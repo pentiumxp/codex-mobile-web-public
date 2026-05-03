@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111315">
+  <title>Codex Mobile</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="login" class="login hidden">
+    <form id="loginForm" class="login-panel">
+      <div class="brand">Codex</div>
+      <input id="loginKey" type="password" autocomplete="current-password" placeholder="Access key">
+      <button type="submit">Open</button>
+      <div id="loginError" class="error-text"></div>
+    </form>
+  </div>
+
+  <div id="app" class="app hidden">
+    <aside id="sidebar" class="sidebar">
+      <div class="side-header">
+        <div>
+          <div class="app-name">Codex</div>
+          <div id="connectionState" class="connection">Starting</div>
+        </div>
+        <button id="closeMenu" class="icon-button mobile-only" type="button" title="Close menu">×</button>
+      </div>
+
+      <label class="field-label" for="workspaceSelect">Workspace</label>
+      <select id="workspaceSelect" class="select"></select>
+      <div id="workspacePath" class="workspace-path"></div>
+
+      <div class="thread-tools">
+        <input id="threadSearch" class="search" type="search" placeholder="Search threads">
+        <button id="refreshThreads" class="icon-button" type="button" title="Refresh">↻</button>
+      </div>
+
+      <div id="threadList" class="thread-list"></div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button id="openMenu" class="icon-button mobile-only" type="button" title="Menu">☰</button>
+        <div class="thread-title-wrap">
+          <div id="threadTitle" class="thread-title">Select a thread</div>
+          <div id="threadMeta" class="thread-meta"></div>
+        </div>
+        <div id="turnTimer" class="turn-timer" aria-live="polite" aria-hidden="true">&#26412;&#36718; 00:00:00</div>
+        <button id="interruptTurn" class="icon-button" type="button" title="Interrupt" disabled>■</button>
+      </header>
+
+      <section id="conversation" class="conversation">
+        <div class="empty-state">Select a thread from the menu.</div>
+      </section>
+
+      <form id="composer" class="composer">
+        <label id="attachFiles" class="icon-button composer-icon file-picker" title="Attach files" aria-label="Attach files" aria-disabled="true" tabindex="-1">
+          <span aria-hidden="true">+</span>
+          <input id="fileInput" class="file-input" type="file" multiple disabled>
+        </label>
+        <div class="composer-body">
+          <div class="composer-controls">
+            <label class="composer-select-wrap">
+              <span>Model</span>
+              <select id="modelSelect" class="composer-select" disabled></select>
+            </label>
+            <label class="composer-select-wrap">
+              <span>Reasoning</span>
+              <select id="effortSelect" class="composer-select" disabled></select>
+            </label>
+            <div id="quotaUsage" class="quota-usage unknown" title="Quota remaining" aria-live="polite">-- | --</div>
+          </div>
+          <div id="attachmentList" class="attachment-list hidden"></div>
+          <textarea id="messageInput" rows="1" placeholder="Message Codex" disabled></textarea>
+        </div>
+        <button id="sendMessage" type="submit" disabled>Send</button>
+      </form>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
