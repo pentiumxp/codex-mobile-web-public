@@ -1866,11 +1866,14 @@ function updateComposerControls() {
   const hasContent = composerHasContent();
   const interruptMode = Boolean(state.activeTurnId) && !hasContent;
   const sendButton = $("sendMessage");
+  const attachButton = $("attachFiles");
   $("messageInput").disabled = disabled;
-  $("attachFiles").disabled = disabled;
   $("fileInput").disabled = disabled;
   $("modelSelect").disabled = disabled;
   $("effortSelect").disabled = disabled;
+  attachButton.classList.toggle("disabled", disabled);
+  attachButton.setAttribute("aria-disabled", disabled ? "true" : "false");
+  attachButton.tabIndex = disabled ? -1 : 0;
   sendButton.textContent = interruptMode ? "Stop" : "Send";
   sendButton.title = interruptMode ? "Interrupt current turn" : "Send message";
   sendButton.classList.toggle("interrupt-mode", interruptMode);
@@ -1974,7 +1977,11 @@ function wireUi() {
     const files = Array.from((event.clipboardData && event.clipboardData.files) || []);
     if (files.length) addAttachmentFiles(files);
   });
-  $("attachFiles").addEventListener("click", () => $("fileInput").click());
+  $("attachFiles").addEventListener("keydown", (event) => {
+    if ($("fileInput").disabled || !["Enter", " "].includes(event.key)) return;
+    event.preventDefault();
+    $("fileInput").click();
+  });
   $("fileInput").addEventListener("change", (event) => {
     addAttachmentFiles(event.target.files);
     event.target.value = "";

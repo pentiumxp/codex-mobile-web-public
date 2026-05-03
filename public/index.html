@@ -55,8 +55,10 @@
       </section>
 
       <form id="composer" class="composer">
-        <input id="fileInput" class="file-input" type="file" multiple disabled>
-        <button id="attachFiles" class="icon-button composer-icon" type="button" title="Attach files" disabled>+</button>
+        <label id="attachFiles" class="icon-button composer-icon file-picker" title="Attach files" aria-label="Attach files" aria-disabled="true" tabindex="-1">
+          <span aria-hidden="true">+</span>
+          <input id="fileInput" class="file-input" type="file" multiple disabled>
+        </label>
         <div class="composer-body">
           <div class="composer-controls">
             <label class="composer-select-wrap">

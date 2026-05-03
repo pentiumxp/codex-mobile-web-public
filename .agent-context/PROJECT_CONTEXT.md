@@ -63,6 +63,7 @@ This workspace owns the standalone Codex Mobile Web app.
 - Live reasoning does not render as a conversation row; the top-right turn timer provides the in-progress time signal.
 - The top conversation bar is intentionally compact: it shows the thread title, but not cwd or thread status metadata.
 - The composer submit button follows Desktop behavior: during an active turn, an empty composer shows `Stop`; if text or attachments are present it switches back to `Send` for the new input.
+- The composer attachment button should be a real file-picker label/input on mobile; do not rely only on calling `.click()` on a fully hidden file input.
 - Message entry, smooth scroll-to-bottom, and live operation removal use short motion transitions.
 - Context compaction renders as the single Chinese notice `历史上下文已压缩`.
 - Thread lists hide archived/deleted/removed sessions and sessions outside Codex Desktop visible workspace roots.

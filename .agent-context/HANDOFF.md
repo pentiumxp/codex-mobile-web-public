@@ -501,3 +501,18 @@
 - Validation:
   - `npm.cmd run check` passed.
   - `git diff --check` passed with only Git line-ending warnings.
+
+## 2026-05-03 Mobile Attachment Picker Fix
+
+- User-reported issue:
+  - After the image rendering/mobile width changes, tapping `+` on the mobile composer no longer reliably attached images.
+- Likely cause:
+  - The old implementation kept `#fileInput` as `display:none` and opened it by calling `.click()` from the visual `+` button.
+  - Mobile browsers, especially iOS/Safari contexts, can reject or ignore programmatic clicks on fully hidden file inputs.
+- Changes:
+  - `public/index.html` now makes `#attachFiles` a real file-picker label containing the `#fileInput`.
+  - `public/styles.css` positions the transparent file input over the visible `+` affordance, so tapping the button hits the native file input directly.
+  - `public/app.js` updates disabled/ARIA state through class attributes and keeps keyboard activation as a fallback.
+- Validation:
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only Git line-ending warnings.
