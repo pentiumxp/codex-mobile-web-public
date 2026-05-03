@@ -40,15 +40,18 @@ This workspace owns the standalone Codex Mobile Web app.
 
 - Mobile rendering is interaction-first.
 - Historical command/tool/file-change payloads are hidden.
-- Only the latest turn's trailing live operation can render as a compact status card.
-- If app-server `thread/read` omits operation items, Mobile Web may synthesize one compact latest operation card from the thread rollout JSONL tail (`exec_command_end`, `patch_apply_end`, `function_call`, or `custom_tool_call`), without command output or diffs.
-- When newer normal content arrives, old operation cards are removed.
+- Only the latest turn's latest live operation can render as a compact status card.
+- If app-server `thread/read` omits operation items, Mobile Web may synthesize one compact latest operation card from the thread rollout JSONL tail (`exec_command_end`, `patch_apply_end`, `function_call`, `custom_tool_call`, or Web Search events), without command output or diffs.
+- Live operation cards stay in source order within the turn; newer normal content renders below them, and when a newer operation arrives older operation cards are removed.
 - File-change cards show compact file names only, not diffs or full change payloads.
+- Web Search items are rendered as compact live operation cards like command/tool calls, not expanded structured payloads.
 - Reasoning items are not rendered in the conversation and reasoning deltas must not remove or replace live command/file/tool operation cards.
 - Conversation rendering uses a visible-content signature and a lightweight keyed DOM patcher to avoid replacing the whole conversation when polling/status refreshes only change local text, item status, or operation cards; this prevents no-op and broad refresh flicker.
 - Uploaded images are sent as app-server `localImage` input items.
 - Uploaded non-image files are saved locally and referenced in message text by absolute path.
 - The composer exposes compact side-by-side per-message model and reasoning effort selectors; blank/default values follow the current thread or `%USERPROFILE%\.codex\config.toml`.
+- The composer shows 5-hour and weekly quota remaining as two separate compact boxes next to the model/reasoning selectors after app-server emits `account/rateLimits/updated`; the 5-hour box is labeled `5H`, the weekly box is labeled `周`, and each displays `100 - usedPercent` from its matching 300-minute or 10080-minute window.
+- The model and reasoning selectors must keep a readable minimum width; quota boxes may wrap before shrinking those selectors.
 - When no thread is selected, the main pane lists recent workspaces and recent threads as shortcuts.
 - Thread detail reads prefer app-server `thread/turns/list` plus local `state_5.sqlite` metadata instead of `thread/read includeTurns:true`, because large historical rollouts can make `thread/read` several seconds slower.
 - Thread switching in the browser uses request sequencing and cancels the previous detail fetch so stale slow responses cannot overwrite the current selection.

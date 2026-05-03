@@ -31,6 +31,7 @@ const state = {
   reasoningEffortOptions: [],
   defaultModel: "",
   defaultReasoningEffort: "",
+  rateLimits: null,
   selectedModel: localStorage.getItem("codexMobileSelectedModel") || "",
   selectedEffort: localStorage.getItem("codexMobileSelectedEffort") || "",
   leavingItems: new Map(),
@@ -135,6 +136,63 @@ function labelForEffort(value) {
   return labels[value] || value;
 }
 
+function rateLimitWindows(rateLimits) {
+  return [rateLimits && rateLimits.primary, rateLimits && rateLimits.secondary]
+    .filter((windowInfo) => windowInfo && Number.isFinite(Number(windowInfo.usedPercent)));
+}
+
+function rateLimitWindowForMinutes(rateLimits, targetMinutes) {
+  const windows = rateLimitWindows(rateLimits);
+  if (!windows.length) return null;
+  return windows.find((windowInfo) => Number(windowInfo.windowDurationMins || 0) === targetMinutes) || null;
+}
+
+function weeklyRateLimit(rateLimits) {
+  return rateLimitWindowForMinutes(rateLimits, 10080);
+}
+
+function fiveHourRateLimit(rateLimits) {
+  return rateLimitWindowForMinutes(rateLimits, 300);
+}
+
+function clampPercent(value) {
+  return Math.max(0, Math.min(100, Number(value) || 0));
+}
+
+function formatQuotaReset(seconds) {
+  if (!seconds) return "";
+  const date = new Date(Number(seconds) * 1000);
+  if (!Number.isFinite(date.getTime())) return "";
+  return date.toLocaleString([], { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function renderQuotaWindow(elementId, label, windowInfo, title) {
+  const el = $(elementId);
+  if (!el) return;
+  if (!windowInfo) {
+    el.textContent = `${label} --`;
+    el.title = `${title} unavailable`;
+    el.classList.add("unknown");
+    return;
+  }
+  const used = clampPercent(windowInfo.usedPercent);
+  const remaining = clampPercent(100 - used);
+  const remainingText = `${Math.round(remaining)}%`;
+  const resetText = formatQuotaReset(windowInfo.resetsAt);
+  el.textContent = `${label} ${remainingText}`;
+  el.title = [
+    `${title}: ${remainingText}`,
+    `used: ${Math.round(used)}%`,
+    resetText ? `resets: ${resetText}` : "",
+  ].filter(Boolean).join("; ");
+  el.classList.remove("unknown");
+}
+
+function renderQuotaUsage() {
+  renderQuotaWindow("quotaUsageFiveHour", "5H", fiveHourRateLimit(state.rateLimits), "5-hour quota remaining");
+  renderQuotaWindow("quotaUsageWeekly", "\u5468", weeklyRateLimit(state.rateLimits), "Weekly quota remaining");
+}
+
 function normalizeFsPath(value) {
   return String(value || "")
     .replace(/^\\\\\?\\/, "")
@@ -200,7 +258,18 @@ function syncActiveTurnFromThread() {
 }
 
 function isOperationalItem(item) {
-  return item && OPERATIONAL_ITEM_TYPES.has(item.type);
+  return item && (OPERATIONAL_ITEM_TYPES.has(item.type) || isWebSearchLikeItem(item));
+}
+
+function isWebSearchLikeItem(item) {
+  if (!item) return false;
+  return /web[_-]?search|websearch|search_query|image_query/i.test([
+    item.type,
+    item.tool,
+    item.name,
+    item.namespace,
+    item.server,
+  ].filter(Boolean).join(" "));
 }
 
 function isContextCompactionType(type) {
@@ -323,12 +392,12 @@ function visibleNonOperationalItemsForTurn(turn) {
 }
 
 function visibleItemsForTurn(turn) {
-  const items = visibleNonOperationalItemsForTurn(turn).map((item) => ({ item, sourceIndex: (turn.items || []).indexOf(item) }));
   const operation = latestVisibleOperationItem(turn);
-  if (operation) {
-    items.push({ item: operation.item, sourceIndex: operation.index, forceTrailingOperation: true });
-  }
-  return items;
+  return (turn.items || []).map((item, index) => {
+    if (!item || isReasoningItem(item)) return null;
+    if (isOperationalItem(item) && (!operation || operation.item !== item)) return null;
+    return { item, sourceIndex: index };
+  }).filter(Boolean);
 }
 
 function visibleItemSignature(item) {
@@ -378,7 +447,6 @@ function conversationRenderSignature(thread) {
         durationMs: timerShowsStatus ? "" : (turn.durationMs || ""),
         items: visibleItemsForTurn(turn).map((entry) => ({
           sourceIndex: entry.sourceIndex,
-          trailingOperation: Boolean(entry.forceTrailingOperation),
           item: visibleItemSignature(entry.item),
         })).filter((entry) => entry.item),
       };
@@ -610,9 +678,14 @@ async function login(key) {
 }
 
 async function bootstrap() {
-  await api("/api/status").catch((err) => {
+  const status = await api("/api/status").catch((err) => {
     $("connectionState").textContent = err.message;
+    return null;
   });
+  if (status && status.rateLimits) {
+    state.rateLimits = status.rateLimits;
+    renderQuotaUsage();
+  }
   await loadWorkspaces();
   await loadThreads();
   await restoreThreadSelection();
@@ -1058,12 +1131,45 @@ function operationFileNames(item) {
   return [...new Set(values.map((name) => truncateSingleLine(shortPath(name), 72)).filter(Boolean))].slice(0, 5);
 }
 
+function collectSearchSummaries(value, out = [], keyHint = "") {
+  if (out.length >= 3 || value == null) return out;
+  const keyLooksSearch = /^(q|query|searchQuery|url|pattern)$/i.test(keyHint);
+  const keyLooksQueryList = /^queries$/i.test(keyHint);
+  if (typeof value === "string") {
+    const text = value.replace(/\s+/g, " ").trim();
+    if ((keyLooksSearch || keyLooksQueryList) && text) out.push(text);
+    return out;
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      collectSearchSummaries(entry, out, keyLooksQueryList ? "query" : keyHint);
+      if (out.length >= 3) return out;
+    }
+    return out;
+  }
+  if (typeof value === "object") {
+    for (const [key, entry] of Object.entries(value)) {
+      collectSearchSummaries(entry, out, key);
+      if (out.length >= 3) return out;
+    }
+  }
+  return out;
+}
+
+function operationSearchSummary(item) {
+  return [...new Set(collectSearchSummaries(item && (item.action || item.arguments || item.result || item.contentItems || item)))]
+    .slice(0, 3)
+    .join(" | ");
+}
+
 function operationSummaryLines(item) {
   if (item.type === "fileChange") {
     const names = operationFileNames(item);
     return names.length ? [names.join(", ")] : [];
   }
   if (item.command) return [truncateMiddle(item.command, 180, "command")];
+  const searchSummary = isWebSearchLikeItem(item) ? operationSearchSummary(item) : "";
+  if (searchSummary) return [truncateMiddle(searchSummary, 180, "search")];
   const names = operationFileNames(item);
   if (names.length) return [names.join(", ")];
   if (item.tool) return [item.tool];
@@ -1100,6 +1206,7 @@ function renderLiveReasoning(item, turn) {
 }
 
 function labelForItem(item) {
+  if (isWebSearchLikeItem(item)) return "Web Search";
   const map = {
     userMessage: "You",
     agentMessage: "Codex",
@@ -1276,6 +1383,11 @@ function scheduleRenderCurrentThread() {
 
 function applyNotification(method, params) {
   if (!params) return;
+  if (method === "account/rateLimits/updated") {
+    state.rateLimits = params.rateLimits || null;
+    renderQuotaUsage();
+    return;
+  }
   if (method === "thread/started" && params.thread) {
     if (isHiddenThread(params.thread)) {
       state.threads = state.threads.filter((thread) => thread.id !== params.thread.id);
@@ -1364,6 +1476,10 @@ function connectEvents() {
     const payload = JSON.parse(event.data);
     if (payload.type === "status") {
       $("connectionState").textContent = payload.status.ready ? "Connected" : "Starting";
+      if (payload.status.rateLimits) {
+        state.rateLimits = payload.status.rateLimits;
+        renderQuotaUsage();
+      }
       if (payload.status.ready) clearTimeout(state.recoveryTimer);
       return;
     }
@@ -1376,6 +1492,10 @@ function connectEvents() {
       try {
         const status = await api("/api/status");
         $("connectionState").textContent = status.ready ? "Connected" : "Starting";
+        if (status.rateLimits) {
+          state.rateLimits = status.rateLimits;
+          renderQuotaUsage();
+        }
         await loadThreads();
         await refreshCurrentThread();
       } catch (err) {
@@ -1409,6 +1529,10 @@ async function resumeMobileSession(reason = "resume") {
   state.pollStableCount = 0;
   const status = await api("/api/status");
   $("connectionState").textContent = status.ready ? "Connected" : "Starting";
+  if (status.rateLimits) {
+    state.rateLimits = status.rateLimits;
+    renderQuotaUsage();
+  }
   await loadThreads();
   if (state.currentThreadId) await refreshCurrentThread();
   else await restoreThreadSelection();
@@ -1714,7 +1838,9 @@ async function start() {
   state.reasoningEffortOptions = normalizeOptionList(config.reasoningEffortOptions || []);
   state.defaultModel = String(config.defaultModel || "");
   state.defaultReasoningEffort = String(config.defaultReasoningEffort || "");
+  state.rateLimits = config.rateLimits || null;
   renderComposerSettings();
+  renderQuotaUsage();
   if (config.authRequired && !state.key) {
     showLogin();
     return;

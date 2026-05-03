@@ -416,3 +416,30 @@
   - Current thread detail still used `mobileReadMode=turns-list`.
 - Operational note:
   - Existing Mobile Web browser tabs need a page reload to load this updated `public/app.js`.
+
+## 2026-05-03 Quota, Web Search, And Operation Ordering - 22:24 +08:00
+
+- User-requested adjustments:
+  - Show 5-hour and weekly quota remaining percentages to the right of the model/reasoning selectors, with 5-hour remaining before weekly remaining.
+  - Render the 5-hour and weekly quota values as two separate boxes labeled `5H` and `周`, not a combined `5h余` / `周余` string.
+  - Render Web Search like a compact Command/tool operation, not as an expanded structured payload.
+  - Do not pin command/file operation cards to the bottom; newer normal messages should render below them, and a newer operation should replace older operation cards.
+- Changes:
+  - `server.js` now stores compact `account/rateLimits/updated` notifications and exposes them through `/api/status` and `/api/public-config`.
+  - `public/app.js` selects the 5-hour quota window from the 300-minute `primary` rate-limit window and the weekly quota window from the 10080-minute `secondary` rate-limit window when present, displaying remaining percentages as `100 - usedPercent`.
+  - `public/app.js` updates the two quota boxes independently through `#quotaUsageFiveHour` and `#quotaUsageWeekly`.
+  - `server.js` and `public/app.js` now classify Web Search payloads and rollout `web_search_*` events as compact `Web Search` operation cards.
+  - `public/app.js` now keeps only the latest operation card but renders it in source order inside the turn instead of appending it to the bottom.
+  - `public/index.html` and `public/styles.css` add two compact quota indicators next to the existing selectors.
+  - `public/styles.css` now uses a wrapping flex layout for composer controls so model/reasoning selectors keep readable minimum widths; quota boxes wrap before compressing selectors.
+- Service recovery:
+  - An interrupted restart left old 8787 process PID `55308` running, so new code was not loaded.
+  - Stopped wrapper PID `57184` and child PID `55308`, then restarted with `start-codex-mobile-web.ps1`.
+  - Current wrapper PID `49844`, Node/listener PID `50372`.
+- Validation:
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only Git line-ending warnings.
+  - LAN `/api/public-config` responds at `http://192.168.10.108:8787`.
+  - Authenticated `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, `lastError=null`.
+  - Status rate limit payload showed `primary.usedPercent=13` and weekly `secondary.usedPercent=80`, so Mobile Web should display about `5H 87%` and `周 20%` after status/bootstrap.
+  - Current thread detail confirmed the latest command operation remains between surrounding agent messages in source order.

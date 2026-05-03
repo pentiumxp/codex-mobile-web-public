@@ -56,6 +56,7 @@ const IMAGE_EXTENSIONS = new Set([".avif", ".bmp", ".gif", ".heic", ".heif", ".j
 const CODEX_CONFIG_DEFAULTS = readCodexConfigDefaults();
 
 let clients = new Set();
+let latestRateLimits = null;
 
 function optionListFromEnv(name, fallback) {
   const values = String(process.env[name] || "")
@@ -293,15 +294,64 @@ function collectFileNames(value, out = [], keyHint = "") {
   return out;
 }
 
+function isWebSearchLikeItem(item) {
+  if (!item || typeof item !== "object") return false;
+  return /web[_-]?search|websearch|search_query|image_query/i.test([
+    item.type,
+    item.tool,
+    item.name,
+    item.namespace,
+    item.server,
+  ].filter(Boolean).join(" "));
+}
+
+function isOperationalItem(item) {
+  return item && (OPERATIONAL_ITEM_TYPES.has(item.type) || isWebSearchLikeItem(item));
+}
+
+function collectSearchSummaries(value, out = [], keyHint = "") {
+  if (out.length >= 3 || value == null) return out;
+  const keyLooksSearch = /^(q|query|searchQuery|url|pattern)$/i.test(keyHint);
+  const keyLooksQueryList = /^queries$/i.test(keyHint);
+  if (typeof value === "string") {
+    const text = value.replace(/\s+/g, " ").trim();
+    if ((keyLooksSearch || keyLooksQueryList) && text) out.push(text);
+    return out;
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      collectSearchSummaries(entry, out, keyLooksQueryList ? "query" : keyHint);
+      if (out.length >= 3) return out;
+    }
+    return out;
+  }
+  if (typeof value === "object") {
+    for (const [key, entry] of Object.entries(value)) {
+      collectSearchSummaries(entry, out, key);
+      if (out.length >= 3) return out;
+    }
+  }
+  return out;
+}
+
+function searchSummaryFromOperation(item) {
+  const summaries = collectSearchSummaries(item && (item.action || item.arguments || item.result || item.contentItems || item));
+  return [...new Set(summaries)].slice(0, 3).join(" | ");
+}
+
 function compactOperationalItem(out) {
+  const isWebSearch = isWebSearchLikeItem(out);
+  const command = typeof out.command === "string"
+    ? out.command
+    : (isWebSearch ? searchSummaryFromOperation(out) : undefined);
   const compact = {
     id: out.id,
-    type: out.type,
+    type: isWebSearch ? "dynamicToolCall" : out.type,
     status: out.status,
     server: out.server,
     namespace: out.namespace,
-    tool: out.tool,
-    command: typeof out.command === "string" ? truncateMiddle(out.command, 180, "command") : undefined,
+    tool: isWebSearch ? "Web Search" : out.tool,
+    command: typeof command === "string" ? truncateMiddle(command, 180, "command") : undefined,
     fileNames: [...new Set(Array.isArray(out.fileNames) && out.fileNames.length
       ? out.fileNames
       : collectFileNames(out.changes || out.arguments || out.result || out.contentItems))].slice(0, 5),
@@ -353,6 +403,16 @@ function fileNamesFromPatchInput(input) {
 function rawOperationFromEntry(entry) {
   if (!entry || !entry.payload) return null;
   const payload = entry.payload;
+  if (entry.type === "event_msg" && payload.type === "web_search_end") {
+    return compactOperationalItem({
+      id: `raw-${payload.call_id || entry.timestamp || "web-search"}`,
+      type: "web_search_call",
+      status: statusFromRawOperation(payload),
+      tool: "Web Search",
+      command: searchSummaryFromOperation(payload),
+      action: payload.action,
+    });
+  }
   if (entry.type === "event_msg" && payload.type === "exec_command_end") {
     return compactOperationalItem({
       id: `raw-${payload.call_id || entry.timestamp || "command"}`,
@@ -375,6 +435,16 @@ function rawOperationFromEntry(entry) {
       type: "commandExecution",
       status: statusFromRawOperation(payload),
       command: commandFromRawPayload(payload),
+    });
+  }
+  if (entry.type === "response_item" && payload.type === "web_search_call") {
+    return compactOperationalItem({
+      id: `raw-${payload.call_id || entry.timestamp || "web-search"}`,
+      type: "web_search_call",
+      status: statusFromRawOperation(payload),
+      tool: "Web Search",
+      command: searchSummaryFromOperation(payload),
+      action: payload.action,
     });
   }
   if (entry.type === "response_item" && payload.type === "custom_tool_call") {
@@ -415,7 +485,7 @@ function compactItem(item) {
       mobileNotice: "历史上下文已压缩",
     };
   }
-  if (OPERATIONAL_ITEM_TYPES.has(out.type)) {
+  if (isOperationalItem(out)) {
     return compactOperationalItem(out);
   }
   if (typeof out.text === "string") out.text = truncateMiddle(out.text, MAX_TEXT_CHARS, "text");
@@ -435,7 +505,7 @@ function compactItem(item) {
 function trailingOperationIndex(items, allowLiveOperation) {
   if (!allowLiveOperation || !Array.isArray(items)) return -1;
   for (let index = items.length - 1; index >= 0; index -= 1) {
-    if (items[index] && OPERATIONAL_ITEM_TYPES.has(items[index].type)) return index;
+    if (isOperationalItem(items[index])) return index;
   }
   return -1;
 }
@@ -446,7 +516,7 @@ function compactTurn(turn, options = {}) {
   if (Array.isArray(out.items)) {
     const lastLiveOperationIndex = trailingOperationIndex(out.items, Boolean(options.allowLiveOperation) && isLiveTurn(out));
     out.items = out.items.map(compactItem).filter((item, index) => {
-      if (!item || !OPERATIONAL_ITEM_TYPES.has(item.type)) return true;
+      if (!isOperationalItem(item)) return true;
       return index === lastLiveOperationIndex;
     });
     let remainingOutputBudget = MAX_COMMAND_OUTPUT_CHARS_PER_TURN;
@@ -487,7 +557,7 @@ function compactThread(thread) {
     out.turns = out.turns.map((turn, index) => compactTurn(turn, { allowLiveOperation: index === latestIndex }));
     const latest = out.turns[latestIndex];
     if (latest && isLiveTurn(latest) && Array.isArray(latest.items)
-      && !latest.items.some((item) => item && OPERATIONAL_ITEM_TYPES.has(item.type))) {
+      && !latest.items.some((item) => isOperationalItem(item))) {
       const rawOperation = readLatestRawOperation(out);
       if (rawOperation) latest.items.push(rawOperation);
     }
@@ -525,6 +595,9 @@ function compactNotification(payload) {
   };
   if (out.params.item) out.params.item = compactItem(out.params.item);
   if (out.params.turn) out.params.turn = compactTurn(out.params.turn, { allowLiveOperation: true });
+  if (payload.method === "account/rateLimits/updated" && out.params.rateLimits) {
+    out.params.rateLimits = compactRateLimits(out.params.rateLimits);
+  }
   if (payload.method === "item/commandExecution/outputDelta" && typeof out.params.delta === "string") {
     out.params.originalDeltaChars = out.params.delta.length;
     out.params.deltaTruncated = out.params.delta.length > MAX_DELTA_CHARS;
@@ -536,6 +609,28 @@ function compactNotification(payload) {
     out.params.delta = truncateMiddle(out.params.delta, MAX_DELTA_CHARS, "text delta");
   }
   return out;
+}
+
+function compactRateLimitWindow(value) {
+  if (!value || typeof value !== "object") return null;
+  return Object.fromEntries(Object.entries({
+    usedPercent: typeof value.usedPercent === "number" ? value.usedPercent : undefined,
+    windowDurationMins: typeof value.windowDurationMins === "number" ? value.windowDurationMins : undefined,
+    resetsAt: typeof value.resetsAt === "number" ? value.resetsAt : undefined,
+  }).filter(([, entry]) => entry !== undefined));
+}
+
+function compactRateLimits(value) {
+  if (!value || typeof value !== "object") return null;
+  return Object.fromEntries(Object.entries({
+    limitId: value.limitId || undefined,
+    limitName: value.limitName || undefined,
+    primary: compactRateLimitWindow(value.primary),
+    secondary: compactRateLimitWindow(value.secondary),
+    credits: value.credits || null,
+    planType: value.planType || undefined,
+    rateLimitReachedType: value.rateLimitReachedType || null,
+  }).filter(([, entry]) => entry !== undefined));
 }
 
 function readRawBody(req, limitBytes) {
@@ -1064,6 +1159,9 @@ class CodexAppServerClient {
       return;
     }
     if (msg.method) {
+      if (msg.method === "account/rateLimits/updated" && msg.params && msg.params.rateLimits) {
+        latestRateLimits = compactRateLimits(msg.params.rateLimits);
+      }
       broadcast({ type: "notification", method: msg.method, params: msg.params || null });
     }
   }
@@ -1174,6 +1272,7 @@ class CodexAppServerClient {
       runtimeRoot: RUNTIME_ROOT,
       userAgent: this.info ? this.info.userAgent : null,
       lastError: this.lastError,
+      rateLimits: latestRateLimits,
     };
   }
 }
@@ -1391,6 +1490,7 @@ async function handleApi(req, res) {
       reasoningEffortOptions: REASONING_EFFORT_OPTIONS,
       defaultModel: CODEX_CONFIG_DEFAULTS.model,
       defaultReasoningEffort: CODEX_CONFIG_DEFAULTS.reasoningEffort,
+      rateLimits: latestRateLimits,
     });
     return;
   }
