@@ -35,6 +35,7 @@ const state = {
   selectedModel: localStorage.getItem("codexMobileSelectedModel") || "",
   selectedEffort: localStorage.getItem("codexMobileSelectedEffort") || "",
   leavingItems: new Map(),
+  leavingCleanupTimer: null,
 };
 
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
@@ -338,9 +339,32 @@ function entryAnimationClass(key, previousKeys) {
 
 function cleanupLeavingItems() {
   const now = Date.now();
+  let needsRecheck = false;
   for (const [key, value] of state.leavingItems.entries()) {
-    if (!value || value.expiresAt <= now) state.leavingItems.delete(key);
+    if (!value) {
+      state.leavingItems.delete(key);
+      continue;
+    }
+    if (value.keepUntilOutOfView) {
+      if (value.maxExpiresAt && value.maxExpiresAt <= now) {
+        state.leavingItems.delete(key);
+        continue;
+      }
+      if (value.minExpiresAt && value.minExpiresAt > now) {
+        needsRecheck = true;
+        continue;
+      }
+      const node = renderNodeByKey(value.renderKey || key);
+      if (node && isNodeInConversationViewport(node)) {
+        needsRecheck = true;
+        continue;
+      }
+      state.leavingItems.delete(key);
+      continue;
+    }
+    if (value.expiresAt <= now) state.leavingItems.delete(key);
   }
+  if (needsRecheck) scheduleLeavingCleanup();
 }
 
 function leavingItemsForTurn(turn) {
@@ -348,28 +372,73 @@ function leavingItemsForTurn(turn) {
   const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
   return Array.from(state.leavingItems.values())
     .filter((value) => value.threadId === threadId && value.turnId === turn.id)
-    .map((value) => value.html);
+    .map((value) => ({
+      html: value.html,
+      sourceIndex: Number.isFinite(value.sourceIndex) ? value.sourceIndex : Number.MAX_SAFE_INTEGER,
+      order: Number.isFinite(value.order) ? value.order : 0,
+    }));
 }
 
-function rememberLeavingOperation(turn, item, index) {
+function renderNodeByKey(key) {
+  const conversation = $("conversation");
+  if (!conversation || !key) return null;
+  return Array.from(conversation.querySelectorAll("[data-render-key]"))
+    .find((node) => node.dataset.renderKey === key) || null;
+}
+
+function liveOperationNodeForItem(item) {
+  const conversation = $("conversation");
+  if (!conversation || !item || !item.id) return null;
+  return Array.from(conversation.querySelectorAll(".live-operation"))
+    .find((node) => node.dataset.item === String(item.id)) || null;
+}
+
+function isNodeInConversationViewport(node) {
+  const conversation = $("conversation");
+  if (!conversation || !node) return false;
+  const viewport = conversation.getBoundingClientRect();
+  const rect = node.getBoundingClientRect();
+  const margin = 24;
+  return rect.bottom > viewport.top + margin && rect.top < viewport.bottom - margin;
+}
+
+function scheduleLeavingCleanup(delay = 1200) {
+  if (state.leavingCleanupTimer) return;
+  state.leavingCleanupTimer = setTimeout(() => {
+    state.leavingCleanupTimer = null;
+    scheduleRenderCurrentThread();
+  }, delay);
+}
+
+function rememberLeavingOperation(turn, item, index, options = {}) {
   if (!turn || !item || !isLatestTurn(turn)) return;
-  const key = stableItemKey(turn, item, index);
+  const keepUntilOutOfView = Boolean(options.keepUntilOutOfView);
+  if (options.onlyIfInViewport && !isNodeInConversationViewport(liveOperationNodeForItem(item))) return;
+  const key = stableItemKey(turn, item, index, keepUntilOutOfView ? "retained-operation" : "leaving-operation");
   if (state.leavingItems.has(key)) return;
   const lines = operationSummaryLines(item);
   const body = lines.length ? `<div class="operation-body">${escapeHtml(lines.join("\n"))}</div>` : "";
   const status = statusText(item.status) || (item.completedAtMs ? "completed" : "running");
   const title = operationTitle(item, status);
   const type = item.type || "item";
+  const now = Date.now();
+  const transitionClass = keepUntilOutOfView ? "retained-operation" : "entry-leave";
   state.leavingItems.set(key, {
     threadId: state.currentThreadId || (state.currentThread && state.currentThread.id) || "",
     turnId: turn.id,
-    expiresAt: Date.now() + 180,
-    html: `<section class="item live-operation entry-leave ${isCompletedStatus(status) ? "completed" : ""} ${escapeHtml(type)}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">
+    sourceIndex: index,
+    order: 0,
+    renderKey: key,
+    keepUntilOutOfView,
+    minExpiresAt: keepUntilOutOfView ? now + 450 : 0,
+    maxExpiresAt: keepUntilOutOfView ? now + 30000 : 0,
+    expiresAt: now + (keepUntilOutOfView ? 30000 : 180),
+    html: `<section class="item live-operation ${transitionClass} ${isCompletedStatus(status) ? "completed" : ""} ${escapeHtml(type)}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">
     <div class="item-head"><span>${escapeHtml(title)}</span><span>${escapeHtml(status)}</span></div>
     ${body}
   </section>`,
   });
-  setTimeout(() => scheduleRenderCurrentThread(), 190);
+  setTimeout(() => scheduleRenderCurrentThread(), keepUntilOutOfView ? 480 : 190);
 }
 
 function visibleOperationIndex(turn) {
@@ -1166,12 +1235,18 @@ function renderTurn(turn, previousKeys = new Set()) {
   const renderedItems = visibleItemsForTurn(turn).map((entry, index) => {
     const item = entry.item;
     const sourceIndex = Number.isInteger(entry.sourceIndex) && entry.sourceIndex >= 0 ? entry.sourceIndex : index;
-    if (isContextCompactionItem(item)) return renderContextCompaction(item, turn, previousKeys, sourceIndex);
-    if (isOperationalItem(item)) return renderLiveOperation(item, turn, previousKeys, sourceIndex);
-    if (item.type === "reasoning" && isLiveTurn(turn)) return "";
-    return renderItem(item, turn, previousKeys, sourceIndex);
-  }).filter(Boolean);
-  const items = renderedItems.concat(leavingItemsForTurn(turn)).join("");
+    let html = "";
+    if (isContextCompactionItem(item)) html = renderContextCompaction(item, turn, previousKeys, sourceIndex);
+    else if (isOperationalItem(item)) html = renderLiveOperation(item, turn, previousKeys, sourceIndex);
+    else if (item.type === "reasoning" && isLiveTurn(turn)) html = "";
+    else html = renderItem(item, turn, previousKeys, sourceIndex);
+    return { html, sourceIndex, order: 1 };
+  }).filter((entry) => entry && entry.html);
+  const items = renderedItems
+    .concat(leavingItemsForTurn(turn))
+    .sort((a, b) => (a.sourceIndex - b.sourceIndex) || (a.order - b.order))
+    .map((entry) => entry.html)
+    .join("");
   if (!items.trim()) return "";
   const turnKey = stableTurnKey(turn);
   const statusKey = stableTurnKey(turn, "status");
@@ -1481,6 +1556,14 @@ function upsertItem(turnId, item) {
   }
   turn.items = turn.items || [];
   if (isOperationalItem(item)) {
+    turn.items.forEach((existing, existingIndex) => {
+      if (isOperationalItem(existing) && existing.id !== item.id) {
+        rememberLeavingOperation(turn, existing, existingIndex, {
+          keepUntilOutOfView: true,
+          onlyIfInViewport: true,
+        });
+      }
+    });
     turn.items = turn.items.filter((existing) => !isOperationalItem(existing) || existing.id === item.id);
   }
   const index = turn.items.findIndex((x) => x.id === item.id);
@@ -1959,6 +2042,9 @@ function wireUi() {
   $("closeMenu").addEventListener("click", () => $("sidebar").classList.remove("open"));
   $("composer").addEventListener("submit", sendMessage);
   $("interruptTurn").addEventListener("click", interruptActiveTurn);
+  $("conversation").addEventListener("scroll", () => {
+    if (state.leavingItems.size) scheduleLeavingCleanup(120);
+  }, { passive: true });
   $("messageInput").addEventListener("input", (event) => {
     autoSizeTextarea(event.target);
     updateComposerControls();

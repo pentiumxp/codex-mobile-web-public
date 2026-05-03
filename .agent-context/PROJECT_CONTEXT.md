@@ -42,7 +42,7 @@ This workspace owns the standalone Codex Mobile Web app.
 - Historical command/tool/file-change payloads are hidden.
 - Only the latest turn's latest live operation can render as a compact status card.
 - If app-server `thread/read` omits operation items, Mobile Web may synthesize one compact latest operation card from the thread rollout JSONL tail (`exec_command_end`, `patch_apply_end`, `function_call`, `custom_tool_call`, or Web Search events), without command output or diffs.
-- Live operation cards stay in source order within the turn; newer normal content renders below them, and when a newer operation arrives older operation cards are removed.
+- Live operation cards stay in source order within the turn; newer normal content renders below them. When a newer operation arrives, an older visible operation card may be retained until it leaves the conversation viewport to avoid visible removal flicker, then it is pruned.
 - File-change cards show compact file names only, not diffs or full change payloads.
 - Web Search items are rendered as compact live operation cards like command/tool calls, not expanded structured payloads.
 - Reasoning items are not rendered in the conversation and reasoning deltas must not remove or replace live command/file/tool operation cards.

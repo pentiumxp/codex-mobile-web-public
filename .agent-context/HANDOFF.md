@@ -516,3 +516,16 @@
 - Validation:
   - `npm.cmd run check` passed.
   - `git diff --check` passed with only Git line-ending warnings.
+
+## 2026-05-03 Viewport-Based Operation Card Pruning
+
+- User-reported issue:
+  - When a new Command/operation card appears, removing the old card immediately can visibly flash, especially if the old card is large and still on screen.
+- Change:
+  - `public/app.js` now snapshots old operation cards before replacement if the old card is currently inside the conversation viewport.
+  - Retained operation cards are reinserted in source order and do not run the short leave animation.
+  - Retained cards are pruned after they leave the conversation viewport, with scroll-triggered and timed cleanup plus a 30-second failsafe.
+  - `public/styles.css` disables animation for `.retained-operation`.
+- Validation:
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only Git line-ending warnings.

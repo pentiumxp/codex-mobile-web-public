@@ -545,6 +545,10 @@ textarea {
   animation: none;
 }
 
+.item.retained-operation {
+  animation: none;
+}
+
 .item.live-operation .item-head {
   border-bottom-color: rgba(122, 199, 167, 0.16);
 }
