@@ -17,6 +17,7 @@ This workspace owns the standalone Codex Mobile Web app.
 - Codex desktop state is read from `%USERPROFILE%\.codex`.
 - Mobile Web runtime state lives under `%USERPROFILE%\.codex-mobile-web`.
 - Access key file: `%USERPROFILE%\.codex-mobile-web\access_key`
+- Access key generation: `server.js` first uses `CODEX_MOBILE_KEY`, then `CODEX_MOBILE_KEY_FILE` / default `access_key`; if no key file exists it creates an 18-random-byte `base64url` key and writes it to the runtime key file.
 - Local Codex executable copy: `%USERPROFILE%\.codex-mobile-web\codex.exe`
 - Uploaded attachment storage: `%USERPROFILE%\.codex-mobile-web\uploads`
 - Raw access keys and binaries are local runtime state and must not be committed.

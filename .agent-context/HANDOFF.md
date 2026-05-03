@@ -581,3 +581,15 @@
 - Changes:
   - `public/styles.css` changed conversation image thumbnail caps from `min(36vw, 160px)` / `120px` to `min(72vw, 320px)` / `240px`.
   - `PROJECT_CONTEXT.md` records the current thumbnail size cap.
+
+## 2026-05-03 Cross-Platform README
+
+- User-requested documentation:
+  - Write a README that someone can read after cloning, including Windows and Mac usage.
+  - Clarify access-key generation and the easiest way for another user to enter/copy it.
+- Changes:
+  - `README.md` now has a platform support table, Windows standalone startup, macOS standalone startup, authentication flow, upload behavior, interface notes, Windows Desktop mux sync, macOS sync limitations, environment variables, and safety notes.
+  - Authentication docs now state the exact key source priority and generation behavior: `CODEX_MOBILE_KEY`, then key file, then an 18-random-byte base64url key generated on first start.
+  - README includes clipboard commands: Windows `Set-Clipboard`, macOS `pbcopy`.
+  - README includes optional custom-key examples for demos on trusted private networks.
+  - `PROJECT_CONTEXT.md` records the durable access-key generation behavior.
