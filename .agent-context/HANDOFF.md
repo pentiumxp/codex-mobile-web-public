@@ -625,3 +625,17 @@
   - `public/app.js` now removes the automatic `input.focus()` after send.
   - After a successful send, `public/app.js` clears the textarea and calls `input.blur()` so the mobile keyboard closes instead of being reopened.
   - `PROJECT_CONTEXT.md` records that keyboards/input methods should open only after the user explicitly taps the textarea.
+
+## 2026-05-03 README macOS App-Server Bridge Notes
+
+- User-requested documentation:
+  - README should clearly describe the macOS implementation approach for the bridge app-server path.
+  - README should explicitly state Windows bridge support is implemented while macOS is not yet verified.
+  - The public release README should be enough for another Codex agent to implement and validate macOS support.
+- Changes:
+  - `README.md` now has an `App-Server Bridge Design` section describing the mux flow shared by Desktop and Mobile Web.
+  - Windows Desktop live sync is marked `implemented and verified`.
+  - macOS Desktop live sync is marked `design documented, not yet packaged or verified on macOS`.
+  - Added a macOS implementation plan covering `CODEX_CLI_PATH`, `CODEX_HOME`, `CODEX_MUX_SCRIPT_PATH`, `CODEX_MUX_CODEX_EXE`, optional `CODEX_MUX_NODE_EXE`, stdout cleanliness, argument passthrough, and fallback native shim requirements.
+  - Added a macOS verification checklist for endpoint file, mux log, Mobile Web `external-jsonl-tcp` transport, Desktop-to-Mobile live updates, Mobile-to-Desktop mid-turn sync, and endpoint cleanup.
+  - The clean public release repo README was synchronized while preserving the public clone URL and `.agent-context/` ignore note.
