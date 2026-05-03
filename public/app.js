@@ -494,6 +494,15 @@ function visibleItemsForTurn(turn) {
   }).filter(Boolean);
 }
 
+function hasVisibleNonOperationAfterIndex(turn, sourceIndex) {
+  const items = turn && Array.isArray(turn.items) ? turn.items : [];
+  for (let index = sourceIndex + 1; index < items.length; index += 1) {
+    const item = items[index];
+    if (item && !isOperationalItem(item) && !isReasoningItem(item) && itemVisibleWeight(item) > 0) return true;
+  }
+  return false;
+}
+
 function visibleItemSignature(item) {
   if (!item || isReasoningItem(item)) return null;
   if (isOperationalItem(item)) {
@@ -1583,10 +1592,12 @@ function upsertItem(turnId, item) {
   if (isOperationalItem(item)) {
     turn.items.forEach((existing, existingIndex) => {
       if (isOperationalItem(existing) && existing.id !== item.id) {
-        rememberLeavingOperation(turn, existing, existingIndex, {
-          keepUntilOutOfView: true,
-          onlyIfInViewport: true,
-        });
+        if (hasVisibleNonOperationAfterIndex(turn, existingIndex)) {
+          rememberLeavingOperation(turn, existing, existingIndex, {
+            keepUntilOutOfView: true,
+            onlyIfInViewport: true,
+          });
+        }
       }
     });
     turn.items = turn.items.filter((existing) => !isOperationalItem(existing) || existing.id === item.id);

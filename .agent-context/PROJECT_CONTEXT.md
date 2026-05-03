@@ -42,7 +42,7 @@ This workspace owns the standalone Codex Mobile Web app.
 - Historical command/tool/file-change payloads are hidden.
 - Only the latest turn's latest live operation can render as a compact status card.
 - If app-server `thread/read` omits operation items, Mobile Web may synthesize one compact latest operation card from the thread rollout JSONL tail (`exec_command_end`, `patch_apply_end`, `function_call`, `custom_tool_call`, or Web Search events), without command output or diffs.
-- Live operation cards stay in source order within the turn; newer normal content renders below them. When a newer operation arrives, at most one older visible operation card may be retained until it leaves the conversation viewport to avoid visible removal flicker; retained operation cards must not stack into multiple old command/file cards.
+- Live operation cards stay in source order within the turn; newer normal content renders below them. Consecutive operation updates should show only the latest operation card. At most one older visible operation card may be retained only when visible non-operation content has arrived after it, so a later operation can appear in the newer content segment without stacking consecutive command/file cards.
 - File-change cards show compact file names only, not diffs or full change payloads.
 - Web Search items are rendered as compact live operation cards like command/tool calls, not expanded structured payloads.
 - Reasoning items are not rendered in the conversation and reasoning deltas must not remove or replace live command/file/tool operation cards.
@@ -51,7 +51,7 @@ This workspace owns the standalone Codex Mobile Web app.
 - Uploaded images are sent as app-server `localImage` input items.
 - Uploaded non-image files are saved locally and referenced in message text by absolute path.
 - Uploaded files under `%USERPROFILE%\.codex-mobile-web\uploads` can be served back to the authenticated browser through `/api/uploads/file?path=<absolute-upload-path>`; the server must only allow paths inside the upload root.
-- User message rendering must show image input parts as bounded thumbnails and must never stringify full data-URL image payloads into the conversation.
+- User message rendering must show image input parts as compact thumbnails, not large inline previews, and must never stringify full data-URL image payloads into the conversation.
 - The composer exposes compact side-by-side per-message model and reasoning effort selectors; blank/default values follow the current thread or `%USERPROFILE%\.codex\config.toml`.
 - The composer shows 5-hour and weekly quota remaining as one compact right-aligned numeric indicator next to the model/reasoning selectors after app-server emits `account/rateLimits/updated`; it displays `<5-hour remaining> | <weekly remaining>` from the matching 300-minute and 10080-minute windows.
 - The model, reasoning, and quota controls should stay on one line while keeping the model/reasoning selectors readable; the quota column must not starve the reasoning selector width.

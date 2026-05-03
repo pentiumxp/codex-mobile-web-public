@@ -551,3 +551,16 @@
 - Validation:
   - `npm.cmd run check` passed.
   - `git diff --check` passed with only Git line-ending warnings.
+
+## 2026-05-03 Image Thumbnail Size And Command Card Rule
+
+- User-reported issues:
+  - Uploaded images rendered too large in the conversation; they should appear as thumbnails.
+  - Consecutive command updates could still show two Command cards. Desired behavior: only one Command card for consecutive operations; two cards are acceptable only when visible non-operation content appears between the older operation and the newer operation.
+- Changes:
+  - `public/styles.css` now caps conversation image thumbnails at `min(36vw, 160px)` wide and `120px` high.
+  - `public/app.js` now retains an older operation card only if visible non-operation content exists after that operation in the same turn.
+  - Consecutive operation updates without intervening visible content replace the current operation card instead of retaining the old card.
+  - `PROJECT_CONTEXT.md` documents compact thumbnail rendering and the refined command-card retention rule.
+- Validation:
+  - `npm.cmd run check` passed.
