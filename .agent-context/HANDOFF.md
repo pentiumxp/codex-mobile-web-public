@@ -614,3 +614,14 @@
   - `git ls-files` in the release repo returns 13 files and no `.agent-context` / `AGENTS.md`.
   - `npm.cmd run check` passed in the release repo.
   - Privacy scan in the release repo found no `xuxin`, `Hermes`, `C:\Users`, `192.168.10.108`, `.webui_secret`, old private repo clone URL, or `AGENTS` matches.
+
+## 2026-05-03 Composer Keyboard Focus Suppression
+
+- User-reported issue:
+  - The message input could bring up the mobile input method even when the user did not intend to type.
+- Finding:
+  - `sendMessage()` called `input.focus()` in `finally`, so every send attempt could programmatically focus the textarea.
+- Changes:
+  - `public/app.js` now removes the automatic `input.focus()` after send.
+  - After a successful send, `public/app.js` clears the textarea and calls `input.blur()` so the mobile keyboard closes instead of being reopened.
+  - `PROJECT_CONTEXT.md` records that keyboards/input methods should open only after the user explicitly taps the textarea.
