@@ -10,6 +10,8 @@ This workspace owns the standalone Codex Mobile Web app.
 - Main server: `server.js`
 - Startup script: `start-codex-mobile-web.ps1`
 - Optional app-server mux: `codex-app-server-mux.js`
+- Clean public release repository: `https://github.com/pentiumxp/codex-mobile-web-public`
+- Clean public release local path: `C:\Users\xuxin\Documents\codex-mobile-web-public`
 - Current LAN URL: `http://192.168.10.108:8787`
 
 ## Runtime State

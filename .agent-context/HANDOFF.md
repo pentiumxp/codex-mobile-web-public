@@ -593,3 +593,24 @@
   - README includes clipboard commands: Windows `Set-Clipboard`, macOS `pbcopy`.
   - README includes optional custom-key examples for demos on trusted private networks.
   - `PROJECT_CONTEXT.md` records the durable access-key generation behavior.
+
+## 2026-05-03 Clean Public Release Repository
+
+- User-requested action:
+  - Create a clean release repository and remove Agent context from the submitted history.
+- Release repo:
+  - URL: `https://github.com/pentiumxp/codex-mobile-web-public`
+  - Visibility: public
+  - Local path: `C:\Users\xuxin\Documents\codex-mobile-web-public`
+- Release construction:
+  - Created a new local repository with no inherited Git history.
+  - Copied only release files from the private workspace.
+  - Excluded `.agent-context/` and `AGENTS.md`.
+  - Added `.agent-context/` and `AGENTS.md` to the release `.gitignore`.
+  - Updated the release README clone URL to `pentiumxp/codex-mobile-web-public`.
+  - Changed release `LICENSE` copyright holder to `Codex Mobile Web contributors`.
+- Validation:
+  - Release repo has a single root commit: `95a04a9 Initial clean public release`.
+  - `git ls-files` in the release repo returns 13 files and no `.agent-context` / `AGENTS.md`.
+  - `npm.cmd run check` passed in the release repo.
+  - Privacy scan in the release repo found no `xuxin`, `Hermes`, `C:\Users`, `192.168.10.108`, `.webui_secret`, old private repo clone URL, or `AGENTS` matches.
