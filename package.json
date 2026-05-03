@@ -1,0 +1,21 @@
+{
+  "name": "codex-mobile-web",
+  "version": "0.1.0",
+  "description": "A local authenticated mobile web client for Codex app-server.",
+  "type": "commonjs",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --check codex-app-server-mux.js && node --check public/app.js"
+  },
+  "keywords": [
+    "codex",
+    "mobile",
+    "web",
+    "app-server",
+    "tailscale"
+  ]
+}
