@@ -64,3 +64,17 @@
 - Resume steps after authentication:
   - Run `gh auth login` in this Windows user session.
   - From `C:\Users\xuxin\Documents\codex-mobile-web`, create the private remote and push with `gh repo create codex-mobile-web --private --source . --remote origin --push`.
+
+## 2026-05-03 GitHub Publish Completed - 18:17 +08:00
+
+- GitHub CLI authenticated as account `pentiumxp`.
+- Created private GitHub repository:
+  - `https://github.com/pentiumxp/codex-mobile-web`
+- Local Git state:
+  - Branch: `main`
+  - Remote: `origin` -> `https://github.com/pentiumxp/codex-mobile-web.git`
+  - Tracking: `main` tracks `origin/main`
+- Pushed commits:
+  - `6f821a1 Initial Codex Mobile Web app`
+- Validation after push:
+  - `npm.cmd run check` passed.
