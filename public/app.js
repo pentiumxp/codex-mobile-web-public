@@ -23,6 +23,8 @@ const state = {
   nowMs: Date.now(),
   threadLoadSeq: 0,
   threadLoadController: null,
+  threadListLoadSeq: 0,
+  threadListLoadController: null,
   pendingAttachments: [],
   composerBusy: false,
   maxUploadBytes: 64 * 1024 * 1024,
@@ -610,6 +612,7 @@ function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
 
 function conversationRenderSignature(thread) {
   if (!thread) return "home";
+  if (thread.mobileLoadError) return `load-error|${state.currentThreadId || thread.id || ""}|${thread.mobileLoadError}`;
   if (thread.mobileLoading) return `loading|${state.currentThreadId || thread.id || ""}`;
   cleanupLeavingItems();
   const turns = (thread.turns || []).slice(-MAX_VISIBLE_TURNS);
@@ -898,21 +901,56 @@ function updateWorkspacePath() {
   el.textContent = state.selectedCwd || "All workspaces";
 }
 
+function clearCurrentThreadSelection() {
+  state.threadLoadSeq += 1;
+  if (state.threadLoadController) {
+    state.threadLoadController.abort();
+    state.threadLoadController = null;
+  }
+  clearTimeout(state.refreshTimer);
+  clearTimeout(state.pollTimer);
+  state.pollStableCount = 0;
+  state.currentThread = null;
+  state.currentThreadId = "";
+  state.activeTurnId = "";
+  state.leavingItems.clear();
+  localStorage.removeItem(STORAGE_THREAD_ID);
+  syncActiveTurnFromThread();
+}
+
+function renderThreadListLoading() {
+  const list = $("threadList");
+  if (!list) return;
+  list.innerHTML = `<div class="empty-state">Loading threads...</div>`;
+  state.renderedThreadListSignature = `loading|${state.selectedCwd}|${$("threadSearch").value.trim()}`;
+}
+
 async function loadThreads() {
+  const seq = state.threadListLoadSeq + 1;
+  state.threadListLoadSeq = seq;
+  if (state.threadListLoadController) state.threadListLoadController.abort();
+  const controller = new AbortController();
+  state.threadListLoadController = controller;
   const params = new URLSearchParams({ limit: "80", archived: "false" });
   if (state.selectedCwd) params.set("cwd", state.selectedCwd);
   const search = $("threadSearch").value.trim();
   if (search) params.set("search", search);
-  $("threadList").innerHTML = `<div class="empty-state">Loading threads...</div>`;
+  renderThreadListLoading();
   try {
-    const result = await api(`/api/threads?${params}`, { timeoutMs: 45000 });
+    const result = await api(`/api/threads?${params}`, { timeoutMs: 45000, signal: controller.signal });
+    if (seq !== state.threadListLoadSeq) return null;
     state.threads = visibleThreads(result.data || []);
     renderThreads(result);
     if (result.mobileFallback) $("connectionState").textContent = "Recovered from session index";
+    else $("connectionState").textContent = "Connected";
     if (!state.currentThread) renderCurrentThread();
+    return result;
   } catch (err) {
+    if (seq !== state.threadListLoadSeq || controller.signal.aborted) return null;
     renderThreadLoadError(err);
     throw err;
+  } finally {
+    if (state.threadListLoadController === controller) state.threadListLoadController = null;
   }
 }
 
@@ -946,6 +984,14 @@ async function loadThread(threadId) {
     });
   } catch (err) {
     if (seq !== state.threadLoadSeq || controller.signal.aborted) return;
+    state.currentThread = Object.assign({}, state.currentThread || { id: threadId, name: threadId, preview: threadId, turns: [] }, {
+      mobileLoading: false,
+      mobileLoadError: err.message || String(err),
+    });
+    syncActiveTurnFromThread();
+    renderThreads();
+    renderCurrentThread();
+    updateComposerControls();
     throw err;
   } finally {
     if (state.threadLoadController === controller) state.threadLoadController = null;
@@ -957,6 +1003,7 @@ async function loadThread(threadId) {
   syncActiveTurnFromThread();
   renderThreads();
   renderCurrentThread({ stickToBottom: true });
+  $("connectionState").textContent = "Connected";
   scheduleLivePollIfNeeded(1200);
   updateComposerControls();
   if (window.matchMedia("(max-width: 760px)").matches) $("sidebar").classList.remove("open");
@@ -1055,14 +1102,12 @@ async function restoreThreadSelection() {
 
 async function selectWorkspaceShortcut(cwd) {
   state.selectedCwd = cwd || "";
-  state.currentThread = null;
-  state.currentThreadId = "";
-  localStorage.removeItem(STORAGE_THREAD_ID);
-  syncActiveTurnFromThread();
+  clearCurrentThreadSelection();
   const select = $("workspaceSelect");
   if (select) select.value = state.selectedCwd;
   updateWorkspacePath();
   updateComposerControls();
+  renderCurrentThread();
   await loadThreads();
 }
 
@@ -1227,6 +1272,7 @@ function renderThreadLoadError(err) {
     <div>Thread list failed: ${escapeHtml(err.message || String(err))}</div>
     <button id="retryThreads" class="retry-button" type="button">Retry</button>
   </div>`;
+  state.renderedThreadListSignature = `error|${err.message || String(err)}`;
   const retry = $("retryThreads");
   if (retry) retry.addEventListener("click", () => loadThreads().catch(showError));
 }
@@ -1251,6 +1297,20 @@ function renderCurrentThread(options = {}) {
       conversationRenderSignature(thread),
       { stickToBottom: shouldStickToBottom },
     );
+    updateTickTimer();
+    return;
+  }
+  if (thread.mobileLoadError) {
+    updateConversationHtml(
+      `<div class="empty-state entry-animate">
+        <div>Thread failed: ${escapeHtml(thread.mobileLoadError)}</div>
+        <button id="retryCurrentThread" class="retry-button" type="button">Retry</button>
+      </div>`,
+      conversationRenderSignature(thread),
+      { stickToBottom: shouldStickToBottom },
+    );
+    const retry = $("retryCurrentThread");
+    if (retry) retry.onclick = () => loadThread(thread.id || state.currentThreadId).catch(showError);
     updateTickTimer();
     return;
   }
@@ -1834,12 +1894,9 @@ async function resumeMobileSession(reason = "resume") {
 function scrollConversationToBottom() {
   const el = $("conversation");
   if (!el) return;
-  const top = el.scrollHeight;
-  if (typeof el.scrollTo === "function") {
-    el.scrollTo({ top, behavior: "smooth" });
-  } else {
-    el.scrollTop = top;
-  }
+  const target = Math.max(0, el.scrollHeight - el.clientHeight);
+  if (Math.abs(el.scrollTop - target) < 2) return;
+  el.scrollTop = target;
 }
 
 function isConversationNearBottom() {
@@ -1980,7 +2037,10 @@ function renderComposerSettings() {
 }
 
 function updateComposerControls() {
-  const hasThread = Boolean(state.currentThreadId);
+  const hasThread = Boolean(state.currentThreadId
+    && state.currentThread
+    && !state.currentThread.mobileLoading
+    && !state.currentThread.mobileLoadError);
   const disabled = !hasThread || state.composerBusy;
   const hasContent = composerHasContent();
   const interruptMode = Boolean(state.activeTurnId) && !hasContent;
@@ -2062,11 +2122,10 @@ function wireUi() {
   });
   $("workspaceSelect").addEventListener("change", (event) => {
     state.selectedCwd = event.target.value;
-    state.currentThread = null;
-    state.currentThreadId = "";
-    localStorage.removeItem(STORAGE_THREAD_ID);
-    syncActiveTurnFromThread();
+    clearCurrentThreadSelection();
     updateWorkspacePath();
+    updateComposerControls();
+    renderCurrentThread();
     loadThreads().catch(showError);
   });
   $("refreshThreads").addEventListener("click", () => loadThreads().catch(showError));
@@ -2074,7 +2133,12 @@ function wireUi() {
     clearTimeout(state.searchTimer);
     state.searchTimer = setTimeout(() => loadThreads().catch(showError), 250);
   });
-  $("openMenu").addEventListener("click", () => $("sidebar").classList.add("open"));
+  $("openMenu").addEventListener("click", () => {
+    $("sidebar").classList.add("open");
+    loadWorkspaces()
+      .then(() => loadThreads())
+      .catch(showError);
+  });
   $("closeMenu").addEventListener("click", () => $("sidebar").classList.remove("open"));
   $("composer").addEventListener("submit", sendMessage);
   $("interruptTurn").addEventListener("click", interruptActiveTurn);

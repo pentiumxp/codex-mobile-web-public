@@ -302,7 +302,7 @@ textarea {
   min-width: 0;
   overflow: auto;
   padding: 20px 20px 28px;
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
 }
 
 .turn-timer {
