@@ -460,3 +460,18 @@
 - Validation:
   - `npm.cmd run check` passed.
   - `git diff --check` passed with only Git line-ending warnings.
+
+## 2026-05-03 Loading Thread Regression Fix
+
+- User-reported issue:
+  - Mobile Web could enter the app but remain stuck on `Loading thread`.
+- Finding:
+  - The new visible-item merge path was also used for initial `loadThread()`.
+  - The initial placeholder thread carries `mobileLoading: true`; because the server detail payload does not include `mobileLoading`, `Object.assign({}, existingThread, incomingThread)` preserved the placeholder flag after a successful detail read.
+  - Result: the thread detail data was loaded, but the UI still rendered the loading state.
+- Changes:
+  - `public/app.js` now clears placeholder-only `mobileLoading` and `mobileLoadError` flags when merging a real incoming thread payload that does not explicitly contain those fields.
+  - `public/app.js` now catches keyed conversation patch failures and falls back to a full `innerHTML` render instead of leaving a stale loading screen.
+- Validation:
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only Git line-ending warnings.

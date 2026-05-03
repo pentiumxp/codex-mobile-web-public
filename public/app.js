@@ -456,6 +456,12 @@ function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
   const incomingTurns = Array.isArray(incomingThread.turns) ? incomingThread.turns : null;
   const existingById = new Map(existingTurns.map((turn) => [turn.id, turn]));
   const merged = Object.assign({}, existingThread, incomingThread);
+  if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoading")) {
+    delete merged.mobileLoading;
+  }
+  if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoadError")) {
+    delete merged.mobileLoadError;
+  }
   if (!incomingTurns) return merged;
   merged.turns = incomingTurns.map((incomingTurn) => {
     const existingTurn = existingById.get(incomingTurn.id);
@@ -1011,8 +1017,13 @@ function updateConversationHtml(html, signature, options = {}) {
   if (state.renderedConversationSignature === signature) {
     return false;
   }
-  if (conversation.childNodes.length) patchHtml(conversation, html);
-  else conversation.innerHTML = html;
+  try {
+    if (conversation.childNodes.length) patchHtml(conversation, html);
+    else conversation.innerHTML = html;
+  } catch (err) {
+    console.warn("Conversation patch failed; falling back to full render.", err);
+    conversation.innerHTML = html;
+  }
   state.renderedConversationSignature = signature;
   if (options.stickToBottom) scrollConversationToBottom();
   return true;
