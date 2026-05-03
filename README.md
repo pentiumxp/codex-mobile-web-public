@@ -250,7 +250,30 @@ Behavior:
 - The composer shows 5-hour and weekly quota remaining when app-server sends rate-limit updates.
 - The send button follows Codex Desktop behavior: empty composer during an active turn shows `Stop`; typed text or attachments switch it back to `Send`.
 
+## App-Server Bridge Design
+
+Desktop live sync depends on making Codex Desktop and Mobile Web talk to the same `codex app-server` process.
+
+The bridge is implemented by `codex-app-server-mux.js`:
+
+1. Codex Desktop is launched with an app-server command override.
+2. That override starts the mux process instead of starting `codex app-server` directly.
+3. The mux starts the real `codex app-server` as a child process over stdio.
+4. Codex Desktop stays connected to the mux over stdio.
+5. The mux also opens a loopback JSONL TCP server for Mobile Web.
+6. The mux writes an endpoint file under the Codex state directory:
+
+```text
+<CODEX_HOME>/app-server-mux/endpoint.json
+```
+
+7. Mobile Web detects that endpoint file and connects to the same mux-backed app-server stream.
+
+The mux must keep stdout clean because stdout is the Desktop app-server protocol channel. Diagnostics are written to the mux log file instead.
+
 ## Windows Desktop Live Sync
+
+Status: implemented and verified.
 
 Codex Desktop normally starts its own `codex app-server` over stdio. If Mobile Web starts a separate app-server, both clients can read durable `.codex` state, but live UI streams will not fully converge.
 
@@ -284,14 +307,133 @@ Do not reconnect while a separate managed-child turn is still running unless you
 
 ## macOS Desktop Live Sync
 
-Standalone Mobile Web can run on macOS, but Desktop live sync through the included mux launcher is not yet packaged or tested for macOS.
+Status: design documented, not yet packaged or verified on macOS.
+
+Standalone Mobile Web can run on macOS. The bridge core, `codex-app-server-mux.js`, is Node.js and should be portable. The missing part is a macOS launcher/shim that makes Codex Desktop start the mux as its app-server command.
 
 Current limitations:
 
 - `start-codex-desktop-shared.ps1` is Windows-specific.
 - `codex-app-server-mux-shim.cs` builds a Windows `.exe`.
-- macOS Codex Desktop launch behavior and any equivalent `CODEX_CLI_PATH` override still need verification.
-- `codex-app-server-mux.js` itself is Node.js and should be portable, but the Desktop launcher layer needs a macOS-specific executable/script wrapper and testing.
+- macOS Codex Desktop launch behavior with `CODEX_CLI_PATH` still needs verification.
+- It is not yet verified whether macOS Codex Desktop accepts a shell script as `CODEX_CLI_PATH` or requires a native executable shim.
+
+### macOS Bridge Implementation Plan
+
+A Codex agent implementing macOS Desktop live sync should create and test a macOS equivalent of the Windows launcher.
+
+Required behavior:
+
+- Fully quit Codex Desktop before launch.
+- Set `CODEX_HOME="$HOME/.codex"` explicitly.
+- Set `CODEX_CLI_PATH` to a real executable wrapper that starts the mux.
+- Set `CODEX_MUX_SCRIPT_PATH` to this repo's `codex-app-server-mux.js`.
+- Set `CODEX_MUX_CODEX_EXE` to the real `codex` CLI path.
+- Optionally set `CODEX_MUX_NODE_EXE` to the real `node` path.
+- Launch Codex Desktop from that same environment.
+- Do not write anything to stdout before `node codex-app-server-mux.js` takes over, because stdout is the app-server JSONL protocol channel.
+- Pass all Desktop-supplied app-server arguments through to the mux wrapper.
+
+Candidate wrapper script:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT="${CODEX_MUX_SCRIPT_PATH:?CODEX_MUX_SCRIPT_PATH is required}"
+NODE_BIN="${CODEX_MUX_NODE_EXE:-node}"
+
+exec "$NODE_BIN" "$SCRIPT" "$@"
+```
+
+Save it outside `.codex` runtime state, for example:
+
+```bash
+cat > ./codex-app-server-mux-macos.sh <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+SCRIPT="${CODEX_MUX_SCRIPT_PATH:?CODEX_MUX_SCRIPT_PATH is required}"
+NODE_BIN="${CODEX_MUX_NODE_EXE:-node}"
+exec "$NODE_BIN" "$SCRIPT" "$@"
+EOF
+chmod +x ./codex-app-server-mux-macos.sh
+```
+
+Candidate launch command:
+
+```bash
+cd /path/to/codex-mobile-web
+
+export CODEX_HOME="$HOME/.codex"
+export CODEX_CLI_PATH="$PWD/codex-app-server-mux-macos.sh"
+export CODEX_MUX_SCRIPT_PATH="$PWD/codex-app-server-mux.js"
+export CODEX_MUX_CODEX_EXE="$(command -v codex)"
+export CODEX_MUX_NODE_EXE="$(command -v node)"
+
+# The exact app path may differ. Verify it on the target Mac.
+"/Applications/Codex.app/Contents/MacOS/Codex"
+```
+
+If Codex Desktop does not inherit environment variables through the chosen launch method, launch the executable directly instead of using Finder. If a shell script fails as `CODEX_CLI_PATH`, build a tiny native macOS executable shim that execs:
+
+```bash
+node "$CODEX_MUX_SCRIPT_PATH" "$@"
+```
+
+The native shim must preserve stdin/stdout/stderr and pass arguments unchanged.
+
+### macOS Bridge Verification Checklist
+
+After launching Desktop with the candidate wrapper:
+
+1. Confirm the mux endpoint file exists:
+
+```bash
+cat "$HOME/.codex/app-server-mux/endpoint.json"
+```
+
+Expected shape:
+
+```json
+{
+  "protocol": "jsonl-tcp",
+  "host": "127.0.0.1",
+  "port": 12345,
+  "pid": 111,
+  "childPid": 222,
+  "capabilities": {
+    "mobileUserMessageEcho": true
+  }
+}
+```
+
+2. Confirm the mux log exists and does not show fatal startup errors:
+
+```bash
+tail -100 "$HOME/.codex/app-server-mux/mux.log"
+```
+
+3. Start Mobile Web:
+
+```bash
+cd /path/to/codex-mobile-web
+export CODEX_HOME="$HOME/.codex"
+export CODEX_MOBILE_HOST="0.0.0.0"
+export CODEX_MOBILE_PORT="8787"
+npm start
+```
+
+4. Open `/api/status` through the authenticated UI and verify the transport is `external-jsonl-tcp`.
+
+5. Start a test turn from Desktop and watch Mobile Web receive live updates.
+
+6. Send a mid-turn message from Mobile Web and verify Desktop shows the user message and subsequent Codex output in the same active turn.
+
+7. Quit Desktop and confirm the mux shuts down or cleans up the endpoint file when expected.
+
+Until this checklist passes on a real Mac, macOS Desktop live sync should be treated as unverified.
+
+### Standalone Mux On macOS
 
 A Mac user can still try standalone mux mode for Mobile Web only:
 
@@ -332,6 +474,13 @@ This can let Mobile Web connect to the mux endpoint, but it does not by itself m
 | `CODEX_MOBILE_MUX_ENDPOINT_FILE` | Custom mux endpoint file path. |
 | `CODEX_MOBILE_APP_SERVER_WS` | External app-server WebSocket endpoint. |
 | `CODEX_MOBILE_APP_SERVER_TCP` | External app-server JSONL TCP endpoint. |
+| `CODEX_CLI_PATH` | Desktop-side override used to make Codex Desktop launch the mux instead of the normal Codex CLI/app-server command. Windows path must be a real `.exe`; macOS behavior is unverified. |
+| `CODEX_MUX_SCRIPT_PATH` | Path to `codex-app-server-mux.js` for shim/wrapper launchers. |
+| `CODEX_MUX_CODEX_EXE` | Real Codex CLI executable used by the mux to start the real app-server. |
+| `CODEX_MUX_NODE_EXE` | Optional explicit Node executable for shim/wrapper launchers. |
+| `CODEX_MUX_STANDALONE` | Start mux without attaching stdin/stdout Desktop client when set to `1`, useful for Mobile Web-only mux testing. |
+| `CODEX_MUX_ENDPOINT_FILE` | Custom mux endpoint file path. |
+| `CODEX_MUX_CODEX_ARGS` | Override real Codex app-server arguments. When unset, Desktop-supplied arguments are passed through, otherwise the mux falls back to `app-server --analytics-default-enabled`. |
 
 ## Safety Notes
 
@@ -363,6 +512,6 @@ npm run check
 5. Start with the platform-specific command above.
 6. If the user asks for Desktop live sync:
    - On Windows, use `start-codex-desktop-shared.ps1` after fully quitting Codex Desktop.
-   - On macOS, state that Desktop live sync is not yet packaged/tested and only standalone Mobile Web is documented.
+   - On macOS, follow the `macOS Bridge Implementation Plan` above and state that the Desktop bridge is not verified until the checklist passes on a real Mac.
 
 If you create local agent handoff/context files while working on this repo, keep them local. `.agent-context/` is intentionally ignored in the release repository.
