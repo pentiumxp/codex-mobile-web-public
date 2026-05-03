@@ -33,13 +33,52 @@ const MAX_STRUCTURED_CHARS = 24000;
 const MAX_DELTA_CHARS = 12000;
 const MAX_THREAD_TURNS = Math.max(1, Math.min(100, Number(process.env.CODEX_MOBILE_THREAD_TURNS || "12")));
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
+const MODEL_OPTIONS = optionListFromEnv("CODEX_MOBILE_MODEL_OPTIONS", [
+  "gpt-5.5",
+  "gpt-5.4",
+  "gpt-5.4-mini",
+  "gpt-5.3-codex",
+  "gpt-5.3-codex-spark",
+  "gpt-5.2",
+]);
+const REASONING_EFFORT_OPTIONS = optionListFromEnv("CODEX_MOBILE_REASONING_EFFORT_OPTIONS", [
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+]);
 const DEFAULT_RPC_TIMEOUT_MS = 30000;
 const READ_RPC_TIMEOUT_MS = 12000;
+const THREAD_DETAIL_RPC_TIMEOUT_MS = Math.min(6000, READ_RPC_TIMEOUT_MS);
 const MUTATION_RPC_TIMEOUT_MS = 120000;
 const SAFE_RETRY_METHODS = new Set(["initialize", "thread/list", "thread/read", "thread/turns/list"]);
 const IMAGE_EXTENSIONS = new Set([".avif", ".bmp", ".gif", ".heic", ".heif", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"]);
+const CODEX_CONFIG_DEFAULTS = readCodexConfigDefaults();
 
 let clients = new Set();
+
+function optionListFromEnv(name, fallback) {
+  const values = String(process.env[name] || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return [...new Set(values.length ? values : fallback)];
+}
+
+function readCodexConfigDefaults() {
+  const configPath = path.join(CODEX_HOME, "config.toml");
+  try {
+    const text = fs.readFileSync(configPath, "utf8");
+    const model = /^\s*model\s*=\s*"([^"]+)"/m.exec(text);
+    const effort = /^\s*model_reasoning_effort\s*=\s*"([^"]+)"/m.exec(text);
+    return {
+      model: model ? model[1] : "",
+      reasoningEffort: effort ? effort[1] : "",
+    };
+  } catch (_) {
+    return { model: "", reasoningEffort: "" };
+  }
+}
 
 function loadAuthKey() {
   if (process.env.CODEX_MOBILE_KEY && process.env.CODEX_MOBILE_KEY.trim()) {
@@ -206,7 +245,7 @@ function isCompletedStatus(status) {
 
 function isLiveTurn(turn) {
   const text = statusText(turn && turn.status).toLowerCase();
-  return /(running|active|queued|processing|in_progress|in-progress)/.test(text)
+  return /(running|active|queued|processing|inprogress|in_progress|in-progress)/.test(text)
     || (text === "interrupted" && turn && !turn.completedAt && !turn.durationMs);
 }
 
@@ -263,13 +302,107 @@ function compactOperationalItem(out) {
     namespace: out.namespace,
     tool: out.tool,
     command: typeof out.command === "string" ? truncateMiddle(out.command, 180, "command") : undefined,
-    fileNames: [...new Set(collectFileNames(out.changes || out.arguments || out.result || out.contentItems))].slice(0, 5),
+    fileNames: [...new Set(Array.isArray(out.fileNames) && out.fileNames.length
+      ? out.fileNames
+      : collectFileNames(out.changes || out.arguments || out.result || out.contentItems))].slice(0, 5),
     mobileLiveOperation: true,
   };
   return Object.fromEntries(Object.entries(compact).filter(([, value]) => {
     if (Array.isArray(value)) return value.length > 0;
     return value !== undefined;
   }));
+}
+
+function parseJsonLine(line) {
+  try {
+    return JSON.parse(line);
+  } catch (_) {
+    return null;
+  }
+}
+
+function statusFromRawOperation(payload) {
+  const status = String(payload.status || "").toLowerCase();
+  if (status) return status;
+  if (typeof payload.success === "boolean") return payload.success ? "completed" : "failed";
+  if (typeof payload.exit_code === "number") return payload.exit_code === 0 ? "completed" : "failed";
+  return "running";
+}
+
+function commandFromRawPayload(payload) {
+  if (Array.isArray(payload.parsed_cmd) && payload.parsed_cmd[0] && payload.parsed_cmd[0].cmd) {
+    return String(payload.parsed_cmd[0].cmd);
+  }
+  if (Array.isArray(payload.command)) return payload.command.join(" ");
+  if (typeof payload.arguments === "string") {
+    const parsed = parseJsonLine(payload.arguments);
+    if (parsed && parsed.command) return String(parsed.command);
+  }
+  return "";
+}
+
+function fileNamesFromPatchInput(input) {
+  const names = [];
+  for (const line of String(input || "").split(/\r?\n/)) {
+    const match = /^(?:\*\*\* (?:Add|Update|Delete) File:|\*\*\* Move to:)\s+(.+)$/.exec(line.trim());
+    if (match) names.push(match[1].trim());
+  }
+  return [...new Set(names)].slice(0, 5);
+}
+
+function rawOperationFromEntry(entry) {
+  if (!entry || !entry.payload) return null;
+  const payload = entry.payload;
+  if (entry.type === "event_msg" && payload.type === "exec_command_end") {
+    return compactOperationalItem({
+      id: `raw-${payload.call_id || entry.timestamp || "command"}`,
+      type: "commandExecution",
+      status: statusFromRawOperation(payload),
+      command: commandFromRawPayload(payload),
+    });
+  }
+  if (entry.type === "event_msg" && payload.type === "patch_apply_end") {
+    return compactOperationalItem({
+      id: `raw-${payload.call_id || entry.timestamp || "patch"}`,
+      type: "fileChange",
+      status: statusFromRawOperation(payload),
+      fileNames: Object.keys(payload.changes || {}).slice(0, 5),
+    });
+  }
+  if (entry.type === "response_item" && payload.type === "function_call") {
+    return compactOperationalItem({
+      id: `raw-${payload.call_id || entry.timestamp || "function"}`,
+      type: "commandExecution",
+      status: statusFromRawOperation(payload),
+      command: commandFromRawPayload(payload),
+    });
+  }
+  if (entry.type === "response_item" && payload.type === "custom_tool_call") {
+    const fileNames = payload.name === "apply_patch" ? fileNamesFromPatchInput(payload.input) : [];
+    return compactOperationalItem({
+      id: `raw-${payload.call_id || entry.timestamp || "tool"}`,
+      type: fileNames.length ? "fileChange" : "dynamicToolCall",
+      status: statusFromRawOperation(payload),
+      tool: payload.name,
+      fileNames,
+    });
+  }
+  return null;
+}
+
+function readLatestRawOperation(thread) {
+  const rolloutPath = thread && (thread.path || thread.rolloutPath || thread.rollout_path);
+  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) return null;
+  try {
+    const lines = fs.readFileSync(rolloutPath, "utf8").split(/\r?\n/).filter(Boolean).slice(-800);
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      const operation = rawOperationFromEntry(parseJsonLine(lines[index]));
+      if (operation) return operation;
+    }
+  } catch (_) {
+    return null;
+  }
+  return null;
 }
 
 function compactItem(item) {
@@ -301,10 +434,10 @@ function compactItem(item) {
 
 function trailingOperationIndex(items, allowLiveOperation) {
   if (!allowLiveOperation || !Array.isArray(items)) return -1;
-  const lastOperationIndex = items.findLastIndex((item) => item && OPERATIONAL_ITEM_TYPES.has(item.type));
-  if (lastOperationIndex < 0) return -1;
-  const hasLaterVisibleItem = items.slice(lastOperationIndex + 1).some((item) => item && !OPERATIONAL_ITEM_TYPES.has(item.type));
-  return hasLaterVisibleItem ? -1 : lastOperationIndex;
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (items[index] && OPERATIONAL_ITEM_TYPES.has(items[index].type)) return index;
+  }
+  return -1;
 }
 
 function compactTurn(turn, options = {}) {
@@ -352,6 +485,12 @@ function compactThread(thread) {
     }
     const latestIndex = out.turns.length - 1;
     out.turns = out.turns.map((turn, index) => compactTurn(turn, { allowLiveOperation: index === latestIndex }));
+    const latest = out.turns[latestIndex];
+    if (latest && isLiveTurn(latest) && Array.isArray(latest.items)
+      && !latest.items.some((item) => item && OPERATIONAL_ITEM_TYPES.has(item.type))) {
+      const rawOperation = readLatestRawOperation(out);
+      if (rawOperation) latest.items.push(rawOperation);
+    }
   }
   return out;
 }
@@ -715,6 +854,7 @@ function resolveExternalEndpoint() {
         host: endpoint.host,
         port: Number(endpoint.port),
         source: MUX_ENDPOINT_FILE,
+        capabilities: endpoint.capabilities || null,
         required: false,
       };
     }
@@ -762,7 +902,7 @@ class CodexAppServerClient {
     if (externalEndpoint) {
       try {
         await this.connectEndpoint(externalEndpoint);
-        await this.initialize();
+        await this.initialize({ allowAlreadyInitialized: true });
         return;
       } catch (err) {
         this.closeTransportOnly();
@@ -800,11 +940,18 @@ class CodexAppServerClient {
     }
   }
 
-  async initialize() {
-    this.info = await this.sendRpc("initialize", {
-      clientInfo: { name: "codex-mobile-web", title: "Codex Mobile Web", version: "0.1.0" },
-      capabilities: { experimentalApi: true },
-    }, READ_RPC_TIMEOUT_MS);
+  async initialize(options = {}) {
+    try {
+      this.info = await this.sendRpc("initialize", {
+        clientInfo: { name: "codex-mobile-web", title: "Codex Mobile Web", version: "0.1.0" },
+        capabilities: { experimentalApi: true },
+      }, READ_RPC_TIMEOUT_MS);
+    } catch (err) {
+      if (!options.allowAlreadyInitialized || !/already initialized/i.test(err.message || "")) {
+        throw err;
+      }
+      this.info = { userAgent: "shared app-server (already initialized)" };
+    }
     this.ready = true;
     this.lastError = null;
     broadcast({ type: "status", status: this.status() });
@@ -971,6 +1118,29 @@ class CodexAppServerClient {
     });
   }
 
+  sendNotification(method, params) {
+    if (!this.isTransportOpen()) return false;
+    this.ws.send(JSON.stringify({ jsonrpc: "2.0", method, params }));
+    return true;
+  }
+
+  isMuxEndpoint() {
+    return this.transportKind === "external-jsonl-tcp"
+      && this.endpoint
+      && normalizeFsPath(this.endpoint.source) === normalizeFsPath(MUX_ENDPOINT_FILE);
+  }
+
+  supportsMuxUserMessageEcho() {
+    return this.isMuxEndpoint()
+      && this.endpoint.capabilities
+      && this.endpoint.capabilities.mobileUserMessageEcho === true;
+  }
+
+  notifyMuxUserMessage(params) {
+    if (!this.supportsMuxUserMessageEcho()) return false;
+    return this.sendNotification("mux/userMessage", params);
+  }
+
   async request(method, params, options = {}) {
     const timeoutMs = options.timeoutMs || (SAFE_RETRY_METHODS.has(method) ? READ_RPC_TIMEOUT_MS : DEFAULT_RPC_TIMEOUT_MS);
     const retry = options.retry !== false && SAFE_RETRY_METHODS.has(method);
@@ -996,6 +1166,7 @@ class CodexAppServerClient {
         host: this.endpoint.host || null,
         port: this.endpoint.port || null,
         url: this.endpoint.url || null,
+        capabilities: this.endpoint.capabilities || null,
       } : null,
       muxEndpointFile: MUX_ENDPOINT_FILE,
       codexExe: CODEX_EXE,
@@ -1020,11 +1191,14 @@ function readGlobalState() {
 
 function rowToFallbackThread(row) {
   const updatedAt = Number(row.updated_at || row.updatedAt || 0);
+  const name = row.title || row.thread_name || null;
+  const preview = row.first_user_message || row.preview || name || row.id;
   return {
     id: row.id,
-    name: row.title || row.thread_name || null,
-    preview: row.title || row.thread_name || row.id,
-    cwd: row.cwd || null,
+    name,
+    preview,
+    cwd: typeof row.cwd === "string" ? row.cwd.replace(/^\\\\\?\\/, "") : null,
+    path: row.path || row.rollout_path || row.rolloutPath || null,
     updatedAt,
     archived: Boolean(Number(row.archived || 0)),
     archivedAt: row.archived_at || null,
@@ -1033,6 +1207,64 @@ function rowToFallbackThread(row) {
     effort: row.reasoning_effort || null,
     mobileFallback: true,
   };
+}
+
+function sqlString(value) {
+  return `'${String(value || "").replace(/'/g, "''")}'`;
+}
+
+function readStateDbThread(threadId) {
+  if (!fs.existsSync(STATE_DB) || !threadId) return null;
+  const query = [
+    "select id,title,first_user_message,cwd,rollout_path,archived,archived_at,updated_at,model,reasoning_effort",
+    "from threads",
+    `where id=${sqlString(threadId)}`,
+    "limit 1;",
+  ].join(" ");
+  try {
+    const result = spawnSync("sqlite3", ["-json", STATE_DB, query], {
+      encoding: "utf8",
+      timeout: 5000,
+      windowsHide: true,
+      maxBuffer: 1024 * 1024,
+    });
+    if (result.error || result.status !== 0) return null;
+    const rows = JSON.parse(result.stdout || "[]");
+    return rows[0] ? rowToFallbackThread(rows[0]) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function sortTurnsChronologically(turns) {
+  return (turns || []).slice().sort((a, b) => {
+    const left = Date.parse(a && (a.startedAt || a.completedAt || ""));
+    const right = Date.parse(b && (b.startedAt || b.completedAt || ""));
+    if (Number.isFinite(left) && Number.isFinite(right) && left !== right) return left - right;
+    return String((a && a.id) || "").localeCompare(String((b && b.id) || ""));
+  });
+}
+
+function threadFromTurnsList(threadId, summary, turnsResult) {
+  const data = Array.isArray(turnsResult && turnsResult.data)
+    ? turnsResult.data
+    : Array.isArray(turnsResult && turnsResult.turns)
+      ? turnsResult.turns
+      : [];
+  const turns = sortTurnsChronologically(data).slice(-MAX_THREAD_TURNS);
+  const latest = turns[turns.length - 1];
+  const status = latest && isLiveTurn(latest) ? { type: "active" } : (summary && summary.status) || { type: "notLoaded" };
+  return Object.assign({
+    id: threadId,
+    name: null,
+    preview: threadId,
+    cwd: null,
+    path: null,
+    updatedAt: 0,
+    status,
+    turns,
+    mobileReadMode: "turns-list",
+  }, summary || {}, { id: threadId, status, turns, mobileReadMode: "turns-list" });
 }
 
 function filterFallbackThreads(threads, filters = {}) {
@@ -1155,6 +1387,10 @@ async function handleApi(req, res) {
       title: "Codex Mobile Web",
       maxUploadBytes: MAX_UPLOAD_BYTES,
       maxUploadFiles: MAX_UPLOAD_FILES,
+      modelOptions: MODEL_OPTIONS,
+      reasoningEffortOptions: REASONING_EFFORT_OPTIONS,
+      defaultModel: CODEX_CONFIG_DEFAULTS.model,
+      defaultReasoningEffort: CODEX_CONFIG_DEFAULTS.reasoningEffort,
     });
     return;
   }
@@ -1176,6 +1412,15 @@ async function handleApi(req, res) {
     return;
   }
   if (url.pathname === "/api/status") {
+    await codex.ensure().catch((err) => {
+      codex.lastError = err.message;
+    });
+    sendJson(res, 200, codex.status());
+    return;
+  }
+  if (url.pathname === "/api/app-server/reconnect" && req.method === "POST") {
+    codex.resetConnection("manual app-server reconnect requested");
+    await new Promise((resolve) => setTimeout(resolve, 350));
     await codex.ensure().catch((err) => {
       codex.lastError = err.message;
     });
@@ -1236,12 +1481,33 @@ async function handleApi(req, res) {
   if (threadRead && req.method === "GET") {
     const threadId = decodeURIComponent(threadRead[1]);
     const globalState = readGlobalState();
-    const result = compactThreadReadResult(await codex.request("thread/read", { threadId, includeTurns: true }, { timeoutMs: 25000 }));
-    if (isHiddenThread(result.thread, visibilityFromGlobalState(globalState))) {
+    const visibility = visibilityFromGlobalState(globalState);
+    const summary = readStateDbThread(threadId);
+    if (summary && isHiddenThread(summary, visibility)) {
       sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
       return;
     }
-    sendJson(res, 200, result);
+    try {
+      const turnsResult = await codex.request("thread/turns/list", {
+        threadId,
+        limit: MAX_THREAD_TURNS,
+        sortDirection: "desc",
+      }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS });
+      const result = compactThreadReadResult({ thread: threadFromTurnsList(threadId, summary, turnsResult) });
+      if (isHiddenThread(result.thread, visibility)) {
+        sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
+        return;
+      }
+      sendJson(res, 200, result);
+    } catch (turnsErr) {
+      const result = compactThreadReadResult(await codex.request("thread/read", { threadId, includeTurns: true }, { timeoutMs: READ_RPC_TIMEOUT_MS }));
+      if (isHiddenThread(result.thread, visibility)) {
+        sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
+        return;
+      }
+      result.mobileReadWarning = turnsErr.message || String(turnsErr);
+      sendJson(res, 200, result);
+    }
     return;
   }
   const threadTurns = url.pathname.match(/^\/api\/threads\/([^/]+)\/turns$/);
@@ -1295,7 +1561,15 @@ async function handleApi(req, res) {
     if (body.cwd) params.cwd = body.cwd;
     if (body.model) params.model = body.model;
     if (body.effort) params.effort = body.effort;
-    sendJson(res, 200, await codex.request("turn/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false }));
+    const result = await codex.request("turn/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+    if (body.activeTurnId) {
+      codex.notifyMuxUserMessage({
+        threadId,
+        turnId: String(body.activeTurnId),
+        input,
+      });
+    }
+    sendJson(res, 200, result);
     return;
   }
   const interrupt = url.pathname.match(/^\/api\/threads\/([^/]+)\/turns\/([^/]+)\/interrupt$/);

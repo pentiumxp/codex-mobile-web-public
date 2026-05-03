@@ -11,8 +11,11 @@ const RUNTIME_ROOT = process.env.CODEX_MOBILE_RUNTIME_DIR || path.join(USER_HOME
 const CODEX_HOME = process.env.CODEX_HOME || path.join(process.env.USERPROFILE || "", ".codex");
 const RUNTIME_CODEX_EXE = path.join(RUNTIME_ROOT, "codex.exe");
 const CODEX_EXE = process.env.CODEX_MUX_CODEX_EXE || (fs.existsSync(RUNTIME_CODEX_EXE) ? RUNTIME_CODEX_EXE : "codex");
+const PASSTHROUGH_ARGS = process.argv.slice(2);
 const CODEX_ARGS = process.env.CODEX_MUX_CODEX_ARGS
   ? process.env.CODEX_MUX_CODEX_ARGS.split(/\s+/).filter(Boolean)
+  : PASSTHROUGH_ARGS.length
+    ? PASSTHROUGH_ARGS
   : ["app-server", "--analytics-default-enabled"];
 const HOST = process.env.CODEX_MUX_HOST || "127.0.0.1";
 const PORT = Number(process.env.CODEX_MUX_PORT || "0");
@@ -28,6 +31,8 @@ let childBuffer = "";
 let shuttingDown = false;
 const clients = new Map();
 const pending = new Map();
+const activeTurnsByThread = new Map();
+let nextSyntheticItemId = 1;
 
 function log(message) {
   try {
@@ -89,6 +94,89 @@ function broadcastToClients(message) {
   for (const client of clients.values()) sendToClient(client, message);
 }
 
+function isTcpClient(client) {
+  return Boolean(client && typeof client.name === "string" && client.name.startsWith("tcp:"));
+}
+
+function normalizeUserInputPart(part) {
+  if (!part || typeof part !== "object") return null;
+  if (part.type === "text") {
+    const text = String(part.text || "");
+    if (!text) return null;
+    return {
+      type: "text",
+      text,
+      text_elements: Array.isArray(part.text_elements) ? part.text_elements : [],
+    };
+  }
+  if (part.type === "localImage" && part.path) {
+    return {
+      type: "localImage",
+      path: String(part.path),
+    };
+  }
+  return part;
+}
+
+function buildUserMessageNotification(params) {
+  const threadId = params.threadId;
+  const turnId = params.turnId || (threadId ? activeTurnsByThread.get(threadId) : "");
+  if (!threadId || !turnId || !Array.isArray(params.input)) return null;
+
+  const content = params.input.map(normalizeUserInputPart).filter(Boolean);
+  if (!content.length) return null;
+
+  return {
+    jsonrpc: "2.0",
+    method: "item/completed",
+    params: {
+      threadId,
+      turnId,
+      item: {
+        id: `mux-user-${Date.now()}-${nextSyntheticItemId++}`,
+        type: "userMessage",
+        content,
+      },
+    },
+  };
+}
+
+function handleMuxMethod(client, message) {
+  if (!message || message.method !== "mux/userMessage") return false;
+  const notification = isTcpClient(client) ? buildUserMessageNotification(message.params || {}) : null;
+  if (notification) {
+    broadcastToClients(notification);
+    log(`synthetic active-turn user message thread=${notification.params.threadId} turn=${notification.params.turnId} source=${client.id}`);
+  }
+  if (hasId(message)) {
+    sendToClient(client, {
+      jsonrpc: "2.0",
+      id: message.id,
+      result: { ok: Boolean(notification) },
+    });
+  }
+  return true;
+}
+
+function trackTurnNotification(message) {
+  if (!message || !message.method) return;
+  const params = message.params || {};
+  const threadId = params.threadId;
+  const turnId = params.turn && params.turn.id;
+  if (!threadId) return;
+
+  if (message.method === "turn/started" && turnId) {
+    activeTurnsByThread.set(threadId, turnId);
+    return;
+  }
+
+  if (message.method === "turn/completed") {
+    if (!turnId || activeTurnsByThread.get(threadId) === turnId) {
+      activeTurnsByThread.delete(threadId);
+    }
+  }
+}
+
 function sendToChild(message) {
   if (!child || !child.stdin.writable) {
     throw new Error("real codex app-server is not running");
@@ -104,6 +192,8 @@ function handleClientLine(client, line) {
     log(`invalid client json from ${client.id}: ${err.message}`);
     return;
   }
+
+  if (handleMuxMethod(client, message)) return;
 
   if (hasId(message)) {
     const originalId = message.id;
@@ -149,6 +239,7 @@ function handleChildLine(line) {
   }
 
   if (message.method) {
+    trackTurnNotification(message);
     broadcastToClients(message);
   }
 }
@@ -215,6 +306,9 @@ function startTcpServer() {
       pid: process.pid,
       childPid: child ? child.pid : null,
       startedAt: new Date().toISOString(),
+      capabilities: {
+        mobileUserMessageEcho: true,
+      },
     };
     fs.mkdirSync(path.dirname(ENDPOINT_FILE), { recursive: true });
     fs.writeFileSync(ENDPOINT_FILE, JSON.stringify(endpoint, null, 2), "utf8");

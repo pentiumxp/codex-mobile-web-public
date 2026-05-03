@@ -55,6 +55,58 @@
   - `.gitignore` excludes `.env*`, `*.key`, `*.pem`, `.webui_secret_key`, logs, and workspace/log directories.
 - Validation:
   - `npm.cmd run check` passed.
+  - `git diff --check` passed with only Git line-ending warnings.
+
+## 2026-05-03 Composer Send/Stop And Model Selectors - 21:18 +08:00
+
+- User-requested adjustment:
+  - During an active turn, the composer button should be `Stop` only when the composer is empty.
+  - If text or attachments are present during an active turn, the same button should become `Send` and submit the new input.
+  - Add model and reasoning effort selectors similar to Codex Desktop.
+- Changes:
+  - `public/app.js` now makes `Send`/`Stop` depend on both `activeTurnId` and composer content.
+  - `public/app.js` now sends `model` and `effort` with message `FormData` only when the user selects non-default values.
+  - `public/index.html` adds compact `Model` and `Reasoning` selectors in the composer.
+  - `public/styles.css` styles the selectors for the compact composer.
+  - `server.js` now exposes model and reasoning effort options via `/api/public-config`.
+  - Model options can be overridden with `CODEX_MOBILE_MODEL_OPTIONS`; reasoning options can be overridden with `CODEX_MOBILE_REASONING_EFFORT_OPTIONS`.
+  - Defaults are read from `%USERPROFILE%\.codex\config.toml` (`model` and `model_reasoning_effort`) when available.
+  - `README.md` and `PROJECT_CONTEXT.md` document the new per-message selector behavior.
+- Runtime state after restart:
+  - Mobile Web wrapper PID `43952`, Node/listener PID `48832`.
+  - Shared mux remains `external-jsonl-tcp`.
+- Validation:
+  - `npm.cmd run check` passed.
+  - `/api/status` returns `ready=true`, `transport=external-jsonl-tcp`, `lastError=null`.
+  - `/api/public-config` returns default model `gpt-5.5`, default reasoning effort `xhigh`, model options `gpt-5.5,gpt-5.4,gpt-5.4-mini,gpt-5.3-codex,gpt-5.3-codex-spark,gpt-5.2`, and efforts `low,medium,high,xhigh`.
+
+## 2026-05-03 Composer Selector Compact Layout - 21:24 +08:00
+
+- User-requested adjustment:
+  - Model and reasoning selectors should not stack vertically.
+  - Remove visible `Model` / `Reasoning` prompt text because it wastes space.
+  - Avoid duplicate default values in the dropdown lists, such as two `GPT-5.5` or two `XHigh` entries.
+- Changes:
+  - `public/styles.css` now forces the selector area into two equal side-by-side columns.
+  - `public/styles.css` hides the label text visually while keeping the labels for accessibility.
+  - `public/app.js` now shows only the selected/default value in the collapsed controls, for example `GPT-5.5` and `XHigh`.
+  - `public/app.js` now filters the current default value out of the explicit option list and treats a saved selection equal to the default as the default option.
+- Validation:
+  - `npm.cmd run check` passed.
+
+## 2026-05-03 Mobile Foreground Black-Screen Recovery - 21:30 +08:00
+
+- User-reported issue:
+  - Voice input sometimes jumps to another app for permissions, then returns to Mobile Web with a black screen.
+- Likely cause:
+  - The page only handled `visibilitychange` by firing refresh requests; it did not force the app shell to re-show, re-render existing state, or reconnect SSE when returning from an external permission/input-method screen.
+- Changes:
+  - `public/app.js` adds `scheduleMobileResume()` / `resumeMobileSession()`.
+  - Resume now handles `visibilitychange`, `pageshow`, `focus`, and `orientationchange`.
+  - Resume re-shows the app shell, updates composer/layout height, renders cached current state immediately, reconnects SSE if closed, then refreshes status, thread list, and current thread.
+  - `public/styles.css` uses `100dvh` for the app shell with a fallback to `100%`, and prevents body-level overflow after mobile viewport changes.
+- Validation:
+  - `npm.cmd run check` passed.
 - Blocker:
   - GitHub CLI is installed, but `gh auth status` reports no authenticated GitHub hosts.
   - The available GitHub connector tools can operate inside existing repositories but do not expose repository creation.
@@ -111,3 +163,256 @@
   - Wrapper PowerShell PID `15412`
   - Node PID `20868`
   - Managed app-server child PID `38792`
+
+## 2026-05-03 Live Thread Refresh Diagnosis - 19:14 +08:00
+
+- Objective:
+  - Diagnose why the Codex Mobile Web conversation showed user messages but did not show later assistant updates.
+- Findings:
+  - Backend service on `8787` was alive and `/api/status` returned ready with managed app-server transport.
+  - Authenticated thread detail for the active `codex-mobile-web` thread contained the newer assistant items, so the issue was client-side display/recovery, not missing backend data.
+  - Browser validation showed reload/login landed on the home shortcuts view instead of automatically opening the active thread.
+  - Browser validation also showed that opening the active thread renders the latest assistant content with no frontend console errors.
+  - Existing polling stopped permanently after more than 60 stable polls, leaving SSE as the only update path during long-running turns.
+- Changes:
+  - `public/app.js` now keeps polling long-running active turns at a lower frequency instead of stopping after the stable-poll threshold.
+  - `public/app.js` now persists the opened thread id and restores it after reload/login.
+  - If there is no persisted thread id, startup opens the newest active thread when available.
+  - Switching workspaces clears the persisted current-thread selection to avoid restoring a thread outside the selected workspace.
+- Validation:
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed.
+  - Browser reload of `http://127.0.0.1:8787` automatically reopened the active `Codex webapp` thread and rendered the latest assistant updates.
+
+## 2026-05-03 Desktop/Mobile Shared App-Server Bridge - 19:25 +08:00
+
+- Objective:
+  - Make the existing app-server mux bridge operational for Desktop/Mobile live convergence.
+- Existing code confirmed:
+  - `codex-app-server-mux.js` is the bridge: it accepts a Desktop stdio client, starts one real Codex app-server, and exposes `%USERPROFILE%\.codex\app-server-mux\endpoint.json` for Mobile Web.
+  - Desktop currently launches its bundled `codex.exe app-server --analytics-default-enabled` directly unless launched with an override.
+  - Mobile Web already detects the mux endpoint file when connecting to app-server.
+- Changes:
+  - `codex-app-server-mux.js` now passes through CLI arguments supplied by Desktop, falling back to `app-server --analytics-default-enabled` when no args are supplied.
+  - Added `start-codex-desktop-shared.ps1`, a reversible launcher that sets `CODEX_CLI_PATH` to `codex-app-server-mux.cmd` only for the launched Desktop process.
+  - Added authenticated `POST /api/app-server/reconnect` to let Mobile Web reconnect to a newly available mux endpoint without restarting the whole web server.
+  - Updated `README.md` and `PROJECT_CONTEXT.md` with shared-mux setup and limitations.
+- Operational notes:
+  - To converge live UI state, fully quit Codex Desktop, launch it with `start-codex-desktop-shared.ps1`, then start or reconnect Mobile Web.
+  - This bridge does not merge two already-running turns or retroactively inject missed content into an in-progress model call.
+- Validation:
+  - `npm.cmd run check` passed.
+  - PowerShell parser check passed for `start-codex-desktop-shared.ps1`.
+  - `git diff --check` passed.
+
+## 2026-05-03 Desktop Shared Launcher `spawn EINVAL` Fix - 20:10 +08:00
+
+- Problem:
+  - Launching Codex Desktop through the new `Codex (MUX)` shortcut showed `spawn EINVAL`.
+  - The launcher had set `CODEX_CLI_PATH` to `codex-app-server-mux.cmd`.
+  - Codex Desktop uses direct process spawning for `CODEX_CLI_PATH`; on Windows this path must be a real executable, not a batch/cmd wrapper.
+- Changes:
+  - Added `codex-app-server-mux-shim.cs`.
+  - `start-codex-desktop-shared.ps1` now builds generated `codex-app-server-mux.exe` from the shim source when missing or stale.
+  - The launcher now sets `CODEX_CLI_PATH` to generated `codex-app-server-mux.exe`.
+  - The launcher also sets `CODEX_MUX_SCRIPT_PATH` to `codex-app-server-mux.js`, `CODEX_MUX_CODEX_EXE` to the real Codex CLI, and `CODEX_MUX_NODE_EXE` when `node.exe` is discoverable.
+  - `.gitignore` excludes generated `codex-app-server-mux.exe`.
+  - `README.md` and `PROJECT_CONTEXT.md` now document the exe shim requirement.
+- Validation:
+  - `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\start-codex-desktop-shared.ps1 -PrintOnly` succeeded and generated `codex-app-server-mux.exe`.
+  - `.\codex-app-server-mux.exe --mux-shim-version` returned `codex-app-server-mux-shim 1`.
+  - `npm.cmd run check` passed.
+  - PowerShell parser check passed for `start-codex-desktop-shared.ps1`.
+  - `git diff --check` passed with only Git line-ending warnings.
+- Operational note:
+  - Existing Codex Desktop processes must be fully closed before relaunching through `Codex (MUX)`; already-running Desktop processes cannot inherit the corrected `CODEX_CLI_PATH`.
+
+## 2026-05-03 Mobile Web No-Response / Mux Initialize Fix - 20:20 +08:00
+
+- Symptom:
+  - User reported that sending from Mobile Web produced no visible reaction and did not sync to this Desktop-side conversation.
+- Findings:
+  - Port `8787` was initially still running old `server.js` PID `20868`, started before the mux/reconnect changes; `POST /api/app-server/reconnect` returned 404.
+  - After restarting Mobile Web, it still fell back to `managed-ws-child`.
+  - Direct mux diagnostic showed the real shared app-server returned `Already initialized` for a second `initialize` request because Desktop had already initialized the same app-server.
+  - Direct `thread/list` over the mux worked without a second initialize, confirming the shared app-server itself was usable.
+- Changes:
+  - `server.js` now calls `initialize({ allowAlreadyInitialized: true })` for external/shared endpoints.
+  - If external/shared initialize returns `Already initialized`, Mobile Web treats the connection as ready instead of falling back to a managed child.
+- Runtime actions:
+  - Stopped old Mobile Web wrapper/server/managed child PIDs `15412`, `52580`, `20868`, `27476`.
+  - Later stopped restarted managed fallback PIDs `10224`, `31512`, `33288`.
+  - Restarted Mobile Web from current workspace on `0.0.0.0:8787`; current wrapper PID `22760`, Node PID `29288`.
+  - Current mux PID `11600`, shared real app-server PID `57936`.
+- Validation:
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only Git line-ending warnings.
+  - `/api/status` now returns `ready=true`, `transport=external-jsonl-tcp`, endpoint source `%USERPROFILE%\.codex\app-server-mux\endpoint.json`, `lastError=null`.
+  - `/api/threads/019ded32-ed92-7681-9591-0e4d457c5274` returns the current active thread with latest commentary items.
+  - `/api/events` returns SSE status with `external-jsonl-tcp`.
+- Operational note:
+  - Mobile browser tabs connected before the restart may need a reload if their EventSource did not automatically reconnect after the 8787 process restart.
+
+## 2026-05-03 Mobile Rendering Stability Pass - 20:32 +08:00
+
+- User-reported issues:
+  - Live command/file operation cards sometimes disappeared and were replaced by repeating `Reasoning` rows.
+  - The lower-left turn timer overlapped final `in progress` / `syncing` turn status text.
+  - The timer continued updating after completion instead of settling on a final elapsed value.
+  - The top conversation header used too much vertical space by showing thread title, cwd, and status metadata.
+- Changes:
+  - `public/app.js` now treats reasoning items as non-conversation items everywhere in visible item selection and thread signatures.
+  - Reasoning `item/started`, reasoning deltas, and reasoning timer updates no longer remove existing command/file/tool operation items.
+  - Live operation visibility ignores later hidden reasoning items, so operation cards remain visible until later normal content arrives.
+  - Turn completion checks now prioritize `completedAt`, `durationMs`, or completed/error/interrupted status before treating a turn as live.
+  - The lower-left timer now clears its interval when no live turn exists and shows a settled final duration when the latest turn has completion timing.
+  - The conversation area gets extra bottom padding while the timer is visible so the timer does not cover `in progress` / `syncing` status text.
+  - `public/index.html`/`public/styles.css` now hide the thread title/meta header block and use smaller topbar icon buttons.
+- Validation:
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only Git line-ending warnings.
+  - `/api/status` still returns `ready=true`, `transport=external-jsonl-tcp`, `lastError=null`.
+- Operational note:
+  - Existing browser tabs need a page refresh to load the updated `public/app.js` and CSS.
+
+## 2026-05-03 Topbar Thread Title And Turn Timer Adjustment - 20:36 +08:00
+
+- User-requested adjustment:
+  - Restore the thread name at the top of the conversation.
+  - Do not render the turn timer and turn status as separate lines.
+  - Move the current-turn timer to the top right if the lower-left placement is problematic.
+- Changes:
+  - `public/index.html` now places `#turnTimer` inside the topbar, between the thread title and interrupt button.
+  - The topbar again shows `#threadTitle`; `#threadMeta` remains hidden, so cwd/status metadata does not take vertical space.
+  - `public/app.js` now formats the timer as one line with status: `本轮 HH:MM:SS · <status>`.
+  - Latest-turn status is hidden from the conversation body when the topbar timer can show the same status, avoiding duplicated two-line status/timer presentation.
+  - `public/styles.css` now styles the timer as a compact top-right pill instead of a lower-left absolute overlay.
+- Validation:
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only Git line-ending warnings.
+  - `/api/status` still returns `ready=true`, `transport=external-jsonl-tcp`, `lastError=null`.
+- Operational note:
+  - Existing browser tabs need a page refresh to load the updated topbar layout.
+
+## 2026-05-03 Operation Card Restore And Composer Stop Button - 20:43 +08:00
+
+- User-reported issues:
+  - After hiding reasoning, command/file operation cards also disappeared.
+  - The separate topbar interrupt button did not match Codex Desktop behavior; the composer submit button should become the interrupt button while a turn is active.
+- Findings:
+  - Current app-server `thread/read` for the active Desktop-backed thread returned only `userMessage` and `agentMessage` items.
+  - The raw rollout JSONL still contained operation runtime events such as `exec_command_end`, `patch_apply_end`, `function_call`, and `custom_tool_call`.
+  - Status string compatibility also mattered: current turns use `inProgress`, while the live-turn regex only matched `in_progress` and `in-progress`.
+- Changes:
+  - `server.js` now treats `inProgress` / `inprogress` as a live status.
+  - `server.js` now keeps the latest app-server operation item whenever a latest turn is live.
+  - If app-server omits operation items, `server.js` reads the thread rollout JSONL tail and synthesizes one compact latest operation card from runtime events.
+  - The synthesized card includes only command text or file names; it does not include command output or diffs.
+  - `public/app.js` now treats `inProgress` / `inprogress` as running.
+  - `public/app.js` preserves latest operation cards while a turn is active and appends the latest operation card after visible non-operation items.
+  - The composer submit button now switches between `Send` and `Stop`; `Stop` calls the existing turn interrupt endpoint.
+  - `public/styles.css` hides the old topbar interrupt button and styles `#sendMessage.interrupt-mode`.
+- Runtime state after restart:
+  - Mobile Web wrapper PID `6576`, Node PID `33644`.
+  - Mux PID `11600`, shared real app-server PID `57936`.
+- Validation:
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only Git line-ending warnings.
+  - `/api/status` returns `ready=true`, `transport=external-jsonl-tcp`, `lastError=null`.
+  - `/api/threads/019ded32-ed92-7681-9591-0e4d457c5274` now includes `commandExecution:1` in the latest in-progress turn.
+- Operational note:
+  - Existing browser tabs need a page refresh to load the updated composer button behavior and operation-card rendering.
+
+## 2026-05-03 Thread Switch Performance Fix - 21:05 +08:00
+
+- User-reported issue:
+  - Switching threads in Mobile Web was slow and could appear stuck; restarting the app and restoring the previous thread was fast.
+- Findings:
+  - `/api/threads?limit=12&archived=false` returned in about 179 ms.
+  - Old `/api/threads/:id` used app-server `thread/read includeTurns:true`; one visible `Hermes` thread took about 7.6 s while most others were under 1 s.
+  - Direct `thread/turns/list` for the same slow thread returned in about 0.5-0.6 s.
+  - The frontend did not cancel or sequence stale thread-load requests, so rapid switching could leave older slow reads in flight and produce stale UI updates.
+- Changes:
+  - `server.js` now serves `/api/threads/:id` through fast `thread/turns/list` plus local `state_5.sqlite` thread metadata.
+  - `server.js` keeps `thread/read` only as a fallback if the fast turns-list path fails.
+  - `server.js` normalizes `\\?\` cwd prefixes from state DB summaries before sending them to the browser.
+  - `public/app.js` now assigns a sequence number to each thread switch, aborts the previous thread detail fetch, ignores stale responses, clears old live-poll timers, and renders an immediate lightweight loading state for the selected thread.
+- Runtime state after restart:
+  - Mobile Web wrapper PID `48976`, Node/listener PID `12888`.
+  - Mux remains `external-jsonl-tcp` through `%USERPROFILE%\.codex\app-server-mux\endpoint.json`.
+- Validation:
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only Git line-ending warnings.
+  - `/api/status` returns `ready=true`, `transport=external-jsonl-tcp`, `lastError=null`.
+  - After restart, the first 8 visible thread detail reads all used `mobileReadMode=turns-list`.
+  - The previously slow `Hermes` detail read dropped from about 7.6 s to about 573 ms.
+  - Current active thread detail still includes `commandExecution:1` in the latest turn.
+- Operational note:
+  - Existing browser tabs need a page refresh to load the updated thread-switch cancellation logic.
+
+## 2026-05-03 Topbar Timer And Live Operation Flicker Adjustment - 21:12 +08:00
+
+- User-requested adjustment:
+  - Move the topbar current-turn timer to the far right.
+  - Remove the `in progress` / status suffix from the timer text.
+  - Reduce flashing when consecutive command/file operation cards update.
+- Changes:
+  - `public/app.js` now formats the timer as `本轮 HH:MM:SS` for both running and settled turns.
+  - `public/app.js` now gives the live operation card a stable render key per turn, so a new command does not trigger a fresh entry animation for the whole card.
+  - `public/styles.css` keeps the timer as a fixed-width right-side topbar element and disables entry animation on `.live-operation` cards.
+  - `public/styles.css` narrows the mobile timer max width so the title remains usable.
+- Validation:
+  - `npm.cmd run check` passed.
+
+## 2026-05-03 Active-Turn Web Input Desktop Echo Fix - 21:40 +08:00
+
+- User-reported issue:
+  - If a message is sent from Mobile Web while a turn is already running, Codex Desktop shows later assistant replies but does not show that user message live.
+  - If the same message starts a new turn, Desktop shows it normally.
+- Finding:
+  - Current thread detail from Mobile Web already contained the mid-turn `userMessage` items, so persistence was intact.
+  - The missing part was a Desktop-visible live notification for Web App active-turn input.
+- Changes:
+  - `public/app.js` now includes `activeTurnId` in composer submissions when a turn is running.
+  - `server.js` now emits a mux-local `mux/userMessage` notification after `turn/start` succeeds, but only when connected through a shared mux endpoint that advertises `capabilities.mobileUserMessageEcho=true`.
+  - `codex-app-server-mux.js` handles `mux/userMessage` locally and broadcasts it as an `item/completed` `userMessage` notification to mux clients, including Codex Desktop.
+  - New mux endpoint files include `capabilities.mobileUserMessageEcho=true`; old running mux processes do not.
+  - The mux also tracks `turn/started` / `turn/completed` notifications as a fallback for active turn ids.
+- Runtime state after Web restart:
+  - Mobile Web wrapper PID `57100`, Node/listener PID `17480`.
+  - Mobile Web is ready on `0.0.0.0:8787` and connected to external shared mux endpoint `%USERPROFILE%\.codex\app-server-mux\endpoint.json`.
+  - Running mux PID was still `11600` at validation time; its endpoint file had no capabilities block because it was started before this change.
+  - To activate Desktop live echo for mid-turn Web input, fully quit Codex Desktop and relaunch through `Codex (MUX)` so the mux endpoint advertises `mobileUserMessageEcho`.
+- Validation:
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only Git line-ending warnings.
+  - `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, `lastError=null`.
+  - Current thread detail used `mobileReadMode=turns-list`; latest in-progress turn `019dedf9-d737-70e1-99df-0057b88c1605` contained 3 `userMessage` items.
+
+## 2026-05-03 No-Op Conversation Refresh Flicker Fix - 22:05 +08:00
+
+- User-reported issue:
+  - Codex reply text streams in correctly, but after a paragraph finishes the whole conversation appears to flash every few seconds even when no visible text changes.
+  - After the first no-op skip pass, user still saw refresh-like flashes and asked to minimize global refreshes in favor of local refresh.
+- Likely cause:
+  - Polling and status refreshes could call `renderCurrentThread()` with unchanged visible content.
+  - `renderCurrentThread()` replaced the entire `#conversation.innerHTML` each time, rebuilding the DOM even when the rendered text was identical.
+  - Even when visible content changed only locally, the old path still replaced the whole conversation DOM.
+- Changes:
+  - `public/app.js` now tracks `state.renderedConversationSignature`.
+  - Added `conversationRenderSignature()` based on visible turns, visible items, operation cards, status lines, omitted-history count, and leaving-operation keys.
+  - Added `updateConversationHtml()` so no-op conversation refreshes do not touch the DOM.
+  - Added a lightweight keyed DOM patcher (`patchHtml`, `patchNode`, `patchChildNodes`) so changed conversation renders reuse existing turn/item nodes by `data-render-key` and update only changed local text/attributes/children.
+  - Thread list rendering now tracks `state.renderedThreadListSignature` and skips rebuilding the sidebar list when thread metadata has not changed.
+  - Home shortcut rendering uses the same skip path to avoid unnecessary home DOM rebuilds.
+  - Timer/title updates still run even when the conversation DOM is skipped.
+- Runtime state after restart:
+  - Mobile Web wrapper PID `57184`, Node/listener PID `55308`.
+  - `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, `lastError=null`.
+  - Current mux endpoint advertised `capabilities.mobileUserMessageEcho=true` on port `50163`.
+- Validation:
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only Git line-ending warnings.
+  - Current thread detail still used `mobileReadMode=turns-list`.
+- Operational note:
+  - Existing Mobile Web browser tabs need a page reload to load this updated `public/app.js`.

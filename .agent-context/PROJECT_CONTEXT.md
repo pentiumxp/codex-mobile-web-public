@@ -30,17 +30,34 @@ This workspace owns the standalone Codex Mobile Web app.
 - The backend talks to `codex app-server` through JSON-RPC over WebSocket or local JSONL TCP.
 - By default the backend starts a loopback `codex app-server --listen ws://127.0.0.1:<port>` child.
 - If `CODEX_MOBILE_APP_SERVER_WS`, `CODEX_MOBILE_APP_SERVER_TCP`, or `%USERPROFILE%\.codex\app-server-mux\endpoint.json` is available, the backend can use an external/shared endpoint instead.
-- Windows Codex Desktop currently runs its own stdio app-server and is not modified by this project.
+- `codex-app-server-mux.js` can act as the shared bridge: Desktop launches generated `codex-app-server-mux.exe` via `CODEX_CLI_PATH`, the shim starts `node codex-app-server-mux.js`, the mux starts the real app-server over stdio, and Mobile Web connects to the mux endpoint file.
+- `start-codex-desktop-shared.ps1` is the reversible Desktop launcher for that bridge; it builds the shim exe from `codex-app-server-mux-shim.cs` when needed and sets `CODEX_CLI_PATH` only for the launched Desktop process.
+- When Mobile Web connects to an already-initialized shared app-server through mux, `initialize` may return `Already initialized`; this is valid for the second client and should be treated as a usable shared connection.
+- When Mobile Web sends extra input while a turn is already active, the browser posts the active turn id and `server.js` can emit a mux-local `mux/userMessage` notification. `codex-app-server-mux.js` converts that into an `item/completed` `userMessage` broadcast so Codex Desktop can render the user's mid-turn Web App input live. `server.js` only sends this extension when the mux endpoint advertises `capabilities.mobileUserMessageEcho=true`, so old running mux processes must be restarted before the fix activates.
+- Windows Codex Desktop runs its own stdio app-server unless launched through the shared mux path.
 
 ## Product Rules
 
 - Mobile rendering is interaction-first.
 - Historical command/tool/file-change payloads are hidden.
 - Only the latest turn's trailing live operation can render as a compact status card.
+- If app-server `thread/read` omits operation items, Mobile Web may synthesize one compact latest operation card from the thread rollout JSONL tail (`exec_command_end`, `patch_apply_end`, `function_call`, or `custom_tool_call`), without command output or diffs.
 - When newer normal content arrives, old operation cards are removed.
 - File-change cards show compact file names only, not diffs or full change payloads.
+- Reasoning items are not rendered in the conversation and reasoning deltas must not remove or replace live command/file/tool operation cards.
+- Conversation rendering uses a visible-content signature and a lightweight keyed DOM patcher to avoid replacing the whole conversation when polling/status refreshes only change local text, item status, or operation cards; this prevents no-op and broad refresh flicker.
 - Uploaded images are sent as app-server `localImage` input items.
 - Uploaded non-image files are saved locally and referenced in message text by absolute path.
+- The composer exposes compact side-by-side per-message model and reasoning effort selectors; blank/default values follow the current thread or `%USERPROFILE%\.codex\config.toml`.
+- When no thread is selected, the main pane lists recent workspaces and recent threads as shortcuts.
+- Thread detail reads prefer app-server `thread/turns/list` plus local `state_5.sqlite` metadata instead of `thread/read includeTurns:true`, because large historical rollouts can make `thread/read` several seconds slower.
+- Thread switching in the browser uses request sequencing and cancels the previous detail fetch so stale slow responses cannot overwrite the current selection.
+- Mobile foreground recovery uses `visibilitychange`, `pageshow`, `focus`, and `orientationchange` to re-show the app shell, reconnect SSE if needed, and refresh current thread state after returning from external permission/input-method screens.
+- Turns show a top-right elapsed timer formatted as `本轮 HH:MM:SS`; it updates while running and keeps the status label out of the timer.
+- Live reasoning does not render as a conversation row; the top-right turn timer provides the in-progress time signal.
+- The top conversation bar is intentionally compact: it shows the thread title, but not cwd or thread status metadata.
+- The composer submit button follows Desktop behavior: during an active turn, an empty composer shows `Stop`; if text or attachments are present it switches back to `Send` for the new input.
+- Message entry, smooth scroll-to-bottom, and live operation removal use short motion transitions.
 - Context compaction renders as the single Chinese notice `历史上下文已压缩`.
 - Thread lists hide archived/deleted/removed sessions and sessions outside Codex Desktop visible workspace roots.
 - Weak-network recovery may use `state_5.sqlite` metadata fallback, but should not resurface archived/deleted/old-workspace sessions.
@@ -49,5 +66,6 @@ This workspace owns the standalone Codex Mobile Web app.
 
 - Do not patch the WindowsApps Codex installation.
 - Do not replace Codex Desktop's startup command unless explicitly requested and tested through a reversible path.
+- Prefer the reversible `start-codex-desktop-shared.ps1` launcher over persistent system environment changes for Desktop/Web live sync.
 - Keep `.codex` state read-only except through app-server RPCs.
 - Keep raw access keys out of Git and out of `.agent-context`.

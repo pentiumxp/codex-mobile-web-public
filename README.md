@@ -46,6 +46,14 @@ The composer supports attaching images and files.
 
 Uploaded file contents are runtime state and must not be committed to Git.
 
+## Interface
+
+- When no thread is selected, the main pane lists recent workspaces and recent threads as shortcuts.
+- While a turn is running, the top-right timer shows the current turn elapsed time as `本轮 HH:MM:SS`.
+- The composer can choose a per-message model and reasoning effort; leave either selector on default to follow the current thread/config value.
+- Live reasoning does not stream into the conversation; the turn timer covers the in-progress time signal.
+- Message appearance, smooth scroll-to-bottom, and live operation removal use short motion transitions.
+
 ## Architecture
 
 - Public web server binds to `CODEX_MOBILE_HOST` / `CODEX_MOBILE_PORT`.
@@ -73,7 +81,21 @@ Then start the web server normally. It will auto-detect:
 C:\Users\xuxin\.codex\app-server-mux\endpoint.json
 ```
 
-This does not modify Codex Desktop. Desktop sharing would require the desktop app to launch the mux as its app-server command, which should only be tested with a reversible config or shortcut. Do not patch the WindowsApps install directory or replace the bundled Codex binary.
+This does not modify Codex Desktop. Desktop sharing requires the desktop app to launch the mux as its app-server command. Use the reversible launcher instead of patching the WindowsApps install directory:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Users\xuxin\Documents\codex-mobile-web\start-codex-desktop-shared.ps1
+```
+
+The launcher sets `CODEX_CLI_PATH` only for the Codex Desktop process it starts. Codex Desktop requires that path to be a real `.exe`, so the launcher builds `codex-app-server-mux.exe` from `codex-app-server-mux-shim.cs` when needed. The shim starts `node codex-app-server-mux.js`, the mux starts the real `codex app-server`, and Mobile Web connects through the mux endpoint file above. For the environment change to affect Desktop, fully quit Codex Desktop before launching it this way.
+
+If Mobile Web was already running against its own managed app-server, restart Mobile Web or call:
+
+```text
+POST /api/app-server/reconnect
+```
+
+after the mux endpoint exists. Do not reconnect while a managed-child turn is still running unless you intend to abandon that child connection.
 
 ## Mobile Output Limits
 
@@ -82,11 +104,11 @@ Raw command/tool output can be very large. The mobile UI intentionally shows bou
 - only the latest `CODEX_MOBILE_THREAD_TURNS` turns are returned to the phone, default `12`
 - command, tool, and file-change items are removed from the mobile conversation payload
 - the current running command/tool/file operation may appear as one temporary status row with command/file names only
-- live reasoning is shown as a timer row instead of streaming reasoning text
+- live reasoning is represented by the top-right turn timer instead of a conversation row or streamed reasoning text
 - command output deltas are not forwarded to the browser
 
 The original Codex rollout history remains in `C:\Users\xuxin\.codex\sessions\...`; these limits only protect the phone view.
 
 ## Desktop App Sync Limitation
 
-The Windows Codex desktop app runs its own `codex app-server` over `stdio://` unless explicitly configured otherwise. The standalone mobile web server and standalone mux do not change that desktop launch path. Both use the same `.codex` durable state, but an already-open desktop Codex window may not live-update to show mobile-started turns until the desktop app is deliberately moved to the shared mux path.
+The Windows Codex desktop app runs its own `codex app-server` over `stdio://` unless it is launched with the shared mux path above. Both clients can read the same `.codex` durable state, but live UI convergence requires both Desktop and Mobile Web to attach to the same mux-backed app-server. This does not merge two already-running model turns or retroactively inject missed content into an in-progress model call.
