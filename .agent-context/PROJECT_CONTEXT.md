@@ -51,7 +51,7 @@ This workspace owns the standalone Codex Mobile Web app.
 - Uploaded images are sent as app-server `localImage` input items.
 - Uploaded non-image files are saved locally and referenced in message text by absolute path.
 - Uploaded files under `%USERPROFILE%\.codex-mobile-web\uploads` can be served back to the authenticated browser through `/api/uploads/file?path=<absolute-upload-path>`; the server must only allow paths inside the upload root.
-- User message rendering must show image input parts as compact centered thumbnails, not large inline previews, and must never stringify full data-URL image payloads into the conversation.
+- User message rendering must show image input parts as centered thumbnails, not full-width inline previews, and must never stringify full data-URL image payloads into the conversation. Current thumbnail cap is about `min(72vw, 320px)` wide and `240px` high.
 - The composer exposes compact side-by-side per-message model and reasoning effort selectors; blank/default values follow the current thread or `%USERPROFILE%\.codex\config.toml`.
 - The composer shows 5-hour and weekly quota remaining as one compact right-aligned numeric indicator next to the model/reasoning selectors after app-server emits `account/rateLimits/updated`; it displays `<5-hour remaining> | <weekly remaining>` from the matching 300-minute and 10080-minute windows.
 - The model, reasoning, and quota controls should stay on one line while keeping the model/reasoning selectors readable; the quota column must not starve the reasoning selector width.

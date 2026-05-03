@@ -573,3 +573,11 @@
   - `public/styles.css` now centers `.input-image` thumbnails with horizontal auto margins.
   - Image captions are centered under thumbnails.
   - `PROJECT_CONTEXT.md` records that user-message images should render as compact centered thumbnails.
+
+## 2026-05-03 Enlarge Image Thumbnails
+
+- User-requested adjustment:
+  - Centered image thumbnails were still too small; enlarge them by about 2x.
+- Changes:
+  - `public/styles.css` changed conversation image thumbnail caps from `min(36vw, 160px)` / `120px` to `min(72vw, 320px)` / `240px`.
+  - `PROJECT_CONTEXT.md` records the current thumbnail size cap.

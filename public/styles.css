@@ -622,8 +622,8 @@ textarea {
   display: block;
   width: auto;
   height: auto;
-  max-width: min(36vw, 160px);
-  max-height: 120px;
+  max-width: min(72vw, 320px);
+  max-height: 240px;
   object-fit: contain;
   border: 1px solid var(--line-soft);
   border-radius: 8px;
