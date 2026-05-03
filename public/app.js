@@ -420,10 +420,39 @@ function visibleItemSignature(item) {
     type: item.type || "",
     status: statusText(item.status),
     text: item.text || "",
-    content: Array.isArray(item.content) ? item.content : [],
+    content: Array.isArray(item.content) ? inputContentSignature(item.content) : [],
     summary: Array.isArray(item.summary) ? item.summary : [],
     mobileNotice: item.mobileNotice || "",
   };
+}
+
+function inputContentSignature(content) {
+  return (content || []).map((part) => {
+    if (!part || typeof part !== "object") return String(part || "");
+    if (part.type === "text") return { type: "text", text: part.text || "" };
+    if (isInputImagePart(part)) {
+      return {
+        type: part.type || "image",
+        path: part.path || "",
+        url: imageSourceSignature(part.url || part.image_url || ""),
+      };
+    }
+    return compactStructuredForSignature(part);
+  });
+}
+
+function imageSourceSignature(value) {
+  const text = String(value || "");
+  if (/^data:image\//i.test(text)) return `${text.slice(0, 48)}...${text.length}`;
+  return text;
+}
+
+function compactStructuredForSignature(value) {
+  try {
+    return truncateMiddle(JSON.stringify(value), 600, "payload");
+  } catch (_) {
+    return String(value || "");
+  }
 }
 
 function itemVisibleWeight(item) {
@@ -1278,12 +1307,99 @@ function labelForItem(item) {
   return map[item.type] || item.type || "Item";
 }
 
+function isInputImagePart(part) {
+  if (!part || typeof part !== "object") return false;
+  const type = String(part.type || "");
+  const url = String(part.url || part.image_url || "");
+  return type === "image" || type === "localImage" || /^data:image\//i.test(url);
+}
+
+function splitAttachmentSummaryText(text) {
+  const source = String(text || "");
+  const marker = "Uploaded attachments:\n";
+  const markerIndex = source.indexOf(marker);
+  if (markerIndex < 0) return { text: source, attachments: [] };
+  const before = source.slice(0, markerIndex).trimEnd();
+  const lines = source.slice(markerIndex + marker.length)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return { text: before, attachments: lines.map(parseAttachmentLine).filter(Boolean) };
+}
+
+function parseAttachmentLine(line) {
+  const match = /^-\s*(.*?)\s*\((.*?)\):\s*(.+)$/.exec(String(line || ""));
+  if (!match) return null;
+  const meta = match[2] || "";
+  return {
+    name: match[1] || "attachment",
+    meta,
+    path: match[3] || "",
+    isImage: /\bimage\b/i.test(meta),
+  };
+}
+
+function uploadFileUrl(filePath) {
+  const params = new URLSearchParams({ path: filePath });
+  if (state.key) params.set("key", state.key);
+  return `/api/uploads/file?${params.toString()}`;
+}
+
+function imageSourceForPart(part, attachment = null) {
+  if (attachment && attachment.path) return uploadFileUrl(attachment.path);
+  if (part.path) return uploadFileUrl(part.path);
+  const url = String(part.url || part.image_url || "");
+  return url || "";
+}
+
+function renderInputText(text) {
+  if (!String(text || "").trim()) return "";
+  return `<div class="input-text">${escapeHtml(text)}</div>`;
+}
+
+function renderInputImage(part, attachment = null, index = 0) {
+  const src = imageSourceForPart(part, attachment);
+  const label = (attachment && attachment.name) || shortPath(part.path || part.url || "") || `Image ${index + 1}`;
+  if (!src) return `<div class="input-attachment">${escapeHtml(label)}</div>`;
+  return `<figure class="input-image">
+    <img src="${escapeHtml(src)}" alt="${escapeHtml(label)}" loading="lazy">
+    <figcaption>${escapeHtml(label)}</figcaption>
+  </figure>`;
+}
+
+function renderInputAttachment(attachment) {
+  const label = attachment.name || shortPath(attachment.path) || "attachment";
+  const meta = attachment.meta ? ` (${attachment.meta})` : "";
+  return `<div class="input-attachment">
+    <span>${escapeHtml(label)}</span>
+    <span>${escapeHtml(meta)}</span>
+    ${attachment.path ? `<code>${escapeHtml(attachment.path)}</code>` : ""}
+  </div>`;
+}
+
 function renderInputContent(content) {
-  return (content || []).map((part) => {
-    if (part.type === "text") return escapeHtml(part.text || "");
-    if (part.type === "image" || part.type === "localImage") return `[${part.type}: ${escapeHtml(part.url || part.path || "")}]`;
-    return escapeHtml(JSON.stringify(part));
-  }).join("\n");
+  const parts = content || [];
+  const imageParts = parts.filter(isInputImagePart);
+  const attachments = [];
+  const html = [];
+  for (const part of parts) {
+    if (!part || isInputImagePart(part)) continue;
+    if (part.type === "text") {
+      const split = splitAttachmentSummaryText(part.text || "");
+      if (split.text) html.push(renderInputText(split.text));
+      attachments.push(...split.attachments);
+      continue;
+    }
+    html.push(`<div class="input-text">${escapeHtml(compactStructuredForSignature(part))}</div>`);
+  }
+  const imageAttachments = attachments.filter((attachment) => attachment.isImage);
+  imageParts.forEach((part, index) => {
+    html.push(renderInputImage(part, imageAttachments[index] || null, index));
+  });
+  attachments
+    .filter((attachment) => !attachment.isImage || !imageParts.length)
+    .forEach((attachment) => html.push(renderInputAttachment(attachment)));
+  return html.join("");
 }
 
 function renderItemBody(item) {

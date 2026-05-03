@@ -830,6 +830,37 @@ function mimeFor(file) {
   }[ext] || "application/octet-stream";
 }
 
+function isPathInside(parent, child) {
+  const parentPath = path.resolve(parent);
+  const childPath = path.resolve(child);
+  return childPath === parentPath || childPath.startsWith(parentPath + path.sep);
+}
+
+function serveUploadedFile(req, res) {
+  const url = getUrl(req);
+  const rawPath = url.searchParams.get("path") || "";
+  const target = path.resolve(rawPath);
+  if (!rawPath || !isPathInside(UPLOAD_ROOT, target)) {
+    res.writeHead(403);
+    res.end("Forbidden");
+    return;
+  }
+  fs.stat(target, (statErr, stat) => {
+    if (statErr || !stat.isFile()) {
+      res.writeHead(404);
+      res.end("Not found");
+      return;
+    }
+    res.writeHead(200, {
+      "Content-Type": mimeFor(target),
+      "Cache-Control": "private, max-age=300",
+      "Content-Length": stat.size,
+      "Content-Disposition": `inline; filename="${path.basename(target).replace(/"/g, "_")}"`,
+    });
+    fs.createReadStream(target).pipe(res);
+  });
+}
+
 function serveStatic(req, res) {
   const url = getUrl(req);
   const rel = decodeURIComponent(url.pathname === "/" ? "/index.html" : url.pathname);
@@ -1516,6 +1547,10 @@ async function handleApi(req, res) {
       codex.lastError = err.message;
     });
     sendJson(res, 200, codex.status());
+    return;
+  }
+  if (url.pathname === "/api/uploads/file" && req.method === "GET") {
+    serveUploadedFile(req, res);
     return;
   }
   if (url.pathname === "/api/app-server/reconnect" && req.method === "POST") {

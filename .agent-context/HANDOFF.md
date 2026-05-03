@@ -475,3 +475,29 @@
 - Validation:
   - `npm.cmd run check` passed.
   - `git diff --check` passed with only Git line-ending warnings.
+
+## 2026-05-03 Image Payload Rendering And Mobile Width Fix
+
+- User-reported issues:
+  - A huge image data payload appeared in the conversation after sending screenshots.
+  - Image attachments in user messages were shown as paths/text instead of rendered images.
+  - The mobile page width overflowed horizontally, clipping the right side of the top timer and `Stop` button.
+- Findings:
+  - App-server thread data can include image input parts as `{"type":"image","url":"data:image/png;base64,..."}` alongside the text attachment summary.
+  - `public/app.js` rendered unknown input parts with `JSON.stringify(part)`, which expanded the full data URL into the conversation.
+  - The same raw `content` array was used in visible-content signatures, making render signatures large when image data URLs were present.
+  - Mobile composer minimum widths for Model/Effort/quota plus attachment/input/send controls exceeded the phone viewport.
+- Changes:
+  - `public/app.js` now normalizes input content signatures so data URLs are represented by a short signature, not the full payload.
+  - `public/app.js` now renders `image` / `localImage` input parts as bounded thumbnails and skips expanded JSON rendering for image payloads.
+  - `public/app.js` parses the text `Uploaded attachments` summary so image paths can be used as thumbnail sources instead of embedding large data URLs.
+  - `server.js` adds authenticated `/api/uploads/file?path=<absolute-upload-path>` serving, restricted to the configured upload root.
+  - `public/styles.css` adds bounded image/attachment styles and mobile-only composer grid areas so controls no longer force horizontal page overflow.
+- Runtime:
+  - Mobile Web was restarted after the `server.js` route change.
+  - Current wrapper PID `10796`, Node/listener PID `50268`.
+  - `/api/status` returns `ready=true`, `transport=external-jsonl-tcp`, `lastError=null`.
+  - A known uploaded PNG returned `HTTP 200`, `Content-Type: image/png` through `/api/uploads/file`.
+- Validation:
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only Git line-ending warnings.

@@ -100,6 +100,8 @@ textarea {
 }
 
 .app {
+  width: 100%;
+  max-width: 100vw;
   height: 100dvh;
   min-height: 100%;
   display: grid;
@@ -260,6 +262,7 @@ textarea {
 
 .topbar {
   justify-content: flex-start;
+  min-width: 0;
   min-height: 44px;
   padding: 6px 12px;
   border-bottom: 1px solid var(--line);
@@ -295,6 +298,7 @@ textarea {
 
 .conversation {
   min-height: 0;
+  min-width: 0;
   overflow: auto;
   padding: 20px 20px 28px;
   scroll-behavior: smooth;
@@ -427,6 +431,7 @@ textarea {
 }
 
 .turn {
+  min-width: 0;
   display: grid;
   gap: 12px;
   margin: 0 auto 22px;
@@ -496,6 +501,8 @@ textarea {
 }
 
 .item {
+  min-width: 0;
+  max-width: 100%;
   border: 1px solid var(--line-soft);
   border-radius: 8px;
   background: rgba(32, 36, 40, 0.72);
@@ -542,6 +549,7 @@ textarea {
 }
 
 .operation-body {
+  min-width: 0;
   padding: 9px 11px 11px;
   max-height: min(36vh, 220px);
   overflow: auto;
@@ -551,10 +559,12 @@ textarea {
   line-height: 1.42;
   white-space: pre-wrap;
   word-break: break-word;
+  overflow-wrap: anywhere;
   scrollbar-width: thin;
 }
 
 .item-head {
+  min-width: 0;
   display: flex;
   justify-content: space-between;
   gap: 10px;
@@ -564,15 +574,64 @@ textarea {
   border-bottom: 1px solid var(--line-soft);
 }
 
+.item-head span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .item-body {
+  min-width: 0;
   padding: 12px;
   line-height: 1.58;
   white-space: pre-wrap;
   word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.input-text {
+  white-space: pre-wrap;
+}
+
+.input-image {
+  margin: 8px 0 0;
+  display: grid;
+  gap: 6px;
+}
+
+.input-image img {
+  display: block;
+  width: min(100%, 360px);
+  max-height: 360px;
+  object-fit: contain;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--code);
+}
+
+.input-image figcaption,
+.input-attachment {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.input-attachment {
+  margin-top: 8px;
+  display: grid;
+  gap: 4px;
+}
+
+.input-attachment code {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .item-body pre,
 .mono {
+  min-width: 0;
+  max-width: 100%;
   margin: 8px 0 0;
   padding: 10px;
   overflow: auto;
@@ -580,9 +639,12 @@ textarea {
   background: var(--code);
   border-radius: 8px;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .output-details {
+  min-width: 0;
+  max-width: 100%;
   margin-top: 8px;
   border: 1px solid var(--line-soft);
   border-radius: 8px;
@@ -599,13 +661,18 @@ textarea {
 }
 
 .output-details pre {
+  min-width: 0;
+  max-width: 100%;
   max-height: min(52vh, 520px);
   margin: 0;
   border-top: 1px solid var(--line-soft);
   border-radius: 0;
+  overflow-wrap: anywhere;
 }
 
 .composer {
+  min-width: 0;
+  max-width: 100%;
   gap: 10px;
   align-items: flex-end;
   padding: 12px 18px calc(12px + env(safe-area-inset-bottom));
@@ -827,7 +894,18 @@ textarea {
 
 @media (max-width: 760px) {
   .app {
+    width: 100vw;
+    max-width: 100vw;
     grid-template-columns: 1fr;
+  }
+
+  .main,
+  .topbar,
+  .conversation,
+  .composer {
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
   }
 
   .sidebar {
@@ -863,14 +941,48 @@ textarea {
   }
 
   .composer {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) max-content;
+    grid-template-areas:
+      "controls controls controls"
+      "attachments attachments attachments"
+      "attach input send";
     gap: 8px;
     padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
   }
 
+  .composer-body {
+    display: contents;
+  }
+
+  .composer-controls {
+    grid-area: controls;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.92fr) max-content;
+  }
+
   .composer-icon {
+    grid-area: attach;
     flex-basis: 42px;
     width: 42px;
     height: 42px;
+  }
+
+  .attachment-list {
+    grid-area: attachments;
+  }
+
+  .composer textarea {
+    grid-area: input;
+    min-width: 0;
+  }
+
+  #sendMessage {
+    grid-area: send;
+    min-width: 58px;
+    max-width: 74px;
+    padding-inline: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .attachment-chip {
