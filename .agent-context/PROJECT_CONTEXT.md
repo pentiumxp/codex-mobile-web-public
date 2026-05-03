@@ -18,12 +18,15 @@ This workspace owns the standalone Codex Mobile Web app.
 - Mobile Web runtime state lives under `%USERPROFILE%\.codex-mobile-web`.
 - Access key file: `%USERPROFILE%\.codex-mobile-web\access_key`
 - Local Codex executable copy: `%USERPROFILE%\.codex-mobile-web\codex.exe`
+- Uploaded attachment storage: `%USERPROFILE%\.codex-mobile-web\uploads`
 - Raw access keys and binaries are local runtime state and must not be committed.
+- Uploaded attachment contents are local runtime state and must not be committed.
 
 ## Architecture
 
 - The web server binds to `CODEX_MOBILE_HOST` / `CODEX_MOBILE_PORT`, default `0.0.0.0:8787`.
 - The browser authenticates with the access key, then receives live updates through Server-Sent Events.
+- The composer can upload attachments through multipart form posts.
 - The backend talks to `codex app-server` through JSON-RPC over WebSocket or local JSONL TCP.
 - By default the backend starts a loopback `codex app-server --listen ws://127.0.0.1:<port>` child.
 - If `CODEX_MOBILE_APP_SERVER_WS`, `CODEX_MOBILE_APP_SERVER_TCP`, or `%USERPROFILE%\.codex\app-server-mux\endpoint.json` is available, the backend can use an external/shared endpoint instead.
@@ -36,6 +39,8 @@ This workspace owns the standalone Codex Mobile Web app.
 - Only the latest turn's trailing live operation can render as a compact status card.
 - When newer normal content arrives, old operation cards are removed.
 - File-change cards show compact file names only, not diffs or full change payloads.
+- Uploaded images are sent as app-server `localImage` input items.
+- Uploaded non-image files are saved locally and referenced in message text by absolute path.
 - Context compaction renders as the single Chinese notice `历史上下文已压缩`.
 - Thread lists hide archived/deleted/removed sessions and sessions outside Codex Desktop visible workspace roots.
 - Weak-network recovery may use `state_5.sqlite` metadata fallback, but should not resurface archived/deleted/old-workspace sessions.

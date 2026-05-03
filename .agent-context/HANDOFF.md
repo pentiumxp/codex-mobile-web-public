@@ -78,3 +78,36 @@
   - `6f821a1 Initial Codex Mobile Web app`
 - Validation after push:
   - `npm.cmd run check` passed.
+
+## 2026-05-03 Composer Attachment Uploads - 18:17 +08:00
+
+- Objective:
+  - Add image and file upload support to the mobile interaction composer.
+- Changed files:
+  - `server.js`
+  - `public/app.js`
+  - `public/index.html`
+  - `public/styles.css`
+  - `README.md`
+  - `.gitignore`
+  - `.agent-context/PROJECT_CONTEXT.md`
+- Runtime behavior:
+  - Browser sends composer submissions as multipart `FormData` when attachments are present.
+  - Server stores uploaded files under `%USERPROFILE%\.codex-mobile-web\uploads` by default.
+  - `CODEX_MOBILE_UPLOAD_DIR` can override upload storage.
+  - `CODEX_MOBILE_MAX_UPLOAD_BYTES` controls max total upload bytes per message, default `67108864`.
+  - `CODEX_MOBILE_MAX_UPLOAD_FILES` controls max attachments per message, default `12`.
+  - Uploaded images are passed to `turn/start` as app-server `localImage` input items.
+  - Uploaded non-image files are referenced in the message text by absolute local path.
+- Validation:
+  - Official `openai/codex` source was checked for app-server v2 `UserInput` shape; `localImage` with `path` is supported, no generic file input exists.
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed.
+  - Temporary no-auth server on `127.0.0.1:8790` returned upload limits from `/api/public-config`.
+  - Main server restarted on `0.0.0.0:8787`.
+  - `/api/public-config` returns `maxUploadBytes=67108864` and `maxUploadFiles=12`.
+  - Authenticated `/api/status` returned `ready=true`, `transport=managed-ws-child`, `lastError=null`.
+- Current runtime PIDs after restart:
+  - Wrapper PowerShell PID `15412`
+  - Node PID `20868`
+  - Managed app-server child PID `38792`

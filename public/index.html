@@ -54,7 +54,12 @@
       </section>
 
       <form id="composer" class="composer">
-        <textarea id="messageInput" rows="1" placeholder="Message Codex" disabled></textarea>
+        <input id="fileInput" class="file-input" type="file" multiple disabled>
+        <button id="attachFiles" class="icon-button composer-icon" type="button" title="Attach files" disabled>+</button>
+        <div class="composer-body">
+          <div id="attachmentList" class="attachment-list hidden"></div>
+          <textarea id="messageInput" rows="1" placeholder="Message Codex" disabled></textarea>
+        </div>
         <button id="sendMessage" type="submit" disabled>Send</button>
       </form>
     </main>

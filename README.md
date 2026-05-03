@@ -33,6 +33,19 @@ Disable auth only for isolated testing:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\start-codex-mobile-web.ps1 -NoAuth
 ```
 
+## Uploads
+
+The composer supports attaching images and files.
+
+- Uploaded files are stored under `%USERPROFILE%\.codex-mobile-web\uploads` by default.
+- Override the upload directory with `CODEX_MOBILE_UPLOAD_DIR`.
+- Override total upload size per message with `CODEX_MOBILE_MAX_UPLOAD_BYTES`, default `67108864`.
+- Override attachment count per message with `CODEX_MOBILE_MAX_UPLOAD_FILES`, default `12`.
+- Images are sent to Codex as `localImage` input items.
+- Non-image files are referenced in the message text by absolute local path so Codex can read them through normal file access.
+
+Uploaded file contents are runtime state and must not be committed to Git.
+
 ## Architecture
 
 - Public web server binds to `CODEX_MOBILE_HOST` / `CODEX_MOBILE_PORT`.

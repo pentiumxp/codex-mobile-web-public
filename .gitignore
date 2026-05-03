@@ -11,6 +11,7 @@ pnpm-debug.log*
 
 workspace/
 logs/
+uploads/
 *.log
 *.err.log
 

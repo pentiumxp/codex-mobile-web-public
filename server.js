@@ -23,6 +23,10 @@ const DISABLE_AUTH = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_DISABLE_
 const AUTH_KEY_FILE = process.env.CODEX_MOBILE_KEY_FILE || path.join(RUNTIME_ROOT, "access_key");
 const AUTH_KEY = DISABLE_AUTH ? "" : loadAuthKey();
 const MAX_TEXT_CHARS = 60000;
+const MAX_JSON_BODY_BYTES = 2_000_000;
+const MAX_UPLOAD_BYTES = Math.max(1, Number(process.env.CODEX_MOBILE_MAX_UPLOAD_BYTES || String(64 * 1024 * 1024)));
+const MAX_UPLOAD_FILES = Math.max(1, Math.min(50, Number(process.env.CODEX_MOBILE_MAX_UPLOAD_FILES || "12")));
+const UPLOAD_ROOT = process.env.CODEX_MOBILE_UPLOAD_DIR || path.join(RUNTIME_ROOT, "uploads");
 const MAX_COMMAND_OUTPUT_CHARS = 8000;
 const MAX_COMMAND_OUTPUT_CHARS_PER_TURN = 48000;
 const MAX_STRUCTURED_CHARS = 24000;
@@ -33,6 +37,7 @@ const DEFAULT_RPC_TIMEOUT_MS = 30000;
 const READ_RPC_TIMEOUT_MS = 12000;
 const MUTATION_RPC_TIMEOUT_MS = 120000;
 const SAFE_RETRY_METHODS = new Set(["initialize", "thread/list", "thread/read", "thread/turns/list"]);
+const IMAGE_EXTENSIONS = new Set([".avif", ".bmp", ".gif", ".heic", ".heif", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"]);
 
 let clients = new Set();
 
@@ -394,13 +399,31 @@ function compactNotification(payload) {
   return out;
 }
 
+function readRawBody(req, limitBytes) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > limitBytes) {
+        reject(new Error("request body too large"));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
+  });
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
     req.on("data", (chunk) => {
       size += chunk.length;
-      if (size > 2_000_000) {
+      if (size > MAX_JSON_BODY_BYTES) {
         reject(new Error("request body too large"));
         req.destroy();
         return;
@@ -418,6 +441,146 @@ function readBody(req) {
     });
     req.on("error", reject);
   });
+}
+
+function multipartBoundary(contentType) {
+  const match = /(?:^|;\s*)boundary=(?:"([^"]+)"|([^;]+))/i.exec(String(contentType || ""));
+  return match ? String(match[1] || match[2] || "").trim() : "";
+}
+
+function parsePartHeaders(raw) {
+  const headers = {};
+  for (const line of String(raw || "").split(/\r?\n/)) {
+    const idx = line.indexOf(":");
+    if (idx < 0) continue;
+    headers[line.slice(0, idx).trim().toLowerCase()] = line.slice(idx + 1).trim();
+  }
+  return headers;
+}
+
+function dispositionParam(disposition, name) {
+  const quoted = new RegExp(`(?:^|;\\s*)${name}="([^"]*)"`, "i").exec(String(disposition || ""));
+  if (quoted) return quoted[1];
+  const bare = new RegExp(`(?:^|;\\s*)${name}=([^;]*)`, "i").exec(String(disposition || ""));
+  return bare ? bare[1].trim() : "";
+}
+
+function parseMultipartBody(buffer, contentType) {
+  const boundary = multipartBoundary(contentType);
+  if (!boundary) throw new Error("multipart boundary is missing");
+  const boundaryBuffer = Buffer.from(`--${boundary}`, "utf8");
+  const separator = Buffer.from("\r\n\r\n", "utf8");
+  const fields = {};
+  const files = [];
+  let pos = buffer.indexOf(boundaryBuffer);
+  while (pos >= 0) {
+    pos += boundaryBuffer.length;
+    if (buffer.slice(pos, pos + 2).toString("utf8") === "--") break;
+    if (buffer.slice(pos, pos + 2).toString("utf8") === "\r\n") pos += 2;
+    const next = buffer.indexOf(boundaryBuffer, pos);
+    if (next < 0) break;
+    let end = next;
+    if (end >= 2 && buffer[end - 2] === 13 && buffer[end - 1] === 10) end -= 2;
+    const part = buffer.slice(pos, end);
+    const headerEnd = part.indexOf(separator);
+    if (headerEnd >= 0) {
+      const headers = parsePartHeaders(part.slice(0, headerEnd).toString("utf8"));
+      const disposition = headers["content-disposition"] || "";
+      const fieldName = dispositionParam(disposition, "name");
+      const filename = dispositionParam(disposition, "filename");
+      const content = part.slice(headerEnd + separator.length);
+      if (fieldName) {
+        if (filename) {
+          files.push({
+            fieldName,
+            originalName: filename,
+            mimeType: headers["content-type"] || "",
+            buffer: content,
+          });
+        } else {
+          fields[fieldName] = content.toString("utf8");
+        }
+      }
+    }
+    pos = next;
+  }
+  return { fields, files };
+}
+
+function sanitizeUploadName(name) {
+  const base = path.basename(String(name || "upload").replace(/\\/g, "/"));
+  const cleaned = base
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
+    .replace(/\s+/g, " ")
+    .trim();
+  return (cleaned || "upload").slice(0, 160);
+}
+
+function isImageUpload(file) {
+  const mime = String(file.mimeType || "").toLowerCase();
+  const ext = path.extname(file.originalName || "").toLowerCase();
+  return mime.startsWith("image/") || IMAGE_EXTENSIONS.has(ext);
+}
+
+function saveUploadedFiles(threadId, files) {
+  if (!files.length) return [];
+  if (files.length > MAX_UPLOAD_FILES) throw new Error(`Too many attachments; max ${MAX_UPLOAD_FILES}`);
+  const total = files.reduce((sum, file) => sum + file.buffer.length, 0);
+  if (total > MAX_UPLOAD_BYTES) throw new Error(`Attachments are too large; max ${MAX_UPLOAD_BYTES} bytes`);
+  const day = new Date().toISOString().slice(0, 10);
+  const safeThreadId = sanitizeUploadName(threadId).slice(0, 72);
+  const dir = path.join(UPLOAD_ROOT, day, safeThreadId || "thread");
+  fs.mkdirSync(dir, { recursive: true });
+  return files.map((file) => {
+    const originalName = sanitizeUploadName(file.originalName);
+    const diskName = `${Date.now()}-${crypto.randomBytes(6).toString("hex")}-${originalName}`;
+    const diskPath = path.join(dir, diskName);
+    fs.writeFileSync(diskPath, file.buffer, { mode: 0o600 });
+    return {
+      originalName,
+      mimeType: file.mimeType || "application/octet-stream",
+      size: file.buffer.length,
+      path: diskPath,
+      isImage: isImageUpload(file),
+    };
+  });
+}
+
+function formatUploadSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes < 0) return "0 B";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function appendAttachmentSummary(text, uploads) {
+  if (!uploads.length) return text;
+  const lines = uploads.map((file) => {
+    const kind = file.isImage ? "image" : "file";
+    return `- ${file.originalName} (${kind}, ${file.mimeType}, ${formatUploadSize(file.size)}): ${file.path}`;
+  });
+  return `${text ? `${text}\n\n` : ""}Uploaded attachments:\n${lines.join("\n")}`;
+}
+
+async function readMessageBody(req, threadId) {
+  const contentType = String(req.headers["content-type"] || "");
+  if (!/^multipart\/form-data\b/i.test(contentType)) {
+    return { fields: await readBody(req), uploads: [] };
+  }
+  const raw = await readRawBody(req, MAX_UPLOAD_BYTES + 256 * 1024);
+  const parsed = parseMultipartBody(raw, contentType);
+  const uploads = saveUploadedFiles(threadId, parsed.files);
+  return { fields: parsed.fields, uploads };
+}
+
+function buildTurnInput(text, uploads) {
+  const input = [];
+  const messageText = appendAttachmentSummary(text, uploads).trim();
+  if (messageText) input.push({ type: "text", text: messageText, text_elements: [] });
+  for (const file of uploads) {
+    if (file.isImage) input.push({ type: "localImage", path: file.path });
+  }
+  return input;
 }
 
 function mimeFor(file) {
@@ -987,7 +1150,12 @@ async function listWorkspaces() {
 async function handleApi(req, res) {
   const url = getUrl(req);
   if (url.pathname === "/api/public-config") {
-    sendJson(res, 200, { authRequired: !DISABLE_AUTH, title: "Codex Mobile Web" });
+    sendJson(res, 200, {
+      authRequired: !DISABLE_AUTH,
+      title: "Codex Mobile Web",
+      maxUploadBytes: MAX_UPLOAD_BYTES,
+      maxUploadFiles: MAX_UPLOAD_FILES,
+    });
     return;
   }
   if (url.pathname === "/api/login" && req.method === "POST") {
@@ -1103,10 +1271,11 @@ async function handleApi(req, res) {
   const messages = url.pathname.match(/^\/api\/threads\/([^/]+)\/messages$/);
   if (messages && req.method === "POST") {
     const threadId = decodeURIComponent(messages[1]);
-    const body = await readBody(req);
+    const { fields: body, uploads } = await readMessageBody(req, threadId);
     const text = String(body.text || "").trim();
-    if (!text) {
-      sendJson(res, 400, { error: "Message text is required" });
+    const input = buildTurnInput(text, uploads);
+    if (!input.length) {
+      sendJson(res, 400, { error: "Message text or attachment is required" });
       return;
     }
     try {
@@ -1121,7 +1290,7 @@ async function handleApi(req, res) {
     }
     const params = {
       threadId,
-      input: [{ type: "text", text, text_elements: [] }],
+      input,
     };
     if (body.cwd) params.cwd = body.cwd;
     if (body.model) params.model = body.model;

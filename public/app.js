@@ -18,6 +18,10 @@ const state = {
   lastThreadSignature: "",
   tickTimer: null,
   nowMs: Date.now(),
+  pendingAttachments: [],
+  composerBusy: false,
+  maxUploadBytes: 64 * 1024 * 1024,
+  maxUploadFiles: 12,
 };
 
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
@@ -290,7 +294,8 @@ async function api(path, options = {}) {
   const fetchOptions = Object.assign({}, options, { headers, signal: controller.signal });
   delete fetchOptions.timeoutMs;
   if (state.key) headers["X-Codex-Mobile-Key"] = state.key;
-  if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
+  if (options.body && !isFormData && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
   try {
     const res = await fetch(path, fetchOptions);
     if (res.status === 401) {
@@ -395,9 +400,7 @@ async function loadThread(threadId) {
   renderThreads();
   renderCurrentThread({ stickToBottom: true });
   scheduleLivePollIfNeeded(1200);
-  $("composer").querySelectorAll("textarea, button").forEach((el) => {
-    el.disabled = false;
-  });
+  updateComposerControls();
   if (window.matchMedia("(max-width: 760px)").matches) $("sidebar").classList.remove("open");
 }
 
@@ -868,28 +871,136 @@ function autoSizeTextarea(el) {
   el.style.height = `${Math.min(160, Math.max(44, el.scrollHeight))}px`;
 }
 
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes < 0) return "0 B";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function attachmentId() {
+  if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function pendingAttachmentBytes(extra = []) {
+  return state.pendingAttachments.reduce((total, item) => total + item.file.size, 0)
+    + extra.reduce((total, file) => total + file.size, 0);
+}
+
+function addAttachmentFiles(fileList) {
+  const files = Array.from(fileList || []).filter(Boolean);
+  if (!files.length) return;
+  const accepted = [];
+  for (const file of files) {
+    if (state.pendingAttachments.length + accepted.length >= state.maxUploadFiles) {
+      showError(new Error(`Too many attachments; max ${state.maxUploadFiles}`));
+      break;
+    }
+    if (pendingAttachmentBytes(accepted.concat(file)) > state.maxUploadBytes) {
+      showError(new Error(`Attachments are too large; max ${formatFileSize(state.maxUploadBytes)}`));
+      break;
+    }
+    accepted.push(file);
+  }
+  for (const file of accepted) {
+    const previewUrl = file.type && file.type.startsWith("image/") ? URL.createObjectURL(file) : "";
+    state.pendingAttachments.push({ id: attachmentId(), file, previewUrl });
+  }
+  renderAttachmentList();
+}
+
+function removeAttachment(id) {
+  const index = state.pendingAttachments.findIndex((item) => item.id === id);
+  if (index < 0) return;
+  const [item] = state.pendingAttachments.splice(index, 1);
+  if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+  renderAttachmentList();
+}
+
+function clearPendingAttachments() {
+  for (const item of state.pendingAttachments) {
+    if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+  }
+  state.pendingAttachments = [];
+  renderAttachmentList();
+}
+
+function renderAttachmentList() {
+  const list = $("attachmentList");
+  if (!state.pendingAttachments.length) {
+    list.classList.add("hidden");
+    list.innerHTML = "";
+    updateComposerControls();
+    return;
+  }
+  list.classList.remove("hidden");
+  list.innerHTML = state.pendingAttachments.map((item) => {
+    const file = item.file;
+    const thumb = item.previewUrl
+      ? `<img class="attachment-thumb" src="${escapeHtml(item.previewUrl)}" alt="">`
+      : `<div class="attachment-file-icon" aria-hidden="true"></div>`;
+    return `<div class="attachment-chip" data-attachment="${escapeHtml(item.id)}">
+      ${thumb}
+      <div class="attachment-meta">
+        <div class="attachment-name">${escapeHtml(file.name || "upload")}</div>
+        <div class="attachment-size">${escapeHtml(`${file.type || "file"} - ${formatFileSize(file.size)}`)}</div>
+      </div>
+      <button class="attachment-remove" type="button" title="Remove attachment" data-remove-attachment="${escapeHtml(item.id)}">x</button>
+    </div>`;
+  }).join("");
+  updateComposerControls();
+}
+
+function composerHasContent() {
+  return Boolean($("messageInput").value.trim() || state.pendingAttachments.length);
+}
+
+function updateComposerControls() {
+  const hasThread = Boolean(state.currentThreadId);
+  const disabled = !hasThread || state.composerBusy;
+  $("messageInput").disabled = disabled;
+  $("attachFiles").disabled = disabled;
+  $("fileInput").disabled = disabled;
+  $("sendMessage").disabled = disabled || !composerHasContent();
+}
+
+function hasTransferFiles(event) {
+  const types = Array.from((event.dataTransfer && event.dataTransfer.types) || []);
+  return types.includes("Files");
+}
+
 async function sendMessage(event) {
   event.preventDefault();
+  if (state.composerBusy) return;
   const input = $("messageInput");
   const text = input.value.trim();
-  if (!text || !state.currentThreadId) return;
-  input.value = "";
-  autoSizeTextarea(input);
-  $("sendMessage").disabled = true;
+  if ((!text && !state.pendingAttachments.length) || !state.currentThreadId) return;
+  state.composerBusy = true;
+  updateComposerControls();
   try {
-    const body = { text };
-    if (state.currentThread && state.currentThread.cwd) body.cwd = state.currentThread.cwd;
+    const body = new FormData();
+    body.append("text", text);
+    if (state.currentThread && state.currentThread.cwd) body.append("cwd", state.currentThread.cwd);
+    for (const item of state.pendingAttachments) {
+      body.append("attachments", item.file, item.file.name || "upload");
+    }
     await api(`/api/threads/${encodeURIComponent(state.currentThreadId)}/messages`, {
       method: "POST",
-      body: JSON.stringify(body),
+      body,
+      timeoutMs: 180000,
     });
+    input.value = "";
+    autoSizeTextarea(input);
+    clearPendingAttachments();
     $("connectionState").textContent = "Sent";
     scheduleCurrentThreadRefresh(600);
     scheduleLivePollIfNeeded(1200);
   } catch (err) {
     showError(err);
   } finally {
-    $("sendMessage").disabled = false;
+    state.composerBusy = false;
+    updateComposerControls();
     input.focus();
   }
 }
@@ -921,7 +1032,35 @@ function wireUi() {
   $("closeMenu").addEventListener("click", () => $("sidebar").classList.remove("open"));
   $("composer").addEventListener("submit", sendMessage);
   $("interruptTurn").addEventListener("click", interruptActiveTurn);
-  $("messageInput").addEventListener("input", (event) => autoSizeTextarea(event.target));
+  $("messageInput").addEventListener("input", (event) => {
+    autoSizeTextarea(event.target);
+    updateComposerControls();
+  });
+  $("messageInput").addEventListener("paste", (event) => {
+    const files = Array.from((event.clipboardData && event.clipboardData.files) || []);
+    if (files.length) addAttachmentFiles(files);
+  });
+  $("attachFiles").addEventListener("click", () => $("fileInput").click());
+  $("fileInput").addEventListener("change", (event) => {
+    addAttachmentFiles(event.target.files);
+    event.target.value = "";
+  });
+  $("attachmentList").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-remove-attachment]");
+    if (button) removeAttachment(button.dataset.removeAttachment);
+  });
+  $("composer").addEventListener("dragover", (event) => {
+    if (!state.currentThreadId || !hasTransferFiles(event)) return;
+    event.preventDefault();
+    $("composer").classList.add("drag-over");
+  });
+  $("composer").addEventListener("dragleave", () => $("composer").classList.remove("drag-over"));
+  $("composer").addEventListener("drop", (event) => {
+    if (!state.currentThreadId || !hasTransferFiles(event)) return;
+    event.preventDefault();
+    $("composer").classList.remove("drag-over");
+    addAttachmentFiles(event.dataTransfer.files);
+  });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible") return;
     state.pollStableCount = 0;
@@ -934,6 +1073,8 @@ function wireUi() {
 async function start() {
   wireUi();
   const config = await fetch("/api/public-config").then((res) => res.json());
+  state.maxUploadBytes = Number(config.maxUploadBytes || state.maxUploadBytes);
+  state.maxUploadFiles = Number(config.maxUploadFiles || state.maxUploadFiles);
   if (config.authRequired && !state.key) {
     showLogin();
     return;
