@@ -564,3 +564,12 @@
   - `PROJECT_CONTEXT.md` documents compact thumbnail rendering and the refined command-card retention rule.
 - Validation:
   - `npm.cmd run check` passed.
+
+## 2026-05-03 Center Image Thumbnails
+
+- User-reported issue:
+  - Single image thumbnails were left-aligned inside the message body, which looked visually unbalanced.
+- Changes:
+  - `public/styles.css` now centers `.input-image` thumbnails with horizontal auto margins.
+  - Image captions are centered under thumbnails.
+  - `PROJECT_CONTEXT.md` records that user-message images should render as compact centered thumbnails.

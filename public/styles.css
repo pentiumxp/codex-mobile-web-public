@@ -610,11 +610,12 @@ textarea {
 }
 
 .input-image {
-  margin: 8px 0 0;
+  margin: 8px auto 0;
   display: grid;
   gap: 6px;
   width: fit-content;
   max-width: 100%;
+  justify-items: center;
 }
 
 .input-image img {
@@ -634,6 +635,10 @@ textarea {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.35;
+}
+
+.input-image figcaption {
+  text-align: center;
 }
 
 .input-attachment {
