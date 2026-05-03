@@ -639,15 +639,14 @@ textarea {
 }
 
 .composer-controls {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(92px, 1fr) minmax(86px, 0.95fr) max-content;
   align-items: stretch;
   gap: 6px;
 }
 
 .composer-select-wrap {
-  flex: 1 1 96px;
-  min-width: 92px;
+  min-width: 0;
   display: block;
 }
 
@@ -681,9 +680,9 @@ textarea {
 }
 
 .quota-usage {
-  flex: 0 0 auto;
-  min-width: 52px;
+  min-width: 54px;
   min-height: 28px;
+  justify-self: end;
   display: flex;
   align-items: center;
   justify-content: center;

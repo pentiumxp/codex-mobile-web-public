@@ -166,31 +166,32 @@ function formatQuotaReset(seconds) {
   return date.toLocaleString([], { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
-function renderQuotaWindow(elementId, label, windowInfo, title) {
-  const el = $(elementId);
-  if (!el) return;
-  if (!windowInfo) {
-    el.textContent = `${label} --`;
-    el.title = `${title} unavailable`;
-    el.classList.add("unknown");
-    return;
-  }
+function quotaRemainingText(windowInfo) {
+  if (!windowInfo) return "--";
   const used = clampPercent(windowInfo.usedPercent);
   const remaining = clampPercent(100 - used);
-  const remainingText = `${Math.round(remaining)}%`;
+  return `${Math.round(remaining)}%`;
+}
+
+function quotaTitle(label, windowInfo) {
+  if (!windowInfo) return `${label} quota remaining unavailable`;
+  const used = clampPercent(windowInfo.usedPercent);
   const resetText = formatQuotaReset(windowInfo.resetsAt);
-  el.textContent = `${label} ${remainingText}`;
-  el.title = [
-    `${title}: ${remainingText}`,
+  return [
+    `${label} quota remaining: ${quotaRemainingText(windowInfo)}`,
     `used: ${Math.round(used)}%`,
     resetText ? `resets: ${resetText}` : "",
   ].filter(Boolean).join("; ");
-  el.classList.remove("unknown");
 }
 
 function renderQuotaUsage() {
-  renderQuotaWindow("quotaUsageFiveHour", "5H", fiveHourRateLimit(state.rateLimits), "5-hour quota remaining");
-  renderQuotaWindow("quotaUsageWeekly", "\u5468", weeklyRateLimit(state.rateLimits), "Weekly quota remaining");
+  const el = $("quotaUsage");
+  if (!el) return;
+  const fiveHour = fiveHourRateLimit(state.rateLimits);
+  const weekly = weeklyRateLimit(state.rateLimits);
+  el.textContent = `${quotaRemainingText(fiveHour)} | ${quotaRemainingText(weekly)}`;
+  el.title = `${quotaTitle("5-hour", fiveHour)} | ${quotaTitle("weekly", weekly)}`;
+  el.classList.toggle("unknown", !fiveHour && !weekly);
 }
 
 function normalizeFsPath(value) {
@@ -423,6 +424,51 @@ function visibleItemSignature(item) {
     summary: Array.isArray(item.summary) ? item.summary : [],
     mobileNotice: item.mobileNotice || "",
   };
+}
+
+function itemVisibleWeight(item) {
+  const signature = visibleItemSignature(item);
+  return signature ? JSON.stringify(signature).length : 0;
+}
+
+function turnVisibleWeight(turn) {
+  const items = turn && Array.isArray(turn.items) ? turn.items : [];
+  return items.reduce((total, item) => total + itemVisibleWeight(item), 0);
+}
+
+function mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) {
+  if (!existingTurn) return incomingTurn;
+  if (!incomingTurn) return existingTurn;
+  const existingItems = Array.isArray(existingTurn.items) ? existingTurn.items : [];
+  const incomingHasItems = Array.isArray(incomingTurn.items);
+  const existingWeight = turnVisibleWeight(existingTurn);
+  const incomingWeight = incomingHasItems ? turnVisibleWeight(incomingTurn) : -1;
+  const merged = Object.assign({}, existingTurn, incomingTurn);
+  if (!incomingHasItems || existingWeight > incomingWeight) {
+    merged.items = existingItems;
+  }
+  return merged;
+}
+
+function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
+  if (!existingThread || !incomingThread || existingThread.id !== incomingThread.id) return incomingThread;
+  const existingTurns = Array.isArray(existingThread.turns) ? existingThread.turns : [];
+  const incomingTurns = Array.isArray(incomingThread.turns) ? incomingThread.turns : null;
+  const existingById = new Map(existingTurns.map((turn) => [turn.id, turn]));
+  const merged = Object.assign({}, existingThread, incomingThread);
+  if (!incomingTurns) return merged;
+  merged.turns = incomingTurns.map((incomingTurn) => {
+    const existingTurn = existingById.get(incomingTurn.id);
+    return existingTurn ? mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) : incomingTurn;
+  });
+  const incomingIds = new Set(merged.turns.map((turn) => turn && turn.id).filter(Boolean));
+  for (const existingTurn of existingTurns) {
+    if (!existingTurn || incomingIds.has(existingTurn.id)) continue;
+    if (existingTurn.id === state.activeTurnId || (!isTurnComplete(existingTurn) && turnVisibleWeight(existingTurn) > 0)) {
+      merged.turns.push(existingTurn);
+    }
+  }
+  return merged;
 }
 
 function conversationRenderSignature(thread) {
@@ -767,7 +813,7 @@ async function loadThread(threadId) {
     if (state.threadLoadController === controller) state.threadLoadController = null;
   }
   if (seq !== state.threadLoadSeq || state.currentThreadId !== threadId) return;
-  state.currentThread = result.thread;
+  state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
   localStorage.setItem(STORAGE_THREAD_ID, threadId);
   renderComposerSettings();
   syncActiveTurnFromThread();
@@ -784,7 +830,7 @@ async function refreshCurrentThread() {
   const seq = state.threadLoadSeq;
   const result = await api(`/api/threads/${encodeURIComponent(threadId)}`, { timeoutMs: 20000 });
   if (state.currentThreadId !== threadId || seq !== state.threadLoadSeq) return;
-  state.currentThread = result.thread;
+  state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
   renderComposerSettings();
   syncActiveTurnFromThread();
   renderThreads();
@@ -1435,7 +1481,7 @@ function applyNotification(method, params) {
   }
   if (method === "turn/completed") {
     const turn = ensureTurn(params.turn.id);
-    Object.assign(turn, params.turn);
+    Object.assign(turn, mergeTurnPreservingVisibleItems(turn, params.turn));
     removeOperationalItemsFromTurn(turn);
     state.activeTurnId = "";
     $("interruptTurn").disabled = true;

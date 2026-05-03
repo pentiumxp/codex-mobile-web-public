@@ -47,11 +47,12 @@ This workspace owns the standalone Codex Mobile Web app.
 - Web Search items are rendered as compact live operation cards like command/tool calls, not expanded structured payloads.
 - Reasoning items are not rendered in the conversation and reasoning deltas must not remove or replace live command/file/tool operation cards.
 - Conversation rendering uses a visible-content signature and a lightweight keyed DOM patcher to avoid replacing the whole conversation when polling/status refreshes only change local text, item status, or operation cards; this prevents no-op and broad refresh flicker.
+- Turn completion and thread refresh merges must not replace locally streamed visible turn items with an empty or shorter server snapshot; preserve local visible items until an equal or fuller snapshot arrives.
 - Uploaded images are sent as app-server `localImage` input items.
 - Uploaded non-image files are saved locally and referenced in message text by absolute path.
 - The composer exposes compact side-by-side per-message model and reasoning effort selectors; blank/default values follow the current thread or `%USERPROFILE%\.codex\config.toml`.
-- The composer shows 5-hour and weekly quota remaining as two separate compact boxes next to the model/reasoning selectors after app-server emits `account/rateLimits/updated`; the 5-hour box is labeled `5H`, the weekly box is labeled `周`, and each displays `100 - usedPercent` from its matching 300-minute or 10080-minute window.
-- The model and reasoning selectors must keep a readable minimum width; quota boxes may wrap before shrinking those selectors.
+- The composer shows 5-hour and weekly quota remaining as one compact right-aligned numeric indicator next to the model/reasoning selectors after app-server emits `account/rateLimits/updated`; it displays `<5-hour remaining> | <weekly remaining>` from the matching 300-minute and 10080-minute windows.
+- The model, reasoning, and quota controls should stay on one line while keeping the model/reasoning selectors readable; the quota column must not starve the reasoning selector width.
 - When no thread is selected, the main pane lists recent workspaces and recent threads as shortcuts.
 - Thread detail reads prefer app-server `thread/turns/list` plus local `state_5.sqlite` metadata instead of `thread/read includeTurns:true`, because large historical rollouts can make `thread/read` several seconds slower.
 - Thread switching in the browser uses request sequencing and cancels the previous detail fetch so stale slow responses cannot overwrite the current selection.

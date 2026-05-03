@@ -421,17 +421,17 @@
 
 - User-requested adjustments:
   - Show 5-hour and weekly quota remaining percentages to the right of the model/reasoning selectors, with 5-hour remaining before weekly remaining.
-  - Render the 5-hour and weekly quota values as two separate boxes labeled `5H` and `周`, not a combined `5h余` / `周余` string.
+  - Render the quota values as a single compact numeric indicator in the same line as model/reasoning, formatted as `<5-hour remaining> | <weekly remaining>`.
   - Render Web Search like a compact Command/tool operation, not as an expanded structured payload.
   - Do not pin command/file operation cards to the bottom; newer normal messages should render below them, and a newer operation should replace older operation cards.
 - Changes:
   - `server.js` now stores compact `account/rateLimits/updated` notifications and exposes them through `/api/status` and `/api/public-config`.
   - `public/app.js` selects the 5-hour quota window from the 300-minute `primary` rate-limit window and the weekly quota window from the 10080-minute `secondary` rate-limit window when present, displaying remaining percentages as `100 - usedPercent`.
-  - `public/app.js` updates the two quota boxes independently through `#quotaUsageFiveHour` and `#quotaUsageWeekly`.
+  - `public/app.js` updates one compact `#quotaUsage` indicator with 5-hour and weekly remaining values separated by `|`.
   - `server.js` and `public/app.js` now classify Web Search payloads and rollout `web_search_*` events as compact `Web Search` operation cards.
   - `public/app.js` now keeps only the latest operation card but renders it in source order inside the turn instead of appending it to the bottom.
-  - `public/index.html` and `public/styles.css` add two compact quota indicators next to the existing selectors.
-  - `public/styles.css` now uses a wrapping flex layout for composer controls so model/reasoning selectors keep readable minimum widths; quota boxes wrap before compressing selectors.
+  - `public/index.html` and `public/styles.css` add the compact quota indicator next to the existing selectors.
+  - `public/styles.css` keeps model, reasoning, and quota controls in one row while keeping model/reasoning selectors readable.
 - Service recovery:
   - An interrupted restart left old 8787 process PID `55308` running, so new code was not loaded.
   - Stopped wrapper PID `57184` and child PID `55308`, then restarted with `start-codex-mobile-web.ps1`.
@@ -441,5 +441,22 @@
   - `git diff --check` passed with only Git line-ending warnings.
   - LAN `/api/public-config` responds at `http://192.168.10.108:8787`.
   - Authenticated `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, `lastError=null`.
-  - Status rate limit payload showed `primary.usedPercent=13` and weekly `secondary.usedPercent=80`, so Mobile Web should display about `5H 87%` and `周 20%` after status/bootstrap.
+  - Latest validation showed Mobile Web should display about `86% | 20%` after status/bootstrap.
   - Current thread detail confirmed the latest command operation remains between surrounding agent messages in source order.
+
+## 2026-05-03 Completion Refresh And Composer Layout
+
+- User-reported issues:
+  - At the end of a turn, the final streamed summary could finish line-by-line, then the screen could go black briefly before the complete content returned.
+  - The Effort selector became too narrow after adding the quota indicator.
+  - The quota indicator should stay at the far right of the selector row.
+- Likely cause for the black-screen/end-of-turn flash:
+  - `turn/completed` and the scheduled follow-up thread refresh both replaced local turn/thread state directly with the incoming payload.
+  - If the completion payload or a fast server snapshot had fewer visible `items` than the locally streamed turn, the keyed DOM patcher correctly rendered that shorter state, temporarily removing visible content until a fuller snapshot arrived.
+- Changes:
+  - `public/app.js` now computes visible item weight and merges completion/thread refresh payloads without letting empty or shorter visible item snapshots overwrite local streamed items.
+  - `public/app.js` preserves local in-progress turns if a refresh snapshot omits them.
+  - `public/styles.css` gives Model and Effort readable grid tracks and makes the quota indicator a fixed-content right-aligned column.
+- Validation:
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only Git line-ending warnings.
