@@ -2035,6 +2035,7 @@ async function sendMessage(event) {
     input.value = "";
     autoSizeTextarea(input);
     clearPendingAttachments();
+    input.blur();
     $("connectionState").textContent = "Sent";
     scheduleCurrentThreadRefresh(600);
     scheduleLivePollIfNeeded(1200);
@@ -2043,7 +2044,6 @@ async function sendMessage(event) {
   } finally {
     state.composerBusy = false;
     updateComposerControls();
-    input.focus();
   }
 }
 
