@@ -62,6 +62,8 @@ This workspace owns the standalone Codex Mobile Web app.
 - When no thread is selected, the main pane lists recent workspaces and recent threads as shortcuts.
 - Thread detail reads prefer app-server `thread/turns/list` plus local `state_5.sqlite` metadata instead of `thread/read includeTurns:true`, because large historical rollouts can make `thread/read` several seconds slower.
 - Thread switching in the browser uses request sequencing and cancels the previous detail fetch so stale slow responses cannot overwrite the current selection.
+- Thread-list refreshes also use request sequencing and cancel older list requests; loading placeholders must reset the thread-list render signature so an unchanged result can still repaint over the placeholder.
+- Workspace changes clear the current thread through the shared selection reset path, abort pending thread detail loads, and render the home/workspace shortcut view before the new list returns.
 - Mobile foreground recovery uses `visibilitychange`, `pageshow`, `focus`, and `orientationchange` to re-show the app shell, reconnect SSE if needed, and refresh current thread state after returning from external permission/input-method screens.
 - Turns show a top-right elapsed timer formatted as `本轮 HH:MM:SS`; it updates while running, uses the active/red treatment during an in-progress turn, reverts to the settled muted treatment after completion, and keeps the status label out of the timer.
 - Live reasoning does not render as a conversation row; the top-right turn timer provides the in-progress time signal.
@@ -69,7 +71,8 @@ This workspace owns the standalone Codex Mobile Web app.
 - The composer submit button follows Desktop behavior: during an active turn, an empty composer shows `Stop`; if text or attachments are present it switches back to `Send` for the new input.
 - The composer must not programmatically focus the message textarea after send, thread switch, refresh, or mobile foreground recovery; mobile keyboards/input methods should open only after the user explicitly taps the message textarea.
 - The composer attachment button should be a real file-picker label/input on mobile; do not rely only on calling `.click()` on a fully hidden file input.
-- Message entry, smooth scroll-to-bottom, and live operation removal use short motion transitions.
+- Message entry and live operation removal use short motion transitions.
+- Automatic scroll-to-bottom uses immediate scroll positioning rather than smooth scrolling, to avoid visible whole-conversation up/down motion during no-op or near-no-op refreshes.
 - Context compaction renders as the single Chinese notice `历史上下文已压缩`.
 - Thread lists hide archived/deleted/removed sessions and sessions outside Codex Desktop visible workspace roots.
 - Weak-network recovery may use `state_5.sqlite` metadata fallback, but should not resurface archived/deleted/old-workspace sessions.

@@ -639,3 +639,27 @@
   - Added a macOS implementation plan covering `CODEX_CLI_PATH`, `CODEX_HOME`, `CODEX_MUX_SCRIPT_PATH`, `CODEX_MUX_CODEX_EXE`, optional `CODEX_MUX_NODE_EXE`, stdout cleanliness, argument passthrough, and fallback native shim requirements.
   - Added a macOS verification checklist for endpoint file, mux log, Mobile Web `external-jsonl-tcp` transport, Desktop-to-Mobile live updates, Mobile-to-Desktop mid-turn sync, and endpoint cleanup.
   - The clean public release repo README was synchronized while preserving the public clone URL and `.agent-context/` ignore note.
+
+## 2026-05-04 Menu Workspace/Thread Loading Fix
+
+- User-reported issue:
+  - In the menu/sidebar workspace and thread switcher, the UI could get stuck showing `Loading thread` and the thread list would not repaint.
+  - Selecting a workspace again from the workspace select could force the list to recover.
+  - The conversation could also appear to shift upward and then downward even when visible content did not materially change.
+- Findings:
+  - `loadThreads()` directly replaced the thread list DOM with a loading placeholder but did not reset `state.renderedThreadListSignature`.
+  - If the refreshed thread data was identical to the previous rendered list, `renderThreads()` skipped repainting and left the loading placeholder on screen.
+  - Workspace shortcut and workspace select changes cleared thread state inline instead of using a shared reset path, so pending detail loads, poll timers, and home rendering could be left in inconsistent states.
+  - Automatic scroll-to-bottom used smooth scrolling, which can produce visible whole-content motion during frequent live or near-no-op refreshes.
+- Changes:
+  - Added request sequencing and abort handling for thread-list loads.
+  - Loading and error placeholders now update the thread-list render signature, so later successful results repaint even when the data is unchanged.
+  - Workspace changes now call a shared current-thread reset helper that aborts pending detail loads, clears poll/refresh timers, clears retained operation cards, resets active turn state, and renders the home view immediately.
+  - Opening the mobile menu now refreshes workspaces and threads.
+  - Thread detail load failures now render an inline retry state instead of leaving the conversation permanently in `Loading thread`.
+  - Composer controls remain disabled while a thread is loading or in a thread-load error state.
+  - Automatic bottom scrolling is now immediate and no-op guarded instead of smooth.
+- Validation:
+  - `npm.cmd run check` passed in the private workspace.
+  - `git diff --check` passed with only Git line-ending warnings.
+  - The same front-end fix was synchronized to the clean public release workspace, where `npm.cmd run check`, `git diff --check`, and the public privacy scan passed.
