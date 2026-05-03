@@ -334,8 +334,18 @@ textarea {
   transform: translateY(0);
 }
 
+.turn-timer.active {
+  color: #fff1ef;
+  background: rgba(241, 135, 125, 0.16);
+  border-color: rgba(241, 135, 125, 0.58);
+  box-shadow: 0 8px 28px rgba(241, 135, 125, 0.16);
+}
+
 .turn-timer.settled {
   color: var(--muted);
+  background: rgba(13, 15, 16, 0.82);
+  border-color: var(--line-soft);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.24);
 }
 
 .empty-state {

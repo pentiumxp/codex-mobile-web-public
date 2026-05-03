@@ -33,7 +33,7 @@ This workspace owns the standalone Codex Mobile Web app.
 - `codex-app-server-mux.js` can act as the shared bridge: Desktop launches generated `codex-app-server-mux.exe` via `CODEX_CLI_PATH`, the shim starts `node codex-app-server-mux.js`, the mux starts the real app-server over stdio, and Mobile Web connects to the mux endpoint file.
 - `start-codex-desktop-shared.ps1` is the reversible Desktop launcher for that bridge; it builds the shim exe from `codex-app-server-mux-shim.cs` when needed and sets `CODEX_CLI_PATH` only for the launched Desktop process.
 - When Mobile Web connects to an already-initialized shared app-server through mux, `initialize` may return `Already initialized`; this is valid for the second client and should be treated as a usable shared connection.
-- When Mobile Web sends extra input while a turn is already active, the browser posts the active turn id and `server.js` can emit a mux-local `mux/userMessage` notification. `codex-app-server-mux.js` converts that into an `item/completed` `userMessage` broadcast so Codex Desktop can render the user's mid-turn Web App input live. `server.js` only sends this extension when the mux endpoint advertises `capabilities.mobileUserMessageEcho=true`, so old running mux processes must be restarted before the fix activates.
+- When Mobile Web sends extra input while a turn is already active, the browser posts the active turn id and `server.js` should use app-server `turn/steer` with `expectedTurnId` so Desktop and Mobile stay on the same active turn stream. The older mux-local `mux/userMessage` synthetic echo remains only as a fallback when an older app-server does not support `turn/steer`.
 - Windows Codex Desktop runs its own stdio app-server unless launched through the shared mux path.
 
 ## Product Rules
@@ -42,7 +42,7 @@ This workspace owns the standalone Codex Mobile Web app.
 - Historical command/tool/file-change payloads are hidden.
 - Only the latest turn's latest live operation can render as a compact status card.
 - If app-server `thread/read` omits operation items, Mobile Web may synthesize one compact latest operation card from the thread rollout JSONL tail (`exec_command_end`, `patch_apply_end`, `function_call`, `custom_tool_call`, or Web Search events), without command output or diffs.
-- Live operation cards stay in source order within the turn; newer normal content renders below them. When a newer operation arrives, an older visible operation card may be retained until it leaves the conversation viewport to avoid visible removal flicker, then it is pruned.
+- Live operation cards stay in source order within the turn; newer normal content renders below them. When a newer operation arrives, at most one older visible operation card may be retained until it leaves the conversation viewport to avoid visible removal flicker; retained operation cards must not stack into multiple old command/file cards.
 - File-change cards show compact file names only, not diffs or full change payloads.
 - Web Search items are rendered as compact live operation cards like command/tool calls, not expanded structured payloads.
 - Reasoning items are not rendered in the conversation and reasoning deltas must not remove or replace live command/file/tool operation cards.
@@ -59,7 +59,7 @@ This workspace owns the standalone Codex Mobile Web app.
 - Thread detail reads prefer app-server `thread/turns/list` plus local `state_5.sqlite` metadata instead of `thread/read includeTurns:true`, because large historical rollouts can make `thread/read` several seconds slower.
 - Thread switching in the browser uses request sequencing and cancels the previous detail fetch so stale slow responses cannot overwrite the current selection.
 - Mobile foreground recovery uses `visibilitychange`, `pageshow`, `focus`, and `orientationchange` to re-show the app shell, reconnect SSE if needed, and refresh current thread state after returning from external permission/input-method screens.
-- Turns show a top-right elapsed timer formatted as `本轮 HH:MM:SS`; it updates while running and keeps the status label out of the timer.
+- Turns show a top-right elapsed timer formatted as `本轮 HH:MM:SS`; it updates while running, uses the active/red treatment during an in-progress turn, reverts to the settled muted treatment after completion, and keeps the status label out of the timer.
 - Live reasoning does not render as a conversation row; the top-right turn timer provides the in-progress time signal.
 - The top conversation bar is intentionally compact: it shows the thread title, but not cwd or thread status metadata.
 - The composer submit button follows Desktop behavior: during an active turn, an empty composer shows `Stop`; if text or attachments are present it switches back to `Send` for the new input.

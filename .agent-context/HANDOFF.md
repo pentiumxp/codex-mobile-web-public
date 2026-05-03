@@ -529,3 +529,25 @@
 - Validation:
   - `npm.cmd run check` passed.
   - `git diff --check` passed with only Git line-ending warnings.
+
+## 2026-05-03 Active Turn Steering And Operation Retention Cap
+
+- User-reported issues:
+  - During an active turn, Mobile Web input and live guidance output were not consistently mirrored in Codex Desktop.
+  - The top-right turn timer should use red/active styling while a turn is running, then revert to the settled muted styling after completion.
+  - The previous viewport-based operation retention could stack multiple old Command cards during consecutive command updates.
+- Findings:
+  - The active-turn message path was using `turn/start` plus a mux-local synthetic `mux/userMessage` echo.
+  - Current app-server supports `turn/steer` with `expectedTurnId`, which is the correct API for sending extra input into an already-running turn.
+- Changes:
+  - `server.js` now uses `turn/steer` when `activeTurnId` is present, returning immediately on success.
+  - The older `mux/userMessage` synthetic echo remains only as a fallback if `turn/steer` is unavailable.
+  - `public/app.js` now adds an `active` class to the top-right timer while the latest turn is running and removes it when settled/hidden.
+  - `public/styles.css` gives `.turn-timer.active` the red active treatment while preserving the muted settled treatment.
+  - `public/app.js` now caps retained old operation cards to one per thread/turn, so consecutive Command/file operation updates do not stack multiple old cards.
+- Runtime after restart:
+  - Mobile Web wrapper PID `29852`, Node/listener PID `49296`.
+  - `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, `lastError=null`.
+- Validation:
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only Git line-ending warnings.

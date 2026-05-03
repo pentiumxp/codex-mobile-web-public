@@ -1679,6 +1679,24 @@ async function handleApi(req, res) {
       sendJson(res, 400, { error: "Message text or attachment is required" });
       return;
     }
+    if (body.activeTurnId) {
+      try {
+        const result = await codex.request("turn/steer", {
+          threadId,
+          input,
+          expectedTurnId: String(body.activeTurnId),
+        }, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+        sendJson(res, 200, result);
+        return;
+      } catch (err) {
+        if (!/method not found|unknown method|not found/i.test(err.message || "")) throw err;
+        codex.notifyMuxUserMessage({
+          threadId,
+          turnId: String(body.activeTurnId),
+          input,
+        });
+      }
+    }
     try {
       await codex.request("thread/resume", {
         threadId,
@@ -1697,13 +1715,6 @@ async function handleApi(req, res) {
     if (body.model) params.model = body.model;
     if (body.effort) params.effort = body.effort;
     const result = await codex.request("turn/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
-    if (body.activeTurnId) {
-      codex.notifyMuxUserMessage({
-        threadId,
-        turnId: String(body.activeTurnId),
-        input,
-      });
-    }
     sendJson(res, 200, result);
     return;
   }

@@ -41,6 +41,7 @@ const state = {
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
+const MAX_RETAINED_OPERATIONS_PER_TURN = 1;
 const STORAGE_THREAD_ID = "codexMobileCurrentThreadId";
 const STORAGE_MODEL = "codexMobileSelectedModel";
 const STORAGE_EFFORT = "codexMobileSelectedEffort";
@@ -410,6 +411,25 @@ function scheduleLeavingCleanup(delay = 1200) {
   }, delay);
 }
 
+function trimRetainedOperationsForTurn(threadId, turnId, keepKey = "") {
+  const retained = Array.from(state.leavingItems.entries())
+    .filter(([, value]) => value
+      && value.keepUntilOutOfView
+      && value.threadId === threadId
+      && value.turnId === turnId)
+    .sort((a, b) => (Number(b[1].createdAt || 0) - Number(a[1].createdAt || 0)));
+  if (keepKey && MAX_RETAINED_OPERATIONS_PER_TURN <= 1) {
+    retained.forEach(([key]) => {
+      if (key !== keepKey) state.leavingItems.delete(key);
+    });
+    return;
+  }
+  retained.forEach(([key], index) => {
+    if (key === keepKey) return;
+    if (index >= MAX_RETAINED_OPERATIONS_PER_TURN) state.leavingItems.delete(key);
+  });
+}
+
 function rememberLeavingOperation(turn, item, index, options = {}) {
   if (!turn || !item || !isLatestTurn(turn)) return;
   const keepUntilOutOfView = Boolean(options.keepUntilOutOfView);
@@ -423,13 +443,16 @@ function rememberLeavingOperation(turn, item, index, options = {}) {
   const type = item.type || "item";
   const now = Date.now();
   const transitionClass = keepUntilOutOfView ? "retained-operation" : "entry-leave";
+  const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
+  const turnId = turn.id;
   state.leavingItems.set(key, {
-    threadId: state.currentThreadId || (state.currentThread && state.currentThread.id) || "",
-    turnId: turn.id,
+    threadId,
+    turnId,
     sourceIndex: index,
     order: 0,
     renderKey: key,
     keepUntilOutOfView,
+    createdAt: now,
     minExpiresAt: keepUntilOutOfView ? now + 450 : 0,
     maxExpiresAt: keepUntilOutOfView ? now + 30000 : 0,
     expiresAt: now + (keepUntilOutOfView ? 30000 : 180),
@@ -438,6 +461,7 @@ function rememberLeavingOperation(turn, item, index, options = {}) {
     ${body}
   </section>`,
   });
+  if (keepUntilOutOfView) trimRetainedOperationsForTurn(threadId, turnId, key);
   setTimeout(() => scheduleRenderCurrentThread(), keepUntilOutOfView ? 480 : 190);
 }
 
@@ -712,16 +736,17 @@ function updateTurnTimer() {
     if (finalSeconds != null) {
       el.textContent = `${turnLabel} ${formatElapsedTime(finalSeconds)}`;
       el.classList.add("visible", "settled");
+      el.classList.remove("active");
       el.setAttribute("aria-hidden", "false");
     } else {
       el.textContent = `${turnLabel} 00:00:00`;
-      el.classList.remove("visible", "settled");
+      el.classList.remove("visible", "settled", "active");
       el.setAttribute("aria-hidden", "true");
     }
     return;
   }
   el.textContent = `${turnLabel} ${formatElapsedTime(turnElapsedSeconds(turn))}`;
-  el.classList.add("visible");
+  el.classList.add("visible", "active");
   el.classList.remove("settled");
   el.setAttribute("aria-hidden", "false");
 }
