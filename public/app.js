@@ -16,6 +16,8 @@ const state = {
   resumeTimer: null,
   resumeVisualTimers: [],
   resumeSeq: 0,
+  visualRecoveryTimers: [],
+  visualRecoverySeq: 0,
   pollTimer: null,
   pollStableCount: 0,
   lastThreadSignature: "",
@@ -683,6 +685,30 @@ function hasMatchingIncomingUserMessage(existingItem, incomingItems) {
   return (incomingItems || []).some((incomingItem) => userMessagesLikelySame(existingItem, incomingItem));
 }
 
+function comparableVisibleTextItem(item) {
+  return Boolean(item && (item.type === "agentMessage" || item.type === "plan"));
+}
+
+function comparableVisibleText(item) {
+  if (!comparableVisibleTextItem(item)) return "";
+  return normalizeComparableText(item.text || "");
+}
+
+function visibleTextItemsLikelySame(existingItem, incomingItem) {
+  if (!comparableVisibleTextItem(existingItem) || !comparableVisibleTextItem(incomingItem)) return false;
+  if (existingItem.type !== incomingItem.type) return false;
+  const existingText = comparableVisibleText(existingItem);
+  const incomingText = comparableVisibleText(incomingItem);
+  if (!existingText || !incomingText) return false;
+  return incomingText === existingText
+    || (incomingText.length >= existingText.length && incomingText.startsWith(existingText));
+}
+
+function hasMatchingIncomingVisibleItem(existingItem, incomingItems) {
+  if (hasMatchingIncomingUserMessage(existingItem, incomingItems)) return true;
+  return (incomingItems || []).some((incomingItem) => visibleTextItemsLikelySame(existingItem, incomingItem));
+}
+
 function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
   if (!existingItem || !incomingItem) return incomingItem || existingItem;
   const existingWeight = itemVisibleWeight(existingItem);
@@ -715,7 +741,7 @@ function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserve
     if (id && incomingById.has(id)) {
       merged.push(mergeItemPreservingVisibleFields(existingItem, incomingById.get(id)));
       added.add(id);
-    } else if (hasMatchingIncomingUserMessage(existingItem, incomingItems)) {
+    } else if (hasMatchingIncomingVisibleItem(existingItem, incomingItems)) {
       if (id) added.add(id);
     } else if (shouldPreserveLocalOnlyItem(existingItem, preserveLocalVisible)) {
       merged.push(existingItem);
@@ -2219,6 +2245,9 @@ function upsertItem(turnId, item) {
   if (item.type === "userMessage") {
     turn.items = turn.items.filter((existing) => !isMuxUserMessage(existing) || !userMessagesLikelySame(existing, item));
   }
+  if (item.type === "agentMessage" || item.type === "plan") {
+    turn.items = turn.items.filter((existing) => existing.id === item.id || !visibleTextItemsLikelySame(existing, item));
+  }
   if (isOperationalItem(item)) {
     turn.items.forEach((existing, existingIndex) => {
       if (isOperationalItem(existing) && existing.id !== item.id) {
@@ -2483,23 +2512,66 @@ function clearResumeVisualTimers() {
   state.resumeVisualTimers = [];
 }
 
-function forceVisualRecovery(reason = "resume") {
+function clearVisualRecoveryTimers() {
+  for (const timer of state.visualRecoveryTimers) clearTimeout(timer);
+  state.visualRecoveryTimers = [];
+}
+
+function forceVisualRecovery(reason = "resume", options = {}) {
   updateViewportVars();
   if (!state.key) return;
   const app = $("app");
   const login = $("login");
   if (!app || !login) return;
+  const root = document.documentElement;
+  const body = document.body;
+  const heavy = options.heavy !== false;
   login.classList.add("hidden");
   app.classList.remove("hidden");
-  app.classList.add("resume-repaint");
+  if (heavy) {
+    root.classList.add("visual-recovering");
+    if (body) body.classList.add("visual-recovering");
+    app.classList.add("resume-repaint");
+  }
   app.dataset.resumeReason = reason;
+  const z = state.visualRecoverySeq % 2 ? "0.01px" : "0px";
+  if (heavy) {
+    app.style.transform = `translate3d(0, 0, ${z})`;
+    app.style.webkitTransform = `translate3d(0, 0, ${z})`;
+  }
   app.getBoundingClientRect();
-  if (state.currentThread || state.threads.length) renderCurrentThread();
+  if (options.render !== false && (state.currentThread || state.threads.length)) renderCurrentThread();
   updateComposerHeightVar();
   window.requestAnimationFrame(() => {
-    app.classList.remove("resume-repaint");
-    delete app.dataset.resumeReason;
+    app.getBoundingClientRect();
+    window.requestAnimationFrame(() => {
+      if (heavy) {
+        app.classList.remove("resume-repaint");
+        root.classList.remove("visual-recovering");
+        if (body) body.classList.remove("visual-recovering");
+      }
+      app.style.removeProperty("transform");
+      app.style.removeProperty("-webkit-transform");
+      delete app.dataset.resumeReason;
+    });
   });
+}
+
+function scheduleVisualRecovery(reason = "visual", delay = 0, options = {}) {
+  if (document.visibilityState === "hidden") return;
+  const seq = ++state.visualRecoverySeq;
+  clearVisualRecoveryTimers();
+  const delays = options.delays || [delay, delay + 80, delay + 240, delay + 700, delay + 1600, delay + 3200];
+  for (const visualDelay of delays) {
+    state.visualRecoveryTimers.push(setTimeout(() => {
+      if (seq === state.visualRecoverySeq && document.visibilityState !== "hidden") {
+        forceVisualRecovery(reason, {
+          render: options.render !== false,
+          heavy: options.heavy !== false,
+        });
+      }
+    }, Math.max(0, visualDelay)));
+  }
 }
 
 function scheduleMobileResume(reason = "resume", delay = 80) {
@@ -2959,17 +3031,25 @@ function wireUi() {
   document.addEventListener("visibilitychange", () => scheduleMobileResume("visibility"));
   window.addEventListener("pageshow", () => scheduleMobileResume("pageshow"));
   window.addEventListener("focus", () => scheduleMobileResume("focus", 150));
+  window.addEventListener("blur", () => scheduleVisualRecovery("window-blur", 180, { render: false }));
+  document.addEventListener("focusin", () => scheduleVisualRecovery("focusin", 40, { render: false, heavy: false, delays: [40, 180] }));
+  document.addEventListener("focusout", () => scheduleVisualRecovery("focusout", 160, { render: false, heavy: false, delays: [160, 420] }));
   window.addEventListener("orientationchange", () => scheduleMobileResume("orientation", 250));
   window.addEventListener("resize", () => {
     updateViewportVars();
     updateComposerHeightVar();
+    scheduleVisualRecovery("resize", 40, { render: false, heavy: false, delays: [40, 180] });
   });
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", () => {
       updateViewportVars();
       updateComposerHeightVar();
+      scheduleVisualRecovery("visual-viewport", 40, { render: false, heavy: false, delays: [40, 180, 520] });
     });
-    window.visualViewport.addEventListener("scroll", () => updateViewportVars());
+    window.visualViewport.addEventListener("scroll", () => {
+      updateViewportVars();
+      scheduleVisualRecovery("visual-viewport-scroll", 40, { render: false, heavy: false, delays: [40, 180] });
+    });
   }
 }
 

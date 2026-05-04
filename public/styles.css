@@ -123,8 +123,28 @@ textarea {
 
 .app.resume-repaint {
   transform: translateZ(0);
+  -webkit-transform: translateZ(0);
   backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
   contain: layout paint;
+  will-change: transform, opacity;
+}
+
+html.visual-recovering,
+body.visual-recovering {
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+html.visual-recovering body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.001);
 }
 
 .sidebar {
