@@ -1242,6 +1242,7 @@
   - `server.js` now returns sanitized Web Push send failure details from `/api/push/test`.
   - `public/app.js` now reports test-send failure explicitly instead of showing `No push subscription` when a subscription exists but delivery fails.
   - Turn-completed Web Push payloads now use the thread title as the notification title and body `<thread-id> · This turn 已结束 · <local time>`.
+  - Notification click targets include `/?thread=<threadId>`, and the browser now loads that thread directly from the URL even when it is not present in the first rendered thread list.
   - `README.md` documents Web Push setup, iOS Home Screen requirements, local runtime files, and the non-localhost VAPID subject requirement.
 - Runtime state after restart:
   - Codex Mobile Web wrapper PID `48188`, Node PID `54184`.

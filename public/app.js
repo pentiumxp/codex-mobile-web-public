@@ -1531,11 +1531,12 @@ function renderThreads(result = null) {
 }
 
 async function restoreThreadSelection() {
-  if (state.currentThread || !state.threads.length) return;
+  if (state.currentThread) return;
   const savedThreadId = localStorage.getItem(STORAGE_THREAD_ID) || "";
+  if (!state.threads.length && !savedThreadId) return;
   const saved = savedThreadId && state.threads.find((thread) => thread.id === savedThreadId);
   const active = state.threads.find((thread) => isRunningStatus(thread.status));
-  const target = saved || active;
+  const target = saved || (savedThreadId ? { id: savedThreadId } : active);
   if (!target) return;
   try {
     await loadThread(target.id);
