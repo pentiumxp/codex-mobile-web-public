@@ -1181,3 +1181,79 @@
   - Public checkout: `npm.cmd test`, `npm.cmd run check`, `npm.cmd run check:macos`, and `git diff --check` passed with line-ending warnings only.
 - Activation note:
   - This is a static frontend/CSS change. Existing browser/mobile tabs need a page refresh to load the fixed `public/app.js` and `public/styles.css`; the Node server does not need to restart.
+
+## 2026-05-04 Late Mux User Echo Duplicate Guard
+
+- User-reported issue:
+  - The same Mobile Web `You` message could still appear twice, for example the text `主要是因为刚才Tailscale 没有直连，现在已经好了。`.
+- Diagnosis:
+  - The authenticated thread history for Hermes thread `019dde72-2de7-7542-b43f-d7fa0d98fb21` contained only one real `userMessage` for that text.
+  - The duplicate was therefore a browser-local merge artifact, not a double write into app-server history.
+  - Existing frontend logic handled the order `mux-user-*` echo first, real `userMessage` later. It did not handle the reverse order where the real item arrived first and a replayed or delayed `mux-user-*` echo arrived later.
+- Code change:
+  - `public/app.js` now detects a `mux-user-*` user-message echo that is shadowed by a matching real `userMessage` in the same item list.
+  - Late shadowed mux echoes are dropped in `upsertItem`.
+  - Thread refresh merges also remove shadowed mux echoes after merging existing and incoming items, covering replay/order variations.
+  - The same fix was applied to the clean public release checkout at `C:\Users\xuxin\Documents\codex-mobile-web-public\public\app.js`.
+- Validation:
+  - Private checkout: `npm.cmd run check`, `npm.cmd run check:macos`, and `git diff --check` passed with line-ending warnings only.
+  - Public checkout: `npm.cmd test`, `npm.cmd run check`, `npm.cmd run check:macos`, and `git diff --check` passed with line-ending warnings only.
+- Activation note:
+  - This is a static frontend change. Existing browser/mobile tabs need a page refresh to load the fixed `public/app.js`; the Node server does not need to restart.
+
+## 2026-05-05 Web Push Port Correction
+
+- User requested restoring Codex Mobile Web to local port `8787`.
+- Runtime state after correction:
+  - Codex Mobile Web wrapper PID `60628`, Node PID `16148`.
+  - Codex Mobile Web listens on `0.0.0.0:8787`.
+  - Hermes Web currently listens on `0.0.0.0:8797` with Node PID `42396`.
+  - Tailscale Serve maps `https://gmk.tail62e8ce.ts.net:8443/` to `http://127.0.0.1:8787`.
+  - Tailscale Serve root `https://gmk.tail62e8ce.ts.net/` remains mapped to Hermes Web at `http://127.0.0.1:8797`.
+- Code/doc state:
+  - `server.js`, `start-codex-mobile-web.ps1`, `start-codex-mobile-web-macos.sh`, `README.md`, and `PROJECT_CONTEXT.md` have been restored to default Codex Mobile Web port `8787`.
+  - Web Push work remains in progress in the working tree and is not yet committed.
+
+## 2026-05-05 iOS Dynamic Island Safe Area
+
+- User-reported issue:
+  - The top menu bar occupied the iPhone Dynamic Island/status-bar area and the menu button became hard or impossible to tap.
+- Changes:
+  - `public/index.html` changed `apple-mobile-web-app-status-bar-style` from `black-translucent` to `black`.
+  - `public/styles.css` now applies `env(safe-area-inset-top, 0px)` to the top conversation bar.
+  - `public/styles.css` also applies the same top safe-area inset to the mobile sidebar, so the menu page header does not start under the status bar.
+- Activation note:
+  - This is a static frontend change. Existing phone/PWA sessions need a page refresh or app relaunch to load the updated HTML/CSS.
+
+## 2026-05-05 Web Push Apple BadJwtToken Fix
+
+- User-reported issue:
+  - Notifications were enabled and a test notification was sent from Mobile Web, but no notification arrived.
+- Diagnosis:
+  - Runtime subscription existed in `%USERPROFILE%\.codex-mobile-web\web-push-subscriptions.json`.
+  - The stored endpoint host was Apple Push (`web.push.apple.com`).
+  - Authenticated `POST /api/push/test` initially returned `sent=0`, `failed=1`.
+  - Direct diagnostic send showed Apple returned HTTP `403` with reason `BadJwtToken`.
+  - The VAPID subject in `%USERPROFILE%\.codex-mobile-web\web-push-vapid.json` was `mailto:codex-mobile-web@localhost`.
+  - Reusing the same VAPID key with a non-localhost subject was accepted by Apple with HTTP `201`.
+- Changes:
+  - `server.js` default Web Push VAPID subject is now `mailto:codex-mobile-web@example.com` instead of a localhost address.
+  - `server.js` automatically repairs existing runtime VAPID files whose subject contains `localhost`, while preserving the same public/private key pair.
+  - `server.js` now returns sanitized Web Push send failure details from `/api/push/test`.
+  - `public/app.js` now reports test-send failure explicitly instead of showing `No push subscription` when a subscription exists but delivery fails.
+  - Turn-completed Web Push payloads now use the thread title as the notification title and body `<thread-id> · This turn 已结束 · <local time>`.
+  - `README.md` documents Web Push setup, iOS Home Screen requirements, local runtime files, and the non-localhost VAPID subject requirement.
+- Runtime state after restart:
+  - Codex Mobile Web wrapper PID `48188`, Node PID `54184`.
+  - Codex Mobile Web listens on `0.0.0.0:8787`.
+  - Authenticated `GET /api/status` through `https://gmk.tail62e8ce.ts.net:8443` returned `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, `lastError=null`.
+  - Authenticated `GET /api/push/vapid-public-key` returned subject `mailto:codex-mobile-web@example.com`.
+  - Authenticated `POST /api/push/test` returned `sent=1`, `failed=0`, `removed=0`.
+  - `%USERPROFILE%\.codex-mobile-web\web-push-vapid.json` has been repaired to the non-localhost subject; do not commit or copy the raw key material.
+- Validation:
+  - `node --check server.js` passed.
+  - `node --check public/app.js` passed.
+  - `node --check public/service-worker.js` passed.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with line-ending warnings only.

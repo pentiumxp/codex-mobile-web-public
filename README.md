@@ -261,11 +261,11 @@ Behavior:
 ## Interface Notes
 
 - Home view shows recent workspaces and recent threads.
-- The top-right timer shows current turn elapsed time as `本轮 HH:MM:SS`.
+- The top-right timer shows current turn elapsed time as `鏈疆 HH:MM:SS`.
 - The timer is red while a turn is active and muted after completion.
-- During an active turn, the timer may append a compact activity label such as `思考`, `输出`, `命令`, `文件`, `工具`, `搜索`, `同步`, or `等待批准`.
-- The timer uses a fixed elapsed-time segment, so activity label length changes do not move the `本轮 HH:MM:SS` text.
-- After the latest turn finishes, the timer switches to muted styling and shows `已结束` instead of any in-progress activity label.
+- During an active turn, the timer may append a compact activity label such as `鎬濊€僠, `杈撳嚭`, `鍛戒护`, `鏂囦欢`, `宸ュ叿`, `鎼滅储`, `鍚屾`, or `绛夊緟鎵瑰噯`.
+- The timer uses a fixed elapsed-time segment, so activity label length changes do not move the `鏈疆 HH:MM:SS` text.
+- After the latest turn finishes, the timer switches to muted styling and shows `宸茬粨鏉焋 instead of any in-progress activity label.
 - Live reasoning is not rendered as conversation rows.
 - Command/file/tool activity appears as compact operation cards.
 - Consecutive command/file operation updates show only the latest operation card unless normal visible content appears between two operations.
@@ -593,6 +593,50 @@ npm start
 
 This can let Mobile Web connect to the mux endpoint, but it does not by itself make Codex Desktop share that mux.
 
+## Web Push Notifications
+
+Web Push is optional. It is intended for phone notifications when a Codex turn finishes.
+
+This project does not provide a shared push gateway, a hosted HTTPS endpoint, or checked-in certificates. Each user runs Mobile Web on their own machine, exposes that local server through HTTPS, and lets the server generate its own local VAPID key pair.
+
+Requirements:
+
+- Open Mobile Web through HTTPS. iOS Safari/PWA push does not work on plain LAN HTTP.
+- On iOS, add the HTTPS Mobile Web page to the Home Screen and open it from the Home Screen icon before enabling notifications.
+- Allow notifications in iOS when prompted.
+- Keep the Web Push runtime files local under `%USERPROFILE%\.codex-mobile-web`; do not commit them.
+- No Apple Developer account is required for standards-based Web Push. Apple Push is contacted through the browser's Web Push subscription endpoint.
+- No public HTTP registration step is required. The only public-facing requirement is that the phone opens Mobile Web from a valid HTTPS origin.
+
+Current Windows/Tailscale example:
+
+```powershell
+tailscale serve --https=8443 http://127.0.0.1:8787
+```
+
+Then open:
+
+```text
+https://<tailscale-host>.ts.net:8443/
+```
+
+After login, use the `Enable notifications` button in the Mobile Web menu/top controls. After the subscription is created, the same button becomes `Send test notification`.
+
+Notification behavior:
+
+- Test notification title: `Codex Mobile Web`.
+- Turn-completed notification title: the thread title when available.
+- Turn-completed notification body: `<thread-id> · This turn 已结束 · <local time>`.
+- Clicking a notification opens Mobile Web and navigates to the relevant thread when the thread id is available.
+
+VAPID details:
+
+- VAPID keys are generated automatically and stored in `%USERPROFILE%\.codex-mobile-web\web-push-vapid.json`.
+- Subscriptions are stored in `%USERPROFILE%\.codex-mobile-web\web-push-subscriptions.json`.
+- `CODEX_MOBILE_PUSH_SUBJECT` can override the VAPID subject.
+- Do not use a `localhost` VAPID subject for Apple Push. Apple can reject it with `BadJwtToken`; the default subject is a non-localhost contact URI.
+- The generated VAPID private key and browser subscription endpoints are local runtime state. They must not be committed to a public repository, pasted into issues, or copied into shared handoff files.
+
 ## Useful Environment Variables
 
 | Variable | Purpose |
@@ -611,6 +655,10 @@ This can let Mobile Web connect to the mux endpoint, but it does not by itself m
 | `CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES` | Tail bytes read from a thread rollout to recover inherited turn runtime settings, default `4194304`. |
 | `CODEX_MOBILE_MESSAGE_DEDUPE_WINDOW_MS` | Time window for treating repeated message submissions as the same request, default `90000`. Requests with `clientSubmissionId` are deduped by id; legacy requests without it fall back to content fingerprinting. |
 | `CODEX_MOBILE_MESSAGE_DEDUPE_MAX` | Maximum number of recent message submissions kept in the dedupe cache, default `300`. |
+| `CODEX_MOBILE_PUSH_SUBJECT` | VAPID subject used for Web Push. Must be a non-localhost contact URI, for example `mailto:name@example.com` or an HTTPS URL. |
+| `CODEX_MOBILE_PUSH_TTL_SECONDS` | Web Push TTL in seconds, default `3600`. |
+| `CODEX_MOBILE_PUSH_VAPID_FILE` | Custom runtime path for Web Push VAPID keys. |
+| `CODEX_MOBILE_PUSH_SUBSCRIPTIONS_FILE` | Custom runtime path for stored Web Push subscriptions. |
 | `CODEX_MOBILE_MUX_ENDPOINT_FILE` | Custom mux endpoint file path. |
 | `CODEX_MOBILE_APP_SERVER_WS` | External app-server WebSocket endpoint. |
 | `CODEX_MOBILE_APP_SERVER_TCP` | External app-server JSONL TCP endpoint. |

@@ -28,7 +28,9 @@ This workspace owns the standalone Codex Mobile Web app.
 ## Architecture
 
 - The web server binds to `CODEX_MOBILE_HOST` / `CODEX_MOBILE_PORT`, default `0.0.0.0:8787`.
+- Current Tailscale HTTPS mapping is `https://gmk.tail62e8ce.ts.net:8443/ -> http://127.0.0.1:8787`.
 - The browser authenticates with the access key, then receives live updates through Server-Sent Events.
+- Web Push support stores VAPID keys in `%USERPROFILE%\.codex-mobile-web\web-push-vapid.json` and subscriptions in `%USERPROFILE%\.codex-mobile-web\web-push-subscriptions.json`; neither file should be committed or copied into shared context. The browser must access Codex Mobile Web through HTTPS, currently Tailscale Serve `https://gmk.tail62e8ce.ts.net:8443/`, to subscribe. The VAPID subject must be a non-localhost contact URI; Apple Push rejects localhost subjects with `BadJwtToken`.
 - The composer can upload attachments through multipart form posts.
 - The backend talks to `codex app-server` through JSON-RPC over WebSocket or local JSONL TCP.
 - By default the backend starts a loopback `codex app-server --listen ws://127.0.0.1:<port>` child.
@@ -62,6 +64,7 @@ This workspace owns the standalone Codex Mobile Web app.
 - Reasoning items are not rendered in the conversation and reasoning deltas must not remove or replace live command/file/tool operation cards.
 - Conversation rendering uses a visible-content signature and a lightweight keyed DOM patcher to avoid replacing the whole conversation when polling/status refreshes only change local text, item status, or operation cards; this prevents no-op and broad refresh flicker.
 - Thread refresh merges preserve synthetic `mux-user-*` user-message echo items when the app-server historical snapshot does not contain them, because active-turn `turn/steer` input can otherwise disappear from the visible stream after a refresh.
+- If a real `userMessage` and a matching synthetic `mux-user-*` echo are both present, the real item wins and the mux echo must be dropped. This covers delayed mux notification replay after the real app-server item has already reached the browser.
 - Turn completion and thread refresh merges must not replace locally streamed visible turn items with an empty or shorter server snapshot; preserve local visible items until an equal or fuller snapshot arrives.
 - Uploaded images are sent as app-server `localImage` input items.
 - Uploaded non-image files are saved locally and referenced in message text by absolute path.
@@ -83,6 +86,7 @@ This workspace owns the standalone Codex Mobile Web app.
 - The top-right timer layout keeps the elapsed time segment fixed so activity label length changes do not move the `本轮 HH:MM:SS` text.
 - After the latest turn ends, the top-right timer shows the final elapsed time with `已结束` instead of retaining any in-progress activity label.
 - The top conversation bar is intentionally compact: it shows the thread title, but not cwd or thread status metadata.
+- On iOS standalone/PWA, the top conversation bar and mobile sidebar must respect `safe-area-inset-top` so the menu button and timer do not sit under the Dynamic Island/status bar. The PWA status bar style should not be `black-translucent`.
 - The composer submit button follows Desktop behavior: during an active turn, an empty composer shows `Stop`; if text or attachments are present it switches back to `Send` for the new input.
 - App-server approval requests render as pending approval cards in the current thread and support `Allow once`, `Allow session`, and `Deny` for command, file-change, legacy exec/apply-patch, and permission-profile requests.
 - Approval requests with a `turnId` render inside that turn instead of as a persistent bottom stack. Once answered/resolved, they collapse to a one-line in-turn status.

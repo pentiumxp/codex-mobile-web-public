@@ -6,6 +6,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { spawn, spawnSync } = require("node:child_process");
 const net = require("node:net");
+const webPush = require("web-push");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -23,6 +24,11 @@ const PORT = Number(process.env.CODEX_MOBILE_PORT || "8787");
 const DISABLE_AUTH = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_DISABLE_AUTH || "");
 const AUTH_KEY_FILE = process.env.CODEX_MOBILE_KEY_FILE || path.join(RUNTIME_ROOT, "access_key");
 const AUTH_KEY = DISABLE_AUTH ? "" : loadAuthKey();
+const PUSH_VAPID_FILE = process.env.CODEX_MOBILE_PUSH_VAPID_FILE || path.join(RUNTIME_ROOT, "web-push-vapid.json");
+const PUSH_SUBSCRIPTIONS_FILE = process.env.CODEX_MOBILE_PUSH_SUBSCRIPTIONS_FILE || path.join(RUNTIME_ROOT, "web-push-subscriptions.json");
+const DEFAULT_PUSH_SUBJECT = "mailto:codex-mobile-web@example.com";
+const PUSH_SUBJECT = normalizePushSubject(process.env.CODEX_MOBILE_PUSH_SUBJECT || DEFAULT_PUSH_SUBJECT);
+const PUSH_TTL_SECONDS = Math.max(30, Number(process.env.CODEX_MOBILE_PUSH_TTL_SECONDS || "3600"));
 const MAX_TEXT_CHARS = 60000;
 const MAX_JSON_BODY_BYTES = 2_000_000;
 const MAX_UPLOAD_BYTES = Math.max(1, Number(process.env.CODEX_MOBILE_MAX_UPLOAD_BYTES || String(64 * 1024 * 1024)));
@@ -58,11 +64,16 @@ const MAX_ROLLOUT_CONTEXT_BYTES = Math.max(256 * 1024, Number(process.env.CODEX_
 const SAFE_RETRY_METHODS = new Set(["initialize", "thread/list", "thread/read", "thread/turns/list"]);
 const IMAGE_EXTENSIONS = new Set([".avif", ".bmp", ".gif", ".heic", ".heif", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"]);
 const CODEX_CONFIG_DEFAULTS = readCodexConfigDefaults();
+const PROCESS_STARTED_AT_MS = Date.now();
 
 let clients = new Set();
 let clientHeartbeats = new WeakMap();
 let latestRateLimits = null;
+let pushVapidKeys = null;
+let pushSubscriptionsCache = null;
 const recentMessageSubmissions = new Map();
+const pushObservedTurns = new Set();
+const pushSentTurns = new Map();
 const SERVER_REQUEST_METHODS = new Set([
   "item/commandExecution/requestApproval",
   "item/fileChange/requestApproval",
@@ -1020,6 +1031,278 @@ function readBody(req) {
   });
 }
 
+function readJsonFile(file, fallback) {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function writeRuntimeJson(file, value) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+}
+
+function normalizePushSubject(value) {
+  const subject = String(value || "").trim();
+  return subject || DEFAULT_PUSH_SUBJECT;
+}
+
+function isLocalhostPushSubject(value) {
+  const subject = String(value || "");
+  if (/\blocalhost\b|127\.0\.0\.1|\[::1\]/i.test(subject)) return true;
+  try {
+    const url = new URL(subject);
+    return url.hostname === "localhost"
+      || url.hostname === "127.0.0.1"
+      || url.hostname === "::1"
+      || url.hostname.endsWith(".localhost");
+  } catch (_) {
+    return false;
+  }
+}
+
+function storedPushSubject(existingSubject) {
+  const existing = normalizePushSubject(existingSubject);
+  if (process.env.CODEX_MOBILE_PUSH_SUBJECT) return PUSH_SUBJECT;
+  return isLocalhostPushSubject(existing) ? PUSH_SUBJECT : existing;
+}
+
+function loadPushVapidKeys() {
+  if (pushVapidKeys) return pushVapidKeys;
+  const existing = readJsonFile(PUSH_VAPID_FILE, null);
+  if (existing && existing.publicKey && existing.privateKey) {
+    const subject = storedPushSubject(existing.subject);
+    pushVapidKeys = {
+      publicKey: String(existing.publicKey),
+      privateKey: String(existing.privateKey),
+      subject,
+    };
+    if (subject !== existing.subject) {
+      writeRuntimeJson(PUSH_VAPID_FILE, Object.assign({}, existing, {
+        subject,
+        updatedAt: new Date().toISOString(),
+      }));
+    }
+  } else {
+    const generated = webPush.generateVAPIDKeys();
+    pushVapidKeys = {
+      publicKey: generated.publicKey,
+      privateKey: generated.privateKey,
+      subject: PUSH_SUBJECT,
+      createdAt: new Date().toISOString(),
+    };
+    writeRuntimeJson(PUSH_VAPID_FILE, pushVapidKeys);
+  }
+  webPush.setVapidDetails(pushVapidKeys.subject || PUSH_SUBJECT, pushVapidKeys.publicKey, pushVapidKeys.privateKey);
+  return pushVapidKeys;
+}
+
+function loadPushSubscriptions() {
+  if (pushSubscriptionsCache) return pushSubscriptionsCache;
+  const raw = readJsonFile(PUSH_SUBSCRIPTIONS_FILE, []);
+  pushSubscriptionsCache = Array.isArray(raw) ? raw.filter((entry) => entry && entry.endpoint) : [];
+  return pushSubscriptionsCache;
+}
+
+function savePushSubscriptions(subscriptions = loadPushSubscriptions()) {
+  pushSubscriptionsCache = subscriptions.filter((entry) => entry && entry.endpoint);
+  writeRuntimeJson(PUSH_SUBSCRIPTIONS_FILE, pushSubscriptionsCache);
+}
+
+function normalizePushSubscription(value) {
+  const sub = value && value.subscription ? value.subscription : value;
+  if (!sub || typeof sub !== "object") throw new Error("Push subscription is required");
+  if (!sub.endpoint || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) {
+    throw new Error("Push subscription is incomplete");
+  }
+  return {
+    endpoint: String(sub.endpoint),
+    expirationTime: sub.expirationTime || null,
+    keys: {
+      p256dh: String(sub.keys.p256dh),
+      auth: String(sub.keys.auth),
+    },
+  };
+}
+
+function pushSubscriptionPublicStatus() {
+  return {
+    supported: true,
+    subscriptionCount: loadPushSubscriptions().length,
+  };
+}
+
+function prunePushSentTurns(now = Date.now()) {
+  const maxAgeMs = 24 * 60 * 60 * 1000;
+  for (const [key, sentAt] of pushSentTurns) {
+    if (now - sentAt > maxAgeMs) pushSentTurns.delete(key);
+  }
+}
+
+function pushTurnId(params) {
+  return String((params && params.turn && params.turn.id) || (params && params.turnId) || "");
+}
+
+function timestampToMs(value) {
+  if (value == null || value === "") return 0;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value > 1_000_000_000_000 ? value : value * 1000;
+  }
+  if (/^\d+(?:\.\d+)?$/.test(String(value))) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
+  }
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function turnTimestampMs(params, field) {
+  return timestampToMs((params && params.turn && params.turn[field]) || (params && params[field]));
+}
+
+function isOldPushTurnEvent(params, fields) {
+  for (const field of fields) {
+    const timestamp = turnTimestampMs(params, field);
+    if (timestamp) return timestamp < PROCESS_STARTED_AT_MS - 120000;
+  }
+  return false;
+}
+
+function notificationUrlForThread(threadId) {
+  const id = String(threadId || "");
+  return id ? `/?thread=${encodeURIComponent(id)}` : "/";
+}
+
+function compactOneLine(value, maxChars = 80) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, Math.max(1, maxChars - 3))}...`;
+}
+
+function shortIdentifier(value) {
+  const text = String(value || "").trim();
+  if (text.length <= 16) return text;
+  return `${text.slice(0, 8)}...${text.slice(-4)}`;
+}
+
+function pushTimestamp(ms = Date.now()) {
+  const time = Number.isFinite(ms) && ms > 0 ? ms : Date.now();
+  try {
+    return new Intl.DateTimeFormat("zh-CN", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    }).format(new Date(time)).replace(/\//g, "-");
+  } catch (_) {
+    return new Date(time).toISOString();
+  }
+}
+
+function pushThreadTitle(params) {
+  const candidates = [
+    params && params.threadName,
+    params && params.thread && params.thread.name,
+    params && params.thread && params.thread.title,
+    params && params.thread && params.thread.preview,
+  ];
+  for (const candidate of candidates) {
+    const text = compactOneLine(candidate);
+    if (text) return text;
+  }
+  const summary = readStateDbThread(params && params.threadId);
+  return compactOneLine((summary && (summary.name || summary.preview)) || shortIdentifier(params && params.threadId) || "Codex Mobile Web");
+}
+
+function webPushFailureDetails(err) {
+  const statusCode = Number(err && err.statusCode) || null;
+  const body = String((err && err.body) || "").trim();
+  let reason = "";
+  if (body) {
+    try {
+      const parsed = JSON.parse(body);
+      reason = String(parsed.reason || parsed.error || parsed.message || "").trim();
+    } catch (_) {
+      reason = body.slice(0, 160);
+    }
+  }
+  return {
+    statusCode,
+    reason: reason || String((err && err.message) || err || "Web Push send failed"),
+  };
+}
+
+async function sendWebPushToAll(payload) {
+  loadPushVapidKeys();
+  const subscriptions = loadPushSubscriptions();
+  if (!subscriptions.length) return { sent: 0, failed: 0, removed: 0 };
+  let sent = 0;
+  let failed = 0;
+  let lastError = null;
+  const dead = new Set();
+  await Promise.all(subscriptions.map(async (subscription) => {
+    try {
+      await webPush.sendNotification(subscription, JSON.stringify(payload), {
+        TTL: PUSH_TTL_SECONDS,
+        urgency: "normal",
+      });
+      sent += 1;
+    } catch (err) {
+      failed += 1;
+      lastError = webPushFailureDetails(err);
+      const statusCode = Number(err && err.statusCode);
+      if (statusCode === 404 || statusCode === 410) dead.add(subscription.endpoint);
+      else console.error(`[web push] send failed: ${lastError.statusCode || ""} ${lastError.reason}`);
+    }
+  }));
+  if (dead.size) {
+    const kept = subscriptions.filter((subscription) => !dead.has(subscription.endpoint));
+    savePushSubscriptions(kept);
+  }
+  return Object.assign({ sent, failed, removed: dead.size }, lastError ? { lastError } : {});
+}
+
+function maybeSendTurnCompletedPush(method, params) {
+  if (method === "turn/started") {
+    const id = pushTurnId(params);
+    if (isOldPushTurnEvent(params, ["startedAt", "createdAt"])) return;
+    if (id) pushObservedTurns.add(id);
+    return;
+  }
+  if (method !== "turn/completed") return;
+  const turnId = pushTurnId(params);
+  if (!turnId || !pushObservedTurns.has(turnId)) return;
+  if (isOldPushTurnEvent(params, ["completedAt", "updatedAt"])) return;
+  pushObservedTurns.delete(turnId);
+  prunePushSentTurns();
+  const key = `${params.threadId || ""}:${turnId}`;
+  if (pushSentTurns.has(key)) return;
+  pushSentTurns.set(key, Date.now());
+  const completedAt = turnTimestampMs(params, "completedAt") || Date.now();
+  const threadTitle = pushThreadTitle(params);
+  const threadMark = shortIdentifier(params.threadId || turnId);
+  const payload = {
+    title: threadTitle,
+    body: `${threadMark} · This turn 已结束 · ${pushTimestamp(completedAt)}`,
+    tag: `codex-turn-${params.threadId || turnId}`,
+    data: {
+      url: notificationUrlForThread(params.threadId),
+      threadId: params.threadId || "",
+      turnId,
+      threadTitle,
+      completedAt,
+    },
+  };
+  sendWebPushToAll(payload).catch((err) => {
+    console.error(`[web push] turn completed notification failed: ${err.message || String(err)}`);
+  });
+}
+
 function multipartBoundary(contentType) {
   const match = /(?:^|;\s*)boundary=(?:"([^"]+)"|([^;]+))/i.exec(String(contentType || ""));
   return match ? String(match[1] || match[2] || "").trim() : "";
@@ -1657,6 +1940,7 @@ class CodexAppServerClient {
       if (msg.method === "serverRequest/resolved" && msg.params && msg.params.requestId != null) {
         this.markServerRequestResolved(msg.params.requestId, "resolved");
       }
+      maybeSendTurnCompletedPush(msg.method, msg.params || null);
       broadcast({ type: "notification", method: msg.method, params: msg.params || null });
     }
   }
@@ -2054,6 +2338,7 @@ async function handleApi(req, res) {
       defaultModel: CODEX_CONFIG_DEFAULTS.model,
       defaultReasoningEffort: CODEX_CONFIG_DEFAULTS.reasoningEffort,
       rateLimits: latestRateLimits,
+      push: pushSubscriptionPublicStatus(),
     });
     return;
   }
@@ -2072,6 +2357,48 @@ async function handleApi(req, res) {
   }
   if (!isAuthorized(req)) {
     sendJson(res, 401, { error: "Unauthorized" });
+    return;
+  }
+  if (url.pathname === "/api/push/vapid-public-key" && req.method === "GET") {
+    const keys = loadPushVapidKeys();
+    sendJson(res, 200, { publicKey: keys.publicKey, subject: keys.subject || PUSH_SUBJECT });
+    return;
+  }
+  if (url.pathname === "/api/push/subscribe" && req.method === "POST") {
+    const body = await readBody(req);
+    const subscription = normalizePushSubscription(body);
+    const subscriptions = loadPushSubscriptions();
+    const next = subscriptions.filter((entry) => entry.endpoint !== subscription.endpoint);
+    next.push(Object.assign({}, subscription, {
+      createdAt: subscriptions.some((entry) => entry.endpoint === subscription.endpoint)
+        ? subscriptions.find((entry) => entry.endpoint === subscription.endpoint).createdAt || new Date().toISOString()
+        : new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userAgent: String(req.headers["user-agent"] || ""),
+    }));
+    savePushSubscriptions(next);
+    sendJson(res, 200, { ok: true, subscriptionCount: next.length });
+    return;
+  }
+  if (url.pathname === "/api/push/unsubscribe" && req.method === "POST") {
+    const body = await readBody(req);
+    const endpoint = String(body.endpoint || (body.subscription && body.subscription.endpoint) || "");
+    if (!endpoint) {
+      sendJson(res, 400, { error: "Push subscription endpoint is required" });
+      return;
+    }
+    const next = loadPushSubscriptions().filter((entry) => entry.endpoint !== endpoint);
+    savePushSubscriptions(next);
+    sendJson(res, 200, { ok: true, subscriptionCount: next.length });
+    return;
+  }
+  if (url.pathname === "/api/push/test" && req.method === "POST") {
+    const result = await sendWebPushToAll({
+      title: "Codex Mobile Web",
+      body: "Test notification",
+      data: { url: "/" },
+    });
+    sendJson(res, 200, Object.assign({ ok: true }, result));
     return;
   }
   if (url.pathname === "/api/status") {
