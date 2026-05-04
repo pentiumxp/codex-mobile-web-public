@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "codex-mobile-shell-v1";
+const CACHE_NAME = "codex-mobile-shell-v2";
 const STATIC_ASSETS = [
   "/",
   "/index.html",
@@ -67,4 +67,46 @@ self.addEventListener("fetch", (event) => {
       return cached || network;
     })
   );
+});
+
+function pushPayload(event) {
+  if (!event.data) return {};
+  try {
+    return event.data.json();
+  } catch (_) {
+    return { body: event.data.text() };
+  }
+}
+
+self.addEventListener("push", (event) => {
+  const payload = pushPayload(event);
+  const title = payload.title || "Codex Mobile Web";
+  const options = {
+    body: payload.body || "Codex update",
+    icon: "/icons/icon-192.png",
+    badge: "/icons/icon-192.png",
+    tag: payload.tag || "codex-mobile-web",
+    data: Object.assign({ url: "/" }, payload.data || {}),
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = new URL((event.notification.data && event.notification.data.url) || "/", self.location.origin).href;
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const client of windows) {
+      if ("focus" in client) {
+        try {
+          await client.focus();
+          if ("navigate" in client) await client.navigate(targetUrl);
+          return;
+        } catch (_) {
+          // Fall through to opening a new client.
+        }
+      }
+    }
+    if (self.clients.openWindow) await self.clients.openWindow(targetUrl);
+  })());
 });

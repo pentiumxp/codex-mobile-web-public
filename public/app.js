@@ -38,6 +38,11 @@ const state = {
   defaultModel: "",
   defaultReasoningEffort: "",
   rateLimits: null,
+  pushServerSupported: false,
+  pushSubscribed: false,
+  pushBusy: false,
+  pushError: "",
+  serviceWorkerRegistration: null,
   pendingApprovals: new Map(),
   selectedModel: localStorage.getItem("codexMobileSelectedModel") || "",
   selectedEffort: localStorage.getItem("codexMobileSelectedEffort") || "",
@@ -73,6 +78,27 @@ function updateViewportVars() {
 function createSubmissionId() {
   if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function base64UrlToUint8Array(value) {
+  const padding = "=".repeat((4 - (value.length % 4)) % 4);
+  const base64 = `${value}${padding}`.replace(/-/g, "+").replace(/_/g, "/");
+  const raw = window.atob(base64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i += 1) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+function pushSubscriptionToJson(subscription) {
+  return typeof subscription.toJSON === "function" ? subscription.toJSON() : subscription;
+}
+
+function pushBrowserAvailable() {
+  return Boolean(state.pushServerSupported
+    && window.isSecureContext
+    && "serviceWorker" in navigator
+    && "PushManager" in window
+    && "Notification" in window);
 }
 
 function escapeHtml(value) {
@@ -685,6 +711,19 @@ function hasMatchingIncomingUserMessage(existingItem, incomingItems) {
   return (incomingItems || []).some((incomingItem) => userMessagesLikelySame(existingItem, incomingItem));
 }
 
+function hasMatchingRealUserMessage(item, items) {
+  if (!isMuxUserMessage(item)) return false;
+  return (items || []).some((candidate) => candidate
+    && candidate.id !== item.id
+    && candidate.type === "userMessage"
+    && !isMuxUserMessage(candidate)
+    && userMessagesLikelySame(candidate, item));
+}
+
+function removeShadowedMuxUserMessages(items) {
+  return (items || []).filter((item) => !hasMatchingRealUserMessage(item, items));
+}
+
 function comparableVisibleTextItem(item) {
   return Boolean(item && (item.type === "agentMessage" || item.type === "plan"));
 }
@@ -751,10 +790,11 @@ function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserve
   for (const incomingItem of incomingItems || []) {
     if (!incomingItem) continue;
     if (incomingItem.id && added.has(incomingItem.id)) continue;
+    if (hasMatchingRealUserMessage(incomingItem, merged) || hasMatchingRealUserMessage(incomingItem, incomingItems)) continue;
     merged.push(incomingItem);
     if (incomingItem.id) added.add(incomingItem.id);
   }
-  return merged;
+  return removeShadowedMuxUserMessages(merged);
 }
 
 function mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) {
@@ -1090,6 +1130,142 @@ async function api(path, options = {}) {
   }
 }
 
+function updatePushButton() {
+  const button = $("pushNotifications");
+  if (!button) return;
+  button.classList.remove("ready", "error");
+  if (state.pushBusy) {
+    button.textContent = "Working...";
+    button.disabled = true;
+    return;
+  }
+  if (!state.pushServerSupported) {
+    button.textContent = "Notifications unavailable";
+    button.disabled = true;
+    return;
+  }
+  if (!window.isSecureContext) {
+    button.textContent = "HTTPS required";
+    button.disabled = true;
+    button.classList.add("error");
+    return;
+  }
+  if (!pushBrowserAvailable()) {
+    button.textContent = "Notifications unsupported";
+    button.disabled = true;
+    return;
+  }
+  if (Notification.permission === "denied") {
+    button.textContent = "Notifications blocked";
+    button.disabled = true;
+    button.classList.add("error");
+    return;
+  }
+  if (state.pushSubscribed) {
+    button.textContent = "Send test notification";
+    button.disabled = false;
+    button.classList.add("ready");
+    return;
+  }
+  button.textContent = "Enable notifications";
+  button.disabled = false;
+  if (state.pushError) button.classList.add("error");
+}
+
+async function registerPushServiceWorker() {
+  const registration = await registerServiceWorker();
+  if (!registration) throw new Error("Notifications unsupported");
+  return registration;
+}
+
+async function syncExistingPushSubscription() {
+  if (!state.key || !pushBrowserAvailable()) return;
+  const registration = await registerPushServiceWorker();
+  const subscription = await registration.pushManager.getSubscription();
+  state.pushSubscribed = Boolean(subscription);
+  if (subscription) {
+    await api("/api/push/subscribe", {
+      method: "POST",
+      body: JSON.stringify({ subscription: pushSubscriptionToJson(subscription) }),
+    });
+  }
+}
+
+async function initializePushControls() {
+  state.pushError = "";
+  updatePushButton();
+  if (!pushBrowserAvailable() || !state.key) return;
+  try {
+    await syncExistingPushSubscription();
+  } catch (err) {
+    state.pushError = err.message || String(err);
+  } finally {
+    updatePushButton();
+  }
+}
+
+async function enablePushNotifications() {
+  if (!pushBrowserAvailable()) return;
+  const permission = Notification.permission === "default"
+    ? await Notification.requestPermission()
+    : Notification.permission;
+  if (permission !== "granted") {
+    state.pushSubscribed = false;
+    state.pushError = permission === "denied" ? "Notifications blocked" : "Notification permission not granted";
+    updatePushButton();
+    return;
+  }
+  const registration = await registerPushServiceWorker();
+  let subscription = await registration.pushManager.getSubscription();
+  if (!subscription) {
+    const key = await api("/api/push/vapid-public-key");
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: base64UrlToUint8Array(key.publicKey),
+    });
+  }
+  await api("/api/push/subscribe", {
+    method: "POST",
+    body: JSON.stringify({ subscription: pushSubscriptionToJson(subscription) }),
+  });
+  state.pushSubscribed = true;
+  state.pushError = "";
+  $("connectionState").classList.remove("error");
+  $("connectionState").textContent = "Notifications enabled";
+}
+
+async function sendTestPushNotification() {
+  const result = await api("/api/push/test", { method: "POST", body: "{}" });
+  $("connectionState").classList.remove("error");
+  if (result.sent) {
+    $("connectionState").textContent = "Test notification sent";
+    return;
+  }
+  if (result.failed) {
+    const detail = result.lastError && (result.lastError.reason || result.lastError.statusCode)
+      ? `${result.lastError.statusCode || ""} ${result.lastError.reason || ""}`.trim()
+      : "delivery failed";
+    throw new Error(`Test notification failed: ${detail}`);
+  }
+  $("connectionState").textContent = "No push subscription";
+}
+
+async function handlePushButtonClick() {
+  if (state.pushBusy) return;
+  state.pushBusy = true;
+  updatePushButton();
+  try {
+    if (state.pushSubscribed) await sendTestPushNotification();
+    else await enablePushNotifications();
+  } catch (err) {
+    state.pushError = err.message || String(err);
+    showError(err);
+  } finally {
+    state.pushBusy = false;
+    updatePushButton();
+  }
+}
+
 function showLogin(message = "") {
   $("app").classList.add("hidden");
   $("login").classList.remove("hidden");
@@ -1118,6 +1294,7 @@ async function login(key) {
 }
 
 async function bootstrap() {
+  applyUrlThreadSelection();
   const status = await api("/api/status").catch((err) => {
     $("connectionState").textContent = err.message;
     $("connectionState").classList.add("error");
@@ -1132,6 +1309,22 @@ async function bootstrap() {
   await loadThreads();
   await restoreThreadSelection();
   connectEvents();
+  initializePushControls().catch((err) => {
+    state.pushError = err.message || String(err);
+    updatePushButton();
+  });
+}
+
+function applyUrlThreadSelection() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const threadId = params.get("thread");
+    if (!threadId) return;
+    localStorage.setItem(STORAGE_THREAD_ID, threadId);
+    window.history.replaceState({}, "", window.location.pathname || "/");
+  } catch (_) {
+    // URL thread selection is best-effort for notification clicks.
+  }
 }
 
 async function loadWorkspaces() {
@@ -1345,11 +1538,12 @@ function renderThreads(result = null) {
 }
 
 async function restoreThreadSelection() {
-  if (state.currentThread || !state.threads.length) return;
+  if (state.currentThread) return;
   const savedThreadId = localStorage.getItem(STORAGE_THREAD_ID) || "";
+  if (!state.threads.length && !savedThreadId) return;
   const saved = savedThreadId && state.threads.find((thread) => thread.id === savedThreadId);
   const active = state.threads.find((thread) => isRunningStatus(thread.status));
-  const target = saved || active;
+  const target = saved || (savedThreadId ? { id: savedThreadId } : active);
   if (!target) return;
   try {
     await loadThread(target.id);
@@ -2243,6 +2437,7 @@ function upsertItem(turnId, item) {
   }
   turn.items = turn.items || [];
   if (item.type === "userMessage") {
+    if (hasMatchingRealUserMessage(item, turn.items)) return;
     turn.items = turn.items.filter((existing) => !isMuxUserMessage(existing) || !userMessagesLikelySame(existing, item));
   }
   if (item.type === "agentMessage" || item.type === "plan") {
@@ -2267,6 +2462,7 @@ function upsertItem(turnId, item) {
   if (isOperationalItem(item) && isCompletedStatus(item.status) && !item.completedAtMs) item.completedAtMs = Date.now();
   if (index >= 0) turn.items[index] = mergeItemPreservingVisibleFields(turn.items[index], item);
   else turn.items.push(item);
+  turn.items = removeShadowedMuxUserMessages(turn.items);
   scheduleRenderCurrentThread();
 }
 
@@ -2930,6 +3126,7 @@ function wireUi() {
     loadThreads().catch(showError);
   });
   $("refreshThreads").addEventListener("click", () => loadThreads().catch(showError));
+  $("pushNotifications").addEventListener("click", () => handlePushButtonClick().catch(showError));
   $("threadSearch").addEventListener("input", () => {
     clearTimeout(state.searchTimer);
     state.searchTimer = setTimeout(() => loadThreads().catch(showError), 250);
@@ -3064,8 +3261,10 @@ async function start() {
   state.defaultModel = String(config.defaultModel || "");
   state.defaultReasoningEffort = String(config.defaultReasoningEffort || "");
   state.rateLimits = config.rateLimits || null;
+  state.pushServerSupported = Boolean(config.push && config.push.supported);
   renderComposerSettings();
   renderQuotaUsage();
+  updatePushButton();
   if (config.authRequired && !state.key) {
     showLogin();
     return;
@@ -3078,11 +3277,20 @@ async function start() {
 }
 
 function registerServiceWorker() {
-  if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch((err) => {
+  if (state.serviceWorkerRegistration) return Promise.resolve(state.serviceWorkerRegistration);
+  if (!("serviceWorker" in navigator) || !window.isSecureContext) return Promise.resolve(null);
+  const register = () => navigator.serviceWorker.register("/sw.js")
+    .then((registration) => {
+      state.serviceWorkerRegistration = registration;
+      return registration;
+    })
+    .catch((err) => {
       console.debug("Service worker registration failed", err);
+      return null;
     });
+  if (document.readyState === "complete") return register();
+  return new Promise((resolve) => {
+    window.addEventListener("load", () => register().then(resolve), { once: true });
   });
 }
 
