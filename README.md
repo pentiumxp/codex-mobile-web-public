@@ -9,7 +9,7 @@ This repository does not contain Codex credentials, uploaded files, or a bundled
 | Platform | Standalone Mobile Web | Desktop live sync through mux | Notes |
 | --- | --- | --- | --- |
 | Windows | Supported | Supported with the included PowerShell launcher | This is the primary tested platform. |
-| macOS | Supported for standalone Mobile Web when `codex` CLI is installed | Not yet packaged/tested | The shared Desktop mux launcher is currently Windows-specific. |
+| macOS | Supported for standalone Mobile Web when `codex` CLI is installed | Launcher scripts included; needs real-Mac verification | macOS Desktop bridge behavior depends on Codex Desktop accepting the shell wrapper through `CODEX_CLI_PATH`. |
 
 Standalone Mobile Web means the browser connects to this local server, and the server starts or connects to a Codex app-server. Desktop live sync means Codex Desktop and Mobile Web attach to the same mux-backed app-server so both UIs see the same active turn stream.
 
@@ -40,7 +40,11 @@ cd codex-mobile-web
 npm run check
 ```
 
-There are no npm package dependencies. `npm run check` only syntax-checks the JavaScript files.
+There are no npm package dependencies. `npm run check` only syntax-checks the JavaScript files. On macOS, also run:
+
+```bash
+npm run check:macos
+```
 
 ## Windows Standalone Start
 
@@ -80,18 +84,28 @@ If that file does not exist, it falls back to `codex` from `PATH`.
 
 ## macOS Standalone Start
 
-The PowerShell scripts are for Windows. On macOS, start the server directly with environment variables:
+On macOS, use the included launcher so the `codex` and `node` commands are resolved to real executable paths before the server starts:
 
 ```bash
 cd /path/to/codex-mobile-web
 npm run check
+npm run check:macos
 
-export CODEX_HOME="$HOME/.codex"
-export CODEX_MOBILE_HOST="0.0.0.0"
-export CODEX_MOBILE_PORT="8787"
-export CODEX_MOBILE_CODEX_EXE="codex"
+./start-codex-mobile-web-macos.sh --host 0.0.0.0 --port 8787
+```
 
-npm start
+The launcher defaults to:
+
+- `CODEX_HOME="$HOME/.codex"`
+- `CODEX_MOBILE_HOST="0.0.0.0"`
+- `CODEX_MOBILE_PORT="8787"`
+- `CODEX_MOBILE_CODEX_EXE="$(command -v codex)"`
+- `node` from `command -v node`
+
+If you only want access from the Mac itself, bind to loopback:
+
+```bash
+./start-codex-mobile-web-macos.sh --host 127.0.0.1 --port 8787
 ```
 
 Open on the Mac:
@@ -327,86 +341,70 @@ In this mode, if the shared mux endpoint is unavailable, Mobile Web reports the 
 
 ## macOS Desktop Live Sync
 
-Status: design documented, not yet packaged or verified on macOS.
+Status: launcher scripts are included, but full Desktop live-sync verification still needs to pass on a real Mac/Codex Desktop build.
 
-Standalone Mobile Web can run on macOS. The bridge core, `codex-app-server-mux.js`, is Node.js and should be portable. The missing part is a macOS launcher/shim that makes Codex Desktop start the mux as its app-server command.
+Standalone Mobile Web can run on macOS. The bridge core, `codex-app-server-mux.js`, is Node.js and portable. The macOS launcher uses `CODEX_CLI_PATH` to make Codex Desktop start `codex-app-server-mux-macos.sh`, which then execs the Node mux without writing anything to the app-server protocol stdout.
 
 Current limitations:
 
 - `start-codex-desktop-shared.ps1` is Windows-specific.
 - `codex-app-server-mux-shim.cs` builds a Windows `.exe`.
-- macOS Codex Desktop launch behavior with `CODEX_CLI_PATH` still needs verification.
-- It is not yet verified whether macOS Codex Desktop accepts a shell script as `CODEX_CLI_PATH` or requires a native executable shim.
+- macOS shell-wrapper launch is implemented, but should be treated as unverified until the checklist below passes.
+- If a future Codex Desktop build rejects a shell script as `CODEX_CLI_PATH`, add a tiny native macOS executable shim that execs the same mux command.
 
-### macOS Bridge Implementation Plan
+### macOS Bridge Start
 
-A Codex agent implementing macOS Desktop live sync should create and test a macOS equivalent of the Windows launcher.
-
-Required behavior:
-
-- Fully quit Codex Desktop before launch.
-- Set `CODEX_HOME="$HOME/.codex"` explicitly.
-- Set `CODEX_CLI_PATH` to a real executable wrapper that starts the mux.
-- Set `CODEX_MUX_SCRIPT_PATH` to this repo's `codex-app-server-mux.js`.
-- Set `CODEX_MUX_CODEX_EXE` to the real `codex` CLI path.
-- Optionally set `CODEX_MUX_NODE_EXE` to the real `node` path.
-- Set `CODEX_MUX_KEEP_ALIVE=1` if Desktop restarts should reconnect to the same mux/app-server process.
-- Launch Codex Desktop from that same environment.
-- Do not write anything to stdout before `node codex-app-server-mux.js` takes over, because stdout is the app-server JSONL protocol channel.
-- Pass all Desktop-supplied app-server arguments through to the mux wrapper.
-
-Candidate wrapper script:
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-SCRIPT="${CODEX_MUX_SCRIPT_PATH:?CODEX_MUX_SCRIPT_PATH is required}"
-NODE_BIN="${CODEX_MUX_NODE_EXE:-node}"
-
-exec "$NODE_BIN" "$SCRIPT" "$@"
-```
-
-Save it outside `.codex` runtime state, for example:
-
-```bash
-cat > ./codex-app-server-mux-macos.sh <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-SCRIPT="${CODEX_MUX_SCRIPT_PATH:?CODEX_MUX_SCRIPT_PATH is required}"
-NODE_BIN="${CODEX_MUX_NODE_EXE:-node}"
-exec "$NODE_BIN" "$SCRIPT" "$@"
-EOF
-chmod +x ./codex-app-server-mux-macos.sh
-```
-
-Candidate launch command:
+1. Fully quit Codex Desktop.
+2. Validate the launcher environment:
 
 ```bash
 cd /path/to/codex-mobile-web
-
-export CODEX_HOME="$HOME/.codex"
-export CODEX_CLI_PATH="$PWD/codex-app-server-mux-macos.sh"
-export CODEX_MUX_SCRIPT_PATH="$PWD/codex-app-server-mux.js"
-export CODEX_MUX_CODEX_EXE="$(command -v codex)"
-export CODEX_MUX_NODE_EXE="$(command -v node)"
-export CODEX_MUX_KEEP_ALIVE=1
-
-# The exact app path may differ. Verify it on the target Mac.
-"/Applications/Codex.app/Contents/MacOS/Codex"
+npm run check
+npm run check:macos
+./start-codex-desktop-shared-macos.sh --print-only
 ```
 
-If Codex Desktop does not inherit environment variables through the chosen launch method, launch the executable directly instead of using Finder. If a shell script fails as `CODEX_CLI_PATH`, build a tiny native macOS executable shim that execs:
+3. Start Codex Desktop through the shared launcher:
 
 ```bash
-node "$CODEX_MUX_SCRIPT_PATH" "$@"
+./start-codex-desktop-shared-macos.sh
 ```
 
-The native shim must preserve stdin/stdout/stderr and pass arguments unchanged.
+If Codex is still running, the launcher exits instead of attaching to the wrong process. You can ask it to quit Codex first:
+
+```bash
+./start-codex-desktop-shared-macos.sh --force-quit
+```
+
+4. Start Mobile Web in another terminal:
+
+```bash
+./start-codex-mobile-web-macos.sh --host 0.0.0.0 --port 8787
+```
+
+Useful launcher overrides:
+
+- `--app /Applications/Codex.app`
+- `--desktop-exe /Applications/Codex.app/Contents/MacOS/Codex`
+- `--codex "$(command -v codex)"`
+- `--node "$(command -v node)"`
+- `--codex-home "$HOME/.codex"`
+- `--mux-wrapper "$PWD/codex-app-server-mux-macos.sh"`
+
+The launcher sets:
+
+- `CODEX_HOME`
+- `CODEX_CLI_PATH`
+- `CODEX_MUX_SCRIPT_PATH`
+- `CODEX_MUX_CODEX_EXE`
+- `CODEX_MUX_NODE_EXE`
+- `CODEX_MUX_KEEP_ALIVE=1`
+
+It launches `/Applications/Codex.app/Contents/MacOS/Codex` directly so the environment is inherited.
 
 ### macOS Bridge Verification Checklist
 
-After launching Desktop with the candidate wrapper:
+After launching Desktop with the shared launcher:
 
 1. Confirm the mux endpoint file exists:
 
@@ -424,7 +422,8 @@ Expected shape:
   "pid": 111,
   "childPid": 222,
   "capabilities": {
-    "mobileUserMessageEcho": true
+    "mobileUserMessageEcho": true,
+    "serverRequestProxy": true
   }
 }
 ```
@@ -485,7 +484,7 @@ This can let Mobile Web connect to the mux endpoint, but it does not by itself m
 
 | Variable | Purpose |
 | --- | --- |
-| `CODEX_HOME` | Codex state directory. Defaults to user home `.codex` in `server.js`; set explicitly on macOS for mux usage. |
+| `CODEX_HOME` | Codex state directory. Defaults to user home `.codex` in `server.js` and `codex-app-server-mux.js`. |
 | `CODEX_MOBILE_HOST` | Web server bind host. Use `0.0.0.0` for phone access. |
 | `CODEX_MOBILE_PORT` | Web server port, default `8787`. |
 | `CODEX_MOBILE_CODEX_EXE` | Codex CLI executable path/name. |
@@ -541,6 +540,6 @@ npm run check
 5. Start with the platform-specific command above.
 6. If the user asks for Desktop live sync:
    - On Windows, use `start-codex-desktop-shared.ps1` after fully quitting Codex Desktop.
-   - On macOS, follow the `macOS Bridge Implementation Plan` above and state that the Desktop bridge is not verified until the checklist passes on a real Mac.
+   - On macOS, use `start-codex-desktop-shared-macos.sh` and state that the Desktop bridge is not verified until the checklist passes on a real Mac.
 
 Record durable setup facts in `.agent-context/HANDOFF.md` if this repo is being modified.

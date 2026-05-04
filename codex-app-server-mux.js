@@ -8,7 +8,7 @@ const { spawn } = require("node:child_process");
 const APP_ROOT = __dirname;
 const USER_HOME = process.env.USERPROFILE || process.env.HOME || process.cwd();
 const RUNTIME_ROOT = process.env.CODEX_MOBILE_RUNTIME_DIR || path.join(USER_HOME, ".codex-mobile-web");
-const CODEX_HOME = process.env.CODEX_HOME || path.join(process.env.USERPROFILE || "", ".codex");
+const CODEX_HOME = process.env.CODEX_HOME || path.join(USER_HOME, ".codex");
 const RUNTIME_CODEX_EXE = path.join(RUNTIME_ROOT, "codex.exe");
 const CODEX_EXE = process.env.CODEX_MUX_CODEX_EXE || (fs.existsSync(RUNTIME_CODEX_EXE) ? RUNTIME_CODEX_EXE : "codex");
 const PASSTHROUGH_ARGS = process.argv.slice(2);
@@ -52,6 +52,19 @@ function hasId(message) {
 
 function writeJsonLine(write, message) {
   write(`${JSON.stringify(message)}\n`);
+}
+
+function commandNeedsFilesystemCheck(command) {
+  const value = String(command || "");
+  return path.isAbsolute(value) || value.includes("/") || value.includes("\\");
+}
+
+function assertCommandAvailable(command, label) {
+  const value = String(command || "").trim();
+  if (!value) throw new Error(`${label} is not configured`);
+  if (commandNeedsFilesystemCheck(value) && !fs.existsSync(value)) {
+    throw new Error(`${label} not found: ${value}`);
+  }
 }
 
 function createLineParser(onLine) {
@@ -295,13 +308,20 @@ function handleChildLine(line) {
 }
 
 function startChild() {
-  if (!fs.existsSync(CODEX_EXE)) {
-    throw new Error(`Codex executable not found: ${CODEX_EXE}`);
-  }
+  assertCommandAvailable(CODEX_EXE, "Codex executable");
   child = spawn(CODEX_EXE, CODEX_ARGS, {
     cwd: APP_ROOT,
     windowsHide: true,
     stdio: ["pipe", "pipe", "pipe"],
+  });
+  child.on("error", (err) => {
+    log(`failed to start real app-server exe=${CODEX_EXE}: ${err.message}`);
+    for (const client of clients.values()) {
+      try {
+        client.close();
+      } catch (_) {}
+    }
+    if (!shuttingDown) shutdown(1);
   });
   child.stdout.setEncoding("utf8");
   child.stdout.on("data", (chunk) => {
