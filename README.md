@@ -108,6 +108,12 @@ If you only want access from the Mac itself, bind to loopback:
 ./start-codex-mobile-web-macos.sh --host 127.0.0.1 --port 8787
 ```
 
+If `8787` is already in use, choose another port:
+
+```bash
+./start-codex-mobile-web-macos.sh --host 0.0.0.0 --port 8789
+```
+
 Open on the Mac:
 
 ```text
@@ -353,6 +359,21 @@ Current limitations:
 - If a future Codex Desktop build rejects a shell script as `CODEX_CLI_PATH`, add a tiny native macOS executable shim that execs the same mux command.
 
 ### macOS Bridge Start
+
+For the easiest path, use the one-command launcher. It quits and relaunches Codex Desktop through the mux, starts Mobile Web in the background, and picks the first free port from `8789` through `8899`:
+
+```bash
+cd /path/to/codex-mobile-web
+./start-codex-shared-mobile-macos.sh
+```
+
+The script prints the local URL, phone URL, access key file, and log paths. To force a specific port:
+
+```bash
+./start-codex-shared-mobile-macos.sh --port 8789
+```
+
+The manual steps below are useful when diagnosing the Desktop bridge.
 
 1. Fully quit Codex Desktop.
 2. Validate the launcher environment:
