@@ -625,8 +625,8 @@ After login, use the `Enable notifications` button in the Mobile Web menu/top co
 Notification behavior:
 
 - Test notification title: `Codex Mobile Web`.
-- Turn-completed notification title: the thread title when available.
-- Turn-completed notification body: `<thread-id> · This turn 已结束 · <local time>`.
+- Turn-completed notification title: `Codex Mobile Web`.
+- Turn-completed notification body: `<thread-title> · This turn 已结束 · <local time>`.
 - Clicking a notification opens Mobile Web and navigates to the relevant thread when the thread id is available.
 
 VAPID details:

@@ -31,7 +31,7 @@ This workspace owns the standalone Codex Mobile Web app.
 - Current Tailscale HTTPS mapping is `https://gmk.tail62e8ce.ts.net:8443/ -> http://127.0.0.1:8787`.
 - The browser authenticates with the access key, then receives live updates through Server-Sent Events.
 - Web Push support stores VAPID keys in `%USERPROFILE%\.codex-mobile-web\web-push-vapid.json` and subscriptions in `%USERPROFILE%\.codex-mobile-web\web-push-subscriptions.json`; neither file should be committed or copied into shared context. The browser must access Codex Mobile Web through HTTPS, currently Tailscale Serve `https://gmk.tail62e8ce.ts.net:8443/`, to subscribe. The VAPID subject must be a non-localhost contact URI; Apple Push rejects localhost subjects with `BadJwtToken`.
-- Web Push turn-completed notifications include a `/?thread=<threadId>` target URL. Notification clicks should focus/open Mobile Web and load that thread directly, even if it is not present in the first rendered thread list.
+- Web Push turn-completed notifications use `Codex Mobile Web` as the notification title and put the thread title in the body. They include a `/?thread=<threadId>` target URL. Notification clicks should focus/open Mobile Web and load that thread directly, even if it is not present in the first rendered thread list.
 - The composer can upload attachments through multipart form posts.
 - The backend talks to `codex app-server` through JSON-RPC over WebSocket or local JSONL TCP.
 - By default the backend starts a loopback `codex app-server --listen ws://127.0.0.1:<port>` child.

@@ -1241,7 +1241,7 @@
   - `server.js` automatically repairs existing runtime VAPID files whose subject contains `localhost`, while preserving the same public/private key pair.
   - `server.js` now returns sanitized Web Push send failure details from `/api/push/test`.
   - `public/app.js` now reports test-send failure explicitly instead of showing `No push subscription` when a subscription exists but delivery fails.
-  - Turn-completed Web Push payloads now use the thread title as the notification title and body `<thread-id> · This turn 已结束 · <local time>`.
+  - Turn-completed Web Push payloads now use `Codex Mobile Web` as the notification title and body `<thread-title> · This turn 已结束 · <local time>`.
   - Notification click targets include `/?thread=<threadId>`, and the browser now loads that thread directly from the URL even when it is not present in the first rendered thread list.
   - `README.md` documents Web Push setup, iOS Home Screen requirements, local runtime files, and the non-localhost VAPID subject requirement.
 - Runtime state after restart:
@@ -1258,3 +1258,20 @@
   - `npm.cmd run check` passed.
   - `npm.cmd run check:macos` passed.
   - `git diff --check` passed with line-ending warnings only.
+
+## 2026-05-05 Web Push Completion Title Adjustment
+
+- User-reported issue:
+  - Automatic turn-completed notifications used the thread name, for example `Hermes`, as the system notification title.
+  - Test notifications already used the expected app title.
+- Change:
+  - `server.js` now uses `Codex Mobile Web` as the title for automatic turn-completed notifications.
+  - The thread title remains in the notification body as `<thread-title> · This turn 已结束 · <local time>`.
+  - `README.md`, `PROJECT_CONTEXT.md`, and the public release checkout were updated to match this behavior.
+- Runtime activation:
+  - Mobile Web was restarted on `0.0.0.0:8787`.
+  - Current wrapper PID `51516`, Node PID `41324`.
+  - Authenticated `/api/status` through `https://gmk.tail62e8ce.ts.net:8443` returned `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, `lastError=null`.
+- Validation:
+  - Private checkout: `npm.cmd run check`, `npm.cmd run check:macos`, and `git diff --check` passed with line-ending warnings only.
+  - Public checkout: `npm.cmd run check`, `npm.cmd run check:macos`, `npm.cmd test`, and `git diff --check` passed with line-ending warnings only.

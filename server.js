@@ -1287,8 +1287,8 @@ function maybeSendTurnCompletedPush(method, params) {
   const threadTitle = pushThreadTitle(params);
   const threadMark = shortIdentifier(params.threadId || turnId);
   const payload = {
-    title: threadTitle,
-    body: `${threadMark} · This turn 已结束 · ${pushTimestamp(completedAt)}`,
+    title: "Codex Mobile Web",
+    body: `${threadTitle || threadMark} · This turn 已结束 · ${pushTimestamp(completedAt)}`,
     tag: `codex-turn-${params.threadId || turnId}`,
     data: {
       url: notificationUrlForThread(params.threadId),
