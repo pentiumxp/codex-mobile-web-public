@@ -1087,3 +1087,73 @@
   - `git diff --check` passed with line-ending warnings only.
 - Activation note:
   - This approval placement change is frontend/CSS only; existing browser tabs need a page refresh to load it.
+
+## 2026-05-04 Public Repository PR Merge Sequence
+
+- User requested checking the latest public GitHub repository and merging PRs in order starting from PR #6.
+- Public repository:
+  - `https://github.com/pentiumxp/codex-mobile-web-public`
+  - Local path: `C:\Users\xuxin\Documents\codex-mobile-web-public`
+- Merged and pushed public PRs:
+  - PR #6 `增加协议级回归测试` -> merge commit `f2dbf90bc0f352b21ff86f5deba7052e830beb97`
+  - PR #7 `完善手机端 server request 处理` -> merge commit `f3608e744628879a97fa564cabb2ad9369f0c655`
+  - PR #8 `增加 PWA 主屏幕支持` -> merge commit `ffa2792eabbf33cd12af56090d7c07e80a48a725`
+- PR #6 local finding:
+  - Its new `npm test` initially failed on Windows because the test tried to spawn `mock-codex-app-server.js` directly, which raised `spawn EFTYPE`.
+  - The merge commit fixed the test to launch the mock through `process.execPath` and pass the mock script via `CODEX_MUX_CODEX_ARGS`, making the test cross-platform.
+- PR #7 merge details:
+  - Three-way merge after PR #6 preserved the new CI/test files.
+  - Actual changed files were `public/app.js`, `public/styles.css`, and `server.js`.
+- PR #8 merge details:
+  - Resolved `package.json` conflict by keeping `npm test` from PR #6 and adding `public/sw.js` to `npm run check`.
+  - Added PWA manifest, icons, and service worker static shell caching.
+- Validation completed after each merge as applicable:
+  - `npm.cmd test`
+  - `npm.cmd run check`
+  - `npm.cmd run check:macos`
+  - `git diff --check`
+  - For PR #8, also checked `manifest.json` parsing and PNG icon dimensions `192x192`, `512x512`, and `180x180`.
+- Final public repository state:
+  - `main` is synchronized with `origin/main`.
+  - No open PRs remained after merging #6, #7, and #8.
+
+## 2026-05-04 Live Agent Text Disappearing During Stream
+
+- User-reported issue:
+  - During live agent output, text appeared line by line, then the whole current paragraph/section could disappear briefly and reappear a few seconds later.
+- Diagnosis:
+  - The running Mobile Web process was confirmed to use private workspace `C:\Users\xuxin\Documents\codex-mobile-web\server.js`, not the public release checkout.
+  - Public PR merging did not directly change the running code.
+  - Two frontend merge paths could still cause the observed symptom:
+    - `item/completed` / `item/started` upserts replaced an existing streamed item with the incoming item object, even if the incoming object had less visible text.
+    - Thread refresh merges preserved synthetic `mux-user-*` user messages, but did not preserve local-only visible assistant/operation items when the app-server snapshot was shorter than the local streamed state.
+- Code change:
+  - `public/app.js` now uses `mergeItemPreservingVisibleFields()` when upserting an existing item, so short completion/status events cannot erase already-streamed text.
+  - `public/app.js` now preserves local-only visible non-reasoning items when an incoming turn snapshot has lower visible weight than the existing local turn.
+  - The same frontend fix was also applied to the clean public release checkout at `C:\Users\xuxin\Documents\codex-mobile-web-public\public\app.js`.
+- Validation:
+  - Private checkout: `npm.cmd run check`, `npm.cmd run check:macos`, and `git diff --check` passed with line-ending warnings only.
+  - Public checkout: `npm.cmd test`, `npm.cmd run check`, `npm.cmd run check:macos`, and `git diff --check` passed with line-ending warnings only.
+- Activation note:
+  - This is a static frontend change. Existing browser/mobile tabs need a page refresh to load the fixed `public/app.js`; the Node server does not need to restart.
+
+## 2026-05-04 Image Upload Duplicate And Base64 Rendering Fix
+
+- User-reported issue:
+  - Uploading an image could show the submitted user message twice.
+  - One copy could render a large base64/data-url-like payload as garbled text before the attachment path.
+- Diagnosis:
+  - The affected Hermes thread item contained a normal text attachment summary with the local upload path, plus a second app-server-snapshot part shaped like `{ truncated: true, totalChars, preview: "{\"type\":\"image\",\"url\":\"data:image/png;base64,...` }`.
+  - `public/app.js` did not recognize that truncated snapshot part as an image, so it rendered the compacted JSON preview as ordinary text.
+  - During active-turn image input, Mobile Web can first show a synthetic `mux-user-*` echo, then later receive the real app-server `userMessage` with a different item id; previous merge logic preserved both.
+- Code change:
+  - `public/app.js` now recognizes truncated data-image preview payloads as image input parts, preventing the base64 JSON preview from rendering as text.
+  - When a matching attachment summary exists, the image renders from the local upload path as a thumbnail.
+  - `public/app.js` now compares synthetic `mux-user-*` user messages with incoming real `userMessage` items by normalized text and upload paths.
+  - Matching synthetic echoes are dropped during thread refresh merges and when a real `userMessage` is upserted, preventing duplicate display.
+  - The same fix was applied to the clean public release checkout at `C:\Users\xuxin\Documents\codex-mobile-web-public\public\app.js`.
+- Validation:
+  - Private checkout: `npm.cmd run check`, `npm.cmd run check:macos`, and `git diff --check` passed with line-ending warnings only.
+  - Public checkout: `npm.cmd test`, `npm.cmd run check`, `npm.cmd run check:macos`, and `git diff --check` passed with line-ending warnings only.
+- Activation note:
+  - This is a static frontend change. Existing browser/mobile tabs need a page refresh to load the fixed `public/app.js`.
