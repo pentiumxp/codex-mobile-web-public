@@ -14,6 +14,8 @@ const state = {
   refreshTimer: null,
   recoveryTimer: null,
   resumeTimer: null,
+  resumeVisualTimers: [],
+  resumeSeq: 0,
   pollTimer: null,
   pollStableCount: 0,
   lastThreadSignature: "",
@@ -37,6 +39,8 @@ const state = {
   pendingApprovals: new Map(),
   selectedModel: localStorage.getItem("codexMobileSelectedModel") || "",
   selectedEffort: localStorage.getItem("codexMobileSelectedEffort") || "",
+  activityLabel: "",
+  activityAtMs: 0,
   leavingItems: new Map(),
   leavingCleanupTimer: null,
 };
@@ -51,6 +55,22 @@ const STORAGE_EFFORT = "codexMobileSelectedEffort";
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
 
 const $ = (id) => document.getElementById(id);
+
+function viewportHeight() {
+  const visual = window.visualViewport && Number(window.visualViewport.height);
+  const inner = Number(window.innerHeight);
+  const client = document.documentElement && Number(document.documentElement.clientHeight);
+  return Math.max(320, Math.round(visual || inner || client || 0));
+}
+
+function updateViewportVars() {
+  document.documentElement.style.setProperty("--app-height", `${viewportHeight()}px`);
+}
+
+function createSubmissionId() {
+  if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -214,6 +234,18 @@ function updateConnectionState(status, fallbackText = "Starting") {
   el.title = hasError ? status.lastError : "";
 }
 
+function markActivity(label) {
+  state.activityLabel = String(label || "").trim();
+  state.activityAtMs = state.activityLabel ? Date.now() : 0;
+  updateTurnTimer();
+}
+
+function markIdleActivity(label) {
+  if (!state.activeTurnId && !currentLiveTurn()) return;
+  if (state.activityAtMs && Date.now() - state.activityAtMs < 3000) return;
+  markActivity(label);
+}
+
 function normalizeFsPath(value) {
   return String(value || "")
     .replace(/^\\\\\?\\/, "")
@@ -280,6 +312,21 @@ function syncActiveTurnFromThread() {
 
 function isOperationalItem(item) {
   return item && (OPERATIONAL_ITEM_TYPES.has(item.type) || isWebSearchLikeItem(item));
+}
+
+function activityLabelForItem(item) {
+  if (!item) return "更新";
+  const status = statusText(item.status);
+  const completed = isCompletedStatus(status);
+  if (isWebSearchLikeItem(item)) return completed ? "搜索完成" : "搜索";
+  if (item.type === "commandExecution") return completed ? "命令完成" : "命令";
+  if (item.type === "fileChange") return completed ? "文件完成" : "文件";
+  if (item.type === "dynamicToolCall" || item.type === "mcpToolCall") return completed ? "工具完成" : "工具";
+  if (item.type === "agentMessage") return "输出";
+  if (item.type === "userMessage") return "输入";
+  if (item.type === "plan") return "计划";
+  if (item.type === "reasoning") return "思考";
+  return completed ? "更新完成" : "更新";
 }
 
 function isWebSearchLikeItem(item) {
@@ -585,17 +632,65 @@ function turnVisibleWeight(turn) {
   return items.reduce((total, item) => total + itemVisibleWeight(item), 0);
 }
 
+function shouldPreserveLocalOnlyItem(item) {
+  if (!item || itemVisibleWeight(item) <= 0) return false;
+  return item.type === "userMessage" && /^mux-user-/.test(String(item.id || ""));
+}
+
+function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
+  if (!existingItem || !incomingItem) return incomingItem || existingItem;
+  const existingWeight = itemVisibleWeight(existingItem);
+  const incomingWeight = itemVisibleWeight(incomingItem);
+  if (existingWeight <= incomingWeight) return incomingItem;
+  const merged = Object.assign({}, existingItem, incomingItem);
+  if (typeof existingItem.text === "string") merged.text = existingItem.text;
+  if (Array.isArray(existingItem.content)) merged.content = existingItem.content;
+  if (Array.isArray(existingItem.summary)) merged.summary = existingItem.summary;
+  if (existingItem.mobileNotice) merged.mobileNotice = existingItem.mobileNotice;
+  if (isOperationalItem(existingItem)) {
+    if (existingItem.command) merged.command = existingItem.command;
+    if (Array.isArray(existingItem.fileNames)) merged.fileNames = existingItem.fileNames;
+    if (existingItem.tool) merged.tool = existingItem.tool;
+    if (existingItem.server) merged.server = existingItem.server;
+    if (existingItem.namespace) merged.namespace = existingItem.namespace;
+  }
+  return merged;
+}
+
+function mergeItemsPreservingLocalVisible(existingItems, incomingItems) {
+  const incomingById = new Map((incomingItems || [])
+    .filter((item) => item && item.id)
+    .map((item) => [item.id, item]));
+  const added = new Set();
+  const merged = [];
+  for (const existingItem of existingItems || []) {
+    if (!existingItem) continue;
+    const id = existingItem.id;
+    if (id && incomingById.has(id)) {
+      merged.push(mergeItemPreservingVisibleFields(existingItem, incomingById.get(id)));
+      added.add(id);
+    } else if (shouldPreserveLocalOnlyItem(existingItem)) {
+      merged.push(existingItem);
+      if (id) added.add(id);
+    }
+  }
+  for (const incomingItem of incomingItems || []) {
+    if (!incomingItem) continue;
+    if (incomingItem.id && added.has(incomingItem.id)) continue;
+    merged.push(incomingItem);
+    if (incomingItem.id) added.add(incomingItem.id);
+  }
+  return merged;
+}
+
 function mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) {
   if (!existingTurn) return incomingTurn;
   if (!incomingTurn) return existingTurn;
   const existingItems = Array.isArray(existingTurn.items) ? existingTurn.items : [];
   const incomingHasItems = Array.isArray(incomingTurn.items);
-  const existingWeight = turnVisibleWeight(existingTurn);
-  const incomingWeight = incomingHasItems ? turnVisibleWeight(incomingTurn) : -1;
   const merged = Object.assign({}, existingTurn, incomingTurn);
-  if (!incomingHasItems || existingWeight > incomingWeight) {
-    merged.items = existingItems;
-  }
+  if (!incomingHasItems) merged.items = existingItems;
+  else merged.items = mergeItemsPreservingLocalVisible(existingItems, incomingTurn.items || []);
   return merged;
 }
 
@@ -630,10 +725,29 @@ function approvalThreadId(request) {
   return request && request.params && (request.params.threadId || request.params.conversationId || "");
 }
 
+function approvalTurnId(request) {
+  return request && request.params && request.params.turnId ? String(request.params.turnId) : "";
+}
+
+function isApprovalActive(request) {
+  const status = String(request && request.status || "waiting");
+  return status === "waiting";
+}
+
+function isApprovalSettled(request) {
+  const status = String(request && request.status || "");
+  return status && status !== "waiting";
+}
+
 function pendingApprovalsForThread(threadId) {
   return Array.from(state.pendingApprovals.values())
     .filter((request) => approvalThreadId(request) === threadId)
     .sort((a, b) => Number(a.receivedAt || 0) - Number(b.receivedAt || 0));
+}
+
+function approvalsForTurn(threadId, turnId) {
+  return pendingApprovalsForThread(threadId)
+    .filter((request) => approvalTurnId(request) === String(turnId || ""));
 }
 
 function approvalRequestsSignature(threadId) {
@@ -773,28 +887,45 @@ function turnFinalSeconds(turn) {
   return null;
 }
 
+function setTurnTimerContent(el, seconds, detail = "") {
+  let timeEl = el.querySelector(".turn-timer-time");
+  let detailEl = el.querySelector(".turn-timer-detail");
+  if (!timeEl || !detailEl) {
+    el.textContent = "";
+    timeEl = document.createElement("span");
+    timeEl.className = "turn-timer-time";
+    detailEl = document.createElement("span");
+    detailEl.className = "turn-timer-detail";
+    el.append(timeEl, detailEl);
+  }
+  const timeText = `\u672c\u8f6e ${formatElapsedTime(seconds)}`;
+  if (timeEl.textContent !== timeText) timeEl.textContent = timeText;
+  if (detailEl.textContent !== detail) detailEl.textContent = detail;
+  detailEl.classList.toggle("empty", !detail);
+  el.setAttribute("aria-label", detail ? `${timeText} ${detail}` : timeText);
+}
+
 function updateTurnTimer() {
   const el = $("turnTimer");
   if (!el) return;
   updateComposerHeightVar();
-  const turnLabel = "\u672c\u8f6e";
   const turn = currentLiveTurn();
   if (!turn) {
     const latest = latestTurn();
     const finalSeconds = turnFinalSeconds(latest);
     if (finalSeconds != null) {
-      el.textContent = `${turnLabel} ${formatElapsedTime(finalSeconds)}`;
+      setTurnTimerContent(el, finalSeconds, "已结束");
       el.classList.add("visible", "settled");
       el.classList.remove("active");
       el.setAttribute("aria-hidden", "false");
     } else {
-      el.textContent = `${turnLabel} 00:00:00`;
+      setTurnTimerContent(el, 0);
       el.classList.remove("visible", "settled", "active");
       el.setAttribute("aria-hidden", "true");
     }
     return;
   }
-  el.textContent = `${turnLabel} ${formatElapsedTime(turnElapsedSeconds(turn))}`;
+  setTurnTimerContent(el, turnElapsedSeconds(turn), state.activityLabel);
   el.classList.add("visible", "active");
   el.classList.remove("settled");
   el.setAttribute("aria-hidden", "false");
@@ -882,6 +1013,7 @@ function showLogin(message = "") {
 }
 
 function showApp() {
+  updateViewportVars();
   $("login").classList.add("hidden");
   $("app").classList.remove("hidden");
   updateComposerHeightVar();
@@ -1017,6 +1149,7 @@ async function loadThread(threadId) {
   updateComposerControls();
   $("connectionState").classList.remove("error");
   $("connectionState").textContent = "Loading thread";
+  markActivity("加载线程");
   let result;
   try {
     result = await api(`/api/threads/${encodeURIComponent(threadId)}`, {
@@ -1053,6 +1186,7 @@ async function loadThread(threadId) {
 
 async function refreshCurrentThread() {
   if (!state.currentThreadId) return;
+  markIdleActivity("同步");
   const threadId = state.currentThreadId;
   const seq = state.threadLoadSeq;
   const result = await api(`/api/threads/${encodeURIComponent(threadId)}`, { timeoutMs: 20000 });
@@ -1362,8 +1496,13 @@ function renderCurrentThread(options = {}) {
   const omittedBanner = omitted > 0
     ? `<div class="history-note${entryAnimationClass(omittedKey, previousKeys)}" data-render-key="${escapeHtml(omittedKey)}">Older history hidden on mobile: ${omitted.toLocaleString()} turn(s)</div>`
     : "";
+  const visibleTurnIds = new Set(turns.map((turn) => turn && turn.id).filter(Boolean).map(String));
   const turnsHtml = turns.map((turn) => renderTurn(turn, previousKeys)).join("");
-  const approvalsHtml = renderPendingApprovals(thread, previousKeys);
+  const approvalsHtml = renderPendingApprovals(thread, previousKeys, (request) => {
+    const turnId = approvalTurnId(request);
+    if (turnId && visibleTurnIds.has(turnId)) return false;
+    return isApprovalActive(request);
+  });
   const html = omittedBanner + (turnsHtml || approvalsHtml ? `${turnsHtml}${approvalsHtml}` : `<div class="empty-state entry-animate">No visible turns.</div>`);
   updateConversationHtml(html, conversationRenderSignature(thread), { stickToBottom: shouldStickToBottom });
   updateTickTimer();
@@ -1425,26 +1564,38 @@ function renderApprovalActions(request) {
   </div>`;
 }
 
-function renderPendingApprovals(thread, previousKeys = new Set()) {
+function renderApprovalRequest(request, previousKeys = new Set()) {
+  const key = `approval|${request.id}`;
+  const status = String(request.status || "waiting");
+  if (isApprovalSettled(request)) {
+    return `<section class="approval-card compact${entryAnimationClass(key, previousKeys)} ${escapeHtml(status)}" data-render-key="${escapeHtml(key)}" data-approval-card="${escapeHtml(request.id)}">
+      <div class="approval-line">
+        <span>${escapeHtml(approvalTitle(request.method))}</span>
+        <span>${escapeHtml(approvalStatusLabel(request.status))}</span>
+      </div>
+    </section>`;
+  }
+  const detail = approvalDetailLines(request).join("\n");
+  return `<section class="approval-card${entryAnimationClass(key, previousKeys)} ${escapeHtml(status)}" data-render-key="${escapeHtml(key)}" data-approval-card="${escapeHtml(request.id)}">
+    <div class="approval-head">
+      <div>
+        <div class="approval-title">${escapeHtml(approvalTitle(request.method))}</div>
+        <div class="approval-method">${escapeHtml(request.method)}</div>
+      </div>
+      <span class="approval-status">${escapeHtml(approvalStatusLabel(request.status))}</span>
+    </div>
+    ${detail ? `<pre class="approval-detail">${escapeHtml(detail)}</pre>` : ""}
+    ${renderApprovalActions(request)}
+  </section>`;
+}
+
+function renderPendingApprovals(thread, previousKeys = new Set(), filter = null) {
   const threadId = thread && (thread.id || state.currentThreadId);
-  const requests = pendingApprovalsForThread(threadId);
+  const requests = pendingApprovalsForThread(threadId)
+    .filter((request) => !filter || filter(request));
   if (!requests.length) return "";
   return `<div class="approval-stack">
-    ${requests.map((request) => {
-      const key = `approval|${request.id}`;
-      const detail = approvalDetailLines(request).join("\n");
-      return `<section class="approval-card${entryAnimationClass(key, previousKeys)} ${escapeHtml(request.status || "waiting")}" data-render-key="${escapeHtml(key)}" data-approval-card="${escapeHtml(request.id)}">
-        <div class="approval-head">
-          <div>
-            <div class="approval-title">${escapeHtml(approvalTitle(request.method))}</div>
-            <div class="approval-method">${escapeHtml(request.method)}</div>
-          </div>
-          <span class="approval-status">${escapeHtml(approvalStatusLabel(request.status))}</span>
-        </div>
-        ${detail ? `<pre class="approval-detail">${escapeHtml(detail)}</pre>` : ""}
-        ${renderApprovalActions(request)}
-      </section>`;
-    }).join("")}
+    ${requests.map((request) => renderApprovalRequest(request, previousKeys)).join("")}
   </div>`;
 }
 
@@ -1464,14 +1615,19 @@ function renderTurn(turn, previousKeys = new Set()) {
     .sort((a, b) => (a.sourceIndex - b.sourceIndex) || (a.order - b.order))
     .map((entry) => entry.html)
     .join("");
-  if (!items.trim()) return "";
+  const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
+  const turnApprovals = approvalsForTurn(threadId, turn.id);
+  const approvalsHtml = turnApprovals.length
+    ? `<div class="approval-stack in-turn">${turnApprovals.map((request) => renderApprovalRequest(request, previousKeys)).join("")}</div>`
+    : "";
+  if (!items.trim() && !approvalsHtml.trim()) return "";
   const turnKey = stableTurnKey(turn);
   const statusKey = stableTurnKey(turn, "status");
   const duration = turn.durationMs ? ` | ${formatElapsedTime(Math.round(turn.durationMs / 1000))}` : "";
   const timerShowsStatus = isLatestTurn(turn) && (isLiveTurn(turn) || turnFinalSeconds(turn) != null);
   const showStatusLine = !timerShowsStatus;
   return `<article class="turn" data-turn="${escapeHtml(turn.id)}" data-render-key="${escapeHtml(turnKey)}">
-    ${items}
+    ${items}${approvalsHtml}
     ${showStatusLine ? `<div class="turn-status${entryAnimationClass(statusKey, previousKeys)}" data-render-key="${escapeHtml(statusKey)}">${escapeHtml(displayTurnStatus(turn))}${duration}</div>` : ""}
   </article>`;
 }
@@ -1941,6 +2097,7 @@ function ensureTurn(turnId) {
 function upsertItem(turnId, item) {
   const turn = ensureTurn(turnId);
   if (!turn || !item || !item.id) return;
+  markActivity(activityLabelForItem(item));
   if (isReasoningItem(item)) {
     updateTickTimer();
     return;
@@ -1979,6 +2136,7 @@ function ensureTimerItem(turnId, itemId, itemType) {
   const turn = ensureTurn(turnId);
   if (!turn || !itemId) return;
   if (itemType === "reasoning") {
+    markActivity("思考");
     updateTickTimer();
     return;
   }
@@ -1996,9 +2154,11 @@ function appendToItem(turnId, itemId, itemType, field, delta, index = 0) {
   const turn = ensureTurn(turnId);
   if (!turn) return;
   if (itemType === "reasoning") {
+    markActivity("思考");
     updateTickTimer();
     return;
   }
+  markActivity(activityLabelForItem({ type: itemType }));
   let item = (turn.items || []).find((x) => x.id === itemId);
   if (!item) {
     item = { id: itemId, type: itemType };
@@ -2032,8 +2192,20 @@ function scheduleRenderCurrentThread() {
 
 function upsertServerRequest(request) {
   if (!request || !request.id) return;
+  markActivity("等待批准");
   state.pendingApprovals.set(String(request.id), Object.assign({}, state.pendingApprovals.get(String(request.id)) || {}, request));
   if (state.currentThread && approvalThreadId(request) === state.currentThread.id) scheduleRenderCurrentThread();
+}
+
+function scheduleApprovalRemoval(requestId, delayMs = 6000) {
+  const key = String(requestId || "");
+  if (!key) return;
+  setTimeout(() => {
+    const existing = state.pendingApprovals.get(key);
+    if (!existing || !isApprovalSettled(existing)) return;
+    state.pendingApprovals.delete(key);
+    if (state.currentThread) scheduleRenderCurrentThread();
+  }, delayMs);
 }
 
 function resolveServerRequest(payload) {
@@ -2049,10 +2221,8 @@ function resolveServerRequest(payload) {
     next = existing;
   }
   if (state.currentThread && next && approvalThreadId(next) === state.currentThread.id) scheduleRenderCurrentThread();
-  setTimeout(() => {
-    state.pendingApprovals.delete(requestId);
-    if (state.currentThread) scheduleRenderCurrentThread();
-  }, 1200);
+  if (next) markActivity("批准完成");
+  scheduleApprovalRemoval(requestId);
 }
 
 function applyNotification(method, params) {
@@ -2100,6 +2270,7 @@ function applyNotification(method, params) {
   if (!state.currentThread || params.threadId !== state.currentThread.id) return;
   if (method === "turn/started") {
     state.activeTurnId = params.turn.id;
+    markActivity("开始");
     $("interruptTurn").disabled = false;
     updateComposerControls();
     ensureTurn(params.turn.id);
@@ -2112,6 +2283,7 @@ function applyNotification(method, params) {
     Object.assign(turn, mergeTurnPreservingVisibleItems(turn, params.turn));
     removeOperationalItemsFromTurn(turn);
     state.activeTurnId = "";
+    markActivity("完成");
     $("interruptTurn").disabled = true;
     updateComposerControls();
     renderCurrentThread();
@@ -2125,6 +2297,7 @@ function applyNotification(method, params) {
     return;
   }
   if (method === "item/agentMessage/delta") {
+    markActivity("输出");
     appendToItem(params.turnId, params.itemId, "agentMessage", "text", params.delta || "");
     return;
   }
@@ -2135,10 +2308,12 @@ function applyNotification(method, params) {
     return;
   }
   if (method === "item/reasoning/textDelta") {
+    markActivity("思考");
     ensureTimerItem(params.turnId, params.itemId, "reasoning");
     return;
   }
   if (method === "item/reasoning/summaryTextDelta") {
+    markActivity("思考");
     ensureTimerItem(params.turnId, params.itemId, "reasoning");
   }
 }
@@ -2162,6 +2337,7 @@ function connectEvents() {
     if (payload.type === "serverRequestResolved") resolveServerRequest(payload);
   };
   state.events.onerror = () => {
+    markActivity("重连");
     updateConnectionState(null, "Reconnecting");
     clearTimeout(state.recoveryTimer);
     state.recoveryTimer = setTimeout(async () => {
@@ -2186,17 +2362,48 @@ function ensureEventConnection() {
   if (!state.events || state.events.readyState === EventSource.CLOSED) connectEvents();
 }
 
+function clearResumeVisualTimers() {
+  for (const timer of state.resumeVisualTimers) clearTimeout(timer);
+  state.resumeVisualTimers = [];
+}
+
+function forceVisualRecovery(reason = "resume") {
+  updateViewportVars();
+  if (!state.key) return;
+  const app = $("app");
+  const login = $("login");
+  if (!app || !login) return;
+  login.classList.add("hidden");
+  app.classList.remove("hidden");
+  app.classList.add("resume-repaint");
+  app.dataset.resumeReason = reason;
+  app.getBoundingClientRect();
+  if (state.currentThread || state.threads.length) renderCurrentThread();
+  updateComposerHeightVar();
+  window.requestAnimationFrame(() => {
+    app.classList.remove("resume-repaint");
+    delete app.dataset.resumeReason;
+  });
+}
+
 function scheduleMobileResume(reason = "resume", delay = 80) {
   if (document.visibilityState === "hidden") return;
+  const seq = ++state.resumeSeq;
   clearTimeout(state.resumeTimer);
+  clearResumeVisualTimers();
+  for (const visualDelay of [0, delay, delay + 220, delay + 900]) {
+    state.resumeVisualTimers.push(setTimeout(() => {
+      if (seq === state.resumeSeq && document.visibilityState !== "hidden") forceVisualRecovery(reason);
+    }, visualDelay));
+  }
   state.resumeTimer = setTimeout(() => {
-    resumeMobileSession(reason).catch(showError);
+    if (seq === state.resumeSeq) resumeMobileSession(reason).catch(showError);
   }, delay);
 }
 
 async function resumeMobileSession(reason = "resume") {
   if (document.visibilityState === "hidden" || !state.key) return;
-  showApp();
+  forceVisualRecovery(reason);
   updateComposerHeightVar();
   renderComposerSettings();
   updateComposerControls();
@@ -2240,7 +2447,32 @@ function showError(err) {
   $("connectionState").classList.add("error");
 }
 
-function autoSizeTextarea(el) {
+function composerText() {
+  const el = $("messageInput");
+  return (el ? el.innerText : "")
+    .replace(/\u00a0/g, " ")
+    .replace(/\n+$/g, "")
+    .trim();
+}
+
+function setComposerText(value) {
+  const el = $("messageInput");
+  if (!el) return;
+  el.textContent = String(value || "");
+  if (!value) el.innerHTML = "";
+  autoSizeMessageInput(el);
+}
+
+function setMessageInputDisabled(disabled) {
+  const el = $("messageInput");
+  if (!el) return;
+  el.contentEditable = disabled ? "false" : "true";
+  el.setAttribute("aria-disabled", disabled ? "true" : "false");
+  el.tabIndex = disabled ? -1 : 0;
+  el.classList.toggle("disabled", disabled);
+}
+
+function autoSizeMessageInput(el) {
   el.style.height = "auto";
   el.style.height = `${Math.min(160, Math.max(44, el.scrollHeight))}px`;
   updateComposerHeightVar();
@@ -2330,7 +2562,7 @@ function renderAttachmentList() {
 }
 
 function composerHasContent() {
-  return Boolean($("messageInput").value.trim() || state.pendingAttachments.length);
+  return Boolean(composerText() || state.pendingAttachments.length);
 }
 
 function effectiveDefaultModel() {
@@ -2371,7 +2603,7 @@ function updateComposerControls() {
   const interruptMode = Boolean(state.activeTurnId) && !hasContent;
   const sendButton = $("sendMessage");
   const attachButton = $("attachFiles");
-  $("messageInput").disabled = disabled;
+  setMessageInputDisabled(disabled);
   $("fileInput").disabled = disabled;
   $("modelSelect").disabled = disabled;
   $("effortSelect").disabled = disabled;
@@ -2393,7 +2625,7 @@ async function sendMessage(event) {
   event.preventDefault();
   if (state.composerBusy) return;
   const input = $("messageInput");
-  const text = input.value.trim();
+  const text = composerText();
   const hasContent = Boolean(text || state.pendingAttachments.length);
   if (state.activeTurnId && !hasContent) {
     await interruptActiveTurn();
@@ -2401,9 +2633,11 @@ async function sendMessage(event) {
   }
   if ((!text && !state.pendingAttachments.length) || !state.currentThreadId) return;
   state.composerBusy = true;
+  markActivity(state.activeTurnId ? "追加输入" : "发送");
   updateComposerControls();
   try {
     const body = new FormData();
+    body.append("clientSubmissionId", createSubmissionId());
     body.append("text", text);
     if (state.currentThread && state.currentThread.cwd) body.append("cwd", state.currentThread.cwd);
     if (state.activeTurnId) body.append("activeTurnId", state.activeTurnId);
@@ -2417,12 +2651,12 @@ async function sendMessage(event) {
       body,
       timeoutMs: 180000,
     });
-    input.value = "";
-    autoSizeTextarea(input);
+    setComposerText("");
     clearPendingAttachments();
     input.blur();
     $("connectionState").classList.remove("error");
     $("connectionState").textContent = "Sent";
+    markActivity("已发送");
     scheduleCurrentThreadRefresh(600);
     scheduleLivePollIfNeeded(1200);
   } catch (err) {
@@ -2437,6 +2671,7 @@ async function interruptActiveTurn() {
   if (!state.currentThreadId || !state.activeTurnId) return;
   $("connectionState").classList.remove("error");
   $("connectionState").textContent = "Interrupt requested";
+  markActivity("中断");
   await api(`/api/threads/${encodeURIComponent(state.currentThreadId)}/turns/${encodeURIComponent(state.activeTurnId)}/interrupt`, { method: "POST" })
     .then(() => scheduleCurrentThreadRefresh(900))
     .catch(showError);
@@ -2448,6 +2683,7 @@ async function answerApproval(requestId, decision) {
   if (!request || request.status !== "waiting") return;
   request.status = "responding";
   request.decision = decision;
+  markActivity("批准中");
   renderCurrentThread();
   try {
     const result = await api(`/api/approvals/${encodeURIComponent(key)}`, {
@@ -2458,6 +2694,7 @@ async function answerApproval(requestId, decision) {
     if (result && result.request) state.pendingApprovals.set(key, result.request);
     $("connectionState").classList.remove("error");
     $("connectionState").textContent = "Approval sent";
+    markActivity("批准发送");
     renderCurrentThread();
   } catch (err) {
     request.status = "waiting";
@@ -2503,8 +2740,14 @@ function wireUi() {
     answerApproval(button.dataset.approvalId, button.dataset.approvalAction).catch(showError);
   });
   $("messageInput").addEventListener("input", (event) => {
-    autoSizeTextarea(event.target);
+    autoSizeMessageInput(event.target);
     updateComposerControls();
+  });
+  $("messageInput").addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.shiftKey) return;
+    if (!composerHasContent() || state.composerBusy) return;
+    event.preventDefault();
+    $("composer").requestSubmit();
   });
   $("modelSelect").addEventListener("change", (event) => {
     state.selectedModel = event.target.value;
@@ -2519,6 +2762,11 @@ function wireUi() {
   $("messageInput").addEventListener("paste", (event) => {
     const files = Array.from((event.clipboardData && event.clipboardData.files) || []);
     if (files.length) addAttachmentFiles(files);
+    const text = event.clipboardData && event.clipboardData.getData("text/plain");
+    if (text) {
+      event.preventDefault();
+      document.execCommand("insertText", false, text);
+    }
   });
   $("attachFiles").addEventListener("keydown", (event) => {
     if ($("fileInput").disabled || !["Enter", " "].includes(event.key)) return;
@@ -2545,11 +2793,22 @@ function wireUi() {
     $("composer").classList.remove("drag-over");
     addAttachmentFiles(event.dataTransfer.files);
   });
+  updateViewportVars();
   document.addEventListener("visibilitychange", () => scheduleMobileResume("visibility"));
   window.addEventListener("pageshow", () => scheduleMobileResume("pageshow"));
   window.addEventListener("focus", () => scheduleMobileResume("focus", 150));
   window.addEventListener("orientationchange", () => scheduleMobileResume("orientation", 250));
-  window.addEventListener("resize", updateComposerHeightVar);
+  window.addEventListener("resize", () => {
+    updateViewportVars();
+    updateComposerHeightVar();
+  });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", () => {
+      updateViewportVars();
+      updateComposerHeightVar();
+    });
+    window.visualViewport.addEventListener("scroll", () => updateViewportVars());
+  }
 }
 
 async function start() {

@@ -263,12 +263,101 @@ Behavior:
 - Home view shows recent workspaces and recent threads.
 - The top-right timer shows current turn elapsed time as `本轮 HH:MM:SS`.
 - The timer is red while a turn is active and muted after completion.
+- During an active turn, the timer may append a compact activity label such as `思考`, `输出`, `命令`, `文件`, `工具`, `搜索`, `同步`, or `等待批准`.
+- The timer uses a fixed elapsed-time segment, so activity label length changes do not move the `本轮 HH:MM:SS` text.
+- After the latest turn finishes, the timer switches to muted styling and shows `已结束` instead of any in-progress activity label.
 - Live reasoning is not rendered as conversation rows.
 - Command/file/tool activity appears as compact operation cards.
 - Consecutive command/file operation updates show only the latest operation card unless normal visible content appears between two operations.
 - The composer supports per-message model and reasoning effort selectors.
 - The composer shows 5-hour and weekly quota remaining when app-server sends rate-limit updates.
 - The send button follows Codex Desktop behavior: empty composer during an active turn shows `Stop`; typed text or attachments switch it back to `Send`.
+- The message input uses a `contenteditable` textbox instead of a native `textarea` to reduce the extra iOS browser input accessory toolbar. Enter sends; Shift+Enter inserts a newline.
+- The web app avoids programmatic composer focus after send, thread switch, refresh, and mobile foreground recovery. Mobile keyboards should open only after the user explicitly taps the message input.
+
+## Current Update Notes
+
+This section summarizes the current integration behavior for someone cloning or taking over the repository.
+
+### Shared Desktop/Mobile Stream
+
+- Windows Desktop live sync is implemented through `codex-app-server-mux.js` and `start-codex-desktop-shared.ps1`.
+- macOS scripts are included and the implementation approach is documented, but Desktop live sync still needs verification on a real Mac/Codex Desktop build.
+- When Mobile Web detects a shared mux endpoint, it treats that endpoint as the required app-server for the current process lifetime. If the shared endpoint disconnects, Mobile Web reports the shared-stream error instead of silently starting an independent app-server.
+- `-RequireSharedAppServer` / `CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER=1` enforces the same rule even if Mobile Web starts before any mux endpoint exists.
+- `CODEX_MUX_KEEP_ALIVE=1` keeps the mux and real app-server alive after Codex Desktop exits, so Mobile Web can continue using the same live stream.
+- Starting Desktop again through the shared launcher attaches it to the existing mux endpoint instead of creating a second app-server.
+
+### Mux Replay And Reconnect
+
+- The mux keeps a bounded replay buffer for recent app-server notifications:
+  - `turn/*`
+  - `item/*`
+  - `thread/*`
+  - `account/rateLimits/updated`
+- On `initialize`, Mobile Web receives unresolved server requests plus buffered notifications, so reconnecting or refreshing the phone browser can catch up within the replay window.
+- Pending approval/server requests are replayed to all clients because they can block the active turn.
+- Historical notification replay is sent only to clients identified as `codex-mobile-web` by default. Desktop usually loads durable thread history itself; replaying old incremental notifications to Desktop can roll the visible UI back to an earlier partial state.
+- Set `CODEX_MUX_REPLAY_DESKTOP_NOTIFICATIONS=1` only for diagnostics if you need to see how Desktop behaves with historical notification replay.
+- TCP client backpressure is treated as a normal `drain` condition. The mux logs the delay but does not disconnect Desktop or Mobile Web just because one write returned `false`.
+- Events missed before the mux replay buffer existed cannot be reconstructed from mux memory. Future offline intervals are covered within the configured buffer size and age.
+
+### Approval Control
+
+- Mobile Web renders app-server approval requests as cards in the current thread.
+- Supported approval families include command execution, file change, and permission-profile requests.
+- Each pending card exposes:
+  - `Allow once`
+  - `Allow session`
+  - `Deny`
+- The approval response goes back through the same shared app-server stream. This avoids creating a separate stream just to answer permissions.
+- Approval cards render inside their associated turn when a `turnId` is available. After the request is answered, the large card collapses to a one-line status instead of remaining as a full card at the bottom of the conversation.
+
+### Message Submission And Active Turns
+
+- The browser sends a `clientSubmissionId` with each message submission.
+- For modern clients that send `clientSubmissionId`, the server deduplicates only by that id. This prevents an intentional repeated short message, such as `continue`, from being incorrectly suppressed as duplicate content.
+- For older clients that do not send `clientSubmissionId`, the server falls back to a content fingerprint from thread id, active turn id, cwd, model, effort, message text, and attachment metadata.
+- If the same request id, or the same legacy content fingerprint, is repeated within `CODEX_MOBILE_MESSAGE_DEDUPE_WINDOW_MS`, the server returns the original in-flight/completed result and does not call `turn/start` or `turn/steer` again.
+- During an active turn, Mobile Web posts the active turn id. The server uses app-server `turn/steer` when available so Desktop and Mobile stay on the same active stream.
+- After a successful active-turn `turn/steer`, the server also sends a deterministic mux-local `mux/userMessage` echo keyed by `clientSubmissionId`. This makes the user's mid-turn input visible in Mobile Web even when the app-server accepts the steering request without replaying a user-message item.
+- The browser preserves `mux-user-*` user-message echo items during thread refresh merges, because these synthetic visible inputs may not exist in the durable thread snapshot returned by app-server.
+- For new turns, Mobile Web reads the thread's last rollout `turn_context` plus `state_5.sqlite` metadata and forwards the inherited approval policy, sandbox policy, reasoning summary, and configured verbosity where the app-server protocol supports it. This keeps Mobile Web turns aligned with the thread permissions that Desktop is using.
+- Full-access threads are normalized for Mobile Web new turns: if the inherited sandbox is `danger-full-access`, or the permission profile grants root write access, Mobile Web sends `approvalPolicy: "never"` when the persisted approval mode is missing or still `on-request`. This matches the user-facing "full access" expectation and avoids redundant command approval cards on new turns.
+- The older mux-local `mux/userMessage` echo is still retained as a fallback for app-server builds that do not support `turn/steer`.
+
+### Mobile UI Stability
+
+- Conversation rendering uses a lightweight keyed DOM patcher so status polls and no-op refreshes do not replace the whole conversation.
+- Live reasoning deltas update the timer activity label but do not create visible conversation rows.
+- Mobile foreground recovery handles `visibilitychange`, `pageshow`, `focus`, `orientationchange`, `visualViewport` changes, and window resize.
+- On iOS, returning from input-method or permission screens can leave a stale/blank composited viewport. The app maintains a JS-driven `--app-height` and runs several lightweight visual recovery passes after resume.
+- Uploaded image messages render as centered thumbnails, not full-width raw images or data URLs.
+- Non-image uploads are stored locally and referenced by absolute path in the message text.
+
+### Which Restart Is Needed After Changes
+
+Use this table after pulling updates:
+
+| Changed area | Required action |
+| --- | --- |
+| `public/index.html`, `public/app.js`, `public/styles.css` only | Refresh the browser tab. The Node server serves these files from disk. |
+| `server.js` | Restart Mobile Web. |
+| `codex-app-server-mux.js` | Fully quit Desktop and launch once with the force-restart mux option. |
+| `start-codex-desktop-shared.ps1` or shim files | Fully quit Desktop, then relaunch through the updated shared launcher. |
+| macOS `.sh` launcher files | Rerun `npm run check:macos`, then relaunch through the updated script. |
+
+Windows mux replacement:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\start-codex-desktop-shared.ps1 -ForceRestartMux
+```
+
+Mobile Web restart on Windows:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\start-codex-mobile-web.ps1 -HostAddress 0.0.0.0 -Port 8787 -RequireSharedAppServer
+```
 
 ## App-Server Bridge Design
 
@@ -294,6 +383,8 @@ The mux must keep stdout clean because stdout is the Desktop app-server protocol
 When `CODEX_MUX_KEEP_ALIVE=1`, the mux keeps the real app-server and TCP endpoint alive after the Desktop stdio client disconnects. A later Desktop launch through the same wrapper connects back to the existing mux instead of starting a second app-server.
 
 The mux also proxies app-server requests such as command, file-change, and permission approvals. This allows Mobile Web to display approval cards and answer `Allow once`, `Allow session`, or `Deny` without creating a separate app-server stream.
+
+The mux keeps a bounded notification replay buffer. Mobile Web receives buffered `turn/*`, `item/*`, `thread/*`, and rate-limit notifications after reconnecting, while Desktop notification replay is disabled by default to avoid rolling back Desktop's already-loaded durable thread view. Unresolved approval/server requests are replayed to both Desktop and Mobile Web.
 
 ## Windows Desktop Live Sync
 
@@ -444,7 +535,8 @@ Expected shape:
   "childPid": 222,
   "capabilities": {
     "mobileUserMessageEcho": true,
-    "serverRequestProxy": true
+    "serverRequestProxy": true,
+    "notificationReplay": true
   }
 }
 ```
@@ -516,6 +608,9 @@ This can let Mobile Web connect to the mux endpoint, but it does not by itself m
 | `CODEX_MOBILE_MAX_UPLOAD_BYTES` | Max total upload bytes per message. |
 | `CODEX_MOBILE_MAX_UPLOAD_FILES` | Max files per message. |
 | `CODEX_MOBILE_THREAD_TURNS` | Number of recent turns returned to the phone, default `12`. |
+| `CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES` | Tail bytes read from a thread rollout to recover inherited turn runtime settings, default `4194304`. |
+| `CODEX_MOBILE_MESSAGE_DEDUPE_WINDOW_MS` | Time window for treating repeated message submissions as the same request, default `90000`. Requests with `clientSubmissionId` are deduped by id; legacy requests without it fall back to content fingerprinting. |
+| `CODEX_MOBILE_MESSAGE_DEDUPE_MAX` | Maximum number of recent message submissions kept in the dedupe cache, default `300`. |
 | `CODEX_MOBILE_MUX_ENDPOINT_FILE` | Custom mux endpoint file path. |
 | `CODEX_MOBILE_APP_SERVER_WS` | External app-server WebSocket endpoint. |
 | `CODEX_MOBILE_APP_SERVER_TCP` | External app-server JSONL TCP endpoint. |
@@ -528,8 +623,45 @@ This can let Mobile Web connect to the mux endpoint, but it does not by itself m
 | `CODEX_MUX_KEEP_ALIVE` | Keep mux and real app-server alive after Desktop stdio disconnects; Desktop relaunches can attach back to the existing mux. |
 | `CODEX_MUX_ENDPOINT_FILE` | Custom mux endpoint file path. |
 | `CODEX_MUX_CODEX_ARGS` | Override real Codex app-server arguments. When unset, Desktop-supplied arguments are passed through, otherwise the mux falls back to `app-server --analytics-default-enabled`. |
+| `CODEX_MUX_REPLAY_BUFFER_LIMIT` | Maximum buffered app-server notifications for Mobile Web reconnect replay, default `1200`. |
+| `CODEX_MUX_REPLAY_BUFFER_MAX_AGE_MS` | Maximum replay-buffer age in milliseconds, default `1800000` (30 minutes). |
+| `CODEX_MUX_REPLAY_DESKTOP_NOTIFICATIONS` | When set to `1`, also replay historical notifications to Desktop clients. Keep disabled unless diagnosing Desktop reconnect behavior. |
 
 `start-codex-desktop-shared.ps1 -ForceRestartMux` is a launcher option, not an environment variable. It is intended for bridge updates where an existing keep-alive mux must be replaced.
+
+## Troubleshooting
+
+### Mobile Web Shows `Loading thread`
+
+1. Confirm the web server is reachable.
+2. Confirm `/api/status` reports `ready=true`.
+3. If strict shared-stream mode is enabled, check that the mux endpoint file exists:
+
+```text
+%USERPROFILE%\.codex\app-server-mux\endpoint.json
+```
+
+4. If the endpoint points to an old mux after code changes, fully quit Desktop and use `-ForceRestartMux`.
+5. If only one browser tab is stale after a frontend update, refresh that tab. Static files are read from disk and do not require a Node restart.
+
+### Desktop Does Not See Mobile Web Messages
+
+- Desktop must be launched through the shared launcher. A normal Desktop launch starts its own stdio app-server and will not share the same live stream.
+- Mobile Web status should show an external/shared transport such as `external-jsonl-tcp`.
+- If Desktop was offline while Mobile Web continued, future reconnect replay depends on the mux replay buffer. Events older than `CODEX_MUX_REPLAY_BUFFER_MAX_AGE_MS` or beyond `CODEX_MUX_REPLAY_BUFFER_LIMIT` may not replay from mux memory.
+- If Desktop loads complete history and then visually rolls back, leave `CODEX_MUX_REPLAY_DESKTOP_NOTIFICATIONS` unset. Desktop notification replay is off by default for that reason.
+
+### Approval Cards Do Not Appear
+
+- Approval cards require the shared mux path because approvals are server requests on the app-server stream.
+- Confirm the endpoint capabilities include `serverRequestProxy: true`.
+- If Mobile Web is connected to a managed child app-server instead of mux, approvals for the Desktop stream will not appear in Mobile Web.
+
+### iOS Returns To A Blank Or Black Page
+
+- Refresh the page first to ensure the latest frontend files are loaded.
+- The app runs multiple foreground recovery passes after `visibilitychange`, `pageshow`, and `focus`, but iOS browser compositing can still be device/browser-version dependent.
+- If the page is visually blank but the server is alive, switch away and back once; then check whether the issue reproduces after a full page refresh.
 
 ## Safety Notes
 

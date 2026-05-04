@@ -52,6 +52,9 @@ const DEFAULT_RPC_TIMEOUT_MS = 30000;
 const READ_RPC_TIMEOUT_MS = 12000;
 const THREAD_DETAIL_RPC_TIMEOUT_MS = Math.min(6000, READ_RPC_TIMEOUT_MS);
 const MUTATION_RPC_TIMEOUT_MS = 120000;
+const MESSAGE_DEDUPE_WINDOW_MS = Math.max(5_000, Number(process.env.CODEX_MOBILE_MESSAGE_DEDUPE_WINDOW_MS || "90000"));
+const MESSAGE_DEDUPE_MAX = Math.max(20, Number(process.env.CODEX_MOBILE_MESSAGE_DEDUPE_MAX || "300"));
+const MAX_ROLLOUT_CONTEXT_BYTES = Math.max(256 * 1024, Number(process.env.CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES || String(4 * 1024 * 1024)));
 const SAFE_RETRY_METHODS = new Set(["initialize", "thread/list", "thread/read", "thread/turns/list"]);
 const IMAGE_EXTENSIONS = new Set([".avif", ".bmp", ".gif", ".heic", ".heif", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"]);
 const CODEX_CONFIG_DEFAULTS = readCodexConfigDefaults();
@@ -59,6 +62,7 @@ const CODEX_CONFIG_DEFAULTS = readCodexConfigDefaults();
 let clients = new Set();
 let clientHeartbeats = new WeakMap();
 let latestRateLimits = null;
+const recentMessageSubmissions = new Map();
 const SERVER_REQUEST_METHODS = new Set([
   "item/commandExecution/requestApproval",
   "item/fileChange/requestApproval",
@@ -92,12 +96,16 @@ function readCodexConfigDefaults() {
     const text = fs.readFileSync(configPath, "utf8");
     const model = /^\s*model\s*=\s*"([^"]+)"/m.exec(text);
     const effort = /^\s*model_reasoning_effort\s*=\s*"([^"]+)"/m.exec(text);
+    const summary = /^\s*model_reasoning_summary\s*=\s*"([^"]+)"/m.exec(text);
+    const verbosity = /^\s*model_verbosity\s*=\s*"([^"]+)"/m.exec(text);
     return {
       model: model ? model[1] : "",
       reasoningEffort: effort ? effort[1] : "",
+      reasoningSummary: summary ? summary[1] : "",
+      modelVerbosity: verbosity ? verbosity[1] : "",
     };
   } catch (_) {
-    return { model: "", reasoningEffort: "" };
+    return { model: "", reasoningEffort: "", reasoningSummary: "", modelVerbosity: "" };
   }
 }
 
@@ -402,6 +410,206 @@ function parseJsonLine(line) {
   } catch (_) {
     return null;
   }
+}
+
+function parseJsonObject(value) {
+  if (!value) return null;
+  if (typeof value === "object") return value;
+  if (typeof value !== "string") return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function lastString(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+function normalizeEnumValue(value, allowed) {
+  const text = String(value || "").trim();
+  return allowed.has(text) ? text : "";
+}
+
+function normalizeSandboxPolicyType(type) {
+  const text = String(type || "").trim();
+  return {
+    "danger-full-access": "dangerFullAccess",
+    dangerFullAccess: "dangerFullAccess",
+    "read-only": "readOnly",
+    readOnly: "readOnly",
+    "workspace-write": "workspaceWrite",
+    workspaceWrite: "workspaceWrite",
+    "external-sandbox": "externalSandbox",
+    externalSandbox: "externalSandbox",
+  }[text] || "";
+}
+
+function sandboxModeFromPolicy(policy) {
+  const type = normalizeSandboxPolicyType(policy && policy.type);
+  return {
+    dangerFullAccess: "danger-full-access",
+    readOnly: "read-only",
+    workspaceWrite: "workspace-write",
+  }[type] || "";
+}
+
+function normalizeSandboxPolicy(value) {
+  const policy = parseJsonObject(value);
+  if (!policy) return null;
+  const type = normalizeSandboxPolicyType(policy.type);
+  if (type === "dangerFullAccess") return { type };
+  if (type === "readOnly") {
+    return {
+      type,
+      networkAccess: Boolean(policy.networkAccess ?? policy.network_access),
+    };
+  }
+  if (type === "externalSandbox") {
+    return {
+      type,
+      networkAccess: policy.networkAccess || policy.network_access || "restricted",
+    };
+  }
+  if (type === "workspaceWrite") {
+    return {
+      type,
+      writableRoots: Array.isArray(policy.writableRoots) ? policy.writableRoots : (Array.isArray(policy.writable_roots) ? policy.writable_roots : []),
+      networkAccess: Boolean(policy.networkAccess ?? policy.network_access),
+      excludeTmpdirEnvVar: Boolean(policy.excludeTmpdirEnvVar ?? policy.exclude_tmpdir_env_var),
+      excludeSlashTmp: Boolean(policy.excludeSlashTmp ?? policy.exclude_slash_tmp),
+    };
+  }
+  return null;
+}
+
+function normalizePermissionProfile(value) {
+  const profile = parseJsonObject(value);
+  if (!profile) return null;
+  const fileSystem = profile.fileSystem || profile.file_system || null;
+  return {
+    network: profile.network || null,
+    fileSystem: fileSystem ? {
+      entries: Array.isArray(fileSystem.entries) ? fileSystem.entries : [],
+      ...(fileSystem.globScanMaxDepth || fileSystem.glob_scan_max_depth
+        ? { globScanMaxDepth: fileSystem.globScanMaxDepth || fileSystem.glob_scan_max_depth }
+        : {}),
+    } : null,
+  };
+}
+
+function isRootWritePermissionProfile(profile) {
+  const entries = profile
+    && profile.fileSystem
+    && Array.isArray(profile.fileSystem.entries)
+    ? profile.fileSystem.entries
+    : [];
+  return entries.some((entry) => {
+    const pathValue = entry && entry.path;
+    return entry
+      && entry.access === "write"
+      && pathValue
+      && pathValue.type === "special"
+      && pathValue.value
+      && pathValue.value.kind === "root";
+  });
+}
+
+function isFullAccessRuntime(sandboxPolicy, permissionProfile) {
+  return normalizeSandboxPolicyType(sandboxPolicy && sandboxPolicy.type) === "dangerFullAccess"
+    || isRootWritePermissionProfile(permissionProfile);
+}
+
+function readRolloutTail(rolloutPath) {
+  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) return "";
+  let fd = null;
+  try {
+    const stat = fs.statSync(rolloutPath);
+    const start = Math.max(0, stat.size - MAX_ROLLOUT_CONTEXT_BYTES);
+    const length = stat.size - start;
+    const buffer = Buffer.alloc(length);
+    fd = fs.openSync(rolloutPath, "r");
+    fs.readSync(fd, buffer, 0, length, start);
+    return buffer.toString("utf8");
+  } catch (_) {
+    return "";
+  } finally {
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd);
+      } catch (_) {}
+    }
+  }
+}
+
+function readLatestTurnContext(thread) {
+  const rolloutPath = thread && (thread.path || thread.rolloutPath || thread.rollout_path);
+  const text = readRolloutTail(rolloutPath);
+  if (!text) return null;
+  const lines = text.split(/\r?\n/).filter(Boolean);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const entry = parseJsonLine(lines[index]);
+    if (entry && entry.type === "turn_context" && entry.payload && typeof entry.payload === "object") {
+      return entry.payload;
+    }
+  }
+  return null;
+}
+
+function threadRuntimeSettings(threadId) {
+  const thread = readStateDbThread(threadId);
+  const context = readLatestTurnContext(thread) || {};
+  const sandboxPolicy = normalizeSandboxPolicy(context.sandbox_policy || (thread && thread.sandboxPolicy));
+  const permissionProfile = normalizePermissionProfile(context.permission_profile || (thread && thread.permissionProfile));
+  let approvalPolicy = normalizeEnumValue(
+    lastString(context.approval_policy, thread && thread.approvalPolicy),
+    new Set(["untrusted", "on-request", "on-failure", "never"]),
+  );
+  if (isFullAccessRuntime(sandboxPolicy, permissionProfile) && (!approvalPolicy || approvalPolicy === "on-request")) {
+    approvalPolicy = "never";
+  }
+  const reasoningSummary = normalizeEnumValue(
+    lastString(context.summary, context.reasoning_summary, context.model_reasoning_summary, CODEX_CONFIG_DEFAULTS.reasoningSummary),
+    new Set(["auto", "concise", "detailed", "none"]),
+  );
+  const modelVerbosity = normalizeEnumValue(
+    lastString(context.model_verbosity, CODEX_CONFIG_DEFAULTS.modelVerbosity),
+    new Set(["low", "medium", "high"]),
+  );
+  return {
+    approvalPolicy,
+    sandboxPolicy,
+    sandboxMode: sandboxModeFromPolicy(sandboxPolicy),
+    permissionProfile,
+    reasoningSummary,
+    modelVerbosity,
+  };
+}
+
+function applyResumeRuntimeSettings(params, settings) {
+  if (!settings) return params;
+  if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
+  if (settings.permissionProfile) params.permissionProfile = settings.permissionProfile;
+  else if (settings.sandboxMode) params.sandbox = settings.sandboxMode;
+  const config = {};
+  if (settings.reasoningSummary) config.model_reasoning_summary = settings.reasoningSummary;
+  if (settings.modelVerbosity) config.model_verbosity = settings.modelVerbosity;
+  if (Object.keys(config).length) params.config = Object.assign({}, params.config || {}, config);
+  return params;
+}
+
+function applyTurnRuntimeSettings(params, settings) {
+  if (!settings) return params;
+  if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
+  if (settings.sandboxPolicy) params.sandboxPolicy = settings.sandboxPolicy;
+  else if (settings.permissionProfile) params.permissionProfile = settings.permissionProfile;
+  if (settings.reasoningSummary) params.summary = settings.reasoningSummary;
+  return params;
 }
 
 function statusFromRawOperation(payload) {
@@ -950,6 +1158,80 @@ function buildTurnInput(text, uploads) {
     if (file.isImage) input.push({ type: "localImage", path: file.path });
   }
   return input;
+}
+
+function uploadDedupeFingerprint(file) {
+  return {
+    name: file.originalName || "",
+    mimeType: file.mimeType || "",
+    size: Number(file.size || 0),
+    isImage: Boolean(file.isImage),
+  };
+}
+
+function messageSubmissionKeys(threadId, body, text, uploads) {
+  const explicit = String(body.clientSubmissionId || "").trim();
+  const payload = {
+    threadId,
+    activeTurnId: String(body.activeTurnId || ""),
+    cwd: String(body.cwd || ""),
+    model: String(body.model || ""),
+    effort: String(body.effort || ""),
+    text: String(text || ""),
+    uploads: uploads.map(uploadDedupeFingerprint),
+  };
+  const contentKey = `content:${crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex")}`;
+  return explicit ? [`client:${threadId}:${explicit}`] : [contentKey];
+}
+
+function pruneMessageSubmissions(now = Date.now()) {
+  for (const [key, entry] of recentMessageSubmissions) {
+    if (now - entry.startedAt > MESSAGE_DEDUPE_WINDOW_MS) recentMessageSubmissions.delete(key);
+  }
+  while (recentMessageSubmissions.size > MESSAGE_DEDUPE_MAX) {
+    const firstKey = recentMessageSubmissions.keys().next().value;
+    if (!firstKey) break;
+    recentMessageSubmissions.delete(firstKey);
+  }
+}
+
+function cleanupDuplicateUploads(uploads) {
+  const root = path.resolve(UPLOAD_ROOT);
+  for (const file of uploads || []) {
+    try {
+      const filePath = path.resolve(file.path || "");
+      if (!filePath.startsWith(`${root}${path.sep}`)) continue;
+      fs.unlinkSync(filePath);
+    } catch (_) {}
+  }
+}
+
+async function runMessageSubmissionOnce(keys, duplicateUploads, fn) {
+  const now = Date.now();
+  const keyList = Array.isArray(keys) ? keys.filter(Boolean) : [keys].filter(Boolean);
+  pruneMessageSubmissions(now);
+  for (const key of keyList) {
+    const existing = recentMessageSubmissions.get(key);
+    if (existing && now - existing.startedAt <= MESSAGE_DEDUPE_WINDOW_MS) {
+      cleanupDuplicateUploads(duplicateUploads);
+      return existing.promise;
+    }
+  }
+  const entry = { startedAt: now, promise: null };
+  entry.promise = Promise.resolve()
+    .then(fn)
+    .catch((err) => {
+      for (const key of keyList) {
+        if (recentMessageSubmissions.get(key) === entry) recentMessageSubmissions.delete(key);
+      }
+      throw err;
+    });
+  for (const key of keyList) recentMessageSubmissions.set(key, entry);
+  try {
+    return await entry.promise;
+  } finally {
+    pruneMessageSubmissions();
+  }
 }
 
 function mimeFor(file) {
@@ -1583,6 +1865,8 @@ function rowToFallbackThread(row) {
     status: { type: "notLoaded" },
     model: row.model || null,
     effort: row.reasoning_effort || null,
+    sandboxPolicy: row.sandbox_policy || null,
+    approvalPolicy: row.approval_mode || null,
     mobileFallback: true,
   };
 }
@@ -1594,7 +1878,7 @@ function sqlString(value) {
 function readStateDbThread(threadId) {
   if (!fs.existsSync(STATE_DB) || !threadId) return null;
   const query = [
-    "select id,title,first_user_message,cwd,rollout_path,archived,archived_at,updated_at,model,reasoning_effort",
+    "select id,title,first_user_message,cwd,rollout_path,archived,archived_at,updated_at,model,reasoning_effort,sandbox_policy,approval_mode",
     "from threads",
     `where id=${sqlString(threadId)}`,
     "limit 1;",
@@ -1921,12 +2205,13 @@ async function handleApi(req, res) {
   if (resume && req.method === "POST") {
     const threadId = decodeURIComponent(resume[1]);
     const body = await readBody(req);
-    sendJson(res, 200, await codex.request("thread/resume", {
+    const runtimeSettings = threadRuntimeSettings(threadId);
+    sendJson(res, 200, await codex.request("thread/resume", applyResumeRuntimeSettings({
       threadId,
       cwd: body.cwd || null,
       model: body.model || null,
       persistExtendedHistory: true,
-    }, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false }));
+    }, runtimeSettings), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false }));
     return;
   }
   const messages = url.pathname.match(/^\/api\/threads\/([^/]+)\/messages$/);
@@ -1939,42 +2224,53 @@ async function handleApi(req, res) {
       sendJson(res, 400, { error: "Message text or attachment is required" });
       return;
     }
-    if (body.activeTurnId) {
-      try {
-        const result = await codex.request("turn/steer", {
-          threadId,
-          input,
-          expectedTurnId: String(body.activeTurnId),
-        }, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
-        sendJson(res, 200, result);
-        return;
-      } catch (err) {
-        if (!/method not found|unknown method|not found/i.test(err.message || "")) throw err;
-        codex.notifyMuxUserMessage({
-          threadId,
-          turnId: String(body.activeTurnId),
-          input,
-        });
+    const submissionKeys = messageSubmissionKeys(threadId, body, text, uploads);
+    const runtimeSettings = threadRuntimeSettings(threadId);
+    const result = await runMessageSubmissionOnce(submissionKeys, uploads, async () => {
+      if (body.activeTurnId) {
+        try {
+          const result = await codex.request("turn/steer", {
+            threadId,
+            input,
+            expectedTurnId: String(body.activeTurnId),
+          }, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+          codex.notifyMuxUserMessage({
+            threadId,
+            turnId: String(body.activeTurnId),
+            input,
+            clientSubmissionId: body.clientSubmissionId,
+          });
+          return result;
+        } catch (err) {
+          if (!/method not found|unknown method|not found/i.test(err.message || "")) throw err;
+          codex.notifyMuxUserMessage({
+            threadId,
+            turnId: String(body.activeTurnId),
+            input,
+            clientSubmissionId: body.clientSubmissionId,
+          });
+          return {};
+        }
       }
-    }
-    try {
-      await codex.request("thread/resume", {
+      try {
+        await codex.request("thread/resume", applyResumeRuntimeSettings({
+          threadId,
+          cwd: body.cwd || null,
+          model: body.model || null,
+          persistExtendedHistory: true,
+        }, runtimeSettings), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+      } catch (err) {
+        if (!/already|loaded|active/i.test(err.message || "")) throw err;
+      }
+      const params = applyTurnRuntimeSettings({
         threadId,
-        cwd: body.cwd || null,
-        model: body.model || null,
-        persistExtendedHistory: true,
-      }, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
-    } catch (err) {
-      if (!/already|loaded|active/i.test(err.message || "")) throw err;
-    }
-    const params = {
-      threadId,
-      input,
-    };
-    if (body.cwd) params.cwd = body.cwd;
-    if (body.model) params.model = body.model;
-    if (body.effort) params.effort = body.effort;
-    const result = await codex.request("turn/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+        input,
+      }, runtimeSettings);
+      if (body.cwd) params.cwd = body.cwd;
+      if (body.model) params.model = body.model;
+      if (body.effort) params.effort = body.effort;
+      return await codex.request("turn/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+    });
     sendJson(res, 200, result);
     return;
   }

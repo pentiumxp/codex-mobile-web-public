@@ -788,3 +788,302 @@
   - `npm.cmd run check:macos` passed under available Windows bash after LF normalization.
   - `git diff --check` passed.
 - Before pushing, ensure the clean public release repository is synchronized from the private source without copying `.agent-context/` or `AGENTS.md`.
+
+## 2026-05-04 Mux Reconnect History Replay Fix
+
+- User-reported issue:
+  - After replacing mux, if Codex Desktop exits and then reopens, the shared stream still receives new messages, but Desktop does not backfill messages emitted while Desktop was offline.
+- Runtime finding:
+  - The current mux endpoint stayed alive at port `62570` with mux PID `12780` and app-server PID `44104`.
+  - Mobile Web remained connected and healthy (`transport=external-jsonl-tcp`, `sharedRequired=true`, `lastError=null`).
+  - Desktop reconnects were visible in mux log as `attached desktop stdio to existing mux 127.0.0.1:62570`, so the stream was connected; only offline event replay was missing.
+- Root cause:
+  - Keep-alive mux only cached and replayed the `initialize` result for reconnecting clients.
+  - App-server notifications emitted while Desktop stdio was disconnected were broadcast to currently connected clients but not stored for later replay.
+- Code change:
+  - `codex-app-server-mux.js` now keeps a bounded replay buffer for recent `turn/*`, `item/*`, `thread/*`, and `account/rateLimits/updated` notifications.
+  - On client `initialize`, mux replays unresolved server requests and buffered notifications to the reconnecting client.
+  - Synthetic `mux/userMessage` notifications are also cached for replay.
+  - New mux endpoint capability includes `notificationReplay: true`.
+  - Replay controls:
+    - `CODEX_MUX_REPLAY_BUFFER_LIMIT`, default `1200`
+    - `CODEX_MUX_REPLAY_BUFFER_MAX_AGE_MS`, default `1800000` (30 minutes)
+- Validation:
+  - `node --check codex-app-server-mux.js` passed.
+  - `npm.cmd run check` passed.
+- Operational note:
+  - The fix only applies after starting a new mux process from the updated file.
+  - Events missed before the replay buffer existed cannot be reconstructed from mux memory; future offline intervals after replacement should replay within the buffer limit/age.
+- Runtime activation:
+  - User approved immediate mux replacement.
+  - `start-codex-desktop-shared.ps1 -ForceRestartMux` returned `aborted` from the tool layer, but the replacement completed.
+  - New endpoint file points to port `58264`, mux Node PID `28708`, real app-server child PID `50760`, started `2026-05-04T04:28:54.284Z`.
+  - Endpoint capabilities are `{ mobileUserMessageEcho: true, serverRequestProxy: true, notificationReplay: true }`.
+  - Mobile Web was explicitly reconnected to port `58264`; authenticated `/api/status` reported `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, and `lastError=null`.
+  - Mux log confirmed replay path is active: `replayed 288 buffered message(s) to c3 after cached initialize`.
+
+## 2026-05-04 Mobile Foreground Black-Screen Follow-Up
+
+- User confirmed the input-method/external-app return path could still produce a black screen.
+- Likely cause:
+  - The previous resume path refreshed data once, but iOS can return from an input-method permission/app switch with a stale visual viewport height or blank composited layer.
+  - A single resume render can run before `visualViewport.height` / `innerHeight` stabilizes.
+- Changes:
+  - `public/app.js` now maintains `--app-height` from `visualViewport.height`, `window.innerHeight`, or document client height.
+  - `public/styles.css` uses `height: var(--app-height)` for `.app` instead of direct `100dvh`.
+  - Foreground resume now runs visual-only recovery passes at multiple short delays, re-shows the app shell, re-renders cached content, updates composer height, and forces a lightweight repaint before doing the network refresh.
+  - `visualViewport` resize/scroll and window resize update the viewport height variable without focusing the textarea.
+- Validation:
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+- Operational note:
+  - Existing browser tabs need a page refresh to load the updated `public/app.js` and CSS before this fix can affect the black-screen path.
+
+## 2026-05-04 Desktop Reconnect Replay Rollback Fix
+
+- User-reported issue:
+  - After Desktop restart, the current thread initially displayed complete history, then a refresh rolled the visible UI back to an earlier partial point.
+  - New turns still streamed to Desktop, which indicates the live connection itself was still attached.
+- Likely cause:
+  - The new mux notification replay sent historical `turn/*` and `item/*` incremental notifications to Desktop after cached `initialize`.
+  - Desktop had already loaded durable thread history, so replaying older incremental UI events could overwrite or roll back the foreground view.
+- Code change:
+  - `codex-app-server-mux.js` now records each client's `initialize.params.clientInfo`.
+  - Historical notification replay is sent only to clients identified as `codex-mobile-web` by default.
+  - Pending approval/server requests are still replayed to all clients.
+  - `CODEX_MUX_REPLAY_DESKTOP_NOTIFICATIONS=1` can opt Desktop back into historical notification replay for diagnostics.
+- Validation:
+  - `node --check codex-app-server-mux.js` passed.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+- Operational note:
+  - This code change needs a fresh mux process before it affects Desktop reconnect behavior.
+- Runtime activation:
+  - A forced mux restart was requested; the tool reported `aborted`, but the restart completed.
+  - Current endpoint file points to port `49686`, mux Node PID `11168`, real app-server child PID `54496`, started `2026-05-04T04:44:08.760Z`.
+  - Mux log shows Desktop initialized with `name=Codex Desktop` and Mobile Web initialized with `name=codex-mobile-web`.
+  - Authenticated `/api/status` reports `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, `lastError=null`, endpoint port `49686`.
+
+## 2026-05-04 Duplicate Message Submission Guard
+
+- User-reported issue:
+  - A message could appear to submit twice, and long-running/stale turns increasingly required manual Stop.
+- Runtime cleanup:
+  - Found and stopped an old server process from `C:\Users\xuxin\Documents\Agent\tools\cli\codex-mobile-web` and its independent app-server child.
+  - Current Mobile Web status remained healthy afterward: `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, `lastError=null`.
+- Code change:
+  - `public/app.js` now adds a `clientSubmissionId` to each composer message submission.
+  - `server.js` keeps a short bounded message-submission dedupe map.
+  - Server dedupe checks both `clientSubmissionId` and a content fingerprint made from thread id, active turn id, cwd, model, effort, message text, and attachment metadata.
+  - If the same submission arrives again within `CODEX_MOBILE_MESSAGE_DEDUPE_WINDOW_MS` (default 90 seconds), the server returns the original in-flight/completed result and does not call app-server `turn/start` or `turn/steer` again.
+  - Duplicate uploaded files saved by the repeated request are unlinked if they are under the configured upload root.
+- Validation:
+  - `node --check server.js` passed.
+  - `node --check public/app.js` passed.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+- Operational note:
+  - The server-side dedupe fix needs the Mobile Web Node server to be restarted before it affects live submissions.
+
+## 2026-05-04 Stale Running Turn Diagnosis
+
+- User-reported issue:
+  - Desktop/Mobile interaction increasingly appears stuck and often requires pressing Stop.
+  - The same user message could appear twice before the dedupe guard was added.
+- Current evidence:
+  - Mobile Web `/api/status` remains healthy: `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, `lastError=null`, mux port `49686`.
+  - Thread `019ded32-ed92-7681-9591-0e4d457c5274` contains stale turn `019df149-500f-74b3-a038-849c5d2cfda7` still reported by app-server as `inProgress` with no `completedAt` / `durationMs`.
+  - Later turns in the same thread already exist, including completed turns, so the stale in-progress turn is not the actual latest user intent.
+  - Mux/app-server log repeatedly shows `thread/resume overrides ignored for running thread 019ded32-ed92-7681-9591-0e4d457c5274`, which is consistent with app-server treating the thread as still running and causing follow-up submissions/resumes to behave abnormally.
+  - A long-lived PowerShell child under the app-server is the normal Rust command-safety PowerShell AST parser, not necessarily the stuck user command.
+- Recommended next action:
+  - Use the app-server `turn/interrupt` API once for stale turn `019df149-500f-74b3-a038-849c5d2cfda7`.
+  - After interrupt, re-read only that turn's status and verify it is no longer `inProgress`.
+  - Avoid broad `.codex` scans and avoid full mux replacement unless interrupt fails.
+
+## 2026-05-04 iOS Composer Toolbar Mitigation And Activity Feedback - 14:02 +08:00
+
+- User-reported issue:
+  - On iOS, focusing the composer showed an extra browser/input accessory row above the keyboard, taking significant vertical space.
+  - During long active turns, the UI could feel stuck when no command/file card or text delta was visibly changing.
+- Code changes:
+  - `public/index.html` replaces the native composer `textarea` with a `contenteditable` textbox.
+  - `public/app.js` adds contenteditable-specific helpers for text read/write, enabled state, autosizing, paste handling, and Enter-to-send / Shift+Enter newline behavior.
+  - `public/styles.css` moves the composer input styling to `.message-input`.
+  - The active turn timer can now append a compact activity label from live app-server events: `思考`, `输出`, `命令`, `文件`, `工具`, `搜索`, `同步`, `等待批准`, etc.
+  - Activity labels update only the timer text; they do not reintroduce reasoning rows and do not force full conversation rerenders.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with line-ending warnings only.
+  - Authenticated `/api/status` reports `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, `lastError=null`.
+- Operational note:
+  - No Node server restart is required for these static frontend changes.
+  - Existing browser tabs must refresh the page to load the new `index.html`, `app.js`, and `styles.css`.
+  - The `contenteditable` mitigation can reduce the iOS native textarea accessory row, but iOS/browser-owned IME UI cannot be completely controlled from page CSS.
+
+## 2026-05-04 Stable Turn Timer Activity Label Layout
+
+- User-reported issue:
+  - The new activity label in the top-right turn timer made the elapsed time text shift horizontally when labels such as `思考` and `等待批准` had different lengths.
+- Code changes:
+  - `public/app.js` now renders timer content as separate `.turn-timer-time` and `.turn-timer-detail` spans instead of one variable-length text node.
+  - `public/styles.css` gives the timer a fixed responsive width, keeps the elapsed time span fixed, and ellipsizes only the activity label.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+- Operational note:
+  - No Node server restart is required because this only changes static frontend files.
+
+## 2026-05-04 README Update Before Private Push
+
+- User requested commit and push, with README update notes made more detailed.
+- README changes:
+  - Expanded interface notes for activity labels, fixed timer layout, contenteditable composer, and no programmatic composer focus.
+  - Added `Current Update Notes` covering shared Desktop/Mobile stream behavior, mux replay, approval controls, duplicate message submission handling, active-turn steering, and mobile UI recovery.
+  - Added a restart/refresh matrix for frontend files, `server.js`, mux changes, shared launcher changes, and macOS scripts.
+  - Documented `notificationReplay` in the mux endpoint capability example.
+  - Added environment variables for message dedupe and mux replay buffer controls.
+  - Added troubleshooting notes for `Loading thread`, Desktop/Mobile stream mismatch, missing approval cards, and iOS blank/black page recovery.
+- Validation before commit:
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with line-ending warnings only.
+- Scope:
+  - Push target is the private `origin` remote: `https://github.com/pentiumxp/codex-mobile-web.git`.
+  - The local `public` remote points to the clean public release directory and is not pushed by this step.
+
+## 2026-05-04 Settled Timer Label
+
+- User requested that right-side timer activity labels such as `同步` should not remain semantically active after the turn has ended.
+- Change:
+  - `public/app.js` now renders the settled/final timer detail as `已结束` when the latest turn has a final duration.
+  - `README.md` and `PROJECT_CONTEXT.md` document the settled timer label behavior.
+- Validation pending:
+  - Run normal checks before commit and push.
+
+## 2026-05-04 Runtime Inheritance And Mux Backpressure Fix
+
+- User paused remote GitHub push; local commit/amend is allowed, but do not run `git push` until explicitly requested again.
+- User-reported issues:
+  - Desktop showed `Codex app-server websocket closed (code=1)` and stopped refreshing.
+  - Mobile Web mid-turn messages sent through `turn/steer` could disappear from the sender's visible conversation.
+  - Mobile Web turns did not inherit Desktop/thread permissions and output-detail settings closely enough, causing approval prompts even when Desktop was effectively running with high permissions.
+- Findings:
+  - Mux log showed `dropping slow tcp client ...`; the mux treated one `socket.write()` backpressure signal as a dead client and closed it.
+  - Current app-server `turn/steer` returns a turn id but may not emit a visible user-message item.
+  - Thread runtime permissions are available from the latest rollout `turn_context` and `state_5.sqlite` thread metadata; the current thread has `sandbox_policy={"type":"danger-full-access"}` plus a root-write/network-enabled permission profile.
+- Changes:
+  - `codex-app-server-mux.js` now logs TCP backpressure and waits for `drain` instead of closing the client.
+  - `codex-app-server-mux.js` now uses deterministic synthetic user-message ids when `clientSubmissionId` is present.
+  - `server.js` now reads the latest rollout `turn_context` and state DB metadata for thread runtime settings.
+  - `server.js` forwards inherited approval policy, sandbox policy, reasoning summary, and config verbosity where supported during `thread/resume` / `turn/start`.
+  - `server.js` sends a mux-local user-message echo after successful active-turn `turn/steer`.
+  - `README.md` and `PROJECT_CONTEXT.md` document runtime inheritance and the backpressure behavior.
+- Validation:
+  - `node --check server.js` passed.
+  - `node --check codex-app-server-mux.js` passed.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with line-ending warnings only.
+- Activation notes:
+  - `server.js` changes require restarting Mobile Web.
+  - `codex-app-server-mux.js` changes require replacing the keep-alive mux, normally through `start-codex-desktop-shared.ps1 -ForceRestartMux` after Desktop is closed or ready to reconnect.
+
+## 2026-05-04 Runtime Fix Activation Confirmed
+
+- User restarted Codex Desktop after the mux backpressure fix.
+- Confirmed mux endpoint file now points to a fresh shared endpoint:
+  - Protocol: `jsonl-tcp`
+  - Endpoint: `127.0.0.1:51838`
+  - Mux PID: `32948`
+  - Real app-server child PID: `24208`
+  - Capabilities: `mobileUserMessageEcho=true`, `serverRequestProxy=true`, `notificationReplay=true`
+- Confirmed active connections:
+  - Mobile Web Node PID `46604` is listening on `0.0.0.0:8787`.
+  - Desktop adapter PID `44640` is connected to mux port `51838`.
+  - Mobile Web PID `46604` is connected to mux port `51838`.
+- Authenticated `/api/status` confirms:
+  - `ready=true`
+  - `transport=external-jsonl-tcp`
+  - `sharedRequired=true`
+  - `lastError=null`
+  - endpoint port `51838`
+- Mux log after the fresh endpoint start no longer shows new `dropping slow tcp client` entries; the old entries were before the 07:32 mux restart.
+- Remaining observed app-server warnings are upstream/runtime warnings, not Mobile Web transport failures:
+  - ChatGPT backend plugin/event requests returning `403 Forbidden`.
+  - Obsidian MCP resource/list template methods not found.
+  - `thread/resume` overrides ignored for an already running thread; inherited runtime settings are still applied on the next `turn/start` path.
+- Remote push remains paused by user instruction; local branch is ahead of `origin/main`.
+
+## 2026-05-04 Visible External Input Regression Fix
+
+- User-reported issue:
+  - Inputs sent from Mobile Web during an active turn were no longer visible in the message stream.
+  - The regression appeared after adding duplicate-submission protection.
+- Root causes:
+  - `server.js` deduplicated modern submissions by both `clientSubmissionId` and content fingerprint. This could suppress intentional repeated short messages inside the dedupe window.
+  - Synthetic mux-local `mux-user-*` user-message echo items are live stream artifacts; app-server historical thread snapshots may not include them. A later thread refresh could therefore replace the visible item list and drop the user's mid-turn input.
+- Changes:
+  - `server.js` now deduplicates requests with `clientSubmissionId` by that id only.
+  - Content-fingerprint dedupe remains only for legacy/no-id requests.
+  - `public/app.js` thread refresh merges now preserve local-only `mux-user-*` user-message items.
+  - `public/app.js` also preserves richer visible fields for existing items when an incoming snapshot is shorter for the same item id.
+  - `README.md` and `PROJECT_CONTEXT.md` document the revised dedupe and merge behavior.
+- Validation:
+  - `node --check server.js` passed.
+  - `node --check public/app.js` passed.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with line-ending warnings only.
+- Activation notes:
+  - `server.js` changes require restarting Mobile Web.
+  - `public/app.js` changes require refreshing existing browser/mobile tabs to load the new frontend bundle.
+
+## 2026-05-04 Full Access Approval Normalization
+
+- User-reported issue:
+  - Mobile Web still showed many command approval cards even though the thread was expected to be in full-access mode.
+- Findings:
+  - Current thread `019ded32-ed92-7681-9591-0e4d457c5274` has `sandbox_policy={"type":"danger-full-access"}` in `state_5.sqlite`.
+  - The same thread and latest rollout `turn_context` still store `approval_policy="on-request"`.
+  - Therefore the sandbox/file permissions were being inherited, but approval policy still allowed command approval prompts.
+- Change:
+  - `server.js` now treats inherited full access as authoritative for Mobile Web new turns.
+  - If sandbox policy is `dangerFullAccess`, or the permission profile grants root write access, and approval policy is missing or `on-request`, Mobile Web sends `approvalPolicy: "never"` on `turn/start`.
+  - This applies only to new turns. Existing active turns keep their already-started runtime settings; `turn/steer` cannot change approval policy mid-turn.
+- Documentation:
+  - `README.md` and `PROJECT_CONTEXT.md` document this full-access approval normalization.
+- Validation:
+  - `node --check server.js` passed.
+  - `node --check public/app.js` passed.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with line-ending warnings only.
+- Runtime activation:
+  - Mobile Web restarted after the change.
+  - Current Mobile Web Node PID `56684` listens on `0.0.0.0:8787`.
+  - Authenticated `/api/status` reports `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, `lastError=null`, endpoint port `51838`.
+  - Existing active turns keep their original approval policy; the full-access normalization applies to subsequent `turn/start` calls.
+
+## 2026-05-04 Approval Card Placement And Settled Compact State
+
+- User-reported issue:
+  - Command approval cards remained as large cards at the bottom of the conversation after approval, occupying too much space.
+- Changes:
+  - `public/app.js` now associates approval requests with their `params.turnId` when available.
+  - Approval cards for visible turns render inside the matching turn instead of in the bottom fallback stack.
+  - Only active waiting approvals without a visible turn remain in the bottom fallback stack.
+  - Answered/resolved approvals render as a compact one-line in-turn status.
+  - `public/styles.css` adds compact approval row styling and in-turn approval spacing.
+  - `README.md` and `PROJECT_CONTEXT.md` document the behavior.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --check server.js` passed.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with line-ending warnings only.
+- Activation note:
+  - This approval placement change is frontend/CSS only; existing browser tabs need a page refresh to load it.

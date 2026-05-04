@@ -24,6 +24,9 @@ const KEEP_ALIVE = STANDALONE || /^(1|true|yes|on)$/i.test(process.env.CODEX_MUX
 const RUNTIME_DIR = process.env.CODEX_MUX_RUNTIME_DIR || path.join(CODEX_HOME, "app-server-mux");
 const ENDPOINT_FILE = process.env.CODEX_MUX_ENDPOINT_FILE || path.join(RUNTIME_DIR, "endpoint.json");
 const LOG_FILE = process.env.CODEX_MUX_LOG_FILE || path.join(RUNTIME_DIR, "mux.log");
+const REPLAY_BUFFER_LIMIT = Math.max(0, Number(process.env.CODEX_MUX_REPLAY_BUFFER_LIMIT || "1200"));
+const REPLAY_BUFFER_MAX_AGE_MS = Math.max(0, Number(process.env.CODEX_MUX_REPLAY_BUFFER_MAX_AGE_MS || String(30 * 60 * 1000)));
+const REPLAY_DESKTOP_NOTIFICATIONS = /^(1|true|yes|on)$/i.test(process.env.CODEX_MUX_REPLAY_DESKTOP_NOTIFICATIONS || "");
 
 let nextClientId = 1;
 let child = null;
@@ -34,7 +37,9 @@ const clients = new Map();
 const pending = new Map();
 const serverRequests = new Map();
 const activeTurnsByThread = new Map();
+const replayBuffer = [];
 let nextSyntheticItemId = 1;
+let nextReplaySeq = 1;
 let initializeResult = null;
 
 function log(message) {
@@ -82,7 +87,7 @@ function createLineParser(onLine) {
 
 function addClient(name, write, close) {
   const id = `c${nextClientId++}`;
-  const client = { id, name, write, close };
+  const client = { id, name, write, close, clientInfo: null, backpressureSince: 0 };
   clients.set(id, client);
   log(`client connected ${id} ${name}`);
   return client;
@@ -99,12 +104,9 @@ function removeClient(client) {
 
 function sendToClient(client, message) {
   try {
-    if (writeJsonLine(client.write, message) === false && isTcpClient(client)) {
-      log(`dropping slow tcp client ${client.id}`);
-      try {
-        client.close();
-      } catch (_) {}
-      removeClient(client);
+    if (writeJsonLine(client.write, message) === false && isTcpClient(client) && !client.backpressureSince) {
+      client.backpressureSince = Date.now();
+      log(`tcp client backpressure ${client.id}; waiting for drain`);
     }
   } catch (err) {
     log(`failed to send to ${client.id}: ${err.message}`);
@@ -114,6 +116,86 @@ function sendToClient(client, message) {
 
 function broadcastToClients(message) {
   for (const client of clients.values()) sendToClient(client, message);
+}
+
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function isReplayableNotification(message) {
+  if (!message || hasId(message) || !message.method) return false;
+  const method = String(message.method);
+  return method.startsWith("turn/")
+    || method.startsWith("item/")
+    || method.startsWith("thread/")
+    || method === "account/rateLimits/updated";
+}
+
+function pruneReplayBuffer(now = Date.now()) {
+  if (REPLAY_BUFFER_MAX_AGE_MS > 0) {
+    const oldestAllowed = now - REPLAY_BUFFER_MAX_AGE_MS;
+    while (replayBuffer.length && replayBuffer[0].receivedAt < oldestAllowed) {
+      replayBuffer.shift();
+    }
+  }
+  if (REPLAY_BUFFER_LIMIT > 0) {
+    while (replayBuffer.length > REPLAY_BUFFER_LIMIT) replayBuffer.shift();
+  } else {
+    replayBuffer.length = 0;
+  }
+}
+
+function cacheReplayNotification(message) {
+  if (REPLAY_BUFFER_LIMIT <= 0 || !isReplayableNotification(message)) return;
+  try {
+    replayBuffer.push({
+      seq: nextReplaySeq++,
+      receivedAt: Date.now(),
+      message: cloneJson(message),
+    });
+    pruneReplayBuffer();
+  } catch (err) {
+    log(`failed to cache replay notification method=${message && message.method ? message.method : ""}: ${err.message}`);
+  }
+}
+
+function rememberClientInfo(client, message) {
+  if (!client || !message || message.method !== "initialize") return;
+  const clientInfo = message.params && message.params.clientInfo;
+  if (!clientInfo || typeof clientInfo !== "object") return;
+  client.clientInfo = cloneJson(clientInfo);
+  const name = client.clientInfo.name || "";
+  const title = client.clientInfo.title || "";
+  log(`client ${client.id} initialized name=${String(name).slice(0, 80)} title=${String(title).slice(0, 120)}`);
+}
+
+function isMobileWebClient(client) {
+  const info = (client && client.clientInfo) || {};
+  const name = String(info.name || "").toLowerCase();
+  const title = String(info.title || "").toLowerCase();
+  return name === "codex-mobile-web" || title.includes("codex mobile web");
+}
+
+function replayMissedNotifications(client, reason) {
+  if (!client) return;
+  pruneReplayBuffer();
+  let requestCount = 0;
+  let notificationCount = 0;
+  for (const request of serverRequests.values()) {
+    if (!request.message) continue;
+    sendToClient(client, request.message);
+    requestCount += 1;
+  }
+  const shouldReplayNotifications = isMobileWebClient(client) || REPLAY_DESKTOP_NOTIFICATIONS;
+  if (shouldReplayNotifications) {
+    for (const entry of replayBuffer) {
+      sendToClient(client, entry.message);
+      notificationCount += 1;
+    }
+  }
+  if (requestCount > 0 || notificationCount > 0) {
+    log(`replayed ${requestCount} pending request(s), ${notificationCount} buffered notification(s) to ${client.id} after ${reason}`);
+  }
 }
 
 function isTcpClient(client) {
@@ -155,7 +237,9 @@ function buildUserMessageNotification(params) {
       threadId,
       turnId,
       item: {
-        id: `mux-user-${Date.now()}-${nextSyntheticItemId++}`,
+        id: params.clientSubmissionId
+          ? `mux-user-${threadId}-${turnId}-${String(params.clientSubmissionId)}`
+          : `mux-user-${Date.now()}-${nextSyntheticItemId++}`,
         type: "userMessage",
         content,
       },
@@ -167,6 +251,7 @@ function handleMuxMethod(client, message) {
   if (!message || message.method !== "mux/userMessage") return false;
   const notification = isTcpClient(client) ? buildUserMessageNotification(message.params || {}) : null;
   if (notification) {
+    cacheReplayNotification(notification);
     broadcastToClients(notification);
     log(`synthetic active-turn user message thread=${notification.params.threadId} turn=${notification.params.turnId} source=${client.id}`);
   }
@@ -215,6 +300,8 @@ function handleClientLine(client, line) {
     return;
   }
 
+  rememberClientInfo(client, message);
+
   if (handleMuxMethod(client, message)) return;
 
   if (message.method === "initialize" && hasId(message) && initializeResult) {
@@ -223,6 +310,7 @@ function handleClientLine(client, line) {
       id: message.id,
       result: initializeResult,
     });
+    replayMissedNotifications(client, "cached initialize");
     log(`replayed cached initialize result for ${client.id}`);
     return;
   }
@@ -279,6 +367,7 @@ function handleChildLine(line) {
     serverRequests.set(requestId, {
       method: message.method,
       receivedAt: Date.now(),
+      message: cloneJson(message),
     });
     broadcastToClients(message);
     log(`broadcast server request id=${requestId} method=${message.method}`);
@@ -301,6 +390,9 @@ function handleChildLine(line) {
     }
     message.id = request.originalId;
     sendToClient(request.client, message);
+    if (request.method === "initialize" && !message.error) {
+      replayMissedNotifications(request.client, "initialize");
+    }
     return;
   }
 
@@ -309,6 +401,7 @@ function handleChildLine(line) {
       serverRequests.delete(String(message.params.requestId));
     }
     trackTurnNotification(message);
+    cacheReplayNotification(message);
     broadcastToClients(message);
   }
 }
@@ -366,6 +459,12 @@ function startTcpServer() {
     );
     const onData = createLineParser((line) => handleClientLine(client, line));
     socket.on("data", onData);
+    socket.on("drain", () => {
+      if (client.backpressureSince) {
+        log(`tcp client drain ${client.id} after ${Date.now() - client.backpressureSince}ms`);
+        client.backpressureSince = 0;
+      }
+    });
     socket.on("close", () => removeClient(client));
     socket.on("error", (err) => {
       log(`tcp client error ${client.id}: ${err.message}`);
@@ -385,6 +484,7 @@ function startTcpServer() {
       capabilities: {
         mobileUserMessageEcho: true,
         serverRequestProxy: true,
+        notificationReplay: true,
       },
     };
     fs.mkdirSync(path.dirname(ENDPOINT_FILE), { recursive: true });
