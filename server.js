@@ -81,6 +81,14 @@ const ACTIONABLE_APPROVAL_METHODS = new Set([
   "execCommandApproval",
   "applyPatchApproval",
 ]);
+const ACTIONABLE_USER_INPUT_METHODS = new Set([
+  "item/tool/requestUserInput",
+  "mcpServer/elicitation/request",
+]);
+const ACTIONABLE_SERVER_REQUEST_METHODS = new Set([
+  ...ACTIONABLE_APPROVAL_METHODS,
+  ...ACTIONABLE_USER_INPUT_METHODS,
+]);
 
 function optionListFromEnv(name, fallback) {
   const values = String(process.env[name] || "")
@@ -894,6 +902,28 @@ function fileNamesFromApproval(method, params = {}) {
   return [];
 }
 
+function compactUserInputQuestions(params = {}) {
+  if (!Array.isArray(params.questions)) return [];
+  return params.questions.slice(0, 8).map((question) => {
+    const options = Array.isArray(question && question.options)
+      ? question.options.slice(0, 12).map((option) => Object.fromEntries(Object.entries({
+        label: option && option.label ? compactApprovalText(option.label, 240) : "",
+        description: option && option.description ? compactApprovalText(option.description, 500) : "",
+      }).filter(([, value]) => value !== "")))
+      : [];
+    return Object.fromEntries(Object.entries({
+      id: question && question.id ? String(question.id) : "",
+      header: question && question.header ? compactApprovalText(question.header, 240) : "",
+      question: question && question.question ? compactApprovalText(question.question, 1200) : "",
+      isOther: Boolean(question && question.isOther),
+      options,
+    }).filter(([, value]) => {
+      if (Array.isArray(value)) return value.length > 0;
+      return value !== "" && value !== false;
+    }));
+  });
+}
+
 function compactApprovalParams(method, params = {}) {
   return Object.fromEntries(Object.entries({
     threadId: params.threadId || params.conversationId || null,
@@ -907,6 +937,12 @@ function compactApprovalParams(method, params = {}) {
     fileNames: fileNamesFromApproval(method, params),
     permissions: method === "item/permissions/requestApproval" ? compactStructured(params.permissions || {}) : null,
     networkApprovalContext: params.networkApprovalContext || null,
+    questions: method === "item/tool/requestUserInput" ? compactUserInputQuestions(params) : [],
+    elicitationId: method === "mcpServer/elicitation/request" ? params.elicitationId || null : null,
+    title: method === "mcpServer/elicitation/request" && params.title ? compactApprovalText(params.title, 240) : null,
+    message: method === "mcpServer/elicitation/request" && params.message ? compactApprovalText(params.message, 1200) : null,
+    schema: method === "mcpServer/elicitation/request" && params.schema ? compactStructured(params.schema) : null,
+    elicitation: method === "mcpServer/elicitation/request" && params.elicitation ? compactStructured(params.elicitation) : null,
   }).filter(([, value]) => {
     if (Array.isArray(value)) return value.length > 0;
     return value !== null && value !== undefined && value !== "";
@@ -921,7 +957,7 @@ function publicServerRequest(request) {
     decision: request.decision || null,
     receivedAt: request.receivedAt || null,
     respondedAt: request.respondedAt || null,
-    actionable: ACTIONABLE_APPROVAL_METHODS.has(request.method),
+    actionable: ACTIONABLE_SERVER_REQUEST_METHODS.has(request.method),
     params: compactApprovalParams(request.method, request.params || {}),
   };
 }
@@ -973,6 +1009,41 @@ function approvalResponsePayload(request, decision) {
       },
     };
   }
+  throw new Error(`Unsupported server request method: ${method || "unknown"}`);
+}
+
+function userInputResponsePayload(request, body = {}) {
+  const params = (request && request.params) || {};
+  const questions = Array.isArray(params.questions) ? params.questions : [];
+  if (body.answers && typeof body.answers === "object") {
+    return { result: { answers: body.answers } };
+  }
+  const responseText = String(body.responseText || body.text || "").trim();
+  const questionId = String(body.questionId || (questions[0] && questions[0].id) || "answer");
+  return {
+    result: {
+      answers: responseText ? { [questionId]: { answers: [responseText] } } : {},
+    },
+  };
+}
+
+function mcpElicitationResponsePayload(body = {}) {
+  const action = body.action === "decline" || body.decision === "deny" ? "decline" : "accept";
+  if (action === "decline") return { result: { action, content: null } };
+  const responseText = String(body.responseText || body.text || "").trim();
+  const result = { action, content: {} };
+  if (body.content && typeof body.content === "object") result.content = body.content;
+  else if (responseText) result.content = { response: responseText };
+  return { result };
+}
+
+function serverRequestResponsePayload(request, body = {}) {
+  const method = request && request.method;
+  if (ACTIONABLE_APPROVAL_METHODS.has(method)) {
+    return approvalResponsePayload(request, String(body.decision || ""));
+  }
+  if (method === "item/tool/requestUserInput") return userInputResponsePayload(request, body);
+  if (method === "mcpServer/elicitation/request") return mcpElicitationResponsePayload(body);
   throw new Error(`Unsupported server request method: ${method || "unknown"}`);
 }
 
@@ -1705,15 +1776,16 @@ class CodexAppServerClient {
     this.ws.send(JSON.stringify(message));
   }
 
-  answerServerRequest(requestId, decision) {
+  answerServerRequest(requestId, responseBody = {}) {
     const key = String(requestId);
     const request = this.serverRequests.get(key);
     if (!request) throw new Error("Approval request is no longer pending");
     if (request.status !== "waiting") throw new Error("Approval request has already been answered");
-    const payload = approvalResponsePayload(request, decision);
+    const body = responseBody && typeof responseBody === "object" ? responseBody : { decision: String(responseBody || "") };
+    const payload = serverRequestResponsePayload(request, body);
     this.sendServerRequestResponse(request, payload);
     request.status = "responded";
-    request.decision = decision;
+    request.decision = body.decision || body.action || "submitted";
     request.respondedAt = Date.now();
     broadcast({ type: "serverRequestResolved", requestId: key, request: publicServerRequest(request) });
     setTimeout(() => this.serverRequests.delete(key), 15000).unref();
@@ -2102,7 +2174,7 @@ async function handleApi(req, res) {
   if (approvalResponse && req.method === "POST") {
     const requestId = decodeURIComponent(approvalResponse[1]);
     const body = await readBody(req);
-    const request = codex.answerServerRequest(requestId, String(body.decision || ""));
+    const request = codex.answerServerRequest(requestId, body);
     sendJson(res, 200, { ok: true, request });
     return;
   }
