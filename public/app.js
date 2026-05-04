@@ -633,9 +633,54 @@ function turnVisibleWeight(turn) {
   return items.reduce((total, item) => total + itemVisibleWeight(item), 0);
 }
 
-function shouldPreserveLocalOnlyItem(item) {
+function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false) {
   if (!item || itemVisibleWeight(item) <= 0) return false;
-  return item.type === "userMessage" && /^mux-user-/.test(String(item.id || ""));
+  if (item.type === "userMessage" && /^mux-user-/.test(String(item.id || ""))) return true;
+  return preserveLocalVisible && !isReasoningItem(item);
+}
+
+function isMuxUserMessage(item) {
+  return Boolean(item && item.type === "userMessage" && /^mux-user-/.test(String(item.id || "")));
+}
+
+function normalizeComparableText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function userMessageComparableParts(item) {
+  const result = { text: "", paths: [] };
+  if (!item || item.type !== "userMessage") return result;
+  const textParts = [];
+  const paths = [];
+  for (const part of item.content || []) {
+    if (!part || typeof part !== "object") continue;
+    if (part.type === "text") {
+      const split = splitAttachmentSummaryText(part.text || "");
+      if (split.text) textParts.push(split.text);
+      for (const attachment of split.attachments) {
+        if (attachment.path) paths.push(normalizeFsPath(attachment.path));
+      }
+      continue;
+    }
+    if (part.path) paths.push(normalizeFsPath(part.path));
+  }
+  result.text = normalizeComparableText(textParts.join("\n"));
+  result.paths = [...new Set(paths.filter(Boolean))].sort();
+  return result;
+}
+
+function userMessagesLikelySame(left, right) {
+  if (!left || !right || left.type !== "userMessage" || right.type !== "userMessage") return false;
+  const a = userMessageComparableParts(left);
+  const b = userMessageComparableParts(right);
+  if (a.text !== b.text) return false;
+  if (!a.paths.length && !b.paths.length) return true;
+  return a.paths.some((pathValue) => b.paths.includes(pathValue));
+}
+
+function hasMatchingIncomingUserMessage(existingItem, incomingItems) {
+  if (!isMuxUserMessage(existingItem)) return false;
+  return (incomingItems || []).some((incomingItem) => userMessagesLikelySame(existingItem, incomingItem));
 }
 
 function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
@@ -658,7 +703,7 @@ function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
   return merged;
 }
 
-function mergeItemsPreservingLocalVisible(existingItems, incomingItems) {
+function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserveLocalVisible = false) {
   const incomingById = new Map((incomingItems || [])
     .filter((item) => item && item.id)
     .map((item) => [item.id, item]));
@@ -670,7 +715,9 @@ function mergeItemsPreservingLocalVisible(existingItems, incomingItems) {
     if (id && incomingById.has(id)) {
       merged.push(mergeItemPreservingVisibleFields(existingItem, incomingById.get(id)));
       added.add(id);
-    } else if (shouldPreserveLocalOnlyItem(existingItem)) {
+    } else if (hasMatchingIncomingUserMessage(existingItem, incomingItems)) {
+      if (id) added.add(id);
+    } else if (shouldPreserveLocalOnlyItem(existingItem, preserveLocalVisible)) {
       merged.push(existingItem);
       if (id) added.add(id);
     }
@@ -691,7 +738,11 @@ function mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) {
   const incomingHasItems = Array.isArray(incomingTurn.items);
   const merged = Object.assign({}, existingTurn, incomingTurn);
   if (!incomingHasItems) merged.items = existingItems;
-  else merged.items = mergeItemsPreservingLocalVisible(existingItems, incomingTurn.items || []);
+  else {
+    const incomingWeight = turnVisibleWeight(Object.assign({}, incomingTurn, { items: incomingTurn.items || [] }));
+    const preserveLocalVisible = incomingWeight < turnVisibleWeight(existingTurn);
+    merged.items = mergeItemsPreservingLocalVisible(existingItems, incomingTurn.items || [], preserveLocalVisible);
+  }
   return merged;
 }
 
@@ -1814,7 +1865,14 @@ function isInputImagePart(part) {
   if (!part || typeof part !== "object") return false;
   const type = String(part.type || "");
   const url = String(part.url || part.image_url || "");
+  if (isTruncatedImagePayloadPart(part)) return true;
   return type === "image" || type === "localImage" || /^data:image\//i.test(url);
+}
+
+function isTruncatedImagePayloadPart(part) {
+  if (!part || typeof part !== "object" || !part.truncated) return false;
+  const preview = String(part.preview || "");
+  return /data:image\//i.test(preview) || /"type"\s*:\s*"image"/i.test(preview);
 }
 
 function splitAttachmentSummaryText(text) {
@@ -2158,6 +2216,9 @@ function upsertItem(turnId, item) {
     return;
   }
   turn.items = turn.items || [];
+  if (item.type === "userMessage") {
+    turn.items = turn.items.filter((existing) => !isMuxUserMessage(existing) || !userMessagesLikelySame(existing, item));
+  }
   if (isOperationalItem(item)) {
     turn.items.forEach((existing, existingIndex) => {
       if (isOperationalItem(existing) && existing.id !== item.id) {
@@ -2175,7 +2236,7 @@ function upsertItem(turnId, item) {
   if (index >= 0 && !item.startedAtMs && turn.items[index].startedAtMs) item.startedAtMs = turn.items[index].startedAtMs;
   if (item.type === "reasoning" && !item.startedAtMs) item.startedAtMs = Date.now();
   if (isOperationalItem(item) && isCompletedStatus(item.status) && !item.completedAtMs) item.completedAtMs = Date.now();
-  if (index >= 0) turn.items[index] = item;
+  if (index >= 0) turn.items[index] = mergeItemPreservingVisibleFields(turn.items[index], item);
   else turn.items.push(item);
   scheduleRenderCurrentThread();
 }
