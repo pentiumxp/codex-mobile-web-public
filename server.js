@@ -81,6 +81,19 @@ function readCodexConfigDefaults() {
   }
 }
 
+function commandNeedsFilesystemCheck(command) {
+  const value = String(command || "");
+  return path.isAbsolute(value) || value.includes("/") || value.includes("\\");
+}
+
+function assertCommandAvailable(command, label) {
+  const value = String(command || "").trim();
+  if (!value) throw new Error(`${label} is not configured`);
+  if (commandNeedsFilesystemCheck(value) && !fs.existsSync(value)) {
+    throw new Error(`${label} not found: ${value}`);
+  }
+}
+
 function loadAuthKey() {
   if (process.env.CODEX_MOBILE_KEY && process.env.CODEX_MOBILE_KEY.trim()) {
     return process.env.CODEX_MOBILE_KEY.trim();
@@ -1044,9 +1057,7 @@ class CodexAppServerClient {
   }
 
   async startManagedChild() {
-    if (!fs.existsSync(CODEX_EXE)) {
-      throw new Error(`Codex executable not found: ${CODEX_EXE}`);
-    }
+    assertCommandAvailable(CODEX_EXE, "Codex executable");
     if (!this.child || this.child.exitCode !== null || this.child.signalCode !== null) {
       this.port = await getFreePort();
       const child = spawn(CODEX_EXE, ["app-server", "--listen", `ws://127.0.0.1:${this.port}`], {
@@ -1055,6 +1066,22 @@ class CodexAppServerClient {
         stdio: ["ignore", "pipe", "pipe"],
       });
       this.child = child;
+      const started = new Promise((resolve, reject) => {
+        const onError = (err) => {
+          child.off("spawn", onSpawn);
+          if (this.child === child) this.child = null;
+          this.ready = false;
+          this.lastError = `failed to start codex app-server (${err.message})`;
+          broadcast({ type: "status", status: this.status() });
+          reject(new Error(this.lastError));
+        };
+        const onSpawn = () => {
+          child.off("error", onError);
+          resolve();
+        };
+        child.once("error", onError);
+        child.once("spawn", onSpawn);
+      });
       child.stderr.on("data", (chunk) => this.handleAppServerLog(chunk));
       child.stdout.on("data", (chunk) => this.handleAppServerLog(chunk));
       child.on("exit", (code, signal) => {
@@ -1063,6 +1090,7 @@ class CodexAppServerClient {
         this.lastError = `codex app-server exited (${code ?? signal ?? "unknown"})`;
         broadcast({ type: "status", status: this.status() });
       });
+      await started;
     }
   }
 
