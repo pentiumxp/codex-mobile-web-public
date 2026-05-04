@@ -2333,9 +2333,6 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-process.on("SIGINT", () => shutdown());
-process.on("SIGTERM", () => shutdown());
-
 function shutdown() {
   try {
     if (codex.ws) codex.ws.close();
@@ -2346,8 +2343,19 @@ function shutdown() {
   process.exit(0);
 }
 
-server.listen(PORT, HOST, () => {
-  console.log(`Codex Mobile Web listening on http://${HOST}:${PORT}`);
-  console.log(`Codex app-server will be managed on 127.0.0.1 when first used.`);
-  console.log(DISABLE_AUTH ? "Authentication disabled by CODEX_MOBILE_DISABLE_AUTH." : `Authentication enabled; key source is env CODEX_MOBILE_KEY or ${AUTH_KEY_FILE}.`);
-});
+if (require.main === module) {
+  process.on("SIGINT", () => shutdown());
+  process.on("SIGTERM", () => shutdown());
+
+  server.listen(PORT, HOST, () => {
+    console.log(`Codex Mobile Web listening on http://${HOST}:${PORT}`);
+    console.log(`Codex app-server will be managed on 127.0.0.1 when first used.`);
+    console.log(DISABLE_AUTH ? "Authentication disabled by CODEX_MOBILE_DISABLE_AUTH." : `Authentication enabled; key source is env CODEX_MOBILE_KEY or ${AUTH_KEY_FILE}.`);
+  });
+}
+
+module.exports = {
+  approvalResponsePayload,
+  compactApprovalParams,
+  publicServerRequest,
+};
