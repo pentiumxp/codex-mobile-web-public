@@ -1449,7 +1449,7 @@ function renderItem(item, turn = null, previousKeys = new Set(), index = 0) {
   const key = stableItemKey(turn, item, index);
   return `<section class="item${entryAnimationClass(key, previousKeys)} ${escapeHtml(type)}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">
     <div class="item-head"><span>${escapeHtml(labelForItem(item))}</span><span>${escapeHtml(item.status ? statusText(item.status) : "")}</span></div>
-    <div class="item-body">${renderItemBody(item)}</div>
+    <div class="item-body">${renderItemBody(item, turn)}</div>
   </section>`;
 }
 
@@ -1743,10 +1743,12 @@ function renderMarkdown(value) {
   return `<div class="markdown-body">${blocks.join("")}</div>`;
 }
 
-function renderItemBody(item) {
+function renderItemBody(item, turn = null) {
   if (isContextCompactionItem(item)) return escapeHtml(item.mobileNotice || "历史上下文已压缩");
   if (item.type === "userMessage") return renderInputContent(item.content);
-  if (item.type === "agentMessage") return renderMarkdown(item.text || "");
+  if (item.type === "agentMessage") {
+    return isLiveTurn(turn) ? escapeHtml(item.text || "") : renderMarkdown(item.text || "");
+  }
   if (item.type === "reasoning") {
     const summary = (item.summary || []).join("\n");
     const content = (item.content || []).join("\n");
