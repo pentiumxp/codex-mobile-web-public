@@ -17,6 +17,7 @@ const CODEX_EXE = process.env.CODEX_MOBILE_CODEX_EXE || "codex";
 const MUX_ENDPOINT_FILE = process.env.CODEX_MOBILE_MUX_ENDPOINT_FILE || path.join(CODEX_HOME, "app-server-mux", "endpoint.json");
 const EXTERNAL_APP_SERVER_WS = process.env.CODEX_MOBILE_APP_SERVER_WS || "";
 const EXTERNAL_APP_SERVER_TCP = process.env.CODEX_MOBILE_APP_SERVER_TCP || "";
+const REQUIRE_SHARED_APP_SERVER = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER || "");
 const HOST = process.env.CODEX_MOBILE_HOST || "0.0.0.0";
 const PORT = Number(process.env.CODEX_MOBILE_PORT || "8787");
 const DISABLE_AUTH = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_DISABLE_AUTH || "");
@@ -51,6 +52,9 @@ const DEFAULT_RPC_TIMEOUT_MS = 30000;
 const READ_RPC_TIMEOUT_MS = 12000;
 const THREAD_DETAIL_RPC_TIMEOUT_MS = Math.min(6000, READ_RPC_TIMEOUT_MS);
 const MUTATION_RPC_TIMEOUT_MS = 120000;
+const MESSAGE_DEDUPE_WINDOW_MS = Math.max(5_000, Number(process.env.CODEX_MOBILE_MESSAGE_DEDUPE_WINDOW_MS || "90000"));
+const MESSAGE_DEDUPE_MAX = Math.max(20, Number(process.env.CODEX_MOBILE_MESSAGE_DEDUPE_MAX || "300"));
+const MAX_ROLLOUT_CONTEXT_BYTES = Math.max(256 * 1024, Number(process.env.CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES || String(4 * 1024 * 1024)));
 const SAFE_RETRY_METHODS = new Set(["initialize", "thread/list", "thread/read", "thread/turns/list"]);
 const IMAGE_EXTENSIONS = new Set([".avif", ".bmp", ".gif", ".heic", ".heif", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"]);
 const CODEX_CONFIG_DEFAULTS = readCodexConfigDefaults();
@@ -58,6 +62,25 @@ const CODEX_CONFIG_DEFAULTS = readCodexConfigDefaults();
 let clients = new Set();
 let clientHeartbeats = new WeakMap();
 let latestRateLimits = null;
+const recentMessageSubmissions = new Map();
+const SERVER_REQUEST_METHODS = new Set([
+  "item/commandExecution/requestApproval",
+  "item/fileChange/requestApproval",
+  "item/permissions/requestApproval",
+  "item/tool/requestUserInput",
+  "mcpServer/elicitation/request",
+  "item/tool/call",
+  "account/chatgptAuthTokens/refresh",
+  "execCommandApproval",
+  "applyPatchApproval",
+]);
+const ACTIONABLE_APPROVAL_METHODS = new Set([
+  "item/commandExecution/requestApproval",
+  "item/fileChange/requestApproval",
+  "item/permissions/requestApproval",
+  "execCommandApproval",
+  "applyPatchApproval",
+]);
 
 function optionListFromEnv(name, fallback) {
   const values = String(process.env[name] || "")
@@ -73,12 +96,16 @@ function readCodexConfigDefaults() {
     const text = fs.readFileSync(configPath, "utf8");
     const model = /^\s*model\s*=\s*"([^"]+)"/m.exec(text);
     const effort = /^\s*model_reasoning_effort\s*=\s*"([^"]+)"/m.exec(text);
+    const summary = /^\s*model_reasoning_summary\s*=\s*"([^"]+)"/m.exec(text);
+    const verbosity = /^\s*model_verbosity\s*=\s*"([^"]+)"/m.exec(text);
     return {
       model: model ? model[1] : "",
       reasoningEffort: effort ? effort[1] : "",
+      reasoningSummary: summary ? summary[1] : "",
+      modelVerbosity: verbosity ? verbosity[1] : "",
     };
   } catch (_) {
-    return { model: "", reasoningEffort: "" };
+    return { model: "", reasoningEffort: "", reasoningSummary: "", modelVerbosity: "" };
   }
 }
 
@@ -385,6 +412,206 @@ function parseJsonLine(line) {
   }
 }
 
+function parseJsonObject(value) {
+  if (!value) return null;
+  if (typeof value === "object") return value;
+  if (typeof value !== "string") return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function lastString(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+function normalizeEnumValue(value, allowed) {
+  const text = String(value || "").trim();
+  return allowed.has(text) ? text : "";
+}
+
+function normalizeSandboxPolicyType(type) {
+  const text = String(type || "").trim();
+  return {
+    "danger-full-access": "dangerFullAccess",
+    dangerFullAccess: "dangerFullAccess",
+    "read-only": "readOnly",
+    readOnly: "readOnly",
+    "workspace-write": "workspaceWrite",
+    workspaceWrite: "workspaceWrite",
+    "external-sandbox": "externalSandbox",
+    externalSandbox: "externalSandbox",
+  }[text] || "";
+}
+
+function sandboxModeFromPolicy(policy) {
+  const type = normalizeSandboxPolicyType(policy && policy.type);
+  return {
+    dangerFullAccess: "danger-full-access",
+    readOnly: "read-only",
+    workspaceWrite: "workspace-write",
+  }[type] || "";
+}
+
+function normalizeSandboxPolicy(value) {
+  const policy = parseJsonObject(value);
+  if (!policy) return null;
+  const type = normalizeSandboxPolicyType(policy.type);
+  if (type === "dangerFullAccess") return { type };
+  if (type === "readOnly") {
+    return {
+      type,
+      networkAccess: Boolean(policy.networkAccess ?? policy.network_access),
+    };
+  }
+  if (type === "externalSandbox") {
+    return {
+      type,
+      networkAccess: policy.networkAccess || policy.network_access || "restricted",
+    };
+  }
+  if (type === "workspaceWrite") {
+    return {
+      type,
+      writableRoots: Array.isArray(policy.writableRoots) ? policy.writableRoots : (Array.isArray(policy.writable_roots) ? policy.writable_roots : []),
+      networkAccess: Boolean(policy.networkAccess ?? policy.network_access),
+      excludeTmpdirEnvVar: Boolean(policy.excludeTmpdirEnvVar ?? policy.exclude_tmpdir_env_var),
+      excludeSlashTmp: Boolean(policy.excludeSlashTmp ?? policy.exclude_slash_tmp),
+    };
+  }
+  return null;
+}
+
+function normalizePermissionProfile(value) {
+  const profile = parseJsonObject(value);
+  if (!profile) return null;
+  const fileSystem = profile.fileSystem || profile.file_system || null;
+  return {
+    network: profile.network || null,
+    fileSystem: fileSystem ? {
+      entries: Array.isArray(fileSystem.entries) ? fileSystem.entries : [],
+      ...(fileSystem.globScanMaxDepth || fileSystem.glob_scan_max_depth
+        ? { globScanMaxDepth: fileSystem.globScanMaxDepth || fileSystem.glob_scan_max_depth }
+        : {}),
+    } : null,
+  };
+}
+
+function isRootWritePermissionProfile(profile) {
+  const entries = profile
+    && profile.fileSystem
+    && Array.isArray(profile.fileSystem.entries)
+    ? profile.fileSystem.entries
+    : [];
+  return entries.some((entry) => {
+    const pathValue = entry && entry.path;
+    return entry
+      && entry.access === "write"
+      && pathValue
+      && pathValue.type === "special"
+      && pathValue.value
+      && pathValue.value.kind === "root";
+  });
+}
+
+function isFullAccessRuntime(sandboxPolicy, permissionProfile) {
+  return normalizeSandboxPolicyType(sandboxPolicy && sandboxPolicy.type) === "dangerFullAccess"
+    || isRootWritePermissionProfile(permissionProfile);
+}
+
+function readRolloutTail(rolloutPath) {
+  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) return "";
+  let fd = null;
+  try {
+    const stat = fs.statSync(rolloutPath);
+    const start = Math.max(0, stat.size - MAX_ROLLOUT_CONTEXT_BYTES);
+    const length = stat.size - start;
+    const buffer = Buffer.alloc(length);
+    fd = fs.openSync(rolloutPath, "r");
+    fs.readSync(fd, buffer, 0, length, start);
+    return buffer.toString("utf8");
+  } catch (_) {
+    return "";
+  } finally {
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd);
+      } catch (_) {}
+    }
+  }
+}
+
+function readLatestTurnContext(thread) {
+  const rolloutPath = thread && (thread.path || thread.rolloutPath || thread.rollout_path);
+  const text = readRolloutTail(rolloutPath);
+  if (!text) return null;
+  const lines = text.split(/\r?\n/).filter(Boolean);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const entry = parseJsonLine(lines[index]);
+    if (entry && entry.type === "turn_context" && entry.payload && typeof entry.payload === "object") {
+      return entry.payload;
+    }
+  }
+  return null;
+}
+
+function threadRuntimeSettings(threadId) {
+  const thread = readStateDbThread(threadId);
+  const context = readLatestTurnContext(thread) || {};
+  const sandboxPolicy = normalizeSandboxPolicy(context.sandbox_policy || (thread && thread.sandboxPolicy));
+  const permissionProfile = normalizePermissionProfile(context.permission_profile || (thread && thread.permissionProfile));
+  let approvalPolicy = normalizeEnumValue(
+    lastString(context.approval_policy, thread && thread.approvalPolicy),
+    new Set(["untrusted", "on-request", "on-failure", "never"]),
+  );
+  if (isFullAccessRuntime(sandboxPolicy, permissionProfile) && (!approvalPolicy || approvalPolicy === "on-request")) {
+    approvalPolicy = "never";
+  }
+  const reasoningSummary = normalizeEnumValue(
+    lastString(context.summary, context.reasoning_summary, context.model_reasoning_summary, CODEX_CONFIG_DEFAULTS.reasoningSummary),
+    new Set(["auto", "concise", "detailed", "none"]),
+  );
+  const modelVerbosity = normalizeEnumValue(
+    lastString(context.model_verbosity, CODEX_CONFIG_DEFAULTS.modelVerbosity),
+    new Set(["low", "medium", "high"]),
+  );
+  return {
+    approvalPolicy,
+    sandboxPolicy,
+    sandboxMode: sandboxModeFromPolicy(sandboxPolicy),
+    permissionProfile,
+    reasoningSummary,
+    modelVerbosity,
+  };
+}
+
+function applyResumeRuntimeSettings(params, settings) {
+  if (!settings) return params;
+  if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
+  if (settings.permissionProfile) params.permissionProfile = settings.permissionProfile;
+  else if (settings.sandboxMode) params.sandbox = settings.sandboxMode;
+  const config = {};
+  if (settings.reasoningSummary) config.model_reasoning_summary = settings.reasoningSummary;
+  if (settings.modelVerbosity) config.model_verbosity = settings.modelVerbosity;
+  if (Object.keys(config).length) params.config = Object.assign({}, params.config || {}, config);
+  return params;
+}
+
+function applyTurnRuntimeSettings(params, settings) {
+  if (!settings) return params;
+  if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
+  if (settings.sandboxPolicy) params.sandboxPolicy = settings.sandboxPolicy;
+  else if (settings.permissionProfile) params.permissionProfile = settings.permissionProfile;
+  if (settings.reasoningSummary) params.summary = settings.reasoningSummary;
+  return params;
+}
+
 function statusFromRawOperation(payload) {
   const status = String(payload.status || "").toLowerCase();
   if (status) return status;
@@ -647,6 +874,108 @@ function compactRateLimits(value) {
   }).filter(([, entry]) => entry !== undefined));
 }
 
+function compactApprovalText(value, maxChars = 1200) {
+  return truncateMiddle(String(value ?? ""), maxChars, "approval text");
+}
+
+function commandTextFromApproval(method, params = {}) {
+  if (method === "execCommandApproval" && Array.isArray(params.command)) return params.command.join(" ");
+  if (typeof params.command === "string") return params.command;
+  if (Array.isArray(params.commandActions) && params.commandActions.length) {
+    return params.commandActions.map((action) => action && action.command).filter(Boolean).join(" && ");
+  }
+  return "";
+}
+
+function fileNamesFromApproval(method, params = {}) {
+  if (method === "applyPatchApproval" && params.fileChanges && typeof params.fileChanges === "object") {
+    return Object.keys(params.fileChanges).slice(0, 12);
+  }
+  return [];
+}
+
+function compactApprovalParams(method, params = {}) {
+  return Object.fromEntries(Object.entries({
+    threadId: params.threadId || params.conversationId || null,
+    turnId: params.turnId || null,
+    itemId: params.itemId || params.callId || null,
+    approvalId: params.approvalId || null,
+    reason: params.reason ? compactApprovalText(params.reason, 900) : null,
+    command: commandTextFromApproval(method, params) ? compactApprovalText(commandTextFromApproval(method, params), 1800) : null,
+    cwd: params.cwd || null,
+    grantRoot: params.grantRoot || null,
+    fileNames: fileNamesFromApproval(method, params),
+    permissions: method === "item/permissions/requestApproval" ? compactStructured(params.permissions || {}) : null,
+    networkApprovalContext: params.networkApprovalContext || null,
+  }).filter(([, value]) => {
+    if (Array.isArray(value)) return value.length > 0;
+    return value !== null && value !== undefined && value !== "";
+  }));
+}
+
+function publicServerRequest(request) {
+  return {
+    id: String(request.id),
+    method: request.method,
+    status: request.status || "waiting",
+    decision: request.decision || null,
+    receivedAt: request.receivedAt || null,
+    respondedAt: request.respondedAt || null,
+    actionable: ACTIONABLE_APPROVAL_METHODS.has(request.method),
+    params: compactApprovalParams(request.method, request.params || {}),
+  };
+}
+
+function grantedPermissionsFromRequest(params = {}) {
+  const permissions = params.permissions || {};
+  const granted = {};
+  if (permissions.network) granted.network = permissions.network;
+  if (permissions.fileSystem) granted.fileSystem = permissions.fileSystem;
+  return granted;
+}
+
+function approvalResponsePayload(request, decision) {
+  const method = request && request.method;
+  const params = (request && request.params) || {};
+  if (!["allow_once", "allow_session", "deny"].includes(decision)) {
+    throw new Error("Invalid approval decision");
+  }
+  if (method === "item/commandExecution/requestApproval") {
+    return {
+      result: {
+        decision: decision === "allow_once" ? "accept" : decision === "allow_session" ? "acceptForSession" : "decline",
+      },
+    };
+  }
+  if (method === "item/fileChange/requestApproval") {
+    return {
+      result: {
+        decision: decision === "allow_once" ? "accept" : decision === "allow_session" ? "acceptForSession" : "decline",
+      },
+    };
+  }
+  if (method === "execCommandApproval" || method === "applyPatchApproval") {
+    return {
+      result: {
+        decision: decision === "allow_once" ? "approved" : decision === "allow_session" ? "approved_for_session" : "denied",
+      },
+    };
+  }
+  if (method === "item/permissions/requestApproval") {
+    if (decision === "deny") {
+      return { error: { code: -32001, message: "Permission request denied" } };
+    }
+    return {
+      result: {
+        permissions: grantedPermissionsFromRequest(params),
+        scope: decision === "allow_session" ? "session" : "turn",
+        strictAutoReview: false,
+      },
+    };
+  }
+  throw new Error(`Unsupported server request method: ${method || "unknown"}`);
+}
+
 function readRawBody(req, limitBytes) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -831,6 +1160,80 @@ function buildTurnInput(text, uploads) {
   return input;
 }
 
+function uploadDedupeFingerprint(file) {
+  return {
+    name: file.originalName || "",
+    mimeType: file.mimeType || "",
+    size: Number(file.size || 0),
+    isImage: Boolean(file.isImage),
+  };
+}
+
+function messageSubmissionKeys(threadId, body, text, uploads) {
+  const explicit = String(body.clientSubmissionId || "").trim();
+  const payload = {
+    threadId,
+    activeTurnId: String(body.activeTurnId || ""),
+    cwd: String(body.cwd || ""),
+    model: String(body.model || ""),
+    effort: String(body.effort || ""),
+    text: String(text || ""),
+    uploads: uploads.map(uploadDedupeFingerprint),
+  };
+  const contentKey = `content:${crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex")}`;
+  return explicit ? [`client:${threadId}:${explicit}`] : [contentKey];
+}
+
+function pruneMessageSubmissions(now = Date.now()) {
+  for (const [key, entry] of recentMessageSubmissions) {
+    if (now - entry.startedAt > MESSAGE_DEDUPE_WINDOW_MS) recentMessageSubmissions.delete(key);
+  }
+  while (recentMessageSubmissions.size > MESSAGE_DEDUPE_MAX) {
+    const firstKey = recentMessageSubmissions.keys().next().value;
+    if (!firstKey) break;
+    recentMessageSubmissions.delete(firstKey);
+  }
+}
+
+function cleanupDuplicateUploads(uploads) {
+  const root = path.resolve(UPLOAD_ROOT);
+  for (const file of uploads || []) {
+    try {
+      const filePath = path.resolve(file.path || "");
+      if (!filePath.startsWith(`${root}${path.sep}`)) continue;
+      fs.unlinkSync(filePath);
+    } catch (_) {}
+  }
+}
+
+async function runMessageSubmissionOnce(keys, duplicateUploads, fn) {
+  const now = Date.now();
+  const keyList = Array.isArray(keys) ? keys.filter(Boolean) : [keys].filter(Boolean);
+  pruneMessageSubmissions(now);
+  for (const key of keyList) {
+    const existing = recentMessageSubmissions.get(key);
+    if (existing && now - existing.startedAt <= MESSAGE_DEDUPE_WINDOW_MS) {
+      cleanupDuplicateUploads(duplicateUploads);
+      return existing.promise;
+    }
+  }
+  const entry = { startedAt: now, promise: null };
+  entry.promise = Promise.resolve()
+    .then(fn)
+    .catch((err) => {
+      for (const key of keyList) {
+        if (recentMessageSubmissions.get(key) === entry) recentMessageSubmissions.delete(key);
+      }
+      throw err;
+    });
+  for (const key of keyList) recentMessageSubmissions.set(key, entry);
+  try {
+    return await entry.promise;
+  } finally {
+    pruneMessageSubmissions();
+  }
+}
+
 function mimeFor(file) {
   const ext = path.extname(file).toLowerCase();
   return {
@@ -1007,11 +1410,11 @@ function resolveExternalEndpoint() {
         port: Number(endpoint.port),
         source: MUX_ENDPOINT_FILE,
         capabilities: endpoint.capabilities || null,
-        required: false,
+        required: true,
       };
     }
     if (endpoint && endpoint.protocol === "ws" && endpoint.url) {
-      return { protocol: "ws", url: endpoint.url, source: MUX_ENDPOINT_FILE, required: false };
+      return { protocol: "ws", url: endpoint.url, source: MUX_ENDPOINT_FILE, required: true };
     }
   } catch (_) {
     return null;
@@ -1028,11 +1431,13 @@ class CodexAppServerClient {
     this.transportKind = "none";
     this.nextId = 1;
     this.pending = new Map();
+    this.serverRequests = new Map();
     this.connecting = null;
     this.info = null;
     this.ready = false;
     this.lastError = null;
     this.resetting = false;
+    this.requireSharedAppServer = REQUIRE_SHARED_APP_SERVER;
   }
 
   async ensure() {
@@ -1052,16 +1457,23 @@ class CodexAppServerClient {
     this.closeTransportOnly();
     const externalEndpoint = resolveExternalEndpoint();
     if (externalEndpoint) {
+      this.requireSharedAppServer = true;
       try {
         await this.connectEndpoint(externalEndpoint);
         await this.initialize({ allowAlreadyInitialized: true });
         return;
       } catch (err) {
         this.closeTransportOnly();
-        if (externalEndpoint.required) throw err;
-        this.lastError = `shared app-server endpoint unavailable (${err.message}); falling back to managed app-server`;
+        this.lastError = `shared app-server endpoint unavailable (${err.message})`;
         console.error(`[codex app-server] ${this.lastError}`);
+        throw new Error(this.lastError);
       }
+    }
+
+    if (this.requireSharedAppServer) {
+      this.lastError = `shared app-server endpoint unavailable (${MUX_ENDPOINT_FILE} not found)`;
+      console.error(`[codex app-server] ${this.lastError}`);
+      throw new Error(this.lastError);
     }
 
     await this.startManagedChild();
@@ -1168,8 +1580,10 @@ class CodexAppServerClient {
         this.transportKind = url.includes(`127.0.0.1:${this.port}`) ? "managed-ws-child" : "external-ws";
         ws.onmessage = (event) => this.handleMessage(event.data);
         ws.onclose = () => {
+          const wasShared = this.transportKind === "external-ws";
           this.ready = false;
-          this.failPending(new Error("codex app-server connection closed"));
+          this.lastError = wasShared ? "shared app-server connection closed" : "codex app-server connection closed";
+          this.failPending(new Error(this.lastError));
           broadcast({ type: "status", status: this.status() });
         };
         ws.onerror = () => {
@@ -1197,10 +1611,12 @@ class CodexAppServerClient {
         this.ws = connection;
         this.endpoint = endpoint;
         this.transportKind = "external-jsonl-tcp";
+        this.requireSharedAppServer = true;
         connection.onmessage = (event) => this.handleMessage(event.data);
         connection.onclose = () => {
           this.ready = false;
-          this.failPending(new Error("codex app-server connection closed"));
+          this.lastError = "shared app-server connection closed";
+          this.failPending(new Error(this.lastError));
           broadcast({ type: "status", status: this.status() });
         };
         connection.onerror = () => {
@@ -1222,6 +1638,10 @@ class CodexAppServerClient {
     } catch (_) {
       return;
     }
+    if (Object.prototype.hasOwnProperty.call(msg, "id") && msg.method) {
+      this.handleServerRequest(msg);
+      return;
+    }
     if (Object.prototype.hasOwnProperty.call(msg, "id") && this.pending.has(msg.id)) {
       const { resolve, reject, timer } = this.pending.get(msg.id);
       clearTimeout(timer);
@@ -1234,8 +1654,70 @@ class CodexAppServerClient {
       if (msg.method === "account/rateLimits/updated" && msg.params && msg.params.rateLimits) {
         latestRateLimits = compactRateLimits(msg.params.rateLimits);
       }
+      if (msg.method === "serverRequest/resolved" && msg.params && msg.params.requestId != null) {
+        this.markServerRequestResolved(msg.params.requestId, "resolved");
+      }
       broadcast({ type: "notification", method: msg.method, params: msg.params || null });
     }
+  }
+
+  handleServerRequest(msg) {
+    if (!SERVER_REQUEST_METHODS.has(msg.method)) {
+      broadcast({ type: "notification", method: msg.method, params: msg.params || null });
+      return;
+    }
+    const key = String(msg.id);
+    const request = {
+      id: msg.id,
+      method: msg.method,
+      params: msg.params || {},
+      status: "waiting",
+      receivedAt: Date.now(),
+      decision: null,
+      respondedAt: null,
+    };
+    this.serverRequests.set(key, request);
+    broadcast({ type: "serverRequest", request: publicServerRequest(request) });
+  }
+
+  markServerRequestResolved(requestId, status = "resolved") {
+    const key = String(requestId);
+    const request = this.serverRequests.get(key);
+    if (request) {
+      request.status = status;
+      request.respondedAt = request.respondedAt || Date.now();
+      broadcast({ type: "serverRequestResolved", requestId: key, request: publicServerRequest(request) });
+      setTimeout(() => this.serverRequests.delete(key), 15000).unref();
+      return;
+    }
+    broadcast({ type: "serverRequestResolved", requestId: key, status });
+  }
+
+  pendingServerRequests() {
+    return [...this.serverRequests.values()].map(publicServerRequest);
+  }
+
+  sendServerRequestResponse(request, payload) {
+    if (!this.isTransportOpen()) {
+      throw new Error("codex app-server connection is not open");
+    }
+    const message = Object.assign({ jsonrpc: "2.0", id: request.id }, payload);
+    this.ws.send(JSON.stringify(message));
+  }
+
+  answerServerRequest(requestId, decision) {
+    const key = String(requestId);
+    const request = this.serverRequests.get(key);
+    if (!request) throw new Error("Approval request is no longer pending");
+    if (request.status !== "waiting") throw new Error("Approval request has already been answered");
+    const payload = approvalResponsePayload(request, decision);
+    this.sendServerRequestResponse(request, payload);
+    request.status = "responded";
+    request.decision = decision;
+    request.respondedAt = Date.now();
+    broadcast({ type: "serverRequestResolved", requestId: key, request: publicServerRequest(request) });
+    setTimeout(() => this.serverRequests.delete(key), 15000).unref();
+    return publicServerRequest(request);
   }
 
   failPending(err) {
@@ -1244,6 +1726,12 @@ class CodexAppServerClient {
       reject(err);
     }
     this.pending.clear();
+    for (const request of this.serverRequests.values()) {
+      request.status = "connectionClosed";
+      request.respondedAt = Date.now();
+      broadcast({ type: "serverRequestResolved", requestId: String(request.id), request: publicServerRequest(request) });
+    }
+    this.serverRequests.clear();
   }
 
   resetConnection(reason) {
@@ -1344,6 +1832,7 @@ class CodexAppServerClient {
       runtimeRoot: RUNTIME_ROOT,
       userAgent: this.info ? this.info.userAgent : null,
       lastError: this.lastError,
+      sharedRequired: this.requireSharedAppServer,
       rateLimits: latestRateLimits,
     };
   }
@@ -1376,6 +1865,8 @@ function rowToFallbackThread(row) {
     status: { type: "notLoaded" },
     model: row.model || null,
     effort: row.reasoning_effort || null,
+    sandboxPolicy: row.sandbox_policy || null,
+    approvalPolicy: row.approval_mode || null,
     mobileFallback: true,
   };
 }
@@ -1387,7 +1878,7 @@ function sqlString(value) {
 function readStateDbThread(threadId) {
   if (!fs.existsSync(STATE_DB) || !threadId) return null;
   const query = [
-    "select id,title,first_user_message,cwd,rollout_path,archived,archived_at,updated_at,model,reasoning_effort",
+    "select id,title,first_user_message,cwd,rollout_path,archived,archived_at,updated_at,model,reasoning_effort,sandbox_policy,approval_mode",
     "from threads",
     `where id=${sqlString(threadId)}`,
     "limit 1;",
@@ -1603,6 +2094,18 @@ async function handleApi(req, res) {
     sendJson(res, 200, codex.status());
     return;
   }
+  if (url.pathname === "/api/approvals" && req.method === "GET") {
+    sendJson(res, 200, { data: codex.pendingServerRequests() });
+    return;
+  }
+  const approvalResponse = url.pathname.match(/^\/api\/approvals\/([^/]+)$/);
+  if (approvalResponse && req.method === "POST") {
+    const requestId = decodeURIComponent(approvalResponse[1]);
+    const body = await readBody(req);
+    const request = codex.answerServerRequest(requestId, String(body.decision || ""));
+    sendJson(res, 200, { ok: true, request });
+    return;
+  }
   if (url.pathname === "/api/workspaces" && req.method === "GET") {
     sendJson(res, 200, { data: await listWorkspaces() });
     return;
@@ -1702,12 +2205,13 @@ async function handleApi(req, res) {
   if (resume && req.method === "POST") {
     const threadId = decodeURIComponent(resume[1]);
     const body = await readBody(req);
-    sendJson(res, 200, await codex.request("thread/resume", {
+    const runtimeSettings = threadRuntimeSettings(threadId);
+    sendJson(res, 200, await codex.request("thread/resume", applyResumeRuntimeSettings({
       threadId,
       cwd: body.cwd || null,
       model: body.model || null,
       persistExtendedHistory: true,
-    }, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false }));
+    }, runtimeSettings), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false }));
     return;
   }
   const messages = url.pathname.match(/^\/api\/threads\/([^/]+)\/messages$/);
@@ -1720,42 +2224,53 @@ async function handleApi(req, res) {
       sendJson(res, 400, { error: "Message text or attachment is required" });
       return;
     }
-    if (body.activeTurnId) {
-      try {
-        const result = await codex.request("turn/steer", {
-          threadId,
-          input,
-          expectedTurnId: String(body.activeTurnId),
-        }, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
-        sendJson(res, 200, result);
-        return;
-      } catch (err) {
-        if (!/method not found|unknown method|not found/i.test(err.message || "")) throw err;
-        codex.notifyMuxUserMessage({
-          threadId,
-          turnId: String(body.activeTurnId),
-          input,
-        });
+    const submissionKeys = messageSubmissionKeys(threadId, body, text, uploads);
+    const runtimeSettings = threadRuntimeSettings(threadId);
+    const result = await runMessageSubmissionOnce(submissionKeys, uploads, async () => {
+      if (body.activeTurnId) {
+        try {
+          const result = await codex.request("turn/steer", {
+            threadId,
+            input,
+            expectedTurnId: String(body.activeTurnId),
+          }, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+          codex.notifyMuxUserMessage({
+            threadId,
+            turnId: String(body.activeTurnId),
+            input,
+            clientSubmissionId: body.clientSubmissionId,
+          });
+          return result;
+        } catch (err) {
+          if (!/method not found|unknown method|not found/i.test(err.message || "")) throw err;
+          codex.notifyMuxUserMessage({
+            threadId,
+            turnId: String(body.activeTurnId),
+            input,
+            clientSubmissionId: body.clientSubmissionId,
+          });
+          return {};
+        }
       }
-    }
-    try {
-      await codex.request("thread/resume", {
+      try {
+        await codex.request("thread/resume", applyResumeRuntimeSettings({
+          threadId,
+          cwd: body.cwd || null,
+          model: body.model || null,
+          persistExtendedHistory: true,
+        }, runtimeSettings), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+      } catch (err) {
+        if (!/already|loaded|active/i.test(err.message || "")) throw err;
+      }
+      const params = applyTurnRuntimeSettings({
         threadId,
-        cwd: body.cwd || null,
-        model: body.model || null,
-        persistExtendedHistory: true,
-      }, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
-    } catch (err) {
-      if (!/already|loaded|active/i.test(err.message || "")) throw err;
-    }
-    const params = {
-      threadId,
-      input,
-    };
-    if (body.cwd) params.cwd = body.cwd;
-    if (body.model) params.model = body.model;
-    if (body.effort) params.effort = body.effort;
-    const result = await codex.request("turn/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+        input,
+      }, runtimeSettings);
+      if (body.cwd) params.cwd = body.cwd;
+      if (body.model) params.model = body.model;
+      if (body.effort) params.effort = body.effort;
+      return await codex.request("turn/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+    });
     sendJson(res, 200, result);
     return;
   }
@@ -1782,6 +2297,9 @@ function handleEvents(req, res) {
     "X-Accel-Buffering": "no",
   });
   res.write(`data: ${JSON.stringify({ type: "status", status: codex.status() })}\n\n`);
+  for (const request of codex.pendingServerRequests()) {
+    res.write(`data: ${JSON.stringify({ type: "serverRequest", request })}\n\n`);
+  }
   clients.add(res);
   const heartbeat = setInterval(() => {
     try {
