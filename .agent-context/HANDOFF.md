@@ -768,3 +768,23 @@
 - Not yet integrated into the private source workspace:
   - The private workspace currently has uncommitted local changes in overlapping files, including `server.js`, `public/app.js`, `public/styles.css`, `codex-app-server-mux.js`, and `README.md`.
   - Do not blindly copy or merge the public PR into the private workspace without reconciling it with the newer private approval-proxy and shared-stream changes.
+
+## 2026-05-04 Private/Public Merge And Push Preparation
+
+- User asked to push current private modifications and also merge the public PR.
+- Process used:
+  - Removed unused `web-push` dependency and untracked `package-lock.json`; the dependency was from earlier Web Push investigation and had no implementation references.
+  - Committed private approval/shared-stream work first as `eb33384 Add shared approval controls`.
+  - Added the local public release repo as remote `public` and fetched `public/main`.
+  - Cherry-picked the four non-merge commits from public PR #1 into the private repository to preserve Frank Song's authorship and avoid unrelated-history merge noise:
+    - `572f936` from public `5f39aa7`: macOS launcher and app-server path fixes
+    - `1c73332` from public `858af2e`: macOS one-command shared/mobile launcher
+    - `ea05c4c` from public `4c2cdb5`: mobile Markdown rendering
+    - `eb5cb50` from public `59414eb`: lower live long-message memory pressure
+  - Resolved the README conflict by keeping private Windows approval/keep-alive docs and adding the public macOS launcher instructions.
+  - Added `.gitattributes` in `9c6969c` to force `*.sh` files to LF so `npm run check:macos` works from Windows checkouts.
+- Validation after integration:
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed under available Windows bash after LF normalization.
+  - `git diff --check` passed.
+- Before pushing, ensure the clean public release repository is synchronized from the private source without copying `.agent-context/` or `AGENTS.md`.
