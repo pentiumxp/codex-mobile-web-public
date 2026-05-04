@@ -51,7 +51,7 @@ function hasId(message) {
 }
 
 function writeJsonLine(write, message) {
-  write(`${JSON.stringify(message)}\n`);
+  return write(`${JSON.stringify(message)}\n`);
 }
 
 function commandNeedsFilesystemCheck(command) {
@@ -99,7 +99,13 @@ function removeClient(client) {
 
 function sendToClient(client, message) {
   try {
-    writeJsonLine(client.write, message);
+    if (writeJsonLine(client.write, message) === false && isTcpClient(client)) {
+      log(`dropping slow tcp client ${client.id}`);
+      try {
+        client.close();
+      } catch (_) {}
+      removeClient(client);
+    }
   } catch (err) {
     log(`failed to send to ${client.id}: ${err.message}`);
     removeClient(client);

@@ -57,6 +57,7 @@ const IMAGE_EXTENSIONS = new Set([".avif", ".bmp", ".gif", ".heic", ".heif", ".j
 const CODEX_CONFIG_DEFAULTS = readCodexConfigDefaults();
 
 let clients = new Set();
+let clientHeartbeats = new WeakMap();
 let latestRateLimits = null;
 const SERVER_REQUEST_METHODS = new Set([
   "item/commandExecution/requestApproval",
@@ -1024,11 +1025,23 @@ function broadcast(payload) {
   const body = `data: ${JSON.stringify(compacted)}\n\n`;
   for (const res of [...clients]) {
     try {
-      res.write(body);
+      if (res.destroyed || res.writableEnded || !res.write(body)) {
+        removeEventClient(res);
+      }
     } catch (_) {
-      clients.delete(res);
+      removeEventClient(res);
     }
   }
+}
+
+function removeEventClient(res) {
+  const heartbeat = clientHeartbeats.get(res);
+  if (heartbeat) clearInterval(heartbeat);
+  clientHeartbeats.delete(res);
+  clients.delete(res);
+  try {
+    if (!res.destroyed && !res.writableEnded) res.end();
+  } catch (_) {}
 }
 
 function getFreePort() {
@@ -1994,15 +2007,16 @@ function handleEvents(req, res) {
   clients.add(res);
   const heartbeat = setInterval(() => {
     try {
-      res.write(": keepalive\n\n");
+      if (res.destroyed || res.writableEnded || !res.write(": keepalive\n\n")) {
+        removeEventClient(res);
+      }
     } catch (_) {
-      clearInterval(heartbeat);
-      clients.delete(res);
+      removeEventClient(res);
     }
   }, 25000);
+  clientHeartbeats.set(res, heartbeat);
   req.on("close", () => {
-    clearInterval(heartbeat);
-    clients.delete(res);
+    removeEventClient(res);
   });
 }
 
