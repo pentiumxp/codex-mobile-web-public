@@ -26,6 +26,7 @@ const state = {
   threadListLoadSeq: 0,
   threadListLoadController: null,
   pendingAttachments: [],
+  pendingApproval: null,
   composerBusy: false,
   maxUploadBytes: 64 * 1024 * 1024,
   maxUploadFiles: 12,
@@ -998,6 +999,7 @@ async function loadThread(threadId) {
   }
   if (seq !== state.threadLoadSeq || state.currentThreadId !== threadId) return;
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
+  checkForApproval(state.currentThread);
   localStorage.setItem(STORAGE_THREAD_ID, threadId);
   renderComposerSettings();
   syncActiveTurnFromThread();
@@ -1016,6 +1018,7 @@ async function refreshCurrentThread() {
   const result = await api(`/api/threads/${encodeURIComponent(threadId)}`, { timeoutMs: 20000 });
   if (state.currentThreadId !== threadId || seq !== state.threadLoadSeq) return;
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
+  checkForApproval(state.currentThread);
   renderComposerSettings();
   syncActiveTurnFromThread();
   renderThreads();
@@ -1907,8 +1910,20 @@ function scheduleRenderCurrentThread() {
   }
 }
 
-function applyNotification(method, params) {
+function applyNotification(method, params, requestId = null) {
   if (!params) return;
+  if (method === "item/commandExecution/requestApproval" || method === "item/fileChange/requestApproval") {
+    handleApprovalRequest(requestId, method, params);
+    return;
+  }
+  if (method === "serverRequest/resolved") {
+    const resolvedId = params.requestId ?? params.id;
+    if (!state.pendingApproval || resolvedId == null || String(state.pendingApproval.requestId) === String(resolvedId)) {
+      state.pendingApproval = null;
+      hideApprovalBanner();
+    }
+    return;
+  }
   if (method === "account/rateLimits/updated") {
     state.rateLimits = params.rateLimits || null;
     renderQuotaUsage();
@@ -1932,6 +1947,7 @@ function applyNotification(method, params) {
     pruneHiddenThreads();
     if (state.currentThread && state.currentThread.id === params.threadId) {
       state.currentThread.status = params.status;
+      checkForApproval(state.currentThread);
       renderCurrentThread();
       scheduleLivePollIfNeeded(1400);
     }
@@ -2009,7 +2025,7 @@ function connectEvents() {
       if (payload.status.ready) clearTimeout(state.recoveryTimer);
       return;
     }
-    if (payload.type === "notification") applyNotification(payload.method, payload.params);
+    if (payload.type === "notification") applyNotification(payload.method, payload.params, payload.requestId);
   };
   state.events.onerror = () => {
     $("connectionState").textContent = "Reconnecting";
@@ -2289,6 +2305,100 @@ async function interruptActiveTurn() {
     .catch(showError);
 }
 
+async function respondToApproval(action) {
+  if (!state.currentThreadId || !state.pendingApproval) return;
+  const approval = state.pendingApproval;
+  if (approval.requestId === null || approval.requestId === undefined) {
+    showError(new Error("Approval request id is missing; approve from Codex Desktop."));
+    return;
+  }
+  $("connectionState").textContent = action === "approve" ? "Approving..." : "Denying...";
+  hideApprovalBanner();
+  try {
+    await api(`/api/threads/${encodeURIComponent(state.currentThreadId)}/approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action,
+        requestId: approval.requestId,
+        method: approval.method,
+        availableDecisions: approval.params && approval.params.availableDecisions,
+      }),
+      timeoutMs: 120000,
+    });
+    state.pendingApproval = null;
+    scheduleCurrentThreadRefresh(600);
+  } catch (err) {
+    state.pendingApproval = approval;
+    showApprovalBanner(approvalText(approval.method, approval.params), true);
+    showError(err);
+  }
+}
+
+function approvalText(method, params) {
+  if (!params || typeof params !== "object") return "有请求正在等待批准";
+  const command = params.command || params.parsedCmd || params.cmd || params.argv;
+  if (Array.isArray(command) && command.length) return command.join(" ");
+  if (typeof command === "string" && command.trim()) return command;
+  if (method === "item/fileChange/requestApproval") return "文件修改正在等待批准";
+  if (params.approvalId) return `批准请求：${params.approvalId}`;
+  return "命令正在等待批准";
+}
+
+function handleApprovalRequest(requestId, method, params) {
+  state.pendingApproval = { requestId, method, params: params || {} };
+  showApprovalBanner(approvalText(method, params), requestId !== null && requestId !== undefined);
+}
+
+function showApprovalBanner(command, actionable = true) {
+  const banner = $("approvalBanner");
+  const cmdEl = $("approvalCommand");
+  if (!banner || !cmdEl) return;
+  banner.classList.remove("hidden");
+  cmdEl.textContent = command || "命令正在等待批准";
+  const approve = $("approvalApprove");
+  const deny = $("approvalDeny");
+  if (approve) approve.disabled = !actionable;
+  if (deny) deny.disabled = !actionable;
+}
+
+function hideApprovalBanner() {
+  const banner = $("approvalBanner");
+  if (banner) banner.classList.add("hidden");
+}
+
+function checkForApproval(thread) {
+  if (state.pendingApproval) return;
+  const status = thread && thread.status;
+  if (!status || typeof status !== "object") {
+    hideApprovalBanner();
+    return;
+  }
+  const flags = Array.isArray(status.activeFlags) ? status.activeFlags : [];
+  const needsApproval = flags.includes("waitingOnApproval") || status.type === "waitingOnApproval";
+  if (needsApproval) {
+    // Find the pending command from the latest turn
+    const turns = thread.turns || [];
+    let pendingCmd = "";
+    for (let i = turns.length - 1; i >= 0; i--) {
+      const turn = turns[i];
+      if (turn && !isTurnComplete(turn)) {
+        const items = turn.items || [];
+        for (const item of items) {
+          if (item && item.type === "commandExecution" && item.command) {
+            pendingCmd = item.command;
+            break;
+          }
+        }
+        break;
+      }
+    }
+    showApprovalBanner(pendingCmd || "命令正在等待批准", false);
+  } else {
+    hideApprovalBanner();
+  }
+}
+
 function wireUi() {
   $("loginForm").addEventListener("submit", (event) => {
     event.preventDefault();
@@ -2316,6 +2426,8 @@ function wireUi() {
   $("closeMenu").addEventListener("click", () => $("sidebar").classList.remove("open"));
   $("composer").addEventListener("submit", sendMessage);
   $("interruptTurn").addEventListener("click", interruptActiveTurn);
+  $("approvalApprove").addEventListener("click", () => respondToApproval("approve"));
+  $("approvalDeny").addEventListener("click", () => respondToApproval("deny"));
   $("conversation").addEventListener("scroll", () => {
     if (state.leavingItems.size) scheduleLeavingCleanup(120);
   }, { passive: true });

@@ -151,6 +151,25 @@ function sendJson(res, status, data) {
   res.end(body);
 }
 
+function approvalDecision(action, availableDecisions) {
+  const available = Array.isArray(availableDecisions)
+    ? availableDecisions.map((value) => {
+      if (value && typeof value === "object") return value.decision || value.value || value.id || value.name || value.type || "";
+      return value;
+    }).map((value) => String(value || "")).filter(Boolean)
+    : [];
+  const approveCandidates = ["approved", "allow", "approved_for_session", "approved_execpolicy_amendment", "approve"];
+  const denyCandidates = ["denied", "decline", "abort", "cancel", "deny"];
+  const candidates = action === "deny" ? denyCandidates : approveCandidates;
+  for (const candidate of candidates) {
+    if (!available.length || available.includes(candidate)) return candidate;
+  }
+  if (action === "deny") {
+    return available.find((value) => /deny|decline|abort|cancel/i.test(value)) || "denied";
+  }
+  return available.find((value) => !/deny|decline|abort|cancel/i.test(value)) || "approved";
+}
+
 function truncateMiddle(value, maxChars, label) {
   const text = String(value ?? "");
   if (text.length <= maxChars) return text;
@@ -607,6 +626,7 @@ function compactNotification(payload) {
     method: payload.method,
     params: Object.assign({}, payload.params),
   };
+  if (Object.prototype.hasOwnProperty.call(payload, "requestId")) out.requestId = payload.requestId;
   if (out.params.item) out.params.item = compactItem(out.params.item);
   if (out.params.turn) out.params.turn = compactTurn(out.params.turn, { allowLiveOperation: true });
   if (payload.method === "account/rateLimits/updated" && out.params.rateLimits) {
@@ -1222,6 +1242,18 @@ class CodexAppServerClient {
     } catch (_) {
       return;
     }
+    if (msg.method) {
+      if (msg.method === "account/rateLimits/updated" && msg.params && msg.params.rateLimits) {
+        latestRateLimits = compactRateLimits(msg.params.rateLimits);
+      }
+      broadcast({
+        type: "notification",
+        method: msg.method,
+        params: msg.params || null,
+        requestId: Object.prototype.hasOwnProperty.call(msg, "id") ? msg.id : null,
+      });
+      return;
+    }
     if (Object.prototype.hasOwnProperty.call(msg, "id") && this.pending.has(msg.id)) {
       const { resolve, reject, timer } = this.pending.get(msg.id);
       clearTimeout(timer);
@@ -1229,12 +1261,6 @@ class CodexAppServerClient {
       if (msg.error) reject(new Error(msg.error.message || JSON.stringify(msg.error)));
       else resolve(msg.result);
       return;
-    }
-    if (msg.method) {
-      if (msg.method === "account/rateLimits/updated" && msg.params && msg.params.rateLimits) {
-        latestRateLimits = compactRateLimits(msg.params.rateLimits);
-      }
-      broadcast({ type: "notification", method: msg.method, params: msg.params || null });
     }
   }
 
@@ -1291,6 +1317,13 @@ class CodexAppServerClient {
   sendNotification(method, params) {
     if (!this.isTransportOpen()) return false;
     this.ws.send(JSON.stringify({ jsonrpc: "2.0", method, params }));
+    return true;
+  }
+
+  async sendServerResponse(id, result) {
+    await this.ensure();
+    if (!this.isTransportOpen()) return false;
+    this.ws.send(JSON.stringify({ jsonrpc: "2.0", id, result }));
     return true;
   }
 
@@ -1767,6 +1800,19 @@ async function handleApi(req, res) {
     }, { timeoutMs: 20000, retry: false }));
     return;
   }
+  const approve = url.pathname.match(/^\/api\/threads\/([^/]+)\/approve$/);
+  if (approve && req.method === "POST") {
+    const body = await readBody(req);
+    if (!Object.prototype.hasOwnProperty.call(body, "requestId")) {
+      sendJson(res, 400, { error: "missing approval request id" });
+      return;
+    }
+    const action = body.action === "deny" ? "deny" : "approve";
+    const decision = body.decision || approvalDecision(action, body.availableDecisions);
+    const ok = await codex.sendServerResponse(body.requestId, { decision });
+    sendJson(res, 200, { ok, decision });
+    return;
+  }
   sendJson(res, 404, { error: "Not found" });
 }
 
@@ -1799,6 +1845,7 @@ function handleEvents(req, res) {
 }
 
 const server = http.createServer(async (req, res) => {
+  const reqStart = Date.now();
   try {
     const url = getUrl(req);
     if (url.pathname === "/api/events") {
@@ -1807,6 +1854,10 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname.startsWith("/api/")) {
       await handleApi(req, res);
+      const elapsed = Date.now() - reqStart;
+      if (elapsed > 1000) {
+        console.error(`[slow request] ${req.method} ${url.pathname} took ${elapsed}ms`);
+      }
       return;
     }
     serveStatic(req, res);

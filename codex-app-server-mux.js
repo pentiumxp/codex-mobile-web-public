@@ -31,6 +31,7 @@ let childBuffer = "";
 let shuttingDown = false;
 const clients = new Map();
 const pending = new Map();
+const serverRequests = new Map();
 const activeTurnsByThread = new Map();
 let nextSyntheticItemId = 1;
 
@@ -77,9 +78,9 @@ function createLineParser(onLine) {
   };
 }
 
-function addClient(name, write, close) {
+function addClient(name, write, close, socket) {
   const id = `c${nextClientId++}`;
-  const client = { id, name, write, close };
+  const client = { id, name, write, close, socket, drainQueue: [], draining: false };
   clients.set(id, client);
   log(`client connected ${id} ${name}`);
   return client;
@@ -88,20 +89,48 @@ function addClient(name, write, close) {
 function removeClient(client) {
   if (!client || !clients.has(client.id)) return;
   clients.delete(client.id);
+  client.drainQueue = [];
+  client.draining = false;
   for (const [internalId, request] of pending) {
     if (request.client.id === client.id) pending.delete(internalId);
   }
   log(`client disconnected ${client.id} ${client.name}`);
 }
 
+function flushDrainQueue(client) {
+  if (!client.draining || !clients.has(client.id)) return;
+  while (client.drainQueue.length > 0) {
+    const line = client.drainQueue.shift();
+    const ok = client.write(line);
+    if (ok === false) {
+      // Still back-pressured; wait for next drain
+      return;
+    }
+  }
+  client.draining = false;
+}
+
 function sendToClient(client, message) {
   try {
-    if (writeJsonLine(client.write, message) === false && isTcpClient(client)) {
-      log(`dropping slow tcp client ${client.id}`);
-      try {
-        client.close();
-      } catch (_) {}
-      removeClient(client);
+    if (client.draining && isTcpClient(client)) {
+      // Already waiting for drain; queue the message.
+      client.drainQueue.push(`${JSON.stringify(message)}\n`);
+      if (client.drainQueue.length > 200) {
+        log(`dropping client ${client.id}: drain queue overflow (${client.drainQueue.length})`);
+        try { client.close(); } catch (_) {}
+        removeClient(client);
+      }
+      return;
+    }
+    const result = writeJsonLine(client.write, message);
+    if (result === false && isTcpClient(client)) {
+      // Back-pressured: wait for drain instead of dropping.
+      client.draining = true;
+      if (client.socket && typeof client.socket.once === "function") {
+        client.socket.once("drain", () => {
+          flushDrainQueue(client);
+        });
+      }
     }
   } catch (err) {
     log(`failed to send to ${client.id}: ${err.message}`);
@@ -214,6 +243,25 @@ function handleClientLine(client, line) {
 
   if (handleMuxMethod(client, message)) return;
 
+  if (hasId(message) && !message.method && serverRequests.has(String(message.id))) {
+    serverRequests.delete(String(message.id));
+    try {
+      sendToChild(message);
+    } catch (err) {
+      sendToClient(client, {
+        jsonrpc: "2.0",
+        id: message.id,
+        error: { code: -32000, message: err.message },
+      });
+    }
+    return;
+  }
+
+  if (hasId(message) && !message.method) {
+    log(`ignoring response for unknown server request id ${String(message.id)} from ${client.id}`);
+    return;
+  }
+
   if (hasId(message)) {
     const originalId = message.id;
     const internalId = `${client.id}:${String(originalId)}`;
@@ -242,6 +290,15 @@ function handleChildLine(line) {
     message = JSON.parse(line);
   } catch (err) {
     log(`non-json app-server stdout: ${line.slice(0, 500)}`);
+    return;
+  }
+
+  if (hasId(message) && message.method) {
+    serverRequests.set(String(message.id), {
+      method: message.method,
+      createdAt: Date.now(),
+    });
+    broadcastToClients(message);
     return;
   }
 
@@ -313,6 +370,7 @@ function startTcpServer() {
       `tcp:${socket.remoteAddress || ""}:${socket.remotePort || ""}`,
       (line) => socket.write(line),
       () => socket.end(),
+      socket,
     );
     const onData = createLineParser((line) => handleClientLine(client, line));
     socket.on("data", onData);

@@ -54,6 +54,16 @@
         <div class="empty-state">Select a thread from the menu.</div>
       </section>
 
+      <div id="approvalBanner" class="approval-banner hidden">
+        <div class="approval-icon">⏸️</div>
+        <div class="approval-content">
+          <div class="approval-title">等待批准</div>
+          <div class="approval-command" id="approvalCommand"></div>
+        </div>
+        <button id="approvalDeny" class="approval-btn deny" type="button">拒绝</button>
+        <button id="approvalApprove" class="approval-btn approve" type="button">允许</button>
+      </div>
+
       <form id="composer" class="composer">
         <label id="attachFiles" class="icon-button composer-icon file-picker" title="Attach files" aria-label="Attach files" aria-disabled="true" tabindex="-1">
           <span aria-hidden="true">+</span>
