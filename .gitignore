@@ -13,9 +13,11 @@ AGENTS.md
 
 workspace/
 logs/
+data/
 uploads/
 *.log
 *.err.log
+*.log.err
 codex-app-server-mux.exe
 
 .DS_Store
