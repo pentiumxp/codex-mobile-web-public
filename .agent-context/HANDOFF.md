@@ -1157,3 +1157,27 @@
   - Public checkout: `npm.cmd test`, `npm.cmd run check`, `npm.cmd run check:macos`, and `git diff --check` passed with line-ending warnings only.
 - Activation note:
   - This is a static frontend change. Existing browser/mobile tabs need a page refresh to load the fixed `public/app.js`.
+
+## 2026-05-04 Input Method Black-Screen Recovery And Assistant Duplicate Guard
+
+- User-reported issues:
+  - Switching to the Doubao input method and letting it switch back could still leave the mobile Web UI black until the app was minimized and reopened.
+  - Assistant/Codex output cards were frequently duplicated in the UI, while the fetched thread history did not contain duplicate agent messages.
+- Diagnosis:
+  - Existing foreground recovery relied mostly on `visibilitychange`, `pageshow`, `window focus`, `orientationchange`, and `visualViewport` resize/scroll.
+  - Some input-method return paths do not reliably fire page-level focus/visibility events, so the composited viewport can stay stale or black.
+  - Assistant duplicate display was caused by the local merge guard preserving a streamed local `agentMessage` while a later server snapshot supplied the same text under a different item id.
+- Code change:
+  - `public/app.js` now has a visual-only recovery pulse separate from network refresh.
+  - Visual recovery is scheduled from `window blur`, `focusin`, `focusout`, `resize`, and `visualViewport` resize/scroll.
+  - Heavy visual recovery updates `--app-height`, re-shows the app shell, applies a short compositing transform, and uses delayed repeated repaint pulses without forcing API refreshes.
+  - `focusin`, `focusout`, `resize`, and `visualViewport` recovery are lightweight and do not transform the scroll container.
+  - Touch/pointer start recovery was deliberately not used because it can cancel normal iOS scrolling when the user starts dragging the conversation.
+  - `public/styles.css` adds stronger temporary compositing/repaint styles for `visual-recovering` and `resume-repaint`.
+  - `public/app.js` now deduplicates local streamed `agentMessage` / `plan` items against incoming real items when the incoming text is the same or a longer continuation of the local text.
+  - The same frontend/CSS changes were also applied to the clean public release checkout at `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+- Validation:
+  - Private checkout: `npm.cmd run check`, `npm.cmd run check:macos`, and `git diff --check` passed with line-ending warnings only.
+  - Public checkout: `npm.cmd test`, `npm.cmd run check`, `npm.cmd run check:macos`, and `git diff --check` passed with line-ending warnings only.
+- Activation note:
+  - This is a static frontend/CSS change. Existing browser/mobile tabs need a page refresh to load the fixed `public/app.js` and `public/styles.css`; the Node server does not need to restart.
