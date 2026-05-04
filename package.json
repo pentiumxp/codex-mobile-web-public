@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test",
-    "check": "node --check server.js && node --check codex-app-server-mux.js && node --check public/app.js",
+    "check": "node --check server.js && node --check codex-app-server-mux.js && node --check public/app.js && node --check public/sw.js",
     "check:macos": "bash -n start-codex-mobile-web-macos.sh start-codex-desktop-shared-macos.sh codex-app-server-mux-macos.sh start-codex-shared-mobile-macos.sh"
   },
   "keywords": [

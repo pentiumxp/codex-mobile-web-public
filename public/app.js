@@ -2914,6 +2914,7 @@ function wireUi() {
 
 async function start() {
   wireUi();
+  registerServiceWorker();
   const config = await fetch("/api/public-config").then((res) => res.json());
   state.maxUploadBytes = Number(config.maxUploadBytes || state.maxUploadBytes);
   state.maxUploadFiles = Number(config.maxUploadFiles || state.maxUploadFiles);
@@ -2932,6 +2933,15 @@ async function start() {
   await bootstrap().catch((err) => {
     showError(err);
     if (/unauthorized/i.test(err.message)) showLogin();
+  });
+}
+
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch((err) => {
+      console.debug("Service worker registration failed", err);
+    });
   });
 }
 
