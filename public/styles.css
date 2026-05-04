@@ -99,6 +99,10 @@ textarea {
   font-size: 13px;
 }
 
+.connection.error {
+  color: var(--danger);
+}
+
 .app {
   width: 100%;
   max-width: 100vw;
@@ -509,6 +513,100 @@ textarea {
   border: 1px solid var(--line-soft);
   border-radius: 999px;
   font-size: 12px;
+}
+
+.approval-stack {
+  max-width: 980px;
+  margin: 0 auto 22px;
+  display: grid;
+  gap: 12px;
+}
+
+.approval-card {
+  min-width: 0;
+  border: 1px solid rgba(240, 180, 108, 0.45);
+  border-radius: 8px;
+  background: rgba(32, 28, 20, 0.76);
+  overflow: hidden;
+}
+
+.approval-card.responded,
+.approval-card.resolved {
+  border-color: rgba(122, 199, 167, 0.34);
+  background: rgba(18, 31, 27, 0.62);
+}
+
+.approval-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-bottom: 1px solid rgba(240, 180, 108, 0.16);
+}
+
+.approval-title {
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.approval-method {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.approval-status {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  color: #f8ddb6;
+  background: rgba(240, 180, 108, 0.14);
+  border: 1px solid rgba(240, 180, 108, 0.36);
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.approval-detail {
+  max-height: min(42vh, 360px);
+  margin: 12px;
+  padding: 11px;
+  overflow: auto;
+  color: #e7ece8;
+  background: var(--code);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  font-family: "Cascadia Mono", "Consolas", "Microsoft YaHei", monospace;
+  font-size: 12px;
+  line-height: 1.48;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.approval-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+.approval-button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 8px;
+  font-weight: 750;
+}
+
+.approval-button.allow {
+  color: #09100d;
+  background: var(--accent-strong);
+}
+
+.approval-button.deny {
+  grid-column: 1 / -1;
+  color: #fff1ef;
+  background: var(--danger);
 }
 
 .item {

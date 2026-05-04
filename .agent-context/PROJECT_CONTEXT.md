@@ -34,7 +34,12 @@ This workspace owns the standalone Codex Mobile Web app.
 - By default the backend starts a loopback `codex app-server --listen ws://127.0.0.1:<port>` child.
 - If `CODEX_MOBILE_APP_SERVER_WS`, `CODEX_MOBILE_APP_SERVER_TCP`, or `%USERPROFILE%\.codex\app-server-mux\endpoint.json` is available, the backend can use an external/shared endpoint instead.
 - `codex-app-server-mux.js` can act as the shared bridge: Desktop launches generated `codex-app-server-mux.exe` via `CODEX_CLI_PATH`, the shim starts `node codex-app-server-mux.js`, the mux starts the real app-server over stdio, and Mobile Web connects to the mux endpoint file.
-- `start-codex-desktop-shared.ps1` is the reversible Desktop launcher for that bridge; it builds the shim exe from `codex-app-server-mux-shim.cs` when needed and sets `CODEX_CLI_PATH` only for the launched Desktop process.
+- `start-codex-desktop-shared.ps1` is the reversible Desktop launcher for that bridge; it builds the shim exe from `codex-app-server-mux-shim.cs` when needed, sets `CODEX_CLI_PATH` only for the launched Desktop process, and defaults `CODEX_MUX_KEEP_ALIVE=1`.
+- With `CODEX_MUX_KEEP_ALIVE=1`, the mux remains alive after Desktop stdio disconnects; a later Desktop launch through the same wrapper attaches back to the existing mux endpoint instead of starting a second real app-server.
+- When bridge code changes, normal Desktop restarts may attach back to the old keep-alive mux. Use `start-codex-desktop-shared.ps1 -ForceRestartMux` to stop the mux PID recorded in the endpoint file and start a fresh mux from current files.
+- The mux proxies app-server server requests, including command, file-change, and permission approvals, so Mobile Web can display approval controls and answer them through the same shared stream.
+- Mobile Web treats a detected mux/shared endpoint as required for that process lifetime. If the shared endpoint disconnects or becomes unavailable, Mobile Web reports the shared app-server error instead of falling back to a managed child and creating a divergent stream.
+- `CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER=1` forces the same no-fallback behavior even when Mobile Web starts before any mux endpoint file exists.
 - README documents the app-server bridge as implemented and verified on Windows; macOS Desktop bridge support is documented as an implementation plan only and remains unverified until tested on a real Mac.
 - When Mobile Web connects to an already-initialized shared app-server through mux, `initialize` may return `Already initialized`; this is valid for the second client and should be treated as a usable shared connection.
 - When Mobile Web sends extra input while a turn is already active, the browser posts the active turn id and `server.js` should use app-server `turn/steer` with `expectedTurnId` so Desktop and Mobile stay on the same active turn stream. The older mux-local `mux/userMessage` synthetic echo remains only as a fallback when an older app-server does not support `turn/steer`.
@@ -69,6 +74,7 @@ This workspace owns the standalone Codex Mobile Web app.
 - Live reasoning does not render as a conversation row; the top-right turn timer provides the in-progress time signal.
 - The top conversation bar is intentionally compact: it shows the thread title, but not cwd or thread status metadata.
 - The composer submit button follows Desktop behavior: during an active turn, an empty composer shows `Stop`; if text or attachments are present it switches back to `Send` for the new input.
+- App-server approval requests render as pending approval cards in the current thread and support `Allow once`, `Allow session`, and `Deny` for command, file-change, legacy exec/apply-patch, and permission-profile requests.
 - The composer must not programmatically focus the message textarea after send, thread switch, refresh, or mobile foreground recovery; mobile keyboards/input methods should open only after the user explicitly taps the message textarea.
 - The composer attachment button should be a real file-picker label/input on mobile; do not rely only on calling `.click()` on a fully hidden file input.
 - Message entry and live operation removal use short motion transitions.

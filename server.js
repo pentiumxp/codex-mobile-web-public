@@ -17,6 +17,7 @@ const CODEX_EXE = process.env.CODEX_MOBILE_CODEX_EXE || "codex";
 const MUX_ENDPOINT_FILE = process.env.CODEX_MOBILE_MUX_ENDPOINT_FILE || path.join(CODEX_HOME, "app-server-mux", "endpoint.json");
 const EXTERNAL_APP_SERVER_WS = process.env.CODEX_MOBILE_APP_SERVER_WS || "";
 const EXTERNAL_APP_SERVER_TCP = process.env.CODEX_MOBILE_APP_SERVER_TCP || "";
+const REQUIRE_SHARED_APP_SERVER = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER || "");
 const HOST = process.env.CODEX_MOBILE_HOST || "0.0.0.0";
 const PORT = Number(process.env.CODEX_MOBILE_PORT || "8787");
 const DISABLE_AUTH = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_DISABLE_AUTH || "");
@@ -57,6 +58,24 @@ const CODEX_CONFIG_DEFAULTS = readCodexConfigDefaults();
 
 let clients = new Set();
 let latestRateLimits = null;
+const SERVER_REQUEST_METHODS = new Set([
+  "item/commandExecution/requestApproval",
+  "item/fileChange/requestApproval",
+  "item/permissions/requestApproval",
+  "item/tool/requestUserInput",
+  "mcpServer/elicitation/request",
+  "item/tool/call",
+  "account/chatgptAuthTokens/refresh",
+  "execCommandApproval",
+  "applyPatchApproval",
+]);
+const ACTIONABLE_APPROVAL_METHODS = new Set([
+  "item/commandExecution/requestApproval",
+  "item/fileChange/requestApproval",
+  "item/permissions/requestApproval",
+  "execCommandApproval",
+  "applyPatchApproval",
+]);
 
 function optionListFromEnv(name, fallback) {
   const values = String(process.env[name] || "")
@@ -633,6 +652,108 @@ function compactRateLimits(value) {
   }).filter(([, entry]) => entry !== undefined));
 }
 
+function compactApprovalText(value, maxChars = 1200) {
+  return truncateMiddle(String(value ?? ""), maxChars, "approval text");
+}
+
+function commandTextFromApproval(method, params = {}) {
+  if (method === "execCommandApproval" && Array.isArray(params.command)) return params.command.join(" ");
+  if (typeof params.command === "string") return params.command;
+  if (Array.isArray(params.commandActions) && params.commandActions.length) {
+    return params.commandActions.map((action) => action && action.command).filter(Boolean).join(" && ");
+  }
+  return "";
+}
+
+function fileNamesFromApproval(method, params = {}) {
+  if (method === "applyPatchApproval" && params.fileChanges && typeof params.fileChanges === "object") {
+    return Object.keys(params.fileChanges).slice(0, 12);
+  }
+  return [];
+}
+
+function compactApprovalParams(method, params = {}) {
+  return Object.fromEntries(Object.entries({
+    threadId: params.threadId || params.conversationId || null,
+    turnId: params.turnId || null,
+    itemId: params.itemId || params.callId || null,
+    approvalId: params.approvalId || null,
+    reason: params.reason ? compactApprovalText(params.reason, 900) : null,
+    command: commandTextFromApproval(method, params) ? compactApprovalText(commandTextFromApproval(method, params), 1800) : null,
+    cwd: params.cwd || null,
+    grantRoot: params.grantRoot || null,
+    fileNames: fileNamesFromApproval(method, params),
+    permissions: method === "item/permissions/requestApproval" ? compactStructured(params.permissions || {}) : null,
+    networkApprovalContext: params.networkApprovalContext || null,
+  }).filter(([, value]) => {
+    if (Array.isArray(value)) return value.length > 0;
+    return value !== null && value !== undefined && value !== "";
+  }));
+}
+
+function publicServerRequest(request) {
+  return {
+    id: String(request.id),
+    method: request.method,
+    status: request.status || "waiting",
+    decision: request.decision || null,
+    receivedAt: request.receivedAt || null,
+    respondedAt: request.respondedAt || null,
+    actionable: ACTIONABLE_APPROVAL_METHODS.has(request.method),
+    params: compactApprovalParams(request.method, request.params || {}),
+  };
+}
+
+function grantedPermissionsFromRequest(params = {}) {
+  const permissions = params.permissions || {};
+  const granted = {};
+  if (permissions.network) granted.network = permissions.network;
+  if (permissions.fileSystem) granted.fileSystem = permissions.fileSystem;
+  return granted;
+}
+
+function approvalResponsePayload(request, decision) {
+  const method = request && request.method;
+  const params = (request && request.params) || {};
+  if (!["allow_once", "allow_session", "deny"].includes(decision)) {
+    throw new Error("Invalid approval decision");
+  }
+  if (method === "item/commandExecution/requestApproval") {
+    return {
+      result: {
+        decision: decision === "allow_once" ? "accept" : decision === "allow_session" ? "acceptForSession" : "decline",
+      },
+    };
+  }
+  if (method === "item/fileChange/requestApproval") {
+    return {
+      result: {
+        decision: decision === "allow_once" ? "accept" : decision === "allow_session" ? "acceptForSession" : "decline",
+      },
+    };
+  }
+  if (method === "execCommandApproval" || method === "applyPatchApproval") {
+    return {
+      result: {
+        decision: decision === "allow_once" ? "approved" : decision === "allow_session" ? "approved_for_session" : "denied",
+      },
+    };
+  }
+  if (method === "item/permissions/requestApproval") {
+    if (decision === "deny") {
+      return { error: { code: -32001, message: "Permission request denied" } };
+    }
+    return {
+      result: {
+        permissions: grantedPermissionsFromRequest(params),
+        scope: decision === "allow_session" ? "session" : "turn",
+        strictAutoReview: false,
+      },
+    };
+  }
+  throw new Error(`Unsupported server request method: ${method || "unknown"}`);
+}
+
 function readRawBody(req, limitBytes) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -981,11 +1102,11 @@ function resolveExternalEndpoint() {
         port: Number(endpoint.port),
         source: MUX_ENDPOINT_FILE,
         capabilities: endpoint.capabilities || null,
-        required: false,
+        required: true,
       };
     }
     if (endpoint && endpoint.protocol === "ws" && endpoint.url) {
-      return { protocol: "ws", url: endpoint.url, source: MUX_ENDPOINT_FILE, required: false };
+      return { protocol: "ws", url: endpoint.url, source: MUX_ENDPOINT_FILE, required: true };
     }
   } catch (_) {
     return null;
@@ -1002,11 +1123,13 @@ class CodexAppServerClient {
     this.transportKind = "none";
     this.nextId = 1;
     this.pending = new Map();
+    this.serverRequests = new Map();
     this.connecting = null;
     this.info = null;
     this.ready = false;
     this.lastError = null;
     this.resetting = false;
+    this.requireSharedAppServer = REQUIRE_SHARED_APP_SERVER;
   }
 
   async ensure() {
@@ -1026,16 +1149,23 @@ class CodexAppServerClient {
     this.closeTransportOnly();
     const externalEndpoint = resolveExternalEndpoint();
     if (externalEndpoint) {
+      this.requireSharedAppServer = true;
       try {
         await this.connectEndpoint(externalEndpoint);
         await this.initialize({ allowAlreadyInitialized: true });
         return;
       } catch (err) {
         this.closeTransportOnly();
-        if (externalEndpoint.required) throw err;
-        this.lastError = `shared app-server endpoint unavailable (${err.message}); falling back to managed app-server`;
+        this.lastError = `shared app-server endpoint unavailable (${err.message})`;
         console.error(`[codex app-server] ${this.lastError}`);
+        throw new Error(this.lastError);
       }
+    }
+
+    if (this.requireSharedAppServer) {
+      this.lastError = `shared app-server endpoint unavailable (${MUX_ENDPOINT_FILE} not found)`;
+      console.error(`[codex app-server] ${this.lastError}`);
+      throw new Error(this.lastError);
     }
 
     await this.startManagedChild();
@@ -1127,8 +1257,10 @@ class CodexAppServerClient {
         this.transportKind = url.includes(`127.0.0.1:${this.port}`) ? "managed-ws-child" : "external-ws";
         ws.onmessage = (event) => this.handleMessage(event.data);
         ws.onclose = () => {
+          const wasShared = this.transportKind === "external-ws";
           this.ready = false;
-          this.failPending(new Error("codex app-server connection closed"));
+          this.lastError = wasShared ? "shared app-server connection closed" : "codex app-server connection closed";
+          this.failPending(new Error(this.lastError));
           broadcast({ type: "status", status: this.status() });
         };
         ws.onerror = () => {
@@ -1156,10 +1288,12 @@ class CodexAppServerClient {
         this.ws = connection;
         this.endpoint = endpoint;
         this.transportKind = "external-jsonl-tcp";
+        this.requireSharedAppServer = true;
         connection.onmessage = (event) => this.handleMessage(event.data);
         connection.onclose = () => {
           this.ready = false;
-          this.failPending(new Error("codex app-server connection closed"));
+          this.lastError = "shared app-server connection closed";
+          this.failPending(new Error(this.lastError));
           broadcast({ type: "status", status: this.status() });
         };
         connection.onerror = () => {
@@ -1181,6 +1315,10 @@ class CodexAppServerClient {
     } catch (_) {
       return;
     }
+    if (Object.prototype.hasOwnProperty.call(msg, "id") && msg.method) {
+      this.handleServerRequest(msg);
+      return;
+    }
     if (Object.prototype.hasOwnProperty.call(msg, "id") && this.pending.has(msg.id)) {
       const { resolve, reject, timer } = this.pending.get(msg.id);
       clearTimeout(timer);
@@ -1193,8 +1331,70 @@ class CodexAppServerClient {
       if (msg.method === "account/rateLimits/updated" && msg.params && msg.params.rateLimits) {
         latestRateLimits = compactRateLimits(msg.params.rateLimits);
       }
+      if (msg.method === "serverRequest/resolved" && msg.params && msg.params.requestId != null) {
+        this.markServerRequestResolved(msg.params.requestId, "resolved");
+      }
       broadcast({ type: "notification", method: msg.method, params: msg.params || null });
     }
+  }
+
+  handleServerRequest(msg) {
+    if (!SERVER_REQUEST_METHODS.has(msg.method)) {
+      broadcast({ type: "notification", method: msg.method, params: msg.params || null });
+      return;
+    }
+    const key = String(msg.id);
+    const request = {
+      id: msg.id,
+      method: msg.method,
+      params: msg.params || {},
+      status: "waiting",
+      receivedAt: Date.now(),
+      decision: null,
+      respondedAt: null,
+    };
+    this.serverRequests.set(key, request);
+    broadcast({ type: "serverRequest", request: publicServerRequest(request) });
+  }
+
+  markServerRequestResolved(requestId, status = "resolved") {
+    const key = String(requestId);
+    const request = this.serverRequests.get(key);
+    if (request) {
+      request.status = status;
+      request.respondedAt = request.respondedAt || Date.now();
+      broadcast({ type: "serverRequestResolved", requestId: key, request: publicServerRequest(request) });
+      setTimeout(() => this.serverRequests.delete(key), 15000).unref();
+      return;
+    }
+    broadcast({ type: "serverRequestResolved", requestId: key, status });
+  }
+
+  pendingServerRequests() {
+    return [...this.serverRequests.values()].map(publicServerRequest);
+  }
+
+  sendServerRequestResponse(request, payload) {
+    if (!this.isTransportOpen()) {
+      throw new Error("codex app-server connection is not open");
+    }
+    const message = Object.assign({ jsonrpc: "2.0", id: request.id }, payload);
+    this.ws.send(JSON.stringify(message));
+  }
+
+  answerServerRequest(requestId, decision) {
+    const key = String(requestId);
+    const request = this.serverRequests.get(key);
+    if (!request) throw new Error("Approval request is no longer pending");
+    if (request.status !== "waiting") throw new Error("Approval request has already been answered");
+    const payload = approvalResponsePayload(request, decision);
+    this.sendServerRequestResponse(request, payload);
+    request.status = "responded";
+    request.decision = decision;
+    request.respondedAt = Date.now();
+    broadcast({ type: "serverRequestResolved", requestId: key, request: publicServerRequest(request) });
+    setTimeout(() => this.serverRequests.delete(key), 15000).unref();
+    return publicServerRequest(request);
   }
 
   failPending(err) {
@@ -1203,6 +1403,12 @@ class CodexAppServerClient {
       reject(err);
     }
     this.pending.clear();
+    for (const request of this.serverRequests.values()) {
+      request.status = "connectionClosed";
+      request.respondedAt = Date.now();
+      broadcast({ type: "serverRequestResolved", requestId: String(request.id), request: publicServerRequest(request) });
+    }
+    this.serverRequests.clear();
   }
 
   resetConnection(reason) {
@@ -1303,6 +1509,7 @@ class CodexAppServerClient {
       runtimeRoot: RUNTIME_ROOT,
       userAgent: this.info ? this.info.userAgent : null,
       lastError: this.lastError,
+      sharedRequired: this.requireSharedAppServer,
       rateLimits: latestRateLimits,
     };
   }
@@ -1562,6 +1769,18 @@ async function handleApi(req, res) {
     sendJson(res, 200, codex.status());
     return;
   }
+  if (url.pathname === "/api/approvals" && req.method === "GET") {
+    sendJson(res, 200, { data: codex.pendingServerRequests() });
+    return;
+  }
+  const approvalResponse = url.pathname.match(/^\/api\/approvals\/([^/]+)$/);
+  if (approvalResponse && req.method === "POST") {
+    const requestId = decodeURIComponent(approvalResponse[1]);
+    const body = await readBody(req);
+    const request = codex.answerServerRequest(requestId, String(body.decision || ""));
+    sendJson(res, 200, { ok: true, request });
+    return;
+  }
   if (url.pathname === "/api/workspaces" && req.method === "GET") {
     sendJson(res, 200, { data: await listWorkspaces() });
     return;
@@ -1741,6 +1960,9 @@ function handleEvents(req, res) {
     "X-Accel-Buffering": "no",
   });
   res.write(`data: ${JSON.stringify({ type: "status", status: codex.status() })}\n\n`);
+  for (const request of codex.pendingServerRequests()) {
+    res.write(`data: ${JSON.stringify({ type: "serverRequest", request })}\n\n`);
+  }
   clients.add(res);
   const heartbeat = setInterval(() => {
     try {

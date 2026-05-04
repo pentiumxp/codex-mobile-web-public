@@ -271,6 +271,10 @@ The bridge is implemented by `codex-app-server-mux.js`:
 
 The mux must keep stdout clean because stdout is the Desktop app-server protocol channel. Diagnostics are written to the mux log file instead.
 
+When `CODEX_MUX_KEEP_ALIVE=1`, the mux keeps the real app-server and TCP endpoint alive after the Desktop stdio client disconnects. A later Desktop launch through the same wrapper connects back to the existing mux instead of starting a second app-server.
+
+The mux also proxies app-server requests such as command, file-change, and permission approvals. This allows Mobile Web to display approval cards and answer `Allow once`, `Allow session`, or `Deny` without creating a separate app-server stream.
+
 ## Windows Desktop Live Sync
 
 Status: implemented and verified.
@@ -291,6 +295,16 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\start-codex-desktop-sh
 
 The launcher sets `CODEX_CLI_PATH` only for the Desktop process it starts. It builds `codex-app-server-mux.exe` from `codex-app-server-mux-shim.cs` when needed, because Windows Codex Desktop expects `CODEX_CLI_PATH` to point to a real `.exe`.
 
+By default, the launcher sets `CODEX_MUX_KEEP_ALIVE=1`. If Desktop is fully quit, the mux and real app-server should remain alive so Mobile Web can continue using the same stream. Starting Desktop again through the launcher attaches the new Desktop stdio session to the existing mux.
+
+Because keep-alive deliberately preserves the mux process, normal Desktop restarts do not reload changed mux code. After updating the bridge code, fully quit Desktop and start it once with:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\start-codex-desktop-shared.ps1 -ForceRestartMux
+```
+
+This stops the mux PID recorded in the endpoint file before launching Desktop, so the next Desktop session creates a fresh mux from the current files.
+
 The mux writes its endpoint file here:
 
 ```text
@@ -303,7 +317,13 @@ Mobile Web auto-detects that endpoint. If Mobile Web was already running before 
 POST /api/app-server/reconnect
 ```
 
-Do not reconnect while a separate managed-child turn is still running unless you intend to abandon that child connection.
+For strict shared-stream operation, start Mobile Web with managed fallback disabled:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\start-codex-mobile-web.ps1 -HostAddress 0.0.0.0 -Port 8787 -RequireSharedAppServer
+```
+
+In this mode, if the shared mux endpoint is unavailable, Mobile Web reports the error instead of starting a separate app-server and creating a divergent stream.
 
 ## macOS Desktop Live Sync
 
@@ -330,6 +350,7 @@ Required behavior:
 - Set `CODEX_MUX_SCRIPT_PATH` to this repo's `codex-app-server-mux.js`.
 - Set `CODEX_MUX_CODEX_EXE` to the real `codex` CLI path.
 - Optionally set `CODEX_MUX_NODE_EXE` to the real `node` path.
+- Set `CODEX_MUX_KEEP_ALIVE=1` if Desktop restarts should reconnect to the same mux/app-server process.
 - Launch Codex Desktop from that same environment.
 - Do not write anything to stdout before `node codex-app-server-mux.js` takes over, because stdout is the app-server JSONL protocol channel.
 - Pass all Desktop-supplied app-server arguments through to the mux wrapper.
@@ -369,6 +390,7 @@ export CODEX_CLI_PATH="$PWD/codex-app-server-mux-macos.sh"
 export CODEX_MUX_SCRIPT_PATH="$PWD/codex-app-server-mux.js"
 export CODEX_MUX_CODEX_EXE="$(command -v codex)"
 export CODEX_MUX_NODE_EXE="$(command -v node)"
+export CODEX_MUX_KEEP_ALIVE=1
 
 # The exact app path may differ. Verify it on the target Mac.
 "/Applications/Codex.app/Contents/MacOS/Codex"
@@ -420,6 +442,7 @@ cd /path/to/codex-mobile-web
 export CODEX_HOME="$HOME/.codex"
 export CODEX_MOBILE_HOST="0.0.0.0"
 export CODEX_MOBILE_PORT="8787"
+export CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER=1
 npm start
 ```
 
@@ -429,7 +452,9 @@ npm start
 
 6. Send a mid-turn message from Mobile Web and verify Desktop shows the user message and subsequent Codex output in the same active turn.
 
-7. Quit Desktop and confirm the mux shuts down or cleans up the endpoint file when expected.
+7. Quit Desktop and confirm the mux/app-server remain alive when `CODEX_MUX_KEEP_ALIVE=1`.
+
+8. Relaunch Desktop through the wrapper and verify it reconnects to the existing mux endpoint rather than starting a second app-server.
 
 Until this checklist passes on a real Mac, macOS Desktop live sync should be treated as unverified.
 
@@ -474,13 +499,17 @@ This can let Mobile Web connect to the mux endpoint, but it does not by itself m
 | `CODEX_MOBILE_MUX_ENDPOINT_FILE` | Custom mux endpoint file path. |
 | `CODEX_MOBILE_APP_SERVER_WS` | External app-server WebSocket endpoint. |
 | `CODEX_MOBILE_APP_SERVER_TCP` | External app-server JSONL TCP endpoint. |
+| `CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER` | When `1`, Mobile Web must connect to an external/shared app-server endpoint and must not fall back to a managed child. |
 | `CODEX_CLI_PATH` | Desktop-side override used to make Codex Desktop launch the mux instead of the normal Codex CLI/app-server command. Windows path must be a real `.exe`; macOS behavior is unverified. |
 | `CODEX_MUX_SCRIPT_PATH` | Path to `codex-app-server-mux.js` for shim/wrapper launchers. |
 | `CODEX_MUX_CODEX_EXE` | Real Codex CLI executable used by the mux to start the real app-server. |
 | `CODEX_MUX_NODE_EXE` | Optional explicit Node executable for shim/wrapper launchers. |
 | `CODEX_MUX_STANDALONE` | Start mux without attaching stdin/stdout Desktop client when set to `1`, useful for Mobile Web-only mux testing. |
+| `CODEX_MUX_KEEP_ALIVE` | Keep mux and real app-server alive after Desktop stdio disconnects; Desktop relaunches can attach back to the existing mux. |
 | `CODEX_MUX_ENDPOINT_FILE` | Custom mux endpoint file path. |
 | `CODEX_MUX_CODEX_ARGS` | Override real Codex app-server arguments. When unset, Desktop-supplied arguments are passed through, otherwise the mux falls back to `app-server --analytics-default-enabled`. |
+
+`start-codex-desktop-shared.ps1 -ForceRestartMux` is a launcher option, not an environment variable. It is intended for bridge updates where an existing keep-alive mux must be replaced.
 
 ## Safety Notes
 

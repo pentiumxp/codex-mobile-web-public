@@ -34,6 +34,7 @@ const state = {
   defaultModel: "",
   defaultReasoningEffort: "",
   rateLimits: null,
+  pendingApprovals: new Map(),
   selectedModel: localStorage.getItem("codexMobileSelectedModel") || "",
   selectedEffort: localStorage.getItem("codexMobileSelectedEffort") || "",
   leavingItems: new Map(),
@@ -196,6 +197,21 @@ function renderQuotaUsage() {
   el.textContent = `${quotaRemainingText(fiveHour)} | ${quotaRemainingText(weekly)}`;
   el.title = `${quotaTitle("5-hour", fiveHour)} | ${quotaTitle("weekly", weekly)}`;
   el.classList.toggle("unknown", !fiveHour && !weekly);
+}
+
+function updateConnectionState(status, fallbackText = "Starting") {
+  const el = $("connectionState");
+  if (!el) return;
+  const hasError = Boolean(status && !status.ready && status.lastError);
+  if (status && status.ready) {
+    el.textContent = status.sharedRequired || String(status.transport || "").startsWith("external-")
+      ? "Shared"
+      : "Connected";
+  } else {
+    el.textContent = hasError ? status.lastError : fallbackText;
+  }
+  el.classList.toggle("error", hasError);
+  el.title = hasError ? status.lastError : "";
 }
 
 function normalizeFsPath(value) {
@@ -610,6 +626,26 @@ function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
   return merged;
 }
 
+function approvalThreadId(request) {
+  return request && request.params && (request.params.threadId || request.params.conversationId || "");
+}
+
+function pendingApprovalsForThread(threadId) {
+  return Array.from(state.pendingApprovals.values())
+    .filter((request) => approvalThreadId(request) === threadId)
+    .sort((a, b) => Number(a.receivedAt || 0) - Number(b.receivedAt || 0));
+}
+
+function approvalRequestsSignature(threadId) {
+  return pendingApprovalsForThread(threadId).map((request) => ({
+    id: request.id,
+    method: request.method,
+    status: request.status,
+    decision: request.decision,
+    params: request.params,
+  }));
+}
+
 function conversationRenderSignature(thread) {
   if (!thread) return "home";
   if (thread.mobileLoadError) return `load-error|${state.currentThreadId || thread.id || ""}|${thread.mobileLoadError}`;
@@ -625,6 +661,7 @@ function conversationRenderSignature(thread) {
     threadId: state.currentThreadId || thread.id || "",
     omitted,
     leavingKeys,
+    approvals: approvalRequestsSignature(state.currentThreadId || thread.id || ""),
     turns: turns.map((turn) => {
       const timerShowsStatus = isLatestTurn(turn) && (isLiveTurn(turn) || turnFinalSeconds(turn) != null);
       return {
@@ -867,8 +904,10 @@ async function login(key) {
 async function bootstrap() {
   const status = await api("/api/status").catch((err) => {
     $("connectionState").textContent = err.message;
+    $("connectionState").classList.add("error");
     return null;
   });
+  if (status) updateConnectionState(status);
   if (status && status.rateLimits) {
     state.rateLimits = status.rateLimits;
     renderQuotaUsage();
@@ -941,6 +980,7 @@ async function loadThreads() {
     if (seq !== state.threadListLoadSeq) return null;
     state.threads = visibleThreads(result.data || []);
     renderThreads(result);
+    $("connectionState").classList.remove("error");
     if (result.mobileFallback) $("connectionState").textContent = "Recovered from session index";
     else $("connectionState").textContent = "Connected";
     if (!state.currentThread) renderCurrentThread();
@@ -975,6 +1015,7 @@ async function loadThread(threadId) {
   renderThreads();
   renderCurrentThread({ stickToBottom: true });
   updateComposerControls();
+  $("connectionState").classList.remove("error");
   $("connectionState").textContent = "Loading thread";
   let result;
   try {
@@ -1003,6 +1044,7 @@ async function loadThread(threadId) {
   syncActiveTurnFromThread();
   renderThreads();
   renderCurrentThread({ stickToBottom: true });
+  $("connectionState").classList.remove("error");
   $("connectionState").textContent = "Connected";
   scheduleLivePollIfNeeded(1200);
   updateComposerControls();
@@ -1320,9 +1362,90 @@ function renderCurrentThread(options = {}) {
   const omittedBanner = omitted > 0
     ? `<div class="history-note${entryAnimationClass(omittedKey, previousKeys)}" data-render-key="${escapeHtml(omittedKey)}">Older history hidden on mobile: ${omitted.toLocaleString()} turn(s)</div>`
     : "";
-  const html = omittedBanner + (turns.map((turn) => renderTurn(turn, previousKeys)).join("") || `<div class="empty-state entry-animate">No visible turns.</div>`);
+  const turnsHtml = turns.map((turn) => renderTurn(turn, previousKeys)).join("");
+  const approvalsHtml = renderPendingApprovals(thread, previousKeys);
+  const html = omittedBanner + (turnsHtml || approvalsHtml ? `${turnsHtml}${approvalsHtml}` : `<div class="empty-state entry-animate">No visible turns.</div>`);
   updateConversationHtml(html, conversationRenderSignature(thread), { stickToBottom: shouldStickToBottom });
   updateTickTimer();
+}
+
+function approvalTitle(method) {
+  const titles = {
+    "item/commandExecution/requestApproval": "Command approval",
+    "execCommandApproval": "Command approval",
+    "item/fileChange/requestApproval": "File change approval",
+    "applyPatchApproval": "File change approval",
+    "item/permissions/requestApproval": "Permission approval",
+    "item/tool/requestUserInput": "User input required",
+    "mcpServer/elicitation/request": "MCP input required",
+    "item/tool/call": "Tool request",
+    "account/chatgptAuthTokens/refresh": "Account authorization",
+  };
+  return titles[method] || "Approval request";
+}
+
+function approvalStatusLabel(status) {
+  const text = String(status || "waiting");
+  if (text === "responding") return "Sending";
+  if (text === "responded" || text === "resolved") return "Answered";
+  if (text === "connectionClosed") return "Closed";
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function permissionSummary(permissions) {
+  if (!permissions || typeof permissions !== "object") return "";
+  const parts = [];
+  if (permissions.network) parts.push(`Network: ${JSON.stringify(permissions.network)}`);
+  if (permissions.fileSystem) parts.push(`File system: ${JSON.stringify(permissions.fileSystem)}`);
+  return parts.join("\n");
+}
+
+function approvalDetailLines(request) {
+  const params = request.params || {};
+  return [
+    params.reason ? `Reason: ${params.reason}` : "",
+    params.command ? `Command:\n${params.command}` : "",
+    params.cwd ? `Working directory:\n${params.cwd}` : "",
+    params.grantRoot ? `Grant root:\n${params.grantRoot}` : "",
+    Array.isArray(params.fileNames) && params.fileNames.length ? `Files:\n${params.fileNames.join("\n")}` : "",
+    params.permissions ? `Permissions:\n${permissionSummary(params.permissions) || JSON.stringify(params.permissions, null, 2)}` : "",
+    params.networkApprovalContext ? `Network:\n${JSON.stringify(params.networkApprovalContext, null, 2)}` : "",
+  ].filter(Boolean);
+}
+
+function renderApprovalActions(request) {
+  const waiting = request.status === "waiting";
+  if (!request.actionable || !waiting) {
+    return "";
+  }
+  return `<div class="approval-actions">
+    <button class="approval-button allow" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-action="allow_once">Allow once</button>
+    <button class="approval-button allow" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-action="allow_session">Allow session</button>
+    <button class="approval-button deny" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-action="deny">Deny</button>
+  </div>`;
+}
+
+function renderPendingApprovals(thread, previousKeys = new Set()) {
+  const threadId = thread && (thread.id || state.currentThreadId);
+  const requests = pendingApprovalsForThread(threadId);
+  if (!requests.length) return "";
+  return `<div class="approval-stack">
+    ${requests.map((request) => {
+      const key = `approval|${request.id}`;
+      const detail = approvalDetailLines(request).join("\n");
+      return `<section class="approval-card${entryAnimationClass(key, previousKeys)} ${escapeHtml(request.status || "waiting")}" data-render-key="${escapeHtml(key)}" data-approval-card="${escapeHtml(request.id)}">
+        <div class="approval-head">
+          <div>
+            <div class="approval-title">${escapeHtml(approvalTitle(request.method))}</div>
+            <div class="approval-method">${escapeHtml(request.method)}</div>
+          </div>
+          <span class="approval-status">${escapeHtml(approvalStatusLabel(request.status))}</span>
+        </div>
+        ${detail ? `<pre class="approval-detail">${escapeHtml(detail)}</pre>` : ""}
+        ${renderApprovalActions(request)}
+      </section>`;
+    }).join("")}
+  </div>`;
 }
 
 function renderTurn(turn, previousKeys = new Set()) {
@@ -1733,6 +1856,31 @@ function scheduleRenderCurrentThread() {
   }
 }
 
+function upsertServerRequest(request) {
+  if (!request || !request.id) return;
+  state.pendingApprovals.set(String(request.id), Object.assign({}, state.pendingApprovals.get(String(request.id)) || {}, request));
+  if (state.currentThread && approvalThreadId(request) === state.currentThread.id) scheduleRenderCurrentThread();
+}
+
+function resolveServerRequest(payload) {
+  const requestId = String(payload && payload.requestId || "");
+  if (!requestId) return;
+  const existing = state.pendingApprovals.get(requestId);
+  let next = existing || null;
+  if (payload.request) {
+    next = Object.assign({}, existing || {}, payload.request);
+    state.pendingApprovals.set(requestId, next);
+  } else if (existing) {
+    existing.status = payload.status || "resolved";
+    next = existing;
+  }
+  if (state.currentThread && next && approvalThreadId(next) === state.currentThread.id) scheduleRenderCurrentThread();
+  setTimeout(() => {
+    state.pendingApprovals.delete(requestId);
+    if (state.currentThread) scheduleRenderCurrentThread();
+  }, 1200);
+}
+
 function applyNotification(method, params) {
   if (!params) return;
   if (method === "account/rateLimits/updated") {
@@ -1827,7 +1975,7 @@ function connectEvents() {
   state.events.onmessage = (event) => {
     const payload = JSON.parse(event.data);
     if (payload.type === "status") {
-      $("connectionState").textContent = payload.status.ready ? "Connected" : "Starting";
+      updateConnectionState(payload.status);
       if (payload.status.rateLimits) {
         state.rateLimits = payload.status.rateLimits;
         renderQuotaUsage();
@@ -1836,14 +1984,16 @@ function connectEvents() {
       return;
     }
     if (payload.type === "notification") applyNotification(payload.method, payload.params);
+    if (payload.type === "serverRequest") upsertServerRequest(payload.request);
+    if (payload.type === "serverRequestResolved") resolveServerRequest(payload);
   };
   state.events.onerror = () => {
-    $("connectionState").textContent = "Reconnecting";
+    updateConnectionState(null, "Reconnecting");
     clearTimeout(state.recoveryTimer);
     state.recoveryTimer = setTimeout(async () => {
       try {
         const status = await api("/api/status");
-        $("connectionState").textContent = status.ready ? "Connected" : "Starting";
+        updateConnectionState(status);
         if (status.rateLimits) {
           state.rateLimits = status.rateLimits;
           renderQuotaUsage();
@@ -1880,7 +2030,7 @@ async function resumeMobileSession(reason = "resume") {
   ensureEventConnection();
   state.pollStableCount = 0;
   const status = await api("/api/status");
-  $("connectionState").textContent = status.ready ? "Connected" : "Starting";
+  updateConnectionState(status);
   if (status.rateLimits) {
     state.rateLimits = status.rateLimits;
     renderQuotaUsage();
@@ -1913,6 +2063,7 @@ function updateComposerHeightVar() {
 
 function showError(err) {
   $("connectionState").textContent = err.message || String(err);
+  $("connectionState").classList.add("error");
 }
 
 function autoSizeTextarea(el) {
@@ -2096,6 +2247,7 @@ async function sendMessage(event) {
     autoSizeTextarea(input);
     clearPendingAttachments();
     input.blur();
+    $("connectionState").classList.remove("error");
     $("connectionState").textContent = "Sent";
     scheduleCurrentThreadRefresh(600);
     scheduleLivePollIfNeeded(1200);
@@ -2109,10 +2261,36 @@ async function sendMessage(event) {
 
 async function interruptActiveTurn() {
   if (!state.currentThreadId || !state.activeTurnId) return;
+  $("connectionState").classList.remove("error");
   $("connectionState").textContent = "Interrupt requested";
   await api(`/api/threads/${encodeURIComponent(state.currentThreadId)}/turns/${encodeURIComponent(state.activeTurnId)}/interrupt`, { method: "POST" })
     .then(() => scheduleCurrentThreadRefresh(900))
     .catch(showError);
+}
+
+async function answerApproval(requestId, decision) {
+  const key = String(requestId || "");
+  const request = state.pendingApprovals.get(key);
+  if (!request || request.status !== "waiting") return;
+  request.status = "responding";
+  request.decision = decision;
+  renderCurrentThread();
+  try {
+    const result = await api(`/api/approvals/${encodeURIComponent(key)}`, {
+      method: "POST",
+      body: JSON.stringify({ decision }),
+      timeoutMs: 20000,
+    });
+    if (result && result.request) state.pendingApprovals.set(key, result.request);
+    $("connectionState").classList.remove("error");
+    $("connectionState").textContent = "Approval sent";
+    renderCurrentThread();
+  } catch (err) {
+    request.status = "waiting";
+    request.decision = null;
+    showError(err);
+    renderCurrentThread();
+  }
 }
 
 function wireUi() {
@@ -2145,6 +2323,11 @@ function wireUi() {
   $("conversation").addEventListener("scroll", () => {
     if (state.leavingItems.size) scheduleLeavingCleanup(120);
   }, { passive: true });
+  $("conversation").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-approval-action]");
+    if (!button) return;
+    answerApproval(button.dataset.approvalId, button.dataset.approvalAction).catch(showError);
+  });
   $("messageInput").addEventListener("input", (event) => {
     autoSizeTextarea(event.target);
     updateComposerControls();

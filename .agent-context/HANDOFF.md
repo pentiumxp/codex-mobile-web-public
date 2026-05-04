@@ -663,3 +663,108 @@
   - `npm.cmd run check` passed in the private workspace.
   - `git diff --check` passed with only Git line-ending warnings.
   - The same front-end fix was synchronized to the clean public release workspace, where `npm.cmd run check`, `git diff --check`, and the public privacy scan passed.
+
+## 2026-05-04 Desktop-Owned Mux Lifetime Finding
+
+- Superseded by the keep-alive implementation below, but retained as the diagnosis that led to the fix.
+- Current Windows Desktop live-sync mode is Desktop-owned:
+  - Codex Desktop launches `codex-app-server-mux.exe` through `CODEX_CLI_PATH`.
+  - The shim launches `node codex-app-server-mux.js`.
+  - The mux launches the real `codex app-server` child and exposes the JSONL TCP endpoint consumed by Mobile Web.
+- The mux is intentionally tied to Desktop stdio unless `CODEX_MUX_STANDALONE=1`:
+  - When Desktop closes the mux stdin, `codex-app-server-mux.js` calls shutdown.
+  - Shutdown removes the endpoint file, closes TCP, and kills the real app-server child.
+- Operational implication:
+  - If Mobile Web is actively interacting through `external-jsonl-tcp` and the Desktop app is fully quit, the Mobile Web server process remains running but its shared app-server connection is closed.
+  - The active turn stream should be treated as interrupted in this mode.
+  - Later Mobile Web requests may reconnect or fall back to its own managed app-server if the shared endpoint is unavailable, but that is a new app-server process, not continuation of the killed Desktop-owned process.
+- Durable design note:
+  - To allow Desktop to quit without affecting Mobile Web live turns, the bridge would need a daemon-style mux plus a Desktop stdio adapter, or Mobile Web must run standalone without Desktop live-sync.
+
+## 2026-05-04 Shared Stream Strictness And Mux Keep-Alive
+
+- User-requested product rule:
+  - Shared live message stream is mandatory for Desktop/Mobile sync.
+  - If the shared stream disconnects, Mobile Web should show a connection error rather than silently starting a separate managed app-server with a divergent stream.
+  - Prefer keeping the stream process alive after Desktop exits; Desktop restart should reconnect to the same stream where possible.
+- Changes:
+  - `server.js` now treats detected mux endpoint files as required for the process lifetime.
+  - `server.js` adds `CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER=1` to require a shared endpoint even before a mux endpoint file exists.
+  - If a shared endpoint is unavailable or closes, `server.js` sets a shared app-server error and does not fall back to a managed child.
+  - `/api/status` now includes `sharedRequired`.
+  - `public/app.js` shows `Shared` when using a shared endpoint and surfaces shared app-server errors in the connection label.
+  - `codex-app-server-mux.js` adds `CODEX_MUX_KEEP_ALIVE=1`.
+  - With keep-alive enabled, Desktop stdio disconnect removes only the Desktop client; mux, TCP endpoint, and the real app-server child remain alive.
+  - When a new Desktop-launched mux starts while a live endpoint already exists, it acts as a stdio adapter to the existing mux instead of starting another real app-server.
+  - The mux caches/replays the first successful `initialize` response so reconnecting Desktop clients can attach to an already-initialized app-server.
+  - `start-codex-desktop-shared.ps1` now enables `CODEX_MUX_KEEP_ALIVE=1` by default, with `-NoMuxKeepAlive` as an opt-out.
+  - `start-codex-mobile-web.ps1` adds `-RequireSharedAppServer`.
+  - README and `PROJECT_CONTEXT.md` document strict shared-stream and keep-alive behavior.
+- Validation:
+  - `npm.cmd run check` passed.
+- Remaining limitation:
+  - Desktop UI foreground thread switching is still controlled by Codex Desktop, not by the app-server protocol. Reconnecting Desktop should attach to the same app-server process, but exact foreground route restoration depends on Desktop behavior.
+- Runtime confirmation after Desktop restart:
+  - `%USERPROFILE%\.codex\app-server-mux\endpoint.json` now points to `jsonl-tcp` port `64924`, mux Node PID `47860`, real app-server child PID `36432`, started at `2026-05-04T01:38:48.447Z`.
+  - Codex Desktop process tree includes `Codex.exe` PID `27296` -> `codex-app-server-mux.exe` PID `44428` -> `node.exe` PID `47860` -> `codex.exe app-server` PID `36432`.
+  - Mobile Web wrapper PID `49736`, Node PID `46112`.
+  - Authenticated `/api/status` returns `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, `lastError=null`.
+  - Mux log shows `replayed cached initialize result`, confirming the cached initialize/reconnect path is active.
+- Runtime confirmation after a second Desktop restart:
+  - Endpoint remained unchanged: port `64924`, mux Node PID `47860`, child app-server PID `36432`, started at `2026-05-04T01:38:48.447Z`.
+  - New Desktop main PID became `51516`.
+  - New Desktop-launched adapter process tree is `Codex.exe` PID `51516` -> `codex-app-server-mux.exe` PID `52068` -> `node.exe` PID `55728`.
+  - Mux log shows `client disconnected c1 desktop-stdio`, then `attached desktop stdio to existing mux 127.0.0.1:64924 pid=47860`, then `replayed cached initialize result for c3`.
+  - Authenticated `/api/status` still returns `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, `lastError=null`.
+
+## 2026-05-04 Mobile Approval Control Work - 11:47 +08:00
+
+- User-reported issue:
+  - A normal-permission thread can block on command/file/permission approval, and Mobile Web did not show a usable approval notification.
+- Findings:
+  - The app-server sends approval prompts as server requests with both `method` and `id`, such as `item/commandExecution/requestApproval`, `item/fileChange/requestApproval`, `item/permissions/requestApproval`, plus legacy `execCommandApproval` and `applyPatchApproval`.
+  - The previous mux treated all app-server messages with an `id` as responses to client requests. Server requests with ids were logged as `response for unknown request id ...` and dropped.
+  - Because dropped server requests are not replayed by the app-server, a turn already blocked behind a dropped approval may need to be interrupted/retried or the shared mux/app-server restarted.
+- Changes:
+  - `codex-app-server-mux.js` now distinguishes app-server server requests (`id` + `method`) from responses (`id` without `method`), broadcasts server requests to clients, and forwards the first client response back to the real app-server.
+  - The mux endpoint capability now includes `serverRequestProxy: true` when the new mux code is running.
+  - `server.js` now stores pending server requests, exposes authenticated `GET /api/approvals`, accepts `POST /api/approvals/<requestId>` decisions, and sends JSON-RPC responses back through the shared app-server stream.
+  - `public/app.js` renders pending approval cards in the current thread with `Allow once`, `Allow session`, and `Deny` actions.
+  - `public/styles.css` adds compact approval-card styling.
+  - `start-codex-desktop-shared.ps1` adds `-ForceRestartMux`, which stops the mux PID recorded in `%USERPROFILE%\.codex\app-server-mux\endpoint.json` before launching Desktop. This is needed after bridge-code changes because normal Desktop restarts attach to the old keep-alive mux.
+  - `.gitignore` now ignores local `data/` logs and `*.log.err`, because server restarts can leave runtime log files in the workspace.
+  - README and `PROJECT_CONTEXT.md` document approval proxying and the forced mux restart workflow.
+- Validation:
+  - `npm.cmd run check` passed.
+  - `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\start-codex-desktop-shared.ps1 -PrintOnly` passed.
+  - `git diff --check` passed with only Git line-ending warnings.
+- Current runtime state:
+  - Mobile Web server was restarted with new `server.js`; current 8787 listener is Node PID `53012`.
+  - Authenticated `GET /api/approvals` now returns `200` with an empty `data` array.
+  - Authenticated `/api/status` returns `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, `lastError=null`.
+  - The old keep-alive mux has been replaced through `start-codex-desktop-shared.ps1 -ForceRestartMux`.
+  - Current endpoint is port `62570`, mux Node PID `12780`, real app-server child PID `44104`, started `2026-05-04T03:57:34.646Z`.
+  - Current mux endpoint capabilities are `{ mobileUserMessageEcho: true, serverRequestProxy: true }`, so approval server-request proxying is active.
+  - Mobile Web was explicitly reconnected to this endpoint; authenticated `/api/status` reports `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, `lastError=null`, endpoint port `62570`, and `serverRequestProxy=true`.
+  - Authenticated `/api/approvals` currently returns an empty `data` array.
+  - Any approval prompt dropped by the old mux before the replacement cannot be replayed by app-server; that specific blocked operation should be retried if still needed.
+
+## 2026-05-04 Public PR #1 Pulled Locally
+
+- User reported a new GitHub pull request had been merged.
+- Private repository `pentiumxp/codex-mobile-web` had no new remote commits after `git fetch origin --prune`; `main` remained at `aecf3c2`.
+- The merged PR was in the clean public release repository `pentiumxp/codex-mobile-web-public`:
+  - PR #1: `增加 macOS 共享启动支持并优化手机端消息显示`
+  - Author: `franksong2702`
+  - Merge commit: `73ff0bd`
+- Local public release path `C:\Users\xuxin\Documents\codex-mobile-web-public` was fast-forwarded to `73ff0bd`.
+- Public PR changed:
+  - macOS launch scripts: `codex-app-server-mux-macos.sh`, `start-codex-desktop-shared-macos.sh`, `start-codex-mobile-web-macos.sh`, `start-codex-shared-mobile-macos.sh`
+  - macOS README instructions
+  - mobile Markdown rendering styles/logic
+  - small server/mux memory-pressure and path-resolution fixes
+- Validation in the public release repo:
+  - `npm.cmd run check` passed.
+- Not yet integrated into the private source workspace:
+  - The private workspace currently has uncommitted local changes in overlapping files, including `server.js`, `public/app.js`, `public/styles.css`, `codex-app-server-mux.js`, and `README.md`.
+  - Do not blindly copy or merge the public PR into the private workspace without reconciling it with the newer private approval-proxy and shared-stream changes.

@@ -2,6 +2,7 @@ param(
     [string]$HostAddress = "0.0.0.0",
     [int]$Port = 8787,
     [string]$CodexExe = "",
+    [switch]$RequireSharedAppServer,
     [switch]$NoAuth
 )
 
@@ -26,10 +27,16 @@ if (($CodexExe -match '[\\/]') -and -not (Test-Path -LiteralPath $CodexExe)) {
 $env:CODEX_MOBILE_HOST = $HostAddress
 $env:CODEX_MOBILE_PORT = [string]$Port
 $env:CODEX_MOBILE_CODEX_EXE = $CodexExe
+if ($RequireSharedAppServer) {
+    $env:CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER = "1"
+}
 if ($NoAuth) {
     $env:CODEX_MOBILE_DISABLE_AUTH = "1"
 }
 
 Write-Host "Starting Codex Mobile Web on http://$HostAddress`:$Port"
 Write-Host "Codex exe: $CodexExe"
+if ($RequireSharedAppServer) {
+    Write-Host "Shared app-server is required; managed fallback is disabled."
+}
 node (Join-Path $scriptRoot "server.js")

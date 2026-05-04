@@ -3,6 +3,8 @@ param(
     [string]$MuxCommand = "",
     [string]$MuxScript = "",
     [string]$RealCodexExe = "",
+    [switch]$ForceRestartMux,
+    [switch]$NoMuxKeepAlive,
     [switch]$PrintOnly
 )
 
@@ -101,6 +103,27 @@ if (($RealCodexExe -match '[\\/]') -and -not (Test-Path -LiteralPath $RealCodexE
     throw "Real Codex executable not found: $RealCodexExe"
 }
 
+$endpointFile = Join-Path $env:USERPROFILE ".codex\app-server-mux\endpoint.json"
+if ($ForceRestartMux) {
+    if (Test-Path -LiteralPath $endpointFile) {
+        try {
+            $endpoint = Get-Content -LiteralPath $endpointFile -Raw | ConvertFrom-Json
+            $muxPid = [int]($endpoint.pid)
+            if ($muxPid -gt 0) {
+                $muxProcess = Get-Process -Id $muxPid -ErrorAction SilentlyContinue
+                if ($muxProcess) {
+                    Write-Host "Stopping existing mux PID $muxPid before launch."
+                    Stop-Process -Id $muxPid -Force
+                    Start-Sleep -Milliseconds 800
+                }
+            }
+        } catch {
+            Write-Warning "Failed to stop existing mux from endpoint file: $($_.Exception.Message)"
+        }
+        Remove-Item -LiteralPath $endpointFile -Force -ErrorAction SilentlyContinue
+    }
+}
+
 if ([string]::IsNullOrWhiteSpace($CodexDesktopExe)) {
     $package = Get-AppxPackage -Name "OpenAI.Codex" -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($package -and $package.InstallLocation) {
@@ -118,6 +141,11 @@ if ([string]::IsNullOrWhiteSpace($CodexDesktopExe) -or -not (Test-Path -LiteralP
 $env:CODEX_CLI_PATH = $MuxCommand
 $env:CODEX_MUX_SCRIPT_PATH = $MuxScript
 $env:CODEX_MUX_CODEX_EXE = $RealCodexExe
+if ($NoMuxKeepAlive) {
+    Remove-Item Env:\CODEX_MUX_KEEP_ALIVE -ErrorAction SilentlyContinue
+} else {
+    $env:CODEX_MUX_KEEP_ALIVE = "1"
+}
 $nodeCommand = Get-Command "node.exe" -ErrorAction SilentlyContinue
 if ($nodeCommand -and $nodeCommand.Source) {
     $env:CODEX_MUX_NODE_EXE = $nodeCommand.Source
@@ -130,7 +158,8 @@ Write-Host "  CODEX_MUX_CODEX_EXE=$env:CODEX_MUX_CODEX_EXE"
 if ($env:CODEX_MUX_NODE_EXE) {
     Write-Host "  CODEX_MUX_NODE_EXE=$env:CODEX_MUX_NODE_EXE"
 }
-Write-Host "  Endpoint file: $env:USERPROFILE\.codex\app-server-mux\endpoint.json"
+Write-Host "  CODEX_MUX_KEEP_ALIVE=$env:CODEX_MUX_KEEP_ALIVE"
+Write-Host "  Endpoint file: $endpointFile"
 
 if ($PrintOnly) {
     return

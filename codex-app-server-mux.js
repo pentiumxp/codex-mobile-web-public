@@ -20,6 +20,7 @@ const CODEX_ARGS = process.env.CODEX_MUX_CODEX_ARGS
 const HOST = process.env.CODEX_MUX_HOST || "127.0.0.1";
 const PORT = Number(process.env.CODEX_MUX_PORT || "0");
 const STANDALONE = /^(1|true|yes|on)$/i.test(process.env.CODEX_MUX_STANDALONE || "");
+const KEEP_ALIVE = STANDALONE || /^(1|true|yes|on)$/i.test(process.env.CODEX_MUX_KEEP_ALIVE || "");
 const RUNTIME_DIR = process.env.CODEX_MUX_RUNTIME_DIR || path.join(CODEX_HOME, "app-server-mux");
 const ENDPOINT_FILE = process.env.CODEX_MUX_ENDPOINT_FILE || path.join(RUNTIME_DIR, "endpoint.json");
 const LOG_FILE = process.env.CODEX_MUX_LOG_FILE || path.join(RUNTIME_DIR, "mux.log");
@@ -31,8 +32,10 @@ let childBuffer = "";
 let shuttingDown = false;
 const clients = new Map();
 const pending = new Map();
+const serverRequests = new Map();
 const activeTurnsByThread = new Map();
 let nextSyntheticItemId = 1;
+let initializeResult = null;
 
 function log(message) {
   try {
@@ -195,10 +198,36 @@ function handleClientLine(client, line) {
 
   if (handleMuxMethod(client, message)) return;
 
+  if (message.method === "initialize" && hasId(message) && initializeResult) {
+    sendToClient(client, {
+      jsonrpc: "2.0",
+      id: message.id,
+      result: initializeResult,
+    });
+    log(`replayed cached initialize result for ${client.id}`);
+    return;
+  }
+
+  if (hasId(message) && !message.method) {
+    const requestId = String(message.id);
+    if (!serverRequests.has(requestId)) {
+      log(`client response for unknown server request id ${requestId} from ${client.id}`);
+      return;
+    }
+    try {
+      sendToChild(message);
+      serverRequests.delete(requestId);
+      log(`forwarded server request response id=${requestId} from ${client.id}`);
+    } catch (err) {
+      log(`failed to forward server request response id=${requestId}: ${err.message}`);
+    }
+    return;
+  }
+
   if (hasId(message)) {
     const originalId = message.id;
     const internalId = `${client.id}:${String(originalId)}`;
-    pending.set(internalId, { client, originalId });
+    pending.set(internalId, { client, originalId, method: message.method || "" });
     message.id = internalId;
   }
 
@@ -226,6 +255,17 @@ function handleChildLine(line) {
     return;
   }
 
+  if (hasId(message) && message.method) {
+    const requestId = String(message.id);
+    serverRequests.set(requestId, {
+      method: message.method,
+      receivedAt: Date.now(),
+    });
+    broadcastToClients(message);
+    log(`broadcast server request id=${requestId} method=${message.method}`);
+    return;
+  }
+
   if (hasId(message)) {
     const request = pending.get(message.id);
     if (!request) {
@@ -233,12 +273,22 @@ function handleChildLine(line) {
       return;
     }
     pending.delete(message.id);
+    if (request.method === "initialize") {
+      if (message.error && /already initialized/i.test(message.error.message || "")) {
+        message.result = initializeResult || { userAgent: "shared app-server (already initialized)" };
+        delete message.error;
+      }
+      if (!message.error) initializeResult = message.result || {};
+    }
     message.id = request.originalId;
     sendToClient(request.client, message);
     return;
   }
 
   if (message.method) {
+    if (message.method === "serverRequest/resolved" && message.params && message.params.requestId != null) {
+      serverRequests.delete(String(message.params.requestId));
+    }
     trackTurnNotification(message);
     broadcastToClients(message);
   }
@@ -308,6 +358,7 @@ function startTcpServer() {
       startedAt: new Date().toISOString(),
       capabilities: {
         mobileUserMessageEcho: true,
+        serverRequestProxy: true,
       },
     };
     fs.mkdirSync(path.dirname(ENDPOINT_FILE), { recursive: true });
@@ -326,17 +377,99 @@ function attachStdioClient() {
     (line) => process.stdout.write(line),
     () => process.stdin.destroy(),
   );
+  const disconnectDesktop = (code) => {
+    removeClient(client);
+    if (!KEEP_ALIVE) shutdown(code);
+  };
   process.stdin.setEncoding("utf8");
   process.stdin.on("data", createLineParser((line) => handleClientLine(client, line)));
   process.stdin.on("end", () => {
-    removeClient(client);
-    if (!STANDALONE) shutdown(0);
+    disconnectDesktop(0);
   });
   process.stdin.on("error", (err) => {
     log(`stdin error: ${err.message}`);
-    removeClient(client);
-    if (!STANDALONE) shutdown(1);
+    disconnectDesktop(1);
   });
+  process.stdout.on("error", (err) => {
+    log(`stdout error: ${err.message}`);
+    disconnectDesktop(0);
+  });
+}
+
+function readExistingEndpoint() {
+  try {
+    const endpoint = JSON.parse(fs.readFileSync(ENDPOINT_FILE, "utf8"));
+    if (!endpoint || endpoint.pid === process.pid) return null;
+    if (endpoint.protocol !== "jsonl-tcp" || !endpoint.host || !endpoint.port) return null;
+    return endpoint;
+  } catch (_) {
+    return null;
+  }
+}
+
+function connectExistingEndpoint(endpoint) {
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection({ host: endpoint.host, port: Number(endpoint.port) });
+    const timer = setTimeout(() => {
+      socket.destroy();
+      reject(new Error("existing mux tcp connection timed out"));
+    }, 1200);
+    socket.once("connect", () => {
+      clearTimeout(timer);
+      socket.setEncoding("utf8");
+      resolve(socket);
+    });
+    socket.once("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}
+
+function attachDesktopToExistingMux(socket, endpoint) {
+  let exiting = false;
+  const finish = (code) => {
+    if (exiting) return;
+    exiting = true;
+    try {
+      socket.end();
+    } catch (_) {}
+    setTimeout(() => process.exit(code), 20).unref();
+  };
+
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", createLineParser((line) => socket.write(`${line}\n`)));
+  process.stdin.on("end", () => finish(0));
+  process.stdin.on("error", (err) => {
+    log(`adapter stdin error: ${err.message}`);
+    finish(1);
+  });
+
+  socket.on("data", (chunk) => process.stdout.write(chunk));
+  socket.on("close", () => finish(1));
+  socket.on("error", (err) => {
+    log(`adapter socket error: ${err.message}`);
+    finish(1);
+  });
+  process.stdout.on("error", (err) => {
+    log(`adapter stdout error: ${err.message}`);
+    finish(0);
+  });
+  log(`attached desktop stdio to existing mux ${endpoint.host}:${endpoint.port} pid=${endpoint.pid || ""}`);
+}
+
+async function tryAttachToExistingMux() {
+  if (STANDALONE || !KEEP_ALIVE) return false;
+  const endpoint = readExistingEndpoint();
+  if (!endpoint) return false;
+  try {
+    const socket = await connectExistingEndpoint(endpoint);
+    attachDesktopToExistingMux(socket, endpoint);
+    return true;
+  } catch (err) {
+    log(`existing mux endpoint unavailable; starting a new mux: ${err.message}`);
+    return false;
+  }
 }
 
 function cleanupEndpointFile() {
@@ -364,11 +497,14 @@ process.on("SIGINT", () => shutdown(0));
 process.on("SIGTERM", () => shutdown(0));
 process.on("exit", cleanupEndpointFile);
 
-try {
+async function main() {
+  if (await tryAttachToExistingMux()) return;
   startChild();
   startTcpServer();
   if (!STANDALONE) attachStdioClient();
-} catch (err) {
+}
+
+main().catch((err) => {
   log(`fatal: ${err.stack || err.message || String(err)}`);
   shutdown(1);
-}
+});
