@@ -33,6 +33,7 @@ const state = {
   composerBusy: false,
   maxUploadBytes: 64 * 1024 * 1024,
   maxUploadFiles: 12,
+  rolloutWarningThresholdBytes: 100 * 1024 * 1024,
   modelOptions: [],
   reasoningEffortOptions: [],
   permissionModeOptions: ["default", "auto", "full", "custom"],
@@ -174,6 +175,27 @@ function statusText(status) {
   if (!status) return "";
   if (typeof status === "string") return status;
   return status.type || JSON.stringify(status);
+}
+
+function rolloutSizeBytes(thread) {
+  const size = Number(thread && thread.rolloutSizeBytes);
+  return Number.isFinite(size) && size > 0 ? size : 0;
+}
+
+function rolloutThresholdBytes(thread) {
+  const size = Number(thread && thread.rolloutWarningThresholdBytes);
+  return Number.isFinite(size) && size > 0 ? size : state.rolloutWarningThresholdBytes;
+}
+
+function isRolloutOverThreshold(thread) {
+  const size = rolloutSizeBytes(thread);
+  const threshold = rolloutThresholdBytes(thread);
+  return Boolean(thread && thread.rolloutOverWarningThreshold) || (size > 0 && threshold > 0 && size >= threshold);
+}
+
+function rolloutSizeText(thread) {
+  const size = rolloutSizeBytes(thread);
+  return size > 0 ? formatFileSize(size) : "";
 }
 
 function normalizeOptionList(values) {
@@ -1020,6 +1042,9 @@ function conversationRenderSignature(thread) {
     .sort();
   const payload = {
     threadId: state.currentThreadId || thread.id || "",
+    rolloutSizeBytes: rolloutSizeBytes(thread),
+    rolloutWarning: isRolloutOverThreshold(thread),
+    rolloutWarningThresholdBytes: rolloutThresholdBytes(thread),
     omitted,
     leavingKeys,
     approvals: approvalRequestsSignature(state.currentThreadId || thread.id || ""),
@@ -1631,12 +1656,28 @@ function renderThreads(result = null) {
     : "";
   const html = warning + state.threads.map((thread) => {
     const title = thread.name || thread.preview || thread.id;
-    const meta = `${shortPath(thread.cwd)} | ${formatTime(thread.updatedAt)} | ${statusText(thread.status)}`;
+    const sizeText = rolloutSizeText(thread);
+    const sizeWarn = isRolloutOverThreshold(thread);
+    const meta = [shortPath(thread.cwd), formatTime(thread.updatedAt), statusText(thread.status)]
+      .filter(Boolean)
+      .join(" | ");
     const active = thread.id === state.currentThreadId ? " active" : "";
-    return `<button class="thread-card${active}" type="button" data-thread="${escapeHtml(thread.id)}">
-      <div class="thread-card-title">${escapeHtml(title)}</div>
-      <div class="thread-card-meta">${escapeHtml(meta)}</div>
-    </button>`;
+    const sizeBadge = sizeText
+      ? `<div class="thread-card-size${sizeWarn ? " warn" : ""}" title="Rollout file size">${escapeHtml(sizeText)}</div>`
+      : "";
+    const action = sizeWarn
+      ? `<button class="thread-new-button" type="button" data-new-thread-from-thread="${escapeHtml(thread.id)}">新线程</button>`
+      : "";
+    return `<div class="thread-card-wrap${sizeWarn ? " rollout-warn" : ""}">
+      <button class="thread-card${active}${sizeWarn ? " rollout-warn" : ""}" type="button" data-thread="${escapeHtml(thread.id)}">
+        <div class="thread-card-title">${escapeHtml(title)}</div>
+        <div class="thread-card-meta-row">
+          <div class="thread-card-meta">${escapeHtml(meta)}</div>
+          ${sizeBadge}
+        </div>
+      </button>
+      ${action}
+    </div>`;
   }).join("");
   const signature = JSON.stringify({
     warning: Boolean(warning),
@@ -1647,6 +1688,8 @@ function renderThreads(result = null) {
       shortPath(thread.cwd),
       thread.updatedAt,
       statusText(thread.status),
+      rolloutSizeBytes(thread),
+      isRolloutOverThreshold(thread),
     ]),
   });
   if (state.renderedThreadListSignature === signature) return;
@@ -1654,6 +1697,9 @@ function renderThreads(result = null) {
   state.renderedThreadListSignature = signature;
   list.querySelectorAll("[data-thread]").forEach((button) => {
     button.addEventListener("click", () => loadThread(button.dataset.thread).catch(showError));
+  });
+  list.querySelectorAll("[data-new-thread-from-thread]").forEach((button) => {
+    button.addEventListener("click", startNewThreadFromList);
   });
 }
 
@@ -1808,8 +1854,12 @@ function renderHome() {
   const threadHtml = recentThreads.length
     ? recentThreads.map((thread) => {
       const title = thread.name || thread.preview || thread.id;
-      const meta = `${shortPath(thread.cwd)} | ${formatTime(thread.updatedAt)} | ${statusText(thread.status)}`;
-      return `<button class="home-shortcut" type="button" data-home-thread="${escapeHtml(thread.id)}">
+      const sizeText = rolloutSizeText(thread);
+      const sizeWarn = isRolloutOverThreshold(thread);
+      const meta = [shortPath(thread.cwd), formatTime(thread.updatedAt), statusText(thread.status), sizeText ? `rollout ${sizeText}` : ""]
+        .filter(Boolean)
+        .join(" | ");
+      return `<button class="home-shortcut${sizeWarn ? " rollout-warn" : ""}" type="button" data-home-thread="${escapeHtml(thread.id)}">
         <span class="home-shortcut-title">${escapeHtml(title)}</span>
         <span class="home-shortcut-meta">${escapeHtml(meta)}</span>
       </button>`;
@@ -1829,7 +1879,7 @@ function renderHome() {
     view: "home",
     selectedCwd: state.selectedCwd,
     workspaces: workspaces.map((ws) => [ws.cwd, ws.label, ws.active, ws.recentThreadCount]),
-    threads: recentThreads.map((thread) => [thread.id, thread.name, thread.preview, thread.cwd, thread.updatedAt, statusText(thread.status)]),
+    threads: recentThreads.map((thread) => [thread.id, thread.name, thread.preview, thread.cwd, thread.updatedAt, statusText(thread.status), rolloutSizeBytes(thread), isRolloutOverThreshold(thread)]),
   });
   if (!updateConversationHtml(html, signature)) return;
   $("conversation").querySelectorAll("[data-home-workspace]").forEach((button) => {
@@ -1849,6 +1899,20 @@ function renderThreadLoadError(err) {
   state.renderedThreadListSignature = `error|${err.message || String(err)}`;
   const retry = $("retryThreads");
   if (retry) retry.addEventListener("click", () => loadThreads().catch(showError));
+}
+
+function renderRolloutWarning(thread, previousKeys = new Set()) {
+  if (!isRolloutOverThreshold(thread)) return "";
+  const size = rolloutSizeText(thread);
+  const threshold = formatFileSize(rolloutThresholdBytes(thread));
+  const key = `rollout-warning|${thread.id || state.currentThreadId}|${rolloutSizeBytes(thread)}`;
+  return `<div class="rollout-warning${entryAnimationClass(key, previousKeys)}" data-render-key="${escapeHtml(key)}">
+    <div class="rollout-warning-text">
+      <strong>上下文文件 ${escapeHtml(size)}</strong>
+      <span>已达到 ${escapeHtml(threshold)} 阈值。建议切到新线程，继续使用工作区共享上下文。</span>
+    </div>
+    <button class="rollout-new-thread" type="button" data-new-thread-from-current>新线程</button>
+  </div>`;
 }
 
 function renderCurrentThread(options = {}) {
@@ -1894,6 +1958,7 @@ function renderCurrentThread(options = {}) {
   const omittedBanner = omitted > 0
     ? `<div class="history-note${entryAnimationClass(omittedKey, previousKeys)}" data-render-key="${escapeHtml(omittedKey)}">Older history hidden on mobile: ${omitted.toLocaleString()} turn(s)</div>`
     : "";
+  const rolloutWarning = renderRolloutWarning(thread, previousKeys);
   const visibleTurnIds = new Set(turns.map((turn) => turn && turn.id).filter(Boolean).map(String));
   const turnsHtml = turns.map((turn) => renderTurn(turn, previousKeys)).join("");
   const approvalsHtml = renderPendingApprovals(thread, previousKeys, (request) => {
@@ -1901,9 +1966,113 @@ function renderCurrentThread(options = {}) {
     if (turnId && visibleTurnIds.has(turnId)) return false;
     return isApprovalActive(request);
   });
-  const html = omittedBanner + (turnsHtml || approvalsHtml ? `${turnsHtml}${approvalsHtml}` : `<div class="empty-state entry-animate">No visible turns.</div>`);
+  const html = rolloutWarning + omittedBanner + (turnsHtml || approvalsHtml ? `${turnsHtml}${approvalsHtml}` : `<div class="empty-state entry-animate">No visible turns.</div>`);
   updateConversationHtml(html, conversationRenderSignature(thread), { stickToBottom: shouldStickToBottom });
+  bindCurrentThreadActions();
   updateTickTimer();
+}
+
+function bindCurrentThreadActions() {
+  const button = $("conversation").querySelector("[data-new-thread-from-current]");
+  if (button) button.addEventListener("click", startNewThreadFromCurrent);
+}
+
+function startThreadRequestBody(sourceThread = null, options = {}) {
+  const thread = sourceThread || state.currentThread || {};
+  const useCurrentSelectors = !sourceThread || thread.id === state.currentThreadId;
+  return {
+    cwd: thread.cwd || state.selectedCwd || "",
+    model: useCurrentSelectors ? ($("modelSelect").value || effectiveDefaultModel() || "") : (thread.model || state.defaultModel || ""),
+    effort: useCurrentSelectors ? ($("effortSelect").value || effectiveDefaultEffort() || "") : (thread.effort || state.defaultReasoningEffort || ""),
+    permissionMode: useCurrentSelectors ? ($("permissionSelect").value || effectiveDefaultPermissionMode() || "") : "",
+    sourceThreadId: thread.id || "",
+    sourceThreadTitle: thread.name || thread.preview || thread.id || "",
+    archiveSourceThread: Boolean(options.archiveSourceThread && thread.id),
+  };
+}
+
+function startedThreadId(result) {
+  return String((result && result.threadId)
+    || (result && result.thread && result.thread.id)
+    || (result && result.result && result.result.thread && result.result.thread.id)
+    || (result && result.result && result.result.threadId)
+    || "");
+}
+
+async function startNewThreadFromThread(sourceThread, event) {
+  if (event) event.preventDefault();
+  if (state.composerBusy) return;
+  const thread = sourceThread || state.currentThread || {};
+  const title = thread.name || thread.preview || thread.id || "current thread";
+  const size = rolloutSizeText(thread);
+  const archiveConfirmed = window.confirm([
+    `新建同工作区线程，并归档旧线程“${title}”？`,
+    "",
+    "新线程会先读取当前工作区的 handoff context。",
+    "旧线程仍可在归档记录中找到。",
+    size ? `旧线程 rollout：${size}` : "",
+  ].filter((line) => line !== "").join("\n"));
+  if (!archiveConfirmed) return;
+  const body = startThreadRequestBody(thread, { archiveSourceThread: true });
+  if (!body.cwd) {
+    showError(new Error("Thread has no workspace path"));
+    return;
+  }
+  state.composerBusy = true;
+  const button = event.currentTarget;
+  if (button) button.disabled = true;
+  $("connectionState").classList.remove("error");
+  $("connectionState").textContent = "Starting new thread";
+  markActivity("新线程");
+  updateComposerControls();
+  try {
+    const result = await api("/api/threads", {
+      method: "POST",
+      body: JSON.stringify(body),
+      timeoutMs: 120000,
+    });
+    const threadId = startedThreadId(result);
+    if (!threadId) throw new Error("New thread was created without a thread id");
+    const archivedSourceThreadId = result.sourceArchive && result.sourceArchive.archived
+      ? result.sourceArchive.threadId
+      : "";
+    if (archivedSourceThreadId) {
+      state.threads = state.threads.filter((entry) => entry.id !== archivedSourceThreadId);
+    }
+    if (result.thread) {
+      state.threads = [result.thread, ...state.threads.filter((thread) => thread.id !== result.thread.id)];
+      renderThreads();
+    }
+    await loadThread(threadId);
+    loadThreads().catch(showError);
+    $("connectionState").classList.remove("error");
+    if (result.sourceArchive && result.sourceArchive.error) {
+      $("connectionState").classList.add("error");
+      $("connectionState").textContent = `New thread ready; archive failed: ${result.sourceArchive.error}`;
+    } else {
+      $("connectionState").textContent = "New thread ready";
+    }
+  } catch (err) {
+    showError(err);
+  } finally {
+    state.composerBusy = false;
+    if (button) button.disabled = false;
+    updateComposerControls();
+  }
+}
+
+async function startNewThreadFromCurrent(event) {
+  await startNewThreadFromThread(state.currentThread, event);
+}
+
+async function startNewThreadFromList(event) {
+  const threadId = event.currentTarget && event.currentTarget.dataset.newThreadFromThread;
+  const thread = state.threads.find((entry) => entry.id === threadId);
+  if (!thread) {
+    showError(new Error("Thread is no longer in the current list"));
+    return;
+  }
+  await startNewThreadFromThread(thread, event);
 }
 
 function approvalTitle(method) {
@@ -2685,6 +2854,15 @@ function applyNotification(method, params) {
     renderThreads();
     return;
   }
+  if (method === "thread/archived") {
+    state.threads = state.threads.filter((thread) => thread.id !== params.threadId);
+    if (state.currentThread && state.currentThread.id === params.threadId) {
+      clearCurrentThreadSelection();
+    }
+    renderThreads();
+    renderCurrentThread();
+    return;
+  }
   if (!state.currentThread || params.threadId !== state.currentThread.id) return;
   if (method === "turn/started") {
     state.activeTurnId = params.turn.id;
@@ -3322,6 +3500,7 @@ async function start() {
   const config = await fetch("/api/public-config").then((res) => res.json());
   state.maxUploadBytes = Number(config.maxUploadBytes || state.maxUploadBytes);
   state.maxUploadFiles = Number(config.maxUploadFiles || state.maxUploadFiles);
+  state.rolloutWarningThresholdBytes = Number(config.rolloutWarningBytes || state.rolloutWarningThresholdBytes);
   state.modelOptions = normalizeOptionList(config.modelOptions || []);
   state.reasoningEffortOptions = normalizeOptionList(config.reasoningEffortOptions || []);
   state.permissionModeOptions = normalizeOptionList((config.permissionModeOptions || state.permissionModeOptions)

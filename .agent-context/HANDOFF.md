@@ -1406,3 +1406,171 @@
   - `git diff --check` passed with line-ending warnings only.
 - Activation note:
   - Static frontend change only. Existing browser/PWA sessions need a page refresh so the updated `public/app.js` can clean the currently duplicated local cards on the next thread refresh.
+
+## 2026-05-05 Hermes Thread Slowness Diagnosis
+
+- User reported the Hermes Codex thread felt extremely slow, with simple operations taking 10-20 minutes.
+- Runtime checks:
+  - Codex Mobile Web `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, and `lastError=null`.
+  - Current mux endpoint is `%USERPROFILE%\.codex\app-server-mux\endpoint.json`, TCP `127.0.0.1:49695`, mux PID `12128`, real app-server PID `11732`.
+  - Current listener on `0.0.0.0:8787` is Node PID `13412`.
+  - A local trivial PowerShell command completed in about 40ms under the SYSTEM task context, so the machine's shell execution was not generally stuck.
+  - A 3-second CPU sample showed app-server PID `11732` using under 1 CPU-second and mux/server Node processes using much less, so there was no obvious CPU saturation.
+- Hermes-specific findings:
+  - Hermes thread `019dde72-2de7-7542-b43f-d7fa0d98fb21` is named `Hermes`, cwd `C:\Users\xuxin\Documents\Agent`, status `active`.
+  - Its rollout JSONL file is about 505.5 MB and still being written, making thread load, history scanning, and replay substantially heavier than normal threads.
+  - Recent Hermes turns include long completed durations, including about 26 minutes and 43 minutes, and the latest turn `019df84f-f9f0-7572-a8fc-7c1558704d6f` was still `inProgress` during diagnosis.
+  - mux log showed repeated tool/command errors in the Hermes workspace, several `apply_patch verification failed` entries, command/path-not-found errors, and TCP client backpressure events such as drains after 866ms and 5179ms.
+  - Earlier app-server log entries also showed ChatGPT/Codex websocket/model refresh failures around 10:02-10:16, but no current evidence of 8787 service failure during this check.
+- Interpretation:
+  - The current evidence points to a heavy/stale active Hermes thread plus large persisted history and failed tool-output volume, not a port conflict or a generally frozen local shell.
+  - Git commands under the SYSTEM task can report dubious ownership for user-owned repos such as `C:\Users\xuxin\Documents\Agent`; this can add failures/noise when the app-server runs as SYSTEM.
+- Operational recommendation:
+  - Prefer starting a fresh Hermes thread from a compact handoff/summary for new work, leaving the 505 MB thread as archive/reference.
+  - Avoid broad recursive searches or raw diff/output dumps in the old Hermes thread.
+  - If keeping the old thread live, clear or interrupt only stale old `inProgress` turns after confirming the current active turn should not be interrupted.
+
+## 2026-05-05 Hermes Stale Turns And Slowness Fix
+
+- User confirmed the new Hermes turn had ended and asked to terminate the two old turns first.
+- Runtime action:
+  - Interrupted old Hermes thread `019dde72-2de7-7542-b43f-d7fa0d98fb21` turns:
+    - `019df779-1a1d-7632-857e-5981474d3f32`
+    - `019df84f-f9f0-7572-a8fc-7c1558704d6f`
+  - Verification immediately after interruption showed both old turns as `interrupted` and the Hermes thread as `idle`.
+  - User then started a new Hermes thread; this avoids continuing live work inside the old ~505 MB rollout.
+- Code changes:
+  - `start-codex-mobile-web-windowless.ps1` is now a restart supervisor for the 8787 listener. If `server.js` exits, the wrapper waits briefly and restarts the listener while reusing the existing mux endpoint.
+  - `start-codex-mobile-web.ps1` and the windowless wrapper no longer treat Node stderr as a terminating PowerShell error. This fixes ordinary `clientError: read ECONNRESET` events causing the listener to exit.
+  - `server.js` now ignores expected HTTP `ECONNRESET` client errors, keeps process-level `uncaughtException` / `unhandledRejection` logging, and guards JSON error responses when the client is already closed.
+  - `server.js` caches latest rollout `turn_context` scan results briefly by rollout path/size/mtime, reducing repeated scans over very large rollout files.
+  - `codex-app-server-mux.js` now drops Mobile Web command/file output delta notifications and reasoning deltas, truncates very large payload strings for Mobile Web, and stores compacted notifications in the replay buffer to reduce backpressure and heavy replay.
+  - SYSTEM startup now injects process-local Git `safe.directory` entries for the user's Documents tree and Codex runtime dirs, reducing `dubious ownership` failures from SYSTEM-owned app-server tool runs.
+- Runtime state after activation:
+  - 8787 listener was replaced without killing the shared mux/app-server.
+  - Current Codex Mobile Web listener PID after restart: `15900`.
+  - `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, `lastError=null`.
+  - Current mux endpoint still points to existing mux PID `12128`, real app-server PID `11732`, TCP `127.0.0.1:49695`.
+- Activation note:
+  - `server.js` and startup wrapper changes are active on the current 8787 listener.
+  - The mux payload compaction code will take effect after the mux itself is restarted. It was intentionally not restarted during the active Codex turn because restarting mux/app-server would disconnect the current shared stream.
+- Validation:
+  - `npm.cmd run check` passed.
+  - PowerShell parser checks passed for `start-codex-mobile-web.ps1` and `start-codex-mobile-web-windowless.ps1`.
+  - macOS shell parser check passed with `C:\Program Files\Git\bin\bash.exe -n ...`; the default SYSTEM `bash` command points to the WindowsApps WSL stub and cannot execute here.
+  - `git diff --check` passed with line-ending warnings only.
+
+## 2026-05-05 Rollout Size Monitor And New Thread Action
+
+- User-requested change:
+  - Monitor each thread's rollout JSONL size.
+  - Warn when a rollout reaches about `100MB`.
+  - Provide a direct action to create and switch to a new thread in the same workspace.
+- Code changes:
+  - `server.js` now exposes `CODEX_MOBILE_ROLLOUT_WARNING_BYTES`, default `104857600` (`100MB`), through `/api/public-config`.
+  - `server.js` annotates thread list/detail responses with rollout size metadata when the rollout file path is available.
+  - `server.js` adds authenticated `POST /api/threads` to start a new app-server thread for a visible workspace through `thread/start`.
+  - New threads started from Mobile Web include discovered `AGENTS.md` files as start-thread developer instructions, so the workspace context protocol remains available in the new thread.
+  - `public/app.js` shows rollout size badges in the thread list and recent-thread home shortcuts.
+  - `public/app.js` shows a current-thread warning banner when the rollout reaches the configured threshold, with a `新线程` button that starts and switches to the new thread.
+  - `public/styles.css` adds compact badge and warning-banner styling with a mobile single-column layout.
+  - `README.md` and `PROJECT_CONTEXT.md` document the threshold and behavior.
+- Activation note:
+  - Codex Mobile Web listener was restarted after the change without restarting mux/app-server.
+  - Previous listener PID `15900`; new listener PID `38160`.
+  - Authenticated `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, and `lastError=null`.
+  - `/api/public-config` returned `rolloutWarningBytes=104857600`.
+  - Authenticated `/api/threads?limit=80&archived=false` returned 10 visible threads, all with rollout size metadata; 2 were over threshold, largest visible rollout about `242.1MB`.
+  - Existing browser/PWA sessions need a refresh to load the updated `public/app.js` and CSS.
+- Validation:
+  - `npm.cmd run check` passed.
+  - macOS shell parser check passed with `C:\Program Files\Git\bin\bash.exe -n ...`; `npm.cmd run check:macos` still fails in this SYSTEM environment because `bash` resolves to the WindowsApps WSL stub.
+  - `git diff --check` passed with line-ending warnings only.
+
+## 2026-05-05 Rollout Warning List Button Fix
+
+- User reported:
+  - Threads over `100MB` were visibly red in the sidebar thread list, but no `新线程` button was visible.
+- Cause:
+  - The first implementation put the `新线程` action only in the opened thread's conversation banner.
+  - The red visual indicator most visible to the user is the sidebar thread list item.
+- Code change:
+  - `public/app.js` now renders over-threshold sidebar entries as a wrapper containing the main thread-open button plus a separate `新线程` action button.
+  - The list action creates a new thread from that row's workspace and switches to the new thread.
+  - `public/styles.css` now gives over-threshold list rows a two-column layout with a compact right-side action button.
+- Activation note:
+  - Static frontend change only. Existing browser/PWA sessions need a refresh.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with line-ending warnings only.
+
+## 2026-05-05 New Thread Bootstrap And Naming Fix
+
+- User reported:
+  - A newly created thread could be unmaterialized, causing `includeTurns is unavailable before first user message`.
+  - New thread naming should not look random.
+- Code changes:
+  - `server.js` now materializes Mobile Web-created threads immediately by sending a fixed first user message that asks the agent to read `.agent-context/PROJECT_CONTEXT.md` and `.agent-context/HANDOFF.md`, acknowledge that durable context is loaded, and wait for the next step without editing files.
+  - `server.js` now names these new threads deterministically from the source thread title and uses the app-server protocol method `thread/name/set` with `{ threadId, name }`, with legacy title-update attempts kept as fallbacks.
+  - `server.js` sets the title both before and after the bootstrap `turn/start`, so a newly materialized thread keeps the source-based name instead of a generated/random-looking fallback.
+  - `server.js` keeps a short in-memory summary for just-started threads and returns a valid empty thread object for unmaterialized thread detail reads, rather than surfacing an app-server materialization error to the browser.
+  - `public/app.js` sends `sourceThreadId` and `sourceThreadTitle` when creating a new thread from an over-threshold thread list row or current-thread banner.
+- Follow-up change:
+  - The new-thread action now shows a browser confirmation prompt before proceeding.
+  - If confirmed, `public/app.js` sends `archiveSourceThread: true`.
+  - `server.js` archives the source thread with app-server `thread/archive` only after the new thread has been created and the fixed bootstrap turn has started.
+  - `public/app.js` removes archived source threads from the visible list and handles `thread/archived` notifications.
+  - If source archival fails, the response still returns the new thread so the browser can switch to it, and Mobile Web displays the archive failure in the connection status.
+- Activation note:
+  - Mobile Web listener was restarted after the server-side change without restarting mux/app-server.
+  - Previous listener PID `46616`; new listener PID `4476`.
+  - Authenticated `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, and `lastError=null`.
+  - Existing browser/PWA sessions need a refresh for static frontend changes.
+- Validation:
+  - `node --check server.js` passed.
+  - `node --check public/app.js` passed.
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with line-ending warnings only.
+
+## 2026-05-05 New Thread Title Shortening
+
+- User-requested change:
+  - New thread names should not include `续`.
+  - New thread names should include the date only, not time.
+- Code change:
+  - `server.js` now formats Mobile Web-created thread names as `<source thread title> MM-DD`.
+  - `shortThreadTitle()` strips either old `<title> 续 MM-DD HH:mm` suffixes or new `<title> MM-DD` suffixes before appending the current date, so repeated thread rollover does not accumulate date suffixes.
+- Activation note:
+  - Mobile Web listener was restarted after the server-side change without restarting mux/app-server.
+  - Previous listener PID `4476`; new listener PID `11048`.
+  - Authenticated `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, and `lastError=null`.
+- Validation:
+  - `node --check server.js` passed.
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with line-ending warnings only.
+- Follow-up runtime action:
+  - Renamed existing old-format thread `019df8b5-0028-7d90-ab9b-18d3f7898e01` from `衣橱1 续 05-05 23:15` to `衣橱1 05-05` using app-server `thread/name/set`.
+  - Verification through `/api/threads?limit=200&archived=false` showed the new title and no remaining visible/archived old-format titles matching `续 MM-DD HH:mm`.
+  - Note: when issuing direct app-server rename requests from PowerShell, avoid embedding non-ASCII title literals through a pipeline; use UTF-8-safe input or Unicode code points to avoid `??` replacement.
+
+## 2026-05-05 Private/Public Commit Preparation
+
+- User reminder:
+  - Before push, check handoff for private/public release requirements and README handling.
+- Requirements re-confirmed from prior handoff:
+  - Private repo `origin` is `https://github.com/pentiumxp/codex-mobile-web.git`.
+  - Clean public release repo is `https://github.com/pentiumxp/codex-mobile-web-public`, local path `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Public release must not copy `.agent-context/` or `AGENTS.md`.
+  - Public README must use the public clone URL and preserve public/PWA conventions.
+- Follow-up code/release fixes:
+  - Restored test-friendly `server.js` behavior from the public release line: when `server.js` is required as a module it no longer starts the HTTP listener, and it exports `approvalResponsePayload` / `publicServerRequest` for protocol tests.
+  - Synchronized release files from private to public for `README.md`, `codex-app-server-mux.js`, `public/app.js`, `public/styles.css`, `server.js`, `start-codex-mobile-web-windowless.ps1`, and `start-codex-mobile-web.ps1`.
+  - Preserved the public checkout's PWA service worker path by keeping `public/app.js` registration on `/sw.js`.
+  - Fixed the public README clone command to use `https://github.com/pentiumxp/codex-mobile-web-public.git` and `cd codex-mobile-web-public`.
+- Public release commit:
+  - Local public commit `a77c9f3 优化大线程切换与后台稳定性` is prepared and ahead of public `origin/main`.
+- Validation:
+  - Private checkout: `npm.cmd run check` passed, `git diff --check` passed with line-ending warnings only.
+  - Public checkout: `npm.cmd test` passed, `npm.cmd run check` passed, Git Bash `bash -n ...` macOS shell syntax check passed, `git diff --check` passed with line-ending warnings only.
+  - Public privacy scan passed for tracked files excluding `.gitignore`; no `xuxin`, `Hermes`, `C:\Users`, `192.168.10.108`, `gmk.tail`, `tail62e8ce`, or private GitHub clone URL matches.

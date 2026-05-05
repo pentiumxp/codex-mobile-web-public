@@ -312,6 +312,7 @@ Behavior:
 ## Interface Notes
 
 - Home view shows recent workspaces and recent threads.
+- Thread lists and thread detail monitor rollout JSONL size. At the default `100MB` threshold, Mobile Web shows a context-size warning and offers a same-workspace new-thread action. After user confirmation, the action creates a source-named new thread, sends a fixed bootstrap message that reads `.agent-context/PROJECT_CONTEXT.md` and `.agent-context/HANDOFF.md`, then archives the source thread.
 - The top-right timer shows current turn elapsed time as `鏈疆 HH:MM:SS`.
 - The timer is red while a turn is active and muted after completion.
 - During an active turn, the timer may append a compact activity label such as `鎬濊€僠, `杈撳嚭`, `鍛戒护`, `鏂囦欢`, `宸ュ叿`, `鎼滅储`, `鍚屾`, or `绛夊緟鎵瑰噯`.
@@ -706,6 +707,7 @@ VAPID details:
 | `CODEX_MOBILE_MAX_UPLOAD_FILES` | Max files per message. |
 | `CODEX_MOBILE_THREAD_TURNS` | Number of recent turns returned to the phone, default `12`. |
 | `CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES` | Tail bytes read from a thread rollout to recover inherited turn runtime settings, default `4194304`. |
+| `CODEX_MOBILE_ROLLOUT_WARNING_BYTES` | Rollout JSONL size threshold for UI warnings and the new-thread action, default `104857600` (`100MB`). |
 | `CODEX_MOBILE_MESSAGE_DEDUPE_WINDOW_MS` | Time window for treating repeated message submissions as the same request, default `90000`. Requests with `clientSubmissionId` are deduped by id; legacy requests without it fall back to content fingerprinting. |
 | `CODEX_MOBILE_MESSAGE_DEDUPE_MAX` | Maximum number of recent message submissions kept in the dedupe cache, default `300`. |
 | `CODEX_MOBILE_PUSH_SUBJECT` | VAPID subject used for Web Push. Must be a non-localhost contact URI, for example `mailto:name@example.com` or an HTTPS URL. |

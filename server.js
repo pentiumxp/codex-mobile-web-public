@@ -31,6 +31,7 @@ const PUSH_SUBJECT = normalizePushSubject(process.env.CODEX_MOBILE_PUSH_SUBJECT 
 const PUSH_TTL_SECONDS = Math.max(30, Number(process.env.CODEX_MOBILE_PUSH_TTL_SECONDS || "3600"));
 const MAX_TEXT_CHARS = 60000;
 const MAX_JSON_BODY_BYTES = 2_000_000;
+const MAX_START_THREAD_DEVELOPER_INSTRUCTIONS_CHARS = 120000;
 const MAX_UPLOAD_BYTES = Math.max(1, Number(process.env.CODEX_MOBILE_MAX_UPLOAD_BYTES || String(64 * 1024 * 1024)));
 const MAX_UPLOAD_FILES = Math.max(1, Math.min(50, Number(process.env.CODEX_MOBILE_MAX_UPLOAD_FILES || "12")));
 const UPLOAD_ROOT = process.env.CODEX_MOBILE_UPLOAD_DIR || path.join(RUNTIME_ROOT, "uploads");
@@ -66,8 +67,13 @@ const THREAD_DETAIL_RPC_TIMEOUT_MS = Math.min(6000, READ_RPC_TIMEOUT_MS);
 const MUTATION_RPC_TIMEOUT_MS = 120000;
 const MESSAGE_DEDUPE_WINDOW_MS = Math.max(5_000, Number(process.env.CODEX_MOBILE_MESSAGE_DEDUPE_WINDOW_MS || "90000"));
 const MESSAGE_DEDUPE_MAX = Math.max(20, Number(process.env.CODEX_MOBILE_MESSAGE_DEDUPE_MAX || "300"));
+const STARTED_THREAD_CACHE_TTL_MS = Math.max(60_000, Number(process.env.CODEX_MOBILE_STARTED_THREAD_CACHE_TTL_MS || "900000"));
+const STARTED_THREAD_CACHE_MAX = Math.max(10, Number(process.env.CODEX_MOBILE_STARTED_THREAD_CACHE_MAX || "80"));
 const MAX_ROLLOUT_CONTEXT_BYTES = Math.max(256 * 1024, Number(process.env.CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES || String(4 * 1024 * 1024)));
 const MAX_RUNTIME_CONTEXT_SCAN_BYTES = Math.max(MAX_ROLLOUT_CONTEXT_BYTES, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_SCAN_BYTES || String(512 * 1024 * 1024)));
+const ROLLOUT_WARNING_BYTES = Math.max(1 * 1024 * 1024, Number(process.env.CODEX_MOBILE_ROLLOUT_WARNING_BYTES || String(100 * 1024 * 1024)));
+const RUNTIME_CONTEXT_CACHE_TTL_MS = Math.max(1000, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_CACHE_TTL_MS || "30000"));
+const RUNTIME_CONTEXT_CACHE_MAX = Math.max(20, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_CACHE_MAX || "200"));
 const SAFE_RETRY_METHODS = new Set(["initialize", "thread/list", "thread/read", "thread/turns/list"]);
 const IMAGE_EXTENSIONS = new Set([".avif", ".bmp", ".gif", ".heic", ".heif", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"]);
 const CODEX_CONFIG_DEFAULTS = readCodexConfigDefaults();
@@ -77,6 +83,8 @@ let clients = new Set();
 let clientHeartbeats = new WeakMap();
 let latestRateLimits = null;
 const latestRateLimitsByModel = new Map();
+const latestRuntimeContextByPath = new Map();
+const recentStartedThreads = new Map();
 let pushVapidKeys = null;
 let pushSubscriptionsCache = null;
 const recentMessageSubmissions = new Map();
@@ -192,6 +200,7 @@ function isAuthorized(req) {
 }
 
 function sendJson(res, status, data) {
+  if (!res || res.destroyed || res.writableEnded) return;
   const body = JSON.stringify(data);
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
@@ -299,8 +308,12 @@ function filterVisibleThreads(result, globalState = readGlobalState()) {
   const visibility = visibilityFromGlobalState(globalState);
   if (!result || typeof result !== "object") return result;
   const out = Object.assign({}, result);
-  if (Array.isArray(out.data)) out.data = out.data.filter((thread) => !isHiddenThread(thread, visibility));
-  if (Array.isArray(out.threads)) out.threads = out.threads.filter((thread) => !isHiddenThread(thread, visibility));
+  if (Array.isArray(out.data)) out.data = out.data
+    .filter((thread) => !isHiddenThread(thread, visibility))
+    .map(annotateThreadRolloutStats);
+  if (Array.isArray(out.threads)) out.threads = out.threads
+    .filter((thread) => !isHiddenThread(thread, visibility))
+    .map(annotateThreadRolloutStats);
   return out;
 }
 
@@ -685,12 +698,64 @@ function readRolloutTail(rolloutPath) {
   }
 }
 
+function rolloutPathForThread(thread) {
+  return thread && (thread.path || thread.rolloutPath || thread.rollout_path) || "";
+}
+
+function rolloutStatsForPath(rolloutPath) {
+  if (!rolloutPath || typeof rolloutPath !== "string") return null;
+  try {
+    const stat = fs.statSync(rolloutPath);
+    if (!stat.isFile()) return null;
+    return {
+      sizeBytes: stat.size,
+      mtimeMs: Math.trunc(Number(stat.mtimeMs || 0)),
+      warningThresholdBytes: ROLLOUT_WARNING_BYTES,
+      overWarningThreshold: stat.size >= ROLLOUT_WARNING_BYTES,
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+function annotateThreadRolloutStats(thread) {
+  if (!thread || typeof thread !== "object") return thread;
+  const out = Object.assign({}, thread);
+  const stats = rolloutStatsForPath(rolloutPathForThread(out));
+  out.rolloutWarningThresholdBytes = ROLLOUT_WARNING_BYTES;
+  if (!stats) return out;
+  out.rolloutSizeBytes = stats.sizeBytes;
+  out.rolloutSizeUpdatedAtMs = stats.mtimeMs;
+  out.rolloutOverWarningThreshold = stats.overWarningThreshold;
+  return out;
+}
+
+function runtimeContextCacheKey(rolloutPath, stat) {
+  return `${normalizeFsPath(rolloutPath)}:${stat.size}:${Math.trunc(Number(stat.mtimeMs || 0))}`;
+}
+
+function rememberRuntimeContext(key, payload) {
+  latestRuntimeContextByPath.set(key, {
+    cachedAt: Date.now(),
+    payload: payload || null,
+  });
+  while (latestRuntimeContextByPath.size > RUNTIME_CONTEXT_CACHE_MAX) {
+    const firstKey = latestRuntimeContextByPath.keys().next().value;
+    latestRuntimeContextByPath.delete(firstKey);
+  }
+}
+
 function readLatestTurnContext(thread) {
   const rolloutPath = thread && (thread.path || thread.rolloutPath || thread.rollout_path);
   if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) return null;
   let fd = null;
   try {
     const stat = fs.statSync(rolloutPath);
+    const cacheKey = runtimeContextCacheKey(rolloutPath, stat);
+    const cached = latestRuntimeContextByPath.get(cacheKey);
+    if (cached && Date.now() - cached.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS) {
+      return cached.payload;
+    }
     fd = fs.openSync(rolloutPath, "r");
     const chunkSize = 1024 * 1024;
     let position = stat.size;
@@ -710,6 +775,7 @@ function readLatestTurnContext(thread) {
         if (!line || !line.includes('"type":"turn_context"')) continue;
         const entry = parseJsonLine(line);
         if (entry && entry.type === "turn_context" && entry.payload && typeof entry.payload === "object") {
+          rememberRuntimeContext(cacheKey, entry.payload);
           return entry.payload;
         }
       }
@@ -717,6 +783,7 @@ function readLatestTurnContext(thread) {
     if (carry && carry.includes('"type":"turn_context"')) {
       const entry = parseJsonLine(carry);
       if (entry && entry.type === "turn_context" && entry.payload && typeof entry.payload === "object") {
+        rememberRuntimeContext(cacheKey, entry.payload);
         return entry.payload;
       }
     }
@@ -729,6 +796,10 @@ function readLatestTurnContext(thread) {
       } catch (_) {}
     }
   }
+  try {
+    const stat = fs.statSync(rolloutPath);
+    rememberRuntimeContext(runtimeContextCacheKey(rolloutPath, stat), null);
+  } catch (_) {}
   return null;
 }
 
@@ -774,6 +845,18 @@ async function resolveThreadRuntimeSettings(threadId) {
 }
 
 function applyResumeRuntimeSettings(params, settings) {
+  if (!settings) return params;
+  if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
+  if (settings.permissionProfile) params.permissionProfile = settings.permissionProfile;
+  else if (settings.sandboxMode) params.sandbox = settings.sandboxMode;
+  const config = {};
+  if (settings.reasoningSummary) config.model_reasoning_summary = settings.reasoningSummary;
+  if (settings.modelVerbosity) config.model_verbosity = settings.modelVerbosity;
+  if (Object.keys(config).length) params.config = Object.assign({}, params.config || {}, config);
+  return params;
+}
+
+function applyStartThreadRuntimeSettings(params, settings) {
   if (!settings) return params;
   if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
   if (settings.permissionProfile) params.permissionProfile = settings.permissionProfile;
@@ -985,7 +1068,7 @@ function compactThread(thread) {
       if (rawOperation) latest.items.push(rawOperation);
     }
   }
-  return out;
+  return annotateThreadRolloutStats(out);
 }
 
 function compactThreadReadResult(result) {
@@ -2361,7 +2444,7 @@ function rowToFallbackThread(row) {
   const updatedAt = Number(row.updated_at || row.updatedAt || 0);
   const name = row.title || row.thread_name || null;
   const preview = row.first_user_message || row.preview || name || row.id;
-  return {
+  return annotateThreadRolloutStats({
     id: row.id,
     name,
     preview,
@@ -2376,11 +2459,168 @@ function rowToFallbackThread(row) {
     sandboxPolicy: row.sandbox_policy || null,
     approvalPolicy: row.approval_mode || null,
     mobileFallback: true,
-  };
+  });
 }
 
 function sqlString(value) {
   return `'${String(value || "").replace(/'/g, "''")}'`;
+}
+
+function agentInstructionFilesForCwd(cwd) {
+  const files = [];
+  if (!cwd || typeof cwd !== "string") return files;
+  let current = path.resolve(cwd);
+  for (;;) {
+    const candidate = path.join(current, "AGENTS.md");
+    try {
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) files.push(candidate);
+    } catch (_) {}
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return files.reverse();
+}
+
+function readStartThreadDeveloperInstructions(cwd) {
+  const chunks = [];
+  let remaining = MAX_START_THREAD_DEVELOPER_INSTRUCTIONS_CHARS;
+  for (const file of agentInstructionFilesForCwd(cwd)) {
+    if (remaining <= 0) break;
+    try {
+      const text = fs.readFileSync(file, "utf8");
+      const header = `# Instructions from ${file}\n\n`;
+      const body = text.slice(0, Math.max(0, remaining - header.length));
+      if (body.trim()) {
+        chunks.push(`${header}${body}`);
+        remaining -= header.length + body.length;
+      }
+    } catch (_) {}
+  }
+  return chunks.join("\n\n").trim() || null;
+}
+
+function threadIdFromStartResult(result) {
+  return String((result && result.thread && result.thread.id)
+    || (result && result.data && result.data.thread && result.data.thread.id)
+    || (result && result.threadId)
+    || (result && result.id)
+    || "");
+}
+
+function shortThreadTitle(value, fallback = "Codex Mobile") {
+  const text = String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\s+(?:续\s*)?\d{2}-\d{2}(?:\s+\d{2}:\d{2})?$/u, "");
+  return (text || fallback).slice(0, 72);
+}
+
+function localTitleDate(date = new Date()) {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${month}-${day}`;
+}
+
+function newThreadTitle({ cwd, sourceThreadTitle }) {
+  const base = shortThreadTitle(sourceThreadTitle, path.basename(String(cwd || "").replace(/^\\\\\?\\/, "")) || "Codex Mobile");
+  return `${base} ${localTitleDate()}`;
+}
+
+function newThreadBootstrapPrompt({ cwd, sourceThreadId, sourceThreadTitle }) {
+  const parts = [
+    "请继承上一个线程的项目上下文。",
+    "",
+    "启动后先读取当前工作区的持久上下文文件：",
+    "1. `.agent-context/PROJECT_CONTEXT.md`",
+    "2. `.agent-context/HANDOFF.md`",
+    "",
+    "如果这些文件存在，把它们作为本线程的 durable project context。不要假设本线程继承了旧聊天流、临时 shell 状态或隐藏内存。",
+    "本轮只需要读取上下文并用一句话说明已加载，然后等待下一步；不要修改文件。",
+  ];
+  if (cwd) parts.push("", `当前工作区：${cwd}`);
+  if (sourceThreadTitle || sourceThreadId) {
+    parts.push(`来源线程：${[sourceThreadTitle, sourceThreadId].filter(Boolean).join(" / ")}`);
+  }
+  return parts.join("\n");
+}
+
+function newThreadBootstrapInput(params) {
+  return [{ type: "text", text: newThreadBootstrapPrompt(params), text_elements: [] }];
+}
+
+async function tryUpdateThreadTitle(threadId, title) {
+  if (!threadId || !title) return false;
+  const attempts = [
+    ["thread/name/set", { threadId, name: title }],
+    ["thread/updateTitle", { threadId, title }],
+    ["thread/update_title", { threadId, title }],
+    ["thread/setTitle", { threadId, title }],
+    ["thread/rename", { threadId, title }],
+    ["thread/update", { threadId, title }],
+    ["thread/update", { threadId, threadName: title }],
+  ];
+  for (const [method, params] of attempts) {
+    try {
+      await codex.request(method, params, { timeoutMs: READ_RPC_TIMEOUT_MS, retry: false });
+      return true;
+    } catch (err) {
+      if (!/method not found|unknown method|not found|invalid params|invalid request/i.test(err.message || "")) {
+        throw err;
+      }
+    }
+  }
+  return false;
+}
+
+async function archiveVisibleThread(threadId, visibility) {
+  if (!threadId) return { archived: false };
+  const summary = readStateDbThread(threadId)
+    || readStartedThread(threadId)
+    || await readThreadSummaryFromAppServer(codex, threadId).catch(() => null);
+  if (summary && isHiddenThread(summary, visibility)) {
+    throw new Error("Source thread is archived, deleted, or outside visible workspaces");
+  }
+  return await codex.request("thread/archive", { threadId }, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+}
+
+function isUnmaterializedThreadError(err) {
+  return /not materialized yet|includeTurns is unavailable before first user message/i.test(err && err.message || String(err || ""));
+}
+
+function pruneStartedThreadCache(now = Date.now()) {
+  for (const [threadId, entry] of recentStartedThreads) {
+    if (!entry || now - entry.cachedAt > STARTED_THREAD_CACHE_TTL_MS) recentStartedThreads.delete(threadId);
+  }
+  while (recentStartedThreads.size > STARTED_THREAD_CACHE_MAX) {
+    const firstKey = recentStartedThreads.keys().next().value;
+    if (!firstKey) break;
+    recentStartedThreads.delete(firstKey);
+  }
+}
+
+function rememberStartedThread(thread) {
+  const threadId = thread && thread.id;
+  if (!threadId) return null;
+  pruneStartedThreadCache();
+  const summary = annotateThreadRolloutStats(Object.assign({
+    preview: threadId,
+    updatedAt: Math.floor(Date.now() / 1000),
+    status: { type: "notLoaded" },
+    turns: [],
+    mobileReadMode: "unmaterialized",
+  }, thread, { id: threadId }));
+  recentStartedThreads.set(String(threadId), {
+    cachedAt: Date.now(),
+    thread: summary,
+  });
+  return summary;
+}
+
+function readStartedThread(threadId) {
+  pruneStartedThreadCache();
+  const entry = recentStartedThreads.get(String(threadId || ""));
+  return entry && entry.thread ? annotateThreadRolloutStats(entry.thread) : null;
 }
 
 function readStateDbThread(threadId) {
@@ -2421,7 +2661,8 @@ async function readThreadSummaryFromAppServer(codex, threadId) {
     : Array.isArray(result && result.threads)
       ? result.threads
       : [];
-  return threads.find((thread) => String(thread && thread.id) === String(threadId)) || null;
+  const thread = threads.find((thread) => String(thread && thread.id) === String(threadId)) || null;
+  return annotateThreadRolloutStats(thread);
 }
 
 function sortTurnsChronologically(turns) {
@@ -2442,7 +2683,7 @@ function threadFromTurnsList(threadId, summary, turnsResult) {
   const turns = sortTurnsChronologically(data).slice(-MAX_THREAD_TURNS);
   const latest = turns[turns.length - 1];
   const status = latest && isLiveTurn(latest) ? { type: "active" } : (summary && summary.status) || { type: "notLoaded" };
-  return Object.assign({
+  return annotateThreadRolloutStats(Object.assign({
     id: threadId,
     name: null,
     preview: threadId,
@@ -2452,7 +2693,7 @@ function threadFromTurnsList(threadId, summary, turnsResult) {
     status,
     turns,
     mobileReadMode: "turns-list",
-  }, summary || {}, { id: threadId, status, turns, mobileReadMode: "turns-list" });
+  }, summary || {}, { id: threadId, status, turns, mobileReadMode: "turns-list" }));
 }
 
 function filterFallbackThreads(threads, filters = {}) {
@@ -2474,7 +2715,7 @@ function readStateDbFallback(limit = 80, filters = {}) {
   if (!fs.existsSync(STATE_DB)) return [];
   const rowLimit = Math.max(limit * 5, 200);
   const query = [
-    "select id,title,cwd,archived,archived_at,updated_at,model,reasoning_effort",
+    "select id,title,first_user_message,cwd,rollout_path,archived,archived_at,updated_at,model,reasoning_effort,sandbox_policy,approval_mode",
     "from threads",
     "order by updated_at desc",
     `limit ${Math.min(1000, rowLimit)};`,
@@ -2575,6 +2816,7 @@ async function handleApi(req, res) {
       title: "Codex Mobile Web",
       maxUploadBytes: MAX_UPLOAD_BYTES,
       maxUploadFiles: MAX_UPLOAD_FILES,
+      rolloutWarningBytes: ROLLOUT_WARNING_BYTES,
       modelOptions: MODEL_OPTIONS,
       reasoningEffortOptions: REASONING_EFFORT_OPTIONS,
       permissionModeOptions: PERMISSION_MODE_OPTIONS,
@@ -2681,6 +2923,93 @@ async function handleApi(req, res) {
     sendJson(res, 200, { data: await listWorkspaces() });
     return;
   }
+  if (url.pathname === "/api/threads" && req.method === "POST") {
+    const body = await readBody(req);
+    const cwd = String(body.cwd || "").trim();
+    if (!cwd) {
+      sendJson(res, 400, { error: "Workspace is required to start a new thread" });
+      return;
+    }
+    const globalState = readGlobalState();
+    const visibility = visibilityFromGlobalState(globalState);
+    if (visibility.workspaceKeys.size > 0 && !visibility.workspaceKeys.has(normalizeFsPath(cwd))) {
+      sendJson(res, 403, { error: "Workspace is not visible in Codex Desktop" });
+      return;
+    }
+    const runtimeSettings = applyPermissionModeOverride({}, body.permissionMode, cwd);
+    const sourceThreadId = String(body.sourceThreadId || "").trim();
+    const sourceThreadTitle = String(body.sourceThreadTitle || "").trim();
+    const archiveSourceThread = Boolean(body.archiveSourceThread && sourceThreadId);
+    const desiredTitle = newThreadTitle({ cwd, sourceThreadTitle });
+    const params = applyStartThreadRuntimeSettings({
+      cwd,
+      model: body.model || null,
+      modelProvider: null,
+      config: {},
+      developerInstructions: readStartThreadDeveloperInstructions(cwd) || "",
+      personality: null,
+      ephemeral: null,
+      dynamicTools: null,
+      mockExperimentalField: null,
+      experimentalRawEvents: false,
+      persistExtendedHistory: true,
+    }, runtimeSettings);
+    const result = await codex.request("thread/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+    const threadId = threadIdFromStartResult(result);
+    const titleUpdatedBeforeBootstrap = await tryUpdateThreadTitle(threadId, desiredTitle).catch(() => false);
+    const bootstrapParams = applyTurnRuntimeSettings({
+      threadId,
+      input: newThreadBootstrapInput({ cwd, sourceThreadId, sourceThreadTitle }),
+      cwd,
+      model: body.model || null,
+      summary: "auto",
+    }, runtimeSettings);
+    if (body.effort) bootstrapParams.effort = body.effort;
+    const bootstrap = threadId
+      ? await codex.request("turn/start", bootstrapParams, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false })
+      : null;
+    const titleUpdatedAfterBootstrap = await tryUpdateThreadTitle(threadId, desiredTitle).catch(() => false);
+    let sourceArchive = null;
+    if (archiveSourceThread && sourceThreadId !== threadId) {
+      try {
+        sourceArchive = {
+          archived: true,
+          threadId: sourceThreadId,
+          result: await archiveVisibleThread(sourceThreadId, visibility),
+        };
+      } catch (err) {
+        sourceArchive = {
+          archived: false,
+          threadId: sourceThreadId,
+          error: err.message || String(err),
+        };
+      }
+    }
+    const thread = rememberStartedThread(annotateThreadRolloutStats(Object.assign(
+      {},
+      (result && result.thread) || (result && result.data && result.data.thread) || {},
+      {
+        id: threadId,
+        name: desiredTitle,
+        preview: desiredTitle,
+        cwd,
+        status: { type: "active" },
+        turns: [],
+        mobileReadMode: "new-thread-bootstrap",
+      },
+    )));
+    sendJson(res, 200, {
+      ok: true,
+      threadId,
+      thread,
+      title: desiredTitle,
+      titleUpdated: Boolean(titleUpdatedBeforeBootstrap || titleUpdatedAfterBootstrap),
+      sourceArchive,
+      bootstrap,
+      result,
+    });
+    return;
+  }
   if (url.pathname === "/api/threads" && req.method === "GET") {
     const globalState = readGlobalState();
     const visibility = visibilityFromGlobalState(globalState);
@@ -2732,7 +3061,7 @@ async function handleApi(req, res) {
     const threadId = decodeURIComponent(threadRead[1]);
     const globalState = readGlobalState();
     const visibility = visibilityFromGlobalState(globalState);
-    let summary = readStateDbThread(threadId);
+    let summary = readStateDbThread(threadId) || readStartedThread(threadId);
     if (!summary) {
       try {
         summary = await readThreadSummaryFromAppServer(codex, threadId);
@@ -2757,6 +3086,25 @@ async function handleApi(req, res) {
       }
       sendJson(res, 200, result);
     } catch (turnsErr) {
+      if (isUnmaterializedThreadError(turnsErr)) {
+        const emptyThread = annotateThreadRolloutStats(Object.assign({
+          id: threadId,
+          name: null,
+          preview: threadId,
+          cwd: null,
+          path: null,
+          updatedAt: Math.floor(Date.now() / 1000),
+          status: { type: "notLoaded" },
+          turns: [],
+          mobileReadMode: "unmaterialized",
+        }, summary || {}, { id: threadId, turns: [], mobileReadMode: "unmaterialized" }));
+        if (emptyThread) emptyThread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
+        sendJson(res, 200, {
+          thread: emptyThread,
+          mobileReadWarning: turnsErr.message || String(turnsErr),
+        });
+        return;
+      }
       const result = compactThreadReadResult(await codex.request("thread/read", { threadId, includeTurns: true }, { timeoutMs: READ_RPC_TIMEOUT_MS }));
       if (result.thread) result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
       if (isHiddenThread(result.thread, visibility)) {
@@ -2908,8 +3256,28 @@ const server = http.createServer(async (req, res) => {
     }
     serveStatic(req, res);
   } catch (err) {
-    sendJson(res, 500, { error: err.message || String(err) });
+    try {
+      sendJson(res, 500, { error: err.message || String(err) });
+    } catch (sendErr) {
+      console.error(`[server] failed to send error response: ${sendErr.message || sendErr}`);
+    }
   }
+});
+
+server.on("clientError", (err, socket) => {
+  try {
+    socket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
+  } catch (_) {}
+  if (err && err.code === "ECONNRESET") return;
+  console.error(`[server] client error: ${err.message || err}`);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error(`[server] uncaught exception: ${err && err.stack ? err.stack : err}`);
+});
+
+process.on("unhandledRejection", (err) => {
+  console.error(`[server] unhandled rejection: ${err && err.stack ? err.stack : err}`);
 });
 
 process.on("SIGINT", () => shutdown());
@@ -2925,8 +3293,19 @@ function shutdown() {
   process.exit(0);
 }
 
-server.listen(PORT, HOST, () => {
-  console.log(`Codex Mobile Web listening on http://${HOST}:${PORT}`);
-  console.log(`Codex app-server will be managed on 127.0.0.1 when first used.`);
-  console.log(DISABLE_AUTH ? "Authentication disabled by CODEX_MOBILE_DISABLE_AUTH." : `Authentication enabled; key source is env CODEX_MOBILE_KEY or ${AUTH_KEY_FILE}.`);
-});
+function startServer() {
+  server.listen(PORT, HOST, () => {
+    console.log(`Codex Mobile Web listening on http://${HOST}:${PORT}`);
+    console.log(`Codex app-server will be managed on 127.0.0.1 when first used.`);
+    console.log(DISABLE_AUTH ? "Authentication disabled by CODEX_MOBILE_DISABLE_AUTH." : `Authentication enabled; key source is env CODEX_MOBILE_KEY or ${AUTH_KEY_FILE}.`);
+  });
+}
+
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = {
+  approvalResponsePayload,
+  publicServerRequest,
+};
