@@ -2254,6 +2254,24 @@ function readStateDbThread(threadId) {
   }
 }
 
+async function readThreadSummaryFromAppServer(codex, threadId) {
+  if (!threadId) return null;
+  const result = await codex.request("thread/list", {
+    limit: 1000,
+    sortKey: "updated_at",
+    sortDirection: "desc",
+    archived: false,
+    useStateDbOnly: true,
+    sourceKinds: [],
+  }, { timeoutMs: READ_RPC_TIMEOUT_MS });
+  const threads = Array.isArray(result && result.data)
+    ? result.data
+    : Array.isArray(result && result.threads)
+      ? result.threads
+      : [];
+  return threads.find((thread) => String(thread && thread.id) === String(threadId)) || null;
+}
+
 function sortTurnsChronologically(turns) {
   return (turns || []).slice().sort((a, b) => {
     const left = Date.parse(a && (a.startedAt || a.completedAt || ""));
@@ -2559,7 +2577,12 @@ async function handleApi(req, res) {
     const threadId = decodeURIComponent(threadRead[1]);
     const globalState = readGlobalState();
     const visibility = visibilityFromGlobalState(globalState);
-    const summary = readStateDbThread(threadId);
+    let summary = readStateDbThread(threadId);
+    if (!summary) {
+      try {
+        summary = await readThreadSummaryFromAppServer(codex, threadId);
+      } catch (_) {}
+    }
     if (summary && isHiddenThread(summary, visibility)) {
       sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
       return;
