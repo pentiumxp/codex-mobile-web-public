@@ -82,6 +82,57 @@ The startup script prefers this local runtime binary when it exists:
 
 If that file does not exist, it falls back to `codex` from `PATH`.
 
+## Windows Background Startup
+
+To run Codex Mobile Web without a visible console window and keep it running after the interactive user signs out, install the included background Scheduled Task:
+
+```powershell
+cd C:\path\to\codex-mobile-web
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-codex-mobile-web-startup.ps1 -RunAsSystem -RunNow
+```
+
+Run the install command from an elevated PowerShell session. This registers a task named `Codex Mobile Web` with an `AtStartup` trigger under `LocalSystem`. It does not store your Windows password, does not require the interactive desktop session to stay logged in, and does not create a visible console window.
+
+The task still uses your normal Codex data paths by passing the installing user's profile path into the launcher:
+
+```text
+USERPROFILE=<your Windows user profile>
+CODEX_HOME=<your Windows user profile>\.codex
+CODEX_MOBILE_RUNTIME_DIR=<your Windows user profile>\.codex-mobile-web
+```
+
+The task runs `wscript.exe` against `start-codex-mobile-web-hidden.vbs`, which then starts PowerShell with window style `Hidden` and waits for it. The PowerShell wrapper starts a standalone mux endpoint when shared-stream mode is required, then starts Mobile Web.
+
+```text
+wscript.exe start-codex-mobile-web-hidden.vbs
+```
+
+By default, the startup task passes `-EnsureStandaloneMux -RequireSharedAppServer`, so Mobile Web connects to a single mux-backed app-server endpoint instead of silently creating a separate managed app-server stream. Codex Desktop can later attach to the existing mux endpoint when it is launched through `start-codex-desktop-shared.ps1`.
+
+If you intentionally want standalone fallback behavior without a required mux endpoint, install with:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-codex-mobile-web-startup.ps1 -AllowManagedFallback -RunNow
+```
+
+If you only want the older interactive behavior that starts after the user logs in and stops when that user signs out, install with:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-codex-mobile-web-startup.ps1 -InteractiveLogon -RunNow
+```
+
+The windowless launcher appends runtime logs to:
+
+```text
+%USERPROFILE%\.codex-mobile-web\codex-mobile-web.startup.log
+```
+
+To remove the Windows login startup task:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\uninstall-codex-mobile-web-startup.ps1
+```
+
 ## macOS Standalone Start
 
 On macOS, use the included launcher so the `codex` and `node` commands are resolved to real executable paths before the server starts:
@@ -345,6 +396,7 @@ Use this table after pulling updates:
 | `server.js` | Restart Mobile Web. |
 | `codex-app-server-mux.js` | Fully quit Desktop and launch once with the force-restart mux option. |
 | `start-codex-desktop-shared.ps1` or shim files | Fully quit Desktop, then relaunch through the updated shared launcher. |
+| Windows startup scripts | Re-run `install-codex-mobile-web-startup.ps1` so the Scheduled Task points at the current launcher. |
 | macOS `.sh` launcher files | Rerun `npm run check:macos`, then relaunch through the updated script. |
 
 Windows mux replacement:

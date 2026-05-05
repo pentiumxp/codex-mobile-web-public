@@ -1275,3 +1275,71 @@
 - Validation:
   - Private checkout: `npm.cmd run check`, `npm.cmd run check:macos`, and `git diff --check` passed with line-ending warnings only.
   - Public checkout: `npm.cmd run check`, `npm.cmd run check:macos`, `npm.cmd test`, and `git diff --check` passed with line-ending warnings only.
+
+## 2026-05-05 Windows Hidden Startup Task
+
+- User requested making the Codex Mobile Web listener run with no visible window and start with Windows.
+- Added scripts:
+  - `start-codex-mobile-web-hidden.vbs` launches PowerShell through `WScript.Shell.Run(..., 0, True)` so the Windows startup path does not create a visible console window while the Scheduled Task remains running.
+  - `start-codex-mobile-web-windowless.ps1` runs the existing `start-codex-mobile-web.ps1` path and appends logs to `%USERPROFILE%\.codex-mobile-web\codex-mobile-web.startup.log`.
+  - `install-codex-mobile-web-startup.ps1` registers a per-user Scheduled Task named `Codex Mobile Web` that starts at Windows logon with `wscript.exe start-codex-mobile-web-hidden.vbs`.
+  - `uninstall-codex-mobile-web-startup.ps1` removes the Scheduled Task and can stop it first with `-StopRunning`.
+- The startup task defaults to `-RequireSharedAppServer`, matching the project rule that Mobile Web should not silently create a divergent managed app-server stream when the shared mux is expected.
+- README and PROJECT_CONTEXT document the hidden startup behavior and reinstall/remove commands.
+- Runtime activation:
+  - Registered Scheduled Task `Codex Mobile Web` for the current Windows user.
+  - Current task state is `Running`; Task Scheduler result `267009` means the long-running task is active.
+  - Current hidden launcher PowerShell PID `36100`; Node listener PID `8124`.
+  - `0.0.0.0:8787` is listening from PID `8124`.
+  - Authenticated `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, and `lastError=null`.
+- Validation:
+  - PowerShell parser checks passed for the three startup scripts.
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with line-ending warnings only.
+
+## 2026-05-05 Windows Startup Survive Sign-Out Fix
+
+- User reported that the hidden startup task stopped when the current Windows user signed out, then came back after the user logged in again.
+- Root cause:
+  - The first task was an interactive `AtLogOn` task with `LogonType=Interactive`.
+  - Windows terminates processes in that interactive user session on sign-out, so the Mobile Web listener could not survive sign-out.
+- Changes:
+  - `install-codex-mobile-web-startup.ps1 -RunAsSystem` now creates an `AtStartup` trigger running as `LocalSystem`.
+  - Running as `LocalSystem` requires elevated PowerShell, but does not store the Windows user password and is not tied to the visible desktop session.
+  - `-InteractiveLogon` is available only for the older sign-in-bound behavior.
+  - `start-codex-mobile-web-windowless.ps1` gained `-UserProfilePath` to force the background task to use the real user profile paths for `%USERPROFILE%`, `CODEX_HOME`, and `CODEX_MOBILE_RUNTIME_DIR`.
+  - `start-codex-mobile-web-windowless.ps1` gained `-EnsureStandaloneMux`; when shared-stream mode is required, it starts `codex-app-server-mux.js` with `CODEX_MUX_STANDALONE=1` and `CODEX_MUX_KEEP_ALIVE=1` if no live mux endpoint exists.
+  - The default installed task passes `-EnsureStandaloneMux -RequireSharedAppServer`, so Mobile Web keeps one mux-backed app-server stream and does not silently fall back to a divergent managed child.
+- Operational implication:
+  - The background task can keep Mobile Web and the mux endpoint alive after sign-out.
+  - Codex Desktop should still be launched through `start-codex-desktop-shared.ps1` when the user logs back in, so Desktop attaches to the existing mux endpoint instead of starting its own independent app-server.
+- Runtime activation:
+  - Elevated install through UAC completed successfully.
+  - Scheduled Task `Codex Mobile Web` is now `AtStartup`, `UserId=SYSTEM`, `LogonType=ServiceAccount`, `RunLevel=Highest`.
+  - Current task action is `wscript.exe start-codex-mobile-web-hidden.vbs -HostAddress 0.0.0.0 -Port 8787 -UserProfilePath C:\Users\xuxin -EnsureStandaloneMux -RequireSharedAppServer`.
+  - Current task state is `Running`; `0.0.0.0:8787` is listening from Node PID `40348`.
+  - Authenticated `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, and `lastError=null`.
+- Current limitation:
+  - During this active Desktop turn, the background task reused the already-running Desktop-owned mux endpoint (`endpoint.json` PID `14328`) to avoid interrupting the current Desktop session.
+  - A full immediate ownership switch to a SYSTEM-owned standalone mux requires stopping the existing mux endpoint and restarting Mobile Web, which will disconnect the current Desktop app-server stream. The safer time to do that is after the current turn ends or after a Windows reboot, where no Desktop-owned mux exists yet.
+
+## 2026-05-05 Thread Detail 404 After SYSTEM Task Switch
+
+- User reported that after switching/restarting the background task, opening a thread failed with `Thread is archived, deleted, or outside visible workspace`.
+- Diagnosis:
+  - `/api/threads?limit=...` still returned visible threads with correct `cwd`.
+  - `/api/threads/{id}` returned 404 for known visible thread ids.
+  - Under the SYSTEM task environment, `readStateDbThread()` could fail to get the per-thread summary from local `state_5.sqlite` via `sqlite3`.
+  - The detail route then built a thread from `thread/turns/list` without `cwd`, and the visible-workspace filter treated the thread as outside visible workspaces.
+- Fix:
+  - `server.js` now falls back to app-server `thread/list` when local `readStateDbThread(threadId)` returns no summary.
+  - The fallback recovers the thread summary/cwd before applying `isHiddenThread()`.
+- Runtime activation:
+  - Elevated restart stopped the SYSTEM-owned 8787 listener and restarted the Scheduled Task.
+  - New listener PID is `38552` on `0.0.0.0:8787`.
+  - Authenticated `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, `lastError=null`.
+  - Direct detail reads for `019ded32-ed92-7681-9591-0e4d457c5274`, `019dde72-2de7-7542-b43f-d7fa0d98fb21`, and `019de2ad-421d-7fe2-883b-a6c7cbb8742b` now all return successfully with their expected cwd.
+- Validation:
+  - `node --check server.js` passed.
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with line-ending warnings only.

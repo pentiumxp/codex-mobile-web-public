@@ -9,6 +9,7 @@ This workspace owns the standalone Codex Mobile Web app.
 - Public UI: `public/`
 - Main server: `server.js`
 - Startup script: `start-codex-mobile-web.ps1`
+- Windows hidden startup scripts: `start-codex-mobile-web-hidden.vbs`, `start-codex-mobile-web-windowless.ps1`, `install-codex-mobile-web-startup.ps1`, `uninstall-codex-mobile-web-startup.ps1`
 - Optional app-server mux: `codex-app-server-mux.js`
 - Clean public release repository: `https://github.com/pentiumxp/codex-mobile-web-public`
 - Clean public release local path: `C:\Users\xuxin\Documents\codex-mobile-web-public`
@@ -28,6 +29,8 @@ This workspace owns the standalone Codex Mobile Web app.
 ## Architecture
 
 - The web server binds to `CODEX_MOBILE_HOST` / `CODEX_MOBILE_PORT`, default `0.0.0.0:8787`.
+- On Windows, `install-codex-mobile-web-startup.ps1 -RunAsSystem` registers a Scheduled Task named `Codex Mobile Web` that runs at Windows startup as `LocalSystem`. This requires an elevated PowerShell session but does not store the Windows user password. It passes the installing user's profile path into the launcher so `USERPROFILE`, `CODEX_HOME`, and `CODEX_MOBILE_RUNTIME_DIR` still point at the normal `C:\Users\xuxin` state locations. It uses `wscript.exe` and `start-codex-mobile-web-hidden.vbs`, avoiding a visible console window while keeping the task running after the interactive user signs out. The VBS wrapper calls `start-codex-mobile-web-windowless.ps1`, which appends logs to `%USERPROFILE%\.codex-mobile-web\codex-mobile-web.startup.log`.
+- The Windows startup task defaults to `-EnsureStandaloneMux -RequireSharedAppServer`, preserving the single shared app-server stream while avoiding a silent managed app-server fallback. It starts a standalone mux endpoint when no live mux endpoint exists, and Codex Desktop can later attach to that endpoint through `start-codex-desktop-shared.ps1`. Use `-AllowManagedFallback` only for intentional standalone Mobile Web operation.
 - Current Tailscale HTTPS mapping is `https://gmk.tail62e8ce.ts.net:8443/ -> http://127.0.0.1:8787`.
 - The browser authenticates with the access key, then receives live updates through Server-Sent Events.
 - Web Push support stores VAPID keys in `%USERPROFILE%\.codex-mobile-web\web-push-vapid.json` and subscriptions in `%USERPROFILE%\.codex-mobile-web\web-push-subscriptions.json`; neither file should be committed or copied into shared context. The browser must access Codex Mobile Web through HTTPS, currently Tailscale Serve `https://gmk.tail62e8ce.ts.net:8443/`, to subscribe. The VAPID subject must be a non-localhost contact URI; Apple Push rejects localhost subjects with `BadJwtToken`.
@@ -76,6 +79,7 @@ This workspace owns the standalone Codex Mobile Web app.
 - The model, reasoning, and quota controls should stay on one line while keeping the model/reasoning selectors readable; the quota column must not starve the reasoning selector width.
 - When no thread is selected, the main pane lists recent workspaces and recent threads as shortcuts.
 - Thread detail reads prefer app-server `thread/turns/list` plus local `state_5.sqlite` metadata instead of `thread/read includeTurns:true`, because large historical rollouts can make `thread/read` several seconds slower.
+- When Mobile Web runs under the Windows `LocalSystem` startup task, local `sqlite3` command discovery may differ from the interactive user environment. If `readStateDbThread()` cannot read a per-thread summary, the detail route must fall back to app-server `thread/list` to recover the thread `cwd` before applying visible-workspace filtering.
 - Thread switching in the browser uses request sequencing and cancels the previous detail fetch so stale slow responses cannot overwrite the current selection.
 - Thread-list refreshes also use request sequencing and cancel older list requests; loading placeholders must reset the thread-list render signature so an unchanged result can still repaint over the placeholder.
 - Workspace changes clear the current thread through the shared selection reset path, abort pending thread detail loads, and render the home/workspace shortcut view before the new list returns.
