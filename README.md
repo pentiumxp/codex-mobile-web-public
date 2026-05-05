@@ -84,14 +84,32 @@ If that file does not exist, it falls back to `codex` from `PATH`.
 
 ## Windows Background Startup
 
-To run Codex Mobile Web without a visible console window and keep it running after the interactive user signs out, install the included background Scheduled Task:
+To start Codex Mobile Web when the Windows user logs in without showing a console window, install the included Scheduled Task:
 
 ```powershell
 cd C:\path\to\codex-mobile-web
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-codex-mobile-web-startup.ps1 -RunNow
+```
+
+This is the default mode. It registers a task named `Codex Mobile Web` with an `AtLogOn` trigger under the current Windows user. The task runs `wscript.exe start-codex-mobile-web-hidden.vbs`, which starts PowerShell with `-WindowStyle Hidden`, so it does not create a visible console window.
+
+The task starts after that user logs in and stops when that user signs out. A locked Windows session is fine. Because the task runs as the user, Codex tool calls use the same user profile and can access that user's WSL distributions.
+
+If the installer is launched from another account or a SYSTEM/elevated automation context, pass the target identity and profile explicitly:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-codex-mobile-web-startup.ps1 -UserId "$env:COMPUTERNAME\$env:USERNAME" -UserProfilePath "$env:USERPROFILE" -RunNow
+```
+
+`-InteractiveLogon` is still accepted for older install commands, but it is no longer required because user-logon startup is the default.
+
+If you intentionally need startup before any user logs in or survival after sign-out, install the optional `LocalSystem` task from an elevated PowerShell session:
+
+```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-codex-mobile-web-startup.ps1 -RunAsSystem -RunNow
 ```
 
-Run the install command from an elevated PowerShell session. This registers a task named `Codex Mobile Web` with an `AtStartup` trigger under `LocalSystem`. It does not store your Windows password, does not require the interactive desktop session to stay logged in, and does not create a visible console window.
+`LocalSystem` does not store your Windows password and also uses the hidden launcher, but it cannot start WSL distributions. Use the default user-logon mode when Codex tool calls need WSL access.
 
 The task still uses your normal Codex data paths by passing the installing user's profile path into the launcher:
 
@@ -113,12 +131,6 @@ If you intentionally want standalone fallback behavior without a required mux en
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-codex-mobile-web-startup.ps1 -AllowManagedFallback -RunNow
-```
-
-If you only want the older interactive behavior that starts after the user logs in and stops when that user signs out, install with:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-codex-mobile-web-startup.ps1 -InteractiveLogon -RunNow
 ```
 
 The windowless launcher appends runtime logs to:

@@ -65,6 +65,9 @@ const STORAGE_MODEL = "codexMobileSelectedModel";
 const STORAGE_EFFORT = "codexMobileSelectedEffort";
 const STORAGE_PERMISSION_MODES = "codexMobileSelectedPermissionModes";
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
+const HIDDEN_SERVER_REQUEST_METHODS = new Set(["item/tool/call"]);
+const CONTEXT_COMPACTION_PENDING_NOTICE = "\u5386\u53f2\u4e0a\u4e0b\u6587\u6b63\u5728\u538b\u7f29";
+const CONTEXT_COMPACTION_COMPLETE_NOTICE = "\u5386\u53f2\u4e0a\u4e0b\u6587\u5df2\u538b\u7f29";
 
 const $ = (id) => document.getElementById(id);
 
@@ -510,7 +513,27 @@ function isContextCompactionType(type) {
 }
 
 function isContextCompactionItem(item) {
-  return item && (isContextCompactionType(item.type) || item.mobileNotice === "历史上下文已压缩");
+  return item && (isContextCompactionType(item.type)
+    || item.mobileNotice === CONTEXT_COMPACTION_COMPLETE_NOTICE
+    || item.mobileNotice === CONTEXT_COMPACTION_PENDING_NOTICE
+    || item.mobileCompactionStatus);
+}
+
+function isContextCompactionPending(item, turn = null) {
+  if (!item) return false;
+  if (isCompletedStatus(item.status)) return false;
+  const stateText = String(item.mobileCompactionStatus || "").toLowerCase();
+  if (/running|active|queued|processing|inprogress|in_progress|in-progress|pending|started/.test(stateText)) return true;
+  if (/completed|failed|cancel|error|interrupted/.test(stateText)) return false;
+  const itemStatus = statusText(item.status).toLowerCase();
+  if (/running|active|queued|processing|inprogress|in_progress|in-progress|pending|started/.test(itemStatus)) return true;
+  return Boolean(turn && isLiveTurn(turn) && isContextCompactionType(item.type));
+}
+
+function contextCompactionNotice(item, turn = null) {
+  return isContextCompactionPending(item, turn)
+    ? CONTEXT_COMPACTION_PENDING_NOTICE
+    : CONTEXT_COMPACTION_COMPLETE_NOTICE;
 }
 
 function latestTurn() {
@@ -1008,8 +1031,13 @@ function isApprovalSettled(request) {
   return status && status !== "waiting";
 }
 
+function shouldShowApprovalRequest(request) {
+  return request && !HIDDEN_SERVER_REQUEST_METHODS.has(request.method);
+}
+
 function pendingApprovalsForThread(threadId) {
   return Array.from(state.pendingApprovals.values())
+    .filter(shouldShowApprovalRequest)
     .filter((request) => approvalThreadId(request) === threadId)
     .sort((a, b) => Number(a.receivedAt || 0) - Number(b.receivedAt || 0));
 }
@@ -1491,7 +1519,8 @@ async function loadWorkspaces() {
 function updateWorkspacePath() {
   const el = $("workspacePath");
   if (!el) return;
-  el.textContent = state.selectedCwd || "All workspaces";
+  el.hidden = !state.selectedCwd;
+  el.textContent = state.selectedCwd || "";
 }
 
 function clearCurrentThreadSelection() {
@@ -2284,8 +2313,7 @@ function displayTurnStatus(turn) {
 
 function renderContextCompaction(item, turn = null, previousKeys = new Set(), index = 0) {
   const key = stableItemKey(turn, item, index, "context");
-  const fallbackNotice = "\u5386\u53f2\u4e0a\u4e0b\u6587\u5df2\u538b\u7f29";
-  return `<div class="context-compaction-note${entryAnimationClass(key, previousKeys)}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">${escapeHtml(item.mobileNotice || fallbackNotice)}</div>`;
+  return `<div class="context-compaction-note${entryAnimationClass(key, previousKeys)}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">${escapeHtml(contextCompactionNotice(item, turn))}</div>`;
 }
 
 function renderItem(item, turn = null, previousKeys = new Set(), index = 0) {
@@ -2597,7 +2625,7 @@ function renderMarkdown(value) {
 }
 
 function renderItemBody(item, turn = null) {
-  if (isContextCompactionItem(item)) return escapeHtml(item.mobileNotice || "历史上下文已压缩");
+  if (isContextCompactionItem(item)) return escapeHtml(contextCompactionNotice(item, turn));
   if (item.type === "userMessage") return renderInputContent(item.content);
   if (item.type === "agentMessage") {
     return isLiveTurn(turn) ? escapeHtml(item.text || "") : renderMarkdown(item.text || "");
@@ -2780,7 +2808,12 @@ function scheduleRenderCurrentThread() {
 
 function upsertServerRequest(request) {
   if (!request || !request.id) return;
-  markActivity("等待批准");
+  if (!shouldShowApprovalRequest(request)) {
+    state.pendingApprovals.delete(String(request.id));
+    if (state.currentThread && approvalThreadId(request) === state.currentThread.id) scheduleRenderCurrentThread();
+    return;
+  }
+  markActivity(request.actionable ? "等待批准" : "等待输入");
   state.pendingApprovals.set(String(request.id), Object.assign({}, state.pendingApprovals.get(String(request.id)) || {}, request));
   if (state.currentThread && approvalThreadId(request) === state.currentThread.id) scheduleRenderCurrentThread();
 }

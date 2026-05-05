@@ -3,6 +3,8 @@ param(
     [string]$HostAddress = "0.0.0.0",
     [int]$Port = 8787,
     [string]$CodexExe = "",
+    [string]$UserId = "",
+    [string]$UserProfilePath = "",
     [switch]$RunAsSystem,
     [switch]$InteractiveLogon,
     [switch]$AllowManagedFallback,
@@ -13,20 +15,35 @@ param(
 $ErrorActionPreference = "Stop"
 
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$installingUserProfile = $env:USERPROFILE
-if (-not $InteractiveLogon) {
-    $RunAsSystem = $true
-}
+
 if ($RunAsSystem -and $InteractiveLogon) {
     throw "-RunAsSystem and -InteractiveLogon cannot be used together."
 }
+
+function Test-LocalSystemIdentity {
+    param([string]$Name)
+    if ([string]::IsNullOrWhiteSpace($Name)) {
+        return $false
+    }
+    return ($Name -ieq "NT AUTHORITY\SYSTEM") -or ($Name -ieq "SYSTEM")
+}
+
 if ($RunAsSystem) {
     $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
     $principalCheck = [System.Security.Principal.WindowsPrincipal]::new($identity)
     $isAdmin = $principalCheck.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
     if (-not $isAdmin) {
-        throw "Installing a sign-out-safe startup task requires an elevated PowerShell session. Re-run this script as Administrator, or use -InteractiveLogon for the older sign-in-bound task."
+        throw "Installing with -RunAsSystem requires an elevated PowerShell session. The default user-logon task does not require LocalSystem."
     }
+}
+
+$installingUserProfile = if (-not [string]::IsNullOrWhiteSpace($UserProfilePath)) {
+    [Environment]::ExpandEnvironmentVariables($UserProfilePath)
+} else {
+    $env:USERPROFILE
+}
+if ([string]::IsNullOrWhiteSpace($installingUserProfile) -or -not (Test-Path -LiteralPath $installingUserProfile -PathType Container)) {
+    throw "User profile path not found. Run this installer as the target Windows user or pass -UserProfilePath <profile-path>."
 }
 
 $launcher = Join-Path $scriptRoot "start-codex-mobile-web-windowless.ps1"
@@ -61,7 +78,13 @@ if ($NoAuth) {
     $arguments += "-NoAuth"
 }
 
-$currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+$currentIdentityName = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+if ([string]::IsNullOrWhiteSpace($UserId) -and -not $RunAsSystem) {
+    if (Test-LocalSystemIdentity -Name $currentIdentityName) {
+        throw "Default startup mode registers an interactive user-logon task. When running as LocalSystem, pass -UserId <domain\user> and -UserProfilePath <profile-path>, or run this installer from that user's PowerShell session."
+    }
+    $UserId = $currentIdentityName
+}
 $action = New-ScheduledTaskAction `
     -Execute "wscript.exe" `
     -Argument ($arguments -join " ") `
@@ -69,7 +92,7 @@ $action = New-ScheduledTaskAction `
 if ($RunAsSystem) {
     $trigger = New-ScheduledTaskTrigger -AtStartup
 } else {
-    $trigger = New-ScheduledTaskTrigger -AtLogOn -User $currentUser
+    $trigger = New-ScheduledTaskTrigger -AtLogOn -User $UserId
 }
 $settings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
@@ -85,10 +108,10 @@ if ($RunAsSystem) {
     $descriptionMode = "at Windows startup as LocalSystem"
 } else {
     $principal = New-ScheduledTaskPrincipal `
-        -UserId $currentUser `
+        -UserId $UserId `
         -LogonType Interactive `
         -RunLevel Limited
-    $descriptionMode = "at Windows logon"
+    $descriptionMode = "at Windows logon as $UserId"
 }
 
 Register-ScheduledTask `
