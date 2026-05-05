@@ -6,7 +6,8 @@ param(
     [switch]$EnsureStandaloneMux,
     [switch]$RequireSharedAppServer,
     [switch]$NoAuth,
-    [string]$LogPath = ""
+    [string]$LogPath = "",
+    [switch]$NoRestartOnExit
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,6 +15,9 @@ $ErrorActionPreference = "Stop"
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not [string]::IsNullOrWhiteSpace($UserProfilePath)) {
     $env:USERPROFILE = $UserProfilePath
+    $env:HOME = $UserProfilePath
+    $env:HOMEDRIVE = Split-Path -Qualifier $UserProfilePath
+    $env:HOMEPATH = $UserProfilePath.Substring($env:HOMEDRIVE.Length)
     if ([string]::IsNullOrWhiteSpace($env:CODEX_HOME)) {
         $env:CODEX_HOME = Join-Path $UserProfilePath ".codex"
     }
@@ -21,6 +25,44 @@ if (-not [string]::IsNullOrWhiteSpace($UserProfilePath)) {
         $env:CODEX_MOBILE_RUNTIME_DIR = Join-Path $UserProfilePath ".codex-mobile-web"
     }
 }
+
+function Add-GitSafeDirectoryEnv {
+    param([string[]]$Directories)
+
+    $items = @()
+    foreach ($item in $Directories) {
+        if ([string]::IsNullOrWhiteSpace($item)) {
+            continue
+        }
+        $items += ($item -replace "\\", "/")
+    }
+    if ($items.Count -eq 0) {
+        return
+    }
+
+    $count = 0
+    if ($env:GIT_CONFIG_COUNT -match "^\d+$") {
+        $count = [int]$env:GIT_CONFIG_COUNT
+    }
+    foreach ($item in $items) {
+        [Environment]::SetEnvironmentVariable("GIT_CONFIG_KEY_$count", "safe.directory", "Process")
+        [Environment]::SetEnvironmentVariable("GIT_CONFIG_VALUE_$count", $item, "Process")
+        $count += 1
+    }
+    $env:GIT_CONFIG_COUNT = [string]$count
+}
+
+$configuredSafeDirs = @()
+if (-not [string]::IsNullOrWhiteSpace($env:CODEX_MOBILE_GIT_SAFE_DIRECTORIES)) {
+    $configuredSafeDirs = $env:CODEX_MOBILE_GIT_SAFE_DIRECTORIES -split "[;`n`r]" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+} elseif (-not [string]::IsNullOrWhiteSpace($UserProfilePath)) {
+    $configuredSafeDirs = @(
+        (Join-Path (Join-Path $UserProfilePath "Documents") "*"),
+        (Join-Path $UserProfilePath ".codex"),
+        (Join-Path $UserProfilePath ".codex-mobile-web")
+    )
+}
+Add-GitSafeDirectoryEnv -Directories $configuredSafeDirs
 
 $runtimeRoot = if ($env:CODEX_MOBILE_RUNTIME_DIR) { $env:CODEX_MOBILE_RUNTIME_DIR } else { Join-Path $env:USERPROFILE ".codex-mobile-web" }
 New-Item -ItemType Directory -Force -Path $runtimeRoot | Out-Null
@@ -155,16 +197,34 @@ if ($NoAuth) {
 $startedAt = Get-Date -Format "yyyy-MM-dd HH:mm:ss zzz"
 "[$startedAt] Starting Codex Mobile Web windowless launcher from $scriptRoot" | Add-Content -LiteralPath $LogPath -Encoding Unicode
 
-try {
-    if ($EnsureStandaloneMux) {
-        Start-StandaloneMuxIfNeeded -ProfilePath $env:USERPROFILE -RuntimePath $runtimeRoot -RequestedCodexExe $CodexExe -LogPath $LogPath
+do {
+    $exitCode = 0
+    try {
+        if ($EnsureStandaloneMux) {
+            Start-StandaloneMuxIfNeeded -ProfilePath $env:USERPROFILE -RuntimePath $runtimeRoot -RequestedCodexExe $CodexExe -LogPath $LogPath
+        }
+        $oldErrorActionPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = "Continue"
+            & $startScript @parameters *>> $LogPath
+            if ($LASTEXITCODE -is [int]) {
+                $exitCode = $LASTEXITCODE
+            }
+        } finally {
+            $ErrorActionPreference = $oldErrorActionPreference
+        }
+    } catch {
+        $exitCode = -1
+        "[$(Get-Date -Format "yyyy-MM-dd HH:mm:ss zzz")] Codex Mobile Web launcher error: $($_.Exception.Message)" | Add-Content -LiteralPath $LogPath -Encoding Unicode
+    } finally {
+        $endedAt = Get-Date -Format "yyyy-MM-dd HH:mm:ss zzz"
+        "[$endedAt] Codex Mobile Web listener exited with code $exitCode" | Add-Content -LiteralPath $LogPath -Encoding Unicode
     }
-    & $startScript @parameters *>> $LogPath
-} finally {
-    $endedAt = Get-Date -Format "yyyy-MM-dd HH:mm:ss zzz"
-    "[$endedAt] Codex Mobile Web windowless launcher exited with code $LASTEXITCODE" | Add-Content -LiteralPath $LogPath -Encoding Unicode
-}
 
-if ($LASTEXITCODE -is [int]) {
-    exit $LASTEXITCODE
-}
+    if ($NoRestartOnExit) {
+        exit $exitCode
+    }
+
+    Start-Sleep -Seconds 3
+    "[$(Get-Date -Format "yyyy-MM-dd HH:mm:ss zzz")] Restarting Codex Mobile Web listener after exit" | Add-Content -LiteralPath $LogPath -Encoding Unicode
+} while ($true)

@@ -39,4 +39,10 @@ Write-Host "Codex exe: $CodexExe"
 if ($RequireSharedAppServer) {
     Write-Host "Shared app-server is required; managed fallback is disabled."
 }
-node (Join-Path $scriptRoot "server.js")
+$oldErrorActionPreference = $ErrorActionPreference
+try {
+    $ErrorActionPreference = "Continue"
+    node (Join-Path $scriptRoot "server.js")
+} finally {
+    $ErrorActionPreference = $oldErrorActionPreference
+}

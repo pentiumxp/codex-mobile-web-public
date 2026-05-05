@@ -27,6 +27,15 @@ const LOG_FILE = process.env.CODEX_MUX_LOG_FILE || path.join(RUNTIME_DIR, "mux.l
 const REPLAY_BUFFER_LIMIT = Math.max(0, Number(process.env.CODEX_MUX_REPLAY_BUFFER_LIMIT || "1200"));
 const REPLAY_BUFFER_MAX_AGE_MS = Math.max(0, Number(process.env.CODEX_MUX_REPLAY_BUFFER_MAX_AGE_MS || String(30 * 60 * 1000)));
 const REPLAY_DESKTOP_NOTIFICATIONS = /^(1|true|yes|on)$/i.test(process.env.CODEX_MUX_REPLAY_DESKTOP_NOTIFICATIONS || "");
+const MOBILE_MAX_DELTA_CHARS = Math.max(1024, Number(process.env.CODEX_MUX_MOBILE_MAX_DELTA_CHARS || "12000"));
+const MOBILE_MAX_OUTPUT_CHARS = Math.max(MOBILE_MAX_DELTA_CHARS, Number(process.env.CODEX_MUX_MOBILE_MAX_OUTPUT_CHARS || "20000"));
+const MOBILE_DROP_NOTIFICATION_METHODS = new Set([
+  "item/commandExecution/outputDelta",
+  "item/fileChange/outputDelta",
+  "item/reasoning/textDelta",
+  "item/reasoning/summaryTextDelta",
+]);
+const MOBILE_OUTPUT_FIELD_PATTERN = /^(aggregatedOutput|output|stdout|stderr|diff|patch|logs?|rawOutput)$/i;
 
 let nextClientId = 1;
 let child = null;
@@ -57,6 +66,20 @@ function hasId(message) {
 
 function writeJsonLine(write, message) {
   return write(`${JSON.stringify(message)}\n`);
+}
+
+function truncateMiddle(value, maxChars, label) {
+  const text = String(value || "");
+  if (text.length <= maxChars) return text;
+  const head = Math.max(1, Math.floor(maxChars * 0.45));
+  const tail = Math.max(1, maxChars - head);
+  return `${text.slice(0, head)}\n\n[${label} truncated: ${text.length} chars total]\n\n${text.slice(-tail)}`;
+}
+
+function truncateTail(value, maxChars, label) {
+  const text = String(value || "");
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars)}\n\n[${label} truncated: ${text.length} chars total]`;
 }
 
 function commandNeedsFilesystemCheck(command) {
@@ -102,9 +125,47 @@ function removeClient(client) {
   log(`client disconnected ${client.id} ${client.name}`);
 }
 
+function compactMobileObject(value, depth = 0) {
+  if (!value || typeof value !== "object" || depth > 6) return value;
+  if (Array.isArray(value)) {
+    return value.map((item) => compactMobileObject(item, depth + 1));
+  }
+  const out = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (typeof child === "string") {
+      if (key === "delta") {
+        out[key] = truncateMiddle(child, MOBILE_MAX_DELTA_CHARS, "text delta");
+      } else if (MOBILE_OUTPUT_FIELD_PATTERN.test(key)) {
+        out[key] = truncateTail(child, MOBILE_MAX_OUTPUT_CHARS, key);
+      } else if (child.length > MOBILE_MAX_OUTPUT_CHARS * 4) {
+        out[key] = truncateMiddle(child, MOBILE_MAX_OUTPUT_CHARS, "large payload");
+      } else {
+        out[key] = child;
+      }
+    } else {
+      out[key] = compactMobileObject(child, depth + 1);
+    }
+  }
+  return out;
+}
+
+function compactMobileNotification(message) {
+  if (!message || hasId(message) || !message.method) return message;
+  const method = String(message.method);
+  if (MOBILE_DROP_NOTIFICATION_METHODS.has(method)) return null;
+  return compactMobileObject(cloneJson(message));
+}
+
+function messageForClient(client, message) {
+  if (!isMobileWebClient(client)) return message;
+  return compactMobileNotification(message);
+}
+
 function sendToClient(client, message) {
   try {
-    if (writeJsonLine(client.write, message) === false && isTcpClient(client) && !client.backpressureSince) {
+    const outgoing = messageForClient(client, message);
+    if (!outgoing) return;
+    if (writeJsonLine(client.write, outgoing) === false && isTcpClient(client) && !client.backpressureSince) {
       client.backpressureSince = Date.now();
       log(`tcp client backpressure ${client.id}; waiting for drain`);
     }
@@ -148,10 +209,12 @@ function pruneReplayBuffer(now = Date.now()) {
 function cacheReplayNotification(message) {
   if (REPLAY_BUFFER_LIMIT <= 0 || !isReplayableNotification(message)) return;
   try {
+    const replayMessage = compactMobileNotification(message);
+    if (!replayMessage) return;
     replayBuffer.push({
       seq: nextReplaySeq++,
       receivedAt: Date.now(),
-      message: cloneJson(message),
+      message: replayMessage,
     });
     pruneReplayBuffer();
   } catch (err) {
