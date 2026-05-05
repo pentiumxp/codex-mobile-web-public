@@ -35,9 +35,11 @@ const state = {
   maxUploadFiles: 12,
   modelOptions: [],
   reasoningEffortOptions: [],
+  permissionModeOptions: ["default", "auto", "full", "custom"],
   defaultModel: "",
   defaultReasoningEffort: "",
   rateLimits: null,
+  rateLimitsByModel: {},
   pushServerSupported: false,
   pushSubscribed: false,
   pushBusy: false,
@@ -46,6 +48,7 @@ const state = {
   pendingApprovals: new Map(),
   selectedModel: localStorage.getItem("codexMobileSelectedModel") || "",
   selectedEffort: localStorage.getItem("codexMobileSelectedEffort") || "",
+  selectedPermissionModes: loadJsonStorage("codexMobileSelectedPermissionModes", {}),
   activityLabel: "",
   activityAtMs: 0,
   leavingItems: new Map(),
@@ -59,10 +62,19 @@ const MAX_RETAINED_OPERATIONS_PER_TURN = 1;
 const STORAGE_THREAD_ID = "codexMobileCurrentThreadId";
 const STORAGE_MODEL = "codexMobileSelectedModel";
 const STORAGE_EFFORT = "codexMobileSelectedEffort";
+const STORAGE_PERMISSION_MODES = "codexMobileSelectedPermissionModes";
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
-const USER_INPUT_REQUEST_METHODS = new Set(["item/tool/requestUserInput", "mcpServer/elicitation/request"]);
 
 const $ = (id) => document.getElementById(id);
+
+function loadJsonStorage(key, fallback) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || "");
+    return value && typeof value === "object" ? value : fallback;
+  } catch (_) {
+    return fallback;
+  }
+}
 
 function viewportHeight() {
   const visual = window.visualViewport && Number(window.visualViewport.height);
@@ -190,6 +202,90 @@ function labelForEffort(value) {
   return labels[value] || value;
 }
 
+function labelForPermissionMode(value) {
+  const labels = {
+    default: "默认权限",
+    auto: "自动审查",
+    full: "完全访问权限",
+    custom: "自定义 (config.toml)",
+  };
+  return labels[value] || value || "Perm";
+}
+
+function titleForPermissionMode(value) {
+  const titles = {
+    default: "默认权限",
+    auto: "自动审查",
+    full: "完全访问权限",
+    custom: "自定义 (config.toml)",
+  };
+  return titles[value] || "Thread permission";
+}
+
+function normalizePermissionModeValue(value) {
+  const text = String(value || "").trim().toLowerCase();
+  const aliases = {
+    "full-access": "full",
+    "workspace-write": "auto",
+    "read-only": "auto",
+    "auto-review": "auto",
+    "auto-reviewing": "auto",
+    config: "custom",
+    "config.toml": "custom",
+    "custom-config": "custom",
+  };
+  return aliases[text] || text;
+}
+
+function normalizeModelKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, "-")
+    .replace(/[^a-z0-9.]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function rateLimitModelKeys(rateLimits) {
+  if (!rateLimits || typeof rateLimits !== "object") return [];
+  const keys = new Set();
+  const add = (value) => {
+    const key = normalizeModelKey(value);
+    if (key) keys.add(key);
+  };
+  if (Array.isArray(rateLimits.modelKeys)) {
+    for (const value of rateLimits.modelKeys) add(value);
+  }
+  add(rateLimits.model);
+  add(rateLimits.limitName);
+  const limitNameKey = normalizeModelKey(rateLimits.limitName);
+  for (const model of normalizeOptionList([state.defaultModel, ...state.modelOptions])) {
+    const modelKey = normalizeModelKey(model);
+    if (modelKey && limitNameKey === modelKey) keys.add(modelKey);
+  }
+  const limitId = normalizeModelKey(rateLimits.limitId);
+  if (limitId === "codex-bengalfox") keys.add("gpt-5.3-codex-spark");
+  else if (limitId === "codex") add(state.defaultModel || "gpt-5.5");
+  return [...keys];
+}
+
+function rememberRateLimits(rateLimits, rateLimitsByModel) {
+  if (rateLimitsByModel && typeof rateLimitsByModel === "object") {
+    for (const [model, value] of Object.entries(rateLimitsByModel)) {
+      const key = normalizeModelKey(model);
+      if (key && value && typeof value === "object") state.rateLimitsByModel[key] = value;
+    }
+  }
+  if (rateLimits && typeof rateLimits === "object") {
+    state.rateLimits = rateLimits;
+    for (const key of rateLimitModelKeys(rateLimits)) {
+      state.rateLimitsByModel[normalizeModelKey(key)] = rateLimits;
+    }
+  }
+  renderQuotaUsage();
+}
+
 function rateLimitWindows(rateLimits) {
   return [rateLimits && rateLimits.primary, rateLimits && rateLimits.secondary]
     .filter((windowInfo) => windowInfo && Number.isFinite(Number(windowInfo.usedPercent)));
@@ -238,13 +334,31 @@ function quotaTitle(label, windowInfo) {
   ].filter(Boolean).join("; ");
 }
 
+function selectedQuotaModel() {
+  const modelSelect = $("modelSelect");
+  return (modelSelect && modelSelect.value) || state.selectedModel || effectiveDefaultModel();
+}
+
+function rateLimitsForQuota() {
+  const modelKey = normalizeModelKey(selectedQuotaModel());
+  if (modelKey && state.rateLimitsByModel[modelKey]) return state.rateLimitsByModel[modelKey];
+  if (!modelKey) return state.rateLimits;
+  if (state.rateLimits && rateLimitModelKeys(state.rateLimits).includes(modelKey)) return state.rateLimits;
+  return null;
+}
+
 function renderQuotaUsage() {
   const el = $("quotaUsage");
   if (!el) return;
-  const fiveHour = fiveHourRateLimit(state.rateLimits);
-  const weekly = weeklyRateLimit(state.rateLimits);
+  const rateLimits = rateLimitsForQuota();
+  const fiveHour = fiveHourRateLimit(rateLimits);
+  const weekly = weeklyRateLimit(rateLimits);
+  const model = selectedQuotaModel();
   el.textContent = `${quotaRemainingText(fiveHour)} | ${quotaRemainingText(weekly)}`;
-  el.title = `${quotaTitle("5-hour", fiveHour)} | ${quotaTitle("weekly", weekly)}`;
+  el.title = [
+    model ? `model: ${labelForModel(model)}` : "",
+    `${quotaTitle("5-hour", fiveHour)} | ${quotaTitle("weekly", weekly)}`,
+  ].filter(Boolean).join("; ");
   el.classList.toggle("unknown", !fiveHour && !weekly);
 }
 
@@ -697,18 +811,33 @@ function userMessageComparableParts(item) {
   return result;
 }
 
+function userMessagePathOverlap(left, right) {
+  return left.paths.length > 0 && right.paths.length > 0
+    && left.paths.some((pathValue) => right.paths.includes(pathValue));
+}
+
+function userMessageSpecificity(item) {
+  const parts = userMessageComparableParts(item);
+  return parts.text.length + (parts.paths.length * 240);
+}
+
 function userMessagesLikelySame(left, right) {
   if (!left || !right || left.type !== "userMessage" || right.type !== "userMessage") return false;
   const a = userMessageComparableParts(left);
   const b = userMessageComparableParts(right);
-  if (a.text !== b.text) return false;
-  if (!a.paths.length && !b.paths.length) return true;
-  return a.paths.some((pathValue) => b.paths.includes(pathValue));
+  if (a.text && b.text && a.text === b.text) {
+    if (!a.paths.length && !b.paths.length) return true;
+    return userMessagePathOverlap(a, b);
+  }
+  return userMessagePathOverlap(a, b) && (!a.text || !b.text || a.text === b.text);
 }
 
 function hasMatchingIncomingUserMessage(existingItem, incomingItems) {
-  if (!isMuxUserMessage(existingItem)) return false;
-  return (incomingItems || []).some((incomingItem) => userMessagesLikelySame(existingItem, incomingItem));
+  if (!existingItem || existingItem.type !== "userMessage") return false;
+  return (incomingItems || []).some((incomingItem) => incomingItem
+    && incomingItem.id !== existingItem.id
+    && incomingItem.type === "userMessage"
+    && userMessagesLikelySame(existingItem, incomingItem));
 }
 
 function hasMatchingRealUserMessage(item, items) {
@@ -857,15 +986,9 @@ function isApprovalSettled(request) {
   return status && status !== "waiting";
 }
 
-function requestBelongsToThread(request, threadId) {
-  const requestThreadId = approvalThreadId(request);
-  if (requestThreadId) return requestThreadId === threadId;
-  return Boolean(threadId);
-}
-
 function pendingApprovalsForThread(threadId) {
   return Array.from(state.pendingApprovals.values())
-    .filter((request) => requestBelongsToThread(request, threadId))
+    .filter((request) => approvalThreadId(request) === threadId)
     .sort((a, b) => Number(a.receivedAt || 0) - Number(b.receivedAt || 0));
 }
 
@@ -1173,9 +1296,9 @@ function updatePushButton() {
 }
 
 async function registerPushServiceWorker() {
-  const registration = await registerServiceWorker();
-  if (!registration) throw new Error("Notifications unsupported");
-  return registration;
+  if (state.serviceWorkerRegistration) return state.serviceWorkerRegistration;
+  state.serviceWorkerRegistration = await navigator.serviceWorker.register("/sw.js");
+  return state.serviceWorkerRegistration;
 }
 
 async function syncExistingPushSubscription() {
@@ -1301,10 +1424,7 @@ async function bootstrap() {
     return null;
   });
   if (status) updateConnectionState(status);
-  if (status && status.rateLimits) {
-    state.rateLimits = status.rateLimits;
-    renderQuotaUsage();
-  }
+  if (status && (status.rateLimits || status.rateLimitsByModel)) rememberRateLimits(status.rateLimits, status.rateLimitsByModel);
   await loadWorkspaces();
   await loadThreads();
   await restoreThreadSelection();
@@ -1788,25 +1908,24 @@ function renderCurrentThread(options = {}) {
 
 function approvalTitle(method) {
   const titles = {
-    "item/commandExecution/requestApproval": "命令需要批准",
-    "execCommandApproval": "命令需要批准",
-    "item/fileChange/requestApproval": "文件改动需要批准",
-    "applyPatchApproval": "文件改动需要批准",
-    "item/permissions/requestApproval": "权限需要批准",
-    "item/tool/requestUserInput": "需要你补充信息",
-    "mcpServer/elicitation/request": "MCP 需要输入",
-    "item/tool/call": "工具请求",
-    "account/chatgptAuthTokens/refresh": "账号授权",
+    "item/commandExecution/requestApproval": "Command approval",
+    "execCommandApproval": "Command approval",
+    "item/fileChange/requestApproval": "File change approval",
+    "applyPatchApproval": "File change approval",
+    "item/permissions/requestApproval": "Permission approval",
+    "item/tool/requestUserInput": "User input required",
+    "mcpServer/elicitation/request": "MCP input required",
+    "item/tool/call": "Tool request",
+    "account/chatgptAuthTokens/refresh": "Account authorization",
   };
-  return titles[method] || "待处理请求";
+  return titles[method] || "Approval request";
 }
 
 function approvalStatusLabel(status) {
   const text = String(status || "waiting");
-  if (text === "waiting") return "等待中";
-  if (text === "responding") return "发送中";
-  if (text === "responded" || text === "resolved") return "已处理";
-  if (text === "connectionClosed") return "已关闭";
+  if (text === "responding") return "Sending";
+  if (text === "responded" || text === "resolved") return "Answered";
+  if (text === "connectionClosed") return "Closed";
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
@@ -1820,61 +1939,15 @@ function permissionSummary(permissions) {
 
 function approvalDetailLines(request) {
   const params = request.params || {};
-  const questions = Array.isArray(params.questions) ? params.questions : [];
   return [
-    params.reason ? `原因: ${params.reason}` : "",
-    params.command ? `命令:\n${params.command}` : "",
-    params.cwd ? `工作目录:\n${params.cwd}` : "",
-    params.grantRoot ? `授权目录:\n${params.grantRoot}` : "",
-    Array.isArray(params.fileNames) && params.fileNames.length ? `文件:\n${params.fileNames.join("\n")}` : "",
-    params.permissions ? `权限:\n${permissionSummary(params.permissions) || JSON.stringify(params.permissions, null, 2)}` : "",
-    params.networkApprovalContext ? `网络:\n${JSON.stringify(params.networkApprovalContext, null, 2)}` : "",
-    questions.length ? questions.map((question, index) => {
-      const lines = [
-        question.header ? `${question.header}` : `问题 ${index + 1}`,
-        question.question || "",
-        Array.isArray(question.options) && question.options.length
-          ? question.options.map((option) => `- ${option.label}${option.description ? `: ${option.description}` : ""}`).join("\n")
-          : "",
-      ].filter(Boolean);
-      return lines.join("\n");
-    }).join("\n\n") : "",
-    params.title ? `标题:\n${params.title}` : "",
-    params.message ? `说明:\n${params.message}` : "",
-    params.schema ? `结构:\n${JSON.stringify(params.schema, null, 2)}` : "",
-    params.elicitation ? `请求:\n${JSON.stringify(params.elicitation, null, 2)}` : "",
+    params.reason ? `Reason: ${params.reason}` : "",
+    params.command ? `Command:\n${params.command}` : "",
+    params.cwd ? `Working directory:\n${params.cwd}` : "",
+    params.grantRoot ? `Grant root:\n${params.grantRoot}` : "",
+    Array.isArray(params.fileNames) && params.fileNames.length ? `Files:\n${params.fileNames.join("\n")}` : "",
+    params.permissions ? `Permissions:\n${permissionSummary(params.permissions) || JSON.stringify(params.permissions, null, 2)}` : "",
+    params.networkApprovalContext ? `Network:\n${JSON.stringify(params.networkApprovalContext, null, 2)}` : "",
   ].filter(Boolean);
-}
-
-function isUserInputRequest(request) {
-  return USER_INPUT_REQUEST_METHODS.has(request && request.method);
-}
-
-function renderUserInputOptions(request) {
-  const params = request.params || {};
-  const questions = Array.isArray(params.questions) ? params.questions : [];
-  const question = questions.find((entry) => Array.isArray(entry.options) && entry.options.length) || questions[0] || null;
-  if (!question || !Array.isArray(question.options) || !question.options.length) return "";
-  return `<div class="approval-option-grid">
-    ${question.options.map((option) => `<button class="approval-option" type="button" data-server-request-id="${escapeHtml(request.id)}" data-server-question-id="${escapeHtml(question.id || "answer")}" data-server-response-text="${escapeHtml(option.label || "")}">
-      <span>${escapeHtml(option.label || "选项")}</span>
-      ${option.description ? `<small>${escapeHtml(option.description)}</small>` : ""}
-    </button>`).join("")}
-  </div>`;
-}
-
-function renderUserInputActions(request) {
-  const params = request.params || {};
-  const questions = Array.isArray(params.questions) ? params.questions : [];
-  const question = questions[0] || {};
-  return `<form class="approval-response-form" data-server-request-form data-server-request-id="${escapeHtml(request.id)}" data-server-question-id="${escapeHtml(question.id || "answer")}">
-    ${renderUserInputOptions(request)}
-    <textarea class="approval-response-input" name="responseText" rows="3" placeholder="输入回复内容"></textarea>
-    <div class="approval-actions request-actions">
-      <button class="approval-button allow" type="submit">提交</button>
-      <button class="approval-button deny" type="button" data-server-request-id="${escapeHtml(request.id)}" data-server-request-decline>取消</button>
-    </div>
-  </form>`;
 }
 
 function renderApprovalActions(request) {
@@ -1882,11 +1955,10 @@ function renderApprovalActions(request) {
   if (!request.actionable || !waiting) {
     return "";
   }
-  if (isUserInputRequest(request)) return renderUserInputActions(request);
   return `<div class="approval-actions">
-    <button class="approval-button allow" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-action="allow_once">允许一次</button>
-    <button class="approval-button allow" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-action="allow_session">本会话允许</button>
-    <button class="approval-button deny" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-action="deny">拒绝</button>
+    <button class="approval-button allow" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-action="allow_once">Allow once</button>
+    <button class="approval-button allow" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-action="allow_session">Allow session</button>
+    <button class="approval-button deny" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-action="deny">Deny</button>
   </div>`;
 }
 
@@ -2437,8 +2509,14 @@ function upsertItem(turnId, item) {
   }
   turn.items = turn.items || [];
   if (item.type === "userMessage") {
-    if (hasMatchingRealUserMessage(item, turn.items)) return;
-    turn.items = turn.items.filter((existing) => !isMuxUserMessage(existing) || !userMessagesLikelySame(existing, item));
+    const matchingExisting = turn.items.find((existing) => existing
+      && existing.id !== item.id
+      && existing.type === "userMessage"
+      && userMessagesLikelySame(existing, item));
+    if (matchingExisting && userMessageSpecificity(matchingExisting) >= userMessageSpecificity(item)) return;
+    turn.items = turn.items.filter((existing) => existing.id === item.id
+      || existing.type !== "userMessage"
+      || !userMessagesLikelySame(existing, item));
   }
   if (item.type === "agentMessage" || item.type === "plan") {
     turn.items = turn.items.filter((existing) => existing.id === item.id || !visibleTextItemsLikelySame(existing, item));
@@ -2532,10 +2610,10 @@ function scheduleRenderCurrentThread() {
 }
 
 function upsertServerRequest(request) {
-  if (!request || request.id === null || request.id === undefined) return;
-  markActivity(isUserInputRequest(request) ? "等待输入" : "等待批准");
+  if (!request || !request.id) return;
+  markActivity("等待批准");
   state.pendingApprovals.set(String(request.id), Object.assign({}, state.pendingApprovals.get(String(request.id)) || {}, request));
-  if (state.currentThread && requestBelongsToThread(request, state.currentThread.id)) scheduleRenderCurrentThread();
+  if (state.currentThread && approvalThreadId(request) === state.currentThread.id) scheduleRenderCurrentThread();
 }
 
 function scheduleApprovalRemoval(requestId, delayMs = 6000) {
@@ -2550,7 +2628,7 @@ function scheduleApprovalRemoval(requestId, delayMs = 6000) {
 }
 
 function resolveServerRequest(payload) {
-  const requestId = payload && payload.requestId !== null && payload.requestId !== undefined ? String(payload.requestId) : "";
+  const requestId = String(payload && payload.requestId || "");
   if (!requestId) return;
   const existing = state.pendingApprovals.get(requestId);
   let next = existing || null;
@@ -2561,16 +2639,15 @@ function resolveServerRequest(payload) {
     existing.status = payload.status || "resolved";
     next = existing;
   }
-  if (state.currentThread && next && requestBelongsToThread(next, state.currentThread.id)) scheduleRenderCurrentThread();
-  if (next) markActivity(isUserInputRequest(next) ? "输入完成" : "批准完成");
+  if (state.currentThread && next && approvalThreadId(next) === state.currentThread.id) scheduleRenderCurrentThread();
+  if (next) markActivity("批准完成");
   scheduleApprovalRemoval(requestId);
 }
 
 function applyNotification(method, params) {
   if (!params) return;
   if (method === "account/rateLimits/updated") {
-    state.rateLimits = params.rateLimits || null;
-    renderQuotaUsage();
+    rememberRateLimits(params.rateLimits || null, null);
     return;
   }
   if (method === "thread/started" && params.thread) {
@@ -2666,9 +2743,8 @@ function connectEvents() {
     const payload = JSON.parse(event.data);
     if (payload.type === "status") {
       updateConnectionState(payload.status);
-      if (payload.status.rateLimits) {
-        state.rateLimits = payload.status.rateLimits;
-        renderQuotaUsage();
+      if (payload.status.rateLimits || payload.status.rateLimitsByModel) {
+        rememberRateLimits(payload.status.rateLimits, payload.status.rateLimitsByModel);
       }
       if (payload.status.ready) clearTimeout(state.recoveryTimer);
       return;
@@ -2685,10 +2761,7 @@ function connectEvents() {
       try {
         const status = await api("/api/status");
         updateConnectionState(status);
-        if (status.rateLimits) {
-          state.rateLimits = status.rateLimits;
-          renderQuotaUsage();
-        }
+        if (status.rateLimits || status.rateLimitsByModel) rememberRateLimits(status.rateLimits, status.rateLimitsByModel);
         await loadThreads();
         await refreshCurrentThread();
       } catch (err) {
@@ -2796,10 +2869,7 @@ async function resumeMobileSession(reason = "resume") {
   state.pollStableCount = 0;
   const status = await api("/api/status");
   updateConnectionState(status);
-  if (status.rateLimits) {
-    state.rateLimits = status.rateLimits;
-    renderQuotaUsage();
-  }
+  if (status.rateLimits || status.rateLimitsByModel) rememberRateLimits(status.rateLimits, status.rateLimitsByModel);
   await loadThreads();
   if (state.currentThreadId) await refreshCurrentThread();
   else await restoreThreadSelection();
@@ -2957,24 +3027,60 @@ function effectiveDefaultEffort() {
   return (state.currentThread && state.currentThread.effort) || state.defaultReasoningEffort || "";
 }
 
+function effectiveDefaultPermissionMode() {
+  const settings = state.currentThread && state.currentThread.runtimeSettings;
+  return normalizePermissionModeValue((settings && settings.permissionMode) || "");
+}
+
+function selectedPermissionModeForCurrentThread() {
+  if (!state.currentThreadId) return "";
+  return normalizePermissionModeValue(state.selectedPermissionModes[state.currentThreadId] || "");
+}
+
+function setSelectedPermissionModeForCurrentThread(value) {
+  if (!state.currentThreadId) return;
+  const next = normalizePermissionModeValue(value);
+  if (next && next !== effectiveDefaultPermissionMode()) {
+    state.selectedPermissionModes[state.currentThreadId] = next;
+  } else {
+    delete state.selectedPermissionModes[state.currentThreadId];
+  }
+  localStorage.setItem(STORAGE_PERMISSION_MODES, JSON.stringify(state.selectedPermissionModes));
+}
+
 function renderComposerSettings() {
   const modelSelect = $("modelSelect");
   const effortSelect = $("effortSelect");
-  if (!modelSelect || !effortSelect) return;
+  const permissionSelect = $("permissionSelect");
+  if (!modelSelect || !effortSelect || !permissionSelect) return;
   const defaultModel = effectiveDefaultModel();
   const defaultEffort = effectiveDefaultEffort();
+  const defaultPermission = effectiveDefaultPermissionMode();
+  let selectedPermission = selectedPermissionModeForCurrentThread();
+  if (selectedPermission && selectedPermission === defaultPermission) {
+    setSelectedPermissionModeForCurrentThread("");
+    selectedPermission = "";
+  }
   const modelValues = normalizeOptionList([state.selectedModel, ...state.modelOptions])
     .filter((value) => value !== defaultModel);
   const effortValues = normalizeOptionList([state.selectedEffort, ...state.reasoningEffortOptions])
     .filter((value) => value !== defaultEffort);
+  const permissionValues = normalizeOptionList([selectedPermission, ...state.permissionModeOptions.map(normalizePermissionModeValue)])
+    .filter((value) => value !== defaultPermission);
   modelSelect.innerHTML = `<option value="">${escapeHtml(defaultModel ? labelForModel(defaultModel) : "Default")}</option>`
     + modelValues.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(labelForModel(value))}</option>`).join("");
   effortSelect.innerHTML = `<option value="">${escapeHtml(defaultEffort ? labelForEffort(defaultEffort) : "Default")}</option>`
     + effortValues.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(labelForEffort(value))}</option>`).join("");
+  permissionSelect.innerHTML = `<option value="">${escapeHtml(defaultPermission ? labelForPermissionMode(defaultPermission) : "Perm")}</option>`
+    + permissionValues.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(labelForPermissionMode(value))}</option>`).join("");
   if (state.selectedModel && state.selectedModel !== defaultModel && modelValues.includes(state.selectedModel)) modelSelect.value = state.selectedModel;
   else modelSelect.value = "";
   if (state.selectedEffort && state.selectedEffort !== defaultEffort && effortValues.includes(state.selectedEffort)) effortSelect.value = state.selectedEffort;
   else effortSelect.value = "";
+  if (selectedPermission && selectedPermission !== defaultPermission && permissionValues.includes(selectedPermission)) permissionSelect.value = selectedPermission;
+  else permissionSelect.value = "";
+  permissionSelect.title = titleForPermissionMode(permissionSelect.value || defaultPermission);
+  renderQuotaUsage();
 }
 
 function updateComposerControls() {
@@ -2991,6 +3097,7 @@ function updateComposerControls() {
   $("fileInput").disabled = disabled;
   $("modelSelect").disabled = disabled;
   $("effortSelect").disabled = disabled;
+  $("permissionSelect").disabled = disabled;
   attachButton.classList.toggle("disabled", disabled);
   attachButton.setAttribute("aria-disabled", disabled ? "true" : "false");
   attachButton.tabIndex = disabled ? -1 : 0;
@@ -3027,6 +3134,7 @@ async function sendMessage(event) {
     if (state.activeTurnId) body.append("activeTurnId", state.activeTurnId);
     if ($("modelSelect").value) body.append("model", $("modelSelect").value);
     if ($("effortSelect").value) body.append("effort", $("effortSelect").value);
+    if ($("permissionSelect").value) body.append("permissionMode", $("permissionSelect").value);
     for (const item of state.pendingAttachments) {
       body.append("attachments", item.file, item.file.name || "upload");
     }
@@ -3061,24 +3169,24 @@ async function interruptActiveTurn() {
     .catch(showError);
 }
 
-async function answerServerRequest(requestId, payload) {
-  const key = requestId !== null && requestId !== undefined ? String(requestId) : "";
+async function answerApproval(requestId, decision) {
+  const key = String(requestId || "");
   const request = state.pendingApprovals.get(key);
   if (!request || request.status !== "waiting") return;
   request.status = "responding";
-  request.decision = payload && (payload.decision || payload.action) || "submitted";
-  markActivity(isUserInputRequest(request) ? "输入发送中" : "批准中");
+  request.decision = decision;
+  markActivity("批准中");
   renderCurrentThread();
   try {
     const result = await api(`/api/approvals/${encodeURIComponent(key)}`, {
       method: "POST",
-      body: JSON.stringify(payload || {}),
+      body: JSON.stringify({ decision }),
       timeoutMs: 20000,
     });
     if (result && result.request) state.pendingApprovals.set(key, result.request);
     $("connectionState").classList.remove("error");
-    $("connectionState").textContent = isUserInputRequest(request) ? "Response sent" : "Approval sent";
-    markActivity(isUserInputRequest(request) ? "输入已发送" : "批准发送");
+    $("connectionState").textContent = "Approval sent";
+    markActivity("批准发送");
     renderCurrentThread();
   } catch (err) {
     request.status = "waiting";
@@ -3086,30 +3194,6 @@ async function answerServerRequest(requestId, payload) {
     showError(err);
     renderCurrentThread();
   }
-}
-
-function answerApproval(requestId, decision) {
-  return answerServerRequest(requestId, { decision });
-}
-
-function serverRequestPayload(request, responseText, questionId) {
-  if (request && request.method === "mcpServer/elicitation/request") {
-    return { action: "accept", responseText };
-  }
-  return { responseText, questionId };
-}
-
-function declineServerRequest(requestId) {
-  const key = requestId !== null && requestId !== undefined ? String(requestId) : "";
-  const request = state.pendingApprovals.get(key);
-  if (!request) return Promise.resolve();
-  if (request.method === "mcpServer/elicitation/request") {
-    return answerServerRequest(key, { action: "decline" });
-  }
-  if (request.method === "item/tool/requestUserInput") {
-    return answerServerRequest(key, { answers: {} });
-  }
-  return answerApproval(key, "deny");
 }
 
 function wireUi() {
@@ -3145,30 +3229,8 @@ function wireUi() {
   }, { passive: true });
   $("conversation").addEventListener("click", (event) => {
     const button = event.target.closest("[data-approval-action]");
-    if (button) {
-      answerApproval(button.dataset.approvalId, button.dataset.approvalAction).catch(showError);
-      return;
-    }
-    const option = event.target.closest("[data-server-response-text]");
-    if (option) {
-      const requestId = option.dataset.serverRequestId;
-      const request = state.pendingApprovals.get(String(requestId || ""));
-      answerServerRequest(requestId, serverRequestPayload(request, option.dataset.serverResponseText || "", option.dataset.serverQuestionId || "answer")).catch(showError);
-      return;
-    }
-    const decline = event.target.closest("[data-server-request-decline]");
-    if (decline) {
-      declineServerRequest(decline.dataset.serverRequestId).catch(showError);
-    }
-  });
-  $("conversation").addEventListener("submit", (event) => {
-    const form = event.target.closest("[data-server-request-form]");
-    if (!form) return;
-    event.preventDefault();
-    const requestId = form.dataset.serverRequestId;
-    const request = state.pendingApprovals.get(String(requestId || ""));
-    const responseText = new FormData(form).get("responseText") || "";
-    answerServerRequest(requestId, serverRequestPayload(request, String(responseText), form.dataset.serverQuestionId || "answer")).catch(showError);
+    if (!button) return;
+    answerApproval(button.dataset.approvalId, button.dataset.approvalAction).catch(showError);
   });
   $("messageInput").addEventListener("input", (event) => {
     autoSizeMessageInput(event.target);
@@ -3184,11 +3246,16 @@ function wireUi() {
     state.selectedModel = event.target.value;
     if (state.selectedModel) localStorage.setItem(STORAGE_MODEL, state.selectedModel);
     else localStorage.removeItem(STORAGE_MODEL);
+    renderQuotaUsage();
   });
   $("effortSelect").addEventListener("change", (event) => {
     state.selectedEffort = event.target.value;
     if (state.selectedEffort) localStorage.setItem(STORAGE_EFFORT, state.selectedEffort);
     else localStorage.removeItem(STORAGE_EFFORT);
+  });
+  $("permissionSelect").addEventListener("change", (event) => {
+    setSelectedPermissionModeForCurrentThread(event.target.value);
+    event.target.title = titleForPermissionMode(event.target.value || effectiveDefaultPermissionMode());
   });
   $("messageInput").addEventListener("paste", (event) => {
     const files = Array.from((event.clipboardData && event.clipboardData.files) || []);
@@ -3252,18 +3319,18 @@ function wireUi() {
 
 async function start() {
   wireUi();
-  registerServiceWorker();
   const config = await fetch("/api/public-config").then((res) => res.json());
   state.maxUploadBytes = Number(config.maxUploadBytes || state.maxUploadBytes);
   state.maxUploadFiles = Number(config.maxUploadFiles || state.maxUploadFiles);
   state.modelOptions = normalizeOptionList(config.modelOptions || []);
   state.reasoningEffortOptions = normalizeOptionList(config.reasoningEffortOptions || []);
+  state.permissionModeOptions = normalizeOptionList((config.permissionModeOptions || state.permissionModeOptions)
+    .map(normalizePermissionModeValue));
   state.defaultModel = String(config.defaultModel || "");
   state.defaultReasoningEffort = String(config.defaultReasoningEffort || "");
-  state.rateLimits = config.rateLimits || null;
   state.pushServerSupported = Boolean(config.push && config.push.supported);
   renderComposerSettings();
-  renderQuotaUsage();
+  rememberRateLimits(config.rateLimits || null, config.rateLimitsByModel || null);
   updatePushButton();
   if (config.authRequired && !state.key) {
     showLogin();
@@ -3273,24 +3340,6 @@ async function start() {
   await bootstrap().catch((err) => {
     showError(err);
     if (/unauthorized/i.test(err.message)) showLogin();
-  });
-}
-
-function registerServiceWorker() {
-  if (state.serviceWorkerRegistration) return Promise.resolve(state.serviceWorkerRegistration);
-  if (!("serviceWorker" in navigator) || !window.isSecureContext) return Promise.resolve(null);
-  const register = () => navigator.serviceWorker.register("/sw.js")
-    .then((registration) => {
-      state.serviceWorkerRegistration = registration;
-      return registration;
-    })
-    .catch((err) => {
-      console.debug("Service worker registration failed", err);
-      return null;
-    });
-  if (document.readyState === "complete") return register();
-  return new Promise((resolve) => {
-    window.addEventListener("load", () => register().then(resolve), { once: true });
   });
 }
 

@@ -35,7 +35,7 @@ If Codex CLI is not authenticated, authenticate it first using the normal Codex 
 ## Clone And Validate
 
 ```bash
-git clone https://github.com/pentiumxp/codex-mobile-web-public.git
+git clone https://github.com/pentiumxp/codex-mobile-web.git
 cd codex-mobile-web
 npm run check
 ```
@@ -81,6 +81,57 @@ The startup script prefers this local runtime binary when it exists:
 ```
 
 If that file does not exist, it falls back to `codex` from `PATH`.
+
+## Windows Background Startup
+
+To run Codex Mobile Web without a visible console window and keep it running after the interactive user signs out, install the included background Scheduled Task:
+
+```powershell
+cd C:\path\to\codex-mobile-web
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-codex-mobile-web-startup.ps1 -RunAsSystem -RunNow
+```
+
+Run the install command from an elevated PowerShell session. This registers a task named `Codex Mobile Web` with an `AtStartup` trigger under `LocalSystem`. It does not store your Windows password, does not require the interactive desktop session to stay logged in, and does not create a visible console window.
+
+The task still uses your normal Codex data paths by passing the installing user's profile path into the launcher:
+
+```text
+USERPROFILE=<your Windows user profile>
+CODEX_HOME=<your Windows user profile>\.codex
+CODEX_MOBILE_RUNTIME_DIR=<your Windows user profile>\.codex-mobile-web
+```
+
+The task runs `wscript.exe` against `start-codex-mobile-web-hidden.vbs`, which then starts PowerShell with window style `Hidden` and waits for it. The PowerShell wrapper starts a standalone mux endpoint when shared-stream mode is required, then starts Mobile Web.
+
+```text
+wscript.exe start-codex-mobile-web-hidden.vbs
+```
+
+By default, the startup task passes `-EnsureStandaloneMux -RequireSharedAppServer`, so Mobile Web connects to a single mux-backed app-server endpoint instead of silently creating a separate managed app-server stream. Codex Desktop can later attach to the existing mux endpoint when it is launched through `start-codex-desktop-shared.ps1`.
+
+If you intentionally want standalone fallback behavior without a required mux endpoint, install with:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-codex-mobile-web-startup.ps1 -AllowManagedFallback -RunNow
+```
+
+If you only want the older interactive behavior that starts after the user logs in and stops when that user signs out, install with:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-codex-mobile-web-startup.ps1 -InteractiveLogon -RunNow
+```
+
+The windowless launcher appends runtime logs to:
+
+```text
+%USERPROFILE%\.codex-mobile-web\codex-mobile-web.startup.log
+```
+
+To remove the Windows login startup task:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\uninstall-codex-mobile-web-startup.ps1
+```
 
 ## macOS Standalone Start
 
@@ -261,16 +312,16 @@ Behavior:
 ## Interface Notes
 
 - Home view shows recent workspaces and recent threads.
-- The top-right timer shows current turn elapsed time as `本轮 HH:MM:SS`.
+- The top-right timer shows current turn elapsed time as `鏈疆 HH:MM:SS`.
 - The timer is red while a turn is active and muted after completion.
-- During an active turn, the timer may append a compact activity label such as `思考`, `输出`, `命令`, `文件`, `工具`, `搜索`, `同步`, or `等待批准`.
-- The timer uses a fixed elapsed-time segment, so activity label length changes do not move the `本轮 HH:MM:SS` text.
-- After the latest turn finishes, the timer switches to muted styling and shows `已结束` instead of any in-progress activity label.
+- During an active turn, the timer may append a compact activity label such as `鎬濊€僠, `杈撳嚭`, `鍛戒护`, `鏂囦欢`, `宸ュ叿`, `鎼滅储`, `鍚屾`, or `绛夊緟鎵瑰噯`.
+- The timer uses a fixed elapsed-time segment, so activity label length changes do not move the `鏈疆 HH:MM:SS` text.
+- After the latest turn finishes, the timer switches to muted styling and shows `宸茬粨鏉焋 instead of any in-progress activity label.
 - Live reasoning is not rendered as conversation rows.
 - Command/file/tool activity appears as compact operation cards.
 - Consecutive command/file operation updates show only the latest operation card unless normal visible content appears between two operations.
-- The composer supports per-message model and reasoning effort selectors.
-- The composer shows 5-hour and weekly quota remaining when app-server sends rate-limit updates.
+- The composer supports per-message model, reasoning effort, and thread permission selectors.
+- The composer shows 5-hour and weekly quota remaining when app-server sends rate-limit updates. Rate-limit updates are cached by model, so the visible quota follows the selected/current model instead of the last quota event from another model.
 - The send button follows Codex Desktop behavior: empty composer during an active turn shows `Stop`; typed text or attachments switch it back to `Send`.
 - The message input uses a `contenteditable` textbox instead of a native `textarea` to reduce the extra iOS browser input accessory toolbar. Enter sends; Shift+Enter inserts a newline.
 - The web app avoids programmatic composer focus after send, thread switch, refresh, and mobile foreground recovery. Mobile keyboards should open only after the user explicitly taps the message input.
@@ -324,6 +375,7 @@ This section summarizes the current integration behavior for someone cloning or 
 - The browser preserves `mux-user-*` user-message echo items during thread refresh merges, because these synthetic visible inputs may not exist in the durable thread snapshot returned by app-server.
 - For new turns, Mobile Web reads the thread's last rollout `turn_context` plus `state_5.sqlite` metadata and forwards the inherited approval policy, sandbox policy, reasoning summary, and configured verbosity where the app-server protocol supports it. This keeps Mobile Web turns aligned with the thread permissions that Desktop is using.
 - Full-access threads are normalized for Mobile Web new turns: if the inherited sandbox is `danger-full-access`, or the permission profile grants root write access, Mobile Web sends `approvalPolicy: "never"` when the persisted approval mode is missing or still `on-request`. This matches the user-facing "full access" expectation and avoids redundant command approval cards on new turns.
+- The composer permission selector displays the current thread permission after the reasoning selector and before quota, using the same option names as Codex Desktop: `默认权限`, `自动审查`, `完全访问权限`, and `自定义 (config.toml)`. `完全访问权限` sends `dangerFullAccess` plus `approvalPolicy: "never"`; `默认权限` and `自动审查` use workspace-write with approval prompts; `自定义 (config.toml)` applies the local `sandbox_mode` / approval setting from `%USERPROFILE%\.codex\config.toml` when present.
 - The older mux-local `mux/userMessage` echo is still retained as a fallback for app-server builds that do not support `turn/steer`.
 
 ### Mobile UI Stability
@@ -345,6 +397,7 @@ Use this table after pulling updates:
 | `server.js` | Restart Mobile Web. |
 | `codex-app-server-mux.js` | Fully quit Desktop and launch once with the force-restart mux option. |
 | `start-codex-desktop-shared.ps1` or shim files | Fully quit Desktop, then relaunch through the updated shared launcher. |
+| Windows startup scripts | Re-run `install-codex-mobile-web-startup.ps1` so the Scheduled Task points at the current launcher. |
 | macOS `.sh` launcher files | Rerun `npm run check:macos`, then relaunch through the updated script. |
 
 Windows mux replacement:
@@ -620,14 +673,6 @@ Then open:
 https://<tailscale-host>.ts.net:8443/
 ```
 
-Other HTTPS options:
-
-- Cloudflare Tunnel.
-- A public domain with Caddy, Nginx, Traefik, or another reverse proxy that obtains a Let's Encrypt certificate.
-- Tailscale Serve on a tailnet-only host name.
-
-Self-signed certificates are not recommended for iOS because each device must explicitly trust the certificate before Web Push can work.
-
 After login, use the `Enable notifications` button in the Mobile Web menu/top controls. After the subscription is created, the same button becomes `Send test notification`.
 
 Notification behavior:
@@ -635,7 +680,7 @@ Notification behavior:
 - Test notification title: `Codex Mobile Web`.
 - Turn-completed notification title: `Codex Mobile Web`.
 - Turn-completed notification body: `<thread-title> · This turn 已结束 · <local time>`.
-- Clicking a turn-completed notification opens Mobile Web and navigates to the relevant thread when the thread id is available.
+- Clicking a notification opens Mobile Web and navigates to the relevant thread when the thread id is available.
 
 VAPID details:
 
@@ -751,4 +796,4 @@ npm run check
    - On Windows, use `start-codex-desktop-shared.ps1` after fully quitting Codex Desktop.
    - On macOS, use `start-codex-desktop-shared-macos.sh` and state that the Desktop bridge is not verified until the checklist passes on a real Mac.
 
-Record durable setup facts in `.agent-context/HANDOFF.md` if this repo is being modified.
+Record durable setup facts in local project notes if this repo is being modified across multiple sessions.

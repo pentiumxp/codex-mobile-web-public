@@ -234,28 +234,30 @@ html.visual-recovering body::before {
 }
 
 .push-button {
-  min-height: 34px;
+  min-height: 36px;
+  width: 100%;
   padding: 8px 10px;
-  color: var(--muted);
-  background: rgba(13, 15, 16, 0.58);
+  color: var(--text);
+  background: rgba(13, 15, 16, 0.78);
   border: 1px solid var(--line-soft);
   border-radius: 8px;
   font-size: 12px;
-  text-align: left;
+  font-weight: 650;
+  text-align: center;
 }
 
 .push-button.ready {
-  color: #bde8d5;
+  color: var(--accent-strong);
   border-color: rgba(122, 199, 167, 0.52);
 }
 
 .push-button.error {
-  color: #ffb4ac;
-  border-color: rgba(248, 128, 120, 0.5);
+  color: var(--danger);
+  border-color: rgba(241, 135, 125, 0.48);
 }
 
 .push-button:disabled {
-  opacity: 0.7;
+  opacity: 0.55;
 }
 
 .thread-list {
@@ -694,89 +696,27 @@ html.visual-recovering body::before {
 
 .approval-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  padding: 0 12px 12px;
-}
-
-.approval-actions.request-actions {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  padding: 0;
-}
-
-.approval-button {
-  min-height: 40px;
-  padding: 0 10px;
-  border: 1px solid var(--line-soft);
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.approval-button.allow {
-  color: #c7f1de;
-  background: rgba(122, 199, 167, 0.12);
-  border-color: rgba(122, 199, 167, 0.42);
-}
-
-.approval-button.deny {
-  color: #ffd2cf;
-  background: rgba(247, 132, 124, 0.12);
-  border-color: rgba(247, 132, 124, 0.42);
-}
-
-.approval-response-form {
-  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 10px;
   padding: 0 12px 12px;
 }
 
-.approval-response-input {
-  width: 100%;
-  min-height: 92px;
-  resize: vertical;
-  padding: 11px;
-  color: var(--text);
-  background: var(--code);
-  border: 1px solid var(--line-soft);
-  border-radius: 8px;
-  outline: none;
-  line-height: 1.45;
-}
-
-.approval-response-input:focus {
-  border-color: rgba(122, 199, 167, 0.64);
-  box-shadow: 0 0 0 3px rgba(122, 199, 167, 0.12);
-}
-
-.approval-option-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
-  gap: 8px;
-}
-
-.approval-option {
-  width: 100%;
+.approval-button {
   min-height: 44px;
-  display: grid;
-  gap: 3px;
-  padding: 10px 11px;
-  color: var(--text);
-  text-align: left;
-  background: rgba(13, 15, 16, 0.56);
-  border: 1px solid var(--line-soft);
+  border: 0;
   border-radius: 8px;
-}
-
-.approval-option span {
   font-weight: 750;
 }
 
-.approval-option small {
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.35;
+.approval-button.allow {
+  color: #09100d;
+  background: var(--accent-strong);
+}
+
+.approval-button.deny {
+  grid-column: 1 / -1;
+  color: #fff1ef;
+  background: var(--danger);
 }
 
 .item {
@@ -1175,7 +1115,7 @@ html.visual-recovering body::before {
 
 .composer-controls {
   display: grid;
-  grid-template-columns: minmax(92px, 1fr) minmax(86px, 0.95fr) max-content;
+  grid-template-columns: minmax(60px, 0.68fr) minmax(54px, 0.56fr) minmax(84px, 0.9fr) max-content;
   align-items: stretch;
   gap: 6px;
 }
@@ -1197,7 +1137,7 @@ html.visual-recovering body::before {
 .composer-select {
   width: 100%;
   min-height: 28px;
-  padding: 4px 7px;
+  padding: 4px 6px;
   color: var(--text);
   background: rgba(13, 15, 16, 0.78);
   border: 1px solid var(--line-soft);
@@ -1214,14 +1154,19 @@ html.visual-recovering body::before {
   opacity: 0.55;
 }
 
+.permission-select {
+  padding-left: 6px;
+  padding-right: 4px;
+}
+
 .quota-usage {
-  min-width: 54px;
+  min-width: 50px;
   min-height: 28px;
   justify-self: end;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 4px 8px;
+  padding: 4px 7px;
   color: #d9e4df;
   background: rgba(13, 15, 16, 0.78);
   border: 1px solid var(--line-soft);
@@ -1441,7 +1386,8 @@ html.visual-recovering body::before {
 
   .composer-controls {
     grid-area: controls;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 0.92fr) max-content;
+    grid-template-columns: minmax(48px, 0.55fr) minmax(44px, 0.48fr) minmax(76px, 0.82fr) max-content;
+    gap: 5px;
   }
 
   .composer-icon {

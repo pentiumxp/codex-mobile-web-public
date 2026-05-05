@@ -54,6 +54,12 @@ const REASONING_EFFORT_OPTIONS = optionListFromEnv("CODEX_MOBILE_REASONING_EFFOR
   "high",
   "xhigh",
 ]);
+const PERMISSION_MODE_OPTIONS = optionListFromEnv("CODEX_MOBILE_PERMISSION_MODE_OPTIONS", [
+  "default",
+  "auto",
+  "full",
+  "custom",
+]);
 const DEFAULT_RPC_TIMEOUT_MS = 30000;
 const READ_RPC_TIMEOUT_MS = 12000;
 const THREAD_DETAIL_RPC_TIMEOUT_MS = Math.min(6000, READ_RPC_TIMEOUT_MS);
@@ -61,6 +67,7 @@ const MUTATION_RPC_TIMEOUT_MS = 120000;
 const MESSAGE_DEDUPE_WINDOW_MS = Math.max(5_000, Number(process.env.CODEX_MOBILE_MESSAGE_DEDUPE_WINDOW_MS || "90000"));
 const MESSAGE_DEDUPE_MAX = Math.max(20, Number(process.env.CODEX_MOBILE_MESSAGE_DEDUPE_MAX || "300"));
 const MAX_ROLLOUT_CONTEXT_BYTES = Math.max(256 * 1024, Number(process.env.CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES || String(4 * 1024 * 1024)));
+const MAX_RUNTIME_CONTEXT_SCAN_BYTES = Math.max(MAX_ROLLOUT_CONTEXT_BYTES, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_SCAN_BYTES || String(512 * 1024 * 1024)));
 const SAFE_RETRY_METHODS = new Set(["initialize", "thread/list", "thread/read", "thread/turns/list"]);
 const IMAGE_EXTENSIONS = new Set([".avif", ".bmp", ".gif", ".heic", ".heif", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"]);
 const CODEX_CONFIG_DEFAULTS = readCodexConfigDefaults();
@@ -69,6 +76,7 @@ const PROCESS_STARTED_AT_MS = Date.now();
 let clients = new Set();
 let clientHeartbeats = new WeakMap();
 let latestRateLimits = null;
+const latestRateLimitsByModel = new Map();
 let pushVapidKeys = null;
 let pushSubscriptionsCache = null;
 const recentMessageSubmissions = new Map();
@@ -92,14 +100,6 @@ const ACTIONABLE_APPROVAL_METHODS = new Set([
   "execCommandApproval",
   "applyPatchApproval",
 ]);
-const ACTIONABLE_USER_INPUT_METHODS = new Set([
-  "item/tool/requestUserInput",
-  "mcpServer/elicitation/request",
-]);
-const ACTIONABLE_SERVER_REQUEST_METHODS = new Set([
-  ...ACTIONABLE_APPROVAL_METHODS,
-  ...ACTIONABLE_USER_INPUT_METHODS,
-]);
 
 function optionListFromEnv(name, fallback) {
   const values = String(process.env[name] || "")
@@ -117,14 +117,18 @@ function readCodexConfigDefaults() {
     const effort = /^\s*model_reasoning_effort\s*=\s*"([^"]+)"/m.exec(text);
     const summary = /^\s*model_reasoning_summary\s*=\s*"([^"]+)"/m.exec(text);
     const verbosity = /^\s*model_verbosity\s*=\s*"([^"]+)"/m.exec(text);
+    const sandboxMode = /^\s*sandbox_mode\s*=\s*"([^"]+)"/m.exec(text);
+    const approvalPolicy = /^\s*(approval_policy|approval_mode)\s*=\s*"([^"]+)"/m.exec(text);
     return {
       model: model ? model[1] : "",
       reasoningEffort: effort ? effort[1] : "",
       reasoningSummary: summary ? summary[1] : "",
       modelVerbosity: verbosity ? verbosity[1] : "",
+      sandboxMode: sandboxMode ? sandboxMode[1] : "",
+      approvalPolicy: approvalPolicy ? approvalPolicy[2] : "",
     };
   } catch (_) {
-    return { model: "", reasoningEffort: "", reasoningSummary: "", modelVerbosity: "" };
+    return { model: "", reasoningEffort: "", reasoningSummary: "", modelVerbosity: "", sandboxMode: "", approvalPolicy: "" };
   }
 }
 
@@ -155,278 +159,6 @@ function loadAuthKey() {
   fs.mkdirSync(path.dirname(AUTH_KEY_FILE), { recursive: true });
   fs.writeFileSync(AUTH_KEY_FILE, `${key}\n`, { encoding: "utf8", mode: 0o600 });
   return key;
-}
-
-function readJsonFile(file, fallback) {
-  try {
-    return JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch (_) {
-    return fallback;
-  }
-}
-
-function writeRuntimeJson(file, value) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-}
-
-function normalizePushSubject(value) {
-  const subject = String(value || "").trim();
-  return subject || DEFAULT_PUSH_SUBJECT;
-}
-
-function isLocalhostPushSubject(value) {
-  const subject = String(value || "");
-  if (/\blocalhost\b|127\.0\.0\.1|\[::1\]/i.test(subject)) return true;
-  try {
-    const url = new URL(subject);
-    return url.hostname === "localhost"
-      || url.hostname === "127.0.0.1"
-      || url.hostname === "::1"
-      || url.hostname.endsWith(".localhost");
-  } catch (_) {
-    return false;
-  }
-}
-
-function storedPushSubject(existingSubject) {
-  const existing = normalizePushSubject(existingSubject);
-  if (process.env.CODEX_MOBILE_PUSH_SUBJECT) return PUSH_SUBJECT;
-  return isLocalhostPushSubject(existing) ? PUSH_SUBJECT : existing;
-}
-
-function loadPushVapidKeys() {
-  if (pushVapidKeys) return pushVapidKeys;
-  const existing = readJsonFile(PUSH_VAPID_FILE, null);
-  if (existing && existing.publicKey && existing.privateKey) {
-    const subject = storedPushSubject(existing.subject);
-    pushVapidKeys = {
-      publicKey: String(existing.publicKey),
-      privateKey: String(existing.privateKey),
-      subject,
-    };
-    if (subject !== existing.subject) {
-      writeRuntimeJson(PUSH_VAPID_FILE, Object.assign({}, existing, {
-        subject,
-        updatedAt: new Date().toISOString(),
-      }));
-    }
-  } else {
-    const generated = webPush.generateVAPIDKeys();
-    pushVapidKeys = {
-      publicKey: generated.publicKey,
-      privateKey: generated.privateKey,
-      subject: PUSH_SUBJECT,
-      createdAt: new Date().toISOString(),
-    };
-    writeRuntimeJson(PUSH_VAPID_FILE, pushVapidKeys);
-  }
-  webPush.setVapidDetails(pushVapidKeys.subject || PUSH_SUBJECT, pushVapidKeys.publicKey, pushVapidKeys.privateKey);
-  return pushVapidKeys;
-}
-
-function loadPushSubscriptions() {
-  if (pushSubscriptionsCache) return pushSubscriptionsCache;
-  const raw = readJsonFile(PUSH_SUBSCRIPTIONS_FILE, []);
-  pushSubscriptionsCache = Array.isArray(raw) ? raw.filter((entry) => entry && entry.endpoint) : [];
-  return pushSubscriptionsCache;
-}
-
-function savePushSubscriptions(subscriptions = loadPushSubscriptions()) {
-  pushSubscriptionsCache = subscriptions.filter((entry) => entry && entry.endpoint);
-  writeRuntimeJson(PUSH_SUBSCRIPTIONS_FILE, pushSubscriptionsCache);
-}
-
-function normalizePushSubscription(value) {
-  const sub = value && value.subscription ? value.subscription : value;
-  if (!sub || typeof sub !== "object") throw new Error("Push subscription is required");
-  if (!sub.endpoint || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) {
-    throw new Error("Push subscription is incomplete");
-  }
-  return {
-    endpoint: String(sub.endpoint),
-    expirationTime: sub.expirationTime || null,
-    keys: {
-      p256dh: String(sub.keys.p256dh),
-      auth: String(sub.keys.auth),
-    },
-  };
-}
-
-function pushSubscriptionPublicStatus() {
-  return {
-    supported: true,
-    subscriptionCount: loadPushSubscriptions().length,
-  };
-}
-
-function prunePushSentTurns(now = Date.now()) {
-  const maxAgeMs = 24 * 60 * 60 * 1000;
-  for (const [key, sentAt] of pushSentTurns) {
-    if (now - sentAt > maxAgeMs) pushSentTurns.delete(key);
-  }
-}
-
-function pushTurnId(params) {
-  return String((params && params.turn && params.turn.id) || (params && params.turnId) || "");
-}
-
-function timestampToMs(value) {
-  if (value == null || value === "") return 0;
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value > 1_000_000_000_000 ? value : value * 1000;
-  }
-  if (/^\d+(?:\.\d+)?$/.test(String(value))) {
-    const numeric = Number(value);
-    if (Number.isFinite(numeric)) return numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
-  }
-  const parsed = Date.parse(String(value));
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function turnTimestampMs(params, field) {
-  return timestampToMs((params && params.turn && params.turn[field]) || (params && params[field]));
-}
-
-function isOldPushTurnEvent(params, fields) {
-  for (const field of fields) {
-    const timestamp = turnTimestampMs(params, field);
-    if (timestamp) return timestamp < PROCESS_STARTED_AT_MS - 120000;
-  }
-  return false;
-}
-
-function notificationUrlForThread(threadId) {
-  const id = String(threadId || "");
-  return id ? `/?thread=${encodeURIComponent(id)}` : "/";
-}
-
-function compactOneLine(value, maxChars = 80) {
-  const text = String(value || "").replace(/\s+/g, " ").trim();
-  if (text.length <= maxChars) return text;
-  return `${text.slice(0, Math.max(1, maxChars - 3))}...`;
-}
-
-function shortIdentifier(value) {
-  const text = String(value || "").trim();
-  if (text.length <= 16) return text;
-  return `${text.slice(0, 8)}...${text.slice(-4)}`;
-}
-
-function pushTimestamp(ms = Date.now()) {
-  const time = Number.isFinite(ms) && ms > 0 ? ms : Date.now();
-  try {
-    return new Intl.DateTimeFormat("zh-CN", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    }).format(new Date(time)).replace(/\//g, "-");
-  } catch (_) {
-    return new Date(time).toISOString();
-  }
-}
-
-function pushThreadTitle(params) {
-  const candidates = [
-    params && params.threadName,
-    params && params.thread && params.thread.name,
-    params && params.thread && params.thread.title,
-    params && params.thread && params.thread.preview,
-  ];
-  for (const candidate of candidates) {
-    const text = compactOneLine(candidate);
-    if (text) return text;
-  }
-  const summary = readStateDbThread(params && params.threadId);
-  return compactOneLine((summary && (summary.name || summary.preview)) || shortIdentifier(params && params.threadId) || "Codex Mobile Web");
-}
-
-function webPushFailureDetails(err) {
-  const statusCode = Number(err && err.statusCode) || null;
-  const body = String((err && err.body) || "").trim();
-  let reason = "";
-  if (body) {
-    try {
-      const parsed = JSON.parse(body);
-      reason = String(parsed.reason || parsed.error || parsed.message || "").trim();
-    } catch (_) {
-      reason = body.slice(0, 160);
-    }
-  }
-  return {
-    statusCode,
-    reason: reason || String((err && err.message) || err || "Web Push send failed"),
-  };
-}
-
-async function sendWebPushToAll(payload) {
-  loadPushVapidKeys();
-  const subscriptions = loadPushSubscriptions();
-  if (!subscriptions.length) return { sent: 0, failed: 0, removed: 0 };
-  let sent = 0;
-  let failed = 0;
-  let lastError = null;
-  const dead = new Set();
-  await Promise.all(subscriptions.map(async (subscription) => {
-    try {
-      await webPush.sendNotification(subscription, JSON.stringify(payload), {
-        TTL: PUSH_TTL_SECONDS,
-        urgency: "normal",
-      });
-      sent += 1;
-    } catch (err) {
-      failed += 1;
-      lastError = webPushFailureDetails(err);
-      const statusCode = Number(err && err.statusCode);
-      if (statusCode === 404 || statusCode === 410) dead.add(subscription.endpoint);
-      else console.error(`[web push] send failed: ${lastError.statusCode || ""} ${lastError.reason}`);
-    }
-  }));
-  if (dead.size) {
-    const kept = subscriptions.filter((subscription) => !dead.has(subscription.endpoint));
-    savePushSubscriptions(kept);
-  }
-  return Object.assign({ sent, failed, removed: dead.size }, lastError ? { lastError } : {});
-}
-
-function maybeSendTurnCompletedPush(method, params) {
-  if (method === "turn/started") {
-    const id = pushTurnId(params);
-    if (isOldPushTurnEvent(params, ["startedAt", "createdAt"])) return;
-    if (id) pushObservedTurns.add(id);
-    return;
-  }
-  if (method !== "turn/completed") return;
-  const turnId = pushTurnId(params);
-  if (!turnId || !pushObservedTurns.has(turnId)) return;
-  if (isOldPushTurnEvent(params, ["completedAt", "updatedAt"])) return;
-  pushObservedTurns.delete(turnId);
-  prunePushSentTurns();
-  const key = `${params.threadId || ""}:${turnId}`;
-  if (pushSentTurns.has(key)) return;
-  pushSentTurns.set(key, Date.now());
-  const completedAt = turnTimestampMs(params, "completedAt") || Date.now();
-  const threadTitle = pushThreadTitle(params);
-  const threadMark = shortIdentifier(params.threadId || turnId);
-  const payload = {
-    title: "Codex Mobile Web",
-    body: `${threadTitle || threadMark} · This turn 已结束 · ${pushTimestamp(completedAt)}`,
-    tag: `codex-turn-${params.threadId || turnId}`,
-    data: {
-      url: notificationUrlForThread(params.threadId),
-      threadId: params.threadId || "",
-      turnId,
-      threadTitle,
-      completedAt,
-    },
-  };
-  sendWebPushToAll(payload).catch((err) => {
-    console.error(`[web push] turn completed notification failed: ${err.message || String(err)}`);
-  });
 }
 
 function timingSafeEquals(a, b) {
@@ -727,6 +459,22 @@ function normalizeEnumValue(value, allowed) {
   return allowed.has(text) ? text : "";
 }
 
+function normalizePermissionModeValue(value) {
+  const text = String(value || "").trim().toLowerCase();
+  const aliases = {
+    "full-access": "full",
+    "workspace-write": "auto",
+    "read-only": "auto",
+    "auto-review": "auto",
+    "auto-reviewing": "auto",
+    config: "custom",
+    "config.toml": "custom",
+    "custom-config": "custom",
+  };
+  const normalized = aliases[text] || text;
+  return PERMISSION_MODE_OPTIONS.includes(normalized) ? normalized : "";
+}
+
 function normalizeSandboxPolicyType(type) {
   const text = String(type || "").trim();
   return {
@@ -816,6 +564,105 @@ function isFullAccessRuntime(sandboxPolicy, permissionProfile) {
     || isRootWritePermissionProfile(permissionProfile);
 }
 
+function permissionModeFromRuntimeSettings(settings) {
+  if (!settings) return "";
+  const sandboxType = normalizeSandboxPolicyType(settings.sandboxPolicy && settings.sandboxPolicy.type);
+  if (sandboxType === "dangerFullAccess" || isRootWritePermissionProfile(settings.permissionProfile)) return "full";
+  if (sandboxType === "externalSandbox" || settings.permissionProfile) return "custom";
+  if (sandboxType === "workspaceWrite" || sandboxType === "readOnly") return "auto";
+  return "default";
+}
+
+function publicRuntimeSettings(settings) {
+  if (!settings) return null;
+  const sandboxType = normalizeSandboxPolicyType(settings.sandboxPolicy && settings.sandboxPolicy.type);
+  return Object.fromEntries(Object.entries({
+    permissionMode: permissionModeFromRuntimeSettings(settings),
+    approvalPolicy: settings.approvalPolicy || null,
+    sandboxPolicyType: sandboxType || null,
+    reasoningSummary: settings.reasoningSummary || null,
+    modelVerbosity: settings.modelVerbosity || null,
+  }).filter(([, value]) => value != null && value !== ""));
+}
+
+function workspaceWriteSandboxPolicy(cwd, inheritedPolicy) {
+  const inherited = normalizeSandboxPolicyType(inheritedPolicy && inheritedPolicy.type) === "workspaceWrite"
+    ? inheritedPolicy
+    : {};
+  const writableRoots = Array.isArray(inherited.writableRoots) && inherited.writableRoots.length
+    ? inherited.writableRoots
+    : (cwd ? [cwd] : []);
+  return {
+    type: "workspaceWrite",
+    writableRoots,
+    networkAccess: Boolean(inherited.networkAccess),
+    excludeTmpdirEnvVar: Boolean(inherited.excludeTmpdirEnvVar),
+    excludeSlashTmp: Boolean(inherited.excludeSlashTmp),
+  };
+}
+
+function readOnlySandboxPolicy(inheritedPolicy) {
+  const inherited = normalizeSandboxPolicyType(inheritedPolicy && inheritedPolicy.type) === "readOnly"
+    ? inheritedPolicy
+    : {};
+  return {
+    type: "readOnly",
+    networkAccess: Boolean(inherited.networkAccess),
+  };
+}
+
+function applyPermissionModeOverride(settings, mode, cwd) {
+  const normalized = normalizePermissionModeValue(mode);
+  if (!normalized) return settings;
+  const next = Object.assign({}, settings || {});
+  if (normalized === "default") {
+    next.approvalPolicy = "on-request";
+    next.sandboxPolicy = workspaceWriteSandboxPolicy(cwd, next.sandboxPolicy);
+    next.sandboxMode = "workspace-write";
+    next.permissionProfile = null;
+    return next;
+  }
+  if (normalized === "auto") {
+    next.approvalPolicy = "on-request";
+    next.sandboxPolicy = workspaceWriteSandboxPolicy(cwd, next.sandboxPolicy);
+    next.sandboxMode = "workspace-write";
+    next.permissionProfile = null;
+    return next;
+  }
+  if (normalized === "full") {
+    next.approvalPolicy = "never";
+    next.sandboxPolicy = { type: "dangerFullAccess" };
+    next.sandboxMode = "danger-full-access";
+    next.permissionProfile = null;
+    return next;
+  }
+  if (normalized === "custom") {
+    const sandboxType = normalizeSandboxPolicyType(CODEX_CONFIG_DEFAULTS.sandboxMode);
+    const approvalPolicy = normalizeEnumValue(
+      CODEX_CONFIG_DEFAULTS.approvalPolicy,
+      new Set(["untrusted", "on-request", "on-failure", "never"]),
+    );
+    if (sandboxType === "dangerFullAccess") {
+      next.approvalPolicy = approvalPolicy || "never";
+      next.sandboxPolicy = { type: "dangerFullAccess" };
+      next.sandboxMode = "danger-full-access";
+      next.permissionProfile = null;
+    } else if (sandboxType === "readOnly") {
+      next.approvalPolicy = approvalPolicy || "on-request";
+      next.sandboxPolicy = readOnlySandboxPolicy(next.sandboxPolicy);
+      next.sandboxMode = "read-only";
+      next.permissionProfile = null;
+    } else if (sandboxType === "workspaceWrite") {
+      next.approvalPolicy = approvalPolicy || "on-request";
+      next.sandboxPolicy = workspaceWriteSandboxPolicy(cwd, next.sandboxPolicy);
+      next.sandboxMode = "workspace-write";
+      next.permissionProfile = null;
+    }
+    return next;
+  }
+  return settings;
+}
+
 function readRolloutTail(rolloutPath) {
   if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) return "";
   let fd = null;
@@ -840,20 +687,53 @@ function readRolloutTail(rolloutPath) {
 
 function readLatestTurnContext(thread) {
   const rolloutPath = thread && (thread.path || thread.rolloutPath || thread.rollout_path);
-  const text = readRolloutTail(rolloutPath);
-  if (!text) return null;
-  const lines = text.split(/\r?\n/).filter(Boolean);
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
-    const entry = parseJsonLine(lines[index]);
-    if (entry && entry.type === "turn_context" && entry.payload && typeof entry.payload === "object") {
-      return entry.payload;
+  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) return null;
+  let fd = null;
+  try {
+    const stat = fs.statSync(rolloutPath);
+    fd = fs.openSync(rolloutPath, "r");
+    const chunkSize = 1024 * 1024;
+    let position = stat.size;
+    let scanned = 0;
+    let carry = "";
+    while (position > 0 && scanned < MAX_RUNTIME_CONTEXT_SCAN_BYTES) {
+      const length = Math.min(chunkSize, position, MAX_RUNTIME_CONTEXT_SCAN_BYTES - scanned);
+      position -= length;
+      scanned += length;
+      const buffer = Buffer.alloc(length);
+      fs.readSync(fd, buffer, 0, length, position);
+      const text = buffer.toString("utf8") + carry;
+      const lines = text.split(/\r?\n/);
+      carry = lines.shift() || "";
+      for (let index = lines.length - 1; index >= 0; index -= 1) {
+        const line = lines[index];
+        if (!line || !line.includes('"type":"turn_context"')) continue;
+        const entry = parseJsonLine(line);
+        if (entry && entry.type === "turn_context" && entry.payload && typeof entry.payload === "object") {
+          return entry.payload;
+        }
+      }
+    }
+    if (carry && carry.includes('"type":"turn_context"')) {
+      const entry = parseJsonLine(carry);
+      if (entry && entry.type === "turn_context" && entry.payload && typeof entry.payload === "object") {
+        return entry.payload;
+      }
+    }
+  } catch (_) {
+    return null;
+  } finally {
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd);
+      } catch (_) {}
     }
   }
   return null;
 }
 
-function threadRuntimeSettings(threadId) {
-  const thread = readStateDbThread(threadId);
+function threadRuntimeSettings(threadId, fallbackThread = null) {
+  const thread = readStateDbThread(threadId) || fallbackThread;
   const context = readLatestTurnContext(thread) || {};
   const sandboxPolicy = normalizeSandboxPolicy(context.sandbox_policy || (thread && thread.sandboxPolicy));
   const permissionProfile = normalizePermissionProfile(context.permission_profile || (thread && thread.permissionProfile));
@@ -880,6 +760,17 @@ function threadRuntimeSettings(threadId) {
     reasoningSummary,
     modelVerbosity,
   };
+}
+
+async function resolveThreadRuntimeSettings(threadId) {
+  if (readStateDbThread(threadId)) return threadRuntimeSettings(threadId);
+  let fallbackThread = null;
+  try {
+    fallbackThread = await readThreadSummaryFromAppServer(codex, threadId);
+  } catch (_) {
+    fallbackThread = null;
+  }
+  return threadRuntimeSettings(threadId, fallbackThread);
 }
 
 function applyResumeRuntimeSettings(params, settings) {
@@ -1154,15 +1045,67 @@ function compactRateLimitWindow(value) {
 
 function compactRateLimits(value) {
   if (!value || typeof value !== "object") return null;
-  return Object.fromEntries(Object.entries({
+  const compacted = Object.fromEntries(Object.entries({
     limitId: value.limitId || undefined,
     limitName: value.limitName || undefined,
+    model: value.model || undefined,
     primary: compactRateLimitWindow(value.primary),
     secondary: compactRateLimitWindow(value.secondary),
     credits: value.credits || null,
     planType: value.planType || undefined,
     rateLimitReachedType: value.rateLimitReachedType || null,
   }).filter(([, entry]) => entry !== undefined));
+  const modelKeys = rateLimitModelKeys(compacted);
+  if (modelKeys.length) compacted.modelKeys = modelKeys;
+  return compacted;
+}
+
+function normalizeModelKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, "-")
+    .replace(/[^a-z0-9.]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function addRateLimitModelKey(keys, value) {
+  const key = normalizeModelKey(value);
+  if (key) keys.add(key);
+}
+
+function rateLimitModelKeys(rateLimits) {
+  if (!rateLimits || typeof rateLimits !== "object") return [];
+  const keys = new Set();
+  if (Array.isArray(rateLimits.modelKeys)) {
+    for (const value of rateLimits.modelKeys) addRateLimitModelKey(keys, value);
+  }
+  addRateLimitModelKey(keys, rateLimits.model);
+  addRateLimitModelKey(keys, rateLimits.limitName);
+  const limitNameKey = normalizeModelKey(rateLimits.limitName);
+  for (const model of MODEL_OPTIONS) {
+    const modelKey = normalizeModelKey(model);
+    if (modelKey && limitNameKey === modelKey) keys.add(modelKey);
+  }
+  const limitId = normalizeModelKey(rateLimits.limitId);
+  if (limitId === "codex-bengalfox") keys.add("gpt-5.3-codex-spark");
+  else if (limitId === "codex") addRateLimitModelKey(keys, CODEX_CONFIG_DEFAULTS.model || MODEL_OPTIONS[0]);
+  return [...keys];
+}
+
+function recordRateLimits(value) {
+  const compacted = compactRateLimits(value);
+  if (!compacted) return null;
+  latestRateLimits = compacted;
+  for (const key of compacted.modelKeys || rateLimitModelKeys(compacted)) {
+    latestRateLimitsByModel.set(normalizeModelKey(key), compacted);
+  }
+  return compacted;
+}
+
+function rateLimitsByModelObject() {
+  return Object.fromEntries([...latestRateLimitsByModel.entries()]);
 }
 
 function compactApprovalText(value, maxChars = 1200) {
@@ -1185,28 +1128,6 @@ function fileNamesFromApproval(method, params = {}) {
   return [];
 }
 
-function compactUserInputQuestions(params = {}) {
-  if (!Array.isArray(params.questions)) return [];
-  return params.questions.slice(0, 8).map((question) => {
-    const options = Array.isArray(question && question.options)
-      ? question.options.slice(0, 12).map((option) => Object.fromEntries(Object.entries({
-        label: option && option.label ? compactApprovalText(option.label, 240) : "",
-        description: option && option.description ? compactApprovalText(option.description, 500) : "",
-      }).filter(([, value]) => value !== "")))
-      : [];
-    return Object.fromEntries(Object.entries({
-      id: question && question.id ? String(question.id) : "",
-      header: question && question.header ? compactApprovalText(question.header, 240) : "",
-      question: question && question.question ? compactApprovalText(question.question, 1200) : "",
-      isOther: Boolean(question && question.isOther),
-      options,
-    }).filter(([, value]) => {
-      if (Array.isArray(value)) return value.length > 0;
-      return value !== "" && value !== false;
-    }));
-  });
-}
-
 function compactApprovalParams(method, params = {}) {
   return Object.fromEntries(Object.entries({
     threadId: params.threadId || params.conversationId || null,
@@ -1220,12 +1141,6 @@ function compactApprovalParams(method, params = {}) {
     fileNames: fileNamesFromApproval(method, params),
     permissions: method === "item/permissions/requestApproval" ? compactStructured(params.permissions || {}) : null,
     networkApprovalContext: params.networkApprovalContext || null,
-    questions: method === "item/tool/requestUserInput" ? compactUserInputQuestions(params) : [],
-    elicitationId: method === "mcpServer/elicitation/request" ? params.elicitationId || null : null,
-    title: method === "mcpServer/elicitation/request" && params.title ? compactApprovalText(params.title, 240) : null,
-    message: method === "mcpServer/elicitation/request" && params.message ? compactApprovalText(params.message, 1200) : null,
-    schema: method === "mcpServer/elicitation/request" && params.schema ? compactStructured(params.schema) : null,
-    elicitation: method === "mcpServer/elicitation/request" && params.elicitation ? compactStructured(params.elicitation) : null,
   }).filter(([, value]) => {
     if (Array.isArray(value)) return value.length > 0;
     return value !== null && value !== undefined && value !== "";
@@ -1240,7 +1155,7 @@ function publicServerRequest(request) {
     decision: request.decision || null,
     receivedAt: request.receivedAt || null,
     respondedAt: request.respondedAt || null,
-    actionable: ACTIONABLE_SERVER_REQUEST_METHODS.has(request.method),
+    actionable: ACTIONABLE_APPROVAL_METHODS.has(request.method),
     params: compactApprovalParams(request.method, request.params || {}),
   };
 }
@@ -1295,41 +1210,6 @@ function approvalResponsePayload(request, decision) {
   throw new Error(`Unsupported server request method: ${method || "unknown"}`);
 }
 
-function userInputResponsePayload(request, body = {}) {
-  const params = (request && request.params) || {};
-  const questions = Array.isArray(params.questions) ? params.questions : [];
-  if (body.answers && typeof body.answers === "object") {
-    return { result: { answers: body.answers } };
-  }
-  const responseText = String(body.responseText || body.text || "").trim();
-  const questionId = String(body.questionId || (questions[0] && questions[0].id) || "answer");
-  return {
-    result: {
-      answers: responseText ? { [questionId]: { answers: [responseText] } } : {},
-    },
-  };
-}
-
-function mcpElicitationResponsePayload(body = {}) {
-  const action = body.action === "decline" || body.decision === "deny" ? "decline" : "accept";
-  if (action === "decline") return { result: { action, content: null } };
-  const responseText = String(body.responseText || body.text || "").trim();
-  const result = { action, content: {} };
-  if (body.content && typeof body.content === "object") result.content = body.content;
-  else if (responseText) result.content = { response: responseText };
-  return { result };
-}
-
-function serverRequestResponsePayload(request, body = {}) {
-  const method = request && request.method;
-  if (ACTIONABLE_APPROVAL_METHODS.has(method)) {
-    return approvalResponsePayload(request, String(body.decision || ""));
-  }
-  if (method === "item/tool/requestUserInput") return userInputResponsePayload(request, body);
-  if (method === "mcpServer/elicitation/request") return mcpElicitationResponsePayload(body);
-  throw new Error(`Unsupported server request method: ${method || "unknown"}`);
-}
-
 function readRawBody(req, limitBytes) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -1371,6 +1251,278 @@ function readBody(req) {
       }
     });
     req.on("error", reject);
+  });
+}
+
+function readJsonFile(file, fallback) {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function writeRuntimeJson(file, value) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+}
+
+function normalizePushSubject(value) {
+  const subject = String(value || "").trim();
+  return subject || DEFAULT_PUSH_SUBJECT;
+}
+
+function isLocalhostPushSubject(value) {
+  const subject = String(value || "");
+  if (/\blocalhost\b|127\.0\.0\.1|\[::1\]/i.test(subject)) return true;
+  try {
+    const url = new URL(subject);
+    return url.hostname === "localhost"
+      || url.hostname === "127.0.0.1"
+      || url.hostname === "::1"
+      || url.hostname.endsWith(".localhost");
+  } catch (_) {
+    return false;
+  }
+}
+
+function storedPushSubject(existingSubject) {
+  const existing = normalizePushSubject(existingSubject);
+  if (process.env.CODEX_MOBILE_PUSH_SUBJECT) return PUSH_SUBJECT;
+  return isLocalhostPushSubject(existing) ? PUSH_SUBJECT : existing;
+}
+
+function loadPushVapidKeys() {
+  if (pushVapidKeys) return pushVapidKeys;
+  const existing = readJsonFile(PUSH_VAPID_FILE, null);
+  if (existing && existing.publicKey && existing.privateKey) {
+    const subject = storedPushSubject(existing.subject);
+    pushVapidKeys = {
+      publicKey: String(existing.publicKey),
+      privateKey: String(existing.privateKey),
+      subject,
+    };
+    if (subject !== existing.subject) {
+      writeRuntimeJson(PUSH_VAPID_FILE, Object.assign({}, existing, {
+        subject,
+        updatedAt: new Date().toISOString(),
+      }));
+    }
+  } else {
+    const generated = webPush.generateVAPIDKeys();
+    pushVapidKeys = {
+      publicKey: generated.publicKey,
+      privateKey: generated.privateKey,
+      subject: PUSH_SUBJECT,
+      createdAt: new Date().toISOString(),
+    };
+    writeRuntimeJson(PUSH_VAPID_FILE, pushVapidKeys);
+  }
+  webPush.setVapidDetails(pushVapidKeys.subject || PUSH_SUBJECT, pushVapidKeys.publicKey, pushVapidKeys.privateKey);
+  return pushVapidKeys;
+}
+
+function loadPushSubscriptions() {
+  if (pushSubscriptionsCache) return pushSubscriptionsCache;
+  const raw = readJsonFile(PUSH_SUBSCRIPTIONS_FILE, []);
+  pushSubscriptionsCache = Array.isArray(raw) ? raw.filter((entry) => entry && entry.endpoint) : [];
+  return pushSubscriptionsCache;
+}
+
+function savePushSubscriptions(subscriptions = loadPushSubscriptions()) {
+  pushSubscriptionsCache = subscriptions.filter((entry) => entry && entry.endpoint);
+  writeRuntimeJson(PUSH_SUBSCRIPTIONS_FILE, pushSubscriptionsCache);
+}
+
+function normalizePushSubscription(value) {
+  const sub = value && value.subscription ? value.subscription : value;
+  if (!sub || typeof sub !== "object") throw new Error("Push subscription is required");
+  if (!sub.endpoint || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) {
+    throw new Error("Push subscription is incomplete");
+  }
+  return {
+    endpoint: String(sub.endpoint),
+    expirationTime: sub.expirationTime || null,
+    keys: {
+      p256dh: String(sub.keys.p256dh),
+      auth: String(sub.keys.auth),
+    },
+  };
+}
+
+function pushSubscriptionPublicStatus() {
+  return {
+    supported: true,
+    subscriptionCount: loadPushSubscriptions().length,
+  };
+}
+
+function prunePushSentTurns(now = Date.now()) {
+  const maxAgeMs = 24 * 60 * 60 * 1000;
+  for (const [key, sentAt] of pushSentTurns) {
+    if (now - sentAt > maxAgeMs) pushSentTurns.delete(key);
+  }
+}
+
+function pushTurnId(params) {
+  return String((params && params.turn && params.turn.id) || (params && params.turnId) || "");
+}
+
+function timestampToMs(value) {
+  if (value == null || value === "") return 0;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value > 1_000_000_000_000 ? value : value * 1000;
+  }
+  if (/^\d+(?:\.\d+)?$/.test(String(value))) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
+  }
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function turnTimestampMs(params, field) {
+  return timestampToMs((params && params.turn && params.turn[field]) || (params && params[field]));
+}
+
+function isOldPushTurnEvent(params, fields) {
+  for (const field of fields) {
+    const timestamp = turnTimestampMs(params, field);
+    if (timestamp) return timestamp < PROCESS_STARTED_AT_MS - 120000;
+  }
+  return false;
+}
+
+function notificationUrlForThread(threadId) {
+  const id = String(threadId || "");
+  return id ? `/?thread=${encodeURIComponent(id)}` : "/";
+}
+
+function compactOneLine(value, maxChars = 80) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, Math.max(1, maxChars - 3))}...`;
+}
+
+function shortIdentifier(value) {
+  const text = String(value || "").trim();
+  if (text.length <= 16) return text;
+  return `${text.slice(0, 8)}...${text.slice(-4)}`;
+}
+
+function pushTimestamp(ms = Date.now()) {
+  const time = Number.isFinite(ms) && ms > 0 ? ms : Date.now();
+  try {
+    return new Intl.DateTimeFormat("zh-CN", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    }).format(new Date(time)).replace(/\//g, "-");
+  } catch (_) {
+    return new Date(time).toISOString();
+  }
+}
+
+function pushThreadTitle(params) {
+  const candidates = [
+    params && params.threadName,
+    params && params.thread && params.thread.name,
+    params && params.thread && params.thread.title,
+    params && params.thread && params.thread.preview,
+  ];
+  for (const candidate of candidates) {
+    const text = compactOneLine(candidate);
+    if (text) return text;
+  }
+  const summary = readStateDbThread(params && params.threadId);
+  return compactOneLine((summary && (summary.name || summary.preview)) || shortIdentifier(params && params.threadId) || "Codex Mobile Web");
+}
+
+function webPushFailureDetails(err) {
+  const statusCode = Number(err && err.statusCode) || null;
+  const body = String((err && err.body) || "").trim();
+  let reason = "";
+  if (body) {
+    try {
+      const parsed = JSON.parse(body);
+      reason = String(parsed.reason || parsed.error || parsed.message || "").trim();
+    } catch (_) {
+      reason = body.slice(0, 160);
+    }
+  }
+  return {
+    statusCode,
+    reason: reason || String((err && err.message) || err || "Web Push send failed"),
+  };
+}
+
+async function sendWebPushToAll(payload) {
+  loadPushVapidKeys();
+  const subscriptions = loadPushSubscriptions();
+  if (!subscriptions.length) return { sent: 0, failed: 0, removed: 0 };
+  let sent = 0;
+  let failed = 0;
+  let lastError = null;
+  const dead = new Set();
+  await Promise.all(subscriptions.map(async (subscription) => {
+    try {
+      await webPush.sendNotification(subscription, JSON.stringify(payload), {
+        TTL: PUSH_TTL_SECONDS,
+        urgency: "normal",
+      });
+      sent += 1;
+    } catch (err) {
+      failed += 1;
+      lastError = webPushFailureDetails(err);
+      const statusCode = Number(err && err.statusCode);
+      if (statusCode === 404 || statusCode === 410) dead.add(subscription.endpoint);
+      else console.error(`[web push] send failed: ${lastError.statusCode || ""} ${lastError.reason}`);
+    }
+  }));
+  if (dead.size) {
+    const kept = subscriptions.filter((subscription) => !dead.has(subscription.endpoint));
+    savePushSubscriptions(kept);
+  }
+  return Object.assign({ sent, failed, removed: dead.size }, lastError ? { lastError } : {});
+}
+
+function maybeSendTurnCompletedPush(method, params) {
+  if (method === "turn/started") {
+    const id = pushTurnId(params);
+    if (isOldPushTurnEvent(params, ["startedAt", "createdAt"])) return;
+    if (id) pushObservedTurns.add(id);
+    return;
+  }
+  if (method !== "turn/completed") return;
+  const turnId = pushTurnId(params);
+  if (!turnId || !pushObservedTurns.has(turnId)) return;
+  if (isOldPushTurnEvent(params, ["completedAt", "updatedAt"])) return;
+  pushObservedTurns.delete(turnId);
+  prunePushSentTurns();
+  const key = `${params.threadId || ""}:${turnId}`;
+  if (pushSentTurns.has(key)) return;
+  pushSentTurns.set(key, Date.now());
+  const completedAt = turnTimestampMs(params, "completedAt") || Date.now();
+  const threadTitle = pushThreadTitle(params);
+  const threadMark = shortIdentifier(params.threadId || turnId);
+  const payload = {
+    title: "Codex Mobile Web",
+    body: `${threadTitle || threadMark} · This turn 已结束 · ${pushTimestamp(completedAt)}`,
+    tag: `codex-turn-${params.threadId || turnId}`,
+    data: {
+      url: notificationUrlForThread(params.threadId),
+      threadId: params.threadId || "",
+      turnId,
+      threadTitle,
+      completedAt,
+    },
+  };
+  sendWebPushToAll(payload).catch((err) => {
+    console.error(`[web push] turn completed notification failed: ${err.message || String(err)}`);
   });
 }
 
@@ -2006,7 +2158,7 @@ class CodexAppServerClient {
     }
     if (msg.method) {
       if (msg.method === "account/rateLimits/updated" && msg.params && msg.params.rateLimits) {
-        latestRateLimits = compactRateLimits(msg.params.rateLimits);
+        recordRateLimits(msg.params.rateLimits);
       }
       if (msg.method === "serverRequest/resolved" && msg.params && msg.params.requestId != null) {
         this.markServerRequestResolved(msg.params.requestId, "resolved");
@@ -2060,16 +2212,15 @@ class CodexAppServerClient {
     this.ws.send(JSON.stringify(message));
   }
 
-  answerServerRequest(requestId, responseBody = {}) {
+  answerServerRequest(requestId, decision) {
     const key = String(requestId);
     const request = this.serverRequests.get(key);
     if (!request) throw new Error("Approval request is no longer pending");
     if (request.status !== "waiting") throw new Error("Approval request has already been answered");
-    const body = responseBody && typeof responseBody === "object" ? responseBody : { decision: String(responseBody || "") };
-    const payload = serverRequestResponsePayload(request, body);
+    const payload = approvalResponsePayload(request, decision);
     this.sendServerRequestResponse(request, payload);
     request.status = "responded";
-    request.decision = body.decision || body.action || "submitted";
+    request.decision = decision;
     request.respondedAt = Date.now();
     broadcast({ type: "serverRequestResolved", requestId: key, request: publicServerRequest(request) });
     setTimeout(() => this.serverRequests.delete(key), 15000).unref();
@@ -2190,6 +2341,7 @@ class CodexAppServerClient {
       lastError: this.lastError,
       sharedRequired: this.requireSharedAppServer,
       rateLimits: latestRateLimits,
+      rateLimitsByModel: rateLimitsByModelObject(),
     };
   }
 }
@@ -2425,9 +2577,11 @@ async function handleApi(req, res) {
       maxUploadFiles: MAX_UPLOAD_FILES,
       modelOptions: MODEL_OPTIONS,
       reasoningEffortOptions: REASONING_EFFORT_OPTIONS,
+      permissionModeOptions: PERMISSION_MODE_OPTIONS,
       defaultModel: CODEX_CONFIG_DEFAULTS.model,
       defaultReasoningEffort: CODEX_CONFIG_DEFAULTS.reasoningEffort,
       rateLimits: latestRateLimits,
+      rateLimitsByModel: rateLimitsByModelObject(),
       push: pushSubscriptionPublicStatus(),
     });
     return;
@@ -2458,10 +2612,11 @@ async function handleApi(req, res) {
     const body = await readBody(req);
     const subscription = normalizePushSubscription(body);
     const subscriptions = loadPushSubscriptions();
-    const existing = subscriptions.find((entry) => entry.endpoint === subscription.endpoint);
     const next = subscriptions.filter((entry) => entry.endpoint !== subscription.endpoint);
     next.push(Object.assign({}, subscription, {
-      createdAt: existing && existing.createdAt ? existing.createdAt : new Date().toISOString(),
+      createdAt: subscriptions.some((entry) => entry.endpoint === subscription.endpoint)
+        ? subscriptions.find((entry) => entry.endpoint === subscription.endpoint).createdAt || new Date().toISOString()
+        : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       userAgent: String(req.headers["user-agent"] || ""),
     }));
@@ -2518,7 +2673,7 @@ async function handleApi(req, res) {
   if (approvalResponse && req.method === "POST") {
     const requestId = decodeURIComponent(approvalResponse[1]);
     const body = await readBody(req);
-    const request = codex.answerServerRequest(requestId, body);
+    const request = codex.answerServerRequest(requestId, String(body.decision || ""));
     sendJson(res, 200, { ok: true, request });
     return;
   }
@@ -2583,6 +2738,7 @@ async function handleApi(req, res) {
         summary = await readThreadSummaryFromAppServer(codex, threadId);
       } catch (_) {}
     }
+    const runtimeSettings = threadRuntimeSettings(threadId, summary);
     if (summary && isHiddenThread(summary, visibility)) {
       sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
       return;
@@ -2594,6 +2750,7 @@ async function handleApi(req, res) {
         sortDirection: "desc",
       }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS });
       const result = compactThreadReadResult({ thread: threadFromTurnsList(threadId, summary, turnsResult) });
+      if (result.thread) result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
       if (isHiddenThread(result.thread, visibility)) {
         sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
         return;
@@ -2601,6 +2758,7 @@ async function handleApi(req, res) {
       sendJson(res, 200, result);
     } catch (turnsErr) {
       const result = compactThreadReadResult(await codex.request("thread/read", { threadId, includeTurns: true }, { timeoutMs: READ_RPC_TIMEOUT_MS }));
+      if (result.thread) result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
       if (isHiddenThread(result.thread, visibility)) {
         sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
         return;
@@ -2626,7 +2784,7 @@ async function handleApi(req, res) {
   if (resume && req.method === "POST") {
     const threadId = decodeURIComponent(resume[1]);
     const body = await readBody(req);
-    const runtimeSettings = threadRuntimeSettings(threadId);
+    const runtimeSettings = applyPermissionModeOverride(await resolveThreadRuntimeSettings(threadId), body.permissionMode, body.cwd || null);
     sendJson(res, 200, await codex.request("thread/resume", applyResumeRuntimeSettings({
       threadId,
       cwd: body.cwd || null,
@@ -2646,7 +2804,7 @@ async function handleApi(req, res) {
       return;
     }
     const submissionKeys = messageSubmissionKeys(threadId, body, text, uploads);
-    const runtimeSettings = threadRuntimeSettings(threadId);
+    const runtimeSettings = applyPermissionModeOverride(await resolveThreadRuntimeSettings(threadId), body.permissionMode, body.cwd || null);
     const result = await runMessageSubmissionOnce(submissionKeys, uploads, async () => {
       if (body.activeTurnId) {
         try {
@@ -2754,6 +2912,9 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+process.on("SIGINT", () => shutdown());
+process.on("SIGTERM", () => shutdown());
+
 function shutdown() {
   try {
     if (codex.ws) codex.ws.close();
@@ -2764,10 +2925,7 @@ function shutdown() {
   process.exit(0);
 }
 
-if (require.main === module) {
-  process.on("SIGINT", () => shutdown());
-  process.on("SIGTERM", () => shutdown());
-
+function startServer() {
   server.listen(PORT, HOST, () => {
     console.log(`Codex Mobile Web listening on http://${HOST}:${PORT}`);
     console.log(`Codex app-server will be managed on 127.0.0.1 when first used.`);
@@ -2775,8 +2933,11 @@ if (require.main === module) {
   });
 }
 
+if (require.main === module) {
+  startServer();
+}
+
 module.exports = {
   approvalResponsePayload,
-  compactApprovalParams,
   publicServerRequest,
 };
