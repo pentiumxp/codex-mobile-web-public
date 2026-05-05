@@ -96,7 +96,6 @@ const SERVER_REQUEST_METHODS = new Set([
   "item/permissions/requestApproval",
   "item/tool/requestUserInput",
   "mcpServer/elicitation/request",
-  "item/tool/call",
   "account/chatgptAuthTokens/refresh",
   "execCommandApproval",
   "applyPatchApproval",
@@ -329,6 +328,10 @@ function isLiveTurn(turn) {
 
 function isContextCompactionType(type) {
   return /context.*compaction|context.*compression|context_compaction|context_compression/i.test(String(type || ""));
+}
+
+function contextCompactionNotice(pending) {
+  return pending ? "历史上下文正在压缩" : "历史上下文已压缩";
 }
 
 function isPathLikeValue(value) {
@@ -981,14 +984,18 @@ function readLatestRawOperation(thread) {
   return null;
 }
 
-function compactItem(item) {
+function compactItem(item, options = {}) {
   if (!item || typeof item !== "object") return item;
   const out = Object.assign({}, item);
   if (isContextCompactionType(out.type)) {
+    const pending = options.contextCompactionPending === true
+      || (options.contextCompactionPending !== false && statusText(out.status) && !isCompletedStatus(out.status));
     return {
       id: out.id,
       type: out.type,
-      mobileNotice: "历史上下文已压缩",
+      status: out.status,
+      mobileCompactionStatus: pending ? "running" : "completed",
+      mobileNotice: contextCompactionNotice(pending),
     };
   }
   if (isOperationalItem(out)) {
@@ -1021,7 +1028,8 @@ function compactTurn(turn, options = {}) {
   const out = Object.assign({}, turn);
   if (Array.isArray(out.items)) {
     const lastLiveOperationIndex = trailingOperationIndex(out.items, Boolean(options.allowLiveOperation) && isLiveTurn(out));
-    out.items = out.items.map(compactItem).filter((item, index) => {
+    const contextCompactionPending = isLiveTurn(out);
+    out.items = out.items.map((item) => compactItem(item, { contextCompactionPending })).filter((item, index) => {
       if (!isOperationalItem(item)) return true;
       return index === lastLiveOperationIndex;
     });
@@ -1099,7 +1107,15 @@ function compactNotification(payload) {
     method: payload.method,
     params: Object.assign({}, payload.params),
   };
-  if (out.params.item) out.params.item = compactItem(out.params.item);
+  if (out.params.item) {
+    out.params.item = compactItem(out.params.item, {
+      contextCompactionPending: payload.method === "item/started"
+        ? true
+        : payload.method === "item/completed"
+          ? false
+          : undefined,
+    });
+  }
   if (out.params.turn) out.params.turn = compactTurn(out.params.turn, { allowLiveOperation: true });
   if (payload.method === "account/rateLimits/updated" && out.params.rateLimits) {
     out.params.rateLimits = compactRateLimits(out.params.rateLimits);
@@ -2284,7 +2300,9 @@ class CodexAppServerClient {
   }
 
   pendingServerRequests() {
-    return [...this.serverRequests.values()].map(publicServerRequest);
+    return [...this.serverRequests.values()]
+      .filter((request) => SERVER_REQUEST_METHODS.has(request.method))
+      .map(publicServerRequest);
   }
 
   sendServerRequestResponse(request, payload) {

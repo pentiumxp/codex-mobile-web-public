@@ -55,6 +55,30 @@
   - `.gitignore` excludes `.env*`, `*.key`, `*.pem`, `.webui_secret_key`, logs, and workspace/log directories.
 - Validation:
   - `npm.cmd run check` passed.
+
+## 2026-05-06 Default User-Logon Startup Simplification - 00:35 +08:00
+
+- User-requested change:
+  - Do not make `LocalSystem` the default startup mode. The simpler default should be a Windows user-logon task because WSL access requires the user context.
+  - The user-logon task must still be no-window.
+- Code/documentation changes:
+  - `install-codex-mobile-web-startup.ps1` now defaults to an `AtLogOn` interactive Scheduled Task for the current Windows user. It no longer silently converts missing `-InteractiveLogon` into `-RunAsSystem`.
+  - The default task still runs `wscript.exe start-codex-mobile-web-hidden.vbs`, so both user-logon and optional `-RunAsSystem` modes launch without a visible console window.
+  - `-RunAsSystem` is now an explicit optional mode only, for cases that need startup before user logon or survival after sign-out and do not need WSL.
+  - Added `-UserProfilePath` to the installer so SYSTEM/elevated automation can explicitly target a real Windows user profile when registering the default user-logon task.
+  - README now documents the user-logon no-window task as the primary install path and moves `LocalSystem` into an optional caveat.
+  - `.agent-context/PROJECT_CONTEXT.md` now records the default no-window user-logon startup rule and the two context-compaction display states.
+- Runtime note:
+  - No runtime reinstall was needed during this change because the existing `Codex Mobile Web` task was already `LogonType=Interactive`, `RunLevel=Limited`, owned by `GMK\xuxin`.
+- Validation:
+  - `npm.cmd run check` passed.
+  - PowerShell parser check passed for `install-codex-mobile-web-startup.ps1`.
+  - `git diff --check` passed with line-ending warnings only.
+  - Current Scheduled Task action was verified as `wscript.exe "...\start-codex-mobile-web-hidden.vbs" ...`, with `LogonType=Interactive`, confirming the user-logon task is still no-window.
+- Public release sync:
+  - Synchronized public-safe files to `C:\Users\xuxin\Documents\codex-mobile-web-public`: `README.md`, `install-codex-mobile-web-startup.ps1`, `server.js`, `public/app.js`, `public/index.html`, and `public/styles.css`.
+  - Preserved the public release differences: `public/app.js` registers `/sw.js`, and README uses `https://github.com/pentiumxp/codex-mobile-web-public.git`.
+  - Public validation passed: `npm.cmd test`, `npm.cmd run check`, PowerShell parser check for the installer, Git Bash macOS shell parser check, `git diff --check`, and the tracked-file privacy scan excluding `.gitignore`.
   - `git diff --check` passed with only Git line-ending warnings.
 
 ## 2026-05-03 Composer Send/Stop And Model Selectors - 21:18 +08:00
@@ -1574,3 +1598,84 @@
   - Private checkout: `npm.cmd run check` passed, `git diff --check` passed with line-ending warnings only.
   - Public checkout: `npm.cmd test` passed, `npm.cmd run check` passed, Git Bash `bash -n ...` macOS shell syntax check passed, `git diff --check` passed with line-ending warnings only.
   - Public privacy scan passed for tracked files excluding `.gitignore`; no `xuxin`, `Hermes`, `C:\Users`, `192.168.10.108`, `gmk.tail`, `tail62e8ce`, or private GitHub clone URL matches.
+
+## 2026-05-05 Non-Actionable Tool Request Approval Card Fix - 23:46 +08:00
+
+- User-reported issue:
+  - Mobile Web showed a bottom `Tool request` card with method `item/tool/call`, status `Waiting`, and no clickable approval controls.
+- Diagnosis:
+  - `/api/approvals` showed the pending request with `actionable=false`.
+  - Generated app-server TypeScript protocol identifies `item/tool/call` as `DynamicToolCallParams` with a `DynamicToolCallResponse`, not an Allow/Deny approval request.
+  - Mobile Web had been tracking this server request in the same pending-approval stack as command/file/permission approval requests, producing a misleading waiting card.
+- Code change:
+  - `server.js` no longer includes `item/tool/call` in `SERVER_REQUEST_METHODS`, so dynamic tool calls are not exposed through `/api/approvals` or the approval SSE path.
+  - `server.js` filters pending server requests by the current supported approval/input methods before returning `/api/approvals` or initial SSE approval state.
+  - `public/app.js` ignores `item/tool/call` if an old server or existing browser session still receives it, and uses `等待输入` rather than `等待批准` for other non-actionable visible server requests.
+- Activation note:
+  - Restarted only the Mobile Web 8787 Node listener to load the server-side change.
+  - Previous listener PID `11048`; new listener PID `10276`.
+  - Shared mux/app-server were not restarted.
+  - Authenticated `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, and `lastError=null`.
+  - Authenticated `/api/approvals` returned zero pending approval requests after restart.
+- Validation:
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with line-ending warnings only.
+
+## 2026-05-06 Workspace Selector Mobile Layout Fix - 00:03 +08:00
+
+- User-reported issue:
+  - In the mobile sidebar, the `Workspace` select text was vertically clipped.
+  - The sidebar also showed a duplicate `All workspaces` row below the select.
+- Code change:
+  - `public/index.html` now starts `#workspacePath` hidden.
+  - `public/app.js` hides `#workspacePath` when all workspaces are selected and only shows it for a concrete workspace path.
+  - `public/styles.css` gives the workspace select a fixed `46px` height, matching line height, `16px` font size, and extra right padding for the native picker indicator.
+- Activation note:
+  - Static frontend change only. Existing browser/PWA sessions need a refresh.
+- Validation:
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with line-ending warnings only.
+
+## 2026-05-06 User-Mode Startup And WSL Access - 00:19 +08:00
+
+- User-requested change:
+  - Switch Codex Mobile Web away from `LocalSystem` so Codex tool calls can use WSL.
+- Findings:
+  - Commands launched from the existing SYSTEM app-server returned `WSL_E_LOCAL_SYSTEM_NOT_SUPPORTED`.
+  - A temporary `GMK\xuxin` interactive Scheduled Task successfully ran `wsl.exe --exec /bin/sh -lc 'whoami; uname -a'`, returning Linux `GMK ... WSL2` with exit code 0.
+- Code/documentation changes:
+  - `install-codex-mobile-web-startup.ps1` now accepts `-UserId`, so a SYSTEM/elevated process can explicitly register the interactive task for `GMK\xuxin` instead of accidentally using the executing SYSTEM identity.
+  - `README.md` documents that `LocalSystem` cannot start WSL and shows the `-InteractiveLogon -UserId "$env:COMPUTERNAME\$env:USERNAME"` install form.
+  - `.agent-context/PROJECT_CONTEXT.md` records the current user-mode startup requirement and WSL limitation of LocalSystem.
+- Runtime changes:
+  - Re-registered the `Codex Mobile Web` Scheduled Task as `GMK\xuxin`, `LogonType=Interactive`, `RunLevel=Limited`.
+  - Stopped the old SYSTEM 8787 listener/supervisor.
+  - Started the 8787 listener under `GMK\xuxin`; listener PID observed as `2568`, parent PowerShell PID `45220`, both owned by `GMK\xuxin`.
+  - Started a new user-owned standalone mux by temporary interactive task. New mux PID `48432`, child app-server PID `8732`, both owned by `GMK\xuxin`.
+  - The endpoint file `%USERPROFILE%\.codex\app-server-mux\endpoint.json` now points to user-owned mux port `62616`.
+  - Called authenticated `POST /api/app-server/reconnect`; `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, endpoint port `62616`, and `lastError=null`.
+- Operational note:
+  - The old SYSTEM mux/app-server can remain only for already-connected Desktop/current sessions. It is no longer the endpoint file target. Later Mobile Web reconnects and later Desktop shared launches should attach to the user-owned endpoint.
+  - The current Codex thread that performed this migration may still execute local shell tools under the old SYSTEM app-server until that old session is restarted; new Mobile Web turns should use the user-owned app-server.
+- Validation:
+  - `npm.cmd run check` passed.
+  - PowerShell parser check passed for `install-codex-mobile-web-startup.ps1`.
+  - `git diff --check` passed with line-ending warnings only.
+  - Final status check showed Scheduled Task `LogonType=Interactive`, `/api/status` ready on endpoint port `62616`, mux owner `GMK\xuxin`, and child app-server owner `GMK\xuxin`.
+
+## 2026-05-06 Context Compaction State Text - 00:25 +08:00
+
+- User-reported issue:
+  - Mobile Web displayed `历史上下文已压缩` for both in-progress historical context compaction and completed compaction.
+- Code change:
+  - `server.js` now emits `mobileCompactionStatus` and `mobileNotice` for context-compaction items:
+    - `item/started` and live turns -> `历史上下文正在压缩`
+    - `item/completed` and completed turns -> `历史上下文已压缩`
+  - `public/app.js` now computes context-compaction text from item status plus the containing turn live/completed state, so stale live notices settle to `已压缩` after turn completion.
+- Activation note:
+  - Restarted only the 8787 Mobile Web Node listener to load the `server.js` change.
+  - Previous listener PID `2568`; new listener PID `46060`, owned by `GMK\xuxin`.
+  - `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, endpoint port `62616`, and `lastError=null`.
+  - Existing browser/PWA sessions need a refresh for the updated frontend script.
+- Validation:
+  - `npm.cmd run check` passed.
