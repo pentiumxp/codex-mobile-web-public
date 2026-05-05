@@ -320,8 +320,8 @@ Behavior:
 - Live reasoning is not rendered as conversation rows.
 - Command/file/tool activity appears as compact operation cards.
 - Consecutive command/file operation updates show only the latest operation card unless normal visible content appears between two operations.
-- The composer supports per-message model and reasoning effort selectors.
-- The composer shows 5-hour and weekly quota remaining when app-server sends rate-limit updates.
+- The composer supports per-message model, reasoning effort, and thread permission selectors.
+- The composer shows 5-hour and weekly quota remaining when app-server sends rate-limit updates. Rate-limit updates are cached by model, so the visible quota follows the selected/current model instead of the last quota event from another model.
 - The send button follows Codex Desktop behavior: empty composer during an active turn shows `Stop`; typed text or attachments switch it back to `Send`.
 - The message input uses a `contenteditable` textbox instead of a native `textarea` to reduce the extra iOS browser input accessory toolbar. Enter sends; Shift+Enter inserts a newline.
 - The web app avoids programmatic composer focus after send, thread switch, refresh, and mobile foreground recovery. Mobile keyboards should open only after the user explicitly taps the message input.
@@ -375,6 +375,7 @@ This section summarizes the current integration behavior for someone cloning or 
 - The browser preserves `mux-user-*` user-message echo items during thread refresh merges, because these synthetic visible inputs may not exist in the durable thread snapshot returned by app-server.
 - For new turns, Mobile Web reads the thread's last rollout `turn_context` plus `state_5.sqlite` metadata and forwards the inherited approval policy, sandbox policy, reasoning summary, and configured verbosity where the app-server protocol supports it. This keeps Mobile Web turns aligned with the thread permissions that Desktop is using.
 - Full-access threads are normalized for Mobile Web new turns: if the inherited sandbox is `danger-full-access`, or the permission profile grants root write access, Mobile Web sends `approvalPolicy: "never"` when the persisted approval mode is missing or still `on-request`. This matches the user-facing "full access" expectation and avoids redundant command approval cards on new turns.
+- The composer permission selector displays the current thread permission after the reasoning selector and before quota, using the same option names as Codex Desktop: `默认权限`, `自动审查`, `完全访问权限`, and `自定义 (config.toml)`. `完全访问权限` sends `dangerFullAccess` plus `approvalPolicy: "never"`; `默认权限` and `自动审查` use workspace-write with approval prompts; `自定义 (config.toml)` applies the local `sandbox_mode` / approval setting from `%USERPROFILE%\.codex\config.toml` when present.
 - The older mux-local `mux/userMessage` echo is still retained as a fallback for app-server builds that do not support `turn/steer`.
 
 ### Mobile UI Stability

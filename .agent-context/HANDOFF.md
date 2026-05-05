@@ -1343,3 +1343,66 @@
   - `node --check server.js` passed.
   - `npm.cmd run check` passed.
   - `git diff --check` passed with line-ending warnings only.
+
+## 2026-05-05 Model-Specific Quota Display
+
+- User-reported issue:
+  - The composer quota indicator showed `100% | 100%` even though the selected/default model remained `GPT-5.5`.
+- Diagnosis:
+  - Authenticated `/api/status` showed `rateLimits.limitName = GPT-5.3-Codex-Spark` with zero usage.
+  - `server.js` only kept one global `latestRateLimits`, so a quota event from another model could overwrite the quota shown next to the current model selector.
+- Code change:
+  - `server.js` now records rate-limit updates in `rateLimitsByModel`, keyed by normalized model/limit id, while still exposing the latest event for compatibility.
+  - `public/app.js` now merges `rateLimitsByModel` from config/status/SSE updates and renders quota for the current selected/default model.
+  - Spark quota events no longer overwrite the displayed quota for `GPT-5.5`; if no quota event has been observed for the current model, the UI shows unknown quota instead of a false `100% | 100%`.
+- Activation note:
+  - `server.js` changes require restarting the Codex Mobile Web listener.
+
+## 2026-05-05 Composer Thread Permission Selector
+
+- User-requested change:
+  - Show and allow setting the current thread permission in the composer, positioned after reasoning effort and before quota.
+- Code change:
+  - `server.js` now exposes `permissionModeOptions` and attaches sanitized current-thread `runtimeSettings.permissionMode` to thread detail responses.
+  - Runtime-setting lookup now reuses the app-server thread summary when local SQLite is unavailable under the SYSTEM startup task, and scans large rollout files backward for the latest `turn_context` instead of relying on a small tail read.
+  - `server.js` accepts `permissionMode` on message/resume requests and maps it to app-server runtime settings:
+    - `full` / `完全访问权限` -> `sandboxPolicy: dangerFullAccess` plus `approvalPolicy: never`
+    - `default` / `默认权限` -> `sandboxPolicy: workspaceWrite` plus `approvalPolicy: on-request`
+    - `auto` / `自动审查` -> `sandboxPolicy: workspaceWrite` plus `approvalPolicy: on-request`
+    - `custom` / `自定义 (config.toml)` -> local `%USERPROFILE%\.codex\config.toml` sandbox/approval settings when present
+  - `public/index.html`, `public/styles.css`, and `public/app.js` add a compact permission selector between effort and quota using the same visible option names as Codex Desktop.
+  - Permission overrides are stored per thread in browser local storage and are sent only when different from the displayed current thread default.
+- Activation note:
+  - `server.js` changes require restarting the Codex Mobile Web listener; existing browser/PWA sessions need a refresh for the new selector markup and script.
+
+## 2026-05-05 Composer Four-Control Row
+
+- User-requested change:
+  - Shrink the model and reasoning controls so model, reasoning, permission, and quota all fit on one row.
+- Code change:
+  - `public/styles.css` now uses a four-column mobile composer grid for the controls row.
+  - Model and reasoning columns, select padding, and quota padding were tightened so the four boxes remain on one line on phone-width layouts.
+- Follow-up change:
+  - Permission options were renamed from the earlier `Full` / `Work` / `Read` prototype to the Codex Desktop labels `默认权限` / `自动审查` / `完全访问权限` / `自定义 (config.toml)`.
+- Activation note:
+  - Static CSS change only; existing browser/PWA sessions need a refresh.
+
+## 2026-05-05 User Message Duplicate Render Guard
+
+- User-reported issue:
+  - Mobile Web frequently displayed the same `You` message twice in the conversation.
+- Diagnosis:
+  - Authenticated `/api/threads/019ded32-ed92-7681-9591-0e4d457c5274` showed only one durable app-server `userMessage` for the duplicated visible text.
+  - The duplicate was therefore a browser-side merge artifact, not a double write into app-server history.
+  - Existing frontend merge logic only dropped matching `mux-user-*` synthetic user-message echoes. A live ordinary `userMessage` and a later thread snapshot `userMessage` with identical visible content but a different id could both be retained.
+- Code change:
+  - `public/app.js` now compares ordinary `userMessage` items by normalized visible text and upload paths, not only by id.
+  - During thread refresh merges, a local user-message item is dropped when the incoming snapshot has a matching user-message item in the same turn.
+  - During live upsert, a matching existing user-message item is replaced only when the new item is at least as specific; otherwise the less complete duplicate is ignored.
+  - Image-only versus text-plus-image duplicates are treated as the same visible input when their upload paths overlap.
+- Validation:
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with line-ending warnings only.
+- Activation note:
+  - Static frontend change only. Existing browser/PWA sessions need a page refresh so the updated `public/app.js` can clean the currently duplicated local cards on the next thread refresh.

@@ -35,9 +35,11 @@ const state = {
   maxUploadFiles: 12,
   modelOptions: [],
   reasoningEffortOptions: [],
+  permissionModeOptions: ["default", "auto", "full", "custom"],
   defaultModel: "",
   defaultReasoningEffort: "",
   rateLimits: null,
+  rateLimitsByModel: {},
   pushServerSupported: false,
   pushSubscribed: false,
   pushBusy: false,
@@ -46,6 +48,7 @@ const state = {
   pendingApprovals: new Map(),
   selectedModel: localStorage.getItem("codexMobileSelectedModel") || "",
   selectedEffort: localStorage.getItem("codexMobileSelectedEffort") || "",
+  selectedPermissionModes: loadJsonStorage("codexMobileSelectedPermissionModes", {}),
   activityLabel: "",
   activityAtMs: 0,
   leavingItems: new Map(),
@@ -59,9 +62,19 @@ const MAX_RETAINED_OPERATIONS_PER_TURN = 1;
 const STORAGE_THREAD_ID = "codexMobileCurrentThreadId";
 const STORAGE_MODEL = "codexMobileSelectedModel";
 const STORAGE_EFFORT = "codexMobileSelectedEffort";
+const STORAGE_PERMISSION_MODES = "codexMobileSelectedPermissionModes";
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
 
 const $ = (id) => document.getElementById(id);
+
+function loadJsonStorage(key, fallback) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || "");
+    return value && typeof value === "object" ? value : fallback;
+  } catch (_) {
+    return fallback;
+  }
+}
 
 function viewportHeight() {
   const visual = window.visualViewport && Number(window.visualViewport.height);
@@ -189,6 +202,90 @@ function labelForEffort(value) {
   return labels[value] || value;
 }
 
+function labelForPermissionMode(value) {
+  const labels = {
+    default: "默认权限",
+    auto: "自动审查",
+    full: "完全访问权限",
+    custom: "自定义 (config.toml)",
+  };
+  return labels[value] || value || "Perm";
+}
+
+function titleForPermissionMode(value) {
+  const titles = {
+    default: "默认权限",
+    auto: "自动审查",
+    full: "完全访问权限",
+    custom: "自定义 (config.toml)",
+  };
+  return titles[value] || "Thread permission";
+}
+
+function normalizePermissionModeValue(value) {
+  const text = String(value || "").trim().toLowerCase();
+  const aliases = {
+    "full-access": "full",
+    "workspace-write": "auto",
+    "read-only": "auto",
+    "auto-review": "auto",
+    "auto-reviewing": "auto",
+    config: "custom",
+    "config.toml": "custom",
+    "custom-config": "custom",
+  };
+  return aliases[text] || text;
+}
+
+function normalizeModelKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, "-")
+    .replace(/[^a-z0-9.]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function rateLimitModelKeys(rateLimits) {
+  if (!rateLimits || typeof rateLimits !== "object") return [];
+  const keys = new Set();
+  const add = (value) => {
+    const key = normalizeModelKey(value);
+    if (key) keys.add(key);
+  };
+  if (Array.isArray(rateLimits.modelKeys)) {
+    for (const value of rateLimits.modelKeys) add(value);
+  }
+  add(rateLimits.model);
+  add(rateLimits.limitName);
+  const limitNameKey = normalizeModelKey(rateLimits.limitName);
+  for (const model of normalizeOptionList([state.defaultModel, ...state.modelOptions])) {
+    const modelKey = normalizeModelKey(model);
+    if (modelKey && limitNameKey === modelKey) keys.add(modelKey);
+  }
+  const limitId = normalizeModelKey(rateLimits.limitId);
+  if (limitId === "codex-bengalfox") keys.add("gpt-5.3-codex-spark");
+  else if (limitId === "codex") add(state.defaultModel || "gpt-5.5");
+  return [...keys];
+}
+
+function rememberRateLimits(rateLimits, rateLimitsByModel) {
+  if (rateLimitsByModel && typeof rateLimitsByModel === "object") {
+    for (const [model, value] of Object.entries(rateLimitsByModel)) {
+      const key = normalizeModelKey(model);
+      if (key && value && typeof value === "object") state.rateLimitsByModel[key] = value;
+    }
+  }
+  if (rateLimits && typeof rateLimits === "object") {
+    state.rateLimits = rateLimits;
+    for (const key of rateLimitModelKeys(rateLimits)) {
+      state.rateLimitsByModel[normalizeModelKey(key)] = rateLimits;
+    }
+  }
+  renderQuotaUsage();
+}
+
 function rateLimitWindows(rateLimits) {
   return [rateLimits && rateLimits.primary, rateLimits && rateLimits.secondary]
     .filter((windowInfo) => windowInfo && Number.isFinite(Number(windowInfo.usedPercent)));
@@ -237,13 +334,31 @@ function quotaTitle(label, windowInfo) {
   ].filter(Boolean).join("; ");
 }
 
+function selectedQuotaModel() {
+  const modelSelect = $("modelSelect");
+  return (modelSelect && modelSelect.value) || state.selectedModel || effectiveDefaultModel();
+}
+
+function rateLimitsForQuota() {
+  const modelKey = normalizeModelKey(selectedQuotaModel());
+  if (modelKey && state.rateLimitsByModel[modelKey]) return state.rateLimitsByModel[modelKey];
+  if (!modelKey) return state.rateLimits;
+  if (state.rateLimits && rateLimitModelKeys(state.rateLimits).includes(modelKey)) return state.rateLimits;
+  return null;
+}
+
 function renderQuotaUsage() {
   const el = $("quotaUsage");
   if (!el) return;
-  const fiveHour = fiveHourRateLimit(state.rateLimits);
-  const weekly = weeklyRateLimit(state.rateLimits);
+  const rateLimits = rateLimitsForQuota();
+  const fiveHour = fiveHourRateLimit(rateLimits);
+  const weekly = weeklyRateLimit(rateLimits);
+  const model = selectedQuotaModel();
   el.textContent = `${quotaRemainingText(fiveHour)} | ${quotaRemainingText(weekly)}`;
-  el.title = `${quotaTitle("5-hour", fiveHour)} | ${quotaTitle("weekly", weekly)}`;
+  el.title = [
+    model ? `model: ${labelForModel(model)}` : "",
+    `${quotaTitle("5-hour", fiveHour)} | ${quotaTitle("weekly", weekly)}`,
+  ].filter(Boolean).join("; ");
   el.classList.toggle("unknown", !fiveHour && !weekly);
 }
 
@@ -696,18 +811,33 @@ function userMessageComparableParts(item) {
   return result;
 }
 
+function userMessagePathOverlap(left, right) {
+  return left.paths.length > 0 && right.paths.length > 0
+    && left.paths.some((pathValue) => right.paths.includes(pathValue));
+}
+
+function userMessageSpecificity(item) {
+  const parts = userMessageComparableParts(item);
+  return parts.text.length + (parts.paths.length * 240);
+}
+
 function userMessagesLikelySame(left, right) {
   if (!left || !right || left.type !== "userMessage" || right.type !== "userMessage") return false;
   const a = userMessageComparableParts(left);
   const b = userMessageComparableParts(right);
-  if (a.text !== b.text) return false;
-  if (!a.paths.length && !b.paths.length) return true;
-  return a.paths.some((pathValue) => b.paths.includes(pathValue));
+  if (a.text && b.text && a.text === b.text) {
+    if (!a.paths.length && !b.paths.length) return true;
+    return userMessagePathOverlap(a, b);
+  }
+  return userMessagePathOverlap(a, b) && (!a.text || !b.text || a.text === b.text);
 }
 
 function hasMatchingIncomingUserMessage(existingItem, incomingItems) {
-  if (!isMuxUserMessage(existingItem)) return false;
-  return (incomingItems || []).some((incomingItem) => userMessagesLikelySame(existingItem, incomingItem));
+  if (!existingItem || existingItem.type !== "userMessage") return false;
+  return (incomingItems || []).some((incomingItem) => incomingItem
+    && incomingItem.id !== existingItem.id
+    && incomingItem.type === "userMessage"
+    && userMessagesLikelySame(existingItem, incomingItem));
 }
 
 function hasMatchingRealUserMessage(item, items) {
@@ -1294,10 +1424,7 @@ async function bootstrap() {
     return null;
   });
   if (status) updateConnectionState(status);
-  if (status && status.rateLimits) {
-    state.rateLimits = status.rateLimits;
-    renderQuotaUsage();
-  }
+  if (status && (status.rateLimits || status.rateLimitsByModel)) rememberRateLimits(status.rateLimits, status.rateLimitsByModel);
   await loadWorkspaces();
   await loadThreads();
   await restoreThreadSelection();
@@ -2382,8 +2509,14 @@ function upsertItem(turnId, item) {
   }
   turn.items = turn.items || [];
   if (item.type === "userMessage") {
-    if (hasMatchingRealUserMessage(item, turn.items)) return;
-    turn.items = turn.items.filter((existing) => !isMuxUserMessage(existing) || !userMessagesLikelySame(existing, item));
+    const matchingExisting = turn.items.find((existing) => existing
+      && existing.id !== item.id
+      && existing.type === "userMessage"
+      && userMessagesLikelySame(existing, item));
+    if (matchingExisting && userMessageSpecificity(matchingExisting) >= userMessageSpecificity(item)) return;
+    turn.items = turn.items.filter((existing) => existing.id === item.id
+      || existing.type !== "userMessage"
+      || !userMessagesLikelySame(existing, item));
   }
   if (item.type === "agentMessage" || item.type === "plan") {
     turn.items = turn.items.filter((existing) => existing.id === item.id || !visibleTextItemsLikelySame(existing, item));
@@ -2514,8 +2647,7 @@ function resolveServerRequest(payload) {
 function applyNotification(method, params) {
   if (!params) return;
   if (method === "account/rateLimits/updated") {
-    state.rateLimits = params.rateLimits || null;
-    renderQuotaUsage();
+    rememberRateLimits(params.rateLimits || null, null);
     return;
   }
   if (method === "thread/started" && params.thread) {
@@ -2611,9 +2743,8 @@ function connectEvents() {
     const payload = JSON.parse(event.data);
     if (payload.type === "status") {
       updateConnectionState(payload.status);
-      if (payload.status.rateLimits) {
-        state.rateLimits = payload.status.rateLimits;
-        renderQuotaUsage();
+      if (payload.status.rateLimits || payload.status.rateLimitsByModel) {
+        rememberRateLimits(payload.status.rateLimits, payload.status.rateLimitsByModel);
       }
       if (payload.status.ready) clearTimeout(state.recoveryTimer);
       return;
@@ -2630,10 +2761,7 @@ function connectEvents() {
       try {
         const status = await api("/api/status");
         updateConnectionState(status);
-        if (status.rateLimits) {
-          state.rateLimits = status.rateLimits;
-          renderQuotaUsage();
-        }
+        if (status.rateLimits || status.rateLimitsByModel) rememberRateLimits(status.rateLimits, status.rateLimitsByModel);
         await loadThreads();
         await refreshCurrentThread();
       } catch (err) {
@@ -2741,10 +2869,7 @@ async function resumeMobileSession(reason = "resume") {
   state.pollStableCount = 0;
   const status = await api("/api/status");
   updateConnectionState(status);
-  if (status.rateLimits) {
-    state.rateLimits = status.rateLimits;
-    renderQuotaUsage();
-  }
+  if (status.rateLimits || status.rateLimitsByModel) rememberRateLimits(status.rateLimits, status.rateLimitsByModel);
   await loadThreads();
   if (state.currentThreadId) await refreshCurrentThread();
   else await restoreThreadSelection();
@@ -2902,24 +3027,60 @@ function effectiveDefaultEffort() {
   return (state.currentThread && state.currentThread.effort) || state.defaultReasoningEffort || "";
 }
 
+function effectiveDefaultPermissionMode() {
+  const settings = state.currentThread && state.currentThread.runtimeSettings;
+  return normalizePermissionModeValue((settings && settings.permissionMode) || "");
+}
+
+function selectedPermissionModeForCurrentThread() {
+  if (!state.currentThreadId) return "";
+  return normalizePermissionModeValue(state.selectedPermissionModes[state.currentThreadId] || "");
+}
+
+function setSelectedPermissionModeForCurrentThread(value) {
+  if (!state.currentThreadId) return;
+  const next = normalizePermissionModeValue(value);
+  if (next && next !== effectiveDefaultPermissionMode()) {
+    state.selectedPermissionModes[state.currentThreadId] = next;
+  } else {
+    delete state.selectedPermissionModes[state.currentThreadId];
+  }
+  localStorage.setItem(STORAGE_PERMISSION_MODES, JSON.stringify(state.selectedPermissionModes));
+}
+
 function renderComposerSettings() {
   const modelSelect = $("modelSelect");
   const effortSelect = $("effortSelect");
-  if (!modelSelect || !effortSelect) return;
+  const permissionSelect = $("permissionSelect");
+  if (!modelSelect || !effortSelect || !permissionSelect) return;
   const defaultModel = effectiveDefaultModel();
   const defaultEffort = effectiveDefaultEffort();
+  const defaultPermission = effectiveDefaultPermissionMode();
+  let selectedPermission = selectedPermissionModeForCurrentThread();
+  if (selectedPermission && selectedPermission === defaultPermission) {
+    setSelectedPermissionModeForCurrentThread("");
+    selectedPermission = "";
+  }
   const modelValues = normalizeOptionList([state.selectedModel, ...state.modelOptions])
     .filter((value) => value !== defaultModel);
   const effortValues = normalizeOptionList([state.selectedEffort, ...state.reasoningEffortOptions])
     .filter((value) => value !== defaultEffort);
+  const permissionValues = normalizeOptionList([selectedPermission, ...state.permissionModeOptions.map(normalizePermissionModeValue)])
+    .filter((value) => value !== defaultPermission);
   modelSelect.innerHTML = `<option value="">${escapeHtml(defaultModel ? labelForModel(defaultModel) : "Default")}</option>`
     + modelValues.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(labelForModel(value))}</option>`).join("");
   effortSelect.innerHTML = `<option value="">${escapeHtml(defaultEffort ? labelForEffort(defaultEffort) : "Default")}</option>`
     + effortValues.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(labelForEffort(value))}</option>`).join("");
+  permissionSelect.innerHTML = `<option value="">${escapeHtml(defaultPermission ? labelForPermissionMode(defaultPermission) : "Perm")}</option>`
+    + permissionValues.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(labelForPermissionMode(value))}</option>`).join("");
   if (state.selectedModel && state.selectedModel !== defaultModel && modelValues.includes(state.selectedModel)) modelSelect.value = state.selectedModel;
   else modelSelect.value = "";
   if (state.selectedEffort && state.selectedEffort !== defaultEffort && effortValues.includes(state.selectedEffort)) effortSelect.value = state.selectedEffort;
   else effortSelect.value = "";
+  if (selectedPermission && selectedPermission !== defaultPermission && permissionValues.includes(selectedPermission)) permissionSelect.value = selectedPermission;
+  else permissionSelect.value = "";
+  permissionSelect.title = titleForPermissionMode(permissionSelect.value || defaultPermission);
+  renderQuotaUsage();
 }
 
 function updateComposerControls() {
@@ -2936,6 +3097,7 @@ function updateComposerControls() {
   $("fileInput").disabled = disabled;
   $("modelSelect").disabled = disabled;
   $("effortSelect").disabled = disabled;
+  $("permissionSelect").disabled = disabled;
   attachButton.classList.toggle("disabled", disabled);
   attachButton.setAttribute("aria-disabled", disabled ? "true" : "false");
   attachButton.tabIndex = disabled ? -1 : 0;
@@ -2972,6 +3134,7 @@ async function sendMessage(event) {
     if (state.activeTurnId) body.append("activeTurnId", state.activeTurnId);
     if ($("modelSelect").value) body.append("model", $("modelSelect").value);
     if ($("effortSelect").value) body.append("effort", $("effortSelect").value);
+    if ($("permissionSelect").value) body.append("permissionMode", $("permissionSelect").value);
     for (const item of state.pendingAttachments) {
       body.append("attachments", item.file, item.file.name || "upload");
     }
@@ -3083,11 +3246,16 @@ function wireUi() {
     state.selectedModel = event.target.value;
     if (state.selectedModel) localStorage.setItem(STORAGE_MODEL, state.selectedModel);
     else localStorage.removeItem(STORAGE_MODEL);
+    renderQuotaUsage();
   });
   $("effortSelect").addEventListener("change", (event) => {
     state.selectedEffort = event.target.value;
     if (state.selectedEffort) localStorage.setItem(STORAGE_EFFORT, state.selectedEffort);
     else localStorage.removeItem(STORAGE_EFFORT);
+  });
+  $("permissionSelect").addEventListener("change", (event) => {
+    setSelectedPermissionModeForCurrentThread(event.target.value);
+    event.target.title = titleForPermissionMode(event.target.value || effectiveDefaultPermissionMode());
   });
   $("messageInput").addEventListener("paste", (event) => {
     const files = Array.from((event.clipboardData && event.clipboardData.files) || []);
@@ -3156,12 +3324,13 @@ async function start() {
   state.maxUploadFiles = Number(config.maxUploadFiles || state.maxUploadFiles);
   state.modelOptions = normalizeOptionList(config.modelOptions || []);
   state.reasoningEffortOptions = normalizeOptionList(config.reasoningEffortOptions || []);
+  state.permissionModeOptions = normalizeOptionList((config.permissionModeOptions || state.permissionModeOptions)
+    .map(normalizePermissionModeValue));
   state.defaultModel = String(config.defaultModel || "");
   state.defaultReasoningEffort = String(config.defaultReasoningEffort || "");
-  state.rateLimits = config.rateLimits || null;
   state.pushServerSupported = Boolean(config.push && config.push.supported);
   renderComposerSettings();
-  renderQuotaUsage();
+  rememberRateLimits(config.rateLimits || null, config.rateLimitsByModel || null);
   updatePushButton();
   if (config.authRequired && !state.key) {
     showLogin();

@@ -54,6 +54,12 @@ const REASONING_EFFORT_OPTIONS = optionListFromEnv("CODEX_MOBILE_REASONING_EFFOR
   "high",
   "xhigh",
 ]);
+const PERMISSION_MODE_OPTIONS = optionListFromEnv("CODEX_MOBILE_PERMISSION_MODE_OPTIONS", [
+  "default",
+  "auto",
+  "full",
+  "custom",
+]);
 const DEFAULT_RPC_TIMEOUT_MS = 30000;
 const READ_RPC_TIMEOUT_MS = 12000;
 const THREAD_DETAIL_RPC_TIMEOUT_MS = Math.min(6000, READ_RPC_TIMEOUT_MS);
@@ -61,6 +67,7 @@ const MUTATION_RPC_TIMEOUT_MS = 120000;
 const MESSAGE_DEDUPE_WINDOW_MS = Math.max(5_000, Number(process.env.CODEX_MOBILE_MESSAGE_DEDUPE_WINDOW_MS || "90000"));
 const MESSAGE_DEDUPE_MAX = Math.max(20, Number(process.env.CODEX_MOBILE_MESSAGE_DEDUPE_MAX || "300"));
 const MAX_ROLLOUT_CONTEXT_BYTES = Math.max(256 * 1024, Number(process.env.CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES || String(4 * 1024 * 1024)));
+const MAX_RUNTIME_CONTEXT_SCAN_BYTES = Math.max(MAX_ROLLOUT_CONTEXT_BYTES, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_SCAN_BYTES || String(512 * 1024 * 1024)));
 const SAFE_RETRY_METHODS = new Set(["initialize", "thread/list", "thread/read", "thread/turns/list"]);
 const IMAGE_EXTENSIONS = new Set([".avif", ".bmp", ".gif", ".heic", ".heif", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"]);
 const CODEX_CONFIG_DEFAULTS = readCodexConfigDefaults();
@@ -69,6 +76,7 @@ const PROCESS_STARTED_AT_MS = Date.now();
 let clients = new Set();
 let clientHeartbeats = new WeakMap();
 let latestRateLimits = null;
+const latestRateLimitsByModel = new Map();
 let pushVapidKeys = null;
 let pushSubscriptionsCache = null;
 const recentMessageSubmissions = new Map();
@@ -109,14 +117,18 @@ function readCodexConfigDefaults() {
     const effort = /^\s*model_reasoning_effort\s*=\s*"([^"]+)"/m.exec(text);
     const summary = /^\s*model_reasoning_summary\s*=\s*"([^"]+)"/m.exec(text);
     const verbosity = /^\s*model_verbosity\s*=\s*"([^"]+)"/m.exec(text);
+    const sandboxMode = /^\s*sandbox_mode\s*=\s*"([^"]+)"/m.exec(text);
+    const approvalPolicy = /^\s*(approval_policy|approval_mode)\s*=\s*"([^"]+)"/m.exec(text);
     return {
       model: model ? model[1] : "",
       reasoningEffort: effort ? effort[1] : "",
       reasoningSummary: summary ? summary[1] : "",
       modelVerbosity: verbosity ? verbosity[1] : "",
+      sandboxMode: sandboxMode ? sandboxMode[1] : "",
+      approvalPolicy: approvalPolicy ? approvalPolicy[2] : "",
     };
   } catch (_) {
-    return { model: "", reasoningEffort: "", reasoningSummary: "", modelVerbosity: "" };
+    return { model: "", reasoningEffort: "", reasoningSummary: "", modelVerbosity: "", sandboxMode: "", approvalPolicy: "" };
   }
 }
 
@@ -447,6 +459,22 @@ function normalizeEnumValue(value, allowed) {
   return allowed.has(text) ? text : "";
 }
 
+function normalizePermissionModeValue(value) {
+  const text = String(value || "").trim().toLowerCase();
+  const aliases = {
+    "full-access": "full",
+    "workspace-write": "auto",
+    "read-only": "auto",
+    "auto-review": "auto",
+    "auto-reviewing": "auto",
+    config: "custom",
+    "config.toml": "custom",
+    "custom-config": "custom",
+  };
+  const normalized = aliases[text] || text;
+  return PERMISSION_MODE_OPTIONS.includes(normalized) ? normalized : "";
+}
+
 function normalizeSandboxPolicyType(type) {
   const text = String(type || "").trim();
   return {
@@ -536,6 +564,105 @@ function isFullAccessRuntime(sandboxPolicy, permissionProfile) {
     || isRootWritePermissionProfile(permissionProfile);
 }
 
+function permissionModeFromRuntimeSettings(settings) {
+  if (!settings) return "";
+  const sandboxType = normalizeSandboxPolicyType(settings.sandboxPolicy && settings.sandboxPolicy.type);
+  if (sandboxType === "dangerFullAccess" || isRootWritePermissionProfile(settings.permissionProfile)) return "full";
+  if (sandboxType === "externalSandbox" || settings.permissionProfile) return "custom";
+  if (sandboxType === "workspaceWrite" || sandboxType === "readOnly") return "auto";
+  return "default";
+}
+
+function publicRuntimeSettings(settings) {
+  if (!settings) return null;
+  const sandboxType = normalizeSandboxPolicyType(settings.sandboxPolicy && settings.sandboxPolicy.type);
+  return Object.fromEntries(Object.entries({
+    permissionMode: permissionModeFromRuntimeSettings(settings),
+    approvalPolicy: settings.approvalPolicy || null,
+    sandboxPolicyType: sandboxType || null,
+    reasoningSummary: settings.reasoningSummary || null,
+    modelVerbosity: settings.modelVerbosity || null,
+  }).filter(([, value]) => value != null && value !== ""));
+}
+
+function workspaceWriteSandboxPolicy(cwd, inheritedPolicy) {
+  const inherited = normalizeSandboxPolicyType(inheritedPolicy && inheritedPolicy.type) === "workspaceWrite"
+    ? inheritedPolicy
+    : {};
+  const writableRoots = Array.isArray(inherited.writableRoots) && inherited.writableRoots.length
+    ? inherited.writableRoots
+    : (cwd ? [cwd] : []);
+  return {
+    type: "workspaceWrite",
+    writableRoots,
+    networkAccess: Boolean(inherited.networkAccess),
+    excludeTmpdirEnvVar: Boolean(inherited.excludeTmpdirEnvVar),
+    excludeSlashTmp: Boolean(inherited.excludeSlashTmp),
+  };
+}
+
+function readOnlySandboxPolicy(inheritedPolicy) {
+  const inherited = normalizeSandboxPolicyType(inheritedPolicy && inheritedPolicy.type) === "readOnly"
+    ? inheritedPolicy
+    : {};
+  return {
+    type: "readOnly",
+    networkAccess: Boolean(inherited.networkAccess),
+  };
+}
+
+function applyPermissionModeOverride(settings, mode, cwd) {
+  const normalized = normalizePermissionModeValue(mode);
+  if (!normalized) return settings;
+  const next = Object.assign({}, settings || {});
+  if (normalized === "default") {
+    next.approvalPolicy = "on-request";
+    next.sandboxPolicy = workspaceWriteSandboxPolicy(cwd, next.sandboxPolicy);
+    next.sandboxMode = "workspace-write";
+    next.permissionProfile = null;
+    return next;
+  }
+  if (normalized === "auto") {
+    next.approvalPolicy = "on-request";
+    next.sandboxPolicy = workspaceWriteSandboxPolicy(cwd, next.sandboxPolicy);
+    next.sandboxMode = "workspace-write";
+    next.permissionProfile = null;
+    return next;
+  }
+  if (normalized === "full") {
+    next.approvalPolicy = "never";
+    next.sandboxPolicy = { type: "dangerFullAccess" };
+    next.sandboxMode = "danger-full-access";
+    next.permissionProfile = null;
+    return next;
+  }
+  if (normalized === "custom") {
+    const sandboxType = normalizeSandboxPolicyType(CODEX_CONFIG_DEFAULTS.sandboxMode);
+    const approvalPolicy = normalizeEnumValue(
+      CODEX_CONFIG_DEFAULTS.approvalPolicy,
+      new Set(["untrusted", "on-request", "on-failure", "never"]),
+    );
+    if (sandboxType === "dangerFullAccess") {
+      next.approvalPolicy = approvalPolicy || "never";
+      next.sandboxPolicy = { type: "dangerFullAccess" };
+      next.sandboxMode = "danger-full-access";
+      next.permissionProfile = null;
+    } else if (sandboxType === "readOnly") {
+      next.approvalPolicy = approvalPolicy || "on-request";
+      next.sandboxPolicy = readOnlySandboxPolicy(next.sandboxPolicy);
+      next.sandboxMode = "read-only";
+      next.permissionProfile = null;
+    } else if (sandboxType === "workspaceWrite") {
+      next.approvalPolicy = approvalPolicy || "on-request";
+      next.sandboxPolicy = workspaceWriteSandboxPolicy(cwd, next.sandboxPolicy);
+      next.sandboxMode = "workspace-write";
+      next.permissionProfile = null;
+    }
+    return next;
+  }
+  return settings;
+}
+
 function readRolloutTail(rolloutPath) {
   if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) return "";
   let fd = null;
@@ -560,20 +687,53 @@ function readRolloutTail(rolloutPath) {
 
 function readLatestTurnContext(thread) {
   const rolloutPath = thread && (thread.path || thread.rolloutPath || thread.rollout_path);
-  const text = readRolloutTail(rolloutPath);
-  if (!text) return null;
-  const lines = text.split(/\r?\n/).filter(Boolean);
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
-    const entry = parseJsonLine(lines[index]);
-    if (entry && entry.type === "turn_context" && entry.payload && typeof entry.payload === "object") {
-      return entry.payload;
+  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) return null;
+  let fd = null;
+  try {
+    const stat = fs.statSync(rolloutPath);
+    fd = fs.openSync(rolloutPath, "r");
+    const chunkSize = 1024 * 1024;
+    let position = stat.size;
+    let scanned = 0;
+    let carry = "";
+    while (position > 0 && scanned < MAX_RUNTIME_CONTEXT_SCAN_BYTES) {
+      const length = Math.min(chunkSize, position, MAX_RUNTIME_CONTEXT_SCAN_BYTES - scanned);
+      position -= length;
+      scanned += length;
+      const buffer = Buffer.alloc(length);
+      fs.readSync(fd, buffer, 0, length, position);
+      const text = buffer.toString("utf8") + carry;
+      const lines = text.split(/\r?\n/);
+      carry = lines.shift() || "";
+      for (let index = lines.length - 1; index >= 0; index -= 1) {
+        const line = lines[index];
+        if (!line || !line.includes('"type":"turn_context"')) continue;
+        const entry = parseJsonLine(line);
+        if (entry && entry.type === "turn_context" && entry.payload && typeof entry.payload === "object") {
+          return entry.payload;
+        }
+      }
+    }
+    if (carry && carry.includes('"type":"turn_context"')) {
+      const entry = parseJsonLine(carry);
+      if (entry && entry.type === "turn_context" && entry.payload && typeof entry.payload === "object") {
+        return entry.payload;
+      }
+    }
+  } catch (_) {
+    return null;
+  } finally {
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd);
+      } catch (_) {}
     }
   }
   return null;
 }
 
-function threadRuntimeSettings(threadId) {
-  const thread = readStateDbThread(threadId);
+function threadRuntimeSettings(threadId, fallbackThread = null) {
+  const thread = readStateDbThread(threadId) || fallbackThread;
   const context = readLatestTurnContext(thread) || {};
   const sandboxPolicy = normalizeSandboxPolicy(context.sandbox_policy || (thread && thread.sandboxPolicy));
   const permissionProfile = normalizePermissionProfile(context.permission_profile || (thread && thread.permissionProfile));
@@ -600,6 +760,17 @@ function threadRuntimeSettings(threadId) {
     reasoningSummary,
     modelVerbosity,
   };
+}
+
+async function resolveThreadRuntimeSettings(threadId) {
+  if (readStateDbThread(threadId)) return threadRuntimeSettings(threadId);
+  let fallbackThread = null;
+  try {
+    fallbackThread = await readThreadSummaryFromAppServer(codex, threadId);
+  } catch (_) {
+    fallbackThread = null;
+  }
+  return threadRuntimeSettings(threadId, fallbackThread);
 }
 
 function applyResumeRuntimeSettings(params, settings) {
@@ -874,15 +1045,67 @@ function compactRateLimitWindow(value) {
 
 function compactRateLimits(value) {
   if (!value || typeof value !== "object") return null;
-  return Object.fromEntries(Object.entries({
+  const compacted = Object.fromEntries(Object.entries({
     limitId: value.limitId || undefined,
     limitName: value.limitName || undefined,
+    model: value.model || undefined,
     primary: compactRateLimitWindow(value.primary),
     secondary: compactRateLimitWindow(value.secondary),
     credits: value.credits || null,
     planType: value.planType || undefined,
     rateLimitReachedType: value.rateLimitReachedType || null,
   }).filter(([, entry]) => entry !== undefined));
+  const modelKeys = rateLimitModelKeys(compacted);
+  if (modelKeys.length) compacted.modelKeys = modelKeys;
+  return compacted;
+}
+
+function normalizeModelKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, "-")
+    .replace(/[^a-z0-9.]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function addRateLimitModelKey(keys, value) {
+  const key = normalizeModelKey(value);
+  if (key) keys.add(key);
+}
+
+function rateLimitModelKeys(rateLimits) {
+  if (!rateLimits || typeof rateLimits !== "object") return [];
+  const keys = new Set();
+  if (Array.isArray(rateLimits.modelKeys)) {
+    for (const value of rateLimits.modelKeys) addRateLimitModelKey(keys, value);
+  }
+  addRateLimitModelKey(keys, rateLimits.model);
+  addRateLimitModelKey(keys, rateLimits.limitName);
+  const limitNameKey = normalizeModelKey(rateLimits.limitName);
+  for (const model of MODEL_OPTIONS) {
+    const modelKey = normalizeModelKey(model);
+    if (modelKey && limitNameKey === modelKey) keys.add(modelKey);
+  }
+  const limitId = normalizeModelKey(rateLimits.limitId);
+  if (limitId === "codex-bengalfox") keys.add("gpt-5.3-codex-spark");
+  else if (limitId === "codex") addRateLimitModelKey(keys, CODEX_CONFIG_DEFAULTS.model || MODEL_OPTIONS[0]);
+  return [...keys];
+}
+
+function recordRateLimits(value) {
+  const compacted = compactRateLimits(value);
+  if (!compacted) return null;
+  latestRateLimits = compacted;
+  for (const key of compacted.modelKeys || rateLimitModelKeys(compacted)) {
+    latestRateLimitsByModel.set(normalizeModelKey(key), compacted);
+  }
+  return compacted;
+}
+
+function rateLimitsByModelObject() {
+  return Object.fromEntries([...latestRateLimitsByModel.entries()]);
 }
 
 function compactApprovalText(value, maxChars = 1200) {
@@ -1935,7 +2158,7 @@ class CodexAppServerClient {
     }
     if (msg.method) {
       if (msg.method === "account/rateLimits/updated" && msg.params && msg.params.rateLimits) {
-        latestRateLimits = compactRateLimits(msg.params.rateLimits);
+        recordRateLimits(msg.params.rateLimits);
       }
       if (msg.method === "serverRequest/resolved" && msg.params && msg.params.requestId != null) {
         this.markServerRequestResolved(msg.params.requestId, "resolved");
@@ -2118,6 +2341,7 @@ class CodexAppServerClient {
       lastError: this.lastError,
       sharedRequired: this.requireSharedAppServer,
       rateLimits: latestRateLimits,
+      rateLimitsByModel: rateLimitsByModelObject(),
     };
   }
 }
@@ -2353,9 +2577,11 @@ async function handleApi(req, res) {
       maxUploadFiles: MAX_UPLOAD_FILES,
       modelOptions: MODEL_OPTIONS,
       reasoningEffortOptions: REASONING_EFFORT_OPTIONS,
+      permissionModeOptions: PERMISSION_MODE_OPTIONS,
       defaultModel: CODEX_CONFIG_DEFAULTS.model,
       defaultReasoningEffort: CODEX_CONFIG_DEFAULTS.reasoningEffort,
       rateLimits: latestRateLimits,
+      rateLimitsByModel: rateLimitsByModelObject(),
       push: pushSubscriptionPublicStatus(),
     });
     return;
@@ -2512,6 +2738,7 @@ async function handleApi(req, res) {
         summary = await readThreadSummaryFromAppServer(codex, threadId);
       } catch (_) {}
     }
+    const runtimeSettings = threadRuntimeSettings(threadId, summary);
     if (summary && isHiddenThread(summary, visibility)) {
       sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
       return;
@@ -2523,6 +2750,7 @@ async function handleApi(req, res) {
         sortDirection: "desc",
       }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS });
       const result = compactThreadReadResult({ thread: threadFromTurnsList(threadId, summary, turnsResult) });
+      if (result.thread) result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
       if (isHiddenThread(result.thread, visibility)) {
         sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
         return;
@@ -2530,6 +2758,7 @@ async function handleApi(req, res) {
       sendJson(res, 200, result);
     } catch (turnsErr) {
       const result = compactThreadReadResult(await codex.request("thread/read", { threadId, includeTurns: true }, { timeoutMs: READ_RPC_TIMEOUT_MS }));
+      if (result.thread) result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
       if (isHiddenThread(result.thread, visibility)) {
         sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
         return;
@@ -2555,7 +2784,7 @@ async function handleApi(req, res) {
   if (resume && req.method === "POST") {
     const threadId = decodeURIComponent(resume[1]);
     const body = await readBody(req);
-    const runtimeSettings = threadRuntimeSettings(threadId);
+    const runtimeSettings = applyPermissionModeOverride(await resolveThreadRuntimeSettings(threadId), body.permissionMode, body.cwd || null);
     sendJson(res, 200, await codex.request("thread/resume", applyResumeRuntimeSettings({
       threadId,
       cwd: body.cwd || null,
@@ -2575,7 +2804,7 @@ async function handleApi(req, res) {
       return;
     }
     const submissionKeys = messageSubmissionKeys(threadId, body, text, uploads);
-    const runtimeSettings = threadRuntimeSettings(threadId);
+    const runtimeSettings = applyPermissionModeOverride(await resolveThreadRuntimeSettings(threadId), body.permissionMode, body.cwd || null);
     const result = await runMessageSubmissionOnce(submissionKeys, uploads, async () => {
       if (body.activeTurnId) {
         try {

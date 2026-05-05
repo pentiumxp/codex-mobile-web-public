@@ -1115,7 +1115,7 @@ html.visual-recovering body::before {
 
 .composer-controls {
   display: grid;
-  grid-template-columns: minmax(92px, 1fr) minmax(86px, 0.95fr) max-content;
+  grid-template-columns: minmax(60px, 0.68fr) minmax(54px, 0.56fr) minmax(84px, 0.9fr) max-content;
   align-items: stretch;
   gap: 6px;
 }
@@ -1137,7 +1137,7 @@ html.visual-recovering body::before {
 .composer-select {
   width: 100%;
   min-height: 28px;
-  padding: 4px 7px;
+  padding: 4px 6px;
   color: var(--text);
   background: rgba(13, 15, 16, 0.78);
   border: 1px solid var(--line-soft);
@@ -1154,14 +1154,19 @@ html.visual-recovering body::before {
   opacity: 0.55;
 }
 
+.permission-select {
+  padding-left: 6px;
+  padding-right: 4px;
+}
+
 .quota-usage {
-  min-width: 54px;
+  min-width: 50px;
   min-height: 28px;
   justify-self: end;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 4px 8px;
+  padding: 4px 7px;
   color: #d9e4df;
   background: rgba(13, 15, 16, 0.78);
   border: 1px solid var(--line-soft);
@@ -1381,7 +1386,8 @@ html.visual-recovering body::before {
 
   .composer-controls {
     grid-area: controls;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 0.92fr) max-content;
+    grid-template-columns: minmax(48px, 0.55fr) minmax(44px, 0.48fr) minmax(76px, 0.82fr) max-content;
+    gap: 5px;
   }
 
   .composer-icon {
