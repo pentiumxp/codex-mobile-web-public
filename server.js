@@ -76,6 +76,7 @@ const MAX_CONTINUATION_BOOTSTRAP_CHARS = Math.max(20_000, Number(process.env.COD
 const CONTINUATION_RECENT_TURNS = Math.max(1, Math.min(30, Number(process.env.CODEX_MOBILE_CONTINUATION_RECENT_TURNS || "12")));
 const CONTINUATION_HANDOFF_TIMEOUT_MS = Math.max(30_000, Number(process.env.CODEX_MOBILE_CONTINUATION_HANDOFF_TIMEOUT_MS || "240000"));
 const CONTINUATION_HANDOFF_MIN_CHARS = Math.max(120, Number(process.env.CODEX_MOBILE_CONTINUATION_HANDOFF_MIN_CHARS || "400"));
+const CONTINUATION_HANDOFF_TURN_COMPLETION_TIMEOUT_MS = Math.max(5_000, Number(process.env.CODEX_MOBILE_CONTINUATION_HANDOFF_TURN_COMPLETION_TIMEOUT_MS || "60000"));
 const RUNTIME_CONTEXT_CACHE_TTL_MS = Math.max(1000, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_CACHE_TTL_MS || "30000"));
 const RUNTIME_CONTEXT_CACHE_MAX = Math.max(20, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_CACHE_MAX || "200"));
 const SAFE_RETRY_METHODS = new Set(["initialize", "thread/list", "thread/read", "thread/turns/list"]);
@@ -2906,6 +2907,45 @@ async function waitForContinuationHandoffFile(target) {
   throw new Error(`Source thread did not finish writing continuation handoff within ${Math.round(CONTINUATION_HANDOFF_TIMEOUT_MS / 1000)}s: ${target.file} (${lastError})`);
 }
 
+async function waitForContinuationTurnCompletion(threadId, turnId) {
+  const id = String(turnId || "").trim();
+  if (!threadId || !id) return { waited: false, completed: false, reason: "missing turn id" };
+  const deadline = Date.now() + CONTINUATION_HANDOFF_TURN_COMPLETION_TIMEOUT_MS;
+  let lastStatus = "";
+  let lastError = "";
+  while (Date.now() < deadline) {
+    try {
+      const result = await codex.request("thread/turns/list", {
+        threadId,
+        limit: Math.max(3, CONTINUATION_RECENT_TURNS),
+        sortDirection: "desc",
+      }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS, retry: false });
+      const turns = Array.isArray(result && result.data)
+        ? result.data
+        : Array.isArray(result && result.turns)
+          ? result.turns
+          : [];
+      const turn = turns.find((entry) => entry && String(entry.id || "") === id);
+      if (turn) {
+        lastStatus = statusText(turn.status) || "(no status)";
+        if (isCompletedStatus(turn.status)) {
+          return { waited: true, completed: true, status: lastStatus };
+        }
+      }
+    } catch (err) {
+      lastError = err.message || String(err);
+    }
+    await sleep(1000);
+  }
+  return {
+    waited: true,
+    completed: false,
+    status: lastStatus,
+    error: lastError,
+    timedOut: true,
+  };
+}
+
 async function createSourceContinuationHandoff({ cwd, sourceThreadId, sourceThreadTitle, runtimeSettings, model, effort }) {
   const threadId = String(sourceThreadId || "").trim();
   if (!threadId) return null;
@@ -2938,9 +2978,12 @@ async function createSourceContinuationHandoff({ cwd, sourceThreadId, sourceThre
     if (!/already|loaded|active/i.test(err.message || "")) throw err;
   }
   const result = await codex.request("turn/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+  const turnId = turnIdFromResult(result);
   const file = await waitForContinuationHandoffFile(target);
+  const turnCompletion = await waitForContinuationTurnCompletion(threadId, turnId);
   return Object.assign(file, {
-    turnId: turnIdFromResult(result),
+    turnId,
+    turnCompletion,
     result,
   });
 }
@@ -3472,6 +3515,7 @@ async function handleApi(req, res) {
         relativePath: sourceHandoff.relativePath,
         chars: sourceHandoff.chars || 0,
         turnId: sourceHandoff.turnId || "",
+        turnCompletion: sourceHandoff.turnCompletion || null,
       } : null,
       continuationContextChars: bootstrapParams
         && Array.isArray(bootstrapParams.input)

@@ -1889,3 +1889,21 @@
 - Validation:
   - `npm.cmd run check` passed.
   - `git diff --check` passed with line-ending warnings only.
+
+## 2026-05-07 Continuation Switch-To-New-Thread Fix - 06:35 +08:00
+
+- User-reported issue:
+  - After the source thread's handoff turn finished, Mobile Web still stayed on the archived source thread. The expected behavior is to show the source thread while the handoff turn runs, then switch to the new continuation thread after the continuation is created.
+- Code changes:
+  - Frontend success flow now loads the new continuation thread after `/api/threads` returns the new thread id.
+  - The source-thread archive guard remains in place so an archive event cannot clear the source view before the new thread switch happens.
+  - Server-side continuation now waits briefly for the source handoff turn to report a completed status after the handoff file is written, controlled by `CODEX_MOBILE_CONTINUATION_HANDOFF_TURN_COMPLETION_TIMEOUT_MS` (default `60000`).
+  - The API response includes `sourceHandoff.turnCompletion` for diagnostics.
+- Documentation:
+  - `README.md` and `.agent-context/PROJECT_CONTEXT.md` now describe the two-stage UX: show source thread during handoff, then switch to the new continuation thread.
+- Activation:
+  - Restarted only the 8787 Node listener; new listener PID `8076`.
+  - `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, and `lastError=null`.
+- Validation:
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with line-ending warnings only.

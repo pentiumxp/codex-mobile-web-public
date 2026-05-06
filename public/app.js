@@ -2366,17 +2366,15 @@ async function startNewThreadFromThread(sourceThread, event) {
       state.threads = [result.thread, ...state.threads.filter((thread) => thread.id !== result.thread.id)];
       renderThreads();
     }
-    if (sourceThreadId && state.currentThreadId !== sourceThreadId) {
-      await loadThread(sourceThreadId);
-    }
-    loadThreads().catch(showError);
     $("connectionState").classList.remove("error");
     if (result.sourceArchive && result.sourceArchive.error) {
       $("connectionState").classList.add("error");
       $("connectionState").textContent = `续接线程已就绪；归档失败：${result.sourceArchive.error}`;
     } else {
-      $("connectionState").textContent = "交接已生成；续接线程已就绪";
+      $("connectionState").textContent = "交接已生成；正在打开续接线程";
     }
+    await loadThread(threadId);
+    loadThreads().catch(showError);
   } catch (err) {
     showError(err);
   } finally {
