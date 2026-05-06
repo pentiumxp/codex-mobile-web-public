@@ -72,6 +72,10 @@ const STARTED_THREAD_CACHE_MAX = Math.max(10, Number(process.env.CODEX_MOBILE_ST
 const MAX_ROLLOUT_CONTEXT_BYTES = Math.max(256 * 1024, Number(process.env.CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES || String(4 * 1024 * 1024)));
 const MAX_RUNTIME_CONTEXT_SCAN_BYTES = Math.max(MAX_ROLLOUT_CONTEXT_BYTES, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_SCAN_BYTES || String(512 * 1024 * 1024)));
 const ROLLOUT_WARNING_BYTES = Math.max(1 * 1024 * 1024, Number(process.env.CODEX_MOBILE_ROLLOUT_WARNING_BYTES || String(100 * 1024 * 1024)));
+const THREAD_DETAIL_ROLLOUT_MAX_BYTES = Math.max(
+  1 * 1024 * 1024,
+  Number(process.env.CODEX_MOBILE_THREAD_DETAIL_ROLLOUT_MAX_BYTES || String(ROLLOUT_WARNING_BYTES)),
+);
 const MAX_CONTINUATION_BOOTSTRAP_CHARS = Math.max(20_000, Number(process.env.CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS || "120000"));
 const CONTINUATION_RECENT_TURNS = Math.max(1, Math.min(30, Number(process.env.CODEX_MOBILE_CONTINUATION_RECENT_TURNS || "12")));
 const CONTINUATION_HANDOFF_TIMEOUT_MS = Math.max(30_000, Number(process.env.CODEX_MOBILE_CONTINUATION_HANDOFF_TIMEOUT_MS || "240000"));
@@ -79,6 +83,7 @@ const CONTINUATION_HANDOFF_MIN_CHARS = Math.max(120, Number(process.env.CODEX_MO
 const CONTINUATION_HANDOFF_TURN_COMPLETION_TIMEOUT_MS = Math.max(5_000, Number(process.env.CODEX_MOBILE_CONTINUATION_HANDOFF_TURN_COMPLETION_TIMEOUT_MS || "60000"));
 const RUNTIME_CONTEXT_CACHE_TTL_MS = Math.max(1000, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_CACHE_TTL_MS || "30000"));
 const RUNTIME_CONTEXT_CACHE_MAX = Math.max(20, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_CACHE_MAX || "200"));
+const MUX_REPLAY_NOTIFICATION_LIMIT = Math.max(0, Number(process.env.CODEX_MOBILE_MUX_REPLAY_NOTIFICATION_LIMIT || "200"));
 const SAFE_RETRY_METHODS = new Set(["initialize", "thread/list", "thread/read", "thread/turns/list"]);
 const IMAGE_EXTENSIONS = new Set([".avif", ".bmp", ".gif", ".heic", ".heif", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"]);
 const CODEX_CONFIG_DEFAULTS = readCodexConfigDefaults();
@@ -111,6 +116,14 @@ const ACTIONABLE_APPROVAL_METHODS = new Set([
   "item/permissions/requestApproval",
   "execCommandApproval",
   "applyPatchApproval",
+]);
+const ACTIONABLE_USER_INPUT_METHODS = new Set([
+  "item/tool/requestUserInput",
+  "mcpServer/elicitation/request",
+]);
+const ACTIONABLE_SERVER_REQUEST_METHODS = new Set([
+  ...ACTIONABLE_APPROVAL_METHODS,
+  ...ACTIONABLE_USER_INPUT_METHODS,
 ]);
 
 function optionListFromEnv(name, fallback) {
@@ -212,6 +225,21 @@ function sendJson(res, status, data) {
     "Cache-Control": "no-store",
   });
   res.end(body);
+}
+
+function logThreadDetail(event, details = {}) {
+  const safeDetails = {};
+  for (const [key, value] of Object.entries(details || {})) {
+    if (value === undefined) continue;
+    if (value instanceof Error) {
+      safeDetails[key] = value.message || String(value);
+    } else if (typeof value === "string") {
+      safeDetails[key] = value.length > 600 ? `${value.slice(0, 600)}...` : value;
+    } else {
+      safeDetails[key] = value;
+    }
+  }
+  console.log(`[thread-detail] ${event} ${JSON.stringify(safeDetails)}`);
 }
 
 function truncateMiddle(value, maxChars, label) {
@@ -1235,6 +1263,28 @@ function fileNamesFromApproval(method, params = {}) {
   return [];
 }
 
+function compactUserInputQuestions(params = {}) {
+  if (!Array.isArray(params.questions)) return [];
+  return params.questions.slice(0, 8).map((question) => {
+    const options = Array.isArray(question && question.options)
+      ? question.options.slice(0, 12).map((option) => Object.fromEntries(Object.entries({
+        label: option && option.label ? compactApprovalText(option.label, 240) : "",
+        description: option && option.description ? compactApprovalText(option.description, 500) : "",
+      }).filter(([, value]) => value !== "")))
+      : [];
+    return Object.fromEntries(Object.entries({
+      id: question && question.id ? String(question.id) : "",
+      header: question && question.header ? compactApprovalText(question.header, 240) : "",
+      question: question && question.question ? compactApprovalText(question.question, 1200) : "",
+      isOther: Boolean(question && question.isOther),
+      options,
+    }).filter(([, value]) => {
+      if (Array.isArray(value)) return value.length > 0;
+      return value !== "" && value !== false;
+    }));
+  });
+}
+
 function compactApprovalParams(method, params = {}) {
   return Object.fromEntries(Object.entries({
     threadId: params.threadId || params.conversationId || null,
@@ -1248,6 +1298,12 @@ function compactApprovalParams(method, params = {}) {
     fileNames: fileNamesFromApproval(method, params),
     permissions: method === "item/permissions/requestApproval" ? compactStructured(params.permissions || {}) : null,
     networkApprovalContext: params.networkApprovalContext || null,
+    questions: method === "item/tool/requestUserInput" ? compactUserInputQuestions(params) : [],
+    elicitationId: method === "mcpServer/elicitation/request" ? params.elicitationId || null : null,
+    title: method === "mcpServer/elicitation/request" && params.title ? compactApprovalText(params.title, 240) : null,
+    message: method === "mcpServer/elicitation/request" && params.message ? compactApprovalText(params.message, 1200) : null,
+    schema: method === "mcpServer/elicitation/request" && params.schema ? compactStructured(params.schema) : null,
+    elicitation: method === "mcpServer/elicitation/request" && params.elicitation ? compactStructured(params.elicitation) : null,
   }).filter(([, value]) => {
     if (Array.isArray(value)) return value.length > 0;
     return value !== null && value !== undefined && value !== "";
@@ -1262,7 +1318,7 @@ function publicServerRequest(request) {
     decision: request.decision || null,
     receivedAt: request.receivedAt || null,
     respondedAt: request.respondedAt || null,
-    actionable: ACTIONABLE_APPROVAL_METHODS.has(request.method),
+    actionable: ACTIONABLE_SERVER_REQUEST_METHODS.has(request.method),
     params: compactApprovalParams(request.method, request.params || {}),
   };
 }
@@ -1314,6 +1370,41 @@ function approvalResponsePayload(request, decision) {
       },
     };
   }
+  throw new Error(`Unsupported server request method: ${method || "unknown"}`);
+}
+
+function userInputResponsePayload(request, body = {}) {
+  const params = (request && request.params) || {};
+  const questions = Array.isArray(params.questions) ? params.questions : [];
+  if (body.answers && typeof body.answers === "object") {
+    return { result: { answers: body.answers } };
+  }
+  const responseText = String(body.responseText || body.text || "").trim();
+  const questionId = String(body.questionId || (questions[0] && questions[0].id) || "answer");
+  return {
+    result: {
+      answers: responseText ? { [questionId]: { answers: [responseText] } } : {},
+    },
+  };
+}
+
+function mcpElicitationResponsePayload(body = {}) {
+  const action = body.action === "decline" || body.decision === "deny" ? "decline" : "accept";
+  if (action === "decline") return { result: { action, content: null } };
+  const responseText = String(body.responseText || body.text || "").trim();
+  const result = { action, content: {} };
+  if (body.content && typeof body.content === "object") result.content = body.content;
+  else if (responseText) result.content = { response: responseText };
+  return { result };
+}
+
+function serverRequestResponsePayload(request, body = {}) {
+  const method = request && request.method;
+  if (ACTIONABLE_APPROVAL_METHODS.has(method)) {
+    return approvalResponsePayload(request, String(body.decision || ""));
+  }
+  if (method === "item/tool/requestUserInput") return userInputResponsePayload(request, body);
+  if (method === "mcpServer/elicitation/request") return mcpElicitationResponsePayload(body);
   throw new Error(`Unsupported server request method: ${method || "unknown"}`);
 }
 
@@ -2217,7 +2308,12 @@ class CodexAppServerClient {
   async initialize(options = {}) {
     try {
       this.info = await this.sendRpc("initialize", {
-        clientInfo: { name: "codex-mobile-web", title: "Codex Mobile Web", version: "0.1.0" },
+        clientInfo: {
+          name: "codex-mobile-web",
+          title: "Codex Mobile Web",
+          version: "0.1.0",
+          replayNotificationLimit: MUX_REPLAY_NOTIFICATION_LIMIT,
+        },
         capabilities: { experimentalApi: true },
       }, READ_RPC_TIMEOUT_MS);
     } catch (err) {
@@ -2403,15 +2499,16 @@ class CodexAppServerClient {
     this.ws.send(JSON.stringify(message));
   }
 
-  answerServerRequest(requestId, decision) {
+  answerServerRequest(requestId, responseBody = {}) {
     const key = String(requestId);
     const request = this.serverRequests.get(key);
     if (!request) throw new Error("Approval request is no longer pending");
     if (request.status !== "waiting") throw new Error("Approval request has already been answered");
-    const payload = approvalResponsePayload(request, decision);
+    const body = responseBody && typeof responseBody === "object" ? responseBody : { decision: String(responseBody || "") };
+    const payload = serverRequestResponsePayload(request, body);
     this.sendServerRequestResponse(request, payload);
     request.status = "responded";
-    request.decision = decision;
+    request.decision = body.decision || body.action || "submitted";
     request.respondedAt = Date.now();
     broadcast({ type: "serverRequestResolved", requestId: key, request: publicServerRequest(request) });
     setTimeout(() => this.serverRequests.delete(key), 15000).unref();
@@ -2455,7 +2552,7 @@ class CodexAppServerClient {
     }, 250).unref();
   }
 
-  sendRpc(method, params, timeoutMs = DEFAULT_RPC_TIMEOUT_MS) {
+  sendRpc(method, params, timeoutMs = DEFAULT_RPC_TIMEOUT_MS, options = {}) {
     const id = this.nextId++;
     const payload = { jsonrpc: "2.0", id, method, params };
     if (!this.isTransportOpen()) {
@@ -2468,7 +2565,7 @@ class CodexAppServerClient {
         const err = new Error(`Codex request timed out: ${method}`);
         err.code = "RPC_TIMEOUT";
         reject(err);
-        this.resetConnection(err.message);
+        if (options.resetOnTimeout !== false) this.resetConnection(err.message);
       }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
     });
@@ -2502,12 +2599,12 @@ class CodexAppServerClient {
     const retry = options.retry !== false && SAFE_RETRY_METHODS.has(method);
     await this.ensure();
     try {
-      return await this.sendRpc(method, params, timeoutMs);
+      return await this.sendRpc(method, params, timeoutMs, options);
     } catch (err) {
       const recoverable = /timed out|connection is not open|connection closed/i.test(err.message || "");
       if (!retry || !recoverable) throw err;
       await this.ensure();
-      return this.sendRpc(method, params, timeoutMs);
+      return this.sendRpc(method, params, timeoutMs, options);
     }
   }
 
@@ -2806,12 +2903,16 @@ async function continuationSourceSnapshot(sourceThreadId, sourceThreadTitle, vis
     snapshot.summary = annotateThreadRolloutStats(summary);
     snapshot.runtimeSettings = threadRuntimeSettings(threadId, snapshot.summary);
   }
+  if (snapshot.summary && shouldSkipThreadDetailRpc(snapshot.summary)) {
+    snapshot.readWarnings.push(threadDetailTooLargeWarning(snapshot.summary));
+    return snapshot;
+  }
   try {
     const turnsResult = await codex.request("thread/turns/list", {
       threadId,
       limit: CONTINUATION_RECENT_TURNS,
       sortDirection: "desc",
-    }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS, retry: false });
+    }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS, retry: false, resetOnTimeout: false });
     const data = Array.isArray(turnsResult && turnsResult.data)
       ? turnsResult.data
       : Array.isArray(turnsResult && turnsResult.turns)
@@ -3190,6 +3291,45 @@ function threadFromTurnsList(threadId, summary, turnsResult) {
   }, summary || {}, { id: threadId, status, turns, mobileReadMode: "turns-list" }));
 }
 
+function isReadTimeoutError(err) {
+  return Boolean(err && (err.code === "RPC_TIMEOUT" || /timed out|connection is not open|connection closed/i.test(err.message || "")));
+}
+
+function threadRolloutSizeBytes(thread) {
+  const size = Number(thread && thread.rolloutSizeBytes);
+  if (Number.isFinite(size) && size > 0) return size;
+  const stats = rolloutStatsForPath(rolloutPathForThread(thread));
+  return stats ? stats.sizeBytes : 0;
+}
+
+function shouldSkipThreadDetailRpc(thread) {
+  return threadRolloutSizeBytes(thread) >= THREAD_DETAIL_ROLLOUT_MAX_BYTES;
+}
+
+function threadDetailTooLargeWarning(thread) {
+  const size = threadRolloutSizeBytes(thread);
+  return `Thread rollout is too large for mobile detail RPC (${formatByteCount(size)} >= ${formatByteCount(THREAD_DETAIL_ROLLOUT_MAX_BYTES)}).`;
+}
+
+function fallbackThreadReadResult(threadId, summary, runtimeSettings, warning, mode = "summary-fallback") {
+  const fallbackThread = annotateThreadRolloutStats(Object.assign({
+    id: threadId,
+    name: null,
+    preview: threadId,
+    cwd: null,
+    path: null,
+    updatedAt: Math.floor(Date.now() / 1000),
+    status: { type: "notLoaded" },
+    turns: [],
+    mobileReadMode: mode,
+  }, summary || {}, { id: threadId, turns: [], mobileReadMode: mode }));
+  if (fallbackThread) fallbackThread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
+  return {
+    thread: fallbackThread,
+    mobileReadWarning: warning || "",
+  };
+}
+
 function filterFallbackThreads(threads, filters = {}) {
   const globalState = filters.globalState || readGlobalState();
   const visibility = visibilityFromGlobalState(globalState);
@@ -3409,7 +3549,7 @@ async function handleApi(req, res) {
   if (approvalResponse && req.method === "POST") {
     const requestId = decodeURIComponent(approvalResponse[1]);
     const body = await readBody(req);
-    const request = codex.answerServerRequest(requestId, String(body.decision || ""));
+    const request = codex.answerServerRequest(requestId, body);
     sendJson(res, 200, { ok: true, request });
     return;
   }
@@ -3576,60 +3716,159 @@ async function handleApi(req, res) {
   const threadRead = url.pathname.match(/^\/api\/threads\/([^/]+)$/);
   if (threadRead && req.method === "GET") {
     const threadId = decodeURIComponent(threadRead[1]);
+    const requestStartedAtMs = Date.now();
+    const threadLog = (event, details = {}) => logThreadDetail(event, Object.assign({
+      threadId,
+      elapsedMs: Date.now() - requestStartedAtMs,
+    }, details));
+    threadLog("start", {
+      transport: codex.transportKind,
+      ready: codex.ready,
+    });
     const globalState = readGlobalState();
     const visibility = visibilityFromGlobalState(globalState);
-    let summary = readStateDbThread(threadId) || readStartedThread(threadId);
+    let summary = readStateDbThread(threadId);
+    let summarySource = summary ? "state-db" : "none";
     if (!summary) {
+      summary = readStartedThread(threadId);
+      summarySource = summary ? "started-cache" : "none";
+    }
+    if (!summary) {
+      const summaryStartedAtMs = Date.now();
+      threadLog("summary_app_server_start");
       try {
         summary = await readThreadSummaryFromAppServer(codex, threadId);
-      } catch (_) {}
+        summarySource = summary ? "app-server" : "none";
+        threadLog("summary_app_server_ok", {
+          durationMs: Date.now() - summaryStartedAtMs,
+          found: Boolean(summary),
+        });
+      } catch (err) {
+        threadLog("summary_app_server_error", {
+          durationMs: Date.now() - summaryStartedAtMs,
+          error: err.message || String(err),
+        });
+      }
     }
+    threadLog("summary_ready", {
+      source: summarySource,
+      title: summary && (summary.name || summary.preview || ""),
+      rolloutSizeBytes: summary ? threadRolloutSizeBytes(summary) : null,
+      status: summary && summary.status ? summary.status.type || summary.status : null,
+    });
     const runtimeSettings = threadRuntimeSettings(threadId, summary);
     if (summary && isHiddenThread(summary, visibility)) {
+      threadLog("hidden", { status: 404 });
       sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
+      threadLog("complete", { status: 404, mode: "hidden" });
       return;
     }
+    if (summary && shouldSkipThreadDetailRpc(summary)) {
+      threadLog("skip_detail_rpc", {
+        mode: "summary-large-rollout-fallback",
+        rolloutSizeBytes: threadRolloutSizeBytes(summary),
+        thresholdBytes: THREAD_DETAIL_ROLLOUT_MAX_BYTES,
+      });
+      sendJson(res, 200, fallbackThreadReadResult(
+        threadId,
+        summary,
+        runtimeSettings,
+        threadDetailTooLargeWarning(summary),
+        "summary-large-rollout-fallback",
+      ));
+      threadLog("complete", { status: 200, mode: "summary-large-rollout-fallback" });
+      return;
+    }
+    const turnsStartedAtMs = Date.now();
+    threadLog("turns_list_start", {
+      limit: MAX_THREAD_TURNS,
+      timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS,
+    });
     try {
       const turnsResult = await codex.request("thread/turns/list", {
         threadId,
         limit: MAX_THREAD_TURNS,
         sortDirection: "desc",
-      }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS });
+      }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS, retry: false, resetOnTimeout: false });
       const result = compactThreadReadResult({ thread: threadFromTurnsList(threadId, summary, turnsResult) });
       if (result.thread) result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
       if (isHiddenThread(result.thread, visibility)) {
-        sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
-        return;
-      }
-      sendJson(res, 200, result);
-    } catch (turnsErr) {
-      if (isUnmaterializedThreadError(turnsErr)) {
-        const emptyThread = annotateThreadRolloutStats(Object.assign({
-          id: threadId,
-          name: null,
-          preview: threadId,
-          cwd: null,
-          path: null,
-          updatedAt: Math.floor(Date.now() / 1000),
-          status: { type: "notLoaded" },
-          turns: [],
-          mobileReadMode: "unmaterialized",
-        }, summary || {}, { id: threadId, turns: [], mobileReadMode: "unmaterialized" }));
-        if (emptyThread) emptyThread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
-        sendJson(res, 200, {
-          thread: emptyThread,
-          mobileReadWarning: turnsErr.message || String(turnsErr),
+        threadLog("turns_list_hidden", {
+          durationMs: Date.now() - turnsStartedAtMs,
+          status: 404,
         });
-        return;
-      }
-      const result = compactThreadReadResult(await codex.request("thread/read", { threadId, includeTurns: true }, { timeoutMs: READ_RPC_TIMEOUT_MS }));
-      if (result.thread) result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
-      if (isHiddenThread(result.thread, visibility)) {
         sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
         return;
       }
-      result.mobileReadWarning = turnsErr.message || String(turnsErr);
+      threadLog("turns_list_ok", {
+        durationMs: Date.now() - turnsStartedAtMs,
+        returnedTurns: result.thread && Array.isArray(result.thread.turns) ? result.thread.turns.length : null,
+        mode: result.thread && result.thread.mobileReadMode ? result.thread.mobileReadMode : "turns-list",
+      });
       sendJson(res, 200, result);
+      threadLog("complete", { status: 200, mode: "turns-list" });
+    } catch (turnsErr) {
+      threadLog("turns_list_error", {
+        durationMs: Date.now() - turnsStartedAtMs,
+        timeout: isReadTimeoutError(turnsErr),
+        error: turnsErr.message || String(turnsErr),
+      });
+      if (isUnmaterializedThreadError(turnsErr)) {
+        sendJson(res, 200, fallbackThreadReadResult(threadId, summary, runtimeSettings, turnsErr.message || String(turnsErr), "unmaterialized"));
+        threadLog("complete", { status: 200, mode: "unmaterialized" });
+        return;
+      }
+
+      if (isReadTimeoutError(turnsErr)) {
+        sendJson(res, 200, fallbackThreadReadResult(threadId, summary, runtimeSettings, turnsErr.message || String(turnsErr), "summary-timeout-fallback"));
+        threadLog("complete", { status: 200, mode: "summary-timeout-fallback" });
+        return;
+      }
+
+      const readStartedAtMs = Date.now();
+      threadLog("thread_read_start", {
+        timeoutMs: READ_RPC_TIMEOUT_MS,
+      });
+      try {
+        const result = compactThreadReadResult(await codex.request("thread/read", { threadId, includeTurns: true }, {
+          timeoutMs: READ_RPC_TIMEOUT_MS,
+          retry: false,
+          resetOnTimeout: false,
+        }));
+        if (result.thread) result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
+        if (isHiddenThread(result.thread, visibility)) {
+          threadLog("thread_read_hidden", {
+            durationMs: Date.now() - readStartedAtMs,
+            status: 404,
+          });
+          sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
+          return;
+        }
+        result.mobileReadWarning = turnsErr.message || String(turnsErr);
+        threadLog("thread_read_ok", {
+          durationMs: Date.now() - readStartedAtMs,
+          returnedTurns: result.thread && Array.isArray(result.thread.turns) ? result.thread.turns.length : null,
+          warning: result.mobileReadWarning,
+        });
+        sendJson(res, 200, result);
+        threadLog("complete", { status: 200, mode: "thread-read-fallback" });
+      } catch (readErr) {
+        const mode = isReadTimeoutError(readErr) ? "summary-timeout-fallback" : "summary-error-fallback";
+        threadLog("thread_read_error", {
+          durationMs: Date.now() - readStartedAtMs,
+          timeout: isReadTimeoutError(readErr),
+          mode,
+          error: readErr.message || String(readErr),
+        });
+        sendJson(res, 200, fallbackThreadReadResult(
+          threadId,
+          summary,
+          runtimeSettings,
+          `${turnsErr.message || String(turnsErr)}; thread/read failed: ${readErr.message || String(readErr)}`,
+          mode,
+        ));
+        threadLog("complete", { status: 200, mode });
+      }
     }
     return;
   }
@@ -3642,7 +3881,7 @@ async function handleApi(req, res) {
       cursor,
       limit: Math.max(1, Math.min(100, Number(url.searchParams.get("limit") || String(MAX_THREAD_TURNS)))),
       sortDirection: url.searchParams.get("sortDirection") || "asc",
-    }, { timeoutMs: READ_RPC_TIMEOUT_MS })));
+    }, { timeoutMs: READ_RPC_TIMEOUT_MS, retry: false, resetOnTimeout: false })));
     return;
   }
   const resume = url.pathname.match(/^\/api\/threads\/([^/]+)\/resume$/);
@@ -3829,4 +4068,5 @@ if (require.main === module) {
 module.exports = {
   approvalResponsePayload,
   publicServerRequest,
+  serverRequestResponsePayload,
 };

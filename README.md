@@ -37,10 +37,11 @@ If Codex CLI is not authenticated, authenticate it first using the normal Codex 
 ```bash
 git clone https://github.com/pentiumxp/codex-mobile-web-public.git
 cd codex-mobile-web-public
+npm ci
 npm run check
 ```
 
-There are no npm package dependencies. `npm run check` only syntax-checks the JavaScript files. On macOS, also run:
+`npm ci` installs the small runtime dependency set used by optional Web Push support. `npm run check` syntax-checks the JavaScript files. On macOS, also run:
 
 ```bash
 npm run check:macos
@@ -343,11 +344,11 @@ Behavior:
 
 iOS/PWA 的横滑手势使用 Touch Events 路径处理；如果系统在横滑过程中发出 `touchcancel` / `pointercancel`，前端会根据最后一次横向位移完成展开判定，而不是直接收起按钮。
 
-- The top-right timer shows current turn elapsed time as `鏈疆 HH:MM:SS`.
+- The top-right timer shows current turn elapsed time as `本轮 HH:MM:SS`.
 - The timer is red while a turn is active and muted after completion.
-- During an active turn, the timer may append a compact activity label such as `鎬濊€僠, `杈撳嚭`, `鍛戒护`, `鏂囦欢`, `宸ュ叿`, `鎼滅储`, `鍚屾`, or `绛夊緟鎵瑰噯`.
-- The timer uses a fixed elapsed-time segment, so activity label length changes do not move the `鏈疆 HH:MM:SS` text.
-- After the latest turn finishes, the timer switches to muted styling and shows `宸茬粨鏉焋 instead of any in-progress activity label.
+- During an active turn, the timer may append a compact activity label such as `思考`, `输出`, `命令`, `文件`, `工具`, `搜索`, `同步`, or `等待批准`.
+- The timer uses a fixed elapsed-time segment, so activity label length changes do not move the `本轮 HH:MM:SS` text.
+- After the latest turn finishes, the timer switches to muted styling and shows `已结束` instead of any in-progress activity label.
 - Live reasoning is not rendered as conversation rows.
 - Command/file/tool activity appears as compact operation cards.
 - Consecutive command/file operation updates show only the latest operation card unless normal visible content appears between two operations.
@@ -389,9 +390,9 @@ This section summarizes the current integration behavior for someone cloning or 
 - Mobile Web renders app-server approval requests as cards in the current thread.
 - Supported approval families include command execution, file change, and permission-profile requests.
 - Each pending card exposes:
-  - `Allow once`
-  - `Allow session`
-  - `Deny`
+  - `允许一次`
+  - `本会话允许`
+  - `拒绝`
 - The approval response goes back through the same shared app-server stream. This avoids creating a separate stream just to answer permissions.
 - Approval cards render inside their associated turn when a `turnId` is available. After the request is answered, the large card collapses to a one-line status instead of remaining as a full card at the bottom of the conversation.
 
@@ -466,7 +467,7 @@ The mux must keep stdout clean because stdout is the Desktop app-server protocol
 
 When `CODEX_MUX_KEEP_ALIVE=1`, the mux keeps the real app-server and TCP endpoint alive after the Desktop stdio client disconnects. A later Desktop launch through the same wrapper connects back to the existing mux instead of starting a second app-server.
 
-The mux also proxies app-server requests such as command, file-change, and permission approvals. This allows Mobile Web to display approval cards and answer `Allow once`, `Allow session`, or `Deny` without creating a separate app-server stream.
+The mux also proxies app-server requests such as command, file-change, and permission approvals. This allows Mobile Web to display approval cards and answer `允许一次`, `本会话允许`, or `拒绝` without creating a separate app-server stream.
 
 The mux keeps a bounded notification replay buffer. Mobile Web receives buffered `turn/*`, `item/*`, `thread/*`, and rate-limit notifications after reconnecting, while Desktop notification replay is disabled by default to avoid rolling back Desktop's already-loaded durable thread view. Unresolved approval/server requests are replayed to both Desktop and Mobile Web.
 
@@ -741,6 +742,7 @@ VAPID details:
 | `CODEX_MOBILE_THREAD_TURNS` | Number of recent turns returned to the phone, default `12`. |
 | `CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES` | Tail bytes read from a thread rollout to recover inherited turn runtime settings, default `4194304`. |
 | `CODEX_MOBILE_ROLLOUT_WARNING_BYTES` | Rollout JSONL size threshold for UI warnings and the continuation action, default `104857600` (`100MB`). |
+| `CODEX_MOBILE_THREAD_DETAIL_ROLLOUT_MAX_BYTES` | Rollout JSONL size threshold where Mobile Web skips expensive thread-detail RPCs and shows local summary fallback, default equals `CODEX_MOBILE_ROLLOUT_WARNING_BYTES`. |
 | `CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS` | Max characters in the rollout continuation bootstrap message, default `120000`. |
 | `CODEX_MOBILE_CONTINUATION_RECENT_TURNS` | Recent source turns summarized into the continuation bootstrap, default `12`, capped at `30`. |
 | `CODEX_MOBILE_CONTINUATION_HANDOFF_TIMEOUT_MS` | How long Mobile Web waits for the source thread to write its continuation handoff file before creating the new thread, default `240000`. |
@@ -748,6 +750,7 @@ VAPID details:
 | `CODEX_MOBILE_CONTINUATION_HANDOFF_TURN_COMPLETION_TIMEOUT_MS` | Extra wait for the source handoff turn to report a completed status after the handoff file is written, default `60000`. |
 | `CODEX_MOBILE_MESSAGE_DEDUPE_WINDOW_MS` | Time window for treating repeated message submissions as the same request, default `90000`. Requests with `clientSubmissionId` are deduped by id; legacy requests without it fall back to content fingerprinting. |
 | `CODEX_MOBILE_MESSAGE_DEDUPE_MAX` | Maximum number of recent message submissions kept in the dedupe cache, default `300`. |
+| `CODEX_MOBILE_MUX_REPLAY_NOTIFICATION_LIMIT` | Maximum buffered mux notifications requested by Mobile Web on reconnect, default `200`; unresolved approval/server requests are still replayed separately. |
 | `CODEX_MOBILE_PUSH_SUBJECT` | VAPID subject used for Web Push. Must be a non-localhost contact URI, for example `mailto:name@example.com` or an HTTPS URL. |
 | `CODEX_MOBILE_PUSH_TTL_SECONDS` | Web Push TTL in seconds, default `3600`. |
 | `CODEX_MOBILE_PUSH_VAPID_FILE` | Custom runtime path for Web Push VAPID keys. |

@@ -74,6 +74,7 @@ const STORAGE_EFFORT = "codexMobileSelectedEffort";
 const STORAGE_PERMISSION_MODES = "codexMobileSelectedPermissionModes";
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
 const HIDDEN_SERVER_REQUEST_METHODS = new Set(["item/tool/call"]);
+const USER_INPUT_REQUEST_METHODS = new Set(["item/tool/requestUserInput", "mcpServer/elicitation/request"]);
 const CONTEXT_COMPACTION_PENDING_NOTICE = "\u5386\u53f2\u4e0a\u4e0b\u6587\u6b63\u5728\u538b\u7f29";
 const CONTEXT_COMPACTION_COMPLETE_NOTICE = "\u5386\u53f2\u4e0a\u4e0b\u6587\u5df2\u538b\u7f29";
 
@@ -1026,6 +1027,9 @@ function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
   if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoadError")) {
     delete merged.mobileLoadError;
   }
+  if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileReadWarning")) {
+    delete merged.mobileReadWarning;
+  }
   if (!incomingTurns) return merged;
   merged.turns = incomingTurns.map((incomingTurn) => {
     const existingTurn = existingById.get(incomingTurn.id);
@@ -1063,10 +1067,16 @@ function shouldShowApprovalRequest(request) {
   return request && !HIDDEN_SERVER_REQUEST_METHODS.has(request.method);
 }
 
+function requestBelongsToThread(request, threadId) {
+  const requestThreadId = approvalThreadId(request);
+  if (requestThreadId) return requestThreadId === threadId;
+  return Boolean(threadId);
+}
+
 function pendingApprovalsForThread(threadId) {
   return Array.from(state.pendingApprovals.values())
     .filter(shouldShowApprovalRequest)
-    .filter((request) => approvalThreadId(request) === threadId)
+    .filter((request) => requestBelongsToThread(request, threadId))
     .sort((a, b) => Number(a.receivedAt || 0) - Number(b.receivedAt || 0));
 }
 
@@ -2086,6 +2096,25 @@ function renderRolloutWarning(thread, previousKeys = new Set()) {
   </div>`;
 }
 
+function threadReadWarningMessage(thread) {
+  const rawWarning = String(thread && thread.mobileReadWarning ? thread.mobileReadWarning : "");
+  const mode = String(thread && thread.mobileReadMode ? thread.mobileReadMode : "");
+  if (!rawWarning) return "";
+  if (
+    rawWarning.includes("shared app-server endpoint unavailable")
+    || rawWarning.includes("app-server-mux/endpoint.json not found")
+  ) {
+    return "共享模式已经断开。手机端现在只能显示本地摘要，不能读取完整会话；请在 Mac 上重新运行共享启动脚本，然后刷新手机页面。";
+  }
+  if (mode === "summary-timeout-fallback") {
+    return "线程详情读取超时，先显示本地摘要；稍后刷新会继续补全。";
+  }
+  if (mode === "summary-large-rollout-fallback") {
+    return "这个会话上下文太大，手机端先显示本地摘要；建议压缩续接后再继续使用。";
+  }
+  return "线程详情暂时没有完整读到，先显示本地摘要；稍后刷新会继续补全。";
+}
+
 function renderCurrentThread(options = {}) {
   state.nowMs = Date.now();
   const thread = state.currentThread;
@@ -2129,6 +2158,11 @@ function renderCurrentThread(options = {}) {
   const omittedBanner = omitted > 0
     ? `<div class="history-note${entryAnimationClass(omittedKey, previousKeys)}" data-render-key="${escapeHtml(omittedKey)}">Older history hidden on mobile: ${omitted.toLocaleString()} turn(s)</div>`
     : "";
+  const readWarningKey = `read-warning|${state.currentThreadId}|${thread.mobileReadMode || ""}|${thread.mobileReadWarning || ""}`;
+  const readWarningMessage = threadReadWarningMessage(thread);
+  const readWarning = readWarningMessage
+    ? `<div class="history-note${entryAnimationClass(readWarningKey, previousKeys)}" data-render-key="${escapeHtml(readWarningKey)}">${escapeHtml(readWarningMessage)}</div>`
+    : "";
   const rolloutWarning = renderRolloutWarning(thread, previousKeys);
   const visibleTurnIds = new Set(turns.map((turn) => turn && turn.id).filter(Boolean).map(String));
   const turnsHtml = turns.map((turn) => renderTurn(turn, previousKeys)).join("");
@@ -2137,7 +2171,10 @@ function renderCurrentThread(options = {}) {
     if (turnId && visibleTurnIds.has(turnId)) return false;
     return isApprovalActive(request);
   });
-  const html = rolloutWarning + omittedBanner + (turnsHtml || approvalsHtml ? `${turnsHtml}${approvalsHtml}` : `<div class="empty-state entry-animate">No visible turns.</div>`);
+  const emptyMessage = readWarningMessage
+    ? "暂时没有可显示的完整消息。共享模式恢复后刷新这个页面即可继续读取。"
+    : "No visible turns.";
+  const html = rolloutWarning + omittedBanner + readWarning + (turnsHtml || approvalsHtml ? `${turnsHtml}${approvalsHtml}` : `<div class="empty-state entry-animate">${escapeHtml(emptyMessage)}</div>`);
   updateConversationHtml(html, conversationRenderSignature(thread), { stickToBottom: shouldStickToBottom });
   bindCurrentThreadActions();
   updateTickTimer();
@@ -2401,24 +2438,25 @@ async function startNewThreadFromList(event) {
 
 function approvalTitle(method) {
   const titles = {
-    "item/commandExecution/requestApproval": "Command approval",
-    "execCommandApproval": "Command approval",
-    "item/fileChange/requestApproval": "File change approval",
-    "applyPatchApproval": "File change approval",
-    "item/permissions/requestApproval": "Permission approval",
-    "item/tool/requestUserInput": "User input required",
-    "mcpServer/elicitation/request": "MCP input required",
-    "item/tool/call": "Tool request",
-    "account/chatgptAuthTokens/refresh": "Account authorization",
+    "item/commandExecution/requestApproval": "命令需要批准",
+    "execCommandApproval": "命令需要批准",
+    "item/fileChange/requestApproval": "文件改动需要批准",
+    "applyPatchApproval": "文件改动需要批准",
+    "item/permissions/requestApproval": "权限需要批准",
+    "item/tool/requestUserInput": "需要你补充信息",
+    "mcpServer/elicitation/request": "MCP 需要输入",
+    "item/tool/call": "工具请求",
+    "account/chatgptAuthTokens/refresh": "账号授权",
   };
-  return titles[method] || "Approval request";
+  return titles[method] || "待处理请求";
 }
 
 function approvalStatusLabel(status) {
   const text = String(status || "waiting");
-  if (text === "responding") return "Sending";
-  if (text === "responded" || text === "resolved") return "Answered";
-  if (text === "connectionClosed") return "Closed";
+  if (text === "waiting") return "等待中";
+  if (text === "responding") return "发送中";
+  if (text === "responded" || text === "resolved") return "已处理";
+  if (text === "connectionClosed") return "已关闭";
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
@@ -2432,15 +2470,61 @@ function permissionSummary(permissions) {
 
 function approvalDetailLines(request) {
   const params = request.params || {};
+  const questions = Array.isArray(params.questions) ? params.questions : [];
   return [
-    params.reason ? `Reason: ${params.reason}` : "",
-    params.command ? `Command:\n${params.command}` : "",
-    params.cwd ? `Working directory:\n${params.cwd}` : "",
-    params.grantRoot ? `Grant root:\n${params.grantRoot}` : "",
-    Array.isArray(params.fileNames) && params.fileNames.length ? `Files:\n${params.fileNames.join("\n")}` : "",
-    params.permissions ? `Permissions:\n${permissionSummary(params.permissions) || JSON.stringify(params.permissions, null, 2)}` : "",
-    params.networkApprovalContext ? `Network:\n${JSON.stringify(params.networkApprovalContext, null, 2)}` : "",
+    params.reason ? `原因: ${params.reason}` : "",
+    params.command ? `命令:\n${params.command}` : "",
+    params.cwd ? `工作目录:\n${params.cwd}` : "",
+    params.grantRoot ? `授权目录:\n${params.grantRoot}` : "",
+    Array.isArray(params.fileNames) && params.fileNames.length ? `文件:\n${params.fileNames.join("\n")}` : "",
+    params.permissions ? `权限:\n${permissionSummary(params.permissions) || JSON.stringify(params.permissions, null, 2)}` : "",
+    params.networkApprovalContext ? `网络:\n${JSON.stringify(params.networkApprovalContext, null, 2)}` : "",
+    questions.length ? questions.map((question, index) => {
+      const lines = [
+        question.header ? `${question.header}` : `问题 ${index + 1}`,
+        question.question || "",
+        Array.isArray(question.options) && question.options.length
+          ? question.options.map((option) => `- ${option.label}${option.description ? `: ${option.description}` : ""}`).join("\n")
+          : "",
+      ].filter(Boolean);
+      return lines.join("\n");
+    }).join("\n\n") : "",
+    params.title ? `标题:\n${params.title}` : "",
+    params.message ? `说明:\n${params.message}` : "",
+    params.schema ? `结构:\n${JSON.stringify(params.schema, null, 2)}` : "",
+    params.elicitation ? `请求:\n${JSON.stringify(params.elicitation, null, 2)}` : "",
   ].filter(Boolean);
+}
+
+function isUserInputRequest(request) {
+  return USER_INPUT_REQUEST_METHODS.has(request && request.method);
+}
+
+function renderUserInputOptions(request) {
+  const params = request.params || {};
+  const questions = Array.isArray(params.questions) ? params.questions : [];
+  const question = questions.find((entry) => Array.isArray(entry.options) && entry.options.length) || questions[0] || null;
+  if (!question || !Array.isArray(question.options) || !question.options.length) return "";
+  return `<div class="approval-option-grid">
+    ${question.options.map((option) => `<button class="approval-option" type="button" data-server-request-id="${escapeHtml(request.id)}" data-server-question-id="${escapeHtml(question.id || "answer")}" data-server-response-text="${escapeHtml(option.label || "")}">
+      <span>${escapeHtml(option.label || "选项")}</span>
+      ${option.description ? `<small>${escapeHtml(option.description)}</small>` : ""}
+    </button>`).join("")}
+  </div>`;
+}
+
+function renderUserInputActions(request) {
+  const params = request.params || {};
+  const questions = Array.isArray(params.questions) ? params.questions : [];
+  const question = questions[0] || {};
+  return `<form class="approval-response-form" data-server-request-form data-server-request-id="${escapeHtml(request.id)}" data-server-question-id="${escapeHtml(question.id || "answer")}">
+    ${renderUserInputOptions(request)}
+    <textarea class="approval-response-input" name="responseText" rows="3" placeholder="输入回复内容"></textarea>
+    <div class="approval-actions request-actions">
+      <button class="approval-button allow" type="submit">提交</button>
+      <button class="approval-button deny" type="button" data-server-request-id="${escapeHtml(request.id)}" data-server-request-decline>取消</button>
+    </div>
+  </form>`;
 }
 
 function renderApprovalActions(request) {
@@ -2448,10 +2532,11 @@ function renderApprovalActions(request) {
   if (!request.actionable || !waiting) {
     return "";
   }
+  if (isUserInputRequest(request)) return renderUserInputActions(request);
   return `<div class="approval-actions">
-    <button class="approval-button allow" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-action="allow_once">Allow once</button>
-    <button class="approval-button allow" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-action="allow_session">Allow session</button>
-    <button class="approval-button deny" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-action="deny">Deny</button>
+    <button class="approval-button allow" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-action="allow_once">允许一次</button>
+    <button class="approval-button allow" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-action="allow_session">本会话允许</button>
+    <button class="approval-button deny" type="button" data-approval-id="${escapeHtml(request.id)}" data-approval-action="deny">拒绝</button>
   </div>`;
 }
 
@@ -3102,19 +3187,19 @@ function scheduleRenderCurrentThread() {
 }
 
 function upsertServerRequest(request) {
-  if (!request || !request.id) return;
+  if (!request || request.id === null || request.id === undefined) return;
   if (!shouldShowApprovalRequest(request)) {
     state.pendingApprovals.delete(String(request.id));
-    if (state.currentThread && approvalThreadId(request) === state.currentThread.id) scheduleRenderCurrentThread();
+    if (state.currentThread && requestBelongsToThread(request, state.currentThread.id)) scheduleRenderCurrentThread();
     return;
   }
-  markActivity(request.actionable ? "等待批准" : "等待输入");
+  markActivity(isUserInputRequest(request) ? "等待输入" : "等待批准");
   state.pendingApprovals.set(String(request.id), Object.assign({}, state.pendingApprovals.get(String(request.id)) || {}, request));
-  if (state.currentThread && approvalThreadId(request) === state.currentThread.id) scheduleRenderCurrentThread();
+  if (state.currentThread && requestBelongsToThread(request, state.currentThread.id)) scheduleRenderCurrentThread();
 }
 
 function scheduleApprovalRemoval(requestId, delayMs = 6000) {
-  const key = String(requestId || "");
+  const key = requestId !== null && requestId !== undefined ? String(requestId) : "";
   if (!key) return;
   setTimeout(() => {
     const existing = state.pendingApprovals.get(key);
@@ -3125,7 +3210,7 @@ function scheduleApprovalRemoval(requestId, delayMs = 6000) {
 }
 
 function resolveServerRequest(payload) {
-  const requestId = String(payload && payload.requestId || "");
+  const requestId = payload && payload.requestId !== null && payload.requestId !== undefined ? String(payload.requestId) : "";
   if (!requestId) return;
   const existing = state.pendingApprovals.get(requestId);
   let next = existing || null;
@@ -3136,8 +3221,8 @@ function resolveServerRequest(payload) {
     existing.status = payload.status || "resolved";
     next = existing;
   }
-  if (state.currentThread && next && approvalThreadId(next) === state.currentThread.id) scheduleRenderCurrentThread();
-  if (next) markActivity("批准完成");
+  if (state.currentThread && next && requestBelongsToThread(next, state.currentThread.id)) scheduleRenderCurrentThread();
+  if (next) markActivity(isUserInputRequest(next) ? "输入完成" : "批准完成");
   scheduleApprovalRemoval(requestId);
 }
 
@@ -3703,24 +3788,24 @@ async function interruptActiveTurn() {
     .catch(showError);
 }
 
-async function answerApproval(requestId, decision) {
-  const key = String(requestId || "");
+async function answerServerRequest(requestId, payload) {
+  const key = requestId !== null && requestId !== undefined ? String(requestId) : "";
   const request = state.pendingApprovals.get(key);
   if (!request || request.status !== "waiting") return;
   request.status = "responding";
-  request.decision = decision;
-  markActivity("批准中");
+  request.decision = payload && (payload.decision || payload.action) || "submitted";
+  markActivity(isUserInputRequest(request) ? "输入发送中" : "批准中");
   renderCurrentThread();
   try {
     const result = await api(`/api/approvals/${encodeURIComponent(key)}`, {
       method: "POST",
-      body: JSON.stringify({ decision }),
+      body: JSON.stringify(payload || {}),
       timeoutMs: 20000,
     });
     if (result && result.request) state.pendingApprovals.set(key, result.request);
     $("connectionState").classList.remove("error");
-    $("connectionState").textContent = "Approval sent";
-    markActivity("批准发送");
+    $("connectionState").textContent = isUserInputRequest(request) ? "Response sent" : "Approval sent";
+    markActivity(isUserInputRequest(request) ? "输入已发送" : "批准发送");
     renderCurrentThread();
   } catch (err) {
     request.status = "waiting";
@@ -3728,6 +3813,30 @@ async function answerApproval(requestId, decision) {
     showError(err);
     renderCurrentThread();
   }
+}
+
+function answerApproval(requestId, decision) {
+  return answerServerRequest(requestId, { decision });
+}
+
+function serverRequestPayload(request, responseText, questionId) {
+  if (request && request.method === "mcpServer/elicitation/request") {
+    return { action: "accept", responseText };
+  }
+  return { responseText, questionId };
+}
+
+function declineServerRequest(requestId) {
+  const key = requestId !== null && requestId !== undefined ? String(requestId) : "";
+  const request = state.pendingApprovals.get(key);
+  if (!request) return Promise.resolve();
+  if (request.method === "mcpServer/elicitation/request") {
+    return answerServerRequest(key, { action: "decline" });
+  }
+  if (request.method === "item/tool/requestUserInput") {
+    return answerServerRequest(key, { answers: {} });
+  }
+  return answerApproval(key, "deny");
 }
 
 function wireUi() {
@@ -3772,8 +3881,30 @@ function wireUi() {
   }, { passive: true });
   $("conversation").addEventListener("click", (event) => {
     const button = event.target.closest("[data-approval-action]");
-    if (!button) return;
-    answerApproval(button.dataset.approvalId, button.dataset.approvalAction).catch(showError);
+    if (button) {
+      answerApproval(button.dataset.approvalId, button.dataset.approvalAction).catch(showError);
+      return;
+    }
+    const option = event.target.closest("[data-server-response-text]");
+    if (option) {
+      const requestId = option.dataset.serverRequestId;
+      const request = state.pendingApprovals.get(requestId !== null && requestId !== undefined ? String(requestId) : "");
+      answerServerRequest(requestId, serverRequestPayload(request, option.dataset.serverResponseText || "", option.dataset.serverQuestionId || "answer")).catch(showError);
+      return;
+    }
+    const decline = event.target.closest("[data-server-request-decline]");
+    if (decline) {
+      declineServerRequest(decline.dataset.serverRequestId).catch(showError);
+    }
+  });
+  $("conversation").addEventListener("submit", (event) => {
+    const form = event.target.closest("[data-server-request-form]");
+    if (!form) return;
+    event.preventDefault();
+    const requestId = form.dataset.serverRequestId;
+    const request = state.pendingApprovals.get(requestId !== null && requestId !== undefined ? String(requestId) : "");
+    const responseText = new FormData(form).get("responseText") || "";
+    answerServerRequest(requestId, serverRequestPayload(request, String(responseText), form.dataset.serverQuestionId || "answer")).catch(showError);
   });
   $("messageInput").addEventListener("input", (event) => {
     autoSizeMessageInput(event.target);
