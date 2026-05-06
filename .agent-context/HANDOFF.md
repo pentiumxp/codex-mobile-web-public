@@ -84,6 +84,23 @@
 - Activation note:
   - Static frontend-only change. Existing PWA/browser sessions need a refresh to load the updated `public/app.js`.
 
+## 2026-05-06 Public Sync After User Test - 14:03 +08:00
+
+- User instruction:
+  - After testing the private build, the user explicitly approved public push.
+- Public release sync:
+  - Synchronized current private `README.md` and `public/app.js` into `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Preserved public release differences: `README.md` uses `https://github.com/pentiumxp/codex-mobile-web-public.git` and `cd codex-mobile-web-public`; `public/app.js` registers `/sw.js`.
+  - Updated public `public/sw.js` by keeping its PWA cache shell and adding the Web Push notification-click `codex-open-thread` message path.
+  - Public README includes Chinese documentation for Web Push thread switching and iOS/PWA left-swipe `压缩续接` behavior.
+- Validation:
+  - Public `npm.cmd test` passed.
+  - Public `npm.cmd run check` passed.
+  - Public `git diff --check` passed with line-ending warnings only.
+  - Public tracked-file privacy scan excluding `.gitignore` returned no matches for local user paths, Tailscale host markers, LAN address, Hermes name, or the private GitHub clone URL.
+- Published:
+  - Public commit `f8ac2de 修复通知线程切换和左滑续接` pushed to `origin/main`.
+
 ## 2026-05-06 Default User-Logon Startup Simplification - 00:35 +08:00
 
 - User-requested change:
