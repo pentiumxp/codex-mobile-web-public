@@ -1916,3 +1916,26 @@
   - A public commit message must not be only a one-line title; it should name the concrete changed areas, behavior/documentation impact, and validation or operational notes when relevant.
 - Durable context:
   - Added this as a public commit-message rule in `.agent-context/PROJECT_CONTEXT.md`.
+
+## 2026-05-07 Public Rollout Continuation Release - 07:05 +08:00
+
+- User instruction:
+  - User explicitly asked to commit and push after clarifying that public commits must include detailed change information rather than a one-line message.
+- Public sync:
+  - Synchronized the private rollout continuation fixes into `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Public files changed: `server.js`, `public/app.js`, and `README.md`.
+  - Preserved public release differences: public README still points to `https://github.com/pentiumxp/codex-mobile-web-public.git`, and public `public/app.js` keeps service worker registration path `/sw.js`.
+  - Did not copy `.agent-context/` into public.
+- Public behavior released:
+  - `server.js` now starts/resumes the source thread, asks it to write a thread-specific `.agent-context/thread-handoffs/<id>.md`, waits for that file, briefly waits for source-turn completion, then creates the continuation thread.
+  - New-thread bootstrap uses the source-generated handoff, limited source-turn context, and current-workspace context; it no longer hard-codes unrelated private/public/GitHub release rules into every continuation.
+  - `public/app.js` shows the source thread while the handoff turn runs, prevents source archive events from clearing the view before the continuation is ready, and then switches to the new continuation thread after creation.
+  - Public README includes the required Chinese documentation of the updated rollout continuation flow and new environment variables.
+- Validation:
+  - Public `npm.cmd test` passed.
+  - Public `npm.cmd run check` passed.
+  - Public `git diff --check` passed with line-ending warnings only.
+  - Targeted tracked-file privacy scan found no local user path, private repo URL, LAN/Tailscale host marker, GMK/xuxin marker, or Hermes marker.
+- Published:
+  - Public commit `7160bcd 改进 rollout 压缩续接交接流程` pushed to `origin/main`.
+  - The public commit message includes detailed body paragraphs describing changes since previous public commit `82660e0`.
