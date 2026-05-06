@@ -142,6 +142,7 @@
 - User-reported issue:
   - Opening/loading a thread felt slow in Mobile Web.
   - The user also requested proactive `压缩续接` access through a left-swipe action.
+  - Follow-up screenshot showed thread-list rows with the second metadata line clipped/overlapped after the left-swipe change.
 - Runtime timing findings:
   - Local/LAN backend checks did not show app-server or 8787 service slowness during this check.
   - `http://127.0.0.1:8787/api/threads?limit=80&archived=false` was about `159ms`.
@@ -156,6 +157,7 @@
   - Re-tapping an already loaded current thread now keeps the existing detail view instead of forcing a fresh "Loading thread" state; explicit refresh remains available through the refresh control.
   - Existing over-threshold current-thread banner still exposes the normal `压缩续接` button.
   - `public/styles.css` adds the swipe-reveal row layout and mobile-friendly action area.
+  - The thread list now uses a vertical flex layout and keeps the swipe action layer behind a full-height card layer without clipping the row wrapper, avoiding iOS/PWA text clipping of thread metadata.
 - Documentation:
   - `README.md` now documents proactive left-swipe continuation in English and Chinese.
   - `.agent-context/PROJECT_CONTEXT.md` records the left-swipe continuation rule.

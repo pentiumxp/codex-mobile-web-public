@@ -334,7 +334,7 @@ Behavior:
 
 这个动作不会原地改写或裁剪旧 rollout 文件；它通过“新续接线程 + 旧线程归档”降低后续交互需要读取的历史文件体积。旧线程在续接线程启动成功后才会归档，仍可从归档记录中找回。首条 bootstrap 会要求新线程先读取 `.agent-context/PROJECT_CONTEXT.md` 和 `.agent-context/HANDOFF.md`，并显式确认 private/public/README 规则已经加载，避免漏掉 public README 更新、public 仓库清理、service worker 路径等发布要求。
 
-除超阈值提示外，线程列表中的任意线程都可以向左滑动露出 `压缩续接` 按钮，用于主动开启续接。滑出的按钮使用同一套确认、bootstrap 和归档流程；点线程卡片本身仍用于打开线程。
+除超阈值提示外，线程列表中的任意线程都可以向左滑动露出 `压缩续接` 按钮，用于主动开启续接。滑出的按钮使用同一套确认、bootstrap 和归档流程；点线程卡片本身仍用于打开线程。线程行使用独立的卡片层和动作层，避免滑动动作压缩或裁切标题、工作区、状态和 rollout 大小等元信息。
 
 - The top-right timer shows current turn elapsed time as `鏈疆 HH:MM:SS`.
 - The timer is red while a turn is active and muted after completion.
