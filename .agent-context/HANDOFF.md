@@ -79,6 +79,37 @@
   - Synchronized public-safe files to `C:\Users\xuxin\Documents\codex-mobile-web-public`: `README.md`, `install-codex-mobile-web-startup.ps1`, `server.js`, `public/app.js`, `public/index.html`, and `public/styles.css`.
   - Preserved the public release differences: `public/app.js` registers `/sw.js`, and README uses `https://github.com/pentiumxp/codex-mobile-web-public.git`.
   - Public validation passed: `npm.cmd test`, `npm.cmd run check`, PowerShell parser check for the installer, Git Bash macOS shell parser check, `git diff --check`, and the tracked-file privacy scan excluding `.gitignore`.
+
+## 2026-05-06 Mobile Web SSE Reconnect And Stutter Fix - 09:55 +08:00
+
+- User-reported issue:
+  - The Web App frequently showed `Shared`, `Reconnecting`, and `Connected` state changes.
+  - During these events the mobile client visibly stalled and did not update, so it was not treated as a cosmetic state-label issue only.
+- Findings:
+  - The 8787 listener and shared app-server were healthy after reboot: `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, `lastError=null`.
+  - `tailscale serve status` still mapped `https://gmk.tail62e8ce.ts.net:8443/` to `http://127.0.0.1:8787`.
+  - Local SSE diagnostics showed that Mobile Web was receiving large unrelated app-server notifications from other active shared threads, especially `turn/diff/updated` payloads. The browser had to receive and parse those payloads before client-side thread filtering could ignore them.
+  - The old frontend recovery path also amplified transient `EventSource.onerror` events by immediately showing `Reconnecting` and, after 1.5 seconds, reloading status, thread list, and current thread detail.
+- Code changes:
+  - `server.js` now drops `turn/diff/*` notifications before broadcasting to Mobile Web SSE clients.
+  - `/api/events` now records an optional `threadId` query parameter per SSE client.
+  - `server.js` filters turn/item notifications to the SSE client's selected thread, while still allowing status, rate-limit, and thread-list-level notifications.
+  - `public/app.js` now includes the current thread id in the SSE URL and reconnects SSE when the selected thread changes or clears.
+  - `public/app.js` keeps the last real backend connection status so normal thread list/detail refreshes no longer overwrite `Shared` with `Connected`.
+  - `public/app.js` delays the visible reconnect notice for 3 seconds and only runs full recovery refreshes after 8 seconds of sustained SSE outage, reducing stutter from short browser/Tailscale long-connection interruptions.
+- Activation:
+  - Restarted only the 8787 Node listener; the supervisor relaunched it under `GMK\xuxin`.
+  - New listener PID after activation: `6088`.
+  - Shared mux/app-server were not restarted.
+- Validation:
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with line-ending warnings only.
+  - Authenticated `/api/status` returned ready with endpoint port `59136`.
+  - Local SSE test with `threadId=019df88b-cc8b-7413-83f4-625b39083dcc` timed out normally after 10 seconds, included status, contained no `turn/diff/*`, and did not include the unrelated Hermes thread id observed before the fix.
+- Public release sync:
+  - Synchronized `server.js` and `public/app.js` to `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Preserved public `public/app.js` service worker registration on `/sw.js`.
+  - Public validation passed: `npm.cmd test`, `npm.cmd run check`, `git diff --check`, and tracked-file privacy scan excluding `.gitignore`.
   - `git diff --check` passed with only Git line-ending warnings.
 
 ## 2026-05-03 Composer Send/Stop And Model Selectors - 21:18 +08:00

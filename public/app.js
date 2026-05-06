@@ -9,10 +9,12 @@ const state = {
   currentThreadId: "",
   activeTurnId: "",
   events: null,
+  connectionStatus: null,
   renderScheduled: false,
   renderFrame: null,
   refreshTimer: null,
   recoveryTimer: null,
+  reconnectNoticeTimer: null,
   resumeTimer: null,
   resumeVisualTimers: [],
   resumeSeq: 0,
@@ -390,6 +392,7 @@ function renderQuotaUsage() {
 function updateConnectionState(status, fallbackText = "Starting") {
   const el = $("connectionState");
   if (!el) return;
+  if (status) state.connectionStatus = status;
   const hasError = Boolean(status && !status.ready && status.lastError);
   if (status && status.ready) {
     el.textContent = status.sharedRequired || String(status.transport || "").startsWith("external-")
@@ -400,6 +403,25 @@ function updateConnectionState(status, fallbackText = "Starting") {
   }
   el.classList.toggle("error", hasError);
   el.title = hasError ? status.lastError : "";
+}
+
+function restoreConnectionState(fallbackText = "Connected") {
+  if (state.connectionStatus) {
+    updateConnectionState(state.connectionStatus, fallbackText);
+    return;
+  }
+  const el = $("connectionState");
+  if (!el) return;
+  el.textContent = fallbackText;
+  el.classList.remove("error");
+  el.title = "";
+}
+
+function clearReconnectTimers() {
+  clearTimeout(state.reconnectNoticeTimer);
+  clearTimeout(state.recoveryTimer);
+  state.reconnectNoticeTimer = null;
+  state.recoveryTimer = null;
 }
 
 function markActivity(label) {
@@ -1538,6 +1560,7 @@ function clearCurrentThreadSelection() {
   state.leavingItems.clear();
   localStorage.removeItem(STORAGE_THREAD_ID);
   syncActiveTurnFromThread();
+  if (state.events) connectEvents();
 }
 
 function renderThreadListLoading() {
@@ -1563,9 +1586,7 @@ async function loadThreads() {
     if (seq !== state.threadListLoadSeq) return null;
     state.threads = visibleThreads(result.data || []);
     renderThreads(result);
-    $("connectionState").classList.remove("error");
-    if (result.mobileFallback) $("connectionState").textContent = "Recovered from session index";
-    else $("connectionState").textContent = "Connected";
+    restoreConnectionState(result.mobileFallback ? "Recovered from session index" : "Connected");
     if (!state.currentThread) renderCurrentThread();
     return result;
   } catch (err) {
@@ -1624,12 +1645,12 @@ async function loadThread(threadId) {
   if (seq !== state.threadLoadSeq || state.currentThreadId !== threadId) return;
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
   localStorage.setItem(STORAGE_THREAD_ID, threadId);
+  if (state.events) connectEvents();
   renderComposerSettings();
   syncActiveTurnFromThread();
   renderThreads();
   renderCurrentThread({ stickToBottom: true });
-  $("connectionState").classList.remove("error");
-  $("connectionState").textContent = "Connected";
+  restoreConnectionState();
   scheduleLivePollIfNeeded(1200);
   updateComposerControls();
   if (window.matchMedia("(max-width: 760px)").matches) $("sidebar").classList.remove("open");
@@ -2948,16 +2969,28 @@ function applyNotification(method, params) {
 }
 
 function connectEvents() {
-  if (state.events) state.events.close();
-  state.events = new EventSource(`/api/events?key=${encodeURIComponent(state.key)}`);
+  clearReconnectTimers();
+  if (state.events) {
+    state.events.onmessage = null;
+    state.events.onerror = null;
+    state.events.onopen = null;
+    state.events.close();
+  }
+  const params = new URLSearchParams({ key: state.key });
+  if (state.currentThreadId) params.set("threadId", state.currentThreadId);
+  state.events = new EventSource(`/api/events?${params.toString()}`);
+  state.events.onopen = () => {
+    clearReconnectTimers();
+    if (state.connectionStatus) restoreConnectionState();
+  };
   state.events.onmessage = (event) => {
     const payload = JSON.parse(event.data);
     if (payload.type === "status") {
+      clearReconnectTimers();
       updateConnectionState(payload.status);
       if (payload.status.rateLimits || payload.status.rateLimitsByModel) {
         rememberRateLimits(payload.status.rateLimits, payload.status.rateLimitsByModel);
       }
-      if (payload.status.ready) clearTimeout(state.recoveryTimer);
       return;
     }
     if (payload.type === "notification") applyNotification(payload.method, payload.params);
@@ -2965,20 +2998,29 @@ function connectEvents() {
     if (payload.type === "serverRequestResolved") resolveServerRequest(payload);
   };
   state.events.onerror = () => {
-    markActivity("重连");
-    updateConnectionState(null, "Reconnecting");
+    if (document.visibilityState === "hidden") return;
+    clearTimeout(state.reconnectNoticeTimer);
+    state.reconnectNoticeTimer = setTimeout(() => {
+      if (state.events && state.events.readyState !== EventSource.OPEN && document.visibilityState !== "hidden") {
+        markActivity("重连");
+        updateConnectionState(null, "Reconnecting");
+      }
+    }, 3000);
     clearTimeout(state.recoveryTimer);
     state.recoveryTimer = setTimeout(async () => {
+      if (!state.events || state.events.readyState === EventSource.OPEN || document.visibilityState === "hidden") return;
       try {
         const status = await api("/api/status");
         updateConnectionState(status);
         if (status.rateLimits || status.rateLimitsByModel) rememberRateLimits(status.rateLimits, status.rateLimitsByModel);
         await loadThreads();
         await refreshCurrentThread();
+        ensureEventConnection();
       } catch (err) {
         showError(err);
       }
-    }, 1500);
+    }, 8000);
+    return;
   };
 }
 
