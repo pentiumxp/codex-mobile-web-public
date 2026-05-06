@@ -30,22 +30,43 @@ self.addEventListener("push", (event) => {
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
+function notificationTarget(notification) {
+  const data = notification && notification.data ? notification.data : {};
+  const url = new URL(data.url || "/", self.location.origin);
+  return {
+    url: url.href,
+    threadId: url.searchParams.get("thread") || data.threadId || "",
+  };
+}
+
+function postNotificationTarget(client, target) {
+  if (!client || !("postMessage" in client)) return;
+  client.postMessage({
+    type: "codex-open-thread",
+    url: target.url,
+    threadId: target.threadId,
+  });
+}
+
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const targetUrl = new URL((event.notification.data && event.notification.data.url) || "/", self.location.origin).href;
+  const target = notificationTarget(event.notification);
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     for (const client of windows) {
       if ("focus" in client) {
         try {
-          await client.focus();
-          if ("navigate" in client) await client.navigate(targetUrl);
+          const focused = await client.focus();
+          postNotificationTarget(focused || client, target);
           return;
         } catch (_) {
           // Fall through to opening a new client.
         }
       }
     }
-    if (self.clients.openWindow) await self.clients.openWindow(targetUrl);
+    if (self.clients.openWindow) {
+      const opened = await self.clients.openWindow(target.url);
+      postNotificationTarget(opened, target);
+    }
   })());
 });

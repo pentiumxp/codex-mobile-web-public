@@ -56,6 +56,22 @@
 - Validation:
   - `npm.cmd run check` passed.
 
+## 2026-05-06 Web Push Thread Switch And Swipe Continuation Fix - 13:52 +08:00
+
+- User-reported issues:
+  - Clicking a Web Push notification opened/focused Mobile Web, but the app did not switch to the notification's thread.
+  - The thread-list left-swipe `压缩续接` action flashed briefly and then closed instead of staying visible.
+- Code changes:
+  - `public/service-worker.js` now extracts the target `/?thread=<threadId>` from notification data and posts a `codex-open-thread` message to an already-open Mobile Web window after focusing it. If no window exists, it opens the URL with the thread parameter.
+  - `public/app.js` now listens for service-worker `codex-open-thread` messages, stores the target thread id, clears the URL parameter, and directly calls `loadThread()` so an iOS/PWA notification click switches threads without depending on browser navigation.
+  - `public/app.js` also re-checks URL thread parameters on `pageshow` and `focus`, covering browser/PWA resume cases where the app is opened with `?thread=...`.
+  - `public/app.js` now uses pointer capture for thread-row swipes, no longer cancels the gesture on `pointerleave`, and suppresses the synthetic same-gesture card click for 1.2 seconds so the revealed `压缩续接` button remains open.
+- Documentation:
+  - `README.md` documents Web Push thread switching and the persistent left-swipe action.
+  - `.agent-context/PROJECT_CONTEXT.md` records the service-worker message path and persistent swipe behavior.
+- Activation note:
+  - Static frontend/service-worker change. Existing PWA/browser sessions may need a refresh so the new `app.js` and updated service worker are installed and activated.
+
 ## 2026-05-06 Default User-Logon Startup Simplification - 00:35 +08:00
 
 - User-requested change:
@@ -116,6 +132,9 @@
 - User instruction:
   - Future public-repo commits must include a detailed README update.
   - The README update must include Chinese documentation explaining the user-visible change, usage impact, and any operational notes.
+- Follow-up user instruction on 2026-05-06 13:54 +08:00:
+  - Do not update the public repo immediately during normal private development.
+  - Wait until the user has tested the private build and explicitly instructs a public update before syncing, committing, or pushing `C:\Users\xuxin\Documents\codex-mobile-web-public`.
 - Durable context update:
   - `.agent-context/PROJECT_CONTEXT.md` records this as a public release rule.
 - Operational implication:

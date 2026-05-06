@@ -14,6 +14,7 @@ This workspace owns the standalone Codex Mobile Web app.
 - Clean public release repository: `https://github.com/pentiumxp/codex-mobile-web-public`
 - Clean public release local path: `C:\Users\xuxin\Documents\codex-mobile-web-public`
 - Public release rule: every public-repo commit must include a detailed README update, especially a Chinese explanation of the user-visible change, usage impact, and operational notes. Public sync is incomplete if code changes are pushed without updating the public README's Chinese documentation.
+- Public release timing rule: do not update, sync, commit, or push `C:\Users\xuxin\Documents\codex-mobile-web-public` until the user has tested the private build and explicitly instructs a public update.
 - Current LAN URL: `http://192.168.10.108:8787`
 
 ## Runtime State
@@ -38,7 +39,7 @@ This workspace owns the standalone Codex Mobile Web app.
 - Current Tailscale HTTPS mapping is `https://gmk.tail62e8ce.ts.net:8443/ -> http://127.0.0.1:8787`.
 - The browser authenticates with the access key, then receives live updates through Server-Sent Events.
 - Web Push support stores VAPID keys in `%USERPROFILE%\.codex-mobile-web\web-push-vapid.json` and subscriptions in `%USERPROFILE%\.codex-mobile-web\web-push-subscriptions.json`; neither file should be committed or copied into shared context. The browser must access Codex Mobile Web through HTTPS, currently Tailscale Serve `https://gmk.tail62e8ce.ts.net:8443/`, to subscribe. The VAPID subject must be a non-localhost contact URI; Apple Push rejects localhost subjects with `BadJwtToken`.
-- Web Push turn-completed notifications use `Codex Mobile Web` as the notification title and put the thread title in the body. They include a `/?thread=<threadId>` target URL. Notification clicks should focus/open Mobile Web and load that thread directly, even if it is not present in the first rendered thread list.
+- Web Push turn-completed notifications use `Codex Mobile Web` as the notification title and put the thread title in the body. They include a `/?thread=<threadId>` target URL. Notification clicks should focus/open Mobile Web and load that thread directly, even if it is not present in the first rendered thread list. The service worker also posts a `codex-open-thread` message to already-open Mobile Web windows so iOS/PWA notification clicks do not depend on full browser navigation.
 - The composer can upload attachments through multipart form posts.
 - The backend talks to `codex app-server` through JSON-RPC over WebSocket or local JSONL TCP.
 - By default the backend starts a loopback `codex app-server --listen ws://127.0.0.1:<port>` child.
@@ -93,7 +94,7 @@ This workspace owns the standalone Codex Mobile Web app.
 - The model, reasoning, permission, and quota controls should stay on one line while keeping the model/reasoning selectors readable; the quota column must not starve the reasoning selector width.
 - When no thread is selected, the main pane lists recent workspaces and recent threads as shortcuts.
 - Threads whose rollout JSONL reaches the configured warning threshold show a compact size warning in the thread list/home shortcuts and a current-thread banner with a same-workspace "压缩续接" action. The action must ask for confirmation because the confirmed flow creates a detailed continuation thread and archives the source thread after the new thread is materialized.
-- Thread list rows also support proactive rollout continuation before the warning threshold: swipe a visible thread row left to reveal the same `压缩续接` action.
+- Thread list rows also support proactive rollout continuation before the warning threshold: swipe a visible thread row left to reveal the same `压缩续接` action. The revealed action should remain open after the swipe until the user taps the card/action, opens another row, or the list refreshes.
 - Thread detail reads prefer app-server `thread/turns/list` plus local `state_5.sqlite` metadata instead of `thread/read includeTurns:true`, because large historical rollouts can make `thread/read` several seconds slower.
 - When Mobile Web runs under the optional Windows `LocalSystem` startup task, local `sqlite3` command discovery may differ from the interactive user environment. If `readStateDbThread()` cannot read a per-thread summary, the detail route must fall back to app-server `thread/list` to recover the thread `cwd` before applying visible-workspace filtering.
 - Thread switching in the browser uses request sequencing and cancels the previous detail fetch so stale slow responses cannot overwrite the current selection.

@@ -34,6 +34,7 @@ const state = {
   openThreadActionId: "",
   threadSwipe: null,
   suppressThreadClickUntil: 0,
+  suppressThreadClickThreadId: "",
   pendingAttachments: [],
   composerBusy: false,
   maxUploadBytes: 64 * 1024 * 1024,
@@ -1513,16 +1514,60 @@ async function bootstrap() {
   });
 }
 
-function applyUrlThreadSelection() {
+function threadIdFromUrlValue(value) {
   try {
-    const params = new URLSearchParams(window.location.search);
-    const threadId = params.get("thread");
-    if (!threadId) return;
-    localStorage.setItem(STORAGE_THREAD_ID, threadId);
+    const url = new URL(value || window.location.href, window.location.origin);
+    return String(url.searchParams.get("thread") || "").trim();
+  } catch (_) {
+    return "";
+  }
+}
+
+function clearThreadUrl() {
+  try {
     window.history.replaceState({}, "", window.location.pathname || "/");
+  } catch (_) {
+    // URL cleanup is best-effort after external thread selection.
+  }
+}
+
+async function openExternalThreadSelection(threadId) {
+  const id = String(threadId || "").trim();
+  if (!id) return;
+  localStorage.setItem(STORAGE_THREAD_ID, id);
+  clearThreadUrl();
+  if (!state.key) return;
+  $("connectionState").classList.remove("error");
+  $("connectionState").textContent = "Opening notification thread";
+  if (!state.workspaces.length) {
+    try {
+      await loadWorkspaces();
+    } catch (_) {
+      // Loading the thread by id can still succeed without refreshing workspace shortcuts.
+    }
+  }
+  await loadThread(id);
+}
+
+function applyUrlThreadSelection(options = {}) {
+  try {
+    const threadId = threadIdFromUrlValue(window.location.href);
+    if (!threadId) return "";
+    localStorage.setItem(STORAGE_THREAD_ID, threadId);
+    clearThreadUrl();
+    if (options.load) openExternalThreadSelection(threadId).catch(showError);
+    return threadId;
   } catch (_) {
     // URL thread selection is best-effort for notification clicks.
   }
+  return "";
+}
+
+function handleServiceWorkerMessage(event) {
+  const data = event && event.data ? event.data : {};
+  if (!data || data.type !== "codex-open-thread") return;
+  const threadId = data.threadId || threadIdFromUrlValue(data.url);
+  openExternalThreadSelection(threadId).catch(showError);
 }
 
 async function loadWorkspaces() {
@@ -1729,11 +1774,13 @@ function handleThreadCardClick(event) {
   const button = event.currentTarget;
   const threadId = button && button.dataset.thread;
   if (!threadId) return;
-  if (Date.now() < state.suppressThreadClickUntil) {
+  if (Date.now() < state.suppressThreadClickUntil
+    && (!state.suppressThreadClickThreadId || state.suppressThreadClickThreadId === threadId)) {
     event.preventDefault();
     event.stopPropagation();
     return;
   }
+  if (Date.now() >= state.suppressThreadClickUntil) state.suppressThreadClickThreadId = "";
   if (state.openThreadActionId) {
     event.preventDefault();
     event.stopPropagation();
@@ -2101,6 +2148,17 @@ function actionWidthForThreadRow(row) {
   return Math.max(72, Math.round(action ? action.getBoundingClientRect().width : 86));
 }
 
+function releaseThreadSwipeCapture(swipe) {
+  if (!swipe || !swipe.row || swipe.pointerId == null) return;
+  try {
+    if (swipe.row.hasPointerCapture && swipe.row.hasPointerCapture(swipe.pointerId)) {
+      swipe.row.releasePointerCapture(swipe.pointerId);
+    }
+  } catch (_) {
+    // Pointer capture release is best-effort across mobile browsers.
+  }
+}
+
 function beginThreadSwipe(event) {
   if (event.button != null && event.button !== 0) return;
   if (event.target.closest("[data-new-thread-from-thread]")) return;
@@ -2117,7 +2175,13 @@ function beginThreadSwipe(event) {
     moved: false,
     wasOpen: row.classList.contains("swipe-open"),
     actionWidth: actionWidthForThreadRow(row),
+    pointerId: event.pointerId,
   };
+  try {
+    if (row.setPointerCapture && event.pointerId != null) row.setPointerCapture(event.pointerId);
+  } catch (_) {
+    // Pointer capture is a stability optimization, not required.
+  }
 }
 
 function moveThreadSwipe(event) {
@@ -2129,6 +2193,7 @@ function moveThreadSwipe(event) {
   const dy = y - swipe.startY;
   if (!swipe.moved && Math.abs(dx) < 10) return;
   if (!swipe.moved && Math.abs(dy) > Math.abs(dx)) {
+    releaseThreadSwipeCapture(swipe);
     state.threadSwipe = null;
     return;
   }
@@ -2145,13 +2210,15 @@ function endThreadSwipe(event) {
   const swipe = state.threadSwipe;
   state.threadSwipe = null;
   if (!swipe || !swipe.row) return;
+  releaseThreadSwipeCapture(swipe);
   swipe.row.classList.remove("swiping");
   const dx = Number((event && event.clientX) || swipe.currentX || swipe.startX) - swipe.startX;
   if (!swipe.moved) return;
   const shouldOpen = swipe.wasOpen
     ? dx > 32 ? false : true
     : dx < -Math.min(48, swipe.actionWidth * 0.45);
-  state.suppressThreadClickUntil = Date.now() + 360;
+  state.suppressThreadClickUntil = Date.now() + 1200;
+  state.suppressThreadClickThreadId = swipe.threadId;
   setThreadActionOpen(swipe.threadId, shouldOpen);
 }
 
@@ -2159,6 +2226,7 @@ function cancelThreadSwipe() {
   const swipe = state.threadSwipe;
   state.threadSwipe = null;
   if (!swipe || !swipe.row) return;
+  releaseThreadSwipeCapture(swipe);
   swipe.row.classList.remove("swiping");
   swipe.row.style.removeProperty("--thread-swipe-x");
 }
@@ -3597,7 +3665,6 @@ function wireUi() {
   $("threadList").addEventListener("pointermove", moveThreadSwipe, { passive: false });
   $("threadList").addEventListener("pointerup", endThreadSwipe);
   $("threadList").addEventListener("pointercancel", cancelThreadSwipe);
-  $("threadList").addEventListener("pointerleave", cancelThreadSwipe);
   $("openMenu").addEventListener("click", () => {
     $("sidebar").classList.add("open");
     loadWorkspaces()
@@ -3675,9 +3742,18 @@ function wireUi() {
     addAttachmentFiles(event.dataTransfer.files);
   });
   updateViewportVars();
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("message", handleServiceWorkerMessage);
+  }
   document.addEventListener("visibilitychange", () => scheduleMobileResume("visibility"));
-  window.addEventListener("pageshow", () => scheduleMobileResume("pageshow"));
-  window.addEventListener("focus", () => scheduleMobileResume("focus", 150));
+  window.addEventListener("pageshow", () => {
+    const threadId = applyUrlThreadSelection({ load: true });
+    scheduleMobileResume("pageshow", threadId ? 240 : 80);
+  });
+  window.addEventListener("focus", () => {
+    const threadId = applyUrlThreadSelection({ load: true });
+    scheduleMobileResume("focus", threadId ? 300 : 150);
+  });
   window.addEventListener("blur", () => scheduleVisualRecovery("window-blur", 180, { render: false }));
   document.addEventListener("focusin", () => scheduleVisualRecovery("focusin", 40, { render: false, heavy: false, delays: [40, 180] }));
   document.addEventListener("focusout", () => scheduleVisualRecovery("focusout", 160, { render: false, heavy: false, delays: [160, 420] }));
