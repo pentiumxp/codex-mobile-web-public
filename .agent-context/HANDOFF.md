@@ -101,6 +101,23 @@
 - Published:
   - Public commit `f8ac2de 修复通知线程切换和左滑续接` pushed to `origin/main`.
 
+## 2026-05-06 Web Push Thread Title Binding Fix - 15:02 +08:00
+
+- User-reported issue:
+  - A task completed in the `Hermes Web` thread, but the Web Push notification appeared labeled as `Codex Mobile`.
+- Diagnosis:
+  - `server.js` only remembered observed `turn/started` turn ids in a `Set`.
+  - On `turn/completed`, it recomputed thread title and click target from the completion event's params. In the shared mux stream, those completion params can be incomplete or use different thread-id/title fields, so the notification could be labeled from the wrong available thread/title.
+- Code change:
+  - `server.js` now stores `turn/started` metadata in a `Map` keyed by turn id, including normalized thread id and thread title.
+  - `turn/completed` now reuses the started-turn metadata for notification title, dedupe key, tag, and `/?thread=<threadId>` click target.
+  - Thread id extraction now accepts `threadId`, `conversationId`, snake_case variants, `thread.id`, and nested `turn.threadId` / `turn.conversationId` variants.
+  - Turn-completed notification title is now the thread title, with body `This turn 已结束 · <local time>`, so iOS/PWA notifications show the actual completed thread instead of a generic app title.
+- Documentation:
+  - `README.md` and `.agent-context/PROJECT_CONTEXT.md` document the bound turn metadata and thread-title notification behavior.
+- Activation note:
+  - `server.js` change requires restarting the 8787 Mobile Web listener. Public sync was not performed; wait for user testing and explicit public approval.
+
 ## 2026-05-06 Default User-Logon Startup Simplification - 00:35 +08:00
 
 - User-requested change:

@@ -90,7 +90,7 @@ const recentStartedThreads = new Map();
 let pushVapidKeys = null;
 let pushSubscriptionsCache = null;
 const recentMessageSubmissions = new Map();
-const pushObservedTurns = new Set();
+const pushObservedTurns = new Map();
 const pushSentTurns = new Map();
 const SERVER_REQUEST_METHODS = new Set([
   "item/commandExecution/requestApproval",
@@ -1468,6 +1468,18 @@ function prunePushSentTurns(now = Date.now()) {
   }
 }
 
+function prunePushObservedTurns(now = Date.now()) {
+  const maxAgeMs = 24 * 60 * 60 * 1000;
+  for (const [turnId, meta] of pushObservedTurns) {
+    if (!meta || now - Number(meta.observedAt || 0) > maxAgeMs) pushObservedTurns.delete(turnId);
+  }
+  while (pushObservedTurns.size > 1000) {
+    const firstKey = pushObservedTurns.keys().next().value;
+    if (!firstKey) break;
+    pushObservedTurns.delete(firstKey);
+  }
+}
+
 function pushTurnId(params) {
   return String((params && params.turn && params.turn.id) || (params && params.turnId) || "");
 }
@@ -1531,19 +1543,66 @@ function pushTimestamp(ms = Date.now()) {
   }
 }
 
-function pushThreadTitle(params) {
+function pushThreadId(params) {
+  return String((params && params.threadId)
+    || (params && params.conversationId)
+    || (params && params.thread_id)
+    || (params && params.conversation_id)
+    || (params && params.thread && params.thread.id)
+    || (params && params.turn && params.turn.threadId)
+    || (params && params.turn && params.turn.conversationId)
+    || (params && params.turn && params.turn.thread_id)
+    || (params && params.turn && params.turn.conversation_id)
+    || "");
+}
+
+function pushThreadSummaryTitle(threadId) {
+  const id = String(threadId || "");
+  if (!id) return "";
+  const summary = readStateDbThread(id) || readStartedThread(id);
+  return compactOneLine(summary && (summary.name || summary.preview));
+}
+
+function pushThreadTitleFromParams(params) {
   const candidates = [
+    params && params.threadTitle,
     params && params.threadName,
     params && params.thread && params.thread.name,
     params && params.thread && params.thread.title,
     params && params.thread && params.thread.preview,
+    params && params.turn && params.turn.threadTitle,
+    params && params.turn && params.turn.threadName,
   ];
   for (const candidate of candidates) {
     const text = compactOneLine(candidate);
     if (text) return text;
   }
-  const summary = readStateDbThread(params && params.threadId);
-  return compactOneLine((summary && (summary.name || summary.preview)) || shortIdentifier(params && params.threadId) || "Codex Mobile Web");
+  return "";
+}
+
+function pushThreadTitle(params, threadId = "") {
+  const id = String(threadId || pushThreadId(params) || "");
+  return pushThreadSummaryTitle(id)
+    || pushThreadTitleFromParams(params)
+    || compactOneLine(shortIdentifier(id) || "Codex Mobile Web");
+}
+
+function pushTurnMeta(params, existing = null) {
+  const turnId = pushTurnId(params);
+  const existingThreadId = String((existing && existing.threadId) || "");
+  const paramsThreadId = pushThreadId(params);
+  const threadId = existingThreadId || paramsThreadId;
+  const existingTitle = existingThreadId && existingThreadId === threadId
+    ? String((existing && existing.threadTitle) || "")
+    : "";
+  return {
+    turnId,
+    threadId,
+    threadTitle: existingTitle || pushThreadTitle(params, threadId),
+    observedAt: (existing && existing.observedAt) || Date.now(),
+    startedAt: (existing && existing.startedAt) || turnTimestampMs(params, "startedAt") || turnTimestampMs(params, "createdAt") || 0,
+    completedAt: turnTimestampMs(params, "completedAt") || turnTimestampMs(params, "updatedAt") || 0,
+  };
 }
 
 function webPushFailureDetails(err) {
@@ -1598,28 +1657,31 @@ function maybeSendTurnCompletedPush(method, params) {
   if (method === "turn/started") {
     const id = pushTurnId(params);
     if (isOldPushTurnEvent(params, ["startedAt", "createdAt"])) return;
-    if (id) pushObservedTurns.add(id);
+    prunePushObservedTurns();
+    if (id) pushObservedTurns.set(id, pushTurnMeta(params));
     return;
   }
   if (method !== "turn/completed") return;
   const turnId = pushTurnId(params);
   if (!turnId || !pushObservedTurns.has(turnId)) return;
   if (isOldPushTurnEvent(params, ["completedAt", "updatedAt"])) return;
+  const meta = pushTurnMeta(params, pushObservedTurns.get(turnId));
   pushObservedTurns.delete(turnId);
+  prunePushObservedTurns();
   prunePushSentTurns();
-  const key = `${params.threadId || ""}:${turnId}`;
+  const key = `${meta.threadId || ""}:${turnId}`;
   if (pushSentTurns.has(key)) return;
   pushSentTurns.set(key, Date.now());
-  const completedAt = turnTimestampMs(params, "completedAt") || Date.now();
-  const threadTitle = pushThreadTitle(params);
-  const threadMark = shortIdentifier(params.threadId || turnId);
+  const completedAt = meta.completedAt || Date.now();
+  const threadTitle = meta.threadTitle || pushThreadTitle(params, meta.threadId);
+  const threadMark = shortIdentifier(meta.threadId || turnId);
   const payload = {
-    title: "Codex Mobile Web",
-    body: `${threadTitle || threadMark} · This turn 已结束 · ${pushTimestamp(completedAt)}`,
-    tag: `codex-turn-${params.threadId || turnId}`,
+    title: threadTitle || threadMark || "Codex Mobile Web",
+    body: `This turn 已结束 · ${pushTimestamp(completedAt)}`,
+    tag: `codex-turn-${meta.threadId || turnId}`,
     data: {
-      url: notificationUrlForThread(params.threadId),
-      threadId: params.threadId || "",
+      url: notificationUrlForThread(meta.threadId),
+      threadId: meta.threadId || "",
       turnId,
       threadTitle,
       completedAt,

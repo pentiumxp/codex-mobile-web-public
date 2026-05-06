@@ -707,10 +707,12 @@ After login, use the `Enable notifications` button in the Mobile Web menu/top co
 Notification behavior:
 
 - Test notification title: `Codex Mobile Web`.
-- Turn-completed notification title: `Codex Mobile Web`.
-- Turn-completed notification body: `<thread-title> · This turn 已结束 · <local time>`.
+- Turn-completed notification title: `<thread-title>`.
+- Turn-completed notification body: `This turn 已结束 · <local time>`.
+- Turn-completed notifications bind `turn/started` metadata by turn id, then reuse that thread id and title on `turn/completed`. This avoids a completion notification from one shared-thread stream being labeled with another thread's title.
 - Clicking a notification opens Mobile Web and switches to the relevant thread when the thread id is available. The service worker sends a `codex-open-thread` message to an already-open Mobile Web window, so an installed iOS/PWA session does not have to rely on a full browser navigation to change threads.
 - 中文说明：通知 payload 会带 `/?thread=<threadId>`。如果 Mobile Web 已经打开，service worker 会聚焦现有窗口并把目标线程 ID 发给前端，前端收到后直接保存当前线程并调用线程详情加载接口；如果没有现有窗口，则打开带线程参数的新窗口。这样点击 Web Push 后应进入对应线程，而不是只回到上一次停留的线程。
+- 中文说明：任务完成通知的标题直接使用完成任务所在的线程名，正文只显示完成状态和本地时间。服务端会在 `turn/started` 时记录 turn id 对应的线程 id 和标题，在 `turn/completed` 时复用这份绑定，避免 Hermes Web 的完成事件被标成 Codex Mobile 等其他线程。
 
 VAPID details:
 
