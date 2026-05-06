@@ -265,7 +265,8 @@ html.visual-recovering body::before {
 .thread-list {
   min-height: 0;
   overflow: auto;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 8px;
   padding-right: 2px;
 }
@@ -273,9 +274,9 @@ html.visual-recovering body::before {
 .thread-card-wrap {
   position: relative;
   min-width: 0;
-  overflow: hidden;
   border-radius: 8px;
   touch-action: pan-y;
+  isolation: isolate;
 }
 
 .thread-card-wrap.rollout-warn {
@@ -286,10 +287,11 @@ html.visual-recovering body::before {
   position: relative;
   z-index: 1;
   width: 100%;
+  min-height: 70px;
   text-align: left;
   padding: 11px 12px;
   color: var(--text);
-  background: transparent;
+  background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: 8px;
   display: grid;
