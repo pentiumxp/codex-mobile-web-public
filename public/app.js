@@ -35,6 +35,8 @@ const state = {
   threadSwipe: null,
   suppressThreadClickUntil: 0,
   suppressThreadClickThreadId: "",
+  continuationSourceThreadId: "",
+  continuationNewThreadId: "",
   pendingAttachments: [],
   composerBusy: false,
   maxUploadBytes: 64 * 1024 * 1024,
@@ -1647,6 +1649,9 @@ async function loadThreads() {
 }
 
 async function loadThread(threadId) {
+  if (threadId && threadId !== state.continuationSourceThreadId) {
+    state.continuationSourceThreadId = "";
+  }
   if (threadId === state.currentThreadId
     && state.currentThread
     && !state.currentThread.mobileLoading
@@ -2307,14 +2312,17 @@ async function startNewThreadFromThread(sourceThread, event) {
   if (event) event.stopPropagation();
   closeThreadActions();
   if (state.composerBusy) return;
+  const button = event && event.currentTarget;
   const thread = sourceThread || state.currentThread || {};
+  const sourceThreadId = thread.id || state.currentThreadId || "";
   const title = thread.name || thread.preview || thread.id || "current thread";
   const size = rolloutSizeText(thread);
   const archiveConfirmed = window.confirm([
     `压缩续接同工作区线程，并归档旧线程“${title}”？`,
     "",
-    "将创建同工作区续接线程，并把源线程摘要、最近上下文、GitHub 提交规则和 handoff 摘录写入首条消息。",
-    "旧线程会在续接线程启动后归档，仍可在归档记录中找到。",
+    "将先要求旧线程总结本线程的真实交接重点，并写入当前工作区的交接文件。",
+    "新线程会读取该交接文件、工作区上下文和有限的源线程摘录；不会注入其他线程的固定提交规则。",
+    "旧线程会在交接文件生成且续接线程启动后归档，仍可在归档记录中找到。",
     size ? `旧线程 rollout：${size}` : "",
   ].filter((line) => line !== "").join("\n"));
   if (!archiveConfirmed) return;
@@ -2323,21 +2331,31 @@ async function startNewThreadFromThread(sourceThread, event) {
     showError(new Error("Thread has no workspace path"));
     return;
   }
+  if (sourceThreadId) {
+    state.continuationSourceThreadId = sourceThreadId;
+    state.continuationNewThreadId = "";
+    if (sourceThreadId !== state.currentThreadId) {
+      $("connectionState").classList.remove("error");
+      $("connectionState").textContent = "正在打开源线程";
+      markActivity("打开源线程");
+      await loadThread(sourceThreadId);
+    }
+  }
   state.composerBusy = true;
-  const button = event.currentTarget;
   if (button) button.disabled = true;
   $("connectionState").classList.remove("error");
-  $("connectionState").textContent = "正在压缩续接";
-  markActivity("压缩续接");
+  $("connectionState").textContent = "正在生成交接并续接";
+  markActivity("生成交接");
   updateComposerControls();
   try {
     const result = await api("/api/threads", {
       method: "POST",
       body: JSON.stringify(body),
-      timeoutMs: 120000,
+      timeoutMs: 300000,
     });
     const threadId = startedThreadId(result);
     if (!threadId) throw new Error("Continuation thread was created without a thread id");
+    state.continuationNewThreadId = threadId;
     const archivedSourceThreadId = result.sourceArchive && result.sourceArchive.archived
       ? result.sourceArchive.threadId
       : "";
@@ -2348,15 +2366,15 @@ async function startNewThreadFromThread(sourceThread, event) {
       state.threads = [result.thread, ...state.threads.filter((thread) => thread.id !== result.thread.id)];
       renderThreads();
     }
-    await loadThread(threadId);
-    loadThreads().catch(showError);
     $("connectionState").classList.remove("error");
     if (result.sourceArchive && result.sourceArchive.error) {
       $("connectionState").classList.add("error");
       $("connectionState").textContent = `续接线程已就绪；归档失败：${result.sourceArchive.error}`;
     } else {
-      $("connectionState").textContent = "续接线程已就绪";
+      $("connectionState").textContent = "交接已生成；正在打开续接线程";
     }
+    await loadThread(threadId);
+    loadThreads().catch(showError);
   } catch (err) {
     showError(err);
   } finally {
@@ -3167,7 +3185,14 @@ function applyNotification(method, params) {
   if (method === "thread/archived") {
     state.threads = state.threads.filter((thread) => thread.id !== params.threadId);
     if (state.currentThread && state.currentThread.id === params.threadId) {
-      clearCurrentThreadSelection();
+      if (state.continuationSourceThreadId === params.threadId) {
+        state.currentThread = Object.assign({}, state.currentThread, {
+          archived: true,
+          status: params.status || { type: "archived" },
+        });
+      } else {
+        clearCurrentThreadSelection();
+      }
     }
     renderThreads();
     renderCurrentThread();

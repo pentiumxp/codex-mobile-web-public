@@ -74,6 +74,9 @@ const MAX_RUNTIME_CONTEXT_SCAN_BYTES = Math.max(MAX_ROLLOUT_CONTEXT_BYTES, Numbe
 const ROLLOUT_WARNING_BYTES = Math.max(1 * 1024 * 1024, Number(process.env.CODEX_MOBILE_ROLLOUT_WARNING_BYTES || String(100 * 1024 * 1024)));
 const MAX_CONTINUATION_BOOTSTRAP_CHARS = Math.max(20_000, Number(process.env.CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS || "120000"));
 const CONTINUATION_RECENT_TURNS = Math.max(1, Math.min(30, Number(process.env.CODEX_MOBILE_CONTINUATION_RECENT_TURNS || "12")));
+const CONTINUATION_HANDOFF_TIMEOUT_MS = Math.max(30_000, Number(process.env.CODEX_MOBILE_CONTINUATION_HANDOFF_TIMEOUT_MS || "240000"));
+const CONTINUATION_HANDOFF_MIN_CHARS = Math.max(120, Number(process.env.CODEX_MOBILE_CONTINUATION_HANDOFF_MIN_CHARS || "400"));
+const CONTINUATION_HANDOFF_TURN_COMPLETION_TIMEOUT_MS = Math.max(5_000, Number(process.env.CODEX_MOBILE_CONTINUATION_HANDOFF_TURN_COMPLETION_TIMEOUT_MS || "60000"));
 const RUNTIME_CONTEXT_CACHE_TTL_MS = Math.max(1000, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_CACHE_TTL_MS || "30000"));
 const RUNTIME_CONTEXT_CACHE_MAX = Math.max(20, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_CACHE_MAX || "200"));
 const SAFE_RETRY_METHODS = new Set(["initialize", "thread/list", "thread/read", "thread/turns/list"]);
@@ -2671,22 +2674,9 @@ function readWorkspaceContextFile(cwd, relativePath, maxChars) {
   }
 }
 
-function markdownSectionsContaining(text, needles, maxSections = 4) {
-  const lowerNeedles = needles.map((needle) => String(needle || "").toLowerCase()).filter(Boolean);
-  if (!lowerNeedles.length) return [];
-  return String(text || "")
-    .split(/(?=^##\s+)/m)
-    .map((section) => section.trim())
-    .filter((section) => {
-      const lower = section.slice(0, 240).toLowerCase();
-      return lowerNeedles.some((needle) => lower.includes(needle));
-    })
-    .slice(-maxSections);
-}
-
-function continuationContextFileSections(cwd) {
+function continuationWorkspaceContextSections(cwd) {
   const project = readWorkspaceContextFile(cwd, ".agent-context/PROJECT_CONTEXT.md", 42000);
-  const handoff = readWorkspaceContextFile(cwd, ".agent-context/HANDOFF.md", 1_000_000);
+  const handoff = readWorkspaceContextFile(cwd, ".agent-context/HANDOFF.md", 240000);
   const sections = [];
   if (project.exists) {
     sections.push(`### .agent-context/PROJECT_CONTEXT.md\n${project.text}`);
@@ -2694,16 +2684,7 @@ function continuationContextFileSections(cwd) {
     sections.push(`### .agent-context/PROJECT_CONTEXT.md\nUnavailable: ${project.error || "missing"} (${project.path})`);
   }
   if (handoff.exists) {
-    const criticalSections = markdownSectionsContaining(handoff.text, [
-      "private/public commit preparation",
-      "public readme release requirement",
-      "github publish completed",
-      "github publish attempt",
-    ], 6).join("\n\n").trim();
-    if (criticalSections) {
-      sections.push(`### .agent-context/HANDOFF.md critical release sections\n${truncateMiddle(criticalSections, 36000, "critical handoff sections")}`);
-    }
-    sections.push(`### .agent-context/HANDOFF.md latest tail\n${truncateTail(handoff.text, 36000, ".agent-context/HANDOFF.md")}`);
+    sections.push(`### .agent-context/HANDOFF.md latest tail\n${truncateTail(handoff.text, 52000, ".agent-context/HANDOFF.md")}`);
   } else {
     sections.push(`### .agent-context/HANDOFF.md\nUnavailable: ${handoff.error || "missing"} (${handoff.path})`);
   }
@@ -2843,22 +2824,200 @@ async function continuationSourceSnapshot(sourceThreadId, sourceThreadTitle, vis
   return snapshot;
 }
 
-function newThreadBootstrapPrompt({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings }) {
+function newThreadBootstrapInput(params) {
+  return [{ type: "text", text: newThreadBootstrapPromptScoped(params), text_elements: [] }];
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function continuationSafeFilePart(value, fallback = "thread") {
+  return (String(value || "")
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80)) || fallback;
+}
+
+function continuationHandoffTarget(cwd, sourceThreadId) {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const threadPart = continuationSafeFilePart(sourceThreadId);
+  const id = `${stamp}-${threadPart}-${crypto.randomBytes(4).toString("hex")}`;
+  const relativePath = path.join(".agent-context", "thread-handoffs", `${id}.md`);
+  const file = path.join(cwd, relativePath);
+  return { id, relativePath, file, dir: path.dirname(file) };
+}
+
+function turnIdFromResult(result) {
+  return String((result && result.turn && result.turn.id)
+    || (result && result.data && result.data.turn && result.data.turn.id)
+    || (result && result.turnId)
+    || (result && result.id)
+    || "");
+}
+
+function sourceContinuationHandoffPrompt({ handoffId, handoffFile, cwd, sourceThreadId, sourceThreadTitle }) {
+  return [
+    "# 压缩续接交接文件生成",
+    "",
+    "你正在源线程中执行续接前的交接整理。请基于本源线程自己的历史、当前工作区文件和实际仓库状态，总结交接重点并写入指定文件。",
+    "",
+    `目标文件：${handoffFile}`,
+    "",
+    "必须执行：",
+    "1. 读取当前工作区的 `.agent-context/PROJECT_CONTEXT.md` 和 `.agent-context/HANDOFF.md`（如果存在），只把与当前工作区和本源线程有关的事实写入交接文件。",
+    "2. 检查当前工作区的关键状态，例如 `git status`、最近修改、未完成任务、验证结果、运行/部署注意事项；按实际需要读取相关文件。",
+    "3. 交接文件必须由本源线程重新总结，不能只复制固定模板，也不能混入其他线程或其他工作区的提交规则。",
+    "4. 只有当前工作区文件或本源线程历史明确涉及 private/public/README/release 规则时，才写这些规则，并标明来源；否则不要写。",
+    "5. 不要写入 raw secrets、access tokens、passwords、一次性授权状态、隐藏 UI 状态或长日志。",
+    "6. 覆盖写入目标文件。写完后只简短回复已写入该文件；不要提交、推送或修改无关文件。",
+    "",
+    "交接文件格式要求：",
+    `- 第一行必须是：Continuation handoff marker: ${handoffId}`,
+    `- 必须包含：Source thread id: ${sourceThreadId || "(unknown)"}`,
+    `- 必须包含：Source thread title: ${sourceThreadTitle || "(unknown)"}`,
+    `- 必须包含：Workspace: ${cwd || "(unknown)"}`,
+    "- 后续用 Markdown 分节：当前目标、已完成事项、未完成事项、关键文件/命令、验证结果、风险/注意事项、下一线程建议。",
+  ].join("\n");
+}
+
+async function waitForContinuationHandoffFile(target) {
+  const deadline = Date.now() + CONTINUATION_HANDOFF_TIMEOUT_MS;
+  let lastError = "";
+  while (Date.now() < deadline) {
+    try {
+      const text = fs.readFileSync(target.file, "utf8");
+      const trimmed = text.trim();
+      if (trimmed.length >= CONTINUATION_HANDOFF_MIN_CHARS) {
+        return {
+          id: target.id,
+          path: target.file,
+          relativePath: target.relativePath,
+          text: truncateMiddle(trimmed, 56000, "source continuation handoff"),
+          chars: trimmed.length,
+        };
+      }
+      lastError = `file exists but is incomplete (${trimmed.length} chars)`;
+    } catch (err) {
+      lastError = err && err.code === "ENOENT" ? "file not written yet" : (err.message || String(err));
+    }
+    await sleep(1000);
+  }
+  throw new Error(`Source thread did not finish writing continuation handoff within ${Math.round(CONTINUATION_HANDOFF_TIMEOUT_MS / 1000)}s: ${target.file} (${lastError})`);
+}
+
+async function waitForContinuationTurnCompletion(threadId, turnId) {
+  const id = String(turnId || "").trim();
+  if (!threadId || !id) return { waited: false, completed: false, reason: "missing turn id" };
+  const deadline = Date.now() + CONTINUATION_HANDOFF_TURN_COMPLETION_TIMEOUT_MS;
+  let lastStatus = "";
+  let lastError = "";
+  while (Date.now() < deadline) {
+    try {
+      const result = await codex.request("thread/turns/list", {
+        threadId,
+        limit: Math.max(3, CONTINUATION_RECENT_TURNS),
+        sortDirection: "desc",
+      }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS, retry: false });
+      const turns = Array.isArray(result && result.data)
+        ? result.data
+        : Array.isArray(result && result.turns)
+          ? result.turns
+          : [];
+      const turn = turns.find((entry) => entry && String(entry.id || "") === id);
+      if (turn) {
+        lastStatus = statusText(turn.status) || "(no status)";
+        if (isCompletedStatus(turn.status)) {
+          return { waited: true, completed: true, status: lastStatus };
+        }
+      }
+    } catch (err) {
+      lastError = err.message || String(err);
+    }
+    await sleep(1000);
+  }
+  return {
+    waited: true,
+    completed: false,
+    status: lastStatus,
+    error: lastError,
+    timedOut: true,
+  };
+}
+
+async function createSourceContinuationHandoff({ cwd, sourceThreadId, sourceThreadTitle, runtimeSettings, model, effort }) {
+  const threadId = String(sourceThreadId || "").trim();
+  if (!threadId) return null;
+  const target = continuationHandoffTarget(cwd, threadId);
+  target.sourceThreadId = threadId;
+  fs.mkdirSync(target.dir, { recursive: true });
+  const prompt = sourceContinuationHandoffPrompt({
+    handoffId: target.id,
+    handoffFile: target.file,
+    cwd,
+    sourceThreadId: threadId,
+    sourceThreadTitle,
+  });
+  const params = applyTurnRuntimeSettings({
+    threadId,
+    input: [{ type: "text", text: prompt, text_elements: [] }],
+    cwd,
+    model: model || null,
+    summary: "auto",
+  }, runtimeSettings || {});
+  if (effort) params.effort = effort;
+  try {
+    await codex.request("thread/resume", applyResumeRuntimeSettings({
+      threadId,
+      cwd,
+      model: model || null,
+      persistExtendedHistory: true,
+    }, runtimeSettings || {}), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+  } catch (err) {
+    if (!/already|loaded|active/i.test(err.message || "")) throw err;
+  }
+  const result = await codex.request("turn/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+  const turnId = turnIdFromResult(result);
+  const file = await waitForContinuationHandoffFile(target);
+  const turnCompletion = await waitForContinuationTurnCompletion(threadId, turnId);
+  return Object.assign(file, {
+    turnId,
+    turnCompletion,
+    result,
+  });
+}
+
+function sourceHandoffSection(sourceHandoff) {
+  if (!sourceHandoff) {
+    return "No source-thread-generated handoff file was requested or available.";
+  }
+  return [
+    `- Handoff file: ${sourceHandoff.path}`,
+    `- Handoff id: ${sourceHandoff.id}`,
+    `- Handoff chars: ${sourceHandoff.chars || 0}`,
+    "",
+    "### Source-thread-generated handoff",
+    sourceHandoff.text || "(empty)",
+  ].join("\n");
+}
+
+function newThreadBootstrapPromptScoped({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff }) {
   const snapshot = sourceSnapshot || { threadId: sourceThreadId, title: sourceThreadTitle, turns: [], readWarnings: [] };
   const publicRuntime = publicRuntimeSettings(runtimeSettings);
   const parts = [
     "# 压缩续接启动上下文",
     "",
     "本线程是 Codex Mobile Web 为了降低源线程 rollout JSONL 体积而创建的同工作区续接线程，不是普通新项目。",
-    "请先读取当前工作区的持久上下文文件，并把下面的续接上下文作为本线程的初始事实源。",
+    "续接依据必须来自源线程刚生成的交接文件、当前工作区持久上下文文件和重新读取的本地仓库状态。",
     "",
     "启动步骤：",
-    "1. 读取 `.agent-context/PROJECT_CONTEXT.md`。",
-    "2. 读取 `.agent-context/HANDOFF.md`，重点检查 GitHub/private/public release、README、验证和未完成事项。",
-    "3. 用简短要点确认已加载的关键事实，必须显式确认 private/public/README 提交规则。",
+    "1. 先读取下方“源线程交接文件”中列出的文件，并把它作为本线程的最高优先级交接事实源。",
+    "2. 再读取当前工作区的 `.agent-context/PROJECT_CONTEXT.md` 和 `.agent-context/HANDOFF.md`（如果存在），只加载与当前工作区有关的规则。",
+    "3. 用简短要点确认已加载的关键事实；不要确认与当前工作区无关的 private/public/README/release 规则。",
     "4. 本轮不要修改文件、不要提交、不要推送，除非用户在续接线程里给出新的明确任务。",
     "",
-    "不要假设新线程继承了旧聊天流、临时 shell 状态、一次性审批、隐藏 UI 状态或旧线程的内存推理。需要依赖的内容必须来自工作区文件、下面的续接上下文，或重新读取本地仓库。",
+    "不要假设新线程继承了旧聊天流、临时 shell 状态、一次性审批、隐藏 UI 状态或旧线程的内存推理。需要依赖的内容必须来自工作区文件、源线程交接文件、下面的有限续接上下文，或重新读取本地仓库。",
     "",
     "## 当前续接目标",
     `- 新线程标题：${desiredTitle || "(not set)"}`,
@@ -2868,30 +3027,20 @@ function newThreadBootstrapPrompt({ cwd, sourceThreadId, sourceThreadTitle, desi
     "## 源线程",
     continuationSourceThreadSection(snapshot),
     "",
+    "## 源线程交接文件",
+    sourceHandoffSection(sourceHandoff),
+    "",
     "## 运行设置",
     `- Mobile Web 传给续接线程的运行设置：${Object.keys(publicRuntime || {}).length ? JSON.stringify(publicRuntime) : "(none detected)"}`,
-    "- 如果后续任务需要更高权限或不同模型，先按当前线程 UI/用户指令处理，不要假设旧线程的一次性授权仍然有效。",
+    "- 如果后续任务需要更高权限或不同模型，按当前线程 UI/用户指令处理；不要假设旧线程的一次性授权仍然有效。",
     "",
-    "## 必须携带的 GitHub / public release 规则",
-    "- 以 `.agent-context/PROJECT_CONTEXT.md` 和 `.agent-context/HANDOFF.md` 记录的 private/public 仓库 URL、本地 public checkout 路径和 release 规则为准；不要凭线程记忆猜测 remote。",
-    "- 提交/推送前必须分别检查 private 和 public 仓库的 diff/status；public 同步完成前不能只复制代码不更新 README。",
-    "- public release 不能复制 `.agent-context/` 或 `AGENTS.md`，不能泄露本机私有路径、access key、上传文件、Tailscale 内网地址或私有仓库 clone URL。",
-    "- public checkout 的 `public/app.js` 必须保留 service worker 注册路径 `/sw.js`。",
-    "- public README 的 clone URL 必须指向 public 仓库，而不是 private 仓库。",
-    "- 以后只要向 public 仓库提交，就必须在同一个 public commit 中更新详细 README，尤其要有中文说明：用户可见变化、使用影响、操作注意事项、验证范围。",
-    "- 典型验证：private `npm.cmd run check`；public `npm.cmd test`、`npm.cmd run check`、`git diff --check`，并做 tracked-file 隐私扫描。",
-    "",
-    "## 最近源线程上下文摘要",
+    "## 最近源线程上下文摘录",
     continuationTurnSummaries(snapshot.turns),
     "",
     "## 工作区持久上下文摘录",
-    continuationContextFileSections(cwd),
+    continuationWorkspaceContextSections(cwd),
   ];
   return truncateMiddle(parts.join("\n"), MAX_CONTINUATION_BOOTSTRAP_CHARS, "continuation bootstrap");
-}
-
-function newThreadBootstrapInput(params) {
-  return [{ type: "text", text: newThreadBootstrapPrompt(params), text_elements: [] }];
 }
 
 async function tryUpdateThreadTitle(threadId, title) {
@@ -3287,6 +3436,14 @@ async function handleApi(req, res) {
     const desiredTitle = newThreadTitle({ cwd, sourceThreadTitle });
     const sourceSnapshot = await continuationSourceSnapshot(sourceThreadId, sourceThreadTitle, visibility);
     const runtimeSettings = applyPermissionModeOverride(sourceSnapshot.runtimeSettings || {}, body.permissionMode, cwd);
+    const sourceHandoff = await createSourceContinuationHandoff({
+      cwd,
+      sourceThreadId,
+      sourceThreadTitle,
+      runtimeSettings,
+      model: body.model || null,
+      effort: body.effort || null,
+    });
     const params = applyStartThreadRuntimeSettings({
       cwd,
       model: body.model || null,
@@ -3305,7 +3462,7 @@ async function handleApi(req, res) {
     const titleUpdatedBeforeBootstrap = await tryUpdateThreadTitle(threadId, desiredTitle).catch(() => false);
     const bootstrapParams = applyTurnRuntimeSettings({
       threadId,
-      input: newThreadBootstrapInput({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings }),
+      input: newThreadBootstrapInput({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff }),
       cwd,
       model: body.model || null,
       summary: "auto",
@@ -3352,6 +3509,14 @@ async function handleApi(req, res) {
       titleUpdated: Boolean(titleUpdatedBeforeBootstrap || titleUpdatedAfterBootstrap),
       sourceArchive,
       sourceContextWarnings: sourceSnapshot.readWarnings || [],
+      sourceHandoff: sourceHandoff ? {
+        id: sourceHandoff.id,
+        path: sourceHandoff.path,
+        relativePath: sourceHandoff.relativePath,
+        chars: sourceHandoff.chars || 0,
+        turnId: sourceHandoff.turnId || "",
+        turnCompletion: sourceHandoff.turnCompletion || null,
+      } : null,
       continuationContextChars: bootstrapParams
         && Array.isArray(bootstrapParams.input)
         && bootstrapParams.input[0]
