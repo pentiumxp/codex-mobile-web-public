@@ -2313,8 +2313,9 @@ async function startNewThreadFromThread(sourceThread, event) {
   const archiveConfirmed = window.confirm([
     `压缩续接同工作区线程，并归档旧线程“${title}”？`,
     "",
-    "将创建同工作区续接线程，并把源线程摘要、最近上下文、GitHub 提交规则和 handoff 摘录写入首条消息。",
-    "旧线程会在续接线程启动后归档，仍可在归档记录中找到。",
+    "将先要求旧线程总结本线程的真实交接重点，并写入当前工作区的交接文件。",
+    "新线程会读取该交接文件、工作区上下文和有限的源线程摘录；不会注入其他线程的固定提交规则。",
+    "旧线程会在交接文件生成且续接线程启动后归档，仍可在归档记录中找到。",
     size ? `旧线程 rollout：${size}` : "",
   ].filter((line) => line !== "").join("\n"));
   if (!archiveConfirmed) return;
@@ -2327,14 +2328,14 @@ async function startNewThreadFromThread(sourceThread, event) {
   const button = event.currentTarget;
   if (button) button.disabled = true;
   $("connectionState").classList.remove("error");
-  $("connectionState").textContent = "正在压缩续接";
-  markActivity("压缩续接");
+  $("connectionState").textContent = "正在生成交接并续接";
+  markActivity("生成交接");
   updateComposerControls();
   try {
     const result = await api("/api/threads", {
       method: "POST",
       body: JSON.stringify(body),
-      timeoutMs: 120000,
+      timeoutMs: 300000,
     });
     const threadId = startedThreadId(result);
     if (!threadId) throw new Error("Continuation thread was created without a thread id");

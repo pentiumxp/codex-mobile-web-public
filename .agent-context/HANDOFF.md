@@ -1843,3 +1843,26 @@
 - Published:
   - Public commit `82660e0 修复 Web Push 线程标题绑定` pushed to `origin/main`.
   - Private implementation commit was `1a927ab 修复 Web Push 线程标题绑定`.
+
+## 2026-05-07 Source-Thread Handoff Continuation Fix - 06:09 +08:00
+
+- User-reported issue:
+  - Rollout "压缩续接" bootstrap was still partly template-driven and could inject Codex Mobile Web-specific private/public/README release rules into unrelated workspaces such as Hermes Web.
+  - Continuation should require the old/source thread to summarize its own handoff points and write a file, instead of relying only on fixed prewritten bootstrap text.
+- Code changes:
+  - `POST /api/threads` now first starts a source-thread handoff turn when `sourceThreadId` is provided.
+  - The source-thread handoff turn must write `.agent-context/thread-handoffs/<id>.md` in the current workspace, summarizing only source-thread/current-workspace facts: goals, completed work, pending work, key files/commands, validation, risks, and next-thread advice.
+  - Mobile Web waits for that handoff file before starting the new continuation thread. Default wait is `CODEX_MOBILE_CONTINUATION_HANDOFF_TIMEOUT_MS=240000`; default minimum accepted file size is `CODEX_MOBILE_CONTINUATION_HANDOFF_MIN_CHARS=400`.
+  - The continuation bootstrap now includes the source-thread-generated handoff file as the highest-priority handoff source, plus source metadata, limited recent source-turn summaries, and current-workspace `.agent-context/PROJECT_CONTEXT.md` / `.agent-context/HANDOFF.md` excerpts.
+  - Removed the old hard-coded "must carry GitHub / public release rules" bootstrap section and the special handoff-section extractor for public/private release keywords.
+  - Frontend confirmation text now states that the old thread writes the handoff file first and that unrelated fixed commit rules are not injected. The continuation request timeout is now `300000ms`.
+- Documentation:
+  - `README.md` documents the source-thread handoff file workflow and the new continuation handoff timeout/min-size environment variables.
+  - `.agent-context/PROJECT_CONTEXT.md` records that fixed private/public/README/GitHub rules must not be hard-coded into every continuation.
+- Activation:
+  - Restarted only the 8787 Node listener. Previous listener PID `40692`; new listener PID `53376`.
+  - `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, and `lastError=null`.
+  - Shared mux/app-server were not restarted.
+- Validation:
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with line-ending warnings only.
