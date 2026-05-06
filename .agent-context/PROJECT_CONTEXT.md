@@ -14,6 +14,7 @@ This workspace owns the standalone Codex Mobile Web app.
 - Clean public release repository: `https://github.com/pentiumxp/codex-mobile-web-public`
 - Clean public release local path: `C:\Users\xuxin\Documents\codex-mobile-web-public`
 - Public release rule: every public-repo commit must include a detailed README update, especially a Chinese explanation of the user-visible change, usage impact, and operational notes. Public sync is incomplete if code changes are pushed without updating the public README's Chinese documentation.
+- Public commit-message rule: public-repo commit messages must be detailed and must explain what changed since the previous public commit. Do not use only a one-line title for public commits; include concrete changed areas, behavior/documentation impact, and validation or operational notes when relevant.
 - Public release timing rule: do not update, sync, commit, or push `C:\Users\xuxin\Documents\codex-mobile-web-public` until the user has tested the private build and explicitly instructs a public update.
 - Current LAN URL: `http://192.168.10.108:8787`
 

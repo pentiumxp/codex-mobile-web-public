@@ -166,6 +166,7 @@
 - Validation:
   - `npm.cmd run check` passed.
   - `git diff --check` passed with line-ending warnings only.
+
   - Authenticated `/api/status` returned ready with endpoint port `59136`.
   - Local SSE test with `threadId=019df88b-cc8b-7413-83f4-625b39083dcc` timed out normally after 10 seconds, included status, contained no `turn/diff/*`, and did not include the unrelated Hermes thread id observed before the fix.
 - Public release sync:
@@ -1907,3 +1908,11 @@
 - Validation:
   - `npm.cmd run check` passed.
   - `git diff --check` passed with line-ending warnings only.
+
+## 2026-05-07 Public Commit Detail Rule - 06:45 +08:00
+
+- User instruction:
+  - For future public-repo commits, the commit message must include detailed information about what changed since the previous public commit.
+  - A public commit message must not be only a one-line title; it should name the concrete changed areas, behavior/documentation impact, and validation or operational notes when relevant.
+- Durable context:
+  - Added this as a public commit-message rule in `.agent-context/PROJECT_CONTEXT.md`.
