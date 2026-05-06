@@ -31,6 +31,9 @@ const state = {
   threadLoadController: null,
   threadListLoadSeq: 0,
   threadListLoadController: null,
+  openThreadActionId: "",
+  threadSwipe: null,
+  suppressThreadClickUntil: 0,
   pendingAttachments: [],
   composerBusy: false,
   maxUploadBytes: 64 * 1024 * 1024,
@@ -1599,6 +1602,16 @@ async function loadThreads() {
 }
 
 async function loadThread(threadId) {
+  if (threadId === state.currentThreadId
+    && state.currentThread
+    && !state.currentThread.mobileLoading
+    && !state.currentThread.mobileLoadError) {
+    closeThreadActions();
+    renderThreads();
+    renderCurrentThread();
+    if (window.matchMedia("(max-width: 760px)").matches) $("sidebar").classList.remove("open");
+    return;
+  }
   const seq = state.threadLoadSeq + 1;
   state.threadLoadSeq = seq;
   if (state.threadLoadController) state.threadLoadController.abort();
@@ -1691,6 +1704,45 @@ function scheduleLivePollIfNeeded(delay = 2600) {
   }, nextDelay);
 }
 
+function closeThreadActions(exceptThreadId = "") {
+  const keep = String(exceptThreadId || "");
+  if (state.openThreadActionId && state.openThreadActionId !== keep) state.openThreadActionId = "";
+  document.querySelectorAll("[data-thread-row]").forEach((row) => {
+    const open = keep && row.dataset.threadRow === keep;
+    row.classList.toggle("swipe-open", Boolean(open));
+    row.style.removeProperty("--thread-swipe-x");
+    const actions = row.querySelector(".thread-row-actions");
+    if (actions) actions.setAttribute("aria-hidden", open ? "false" : "true");
+  });
+}
+
+function setThreadActionOpen(threadId, open) {
+  state.openThreadActionId = open ? String(threadId || "") : "";
+  closeThreadActions(state.openThreadActionId);
+}
+
+function applyThreadActionState() {
+  closeThreadActions(state.openThreadActionId);
+}
+
+function handleThreadCardClick(event) {
+  const button = event.currentTarget;
+  const threadId = button && button.dataset.thread;
+  if (!threadId) return;
+  if (Date.now() < state.suppressThreadClickUntil) {
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
+  if (state.openThreadActionId) {
+    event.preventDefault();
+    event.stopPropagation();
+    closeThreadActions();
+    return;
+  }
+  loadThread(threadId).catch(showError);
+}
+
 function renderThreads(result = null) {
   const list = $("threadList");
   pruneHiddenThreads();
@@ -1715,10 +1767,11 @@ function renderThreads(result = null) {
     const sizeBadge = sizeText
       ? `<div class="thread-card-size${sizeWarn ? " warn" : ""}" title="Rollout file size">${escapeHtml(sizeText)}</div>`
       : "";
-    const action = sizeWarn
-      ? `<button class="thread-new-button" type="button" data-new-thread-from-thread="${escapeHtml(thread.id)}">压缩续接</button>`
-      : "";
-    return `<div class="thread-card-wrap${sizeWarn ? " rollout-warn" : ""}">
+    const actionOpen = state.openThreadActionId === thread.id;
+    const action = `<div class="thread-row-actions" aria-hidden="${actionOpen ? "false" : "true"}">
+      <button class="thread-new-button" type="button" data-new-thread-from-thread="${escapeHtml(thread.id)}">压缩续接</button>
+    </div>`;
+    return `<div class="thread-card-wrap${sizeWarn ? " rollout-warn" : ""}${actionOpen ? " swipe-open" : ""}" data-thread-row="${escapeHtml(thread.id)}">
       <button class="thread-card${active}${sizeWarn ? " rollout-warn" : ""}" type="button" data-thread="${escapeHtml(thread.id)}">
         <div class="thread-card-title">${escapeHtml(title)}</div>
         <div class="thread-card-meta-row">
@@ -1740,17 +1793,19 @@ function renderThreads(result = null) {
       statusText(thread.status),
       rolloutSizeBytes(thread),
       isRolloutOverThreshold(thread),
+      state.openThreadActionId === thread.id,
     ]),
   });
   if (state.renderedThreadListSignature === signature) return;
   list.innerHTML = html;
   state.renderedThreadListSignature = signature;
   list.querySelectorAll("[data-thread]").forEach((button) => {
-    button.addEventListener("click", () => loadThread(button.dataset.thread).catch(showError));
+    button.addEventListener("click", handleThreadCardClick);
   });
   list.querySelectorAll("[data-new-thread-from-thread]").forEach((button) => {
     button.addEventListener("click", startNewThreadFromList);
   });
+  applyThreadActionState();
 }
 
 async function restoreThreadSelection() {
@@ -2041,6 +2096,73 @@ function startThreadRequestBody(sourceThread = null, options = {}) {
   };
 }
 
+function actionWidthForThreadRow(row) {
+  const action = row && row.querySelector(".thread-row-actions");
+  return Math.max(72, Math.round(action ? action.getBoundingClientRect().width : 86));
+}
+
+function beginThreadSwipe(event) {
+  if (event.button != null && event.button !== 0) return;
+  if (event.target.closest("[data-new-thread-from-thread]")) return;
+  const row = event.target.closest("[data-thread-row]");
+  if (!row) return;
+  const startX = Number(event.clientX || 0);
+  const startY = Number(event.clientY || 0);
+  state.threadSwipe = {
+    row,
+    threadId: row.dataset.threadRow || "",
+    startX,
+    startY,
+    currentX: startX,
+    moved: false,
+    wasOpen: row.classList.contains("swipe-open"),
+    actionWidth: actionWidthForThreadRow(row),
+  };
+}
+
+function moveThreadSwipe(event) {
+  const swipe = state.threadSwipe;
+  if (!swipe || !swipe.row) return;
+  const x = Number(event.clientX || 0);
+  const y = Number(event.clientY || 0);
+  const dx = x - swipe.startX;
+  const dy = y - swipe.startY;
+  if (!swipe.moved && Math.abs(dx) < 10) return;
+  if (!swipe.moved && Math.abs(dy) > Math.abs(dx)) {
+    state.threadSwipe = null;
+    return;
+  }
+  swipe.moved = true;
+  swipe.currentX = x;
+  event.preventDefault();
+  const base = swipe.wasOpen ? -swipe.actionWidth : 0;
+  const offset = Math.max(-swipe.actionWidth, Math.min(0, base + dx));
+  swipe.row.style.setProperty("--thread-swipe-x", `${Math.round(offset)}px`);
+  swipe.row.classList.add("swiping");
+}
+
+function endThreadSwipe(event) {
+  const swipe = state.threadSwipe;
+  state.threadSwipe = null;
+  if (!swipe || !swipe.row) return;
+  swipe.row.classList.remove("swiping");
+  const dx = Number((event && event.clientX) || swipe.currentX || swipe.startX) - swipe.startX;
+  if (!swipe.moved) return;
+  const shouldOpen = swipe.wasOpen
+    ? dx > 32 ? false : true
+    : dx < -Math.min(48, swipe.actionWidth * 0.45);
+  state.suppressThreadClickUntil = Date.now() + 360;
+  setThreadActionOpen(swipe.threadId, shouldOpen);
+}
+
+function cancelThreadSwipe() {
+  const swipe = state.threadSwipe;
+  state.threadSwipe = null;
+  if (!swipe || !swipe.row) return;
+  swipe.row.classList.remove("swiping");
+  swipe.row.style.removeProperty("--thread-swipe-x");
+}
+
 function startedThreadId(result) {
   return String((result && result.threadId)
     || (result && result.thread && result.thread.id)
@@ -2051,6 +2173,8 @@ function startedThreadId(result) {
 
 async function startNewThreadFromThread(sourceThread, event) {
   if (event) event.preventDefault();
+  if (event) event.stopPropagation();
+  closeThreadActions();
   if (state.composerBusy) return;
   const thread = sourceThread || state.currentThread || {};
   const title = thread.name || thread.preview || thread.id || "current thread";
@@ -2116,6 +2240,7 @@ async function startNewThreadFromCurrent(event) {
 }
 
 async function startNewThreadFromList(event) {
+  if (event) event.stopPropagation();
   const threadId = event.currentTarget && event.currentTarget.dataset.newThreadFromThread;
   const thread = state.threads.find((entry) => entry.id === threadId);
   if (!thread) {
@@ -3468,6 +3593,11 @@ function wireUi() {
     clearTimeout(state.searchTimer);
     state.searchTimer = setTimeout(() => loadThreads().catch(showError), 250);
   });
+  $("threadList").addEventListener("pointerdown", beginThreadSwipe);
+  $("threadList").addEventListener("pointermove", moveThreadSwipe, { passive: false });
+  $("threadList").addEventListener("pointerup", endThreadSwipe);
+  $("threadList").addEventListener("pointercancel", cancelThreadSwipe);
+  $("threadList").addEventListener("pointerleave", cancelThreadSwipe);
   $("openMenu").addEventListener("click", () => {
     $("sidebar").classList.add("open");
     loadWorkspaces()
