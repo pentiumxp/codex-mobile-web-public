@@ -1825,3 +1825,21 @@
   - Existing browser/PWA sessions need a refresh for the updated frontend script.
 - Validation:
   - `npm.cmd run check` passed.
+
+## 2026-05-06 Public Web Push Title Binding Release - 15:20 +08:00
+
+- User instruction:
+  - After testing the private build, the user explicitly approved pushing the public repository.
+- Public sync:
+  - Synchronized the private Web Push thread-title binding fix into `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Public files changed: `server.js` and `README.md`.
+  - Preserved public release differences: the public README uses `https://github.com/pentiumxp/codex-mobile-web-public.git` and `cd codex-mobile-web-public`; the public PWA keeps its existing `/sw.js` service-worker convention.
+  - Public README includes the required Chinese explanation of the Web Push behavior change: turn-completed notifications bind metadata captured at `turn/started`, use the completed thread title, and open `/?thread=<threadId>` so one thread's completion is not labeled as another thread.
+- Validation:
+  - Public `npm.cmd test` passed.
+  - Public `npm.cmd run check` passed.
+  - Public `git diff --check` passed with line-ending warnings only.
+  - Public tracked-file privacy scan excluding `.gitignore` returned no matches for local user paths, Tailscale host markers, LAN address, Hermes name, or the private GitHub clone URL.
+- Published:
+  - Public commit `82660e0 修复 Web Push 线程标题绑定` pushed to `origin/main`.
+  - Private implementation commit was `1a927ab 修复 Web Push 线程标题绑定`.
