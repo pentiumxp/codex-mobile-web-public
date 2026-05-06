@@ -2927,6 +2927,16 @@ async function createSourceContinuationHandoff({ cwd, sourceThreadId, sourceThre
     summary: "auto",
   }, runtimeSettings || {});
   if (effort) params.effort = effort;
+  try {
+    await codex.request("thread/resume", applyResumeRuntimeSettings({
+      threadId,
+      cwd,
+      model: model || null,
+      persistExtendedHistory: true,
+    }, runtimeSettings || {}), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+  } catch (err) {
+    if (!/already|loaded|active/i.test(err.message || "")) throw err;
+  }
   const result = await codex.request("turn/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
   const file = await waitForContinuationHandoffFile(target);
   return Object.assign(file, {

@@ -333,7 +333,7 @@ Behavior:
 
 当线程的 rollout JSONL 达到阈值时，界面按钮显示为“压缩续接”。确认后，Mobile Web 会先在旧线程中启动一个交接整理 turn，要求旧线程把本线程真实的交接重点写入当前工作区的 `.agent-context/thread-handoffs/<id>.md` 文件。该文件必须只总结源线程和当前工作区相关的目标、已完成事项、未完成事项、关键文件、验证结果和风险。
 
-旧线程写出交接文件后，Mobile Web 才会创建同工作区的新续接线程，并在首条 bootstrap 消息中带入源线程 ID、标题、工作区、rollout 路径和大小、运行权限摘要、源线程交接文件、最近源线程上下文，以及当前工作区 `.agent-context/PROJECT_CONTEXT.md` / `.agent-context/HANDOFF.md` 摘录。bootstrap 不再固定注入 private/public/README/GitHub 发布规则；只有当前工作区上下文或源线程交接文件明确涉及这些规则时，新线程才应加载它们。
+旧线程写出交接文件后，Mobile Web 才会创建同工作区的新续接线程，并在首条 bootstrap 消息中带入源线程 ID、标题、工作区、rollout 路径和大小、运行权限摘要、源线程交接文件、最近源线程上下文，以及当前工作区 `.agent-context/PROJECT_CONTEXT.md` / `.agent-context/HANDOFF.md` 摘录。bootstrap 不再固定注入 private/public/README/GitHub 发布规则；只有当前工作区上下文或源线程交接文件明确涉及这些规则时，新线程才应加载它们。前端会先切回源线程，让用户看到源线程生成交接文件的 turn；续接线程创建完成后仍停留在源线程，方便检查交接结果。
 
 这个动作不会原地改写或裁剪旧 rollout 文件；它通过“源线程写交接文件 + 新续接线程 + 旧线程归档”降低后续交互需要读取的历史文件体积。旧线程在交接文件生成且续接线程启动成功后才会归档，仍可从归档记录中找回。首条 bootstrap 会要求新线程先读取源线程交接文件，再读取工作区持久上下文，并显式避免确认与当前工作区无关的发布或提交规则。
 

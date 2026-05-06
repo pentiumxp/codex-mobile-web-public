@@ -1866,3 +1866,26 @@
 - Validation:
   - `npm.cmd run check` passed.
   - `git diff --check` passed with line-ending warnings only.
+
+## 2026-05-07 Continuation Source Thread Visibility Fix - 06:20 +08:00
+
+- User-reported issue:
+  - After tapping `压缩续接`, Mobile Web returned to the home screen or kept the source thread visible without showing any source-thread handoff turn.
+  - A Control4 continuation attempt showed the source thread still unchanged: no 2026-05-07 handoff turn, no handoff file under `C:\Users\xuxin\SynologyDrive\Codex\智能\.agent-context\thread-handoffs`, and no new Control4 continuation thread.
+- Diagnosis:
+  - The previous server implementation started the source-thread handoff turn directly with `turn/start` but did not first `thread/resume` the source thread. For older/notLoaded threads, that can fail to materialize a visible turn in the source thread.
+  - The frontend success path still jumped to the new continuation thread, and `thread/archived` could clear the current source-thread detail view back to the home screen.
+- Code changes:
+  - `createSourceContinuationHandoff()` now resumes the source thread with inherited runtime settings before starting the handoff turn.
+  - The frontend switches to the source thread before starting continuation and no longer automatically loads the new continuation thread when the request completes.
+  - During a continuation, a `thread/archived` event for the source thread marks the current source detail as archived instead of clearing it.
+  - After completion, Mobile Web stays on the source thread so the user can inspect the handoff generation turn/result.
+- Operational note:
+  - The failed Control4 attempt left only an empty `thread-handoffs` directory; no handoff file and no new Control4 continuation thread were created. Retrying after the listener restart should use the fixed flow.
+- Activation:
+  - Restarted only the 8787 Node listener after confirming the Control4 attempt had no active handoff file or new continuation thread.
+  - New listener PID `52296`.
+  - `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, and `lastError=null`.
+- Validation:
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with line-ending warnings only.

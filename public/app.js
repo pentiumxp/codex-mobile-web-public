@@ -35,6 +35,8 @@ const state = {
   threadSwipe: null,
   suppressThreadClickUntil: 0,
   suppressThreadClickThreadId: "",
+  continuationSourceThreadId: "",
+  continuationNewThreadId: "",
   pendingAttachments: [],
   composerBusy: false,
   maxUploadBytes: 64 * 1024 * 1024,
@@ -1647,6 +1649,9 @@ async function loadThreads() {
 }
 
 async function loadThread(threadId) {
+  if (threadId && threadId !== state.continuationSourceThreadId) {
+    state.continuationSourceThreadId = "";
+  }
   if (threadId === state.currentThreadId
     && state.currentThread
     && !state.currentThread.mobileLoading
@@ -2307,7 +2312,9 @@ async function startNewThreadFromThread(sourceThread, event) {
   if (event) event.stopPropagation();
   closeThreadActions();
   if (state.composerBusy) return;
+  const button = event && event.currentTarget;
   const thread = sourceThread || state.currentThread || {};
+  const sourceThreadId = thread.id || state.currentThreadId || "";
   const title = thread.name || thread.preview || thread.id || "current thread";
   const size = rolloutSizeText(thread);
   const archiveConfirmed = window.confirm([
@@ -2324,8 +2331,17 @@ async function startNewThreadFromThread(sourceThread, event) {
     showError(new Error("Thread has no workspace path"));
     return;
   }
+  if (sourceThreadId) {
+    state.continuationSourceThreadId = sourceThreadId;
+    state.continuationNewThreadId = "";
+    if (sourceThreadId !== state.currentThreadId) {
+      $("connectionState").classList.remove("error");
+      $("connectionState").textContent = "正在打开源线程";
+      markActivity("打开源线程");
+      await loadThread(sourceThreadId);
+    }
+  }
   state.composerBusy = true;
-  const button = event.currentTarget;
   if (button) button.disabled = true;
   $("connectionState").classList.remove("error");
   $("connectionState").textContent = "正在生成交接并续接";
@@ -2339,6 +2355,7 @@ async function startNewThreadFromThread(sourceThread, event) {
     });
     const threadId = startedThreadId(result);
     if (!threadId) throw new Error("Continuation thread was created without a thread id");
+    state.continuationNewThreadId = threadId;
     const archivedSourceThreadId = result.sourceArchive && result.sourceArchive.archived
       ? result.sourceArchive.threadId
       : "";
@@ -2349,14 +2366,16 @@ async function startNewThreadFromThread(sourceThread, event) {
       state.threads = [result.thread, ...state.threads.filter((thread) => thread.id !== result.thread.id)];
       renderThreads();
     }
-    await loadThread(threadId);
+    if (sourceThreadId && state.currentThreadId !== sourceThreadId) {
+      await loadThread(sourceThreadId);
+    }
     loadThreads().catch(showError);
     $("connectionState").classList.remove("error");
     if (result.sourceArchive && result.sourceArchive.error) {
       $("connectionState").classList.add("error");
       $("connectionState").textContent = `续接线程已就绪；归档失败：${result.sourceArchive.error}`;
     } else {
-      $("connectionState").textContent = "续接线程已就绪";
+      $("connectionState").textContent = "交接已生成；续接线程已就绪";
     }
   } catch (err) {
     showError(err);
@@ -3168,7 +3187,14 @@ function applyNotification(method, params) {
   if (method === "thread/archived") {
     state.threads = state.threads.filter((thread) => thread.id !== params.threadId);
     if (state.currentThread && state.currentThread.id === params.threadId) {
-      clearCurrentThreadSelection();
+      if (state.continuationSourceThreadId === params.threadId) {
+        state.currentThread = Object.assign({}, state.currentThread, {
+          archived: true,
+          status: params.status || { type: "archived" },
+        });
+      } else {
+        clearCurrentThreadSelection();
+      }
     }
     renderThreads();
     renderCurrentThread();
