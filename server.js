@@ -79,7 +79,7 @@ const IMAGE_EXTENSIONS = new Set([".avif", ".bmp", ".gif", ".heic", ".heif", ".j
 const CODEX_CONFIG_DEFAULTS = readCodexConfigDefaults();
 const PROCESS_STARTED_AT_MS = Date.now();
 
-let clients = new Set();
+let clients = new Map();
 let clientHeartbeats = new WeakMap();
 let latestRateLimits = null;
 const latestRateLimitsByModel = new Map();
@@ -1096,6 +1096,9 @@ function compactTurnsListResult(result) {
 
 function compactNotification(payload) {
   if (!payload || payload.type !== "notification" || !payload.params) return payload;
+  if (String(payload.method || "").startsWith("turn/diff/")) {
+    return null;
+  }
   if (payload.method === "item/commandExecution/outputDelta" || payload.method === "item/fileChange/outputDelta") {
     return null;
   }
@@ -1910,7 +1913,8 @@ function broadcast(payload) {
   const compacted = compactNotification(payload);
   if (!compacted) return;
   const body = `data: ${JSON.stringify(compacted)}\n\n`;
-  for (const res of [...clients]) {
+  for (const [res, client] of [...clients.entries()]) {
+    if (!shouldSendEventToClient(compacted, client)) continue;
     try {
       if (res.destroyed || res.writableEnded || !res.write(body)) {
         removeEventClient(res);
@@ -1919,6 +1923,25 @@ function broadcast(payload) {
       removeEventClient(res);
     }
   }
+}
+
+function notificationThreadId(payload) {
+  if (!payload || payload.type !== "notification" || !payload.params) return "";
+  return String(payload.params.threadId || payload.params.conversationId || "");
+}
+
+function shouldSendEventToClient(payload, client = {}) {
+  if (!payload || payload.type !== "notification") return true;
+  if (payload.method === "account/rateLimits/updated") return true;
+  if (payload.method === "thread/started"
+    || payload.method === "thread/status/changed"
+    || payload.method === "thread/name/updated"
+    || payload.method === "thread/archived") {
+    return true;
+  }
+  const threadId = notificationThreadId(payload);
+  if (!threadId) return true;
+  return Boolean(client.threadId) && client.threadId === threadId;
 }
 
 function removeEventClient(res) {
@@ -3235,6 +3258,10 @@ function handleEvents(req, res) {
     sendJson(res, 401, { error: "Unauthorized" });
     return;
   }
+  const url = getUrl(req);
+  const client = {
+    threadId: String(url.searchParams.get("threadId") || ""),
+  };
   res.writeHead(200, {
     "Content-Type": "text/event-stream; charset=utf-8",
     "Cache-Control": "no-cache, no-transform",
@@ -3245,7 +3272,7 @@ function handleEvents(req, res) {
   for (const request of codex.pendingServerRequests()) {
     res.write(`data: ${JSON.stringify({ type: "serverRequest", request })}\n\n`);
   }
-  clients.add(res);
+  clients.set(res, client);
   const heartbeat = setInterval(() => {
     try {
       if (res.destroyed || res.writableEnded || !res.write(": keepalive\n\n")) {
