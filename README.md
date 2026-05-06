@@ -326,12 +326,16 @@ Behavior:
 - Home view shows recent workspaces and recent threads.
 - Thread lists and thread detail monitor rollout JSONL size. At the default `100MB` threshold, Mobile Web shows a context-size warning and offers a same-workspace continuation action. After user confirmation, the action creates a source-named/date-suffixed continuation thread, sends a detailed bootstrap message, then archives the source thread.
 - The continuation bootstrap message explicitly carries source thread metadata, rollout size, inherited runtime settings, recent visible turn summaries, `.agent-context/PROJECT_CONTEXT.md` and `.agent-context/HANDOFF.md` excerpts, and the private/public GitHub release rules. This avoids relying only on thread-local memory when a large rollout needs to be left behind.
+- Thread list rows support a left-swipe action to reveal `压缩续接` for any visible thread, so users can proactively continue before the rollout reaches the warning threshold.
 
 ### Rollout 压缩续接
 
 当线程的 rollout JSONL 达到阈值时，界面按钮显示为“压缩续接”。确认后，Mobile Web 会创建同工作区的新续接线程，并在首条消息中写入足够详细的交接信息：源线程 ID、标题、工作区、rollout 路径和大小、运行权限摘要、最近源线程上下文、工作区 handoff 摘录，以及 GitHub private/public 提交规则。
 
 这个动作不会原地改写或裁剪旧 rollout 文件；它通过“新续接线程 + 旧线程归档”降低后续交互需要读取的历史文件体积。旧线程在续接线程启动成功后才会归档，仍可从归档记录中找回。首条 bootstrap 会要求新线程先读取 `.agent-context/PROJECT_CONTEXT.md` 和 `.agent-context/HANDOFF.md`，并显式确认 private/public/README 规则已经加载，避免漏掉 public README 更新、public 仓库清理、service worker 路径等发布要求。
+
+除超阈值提示外，线程列表中的任意线程都可以向左滑动露出 `压缩续接` 按钮，用于主动开启续接。滑出的按钮使用同一套确认、bootstrap 和归档流程；点线程卡片本身仍用于打开线程。
+
 - The top-right timer shows current turn elapsed time as `鏈疆 HH:MM:SS`.
 - The timer is red while a turn is active and muted after completion.
 - During an active turn, the timer may append a compact activity label such as `鎬濊€僠, `杈撳嚭`, `鍛戒护`, `鏂囦欢`, `宸ュ叿`, `鎼滅储`, `鍚屾`, or `绛夊緟鎵瑰噯`.

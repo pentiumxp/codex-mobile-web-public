@@ -137,6 +137,29 @@
   - `README.md` documents the "Rollout 压缩续接" behavior in Chinese and records the new environment variables.
   - `.agent-context/PROJECT_CONTEXT.md` records that the continuation bootstrap must carry explicit release rules and not rely only on a generic "read handoff" instruction.
 
+## 2026-05-06 Thread Load Timing And Swipe Continuation
+
+- User-reported issue:
+  - Opening/loading a thread felt slow in Mobile Web.
+  - The user also requested proactive `压缩续接` access through a left-swipe action.
+- Runtime timing findings:
+  - Local/LAN backend checks did not show app-server or 8787 service slowness during this check.
+  - `http://127.0.0.1:8787/api/threads?limit=80&archived=false` was about `159ms`.
+  - LAN `http://192.168.10.108:8787/api/threads?limit=80&archived=false` was about `65ms`.
+  - Current newest thread detail `Codex Mobile 0505` was about `159ms` locally and `147ms` over LAN.
+  - The slowest sampled visible detail read was `Hermes 05-05` at about `384ms`.
+  - `/api/status` was healthy with `transport=external-jsonl-tcp`, `sharedRequired=true`, `lastError=null`.
+  - `tailscale netcheck` showed the nearest DERP as `sfo` around `150ms`, and `pentium-iphone` appeared active through relay `sfo`; phone-side Tailscale/HTTPS can therefore add visible latency beyond the local/LAN API timings.
+- Code changes:
+  - `public/app.js` now renders a hidden `压缩续接` action for every thread list row.
+  - A left swipe on a thread row reveals that action; tapping the row while an action is open closes it rather than accidentally opening the thread.
+  - Re-tapping an already loaded current thread now keeps the existing detail view instead of forcing a fresh "Loading thread" state; explicit refresh remains available through the refresh control.
+  - Existing over-threshold current-thread banner still exposes the normal `压缩续接` button.
+  - `public/styles.css` adds the swipe-reveal row layout and mobile-friendly action area.
+- Documentation:
+  - `README.md` now documents proactive left-swipe continuation in English and Chinese.
+  - `.agent-context/PROJECT_CONTEXT.md` records the left-swipe continuation rule.
+
 ## 2026-05-03 Composer Send/Stop And Model Selectors - 21:18 +08:00
 
 - User-requested adjustment:
