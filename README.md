@@ -327,6 +327,7 @@ Behavior:
 - Thread lists and thread detail monitor rollout JSONL size. At the default `100MB` threshold, Mobile Web shows a context-size warning and offers a same-workspace continuation action. After user confirmation, the action creates a source-named/date-suffixed continuation thread, sends a detailed bootstrap message, then archives the source thread.
 - The continuation bootstrap message explicitly carries source thread metadata, rollout size, inherited runtime settings, recent visible turn summaries, `.agent-context/PROJECT_CONTEXT.md` and `.agent-context/HANDOFF.md` excerpts, and the private/public GitHub release rules. This avoids relying only on thread-local memory when a large rollout needs to be left behind.
 - Thread list rows support a left-swipe action to reveal `压缩续接` for any visible thread, so users can proactively continue before the rollout reaches the warning threshold.
+- The left-swipe action stays open after a horizontal swipe until the user taps the card, taps the action, opens another row, or refreshes the list. Mobile browsers can emit a synthetic click after touch gestures, so the UI suppresses that same-gesture click to avoid immediately closing the action.
 
 ### Rollout 压缩续接
 
@@ -335,6 +336,10 @@ Behavior:
 这个动作不会原地改写或裁剪旧 rollout 文件；它通过“新续接线程 + 旧线程归档”降低后续交互需要读取的历史文件体积。旧线程在续接线程启动成功后才会归档，仍可从归档记录中找回。首条 bootstrap 会要求新线程先读取 `.agent-context/PROJECT_CONTEXT.md` 和 `.agent-context/HANDOFF.md`，并显式确认 private/public/README 规则已经加载，避免漏掉 public README 更新、public 仓库清理、service worker 路径等发布要求。
 
 除超阈值提示外，线程列表中的任意线程都可以向左滑动露出 `压缩续接` 按钮，用于主动开启续接。滑出的按钮使用同一套确认、bootstrap 和归档流程；点线程卡片本身仍用于打开线程。线程行使用独立的卡片层和动作层，避免滑动动作压缩或裁切标题、工作区、状态和 rollout 大小等元信息。
+
+左滑展开后，`压缩续接` 按钮会保持可见，直到用户点击该按钮、点击线程卡片收起、打开另一行，或者刷新线程列表。移动浏览器在触摸滑动后可能补发一次合成点击，前端会吞掉这次同手势点击，避免按钮刚露出就被立即收起。
+
+iOS/PWA 的横滑手势使用 Touch Events 路径处理；如果系统在横滑过程中发出 `touchcancel` / `pointercancel`，前端会根据最后一次横向位移完成展开判定，而不是直接收起按钮。
 
 - The top-right timer shows current turn elapsed time as `鏈疆 HH:MM:SS`.
 - The timer is red while a turn is active and muted after completion.
@@ -704,7 +709,8 @@ Notification behavior:
 - Test notification title: `Codex Mobile Web`.
 - Turn-completed notification title: `Codex Mobile Web`.
 - Turn-completed notification body: `<thread-title> · This turn 已结束 · <local time>`.
-- Clicking a notification opens Mobile Web and navigates to the relevant thread when the thread id is available.
+- Clicking a notification opens Mobile Web and switches to the relevant thread when the thread id is available. The service worker sends a `codex-open-thread` message to an already-open Mobile Web window, so an installed iOS/PWA session does not have to rely on a full browser navigation to change threads.
+- 中文说明：通知 payload 会带 `/?thread=<threadId>`。如果 Mobile Web 已经打开，service worker 会聚焦现有窗口并把目标线程 ID 发给前端，前端收到后直接保存当前线程并调用线程详情加载接口；如果没有现有窗口，则打开带线程参数的新窗口。这样点击 Web Push 后应进入对应线程，而不是只回到上一次停留的线程。
 
 VAPID details:
 

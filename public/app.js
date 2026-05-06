@@ -34,6 +34,7 @@ const state = {
   openThreadActionId: "",
   threadSwipe: null,
   suppressThreadClickUntil: 0,
+  suppressThreadClickThreadId: "",
   pendingAttachments: [],
   composerBusy: false,
   maxUploadBytes: 64 * 1024 * 1024,
@@ -1513,16 +1514,60 @@ async function bootstrap() {
   });
 }
 
-function applyUrlThreadSelection() {
+function threadIdFromUrlValue(value) {
   try {
-    const params = new URLSearchParams(window.location.search);
-    const threadId = params.get("thread");
-    if (!threadId) return;
-    localStorage.setItem(STORAGE_THREAD_ID, threadId);
+    const url = new URL(value || window.location.href, window.location.origin);
+    return String(url.searchParams.get("thread") || "").trim();
+  } catch (_) {
+    return "";
+  }
+}
+
+function clearThreadUrl() {
+  try {
     window.history.replaceState({}, "", window.location.pathname || "/");
+  } catch (_) {
+    // URL cleanup is best-effort after external thread selection.
+  }
+}
+
+async function openExternalThreadSelection(threadId) {
+  const id = String(threadId || "").trim();
+  if (!id) return;
+  localStorage.setItem(STORAGE_THREAD_ID, id);
+  clearThreadUrl();
+  if (!state.key) return;
+  $("connectionState").classList.remove("error");
+  $("connectionState").textContent = "Opening notification thread";
+  if (!state.workspaces.length) {
+    try {
+      await loadWorkspaces();
+    } catch (_) {
+      // Loading the thread by id can still succeed without refreshing workspace shortcuts.
+    }
+  }
+  await loadThread(id);
+}
+
+function applyUrlThreadSelection(options = {}) {
+  try {
+    const threadId = threadIdFromUrlValue(window.location.href);
+    if (!threadId) return "";
+    localStorage.setItem(STORAGE_THREAD_ID, threadId);
+    clearThreadUrl();
+    if (options.load) openExternalThreadSelection(threadId).catch(showError);
+    return threadId;
   } catch (_) {
     // URL thread selection is best-effort for notification clicks.
   }
+  return "";
+}
+
+function handleServiceWorkerMessage(event) {
+  const data = event && event.data ? event.data : {};
+  if (!data || data.type !== "codex-open-thread") return;
+  const threadId = data.threadId || threadIdFromUrlValue(data.url);
+  openExternalThreadSelection(threadId).catch(showError);
 }
 
 async function loadWorkspaces() {
@@ -1729,11 +1774,13 @@ function handleThreadCardClick(event) {
   const button = event.currentTarget;
   const threadId = button && button.dataset.thread;
   if (!threadId) return;
-  if (Date.now() < state.suppressThreadClickUntil) {
+  if (Date.now() < state.suppressThreadClickUntil
+    && (!state.suppressThreadClickThreadId || state.suppressThreadClickThreadId === threadId)) {
     event.preventDefault();
     event.stopPropagation();
     return;
   }
+  if (Date.now() >= state.suppressThreadClickUntil) state.suppressThreadClickThreadId = "";
   if (state.openThreadActionId) {
     event.preventDefault();
     event.stopPropagation();
@@ -1741,6 +1788,20 @@ function handleThreadCardClick(event) {
     return;
   }
   loadThread(threadId).catch(showError);
+}
+
+function suppressThreadClickAfterSwipe(event) {
+  if (Date.now() >= state.suppressThreadClickUntil) {
+    state.suppressThreadClickThreadId = "";
+    return;
+  }
+  if (event.target.closest("[data-new-thread-from-thread]")) return;
+  const row = event.target.closest("[data-thread-row]");
+  if (!row) return;
+  const threadId = row.dataset.threadRow || "";
+  if (state.suppressThreadClickThreadId && state.suppressThreadClickThreadId !== threadId) return;
+  event.preventDefault();
+  event.stopPropagation();
 }
 
 function renderThreads(result = null) {
@@ -2101,66 +2162,136 @@ function actionWidthForThreadRow(row) {
   return Math.max(72, Math.round(action ? action.getBoundingClientRect().width : 86));
 }
 
-function beginThreadSwipe(event) {
-  if (event.button != null && event.button !== 0) return;
-  if (event.target.closest("[data-new-thread-from-thread]")) return;
-  const row = event.target.closest("[data-thread-row]");
+function threadSwipeTargetRow(target) {
+  if (!target || !target.closest) return null;
+  if (target.closest("[data-new-thread-from-thread]")) return null;
+  return target.closest("[data-thread-row]");
+}
+
+function releaseThreadSwipeCapture(swipe) {
+  if (!swipe || !swipe.row || swipe.pointerId == null) return;
+  try {
+    if (swipe.row.hasPointerCapture && swipe.row.hasPointerCapture(swipe.pointerId)) {
+      swipe.row.releasePointerCapture(swipe.pointerId);
+    }
+  } catch (_) {
+    // Pointer capture release is best-effort across mobile browsers.
+  }
+}
+
+function beginThreadSwipeAt(target, startX, startY, options = {}) {
+  const row = threadSwipeTargetRow(target);
   if (!row) return;
-  const startX = Number(event.clientX || 0);
-  const startY = Number(event.clientY || 0);
   state.threadSwipe = {
     row,
     threadId: row.dataset.threadRow || "",
-    startX,
-    startY,
-    currentX: startX,
+    startX: Number(startX || 0),
+    startY: Number(startY || 0),
+    currentX: Number(startX || 0),
     moved: false,
     wasOpen: row.classList.contains("swipe-open"),
     actionWidth: actionWidthForThreadRow(row),
+    pointerId: options.pointerId,
+    source: options.source || "pointer",
   };
+  try {
+    if (row.setPointerCapture && options.pointerId != null) row.setPointerCapture(options.pointerId);
+  } catch (_) {
+    // Pointer capture is a stability optimization, not required.
+  }
 }
 
-function moveThreadSwipe(event) {
+function beginThreadSwipe(event) {
+  if (event.pointerType === "touch") return;
+  if (event.button != null && event.button !== 0) return;
+  beginThreadSwipeAt(event.target, event.clientX, event.clientY, {
+    pointerId: event.pointerId,
+    source: "pointer",
+  });
+}
+
+function moveThreadSwipeTo(xValue, yValue, event) {
   const swipe = state.threadSwipe;
   if (!swipe || !swipe.row) return;
-  const x = Number(event.clientX || 0);
-  const y = Number(event.clientY || 0);
+  const x = Number(xValue || 0);
+  const y = Number(yValue || 0);
   const dx = x - swipe.startX;
   const dy = y - swipe.startY;
   if (!swipe.moved && Math.abs(dx) < 10) return;
   if (!swipe.moved && Math.abs(dy) > Math.abs(dx)) {
+    releaseThreadSwipeCapture(swipe);
     state.threadSwipe = null;
     return;
   }
   swipe.moved = true;
   swipe.currentX = x;
-  event.preventDefault();
+  if (event && event.cancelable !== false) event.preventDefault();
   const base = swipe.wasOpen ? -swipe.actionWidth : 0;
   const offset = Math.max(-swipe.actionWidth, Math.min(0, base + dx));
   swipe.row.style.setProperty("--thread-swipe-x", `${Math.round(offset)}px`);
   swipe.row.classList.add("swiping");
 }
 
-function endThreadSwipe(event) {
+function moveThreadSwipe(event) {
+  const swipe = state.threadSwipe;
+  if (swipe && swipe.source === "touch") return;
+  moveThreadSwipeTo(event.clientX, event.clientY, event);
+}
+
+function finishThreadSwipe() {
   const swipe = state.threadSwipe;
   state.threadSwipe = null;
   if (!swipe || !swipe.row) return;
+  releaseThreadSwipeCapture(swipe);
   swipe.row.classList.remove("swiping");
-  const dx = Number((event && event.clientX) || swipe.currentX || swipe.startX) - swipe.startX;
+  const dx = Number(swipe.currentX || swipe.startX) - swipe.startX;
   if (!swipe.moved) return;
+  const openThreshold = Math.min(28, swipe.actionWidth * 0.32);
   const shouldOpen = swipe.wasOpen
     ? dx > 32 ? false : true
-    : dx < -Math.min(48, swipe.actionWidth * 0.45);
-  state.suppressThreadClickUntil = Date.now() + 360;
+    : dx < -openThreshold;
+  state.suppressThreadClickUntil = Date.now() + 1200;
+  state.suppressThreadClickThreadId = swipe.threadId;
   setThreadActionOpen(swipe.threadId, shouldOpen);
+}
+
+function endThreadSwipe() {
+  const swipe = state.threadSwipe;
+  if (swipe && swipe.source === "touch") return;
+  finishThreadSwipe();
 }
 
 function cancelThreadSwipe() {
   const swipe = state.threadSwipe;
-  state.threadSwipe = null;
-  if (!swipe || !swipe.row) return;
-  swipe.row.classList.remove("swiping");
-  swipe.row.style.removeProperty("--thread-swipe-x");
+  if (swipe && swipe.source === "touch") return;
+  finishThreadSwipe();
+}
+
+function primaryTouch(event) {
+  return (event.touches && event.touches[0])
+    || (event.changedTouches && event.changedTouches[0])
+    || null;
+}
+
+function beginThreadSwipeTouch(event) {
+  if (event.touches && event.touches.length > 1) return;
+  const touch = primaryTouch(event);
+  if (!touch) return;
+  beginThreadSwipeAt(event.target, touch.clientX, touch.clientY, { source: "touch" });
+}
+
+function moveThreadSwipeTouch(event) {
+  const swipe = state.threadSwipe;
+  if (!swipe || swipe.source !== "touch") return;
+  const touch = primaryTouch(event);
+  if (!touch) return;
+  moveThreadSwipeTo(touch.clientX, touch.clientY, event);
+}
+
+function endThreadSwipeTouch() {
+  const swipe = state.threadSwipe;
+  if (!swipe || swipe.source !== "touch") return;
+  finishThreadSwipe();
 }
 
 function startedThreadId(result) {
@@ -3597,7 +3728,11 @@ function wireUi() {
   $("threadList").addEventListener("pointermove", moveThreadSwipe, { passive: false });
   $("threadList").addEventListener("pointerup", endThreadSwipe);
   $("threadList").addEventListener("pointercancel", cancelThreadSwipe);
-  $("threadList").addEventListener("pointerleave", cancelThreadSwipe);
+  $("threadList").addEventListener("touchstart", beginThreadSwipeTouch, { passive: true });
+  $("threadList").addEventListener("touchmove", moveThreadSwipeTouch, { passive: false });
+  $("threadList").addEventListener("touchend", endThreadSwipeTouch, { passive: true });
+  $("threadList").addEventListener("touchcancel", endThreadSwipeTouch, { passive: true });
+  $("threadList").addEventListener("click", suppressThreadClickAfterSwipe, true);
   $("openMenu").addEventListener("click", () => {
     $("sidebar").classList.add("open");
     loadWorkspaces()
@@ -3675,9 +3810,18 @@ function wireUi() {
     addAttachmentFiles(event.dataTransfer.files);
   });
   updateViewportVars();
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("message", handleServiceWorkerMessage);
+  }
   document.addEventListener("visibilitychange", () => scheduleMobileResume("visibility"));
-  window.addEventListener("pageshow", () => scheduleMobileResume("pageshow"));
-  window.addEventListener("focus", () => scheduleMobileResume("focus", 150));
+  window.addEventListener("pageshow", () => {
+    const threadId = applyUrlThreadSelection({ load: true });
+    scheduleMobileResume("pageshow", threadId ? 240 : 80);
+  });
+  window.addEventListener("focus", () => {
+    const threadId = applyUrlThreadSelection({ load: true });
+    scheduleMobileResume("focus", threadId ? 300 : 150);
+  });
   window.addEventListener("blur", () => scheduleVisualRecovery("window-blur", 180, { render: false }));
   document.addEventListener("focusin", () => scheduleVisualRecovery("focusin", 40, { render: false, heavy: false, delays: [40, 180] }));
   document.addEventListener("focusout", () => scheduleVisualRecovery("focusout", 160, { render: false, heavy: false, delays: [160, 420] }));
