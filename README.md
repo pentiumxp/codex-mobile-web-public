@@ -339,6 +339,8 @@ Behavior:
 
 左滑展开后，`压缩续接` 按钮会保持可见，直到用户点击该按钮、点击线程卡片收起、打开另一行，或者刷新线程列表。移动浏览器在触摸滑动后可能补发一次合成点击，前端会吞掉这次同手势点击，避免按钮刚露出就被立即收起。
 
+iOS/PWA 的横滑手势使用 Touch Events 路径处理；如果系统在横滑过程中发出 `touchcancel` / `pointercancel`，前端会根据最后一次横向位移完成展开判定，而不是直接收起按钮。
+
 - The top-right timer shows current turn elapsed time as `鏈疆 HH:MM:SS`.
 - The timer is red while a turn is active and muted after completion.
 - During an active turn, the timer may append a compact activity label such as `鎬濊€僠, `杈撳嚭`, `鍛戒护`, `鏂囦欢`, `宸ュ叿`, `鎼滅储`, `鍚屾`, or `绛夊緟鎵瑰噯`.

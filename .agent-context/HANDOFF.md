@@ -72,6 +72,18 @@
 - Activation note:
   - Static frontend/service-worker change. Existing PWA/browser sessions may need a refresh so the new `app.js` and updated service worker are installed and activated.
 
+## 2026-05-06 iOS Swipe Continuation Follow-up - 13:59 +08:00
+
+- User-reported issue:
+  - The left-swipe `压缩续接` action still flashed and disappeared on the phone.
+- Follow-up code change:
+  - `public/app.js` now ignores touch-origin Pointer Events and uses explicit `touchstart` / `touchmove` / `touchend` / `touchcancel` handlers for thread-list rows.
+  - `touchcancel` now finalizes the gesture from the last horizontal position instead of blindly clearing the row. This covers iOS canceling pointer/touch gestures after the action has already been revealed.
+  - The open threshold was lowered to about 28px / 32% of action width so a deliberate short left swipe keeps the `压缩续接` action open.
+  - A capture-phase click guard now suppresses the same-gesture synthetic click on the row while still allowing immediate taps on the revealed action button.
+- Activation note:
+  - Static frontend-only change. Existing PWA/browser sessions need a refresh to load the updated `public/app.js`.
+
 ## 2026-05-06 Default User-Logon Startup Simplification - 00:35 +08:00
 
 - User-requested change:

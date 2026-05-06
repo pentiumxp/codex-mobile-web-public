@@ -1790,6 +1790,20 @@ function handleThreadCardClick(event) {
   loadThread(threadId).catch(showError);
 }
 
+function suppressThreadClickAfterSwipe(event) {
+  if (Date.now() >= state.suppressThreadClickUntil) {
+    state.suppressThreadClickThreadId = "";
+    return;
+  }
+  if (event.target.closest("[data-new-thread-from-thread]")) return;
+  const row = event.target.closest("[data-thread-row]");
+  if (!row) return;
+  const threadId = row.dataset.threadRow || "";
+  if (state.suppressThreadClickThreadId && state.suppressThreadClickThreadId !== threadId) return;
+  event.preventDefault();
+  event.stopPropagation();
+}
+
 function renderThreads(result = null) {
   const list = $("threadList");
   pruneHiddenThreads();
@@ -2148,6 +2162,12 @@ function actionWidthForThreadRow(row) {
   return Math.max(72, Math.round(action ? action.getBoundingClientRect().width : 86));
 }
 
+function threadSwipeTargetRow(target) {
+  if (!target || !target.closest) return null;
+  if (target.closest("[data-new-thread-from-thread]")) return null;
+  return target.closest("[data-thread-row]");
+}
+
 function releaseThreadSwipeCapture(swipe) {
   if (!swipe || !swipe.row || swipe.pointerId == null) return;
   try {
@@ -2159,36 +2179,42 @@ function releaseThreadSwipeCapture(swipe) {
   }
 }
 
-function beginThreadSwipe(event) {
-  if (event.button != null && event.button !== 0) return;
-  if (event.target.closest("[data-new-thread-from-thread]")) return;
-  const row = event.target.closest("[data-thread-row]");
+function beginThreadSwipeAt(target, startX, startY, options = {}) {
+  const row = threadSwipeTargetRow(target);
   if (!row) return;
-  const startX = Number(event.clientX || 0);
-  const startY = Number(event.clientY || 0);
   state.threadSwipe = {
     row,
     threadId: row.dataset.threadRow || "",
-    startX,
-    startY,
-    currentX: startX,
+    startX: Number(startX || 0),
+    startY: Number(startY || 0),
+    currentX: Number(startX || 0),
     moved: false,
     wasOpen: row.classList.contains("swipe-open"),
     actionWidth: actionWidthForThreadRow(row),
-    pointerId: event.pointerId,
+    pointerId: options.pointerId,
+    source: options.source || "pointer",
   };
   try {
-    if (row.setPointerCapture && event.pointerId != null) row.setPointerCapture(event.pointerId);
+    if (row.setPointerCapture && options.pointerId != null) row.setPointerCapture(options.pointerId);
   } catch (_) {
     // Pointer capture is a stability optimization, not required.
   }
 }
 
-function moveThreadSwipe(event) {
+function beginThreadSwipe(event) {
+  if (event.pointerType === "touch") return;
+  if (event.button != null && event.button !== 0) return;
+  beginThreadSwipeAt(event.target, event.clientX, event.clientY, {
+    pointerId: event.pointerId,
+    source: "pointer",
+  });
+}
+
+function moveThreadSwipeTo(xValue, yValue, event) {
   const swipe = state.threadSwipe;
   if (!swipe || !swipe.row) return;
-  const x = Number(event.clientX || 0);
-  const y = Number(event.clientY || 0);
+  const x = Number(xValue || 0);
+  const y = Number(yValue || 0);
   const dx = x - swipe.startX;
   const dy = y - swipe.startY;
   if (!swipe.moved && Math.abs(dx) < 10) return;
@@ -2199,36 +2225,73 @@ function moveThreadSwipe(event) {
   }
   swipe.moved = true;
   swipe.currentX = x;
-  event.preventDefault();
+  if (event && event.cancelable !== false) event.preventDefault();
   const base = swipe.wasOpen ? -swipe.actionWidth : 0;
   const offset = Math.max(-swipe.actionWidth, Math.min(0, base + dx));
   swipe.row.style.setProperty("--thread-swipe-x", `${Math.round(offset)}px`);
   swipe.row.classList.add("swiping");
 }
 
-function endThreadSwipe(event) {
+function moveThreadSwipe(event) {
+  const swipe = state.threadSwipe;
+  if (swipe && swipe.source === "touch") return;
+  moveThreadSwipeTo(event.clientX, event.clientY, event);
+}
+
+function finishThreadSwipe() {
   const swipe = state.threadSwipe;
   state.threadSwipe = null;
   if (!swipe || !swipe.row) return;
   releaseThreadSwipeCapture(swipe);
   swipe.row.classList.remove("swiping");
-  const dx = Number((event && event.clientX) || swipe.currentX || swipe.startX) - swipe.startX;
+  const dx = Number(swipe.currentX || swipe.startX) - swipe.startX;
   if (!swipe.moved) return;
+  const openThreshold = Math.min(28, swipe.actionWidth * 0.32);
   const shouldOpen = swipe.wasOpen
     ? dx > 32 ? false : true
-    : dx < -Math.min(48, swipe.actionWidth * 0.45);
+    : dx < -openThreshold;
   state.suppressThreadClickUntil = Date.now() + 1200;
   state.suppressThreadClickThreadId = swipe.threadId;
   setThreadActionOpen(swipe.threadId, shouldOpen);
 }
 
+function endThreadSwipe() {
+  const swipe = state.threadSwipe;
+  if (swipe && swipe.source === "touch") return;
+  finishThreadSwipe();
+}
+
 function cancelThreadSwipe() {
   const swipe = state.threadSwipe;
-  state.threadSwipe = null;
-  if (!swipe || !swipe.row) return;
-  releaseThreadSwipeCapture(swipe);
-  swipe.row.classList.remove("swiping");
-  swipe.row.style.removeProperty("--thread-swipe-x");
+  if (swipe && swipe.source === "touch") return;
+  finishThreadSwipe();
+}
+
+function primaryTouch(event) {
+  return (event.touches && event.touches[0])
+    || (event.changedTouches && event.changedTouches[0])
+    || null;
+}
+
+function beginThreadSwipeTouch(event) {
+  if (event.touches && event.touches.length > 1) return;
+  const touch = primaryTouch(event);
+  if (!touch) return;
+  beginThreadSwipeAt(event.target, touch.clientX, touch.clientY, { source: "touch" });
+}
+
+function moveThreadSwipeTouch(event) {
+  const swipe = state.threadSwipe;
+  if (!swipe || swipe.source !== "touch") return;
+  const touch = primaryTouch(event);
+  if (!touch) return;
+  moveThreadSwipeTo(touch.clientX, touch.clientY, event);
+}
+
+function endThreadSwipeTouch() {
+  const swipe = state.threadSwipe;
+  if (!swipe || swipe.source !== "touch") return;
+  finishThreadSwipe();
 }
 
 function startedThreadId(result) {
@@ -3665,6 +3728,11 @@ function wireUi() {
   $("threadList").addEventListener("pointermove", moveThreadSwipe, { passive: false });
   $("threadList").addEventListener("pointerup", endThreadSwipe);
   $("threadList").addEventListener("pointercancel", cancelThreadSwipe);
+  $("threadList").addEventListener("touchstart", beginThreadSwipeTouch, { passive: true });
+  $("threadList").addEventListener("touchmove", moveThreadSwipeTouch, { passive: false });
+  $("threadList").addEventListener("touchend", endThreadSwipeTouch, { passive: true });
+  $("threadList").addEventListener("touchcancel", endThreadSwipeTouch, { passive: true });
+  $("threadList").addEventListener("click", suppressThreadClickAfterSwipe, true);
   $("openMenu").addEventListener("click", () => {
     $("sidebar").classList.add("open");
     loadWorkspaces()
