@@ -1716,7 +1716,7 @@ function renderThreads(result = null) {
       ? `<div class="thread-card-size${sizeWarn ? " warn" : ""}" title="Rollout file size">${escapeHtml(sizeText)}</div>`
       : "";
     const action = sizeWarn
-      ? `<button class="thread-new-button" type="button" data-new-thread-from-thread="${escapeHtml(thread.id)}">新线程</button>`
+      ? `<button class="thread-new-button" type="button" data-new-thread-from-thread="${escapeHtml(thread.id)}">压缩续接</button>`
       : "";
     return `<div class="thread-card-wrap${sizeWarn ? " rollout-warn" : ""}">
       <button class="thread-card${active}${sizeWarn ? " rollout-warn" : ""}" type="button" data-thread="${escapeHtml(thread.id)}">
@@ -1959,9 +1959,9 @@ function renderRolloutWarning(thread, previousKeys = new Set()) {
   return `<div class="rollout-warning${entryAnimationClass(key, previousKeys)}" data-render-key="${escapeHtml(key)}">
     <div class="rollout-warning-text">
       <strong>上下文文件 ${escapeHtml(size)}</strong>
-      <span>已达到 ${escapeHtml(threshold)} 阈值。建议切到新线程，继续使用工作区共享上下文。</span>
+      <span>已达到 ${escapeHtml(threshold)} 阈值。建议压缩续接：创建带详细上下文的新线程后归档旧线程。</span>
     </div>
-    <button class="rollout-new-thread" type="button" data-new-thread-from-current>新线程</button>
+    <button class="rollout-new-thread" type="button" data-new-thread-from-current>压缩续接</button>
   </div>`;
 }
 
@@ -2056,10 +2056,10 @@ async function startNewThreadFromThread(sourceThread, event) {
   const title = thread.name || thread.preview || thread.id || "current thread";
   const size = rolloutSizeText(thread);
   const archiveConfirmed = window.confirm([
-    `新建同工作区线程，并归档旧线程“${title}”？`,
+    `压缩续接同工作区线程，并归档旧线程“${title}”？`,
     "",
-    "新线程会先读取当前工作区的 handoff context。",
-    "旧线程仍可在归档记录中找到。",
+    "将创建同工作区续接线程，并把源线程摘要、最近上下文、GitHub 提交规则和 handoff 摘录写入首条消息。",
+    "旧线程会在续接线程启动后归档，仍可在归档记录中找到。",
     size ? `旧线程 rollout：${size}` : "",
   ].filter((line) => line !== "").join("\n"));
   if (!archiveConfirmed) return;
@@ -2072,8 +2072,8 @@ async function startNewThreadFromThread(sourceThread, event) {
   const button = event.currentTarget;
   if (button) button.disabled = true;
   $("connectionState").classList.remove("error");
-  $("connectionState").textContent = "Starting new thread";
-  markActivity("新线程");
+  $("connectionState").textContent = "正在压缩续接";
+  markActivity("压缩续接");
   updateComposerControls();
   try {
     const result = await api("/api/threads", {
@@ -2082,7 +2082,7 @@ async function startNewThreadFromThread(sourceThread, event) {
       timeoutMs: 120000,
     });
     const threadId = startedThreadId(result);
-    if (!threadId) throw new Error("New thread was created without a thread id");
+    if (!threadId) throw new Error("Continuation thread was created without a thread id");
     const archivedSourceThreadId = result.sourceArchive && result.sourceArchive.archived
       ? result.sourceArchive.threadId
       : "";
@@ -2098,9 +2098,9 @@ async function startNewThreadFromThread(sourceThread, event) {
     $("connectionState").classList.remove("error");
     if (result.sourceArchive && result.sourceArchive.error) {
       $("connectionState").classList.add("error");
-      $("connectionState").textContent = `New thread ready; archive failed: ${result.sourceArchive.error}`;
+      $("connectionState").textContent = `续接线程已就绪；归档失败：${result.sourceArchive.error}`;
     } else {
-      $("connectionState").textContent = "New thread ready";
+      $("connectionState").textContent = "续接线程已就绪";
     }
   } catch (err) {
     showError(err);

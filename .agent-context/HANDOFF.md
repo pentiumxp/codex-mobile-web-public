@@ -110,7 +110,32 @@
   - Synchronized `server.js` and `public/app.js` to `C:\Users\xuxin\Documents\codex-mobile-web-public`.
   - Preserved public `public/app.js` service worker registration on `/sw.js`.
   - Public validation passed: `npm.cmd test`, `npm.cmd run check`, `git diff --check`, and tracked-file privacy scan excluding `.gitignore`.
+
+## 2026-05-06 Public README Release Requirement
+
+- User instruction:
+  - Future public-repo commits must include a detailed README update.
+  - The README update must include Chinese documentation explaining the user-visible change, usage impact, and any operational notes.
+- Durable context update:
+  - `.agent-context/PROJECT_CONTEXT.md` records this as a public release rule.
+- Operational implication:
+  - Do not treat a public sync as complete when only code files are copied/committed. If public code changes are pushed, update `C:\Users\xuxin\Documents\codex-mobile-web-public\README.md` in the same public commit unless the user explicitly excludes README changes.
   - `git diff --check` passed with only Git line-ending warnings.
+
+## 2026-05-06 Rollout Continuation Bootstrap Detail
+
+- User-requested adjustment:
+  - The rollout-size action should be treated as "压缩续接" rather than an ordinary "新线程".
+  - The continuation thread must receive enough explicit detail to avoid missing durable GitHub/private/public/README requirements after a thread switch.
+- Code behavior:
+  - `public/app.js` now labels the over-threshold action as `压缩续接`, updates the warning banner and confirmation prompt, and explains that the source thread summary, recent context, GitHub release rules, and handoff excerpts are written into the first message.
+  - `server.js` now builds a detailed bootstrap message before starting the first continuation turn. The message includes source thread id/title/cwd/rollout path/rollout size/status, runtime settings, recent visible source turns from `thread/turns/list`, `.agent-context/PROJECT_CONTEXT.md`, critical `.agent-context/HANDOFF.md` GitHub/release sections, the latest handoff tail, and explicit reminders about public README and privacy-safe public sync.
+  - `server.js` now defaults continuation runtime settings from the source thread runtime context, then applies any user-selected permission-mode override.
+  - `CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS` controls the maximum bootstrap message size, default `120000`.
+  - `CODEX_MOBILE_CONTINUATION_RECENT_TURNS` controls the number of recent source turns summarized, default `12`, capped at `30`.
+- Documentation:
+  - `README.md` documents the "Rollout 压缩续接" behavior in Chinese and records the new environment variables.
+  - `.agent-context/PROJECT_CONTEXT.md` records that the continuation bootstrap must carry explicit release rules and not rely only on a generic "read handoff" instruction.
 
 ## 2026-05-03 Composer Send/Stop And Model Selectors - 21:18 +08:00
 

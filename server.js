@@ -72,6 +72,8 @@ const STARTED_THREAD_CACHE_MAX = Math.max(10, Number(process.env.CODEX_MOBILE_ST
 const MAX_ROLLOUT_CONTEXT_BYTES = Math.max(256 * 1024, Number(process.env.CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES || String(4 * 1024 * 1024)));
 const MAX_RUNTIME_CONTEXT_SCAN_BYTES = Math.max(MAX_ROLLOUT_CONTEXT_BYTES, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_SCAN_BYTES || String(512 * 1024 * 1024)));
 const ROLLOUT_WARNING_BYTES = Math.max(1 * 1024 * 1024, Number(process.env.CODEX_MOBILE_ROLLOUT_WARNING_BYTES || String(100 * 1024 * 1024)));
+const MAX_CONTINUATION_BOOTSTRAP_CHARS = Math.max(20_000, Number(process.env.CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS || "120000"));
+const CONTINUATION_RECENT_TURNS = Math.max(1, Math.min(30, Number(process.env.CODEX_MOBILE_CONTINUATION_RECENT_TURNS || "12")));
 const RUNTIME_CONTEXT_CACHE_TTL_MS = Math.max(1000, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_CACHE_TTL_MS || "30000"));
 const RUNTIME_CONTEXT_CACHE_MAX = Math.max(20, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_CACHE_MAX || "200"));
 const SAFE_RETRY_METHODS = new Set(["initialize", "thread/list", "thread/read", "thread/turns/list"]);
@@ -2568,22 +2570,262 @@ function newThreadTitle({ cwd, sourceThreadTitle }) {
   return `${base} ${localTitleDate()}`;
 }
 
-function newThreadBootstrapPrompt({ cwd, sourceThreadId, sourceThreadTitle }) {
-  const parts = [
-    "请继承上一个线程的项目上下文。",
-    "",
-    "启动后先读取当前工作区的持久上下文文件：",
-    "1. `.agent-context/PROJECT_CONTEXT.md`",
-    "2. `.agent-context/HANDOFF.md`",
-    "",
-    "如果这些文件存在，把它们作为本线程的 durable project context。不要假设本线程继承了旧聊天流、临时 shell 状态或隐藏内存。",
-    "本轮只需要读取上下文并用一句话说明已加载，然后等待下一步；不要修改文件。",
-  ];
-  if (cwd) parts.push("", `当前工作区：${cwd}`);
-  if (sourceThreadTitle || sourceThreadId) {
-    parts.push(`来源线程：${[sourceThreadTitle, sourceThreadId].filter(Boolean).join(" / ")}`);
+function formatByteCount(bytes) {
+  const value = Number(bytes || 0);
+  if (!Number.isFinite(value) || value <= 0) return "";
+  const units = ["B", "KB", "MB", "GB"];
+  let size = value;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
   }
-  return parts.join("\n");
+  const precision = unitIndex === 0 ? 0 : 1;
+  return `${size.toFixed(precision)} ${units[unitIndex]}`;
+}
+
+function readWorkspaceContextFile(cwd, relativePath, maxChars) {
+  const workspace = String(cwd || "").trim();
+  const file = workspace ? path.join(workspace, ...String(relativePath || "").split(/[\\/]+/).filter(Boolean)) : "";
+  if (!file) {
+    return { relativePath, path: "", exists: false, text: "", error: "Workspace path is empty" };
+  }
+  try {
+    const text = fs.readFileSync(file, "utf8");
+    return {
+      relativePath,
+      path: file,
+      exists: true,
+      text: truncateMiddle(text, maxChars, relativePath),
+    };
+  } catch (err) {
+    return {
+      relativePath,
+      path: file,
+      exists: false,
+      text: "",
+      error: err && err.code === "ENOENT" ? "missing" : (err.message || String(err)),
+    };
+  }
+}
+
+function markdownSectionsContaining(text, needles, maxSections = 4) {
+  const lowerNeedles = needles.map((needle) => String(needle || "").toLowerCase()).filter(Boolean);
+  if (!lowerNeedles.length) return [];
+  return String(text || "")
+    .split(/(?=^##\s+)/m)
+    .map((section) => section.trim())
+    .filter((section) => {
+      const lower = section.slice(0, 240).toLowerCase();
+      return lowerNeedles.some((needle) => lower.includes(needle));
+    })
+    .slice(-maxSections);
+}
+
+function continuationContextFileSections(cwd) {
+  const project = readWorkspaceContextFile(cwd, ".agent-context/PROJECT_CONTEXT.md", 42000);
+  const handoff = readWorkspaceContextFile(cwd, ".agent-context/HANDOFF.md", 1_000_000);
+  const sections = [];
+  if (project.exists) {
+    sections.push(`### .agent-context/PROJECT_CONTEXT.md\n${project.text}`);
+  } else {
+    sections.push(`### .agent-context/PROJECT_CONTEXT.md\nUnavailable: ${project.error || "missing"} (${project.path})`);
+  }
+  if (handoff.exists) {
+    const criticalSections = markdownSectionsContaining(handoff.text, [
+      "private/public commit preparation",
+      "public readme release requirement",
+      "github publish completed",
+      "github publish attempt",
+    ], 6).join("\n\n").trim();
+    if (criticalSections) {
+      sections.push(`### .agent-context/HANDOFF.md critical release sections\n${truncateMiddle(criticalSections, 36000, "critical handoff sections")}`);
+    }
+    sections.push(`### .agent-context/HANDOFF.md latest tail\n${truncateTail(handoff.text, 36000, ".agent-context/HANDOFF.md")}`);
+  } else {
+    sections.push(`### .agent-context/HANDOFF.md\nUnavailable: ${handoff.error || "missing"} (${handoff.path})`);
+  }
+  return sections.join("\n\n");
+}
+
+function continuationContentPartText(part) {
+  if (part == null) return "";
+  if (typeof part === "string") return part;
+  if (typeof part !== "object") return String(part);
+  const type = String(part.type || "");
+  if (typeof part.text === "string") return part.text;
+  if (typeof part.path === "string") return `[${type || "file"}: ${part.path}]`;
+  if (typeof part.url === "string" && /^data:image\//i.test(part.url)) return `[${type || "image"}: inline image omitted]`;
+  if (typeof part.url === "string") return `[${type || "url"}: ${part.url}]`;
+  if (typeof part.image_url === "string") return `[${type || "image"}: ${part.image_url}]`;
+  return truncateMiddle(JSON.stringify(compactStructured(part)), 1200, "input part");
+}
+
+function continuationItemText(item) {
+  if (!item || typeof item !== "object") return "";
+  if (typeof item.text === "string") return item.text;
+  if (Array.isArray(item.content)) {
+    return item.content.map(continuationContentPartText).filter(Boolean).join("\n");
+  }
+  if (Array.isArray(item.summary) && item.summary.length) return item.summary.join("\n");
+  if (typeof item.mobileNotice === "string") return item.mobileNotice;
+  if (item.command) return item.command;
+  if (Array.isArray(item.fileNames) && item.fileNames.length) return item.fileNames.join(", ");
+  if (item.tool) return item.tool;
+  return "";
+}
+
+function continuationItemLabel(item) {
+  if (!item || typeof item !== "object") return "item";
+  if (item.type === "userMessage") return "User";
+  if (item.type === "agentMessage") return "Codex";
+  if (item.type === "plan") return "Plan";
+  if (isContextCompactionType(item.type)) return "Context compaction";
+  if (isWebSearchLikeItem(item)) return "Web Search";
+  if (item.type === "commandExecution") return "Command";
+  if (item.type === "fileChange") return "File change";
+  if (item.type === "dynamicToolCall" || item.type === "mcpToolCall") return `Tool ${item.tool || item.name || ""}`.trim();
+  return item.type || "item";
+}
+
+function continuationItemSummary(item) {
+  if (!item || item.type === "reasoning") return "";
+  const label = continuationItemLabel(item);
+  const status = statusText(item.status);
+  let text = continuationItemText(item);
+  if (!text && (isOperationalItem(item) || item.result || item.arguments || item.contentItems)) {
+    text = JSON.stringify(compactStructured({
+      command: item.command || undefined,
+      arguments: item.arguments || undefined,
+      result: item.result || item.contentItems || undefined,
+      fileNames: item.fileNames || undefined,
+    }));
+  }
+  text = truncateMiddle(String(text || "").replace(/\r\n/g, "\n").trim(), 5000, `${label} item`);
+  return `- ${label}${status ? ` [${status}]` : ""}: ${text || "(no visible text)"}`;
+}
+
+function continuationTurnSummaries(turns) {
+  if (!Array.isArray(turns) || !turns.length) return "No recent source turns were available from thread/turns/list.";
+  return turns.map((turn, index) => {
+    const items = Array.isArray(turn && turn.items) ? turn.items.filter((item) => item && item.type !== "reasoning") : [];
+    const userItems = items.filter((item) => item.type === "userMessage");
+    const otherItems = items.filter((item) => item.type !== "userMessage");
+    const selected = userItems.concat(otherItems.slice(-6));
+    const omitted = Math.max(0, items.length - selected.length);
+    const itemLines = selected.map(continuationItemSummary).filter(Boolean);
+    if (omitted > 0) itemLines.unshift(`- ${omitted} older visible item(s) omitted from this turn summary.`);
+    const title = `### Recent turn ${index + 1}: ${turn.id || "(no id)"}${statusText(turn.status) ? ` / ${statusText(turn.status)}` : ""}`;
+    return `${title}\n${itemLines.length ? itemLines.join("\n") : "- No visible non-reasoning items."}`;
+  }).join("\n\n");
+}
+
+function continuationSourceThreadSection(snapshot) {
+  const summary = snapshot && snapshot.summary;
+  const stats = summary ? rolloutStatsForPath(rolloutPathForThread(summary)) : null;
+  const lines = [
+    `- Source thread id: ${snapshot && snapshot.threadId ? snapshot.threadId : "(none supplied)"}`,
+    `- Source thread title: ${(summary && (summary.name || summary.preview)) || (snapshot && snapshot.title) || "(unknown)"}`,
+    `- Source cwd: ${(summary && summary.cwd) || "(unknown)"}`,
+    `- Source rollout path: ${summary ? (rolloutPathForThread(summary) || "(unknown)") : "(unknown)"}`,
+    `- Source rollout size: ${stats ? `${formatByteCount(stats.sizeBytes)} (${stats.sizeBytes} bytes)` : "(unknown)"}`,
+    `- Source status: ${summary ? (statusText(summary.status) || "(unknown)") : "(unknown)"}`,
+    `- Source updatedAt: ${summary && summary.updatedAt ? summary.updatedAt : "(unknown)"}`,
+  ];
+  if (snapshot && snapshot.readWarnings && snapshot.readWarnings.length) {
+    lines.push(`- Source read warnings: ${snapshot.readWarnings.join("; ")}`);
+  }
+  return lines.join("\n");
+}
+
+async function continuationSourceSnapshot(sourceThreadId, sourceThreadTitle, visibility) {
+  const threadId = String(sourceThreadId || "").trim();
+  const snapshot = {
+    threadId,
+    title: String(sourceThreadTitle || "").trim(),
+    summary: null,
+    runtimeSettings: null,
+    turns: [],
+    readWarnings: [],
+  };
+  if (!threadId) return snapshot;
+  let summary = readStateDbThread(threadId) || readStartedThread(threadId);
+  if (!summary) {
+    try {
+      summary = await readThreadSummaryFromAppServer(codex, threadId);
+    } catch (err) {
+      snapshot.readWarnings.push(`thread/list summary failed: ${err.message || String(err)}`);
+    }
+  }
+  if (summary && isHiddenThread(summary, visibility)) {
+    snapshot.readWarnings.push("source thread is hidden, archived, deleted, or outside visible workspaces");
+  } else if (summary) {
+    snapshot.summary = annotateThreadRolloutStats(summary);
+    snapshot.runtimeSettings = threadRuntimeSettings(threadId, snapshot.summary);
+  }
+  try {
+    const turnsResult = await codex.request("thread/turns/list", {
+      threadId,
+      limit: CONTINUATION_RECENT_TURNS,
+      sortDirection: "desc",
+    }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS, retry: false });
+    const data = Array.isArray(turnsResult && turnsResult.data)
+      ? turnsResult.data
+      : Array.isArray(turnsResult && turnsResult.turns)
+        ? turnsResult.turns
+        : [];
+    snapshot.turns = sortTurnsChronologically(data).slice(-CONTINUATION_RECENT_TURNS).map((turn) => compactTurn(turn));
+  } catch (err) {
+    snapshot.readWarnings.push(`thread/turns/list failed: ${err.message || String(err)}`);
+  }
+  return snapshot;
+}
+
+function newThreadBootstrapPrompt({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings }) {
+  const snapshot = sourceSnapshot || { threadId: sourceThreadId, title: sourceThreadTitle, turns: [], readWarnings: [] };
+  const publicRuntime = publicRuntimeSettings(runtimeSettings);
+  const parts = [
+    "# 压缩续接启动上下文",
+    "",
+    "本线程是 Codex Mobile Web 为了降低源线程 rollout JSONL 体积而创建的同工作区续接线程，不是普通新项目。",
+    "请先读取当前工作区的持久上下文文件，并把下面的续接上下文作为本线程的初始事实源。",
+    "",
+    "启动步骤：",
+    "1. 读取 `.agent-context/PROJECT_CONTEXT.md`。",
+    "2. 读取 `.agent-context/HANDOFF.md`，重点检查 GitHub/private/public release、README、验证和未完成事项。",
+    "3. 用简短要点确认已加载的关键事实，必须显式确认 private/public/README 提交规则。",
+    "4. 本轮不要修改文件、不要提交、不要推送，除非用户在续接线程里给出新的明确任务。",
+    "",
+    "不要假设新线程继承了旧聊天流、临时 shell 状态、一次性审批、隐藏 UI 状态或旧线程的内存推理。需要依赖的内容必须来自工作区文件、下面的续接上下文，或重新读取本地仓库。",
+    "",
+    "## 当前续接目标",
+    `- 新线程标题：${desiredTitle || "(not set)"}`,
+    `- 当前工作区：${cwd || "(unknown)"}`,
+    `- 创建时间：${new Date().toISOString()}`,
+    "",
+    "## 源线程",
+    continuationSourceThreadSection(snapshot),
+    "",
+    "## 运行设置",
+    `- Mobile Web 传给续接线程的运行设置：${Object.keys(publicRuntime || {}).length ? JSON.stringify(publicRuntime) : "(none detected)"}`,
+    "- 如果后续任务需要更高权限或不同模型，先按当前线程 UI/用户指令处理，不要假设旧线程的一次性授权仍然有效。",
+    "",
+    "## 必须携带的 GitHub / public release 规则",
+    "- 以 `.agent-context/PROJECT_CONTEXT.md` 和 `.agent-context/HANDOFF.md` 记录的 private/public 仓库 URL、本地 public checkout 路径和 release 规则为准；不要凭线程记忆猜测 remote。",
+    "- 提交/推送前必须分别检查 private 和 public 仓库的 diff/status；public 同步完成前不能只复制代码不更新 README。",
+    "- public release 不能复制 `.agent-context/` 或 `AGENTS.md`，不能泄露本机私有路径、access key、上传文件、Tailscale 内网地址或私有仓库 clone URL。",
+    "- public checkout 的 `public/app.js` 必须保留 service worker 注册路径 `/sw.js`。",
+    "- public README 的 clone URL 必须指向 public 仓库，而不是 private 仓库。",
+    "- 以后只要向 public 仓库提交，就必须在同一个 public commit 中更新详细 README，尤其要有中文说明：用户可见变化、使用影响、操作注意事项、验证范围。",
+    "- 典型验证：private `npm.cmd run check`；public `npm.cmd test`、`npm.cmd run check`、`git diff --check`，并做 tracked-file 隐私扫描。",
+    "",
+    "## 最近源线程上下文摘要",
+    continuationTurnSummaries(snapshot.turns),
+    "",
+    "## 工作区持久上下文摘录",
+    continuationContextFileSections(cwd),
+  ];
+  return truncateMiddle(parts.join("\n"), MAX_CONTINUATION_BOOTSTRAP_CHARS, "continuation bootstrap");
 }
 
 function newThreadBootstrapInput(params) {
@@ -2977,11 +3219,12 @@ async function handleApi(req, res) {
       sendJson(res, 403, { error: "Workspace is not visible in Codex Desktop" });
       return;
     }
-    const runtimeSettings = applyPermissionModeOverride({}, body.permissionMode, cwd);
     const sourceThreadId = String(body.sourceThreadId || "").trim();
     const sourceThreadTitle = String(body.sourceThreadTitle || "").trim();
     const archiveSourceThread = Boolean(body.archiveSourceThread && sourceThreadId);
     const desiredTitle = newThreadTitle({ cwd, sourceThreadTitle });
+    const sourceSnapshot = await continuationSourceSnapshot(sourceThreadId, sourceThreadTitle, visibility);
+    const runtimeSettings = applyPermissionModeOverride(sourceSnapshot.runtimeSettings || {}, body.permissionMode, cwd);
     const params = applyStartThreadRuntimeSettings({
       cwd,
       model: body.model || null,
@@ -3000,7 +3243,7 @@ async function handleApi(req, res) {
     const titleUpdatedBeforeBootstrap = await tryUpdateThreadTitle(threadId, desiredTitle).catch(() => false);
     const bootstrapParams = applyTurnRuntimeSettings({
       threadId,
-      input: newThreadBootstrapInput({ cwd, sourceThreadId, sourceThreadTitle }),
+      input: newThreadBootstrapInput({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings }),
       cwd,
       model: body.model || null,
       summary: "auto",
@@ -3036,7 +3279,7 @@ async function handleApi(req, res) {
         cwd,
         status: { type: "active" },
         turns: [],
-        mobileReadMode: "new-thread-bootstrap",
+        mobileReadMode: "continuation-bootstrap",
       },
     )));
     sendJson(res, 200, {
@@ -3046,6 +3289,12 @@ async function handleApi(req, res) {
       title: desiredTitle,
       titleUpdated: Boolean(titleUpdatedBeforeBootstrap || titleUpdatedAfterBootstrap),
       sourceArchive,
+      sourceContextWarnings: sourceSnapshot.readWarnings || [],
+      continuationContextChars: bootstrapParams
+        && Array.isArray(bootstrapParams.input)
+        && bootstrapParams.input[0]
+        ? String(bootstrapParams.input[0].text || "").length
+        : 0,
       bootstrap,
       result,
     });

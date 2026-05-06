@@ -324,7 +324,14 @@ Behavior:
 ## Interface Notes
 
 - Home view shows recent workspaces and recent threads.
-- Thread lists and thread detail monitor rollout JSONL size. At the default `100MB` threshold, Mobile Web shows a context-size warning and offers a same-workspace new-thread action. After user confirmation, the action creates a source-named new thread, sends a fixed bootstrap message that reads `.agent-context/PROJECT_CONTEXT.md` and `.agent-context/HANDOFF.md`, then archives the source thread.
+- Thread lists and thread detail monitor rollout JSONL size. At the default `100MB` threshold, Mobile Web shows a context-size warning and offers a same-workspace continuation action. After user confirmation, the action creates a source-named/date-suffixed continuation thread, sends a detailed bootstrap message, then archives the source thread.
+- The continuation bootstrap message explicitly carries source thread metadata, rollout size, inherited runtime settings, recent visible turn summaries, `.agent-context/PROJECT_CONTEXT.md` and `.agent-context/HANDOFF.md` excerpts, and the private/public GitHub release rules. This avoids relying only on thread-local memory when a large rollout needs to be left behind.
+
+### Rollout 压缩续接
+
+当线程的 rollout JSONL 达到阈值时，界面按钮显示为“压缩续接”。确认后，Mobile Web 会创建同工作区的新续接线程，并在首条消息中写入足够详细的交接信息：源线程 ID、标题、工作区、rollout 路径和大小、运行权限摘要、最近源线程上下文、工作区 handoff 摘录，以及 GitHub private/public 提交规则。
+
+这个动作不会原地改写或裁剪旧 rollout 文件；它通过“新续接线程 + 旧线程归档”降低后续交互需要读取的历史文件体积。旧线程在续接线程启动成功后才会归档，仍可从归档记录中找回。首条 bootstrap 会要求新线程先读取 `.agent-context/PROJECT_CONTEXT.md` 和 `.agent-context/HANDOFF.md`，并显式确认 private/public/README 规则已经加载，避免漏掉 public README 更新、public 仓库清理、service worker 路径等发布要求。
 - The top-right timer shows current turn elapsed time as `鏈疆 HH:MM:SS`.
 - The timer is red while a turn is active and muted after completion.
 - During an active turn, the timer may append a compact activity label such as `鎬濊€僠, `杈撳嚭`, `鍛戒护`, `鏂囦欢`, `宸ュ叿`, `鎼滅储`, `鍚屾`, or `绛夊緟鎵瑰噯`.
@@ -719,7 +726,9 @@ VAPID details:
 | `CODEX_MOBILE_MAX_UPLOAD_FILES` | Max files per message. |
 | `CODEX_MOBILE_THREAD_TURNS` | Number of recent turns returned to the phone, default `12`. |
 | `CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES` | Tail bytes read from a thread rollout to recover inherited turn runtime settings, default `4194304`. |
-| `CODEX_MOBILE_ROLLOUT_WARNING_BYTES` | Rollout JSONL size threshold for UI warnings and the new-thread action, default `104857600` (`100MB`). |
+| `CODEX_MOBILE_ROLLOUT_WARNING_BYTES` | Rollout JSONL size threshold for UI warnings and the continuation action, default `104857600` (`100MB`). |
+| `CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS` | Max characters in the rollout continuation bootstrap message, default `120000`. |
+| `CODEX_MOBILE_CONTINUATION_RECENT_TURNS` | Recent source turns summarized into the continuation bootstrap, default `12`, capped at `30`. |
 | `CODEX_MOBILE_MESSAGE_DEDUPE_WINDOW_MS` | Time window for treating repeated message submissions as the same request, default `90000`. Requests with `clientSubmissionId` are deduped by id; legacy requests without it fall back to content fingerprinting. |
 | `CODEX_MOBILE_MESSAGE_DEDUPE_MAX` | Maximum number of recent message submissions kept in the dedupe cache, default `300`. |
 | `CODEX_MOBILE_PUSH_SUBJECT` | VAPID subject used for Web Push. Must be a non-localhost contact URI, for example `mailto:name@example.com` or an HTTPS URL. |
