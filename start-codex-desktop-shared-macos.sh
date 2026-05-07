@@ -143,4 +143,10 @@ if [[ "$PRINT_ONLY" -eq 1 ]]; then
   exit 0
 fi
 
-exec "$CODEX_DESKTOP_EXE"
+exec /usr/bin/open -n \
+  --env "CODEX_HOME=$CODEX_HOME" \
+  --env "CODEX_CLI_PATH=$CODEX_CLI_PATH" \
+  --env "CODEX_MUX_SCRIPT_PATH=$CODEX_MUX_SCRIPT_PATH" \
+  --env "CODEX_MUX_CODEX_EXE=$CODEX_MUX_CODEX_EXE" \
+  --env "CODEX_MUX_NODE_EXE=$CODEX_MUX_NODE_EXE" \
+  "$CODEX_APP_PATH"

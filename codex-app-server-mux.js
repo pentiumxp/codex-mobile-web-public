@@ -251,7 +251,11 @@ function replayMissedNotifications(client, reason) {
   }
   const shouldReplayNotifications = isMobileWebClient(client) || REPLAY_DESKTOP_NOTIFICATIONS;
   if (shouldReplayNotifications) {
-    for (const entry of replayBuffer) {
+    const replayLimit = Number(client.clientInfo && client.clientInfo.replayNotificationLimit);
+    const replayEntries = Number.isFinite(replayLimit) && replayLimit >= 0
+      ? (replayLimit === 0 ? [] : replayBuffer.slice(-replayLimit))
+      : replayBuffer;
+    for (const entry of replayEntries) {
       sendToClient(client, entry.message);
       notificationCount += 1;
     }

@@ -13,6 +13,7 @@ process.env.CODEX_MOBILE_DISABLE_AUTH = "1";
 const {
   approvalResponsePayload,
   publicServerRequest,
+  serverRequestResponsePayload,
 } = require("../server");
 
 const repoRoot = path.resolve(__dirname, "..");
@@ -130,6 +131,77 @@ test("mux forwards server requests and returns client responses with the origina
   assert.equal(stderr, "");
 });
 
+test("mux honors mobile replay notification limit", async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-protocol-"));
+  const codexHome = path.join(tempRoot, "codex-home");
+  const endpointFile = path.join(codexHome, "app-server-mux", "endpoint.json");
+  const logFile = path.join(codexHome, "app-server-mux", "mux.log");
+  const child = spawn(process.execPath, [muxPath], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      CODEX_HOME: codexHome,
+      CODEX_MUX_STANDALONE: "1",
+      CODEX_MUX_HOST: "127.0.0.1",
+      CODEX_MUX_PORT: "0",
+      CODEX_MUX_CODEX_EXE: process.execPath,
+      CODEX_MUX_CODEX_ARGS: mockCodexPath,
+      CODEX_MUX_LOG_FILE: logFile,
+      CODEX_MUX_ENDPOINT_FILE: endpointFile,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  t.after(() => {
+    child.kill("SIGTERM");
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const endpoint = await waitFor(() => readJsonFile(endpointFile));
+  const first = await connectJsonl(endpoint.port);
+  t.after(() => first.destroy());
+  const firstMessages = collectJsonLines(first);
+
+  writeJsonLine(first, {
+    jsonrpc: "2.0",
+    id: "init-1",
+    method: "initialize",
+    params: { clientInfo: { name: "codex-mobile-web", title: "Codex Mobile Web" } },
+  });
+  await waitFor(() => firstMessages.find((message) => message.id === "init-1"));
+
+  writeJsonLine(first, {
+    jsonrpc: "2.0",
+    id: "emit-1",
+    method: "test/emitNotifications",
+    params: { count: 3 },
+  });
+  await waitFor(() => firstMessages.filter((message) => message.method === "thread/status/changed").length >= 3);
+  first.destroy();
+
+  const second = await connectJsonl(endpoint.port);
+  t.after(() => second.destroy());
+  const secondMessages = collectJsonLines(second);
+  writeJsonLine(second, {
+    jsonrpc: "2.0",
+    id: "init-2",
+    method: "initialize",
+    params: {
+      clientInfo: {
+        name: "codex-mobile-web",
+        title: "Codex Mobile Web",
+        replayNotificationLimit: 1,
+      },
+    },
+  });
+
+  await waitFor(() => secondMessages.find((message) => message.id === "init-2"));
+  await waitFor(() => secondMessages.some((message) => message.method === "thread/status/changed"));
+  await delay(100);
+  const replayed = secondMessages.filter((message) => message.method === "thread/status/changed");
+  assert.equal(replayed.length, 1);
+  assert.equal(replayed[0].params.status.index, 2);
+});
+
 test("approval response payloads match current and legacy app-server methods", () => {
   assert.deepEqual(
     approvalResponsePayload({ method: "item/commandExecution/requestApproval" }, "allow_once"),
@@ -183,4 +255,53 @@ test("public server request compaction keeps actionable approval context", () =>
   assert.equal(request.params.turnId, "turn-1");
   assert.equal(request.params.command, "echo hello");
   assert.equal(request.params.reason, "needs approval");
+});
+
+test("user input server requests are actionable and return answers", () => {
+  const request = {
+    id: 1,
+    method: "item/tool/requestUserInput",
+    status: "waiting",
+    params: {
+      questions: [{
+        id: "choice",
+        header: "Pick one",
+        question: "Continue?",
+        options: [{ label: "Yes", description: "Continue the task" }],
+      }],
+    },
+  };
+  const publicRequest = publicServerRequest(request);
+
+  assert.equal(publicRequest.actionable, true);
+  assert.equal(publicRequest.params.questions[0].id, "choice");
+  assert.equal(publicRequest.params.questions[0].options[0].label, "Yes");
+  assert.deepEqual(
+    serverRequestResponsePayload(request, { responseText: "Yes", questionId: "choice" }),
+    { result: { answers: { choice: { answers: ["Yes"] } } } },
+  );
+});
+
+test("MCP elicitation server requests accept and decline", () => {
+  const request = {
+    id: 2,
+    method: "mcpServer/elicitation/request",
+    status: "waiting",
+    params: {
+      title: "Choose scope",
+      message: "Where should this run?",
+    },
+  };
+  const publicRequest = publicServerRequest(request);
+
+  assert.equal(publicRequest.actionable, true);
+  assert.equal(publicRequest.params.title, "Choose scope");
+  assert.deepEqual(
+    serverRequestResponsePayload(request, { responseText: "fork only" }),
+    { result: { action: "accept", content: { response: "fork only" } } },
+  );
+  assert.deepEqual(
+    serverRequestResponsePayload(request, { action: "decline" }),
+    { result: { action: "decline", content: null } },
+  );
 });

@@ -34,6 +34,26 @@ function handle(message) {
     return;
   }
 
+  if (message.method === "test/emitNotifications") {
+    const count = Math.max(0, Number(message.params && message.params.count || 0));
+    for (let i = 0; i < count; i += 1) {
+      send({
+        jsonrpc: "2.0",
+        method: "thread/status/changed",
+        params: {
+          threadId: "thread-1",
+          status: { type: "mock", index: i },
+        },
+      });
+    }
+    send({
+      jsonrpc: "2.0",
+      id: message.id,
+      result: { emitted: count },
+    });
+    return;
+  }
+
   if (Object.prototype.hasOwnProperty.call(message, "id") && !message.method) {
     send({
       jsonrpc: "2.0",
