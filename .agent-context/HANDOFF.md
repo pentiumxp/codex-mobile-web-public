@@ -1939,3 +1939,40 @@
 - Published:
   - Public commit `7160bcd 改进 rollout 压缩续接交接流程` pushed to `origin/main`.
   - The public commit message includes detailed body paragraphs describing changes since previous public commit `82660e0`.
+
+## 2026-05-07 Public PR #9 Merge - 14:55 +08:00
+
+- User instruction:
+  - User approved the recommended controlled merge flow for public PR #9.
+- PR:
+  - `https://github.com/pentiumxp/codex-mobile-web-public/pull/9`
+  - Title: `修复移动端审批卡片和超长会话切换卡顿`
+  - Base before merge: public `main` at `7160bcd`.
+  - Head: `f7f9b46`.
+  - GitHub reported `mergeable=true`; no PR comments or review threads.
+- Private sync first:
+  - Applied the public PR #9 equivalent patch onto private `C:\Users\xuxin\Documents\codex-mobile-web`.
+  - Resolved the README conflict by keeping the private clone URL and private `cd codex-mobile-web` path while retaining `npm ci`.
+  - Kept private `public/app.js` service worker registration at `/service-worker.js`.
+  - Added private `package.json` script `test: node --test` because the PR introduced protocol tests and private did not yet expose `npm test`.
+  - Private commit `69da9dc 同步移动端审批和长线程切换修复` pushed to `origin/main`.
+- Public merge:
+  - Squash-merged public PR #9 with a detailed multi-paragraph commit message, as required for public commits.
+  - Public merge commit `828760a 修复移动端审批和超长会话切换卡顿` pushed to public `origin/main`.
+  - Local public checkout was fast-forwarded to `828760a`.
+- Behavior merged:
+  - Mobile Web actionable server requests now include command/file/permission approvals plus `item/tool/requestUserInput` and `mcpServer/elicitation/request`.
+  - The browser renders input/MCP request cards with option/manual response/cancel paths and sends answers through the same app-server request/response stream.
+  - Thread detail reads avoid resetting the whole app-server connection on detail timeout and use summary fallback for rollout files at or above `CODEX_MOBILE_THREAD_DETAIL_ROLLOUT_MAX_BYTES`.
+  - Mobile Web asks mux for a bounded notification replay window with `CODEX_MOBILE_MUX_REPLAY_NOTIFICATION_LIMIT`; unresolved server requests still replay separately.
+  - macOS shared launcher, PWA icon links, README, and protocol tests were updated.
+- Validation:
+  - Private `npm.cmd test` passed with 6 tests.
+  - Private `npm.cmd run check` passed.
+  - Private `npm.cmd run check:macos` passed.
+  - Private `git diff --cached --check` passed before commit.
+  - Public `npm.cmd test` passed with 6 tests after merge.
+  - Public `npm.cmd run check` passed after merge.
+  - Public `npm.cmd run check:macos` passed after merge.
+  - Public `git diff --check HEAD~1..HEAD` passed.
+  - Public targeted tracked-file privacy scan found no local user path, private repo URL, LAN/Tailscale host marker, GMK/xuxin marker, or Hermes marker.
