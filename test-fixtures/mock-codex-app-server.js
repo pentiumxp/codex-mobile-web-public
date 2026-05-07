@@ -54,6 +54,31 @@ function handle(message) {
     return;
   }
 
+  if (message.method === "turn/start") {
+    const threadId = message.params && message.params.threadId || "thread-1";
+    const turnId = `turn-${Date.now()}`;
+    send({
+      jsonrpc: "2.0",
+      method: "turn/started",
+      params: {
+        threadId,
+        turn: {
+          id: turnId,
+          status: { type: "running" },
+        },
+      },
+    });
+    send({
+      jsonrpc: "2.0",
+      id: message.id,
+      result: {
+        threadId,
+        turnId,
+      },
+    });
+    return;
+  }
+
   if (Object.prototype.hasOwnProperty.call(message, "id") && !message.method) {
     send({
       jsonrpc: "2.0",
