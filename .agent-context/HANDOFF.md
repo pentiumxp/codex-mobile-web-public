@@ -1976,3 +1976,45 @@
   - Public `npm.cmd run check:macos` passed after merge.
   - Public `git diff --check HEAD~1..HEAD` passed.
   - Public targeted tracked-file privacy scan found no local user path, private repo URL, LAN/Tailscale host marker, GMK/xuxin marker, or Hermes marker.
+
+## 2026-05-08 Public PR #10 Merge - 08:45 +08:00
+
+- User instruction:
+  - User asked to inspect and merge the new public pull request.
+- PR:
+  - `https://github.com/pentiumxp/codex-mobile-web-public/pull/10`
+  - Title: `[codex] 修复移动端续接和桌面同步`
+  - Base before merge: public `main` at `828760a`.
+  - Head: `e15cf41`.
+  - GitHub reported `mergeable=true`; no PR comments or review threads.
+  - GitHub Actions `Node checks` passed before merge.
+- Private sync first:
+  - Applied the public PR #10 equivalent patch onto private `C:\Users\xuxin\Documents\codex-mobile-web`.
+  - Resolved the README conflict by keeping private wording while adding the PR #10 continuation-job behavior.
+  - Kept private `public/app.js` service worker registration at `/service-worker.js`.
+  - Did not apply the public `public/sw.js` cache-name-only change to private because private uses `public/service-worker.js` and does not have the same shell-cache implementation.
+  - Private commit `5b0fe7d 同步续接后台任务和桌面同步修复` pushed to `origin/main`.
+- Public merge:
+  - Squash-merged public PR #10 with a detailed multi-paragraph commit message, as required for public commits.
+  - Public merge commit `fec1194 修复移动端续接和桌面同步` pushed to public `origin/main`.
+  - Local public checkout was fast-forwarded to `fec1194`.
+- Behavior merged:
+  - Mobile Web `turn/start` requests now get a mux synthetic `mux/userMessage` echo after `turn/started`, improving visibility of mobile-started new-turn user messages in Codex Desktop.
+  - Thread detail reads prefer full `thread/read` for normal-size sessions, fall back to `thread/turns/list`, and still avoid expensive detail reads for very large rollout files.
+  - Browser-facing rollout continuation now uses background jobs via `POST /api/thread-continuations` and `GET /api/thread-continuations/<jobId>`, allowing phase status, refresh recovery, and switching to other sessions while continuation runs.
+  - Continuation no longer forces opening the source thread before starting, supports late handoff waiting and recent handoff reuse, writes `.agent-context/thread-handoffs/.gitignore`, and avoids locking unrelated session inputs.
+  - Thread list status icons, unread dot semantics, relative time display, public PWA cache version, README, and protocol tests were updated.
+- Validation:
+  - Public PR worktree `npm.cmd test` passed with 7 tests.
+  - Public PR worktree `npm.cmd run check` passed.
+  - Public PR worktree `npm.cmd run check:macos` passed.
+  - Public PR diff-check and targeted tracked-file privacy scan passed before merge.
+  - Private `npm.cmd test` passed with 7 tests.
+  - Private `npm.cmd run check` passed.
+  - Private `npm.cmd run check:macos` passed.
+  - Private `git diff --cached --check` passed before commit.
+  - Public `npm.cmd test` passed with 7 tests after merge.
+  - Public `npm.cmd run check` passed after merge.
+  - Public `npm.cmd run check:macos` passed after merge.
+  - Public `git diff --check HEAD~1..HEAD` passed.
+  - Public targeted tracked-file privacy scan found no local user path, private repo URL, LAN/Tailscale host marker, GMK/xuxin marker, or Hermes marker.
