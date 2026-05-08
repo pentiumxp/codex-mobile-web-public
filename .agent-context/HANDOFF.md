@@ -2018,3 +2018,18 @@
   - Public `npm.cmd run check:macos` passed after merge.
   - Public `git diff --check HEAD~1..HEAD` passed.
   - Public targeted tracked-file privacy scan found no local user path, private repo URL, LAN/Tailscale host marker, GMK/xuxin marker, or Hermes marker.
+
+## 2026-05-08 Runtime Restart After PR #10 - 09:10 +08:00
+
+- User instruction:
+  - User asked to restart after the PR #10 merge because `server.js`, frontend assets, and `codex-app-server-mux.js` changed.
+- Restart result:
+  - Old 8787 listener was replaced; current listener PID is `67944`.
+  - Shared mux endpoint was replaced; current mux PID is `55456`, child `codex.exe app-server` PID is `68428`.
+  - Endpoint file `%USERPROFILE%\.codex\app-server-mux\endpoint.json` now points to TCP port `59301` and started at `2026-05-08T01:07:42.488Z`.
+  - Scheduled Task `Codex Mobile Web` remains running.
+- Health check:
+  - Authenticated `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, and `lastError=null`.
+- Notes:
+  - Existing browser/PWA sessions may need a refresh to load the updated frontend and service worker behavior.
+  - Existing Desktop windows may need reconnect/relaunch if they were attached to the old mux stream before the restart.
