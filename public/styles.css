@@ -320,12 +320,31 @@ html.visual-recovering body::before {
   background: rgba(122, 199, 167, 0.08);
 }
 
+.thread-card.has-status-running:not(.active) {
+  border-color: rgba(122, 199, 167, 0.42);
+  background: rgba(122, 199, 167, 0.045);
+}
+
+.thread-card.has-status-unread:not(.active) {
+  border-color: rgba(154, 163, 165, 0.34);
+  background: rgba(238, 240, 237, 0.035);
+}
+
 .thread-card.rollout-warn,
 .home-shortcut.rollout-warn {
   border-color: rgba(241, 135, 125, 0.54);
 }
 
+.thread-card-title-row {
+  min-width: 0;
+  display: flex;
+  align-items: start;
+  gap: 9px;
+}
+
 .thread-card-title {
+  min-width: 0;
+  flex: 1 1 auto;
   font-size: 14px;
   font-weight: 680;
   line-height: 1.35;
@@ -333,6 +352,10 @@ html.visual-recovering body::before {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+}
+
+.thread-card.has-status-unread:not(.active) .thread-card-title {
+  font-weight: 730;
 }
 
 .thread-card-meta-row {
@@ -344,11 +367,78 @@ html.visual-recovering body::before {
 
 .thread-card-meta {
   min-width: 0;
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 8px;
   color: var(--muted);
   font-size: 12px;
+}
+
+.thread-card-path {
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.thread-card-time {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: #b2b9ba;
+}
+
+.status-icon {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.thread-status-icon {
+  margin-left: auto;
+  margin-top: 2px;
+}
+
+.status-icon::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.status-icon-running::before {
+  width: 10px;
+  height: 10px;
+  background: transparent;
+  border: 1.5px solid rgba(122, 199, 167, 0.32);
+  border-top-color: var(--accent-strong);
+  animation: status-spin 850ms linear infinite;
+}
+
+.status-icon-unread {
+  color: #858d93;
+}
+
+.status-icon-unread::before {
+  width: 7px;
+  height: 7px;
+  background: currentColor;
+  box-shadow: 0 0 0 3px rgba(133, 141, 147, 0.12);
+}
+
+@keyframes status-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .thread-card-size {
@@ -601,6 +691,19 @@ html.visual-recovering body::before {
   font-size: 12px;
   line-height: 1.35;
   white-space: nowrap;
+}
+
+.home-shortcut-meta-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.home-shortcut-meta-status span:first-child {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .home-empty {

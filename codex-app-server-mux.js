@@ -46,6 +46,7 @@ const clients = new Map();
 const pending = new Map();
 const serverRequests = new Map();
 const activeTurnsByThread = new Map();
+const pendingMobileTurnStarts = new Map();
 const replayBuffer = [];
 let nextSyntheticItemId = 1;
 let nextReplaySeq = 1;
@@ -306,6 +307,8 @@ function buildUserMessageNotification(params) {
       item: {
         id: params.clientSubmissionId
           ? `mux-user-${threadId}-${turnId}-${String(params.clientSubmissionId)}`
+          : params.muxRequestId
+            ? `mux-user-${threadId}-${turnId}-${String(params.muxRequestId).replace(/[^a-zA-Z0-9_.:-]/g, "_")}`
           : `mux-user-${Date.now()}-${nextSyntheticItemId++}`,
         type: "userMessage",
         content,
@@ -330,6 +333,49 @@ function handleMuxMethod(client, message) {
     });
   }
   return true;
+}
+
+function rememberPendingMobileTurnStart(internalId, client, message) {
+  if (!internalId || !isMobileWebClient(client) || !message || message.method !== "turn/start") return;
+  const params = message.params || {};
+  const threadId = params.threadId ? String(params.threadId) : "";
+  if (!threadId || !Array.isArray(params.input) || !params.input.length) return;
+  const entry = {
+    internalId,
+    threadId,
+    input: cloneJson(params.input),
+    muxRequestId: internalId,
+    receivedAt: Date.now(),
+  };
+  pendingMobileTurnStarts.set(internalId, entry);
+  setTimeout(() => pendingMobileTurnStarts.delete(internalId), 120000).unref();
+}
+
+function emitPendingMobileTurnStartUserMessage(message) {
+  if (!message || message.method !== "turn/started") return;
+  const params = message.params || {};
+  const threadId = params.threadId ? String(params.threadId) : "";
+  const turnId = params.turn && params.turn.id ? String(params.turn.id) : "";
+  if (!threadId || !turnId) return;
+
+  let selected = null;
+  for (const entry of pendingMobileTurnStarts.values()) {
+    if (entry.threadId !== threadId) continue;
+    if (!selected || entry.receivedAt < selected.receivedAt) selected = entry;
+  }
+  if (!selected) return;
+
+  pendingMobileTurnStarts.delete(selected.internalId);
+  const notification = buildUserMessageNotification({
+    threadId,
+    turnId,
+    input: selected.input,
+    muxRequestId: selected.muxRequestId,
+  });
+  if (!notification) return;
+  cacheReplayNotification(notification);
+  broadcastToClients(notification);
+  log(`synthetic new-turn user message thread=${threadId} turn=${turnId} source=${selected.internalId}`);
 }
 
 function trackTurnNotification(message) {
@@ -403,6 +449,7 @@ function handleClientLine(client, line) {
     const internalId = `${client.id}:${String(originalId)}`;
     pending.set(internalId, { client, originalId, method: message.method || "" });
     message.id = internalId;
+    rememberPendingMobileTurnStart(internalId, client, message);
   }
 
   try {
@@ -448,6 +495,7 @@ function handleChildLine(line) {
       return;
     }
     pending.delete(message.id);
+    if (message.error) pendingMobileTurnStarts.delete(String(message.id));
     if (request.method === "initialize") {
       if (message.error && /already initialized/i.test(message.error.message || "")) {
         message.result = initializeResult || { userAgent: "shared app-server (already initialized)" };
@@ -470,6 +518,7 @@ function handleChildLine(line) {
     trackTurnNotification(message);
     cacheReplayNotification(message);
     broadcastToClients(message);
+    emitPendingMobileTurnStartUserMessage(message);
   }
 }
 

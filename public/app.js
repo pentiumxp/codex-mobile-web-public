@@ -26,6 +26,7 @@ const state = {
   renderedConversationSignature: "",
   renderedThreadListSignature: "",
   tickTimer: null,
+  relativeTimeTimer: null,
   nowMs: Date.now(),
   threadLoadSeq: 0,
   threadLoadController: null,
@@ -37,8 +38,10 @@ const state = {
   suppressThreadClickThreadId: "",
   continuationSourceThreadId: "",
   continuationNewThreadId: "",
+  continuationJobId: "",
   pendingAttachments: [],
   composerBusy: false,
+  continuationBusy: false,
   maxUploadBytes: 64 * 1024 * 1024,
   maxUploadFiles: 12,
   rolloutWarningThresholdBytes: 100 * 1024 * 1024,
@@ -55,6 +58,8 @@ const state = {
   pushError: "",
   serviceWorkerRegistration: null,
   pendingApprovals: new Map(),
+  runningThreadIds: loadStringSetStorage("codexMobileRunningThreadIds"),
+  unreadThreadIds: loadStringSetStorage("codexMobileUnreadThreadIds"),
   selectedModel: localStorage.getItem("codexMobileSelectedModel") || "",
   selectedEffort: localStorage.getItem("codexMobileSelectedEffort") || "",
   selectedPermissionModes: loadJsonStorage("codexMobileSelectedPermissionModes", {}),
@@ -72,6 +77,9 @@ const STORAGE_THREAD_ID = "codexMobileCurrentThreadId";
 const STORAGE_MODEL = "codexMobileSelectedModel";
 const STORAGE_EFFORT = "codexMobileSelectedEffort";
 const STORAGE_PERMISSION_MODES = "codexMobileSelectedPermissionModes";
+const STORAGE_CONTINUATION_JOB = "codexMobileContinuationJobId";
+const STORAGE_RUNNING_THREAD_IDS = "codexMobileRunningThreadIds";
+const STORAGE_UNREAD_THREAD_IDS = "codexMobileUnreadThreadIds";
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
 const HIDDEN_SERVER_REQUEST_METHODS = new Set(["item/tool/call"]);
 const USER_INPUT_REQUEST_METHODS = new Set(["item/tool/requestUserInput", "mcpServer/elicitation/request"]);
@@ -80,12 +88,33 @@ const CONTEXT_COMPACTION_COMPLETE_NOTICE = "\u5386\u53f2\u4e0a\u4e0b\u6587\u5df2
 
 const $ = (id) => document.getElementById(id);
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function loadJsonStorage(key, fallback) {
   try {
     const value = JSON.parse(localStorage.getItem(key) || "");
     return value && typeof value === "object" ? value : fallback;
   } catch (_) {
     return fallback;
+  }
+}
+
+function loadStringSetStorage(key) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || "[]");
+    return new Set(Array.isArray(value) ? value.map((item) => String(item || "")).filter(Boolean) : []);
+  } catch (_) {
+    return new Set();
+  }
+}
+
+function saveStringSetStorage(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify([...value].filter(Boolean)));
+  } catch (_) {
+    // Status hints are best-effort UI state.
   }
 }
 
@@ -169,10 +198,28 @@ function shortPath(value) {
   return String(value).replace(/^\\\\\?\\/, "").replace(/^.*[\\/]/, "");
 }
 
-function formatTime(seconds) {
+function formatAbsoluteTime(seconds) {
   if (!seconds) return "";
   const d = new Date(seconds * 1000);
   return d.toLocaleString([], { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function formatTime(seconds, nowMs = Date.now()) {
+  const value = Number(seconds || 0);
+  if (!value) return "";
+  const diffMs = Math.max(0, nowMs - value * 1000);
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  if (diffMs < 45 * 1000) return "刚刚";
+  if (diffMs < hour) return `${Math.max(1, Math.floor(diffMs / minute))}分钟前`;
+  if (diffMs < day) {
+    const hours = Math.floor(diffMs / hour);
+    const minutes = Math.floor((diffMs % hour) / minute);
+    return minutes ? `${hours}小时${minutes}分钟前` : `${hours}小时前`;
+  }
+  if (diffMs < 30 * day) return `${Math.floor(diffMs / day)}天前`;
+  return formatAbsoluteTime(seconds);
 }
 
 function formatElapsedTime(seconds) {
@@ -187,6 +234,78 @@ function statusText(status) {
   if (!status) return "";
   if (typeof status === "string") return status;
   return status.type || JSON.stringify(status);
+}
+
+function saveThreadStatusHints() {
+  saveStringSetStorage(STORAGE_RUNNING_THREAD_IDS, state.runningThreadIds);
+  saveStringSetStorage(STORAGE_UNREAD_THREAD_IDS, state.unreadThreadIds);
+}
+
+function markThreadViewed(threadId) {
+  const id = String(threadId || "");
+  if (!id || !state.unreadThreadIds.has(id)) return;
+  state.unreadThreadIds.delete(id);
+  saveThreadStatusHints();
+}
+
+function updateThreadStatusHints(threadId, previousStatus, nextStatus) {
+  const id = String(threadId || "");
+  if (!id) return;
+  const wasRunning = state.runningThreadIds.has(id) || isRunningStatus(previousStatus);
+  const isRunning = isRunningStatus(nextStatus);
+  let changed = false;
+  if (isRunning) {
+    if (!state.runningThreadIds.has(id)) {
+      state.runningThreadIds.add(id);
+      changed = true;
+    }
+    if (state.unreadThreadIds.delete(id)) changed = true;
+  } else if (wasRunning) {
+    if (state.runningThreadIds.delete(id)) changed = true;
+    if (id !== state.currentThreadId && !state.unreadThreadIds.has(id)) {
+      state.unreadThreadIds.add(id);
+      changed = true;
+    }
+  }
+  if (changed) saveThreadStatusHints();
+}
+
+function reconcileThreadStatusHints(threads) {
+  let changed = false;
+  for (const thread of threads || []) {
+    const id = String(thread && thread.id || "");
+    if (!id) continue;
+    const wasRunning = state.runningThreadIds.has(id);
+    const isRunning = isRunningStatus(thread.status);
+    if (isRunning && !wasRunning) {
+      state.runningThreadIds.add(id);
+      state.unreadThreadIds.delete(id);
+      changed = true;
+    } else if (!isRunning && wasRunning) {
+      state.runningThreadIds.delete(id);
+      if (id !== state.currentThreadId) state.unreadThreadIds.add(id);
+      changed = true;
+    }
+  }
+  if (changed) saveThreadStatusHints();
+}
+
+function statusIconInfo(status, threadId = "") {
+  const text = statusText(status);
+  const normalized = text.toLowerCase();
+  if (/active|running|queued|processing|inprogress|in_progress|in-progress|pending|started/.test(normalized)) {
+    return { kind: "running", label: text || "running", symbol: "" };
+  }
+  if (threadId && state.unreadThreadIds.has(String(threadId))) {
+    return { kind: "unread", label: "completed, unread", symbol: "" };
+  }
+  return null;
+}
+
+function statusIconHtml(status, className = "", threadId = "") {
+  const info = statusIconInfo(status, threadId);
+  if (!info) return "";
+  return `<span class="status-icon status-icon-${escapeHtml(info.kind)}${className ? ` ${escapeHtml(className)}` : ""}" title="${escapeHtml(info.label)}" aria-label="${escapeHtml(info.label)}" role="img">${escapeHtml(info.symbol || "")}</span>`;
 }
 
 function rolloutSizeBytes(thread) {
@@ -1280,6 +1399,15 @@ function updateTickTimer() {
   }, 1000);
 }
 
+function startRelativeTimeTimer() {
+  if (state.relativeTimeTimer) return;
+  state.relativeTimeTimer = setInterval(() => {
+    if (!state.threads.length) return;
+    renderThreads();
+    if (!state.currentThread) renderHome();
+  }, 60000);
+}
+
 function threadSignature() {
   const turn = latestTurn();
   if (!turn) return "";
@@ -1645,6 +1773,7 @@ async function loadThreads() {
     const result = await api(`/api/threads?${params}`, { timeoutMs: 45000, signal: controller.signal });
     if (seq !== state.threadListLoadSeq) return null;
     state.threads = visibleThreads(result.data || []);
+    reconcileThreadStatusHints(state.threads);
     renderThreads(result);
     restoreConnectionState(result.mobileFallback ? "Recovered from session index" : "Connected");
     if (!state.currentThread) renderCurrentThread();
@@ -1678,6 +1807,7 @@ async function loadThread(threadId) {
   const controller = new AbortController();
   state.threadLoadController = controller;
   clearTimeout(state.pollTimer);
+  markThreadViewed(threadId);
   const summary = state.threads.find((thread) => thread.id === threadId);
   state.currentThreadId = threadId;
   state.currentThread = summary ? Object.assign({ turns: [], mobileLoading: true }, summary) : {
@@ -1832,14 +1962,18 @@ function renderThreads(result = null) {
   const warning = result && result.mobileFallback
     ? `<div class="history-note">Live thread list recovering. Showing cached session index.</div>`
     : "";
+  const nowMs = Date.now();
   const html = warning + state.threads.map((thread) => {
     const title = thread.name || thread.preview || thread.id;
     const sizeText = rolloutSizeText(thread);
     const sizeWarn = isRolloutOverThreshold(thread);
-    const meta = [shortPath(thread.cwd), formatTime(thread.updatedAt), statusText(thread.status)]
-      .filter(Boolean)
-      .join(" | ");
+    const updatedTitle = formatAbsoluteTime(thread.updatedAt);
+    const pathText = shortPath(thread.cwd);
+    const timeText = formatTime(thread.updatedAt, nowMs);
+    const statusIcon = statusIconHtml(thread.status, "thread-status-icon", thread.id);
+    const iconKind = statusIconInfo(thread.status, thread.id)?.kind || "";
     const active = thread.id === state.currentThreadId ? " active" : "";
+    const emphasis = iconKind ? ` has-status-${iconKind}` : "";
     const sizeBadge = sizeText
       ? `<div class="thread-card-size${sizeWarn ? " warn" : ""}" title="Rollout file size">${escapeHtml(sizeText)}</div>`
       : "";
@@ -1848,10 +1982,16 @@ function renderThreads(result = null) {
       <button class="thread-new-button" type="button" data-new-thread-from-thread="${escapeHtml(thread.id)}">压缩续接</button>
     </div>`;
     return `<div class="thread-card-wrap${sizeWarn ? " rollout-warn" : ""}${actionOpen ? " swipe-open" : ""}" data-thread-row="${escapeHtml(thread.id)}">
-      <button class="thread-card${active}${sizeWarn ? " rollout-warn" : ""}" type="button" data-thread="${escapeHtml(thread.id)}">
-        <div class="thread-card-title">${escapeHtml(title)}</div>
+      <button class="thread-card${active}${emphasis}${sizeWarn ? " rollout-warn" : ""}" type="button" data-thread="${escapeHtml(thread.id)}">
+        <div class="thread-card-title-row">
+          <div class="thread-card-title">${escapeHtml(title)}</div>
+          ${statusIcon}
+        </div>
         <div class="thread-card-meta-row">
-          <div class="thread-card-meta">${escapeHtml(meta)}</div>
+          <div class="thread-card-meta">
+            ${pathText ? `<span class="thread-card-path">${escapeHtml(pathText)}</span>` : ""}
+            ${timeText ? `<span class="thread-card-time" title="${escapeHtml(updatedTitle)}">${escapeHtml(timeText)}</span>` : ""}
+          </div>
           ${sizeBadge}
         </div>
       </button>
@@ -1861,12 +2001,15 @@ function renderThreads(result = null) {
   const signature = JSON.stringify({
     warning: Boolean(warning),
     currentThreadId: state.currentThreadId,
+    timeBucket: Math.floor(nowMs / 60000),
     threads: state.threads.map((thread) => [
       thread.id,
       thread.name || thread.preview || thread.id,
       shortPath(thread.cwd),
       thread.updatedAt,
       statusText(thread.status),
+      statusIconInfo(thread.status, thread.id)?.kind || "",
+      state.unreadThreadIds.has(thread.id) ? 1 : 0,
       rolloutSizeBytes(thread),
       isRolloutOverThreshold(thread),
       state.openThreadActionId === thread.id,
@@ -2020,6 +2163,7 @@ function renderHome() {
       || String(a.label || a.cwd).localeCompare(String(b.label || b.cwd)))
     .slice(0, 8);
   const recentThreads = visibleThreads(state.threads).slice(0, 8);
+  const nowMs = Date.now();
   const workspaceHtml = workspaces.length
     ? workspaces.map((ws) => {
       const active = ws.active ? "Active" : "Workspace";
@@ -2037,12 +2181,13 @@ function renderHome() {
       const title = thread.name || thread.preview || thread.id;
       const sizeText = rolloutSizeText(thread);
       const sizeWarn = isRolloutOverThreshold(thread);
-      const meta = [shortPath(thread.cwd), formatTime(thread.updatedAt), statusText(thread.status), sizeText ? `rollout ${sizeText}` : ""]
+      const updatedTitle = formatAbsoluteTime(thread.updatedAt);
+      const meta = [shortPath(thread.cwd), formatTime(thread.updatedAt, nowMs), sizeText ? `rollout ${sizeText}` : ""]
         .filter(Boolean)
         .join(" | ");
       return `<button class="home-shortcut${sizeWarn ? " rollout-warn" : ""}" type="button" data-home-thread="${escapeHtml(thread.id)}">
         <span class="home-shortcut-title">${escapeHtml(title)}</span>
-        <span class="home-shortcut-meta">${escapeHtml(meta)}</span>
+        <span class="home-shortcut-meta home-shortcut-meta-status"><span title="${escapeHtml(updatedTitle)}">${escapeHtml(meta)}</span>${statusIconHtml(thread.status, "home-status-icon", thread.id)}</span>
       </button>`;
     }).join("")
     : `<div class="home-empty">No recent threads.</div>`;
@@ -2059,8 +2204,20 @@ function renderHome() {
   const signature = JSON.stringify({
     view: "home",
     selectedCwd: state.selectedCwd,
+    timeBucket: Math.floor(nowMs / 60000),
     workspaces: workspaces.map((ws) => [ws.cwd, ws.label, ws.active, ws.recentThreadCount]),
-    threads: recentThreads.map((thread) => [thread.id, thread.name, thread.preview, thread.cwd, thread.updatedAt, statusText(thread.status), rolloutSizeBytes(thread), isRolloutOverThreshold(thread)]),
+    threads: recentThreads.map((thread) => [
+      thread.id,
+      thread.name,
+      thread.preview,
+      thread.cwd,
+      thread.updatedAt,
+      statusText(thread.status),
+      statusIconInfo(thread.status, thread.id)?.kind || "",
+      state.unreadThreadIds.has(thread.id) ? 1 : 0,
+      rolloutSizeBytes(thread),
+      isRolloutOverThreshold(thread),
+    ]),
   });
   if (!updateConversationHtml(html, signature)) return;
   $("conversation").querySelectorAll("[data-home-workspace]").forEach((button) => {
@@ -2344,23 +2501,118 @@ function startedThreadId(result) {
     || "");
 }
 
+function continuationJobStatusText(job) {
+  const status = String(job && job.status || "");
+  const message = String(job && job.message || "").trim();
+  if (message) return message;
+  return {
+    queued: "续接任务已排队",
+    running: "正在生成交接并续接",
+    done: "续接线程已就绪",
+    failed: "续接任务失败",
+  }[status] || "正在生成交接并续接";
+}
+
+function rememberContinuationJob(jobId) {
+  const id = String(jobId || "").trim();
+  if (!id) return;
+  state.continuationJobId = id;
+  localStorage.setItem(STORAGE_CONTINUATION_JOB, id);
+}
+
+function clearRememberedContinuationJob(jobId = "") {
+  const id = String(jobId || "").trim();
+  if (!id || localStorage.getItem(STORAGE_CONTINUATION_JOB) === id) {
+    localStorage.removeItem(STORAGE_CONTINUATION_JOB);
+  }
+  if (!id || state.continuationJobId === id) state.continuationJobId = "";
+}
+
+async function openContinuationResult(result) {
+  const threadId = startedThreadId(result);
+  if (!threadId) throw new Error("Continuation thread was created without a thread id");
+  state.continuationNewThreadId = threadId;
+  const archivedSourceThreadId = result.sourceArchive && result.sourceArchive.archived
+    ? result.sourceArchive.threadId
+    : "";
+  if (archivedSourceThreadId) {
+    state.threads = state.threads.filter((entry) => entry.id !== archivedSourceThreadId);
+  }
+  if (result.thread) {
+    state.threads = [result.thread, ...state.threads.filter((thread) => thread.id !== result.thread.id)];
+    renderThreads();
+  }
+  $("connectionState").classList.remove("error");
+  if (result.sourceArchive && result.sourceArchive.error) {
+    $("connectionState").classList.add("error");
+    $("connectionState").textContent = `续接线程已就绪；归档失败：${result.sourceArchive.error}`;
+  } else {
+    $("connectionState").textContent = "交接已生成；正在打开续接线程";
+  }
+  await loadThread(threadId);
+  loadThreads().catch(showError);
+}
+
+async function waitForContinuationJob(jobId) {
+  const id = String(jobId || "").trim();
+  if (!id) throw new Error("Continuation job was created without a job id");
+  rememberContinuationJob(id);
+  let delayMs = 800;
+  while (state.continuationJobId === id) {
+    const job = await api(`/api/thread-continuations/${encodeURIComponent(id)}`, {
+      timeoutMs: 30000,
+    });
+    $("connectionState").classList.toggle("error", job.status === "failed");
+    $("connectionState").textContent = continuationJobStatusText(job);
+    markActivity(job.step || "续接任务");
+    if (job.status === "done") {
+      clearRememberedContinuationJob(id);
+      return job.result || job;
+    }
+    if (job.status === "failed") {
+      clearRememberedContinuationJob(id);
+      throw new Error(job.error || job.message || "Continuation job failed");
+    }
+    await sleep(delayMs);
+    delayMs = Math.min(1800, Math.round(delayMs * 1.25));
+  }
+  throw new Error("Continuation job was cancelled");
+}
+
+async function resumeRememberedContinuationJob() {
+  const jobId = String(localStorage.getItem(STORAGE_CONTINUATION_JOB) || "").trim();
+  if (!jobId || state.continuationBusy) return;
+  state.continuationBusy = true;
+  state.continuationJobId = jobId;
+  $("connectionState").classList.remove("error");
+  $("connectionState").textContent = "正在恢复续接任务";
+  try {
+    const result = await waitForContinuationJob(jobId);
+    await openContinuationResult(result);
+  } catch (err) {
+    clearRememberedContinuationJob(jobId);
+    if (!/Continuation job not found/i.test(err.message || "")) showError(err);
+  } finally {
+    state.continuationBusy = false;
+  }
+}
+
 async function startNewThreadFromThread(sourceThread, event) {
   if (event) event.preventDefault();
   if (event) event.stopPropagation();
   closeThreadActions();
-  if (state.composerBusy) return;
+  if (state.continuationBusy) return;
   const button = event && event.currentTarget;
   const thread = sourceThread || state.currentThread || {};
   const sourceThreadId = thread.id || state.currentThreadId || "";
   const title = thread.name || thread.preview || thread.id || "current thread";
   const size = rolloutSizeText(thread);
   const archiveConfirmed = window.confirm([
-    `压缩续接同工作区线程，并归档旧线程“${title}”？`,
+    `压缩续接“${title}”？`,
     "",
-    "将先要求旧线程总结本线程的真实交接重点，并写入当前工作区的交接文件。",
-    "新线程会读取该交接文件、工作区上下文和有限的源线程摘录；不会注入其他线程的固定提交规则。",
-    "旧线程会在交接文件生成且续接线程启动后归档，仍可在归档记录中找到。",
-    size ? `旧线程 rollout：${size}` : "",
+    "会创建一个同工作区的新 session。",
+    "成功后自动归档旧 session。",
+    size ? `当前大小：${size}` : "",
   ].filter((line) => line !== "").join("\n"));
   if (!archiveConfirmed) return;
   const body = startThreadRequestBody(thread, { archiveSourceThread: true });
@@ -2371,53 +2623,28 @@ async function startNewThreadFromThread(sourceThread, event) {
   if (sourceThreadId) {
     state.continuationSourceThreadId = sourceThreadId;
     state.continuationNewThreadId = "";
-    if (sourceThreadId !== state.currentThreadId) {
-      $("connectionState").classList.remove("error");
-      $("connectionState").textContent = "正在打开源线程";
-      markActivity("打开源线程");
-      await loadThread(sourceThreadId);
-    }
+    clearRememberedContinuationJob();
   }
-  state.composerBusy = true;
+  state.continuationBusy = true;
   if (button) button.disabled = true;
   $("connectionState").classList.remove("error");
-  $("connectionState").textContent = "正在生成交接并续接";
-  markActivity("生成交接");
-  updateComposerControls();
+  $("connectionState").textContent = "正在创建续接任务";
+  markActivity("创建续接任务");
   try {
-    const result = await api("/api/threads", {
+    const job = await api("/api/thread-continuations", {
       method: "POST",
       body: JSON.stringify(body),
-      timeoutMs: 300000,
+      timeoutMs: 30000,
     });
-    const threadId = startedThreadId(result);
-    if (!threadId) throw new Error("Continuation thread was created without a thread id");
-    state.continuationNewThreadId = threadId;
-    const archivedSourceThreadId = result.sourceArchive && result.sourceArchive.archived
-      ? result.sourceArchive.threadId
-      : "";
-    if (archivedSourceThreadId) {
-      state.threads = state.threads.filter((entry) => entry.id !== archivedSourceThreadId);
-    }
-    if (result.thread) {
-      state.threads = [result.thread, ...state.threads.filter((thread) => thread.id !== result.thread.id)];
-      renderThreads();
-    }
-    $("connectionState").classList.remove("error");
-    if (result.sourceArchive && result.sourceArchive.error) {
-      $("connectionState").classList.add("error");
-      $("connectionState").textContent = `续接线程已就绪；归档失败：${result.sourceArchive.error}`;
-    } else {
-      $("connectionState").textContent = "交接已生成；正在打开续接线程";
-    }
-    await loadThread(threadId);
-    loadThreads().catch(showError);
+    $("connectionState").textContent = continuationJobStatusText(job);
+    const result = await waitForContinuationJob(job.jobId);
+    await openContinuationResult(result);
   } catch (err) {
     showError(err);
   } finally {
-    state.composerBusy = false;
+    clearRememberedContinuationJob();
+    state.continuationBusy = false;
     if (button) button.disabled = false;
-    updateComposerControls();
   }
 }
 
@@ -3239,6 +3466,7 @@ function applyNotification(method, params) {
       return;
     }
     const index = state.threads.findIndex((x) => x.id === params.thread.id);
+    updateThreadStatusHints(params.thread.id, index >= 0 ? state.threads[index].status : null, params.thread.status);
     if (index >= 0) state.threads[index] = Object.assign({}, state.threads[index], params.thread);
     else state.threads.unshift(params.thread);
     renderThreads();
@@ -3246,9 +3474,12 @@ function applyNotification(method, params) {
   }
   if (method === "thread/status/changed") {
     const thread = state.threads.find((x) => x.id === params.threadId);
+    const previousStatus = thread ? thread.status : null;
+    updateThreadStatusHints(params.threadId, previousStatus, params.status);
     if (thread) thread.status = params.status;
     pruneHiddenThreads();
     if (state.currentThread && state.currentThread.id === params.threadId) {
+      markThreadViewed(params.threadId);
       state.currentThread.status = params.status;
       renderCurrentThread();
       scheduleLivePollIfNeeded(1400);
@@ -4002,6 +4233,7 @@ function wireUi() {
 
 async function start() {
   wireUi();
+  startRelativeTimeTimer();
   const config = await fetch("/api/public-config").then((res) => res.json());
   state.maxUploadBytes = Number(config.maxUploadBytes || state.maxUploadBytes);
   state.maxUploadFiles = Number(config.maxUploadFiles || state.maxUploadFiles);
@@ -4025,6 +4257,7 @@ async function start() {
     showError(err);
     if (/unauthorized/i.test(err.message)) showLogin();
   });
+  resumeRememberedContinuationJob().catch(showError);
 }
 
 start();
