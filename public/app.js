@@ -48,6 +48,7 @@ const state = {
   pendingAttachments: [],
   composerBusy: false,
   sendButtonHint: "",
+  completionSoundEnabled: true,
   continuationBusy: false,
   maxUploadBytes: 64 * 1024 * 1024,
   maxUploadFiles: 12,
@@ -79,6 +80,9 @@ const state = {
   uiWatchdogTimer: null,
   lastUiWatchdogTickAt: 0,
   lastUiStallReportedAt: 0,
+  lastCompletionSoundAt: 0,
+  completionAudioContext: null,
+  completionAudioUnlocked: false,
 };
 
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
@@ -253,6 +257,110 @@ function saveThreadStatusHints() {
   saveStringSetStorage(STORAGE_UNREAD_THREAD_IDS, state.unreadThreadIds);
 }
 
+function threadDisplayName(thread) {
+  return String(thread && (thread.name || thread.preview || thread.id || "") || "");
+}
+
+function isPwaMode() {
+  return Boolean((window.matchMedia && window.matchMedia("(display-mode: standalone)").matches)
+    || window.navigator.standalone);
+}
+
+function triggerCompletionHaptic() {
+  if (!supportsCompletionHaptic()) return false;
+  const visible = document.visibilityState === "visible";
+  const inPwa = isPwaMode();
+  if (!visible && !inPwa) return false;
+  try {
+    return navigator.vibrate([140, 70, 140]);
+  } catch (_) {
+    return false;
+  }
+}
+
+function supportsCompletionHaptic() {
+  return typeof navigator !== "undefined" && typeof navigator.vibrate === "function";
+}
+
+function completionAudioContext() {
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContext) return null;
+  if (!state.completionAudioContext) state.completionAudioContext = new AudioContext();
+  return state.completionAudioContext;
+}
+
+function playCompletionTone(options = {}) {
+  const audioContext = completionAudioContext();
+  if (!audioContext) return false;
+  const audible = options.audible !== false;
+  const playTone = () => {
+    const nowAt = audioContext.currentTime;
+    const osc = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(audible ? 740 : 520, nowAt);
+    if (audible) osc.frequency.exponentialRampToValueAtTime(560, nowAt + 0.22);
+    const peak = audible ? 0.075 : 0.0001;
+    const duration = audible ? 0.72 : 0.04;
+    gain.gain.setValueAtTime(0.0001, nowAt);
+    gain.gain.exponentialRampToValueAtTime(peak, nowAt + 0.04);
+    gain.gain.exponentialRampToValueAtTime(0.0001, nowAt + duration);
+    osc.connect(gain);
+    gain.connect(audioContext.destination);
+    osc.start(nowAt);
+    osc.stop(nowAt + duration + 0.02);
+    setTimeout(() => {
+      osc.disconnect();
+      gain.disconnect();
+    }, Math.ceil((duration + 0.12) * 1000));
+  };
+  if (audioContext.state === "suspended") {
+    audioContext.resume()
+      .then(() => {
+        state.completionAudioUnlocked = true;
+        playTone();
+      })
+      .catch(() => {});
+    return false;
+  }
+  state.completionAudioUnlocked = true;
+  playTone();
+  return true;
+}
+
+function primeCompletionAudio() {
+  if (!state.completionSoundEnabled || state.completionAudioUnlocked) return;
+  playCompletionTone({ audible: false });
+}
+
+function showCompletionAlert(threadId, threadName) {
+  if (!state.completionSoundEnabled) return;
+  const now = Date.now();
+  if (now - state.lastCompletionSoundAt < 1800) return;
+  state.lastCompletionSoundAt = now;
+  triggerCompletionHaptic();
+  const title = String(threadName || threadDisplayName(state.threads.find((thread) => String(thread.id || "") === String(threadId || ""))) || threadId || "").trim();
+  if (document.visibilityState !== "visible" && "Notification" in window && Notification.permission === "granted") {
+    const notifier = new Notification("会话任务完成", {
+      body: `${title || "会话"} 已完成，可切回查看`,
+      tag: `codex-thread-complete-${threadId}`,
+      renotify: false,
+      silent: false,
+      requireInteraction: false,
+      vibrate: [90, 45, 90],
+    });
+    if (notifier && "addEventListener" in notifier) {
+      notifier.onclick = () => {
+        try {
+          window.focus();
+          $("app").scrollIntoView();
+        } catch (_) {}
+      };
+    }
+  }
+  playCompletionTone({ audible: true });
+}
+
 function markThreadViewed(threadId) {
   const id = String(threadId || "");
   if (!id || !state.unreadThreadIds.has(id)) return;
@@ -260,12 +368,13 @@ function markThreadViewed(threadId) {
   saveThreadStatusHints();
 }
 
-function updateThreadStatusHints(threadId, previousStatus, nextStatus) {
+function updateThreadStatusHints(threadId, previousStatus, nextStatus, options = {}) {
   const id = String(threadId || "");
   if (!id) return;
   const wasRunning = state.runningThreadIds.has(id) || isRunningStatus(previousStatus);
   const isRunning = isRunningStatus(nextStatus);
   let changed = false;
+  let shouldAlert = false;
   if (isRunning) {
     if (!state.runningThreadIds.has(id)) {
       state.runningThreadIds.add(id);
@@ -277,9 +386,13 @@ function updateThreadStatusHints(threadId, previousStatus, nextStatus) {
     if (id !== state.currentThreadId && !state.unreadThreadIds.has(id)) {
       state.unreadThreadIds.add(id);
       changed = true;
+      shouldAlert = true;
     }
   }
   if (changed) saveThreadStatusHints();
+  if (shouldAlert && options.notify) {
+    showCompletionAlert(id, options.threadName || threadDisplayName(options.thread));
+  }
 }
 
 function reconcileThreadStatusHints(threads) {
@@ -2403,7 +2516,7 @@ function startThreadRequestBody(sourceThread = null, options = {}) {
   const useCurrentSelectors = !sourceThread || thread.id === state.currentThreadId;
   return {
     cwd: thread.cwd || state.selectedCwd || "",
-    model: useCurrentSelectors ? ($("modelSelect").value || effectiveDefaultModel() || "") : (thread.model || state.defaultModel || ""),
+    model: useCurrentSelectors ? (currentComposerModel() || "") : (thread.model || state.defaultModel || ""),
     effort: useCurrentSelectors ? ($("effortSelect").value || effectiveDefaultEffort() || "") : (thread.effort || state.defaultReasoningEffort || ""),
     permissionMode: useCurrentSelectors ? ($("permissionSelect").value || effectiveDefaultPermissionMode() || "") : "",
     sourceThreadId: thread.id || "",
@@ -3538,7 +3651,11 @@ function applyNotification(method, params) {
       return;
     }
     const index = state.threads.findIndex((x) => x.id === params.thread.id);
-    updateThreadStatusHints(params.thread.id, index >= 0 ? state.threads[index].status : null, params.thread.status);
+    updateThreadStatusHints(params.thread.id, index >= 0 ? state.threads[index].status : null, params.thread.status, {
+      thread: params.thread,
+      threadName: threadDisplayName(params.thread),
+      notify: true,
+    });
     if (index >= 0) state.threads[index] = Object.assign({}, state.threads[index], params.thread);
     else state.threads.unshift(params.thread);
     scheduleRenderThreads();
@@ -3547,7 +3664,11 @@ function applyNotification(method, params) {
   if (method === "thread/status/changed") {
     const thread = state.threads.find((x) => x.id === params.threadId);
     const previousStatus = thread ? thread.status : null;
-    updateThreadStatusHints(params.threadId, previousStatus, params.status);
+    updateThreadStatusHints(params.threadId, previousStatus, params.status, {
+      thread,
+      notify: true,
+      threadName: threadDisplayName(thread),
+    });
     if (thread) thread.status = params.status;
     pruneHiddenThreads();
     if (state.currentThread && state.currentThread.id === params.threadId) {
@@ -3899,6 +4020,12 @@ function normalizeClientErrorMessage(message) {
   if (text.includes("failed to fetch")) {
     return "网络异常，发送失败：请求未发出，请检查网络后重试";
   }
+  if (/(rate\s*limit|usage\s*limit|quota|limit reached|exhausted|insufficient credits?)/i.test(String(message || ""))) {
+    const model = selectedQuotaModel();
+    return model
+      ? `${labelForModel(model)} 额度不足，请切换模型后重试`
+      : "模型额度不足，请切换模型后重试";
+  }
   if (text.includes("request timed out")) {
     return "请求超时，服务响应较慢，请稍后再试";
   }
@@ -4041,6 +4168,11 @@ function effectiveDefaultModel() {
   return (state.currentThread && state.currentThread.model) || state.defaultModel || "";
 }
 
+function currentComposerModel() {
+  const modelSelect = $("modelSelect");
+  return (modelSelect && modelSelect.value) || state.selectedModel || effectiveDefaultModel();
+}
+
 function effectiveDefaultEffort() {
   return (state.currentThread && state.currentThread.effort) || state.defaultReasoningEffort || "";
 }
@@ -4079,19 +4211,20 @@ function renderComposerSettings() {
     setSelectedPermissionModeForCurrentThread("");
     selectedPermission = "";
   }
-  const modelValues = normalizeOptionList([state.selectedModel, ...state.modelOptions])
-    .filter((value) => value !== defaultModel);
+  const modelValues = normalizeOptionList([state.selectedModel, defaultModel, state.defaultModel, ...state.modelOptions]);
   const effortValues = normalizeOptionList([state.selectedEffort, ...state.reasoningEffortOptions])
     .filter((value) => value !== defaultEffort);
   const permissionValues = normalizeOptionList([selectedPermission, ...state.permissionModeOptions.map(normalizePermissionModeValue)])
     .filter((value) => value !== defaultPermission);
-  modelSelect.innerHTML = `<option value="">${escapeHtml(defaultModel ? labelForModel(defaultModel) : "Default")}</option>`
-    + modelValues.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(labelForModel(value))}</option>`).join("");
+  modelSelect.innerHTML = modelValues.length
+    ? modelValues.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(labelForModel(value))}</option>`).join("")
+    : `<option value="">Model</option>`;
   effortSelect.innerHTML = `<option value="">${escapeHtml(defaultEffort ? labelForEffort(defaultEffort) : "Default")}</option>`
     + effortValues.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(labelForEffort(value))}</option>`).join("");
   permissionSelect.innerHTML = `<option value="">${escapeHtml(defaultPermission ? labelForPermissionMode(defaultPermission) : "Perm")}</option>`
     + permissionValues.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(labelForPermissionMode(value))}</option>`).join("");
-  if (state.selectedModel && state.selectedModel !== defaultModel && modelValues.includes(state.selectedModel)) modelSelect.value = state.selectedModel;
+  const selectedModel = state.selectedModel || defaultModel || state.defaultModel || "";
+  if (selectedModel && modelValues.includes(selectedModel)) modelSelect.value = selectedModel;
   else modelSelect.value = "";
   if (state.selectedEffort && state.selectedEffort !== defaultEffort && effortValues.includes(state.selectedEffort)) effortSelect.value = state.selectedEffort;
   else effortSelect.value = "";
@@ -4175,7 +4308,8 @@ async function sendMessage(event) {
     body.append("text", text);
     if (state.currentThread && state.currentThread.cwd) body.append("cwd", state.currentThread.cwd);
     if (state.activeTurnId) body.append("activeTurnId", state.activeTurnId);
-    if ($("modelSelect").value) body.append("model", $("modelSelect").value);
+    const model = currentComposerModel();
+    if (model) body.append("model", model);
     if ($("effortSelect").value) body.append("effort", $("effortSelect").value);
     if ($("permissionSelect").value) body.append("permissionMode", $("permissionSelect").value);
     for (const item of state.pendingAttachments) {
@@ -4325,6 +4459,9 @@ function wireUi() {
   });
   $("refreshThreads").addEventListener("click", () => loadThreads().catch(showError));
   $("pushNotifications").addEventListener("click", () => handlePushButtonClick().catch(showError));
+  document.addEventListener("pointerdown", primeCompletionAudio, { passive: true });
+  document.addEventListener("touchend", primeCompletionAudio, { passive: true });
+  document.addEventListener("keydown", primeCompletionAudio);
   $("threadSearch").addEventListener("input", () => {
     clearTimeout(state.searchTimer);
     state.searchTimer = setTimeout(() => loadThreads().catch(showError), 250);
