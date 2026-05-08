@@ -268,6 +268,14 @@ function logContinuation(event, details = {}) {
   console.log(`[continuation] ${event} ${JSON.stringify(safeLogDetails(details))}`);
 }
 
+function logMessageSubmit(event, details = {}) {
+  console.log(`[message-submit] ${event} ${JSON.stringify(safeLogDetails(details))}`);
+}
+
+function logClientEvent(event, details = {}) {
+  console.log(`[client-event] ${event} ${JSON.stringify(safeLogDetails(details))}`);
+}
+
 function truncateMiddle(value, maxChars, label) {
   const text = String(value ?? "");
   if (text.length <= maxChars) return text;
@@ -3870,6 +3878,20 @@ async function handleApi(req, res) {
     sendJson(res, 401, { error: "Unauthorized" });
     return;
   }
+  if (url.pathname === "/api/client-events" && req.method === "POST") {
+    const body = await readBody(req);
+    const event = String(body.event || "event").slice(0, 80);
+    const details = body.details && typeof body.details === "object" ? body.details : {};
+    logClientEvent(event, {
+      threadId: body.threadId || "",
+      path: body.path || "",
+      details,
+      userAgent: String(req.headers["user-agent"] || "").slice(0, 160),
+    });
+    res.writeHead(204, { "Cache-Control": "no-store" });
+    res.end();
+    return;
+  }
   if (url.pathname === "/api/push/vapid-public-key" && req.method === "GET") {
     const keys = loadPushVapidKeys();
     sendJson(res, 200, { publicKey: keys.publicKey, subject: keys.subject || PUSH_SUBJECT });
@@ -4217,56 +4239,83 @@ async function handleApi(req, res) {
     const text = String(body.text || "").trim();
     const input = buildTurnInput(text, uploads);
     if (!input.length) {
+      logMessageSubmit("empty", {
+        threadId,
+        clientSubmissionId: body.clientSubmissionId,
+        uploads: uploads.length,
+      });
       sendJson(res, 400, { error: "Message text or attachment is required" });
       return;
     }
+    logMessageSubmit("received", {
+      threadId,
+      textChars: text.length,
+      uploads: uploads.length,
+      activeTurnId: body.activeTurnId || "",
+      clientSubmissionId: body.clientSubmissionId,
+    });
     const submissionKeys = messageSubmissionKeys(threadId, body, text, uploads);
     const runtimeSettings = applyPermissionModeOverride(await resolveThreadRuntimeSettings(threadId), body.permissionMode, body.cwd || null);
-    const result = await runMessageSubmissionOnce(submissionKeys, uploads, async () => {
-      if (body.activeTurnId) {
-        try {
-          const result = await codex.request("turn/steer", {
-            threadId,
-            input,
-            expectedTurnId: String(body.activeTurnId),
-          }, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
-          codex.notifyMuxUserMessage({
-            threadId,
-            turnId: String(body.activeTurnId),
-            input,
-            clientSubmissionId: body.clientSubmissionId,
-          });
-          return result;
-        } catch (err) {
-          if (!/method not found|unknown method|not found/i.test(err.message || "")) throw err;
-          codex.notifyMuxUserMessage({
-            threadId,
-            turnId: String(body.activeTurnId),
-            input,
-            clientSubmissionId: body.clientSubmissionId,
-          });
-          return {};
+    let result;
+    try {
+      result = await runMessageSubmissionOnce(submissionKeys, uploads, async () => {
+        if (body.activeTurnId) {
+          try {
+            const result = await codex.request("turn/steer", {
+              threadId,
+              input,
+              expectedTurnId: String(body.activeTurnId),
+            }, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+            codex.notifyMuxUserMessage({
+              threadId,
+              turnId: String(body.activeTurnId),
+              input,
+              clientSubmissionId: body.clientSubmissionId,
+            });
+            return result;
+          } catch (err) {
+            if (!/method not found|unknown method|not found/i.test(err.message || "")) throw err;
+            codex.notifyMuxUserMessage({
+              threadId,
+              turnId: String(body.activeTurnId),
+              input,
+              clientSubmissionId: body.clientSubmissionId,
+            });
+            return {};
+          }
         }
-      }
-      try {
-        await codex.request("thread/resume", applyResumeRuntimeSettings({
+        try {
+          await codex.request("thread/resume", applyResumeRuntimeSettings({
+            threadId,
+            cwd: body.cwd || null,
+            model: body.model || null,
+            persistExtendedHistory: true,
+          }, runtimeSettings), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+        } catch (err) {
+          if (!/already|loaded|active/i.test(err.message || "")) throw err;
+        }
+        const params = applyTurnRuntimeSettings({
           threadId,
-          cwd: body.cwd || null,
-          model: body.model || null,
-          persistExtendedHistory: true,
-        }, runtimeSettings), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
-      } catch (err) {
-        if (!/already|loaded|active/i.test(err.message || "")) throw err;
-      }
-      const params = applyTurnRuntimeSettings({
+          input,
+        }, runtimeSettings);
+        if (body.cwd) params.cwd = body.cwd;
+        if (body.model) params.model = body.model;
+        if (body.effort) params.effort = body.effort;
+        return await codex.request("turn/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+      });
+      logMessageSubmit("done", {
         threadId,
-        input,
-      }, runtimeSettings);
-      if (body.cwd) params.cwd = body.cwd;
-      if (body.model) params.model = body.model;
-      if (body.effort) params.effort = body.effort;
-      return await codex.request("turn/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
-    });
+        clientSubmissionId: body.clientSubmissionId,
+        resultTurnId: result && (result.turnId || result.id || result.turn && result.turn.id || ""),
+      });
+    } catch (err) {
+      logMessageSubmit("failed", {
+        threadId,
+        clientSubmissionId: body.clientSubmissionId,
+        error: err.message || String(err),
+      });
+      throw err;
+    }
     sendJson(res, 200, result);
     return;
   }
