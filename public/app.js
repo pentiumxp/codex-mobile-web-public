@@ -47,6 +47,7 @@ const state = {
   continuationJobId: "",
   pendingAttachments: [],
   composerBusy: false,
+  sendButtonHint: "",
   continuationBusy: false,
   maxUploadBytes: 64 * 1024 * 1024,
   maxUploadFiles: 12,
@@ -1788,6 +1789,7 @@ function updateWorkspacePath() {
 
 function clearCurrentThreadSelection() {
   state.threadLoadSeq += 1;
+  state.sendButtonHint = "";
   if (state.threadLoadController) {
     state.threadLoadController.abort();
     state.threadLoadController = null;
@@ -1856,6 +1858,7 @@ async function loadThread(threadId) {
   }
   const seq = state.threadLoadSeq + 1;
   state.threadLoadSeq = seq;
+  state.sendButtonHint = "";
   if (state.threadLoadController) state.threadLoadController.abort();
   const controller = new AbortController();
   state.threadLoadController = controller;
@@ -4116,9 +4119,27 @@ function updateComposerControls() {
   attachButton.classList.toggle("disabled", disabled);
   attachButton.setAttribute("aria-disabled", disabled ? "true" : "false");
   attachButton.tabIndex = disabled ? -1 : 0;
-  sendButton.textContent = interruptMode ? "Stop" : "Send";
-  sendButton.title = interruptMode ? "Interrupt current turn" : "Send message";
-  sendButton.classList.toggle("interrupt-mode", interruptMode);
+  const showRetryHint = Boolean(state.sendButtonHint);
+  if (interruptMode) {
+    sendButton.textContent = "Stop";
+    sendButton.title = "Interrupt current turn";
+    sendButton.classList.add("interrupt-mode");
+    sendButton.classList.remove("sending", "send-failed");
+  } else if (state.composerBusy) {
+    sendButton.textContent = "发送中…";
+    sendButton.title = "Message is sending";
+    sendButton.classList.add("sending");
+    sendButton.classList.remove("send-failed", "interrupt-mode");
+  } else if (showRetryHint) {
+    sendButton.textContent = "重试";
+    sendButton.title = "Retry sending message";
+    sendButton.classList.add("send-failed");
+    sendButton.classList.remove("sending", "interrupt-mode");
+  } else {
+    sendButton.textContent = "Send";
+    sendButton.title = "Send message";
+    sendButton.classList.remove("sending", "send-failed", "interrupt-mode");
+  }
   sendButton.disabled = disabled || (!interruptMode && !hasContent);
 }
 
@@ -4140,6 +4161,7 @@ async function sendMessage(event) {
   }
   if ((!text && !state.pendingAttachments.length) || !state.currentThreadId) return;
   state.composerBusy = true;
+  state.sendButtonHint = "";
   startSendProgressWatchdog(state.currentThreadId);
   markActivity(state.activeTurnId ? "追加输入" : "发送");
   updateComposerControls();
@@ -4173,7 +4195,15 @@ async function sendMessage(event) {
     scheduleCurrentThreadRefresh(600);
     scheduleLivePollIfNeeded(1200);
   } catch (err) {
-    showError(err);
+    const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err))
+      || "发送失败，请重试";
+    state.sendButtonHint = "重试";
+    $("connectionState").classList.add("error");
+    $("connectionState").textContent = message.includes("发送") ? message : "发送失败，请重试";
+    postClientEvent("send_failure", {
+      threadId: state.currentThreadId || "",
+      message,
+    });
   } finally {
     finishSendProgressWatchdog();
     state.composerBusy = false;
@@ -4351,6 +4381,7 @@ function wireUi() {
   });
   $("messageInput").addEventListener("input", (event) => {
     autoSizeMessageInput(event.target);
+    if (state.sendButtonHint && !state.composerBusy) state.sendButtonHint = "";
     updateComposerControls();
   });
   $("messageInput").addEventListener("keydown", (event) => {
