@@ -40,6 +40,7 @@ const MAX_COMMAND_OUTPUT_CHARS_PER_TURN = 48000;
 const MAX_STRUCTURED_CHARS = 24000;
 const MAX_DELTA_CHARS = 12000;
 const MAX_THREAD_TURNS = Math.max(1, Math.min(100, Number(process.env.CODEX_MOBILE_THREAD_TURNS || "12")));
+const MAX_FULL_THREAD_TURNS = Math.max(MAX_THREAD_TURNS, Math.min(200, Number(process.env.CODEX_MOBILE_FULL_THREAD_TURNS || "80")));
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
 const MODEL_OPTIONS = optionListFromEnv("CODEX_MOBILE_MODEL_OPTIONS", [
   "gpt-5.5",
@@ -79,8 +80,12 @@ const THREAD_DETAIL_ROLLOUT_MAX_BYTES = Math.max(
 const MAX_CONTINUATION_BOOTSTRAP_CHARS = Math.max(20_000, Number(process.env.CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS || "120000"));
 const CONTINUATION_RECENT_TURNS = Math.max(1, Math.min(30, Number(process.env.CODEX_MOBILE_CONTINUATION_RECENT_TURNS || "12")));
 const CONTINUATION_HANDOFF_TIMEOUT_MS = Math.max(30_000, Number(process.env.CODEX_MOBILE_CONTINUATION_HANDOFF_TIMEOUT_MS || "240000"));
+const CONTINUATION_LATE_HANDOFF_TIMEOUT_MS = Math.max(30_000, Number(process.env.CODEX_MOBILE_CONTINUATION_LATE_HANDOFF_TIMEOUT_MS || "600000"));
+const CONTINUATION_REUSE_HANDOFF_MS = Math.max(0, Number(process.env.CODEX_MOBILE_CONTINUATION_REUSE_HANDOFF_MS || "1800000"));
 const CONTINUATION_HANDOFF_MIN_CHARS = Math.max(120, Number(process.env.CODEX_MOBILE_CONTINUATION_HANDOFF_MIN_CHARS || "400"));
 const CONTINUATION_HANDOFF_TURN_COMPLETION_TIMEOUT_MS = Math.max(5_000, Number(process.env.CODEX_MOBILE_CONTINUATION_HANDOFF_TURN_COMPLETION_TIMEOUT_MS || "60000"));
+const CONTINUATION_JOB_TTL_MS = Math.max(60_000, Number(process.env.CODEX_MOBILE_CONTINUATION_JOB_TTL_MS || "1800000"));
+const CONTINUATION_JOB_MAX = Math.max(10, Number(process.env.CODEX_MOBILE_CONTINUATION_JOB_MAX || "50"));
 const RUNTIME_CONTEXT_CACHE_TTL_MS = Math.max(1000, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_CACHE_TTL_MS || "30000"));
 const RUNTIME_CONTEXT_CACHE_MAX = Math.max(20, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_CACHE_MAX || "200"));
 const MUX_REPLAY_NOTIFICATION_LIMIT = Math.max(0, Number(process.env.CODEX_MOBILE_MUX_REPLAY_NOTIFICATION_LIMIT || "200"));
@@ -95,6 +100,8 @@ let latestRateLimits = null;
 const latestRateLimitsByModel = new Map();
 const latestRuntimeContextByPath = new Map();
 const recentStartedThreads = new Map();
+const continuationJobs = new Map();
+const activeContinuationJobsBySource = new Map();
 let pushVapidKeys = null;
 let pushSubscriptionsCache = null;
 const recentMessageSubmissions = new Map();
@@ -240,6 +247,25 @@ function logThreadDetail(event, details = {}) {
     }
   }
   console.log(`[thread-detail] ${event} ${JSON.stringify(safeDetails)}`);
+}
+
+function safeLogDetails(details = {}) {
+  const safeDetails = {};
+  for (const [key, value] of Object.entries(details || {})) {
+    if (value === undefined) continue;
+    if (value instanceof Error) {
+      safeDetails[key] = value.message || String(value);
+    } else if (typeof value === "string") {
+      safeDetails[key] = value.length > 600 ? `${value.slice(0, 600)}...` : value;
+    } else {
+      safeDetails[key] = value;
+    }
+  }
+  return safeDetails;
+}
+
+function logContinuation(event, details = {}) {
+  console.log(`[continuation] ${event} ${JSON.stringify(safeLogDetails(details))}`);
 }
 
 function truncateMiddle(value, maxChars, label) {
@@ -1091,14 +1117,15 @@ function compactTurn(turn, options = {}) {
   return out;
 }
 
-function compactThread(thread) {
+function compactThread(thread, options = {}) {
   if (!thread || typeof thread !== "object") return thread;
   const out = Object.assign({}, thread);
+  const maxTurns = Math.max(1, Math.min(200, Number(options.maxTurns || MAX_THREAD_TURNS)));
   if (Array.isArray(out.turns)) {
-    const omitted = Math.max(0, out.turns.length - MAX_THREAD_TURNS);
+    const omitted = Math.max(0, out.turns.length - maxTurns);
     if (omitted > 0) {
       out.mobileOmittedTurnCount = omitted;
-      out.turns = out.turns.slice(-MAX_THREAD_TURNS);
+      out.turns = out.turns.slice(-maxTurns);
     }
     const latestIndex = out.turns.length - 1;
     out.turns = out.turns.map((turn, index) => compactTurn(turn, { allowLiveOperation: index === latestIndex }));
@@ -1112,10 +1139,10 @@ function compactThread(thread) {
   return annotateThreadRolloutStats(out);
 }
 
-function compactThreadReadResult(result) {
+function compactThreadReadResult(result, options = {}) {
   if (!result || typeof result !== "object") return result;
   const out = Object.assign({}, result);
-  if (out.thread) out.thread = compactThread(out.thread);
+  if (out.thread) out.thread = compactThread(out.thread, options);
   return out;
 }
 
@@ -2941,6 +2968,29 @@ function continuationSafeFilePart(value, fallback = "thread") {
     .slice(0, 80)) || fallback;
 }
 
+function ensureContinuationHandoffIgnore(target) {
+  if (!target || !target.dir) return;
+  fs.mkdirSync(target.dir, { recursive: true });
+  const ignoreFile = path.join(target.dir, ".gitignore");
+  const block = [
+    "# Codex Mobile Web runtime handoff files.",
+    "# Keep generated continuation handoffs out of commits.",
+    "*",
+    "!.gitignore",
+    "",
+  ].join("\n");
+  try {
+    const existing = fs.existsSync(ignoreFile) ? fs.readFileSync(ignoreFile, "utf8") : "";
+    if (existing.includes("Codex Mobile Web runtime handoff files")
+      || /^\s*\*\s*$/m.test(existing)) {
+      return;
+    }
+    fs.writeFileSync(ignoreFile, existing.trimEnd() ? `${existing.trimEnd()}\n\n${block}` : block, "utf8");
+  } catch (err) {
+    logContinuation("handoff-ignore-failed", { dir: target.dir, error: err.message || String(err) });
+  }
+}
+
 function continuationHandoffTarget(cwd, sourceThreadId) {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const threadPart = continuationSafeFilePart(sourceThreadId);
@@ -2948,6 +2998,58 @@ function continuationHandoffTarget(cwd, sourceThreadId) {
   const relativePath = path.join(".agent-context", "thread-handoffs", `${id}.md`);
   const file = path.join(cwd, relativePath);
   return { id, relativePath, file, dir: path.dirname(file) };
+}
+
+function continuationHandoffFromText(target, text, extra = {}) {
+  const trimmed = String(text || "").trim();
+  if (trimmed.length < CONTINUATION_HANDOFF_MIN_CHARS) return null;
+  const marker = trimmed.match(/^Continuation handoff marker:\s*(.+)$/m);
+  return Object.assign({
+    id: marker && marker[1] ? marker[1].trim() : target.id,
+    path: target.file,
+    relativePath: target.relativePath,
+    text: truncateMiddle(trimmed, 56000, "source continuation handoff"),
+    chars: trimmed.length,
+  }, extra);
+}
+
+function findRecentContinuationHandoff(cwd, sourceThreadId) {
+  if (!CONTINUATION_REUSE_HANDOFF_MS || !cwd || !sourceThreadId) return null;
+  const dir = path.join(cwd, ".agent-context", "thread-handoffs");
+  let entries = [];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+      .map((entry) => {
+        const file = path.join(dir, entry.name);
+        const stat = fs.statSync(file);
+        return { name: entry.name, file, stat };
+      })
+      .filter((entry) => Date.now() - entry.stat.mtimeMs <= CONTINUATION_REUSE_HANDOFF_MS)
+      .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
+  } catch (_) {
+    return null;
+  }
+  for (const entry of entries) {
+    let text = "";
+    try {
+      text = fs.readFileSync(entry.file, "utf8");
+    } catch (_) {
+      continue;
+    }
+    if (!text.includes(`Source thread id: ${sourceThreadId}`)) continue;
+    const relativePath = path.relative(cwd, entry.file);
+    const handoff = continuationHandoffFromText({
+      id: path.basename(entry.name, ".md"),
+      file: entry.file,
+      relativePath,
+    }, text, {
+      reused: true,
+      mtimeMs: entry.stat.mtimeMs,
+    });
+    if (handoff) return handoff;
+  }
+  return null;
 }
 
 function turnIdFromResult(result) {
@@ -2983,29 +3085,25 @@ function sourceContinuationHandoffPrompt({ handoffId, handoffFile, cwd, sourceTh
   ].join("\n");
 }
 
-async function waitForContinuationHandoffFile(target) {
-  const deadline = Date.now() + CONTINUATION_HANDOFF_TIMEOUT_MS;
+async function waitForContinuationHandoffFile(target, timeoutMs = CONTINUATION_HANDOFF_TIMEOUT_MS) {
+  const deadline = Date.now() + timeoutMs;
   let lastError = "";
   while (Date.now() < deadline) {
     try {
       const text = fs.readFileSync(target.file, "utf8");
+      const handoff = continuationHandoffFromText(target, text);
+      if (handoff) return handoff;
       const trimmed = text.trim();
-      if (trimmed.length >= CONTINUATION_HANDOFF_MIN_CHARS) {
-        return {
-          id: target.id,
-          path: target.file,
-          relativePath: target.relativePath,
-          text: truncateMiddle(trimmed, 56000, "source continuation handoff"),
-          chars: trimmed.length,
-        };
-      }
       lastError = `file exists but is incomplete (${trimmed.length} chars)`;
     } catch (err) {
       lastError = err && err.code === "ENOENT" ? "file not written yet" : (err.message || String(err));
     }
     await sleep(1000);
   }
-  throw new Error(`Source thread did not finish writing continuation handoff within ${Math.round(CONTINUATION_HANDOFF_TIMEOUT_MS / 1000)}s: ${target.file} (${lastError})`);
+  const err = new Error(`Source thread did not finish writing continuation handoff within ${Math.round(timeoutMs / 1000)}s: ${target.file} (${lastError})`);
+  err.code = "HANDOFF_TIMEOUT";
+  err.handoffTarget = target;
+  throw err;
 }
 
 async function waitForContinuationTurnCompletion(threadId, turnId) {
@@ -3047,12 +3145,27 @@ async function waitForContinuationTurnCompletion(threadId, turnId) {
   };
 }
 
-async function createSourceContinuationHandoff({ cwd, sourceThreadId, sourceThreadTitle, runtimeSettings, model, effort }) {
+async function createSourceContinuationHandoff({ cwd, sourceThreadId, sourceThreadTitle, runtimeSettings, model, effort, onProgress }) {
   const threadId = String(sourceThreadId || "").trim();
   if (!threadId) return null;
   const target = continuationHandoffTarget(cwd, threadId);
   target.sourceThreadId = threadId;
   fs.mkdirSync(target.dir, { recursive: true });
+  ensureContinuationHandoffIgnore(target);
+  const existingHandoff = findRecentContinuationHandoff(cwd, threadId);
+  if (existingHandoff) {
+    if (onProgress) {
+      onProgress("handoff-reuse", "发现已生成交接文件，继续创建续接线程", {
+        sourceThreadId: threadId,
+        handoffFile: existingHandoff.path,
+        chars: existingHandoff.chars || 0,
+      });
+    }
+    return Object.assign(existingHandoff, {
+      turnId: "",
+      turnCompletion: { waited: false, completed: false, reason: "reused recent handoff file" },
+    });
+  }
   const prompt = sourceContinuationHandoffPrompt({
     handoffId: target.id,
     handoffFile: target.file,
@@ -3069,6 +3182,7 @@ async function createSourceContinuationHandoff({ cwd, sourceThreadId, sourceThre
   }, runtimeSettings || {});
   if (effort) params.effort = effort;
   try {
+    if (onProgress) onProgress("handoff-resume", "正在唤醒源线程");
     await codex.request("thread/resume", applyResumeRuntimeSettings({
       threadId,
       cwd,
@@ -3078,9 +3192,24 @@ async function createSourceContinuationHandoff({ cwd, sourceThreadId, sourceThre
   } catch (err) {
     if (!/already|loaded|active/i.test(err.message || "")) throw err;
   }
+  if (onProgress) onProgress("handoff-turn", "正在让源线程生成交接文件");
   const result = await codex.request("turn/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
   const turnId = turnIdFromResult(result);
-  const file = await waitForContinuationHandoffFile(target);
+  if (onProgress) onProgress("handoff-file", "正在等待源线程写入交接文件", { turnId });
+  let file;
+  try {
+    file = await waitForContinuationHandoffFile(target);
+  } catch (err) {
+    if (err.code !== "HANDOFF_TIMEOUT") throw err;
+    if (onProgress) {
+      onProgress("handoff-late", "源线程仍在写交接文件，继续后台等待", {
+        turnId,
+        extraTimeoutMs: CONTINUATION_LATE_HANDOFF_TIMEOUT_MS,
+      });
+    }
+    file = await waitForContinuationHandoffFile(target, CONTINUATION_LATE_HANDOFF_TIMEOUT_MS);
+  }
+  if (onProgress) onProgress("handoff-complete", "交接文件已写入，正在确认源线程完成", { turnId, chars: file.chars || 0 });
   const turnCompletion = await waitForContinuationTurnCompletion(threadId, turnId);
   return Object.assign(file, {
     turnId,
@@ -3177,6 +3306,268 @@ async function archiveVisibleThread(threadId, visibility) {
     throw new Error("Source thread is archived, deleted, or outside visible workspaces");
   }
   return await codex.request("thread/archive", { threadId }, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+}
+
+function httpStatusError(statusCode, message) {
+  const err = new Error(message);
+  err.statusCode = statusCode;
+  return err;
+}
+
+function continuationJobSourceKey(body) {
+  const sourceThreadId = String(body && body.sourceThreadId || "").trim();
+  if (!sourceThreadId) return "";
+  return [
+    sourceThreadId,
+    normalizeFsPath(String(body.cwd || "").trim()),
+    Boolean(body.archiveSourceThread),
+  ].join("|");
+}
+
+function publicContinuationJob(job) {
+  if (!job) return null;
+  return {
+    ok: job.status === "done",
+    jobId: job.id,
+    status: job.status,
+    step: job.step,
+    message: job.message,
+    sourceThreadId: job.sourceThreadId,
+    threadId: job.threadId || "",
+    sourceArchive: job.sourceArchive || null,
+    sourceHandoff: job.sourceHandoff || null,
+    result: job.status === "done" ? job.result : null,
+    error: job.error || "",
+    createdAt: new Date(job.createdAt).toISOString(),
+    updatedAt: new Date(job.updatedAt).toISOString(),
+  };
+}
+
+function pruneContinuationJobs(now = Date.now()) {
+  for (const [jobId, job] of continuationJobs) {
+    if (!job || now - job.updatedAt > CONTINUATION_JOB_TTL_MS) {
+      continuationJobs.delete(jobId);
+      if (job && job.sourceKey && activeContinuationJobsBySource.get(job.sourceKey) === jobId) {
+        activeContinuationJobsBySource.delete(job.sourceKey);
+      }
+    }
+  }
+  while (continuationJobs.size > CONTINUATION_JOB_MAX) {
+    const firstKey = continuationJobs.keys().next().value;
+    if (!firstKey) break;
+    const job = continuationJobs.get(firstKey);
+    continuationJobs.delete(firstKey);
+    if (job && job.sourceKey && activeContinuationJobsBySource.get(job.sourceKey) === firstKey) {
+      activeContinuationJobsBySource.delete(job.sourceKey);
+    }
+  }
+}
+
+function updateContinuationJob(job, patch = {}) {
+  if (!job) return;
+  Object.assign(job, patch, { updatedAt: Date.now() });
+  logContinuation(job.step || patch.step || "update", {
+    jobId: job.id,
+    status: job.status,
+    sourceThreadId: job.sourceThreadId,
+    threadId: job.threadId,
+    message: job.message,
+    error: job.error,
+  });
+}
+
+function setContinuationStep(job, step, message, extra = {}) {
+  updateContinuationJob(job, Object.assign({ status: "running", step, message }, extra));
+}
+
+async function startThreadFromRequestBody(body, options = {}) {
+  const job = options.job || null;
+  const progress = (step, message, extra) => setContinuationStep(job, step, message, extra);
+  const cwd = String(body.cwd || "").trim();
+  if (!cwd) {
+    throw httpStatusError(400, "Workspace is required to start a new thread");
+  }
+  progress("validate", "正在检查工作区");
+  const globalState = readGlobalState();
+  const visibility = visibilityFromGlobalState(globalState);
+  if (visibility.workspaceKeys.size > 0 && !visibility.workspaceKeys.has(normalizeFsPath(cwd))) {
+    throw httpStatusError(403, "Workspace is not visible in Codex Desktop");
+  }
+  const sourceThreadId = String(body.sourceThreadId || "").trim();
+  const sourceThreadTitle = String(body.sourceThreadTitle || "").trim();
+  const archiveSourceThread = Boolean(body.archiveSourceThread && sourceThreadId);
+  const desiredTitle = newThreadTitle({ cwd, sourceThreadTitle });
+  progress("source-snapshot", "正在读取源线程摘要", { sourceThreadId });
+  const sourceSnapshot = await continuationSourceSnapshot(sourceThreadId, sourceThreadTitle, visibility);
+  const runtimeSettings = applyPermissionModeOverride(sourceSnapshot.runtimeSettings || {}, body.permissionMode, cwd);
+  progress("handoff", "正在生成源线程交接文件", { sourceThreadId });
+  const sourceHandoff = await createSourceContinuationHandoff({
+    cwd,
+    sourceThreadId,
+    sourceThreadTitle,
+    runtimeSettings,
+    model: body.model || null,
+    effort: body.effort || null,
+    onProgress: progress,
+  });
+  if (job && sourceHandoff) {
+    job.sourceHandoff = {
+      id: sourceHandoff.id,
+      path: sourceHandoff.path,
+      relativePath: sourceHandoff.relativePath,
+      chars: sourceHandoff.chars || 0,
+      turnId: sourceHandoff.turnId || "",
+      turnCompletion: sourceHandoff.turnCompletion || null,
+    };
+  }
+  progress("thread-start", "正在创建续接线程");
+  const params = applyStartThreadRuntimeSettings({
+    cwd,
+    model: body.model || null,
+    modelProvider: null,
+    config: {},
+    developerInstructions: readStartThreadDeveloperInstructions(cwd) || "",
+    personality: null,
+    ephemeral: null,
+    dynamicTools: null,
+    mockExperimentalField: null,
+    experimentalRawEvents: false,
+    persistExtendedHistory: true,
+  }, runtimeSettings);
+  const result = await codex.request("thread/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+  const threadId = threadIdFromStartResult(result);
+  if (job) job.threadId = threadId;
+  progress("title", "正在设置续接线程标题", { threadId });
+  const titleUpdatedBeforeBootstrap = await tryUpdateThreadTitle(threadId, desiredTitle).catch(() => false);
+  const bootstrapParams = applyTurnRuntimeSettings({
+    threadId,
+    input: newThreadBootstrapInput({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff }),
+    cwd,
+    model: body.model || null,
+    summary: "auto",
+  }, runtimeSettings);
+  if (body.effort) bootstrapParams.effort = body.effort;
+  progress("bootstrap", "正在写入续接启动上下文", { threadId });
+  const bootstrap = threadId
+    ? await codex.request("turn/start", bootstrapParams, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false })
+    : null;
+  const titleUpdatedAfterBootstrap = await tryUpdateThreadTitle(threadId, desiredTitle).catch(() => false);
+  let sourceArchive = null;
+  if (archiveSourceThread && sourceThreadId !== threadId) {
+    progress("archive-source", "正在归档旧线程", { threadId, sourceThreadId });
+    try {
+      sourceArchive = {
+        archived: true,
+        threadId: sourceThreadId,
+        result: await archiveVisibleThread(sourceThreadId, visibility),
+      };
+    } catch (err) {
+      sourceArchive = {
+        archived: false,
+        threadId: sourceThreadId,
+        error: err.message || String(err),
+      };
+    }
+  }
+  if (job) job.sourceArchive = sourceArchive;
+  const thread = rememberStartedThread(annotateThreadRolloutStats(Object.assign(
+    {},
+    (result && result.thread) || (result && result.data && result.data.thread) || {},
+    {
+      id: threadId,
+      name: desiredTitle,
+      preview: desiredTitle,
+      cwd,
+      status: { type: "active" },
+      turns: [],
+      mobileReadMode: "continuation-bootstrap",
+    },
+  )));
+  return {
+    ok: true,
+    threadId,
+    thread,
+    title: desiredTitle,
+    titleUpdated: Boolean(titleUpdatedBeforeBootstrap || titleUpdatedAfterBootstrap),
+    sourceArchive,
+    sourceContextWarnings: sourceSnapshot.readWarnings || [],
+    sourceHandoff: sourceHandoff ? {
+      id: sourceHandoff.id,
+      path: sourceHandoff.path,
+      relativePath: sourceHandoff.relativePath,
+      chars: sourceHandoff.chars || 0,
+      turnId: sourceHandoff.turnId || "",
+      turnCompletion: sourceHandoff.turnCompletion || null,
+    } : null,
+    continuationContextChars: bootstrapParams
+      && Array.isArray(bootstrapParams.input)
+      && bootstrapParams.input[0]
+      ? String(bootstrapParams.input[0].text || "").length
+      : 0,
+    bootstrap,
+    result,
+  };
+}
+
+function createContinuationJob(body) {
+  pruneContinuationJobs();
+  const sourceKey = continuationJobSourceKey(body);
+  const activeJobId = sourceKey ? activeContinuationJobsBySource.get(sourceKey) : "";
+  const activeJob = activeJobId ? continuationJobs.get(activeJobId) : null;
+  if (activeJob && ["queued", "running"].includes(activeJob.status)) {
+    return activeJob;
+  }
+  const now = Date.now();
+  const job = {
+    id: crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString("hex"),
+    status: "queued",
+    step: "queued",
+    message: "续接任务已创建",
+    body: Object.assign({}, body),
+    sourceThreadId: String(body.sourceThreadId || "").trim(),
+    sourceKey,
+    threadId: "",
+    sourceArchive: null,
+    sourceHandoff: null,
+    result: null,
+    error: "",
+    createdAt: now,
+    updatedAt: now,
+  };
+  continuationJobs.set(job.id, job);
+  if (sourceKey) activeContinuationJobsBySource.set(sourceKey, job.id);
+  logContinuation("queued", { jobId: job.id, sourceThreadId: job.sourceThreadId, cwd: body.cwd });
+  setImmediate(() => runContinuationJob(job));
+  return job;
+}
+
+async function runContinuationJob(job) {
+  try {
+    updateContinuationJob(job, { status: "running", step: "start", message: "续接任务开始执行" });
+    const result = await startThreadFromRequestBody(job.body, { job });
+    updateContinuationJob(job, {
+      status: "done",
+      step: "done",
+      message: result.sourceArchive && result.sourceArchive.error
+        ? `续接线程已就绪；归档失败：${result.sourceArchive.error}`
+        : "续接线程已就绪",
+      threadId: result.threadId || job.threadId,
+      sourceArchive: result.sourceArchive || job.sourceArchive,
+      sourceHandoff: result.sourceHandoff || job.sourceHandoff,
+      result,
+    });
+  } catch (err) {
+    updateContinuationJob(job, {
+      status: "failed",
+      step: "failed",
+      message: "续接任务失败",
+      error: err.message || String(err),
+    });
+  } finally {
+    if (job.sourceKey && activeContinuationJobsBySource.get(job.sourceKey) === job.id) {
+      activeContinuationJobsBySource.delete(job.sourceKey);
+    }
+  }
 }
 
 function isUnmaterializedThreadError(err) {
@@ -3557,114 +3948,31 @@ async function handleApi(req, res) {
     sendJson(res, 200, { data: await listWorkspaces() });
     return;
   }
+  if (url.pathname === "/api/thread-continuations" && req.method === "POST") {
+    const body = await readBody(req);
+    const job = createContinuationJob(body);
+    sendJson(res, 202, publicContinuationJob(job));
+    return;
+  }
+  const continuationJobMatch = url.pathname.match(/^\/api\/thread-continuations\/([^/]+)$/);
+  if (continuationJobMatch && req.method === "GET") {
+    pruneContinuationJobs();
+    const jobId = decodeURIComponent(continuationJobMatch[1]);
+    const job = continuationJobs.get(jobId);
+    if (!job) {
+      sendJson(res, 404, { error: "Continuation job not found" });
+      return;
+    }
+    sendJson(res, 200, publicContinuationJob(job));
+    return;
+  }
   if (url.pathname === "/api/threads" && req.method === "POST") {
     const body = await readBody(req);
-    const cwd = String(body.cwd || "").trim();
-    if (!cwd) {
-      sendJson(res, 400, { error: "Workspace is required to start a new thread" });
-      return;
+    try {
+      sendJson(res, 200, await startThreadFromRequestBody(body));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { error: err.message || String(err) });
     }
-    const globalState = readGlobalState();
-    const visibility = visibilityFromGlobalState(globalState);
-    if (visibility.workspaceKeys.size > 0 && !visibility.workspaceKeys.has(normalizeFsPath(cwd))) {
-      sendJson(res, 403, { error: "Workspace is not visible in Codex Desktop" });
-      return;
-    }
-    const sourceThreadId = String(body.sourceThreadId || "").trim();
-    const sourceThreadTitle = String(body.sourceThreadTitle || "").trim();
-    const archiveSourceThread = Boolean(body.archiveSourceThread && sourceThreadId);
-    const desiredTitle = newThreadTitle({ cwd, sourceThreadTitle });
-    const sourceSnapshot = await continuationSourceSnapshot(sourceThreadId, sourceThreadTitle, visibility);
-    const runtimeSettings = applyPermissionModeOverride(sourceSnapshot.runtimeSettings || {}, body.permissionMode, cwd);
-    const sourceHandoff = await createSourceContinuationHandoff({
-      cwd,
-      sourceThreadId,
-      sourceThreadTitle,
-      runtimeSettings,
-      model: body.model || null,
-      effort: body.effort || null,
-    });
-    const params = applyStartThreadRuntimeSettings({
-      cwd,
-      model: body.model || null,
-      modelProvider: null,
-      config: {},
-      developerInstructions: readStartThreadDeveloperInstructions(cwd) || "",
-      personality: null,
-      ephemeral: null,
-      dynamicTools: null,
-      mockExperimentalField: null,
-      experimentalRawEvents: false,
-      persistExtendedHistory: true,
-    }, runtimeSettings);
-    const result = await codex.request("thread/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
-    const threadId = threadIdFromStartResult(result);
-    const titleUpdatedBeforeBootstrap = await tryUpdateThreadTitle(threadId, desiredTitle).catch(() => false);
-    const bootstrapParams = applyTurnRuntimeSettings({
-      threadId,
-      input: newThreadBootstrapInput({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff }),
-      cwd,
-      model: body.model || null,
-      summary: "auto",
-    }, runtimeSettings);
-    if (body.effort) bootstrapParams.effort = body.effort;
-    const bootstrap = threadId
-      ? await codex.request("turn/start", bootstrapParams, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false })
-      : null;
-    const titleUpdatedAfterBootstrap = await tryUpdateThreadTitle(threadId, desiredTitle).catch(() => false);
-    let sourceArchive = null;
-    if (archiveSourceThread && sourceThreadId !== threadId) {
-      try {
-        sourceArchive = {
-          archived: true,
-          threadId: sourceThreadId,
-          result: await archiveVisibleThread(sourceThreadId, visibility),
-        };
-      } catch (err) {
-        sourceArchive = {
-          archived: false,
-          threadId: sourceThreadId,
-          error: err.message || String(err),
-        };
-      }
-    }
-    const thread = rememberStartedThread(annotateThreadRolloutStats(Object.assign(
-      {},
-      (result && result.thread) || (result && result.data && result.data.thread) || {},
-      {
-        id: threadId,
-        name: desiredTitle,
-        preview: desiredTitle,
-        cwd,
-        status: { type: "active" },
-        turns: [],
-        mobileReadMode: "continuation-bootstrap",
-      },
-    )));
-    sendJson(res, 200, {
-      ok: true,
-      threadId,
-      thread,
-      title: desiredTitle,
-      titleUpdated: Boolean(titleUpdatedBeforeBootstrap || titleUpdatedAfterBootstrap),
-      sourceArchive,
-      sourceContextWarnings: sourceSnapshot.readWarnings || [],
-      sourceHandoff: sourceHandoff ? {
-        id: sourceHandoff.id,
-        path: sourceHandoff.path,
-        relativePath: sourceHandoff.relativePath,
-        chars: sourceHandoff.chars || 0,
-        turnId: sourceHandoff.turnId || "",
-        turnCompletion: sourceHandoff.turnCompletion || null,
-      } : null,
-      continuationContextChars: bootstrapParams
-        && Array.isArray(bootstrapParams.input)
-        && bootstrapParams.input[0]
-        ? String(bootstrapParams.input[0].text || "").length
-        : 0,
-      bootstrap,
-      result,
-    });
     return;
   }
   if (url.pathname === "/api/threads" && req.method === "GET") {
@@ -3779,92 +4087,97 @@ async function handleApi(req, res) {
       threadLog("complete", { status: 200, mode: "summary-large-rollout-fallback" });
       return;
     }
-    const turnsStartedAtMs = Date.now();
-    threadLog("turns_list_start", {
-      limit: MAX_THREAD_TURNS,
-      timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS,
+    const readStartedAtMs = Date.now();
+    threadLog("thread_read_start", {
+      timeoutMs: READ_RPC_TIMEOUT_MS,
+      maxTurns: MAX_FULL_THREAD_TURNS,
     });
     try {
-      const turnsResult = await codex.request("thread/turns/list", {
-        threadId,
-        limit: MAX_THREAD_TURNS,
-        sortDirection: "desc",
-      }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS, retry: false, resetOnTimeout: false });
-      const result = compactThreadReadResult({ thread: threadFromTurnsList(threadId, summary, turnsResult) });
-      if (result.thread) result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
+      const result = compactThreadReadResult(await codex.request("thread/read", { threadId, includeTurns: true }, {
+        timeoutMs: READ_RPC_TIMEOUT_MS,
+        retry: false,
+        resetOnTimeout: false,
+      }), { maxTurns: MAX_FULL_THREAD_TURNS });
+      if (result.thread) {
+        result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
+        result.thread.mobileReadMode = "thread-read";
+      }
       if (isHiddenThread(result.thread, visibility)) {
-        threadLog("turns_list_hidden", {
-          durationMs: Date.now() - turnsStartedAtMs,
+        threadLog("thread_read_hidden", {
+          durationMs: Date.now() - readStartedAtMs,
           status: 404,
         });
         sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
         return;
       }
-      threadLog("turns_list_ok", {
-        durationMs: Date.now() - turnsStartedAtMs,
+      threadLog("thread_read_ok", {
+        durationMs: Date.now() - readStartedAtMs,
         returnedTurns: result.thread && Array.isArray(result.thread.turns) ? result.thread.turns.length : null,
-        mode: result.thread && result.thread.mobileReadMode ? result.thread.mobileReadMode : "turns-list",
+        omittedTurns: result.thread && result.thread.mobileOmittedTurnCount ? result.thread.mobileOmittedTurnCount : 0,
       });
       sendJson(res, 200, result);
-      threadLog("complete", { status: 200, mode: "turns-list" });
-    } catch (turnsErr) {
-      threadLog("turns_list_error", {
-        durationMs: Date.now() - turnsStartedAtMs,
-        timeout: isReadTimeoutError(turnsErr),
-        error: turnsErr.message || String(turnsErr),
+      threadLog("complete", { status: 200, mode: "thread-read" });
+    } catch (readErr) {
+      threadLog("thread_read_error", {
+        durationMs: Date.now() - readStartedAtMs,
+        timeout: isReadTimeoutError(readErr),
+        error: readErr.message || String(readErr),
       });
-      if (isUnmaterializedThreadError(turnsErr)) {
-        sendJson(res, 200, fallbackThreadReadResult(threadId, summary, runtimeSettings, turnsErr.message || String(turnsErr), "unmaterialized"));
-        threadLog("complete", { status: 200, mode: "unmaterialized" });
-        return;
-      }
-
-      if (isReadTimeoutError(turnsErr)) {
-        sendJson(res, 200, fallbackThreadReadResult(threadId, summary, runtimeSettings, turnsErr.message || String(turnsErr), "summary-timeout-fallback"));
-        threadLog("complete", { status: 200, mode: "summary-timeout-fallback" });
-        return;
-      }
-
-      const readStartedAtMs = Date.now();
-      threadLog("thread_read_start", {
-        timeoutMs: READ_RPC_TIMEOUT_MS,
+      const turnsStartedAtMs = Date.now();
+      threadLog("turns_list_start", {
+        limit: MAX_THREAD_TURNS,
+        timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS,
+        fallbackFrom: "thread-read",
       });
       try {
-        const result = compactThreadReadResult(await codex.request("thread/read", { threadId, includeTurns: true }, {
-          timeoutMs: READ_RPC_TIMEOUT_MS,
-          retry: false,
-          resetOnTimeout: false,
-        }));
+        const turnsResult = await codex.request("thread/turns/list", {
+          threadId,
+          limit: MAX_THREAD_TURNS,
+          sortDirection: "desc",
+        }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS, retry: false, resetOnTimeout: false });
+        const result = compactThreadReadResult({ thread: threadFromTurnsList(threadId, summary, turnsResult) });
         if (result.thread) result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
         if (isHiddenThread(result.thread, visibility)) {
-          threadLog("thread_read_hidden", {
-            durationMs: Date.now() - readStartedAtMs,
+          threadLog("turns_list_hidden", {
+            durationMs: Date.now() - turnsStartedAtMs,
             status: 404,
           });
           sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
           return;
         }
-        result.mobileReadWarning = turnsErr.message || String(turnsErr);
-        threadLog("thread_read_ok", {
-          durationMs: Date.now() - readStartedAtMs,
+        threadLog("turns_list_ok", {
+          durationMs: Date.now() - turnsStartedAtMs,
           returnedTurns: result.thread && Array.isArray(result.thread.turns) ? result.thread.turns.length : null,
-          warning: result.mobileReadWarning,
+          mode: result.thread && result.thread.mobileReadMode ? result.thread.mobileReadMode : "turns-list",
         });
+        result.mobileReadWarning = `thread/read failed: ${readErr.message || String(readErr)}`;
+        if (result.thread) result.thread.mobileReadWarning = result.mobileReadWarning;
         sendJson(res, 200, result);
-        threadLog("complete", { status: 200, mode: "thread-read-fallback" });
-      } catch (readErr) {
-        const mode = isReadTimeoutError(readErr) ? "summary-timeout-fallback" : "summary-error-fallback";
-        threadLog("thread_read_error", {
-          durationMs: Date.now() - readStartedAtMs,
-          timeout: isReadTimeoutError(readErr),
-          mode,
-          error: readErr.message || String(readErr),
+        threadLog("complete", { status: 200, mode: "turns-list" });
+      } catch (turnsErr) {
+        threadLog("turns_list_error", {
+          durationMs: Date.now() - turnsStartedAtMs,
+          timeout: isReadTimeoutError(turnsErr),
+          error: turnsErr.message || String(turnsErr),
         });
+        if (isUnmaterializedThreadError(turnsErr)) {
+          sendJson(res, 200, fallbackThreadReadResult(threadId, summary, runtimeSettings, turnsErr.message || String(turnsErr), "unmaterialized"));
+          threadLog("complete", { status: 200, mode: "unmaterialized" });
+          return;
+        }
+
+        if (isReadTimeoutError(turnsErr)) {
+          sendJson(res, 200, fallbackThreadReadResult(threadId, summary, runtimeSettings, turnsErr.message || String(turnsErr), "summary-timeout-fallback"));
+          threadLog("complete", { status: 200, mode: "summary-timeout-fallback" });
+          return;
+        }
+
+        const mode = isReadTimeoutError(turnsErr) ? "summary-timeout-fallback" : "summary-error-fallback";
         sendJson(res, 200, fallbackThreadReadResult(
           threadId,
           summary,
           runtimeSettings,
-          `${turnsErr.message || String(turnsErr)}; thread/read failed: ${readErr.message || String(readErr)}`,
+          `thread/read failed: ${readErr.message || String(readErr)}; thread/turns/list failed: ${turnsErr.message || String(turnsErr)}`,
           mode,
         ));
         threadLog("complete", { status: 200, mode });
@@ -4056,7 +4369,11 @@ function shutdown() {
 function startServer() {
   server.listen(PORT, HOST, () => {
     console.log(`Codex Mobile Web listening on http://${HOST}:${PORT}`);
-    console.log(`Codex app-server will be managed on 127.0.0.1 when first used.`);
+    if (REQUIRE_SHARED_APP_SERVER) {
+      console.log(`Codex Mobile Web requires a shared app-server endpoint: ${MUX_ENDPOINT_FILE}`);
+    } else {
+      console.log(`Codex app-server will be managed on 127.0.0.1 when first used.`);
+    }
     console.log(DISABLE_AUTH ? "Authentication disabled by CODEX_MOBILE_DISABLE_AUTH." : `Authentication enabled; key source is env CODEX_MOBILE_KEY or ${AUTH_KEY_FILE}.`);
   });
 }
