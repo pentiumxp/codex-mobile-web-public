@@ -72,7 +72,7 @@ const STARTED_THREAD_CACHE_TTL_MS = Math.max(60_000, Number(process.env.CODEX_MO
 const STARTED_THREAD_CACHE_MAX = Math.max(10, Number(process.env.CODEX_MOBILE_STARTED_THREAD_CACHE_MAX || "80"));
 const MAX_ROLLOUT_CONTEXT_BYTES = Math.max(256 * 1024, Number(process.env.CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES || String(4 * 1024 * 1024)));
 const MAX_RUNTIME_CONTEXT_SCAN_BYTES = Math.max(MAX_ROLLOUT_CONTEXT_BYTES, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_SCAN_BYTES || String(512 * 1024 * 1024)));
-const ROLLOUT_WARNING_BYTES = Math.max(1 * 1024 * 1024, Number(process.env.CODEX_MOBILE_ROLLOUT_WARNING_BYTES || String(100 * 1024 * 1024)));
+const ROLLOUT_WARNING_BYTES = Math.max(1 * 1024 * 1024, Number(process.env.CODEX_MOBILE_ROLLOUT_WARNING_BYTES || String(200 * 1024 * 1024)));
 const THREAD_DETAIL_ROLLOUT_MAX_BYTES = Math.max(
   1 * 1024 * 1024,
   Number(process.env.CODEX_MOBILE_THREAD_DETAIL_ROLLOUT_MAX_BYTES || String(ROLLOUT_WARNING_BYTES)),
@@ -3721,6 +3721,37 @@ function fallbackThreadReadResult(threadId, summary, runtimeSettings, warning, m
   };
 }
 
+async function turnsListThreadReadResult(threadId, summary, runtimeSettings, warning, mode = "turns-list", threadLog = null) {
+  const startedAtMs = Date.now();
+  if (threadLog) {
+    threadLog("turns_list_start", {
+      limit: MAX_THREAD_TURNS,
+      timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS,
+      fallbackFrom: mode,
+    });
+  }
+  const turnsResult = await codex.request("thread/turns/list", {
+    threadId,
+    limit: MAX_THREAD_TURNS,
+    sortDirection: "desc",
+  }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS, retry: false, resetOnTimeout: false });
+  const result = compactThreadReadResult({ thread: threadFromTurnsList(threadId, summary, turnsResult) });
+  if (result.thread) {
+    result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
+    result.thread.mobileReadMode = mode;
+    result.thread.mobileReadWarning = warning || "";
+  }
+  result.mobileReadWarning = warning || "";
+  if (threadLog) {
+    threadLog("turns_list_ok", {
+      durationMs: Date.now() - startedAtMs,
+      returnedTurns: result.thread && Array.isArray(result.thread.turns) ? result.thread.turns.length : null,
+      mode,
+    });
+  }
+  return result;
+}
+
 function filterFallbackThreads(threads, filters = {}) {
   const globalState = filters.globalState || readGlobalState();
   const visibility = visibilityFromGlobalState(globalState);
@@ -4073,18 +4104,34 @@ async function handleApi(req, res) {
     }
     if (summary && shouldSkipThreadDetailRpc(summary)) {
       threadLog("skip_detail_rpc", {
-        mode: "summary-large-rollout-fallback",
+        mode: "large-rollout-turns-list",
         rolloutSizeBytes: threadRolloutSizeBytes(summary),
         thresholdBytes: THREAD_DETAIL_ROLLOUT_MAX_BYTES,
       });
-      sendJson(res, 200, fallbackThreadReadResult(
-        threadId,
-        summary,
-        runtimeSettings,
-        threadDetailTooLargeWarning(summary),
-        "summary-large-rollout-fallback",
-      ));
-      threadLog("complete", { status: 200, mode: "summary-large-rollout-fallback" });
+      try {
+        const result = await turnsListThreadReadResult(threadId, summary, runtimeSettings, "", "large-rollout-turns-list", threadLog);
+        if (isHiddenThread(result.thread, visibility)) {
+          threadLog("turns_list_hidden", { status: 404, mode: "large-rollout-turns-list" });
+          sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
+          return;
+        }
+        sendJson(res, 200, result);
+        threadLog("complete", { status: 200, mode: "large-rollout-turns-list" });
+      } catch (turnsErr) {
+        threadLog("turns_list_error", {
+          timeout: isReadTimeoutError(turnsErr),
+          error: turnsErr.message || String(turnsErr),
+          fallbackFrom: "large-rollout-turns-list",
+        });
+        if (isUnmaterializedThreadError(turnsErr)) {
+          sendJson(res, 200, fallbackThreadReadResult(threadId, summary, runtimeSettings, turnsErr.message || String(turnsErr), "unmaterialized"));
+          threadLog("complete", { status: 200, mode: "unmaterialized" });
+          return;
+        }
+        const fallbackWarning = `large rollout; thread/turns/list failed: ${turnsErr.message || String(turnsErr)}`;
+        sendJson(res, 200, fallbackThreadReadResult(threadId, summary, runtimeSettings, fallbackWarning, "summary-large-rollout-fallback"));
+        threadLog("complete", { status: 200, mode: "summary-large-rollout-fallback" });
+      }
       return;
     }
     const readStartedAtMs = Date.now();
@@ -4130,13 +4177,14 @@ async function handleApi(req, res) {
         fallbackFrom: "thread-read",
       });
       try {
-        const turnsResult = await codex.request("thread/turns/list", {
+        const result = await turnsListThreadReadResult(
           threadId,
-          limit: MAX_THREAD_TURNS,
-          sortDirection: "desc",
-        }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS, retry: false, resetOnTimeout: false });
-        const result = compactThreadReadResult({ thread: threadFromTurnsList(threadId, summary, turnsResult) });
-        if (result.thread) result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
+          summary,
+          runtimeSettings,
+          `thread/read failed: ${readErr.message || String(readErr)}`,
+          "turns-list",
+          null,
+        );
         if (isHiddenThread(result.thread, visibility)) {
           threadLog("turns_list_hidden", {
             durationMs: Date.now() - turnsStartedAtMs,
@@ -4150,8 +4198,6 @@ async function handleApi(req, res) {
           returnedTurns: result.thread && Array.isArray(result.thread.turns) ? result.thread.turns.length : null,
           mode: result.thread && result.thread.mobileReadMode ? result.thread.mobileReadMode : "turns-list",
         });
-        result.mobileReadWarning = `thread/read failed: ${readErr.message || String(readErr)}`;
-        if (result.thread) result.thread.mobileReadWarning = result.mobileReadWarning;
         sendJson(res, 200, result);
         threadLog("complete", { status: 200, mode: "turns-list" });
       } catch (turnsErr) {

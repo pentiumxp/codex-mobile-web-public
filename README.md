@@ -325,16 +325,18 @@ Behavior:
 ## Interface Notes
 
 - Home view shows recent workspaces and recent threads.
-- Thread lists and thread detail monitor rollout JSONL size. At the default `100MB` threshold, Mobile Web shows a context-size warning and offers a same-workspace continuation action. After user confirmation, the action first asks the source thread to write a thread-specific handoff file, creates a source-named/date-suffixed continuation thread, sends a scoped bootstrap message, then archives the source thread.
-- The continuation bootstrap message explicitly carries source thread metadata, rollout size, inherited runtime settings, the source-thread-generated handoff file, recent visible turn summaries, and current-workspace `.agent-context/PROJECT_CONTEXT.md` / `.agent-context/HANDOFF.md` excerpts. It does not inject fixed release rules from unrelated threads; those appear only if the current workspace context or source-thread handoff says they are relevant.
+- The sidebar menu header includes a compact font-size selector (`小字` / `标准` / `大字` / `特大` / `超大`). The choice is saved in the browser and adjusts conversation text, markdown, code/table content, approval details, and the composer input.
+- On phones and tablet-sized/touch layouts, the sidebar menu is not persistent: the main conversation fills the viewport, and the menu opens only after the user taps the top-left menu button. Wide desktop layouts keep the persistent sidebar.
+- Thread lists and thread detail monitor rollout JSONL size. At the default `200MB` threshold, Mobile Web shows a context-size warning and offers a same-workspace continuation action. The warning can be skipped for the current thread size, and will reappear if that thread grows again past the stored size. After user confirmation, the action first asks the source thread to write a thread-specific handoff file, creates a source-named/date-suffixed continuation thread, sends a scoped bootstrap message, then archives the source thread.
+- The continuation bootstrap message explicitly carries source thread metadata, rollout size, inherited runtime settings, the source-thread-generated handoff file, recent visible turn summaries, and current-workspace `.agent-context/PROJECT_CONTEXT.md` / `.agent-context/HANDOFF.md` excerpts. It does not inject fixed private/public GitHub release rules; those appear only if the current workspace context or source-thread handoff says they are relevant.
 - Thread list rows support a left-swipe action to reveal `压缩续接` for any visible thread, so users can proactively continue before the rollout reaches the warning threshold.
 - The left-swipe action stays open after a horizontal swipe until the user taps the card, taps the action, opens another row, or refreshes the list. Mobile browsers can emit a synthetic click after touch gestures, so the UI suppresses that same-gesture click to avoid immediately closing the action.
 
 ### Rollout 压缩续接
 
-当线程的 rollout JSONL 达到阈值时，界面按钮显示为“压缩续接”。确认后，Mobile Web 会先在旧线程中启动一个交接整理 turn，要求旧线程把本线程真实的交接重点写入当前工作区的 `.agent-context/thread-handoffs/<id>.md` 文件。该文件必须只总结源线程和当前工作区相关的目标、已完成事项、未完成事项、关键文件、验证结果和风险。
+当线程的 rollout JSONL 达到阈值时，界面按钮显示为“压缩续接”。默认阈值是 `200MB`，可用 `CODEX_MOBILE_ROLLOUT_WARNING_BYTES` 覆盖。详情页提示可以点“跳过”暂时隐藏；隐藏记录按“线程 id + 当前 rollout 大小”保存，因此该线程继续增长后会再次提示。确认“压缩续接”后，Mobile Web 会先在旧线程中启动一个交接整理 turn，要求旧线程把本线程真实的交接重点写入当前工作区的 `.agent-context/thread-handoffs/<id>.md` 文件。该文件必须只总结源线程和当前工作区相关的目标、已完成事项、未完成事项、关键文件、验证结果和风险。
 
-旧线程写出交接文件后，Mobile Web 会尽量确认旧线程交接 turn 已完成，然后才创建同工作区的新续接线程，并在首条 bootstrap 消息中带入源线程 ID、标题、工作区、rollout 路径和大小、运行权限摘要、源线程交接文件、最近源线程上下文，以及当前工作区 `.agent-context/PROJECT_CONTEXT.md` / `.agent-context/HANDOFF.md` 摘录。bootstrap 不再固定注入其他工作区的发布或提交规则；只有当前工作区上下文或源线程交接文件明确涉及这些规则时，新线程才应加载它们。前端不会为了发起续接而强制打开源线程，避免源线程过大时先卡在 thread detail 读取；续接任务会通过 job 状态显示当前阶段，手机页面刷新后也会用本地保存的 job id 尝试恢复查询，完成后自动切到新线程。
+旧线程写出交接文件后，Mobile Web 会尽量确认旧线程交接 turn 已完成，然后才创建同工作区的新续接线程，并在首条 bootstrap 消息中带入源线程 ID、标题、工作区、rollout 路径和大小、运行权限摘要、源线程交接文件、最近源线程上下文，以及当前工作区 `.agent-context/PROJECT_CONTEXT.md` / `.agent-context/HANDOFF.md` 摘录。bootstrap 不再固定注入其他工作区或无关线程的发布/提交规则；只有当前工作区上下文或源线程交接文件明确涉及这些规则时，新线程才应加载它们。前端不会为了发起续接而强制打开源线程，避免源线程过大时先卡在 thread detail 读取；续接任务会通过 job 状态显示当前阶段，手机页面刷新后也会用本地保存的 job id 尝试恢复查询，完成后自动切到新线程。
 
 这个动作不会原地改写或裁剪旧 rollout 文件；它通过“源线程写交接文件 + 新续接线程 + 旧线程归档”降低后续交互需要读取的历史文件体积。旧线程在交接文件生成且续接线程启动成功后才会归档，仍可从归档记录中找回。首条 bootstrap 会要求新线程先读取源线程交接文件，再读取工作区持久上下文，并显式避免确认与当前工作区无关的发布或提交规则。
 
@@ -717,7 +719,7 @@ Notification behavior:
 - Turn-completed notifications bind `turn/started` metadata by turn id, then reuse that thread id and title on `turn/completed`. This avoids a completion notification from one shared-thread stream being labeled with another thread's title.
 - Clicking a notification opens Mobile Web and switches to the relevant thread when the thread id is available. The service worker sends a `codex-open-thread` message to an already-open Mobile Web window, so an installed iOS/PWA session does not have to rely on a full browser navigation to change threads.
 - 中文说明：通知 payload 会带 `/?thread=<threadId>`。如果 Mobile Web 已经打开，service worker 会聚焦现有窗口并把目标线程 ID 发给前端，前端收到后直接保存当前线程并调用线程详情加载接口；如果没有现有窗口，则打开带线程参数的新窗口。这样点击 Web Push 后应进入对应线程，而不是只回到上一次停留的线程。
-- 中文说明：任务完成通知的标题直接使用完成任务所在的线程名，正文只显示完成状态和本地时间。服务端会在 `turn/started` 时记录 turn id 对应的线程 id 和标题，在 `turn/completed` 时复用这份绑定，避免一个线程的完成事件被标成另一个线程。
+- 中文说明：任务完成通知的标题直接使用完成任务所在的线程名，正文只显示完成状态和本地时间。服务端会在 `turn/started` 时记录 turn id 对应的线程 id 和标题，在 `turn/completed` 时复用这份绑定，避免其他线程的完成事件被标成 Codex Mobile 等不相关线程。
 
 VAPID details:
 
@@ -744,7 +746,7 @@ VAPID details:
 | `CODEX_MOBILE_THREAD_TURNS` | Number of recent turns returned to the phone when Mobile Web falls back to `thread/turns/list`, default `12`. |
 | `CODEX_MOBILE_FULL_THREAD_TURNS` | Number of turns returned after normal-size sessions are fully read with `thread/read`, default `80`, capped at `200`. |
 | `CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES` | Tail bytes read from a thread rollout to recover inherited turn runtime settings, default `4194304`. |
-| `CODEX_MOBILE_ROLLOUT_WARNING_BYTES` | Rollout JSONL size threshold for UI warnings and the continuation action, default `104857600` (`100MB`). |
+| `CODEX_MOBILE_ROLLOUT_WARNING_BYTES` | Rollout JSONL size threshold for UI warnings and the continuation action, default `209715200` (`200MB`). |
 | `CODEX_MOBILE_THREAD_DETAIL_ROLLOUT_MAX_BYTES` | Rollout JSONL size threshold where Mobile Web skips expensive thread-detail RPCs and shows local summary fallback, default equals `CODEX_MOBILE_ROLLOUT_WARNING_BYTES`. |
 | `CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS` | Max characters in the rollout continuation bootstrap message, default `120000`. |
 | `CODEX_MOBILE_CONTINUATION_RECENT_TURNS` | Recent source turns summarized into the continuation bootstrap, default `12`, capped at `30`. |

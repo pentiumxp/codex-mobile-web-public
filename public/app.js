@@ -60,6 +60,8 @@ const state = {
   pendingApprovals: new Map(),
   runningThreadIds: loadStringSetStorage("codexMobileRunningThreadIds"),
   unreadThreadIds: loadStringSetStorage("codexMobileUnreadThreadIds"),
+  rolloutWarningDismissals: loadStringSetStorage("codexMobileDismissedRolloutWarnings"),
+  fontSize: localStorage.getItem("codexMobileFontSize") || "default",
   selectedModel: localStorage.getItem("codexMobileSelectedModel") || "",
   selectedEffort: localStorage.getItem("codexMobileSelectedEffort") || "",
   selectedPermissionModes: loadJsonStorage("codexMobileSelectedPermissionModes", {}),
@@ -80,6 +82,10 @@ const STORAGE_PERMISSION_MODES = "codexMobileSelectedPermissionModes";
 const STORAGE_CONTINUATION_JOB = "codexMobileContinuationJobId";
 const STORAGE_RUNNING_THREAD_IDS = "codexMobileRunningThreadIds";
 const STORAGE_UNREAD_THREAD_IDS = "codexMobileUnreadThreadIds";
+const STORAGE_DISMISSED_ROLLOUT_WARNINGS = "codexMobileDismissedRolloutWarnings";
+const STORAGE_FONT_SIZE = "codexMobileFontSize";
+const FONT_SIZE_VALUES = new Set(["small", "default", "large", "xlarge", "xxlarge"]);
+const MENU_OVERLAY_MEDIA = "(max-width: 1180px), (pointer: coarse) and (max-width: 1400px)";
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
 const HIDDEN_SERVER_REQUEST_METHODS = new Set(["item/tool/call"]);
 const USER_INPUT_REQUEST_METHODS = new Set(["item/tool/requestUserInput", "mcpServer/elicitation/request"]);
@@ -116,6 +122,36 @@ function saveStringSetStorage(key, value) {
   } catch (_) {
     // Status hints are best-effort UI state.
   }
+}
+
+function normalizeFontSizeValue(value) {
+  const normalized = String(value || "default").trim().toLowerCase();
+  return FONT_SIZE_VALUES.has(normalized) ? normalized : "default";
+}
+
+function applyFontSizePreference() {
+  state.fontSize = normalizeFontSizeValue(state.fontSize);
+  document.documentElement.dataset.fontSize = state.fontSize;
+}
+
+function renderFontSizeControl() {
+  const select = $("fontSizeSelect");
+  if (!select) return;
+  select.value = normalizeFontSizeValue(state.fontSize);
+}
+
+function setFontSizePreference(value) {
+  state.fontSize = normalizeFontSizeValue(value);
+  if (state.fontSize === "default") localStorage.removeItem(STORAGE_FONT_SIZE);
+  else localStorage.setItem(STORAGE_FONT_SIZE, state.fontSize);
+  applyFontSizePreference();
+  renderFontSizeControl();
+  const input = $("messageInput");
+  if (input) autoSizeMessageInput(input);
+}
+
+function isMenuOverlayMode() {
+  return window.matchMedia(MENU_OVERLAY_MEDIA).matches;
 }
 
 function viewportHeight() {
@@ -322,6 +358,25 @@ function isRolloutOverThreshold(thread) {
   const size = rolloutSizeBytes(thread);
   const threshold = rolloutThresholdBytes(thread);
   return Boolean(thread && thread.rolloutOverWarningThreshold) || (size > 0 && threshold > 0 && size >= threshold);
+}
+
+function rolloutWarningDismissKey(thread) {
+  const threadId = String((thread && thread.id) || state.currentThreadId || "").trim();
+  const size = rolloutSizeBytes(thread);
+  return threadId && size > 0 ? `${threadId}|${size}` : "";
+}
+
+function isRolloutWarningDismissed(thread) {
+  const key = rolloutWarningDismissKey(thread);
+  return Boolean(key && state.rolloutWarningDismissals.has(key));
+}
+
+function dismissRolloutWarning(thread) {
+  const key = rolloutWarningDismissKey(thread);
+  if (!key) return;
+  state.rolloutWarningDismissals.add(key);
+  saveStringSetStorage(STORAGE_DISMISSED_ROLLOUT_WARNINGS, state.rolloutWarningDismissals);
+  renderCurrentThread();
 }
 
 function rolloutSizeText(thread) {
@@ -1229,6 +1284,7 @@ function conversationRenderSignature(thread) {
     threadId: state.currentThreadId || thread.id || "",
     rolloutSizeBytes: rolloutSizeBytes(thread),
     rolloutWarning: isRolloutOverThreshold(thread),
+    rolloutWarningDismissed: isRolloutWarningDismissed(thread),
     rolloutWarningThresholdBytes: rolloutThresholdBytes(thread),
     omitted,
     leavingKeys,
@@ -1798,7 +1854,7 @@ async function loadThread(threadId) {
     closeThreadActions();
     renderThreads();
     renderCurrentThread();
-    if (window.matchMedia("(max-width: 760px)").matches) $("sidebar").classList.remove("open");
+    if (isMenuOverlayMode()) $("sidebar").classList.remove("open");
     return;
   }
   const seq = state.threadLoadSeq + 1;
@@ -1856,7 +1912,7 @@ async function loadThread(threadId) {
   restoreConnectionState();
   scheduleLivePollIfNeeded(1200);
   updateComposerControls();
-  if (window.matchMedia("(max-width: 760px)").matches) $("sidebar").classList.remove("open");
+  if (isMenuOverlayMode()) $("sidebar").classList.remove("open");
 }
 
 async function refreshCurrentThread() {
@@ -2241,6 +2297,7 @@ function renderThreadLoadError(err) {
 
 function renderRolloutWarning(thread, previousKeys = new Set()) {
   if (!isRolloutOverThreshold(thread)) return "";
+  if (isRolloutWarningDismissed(thread)) return "";
   const size = rolloutSizeText(thread);
   const threshold = formatFileSize(rolloutThresholdBytes(thread));
   const key = `rollout-warning|${thread.id || state.currentThreadId}|${rolloutSizeBytes(thread)}`;
@@ -2249,7 +2306,10 @@ function renderRolloutWarning(thread, previousKeys = new Set()) {
       <strong>上下文文件 ${escapeHtml(size)}</strong>
       <span>已达到 ${escapeHtml(threshold)} 阈值。建议压缩续接：创建带详细上下文的新线程后归档旧线程。</span>
     </div>
-    <button class="rollout-new-thread" type="button" data-new-thread-from-current>压缩续接</button>
+    <div class="rollout-warning-actions">
+      <button class="rollout-skip" type="button" data-dismiss-rollout-warning>跳过</button>
+      <button class="rollout-new-thread" type="button" data-new-thread-from-current>压缩续接</button>
+    </div>
   </div>`;
 }
 
@@ -2340,6 +2400,8 @@ function renderCurrentThread(options = {}) {
 function bindCurrentThreadActions() {
   const button = $("conversation").querySelector("[data-new-thread-from-current]");
   if (button) button.addEventListener("click", startNewThreadFromCurrent);
+  const dismiss = $("conversation").querySelector("[data-dismiss-rollout-warning]");
+  if (dismiss) dismiss.addEventListener("click", () => dismissRolloutWarning(state.currentThread));
 }
 
 function startThreadRequestBody(sourceThread = null, options = {}) {
@@ -4085,6 +4147,7 @@ function wireUi() {
   });
   $("refreshThreads").addEventListener("click", () => loadThreads().catch(showError));
   $("pushNotifications").addEventListener("click", () => handlePushButtonClick().catch(showError));
+  $("fontSizeSelect").addEventListener("change", (event) => setFontSizePreference(event.target.value));
   $("threadSearch").addEventListener("input", () => {
     clearTimeout(state.searchTimer);
     state.searchTimer = setTimeout(() => loadThreads().catch(showError), 250);
@@ -4197,6 +4260,8 @@ function wireUi() {
     addAttachmentFiles(event.dataTransfer.files);
   });
   updateViewportVars();
+  applyFontSizePreference();
+  renderFontSizeControl();
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.addEventListener("message", handleServiceWorkerMessage);
   }
