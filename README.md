@@ -781,7 +781,7 @@ VAPID details:
 | `CODEX_MOBILE_FULL_THREAD_TURNS` | Number of turns returned after normal-size sessions are fully read with `thread/read`, default `80`, capped at `200`. |
 | `CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES` | Tail bytes read from a thread rollout to recover inherited turn runtime settings, default `4194304`. |
 | `CODEX_MOBILE_ROLLOUT_WARNING_BYTES` | Rollout JSONL size threshold for UI warnings and the continuation action, default `209715200` (`200MB`). |
-| `CODEX_MOBILE_THREAD_DETAIL_ROLLOUT_MAX_BYTES` | Rollout JSONL size threshold where Mobile Web skips expensive thread-detail RPCs and shows local summary fallback, default equals `CODEX_MOBILE_ROLLOUT_WARNING_BYTES`. |
+| `CODEX_MOBILE_THREAD_DETAIL_ROLLOUT_MAX_BYTES` | Rollout JSONL size threshold where Mobile Web skips expensive full `thread/read` detail RPCs and uses bounded `thread/turns/list` first, default `33554432` (`32MB`). This is intentionally lower than the `200MB` warning threshold so large sessions can still open quickly without showing a warning. |
 | `CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS` | Max characters in the rollout continuation bootstrap message, default `120000`. |
 | `CODEX_MOBILE_CONTINUATION_RECENT_TURNS` | Recent source turns summarized into the continuation bootstrap, default `12`, capped at `30`. |
 | `CODEX_MOBILE_CONTINUATION_HANDOFF_TIMEOUT_MS` | How long Mobile Web waits for the source thread to write its continuation handoff file before creating the new thread, default `240000`. |

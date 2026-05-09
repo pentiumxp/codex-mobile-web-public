@@ -2267,3 +2267,35 @@
 - Runtime note:
   - This is a static frontend change. Existing browser/PWA sessions need a refresh to load the updated `index.html`, `app.js`, and `styles.css`.
   - Public repo was not updated; wait for explicit user approval before syncing `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+
+## 2026-05-09 Thread Switch Detail Read Threshold - 16:15 +08:00
+
+- User-reported issue:
+  - After the PR merges, switching sessions / loading a session felt slower than before. Larger rollout sessions were noticeably slower, taking several seconds instead of opening nearly immediately.
+- Findings:
+  - Local API timing reproduced the size correlation: `/api/threads` was about `307ms`; a `44.9MB` thread detail read took about `748ms`; a `184MB` thread detail read took about `2752ms`.
+  - Both larger sessions were still using full app-server `thread/read`, because `CODEX_MOBILE_THREAD_DETAIL_ROLLOUT_MAX_BYTES` defaulted to the same `200MB` value as the UI rollout warning threshold.
+  - Direct bounded `thread/turns/list` for the same sessions was much faster: about `182ms` for the `44.9MB` thread and `506ms` for the `184MB` thread.
+- Code change:
+  - `server.js` now defaults `CODEX_MOBILE_THREAD_DETAIL_ROLLOUT_MAX_BYTES` to `33554432` (`32MB`) instead of inheriting the `200MB` warning threshold.
+  - The `200MB` `CODEX_MOBILE_ROLLOUT_WARNING_BYTES` UI warning / continuation threshold is unchanged.
+  - `README.md` and `.agent-context/PROJECT_CONTEXT.md` now document that the performance threshold and UI warning threshold are intentionally separate.
+- Runtime validation:
+  - Restarted only the 8787 Node listener so the new startup constant took effect. Old listener PID `75020`; new listener PID `10704`.
+  - `/api/status` returned `ready=True`, `transport=external-jsonl-tcp`, `lastError=` after restart.
+  - Post-change detail timings:
+    - `184.1MB` thread: about `638ms`, mode `large-rollout-turns-list`, `12` turns.
+    - `45MB` thread: about `290ms`, mode `large-rollout-turns-list`, `12` turns.
+    - Smaller threads under `32MB` continue to use `thread-read`.
+- Validation:
+  - `npm.cmd test` passed with 7 tests.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with line-ending warnings only.
+- Public release:
+  - User later explicitly requested submit and push including public.
+  - Synchronized the `server.js` threshold change and README documentation to `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Public README includes Chinese explanation that the `32MB` detail-read performance threshold is separate from the `200MB` compression-continuation warning threshold.
+  - Public commit message was written in Chinese with detailed behavior, user impact, documentation, and validation notes, following the updated public release rule.
+  - Public validation passed: `npm.cmd test`, `npm.cmd run check`, `npm.cmd run check:macos`, `git diff --check`, and targeted privacy scan for local paths, private repo URLs, LAN/Tailscale markers, and Hermes markers.
+  - Public commit `e0addcb127c779e3cf4f5500d11357f255f714d6` pushed to `origin/main`.
