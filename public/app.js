@@ -38,7 +38,13 @@ const state = {
   threadLoadController: null,
   threadListLoadSeq: 0,
   threadListLoadController: null,
+  threadListLoadedAtMs: 0,
   openThreadActionId: "",
+  threadActionMenuId: "",
+  threadLongPress: null,
+  renameThreadId: "",
+  renameBusy: false,
+  sidebarEdgeSwipe: null,
   threadSwipe: null,
   suppressThreadClickUntil: 0,
   suppressThreadClickThreadId: "",
@@ -85,6 +91,9 @@ const state = {
   lastCompletionSoundAt: 0,
   completionAudioContext: null,
   completionAudioUnlocked: false,
+  copyTextStore: new Map(),
+  copySeq: 0,
+  copyFeedbackTimers: new Map(),
 };
 
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
@@ -102,6 +111,9 @@ const STORAGE_DISMISSED_ROLLOUT_WARNINGS = "codexMobileDismissedRolloutWarnings"
 const STORAGE_FONT_SIZE = "codexMobileFontSize";
 const FONT_SIZE_VALUES = new Set(["small", "default", "large", "xlarge", "xxlarge"]);
 const MENU_OVERLAY_MEDIA = "(max-width: 1180px), (pointer: coarse) and (max-width: 1400px)";
+const SIDEBAR_EDGE_SWIPE_PX = 34;
+const SIDEBAR_EDGE_OPEN_MIN_PX = 76;
+const SIDEBAR_EDGE_OPEN_RATIO = 0.22;
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
 const HIDDEN_SERVER_REQUEST_METHODS = new Set(["item/tool/call"]);
 const USER_INPUT_REQUEST_METHODS = new Set(["item/tool/requestUserInput", "mcpServer/elicitation/request"]);
@@ -214,6 +226,78 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function resetCopyTextStore() {
+  state.copyTextStore.clear();
+  state.copySeq = 0;
+}
+
+function rememberCopyText(value) {
+  const text = String(value ?? "");
+  if (!text.trim()) return "";
+  state.copySeq += 1;
+  const key = `copy-${state.copySeq}`;
+  state.copyTextStore.set(key, text);
+  return key;
+}
+
+function copyButtonHtml(copyKey, label, className = "") {
+  if (!copyKey) return "";
+  const classes = ["copy-button", className].filter(Boolean).join(" ");
+  return `<button class="${escapeHtml(classes)}" type="button" data-copy-key="${escapeHtml(copyKey)}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">${escapeHtml(label)}</button>`;
+}
+
+function fallbackCopyText(text) {
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.top = "-1000px";
+  textarea.style.left = "-1000px";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } finally {
+    textarea.remove();
+  }
+  if (!ok) throw new Error("copy failed");
+}
+
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  fallbackCopyText(text);
+}
+
+function showCopyFeedback(button) {
+  if (!button) return;
+  const previous = button.textContent || "复制";
+  const existing = state.copyFeedbackTimers.get(button);
+  if (existing) window.clearTimeout(existing);
+  button.textContent = "已复制";
+  button.classList.add("copied");
+  const timer = window.setTimeout(() => {
+    button.textContent = previous;
+    button.classList.remove("copied");
+    state.copyFeedbackTimers.delete(button);
+  }, 900);
+  state.copyFeedbackTimers.set(button, timer);
+}
+
+async function handleCopyButtonClick(button) {
+  const key = button && button.dataset ? button.dataset.copyKey : "";
+  const text = state.copyTextStore.get(key || "");
+  if (!text) return;
+  await copyTextToClipboard(text);
+  showCopyFeedback(button);
 }
 
 function truncateMiddle(value, maxChars, label) {
@@ -331,24 +415,30 @@ function playCompletionTone(options = {}) {
   const audible = options.audible !== false;
   const playTone = () => {
     const nowAt = audioContext.currentTime;
-    const osc = audioContext.createOscillator();
-    const gain = audioContext.createGain();
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(audible ? 740 : 520, nowAt);
-    if (audible) osc.frequency.exponentialRampToValueAtTime(560, nowAt + 0.22);
-    const peak = audible ? 0.075 : 0.0001;
-    const duration = audible ? 0.72 : 0.04;
-    gain.gain.setValueAtTime(0.0001, nowAt);
-    gain.gain.exponentialRampToValueAtTime(peak, nowAt + 0.04);
-    gain.gain.exponentialRampToValueAtTime(0.0001, nowAt + duration);
-    osc.connect(gain);
-    gain.connect(audioContext.destination);
-    osc.start(nowAt);
-    osc.stop(nowAt + duration + 0.02);
-    setTimeout(() => {
-      osc.disconnect();
-      gain.disconnect();
-    }, Math.ceil((duration + 0.12) * 1000));
+    const notes = audible
+      ? [
+        { at: 0, frequency: 523.25, duration: 0.11, peak: 0.038 },
+        { at: 0.115, frequency: 659.25, duration: 0.15, peak: 0.032 },
+      ]
+      : [{ at: 0, frequency: 440, duration: 0.035, peak: 0.0001 }];
+    notes.forEach((note) => {
+      const startAt = nowAt + note.at;
+      const osc = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(note.frequency, startAt);
+      gain.gain.setValueAtTime(0.0001, startAt);
+      gain.gain.linearRampToValueAtTime(note.peak, startAt + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startAt + note.duration);
+      osc.connect(gain);
+      gain.connect(audioContext.destination);
+      osc.start(startAt);
+      osc.stop(startAt + note.duration + 0.02);
+      setTimeout(() => {
+        osc.disconnect();
+        gain.disconnect();
+      }, Math.ceil((note.at + note.duration + 0.12) * 1000));
+    });
   };
   if (audioContext.state === "suspended") {
     audioContext.resume()
@@ -1982,7 +2072,9 @@ function renderThreadListLoading() {
   state.renderedThreadListSignature = `loading|${state.selectedCwd}|${$("threadSearch").value.trim()}`;
 }
 
-async function loadThreads() {
+async function loadThreads(options = {}) {
+  const silent = options.silent === true;
+  if (silent && state.threadListLoadController) return null;
   const seq = state.threadListLoadSeq + 1;
   state.threadListLoadSeq = seq;
   if (state.threadListLoadController) state.threadListLoadController.abort();
@@ -1992,11 +2084,12 @@ async function loadThreads() {
   if (state.selectedCwd) params.set("cwd", state.selectedCwd);
   const search = $("threadSearch").value.trim();
   if (search) params.set("search", search);
-  renderThreadListLoading();
+  if (!silent) renderThreadListLoading();
   try {
     const result = await api(`/api/threads?${params}`, { timeoutMs: 45000, signal: controller.signal });
     if (seq !== state.threadListLoadSeq) return null;
     state.threads = visibleThreads(result.data || []);
+    state.threadListLoadedAtMs = Date.now();
     reconcileThreadStatusHints(state.threads);
     renderThreads(result);
     restoreConnectionState(result.mobileFallback ? "Recovered from session index" : "Connected");
@@ -2004,7 +2097,7 @@ async function loadThreads() {
     return result;
   } catch (err) {
     if (seq !== state.threadListLoadSeq || controller.signal.aborted) return null;
-    renderThreadLoadError(err);
+    if (!silent) renderThreadLoadError(err);
     throw err;
   } finally {
     if (state.threadListLoadController === controller) state.threadListLoadController = null;
@@ -2022,7 +2115,7 @@ async function loadThread(threadId) {
     closeThreadActions();
     renderThreads();
     renderCurrentThread();
-    if (isMenuOverlayMode()) $("sidebar").classList.remove("open");
+    if (isMenuOverlayMode()) closeSidebarMenu();
     return;
   }
   const seq = state.threadLoadSeq + 1;
@@ -2081,7 +2174,7 @@ async function loadThread(threadId) {
   restoreConnectionState();
   scheduleLivePollIfNeeded(1200);
   updateComposerControls();
-  if (isMenuOverlayMode()) $("sidebar").classList.remove("open");
+  if (isMenuOverlayMode()) closeSidebarMenu();
 }
 
 async function refreshCurrentThread() {
@@ -2172,6 +2265,303 @@ function suppressThreadClickAfterSwipe(event) {
   if (state.suppressThreadClickThreadId && state.suppressThreadClickThreadId !== threadId) return;
   event.preventDefault();
   event.stopPropagation();
+}
+
+function isMobileViewport() {
+  return isMenuOverlayMode();
+}
+
+function closeSidebarMenu() {
+  const sidebar = $("sidebar");
+  if (!sidebar) return;
+  sidebar.classList.remove("open", "edge-dragging");
+  sidebar.style.removeProperty("--sidebar-edge-x");
+  state.sidebarEdgeSwipe = null;
+}
+
+function refreshSidebarListAfterOpen() {
+  const loadedAt = Number(state.threadListLoadedAtMs || 0);
+  if (!loadedAt) {
+    loadWorkspaces()
+      .then(() => loadThreads())
+      .catch(showError);
+    return;
+  }
+  if (Date.now() - loadedAt < 60000) return;
+  loadWorkspaces()
+    .then(() => loadThreads({ silent: true }))
+    .catch(() => {
+      // Sidebar opening should stay instant; visible refresh still reports errors.
+    });
+}
+
+function openSidebarMenu() {
+  const sidebar = $("sidebar");
+  if (!sidebar) return;
+  sidebar.classList.remove("edge-dragging");
+  sidebar.style.removeProperty("--sidebar-edge-x");
+  sidebar.classList.add("open");
+  state.sidebarEdgeSwipe = null;
+  refreshSidebarListAfterOpen();
+}
+
+function isSidebarOpen() {
+  const sidebar = $("sidebar");
+  return Boolean(sidebar && sidebar.classList.contains("open"));
+}
+
+function isInteractiveGestureTarget(target) {
+  return Boolean(target && target.closest && target.closest(
+    "a, button, input, textarea, select, label, [contenteditable='true'], .rename-input, .composer, .thread-action-sheet"
+  ));
+}
+
+function beginSidebarEdgeSwipe(event) {
+  if (!isMobileViewport() || isSidebarOpen() || state.renameThreadId || state.threadActionMenuId) return;
+  if (event.touches && event.touches.length > 1) return;
+  if (isInteractiveGestureTarget(event.target)) return;
+  const touch = primaryTouch(event);
+  if (!touch || touch.clientX > SIDEBAR_EDGE_SWIPE_PX) return;
+  const sidebar = $("sidebar");
+  state.sidebarEdgeSwipe = {
+    startX: touch.clientX,
+    startY: touch.clientY,
+    currentX: touch.clientX,
+    moved: false,
+    width: Math.max(1, Math.round((sidebar && sidebar.getBoundingClientRect().width) || window.innerWidth || 1)),
+  };
+}
+
+function moveSidebarEdgeSwipe(event) {
+  const swipe = state.sidebarEdgeSwipe;
+  if (!swipe) return;
+  const touch = primaryTouch(event);
+  if (!touch) return;
+  const dx = touch.clientX - swipe.startX;
+  const dy = touch.clientY - swipe.startY;
+  if (!swipe.moved) {
+    if (dx < 8 && Math.abs(dy) < 12) return;
+    if (dx <= 0 || Math.abs(dy) > Math.abs(dx)) {
+      cancelSidebarEdgeSwipe();
+      return;
+    }
+  }
+  swipe.moved = true;
+  swipe.currentX = touch.clientX;
+  if (event.cancelable !== false) event.preventDefault();
+  const sidebar = $("sidebar");
+  if (!sidebar) return;
+  const offset = Math.max(0, Math.min(swipe.width, dx));
+  sidebar.classList.add("edge-dragging");
+  sidebar.style.setProperty("--sidebar-edge-x", `${Math.round(offset)}px`);
+}
+
+function finishSidebarEdgeSwipe() {
+  const swipe = state.sidebarEdgeSwipe;
+  if (!swipe) return;
+  const dx = Number(swipe.currentX || swipe.startX) - swipe.startX;
+  const shouldOpen = swipe.moved && dx >= Math.max(SIDEBAR_EDGE_OPEN_MIN_PX, swipe.width * SIDEBAR_EDGE_OPEN_RATIO);
+  if (shouldOpen) openSidebarMenu();
+  else cancelSidebarEdgeSwipe();
+}
+
+function cancelSidebarEdgeSwipe() {
+  const sidebar = $("sidebar");
+  if (sidebar) {
+    sidebar.classList.remove("edge-dragging");
+    sidebar.style.removeProperty("--sidebar-edge-x");
+  }
+  state.sidebarEdgeSwipe = null;
+}
+
+function threadById(threadId) {
+  const id = String(threadId || "");
+  return state.threads.find((thread) => String(thread && thread.id || "") === id)
+    || (state.currentThread && String(state.currentThread.id || "") === id ? state.currentThread : null);
+}
+
+function threadTitleForDisplay(thread) {
+  return String(thread && (thread.name || thread.preview || thread.id) || "").trim();
+}
+
+function updateThreadNameLocally(threadId, name) {
+  const id = String(threadId || "");
+  const title = String(name || "").trim();
+  if (!id || !title) return;
+  const thread = state.threads.find((entry) => String(entry && entry.id || "") === id);
+  if (thread) thread.name = title;
+  if (state.currentThread && String(state.currentThread.id || "") === id) {
+    state.currentThread.name = title;
+    renderCurrentThread();
+  }
+  state.renderedThreadListSignature = "";
+  renderThreads();
+}
+
+function cancelThreadLongPress() {
+  if (state.threadLongPress && state.threadLongPress.timer) clearTimeout(state.threadLongPress.timer);
+  state.threadLongPress = null;
+}
+
+function clearTextSelection() {
+  try {
+    const selection = window.getSelection && window.getSelection();
+    if (selection && typeof selection.removeAllRanges === "function") selection.removeAllRanges();
+  } catch (_) {
+    // Clearing accidental mobile text selection is best-effort.
+  }
+}
+
+function openThreadActionSheet(threadId) {
+  const id = String(threadId || "");
+  const sheet = $("threadActionSheet");
+  if (!id || !sheet) return;
+  const thread = threadById(id);
+  if (!thread) return;
+  cancelThreadLongPress();
+  clearTextSelection();
+  closeThreadActions();
+  state.threadActionMenuId = id;
+  const title = $("threadActionTitle");
+  if (title) title.textContent = threadTitleForDisplay(thread) || "Session";
+  sheet.classList.remove("hidden");
+  setTimeout(clearTextSelection, 0);
+  state.suppressThreadClickUntil = Date.now() + 900;
+  state.suppressThreadClickThreadId = id;
+}
+
+function closeThreadActionSheet() {
+  const sheet = $("threadActionSheet");
+  if (sheet) sheet.classList.add("hidden");
+  state.threadActionMenuId = "";
+}
+
+function scheduleThreadLongPress(target, x, y) {
+  const row = threadSwipeTargetRow(target);
+  if (!row) return;
+  const threadId = row.dataset.threadRow || "";
+  if (!threadId) return;
+  cancelThreadLongPress();
+  state.threadLongPress = {
+    threadId,
+    startX: Number(x || 0),
+    startY: Number(y || 0),
+    timer: setTimeout(() => openThreadActionSheet(threadId), 560),
+  };
+}
+
+function moveThreadLongPress(x, y) {
+  const press = state.threadLongPress;
+  if (!press) return;
+  if (Math.abs(Number(x || 0) - press.startX) > 12 || Math.abs(Number(y || 0) - press.startY) > 12) {
+    cancelThreadLongPress();
+  }
+}
+
+function handleThreadListContextMenu(event) {
+  const row = threadSwipeTargetRow(event.target);
+  if (!row) return;
+  event.preventDefault();
+  openThreadActionSheet(row.dataset.threadRow || "");
+}
+
+function beginThreadLongPress(event) {
+  if (event.button != null && event.button !== 0) return;
+  scheduleThreadLongPress(event.target, event.clientX, event.clientY);
+}
+
+function moveThreadLongPressPointer(event) {
+  moveThreadLongPress(event.clientX, event.clientY);
+}
+
+function beginThreadLongPressTouch(event) {
+  if (event.touches && event.touches.length > 1) return;
+  const touch = primaryTouch(event);
+  if (!touch) return;
+  scheduleThreadLongPress(event.target, touch.clientX, touch.clientY);
+}
+
+function moveThreadLongPressTouch(event) {
+  const touch = primaryTouch(event);
+  if (!touch) return;
+  moveThreadLongPress(touch.clientX, touch.clientY);
+}
+
+function openRenameDialog(threadId) {
+  const id = String(threadId || "");
+  const dialog = $("renameDialog");
+  const input = $("renameInput");
+  if (!id || !dialog || !input) return;
+  const thread = threadById(id);
+  if (!thread) return;
+  state.renameThreadId = id;
+  input.value = threadTitleForDisplay(thread);
+  dialog.classList.remove("hidden");
+  setTimeout(() => {
+    input.focus();
+    input.select();
+  }, 30);
+}
+
+function closeRenameDialog(options = {}) {
+  if (state.renameBusy && !options.force) return;
+  const dialog = $("renameDialog");
+  if (dialog) dialog.classList.add("hidden");
+  state.renameThreadId = "";
+}
+
+async function submitRename(event) {
+  event.preventDefault();
+  if (state.renameBusy) return;
+  const threadId = state.renameThreadId;
+  const input = $("renameInput");
+  const submit = $("renameSubmit");
+  const name = String(input && input.value || "").trim();
+  if (!threadId || !name) {
+    if (input) input.focus();
+    return;
+  }
+  state.renameBusy = true;
+  if (submit) submit.disabled = true;
+  $("connectionState").classList.remove("error");
+  $("connectionState").textContent = "正在重命名";
+  try {
+    const result = await api(`/api/threads/${encodeURIComponent(threadId)}/name`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+      timeoutMs: 20000,
+    });
+    updateThreadNameLocally(threadId, result.name || name);
+    closeRenameDialog({ force: true });
+    restoreConnectionState("已重命名");
+  } catch (err) {
+    showError(err);
+  } finally {
+    state.renameBusy = false;
+    if (submit) submit.disabled = false;
+  }
+}
+
+function handleThreadAction(event) {
+  const target = event.target.closest("[data-thread-action]");
+  if (!target) return;
+  event.preventDefault();
+  const action = target.dataset.threadAction;
+  const threadId = state.threadActionMenuId;
+  if (action === "cancel") {
+    closeThreadActionSheet();
+    return;
+  }
+  if (action === "rename") {
+    closeThreadActionSheet();
+    openRenameDialog(threadId);
+    return;
+  }
+  if (action === "continue") {
+    const thread = threadById(threadId);
+    closeThreadActionSheet();
+    if (thread) startNewThreadFromThread(thread, event).catch(showError);
+  }
 }
 
 function renderThreads(result = null) {
@@ -2551,6 +2941,7 @@ function renderCurrentThread(options = {}) {
     : "";
   const rolloutWarning = renderRolloutWarning(thread, previousKeys);
   const visibleTurnIds = new Set(turns.map((turn) => turn && turn.id).filter(Boolean).map(String));
+  resetCopyTextStore();
   const turnsHtml = turns.map((turn) => renderTurn(turn, previousKeys)).join("");
   const approvalsHtml = renderPendingApprovals(thread, previousKeys, (request) => {
     const turnId = approvalTurnId(request);
@@ -3159,8 +3550,13 @@ function renderItem(item, turn = null, previousKeys = new Set(), index = 0) {
   if (isLiveReasoning(item, turn)) return "";
   const type = item.type || "item";
   const key = stableItemKey(turn, item, index);
+  const itemCopyKey = rememberCopyText(copyTextForItem(item));
+  const itemCopyButton = copyButtonHtml(itemCopyKey, "复制全文", "item-copy-button");
   return `<section class="item${entryAnimationClass(key, previousKeys)} ${escapeHtml(type)}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">
-    <div class="item-head"><span>${escapeHtml(labelForItem(item))}</span><span>${escapeHtml(item.status ? statusText(item.status) : "")}</span></div>
+    <div class="item-head">
+      <span>${escapeHtml(labelForItem(item))}</span>
+      <span class="item-head-actions"><span>${escapeHtml(item.status ? statusText(item.status) : "")}</span>${itemCopyButton}</span>
+    </div>
     <div class="item-body">${renderItemBody(item, turn)}</div>
   </section>`;
 }
@@ -3186,6 +3582,11 @@ function labelForItem(item) {
     contextCompaction: "Context",
   };
   return map[item.type] || item.type || "Item";
+}
+
+function copyTextForItem(item) {
+  if (!item || item.type !== "agentMessage") return "";
+  return item.text || "";
 }
 
 function isInputImagePart(part) {
@@ -3390,8 +3791,10 @@ function renderMarkdown(value) {
         i += 1;
       }
       if (i < lines.length) i += 1;
-      const langLabel = lang ? `<div class="markdown-code-lang">${escapeHtml(lang)}</div>` : "";
-      blocks.push(`<div class="markdown-code-block">${langLabel}<pre><code>${escapeHtml(code.join("\n"))}</code></pre></div>`);
+      const codeText = code.join("\n");
+      const langLabel = `<span class="markdown-code-lang">${escapeHtml(lang || "代码")}</span>`;
+      const copyButton = copyButtonHtml(rememberCopyText(codeText), "复制", "markdown-copy-button");
+      blocks.push(`<div class="markdown-code-block"><div class="markdown-code-head">${langLabel}${copyButton}</div><pre><code>${escapeHtml(codeText)}</code></pre></div>`);
       continue;
     }
 
@@ -3489,35 +3892,38 @@ function renderItemBody(item, turn = null) {
 function renderOutputBlock(output, item = {}) {
   if (!output && item.outputOmitted) {
     const total = item.outputTotalChars || 0;
+    const omittedText = "This command output is still in the Codex session history. It is omitted here to keep the mobile client responsive.";
     return `<details class="output-details">
-      <summary>${escapeHtml(`Output omitted from mobile view: ${Number(total).toLocaleString()} chars`)}</summary>
-      <pre>${escapeHtml("This command output is still in the Codex session history. It is omitted here to keep the mobile client responsive.")}</pre>
+      <summary><span>${escapeHtml(`Output omitted from mobile view: ${Number(total).toLocaleString()} chars`)}</span>${copyButtonHtml(rememberCopyText(omittedText), "复制", "output-copy-button")}</summary>
+      <pre>${escapeHtml(omittedText)}</pre>
     </details>`;
   }
   if (!output) return "";
+  const outputText = String(output);
   const total = item.outputTotalChars || String(output).length;
-  const truncated = item.outputTruncated || total > String(output).length;
+  const truncated = item.outputTruncated || total > outputText.length;
   const summary = truncated
-    ? `Output preview: ${total.toLocaleString()} chars total, showing latest ${String(output).length.toLocaleString()}`
-    : `Output: ${String(output).length.toLocaleString()} chars`;
+    ? `Output preview: ${total.toLocaleString()} chars total, showing latest ${outputText.length.toLocaleString()}`
+    : `Output: ${outputText.length.toLocaleString()} chars`;
   return `<details class="output-details">
-    <summary>${escapeHtml(summary)}</summary>
-    <pre>${escapeHtml(output)}</pre>
+    <summary><span>${escapeHtml(summary)}</span>${copyButtonHtml(rememberCopyText(outputText), "复制", "output-copy-button")}</summary>
+    <pre>${escapeHtml(outputText)}</pre>
   </details>`;
 }
 
 function renderStructuredBlock(value, label) {
   if (!value) return "";
   if (value.truncated && value.preview) {
+    const preview = String(value.preview || "");
     return `<details class="output-details">
-      <summary>${escapeHtml(`${label}: ${Number(value.totalChars || 0).toLocaleString()} chars total, preview`)}</summary>
-      <pre>${escapeHtml(value.preview)}</pre>
+      <summary><span>${escapeHtml(`${label}: ${Number(value.totalChars || 0).toLocaleString()} chars total, preview`)}</span>${copyButtonHtml(rememberCopyText(preview), "复制", "output-copy-button")}</summary>
+      <pre>${escapeHtml(preview)}</pre>
     </details>`;
   }
   const raw = JSON.stringify(value, null, 2);
   if (!raw || raw === "null") return "";
   return `<details class="output-details">
-    <summary>${escapeHtml(`${label}: ${raw.length.toLocaleString()} chars`)}</summary>
+    <summary><span>${escapeHtml(`${label}: ${raw.length.toLocaleString()} chars`)}</span>${copyButtonHtml(rememberCopyText(raw), "复制", "output-copy-button")}</summary>
     <pre>${escapeHtml(raw)}</pre>
   </details>`;
 }
@@ -3975,7 +4381,7 @@ async function resumeMobileSession(reason = "resume") {
   const status = await api("/api/status");
   updateConnectionState(status);
   if (status.rateLimits || status.rateLimitsByModel) rememberRateLimits(status.rateLimits, status.rateLimitsByModel);
-  await loadThreads();
+  await loadThreads({ silent: Boolean(state.threads.length) });
   if (state.currentThreadId) await refreshCurrentThread();
   else await restoreThreadSelection();
   scheduleLivePollIfNeeded(1200);
@@ -4530,21 +4936,35 @@ function wireUi() {
     state.searchTimer = setTimeout(() => loadThreads().catch(showError), 250);
   });
   $("threadList").addEventListener("pointerdown", beginThreadSwipe);
+  $("threadList").addEventListener("pointerdown", beginThreadLongPress);
   $("threadList").addEventListener("pointermove", moveThreadSwipe, { passive: false });
+  $("threadList").addEventListener("pointermove", moveThreadLongPressPointer, { passive: true });
   $("threadList").addEventListener("pointerup", endThreadSwipe);
+  $("threadList").addEventListener("pointerup", cancelThreadLongPress);
   $("threadList").addEventListener("pointercancel", cancelThreadSwipe);
+  $("threadList").addEventListener("pointercancel", cancelThreadLongPress);
   $("threadList").addEventListener("touchstart", beginThreadSwipeTouch, { passive: true });
+  $("threadList").addEventListener("touchstart", beginThreadLongPressTouch, { passive: true });
   $("threadList").addEventListener("touchmove", moveThreadSwipeTouch, { passive: false });
+  $("threadList").addEventListener("touchmove", moveThreadLongPressTouch, { passive: true });
   $("threadList").addEventListener("touchend", endThreadSwipeTouch, { passive: true });
+  $("threadList").addEventListener("touchend", cancelThreadLongPress, { passive: true });
   $("threadList").addEventListener("touchcancel", endThreadSwipeTouch, { passive: true });
+  $("threadList").addEventListener("touchcancel", cancelThreadLongPress, { passive: true });
   $("threadList").addEventListener("click", suppressThreadClickAfterSwipe, true);
-  $("openMenu").addEventListener("click", () => {
-    $("sidebar").classList.add("open");
-    loadWorkspaces()
-      .then(() => loadThreads())
-      .catch(showError);
+  $("threadList").addEventListener("contextmenu", handleThreadListContextMenu);
+  if ($("threadActionSheet")) $("threadActionSheet").addEventListener("click", handleThreadAction);
+  if ($("renameForm")) $("renameForm").addEventListener("submit", submitRename);
+  if ($("renameCancel")) $("renameCancel").addEventListener("click", closeRenameDialog);
+  if ($("renameDialog")) $("renameDialog").addEventListener("click", (event) => {
+    if (event.target === $("renameDialog")) closeRenameDialog();
   });
-  $("closeMenu").addEventListener("click", () => $("sidebar").classList.remove("open"));
+  document.addEventListener("touchstart", beginSidebarEdgeSwipe, { passive: true });
+  document.addEventListener("touchmove", moveSidebarEdgeSwipe, { passive: false });
+  document.addEventListener("touchend", finishSidebarEdgeSwipe, { passive: true });
+  document.addEventListener("touchcancel", cancelSidebarEdgeSwipe, { passive: true });
+  $("openMenu").addEventListener("click", openSidebarMenu);
+  $("closeMenu").addEventListener("click", closeSidebarMenu);
   $("composer").addEventListener("submit", sendMessage);
   $("sendMessage").addEventListener("pointerup", requestComposerSubmitFromButton);
   $("sendMessage").addEventListener("click", requestComposerSubmitFromButton);
@@ -4553,6 +4973,18 @@ function wireUi() {
     if (state.leavingItems.size) scheduleLeavingCleanup(120);
   }, { passive: true });
   $("conversation").addEventListener("click", (event) => {
+    const copyButton = event.target.closest("[data-copy-key]");
+    if (copyButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      handleCopyButtonClick(copyButton).catch(() => {
+        copyButton.textContent = "复制失败";
+        window.setTimeout(() => {
+          copyButton.textContent = copyButton.getAttribute("aria-label") || "复制";
+        }, 1200);
+      });
+      return;
+    }
     const button = event.target.closest("[data-approval-action]");
     if (button) {
       answerApproval(button.dataset.approvalId, button.dataset.approvalAction).catch(showError);
