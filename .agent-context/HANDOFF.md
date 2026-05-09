@@ -2193,5 +2193,10 @@
   - `README.md` and `.agent-context/PROJECT_CONTEXT.md` document that theme and font-size choices now live together in the settings panel.
 - Validation:
   - `npm.cmd test`, `npm.cmd run check`, `npm.cmd run check:macos`, and `git diff --check` passed.
-- Public release note:
-  - Public repo was not updated in this step. Follow the project rule and wait for explicit public-update instruction.
+- Public release:
+  - User later explicitly requested public push.
+  - Synced the same frontend/README change to `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Preserved public-only service worker registration path `/sw.js`.
+  - Bumped public `public/sw.js` shell cache to `codex-mobile-shell-v11`.
+  - Public validation passed: `npm.cmd test`, `npm.cmd run check`, `npm.cmd run check:macos`, `git diff --check`, and a targeted privacy scan for private paths/repo URLs/IP/Tailscale/Hermes markers.
+  - Public commit `27bf27b 整合字体大小设置面板` pushed to `origin/main`.
