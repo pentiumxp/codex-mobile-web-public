@@ -2180,3 +2180,18 @@
   - Public `public/app.js` registers `/sw.js`; private registers `/service-worker.js`.
   - Public `public/sw.js` shell cache was bumped to `codex-mobile-shell-v10`; private `public/service-worker.js` remains the no-cache push/click worker.
   - Public README clone instructions still point to `pentiumxp/codex-mobile-web-public`.
+
+## 2026-05-09 Settings Panel Font Size Integration - 10:36 +08:00
+
+- User request:
+  - Move font-size settings into the new settings button/panel and make it visually match the color/theme settings.
+- Code changes:
+  - `public/index.html` removed the standalone `fontSizeSelect` dropdown from the sidebar header.
+  - The existing gear settings panel now contains both `主题` and `字体大小` sections, each using segmented button groups.
+  - `public/app.js` now renders and handles `[data-font-size-choice]` buttons, still persisting `codexMobileFontSize` and applying `:root[data-font-size]`.
+  - `public/styles.css` replaced the old dropdown styling with shared `.settings-options` segmented styles used by both theme and font-size controls.
+  - `README.md` and `.agent-context/PROJECT_CONTEXT.md` document that theme and font-size choices now live together in the settings panel.
+- Validation:
+  - `npm.cmd test`, `npm.cmd run check`, `npm.cmd run check:macos`, and `git diff --check` passed.
+- Public release note:
+  - Public repo was not updated in this step. Follow the project rule and wait for explicit public-update instruction.

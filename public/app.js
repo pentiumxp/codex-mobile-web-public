@@ -163,9 +163,12 @@ function applyFontSizePreference() {
 }
 
 function renderFontSizeControl() {
-  const select = $("fontSizeSelect");
-  if (!select) return;
-  select.value = normalizeFontSizeValue(state.fontSize);
+  const selected = normalizeFontSizeValue(state.fontSize);
+  document.querySelectorAll("[data-font-size-choice]").forEach((button) => {
+    const isSelected = button.dataset.fontSizeChoice === selected;
+    button.classList.toggle("selected", isSelected);
+    button.setAttribute("aria-pressed", isSelected ? "true" : "false");
+  });
 }
 
 function setFontSizePreference(value) {
@@ -176,6 +179,13 @@ function setFontSizePreference(value) {
   renderFontSizeControl();
   const input = $("messageInput");
   if (input) autoSizeMessageInput(input);
+}
+
+function handleFontSizeChoice(event) {
+  const button = event.target.closest("[data-font-size-choice]");
+  if (!button) return;
+  event.preventDefault();
+  setFontSizePreference(button.dataset.fontSizeChoice || "default");
 }
 
 function isMenuOverlayMode() {
@@ -4927,7 +4937,8 @@ function wireUi() {
   });
   $("refreshThreads").addEventListener("click", () => loadThreads().catch(showError));
   $("pushNotifications").addEventListener("click", () => handlePushButtonClick().catch(showError));
-  $("fontSizeSelect").addEventListener("change", (event) => setFontSizePreference(event.target.value));
+  const settingsPanel = $("themeSettingsPanel");
+  if (settingsPanel) settingsPanel.addEventListener("click", handleFontSizeChoice);
   document.addEventListener("pointerdown", primeCompletionAudio, { passive: true });
   document.addEventListener("touchend", primeCompletionAudio, { passive: true });
   document.addEventListener("keydown", primeCompletionAudio);
