@@ -2142,3 +2142,26 @@
   - Public README clone instructions still point to `pentiumxp/codex-mobile-web-public`.
 - PR #13 status:
   - Left untouched as draft; GitHub still reports it open/draft and it should be reviewed after #12.
+
+## 2026-05-09 PR #13 Mobile UX Integration - 10:48 +08:00
+
+- User instruction:
+  - Start merging public PR #13 after PR #12 was published.
+- PR:
+  - Public PR #13: `https://github.com/pentiumxp/codex-mobile-web-public/pull/13`, title `[codex] 优化移动端会话列表和消息操作体验`.
+  - It was draft, cross-repo, and initially `CONFLICTING` / `DIRTY` because it was based before the #12 squash merge plus later main changes.
+- Integration approach:
+  - Instead of directly merging the stale PR branch, reset the local PR branch to current public `origin/main` and cherry-picked only the actual #13 UX commits: `15aa804` and `066e23f`.
+  - Resolved conflicts by preserving main behavior from #12 and later private/public sync: 200MB rollout threshold, skippable rollout banner, sidebar font-size selector including `xxlarge`, tablet/touch overlay sidebar mode, model/send stability fixes, and public `/sw.js` registration path.
+  - Added a public README section for the #13 UX behavior because public commits require detailed README updates.
+- Behavior integrated into private for validation:
+  - Theme selector in the sidebar header with `codexMobileTheme` localStorage and early `data-theme` application.
+  - Left-edge right-swipe opens the overlay sidebar/session list, and sidebar open reuses recent list data before silent background refresh.
+  - Thread long-press action sheet supports rename and rollout continuation while avoiding iOS text selection on cards.
+  - `PATCH /api/threads/<threadId>/name` route calls available app-server title update methods and returns `501` when unsupported.
+  - Agent messages, Markdown code blocks, and output/detail blocks expose copy buttons using in-memory copy text.
+- Private validation:
+  - `npm.cmd test`, `npm.cmd run check`, `npm.cmd run check:macos`, and `git diff --check` passed after syncing #13 code into private.
+- Pending:
+  - Commit/push private.
+  - Push updated PR #13 branch, mark ready if needed, wait for CI, then squash-merge public PR #13 with a detailed public commit message.

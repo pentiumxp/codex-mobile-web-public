@@ -326,11 +326,15 @@ Behavior:
 
 - Home view shows recent workspaces and recent threads.
 - The sidebar menu header includes a compact font-size selector (`小字` / `标准` / `大字` / `特大` / `超大`). The choice is saved in the browser and adjusts conversation text, markdown, code/table content, approval details, and the composer input.
+- The sidebar menu header also includes a theme control. Users can choose `跟随系统`, `深色`, or `浅色`; the choice is saved in the browser and updates the page theme color metadata. iOS PWA status-bar color changes may require closing and reopening the installed app.
 - On phones and tablet-sized/touch layouts, the sidebar menu is not persistent: the main conversation fills the viewport, and the menu opens only after the user taps the top-left menu button. Wide desktop layouts keep the persistent sidebar.
+- On mobile/touch layouts, swiping right from the left screen edge opens the session list without waiting for a network refresh. If the existing session list is newer than 60 seconds, Mobile Web reuses it immediately; older lists open first and then refresh quietly in the background.
 - Thread lists and thread detail monitor rollout JSONL size. At the default `200MB` threshold, Mobile Web shows a context-size warning and offers a same-workspace continuation action. The warning can be skipped for the current thread size, and will reappear if that thread grows again past the stored size. After user confirmation, the action first asks the source thread to write a thread-specific handoff file, creates a source-named/date-suffixed continuation thread, sends a scoped bootstrap message, then archives the source thread.
 - The continuation bootstrap message explicitly carries source thread metadata, rollout size, inherited runtime settings, the source-thread-generated handoff file, recent visible turn summaries, and current-workspace `.agent-context/PROJECT_CONTEXT.md` / `.agent-context/HANDOFF.md` excerpts. It does not inject fixed private/public GitHub release rules; those appear only if the current workspace context or source-thread handoff says they are relevant.
 - Thread list rows support a left-swipe action to reveal `压缩续接` for any visible thread, so users can proactively continue before the rollout reaches the warning threshold.
 - The left-swipe action stays open after a horizontal swipe until the user taps the card, taps the action, opens another row, or refreshes the list. Mobile browsers can emit a synthetic click after touch gestures, so the UI suppresses that same-gesture click to avoid immediately closing the action.
+- Long-pressing a session row opens a mobile action sheet with rename and continuation actions. The row disables accidental system text selection during the long press, while rename input fields still allow normal text selection and editing.
+- Agent replies include a `复制全文` action. Markdown code blocks and command/output detail blocks include smaller copy buttons so users can copy structured text without manually selecting content on iOS.
 
 ### Rollout 压缩续接
 
@@ -428,6 +432,14 @@ This section summarizes the current integration behavior for someone cloning or 
 - On iOS, returning from input-method or permission screens can leave a stale/blank composited viewport. The app maintains a JS-driven `--app-height` and runs several lightweight visual recovery passes after resume.
 - Uploaded image messages render as centered thumbnails, not full-width raw images or data URLs.
 - Non-image uploads are stored locally and referenced by absolute path in the message text.
+
+### Mobile Session List And Copy Actions
+
+- Theme preference is stored in `localStorage` as `codexMobileTheme`, with accepted values `system`, `dark`, and `light`. The early inline script applies the theme before the app bundle loads, reducing flash between dark and light modes.
+- The session list can be opened through the menu button or a left-edge right-swipe gesture on overlay layouts. Opening the list is intentionally fast: existing list data is rendered immediately, and Mobile Web only performs a silent background refresh when the cached list is older than 60 seconds.
+- Thread rows now support a long-press action sheet. Rename calls `PATCH /api/threads/<threadId>/name` with a max 120-character name; the server tries several app-server thread-title methods and returns `501` if the connected app-server does not support renaming.
+- The long-press and swipe handlers avoid iOS text-selection side effects on thread cards by disabling selection on action rows and preserving text selection only inside editable rename controls.
+- Copy buttons use the browser Clipboard API on secure contexts and fall back to a hidden textarea plus `execCommand("copy")` where needed. The copied text is kept only in memory for the current render cycle and is not persisted.
 
 ### Which Restart Is Needed After Changes
 

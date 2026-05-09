@@ -4074,6 +4074,35 @@ async function handleApi(req, res) {
     }
     return;
   }
+  const threadRename = url.pathname.match(/^\/api\/threads\/([^/]+)\/name$/);
+  if (threadRename && (req.method === "PATCH" || req.method === "POST")) {
+    const threadId = decodeURIComponent(threadRename[1]);
+    const body = await readBody(req);
+    const name = String(body.name || body.title || "").trim();
+    if (!threadId) {
+      sendJson(res, 400, { error: "Thread id is required" });
+      return;
+    }
+    if (!name) {
+      sendJson(res, 400, { error: "Thread name is required" });
+      return;
+    }
+    if (name.length > 120) {
+      sendJson(res, 400, { error: "Thread name is too long" });
+      return;
+    }
+    try {
+      const updated = await tryUpdateThreadTitle(threadId, name);
+      if (!updated) {
+        sendJson(res, 501, { error: "Thread rename is not supported by this app-server" });
+        return;
+      }
+      sendJson(res, 200, { ok: true, threadId, name });
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { error: err.message || String(err) });
+    }
+    return;
+  }
   const threadRead = url.pathname.match(/^\/api\/threads\/([^/]+)$/);
   if (threadRead && req.method === "GET") {
     const threadId = decodeURIComponent(threadRead[1]);
