@@ -13,7 +13,64 @@
   --code: #0d0f10;
   --shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
   --app-height: 100dvh;
+  --content-font-size: 15px;
+  --content-line-height: 1.62;
+  --content-small-font-size: 12px;
+  --content-code-font-size: 12px;
+  --content-table-font-size: 13px;
+  --content-heading-2: 18px;
+  --content-heading-3: 16px;
+  --content-heading-rest: 15px;
+  --composer-input-font-size: 16px;
   font-family: "Aptos", "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+:root[data-font-size="small"] {
+  --content-font-size: 14px;
+  --content-line-height: 1.58;
+  --content-small-font-size: 11px;
+  --content-code-font-size: 11px;
+  --content-table-font-size: 12px;
+  --content-heading-2: 17px;
+  --content-heading-3: 15px;
+  --content-heading-rest: 14px;
+  --composer-input-font-size: 15px;
+}
+
+:root[data-font-size="large"] {
+  --content-font-size: 17px;
+  --content-line-height: 1.66;
+  --content-small-font-size: 13px;
+  --content-code-font-size: 13px;
+  --content-table-font-size: 15px;
+  --content-heading-2: 20px;
+  --content-heading-3: 18px;
+  --content-heading-rest: 17px;
+  --composer-input-font-size: 17px;
+}
+
+:root[data-font-size="xlarge"] {
+  --content-font-size: 19px;
+  --content-line-height: 1.7;
+  --content-small-font-size: 14px;
+  --content-code-font-size: 14px;
+  --content-table-font-size: 16px;
+  --content-heading-2: 22px;
+  --content-heading-3: 20px;
+  --content-heading-rest: 19px;
+  --composer-input-font-size: 19px;
+}
+
+:root[data-font-size="xxlarge"] {
+  --content-font-size: 22px;
+  --content-line-height: 1.72;
+  --content-small-font-size: 16px;
+  --content-code-font-size: 16px;
+  --content-table-font-size: 18px;
+  --content-heading-2: 26px;
+  --content-heading-3: 24px;
+  --content-heading-rest: 22px;
+  --composer-input-font-size: 22px;
 }
 
 * {
@@ -172,6 +229,17 @@ html.visual-recovering body::before {
   gap: 12px;
 }
 
+.side-header {
+  position: relative;
+}
+
+.side-header-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .app-name {
   font-size: 22px;
   font-weight: 750;
@@ -195,6 +263,19 @@ html.visual-recovering body::before {
   padding: 0 36px 0 12px;
   font-size: 16px;
   line-height: 46px;
+}
+
+.font-size-select {
+  min-width: 78px;
+  height: 40px;
+  padding: 0 28px 0 10px;
+  color: var(--text);
+  background: var(--code);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 40px;
+  outline: none;
 }
 
 .workspace-path {
@@ -771,7 +852,7 @@ html.visual-recovering body::before {
 
 .turn-status {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--content-small-font-size);
   border-top: 1px solid var(--line-soft);
   padding-top: 10px;
 }
@@ -784,7 +865,7 @@ html.visual-recovering body::before {
   background: rgba(32, 36, 40, 0.58);
   border: 1px solid var(--line-soft);
   border-radius: 8px;
-  font-size: 12px;
+  font-size: var(--content-small-font-size);
 }
 
 .rollout-warning {
@@ -798,7 +879,7 @@ html.visual-recovering body::before {
   background: rgba(241, 135, 125, 0.12);
   border: 1px solid rgba(241, 135, 125, 0.46);
   border-radius: 8px;
-  font-size: 12px;
+  font-size: var(--content-small-font-size);
 }
 
 .rollout-warning-text {
@@ -812,15 +893,32 @@ html.visual-recovering body::before {
   color: #e4beb9;
 }
 
+.rollout-warning-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rollout-skip,
 .rollout-new-thread {
   flex: 0 0 auto;
-  color: #09100d;
-  background: var(--accent-strong);
-  border: 0;
   border-radius: 8px;
   padding: 8px 10px;
   font-size: 12px;
   font-weight: 750;
+}
+
+.rollout-skip {
+  color: #f4c3be;
+  background: rgba(20, 23, 26, 0.46);
+  border: 1px solid rgba(241, 135, 125, 0.4);
+}
+
+.rollout-new-thread {
+  color: #09100d;
+  background: var(--accent-strong);
+  border: 0;
 }
 
 .rollout-new-thread:disabled {
@@ -834,7 +932,7 @@ html.visual-recovering body::before {
   background: rgba(32, 36, 40, 0.62);
   border: 1px solid var(--line-soft);
   border-radius: 999px;
-  font-size: 12px;
+  font-size: var(--content-small-font-size);
 }
 
 .approval-stack {
@@ -874,7 +972,7 @@ html.visual-recovering body::before {
   gap: 10px;
   padding: 8px 11px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--content-small-font-size);
   line-height: 1.3;
 }
 
@@ -907,7 +1005,7 @@ html.visual-recovering body::before {
 .approval-method {
   margin-top: 2px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--content-small-font-size);
   line-height: 1.25;
   overflow-wrap: anywhere;
 }
@@ -919,7 +1017,7 @@ html.visual-recovering body::before {
   background: rgba(240, 180, 108, 0.14);
   border: 1px solid rgba(240, 180, 108, 0.36);
   border-radius: 999px;
-  font-size: 12px;
+  font-size: var(--content-small-font-size);
 }
 
 .approval-detail {
@@ -932,7 +1030,7 @@ html.visual-recovering body::before {
   border: 1px solid var(--line-soft);
   border-radius: 8px;
   font-family: "Cascadia Mono", "Consolas", "Microsoft YaHei", monospace;
-  font-size: 12px;
+  font-size: var(--content-code-font-size);
   line-height: 1.48;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -1021,7 +1119,7 @@ html.visual-recovering body::before {
 
 .approval-option small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--content-small-font-size);
   line-height: 1.35;
 }
 
@@ -1084,7 +1182,7 @@ html.visual-recovering body::before {
   overflow: auto;
   color: #d9e4df;
   font-family: "Cascadia Mono", "Consolas", "Microsoft YaHei", monospace;
-  font-size: 12px;
+  font-size: var(--content-code-font-size);
   line-height: 1.42;
   white-space: pre-wrap;
   word-break: break-word;
@@ -1099,7 +1197,7 @@ html.visual-recovering body::before {
   gap: 10px;
   padding: 8px 11px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--content-small-font-size);
   border-bottom: 1px solid var(--line-soft);
 }
 
@@ -1113,7 +1211,8 @@ html.visual-recovering body::before {
 .item-body {
   min-width: 0;
   padding: 12px;
-  line-height: 1.58;
+  font-size: var(--content-font-size);
+  line-height: var(--content-line-height);
   white-space: pre-wrap;
   word-break: break-word;
   overflow-wrap: anywhere;
@@ -1127,8 +1226,8 @@ html.visual-recovering body::before {
   white-space: normal;
   display: grid;
   gap: 10px;
-  font-size: 15px;
-  line-height: 1.62;
+  font-size: var(--content-font-size);
+  line-height: var(--content-line-height);
 }
 
 .markdown-body > * {
@@ -1146,17 +1245,17 @@ html.visual-recovering body::before {
 }
 
 .markdown-body h2 {
-  font-size: 18px;
+  font-size: var(--content-heading-2);
 }
 
 .markdown-body h3 {
-  font-size: 16px;
+  font-size: var(--content-heading-3);
 }
 
 .markdown-body h4,
 .markdown-body h5,
 .markdown-body h6 {
-  font-size: 15px;
+  font-size: var(--content-heading-rest);
 }
 
 .markdown-body p {
@@ -1213,7 +1312,7 @@ html.visual-recovering body::before {
   background: rgba(255, 255, 255, 0.04);
   border-bottom: 1px solid var(--line-soft);
   font-family: "Cascadia Mono", "Consolas", "Microsoft YaHei", monospace;
-  font-size: 11px;
+  font-size: var(--content-small-font-size);
 }
 
 .markdown-code-block pre {
@@ -1230,7 +1329,7 @@ html.visual-recovering body::before {
   background: transparent;
   border: 0;
   border-radius: 0;
-  font-size: 12px;
+  font-size: var(--content-code-font-size);
   line-height: 1.5;
 }
 
@@ -1246,7 +1345,7 @@ html.visual-recovering body::before {
   width: 100%;
   min-width: 420px;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--content-table-font-size);
 }
 
 .markdown-body th,
@@ -1303,7 +1402,7 @@ html.visual-recovering body::before {
 .input-image figcaption,
 .input-attachment {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--content-small-font-size);
   line-height: 1.35;
 }
 
@@ -1332,6 +1431,7 @@ html.visual-recovering body::before {
   color: #d9e4df;
   background: var(--code);
   border-radius: 8px;
+  font-size: var(--content-code-font-size);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -1350,7 +1450,7 @@ html.visual-recovering body::before {
   cursor: pointer;
   padding: 9px 10px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--content-small-font-size);
   user-select: none;
 }
 
@@ -1592,6 +1692,7 @@ html.visual-recovering body::before {
   overflow-y: auto;
   resize: none;
   padding: 11px 12px;
+  font-size: var(--composer-input-font-size);
   line-height: 1.35;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -1651,7 +1752,7 @@ html.visual-recovering body::before {
   display: none;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 1180px), (pointer: coarse) and (max-width: 1400px) {
   .app {
     width: 100vw;
     max-width: 100vw;
@@ -1690,6 +1791,12 @@ html.visual-recovering body::before {
     padding: calc(5px + env(safe-area-inset-top, 0px)) 10px 5px;
   }
 
+  .font-size-select {
+    min-width: 72px;
+  }
+}
+
+@media (max-width: 760px) {
   .conversation {
     padding: 14px 12px 20px;
   }
@@ -1699,6 +1806,13 @@ html.visual-recovering body::before {
     flex-direction: column;
   }
 
+  .rollout-warning-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+
+  .rollout-skip,
   .rollout-new-thread {
     width: 100%;
   }

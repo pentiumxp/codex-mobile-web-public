@@ -31,10 +31,20 @@
           <div class="app-name">Codex</div>
           <div id="connectionState" class="connection">Starting</div>
         </div>
-        <button id="closeMenu" class="icon-button mobile-only" type="button" title="Close menu">×</button>
+        <div class="side-header-actions">
+          <select id="fontSizeSelect" class="font-size-select" title="字体大小" aria-label="字体大小">
+            <option value="small">小字</option>
+            <option value="default">标准</option>
+            <option value="large">大字</option>
+            <option value="xlarge">特大</option>
+            <option value="xxlarge">超大</option>
+          </select>
+          <button id="closeMenu" class="icon-button mobile-only" type="button" title="Close menu">×</button>
+        </div>
       </div>
 
       <button id="pushNotifications" class="push-button hidden" type="button" disabled>Notifications unavailable</button>
+
       <label class="field-label" for="workspaceSelect">Workspace</label>
       <select id="workspaceSelect" class="select"></select>
       <div id="workspacePath" class="workspace-path" hidden></div>
