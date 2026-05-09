@@ -2162,6 +2162,21 @@
   - Agent messages, Markdown code blocks, and output/detail blocks expose copy buttons using in-memory copy text.
 - Private validation:
   - `npm.cmd test`, `npm.cmd run check`, `npm.cmd run check:macos`, and `git diff --check` passed after syncing #13 code into private.
-- Pending:
-  - Commit/push private.
-  - Push updated PR #13 branch, mark ready if needed, wait for CI, then squash-merge public PR #13 with a detailed public commit message.
+- Publication status:
+  - Completed in the follow-up entry below.
+
+## 2026-05-09 PR #13 Published - 10:22 +08:00
+
+- Private repository:
+  - Committed and pushed `a461062706685f980cc2479f1ab6e7f2e5dd7f9b` on `main`.
+  - Validation passed before commit: `npm.cmd test`, `npm.cmd run check`, `npm.cmd run check:macos`, and `git diff --check`.
+- Public repository:
+  - Updated cross-repo PR #13 head to `77ad6944059b76644ac6fcb0c9489d0235a7ae3d` by replaying it on top of public `origin/main`.
+  - Public validation passed on the updated PR head: `npm.cmd test`, `npm.cmd run check`, `npm.cmd run check:macos`, `git diff --check origin/main...HEAD`, and a privacy scan for private paths/repo URLs/IP/Tailscale/Hermes markers.
+  - PR #13 was marked ready after CI; GitHub reported `MERGEABLE` / `CLEAN`; GitHub Actions `Node checks` passed on run `25588982220`.
+  - Squash-merged PR #13 into public `main` as `5e86ee5b963186b4ac027d85ee7ab3c5100de9a6`.
+  - Local public workspace was switched back to `main` and fast-forwarded to `origin/main`.
+- Public/private difference preserved:
+  - Public `public/app.js` registers `/sw.js`; private registers `/service-worker.js`.
+  - Public `public/sw.js` shell cache was bumped to `codex-mobile-shell-v10`; private `public/service-worker.js` remains the no-cache push/click worker.
+  - Public README clone instructions still point to `pentiumxp/codex-mobile-web-public`.
