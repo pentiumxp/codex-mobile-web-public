@@ -137,6 +137,7 @@ This workspace owns the standalone Codex Mobile Web app.
 - The composer attachment button should be a real file-picker label/input on mobile; do not rely only on calling `.click()` on a fully hidden file input.
 - Message entry and live operation removal use short motion transitions.
 - Automatic scroll-to-bottom uses immediate scroll positioning rather than smooth scrolling, to avoid visible whole-conversation up/down motion during no-op or near-no-op refreshes.
+- When the current conversation is scrollable and the viewport is away from the newest content, Mobile Web shows a floating return-to-bottom button above the composer. It is hidden on home/loading/error states and when the user is already near the latest messages.
 - Context compaction renders as `历史上下文正在压缩` while in progress and `历史上下文已压缩` after completion.
 - Thread lists hide archived/deleted/removed sessions and sessions outside Codex Desktop visible workspace roots.
 - Weak-network recovery may use `state_5.sqlite` metadata fallback, but should not resurface archived/deleted/old-workspace sessions.

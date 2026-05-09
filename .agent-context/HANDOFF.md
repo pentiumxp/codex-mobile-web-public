@@ -2248,3 +2248,22 @@
   - Calling `/api/app-update/apply` returned `updated=true`; the clone advanced to commit `317a68a`, and disk `package.json` became `0.1.1`.
   - Restarting the updated clone returned `/api/public-config` `version=0.1.1` and `/api/app-update/status?force=1` `state=up-to-date`, `dirty=false`, `ahead=0`, `behind=0`.
   - The temporary clone was deleted after validation.
+
+## 2026-05-09 Conversation Return-To-Bottom Button - 16:04 +08:00
+
+- User request:
+  - Long sessions can land or remain in the middle of a conversation, requiring repeated manual scrolling to return to the newest turn.
+- Code changes:
+  - `public/index.html` adds a hidden floating `scrollToBottom` button between the conversation pane and composer.
+  - `public/styles.css` positions the button above the composer on desktop, phone, and tablet layouts, using the existing composer-height CSS variable and safe-area inset.
+  - `public/app.js` shows the button only when a current thread is loaded, the conversation is scrollable, and the viewport is not near the bottom. It hides the button on home, loading, and error states.
+  - Clicking the button uses the existing immediate scroll-to-bottom behavior; normal rendering still avoids forcing the scroll position while the user is reading older content.
+  - `README.md` and `.agent-context/PROJECT_CONTEXT.md` document the user-visible behavior.
+- Validation:
+  - `npm.cmd test` passed with 7 tests.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with line-ending warnings only.
+- Runtime note:
+  - This is a static frontend change. Existing browser/PWA sessions need a refresh to load the updated `index.html`, `app.js`, and `styles.css`.
+  - Public repo was not updated; wait for explicit user approval before syncing `C:\Users\xuxin\Documents\codex-mobile-web-public`.
