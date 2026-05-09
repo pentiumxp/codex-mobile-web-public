@@ -990,6 +990,31 @@ html.visual-recovering body::before {
   scroll-behavior: auto;
 }
 
+.scroll-bottom-button {
+  position: absolute;
+  right: 20px;
+  bottom: calc(var(--composer-height, 92px) + 16px + env(safe-area-inset-bottom, 0px));
+  z-index: 7;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--text-on-accent);
+  background: var(--accent-strong);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  font-size: 24px;
+  font-weight: 850;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.scroll-bottom-button:active {
+  transform: translateY(1px);
+}
+
 .turn-timer {
   display: none;
   flex: 0 0 auto;
@@ -2228,6 +2253,13 @@ html.visual-recovering body::before {
 @media (max-width: 760px) {
   .conversation {
     padding: 14px 12px 20px;
+  }
+
+  .scroll-bottom-button {
+    right: 14px;
+    bottom: calc(var(--composer-height, 92px) + 12px + env(safe-area-inset-bottom, 0px));
+    width: 42px;
+    height: 42px;
   }
 
   .rollout-warning {

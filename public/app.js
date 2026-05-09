@@ -12,6 +12,7 @@ const state = {
   connectionStatus: null,
   renderScheduled: false,
   renderFrame: null,
+  scrollToBottomFrame: null,
   threadListRenderScheduled: false,
   threadListRenderFrame: null,
   threadNotificationThrottle: new Map(),
@@ -2906,6 +2907,7 @@ function patchHtml(target, html) {
 function updateConversationHtml(html, signature, options = {}) {
   const conversation = $("conversation");
   if (state.renderedConversationSignature === signature) {
+    scheduleScrollToBottomButtonUpdate();
     return false;
   }
   try {
@@ -2917,6 +2919,7 @@ function updateConversationHtml(html, signature, options = {}) {
   }
   state.renderedConversationSignature = signature;
   if (options.stickToBottom) scrollConversationToBottom();
+  else scheduleScrollToBottomButtonUpdate();
   return true;
 }
 
@@ -4546,8 +4549,12 @@ function scrollConversationToBottom() {
   const el = $("conversation");
   if (!el) return;
   const target = Math.max(0, el.scrollHeight - el.clientHeight);
-  if (Math.abs(el.scrollTop - target) < 2) return;
+  if (Math.abs(el.scrollTop - target) < 2) {
+    scheduleScrollToBottomButtonUpdate();
+    return;
+  }
   el.scrollTop = target;
+  scheduleScrollToBottomButtonUpdate();
 }
 
 function isConversationNearBottom() {
@@ -4556,10 +4563,41 @@ function isConversationNearBottom() {
   return el.scrollHeight - el.scrollTop - el.clientHeight < 96;
 }
 
+function updateScrollToBottomButton() {
+  const button = $("scrollToBottom");
+  const el = $("conversation");
+  if (!button || !el) return;
+  const isScrollable = el.scrollHeight - el.clientHeight > 128;
+  const shouldShow = Boolean(
+    state.currentThread
+      && !state.currentThread.mobileLoading
+      && !state.currentThread.mobileLoadError
+      && isScrollable
+      && !isConversationNearBottom(),
+  );
+  button.classList.toggle("hidden", !shouldShow);
+  button.setAttribute("aria-hidden", shouldShow ? "false" : "true");
+  button.tabIndex = shouldShow ? 0 : -1;
+}
+
+function scheduleScrollToBottomButtonUpdate() {
+  if (state.scrollToBottomFrame) return;
+  const update = () => {
+    state.scrollToBottomFrame = null;
+    updateScrollToBottomButton();
+  };
+  if (window.requestAnimationFrame) {
+    state.scrollToBottomFrame = window.requestAnimationFrame(update);
+  } else {
+    state.scrollToBottomFrame = setTimeout(update, 33);
+  }
+}
+
 function updateComposerHeightVar() {
   const composer = $("composer");
   if (!composer) return;
   document.documentElement.style.setProperty("--composer-height", `${Math.ceil(composer.getBoundingClientRect().height)}px`);
+  scheduleScrollToBottomButtonUpdate();
 }
 
 function showError(err) {
@@ -5126,8 +5164,10 @@ function wireUi() {
   $("sendMessage").addEventListener("pointerup", requestComposerSubmitFromButton);
   $("sendMessage").addEventListener("click", requestComposerSubmitFromButton);
   $("interruptTurn").addEventListener("click", interruptActiveTurn);
+  if ($("scrollToBottom")) $("scrollToBottom").addEventListener("click", scrollConversationToBottom);
   $("conversation").addEventListener("scroll", () => {
     if (state.leavingItems.size) scheduleLeavingCleanup(120);
+    updateScrollToBottomButton();
   }, { passive: true });
   $("conversation").addEventListener("click", (event) => {
     const copyButton = event.target.closest("[data-copy-key]");
