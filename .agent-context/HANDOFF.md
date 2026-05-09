@@ -2033,3 +2033,67 @@
 - Notes:
   - Existing browser/PWA sessions may need a refresh to load the updated frontend and service worker behavior.
   - Existing Desktop windows may need reconnect/relaunch if they were attached to the old mux stream before the restart.
+
+## 2026-05-08 Large Rollout Warning Skip And 200MB Threshold - 09:26 +08:00
+
+- User-reported issue:
+  - Opening `Hermes 05-07` showed only the rollout-size warning and `No visible turns`; the warning should be kept but must be skippable.
+  - The rollout warning threshold should be raised from `100MB` to `200MB`.
+- Code changes:
+  - `server.js` default `CODEX_MOBILE_ROLLOUT_WARNING_BYTES` is now `209715200` (`200MB`), and `CODEX_MOBILE_THREAD_DETAIL_ROLLOUT_MAX_BYTES` still defaults to the same value unless explicitly overridden.
+  - Large-rollout detail reads no longer immediately return the empty local summary fallback. They skip full `thread/read`, then try bounded `thread/turns/list`, preserving recent visible turns when the app-server can provide them. When this succeeds, the extra read-warning note is suppressed; the user-facing size warning remains in the skippable banner.
+  - `public/app.js` adds per-thread/rollout-size dismissal storage under `codexMobileDismissedRolloutWarnings`; the detail banner now has `跳过` and `压缩续接` actions.
+  - `public/styles.css` adds the two-button action layout for desktop and mobile.
+  - `README.md` and `.agent-context/PROJECT_CONTEXT.md` document the `200MB` default and the skippable warning behavior.
+- Runtime validation:
+  - Restarted the 8787 Node listener after the server-side changes. Previous listener PID `5364`; current listener PID `63392`.
+  - `/api/public-config` returned `rolloutWarningBytes=209715200`.
+  - `Hermes 05-07` summary returned `rolloutSizeBytes=200195815`, threshold `209715200`, and `rolloutOverWarningThreshold=false`.
+  - Direct detail read for `Hermes 05-07` returned in about `2229ms` with `mobileReadMode=thread-read`, `turnCount=80`, and no rollout warning.
+- Validation:
+  - `npm.cmd test` passed with 7 tests.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with line-ending warnings only.
+- Public release note:
+  - Public repo was not updated in this step. Follow the project rule: wait for user testing and explicit public-update instruction before syncing `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+
+## 2026-05-09 Sidebar Font Size Selector - 09:14 +08:00
+
+- User request:
+  - Add font-size adjustment, placed in the menu/sidebar top-right area rather than in the main conversation window.
+- Code changes:
+  - `public/index.html` now places a compact `fontSizeSelect` control in the sidebar header actions, next to the mobile close button.
+  - `public/app.js` stores the selected size in `localStorage` key `codexMobileFontSize`, normalizes values to `small`, `default`, `large`, or `xlarge`, and applies the value through `document.documentElement.dataset.fontSize`.
+  - `public/styles.css` adds CSS variables for content, code, table, heading, and composer input font sizes, with size-specific values under `:root[data-font-size]`.
+  - `README.md` and `.agent-context/PROJECT_CONTEXT.md` document that the control belongs in the sidebar/menu header, not the main topbar.
+- Validation:
+  - `npm.cmd test` passed with 7 tests.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with line-ending warnings only.
+- Runtime note:
+  - This is a static frontend change. The running 8787 server can serve the updated files without a Node restart, but existing PWA/browser sessions need a refresh to load the new `index.html`, `app.js`, and `styles.css`.
+
+## 2026-05-09 Tablet Sidebar Overlay Mode - 09:20 +08:00
+
+- User request:
+  - On a large tablet, the page was split left/right with the menu occupying about half the screen. The user wants the tablet layout to behave like phone layout: the main window should be full-screen, and the menu should appear only after explicit user action.
+- Code changes:
+  - `public/styles.css` split sidebar overlay behavior from phone-only compact layout. The sidebar overlay breakpoint is now `(max-width: 1180px), (pointer: coarse) and (max-width: 1400px)`, while the tighter composer/content mobile layout remains under `760px`.
+  - `public/app.js` adds `MENU_OVERLAY_MEDIA` and `isMenuOverlayMode()`, using the same media query to close the sidebar after selecting/loading a thread on tablet overlay layouts.
+  - `README.md` and `.agent-context/PROJECT_CONTEXT.md` document that phones and tablet-sized/touch layouts should not keep the sidebar permanently visible.
+- Runtime note:
+  - Static frontend change; existing browser/PWA sessions need a refresh to load the updated CSS/JS.
+
+## 2026-05-09 Extra-Large Tablet Font Size - 09:22 +08:00
+
+- User request:
+  - The existing `特大` font size was still too small on a large tablet; add one larger level.
+- Code changes:
+  - `public/index.html` adds a `超大` option with value `xxlarge` to the sidebar font-size selector.
+  - `public/app.js` accepts `xxlarge` in `codexMobileFontSize`.
+  - `public/styles.css` adds `:root[data-font-size="xxlarge"]`, setting conversation text to `22px`, composer input to `22px`, code to `16px`, table text to `18px`, and headings up to `26px`.
+  - `README.md` and `.agent-context/PROJECT_CONTEXT.md` document the new `超大` / `xxlarge` option.
+- Runtime note:
+  - Static frontend change; existing browser/PWA sessions need a refresh to load the updated HTML/CSS/JS.
