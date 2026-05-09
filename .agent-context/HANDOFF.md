@@ -2241,3 +2241,10 @@
   - Bumped private `package.json` and `package-lock.json` from `0.1.0` to `0.1.1`.
 - Operational note:
   - The running server reads `package.json` once at startup, so the 8787 listener must be restarted after this change for the sidebar version pill and `/api/public-config` to show `0.1.1`.
+- Follow-up validation:
+  - User correctly noted that simply bumping private and restarting the live 8787 service did not validate the self-update flow.
+  - A temporary clean clone of `https://github.com/pentiumxp/codex-mobile-web.git` was reset to old private commit `cf6412852a7bdd2457f0c7ca446c5c1b976f6152` on `main`, where `package.json` was `0.1.0` and `HEAD...origin/main` was `0 1`.
+  - Running that old checkout on an isolated local port returned `/api/app-update/status?force=1&fetch=1` with `state=update-available`, `behind=1`, `updateAvailable=true`, and `canFastForward=true`.
+  - Calling `/api/app-update/apply` returned `updated=true`; the clone advanced to commit `317a68a`, and disk `package.json` became `0.1.1`.
+  - Restarting the updated clone returned `/api/public-config` `version=0.1.1` and `/api/app-update/status?force=1` `state=up-to-date`, `dirty=false`, `ahead=0`, `behind=0`.
+  - The temporary clone was deleted after validation.
