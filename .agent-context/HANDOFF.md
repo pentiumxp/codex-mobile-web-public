@@ -2097,3 +2097,30 @@
   - `README.md` and `.agent-context/PROJECT_CONTEXT.md` document the new `超大` / `xxlarge` option.
 - Runtime note:
   - Static frontend change; existing browser/PWA sessions need a refresh to load the updated HTML/CSS/JS.
+
+## 2026-05-09 PR #12 Stability Integration - 10:05 +08:00
+
+- User instruction:
+  - Continue from the split public PR plan until the stability PR can be submitted/committed.
+  - PR #12 is the ready stability PR; PR #13 remains draft and should wait until after #12.
+- PR status:
+  - Public PR #12: `https://github.com/pentiumxp/codex-mobile-web-public/pull/12`, title `[codex] 优化移动端续接同步、模型一致性和完成提醒`, ready, GitHub Actions `Node checks` passed.
+  - Public PR #13: draft and GitHub reported `mergeable=CONFLICTING`; no #13 code was integrated in this step.
+- Integration approach:
+  - Fetched PR #12 into private as `public/pr-12-stability` and three-way merged against current private files using public `main` as base.
+  - Kept current behavior that PR #12 would otherwise regress: 200MB rollout warning threshold, skippable rollout warning banner, large-rollout `thread/turns/list` detail path, sidebar font-size selector including `xxlarge`, and tablet/touch sidebar overlay mode.
+  - Integrated #12 stability behavior into private `server.js`, `public/app.js`, and `public/styles.css`.
+- Behavior integrated:
+  - Server logs compact `[message-submit]` diagnostics for empty/received/done/failed submissions without raw text.
+  - Server accepts best-effort `/api/client-events` diagnostics for UI stalls, send stalls, send-button no-submit cases, and send failures.
+  - Mobile Web adds send-button busy/failed states, a send watchdog, click-submit guarding, and clearer retry/slow-send feedback.
+  - Mobile Web keeps model display and actual submitted model aligned through `currentComposerModel()`, and normalizes quota/rate-limit failures into a model-specific message where possible.
+  - Thread list rendering is requestAnimationFrame-scheduled, noisy thread notifications are throttled, and non-current thread completion can trigger a throttled local tone/haptic completion alert.
+- Documentation:
+  - `README.md` documents the stability behavior.
+  - `.agent-context/PROJECT_CONTEXT.md` records the durable message submission diagnostics, model-selector alignment, send watchdog, and completion alert rules.
+- Validation:
+  - Private validation passed after integration: `npm.cmd test`, `npm.cmd run check`, `npm.cmd run check:macos`, and `git diff --check`.
+  - Manual diff review confirmed current 200MB rollout threshold, skippable rollout warning banner, font-size selector including `xxlarge`, tablet/touch overlay sidebar behavior, and large-rollout `thread/turns/list` path were preserved while integrating PR #12 stability changes.
+- Remaining publication step:
+  - Commit/push private, then update public PR #12 or merge public using a detailed public commit message and README-preserving integration.

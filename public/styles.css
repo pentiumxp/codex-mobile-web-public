@@ -368,7 +368,7 @@ html.visual-recovering body::before {
   position: relative;
   z-index: 1;
   width: 100%;
-  min-height: 70px;
+  min-height: 66px;
   text-align: left;
   padding: 11px 12px;
   color: var(--text);
@@ -402,13 +402,13 @@ html.visual-recovering body::before {
 }
 
 .thread-card.has-status-running:not(.active) {
-  border-color: rgba(122, 199, 167, 0.42);
-  background: rgba(122, 199, 167, 0.045);
+  border-color: var(--line-soft);
+  background: var(--panel);
 }
 
 .thread-card.has-status-unread:not(.active) {
-  border-color: rgba(154, 163, 165, 0.34);
-  background: rgba(238, 240, 237, 0.035);
+  border-color: var(--line-soft);
+  background: var(--panel);
 }
 
 .thread-card.rollout-warn,
@@ -419,24 +419,20 @@ html.visual-recovering body::before {
 .thread-card-title-row {
   min-width: 0;
   display: flex;
-  align-items: start;
+  align-items: center;
   gap: 9px;
 }
 
 .thread-card-title {
   min-width: 0;
   flex: 1 1 auto;
-  font-size: 14px;
-  font-weight: 680;
-  line-height: 1.35;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.22;
   overflow: hidden;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
-}
-
-.thread-card.has-status-unread:not(.active) .thread-card-title {
-  font-weight: 730;
 }
 
 .thread-card-meta-row {
@@ -454,7 +450,7 @@ html.visual-recovering body::before {
   align-items: center;
   gap: 8px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .thread-card-path {
@@ -467,7 +463,8 @@ html.visual-recovering body::before {
 .thread-card-time {
   flex: 0 0 auto;
   white-space: nowrap;
-  color: #b2b9ba;
+  color: #9ba3a5;
+  font-size: 11px;
 }
 
 .status-icon {
@@ -485,7 +482,11 @@ html.visual-recovering body::before {
 
 .thread-status-icon {
   margin-left: auto;
-  margin-top: 2px;
+  margin-top: 0;
+}
+
+.home-status-icon {
+  margin-left: auto;
 }
 
 .status-icon::before {
@@ -762,14 +763,18 @@ html.visual-recovering body::before {
 
 .home-shortcut-title {
   font-size: 14px;
-  font-weight: 680;
-  line-height: 1.35;
+  font-weight: 700;
+  line-height: 1.22;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
   white-space: nowrap;
 }
 
 .home-shortcut-meta {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.35;
   white-space: nowrap;
 }
@@ -1708,6 +1713,30 @@ html.visual-recovering body::before {
 #sendMessage {
   flex: 0 0 auto;
   min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+#sendMessage.sending {
+  color: #f4f5f3;
+  background: rgba(158, 231, 196, 0.25);
+}
+
+#sendMessage.sending::after {
+  content: "";
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 2px solid rgba(10, 16, 13, 0.32);
+  border-top-color: rgba(9, 16, 13, 0.95);
+  animation: status-spin 750ms linear infinite;
+}
+
+#sendMessage.send-failed {
+  color: #ffe2df;
+  background: rgba(241, 135, 125, 0.22);
 }
 
 #sendMessage.interrupt-mode {
