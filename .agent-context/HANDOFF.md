@@ -2200,3 +2200,35 @@
   - Bumped public `public/sw.js` shell cache to `codex-mobile-shell-v11`.
   - Public validation passed: `npm.cmd test`, `npm.cmd run check`, `npm.cmd run check:macos`, `git diff --check`, and a targeted privacy scan for private paths/repo URLs/IP/Tailscale/Hermes markers.
   - Public commit `27bf27b 整合字体大小设置面板` pushed to `origin/main`.
+
+## 2026-05-09 Git Fast-Forward Self Update - 11:05 +08:00
+
+- User request:
+  - Add a startup check for whether the GitHub public/current remote has newer code, show an update hint near the version area, and let the user click to pull and restart.
+- Private code changes:
+  - `server.js` now exposes app version and update config through `/api/public-config`.
+  - Added authenticated `GET /api/app-update/status` and `POST /api/app-update/apply`.
+  - Update status checks the current Git checkout against `CODEX_MOBILE_UPDATE_REMOTE` / `CODEX_MOBILE_UPDATE_BRANCH`, default `origin/main`, using a fetch refspec that updates the remote-tracking branch.
+  - Apply is intentionally fast-forward only. It refuses non-Git installs, missing remotes, dirty working trees, detached/wrong branches, and ahead/diverged local branches. Remote URLs/errors mask URL credentials before returning to the browser.
+  - After a successful fast-forward, the server responds to the browser and schedules `shutdown()`, relying on the existing hidden startup supervisor to restart the 8787 listener from updated files.
+  - `public/index.html`, `public/app.js`, and `public/styles.css` add a sidebar version/update pill. After login it checks updates in the background; available clean updates ask for confirmation before applying. Blocked/unsupported/error states are surfaced through the pill and click alerts.
+  - `README.md` documents self-update behavior and environment variables. `.agent-context/PROJECT_CONTEXT.md` records the durable update semantics.
+- Validation:
+  - `npm.cmd test` passed with 7 tests.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with line-ending warnings only.
+  - A temporary local server on a separate port returned `/api/public-config` update config correctly, and `/api/app-update/status?force=1` reported the expected blocked state because the current worktree contains these uncommitted changes.
+  - A temporary local server returned `409` from `/api/app-update/apply` while the worktree was dirty, confirming the safety refusal path.
+- Runtime activation:
+  - Restarted the 8787 Mobile Web listener after the `server.js` change. Old listener PID `63392`; new listener PID `67020`.
+  - Authenticated `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, and `lastError=null`.
+  - Authenticated `/api/app-update/status?force=1` returned `state=blocked`, `dirty=true`, and `reason=working tree has local changes`, which is expected while these changes are uncommitted.
+- Public release:
+  - User explicitly approved updating public and requested the public version be one patch version higher than private for testing.
+  - Synchronized the self-update implementation to `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Preserved public-only differences: `public/app.js` registers `/sw.js`; README clone instructions point to `pentiumxp/codex-mobile-web-public`; public `public/sw.js` cache is `codex-mobile-shell-v12`.
+  - Bumped public `package.json` / `package-lock.json` version to `0.1.1`, while private remains `0.1.0`.
+  - Public validation passed: `npm.cmd test`, `npm.cmd run check`, `npm.cmd run check:macos`, `git diff --check`, a temporary local update-status API check, and a targeted privacy scan for private paths/repo URLs/IP/Tailscale/Hermes markers.
+  - Public commit `b8bb3e6f513a443b8e0600fd857be8c84fbad26a` pushed to `origin/main`.
+  - After push, a temporary public local server returned `version=0.1.1`, `state=up-to-date`, `dirty=false`, `ahead=0`, and `behind=0` for `/api/app-update/status?force=1`.

@@ -367,6 +367,12 @@ html.visual-recovering body::before {
   position: relative;
 }
 
+.app-title-block {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
 .side-header-actions {
   flex: 0 0 auto;
   display: flex;
@@ -384,6 +390,44 @@ html.visual-recovering body::before {
 .field-label {
   color: var(--muted);
   font-size: 12px;
+}
+
+.update-status {
+  justify-self: start;
+  max-width: 100%;
+  min-height: 22px;
+  padding: 2px 7px;
+  color: var(--muted);
+  background: var(--control-muted-bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.update-status.available {
+  color: var(--text-on-accent);
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+.update-status.blocked {
+  color: var(--danger-soft-text);
+  background: rgba(247, 132, 124, 0.12);
+  border-color: rgba(247, 132, 124, 0.4);
+}
+
+.update-status.checking {
+  color: var(--accent-strong);
+  border-color: rgba(122, 199, 167, 0.42);
+}
+
+.update-status:disabled {
+  opacity: 0.75;
 }
 
 .field-label {

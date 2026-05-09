@@ -59,6 +59,11 @@ const state = {
   maxUploadBytes: 64 * 1024 * 1024,
   maxUploadFiles: 12,
   rolloutWarningThresholdBytes: 100 * 1024 * 1024,
+  appVersion: "",
+  appUpdateStatus: null,
+  appUpdateBusy: false,
+  appUpdateError: "",
+  appUpdateRestarting: false,
   modelOptions: [],
   reasoningEffortOptions: [],
   permissionModeOptions: ["default", "auto", "full", "custom"],
@@ -793,6 +798,145 @@ function renderQuotaUsage() {
     `${quotaTitle("5-hour", fiveHour)} | ${quotaTitle("weekly", weekly)}`,
   ].filter(Boolean).join("; ");
   el.classList.toggle("unknown", !fiveHour && !weekly);
+}
+
+function appVersionText(status = state.appUpdateStatus) {
+  const version = String((status && status.version) || state.appVersion || "").trim();
+  return version ? `v${version}` : "Version";
+}
+
+function renderAppUpdateStatus() {
+  const el = $("appUpdateStatus");
+  if (!el) return;
+  const status = state.appUpdateStatus || {};
+  const supported = status.supported !== false;
+  const checking = state.appUpdateBusy && !state.appUpdateRestarting;
+  const applying = Boolean(status.applying) || state.appUpdateRestarting;
+  const blocked = Boolean(status.updateAvailable && !status.canFastForward);
+  let label = appVersionText(status);
+  let title = "Check for GitHub updates";
+  if (state.appUpdateRestarting) {
+    label = "重启中…";
+    title = "更新已应用，正在等待服务重启";
+  } else if (applying) {
+    label = "更新中…";
+    title = "正在拉取更新";
+  } else if (checking) {
+    label = "检查更新…";
+    title = "正在检查 GitHub 更新";
+  } else if (status.updateAvailable && status.canFastForward) {
+    label = `有更新 ${status.remoteShort || ""}`.trim();
+    title = `发现 ${status.remote || "origin"}/${status.branch || "main"} 更新，点击后确认拉取并重启`;
+  } else if (blocked) {
+    label = "更新受阻";
+    title = status.reason || status.error || "检测到更新，但当前工作区不能安全 fast-forward";
+  } else if (status.error) {
+    label = "更新检查失败";
+    title = status.error;
+  } else if (!supported) {
+    title = status.reason || "当前安装方式不支持 Git 自动更新";
+  } else if (status.localShort) {
+    title = `${appVersionText(status)} (${status.localShort})，点击重新检查更新`;
+  }
+  el.textContent = label;
+  el.title = title;
+  el.classList.toggle("hidden", !state.appVersion && !state.appUpdateStatus);
+  el.classList.toggle("available", Boolean(status.updateAvailable && status.canFastForward));
+  el.classList.toggle("blocked", blocked || Boolean(status.error));
+  el.classList.toggle("checking", checking || applying);
+  el.disabled = state.appUpdateBusy || state.appUpdateRestarting;
+}
+
+async function refreshAppUpdateStatus(options = {}) {
+  if (!state.key) return null;
+  if (state.appUpdateBusy && !options.force) return state.appUpdateStatus;
+  state.appUpdateBusy = true;
+  if (!options.silent) renderAppUpdateStatus();
+  try {
+    const params = new URLSearchParams();
+    if (options.fetch) params.set("fetch", "1");
+    if (options.force) params.set("force", "1");
+    const status = await api(`/api/app-update/status${params.toString() ? `?${params.toString()}` : ""}`, {
+      timeoutMs: options.fetch ? 25000 : 12000,
+    });
+    state.appUpdateStatus = status;
+    state.appUpdateError = status && status.error ? status.error : "";
+    return status;
+  } catch (err) {
+    state.appUpdateError = err.message || String(err);
+    state.appUpdateStatus = Object.assign({}, state.appUpdateStatus || {}, {
+      version: state.appVersion,
+      error: state.appUpdateError,
+    });
+    return state.appUpdateStatus;
+  } finally {
+    state.appUpdateBusy = false;
+    renderAppUpdateStatus();
+  }
+}
+
+function scheduleStartupUpdateCheck() {
+  if (!state.key) return;
+  window.setTimeout(() => {
+    refreshAppUpdateStatus({ fetch: true, force: true, silent: true }).catch(() => {});
+  }, 900);
+}
+
+async function handleAppUpdateClick() {
+  if (state.appUpdateBusy || state.appUpdateRestarting) return;
+  let status = state.appUpdateStatus;
+  if (!status || (!status.updateAvailable && !status.error)) {
+    status = await refreshAppUpdateStatus({ fetch: true, force: true });
+  }
+  if (!status) return;
+  if (status.supported === false) {
+    window.alert(`当前安装方式不支持自动更新：${status.reason || "没有可用的 Git 远程分支"}`);
+    return;
+  }
+  if (status.error && !status.updateAvailable) {
+    window.alert(`更新检查失败：${status.error}`);
+    return;
+  }
+  if (!status.updateAvailable) {
+    window.alert("当前已经是最新版本。");
+    return;
+  }
+  if (!status.canFastForward) {
+    window.alert(`检测到更新，但不能自动应用：${status.reason || status.error || "当前工作区不是干净的 fast-forward 状态"}`);
+    return;
+  }
+  const confirmed = window.confirm([
+    "发现 GitHub 更新。是否拉取并重启 Mobile Web？",
+    "",
+    "仅在当前仓库干净、可 fast-forward 时执行；运行时数据和 Access Key 不会被覆盖。",
+  ].join("\n"));
+  if (!confirmed) return;
+  state.appUpdateBusy = true;
+  renderAppUpdateStatus();
+  try {
+    const result = await api("/api/app-update/apply", {
+      method: "POST",
+      body: "{}",
+      timeoutMs: 150000,
+    });
+    state.appUpdateStatus = result.after || result.status || status;
+    if (result.updated) {
+      state.appUpdateRestarting = true;
+      renderAppUpdateStatus();
+      window.setTimeout(() => window.location.reload(), Math.max(1800, Number(result.restartInMs || 1200) + 900));
+    } else {
+      window.alert("当前已经是最新版本。");
+    }
+  } catch (err) {
+    state.appUpdateError = err.message || String(err);
+    state.appUpdateStatus = Object.assign({}, status || {}, {
+      error: state.appUpdateError,
+    });
+    showError(err);
+  } finally {
+    state.appUpdateBusy = false;
+    renderAppUpdateStatus();
+  }
 }
 
 function updateConnectionState(status, fallbackText = "Starting") {
@@ -1971,6 +2115,7 @@ async function bootstrap() {
   await loadThreads();
   await restoreThreadSelection();
   connectEvents();
+  scheduleStartupUpdateCheck();
   initializePushControls().catch((err) => {
     state.pushError = err.message || String(err);
     updatePushButton();
@@ -4937,6 +5082,7 @@ function wireUi() {
   });
   $("refreshThreads").addEventListener("click", () => loadThreads().catch(showError));
   $("pushNotifications").addEventListener("click", () => handlePushButtonClick().catch(showError));
+  if ($("appUpdateStatus")) $("appUpdateStatus").addEventListener("click", () => handleAppUpdateClick().catch(showError));
   const settingsPanel = $("themeSettingsPanel");
   if (settingsPanel) settingsPanel.addEventListener("click", handleFontSizeChoice);
   document.addEventListener("pointerdown", primeCompletionAudio, { passive: true });
@@ -5124,6 +5270,7 @@ async function start() {
   startRelativeTimeTimer();
   startUiWatchdog();
   const config = await fetch("/api/public-config").then((res) => res.json());
+  state.appVersion = String(config.version || "");
   state.maxUploadBytes = Number(config.maxUploadBytes || state.maxUploadBytes);
   state.maxUploadFiles = Number(config.maxUploadFiles || state.maxUploadFiles);
   state.rolloutWarningThresholdBytes = Number(config.rolloutWarningBytes || state.rolloutWarningThresholdBytes);
@@ -5134,6 +5281,13 @@ async function start() {
   state.defaultModel = String(config.defaultModel || "");
   state.defaultReasoningEffort = String(config.defaultReasoningEffort || "");
   state.pushServerSupported = Boolean(config.push && config.push.supported);
+  state.appUpdateStatus = {
+    supported: Boolean(config.update && config.update.enabled),
+    version: state.appVersion,
+    remote: config.update && config.update.remote || "origin",
+    branch: config.update && config.update.branch || "main",
+  };
+  renderAppUpdateStatus();
   renderComposerSettings();
   rememberRateLimits(config.rateLimits || null, config.rateLimitsByModel || null);
   updatePushButton();

@@ -327,6 +327,7 @@ Behavior:
 - Home view shows recent workspaces and recent threads.
 - The sidebar menu header includes a compact settings button. The settings panel contains the theme control (`跟随系统` / `深色` / `浅色`) and the font-size control (`小字` / `标准` / `大字` / `特大` / `超大`) using the same segmented-button style.
 - Theme and font-size choices are saved in the browser. Theme updates the page theme color metadata; iOS PWA status-bar color changes may require closing and reopening the installed app. Font size adjusts conversation text, markdown, code/table content, approval details, and the composer input.
+- The sidebar header also shows the app version/update pill. After login, Mobile Web checks the configured GitHub remote in the background. If the remote branch is ahead, the pill becomes an update action; tapping it asks for confirmation, applies only a clean fast-forward update, then exits the Node listener so the existing startup supervisor can restart it from the updated files.
 - On phones and tablet-sized/touch layouts, the sidebar menu is not persistent: the main conversation fills the viewport, and the menu opens only after the user taps the top-left menu button. Wide desktop layouts keep the persistent sidebar.
 - On mobile/touch layouts, swiping right from the left screen edge opens the session list without waiting for a network refresh. If the existing session list is newer than 60 seconds, Mobile Web reuses it immediately; older lists open first and then refresh quietly in the background.
 - Thread lists and thread detail monitor rollout JSONL size. At the default `200MB` threshold, Mobile Web shows a context-size warning and offers a same-workspace continuation action. The warning can be skipped for the current thread size, and will reappear if that thread grows again past the stored size. After user confirmation, the action first asks the source thread to write a thread-specific handoff file, creates a source-named/date-suffixed continuation thread, sends a scoped bootstrap message, then archives the source thread.
@@ -440,6 +441,14 @@ This section summarizes the current integration behavior for someone cloning or 
 - Thread rows now support a long-press action sheet. Rename calls `PATCH /api/threads/<threadId>/name` with a max 120-character name; the server tries several app-server thread-title methods and returns `501` if the connected app-server does not support renaming.
 - The long-press and swipe handlers avoid iOS text-selection side effects on thread cards by disabling selection on action rows and preserving text selection only inside editable rename controls.
 - Copy buttons use the browser Clipboard API on secure contexts and fall back to a hidden textarea plus `execCommand("copy")` where needed. The copied text is kept only in memory for the current render cycle and is not persisted.
+
+### Self Update
+
+- On server startup, Mobile Web schedules a background `git fetch` against `CODEX_MOBILE_UPDATE_REMOTE` / `CODEX_MOBILE_UPDATE_BRANCH`, defaulting to `origin/main`.
+- The browser also checks update status after login and displays it in the sidebar version pill. The pill stays passive when the checkout is current or when Git metadata is unavailable.
+- Clicking an available update asks for confirmation and then runs a fast-forward-only update. It refuses to run when the current branch is not the configured branch, the working tree is dirty, or the local branch is ahead/diverged.
+- After a successful fast-forward, the server sends the HTTP response and exits after a short delay. The normal Windows hidden startup wrapper supervises the listener and starts it again from the updated files.
+- The update action only changes tracked repository files. Runtime state such as `%USERPROFILE%\.codex-mobile-web\access_key`, uploads, VAPID keys, and subscriptions remain outside the repository and are not overwritten.
 
 ### Which Restart Is Needed After Changes
 
@@ -755,6 +764,11 @@ VAPID details:
 | `CODEX_MOBILE_HOST` | Web server bind host. Use `0.0.0.0` for phone access. |
 | `CODEX_MOBILE_PORT` | Web server port, default `8787`. |
 | `CODEX_MOBILE_CODEX_EXE` | Codex CLI executable path/name. |
+| `CODEX_MOBILE_DISABLE_UPDATE_CHECK` | Disable startup/browser Git update checks when set to `1`, `true`, `yes`, or `on`. |
+| `CODEX_MOBILE_UPDATE_REMOTE` | Git remote used by the self-update check, default `origin`. |
+| `CODEX_MOBILE_UPDATE_BRANCH` | Git branch used by the self-update check, default `main`. |
+| `CODEX_MOBILE_UPDATE_CHECK_TIMEOUT_MS` | Timeout for update-check Git commands, default `15000`. |
+| `CODEX_MOBILE_UPDATE_APPLY_TIMEOUT_MS` | Timeout for the fast-forward update command, default `120000`. |
 | `CODEX_MOBILE_KEY` | Inline web access key. |
 | `CODEX_MOBILE_KEY_FILE` | Custom access-key file path. |
 | `CODEX_MOBILE_DISABLE_AUTH` | Disable auth when set to `1`, `true`, `yes`, or `on`. |
