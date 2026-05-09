@@ -1528,6 +1528,16 @@ html.visual-recovering body::before {
   white-space: nowrap;
 }
 
+.item-head-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  overflow: visible;
+  text-overflow: clip;
+}
+
 .item-body {
   min-width: 0;
   padding: 12px;
@@ -1626,11 +1636,23 @@ html.visual-recovering body::before {
   overflow: hidden;
 }
 
-.markdown-code-lang {
-  padding: 7px 10px;
+.markdown-code-head {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px 6px 10px;
   color: var(--muted);
   background: var(--table-head-bg);
   border-bottom: 1px solid var(--line-soft);
+}
+
+.markdown-code-lang {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: "Cascadia Mono", "Consolas", "Microsoft YaHei", monospace;
   font-size: var(--content-small-font-size);
 }
@@ -1767,11 +1789,57 @@ html.visual-recovering body::before {
 }
 
 .output-details summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   cursor: pointer;
   padding: 9px 10px;
   color: var(--muted);
   font-size: var(--content-small-font-size);
   user-select: none;
+}
+
+.output-details summary span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.copy-button {
+  flex: 0 0 auto;
+  min-height: 26px;
+  padding: 4px 9px;
+  color: var(--muted);
+  background: var(--control-bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.copy-button:hover,
+.copy-button:focus-visible {
+  color: var(--text);
+  border-color: var(--line);
+}
+
+.copy-button.copied {
+  color: var(--accent-strong);
+  border-color: rgba(122, 199, 167, 0.48);
+  background: rgba(122, 199, 167, 0.11);
+}
+
+.item-copy-button {
+  min-height: 24px;
+  padding: 3px 8px;
+  font-size: 11px;
 }
 
 .output-details pre {

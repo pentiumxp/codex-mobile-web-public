@@ -91,6 +91,9 @@ const state = {
   lastCompletionSoundAt: 0,
   completionAudioContext: null,
   completionAudioUnlocked: false,
+  copyTextStore: new Map(),
+  copySeq: 0,
+  copyFeedbackTimers: new Map(),
 };
 
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
@@ -223,6 +226,78 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function resetCopyTextStore() {
+  state.copyTextStore.clear();
+  state.copySeq = 0;
+}
+
+function rememberCopyText(value) {
+  const text = String(value ?? "");
+  if (!text.trim()) return "";
+  state.copySeq += 1;
+  const key = `copy-${state.copySeq}`;
+  state.copyTextStore.set(key, text);
+  return key;
+}
+
+function copyButtonHtml(copyKey, label, className = "") {
+  if (!copyKey) return "";
+  const classes = ["copy-button", className].filter(Boolean).join(" ");
+  return `<button class="${escapeHtml(classes)}" type="button" data-copy-key="${escapeHtml(copyKey)}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">${escapeHtml(label)}</button>`;
+}
+
+function fallbackCopyText(text) {
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.top = "-1000px";
+  textarea.style.left = "-1000px";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } finally {
+    textarea.remove();
+  }
+  if (!ok) throw new Error("copy failed");
+}
+
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  fallbackCopyText(text);
+}
+
+function showCopyFeedback(button) {
+  if (!button) return;
+  const previous = button.textContent || "复制";
+  const existing = state.copyFeedbackTimers.get(button);
+  if (existing) window.clearTimeout(existing);
+  button.textContent = "已复制";
+  button.classList.add("copied");
+  const timer = window.setTimeout(() => {
+    button.textContent = previous;
+    button.classList.remove("copied");
+    state.copyFeedbackTimers.delete(button);
+  }, 900);
+  state.copyFeedbackTimers.set(button, timer);
+}
+
+async function handleCopyButtonClick(button) {
+  const key = button && button.dataset ? button.dataset.copyKey : "";
+  const text = state.copyTextStore.get(key || "");
+  if (!text) return;
+  await copyTextToClipboard(text);
+  showCopyFeedback(button);
 }
 
 function truncateMiddle(value, maxChars, label) {
@@ -2866,6 +2941,7 @@ function renderCurrentThread(options = {}) {
     : "";
   const rolloutWarning = renderRolloutWarning(thread, previousKeys);
   const visibleTurnIds = new Set(turns.map((turn) => turn && turn.id).filter(Boolean).map(String));
+  resetCopyTextStore();
   const turnsHtml = turns.map((turn) => renderTurn(turn, previousKeys)).join("");
   const approvalsHtml = renderPendingApprovals(thread, previousKeys, (request) => {
     const turnId = approvalTurnId(request);
@@ -3474,8 +3550,13 @@ function renderItem(item, turn = null, previousKeys = new Set(), index = 0) {
   if (isLiveReasoning(item, turn)) return "";
   const type = item.type || "item";
   const key = stableItemKey(turn, item, index);
+  const itemCopyKey = rememberCopyText(copyTextForItem(item));
+  const itemCopyButton = copyButtonHtml(itemCopyKey, "复制全文", "item-copy-button");
   return `<section class="item${entryAnimationClass(key, previousKeys)} ${escapeHtml(type)}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">
-    <div class="item-head"><span>${escapeHtml(labelForItem(item))}</span><span>${escapeHtml(item.status ? statusText(item.status) : "")}</span></div>
+    <div class="item-head">
+      <span>${escapeHtml(labelForItem(item))}</span>
+      <span class="item-head-actions"><span>${escapeHtml(item.status ? statusText(item.status) : "")}</span>${itemCopyButton}</span>
+    </div>
     <div class="item-body">${renderItemBody(item, turn)}</div>
   </section>`;
 }
@@ -3501,6 +3582,11 @@ function labelForItem(item) {
     contextCompaction: "Context",
   };
   return map[item.type] || item.type || "Item";
+}
+
+function copyTextForItem(item) {
+  if (!item || item.type !== "agentMessage") return "";
+  return item.text || "";
 }
 
 function isInputImagePart(part) {
@@ -3705,8 +3791,10 @@ function renderMarkdown(value) {
         i += 1;
       }
       if (i < lines.length) i += 1;
-      const langLabel = lang ? `<div class="markdown-code-lang">${escapeHtml(lang)}</div>` : "";
-      blocks.push(`<div class="markdown-code-block">${langLabel}<pre><code>${escapeHtml(code.join("\n"))}</code></pre></div>`);
+      const codeText = code.join("\n");
+      const langLabel = `<span class="markdown-code-lang">${escapeHtml(lang || "代码")}</span>`;
+      const copyButton = copyButtonHtml(rememberCopyText(codeText), "复制", "markdown-copy-button");
+      blocks.push(`<div class="markdown-code-block"><div class="markdown-code-head">${langLabel}${copyButton}</div><pre><code>${escapeHtml(codeText)}</code></pre></div>`);
       continue;
     }
 
@@ -3804,35 +3892,38 @@ function renderItemBody(item, turn = null) {
 function renderOutputBlock(output, item = {}) {
   if (!output && item.outputOmitted) {
     const total = item.outputTotalChars || 0;
+    const omittedText = "This command output is still in the Codex session history. It is omitted here to keep the mobile client responsive.";
     return `<details class="output-details">
-      <summary>${escapeHtml(`Output omitted from mobile view: ${Number(total).toLocaleString()} chars`)}</summary>
-      <pre>${escapeHtml("This command output is still in the Codex session history. It is omitted here to keep the mobile client responsive.")}</pre>
+      <summary><span>${escapeHtml(`Output omitted from mobile view: ${Number(total).toLocaleString()} chars`)}</span>${copyButtonHtml(rememberCopyText(omittedText), "复制", "output-copy-button")}</summary>
+      <pre>${escapeHtml(omittedText)}</pre>
     </details>`;
   }
   if (!output) return "";
+  const outputText = String(output);
   const total = item.outputTotalChars || String(output).length;
-  const truncated = item.outputTruncated || total > String(output).length;
+  const truncated = item.outputTruncated || total > outputText.length;
   const summary = truncated
-    ? `Output preview: ${total.toLocaleString()} chars total, showing latest ${String(output).length.toLocaleString()}`
-    : `Output: ${String(output).length.toLocaleString()} chars`;
+    ? `Output preview: ${total.toLocaleString()} chars total, showing latest ${outputText.length.toLocaleString()}`
+    : `Output: ${outputText.length.toLocaleString()} chars`;
   return `<details class="output-details">
-    <summary>${escapeHtml(summary)}</summary>
-    <pre>${escapeHtml(output)}</pre>
+    <summary><span>${escapeHtml(summary)}</span>${copyButtonHtml(rememberCopyText(outputText), "复制", "output-copy-button")}</summary>
+    <pre>${escapeHtml(outputText)}</pre>
   </details>`;
 }
 
 function renderStructuredBlock(value, label) {
   if (!value) return "";
   if (value.truncated && value.preview) {
+    const preview = String(value.preview || "");
     return `<details class="output-details">
-      <summary>${escapeHtml(`${label}: ${Number(value.totalChars || 0).toLocaleString()} chars total, preview`)}</summary>
-      <pre>${escapeHtml(value.preview)}</pre>
+      <summary><span>${escapeHtml(`${label}: ${Number(value.totalChars || 0).toLocaleString()} chars total, preview`)}</span>${copyButtonHtml(rememberCopyText(preview), "复制", "output-copy-button")}</summary>
+      <pre>${escapeHtml(preview)}</pre>
     </details>`;
   }
   const raw = JSON.stringify(value, null, 2);
   if (!raw || raw === "null") return "";
   return `<details class="output-details">
-    <summary>${escapeHtml(`${label}: ${raw.length.toLocaleString()} chars`)}</summary>
+    <summary><span>${escapeHtml(`${label}: ${raw.length.toLocaleString()} chars`)}</span>${copyButtonHtml(rememberCopyText(raw), "复制", "output-copy-button")}</summary>
     <pre>${escapeHtml(raw)}</pre>
   </details>`;
 }
@@ -4882,6 +4973,18 @@ function wireUi() {
     if (state.leavingItems.size) scheduleLeavingCleanup(120);
   }, { passive: true });
   $("conversation").addEventListener("click", (event) => {
+    const copyButton = event.target.closest("[data-copy-key]");
+    if (copyButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      handleCopyButtonClick(copyButton).catch(() => {
+        copyButton.textContent = "复制失败";
+        window.setTimeout(() => {
+          copyButton.textContent = copyButton.getAttribute("aria-label") || "复制";
+        }, 1200);
+      });
+      return;
+    }
     const button = event.target.closest("[data-approval-action]");
     if (button) {
       answerApproval(button.dataset.approvalId, button.dataset.approvalAction).catch(showError);
