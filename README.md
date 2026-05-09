@@ -325,8 +325,8 @@ Behavior:
 ## Interface Notes
 
 - Home view shows recent workspaces and recent threads.
-- The sidebar menu header includes a compact font-size selector (`小字` / `标准` / `大字` / `特大` / `超大`). The choice is saved in the browser and adjusts conversation text, markdown, code/table content, approval details, and the composer input.
-- The sidebar menu header also includes a theme control. Users can choose `跟随系统`, `深色`, or `浅色`; the choice is saved in the browser and updates the page theme color metadata. iOS PWA status-bar color changes may require closing and reopening the installed app.
+- The sidebar menu header includes a compact settings button. The settings panel contains the theme control (`跟随系统` / `深色` / `浅色`) and the font-size control (`小字` / `标准` / `大字` / `特大` / `超大`) using the same segmented-button style.
+- Theme and font-size choices are saved in the browser. Theme updates the page theme color metadata; iOS PWA status-bar color changes may require closing and reopening the installed app. Font size adjusts conversation text, markdown, code/table content, approval details, and the composer input.
 - On phones and tablet-sized/touch layouts, the sidebar menu is not persistent: the main conversation fills the viewport, and the menu opens only after the user taps the top-left menu button. Wide desktop layouts keep the persistent sidebar.
 - On mobile/touch layouts, swiping right from the left screen edge opens the session list without waiting for a network refresh. If the existing session list is newer than 60 seconds, Mobile Web reuses it immediately; older lists open first and then refresh quietly in the background.
 - Thread lists and thread detail monitor rollout JSONL size. At the default `200MB` threshold, Mobile Web shows a context-size warning and offers a same-workspace continuation action. The warning can be skipped for the current thread size, and will reappear if that thread grows again past the stored size. After user confirmation, the action first asks the source thread to write a thread-specific handoff file, creates a source-named/date-suffixed continuation thread, sends a scoped bootstrap message, then archives the source thread.
@@ -436,11 +436,12 @@ This section summarizes the current integration behavior for someone cloning or 
 ### Mobile Session List And Copy Actions
 
 - Theme preference is stored in `localStorage` as `codexMobileTheme`, with accepted values `system`, `dark`, and `light`. The early inline script applies the theme before the app bundle loads, reducing flash between dark and light modes.
+- Font-size preference is stored in `localStorage` as `codexMobileFontSize`, with accepted values `small`, `default`, `large`, `xlarge`, and `xxlarge`. It now lives in the same settings panel as theme selection instead of a separate sidebar-header dropdown, so display settings share one consistent mobile control surface.
 - The session list can be opened through the menu button or a left-edge right-swipe gesture on overlay layouts. Opening the list is intentionally fast: existing list data is rendered immediately, and Mobile Web only performs a silent background refresh when the cached list is older than 60 seconds.
 - Thread rows now support a long-press action sheet. Rename calls `PATCH /api/threads/<threadId>/name` with a max 120-character name; the server tries several app-server thread-title methods and returns `501` if the connected app-server does not support renaming.
 - The long-press and swipe handlers avoid iOS text-selection side effects on thread cards by disabling selection on action rows and preserving text selection only inside editable rename controls.
 - Copy buttons use the browser Clipboard API on secure contexts and fall back to a hidden textarea plus `execCommand("copy")` where needed. The copied text is kept only in memory for the current render cycle and is not persisted.
-- Public PWA shell cache is bumped to `codex-mobile-shell-v10` so installed browsers pick up the new HTML, CSS, and JavaScript assets after service-worker activation.
+- Public PWA shell cache is bumped to `codex-mobile-shell-v11` so installed browsers pick up the new HTML, CSS, and JavaScript assets after service-worker activation.
 
 ### Which Restart Is Needed After Changes
 
