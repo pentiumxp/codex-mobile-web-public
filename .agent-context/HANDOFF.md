@@ -2122,5 +2122,23 @@
 - Validation:
   - Private validation passed after integration: `npm.cmd test`, `npm.cmd run check`, `npm.cmd run check:macos`, and `git diff --check`.
   - Manual diff review confirmed current 200MB rollout threshold, skippable rollout warning banner, font-size selector including `xxlarge`, tablet/touch overlay sidebar behavior, and large-rollout `thread/turns/list` path were preserved while integrating PR #12 stability changes.
-- Remaining publication step:
-  - Commit/push private, then update public PR #12 or merge public using a detailed public commit message and README-preserving integration.
+- Publication status:
+  - Completed in the follow-up entry below.
+
+## 2026-05-09 PR #12 Published - 10:08 +08:00
+
+- Private repository:
+  - Committed and pushed `9528e100e40027ae18216114a4cf49f46d2e049a` on `main`.
+  - Validation passed before commit: `npm.cmd test`, `npm.cmd run check`, `npm.cmd run check:macos`, and `git diff --check`.
+- Public repository:
+  - Updated cross-repo PR #12 head to `63ef96f974f3c654e89a7d21de25cc3c69b866ab` after merging `origin/main` and resolving conflicts.
+  - Public validation passed on the updated PR head: `npm.cmd test`, `npm.cmd run check`, `npm.cmd run check:macos`, `git diff --cached --check`, and a privacy scan for private paths/repo URLs/IP/Tailscale/Hermes markers.
+  - PR #12 reported `MERGEABLE` / `CLEAN`; GitHub Actions `Node checks` passed on run `25588614935`.
+  - Squash-merged PR #12 into public `main` as `78e8748e4b28a4a2b7b0fff1327ed455a684f0b5`.
+  - Local public workspace was switched back to `main` and fast-forwarded to `origin/main`.
+- Public/private difference preserved:
+  - Public `public/app.js` registers `/sw.js`.
+  - Public `public/sw.js` shell cache was bumped to `codex-mobile-shell-v8`.
+  - Public README clone instructions still point to `pentiumxp/codex-mobile-web-public`.
+- PR #13 status:
+  - Left untouched as draft; GitHub still reports it open/draft and it should be reviewed after #12.
