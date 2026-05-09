@@ -2228,7 +2228,16 @@
   - User explicitly approved updating public and requested the public version be one patch version higher than private for testing.
   - Synchronized the self-update implementation to `C:\Users\xuxin\Documents\codex-mobile-web-public`.
   - Preserved public-only differences: `public/app.js` registers `/sw.js`; README clone instructions point to `pentiumxp/codex-mobile-web-public`; public `public/sw.js` cache is `codex-mobile-shell-v12`.
-  - Bumped public `package.json` / `package-lock.json` version to `0.1.1`, while private remains `0.1.0`.
+  - Bumped public `package.json` / `package-lock.json` version to `0.1.1`; at that moment private remained `0.1.0` before the follow-up private version bump below.
   - Public validation passed: `npm.cmd test`, `npm.cmd run check`, `npm.cmd run check:macos`, `git diff --check`, a temporary local update-status API check, and a targeted privacy scan for private paths/repo URLs/IP/Tailscale/Hermes markers.
   - Public commit `b8bb3e6f513a443b8e0600fd857be8c84fbad26a` pushed to `origin/main`.
   - After push, a temporary public local server returned `version=0.1.1`, `state=up-to-date`, `dirty=false`, `ahead=0`, and `behind=0` for `/api/app-update/status?force=1`.
+
+## 2026-05-09 Private Version Bump For Current App Display - 14:45 +08:00
+
+- User clarification:
+  - Do not add a separate public-release update channel just for the current private app. Instead, directly bump the private repository version number.
+- Code change:
+  - Bumped private `package.json` and `package-lock.json` from `0.1.0` to `0.1.1`.
+- Operational note:
+  - The running server reads `package.json` once at startup, so the 8787 listener must be restarted after this change for the sidebar version pill and `/api/public-config` to show `0.1.1`.
