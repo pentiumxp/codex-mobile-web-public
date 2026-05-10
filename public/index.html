@@ -100,7 +100,15 @@
       <button id="pushNotifications" class="push-button hidden" type="button" disabled>Notifications unavailable</button>
 
       <label class="field-label" for="workspaceSelect">Workspace</label>
-      <select id="workspaceSelect" class="select"></select>
+      <div class="workspace-select-row">
+        <div class="workspace-select-wrap">
+          <button id="workspaceSelect" class="sidebar-workspace-select" type="button" aria-haspopup="listbox" aria-expanded="false">
+            All workspaces
+          </button>
+          <div id="workspaceSelectMenu" class="workspace-select-menu" role="listbox" aria-label="Workspace 列表" hidden></div>
+        </div>
+        <button id="newThreadButton" class="sidebar-new-thread-button" type="button" title="新建对话" aria-label="新建对话">新建对话</button>
+      </div>
       <div id="workspacePath" class="workspace-path" hidden></div>
 
       <div class="thread-tools">

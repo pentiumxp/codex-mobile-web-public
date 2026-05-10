@@ -7,6 +7,7 @@ const state = {
   threads: [],
   currentThread: null,
   currentThreadId: "",
+  newThreadDraft: false,
   activeTurnId: "",
   events: null,
   connectionStatus: null,
@@ -100,6 +101,8 @@ const state = {
   copyTextStore: new Map(),
   copySeq: 0,
   copyFeedbackTimers: new Map(),
+  steerFeedback: null,
+  steerFeedbackTimer: null,
 };
 
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
@@ -981,6 +984,57 @@ function markActivity(label) {
   updateTurnTimer();
 }
 
+function clearSteerFeedbackTimer() {
+  if (state.steerFeedbackTimer) window.clearTimeout(state.steerFeedbackTimer);
+  state.steerFeedbackTimer = null;
+}
+
+function setSteerFeedback(status, details = {}) {
+  clearSteerFeedbackTimer();
+  const previous = state.steerFeedback || {};
+  const next = Object.assign({}, previous, details, {
+    status,
+    updatedAtMs: Date.now(),
+  });
+  state.steerFeedback = next;
+  const connection = $("connectionState");
+  if (connection) {
+    connection.classList.toggle("error", status === "failed");
+    connection.textContent = steerFeedbackLabel(status);
+  }
+  markActivity(steerFeedbackLabel(status));
+  if (status === "applied" || status === "failed" || status === "completed") {
+    state.steerFeedbackTimer = window.setTimeout(() => {
+      state.steerFeedback = null;
+      state.steerFeedbackTimer = null;
+      restoreConnectionState();
+      updateTurnTimer();
+    }, status === "failed" ? 3200 : 2400);
+  }
+}
+
+function steerFeedbackLabel(status) {
+  if (status === "sending") return "引导中…";
+  if (status === "delivered") return "引导已送达";
+  if (status === "applied") return "Agent 已继续处理";
+  if (status === "completed") return "引导已送达，任务已结束";
+  if (status === "failed") return "引导失败，请重试";
+  return "";
+}
+
+function isPendingSteerForTurn(turnId) {
+  const feedback = state.steerFeedback;
+  if (!feedback || !feedback.turnId || !turnId) return false;
+  if (feedback.turnId !== String(turnId)) return false;
+  return feedback.status === "sending" || feedback.status === "delivered";
+}
+
+function markSteerAppliedIfNeeded(turnId, item = null) {
+  if (!isPendingSteerForTurn(turnId)) return;
+  if (item && item.type === "userMessage") return;
+  setSteerFeedback("applied", { turnId: String(turnId) });
+}
+
 function markIdleActivity(label) {
   if (!state.activeTurnId && !currentLiveTurn()) return;
   if (state.activityAtMs && Date.now() - state.activityAtMs < 3000) return;
@@ -1010,7 +1064,7 @@ function isHiddenThread(thread) {
   const cwd = normalizeFsPath(thread.cwd);
   if (state.selectedCwd && cwd !== normalizeFsPath(state.selectedCwd)) return true;
   const keys = visibleWorkspaceKeys();
-  if (keys.size > 0 && (!cwd || !keys.has(cwd))) return true;
+  if (keys.size > 0 && cwd && !keys.has(cwd)) return true;
   return false;
 }
 
@@ -1921,6 +1975,16 @@ function postClientEvent(event, details = {}) {
   }).catch(() => {});
 }
 
+function nowPerfMs() {
+  return typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
+}
+
+function roundedDurationMs(startedAt) {
+  return Math.max(0, Math.round(nowPerfMs() - Number(startedAt || 0)));
+}
+
 function startUiWatchdog() {
   if (state.uiWatchdogTimer) return;
   state.lastUiWatchdogTickAt = Date.now();
@@ -2155,7 +2219,7 @@ async function openExternalThreadSelection(threadId) {
       // Loading the thread by id can still succeed without refreshing workspace shortcuts.
     }
   }
-  await loadThread(id);
+  await loadThread(id, { source: "external" });
 }
 
 function applyUrlThreadSelection(options = {}) {
@@ -2210,16 +2274,69 @@ async function loadWorkspaces() {
   const result = await api("/api/workspaces");
   state.workspaces = result.data || [];
   const select = $("workspaceSelect");
-  select.innerHTML = `<option value="">All workspaces</option>` + state.workspaces.map((ws) => {
-    const count = ws.recentThreadCount ? ` (${ws.recentThreadCount})` : "";
-    return `<option value="${escapeHtml(ws.cwd)}">${escapeHtml(`${ws.label}${count} - ${ws.cwd}`)}</option>`;
-  }).join("");
+  const menu = $("workspaceSelectMenu");
   if (state.selectedCwd && !state.workspaces.some((ws) => normalizeFsPath(ws.cwd) === normalizeFsPath(state.selectedCwd))) {
     state.selectedCwd = "";
   }
-  if (state.selectedCwd) select.value = state.selectedCwd;
+  if (select) {
+    select.textContent = state.selectedCwd ? selectedWorkspaceLabel() : "All workspaces";
+    select.disabled = !state.workspaces.length;
+    select.setAttribute("title", state.workspaces.length ? "选择 Workspace" : "暂无可用 Workspace");
+  }
+  if (menu) {
+    menu.innerHTML = workspaceSidebarOptionsHtml();
+    if (!state.workspaces.length) {
+      menu.innerHTML = `<div class=\"workspace-select-empty\">暂无可用 Workspace</div>`;
+    }
+  }
   updateWorkspacePath();
   if (!state.currentThread) renderCurrentThread();
+}
+
+function workspaceSidebarOptionsHtml() {
+  const allSelected = !state.selectedCwd ? " is-selected" : "";
+  const allOption = `<button type="button" class="workspace-select-option${allSelected}" data-workspace-value="">All workspaces</button>`;
+  return allOption + state.workspaces.map((ws) => {
+    const count = ws.recentThreadCount ? ` (${ws.recentThreadCount})` : "";
+    const label = `${ws.label}${count} - ${ws.cwd}`;
+    const selected = normalizeFsPath(ws.cwd) === normalizeFsPath(state.selectedCwd) ? " is-selected" : "";
+    return `<button type="button" class="workspace-select-option${selected}" data-workspace-value="${escapeHtml(ws.cwd)}">${escapeHtml(label)}</button>`;
+  }).join("");
+}
+
+function syncSidebarWorkspaceSelect() {
+  const select = $("workspaceSelect");
+  const menu = $("workspaceSelectMenu");
+  if (!select) return;
+  select.textContent = state.selectedCwd ? selectedWorkspaceLabel() : "All workspaces";
+  if (menu) {
+    menu.innerHTML = workspaceSidebarOptionsHtml();
+    if (!state.workspaces.length) {
+      menu.innerHTML = `<div class=\"workspace-select-empty\">暂无可用 Workspace</div>`;
+    }
+  }
+}
+
+function workspaceOptionsHtml() {
+  return `<option value="">All workspaces</option>` + state.workspaces.map((ws) => {
+    const count = ws.recentThreadCount ? ` (${ws.recentThreadCount})` : "";
+    return `<option value="${escapeHtml(ws.cwd)}">${escapeHtml(`${ws.label}${count} - ${ws.cwd}`)}</option>`;
+  }).join("");
+}
+
+function newThreadWorkspaceOptionsHtml() {
+  return state.workspaces.map((ws) => {
+    const count = ws.recentThreadCount ? ` (${ws.recentThreadCount})` : "";
+    const label = `${ws.label}${count} - ${ws.cwd}`;
+    const selected = normalizeFsPath(ws.cwd) === normalizeFsPath(state.selectedCwd) ? " is-selected" : "";
+    return `<button type="button" class="new-thread-workspace-option${selected}" data-new-thread-workspace="${escapeHtml(ws.cwd)}">${escapeHtml(label)}</button>`;
+  }).join("");
+}
+
+function selectedWorkspaceLabel() {
+  if (!state.selectedCwd) return "聊天";
+  const workspace = state.workspaces.find((ws) => normalizeFsPath(ws.cwd) === normalizeFsPath(state.selectedCwd));
+  return workspace && workspace.label ? workspace.label : shortPath(state.selectedCwd);
 }
 
 function updateWorkspacePath() {
@@ -2287,7 +2404,20 @@ async function loadThreads(options = {}) {
   }
 }
 
-async function loadThread(threadId) {
+async function loadThread(threadId, options = {}) {
+  state.newThreadDraft = false;
+  const switchStartedAt = nowPerfMs();
+  const fromThreadId = state.currentThreadId || "";
+  const source = String(options.source || "unknown").slice(0, 40);
+  const listAgeMs = state.threadListLoadedAtMs ? Date.now() - state.threadListLoadedAtMs : null;
+  postClientEvent("thread_switch_start", {
+    source,
+    fromThreadId,
+    toThreadId: threadId || "",
+    listAgeMs,
+    currentHadThread: Boolean(state.currentThread),
+    eventOpen: Boolean(state.events && state.events.readyState === EventSource.OPEN),
+  });
   if (threadId && threadId !== state.continuationSourceThreadId) {
     state.continuationSourceThreadId = "";
   }
@@ -2299,6 +2429,11 @@ async function loadThread(threadId) {
     renderThreads();
     renderCurrentThread();
     if (isMenuOverlayMode()) closeSidebarMenu();
+    postClientEvent("thread_switch_cached", {
+      source,
+      threadId,
+      elapsedMs: roundedDurationMs(switchStartedAt),
+    });
     return;
   }
   const seq = state.threadLoadSeq + 1;
@@ -2327,13 +2462,22 @@ async function loadThread(threadId) {
   $("connectionState").textContent = "Loading thread";
   markActivity("加载线程");
   let result;
+  const apiStartedAt = nowPerfMs();
   try {
     result = await api(`/api/threads/${encodeURIComponent(threadId)}`, {
       timeoutMs: 20000,
       signal: controller.signal,
     });
   } catch (err) {
-    if (seq !== state.threadLoadSeq || controller.signal.aborted) return;
+    if (seq !== state.threadLoadSeq || controller.signal.aborted) {
+      postClientEvent("thread_switch_cancelled", {
+        source,
+        threadId,
+        elapsedMs: roundedDurationMs(switchStartedAt),
+        apiElapsedMs: roundedDurationMs(apiStartedAt),
+      });
+      return;
+    }
     state.currentThread = Object.assign({}, state.currentThread || { id: threadId, name: threadId, preview: threadId, turns: [] }, {
       mobileLoading: false,
       mobileLoadError: err.message || String(err),
@@ -2342,11 +2486,28 @@ async function loadThread(threadId) {
     renderThreads();
     renderCurrentThread();
     updateComposerControls();
+    postClientEvent("thread_switch_error", {
+      source,
+      threadId,
+      elapsedMs: roundedDurationMs(switchStartedAt),
+      apiElapsedMs: roundedDurationMs(apiStartedAt),
+      error: err.message || String(err),
+    });
     throw err;
   } finally {
     if (state.threadLoadController === controller) state.threadLoadController = null;
   }
-  if (seq !== state.threadLoadSeq || state.currentThreadId !== threadId) return;
+  const apiElapsedMs = roundedDurationMs(apiStartedAt);
+  if (seq !== state.threadLoadSeq || state.currentThreadId !== threadId) {
+    postClientEvent("thread_switch_cancelled", {
+      source,
+      threadId,
+      elapsedMs: roundedDurationMs(switchStartedAt),
+      apiElapsedMs,
+    });
+    return;
+  }
+  const renderStartedAt = nowPerfMs();
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
   localStorage.setItem(STORAGE_THREAD_ID, threadId);
   if (state.events) connectEvents();
@@ -2358,6 +2519,18 @@ async function loadThread(threadId) {
   scheduleLivePollIfNeeded(1200);
   updateComposerControls();
   if (isMenuOverlayMode()) closeSidebarMenu();
+  postClientEvent("thread_switch_complete", {
+    source,
+    threadId,
+    elapsedMs: roundedDurationMs(switchStartedAt),
+    apiElapsedMs,
+    renderElapsedMs: roundedDurationMs(renderStartedAt),
+    readMode: result.thread && result.thread.mobileReadMode || "",
+    status: statusText(result.thread && result.thread.status),
+    turns: Array.isArray(result.thread && result.thread.turns) ? result.thread.turns.length : 0,
+    omittedTurns: Number(result.thread && result.thread.mobileOmittedTurnCount || 0),
+    rolloutSizeBytes: rolloutSizeBytes(result.thread),
+  });
 }
 
 async function refreshCurrentThread() {
@@ -2433,7 +2606,7 @@ function handleThreadCardClick(event) {
     closeThreadActions();
     return;
   }
-  loadThread(threadId).catch(showError);
+  loadThread(threadId, { source: "thread-list" }).catch(showError);
 }
 
 function suppressThreadClickAfterSwipe(event) {
@@ -2766,7 +2939,8 @@ function renderThreads(result = null) {
     const sizeText = rolloutSizeText(thread);
     const sizeWarn = isRolloutOverThreshold(thread);
     const updatedTitle = formatAbsoluteTime(thread.updatedAt);
-    const pathText = shortPath(thread.cwd);
+    const pathText = shortPath(thread.cwd) || "聊天";
+    const isWorkspaceLess = !thread.cwd;
     const timeText = formatTime(thread.updatedAt, nowMs);
     const statusIcon = statusIconHtml(thread.status, "thread-status-icon", thread.id);
     const iconKind = statusIconInfo(thread.status, thread.id)?.kind || "";
@@ -2787,7 +2961,7 @@ function renderThreads(result = null) {
         </div>
         <div class="thread-card-meta-row">
           <div class="thread-card-meta">
-            ${pathText ? `<span class="thread-card-path">${escapeHtml(pathText)}</span>` : ""}
+            <span class="thread-card-path${isWorkspaceLess ? " thread-card-path-chat" : ""}">${escapeHtml(pathText)}</span>
             ${timeText ? `<span class="thread-card-time" title="${escapeHtml(updatedTitle)}">${escapeHtml(timeText)}</span>` : ""}
           </div>
           ${sizeBadge}
@@ -2803,7 +2977,7 @@ function renderThreads(result = null) {
     threads: state.threads.map((thread) => [
       thread.id,
       thread.name || thread.preview || thread.id,
-      shortPath(thread.cwd),
+      shortPath(thread.cwd) || "聊天",
       thread.updatedAt,
       statusText(thread.status),
       statusIconInfo(thread.status, thread.id)?.kind || "",
@@ -2834,7 +3008,7 @@ async function restoreThreadSelection() {
   const target = saved || (savedThreadId ? { id: savedThreadId } : active);
   if (!target) return;
   try {
-    await loadThread(target.id);
+    await loadThread(target.id, { source: "restore" });
   } catch (err) {
     if (target.id === savedThreadId) localStorage.removeItem(STORAGE_THREAD_ID);
     showError(err);
@@ -2846,7 +3020,8 @@ async function selectWorkspaceShortcut(cwd) {
   state.selectedCwd = cwd || "";
   clearCurrentThreadSelection();
   const select = $("workspaceSelect");
-  if (select) select.value = state.selectedCwd;
+  if (select) select.textContent = state.selectedCwd ? selectedWorkspaceLabel() : "All workspaces";
+  syncSidebarWorkspaceSelect();
   updateWorkspacePath();
   updateComposerControls();
   renderCurrentThread();
@@ -2982,9 +3157,9 @@ function renderHome() {
       const sizeText = rolloutSizeText(thread);
       const sizeWarn = isRolloutOverThreshold(thread);
       const updatedTitle = formatAbsoluteTime(thread.updatedAt);
-      const meta = [shortPath(thread.cwd), formatTime(thread.updatedAt, nowMs), sizeText ? `rollout ${sizeText}` : ""]
-        .filter(Boolean)
-        .join(" | ");
+  const meta = [shortPath(thread.cwd) || "聊天", formatTime(thread.updatedAt, nowMs), sizeText ? `rollout ${sizeText}` : ""]
+    .filter(Boolean)
+    .join(" | ");
       return `<button class="home-shortcut${sizeWarn ? " rollout-warn" : ""}" type="button" data-home-thread="${escapeHtml(thread.id)}">
         <span class="home-shortcut-title">${escapeHtml(title)}</span>
         <span class="home-shortcut-meta home-shortcut-meta-status"><span title="${escapeHtml(updatedTitle)}">${escapeHtml(meta)}</span>${statusIconHtml(thread.status, "home-status-icon", thread.id)}</span>
@@ -3024,7 +3199,7 @@ function renderHome() {
     button.addEventListener("click", () => selectWorkspaceShortcut(button.dataset.homeWorkspace).catch(showError));
   });
   $("conversation").querySelectorAll("[data-home-thread]").forEach((button) => {
-    button.addEventListener("click", () => loadThread(button.dataset.homeThread).catch(showError));
+    button.addEventListener("click", () => loadThread(button.dataset.homeThread, { source: "home" }).catch(showError));
   });
 }
 
@@ -3078,6 +3253,10 @@ function threadReadWarningMessage(thread) {
 
 function renderCurrentThread(options = {}) {
   state.nowMs = Date.now();
+  if (state.newThreadDraft) {
+    renderNewThreadDraft();
+    return;
+  }
   const thread = state.currentThread;
   if (!thread) {
     renderHome();
@@ -3109,7 +3288,7 @@ function renderCurrentThread(options = {}) {
       { stickToBottom: shouldStickToBottom },
     );
     const retry = $("retryCurrentThread");
-    if (retry) retry.onclick = () => loadThread(thread.id || state.currentThreadId).catch(showError);
+    if (retry) retry.onclick = () => loadThread(thread.id || state.currentThreadId, { source: "retry" }).catch(showError);
     updateTickTimer();
     return;
   }
@@ -3142,25 +3321,120 @@ function renderCurrentThread(options = {}) {
   updateTickTimer();
 }
 
+function renderNewThreadDraft() {
+  clearInterval(state.tickTimer);
+  state.tickTimer = null;
+  const titleEl = $("threadTitle");
+  const metaEl = $("threadMeta");
+  const workspaceLabel = selectedWorkspaceLabel();
+  if (titleEl) titleEl.textContent = "新建对话";
+  if (metaEl) metaEl.textContent = state.selectedCwd ? workspaceLabel : "请先选择 Workspace";
+  const workspaceOptions = newThreadWorkspaceOptionsHtml();
+  const hasWorkspaceOptions = state.workspaces.length > 0;
+  const workspaceStatus = state.selectedCwd
+    ? `<div class="new-thread-path">${escapeHtml(state.selectedCwd)}</div>`
+    : `<div class="new-thread-path">请先在侧边栏或下方选择 workspace</div>`;
+  const html = `<div class="new-thread-page">
+    <div class="new-thread-panel">
+      <div class="new-thread-kicker">New chat</div>
+      <h1>新建对话</h1>
+      <div class="new-thread-workspace">
+        <label for="newThreadWorkspaceSelect">Workspace</label>
+        <button id="newThreadWorkspaceSelect" class="new-thread-workspace-select" type="button" aria-haspopup="listbox" aria-expanded="false">
+          ${escapeHtml(workspaceLabel)}
+        </button>
+        <div id="newThreadWorkspaceMenu" class="new-thread-workspace-menu" role="listbox" aria-label="Workspace 列表" hidden>
+          ${workspaceOptions || `<div class="new-thread-workspace-empty">暂无可用 Workspace</div>`}
+        </div>
+        <div class="new-thread-selected">${escapeHtml(workspaceLabel)}</div>
+        ${workspaceStatus}
+      </div>
+    </div>
+  </div>`;
+  updateConversationHtml(html, `new-thread|${state.selectedCwd}|${state.workspaces.length}`);
+  const selectButton = $("newThreadWorkspaceSelect");
+  const workspaceMenu = $("newThreadWorkspaceMenu");
+  const shouldDisableWorkspaceSelect = !hasWorkspaceOptions;
+  if (selectButton && workspaceMenu) {
+    selectButton.textContent = workspaceLabel;
+    selectButton.disabled = shouldDisableWorkspaceSelect;
+    selectButton.setAttribute("title", shouldDisableWorkspaceSelect ? "暂无可用 Workspace" : "选择 Workspace");
+    workspaceMenu.hidden = true;
+    const closeMenu = () => {
+      workspaceMenu.hidden = true;
+      selectButton.setAttribute("aria-expanded", "false");
+      document.removeEventListener("pointerdown", onOutsidePointer);
+    };
+    const onOutsidePointer = (event) => {
+      if (!workspaceMenu.hidden && !workspaceMenu.contains(event.target) && !selectButton.contains(event.target)) {
+        closeMenu();
+      }
+    };
+    const openMenu = () => {
+      workspaceMenu.hidden = false;
+      selectButton.setAttribute("aria-expanded", "true");
+      document.addEventListener("pointerdown", onOutsidePointer);
+    };
+    const toggleMenu = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (shouldDisableWorkspaceSelect) return;
+      if (workspaceMenu.hidden) {
+        openMenu();
+      } else {
+        closeMenu();
+      }
+    };
+    selectButton.addEventListener("pointerdown", toggleMenu);
+    if (workspaceMenu) {
+      workspaceMenu.querySelectorAll("[data-new-thread-workspace]").forEach((workspaceOption) => {
+        workspaceOption.addEventListener("pointerdown", (event) => {
+          const selectedWorkspace = event.currentTarget.dataset.newThreadWorkspace || "";
+          event.preventDefault();
+          event.stopPropagation();
+          state.selectedCwd = selectedWorkspace || "";
+          const sidebarSelect = $("workspaceSelect");
+          if (sidebarSelect) sidebarSelect.textContent = state.selectedCwd ? selectedWorkspaceLabel() : "All workspaces";
+          syncSidebarWorkspaceSelect();
+          updateWorkspacePath();
+          renderNewThreadDraft();
+          updateComposerControls();
+          loadThreads({ silent: true }).catch(showError);
+          closeMenu();
+        });
+      });
+    }
+    if (shouldDisableWorkspaceSelect) {
+      workspaceMenu.hidden = true;
+    }
+  }
+  updateComposerControls();
+  updateTurnTimer();
+}
+
+function enterNewThreadDraft() {
+  closeThreadActions();
+  clearCurrentThreadSelection();
+  state.newThreadDraft = true;
+  state.sendButtonHint = "";
+  setComposerText("");
+  clearPendingAttachments();
+  renderComposerSettings();
+  renderThreads();
+  renderCurrentThread();
+  restoreConnectionState();
+  if (isMobileViewport()) closeSidebarMenu();
+  window.setTimeout(() => {
+    const input = $("messageInput");
+    if (input) input.focus();
+  }, 80);
+}
+
 function bindCurrentThreadActions() {
   const button = $("conversation").querySelector("[data-new-thread-from-current]");
   if (button) button.addEventListener("click", startNewThreadFromCurrent);
   const dismiss = $("conversation").querySelector("[data-dismiss-rollout-warning]");
   if (dismiss) dismiss.addEventListener("click", () => dismissRolloutWarning(state.currentThread));
-}
-
-function startThreadRequestBody(sourceThread = null, options = {}) {
-  const thread = sourceThread || state.currentThread || {};
-  const useCurrentSelectors = !sourceThread || thread.id === state.currentThreadId;
-  return {
-    cwd: thread.cwd || state.selectedCwd || "",
-    model: useCurrentSelectors ? (currentComposerModel() || "") : (thread.model || state.defaultModel || ""),
-    effort: useCurrentSelectors ? ($("effortSelect").value || effectiveDefaultEffort() || "") : (thread.effort || state.defaultReasoningEffort || ""),
-    permissionMode: useCurrentSelectors ? ($("permissionSelect").value || effectiveDefaultPermissionMode() || "") : "",
-    sourceThreadId: thread.id || "",
-    sourceThreadTitle: thread.name || thread.preview || thread.id || "",
-    archiveSourceThread: Boolean(options.archiveSourceThread && thread.id),
-  };
 }
 
 function actionWidthForThreadRow(row) {
@@ -3308,6 +3582,14 @@ function startedThreadId(result) {
     || "");
 }
 
+function startedTurnId(result) {
+  return String((result && result.turnId)
+    || (result && result.turn && result.turn.id)
+    || (result && result.result && result.result.turnId)
+    || (result && result.result && result.result.turn && result.result.turn.id)
+    || "");
+}
+
 function continuationJobStatusText(job) {
   const status = String(job && job.status || "");
   const message = String(job && job.message || "").trim();
@@ -3356,7 +3638,7 @@ async function openContinuationResult(result) {
   } else {
     $("connectionState").textContent = "交接已生成；正在打开续接线程";
   }
-  await loadThread(threadId);
+  await loadThread(threadId, { source: "continuation" });
   loadThreads().catch(showError);
 }
 
@@ -3414,6 +3696,7 @@ async function startNewThreadFromThread(sourceThread, event) {
   const sourceThreadId = thread.id || state.currentThreadId || "";
   const title = thread.name || thread.preview || thread.id || "current thread";
   const size = rolloutSizeText(thread);
+  const cwd = thread.cwd ? String(thread.cwd).trim() : String(state.selectedCwd || "").trim();
   const archiveConfirmed = window.confirm([
     `压缩续接“${title}”？`,
     "",
@@ -3422,7 +3705,15 @@ async function startNewThreadFromThread(sourceThread, event) {
     size ? `当前大小：${size}` : "",
   ].filter((line) => line !== "").join("\n"));
   if (!archiveConfirmed) return;
-  const body = startThreadRequestBody(thread, { archiveSourceThread: true });
+  const body = {
+    cwd,
+    model: currentComposerModel() || "",
+    effort: ($("effortSelect").value || effectiveDefaultEffort() || ""),
+    permissionMode: ($("permissionSelect").value || effectiveDefaultPermissionMode() || ""),
+    sourceThreadId: thread.id || "",
+    sourceThreadTitle: thread.name || thread.preview || thread.id || "",
+    archiveSourceThread: Boolean(thread.id),
+  };
   if (!body.cwd) {
     showError(new Error("Thread has no workspace path"));
     return;
@@ -4375,8 +4666,10 @@ function applyNotification(method, params) {
     const turn = ensureTurn(params.turn.id);
     Object.assign(turn, mergeTurnPreservingVisibleItems(turn, params.turn));
     removeOperationalItemsFromTurn(turn);
+    const completedPendingSteer = isPendingSteerForTurn(params.turn.id);
     state.activeTurnId = "";
     markActivity("完成");
+    if (completedPendingSteer) setSteerFeedback("completed", { turnId: String(params.turn.id) });
     $("interruptTurn").disabled = true;
     updateComposerControls();
     renderCurrentThread();
@@ -4386,12 +4679,14 @@ function applyNotification(method, params) {
   }
   if (method === "item/started" || method === "item/completed") {
     upsertItem(params.turnId, params.item);
+    markSteerAppliedIfNeeded(params.turnId, params.item);
     scheduleLivePollIfNeeded(2200);
     return;
   }
   if (method === "item/agentMessage/delta") {
     markActivity("输出");
     appendToItem(params.turnId, params.itemId, "agentMessage", "text", params.delta || "");
+    markSteerAppliedIfNeeded(params.turnId, { type: "agentMessage" });
     return;
   }
   if (method === "item/commandExecution/outputDelta") {
@@ -4403,11 +4698,13 @@ function applyNotification(method, params) {
   if (method === "item/reasoning/textDelta") {
     markActivity("思考");
     ensureTimerItem(params.turnId, params.itemId, "reasoning");
+    markSteerAppliedIfNeeded(params.turnId, { type: "reasoning" });
     return;
   }
   if (method === "item/reasoning/summaryTextDelta") {
     markActivity("思考");
     ensureTimerItem(params.turnId, params.itemId, "reasoning");
+    markSteerAppliedIfNeeded(params.turnId, { type: "reasoning" });
   }
 }
 
@@ -4556,20 +4853,39 @@ function scheduleMobileResume(reason = "resume", delay = 80) {
 
 async function resumeMobileSession(reason = "resume") {
   if (document.visibilityState === "hidden" || !state.key) return;
-  forceVisualRecovery(reason);
-  updateComposerHeightVar();
-  renderComposerSettings();
-  updateComposerControls();
-  if (state.currentThread || state.threads.length) renderCurrentThread();
-  ensureEventConnection();
-  state.pollStableCount = 0;
-  const status = await api("/api/status");
-  updateConnectionState(status);
-  if (status.rateLimits || status.rateLimitsByModel) rememberRateLimits(status.rateLimits, status.rateLimitsByModel);
-  await loadThreads({ silent: Boolean(state.threads.length) });
-  if (state.currentThreadId) await refreshCurrentThread();
-  else await restoreThreadSelection();
-  scheduleLivePollIfNeeded(1200);
+  const startedAt = nowPerfMs();
+  try {
+    forceVisualRecovery(reason);
+    updateComposerHeightVar();
+    renderComposerSettings();
+    updateComposerControls();
+    if (state.currentThread || state.threads.length) renderCurrentThread();
+    ensureEventConnection();
+    state.pollStableCount = 0;
+    const status = await api("/api/status");
+    updateConnectionState(status);
+    if (status.rateLimits || status.rateLimitsByModel) rememberRateLimits(status.rateLimits, status.rateLimitsByModel);
+    await loadThreads({ silent: Boolean(state.threads.length) });
+    if (state.currentThreadId) await refreshCurrentThread();
+    else await restoreThreadSelection();
+    scheduleLivePollIfNeeded(1200);
+    const elapsedMs = roundedDurationMs(startedAt);
+    if (elapsedMs > 1200) {
+      postClientEvent("mobile_resume_slow", {
+        reason,
+        elapsedMs,
+        currentThreadId: state.currentThreadId || "",
+        hadThreads: Boolean(state.threads.length),
+      });
+    }
+  } catch (err) {
+    postClientEvent("mobile_resume_error", {
+      reason,
+      elapsedMs: roundedDurationMs(startedAt),
+      error: err.message || String(err),
+    });
+    throw err;
+  }
 }
 
 function scrollConversationToBottom() {
@@ -4632,6 +4948,13 @@ function showError(err) {
   const message = normalizeClientErrorMessage(raw) || (err && err.message) || String(err);
   $("connectionState").textContent = message;
   $("connectionState").classList.add("error");
+  postClientEvent("client_error", {
+    message,
+    raw,
+    currentThreadId: state.currentThreadId || "",
+    composerBusy: state.composerBusy,
+    continuationBusy: state.continuationBusy,
+  });
 }
 
 function clearSendProgressWatchdog() {
@@ -4649,7 +4972,8 @@ function startSendProgressWatchdog(threadId) {
   state.sendProgressWatchdog = setTimeout(() => {
     if (!state.composerBusy || state.currentThreadId !== targetThreadId) return;
     state.sendProgressWarned = true;
-    $("connectionState").textContent = "发送较慢，检查网络后稍等，避免重复提交";
+    const steering = state.steerFeedback && state.steerFeedback.status === "sending";
+    $("connectionState").textContent = steering ? "引导较慢，稍等一下，避免重复提交" : "发送较慢，检查网络后稍等，避免重复提交";
     $("connectionState").classList.add("error");
     postClientEvent("message_send_stall", {
       threadId: targetThreadId,
@@ -4770,6 +5094,28 @@ function formatFileSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function appendLocalAttachmentSummary(text, attachments) {
+  if (!attachments.length) return text;
+  const lines = attachments.map((item) => {
+    const file = item.file;
+    const kind = file.type && file.type.startsWith("image/") ? "image" : "file";
+    return `- ${file.name || "upload"} (${kind}, ${file.type || "file"}, ${formatFileSize(file.size || 0)}): ${file.name || "upload"}`;
+  });
+  return `${text ? `${text}\n\n` : ""}Uploaded attachments:\n${lines.join("\n")}`;
+}
+
+function localUserMessageItem(text, attachments, clientSubmissionId) {
+  return {
+    id: `local-user-${clientSubmissionId || Date.now()}`,
+    type: "userMessage",
+    content: [{
+      type: "text",
+      text: appendLocalAttachmentSummary(text, attachments),
+      text_elements: [],
+    }],
+  };
 }
 
 function attachmentId() {
@@ -4927,11 +5273,20 @@ function updateComposerControls() {
     && state.currentThread
     && !state.currentThread.mobileLoading
     && !state.currentThread.mobileLoadError);
-  const disabled = !hasThread || state.composerBusy;
+  const hasNewThreadDraft = Boolean(state.newThreadDraft);
+  const canComposeNewThread = Boolean(hasNewThreadDraft && state.selectedCwd);
+  const disabled = !(hasThread || canComposeNewThread) || state.composerBusy;
   const hasContent = composerHasContent();
-  const interruptMode = Boolean(state.activeTurnId) && !hasContent;
+  const interruptMode = Boolean(!hasNewThreadDraft && state.activeTurnId) && !hasContent;
+  const steerMode = Boolean(!hasNewThreadDraft && state.activeTurnId) && hasContent;
   const sendButton = $("sendMessage");
   const attachButton = $("attachFiles");
+  const messageInput = $("messageInput");
+  if (messageInput) {
+    messageInput.dataset.placeholder = hasNewThreadDraft
+      ? "输入第一条消息"
+      : "Message Codex";
+  }
   setMessageInputDisabled(disabled);
   $("fileInput").disabled = disabled;
   $("modelSelect").disabled = disabled;
@@ -4945,21 +5300,28 @@ function updateComposerControls() {
     sendButton.textContent = "Stop";
     sendButton.title = "Interrupt current turn";
     sendButton.classList.add("interrupt-mode");
-    sendButton.classList.remove("sending", "send-failed");
+    sendButton.classList.remove("sending", "send-failed", "steer-mode");
   } else if (state.composerBusy) {
-    sendButton.textContent = "发送中…";
-    sendButton.title = "Message is sending";
+    const steering = state.steerFeedback && state.steerFeedback.status === "sending";
+    sendButton.textContent = steering ? "引导中…" : "发送中…";
+    sendButton.title = steering ? "Steering current turn" : "Message is sending";
     sendButton.classList.add("sending");
+    sendButton.classList.toggle("steer-mode", Boolean(steering));
     sendButton.classList.remove("send-failed", "interrupt-mode");
   } else if (showRetryHint) {
     sendButton.textContent = "重试";
     sendButton.title = "Retry sending message";
     sendButton.classList.add("send-failed");
-    sendButton.classList.remove("sending", "interrupt-mode");
+    sendButton.classList.remove("sending", "interrupt-mode", "steer-mode");
+  } else if (steerMode) {
+    sendButton.textContent = "引导";
+    sendButton.title = "Guide the current running turn";
+    sendButton.classList.add("steer-mode");
+    sendButton.classList.remove("sending", "send-failed", "interrupt-mode");
   } else {
     sendButton.textContent = "Send";
-    sendButton.title = "Send message";
-    sendButton.classList.remove("sending", "send-failed", "interrupt-mode");
+    sendButton.title = hasNewThreadDraft ? "Create new chat" : "Send message";
+    sendButton.classList.remove("sending", "send-failed", "interrupt-mode", "steer-mode");
   }
   sendButton.disabled = disabled || (!interruptMode && !hasContent);
 }
@@ -4976,26 +5338,34 @@ async function sendMessage(event) {
   const input = $("messageInput");
   const text = composerText();
   const hasContent = Boolean(text || state.pendingAttachments.length);
+  if (state.newThreadDraft) {
+    await sendNewThreadMessage(text, hasContent, input);
+    return;
+  }
   if (state.activeTurnId && !hasContent) {
     await interruptActiveTurn();
     return;
   }
   if ((!text && !state.pendingAttachments.length) || !state.currentThreadId) return;
+  const steering = Boolean(state.activeTurnId && hasContent);
+  const steerTurnId = steering ? String(state.activeTurnId) : "";
+  const clientSubmissionId = createSubmissionId();
   state.composerBusy = true;
   state.sendButtonHint = "";
   startSendProgressWatchdog(state.currentThreadId);
-  markActivity(state.activeTurnId ? "追加输入" : "发送");
+  if (steering) setSteerFeedback("sending", { threadId: state.currentThreadId, turnId: steerTurnId, clientSubmissionId });
+  else markActivity("发送");
   updateComposerControls();
   if (state.sendProgressWarned) {
-    $("connectionState").textContent = "发送中…";
+    $("connectionState").textContent = steering ? "引导中…" : "发送中…";
     $("connectionState").classList.remove("error");
   }
   try {
     const body = new FormData();
-    body.append("clientSubmissionId", createSubmissionId());
+    body.append("clientSubmissionId", clientSubmissionId);
     body.append("text", text);
     if (state.currentThread && state.currentThread.cwd) body.append("cwd", state.currentThread.cwd);
-    if (state.activeTurnId) body.append("activeTurnId", state.activeTurnId);
+    if (steerTurnId) body.append("activeTurnId", steerTurnId);
     const model = currentComposerModel();
     if (model) body.append("model", model);
     if ($("effortSelect").value) body.append("effort", $("effortSelect").value);
@@ -5012,8 +5382,11 @@ async function sendMessage(event) {
     clearPendingAttachments();
     input.blur();
     $("connectionState").classList.remove("error");
-    $("connectionState").textContent = "Sent";
-    markActivity("已发送");
+    if (steering) setSteerFeedback("delivered", { threadId: state.currentThreadId, turnId: steerTurnId, clientSubmissionId });
+    else {
+      $("connectionState").textContent = "Sent";
+      markActivity("已发送");
+    }
     scheduleCurrentThreadRefresh(600);
     scheduleLivePollIfNeeded(1200);
   } catch (err) {
@@ -5021,13 +5394,109 @@ async function sendMessage(event) {
       || "发送失败，请重试";
     state.sendButtonHint = "重试";
     $("connectionState").classList.add("error");
-    $("connectionState").textContent = message;
+    $("connectionState").textContent = message.includes("发送") ? message : "发送失败，请重试";
     postClientEvent("send_failure", {
       threadId: state.currentThreadId || "",
       message,
+      steering,
     });
   } finally {
     finishSendProgressWatchdog();
+    state.composerBusy = false;
+    updateComposerControls();
+  }
+}
+
+async function sendNewThreadMessage(text, hasContent, input) {
+  if (!hasContent) return;
+  const clientSubmissionId = createSubmissionId();
+  state.composerBusy = true;
+  state.sendButtonHint = "";
+  $("connectionState").classList.remove("error");
+  $("connectionState").textContent = "正在创建新对话";
+  markActivity("创建新对话");
+  updateComposerControls();
+  try {
+    const submittedAttachments = state.pendingAttachments.slice();
+    const body = new FormData();
+    body.append("clientSubmissionId", clientSubmissionId);
+    body.append("text", text);
+    if (state.selectedCwd) body.append("cwd", state.selectedCwd);
+    const model = currentComposerModel();
+    if (model) body.append("model", model);
+    if ($("effortSelect").value) body.append("effort", $("effortSelect").value);
+    if ($("permissionSelect").value) body.append("permissionMode", $("permissionSelect").value);
+    for (const item of state.pendingAttachments) {
+      body.append("attachments", item.file, item.file.name || "upload");
+    }
+    const result = await api("/api/threads/new-message", {
+      method: "POST",
+      body,
+      timeoutMs: 180000,
+    });
+    const threadId = String((result && result.threadId) || (result && result.thread && result.thread.id) || "");
+    if (!threadId) throw new Error("新对话创建失败：未返回 threadId");
+    const turnId = startedTurnId(result);
+    const userItem = localUserMessageItem(text, submittedAttachments, clientSubmissionId);
+    const thread = Object.assign({
+      id: threadId,
+      preview: text || "新建对话",
+      cwd: (result && result.thread && result.thread.cwd) || state.selectedCwd || "",
+      status: { type: "active" },
+      turns: [],
+    }, result.thread || {});
+    if (turnId) {
+      const existingTurn = (thread.turns || []).find((turn) => turn && turn.id === turnId);
+      if (existingTurn) {
+        existingTurn.items = mergeItemsPreservingLocalVisible([userItem], existingTurn.items || [], true);
+      } else {
+        thread.turns = (thread.turns || []).concat([{
+          id: turnId,
+          status: { type: "active" },
+          startedAt: Math.floor(Date.now() / 1000),
+          completedAt: null,
+          durationMs: null,
+          items: [userItem],
+        }]);
+      }
+    }
+    state.threads = [thread, ...state.threads.filter((entry) => entry.id !== threadId)];
+    state.newThreadDraft = false;
+    state.currentThreadId = threadId;
+    state.currentThread = thread;
+    state.activeTurnId = turnId || state.activeTurnId;
+    if (state.events) connectEvents();
+    setComposerText("");
+    clearPendingAttachments();
+    if (input) input.blur();
+    renderComposerSettings();
+    renderThreads();
+    renderCurrentThread({ stickToBottom: true });
+    try {
+      await loadThread(threadId, { source: "new-thread" });
+    } catch (err) {
+      showError(err);
+      renderThreads();
+      renderCurrentThread({ stickToBottom: true });
+    }
+    $("connectionState").textContent = "新对话已创建";
+    markActivity("新对话已创建");
+    renderComposerSettings();
+    updateComposerControls();
+    scheduleCurrentThreadRefresh(900);
+    scheduleLivePollIfNeeded(1200);
+    loadThreads({ silent: true }).catch(showError);
+  } catch (err) {
+    const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err))
+      || "新对话创建失败，请重试";
+    state.sendButtonHint = "重试";
+    $("connectionState").classList.add("error");
+    $("connectionState").textContent = message;
+    postClientEvent("new_thread_send_failure", {
+      cwd: state.selectedCwd || "",
+      message,
+    });
+  } finally {
     state.composerBusy = false;
     updateComposerControls();
   }
@@ -5137,14 +5606,48 @@ function wireUi() {
     event.preventDefault();
     login($("loginKey").value.trim()).catch((err) => showLogin(err.message));
   });
-  $("workspaceSelect").addEventListener("change", (event) => {
-    state.selectedCwd = event.target.value;
-    clearCurrentThreadSelection();
-    updateWorkspacePath();
-    updateComposerControls();
-    renderCurrentThread();
-    loadThreads().catch(showError);
-  });
+  const sidebarWorkspaceSelect = $("workspaceSelect");
+  const sidebarWorkspaceMenu = $("workspaceSelectMenu");
+  if (sidebarWorkspaceSelect && sidebarWorkspaceMenu) {
+    const closeSidebarWorkspaceMenu = () => {
+      sidebarWorkspaceMenu.hidden = true;
+      sidebarWorkspaceSelect.setAttribute("aria-expanded", "false");
+      document.removeEventListener("pointerdown", onSidebarWorkspaceOutsidePointer);
+    };
+    const onSidebarWorkspaceOption = (event) => {
+      const option = event.target.closest("[data-workspace-value]");
+      if (!option) return;
+      const selectedWorkspace = option.dataset.workspaceValue || "";
+      event.preventDefault();
+      event.stopPropagation();
+      selectWorkspaceShortcut(selectedWorkspace).catch(showError);
+      closeSidebarWorkspaceMenu();
+    };
+    const onSidebarWorkspaceOutsidePointer = (event) => {
+      if (!sidebarWorkspaceMenu.hidden && !sidebarWorkspaceMenu.contains(event.target) && !sidebarWorkspaceSelect.contains(event.target)) {
+        closeSidebarWorkspaceMenu();
+      }
+    };
+    const openSidebarWorkspaceMenu = () => {
+      sidebarWorkspaceMenu.hidden = false;
+      sidebarWorkspaceSelect.setAttribute("aria-expanded", "true");
+      document.addEventListener("pointerdown", onSidebarWorkspaceOutsidePointer);
+    };
+    const toggleSidebarWorkspaceMenu = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (sidebarWorkspaceSelect.disabled) return;
+      if (sidebarWorkspaceMenu.hidden) {
+        openSidebarWorkspaceMenu();
+      } else {
+        closeSidebarWorkspaceMenu();
+      }
+    };
+    sidebarWorkspaceSelect.addEventListener("pointerdown", toggleSidebarWorkspaceMenu);
+    sidebarWorkspaceMenu.addEventListener("pointerdown", onSidebarWorkspaceOption);
+    closeSidebarWorkspaceMenu();
+  }
+  $("newThreadButton").addEventListener("click", enterNewThreadDraft);
   $("refreshThreads").addEventListener("click", () => loadThreads().catch(showError));
   $("pushNotifications").addEventListener("click", () => handlePushButtonClick().catch(showError));
   if ($("appUpdateStatus")) $("appUpdateStatus").addEventListener("click", () => handleAppUpdateClick().catch(showError));
@@ -5284,13 +5787,13 @@ function wireUi() {
     if (button) removeAttachment(button.dataset.removeAttachment);
   });
   $("composer").addEventListener("dragover", (event) => {
-    if (!state.currentThreadId || !hasTransferFiles(event)) return;
+    if (!(state.currentThreadId || state.newThreadDraft) || !hasTransferFiles(event)) return;
     event.preventDefault();
     $("composer").classList.add("drag-over");
   });
   $("composer").addEventListener("dragleave", () => $("composer").classList.remove("drag-over"));
   $("composer").addEventListener("drop", (event) => {
-    if (!state.currentThreadId || !hasTransferFiles(event)) return;
+    if (!(state.currentThreadId || state.newThreadDraft) || !hasTransferFiles(event)) return;
     event.preventDefault();
     $("composer").classList.remove("drag-over");
     addAttachmentFiles(event.dataTransfer.files);
@@ -5302,8 +5805,19 @@ function wireUi() {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.addEventListener("message", handleServiceWorkerMessage);
   }
-  document.addEventListener("visibilitychange", () => scheduleMobileResume("visibility"));
-  window.addEventListener("pageshow", () => {
+  document.addEventListener("visibilitychange", () => {
+    postClientEvent("page_visibility", {
+      visibilityState: document.visibilityState,
+      currentThreadId: state.currentThreadId || "",
+      eventOpen: Boolean(state.events && state.events.readyState === EventSource.OPEN),
+    });
+    scheduleMobileResume("visibility");
+  });
+  window.addEventListener("pageshow", (event) => {
+    postClientEvent("page_show", {
+      persisted: Boolean(event && event.persisted),
+      currentThreadId: state.currentThreadId || "",
+    });
     const threadId = applyUrlThreadSelection({ load: true });
     scheduleMobileResume("pageshow", threadId ? 240 : 80);
   });
