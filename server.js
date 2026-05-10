@@ -750,13 +750,63 @@ function filterVisibleThreads(result, globalState = readGlobalState()) {
   const visibility = visibilityFromGlobalState(globalState);
   if (!result || typeof result !== "object") return result;
   const out = Object.assign({}, result);
-  if (Array.isArray(out.data)) out.data = out.data
+  if (Array.isArray(out.data)) out.data = mergeThreadStateFromStateDb(out.data)
     .filter((thread) => !isHiddenThread(thread, visibility))
     .map(annotateThreadRolloutStats);
-  if (Array.isArray(out.threads)) out.threads = out.threads
+  if (Array.isArray(out.threads)) out.threads = mergeThreadStateFromStateDb(out.threads)
     .filter((thread) => !isHiddenThread(thread, visibility))
     .map(annotateThreadRolloutStats);
   return out;
+}
+
+function mergeThreadStateFromStateDb(threads) {
+  if (!Array.isArray(threads) || !threads.length || !fs.existsSync(STATE_DB)) return threads;
+  const ids = Array.from(new Set(threads.map((thread) => String(thread && thread.id || "").trim()).filter(Boolean)));
+  if (!ids.length) return threads;
+  const inClause = ids.map((id) => sqlString(id)).join(", ");
+  const query = [
+    "select id,archived,archived_at,rollout_path,model,reasoning_effort",
+    "from threads",
+    `where id in (${inClause});`,
+  ].join(" ");
+  try {
+    const result = spawnSync("sqlite3", ["-json", STATE_DB, query], {
+      encoding: "utf8",
+      timeout: 5000,
+      windowsHide: true,
+      maxBuffer: 1024 * 1024,
+    });
+    if (result.error || result.status !== 0) return threads;
+    const rows = JSON.parse(result.stdout || "[]");
+    if (!Array.isArray(rows) || !rows.length) return threads;
+    const stateById = new Map();
+    for (const row of rows) {
+      const id = String(row && row.id || "").trim();
+      if (!id) continue;
+      stateById.set(id, {
+        archived: Boolean(Number(row.archived || 0))
+          || /[/\\]archived_sessions[/\\]/i.test(String(row.rollout_path || "")),
+        archivedAt: row.archived_at || null,
+        model: row.model || null,
+        effort: row.reasoning_effort || null,
+      });
+    }
+    return threads.map((thread) => {
+      if (!thread || typeof thread !== "object") return thread;
+      const state = stateById.get(String(thread.id || "").trim());
+      if (!state) return thread;
+      const next = Object.assign({}, thread);
+      if (state.model) next.model = state.model;
+      if (state.effort) next.effort = state.effort;
+      if (state.archived) {
+        next.archived = true;
+        next.archivedAt = state.archivedAt || thread.archivedAt || thread.archived_at || null;
+      }
+      return next;
+    });
+  } catch (_) {
+    return threads;
+  }
 }
 
 function isCompletedStatus(status) {
@@ -2352,8 +2402,6 @@ function messageSubmissionKeys(threadId, body, text, uploads) {
     threadId,
     activeTurnId: String(body.activeTurnId || ""),
     cwd: String(body.cwd || ""),
-    model: String(body.model || ""),
-    effort: String(body.effort || ""),
     text: String(text || ""),
     uploads: uploads.map(uploadDedupeFingerprint),
   };
@@ -3529,7 +3577,7 @@ async function waitForContinuationTurnCompletion(threadId, turnId) {
   };
 }
 
-async function createSourceContinuationHandoff({ cwd, sourceThreadId, sourceThreadTitle, runtimeSettings, model, effort, onProgress }) {
+async function createSourceContinuationHandoff({ cwd, sourceThreadId, sourceThreadTitle, runtimeSettings, onProgress }) {
   const threadId = String(sourceThreadId || "").trim();
   if (!threadId) return null;
   const target = continuationHandoffTarget(cwd, threadId);
@@ -3561,16 +3609,13 @@ async function createSourceContinuationHandoff({ cwd, sourceThreadId, sourceThre
     threadId,
     input: [{ type: "text", text: prompt, text_elements: [] }],
     cwd,
-    model: model || null,
     summary: "auto",
   }, runtimeSettings || {});
-  if (effort) params.effort = effort;
   try {
     if (onProgress) onProgress("handoff-resume", "正在唤醒源线程");
     await codex.request("thread/resume", applyResumeRuntimeSettings({
       threadId,
       cwd,
-      model: model || null,
       persistExtendedHistory: true,
     }, runtimeSettings || {}), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
   } catch (err) {
@@ -3790,8 +3835,6 @@ async function startThreadFromRequestBody(body, options = {}) {
     sourceThreadId,
     sourceThreadTitle,
     runtimeSettings,
-    model: body.model || null,
-    effort: body.effort || null,
     onProgress: progress,
   });
   if (job && sourceHandoff) {
@@ -3807,7 +3850,6 @@ async function startThreadFromRequestBody(body, options = {}) {
   progress("thread-start", "正在创建续接线程");
   const params = applyStartThreadRuntimeSettings({
     cwd,
-    model: body.model || null,
     modelProvider: null,
     config: {},
     developerInstructions: readStartThreadDeveloperInstructions(cwd) || "",
@@ -3827,10 +3869,8 @@ async function startThreadFromRequestBody(body, options = {}) {
     threadId,
     input: newThreadBootstrapInput({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff }),
     cwd,
-    model: body.model || null,
     summary: "auto",
   }, runtimeSettings);
-  if (body.effort) bootstrapParams.effort = body.effort;
   progress("bootstrap", "正在写入续接启动上下文", { threadId });
   const bootstrap = threadId
     ? await codex.request("turn/start", bootstrapParams, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false })
@@ -4014,6 +4054,16 @@ function readStateDbThread(threadId) {
   } catch (_) {
     return null;
   }
+}
+
+function mergeThreadRuntimeFromStateDb(thread, summary = null) {
+  if (!thread || typeof thread !== "object") return thread;
+  const stateThread = summary || readStateDbThread(thread.id);
+  if (!stateThread) return thread;
+  const next = Object.assign({}, thread);
+  if (stateThread.model) next.model = stateThread.model;
+  if (stateThread.effort) next.effort = stateThread.effort;
+  return next;
 }
 
 async function readThreadSummaryFromAppServer(codex, threadId) {
@@ -4595,6 +4645,7 @@ async function handleApi(req, res) {
         resetOnTimeout: false,
       }), { maxTurns: MAX_FULL_THREAD_TURNS });
       if (result.thread) {
+        result.thread = mergeThreadRuntimeFromStateDb(result.thread, summary);
         result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
         result.thread.mobileReadMode = "thread-read";
       }
@@ -4700,7 +4751,6 @@ async function handleApi(req, res) {
     sendJson(res, 200, await codex.request("thread/resume", applyResumeRuntimeSettings({
       threadId,
       cwd: body.cwd || null,
-      model: body.model || null,
       persistExtendedHistory: true,
     }, runtimeSettings), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false }));
     return;
@@ -4761,7 +4811,6 @@ async function handleApi(req, res) {
           await codex.request("thread/resume", applyResumeRuntimeSettings({
             threadId,
             cwd: body.cwd || null,
-            model: body.model || null,
             persistExtendedHistory: true,
           }, runtimeSettings), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
         } catch (err) {
@@ -4772,8 +4821,6 @@ async function handleApi(req, res) {
           input,
         }, runtimeSettings);
         if (body.cwd) params.cwd = body.cwd;
-        if (body.model) params.model = body.model;
-        if (body.effort) params.effort = body.effort;
         return await codex.request("turn/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
       });
       logMessageSubmit("done", {

@@ -82,8 +82,6 @@ const state = {
   unreadThreadIds: loadStringSetStorage("codexMobileUnreadThreadIds"),
   rolloutWarningDismissals: loadStringSetStorage("codexMobileDismissedRolloutWarnings"),
   fontSize: localStorage.getItem("codexMobileFontSize") || "default",
-  selectedModel: localStorage.getItem("codexMobileSelectedModel") || "",
-  selectedEffort: localStorage.getItem("codexMobileSelectedEffort") || "",
   selectedPermissionModes: loadJsonStorage("codexMobileSelectedPermissionModes", {}),
   activityLabel: "",
   activityAtMs: 0,
@@ -107,8 +105,6 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
 const MAX_RETAINED_OPERATIONS_PER_TURN = 1;
 const STORAGE_THREAD_ID = "codexMobileCurrentThreadId";
-const STORAGE_MODEL = "codexMobileSelectedModel";
-const STORAGE_EFFORT = "codexMobileSelectedEffort";
 const STORAGE_PERMISSION_MODES = "codexMobileSelectedPermissionModes";
 const STORAGE_CONTINUATION_JOB = "codexMobileContinuationJobId";
 const STORAGE_RUNNING_THREAD_IDS = "codexMobileRunningThreadIds";
@@ -774,8 +770,7 @@ function quotaTitle(label, windowInfo) {
 }
 
 function selectedQuotaModel() {
-  const modelSelect = $("modelSelect");
-  return (modelSelect && modelSelect.value) || state.selectedModel || effectiveDefaultModel();
+  return effectiveDefaultModel();
 }
 
 function rateLimitsForQuota() {
@@ -3154,8 +3149,6 @@ function startThreadRequestBody(sourceThread = null, options = {}) {
   const useCurrentSelectors = !sourceThread || thread.id === state.currentThreadId;
   return {
     cwd: thread.cwd || state.selectedCwd || "",
-    model: useCurrentSelectors ? (currentComposerModel() || "") : (thread.model || state.defaultModel || ""),
-    effort: useCurrentSelectors ? ($("effortSelect").value || effectiveDefaultEffort() || "") : (thread.effort || state.defaultReasoningEffort || ""),
     permissionMode: useCurrentSelectors ? ($("permissionSelect").value || effectiveDefaultPermissionMode() || "") : "",
     sourceThreadId: thread.id || "",
     sourceThreadTitle: thread.name || thread.preview || thread.id || "",
@@ -4368,6 +4361,7 @@ function applyNotification(method, params) {
     updateComposerControls();
     ensureTurn(params.turn.id);
     renderCurrentThread();
+    scheduleCurrentThreadRefresh(500);
     scheduleLivePollIfNeeded(1200);
     return;
   }
@@ -4856,11 +4850,6 @@ function effectiveDefaultModel() {
   return (state.currentThread && state.currentThread.model) || state.defaultModel || "";
 }
 
-function currentComposerModel() {
-  const modelSelect = $("modelSelect");
-  return (modelSelect && modelSelect.value) || state.selectedModel || effectiveDefaultModel();
-}
-
 function effectiveDefaultEffort() {
   return (state.currentThread && state.currentThread.effort) || state.defaultReasoningEffort || "";
 }
@@ -4887,35 +4876,32 @@ function setSelectedPermissionModeForCurrentThread(value) {
 }
 
 function renderComposerSettings() {
-  const modelSelect = $("modelSelect");
-  const effortSelect = $("effortSelect");
+  const modelDisplay = $("modelDisplay");
+  const effortDisplay = $("effortDisplay");
   const permissionSelect = $("permissionSelect");
-  if (!modelSelect || !effortSelect || !permissionSelect) return;
+  if (!modelDisplay || !effortDisplay || !permissionSelect) return;
   const defaultModel = effectiveDefaultModel();
   const defaultEffort = effectiveDefaultEffort();
+  const hasThreadModel = Boolean(state.currentThread && state.currentThread.model);
+  const hasThreadEffort = Boolean(state.currentThread && state.currentThread.effort);
   const defaultPermission = effectiveDefaultPermissionMode();
   let selectedPermission = selectedPermissionModeForCurrentThread();
   if (selectedPermission && selectedPermission === defaultPermission) {
     setSelectedPermissionModeForCurrentThread("");
     selectedPermission = "";
   }
-  const modelValues = normalizeOptionList([state.selectedModel, defaultModel, state.defaultModel, ...state.modelOptions]);
-  const effortValues = normalizeOptionList([state.selectedEffort, ...state.reasoningEffortOptions])
-    .filter((value) => value !== defaultEffort);
   const permissionValues = normalizeOptionList([selectedPermission, ...state.permissionModeOptions.map(normalizePermissionModeValue)])
     .filter((value) => value !== defaultPermission);
-  modelSelect.innerHTML = modelValues.length
-    ? modelValues.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(labelForModel(value))}</option>`).join("")
-    : `<option value="">Model</option>`;
-  effortSelect.innerHTML = `<option value="">${escapeHtml(defaultEffort ? labelForEffort(defaultEffort) : "Default")}</option>`
-    + effortValues.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(labelForEffort(value))}</option>`).join("");
+  modelDisplay.textContent = defaultModel ? labelForModel(defaultModel) : "--";
+  modelDisplay.title = defaultModel
+    ? `模型：${labelForModel(defaultModel)}。${hasThreadModel ? "本地记录值" : "全局默认值"}，只能在桌面端修改`
+    : "模型未记录，只能在桌面端修改";
+  effortDisplay.textContent = defaultEffort ? labelForEffort(defaultEffort) : "--";
+  effortDisplay.title = defaultEffort
+    ? `推理强度：${labelForEffort(defaultEffort)}。${hasThreadEffort ? "本地记录值" : "全局默认值"}，只能在桌面端修改`
+    : "推理强度未记录，只能在桌面端修改";
   permissionSelect.innerHTML = `<option value="">${escapeHtml(defaultPermission ? labelForPermissionMode(defaultPermission) : "Perm")}</option>`
     + permissionValues.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(labelForPermissionMode(value))}</option>`).join("");
-  const selectedModel = state.selectedModel || defaultModel || state.defaultModel || "";
-  if (selectedModel && modelValues.includes(selectedModel)) modelSelect.value = selectedModel;
-  else modelSelect.value = "";
-  if (state.selectedEffort && state.selectedEffort !== defaultEffort && effortValues.includes(state.selectedEffort)) effortSelect.value = state.selectedEffort;
-  else effortSelect.value = "";
   if (selectedPermission && selectedPermission !== defaultPermission && permissionValues.includes(selectedPermission)) permissionSelect.value = selectedPermission;
   else permissionSelect.value = "";
   permissionSelect.title = titleForPermissionMode(permissionSelect.value || defaultPermission);
@@ -4934,8 +4920,6 @@ function updateComposerControls() {
   const attachButton = $("attachFiles");
   setMessageInputDisabled(disabled);
   $("fileInput").disabled = disabled;
-  $("modelSelect").disabled = disabled;
-  $("effortSelect").disabled = disabled;
   $("permissionSelect").disabled = disabled;
   attachButton.classList.toggle("disabled", disabled);
   attachButton.setAttribute("aria-disabled", disabled ? "true" : "false");
@@ -4996,9 +4980,6 @@ async function sendMessage(event) {
     body.append("text", text);
     if (state.currentThread && state.currentThread.cwd) body.append("cwd", state.currentThread.cwd);
     if (state.activeTurnId) body.append("activeTurnId", state.activeTurnId);
-    const model = currentComposerModel();
-    if (model) body.append("model", model);
-    if ($("effortSelect").value) body.append("effort", $("effortSelect").value);
     if ($("permissionSelect").value) body.append("permissionMode", $("permissionSelect").value);
     for (const item of state.pendingAttachments) {
       body.append("attachments", item.file, item.file.name || "upload");
@@ -5245,17 +5226,6 @@ function wireUi() {
     if (!composerHasContent() || state.composerBusy) return;
     event.preventDefault();
     $("composer").requestSubmit();
-  });
-  $("modelSelect").addEventListener("change", (event) => {
-    state.selectedModel = event.target.value;
-    if (state.selectedModel) localStorage.setItem(STORAGE_MODEL, state.selectedModel);
-    else localStorage.removeItem(STORAGE_MODEL);
-    renderQuotaUsage();
-  });
-  $("effortSelect").addEventListener("change", (event) => {
-    state.selectedEffort = event.target.value;
-    if (state.selectedEffort) localStorage.setItem(STORAGE_EFFORT, state.selectedEffort);
-    else localStorage.removeItem(STORAGE_EFFORT);
   });
   $("permissionSelect").addEventListener("change", (event) => {
     setSelectedPermissionModeForCurrentThread(event.target.value);

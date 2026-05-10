@@ -1993,7 +1993,8 @@ html.visual-recovering body::before {
   white-space: nowrap;
 }
 
-.composer-select {
+.composer-select,
+.composer-readonly-value {
   width: 100%;
   min-height: 28px;
   padding: 4px 6px;
@@ -2007,6 +2008,13 @@ html.visual-recovering body::before {
   letter-spacing: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.composer-readonly-value {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  cursor: default;
 }
 
 .composer-select:disabled {
