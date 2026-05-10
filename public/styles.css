@@ -2197,6 +2197,15 @@ html.visual-recovering body::before {
   background: var(--danger);
 }
 
+#sendMessage.steer-mode {
+  color: var(--sending-text);
+  background: rgba(158, 231, 196, 0.26);
+}
+
+#sendMessage.steer-mode.sending {
+  background: rgba(158, 231, 196, 0.32);
+}
+
 #interruptTurn {
   display: none;
 }

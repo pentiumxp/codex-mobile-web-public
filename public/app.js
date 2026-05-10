@@ -100,6 +100,8 @@ const state = {
   copyTextStore: new Map(),
   copySeq: 0,
   copyFeedbackTimers: new Map(),
+  steerFeedback: null,
+  steerFeedbackTimer: null,
 };
 
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
@@ -979,6 +981,57 @@ function markActivity(label) {
   state.activityLabel = String(label || "").trim();
   state.activityAtMs = state.activityLabel ? Date.now() : 0;
   updateTurnTimer();
+}
+
+function clearSteerFeedbackTimer() {
+  if (state.steerFeedbackTimer) window.clearTimeout(state.steerFeedbackTimer);
+  state.steerFeedbackTimer = null;
+}
+
+function setSteerFeedback(status, details = {}) {
+  clearSteerFeedbackTimer();
+  const previous = state.steerFeedback || {};
+  const next = Object.assign({}, previous, details, {
+    status,
+    updatedAtMs: Date.now(),
+  });
+  state.steerFeedback = next;
+  const connection = $("connectionState");
+  if (connection) {
+    connection.classList.toggle("error", status === "failed");
+    connection.textContent = steerFeedbackLabel(status);
+  }
+  markActivity(steerFeedbackLabel(status));
+  if (status === "applied" || status === "failed" || status === "completed") {
+    state.steerFeedbackTimer = window.setTimeout(() => {
+      state.steerFeedback = null;
+      state.steerFeedbackTimer = null;
+      restoreConnectionState();
+      updateTurnTimer();
+    }, status === "failed" ? 3200 : 2400);
+  }
+}
+
+function steerFeedbackLabel(status) {
+  if (status === "sending") return "引导中…";
+  if (status === "delivered") return "引导已送达";
+  if (status === "applied") return "Agent 已继续处理";
+  if (status === "completed") return "引导已送达，任务已结束";
+  if (status === "failed") return "引导失败，请重试";
+  return "";
+}
+
+function isPendingSteerForTurn(turnId) {
+  const feedback = state.steerFeedback;
+  if (!feedback || !feedback.turnId || !turnId) return false;
+  if (feedback.turnId !== String(turnId)) return false;
+  return feedback.status === "sending" || feedback.status === "delivered";
+}
+
+function markSteerAppliedIfNeeded(turnId, item = null) {
+  if (!isPendingSteerForTurn(turnId)) return;
+  if (item && item.type === "userMessage") return;
+  setSteerFeedback("applied", { turnId: String(turnId) });
 }
 
 function markIdleActivity(label) {
@@ -4348,8 +4401,10 @@ function applyNotification(method, params) {
     const turn = ensureTurn(params.turn.id);
     Object.assign(turn, mergeTurnPreservingVisibleItems(turn, params.turn));
     removeOperationalItemsFromTurn(turn);
+    const completedPendingSteer = isPendingSteerForTurn(params.turn.id);
     state.activeTurnId = "";
     markActivity("完成");
+    if (completedPendingSteer) setSteerFeedback("completed", { turnId: String(params.turn.id) });
     $("interruptTurn").disabled = true;
     updateComposerControls();
     renderCurrentThread();
@@ -4359,12 +4414,14 @@ function applyNotification(method, params) {
   }
   if (method === "item/started" || method === "item/completed") {
     upsertItem(params.turnId, params.item);
+    markSteerAppliedIfNeeded(params.turnId, params.item);
     scheduleLivePollIfNeeded(2200);
     return;
   }
   if (method === "item/agentMessage/delta") {
     markActivity("输出");
     appendToItem(params.turnId, params.itemId, "agentMessage", "text", params.delta || "");
+    markSteerAppliedIfNeeded(params.turnId, { type: "agentMessage" });
     return;
   }
   if (method === "item/commandExecution/outputDelta") {
@@ -4376,11 +4433,13 @@ function applyNotification(method, params) {
   if (method === "item/reasoning/textDelta") {
     markActivity("思考");
     ensureTimerItem(params.turnId, params.itemId, "reasoning");
+    markSteerAppliedIfNeeded(params.turnId, { type: "reasoning" });
     return;
   }
   if (method === "item/reasoning/summaryTextDelta") {
     markActivity("思考");
     ensureTimerItem(params.turnId, params.itemId, "reasoning");
+    markSteerAppliedIfNeeded(params.turnId, { type: "reasoning" });
   }
 }
 
@@ -4622,7 +4681,8 @@ function startSendProgressWatchdog(threadId) {
   state.sendProgressWatchdog = setTimeout(() => {
     if (!state.composerBusy || state.currentThreadId !== targetThreadId) return;
     state.sendProgressWarned = true;
-    $("connectionState").textContent = "发送较慢，检查网络后稍等，避免重复提交";
+    const steering = state.steerFeedback && state.steerFeedback.status === "sending";
+    $("connectionState").textContent = steering ? "引导较慢，稍等一下，避免重复提交" : "发送较慢，检查网络后稍等，避免重复提交";
     $("connectionState").classList.add("error");
     postClientEvent("message_send_stall", {
       threadId: targetThreadId,
@@ -4903,6 +4963,7 @@ function updateComposerControls() {
   const disabled = !hasThread || state.composerBusy;
   const hasContent = composerHasContent();
   const interruptMode = Boolean(state.activeTurnId) && !hasContent;
+  const steerMode = Boolean(state.activeTurnId) && hasContent;
   const sendButton = $("sendMessage");
   const attachButton = $("attachFiles");
   setMessageInputDisabled(disabled);
@@ -4918,21 +4979,28 @@ function updateComposerControls() {
     sendButton.textContent = "Stop";
     sendButton.title = "Interrupt current turn";
     sendButton.classList.add("interrupt-mode");
-    sendButton.classList.remove("sending", "send-failed");
+    sendButton.classList.remove("sending", "send-failed", "steer-mode");
   } else if (state.composerBusy) {
-    sendButton.textContent = "发送中…";
-    sendButton.title = "Message is sending";
+    const steering = state.steerFeedback && state.steerFeedback.status === "sending";
+    sendButton.textContent = steering ? "引导中…" : "发送中…";
+    sendButton.title = steering ? "Steering current turn" : "Message is sending";
     sendButton.classList.add("sending");
+    sendButton.classList.toggle("steer-mode", Boolean(steering));
     sendButton.classList.remove("send-failed", "interrupt-mode");
   } else if (showRetryHint) {
     sendButton.textContent = "重试";
     sendButton.title = "Retry sending message";
     sendButton.classList.add("send-failed");
-    sendButton.classList.remove("sending", "interrupt-mode");
+    sendButton.classList.remove("sending", "interrupt-mode", "steer-mode");
+  } else if (steerMode) {
+    sendButton.textContent = "引导";
+    sendButton.title = "Guide the current running turn";
+    sendButton.classList.add("steer-mode");
+    sendButton.classList.remove("sending", "send-failed", "interrupt-mode");
   } else {
     sendButton.textContent = "Send";
     sendButton.title = "Send message";
-    sendButton.classList.remove("sending", "send-failed", "interrupt-mode");
+    sendButton.classList.remove("sending", "send-failed", "interrupt-mode", "steer-mode");
   }
   sendButton.disabled = disabled || (!interruptMode && !hasContent);
 }
@@ -4954,21 +5022,25 @@ async function sendMessage(event) {
     return;
   }
   if ((!text && !state.pendingAttachments.length) || !state.currentThreadId) return;
+  const steering = Boolean(state.activeTurnId && hasContent);
+  const steerTurnId = steering ? String(state.activeTurnId) : "";
+  const clientSubmissionId = createSubmissionId();
   state.composerBusy = true;
   state.sendButtonHint = "";
   startSendProgressWatchdog(state.currentThreadId);
-  markActivity(state.activeTurnId ? "追加输入" : "发送");
+  if (steering) setSteerFeedback("sending", { threadId: state.currentThreadId, turnId: steerTurnId, clientSubmissionId });
+  else markActivity("发送");
   updateComposerControls();
   if (state.sendProgressWarned) {
-    $("connectionState").textContent = "发送中…";
+    $("connectionState").textContent = steering ? "引导中…" : "发送中…";
     $("connectionState").classList.remove("error");
   }
   try {
     const body = new FormData();
-    body.append("clientSubmissionId", createSubmissionId());
+    body.append("clientSubmissionId", clientSubmissionId);
     body.append("text", text);
     if (state.currentThread && state.currentThread.cwd) body.append("cwd", state.currentThread.cwd);
-    if (state.activeTurnId) body.append("activeTurnId", state.activeTurnId);
+    if (steerTurnId) body.append("activeTurnId", steerTurnId);
     const model = currentComposerModel();
     if (model) body.append("model", model);
     if ($("effortSelect").value) body.append("effort", $("effortSelect").value);
@@ -4985,19 +5057,26 @@ async function sendMessage(event) {
     clearPendingAttachments();
     input.blur();
     $("connectionState").classList.remove("error");
-    $("connectionState").textContent = "Sent";
-    markActivity("已发送");
+    if (steering) setSteerFeedback("delivered", { threadId: state.currentThreadId, turnId: steerTurnId, clientSubmissionId });
+    else {
+      $("connectionState").textContent = "Sent";
+      markActivity("已发送");
+    }
     scheduleCurrentThreadRefresh(600);
     scheduleLivePollIfNeeded(1200);
   } catch (err) {
     const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err))
       || "发送失败，请重试";
     state.sendButtonHint = "重试";
-    $("connectionState").classList.add("error");
-    $("connectionState").textContent = message;
+    if (steering) setSteerFeedback("failed", { threadId: state.currentThreadId, turnId: steerTurnId, clientSubmissionId });
+    else {
+      $("connectionState").classList.add("error");
+      $("connectionState").textContent = message;
+    }
     postClientEvent("send_failure", {
       threadId: state.currentThreadId || "",
       message,
+      steering,
     });
   } finally {
     finishSendProgressWatchdog();
