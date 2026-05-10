@@ -108,7 +108,7 @@
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg: #f5f7f8;
+  --bg: #f8f6ee;
   --panel: #ffffff;
   --panel-2: #eef2f4;
   --line: #d5dce1;
@@ -158,7 +158,7 @@
 @media (prefers-color-scheme: light) {
   :root[data-theme="system"] {
     color-scheme: light;
-    --bg: #f5f7f8;
+    --bg: #f8f6ee;
     --panel: #ffffff;
     --panel-2: #eef2f4;
     --line: #d5dce1;

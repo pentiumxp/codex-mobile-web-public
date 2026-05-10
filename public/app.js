@@ -1943,7 +1943,7 @@ function startUiWatchdog() {
 function updatePushButton() {
   const button = $("pushNotifications");
   if (!button) return;
-  button.classList.remove("ready", "error");
+  button.classList.remove("hidden", "ready", "error");
   if (state.pushBusy) {
     button.textContent = "Working...";
     button.disabled = true;
@@ -2177,6 +2177,33 @@ function handleServiceWorkerMessage(event) {
   if (!data || data.type !== "codex-open-thread") return;
   const threadId = data.threadId || threadIdFromUrlValue(data.url);
   openExternalThreadSelection(threadId).catch(showError);
+}
+
+function handleLaunchTargetUrl(targetUrl) {
+  const threadId = threadIdFromUrlValue(targetUrl);
+  postClientEvent("launch_target", {
+    hasThread: Boolean(threadId),
+    pwa: isPwaMode(),
+  });
+  if (threadId) {
+    openExternalThreadSelection(threadId).catch(showError);
+    return;
+  }
+  scheduleMobileResume("launch-target", 120);
+}
+
+function installLaunchQueueHandler() {
+  const launchQueue = window.launchQueue;
+  if (!launchQueue || typeof launchQueue.setConsumer !== "function") return;
+  try {
+    launchQueue.setConsumer((launchParams) => {
+      if (!launchParams || !launchParams.targetURL) return;
+      handleLaunchTargetUrl(launchParams.targetURL);
+    });
+    postClientEvent("launch_queue_ready", { pwa: isPwaMode() });
+  } catch (err) {
+    postClientEvent("launch_queue_failed", { message: err.message || String(err) });
+  }
 }
 
 async function loadWorkspaces() {
@@ -5271,6 +5298,7 @@ function wireUi() {
   updateViewportVars();
   applyFontSizePreference();
   renderFontSizeControl();
+  installLaunchQueueHandler();
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.addEventListener("message", handleServiceWorkerMessage);
   }

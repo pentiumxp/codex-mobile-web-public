@@ -2,9 +2,14 @@
   "name": "Codex Mobile",
   "short_name": "Codex",
   "description": "A mobile web client for Codex app-server.",
+  "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "fullscreen"],
+  "launch_handler": {
+    "client_mode": ["focus-existing", "navigate-existing", "auto"]
+  },
   "background_color": "#111315",
   "theme_color": "#111315",
   "orientation": "portrait",

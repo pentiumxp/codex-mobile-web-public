@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "codex-mobile-shell-v13";
+const CACHE_NAME = "codex-mobile-shell-v14";
 const STATIC_ASSETS = [
   "/",
   "/index.html",
@@ -17,6 +17,12 @@ function shouldBypassCache(url) {
   return url.origin !== self.location.origin
     || url.pathname.startsWith("/api/")
     || url.pathname.startsWith("/uploads/");
+}
+
+function resolveAfter(ms, value) {
+  return new Promise((resolve) => {
+    setTimeout(() => resolve(value), ms);
+  });
 }
 
 self.addEventListener("install", (event) => {
@@ -44,13 +50,21 @@ self.addEventListener("fetch", (event) => {
 
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put("/index.html", copy));
-          return response;
-        })
-        .catch(() => caches.match("/index.html"))
+      (async () => {
+        const cached = await caches.match("/index.html");
+        const network = fetch(request)
+          .then((response) => {
+            if (response && response.ok) {
+              const copy = response.clone();
+              caches.open(CACHE_NAME).then((cache) => cache.put("/index.html", copy));
+            }
+            return response;
+          });
+        if (cached) {
+          return Promise.race([network, resolveAfter(1200, cached)]).catch(() => cached);
+        }
+        return network.catch(() => caches.match("/index.html"));
+      })()
     );
     return;
   }
@@ -126,7 +140,7 @@ self.addEventListener("notificationclick", (event) => {
       }
     }
     if (self.clients.openWindow) {
-      const opened = await self.clients.openWindow(target.url);
+      const opened = await self.clients.openWindow("/");
       postNotificationTarget(opened, target);
     }
   })());
