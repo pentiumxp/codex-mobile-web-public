@@ -2441,7 +2441,7 @@ function suppressThreadClickAfterSwipe(event) {
     state.suppressThreadClickThreadId = "";
     return;
   }
-  if (event.target.closest("[data-new-thread-from-thread]")) return;
+  if (event.target.closest("[data-thread-archive]")) return;
   const row = event.target.closest("[data-thread-row]");
   if (!row) return;
   const threadId = row.dataset.threadRow || "";
@@ -2777,7 +2777,7 @@ function renderThreads(result = null) {
       : "";
     const actionOpen = state.openThreadActionId === thread.id;
     const action = `<div class="thread-row-actions" aria-hidden="${actionOpen ? "false" : "true"}">
-      <button class="thread-new-button" type="button" data-new-thread-from-thread="${escapeHtml(thread.id)}">压缩续接</button>
+      <button class="thread-new-button" type="button" data-thread-archive="${escapeHtml(thread.id)}">归档</button>
     </div>`;
     return `<div class="thread-card-wrap${sizeWarn ? " rollout-warn" : ""}${actionOpen ? " swipe-open" : ""}" data-thread-row="${escapeHtml(thread.id)}">
       <button class="thread-card${active}${emphasis}${sizeWarn ? " rollout-warn" : ""}" type="button" data-thread="${escapeHtml(thread.id)}">
@@ -2819,8 +2819,8 @@ function renderThreads(result = null) {
   list.querySelectorAll("[data-thread]").forEach((button) => {
     button.addEventListener("click", handleThreadCardClick);
   });
-  list.querySelectorAll("[data-new-thread-from-thread]").forEach((button) => {
-    button.addEventListener("click", startNewThreadFromList);
+  list.querySelectorAll("[data-thread-archive]").forEach((button) => {
+    button.addEventListener("click", archiveThreadFromList);
   });
   applyThreadActionState();
 }
@@ -3170,7 +3170,7 @@ function actionWidthForThreadRow(row) {
 
 function threadSwipeTargetRow(target) {
   if (!target || !target.closest) return null;
-  if (target.closest("[data-new-thread-from-thread]")) return null;
+  if (target.closest("[data-thread-archive]")) return null;
   return target.closest("[data-thread-row]");
 }
 
@@ -3459,15 +3459,39 @@ async function startNewThreadFromCurrent(event) {
   await startNewThreadFromThread(state.currentThread, event);
 }
 
-async function startNewThreadFromList(event) {
-  if (event) event.stopPropagation();
-  const threadId = event.currentTarget && event.currentTarget.dataset.newThreadFromThread;
+async function archiveThreadFromList(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  closeThreadActions();
+  const threadId = event && event.currentTarget ? event.currentTarget.dataset.threadArchive : "";
   const thread = state.threads.find((entry) => entry.id === threadId);
   if (!thread) {
     showError(new Error("Thread is no longer in the current list"));
     return;
   }
-  await startNewThreadFromThread(thread, event);
+  const title = threadTitleForDisplay(thread) || "会话";
+  const archiveConfirmed = window.confirm(`归档“${title}”？`);
+  if (!archiveConfirmed) return;
+  const button = event && event.currentTarget;
+  if (button) button.disabled = true;
+  $("connectionState").classList.remove("error");
+  $("connectionState").textContent = "正在归档会话";
+  markActivity("归档会话");
+  try {
+    await api(`/api/threads/${encodeURIComponent(thread.id)}/archive`, { method: "POST", timeoutMs: 30000 });
+    if (state.currentThreadId === thread.id) {
+      clearCurrentThreadSelection();
+      renderCurrentThread();
+    }
+    state.openThreadActionId = "";
+    loadThreads().catch(showError);
+  } catch (err) {
+    showError(err);
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 function approvalTitle(method) {

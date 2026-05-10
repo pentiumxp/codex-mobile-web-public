@@ -746,14 +746,57 @@ function isHiddenThread(thread, visibility = null) {
   return false;
 }
 
+function mergeThreadStateFromStateDb(threads) {
+  if (!Array.isArray(threads) || !threads.length || !fs.existsSync(STATE_DB)) return threads;
+  const ids = Array.from(new Set(threads.map((thread) => String(thread && thread.id || "").trim()).filter(Boolean)));
+  if (!ids.length) return threads;
+  const inClause = ids.map((id) => sqlString(id)).join(", ");
+  const query = [
+    "select id,archived,archived_at",
+    "from threads",
+    `where id in (${inClause});`,
+  ].join(" ");
+  try {
+    const result = spawnSync("sqlite3", ["-json", STATE_DB, query], {
+      encoding: "utf8",
+      timeout: 5000,
+      windowsHide: true,
+      maxBuffer: 1024 * 1024,
+    });
+    if (result.error || result.status !== 0) return threads;
+    const rows = JSON.parse(result.stdout || "[]");
+    if (!Array.isArray(rows) || !rows.length) return threads;
+    const archivedById = new Map();
+    for (const row of rows) {
+      const id = String(row && row.id || "").trim();
+      if (!id) continue;
+      archivedById.set(id, {
+        archived: Boolean(Number(row.archived || 0)),
+        archivedAt: row.archived_at || null,
+      });
+    }
+    return threads.map((thread) => {
+      if (!thread || typeof thread !== "object") return thread;
+      const state = archivedById.get(String(thread.id || "").trim());
+      if (!state || !state.archived) return thread;
+      return Object.assign({}, thread, {
+        archived: true,
+        archivedAt: state.archivedAt || thread.archivedAt || thread.archived_at || null,
+      });
+    });
+  } catch (_) {
+    return threads;
+  }
+}
+
 function filterVisibleThreads(result, globalState = readGlobalState()) {
   const visibility = visibilityFromGlobalState(globalState);
   if (!result || typeof result !== "object") return result;
   const out = Object.assign({}, result);
-  if (Array.isArray(out.data)) out.data = out.data
+  if (Array.isArray(out.data)) out.data = mergeThreadStateFromStateDb(out.data)
     .filter((thread) => !isHiddenThread(thread, visibility))
     .map(annotateThreadRolloutStats);
-  if (Array.isArray(out.threads)) out.threads = out.threads
+  if (Array.isArray(out.threads)) out.threads = mergeThreadStateFromStateDb(out.threads)
     .filter((thread) => !isHiddenThread(thread, visibility))
     .map(annotateThreadRolloutStats);
   return out;
@@ -3692,6 +3735,37 @@ async function archiveVisibleThread(threadId, visibility) {
   return await codex.request("thread/archive", { threadId }, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
 }
 
+function isThreadArchiveNoOpError(err) {
+  const message = String((err && err.message) || "").toLowerCase();
+  const code = String((err && err.code) || "").toLowerCase();
+  return /already|archived|not found|notexisting|不存在|已归档|does not exist|no such/.test(message)
+    || /thread_not_found|thread-not-found|not_found|not-found/.test(code);
+}
+
+async function archiveThreadId(threadId, visibility = visibilityFromGlobalState()) {
+  if (!threadId) return { archived: false };
+  const summary = readStateDbThread(threadId) || readStartedThread(threadId);
+  if (summary && isHiddenThread(summary, visibility)) {
+    return { archived: true, alreadyArchived: true, source: "state-db" };
+  }
+  try {
+    const result = await codex.request("thread/archive", { threadId }, {
+      timeoutMs: MUTATION_RPC_TIMEOUT_MS,
+      retry: false,
+    });
+    return result || { archived: true };
+  } catch (err) {
+    const rechecked = readStateDbThread(threadId) || readStartedThread(threadId);
+    if (rechecked && isHiddenThread(rechecked, visibility)) {
+      return { archived: true, alreadyArchived: true, source: "state-db" };
+    }
+    if (isThreadArchiveNoOpError(err)) {
+      return { archived: true, alreadyArchived: true };
+    }
+    throw err;
+  }
+}
+
 function httpStatusError(statusCode, message) {
   const err = new Error(message);
   err.statusCode = statusCode;
@@ -4424,6 +4498,14 @@ async function handleApi(req, res) {
     } catch (err) {
       sendJson(res, err.statusCode || 500, { error: err.message || String(err) });
     }
+    return;
+  }
+  const threadArchive = url.pathname.match(/^\/api\/threads\/([^/]+)\/archive$/);
+  if (threadArchive && req.method === "POST") {
+    const threadId = decodeURIComponent(threadArchive[1]);
+    const visibility = visibilityFromGlobalState();
+    const result = await archiveThreadId(threadId, visibility);
+    sendJson(res, 200, result || { archived: true });
     return;
   }
   if (url.pathname === "/api/threads" && req.method === "GET") {
