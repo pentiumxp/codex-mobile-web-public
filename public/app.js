@@ -2339,6 +2339,22 @@ function selectedWorkspaceLabel() {
   return workspace && workspace.label ? workspace.label : shortPath(state.selectedCwd);
 }
 
+function fitWorkspaceMenuToViewport(menu, anchor, options = {}) {
+  if (!menu || !anchor) return;
+  const rect = anchor.getBoundingClientRect();
+  const composer = $("composer");
+  const composerTop = composer ? composer.getBoundingClientRect().top : 0;
+  const viewportBottom = window.innerHeight || document.documentElement.clientHeight || 0;
+  const bottomLimit = options.avoidComposer !== false && composerTop > rect.bottom
+    ? composerTop
+    : viewportBottom;
+  const gap = Number(options.gap || 18);
+  const cap = Number(options.cap || (isMobileViewport() ? 360 : 420));
+  const available = Math.max(120, Math.floor(bottomLimit - rect.bottom - gap));
+  const height = Math.max(120, Math.min(cap, available));
+  menu.style.setProperty("--workspace-menu-max-height", `${height}px`);
+}
+
 function updateWorkspacePath() {
   const el = $("workspacePath");
   if (!el) return;
@@ -3362,6 +3378,7 @@ function renderNewThreadDraft() {
     workspaceMenu.hidden = true;
     const closeMenu = () => {
       workspaceMenu.hidden = true;
+      workspaceMenu.style.removeProperty("--workspace-menu-max-height");
       selectButton.setAttribute("aria-expanded", "false");
       document.removeEventListener("pointerdown", onOutsidePointer);
     };
@@ -3372,6 +3389,7 @@ function renderNewThreadDraft() {
     };
     const openMenu = () => {
       workspaceMenu.hidden = false;
+      fitWorkspaceMenuToViewport(workspaceMenu, selectButton);
       selectButton.setAttribute("aria-expanded", "true");
       document.addEventListener("pointerdown", onOutsidePointer);
     };
@@ -3388,7 +3406,7 @@ function renderNewThreadDraft() {
     selectButton.addEventListener("pointerdown", toggleMenu);
     if (workspaceMenu) {
       workspaceMenu.querySelectorAll("[data-new-thread-workspace]").forEach((workspaceOption) => {
-        workspaceOption.addEventListener("pointerdown", (event) => {
+        workspaceOption.addEventListener("click", (event) => {
           const selectedWorkspace = event.currentTarget.dataset.newThreadWorkspace || "";
           event.preventDefault();
           event.stopPropagation();
@@ -5611,6 +5629,7 @@ function wireUi() {
   if (sidebarWorkspaceSelect && sidebarWorkspaceMenu) {
     const closeSidebarWorkspaceMenu = () => {
       sidebarWorkspaceMenu.hidden = true;
+      sidebarWorkspaceMenu.style.removeProperty("--workspace-menu-max-height");
       sidebarWorkspaceSelect.setAttribute("aria-expanded", "false");
       document.removeEventListener("pointerdown", onSidebarWorkspaceOutsidePointer);
     };
@@ -5630,6 +5649,7 @@ function wireUi() {
     };
     const openSidebarWorkspaceMenu = () => {
       sidebarWorkspaceMenu.hidden = false;
+      fitWorkspaceMenuToViewport(sidebarWorkspaceMenu, sidebarWorkspaceSelect, { avoidComposer: false });
       sidebarWorkspaceSelect.setAttribute("aria-expanded", "true");
       document.addEventListener("pointerdown", onSidebarWorkspaceOutsidePointer);
     };
@@ -5644,7 +5664,7 @@ function wireUi() {
       }
     };
     sidebarWorkspaceSelect.addEventListener("pointerdown", toggleSidebarWorkspaceMenu);
-    sidebarWorkspaceMenu.addEventListener("pointerdown", onSidebarWorkspaceOption);
+    sidebarWorkspaceMenu.addEventListener("click", onSidebarWorkspaceOption);
     closeSidebarWorkspaceMenu();
   }
   $("newThreadButton").addEventListener("click", enterNewThreadDraft);

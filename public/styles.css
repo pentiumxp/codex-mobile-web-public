@@ -346,7 +346,7 @@ html.visual-recovering body::before {
   padding: calc(18px + env(safe-area-inset-top, 0px)) 18px 18px;
   border-right: 1px solid var(--line);
   background: var(--panel);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .side-header,
@@ -482,6 +482,7 @@ html.visual-recovering body::before {
   display: flex;
   flex: 1 1 auto;
   position: relative;
+  overflow: visible;
 }
 
 .sidebar-workspace-select {
@@ -534,8 +535,9 @@ html.visual-recovering body::before {
   top: calc(100% + 6px);
   left: 0;
   right: 0;
-  max-height: 270px;
-  overflow: auto;
+  max-height: var(--workspace-menu-max-height, min(52vh, 360px));
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 6px;
   display: grid;
   gap: 8px;
@@ -543,6 +545,9 @@ html.visual-recovering body::before {
   border-radius: 8px;
   background: var(--panel);
   box-shadow: var(--shadow);
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 .workspace-select-menu[hidden] {
@@ -2118,6 +2123,7 @@ html.visual-recovering body::before {
   display: grid;
   gap: 8px;
   position: relative;
+  overflow: visible;
 }
 
 .new-thread-workspace label {
@@ -2172,8 +2178,9 @@ html.visual-recovering body::before {
   top: calc(100% + 6px);
   left: 0;
   right: 0;
-  max-height: 250px;
-  overflow: auto;
+  max-height: var(--workspace-menu-max-height, min(52vh, 360px));
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 6px;
   display: grid;
   gap: 6px;
@@ -2181,6 +2188,9 @@ html.visual-recovering body::before {
   border-radius: 8px;
   background: var(--panel);
   box-shadow: var(--shadow);
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 .new-thread-workspace-menu[hidden] {
