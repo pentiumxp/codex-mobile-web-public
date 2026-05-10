@@ -1007,6 +1007,7 @@ function isHiddenThread(thread) {
   if (thread.deleted || thread.deletedAt || thread.deleted_at || thread.isDeleted || thread.removed || thread.removedAt) return true;
   if (/archived|deleted|removed/.test(status)) return true;
   if (/[/\\](archived|deleted|trash|removed)[_-]?sessions[/\\]/.test(location)) return true;
+  if (/\.jsonl\.(bak|backup|old)(?:\b|[-_.])/.test(location)) return true;
   const cwd = normalizeFsPath(thread.cwd);
   if (state.selectedCwd && cwd !== normalizeFsPath(state.selectedCwd)) return true;
   const keys = visibleWorkspaceKeys();

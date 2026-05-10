@@ -14,6 +14,7 @@ const USER_HOME = process.env.USERPROFILE || process.env.HOME || process.cwd();
 const RUNTIME_ROOT = process.env.CODEX_MOBILE_RUNTIME_DIR || path.join(USER_HOME, ".codex-mobile-web");
 const CODEX_HOME = process.env.CODEX_HOME || path.join(USER_HOME, ".codex");
 const STATE_DB = path.join(CODEX_HOME, "state_5.sqlite");
+const ARCHIVED_SESSIONS_DIR = path.join(CODEX_HOME, "archived_sessions");
 const CODEX_EXE = process.env.CODEX_MOBILE_CODEX_EXE || "codex";
 const MUX_ENDPOINT_FILE = process.env.CODEX_MOBILE_MUX_ENDPOINT_FILE || path.join(CODEX_HOME, "app-server-mux", "endpoint.json");
 const EXTERNAL_APP_SERVER_WS = process.env.CODEX_MOBILE_APP_SERVER_WS || "";
@@ -729,6 +730,21 @@ function visibilityFromGlobalState(globalState = readGlobalState()) {
   };
 }
 
+function isBackupRolloutPath(value) {
+  return /\.jsonl\.(bak|backup|old)(?:\b|[-_.])/i.test(String(value || ""));
+}
+
+function archivedSessionThreadIds() {
+  try {
+    return new Set(fs.readdirSync(ARCHIVED_SESSIONS_DIR)
+      .map((name) => String(name || "").match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i))
+      .filter(Boolean)
+      .map((match) => match[1]));
+  } catch (_) {
+    return new Set();
+  }
+}
+
 function isHiddenThread(thread, visibility = null) {
   if (!thread || typeof thread !== "object") return true;
   const view = visibility || visibilityFromGlobalState();
@@ -738,6 +754,7 @@ function isHiddenThread(thread, visibility = null) {
   if (thread.deleted || thread.deletedAt || thread.deleted_at || thread.isDeleted || thread.removed || thread.removedAt) return true;
   if (/archived|deleted|removed/.test(status)) return true;
   if (/[/\\](archived|deleted|trash|removed)[_-]?sessions[/\\]/.test(location)) return true;
+  if (isBackupRolloutPath(location)) return true;
   if (view.workspaceKeys && view.workspaceKeys.size > 0) {
     const cwd = normalizeFsPath(thread.cwd);
     if (cwd) return !view.workspaceKeys.has(cwd);
@@ -752,7 +769,7 @@ function mergeThreadStateFromStateDb(threads) {
   if (!ids.length) return threads;
   const inClause = ids.map((id) => sqlString(id)).join(", ");
   const query = [
-    "select id,archived,archived_at",
+    "select id,archived,archived_at,rollout_path",
     "from threads",
     `where id in (${inClause});`,
   ].join(" ");
@@ -767,11 +784,15 @@ function mergeThreadStateFromStateDb(threads) {
     const rows = JSON.parse(result.stdout || "[]");
     if (!Array.isArray(rows) || !rows.length) return threads;
     const archivedById = new Map();
+    const archivedIds = archivedSessionThreadIds();
     for (const row of rows) {
       const id = String(row && row.id || "").trim();
       if (!id) continue;
       archivedById.set(id, {
-        archived: Boolean(Number(row.archived || 0)),
+        archived: Boolean(Number(row.archived || 0))
+          || archivedIds.has(id)
+          || /[/\\]archived_sessions[/\\]/i.test(String(row.rollout_path || ""))
+          || isBackupRolloutPath(row.rollout_path),
         archivedAt: row.archived_at || null,
       });
     }
