@@ -37,6 +37,18 @@ const PUSH_SUBSCRIPTIONS_FILE = process.env.CODEX_MOBILE_PUSH_SUBSCRIPTIONS_FILE
 const DEFAULT_PUSH_SUBJECT = "mailto:codex-mobile-web@example.com";
 const PUSH_SUBJECT = normalizePushSubject(process.env.CODEX_MOBILE_PUSH_SUBJECT || DEFAULT_PUSH_SUBJECT);
 const PUSH_TTL_SECONDS = Math.max(30, Number(process.env.CODEX_MOBILE_PUSH_TTL_SECONDS || "3600"));
+const MOBILE_WEB_LOG_FILE = process.env.CODEX_MOBILE_WEB_LOG_FILE || path.join(RUNTIME_ROOT, "logs", "mobile-web.log");
+const MOBILE_WEB_LOG_MAX_BYTES = Math.max(
+  1024 * 1024,
+  Number(process.env.CODEX_MOBILE_WEB_LOG_MAX_BYTES || String(20 * 1024 * 1024)),
+);
+const MOBILE_WEB_LOG_KEEP_BYTES = Math.max(
+  256 * 1024,
+  Math.min(
+    MOBILE_WEB_LOG_MAX_BYTES,
+    Number(process.env.CODEX_MOBILE_WEB_LOG_KEEP_BYTES || String(5 * 1024 * 1024)),
+  ),
+);
 const MAX_TEXT_CHARS = 60000;
 const MAX_JSON_BODY_BYTES = 2_000_000;
 const MAX_START_THREAD_DEVELOPER_INSTRUCTIONS_CHARS = 120000;
@@ -254,6 +266,35 @@ function sendJson(res, status, data) {
     "Cache-Control": "no-store",
   });
   res.end(body);
+}
+
+let lastLogTrimAt = 0;
+
+function trimLogFile(filePath, maxBytes, keepBytes) {
+  try {
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile() || stat.size <= maxBytes) return false;
+    const bytesToKeep = Math.max(0, Math.min(keepBytes, stat.size));
+    const fd = fs.openSync(filePath, "r");
+    try {
+      const buffer = Buffer.alloc(bytesToKeep);
+      const offset = stat.size - bytesToKeep;
+      const bytesRead = fs.readSync(fd, buffer, 0, bytesToKeep, offset);
+      fs.writeFileSync(filePath, buffer.subarray(0, bytesRead));
+    } finally {
+      fs.closeSync(fd);
+    }
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function trimRuntimeLogs(options = {}) {
+  const now = Date.now();
+  if (!options.force && now - lastLogTrimAt < 60_000) return;
+  lastLogTrimAt = now;
+  trimLogFile(MOBILE_WEB_LOG_FILE, MOBILE_WEB_LOG_MAX_BYTES, MOBILE_WEB_LOG_KEEP_BYTES);
 }
 
 function safeAppUpdateError(err) {
@@ -611,6 +652,7 @@ function scheduleStartupAppUpdateCheck() {
 }
 
 function logThreadDetail(event, details = {}) {
+  trimRuntimeLogs();
   const safeDetails = {};
   for (const [key, value] of Object.entries(details || {})) {
     if (value === undefined) continue;
@@ -641,14 +683,17 @@ function safeLogDetails(details = {}) {
 }
 
 function logContinuation(event, details = {}) {
+  trimRuntimeLogs();
   console.log(`[continuation] ${event} ${JSON.stringify(safeLogDetails(details))}`);
 }
 
 function logMessageSubmit(event, details = {}) {
+  trimRuntimeLogs();
   console.log(`[message-submit] ${event} ${JSON.stringify(safeLogDetails(details))}`);
 }
 
 function logClientEvent(event, details = {}) {
+  trimRuntimeLogs();
   console.log(`[client-event] ${event} ${JSON.stringify(safeLogDetails(details))}`);
 }
 
