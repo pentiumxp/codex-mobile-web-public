@@ -1921,6 +1921,16 @@ function postClientEvent(event, details = {}) {
   }).catch(() => {});
 }
 
+function nowPerfMs() {
+  return typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
+}
+
+function roundedDurationMs(startedAt) {
+  return Math.max(0, Math.round(nowPerfMs() - Number(startedAt || 0)));
+}
+
 function startUiWatchdog() {
   if (state.uiWatchdogTimer) return;
   state.lastUiWatchdogTickAt = Date.now();
@@ -2155,7 +2165,7 @@ async function openExternalThreadSelection(threadId) {
       // Loading the thread by id can still succeed without refreshing workspace shortcuts.
     }
   }
-  await loadThread(id);
+  await loadThread(id, { source: "external" });
 }
 
 function applyUrlThreadSelection(options = {}) {
@@ -2260,7 +2270,19 @@ async function loadThreads(options = {}) {
   }
 }
 
-async function loadThread(threadId) {
+async function loadThread(threadId, options = {}) {
+  const switchStartedAt = nowPerfMs();
+  const fromThreadId = state.currentThreadId || "";
+  const source = String(options.source || "unknown").slice(0, 40);
+  const listAgeMs = state.threadListLoadedAtMs ? Date.now() - state.threadListLoadedAtMs : null;
+  postClientEvent("thread_switch_start", {
+    source,
+    fromThreadId,
+    toThreadId: threadId || "",
+    listAgeMs,
+    currentHadThread: Boolean(state.currentThread),
+    eventOpen: Boolean(state.events && state.events.readyState === EventSource.OPEN),
+  });
   if (threadId && threadId !== state.continuationSourceThreadId) {
     state.continuationSourceThreadId = "";
   }
@@ -2272,6 +2294,11 @@ async function loadThread(threadId) {
     renderThreads();
     renderCurrentThread();
     if (isMenuOverlayMode()) closeSidebarMenu();
+    postClientEvent("thread_switch_cached", {
+      source,
+      threadId,
+      elapsedMs: roundedDurationMs(switchStartedAt),
+    });
     return;
   }
   const seq = state.threadLoadSeq + 1;
@@ -2300,13 +2327,22 @@ async function loadThread(threadId) {
   $("connectionState").textContent = "Loading thread";
   markActivity("加载线程");
   let result;
+  const apiStartedAt = nowPerfMs();
   try {
     result = await api(`/api/threads/${encodeURIComponent(threadId)}`, {
       timeoutMs: 20000,
       signal: controller.signal,
     });
   } catch (err) {
-    if (seq !== state.threadLoadSeq || controller.signal.aborted) return;
+    if (seq !== state.threadLoadSeq || controller.signal.aborted) {
+      postClientEvent("thread_switch_cancelled", {
+        source,
+        threadId,
+        elapsedMs: roundedDurationMs(switchStartedAt),
+        apiElapsedMs: roundedDurationMs(apiStartedAt),
+      });
+      return;
+    }
     state.currentThread = Object.assign({}, state.currentThread || { id: threadId, name: threadId, preview: threadId, turns: [] }, {
       mobileLoading: false,
       mobileLoadError: err.message || String(err),
@@ -2315,11 +2351,28 @@ async function loadThread(threadId) {
     renderThreads();
     renderCurrentThread();
     updateComposerControls();
+    postClientEvent("thread_switch_error", {
+      source,
+      threadId,
+      elapsedMs: roundedDurationMs(switchStartedAt),
+      apiElapsedMs: roundedDurationMs(apiStartedAt),
+      error: err.message || String(err),
+    });
     throw err;
   } finally {
     if (state.threadLoadController === controller) state.threadLoadController = null;
   }
-  if (seq !== state.threadLoadSeq || state.currentThreadId !== threadId) return;
+  const apiElapsedMs = roundedDurationMs(apiStartedAt);
+  if (seq !== state.threadLoadSeq || state.currentThreadId !== threadId) {
+    postClientEvent("thread_switch_cancelled", {
+      source,
+      threadId,
+      elapsedMs: roundedDurationMs(switchStartedAt),
+      apiElapsedMs,
+    });
+    return;
+  }
+  const renderStartedAt = nowPerfMs();
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
   localStorage.setItem(STORAGE_THREAD_ID, threadId);
   if (state.events) connectEvents();
@@ -2331,6 +2384,18 @@ async function loadThread(threadId) {
   scheduleLivePollIfNeeded(1200);
   updateComposerControls();
   if (isMenuOverlayMode()) closeSidebarMenu();
+  postClientEvent("thread_switch_complete", {
+    source,
+    threadId,
+    elapsedMs: roundedDurationMs(switchStartedAt),
+    apiElapsedMs,
+    renderElapsedMs: roundedDurationMs(renderStartedAt),
+    readMode: result.thread && result.thread.mobileReadMode || "",
+    status: statusText(result.thread && result.thread.status),
+    turns: Array.isArray(result.thread && result.thread.turns) ? result.thread.turns.length : 0,
+    omittedTurns: Number(result.thread && result.thread.mobileOmittedTurnCount || 0),
+    rolloutSizeBytes: rolloutSizeBytes(result.thread),
+  });
 }
 
 async function refreshCurrentThread() {
@@ -2406,7 +2471,7 @@ function handleThreadCardClick(event) {
     closeThreadActions();
     return;
   }
-  loadThread(threadId).catch(showError);
+  loadThread(threadId, { source: "thread-list" }).catch(showError);
 }
 
 function suppressThreadClickAfterSwipe(event) {
@@ -2807,7 +2872,7 @@ async function restoreThreadSelection() {
   const target = saved || (savedThreadId ? { id: savedThreadId } : active);
   if (!target) return;
   try {
-    await loadThread(target.id);
+    await loadThread(target.id, { source: "restore" });
   } catch (err) {
     if (target.id === savedThreadId) localStorage.removeItem(STORAGE_THREAD_ID);
     showError(err);
@@ -2997,7 +3062,7 @@ function renderHome() {
     button.addEventListener("click", () => selectWorkspaceShortcut(button.dataset.homeWorkspace).catch(showError));
   });
   $("conversation").querySelectorAll("[data-home-thread]").forEach((button) => {
-    button.addEventListener("click", () => loadThread(button.dataset.homeThread).catch(showError));
+    button.addEventListener("click", () => loadThread(button.dataset.homeThread, { source: "home" }).catch(showError));
   });
 }
 
@@ -3082,7 +3147,7 @@ function renderCurrentThread(options = {}) {
       { stickToBottom: shouldStickToBottom },
     );
     const retry = $("retryCurrentThread");
-    if (retry) retry.onclick = () => loadThread(thread.id || state.currentThreadId).catch(showError);
+    if (retry) retry.onclick = () => loadThread(thread.id || state.currentThreadId, { source: "retry" }).catch(showError);
     updateTickTimer();
     return;
   }
@@ -3329,7 +3394,7 @@ async function openContinuationResult(result) {
   } else {
     $("connectionState").textContent = "交接已生成；正在打开续接线程";
   }
-  await loadThread(threadId);
+  await loadThread(threadId, { source: "continuation" });
   loadThreads().catch(showError);
 }
 
@@ -4529,20 +4594,39 @@ function scheduleMobileResume(reason = "resume", delay = 80) {
 
 async function resumeMobileSession(reason = "resume") {
   if (document.visibilityState === "hidden" || !state.key) return;
-  forceVisualRecovery(reason);
-  updateComposerHeightVar();
-  renderComposerSettings();
-  updateComposerControls();
-  if (state.currentThread || state.threads.length) renderCurrentThread();
-  ensureEventConnection();
-  state.pollStableCount = 0;
-  const status = await api("/api/status");
-  updateConnectionState(status);
-  if (status.rateLimits || status.rateLimitsByModel) rememberRateLimits(status.rateLimits, status.rateLimitsByModel);
-  await loadThreads({ silent: Boolean(state.threads.length) });
-  if (state.currentThreadId) await refreshCurrentThread();
-  else await restoreThreadSelection();
-  scheduleLivePollIfNeeded(1200);
+  const startedAt = nowPerfMs();
+  try {
+    forceVisualRecovery(reason);
+    updateComposerHeightVar();
+    renderComposerSettings();
+    updateComposerControls();
+    if (state.currentThread || state.threads.length) renderCurrentThread();
+    ensureEventConnection();
+    state.pollStableCount = 0;
+    const status = await api("/api/status");
+    updateConnectionState(status);
+    if (status.rateLimits || status.rateLimitsByModel) rememberRateLimits(status.rateLimits, status.rateLimitsByModel);
+    await loadThreads({ silent: Boolean(state.threads.length) });
+    if (state.currentThreadId) await refreshCurrentThread();
+    else await restoreThreadSelection();
+    scheduleLivePollIfNeeded(1200);
+    const elapsedMs = roundedDurationMs(startedAt);
+    if (elapsedMs > 1200) {
+      postClientEvent("mobile_resume_slow", {
+        reason,
+        elapsedMs,
+        currentThreadId: state.currentThreadId || "",
+        hadThreads: Boolean(state.threads.length),
+      });
+    }
+  } catch (err) {
+    postClientEvent("mobile_resume_error", {
+      reason,
+      elapsedMs: roundedDurationMs(startedAt),
+      error: err.message || String(err),
+    });
+    throw err;
+  }
 }
 
 function scrollConversationToBottom() {
@@ -4605,6 +4689,13 @@ function showError(err) {
   const message = normalizeClientErrorMessage(raw) || (err && err.message) || String(err);
   $("connectionState").textContent = message;
   $("connectionState").classList.add("error");
+  postClientEvent("client_error", {
+    message,
+    raw,
+    currentThreadId: state.currentThreadId || "",
+    composerBusy: state.composerBusy,
+    continuationBusy: state.continuationBusy,
+  });
 }
 
 function clearSendProgressWatchdog() {
