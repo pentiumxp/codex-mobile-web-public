@@ -14,6 +14,7 @@ const USER_HOME = process.env.USERPROFILE || process.env.HOME || process.cwd();
 const RUNTIME_ROOT = process.env.CODEX_MOBILE_RUNTIME_DIR || path.join(USER_HOME, ".codex-mobile-web");
 const CODEX_HOME = process.env.CODEX_HOME || path.join(USER_HOME, ".codex");
 const STATE_DB = path.join(CODEX_HOME, "state_5.sqlite");
+const ARCHIVED_SESSIONS_DIR = path.join(CODEX_HOME, "archived_sessions");
 const CODEX_EXE = process.env.CODEX_MOBILE_CODEX_EXE || "codex";
 const MUX_ENDPOINT_FILE = process.env.CODEX_MOBILE_MUX_ENDPOINT_FILE || path.join(CODEX_HOME, "app-server-mux", "endpoint.json");
 const EXTERNAL_APP_SERVER_WS = process.env.CODEX_MOBILE_APP_SERVER_WS || "";
@@ -774,6 +775,21 @@ function visibilityFromGlobalState(globalState = readGlobalState()) {
   };
 }
 
+function isBackupRolloutPath(value) {
+  return /\.jsonl\.(bak|backup|old)(?:\b|[-_.])/i.test(String(value || ""));
+}
+
+function archivedSessionThreadIds() {
+  try {
+    return new Set(fs.readdirSync(ARCHIVED_SESSIONS_DIR)
+      .map((name) => String(name || "").match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i))
+      .filter(Boolean)
+      .map((match) => match[1]));
+  } catch (_) {
+    return new Set();
+  }
+}
+
 function isHiddenThread(thread, visibility = null) {
   if (!thread || typeof thread !== "object") return true;
   const view = visibility || visibilityFromGlobalState();
@@ -783,6 +799,7 @@ function isHiddenThread(thread, visibility = null) {
   if (thread.deleted || thread.deletedAt || thread.deleted_at || thread.isDeleted || thread.removed || thread.removedAt) return true;
   if (/archived|deleted|removed/.test(status)) return true;
   if (/[/\\](archived|deleted|trash|removed)[_-]?sessions[/\\]/.test(location)) return true;
+  if (isBackupRolloutPath(location)) return true;
   if (view.workspaceKeys && view.workspaceKeys.size > 0) {
     const cwd = normalizeFsPath(thread.cwd);
     if (cwd) return !view.workspaceKeys.has(cwd);
@@ -825,12 +842,15 @@ function mergeThreadStateFromStateDb(threads) {
     const rows = JSON.parse(result.stdout || "[]");
     if (!Array.isArray(rows) || !rows.length) return threads;
     const stateById = new Map();
+    const archivedIds = archivedSessionThreadIds();
     for (const row of rows) {
       const id = String(row && row.id || "").trim();
       if (!id) continue;
       stateById.set(id, {
         archived: Boolean(Number(row.archived || 0))
-          || /[/\\]archived_sessions[/\\]/i.test(String(row.rollout_path || "")),
+          || archivedIds.has(id)
+          || /[/\\]archived_sessions[/\\]/i.test(String(row.rollout_path || ""))
+          || isBackupRolloutPath(row.rollout_path),
         archivedAt: row.archived_at || null,
         model: row.model || null,
         effort: row.reasoning_effort || null,
@@ -3782,6 +3802,37 @@ async function archiveVisibleThread(threadId, visibility) {
   return await codex.request("thread/archive", { threadId }, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
 }
 
+function isThreadArchiveNoOpError(err) {
+  const message = String((err && err.message) || "").toLowerCase();
+  const code = String((err && err.code) || "").toLowerCase();
+  return /already|archived|not found|notexisting|不存在|已归档|does not exist|no such/.test(message)
+    || /thread_not_found|thread-not-found|not_found|not-found/.test(code);
+}
+
+async function archiveThreadId(threadId, visibility = visibilityFromGlobalState()) {
+  if (!threadId) return { archived: false };
+  const summary = readStateDbThread(threadId) || readStartedThread(threadId);
+  if (summary && isHiddenThread(summary, visibility)) {
+    return { archived: true, alreadyArchived: true, source: "state-db" };
+  }
+  try {
+    const result = await codex.request("thread/archive", { threadId }, {
+      timeoutMs: MUTATION_RPC_TIMEOUT_MS,
+      retry: false,
+    });
+    return result || { archived: true };
+  } catch (err) {
+    const rechecked = readStateDbThread(threadId) || readStartedThread(threadId);
+    if (rechecked && isHiddenThread(rechecked, visibility)) {
+      return { archived: true, alreadyArchived: true, source: "state-db" };
+    }
+    if (isThreadArchiveNoOpError(err)) {
+      return { archived: true, alreadyArchived: true };
+    }
+    throw err;
+  }
+}
+
 function httpStatusError(statusCode, message) {
   const err = new Error(message);
   err.statusCode = statusCode;
@@ -4519,6 +4570,14 @@ async function handleApi(req, res) {
     } catch (err) {
       sendJson(res, err.statusCode || 500, { error: err.message || String(err) });
     }
+    return;
+  }
+  const threadArchive = url.pathname.match(/^\/api\/threads\/([^/]+)\/archive$/);
+  if (threadArchive && req.method === "POST") {
+    const threadId = decodeURIComponent(threadArchive[1]);
+    const visibility = visibilityFromGlobalState();
+    const result = await archiveThreadId(threadId, visibility);
+    sendJson(res, 200, result || { archived: true });
     return;
   }
   if (url.pathname === "/api/threads" && req.method === "GET") {
