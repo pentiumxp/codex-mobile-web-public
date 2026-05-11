@@ -2319,18 +2319,21 @@ html.visual-recovering body::before {
 }
 
 .composer-controls {
+  --composer-control-height: 44px;
   display: grid;
-  grid-template-columns: minmax(60px, 0.68fr) minmax(54px, 0.56fr) minmax(84px, 0.9fr) max-content;
+  grid-template-columns: minmax(142px, 160px) minmax(118px, 140px) repeat(2, minmax(148px, 170px));
+  justify-content: end;
   align-items: stretch;
   gap: 6px;
 }
 
 .composer-select-wrap {
   min-width: 0;
+  height: var(--composer-control-height);
   display: block;
 }
 
-.composer-select-wrap span {
+.composer-select-wrap > span {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -2341,9 +2344,11 @@ html.visual-recovering body::before {
 
 .composer-select,
 .composer-readonly-value {
+  box-sizing: border-box;
   width: 100%;
-  min-height: 28px;
-  padding: 4px 6px;
+  height: var(--composer-control-height);
+  min-height: var(--composer-control-height);
+  padding: 6px 8px;
   color: var(--text);
   background: var(--control-bg);
   border: 1px solid var(--line-soft);
@@ -2358,9 +2363,36 @@ html.visual-recovering body::before {
 
 .composer-readonly-value {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 3px;
   white-space: nowrap;
   cursor: default;
+}
+
+.model-effort-display {
+  font-weight: 650;
+}
+
+.composer-chip-label {
+  color: var(--muted);
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.composer-chip-value {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .composer-select:disabled {
@@ -2373,23 +2405,103 @@ html.visual-recovering body::before {
 }
 
 .quota-usage {
-  min-width: 50px;
-  min-height: 28px;
-  justify-self: end;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 4px 7px;
-  color: var(--muted-code-text);
-  background: var(--control-bg);
-  border: 1px solid var(--line-soft);
-  border-radius: 7px;
-  font-size: 11px;
-  line-height: 1.15;
-  white-space: nowrap;
+  display: contents;
 }
 
 .quota-usage.unknown {
+  color: var(--muted);
+}
+
+.quota-chip {
+  box-sizing: border-box;
+  min-width: 0;
+  height: var(--composer-control-height);
+  min-height: var(--composer-control-height);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 3px;
+  padding: 6px 8px;
+  background: var(--control-bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.quota-chip-label {
+  color: var(--muted);
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quota-chip-compact-label {
+  display: none;
+}
+
+.quota-chip-main {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.quota-chip-value {
+  flex: 0 0 auto;
+  font: inherit;
+  white-space: nowrap;
+}
+
+.quota-chip-reset {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: inherit;
+  font: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quota-ok {
+  color: var(--text);
+  border-color: var(--line-soft);
+  background: var(--control-bg);
+}
+
+.quota-ok .quota-chip-value {
+  color: #047857;
+}
+
+.quota-warn {
+  color: var(--text);
+  border-color: var(--line-soft);
+  background: var(--control-bg);
+}
+
+.quota-warn .quota-chip-value {
+  color: #b45309;
+}
+
+.quota-danger {
+  color: var(--text);
+  border-color: var(--line-soft);
+  background: var(--control-bg);
+}
+
+.quota-danger .quota-chip-value {
+  color: #b91c1c;
+}
+
+.quota-unknown {
   color: var(--muted);
 }
 
@@ -2616,7 +2728,7 @@ html.visual-recovering body::before {
 
 @media (pointer: coarse) and (orientation: landscape) and (min-width: 900px) and (min-height: 600px) {
   .app {
-    grid-template-columns: minmax(360px, 420px) minmax(0, 1fr);
+    grid-template-columns: clamp(340px, 36vw, 400px) minmax(0, 1fr);
   }
 
   .main,
@@ -2624,6 +2736,12 @@ html.visual-recovering body::before {
   .conversation,
   .composer {
     max-width: none;
+  }
+
+  .main,
+  .sidebar {
+    min-height: 0;
+    max-height: 100%;
   }
 
   .sidebar {
@@ -2647,26 +2765,12 @@ html.visual-recovering body::before {
 
   .composer {
     display: grid;
-    grid-template-columns: 42px minmax(0, 1fr) max-content;
+    grid-template-columns: 44px minmax(0, 1fr) max-content;
     grid-template-areas:
       "controls controls controls"
       "attachments attachments attachments"
       "attach input send";
     gap: 8px;
-    align-items: end;
-    position: relative;
-    z-index: 8;
-    padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
-    transition: transform 160ms ease;
-  }
-
-  .app.composer-keyboard-focus .composer,
-  .app.composer-keyboard-focus .scroll-bottom-button {
-    transform: translateY(calc(-1 * var(--composer-keyboard-lift, 0px)));
-  }
-
-  .app.composer-keyboard-focus .conversation {
-    padding-bottom: calc(28px + var(--composer-keyboard-lift, 0px));
   }
 
   .composer-body {
@@ -2675,14 +2779,12 @@ html.visual-recovering body::before {
 
   .composer-controls {
     grid-area: controls;
-    grid-template-columns: minmax(76px, 0.8fr) minmax(64px, 0.68fr) minmax(108px, 1fr) max-content;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.85fr) repeat(2, minmax(0, 1fr));
+    justify-content: stretch;
   }
 
   .composer-icon {
     grid-area: attach;
-    flex-basis: 42px;
-    width: 42px;
-    height: 42px;
   }
 
   .attachment-list {
@@ -2696,8 +2798,6 @@ html.visual-recovering body::before {
 
   #sendMessage {
     grid-area: send;
-    min-width: 62px;
-    padding-inline: 12px;
   }
 }
 
@@ -2760,8 +2860,75 @@ html.visual-recovering body::before {
 
   .composer-controls {
     grid-area: controls;
-    grid-template-columns: minmax(48px, 0.55fr) minmax(44px, 0.48fr) minmax(76px, 0.82fr) max-content;
-    gap: 5px;
+    --composer-control-height: 30px;
+    grid-template-columns: minmax(106px, 1fr) minmax(94px, 0.88fr) minmax(112px, 1.02fr);
+    justify-content: stretch;
+    gap: 4px;
+  }
+
+  .permission-select-wrap {
+    display: none;
+  }
+
+  .composer-select,
+  .composer-readonly-value {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 4px;
+    padding: 4px 5px;
+  }
+
+  .quota-chip {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 4px;
+    padding: 4px 5px;
+  }
+
+  .composer-chip-label,
+  .quota-chip-label {
+    display: none;
+  }
+
+  .quota-chip-compact-label {
+    display: inline;
+    flex: 0 0 auto;
+    color: var(--muted);
+    font-size: 9px;
+    font-weight: 650;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .composer-chip-value,
+  .quota-chip-main {
+    width: auto;
+    flex: 1 1 auto;
+    font-size: 10.5px;
+  }
+
+  .model-effort-display .composer-chip-value {
+    font-size: 0;
+  }
+
+  .model-effort-display .composer-chip-value::after {
+    content: attr(data-mobile-text);
+    display: block;
+    overflow: hidden;
+    font-size: 10.5px;
+    line-height: 1.1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .quota-chip-main {
+    gap: 3px;
+  }
+
+  .quota-chip-reset-prefix {
+    display: none;
   }
 
   .composer-icon {

@@ -84,7 +84,6 @@ const state = {
   unreadThreadIds: loadStringSetStorage("codexMobileUnreadThreadIds"),
   rolloutWarningDismissals: loadStringSetStorage("codexMobileDismissedRolloutWarnings"),
   fontSize: localStorage.getItem("codexMobileFontSize") || "default",
-  selectedPermissionModes: loadJsonStorage("codexMobileSelectedPermissionModes", {}),
   activityLabel: "",
   activityAtMs: 0,
   leavingItems: new Map(),
@@ -109,7 +108,6 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
 const MAX_RETAINED_OPERATIONS_PER_TURN = 1;
 const STORAGE_THREAD_ID = "codexMobileCurrentThreadId";
-const STORAGE_PERMISSION_MODES = "codexMobileSelectedPermissionModes";
 const STORAGE_CONTINUATION_JOB = "codexMobileContinuationJobId";
 const STORAGE_RUNNING_THREAD_IDS = "codexMobileRunningThreadIds";
 const STORAGE_UNREAD_THREAD_IDS = "codexMobileUnreadThreadIds";
@@ -209,28 +207,6 @@ function viewportHeight() {
 
 function updateViewportVars() {
   document.documentElement.style.setProperty("--app-height", `${viewportHeight()}px`);
-}
-
-function visualKeyboardInset() {
-  if (!window.visualViewport) return 0;
-  const visual = window.visualViewport;
-  const layoutHeight = Number(window.innerHeight || (document.documentElement && document.documentElement.clientHeight) || 0);
-  const visualHeight = Number(visual.height || 0);
-  const visualTop = Number(visual.offsetTop || 0);
-  if (!layoutHeight || !visualHeight) return 0;
-  return Math.max(0, Math.round(layoutHeight - visualHeight - visualTop));
-}
-
-function updateComposerKeyboardAvoidance() {
-  const app = $("app");
-  const input = $("messageInput");
-  if (!app || !input) return;
-  const focused = document.activeElement === input;
-  const active = focused && window.matchMedia(TABLET_SPLIT_MEDIA).matches;
-  const inset = visualKeyboardInset();
-  const lift = active ? Math.min(360, Math.max(82, inset || 0)) : 0;
-  document.documentElement.style.setProperty("--composer-keyboard-lift", `${lift}px`);
-  app.classList.toggle("composer-keyboard-focus", active);
 }
 
 function createSubmissionId() {
@@ -655,6 +631,18 @@ function labelForModel(value) {
   return labels[value] || value;
 }
 
+function compactLabelForModel(value) {
+  const labels = {
+    "gpt-5.5": "5.5",
+    "gpt-5.4": "5.4",
+    "gpt-5.4-mini": "5.4 Mini",
+    "gpt-5.3-codex": "5.3 Codex",
+    "gpt-5.3-codex-spark": "5.3 Spark",
+    "gpt-5.2": "5.2",
+  };
+  return labels[value] || labelForModel(value).replace(/^GPT-/, "");
+}
+
 function labelForEffort(value) {
   const labels = {
     low: "Low",
@@ -779,11 +767,54 @@ function formatQuotaReset(seconds) {
   return date.toLocaleString([], { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
+function formatQuotaResetShort(seconds) {
+  if (!seconds) return "--";
+  const date = new Date(Number(seconds) * 1000);
+  if (!Number.isFinite(date.getTime())) return "--";
+  const now = new Date();
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const resetDayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const dayOffset = Math.round((resetDayStart - dayStart) / 86400000);
+  const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (dayOffset === 0) return time;
+  if (dayOffset === 1) return `明天 ${time}`;
+  if (dayOffset > 1 && dayOffset < 7) {
+    return `${date.toLocaleDateString([], { weekday: "short" })} ${time}`;
+  }
+  return date.toLocaleString([], { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
 function quotaRemainingText(windowInfo) {
   if (!windowInfo) return "--";
   const used = clampPercent(windowInfo.usedPercent);
   const remaining = clampPercent(100 - used);
   return `${Math.round(remaining)}%`;
+}
+
+function quotaRiskLevel(windowInfo, nearResetMinutes) {
+  if (!windowInfo) return "unknown";
+  const used = clampPercent(windowInfo.usedPercent);
+  const remaining = clampPercent(100 - used);
+  let risk = remaining > 50 ? 0 : remaining >= 30 ? 1 : 2;
+  const resetMs = Number(windowInfo.resetsAt || 0) * 1000;
+  const minutesToReset = resetMs ? (resetMs - Date.now()) / 60000 : Infinity;
+  if (minutesToReset >= 0 && minutesToReset <= nearResetMinutes) risk = Math.max(0, risk - 1);
+  return ["ok", "warn", "danger"][risk] || "unknown";
+}
+
+function quotaChipHtml(label, windowInfo, nearResetMinutes) {
+  const status = quotaRiskLevel(windowInfo, nearResetMinutes);
+  const remaining = quotaRemainingText(windowInfo);
+  const reset = windowInfo ? formatQuotaResetShort(windowInfo.resetsAt) : "--";
+  const compactLabel = label === "5小时" ? "5h" : label.replace("额度", "");
+  return `<span class="quota-chip quota-${escapeHtml(status)}">`
+    + `<span class="quota-chip-label">${escapeHtml(label)}</span>`
+    + `<span class="quota-chip-compact-label">${escapeHtml(compactLabel)}</span>`
+    + `<span class="quota-chip-main">`
+    + `<span class="quota-chip-value">${escapeHtml(remaining)}</span>`
+    + `<span class="quota-chip-reset"><span class="quota-chip-reset-prefix">重置 </span>${escapeHtml(reset)}</span>`
+    + "</span>"
+    + "</span>";
 }
 
 function quotaTitle(label, windowInfo) {
@@ -816,7 +847,7 @@ function renderQuotaUsage() {
   const fiveHour = fiveHourRateLimit(rateLimits);
   const weekly = weeklyRateLimit(rateLimits);
   const model = selectedQuotaModel();
-  el.textContent = `${quotaRemainingText(fiveHour)} | ${quotaRemainingText(weekly)}`;
+  el.innerHTML = quotaChipHtml("5小时", fiveHour, 60) + quotaChipHtml("周额度", weekly, 1440);
   el.title = [
     model ? `model: ${labelForModel(model)}` : "",
     `${quotaTitle("5-hour", fiveHour)} | ${quotaTitle("weekly", weekly)}`,
@@ -3771,7 +3802,6 @@ async function startNewThreadFromThread(sourceThread, event) {
   if (!archiveConfirmed) return;
   const body = {
     cwd,
-    permissionMode: ($("permissionSelect").value || effectiveDefaultPermissionMode() || ""),
     sourceThreadId: thread.id || "",
     sourceThreadTitle: thread.name || thread.preview || thread.id || "",
     archiveSourceThread: Boolean(thread.id),
@@ -5298,52 +5328,41 @@ function effectiveDefaultPermissionMode() {
   return normalizePermissionModeValue((settings && settings.permissionMode) || "");
 }
 
-function selectedPermissionModeForCurrentThread() {
-  if (!state.currentThreadId) return "";
-  return normalizePermissionModeValue(state.selectedPermissionModes[state.currentThreadId] || "");
-}
-
-function setSelectedPermissionModeForCurrentThread(value) {
-  if (!state.currentThreadId) return;
-  const next = normalizePermissionModeValue(value);
-  if (next && next !== effectiveDefaultPermissionMode()) {
-    state.selectedPermissionModes[state.currentThreadId] = next;
-  } else {
-    delete state.selectedPermissionModes[state.currentThreadId];
-  }
-  localStorage.setItem(STORAGE_PERMISSION_MODES, JSON.stringify(state.selectedPermissionModes));
-}
-
 function renderComposerSettings() {
-  const modelDisplay = $("modelDisplay");
-  const effortDisplay = $("effortDisplay");
-  const permissionSelect = $("permissionSelect");
-  if (!modelDisplay || !effortDisplay || !permissionSelect) return;
+  const modelEffortDisplay = $("modelEffortDisplay");
+  const permissionDisplay = $("permissionDisplay");
+  if (!modelEffortDisplay || !permissionDisplay) return;
   const defaultModel = effectiveDefaultModel();
   const defaultEffort = effectiveDefaultEffort();
   const hasThreadModel = Boolean(state.currentThread && state.currentThread.model);
   const hasThreadEffort = Boolean(state.currentThread && state.currentThread.effort);
   const defaultPermission = effectiveDefaultPermissionMode();
-  let selectedPermission = selectedPermissionModeForCurrentThread();
-  if (selectedPermission && selectedPermission === defaultPermission) {
-    setSelectedPermissionModeForCurrentThread("");
-    selectedPermission = "";
+  const modelText = defaultModel ? labelForModel(defaultModel) : "--";
+  const compactModelText = defaultModel ? compactLabelForModel(defaultModel) : "--";
+  const effortText = defaultEffort ? labelForEffort(defaultEffort) : "--";
+  const permissionText = defaultPermission ? labelForPermissionMode(defaultPermission).replace(/权限$/, "") : "--";
+  const modelValue = modelEffortDisplay.querySelector(".composer-chip-value");
+  if (modelValue) {
+    modelValue.textContent = `${modelText} · ${effortText}`;
+    modelValue.dataset.compactText = `${compactModelText} · ${effortText}`;
+    modelValue.dataset.mobileText = `${compactModelText} ${effortText} · ${permissionText}`;
   }
-  const permissionValues = normalizeOptionList([selectedPermission, ...state.permissionModeOptions.map(normalizePermissionModeValue)])
-    .filter((value) => value !== defaultPermission);
-  modelDisplay.textContent = defaultModel ? labelForModel(defaultModel) : "--";
-  modelDisplay.title = defaultModel
-    ? `模型：${labelForModel(defaultModel)}。${hasThreadModel ? "本地记录值" : "全局默认值"}，只能在桌面端修改`
-    : "模型未记录，只能在桌面端修改";
-  effortDisplay.textContent = defaultEffort ? labelForEffort(defaultEffort) : "--";
-  effortDisplay.title = defaultEffort
-    ? `推理强度：${labelForEffort(defaultEffort)}。${hasThreadEffort ? "本地记录值" : "全局默认值"}，只能在桌面端修改`
-    : "推理强度未记录，只能在桌面端修改";
-  permissionSelect.innerHTML = `<option value="">${escapeHtml(defaultPermission ? labelForPermissionMode(defaultPermission) : "Perm")}</option>`
-    + permissionValues.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(labelForPermissionMode(value))}</option>`).join("");
-  if (selectedPermission && selectedPermission !== defaultPermission && permissionValues.includes(selectedPermission)) permissionSelect.value = selectedPermission;
-  else permissionSelect.value = "";
-  permissionSelect.title = titleForPermissionMode(permissionSelect.value || defaultPermission);
+  else modelEffortDisplay.textContent = `${modelText} · ${effortText}`;
+  modelEffortDisplay.title = [
+    defaultModel
+      ? `模型：${labelForModel(defaultModel)}（${hasThreadModel ? "本地记录值" : "全局默认值"}）`
+      : "模型未记录",
+    defaultEffort
+      ? `推理强度：${labelForEffort(defaultEffort)}（${hasThreadEffort ? "本地记录值" : "全局默认值"}）`
+      : "推理强度未记录",
+    "只能在桌面端修改",
+  ].join("；");
+  const permissionValue = permissionDisplay.querySelector(".composer-chip-value");
+  if (permissionValue) permissionValue.textContent = permissionText;
+  else permissionDisplay.textContent = permissionText;
+  permissionDisplay.title = defaultPermission
+    ? `${titleForPermissionMode(defaultPermission)}。只能在桌面端修改`
+    : "权限未记录，只能在桌面端修改";
   renderQuotaUsage();
 }
 
@@ -5368,7 +5387,6 @@ function updateComposerControls() {
   }
   setMessageInputDisabled(disabled);
   $("fileInput").disabled = disabled;
-  $("permissionSelect").disabled = disabled;
   attachButton.classList.toggle("disabled", disabled);
   attachButton.setAttribute("aria-disabled", disabled ? "true" : "false");
   attachButton.tabIndex = disabled ? -1 : 0;
@@ -5443,7 +5461,6 @@ async function sendMessage(event) {
     body.append("text", text);
     if (state.currentThread && state.currentThread.cwd) body.append("cwd", state.currentThread.cwd);
     if (steerTurnId) body.append("activeTurnId", steerTurnId);
-    if ($("permissionSelect").value) body.append("permissionMode", $("permissionSelect").value);
     for (const item of state.pendingAttachments) {
       body.append("attachments", item.file, item.file.name || "upload");
     }
@@ -5499,7 +5516,6 @@ async function sendNewThreadMessage(text, hasContent, input) {
     body.append("clientSubmissionId", clientSubmissionId);
     body.append("text", text);
     if (state.selectedCwd) body.append("cwd", state.selectedCwd);
-    if ($("permissionSelect").value) body.append("permissionMode", $("permissionSelect").value);
     for (const item of state.pendingAttachments) {
       body.append("attachments", item.file, item.file.name || "upload");
     }
@@ -5819,22 +5835,11 @@ function wireUi() {
     if (state.sendButtonHint && !state.composerBusy) state.sendButtonHint = "";
     updateComposerControls();
   });
-  $("messageInput").addEventListener("focus", () => {
-    updateComposerKeyboardAvoidance();
-    window.setTimeout(updateComposerKeyboardAvoidance, 180);
-  });
-  $("messageInput").addEventListener("blur", () => {
-    window.setTimeout(updateComposerKeyboardAvoidance, 80);
-  });
   $("messageInput").addEventListener("keydown", (event) => {
     if (event.key !== "Enter" || event.shiftKey) return;
     if (!composerHasContent() || state.composerBusy) return;
     event.preventDefault();
     $("composer").requestSubmit();
-  });
-  $("permissionSelect").addEventListener("change", (event) => {
-    setSelectedPermissionModeForCurrentThread(event.target.value);
-    event.target.title = titleForPermissionMode(event.target.value || effectiveDefaultPermissionMode());
   });
   $("messageInput").addEventListener("paste", (event) => {
     const files = Array.from((event.clipboardData && event.clipboardData.files) || []);
@@ -5903,20 +5908,17 @@ function wireUi() {
   window.addEventListener("orientationchange", () => scheduleMobileResume("orientation", 250));
   window.addEventListener("resize", () => {
     updateViewportVars();
-    updateComposerKeyboardAvoidance();
     updateComposerHeightVar();
     scheduleVisualRecovery("resize", 40, { render: false, heavy: false, delays: [40, 180] });
   });
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", () => {
       updateViewportVars();
-      updateComposerKeyboardAvoidance();
       updateComposerHeightVar();
       scheduleVisualRecovery("visual-viewport", 40, { render: false, heavy: false, delays: [40, 180, 520] });
     });
     window.visualViewport.addEventListener("scroll", () => {
       updateViewportVars();
-      updateComposerKeyboardAvoidance();
       scheduleVisualRecovery("visual-viewport-scroll", 40, { render: false, heavy: false, delays: [40, 180] });
     });
   }

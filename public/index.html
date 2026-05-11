@@ -143,17 +143,19 @@
         </label>
         <div class="composer-body">
           <div class="composer-controls">
-            <label class="composer-select-wrap">
-              <span>Model</span>
-              <div id="modelDisplay" class="composer-readonly-value" title="模型只能在桌面端修改">--</div>
-            </label>
-            <label class="composer-select-wrap">
-              <span>Reasoning</span>
-              <div id="effortDisplay" class="composer-readonly-value" title="推理强度只能在桌面端修改">--</div>
+            <label class="composer-select-wrap model-effort-wrap">
+              <span>Model and reasoning</span>
+              <div id="modelEffortDisplay" class="composer-readonly-value model-effort-display" title="模型和推理强度只能在桌面端修改">
+                <span class="composer-chip-label">模型</span>
+                <span class="composer-chip-value">--</span>
+              </div>
             </label>
             <label class="composer-select-wrap permission-select-wrap">
               <span>Permission</span>
-              <select id="permissionSelect" class="composer-select permission-select" disabled></select>
+              <div id="permissionDisplay" class="composer-readonly-value permission-display" title="权限只能在桌面端修改">
+                <span class="composer-chip-label">权限</span>
+                <span class="composer-chip-value">--</span>
+              </div>
             </label>
             <div id="quotaUsage" class="quota-usage unknown" title="Quota remaining" aria-live="polite">-- | --</div>
           </div>
