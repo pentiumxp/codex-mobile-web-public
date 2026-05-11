@@ -31,7 +31,7 @@ const LOG_KEEP_BYTES = Math.max(
 );
 const REPLAY_BUFFER_LIMIT = Math.max(0, Number(process.env.CODEX_MUX_REPLAY_BUFFER_LIMIT || "1200"));
 const REPLAY_BUFFER_MAX_AGE_MS = Math.max(0, Number(process.env.CODEX_MUX_REPLAY_BUFFER_MAX_AGE_MS || String(30 * 60 * 1000)));
-const REPLAY_DESKTOP_NOTIFICATIONS = /^(1|true|yes|on)$/i.test(process.env.CODEX_MUX_REPLAY_DESKTOP_NOTIFICATIONS || "");
+const REPLAY_DESKTOP_NOTIFICATIONS = /^(1|true|yes|on)$/i.test(process.env.CODEX_MUX_REPLAY_DESKTOP_NOTIFICATIONS || "1");
 const MOBILE_MAX_DELTA_CHARS = Math.max(1024, Number(process.env.CODEX_MUX_MOBILE_MAX_DELTA_CHARS || "12000"));
 const MOBILE_MAX_OUTPUT_CHARS = Math.max(MOBILE_MAX_DELTA_CHARS, Number(process.env.CODEX_MUX_MOBILE_MAX_OUTPUT_CHARS || "20000"));
 const MOBILE_DROP_NOTIFICATION_METHODS = new Set([
@@ -240,8 +240,7 @@ function pruneReplayBuffer(now = Date.now()) {
 function cacheReplayNotification(message) {
   if (REPLAY_BUFFER_LIMIT <= 0 || !isReplayableNotification(message)) return;
   try {
-    const replayMessage = compactMobileNotification(message);
-    if (!replayMessage) return;
+    const replayMessage = cloneJson(message);
     replayBuffer.push({
       seq: nextReplaySeq++,
       receivedAt: Date.now(),
