@@ -2280,7 +2280,9 @@ html.visual-recovering body::before {
   .mobile-only {
     display: none;
   }
+}
 
+@media (pointer: coarse) and (max-width: 1400px) {
   .composer {
     display: grid;
     grid-template-columns: 42px minmax(0, 1fr) max-content;
