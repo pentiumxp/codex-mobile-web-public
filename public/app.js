@@ -117,6 +117,7 @@ const STORAGE_DISMISSED_ROLLOUT_WARNINGS = "codexMobileDismissedRolloutWarnings"
 const STORAGE_FONT_SIZE = "codexMobileFontSize";
 const FONT_SIZE_VALUES = new Set(["small", "default", "large", "xlarge", "xxlarge"]);
 const MENU_OVERLAY_MEDIA = "(max-width: 1180px), (pointer: coarse) and (max-width: 1400px)";
+const TABLET_SPLIT_MEDIA = "(pointer: coarse) and (orientation: landscape) and (min-width: 900px) and (min-height: 600px)";
 const SIDEBAR_EDGE_SWIPE_PX = 34;
 const SIDEBAR_EDGE_OPEN_MIN_PX = 76;
 const SIDEBAR_EDGE_OPEN_RATIO = 0.22;
@@ -195,7 +196,8 @@ function handleFontSizeChoice(event) {
 }
 
 function isMenuOverlayMode() {
-  return window.matchMedia(MENU_OVERLAY_MEDIA).matches;
+  return window.matchMedia(MENU_OVERLAY_MEDIA).matches
+    && !window.matchMedia(TABLET_SPLIT_MEDIA).matches;
 }
 
 function viewportHeight() {

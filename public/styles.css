@@ -2250,6 +2250,38 @@ html.visual-recovering body::before {
   }
 }
 
+@media (pointer: coarse) and (orientation: landscape) and (min-width: 900px) and (min-height: 600px) {
+  .app {
+    grid-template-columns: minmax(360px, 420px) minmax(0, 1fr);
+  }
+
+  .main,
+  .topbar,
+  .conversation,
+  .composer {
+    max-width: none;
+  }
+
+  .sidebar {
+    position: relative;
+    inset: auto;
+    z-index: auto;
+    width: auto;
+    transform: none;
+    transition: none;
+    box-shadow: none;
+  }
+
+  .sidebar.open,
+  .sidebar.edge-dragging {
+    transform: none;
+  }
+
+  .mobile-only {
+    display: none;
+  }
+}
+
 @media (max-width: 760px) {
   .conversation {
     padding: 14px 12px 20px;
