@@ -22,4 +22,6 @@ test("iPad landscape split layout gives composer a narrow-column grid", () => {
   assert.match(mediaBody, /--composer-keyboard-lift/);
   assert.match(appJs, /function scheduleConversationKeyboardAvoidanceScroll\(/);
   assert.match(appJs, /scrollConversationToBottom\(\)/);
+  assert.match(appJs, /visual\.offsetTop/);
+  assert.match(appJs, /visualHeight - Math\.max\(0, visualTop/);
 });
