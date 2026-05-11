@@ -14,8 +14,9 @@ test("iPad landscape split layout keeps the composer inside the app viewport", (
 
   const nextMediaIndex = stylesCss.indexOf("@media", mediaIndex + 1);
   const mediaBody = stylesCss.slice(mediaIndex, nextMediaIndex);
-  assert.match(mediaBody, /\.app\s*{[\s\S]*grid-template-columns:\s*minmax\(360px,\s*420px\) minmax\(0,\s*1fr\)/);
+  assert.match(mediaBody, /\.app\s*{[\s\S]*grid-template-columns:\s*clamp\(340px,\s*36vw,\s*400px\) minmax\(0,\s*1fr\)/);
   assert.match(mediaBody, /\.main,\s*\.sidebar\s*{[\s\S]*min-height:\s*0;[\s\S]*max-height:\s*100%;/);
+  assert.match(mediaBody, /\.composer-controls\s*{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\) minmax\(0,\s*0\.85fr\) repeat\(2,\s*minmax\(0,\s*1fr\)\);/);
   assert.doesNotMatch(mediaBody, /composer-keyboard-focus/);
   assert.doesNotMatch(appJs, /updateComposerKeyboardAvoidance/);
 });
