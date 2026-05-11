@@ -37,6 +37,7 @@ const state = {
   nowMs: Date.now(),
   threadLoadSeq: 0,
   threadLoadController: null,
+  refreshThreadController: null,
   threadListLoadSeq: 0,
   threadListLoadController: null,
   threadListLoadedAtMs: 0,
@@ -2238,9 +2239,7 @@ function clearCurrentThreadSelection() {
     state.threadLoadController.abort();
     state.threadLoadController = null;
   }
-  clearTimeout(state.refreshTimer);
-  clearTimeout(state.pollTimer);
-  state.pollStableCount = 0;
+  abortCurrentThreadRefresh();
   state.currentThread = null;
   state.currentThreadId = "";
   state.activeTurnId = "";
@@ -2306,10 +2305,10 @@ async function loadThread(threadId) {
   const seq = state.threadLoadSeq + 1;
   state.threadLoadSeq = seq;
   state.sendButtonHint = "";
+  abortCurrentThreadRefresh();
   if (state.threadLoadController) state.threadLoadController.abort();
   const controller = new AbortController();
   state.threadLoadController = controller;
-  clearTimeout(state.pollTimer);
   markThreadViewed(threadId);
   const summary = state.threads.find((thread) => thread.id === threadId);
   state.currentThreadId = threadId;
@@ -2367,7 +2366,21 @@ async function refreshCurrentThread() {
   markIdleActivity("同步");
   const threadId = state.currentThreadId;
   const seq = state.threadLoadSeq;
-  const result = await api(`/api/threads/${encodeURIComponent(threadId)}`, { timeoutMs: 20000 });
+  if (state.refreshThreadController) state.refreshThreadController.abort();
+  const controller = new AbortController();
+  state.refreshThreadController = controller;
+  let result;
+  try {
+    result = await api(`/api/threads/${encodeURIComponent(threadId)}`, {
+      timeoutMs: 20000,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (controller.signal.aborted || err.name === "AbortError") return;
+    throw err;
+  } finally {
+    if (state.refreshThreadController === controller) state.refreshThreadController = null;
+  }
   if (state.currentThreadId !== threadId || seq !== state.threadLoadSeq) return;
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
   renderComposerSettings();
@@ -2384,6 +2397,17 @@ function scheduleCurrentThreadRefresh(delay = 600) {
   }, delay);
 }
 
+function abortCurrentThreadRefresh() {
+  clearTimeout(state.refreshTimer);
+  clearTimeout(state.pollTimer);
+  if (state.refreshThreadController) {
+    state.refreshThreadController.abort();
+    state.refreshThreadController = null;
+  }
+  state.pollStableCount = 0;
+  state.lastThreadSignature = "";
+}
+
 function scheduleLivePollIfNeeded(delay = 2600) {
   clearTimeout(state.pollTimer);
   if (!shouldPollCurrentThread()) return;
@@ -2391,7 +2415,9 @@ function scheduleLivePollIfNeeded(delay = 2600) {
   if (signature === state.lastThreadSignature) state.pollStableCount += 1;
   else state.pollStableCount = 0;
   state.lastThreadSignature = signature;
-  const nextDelay = state.pollStableCount > 60 ? 10000 : delay;
+  let nextDelay = delay;
+  if (state.pollStableCount > 12) nextDelay = Math.max(delay, 12000);
+  else if (state.pollStableCount > 3) nextDelay = Math.max(delay, 5000);
   state.pollTimer = setTimeout(() => {
     refreshCurrentThread().catch(showError);
   }, nextDelay);
