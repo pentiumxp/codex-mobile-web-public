@@ -2626,6 +2626,12 @@ html.visual-recovering body::before {
     max-width: none;
   }
 
+  .main,
+  .sidebar {
+    min-height: 0;
+    max-height: 100%;
+  }
+
   .sidebar {
     position: relative;
     inset: auto;
@@ -2643,61 +2649,6 @@ html.visual-recovering body::before {
 
   .mobile-only {
     display: none;
-  }
-
-  .composer {
-    display: grid;
-    grid-template-columns: 42px minmax(0, 1fr) max-content;
-    grid-template-areas:
-      "controls controls controls"
-      "attachments attachments attachments"
-      "attach input send";
-    gap: 8px;
-    align-items: end;
-    position: relative;
-    z-index: 8;
-    padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
-    transition: transform 160ms ease;
-  }
-
-  .app.composer-keyboard-focus .composer,
-  .app.composer-keyboard-focus .scroll-bottom-button {
-    transform: translateY(calc(-1 * var(--composer-keyboard-lift, 0px)));
-  }
-
-  .app.composer-keyboard-focus .conversation {
-    padding-bottom: calc(28px + var(--composer-keyboard-lift, 0px));
-  }
-
-  .composer-body {
-    display: contents;
-  }
-
-  .composer-controls {
-    grid-area: controls;
-    grid-template-columns: minmax(76px, 0.8fr) minmax(64px, 0.68fr) minmax(108px, 1fr) max-content;
-  }
-
-  .composer-icon {
-    grid-area: attach;
-    flex-basis: 42px;
-    width: 42px;
-    height: 42px;
-  }
-
-  .attachment-list {
-    grid-area: attachments;
-  }
-
-  .message-input {
-    grid-area: input;
-    min-width: 0;
-  }
-
-  #sendMessage {
-    grid-area: send;
-    min-width: 62px;
-    padding-inline: 12px;
   }
 }
 
