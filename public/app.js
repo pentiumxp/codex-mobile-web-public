@@ -210,6 +210,28 @@ function updateViewportVars() {
   document.documentElement.style.setProperty("--app-height", `${viewportHeight()}px`);
 }
 
+function visualKeyboardInset() {
+  if (!window.visualViewport) return 0;
+  const visual = window.visualViewport;
+  const layoutHeight = Number(window.innerHeight || (document.documentElement && document.documentElement.clientHeight) || 0);
+  const visualHeight = Number(visual.height || 0);
+  const visualTop = Number(visual.offsetTop || 0);
+  if (!layoutHeight || !visualHeight) return 0;
+  return Math.max(0, Math.round(layoutHeight - visualHeight - visualTop));
+}
+
+function updateComposerKeyboardAvoidance() {
+  const app = $("app");
+  const input = $("messageInput");
+  if (!app || !input) return;
+  const focused = document.activeElement === input;
+  const active = focused && window.matchMedia(TABLET_SPLIT_MEDIA).matches;
+  const inset = visualKeyboardInset();
+  const lift = active ? Math.min(360, Math.max(82, inset || 0)) : 0;
+  document.documentElement.style.setProperty("--composer-keyboard-lift", `${lift}px`);
+  app.classList.toggle("composer-keyboard-focus", active);
+}
+
 function createSubmissionId() {
   if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -5746,6 +5768,13 @@ function wireUi() {
     if (state.sendButtonHint && !state.composerBusy) state.sendButtonHint = "";
     updateComposerControls();
   });
+  $("messageInput").addEventListener("focus", () => {
+    updateComposerKeyboardAvoidance();
+    window.setTimeout(updateComposerKeyboardAvoidance, 180);
+  });
+  $("messageInput").addEventListener("blur", () => {
+    window.setTimeout(updateComposerKeyboardAvoidance, 80);
+  });
   $("messageInput").addEventListener("keydown", (event) => {
     if (event.key !== "Enter" || event.shiftKey) return;
     if (!composerHasContent() || state.composerBusy) return;
@@ -5823,17 +5852,20 @@ function wireUi() {
   window.addEventListener("orientationchange", () => scheduleMobileResume("orientation", 250));
   window.addEventListener("resize", () => {
     updateViewportVars();
+    updateComposerKeyboardAvoidance();
     updateComposerHeightVar();
     scheduleVisualRecovery("resize", 40, { render: false, heavy: false, delays: [40, 180] });
   });
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", () => {
       updateViewportVars();
+      updateComposerKeyboardAvoidance();
       updateComposerHeightVar();
       scheduleVisualRecovery("visual-viewport", 40, { render: false, heavy: false, delays: [40, 180, 520] });
     });
     window.visualViewport.addEventListener("scroll", () => {
       updateViewportVars();
+      updateComposerKeyboardAvoidance();
       scheduleVisualRecovery("visual-viewport-scroll", 40, { render: false, heavy: false, delays: [40, 180] });
     });
   }

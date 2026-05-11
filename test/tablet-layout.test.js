@@ -17,4 +17,6 @@ test("iPad landscape split layout gives composer a narrow-column grid", () => {
   assert.match(mediaBody, /grid-template-areas:\s*"controls controls controls"\s*"attachments attachments attachments"\s*"attach input send"/);
   assert.match(mediaBody, /\.composer-body\s*{\s*display:\s*contents;/);
   assert.match(mediaBody, /\.message-input\s*{[\s\S]*grid-area:\s*input;/);
+  assert.match(mediaBody, /\.app\.composer-keyboard-focus \.composer/);
+  assert.match(mediaBody, /--composer-keyboard-lift/);
 });

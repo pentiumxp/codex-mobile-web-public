@@ -2654,7 +2654,19 @@ html.visual-recovering body::before {
       "attach input send";
     gap: 8px;
     align-items: end;
+    position: relative;
+    z-index: 8;
     padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
+    transition: transform 160ms ease;
+  }
+
+  .app.composer-keyboard-focus .composer,
+  .app.composer-keyboard-focus .scroll-bottom-button {
+    transform: translateY(calc(-1 * var(--composer-keyboard-lift, 0px)));
+  }
+
+  .app.composer-keyboard-focus .conversation {
+    padding-bottom: calc(28px + var(--composer-keyboard-lift, 0px));
   }
 
   .composer-body {
