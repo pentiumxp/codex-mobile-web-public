@@ -271,6 +271,70 @@ test("mux echoes mobile new-turn user messages to desktop clients", async (t) =>
   assert.equal(echoed.params.item.content[0].text, "hello from phone");
 });
 
+test("mux replays missed turn notifications to desktop clients after reconnect", async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-protocol-"));
+  const codexHome = path.join(tempRoot, "codex-home");
+  const endpointFile = path.join(codexHome, "app-server-mux", "endpoint.json");
+  const logFile = path.join(codexHome, "app-server-mux", "mux.log");
+  const child = spawn(process.execPath, [muxPath], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      CODEX_HOME: codexHome,
+      CODEX_MUX_STANDALONE: "1",
+      CODEX_MUX_HOST: "127.0.0.1",
+      CODEX_MUX_PORT: "0",
+      CODEX_MUX_CODEX_EXE: process.execPath,
+      CODEX_MUX_CODEX_ARGS: mockCodexPath,
+      CODEX_MUX_LOG_FILE: logFile,
+      CODEX_MUX_ENDPOINT_FILE: endpointFile,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  t.after(() => {
+    child.kill("SIGTERM");
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const endpoint = await waitFor(() => readJsonFile(endpointFile));
+  const mobile = await connectJsonl(endpoint.port);
+  t.after(() => mobile.destroy());
+  const mobileMessages = collectJsonLines(mobile);
+  writeJsonLine(mobile, {
+    jsonrpc: "2.0",
+    id: "mobile-init",
+    method: "initialize",
+    params: { clientInfo: { name: "codex-mobile-web", title: "Codex Mobile Web" } },
+  });
+  await waitFor(() => mobileMessages.find((message) => message.id === "mobile-init"));
+
+  writeJsonLine(mobile, {
+    jsonrpc: "2.0",
+    id: "mobile-turn-1",
+    method: "turn/start",
+    params: {
+      threadId: "thread-replay",
+      input: [{ type: "text", text: "hello while desktop offline", text_elements: [] }],
+    },
+  });
+  await waitFor(() => mobileMessages.find((message) => message.id === "mobile-turn-1"));
+
+  const desktop = await connectJsonl(endpoint.port);
+  t.after(() => desktop.destroy());
+  const desktopMessages = collectJsonLines(desktop);
+  writeJsonLine(desktop, {
+    jsonrpc: "2.0",
+    id: "desktop-init",
+    method: "initialize",
+    params: { clientInfo: { name: "Codex Desktop", title: "Codex Desktop" } },
+  });
+  await waitFor(() => desktopMessages.find((message) => message.id === "desktop-init"));
+
+  const replayed = await waitFor(() => desktopMessages.find((message) => message.method === "turn/started"
+    && message.params.threadId === "thread-replay"));
+  assert.equal(replayed.params.threadId, "thread-replay");
+});
+
 test("approval response payloads match current and legacy app-server methods", () => {
   assert.deepEqual(
     approvalResponsePayload({ method: "item/commandExecution/requestApproval" }, "allow_once"),
