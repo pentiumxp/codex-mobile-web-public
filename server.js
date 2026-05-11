@@ -4705,6 +4705,82 @@ async function handleApi(req, res) {
     }, runtimeSettings), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false }));
     return;
   }
+  if (url.pathname === "/api/threads/new-message" && req.method === "POST") {
+    const { fields: body, uploads } = await readMessageBody(req, "new-thread");
+    const cwd = String(body.cwd || "").trim();
+    const text = String(body.text || "").trim();
+    const input = buildTurnInput(text, uploads);
+    if (!cwd) {
+      sendJson(res, 400, { error: "Workspace is required to start a new thread" });
+      return;
+    }
+    if (!input.length) {
+      sendJson(res, 400, { error: "Message text or attachment is required" });
+      return;
+    }
+    const globalState = readGlobalState();
+    const visibility = visibilityFromGlobalState(globalState);
+    if (visibility.workspaceKeys.size > 0 && !visibility.workspaceKeys.has(normalizeFsPath(cwd))) {
+      sendJson(res, 403, { error: "Workspace is not visible in Codex Desktop" });
+      return;
+    }
+    const submissionKeys = messageSubmissionKeys("new-thread", body, text, uploads);
+    try {
+      const result = await runMessageSubmissionOnce(submissionKeys, uploads, async () => {
+        const runtimeSettings = applyPermissionModeOverride({}, body.permissionMode, cwd);
+        const startParams = applyStartThreadRuntimeSettings({
+          cwd,
+          modelProvider: null,
+          config: {},
+          developerInstructions: readStartThreadDeveloperInstructions(cwd) || "",
+          personality: null,
+          ephemeral: null,
+          dynamicTools: null,
+          mockExperimentalField: null,
+          experimentalRawEvents: false,
+          persistExtendedHistory: true,
+        }, runtimeSettings);
+        const startResult = await codex.request("thread/start", startParams, {
+          timeoutMs: MUTATION_RPC_TIMEOUT_MS,
+          retry: false,
+        });
+        const threadId = threadIdFromStartResult(startResult);
+        if (!threadId) throw new Error("New thread creation failed: app-server did not return threadId");
+        const turnParams = applyTurnRuntimeSettings({
+          threadId,
+          input,
+          cwd,
+        }, runtimeSettings);
+        const turnResult = await codex.request("turn/start", turnParams, {
+          timeoutMs: MUTATION_RPC_TIMEOUT_MS,
+          retry: false,
+        });
+        const thread = rememberStartedThread(Object.assign(
+          {},
+          (startResult && startResult.thread) || (startResult && startResult.data && startResult.data.thread) || {},
+          {
+            id: threadId,
+            preview: text || path.basename(cwd) || "新建对话",
+            cwd,
+            status: { type: "active" },
+            turns: [],
+          },
+        ));
+        return {
+          ok: true,
+          threadId,
+          thread,
+          turnId: (turnResult && (turnResult.turnId || turnResult.id || turnResult.turn && turnResult.turn.id)) || "",
+          result: turnResult,
+          startResult,
+        };
+      });
+      sendJson(res, 200, result);
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { error: err.message || String(err) });
+    }
+    return;
+  }
   const messages = url.pathname.match(/^\/api\/threads\/([^/]+)\/messages$/);
   if (messages && req.method === "POST") {
     const threadId = decodeURIComponent(messages[1]);
