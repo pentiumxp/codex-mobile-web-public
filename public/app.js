@@ -230,6 +230,21 @@ function updateComposerKeyboardAvoidance() {
   const lift = active ? Math.min(360, Math.max(82, inset || 0)) : 0;
   document.documentElement.style.setProperty("--composer-keyboard-lift", `${lift}px`);
   app.classList.toggle("composer-keyboard-focus", active);
+  if (active) scheduleConversationKeyboardAvoidanceScroll();
+}
+
+function scheduleConversationKeyboardAvoidanceScroll() {
+  const scroll = () => {
+    const app = $("app");
+    const input = $("messageInput");
+    if (!app || !input || document.activeElement !== input || !app.classList.contains("composer-keyboard-focus")) return;
+    scrollConversationToBottom();
+  };
+  if (window.requestAnimationFrame) {
+    window.requestAnimationFrame(() => window.requestAnimationFrame(scroll));
+  } else {
+    window.setTimeout(scroll, 80);
+  }
 }
 
 function createSubmissionId() {
