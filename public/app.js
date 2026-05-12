@@ -72,8 +72,16 @@ const state = {
   permissionModeOptions: ["default", "auto", "full", "custom"],
   defaultModel: "",
   defaultReasoningEffort: "",
-  rateLimits: null,
-  rateLimitsByModel: {},
+  composerModel: "",
+  composerEffort: "",
+  composerPermissionMode: "",
+  composerMenuKind: "",
+  quotaDetailsOpen: false,
+  newThreadModel: "",
+  newThreadEffort: "",
+  newThreadPermissionMode: "full",
+  rateLimits: loadJsonStorage("codexMobileRateLimits", null),
+  rateLimitsByModel: loadJsonStorage("codexMobileRateLimitsByModel", {}),
   pushServerSupported: false,
   pushSubscribed: false,
   pushBusy: false,
@@ -113,6 +121,8 @@ const STORAGE_RUNNING_THREAD_IDS = "codexMobileRunningThreadIds";
 const STORAGE_UNREAD_THREAD_IDS = "codexMobileUnreadThreadIds";
 const STORAGE_DISMISSED_ROLLOUT_WARNINGS = "codexMobileDismissedRolloutWarnings";
 const STORAGE_FONT_SIZE = "codexMobileFontSize";
+const STORAGE_RATE_LIMITS = "codexMobileRateLimits";
+const STORAGE_RATE_LIMITS_BY_MODEL = "codexMobileRateLimitsByModel";
 const FONT_SIZE_VALUES = new Set(["small", "default", "large", "xlarge", "xxlarge"]);
 const MENU_OVERLAY_MEDIA = "(max-width: 1180px), (pointer: coarse) and (max-width: 1400px)";
 const TABLET_SPLIT_MEDIA = "(pointer: coarse) and (orientation: landscape) and (min-width: 900px) and (min-height: 600px)";
@@ -673,6 +683,22 @@ function titleForPermissionMode(value) {
   return titles[value] || "Thread permission";
 }
 
+function newThreadSelectedModel() {
+  const options = normalizeOptionList([state.newThreadModel, state.defaultModel, ...state.modelOptions]);
+  return options[0] || "";
+}
+
+function newThreadSelectedEffort() {
+  const options = normalizeOptionList([state.newThreadEffort, state.defaultReasoningEffort, ...state.reasoningEffortOptions]);
+  return options[0] || "";
+}
+
+function newThreadSelectedPermissionMode() {
+  const normalized = normalizePermissionModeValue(state.newThreadPermissionMode);
+  if (normalized) return normalized;
+  return normalizePermissionModeValue(state.permissionModeOptions[0]) || "full";
+}
+
 function normalizePermissionModeValue(value) {
   const text = String(value || "").trim().toLowerCase();
   const aliases = {
@@ -698,6 +724,21 @@ function normalizeModelKey(value) {
     .replace(/^-|-$/g, "");
 }
 
+function isSparkModelKey(key) {
+  return /\bspark\b/.test(normalizeModelKey(key));
+}
+
+function isRateLimitCompatibleWithModel(rateLimits, modelKey) {
+  if (!rateLimits || !hasCurrentRateLimitWindow(rateLimits)) return false;
+  const key = normalizeModelKey(modelKey);
+  if (!key) return true;
+  const limitId = normalizeModelKey(rateLimits.limitId);
+  if (limitId === "codex-bengalfox") return isSparkModelKey(key);
+  if (limitId === "codex") return !isSparkModelKey(key);
+  const keys = rateLimitModelKeys(rateLimits);
+  return keys.length === 0 || keys.includes(key);
+}
+
 function rateLimitModelKeys(rateLimits) {
   if (!rateLimits || typeof rateLimits !== "object") return [];
   const keys = new Set();
@@ -717,22 +758,37 @@ function rateLimitModelKeys(rateLimits) {
   }
   const limitId = normalizeModelKey(rateLimits.limitId);
   if (limitId === "codex-bengalfox") keys.add("gpt-5.3-codex-spark");
-  else if (limitId === "codex") add(state.defaultModel || "gpt-5.5");
+  else if (limitId === "codex") {
+    for (const model of normalizeOptionList([state.defaultModel, ...state.modelOptions])) {
+      const modelKey = normalizeModelKey(model);
+      if (modelKey && !isSparkModelKey(modelKey)) keys.add(modelKey);
+    }
+  }
   return [...keys];
 }
 
 function rememberRateLimits(rateLimits, rateLimitsByModel) {
+  let changed = false;
   if (rateLimitsByModel && typeof rateLimitsByModel === "object") {
     for (const [model, value] of Object.entries(rateLimitsByModel)) {
       const key = normalizeModelKey(model);
-      if (key && value && typeof value === "object") state.rateLimitsByModel[key] = value;
+      if (key && value && typeof value === "object" && hasCurrentRateLimitWindow(value)) {
+        state.rateLimitsByModel[key] = value;
+        changed = true;
+      }
     }
   }
-  if (rateLimits && typeof rateLimits === "object") {
+  if (rateLimits && typeof rateLimits === "object" && hasCurrentRateLimitWindow(rateLimits)) {
     state.rateLimits = rateLimits;
+    changed = true;
     for (const key of rateLimitModelKeys(rateLimits)) {
       state.rateLimitsByModel[normalizeModelKey(key)] = rateLimits;
+      changed = true;
     }
+  }
+  if (changed) {
+    localStorage.setItem(STORAGE_RATE_LIMITS, JSON.stringify(state.rateLimits || null));
+    localStorage.setItem(STORAGE_RATE_LIMITS_BY_MODEL, JSON.stringify(state.rateLimitsByModel || {}));
   }
   renderQuotaUsage();
 }
@@ -740,6 +796,14 @@ function rememberRateLimits(rateLimits, rateLimitsByModel) {
 function rateLimitWindows(rateLimits) {
   return [rateLimits && rateLimits.primary, rateLimits && rateLimits.secondary]
     .filter((windowInfo) => windowInfo && Number.isFinite(Number(windowInfo.usedPercent)));
+}
+
+function hasCurrentRateLimitWindow(rateLimits) {
+  const nowSeconds = Date.now() / 1000;
+  return rateLimitWindows(rateLimits).some((windowInfo) => {
+    const resetsAt = Number(windowInfo.resetsAt || 0);
+    return !resetsAt || resetsAt > nowSeconds;
+  });
 }
 
 function rateLimitWindowForMinutes(rateLimits, targetMinutes) {
@@ -817,6 +881,15 @@ function quotaChipHtml(label, windowInfo, nearResetMinutes) {
     + "</span>";
 }
 
+function quotaInlineHtml() {
+  const rateLimits = rateLimitsForQuota();
+  const fiveHour = fiveHourRateLimit(rateLimits);
+  const weekly = weeklyRateLimit(rateLimits);
+  const fiveStatus = quotaRiskLevel(fiveHour, 60);
+  const weeklyStatus = quotaRiskLevel(weekly, 1440);
+  return `<span class="quota-inline"><span class="quota-inline-part quota-${escapeHtml(fiveStatus)}"><span class="quota-inline-label">5h</span> <span class="quota-chip-value">${escapeHtml(quotaRemainingText(fiveHour))}</span></span><span class="quota-inline-sep">·</span><span class="quota-inline-part quota-${escapeHtml(weeklyStatus)}"><span class="quota-inline-label">周</span> <span class="quota-chip-value">${escapeHtml(quotaRemainingText(weekly))}</span></span></span>`;
+}
+
 function quotaTitle(label, windowInfo) {
   if (!windowInfo) return `${label} quota remaining unavailable`;
   const used = clampPercent(windowInfo.usedPercent);
@@ -829,14 +902,16 @@ function quotaTitle(label, windowInfo) {
 }
 
 function selectedQuotaModel() {
-  return effectiveDefaultModel();
+  return selectedComposerModel();
 }
 
 function rateLimitsForQuota() {
   const modelKey = normalizeModelKey(selectedQuotaModel());
-  if (modelKey && state.rateLimitsByModel[modelKey]) return state.rateLimitsByModel[modelKey];
-  if (!modelKey) return state.rateLimits;
-  if (state.rateLimits && rateLimitModelKeys(state.rateLimits).includes(modelKey)) return state.rateLimits;
+  if (modelKey && state.rateLimitsByModel[modelKey] && hasCurrentRateLimitWindow(state.rateLimitsByModel[modelKey])) {
+    return state.rateLimitsByModel[modelKey];
+  }
+  if (isRateLimitCompatibleWithModel(state.rateLimits, modelKey)) return state.rateLimits;
+  if (!modelKey) return null;
   return null;
 }
 
@@ -847,12 +922,43 @@ function renderQuotaUsage() {
   const fiveHour = fiveHourRateLimit(rateLimits);
   const weekly = weeklyRateLimit(rateLimits);
   const model = selectedQuotaModel();
-  el.innerHTML = quotaChipHtml("5小时", fiveHour, 60) + quotaChipHtml("周额度", weekly, 1440);
+  el.innerHTML = `<span class="composer-chip-label">额度</span><span class="composer-chip-value">${quotaInlineHtml()}</span>`;
   el.title = [
     model ? `model: ${labelForModel(model)}` : "",
     `${quotaTitle("5-hour", fiveHour)} | ${quotaTitle("weekly", weekly)}`,
   ].filter(Boolean).join("; ");
   el.classList.toggle("unknown", !fiveHour && !weekly);
+  el.setAttribute("aria-expanded", state.quotaDetailsOpen ? "true" : "false");
+  renderQuotaDetailPanel(fiveHour, weekly, model);
+}
+
+function quotaDetailLineHtml(label, windowInfo, nearResetMinutes) {
+  const status = quotaRiskLevel(windowInfo, nearResetMinutes);
+  const remaining = quotaRemainingText(windowInfo);
+  const used = windowInfo ? clampPercent(windowInfo.usedPercent) : 0;
+  const remainingPercent = clampPercent(100 - used);
+  const reset = windowInfo ? formatQuotaResetShort(windowInfo.resetsAt) : "--";
+  return `<div class="quota-detail-line quota-${escapeHtml(status)}">`
+    + `<div class="quota-detail-meta"><span>${escapeHtml(label)}</span><small>重置 ${escapeHtml(reset)}</small></div>`
+    + `<div class="quota-detail-track" aria-hidden="true"><span style="width:${escapeHtml(String(remainingPercent))}%"></span></div>`
+    + `<strong class="quota-detail-value">${escapeHtml(remaining)}</strong>`
+    + "</div>";
+}
+
+function renderQuotaDetailPanel(fiveHour, weekly, model) {
+  const panel = $("quotaDetailPanel");
+  if (!panel) return;
+  if (!state.quotaDetailsOpen) {
+    panel.hidden = true;
+    panel.innerHTML = "";
+    return;
+  }
+  panel.hidden = false;
+  panel.innerHTML = [
+    `<div class="quota-detail-title"><span>额度</span><strong>${escapeHtml(model ? labelForModel(model) : "当前模型")}</strong></div>`,
+    quotaDetailLineHtml("5小时额度", fiveHour, 60),
+    quotaDetailLineHtml("周额度", weekly, 1440),
+  ].join("");
 }
 
 function appVersionText(status = state.appUpdateStatus) {
@@ -2385,6 +2491,13 @@ function newThreadWorkspaceOptionsHtml() {
   }).join("");
 }
 
+function newThreadChoiceOptionsHtml(values, selectedValue, dataName, labeler) {
+  return normalizeOptionList(values).map((value) => {
+    const selected = value === selectedValue ? " is-selected" : "";
+    return `<button type="button" class="new-thread-choice${selected}" data-new-thread-${dataName}="${escapeHtml(value)}">${escapeHtml(labeler(value))}</button>`;
+  }).join("");
+}
+
 function selectedWorkspaceLabel() {
   if (!state.selectedCwd) return "聊天";
   const workspace = state.workspaces.find((ws) => normalizeFsPath(ws.cwd) === normalizeFsPath(state.selectedCwd));
@@ -2417,6 +2530,7 @@ function updateWorkspacePath() {
 function clearCurrentThreadSelection() {
   state.threadLoadSeq += 1;
   state.sendButtonHint = "";
+  resetComposerRuntimeSelection();
   if (state.threadLoadController) {
     state.threadLoadController.abort();
     state.threadLoadController = null;
@@ -2475,6 +2589,7 @@ async function loadThread(threadId, options = {}) {
   const switchStartedAt = nowPerfMs();
   const fromThreadId = state.currentThreadId || "";
   const source = String(options.source || "unknown").slice(0, 40);
+  if (threadId !== fromThreadId) resetComposerRuntimeSelection();
   const listAgeMs = state.threadListLoadedAtMs ? Date.now() - state.threadListLoadedAtMs : null;
   postClientEvent("thread_switch_start", {
     source,
@@ -2509,6 +2624,7 @@ async function loadThread(threadId, options = {}) {
   if (state.threadLoadController) state.threadLoadController.abort();
   const controller = new AbortController();
   state.threadLoadController = controller;
+  clearTimeout(state.pollTimer);
   markThreadViewed(threadId);
   const summary = state.threads.find((thread) => thread.id === threadId);
   state.currentThreadId = threadId;
@@ -3427,6 +3543,9 @@ function renderNewThreadDraft() {
   const workspaceStatus = state.selectedCwd
     ? `<div class="new-thread-path">${escapeHtml(state.selectedCwd)}</div>`
     : `<div class="new-thread-path">请先在侧边栏或下方选择 workspace</div>`;
+  const selectedModel = newThreadSelectedModel();
+  const selectedEffort = newThreadSelectedEffort();
+  const selectedPermission = newThreadSelectedPermissionMode();
   const html = `<div class="new-thread-page">
     <div class="new-thread-panel">
       <div class="new-thread-kicker">New chat</div>
@@ -3444,7 +3563,7 @@ function renderNewThreadDraft() {
       </div>
     </div>
   </div>`;
-  updateConversationHtml(html, `new-thread|${state.selectedCwd}|${state.workspaces.length}`);
+  updateConversationHtml(html, `new-thread|${state.selectedCwd}|${state.workspaces.length}|${selectedModel}|${selectedEffort}|${selectedPermission}`);
   const selectButton = $("newThreadWorkspaceSelect");
   const workspaceMenu = $("newThreadWorkspaceMenu");
   const shouldDisableWorkspaceSelect = !hasWorkspaceOptions;
@@ -3503,6 +3622,7 @@ function renderNewThreadDraft() {
       workspaceMenu.hidden = true;
     }
   }
+  renderComposerSettings();
   updateComposerControls();
   updateTurnTimer();
 }
@@ -3530,6 +3650,16 @@ function bindCurrentThreadActions() {
   if (button) button.addEventListener("click", startNewThreadFromCurrent);
   const dismiss = $("conversation").querySelector("[data-dismiss-rollout-warning]");
   if (dismiss) dismiss.addEventListener("click", () => dismissRolloutWarning(state.currentThread));
+}
+
+function startThreadRequestBody(sourceThread = null, options = {}) {
+  const thread = sourceThread || state.currentThread || {};
+  return {
+    cwd: thread.cwd || state.selectedCwd || "",
+    sourceThreadId: thread.id || "",
+    sourceThreadTitle: thread.name || thread.preview || thread.id || "",
+    archiveSourceThread: Boolean(options.archiveSourceThread && thread.id),
+  };
 }
 
 function actionWidthForThreadRow(row) {
@@ -5328,41 +5458,179 @@ function effectiveDefaultPermissionMode() {
   return normalizePermissionModeValue((settings && settings.permissionMode) || "");
 }
 
-function renderComposerSettings() {
-  const modelEffortDisplay = $("modelEffortDisplay");
-  const permissionDisplay = $("permissionDisplay");
-  if (!modelEffortDisplay || !permissionDisplay) return;
-  const defaultModel = effectiveDefaultModel();
-  const defaultEffort = effectiveDefaultEffort();
-  const hasThreadModel = Boolean(state.currentThread && state.currentThread.model);
-  const hasThreadEffort = Boolean(state.currentThread && state.currentThread.effort);
-  const defaultPermission = effectiveDefaultPermissionMode();
-  const modelText = defaultModel ? labelForModel(defaultModel) : "--";
-  const compactModelText = defaultModel ? compactLabelForModel(defaultModel) : "--";
-  const effortText = defaultEffort ? labelForEffort(defaultEffort) : "--";
-  const permissionText = defaultPermission ? labelForPermissionMode(defaultPermission).replace(/权限$/, "") : "--";
-  const modelValue = modelEffortDisplay.querySelector(".composer-chip-value");
-  if (modelValue) {
-    modelValue.textContent = `${modelText} · ${effortText}`;
-    modelValue.dataset.compactText = `${compactModelText} · ${effortText}`;
-    modelValue.dataset.mobileText = `${compactModelText} ${effortText} · ${permissionText}`;
+function selectedComposerModel() {
+  if (state.newThreadDraft) return newThreadSelectedModel();
+  return state.composerModel || effectiveDefaultModel();
+}
+
+function selectedComposerEffort() {
+  if (state.newThreadDraft) return newThreadSelectedEffort();
+  return state.composerEffort || effectiveDefaultEffort();
+}
+
+function selectedComposerPermissionMode() {
+  if (state.newThreadDraft) return newThreadSelectedPermissionMode();
+  return normalizePermissionModeValue(state.composerPermissionMode || effectiveDefaultPermissionMode()) || "default";
+}
+
+function resetComposerRuntimeSelection() {
+  state.composerModel = "";
+  state.composerEffort = "";
+  state.composerPermissionMode = "";
+  closeComposerRuntimeMenu();
+  state.quotaDetailsOpen = false;
+}
+
+function runtimeOptionValues(kind) {
+  if (kind === "model") return normalizeOptionList([selectedComposerModel(), state.defaultModel, ...state.modelOptions]);
+  if (kind === "effort") return normalizeOptionList([selectedComposerEffort(), state.defaultReasoningEffort, ...state.reasoningEffortOptions]);
+  if (kind === "permission") return normalizeOptionList([selectedComposerPermissionMode(), ...state.permissionModeOptions]);
+  return [];
+}
+
+function runtimeOptionLabel(kind, value) {
+  if (kind === "model") return labelForModel(value);
+  if (kind === "effort") return labelForEffort(value);
+  if (kind === "permission") return labelForPermissionMode(value);
+  return value;
+}
+
+function runtimeSelectedValue(kind) {
+  if (kind === "model") return selectedComposerModel();
+  if (kind === "effort") return selectedComposerEffort();
+  if (kind === "permission") return selectedComposerPermissionMode();
+  return "";
+}
+
+function applyRuntimeSelection(kind, value) {
+  const selected = String(value || "").trim();
+  if (!selected) return;
+  if (state.newThreadDraft) {
+    if (kind === "model") state.newThreadModel = selected;
+    if (kind === "effort") state.newThreadEffort = selected;
+    if (kind === "permission") state.newThreadPermissionMode = normalizePermissionModeValue(selected) || "full";
+  } else {
+    if (kind === "model") state.composerModel = selected;
+    if (kind === "effort") state.composerEffort = selected;
+    if (kind === "permission") state.composerPermissionMode = normalizePermissionModeValue(selected) || "default";
   }
-  else modelEffortDisplay.textContent = `${modelText} · ${effortText}`;
-  modelEffortDisplay.title = [
-    defaultModel
-      ? `模型：${labelForModel(defaultModel)}（${hasThreadModel ? "本地记录值" : "全局默认值"}）`
-      : "模型未记录",
-    defaultEffort
-      ? `推理强度：${labelForEffort(defaultEffort)}（${hasThreadEffort ? "本地记录值" : "全局默认值"}）`
-      : "推理强度未记录",
-    "只能在桌面端修改",
-  ].join("；");
-  const permissionValue = permissionDisplay.querySelector(".composer-chip-value");
-  if (permissionValue) permissionValue.textContent = permissionText;
-  else permissionDisplay.textContent = permissionText;
-  permissionDisplay.title = defaultPermission
-    ? `${titleForPermissionMode(defaultPermission)}。只能在桌面端修改`
-    : "权限未记录，只能在桌面端修改";
+  closeComposerRuntimeMenu();
+  renderComposerSettings();
+  updateComposerControls();
+}
+
+function closeComposerRuntimeMenu() {
+  const menu = $("composerRuntimeMenu");
+  if (menu) {
+    menu.hidden = true;
+    menu.innerHTML = "";
+  }
+  for (const id of ["composerModelControl", "composerEffortControl", "composerPermissionControl"]) {
+    const button = $(id);
+    if (button) button.setAttribute("aria-expanded", "false");
+  }
+  state.composerMenuKind = "";
+  document.removeEventListener("pointerdown", onComposerRuntimeOutsidePointer);
+}
+
+function onComposerRuntimeOutsidePointer(event) {
+  const menu = $("composerRuntimeMenu");
+  const target = event.target;
+  if (!menu || menu.hidden) return;
+  if (menu.contains(target)) return;
+  if (target && target.closest && target.closest("[data-composer-runtime]")) return;
+  closeComposerRuntimeMenu();
+}
+
+function openComposerRuntimeMenu(kind, anchor) {
+  const menu = $("composerRuntimeMenu");
+  if (!menu || !anchor) return;
+  state.quotaDetailsOpen = false;
+  const selected = runtimeSelectedValue(kind);
+  const options = runtimeOptionValues(kind);
+  menu.innerHTML = options.map((value) => {
+    const isSelected = value === selected ? " is-selected" : "";
+    return `<button type="button" class="composer-runtime-option${isSelected}" role="option" aria-selected="${value === selected ? "true" : "false"}" data-runtime-kind="${escapeHtml(kind)}" data-runtime-value="${escapeHtml(value)}">${escapeHtml(runtimeOptionLabel(kind, value))}</button>`;
+  }).join("");
+  menu.hidden = false;
+  state.composerMenuKind = kind;
+  for (const id of ["composerModelControl", "composerEffortControl", "composerPermissionControl"]) {
+    const button = $(id);
+    if (button) button.setAttribute("aria-expanded", button === anchor ? "true" : "false");
+  }
+  fitComposerPopupToAnchor(menu, anchor);
+  document.addEventListener("pointerdown", onComposerRuntimeOutsidePointer);
+}
+
+function fitComposerPopupToAnchor(panel, anchor, options = {}) {
+  const rect = anchor.getBoundingClientRect();
+  const composer = $("composer");
+  const composerRect = composer ? composer.getBoundingClientRect() : { left: 0, right: window.innerWidth, top: window.innerHeight };
+  const minWidth = Number(options.minWidth || 180);
+  const maxWidth = Number(options.maxWidth || 280);
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || maxWidth;
+  const width = Math.max(minWidth, Math.min(maxWidth, viewportWidth - 16, Math.max(rect.width, minWidth)));
+  const left = Math.max(8, Math.min(window.innerWidth - width - 8, rect.left));
+  const bottom = Math.max(8, window.innerHeight - composerRect.top + 6);
+  panel.style.setProperty("--composer-popup-left", `${Math.round(left)}px`);
+  panel.style.setProperty("--composer-popup-bottom", `${Math.round(bottom)}px`);
+  panel.style.setProperty("--composer-popup-width", `${Math.round(width)}px`);
+}
+
+function closeQuotaDetails() {
+  state.quotaDetailsOpen = false;
+  const panel = $("quotaDetailPanel");
+  if (panel) {
+    panel.hidden = true;
+    panel.innerHTML = "";
+  }
+  const quota = $("quotaUsage");
+  if (quota) quota.setAttribute("aria-expanded", "false");
+  document.removeEventListener("pointerdown", onQuotaOutsidePointer);
+}
+
+function onQuotaOutsidePointer(event) {
+  const panel = $("quotaDetailPanel");
+  const quota = $("quotaUsage");
+  const target = event.target;
+  if (!state.quotaDetailsOpen) return;
+  if ((panel && panel.contains(target)) || (quota && quota.contains(target))) return;
+  closeQuotaDetails();
+}
+
+function toggleQuotaDetails(anchor) {
+  closeComposerRuntimeMenu();
+  state.quotaDetailsOpen = !state.quotaDetailsOpen;
+  renderQuotaUsage();
+  const panel = $("quotaDetailPanel");
+  if (state.quotaDetailsOpen && panel && anchor) {
+    fitComposerPopupToAnchor(panel, anchor, { minWidth: 320, maxWidth: 390 });
+    document.addEventListener("pointerdown", onQuotaOutsidePointer);
+  } else {
+    document.removeEventListener("pointerdown", onQuotaOutsidePointer);
+  }
+}
+
+function renderComposerSettings() {
+  const modelControl = $("composerModelControl");
+  const effortControl = $("composerEffortControl");
+  const permissionControl = $("composerPermissionControl");
+  if (!modelControl || !effortControl || !permissionControl) return;
+  const selectedModel = selectedComposerModel();
+  const selectedEffort = selectedComposerEffort();
+  const selectedPermission = selectedComposerPermissionMode();
+  const controls = [
+    [modelControl, selectedModel ? labelForModel(selectedModel) : "--", state.newThreadDraft || state.composerModel ? "下一轮使用" : "当前记录"],
+    [effortControl, selectedEffort ? labelForEffort(selectedEffort) : "--", state.newThreadDraft || state.composerEffort ? "下一轮使用" : "当前记录"],
+    [permissionControl, selectedPermission ? labelForPermissionMode(selectedPermission).replace(/权限$/, "") : "--", state.newThreadDraft || state.composerPermissionMode ? "下一轮使用" : "当前记录"],
+  ];
+  for (const [button, value, mode] of controls) {
+    const valueEl = button.querySelector(".composer-chip-value");
+    if (valueEl) valueEl.textContent = value;
+    button.title = `${button.querySelector(".composer-chip-label")?.textContent || ""}：${value}（${mode}）`;
+    button.classList.toggle("has-pending-value", mode === "下一轮使用");
+    button.disabled = state.composerBusy;
+  }
   renderQuotaUsage();
 }
 
@@ -5390,6 +5658,10 @@ function updateComposerControls() {
   attachButton.classList.toggle("disabled", disabled);
   attachButton.setAttribute("aria-disabled", disabled ? "true" : "false");
   attachButton.tabIndex = disabled ? -1 : 0;
+  for (const id of ["composerModelControl", "composerEffortControl", "composerPermissionControl", "quotaUsage"]) {
+    const button = $(id);
+    if (button) button.disabled = disabled;
+  }
   const showRetryHint = Boolean(state.sendButtonHint);
   if (interruptMode) {
     sendButton.textContent = "Stop";
@@ -5461,6 +5733,9 @@ async function sendMessage(event) {
     body.append("text", text);
     if (state.currentThread && state.currentThread.cwd) body.append("cwd", state.currentThread.cwd);
     if (steerTurnId) body.append("activeTurnId", steerTurnId);
+    body.append("model", selectedComposerModel());
+    body.append("effort", selectedComposerEffort());
+    body.append("permissionMode", selectedComposerPermissionMode());
     for (const item of state.pendingAttachments) {
       body.append("attachments", item.file, item.file.name || "upload");
     }
@@ -5471,6 +5746,12 @@ async function sendMessage(event) {
     });
     setComposerText("");
     clearPendingAttachments();
+    if (!steering) {
+      state.composerModel = "";
+      state.composerEffort = "";
+      state.composerPermissionMode = "";
+      renderComposerSettings();
+    }
     input.blur();
     $("connectionState").classList.remove("error");
     if (steering) setSteerFeedback("delivered", { threadId: state.currentThreadId, turnId: steerTurnId, clientSubmissionId });
@@ -5483,11 +5764,11 @@ async function sendMessage(event) {
   } catch (err) {
     const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err))
       || "发送失败，请重试";
-    state.sendButtonHint = "Retry";
+    state.sendButtonHint = "重试";
     if (steering) setSteerFeedback("failed", { threadId: state.currentThreadId, turnId: steerTurnId, clientSubmissionId });
     else {
       $("connectionState").classList.add("error");
-      $("connectionState").textContent = message.includes("send") ? message : "Send failed, please retry";
+      $("connectionState").textContent = message.includes("发送") ? message : "发送失败，请重试";
     }
     postClientEvent("send_failure", {
       threadId: state.currentThreadId || "",
@@ -5516,6 +5797,9 @@ async function sendNewThreadMessage(text, hasContent, input) {
     body.append("clientSubmissionId", clientSubmissionId);
     body.append("text", text);
     if (state.selectedCwd) body.append("cwd", state.selectedCwd);
+    body.append("model", newThreadSelectedModel());
+    body.append("effort", newThreadSelectedEffort());
+    body.append("permissionMode", newThreadSelectedPermissionMode());
     for (const item of state.pendingAttachments) {
       body.append("attachments", item.file, item.file.name || "upload");
     }
@@ -5745,6 +6029,41 @@ function wireUi() {
   if ($("appUpdateStatus")) $("appUpdateStatus").addEventListener("click", () => handleAppUpdateClick().catch(showError));
   const settingsPanel = $("themeSettingsPanel");
   if (settingsPanel) settingsPanel.addEventListener("click", handleFontSizeChoice);
+  const runtimeControls = [
+    ["composerModelControl", "model"],
+    ["composerEffortControl", "effort"],
+    ["composerPermissionControl", "permission"],
+  ];
+  for (const [id, kind] of runtimeControls) {
+    const button = $(id);
+    if (!button) continue;
+    button.dataset.composerRuntime = kind;
+    button.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (button.disabled) return;
+      if (state.composerMenuKind === kind) closeComposerRuntimeMenu();
+      else openComposerRuntimeMenu(kind, button);
+    });
+  }
+  const runtimeMenu = $("composerRuntimeMenu");
+  if (runtimeMenu) {
+    runtimeMenu.addEventListener("click", (event) => {
+      const option = event.target.closest("[data-runtime-kind][data-runtime-value]");
+      if (!option) return;
+      event.preventDefault();
+      event.stopPropagation();
+      applyRuntimeSelection(option.dataset.runtimeKind, option.dataset.runtimeValue);
+    });
+  }
+  const quotaUsage = $("quotaUsage");
+  if (quotaUsage) {
+    quotaUsage.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleQuotaDetails(quotaUsage);
+    });
+  }
   document.addEventListener("pointerdown", primeCompletionAudio, { passive: true });
   document.addEventListener("touchend", primeCompletionAudio, { passive: true });
   document.addEventListener("keydown", primeCompletionAudio);
@@ -5939,6 +6258,11 @@ async function start() {
     .map(normalizePermissionModeValue));
   state.defaultModel = String(config.defaultModel || "");
   state.defaultReasoningEffort = String(config.defaultReasoningEffort || "");
+  state.newThreadModel = state.newThreadModel || state.defaultModel || state.modelOptions[0] || "";
+  state.newThreadEffort = state.newThreadEffort || state.defaultReasoningEffort || state.reasoningEffortOptions[0] || "";
+  state.newThreadPermissionMode = normalizePermissionModeValue(state.newThreadPermissionMode)
+    || normalizePermissionModeValue(state.permissionModeOptions[0])
+    || "full";
   state.pushServerSupported = Boolean(config.push && config.push.supported);
   state.appUpdateStatus = {
     supported: Boolean(config.update && config.update.enabled),

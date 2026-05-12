@@ -143,21 +143,21 @@
         </label>
         <div class="composer-body">
           <div class="composer-controls">
-            <label class="composer-select-wrap model-effort-wrap">
-              <span>Model and reasoning</span>
-              <div id="modelEffortDisplay" class="composer-readonly-value model-effort-display" title="模型和推理强度只能在桌面端修改">
-                <span class="composer-chip-label">模型</span>
-                <span class="composer-chip-value">--</span>
-              </div>
-            </label>
-            <label class="composer-select-wrap permission-select-wrap">
-              <span>Permission</span>
-              <div id="permissionDisplay" class="composer-readonly-value permission-display" title="权限只能在桌面端修改">
-                <span class="composer-chip-label">权限</span>
-                <span class="composer-chip-value">--</span>
-              </div>
-            </label>
-            <div id="quotaUsage" class="quota-usage unknown" title="Quota remaining" aria-live="polite">-- | --</div>
+            <button id="composerModelControl" class="composer-control-card" type="button" aria-haspopup="listbox" aria-expanded="false">
+              <span class="composer-chip-label">模型</span>
+              <span class="composer-chip-value">--</span>
+            </button>
+            <button id="composerEffortControl" class="composer-control-card" type="button" aria-haspopup="listbox" aria-expanded="false">
+              <span class="composer-chip-label">推理强度</span>
+              <span class="composer-chip-value">--</span>
+            </button>
+            <button id="composerPermissionControl" class="composer-control-card" type="button" aria-haspopup="listbox" aria-expanded="false">
+              <span class="composer-chip-label">权限</span>
+              <span class="composer-chip-value">--</span>
+            </button>
+            <button id="quotaUsage" class="composer-control-card quota-usage unknown" type="button" title="Quota remaining" aria-live="polite">-- | --</button>
+            <div id="composerRuntimeMenu" class="composer-runtime-menu" role="listbox" hidden></div>
+            <div id="quotaDetailPanel" class="quota-detail-panel" hidden></div>
           </div>
           <div id="attachmentList" class="attachment-list hidden"></div>
           <div id="messageInput" class="message-input" contenteditable="false" role="textbox" aria-multiline="true" data-placeholder="Message Codex"></div>
