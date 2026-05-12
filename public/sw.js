@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "codex-mobile-shell-v34";
+const CACHE_NAME = "codex-mobile-shell-v35";
 const STATIC_ASSETS = [
   "/",
   "/index.html",

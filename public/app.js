@@ -2101,6 +2101,9 @@ function updatePushButton() {
 async function registerPushServiceWorker() {
   if (state.serviceWorkerRegistration) return state.serviceWorkerRegistration;
   state.serviceWorkerRegistration = await navigator.serviceWorker.register("/sw.js");
+  if (state.serviceWorkerRegistration && state.serviceWorkerRegistration.update) {
+    state.serviceWorkerRegistration.update().catch(() => {});
+  }
   return state.serviceWorkerRegistration;
 }
 

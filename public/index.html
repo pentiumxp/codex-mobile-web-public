@@ -2,7 +2,26 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <script>
+    (function () {
+      function preventZoom(event) {
+        if (event && event.cancelable) event.preventDefault();
+      }
+      document.addEventListener("gesturestart", preventZoom, { passive: false });
+      document.addEventListener("gesturechange", preventZoom, { passive: false });
+      document.addEventListener("gestureend", preventZoom, { passive: false });
+      document.addEventListener("dblclick", preventZoom, { passive: false });
+      var lastTouchEndAt = 0;
+      document.addEventListener("touchend", function (event) {
+        var now = Date.now();
+        if (now - lastTouchEndAt < 320 && event && event.cancelable) {
+          event.preventDefault();
+        }
+        lastTouchEndAt = now;
+      }, { passive: false });
+    }());
+  </script>
   <script>
     (function () {
       var allowedThemes = { system: true, dark: true, light: true };
