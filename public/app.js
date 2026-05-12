@@ -871,8 +871,8 @@ function renderAppUpdateStatus() {
   let label = appVersionText(status);
   let title = "Check for GitHub updates";
   if (state.appUpdateRestarting) {
-    label = "重启中…";
-    title = "更新已应用，正在等待服务重启";
+    label = "等待重启…";
+    title = "更新已应用。服务会退出并等待启动任务或守护脚本拉起；手动启动的部署需要在服务停止后手动重启。";
   } else if (applying) {
     label = "更新中…";
     title = "正在拉取更新";
@@ -881,7 +881,7 @@ function renderAppUpdateStatus() {
     title = "正在检查 GitHub 更新";
   } else if (status.updateAvailable && status.canFastForward) {
     label = `有更新 ${status.remoteShort || ""}`.trim();
-    title = `发现 ${status.remote || "origin"}/${status.branch || "main"} 更新，点击后确认拉取并重启`;
+    title = `发现 ${status.remote || "origin"}/${status.branch || "main"} 更新，点击后确认拉取；更新后服务会退出并依赖启动任务或守护脚本重启`;
   } else if (blocked) {
     label = "更新受阻";
     title = status.reason || status.error || "检测到更新，但当前工作区不能安全 fast-forward";
@@ -964,6 +964,7 @@ async function handleAppUpdateClick() {
     "发现 GitHub 更新。是否拉取并重启 Mobile Web？",
     "",
     "仅在当前仓库干净、可 fast-forward 时执行；运行时数据和 Access Key 不会被覆盖。",
+    "更新完成后当前 Node 服务会退出。只有通过 Windows 启动任务、windowless supervisor 或 macOS shared launcher 运行时才会自动拉起；手动运行 node/npm start 的部署需要手动重启。",
   ].join("\n"));
   if (!confirmed) return;
   state.appUpdateBusy = true;
@@ -977,6 +978,7 @@ async function handleAppUpdateClick() {
     state.appUpdateStatus = result.after || result.status || status;
     if (result.updated) {
       state.appUpdateRestarting = true;
+      $("connectionState").textContent = "更新已应用；如连接断开且未自动恢复，请在部署机手动重启";
       renderAppUpdateStatus();
       window.setTimeout(() => window.location.reload(), Math.max(1800, Number(result.restartInMs || 1200) + 900));
     } else {
