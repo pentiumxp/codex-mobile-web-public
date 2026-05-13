@@ -2,7 +2,26 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <script>
+    (function () {
+      function preventZoom(event) {
+        if (event && event.cancelable) event.preventDefault();
+      }
+      document.addEventListener("gesturestart", preventZoom, { passive: false });
+      document.addEventListener("gesturechange", preventZoom, { passive: false });
+      document.addEventListener("gestureend", preventZoom, { passive: false });
+      document.addEventListener("dblclick", preventZoom, { passive: false });
+      var lastTouchEndAt = 0;
+      document.addEventListener("touchend", function (event) {
+        var now = Date.now();
+        if (now - lastTouchEndAt < 320 && event && event.cancelable) {
+          event.preventDefault();
+        }
+        lastTouchEndAt = now;
+      }, { passive: false });
+    }());
+  </script>
   <script>
     (function () {
       var allowedThemes = { system: true, dark: true, light: true };
@@ -22,7 +41,7 @@
         return effectiveTheme(theme) === "light" ? "default" : "black";
       }
       function themeColor(theme) {
-        return effectiveTheme(theme) === "light" ? "#f5f7f8" : "#111315";
+        return effectiveTheme(theme) === "light" ? "#f8f6ee" : "#111315";
       }
       function writeMeta(name, content) {
         document.write('<meta name="' + name + '" content="' + content + '">');
@@ -100,7 +119,15 @@
       <button id="pushNotifications" class="push-button hidden" type="button" disabled>Notifications unavailable</button>
 
       <label class="field-label" for="workspaceSelect">Workspace</label>
-      <select id="workspaceSelect" class="select"></select>
+      <div class="workspace-select-row">
+        <div class="workspace-select-wrap">
+          <button id="workspaceSelect" class="sidebar-workspace-select" type="button" aria-haspopup="listbox" aria-expanded="false">
+            All workspaces
+          </button>
+          <div id="workspaceSelectMenu" class="workspace-select-menu" role="listbox" aria-label="Workspace 列表" hidden></div>
+        </div>
+        <button id="newThreadButton" class="sidebar-new-thread-button" type="button" title="新建对话" aria-label="新建对话">新建对话</button>
+      </div>
       <div id="workspacePath" class="workspace-path" hidden></div>
 
       <div class="thread-tools">
@@ -135,19 +162,21 @@
         </label>
         <div class="composer-body">
           <div class="composer-controls">
-            <label class="composer-select-wrap">
-              <span>Model</span>
-              <select id="modelSelect" class="composer-select" disabled></select>
-            </label>
-            <label class="composer-select-wrap">
-              <span>Reasoning</span>
-              <select id="effortSelect" class="composer-select" disabled></select>
-            </label>
-            <label class="composer-select-wrap permission-select-wrap">
-              <span>Permission</span>
-              <select id="permissionSelect" class="composer-select permission-select" disabled></select>
-            </label>
-            <div id="quotaUsage" class="quota-usage unknown" title="Quota remaining" aria-live="polite">-- | --</div>
+            <button id="composerModelControl" class="composer-control-card" type="button" aria-haspopup="listbox" aria-expanded="false">
+              <span class="composer-chip-label">模型</span>
+              <span class="composer-chip-value">--</span>
+            </button>
+            <button id="composerEffortControl" class="composer-control-card" type="button" aria-haspopup="listbox" aria-expanded="false">
+              <span class="composer-chip-label">推理强度</span>
+              <span class="composer-chip-value">--</span>
+            </button>
+            <button id="composerPermissionControl" class="composer-control-card" type="button" aria-haspopup="listbox" aria-expanded="false">
+              <span class="composer-chip-label">权限</span>
+              <span class="composer-chip-value">--</span>
+            </button>
+            <button id="quotaUsage" class="composer-control-card quota-usage unknown" type="button" title="Quota remaining" aria-live="polite">-- | --</button>
+            <div id="composerRuntimeMenu" class="composer-runtime-menu" role="listbox" hidden></div>
+            <div id="quotaDetailPanel" class="quota-detail-panel" hidden></div>
           </div>
           <div id="attachmentList" class="attachment-list hidden"></div>
           <div id="messageInput" class="message-input" contenteditable="false" role="textbox" aria-multiline="true" data-placeholder="Message Codex"></div>
@@ -177,6 +206,10 @@
     </form>
   </div>
 
+  <script src="/api-client.js"></script>
+  <script src="/runtime-settings.js"></script>
+  <script src="/draft-store.js"></script>
+  <script src="/markdown-renderer.js"></script>
   <script src="/app.js"></script>
   <script>
     (function () {

@@ -7,6 +7,7 @@ const state = {
   threads: [],
   currentThread: null,
   currentThreadId: "",
+  newThreadDraft: false,
   activeTurnId: "",
   events: null,
   connectionStatus: null,
@@ -25,6 +26,9 @@ const state = {
   resumeTimer: null,
   resumeVisualTimers: [],
   resumeSeq: 0,
+  draftSaveTimer: null,
+  draftRestoreSeq: 0,
+  draftAttachmentWarningShown: false,
   visualRecoveryTimers: [],
   visualRecoverySeq: 0,
   pollTimer: null,
@@ -37,6 +41,7 @@ const state = {
   nowMs: Date.now(),
   threadLoadSeq: 0,
   threadLoadController: null,
+  refreshThreadController: null,
   threadListLoadSeq: 0,
   threadListLoadController: null,
   threadListLoadedAtMs: 0,
@@ -70,8 +75,16 @@ const state = {
   permissionModeOptions: ["default", "auto", "full", "custom"],
   defaultModel: "",
   defaultReasoningEffort: "",
-  rateLimits: null,
-  rateLimitsByModel: {},
+  composerModel: "",
+  composerEffort: "",
+  composerPermissionMode: "",
+  composerMenuKind: "",
+  quotaDetailsOpen: false,
+  newThreadModel: "",
+  newThreadEffort: "",
+  newThreadPermissionMode: "full",
+  rateLimits: loadJsonStorage("codexMobileRateLimits", null),
+  rateLimitsByModel: loadJsonStorage("codexMobileRateLimitsByModel", {}),
   pushServerSupported: false,
   pushSubscribed: false,
   pushBusy: false,
@@ -82,9 +95,6 @@ const state = {
   unreadThreadIds: loadStringSetStorage("codexMobileUnreadThreadIds"),
   rolloutWarningDismissals: loadStringSetStorage("codexMobileDismissedRolloutWarnings"),
   fontSize: localStorage.getItem("codexMobileFontSize") || "default",
-  selectedModel: localStorage.getItem("codexMobileSelectedModel") || "",
-  selectedEffort: localStorage.getItem("codexMobileSelectedEffort") || "",
-  selectedPermissionModes: loadJsonStorage("codexMobileSelectedPermissionModes", {}),
   activityLabel: "",
   activityAtMs: 0,
   leavingItems: new Map(),
@@ -100,6 +110,8 @@ const state = {
   copyTextStore: new Map(),
   copySeq: 0,
   copyFeedbackTimers: new Map(),
+  steerFeedback: null,
+  steerFeedbackTimer: null,
 };
 
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
@@ -107,16 +119,17 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
 const MAX_RETAINED_OPERATIONS_PER_TURN = 1;
 const STORAGE_THREAD_ID = "codexMobileCurrentThreadId";
-const STORAGE_MODEL = "codexMobileSelectedModel";
-const STORAGE_EFFORT = "codexMobileSelectedEffort";
-const STORAGE_PERMISSION_MODES = "codexMobileSelectedPermissionModes";
 const STORAGE_CONTINUATION_JOB = "codexMobileContinuationJobId";
 const STORAGE_RUNNING_THREAD_IDS = "codexMobileRunningThreadIds";
 const STORAGE_UNREAD_THREAD_IDS = "codexMobileUnreadThreadIds";
 const STORAGE_DISMISSED_ROLLOUT_WARNINGS = "codexMobileDismissedRolloutWarnings";
 const STORAGE_FONT_SIZE = "codexMobileFontSize";
+const STORAGE_RATE_LIMITS = "codexMobileRateLimits";
+const STORAGE_RATE_LIMITS_BY_MODEL = "codexMobileRateLimitsByModel";
+const DRAFT_SAVE_DEBOUNCE_MS = 250;
 const FONT_SIZE_VALUES = new Set(["small", "default", "large", "xlarge", "xxlarge"]);
 const MENU_OVERLAY_MEDIA = "(max-width: 1180px), (pointer: coarse) and (max-width: 1400px)";
+const TABLET_SPLIT_MEDIA = "(pointer: coarse) and (orientation: landscape) and (min-width: 900px) and (min-height: 600px)";
 const SIDEBAR_EDGE_SWIPE_PX = 34;
 const SIDEBAR_EDGE_OPEN_MIN_PX = 76;
 const SIDEBAR_EDGE_OPEN_RATIO = 0.22;
@@ -127,6 +140,29 @@ const CONTEXT_COMPACTION_PENDING_NOTICE = "\u5386\u53f2\u4e0a\u4e0b\u6587\u6b63\
 const CONTEXT_COMPACTION_COMPLETE_NOTICE = "\u5386\u53f2\u4e0a\u4e0b\u6587\u5df2\u538b\u7f29";
 
 const $ = (id) => document.getElementById(id);
+const apiClient = window.CodexApiClient.createApiClient({
+  fetch: window.fetch.bind(window),
+  AbortControllerCtor: AbortController,
+  FormDataCtor: window.FormData,
+  getKey() {
+    return state.key;
+  },
+  onUnauthorized() {
+    showLogin();
+  },
+});
+const runtimeSettings = window.CodexRuntimeSettings;
+const draftStore = window.CodexDraftStore.createDraftStore({
+  storage: localStorage,
+  indexedDB: window.indexedDB,
+  FileCtor: window.File,
+  URLApi: URL,
+  IDBKeyRangeCtor: window.IDBKeyRange,
+  normalizeFsPath,
+  reportError(type, details) {
+    postClientEvent(type, details || {});
+  },
+});
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -195,7 +231,8 @@ function handleFontSizeChoice(event) {
 }
 
 function isMenuOverlayMode() {
-  return window.matchMedia(MENU_OVERLAY_MEDIA).matches;
+  return window.matchMedia(MENU_OVERLAY_MEDIA).matches
+    && !window.matchMedia(TABLET_SPLIT_MEDIA).matches;
 }
 
 function viewportHeight() {
@@ -616,64 +653,54 @@ function rolloutSizeText(thread) {
 }
 
 function normalizeOptionList(values) {
-  return [...new Set((values || []).map((value) => String(value || "").trim()).filter(Boolean))];
+  return runtimeSettings.normalizeOptionList(values);
 }
 
 function labelForModel(value) {
-  const labels = {
-    "gpt-5.5": "GPT-5.5",
-    "gpt-5.4": "GPT-5.4",
-    "gpt-5.4-mini": "GPT-5.4 Mini",
-    "gpt-5.3-codex": "GPT-5.3 Codex",
-    "gpt-5.3-codex-spark": "GPT-5.3 Codex Spark",
-    "gpt-5.2": "GPT-5.2",
-  };
-  return labels[value] || value;
+  return runtimeSettings.labelForModel(value);
+}
+
+function compactLabelForModel(value) {
+  return runtimeSettings.compactLabelForModel(value);
 }
 
 function labelForEffort(value) {
-  const labels = {
-    low: "Low",
-    medium: "Medium",
-    high: "High",
-    xhigh: "XHigh",
-  };
-  return labels[value] || value;
+  return runtimeSettings.labelForEffort(value);
 }
 
 function labelForPermissionMode(value) {
-  const labels = {
-    default: "默认权限",
-    auto: "自动审查",
-    full: "完全访问权限",
-    custom: "自定义 (config.toml)",
-  };
-  return labels[value] || value || "Perm";
+  return runtimeSettings.labelForPermissionMode(value);
 }
 
 function titleForPermissionMode(value) {
-  const titles = {
-    default: "默认权限",
-    auto: "自动审查",
-    full: "完全访问权限",
-    custom: "自定义 (config.toml)",
-  };
-  return titles[value] || "Thread permission";
+  return runtimeSettings.titleForPermissionMode(value);
+}
+
+function newThreadSelectedModel() {
+  return runtimeSettings.selectedNewThreadModel({
+    selected: state.newThreadModel,
+    defaultValue: state.defaultModel,
+    options: state.modelOptions,
+  });
+}
+
+function newThreadSelectedEffort() {
+  return runtimeSettings.selectedNewThreadEffort({
+    selected: state.newThreadEffort,
+    defaultValue: state.defaultReasoningEffort,
+    options: state.reasoningEffortOptions,
+  });
+}
+
+function newThreadSelectedPermissionMode() {
+  return runtimeSettings.selectedNewThreadPermission({
+    selected: state.newThreadPermissionMode,
+    options: state.permissionModeOptions,
+  });
 }
 
 function normalizePermissionModeValue(value) {
-  const text = String(value || "").trim().toLowerCase();
-  const aliases = {
-    "full-access": "full",
-    "workspace-write": "auto",
-    "read-only": "auto",
-    "auto-review": "auto",
-    "auto-reviewing": "auto",
-    config: "custom",
-    "config.toml": "custom",
-    "custom-config": "custom",
-  };
-  return aliases[text] || text;
+  return runtimeSettings.normalizePermissionModeValue(value);
 }
 
 function normalizeModelKey(value) {
@@ -684,6 +711,21 @@ function normalizeModelKey(value) {
     .replace(/[^a-z0-9.]+/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
+}
+
+function isSparkModelKey(key) {
+  return /\bspark\b/.test(normalizeModelKey(key));
+}
+
+function isRateLimitCompatibleWithModel(rateLimits, modelKey) {
+  if (!rateLimits || !hasCurrentRateLimitWindow(rateLimits)) return false;
+  const key = normalizeModelKey(modelKey);
+  if (!key) return true;
+  const limitId = normalizeModelKey(rateLimits.limitId);
+  if (limitId === "codex-bengalfox") return isSparkModelKey(key);
+  if (limitId === "codex") return !isSparkModelKey(key);
+  const keys = rateLimitModelKeys(rateLimits);
+  return keys.length === 0 || keys.includes(key);
 }
 
 function rateLimitModelKeys(rateLimits) {
@@ -705,22 +747,37 @@ function rateLimitModelKeys(rateLimits) {
   }
   const limitId = normalizeModelKey(rateLimits.limitId);
   if (limitId === "codex-bengalfox") keys.add("gpt-5.3-codex-spark");
-  else if (limitId === "codex") add(state.defaultModel || "gpt-5.5");
+  else if (limitId === "codex") {
+    for (const model of normalizeOptionList([state.defaultModel, ...state.modelOptions])) {
+      const modelKey = normalizeModelKey(model);
+      if (modelKey && !isSparkModelKey(modelKey)) keys.add(modelKey);
+    }
+  }
   return [...keys];
 }
 
 function rememberRateLimits(rateLimits, rateLimitsByModel) {
+  let changed = false;
   if (rateLimitsByModel && typeof rateLimitsByModel === "object") {
     for (const [model, value] of Object.entries(rateLimitsByModel)) {
       const key = normalizeModelKey(model);
-      if (key && value && typeof value === "object") state.rateLimitsByModel[key] = value;
+      if (key && value && typeof value === "object" && hasCurrentRateLimitWindow(value)) {
+        state.rateLimitsByModel[key] = value;
+        changed = true;
+      }
     }
   }
-  if (rateLimits && typeof rateLimits === "object") {
+  if (rateLimits && typeof rateLimits === "object" && hasCurrentRateLimitWindow(rateLimits)) {
     state.rateLimits = rateLimits;
+    changed = true;
     for (const key of rateLimitModelKeys(rateLimits)) {
       state.rateLimitsByModel[normalizeModelKey(key)] = rateLimits;
+      changed = true;
     }
+  }
+  if (changed) {
+    localStorage.setItem(STORAGE_RATE_LIMITS, JSON.stringify(state.rateLimits || null));
+    localStorage.setItem(STORAGE_RATE_LIMITS_BY_MODEL, JSON.stringify(state.rateLimitsByModel || {}));
   }
   renderQuotaUsage();
 }
@@ -728,6 +785,14 @@ function rememberRateLimits(rateLimits, rateLimitsByModel) {
 function rateLimitWindows(rateLimits) {
   return [rateLimits && rateLimits.primary, rateLimits && rateLimits.secondary]
     .filter((windowInfo) => windowInfo && Number.isFinite(Number(windowInfo.usedPercent)));
+}
+
+function hasCurrentRateLimitWindow(rateLimits) {
+  const nowSeconds = Date.now() / 1000;
+  return rateLimitWindows(rateLimits).some((windowInfo) => {
+    const resetsAt = Number(windowInfo.resetsAt || 0);
+    return !resetsAt || resetsAt > nowSeconds;
+  });
 }
 
 function rateLimitWindowForMinutes(rateLimits, targetMinutes) {
@@ -755,11 +820,63 @@ function formatQuotaReset(seconds) {
   return date.toLocaleString([], { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
+function formatQuotaResetShort(seconds) {
+  if (!seconds) return "--";
+  const date = new Date(Number(seconds) * 1000);
+  if (!Number.isFinite(date.getTime())) return "--";
+  const now = new Date();
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const resetDayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const dayOffset = Math.round((resetDayStart - dayStart) / 86400000);
+  const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (dayOffset === 0) return time;
+  if (dayOffset === 1) return `明天 ${time}`;
+  if (dayOffset > 1 && dayOffset < 7) {
+    return `${date.toLocaleDateString([], { weekday: "short" })} ${time}`;
+  }
+  return date.toLocaleString([], { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
 function quotaRemainingText(windowInfo) {
   if (!windowInfo) return "--";
   const used = clampPercent(windowInfo.usedPercent);
   const remaining = clampPercent(100 - used);
   return `${Math.round(remaining)}%`;
+}
+
+function quotaRiskLevel(windowInfo, nearResetMinutes) {
+  if (!windowInfo) return "unknown";
+  const used = clampPercent(windowInfo.usedPercent);
+  const remaining = clampPercent(100 - used);
+  let risk = remaining > 50 ? 0 : remaining >= 30 ? 1 : 2;
+  const resetMs = Number(windowInfo.resetsAt || 0) * 1000;
+  const minutesToReset = resetMs ? (resetMs - Date.now()) / 60000 : Infinity;
+  if (minutesToReset >= 0 && minutesToReset <= nearResetMinutes) risk = Math.max(0, risk - 1);
+  return ["ok", "warn", "danger"][risk] || "unknown";
+}
+
+function quotaChipHtml(label, windowInfo, nearResetMinutes) {
+  const status = quotaRiskLevel(windowInfo, nearResetMinutes);
+  const remaining = quotaRemainingText(windowInfo);
+  const reset = windowInfo ? formatQuotaResetShort(windowInfo.resetsAt) : "--";
+  const compactLabel = label === "5小时" ? "5h" : label.replace("额度", "");
+  return `<span class="quota-chip quota-${escapeHtml(status)}">`
+    + `<span class="quota-chip-label">${escapeHtml(label)}</span>`
+    + `<span class="quota-chip-compact-label">${escapeHtml(compactLabel)}</span>`
+    + `<span class="quota-chip-main">`
+    + `<span class="quota-chip-value">${escapeHtml(remaining)}</span>`
+    + `<span class="quota-chip-reset"><span class="quota-chip-reset-prefix">重置 </span>${escapeHtml(reset)}</span>`
+    + "</span>"
+    + "</span>";
+}
+
+function quotaInlineHtml() {
+  const rateLimits = rateLimitsForQuota();
+  const fiveHour = fiveHourRateLimit(rateLimits);
+  const weekly = weeklyRateLimit(rateLimits);
+  const fiveStatus = quotaRiskLevel(fiveHour, 60);
+  const weeklyStatus = quotaRiskLevel(weekly, 1440);
+  return `<span class="quota-inline"><span class="quota-inline-part quota-${escapeHtml(fiveStatus)}"><span class="quota-inline-label">5h</span> <span class="quota-chip-value">${escapeHtml(quotaRemainingText(fiveHour))}</span></span><span class="quota-inline-sep">·</span><span class="quota-inline-part quota-${escapeHtml(weeklyStatus)}"><span class="quota-inline-label">周</span> <span class="quota-chip-value">${escapeHtml(quotaRemainingText(weekly))}</span></span></span>`;
 }
 
 function quotaTitle(label, windowInfo) {
@@ -774,15 +891,16 @@ function quotaTitle(label, windowInfo) {
 }
 
 function selectedQuotaModel() {
-  const modelSelect = $("modelSelect");
-  return (modelSelect && modelSelect.value) || state.selectedModel || effectiveDefaultModel();
+  return selectedComposerModel();
 }
 
 function rateLimitsForQuota() {
   const modelKey = normalizeModelKey(selectedQuotaModel());
-  if (modelKey && state.rateLimitsByModel[modelKey]) return state.rateLimitsByModel[modelKey];
-  if (!modelKey) return state.rateLimits;
-  if (state.rateLimits && rateLimitModelKeys(state.rateLimits).includes(modelKey)) return state.rateLimits;
+  if (modelKey && state.rateLimitsByModel[modelKey] && hasCurrentRateLimitWindow(state.rateLimitsByModel[modelKey])) {
+    return state.rateLimitsByModel[modelKey];
+  }
+  if (isRateLimitCompatibleWithModel(state.rateLimits, modelKey)) return state.rateLimits;
+  if (!modelKey) return null;
   return null;
 }
 
@@ -793,12 +911,43 @@ function renderQuotaUsage() {
   const fiveHour = fiveHourRateLimit(rateLimits);
   const weekly = weeklyRateLimit(rateLimits);
   const model = selectedQuotaModel();
-  el.textContent = `${quotaRemainingText(fiveHour)} | ${quotaRemainingText(weekly)}`;
+  el.innerHTML = `<span class="composer-chip-label">额度</span><span class="composer-chip-value">${quotaInlineHtml()}</span>`;
   el.title = [
     model ? `model: ${labelForModel(model)}` : "",
     `${quotaTitle("5-hour", fiveHour)} | ${quotaTitle("weekly", weekly)}`,
   ].filter(Boolean).join("; ");
   el.classList.toggle("unknown", !fiveHour && !weekly);
+  el.setAttribute("aria-expanded", state.quotaDetailsOpen ? "true" : "false");
+  renderQuotaDetailPanel(fiveHour, weekly, model);
+}
+
+function quotaDetailLineHtml(label, windowInfo, nearResetMinutes) {
+  const status = quotaRiskLevel(windowInfo, nearResetMinutes);
+  const remaining = quotaRemainingText(windowInfo);
+  const used = windowInfo ? clampPercent(windowInfo.usedPercent) : 0;
+  const remainingPercent = clampPercent(100 - used);
+  const reset = windowInfo ? formatQuotaResetShort(windowInfo.resetsAt) : "--";
+  return `<div class="quota-detail-line quota-${escapeHtml(status)}">`
+    + `<div class="quota-detail-meta"><span>${escapeHtml(label)}</span><small>重置 ${escapeHtml(reset)}</small></div>`
+    + `<div class="quota-detail-track" aria-hidden="true"><span style="width:${escapeHtml(String(remainingPercent))}%"></span></div>`
+    + `<strong class="quota-detail-value">${escapeHtml(remaining)}</strong>`
+    + "</div>";
+}
+
+function renderQuotaDetailPanel(fiveHour, weekly, model) {
+  const panel = $("quotaDetailPanel");
+  if (!panel) return;
+  if (!state.quotaDetailsOpen) {
+    panel.hidden = true;
+    panel.innerHTML = "";
+    return;
+  }
+  panel.hidden = false;
+  panel.innerHTML = [
+    `<div class="quota-detail-title"><span>额度</span><strong>${escapeHtml(model ? labelForModel(model) : "当前模型")}</strong></div>`,
+    quotaDetailLineHtml("5小时额度", fiveHour, 60),
+    quotaDetailLineHtml("周额度", weekly, 1440),
+  ].join("");
 }
 
 function appVersionText(status = state.appUpdateStatus) {
@@ -817,8 +966,8 @@ function renderAppUpdateStatus() {
   let label = appVersionText(status);
   let title = "Check for GitHub updates";
   if (state.appUpdateRestarting) {
-    label = "重启中…";
-    title = "更新已应用，正在等待服务重启";
+    label = "等待重启…";
+    title = "更新已应用。服务会退出并等待启动任务或守护脚本拉起；手动启动的部署需要在服务停止后手动重启。";
   } else if (applying) {
     label = "更新中…";
     title = "正在拉取更新";
@@ -827,7 +976,7 @@ function renderAppUpdateStatus() {
     title = "正在检查 GitHub 更新";
   } else if (status.updateAvailable && status.canFastForward) {
     label = `有更新 ${status.remoteShort || ""}`.trim();
-    title = `发现 ${status.remote || "origin"}/${status.branch || "main"} 更新，点击后确认拉取并重启`;
+    title = `发现 ${status.remote || "origin"}/${status.branch || "main"} 更新，点击后确认拉取；更新后服务会退出并依赖启动任务或守护脚本重启`;
   } else if (blocked) {
     label = "更新受阻";
     title = status.reason || status.error || "检测到更新，但当前工作区不能安全 fast-forward";
@@ -910,6 +1059,7 @@ async function handleAppUpdateClick() {
     "发现 GitHub 更新。是否拉取并重启 Mobile Web？",
     "",
     "仅在当前仓库干净、可 fast-forward 时执行；运行时数据和 Access Key 不会被覆盖。",
+    "更新完成后当前 Node 服务会退出。只有通过 Windows 启动任务、windowless supervisor 或 macOS shared launcher 运行时才会自动拉起；手动运行 node/npm start 的部署需要手动重启。",
   ].join("\n"));
   if (!confirmed) return;
   state.appUpdateBusy = true;
@@ -923,6 +1073,7 @@ async function handleAppUpdateClick() {
     state.appUpdateStatus = result.after || result.status || status;
     if (result.updated) {
       state.appUpdateRestarting = true;
+      $("connectionState").textContent = "更新已应用；如连接断开且未自动恢复，请在部署机手动重启";
       renderAppUpdateStatus();
       window.setTimeout(() => window.location.reload(), Math.max(1800, Number(result.restartInMs || 1200) + 900));
     } else {
@@ -981,6 +1132,57 @@ function markActivity(label) {
   updateTurnTimer();
 }
 
+function clearSteerFeedbackTimer() {
+  if (state.steerFeedbackTimer) window.clearTimeout(state.steerFeedbackTimer);
+  state.steerFeedbackTimer = null;
+}
+
+function setSteerFeedback(status, details = {}) {
+  clearSteerFeedbackTimer();
+  const previous = state.steerFeedback || {};
+  const next = Object.assign({}, previous, details, {
+    status,
+    updatedAtMs: Date.now(),
+  });
+  state.steerFeedback = next;
+  const connection = $("connectionState");
+  if (connection) {
+    connection.classList.toggle("error", status === "failed");
+    connection.textContent = steerFeedbackLabel(status);
+  }
+  markActivity(steerFeedbackLabel(status));
+  if (status === "applied" || status === "failed" || status === "completed") {
+    state.steerFeedbackTimer = window.setTimeout(() => {
+      state.steerFeedback = null;
+      state.steerFeedbackTimer = null;
+      restoreConnectionState();
+      updateTurnTimer();
+    }, status === "failed" ? 3200 : 2400);
+  }
+}
+
+function steerFeedbackLabel(status) {
+  if (status === "sending") return "引导中…";
+  if (status === "delivered") return "引导已送达";
+  if (status === "applied") return "Agent 已继续处理";
+  if (status === "completed") return "引导已送达，任务已结束";
+  if (status === "failed") return "引导失败，请重试";
+  return "";
+}
+
+function isPendingSteerForTurn(turnId) {
+  const feedback = state.steerFeedback;
+  if (!feedback || !feedback.turnId || !turnId) return false;
+  if (feedback.turnId !== String(turnId)) return false;
+  return feedback.status === "sending" || feedback.status === "delivered";
+}
+
+function markSteerAppliedIfNeeded(turnId, item = null) {
+  if (!isPendingSteerForTurn(turnId)) return;
+  if (item && item.type === "userMessage") return;
+  setSteerFeedback("applied", { turnId: String(turnId) });
+}
+
 function markIdleActivity(label) {
   if (!state.activeTurnId && !currentLiveTurn()) return;
   if (state.activityAtMs && Date.now() - state.activityAtMs < 3000) return;
@@ -995,6 +1197,193 @@ function normalizeFsPath(value) {
     .toLowerCase();
 }
 
+function draftKeyForThread(threadId) {
+  return draftStore.keyForThread(threadId);
+}
+
+function draftKeyForNewThread(cwd) {
+  return draftStore.keyForNewThread(cwd);
+}
+
+function currentDraftKey() {
+  if (state.newThreadDraft) return draftKeyForNewThread(state.selectedCwd);
+  return draftKeyForThread(state.currentThreadId);
+}
+
+function readDraftMap() {
+  return draftStore.readMap();
+}
+
+function writeDraftMap(map) {
+  draftStore.writeMap(map);
+}
+
+function normalizeDraftAttachmentMeta(item) {
+  return draftStore.normalizeAttachmentMeta(item);
+}
+
+function buildCurrentDraft() {
+  const draft = {
+    text: composerText(),
+    attachments: state.pendingAttachments.map(normalizeDraftAttachmentMeta).filter(Boolean),
+    updatedAt: Date.now(),
+  };
+  if (state.newThreadDraft) {
+    draft.cwd = state.selectedCwd || "";
+    if (state.newThreadModel && state.newThreadModel !== defaultNewThreadModel()) draft.model = state.newThreadModel;
+    if (state.newThreadEffort && state.newThreadEffort !== defaultNewThreadEffort()) draft.effort = state.newThreadEffort;
+    const permission = normalizePermissionModeValue(state.newThreadPermissionMode);
+    if (permission && permission !== defaultNewThreadPermissionMode()) draft.permissionMode = permission;
+  } else {
+    if (state.composerModel) draft.model = state.composerModel;
+    if (state.composerEffort) draft.effort = state.composerEffort;
+    const permission = normalizePermissionModeValue(state.composerPermissionMode);
+    if (permission) draft.permissionMode = permission;
+  }
+  return draft;
+}
+
+function draftHasContent(draft) {
+  return draftStore.hasContent(draft);
+}
+
+function draftAttachmentStorageKey(draftKey, attachmentIdValue) {
+  return draftStore.attachmentStorageKey(draftKey, attachmentIdValue);
+}
+
+function openDraftDb() {
+  return draftStore.openAttachmentDb();
+}
+
+async function storeDraftAttachment(draftKey, item) {
+  return draftStore.storeAttachment(draftKey, item);
+}
+
+async function loadDraftAttachment(draftKey, meta) {
+  return draftStore.loadAttachment(draftKey, meta);
+}
+
+async function deleteDraftAttachments(draftKey, attachmentIds = null) {
+  return draftStore.deleteAttachments(draftKey, attachmentIds);
+}
+
+function saveDraftAttachmentFiles(draftKey, items) {
+  if (!draftKey || !items || !items.length) return;
+  if (!("indexedDB" in window)) {
+    if (!state.draftAttachmentWarningShown) {
+      state.draftAttachmentWarningShown = true;
+      showError(new Error("当前浏览器不能持久保存草稿附件；刷新后需要重新选择附件。"));
+    }
+    return;
+  }
+  Promise.all(items.map((item) => storeDraftAttachment(draftKey, item))).catch((err) => {
+    postClientEvent("draft_attachment_save_failed", { message: err.message || String(err) });
+    showError(new Error("附件已加入本次发送，但浏览器没有保存草稿附件；刷新后可能需要重新选择。"));
+  });
+}
+
+function saveCurrentDraftNow() {
+  clearTimeout(state.draftSaveTimer);
+  state.draftSaveTimer = null;
+  if (state.composerBusy) return;
+  const key = currentDraftKey();
+  if (!key) return;
+  const map = readDraftMap();
+  const draft = buildCurrentDraft();
+  if (draftHasContent(draft)) {
+    map[key] = draft;
+    if (key.startsWith("new:")) draftStore.setTargetKey(key);
+  } else {
+    delete map[key];
+    draftStore.clearTargetKeyIfMatches(key);
+  }
+  writeDraftMap(map);
+}
+
+function scheduleCurrentDraftSave() {
+  clearTimeout(state.draftSaveTimer);
+  state.draftSaveTimer = setTimeout(saveCurrentDraftNow, DRAFT_SAVE_DEBOUNCE_MS);
+}
+
+function clearDraftForKey(draftKey) {
+  const key = String(draftKey || "");
+  if (!key) return;
+  const map = readDraftMap();
+  delete map[key];
+  writeDraftMap(map);
+  draftStore.clearTargetKeyIfMatches(key);
+  deleteDraftAttachments(key).catch((err) => {
+    postClientEvent("draft_attachment_clear_failed", { message: err.message || String(err) });
+  });
+}
+
+function defaultNewThreadModel() {
+  return state.defaultModel || state.modelOptions[0] || "";
+}
+
+function defaultNewThreadEffort() {
+  return state.defaultReasoningEffort || state.reasoningEffortOptions[0] || "";
+}
+
+function defaultNewThreadPermissionMode() {
+  return "full";
+}
+
+function applyDraftRuntimeSelection(draft) {
+  const model = String(draft && draft.model || "");
+  const effort = String(draft && draft.effort || "");
+  const permission = normalizePermissionModeValue(draft && draft.permissionMode);
+  if (state.newThreadDraft) {
+    state.newThreadModel = model && state.modelOptions.includes(model) ? model : defaultNewThreadModel();
+    state.newThreadEffort = effort && state.reasoningEffortOptions.includes(effort) ? effort : defaultNewThreadEffort();
+    state.newThreadPermissionMode = permission || defaultNewThreadPermissionMode();
+    return;
+  }
+  state.composerModel = model && state.modelOptions.includes(model) ? model : "";
+  state.composerEffort = effort && state.reasoningEffortOptions.includes(effort) ? effort : "";
+  state.composerPermissionMode = permission && state.permissionModeOptions.includes(permission) ? permission : "";
+}
+
+function replacePendingAttachments(items, options = {}) {
+  for (const item of state.pendingAttachments) {
+    if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+  }
+  state.pendingAttachments = Array.isArray(items) ? items : [];
+  renderAttachmentList();
+  if (options.saveDraft !== false) scheduleCurrentDraftSave();
+}
+
+function restoreDraftForCurrentTarget() {
+  clearTimeout(state.draftSaveTimer);
+  state.draftSaveTimer = null;
+  const key = currentDraftKey();
+  const draft = key ? readDraftMap()[key] : null;
+  const restoreSeq = state.draftRestoreSeq + 1;
+  state.draftRestoreSeq = restoreSeq;
+  setComposerText(draft && draft.text ? draft.text : "");
+  applyDraftRuntimeSelection(draft || null);
+  replacePendingAttachments([], { saveDraft: false });
+  renderComposerSettings();
+  updateComposerControls();
+  const metas = draft && Array.isArray(draft.attachments) ? draft.attachments : [];
+  if (!key || !metas.length) return;
+  Promise.all(metas.map((meta) => loadDraftAttachment(key, meta).catch(() => null))).then((items) => {
+    if (restoreSeq !== state.draftRestoreSeq || key !== currentDraftKey()) {
+      for (const item of items) {
+        if (item && item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      }
+      return;
+    }
+    const restored = items.filter(Boolean);
+    replacePendingAttachments(restored, { saveDraft: false });
+    if (restored.length !== metas.length) {
+      showError(new Error("有草稿附件没有恢复，请重新选择后再发送。"));
+    }
+  }).catch((err) => {
+    postClientEvent("draft_restore_failed", { message: err.message || String(err) });
+  });
+}
+
 function visibleWorkspaceKeys() {
   return new Set(state.workspaces.map((ws) => normalizeFsPath(ws.cwd)).filter(Boolean));
 }
@@ -1007,10 +1396,11 @@ function isHiddenThread(thread) {
   if (thread.deleted || thread.deletedAt || thread.deleted_at || thread.isDeleted || thread.removed || thread.removedAt) return true;
   if (/archived|deleted|removed/.test(status)) return true;
   if (/[/\\](archived|deleted|trash|removed)[_-]?sessions[/\\]/.test(location)) return true;
+  if (/\.jsonl\.(bak|backup|old)(?:\b|[-_.])/.test(location)) return true;
   const cwd = normalizeFsPath(thread.cwd);
   if (state.selectedCwd && cwd !== normalizeFsPath(state.selectedCwd)) return true;
   const keys = visibleWorkspaceKeys();
-  if (keys.size > 0 && (!cwd || !keys.has(cwd))) return true;
+  if (keys.size > 0 && cwd && !keys.has(cwd)) return true;
   return false;
 }
 
@@ -1851,51 +2241,7 @@ function threadSignature() {
 }
 
 async function api(path, options = {}) {
-  const headers = Object.assign({}, options.headers || {});
-  const timeoutMs = options.timeoutMs || 30000;
-  const controller = new AbortController();
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, timeoutMs);
-  const externalSignal = options.signal;
-  const abortFromExternal = () => controller.abort();
-  if (externalSignal) {
-    if (externalSignal.aborted) controller.abort();
-    else externalSignal.addEventListener("abort", abortFromExternal, { once: true });
-  }
-  const fetchOptions = Object.assign({}, options, { headers, signal: controller.signal });
-  delete fetchOptions.timeoutMs;
-  if (state.key) headers["X-Codex-Mobile-Key"] = state.key;
-  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
-  if (options.body && !isFormData && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
-  try {
-    const res = await fetch(path, fetchOptions);
-    if (res.status === 401) {
-      showLogin();
-      throw new Error("Unauthorized");
-    }
-    if (!res.ok) {
-      let message = `${res.status} ${res.statusText}`;
-      try {
-        const body = await res.json();
-        if (body.error) message = body.error;
-      } catch (_) {}
-      throw new Error(message);
-    }
-    if (res.status === 204) return null;
-    return res.json();
-  } catch (err) {
-    if (err.name === "AbortError") {
-      if (timedOut) throw new Error(`Request timed out: ${path}`);
-      throw new Error(`Request cancelled: ${path}`);
-    }
-    throw err;
-  } finally {
-    clearTimeout(timer);
-    if (externalSignal) externalSignal.removeEventListener("abort", abortFromExternal);
-  }
+  return apiClient.request(path, options);
 }
 
 function postClientEvent(event, details = {}) {
@@ -1921,6 +2267,16 @@ function postClientEvent(event, details = {}) {
   }).catch(() => {});
 }
 
+function nowPerfMs() {
+  return typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
+}
+
+function roundedDurationMs(startedAt) {
+  return Math.max(0, Math.round(nowPerfMs() - Number(startedAt || 0)));
+}
+
 function startUiWatchdog() {
   if (state.uiWatchdogTimer) return;
   state.lastUiWatchdogTickAt = Date.now();
@@ -1943,7 +2299,7 @@ function startUiWatchdog() {
 function updatePushButton() {
   const button = $("pushNotifications");
   if (!button) return;
-  button.classList.remove("ready", "error");
+  button.classList.remove("hidden", "ready", "error");
   if (state.pushBusy) {
     button.textContent = "Working...";
     button.disabled = true;
@@ -1984,7 +2340,10 @@ function updatePushButton() {
 
 async function registerPushServiceWorker() {
   if (state.serviceWorkerRegistration) return state.serviceWorkerRegistration;
-  state.serviceWorkerRegistration = await navigator.serviceWorker.register("/service-worker.js");
+  state.serviceWorkerRegistration = await navigator.serviceWorker.register("/sw.js");
+  if (state.serviceWorkerRegistration && state.serviceWorkerRegistration.update) {
+    state.serviceWorkerRegistration.update().catch(() => {});
+  }
   return state.serviceWorkerRegistration;
 }
 
@@ -2155,7 +2514,7 @@ async function openExternalThreadSelection(threadId) {
       // Loading the thread by id can still succeed without refreshing workspace shortcuts.
     }
   }
-  await loadThread(id);
+  await loadThread(id, { source: "external" });
 }
 
 function applyUrlThreadSelection(options = {}) {
@@ -2179,20 +2538,123 @@ function handleServiceWorkerMessage(event) {
   openExternalThreadSelection(threadId).catch(showError);
 }
 
+function handleLaunchTargetUrl(targetUrl) {
+  const threadId = threadIdFromUrlValue(targetUrl);
+  postClientEvent("launch_target", {
+    hasThread: Boolean(threadId),
+    pwa: isPwaMode(),
+  });
+  if (threadId) {
+    openExternalThreadSelection(threadId).catch(showError);
+    return;
+  }
+  scheduleMobileResume("launch-target", 120);
+}
+
+function installLaunchQueueHandler() {
+  const launchQueue = window.launchQueue;
+  if (!launchQueue || typeof launchQueue.setConsumer !== "function") return;
+  try {
+    launchQueue.setConsumer((launchParams) => {
+      if (!launchParams || !launchParams.targetURL) return;
+      handleLaunchTargetUrl(launchParams.targetURL);
+    });
+    postClientEvent("launch_queue_ready", { pwa: isPwaMode() });
+  } catch (err) {
+    postClientEvent("launch_queue_failed", { message: err.message || String(err) });
+  }
+}
+
 async function loadWorkspaces() {
   const result = await api("/api/workspaces");
   state.workspaces = result.data || [];
   const select = $("workspaceSelect");
-  select.innerHTML = `<option value="">All workspaces</option>` + state.workspaces.map((ws) => {
-    const count = ws.recentThreadCount ? ` (${ws.recentThreadCount})` : "";
-    return `<option value="${escapeHtml(ws.cwd)}">${escapeHtml(`${ws.label}${count} - ${ws.cwd}`)}</option>`;
-  }).join("");
+  const menu = $("workspaceSelectMenu");
   if (state.selectedCwd && !state.workspaces.some((ws) => normalizeFsPath(ws.cwd) === normalizeFsPath(state.selectedCwd))) {
     state.selectedCwd = "";
   }
-  if (state.selectedCwd) select.value = state.selectedCwd;
+  if (select) {
+    select.textContent = state.selectedCwd ? selectedWorkspaceLabel() : "All workspaces";
+    select.disabled = !state.workspaces.length;
+    select.setAttribute("title", state.workspaces.length ? "选择 Workspace" : "暂无可用 Workspace");
+  }
+  if (menu) {
+    menu.innerHTML = workspaceSidebarOptionsHtml();
+    if (!state.workspaces.length) {
+      menu.innerHTML = `<div class=\"workspace-select-empty\">暂无可用 Workspace</div>`;
+    }
+  }
   updateWorkspacePath();
   if (!state.currentThread) renderCurrentThread();
+}
+
+function workspaceSidebarOptionsHtml() {
+  const allSelected = !state.selectedCwd ? " is-selected" : "";
+  const allOption = `<button type="button" class="workspace-select-option${allSelected}" data-workspace-value="">All workspaces</button>`;
+  return allOption + state.workspaces.map((ws) => {
+    const count = ws.recentThreadCount ? ` (${ws.recentThreadCount})` : "";
+    const label = `${ws.label}${count} - ${ws.cwd}`;
+    const selected = normalizeFsPath(ws.cwd) === normalizeFsPath(state.selectedCwd) ? " is-selected" : "";
+    return `<button type="button" class="workspace-select-option${selected}" data-workspace-value="${escapeHtml(ws.cwd)}">${escapeHtml(label)}</button>`;
+  }).join("");
+}
+
+function syncSidebarWorkspaceSelect() {
+  const select = $("workspaceSelect");
+  const menu = $("workspaceSelectMenu");
+  if (!select) return;
+  select.textContent = state.selectedCwd ? selectedWorkspaceLabel() : "All workspaces";
+  if (menu) {
+    menu.innerHTML = workspaceSidebarOptionsHtml();
+    if (!state.workspaces.length) {
+      menu.innerHTML = `<div class=\"workspace-select-empty\">暂无可用 Workspace</div>`;
+    }
+  }
+}
+
+function workspaceOptionsHtml() {
+  return `<option value="">All workspaces</option>` + state.workspaces.map((ws) => {
+    const count = ws.recentThreadCount ? ` (${ws.recentThreadCount})` : "";
+    return `<option value="${escapeHtml(ws.cwd)}">${escapeHtml(`${ws.label}${count} - ${ws.cwd}`)}</option>`;
+  }).join("");
+}
+
+function newThreadWorkspaceOptionsHtml() {
+  return state.workspaces.map((ws) => {
+    const count = ws.recentThreadCount ? ` (${ws.recentThreadCount})` : "";
+    const label = `${ws.label}${count} - ${ws.cwd}`;
+    const selected = normalizeFsPath(ws.cwd) === normalizeFsPath(state.selectedCwd) ? " is-selected" : "";
+    return `<button type="button" class="new-thread-workspace-option${selected}" data-new-thread-workspace="${escapeHtml(ws.cwd)}">${escapeHtml(label)}</button>`;
+  }).join("");
+}
+
+function newThreadChoiceOptionsHtml(values, selectedValue, dataName, labeler) {
+  return normalizeOptionList(values).map((value) => {
+    const selected = value === selectedValue ? " is-selected" : "";
+    return `<button type="button" class="new-thread-choice${selected}" data-new-thread-${dataName}="${escapeHtml(value)}">${escapeHtml(labeler(value))}</button>`;
+  }).join("");
+}
+
+function selectedWorkspaceLabel() {
+  if (!state.selectedCwd) return "聊天";
+  const workspace = state.workspaces.find((ws) => normalizeFsPath(ws.cwd) === normalizeFsPath(state.selectedCwd));
+  return workspace && workspace.label ? workspace.label : shortPath(state.selectedCwd);
+}
+
+function fitWorkspaceMenuToViewport(menu, anchor, options = {}) {
+  if (!menu || !anchor) return;
+  const rect = anchor.getBoundingClientRect();
+  const composer = $("composer");
+  const composerTop = composer ? composer.getBoundingClientRect().top : 0;
+  const viewportBottom = window.innerHeight || document.documentElement.clientHeight || 0;
+  const bottomLimit = options.avoidComposer !== false && composerTop > rect.bottom
+    ? composerTop
+    : viewportBottom;
+  const gap = Number(options.gap || 18);
+  const cap = Number(options.cap || (isMobileViewport() ? 360 : 420));
+  const available = Math.max(120, Math.floor(bottomLimit - rect.bottom - gap));
+  const height = Math.max(120, Math.min(cap, available));
+  menu.style.setProperty("--workspace-menu-max-height", `${height}px`);
 }
 
 function updateWorkspacePath() {
@@ -2202,21 +2664,23 @@ function updateWorkspacePath() {
   el.textContent = state.selectedCwd || "";
 }
 
-function clearCurrentThreadSelection() {
+function clearCurrentThreadSelection(options = {}) {
+  if (options.saveDraft !== false) saveCurrentDraftNow();
   state.threadLoadSeq += 1;
   state.sendButtonHint = "";
+  resetComposerRuntimeSelection();
   if (state.threadLoadController) {
     state.threadLoadController.abort();
     state.threadLoadController = null;
   }
-  clearTimeout(state.refreshTimer);
-  clearTimeout(state.pollTimer);
-  state.pollStableCount = 0;
+  abortCurrentThreadRefresh();
   state.currentThread = null;
   state.currentThreadId = "";
   state.activeTurnId = "";
   state.leavingItems.clear();
   localStorage.removeItem(STORAGE_THREAD_ID);
+  setComposerText("");
+  replacePendingAttachments([], { saveDraft: false });
   syncActiveTurnFromThread();
   if (state.events) connectEvents();
 }
@@ -2260,7 +2724,22 @@ async function loadThreads(options = {}) {
   }
 }
 
-async function loadThread(threadId) {
+async function loadThread(threadId, options = {}) {
+  saveCurrentDraftNow();
+  state.newThreadDraft = false;
+  const switchStartedAt = nowPerfMs();
+  const fromThreadId = state.currentThreadId || "";
+  const source = String(options.source || "unknown").slice(0, 40);
+  if (threadId !== fromThreadId) resetComposerRuntimeSelection();
+  const listAgeMs = state.threadListLoadedAtMs ? Date.now() - state.threadListLoadedAtMs : null;
+  postClientEvent("thread_switch_start", {
+    source,
+    fromThreadId,
+    toThreadId: threadId || "",
+    listAgeMs,
+    currentHadThread: Boolean(state.currentThread),
+    eventOpen: Boolean(state.events && state.events.readyState === EventSource.OPEN),
+  });
   if (threadId && threadId !== state.continuationSourceThreadId) {
     state.continuationSourceThreadId = "";
   }
@@ -2272,11 +2751,17 @@ async function loadThread(threadId) {
     renderThreads();
     renderCurrentThread();
     if (isMenuOverlayMode()) closeSidebarMenu();
+    postClientEvent("thread_switch_cached", {
+      source,
+      threadId,
+      elapsedMs: roundedDurationMs(switchStartedAt),
+    });
     return;
   }
   const seq = state.threadLoadSeq + 1;
   state.threadLoadSeq = seq;
   state.sendButtonHint = "";
+  abortCurrentThreadRefresh();
   if (state.threadLoadController) state.threadLoadController.abort();
   const controller = new AbortController();
   state.threadLoadController = controller;
@@ -2291,6 +2776,7 @@ async function loadThread(threadId) {
     turns: [],
     mobileLoading: true,
   };
+  restoreDraftForCurrentTarget();
   renderComposerSettings();
   syncActiveTurnFromThread();
   renderThreads();
@@ -2300,13 +2786,22 @@ async function loadThread(threadId) {
   $("connectionState").textContent = "Loading thread";
   markActivity("加载线程");
   let result;
+  const apiStartedAt = nowPerfMs();
   try {
     result = await api(`/api/threads/${encodeURIComponent(threadId)}`, {
       timeoutMs: 20000,
       signal: controller.signal,
     });
   } catch (err) {
-    if (seq !== state.threadLoadSeq || controller.signal.aborted) return;
+    if (seq !== state.threadLoadSeq || controller.signal.aborted) {
+      postClientEvent("thread_switch_cancelled", {
+        source,
+        threadId,
+        elapsedMs: roundedDurationMs(switchStartedAt),
+        apiElapsedMs: roundedDurationMs(apiStartedAt),
+      });
+      return;
+    }
     state.currentThread = Object.assign({}, state.currentThread || { id: threadId, name: threadId, preview: threadId, turns: [] }, {
       mobileLoading: false,
       mobileLoadError: err.message || String(err),
@@ -2315,13 +2810,31 @@ async function loadThread(threadId) {
     renderThreads();
     renderCurrentThread();
     updateComposerControls();
+    postClientEvent("thread_switch_error", {
+      source,
+      threadId,
+      elapsedMs: roundedDurationMs(switchStartedAt),
+      apiElapsedMs: roundedDurationMs(apiStartedAt),
+      error: err.message || String(err),
+    });
     throw err;
   } finally {
     if (state.threadLoadController === controller) state.threadLoadController = null;
   }
-  if (seq !== state.threadLoadSeq || state.currentThreadId !== threadId) return;
+  const apiElapsedMs = roundedDurationMs(apiStartedAt);
+  if (seq !== state.threadLoadSeq || state.currentThreadId !== threadId) {
+    postClientEvent("thread_switch_cancelled", {
+      source,
+      threadId,
+      elapsedMs: roundedDurationMs(switchStartedAt),
+      apiElapsedMs,
+    });
+    return;
+  }
+  const renderStartedAt = nowPerfMs();
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
   localStorage.setItem(STORAGE_THREAD_ID, threadId);
+  draftStore.setTargetKey("");
   if (state.events) connectEvents();
   renderComposerSettings();
   syncActiveTurnFromThread();
@@ -2331,6 +2844,18 @@ async function loadThread(threadId) {
   scheduleLivePollIfNeeded(1200);
   updateComposerControls();
   if (isMenuOverlayMode()) closeSidebarMenu();
+  postClientEvent("thread_switch_complete", {
+    source,
+    threadId,
+    elapsedMs: roundedDurationMs(switchStartedAt),
+    apiElapsedMs,
+    renderElapsedMs: roundedDurationMs(renderStartedAt),
+    readMode: result.thread && result.thread.mobileReadMode || "",
+    status: statusText(result.thread && result.thread.status),
+    turns: Array.isArray(result.thread && result.thread.turns) ? result.thread.turns.length : 0,
+    omittedTurns: Number(result.thread && result.thread.mobileOmittedTurnCount || 0),
+    rolloutSizeBytes: rolloutSizeBytes(result.thread),
+  });
 }
 
 async function refreshCurrentThread() {
@@ -2338,7 +2863,21 @@ async function refreshCurrentThread() {
   markIdleActivity("同步");
   const threadId = state.currentThreadId;
   const seq = state.threadLoadSeq;
-  const result = await api(`/api/threads/${encodeURIComponent(threadId)}`, { timeoutMs: 20000 });
+  if (state.refreshThreadController) state.refreshThreadController.abort();
+  const controller = new AbortController();
+  state.refreshThreadController = controller;
+  let result;
+  try {
+    result = await api(`/api/threads/${encodeURIComponent(threadId)}`, {
+      timeoutMs: 20000,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (controller.signal.aborted || err.name === "AbortError") return;
+    throw err;
+  } finally {
+    if (state.refreshThreadController === controller) state.refreshThreadController = null;
+  }
   if (state.currentThreadId !== threadId || seq !== state.threadLoadSeq) return;
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
   renderComposerSettings();
@@ -2355,6 +2894,17 @@ function scheduleCurrentThreadRefresh(delay = 600) {
   }, delay);
 }
 
+function abortCurrentThreadRefresh() {
+  clearTimeout(state.refreshTimer);
+  clearTimeout(state.pollTimer);
+  if (state.refreshThreadController) {
+    state.refreshThreadController.abort();
+    state.refreshThreadController = null;
+  }
+  state.pollStableCount = 0;
+  state.lastThreadSignature = "";
+}
+
 function scheduleLivePollIfNeeded(delay = 2600) {
   clearTimeout(state.pollTimer);
   if (!shouldPollCurrentThread()) return;
@@ -2362,7 +2912,9 @@ function scheduleLivePollIfNeeded(delay = 2600) {
   if (signature === state.lastThreadSignature) state.pollStableCount += 1;
   else state.pollStableCount = 0;
   state.lastThreadSignature = signature;
-  const nextDelay = state.pollStableCount > 60 ? 10000 : delay;
+  let nextDelay = delay;
+  if (state.pollStableCount > 12) nextDelay = Math.max(delay, 12000);
+  else if (state.pollStableCount > 3) nextDelay = Math.max(delay, 5000);
   state.pollTimer = setTimeout(() => {
     refreshCurrentThread().catch(showError);
   }, nextDelay);
@@ -2406,7 +2958,7 @@ function handleThreadCardClick(event) {
     closeThreadActions();
     return;
   }
-  loadThread(threadId).catch(showError);
+  loadThread(threadId, { source: "thread-list" }).catch(showError);
 }
 
 function suppressThreadClickAfterSwipe(event) {
@@ -2414,7 +2966,7 @@ function suppressThreadClickAfterSwipe(event) {
     state.suppressThreadClickThreadId = "";
     return;
   }
-  if (event.target.closest("[data-new-thread-from-thread]")) return;
+  if (event.target.closest("[data-thread-archive]")) return;
   const row = event.target.closest("[data-thread-row]");
   if (!row) return;
   const threadId = row.dataset.threadRow || "";
@@ -2739,7 +3291,8 @@ function renderThreads(result = null) {
     const sizeText = rolloutSizeText(thread);
     const sizeWarn = isRolloutOverThreshold(thread);
     const updatedTitle = formatAbsoluteTime(thread.updatedAt);
-    const pathText = shortPath(thread.cwd);
+    const pathText = shortPath(thread.cwd) || "聊天";
+    const isWorkspaceLess = !thread.cwd;
     const timeText = formatTime(thread.updatedAt, nowMs);
     const statusIcon = statusIconHtml(thread.status, "thread-status-icon", thread.id);
     const iconKind = statusIconInfo(thread.status, thread.id)?.kind || "";
@@ -2750,7 +3303,7 @@ function renderThreads(result = null) {
       : "";
     const actionOpen = state.openThreadActionId === thread.id;
     const action = `<div class="thread-row-actions" aria-hidden="${actionOpen ? "false" : "true"}">
-      <button class="thread-new-button" type="button" data-new-thread-from-thread="${escapeHtml(thread.id)}">压缩续接</button>
+      <button class="thread-new-button" type="button" data-thread-archive="${escapeHtml(thread.id)}">归档</button>
     </div>`;
     return `<div class="thread-card-wrap${sizeWarn ? " rollout-warn" : ""}${actionOpen ? " swipe-open" : ""}" data-thread-row="${escapeHtml(thread.id)}">
       <button class="thread-card${active}${emphasis}${sizeWarn ? " rollout-warn" : ""}" type="button" data-thread="${escapeHtml(thread.id)}">
@@ -2760,7 +3313,7 @@ function renderThreads(result = null) {
         </div>
         <div class="thread-card-meta-row">
           <div class="thread-card-meta">
-            ${pathText ? `<span class="thread-card-path">${escapeHtml(pathText)}</span>` : ""}
+            <span class="thread-card-path${isWorkspaceLess ? " thread-card-path-chat" : ""}">${escapeHtml(pathText)}</span>
             ${timeText ? `<span class="thread-card-time" title="${escapeHtml(updatedTitle)}">${escapeHtml(timeText)}</span>` : ""}
           </div>
           ${sizeBadge}
@@ -2776,7 +3329,7 @@ function renderThreads(result = null) {
     threads: state.threads.map((thread) => [
       thread.id,
       thread.name || thread.preview || thread.id,
-      shortPath(thread.cwd),
+      shortPath(thread.cwd) || "聊天",
       thread.updatedAt,
       statusText(thread.status),
       statusIconInfo(thread.status, thread.id)?.kind || "",
@@ -2792,8 +3345,8 @@ function renderThreads(result = null) {
   list.querySelectorAll("[data-thread]").forEach((button) => {
     button.addEventListener("click", handleThreadCardClick);
   });
-  list.querySelectorAll("[data-new-thread-from-thread]").forEach((button) => {
-    button.addEventListener("click", startNewThreadFromList);
+  list.querySelectorAll("[data-thread-archive]").forEach((button) => {
+    button.addEventListener("click", archiveThreadFromList);
   });
   applyThreadActionState();
 }
@@ -2801,13 +3354,19 @@ function renderThreads(result = null) {
 async function restoreThreadSelection() {
   if (state.currentThread) return;
   const savedThreadId = localStorage.getItem(STORAGE_THREAD_ID) || "";
-  if (!state.threads.length && !savedThreadId) return;
+  if (!state.threads.length && !savedThreadId) {
+    restoreNewThreadDraftSelection();
+    return;
+  }
   const saved = savedThreadId && state.threads.find((thread) => thread.id === savedThreadId);
   const active = state.threads.find((thread) => isRunningStatus(thread.status));
   const target = saved || (savedThreadId ? { id: savedThreadId } : active);
-  if (!target) return;
+  if (!target) {
+    restoreNewThreadDraftSelection();
+    return;
+  }
   try {
-    await loadThread(target.id);
+    await loadThread(target.id, { source: "restore" });
   } catch (err) {
     if (target.id === savedThreadId) localStorage.removeItem(STORAGE_THREAD_ID);
     showError(err);
@@ -2815,11 +3374,35 @@ async function restoreThreadSelection() {
   }
 }
 
+function restoreNewThreadDraftSelection() {
+  const key = draftStore.getTargetKey();
+  if (!key.startsWith("new:")) return false;
+  const draft = readDraftMap()[key];
+  if (!draftHasContent(draft)) return false;
+  const cwd = String(draft.cwd || "");
+  const workspace = cwd
+    ? state.workspaces.find((ws) => normalizeFsPath(ws.cwd) === normalizeFsPath(cwd))
+    : null;
+  if (!workspace) return false;
+  state.selectedCwd = workspace.cwd || cwd;
+  clearCurrentThreadSelection({ saveDraft: false });
+  state.newThreadDraft = true;
+  restoreDraftForCurrentTarget();
+  syncSidebarWorkspaceSelect();
+  updateWorkspacePath();
+  renderThreads();
+  renderCurrentThread();
+  updateComposerControls();
+  return true;
+}
+
 async function selectWorkspaceShortcut(cwd) {
+  saveCurrentDraftNow();
   state.selectedCwd = cwd || "";
-  clearCurrentThreadSelection();
+  clearCurrentThreadSelection({ saveDraft: false });
   const select = $("workspaceSelect");
-  if (select) select.value = state.selectedCwd;
+  if (select) select.textContent = state.selectedCwd ? selectedWorkspaceLabel() : "All workspaces";
+  syncSidebarWorkspaceSelect();
   updateWorkspacePath();
   updateComposerControls();
   renderCurrentThread();
@@ -2955,9 +3538,9 @@ function renderHome() {
       const sizeText = rolloutSizeText(thread);
       const sizeWarn = isRolloutOverThreshold(thread);
       const updatedTitle = formatAbsoluteTime(thread.updatedAt);
-      const meta = [shortPath(thread.cwd), formatTime(thread.updatedAt, nowMs), sizeText ? `rollout ${sizeText}` : ""]
-        .filter(Boolean)
-        .join(" | ");
+  const meta = [shortPath(thread.cwd) || "聊天", formatTime(thread.updatedAt, nowMs), sizeText ? `rollout ${sizeText}` : ""]
+    .filter(Boolean)
+    .join(" | ");
       return `<button class="home-shortcut${sizeWarn ? " rollout-warn" : ""}" type="button" data-home-thread="${escapeHtml(thread.id)}">
         <span class="home-shortcut-title">${escapeHtml(title)}</span>
         <span class="home-shortcut-meta home-shortcut-meta-status"><span title="${escapeHtml(updatedTitle)}">${escapeHtml(meta)}</span>${statusIconHtml(thread.status, "home-status-icon", thread.id)}</span>
@@ -2997,7 +3580,7 @@ function renderHome() {
     button.addEventListener("click", () => selectWorkspaceShortcut(button.dataset.homeWorkspace).catch(showError));
   });
   $("conversation").querySelectorAll("[data-home-thread]").forEach((button) => {
-    button.addEventListener("click", () => loadThread(button.dataset.homeThread).catch(showError));
+    button.addEventListener("click", () => loadThread(button.dataset.homeThread, { source: "home" }).catch(showError));
   });
 }
 
@@ -3051,6 +3634,10 @@ function threadReadWarningMessage(thread) {
 
 function renderCurrentThread(options = {}) {
   state.nowMs = Date.now();
+  if (state.newThreadDraft) {
+    renderNewThreadDraft();
+    return;
+  }
   const thread = state.currentThread;
   if (!thread) {
     renderHome();
@@ -3082,7 +3669,7 @@ function renderCurrentThread(options = {}) {
       { stickToBottom: shouldStickToBottom },
     );
     const retry = $("retryCurrentThread");
-    if (retry) retry.onclick = () => loadThread(thread.id || state.currentThreadId).catch(showError);
+    if (retry) retry.onclick = () => loadThread(thread.id || state.currentThreadId, { source: "retry" }).catch(showError);
     updateTickTimer();
     return;
   }
@@ -3115,6 +3702,123 @@ function renderCurrentThread(options = {}) {
   updateTickTimer();
 }
 
+function renderNewThreadDraft() {
+  clearInterval(state.tickTimer);
+  state.tickTimer = null;
+  const titleEl = $("threadTitle");
+  const metaEl = $("threadMeta");
+  const workspaceLabel = selectedWorkspaceLabel();
+  if (titleEl) titleEl.textContent = "新建对话";
+  if (metaEl) metaEl.textContent = state.selectedCwd ? workspaceLabel : "请先选择 Workspace";
+  const workspaceOptions = newThreadWorkspaceOptionsHtml();
+  const hasWorkspaceOptions = state.workspaces.length > 0;
+  const workspaceStatus = state.selectedCwd
+    ? `<div class="new-thread-path">${escapeHtml(state.selectedCwd)}</div>`
+    : `<div class="new-thread-path">请先在侧边栏或下方选择 workspace</div>`;
+  const selectedModel = newThreadSelectedModel();
+  const selectedEffort = newThreadSelectedEffort();
+  const selectedPermission = newThreadSelectedPermissionMode();
+  const html = `<div class="new-thread-page">
+    <div class="new-thread-panel">
+      <div class="new-thread-kicker">New chat</div>
+      <h1>新建对话</h1>
+      <div class="new-thread-workspace">
+        <label for="newThreadWorkspaceSelect">Workspace</label>
+        <button id="newThreadWorkspaceSelect" class="new-thread-workspace-select" type="button" aria-haspopup="listbox" aria-expanded="false">
+          ${escapeHtml(workspaceLabel)}
+        </button>
+        <div id="newThreadWorkspaceMenu" class="new-thread-workspace-menu" role="listbox" aria-label="Workspace 列表" hidden>
+          ${workspaceOptions || `<div class="new-thread-workspace-empty">暂无可用 Workspace</div>`}
+        </div>
+        <div class="new-thread-selected">${escapeHtml(workspaceLabel)}</div>
+        ${workspaceStatus}
+      </div>
+    </div>
+  </div>`;
+  updateConversationHtml(html, `new-thread|${state.selectedCwd}|${state.workspaces.length}|${selectedModel}|${selectedEffort}|${selectedPermission}`);
+  const selectButton = $("newThreadWorkspaceSelect");
+  const workspaceMenu = $("newThreadWorkspaceMenu");
+  const shouldDisableWorkspaceSelect = !hasWorkspaceOptions;
+  if (selectButton && workspaceMenu) {
+    selectButton.textContent = workspaceLabel;
+    selectButton.disabled = shouldDisableWorkspaceSelect;
+    selectButton.setAttribute("title", shouldDisableWorkspaceSelect ? "暂无可用 Workspace" : "选择 Workspace");
+    workspaceMenu.hidden = true;
+    const closeMenu = () => {
+      workspaceMenu.hidden = true;
+      workspaceMenu.style.removeProperty("--workspace-menu-max-height");
+      selectButton.setAttribute("aria-expanded", "false");
+      document.removeEventListener("pointerdown", onOutsidePointer);
+    };
+    const onOutsidePointer = (event) => {
+      if (!workspaceMenu.hidden && !workspaceMenu.contains(event.target) && !selectButton.contains(event.target)) {
+        closeMenu();
+      }
+    };
+    const openMenu = () => {
+      workspaceMenu.hidden = false;
+      fitWorkspaceMenuToViewport(workspaceMenu, selectButton);
+      selectButton.setAttribute("aria-expanded", "true");
+      document.addEventListener("pointerdown", onOutsidePointer);
+    };
+    const toggleMenu = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (shouldDisableWorkspaceSelect) return;
+      if (workspaceMenu.hidden) {
+        openMenu();
+      } else {
+        closeMenu();
+      }
+    };
+    selectButton.addEventListener("pointerdown", toggleMenu);
+    if (workspaceMenu) {
+      workspaceMenu.querySelectorAll("[data-new-thread-workspace]").forEach((workspaceOption) => {
+        workspaceOption.addEventListener("click", (event) => {
+          const selectedWorkspace = event.currentTarget.dataset.newThreadWorkspace || "";
+          event.preventDefault();
+          event.stopPropagation();
+          saveCurrentDraftNow();
+          state.selectedCwd = selectedWorkspace || "";
+          restoreDraftForCurrentTarget();
+          const sidebarSelect = $("workspaceSelect");
+          if (sidebarSelect) sidebarSelect.textContent = state.selectedCwd ? selectedWorkspaceLabel() : "All workspaces";
+          syncSidebarWorkspaceSelect();
+          updateWorkspacePath();
+          renderNewThreadDraft();
+          updateComposerControls();
+          loadThreads({ silent: true }).catch(showError);
+          closeMenu();
+        });
+      });
+    }
+    if (shouldDisableWorkspaceSelect) {
+      workspaceMenu.hidden = true;
+    }
+  }
+  renderComposerSettings();
+  updateComposerControls();
+  updateTurnTimer();
+}
+
+function enterNewThreadDraft() {
+  closeThreadActions();
+  saveCurrentDraftNow();
+  clearCurrentThreadSelection({ saveDraft: false });
+  state.newThreadDraft = true;
+  state.sendButtonHint = "";
+  restoreDraftForCurrentTarget();
+  renderComposerSettings();
+  renderThreads();
+  renderCurrentThread();
+  restoreConnectionState();
+  if (isMobileViewport()) closeSidebarMenu();
+  window.setTimeout(() => {
+    const input = $("messageInput");
+    if (input) input.focus();
+  }, 80);
+}
+
 function bindCurrentThreadActions() {
   const button = $("conversation").querySelector("[data-new-thread-from-current]");
   if (button) button.addEventListener("click", startNewThreadFromCurrent);
@@ -3124,12 +3828,8 @@ function bindCurrentThreadActions() {
 
 function startThreadRequestBody(sourceThread = null, options = {}) {
   const thread = sourceThread || state.currentThread || {};
-  const useCurrentSelectors = !sourceThread || thread.id === state.currentThreadId;
   return {
     cwd: thread.cwd || state.selectedCwd || "",
-    model: useCurrentSelectors ? (currentComposerModel() || "") : (thread.model || state.defaultModel || ""),
-    effort: useCurrentSelectors ? ($("effortSelect").value || effectiveDefaultEffort() || "") : (thread.effort || state.defaultReasoningEffort || ""),
-    permissionMode: useCurrentSelectors ? ($("permissionSelect").value || effectiveDefaultPermissionMode() || "") : "",
     sourceThreadId: thread.id || "",
     sourceThreadTitle: thread.name || thread.preview || thread.id || "",
     archiveSourceThread: Boolean(options.archiveSourceThread && thread.id),
@@ -3143,7 +3843,7 @@ function actionWidthForThreadRow(row) {
 
 function threadSwipeTargetRow(target) {
   if (!target || !target.closest) return null;
-  if (target.closest("[data-new-thread-from-thread]")) return null;
+  if (target.closest("[data-thread-archive]")) return null;
   return target.closest("[data-thread-row]");
 }
 
@@ -3281,6 +3981,14 @@ function startedThreadId(result) {
     || "");
 }
 
+function startedTurnId(result) {
+  return String((result && result.turnId)
+    || (result && result.turn && result.turn.id)
+    || (result && result.result && result.result.turnId)
+    || (result && result.result && result.result.turn && result.result.turn.id)
+    || "");
+}
+
 function continuationJobStatusText(job) {
   const status = String(job && job.status || "");
   const message = String(job && job.message || "").trim();
@@ -3329,7 +4037,7 @@ async function openContinuationResult(result) {
   } else {
     $("connectionState").textContent = "交接已生成；正在打开续接线程";
   }
-  await loadThread(threadId);
+  await loadThread(threadId, { source: "continuation" });
   loadThreads().catch(showError);
 }
 
@@ -3387,6 +4095,7 @@ async function startNewThreadFromThread(sourceThread, event) {
   const sourceThreadId = thread.id || state.currentThreadId || "";
   const title = thread.name || thread.preview || thread.id || "current thread";
   const size = rolloutSizeText(thread);
+  const cwd = thread.cwd ? String(thread.cwd).trim() : String(state.selectedCwd || "").trim();
   const archiveConfirmed = window.confirm([
     `压缩续接“${title}”？`,
     "",
@@ -3395,7 +4104,12 @@ async function startNewThreadFromThread(sourceThread, event) {
     size ? `当前大小：${size}` : "",
   ].filter((line) => line !== "").join("\n"));
   if (!archiveConfirmed) return;
-  const body = startThreadRequestBody(thread, { archiveSourceThread: true });
+  const body = {
+    cwd,
+    sourceThreadId: thread.id || "",
+    sourceThreadTitle: thread.name || thread.preview || thread.id || "",
+    archiveSourceThread: Boolean(thread.id),
+  };
   if (!body.cwd) {
     showError(new Error("Thread has no workspace path"));
     return;
@@ -3432,15 +4146,39 @@ async function startNewThreadFromCurrent(event) {
   await startNewThreadFromThread(state.currentThread, event);
 }
 
-async function startNewThreadFromList(event) {
-  if (event) event.stopPropagation();
-  const threadId = event.currentTarget && event.currentTarget.dataset.newThreadFromThread;
+async function archiveThreadFromList(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  closeThreadActions();
+  const threadId = event && event.currentTarget ? event.currentTarget.dataset.threadArchive : "";
   const thread = state.threads.find((entry) => entry.id === threadId);
   if (!thread) {
     showError(new Error("Thread is no longer in the current list"));
     return;
   }
-  await startNewThreadFromThread(thread, event);
+  const title = threadTitleForDisplay(thread) || "会话";
+  const archiveConfirmed = window.confirm(`归档“${title}”？`);
+  if (!archiveConfirmed) return;
+  const button = event && event.currentTarget;
+  if (button) button.disabled = true;
+  $("connectionState").classList.remove("error");
+  $("connectionState").textContent = "正在归档会话";
+  markActivity("归档会话");
+  try {
+    await api(`/api/threads/${encodeURIComponent(thread.id)}/archive`, { method: "POST", timeoutMs: 30000 });
+    if (state.currentThreadId === thread.id) {
+      clearCurrentThreadSelection();
+      renderCurrentThread();
+    }
+    state.openThreadActionId = "";
+    loadThreads().catch(showError);
+  } catch (err) {
+    showError(err);
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 function approvalTitle(method) {
@@ -3849,178 +4587,15 @@ function renderInputContent(content) {
   return html.join("");
 }
 
-function isMarkdownTableSeparator(line) {
-  const cells = String(line || "").trim().replace(/^\||\|$/g, "").split("|");
-  return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
-}
-
-function splitMarkdownTableRow(line) {
-  return String(line || "")
-    .trim()
-    .replace(/^\||\|$/g, "")
-    .split("|")
-    .map((cell) => cell.trim());
-}
-
-function isMarkdownBlockStart(line, nextLine = "") {
-  return /^```/.test(line)
-    || /^(#{1,6})\s+\S/.test(line)
-    || /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line)
-    || /^>\s?/.test(line)
-    || /^\s*[-*+]\s+\S/.test(line)
-    || /^\s*\d+[.)]\s+\S/.test(line)
-    || (line.includes("|") && isMarkdownTableSeparator(nextLine));
-}
-
-function safeMarkdownUrl(value) {
-  const url = String(value || "").trim();
-  if (/^(https?:|mailto:)/i.test(url)) return url;
-  return "";
-}
-
-function renderInlineMarkdown(value) {
-  const placeholders = [];
-  const tokenPrefix = "MDTOKEN";
-  let text = String(value || "").replace(/`([^`\n]+)`/g, (_match, code) => {
-    const token = `${tokenPrefix}${placeholders.length}END`;
-    placeholders.push(`<code>${escapeHtml(code)}</code>`);
-    return token;
-  });
-
-  text = escapeHtml(text);
-  text = text.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (match, label, url) => {
-    const safeUrl = safeMarkdownUrl(url.replaceAll("&amp;", "&"));
-    if (!safeUrl) return match;
-    return `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noreferrer">${label}</a>`;
-  });
-  text = text
-    .replace(/\*\*([^*\n][^*\n]*?)\*\*/g, "<strong>$1</strong>")
-    .replace(/__([^_\n][^_\n]*?)__/g, "<strong>$1</strong>")
-    .replace(/(^|[\s(])\*([^*\n][^*\n]*?)\*/g, "$1<em>$2</em>")
-    .replace(/(^|[\s(])_([^_\n][^_\n]*?)_/g, "$1<em>$2</em>");
-
-  placeholders.forEach((html, index) => {
-    text = text.replaceAll(`${tokenPrefix}${index}END`, html);
-  });
-  return text;
-}
-
-function renderMarkdownTable(lines) {
-  const header = splitMarkdownTableRow(lines[0]);
-  const rows = lines.slice(2).map(splitMarkdownTableRow);
-  return `<div class="markdown-table-wrap"><table>
-    <thead><tr>${header.map((cell) => `<th>${renderInlineMarkdown(cell)}</th>`).join("")}</tr></thead>
-    <tbody>${rows.map((row) => `<tr>${header.map((_cell, index) => `<td>${renderInlineMarkdown(row[index] || "")}</td>`).join("")}</tr>`).join("")}</tbody>
-  </table></div>`;
-}
-
-function renderMarkdownList(lines, ordered) {
-  const tag = ordered ? "ol" : "ul";
-  const itemPattern = ordered ? /^\s*\d+[.)]\s+(.+)$/ : /^\s*[-*+]\s+(.+)$/;
-  const items = lines.map((line) => {
-    const match = itemPattern.exec(line);
-    const text = match ? match[1] : line.trim();
-    return `<li>${renderInlineMarkdown(text)}</li>`;
-  });
-  return `<${tag}>${items.join("")}</${tag}>`;
-}
-
 function renderMarkdown(value) {
-  const source = String(value || "");
-  if (!source.trim()) return "";
-  const lines = source.replace(/\r\n?/g, "\n").split("\n");
-  const blocks = [];
-  let i = 0;
-
-  while (i < lines.length) {
-    const line = lines[i];
-    if (!line.trim()) {
-      i += 1;
-      continue;
-    }
-
-    const fence = /^```([A-Za-z0-9_.+-]*)\s*$/.exec(line);
-    if (fence) {
-      const lang = fence[1] || "";
-      const code = [];
-      i += 1;
-      while (i < lines.length && !/^```\s*$/.test(lines[i])) {
-        code.push(lines[i]);
-        i += 1;
-      }
-      if (i < lines.length) i += 1;
-      const codeText = code.join("\n");
-      const langLabel = `<span class="markdown-code-lang">${escapeHtml(lang || "代码")}</span>`;
-      const copyButton = copyButtonHtml(rememberCopyText(codeText), "复制", "markdown-copy-button");
-      blocks.push(`<div class="markdown-code-block"><div class="markdown-code-head">${langLabel}${copyButton}</div><pre><code>${escapeHtml(codeText)}</code></pre></div>`);
-      continue;
-    }
-
-    const heading = /^(#{1,6})\s+(.+)$/.exec(line);
-    if (heading) {
-      const level = Math.min(6, heading[1].length + 1);
-      blocks.push(`<h${level}>${renderInlineMarkdown(heading[2].trim())}</h${level}>`);
-      i += 1;
-      continue;
-    }
-
-    if (/^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line)) {
-      blocks.push("<hr>");
-      i += 1;
-      continue;
-    }
-
-    if (/^>\s?/.test(line)) {
-      const quote = [];
-      while (i < lines.length && /^>\s?/.test(lines[i])) {
-        quote.push(lines[i].replace(/^>\s?/, ""));
-        i += 1;
-      }
-      blocks.push(`<blockquote>${renderMarkdown(quote.join("\n"))}</blockquote>`);
-      continue;
-    }
-
-    if (line.includes("|") && isMarkdownTableSeparator(lines[i + 1])) {
-      const tableLines = [line, lines[i + 1]];
-      i += 2;
-      while (i < lines.length && lines[i].trim() && lines[i].includes("|")) {
-        tableLines.push(lines[i]);
-        i += 1;
-      }
-      blocks.push(renderMarkdownTable(tableLines));
-      continue;
-    }
-
-    if (/^\s*[-*+]\s+\S/.test(line)) {
-      const list = [];
-      while (i < lines.length && /^\s*[-*+]\s+\S/.test(lines[i])) {
-        list.push(lines[i]);
-        i += 1;
-      }
-      blocks.push(renderMarkdownList(list, false));
-      continue;
-    }
-
-    if (/^\s*\d+[.)]\s+\S/.test(line)) {
-      const list = [];
-      while (i < lines.length && /^\s*\d+[.)]\s+\S/.test(lines[i])) {
-        list.push(lines[i]);
-        i += 1;
-      }
-      blocks.push(renderMarkdownList(list, true));
-      continue;
-    }
-
-    const paragraph = [line.trim()];
-    i += 1;
-    while (i < lines.length && lines[i].trim() && !isMarkdownBlockStart(lines[i], lines[i + 1] || "")) {
-      paragraph.push(lines[i].trim());
-      i += 1;
-    }
-    blocks.push(`<p>${paragraph.map(renderInlineMarkdown).join("<br>")}</p>`);
+  const renderer = window.CodexMarkdownRenderer;
+  if (!renderer || typeof renderer.renderMarkdown !== "function") {
+    return `<div class="markdown-body"><p>${escapeHtml(value || "")}</p></div>`;
   }
-
-  return `<div class="markdown-body">${blocks.join("")}</div>`;
+  return renderer.renderMarkdown(value, {
+    rememberCopyText,
+    copyButtonHtml,
+  });
 }
 
 function renderItemBody(item, turn = null) {
@@ -4341,6 +4916,7 @@ function applyNotification(method, params) {
     updateComposerControls();
     ensureTurn(params.turn.id);
     renderCurrentThread();
+    scheduleCurrentThreadRefresh(500);
     scheduleLivePollIfNeeded(1200);
     return;
   }
@@ -4348,8 +4924,10 @@ function applyNotification(method, params) {
     const turn = ensureTurn(params.turn.id);
     Object.assign(turn, mergeTurnPreservingVisibleItems(turn, params.turn));
     removeOperationalItemsFromTurn(turn);
+    const completedPendingSteer = isPendingSteerForTurn(params.turn.id);
     state.activeTurnId = "";
     markActivity("完成");
+    if (completedPendingSteer) setSteerFeedback("completed", { turnId: String(params.turn.id) });
     $("interruptTurn").disabled = true;
     updateComposerControls();
     renderCurrentThread();
@@ -4359,12 +4937,14 @@ function applyNotification(method, params) {
   }
   if (method === "item/started" || method === "item/completed") {
     upsertItem(params.turnId, params.item);
+    markSteerAppliedIfNeeded(params.turnId, params.item);
     scheduleLivePollIfNeeded(2200);
     return;
   }
   if (method === "item/agentMessage/delta") {
     markActivity("输出");
     appendToItem(params.turnId, params.itemId, "agentMessage", "text", params.delta || "");
+    markSteerAppliedIfNeeded(params.turnId, { type: "agentMessage" });
     return;
   }
   if (method === "item/commandExecution/outputDelta") {
@@ -4376,11 +4956,13 @@ function applyNotification(method, params) {
   if (method === "item/reasoning/textDelta") {
     markActivity("思考");
     ensureTimerItem(params.turnId, params.itemId, "reasoning");
+    markSteerAppliedIfNeeded(params.turnId, { type: "reasoning" });
     return;
   }
   if (method === "item/reasoning/summaryTextDelta") {
     markActivity("思考");
     ensureTimerItem(params.turnId, params.itemId, "reasoning");
+    markSteerAppliedIfNeeded(params.turnId, { type: "reasoning" });
   }
 }
 
@@ -4529,20 +5111,39 @@ function scheduleMobileResume(reason = "resume", delay = 80) {
 
 async function resumeMobileSession(reason = "resume") {
   if (document.visibilityState === "hidden" || !state.key) return;
-  forceVisualRecovery(reason);
-  updateComposerHeightVar();
-  renderComposerSettings();
-  updateComposerControls();
-  if (state.currentThread || state.threads.length) renderCurrentThread();
-  ensureEventConnection();
-  state.pollStableCount = 0;
-  const status = await api("/api/status");
-  updateConnectionState(status);
-  if (status.rateLimits || status.rateLimitsByModel) rememberRateLimits(status.rateLimits, status.rateLimitsByModel);
-  await loadThreads({ silent: Boolean(state.threads.length) });
-  if (state.currentThreadId) await refreshCurrentThread();
-  else await restoreThreadSelection();
-  scheduleLivePollIfNeeded(1200);
+  const startedAt = nowPerfMs();
+  try {
+    forceVisualRecovery(reason);
+    updateComposerHeightVar();
+    renderComposerSettings();
+    updateComposerControls();
+    if (state.currentThread || state.threads.length) renderCurrentThread();
+    ensureEventConnection();
+    state.pollStableCount = 0;
+    const status = await api("/api/status");
+    updateConnectionState(status);
+    if (status.rateLimits || status.rateLimitsByModel) rememberRateLimits(status.rateLimits, status.rateLimitsByModel);
+    await loadThreads({ silent: Boolean(state.threads.length) });
+    if (state.currentThreadId) await refreshCurrentThread();
+    else await restoreThreadSelection();
+    scheduleLivePollIfNeeded(1200);
+    const elapsedMs = roundedDurationMs(startedAt);
+    if (elapsedMs > 1200) {
+      postClientEvent("mobile_resume_slow", {
+        reason,
+        elapsedMs,
+        currentThreadId: state.currentThreadId || "",
+        hadThreads: Boolean(state.threads.length),
+      });
+    }
+  } catch (err) {
+    postClientEvent("mobile_resume_error", {
+      reason,
+      elapsedMs: roundedDurationMs(startedAt),
+      error: err.message || String(err),
+    });
+    throw err;
+  }
 }
 
 function scrollConversationToBottom() {
@@ -4605,6 +5206,13 @@ function showError(err) {
   const message = normalizeClientErrorMessage(raw) || (err && err.message) || String(err);
   $("connectionState").textContent = message;
   $("connectionState").classList.add("error");
+  postClientEvent("client_error", {
+    message,
+    raw,
+    currentThreadId: state.currentThreadId || "",
+    composerBusy: state.composerBusy,
+    continuationBusy: state.continuationBusy,
+  });
 }
 
 function clearSendProgressWatchdog() {
@@ -4622,7 +5230,8 @@ function startSendProgressWatchdog(threadId) {
   state.sendProgressWatchdog = setTimeout(() => {
     if (!state.composerBusy || state.currentThreadId !== targetThreadId) return;
     state.sendProgressWarned = true;
-    $("connectionState").textContent = "发送较慢，检查网络后稍等，避免重复提交";
+    const steering = state.steerFeedback && state.steerFeedback.status === "sending";
+    $("connectionState").textContent = steering ? "引导较慢，稍等一下，避免重复提交" : "发送较慢，检查网络后稍等，避免重复提交";
     $("connectionState").classList.add("error");
     postClientEvent("message_send_stall", {
       threadId: targetThreadId,
@@ -4745,6 +5354,28 @@ function formatFileSize(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function appendLocalAttachmentSummary(text, attachments) {
+  if (!attachments.length) return text;
+  const lines = attachments.map((item) => {
+    const file = item.file;
+    const kind = file.type && file.type.startsWith("image/") ? "image" : "file";
+    return `- ${file.name || "upload"} (${kind}, ${file.type || "file"}, ${formatFileSize(file.size || 0)}): ${file.name || "upload"}`;
+  });
+  return `${text ? `${text}\n\n` : ""}Uploaded attachments:\n${lines.join("\n")}`;
+}
+
+function localUserMessageItem(text, attachments, clientSubmissionId) {
+  return {
+    id: `local-user-${clientSubmissionId || Date.now()}`,
+    type: "userMessage",
+    content: [{
+      type: "text",
+      text: appendLocalAttachmentSummary(text, attachments),
+      text_elements: [],
+    }],
+  };
+}
+
 function attachmentId() {
   if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -4758,6 +5389,8 @@ function pendingAttachmentBytes(extra = []) {
 function addAttachmentFiles(fileList) {
   const files = Array.from(fileList || []).filter(Boolean);
   if (!files.length) return;
+  const draftKey = currentDraftKey();
+  const startIndex = state.pendingAttachments.length;
   const accepted = [];
   for (const file of files) {
     if (state.pendingAttachments.length + accepted.length >= state.maxUploadFiles) {
@@ -4775,22 +5408,34 @@ function addAttachmentFiles(fileList) {
     state.pendingAttachments.push({ id: attachmentId(), file, previewUrl });
   }
   renderAttachmentList();
+  const addedItems = state.pendingAttachments.slice(startIndex);
+  if (draftKey) saveDraftAttachmentFiles(draftKey, addedItems);
+  scheduleCurrentDraftSave();
 }
 
 function removeAttachment(id) {
+  const draftKey = currentDraftKey();
   const index = state.pendingAttachments.findIndex((item) => item.id === id);
   if (index < 0) return;
   const [item] = state.pendingAttachments.splice(index, 1);
   if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
   renderAttachmentList();
+  if (draftKey) {
+    deleteDraftAttachments(draftKey, [id]).catch((err) => {
+      postClientEvent("draft_attachment_remove_failed", { message: err.message || String(err) });
+    });
+  }
+  scheduleCurrentDraftSave();
 }
 
-function clearPendingAttachments() {
-  for (const item of state.pendingAttachments) {
-    if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+function clearPendingAttachments(options = {}) {
+  const draftKey = currentDraftKey();
+  replacePendingAttachments([], { saveDraft: false });
+  if (options.deleteDraft !== false && draftKey) {
+    deleteDraftAttachments(draftKey).catch((err) => {
+      postClientEvent("draft_attachment_clear_failed", { message: err.message || String(err) });
+    });
   }
-  state.pendingAttachments = [];
-  renderAttachmentList();
 }
 
 function renderAttachmentList() {
@@ -4829,11 +5474,6 @@ function effectiveDefaultModel() {
   return (state.currentThread && state.currentThread.model) || state.defaultModel || "";
 }
 
-function currentComposerModel() {
-  const modelSelect = $("modelSelect");
-  return (modelSelect && modelSelect.value) || state.selectedModel || effectiveDefaultModel();
-}
-
 function effectiveDefaultEffort() {
   return (state.currentThread && state.currentThread.effort) || state.defaultReasoningEffort || "";
 }
@@ -4843,55 +5483,179 @@ function effectiveDefaultPermissionMode() {
   return normalizePermissionModeValue((settings && settings.permissionMode) || "");
 }
 
-function selectedPermissionModeForCurrentThread() {
-  if (!state.currentThreadId) return "";
-  return normalizePermissionModeValue(state.selectedPermissionModes[state.currentThreadId] || "");
+function selectedComposerModel() {
+  if (state.newThreadDraft) return newThreadSelectedModel();
+  return state.composerModel || effectiveDefaultModel();
 }
 
-function setSelectedPermissionModeForCurrentThread(value) {
-  if (!state.currentThreadId) return;
-  const next = normalizePermissionModeValue(value);
-  if (next && next !== effectiveDefaultPermissionMode()) {
-    state.selectedPermissionModes[state.currentThreadId] = next;
+function selectedComposerEffort() {
+  if (state.newThreadDraft) return newThreadSelectedEffort();
+  return state.composerEffort || effectiveDefaultEffort();
+}
+
+function selectedComposerPermissionMode() {
+  if (state.newThreadDraft) return newThreadSelectedPermissionMode();
+  return normalizePermissionModeValue(state.composerPermissionMode || effectiveDefaultPermissionMode()) || "default";
+}
+
+function resetComposerRuntimeSelection() {
+  state.composerModel = "";
+  state.composerEffort = "";
+  state.composerPermissionMode = "";
+  closeComposerRuntimeMenu();
+  state.quotaDetailsOpen = false;
+}
+
+function runtimeOptionValues(kind) {
+  if (kind === "model") return normalizeOptionList([selectedComposerModel(), state.defaultModel, ...state.modelOptions]);
+  if (kind === "effort") return normalizeOptionList([selectedComposerEffort(), state.defaultReasoningEffort, ...state.reasoningEffortOptions]);
+  if (kind === "permission") return normalizeOptionList([selectedComposerPermissionMode(), ...state.permissionModeOptions]);
+  return [];
+}
+
+function runtimeOptionLabel(kind, value) {
+  if (kind === "model") return labelForModel(value);
+  if (kind === "effort") return labelForEffort(value);
+  if (kind === "permission") return labelForPermissionMode(value);
+  return value;
+}
+
+function runtimeSelectedValue(kind) {
+  if (kind === "model") return selectedComposerModel();
+  if (kind === "effort") return selectedComposerEffort();
+  if (kind === "permission") return selectedComposerPermissionMode();
+  return "";
+}
+
+function applyRuntimeSelection(kind, value) {
+  const selected = String(value || "").trim();
+  if (!selected) return;
+  if (state.newThreadDraft) {
+    if (kind === "model") state.newThreadModel = selected;
+    if (kind === "effort") state.newThreadEffort = selected;
+    if (kind === "permission") state.newThreadPermissionMode = normalizePermissionModeValue(selected) || "full";
   } else {
-    delete state.selectedPermissionModes[state.currentThreadId];
+    if (kind === "model") state.composerModel = selected;
+    if (kind === "effort") state.composerEffort = selected;
+    if (kind === "permission") state.composerPermissionMode = normalizePermissionModeValue(selected) || "default";
   }
-  localStorage.setItem(STORAGE_PERMISSION_MODES, JSON.stringify(state.selectedPermissionModes));
+  closeComposerRuntimeMenu();
+  renderComposerSettings();
+  updateComposerControls();
+}
+
+function closeComposerRuntimeMenu() {
+  const menu = $("composerRuntimeMenu");
+  if (menu) {
+    menu.hidden = true;
+    menu.innerHTML = "";
+  }
+  for (const id of ["composerModelControl", "composerEffortControl", "composerPermissionControl"]) {
+    const button = $(id);
+    if (button) button.setAttribute("aria-expanded", "false");
+  }
+  state.composerMenuKind = "";
+  document.removeEventListener("pointerdown", onComposerRuntimeOutsidePointer);
+}
+
+function onComposerRuntimeOutsidePointer(event) {
+  const menu = $("composerRuntimeMenu");
+  const target = event.target;
+  if (!menu || menu.hidden) return;
+  if (menu.contains(target)) return;
+  if (target && target.closest && target.closest("[data-composer-runtime]")) return;
+  closeComposerRuntimeMenu();
+}
+
+function openComposerRuntimeMenu(kind, anchor) {
+  const menu = $("composerRuntimeMenu");
+  if (!menu || !anchor) return;
+  state.quotaDetailsOpen = false;
+  const selected = runtimeSelectedValue(kind);
+  const options = runtimeOptionValues(kind);
+  menu.innerHTML = options.map((value) => {
+    const isSelected = value === selected ? " is-selected" : "";
+    return `<button type="button" class="composer-runtime-option${isSelected}" role="option" aria-selected="${value === selected ? "true" : "false"}" data-runtime-kind="${escapeHtml(kind)}" data-runtime-value="${escapeHtml(value)}">${escapeHtml(runtimeOptionLabel(kind, value))}</button>`;
+  }).join("");
+  menu.hidden = false;
+  state.composerMenuKind = kind;
+  for (const id of ["composerModelControl", "composerEffortControl", "composerPermissionControl"]) {
+    const button = $(id);
+    if (button) button.setAttribute("aria-expanded", button === anchor ? "true" : "false");
+  }
+  fitComposerPopupToAnchor(menu, anchor);
+  document.addEventListener("pointerdown", onComposerRuntimeOutsidePointer);
+}
+
+function fitComposerPopupToAnchor(panel, anchor, options = {}) {
+  const rect = anchor.getBoundingClientRect();
+  const composer = $("composer");
+  const composerRect = composer ? composer.getBoundingClientRect() : { left: 0, right: window.innerWidth, top: window.innerHeight };
+  const minWidth = Number(options.minWidth || 180);
+  const maxWidth = Number(options.maxWidth || 280);
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || maxWidth;
+  const width = Math.max(minWidth, Math.min(maxWidth, viewportWidth - 16, Math.max(rect.width, minWidth)));
+  const left = Math.max(8, Math.min(window.innerWidth - width - 8, rect.left));
+  const bottom = Math.max(8, window.innerHeight - composerRect.top + 6);
+  panel.style.setProperty("--composer-popup-left", `${Math.round(left)}px`);
+  panel.style.setProperty("--composer-popup-bottom", `${Math.round(bottom)}px`);
+  panel.style.setProperty("--composer-popup-width", `${Math.round(width)}px`);
+}
+
+function closeQuotaDetails() {
+  state.quotaDetailsOpen = false;
+  const panel = $("quotaDetailPanel");
+  if (panel) {
+    panel.hidden = true;
+    panel.innerHTML = "";
+  }
+  const quota = $("quotaUsage");
+  if (quota) quota.setAttribute("aria-expanded", "false");
+  document.removeEventListener("pointerdown", onQuotaOutsidePointer);
+}
+
+function onQuotaOutsidePointer(event) {
+  const panel = $("quotaDetailPanel");
+  const quota = $("quotaUsage");
+  const target = event.target;
+  if (!state.quotaDetailsOpen) return;
+  if ((panel && panel.contains(target)) || (quota && quota.contains(target))) return;
+  closeQuotaDetails();
+}
+
+function toggleQuotaDetails(anchor) {
+  closeComposerRuntimeMenu();
+  state.quotaDetailsOpen = !state.quotaDetailsOpen;
+  renderQuotaUsage();
+  const panel = $("quotaDetailPanel");
+  if (state.quotaDetailsOpen && panel && anchor) {
+    fitComposerPopupToAnchor(panel, anchor, { minWidth: 320, maxWidth: 390 });
+    document.addEventListener("pointerdown", onQuotaOutsidePointer);
+  } else {
+    document.removeEventListener("pointerdown", onQuotaOutsidePointer);
+  }
 }
 
 function renderComposerSettings() {
-  const modelSelect = $("modelSelect");
-  const effortSelect = $("effortSelect");
-  const permissionSelect = $("permissionSelect");
-  if (!modelSelect || !effortSelect || !permissionSelect) return;
-  const defaultModel = effectiveDefaultModel();
-  const defaultEffort = effectiveDefaultEffort();
-  const defaultPermission = effectiveDefaultPermissionMode();
-  let selectedPermission = selectedPermissionModeForCurrentThread();
-  if (selectedPermission && selectedPermission === defaultPermission) {
-    setSelectedPermissionModeForCurrentThread("");
-    selectedPermission = "";
+  const modelControl = $("composerModelControl");
+  const effortControl = $("composerEffortControl");
+  const permissionControl = $("composerPermissionControl");
+  if (!modelControl || !effortControl || !permissionControl) return;
+  const selectedModel = selectedComposerModel();
+  const selectedEffort = selectedComposerEffort();
+  const selectedPermission = selectedComposerPermissionMode();
+  const controls = [
+    [modelControl, selectedModel ? labelForModel(selectedModel) : "--", state.newThreadDraft || state.composerModel ? "下一轮使用" : "当前记录"],
+    [effortControl, selectedEffort ? labelForEffort(selectedEffort) : "--", state.newThreadDraft || state.composerEffort ? "下一轮使用" : "当前记录"],
+    [permissionControl, selectedPermission ? labelForPermissionMode(selectedPermission).replace(/权限$/, "") : "--", state.newThreadDraft || state.composerPermissionMode ? "下一轮使用" : "当前记录"],
+  ];
+  for (const [button, value, mode] of controls) {
+    const valueEl = button.querySelector(".composer-chip-value");
+    if (valueEl) valueEl.textContent = value;
+    button.title = `${button.querySelector(".composer-chip-label")?.textContent || ""}：${value}（${mode}）`;
+    button.classList.toggle("has-pending-value", mode === "下一轮使用");
+    button.disabled = state.composerBusy;
   }
-  const modelValues = normalizeOptionList([state.selectedModel, defaultModel, state.defaultModel, ...state.modelOptions]);
-  const effortValues = normalizeOptionList([state.selectedEffort, ...state.reasoningEffortOptions])
-    .filter((value) => value !== defaultEffort);
-  const permissionValues = normalizeOptionList([selectedPermission, ...state.permissionModeOptions.map(normalizePermissionModeValue)])
-    .filter((value) => value !== defaultPermission);
-  modelSelect.innerHTML = modelValues.length
-    ? modelValues.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(labelForModel(value))}</option>`).join("")
-    : `<option value="">Model</option>`;
-  effortSelect.innerHTML = `<option value="">${escapeHtml(defaultEffort ? labelForEffort(defaultEffort) : "Default")}</option>`
-    + effortValues.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(labelForEffort(value))}</option>`).join("");
-  permissionSelect.innerHTML = `<option value="">${escapeHtml(defaultPermission ? labelForPermissionMode(defaultPermission) : "Perm")}</option>`
-    + permissionValues.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(labelForPermissionMode(value))}</option>`).join("");
-  const selectedModel = state.selectedModel || defaultModel || state.defaultModel || "";
-  if (selectedModel && modelValues.includes(selectedModel)) modelSelect.value = selectedModel;
-  else modelSelect.value = "";
-  if (state.selectedEffort && state.selectedEffort !== defaultEffort && effortValues.includes(state.selectedEffort)) effortSelect.value = state.selectedEffort;
-  else effortSelect.value = "";
-  if (selectedPermission && selectedPermission !== defaultPermission && permissionValues.includes(selectedPermission)) permissionSelect.value = selectedPermission;
-  else permissionSelect.value = "";
-  permissionSelect.title = titleForPermissionMode(permissionSelect.value || defaultPermission);
   renderQuotaUsage();
 }
 
@@ -4900,39 +5664,56 @@ function updateComposerControls() {
     && state.currentThread
     && !state.currentThread.mobileLoading
     && !state.currentThread.mobileLoadError);
-  const disabled = !hasThread || state.composerBusy;
+  const hasNewThreadDraft = Boolean(state.newThreadDraft);
+  const canComposeNewThread = Boolean(hasNewThreadDraft && state.selectedCwd);
+  const disabled = !(hasThread || canComposeNewThread) || state.composerBusy;
   const hasContent = composerHasContent();
-  const interruptMode = Boolean(state.activeTurnId) && !hasContent;
+  const interruptMode = Boolean(!hasNewThreadDraft && state.activeTurnId) && !hasContent;
+  const steerMode = Boolean(!hasNewThreadDraft && state.activeTurnId) && hasContent;
   const sendButton = $("sendMessage");
   const attachButton = $("attachFiles");
+  const messageInput = $("messageInput");
+  if (messageInput) {
+    messageInput.dataset.placeholder = hasNewThreadDraft
+      ? "输入第一条消息"
+      : "Message Codex";
+  }
   setMessageInputDisabled(disabled);
   $("fileInput").disabled = disabled;
-  $("modelSelect").disabled = disabled;
-  $("effortSelect").disabled = disabled;
-  $("permissionSelect").disabled = disabled;
   attachButton.classList.toggle("disabled", disabled);
   attachButton.setAttribute("aria-disabled", disabled ? "true" : "false");
   attachButton.tabIndex = disabled ? -1 : 0;
+  for (const id of ["composerModelControl", "composerEffortControl", "composerPermissionControl", "quotaUsage"]) {
+    const button = $(id);
+    if (button) button.disabled = disabled;
+  }
   const showRetryHint = Boolean(state.sendButtonHint);
   if (interruptMode) {
     sendButton.textContent = "Stop";
     sendButton.title = "Interrupt current turn";
     sendButton.classList.add("interrupt-mode");
-    sendButton.classList.remove("sending", "send-failed");
+    sendButton.classList.remove("sending", "send-failed", "steer-mode");
   } else if (state.composerBusy) {
-    sendButton.textContent = "发送中…";
-    sendButton.title = "Message is sending";
+    const steering = state.steerFeedback && state.steerFeedback.status === "sending";
+    sendButton.textContent = steering ? "引导中…" : "发送中…";
+    sendButton.title = steering ? "Steering current turn" : "Message is sending";
     sendButton.classList.add("sending");
+    sendButton.classList.toggle("steer-mode", Boolean(steering));
     sendButton.classList.remove("send-failed", "interrupt-mode");
   } else if (showRetryHint) {
     sendButton.textContent = "重试";
     sendButton.title = "Retry sending message";
     sendButton.classList.add("send-failed");
-    sendButton.classList.remove("sending", "interrupt-mode");
+    sendButton.classList.remove("sending", "interrupt-mode", "steer-mode");
+  } else if (steerMode) {
+    sendButton.textContent = "引导";
+    sendButton.title = "Guide the current running turn";
+    sendButton.classList.add("steer-mode");
+    sendButton.classList.remove("sending", "send-failed", "interrupt-mode");
   } else {
     sendButton.textContent = "Send";
-    sendButton.title = "Send message";
-    sendButton.classList.remove("sending", "send-failed", "interrupt-mode");
+    sendButton.title = hasNewThreadDraft ? "Create new chat" : "Send message";
+    sendButton.classList.remove("sending", "send-failed", "interrupt-mode", "steer-mode");
   }
   sendButton.disabled = disabled || (!interruptMode && !hasContent);
 }
@@ -4949,30 +5730,38 @@ async function sendMessage(event) {
   const input = $("messageInput");
   const text = composerText();
   const hasContent = Boolean(text || state.pendingAttachments.length);
+  if (state.newThreadDraft) {
+    await sendNewThreadMessage(text, hasContent, input);
+    return;
+  }
   if (state.activeTurnId && !hasContent) {
     await interruptActiveTurn();
     return;
   }
   if ((!text && !state.pendingAttachments.length) || !state.currentThreadId) return;
+  const steering = Boolean(state.activeTurnId && hasContent);
+  const steerTurnId = steering ? String(state.activeTurnId) : "";
+  const submittedDraftKey = currentDraftKey();
+  const clientSubmissionId = createSubmissionId();
   state.composerBusy = true;
   state.sendButtonHint = "";
   startSendProgressWatchdog(state.currentThreadId);
-  markActivity(state.activeTurnId ? "追加输入" : "发送");
+  if (steering) setSteerFeedback("sending", { threadId: state.currentThreadId, turnId: steerTurnId, clientSubmissionId });
+  else markActivity("发送");
   updateComposerControls();
   if (state.sendProgressWarned) {
-    $("connectionState").textContent = "发送中…";
+    $("connectionState").textContent = steering ? "引导中…" : "发送中…";
     $("connectionState").classList.remove("error");
   }
   try {
     const body = new FormData();
-    body.append("clientSubmissionId", createSubmissionId());
+    body.append("clientSubmissionId", clientSubmissionId);
     body.append("text", text);
     if (state.currentThread && state.currentThread.cwd) body.append("cwd", state.currentThread.cwd);
-    if (state.activeTurnId) body.append("activeTurnId", state.activeTurnId);
-    const model = currentComposerModel();
-    if (model) body.append("model", model);
-    if ($("effortSelect").value) body.append("effort", $("effortSelect").value);
-    if ($("permissionSelect").value) body.append("permissionMode", $("permissionSelect").value);
+    if (steerTurnId) body.append("activeTurnId", steerTurnId);
+    body.append("model", selectedComposerModel());
+    body.append("effort", selectedComposerEffort());
+    body.append("permissionMode", selectedComposerPermissionMode());
     for (const item of state.pendingAttachments) {
       body.append("attachments", item.file, item.file.name || "upload");
     }
@@ -4983,24 +5772,134 @@ async function sendMessage(event) {
     });
     setComposerText("");
     clearPendingAttachments();
+    clearDraftForKey(submittedDraftKey);
+    if (!steering) {
+      state.composerModel = "";
+      state.composerEffort = "";
+      state.composerPermissionMode = "";
+      renderComposerSettings();
+    }
     input.blur();
     $("connectionState").classList.remove("error");
-    $("connectionState").textContent = "Sent";
-    markActivity("已发送");
+    if (steering) setSteerFeedback("delivered", { threadId: state.currentThreadId, turnId: steerTurnId, clientSubmissionId });
+    else {
+      $("connectionState").textContent = "Sent";
+      markActivity("已发送");
+    }
     scheduleCurrentThreadRefresh(600);
     scheduleLivePollIfNeeded(1200);
   } catch (err) {
     const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err))
       || "发送失败，请重试";
     state.sendButtonHint = "重试";
-    $("connectionState").classList.add("error");
-    $("connectionState").textContent = message;
+    if (steering) setSteerFeedback("failed", { threadId: state.currentThreadId, turnId: steerTurnId, clientSubmissionId });
+    else {
+      $("connectionState").classList.add("error");
+      $("connectionState").textContent = message.includes("发送") ? message : "发送失败，请重试";
+    }
     postClientEvent("send_failure", {
       threadId: state.currentThreadId || "",
       message,
+      steering,
     });
   } finally {
     finishSendProgressWatchdog();
+    state.composerBusy = false;
+    updateComposerControls();
+  }
+}
+
+async function sendNewThreadMessage(text, hasContent, input) {
+  if (!hasContent) return;
+  const submittedDraftKey = currentDraftKey();
+  const clientSubmissionId = createSubmissionId();
+  state.composerBusy = true;
+  state.sendButtonHint = "";
+  $("connectionState").classList.remove("error");
+  $("connectionState").textContent = "正在创建新对话";
+  markActivity("创建新对话");
+  updateComposerControls();
+  try {
+    const submittedAttachments = state.pendingAttachments.slice();
+    const body = new FormData();
+    body.append("clientSubmissionId", clientSubmissionId);
+    body.append("text", text);
+    if (state.selectedCwd) body.append("cwd", state.selectedCwd);
+    body.append("model", newThreadSelectedModel());
+    body.append("effort", newThreadSelectedEffort());
+    body.append("permissionMode", newThreadSelectedPermissionMode());
+    for (const item of state.pendingAttachments) {
+      body.append("attachments", item.file, item.file.name || "upload");
+    }
+    const result = await api("/api/threads/new-message", {
+      method: "POST",
+      body,
+      timeoutMs: 180000,
+    });
+    const threadId = String((result && result.threadId) || (result && result.thread && result.thread.id) || "");
+    if (!threadId) throw new Error("新对话创建失败：未返回 threadId");
+    const turnId = startedTurnId(result);
+    const userItem = localUserMessageItem(text, submittedAttachments, clientSubmissionId);
+    const thread = Object.assign({
+      id: threadId,
+      preview: text || "新建对话",
+      cwd: (result && result.thread && result.thread.cwd) || state.selectedCwd || "",
+      status: { type: "active" },
+      turns: [],
+    }, result.thread || {});
+    if (turnId) {
+      const existingTurn = (thread.turns || []).find((turn) => turn && turn.id === turnId);
+      if (existingTurn) {
+        existingTurn.items = mergeItemsPreservingLocalVisible([userItem], existingTurn.items || [], true);
+      } else {
+        thread.turns = (thread.turns || []).concat([{
+          id: turnId,
+          status: { type: "active" },
+          startedAt: Math.floor(Date.now() / 1000),
+          completedAt: null,
+          durationMs: null,
+          items: [userItem],
+        }]);
+      }
+    }
+    state.threads = [thread, ...state.threads.filter((entry) => entry.id !== threadId)];
+    state.newThreadDraft = false;
+    state.currentThreadId = threadId;
+    state.currentThread = thread;
+    state.activeTurnId = turnId || state.activeTurnId;
+    if (state.events) connectEvents();
+    setComposerText("");
+    clearPendingAttachments();
+    clearDraftForKey(submittedDraftKey);
+    if (input) input.blur();
+    renderComposerSettings();
+    renderThreads();
+    renderCurrentThread({ stickToBottom: true });
+    try {
+      await loadThread(threadId, { source: "new-thread" });
+    } catch (err) {
+      showError(err);
+      renderThreads();
+      renderCurrentThread({ stickToBottom: true });
+    }
+    $("connectionState").textContent = "新对话已创建";
+    markActivity("新对话已创建");
+    renderComposerSettings();
+    updateComposerControls();
+    scheduleCurrentThreadRefresh(900);
+    scheduleLivePollIfNeeded(1200);
+    loadThreads({ silent: true }).catch(showError);
+  } catch (err) {
+    const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err))
+      || "新对话创建失败，请重试";
+    state.sendButtonHint = "重试";
+    $("connectionState").classList.add("error");
+    $("connectionState").textContent = message;
+    postClientEvent("new_thread_send_failure", {
+      cwd: state.selectedCwd || "",
+      message,
+    });
+  } finally {
     state.composerBusy = false;
     updateComposerControls();
   }
@@ -5110,19 +6009,90 @@ function wireUi() {
     event.preventDefault();
     login($("loginKey").value.trim()).catch((err) => showLogin(err.message));
   });
-  $("workspaceSelect").addEventListener("change", (event) => {
-    state.selectedCwd = event.target.value;
-    clearCurrentThreadSelection();
-    updateWorkspacePath();
-    updateComposerControls();
-    renderCurrentThread();
-    loadThreads().catch(showError);
-  });
+  const sidebarWorkspaceSelect = $("workspaceSelect");
+  const sidebarWorkspaceMenu = $("workspaceSelectMenu");
+  if (sidebarWorkspaceSelect && sidebarWorkspaceMenu) {
+    const closeSidebarWorkspaceMenu = () => {
+      sidebarWorkspaceMenu.hidden = true;
+      sidebarWorkspaceMenu.style.removeProperty("--workspace-menu-max-height");
+      sidebarWorkspaceSelect.setAttribute("aria-expanded", "false");
+      document.removeEventListener("pointerdown", onSidebarWorkspaceOutsidePointer);
+    };
+    const onSidebarWorkspaceOption = (event) => {
+      const option = event.target.closest("[data-workspace-value]");
+      if (!option) return;
+      const selectedWorkspace = option.dataset.workspaceValue || "";
+      event.preventDefault();
+      event.stopPropagation();
+      selectWorkspaceShortcut(selectedWorkspace).catch(showError);
+      closeSidebarWorkspaceMenu();
+    };
+    const onSidebarWorkspaceOutsidePointer = (event) => {
+      if (!sidebarWorkspaceMenu.hidden && !sidebarWorkspaceMenu.contains(event.target) && !sidebarWorkspaceSelect.contains(event.target)) {
+        closeSidebarWorkspaceMenu();
+      }
+    };
+    const openSidebarWorkspaceMenu = () => {
+      sidebarWorkspaceMenu.hidden = false;
+      fitWorkspaceMenuToViewport(sidebarWorkspaceMenu, sidebarWorkspaceSelect, { avoidComposer: false });
+      sidebarWorkspaceSelect.setAttribute("aria-expanded", "true");
+      document.addEventListener("pointerdown", onSidebarWorkspaceOutsidePointer);
+    };
+    const toggleSidebarWorkspaceMenu = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (sidebarWorkspaceSelect.disabled) return;
+      if (sidebarWorkspaceMenu.hidden) {
+        openSidebarWorkspaceMenu();
+      } else {
+        closeSidebarWorkspaceMenu();
+      }
+    };
+    sidebarWorkspaceSelect.addEventListener("pointerdown", toggleSidebarWorkspaceMenu);
+    sidebarWorkspaceMenu.addEventListener("click", onSidebarWorkspaceOption);
+    closeSidebarWorkspaceMenu();
+  }
+  $("newThreadButton").addEventListener("click", enterNewThreadDraft);
   $("refreshThreads").addEventListener("click", () => loadThreads().catch(showError));
   $("pushNotifications").addEventListener("click", () => handlePushButtonClick().catch(showError));
   if ($("appUpdateStatus")) $("appUpdateStatus").addEventListener("click", () => handleAppUpdateClick().catch(showError));
   const settingsPanel = $("themeSettingsPanel");
   if (settingsPanel) settingsPanel.addEventListener("click", handleFontSizeChoice);
+  const runtimeControls = [
+    ["composerModelControl", "model"],
+    ["composerEffortControl", "effort"],
+    ["composerPermissionControl", "permission"],
+  ];
+  for (const [id, kind] of runtimeControls) {
+    const button = $(id);
+    if (!button) continue;
+    button.dataset.composerRuntime = kind;
+    button.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (button.disabled) return;
+      if (state.composerMenuKind === kind) closeComposerRuntimeMenu();
+      else openComposerRuntimeMenu(kind, button);
+    });
+  }
+  const runtimeMenu = $("composerRuntimeMenu");
+  if (runtimeMenu) {
+    runtimeMenu.addEventListener("click", (event) => {
+      const option = event.target.closest("[data-runtime-kind][data-runtime-value]");
+      if (!option) return;
+      event.preventDefault();
+      event.stopPropagation();
+      applyRuntimeSelection(option.dataset.runtimeKind, option.dataset.runtimeValue);
+    });
+  }
+  const quotaUsage = $("quotaUsage");
+  if (quotaUsage) {
+    quotaUsage.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleQuotaDetails(quotaUsage);
+    });
+  }
   document.addEventListener("pointerdown", primeCompletionAudio, { passive: true });
   document.addEventListener("touchend", primeCompletionAudio, { passive: true });
   document.addEventListener("keydown", primeCompletionAudio);
@@ -5212,27 +6182,13 @@ function wireUi() {
     autoSizeMessageInput(event.target);
     if (state.sendButtonHint && !state.composerBusy) state.sendButtonHint = "";
     updateComposerControls();
+    scheduleCurrentDraftSave();
   });
   $("messageInput").addEventListener("keydown", (event) => {
     if (event.key !== "Enter" || event.shiftKey) return;
     if (!composerHasContent() || state.composerBusy) return;
     event.preventDefault();
     $("composer").requestSubmit();
-  });
-  $("modelSelect").addEventListener("change", (event) => {
-    state.selectedModel = event.target.value;
-    if (state.selectedModel) localStorage.setItem(STORAGE_MODEL, state.selectedModel);
-    else localStorage.removeItem(STORAGE_MODEL);
-    renderQuotaUsage();
-  });
-  $("effortSelect").addEventListener("change", (event) => {
-    state.selectedEffort = event.target.value;
-    if (state.selectedEffort) localStorage.setItem(STORAGE_EFFORT, state.selectedEffort);
-    else localStorage.removeItem(STORAGE_EFFORT);
-  });
-  $("permissionSelect").addEventListener("change", (event) => {
-    setSelectedPermissionModeForCurrentThread(event.target.value);
-    event.target.title = titleForPermissionMode(event.target.value || effectiveDefaultPermissionMode());
   });
   $("messageInput").addEventListener("paste", (event) => {
     const files = Array.from((event.clipboardData && event.clipboardData.files) || []);
@@ -5257,13 +6213,13 @@ function wireUi() {
     if (button) removeAttachment(button.dataset.removeAttachment);
   });
   $("composer").addEventListener("dragover", (event) => {
-    if (!state.currentThreadId || !hasTransferFiles(event)) return;
+    if (!(state.currentThreadId || state.newThreadDraft) || !hasTransferFiles(event)) return;
     event.preventDefault();
     $("composer").classList.add("drag-over");
   });
   $("composer").addEventListener("dragleave", () => $("composer").classList.remove("drag-over"));
   $("composer").addEventListener("drop", (event) => {
-    if (!state.currentThreadId || !hasTransferFiles(event)) return;
+    if (!(state.currentThreadId || state.newThreadDraft) || !hasTransferFiles(event)) return;
     event.preventDefault();
     $("composer").classList.remove("drag-over");
     addAttachmentFiles(event.dataTransfer.files);
@@ -5271,11 +6227,23 @@ function wireUi() {
   updateViewportVars();
   applyFontSizePreference();
   renderFontSizeControl();
+  installLaunchQueueHandler();
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.addEventListener("message", handleServiceWorkerMessage);
   }
-  document.addEventListener("visibilitychange", () => scheduleMobileResume("visibility"));
-  window.addEventListener("pageshow", () => {
+  document.addEventListener("visibilitychange", () => {
+    postClientEvent("page_visibility", {
+      visibilityState: document.visibilityState,
+      currentThreadId: state.currentThreadId || "",
+      eventOpen: Boolean(state.events && state.events.readyState === EventSource.OPEN),
+    });
+    scheduleMobileResume("visibility");
+  });
+  window.addEventListener("pageshow", (event) => {
+    postClientEvent("page_show", {
+      persisted: Boolean(event && event.persisted),
+      currentThreadId: state.currentThreadId || "",
+    });
     const threadId = applyUrlThreadSelection({ load: true });
     scheduleMobileResume("pageshow", threadId ? 240 : 80);
   });
@@ -5284,6 +6252,8 @@ function wireUi() {
     scheduleMobileResume("focus", threadId ? 300 : 150);
   });
   window.addEventListener("blur", () => scheduleVisualRecovery("window-blur", 180, { render: false }));
+  window.addEventListener("pagehide", saveCurrentDraftNow);
+  window.addEventListener("beforeunload", saveCurrentDraftNow);
   document.addEventListener("focusin", () => scheduleVisualRecovery("focusin", 40, { render: false, heavy: false, delays: [40, 180] }));
   document.addEventListener("focusout", () => scheduleVisualRecovery("focusout", 160, { render: false, heavy: false, delays: [160, 420] }));
   window.addEventListener("orientationchange", () => scheduleMobileResume("orientation", 250));
@@ -5320,6 +6290,11 @@ async function start() {
     .map(normalizePermissionModeValue));
   state.defaultModel = String(config.defaultModel || "");
   state.defaultReasoningEffort = String(config.defaultReasoningEffort || "");
+  state.newThreadModel = state.newThreadModel || state.defaultModel || state.modelOptions[0] || "";
+  state.newThreadEffort = state.newThreadEffort || state.defaultReasoningEffort || state.reasoningEffortOptions[0] || "";
+  state.newThreadPermissionMode = normalizePermissionModeValue(state.newThreadPermissionMode)
+    || normalizePermissionModeValue(state.permissionModeOptions[0])
+    || "full";
   state.pushServerSupported = Boolean(config.push && config.push.supported);
   state.appUpdateStatus = {
     supported: Boolean(config.update && config.update.enabled),

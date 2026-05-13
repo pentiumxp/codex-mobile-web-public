@@ -8,6 +8,8 @@ pnpm-debug.log*
 *.key
 *.pem
 .webui_secret_key
+.agent-context/
+AGENTS.md
 
 workspace/
 logs/

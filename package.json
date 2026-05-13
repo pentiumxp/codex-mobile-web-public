@@ -1,6 +1,6 @@
 {
   "name": "codex-mobile-web",
-  "version": "0.1.1",
+  "version": "0.1.4",
   "description": "A local authenticated mobile web client for Codex app-server.",
   "type": "commonjs",
   "license": "MIT",
@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test",
-    "check": "node --check server.js && node --check codex-app-server-mux.js && node --check public/app.js && node --check public/service-worker.js",
+    "check": "node --check server.js && node --check codex-app-server-mux.js && node --check public/api-client.js && node --check public/runtime-settings.js && node --check public/draft-store.js && node --check public/markdown-renderer.js && node --check public/app.js && node --check public/sw.js",
     "check:macos": "bash -n start-codex-mobile-web-macos.sh start-codex-desktop-shared-macos.sh codex-app-server-mux-macos.sh start-codex-shared-mobile-macos.sh"
   },
   "keywords": [

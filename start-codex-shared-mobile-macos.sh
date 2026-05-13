@@ -6,6 +6,7 @@ HOST_ADDRESS="${CODEX_MOBILE_HOST:-0.0.0.0}"
 PORT="${CODEX_MOBILE_PORT:-auto}"
 START_PORT="${CODEX_MOBILE_START_PORT:-8789}"
 END_PORT="${CODEX_MOBILE_END_PORT:-8899}"
+RESERVED_PORTS="${CODEX_MOBILE_RESERVED_PORTS-8797}"
 CODEX_HOME_VALUE="${CODEX_HOME:-$HOME/.codex}"
 RUNTIME_ROOT="${CODEX_MOBILE_RUNTIME_DIR:-$HOME/.codex-mobile-web}"
 LOG_DIR="${CODEX_MOBILE_LOG_DIR:-$RUNTIME_ROOT/logs}"
@@ -26,6 +27,8 @@ Options:
   --port <port|auto>     Mobile Web port, default auto
   --start-port <port>    First auto port, default 8789
   --end-port <port>      Last auto port, default 8899
+  --reserved-ports <csv> Ports auto mode must skip, default 8797
+  --no-reserved-ports    Let auto mode consider every port in the range
   --codex-home <path>    Codex state directory, default $HOME/.codex
   --no-force-quit        Do not quit an already running Codex Desktop
   --print-only           Print what would be used without starting anything
@@ -33,13 +36,36 @@ Options:
 EOF
 }
 
+port_is_reserved() {
+  local port="$1"
+  local item
+  local old_ifs="$IFS"
+  IFS=','
+  for item in $RESERVED_PORTS; do
+    item="${item//[[:space:]]/}"
+    if [[ -n "$item" && "$item" == "$port" ]]; then
+      IFS="$old_ifs"
+      return 0
+    fi
+  done
+  IFS="$old_ifs"
+  return 1
+}
+
 port_is_free() {
   local port="$1"
+  if port_is_reserved "$port"; then
+    return 1
+  fi
   ! lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1
 }
 
 choose_port() {
   if [[ "$PORT" != "auto" ]]; then
+    if port_is_reserved "$PORT"; then
+      echo "Requested port is reserved: $PORT (CODEX_MOBILE_RESERVED_PORTS=$RESERVED_PORTS)" >&2
+      exit 1
+    fi
     if ! port_is_free "$PORT"; then
       echo "Requested port is already in use: $PORT" >&2
       exit 1
@@ -109,6 +135,18 @@ while [[ $# -gt 0 ]]; do
       END_PORT="${2:?--end-port requires a value}"
       shift 2
       ;;
+    --reserved-ports)
+      if [[ $# -lt 2 || "$2" == --* ]]; then
+        echo "--reserved-ports requires a comma-separated value. Use --no-reserved-ports to clear the list." >&2
+        exit 2
+      fi
+      RESERVED_PORTS="$2"
+      shift 2
+      ;;
+    --no-reserved-ports)
+      RESERVED_PORTS=""
+      shift
+      ;;
     --codex-home)
       CODEX_HOME_VALUE="${2:?--codex-home requires a value}"
       shift 2
@@ -146,6 +184,7 @@ ACCESS_KEY_FILE="$RUNTIME_ROOT/access_key"
 echo "Codex shared mobile launch plan:"
 echo "  Codex home: $CODEX_HOME_VALUE"
 echo "  Mobile Web: http://$HOST_ADDRESS:$CHOSEN_PORT"
+echo "  Reserved ports: ${RESERVED_PORTS:-none}"
 echo "  Mux endpoint: $ENDPOINT_FILE"
 echo "  Desktop log: $DESKTOP_LOG"
 echo "  Mobile Web log: $MOBILE_LOG"

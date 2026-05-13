@@ -1,5 +1,253 @@
 # HANDOFF
 
+## 2026-05-13 Long-Running Shared Chain Slowdown Evidence - 06:05 +08:00
+
+- User report:
+  - On 2026-05-12, Mobile/Hermes sessions became slow in synchronization, thinking, and command/tool execution, not just in thread loading.
+  - After an automatic Windows reboot on 2026-05-13, speed felt fast again.
+- Windows reboot evidence:
+  - `Win32_OperatingSystem.LastBootUpTime`: `2026-05-13 03:16:05 +08:00`.
+  - System event log showed planned OS update restarts initiated by `MoUsoCoreWorker.exe` and `TrustedInstaller.exe` around `03:14-03:16 +08:00`.
+- Current post-reboot runtime:
+  - `Codex Mobile Web` Scheduled Task last ran at `2026-05-13 05:25:26 +08:00` and is running.
+  - Current mux endpoint is `127.0.0.1:53599`, mux PID `20000`, child `codex.exe app-server` PID `23676`, started `2026-05-12T21:25:35Z`.
+  - Current Mobile Web listener PID `24228`; `http://127.0.0.1:8787/` returns HTTP `200`.
+  - Current process scan showed one Mobile Web listener, one standalone mux, and one `codex app-server`; no duplicate stale mux/app-server chain like the 2026-05-12 manual restart window.
+- Memory and latency evidence:
+  - Before the 2026-05-12 manual restart, long-running `codex.exe app-server` private memory was about `492MB`; current post-reboot `codex.exe app-server` private memory is about `197MB`.
+  - Current local authenticated API timings: `/api/status` hot path about `1ms`; `/api/threads?limit=20` about `88-166ms`; large 79.8MB thread detail about `260-460ms`.
+- Mux log segmentation:
+  - Old long-running segment `2026-05-10T15:29:39Z` to `2026-05-12T14:23:30Z`: 553 timestamped app-server/tool errors, 20 backpressure events, 7 replay events, 7 disconnects.
+  - Post-manual-restart/pre-Windows-reboot segment `2026-05-12T14:23:30Z` to `2026-05-12T21:25:35Z`: 43 timestamped errors, no backpressure, 2 replay events, 2 disconnects.
+  - Post-Windows-reboot/current segment started `2026-05-12T21:25:35Z`: early logs showed only one short backpressure/drain pair during startup plus normal app-server/tool errors from active work.
+- Current diagnosis:
+  - Initial evidence pointed to long-lived shared-chain degradation: `codex app-server` / mux process age, accumulated memory, historical tool errors, and occasional duplicate/stale mux processes are more likely than rollout-file size alone.
+  - Rollout continuation reduces per-thread context/read size, but it does not reset the shared app-server/mux process state.
+  - A practical fix should add supervised soft-restart criteria for the shared chain, preferably based on process age, `codex.exe` private memory, mux backpressure/replay/error counters, and no active turn/request state.
+- Important correction after user feedback:
+  - User observed that the 2026-05-12 manual mux/app-server restart did not restore perceived speed, while the 2026-05-13 full Windows reboot did.
+  - Manual restart log only stopped Codex Mobile Web/mux/app-server PIDs `22916`, `23272`, `20964`, and `45264`; it did not restart Hermes Mobile listener, Hermes bridge host, Hermes gateway pool, WSL distributions, MCPVault child processes, or Codex Desktop itself.
+  - `C:\ProgramData\HermesMobile\data\logs\worker-host.log` shows Hermes Mobile listener/bridge restarts independent of Codex Mobile Web, including listener PID `45228` at `2026-05-12 21:35:35 +08:00` and a fresh post-reboot worker listener PID `32152` at `2026-05-13 05:26:54 +08:00`.
+  - `C:\ProgramData\HermesMobile\gateway-worker\logs\start-gateway-pool.log` shows the full reboot path restarted low gateway processes and reported healthy gateway ports `18751-18760,18651,18652` at `2026-05-13 05:26:52 +08:00`.
+  - Revised diagnosis: the slow state likely involved the broader Hermes/WSL/gateway worker stack, not just Codex Mobile Web's mux/app-server. A future "deep restart" action should restart Hermes Mobile listener/bridge/gateway pool and reset WSL/gateway children, or at least make those components visible in diagnostics, instead of only restarting the Codex mux endpoint.
+
+## 2026-05-12 Manual Shared Chain Restart - 22:26 +08:00
+
+- User report:
+  - Hermes/Mobile sessions felt slow in synchronization, thinking, and command/tool execution, not only in thread loading.
+- Diagnostics before restart:
+  - Previous standalone mux endpoint was PID `22916`, child `codex.exe app-server` PID `23272`, started `2026-05-10T15:29:39Z`.
+  - Mobile Web listener was PID `45264`, started `2026-05-11 23:15:31 +08:00`.
+  - Logs showed historical mux backpressure/replay, but not recent active backpressure; long-lived app-server/mux state and repeated tool errors were more plausible than unbounded replay accumulation.
+- Action taken:
+  - Stopped the `Codex Mobile Web` Scheduled Task, killed the old Mobile Web listener plus old standalone mux/app-server processes, removed the stale mux endpoint, and restarted the scheduled task.
+- Post-restart state:
+  - New endpoint: `%USERPROFILE%\.codex\app-server-mux\endpoint.json`.
+  - New standalone mux PID `36872`, child `codex.exe app-server` PID `45320`, started `2026-05-12T14:23:30Z`.
+  - New Mobile Web listener PID `43716`; `http://127.0.0.1:8787/` returned HTTP `200`.
+  - A `codex-app-server-mux.exe` / node pair spawned by Codex Desktop was observed attaching desktop stdio to the existing mux PID `36872`; this is the Desktop shim path, not a second real app-server.
+
+## 2026-05-12 Self-Update Restart Clarification - 19:35 +08:00
+
+- User report:
+  - A separate public deployment showed an update, the user clicked update, Mobile Web showed a restart state, then the connection dropped.
+  - On that machine the service was stopped; manually starting it again showed the app had updated successfully.
+- Finding:
+  - This is consistent with the current self-update implementation. `server.js` applies a clean fast-forward update, returns the HTTP response, waits briefly, then exits the Node listener.
+  - Automatic recovery depends on an external supervisor such as the Windows hidden startup wrapper, the user-logon Scheduled Task using that wrapper, or the macOS shared launcher.
+  - Manual `node server.js`, `npm start`, or one-shot shell deployments have no supervisor, so the update is applied but the web service remains stopped until manually restarted.
+- Private local changes:
+  - `public/app.js`: update available/restarting tooltips and confirmation text now state that the service exits after update and only supervisor-backed deployments restart automatically.
+  - `public/app.js`: after a successful update, the connection state tells the user to manually restart on the deployment machine if the connection drops and does not recover.
+  - `README.md`: Self Update section documents that manual-start deployments require manual restart after an applied update.
+  - `.agent-context/PROJECT_CONTEXT.md`: durable architecture note added for supervisor-dependent self-update restart.
+  - `test/app-update.test.js`: added regression coverage for the supervisor/manual-restart UI and README text.
+- Publication status:
+  - User explicitly requested public push on 2026-05-12.
+  - Public repo `C:\Users\xuxin\Documents\codex-mobile-web-public` was updated and pushed as commit `8a8dda3 澄清自更新后的重启依赖`.
+  - Public package version was bumped from `0.1.3` to `0.1.4`.
+  - Public validation before push: `npm.cmd test` (22/22), `npm.cmd run check`, `npm.cmd run check:macos`, `git diff --check` with line-ending warnings only, and a focused public diff privacy scan.
+
+## 2026-05-12 Disable Mobile Page Zoom - 15:45 +08:00
+
+- User request:
+  - Disable page zoom in Mobile Web.
+- Private local changes:
+  - `public/index.html`: viewport meta now locks scale to `1` with `minimum-scale=1`, `maximum-scale=1`, and `user-scalable=no`.
+  - `public/index.html`: added an early head script that prevents iOS/WebKit `gesturestart`, `gesturechange`, `gestureend`, `dblclick`, and rapid double-touch zoom events with non-passive listeners.
+  - `public/styles.css`: root `html, body` now set `touch-action: pan-x pan-y`, keeping normal panning while omitting pinch zoom.
+  - App-shell cache version was bumped from `v36` to `v37` across `index.html`, `public/app.js`, `public/service-worker.js`, and cache regression tests so installed PWA clients fetch the updated HTML/CSS/JS.
+  - `test/mobile-viewport.test.js`: added regression coverage for the viewport lock, WebKit gesture guards, double-tap guard, and CSS touch-action rule.
+  - `README.md` and `.agent-context/PROJECT_CONTEXT.md`: documented that browser page zoom is disabled and readability should use the in-app font-size setting.
+- Publication status:
+  - User explicitly requested public push later on 2026-05-12.
+  - Public repo `C:\Users\xuxin\Documents\codex-mobile-web-public` was updated and pushed as commit `9f893f8 发布端口保留与移动端禁用页面缩放`.
+  - Public release also included the previously prepared macOS reserved-port update: `start-codex-shared-mobile-macos.sh` skips `8797` by default, supports `CODEX_MOBILE_RESERVED_PORTS`, `--reserved-ports`, and `--no-reserved-ports`, and documents the behavior in Chinese README notes.
+  - Public page-zoom changes were adapted to public's `/sw.js` and unversioned static asset layout, not copied wholesale from private's `service-worker.js?v=37` layout. Public PWA shell cache was bumped from `codex-mobile-shell-v34` to `codex-mobile-shell-v35`.
+  - Public package version was bumped from `0.1.2` to `0.1.3`.
+  - Public validation passed before push: `npm.cmd test` (20/20), `npm.cmd run check`, `npm.cmd run check:macos`, `git diff --check` with line-ending warnings only, reserved-port behavior checks, and a diff privacy scan for local/private markers.
+  - GitHub Actions CI for public commit `9f893f8` completed successfully.
+
+## 2026-05-12 Private Backport Of Public PR #24/#25 Composer Quota UI - 15:32 +08:00
+
+- User clarification:
+  - Public PR #24/#25's Composer/quota design is acceptable and should not be reverted.
+  - The problem was that the public repo had the design while the private repo did not, which would cause later private-to-public syncs to overwrite the public behavior.
+- Cause:
+  - PR #24/#25 had been integrated directly into `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - The running private workspace `C:\Users\xuxin\Documents\codex-mobile-web` still had editable model/reasoning/permission selectors and single-text quota display.
+- Private local changes:
+  - `public/index.html`: Composer controls now use read-only `modelEffortDisplay` and `permissionDisplay` chips instead of editable `modelSelect`, `effortSelect`, and `permissionSelect`.
+  - `public/app.js`: added compact model labels, reset-aware quota chip rendering, quota risk coloring classes, and read-only Composer settings rendering.
+  - `public/app.js`: normal message send and continuation request bodies no longer append `model`, `effort`, or `permissionMode`, keeping Mobile Web aligned with Desktop/app-server runtime settings.
+  - `public/styles.css`: Composer control row now has fixed-height read-only chips; phone layout hides the separate permission chip and compacts model/reasoning/permission into the model chip while showing the two quota chips on the same row.
+  - `test/composer-quota.test.js`: added regression coverage for read-only model/reasoning, read-only permission, separate reset-aware quota chips, mobile compact layout, and fixed control heights.
+  - `README.md`: updated current behavior notes from editable selectors/single quota text to read-only runtime chips and reset-aware quota chips.
+- Public repo status:
+  - A brief temporary edit to `public/app.js` was restored; public `public/app.js` has no substantive diff.
+  - Existing public local changes remain the macOS reserved-port update in `README.md` and `start-codex-shared-mobile-macos.sh`; they are still uncommitted/unpushed unless the user explicitly requests publication.
+- Validation:
+  - Private `node --check public/app.js` passed.
+  - Private `npm.cmd test` passed (15/15).
+  - Private `npm.cmd run check` passed.
+  - Private `git diff --check` passed with line-ending warnings only.
+- Important workflow note:
+  - Future public PR integrations that change user-visible behavior should either be backported to the private repo after acceptance or intentionally reverted in public. Leaving accepted public-only behavior creates a later sync conflict where private changes can overwrite public behavior.
+
+## 2026-05-12 Public Deployment Port Reservation - 15:04 +08:00
+
+- User report:
+  - Hermes Mobile was deployed first on port `8797`.
+  - Later Codex public deployment also targeted `8797`, causing a service/target conflict.
+- Findings:
+  - `C:\Users\xuxin\Documents\codex-mobile-web-public` tracked files do not hard-code `8797` for the core Windows/Node server. `server.js`, Windows startup scripts, and README default to `8787`.
+  - Current local listeners:
+    - `0.0.0.0:8797` is Hermes Mobile: `C:\ProgramData\HermesMobile\app\server.js`, PID `17964`.
+    - `0.0.0.0:8787` is Codex Mobile Web private: `C:\Users\xuxin\Documents\codex-mobile-web\server.js`, PID `45264`.
+    - `127.0.0.1:8798` is a Hermes Mobile bridge host: `C:\ProgramData\HermesMobile\app\scripts\bridge-host.js`, PID `17224`.
+  - `tailscale serve status` currently maps:
+    - `https://gmk.tail62e8ce.ts.net/` -> `http://127.0.0.1:8797` (Hermes Mobile)
+    - `https://gmk.tail62e8ce.ts.net:8443/` -> `http://127.0.0.1:8787` (Codex Mobile Web)
+  - The public macOS one-command shared launcher auto-selects from `8789..8899`, which included `8797`; that made it possible for Codex auto deployment to choose or be documented around a port that another local Agent service reserves.
+- Public local repo changes, not pushed:
+  - `C:\Users\xuxin\Documents\codex-mobile-web-public\start-codex-shared-mobile-macos.sh`
+    - Added `CODEX_MOBILE_RESERVED_PORTS`, default `8797`.
+    - Auto port selection now skips reserved ports.
+    - Explicit `--port 8797` fails with a reserved-port error unless the reserved list is disabled.
+    - Added `--reserved-ports <csv>` and `--no-reserved-ports`.
+  - `C:\Users\xuxin\Documents\codex-mobile-web-public\README.md`
+    - Added detailed Chinese release notes for the `8797` reservation.
+    - Updated macOS bridge start docs and environment variable table.
+- Validation:
+  - Public `npm.cmd test` passed (18/18).
+  - Public `npm.cmd run check` passed.
+  - Public `npm.cmd run check:macos` passed.
+  - Public `git diff --check` passed with line-ending warnings only.
+  - `bash ./start-codex-shared-mobile-macos.sh --start-port 8797 --end-port 8798 --print-only` chooses `8798`, proving default auto mode skips `8797`.
+  - `bash ./start-codex-shared-mobile-macos.sh --port 8797 --print-only` exits with the reserved-port error.
+- Publication status:
+  - Changes are local in the public repo. They have not been committed or pushed.
+
+## 2026-05-11 PWA Cache Reset For Swipe Archive - 23:12 +08:00
+
+- User report:
+  - Killing and reopening the PWA still showed the old thread-list left-swipe action `压缩续接` instead of `归档`.
+- Cause:
+  - The running server had already been updated and restarted, but the installed iOS/PWA client could still be controlled by the old active service worker.
+  - The old service worker used cache-first behavior for static assets, so reopening the app could continue serving stale `/index.html` and `/app.js` from Cache Storage.
+- Private workspace changes:
+  - `public/index.html`: versioned app-shell URLs are now used for `/manifest.json?v=36`, `/styles.css?v=36`, `/service-worker.js?v=36`, and `/app.js?v=36`.
+  - `public/app.js`: normal service-worker registration now also uses `/service-worker.js?v=36` and asks the registration to update.
+  - `public/service-worker.js`: static assets are cached with versioned URLs, and non-API/non-upload requests now prefer network first with cached fallback. The old `return cached || network` cache-first path is removed.
+  - `server.js`: added unauthenticated `GET /api/client-reset`, which bypasses the old service worker because `/api/` is excluded from app-shell caching. It unregisters all service workers for the origin, deletes Cache Storage entries, then redirects to a fresh app URL.
+  - `test/thread-archive.test.js`: added regression coverage for versioned app-shell URLs and the client reset route.
+- Runtime activation:
+  - Restarted the 8787 Node listener after the `v36` cache-version bump. Old PID `37712`, new PID `45264`.
+  - Verified `http://127.0.0.1:8787/app.js?v=36` contains `data-thread-archive` and no `data-new-thread-from-thread`.
+  - Verified `http://127.0.0.1:8787/service-worker.js?v=36` contains `codex-mobile-shell-v36`, versioned app assets, network-first fetch logic, and no old cache-first `return cached || network`.
+  - Verified `http://127.0.0.1:8787/api/client-reset` returns the reset page and includes service-worker unregister plus cache deletion code.
+- Validation:
+  - `npm.cmd test` passed (10/10).
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with line-ending warnings only.
+- User-facing recovery:
+  - Open the reset route in the same PWA/Safari origin used for Mobile Web, for example `https://gmk.tail62e8ce.ts.net:8443/api/client-reset` or the matching LAN host. After it redirects back to the app, the left-swipe action should show `归档`.
+
+## 2026-05-11 Private Swipe Archive Activation - 18:34 +08:00
+
+- User report:
+  - After re-login, thread-list left swipe still showed `压缩续接` instead of `归档`.
+- Cause:
+  - The previous PR #18 merge was completed in `C:\Users\xuxin\Documents\codex-mobile-web-public`, but the running 8787 service was using the private workspace `C:\Users\xuxin\Documents\codex-mobile-web`.
+  - Private `public/app.js` still used `data-new-thread-from-thread` and rendered `压缩续接` for the thread-row swipe action.
+- Private workspace changes:
+  - `public/app.js`: thread-row swipe action now renders `归档`, uses `data-thread-archive`, and calls `archiveThreadFromList()`.
+  - `server.js`: added `POST /api/threads/<threadId>/archive`, idempotent archive handling, archive/backup rollout filtering through `archived_sessions`, `state_5.sqlite`, and `.jsonl.bak/.backup/.old` paths.
+  - `public/service-worker.js`: cache name bumped from `codex-mobile-shell-v10` to `codex-mobile-shell-v35`.
+  - `test/thread-archive.test.js`: added regression coverage for left-swipe archive selectors and archive route presence.
+- Runtime activation:
+  - Restarted only the 8787 Node listener. Old PID `13572`, new PID `15612`.
+  - Verified `http://127.0.0.1:8787/app.js` contains `data-thread-archive` and `archiveThreadFromList`, and does not contain `data-new-thread-from-thread`.
+  - Verified `http://127.0.0.1:8787/service-worker.js` contains `codex-mobile-shell-v35`.
+- Validation:
+  - `npm.cmd test` passed (9/9).
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with line-ending warnings only.
+- User-facing note:
+  - If an already-installed PWA still shows `压缩续接`, it is using the old service worker/app-shell cache. Refresh once or close/reopen the PWA so the new service worker and `app.js` activate.
+
+## 2026-05-11 Public Repo PR #18/#24/#25 Merge - 18:05 +08:00
+
+- User instruction:
+  - Continue merging public pull requests.
+  - Merge PR #18 as well and let PR content override the previous local behavior.
+- Public repo path:
+  - `C:\Users\xuxin\Documents\codex-mobile-web-public`
+- Published commits:
+  - `f13f8a3 合并 PR #18：将线程列表左滑动作改为归档`
+    - Left-swipe thread-row action changed from `压缩续接` to `归档`.
+    - Added `POST /api/threads/<threadId>/archive`.
+    - Added filtering for `archived_sessions` and `.jsonl.bak/.backup/.old` backup rollout paths.
+    - Resolved an automatic merge issue where PR #18 and current main both defined `mergeThreadStateFromStateDb`; final code keeps one merged implementation.
+    - README Chinese release section `2026-05-11 Public 发布说明（续三）`; service worker cache `codex-mobile-shell-v18`.
+    - Added `test/thread-archive.test.js`.
+  - `233eb66 合并 PR #24/#25：修复 iPad 横屏 Composer 溢出并优化额度显示`
+    - PR #25 includes PR #24, so both were merged through the PR #25 head.
+    - iPad landscape split composer overflow fixed with tighter sidebar/main height constraints.
+    - Removed the previous visualViewport composer lift path in favor of stable grid/container constraints.
+    - Composer model/reasoning and permission are read-only chips; Mobile Web no longer submits `model`, `effort`, or `permissionMode`.
+    - Quota display is now two reset-aware chips with severity coloring.
+    - README Chinese release section `2026-05-11 Public 发布说明（续四）`; service worker cache `codex-mobile-shell-v34`.
+    - Added `test/composer-quota.test.js` and updated `test/tablet-layout.test.js`.
+- PR state:
+  - Closed PR #18, #24, and #25 after push.
+  - `gh pr list --state open` returned no open PRs.
+- Validation:
+  - After PR #18: `npm.cmd test` passed (12/12), `npm.cmd run check` passed, `npm.cmd run check:macos` passed, `git diff --check` passed.
+  - After PR #24/#25: `npm.cmd test` passed (18/18), `npm.cmd run check` passed, `npm.cmd run check:macos` passed, `git diff --check` passed.
+  - Public `main` and `origin/main` are aligned at `233eb66`.
+
+## 2026-05-11 Public Repo Merge Follow-up - 16:08 +08:00
+
+- Scope:
+  - Continue processing pending public pull requests in `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Complete integration of PR #21, #22, #23 into `main` with detailed README update.
+- Integrated and published:
+  - Consolidated changes on `main` as commit `e13daeb`:
+    - iPad landscape composer two-row compact layout and keyboard-avoidance lift.
+    - Session switch refresh abort + polling backoff optimization.
+    - Desktop notification replay enabled by default and replay buffer stores full notifications.
+    - Added tests: `test/tablet-layout.test.js`, `test/mobile-polling.test.js`, and protocol replay coverage in `test/protocol.test.js`.
+    - README updated with Chinese release section `2026-05-11 Public 发布说明（续二）`, plus mux replay/env/troubleshooting corrections.
+  - Pushed to `origin/main`: `5b57a54..e13daeb`.
+- PR state updates:
+  - Closed PR #21, #22, #23 with comments pointing to `e13daeb`.
+  - PR #18 (`[移动端] 将左滑操作改为归档`) remains open intentionally; it is still outside the current product rule.
+- Validation in public repo:
+  - `npm.cmd test` passed (10/10).
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+
 ## 2026-05-03 Migration From Agent Workspace - 17:45 +08:00
 
 - Objective:
@@ -2299,3 +2547,251 @@
   - Public commit message was written in Chinese with detailed behavior, user impact, documentation, and validation notes, following the updated public release rule.
   - Public validation passed: `npm.cmd test`, `npm.cmd run check`, `npm.cmd run check:macos`, `git diff --check`, and targeted privacy scan for local paths, private repo URLs, LAN/Tailscale markers, and Hermes markers.
   - Public commit `e0addcb127c779e3cf4f5500d11357f255f714d6` pushed to `origin/main`.
+
+## 2026-05-09 iOS PWA Blank Return From Input Method Permission - 16:51 +08:00
+
+- User-reported issue:
+  - When switching input methods and opening an input-method permission/settings screen, returning to Mobile Web can show a black/empty window that is not the original app window. Switching back to the original app/window restores the real UI.
+- Likely cause:
+  - iOS PWA / WebKit can create or restore a separate web app scene after returning from Settings/input-method permission flows.
+  - The Mobile Web HTML initially hides both `#login` and `#app`, and the old startup path waited for `/api/public-config` before revealing either pane. If that new/restored scene hit a transient stalled/failed config request, it could remain visually black even though the original scene was still alive.
+- Code changes:
+  - `public/app.js` now reveals a cached shell immediately at startup: if a stored access key exists, show the app shell before `/api/public-config`; otherwise show login.
+  - `/api/public-config` is now fetched through the normal `api()` helper with an 8-second timeout. If it fails and an access key exists, the app shell stays visible and shows the error instead of leaving a hidden black page.
+  - Added a blank-shell watchdog. While visible, if both `#login` and `#app` are hidden, it restores the app shell when a key exists or login otherwise. Recovery emits a compact `blank_shell_recovered` client event when authenticated.
+  - `resumeMobileSession()` also invokes blank-shell recovery before the heavier visual recovery passes.
+  - `README.md` and `.agent-context/PROJECT_CONTEXT.md` document the startup-shell and blank-shell watchdog rule.
+- Validation:
+  - `npm.cmd test` passed with 7 tests.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with line-ending warnings only.
+- Runtime note:
+  - Static frontend-only change; the 8787 Node listener does not need restart.
+  - Existing browser/PWA sessions need a refresh to load the updated `public/app.js`.
+  - Public repo was not updated in this step. Follow the project rule: wait for explicit user approval before syncing `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+
+## 2026-05-09 iOS PWA Blank Return Follow-up - 17:00 +08:00
+
+- User feedback:
+  - The first blank-return fix did not resolve the issue.
+- Follow-up diagnosis:
+  - The first fix only covered the case where JavaScript was already running and both root panes were hidden.
+  - The remaining failure can happen earlier or lower in the WebKit/PWA scene lifecycle: the restored scene may show the static page before startup JavaScript/config finishes, or a previous visual-recovery transform/class can remain around a suspended scene.
+- Code changes:
+  - `public/index.html` now leaves the app shell visible in static HTML instead of hiding both root panes by default. Startup JavaScript still switches to login when auth requires it and no saved access key exists.
+  - `public/index.html` now includes a pre-app boot fallback (`Codex / 正在恢复界面 / 重新载入`), early service-worker registration, and an inline early diagnostic script. When a saved key exists, it posts compact `early_boot` client events with phase, visibility, standalone mode, and viewport dimensions, without raw secrets or user content.
+  - `public/app.js` now clears transient visual-recovery classes/transforms before showing login/app, before new foreground recovery passes, and when the page blurs, hides, or receives `pagehide`.
+  - `public/app.js` now registers the service worker during normal startup even when Web Push is not being enabled, so the app shell cache is installed independently of notification setup.
+  - `public/service-worker.js` now caches the private app shell and uses cached `index.html` for navigation after a short network timeout, while bypassing `/api/` and `/uploads/`. This mirrors the public PWA shell-cache behavior and targets the pure black iOS launch screen where page HTML was not reached.
+  - Follow-up evidence from startup logs showed `early_boot`, `early-service-worker-registered`, and `app-app-shown` events from the iPhone while the user still saw pure black, so page JavaScript did run and the remaining issue is a WebKit/PWA paint/compositing failure.
+  - Removed the heavy iOS recovery compositor hints: root/body/app 3D transforms and the full-screen transparent `body::before` pseudo-element are no longer used. These were plausible contributors to a black composited surface.
+  - The boot fallback is no longer hidden immediately by `app-booted`; it stays visible during startup/resume and is hidden later through `app-ready`, giving iOS a visible fixed layer while the main app repaints.
+  - After the user still reproduced pure black, the default iOS launch mode was changed to avoid standalone Web App scenes: `public/manifest.json` now uses `display: "browser"` and `display_override: ["browser"]`, `public/index.html` sets `apple-mobile-web-app-capable=no`, and the service-worker cache is bumped to `codex-mobile-shell-v3`. Existing Home Screen installs may keep the old standalone mode until the user deletes and re-adds the icon from Safari.
+  - Follow-up logs showed both `standalone:true` Safari/Home Screen paths and `standalone:false` Chrome/browser paths. The standalone warning gate caused false-positive UX when the user tried browser paths, so it was removed. Mobile Web now records diagnostics but does not block entry based on display-mode checks; service-worker cache was bumped to `codex-mobile-shell-v5`.
+  - Follow-up user feedback: the fallback still appeared on every refresh and was disruptive. The boot fallback is now hidden by default through CSS and only becomes visible after a 2.5s startup timeout or an explicit shell recovery path. `showBootFallback()` adds `boot-fallback-visible`, `hideBootFallback()` removes it, and the service-worker cache was bumped to `codex-mobile-shell-v6`.
+  - The blank-shell watchdog now also treats a visible but collapsed app pane as recoverable, not only the "both root panes hidden" case.
+  - Focus-out visual recovery is suppressed when the document has already lost focus, reducing the chance that opening an input-method permission screen leaves a stale repaint layer behind.
+  - `public/styles.css` now uses `100vh` / `100svh` startup fallbacks for the app shell and boot fallback, reducing dependence on `100dvh` before JavaScript updates `--app-height`.
+- Documentation:
+  - `README.md` and `.agent-context/PROJECT_CONTEXT.md` now describe the static visible shell, collapsed-pane recovery, and suspended-scene cleanup behavior.
+- Validation:
+  - `npm.cmd test` passed with 7 tests.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with line-ending warnings only.
+- Runtime note:
+  - Static frontend-only change; existing PWA sessions need a refresh/relaunch to load the new `index.html` and `app.js`.
+  - Public repo was not updated in this step; wait for explicit user approval before syncing public.
+
+## 2026-05-09 iOS Full-Screen PWA Recovery Adjustment
+
+- User clarification:
+  - Browser display mode avoids the black-return issue but is not acceptable because the target use case requires a full-screen Home Screen app.
+  - Follow-up screenshot showed the black page is a separate iOS PWA scene/window, while the original Codex scene on the left is still alive. Reloading the original scene is therefore the wrong recovery target.
+- Code changes:
+  - Restored full-screen PWA install behavior: `public/manifest.json` now uses `display: "standalone"` with `display_override: ["standalone", "fullscreen"]`, and `public/index.html` sets `mobile-web-app-capable=yes`, `apple-mobile-web-app-capable=yes`, and `apple-mobile-web-app-status-bar-style=black-translucent`.
+  - `public/manifest.json` now also declares stable PWA identity with `id: "/"` and `launch_handler.client_mode` preferring `focus-existing` / `navigate-existing` where supported, so repeated launches should prefer the existing PWA client instead of creating an additional app scene.
+  - Removed the iOS standalone resume hard-reload recovery because it refreshed the original good scene and did not affect the separate black scene.
+  - `public/service-worker.js` now opens `/` when no notification client exists, then posts the target thread id to that client. It no longer directly opens `/?thread=...`, which can be treated by iOS as a distinct PWA launch target.
+  - `public/app.js` now installs a `launchQueue` consumer when available and routes launch target URLs through the existing external-thread selection path.
+  - Fixed the private HTML icon references from missing `/icons/...` paths to the existing `/icon.svg` path. This reduces the chance of generic PWA icons after a fresh Home Screen install, though iOS may still prefer PNG touch icons in some versions.
+  - Bumped the private service-worker app-shell cache to `codex-mobile-shell-v8`.
+- Documentation:
+  - `README.md` now states that full-screen standalone PWA is intentional and that the black-scene issue is a multi-scene launch problem, not a simple repaint problem.
+  - `.agent-context/PROJECT_CONTEXT.md` records that future iOS recovery work must preserve full-screen PWA mode unless the user explicitly changes that requirement.
+- Publication status:
+  - Private workspace only. Do not sync public until the user tests and explicitly requests public update.
+
+## 2026-05-09 Disable Boot Recovery Overlay
+
+- User decision:
+  - The iOS separate black PWA scene issue is deferred for now.
+  - The page-entry recovery / old-page prompt should be removed because it is disruptive.
+- Code changes:
+  - `public/index.html` no longer renders the `bootFallback` overlay markup.
+  - The early startup timeout still reports a compact diagnostic event, but it no longer adds `boot-fallback-visible`.
+  - `public/app.js` suppresses `showBootFallback()` by removing `boot-fallback-visible` instead of showing an overlay, while keeping the normal shell recovery logic.
+  - `public/styles.css` keeps any stale `boot-fallback-visible` state hidden so old cached HTML plus new CSS does not display the prompt.
+  - Bumped private service-worker app-shell cache to `codex-mobile-shell-v9`.
+- Documentation:
+  - `README.md` and `.agent-context/PROJECT_CONTEXT.md` now state that the boot recovery overlay is intentionally disabled.
+- Publication status:
+  - Private workspace only. Do not sync public until the user tests and explicitly requests public update.
+
+## 2026-05-09 Light Theme Warmer Page Background
+
+- User request:
+  - Make the daytime/light page background slightly more yellow.
+- Code changes:
+  - `public/styles.css` changed the light-theme `--bg` value from the previous cool gray to a warmer pale background for both explicit `light` mode and system-light mode.
+  - `public/index.html` updated the early light `theme-color` metadata to match the warmer background before the app bundle loads.
+- Publication status:
+  - Private workspace only. Do not sync public until the user tests and explicitly requests public update.
+
+## 2026-05-09 Web Push Button Visible After PWA Reinstall
+
+- User-reported issue:
+  - After reinstalling the PWA, the Web Push registration button disappeared and notifications could not be enabled.
+- Finding:
+  - `public/index.html` renders the button initially as `class="push-button hidden"`.
+  - `updatePushButton()` updated text and disabled/error/ready states but never removed `hidden`, so a fresh PWA install could keep the button invisible.
+- Code changes:
+  - `public/app.js` now removes `hidden` whenever `updatePushButton()` runs, so the sidebar shows the current notification state such as enable, test, HTTPS required, unsupported, or blocked.
+  - Bumped private service-worker app-shell cache to `codex-mobile-shell-v10` so cached `app.js` updates are picked up.
+- Publication status:
+  - User explicitly requested public push on 2026-05-10.
+  - Public repo `C:\Users\xuxin\Documents\codex-mobile-web-public` was updated with the public-safe subset of these changes:
+    - Web Push button removes initial `hidden` state in `updatePushButton()`.
+    - Public `manifest.json` adds stable `id: "/"`, `display_override`, and `launch_handler` hints while preserving public PNG icon assets.
+    - Public `sw.js` cache bumped to `codex-mobile-shell-v14`, navigation uses cached `index.html` after a short timeout, and notification clicks open `/` before posting the target thread id.
+    - Public light theme background changed to the warmer `#f8f6ee`.
+    - Public package version bumped to `0.1.2`.
+    - Public README received detailed Chinese release notes, Web Push behavior notes, PWA limitation notes, and cache activation guidance.
+  - Public validation passed: `npm.cmd test`, `npm.cmd run check`, `npm.cmd run check:macos`, `git diff --check`, and a targeted diff privacy scan for local paths, private repo markers, LAN/Tailscale markers, Hermes markers, access-key and Web Push runtime file names.
+  - Public commit `7e50677 发布移动端 PWA 与推送体验修正` pushed to `origin/main`.
+
+## 2026-05-11 Public PR #20 iPad Landscape Layout
+
+- User request:
+  - Public repository had a new pull request to pull/merge.
+- PR reviewed:
+  - `pentiumxp/codex-mobile-web-public#20` titled `[移动端] 增加 iPad 横屏双栏布局`.
+  - The PR touched `public/app.js`, `public/styles.css`, and `public/sw.js`.
+  - GitHub CI `Node checks` was green before integration.
+- Integration approach:
+  - The PR author's branch could not be pushed to directly from this environment even though GitHub reported maintainer modification was allowed; `git push` to the contributor fork returned `permission denied`.
+  - To satisfy the public release rule that public code changes must include detailed Chinese README documentation in the same public commit, the PR code changes and a README release-note update were integrated locally with a squash commit on public `main`.
+  - The original PR was commented with the integration details and closed. GitHub shows it as closed rather than merged because the final public commit is a local squash with added README documentation, not the contributor head commit.
+- Public changes pushed:
+  - Public commit `defe3a9 集成 iPad 横屏双栏布局` pushed to `C:\Users\xuxin\Documents\codex-mobile-web-public` `origin/main`.
+  - iPad / coarse-pointer landscape screens at roughly `min-width: 900px` and `min-height: 600px` now use a persistent left session/sidebar plus right conversation pane.
+  - Phone, narrow, and iPad portrait layouts keep the drawer/sidebar behavior.
+  - `public/app.js` now keeps sidebar overlay detection aligned with the new CSS tablet split breakpoint.
+  - Public service worker cache bumped from `codex-mobile-shell-v14` to `codex-mobile-shell-v15`.
+  - Public `README.md` added a `2026-05-11 Public 发布说明` section with Chinese user-visible behavior, scope, and cache activation notes.
+- Validation:
+  - Public `npm.cmd test` passed.
+  - Public `npm.cmd run check` passed.
+  - Public `npm.cmd run check:macos` passed.
+  - Public `git diff --cached --check` passed before commit.
+  - Public privacy scan found no local user paths, private repo markers, LAN/Tailscale markers, Hermes markers, access-key markers, or Web Push runtime file markers.
+- Remaining open public PRs after closing #20:
+  - #14 `优化运行中消息引导反馈`
+  - #15 `增加移动端同步健康日志`
+  - #16 `增加线程切换和恢复诊断`
+  - #17 `[移动端] 完善新建对话入口与工作区下拉`
+  - #18 `[移动端] 将左滑操作改为归档` - conflicts with the current product rule that left swipe exposes `压缩续接`; do not merge blindly.
+  - #19 `[移动端] 只读显示 session 的模型和推理强度`
+
+## 2026-05-11 Public PR Batch Merge (#14/#15/#16/#17/#19)
+
+- User request:
+  - Continue processing remaining public pull requests.
+- Scope integrated to public main:
+  - PR #14 optimize running-turn steer feedback UX.
+  - PR #15 add mobile sync-health diagnostics logs and log-size guards.
+  - PR #16 thread switch/resume diagnostics (resulted empty during cherry-pick because equivalent behavior was already present after merged stack and conflict resolution).
+  - PR #17 mobile new-thread entry and workspace picker improvements.
+  - PR #19 mobile model/reasoning read-only behavior and no model/effort submit from mobile.
+- Public release commit:
+  - `5b57a54 合并移动端体验增强与诊断能力（PR #14/#15/#16/#17/#19）` pushed to `origin/main` in `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+- Public documentation and cache:
+  - README updated with detailed Chinese notes for this batch release.
+  - Public service-worker cache bumped to `codex-mobile-shell-v16`.
+- Validation:
+  - `npm.cmd test` passed.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed.
+  - Public privacy scan passed for local paths/private markers/runtime secret markers.
+  - GitHub CI for commit `5b57a54` completed with `success`.
+- PR closure:
+  - Added integrated-to-main comments and closed PRs #14/#15/#16/#17/#19.
+- Remaining open public PRs after this batch:
+  - #18 `[移动端] 将左滑操作改为归档` (still open; conflicts with current product rule that left swipe exposes `压缩续接`).
+  - Newly observed open PRs: #21, #22, #23 (not processed in this batch).
+
+## 2026-05-13 Scheduled Shared-Chain Restart
+
+- User request:
+  - Create a scheduled restart for processes that may become slow over long uptimes.
+  - Scope should not include Hermes Mobile or Gateway, because the user had already restarted those repeatedly without restoring speed.
+- Implemented scripts:
+  - `restart-codex-mobile-shared-chain.ps1`
+    - Stops the `Codex Mobile Web` scheduled task.
+    - Stops only matching Codex Mobile Web shared-chain processes: hidden/windowless launchers for this workspace, this workspace's `server.js`, this workspace's app-server mux, and `%USERPROFILE%\.codex-mobile-web\codex.exe app-server`.
+    - Removes `%USERPROFILE%\.codex\app-server-mux\endpoint.json`.
+    - Starts `Codex Mobile Web` again and waits for both HTTP on port `8787` and mux endpoint readiness.
+    - Logs to `%USERPROFILE%\.codex-mobile-web\scheduled-shared-chain-restart.log`.
+  - `install-codex-mobile-shared-chain-restart.ps1`
+    - Installs or uninstalls the scheduled restart task.
+    - Uses `powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden`, so the task is hidden/no-window.
+- Installed task:
+  - Name: `Codex Mobile Web Shared Chain Restart`
+  - Schedule: daily at `04:30`
+  - Next run after installation: `2026-05-14 04:30:00`
+  - Hidden: `True`
+  - It intentionally does not restart Hermes Mobile, Gateway, WSL, or Codex Desktop.
+- Validation:
+  - PowerShell scriptblock syntax check passed for both scripts.
+  - Dry run of `restart-codex-mobile-shared-chain.ps1 -DryRun` matched only the expected current processes: `wscript.exe`, the windowless PowerShell launcher, `node.exe` mux, `codex.exe app-server`, and `node.exe server.js`.
+  - `Get-ScheduledTask` verified the new task is `Ready`, hidden, and points at `restart-codex-mobile-shared-chain.ps1`.
+
+## 2026-05-13 Public PR #26-#30 Integration And Public-First Sync
+
+- User decision:
+  - Future PR integrations should be public-first: merge/integrate public PRs in `C:\Users\xuxin\Documents\codex-mobile-web-public`, then sync product files into the private repo.
+  - Private repo should stay aligned with public product code and keep only local-only overlays such as `.agent-context`, raw runtime state, generated binaries, and local scheduled-task helper scripts.
+- Public PRs processed:
+  - #26 `恢复 Composer 运行时设置卡片`
+  - #27 `修复移动端 Markdown 列表和链接渲染`
+  - #28 `保留移动端浏览器本地草稿`
+  - #29 `重构移动端核心前端模块`
+  - #30 `记录压缩续接 lineage`
+- Public merge results:
+  - PR #26 was squash-merged with Chinese detailed commit `00062bf 合并 PR #26：恢复移动端 Composer 运行时设置卡片`.
+  - PR #27 was squash-merged with Chinese detailed commit `f0b02fd 合并 PR #27：修复移动端 Markdown 列表和链接渲染`.
+  - PR #28/#29/#30 were stacked on top of one another and conflicted after #26/#27 squash merges. To avoid bringing duplicate and English PR commits into public history, their final #30 tree was squash-integrated with Chinese detailed commit `7393a58 合并 PR #28/#29/#30：草稿保存、前端模块化与续接 lineage`.
+  - PR #28/#29/#30 were commented with the integration commit and closed because GitHub could not directly mark them merged after the stacked conflict resolution.
+- Public changes integrated:
+  - Composer runtime cards are editable again: model, reasoning effort, permission, and quota render as compact cards; selected model/effort/permission are submitted for existing-thread sends and new-thread first messages.
+  - Browser-local composer drafts are saved per thread and per new-thread workspace. Text uses `localStorage`; resumable attachments use IndexedDB where available.
+  - Frontend core modules were split into `public/api-client.js`, `public/runtime-settings.js`, `public/draft-store.js`, and `public/markdown-renderer.js`.
+  - Markdown rendering now has dedicated module/test coverage for ordered lists, bare URLs, safe links, unsafe links, and code-copy hooks.
+  - Continuation lineage records successful continuation links in `.agent-context/thread-handoffs/index.jsonl` and includes bounded lineage instructions in future continuation bootstrap messages.
+  - Public app shell uses `public/sw.js` and cache `codex-mobile-shell-v39`.
+- Public validation:
+  - `npm.cmd test` passed with 58 tests.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --cached --check` passed.
+  - Privacy scan of staged public diff found no local user paths, private repo paths, LAN/Tailscale markers, Hermes markers, or Web Push runtime file markers.
+- Private sync:
+  - Product files were copied from public main into private after public push. Private now follows public product layout, including `public/sw.js` instead of private-only `public/service-worker.js`, version `0.1.4`, and the new frontend modules/tests.
+  - Preserved private-only overlays: `.agent-context`, `AGENTS.md`, `data`, `logs`, generated `codex-app-server-mux.exe`, and the local scheduled shared-chain restart scripts.
+  - The earlier private-only PWA boot fallback/client-reset/service-worker recovery path is no longer present in product code after the public-upstream sync. If needed again, implement it in public first, then sync private.
+- Private validation after sync:
+  - `npm.cmd test` passed with 58 tests.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.

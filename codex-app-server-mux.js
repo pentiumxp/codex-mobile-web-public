@@ -24,9 +24,14 @@ const KEEP_ALIVE = STANDALONE || /^(1|true|yes|on)$/i.test(process.env.CODEX_MUX
 const RUNTIME_DIR = process.env.CODEX_MUX_RUNTIME_DIR || path.join(CODEX_HOME, "app-server-mux");
 const ENDPOINT_FILE = process.env.CODEX_MUX_ENDPOINT_FILE || path.join(RUNTIME_DIR, "endpoint.json");
 const LOG_FILE = process.env.CODEX_MUX_LOG_FILE || path.join(RUNTIME_DIR, "mux.log");
+const LOG_MAX_BYTES = Math.max(1024 * 1024, Number(process.env.CODEX_MUX_LOG_MAX_BYTES || String(30 * 1024 * 1024)));
+const LOG_KEEP_BYTES = Math.max(
+  256 * 1024,
+  Math.min(LOG_MAX_BYTES, Number(process.env.CODEX_MUX_LOG_KEEP_BYTES || String(8 * 1024 * 1024))),
+);
 const REPLAY_BUFFER_LIMIT = Math.max(0, Number(process.env.CODEX_MUX_REPLAY_BUFFER_LIMIT || "1200"));
 const REPLAY_BUFFER_MAX_AGE_MS = Math.max(0, Number(process.env.CODEX_MUX_REPLAY_BUFFER_MAX_AGE_MS || String(30 * 60 * 1000)));
-const REPLAY_DESKTOP_NOTIFICATIONS = /^(1|true|yes|on)$/i.test(process.env.CODEX_MUX_REPLAY_DESKTOP_NOTIFICATIONS || "");
+const REPLAY_DESKTOP_NOTIFICATIONS = /^(1|true|yes|on)$/i.test(process.env.CODEX_MUX_REPLAY_DESKTOP_NOTIFICATIONS || "1");
 const MOBILE_MAX_DELTA_CHARS = Math.max(1024, Number(process.env.CODEX_MUX_MOBILE_MAX_DELTA_CHARS || "12000"));
 const MOBILE_MAX_OUTPUT_CHARS = Math.max(MOBILE_MAX_DELTA_CHARS, Number(process.env.CODEX_MUX_MOBILE_MAX_OUTPUT_CHARS || "20000"));
 const MOBILE_DROP_NOTIFICATION_METHODS = new Set([
@@ -51,10 +56,35 @@ const replayBuffer = [];
 let nextSyntheticItemId = 1;
 let nextReplaySeq = 1;
 let initializeResult = null;
+let lastLogTrimAt = 0;
+
+function trimLogFile(filePath, maxBytes, keepBytes) {
+  try {
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile() || stat.size <= maxBytes) return;
+    const bytesToKeep = Math.max(0, Math.min(keepBytes, stat.size));
+    const fd = fs.openSync(filePath, "r");
+    try {
+      const buffer = Buffer.alloc(bytesToKeep);
+      const offset = stat.size - bytesToKeep;
+      const bytesRead = fs.readSync(fd, buffer, 0, bytesToKeep, offset);
+      fs.writeFileSync(filePath, buffer.subarray(0, bytesRead));
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch (_) {
+    // Keep stdio clean for the desktop app-server protocol.
+  }
+}
 
 function log(message) {
   try {
     fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true });
+    const now = Date.now();
+    if (now - lastLogTrimAt > 60_000) {
+      lastLogTrimAt = now;
+      trimLogFile(LOG_FILE, LOG_MAX_BYTES, LOG_KEEP_BYTES);
+    }
     fs.appendFileSync(LOG_FILE, `${new Date().toISOString()} ${message}\n`, "utf8");
   } catch (_) {
     // Keep stdio clean for the desktop app-server protocol.
@@ -210,8 +240,7 @@ function pruneReplayBuffer(now = Date.now()) {
 function cacheReplayNotification(message) {
   if (REPLAY_BUFFER_LIMIT <= 0 || !isReplayableNotification(message)) return;
   try {
-    const replayMessage = compactMobileNotification(message);
-    if (!replayMessage) return;
+    const replayMessage = cloneJson(message);
     replayBuffer.push({
       seq: nextReplaySeq++,
       receivedAt: Date.now(),
@@ -315,6 +344,32 @@ function buildUserMessageNotification(params) {
       },
     },
   };
+}
+
+function turnSummaryFromThread(thread) {
+  if (!thread || typeof thread !== "object") return null;
+  const turns = Array.isArray(thread.turns) ? thread.turns : [];
+  const latest = turns.length ? turns[turns.length - 1] : null;
+  return {
+    threadId: String(thread.id || ""),
+    turnCount: turns.length,
+    latestTurnId: latest && latest.id ? String(latest.id) : "",
+    latestTurnStatus: latest && latest.status ? String(latest.status) : "",
+    updatedAt: thread.updatedAt == null ? "" : String(thread.updatedAt),
+    status: thread.status && thread.status.type ? String(thread.status.type) : "",
+  };
+}
+
+function logThreadRpcResponse(request, message) {
+  if (!request || (request.method !== "thread/read" && request.method !== "thread/resume")) return;
+  const requestThreadId = request.params && request.params.threadId ? String(request.params.threadId) : "";
+  if (message && message.error) {
+    const err = message.error || {};
+    log(`[sync-health] method=${request.method} client=${request.client.id} thread=${requestThreadId} error=${err.code || ""}:${String(err.message || "").slice(0, 180)}`);
+    return;
+  }
+  const summary = turnSummaryFromThread(message && message.result && message.result.thread);
+  log(`[sync-health] method=${request.method} client=${request.client.id} thread=${requestThreadId || (summary && summary.threadId) || ""} status=${summary ? summary.status : ""} turns=${summary ? summary.turnCount : ""} latest=${summary ? summary.latestTurnId : ""} latestStatus=${summary ? summary.latestTurnStatus : ""} updatedAt=${summary ? summary.updatedAt : ""}`);
 }
 
 function handleMuxMethod(client, message) {
@@ -447,7 +502,12 @@ function handleClientLine(client, line) {
   if (hasId(message)) {
     const originalId = message.id;
     const internalId = `${client.id}:${String(originalId)}`;
-    pending.set(internalId, { client, originalId, method: message.method || "" });
+    pending.set(internalId, {
+      client,
+      originalId,
+      method: message.method || "",
+      params: message.params && typeof message.params === "object" ? cloneJson(message.params) : {},
+    });
     message.id = internalId;
     rememberPendingMobileTurnStart(internalId, client, message);
   }
@@ -503,6 +563,7 @@ function handleChildLine(line) {
       }
       if (!message.error) initializeResult = message.result || {};
     }
+    logThreadRpcResponse(request, message);
     message.id = request.originalId;
     sendToClient(request.client, message);
     if (request.method === "initialize" && !message.error) {

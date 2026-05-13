@@ -14,6 +14,8 @@ const USER_HOME = process.env.USERPROFILE || process.env.HOME || process.cwd();
 const RUNTIME_ROOT = process.env.CODEX_MOBILE_RUNTIME_DIR || path.join(USER_HOME, ".codex-mobile-web");
 const CODEX_HOME = process.env.CODEX_HOME || path.join(USER_HOME, ".codex");
 const STATE_DB = path.join(CODEX_HOME, "state_5.sqlite");
+const SESSIONS_DIR = path.join(CODEX_HOME, "sessions");
+const ARCHIVED_SESSIONS_DIR = path.join(CODEX_HOME, "archived_sessions");
 const CODEX_EXE = process.env.CODEX_MOBILE_CODEX_EXE || "codex";
 const MUX_ENDPOINT_FILE = process.env.CODEX_MOBILE_MUX_ENDPOINT_FILE || path.join(CODEX_HOME, "app-server-mux", "endpoint.json");
 const EXTERNAL_APP_SERVER_WS = process.env.CODEX_MOBILE_APP_SERVER_WS || "";
@@ -37,6 +39,18 @@ const PUSH_SUBSCRIPTIONS_FILE = process.env.CODEX_MOBILE_PUSH_SUBSCRIPTIONS_FILE
 const DEFAULT_PUSH_SUBJECT = "mailto:codex-mobile-web@example.com";
 const PUSH_SUBJECT = normalizePushSubject(process.env.CODEX_MOBILE_PUSH_SUBJECT || DEFAULT_PUSH_SUBJECT);
 const PUSH_TTL_SECONDS = Math.max(30, Number(process.env.CODEX_MOBILE_PUSH_TTL_SECONDS || "3600"));
+const MOBILE_WEB_LOG_FILE = process.env.CODEX_MOBILE_WEB_LOG_FILE || path.join(RUNTIME_ROOT, "logs", "mobile-web.log");
+const MOBILE_WEB_LOG_MAX_BYTES = Math.max(
+  1024 * 1024,
+  Number(process.env.CODEX_MOBILE_WEB_LOG_MAX_BYTES || String(20 * 1024 * 1024)),
+);
+const MOBILE_WEB_LOG_KEEP_BYTES = Math.max(
+  256 * 1024,
+  Math.min(
+    MOBILE_WEB_LOG_MAX_BYTES,
+    Number(process.env.CODEX_MOBILE_WEB_LOG_KEEP_BYTES || String(5 * 1024 * 1024)),
+  ),
+);
 const MAX_TEXT_CHARS = 60000;
 const MAX_JSON_BODY_BYTES = 2_000_000;
 const MAX_START_THREAD_DEVELOPER_INSTRUCTIONS_CHARS = 120000;
@@ -58,6 +72,7 @@ const MODEL_OPTIONS = optionListFromEnv("CODEX_MOBILE_MODEL_OPTIONS", [
   "gpt-5.3-codex-spark",
   "gpt-5.2",
 ]);
+const DEFAULT_MODEL = MODEL_OPTIONS[0] || "gpt-5.5";
 const REASONING_EFFORT_OPTIONS = optionListFromEnv("CODEX_MOBILE_REASONING_EFFORT_OPTIONS", [
   "low",
   "medium",
@@ -95,6 +110,8 @@ const CONTINUATION_HANDOFF_MIN_CHARS = Math.max(120, Number(process.env.CODEX_MO
 const CONTINUATION_HANDOFF_TURN_COMPLETION_TIMEOUT_MS = Math.max(5_000, Number(process.env.CODEX_MOBILE_CONTINUATION_HANDOFF_TURN_COMPLETION_TIMEOUT_MS || "60000"));
 const CONTINUATION_JOB_TTL_MS = Math.max(60_000, Number(process.env.CODEX_MOBILE_CONTINUATION_JOB_TTL_MS || "1800000"));
 const CONTINUATION_JOB_MAX = Math.max(10, Number(process.env.CODEX_MOBILE_CONTINUATION_JOB_MAX || "50"));
+const CONTINUATION_LINEAGE_MAX_DEPTH = Math.max(0, Math.min(5, Number(process.env.CODEX_MOBILE_CONTINUATION_LINEAGE_MAX_DEPTH || "2")));
+const CONTINUATION_LINEAGE_MAX_CHARS = Math.max(2_000, Number(process.env.CODEX_MOBILE_CONTINUATION_LINEAGE_MAX_CHARS || "30000"));
 const RUNTIME_CONTEXT_CACHE_TTL_MS = Math.max(1000, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_CACHE_TTL_MS || "30000"));
 const RUNTIME_CONTEXT_CACHE_MAX = Math.max(20, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_CACHE_MAX || "200"));
 const MUX_REPLAY_NOTIFICATION_LIMIT = Math.max(0, Number(process.env.CODEX_MOBILE_MUX_REPLAY_NOTIFICATION_LIMIT || "200"));
@@ -111,6 +128,7 @@ let clients = new Map();
 let clientHeartbeats = new WeakMap();
 let latestRateLimits = null;
 const latestRateLimitsByModel = new Map();
+let lastRolloutRateLimitScanAt = 0;
 const latestRuntimeContextByPath = new Map();
 const recentStartedThreads = new Map();
 const continuationJobs = new Map();
@@ -254,6 +272,35 @@ function sendJson(res, status, data) {
     "Cache-Control": "no-store",
   });
   res.end(body);
+}
+
+let lastLogTrimAt = 0;
+
+function trimLogFile(filePath, maxBytes, keepBytes) {
+  try {
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile() || stat.size <= maxBytes) return false;
+    const bytesToKeep = Math.max(0, Math.min(keepBytes, stat.size));
+    const fd = fs.openSync(filePath, "r");
+    try {
+      const buffer = Buffer.alloc(bytesToKeep);
+      const offset = stat.size - bytesToKeep;
+      const bytesRead = fs.readSync(fd, buffer, 0, bytesToKeep, offset);
+      fs.writeFileSync(filePath, buffer.subarray(0, bytesRead));
+    } finally {
+      fs.closeSync(fd);
+    }
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function trimRuntimeLogs(options = {}) {
+  const now = Date.now();
+  if (!options.force && now - lastLogTrimAt < 60_000) return;
+  lastLogTrimAt = now;
+  trimLogFile(MOBILE_WEB_LOG_FILE, MOBILE_WEB_LOG_MAX_BYTES, MOBILE_WEB_LOG_KEEP_BYTES);
 }
 
 function safeAppUpdateError(err) {
@@ -611,6 +658,7 @@ function scheduleStartupAppUpdateCheck() {
 }
 
 function logThreadDetail(event, details = {}) {
+  trimRuntimeLogs();
   const safeDetails = {};
   for (const [key, value] of Object.entries(details || {})) {
     if (value === undefined) continue;
@@ -641,14 +689,17 @@ function safeLogDetails(details = {}) {
 }
 
 function logContinuation(event, details = {}) {
+  trimRuntimeLogs();
   console.log(`[continuation] ${event} ${JSON.stringify(safeLogDetails(details))}`);
 }
 
 function logMessageSubmit(event, details = {}) {
+  trimRuntimeLogs();
   console.log(`[message-submit] ${event} ${JSON.stringify(safeLogDetails(details))}`);
 }
 
 function logClientEvent(event, details = {}) {
+  trimRuntimeLogs();
   console.log(`[client-event] ${event} ${JSON.stringify(safeLogDetails(details))}`);
 }
 
@@ -729,6 +780,21 @@ function visibilityFromGlobalState(globalState = readGlobalState()) {
   };
 }
 
+function isBackupRolloutPath(value) {
+  return /\.jsonl\.(bak|backup|old)(?:\b|[-_.])/i.test(String(value || ""));
+}
+
+function archivedSessionThreadIds() {
+  try {
+    return new Set(fs.readdirSync(ARCHIVED_SESSIONS_DIR)
+      .map((name) => String(name || "").match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i))
+      .filter(Boolean)
+      .map((match) => match[1]));
+  } catch (_) {
+    return new Set();
+  }
+}
+
 function isHiddenThread(thread, visibility = null) {
   if (!thread || typeof thread !== "object") return true;
   const view = visibility || visibilityFromGlobalState();
@@ -738,6 +804,7 @@ function isHiddenThread(thread, visibility = null) {
   if (thread.deleted || thread.deletedAt || thread.deleted_at || thread.isDeleted || thread.removed || thread.removedAt) return true;
   if (/archived|deleted|removed/.test(status)) return true;
   if (/[/\\](archived|deleted|trash|removed)[_-]?sessions[/\\]/.test(location)) return true;
+  if (isBackupRolloutPath(location)) return true;
   if (view.workspaceKeys && view.workspaceKeys.size > 0) {
     const cwd = normalizeFsPath(thread.cwd);
     if (cwd) return !view.workspaceKeys.has(cwd);
@@ -750,13 +817,66 @@ function filterVisibleThreads(result, globalState = readGlobalState()) {
   const visibility = visibilityFromGlobalState(globalState);
   if (!result || typeof result !== "object") return result;
   const out = Object.assign({}, result);
-  if (Array.isArray(out.data)) out.data = out.data
+  if (Array.isArray(out.data)) out.data = mergeThreadStateFromStateDb(out.data)
     .filter((thread) => !isHiddenThread(thread, visibility))
     .map(annotateThreadRolloutStats);
-  if (Array.isArray(out.threads)) out.threads = out.threads
+  if (Array.isArray(out.threads)) out.threads = mergeThreadStateFromStateDb(out.threads)
     .filter((thread) => !isHiddenThread(thread, visibility))
     .map(annotateThreadRolloutStats);
   return out;
+}
+
+function mergeThreadStateFromStateDb(threads) {
+  if (!Array.isArray(threads) || !threads.length || !fs.existsSync(STATE_DB)) return threads;
+  const ids = Array.from(new Set(threads.map((thread) => String(thread && thread.id || "").trim()).filter(Boolean)));
+  if (!ids.length) return threads;
+  const inClause = ids.map((id) => sqlString(id)).join(", ");
+  const query = [
+    "select id,archived,archived_at,rollout_path,model,reasoning_effort",
+    "from threads",
+    `where id in (${inClause});`,
+  ].join(" ");
+  try {
+    const result = spawnSync("sqlite3", ["-json", STATE_DB, query], {
+      encoding: "utf8",
+      timeout: 5000,
+      windowsHide: true,
+      maxBuffer: 1024 * 1024,
+    });
+    if (result.error || result.status !== 0) return threads;
+    const rows = JSON.parse(result.stdout || "[]");
+    if (!Array.isArray(rows) || !rows.length) return threads;
+    const stateById = new Map();
+    const archivedIds = archivedSessionThreadIds();
+    for (const row of rows) {
+      const id = String(row && row.id || "").trim();
+      if (!id) continue;
+      stateById.set(id, {
+        archived: Boolean(Number(row.archived || 0))
+          || archivedIds.has(id)
+          || /[/\\]archived_sessions[/\\]/i.test(String(row.rollout_path || ""))
+          || isBackupRolloutPath(row.rollout_path),
+        archivedAt: row.archived_at || null,
+        model: row.model || null,
+        effort: row.reasoning_effort || null,
+      });
+    }
+    return threads.map((thread) => {
+      if (!thread || typeof thread !== "object") return thread;
+      const state = stateById.get(String(thread.id || "").trim());
+      if (!state) return thread;
+      const next = Object.assign({}, thread);
+      if (state.model) next.model = state.model;
+      if (state.effort) next.effort = state.effort;
+      if (state.archived) {
+        next.archived = true;
+        next.archivedAt = state.archivedAt || thread.archivedAt || thread.archived_at || null;
+      }
+      return next;
+    });
+  } catch (_) {
+    return threads;
+  }
 }
 
 function isCompletedStatus(status) {
@@ -1582,24 +1702,27 @@ function compactNotification(payload) {
 
 function compactRateLimitWindow(value) {
   if (!value || typeof value !== "object") return null;
+  const usedPercent = value.usedPercent ?? value.used_percent;
+  const windowDurationMins = value.windowDurationMins ?? value.window_minutes;
+  const resetsAt = value.resetsAt ?? value.resets_at;
   return Object.fromEntries(Object.entries({
-    usedPercent: typeof value.usedPercent === "number" ? value.usedPercent : undefined,
-    windowDurationMins: typeof value.windowDurationMins === "number" ? value.windowDurationMins : undefined,
-    resetsAt: typeof value.resetsAt === "number" ? value.resetsAt : undefined,
+    usedPercent: Number.isFinite(Number(usedPercent)) ? Number(usedPercent) : undefined,
+    windowDurationMins: Number.isFinite(Number(windowDurationMins)) ? Number(windowDurationMins) : undefined,
+    resetsAt: Number.isFinite(Number(resetsAt)) ? Number(resetsAt) : undefined,
   }).filter(([, entry]) => entry !== undefined));
 }
 
 function compactRateLimits(value) {
   if (!value || typeof value !== "object") return null;
   const compacted = Object.fromEntries(Object.entries({
-    limitId: value.limitId || undefined,
-    limitName: value.limitName || undefined,
+    limitId: value.limitId || value.limit_id || undefined,
+    limitName: value.limitName || value.limit_name || undefined,
     model: value.model || undefined,
     primary: compactRateLimitWindow(value.primary),
     secondary: compactRateLimitWindow(value.secondary),
     credits: value.credits || null,
-    planType: value.planType || undefined,
-    rateLimitReachedType: value.rateLimitReachedType || null,
+    planType: value.planType || value.plan_type || undefined,
+    rateLimitReachedType: value.rateLimitReachedType || value.rate_limit_reached_type || null,
   }).filter(([, entry]) => entry !== undefined));
   const modelKeys = rateLimitModelKeys(compacted);
   if (modelKeys.length) compacted.modelKeys = modelKeys;
@@ -1621,6 +1744,10 @@ function addRateLimitModelKey(keys, value) {
   if (key) keys.add(key);
 }
 
+function isSparkModelKey(key) {
+  return /\bspark\b/.test(normalizeModelKey(key));
+}
+
 function rateLimitModelKeys(rateLimits) {
   if (!rateLimits || typeof rateLimits !== "object") return [];
   const keys = new Set();
@@ -1636,18 +1763,125 @@ function rateLimitModelKeys(rateLimits) {
   }
   const limitId = normalizeModelKey(rateLimits.limitId);
   if (limitId === "codex-bengalfox") keys.add("gpt-5.3-codex-spark");
-  else if (limitId === "codex") addRateLimitModelKey(keys, CODEX_CONFIG_DEFAULTS.model || MODEL_OPTIONS[0]);
+  else if (limitId === "codex") {
+    for (const model of MODEL_OPTIONS) {
+      const modelKey = normalizeModelKey(model);
+      if (modelKey && !isSparkModelKey(modelKey)) keys.add(modelKey);
+    }
+  }
   return [...keys];
+}
+
+function rateLimitWindows(rateLimits) {
+  return [rateLimits && rateLimits.primary, rateLimits && rateLimits.secondary]
+    .filter((windowInfo) => windowInfo && Number.isFinite(Number(windowInfo.usedPercent)));
+}
+
+function hasCurrentRateLimitWindow(rateLimits) {
+  const nowSeconds = Date.now() / 1000;
+  return rateLimitWindows(rateLimits).some((windowInfo) => {
+    const resetsAt = Number(windowInfo.resetsAt || 0);
+    return !resetsAt || resetsAt > nowSeconds;
+  });
 }
 
 function recordRateLimits(value) {
   const compacted = compactRateLimits(value);
-  if (!compacted) return null;
+  if (!compacted || !hasCurrentRateLimitWindow(compacted)) return null;
   latestRateLimits = compacted;
   for (const key of compacted.modelKeys || rateLimitModelKeys(compacted)) {
     latestRateLimitsByModel.set(normalizeModelKey(key), compacted);
   }
   return compacted;
+}
+
+function collectRecentRolloutFiles(root, options = {}) {
+  const maxFiles = Number(options.maxFiles || 160);
+  const maxDepth = Number(options.maxDepth || 6);
+  const out = [];
+  const visit = (dir, depth) => {
+    if (out.length >= maxFiles * 4 || depth > maxDepth) return;
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (_) {
+      return;
+    }
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        visit(fullPath, depth + 1);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
+      try {
+        const stat = fs.statSync(fullPath);
+        out.push({ path: fullPath, mtimeMs: Number(stat.mtimeMs || 0), size: Number(stat.size || 0) });
+      } catch (_) {
+        // A rollout may disappear while the app rotates files.
+      }
+    }
+  };
+  visit(root, 0);
+  return out
+    .sort((a, b) => b.mtimeMs - a.mtimeMs)
+    .slice(0, maxFiles);
+}
+
+function readRolloutTailForRateLimits(filePath, maxBytes = 2 * 1024 * 1024) {
+  try {
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile() || stat.size <= 0) return "";
+    const bytesToRead = Math.min(maxBytes, stat.size);
+    const fd = fs.openSync(filePath, "r");
+    try {
+      const buffer = Buffer.alloc(bytesToRead);
+      fs.readSync(fd, buffer, 0, bytesToRead, stat.size - bytesToRead);
+      return buffer.toString("utf8");
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch (_) {
+    return "";
+  }
+}
+
+function loadRecentRateLimitsFromRollouts(options = {}) {
+  const now = Date.now();
+  const force = options.force === true;
+  if (!force && now - lastRolloutRateLimitScanAt < 60000) return;
+  lastRolloutRateLimitScanAt = now;
+  const files = [
+    ...collectRecentRolloutFiles(SESSIONS_DIR, { maxFiles: 140 }),
+    ...collectRecentRolloutFiles(ARCHIVED_SESSIONS_DIR, { maxFiles: 60, maxDepth: 1 }),
+  ].sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, 180);
+  const latestByGroup = new Map();
+  for (const file of files) {
+    const tail = readRolloutTailForRateLimits(file.path);
+    if (!tail.includes("rate_limits")) continue;
+    const lines = tail.split(/\r?\n/).filter(Boolean).reverse();
+    for (const line of lines) {
+      let entry;
+      try {
+        entry = JSON.parse(line);
+      } catch (_) {
+        continue;
+      }
+      const rateLimits = entry && entry.payload && entry.payload.rate_limits;
+      const compacted = compactRateLimits(rateLimits);
+      if (!compacted || !hasCurrentRateLimitWindow(compacted)) continue;
+      const group = normalizeModelKey(compacted.limitId);
+      if (!group) continue;
+      const eventMs = Date.parse(entry.timestamp || "") || file.mtimeMs || 0;
+      const existing = latestByGroup.get(group);
+      if (!existing || eventMs > existing.eventMs) {
+        latestByGroup.set(group, { eventMs, rateLimits: compacted });
+      }
+    }
+  }
+  for (const entry of [...latestByGroup.values()].sort((a, b) => a.eventMs - b.eventMs)) {
+    recordRateLimits(entry.rateLimits);
+  }
 }
 
 function rateLimitsByModelObject() {
@@ -2352,8 +2586,6 @@ function messageSubmissionKeys(threadId, body, text, uploads) {
     threadId,
     activeTurnId: String(body.activeTurnId || ""),
     cwd: String(body.cwd || ""),
-    model: String(body.model || ""),
-    effort: String(body.effort || ""),
     text: String(text || ""),
     uploads: uploads.map(uploadDedupeFingerprint),
   };
@@ -3375,6 +3607,150 @@ function ensureContinuationHandoffIgnore(target) {
   }
 }
 
+function continuationLineageIndexPath(cwd) {
+  return path.join(cwd || "", ".agent-context", "thread-handoffs", "index.jsonl");
+}
+
+function normalizeContinuationLineageEntry(entry) {
+  if (!entry || typeof entry !== "object") return null;
+  const newThreadId = String(entry.newThreadId || "").trim();
+  const sourceThreadId = String(entry.sourceThreadId || "").trim();
+  if (!newThreadId || !sourceThreadId) return null;
+  return {
+    version: Number(entry.version || 1),
+    createdAt: String(entry.createdAt || new Date().toISOString()),
+    workspace: String(entry.workspace || ""),
+    newThreadId,
+    newThreadTitle: String(entry.newThreadTitle || ""),
+    sourceThreadId,
+    sourceThreadTitle: String(entry.sourceThreadTitle || ""),
+    sourceRolloutPath: String(entry.sourceRolloutPath || ""),
+    sourceRolloutSizeBytes: Number(entry.sourceRolloutSizeBytes || 0),
+    handoffFile: String(entry.handoffFile || ""),
+    handoffRelativePath: String(entry.handoffRelativePath || ""),
+    handoffId: String(entry.handoffId || ""),
+    handoffChars: Number(entry.handoffChars || 0),
+    sourceArchived: Boolean(entry.sourceArchived),
+    sourceArchiveError: String(entry.sourceArchiveError || ""),
+  };
+}
+
+function readContinuationLineageEntries(cwd) {
+  if (!cwd) return [];
+  const indexPath = continuationLineageIndexPath(cwd);
+  let text = "";
+  try {
+    text = fs.readFileSync(indexPath, "utf8");
+  } catch (_) {
+    return [];
+  }
+  return text.split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return normalizeContinuationLineageEntry(JSON.parse(line));
+      } catch (_) {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
+function appendContinuationLineageEntry(cwd, entry) {
+  const normalized = normalizeContinuationLineageEntry(Object.assign({
+    version: 1,
+    createdAt: new Date().toISOString(),
+    workspace: cwd || "",
+  }, entry || {}));
+  if (!cwd || !normalized) return null;
+  const indexPath = continuationLineageIndexPath(cwd);
+  const target = { dir: path.dirname(indexPath) };
+  try {
+    fs.mkdirSync(target.dir, { recursive: true });
+    ensureContinuationHandoffIgnore(target);
+    fs.appendFileSync(indexPath, `${JSON.stringify(normalized)}\n`, "utf8");
+    logContinuation("lineage-written", {
+      newThreadId: normalized.newThreadId,
+      sourceThreadId: normalized.sourceThreadId,
+      handoffFile: normalized.handoffFile,
+    });
+    return normalized;
+  } catch (err) {
+    logContinuation("lineage-write-failed", {
+      newThreadId: normalized.newThreadId,
+      sourceThreadId: normalized.sourceThreadId,
+      error: err.message || String(err),
+    });
+    return null;
+  }
+}
+
+function buildContinuationLineageChain(cwd, sourceThreadId, maxDepth = CONTINUATION_LINEAGE_MAX_DEPTH) {
+  const entries = readContinuationLineageEntries(cwd);
+  if (!entries.length || !sourceThreadId || maxDepth <= 0) return [];
+  const byNewThreadId = new Map();
+  for (const entry of entries) byNewThreadId.set(entry.newThreadId, entry);
+  const chain = [];
+  const seen = new Set();
+  let currentThreadId = String(sourceThreadId || "").trim();
+  while (currentThreadId && chain.length < maxDepth && !seen.has(currentThreadId)) {
+    seen.add(currentThreadId);
+    const entry = byNewThreadId.get(currentThreadId);
+    if (!entry) break;
+    chain.push(entry);
+    currentThreadId = entry.sourceThreadId;
+  }
+  return chain;
+}
+
+function continuationLineageHandoffExcerpt(entry, maxChars) {
+  const file = entry && entry.handoffFile ? entry.handoffFile : "";
+  if (!file) return "(no handoff file path recorded)";
+  try {
+    return truncateMiddle(fs.readFileSync(file, "utf8"), maxChars, "lineage handoff");
+  } catch (err) {
+    return `(handoff file unavailable: ${err.message || String(err)})`;
+  }
+}
+
+function continuationLineageSection(cwd, sourceThreadId) {
+  const chain = buildContinuationLineageChain(cwd, sourceThreadId);
+  if (!chain.length) {
+    return [
+      "## 续接 lineage",
+      "No prior continuation lineage was found for the source thread.",
+    ].join("\n");
+  }
+  const perHandoffChars = Math.max(1000, Math.floor(CONTINUATION_LINEAGE_MAX_CHARS / Math.max(2, chain.length + 1)));
+  const lines = [
+    "## 续接 lineage",
+    "本线程的源线程本身来自以下压缩续接链。这里是 Agent 可见的历史交接索引，不是隐藏后端状态。",
+    "如果用户的问题涉及续接前的事实、已完成工作、未完成事项、风险、PR 状态或架构判断，先读取 lineage 指向的 handoff 文件，不要凭当前上下文猜。",
+    "优先级：当前源线程交接文件 > 当前工作区持久上下文 > 下方 lineage handoff 摘要。只有 handoff 不够时，才说明原因并考虑读取旧 rollout 或归档线程。",
+    "",
+  ];
+  chain.forEach((entry, index) => {
+    lines.push(
+      `### Lineage ${index + 1}`,
+      `- Continuation thread id: ${entry.newThreadId}`,
+      `- Continuation title: ${entry.newThreadTitle || "(unknown)"}`,
+      `- Continued from source thread id: ${entry.sourceThreadId}`,
+      `- Source title: ${entry.sourceThreadTitle || "(unknown)"}`,
+      `- Handoff file: ${entry.handoffFile || entry.handoffRelativePath || "(unknown)"}`,
+      `- Handoff id: ${entry.handoffId || "(unknown)"}`,
+      `- Handoff chars: ${entry.handoffChars || 0}`,
+      `- Created at: ${entry.createdAt || "(unknown)"}`,
+      `- Source archived: ${entry.sourceArchived ? "yes" : "no"}${entry.sourceArchiveError ? ` (${entry.sourceArchiveError})` : ""}`,
+      "",
+      "#### Handoff excerpt",
+      continuationLineageHandoffExcerpt(entry, perHandoffChars),
+      "",
+    );
+  });
+  return truncateMiddle(lines.join("\n"), CONTINUATION_LINEAGE_MAX_CHARS, "continuation lineage");
+}
+
 function continuationHandoffTarget(cwd, sourceThreadId) {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const threadPart = continuationSafeFilePart(sourceThreadId);
@@ -3529,7 +3905,7 @@ async function waitForContinuationTurnCompletion(threadId, turnId) {
   };
 }
 
-async function createSourceContinuationHandoff({ cwd, sourceThreadId, sourceThreadTitle, runtimeSettings, model, effort, onProgress }) {
+async function createSourceContinuationHandoff({ cwd, sourceThreadId, sourceThreadTitle, runtimeSettings, onProgress }) {
   const threadId = String(sourceThreadId || "").trim();
   if (!threadId) return null;
   const target = continuationHandoffTarget(cwd, threadId);
@@ -3561,16 +3937,13 @@ async function createSourceContinuationHandoff({ cwd, sourceThreadId, sourceThre
     threadId,
     input: [{ type: "text", text: prompt, text_elements: [] }],
     cwd,
-    model: model || null,
     summary: "auto",
   }, runtimeSettings || {});
-  if (effort) params.effort = effort;
   try {
     if (onProgress) onProgress("handoff-resume", "正在唤醒源线程");
     await codex.request("thread/resume", applyResumeRuntimeSettings({
       threadId,
       cwd,
-      model: model || null,
       persistExtendedHistory: true,
     }, runtimeSettings || {}), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
   } catch (err) {
@@ -3616,7 +3989,7 @@ function sourceHandoffSection(sourceHandoff) {
   ].join("\n");
 }
 
-function newThreadBootstrapPromptScoped({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff }) {
+function newThreadBootstrapPromptScoped({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff, sourceLineage }) {
   const snapshot = sourceSnapshot || { threadId: sourceThreadId, title: sourceThreadTitle, turns: [], readWarnings: [] };
   const publicRuntime = publicRuntimeSettings(runtimeSettings);
   const parts = [
@@ -3643,6 +4016,8 @@ function newThreadBootstrapPromptScoped({ cwd, sourceThreadId, sourceThreadTitle
     "",
     "## 源线程交接文件",
     sourceHandoffSection(sourceHandoff),
+    "",
+    sourceLineage || continuationLineageSection(cwd, sourceThreadId),
     "",
     "## 运行设置",
     `- Mobile Web 传给续接线程的运行设置：${Object.keys(publicRuntime || {}).length ? JSON.stringify(publicRuntime) : "(none detected)"}`,
@@ -3692,6 +4067,37 @@ async function archiveVisibleThread(threadId, visibility) {
   return await codex.request("thread/archive", { threadId }, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
 }
 
+function isThreadArchiveNoOpError(err) {
+  const message = String((err && err.message) || "").toLowerCase();
+  const code = String((err && err.code) || "").toLowerCase();
+  return /already|archived|not found|notexisting|不存在|已归档|does not exist|no such/.test(message)
+    || /thread_not_found|thread-not-found|not_found|not-found/.test(code);
+}
+
+async function archiveThreadId(threadId, visibility = visibilityFromGlobalState()) {
+  if (!threadId) return { archived: false };
+  const summary = readStateDbThread(threadId) || readStartedThread(threadId);
+  if (summary && isHiddenThread(summary, visibility)) {
+    return { archived: true, alreadyArchived: true, source: "state-db" };
+  }
+  try {
+    const result = await codex.request("thread/archive", { threadId }, {
+      timeoutMs: MUTATION_RPC_TIMEOUT_MS,
+      retry: false,
+    });
+    return result || { archived: true };
+  } catch (err) {
+    const rechecked = readStateDbThread(threadId) || readStartedThread(threadId);
+    if (rechecked && isHiddenThread(rechecked, visibility)) {
+      return { archived: true, alreadyArchived: true, source: "state-db" };
+    }
+    if (isThreadArchiveNoOpError(err)) {
+      return { archived: true, alreadyArchived: true };
+    }
+    throw err;
+  }
+}
+
 function httpStatusError(statusCode, message) {
   const err = new Error(message);
   err.statusCode = statusCode;
@@ -3720,6 +4126,7 @@ function publicContinuationJob(job) {
     threadId: job.threadId || "",
     sourceArchive: job.sourceArchive || null,
     sourceHandoff: job.sourceHandoff || null,
+    lineage: job.lineage || null,
     result: job.status === "done" ? job.result : null,
     error: job.error || "",
     createdAt: new Date(job.createdAt).toISOString(),
@@ -3790,8 +4197,6 @@ async function startThreadFromRequestBody(body, options = {}) {
     sourceThreadId,
     sourceThreadTitle,
     runtimeSettings,
-    model: body.model || null,
-    effort: body.effort || null,
     onProgress: progress,
   });
   if (job && sourceHandoff) {
@@ -3804,10 +4209,10 @@ async function startThreadFromRequestBody(body, options = {}) {
       turnCompletion: sourceHandoff.turnCompletion || null,
     };
   }
+  const sourceLineage = continuationLineageSection(cwd, sourceThreadId);
   progress("thread-start", "正在创建续接线程");
   const params = applyStartThreadRuntimeSettings({
     cwd,
-    model: body.model || null,
     modelProvider: null,
     config: {},
     developerInstructions: readStartThreadDeveloperInstructions(cwd) || "",
@@ -3825,12 +4230,10 @@ async function startThreadFromRequestBody(body, options = {}) {
   const titleUpdatedBeforeBootstrap = await tryUpdateThreadTitle(threadId, desiredTitle).catch(() => false);
   const bootstrapParams = applyTurnRuntimeSettings({
     threadId,
-    input: newThreadBootstrapInput({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff }),
+    input: newThreadBootstrapInput({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff, sourceLineage }),
     cwd,
-    model: body.model || null,
     summary: "auto",
   }, runtimeSettings);
-  if (body.effort) bootstrapParams.effort = body.effort;
   progress("bootstrap", "正在写入续接启动上下文", { threadId });
   const bootstrap = threadId
     ? await codex.request("turn/start", bootstrapParams, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false })
@@ -3854,6 +4257,24 @@ async function startThreadFromRequestBody(body, options = {}) {
     }
   }
   if (job) job.sourceArchive = sourceArchive;
+  const sourceSummary = sourceSnapshot && sourceSnapshot.summary;
+  const sourceRolloutPath = sourceSummary ? rolloutPathForThread(sourceSummary) : "";
+  const sourceStats = sourceRolloutPath ? rolloutStatsForPath(sourceRolloutPath) : null;
+  const lineage = appendContinuationLineageEntry(cwd, {
+    newThreadId: threadId,
+    newThreadTitle: desiredTitle,
+    sourceThreadId,
+    sourceThreadTitle: (sourceSummary && (sourceSummary.name || sourceSummary.preview)) || sourceThreadTitle,
+    sourceRolloutPath,
+    sourceRolloutSizeBytes: sourceStats ? sourceStats.sizeBytes : 0,
+    handoffFile: sourceHandoff && sourceHandoff.path,
+    handoffRelativePath: sourceHandoff && sourceHandoff.relativePath,
+    handoffId: sourceHandoff && sourceHandoff.id,
+    handoffChars: sourceHandoff && sourceHandoff.chars,
+    sourceArchived: Boolean(sourceArchive && sourceArchive.archived),
+    sourceArchiveError: sourceArchive && sourceArchive.error,
+  });
+  if (job) job.lineage = lineage;
   const thread = rememberStartedThread(annotateThreadRolloutStats(Object.assign(
     {},
     (result && result.thread) || (result && result.data && result.data.thread) || {},
@@ -3883,6 +4304,7 @@ async function startThreadFromRequestBody(body, options = {}) {
       turnId: sourceHandoff.turnId || "",
       turnCompletion: sourceHandoff.turnCompletion || null,
     } : null,
+    lineage,
     continuationContextChars: bootstrapParams
       && Array.isArray(bootstrapParams.input)
       && bootstrapParams.input[0]
@@ -3913,6 +4335,7 @@ function createContinuationJob(body) {
     threadId: "",
     sourceArchive: null,
     sourceHandoff: null,
+    lineage: null,
     result: null,
     error: "",
     createdAt: now,
@@ -4014,6 +4437,16 @@ function readStateDbThread(threadId) {
   } catch (_) {
     return null;
   }
+}
+
+function mergeThreadRuntimeFromStateDb(thread, summary = null) {
+  if (!thread || typeof thread !== "object") return thread;
+  const stateThread = summary || readStateDbThread(thread.id);
+  if (!stateThread) return thread;
+  const next = Object.assign({}, thread);
+  if (stateThread.model) next.model = stateThread.model;
+  if (stateThread.effort) next.effort = stateThread.effort;
+  return next;
 }
 
 async function readThreadSummaryFromAppServer(codex, threadId) {
@@ -4251,6 +4684,7 @@ async function listWorkspaces() {
 async function handleApi(req, res) {
   const url = getUrl(req);
   if (url.pathname === "/api/public-config") {
+    loadRecentRateLimitsFromRollouts();
     sendJson(res, 200, {
       authRequired: !DISABLE_AUTH,
       title: "Codex Mobile Web",
@@ -4261,7 +4695,7 @@ async function handleApi(req, res) {
       modelOptions: MODEL_OPTIONS,
       reasoningEffortOptions: REASONING_EFFORT_OPTIONS,
       permissionModeOptions: PERMISSION_MODE_OPTIONS,
-      defaultModel: CODEX_CONFIG_DEFAULTS.model,
+      defaultModel: CODEX_CONFIG_DEFAULTS.model || DEFAULT_MODEL,
       defaultReasoningEffort: CODEX_CONFIG_DEFAULTS.reasoningEffort,
       rateLimits: latestRateLimits,
       rateLimitsByModel: rateLimitsByModelObject(),
@@ -4367,6 +4801,7 @@ async function handleApi(req, res) {
     await codex.ensure().catch((err) => {
       codex.lastError = err.message;
     });
+    loadRecentRateLimitsFromRollouts();
     sendJson(res, 200, codex.status());
     return;
   }
@@ -4424,6 +4859,99 @@ async function handleApi(req, res) {
     } catch (err) {
       sendJson(res, err.statusCode || 500, { error: err.message || String(err) });
     }
+    return;
+  }
+  if (url.pathname === "/api/threads/new-message" && req.method === "POST") {
+    const { fields: body, uploads } = await readMessageBody(req, "new-thread");
+    const cwd = String(body.cwd || "").trim();
+    const text = String(body.text || "").trim();
+    const requestedModel = MODEL_OPTIONS.includes(String(body.model || "").trim())
+      ? String(body.model || "").trim()
+      : "";
+    const requestedEffort = REASONING_EFFORT_OPTIONS.includes(String(body.effort || "").trim())
+      ? String(body.effort || "").trim()
+      : "";
+    const input = buildTurnInput(text, uploads);
+    if (!cwd) {
+      sendJson(res, 400, { error: "Workspace is required to start a new thread" });
+      return;
+    }
+    if (!input.length) {
+      sendJson(res, 400, { error: "Message text or attachment is required" });
+      return;
+    }
+    const globalState = readGlobalState();
+    const visibility = visibilityFromGlobalState(globalState);
+    if (visibility.workspaceKeys.size > 0 && !visibility.workspaceKeys.has(normalizeFsPath(cwd))) {
+      sendJson(res, 403, { error: "Workspace is not visible in Codex Desktop" });
+      return;
+    }
+    const submissionKeys = messageSubmissionKeys("new-thread", body, text, uploads);
+    try {
+      const result = await runMessageSubmissionOnce(submissionKeys, uploads, async () => {
+        const runtimeSettings = applyPermissionModeOverride({}, body.permissionMode, cwd);
+        const startParams = applyStartThreadRuntimeSettings({
+          cwd,
+          modelProvider: null,
+          config: {},
+          developerInstructions: readStartThreadDeveloperInstructions(cwd) || "",
+          personality: null,
+          ephemeral: null,
+          dynamicTools: null,
+          mockExperimentalField: null,
+          experimentalRawEvents: false,
+          persistExtendedHistory: true,
+        }, runtimeSettings);
+        if (requestedModel) startParams.model = requestedModel;
+        const startResult = await codex.request("thread/start", startParams, {
+          timeoutMs: MUTATION_RPC_TIMEOUT_MS,
+          retry: false,
+        });
+        const threadId = threadIdFromStartResult(startResult);
+        if (!threadId) throw new Error("New thread creation failed: app-server did not return threadId");
+        const turnParams = applyTurnRuntimeSettings({
+          threadId,
+          input,
+          cwd,
+        }, runtimeSettings);
+        if (requestedModel) turnParams.model = requestedModel;
+        if (requestedEffort) turnParams.effort = requestedEffort;
+        const turnResult = await codex.request("turn/start", turnParams, {
+          timeoutMs: MUTATION_RPC_TIMEOUT_MS,
+          retry: false,
+        });
+        const thread = rememberStartedThread(Object.assign(
+          {},
+          (startResult && startResult.thread) || (startResult && startResult.data && startResult.data.thread) || {},
+          {
+            id: threadId,
+            preview: text || path.basename(cwd) || "新建对话",
+            cwd,
+            status: { type: "active" },
+            turns: [],
+          },
+        ));
+        return {
+          ok: true,
+          threadId,
+          thread,
+          turnId: (turnResult && (turnResult.turnId || turnResult.id || turnResult.turn && turnResult.turn.id)) || "",
+          result: turnResult,
+          startResult,
+        };
+      });
+      sendJson(res, 200, result);
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { error: err.message || String(err) });
+    }
+    return;
+  }
+  const threadArchive = url.pathname.match(/^\/api\/threads\/([^/]+)\/archive$/);
+  if (threadArchive && req.method === "POST") {
+    const threadId = decodeURIComponent(threadArchive[1]);
+    const visibility = visibilityFromGlobalState();
+    const result = await archiveThreadId(threadId, visibility);
+    sendJson(res, 200, result || { archived: true });
     return;
   }
   if (url.pathname === "/api/threads" && req.method === "GET") {
@@ -4595,6 +5123,7 @@ async function handleApi(req, res) {
         resetOnTimeout: false,
       }), { maxTurns: MAX_FULL_THREAD_TURNS });
       if (result.thread) {
+        result.thread = mergeThreadRuntimeFromStateDb(result.thread, summary);
         result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
         result.thread.mobileReadMode = "thread-read";
       }
@@ -4700,7 +5229,6 @@ async function handleApi(req, res) {
     sendJson(res, 200, await codex.request("thread/resume", applyResumeRuntimeSettings({
       threadId,
       cwd: body.cwd || null,
-      model: body.model || null,
       persistExtendedHistory: true,
     }, runtimeSettings), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false }));
     return;
@@ -4729,6 +5257,12 @@ async function handleApi(req, res) {
     });
     const submissionKeys = messageSubmissionKeys(threadId, body, text, uploads);
     const runtimeSettings = applyPermissionModeOverride(await resolveThreadRuntimeSettings(threadId), body.permissionMode, body.cwd || null);
+    const requestedModel = MODEL_OPTIONS.includes(String(body.model || "").trim())
+      ? String(body.model || "").trim()
+      : "";
+    const requestedEffort = REASONING_EFFORT_OPTIONS.includes(String(body.effort || "").trim())
+      ? String(body.effort || "").trim()
+      : "";
     let result;
     try {
       result = await runMessageSubmissionOnce(submissionKeys, uploads, async () => {
@@ -4761,7 +5295,6 @@ async function handleApi(req, res) {
           await codex.request("thread/resume", applyResumeRuntimeSettings({
             threadId,
             cwd: body.cwd || null,
-            model: body.model || null,
             persistExtendedHistory: true,
           }, runtimeSettings), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
         } catch (err) {
@@ -4772,8 +5305,8 @@ async function handleApi(req, res) {
           input,
         }, runtimeSettings);
         if (body.cwd) params.cwd = body.cwd;
-        if (body.model) params.model = body.model;
-        if (body.effort) params.effort = body.effort;
+        if (requestedModel) params.model = requestedModel;
+        if (requestedEffort) params.effort = requestedEffort;
         return await codex.request("turn/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
       });
       logMessageSubmit("done", {
