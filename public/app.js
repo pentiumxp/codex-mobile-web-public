@@ -141,7 +141,7 @@ const CONTEXT_COMPACTION_COMPLETE_NOTICE = "\u5386\u53f2\u4e0a\u4e0b\u6587\u5df2
 
 const $ = (id) => document.getElementById(id);
 const apiClient = window.CodexApiClient.createApiClient({
-  fetch,
+  fetch: window.fetch.bind(window),
   AbortControllerCtor: AbortController,
   FormDataCtor: window.FormData,
   getKey() {
