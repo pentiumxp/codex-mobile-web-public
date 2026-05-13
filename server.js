@@ -110,6 +110,8 @@ const CONTINUATION_HANDOFF_MIN_CHARS = Math.max(120, Number(process.env.CODEX_MO
 const CONTINUATION_HANDOFF_TURN_COMPLETION_TIMEOUT_MS = Math.max(5_000, Number(process.env.CODEX_MOBILE_CONTINUATION_HANDOFF_TURN_COMPLETION_TIMEOUT_MS || "60000"));
 const CONTINUATION_JOB_TTL_MS = Math.max(60_000, Number(process.env.CODEX_MOBILE_CONTINUATION_JOB_TTL_MS || "1800000"));
 const CONTINUATION_JOB_MAX = Math.max(10, Number(process.env.CODEX_MOBILE_CONTINUATION_JOB_MAX || "50"));
+const CONTINUATION_LINEAGE_MAX_DEPTH = Math.max(0, Math.min(5, Number(process.env.CODEX_MOBILE_CONTINUATION_LINEAGE_MAX_DEPTH || "2")));
+const CONTINUATION_LINEAGE_MAX_CHARS = Math.max(2_000, Number(process.env.CODEX_MOBILE_CONTINUATION_LINEAGE_MAX_CHARS || "30000"));
 const RUNTIME_CONTEXT_CACHE_TTL_MS = Math.max(1000, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_CACHE_TTL_MS || "30000"));
 const RUNTIME_CONTEXT_CACHE_MAX = Math.max(20, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_CACHE_MAX || "200"));
 const MUX_REPLAY_NOTIFICATION_LIMIT = Math.max(0, Number(process.env.CODEX_MOBILE_MUX_REPLAY_NOTIFICATION_LIMIT || "200"));
@@ -3605,6 +3607,150 @@ function ensureContinuationHandoffIgnore(target) {
   }
 }
 
+function continuationLineageIndexPath(cwd) {
+  return path.join(cwd || "", ".agent-context", "thread-handoffs", "index.jsonl");
+}
+
+function normalizeContinuationLineageEntry(entry) {
+  if (!entry || typeof entry !== "object") return null;
+  const newThreadId = String(entry.newThreadId || "").trim();
+  const sourceThreadId = String(entry.sourceThreadId || "").trim();
+  if (!newThreadId || !sourceThreadId) return null;
+  return {
+    version: Number(entry.version || 1),
+    createdAt: String(entry.createdAt || new Date().toISOString()),
+    workspace: String(entry.workspace || ""),
+    newThreadId,
+    newThreadTitle: String(entry.newThreadTitle || ""),
+    sourceThreadId,
+    sourceThreadTitle: String(entry.sourceThreadTitle || ""),
+    sourceRolloutPath: String(entry.sourceRolloutPath || ""),
+    sourceRolloutSizeBytes: Number(entry.sourceRolloutSizeBytes || 0),
+    handoffFile: String(entry.handoffFile || ""),
+    handoffRelativePath: String(entry.handoffRelativePath || ""),
+    handoffId: String(entry.handoffId || ""),
+    handoffChars: Number(entry.handoffChars || 0),
+    sourceArchived: Boolean(entry.sourceArchived),
+    sourceArchiveError: String(entry.sourceArchiveError || ""),
+  };
+}
+
+function readContinuationLineageEntries(cwd) {
+  if (!cwd) return [];
+  const indexPath = continuationLineageIndexPath(cwd);
+  let text = "";
+  try {
+    text = fs.readFileSync(indexPath, "utf8");
+  } catch (_) {
+    return [];
+  }
+  return text.split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return normalizeContinuationLineageEntry(JSON.parse(line));
+      } catch (_) {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
+function appendContinuationLineageEntry(cwd, entry) {
+  const normalized = normalizeContinuationLineageEntry(Object.assign({
+    version: 1,
+    createdAt: new Date().toISOString(),
+    workspace: cwd || "",
+  }, entry || {}));
+  if (!cwd || !normalized) return null;
+  const indexPath = continuationLineageIndexPath(cwd);
+  const target = { dir: path.dirname(indexPath) };
+  try {
+    fs.mkdirSync(target.dir, { recursive: true });
+    ensureContinuationHandoffIgnore(target);
+    fs.appendFileSync(indexPath, `${JSON.stringify(normalized)}\n`, "utf8");
+    logContinuation("lineage-written", {
+      newThreadId: normalized.newThreadId,
+      sourceThreadId: normalized.sourceThreadId,
+      handoffFile: normalized.handoffFile,
+    });
+    return normalized;
+  } catch (err) {
+    logContinuation("lineage-write-failed", {
+      newThreadId: normalized.newThreadId,
+      sourceThreadId: normalized.sourceThreadId,
+      error: err.message || String(err),
+    });
+    return null;
+  }
+}
+
+function buildContinuationLineageChain(cwd, sourceThreadId, maxDepth = CONTINUATION_LINEAGE_MAX_DEPTH) {
+  const entries = readContinuationLineageEntries(cwd);
+  if (!entries.length || !sourceThreadId || maxDepth <= 0) return [];
+  const byNewThreadId = new Map();
+  for (const entry of entries) byNewThreadId.set(entry.newThreadId, entry);
+  const chain = [];
+  const seen = new Set();
+  let currentThreadId = String(sourceThreadId || "").trim();
+  while (currentThreadId && chain.length < maxDepth && !seen.has(currentThreadId)) {
+    seen.add(currentThreadId);
+    const entry = byNewThreadId.get(currentThreadId);
+    if (!entry) break;
+    chain.push(entry);
+    currentThreadId = entry.sourceThreadId;
+  }
+  return chain;
+}
+
+function continuationLineageHandoffExcerpt(entry, maxChars) {
+  const file = entry && entry.handoffFile ? entry.handoffFile : "";
+  if (!file) return "(no handoff file path recorded)";
+  try {
+    return truncateMiddle(fs.readFileSync(file, "utf8"), maxChars, "lineage handoff");
+  } catch (err) {
+    return `(handoff file unavailable: ${err.message || String(err)})`;
+  }
+}
+
+function continuationLineageSection(cwd, sourceThreadId) {
+  const chain = buildContinuationLineageChain(cwd, sourceThreadId);
+  if (!chain.length) {
+    return [
+      "## 续接 lineage",
+      "No prior continuation lineage was found for the source thread.",
+    ].join("\n");
+  }
+  const perHandoffChars = Math.max(1000, Math.floor(CONTINUATION_LINEAGE_MAX_CHARS / Math.max(2, chain.length + 1)));
+  const lines = [
+    "## 续接 lineage",
+    "本线程的源线程本身来自以下压缩续接链。这里是 Agent 可见的历史交接索引，不是隐藏后端状态。",
+    "如果用户的问题涉及续接前的事实、已完成工作、未完成事项、风险、PR 状态或架构判断，先读取 lineage 指向的 handoff 文件，不要凭当前上下文猜。",
+    "优先级：当前源线程交接文件 > 当前工作区持久上下文 > 下方 lineage handoff 摘要。只有 handoff 不够时，才说明原因并考虑读取旧 rollout 或归档线程。",
+    "",
+  ];
+  chain.forEach((entry, index) => {
+    lines.push(
+      `### Lineage ${index + 1}`,
+      `- Continuation thread id: ${entry.newThreadId}`,
+      `- Continuation title: ${entry.newThreadTitle || "(unknown)"}`,
+      `- Continued from source thread id: ${entry.sourceThreadId}`,
+      `- Source title: ${entry.sourceThreadTitle || "(unknown)"}`,
+      `- Handoff file: ${entry.handoffFile || entry.handoffRelativePath || "(unknown)"}`,
+      `- Handoff id: ${entry.handoffId || "(unknown)"}`,
+      `- Handoff chars: ${entry.handoffChars || 0}`,
+      `- Created at: ${entry.createdAt || "(unknown)"}`,
+      `- Source archived: ${entry.sourceArchived ? "yes" : "no"}${entry.sourceArchiveError ? ` (${entry.sourceArchiveError})` : ""}`,
+      "",
+      "#### Handoff excerpt",
+      continuationLineageHandoffExcerpt(entry, perHandoffChars),
+      "",
+    );
+  });
+  return truncateMiddle(lines.join("\n"), CONTINUATION_LINEAGE_MAX_CHARS, "continuation lineage");
+}
+
 function continuationHandoffTarget(cwd, sourceThreadId) {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const threadPart = continuationSafeFilePart(sourceThreadId);
@@ -3843,7 +3989,7 @@ function sourceHandoffSection(sourceHandoff) {
   ].join("\n");
 }
 
-function newThreadBootstrapPromptScoped({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff }) {
+function newThreadBootstrapPromptScoped({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff, sourceLineage }) {
   const snapshot = sourceSnapshot || { threadId: sourceThreadId, title: sourceThreadTitle, turns: [], readWarnings: [] };
   const publicRuntime = publicRuntimeSettings(runtimeSettings);
   const parts = [
@@ -3870,6 +4016,8 @@ function newThreadBootstrapPromptScoped({ cwd, sourceThreadId, sourceThreadTitle
     "",
     "## 源线程交接文件",
     sourceHandoffSection(sourceHandoff),
+    "",
+    sourceLineage || continuationLineageSection(cwd, sourceThreadId),
     "",
     "## 运行设置",
     `- Mobile Web 传给续接线程的运行设置：${Object.keys(publicRuntime || {}).length ? JSON.stringify(publicRuntime) : "(none detected)"}`,
@@ -3978,6 +4126,7 @@ function publicContinuationJob(job) {
     threadId: job.threadId || "",
     sourceArchive: job.sourceArchive || null,
     sourceHandoff: job.sourceHandoff || null,
+    lineage: job.lineage || null,
     result: job.status === "done" ? job.result : null,
     error: job.error || "",
     createdAt: new Date(job.createdAt).toISOString(),
@@ -4060,6 +4209,7 @@ async function startThreadFromRequestBody(body, options = {}) {
       turnCompletion: sourceHandoff.turnCompletion || null,
     };
   }
+  const sourceLineage = continuationLineageSection(cwd, sourceThreadId);
   progress("thread-start", "正在创建续接线程");
   const params = applyStartThreadRuntimeSettings({
     cwd,
@@ -4080,7 +4230,7 @@ async function startThreadFromRequestBody(body, options = {}) {
   const titleUpdatedBeforeBootstrap = await tryUpdateThreadTitle(threadId, desiredTitle).catch(() => false);
   const bootstrapParams = applyTurnRuntimeSettings({
     threadId,
-    input: newThreadBootstrapInput({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff }),
+    input: newThreadBootstrapInput({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff, sourceLineage }),
     cwd,
     summary: "auto",
   }, runtimeSettings);
@@ -4107,6 +4257,24 @@ async function startThreadFromRequestBody(body, options = {}) {
     }
   }
   if (job) job.sourceArchive = sourceArchive;
+  const sourceSummary = sourceSnapshot && sourceSnapshot.summary;
+  const sourceRolloutPath = sourceSummary ? rolloutPathForThread(sourceSummary) : "";
+  const sourceStats = sourceRolloutPath ? rolloutStatsForPath(sourceRolloutPath) : null;
+  const lineage = appendContinuationLineageEntry(cwd, {
+    newThreadId: threadId,
+    newThreadTitle: desiredTitle,
+    sourceThreadId,
+    sourceThreadTitle: (sourceSummary && (sourceSummary.name || sourceSummary.preview)) || sourceThreadTitle,
+    sourceRolloutPath,
+    sourceRolloutSizeBytes: sourceStats ? sourceStats.sizeBytes : 0,
+    handoffFile: sourceHandoff && sourceHandoff.path,
+    handoffRelativePath: sourceHandoff && sourceHandoff.relativePath,
+    handoffId: sourceHandoff && sourceHandoff.id,
+    handoffChars: sourceHandoff && sourceHandoff.chars,
+    sourceArchived: Boolean(sourceArchive && sourceArchive.archived),
+    sourceArchiveError: sourceArchive && sourceArchive.error,
+  });
+  if (job) job.lineage = lineage;
   const thread = rememberStartedThread(annotateThreadRolloutStats(Object.assign(
     {},
     (result && result.thread) || (result && result.data && result.data.thread) || {},
@@ -4136,6 +4304,7 @@ async function startThreadFromRequestBody(body, options = {}) {
       turnId: sourceHandoff.turnId || "",
       turnCompletion: sourceHandoff.turnCompletion || null,
     } : null,
+    lineage,
     continuationContextChars: bootstrapParams
       && Array.isArray(bootstrapParams.input)
       && bootstrapParams.input[0]
@@ -4166,6 +4335,7 @@ function createContinuationJob(body) {
     threadId: "",
     sourceArchive: null,
     sourceHandoff: null,
+    lineage: null,
     result: null,
     error: "",
     createdAt: now,

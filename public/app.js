@@ -26,6 +26,9 @@ const state = {
   resumeTimer: null,
   resumeVisualTimers: [],
   resumeSeq: 0,
+  draftSaveTimer: null,
+  draftRestoreSeq: 0,
+  draftAttachmentWarningShown: false,
   visualRecoveryTimers: [],
   visualRecoverySeq: 0,
   pollTimer: null,
@@ -123,6 +126,7 @@ const STORAGE_DISMISSED_ROLLOUT_WARNINGS = "codexMobileDismissedRolloutWarnings"
 const STORAGE_FONT_SIZE = "codexMobileFontSize";
 const STORAGE_RATE_LIMITS = "codexMobileRateLimits";
 const STORAGE_RATE_LIMITS_BY_MODEL = "codexMobileRateLimitsByModel";
+const DRAFT_SAVE_DEBOUNCE_MS = 250;
 const FONT_SIZE_VALUES = new Set(["small", "default", "large", "xlarge", "xxlarge"]);
 const MENU_OVERLAY_MEDIA = "(max-width: 1180px), (pointer: coarse) and (max-width: 1400px)";
 const TABLET_SPLIT_MEDIA = "(pointer: coarse) and (orientation: landscape) and (min-width: 900px) and (min-height: 600px)";
@@ -136,6 +140,29 @@ const CONTEXT_COMPACTION_PENDING_NOTICE = "\u5386\u53f2\u4e0a\u4e0b\u6587\u6b63\
 const CONTEXT_COMPACTION_COMPLETE_NOTICE = "\u5386\u53f2\u4e0a\u4e0b\u6587\u5df2\u538b\u7f29";
 
 const $ = (id) => document.getElementById(id);
+const apiClient = window.CodexApiClient.createApiClient({
+  fetch: window.fetch.bind(window),
+  AbortControllerCtor: AbortController,
+  FormDataCtor: window.FormData,
+  getKey() {
+    return state.key;
+  },
+  onUnauthorized() {
+    showLogin();
+  },
+});
+const runtimeSettings = window.CodexRuntimeSettings;
+const draftStore = window.CodexDraftStore.createDraftStore({
+  storage: localStorage,
+  indexedDB: window.indexedDB,
+  FileCtor: window.File,
+  URLApi: URL,
+  IDBKeyRangeCtor: window.IDBKeyRange,
+  normalizeFsPath,
+  reportError(type, details) {
+    postClientEvent(type, details || {});
+  },
+});
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -626,92 +653,54 @@ function rolloutSizeText(thread) {
 }
 
 function normalizeOptionList(values) {
-  return [...new Set((values || []).map((value) => String(value || "").trim()).filter(Boolean))];
+  return runtimeSettings.normalizeOptionList(values);
 }
 
 function labelForModel(value) {
-  const labels = {
-    "gpt-5.5": "GPT-5.5",
-    "gpt-5.4": "GPT-5.4",
-    "gpt-5.4-mini": "GPT-5.4 Mini",
-    "gpt-5.3-codex": "GPT-5.3 Codex",
-    "gpt-5.3-codex-spark": "GPT-5.3 Codex Spark",
-    "gpt-5.2": "GPT-5.2",
-  };
-  return labels[value] || value;
+  return runtimeSettings.labelForModel(value);
 }
 
 function compactLabelForModel(value) {
-  const labels = {
-    "gpt-5.5": "5.5",
-    "gpt-5.4": "5.4",
-    "gpt-5.4-mini": "5.4 Mini",
-    "gpt-5.3-codex": "5.3 Codex",
-    "gpt-5.3-codex-spark": "5.3 Spark",
-    "gpt-5.2": "5.2",
-  };
-  return labels[value] || labelForModel(value).replace(/^GPT-/, "");
+  return runtimeSettings.compactLabelForModel(value);
 }
 
 function labelForEffort(value) {
-  const labels = {
-    low: "Low",
-    medium: "Medium",
-    high: "High",
-    xhigh: "XHigh",
-  };
-  return labels[value] || value;
+  return runtimeSettings.labelForEffort(value);
 }
 
 function labelForPermissionMode(value) {
-  const labels = {
-    default: "默认权限",
-    auto: "自动审查",
-    full: "完全访问权限",
-    custom: "自定义 (config.toml)",
-  };
-  return labels[value] || value || "Perm";
+  return runtimeSettings.labelForPermissionMode(value);
 }
 
 function titleForPermissionMode(value) {
-  const titles = {
-    default: "默认权限",
-    auto: "自动审查",
-    full: "完全访问权限",
-    custom: "自定义 (config.toml)",
-  };
-  return titles[value] || "Thread permission";
+  return runtimeSettings.titleForPermissionMode(value);
 }
 
 function newThreadSelectedModel() {
-  const options = normalizeOptionList([state.newThreadModel, state.defaultModel, ...state.modelOptions]);
-  return options[0] || "";
+  return runtimeSettings.selectedNewThreadModel({
+    selected: state.newThreadModel,
+    defaultValue: state.defaultModel,
+    options: state.modelOptions,
+  });
 }
 
 function newThreadSelectedEffort() {
-  const options = normalizeOptionList([state.newThreadEffort, state.defaultReasoningEffort, ...state.reasoningEffortOptions]);
-  return options[0] || "";
+  return runtimeSettings.selectedNewThreadEffort({
+    selected: state.newThreadEffort,
+    defaultValue: state.defaultReasoningEffort,
+    options: state.reasoningEffortOptions,
+  });
 }
 
 function newThreadSelectedPermissionMode() {
-  const normalized = normalizePermissionModeValue(state.newThreadPermissionMode);
-  if (normalized) return normalized;
-  return normalizePermissionModeValue(state.permissionModeOptions[0]) || "full";
+  return runtimeSettings.selectedNewThreadPermission({
+    selected: state.newThreadPermissionMode,
+    options: state.permissionModeOptions,
+  });
 }
 
 function normalizePermissionModeValue(value) {
-  const text = String(value || "").trim().toLowerCase();
-  const aliases = {
-    "full-access": "full",
-    "workspace-write": "auto",
-    "read-only": "auto",
-    "auto-review": "auto",
-    "auto-reviewing": "auto",
-    config: "custom",
-    "config.toml": "custom",
-    "custom-config": "custom",
-  };
-  return aliases[text] || text;
+  return runtimeSettings.normalizePermissionModeValue(value);
 }
 
 function normalizeModelKey(value) {
@@ -1206,6 +1195,193 @@ function normalizeFsPath(value) {
     .replace(/[\\/]+/g, "\\")
     .replace(/\\+$/, "")
     .toLowerCase();
+}
+
+function draftKeyForThread(threadId) {
+  return draftStore.keyForThread(threadId);
+}
+
+function draftKeyForNewThread(cwd) {
+  return draftStore.keyForNewThread(cwd);
+}
+
+function currentDraftKey() {
+  if (state.newThreadDraft) return draftKeyForNewThread(state.selectedCwd);
+  return draftKeyForThread(state.currentThreadId);
+}
+
+function readDraftMap() {
+  return draftStore.readMap();
+}
+
+function writeDraftMap(map) {
+  draftStore.writeMap(map);
+}
+
+function normalizeDraftAttachmentMeta(item) {
+  return draftStore.normalizeAttachmentMeta(item);
+}
+
+function buildCurrentDraft() {
+  const draft = {
+    text: composerText(),
+    attachments: state.pendingAttachments.map(normalizeDraftAttachmentMeta).filter(Boolean),
+    updatedAt: Date.now(),
+  };
+  if (state.newThreadDraft) {
+    draft.cwd = state.selectedCwd || "";
+    if (state.newThreadModel && state.newThreadModel !== defaultNewThreadModel()) draft.model = state.newThreadModel;
+    if (state.newThreadEffort && state.newThreadEffort !== defaultNewThreadEffort()) draft.effort = state.newThreadEffort;
+    const permission = normalizePermissionModeValue(state.newThreadPermissionMode);
+    if (permission && permission !== defaultNewThreadPermissionMode()) draft.permissionMode = permission;
+  } else {
+    if (state.composerModel) draft.model = state.composerModel;
+    if (state.composerEffort) draft.effort = state.composerEffort;
+    const permission = normalizePermissionModeValue(state.composerPermissionMode);
+    if (permission) draft.permissionMode = permission;
+  }
+  return draft;
+}
+
+function draftHasContent(draft) {
+  return draftStore.hasContent(draft);
+}
+
+function draftAttachmentStorageKey(draftKey, attachmentIdValue) {
+  return draftStore.attachmentStorageKey(draftKey, attachmentIdValue);
+}
+
+function openDraftDb() {
+  return draftStore.openAttachmentDb();
+}
+
+async function storeDraftAttachment(draftKey, item) {
+  return draftStore.storeAttachment(draftKey, item);
+}
+
+async function loadDraftAttachment(draftKey, meta) {
+  return draftStore.loadAttachment(draftKey, meta);
+}
+
+async function deleteDraftAttachments(draftKey, attachmentIds = null) {
+  return draftStore.deleteAttachments(draftKey, attachmentIds);
+}
+
+function saveDraftAttachmentFiles(draftKey, items) {
+  if (!draftKey || !items || !items.length) return;
+  if (!("indexedDB" in window)) {
+    if (!state.draftAttachmentWarningShown) {
+      state.draftAttachmentWarningShown = true;
+      showError(new Error("当前浏览器不能持久保存草稿附件；刷新后需要重新选择附件。"));
+    }
+    return;
+  }
+  Promise.all(items.map((item) => storeDraftAttachment(draftKey, item))).catch((err) => {
+    postClientEvent("draft_attachment_save_failed", { message: err.message || String(err) });
+    showError(new Error("附件已加入本次发送，但浏览器没有保存草稿附件；刷新后可能需要重新选择。"));
+  });
+}
+
+function saveCurrentDraftNow() {
+  clearTimeout(state.draftSaveTimer);
+  state.draftSaveTimer = null;
+  if (state.composerBusy) return;
+  const key = currentDraftKey();
+  if (!key) return;
+  const map = readDraftMap();
+  const draft = buildCurrentDraft();
+  if (draftHasContent(draft)) {
+    map[key] = draft;
+    if (key.startsWith("new:")) draftStore.setTargetKey(key);
+  } else {
+    delete map[key];
+    draftStore.clearTargetKeyIfMatches(key);
+  }
+  writeDraftMap(map);
+}
+
+function scheduleCurrentDraftSave() {
+  clearTimeout(state.draftSaveTimer);
+  state.draftSaveTimer = setTimeout(saveCurrentDraftNow, DRAFT_SAVE_DEBOUNCE_MS);
+}
+
+function clearDraftForKey(draftKey) {
+  const key = String(draftKey || "");
+  if (!key) return;
+  const map = readDraftMap();
+  delete map[key];
+  writeDraftMap(map);
+  draftStore.clearTargetKeyIfMatches(key);
+  deleteDraftAttachments(key).catch((err) => {
+    postClientEvent("draft_attachment_clear_failed", { message: err.message || String(err) });
+  });
+}
+
+function defaultNewThreadModel() {
+  return state.defaultModel || state.modelOptions[0] || "";
+}
+
+function defaultNewThreadEffort() {
+  return state.defaultReasoningEffort || state.reasoningEffortOptions[0] || "";
+}
+
+function defaultNewThreadPermissionMode() {
+  return "full";
+}
+
+function applyDraftRuntimeSelection(draft) {
+  const model = String(draft && draft.model || "");
+  const effort = String(draft && draft.effort || "");
+  const permission = normalizePermissionModeValue(draft && draft.permissionMode);
+  if (state.newThreadDraft) {
+    state.newThreadModel = model && state.modelOptions.includes(model) ? model : defaultNewThreadModel();
+    state.newThreadEffort = effort && state.reasoningEffortOptions.includes(effort) ? effort : defaultNewThreadEffort();
+    state.newThreadPermissionMode = permission || defaultNewThreadPermissionMode();
+    return;
+  }
+  state.composerModel = model && state.modelOptions.includes(model) ? model : "";
+  state.composerEffort = effort && state.reasoningEffortOptions.includes(effort) ? effort : "";
+  state.composerPermissionMode = permission && state.permissionModeOptions.includes(permission) ? permission : "";
+}
+
+function replacePendingAttachments(items, options = {}) {
+  for (const item of state.pendingAttachments) {
+    if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+  }
+  state.pendingAttachments = Array.isArray(items) ? items : [];
+  renderAttachmentList();
+  if (options.saveDraft !== false) scheduleCurrentDraftSave();
+}
+
+function restoreDraftForCurrentTarget() {
+  clearTimeout(state.draftSaveTimer);
+  state.draftSaveTimer = null;
+  const key = currentDraftKey();
+  const draft = key ? readDraftMap()[key] : null;
+  const restoreSeq = state.draftRestoreSeq + 1;
+  state.draftRestoreSeq = restoreSeq;
+  setComposerText(draft && draft.text ? draft.text : "");
+  applyDraftRuntimeSelection(draft || null);
+  replacePendingAttachments([], { saveDraft: false });
+  renderComposerSettings();
+  updateComposerControls();
+  const metas = draft && Array.isArray(draft.attachments) ? draft.attachments : [];
+  if (!key || !metas.length) return;
+  Promise.all(metas.map((meta) => loadDraftAttachment(key, meta).catch(() => null))).then((items) => {
+    if (restoreSeq !== state.draftRestoreSeq || key !== currentDraftKey()) {
+      for (const item of items) {
+        if (item && item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      }
+      return;
+    }
+    const restored = items.filter(Boolean);
+    replacePendingAttachments(restored, { saveDraft: false });
+    if (restored.length !== metas.length) {
+      showError(new Error("有草稿附件没有恢复，请重新选择后再发送。"));
+    }
+  }).catch((err) => {
+    postClientEvent("draft_restore_failed", { message: err.message || String(err) });
+  });
 }
 
 function visibleWorkspaceKeys() {
@@ -2065,51 +2241,7 @@ function threadSignature() {
 }
 
 async function api(path, options = {}) {
-  const headers = Object.assign({}, options.headers || {});
-  const timeoutMs = options.timeoutMs || 30000;
-  const controller = new AbortController();
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, timeoutMs);
-  const externalSignal = options.signal;
-  const abortFromExternal = () => controller.abort();
-  if (externalSignal) {
-    if (externalSignal.aborted) controller.abort();
-    else externalSignal.addEventListener("abort", abortFromExternal, { once: true });
-  }
-  const fetchOptions = Object.assign({}, options, { headers, signal: controller.signal });
-  delete fetchOptions.timeoutMs;
-  if (state.key) headers["X-Codex-Mobile-Key"] = state.key;
-  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
-  if (options.body && !isFormData && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
-  try {
-    const res = await fetch(path, fetchOptions);
-    if (res.status === 401) {
-      showLogin();
-      throw new Error("Unauthorized");
-    }
-    if (!res.ok) {
-      let message = `${res.status} ${res.statusText}`;
-      try {
-        const body = await res.json();
-        if (body.error) message = body.error;
-      } catch (_) {}
-      throw new Error(message);
-    }
-    if (res.status === 204) return null;
-    return res.json();
-  } catch (err) {
-    if (err.name === "AbortError") {
-      if (timedOut) throw new Error(`Request timed out: ${path}`);
-      throw new Error(`Request cancelled: ${path}`);
-    }
-    throw err;
-  } finally {
-    clearTimeout(timer);
-    if (externalSignal) externalSignal.removeEventListener("abort", abortFromExternal);
-  }
+  return apiClient.request(path, options);
 }
 
 function postClientEvent(event, details = {}) {
@@ -2532,7 +2664,8 @@ function updateWorkspacePath() {
   el.textContent = state.selectedCwd || "";
 }
 
-function clearCurrentThreadSelection() {
+function clearCurrentThreadSelection(options = {}) {
+  if (options.saveDraft !== false) saveCurrentDraftNow();
   state.threadLoadSeq += 1;
   state.sendButtonHint = "";
   resetComposerRuntimeSelection();
@@ -2546,6 +2679,8 @@ function clearCurrentThreadSelection() {
   state.activeTurnId = "";
   state.leavingItems.clear();
   localStorage.removeItem(STORAGE_THREAD_ID);
+  setComposerText("");
+  replacePendingAttachments([], { saveDraft: false });
   syncActiveTurnFromThread();
   if (state.events) connectEvents();
 }
@@ -2590,6 +2725,7 @@ async function loadThreads(options = {}) {
 }
 
 async function loadThread(threadId, options = {}) {
+  saveCurrentDraftNow();
   state.newThreadDraft = false;
   const switchStartedAt = nowPerfMs();
   const fromThreadId = state.currentThreadId || "";
@@ -2640,6 +2776,7 @@ async function loadThread(threadId, options = {}) {
     turns: [],
     mobileLoading: true,
   };
+  restoreDraftForCurrentTarget();
   renderComposerSettings();
   syncActiveTurnFromThread();
   renderThreads();
@@ -2697,6 +2834,7 @@ async function loadThread(threadId, options = {}) {
   const renderStartedAt = nowPerfMs();
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
   localStorage.setItem(STORAGE_THREAD_ID, threadId);
+  draftStore.setTargetKey("");
   if (state.events) connectEvents();
   renderComposerSettings();
   syncActiveTurnFromThread();
@@ -3216,11 +3354,17 @@ function renderThreads(result = null) {
 async function restoreThreadSelection() {
   if (state.currentThread) return;
   const savedThreadId = localStorage.getItem(STORAGE_THREAD_ID) || "";
-  if (!state.threads.length && !savedThreadId) return;
+  if (!state.threads.length && !savedThreadId) {
+    restoreNewThreadDraftSelection();
+    return;
+  }
   const saved = savedThreadId && state.threads.find((thread) => thread.id === savedThreadId);
   const active = state.threads.find((thread) => isRunningStatus(thread.status));
   const target = saved || (savedThreadId ? { id: savedThreadId } : active);
-  if (!target) return;
+  if (!target) {
+    restoreNewThreadDraftSelection();
+    return;
+  }
   try {
     await loadThread(target.id, { source: "restore" });
   } catch (err) {
@@ -3230,9 +3374,32 @@ async function restoreThreadSelection() {
   }
 }
 
+function restoreNewThreadDraftSelection() {
+  const key = draftStore.getTargetKey();
+  if (!key.startsWith("new:")) return false;
+  const draft = readDraftMap()[key];
+  if (!draftHasContent(draft)) return false;
+  const cwd = String(draft.cwd || "");
+  const workspace = cwd
+    ? state.workspaces.find((ws) => normalizeFsPath(ws.cwd) === normalizeFsPath(cwd))
+    : null;
+  if (!workspace) return false;
+  state.selectedCwd = workspace.cwd || cwd;
+  clearCurrentThreadSelection({ saveDraft: false });
+  state.newThreadDraft = true;
+  restoreDraftForCurrentTarget();
+  syncSidebarWorkspaceSelect();
+  updateWorkspacePath();
+  renderThreads();
+  renderCurrentThread();
+  updateComposerControls();
+  return true;
+}
+
 async function selectWorkspaceShortcut(cwd) {
+  saveCurrentDraftNow();
   state.selectedCwd = cwd || "";
-  clearCurrentThreadSelection();
+  clearCurrentThreadSelection({ saveDraft: false });
   const select = $("workspaceSelect");
   if (select) select.textContent = state.selectedCwd ? selectedWorkspaceLabel() : "All workspaces";
   syncSidebarWorkspaceSelect();
@@ -3611,7 +3778,9 @@ function renderNewThreadDraft() {
           const selectedWorkspace = event.currentTarget.dataset.newThreadWorkspace || "";
           event.preventDefault();
           event.stopPropagation();
+          saveCurrentDraftNow();
           state.selectedCwd = selectedWorkspace || "";
+          restoreDraftForCurrentTarget();
           const sidebarSelect = $("workspaceSelect");
           if (sidebarSelect) sidebarSelect.textContent = state.selectedCwd ? selectedWorkspaceLabel() : "All workspaces";
           syncSidebarWorkspaceSelect();
@@ -3634,11 +3803,11 @@ function renderNewThreadDraft() {
 
 function enterNewThreadDraft() {
   closeThreadActions();
-  clearCurrentThreadSelection();
+  saveCurrentDraftNow();
+  clearCurrentThreadSelection({ saveDraft: false });
   state.newThreadDraft = true;
   state.sendButtonHint = "";
-  setComposerText("");
-  clearPendingAttachments();
+  restoreDraftForCurrentTarget();
   renderComposerSettings();
   renderThreads();
   renderCurrentThread();
@@ -4418,212 +4587,15 @@ function renderInputContent(content) {
   return html.join("");
 }
 
-function isMarkdownTableSeparator(line) {
-  const cells = String(line || "").trim().replace(/^\||\|$/g, "").split("|");
-  return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
-}
-
-function splitMarkdownTableRow(line) {
-  return String(line || "")
-    .trim()
-    .replace(/^\||\|$/g, "")
-    .split("|")
-    .map((cell) => cell.trim());
-}
-
-function isMarkdownBlockStart(line, nextLine = "") {
-  return /^```/.test(line)
-    || /^(#{1,6})\s+\S/.test(line)
-    || /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line)
-    || /^>\s?/.test(line)
-    || /^\s*[-*+]\s+\S/.test(line)
-    || /^\s*\d+[.)]\s+\S/.test(line)
-    || (line.includes("|") && isMarkdownTableSeparator(nextLine));
-}
-
-function safeMarkdownUrl(value) {
-  const url = String(value || "").trim();
-  if (/^(https?:|mailto:)/i.test(url)) return url;
-  return "";
-}
-
-function autolinkUrlParts(rawUrl) {
-  let href = String(rawUrl || "");
-  let suffix = "";
-  while (/[.,;:!?]$/.test(href)) {
-    suffix = href.slice(-1) + suffix;
-    href = href.slice(0, -1);
-  }
-  while (href.endsWith(")") && href.split("(").length <= href.split(")").length) {
-    suffix = ")" + suffix;
-    href = href.slice(0, -1);
-  }
-  return { href, suffix };
-}
-
-function renderMarkdownLink(label, rawUrl) {
-  const safeUrl = safeMarkdownUrl(String(rawUrl || "").replaceAll("&amp;", "&"));
-  if (!safeUrl) return null;
-  return `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noreferrer">${label}</a>`;
-}
-
-function renderAutolinkUrl(rawUrl) {
-  const parts = autolinkUrlParts(rawUrl);
-  const href = parts.href.startsWith("www.") ? `https://${parts.href}` : parts.href;
-  const safeUrl = safeMarkdownUrl(href.replaceAll("&amp;", "&"));
-  if (!safeUrl) return rawUrl;
-  return `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noreferrer">${parts.href}</a>${parts.suffix}`;
-}
-
-function renderInlineMarkdown(value) {
-  const placeholders = [];
-  const tokenPrefix = "MDTOKEN";
-  let text = String(value || "").replace(/`([^`\n]+)`/g, (_match, code) => {
-    const token = `${tokenPrefix}${placeholders.length}END`;
-    placeholders.push(`<code>${escapeHtml(code)}</code>`);
-    return token;
-  });
-
-  text = text.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (match, label, url) => {
-    const rendered = renderMarkdownLink(escapeHtml(label), url);
-    if (!rendered) return match;
-    const token = `${tokenPrefix}${placeholders.length}END`;
-    placeholders.push(rendered);
-    return token;
-  });
-  text = escapeHtml(text);
-  text = text.replace(/(^|[\s(])((?:https?:\/\/|www\.)[^\s<]+)/gi, (_match, prefix, url) => `${prefix}${renderAutolinkUrl(url)}`);
-  text = text
-    .replace(/\*\*([^*\n][^*\n]*?)\*\*/g, "<strong>$1</strong>")
-    .replace(/__([^_\n][^_\n]*?)__/g, "<strong>$1</strong>")
-    .replace(/(^|[\s(])\*([^*\n][^*\n]*?)\*/g, "$1<em>$2</em>")
-    .replace(/(^|[\s(])_([^_\n][^_\n]*?)_/g, "$1<em>$2</em>");
-
-  placeholders.forEach((html, index) => {
-    text = text.replaceAll(`${tokenPrefix}${index}END`, html);
-  });
-  return text;
-}
-
-function renderMarkdownTable(lines) {
-  const header = splitMarkdownTableRow(lines[0]);
-  const rows = lines.slice(2).map(splitMarkdownTableRow);
-  return `<div class="markdown-table-wrap"><table>
-    <thead><tr>${header.map((cell) => `<th>${renderInlineMarkdown(cell)}</th>`).join("")}</tr></thead>
-    <tbody>${rows.map((row) => `<tr>${header.map((_cell, index) => `<td>${renderInlineMarkdown(row[index] || "")}</td>`).join("")}</tr>`).join("")}</tbody>
-  </table></div>`;
-}
-
-function renderMarkdownList(lines, ordered) {
-  const tag = ordered ? "ol" : "ul";
-  const itemPattern = ordered ? /^\s*(\d+)[.)]\s+(.+)$/ : /^\s*[-*+]\s+(.+)$/;
-  let start = 1;
-  const items = lines.map((line) => {
-    const match = itemPattern.exec(line);
-    if (ordered && match) start = Number(match[1]) || start;
-    const text = match ? match[ordered ? 2 : 1] : line.trim();
-    return `<li>${renderInlineMarkdown(text)}</li>`;
-  });
-  const startAttr = ordered && start > 1 ? ` start="${start}"` : "";
-  return `<${tag}${startAttr}>${items.join("")}</${tag}>`;
-}
-
 function renderMarkdown(value) {
-  const source = String(value || "");
-  if (!source.trim()) return "";
-  const lines = source.replace(/\r\n?/g, "\n").split("\n");
-  const blocks = [];
-  let i = 0;
-
-  while (i < lines.length) {
-    const line = lines[i];
-    if (!line.trim()) {
-      i += 1;
-      continue;
-    }
-
-    const fence = /^```([A-Za-z0-9_.+-]*)\s*$/.exec(line);
-    if (fence) {
-      const lang = fence[1] || "";
-      const code = [];
-      i += 1;
-      while (i < lines.length && !/^```\s*$/.test(lines[i])) {
-        code.push(lines[i]);
-        i += 1;
-      }
-      if (i < lines.length) i += 1;
-      const codeText = code.join("\n");
-      const langLabel = `<span class="markdown-code-lang">${escapeHtml(lang || "代码")}</span>`;
-      const copyButton = copyButtonHtml(rememberCopyText(codeText), "复制", "markdown-copy-button");
-      blocks.push(`<div class="markdown-code-block"><div class="markdown-code-head">${langLabel}${copyButton}</div><pre><code>${escapeHtml(codeText)}</code></pre></div>`);
-      continue;
-    }
-
-    const heading = /^(#{1,6})\s+(.+)$/.exec(line);
-    if (heading) {
-      const level = Math.min(6, heading[1].length + 1);
-      blocks.push(`<h${level}>${renderInlineMarkdown(heading[2].trim())}</h${level}>`);
-      i += 1;
-      continue;
-    }
-
-    if (/^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line)) {
-      blocks.push("<hr>");
-      i += 1;
-      continue;
-    }
-
-    if (/^>\s?/.test(line)) {
-      const quote = [];
-      while (i < lines.length && /^>\s?/.test(lines[i])) {
-        quote.push(lines[i].replace(/^>\s?/, ""));
-        i += 1;
-      }
-      blocks.push(`<blockquote>${renderMarkdown(quote.join("\n"))}</blockquote>`);
-      continue;
-    }
-
-    if (line.includes("|") && isMarkdownTableSeparator(lines[i + 1])) {
-      const tableLines = [line, lines[i + 1]];
-      i += 2;
-      while (i < lines.length && lines[i].trim() && lines[i].includes("|")) {
-        tableLines.push(lines[i]);
-        i += 1;
-      }
-      blocks.push(renderMarkdownTable(tableLines));
-      continue;
-    }
-
-    if (/^\s*[-*+]\s+\S/.test(line)) {
-      const list = [];
-      while (i < lines.length && /^\s*[-*+]\s+\S/.test(lines[i])) {
-        list.push(lines[i]);
-        i += 1;
-      }
-      blocks.push(renderMarkdownList(list, false));
-      continue;
-    }
-
-    if (/^\s*\d+[.)]\s+\S/.test(line)) {
-      const list = [];
-      while (i < lines.length && /^\s*\d+[.)]\s+\S/.test(lines[i])) {
-        list.push(lines[i]);
-        i += 1;
-      }
-      blocks.push(renderMarkdownList(list, true));
-      continue;
-    }
-
-    const paragraph = [line.trim()];
-    i += 1;
-    while (i < lines.length && lines[i].trim() && !isMarkdownBlockStart(lines[i], lines[i + 1] || "")) {
-      paragraph.push(lines[i].trim());
-      i += 1;
-    }
-    blocks.push(`<p>${paragraph.map(renderInlineMarkdown).join("<br>")}</p>`);
+  const renderer = window.CodexMarkdownRenderer;
+  if (!renderer || typeof renderer.renderMarkdown !== "function") {
+    return `<div class="markdown-body"><p>${escapeHtml(value || "")}</p></div>`;
   }
-
-  return `<div class="markdown-body">${blocks.join("")}</div>`;
+  return renderer.renderMarkdown(value, {
+    rememberCopyText,
+    copyButtonHtml,
+  });
 }
 
 function renderItemBody(item, turn = null) {
@@ -5417,6 +5389,8 @@ function pendingAttachmentBytes(extra = []) {
 function addAttachmentFiles(fileList) {
   const files = Array.from(fileList || []).filter(Boolean);
   if (!files.length) return;
+  const draftKey = currentDraftKey();
+  const startIndex = state.pendingAttachments.length;
   const accepted = [];
   for (const file of files) {
     if (state.pendingAttachments.length + accepted.length >= state.maxUploadFiles) {
@@ -5434,22 +5408,34 @@ function addAttachmentFiles(fileList) {
     state.pendingAttachments.push({ id: attachmentId(), file, previewUrl });
   }
   renderAttachmentList();
+  const addedItems = state.pendingAttachments.slice(startIndex);
+  if (draftKey) saveDraftAttachmentFiles(draftKey, addedItems);
+  scheduleCurrentDraftSave();
 }
 
 function removeAttachment(id) {
+  const draftKey = currentDraftKey();
   const index = state.pendingAttachments.findIndex((item) => item.id === id);
   if (index < 0) return;
   const [item] = state.pendingAttachments.splice(index, 1);
   if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
   renderAttachmentList();
+  if (draftKey) {
+    deleteDraftAttachments(draftKey, [id]).catch((err) => {
+      postClientEvent("draft_attachment_remove_failed", { message: err.message || String(err) });
+    });
+  }
+  scheduleCurrentDraftSave();
 }
 
-function clearPendingAttachments() {
-  for (const item of state.pendingAttachments) {
-    if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+function clearPendingAttachments(options = {}) {
+  const draftKey = currentDraftKey();
+  replacePendingAttachments([], { saveDraft: false });
+  if (options.deleteDraft !== false && draftKey) {
+    deleteDraftAttachments(draftKey).catch((err) => {
+      postClientEvent("draft_attachment_clear_failed", { message: err.message || String(err) });
+    });
   }
-  state.pendingAttachments = [];
-  renderAttachmentList();
 }
 
 function renderAttachmentList() {
@@ -5755,6 +5741,7 @@ async function sendMessage(event) {
   if ((!text && !state.pendingAttachments.length) || !state.currentThreadId) return;
   const steering = Boolean(state.activeTurnId && hasContent);
   const steerTurnId = steering ? String(state.activeTurnId) : "";
+  const submittedDraftKey = currentDraftKey();
   const clientSubmissionId = createSubmissionId();
   state.composerBusy = true;
   state.sendButtonHint = "";
@@ -5785,6 +5772,7 @@ async function sendMessage(event) {
     });
     setComposerText("");
     clearPendingAttachments();
+    clearDraftForKey(submittedDraftKey);
     if (!steering) {
       state.composerModel = "";
       state.composerEffort = "";
@@ -5823,6 +5811,7 @@ async function sendMessage(event) {
 
 async function sendNewThreadMessage(text, hasContent, input) {
   if (!hasContent) return;
+  const submittedDraftKey = currentDraftKey();
   const clientSubmissionId = createSubmissionId();
   state.composerBusy = true;
   state.sendButtonHint = "";
@@ -5881,6 +5870,7 @@ async function sendNewThreadMessage(text, hasContent, input) {
     if (state.events) connectEvents();
     setComposerText("");
     clearPendingAttachments();
+    clearDraftForKey(submittedDraftKey);
     if (input) input.blur();
     renderComposerSettings();
     renderThreads();
@@ -6192,6 +6182,7 @@ function wireUi() {
     autoSizeMessageInput(event.target);
     if (state.sendButtonHint && !state.composerBusy) state.sendButtonHint = "";
     updateComposerControls();
+    scheduleCurrentDraftSave();
   });
   $("messageInput").addEventListener("keydown", (event) => {
     if (event.key !== "Enter" || event.shiftKey) return;
@@ -6261,6 +6252,8 @@ function wireUi() {
     scheduleMobileResume("focus", threadId ? 300 : 150);
   });
   window.addEventListener("blur", () => scheduleVisualRecovery("window-blur", 180, { render: false }));
+  window.addEventListener("pagehide", saveCurrentDraftNow);
+  window.addEventListener("beforeunload", saveCurrentDraftNow);
   document.addEventListener("focusin", () => scheduleVisualRecovery("focusin", 40, { render: false, heavy: false, delays: [40, 180] }));
   document.addEventListener("focusout", () => scheduleVisualRecovery("focusout", 160, { render: false, heavy: false, delays: [160, 420] }));
   window.addEventListener("orientationchange", () => scheduleMobileResume("orientation", 250));
