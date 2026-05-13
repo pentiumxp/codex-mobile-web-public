@@ -14,6 +14,7 @@ const USER_HOME = process.env.USERPROFILE || process.env.HOME || process.cwd();
 const RUNTIME_ROOT = process.env.CODEX_MOBILE_RUNTIME_DIR || path.join(USER_HOME, ".codex-mobile-web");
 const CODEX_HOME = process.env.CODEX_HOME || path.join(USER_HOME, ".codex");
 const STATE_DB = path.join(CODEX_HOME, "state_5.sqlite");
+const SESSIONS_DIR = path.join(CODEX_HOME, "sessions");
 const ARCHIVED_SESSIONS_DIR = path.join(CODEX_HOME, "archived_sessions");
 const CODEX_EXE = process.env.CODEX_MOBILE_CODEX_EXE || "codex";
 const MUX_ENDPOINT_FILE = process.env.CODEX_MOBILE_MUX_ENDPOINT_FILE || path.join(CODEX_HOME, "app-server-mux", "endpoint.json");
@@ -71,6 +72,7 @@ const MODEL_OPTIONS = optionListFromEnv("CODEX_MOBILE_MODEL_OPTIONS", [
   "gpt-5.3-codex-spark",
   "gpt-5.2",
 ]);
+const DEFAULT_MODEL = MODEL_OPTIONS[0] || "gpt-5.5";
 const REASONING_EFFORT_OPTIONS = optionListFromEnv("CODEX_MOBILE_REASONING_EFFORT_OPTIONS", [
   "low",
   "medium",
@@ -124,6 +126,7 @@ let clients = new Map();
 let clientHeartbeats = new WeakMap();
 let latestRateLimits = null;
 const latestRateLimitsByModel = new Map();
+let lastRolloutRateLimitScanAt = 0;
 const latestRuntimeContextByPath = new Map();
 const recentStartedThreads = new Map();
 const continuationJobs = new Map();
@@ -1697,24 +1700,27 @@ function compactNotification(payload) {
 
 function compactRateLimitWindow(value) {
   if (!value || typeof value !== "object") return null;
+  const usedPercent = value.usedPercent ?? value.used_percent;
+  const windowDurationMins = value.windowDurationMins ?? value.window_minutes;
+  const resetsAt = value.resetsAt ?? value.resets_at;
   return Object.fromEntries(Object.entries({
-    usedPercent: typeof value.usedPercent === "number" ? value.usedPercent : undefined,
-    windowDurationMins: typeof value.windowDurationMins === "number" ? value.windowDurationMins : undefined,
-    resetsAt: typeof value.resetsAt === "number" ? value.resetsAt : undefined,
+    usedPercent: Number.isFinite(Number(usedPercent)) ? Number(usedPercent) : undefined,
+    windowDurationMins: Number.isFinite(Number(windowDurationMins)) ? Number(windowDurationMins) : undefined,
+    resetsAt: Number.isFinite(Number(resetsAt)) ? Number(resetsAt) : undefined,
   }).filter(([, entry]) => entry !== undefined));
 }
 
 function compactRateLimits(value) {
   if (!value || typeof value !== "object") return null;
   const compacted = Object.fromEntries(Object.entries({
-    limitId: value.limitId || undefined,
-    limitName: value.limitName || undefined,
+    limitId: value.limitId || value.limit_id || undefined,
+    limitName: value.limitName || value.limit_name || undefined,
     model: value.model || undefined,
     primary: compactRateLimitWindow(value.primary),
     secondary: compactRateLimitWindow(value.secondary),
     credits: value.credits || null,
-    planType: value.planType || undefined,
-    rateLimitReachedType: value.rateLimitReachedType || null,
+    planType: value.planType || value.plan_type || undefined,
+    rateLimitReachedType: value.rateLimitReachedType || value.rate_limit_reached_type || null,
   }).filter(([, entry]) => entry !== undefined));
   const modelKeys = rateLimitModelKeys(compacted);
   if (modelKeys.length) compacted.modelKeys = modelKeys;
@@ -1736,6 +1742,10 @@ function addRateLimitModelKey(keys, value) {
   if (key) keys.add(key);
 }
 
+function isSparkModelKey(key) {
+  return /\bspark\b/.test(normalizeModelKey(key));
+}
+
 function rateLimitModelKeys(rateLimits) {
   if (!rateLimits || typeof rateLimits !== "object") return [];
   const keys = new Set();
@@ -1751,18 +1761,125 @@ function rateLimitModelKeys(rateLimits) {
   }
   const limitId = normalizeModelKey(rateLimits.limitId);
   if (limitId === "codex-bengalfox") keys.add("gpt-5.3-codex-spark");
-  else if (limitId === "codex") addRateLimitModelKey(keys, CODEX_CONFIG_DEFAULTS.model || MODEL_OPTIONS[0]);
+  else if (limitId === "codex") {
+    for (const model of MODEL_OPTIONS) {
+      const modelKey = normalizeModelKey(model);
+      if (modelKey && !isSparkModelKey(modelKey)) keys.add(modelKey);
+    }
+  }
   return [...keys];
+}
+
+function rateLimitWindows(rateLimits) {
+  return [rateLimits && rateLimits.primary, rateLimits && rateLimits.secondary]
+    .filter((windowInfo) => windowInfo && Number.isFinite(Number(windowInfo.usedPercent)));
+}
+
+function hasCurrentRateLimitWindow(rateLimits) {
+  const nowSeconds = Date.now() / 1000;
+  return rateLimitWindows(rateLimits).some((windowInfo) => {
+    const resetsAt = Number(windowInfo.resetsAt || 0);
+    return !resetsAt || resetsAt > nowSeconds;
+  });
 }
 
 function recordRateLimits(value) {
   const compacted = compactRateLimits(value);
-  if (!compacted) return null;
+  if (!compacted || !hasCurrentRateLimitWindow(compacted)) return null;
   latestRateLimits = compacted;
   for (const key of compacted.modelKeys || rateLimitModelKeys(compacted)) {
     latestRateLimitsByModel.set(normalizeModelKey(key), compacted);
   }
   return compacted;
+}
+
+function collectRecentRolloutFiles(root, options = {}) {
+  const maxFiles = Number(options.maxFiles || 160);
+  const maxDepth = Number(options.maxDepth || 6);
+  const out = [];
+  const visit = (dir, depth) => {
+    if (out.length >= maxFiles * 4 || depth > maxDepth) return;
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (_) {
+      return;
+    }
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        visit(fullPath, depth + 1);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
+      try {
+        const stat = fs.statSync(fullPath);
+        out.push({ path: fullPath, mtimeMs: Number(stat.mtimeMs || 0), size: Number(stat.size || 0) });
+      } catch (_) {
+        // A rollout may disappear while the app rotates files.
+      }
+    }
+  };
+  visit(root, 0);
+  return out
+    .sort((a, b) => b.mtimeMs - a.mtimeMs)
+    .slice(0, maxFiles);
+}
+
+function readRolloutTailForRateLimits(filePath, maxBytes = 2 * 1024 * 1024) {
+  try {
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile() || stat.size <= 0) return "";
+    const bytesToRead = Math.min(maxBytes, stat.size);
+    const fd = fs.openSync(filePath, "r");
+    try {
+      const buffer = Buffer.alloc(bytesToRead);
+      fs.readSync(fd, buffer, 0, bytesToRead, stat.size - bytesToRead);
+      return buffer.toString("utf8");
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch (_) {
+    return "";
+  }
+}
+
+function loadRecentRateLimitsFromRollouts(options = {}) {
+  const now = Date.now();
+  const force = options.force === true;
+  if (!force && now - lastRolloutRateLimitScanAt < 60000) return;
+  lastRolloutRateLimitScanAt = now;
+  const files = [
+    ...collectRecentRolloutFiles(SESSIONS_DIR, { maxFiles: 140 }),
+    ...collectRecentRolloutFiles(ARCHIVED_SESSIONS_DIR, { maxFiles: 60, maxDepth: 1 }),
+  ].sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, 180);
+  const latestByGroup = new Map();
+  for (const file of files) {
+    const tail = readRolloutTailForRateLimits(file.path);
+    if (!tail.includes("rate_limits")) continue;
+    const lines = tail.split(/\r?\n/).filter(Boolean).reverse();
+    for (const line of lines) {
+      let entry;
+      try {
+        entry = JSON.parse(line);
+      } catch (_) {
+        continue;
+      }
+      const rateLimits = entry && entry.payload && entry.payload.rate_limits;
+      const compacted = compactRateLimits(rateLimits);
+      if (!compacted || !hasCurrentRateLimitWindow(compacted)) continue;
+      const group = normalizeModelKey(compacted.limitId);
+      if (!group) continue;
+      const eventMs = Date.parse(entry.timestamp || "") || file.mtimeMs || 0;
+      const existing = latestByGroup.get(group);
+      if (!existing || eventMs > existing.eventMs) {
+        latestByGroup.set(group, { eventMs, rateLimits: compacted });
+      }
+    }
+  }
+  for (const entry of [...latestByGroup.values()].sort((a, b) => a.eventMs - b.eventMs)) {
+    recordRateLimits(entry.rateLimits);
+  }
 }
 
 function rateLimitsByModelObject() {
@@ -4397,6 +4514,7 @@ async function listWorkspaces() {
 async function handleApi(req, res) {
   const url = getUrl(req);
   if (url.pathname === "/api/public-config") {
+    loadRecentRateLimitsFromRollouts();
     sendJson(res, 200, {
       authRequired: !DISABLE_AUTH,
       title: "Codex Mobile Web",
@@ -4407,7 +4525,7 @@ async function handleApi(req, res) {
       modelOptions: MODEL_OPTIONS,
       reasoningEffortOptions: REASONING_EFFORT_OPTIONS,
       permissionModeOptions: PERMISSION_MODE_OPTIONS,
-      defaultModel: CODEX_CONFIG_DEFAULTS.model,
+      defaultModel: CODEX_CONFIG_DEFAULTS.model || DEFAULT_MODEL,
       defaultReasoningEffort: CODEX_CONFIG_DEFAULTS.reasoningEffort,
       rateLimits: latestRateLimits,
       rateLimitsByModel: rateLimitsByModelObject(),
@@ -4513,6 +4631,7 @@ async function handleApi(req, res) {
     await codex.ensure().catch((err) => {
       codex.lastError = err.message;
     });
+    loadRecentRateLimitsFromRollouts();
     sendJson(res, 200, codex.status());
     return;
   }
@@ -4567,6 +4686,91 @@ async function handleApi(req, res) {
     const body = await readBody(req);
     try {
       sendJson(res, 200, await startThreadFromRequestBody(body));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { error: err.message || String(err) });
+    }
+    return;
+  }
+  if (url.pathname === "/api/threads/new-message" && req.method === "POST") {
+    const { fields: body, uploads } = await readMessageBody(req, "new-thread");
+    const cwd = String(body.cwd || "").trim();
+    const text = String(body.text || "").trim();
+    const requestedModel = MODEL_OPTIONS.includes(String(body.model || "").trim())
+      ? String(body.model || "").trim()
+      : "";
+    const requestedEffort = REASONING_EFFORT_OPTIONS.includes(String(body.effort || "").trim())
+      ? String(body.effort || "").trim()
+      : "";
+    const input = buildTurnInput(text, uploads);
+    if (!cwd) {
+      sendJson(res, 400, { error: "Workspace is required to start a new thread" });
+      return;
+    }
+    if (!input.length) {
+      sendJson(res, 400, { error: "Message text or attachment is required" });
+      return;
+    }
+    const globalState = readGlobalState();
+    const visibility = visibilityFromGlobalState(globalState);
+    if (visibility.workspaceKeys.size > 0 && !visibility.workspaceKeys.has(normalizeFsPath(cwd))) {
+      sendJson(res, 403, { error: "Workspace is not visible in Codex Desktop" });
+      return;
+    }
+    const submissionKeys = messageSubmissionKeys("new-thread", body, text, uploads);
+    try {
+      const result = await runMessageSubmissionOnce(submissionKeys, uploads, async () => {
+        const runtimeSettings = applyPermissionModeOverride({}, body.permissionMode, cwd);
+        const startParams = applyStartThreadRuntimeSettings({
+          cwd,
+          modelProvider: null,
+          config: {},
+          developerInstructions: readStartThreadDeveloperInstructions(cwd) || "",
+          personality: null,
+          ephemeral: null,
+          dynamicTools: null,
+          mockExperimentalField: null,
+          experimentalRawEvents: false,
+          persistExtendedHistory: true,
+        }, runtimeSettings);
+        if (requestedModel) startParams.model = requestedModel;
+        const startResult = await codex.request("thread/start", startParams, {
+          timeoutMs: MUTATION_RPC_TIMEOUT_MS,
+          retry: false,
+        });
+        const threadId = threadIdFromStartResult(startResult);
+        if (!threadId) throw new Error("New thread creation failed: app-server did not return threadId");
+        const turnParams = applyTurnRuntimeSettings({
+          threadId,
+          input,
+          cwd,
+        }, runtimeSettings);
+        if (requestedModel) turnParams.model = requestedModel;
+        if (requestedEffort) turnParams.effort = requestedEffort;
+        const turnResult = await codex.request("turn/start", turnParams, {
+          timeoutMs: MUTATION_RPC_TIMEOUT_MS,
+          retry: false,
+        });
+        const thread = rememberStartedThread(Object.assign(
+          {},
+          (startResult && startResult.thread) || (startResult && startResult.data && startResult.data.thread) || {},
+          {
+            id: threadId,
+            preview: text || path.basename(cwd) || "新建对话",
+            cwd,
+            status: { type: "active" },
+            turns: [],
+          },
+        ));
+        return {
+          ok: true,
+          threadId,
+          thread,
+          turnId: (turnResult && (turnResult.turnId || turnResult.id || turnResult.turn && turnResult.turn.id)) || "",
+          result: turnResult,
+          startResult,
+        };
+      });
+      sendJson(res, 200, result);
     } catch (err) {
       sendJson(res, err.statusCode || 500, { error: err.message || String(err) });
     }
@@ -4883,6 +5087,12 @@ async function handleApi(req, res) {
     });
     const submissionKeys = messageSubmissionKeys(threadId, body, text, uploads);
     const runtimeSettings = applyPermissionModeOverride(await resolveThreadRuntimeSettings(threadId), body.permissionMode, body.cwd || null);
+    const requestedModel = MODEL_OPTIONS.includes(String(body.model || "").trim())
+      ? String(body.model || "").trim()
+      : "";
+    const requestedEffort = REASONING_EFFORT_OPTIONS.includes(String(body.effort || "").trim())
+      ? String(body.effort || "").trim()
+      : "";
     let result;
     try {
       result = await runMessageSubmissionOnce(submissionKeys, uploads, async () => {
@@ -4925,6 +5135,8 @@ async function handleApi(req, res) {
           input,
         }, runtimeSettings);
         if (body.cwd) params.cwd = body.cwd;
+        if (requestedModel) params.model = requestedModel;
+        if (requestedEffort) params.effort = requestedEffort;
         return await codex.request("turn/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
       });
       logMessageSubmit("done", {
