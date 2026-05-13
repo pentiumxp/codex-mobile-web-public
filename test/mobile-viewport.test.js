@@ -21,12 +21,20 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(stylesCss, /html,\s*\nbody\s*{[\s\S]*touch-action:\s*pan-x pan-y;/);
 });
 
-test("public app shell cache advances after viewport change", () => {
-  assert.match(swJs, /codex-mobile-shell-v39/);
+test("public app shell cache advances after frontend visibility changes", () => {
+  assert.match(swJs, /codex-mobile-shell-v40/);
   assert.match(swJs, /"\/api-client\.js"/);
   assert.match(swJs, /"\/runtime-settings\.js"/);
   assert.match(swJs, /"\/draft-store\.js"/);
   assert.match(swJs, /"\/markdown-renderer\.js"/);
   assert.match(appJs, /navigator\.serviceWorker\.register\("\/sw\.js"\)/);
   assert.match(appJs, /state\.serviceWorkerRegistration\.update\(\)\.catch/);
+});
+
+test("push notification control stays hidden when the browser cannot enable it", () => {
+  assert.doesNotMatch(appJs, /HTTPS required/);
+  assert.doesNotMatch(appJs, /Notifications unavailable/);
+  assert.doesNotMatch(appJs, /Notifications unsupported/);
+  assert.match(appJs, /const hideButton = \(\) => \{/);
+  assert.match(appJs, /if \(!window\.isSecureContext\) \{[\s\S]*hideButton\(\);[\s\S]*return;[\s\S]*\}/);
 });
