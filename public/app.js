@@ -26,6 +26,10 @@ const state = {
   resumeTimer: null,
   resumeVisualTimers: [],
   resumeSeq: 0,
+  draftSaveTimer: null,
+  draftRestoreSeq: 0,
+  draftDbPromise: null,
+  draftAttachmentWarningShown: false,
   visualRecoveryTimers: [],
   visualRecoverySeq: 0,
   pollTimer: null,
@@ -123,6 +127,13 @@ const STORAGE_DISMISSED_ROLLOUT_WARNINGS = "codexMobileDismissedRolloutWarnings"
 const STORAGE_FONT_SIZE = "codexMobileFontSize";
 const STORAGE_RATE_LIMITS = "codexMobileRateLimits";
 const STORAGE_RATE_LIMITS_BY_MODEL = "codexMobileRateLimitsByModel";
+const STORAGE_DRAFTS = "codexMobileDraftsV1";
+const STORAGE_DRAFT_TARGET = "codexMobileDraftTargetV1";
+const DRAFT_DB_NAME = "codex-mobile-drafts";
+const DRAFT_DB_VERSION = 1;
+const DRAFT_ATTACHMENT_STORE = "attachments";
+const DRAFT_SAVE_DEBOUNCE_MS = 250;
+const MAX_DRAFTS = 80;
 const FONT_SIZE_VALUES = new Set(["small", "default", "large", "xlarge", "xxlarge"]);
 const MENU_OVERLAY_MEDIA = "(max-width: 1180px), (pointer: coarse) and (max-width: 1400px)";
 const TABLET_SPLIT_MEDIA = "(pointer: coarse) and (orientation: landscape) and (min-width: 900px) and (min-height: 600px)";
@@ -1206,6 +1217,286 @@ function normalizeFsPath(value) {
     .replace(/[\\/]+/g, "\\")
     .replace(/\\+$/, "")
     .toLowerCase();
+}
+
+function draftKeyForThread(threadId) {
+  const id = String(threadId || "").trim();
+  return id ? `thread:${id}` : "";
+}
+
+function draftKeyForNewThread(cwd) {
+  const key = normalizeFsPath(cwd || "");
+  return key ? `new:${key}` : "";
+}
+
+function currentDraftKey() {
+  if (state.newThreadDraft) return draftKeyForNewThread(state.selectedCwd);
+  return draftKeyForThread(state.currentThreadId);
+}
+
+function readDraftMap() {
+  const value = loadJsonStorage(STORAGE_DRAFTS, {});
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function writeDraftMap(map) {
+  const entries = Object.entries(map || {})
+    .filter(([, draft]) => draft && typeof draft === "object")
+    .sort((a, b) => Number(b[1].updatedAt || 0) - Number(a[1].updatedAt || 0))
+    .slice(0, MAX_DRAFTS);
+  const next = Object.fromEntries(entries);
+  try {
+    if (entries.length) localStorage.setItem(STORAGE_DRAFTS, JSON.stringify(next));
+    else localStorage.removeItem(STORAGE_DRAFTS);
+  } catch (err) {
+    postClientEvent("draft_save_failed", { message: err.message || String(err) });
+  }
+}
+
+function normalizeDraftAttachmentMeta(item) {
+  if (!item || !item.id || !item.file) return null;
+  return {
+    id: String(item.id),
+    name: String(item.file.name || "upload"),
+    type: String(item.file.type || ""),
+    size: Number(item.file.size || 0),
+    lastModified: Number(item.file.lastModified || 0),
+  };
+}
+
+function buildCurrentDraft() {
+  const draft = {
+    text: composerText(),
+    attachments: state.pendingAttachments.map(normalizeDraftAttachmentMeta).filter(Boolean),
+    updatedAt: Date.now(),
+  };
+  if (state.newThreadDraft) {
+    draft.cwd = state.selectedCwd || "";
+    if (state.newThreadModel && state.newThreadModel !== defaultNewThreadModel()) draft.model = state.newThreadModel;
+    if (state.newThreadEffort && state.newThreadEffort !== defaultNewThreadEffort()) draft.effort = state.newThreadEffort;
+    const permission = normalizePermissionModeValue(state.newThreadPermissionMode);
+    if (permission && permission !== defaultNewThreadPermissionMode()) draft.permissionMode = permission;
+  } else {
+    if (state.composerModel) draft.model = state.composerModel;
+    if (state.composerEffort) draft.effort = state.composerEffort;
+    const permission = normalizePermissionModeValue(state.composerPermissionMode);
+    if (permission) draft.permissionMode = permission;
+  }
+  return draft;
+}
+
+function draftHasContent(draft) {
+  return Boolean(draft
+    && (String(draft.text || "").trim()
+      || (Array.isArray(draft.attachments) && draft.attachments.length)
+      || draft.model
+      || draft.effort
+      || draft.permissionMode));
+}
+
+function draftAttachmentStorageKey(draftKey, attachmentIdValue) {
+  return `${encodeURIComponent(draftKey)}|${encodeURIComponent(attachmentIdValue)}`;
+}
+
+function openDraftDb() {
+  if (!("indexedDB" in window)) return Promise.resolve(null);
+  if (state.draftDbPromise) return state.draftDbPromise;
+  state.draftDbPromise = new Promise((resolve) => {
+    const request = indexedDB.open(DRAFT_DB_NAME, DRAFT_DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      const store = db.objectStoreNames.contains(DRAFT_ATTACHMENT_STORE)
+        ? request.transaction.objectStore(DRAFT_ATTACHMENT_STORE)
+        : db.createObjectStore(DRAFT_ATTACHMENT_STORE, { keyPath: "key" });
+      if (!store.indexNames.contains("draftKey")) store.createIndex("draftKey", "draftKey", { unique: false });
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => {
+      postClientEvent("draft_db_open_failed", { message: request.error ? request.error.message : "" });
+      resolve(null);
+    };
+    request.onblocked = () => resolve(null);
+  });
+  return state.draftDbPromise;
+}
+
+async function storeDraftAttachment(draftKey, item) {
+  if (!draftKey || !item || !item.id || !item.file) return;
+  const db = await openDraftDb();
+  if (!db) throw new Error("Draft attachment storage unavailable");
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(DRAFT_ATTACHMENT_STORE, "readwrite");
+    tx.objectStore(DRAFT_ATTACHMENT_STORE).put({
+      key: draftAttachmentStorageKey(draftKey, item.id),
+      draftKey,
+      id: item.id,
+      name: item.file.name || "upload",
+      type: item.file.type || "",
+      lastModified: item.file.lastModified || Date.now(),
+      file: item.file,
+    });
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error || new Error("Draft attachment save failed"));
+    tx.onabort = () => reject(tx.error || new Error("Draft attachment save aborted"));
+  });
+}
+
+async function loadDraftAttachment(draftKey, meta) {
+  const db = await openDraftDb();
+  if (!db || !draftKey || !meta || !meta.id) return null;
+  const record = await new Promise((resolve, reject) => {
+    const tx = db.transaction(DRAFT_ATTACHMENT_STORE, "readonly");
+    const request = tx.objectStore(DRAFT_ATTACHMENT_STORE).get(draftAttachmentStorageKey(draftKey, meta.id));
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => reject(request.error || new Error("Draft attachment read failed"));
+  });
+  const blob = record && record.file;
+  if (!blob || typeof File === "undefined") return null;
+  const file = blob instanceof File
+    ? blob
+    : new File([blob], meta.name || record.name || "upload", {
+      type: meta.type || record.type || blob.type || "",
+      lastModified: meta.lastModified || record.lastModified || Date.now(),
+    });
+  const previewUrl = file.type && file.type.startsWith("image/") ? URL.createObjectURL(file) : "";
+  return { id: meta.id, file, previewUrl };
+}
+
+async function deleteDraftAttachments(draftKey, attachmentIds = null) {
+  const db = await openDraftDb();
+  if (!db || !draftKey || typeof IDBKeyRange === "undefined") return;
+  const ids = attachmentIds ? new Set(Array.from(attachmentIds).map(String)) : null;
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(DRAFT_ATTACHMENT_STORE, "readwrite");
+    const request = tx.objectStore(DRAFT_ATTACHMENT_STORE).index("draftKey").openCursor(IDBKeyRange.only(draftKey));
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      if (!ids || ids.has(String(cursor.value && cursor.value.id))) cursor.delete();
+      cursor.continue();
+    };
+    request.onerror = () => reject(request.error || new Error("Draft attachment cleanup failed"));
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error || new Error("Draft attachment cleanup failed"));
+    tx.onabort = () => reject(tx.error || new Error("Draft attachment cleanup aborted"));
+  });
+}
+
+function saveDraftAttachmentFiles(draftKey, items) {
+  if (!draftKey || !items || !items.length) return;
+  if (!("indexedDB" in window)) {
+    if (!state.draftAttachmentWarningShown) {
+      state.draftAttachmentWarningShown = true;
+      showError(new Error("当前浏览器不能持久保存草稿附件；刷新后需要重新选择附件。"));
+    }
+    return;
+  }
+  Promise.all(items.map((item) => storeDraftAttachment(draftKey, item))).catch((err) => {
+    postClientEvent("draft_attachment_save_failed", { message: err.message || String(err) });
+    showError(new Error("附件已加入本次发送，但浏览器没有保存草稿附件；刷新后可能需要重新选择。"));
+  });
+}
+
+function saveCurrentDraftNow() {
+  clearTimeout(state.draftSaveTimer);
+  state.draftSaveTimer = null;
+  if (state.composerBusy) return;
+  const key = currentDraftKey();
+  if (!key) return;
+  const map = readDraftMap();
+  const draft = buildCurrentDraft();
+  if (draftHasContent(draft)) {
+    map[key] = draft;
+    if (key.startsWith("new:")) localStorage.setItem(STORAGE_DRAFT_TARGET, key);
+  } else {
+    delete map[key];
+    if (localStorage.getItem(STORAGE_DRAFT_TARGET) === key) localStorage.removeItem(STORAGE_DRAFT_TARGET);
+  }
+  writeDraftMap(map);
+}
+
+function scheduleCurrentDraftSave() {
+  clearTimeout(state.draftSaveTimer);
+  state.draftSaveTimer = setTimeout(saveCurrentDraftNow, DRAFT_SAVE_DEBOUNCE_MS);
+}
+
+function clearDraftForKey(draftKey) {
+  const key = String(draftKey || "");
+  if (!key) return;
+  const map = readDraftMap();
+  delete map[key];
+  writeDraftMap(map);
+  if (localStorage.getItem(STORAGE_DRAFT_TARGET) === key) localStorage.removeItem(STORAGE_DRAFT_TARGET);
+  deleteDraftAttachments(key).catch((err) => {
+    postClientEvent("draft_attachment_clear_failed", { message: err.message || String(err) });
+  });
+}
+
+function defaultNewThreadModel() {
+  return state.defaultModel || state.modelOptions[0] || "";
+}
+
+function defaultNewThreadEffort() {
+  return state.defaultReasoningEffort || state.reasoningEffortOptions[0] || "";
+}
+
+function defaultNewThreadPermissionMode() {
+  return "full";
+}
+
+function applyDraftRuntimeSelection(draft) {
+  const model = String(draft && draft.model || "");
+  const effort = String(draft && draft.effort || "");
+  const permission = normalizePermissionModeValue(draft && draft.permissionMode);
+  if (state.newThreadDraft) {
+    state.newThreadModel = model && state.modelOptions.includes(model) ? model : defaultNewThreadModel();
+    state.newThreadEffort = effort && state.reasoningEffortOptions.includes(effort) ? effort : defaultNewThreadEffort();
+    state.newThreadPermissionMode = permission || defaultNewThreadPermissionMode();
+    return;
+  }
+  state.composerModel = model && state.modelOptions.includes(model) ? model : "";
+  state.composerEffort = effort && state.reasoningEffortOptions.includes(effort) ? effort : "";
+  state.composerPermissionMode = permission && state.permissionModeOptions.includes(permission) ? permission : "";
+}
+
+function replacePendingAttachments(items, options = {}) {
+  for (const item of state.pendingAttachments) {
+    if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+  }
+  state.pendingAttachments = Array.isArray(items) ? items : [];
+  renderAttachmentList();
+  if (options.saveDraft !== false) scheduleCurrentDraftSave();
+}
+
+function restoreDraftForCurrentTarget() {
+  clearTimeout(state.draftSaveTimer);
+  state.draftSaveTimer = null;
+  const key = currentDraftKey();
+  const draft = key ? readDraftMap()[key] : null;
+  const restoreSeq = state.draftRestoreSeq + 1;
+  state.draftRestoreSeq = restoreSeq;
+  setComposerText(draft && draft.text ? draft.text : "");
+  applyDraftRuntimeSelection(draft || null);
+  replacePendingAttachments([], { saveDraft: false });
+  renderComposerSettings();
+  updateComposerControls();
+  const metas = draft && Array.isArray(draft.attachments) ? draft.attachments : [];
+  if (!key || !metas.length) return;
+  Promise.all(metas.map((meta) => loadDraftAttachment(key, meta).catch(() => null))).then((items) => {
+    if (restoreSeq !== state.draftRestoreSeq || key !== currentDraftKey()) {
+      for (const item of items) {
+        if (item && item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      }
+      return;
+    }
+    const restored = items.filter(Boolean);
+    replacePendingAttachments(restored, { saveDraft: false });
+    if (restored.length !== metas.length) {
+      showError(new Error("有草稿附件没有恢复，请重新选择后再发送。"));
+    }
+  }).catch((err) => {
+    postClientEvent("draft_restore_failed", { message: err.message || String(err) });
+  });
 }
 
 function visibleWorkspaceKeys() {
@@ -2532,7 +2823,8 @@ function updateWorkspacePath() {
   el.textContent = state.selectedCwd || "";
 }
 
-function clearCurrentThreadSelection() {
+function clearCurrentThreadSelection(options = {}) {
+  if (options.saveDraft !== false) saveCurrentDraftNow();
   state.threadLoadSeq += 1;
   state.sendButtonHint = "";
   resetComposerRuntimeSelection();
@@ -2546,6 +2838,8 @@ function clearCurrentThreadSelection() {
   state.activeTurnId = "";
   state.leavingItems.clear();
   localStorage.removeItem(STORAGE_THREAD_ID);
+  setComposerText("");
+  replacePendingAttachments([], { saveDraft: false });
   syncActiveTurnFromThread();
   if (state.events) connectEvents();
 }
@@ -2590,6 +2884,7 @@ async function loadThreads(options = {}) {
 }
 
 async function loadThread(threadId, options = {}) {
+  saveCurrentDraftNow();
   state.newThreadDraft = false;
   const switchStartedAt = nowPerfMs();
   const fromThreadId = state.currentThreadId || "";
@@ -2640,6 +2935,7 @@ async function loadThread(threadId, options = {}) {
     turns: [],
     mobileLoading: true,
   };
+  restoreDraftForCurrentTarget();
   renderComposerSettings();
   syncActiveTurnFromThread();
   renderThreads();
@@ -2697,6 +2993,7 @@ async function loadThread(threadId, options = {}) {
   const renderStartedAt = nowPerfMs();
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
   localStorage.setItem(STORAGE_THREAD_ID, threadId);
+  localStorage.removeItem(STORAGE_DRAFT_TARGET);
   if (state.events) connectEvents();
   renderComposerSettings();
   syncActiveTurnFromThread();
@@ -3216,11 +3513,17 @@ function renderThreads(result = null) {
 async function restoreThreadSelection() {
   if (state.currentThread) return;
   const savedThreadId = localStorage.getItem(STORAGE_THREAD_ID) || "";
-  if (!state.threads.length && !savedThreadId) return;
+  if (!state.threads.length && !savedThreadId) {
+    restoreNewThreadDraftSelection();
+    return;
+  }
   const saved = savedThreadId && state.threads.find((thread) => thread.id === savedThreadId);
   const active = state.threads.find((thread) => isRunningStatus(thread.status));
   const target = saved || (savedThreadId ? { id: savedThreadId } : active);
-  if (!target) return;
+  if (!target) {
+    restoreNewThreadDraftSelection();
+    return;
+  }
   try {
     await loadThread(target.id, { source: "restore" });
   } catch (err) {
@@ -3230,9 +3533,32 @@ async function restoreThreadSelection() {
   }
 }
 
+function restoreNewThreadDraftSelection() {
+  const key = String(localStorage.getItem(STORAGE_DRAFT_TARGET) || "");
+  if (!key.startsWith("new:")) return false;
+  const draft = readDraftMap()[key];
+  if (!draftHasContent(draft)) return false;
+  const cwd = String(draft.cwd || "");
+  const workspace = cwd
+    ? state.workspaces.find((ws) => normalizeFsPath(ws.cwd) === normalizeFsPath(cwd))
+    : null;
+  if (!workspace) return false;
+  state.selectedCwd = workspace.cwd || cwd;
+  clearCurrentThreadSelection({ saveDraft: false });
+  state.newThreadDraft = true;
+  restoreDraftForCurrentTarget();
+  syncSidebarWorkspaceSelect();
+  updateWorkspacePath();
+  renderThreads();
+  renderCurrentThread();
+  updateComposerControls();
+  return true;
+}
+
 async function selectWorkspaceShortcut(cwd) {
+  saveCurrentDraftNow();
   state.selectedCwd = cwd || "";
-  clearCurrentThreadSelection();
+  clearCurrentThreadSelection({ saveDraft: false });
   const select = $("workspaceSelect");
   if (select) select.textContent = state.selectedCwd ? selectedWorkspaceLabel() : "All workspaces";
   syncSidebarWorkspaceSelect();
@@ -3611,7 +3937,9 @@ function renderNewThreadDraft() {
           const selectedWorkspace = event.currentTarget.dataset.newThreadWorkspace || "";
           event.preventDefault();
           event.stopPropagation();
+          saveCurrentDraftNow();
           state.selectedCwd = selectedWorkspace || "";
+          restoreDraftForCurrentTarget();
           const sidebarSelect = $("workspaceSelect");
           if (sidebarSelect) sidebarSelect.textContent = state.selectedCwd ? selectedWorkspaceLabel() : "All workspaces";
           syncSidebarWorkspaceSelect();
@@ -3634,11 +3962,11 @@ function renderNewThreadDraft() {
 
 function enterNewThreadDraft() {
   closeThreadActions();
-  clearCurrentThreadSelection();
+  saveCurrentDraftNow();
+  clearCurrentThreadSelection({ saveDraft: false });
   state.newThreadDraft = true;
   state.sendButtonHint = "";
-  setComposerText("");
-  clearPendingAttachments();
+  restoreDraftForCurrentTarget();
   renderComposerSettings();
   renderThreads();
   renderCurrentThread();
@@ -5417,6 +5745,8 @@ function pendingAttachmentBytes(extra = []) {
 function addAttachmentFiles(fileList) {
   const files = Array.from(fileList || []).filter(Boolean);
   if (!files.length) return;
+  const draftKey = currentDraftKey();
+  const startIndex = state.pendingAttachments.length;
   const accepted = [];
   for (const file of files) {
     if (state.pendingAttachments.length + accepted.length >= state.maxUploadFiles) {
@@ -5434,22 +5764,34 @@ function addAttachmentFiles(fileList) {
     state.pendingAttachments.push({ id: attachmentId(), file, previewUrl });
   }
   renderAttachmentList();
+  const addedItems = state.pendingAttachments.slice(startIndex);
+  if (draftKey) saveDraftAttachmentFiles(draftKey, addedItems);
+  scheduleCurrentDraftSave();
 }
 
 function removeAttachment(id) {
+  const draftKey = currentDraftKey();
   const index = state.pendingAttachments.findIndex((item) => item.id === id);
   if (index < 0) return;
   const [item] = state.pendingAttachments.splice(index, 1);
   if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
   renderAttachmentList();
+  if (draftKey) {
+    deleteDraftAttachments(draftKey, [id]).catch((err) => {
+      postClientEvent("draft_attachment_remove_failed", { message: err.message || String(err) });
+    });
+  }
+  scheduleCurrentDraftSave();
 }
 
-function clearPendingAttachments() {
-  for (const item of state.pendingAttachments) {
-    if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+function clearPendingAttachments(options = {}) {
+  const draftKey = currentDraftKey();
+  replacePendingAttachments([], { saveDraft: false });
+  if (options.deleteDraft !== false && draftKey) {
+    deleteDraftAttachments(draftKey).catch((err) => {
+      postClientEvent("draft_attachment_clear_failed", { message: err.message || String(err) });
+    });
   }
-  state.pendingAttachments = [];
-  renderAttachmentList();
 }
 
 function renderAttachmentList() {
@@ -5755,6 +6097,7 @@ async function sendMessage(event) {
   if ((!text && !state.pendingAttachments.length) || !state.currentThreadId) return;
   const steering = Boolean(state.activeTurnId && hasContent);
   const steerTurnId = steering ? String(state.activeTurnId) : "";
+  const submittedDraftKey = currentDraftKey();
   const clientSubmissionId = createSubmissionId();
   state.composerBusy = true;
   state.sendButtonHint = "";
@@ -5785,6 +6128,7 @@ async function sendMessage(event) {
     });
     setComposerText("");
     clearPendingAttachments();
+    clearDraftForKey(submittedDraftKey);
     if (!steering) {
       state.composerModel = "";
       state.composerEffort = "";
@@ -5823,6 +6167,7 @@ async function sendMessage(event) {
 
 async function sendNewThreadMessage(text, hasContent, input) {
   if (!hasContent) return;
+  const submittedDraftKey = currentDraftKey();
   const clientSubmissionId = createSubmissionId();
   state.composerBusy = true;
   state.sendButtonHint = "";
@@ -5881,6 +6226,7 @@ async function sendNewThreadMessage(text, hasContent, input) {
     if (state.events) connectEvents();
     setComposerText("");
     clearPendingAttachments();
+    clearDraftForKey(submittedDraftKey);
     if (input) input.blur();
     renderComposerSettings();
     renderThreads();
@@ -6192,6 +6538,7 @@ function wireUi() {
     autoSizeMessageInput(event.target);
     if (state.sendButtonHint && !state.composerBusy) state.sendButtonHint = "";
     updateComposerControls();
+    scheduleCurrentDraftSave();
   });
   $("messageInput").addEventListener("keydown", (event) => {
     if (event.key !== "Enter" || event.shiftKey) return;
@@ -6261,6 +6608,8 @@ function wireUi() {
     scheduleMobileResume("focus", threadId ? 300 : 150);
   });
   window.addEventListener("blur", () => scheduleVisualRecovery("window-blur", 180, { render: false }));
+  window.addEventListener("pagehide", saveCurrentDraftNow);
+  window.addEventListener("beforeunload", saveCurrentDraftNow);
   document.addEventListener("focusin", () => scheduleVisualRecovery("focusin", 40, { render: false, heavy: false, delays: [40, 180] }));
   document.addEventListener("focusout", () => scheduleVisualRecovery("focusout", 160, { render: false, heavy: false, delays: [160, 420] }));
   window.addEventListener("orientationchange", () => scheduleMobileResume("orientation", 250));
