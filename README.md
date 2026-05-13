@@ -334,7 +334,7 @@ Behavior:
 - On coarse-pointer landscape tablets, the composer uses a viewport-contained two-row compact layout: runtime indicators and quota on the first row, then attach/input/send on the second row. The split layout constrains both sidebar and main pane height so the composer stays inside the visible app surface.
 - On mobile/touch layouts, swiping right from the left screen edge opens the session list without waiting for a network refresh. If the existing session list is newer than 60 seconds, Mobile Web reuses it immediately; older lists open first and then refresh quietly in the background.
 - Thread lists and thread detail monitor rollout JSONL size. At the default `200MB` threshold, Mobile Web shows a context-size warning and offers a same-workspace continuation action. The warning can be skipped for the current thread size, and will reappear if that thread grows again past the stored size. After user confirmation, the action first asks the source thread to write a thread-specific handoff file, creates a source-named/date-suffixed continuation thread, sends a scoped bootstrap message, then archives the source thread.
-- The continuation bootstrap message explicitly carries source thread metadata, rollout size, inherited runtime settings, the source-thread-generated handoff file, recent visible turn summaries, and current-workspace `.agent-context/PROJECT_CONTEXT.md` / `.agent-context/HANDOFF.md` excerpts. It does not inject fixed private/public GitHub release rules; those appear only if the current workspace context or source-thread handoff says they are relevant.
+- The continuation bootstrap message explicitly carries source thread metadata, rollout size, inherited runtime settings, the source-thread-generated handoff file, bounded continuation lineage, recent visible turn summaries, and current-workspace `.agent-context/PROJECT_CONTEXT.md` / `.agent-context/HANDOFF.md` excerpts. It does not inject fixed private/public GitHub release rules; those appear only if the current workspace context or source-thread handoff says they are relevant.
 - Thread list rows support a left-swipe action to reveal `归档` for any visible thread. This is a direct archive shortcut and no longer starts rollout continuation from the swipe row.
 - The left-swipe action stays open after a horizontal swipe until the user taps the card, taps the action, opens another row, or refreshes the list. Mobile browsers can emit a synthetic click after touch gestures, so the UI suppresses that same-gesture click to avoid immediately closing the action.
 - Long-pressing a session row opens a mobile action sheet with rename and continuation actions. The row disables accidental system text selection during the long press, while rename input fields still allow normal text selection and editing.
@@ -346,11 +346,11 @@ Behavior:
 
 线程详情读取还有一个单独的性能阈值：`CODEX_MOBILE_THREAD_DETAIL_ROLLOUT_MAX_BYTES`，默认 `32MB`。当 rollout 超过这个值时，Mobile Web 不再先走昂贵的完整 `thread/read`，而是优先使用有数量上限的 `thread/turns/list` 读取最近 turns。这个阈值故意低于 `200MB` 的界面提醒阈值：例如几十 MB 到一百多 MB 的线程可以更快切换进入，但不会提前显示“压缩续接”警告。只有达到 `200MB` 提醒阈值后，界面才提示压缩续接。
 
-旧线程写出交接文件后，Mobile Web 会尽量确认旧线程交接 turn 已完成，然后才创建同工作区的新续接线程，并在首条 bootstrap 消息中带入源线程 ID、标题、工作区、rollout 路径和大小、运行权限摘要、源线程交接文件、最近源线程上下文，以及当前工作区 `.agent-context/PROJECT_CONTEXT.md` / `.agent-context/HANDOFF.md` 摘录。bootstrap 不再固定注入其他工作区或无关线程的发布/提交规则；只有当前工作区上下文或源线程交接文件明确涉及这些规则时，新线程才应加载它们。前端不会为了发起续接而强制打开源线程，避免源线程过大时先卡在 thread detail 读取；续接任务会通过 job 状态显示当前阶段，手机页面刷新后也会用本地保存的 job id 尝试恢复查询，完成后自动切到新线程。
+旧线程写出交接文件后，Mobile Web 会尽量确认旧线程交接 turn 已完成，然后才创建同工作区的新续接线程，并在首条 bootstrap 消息中带入源线程 ID、标题、工作区、rollout 路径和大小、运行权限摘要、源线程交接文件、续接 lineage、最近源线程上下文，以及当前工作区 `.agent-context/PROJECT_CONTEXT.md` / `.agent-context/HANDOFF.md` 摘录。bootstrap 不再固定注入其他工作区或无关线程的发布/提交规则；只有当前工作区上下文或源线程交接文件明确涉及这些规则时，新线程才应加载它们。前端不会为了发起续接而强制打开源线程，避免源线程过大时先卡在 thread detail 读取；续接任务会通过 job 状态显示当前阶段，手机页面刷新后也会用本地保存的 job id 尝试恢复查询，完成后自动切到新线程。
 
-这个动作不会原地改写或裁剪旧 rollout 文件；它通过“源线程写交接文件 + 新续接线程 + 旧线程归档”降低后续交互需要读取的历史文件体积。旧线程在交接文件生成且续接线程启动成功后才会归档，仍可从归档记录中找回。首条 bootstrap 会要求新线程先读取源线程交接文件，再读取工作区持久上下文，并显式避免确认与当前工作区无关的发布或提交规则。
+这个动作不会原地改写或裁剪旧 rollout 文件；它通过“源线程写交接文件 + 新续接线程 + 旧线程归档”降低后续交互需要读取的历史文件体积。旧线程在交接文件生成且续接线程启动成功后才会归档，仍可从归档记录中找回。首条 bootstrap 会要求新线程先读取源线程交接文件，再读取工作区持久上下文，并显式避免确认与当前工作区无关的发布或提交规则。续接成功后，服务端还会把 `newThreadId -> sourceThreadId -> handoffFile` 追加到 `.agent-context/thread-handoffs/index.jsonl`；下一次继续压缩时，bootstrap 会带入最多几层 lineage 摘要，并明确要求 Agent 在历史事实、风险、未完成事项或架构判断不确定时先读取 lineage 指向的 handoff 文件，而不是凭当前上下文猜。
 
-交接文件属于本地运行态资料。创建交接目录时，服务端会在 `.agent-context/thread-handoffs/.gitignore` 写入忽略规则，防止这些自动生成的 Markdown 交接文件被误提交。
+交接文件和 lineage index 都属于本地运行态资料。创建交接目录时，服务端会在 `.agent-context/thread-handoffs/.gitignore` 写入忽略规则，防止这些自动生成的 Markdown/JSONL 资料被误提交。
 
 线程列表中的任意线程都可以向左滑动露出 `归档` 按钮，用于直接归档不再需要显示的会话。这个动作会先弹出确认提示，确认后调用 `/api/threads/<threadId>/archive`，成功后刷新列表；如果归档的是当前打开线程，前端会清空当前详情视图并回到未选中状态。主动压缩续接不再放在线程行左滑动作里，仍保留在超阈值详情提示和长按菜单动作中。
 
@@ -919,6 +919,8 @@ VAPID details:
 | `CODEX_MOBILE_CONTINUATION_HANDOFF_TURN_COMPLETION_TIMEOUT_MS` | Extra wait for the source handoff turn to report a completed status after the handoff file is written, default `60000`. |
 | `CODEX_MOBILE_CONTINUATION_JOB_TTL_MS` | How long finished continuation jobs stay queryable for the mobile UI, default `1800000` (`30 minutes`). |
 | `CODEX_MOBILE_CONTINUATION_JOB_MAX` | Maximum continuation jobs retained in memory, default `50`. |
+| `CODEX_MOBILE_CONTINUATION_LINEAGE_MAX_DEPTH` | Maximum previous continuation links included in a new bootstrap, default `2`, capped at `5`. |
+| `CODEX_MOBILE_CONTINUATION_LINEAGE_MAX_CHARS` | Maximum characters used for lineage instructions and handoff excerpts inside a bootstrap, default `30000`. |
 | `CODEX_MOBILE_MESSAGE_DEDUPE_WINDOW_MS` | Time window for treating repeated message submissions as the same request, default `90000`. Requests with `clientSubmissionId` are deduped by id; legacy requests without it fall back to content fingerprinting. |
 | `CODEX_MOBILE_MESSAGE_DEDUPE_MAX` | Maximum number of recent message submissions kept in the dedupe cache, default `300`. |
 | `CODEX_MOBILE_MUX_REPLAY_NOTIFICATION_LIMIT` | Maximum buffered mux notifications requested by Mobile Web on reconnect, default `200`; unresolved approval/server requests are still replayed separately. |
