@@ -6,6 +6,7 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+const draftStoreJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "draft-store.js"), "utf8");
 
 function functionBody(name) {
   let start = appJs.indexOf(`function ${name}(`);
@@ -24,8 +25,9 @@ function functionBody(name) {
 }
 
 test("composer drafts are browser-local and keyed by thread or new-thread workspace", () => {
-  assert.match(appJs, /const STORAGE_DRAFTS = "codexMobileDraftsV1"/);
-  assert.match(appJs, /const STORAGE_DRAFT_TARGET = "codexMobileDraftTargetV1"/);
+  assert.match(draftStoreJs, /draftsKey: "codexMobileDraftsV1"/);
+  assert.match(draftStoreJs, /draftTargetKey: "codexMobileDraftTargetV1"/);
+  assert.match(appJs, /window\.CodexDraftStore\.createDraftStore/);
   assert.match(appJs, /function draftKeyForThread\(threadId\)/);
   assert.match(appJs, /function draftKeyForNewThread\(cwd\)/);
   assert.match(appJs, /return draftKeyForThread\(state\.currentThreadId\)/);
@@ -55,7 +57,7 @@ test("switching targets saves the previous draft and restores the next draft", (
 });
 
 test("draft attachments use IndexedDB and are cleared only after a successful send", () => {
-  assert.match(appJs, /indexedDB\.open\(DRAFT_DB_NAME,\s*DRAFT_DB_VERSION\)/);
+  assert.match(draftStoreJs, /indexedDBRef\.open\(config\.dbName,\s*config\.dbVersion\)/);
   assert.match(appJs, /function storeDraftAttachment\(/);
   assert.match(appJs, /function loadDraftAttachment\(/);
   assert.match(appJs, /function deleteDraftAttachments\(/);

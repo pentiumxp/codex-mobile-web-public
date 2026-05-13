@@ -22,7 +22,11 @@ test("mobile viewport and early guards disable page zoom", () => {
 });
 
 test("public app shell cache advances after viewport change", () => {
-  assert.match(swJs, /codex-mobile-shell-v36/);
+  assert.match(swJs, /codex-mobile-shell-v39/);
+  assert.match(swJs, /"\/api-client\.js"/);
+  assert.match(swJs, /"\/runtime-settings\.js"/);
+  assert.match(swJs, /"\/draft-store\.js"/);
+  assert.match(swJs, /"\/markdown-renderer\.js"/);
   assert.match(appJs, /navigator\.serviceWorker\.register\("\/sw\.js"\)/);
   assert.match(appJs, /state\.serviceWorkerRegistration\.update\(\)\.catch/);
 });

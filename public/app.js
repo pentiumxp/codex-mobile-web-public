@@ -28,7 +28,6 @@ const state = {
   resumeSeq: 0,
   draftSaveTimer: null,
   draftRestoreSeq: 0,
-  draftDbPromise: null,
   draftAttachmentWarningShown: false,
   visualRecoveryTimers: [],
   visualRecoverySeq: 0,
@@ -127,13 +126,7 @@ const STORAGE_DISMISSED_ROLLOUT_WARNINGS = "codexMobileDismissedRolloutWarnings"
 const STORAGE_FONT_SIZE = "codexMobileFontSize";
 const STORAGE_RATE_LIMITS = "codexMobileRateLimits";
 const STORAGE_RATE_LIMITS_BY_MODEL = "codexMobileRateLimitsByModel";
-const STORAGE_DRAFTS = "codexMobileDraftsV1";
-const STORAGE_DRAFT_TARGET = "codexMobileDraftTargetV1";
-const DRAFT_DB_NAME = "codex-mobile-drafts";
-const DRAFT_DB_VERSION = 1;
-const DRAFT_ATTACHMENT_STORE = "attachments";
 const DRAFT_SAVE_DEBOUNCE_MS = 250;
-const MAX_DRAFTS = 80;
 const FONT_SIZE_VALUES = new Set(["small", "default", "large", "xlarge", "xxlarge"]);
 const MENU_OVERLAY_MEDIA = "(max-width: 1180px), (pointer: coarse) and (max-width: 1400px)";
 const TABLET_SPLIT_MEDIA = "(pointer: coarse) and (orientation: landscape) and (min-width: 900px) and (min-height: 600px)";
@@ -147,6 +140,29 @@ const CONTEXT_COMPACTION_PENDING_NOTICE = "\u5386\u53f2\u4e0a\u4e0b\u6587\u6b63\
 const CONTEXT_COMPACTION_COMPLETE_NOTICE = "\u5386\u53f2\u4e0a\u4e0b\u6587\u5df2\u538b\u7f29";
 
 const $ = (id) => document.getElementById(id);
+const apiClient = window.CodexApiClient.createApiClient({
+  fetch,
+  AbortControllerCtor: AbortController,
+  FormDataCtor: window.FormData,
+  getKey() {
+    return state.key;
+  },
+  onUnauthorized() {
+    showLogin();
+  },
+});
+const runtimeSettings = window.CodexRuntimeSettings;
+const draftStore = window.CodexDraftStore.createDraftStore({
+  storage: localStorage,
+  indexedDB: window.indexedDB,
+  FileCtor: window.File,
+  URLApi: URL,
+  IDBKeyRangeCtor: window.IDBKeyRange,
+  normalizeFsPath,
+  reportError(type, details) {
+    postClientEvent(type, details || {});
+  },
+});
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -637,92 +653,54 @@ function rolloutSizeText(thread) {
 }
 
 function normalizeOptionList(values) {
-  return [...new Set((values || []).map((value) => String(value || "").trim()).filter(Boolean))];
+  return runtimeSettings.normalizeOptionList(values);
 }
 
 function labelForModel(value) {
-  const labels = {
-    "gpt-5.5": "GPT-5.5",
-    "gpt-5.4": "GPT-5.4",
-    "gpt-5.4-mini": "GPT-5.4 Mini",
-    "gpt-5.3-codex": "GPT-5.3 Codex",
-    "gpt-5.3-codex-spark": "GPT-5.3 Codex Spark",
-    "gpt-5.2": "GPT-5.2",
-  };
-  return labels[value] || value;
+  return runtimeSettings.labelForModel(value);
 }
 
 function compactLabelForModel(value) {
-  const labels = {
-    "gpt-5.5": "5.5",
-    "gpt-5.4": "5.4",
-    "gpt-5.4-mini": "5.4 Mini",
-    "gpt-5.3-codex": "5.3 Codex",
-    "gpt-5.3-codex-spark": "5.3 Spark",
-    "gpt-5.2": "5.2",
-  };
-  return labels[value] || labelForModel(value).replace(/^GPT-/, "");
+  return runtimeSettings.compactLabelForModel(value);
 }
 
 function labelForEffort(value) {
-  const labels = {
-    low: "Low",
-    medium: "Medium",
-    high: "High",
-    xhigh: "XHigh",
-  };
-  return labels[value] || value;
+  return runtimeSettings.labelForEffort(value);
 }
 
 function labelForPermissionMode(value) {
-  const labels = {
-    default: "默认权限",
-    auto: "自动审查",
-    full: "完全访问权限",
-    custom: "自定义 (config.toml)",
-  };
-  return labels[value] || value || "Perm";
+  return runtimeSettings.labelForPermissionMode(value);
 }
 
 function titleForPermissionMode(value) {
-  const titles = {
-    default: "默认权限",
-    auto: "自动审查",
-    full: "完全访问权限",
-    custom: "自定义 (config.toml)",
-  };
-  return titles[value] || "Thread permission";
+  return runtimeSettings.titleForPermissionMode(value);
 }
 
 function newThreadSelectedModel() {
-  const options = normalizeOptionList([state.newThreadModel, state.defaultModel, ...state.modelOptions]);
-  return options[0] || "";
+  return runtimeSettings.selectedNewThreadModel({
+    selected: state.newThreadModel,
+    defaultValue: state.defaultModel,
+    options: state.modelOptions,
+  });
 }
 
 function newThreadSelectedEffort() {
-  const options = normalizeOptionList([state.newThreadEffort, state.defaultReasoningEffort, ...state.reasoningEffortOptions]);
-  return options[0] || "";
+  return runtimeSettings.selectedNewThreadEffort({
+    selected: state.newThreadEffort,
+    defaultValue: state.defaultReasoningEffort,
+    options: state.reasoningEffortOptions,
+  });
 }
 
 function newThreadSelectedPermissionMode() {
-  const normalized = normalizePermissionModeValue(state.newThreadPermissionMode);
-  if (normalized) return normalized;
-  return normalizePermissionModeValue(state.permissionModeOptions[0]) || "full";
+  return runtimeSettings.selectedNewThreadPermission({
+    selected: state.newThreadPermissionMode,
+    options: state.permissionModeOptions,
+  });
 }
 
 function normalizePermissionModeValue(value) {
-  const text = String(value || "").trim().toLowerCase();
-  const aliases = {
-    "full-access": "full",
-    "workspace-write": "auto",
-    "read-only": "auto",
-    "auto-review": "auto",
-    "auto-reviewing": "auto",
-    config: "custom",
-    "config.toml": "custom",
-    "custom-config": "custom",
-  };
-  return aliases[text] || text;
+  return runtimeSettings.normalizePermissionModeValue(value);
 }
 
 function normalizeModelKey(value) {
@@ -1220,13 +1198,11 @@ function normalizeFsPath(value) {
 }
 
 function draftKeyForThread(threadId) {
-  const id = String(threadId || "").trim();
-  return id ? `thread:${id}` : "";
+  return draftStore.keyForThread(threadId);
 }
 
 function draftKeyForNewThread(cwd) {
-  const key = normalizeFsPath(cwd || "");
-  return key ? `new:${key}` : "";
+  return draftStore.keyForNewThread(cwd);
 }
 
 function currentDraftKey() {
@@ -1235,33 +1211,15 @@ function currentDraftKey() {
 }
 
 function readDraftMap() {
-  const value = loadJsonStorage(STORAGE_DRAFTS, {});
-  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  return draftStore.readMap();
 }
 
 function writeDraftMap(map) {
-  const entries = Object.entries(map || {})
-    .filter(([, draft]) => draft && typeof draft === "object")
-    .sort((a, b) => Number(b[1].updatedAt || 0) - Number(a[1].updatedAt || 0))
-    .slice(0, MAX_DRAFTS);
-  const next = Object.fromEntries(entries);
-  try {
-    if (entries.length) localStorage.setItem(STORAGE_DRAFTS, JSON.stringify(next));
-    else localStorage.removeItem(STORAGE_DRAFTS);
-  } catch (err) {
-    postClientEvent("draft_save_failed", { message: err.message || String(err) });
-  }
+  draftStore.writeMap(map);
 }
 
 function normalizeDraftAttachmentMeta(item) {
-  if (!item || !item.id || !item.file) return null;
-  return {
-    id: String(item.id),
-    name: String(item.file.name || "upload"),
-    type: String(item.file.type || ""),
-    size: Number(item.file.size || 0),
-    lastModified: Number(item.file.lastModified || 0),
-  };
+  return draftStore.normalizeAttachmentMeta(item);
 }
 
 function buildCurrentDraft() {
@@ -1286,100 +1244,27 @@ function buildCurrentDraft() {
 }
 
 function draftHasContent(draft) {
-  return Boolean(draft
-    && (String(draft.text || "").trim()
-      || (Array.isArray(draft.attachments) && draft.attachments.length)
-      || draft.model
-      || draft.effort
-      || draft.permissionMode));
+  return draftStore.hasContent(draft);
 }
 
 function draftAttachmentStorageKey(draftKey, attachmentIdValue) {
-  return `${encodeURIComponent(draftKey)}|${encodeURIComponent(attachmentIdValue)}`;
+  return draftStore.attachmentStorageKey(draftKey, attachmentIdValue);
 }
 
 function openDraftDb() {
-  if (!("indexedDB" in window)) return Promise.resolve(null);
-  if (state.draftDbPromise) return state.draftDbPromise;
-  state.draftDbPromise = new Promise((resolve) => {
-    const request = indexedDB.open(DRAFT_DB_NAME, DRAFT_DB_VERSION);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      const store = db.objectStoreNames.contains(DRAFT_ATTACHMENT_STORE)
-        ? request.transaction.objectStore(DRAFT_ATTACHMENT_STORE)
-        : db.createObjectStore(DRAFT_ATTACHMENT_STORE, { keyPath: "key" });
-      if (!store.indexNames.contains("draftKey")) store.createIndex("draftKey", "draftKey", { unique: false });
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => {
-      postClientEvent("draft_db_open_failed", { message: request.error ? request.error.message : "" });
-      resolve(null);
-    };
-    request.onblocked = () => resolve(null);
-  });
-  return state.draftDbPromise;
+  return draftStore.openAttachmentDb();
 }
 
 async function storeDraftAttachment(draftKey, item) {
-  if (!draftKey || !item || !item.id || !item.file) return;
-  const db = await openDraftDb();
-  if (!db) throw new Error("Draft attachment storage unavailable");
-  await new Promise((resolve, reject) => {
-    const tx = db.transaction(DRAFT_ATTACHMENT_STORE, "readwrite");
-    tx.objectStore(DRAFT_ATTACHMENT_STORE).put({
-      key: draftAttachmentStorageKey(draftKey, item.id),
-      draftKey,
-      id: item.id,
-      name: item.file.name || "upload",
-      type: item.file.type || "",
-      lastModified: item.file.lastModified || Date.now(),
-      file: item.file,
-    });
-    tx.oncomplete = resolve;
-    tx.onerror = () => reject(tx.error || new Error("Draft attachment save failed"));
-    tx.onabort = () => reject(tx.error || new Error("Draft attachment save aborted"));
-  });
+  return draftStore.storeAttachment(draftKey, item);
 }
 
 async function loadDraftAttachment(draftKey, meta) {
-  const db = await openDraftDb();
-  if (!db || !draftKey || !meta || !meta.id) return null;
-  const record = await new Promise((resolve, reject) => {
-    const tx = db.transaction(DRAFT_ATTACHMENT_STORE, "readonly");
-    const request = tx.objectStore(DRAFT_ATTACHMENT_STORE).get(draftAttachmentStorageKey(draftKey, meta.id));
-    request.onsuccess = () => resolve(request.result || null);
-    request.onerror = () => reject(request.error || new Error("Draft attachment read failed"));
-  });
-  const blob = record && record.file;
-  if (!blob || typeof File === "undefined") return null;
-  const file = blob instanceof File
-    ? blob
-    : new File([blob], meta.name || record.name || "upload", {
-      type: meta.type || record.type || blob.type || "",
-      lastModified: meta.lastModified || record.lastModified || Date.now(),
-    });
-  const previewUrl = file.type && file.type.startsWith("image/") ? URL.createObjectURL(file) : "";
-  return { id: meta.id, file, previewUrl };
+  return draftStore.loadAttachment(draftKey, meta);
 }
 
 async function deleteDraftAttachments(draftKey, attachmentIds = null) {
-  const db = await openDraftDb();
-  if (!db || !draftKey || typeof IDBKeyRange === "undefined") return;
-  const ids = attachmentIds ? new Set(Array.from(attachmentIds).map(String)) : null;
-  await new Promise((resolve, reject) => {
-    const tx = db.transaction(DRAFT_ATTACHMENT_STORE, "readwrite");
-    const request = tx.objectStore(DRAFT_ATTACHMENT_STORE).index("draftKey").openCursor(IDBKeyRange.only(draftKey));
-    request.onsuccess = () => {
-      const cursor = request.result;
-      if (!cursor) return;
-      if (!ids || ids.has(String(cursor.value && cursor.value.id))) cursor.delete();
-      cursor.continue();
-    };
-    request.onerror = () => reject(request.error || new Error("Draft attachment cleanup failed"));
-    tx.oncomplete = resolve;
-    tx.onerror = () => reject(tx.error || new Error("Draft attachment cleanup failed"));
-    tx.onabort = () => reject(tx.error || new Error("Draft attachment cleanup aborted"));
-  });
+  return draftStore.deleteAttachments(draftKey, attachmentIds);
 }
 
 function saveDraftAttachmentFiles(draftKey, items) {
@@ -1407,10 +1292,10 @@ function saveCurrentDraftNow() {
   const draft = buildCurrentDraft();
   if (draftHasContent(draft)) {
     map[key] = draft;
-    if (key.startsWith("new:")) localStorage.setItem(STORAGE_DRAFT_TARGET, key);
+    if (key.startsWith("new:")) draftStore.setTargetKey(key);
   } else {
     delete map[key];
-    if (localStorage.getItem(STORAGE_DRAFT_TARGET) === key) localStorage.removeItem(STORAGE_DRAFT_TARGET);
+    draftStore.clearTargetKeyIfMatches(key);
   }
   writeDraftMap(map);
 }
@@ -1426,7 +1311,7 @@ function clearDraftForKey(draftKey) {
   const map = readDraftMap();
   delete map[key];
   writeDraftMap(map);
-  if (localStorage.getItem(STORAGE_DRAFT_TARGET) === key) localStorage.removeItem(STORAGE_DRAFT_TARGET);
+  draftStore.clearTargetKeyIfMatches(key);
   deleteDraftAttachments(key).catch((err) => {
     postClientEvent("draft_attachment_clear_failed", { message: err.message || String(err) });
   });
@@ -2356,51 +2241,7 @@ function threadSignature() {
 }
 
 async function api(path, options = {}) {
-  const headers = Object.assign({}, options.headers || {});
-  const timeoutMs = options.timeoutMs || 30000;
-  const controller = new AbortController();
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, timeoutMs);
-  const externalSignal = options.signal;
-  const abortFromExternal = () => controller.abort();
-  if (externalSignal) {
-    if (externalSignal.aborted) controller.abort();
-    else externalSignal.addEventListener("abort", abortFromExternal, { once: true });
-  }
-  const fetchOptions = Object.assign({}, options, { headers, signal: controller.signal });
-  delete fetchOptions.timeoutMs;
-  if (state.key) headers["X-Codex-Mobile-Key"] = state.key;
-  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
-  if (options.body && !isFormData && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
-  try {
-    const res = await fetch(path, fetchOptions);
-    if (res.status === 401) {
-      showLogin();
-      throw new Error("Unauthorized");
-    }
-    if (!res.ok) {
-      let message = `${res.status} ${res.statusText}`;
-      try {
-        const body = await res.json();
-        if (body.error) message = body.error;
-      } catch (_) {}
-      throw new Error(message);
-    }
-    if (res.status === 204) return null;
-    return res.json();
-  } catch (err) {
-    if (err.name === "AbortError") {
-      if (timedOut) throw new Error(`Request timed out: ${path}`);
-      throw new Error(`Request cancelled: ${path}`);
-    }
-    throw err;
-  } finally {
-    clearTimeout(timer);
-    if (externalSignal) externalSignal.removeEventListener("abort", abortFromExternal);
-  }
+  return apiClient.request(path, options);
 }
 
 function postClientEvent(event, details = {}) {
@@ -2993,7 +2834,7 @@ async function loadThread(threadId, options = {}) {
   const renderStartedAt = nowPerfMs();
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
   localStorage.setItem(STORAGE_THREAD_ID, threadId);
-  localStorage.removeItem(STORAGE_DRAFT_TARGET);
+  draftStore.setTargetKey("");
   if (state.events) connectEvents();
   renderComposerSettings();
   syncActiveTurnFromThread();
@@ -3534,7 +3375,7 @@ async function restoreThreadSelection() {
 }
 
 function restoreNewThreadDraftSelection() {
-  const key = String(localStorage.getItem(STORAGE_DRAFT_TARGET) || "");
+  const key = draftStore.getTargetKey();
   if (!key.startsWith("new:")) return false;
   const draft = readDraftMap()[key];
   if (!draftHasContent(draft)) return false;
@@ -4746,212 +4587,15 @@ function renderInputContent(content) {
   return html.join("");
 }
 
-function isMarkdownTableSeparator(line) {
-  const cells = String(line || "").trim().replace(/^\||\|$/g, "").split("|");
-  return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
-}
-
-function splitMarkdownTableRow(line) {
-  return String(line || "")
-    .trim()
-    .replace(/^\||\|$/g, "")
-    .split("|")
-    .map((cell) => cell.trim());
-}
-
-function isMarkdownBlockStart(line, nextLine = "") {
-  return /^```/.test(line)
-    || /^(#{1,6})\s+\S/.test(line)
-    || /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line)
-    || /^>\s?/.test(line)
-    || /^\s*[-*+]\s+\S/.test(line)
-    || /^\s*\d+[.)]\s+\S/.test(line)
-    || (line.includes("|") && isMarkdownTableSeparator(nextLine));
-}
-
-function safeMarkdownUrl(value) {
-  const url = String(value || "").trim();
-  if (/^(https?:|mailto:)/i.test(url)) return url;
-  return "";
-}
-
-function autolinkUrlParts(rawUrl) {
-  let href = String(rawUrl || "");
-  let suffix = "";
-  while (/[.,;:!?]$/.test(href)) {
-    suffix = href.slice(-1) + suffix;
-    href = href.slice(0, -1);
-  }
-  while (href.endsWith(")") && href.split("(").length <= href.split(")").length) {
-    suffix = ")" + suffix;
-    href = href.slice(0, -1);
-  }
-  return { href, suffix };
-}
-
-function renderMarkdownLink(label, rawUrl) {
-  const safeUrl = safeMarkdownUrl(String(rawUrl || "").replaceAll("&amp;", "&"));
-  if (!safeUrl) return null;
-  return `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noreferrer">${label}</a>`;
-}
-
-function renderAutolinkUrl(rawUrl) {
-  const parts = autolinkUrlParts(rawUrl);
-  const href = parts.href.startsWith("www.") ? `https://${parts.href}` : parts.href;
-  const safeUrl = safeMarkdownUrl(href.replaceAll("&amp;", "&"));
-  if (!safeUrl) return rawUrl;
-  return `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noreferrer">${parts.href}</a>${parts.suffix}`;
-}
-
-function renderInlineMarkdown(value) {
-  const placeholders = [];
-  const tokenPrefix = "MDTOKEN";
-  let text = String(value || "").replace(/`([^`\n]+)`/g, (_match, code) => {
-    const token = `${tokenPrefix}${placeholders.length}END`;
-    placeholders.push(`<code>${escapeHtml(code)}</code>`);
-    return token;
-  });
-
-  text = text.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (match, label, url) => {
-    const rendered = renderMarkdownLink(escapeHtml(label), url);
-    if (!rendered) return match;
-    const token = `${tokenPrefix}${placeholders.length}END`;
-    placeholders.push(rendered);
-    return token;
-  });
-  text = escapeHtml(text);
-  text = text.replace(/(^|[\s(])((?:https?:\/\/|www\.)[^\s<]+)/gi, (_match, prefix, url) => `${prefix}${renderAutolinkUrl(url)}`);
-  text = text
-    .replace(/\*\*([^*\n][^*\n]*?)\*\*/g, "<strong>$1</strong>")
-    .replace(/__([^_\n][^_\n]*?)__/g, "<strong>$1</strong>")
-    .replace(/(^|[\s(])\*([^*\n][^*\n]*?)\*/g, "$1<em>$2</em>")
-    .replace(/(^|[\s(])_([^_\n][^_\n]*?)_/g, "$1<em>$2</em>");
-
-  placeholders.forEach((html, index) => {
-    text = text.replaceAll(`${tokenPrefix}${index}END`, html);
-  });
-  return text;
-}
-
-function renderMarkdownTable(lines) {
-  const header = splitMarkdownTableRow(lines[0]);
-  const rows = lines.slice(2).map(splitMarkdownTableRow);
-  return `<div class="markdown-table-wrap"><table>
-    <thead><tr>${header.map((cell) => `<th>${renderInlineMarkdown(cell)}</th>`).join("")}</tr></thead>
-    <tbody>${rows.map((row) => `<tr>${header.map((_cell, index) => `<td>${renderInlineMarkdown(row[index] || "")}</td>`).join("")}</tr>`).join("")}</tbody>
-  </table></div>`;
-}
-
-function renderMarkdownList(lines, ordered) {
-  const tag = ordered ? "ol" : "ul";
-  const itemPattern = ordered ? /^\s*(\d+)[.)]\s+(.+)$/ : /^\s*[-*+]\s+(.+)$/;
-  let start = 1;
-  const items = lines.map((line) => {
-    const match = itemPattern.exec(line);
-    if (ordered && match) start = Number(match[1]) || start;
-    const text = match ? match[ordered ? 2 : 1] : line.trim();
-    return `<li>${renderInlineMarkdown(text)}</li>`;
-  });
-  const startAttr = ordered && start > 1 ? ` start="${start}"` : "";
-  return `<${tag}${startAttr}>${items.join("")}</${tag}>`;
-}
-
 function renderMarkdown(value) {
-  const source = String(value || "");
-  if (!source.trim()) return "";
-  const lines = source.replace(/\r\n?/g, "\n").split("\n");
-  const blocks = [];
-  let i = 0;
-
-  while (i < lines.length) {
-    const line = lines[i];
-    if (!line.trim()) {
-      i += 1;
-      continue;
-    }
-
-    const fence = /^```([A-Za-z0-9_.+-]*)\s*$/.exec(line);
-    if (fence) {
-      const lang = fence[1] || "";
-      const code = [];
-      i += 1;
-      while (i < lines.length && !/^```\s*$/.test(lines[i])) {
-        code.push(lines[i]);
-        i += 1;
-      }
-      if (i < lines.length) i += 1;
-      const codeText = code.join("\n");
-      const langLabel = `<span class="markdown-code-lang">${escapeHtml(lang || "代码")}</span>`;
-      const copyButton = copyButtonHtml(rememberCopyText(codeText), "复制", "markdown-copy-button");
-      blocks.push(`<div class="markdown-code-block"><div class="markdown-code-head">${langLabel}${copyButton}</div><pre><code>${escapeHtml(codeText)}</code></pre></div>`);
-      continue;
-    }
-
-    const heading = /^(#{1,6})\s+(.+)$/.exec(line);
-    if (heading) {
-      const level = Math.min(6, heading[1].length + 1);
-      blocks.push(`<h${level}>${renderInlineMarkdown(heading[2].trim())}</h${level}>`);
-      i += 1;
-      continue;
-    }
-
-    if (/^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line)) {
-      blocks.push("<hr>");
-      i += 1;
-      continue;
-    }
-
-    if (/^>\s?/.test(line)) {
-      const quote = [];
-      while (i < lines.length && /^>\s?/.test(lines[i])) {
-        quote.push(lines[i].replace(/^>\s?/, ""));
-        i += 1;
-      }
-      blocks.push(`<blockquote>${renderMarkdown(quote.join("\n"))}</blockquote>`);
-      continue;
-    }
-
-    if (line.includes("|") && isMarkdownTableSeparator(lines[i + 1])) {
-      const tableLines = [line, lines[i + 1]];
-      i += 2;
-      while (i < lines.length && lines[i].trim() && lines[i].includes("|")) {
-        tableLines.push(lines[i]);
-        i += 1;
-      }
-      blocks.push(renderMarkdownTable(tableLines));
-      continue;
-    }
-
-    if (/^\s*[-*+]\s+\S/.test(line)) {
-      const list = [];
-      while (i < lines.length && /^\s*[-*+]\s+\S/.test(lines[i])) {
-        list.push(lines[i]);
-        i += 1;
-      }
-      blocks.push(renderMarkdownList(list, false));
-      continue;
-    }
-
-    if (/^\s*\d+[.)]\s+\S/.test(line)) {
-      const list = [];
-      while (i < lines.length && /^\s*\d+[.)]\s+\S/.test(lines[i])) {
-        list.push(lines[i]);
-        i += 1;
-      }
-      blocks.push(renderMarkdownList(list, true));
-      continue;
-    }
-
-    const paragraph = [line.trim()];
-    i += 1;
-    while (i < lines.length && lines[i].trim() && !isMarkdownBlockStart(lines[i], lines[i + 1] || "")) {
-      paragraph.push(lines[i].trim());
-      i += 1;
-    }
-    blocks.push(`<p>${paragraph.map(renderInlineMarkdown).join("<br>")}</p>`);
+  const renderer = window.CodexMarkdownRenderer;
+  if (!renderer || typeof renderer.renderMarkdown !== "function") {
+    return `<div class="markdown-body"><p>${escapeHtml(value || "")}</p></div>`;
   }
-
-  return `<div class="markdown-body">${blocks.join("")}</div>`;
+  return renderer.renderMarkdown(value, {
+    rememberCopyText,
+    copyButtonHtml,
+  });
 }
 
 function renderItemBody(item, turn = null) {

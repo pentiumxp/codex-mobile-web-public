@@ -366,9 +366,9 @@ iOS/PWA 的横滑手势使用 Touch Events 路径处理；如果系统在横滑�
 - Live reasoning is not rendered as conversation rows.
 - Command/file/tool activity appears as compact operation cards.
 - Consecutive command/file operation updates show only the latest operation card unless normal visible content appears between two operations.
-- The composer shows model/reasoning and permission as read-only runtime chips sourced from the current thread/default runtime, to avoid mobile-side edits diverging from Desktop thread settings.
-- Mobile Web no longer submits `model`, `effort`, or `permissionMode` fields for normal send, continuation, or new-thread-first-message requests.
-- The composer shows 5-hour and weekly quota as separate reset-aware chips when app-server sends rate-limit updates. Rate-limit updates are cached by model key, and mobile quota display follows the thread/default model shown in the read-only field.
+- The composer shows model, reasoning effort, permission, and quota as four compact runtime cards.
+- Model, reasoning effort, and permission can be changed before sending. Existing-thread sends submit the selected values with the next `turn/start`; new-thread first messages submit the selected values when creating and starting the first turn.
+- The composer shows 5-hour and weekly quota as separate reset-aware chips when app-server sends rate-limit updates. Rate-limit updates are cached by model key, and mobile quota display follows the currently selected composer model.
 - The send button follows Codex Desktop behavior: empty composer during an active turn shows `Stop`; typed text or attachments switch it back to `Send`.
 - When message submission is slow or fails, the UI shows an explicit sending/failed state, keeps the text and attachments available for retry, and logs a compact client event to `/api/client-events` for diagnostics. Quota/rate-limit failures are normalized into a model-specific "额度不足，请切换模型后重试" message when the backend error text indicates an exhausted limit.
 - Composer drafts are saved in the browser per thread and per new-thread workspace. Text uses `localStorage`, attachments use IndexedDB when available, and the submitted draft is cleared only after a successful send.
