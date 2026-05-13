@@ -4447,6 +4447,34 @@ function safeMarkdownUrl(value) {
   return "";
 }
 
+function autolinkUrlParts(rawUrl) {
+  let href = String(rawUrl || "");
+  let suffix = "";
+  while (/[.,;:!?]$/.test(href)) {
+    suffix = href.slice(-1) + suffix;
+    href = href.slice(0, -1);
+  }
+  while (href.endsWith(")") && href.split("(").length <= href.split(")").length) {
+    suffix = ")" + suffix;
+    href = href.slice(0, -1);
+  }
+  return { href, suffix };
+}
+
+function renderMarkdownLink(label, rawUrl) {
+  const safeUrl = safeMarkdownUrl(String(rawUrl || "").replaceAll("&amp;", "&"));
+  if (!safeUrl) return null;
+  return `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noreferrer">${label}</a>`;
+}
+
+function renderAutolinkUrl(rawUrl) {
+  const parts = autolinkUrlParts(rawUrl);
+  const href = parts.href.startsWith("www.") ? `https://${parts.href}` : parts.href;
+  const safeUrl = safeMarkdownUrl(href.replaceAll("&amp;", "&"));
+  if (!safeUrl) return rawUrl;
+  return `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noreferrer">${parts.href}</a>${parts.suffix}`;
+}
+
 function renderInlineMarkdown(value) {
   const placeholders = [];
   const tokenPrefix = "MDTOKEN";
@@ -4456,12 +4484,15 @@ function renderInlineMarkdown(value) {
     return token;
   });
 
-  text = escapeHtml(text);
   text = text.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (match, label, url) => {
-    const safeUrl = safeMarkdownUrl(url.replaceAll("&amp;", "&"));
-    if (!safeUrl) return match;
-    return `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noreferrer">${label}</a>`;
+    const rendered = renderMarkdownLink(escapeHtml(label), url);
+    if (!rendered) return match;
+    const token = `${tokenPrefix}${placeholders.length}END`;
+    placeholders.push(rendered);
+    return token;
   });
+  text = escapeHtml(text);
+  text = text.replace(/(^|[\s(])((?:https?:\/\/|www\.)[^\s<]+)/gi, (_match, prefix, url) => `${prefix}${renderAutolinkUrl(url)}`);
   text = text
     .replace(/\*\*([^*\n][^*\n]*?)\*\*/g, "<strong>$1</strong>")
     .replace(/__([^_\n][^_\n]*?)__/g, "<strong>$1</strong>")
@@ -4485,13 +4516,16 @@ function renderMarkdownTable(lines) {
 
 function renderMarkdownList(lines, ordered) {
   const tag = ordered ? "ol" : "ul";
-  const itemPattern = ordered ? /^\s*\d+[.)]\s+(.+)$/ : /^\s*[-*+]\s+(.+)$/;
+  const itemPattern = ordered ? /^\s*(\d+)[.)]\s+(.+)$/ : /^\s*[-*+]\s+(.+)$/;
+  let start = 1;
   const items = lines.map((line) => {
     const match = itemPattern.exec(line);
-    const text = match ? match[1] : line.trim();
+    if (ordered && match) start = Number(match[1]) || start;
+    const text = match ? match[ordered ? 2 : 1] : line.trim();
     return `<li>${renderInlineMarkdown(text)}</li>`;
   });
-  return `<${tag}>${items.join("")}</${tag}>`;
+  const startAttr = ordered && start > 1 ? ` start="${start}"` : "";
+  return `<${tag}${startAttr}>${items.join("")}</${tag}>`;
 }
 
 function renderMarkdown(value) {
