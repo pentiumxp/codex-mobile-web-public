@@ -4472,6 +4472,7 @@ function labelForItem(item) {
     reasoning: "Reasoning",
     commandExecution: "Command",
     fileChange: "File Change",
+    collabAgentToolCall: "协作 Agent",
     mcpToolCall: `MCP ${item.server || ""}.${item.tool || ""}`,
     dynamicToolCall: `${item.namespace ? item.namespace + "." : ""}${item.tool || "Tool"}`,
     plan: "Plan",
@@ -4598,6 +4599,62 @@ function renderMarkdown(value) {
   });
 }
 
+function nestedStringValue(value, keys, depth = 0, seen = new Set()) {
+  if (!value || typeof value !== "object" || depth > 3 || seen.has(value)) return "";
+  seen.add(value);
+  const wanted = new Set(keys.map((key) => String(key).toLowerCase()));
+  for (const [key, entry] of Object.entries(value)) {
+    if (wanted.has(String(key).toLowerCase()) && typeof entry === "string" && entry.trim()) return entry;
+  }
+  for (const entry of Object.values(value)) {
+    const found = nestedStringValue(entry, keys, depth + 1, seen);
+    if (found) return found;
+  }
+  return "";
+}
+
+function collabAgentTaskText(item) {
+  return nestedStringValue(item, ["task", "message", "prompt", "description", "instructions"]);
+}
+
+function collabAgentThreadText(item) {
+  return nestedStringValue(item, ["targetThread", "targetThreadId", "threadId", "agentThreadId", "modelThread"]);
+}
+
+function collabAgentNameText(item) {
+  return nestedStringValue(item, ["name", "agentName", "nickname", "role", "agentType", "agent_type"]);
+}
+
+function collabAgentMetaPill(label, value) {
+  if (!value) return "";
+  return `<span class="collab-agent-pill"><span>${escapeHtml(label)}</span>${escapeHtml(value)}</span>`;
+}
+
+function renderCollabAgentToolCall(item) {
+  const tool = item.tool || item.name || "collabAgentToolCall";
+  const status = statusText(item.status);
+  const thread = collabAgentThreadText(item);
+  const agentName = collabAgentNameText(item);
+  const task = collabAgentTaskText(item);
+  const raw = JSON.stringify(item, null, 2);
+  const rawCopyButton = copyButtonHtml(rememberCopyText(raw), "复制", "output-copy-button");
+  const pills = [
+    collabAgentMetaPill("工具", tool),
+    collabAgentMetaPill("状态", status),
+    collabAgentMetaPill("Agent", agentName),
+    collabAgentMetaPill("线程", thread),
+  ].filter(Boolean).join("");
+  return `<div class="collab-agent-card">
+    <div class="collab-agent-title">${escapeHtml(tool === "spawnAgent" ? "协作 Agent 已启动" : "协作 Agent 调用")}</div>
+    ${pills ? `<div class="collab-agent-meta">${pills}</div>` : ""}
+    ${task ? `<div class="collab-agent-task">${escapeHtml(truncateMiddle(task, 260, "task"))}</div>` : ""}
+    <details class="output-details collab-agent-raw">
+      <summary><span>${escapeHtml(`原始 JSON: ${raw.length.toLocaleString()} chars`)}</span>${rawCopyButton}</summary>
+      <pre>${escapeHtml(raw)}</pre>
+    </details>
+  </div>`;
+}
+
 function renderItemBody(item, turn = null) {
   if (isContextCompactionItem(item)) return escapeHtml(contextCompactionNotice(item, turn));
   if (item.type === "userMessage") return renderInputContent(item.content);
@@ -4616,6 +4673,7 @@ function renderItemBody(item, turn = null) {
   if (item.type === "fileChange") {
     return renderStructuredBlock(item.changes || [], `${Array.isArray(item.changes) ? item.changes.length : 0} change(s)`);
   }
+  if (item.type === "collabAgentToolCall") return renderCollabAgentToolCall(item);
   if (item.type === "dynamicToolCall" || item.type === "mcpToolCall") {
     return `<div class="mono">${escapeHtml(JSON.stringify(item.arguments || {}, null, 2))}</div>${renderStructuredBlock(item.result || item.contentItems, "Tool result")}`;
   }

@@ -1717,6 +1717,7 @@ html.visual-recovering body::before {
 .item.commandExecution,
 .item.dynamicToolCall,
 .item.mcpToolCall,
+.item.collabAgentToolCall,
 .item.fileChange {
   background: var(--item-command-bg);
 }
@@ -1786,6 +1787,54 @@ html.visual-recovering body::before {
   white-space: pre-wrap;
   word-break: break-word;
   overflow-wrap: anywhere;
+}
+
+.collab-agent-card {
+  display: grid;
+  gap: 9px;
+  white-space: normal;
+}
+
+.collab-agent-title {
+  color: var(--text);
+  font-weight: 760;
+}
+
+.collab-agent-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.collab-agent-pill {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--control-bg);
+  font-size: var(--content-small-font-size);
+  line-height: 1.25;
+}
+
+.collab-agent-pill span {
+  color: var(--muted-strong);
+  font-weight: 700;
+}
+
+.collab-agent-task {
+  color: var(--text);
+  font-size: var(--content-small-font-size);
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.collab-agent-raw {
+  margin-top: 2px;
 }
 
 .input-text {
@@ -3107,7 +3156,7 @@ html.visual-recovering body::before {
   .composer-controls {
     grid-area: controls;
     --composer-control-height: 30px;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 0.98fr) minmax(0, 0.96fr) minmax(0, 0.98fr) minmax(0, 1.08fr);
     justify-content: stretch;
     gap: 4px;
   }
@@ -3154,6 +3203,36 @@ html.visual-recovering body::before {
 
   .quota-chip-main {
     gap: 3px;
+  }
+
+  .quota-usage {
+    padding-inline: 4px;
+  }
+
+  .quota-usage .composer-chip-value {
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  .quota-inline {
+    width: 100%;
+    gap: 3px;
+    font-size: 10px;
+  }
+
+  .quota-inline-part {
+    flex: 0 0 auto;
+    gap: 1px;
+    font-size: 0;
+  }
+
+  .quota-inline-label,
+  .quota-inline-part .quota-chip-value {
+    font-size: 10px;
+  }
+
+  .quota-inline-sep {
+    display: none;
   }
 
   .quota-chip-reset-prefix {
