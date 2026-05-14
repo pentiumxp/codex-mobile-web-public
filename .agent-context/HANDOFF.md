@@ -2888,3 +2888,25 @@
   - `git diff --check` passed, with only Windows LF-to-CRLF working-copy notices.
 - Browser verification note:
   - The in-app Browser plugin's required Node REPL control tool was not exposed by tool discovery in this session, so browser-level interaction testing was not run here.
+
+## 2026-05-14 Public Release 0.1.6
+
+- User explicitly requested pushing public after the turn scroll-control fixes.
+- Public repo: `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+- Public commit pushed:
+  - `41d31d8 发布移动端回执滚动控制修复`
+- Public version/cache:
+  - `package.json` / `package-lock.json` version bumped from `0.1.5` to `0.1.6`.
+  - `public/sw.js` cache bumped to `codex-mobile-shell-v43`.
+- Product changes published:
+  - Added the recently completed turn up-arrow button that jumps from the bottom back to the current turn's latest `agentMessage`.
+  - Live turn output now respects manual conversation scrolling: touch/pointer/wheel scroll intent plus a real scroll disables auto-stick-to-bottom for that turn until the user returns to bottom or presses the down arrow.
+  - Mobile quota summary keeps the compact separator dot between 5-hour and weekly quota while retaining the narrow-screen width fix.
+- Public README:
+  - Added a detailed Chinese `2026-05-14 Public 发布说明（续）` section covering the new up arrow, live scroll hold behavior, quota separator, cache bump, and version bump.
+- Validation before push:
+  - `npm.cmd test` passed with 61 tests.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed, with only Windows LF-to-CRLF working-copy notices.
+  - Staged public diff privacy scan found no local user path, private repo marker, LAN/Tailscale marker, access key marker, or Web Push runtime secret-file marker.
