@@ -1,5 +1,51 @@
 # HANDOFF
 
+## 2026-05-14 Mobile Quota Chip Width Fix
+
+- User report:
+  - On the phone composer control row, the weekly quota percentage was clipped; the `周` quota value showed without the trailing `%`.
+- Private local changes:
+  - `public/styles.css`
+    - In the `max-width: 760px` phone layout, changed the four composer controls from equal-width columns to lightly weighted columns: model/effort/permission stay close to equal width and the quota card gets only a small extra width (`1.08fr`) to recover the missing one or two characters.
+    - Tightened the quota inline layout on phone: smaller internal gap, hidden separator dot, removed text-node spacing impact inside quota parts, and allowed the quota value row to use the wider card.
+  - `public/sw.js`
+    - Bumped app-shell cache to `codex-mobile-shell-v42` so installed PWA clients can pick up the CSS fix.
+  - `test/composer-quota.test.js`
+    - Updated mobile composer-control assertions for the weighted columns and compact quota layout.
+  - `test/mobile-viewport.test.js`
+    - Updated cache-version assertion to `v41`.
+- Validation:
+  - `npm.cmd test` passed with 59 tests.
+  - `npm.cmd run check` passed.
+  - Local HTTP checks on `http://127.0.0.1:8787/styles.css` and `/sw.js` confirmed the running server serves the small quota-width boost and `v42` service-worker cache.
+- Publication status:
+  - Private workspace only. Do not update public until the user explicitly requests public push.
+
+## 2026-05-13 Collab Agent Tool Call Compact Rendering
+
+- User report:
+  - Hermes/Codex multi-Agent collaboration output produced `collabAgentToolCall` items.
+  - Mobile Web rendered those unknown items as full JSON, taking over the phone screen.
+- Private local changes:
+  - `public/app.js`
+    - Added `collabAgentToolCall` label as `协作 Agent`.
+    - Added `renderCollabAgentToolCall()` to show a compact summary card with tool/status/agent/thread/task when available.
+    - Raw JSON is still available, but only inside a collapsed details block with copy support.
+  - `public/styles.css`
+    - Added compact `collab-agent-*` styles and included `.item.collabAgentToolCall` in the tool-call visual group.
+  - `public/sw.js`
+    - Bumped app-shell cache from `codex-mobile-shell-v39` to `codex-mobile-shell-v40` so installed PWA clients can pick up the new frontend assets.
+  - `test/collab-agent-render.test.js`
+    - Added regression coverage for the compact renderer and styles.
+  - `test/mobile-viewport.test.js`
+    - Updated cache-version assertion to `v40`.
+- Validation:
+  - `npm.cmd test` passed with 59 tests.
+  - `npm.cmd run check` passed.
+  - Local HTTP checks on `http://127.0.0.1:8787/app.js`, `/styles.css`, and `/sw.js` confirmed the running server serves the new renderer, styles, and `v40` service-worker cache.
+- Publication status:
+  - Private workspace only. Do not update public until the user explicitly requests public push.
+
 ## 2026-05-13 Long-Running Shared Chain Slowdown Evidence - 06:05 +08:00
 
 - User report:
@@ -2795,3 +2841,50 @@
   - `npm.cmd test` passed with 58 tests.
   - `npm.cmd run check` passed.
   - `npm.cmd run check:macos` passed.
+
+## 2026-05-14 Public Release 0.1.5
+
+- User explicitly requested pushing public after the mobile display fixes.
+- Public repo: `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+- Public commit pushed:
+  - `a17d4d2 发布移动端协作 Agent 与额度显示修复`
+- Public version/cache:
+  - `package.json` / `package-lock.json` version bumped from `0.1.4` to `0.1.5`.
+  - `public/sw.js` cache bumped to `codex-mobile-shell-v42`.
+- Product changes published:
+  - `collabAgentToolCall` now renders as a compact Chinese “协作 Agent” card instead of expanding raw JSON in the conversation.
+  - Raw JSON remains available under a collapsed details block with copy support.
+  - Mobile Composer quota card was lightly widened and its internal spacing compressed so the weekly quota percent is not clipped at large mobile font sizes.
+- Public README:
+  - Added a detailed Chinese `2026-05-14 Public 发布说明` section covering the rendering change, quota layout change, cache bump, and version bump.
+- Validation before push:
+  - `npm.cmd test` passed with 59 tests.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed, with only Windows LF-to-CRLF working-copy notices.
+  - Staged public diff privacy scan found no local user path, private repo marker, LAN marker, access key marker, or Web Push runtime secret-file marker.
+- Private repo note:
+  - Product files in private already contain the same display fixes, but private has not been committed in this step.
+
+## 2026-05-14 Turn Scroll Controls
+
+- User request:
+  - Add an upward shortcut for the case where a just-completed turn leaves the user at the bottom after long receipt/tool output, but the user wants to jump back to the turn's reply/summary content.
+  - While a turn is streaming output line by line, if the user manually drags/scrolls the conversation, stop forcing the conversation to keep sticking to the bottom. The user scroll gesture means they want to inspect the current output position.
+- Implemented in private product code:
+  - Added `#scrollToTurnReply` next to the existing `#scrollToBottom` floating button.
+  - The new up arrow is shown only for the current thread's recently completed latest turn, while the viewport is near the bottom and the latest assistant reply in that turn is above the visible conversation viewport.
+  - Clicking it scrolls to the latest `.item.agentMessage` in the completed turn; if no assistant message exists it falls back to the first non-user/non-live-operation item, then the turn itself.
+  - Added a per-turn `autoScrollHold`: touch/pointer/wheel intent plus a real conversation scroll during a live turn disables automatic bottom stick for that turn. Returning to the bottom or pressing the down arrow clears the hold and resumes normal behavior.
+  - Programmatic scrolls are marked so the auto-scroll hold is not triggered by Mobile Web's own render-time scroll-to-bottom.
+  - `public/sw.js` cache bumped to `codex-mobile-shell-v43`.
+- Tests:
+  - Added `test/turn-scroll-controls.test.js` for the up-arrow anchor and live auto-scroll hold behavior.
+  - Updated `test/mobile-viewport.test.js` for cache `v43`.
+- Validation:
+  - `npm.cmd test` passed with 61 tests.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed, with only Windows LF-to-CRLF working-copy notices.
+- Browser verification note:
+  - The in-app Browser plugin's required Node REPL control tool was not exposed by tool discovery in this session, so browser-level interaction testing was not run here.
