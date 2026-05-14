@@ -14,6 +14,10 @@ const state = {
   renderScheduled: false,
   renderFrame: null,
   scrollToBottomFrame: null,
+  recentCompletedReplyAnchor: null,
+  conversationScrollIntentAtMs: 0,
+  programmaticScrollUntilMs: 0,
+  autoScrollHold: null,
   threadListRenderScheduled: false,
   threadListRenderFrame: null,
   threadNotificationThrottle: new Map(),
@@ -118,6 +122,7 @@ const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
 const MAX_RETAINED_OPERATIONS_PER_TURN = 1;
+const TURN_REPLY_JUMP_WINDOW_MS = 10 * 60 * 1000;
 const STORAGE_THREAD_ID = "codexMobileCurrentThreadId";
 const STORAGE_CONTINUATION_JOB = "codexMobileContinuationJobId";
 const STORAGE_RUNNING_THREAD_IDS = "codexMobileRunningThreadIds";
@@ -1619,6 +1624,14 @@ function isNodeInConversationViewport(node) {
   return rect.bottom > viewport.top + margin && rect.top < viewport.bottom - margin;
 }
 
+function isNodeAboveConversationViewport(node) {
+  const conversation = $("conversation");
+  if (!conversation || !node) return false;
+  const viewport = conversation.getBoundingClientRect();
+  const rect = node.getBoundingClientRect();
+  return rect.bottom < viewport.top + 24;
+}
+
 function scheduleLeavingCleanup(delay = 1200) {
   if (state.leavingCleanupTimer) return;
   state.leavingCleanupTimer = setTimeout(() => {
@@ -2677,6 +2690,8 @@ function clearCurrentThreadSelection(options = {}) {
   state.currentThread = null;
   state.currentThreadId = "";
   state.activeTurnId = "";
+  clearRecentCompletedReplyAnchor();
+  clearConversationAutoScrollHold();
   state.leavingItems.clear();
   localStorage.removeItem(STORAGE_THREAD_ID);
   setComposerText("");
@@ -2761,6 +2776,8 @@ async function loadThread(threadId, options = {}) {
   const seq = state.threadLoadSeq + 1;
   state.threadLoadSeq = seq;
   state.sendButtonHint = "";
+  clearRecentCompletedReplyAnchor();
+  clearConversationAutoScrollHold();
   abortCurrentThreadRefresh();
   if (state.threadLoadController) state.threadLoadController.abort();
   const controller = new AbortController();
@@ -3643,7 +3660,8 @@ function renderCurrentThread(options = {}) {
     renderHome();
     return;
   }
-  const shouldStickToBottom = options.stickToBottom === true || isConversationNearBottom();
+  const shouldStickToBottom = !shouldHoldAutoScrollForCurrentTurn()
+    && (options.stickToBottom === true || isConversationNearBottom());
   const previousKeys = existingConversationRenderKeys();
   cleanupLeavingItems();
   const titleEl = $("threadTitle");
@@ -4969,6 +4987,8 @@ function applyNotification(method, params) {
   if (!state.currentThread || params.threadId !== state.currentThread.id) return;
   if (method === "turn/started") {
     state.activeTurnId = params.turn.id;
+    clearRecentCompletedReplyAnchor();
+    clearConversationAutoScrollHold();
     markActivity("开始");
     $("interruptTurn").disabled = false;
     updateComposerControls();
@@ -4982,6 +5002,7 @@ function applyNotification(method, params) {
     const turn = ensureTurn(params.turn.id);
     Object.assign(turn, mergeTurnPreservingVisibleItems(turn, params.turn));
     removeOperationalItemsFromTurn(turn);
+    rememberRecentCompletedTurnReply(params.turn.id);
     const completedPendingSteer = isPendingSteerForTurn(params.turn.id);
     state.activeTurnId = "";
     markActivity("完成");
@@ -5212,7 +5233,109 @@ function scrollConversationToBottom() {
     scheduleScrollToBottomButtonUpdate();
     return;
   }
+  markProgrammaticConversationScroll();
   el.scrollTop = target;
+  scheduleScrollToBottomButtonUpdate();
+}
+
+function markProgrammaticConversationScroll() {
+  state.programmaticScrollUntilMs = Date.now() + 500;
+}
+
+function rememberConversationScrollIntent() {
+  state.conversationScrollIntentAtMs = Date.now();
+}
+
+function clearConversationAutoScrollHold() {
+  state.autoScrollHold = null;
+}
+
+function rememberConversationAutoScrollHold() {
+  const turn = currentLiveTurn() || latestTurn();
+  const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
+  if (!threadId || !turn || !turn.id) return;
+  state.autoScrollHold = {
+    threadId: String(threadId),
+    turnId: String(turn.id),
+  };
+}
+
+function shouldHoldAutoScrollForCurrentTurn() {
+  const hold = state.autoScrollHold;
+  if (!hold) return false;
+  const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
+  const turn = latestTurn();
+  return Boolean(threadId && turn && hold.threadId === String(threadId) && hold.turnId === String(turn.id || ""));
+}
+
+function updateConversationAutoScrollHoldFromScroll() {
+  if (Date.now() < state.programmaticScrollUntilMs) return;
+  if (isConversationNearBottom()) {
+    clearConversationAutoScrollHold();
+    return;
+  }
+  if (Date.now() - Number(state.conversationScrollIntentAtMs || 0) > 1200) return;
+  if (currentLiveTurn()) rememberConversationAutoScrollHold();
+}
+
+function clearRecentCompletedReplyAnchor() {
+  state.recentCompletedReplyAnchor = null;
+}
+
+function rememberRecentCompletedTurnReply(turnId) {
+  const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
+  if (!threadId || !turnId) return;
+  state.recentCompletedReplyAnchor = {
+    threadId: String(threadId),
+    turnId: String(turnId),
+    completedAtMs: Date.now(),
+  };
+}
+
+function currentRecentCompletedReplyAnchor() {
+  const anchor = state.recentCompletedReplyAnchor;
+  if (!anchor) return null;
+  const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
+  if (!threadId || anchor.threadId !== String(threadId)) return null;
+  if (Date.now() - Number(anchor.completedAtMs || 0) > TURN_REPLY_JUMP_WINDOW_MS) {
+    clearRecentCompletedReplyAnchor();
+    return null;
+  }
+  const turn = latestTurn();
+  if (!turn || String(turn.id || "") !== anchor.turnId || !isTurnComplete(turn)) return null;
+  return anchor;
+}
+
+function turnNodeForId(turnId) {
+  const conversation = $("conversation");
+  if (!conversation || !turnId) return null;
+  return Array.from(conversation.querySelectorAll(".turn"))
+    .find((node) => node.dataset.turn === String(turnId)) || null;
+}
+
+function latestTurnReplyNode(anchor = currentRecentCompletedReplyAnchor()) {
+  if (!anchor) return null;
+  const turnNode = turnNodeForId(anchor.turnId);
+  if (!turnNode) return null;
+  const replies = Array.from(turnNode.querySelectorAll(".item.agentMessage"));
+  if (replies.length) return replies[replies.length - 1];
+  return turnNode.querySelector(".item:not(.userMessage):not(.live-operation)") || turnNode;
+}
+
+function scrollNodeIntoConversationView(node, margin = 12) {
+  const el = $("conversation");
+  if (!el || !node) return;
+  const viewport = el.getBoundingClientRect();
+  const rect = node.getBoundingClientRect();
+  const target = el.scrollTop + rect.top - viewport.top - margin;
+  markProgrammaticConversationScroll();
+  el.scrollTop = Math.max(0, Math.min(target, Math.max(0, el.scrollHeight - el.clientHeight)));
+}
+
+function scrollConversationToTurnReply() {
+  const target = latestTurnReplyNode();
+  if (!target) return;
+  scrollNodeIntoConversationView(target);
   scheduleScrollToBottomButtonUpdate();
 }
 
@@ -5224,6 +5347,7 @@ function isConversationNearBottom() {
 
 function updateScrollToBottomButton() {
   const button = $("scrollToBottom");
+  const replyButton = $("scrollToTurnReply");
   const el = $("conversation");
   if (!button || !el) return;
   const isScrollable = el.scrollHeight - el.clientHeight > 128;
@@ -5237,6 +5361,22 @@ function updateScrollToBottomButton() {
   button.classList.toggle("hidden", !shouldShow);
   button.setAttribute("aria-hidden", shouldShow ? "false" : "true");
   button.tabIndex = shouldShow ? 0 : -1;
+  if (!replyButton) return;
+  const replyAnchor = currentRecentCompletedReplyAnchor();
+  const replyNode = latestTurnReplyNode(replyAnchor);
+  const shouldShowReply = Boolean(
+    !shouldShow
+      && state.currentThread
+      && !state.currentThread.mobileLoading
+      && !state.currentThread.mobileLoadError
+      && isScrollable
+      && isConversationNearBottom()
+      && replyNode
+      && isNodeAboveConversationViewport(replyNode),
+  );
+  replyButton.classList.toggle("hidden", !shouldShowReply);
+  replyButton.setAttribute("aria-hidden", shouldShowReply ? "false" : "true");
+  replyButton.tabIndex = shouldShowReply ? 0 : -1;
 }
 
 function scheduleScrollToBottomButtonUpdate() {
@@ -6192,9 +6332,17 @@ function wireUi() {
   $("sendMessage").addEventListener("pointerup", requestComposerSubmitFromButton);
   $("sendMessage").addEventListener("click", requestComposerSubmitFromButton);
   $("interruptTurn").addEventListener("click", interruptActiveTurn);
-  if ($("scrollToBottom")) $("scrollToBottom").addEventListener("click", scrollConversationToBottom);
+  if ($("scrollToBottom")) $("scrollToBottom").addEventListener("click", () => {
+    clearConversationAutoScrollHold();
+    scrollConversationToBottom();
+  });
+  if ($("scrollToTurnReply")) $("scrollToTurnReply").addEventListener("click", scrollConversationToTurnReply);
+  $("conversation").addEventListener("pointerdown", rememberConversationScrollIntent, { passive: true });
+  $("conversation").addEventListener("touchstart", rememberConversationScrollIntent, { passive: true });
+  $("conversation").addEventListener("wheel", rememberConversationScrollIntent, { passive: true });
   $("conversation").addEventListener("scroll", () => {
     if (state.leavingItems.size) scheduleLeavingCleanup(120);
+    updateConversationAutoScrollHoldFromScroll();
     updateScrollToBottomButton();
   }, { passive: true });
   $("conversation").addEventListener("click", (event) => {

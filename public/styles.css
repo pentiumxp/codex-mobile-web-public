@@ -1183,7 +1183,14 @@ html.visual-recovering body::before {
   cursor: pointer;
 }
 
-.scroll-bottom-button:active {
+.scroll-turn-reply-button {
+  color: var(--accent-strong);
+  background: var(--control-bg);
+  border-color: var(--accent);
+}
+
+.scroll-bottom-button:active,
+.scroll-turn-reply-button:active {
   transform: translateY(1px);
 }
 
@@ -3232,7 +3239,9 @@ html.visual-recovering body::before {
   }
 
   .quota-inline-sep {
-    display: none;
+    display: inline-block;
+    flex: 0 0 auto;
+    font-size: 10px;
   }
 
   .quota-chip-reset-prefix {
