@@ -2978,3 +2978,41 @@
   - `git diff --check` passed, with only Windows LF-to-CRLF working-copy notices.
 - Publication status:
   - Superseded by the later 0.1.7 commit/push request recorded above.
+
+## 2026-05-14 Public PR #31/#32 Integration
+
+- User request:
+  - Public repo had two open PRs; merge them and pull the result back locally.
+- Public repo:
+  - Path: `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Integrated PRs:
+    - #31 `刷新线程详情标题来源`.
+    - #32 `隐藏不可用的推送入口`.
+  - #31 was GitHub-mergeable, #32 was conflicting against current `main` because it was based on older frontend/cache state. To preserve the public README rule and avoid an outdated cache/version merge, both PRs were manually integrated on top of current public `main`.
+  - Public pushed commit: `92e8915 集成 PR #31/#32：刷新标题来源并隐藏不可用推送入口`.
+  - Both PRs were commented with the integration commit and closed.
+- Product changes:
+  - `server.js`
+    - Added `mergeThreadDisplaySummary(base, display)`.
+    - Thread detail reads that already have a `state_5.sqlite` or started-cache summary now refresh display fields from app-server `thread/list`.
+    - Only display fields are refreshed: `name`, `preview`, `cwd`, `updatedAt`, and `status`.
+    - Runtime fields such as model, reasoning, sandbox, and approval policy are intentionally not overwritten.
+  - `public/app.js`
+    - Push notification button is hidden when Push is unavailable: server does not support Push, page is not secure, or browser does not support Push.
+    - HTTPS-supported cases still show normal enable/test/blocked states.
+  - `public/sw.js`
+    - PWA shell cache bumped to `codex-mobile-shell-v45`.
+  - `package.json` / `package-lock.json`
+    - Version bumped to `0.1.8`.
+  - `README.md`
+    - Added detailed Chinese `2026-05-14 Public 发布说明（续三）` describing PR #31/#32 integration, display-field-only title refresh, hidden unavailable Push entry, cache `v45`, and version `0.1.8`.
+  - Tests:
+    - Added `test/thread-title-source.test.js`.
+    - Updated `test/mobile-viewport.test.js` for cache `v45` and unavailable Push button hiding.
+- Validation:
+  - Public: `npm.cmd test` passed with 64 tests; `npm.cmd run check` passed; `npm.cmd run check:macos` passed; `git diff --check` and `git diff --cached --check` passed with only Windows LF-to-CRLF notices.
+  - Public staged privacy scan found no local user path, raw access-key marker, Web Push runtime file marker, LAN/Tailscale marker, or other runtime secret marker.
+  - Private after sync: `npm.cmd test` passed with 64 tests; `npm.cmd run check` passed; `npm.cmd run check:macos` passed; `git diff --check` passed with only Windows LF-to-CRLF notices.
+- Private sync:
+  - Copied public product files back into `C:\Users\xuxin\Documents\codex-mobile-web`: `README.md`, `package.json`, `package-lock.json`, `server.js`, `public/app.js`, `public/sw.js`, `test/mobile-viewport.test.js`, and `test/thread-title-source.test.js`.
+  - Local-only overlays such as `.agent-context`, runtime state, generated binaries, and local scheduled-task scripts were not overwritten.

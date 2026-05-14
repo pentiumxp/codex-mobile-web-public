@@ -1,6 +1,6 @@
 {
   "name": "codex-mobile-web",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "A local authenticated mobile web client for Codex app-server.",
   "type": "commonjs",
   "license": "MIT",

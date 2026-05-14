@@ -4439,6 +4439,18 @@ function readStateDbThread(threadId) {
   }
 }
 
+function mergeThreadDisplaySummary(base, display) {
+  if (!base) return display ? annotateThreadRolloutStats(display) : null;
+  if (!display) return base;
+  const next = Object.assign({}, base);
+  for (const key of ["name", "preview", "cwd", "updatedAt"]) {
+    const value = display[key];
+    if (value !== null && value !== undefined && String(value).trim() !== "") next[key] = value;
+  }
+  if (display.status) next.status = display.status;
+  return annotateThreadRolloutStats(next);
+}
+
 function mergeThreadRuntimeFromStateDb(thread, summary = null) {
   if (!thread || typeof thread !== "object") return thread;
   const stateThread = summary || readStateDbThread(thread.id);
@@ -5061,6 +5073,25 @@ async function handleApi(req, res) {
         });
       } catch (err) {
         threadLog("summary_app_server_error", {
+          durationMs: Date.now() - summaryStartedAtMs,
+          error: err.message || String(err),
+        });
+      }
+    } else {
+      const summaryStartedAtMs = Date.now();
+      threadLog("summary_app_server_refresh_start", { baseSource: summarySource });
+      try {
+        const appServerSummary = await readThreadSummaryFromAppServer(codex, threadId);
+        if (appServerSummary) {
+          summary = mergeThreadDisplaySummary(summary, appServerSummary);
+          summarySource = `${summarySource}+app-server`;
+        }
+        threadLog("summary_app_server_refresh_ok", {
+          durationMs: Date.now() - summaryStartedAtMs,
+          found: Boolean(appServerSummary),
+        });
+      } catch (err) {
+        threadLog("summary_app_server_refresh_error", {
           durationMs: Date.now() - summaryStartedAtMs,
           error: err.message || String(err),
         });
