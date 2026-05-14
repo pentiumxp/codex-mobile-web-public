@@ -7,7 +7,7 @@
 - Private local changes:
   - `public/styles.css`
     - In the `max-width: 760px` phone layout, changed the four composer controls from equal-width columns to lightly weighted columns: model/effort/permission stay close to equal width and the quota card gets only a small extra width (`1.08fr`) to recover the missing one or two characters.
-    - Tightened the quota inline layout on phone: smaller internal gap, hidden separator dot, removed text-node spacing impact inside quota parts, and allowed the quota value row to use the wider card.
+    - Tightened the quota inline layout on phone: smaller internal gap, retained the compact separator dot between 5-hour and weekly quota, removed text-node spacing impact inside quota parts, and allowed the quota value row to use the wider card.
   - `public/sw.js`
     - Bumped app-shell cache to `codex-mobile-shell-v42` so installed PWA clients can pick up the CSS fix.
   - `test/composer-quota.test.js`
