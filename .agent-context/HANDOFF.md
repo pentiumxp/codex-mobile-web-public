@@ -2910,3 +2910,71 @@
   - `npm.cmd run check:macos` passed.
   - `git diff --check` passed, with only Windows LF-to-CRLF working-copy notices.
   - Staged public diff privacy scan found no local user path, private repo marker, LAN/Tailscale marker, access key marker, or Web Push runtime secret-file marker.
+
+## 2026-05-14 Background-Completed Turn Reply Anchor Fix
+
+- User report:
+  - If a different thread/turn finishes in the background and the user switches into it after completion, the bottom up-arrow does not appear even though the turn just ended.
+- Cause:
+  - `recentCompletedReplyAnchor` was only written by live `turn/completed` notifications for the currently open thread.
+  - Background completion only marked the thread unread in the list; after switching into the thread, the detail load did not derive an anchor from the latest completed turn.
+- Private local changes:
+  - `public/app.js`
+    - Added `primeRecentCompletedReplyAnchor()` to derive the reply anchor from the latest completed turn after thread detail load/refresh.
+    - Captures `wasUnreadOnOpen` before `markThreadViewed()` and forces the anchor for unread completed threads opened from the list.
+    - Uses turn completion timestamps (`completedAt`, `completedAtMs`, snake_case variants, finished/updated variants) and falls back to thread `updatedAt` to keep the normal 10-minute “recent completion” window for non-unread direct opens.
+    - Cached same-thread opens and current-thread refreshes also try to prime the anchor, covering missed completion events or notification-open paths.
+  - `public/sw.js`
+    - Bumped app-shell cache to `codex-mobile-shell-v44`.
+  - `test/turn-scroll-controls.test.js`
+    - Added assertions for unread thread-open anchor priming and completed-turn timestamp derivation.
+  - `test/mobile-viewport.test.js`
+    - Updated cache-version assertion to `v44`.
+- Validation:
+  - `npm.cmd test` passed with 61 tests.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed, with only Windows LF-to-CRLF working-copy notices.
+- Publication status:
+  - Superseded by the later 0.1.7 commit/push request recorded above.
+
+## 2026-05-14 Release 0.1.7 And Public Push
+
+- User explicitly requested commit and push, including public.
+- Version alignment:
+  - Private `package.json` / `package-lock.json` bumped from `0.1.4` to `0.1.7`.
+  - Public `package.json` / `package-lock.json` bumped from `0.1.6` to `0.1.7`.
+  - `public/sw.js` cache remains the new `codex-mobile-shell-v44`.
+- Public repo:
+  - Path: `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Pushed commit: `3225803 发布移动端本轮回复跳转逻辑修正`.
+  - Public README gained a Chinese `2026-05-14 Public 发布说明（续二）` section describing the upward-scroll-only trigger, answer-start jump target, 10-minute recency window, coexistence with the down arrow, PWA cache `v44`, and version `0.1.7`.
+- Validation before public/private commits:
+  - Private: `npm.cmd test` passed with 61 tests; `npm.cmd run check` passed; `npm.cmd run check:macos` passed; `git diff --check` passed with only Windows LF-to-CRLF notices.
+  - Public: `npm.cmd test` passed with 61 tests; `npm.cmd run check` passed; `npm.cmd run check:macos` passed; `git diff --check` passed with only Windows LF-to-CRLF notices.
+  - Public staged diff privacy scan found no local user path, raw access-key marker, Web Push runtime file marker, LAN/Tailscale marker, or other runtime secret marker.
+- Private repo:
+  - The private commit that includes this note records the same product changes plus this handoff update.
+
+## 2026-05-14 Upward-Scroll Reply Jump Revision
+
+- User revised the requirement:
+  - The up-arrow should not appear simply because a turn recently completed or an unread/background thread was opened.
+  - It should appear only after the user manually scrolls upward, and clicking it should jump to the start of the current answer.
+- Private local changes supersede the previous automatic background anchor approach:
+  - Removed `primeRecentCompletedReplyAnchor()` and the `wasUnreadOnOpen` thread-open priming path from `public/app.js`.
+  - Added scroll-direction tracking with `conversationLastScrollTop`.
+  - `updateRecentCompletedReplyAnchorFromScroll()` activates the jump anchor only when a recent user scroll intent causes `scrollTop` to decrease.
+  - The anchor is allowed only for the current live turn or the latest turn completed within the existing 10-minute window.
+  - The jump target changed from the latest `.item.agentMessage` to the first `.item.agentMessage` in the turn, falling back to the first non-user/non-live-operation item.
+  - The reply up-arrow can coexist with the down-to-bottom arrow; `.scroll-turn-reply-button` is shifted left to avoid overlap.
+  - Pressing the down-to-bottom button clears the reply jump anchor.
+- Tests:
+  - Updated `test/turn-scroll-controls.test.js` to cover upward user-scroll activation, recent-turn gating, first assistant-message target, and the new down-button clearing behavior.
+- Validation:
+  - `npm.cmd test` passed with 61 tests.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed, with only Windows LF-to-CRLF working-copy notices.
+- Publication status:
+  - Superseded by the later 0.1.7 commit/push request recorded above.
