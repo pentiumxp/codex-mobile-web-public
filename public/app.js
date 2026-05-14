@@ -2314,25 +2314,26 @@ function updatePushButton() {
   const button = $("pushNotifications");
   if (!button) return;
   button.classList.remove("hidden", "ready", "error");
+  const hideButton = () => {
+    button.textContent = "";
+    button.disabled = true;
+    button.classList.add("hidden");
+  };
   if (state.pushBusy) {
     button.textContent = "Working...";
     button.disabled = true;
     return;
   }
   if (!state.pushServerSupported) {
-    button.textContent = "Notifications unavailable";
-    button.disabled = true;
+    hideButton();
     return;
   }
   if (!window.isSecureContext) {
-    button.textContent = "HTTPS required";
-    button.disabled = true;
-    button.classList.add("error");
+    hideButton();
     return;
   }
   if (!pushBrowserAvailable()) {
-    button.textContent = "Notifications unsupported";
-    button.disabled = true;
+    hideButton();
     return;
   }
   if (Notification.permission === "denied") {
