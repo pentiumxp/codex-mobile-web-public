@@ -1184,6 +1184,7 @@ html.visual-recovering body::before {
 }
 
 .scroll-turn-reply-button {
+  right: 74px;
   color: var(--accent-strong);
   background: var(--control-bg);
   border-color: var(--accent);
