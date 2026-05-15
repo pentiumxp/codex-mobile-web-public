@@ -18,11 +18,23 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(indexHtml, /addEventListener\("gesturechange", preventZoom, \{ passive: false \}\)/);
   assert.match(indexHtml, /addEventListener\("dblclick", preventZoom, \{ passive: false \}\)/);
   assert.match(indexHtml, /lastTouchEndAt < 320/);
+  assert.match(appJs, /const visualOffsetTop = window\.visualViewport && Number\(window\.visualViewport\.offsetTop\)/);
+  assert.match(appJs, /const visualBottom = visual \? visual \+ Math\.max\(0, visualOffsetTop \|\| 0\) : 0/);
+  assert.match(appJs, /const keyboardShrunk = Boolean\(visualBottom && layout && visualBottom < layout - 120\)/);
+  assert.match(appJs, /keyboardShrunk \? visualBottom : Math\.max\(visualBottom \|\| 0, layout \|\| 0\)/);
+  assert.match(appJs, /if \(viewport\.keyboardShrunk\) \{[\s\S]*--app-height/);
+  assert.match(appJs, /document\.documentElement\.style\.removeProperty\("--app-height"\)/);
+  assert.match(appJs, /document\.documentElement\.classList\.toggle\("keyboard-open", viewport\.keyboardShrunk\)/);
   assert.match(stylesCss, /html,\s*\nbody\s*{[\s\S]*touch-action:\s*pan-x pan-y;/);
+  assert.match(stylesCss, /html\s*{[\s\S]*height:\s*-webkit-fill-available;/);
+  assert.match(stylesCss, /body\s*{[\s\S]*min-height:\s*-webkit-fill-available;/);
+  assert.match(stylesCss, /html\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*12px;/);
+  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*7px;/);
 });
 
 test("public app shell cache advances after frontend visibility changes", () => {
-  assert.match(swJs, /codex-mobile-shell-v45/);
+  assert.match(swJs, /codex-mobile-shell-v55/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.8\|codex-mobile-shell-v55"/);
   assert.match(swJs, /"\/api-client\.js"/);
   assert.match(swJs, /"\/runtime-settings\.js"/);
   assert.match(swJs, /"\/draft-store\.js"/);

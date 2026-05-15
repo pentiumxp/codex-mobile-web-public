@@ -181,6 +181,34 @@ function readPackageVersion() {
   }
 }
 
+function readServiceWorkerCacheName() {
+  try {
+    const source = fs.readFileSync(path.join(PUBLIC_ROOT, "sw.js"), "utf8");
+    const match = source.match(/CACHE_NAME\s*=\s*["']([^"']+)["']/);
+    return match ? String(match[1] || "") : "";
+  } catch (_) {
+    return "";
+  }
+}
+
+function appShellBuildId() {
+  const parts = [`app=${APP_VERSION}`, `sw=${readServiceWorkerCacheName()}`];
+  for (const file of ["index.html", "app.js", "styles.css", "sw.js", "manifest.json"]) {
+    try {
+      const stat = fs.statSync(path.join(PUBLIC_ROOT, file));
+      parts.push(`${file}:${stat.size}:${Math.trunc(stat.mtimeMs)}`);
+    } catch (_) {
+      parts.push(`${file}:missing`);
+    }
+  }
+  return crypto.createHash("sha256").update(parts.join("|")).digest("hex").slice(0, 16);
+}
+
+function clientBuildId() {
+  const cacheName = readServiceWorkerCacheName();
+  return `${APP_VERSION}|${cacheName || appShellBuildId()}`;
+}
+
 function readCodexConfigDefaults() {
   const configPath = path.join(CODEX_HOME, "config.toml");
   try {
@@ -4701,6 +4729,9 @@ async function handleApi(req, res) {
       authRequired: !DISABLE_AUTH,
       title: "Codex Mobile Web",
       version: APP_VERSION,
+      buildId: appShellBuildId(),
+      clientBuildId: clientBuildId(),
+      shellCacheName: readServiceWorkerCacheName(),
       maxUploadBytes: MAX_UPLOAD_BYTES,
       maxUploadFiles: MAX_UPLOAD_FILES,
       rolloutWarningBytes: ROLLOUT_WARNING_BYTES,

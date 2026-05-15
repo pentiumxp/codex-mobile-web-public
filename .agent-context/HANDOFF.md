@@ -1,5 +1,54 @@
 # HANDOFF
 
+## 2026-05-15 Rollback To Prior Layout With Left-Swipe Subagent Panel Only
+
+- User direction:
+  - Revert today's UI/layout changes and keep only the behavior that opens the Subagent page via left swipe.
+  - Follow-up user report: left swipe still appeared inactive, and the composer area left a large blank strip below the input on iOS/PWA.
+- Result:
+  - Restored the workspace to `HEAD` first, removing today's larger Subagent-status experiments, server/SSE changes, service-worker bump, composer height edits, viewport/grid edits, and the untracked Web Push subagent test.
+  - Re-applied only a minimal current-turn Subagent panel:
+    - `public/index.html` adds `#subagentPanel` under the topbar.
+    - `public/app.js` opens the panel from a left-swipe gesture on `#conversation`; horizontal trackpad/wheel swipe also opens it for desktop use.
+    - The panel has no topbar button.
+    - Left swipe now opens whenever a current thread exists, even if there are no Subagent records; the panel shows an explicit empty state instead of silently ignoring the gesture.
+    - Subagent rows come from the current live/latest turn when present, with a fallback to the latest visible turn in the current thread that contains `collabAgentToolCall`.
+    - Switching thread, entering home, or entering new-thread draft closes the panel.
+    - `public/styles.css` adds absolute overlay styles so the panel does not consume a grid row or affect the composer layout.
+  - Fixed the large blank strip below the composer:
+    - `viewportHeight()` now uses the maximum of visual viewport, `innerHeight`, and document client height when no text input is focused.
+    - It only trusts a smaller visual viewport when a text input is focused and the viewport is clearly keyboard-shrunk.
+    - Follow-up fix for keyboard-open state: visual viewport bottom now includes `visualViewport.offsetTop`, `html.keyboard-open` removes composer bottom safe-area padding while the keyboard is open, and keyboard-open detection no longer depends on `document.activeElement` because iOS input-method focus state can be stale.
+  - `public/sw.js` was bumped to `codex-mobile-shell-v52` so installed PWA clients replace any mixed v45/v49/v50/v51 frontend caches.
+  - Runtime recovery:
+    - Restarted the Codex Mobile Web shared chain with `restart-codex-mobile-shared-chain.ps1` after logs showed `shared app-server endpoint unavailable (Codex request timed out: initialize)`.
+    - New local checks confirmed `GET /api/threads?limit=5` returns `200` with the stored access key in about 264 ms.
+  - Follow-up mobile composer positioning:
+    - User requested the input bar position to match WeChat: docked to the bottom instead of floating above a blank strip.
+    - In the `max-width: 760px` mobile layout, `.composer` is now `position: fixed` at `bottom: 0`, and `.conversation` bottom padding is based on `--composer-height` so content does not sit under the fixed input bar.
+    - `public/sw.js` was bumped again to `codex-mobile-shell-v53`.
+  - Follow-up page refresh prompt:
+    - `server.js` now exposes `buildId`, `clientBuildId`, and `shellCacheName` from `/api/public-config`; `clientBuildId` combines package version with the Service Worker shell cache name.
+    - `public/app.js` has a loaded `CLIENT_BUILD_ID`, checks `/api/public-config` on startup, focus/pageshow/visibility resume, and every 60 seconds while visible.
+    - If the server build/client shell changes, `#pageRefreshPrompt` appears with "页面有新版本，点击刷新"; clicking saves the current draft, asks the Service Worker to update, deletes old `codex-mobile-shell-*` caches, and reloads the page.
+    - `public/sw.js` was bumped again to `codex-mobile-shell-v54`.
+    - Restarted the 8787 listener so the new `/api/public-config` fields are live; current listener PID after restart was `15092` during verification.
+  - `test/collab-agent-render.test.js` now covers the minimal left-swipe Subagent panel and absence of a topbar button.
+  - `test/mobile-viewport.test.js` covers the safer viewport-height behavior and service-worker v50.
+- Validation:
+  - `npm.cmd test` passed with 65 tests.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed, with only Windows LF-to-CRLF working-copy notices.
+  - Local HTTP checks on `http://127.0.0.1:8787/app.js`, `/styles.css`, and `/sw.js` confirmed the running server serves:
+    - relaxed Subagent left-swipe logic and empty state,
+    - viewport-height keyboard guard and keyboard-open composer padding override,
+    - `.subagent-panel` / `.subagent-empty` styles,
+    - `codex-mobile-shell-v54`.
+  - Local HTTP checks confirmed `/api/public-config` returns `clientBuildId=0.1.8|codex-mobile-shell-v54`, `/` contains `#pageRefreshPrompt`, `/app.js` contains the refresh-check logic, `/sw.js` is v54, and authenticated `/api/threads?limit=1` returns `200`.
+- Status:
+  - Private workspace only. Not committed, not pushed, and not synced to public.
+
 ## 2026-05-14 Mobile Quota Chip Width Fix
 
 - User report:
@@ -3016,3 +3065,26 @@
 - Private sync:
   - Copied public product files back into `C:\Users\xuxin\Documents\codex-mobile-web`: `README.md`, `package.json`, `package-lock.json`, `server.js`, `public/app.js`, `public/sw.js`, `test/mobile-viewport.test.js`, and `test/thread-title-source.test.js`.
   - Local-only overlays such as `.agent-context`, runtime state, generated binaries, and local scheduled-task scripts were not overwritten.
+
+## 2026-05-15 Mobile Composer Bottom Position
+
+- User reported the Codex Mobile input bar still floated above the bottom, while the comparable Hermes Mobile page did not.
+- Comparison target:
+  - `C:\ProgramData\HermesMobile\app\public\styles.css`
+  - Hermes keeps the composer in the normal bottom grid row, uses `100vh`/`100dvh` by default, and only switches to measured visual viewport height when keyboard shrink is likely.
+- Root cause judged from code:
+  - Codex Mobile was overwriting `--app-height` with `visualViewport.height` even when no keyboard was open.
+  - On iOS/PWA this value can under-report the real standalone viewport, leaving a stable blank area below the app.
+  - Phone composer had also been changed to `position: fixed`, making it more sensitive to app/viewport mismatch and repaint transforms.
+- Local fix:
+  - `public/app.js`: `updateViewportVars()` now writes `--app-height` only while `viewport.keyboardShrunk` is true; otherwise it removes the inline override and lets CSS use `100dvh`.
+  - `public/styles.css`: added `-webkit-fill-available` fallback for `html`/`body`; `.app` now has `height: 100vh` before `height: var(--app-height)`.
+  - `public/styles.css`: phone `.composer` is back to normal layout flow (`position: relative`, `width: 100%`) with compact bottom padding, and phone `.conversation` no longer reserves composer-height padding for a fixed composer.
+  - `public/sw.js` / `public/app.js`: PWA shell cache/build id bumped to `codex-mobile-shell-v55`.
+  - Tests updated in `test/mobile-viewport.test.js` and `test/composer-quota.test.js`.
+- Validation:
+  - `npm.cmd test` passed: 66/66.
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy notices.
+  - Local 8787 `/api/public-config` returned `clientBuildId: 0.1.8|codex-mobile-shell-v55`.
+  - Headless mobile viewport 390x844 measurement with app manually unhidden: app bottom 844, composer bottom 844, bottom gap 0, composer position `relative`, app height variable `100dvh` with no inline `--app-height`.
