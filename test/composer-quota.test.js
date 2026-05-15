@@ -49,6 +49,9 @@ test("phone composer controls stay in one compact status row", () => {
 
   const mobileBody = stylesCss.slice(mobileIndex);
   assert.match(mobileBody, /\.composer-controls\s*{[\s\S]*--composer-control-height:\s*30px;/);
+  assert.match(mobileBody, /\.conversation\s*{[\s\S]*padding:\s*14px 12px;/);
+  assert.match(mobileBody, /\.composer\s*{[\s\S]*position:\s*relative;[\s\S]*width:\s*100%;/);
+  assert.doesNotMatch(mobileBody, /\.composer\s*{[\s\S]*position:\s*fixed;[\s\S]*bottom:\s*0;/);
   assert.match(mobileBody, /\.composer-controls\s*{[\s\S]*grid-template-columns:\s*minmax\(0,\s*0\.98fr\) minmax\(0,\s*0\.96fr\) minmax\(0,\s*0\.98fr\) minmax\(0,\s*1\.08fr\);/);
   assert.match(mobileBody, /\.composer-control-card\s*{[\s\S]*padding:\s*4px 5px;/);
   assert.match(mobileBody, /\.quota-usage\s*{[\s\S]*padding-inline:\s*4px;/);

@@ -7,6 +7,9 @@ const { test } = require("node:test");
 
 const root = path.resolve(__dirname, "..");
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
+const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
+const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
+const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 
 test("self-update UI explains supervisor-dependent restart", () => {
@@ -15,6 +18,19 @@ test("self-update UI explains supervisor-dependent restart", () => {
   assert.match(appJs, /手动启动的部署需要在服务停止后手动重启/);
   assert.match(appJs, /手动运行 node\/npm start 的部署需要手动重启/);
   assert.match(appJs, /如连接断开且未自动恢复，请在部署机手动重启/);
+});
+
+test("page prompts for refresh when server client build changes", () => {
+  assert.match(serverJs, /function clientBuildId\(\)/);
+  assert.match(serverJs, /clientBuildId:\s*clientBuildId\(\)/);
+  assert.match(serverJs, /shellCacheName:\s*readServiceWorkerCacheName\(\)/);
+  assert.match(indexHtml, /id="pageRefreshPrompt"/);
+  assert.match(appJs, /function checkPageRefreshAvailability\(/);
+  assert.match(appJs, /function refreshPageForNewBuild\(/);
+  assert.match(appJs, /window\.caches\.delete\(key\)/);
+  assert.match(appJs, /window\.location\.reload\(\)/);
+  assert.match(appJs, /addEventListener\("click", refreshPageForNewBuild\)/);
+  assert.match(stylesCss, /\.page-refresh-prompt/);
 });
 
 test("README documents manual-start update restart requirement", () => {

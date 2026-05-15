@@ -7,6 +7,7 @@ const { test } = require("node:test");
 
 const root = path.resolve(__dirname, "..");
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
+const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 
 function functionBody(name) {
@@ -32,4 +33,24 @@ test("collab agent tool calls render as compact summary cards", () => {
   assert.match(functionBody("renderCollabAgentToolCall"), /collab-agent-raw/);
   assert.match(stylesCss, /\.item\.collabAgentToolCall/);
   assert.match(stylesCss, /\.collab-agent-card/);
+});
+
+test("current-turn subagent panel opens from a left swipe without a topbar button", () => {
+  assert.match(indexHtml, /id="subagentPanel"/);
+  assert.doesNotMatch(indexHtml, /id="subagentStatusButton"/);
+  assert.match(appJs, /subagentSwipe:\s*null/);
+  assert.match(appJs, /function currentSubagentItems\(/);
+  assert.match(appJs, /function turnSubagentItems\(/);
+  assert.match(appJs, /function beginSubagentSwipe\(/);
+  assert.match(appJs, /function handleSubagentWheelSwipe\(/);
+  assert.match(appJs, /addEventListener\("touchstart", beginSubagentSwipe/);
+  assert.match(appJs, /addEventListener\("wheel", handleSubagentWheelSwipe/);
+  assert.match(functionBody("isSubagentItem"), /collabAgentToolCall/);
+  assert.match(functionBody("currentSubagentTurn"), /turns\.length - 1/);
+  assert.match(functionBody("subagentSwipeAvailable"), /Boolean\(state\.currentThread\)/);
+  assert.match(functionBody("renderSubagentPanel"), /subagent-status-window/);
+  assert.match(functionBody("renderSubagentPanel"), /subagent-empty/);
+  assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*absolute;/);
+  assert.match(stylesCss, /\.subagent-empty/);
+  assert.match(stylesCss, /\.subagent-status-row/);
 });

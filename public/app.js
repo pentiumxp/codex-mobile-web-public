@@ -56,6 +56,8 @@ const state = {
   renameThreadId: "",
   renameBusy: false,
   sidebarEdgeSwipe: null,
+  subagentSwipe: null,
+  subagentPanelOpen: false,
   threadSwipe: null,
   suppressThreadClickUntil: 0,
   suppressThreadClickThreadId: "",
@@ -75,6 +77,14 @@ const state = {
   appUpdateBusy: false,
   appUpdateError: "",
   appUpdateRestarting: false,
+  serverBuildId: "",
+  serverAssetBuildId: "",
+  pageRefreshAvailable: false,
+  pageRefreshBuildId: "",
+  pageRefreshBusy: false,
+  pageRefreshReloading: false,
+  pageRefreshTimer: null,
+  pageRefreshLastCheckAt: 0,
   modelOptions: [],
   reasoningEffortOptions: [],
   permissionModeOptions: ["default", "auto", "full", "custom"],
@@ -123,6 +133,9 @@ const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
 const MAX_RETAINED_OPERATIONS_PER_TURN = 1;
+const CLIENT_BUILD_ID = "0.1.9|codex-mobile-shell-v55";
+const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
+const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const TURN_REPLY_JUMP_WINDOW_MS = 10 * 60 * 1000;
 const STORAGE_THREAD_ID = "codexMobileCurrentThreadId";
 const STORAGE_CONTINUATION_JOB = "codexMobileContinuationJobId";
@@ -139,6 +152,8 @@ const TABLET_SPLIT_MEDIA = "(pointer: coarse) and (orientation: landscape) and (
 const SIDEBAR_EDGE_SWIPE_PX = 34;
 const SIDEBAR_EDGE_OPEN_MIN_PX = 76;
 const SIDEBAR_EDGE_OPEN_RATIO = 0.22;
+const SUBAGENT_SWIPE_MIN_PX = 70;
+const SUBAGENT_WHEEL_SWIPE_MIN_PX = 48;
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
 const HIDDEN_SERVER_REQUEST_METHODS = new Set(["item/tool/call"]);
 const USER_INPUT_REQUEST_METHODS = new Set(["item/tool/requestUserInput", "mcpServer/elicitation/request"]);
@@ -241,15 +256,33 @@ function isMenuOverlayMode() {
     && !window.matchMedia(TABLET_SPLIT_MEDIA).matches;
 }
 
-function viewportHeight() {
+function viewportState() {
   const visual = window.visualViewport && Number(window.visualViewport.height);
+  const visualOffsetTop = window.visualViewport && Number(window.visualViewport.offsetTop);
+  const visualBottom = visual ? visual + Math.max(0, visualOffsetTop || 0) : 0;
   const inner = Number(window.innerHeight);
   const client = document.documentElement && Number(document.documentElement.clientHeight);
-  return Math.max(320, Math.round(visual || inner || client || 0));
+  const layout = Math.max(inner || 0, client || 0);
+  const keyboardShrunk = Boolean(visualBottom && layout && visualBottom < layout - 120);
+  const height = keyboardShrunk ? visualBottom : Math.max(visualBottom || 0, layout || 0);
+  return {
+    height: Math.max(320, Math.round(height)),
+    keyboardShrunk,
+  };
+}
+
+function viewportHeight() {
+  return viewportState().height;
 }
 
 function updateViewportVars() {
-  document.documentElement.style.setProperty("--app-height", `${viewportHeight()}px`);
+  const viewport = viewportState();
+  if (viewport.keyboardShrunk) {
+    document.documentElement.style.setProperty("--app-height", `${viewport.height}px`);
+  } else {
+    document.documentElement.style.removeProperty("--app-height");
+  }
+  document.documentElement.classList.toggle("keyboard-open", viewport.keyboardShrunk);
 }
 
 function createSubmissionId() {
@@ -1095,6 +1128,107 @@ async function handleAppUpdateClick() {
     state.appUpdateBusy = false;
     renderAppUpdateStatus();
   }
+}
+
+function serverBuildIdFromConfig(config) {
+  return String(config && (config.clientBuildId || config.shellCacheName || config.buildId || config.version) || "").trim();
+}
+
+function initializePageBuildState(config) {
+  state.serverBuildId = CLIENT_BUILD_ID || serverBuildIdFromConfig(config);
+  state.serverAssetBuildId = String(config && config.buildId || "").trim();
+  const currentServerBuildId = serverBuildIdFromConfig(config);
+  if (state.serverBuildId && currentServerBuildId && currentServerBuildId !== state.serverBuildId) {
+    state.pageRefreshAvailable = true;
+    state.pageRefreshBuildId = currentServerBuildId;
+  }
+  renderPageRefreshPrompt();
+}
+
+function renderPageRefreshPrompt() {
+  const el = $("pageRefreshPrompt");
+  if (!el) return;
+  el.classList.toggle("hidden", !state.pageRefreshAvailable && !state.pageRefreshReloading);
+  el.disabled = state.pageRefreshReloading;
+  el.textContent = state.pageRefreshReloading ? "正在刷新页面…" : "页面有新版本，点击刷新";
+  el.title = state.pageRefreshBuildId
+    ? `服务端版本已变为 ${state.pageRefreshBuildId}，点击刷新页面`
+    : "服务端页面资源已更新，点击刷新页面";
+}
+
+async function checkPageRefreshAvailability(options = {}) {
+  if (state.pageRefreshReloading) return;
+  const now = Date.now();
+  if (state.pageRefreshBusy) return;
+  if (!options.force && now - state.pageRefreshLastCheckAt < PAGE_REFRESH_MIN_CHECK_INTERVAL_MS) return;
+  state.pageRefreshBusy = true;
+  state.pageRefreshLastCheckAt = now;
+  try {
+    const response = await fetch(`/api/public-config?buildCheck=${now}`, {
+      cache: "no-store",
+      credentials: "same-origin",
+    });
+    if (!response.ok) return;
+    const config = await response.json();
+    const nextBuildId = serverBuildIdFromConfig(config);
+    const nextAssetBuildId = String(config && config.buildId || "").trim();
+    if (!state.serverBuildId) {
+      state.serverBuildId = CLIENT_BUILD_ID || nextBuildId;
+      state.serverAssetBuildId = nextAssetBuildId;
+      return;
+    }
+    const clientChanged = Boolean(nextBuildId && nextBuildId !== state.serverBuildId);
+    const assetsChanged = Boolean(nextAssetBuildId && state.serverAssetBuildId && nextAssetBuildId !== state.serverAssetBuildId);
+    if (clientChanged || assetsChanged) {
+      state.pageRefreshAvailable = true;
+      state.pageRefreshBuildId = nextBuildId;
+      renderPageRefreshPrompt();
+    }
+  } catch (_) {
+    // Version checks are best-effort; normal API connection state handles real failures.
+  } finally {
+    state.pageRefreshBusy = false;
+  }
+}
+
+function schedulePageRefreshCheck(delayMs = 0, options = {}) {
+  window.setTimeout(() => {
+    checkPageRefreshAvailability(options).catch(() => {});
+  }, Math.max(0, Number(delayMs || 0)));
+}
+
+function startPageRefreshChecks() {
+  if (state.pageRefreshTimer) clearInterval(state.pageRefreshTimer);
+  state.pageRefreshTimer = window.setInterval(() => {
+    if (document.visibilityState === "hidden") return;
+    checkPageRefreshAvailability({ silent: true }).catch(() => {});
+  }, PAGE_REFRESH_CHECK_INTERVAL_MS);
+}
+
+async function refreshPageForNewBuild() {
+  if (state.pageRefreshReloading) return;
+  state.pageRefreshReloading = true;
+  renderPageRefreshPrompt();
+  saveCurrentDraftNow();
+  try {
+    if ("serviceWorker" in navigator) {
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (registration && registration.update) await registration.update();
+    }
+  } catch (_) {
+    // Reload still works even if service worker update probing fails.
+  }
+  try {
+    if ("caches" in window) {
+      const keys = await window.caches.keys();
+      await Promise.all(keys
+        .filter((key) => String(key || "").startsWith("codex-mobile-shell-"))
+        .map((key) => window.caches.delete(key)));
+    }
+  } catch (_) {
+    // Cache deletion is a best-effort stale-asset guard.
+  }
+  window.location.reload();
 }
 
 function updateConnectionState(status, fallbackText = "Starting") {
@@ -2748,6 +2882,11 @@ async function loadThread(threadId, options = {}) {
   const fromThreadId = state.currentThreadId || "";
   const source = String(options.source || "unknown").slice(0, 40);
   if (threadId !== fromThreadId) resetComposerRuntimeSelection();
+  if (threadId !== fromThreadId) {
+    state.subagentPanelOpen = false;
+    cancelSubagentSwipe();
+    updateSubagentPanelUi();
+  }
   const listAgeMs = state.threadListLoadedAtMs ? Date.now() - state.threadListLoadedAtMs : null;
   postClientEvent("thread_switch_start", {
     source,
@@ -3099,6 +3238,170 @@ function cancelSidebarEdgeSwipe() {
     sidebar.style.removeProperty("--sidebar-edge-x");
   }
   state.sidebarEdgeSwipe = null;
+}
+
+function isSubagentItem(item) {
+  return Boolean(item && item.type === "collabAgentToolCall");
+}
+
+function turnSubagentItems(turn) {
+  const items = Array.isArray(turn && turn.items) ? turn.items : [];
+  return items.filter(isSubagentItem);
+}
+
+function currentSubagentTurn() {
+  if (!state.currentThread) return null;
+  const preferred = currentLiveTurn() || latestTurn();
+  if (turnSubagentItems(preferred).length) return preferred;
+  const turns = Array.isArray(state.currentThread.turns) ? state.currentThread.turns : [];
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    if (turnSubagentItems(turn).length) return turn;
+  }
+  return preferred;
+}
+
+function currentSubagentItems() {
+  return turnSubagentItems(currentSubagentTurn());
+}
+
+function subagentStatusKind(status) {
+  const text = statusText(status).toLowerCase();
+  if (/fail|error|denied|reject|cancel|interrupt|stop/.test(text)) return "failed";
+  if (/complete|success|succeeded|done|finished/.test(text)) return "completed";
+  if (/queue|pending|waiting|wait/.test(text)) return "queued";
+  if (/running|active|started|processing|inprogress|in_progress|in-progress|working/.test(text)) return "running";
+  return "unknown";
+}
+
+function subagentStatusLabel(kind) {
+  return {
+    running: "运行中",
+    queued: "等待",
+    completed: "完成",
+    failed: "失败",
+    unknown: "未知",
+  }[kind] || "未知";
+}
+
+function subagentSwipeAvailable() {
+  return Boolean(state.currentThread);
+}
+
+function renderSubagentPanel() {
+  const items = currentSubagentItems();
+  const rows = items.map((item, index) => {
+    const status = statusText(item.status) || "unknown";
+    const kind = subagentStatusKind(status);
+    const label = collabAgentNameText(item)
+      || collabAgentThreadText(item)
+      || (item.tool === "spawnAgent" ? "Subagent" : item.tool || item.name || `Subagent ${index + 1}`);
+    const task = collabAgentTaskText(item);
+    const thread = collabAgentThreadText(item);
+    const meta = [
+      subagentStatusLabel(kind),
+      thread ? truncateMiddle(thread, 32, "thread") : "",
+      item.tool && item.tool !== "collabAgentToolCall" ? item.tool : "",
+    ].filter(Boolean).join(" | ");
+    return `<article class="subagent-status-row ${escapeHtml(kind)}">
+      <div class="subagent-status-main">
+        <div class="subagent-status-title"><span class="subagent-status-dot ${escapeHtml(kind)}"></span>${escapeHtml(label)}</div>
+        ${task ? `<div class="subagent-status-task">${escapeHtml(truncateMiddle(task, 180, "task"))}</div>` : ""}
+      </div>
+      <div class="subagent-status-meta">${escapeHtml(meta)}</div>
+    </article>`;
+  }).join("");
+  const empty = items.length ? "" : `<div class="subagent-empty">当前线程暂未发现 Subagent 调用。</div>`;
+  return `<div class="subagent-status-window">
+    <div class="subagent-status-header">
+      <div>
+        <div class="subagent-status-heading">Subagent 状态</div>
+        <div class="subagent-status-summary">当前线程 · ${items.length.toLocaleString()} 个</div>
+      </div>
+      <button class="subagent-window-close" type="button" data-subagent-panel-close aria-label="关闭 Subagent 状态">×</button>
+    </div>
+    <div class="subagent-status-list">${rows}${empty}</div>
+  </div>`;
+}
+
+function updateSubagentPanelUi() {
+  const panel = $("subagentPanel");
+  if (!panel) return;
+  if (!state.subagentPanelOpen || !subagentSwipeAvailable()) {
+    state.subagentPanelOpen = false;
+    panel.classList.add("hidden");
+    panel.innerHTML = "";
+    return;
+  }
+  panel.classList.remove("hidden");
+  panel.innerHTML = renderSubagentPanel();
+  panel.querySelectorAll("[data-subagent-panel-close]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.subagentPanelOpen = false;
+      updateSubagentPanelUi();
+    });
+  });
+}
+
+function openSubagentPanelFromGesture() {
+  if (!state.currentThread) return;
+  state.subagentPanelOpen = true;
+  updateSubagentPanelUi();
+}
+
+function beginSubagentSwipe(event) {
+  if (!subagentSwipeAvailable()) return;
+  if (event.touches && event.touches.length > 1) return;
+  if (isInteractiveGestureTarget(event.target)) return;
+  const touch = primaryTouch(event);
+  if (!touch) return;
+  state.subagentSwipe = {
+    startX: touch.clientX,
+    startY: touch.clientY,
+    currentX: touch.clientX,
+    currentY: touch.clientY,
+    moved: false,
+  };
+}
+
+function moveSubagentSwipe(event) {
+  const swipe = state.subagentSwipe;
+  if (!swipe) return;
+  const touch = primaryTouch(event);
+  if (!touch) return;
+  const dx = touch.clientX - swipe.startX;
+  const dy = touch.clientY - swipe.startY;
+  if (!swipe.moved) {
+    if (Math.abs(dx) < 10 && Math.abs(dy) < 12) return;
+    if (dx >= 0 || Math.abs(dy) > Math.abs(dx)) {
+      cancelSubagentSwipe();
+      return;
+    }
+  }
+  swipe.moved = true;
+  swipe.currentX = touch.clientX;
+  swipe.currentY = touch.clientY;
+  if (event.cancelable !== false) event.preventDefault();
+}
+
+function finishSubagentSwipe() {
+  const swipe = state.subagentSwipe;
+  state.subagentSwipe = null;
+  if (!swipe || !swipe.moved) return;
+  const dx = Number(swipe.currentX || swipe.startX) - swipe.startX;
+  const dy = Number(swipe.currentY || swipe.startY) - swipe.startY;
+  if (dx <= -SUBAGENT_SWIPE_MIN_PX && Math.abs(dy) <= Math.abs(dx) * 0.85) openSubagentPanelFromGesture();
+}
+
+function cancelSubagentSwipe() {
+  state.subagentSwipe = null;
+}
+
+function handleSubagentWheelSwipe(event) {
+  if (state.subagentPanelOpen || !subagentSwipeAvailable()) return;
+  const dx = Number(event.deltaX || 0);
+  const dy = Number(event.deltaY || 0);
+  if (dx >= SUBAGENT_WHEEL_SWIPE_MIN_PX && Math.abs(dx) > Math.abs(dy) * 1.2) openSubagentPanelFromGesture();
 }
 
 function threadById(threadId) {
@@ -3528,6 +3831,8 @@ function updateConversationHtml(html, signature, options = {}) {
 function renderHome() {
   clearInterval(state.tickTimer);
   state.tickTimer = null;
+  state.subagentPanelOpen = false;
+  updateSubagentPanelUi();
   updateTurnTimer();
   const selectedLabel = state.selectedCwd ? shortPath(state.selectedCwd) : "Codex Mobile";
   $("threadTitle").textContent = selectedLabel || "Codex Mobile";
@@ -3662,6 +3967,7 @@ function renderCurrentThread(options = {}) {
     renderHome();
     return;
   }
+  updateSubagentPanelUi();
   const shouldStickToBottom = !shouldHoldAutoScrollForCurrentTurn()
     && (options.stickToBottom === true || isConversationNearBottom());
   const previousKeys = existingConversationRenderKeys();
@@ -3725,6 +4031,8 @@ function renderCurrentThread(options = {}) {
 function renderNewThreadDraft() {
   clearInterval(state.tickTimer);
   state.tickTimer = null;
+  state.subagentPanelOpen = false;
+  updateSubagentPanelUi();
   const titleEl = $("threadTitle");
   const metaEl = $("threadMeta");
   const workspaceLabel = selectedWorkspaceLabel();
@@ -6400,6 +6708,8 @@ function wireUi() {
   document.addEventListener("touchcancel", cancelSidebarEdgeSwipe, { passive: true });
   $("openMenu").addEventListener("click", openSidebarMenu);
   $("closeMenu").addEventListener("click", closeSidebarMenu);
+  const pageRefreshPrompt = $("pageRefreshPrompt");
+  if (pageRefreshPrompt) pageRefreshPrompt.addEventListener("click", refreshPageForNewBuild);
   $("composer").addEventListener("submit", sendMessage);
   $("sendMessage").addEventListener("pointerup", requestComposerSubmitFromButton);
   $("sendMessage").addEventListener("click", requestComposerSubmitFromButton);
@@ -6412,7 +6722,12 @@ function wireUi() {
   if ($("scrollToTurnReply")) $("scrollToTurnReply").addEventListener("click", scrollConversationToTurnReply);
   $("conversation").addEventListener("pointerdown", rememberConversationScrollIntent, { passive: true });
   $("conversation").addEventListener("touchstart", rememberConversationScrollIntent, { passive: true });
+  $("conversation").addEventListener("touchstart", beginSubagentSwipe, { passive: true });
+  $("conversation").addEventListener("touchmove", moveSubagentSwipe, { passive: false });
+  $("conversation").addEventListener("touchend", finishSubagentSwipe, { passive: true });
+  $("conversation").addEventListener("touchcancel", cancelSubagentSwipe, { passive: true });
   $("conversation").addEventListener("wheel", rememberConversationScrollIntent, { passive: true });
+  $("conversation").addEventListener("wheel", handleSubagentWheelSwipe, { passive: true });
   $("conversation").addEventListener("scroll", () => {
     if (state.leavingItems.size) scheduleLeavingCleanup(120);
     updateRecentCompletedReplyAnchorFromScroll();
@@ -6517,6 +6832,7 @@ function wireUi() {
       currentThreadId: state.currentThreadId || "",
       eventOpen: Boolean(state.events && state.events.readyState === EventSource.OPEN),
     });
+    if (document.visibilityState === "visible") schedulePageRefreshCheck(200, { force: true });
     scheduleMobileResume("visibility");
   });
   window.addEventListener("pageshow", (event) => {
@@ -6525,10 +6841,12 @@ function wireUi() {
       currentThreadId: state.currentThreadId || "",
     });
     const threadId = applyUrlThreadSelection({ load: true });
+    schedulePageRefreshCheck(200, { force: true });
     scheduleMobileResume("pageshow", threadId ? 240 : 80);
   });
   window.addEventListener("focus", () => {
     const threadId = applyUrlThreadSelection({ load: true });
+    schedulePageRefreshCheck(600);
     scheduleMobileResume("focus", threadId ? 300 : 150);
   });
   window.addEventListener("blur", () => scheduleVisualRecovery("window-blur", 180, { render: false }));
@@ -6560,6 +6878,8 @@ async function start() {
   startRelativeTimeTimer();
   startUiWatchdog();
   const config = await fetch("/api/public-config").then((res) => res.json());
+  initializePageBuildState(config);
+  startPageRefreshChecks();
   state.appVersion = String(config.version || "");
   state.maxUploadBytes = Number(config.maxUploadBytes || state.maxUploadBytes);
   state.maxUploadFiles = Number(config.maxUploadFiles || state.maxUploadFiles);
