@@ -23,3 +23,12 @@ test("archive state merge keeps backup and archived-session filters active", () 
   assert.match(serverJs, /isBackupRolloutPath\(row\.rollout_path\)/);
   assert.ok(serverJs.includes("url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/archive$/)"));
 });
+
+test("thread list hides subagent child threads", () => {
+  assert.match(serverJs, /function isSubagentThreadSummary\(/);
+  assert.match(serverJs, /agentNickname/);
+  assert.match(serverJs, /agentRole/);
+  assert.match(serverJs, /isSpawnedChildThread/);
+  assert.match(serverJs, /exists\(select 1 from thread_spawn_edges where child_thread_id=threads\.id\) as is_spawned_child/);
+  assert.match(serverJs, /if \(isSubagentThreadSummary\(thread\)\) return true;/);
+});

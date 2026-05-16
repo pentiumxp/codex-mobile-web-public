@@ -112,6 +112,14 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-codex-mobile-w
 
 `LocalSystem` does not store your Windows password and also uses the hidden launcher, but it cannot start WSL distributions. Use the default user-logon mode when Codex tool calls need WSL access.
 
+### Manual Mobile Web Shared-Chain Restart
+
+The daily `Codex Mobile Web Shared Chain Restart` scheduled task is no longer installed by default. The same scoped restart is now exposed as a manual control in the mobile sidebar: the header shows a small `Restart` button next to the version/update pill, and tapping it asks for confirmation before restarting.
+
+The manual restart calls the authenticated `POST /api/restart/shared-chain` endpoint. The endpoint launches `restart-codex-mobile-shared-chain.ps1` after the HTTP response has been sent, so the page can show the confirmation result before the current Node listener exits. The script stops only the Codex Mobile Web shared chain: the `Codex Mobile Web` startup task, this workspace's hidden/windowless launchers, this workspace's `server.js`, this workspace's mux process, and `%USERPROFILE%\.codex-mobile-web\codex.exe app-server`. It removes the stale mux endpoint file, starts `Codex Mobile Web` again, and waits for HTTP plus mux readiness.
+
+This manual restart intentionally does not restart WSL, Codex Desktop, or unrelated local services. Logs are written to `%USERPROFILE%\.codex-mobile-web\shared-chain-restart.log`.
+
 The task still uses your normal Codex data paths by passing the installing user's profile path into the launcher:
 
 ```text
@@ -327,7 +335,7 @@ Behavior:
 - Home view shows recent workspaces and recent threads.
 - The sidebar menu header includes a compact settings button. The settings panel contains the theme control (`跟随系统` / `深色` / `浅色`) and the font-size control (`小字` / `标准` / `大字` / `特大` / `超大`) using the same segmented-button style.
 - Theme and font-size choices are saved in the browser. Theme updates the page theme color metadata; iOS PWA status-bar color changes may require closing and reopening the installed app. The light theme now uses a slightly warmer page background so the daytime view is less cold gray while cards and controls stay crisp. Font size adjusts conversation text, markdown, code/table content, approval details, and the composer input.
-- The sidebar header also shows the app version/update pill. After login, Mobile Web checks the configured GitHub remote in the background. If the remote branch is ahead, the pill becomes an update action; tapping it asks for confirmation, applies only a clean fast-forward update, then exits the Node listener so the existing startup supervisor can restart it from the updated files.
+- The sidebar header also shows the app version/update pill and a same-size `Restart` button. After login, Mobile Web checks the configured GitHub remote in the background. If the remote branch is ahead, the pill becomes an update action; tapping it asks for confirmation, applies only a clean fast-forward update, then exits the Node listener so the existing startup supervisor can restart it from the updated files. The `Restart` button is separate from Git self-update and asks for confirmation before restarting the local Mobile Web shared chain.
 - When a conversation is scrollable and the user is away from the newest messages, a floating down-arrow button appears above the composer. Tapping it jumps directly back to the latest turn; normal rendering still avoids forcing the scroll position while the user is reading older content.
 - 中文说明：长对话如果因为恢复、切换线程或手动滚动停在历史消息中间，页面会在输入框上方显示“回到底部”浮动按钮。按钮只在当前线程已加载、内容可滚动且不在底部时出现；点击后立即回到最新 turn。用户阅读历史内容时，普通刷新仍不会强制自动滚到底部。PWA/手机浏览器如果仍显示旧界面，需要刷新一次或等待新的 service worker 缓存 `codex-mobile-shell-v36` 激活。
 - On phones and tablet portrait/touch layouts, the sidebar menu is not persistent: the main conversation fills the viewport, and the menu opens only after the user taps the top-left menu button. Wide desktop layouts keep the persistent sidebar. On coarse-pointer landscape tablets with enough room, Mobile Web uses a two-column layout with a persistent sidebar and full conversation pane.
@@ -366,6 +374,8 @@ iOS/PWA 的横滑手势使用 Touch Events 路径处理；如果系统在横滑�
 - Live reasoning is not rendered as conversation rows.
 - Command/file/tool activity appears as compact operation cards.
 - Consecutive command/file operation updates show only the latest operation card unless normal visible content appears between two operations.
+- The left-swipe Subagent status panel shows Subagents from the current live turn, treating completed/closed spawn-call rows in that live turn as current because the child Agent can still be running after the spawn call closes. Older historical Subagent records are omitted so long-running collaboration sessions do not show hundreds of stale entries.
+- Page refresh prompts are gated by a full app-shell preflight. The browser must fetch and populate the target shell cache with the new HTML, CSS, JavaScript modules, manifest, service worker, and icons before the prompt is shown; clicking the prompt repeats that check and reloads only after the target cache is ready.
 - The composer shows model, reasoning effort, permission, and quota as four compact runtime cards.
 - Model, reasoning effort, and permission can be changed before sending. Existing-thread sends submit the selected values with the next `turn/start`; new-thread first messages submit the selected values when creating and starting the first turn.
 - The composer shows 5-hour and weekly quota as separate reset-aware chips when app-server sends rate-limit updates. Rate-limit updates are cached by model key, and mobile quota display follows the currently selected composer model.
@@ -521,17 +531,17 @@ iOS/PWA 的横滑手势使用 Touch Events 路径处理；如果系统在横滑�
 - Public service worker 缓存升级到 `codex-mobile-shell-v45`。已经安装到主屏幕的 PWA 需要刷新、关闭重开，或等待新的 service worker 激活后，才能拿到本次前端显示变化。
 - Public 包版本升级到 `0.1.8`，便于部署者通过版本号和自更新提示确认本次 PR 集成已经生效。
 
-### 2026-05-15 Public 发布说明
+### 2026-05-16 Public 发布说明
 
-本次 public 发布同步移动端会话体验与页面资源刷新修正，重点覆盖 PWA 旧缓存、当前 turn 的协作 Agent 状态查看，以及 iOS/PWA 输入栏底部位置。
+本次 public 发布同步近期移动端会话体验修正，并把 Web Push 的 Sub Agent 完成通知过滤改成更保守的服务端判定。
 
-- `/api/public-config` 现在额外返回 `buildId`、`clientBuildId` 和 `shellCacheName`。前端会用这些字段判断服务器上的页面资源是否已经变化，而不是只依赖包版本号。
-- 当浏览器或 PWA 仍在运行旧前端资源、服务器已经提供新 build 时，页面会显示“页面有新版本，点击刷新”。点击后会先保存当前 Composer 草稿，再触发 service worker 更新、清理旧的 `codex-mobile-shell-*` shell cache，并重新加载页面，降低 PWA 长时间持有旧 HTML/CSS/JS 的概率。
-- 当前线程的对话区支持左滑打开 Subagent 状态面板。面板只展示当前线程当前 turn 或最近相关 turn 的 `collabAgentToolCall` 状态；没有记录时显示空态，避免用户左滑后误以为手势失效。界面不增加顶部按钮，保持原有顶栏密度。
-- 手机端 Composer 底部布局回到正常页面流。无键盘时不再用 `visualViewport.height` 覆盖应用高度，而是让 CSS 使用 `100dvh` / `100vh`；只有键盘确实压缩视口时才写入测量高度。这减少 iOS Home Screen / PWA 下输入栏悬浮在底部空白条上方的情况。
-- 本次新增和更新了页面刷新、Subagent 面板、Composer 底部布局、PWA cache build id 的回归测试。真实 iOS/PWA 设备如果仍看到旧布局，应先点页面刷新提示，或关闭主屏幕 PWA 后重新打开，让新的 service worker 与 shell cache 生效。
-- Public service worker 缓存升级到 `codex-mobile-shell-v55`。这次从上一版 public 的 `v45` 跨过多个私有验证缓存号，目的是让已安装 PWA 明确替换旧 shell 资源。
-- Public 包版本升级到 `0.1.9`，便于部署者通过版本号、自更新提示和 `clientBuildId` 确认本次移动端体验修正已经生效。
+- 页面资源更新提示现在必须先确认新版本 app shell 资源已经完整写入目标 `codex-mobile-shell-*` 缓存，点击刷新时也会再次预检。这样可以避免只刷新了版本号、但 JS/CSS 仍来自旧缓存时出现未套样式的页面。
+- 移动端输入栏回到正常底部布局流。无键盘时不再用 `visualViewport.height` 覆盖 `--app-height`，手机 composer 不再使用固定定位，从而减少 iOS/PWA 下输入栏悬空和底部留白。
+- 侧边栏版本号旁新增同尺寸 `Restart` 按钮。点击后先确认，再调用 `POST /api/restart/shared-chain` 手动重启 Mobile Web shared chain；该动作只重启 Mobile Web、shared mux 和本地 app-server，不重启 WSL、Codex Desktop 或其它本机服务。原每日 `Codex Mobile Web Shared Chain Restart` 计划任务已取消。
+- 当前线程的 Sub Agent 面板保持“当前进行中”视角。左滑打开后只看当前 live turn 相关的协作 Agent 状态，不再扫描历史完成记录，避免长协作会话里出现大量旧 Agent。
+- Web Push 完成通知现在要求 `turn/completed` 能解析到已知主线程 id，并且该线程不能是 `thread_spawn_edges` child，也不能带 `agent_nickname` / `agent_role`。解析不到线程、SQLite 查询失败、查到未知 UUID/turn id，都会跳过通知，避免 Sub Agent 完成以 UUID 标题推到 iOS 通知中心。
+- 后端 SQLite 读取改用 `adapters/sqlite-cli.js`，会优先使用 `CODEX_MOBILE_SQLITE3_EXE`，并覆盖常见 WinGet/Platform Tools `sqlite3.exe` 路径，减少隐藏启动环境 PATH 不一致导致的 Sub Agent 判定漏查。
+- Public 版本升到 `0.1.9`，PWA shell 缓存升到 `codex-mobile-shell-v60`。已安装到主屏幕的 PWA 需要刷新、关闭重开，或等待新 service worker 激活后，才能拿到本次前端和缓存策略变更。
 
 ## Current Update Notes
 
@@ -931,6 +941,7 @@ Notification behavior:
 - Turn-completed notification title: `<thread-title>`.
 - Turn-completed notification body: `This turn 已结束 · <local time>`.
 - Turn-completed notifications bind `turn/started` metadata by turn id, then reuse that thread id and title on `turn/completed`. This avoids a completion notification from one shared-thread stream being labeled with another thread's title.
+- Turn-completed Web Push and the normal thread list skip Sub Agent child threads recorded in `state_5.sqlite` `thread_spawn_edges` or marked with thread `agent_nickname` / `agent_role`. The parent/main thread completion can still notify, but individual Sub Agent completions do not create separate phone notifications or regular session rows.
 - Clicking a notification opens Mobile Web and switches to the relevant thread when the thread id is available. The service worker sends a `codex-open-thread` message to an already-open Mobile Web window, so an installed iOS/PWA session does not have to rely on a full browser navigation to change threads.
 - 中文说明：通知 payload 会带目标线程 ID。 如果 Mobile Web 已经打开，service worker 会聚焦现有窗口并把目标线程 ID 发给前端，前端收到后直接保存当前线程并调用线程详情加载接口；如果没有现有窗口，则先打开 `/`，再把目标线程 ID 通过消息传给新窗口。这样点击 Web Push 后应进入对应线程，同时减少移动端 PWA 把 `/?thread=...` 当成另一个启动窗口的机会。
 - 中文说明：任务完成通知的标题直接使用完成任务所在的线程名，正文只显示完成状态和本地时间。服务端会在 `turn/started` 时记录 turn id 对应的线程 id 和标题，在 `turn/completed` 时复用这份绑定，避免一个线程的完成事件被标成另一个线程。
@@ -963,6 +974,7 @@ VAPID details:
 | `CODEX_MOBILE_UPLOAD_DIR` | Upload storage directory. |
 | `CODEX_MOBILE_MAX_UPLOAD_BYTES` | Max total upload bytes per message. |
 | `CODEX_MOBILE_MAX_UPLOAD_FILES` | Max files per message. |
+| `CODEX_MOBILE_SQLITE3_EXE` | Optional absolute path to `sqlite3.exe` for reading Codex `state_5.sqlite`. When unset, Mobile Web also checks common user-local Platform Tools / WinGet install paths before falling back to `sqlite3` on `PATH`. |
 | `CODEX_MOBILE_THREAD_TURNS` | Number of recent turns returned to the phone when Mobile Web falls back to `thread/turns/list`, default `12`. |
 | `CODEX_MOBILE_FULL_THREAD_TURNS` | Number of turns returned after normal-size sessions are fully read with `thread/read`, default `80`, capped at `200`. |
 | `CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES` | Tail bytes read from a thread rollout to recover inherited turn runtime settings, default `4194304`. |
