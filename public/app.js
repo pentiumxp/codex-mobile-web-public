@@ -136,7 +136,7 @@ const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
 const MAX_RETAINED_OPERATIONS_PER_TURN = 1;
-const CLIENT_BUILD_ID = "0.1.9|codex-mobile-shell-v60";
+const CLIENT_BUILD_ID = "0.1.9|codex-mobile-shell-v61";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -467,6 +467,22 @@ function formatTime(seconds, nowMs = Date.now()) {
   }
   if (diffMs < 30 * day) return `${Math.floor(diffMs / day)}天前`;
   return formatAbsoluteTime(seconds);
+}
+
+function sameLocalDate(left, right) {
+  return left.getFullYear() === right.getFullYear()
+    && left.getMonth() === right.getMonth()
+    && left.getDate() === right.getDate();
+}
+
+function formatCardTimestamp(ms, nowMs = Date.now()) {
+  const value = Number(ms || 0);
+  if (!Number.isFinite(value) || value <= 0) return "";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (sameLocalDate(date, new Date(nowMs))) return time;
+  return `${date.toLocaleDateString([], { month: "2-digit", day: "2-digit" })} ${time}`;
 }
 
 function formatElapsedTime(seconds) {
@@ -4917,13 +4933,65 @@ function renderItem(item, turn = null, previousKeys = new Set(), index = 0) {
   const key = stableItemKey(turn, item, index);
   const itemCopyKey = rememberCopyText(copyTextForItem(item));
   const itemCopyButton = copyButtonHtml(itemCopyKey, "复制全文", "item-copy-button");
+  const timestampHtml = renderItemTimestampHtml(item, turn);
   return `<section class="item${entryAnimationClass(key, previousKeys)} ${escapeHtml(type)}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">
     <div class="item-head">
       <span>${escapeHtml(labelForItem(item))}</span>
-      <span class="item-head-actions"><span>${escapeHtml(item.status ? statusText(item.status) : "")}</span>${itemCopyButton}</span>
+      <span class="item-head-actions">${timestampHtml}<span>${escapeHtml(item.status ? statusText(item.status) : "")}</span>${itemCopyButton}</span>
     </div>
     <div class="item-body">${renderItemBody(item, turn)}</div>
   </section>`;
+}
+
+function renderItemTimestampHtml(item, turn = null) {
+  const timestampMs = itemTimestampMs(item, turn);
+  if (!timestampMs) return "";
+  const label = formatCardTimestamp(timestampMs, state.nowMs);
+  if (!label) return "";
+  const title = new Date(timestampMs).toLocaleString([], {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `<time class="item-timestamp" datetime="${escapeHtml(new Date(timestampMs).toISOString())}" title="${escapeHtml(title)}">${escapeHtml(label)}</time>`;
+}
+
+function itemTimestampMs(item, turn = null) {
+  if (!item) return 0;
+  const itemStarted = numericTimestampMs(item.createdAtMs)
+    || numericTimestampMs(item.createdAt)
+    || numericTimestampMs(item.created_at_ms)
+    || numericTimestampMs(item.created_at)
+    || numericTimestampMs(item.startedAtMs)
+    || numericTimestampMs(item.startedAt)
+    || numericTimestampMs(item.started_at_ms)
+    || numericTimestampMs(item.started_at)
+    || numericTimestampMs(item.timestampMs)
+    || numericTimestampMs(item.timestamp);
+  if (itemStarted) return itemStarted;
+  if (item.type === "agentMessage" || item.type === "plan") {
+    return numericTimestampMs(item.completedAtMs)
+      || numericTimestampMs(item.completedAt)
+      || numericTimestampMs(item.completed_at_ms)
+      || numericTimestampMs(item.completed_at)
+      || turnCompletedAtMs(turn, state.currentThread)
+      || turnStartedAtMs(turn);
+  }
+  return turnStartedAtMs(turn) || turnCompletedAtMs(turn, state.currentThread);
+}
+
+function turnStartedAtMs(turn) {
+  if (!turn) return 0;
+  return numericTimestampMs(turn.startedAtMs)
+    || numericTimestampMs(turn.startedAt)
+    || numericTimestampMs(turn.started_at_ms)
+    || numericTimestampMs(turn.started_at)
+    || numericTimestampMs(turn.createdAtMs)
+    || numericTimestampMs(turn.createdAt)
+    || numericTimestampMs(turn.created_at_ms)
+    || numericTimestampMs(turn.created_at);
 }
 
 function renderLiveReasoning(item, turn) {
@@ -5281,10 +5349,10 @@ function appendToItem(turnId, itemId, itemType, field, delta, index = 0) {
   markActivity(activityLabelForItem({ type: itemType }));
   let item = (turn.items || []).find((x) => x.id === itemId);
   if (!item) {
-    item = { id: itemId, type: itemType };
-    if (itemType === "reasoning") item.startedAtMs = Date.now();
+    item = { id: itemId, type: itemType, startedAtMs: Date.now() };
     turn.items.push(item);
   }
+  if (!item.startedAtMs) item.startedAtMs = Date.now();
   if (field === "aggregatedOutput") {
     appendCommandOutput(item, delta);
   } else if (Array.isArray(item[field])) {
@@ -6087,6 +6155,7 @@ function localUserMessageItem(text, attachments, clientSubmissionId) {
   return {
     id: `local-user-${clientSubmissionId || Date.now()}`,
     type: "userMessage",
+    startedAtMs: Date.now(),
     content: [{
       type: "text",
       text: appendLocalAttachmentSummary(text, attachments),
