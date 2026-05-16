@@ -38,7 +38,7 @@ $UserProfilePath = Resolve-ExistingPath $UserProfilePath
 $RuntimeRoot = Join-Path $UserProfilePath ".codex-mobile-web"
 $CodexHome = Join-Path $UserProfilePath ".codex"
 $EndpointFile = Join-Path $CodexHome "app-server-mux\endpoint.json"
-$LogPath = Join-Path $RuntimeRoot "scheduled-shared-chain-restart.log"
+$LogPath = Join-Path $RuntimeRoot "shared-chain-restart.log"
 
 $ServerPath = Join-Path $WorkspacePath "server.js"
 $MuxScriptPath = Join-Path $WorkspacePath "codex-app-server-mux.js"

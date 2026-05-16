@@ -1,5 +1,167 @@
 # HANDOFF
 
+## 2026-05-15 Web Push SQLite Discovery Fix
+
+- User report:
+  - After the earlier Sub Agent Web Push suppression, the phone still received a completion Web Push for a Sub Agent thread.
+  - Screenshot notification title showed a raw shortened thread id (`019e2afe...`) rather than the human title, suggesting the running server could not read local SQLite thread metadata.
+- Evidence:
+  - The notified thread was `019e2afe-9476-7533-9723-b807b0d57844`.
+  - Interactive SQLite query showed it is definitely a Sub Agent child thread:
+    - `threads.agent_nickname = Hegel`
+    - `threads.agent_role = explorer`
+    - `thread_spawn_edges.child_thread_id = 019e2afe-9476-7533-9723-b807b0d57844`
+    - parent thread id `019e29d5-60ea-7723-99ba-ff50c3be067e`
+  - The machine's working SQLite binary is under the user-local WinGet Platform Tools path:
+    - `%USERPROFILE%\AppData\Local\Microsoft\WinGet\Packages\Google.PlatformTools_Microsoft.Winget.Source_8wekyb3d8bbwe\platform-tools\sqlite3.exe`
+  - Hidden/scheduled Node listeners can have a PATH that differs from interactive PowerShell, so direct `spawnSync("sqlite3", ...)` can fail even when `sqlite3` works interactively.
+- Local fix:
+  - Added `adapters/sqlite-cli.js`.
+  - The adapter honors `CODEX_MOBILE_SQLITE3_EXE`, then common user-local Platform Tools / WinGet `sqlite3.exe` paths, then falls back to `sqlite3` on PATH.
+  - `server.js` now uses `runSqliteJson()` for all `state_5.sqlite` reads instead of direct `spawnSync("sqlite3", ...)`.
+  - Updated `package.json` `check` script to syntax-check the new adapter.
+  - Updated tests to assert server SQLite reads go through the adapter and that WinGet Platform Tools discovery is covered.
+  - Updated `README.md` and `.agent-context/PROJECT_CONTEXT.md` to document `CODEX_MOBILE_SQLITE3_EXE` and the hidden/scheduled PATH issue.
+- Runtime activation:
+  - Restarted only the 8787 `server.js` Node listener.
+  - Old listener PID `61000`; new listener PID `16580`.
+  - `GET http://127.0.0.1:8787/api/public-config` returned `clientBuildId: 0.1.8|codex-mobile-shell-v58`.
+  - Authenticated `GET /api/threads?limit=200` returned `containsSubagent=0` for `019e2afe-9476-7533-9723-b807b0d57844` and `agentLike=0`.
+  - Direct adapter verification read the same Sub Agent row using the WinGet Platform Tools `sqlite3.exe` path.
+- Validation:
+  - `npm.cmd test` passed with 73/73 tests.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed, with only Windows LF-to-CRLF working-copy notices.
+- Status:
+  - Private workspace local changes only; not committed, not pushed, and not synced to public.
+
+## 2026-05-15 Live Subagent Count Fix
+
+- User report:
+  - The Subagent panel could show `当前进行中 · 0 个` even while Sub Agents were visibly present/running.
+- Cause:
+  - The panel filtered `collabAgentToolCall` rows by the row's own status (`running` / `queued` only).
+  - In current app-server events, a spawn-call row can become `closed` / `completed` after the child Agent is spawned, while the child Agent is still running as part of the parent live turn. Treating that row status as the child Agent lifecycle hid live Subagents.
+- Local fix:
+  - `public/app.js` now counts all `collabAgentToolCall` rows in the current live turn.
+  - For current live-turn rows, `completed` / `closed` / `unknown` spawn-call statuses render as running/current instead of being filtered out.
+  - Historical turns are still not scanned; without a live turn, the panel only falls back to active rows from the latest turn.
+  - `public/sw.js` cache and `public/app.js` `CLIENT_BUILD_ID` bumped to `codex-mobile-shell-v58`.
+  - Updated `test/collab-agent-render.test.js`, `test/mobile-viewport.test.js`, `README.md`, and `.agent-context/PROJECT_CONTEXT.md`.
+- Validation:
+  - `npm.cmd test` passed with 72/72 tests.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed, with only Windows LF-to-CRLF working-copy notices.
+  - `GET http://127.0.0.1:8787/api/public-config` returned `clientBuildId: 0.1.8|codex-mobile-shell-v58` and `shellCacheName: codex-mobile-shell-v58`.
+  - Direct HTTP checks for `/`, `/index.html`, `/styles.css`, `/app.js`, and `/sw.js` returned `200`.
+- Status:
+  - Private workspace local changes only; not committed, not pushed, and not synced to public.
+
+## 2026-05-15 Page Refresh App-Shell Preflight
+
+- User report:
+  - After the page showed the new-version refresh prompt and the user clicked it, iOS/PWA could load an unstyled/half-updated page: static HTML was visible, CSS was not applied, and the displayed version/status looked stale.
+  - User requirement: show/act on the refresh prompt only after all page resources are updated.
+- Cause:
+  - The previous `refreshPageForNewBuild()` updated the service worker best-effort, deleted every `codex-mobile-shell-*` cache, and immediately reloaded.
+  - If the new HTML/CSS/JS/module/icon/service-worker assets were not all reachable and present in the target app-shell cache, the reload could land on a mixed or uncached app shell.
+- Local fix:
+  - `public/app.js` now defines `PAGE_SHELL_ASSETS` for the complete app shell: `/`, `/index.html`, `/styles.css`, frontend modules, `/app.js`, `/manifest.json`, `/sw.js`, and icons.
+  - `checkPageRefreshAvailability()` fetches `/api/public-config`, then fetches all shell assets with `cache: "no-store"` and build cache-busting, validates critical HTML/CSS/JS/SW content, and populates the target `shellCacheName` cache before setting `pageRefreshAvailable=true`.
+  - `refreshPageForNewBuild()` repeats that preflight before reloading. It prunes old `codex-mobile-shell-*` caches only after the target cache is populated; if preflight fails, it does not delete old caches and does not reload, then retries later.
+  - `public/sw.js` cache and `public/app.js` `CLIENT_BUILD_ID` bumped to `codex-mobile-shell-v57`.
+  - `test/app-update.test.js` now covers the app-shell preflight and target-cache pruning behavior; `test/mobile-viewport.test.js` expects v57.
+- Validation:
+  - `npm.cmd test` passed with 72/72 tests.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed, with only Windows LF-to-CRLF working-copy notices.
+  - `GET http://127.0.0.1:8787/api/public-config` returned `clientBuildId: 0.1.8|codex-mobile-shell-v57` and `shellCacheName: codex-mobile-shell-v57`.
+  - Direct HTTP checks for `/`, `/index.html`, `/styles.css`, all frontend modules, `/app.js`, `/manifest.json`, `/sw.js`, and icon assets all returned `200`.
+- Runtime note:
+  - No Node restart was required; the current 8787 listener PID is `61000`, and `/api/public-config` reads `public/sw.js` dynamically.
+  - A page that has already loaded the unsafe v56 click handler cannot be patched in memory. If a device is already on the broken unstyled page, it may need one manual close/reopen or browser/PWA reload to load v57; future refresh prompts from v57 are gated by the full app-shell preflight.
+- Status:
+  - Private workspace local changes only; not committed, not pushed, and not synced to public.
+
+## 2026-05-15 Subagent Panel Current-Only Filter
+
+- User report:
+  - Inside a busy Hermes thread, the Subagent panel could show one or two hundred Subagents.
+  - The desired behavior is to see only the Subagents currently in progress; historical completed records are not useful.
+- Local fix:
+  - `public/app.js` no longer scans backward through historical turns for Subagent records.
+  - `currentSubagentItems()` now returns only running or queued `collabAgentToolCall` items from the current live turn, with a latest-turn fallback only when that latest turn itself still has active Subagent items.
+  - `completed`, `failed`, `closed`, and other inactive historical statuses are omitted from the panel.
+  - The panel empty state now says there is no currently active Subagent, not that no Subagent call was ever found.
+  - `public/sw.js` cache and `public/app.js` `CLIENT_BUILD_ID` bumped from `codex-mobile-shell-v55` to `codex-mobile-shell-v56` so existing mobile/PWA clients can get the page refresh prompt and reload the updated frontend.
+  - Updated `test/collab-agent-render.test.js` and `test/mobile-viewport.test.js` for the current-only filter and v56 build id.
+- Validation:
+  - `npm.cmd test` passed with 72/72 tests.
+  - `npm.cmd run check` passed.
+- Runtime note:
+  - This is a static frontend/service-worker update. The current running server reads `public/sw.js` dynamically for `/api/public-config`, so clients running v55 should see server `clientBuildId` move to `0.1.8|codex-mobile-shell-v56` and show the existing page refresh prompt.
+- Status:
+  - Private workspace local changes only; not committed, not pushed, and not synced to public.
+
+## 2026-05-15 Web Push Sub Agent Completion Suppression
+
+- User report:
+  - Mobile Web still produced many Web Push notifications when Sub Agents completed.
+  - Follow-up screenshot showed the thread list itself occasionally filled with many `Agent` rows titled by raw thread ids, so Sub Agent child threads were also leaking into normal Mobile Web session lists.
+- Cause:
+  - `server.js` observed every `turn/started` / `turn/completed` pair from the shared app-server stream and sent a completion Web Push for each observed turn.
+  - Spawned Sub Agent threads are recorded in Codex `state_5.sqlite` table `thread_spawn_edges`; many also have `threads.agent_nickname` / `threads.agent_role`. The Web Push path and normal `thread/list` filtering did not check those fields, so child thread completions looked like ordinary background thread completions and child threads could appear as regular sessions.
+- Local fix:
+  - Added `adapters/push-notification-service.js` with `shouldTrackTurnForWebPush()` so the notification decision is testable outside the large `server.js` entrypoint.
+  - `server.js` now checks both `thread_spawn_edges.child_thread_id` and `threads.agent_nickname` / `threads.agent_role` for the notification thread id and does not observe/send Web Push for Sub Agent child threads.
+  - The Sub Agent lookup caches only positive matches. Negative matches are not cached so a child turn that starts before the spawn edge or agent metadata is visible can still be suppressed when its completion event arrives.
+  - Normal `thread/list` results now merge local state fields including `agent_nickname`, `agent_role`, and whether the id exists as `thread_spawn_edges.child_thread_id`; `isHiddenThread()` hides those child threads from ordinary Mobile Web lists.
+  - Updated `package.json` `check` script to syntax-check the new adapter.
+  - Added/updated tests covering normal turn notifications, spawned child suppression, agent-metadata suppression, fail-open behavior when SQLite lookup is unavailable, server wiring to `thread_spawn_edges`, and session-list hiding for Sub Agent child threads.
+  - Updated `README.md` and `.agent-context/PROJECT_CONTEXT.md` to document that Web Push and ordinary thread lists skip Sub Agent child threads while keeping parent/main turn completion notifications and rows.
+- Runtime activation:
+  - Restarted only the `server.js` Node listener, not the shared mux/app-server chain.
+  - First restart after push-filter-only fix: old listener PID `15092`, new listener PID `66752`.
+  - Second restart after adding agent-metadata and thread-list filtering: old listener PID `66752`, new listener PID `61000`.
+  - `GET http://127.0.0.1:8787/api/public-config` returned `200` after restart.
+  - Authenticated `GET /api/threads?limit=80` returned 11 rows and `0` agent-like rows after filtering.
+- Validation:
+  - `npm.cmd test` passed with 72/72 tests.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed, with only Windows LF-to-CRLF working-copy notices.
+- Status:
+  - Private workspace local changes only; not committed, not pushed, and not synced to public.
+
+## 2026-05-15 Public Release 0.1.9
+
+- User request:
+  - Push the latest private Mobile Web fixes to the public repository.
+- Public repository:
+  - Path: `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Previous public HEAD: `92e8915 集成 PR #31/#32：刷新标题来源并隐藏不可用推送入口`.
+  - Pushed public commit: `43c5fab 发布移动端会话体验与页面刷新修正`.
+- Public release contents:
+  - Synced the latest private product changes for page build/cache detection, the page refresh prompt, current-thread left-swipe Subagent panel, and iOS/PWA Composer bottom positioning.
+  - `/api/public-config` exposes `buildId`, `clientBuildId`, and `shellCacheName`.
+  - Browser/PWA clients show `页面有新版本，点击刷新` when the server client build changes; clicking saves the draft, updates the service worker, deletes old `codex-mobile-shell-*` caches, and reloads.
+  - The current conversation area supports left swipe to open a Subagent status panel without adding a topbar button; empty state is shown when the current thread has no related `collabAgentToolCall`.
+  - Phone Composer returns to normal bottom layout flow and only uses measured `visualViewport` height while keyboard shrink is detected.
+  - Public package version bumped to `0.1.9`; public PWA shell cache is `codex-mobile-shell-v55`; public `CLIENT_BUILD_ID` is `0.1.9|codex-mobile-shell-v55`.
+  - Public `README.md` gained a detailed Chinese `2026-05-15 Public 发布说明` covering user-visible behavior, cache activation, version/build id, and iOS/PWA notes.
+- Public validation before push:
+  - `npm.cmd test` passed: 66/66.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` and `git diff --cached --check` passed, with only Windows LF-to-CRLF working-copy notices.
+  - Public staged diff privacy scan found no local user path, private repo marker, LAN/Tailscale marker, Hermes marker, access-key marker, or Web Push runtime secret-file marker.
+- Private workspace status:
+  - Product code was already committed and pushed privately as `ab1a7cd 改进移动端会话体验与页面刷新`.
+  - This entry updates only `.agent-context/HANDOFF.md`; no private product code was changed for the public push.
+
 ## 2026-05-15 Rollback To Prior Layout With Left-Swipe Subagent Panel Only
 
 - User direction:
@@ -3088,3 +3250,89 @@
   - `git diff --check` passed with only Windows LF-to-CRLF working-copy notices.
   - Local 8787 `/api/public-config` returned `clientBuildId: 0.1.8|codex-mobile-shell-v55`.
   - Headless mobile viewport 390x844 measurement with app manually unhidden: app bottom 844, composer bottom 844, bottom gap 0, composer position `relative`, app height variable `100dvh` with no inline `--app-height`.
+
+## 2026-05-16 Manual Shared-Chain Restart
+
+- User request:
+  - Cancel the daily scheduled restart and replace it with a manual restart entry in the navigation/sidebar menu.
+  - Put a small restart button next to the version number, ask for confirmation before restarting, and keep the restart button visually the same size as the version pill.
+- Operational change:
+  - Removed the hidden Windows Scheduled Task `Codex Mobile Web Shared Chain Restart`.
+  - Verified `Get-ScheduledTask -TaskName 'Codex Mobile Web Shared Chain Restart'` returns no task.
+- Code changes:
+  - Added `adapters/shared-chain-restart-service.js`.
+    - It builds an encoded delayed PowerShell command and launches `restart-codex-mobile-shared-chain.ps1` detached/hidden after the HTTP response can be sent.
+    - It targets only the existing shared-chain restart script and `Codex Mobile Web` startup task.
+  - `server.js` now wires authenticated `POST /api/restart/shared-chain` to the new service and returns `202` when the restart is scheduled.
+  - `public/index.html` adds `#sharedRestartButton` beside `#appUpdateStatus` inside a shared `.version-actions` container.
+  - `public/styles.css` gives the update pill and restart button the same base height, padding, font size, border radius, and inline-flex alignment.
+  - `public/app.js` adds the confirmed manual restart flow and reloads the page after the backend schedules the restart.
+  - `restart-codex-mobile-shared-chain.ps1` now logs to `%USERPROFILE%\.codex-mobile-web\shared-chain-restart.log` instead of the old scheduled-task log name.
+  - PWA shell build/cache bumped to `codex-mobile-shell-v59`.
+- Documentation:
+  - `README.md` documents the manual restart button, `POST /api/restart/shared-chain`, exact restart scope, and log file.
+  - `.agent-context/PROJECT_CONTEXT.md` now records that the daily scheduled restart task has been removed and manual restart is the active flow.
+- Validation:
+  - `npm.cmd test` passed: 78/78.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+- Activation:
+  - Restarted only the 8787 Node listener to load the new backend route and v59 static assets; old PID `16580`, new PID `1344`.
+  - `GET http://127.0.0.1:8787/api/public-config` now returns `clientBuildId: 0.1.8|codex-mobile-shell-v59` and `shellCacheName: codex-mobile-shell-v59`.
+
+## 2026-05-16 Web Push SubAgent Completion Filter Tightening
+
+- User report:
+  - iOS notification center still showed many Sub Agent completion Web Push notifications after the earlier spawn-edge filter.
+  - Screenshot examples used UUID-like notification titles such as `019e2df9...`, which indicates the Push path was sending completions without a resolved durable thread title/thread id.
+- Diagnosis:
+  - Local `state_5.sqlite` confirmed at least one recent `019e2df9-d85a-...` thread has `agent_nickname=Sagan`, `agent_role=explorer`, and a `thread_spawn_edges` child row.
+  - Current Mobile Web had only one active `codex-mobile-web\server.js` listener, so this was not caused by an old duplicate Node process.
+  - The remaining leak path was the Web Push decision rule allowing turns with no resolved `threadId`; those can bypass the SQLite child-thread lookup and produce UUID-title Push notifications.
+- Code changes:
+  - `adapters/push-notification-service.js` now fails closed for completion decisions when no `threadId` is available, returning `missing-thread-id`.
+  - `turn/started` still allows a temporary `pending-thread-id` observation so a later `turn/completed` can notify if that completion event resolves a real non-SubAgent thread id.
+  - `server.js` now passes `allowMissingThreadId: true` only for `turn/started`, not for `turn/completed`.
+  - `server.js` expands `pushThreadId()` to parse more nested thread id/session id variants and rollout paths before deciding the id is missing.
+  - Added compact `[web push]` decision logs for skipped/pending cases with only short turn/thread identifiers.
+  - `test/push-notification-service.test.js` covers missing-thread-id suppression and pending started events.
+- Validation:
+  - Targeted `node --test test\push-notification-service.test.js test\manual-restart-ui.test.js` passed.
+  - `npm.cmd test` passed: 80/80.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+- Activation:
+  - Restarted the 8787 Node listener to load the new server-side Push filter; old PID `1344`, new PID `14904`.
+  - `GET http://127.0.0.1:8787/api/public-config` still returns `clientBuildId: 0.1.8|codex-mobile-shell-v59`.
+
+## 2026-05-16 Web Push Main-Thread Classification And 0.1.9
+
+- User follow-up:
+  - Sub Agent completion Web Push notifications were still observed after the missing-thread-id suppression.
+  - Recent iOS notifications still showed UUID-like titles for completed Sub Agent turns.
+- Additional hardening:
+  - `adapters/push-notification-service.js` now requires completion notifications to classify as a known main thread before sending.
+  - Sub Agent / child / agent classifications are skipped as `subagent-thread`.
+  - Unknown thread ids are skipped as `unknown-thread`.
+  - Thread-classification lookup failures are skipped as `thread-lookup-failed`.
+  - Missing thread ids remain skipped for `turn/completed`; `turn/started` can still keep temporary pending state only until a later completion resolves a real known main thread.
+  - `server.js` now uses `classifyWebPushThreadId()` for Push decisions. It reads `state_5.sqlite` through `adapters/sqlite-cli.js`, checks `thread_spawn_edges`, `threads.agent_nickname`, and `threads.agent_role`, and caches main/subagent/unknown classifications with short TTL for unknowns.
+- Version/cache:
+  - Private package version bumped to `0.1.9`.
+  - PWA shell cache/build id bumped to `codex-mobile-shell-v60` / `0.1.9|codex-mobile-shell-v60`.
+- Validation:
+  - `npm.cmd test` passed: 81/81.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+- Activation:
+  - Restarted the 8787 Node listener to load the final Push classifier and v60 static assets; old PID `14904`, new PID `43816`.
+  - `GET http://127.0.0.1:8787/api/public-config` returns `version: 0.1.9`, `clientBuildId: 0.1.9|codex-mobile-shell-v60`, and `shellCacheName: codex-mobile-shell-v60`.
+- Public release:
+  - User explicitly requested update and push including public.
+  - Synced product files, adapters, restart script, tests, and README notes to `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Public README uses a public-safe manual restart description that avoids naming unrelated local private services while preserving the restart scope.
+  - Public validation passed: `npm.cmd test` 81/81, `npm.cmd run check`, `npm.cmd run check:macos`, `git diff --check`, `git diff --cached --check`, and staged diff privacy scan.
+  - Public pushed commit: `6aea3ab 发布移动端重启入口与 Sub Agent 推送过滤修正`.

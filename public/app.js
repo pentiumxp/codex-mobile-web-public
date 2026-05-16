@@ -77,10 +77,13 @@ const state = {
   appUpdateBusy: false,
   appUpdateError: "",
   appUpdateRestarting: false,
+  sharedRestartBusy: false,
+  sharedRestarting: false,
   serverBuildId: "",
   serverAssetBuildId: "",
   pageRefreshAvailable: false,
   pageRefreshBuildId: "",
+  pageRefreshPreparedConfig: null,
   pageRefreshBusy: false,
   pageRefreshReloading: false,
   pageRefreshTimer: null,
@@ -133,9 +136,25 @@ const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
 const MAX_RETAINED_OPERATIONS_PER_TURN = 1;
-const CLIENT_BUILD_ID = "0.1.8|codex-mobile-shell-v55";
+const CLIENT_BUILD_ID = "0.1.9|codex-mobile-shell-v60";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
+const PAGE_SHELL_ASSETS = Object.freeze([
+  "/",
+  "/index.html",
+  "/styles.css",
+  "/api-client.js",
+  "/runtime-settings.js",
+  "/draft-store.js",
+  "/markdown-renderer.js",
+  "/app.js",
+  "/manifest.json",
+  "/sw.js",
+  "/icons/icon.svg",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/icons/apple-touch-icon.png",
+]);
 const TURN_REPLY_JUMP_WINDOW_MS = 10 * 60 * 1000;
 const STORAGE_THREAD_ID = "codexMobileCurrentThreadId";
 const STORAGE_CONTINUATION_JOB = "codexMobileContinuationJobId";
@@ -1130,8 +1149,119 @@ async function handleAppUpdateClick() {
   }
 }
 
+function renderSharedRestartButton() {
+  const el = $("sharedRestartButton");
+  if (!el) return;
+  const restarting = state.sharedRestarting;
+  el.textContent = restarting ? "Restarting" : "Restart";
+  el.title = restarting ? "Mobile Web is restarting" : "Restart Mobile Web shared chain";
+  el.disabled = state.sharedRestartBusy || restarting;
+  el.classList.toggle("checking", state.sharedRestartBusy || restarting);
+}
+
+async function handleSharedRestartClick() {
+  if (state.sharedRestartBusy || state.sharedRestarting) return;
+  const confirmed = window.confirm([
+    "确认重启 Codex Mobile Web？",
+    "",
+    "这会短暂断开当前页面连接，并重启 Mobile Web、shared mux 和本地 app-server。",
+    "不会重启 Hermes、Gateway、WSL 或 Codex Desktop。",
+  ].join("\n"));
+  if (!confirmed) return;
+  state.sharedRestartBusy = true;
+  renderSharedRestartButton();
+  try {
+    const result = await api("/api/restart/shared-chain", {
+      method: "POST",
+      body: "{}",
+      timeoutMs: 12000,
+    });
+    state.sharedRestarting = true;
+    state.sharedRestartBusy = false;
+    const connection = $("connectionState");
+    if (connection) connection.textContent = "Restarting";
+    renderSharedRestartButton();
+    window.setTimeout(() => window.location.reload(), Math.max(2500, Number(result.restartInMs || 900) + 3500));
+  } catch (err) {
+    state.sharedRestartBusy = false;
+    renderSharedRestartButton();
+    showError(err);
+  }
+}
+
 function serverBuildIdFromConfig(config) {
   return String(config && (config.clientBuildId || config.shellCacheName || config.buildId || config.version) || "").trim();
+}
+
+function pageShellAssetUrl(asset, buildId) {
+  const url = new URL(asset, window.location.origin);
+  url.searchParams.set("shellBuild", buildId || "current");
+  url.searchParams.set("shellCheck", String(Date.now()));
+  return url.href;
+}
+
+function validatePageShellAsset(asset, text, config) {
+  const buildId = serverBuildIdFromConfig(config);
+  const shellCacheName = String(config && config.shellCacheName || "").trim();
+  if (asset === "/" || asset === "/index.html") {
+    return text.includes('href="/styles.css"') && text.includes('src="/app.js"');
+  }
+  if (asset === "/styles.css") {
+    return text.includes(".app") && text.includes(".composer");
+  }
+  if (asset === "/app.js") {
+    return !buildId || text.includes(buildId) || text.includes(shellCacheName);
+  }
+  if (asset === "/sw.js") {
+    return !shellCacheName || text.includes(shellCacheName);
+  }
+  return true;
+}
+
+async function fetchPageShellAsset(asset, config) {
+  const response = await fetch(pageShellAssetUrl(asset, serverBuildIdFromConfig(config)), {
+    cache: "no-store",
+    credentials: "same-origin",
+  });
+  if (!response.ok) {
+    throw new Error(`page shell asset unavailable: ${asset}`);
+  }
+  if (asset === "/" || asset.endsWith(".html") || asset.endsWith(".css") || asset.endsWith(".js") || asset.endsWith(".json") || asset.endsWith(".svg")) {
+    const text = await response.clone().text();
+    if (!validatePageShellAsset(asset, text, config)) {
+      throw new Error(`page shell asset stale: ${asset}`);
+    }
+  }
+  return response;
+}
+
+async function preparePageShellAssets(config, options = {}) {
+  const populateCache = Boolean(options.populateCache);
+  const shellCacheName = String(config && config.shellCacheName || "").trim();
+  const cache = populateCache && shellCacheName && "caches" in window
+    ? await window.caches.open(shellCacheName)
+    : null;
+  for (const asset of PAGE_SHELL_ASSETS) {
+    const response = await fetchPageShellAsset(asset, config);
+    if (cache) await cache.put(asset, response.clone());
+  }
+}
+
+async function fetchPageBuildConfig() {
+  const response = await fetch(`/api/public-config?buildCheck=${Date.now()}`, {
+    cache: "no-store",
+    credentials: "same-origin",
+  });
+  if (!response.ok) return null;
+  return response.json();
+}
+
+async function pruneOldShellCaches(expectedCacheName) {
+  if (!expectedCacheName || !("caches" in window)) return;
+  const keys = await window.caches.keys();
+  await Promise.all(keys
+    .filter((key) => String(key || "").startsWith("codex-mobile-shell-") && key !== expectedCacheName)
+    .map((key) => window.caches.delete(key)));
 }
 
 function initializePageBuildState(config) {
@@ -1139,8 +1269,8 @@ function initializePageBuildState(config) {
   state.serverAssetBuildId = String(config && config.buildId || "").trim();
   const currentServerBuildId = serverBuildIdFromConfig(config);
   if (state.serverBuildId && currentServerBuildId && currentServerBuildId !== state.serverBuildId) {
-    state.pageRefreshAvailable = true;
     state.pageRefreshBuildId = currentServerBuildId;
+    schedulePageRefreshCheck(0, { force: true });
   }
   renderPageRefreshPrompt();
 }
@@ -1164,12 +1294,8 @@ async function checkPageRefreshAvailability(options = {}) {
   state.pageRefreshBusy = true;
   state.pageRefreshLastCheckAt = now;
   try {
-    const response = await fetch(`/api/public-config?buildCheck=${now}`, {
-      cache: "no-store",
-      credentials: "same-origin",
-    });
-    if (!response.ok) return;
-    const config = await response.json();
+    const config = await fetchPageBuildConfig();
+    if (!config) return;
     const nextBuildId = serverBuildIdFromConfig(config);
     const nextAssetBuildId = String(config && config.buildId || "").trim();
     if (!state.serverBuildId) {
@@ -1180,8 +1306,10 @@ async function checkPageRefreshAvailability(options = {}) {
     const clientChanged = Boolean(nextBuildId && nextBuildId !== state.serverBuildId);
     const assetsChanged = Boolean(nextAssetBuildId && state.serverAssetBuildId && nextAssetBuildId !== state.serverAssetBuildId);
     if (clientChanged || assetsChanged) {
+      await preparePageShellAssets(config, { populateCache: true });
       state.pageRefreshAvailable = true;
       state.pageRefreshBuildId = nextBuildId;
+      state.pageRefreshPreparedConfig = config;
       renderPageRefreshPrompt();
     }
   } catch (_) {
@@ -1210,25 +1338,25 @@ async function refreshPageForNewBuild() {
   state.pageRefreshReloading = true;
   renderPageRefreshPrompt();
   saveCurrentDraftNow();
+  let config = state.pageRefreshPreparedConfig;
   try {
+    const latestConfig = await fetchPageBuildConfig();
+    if (latestConfig) config = latestConfig;
+    if (!config) throw new Error("page refresh build config unavailable");
+    if (config) await preparePageShellAssets(config, { populateCache: true });
     if ("serviceWorker" in navigator) {
       const registration = await navigator.serviceWorker.getRegistration();
       if (registration && registration.update) await registration.update();
     }
+    await pruneOldShellCaches(String(config && config.shellCacheName || "").trim());
+    window.location.reload();
   } catch (_) {
-    // Reload still works even if service worker update probing fails.
+    state.pageRefreshAvailable = false;
+    state.pageRefreshReloading = false;
+    state.pageRefreshPreparedConfig = null;
+    renderPageRefreshPrompt();
+    schedulePageRefreshCheck(5000, { force: true });
   }
-  try {
-    if ("caches" in window) {
-      const keys = await window.caches.keys();
-      await Promise.all(keys
-        .filter((key) => String(key || "").startsWith("codex-mobile-shell-"))
-        .map((key) => window.caches.delete(key)));
-    }
-  } catch (_) {
-    // Cache deletion is a best-effort stale-asset guard.
-  }
-  window.location.reload();
 }
 
 function updateConnectionState(status, fallbackText = "Starting") {
@@ -3249,29 +3377,42 @@ function turnSubagentItems(turn) {
   return items.filter(isSubagentItem);
 }
 
+function activeSubagentItems(turn) {
+  return turnSubagentItems(turn).filter(isActiveSubagentItem);
+}
+
 function currentSubagentTurn() {
   if (!state.currentThread) return null;
-  const preferred = currentLiveTurn() || latestTurn();
-  if (turnSubagentItems(preferred).length) return preferred;
-  const turns = Array.isArray(state.currentThread.turns) ? state.currentThread.turns : [];
-  for (let index = turns.length - 1; index >= 0; index -= 1) {
-    const turn = turns[index];
-    if (turnSubagentItems(turn).length) return turn;
-  }
-  return preferred;
+  const live = currentLiveTurn();
+  if (turnSubagentItems(live).length) return live;
+  const latest = latestTurn();
+  return activeSubagentItems(latest).length ? latest : null;
 }
 
 function currentSubagentItems() {
-  return turnSubagentItems(currentSubagentTurn());
+  const turn = currentSubagentTurn();
+  if (turn && currentLiveTurn() === turn) return turnSubagentItems(turn);
+  return activeSubagentItems(turn);
 }
 
 function subagentStatusKind(status) {
   const text = statusText(status).toLowerCase();
   if (/fail|error|denied|reject|cancel|interrupt|stop/.test(text)) return "failed";
-  if (/complete|success|succeeded|done|finished/.test(text)) return "completed";
+  if (/complete|success|succeeded|done|finished|closed/.test(text)) return "completed";
   if (/queue|pending|waiting|wait/.test(text)) return "queued";
-  if (/running|active|started|processing|inprogress|in_progress|in-progress|working/.test(text)) return "running";
+  if (/running|active|started|processing|inprogress|in_progress|in-progress|working|open|spawned|starting/.test(text)) return "running";
   return "unknown";
+}
+
+function isActiveSubagentItem(item) {
+  const kind = subagentStatusKind(item && item.status);
+  return kind === "running" || kind === "queued";
+}
+
+function currentSubagentStatusKind(item, turn) {
+  const kind = subagentStatusKind(item && item.status);
+  if (turn && currentLiveTurn() === turn && (kind === "completed" || kind === "unknown")) return "running";
+  return kind;
 }
 
 function subagentStatusLabel(kind) {
@@ -3289,10 +3430,10 @@ function subagentSwipeAvailable() {
 }
 
 function renderSubagentPanel() {
+  const turn = currentSubagentTurn();
   const items = currentSubagentItems();
   const rows = items.map((item, index) => {
-    const status = statusText(item.status) || "unknown";
-    const kind = subagentStatusKind(status);
+    const kind = currentSubagentStatusKind(item, turn);
     const label = collabAgentNameText(item)
       || collabAgentThreadText(item)
       || (item.tool === "spawnAgent" ? "Subagent" : item.tool || item.name || `Subagent ${index + 1}`);
@@ -3311,12 +3452,12 @@ function renderSubagentPanel() {
       <div class="subagent-status-meta">${escapeHtml(meta)}</div>
     </article>`;
   }).join("");
-  const empty = items.length ? "" : `<div class="subagent-empty">当前线程暂未发现 Subagent 调用。</div>`;
+  const empty = items.length ? "" : `<div class="subagent-empty">当前线程暂无正在进行的 Subagent。</div>`;
   return `<div class="subagent-status-window">
     <div class="subagent-status-header">
       <div>
         <div class="subagent-status-heading">Subagent 状态</div>
-        <div class="subagent-status-summary">当前线程 · ${items.length.toLocaleString()} 个</div>
+        <div class="subagent-status-summary">当前进行中 · ${items.length.toLocaleString()} 个</div>
       </div>
       <button class="subagent-window-close" type="button" data-subagent-panel-close aria-label="关闭 Subagent 状态">×</button>
     </div>
@@ -6634,6 +6775,7 @@ function wireUi() {
   $("refreshThreads").addEventListener("click", () => loadThreads().catch(showError));
   $("pushNotifications").addEventListener("click", () => handlePushButtonClick().catch(showError));
   if ($("appUpdateStatus")) $("appUpdateStatus").addEventListener("click", () => handleAppUpdateClick().catch(showError));
+  if ($("sharedRestartButton")) $("sharedRestartButton").addEventListener("click", () => handleSharedRestartClick().catch(showError));
   const settingsPanel = $("themeSettingsPanel");
   if (settingsPanel) settingsPanel.addEventListener("click", handleFontSizeChoice);
   const runtimeControls = [
@@ -6903,6 +7045,7 @@ async function start() {
     branch: config.update && config.update.branch || "main",
   };
   renderAppUpdateStatus();
+  renderSharedRestartButton();
   renderComposerSettings();
   rememberRateLimits(config.rateLimits || null, config.rateLimitsByModel || null);
   updatePushButton();

@@ -4,9 +4,12 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const { spawn, spawnSync } = require("node:child_process");
+const { spawn } = require("node:child_process");
 const net = require("node:net");
 const webPush = require("web-push");
+const { shouldTrackTurnForWebPush } = require("./adapters/push-notification-service");
+const { createSharedChainRestartService } = require("./adapters/shared-chain-restart-service");
+const { runSqliteJson } = require("./adapters/sqlite-cli");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -31,9 +34,17 @@ const APP_UPDATE_CHECK_TIMEOUT_MS = Math.max(1000, Number(process.env.CODEX_MOBI
 const APP_UPDATE_APPLY_TIMEOUT_MS = Math.max(5000, Number(process.env.CODEX_MOBILE_UPDATE_APPLY_TIMEOUT_MS || "120000"));
 const APP_UPDATE_RESTART_DELAY_MS = Math.max(500, Number(process.env.CODEX_MOBILE_UPDATE_RESTART_DELAY_MS || "1200"));
 const APP_UPDATE_CACHE_MS = Math.max(30_000, Number(process.env.CODEX_MOBILE_UPDATE_CACHE_MS || "900000"));
+const SHARED_CHAIN_RESTART_TASK_NAME = process.env.CODEX_MOBILE_RESTART_TASK_NAME || "Codex Mobile Web";
+const SHARED_CHAIN_RESTART_DELAY_MS = Math.max(500, Number(process.env.CODEX_MOBILE_SHARED_CHAIN_RESTART_DELAY_MS || "900"));
 const DISABLE_AUTH = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_DISABLE_AUTH || "");
 const AUTH_KEY_FILE = process.env.CODEX_MOBILE_KEY_FILE || path.join(RUNTIME_ROOT, "access_key");
 const AUTH_KEY = DISABLE_AUTH ? "" : loadAuthKey();
+const sharedChainRestartService = createSharedChainRestartService({
+  workspacePath: APP_ROOT,
+  userProfilePath: USER_HOME,
+  taskName: SHARED_CHAIN_RESTART_TASK_NAME,
+  port: PORT,
+});
 const PUSH_VAPID_FILE = process.env.CODEX_MOBILE_PUSH_VAPID_FILE || path.join(RUNTIME_ROOT, "web-push-vapid.json");
 const PUSH_SUBSCRIPTIONS_FILE = process.env.CODEX_MOBILE_PUSH_SUBSCRIPTIONS_FILE || path.join(RUNTIME_ROOT, "web-push-subscriptions.json");
 const DEFAULT_PUSH_SUBJECT = "mailto:codex-mobile-web@example.com";
@@ -138,6 +149,7 @@ let pushSubscriptionsCache = null;
 const recentMessageSubmissions = new Map();
 const pushObservedTurns = new Map();
 const pushSentTurns = new Map();
+const pushThreadClassCache = new Map();
 const SERVER_REQUEST_METHODS = new Set([
   "item/commandExecution/requestApproval",
   "item/fileChange/requestApproval",
@@ -812,6 +824,14 @@ function isBackupRolloutPath(value) {
   return /\.jsonl\.(bak|backup|old)(?:\b|[-_.])/i.test(String(value || ""));
 }
 
+function isSubagentThreadSummary(thread) {
+  return Boolean(thread && (
+    thread.isSpawnedChildThread
+    || String(thread.agentNickname || thread.agent_nickname || "").trim()
+    || String(thread.agentRole || thread.agent_role || "").trim()
+  ));
+}
+
 function archivedSessionThreadIds() {
   try {
     return new Set(fs.readdirSync(ARCHIVED_SESSIONS_DIR)
@@ -830,6 +850,7 @@ function isHiddenThread(thread, visibility = null) {
   const location = String(thread.path || thread.rolloutPath || thread.rollout_path || "").toLowerCase();
   if (thread.archived || thread.archivedAt || thread.archived_at || thread.isArchived) return true;
   if (thread.deleted || thread.deletedAt || thread.deleted_at || thread.isDeleted || thread.removed || thread.removedAt) return true;
+  if (isSubagentThreadSummary(thread)) return true;
   if (/archived|deleted|removed/.test(status)) return true;
   if (/[/\\](archived|deleted|trash|removed)[_-]?sessions[/\\]/.test(location)) return true;
   if (isBackupRolloutPath(location)) return true;
@@ -860,19 +881,15 @@ function mergeThreadStateFromStateDb(threads) {
   if (!ids.length) return threads;
   const inClause = ids.map((id) => sqlString(id)).join(", ");
   const query = [
-    "select id,archived,archived_at,rollout_path,model,reasoning_effort",
+    "select id,archived,archived_at,rollout_path,model,reasoning_effort,agent_nickname,agent_role,",
+    "exists(select 1 from thread_spawn_edges where child_thread_id=threads.id) as is_spawned_child",
     "from threads",
     `where id in (${inClause});`,
   ].join(" ");
   try {
-    const result = spawnSync("sqlite3", ["-json", STATE_DB, query], {
-      encoding: "utf8",
-      timeout: 5000,
-      windowsHide: true,
-      maxBuffer: 1024 * 1024,
-    });
-    if (result.error || result.status !== 0) return threads;
-    const rows = JSON.parse(result.stdout || "[]");
+    const result = runSqliteJson(STATE_DB, query, { timeoutMs: 5000, maxBuffer: 1024 * 1024, userHome: USER_HOME });
+    if (!result.ok) return threads;
+    const rows = result.rows;
     if (!Array.isArray(rows) || !rows.length) return threads;
     const stateById = new Map();
     const archivedIds = archivedSessionThreadIds();
@@ -887,6 +904,9 @@ function mergeThreadStateFromStateDb(threads) {
         archivedAt: row.archived_at || null,
         model: row.model || null,
         effort: row.reasoning_effort || null,
+        agentNickname: row.agent_nickname || null,
+        agentRole: row.agent_role || null,
+        isSpawnedChildThread: Boolean(Number(row.is_spawned_child || 0)),
       });
     }
     return threads.map((thread) => {
@@ -896,6 +916,9 @@ function mergeThreadStateFromStateDb(threads) {
       const next = Object.assign({}, thread);
       if (state.model) next.model = state.model;
       if (state.effort) next.effort = state.effort;
+      if (state.agentNickname) next.agentNickname = state.agentNickname;
+      if (state.agentRole) next.agentRole = state.agentRole;
+      if (state.isSpawnedChildThread) next.isSpawnedChildThread = true;
       if (state.archived) {
         next.archived = true;
         next.archivedAt = state.archivedAt || thread.archivedAt || thread.archived_at || null;
@@ -2235,6 +2258,48 @@ function prunePushSentTurns(now = Date.now()) {
   }
 }
 
+function prunePushThreadClassCache(now = Date.now()) {
+  for (const [threadId, entry] of pushThreadClassCache) {
+    const maxAgeMs = entry && entry.value === "unknown" ? 5000 : 24 * 60 * 60 * 1000;
+    if (!entry || now - Number(entry.cachedAt || 0) > maxAgeMs) pushThreadClassCache.delete(threadId);
+  }
+  while (pushThreadClassCache.size > 2000) {
+    const firstKey = pushThreadClassCache.keys().next().value;
+    if (!firstKey) break;
+    pushThreadClassCache.delete(firstKey);
+  }
+}
+
+function classifyWebPushThreadId(threadId) {
+  const id = String(threadId || "").trim();
+  if (!id || !fs.existsSync(STATE_DB)) return "unknown";
+  const now = Date.now();
+  const cached = pushThreadClassCache.get(id);
+  if (cached) {
+    const maxAgeMs = cached.value === "unknown" ? 5000 : 24 * 60 * 60 * 1000;
+    if (now - Number(cached.cachedAt || 0) <= maxAgeMs) return cached.value;
+  }
+  const query = [
+    "select",
+    "exists(select 1 from threads where id=t.id) as known,",
+    "exists(select 1 from thread_spawn_edges where child_thread_id=t.id) as is_child,",
+    "exists(select 1 from threads where id=t.id and (coalesce(agent_nickname,'') <> '' or coalesce(agent_role,'') <> '')) as has_agent_metadata",
+    `from (select ${sqlString(id)} as id) t;`,
+  ].join(" ");
+  let value = "unknown";
+  try {
+    const result = runSqliteJson(STATE_DB, query, { timeoutMs: 3000, maxBuffer: 1024 * 1024, userHome: USER_HOME });
+    const row = result.ok && Array.isArray(result.rows) ? result.rows[0] : null;
+    if (row && (Number(row.is_child || 0) || Number(row.has_agent_metadata || 0))) value = "subagent";
+    else if (row && Number(row.known || 0)) value = "main";
+  } catch (_) {
+    value = "unknown";
+  }
+  pushThreadClassCache.set(id, { value, cachedAt: now });
+  prunePushThreadClassCache(now);
+  return value;
+}
+
 function prunePushObservedTurns(now = Date.now()) {
   const maxAgeMs = 24 * 60 * 60 * 1000;
   for (const [turnId, meta] of pushObservedTurns) {
@@ -2249,6 +2314,12 @@ function prunePushObservedTurns(now = Date.now()) {
 
 function pushTurnId(params) {
   return String((params && params.turn && params.turn.id) || (params && params.turnId) || "");
+}
+
+function threadIdFromRolloutPath(value) {
+  const text = String(value || "");
+  const match = /rollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl/i.exec(text);
+  return match ? match[1] : "";
 }
 
 function timestampToMs(value) {
@@ -2313,13 +2384,36 @@ function pushTimestamp(ms = Date.now()) {
 function pushThreadId(params) {
   return String((params && params.threadId)
     || (params && params.conversationId)
+    || (params && params.sessionId)
     || (params && params.thread_id)
     || (params && params.conversation_id)
+    || (params && params.session_id)
     || (params && params.thread && params.thread.id)
+    || (params && params.thread && params.thread.threadId)
+    || (params && params.thread && params.thread.conversationId)
+    || (params && params.thread && params.thread.sessionId)
+    || (params && params.thread && params.thread.thread_id)
+    || (params && params.thread && params.thread.conversation_id)
+    || (params && params.thread && params.thread.session_id)
     || (params && params.turn && params.turn.threadId)
     || (params && params.turn && params.turn.conversationId)
+    || (params && params.turn && params.turn.sessionId)
     || (params && params.turn && params.turn.thread_id)
     || (params && params.turn && params.turn.conversation_id)
+    || (params && params.turn && params.turn.session_id)
+    || (params && params.turn && params.turn.thread && params.turn.thread.id)
+    || (params && params.turn && params.turn.thread && params.turn.thread.threadId)
+    || (params && params.turn && params.turn.thread && params.turn.thread.conversationId)
+    || (params && params.turn && params.turn.thread && params.turn.thread.sessionId)
+    || (params && params.turn && params.turn.thread && params.turn.thread.thread_id)
+    || (params && params.turn && params.turn.thread && params.turn.thread.conversation_id)
+    || (params && params.turn && params.turn.thread && params.turn.thread.session_id)
+    || threadIdFromRolloutPath(params && params.rolloutPath)
+    || threadIdFromRolloutPath(params && params.rollout_path)
+    || threadIdFromRolloutPath(params && params.thread && params.thread.rolloutPath)
+    || threadIdFromRolloutPath(params && params.thread && params.thread.rollout_path)
+    || threadIdFromRolloutPath(params && params.turn && params.turn.rolloutPath)
+    || threadIdFromRolloutPath(params && params.turn && params.turn.rollout_path)
     || "");
 }
 
@@ -2354,6 +2448,29 @@ function pushThreadTitle(params, threadId = "") {
     || compactOneLine(shortIdentifier(id) || "Codex Mobile Web");
 }
 
+function pushThreadAgentMetadataFromParams(params) {
+  const nickname = lastString(
+    params && params.agentNickname,
+    params && params.agent_nickname,
+    params && params.thread && params.thread.agentNickname,
+    params && params.thread && params.thread.agent_nickname,
+    params && params.turn && params.turn.agentNickname,
+    params && params.turn && params.turn.agent_nickname,
+  );
+  const role = lastString(
+    params && params.agentRole,
+    params && params.agent_role,
+    params && params.thread && params.thread.agentRole,
+    params && params.thread && params.thread.agent_role,
+    params && params.turn && params.turn.agentRole,
+    params && params.turn && params.turn.agent_role,
+  );
+  return {
+    agentNickname: nickname,
+    agentRole: role,
+  };
+}
+
 function pushTurnMeta(params, existing = null) {
   const turnId = pushTurnId(params);
   const existingThreadId = String((existing && existing.threadId) || "");
@@ -2362,14 +2479,23 @@ function pushTurnMeta(params, existing = null) {
   const existingTitle = existingThreadId && existingThreadId === threadId
     ? String((existing && existing.threadTitle) || "")
     : "";
+  const agentMetadata = pushThreadAgentMetadataFromParams(params);
   return {
     turnId,
     threadId,
     threadTitle: existingTitle || pushThreadTitle(params, threadId),
+    agentNickname: (existing && existing.agentNickname) || agentMetadata.agentNickname,
+    agentRole: (existing && existing.agentRole) || agentMetadata.agentRole,
     observedAt: (existing && existing.observedAt) || Date.now(),
     startedAt: (existing && existing.startedAt) || turnTimestampMs(params, "startedAt") || turnTimestampMs(params, "createdAt") || 0,
     completedAt: turnTimestampMs(params, "completedAt") || turnTimestampMs(params, "updatedAt") || 0,
   };
+}
+
+function logWebPushDecision(event, decision, meta) {
+  if (decision && decision.track && !decision.reason) return;
+  const reason = String((decision && decision.reason) || "tracked");
+  console.log(`[web push] ${event} ${reason} turn=${shortIdentifier(meta && meta.turnId)} thread=${shortIdentifier(meta && meta.threadId)}`);
 }
 
 function webPushFailureDetails(err) {
@@ -2425,7 +2551,16 @@ function maybeSendTurnCompletedPush(method, params) {
     const id = pushTurnId(params);
     if (isOldPushTurnEvent(params, ["startedAt", "createdAt"])) return;
     prunePushObservedTurns();
-    if (id) pushObservedTurns.set(id, pushTurnMeta(params));
+    if (id) {
+      const meta = pushTurnMeta(params);
+      const decision = shouldTrackTurnForWebPush(meta, {
+        allowMissingThreadId: true,
+        classifyThread: classifyWebPushThreadId,
+      });
+      logWebPushDecision("turn/started", decision, meta);
+      if (decision.track) pushObservedTurns.set(id, meta);
+      else pushObservedTurns.delete(id);
+    }
     return;
   }
   if (method !== "turn/completed") return;
@@ -2434,6 +2569,13 @@ function maybeSendTurnCompletedPush(method, params) {
   if (isOldPushTurnEvent(params, ["completedAt", "updatedAt"])) return;
   const meta = pushTurnMeta(params, pushObservedTurns.get(turnId));
   pushObservedTurns.delete(turnId);
+  const decision = shouldTrackTurnForWebPush(meta, {
+    classifyThread: classifyWebPushThreadId,
+  });
+  if (!decision.track) {
+    logWebPushDecision("turn/completed", decision, meta);
+    return;
+  }
   prunePushObservedTurns();
   prunePushSentTurns();
   const key = `${meta.threadId || ""}:${turnId}`;
@@ -3332,6 +3474,9 @@ function rowToFallbackThread(row) {
     status: { type: "notLoaded" },
     model: row.model || null,
     effort: row.reasoning_effort || null,
+    agentNickname: row.agent_nickname || null,
+    agentRole: row.agent_role || null,
+    isSpawnedChildThread: Boolean(Number(row.is_spawned_child || 0)),
     sandboxPolicy: row.sandbox_policy || null,
     approvalPolicy: row.approval_mode || null,
     mobileFallback: true,
@@ -4447,20 +4592,16 @@ function readStartedThread(threadId) {
 function readStateDbThread(threadId) {
   if (!fs.existsSync(STATE_DB) || !threadId) return null;
   const query = [
-    "select id,title,first_user_message,cwd,rollout_path,archived,archived_at,updated_at,model,reasoning_effort,sandbox_policy,approval_mode",
+    "select id,title,first_user_message,cwd,rollout_path,archived,archived_at,updated_at,model,reasoning_effort,sandbox_policy,approval_mode,agent_nickname,agent_role,",
+    "exists(select 1 from thread_spawn_edges where child_thread_id=threads.id) as is_spawned_child",
     "from threads",
     `where id=${sqlString(threadId)}`,
     "limit 1;",
   ].join(" ");
   try {
-    const result = spawnSync("sqlite3", ["-json", STATE_DB, query], {
-      encoding: "utf8",
-      timeout: 5000,
-      windowsHide: true,
-      maxBuffer: 1024 * 1024,
-    });
-    if (result.error || result.status !== 0) return null;
-    const rows = JSON.parse(result.stdout || "[]");
+    const result = runSqliteJson(STATE_DB, query, { timeoutMs: 5000, maxBuffer: 1024 * 1024, userHome: USER_HOME });
+    if (!result.ok) return null;
+    const rows = result.rows;
     return rows[0] ? rowToFallbackThread(rows[0]) : null;
   } catch (_) {
     return null;
@@ -4628,20 +4769,16 @@ function readStateDbFallback(limit = 80, filters = {}) {
   if (!fs.existsSync(STATE_DB)) return [];
   const rowLimit = Math.max(limit * 5, 200);
   const query = [
-    "select id,title,first_user_message,cwd,rollout_path,archived,archived_at,updated_at,model,reasoning_effort,sandbox_policy,approval_mode",
+    "select id,title,first_user_message,cwd,rollout_path,archived,archived_at,updated_at,model,reasoning_effort,sandbox_policy,approval_mode,agent_nickname,agent_role,",
+    "exists(select 1 from thread_spawn_edges where child_thread_id=threads.id) as is_spawned_child",
     "from threads",
     "order by updated_at desc",
     `limit ${Math.min(1000, rowLimit)};`,
   ].join(" ");
   try {
-    const result = spawnSync("sqlite3", ["-json", STATE_DB, query], {
-      encoding: "utf8",
-      timeout: 5000,
-      windowsHide: true,
-      maxBuffer: 5 * 1024 * 1024,
-    });
-    if (result.error || result.status !== 0) return [];
-    const rows = JSON.parse(result.stdout || "[]");
+    const result = runSqliteJson(STATE_DB, query, { timeoutMs: 5000, maxBuffer: 5 * 1024 * 1024, userHome: USER_HOME });
+    if (!result.ok) return [];
+    const rows = result.rows;
     return filterFallbackThreads(rows.map(rowToFallbackThread), filters).slice(0, limit);
   } catch (_) {
     return [];
@@ -4795,6 +4932,15 @@ async function handleApi(req, res) {
       if (result && result.updated) scheduleAppRestart("app update applied");
     } catch (err) {
       sendJson(res, err.statusCode || 500, { error: safeAppUpdateError(err) });
+    }
+    return;
+  }
+  if (url.pathname === "/api/restart/shared-chain" && req.method === "POST") {
+    try {
+      const result = sharedChainRestartService.restart({ delayMs: SHARED_CHAIN_RESTART_DELAY_MS });
+      sendJson(res, 202, result);
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { error: err.message || String(err) });
     }
     return;
   }
