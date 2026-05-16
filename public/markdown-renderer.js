@@ -118,9 +118,13 @@
     const tag = ordered ? "ol" : "ul";
     const itemPattern = ordered ? /^\s*(\d+)[.)]\s+(.+)$/ : /^\s*[-*+]\s+(.+)$/;
     let start = 1;
+    let hasStart = false;
     const items = lines.map((line) => {
       const match = itemPattern.exec(line);
-      if (ordered && match) start = Number(match[1]) || start;
+      if (ordered && match && !hasStart) {
+        start = Number(match[1]) || start;
+        hasStart = true;
+      }
       const text = match ? match[ordered ? 2 : 1] : line.trim();
       return `<li>${renderInlineMarkdown(text)}</li>`;
     });
