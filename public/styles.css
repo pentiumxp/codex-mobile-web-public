@@ -1977,6 +1977,12 @@ html.visual-recovering body::before {
   text-overflow: clip;
 }
 
+.item-timestamp {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .item-body {
   min-width: 0;
   padding: 12px;
