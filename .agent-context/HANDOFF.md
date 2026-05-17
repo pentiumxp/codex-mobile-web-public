@@ -3336,3 +3336,34 @@
   - Public README uses a public-safe manual restart description that avoids naming unrelated local private services while preserving the restart scope.
   - Public validation passed: `npm.cmd test` 81/81, `npm.cmd run check`, `npm.cmd run check:macos`, `git diff --check`, `git diff --cached --check`, and staged diff privacy scan.
   - Public pushed commit: `6aea3ab 发布移动端重启入口与 Sub Agent 推送过滤修正`.
+
+## 2026-05-17 iOS/iPad Portrait Half-Height Viewport Fix
+
+- User report:
+  - iPhone screenshot showed the active conversation/composer occupying only the upper half of the screen, with a large blank area below.
+  - The same "only half" layout also occurred on iPad portrait and had appeared several times.
+- Diagnosis:
+  - Existing `viewportState()` treated `visualViewport.height + offsetTop < layout - 120` as a keyboard shrink signal by itself.
+  - On iOS/PWA, `visualViewport` can remain or report a stale half-height value after the keyboard is no longer active. That made `updateViewportVars()` keep writing a small pixel `--app-height`, pinning the app grid to the upper half of the screen.
+- Code changes:
+  - Added `public/viewport-metrics.js` as a small testable frontend module.
+  - `viewport-metrics.measureViewport()` only allows the shrunk visual viewport to override app height when an editable input, textarea, or contenteditable element owns the keyboard.
+  - Without an active text input, stale half-height `visualViewport` values now fall back to the full layout viewport.
+  - `public/app.js` delegates viewport calculation to `window.CodexViewportMetrics`.
+  - `public/index.html`, `public/sw.js`, and page refresh shell assets now include `/viewport-metrics.js`.
+  - `server.js` app-shell build hashing now includes the frontend support modules, including `viewport-metrics.js`.
+  - PWA shell build/cache bumped to `codex-mobile-shell-v61` / `0.1.9|codex-mobile-shell-v61`.
+- Validation:
+  - `node --test test\viewport-metrics.test.js test\mobile-viewport.test.js` passed.
+  - `npm.cmd test` passed: 85/85.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+- Runtime:
+  - `GET http://127.0.0.1:8787/api/public-config` returns `clientBuildId: 0.1.9|codex-mobile-shell-v61` and `shellCacheName: codex-mobile-shell-v61`, so existing clients should receive the page refresh prompt and fetch the new shell assets.
+- Status:
+  - User requested commit/push including public on 2026-05-18.
+  - Public README gained a Chinese `2026-05-18 Public 发布说明` section describing the iOS/iPad portrait half-height fix, viewport-metrics module, app-shell cache `v61`, and PWA refresh/reopen requirement.
+  - Public validation passed: `npm.cmd test` 85/85, `npm.cmd run check`, `npm.cmd run check:macos`, `git diff --check`, `git diff --cached --check`, and staged diff privacy scan.
+  - Public pushed commit: `82346f7 修正 iOS 与 iPad 竖屏半屏显示问题`.
+  - Private workspace still needs the final commit/push for the same fix plus this handoff update.

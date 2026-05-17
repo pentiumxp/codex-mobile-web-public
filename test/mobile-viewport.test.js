@@ -9,6 +9,7 @@ const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
 const swJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "sw.js"), "utf8");
+const viewportMetricsJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "viewport-metrics.js"), "utf8");
 
 test("mobile viewport and early guards disable page zoom", () => {
   assert.match(indexHtml, /name="viewport" content="[^"]*maximum-scale=1/);
@@ -18,10 +19,11 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(indexHtml, /addEventListener\("gesturechange", preventZoom, \{ passive: false \}\)/);
   assert.match(indexHtml, /addEventListener\("dblclick", preventZoom, \{ passive: false \}\)/);
   assert.match(indexHtml, /lastTouchEndAt < 320/);
-  assert.match(appJs, /const visualOffsetTop = window\.visualViewport && Number\(window\.visualViewport\.offsetTop\)/);
-  assert.match(appJs, /const visualBottom = visual \? visual \+ Math\.max\(0, visualOffsetTop \|\| 0\) : 0/);
-  assert.match(appJs, /const keyboardShrunk = Boolean\(visualBottom && layout && visualBottom < layout - 120\)/);
-  assert.match(appJs, /keyboardShrunk \? visualBottom : Math\.max\(visualBottom \|\| 0, layout \|\| 0\)/);
+  assert.match(indexHtml, /<script src="\/viewport-metrics\.js"><\/script>/);
+  assert.match(appJs, /const viewportMetrics = window\.CodexViewportMetrics/);
+  assert.match(appJs, /viewportMetrics\.measureViewport\(\{/);
+  assert.match(viewportMetricsJs, /const keyboardShrunk = keyboardCandidate && keyboardInputActive/);
+  assert.match(viewportMetricsJs, /const height = keyboardShrunk \? visualBottom : Math\.max\(visualBottom \|\| 0, layout \|\| 0\)/);
   assert.match(appJs, /if \(viewport\.keyboardShrunk\) \{[\s\S]*--app-height/);
   assert.match(appJs, /document\.documentElement\.style\.removeProperty\("--app-height"\)/);
   assert.match(appJs, /document\.documentElement\.classList\.toggle\("keyboard-open", viewport\.keyboardShrunk\)/);
@@ -33,12 +35,14 @@ test("mobile viewport and early guards disable page zoom", () => {
 });
 
 test("public app shell cache advances after frontend visibility changes", () => {
-  assert.match(swJs, /codex-mobile-shell-v60/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.9\|codex-mobile-shell-v60"/);
+  assert.match(swJs, /codex-mobile-shell-v61/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.9\|codex-mobile-shell-v61"/);
   assert.match(swJs, /"\/api-client\.js"/);
   assert.match(swJs, /"\/runtime-settings\.js"/);
   assert.match(swJs, /"\/draft-store\.js"/);
   assert.match(swJs, /"\/markdown-renderer\.js"/);
+  assert.match(swJs, /"\/viewport-metrics\.js"/);
+  assert.match(appJs, /"\/viewport-metrics\.js"/);
   assert.match(appJs, /navigator\.serviceWorker\.register\("\/sw\.js"\)/);
   assert.match(appJs, /state\.serviceWorkerRegistration\.update\(\)\.catch/);
 });
