@@ -31,6 +31,8 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(appJs, /"\/runtime-settings\.js"/);
   assert.match(appJs, /"\/draft-store\.js"/);
   assert.match(appJs, /"\/markdown-renderer\.js"/);
+  assert.match(appJs, /"\/viewport-metrics\.js"/);
+  assert.match(serverJs, /"viewport-metrics\.js"/);
   assert.match(appJs, /function checkPageRefreshAvailability\(/);
   assert.match(appJs, /function refreshPageForNewBuild\(/);
   assert.match(appJs, /function preparePageShellAssets\(config, options = \{\}\)/);

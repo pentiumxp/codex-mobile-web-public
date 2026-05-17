@@ -136,7 +136,7 @@ const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
 const MAX_RETAINED_OPERATIONS_PER_TURN = 1;
-const CLIENT_BUILD_ID = "0.1.9|codex-mobile-shell-v60";
+const CLIENT_BUILD_ID = "0.1.9|codex-mobile-shell-v61";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -147,6 +147,7 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/runtime-settings.js",
   "/draft-store.js",
   "/markdown-renderer.js",
+  "/viewport-metrics.js",
   "/app.js",
   "/manifest.json",
   "/sw.js",
@@ -192,6 +193,7 @@ const apiClient = window.CodexApiClient.createApiClient({
   },
 });
 const runtimeSettings = window.CodexRuntimeSettings;
+const viewportMetrics = window.CodexViewportMetrics;
 const draftStore = window.CodexDraftStore.createDraftStore({
   storage: localStorage,
   indexedDB: window.indexedDB,
@@ -276,18 +278,13 @@ function isMenuOverlayMode() {
 }
 
 function viewportState() {
-  const visual = window.visualViewport && Number(window.visualViewport.height);
-  const visualOffsetTop = window.visualViewport && Number(window.visualViewport.offsetTop);
-  const visualBottom = visual ? visual + Math.max(0, visualOffsetTop || 0) : 0;
-  const inner = Number(window.innerHeight);
-  const client = document.documentElement && Number(document.documentElement.clientHeight);
-  const layout = Math.max(inner || 0, client || 0);
-  const keyboardShrunk = Boolean(visualBottom && layout && visualBottom < layout - 120);
-  const height = keyboardShrunk ? visualBottom : Math.max(visualBottom || 0, layout || 0);
-  return {
-    height: Math.max(320, Math.round(height)),
-    keyboardShrunk,
-  };
+  return viewportMetrics.measureViewport({
+    visualHeight: window.visualViewport && window.visualViewport.height,
+    visualOffsetTop: window.visualViewport && window.visualViewport.offsetTop,
+    innerHeight: window.innerHeight,
+    clientHeight: document.documentElement && document.documentElement.clientHeight,
+    activeElement: document.activeElement,
+  });
 }
 
 function viewportHeight() {

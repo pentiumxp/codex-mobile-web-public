@@ -205,7 +205,18 @@ function readServiceWorkerCacheName() {
 
 function appShellBuildId() {
   const parts = [`app=${APP_VERSION}`, `sw=${readServiceWorkerCacheName()}`];
-  for (const file of ["index.html", "app.js", "styles.css", "sw.js", "manifest.json"]) {
+  for (const file of [
+    "index.html",
+    "styles.css",
+    "api-client.js",
+    "runtime-settings.js",
+    "draft-store.js",
+    "markdown-renderer.js",
+    "viewport-metrics.js",
+    "app.js",
+    "sw.js",
+    "manifest.json",
+  ]) {
     try {
       const stat = fs.statSync(path.join(PUBLIC_ROOT, file));
       parts.push(`${file}:${stat.size}:${Math.trunc(stat.mtimeMs)}`);
