@@ -83,6 +83,7 @@ const state = {
   serverAssetBuildId: "",
   pageRefreshAvailable: false,
   pageRefreshBuildId: "",
+  pageRefreshReason: "",
   pageRefreshPreparedConfig: null,
   pageRefreshBusy: false,
   pageRefreshReloading: false,
@@ -1175,10 +1176,16 @@ async function handleSharedRestartClick() {
     });
     state.sharedRestarting = true;
     state.sharedRestartBusy = false;
+    state.pageRefreshAvailable = true;
+    state.pageRefreshReason = "reconnect";
+    state.pageRefreshPreparedConfig = null;
     const connection = $("connectionState");
     if (connection) connection.textContent = "Restarting";
     renderSharedRestartButton();
-    window.setTimeout(() => window.location.reload(), Math.max(2500, Number(result.restartInMs || 900) + 3500));
+    renderPageRefreshPrompt();
+    window.setTimeout(() => {
+      refreshPageForNewBuild().catch(showError);
+    }, Math.max(1800, Number(result.restartInMs || 900) + 1200));
   } catch (err) {
     state.sharedRestartBusy = false;
     renderSharedRestartButton();
@@ -1275,12 +1282,27 @@ function initializePageBuildState(config) {
 function renderPageRefreshPrompt() {
   const el = $("pageRefreshPrompt");
   if (!el) return;
+  const reconnecting = state.pageRefreshReason === "reconnect";
   el.classList.toggle("hidden", !state.pageRefreshAvailable && !state.pageRefreshReloading);
   el.disabled = state.pageRefreshReloading;
-  el.textContent = state.pageRefreshReloading ? "正在刷新页面…" : "页面有新版本，点击刷新";
-  el.title = state.pageRefreshBuildId
+  if (state.pageRefreshReloading) {
+    el.textContent = reconnecting ? "正在刷新并重连…" : "正在刷新页面…";
+  } else {
+    el.textContent = reconnecting ? "服务重启中，点击刷新并重连" : "页面有新版本，点击刷新";
+  }
+  el.title = reconnecting
+    ? "Mobile Web 服务恢复后会刷新页面并重新连接"
+    : state.pageRefreshBuildId
     ? `服务端版本已变为 ${state.pageRefreshBuildId}，点击刷新页面`
     : "服务端页面资源已更新，点击刷新页面";
+}
+
+function showReconnectRefreshPrompt() {
+  if (state.pageRefreshReloading) return;
+  state.pageRefreshAvailable = true;
+  state.pageRefreshReason = "reconnect";
+  state.pageRefreshPreparedConfig = null;
+  renderPageRefreshPrompt();
 }
 
 async function checkPageRefreshAvailability(options = {}) {
@@ -1305,6 +1327,7 @@ async function checkPageRefreshAvailability(options = {}) {
     if (clientChanged || assetsChanged) {
       await preparePageShellAssets(config, { populateCache: true });
       state.pageRefreshAvailable = true;
+      state.pageRefreshReason = "build";
       state.pageRefreshBuildId = nextBuildId;
       state.pageRefreshPreparedConfig = config;
       renderPageRefreshPrompt();
@@ -1330,6 +1353,21 @@ function startPageRefreshChecks() {
   }, PAGE_REFRESH_CHECK_INTERVAL_MS);
 }
 
+async function waitForPageBuildConfig(timeoutMs = 18000) {
+  const startedAt = Date.now();
+  let lastError = null;
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const config = await fetchPageBuildConfig();
+      if (config) return config;
+    } catch (err) {
+      lastError = err;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 900));
+  }
+  throw lastError || new Error("Mobile Web is still unavailable");
+}
+
 async function refreshPageForNewBuild() {
   if (state.pageRefreshReloading) return;
   state.pageRefreshReloading = true;
@@ -1337,7 +1375,9 @@ async function refreshPageForNewBuild() {
   saveCurrentDraftNow();
   let config = state.pageRefreshPreparedConfig;
   try {
-    const latestConfig = await fetchPageBuildConfig();
+    const latestConfig = state.pageRefreshReason === "reconnect"
+      ? await waitForPageBuildConfig()
+      : await fetchPageBuildConfig();
     if (latestConfig) config = latestConfig;
     if (!config) throw new Error("page refresh build config unavailable");
     if (config) await preparePageShellAssets(config, { populateCache: true });
@@ -1348,9 +1388,12 @@ async function refreshPageForNewBuild() {
     await pruneOldShellCaches(String(config && config.shellCacheName || "").trim());
     window.location.reload();
   } catch (_) {
-    state.pageRefreshAvailable = false;
     state.pageRefreshReloading = false;
     state.pageRefreshPreparedConfig = null;
+    if (state.pageRefreshReason !== "reconnect") {
+      state.pageRefreshAvailable = false;
+      state.pageRefreshReason = "";
+    }
     renderPageRefreshPrompt();
     schedulePageRefreshCheck(5000, { force: true });
   }
@@ -5529,6 +5572,7 @@ function connectEvents() {
       if (state.events && state.events.readyState !== EventSource.OPEN && document.visibilityState !== "hidden") {
         markActivity("重连");
         updateConnectionState(null, "Reconnecting");
+        showReconnectRefreshPrompt();
       }
     }, 3000);
     clearTimeout(state.recoveryTimer);
@@ -5542,6 +5586,7 @@ function connectEvents() {
         await refreshCurrentThread();
         ensureEventConnection();
       } catch (err) {
+        showReconnectRefreshPrompt();
         showError(err);
       }
     }, 8000);
