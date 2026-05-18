@@ -8,9 +8,12 @@ START_PORT="${CODEX_MOBILE_START_PORT:-8789}"
 END_PORT="${CODEX_MOBILE_END_PORT:-8899}"
 RESERVED_PORTS="${CODEX_MOBILE_RESERVED_PORTS-8797}"
 CODEX_HOME_VALUE="${CODEX_HOME:-$HOME/.codex}"
+CODEX_EXE_VALUE="${CODEX_MOBILE_CODEX_EXE:-${CODEX_MUX_CODEX_EXE:-}}"
+NODE_EXE_VALUE="${CODEX_MOBILE_NODE_EXE:-${CODEX_MUX_NODE_EXE:-}}"
 RUNTIME_ROOT="${CODEX_MOBILE_RUNTIME_DIR:-$HOME/.codex-mobile-web}"
 LOG_DIR="${CODEX_MOBILE_LOG_DIR:-$RUNTIME_ROOT/logs}"
 PID_DIR="${CODEX_MOBILE_PID_DIR:-$RUNTIME_ROOT}"
+RESTART_DESKTOP=0
 FORCE_QUIT=1
 PRINT_ONLY=0
 
@@ -18,9 +21,11 @@ usage() {
   cat <<'EOF'
 Usage: ./start-codex-shared-mobile-macos.sh [options]
 
-Starts Codex Desktop through the shared mux launcher and starts Codex Mobile Web
-on an available port. This will quit the currently running Codex Desktop app by
-default so the mux can be inserted before Desktop starts its app-server.
+Starts or restarts Codex Mobile Web on an available port. By default this
+reuses the existing shared mux endpoint and does not quit Codex Desktop.
+
+Use --restart-desktop only when the Desktop shared mux injection itself needs
+to be refreshed. That mode may show a Codex quit confirmation dialog on the Mac.
 
 Options:
   --host <address>       Mobile Web bind address, default 0.0.0.0
@@ -30,10 +35,33 @@ Options:
   --reserved-ports <csv> Ports auto mode must skip, default 8797
   --no-reserved-ports    Let auto mode consider every port in the range
   --codex-home <path>    Codex state directory, default $HOME/.codex
-  --no-force-quit        Do not quit an already running Codex Desktop
+  --codex <path|name>    Codex CLI executable, default command -v codex
+  --node <path|name>     Node executable, default command -v node
+  --restart-desktop      Restart Codex Desktop through the shared mux launcher
+  --force-quit           Alias for --restart-desktop; quit Codex Desktop first
+  --no-force-quit        With --restart-desktop, do not ask Codex Desktop to quit
   --print-only           Print what would be used without starting anything
   -h, --help             Show this help
 EOF
+}
+
+resolve_command() {
+  local value="$1"
+  local label="$2"
+  if [[ -z "$value" ]]; then
+    value="$label"
+  fi
+  if [[ "$value" != */* ]]; then
+    local resolved
+    resolved="$(command -v "$value" || true)"
+    if [[ -n "$resolved" ]]; then
+      printf '%s\n' "$resolved"
+      return 0
+    fi
+    echo "$label command not found on PATH: $value" >&2
+    return 1
+  fi
+  printf '%s\n' "$value"
 }
 
 port_is_reserved() {
@@ -151,6 +179,24 @@ while [[ $# -gt 0 ]]; do
       CODEX_HOME_VALUE="${2:?--codex-home requires a value}"
       shift 2
       ;;
+    --codex)
+      CODEX_EXE_VALUE="${2:?--codex requires a value}"
+      shift 2
+      ;;
+    --node)
+      NODE_EXE_VALUE="${2:?--node requires a value}"
+      shift 2
+      ;;
+    --restart-desktop)
+      RESTART_DESKTOP=1
+      FORCE_QUIT=1
+      shift
+      ;;
+    --force-quit)
+      RESTART_DESKTOP=1
+      FORCE_QUIT=1
+      shift
+      ;;
     --no-force-quit)
       FORCE_QUIT=0
       shift
@@ -171,7 +217,16 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-CHOSEN_PORT="$(choose_port)"
+NODE_EXE_VALUE="$(resolve_command "$NODE_EXE_VALUE" node)"
+CODEX_EXE_VALUE="$(resolve_command "$CODEX_EXE_VALUE" codex)"
+
+for executable in "$NODE_EXE_VALUE" "$CODEX_EXE_VALUE"; do
+  if [[ "$executable" == */* && ! -x "$executable" ]]; then
+    echo "Executable not found or not executable: $executable" >&2
+    exit 1
+  fi
+done
+
 mkdir -p "$LOG_DIR" "$PID_DIR"
 
 DESKTOP_LOG="$LOG_DIR/codex-desktop-shared.log"
@@ -180,38 +235,64 @@ DESKTOP_PID_FILE="$PID_DIR/codex-desktop-shared.pid"
 MOBILE_PID_FILE="$PID_DIR/mobile-web.pid"
 ENDPOINT_FILE="$CODEX_HOME_VALUE/app-server-mux/endpoint.json"
 ACCESS_KEY_FILE="$RUNTIME_ROOT/access_key"
+if [[ -f "$ENDPOINT_FILE" ]]; then
+  MUX_ENDPOINT_STATUS="found"
+else
+  MUX_ENDPOINT_STATUS="missing"
+fi
+
+if [[ "$PRINT_ONLY" -eq 0 ]]; then
+  stop_previous_mobile_web
+fi
+
+CHOSEN_PORT="$(choose_port)"
 
 echo "Codex shared mobile launch plan:"
 echo "  Codex home: $CODEX_HOME_VALUE"
 echo "  Mobile Web: http://$HOST_ADDRESS:$CHOSEN_PORT"
+echo "  Desktop restart: $([[ "$RESTART_DESKTOP" -eq 1 ]] && echo yes || echo no)"
 echo "  Reserved ports: ${RESERVED_PORTS:-none}"
 echo "  Mux endpoint: $ENDPOINT_FILE"
-echo "  Desktop log: $DESKTOP_LOG"
+echo "  Mux endpoint status: $MUX_ENDPOINT_STATUS"
+echo "  Codex exe: $CODEX_EXE_VALUE"
+echo "  Node exe: $NODE_EXE_VALUE"
 echo "  Mobile Web log: $MOBILE_LOG"
+if [[ "$RESTART_DESKTOP" -eq 1 ]]; then
+  echo "  Desktop log: $DESKTOP_LOG"
+  if [[ "$FORCE_QUIT" -eq 1 ]]; then
+    echo "  Note: Codex Desktop may ask for quit confirmation on the Mac."
+  fi
+else
+  echo "  Desktop: unchanged; existing shared mux endpoint will be reused if available."
+fi
 
 if [[ "$PRINT_ONLY" -eq 1 ]]; then
   exit 0
 fi
 
-stop_previous_mobile_web
+if [[ "$RESTART_DESKTOP" -eq 1 ]]; then
+  desktop_args=(--codex-home "$CODEX_HOME_VALUE" --codex "$CODEX_EXE_VALUE" --node "$NODE_EXE_VALUE")
+  if [[ "$FORCE_QUIT" -eq 1 ]]; then
+    desktop_args+=(--force-quit)
+  fi
 
-desktop_args=(--codex-home "$CODEX_HOME_VALUE")
-if [[ "$FORCE_QUIT" -eq 1 ]]; then
-  desktop_args+=(--force-quit)
+  echo "Starting Codex Desktop through shared mux..."
+  (
+    cd "$SCRIPT_DIR"
+    ./start-codex-desktop-shared-macos.sh "${desktop_args[@]}"
+  ) >"$DESKTOP_LOG" 2>&1 &
+  echo $! > "$DESKTOP_PID_FILE"
+else
+  echo "Leaving Codex Desktop running; Mobile Web will reconnect to the existing shared mux when available."
 fi
-
-echo "Starting Codex Desktop through shared mux..."
-(
-  cd "$SCRIPT_DIR"
-  ./start-codex-desktop-shared-macos.sh "${desktop_args[@]}"
-) >"$DESKTOP_LOG" 2>&1 &
-echo $! > "$DESKTOP_PID_FILE"
 
 echo "Starting Mobile Web on port $CHOSEN_PORT..."
 CODEX_HOME="$CODEX_HOME_VALUE" CODEX_MOBILE_RUNTIME_DIR="$RUNTIME_ROOT" \
   "$SCRIPT_DIR/start-codex-mobile-web-macos.sh" \
     --host "$HOST_ADDRESS" \
     --port "$CHOSEN_PORT" \
+    --codex "$CODEX_EXE_VALUE" \
+    --node "$NODE_EXE_VALUE" \
     --codex-home "$CODEX_HOME_VALUE" \
   >"$MOBILE_LOG" 2>&1 &
 echo $! > "$MOBILE_PID_FILE"

@@ -655,7 +655,8 @@ Use this table after pulling updates:
 | `codex-app-server-mux.js` | Fully quit Desktop and launch once with the force-restart mux option. |
 | `start-codex-desktop-shared.ps1` or shim files | Fully quit Desktop, then relaunch through the updated shared launcher. |
 | Windows startup scripts | Re-run `install-codex-mobile-web-startup.ps1` so the Scheduled Task points at the current launcher. |
-| macOS `.sh` launcher files | Rerun `npm run check:macos`, then relaunch through the updated script. |
+| macOS Mobile Web launcher changes | Rerun `npm run check:macos`, then restart Mobile Web through `start-codex-shared-mobile-macos.sh`; this does not quit Codex Desktop by default. |
+| macOS Desktop/mux launcher changes | Rerun `npm run check:macos`, then relaunch with `start-codex-shared-mobile-macos.sh --restart-desktop`; be ready to confirm Codex Desktop quit on the Mac. |
 
 Windows mux replacement:
 
@@ -761,7 +762,7 @@ Current limitations:
 
 ### macOS Bridge Start
 
-For the easiest path, use the one-command launcher. It quits and relaunches Codex Desktop through the mux, starts Mobile Web in the background, and picks the first free non-reserved port from `8789` through `8899`. Port `8797` is reserved by default so it will not be selected automatically when another local Agent web service uses that port:
+For day-to-day Mobile Web restarts, use the one-command launcher. By default it restarts only Mobile Web, leaves Codex Desktop running, and lets Mobile Web reconnect to the existing shared mux endpoint. It picks the first free non-reserved port from `8789` through `8899`. Port `8797` is reserved by default so it will not be selected automatically when another local Agent web service uses that port:
 
 ```bash
 cd /path/to/codex-mobile-web
@@ -772,6 +773,12 @@ The script prints the local URL, phone URL, access key file, and log paths. To f
 
 ```bash
 ./start-codex-shared-mobile-macos.sh --port 8789
+```
+
+Only use the Desktop restart path when the Desktop shared mux injection itself changed or the existing mux endpoint is unhealthy. This mode asks Codex Desktop to quit before relaunching through the mux and may show a macOS confirmation dialog:
+
+```bash
+./start-codex-shared-mobile-macos.sh --restart-desktop --port 8789
 ```
 
 To adjust the reserved-port list:
