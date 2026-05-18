@@ -217,6 +217,23 @@
     </form>
   </div>
 
+  <div id="filePreviewDialog" class="file-preview-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="filePreviewTitle">
+    <div class="file-preview-panel">
+      <div class="file-preview-head">
+        <div class="file-preview-title-wrap">
+          <div id="filePreviewTitle" class="file-preview-title">文件预览</div>
+          <div id="filePreviewPath" class="file-preview-path"></div>
+        </div>
+        <div class="file-preview-actions">
+          <button id="filePreviewCopyPath" class="copy-button file-preview-copy-path" type="button">复制路径</button>
+          <button id="filePreviewClose" class="icon-button" type="button" aria-label="关闭文件预览" title="关闭">×</button>
+        </div>
+      </div>
+      <div id="filePreviewMeta" class="file-preview-meta"></div>
+      <div id="filePreviewBody" class="file-preview-body">正在加载文件...</div>
+    </div>
+  </div>
+
   <script src="/api-client.js"></script>
   <script src="/runtime-settings.js"></script>
   <script src="/draft-store.js"></script>
