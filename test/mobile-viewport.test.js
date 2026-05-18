@@ -35,8 +35,8 @@ test("mobile viewport and early guards disable page zoom", () => {
 });
 
 test("public app shell cache advances after frontend visibility changes", () => {
-  assert.match(swJs, /codex-mobile-shell-v61/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.9\|codex-mobile-shell-v61"/);
+  assert.match(swJs, /codex-mobile-shell-v62/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.9\|codex-mobile-shell-v62"/);
   assert.match(swJs, /"\/api-client\.js"/);
   assert.match(swJs, /"\/runtime-settings\.js"/);
   assert.match(swJs, /"\/draft-store\.js"/);
