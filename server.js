@@ -4877,6 +4877,7 @@ async function handleApi(req, res) {
       authRequired: !DISABLE_AUTH,
       title: "Codex Mobile Web",
       version: APP_VERSION,
+      platform: process.platform,
       buildId: appShellBuildId(),
       clientBuildId: clientBuildId(),
       shellCacheName: readServiceWorkerCacheName(),

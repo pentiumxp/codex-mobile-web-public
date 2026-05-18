@@ -5,6 +5,7 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const {
+  buildRestartMacShellCommand,
   buildRestartPowerShellCommand,
   createSharedChainRestartService,
   psQuote,
@@ -35,6 +36,7 @@ test("restart service spawns a detached hidden PowerShell process", () => {
   let unrefCalled = false;
   const service = createSharedChainRestartService({
     allowNonWindows: true,
+    platform: "win32",
     env: {
       SystemRoot: "C:\\Windows",
       USERPROFILE: path.join(root, ".tmp-user"),
@@ -74,6 +76,89 @@ test("restart service spawns a detached hidden PowerShell process", () => {
   const decoded = Buffer.from(encoded, "base64").toString("utf16le");
   assert.match(decoded, /restart-codex-mobile-shared-chain\.ps1/);
   assert.match(decoded, /-TaskName 'Codex Mobile Web'/);
+});
+
+test("macOS restart command relaunches Mobile Web through launchctl only", () => {
+  const root = path.resolve(__dirname, "..");
+  const command = buildRestartMacShellCommand({
+    delayMs: 1200,
+    workspacePath: root,
+    serverPath: path.join(root, "server.js"),
+    nodePath: "/usr/local/bin/node",
+    currentPid: 4321,
+    launchctlPath: "/bin/launchctl",
+    logPath: "/Users/xuefusong/.codex-mobile-web/logs/mobile-web.log",
+    labelPrefix: "com.xuefusong.codex-mobile-web.test",
+    port: 8789,
+    host: "0.0.0.0",
+    codexHome: "/Users/xuefusong/.codex",
+    runtimeDir: "/Users/xuefusong/.codex-mobile-web",
+    env: {
+      CODEX_MOBILE_CODEX_EXE: "/Users/xuefusong/.local/bin/codex",
+      CODEX_MOBILE_AUTH_KEY: "should-not-leak",
+      CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER: "1",
+    },
+  });
+
+  assert.match(command, /sleep 1\.200/);
+  assert.match(command, /lsof -tiTCP:8789/);
+  assert.match(command, /\/bin\/kill "\$pid"/);
+  assert.match(command, /\/bin\/launchctl' submit -l "\$label"/);
+  assert.match(command, /CODEX_HOME='\/Users\/xuefusong\/\.codex'/);
+  assert.match(command, /CODEX_MOBILE_RUNTIME_DIR='\/Users\/xuefusong\/\.codex-mobile-web'/);
+  assert.match(command, /CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER='1'/);
+  assert.match(command, /CODEX_MOBILE_LAUNCHD_LABEL="\$label"/);
+  assert.match(command, /\/usr\/local\/bin\/node/);
+  assert.match(command, /server\.js/);
+  assert.doesNotMatch(command, /AUTH_KEY/);
+  assert.doesNotMatch(command, /Codex\.app/);
+  assert.doesNotMatch(command, /osascript/);
+});
+
+test("restart service spawns a detached macOS launchctl restart command", () => {
+  const root = path.resolve(__dirname, "..");
+  let spawnCall = null;
+  let unrefCalled = false;
+  const service = createSharedChainRestartService({
+    platform: "darwin",
+    env: {
+      HOME: "/Users/xuefusong",
+      CODEX_HOME: "/Users/xuefusong/.codex",
+      CODEX_MOBILE_PORT: "8789",
+      CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER: "1",
+    },
+    spawn: (exe, args, options) => {
+      spawnCall = { exe, args, options };
+      return {
+        pid: 24680,
+        unref: () => {
+          unrefCalled = true;
+        },
+      };
+    },
+    workspacePath: root,
+    serverPath: path.join(root, "server.js"),
+    nodePath: "/usr/local/bin/node",
+    currentPid: 4321,
+    launchctlPath: "/bin/launchctl",
+    logPath: "/Users/xuefusong/.codex-mobile-web/logs/mobile-web.log",
+  });
+
+  const result = service.restart({ delayMs: 900 });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.restarting, true);
+  assert.equal(result.restartInMs, 900);
+  assert.equal(result.pid, 24680);
+  assert.equal(result.port, 8789);
+  assert.equal(result.mode, "macos-launchctl");
+  assert.ok(unrefCalled);
+  assert.equal(spawnCall.exe, "/bin/bash");
+  assert.deepEqual(spawnCall.args.slice(0, 1), ["-lc"]);
+  assert.match(spawnCall.args[1], /\/bin\/launchctl' submit/);
+  assert.match(spawnCall.args[1], /CODEX_MOBILE_PORT='8789'/);
+  assert.equal(spawnCall.options.detached, true);
+  assert.equal(spawnCall.options.stdio, "ignore");
 });
 
 test("PowerShell single-quote escaping doubles embedded quotes", () => {

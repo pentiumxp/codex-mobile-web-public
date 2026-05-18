@@ -73,6 +73,7 @@ const state = {
   maxUploadFiles: 12,
   rolloutWarningThresholdBytes: 100 * 1024 * 1024,
   appVersion: "",
+  serverPlatform: "",
   appUpdateStatus: null,
   appUpdateBusy: false,
   appUpdateError: "",
@@ -1159,11 +1160,20 @@ function renderSharedRestartButton() {
 
 async function handleSharedRestartClick() {
   if (state.sharedRestartBusy || state.sharedRestarting) return;
+  const isMac = state.serverPlatform === "darwin";
+  const scopeLines = isMac
+    ? [
+      "这会短暂断开当前页面连接，并重启这台 Mac 上的 Mobile Web 服务。",
+      "不会重启 Codex Desktop、shared mux 或其它本机服务。",
+    ]
+    : [
+      "这会短暂断开当前页面连接，并重启 Mobile Web、shared mux 和本地 app-server。",
+      "不会重启 WSL、Codex Desktop 或其它本机服务。",
+    ];
   const confirmed = window.confirm([
     "确认重启 Codex Mobile Web？",
     "",
-    "这会短暂断开当前页面连接，并重启 Mobile Web、shared mux 和本地 app-server。",
-    "不会重启 WSL、Codex Desktop 或其它本机服务。",
+    ...scopeLines,
   ].join("\n"));
   if (!confirmed) return;
   state.sharedRestartBusy = true;
@@ -7065,6 +7075,7 @@ async function start() {
   initializePageBuildState(config);
   startPageRefreshChecks();
   state.appVersion = String(config.version || "");
+  state.serverPlatform = String(config.platform || "");
   state.maxUploadBytes = Number(config.maxUploadBytes || state.maxUploadBytes);
   state.maxUploadFiles = Number(config.maxUploadFiles || state.maxUploadFiles);
   state.rolloutWarningThresholdBytes = Number(config.rolloutWarningBytes || state.rolloutWarningThresholdBytes);
