@@ -861,6 +861,170 @@ html.visual-recovering body::before {
   padding: 14px;
 }
 
+.file-preview-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(0, 0, 0, 0.42);
+}
+
+.file-preview-panel {
+  width: min(980px, 100%);
+  max-height: min(78vh, 900px);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.file-preview-head {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.file-preview-title-wrap {
+  min-width: 0;
+}
+
+.file-preview-title {
+  color: var(--text);
+  font-weight: 760;
+  line-height: 1.25;
+}
+
+.file-preview-path {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: var(--content-small-font-size);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.file-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.file-preview-copy-path {
+  white-space: nowrap;
+}
+
+.file-preview-meta {
+  min-height: 0;
+  padding: 8px 12px;
+  color: var(--muted);
+  background: var(--control-muted-bg);
+  border-bottom: 1px solid var(--line-soft);
+  font-size: var(--content-small-font-size);
+}
+
+.file-preview-body {
+  min-width: 0;
+  min-height: 180px;
+  overflow: auto;
+  padding: 14px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.file-preview-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-family: "Cascadia Mono", "Consolas", "Microsoft YaHei", monospace;
+  font-size: var(--content-code-font-size);
+  line-height: 1.55;
+}
+
+.file-preview-media {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+}
+
+.file-preview-image {
+  display: block;
+  max-width: 100%;
+  max-height: min(62vh, 720px);
+  object-fit: contain;
+  background: var(--control-muted-bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+}
+
+.file-preview-pdf {
+  min-height: min(64vh, 760px);
+  display: grid;
+  grid-template-rows: minmax(320px, 1fr) auto;
+  gap: 10px;
+}
+
+.file-preview-pdf iframe {
+  width: 100%;
+  height: 100%;
+  min-height: 320px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--control-muted-bg);
+}
+
+.file-preview-table-wrap {
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+}
+
+.file-preview-table {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: collapse;
+  font-size: var(--content-body-font-size);
+  line-height: 1.4;
+}
+
+.file-preview-table th,
+.file-preview-table td {
+  padding: 7px 9px;
+  border-bottom: 1px solid var(--line-soft);
+  border-right: 1px solid var(--line-soft);
+  text-align: left;
+  vertical-align: top;
+}
+
+.file-preview-table th {
+  color: var(--text);
+  background: var(--control-muted-bg);
+  font-weight: 760;
+}
+
+.file-preview-table td {
+  color: var(--text);
+  background: var(--panel);
+}
+
+.file-preview-error {
+  color: var(--danger-text);
+  background: var(--danger-bg);
+  border: 1px solid rgba(241, 135, 125, 0.36);
+  border-radius: 8px;
+  padding: 10px;
+}
+
 .rename-input {
   width: 100%;
   min-height: 44px;
@@ -2117,6 +2281,34 @@ html.visual-recovering body::before {
   text-decoration: underline;
   text-underline-offset: 3px;
   overflow-wrap: anywhere;
+}
+
+.local-file-preview-link {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  gap: 7px;
+  padding: 2px 7px;
+  color: var(--link);
+  background: var(--control-bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  font: inherit;
+  line-height: 1.35;
+  text-align: left;
+  vertical-align: baseline;
+  cursor: pointer;
+}
+
+.local-file-preview-link span {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: var(--content-small-font-size);
+  line-height: 1.2;
+}
+
+.local-file-preview-link:active {
+  border-color: var(--accent-strong);
 }
 
 .markdown-body code {

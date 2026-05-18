@@ -136,7 +136,7 @@ const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
 const MAX_RETAINED_OPERATIONS_PER_TURN = 1;
-const CLIENT_BUILD_ID = "0.1.9|codex-mobile-shell-v61";
+const CLIENT_BUILD_ID = "0.1.9|codex-mobile-shell-v63";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -5065,6 +5065,135 @@ function renderMarkdown(value) {
   });
 }
 
+function closeFilePreview() {
+  const dialog = $("filePreviewDialog");
+  if (!dialog) return;
+  dialog.classList.add("hidden");
+  $("filePreviewBody").innerHTML = "";
+  $("filePreviewMeta").textContent = "";
+  $("filePreviewPath").textContent = "";
+}
+
+function filePreviewMetaText(file) {
+  const parts = [];
+  if (file && file.kind) parts.push(String(file.kind).toUpperCase());
+  if (file && file.contentType) parts.push(String(file.contentType).split(";")[0]);
+  if (file && Number.isFinite(Number(file.sizeBytes))) parts.push(`${Number(file.sizeBytes).toLocaleString()} bytes`);
+  if (file && file.truncated) parts.push(`已截断到 ${Number(file.maxBytes || 0).toLocaleString()} bytes`);
+  return parts.join(" · ");
+}
+
+function filePreviewContentUrl(file) {
+  if (file && file.contentUrl) return String(file.contentUrl);
+  if (!file || !file.path) return "";
+  return `/api/files/preview/content?threadId=${encodeURIComponent(state.currentThreadId || "")}&path=${encodeURIComponent(file.path)}`;
+}
+
+function renderJsonPreview(content) {
+  try {
+    return `<pre class="file-preview-text"><code>${escapeHtml(JSON.stringify(JSON.parse(content), null, 2))}</code></pre>`;
+  } catch (_) {
+    return `<pre class="file-preview-text"><code>${escapeHtml(content)}</code></pre>`;
+  }
+}
+
+function parseCsvPreviewRows(content) {
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let quoted = false;
+  const source = String(content || "");
+  for (let index = 0; index < source.length; index += 1) {
+    const ch = source[index];
+    const next = source[index + 1];
+    if (ch === '"' && quoted && next === '"') {
+      cell += '"';
+      index += 1;
+    } else if (ch === '"') {
+      quoted = !quoted;
+    } else if (ch === "," && !quoted) {
+      row.push(cell);
+      cell = "";
+    } else if ((ch === "\n" || ch === "\r") && !quoted) {
+      if (ch === "\r" && next === "\n") index += 1;
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+      if (rows.length >= 50) break;
+    } else {
+      cell += ch;
+    }
+  }
+  if (rows.length < 50 && (cell || row.length)) {
+    row.push(cell);
+    rows.push(row);
+  }
+  return rows.filter((entry) => entry.some((cellValue) => String(cellValue || "").trim()));
+}
+
+function renderCsvPreview(content) {
+  const rows = parseCsvPreviewRows(content);
+  if (!rows.length) return `<pre class="file-preview-text"><code>${escapeHtml(content)}</code></pre>`;
+  const head = rows[0];
+  const bodyRows = rows.slice(1);
+  const headHtml = head.map((cell) => `<th>${escapeHtml(cell)}</th>`).join("");
+  const bodyHtml = bodyRows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("");
+  return `<div class="file-preview-table-wrap"><table class="file-preview-table"><thead><tr>${headHtml}</tr></thead><tbody>${bodyHtml}</tbody></table></div>`;
+}
+
+function renderFilePreviewContent(file) {
+  const content = String((file && file.content) || "");
+  if (file && file.kind === "markdown") return renderMarkdown(content);
+  if (file && file.kind === "image") {
+    const src = filePreviewContentUrl(file);
+    return `<div class="file-preview-media"><img class="file-preview-image" src="${escapeHtml(src)}" alt="${escapeHtml(file.fileName || "image preview")}"></div>`;
+  }
+  if (file && file.kind === "pdf") {
+    const src = filePreviewContentUrl(file);
+    return `<div class="file-preview-pdf"><iframe src="${escapeHtml(src)}" title="${escapeHtml(file.fileName || "PDF preview")}"></iframe><a href="${escapeHtml(src)}" target="_blank" rel="noreferrer">打开 PDF 预览</a></div>`;
+  }
+  if (file && file.kind === "json") return renderJsonPreview(content);
+  if (file && file.kind === "csv") return renderCsvPreview(content);
+  return `<pre class="file-preview-text"><code>${escapeHtml(content)}</code></pre>`;
+}
+
+function showFilePreviewLoading(label, filePath) {
+  const dialog = $("filePreviewDialog");
+  if (!dialog) return;
+  $("filePreviewTitle").textContent = label || "文件预览";
+  $("filePreviewPath").textContent = filePath || "";
+  $("filePreviewMeta").textContent = "";
+  $("filePreviewBody").textContent = "正在加载文件...";
+  const copyButton = $("filePreviewCopyPath");
+  if (copyButton) {
+    copyButton.dataset.copyKey = rememberCopyText(filePath || "");
+    copyButton.textContent = "复制路径";
+  }
+  dialog.classList.remove("hidden");
+}
+
+async function openLocalFilePreview(link) {
+  const filePath = link && link.dataset ? link.dataset.localFilePath || "" : "";
+  if (!filePath) return;
+  const label = (link && link.dataset && link.dataset.localFileLabel) || (link && link.textContent ? link.textContent.replace(/预览文件\s*$/, "").trim() : "") || "文件预览";
+  showFilePreviewLoading(label, filePath);
+  try {
+    const file = await api(`/api/files/preview?threadId=${encodeURIComponent(state.currentThreadId || "")}&path=${encodeURIComponent(filePath)}`, {
+      timeoutMs: 15000,
+    });
+    $("filePreviewTitle").textContent = file.fileName || label;
+    $("filePreviewPath").textContent = file.relativePath || file.path || filePath;
+    $("filePreviewMeta").textContent = filePreviewMetaText(file);
+    $("filePreviewBody").innerHTML = renderFilePreviewContent(file);
+    const copyButton = $("filePreviewCopyPath");
+    if (copyButton) copyButton.dataset.copyKey = rememberCopyText(file.path || filePath);
+  } catch (err) {
+    $("filePreviewMeta").textContent = "";
+    $("filePreviewBody").innerHTML = `<div class="file-preview-error">${escapeHtml(err && err.message ? err.message : String(err))}</div>`;
+  }
+}
+
 function nestedStringValue(value, keys, depth = 0, seen = new Set()) {
   if (!value || typeof value !== "object" || depth > 3 || seen.has(value)) return "";
   seen.add(value);
@@ -6886,6 +7015,13 @@ function wireUi() {
       });
       return;
     }
+    const localFileLink = event.target.closest("[data-local-file-path]");
+    if (localFileLink) {
+      event.preventDefault();
+      event.stopPropagation();
+      openLocalFilePreview(localFileLink).catch(showError);
+      return;
+    }
     const button = event.target.closest("[data-approval-action]");
     if (button) {
       answerApproval(button.dataset.approvalId, button.dataset.approvalAction).catch(showError);
@@ -6945,6 +7081,26 @@ function wireUi() {
   $("attachmentList").addEventListener("click", (event) => {
     const button = event.target.closest("[data-remove-attachment]");
     if (button) removeAttachment(button.dataset.removeAttachment);
+  });
+  if ($("filePreviewClose")) $("filePreviewClose").addEventListener("click", closeFilePreview);
+  if ($("filePreviewDialog")) $("filePreviewDialog").addEventListener("click", (event) => {
+    if (event.target === $("filePreviewDialog")) {
+      closeFilePreview();
+      return;
+    }
+    const copyButton = event.target.closest("[data-copy-key]");
+    if (copyButton) {
+      event.preventDefault();
+      handleCopyButtonClick(copyButton).catch(() => {
+        copyButton.textContent = "复制失败";
+      });
+      return;
+    }
+    const localFileLink = event.target.closest("[data-local-file-path]");
+    if (localFileLink) {
+      event.preventDefault();
+      openLocalFilePreview(localFileLink).catch(showError);
+    }
   });
   $("composer").addEventListener("dragover", (event) => {
     if (!(state.currentThreadId || state.newThreadDraft) || !hasTransferFiles(event)) return;

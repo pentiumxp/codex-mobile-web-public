@@ -68,6 +68,8 @@ const MAX_START_THREAD_DEVELOPER_INSTRUCTIONS_CHARS = 120000;
 const MAX_UPLOAD_BYTES = Math.max(1, Number(process.env.CODEX_MOBILE_MAX_UPLOAD_BYTES || String(64 * 1024 * 1024)));
 const MAX_UPLOAD_FILES = Math.max(1, Math.min(50, Number(process.env.CODEX_MOBILE_MAX_UPLOAD_FILES || "12")));
 const UPLOAD_ROOT = process.env.CODEX_MOBILE_UPLOAD_DIR || path.join(RUNTIME_ROOT, "uploads");
+const FILE_PREVIEW_MAX_BYTES = Math.max(1024, Number(process.env.CODEX_MOBILE_FILE_PREVIEW_MAX_BYTES || String(512 * 1024)));
+const FILE_PREVIEW_MEDIA_MAX_BYTES = Math.max(1024 * 1024, Number(process.env.CODEX_MOBILE_FILE_PREVIEW_MEDIA_MAX_BYTES || String(24 * 1024 * 1024)));
 const MAX_COMMAND_OUTPUT_CHARS = 8000;
 const MAX_COMMAND_OUTPUT_CHARS_PER_TURN = 48000;
 const MAX_STRUCTURED_CHARS = 24000;
@@ -128,6 +130,91 @@ const RUNTIME_CONTEXT_CACHE_MAX = Math.max(20, Number(process.env.CODEX_MOBILE_R
 const MUX_REPLAY_NOTIFICATION_LIMIT = Math.max(0, Number(process.env.CODEX_MOBILE_MUX_REPLAY_NOTIFICATION_LIMIT || "200"));
 const SAFE_RETRY_METHODS = new Set(["initialize", "thread/list", "thread/read", "thread/turns/list"]);
 const IMAGE_EXTENSIONS = new Set([".avif", ".bmp", ".gif", ".heic", ".heif", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"]);
+const FILE_PREVIEW_TEXT_EXTENSIONS = new Set([
+  ".conf",
+  ".csv",
+  ".css",
+  ".diff",
+  ".env.example",
+  ".htm",
+  ".html",
+  ".ini",
+  ".js",
+  ".jsx",
+  ".json",
+  ".jsonl",
+  ".log",
+  ".md",
+  ".markdown",
+  ".patch",
+  ".plist",
+  ".properties",
+  ".py",
+  ".rb",
+  ".rs",
+  ".sh",
+  ".sql",
+  ".toml",
+  ".ts",
+  ".tsx",
+  ".txt",
+  ".xml",
+  ".yaml",
+  ".yml",
+]);
+const FILE_PREVIEW_DOCUMENT_EXTENSIONS = new Set([".pdf"]);
+const FILE_PREVIEW_IMAGE_CONTENT_TYPES = new Map([
+  [".avif", "image/avif"],
+  [".bmp", "image/bmp"],
+  [".gif", "image/gif"],
+  [".heic", "image/heic"],
+  [".heif", "image/heif"],
+  [".jpeg", "image/jpeg"],
+  [".jpg", "image/jpeg"],
+  [".png", "image/png"],
+  [".tif", "image/tiff"],
+  [".tiff", "image/tiff"],
+  [".webp", "image/webp"],
+]);
+const FILE_PREVIEW_TEXT_CONTENT_TYPES = new Map([
+  [".css", "text/css; charset=utf-8"],
+  [".csv", "text/csv; charset=utf-8"],
+  [".htm", "text/html; charset=utf-8"],
+  [".html", "text/html; charset=utf-8"],
+  [".js", "text/javascript; charset=utf-8"],
+  [".json", "application/json; charset=utf-8"],
+  [".jsonl", "application/x-ndjson; charset=utf-8"],
+  [".md", "text/markdown; charset=utf-8"],
+  [".markdown", "text/markdown; charset=utf-8"],
+  [".txt", "text/plain; charset=utf-8"],
+  [".xml", "application/xml; charset=utf-8"],
+  [".yaml", "application/yaml; charset=utf-8"],
+  [".yml", "application/yaml; charset=utf-8"],
+]);
+const FILE_PREVIEW_DENIED_BASENAMES = new Set([
+  ".env",
+  ".npmrc",
+  ".netrc",
+  "access_key",
+  "auth.json",
+  "credentials",
+  "credentials.json",
+  "id_ed25519",
+  "id_rsa",
+  "known_hosts",
+  "secret.json",
+  "secrets.json",
+  "service-account.json",
+  "service_account.json",
+  "token.json",
+  "tokens.json",
+]);
+const FILE_PREVIEW_DENIED_DIRS = new Set([
+  ".aws",
+  ".gnupg",
+  ".ssh",
+  "keychain",
+]);
 const CODEX_CONFIG_DEFAULTS = readCodexConfigDefaults();
 const PROCESS_STARTED_AT_MS = Date.now();
 
@@ -829,6 +916,250 @@ function visibilityFromGlobalState(globalState = readGlobalState()) {
     workspaceKeys: visibleWorkspaceKeys(globalState),
     projectlessThreadIds: visibleProjectlessThreadIds(globalState),
   };
+}
+
+function filePreviewEnvRoots() {
+  return String(process.env.CODEX_MOBILE_FILE_PREVIEW_ROOTS || "")
+    .split(path.delimiter)
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function nearestAncestorWithChild(startPath, childName) {
+  let current = path.resolve(String(startPath || ""));
+  for (let depth = 0; depth < 12; depth += 1) {
+    if (!current || current === path.dirname(current)) break;
+    try {
+      if (fs.existsSync(path.join(current, childName))) return current;
+    } catch (_) {}
+    current = path.dirname(current);
+  }
+  return "";
+}
+
+function safeRealpath(value) {
+  try {
+    return fs.realpathSync.native ? fs.realpathSync.native(value) : fs.realpathSync(value);
+  } catch (_) {
+    return "";
+  }
+}
+
+function isPathInsideRoot(targetPath, rootPath) {
+  const target = safeRealpath(targetPath);
+  const root = safeRealpath(rootPath);
+  if (!target || !root) return false;
+  const relative = path.relative(root, target);
+  return relative === "" || (relative && !relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function previewRootsForThread(threadId, globalState = readGlobalState()) {
+  const roots = new Map(filePreviewEnvRoots().map((root) => [root, "env"]));
+  const summary = readStateDbThread(threadId) || readStartedThread(threadId);
+  const cwd = summary && typeof summary.cwd === "string" ? summary.cwd : "";
+  const obsidianRoot = cwd ? nearestAncestorWithChild(cwd, ".obsidian") : "";
+  if (cwd) {
+    roots.set(cwd, "thread");
+    if (obsidianRoot) roots.set(obsidianRoot, "obsidian");
+  }
+  const visible = visibleWorkspaceKeys(globalState);
+  return [...roots.entries()]
+    .map(([root, source]) => ({ root: path.resolve(root), source }))
+    .filter((entry) => entry.root && fs.existsSync(entry.root))
+    .filter((entry) => entry.source === "env"
+      || !visible.size
+      || visible.has(normalizeFsPath(entry.root))
+      || entry.root === obsidianRoot)
+    .map((entry) => entry.root);
+}
+
+function stripMarkdownFileTarget(value) {
+  let target = String(value || "").trim();
+  if (target.startsWith("<") && target.endsWith(">")) target = target.slice(1, -1).trim();
+  if (/^file:\/\//i.test(target)) {
+    try {
+      return decodeURIComponent(new URL(target).pathname);
+    } catch (_) {
+      return target.replace(/^file:\/\//i, "");
+    }
+  }
+  try {
+    return decodeURIComponent(target);
+  } catch (_) {
+    return target;
+  }
+}
+
+function hasDeniedPreviewPathSegment(filePath) {
+  const parts = path.resolve(filePath).split(path.sep).filter(Boolean);
+  return parts.some((part, index) => {
+    const lower = part.toLowerCase();
+    if (FILE_PREVIEW_DENIED_BASENAMES.has(lower)) return true;
+    return index < parts.length - 1 && FILE_PREVIEW_DENIED_DIRS.has(lower);
+  });
+}
+
+function filePreviewExtension(filePath) {
+  const basename = path.basename(filePath).toLowerCase();
+  if (basename.endsWith(".env.example")) return ".env.example";
+  return path.extname(filePath).toLowerCase();
+}
+
+function allowedFilePreviewExtension(filePath) {
+  const ext = filePreviewExtension(filePath);
+  return FILE_PREVIEW_TEXT_EXTENSIONS.has(ext)
+    || IMAGE_EXTENSIONS.has(ext)
+    || FILE_PREVIEW_DOCUMENT_EXTENSIONS.has(ext);
+}
+
+function filePreviewContentType(filePath) {
+  const ext = filePreviewExtension(filePath);
+  if (FILE_PREVIEW_IMAGE_CONTENT_TYPES.has(ext)) return FILE_PREVIEW_IMAGE_CONTENT_TYPES.get(ext);
+  if (ext === ".pdf") return "application/pdf";
+  return FILE_PREVIEW_TEXT_CONTENT_TYPES.get(ext) || "text/plain; charset=utf-8";
+}
+
+function isTextFilePreview(filePath) {
+  return FILE_PREVIEW_TEXT_EXTENSIONS.has(filePreviewExtension(filePath));
+}
+
+function isMediaFilePreview(filePath) {
+  const ext = filePreviewExtension(filePath);
+  return IMAGE_EXTENSIONS.has(ext) || FILE_PREVIEW_DOCUMENT_EXTENSIONS.has(ext);
+}
+
+function resolveFilePreviewPath(requestedPath, allowedRoots) {
+  const target = stripMarkdownFileTarget(requestedPath);
+  if (!target || !path.isAbsolute(target)) {
+    const err = new Error("Only absolute local file paths can be previewed");
+    err.statusCode = 400;
+    throw err;
+  }
+  const resolved = path.resolve(target);
+  if (hasDeniedPreviewPathSegment(resolved)) {
+    const err = new Error("This file is not allowed for mobile preview");
+    err.statusCode = 403;
+    throw err;
+  }
+  if (!allowedFilePreviewExtension(resolved)) {
+    const err = new Error("This file type is not supported for mobile preview");
+    err.statusCode = 415;
+    throw err;
+  }
+  let stat;
+  try {
+    stat = fs.statSync(resolved);
+  } catch (_) {
+    const err = new Error("File was not found");
+    err.statusCode = 404;
+    throw err;
+  }
+  if (!stat.isFile()) {
+    const err = new Error("Only files can be previewed");
+    err.statusCode = 400;
+    throw err;
+  }
+  const matchingRoots = (allowedRoots || [])
+    .map((root) => path.resolve(String(root || "")))
+    .filter(Boolean)
+    .filter((root) => isPathInsideRoot(resolved, root))
+    .sort((a, b) => b.length - a.length);
+  if (!matchingRoots.length) {
+    const err = new Error("File is outside the allowed preview roots");
+    err.statusCode = 403;
+    throw err;
+  }
+  return {
+    path: safeRealpath(resolved) || resolved,
+    root: safeRealpath(matchingRoots[0]) || matchingRoots[0],
+    stat,
+  };
+}
+
+function previewKindForPath(filePath) {
+  const ext = filePreviewExtension(filePath);
+  if (ext === ".md" || ext === ".markdown") return "markdown";
+  if (ext === ".json" || ext === ".jsonl") return "json";
+  if (ext === ".yaml" || ext === ".yml") return "yaml";
+  if (ext === ".csv") return "csv";
+  if (IMAGE_EXTENSIONS.has(ext)) return "image";
+  if (ext === ".pdf") return "pdf";
+  return "text";
+}
+
+function filePreviewPublicFields(resolved, requestedPath = "", threadId = "") {
+  const kind = previewKindForPath(resolved.path);
+  const contentUrl = `/api/files/preview/content?threadId=${encodeURIComponent(threadId || "")}&path=${encodeURIComponent(resolved.path)}`;
+  return {
+    path: resolved.path,
+    fileName: path.basename(resolved.path),
+    relativePath: path.relative(resolved.root, resolved.path) || path.basename(resolved.path),
+    kind,
+    contentType: filePreviewContentType(resolved.path),
+    sizeBytes: resolved.stat.size,
+    sourcePath: stripMarkdownFileTarget(requestedPath || resolved.path),
+    contentUrl,
+  };
+}
+
+function readFilePreview(requestedPath, allowedRoots, options = {}) {
+  const resolved = resolveFilePreviewPath(requestedPath, allowedRoots);
+  const base = filePreviewPublicFields(resolved, requestedPath, options.threadId || "");
+  if (isMediaFilePreview(resolved.path)) {
+    if (resolved.stat.size > FILE_PREVIEW_MEDIA_MAX_BYTES) {
+      const err = new Error(`File is too large for mobile preview (${Math.round(FILE_PREVIEW_MEDIA_MAX_BYTES / 1024 / 1024)} MB limit)`);
+      err.statusCode = 413;
+      throw err;
+    }
+    return Object.assign(base, {
+      truncated: false,
+      maxBytes: FILE_PREVIEW_MEDIA_MAX_BYTES,
+    });
+  }
+
+  const limit = FILE_PREVIEW_MAX_BYTES;
+  const fd = fs.openSync(resolved.path, "r");
+  try {
+    const bytesToRead = Math.min(resolved.stat.size, limit + 1);
+    const buffer = Buffer.alloc(bytesToRead);
+    const bytesRead = fs.readSync(fd, buffer, 0, bytesToRead, 0);
+    const truncated = bytesRead > limit || resolved.stat.size > limit;
+    const content = buffer.subarray(0, Math.min(bytesRead, limit)).toString("utf8");
+    return Object.assign(base, {
+      truncated,
+      maxBytes: limit,
+      content,
+    });
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function filePreviewContentDisposition(filePath) {
+  const basename = path.basename(filePath);
+  const asciiName = basename.replace(/[^\x20-\x7E]+/g, "_").replaceAll('"', "");
+  return `inline; filename="${asciiName || "preview"}"; filename*=UTF-8''${encodeURIComponent(basename)}`;
+}
+
+function serveFilePreviewContent(req, res, requestedPath, allowedRoots) {
+  const resolved = resolveFilePreviewPath(requestedPath, allowedRoots);
+  if (!isMediaFilePreview(resolved.path) && !isTextFilePreview(resolved.path)) {
+    sendJson(res, 415, { error: "This file type is not supported for mobile preview" });
+    return;
+  }
+  const limit = isMediaFilePreview(resolved.path) ? FILE_PREVIEW_MEDIA_MAX_BYTES : FILE_PREVIEW_MAX_BYTES;
+  if (resolved.stat.size > limit) {
+    sendJson(res, 413, { error: `File is too large for mobile preview (${Math.round(limit / 1024 / 1024)} MB limit)` });
+    return;
+  }
+  res.writeHead(200, {
+    "Content-Type": filePreviewContentType(resolved.path),
+    "Content-Length": resolved.stat.size,
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+    "Content-Disposition": filePreviewContentDisposition(resolved.path),
+  });
+  fs.createReadStream(resolved.path).pipe(res);
 }
 
 function isBackupRolloutPath(value) {
@@ -5009,6 +5340,28 @@ async function handleApi(req, res) {
     serveUploadedFile(req, res);
     return;
   }
+  if (url.pathname === "/api/files/preview" && req.method === "GET") {
+    const requestedPath = url.searchParams.get("path") || "";
+    const threadId = url.searchParams.get("threadId") || "";
+    try {
+      const allowedRoots = previewRootsForThread(threadId);
+      sendJson(res, 200, readFilePreview(requestedPath, allowedRoots, { threadId }));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { error: err.message || String(err) });
+    }
+    return;
+  }
+  if (url.pathname === "/api/files/preview/content" && req.method === "GET") {
+    const requestedPath = url.searchParams.get("path") || "";
+    const threadId = url.searchParams.get("threadId") || "";
+    try {
+      const allowedRoots = previewRootsForThread(threadId);
+      serveFilePreviewContent(req, res, requestedPath, allowedRoots);
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { error: err.message || String(err) });
+    }
+    return;
+  }
   if (url.pathname === "/api/app-server/reconnect" && req.method === "POST") {
     codex.resetConnection("manual app-server reconnect requested");
     await new Promise((resolve) => setTimeout(resolve, 350));
@@ -5659,6 +6012,12 @@ if (require.main === module) {
 
 module.exports = {
   approvalResponsePayload,
+  filePreviewContentDisposition,
+  filePreviewContentType,
+  readFilePreview,
+  resolveFilePreviewPath,
   publicServerRequest,
+  serveFilePreviewContent,
   serverRequestResponsePayload,
+  stripMarkdownFileTarget,
 };

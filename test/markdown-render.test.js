@@ -27,6 +27,20 @@ test("existing markdown links are not broken by bare URL linkification", () => {
   assert.match(html, /^<a href="https:\/\/example\.com\/path" target="_blank" rel="noreferrer">Open<\/a> and <a href="https:\/\/other\.example" target="_blank" rel="noreferrer">https:\/\/other\.example<\/a>$/);
 });
 
+test("local file markdown links render as explicit preview actions", () => {
+  const html = renderer.renderInlineMarkdown("[PROJECT_STATUS.md](</Users/frank/Obsidian Vault/01_Work/PROJECT_STATUS.md>)");
+
+  assert.match(html, /class="local-file-preview-link"/);
+  assert.match(html, /data-local-file-path="\/Users\/frank\/Obsidian Vault\/01_Work\/PROJECT_STATUS\.md"/);
+  assert.match(html, /PROJECT_STATUS\.md<span>预览文件<\/span>/);
+});
+
+test("local file markdown links decode url-encoded path segments", () => {
+  const html = renderer.renderInlineMarkdown("[Personal AI Homelab.md](/Users/frank/Obsidian%20Vault/Personal%20AI%20Homelab.md)");
+
+  assert.match(html, /data-local-file-path="\/Users\/frank\/Obsidian Vault\/Personal AI Homelab\.md"/);
+});
+
 test("unsafe markdown links are escaped instead of rendered clickable", () => {
   const html = renderer.renderInlineMarkdown("[bad](javascript:alert(1)) and <script>alert(2)</script>");
 
