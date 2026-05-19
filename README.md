@@ -700,6 +700,8 @@ The bridge is implemented by `codex-app-server-mux.js`:
 
 The mux must keep stdout clean because stdout is the Desktop app-server protocol channel. Diagnostics are written to the mux log file instead.
 
+In the default `auto` publish mode, a secondary `app-server --listen stdio://` mux will not overwrite an already reachable shared endpoint. This keeps short-lived agent/tool app-server sessions from stealing Mobile Web away from the Desktop-backed mux endpoint.
+
 When `CODEX_MUX_KEEP_ALIVE=1`, the mux keeps the real app-server and TCP endpoint alive after the Desktop stdio client disconnects. A later Desktop launch through the same wrapper connects back to the existing mux instead of starting a second app-server.
 
 The mux also proxies app-server requests such as command, file-change, and permission approvals. This allows Mobile Web to display approval cards and answer `允许一次`, `本会话允许`, or `拒绝` without creating a separate app-server stream.
@@ -1029,6 +1031,7 @@ VAPID details:
 | `CODEX_MUX_STANDALONE` | Start mux without attaching stdin/stdout Desktop client when set to `1`, useful for Mobile Web-only mux testing. |
 | `CODEX_MUX_KEEP_ALIVE` | Keep mux and real app-server alive after Desktop stdio disconnects; Desktop relaunches can attach back to the existing mux. |
 | `CODEX_MUX_ENDPOINT_FILE` | Custom mux endpoint file path. |
+| `CODEX_MUX_PUBLISH_ENDPOINT` | Controls whether this mux writes the shared endpoint file. Default `auto` lets primary/Desktop muxes publish but prevents secondary `--listen stdio://` muxes from overwriting a reachable endpoint. Set `1` or `0` for diagnostics. |
 | `CODEX_MUX_CODEX_ARGS` | Override real Codex app-server arguments. When unset, Desktop-supplied arguments are passed through, otherwise the mux falls back to `app-server --analytics-default-enabled`. |
 | `CODEX_MUX_REPLAY_BUFFER_LIMIT` | Maximum buffered app-server notifications for Mobile Web reconnect replay, default `1200`. |
 | `CODEX_MUX_REPLAY_BUFFER_MAX_AGE_MS` | Maximum replay-buffer age in milliseconds, default `1800000` (30 minutes). |
