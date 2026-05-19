@@ -3366,4 +3366,57 @@
   - Public README gained a Chinese `2026-05-18 Public 发布说明` section describing the iOS/iPad portrait half-height fix, viewport-metrics module, app-shell cache `v61`, and PWA refresh/reopen requirement.
   - Public validation passed: `npm.cmd test` 85/85, `npm.cmd run check`, `npm.cmd run check:macos`, `git diff --check`, `git diff --cached --check`, and staged diff privacy scan.
   - Public pushed commit: `82346f7 修正 iOS 与 iPad 竖屏半屏显示问题`.
-  - Private workspace still needs the final commit/push for the same fix plus this handoff update.
+  - Private pushed commit: `c2339f1 修正 iOS 与 iPad 竖屏半屏显示问题`.
+
+## 2026-05-18 Send Submit Bottom Follow Fix
+
+- User report:
+  - After typing and tapping Send, the conversation often landed in the middle of the session instead of staying near the bottom.
+  - The user then had to tap the floating down-arrow to return to the newest content.
+- Diagnosis:
+  - Existing render logic only auto-stuck when `isConversationNearBottom()` was true or a caller explicitly passed `stickToBottom`.
+  - Sending a message did not create an explicit bottom-follow state. If keyboard close, composer height changes, or a refresh made the near-bottom check false, the next render preserved the middle scroll position.
+- Code changes:
+  - Added `public/conversation-scroll.js` as a small testable frontend module for near-bottom metrics and submitted-message follow state.
+  - `public/app.js` now enters a same-thread `submittedMessageBottomFollow` window after a current-thread send is submitted.
+  - While the follow window is active, renders and delayed layout passes scroll the conversation to bottom so the new user message / turn start / first output stays visible.
+  - A real user touch/pointer/wheel scroll in the conversation clears the follow state immediately, preserving manual live-output scroll hold.
+  - Page refresh shell assets, `index.html`, service worker cache, and server app-shell build hash now include `/conversation-scroll.js`.
+  - PWA shell build/cache bumped to `codex-mobile-shell-v62` / `0.1.9|codex-mobile-shell-v62`.
+- Validation:
+  - Targeted `node --test test\conversation-scroll.test.js test\turn-scroll-controls.test.js test\mobile-viewport.test.js test\app-update.test.js` passed.
+  - `npm.cmd test` passed: 89/89.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - `GET http://127.0.0.1:8787/api/public-config` returns `clientBuildId: 0.1.9|codex-mobile-shell-v62` and `shellCacheName: codex-mobile-shell-v62`.
+- Status:
+  - Private workspace has local uncommitted changes for this fix.
+  - Public repository has not been synced for this fix yet.
+
+## 2026-05-19 Orientation Return Bottom Follow Fix
+
+- User report:
+  - After rotating to landscape and then back, the current conversation could remain away from the bottom even when the user had been reading the newest turn.
+- Local fix:
+  - Extended `public/conversation-scroll.js` with testable viewport-follow state:
+    - viewport follow starts only when the current conversation is at the bottom or was at the bottom very recently;
+    - follow state is scoped to the current thread and expires quickly.
+  - `public/app.js` now records recent near-bottom state by thread and uses the same bottom-follow scheduler for submitted-message follow and orientation/resize/visualViewport follow.
+  - `orientationchange`, `resize`, `visualViewport.resize`, and `visualViewport.scroll` now schedule short delayed bottom scrolls while the follow state is valid.
+  - User touch/pointer/wheel scroll cancels both submitted-message and viewport bottom-follow states immediately.
+  - Tapping the up-arrow reply jump also cancels viewport bottom-follow so intentional navigation is not pulled back down.
+  - PWA shell build/cache bumped to `codex-mobile-shell-v63` / `0.1.9|codex-mobile-shell-v63`.
+- Validation:
+  - Targeted `node --test test\conversation-scroll.test.js test\turn-scroll-controls.test.js test\mobile-viewport.test.js test\app-update.test.js` passed.
+  - `npm.cmd test` passed: 92/92.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - `GET http://127.0.0.1:8787/api/public-config` returns `clientBuildId: 0.1.9|codex-mobile-shell-v63` and `shellCacheName: codex-mobile-shell-v63`.
+- Status:
+  - Public repository was synced and pushed on 2026-05-19.
+  - Public pushed commit: `b541fef 修正移动端发送与旋转后的底部滚动保持`.
+  - Public README includes a Chinese `2026-05-19 Public 发布说明` covering the send-after-submit bottom follow, landscape-to-portrait bottom follow, user-scroll cancellation behavior, `conversation-scroll.js`, and PWA shell cache `v63`.
+  - Public validation passed before push: `npm.cmd test` 92/92, `npm.cmd run check`, `npm.cmd run check:macos`, `git diff --check`, `node --check public/app.js`, and staged diff privacy scan.
+  - Private workspace still needs the local commit/push that includes this handoff update.
