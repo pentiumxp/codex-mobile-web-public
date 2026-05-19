@@ -3419,4 +3419,5 @@
   - Public pushed commit: `b541fef 修正移动端发送与旋转后的底部滚动保持`.
   - Public README includes a Chinese `2026-05-19 Public 发布说明` covering the send-after-submit bottom follow, landscape-to-portrait bottom follow, user-scroll cancellation behavior, `conversation-scroll.js`, and PWA shell cache `v63`.
   - Public validation passed before push: `npm.cmd test` 92/92, `npm.cmd run check`, `npm.cmd run check:macos`, `git diff --check`, `node --check public/app.js`, and staged diff privacy scan.
-  - Private workspace still needs the local commit/push that includes this handoff update.
+  - Private repository was pushed after the public release.
+  - Private product commit: `3481e7a 修正移动端发送与旋转后的底部滚动保持`.
