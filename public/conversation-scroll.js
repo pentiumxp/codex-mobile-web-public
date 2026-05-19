@@ -1,0 +1,89 @@
+"use strict";
+
+(function (root, factory) {
+  const api = factory();
+  if (typeof module === "object" && module.exports) {
+    module.exports = api;
+  } else if (root) {
+    root.CodexConversationScroll = api;
+  }
+}(typeof globalThis !== "undefined" ? globalThis : null, function () {
+  const DEFAULT_NEAR_BOTTOM_PX = 96;
+  const DEFAULT_SUBMIT_FOLLOW_MS = 15000;
+  const DEFAULT_VIEWPORT_FOLLOW_MS = 3200;
+  const DEFAULT_RECENT_BOTTOM_MS = 120000;
+
+  function numberOrZero(value) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : 0;
+  }
+
+  function isNearBottom(metrics = {}, thresholdPx = DEFAULT_NEAR_BOTTOM_PX) {
+    const scrollHeight = numberOrZero(metrics.scrollHeight);
+    const scrollTop = numberOrZero(metrics.scrollTop);
+    const clientHeight = numberOrZero(metrics.clientHeight);
+    const threshold = Math.max(0, numberOrZero(thresholdPx));
+    return scrollHeight - scrollTop - clientHeight < threshold;
+  }
+
+  function createSubmittedMessageFollow(threadId, options = {}) {
+    const id = String(threadId || "").trim();
+    if (!id) return null;
+    const nowMs = numberOrZero(options.nowMs) || Date.now();
+    const ttlMs = Math.max(1000, numberOrZero(options.ttlMs) || DEFAULT_SUBMIT_FOLLOW_MS);
+    return {
+      threadId: id,
+      clientSubmissionId: String(options.clientSubmissionId || ""),
+      untilMs: nowMs + ttlMs,
+    };
+  }
+
+  function shouldFollowSubmittedMessage(follow, options = {}) {
+    if (!follow || !follow.threadId) return false;
+    const threadId = String(options.threadId || "").trim();
+    if (!threadId || String(follow.threadId) !== threadId) return false;
+    const nowMs = numberOrZero(options.nowMs) || Date.now();
+    return nowMs <= numberOrZero(follow.untilMs);
+  }
+
+  function shouldStartViewportFollow(options = {}) {
+    if (options.nearBottom) return true;
+    const nowMs = numberOrZero(options.nowMs) || Date.now();
+    const recentBottomMs = Math.max(0, numberOrZero(options.recentBottomMs) || DEFAULT_RECENT_BOTTOM_MS);
+    const lastNearBottomAtMs = numberOrZero(options.lastNearBottomAtMs);
+    return Boolean(lastNearBottomAtMs && nowMs - lastNearBottomAtMs <= recentBottomMs);
+  }
+
+  function createViewportFollow(threadId, options = {}) {
+    const id = String(threadId || "").trim();
+    if (!id) return null;
+    const nowMs = numberOrZero(options.nowMs) || Date.now();
+    const ttlMs = Math.max(500, numberOrZero(options.ttlMs) || DEFAULT_VIEWPORT_FOLLOW_MS);
+    return {
+      threadId: id,
+      reason: String(options.reason || "viewport"),
+      untilMs: nowMs + ttlMs,
+    };
+  }
+
+  function shouldFollowViewport(follow, options = {}) {
+    if (!follow || !follow.threadId) return false;
+    const threadId = String(options.threadId || "").trim();
+    if (!threadId || String(follow.threadId) !== threadId) return false;
+    const nowMs = numberOrZero(options.nowMs) || Date.now();
+    return nowMs <= numberOrZero(follow.untilMs);
+  }
+
+  return {
+    DEFAULT_NEAR_BOTTOM_PX,
+    DEFAULT_SUBMIT_FOLLOW_MS,
+    DEFAULT_VIEWPORT_FOLLOW_MS,
+    DEFAULT_RECENT_BOTTOM_MS,
+    createSubmittedMessageFollow,
+    createViewportFollow,
+    isNearBottom,
+    shouldFollowViewport,
+    shouldFollowSubmittedMessage,
+    shouldStartViewportFollow,
+  };
+}));

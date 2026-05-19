@@ -17,8 +17,12 @@ const state = {
   recentCompletedReplyAnchor: null,
   conversationScrollIntentAtMs: 0,
   conversationLastScrollTop: 0,
+  conversationNearBottomAtMs: 0,
+  conversationNearBottomThreadId: "",
   programmaticScrollUntilMs: 0,
   autoScrollHold: null,
+  submittedMessageBottomFollow: null,
+  viewportBottomFollow: null,
   threadListRenderScheduled: false,
   threadListRenderFrame: null,
   threadNotificationThrottle: new Map(),
@@ -136,7 +140,7 @@ const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
 const MAX_RETAINED_OPERATIONS_PER_TURN = 1;
-const CLIENT_BUILD_ID = "0.1.9|codex-mobile-shell-v61";
+const CLIENT_BUILD_ID = "0.1.9|codex-mobile-shell-v63";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -148,6 +152,7 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/draft-store.js",
   "/markdown-renderer.js",
   "/viewport-metrics.js",
+  "/conversation-scroll.js",
   "/app.js",
   "/manifest.json",
   "/sw.js",
@@ -194,6 +199,7 @@ const apiClient = window.CodexApiClient.createApiClient({
 });
 const runtimeSettings = window.CodexRuntimeSettings;
 const viewportMetrics = window.CodexViewportMetrics;
+const conversationScroll = window.CodexConversationScroll;
 const draftStore = window.CodexDraftStore.createDraftStore({
   storage: localStorage,
   indexedDB: window.indexedDB,
@@ -4106,8 +4112,10 @@ function renderCurrentThread(options = {}) {
     return;
   }
   updateSubagentPanelUi();
-  const shouldStickToBottom = !shouldHoldAutoScrollForCurrentTurn()
-    && (options.stickToBottom === true || isConversationNearBottom());
+  const shouldFollowBottom = shouldFollowSubmittedMessageToBottom() || shouldFollowViewportChangeToBottom();
+  const shouldStickToBottom = shouldFollowBottom
+    || (!shouldHoldAutoScrollForCurrentTurn()
+      && (options.stickToBottom === true || isConversationNearBottom()));
   const previousKeys = existingConversationRenderKeys();
   cleanupLeavingItems();
   const titleEl = $("threadTitle");
@@ -5687,17 +5695,114 @@ function scrollConversationToBottom() {
   scheduleScrollToBottomButtonUpdate();
 }
 
+function clearSubmittedMessageBottomFollow() {
+  state.submittedMessageBottomFollow = null;
+}
+
+function clearViewportBottomFollow() {
+  state.viewportBottomFollow = null;
+}
+
+function shouldFollowSubmittedMessageToBottom() {
+  const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
+  const shouldFollow = conversationScroll.shouldFollowSubmittedMessage(state.submittedMessageBottomFollow, {
+    threadId,
+    nowMs: Date.now(),
+  });
+  if (!shouldFollow && state.submittedMessageBottomFollow) clearSubmittedMessageBottomFollow();
+  return shouldFollow;
+}
+
+function shouldFollowViewportChangeToBottom() {
+  const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
+  const shouldFollow = conversationScroll.shouldFollowViewport(state.viewportBottomFollow, {
+    threadId,
+    nowMs: Date.now(),
+  });
+  if (!shouldFollow && state.viewportBottomFollow) clearViewportBottomFollow();
+  return shouldFollow;
+}
+
+function scheduleBottomFollowScroll(shouldFollow) {
+  [0, 80, 240, 600, 1200].forEach((delay) => {
+    window.setTimeout(() => {
+      if (shouldFollow()) scrollConversationToBottom();
+    }, delay);
+  });
+}
+
+function scheduleSubmittedMessageBottomFollowScroll() {
+  scheduleBottomFollowScroll(shouldFollowSubmittedMessageToBottom);
+}
+
+function scheduleViewportBottomFollowScroll() {
+  scheduleBottomFollowScroll(shouldFollowViewportChangeToBottom);
+}
+
+function followSubmittedMessageToBottom(threadId, clientSubmissionId = "") {
+  state.submittedMessageBottomFollow = conversationScroll.createSubmittedMessageFollow(threadId, {
+    clientSubmissionId,
+    nowMs: Date.now(),
+  });
+  if (!state.submittedMessageBottomFollow) return;
+  clearConversationAutoScrollHold();
+  clearRecentCompletedReplyAnchor();
+  scheduleSubmittedMessageBottomFollowScroll();
+}
+
+function followViewportChangeToBottom(reason = "viewport") {
+  const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
+  if (!threadId || !state.currentThread) return;
+  const nowMs = Date.now();
+  const alreadyFollowing = shouldFollowViewportChangeToBottom();
+  const lastNearBottomAtMs = state.conversationNearBottomThreadId === threadId
+    ? state.conversationNearBottomAtMs
+    : 0;
+  const shouldStart = alreadyFollowing || conversationScroll.shouldStartViewportFollow({
+    nearBottom: isConversationNearBottom(),
+    lastNearBottomAtMs,
+    nowMs,
+  });
+  if (!shouldStart) return;
+  if (!alreadyFollowing) {
+    state.viewportBottomFollow = conversationScroll.createViewportFollow(threadId, {
+      reason,
+      nowMs,
+    });
+  }
+  scheduleViewportBottomFollowScroll();
+}
+
 function markProgrammaticConversationScroll() {
   state.programmaticScrollUntilMs = Date.now() + 500;
 }
 
-function syncConversationScrollPosition() {
+function clearConversationNearBottomState() {
+  state.conversationNearBottomAtMs = 0;
+  state.conversationNearBottomThreadId = "";
+}
+
+function noteConversationBottomState(options = {}) {
+  const nearBottom = isConversationNearBottom();
+  if (nearBottom) {
+    state.conversationNearBottomAtMs = Date.now();
+    state.conversationNearBottomThreadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
+  } else if (options.userIntent) {
+    clearConversationNearBottomState();
+  }
+  return nearBottom;
+}
+
+function syncConversationScrollPosition(options = {}) {
   const el = $("conversation");
   if (el) state.conversationLastScrollTop = el.scrollTop;
+  noteConversationBottomState(options);
 }
 
 function rememberConversationScrollIntent() {
   state.conversationScrollIntentAtMs = Date.now();
+  clearSubmittedMessageBottomFollow();
+  clearViewportBottomFollow();
   syncConversationScrollPosition();
 }
 
@@ -5800,6 +5905,7 @@ function updateRecentCompletedReplyAnchorFromScroll() {
   const previousTop = Number(state.conversationLastScrollTop || 0);
   const delta = currentTop - previousTop;
   state.conversationLastScrollTop = currentTop;
+  noteConversationBottomState({ userIntent: Date.now() - Number(state.conversationScrollIntentAtMs || 0) <= 1200 });
   if (Date.now() < state.programmaticScrollUntilMs) return;
   if (Date.now() - Number(state.conversationScrollIntentAtMs || 0) > 1200) return;
   if (delta < -2) {
@@ -5854,6 +5960,9 @@ function scrollNodeIntoConversationView(node, margin = 12) {
 function scrollConversationToTurnReply() {
   const target = turnReplyStartNode();
   if (!target) return;
+  clearSubmittedMessageBottomFollow();
+  clearViewportBottomFollow();
+  clearConversationNearBottomState();
   scrollNodeIntoConversationView(target);
   clearRecentCompletedReplyAnchor();
   scheduleScrollToBottomButtonUpdate();
@@ -5862,7 +5971,11 @@ function scrollConversationToTurnReply() {
 function isConversationNearBottom() {
   const el = $("conversation");
   if (!el) return true;
-  return el.scrollHeight - el.scrollTop - el.clientHeight < 96;
+  return conversationScroll.isNearBottom({
+    scrollHeight: el.scrollHeight,
+    scrollTop: el.scrollTop,
+    clientHeight: el.clientHeight,
+  });
 }
 
 function updateScrollToBottomButton() {
@@ -6481,6 +6594,7 @@ async function sendMessage(event) {
     for (const item of state.pendingAttachments) {
       body.append("attachments", item.file, item.file.name || "upload");
     }
+    followSubmittedMessageToBottom(state.currentThreadId, clientSubmissionId);
     await api(`/api/threads/${encodeURIComponent(state.currentThreadId)}/messages`, {
       method: "POST",
       body,
@@ -6505,6 +6619,7 @@ async function sendMessage(event) {
     scheduleCurrentThreadRefresh(600);
     scheduleLivePollIfNeeded(1200);
   } catch (err) {
+    clearSubmittedMessageBottomFollow();
     const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err))
       || "发送失败，请重试";
     state.sendButtonHint = "重试";
@@ -6856,6 +6971,8 @@ function wireUi() {
   if ($("scrollToBottom")) $("scrollToBottom").addEventListener("click", () => {
     clearConversationAutoScrollHold();
     clearRecentCompletedReplyAnchor();
+    clearSubmittedMessageBottomFollow();
+    clearViewportBottomFollow();
     scrollConversationToBottom();
   });
   if ($("scrollToTurnReply")) $("scrollToTurnReply").addEventListener("click", scrollConversationToTurnReply);
@@ -6993,20 +7110,29 @@ function wireUi() {
   window.addEventListener("beforeunload", saveCurrentDraftNow);
   document.addEventListener("focusin", () => scheduleVisualRecovery("focusin", 40, { render: false, heavy: false, delays: [40, 180] }));
   document.addEventListener("focusout", () => scheduleVisualRecovery("focusout", 160, { render: false, heavy: false, delays: [160, 420] }));
-  window.addEventListener("orientationchange", () => scheduleMobileResume("orientation", 250));
+  window.addEventListener("orientationchange", () => {
+    followViewportChangeToBottom("orientation");
+    scheduleMobileResume("orientation", 250);
+  });
   window.addEventListener("resize", () => {
+    followViewportChangeToBottom("resize");
     updateViewportVars();
     updateComposerHeightVar();
+    scheduleViewportBottomFollowScroll();
     scheduleVisualRecovery("resize", 40, { render: false, heavy: false, delays: [40, 180] });
   });
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", () => {
+      followViewportChangeToBottom("visual-viewport-resize");
       updateViewportVars();
       updateComposerHeightVar();
+      scheduleViewportBottomFollowScroll();
       scheduleVisualRecovery("visual-viewport", 40, { render: false, heavy: false, delays: [40, 180, 520] });
     });
     window.visualViewport.addEventListener("scroll", () => {
+      followViewportChangeToBottom("visual-viewport-scroll");
       updateViewportVars();
+      scheduleViewportBottomFollowScroll();
       scheduleVisualRecovery("visual-viewport-scroll", 40, { render: false, heavy: false, delays: [40, 180] });
     });
   }

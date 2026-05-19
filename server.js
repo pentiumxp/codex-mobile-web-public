@@ -213,6 +213,7 @@ function appShellBuildId() {
     "draft-store.js",
     "markdown-renderer.js",
     "viewport-metrics.js",
+    "conversation-scroll.js",
     "app.js",
     "sw.js",
     "manifest.json",
