@@ -70,6 +70,67 @@ function writeJsonLine(socket, message) {
   socket.write(`${JSON.stringify(message)}\n`);
 }
 
+test("stdio app-server mux does not overwrite an available shared endpoint", async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-protocol-"));
+  const codexHome = path.join(tempRoot, "codex-home");
+  const endpointFile = path.join(codexHome, "app-server-mux", "endpoint.json");
+  const logFile = path.join(codexHome, "app-server-mux", "mux.log");
+  fs.mkdirSync(path.dirname(endpointFile), { recursive: true });
+
+  const existingServer = net.createServer((socket) => socket.end());
+  await new Promise((resolve, reject) => {
+    existingServer.once("error", reject);
+    existingServer.listen(0, "127.0.0.1", resolve);
+  });
+  t.after(() => existingServer.close());
+
+  const existingEndpoint = {
+    protocol: "jsonl-tcp",
+    host: "127.0.0.1",
+    port: existingServer.address().port,
+    pid: 12345,
+    childPid: 12346,
+    startedAt: "2026-05-19T00:00:00.000Z",
+    capabilities: { mobileUserMessageEcho: true },
+  };
+  fs.writeFileSync(endpointFile, JSON.stringify(existingEndpoint, null, 2), "utf8");
+
+  const child = spawn(process.execPath, [muxPath, "app-server", "--listen", "stdio://"], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      CODEX_HOME: codexHome,
+      CODEX_MUX_HOST: "127.0.0.1",
+      CODEX_MUX_PORT: "0",
+      CODEX_MUX_CODEX_EXE: process.execPath,
+      CODEX_MUX_CODEX_ARGS: mockCodexPath,
+      CODEX_MUX_LOG_FILE: logFile,
+      CODEX_MUX_ENDPOINT_FILE: endpointFile,
+    },
+    stdio: ["pipe", "ignore", "pipe"],
+  });
+  t.after(() => {
+    child.kill("SIGTERM");
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  let stderr = "";
+  child.stderr.on("data", (chunk) => {
+    stderr += String(chunk);
+  });
+
+  await waitFor(() => {
+    try {
+      return fs.readFileSync(logFile, "utf8").includes("endpoint not published");
+    } catch (_) {
+      return false;
+    }
+  });
+
+  assert.deepEqual(readJsonFile(endpointFile), existingEndpoint);
+  assert.equal(stderr, "");
+});
+
 test("mux forwards server requests and returns client responses with the original id", async (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-protocol-"));
   const codexHome = path.join(tempRoot, "codex-home");

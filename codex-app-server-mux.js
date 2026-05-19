@@ -17,10 +17,12 @@ const CODEX_ARGS = process.env.CODEX_MUX_CODEX_ARGS
   : PASSTHROUGH_ARGS.length
     ? PASSTHROUGH_ARGS
   : ["app-server", "--analytics-default-enabled"];
+const INBOUND_ARGS = PASSTHROUGH_ARGS.length ? PASSTHROUGH_ARGS : CODEX_ARGS;
 const HOST = process.env.CODEX_MUX_HOST || "127.0.0.1";
 const PORT = Number(process.env.CODEX_MUX_PORT || "0");
 const STANDALONE = /^(1|true|yes|on)$/i.test(process.env.CODEX_MUX_STANDALONE || "");
 const KEEP_ALIVE = STANDALONE || /^(1|true|yes|on)$/i.test(process.env.CODEX_MUX_KEEP_ALIVE || "");
+const PUBLISH_ENDPOINT = process.env.CODEX_MUX_PUBLISH_ENDPOINT || "auto";
 const RUNTIME_DIR = process.env.CODEX_MUX_RUNTIME_DIR || path.join(CODEX_HOME, "app-server-mux");
 const ENDPOINT_FILE = process.env.CODEX_MUX_ENDPOINT_FILE || path.join(RUNTIME_DIR, "endpoint.json");
 const LOG_FILE = process.env.CODEX_MUX_LOG_FILE || path.join(RUNTIME_DIR, "mux.log");
@@ -124,6 +126,23 @@ function assertCommandAvailable(command, label) {
   if (commandNeedsFilesystemCheck(value) && !fs.existsSync(value)) {
     throw new Error(`${label} not found: ${value}`);
   }
+}
+
+function isTruthy(value) {
+  return /^(1|true|yes|on)$/i.test(String(value || ""));
+}
+
+function isFalsey(value) {
+  return /^(0|false|no|off)$/i.test(String(value || ""));
+}
+
+function argsRequestStdioAppServer(args) {
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = String(args[i] || "");
+    if (arg === "--listen" && String(args[i + 1] || "").startsWith("stdio://")) return true;
+    if (arg.startsWith("--listen=stdio://")) return true;
+  }
+  return false;
 }
 
 function createLineParser(onLine) {
@@ -649,7 +668,7 @@ function startTcpServer() {
     });
   });
 
-  tcpServer.listen(PORT, HOST, () => {
+  tcpServer.listen(PORT, HOST, async () => {
     const address = tcpServer.address();
     const endpoint = {
       protocol: "jsonl-tcp",
@@ -664,9 +683,14 @@ function startTcpServer() {
         notificationReplay: true,
       },
     };
-    fs.mkdirSync(path.dirname(ENDPOINT_FILE), { recursive: true });
-    fs.writeFileSync(ENDPOINT_FILE, JSON.stringify(endpoint, null, 2), "utf8");
-    log(`listening ${endpoint.host}:${endpoint.port}; endpoint=${ENDPOINT_FILE}`);
+    const publish = await shouldPublishEndpoint();
+    if (publish.publish) {
+      fs.mkdirSync(path.dirname(ENDPOINT_FILE), { recursive: true });
+      fs.writeFileSync(ENDPOINT_FILE, JSON.stringify(endpoint, null, 2), "utf8");
+      log(`listening ${endpoint.host}:${endpoint.port}; endpoint=${ENDPOINT_FILE}`);
+    } else {
+      log(`listening ${endpoint.host}:${endpoint.port}; endpoint not published: ${publish.reason}`);
+    }
   });
   tcpServer.on("error", (err) => {
     log(`tcp server error: ${err.message}`);
@@ -727,6 +751,30 @@ function connectExistingEndpoint(endpoint) {
       reject(err);
     });
   });
+}
+
+async function shouldPublishEndpoint() {
+  if (isFalsey(PUBLISH_ENDPOINT)) {
+    return { publish: false, reason: "disabled by CODEX_MUX_PUBLISH_ENDPOINT" };
+  }
+  if (isTruthy(PUBLISH_ENDPOINT)) return { publish: true };
+  if (!argsRequestStdioAppServer(INBOUND_ARGS)) return { publish: true };
+
+  const endpoint = readExistingEndpoint();
+  if (!endpoint) return { publish: true };
+  try {
+    const socket = await connectExistingEndpoint(endpoint);
+    try {
+      socket.destroy();
+    } catch (_) {}
+    return {
+      publish: false,
+      reason: `existing mux endpoint is available at ${endpoint.host}:${endpoint.port} pid=${endpoint.pid || ""}`,
+    };
+  } catch (err) {
+    log(`existing mux endpoint unavailable for publish guard; publishing this endpoint: ${err.message}`);
+    return { publish: true };
+  }
 }
 
 function attachDesktopToExistingMux(socket, endpoint) {
