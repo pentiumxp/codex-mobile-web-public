@@ -114,13 +114,22 @@
   </table></div>`;
   }
 
-  function renderMarkdownList(lines, ordered) {
+  function orderedListStart(lines, options) {
+    const numbers = lines
+      .map((line) => /^\s*(\d+)[.)]\s+/.exec(line))
+      .filter(Boolean)
+      .map((match) => Number(match[1]) || 1);
+    const first = numbers[0] || 1;
+    if (options && options.orderedListMode === "source") return first;
+    return lines.length <= 1 ? first : 1;
+  }
+
+  function renderMarkdownList(lines, ordered, options) {
     const tag = ordered ? "ol" : "ul";
     const itemPattern = ordered ? /^\s*(\d+)[.)]\s+(.+)$/ : /^\s*[-*+]\s+(.+)$/;
-    let start = 1;
+    const start = ordered ? orderedListStart(lines, options) : 1;
     const items = lines.map((line) => {
       const match = itemPattern.exec(line);
-      if (ordered && match) start = Number(match[1]) || start;
       const text = match ? match[ordered ? 2 : 1] : line.trim();
       return `<li>${renderInlineMarkdown(text)}</li>`;
     });
@@ -206,7 +215,7 @@
           list.push(lines[i]);
           i += 1;
         }
-        blocks.push(renderMarkdownList(list, false));
+        blocks.push(renderMarkdownList(list, false, options));
         continue;
       }
 
@@ -216,7 +225,7 @@
           list.push(lines[i]);
           i += 1;
         }
-        blocks.push(renderMarkdownList(list, true));
+        blocks.push(renderMarkdownList(list, true, options));
         continue;
       }
 

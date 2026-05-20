@@ -14,6 +14,27 @@ test("ordered markdown lists keep their source numbering across blank-separated 
   assert.match(html, /<ol start="3"><li>third<\/li><\/ol>/);
 });
 
+test("ordered markdown lists use the first item as the source start", () => {
+  const html = renderer.renderMarkdown("3. first\n4. second", { orderedListMode: "source" });
+
+  assert.match(html, /<ol start="3"><li>first<\/li><li>second<\/li><\/ol>/);
+  assert.doesNotMatch(html, /<ol start="4">/);
+});
+
+test("chat ordered markdown lists reset detached continuation numbering", () => {
+  const html = renderer.renderMarkdown("6. one\n7. two\n8. three\n9. four");
+
+  assert.match(html, /<ol><li>one<\/li><li>two<\/li><li>three<\/li><li>four<\/li><\/ol>/);
+  assert.doesNotMatch(html, /<ol start="6">/);
+  assert.doesNotMatch(html, /<ol start="9">/);
+});
+
+test("source-mode ordered markdown lists preserve detached continuation numbering", () => {
+  const html = renderer.renderMarkdown("6. one\n7. two", { orderedListMode: "source" });
+
+  assert.match(html, /<ol start="6"><li>one<\/li><li>two<\/li><\/ol>/);
+});
+
 test("bare URLs render as safe clickable links", () => {
   const html = renderer.renderInlineMarkdown("Open https://example.com/a?b=1&c=2, or www.example.org.");
 
