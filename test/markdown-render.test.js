@@ -14,6 +14,14 @@ test("ordered markdown lists keep their source numbering across blank-separated 
   assert.match(html, /<ol start="3"><li>third<\/li><\/ol>/);
 });
 
+test("ordered markdown lists use the first source number as the list start", () => {
+  const html = renderer.renderMarkdown("1. first\n2. second\n3. third\n\n3. resumed\n4. next\n5. final");
+
+  assert.match(html, /<ol><li>first<\/li><li>second<\/li><li>third<\/li><\/ol>/);
+  assert.match(html, /<ol start="3"><li>resumed<\/li><li>next<\/li><li>final<\/li><\/ol>/);
+  assert.doesNotMatch(html, /<ol start="5"><li>resumed/);
+});
+
 test("bare URLs render as safe clickable links", () => {
   const html = renderer.renderInlineMarkdown("Open https://example.com/a?b=1&c=2, or www.example.org.");
 
