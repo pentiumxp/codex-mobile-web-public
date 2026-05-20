@@ -187,7 +187,16 @@ function compactMobileNotification(message) {
   return compactMobileObject(cloneJson(message));
 }
 
+function isSyntheticMuxUserMessage(message) {
+  if (!message || message.method !== "item/completed") return false;
+  const item = message.params && message.params.item;
+  return Boolean(item
+    && item.type === "userMessage"
+    && /^mux-user-/.test(String(item.id || "")));
+}
+
 function messageForClient(client, message) {
+  if (isSyntheticMuxUserMessage(message) && !isMobileWebClient(client)) return null;
   if (!isMobileWebClient(client)) return message;
   return compactMobileNotification(message);
 }
