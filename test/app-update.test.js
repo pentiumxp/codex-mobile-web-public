@@ -47,6 +47,18 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(stylesCss, /\.page-refresh-prompt/);
 });
 
+test("page refresh prompt also handles server restart reconnects", () => {
+  assert.match(appJs, /pageRefreshReason:\s*""/);
+  assert.match(appJs, /function showReconnectRefreshPrompt\(\)/);
+  assert.match(appJs, /state\.pageRefreshReason = "reconnect"/);
+  assert.match(appJs, /服务重启中，点击刷新并重连/);
+  assert.match(appJs, /正在刷新并重连/);
+  assert.match(appJs, /async function waitForPageBuildConfig\(timeoutMs = 18000\)/);
+  assert.match(appJs, /state\.pageRefreshReason === "reconnect"[\s\S]*await waitForPageBuildConfig\(\)/);
+  assert.match(appJs, /showReconnectRefreshPrompt\(\);[\s\S]*showError\(err\)/);
+  assert.match(appJs, /refreshPageForNewBuild\(\)\.catch\(showError\)/);
+});
+
 test("README documents manual-start update restart requirement", () => {
   assert.match(readme, /直接手动运行 `node server\.js`、`npm start` 或一次性 shell 命令/);
   assert.match(readme, /自更新会完成文件更新并停止旧服务/);

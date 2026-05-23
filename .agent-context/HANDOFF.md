@@ -3421,3 +3421,450 @@
   - Public validation passed before push: `npm.cmd test` 92/92, `npm.cmd run check`, `npm.cmd run check:macos`, `git diff --check`, `node --check public/app.js`, and staged diff privacy scan.
   - Private repository was pushed after the public release.
   - Private product commit: `3481e7a 修正移动端发送与旋转后的底部滚动保持`.
+
+## 2026-05-23 Top-Right Turn Timer Regression Fix
+
+- User report:
+  - After today's Mobile Web changes, the top-right turn status/timer box sometimes disappeared. This was a functional regression from the previous behavior.
+- Current state observed before the fix:
+  - Disk worktree had returned to clean `HEAD=98cb19e`, with `public/app.js` / `public/sw.js` at `codex-mobile-shell-v63`.
+  - The running 8787 listener PID was `26160`; `/api/public-config` initially matched `0.1.9|codex-mobile-shell-v63`.
+- Diagnosis:
+  - `#turnTimer` was hidden whenever `currentLiveTurn()` returned null and the latest turn had no final duration.
+  - The live-turn predicate depended too narrowly on explicit running/active status in the turn snapshot.
+  - During optimistic send, refresh, replay, or incomplete app-server snapshots, the browser can know `state.activeTurnId` before the matching turn has a fully normalized running status. That made the top-right status box disappear even though the turn was still the active one.
+  - Completed notifications can also arrive without `durationMs` / `completedAt`; the old `turnFinalSeconds()` then returned null and hid the settled timer.
+- Local fix:
+  - `public/app.js`
+    - `syncActiveTurnFromThread()` now preserves the current `activeTurnId` when the matching turn exists and is not complete, even if its status field is not yet normalized.
+    - `isLiveTurn()` treats the current active incomplete turn as live.
+    - `isTurnComplete()` recognizes `completedAtMs` and zero-valued `durationMs`, and does not treat incomplete `interrupted` turns as complete.
+    - `turnFinalSeconds()` now derives final seconds from `completedAtMs` / parsed timestamps and falls back to the current activity time for completed snapshots without duration fields.
+    - `turn/completed` handling stamps `completedAtMs` when the event lacks explicit completion timing.
+  - Added `test/turn-timer.test.js` covering optimistic active-turn visibility and completion-without-duration settled timer behavior.
+  - PWA shell cache/build id bumped to `codex-mobile-shell-v68` / `0.1.9|codex-mobile-shell-v68`.
+- Validation:
+  - `node --check public\app.js` passed.
+  - `node --test test\turn-timer.test.js test\mobile-viewport.test.js` passed: 5/5.
+  - `npm.cmd test` passed: 94/94.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Edited source/test files were checked for UTF-8 BOM; first bytes were `34 117 115`, no BOM.
+  - Running 8787 `/api/public-config` now returns `clientBuildId: 0.1.9|codex-mobile-shell-v68` and `shellCacheName: codex-mobile-shell-v68`.
+- Status:
+  - Private workspace has local uncommitted changes for this fix.
+  - Public repository has not been synced or pushed for this fix.
+  - After the browser accepted the v68 page refresh prompt, the user reported that the Hermes thread's top-right status box appeared again.
+  - Therefore this specific symptom should not be treated first as requiring rollout compression. Consider rollout continuation separately only if the thread is over threshold or detail reads keep falling back because the rollout is too large.
+
+## 2026-05-23 Current-Turn Steering Regression Fix
+
+- User report:
+  - After today's Mobile Web changes, active-turn guidance / "引导" sometimes behaved as if the agent did not see it.
+  - A live test message in this thread did arrive, so the transport was not globally broken; the suspect path was inconsistent steering classification after refresh.
+- Diagnosis:
+  - `server.js` already routes existing-thread messages through `turn/steer` whenever the request body includes `activeTurnId`.
+  - If the refreshed browser misses or loses the live `turn/started` SSE state, `state.activeTurnId` can be empty even while the current thread snapshot still shows an incomplete latest running turn.
+  - Before this fix, the composer button state and submit path looked only at `state.activeTurnId`, so a typed guidance message could be submitted without `activeTurnId` and fall back to `turn/start`.
+- Local fix:
+  - `public/app.js` now derives a `currentSteerableTurnId()` from `currentLiveTurn()`.
+  - `isLiveTurn()` treats the latest incomplete turn as live when the thread summary/status is running, and still preserves explicit `activeTurnId` and incomplete `interrupted` turns.
+  - `syncActiveTurnFromThread()`, composer button mode, current-thread send, and Stop/interrupt now all use the same derived steerable turn id.
+  - When a send is classified as steering, the frontend stamps `state.activeTurnId = steerTurnId` before feedback/render updates so the UI stays coherent.
+  - PWA shell cache/build id bumped to `codex-mobile-shell-v69` / `0.1.9|codex-mobile-shell-v69`.
+  - Added `test/steering-active-turn.test.js` covering refresh-derived steering and interrupt targeting.
+- Validation:
+  - `node --check public\app.js` passed.
+  - Targeted `node --test test\steering-active-turn.test.js test\turn-timer.test.js test\mobile-viewport.test.js` passed: 7/7.
+  - `npm.cmd test` passed: 96/96.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Edited source/test files were checked for UTF-8 BOM; first bytes were `34 117 115`, no BOM.
+  - Running 8787 `/api/public-config` returns `clientBuildId: 0.1.9|codex-mobile-shell-v69` and `shellCacheName: codex-mobile-shell-v69`.
+- Status:
+  - Private workspace has local uncommitted changes for v68 timer fix plus this v69 steering fix.
+  - Public repository has not been synced, committed, or pushed for this fix.
+
+## 2026-05-23 Hermes-Codex Mux Worker Runtime Restore
+
+- User report:
+  - After a restart, Hermes Mobile could no longer receive Codex-side messages/updates through the Codex Mobile service chain.
+- Diagnosis:
+  - Codex Mobile 8787 was healthy: `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, mux endpoint `127.0.0.1:56410`, and `lastError=null`.
+  - Hermes Mobile 8797 and bridge host 8798 were listening; `GET http://127.0.0.1:8797/api/public-config` returned 200.
+  - Hermes Mux API was healthy with owner auth: `GET /api/codex-mux/tasks?assignedWorker=codex-hermes-main&status=open,running` returned 4 tasks.
+  - The Codex-Hermes polling worker was the broken link:
+    - `hermes-codex-mux-worker-auth.out.log` stopped at `2026-05-23T08:21Z`.
+    - No real `codex-hermes-mux-worker.js` worker process was running.
+    - The earlier rollback had removed the worker files and `npm.cmd run mux:worker` script from the current repo.
+- Local restore:
+  - Restored `adapters/hermes-codex-mux-worker-service.js`.
+  - Restored `scripts/codex-hermes-mux-worker.js`.
+  - Added `test/hermes-codex-mux-worker-service.test.js`.
+  - Updated `package.json` with `mux:worker` and syntax-check coverage for the worker service/CLI.
+  - Updated `.agent-context/PROJECT_CONTEXT.md` with durable worker runbook facts.
+- Runtime recovery:
+  - A real one-shot smoke poll succeeded:
+    - `npm.cmd run mux:worker -- --once --base-url http://127.0.0.1:8797`
+    - output reported `workerId=codex-hermes-main`, `tasks=4`.
+  - Started a hidden continuous polling worker using:
+    - `CODEX_HERMES_MUX_AUTH_HEADER_NAME=x-hermes-web-key`
+    - `CODEX_HERMES_MUX_AUTH_VALUE_FILE=C:\ProgramData\HermesMobile\data\secrets\owner-web-key.secret`
+    - base URL `http://127.0.0.1:8797`, poll interval 5000ms.
+  - Running worker process:
+    - `node.exe` PID `55300`
+    - command `node scripts/codex-hermes-mux-worker.js --base-url http://127.0.0.1:8797 --poll-ms 5000`
+  - Logs:
+    - `%USERPROFILE%\.codex-mobile-web\hermes-codex-mux-worker-restored.out.log`
+    - `%USERPROFILE%\.codex-mobile-web\hermes-codex-mux-worker-restored.err.log`
+  - Hermes task heartbeat now reports:
+    - `workerId=codex-hermes-main`
+    - `observedAt=2026-05-23T11:56:25Z` or newer
+    - `pid=55300`
+    - `mode=polling`
+- Validation:
+  - `node --check adapters\hermes-codex-mux-worker-service.js` passed.
+  - `node --check scripts\codex-hermes-mux-worker.js` passed.
+  - `node --test test\hermes-codex-mux-worker-service.test.js` passed: 3/3.
+  - `npm.cmd test` passed: 99/99.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Edited source/test files were checked for UTF-8 BOM; no BOM.
+- Status:
+  - Immediate runtime bridge is restored.
+  - Private workspace has local uncommitted changes for v68/v69 frontend fixes plus the restored Hermes-Codex worker.
+  - Public repository has not been synced, committed, or pushed.
+  - Existing 4 Hermes Mux tasks are already in `worker.blocked.context_conflict` state from 2026-05-22; the restored worker will heartbeat and handle new/open tasks, but those old blocked task states should be reviewed separately if the user expects them to continue.
+
+## 2026-05-23 Mux Endpoint Drift Hotfix After Hermes Thread Stall
+
+- User report:
+  - Current Codex Mobile thread was normal, but the new `Hermes 05-23` continuation thread produced one sentence and then stopped showing updates mid-work.
+  - The source thread had already been compressed/continued, and the new rollout was small, so this was not a large-rollout detail-load problem.
+- Runtime evidence:
+  - `Hermes 05-23` thread id: `019e54b8-7064-7763-9a37-f23c26a6bb32`.
+  - Rollout size was about `593578` bytes and not over threshold.
+  - Thread detail latest turn was `interrupted` with only 4 visible items, so no more output was expected from that turn after the runtime split.
+  - Before repair, Mobile Web `/api/status` reported its live external mux endpoint as port `64172`, while `%USERPROFILE%\.codex\app-server-mux\endpoint.json` pointed at port `52203`.
+  - Old mux ports `64172`, `56410`, and `53371` were still listening, so the stale Mobile Web connection looked healthy while current Desktop/current app-server traffic had moved to `52203`.
+- Immediate repair:
+  - Called authenticated `POST /api/app-server/reconnect`.
+  - After reconnect, `/api/status` and endpoint file both reported `127.0.0.1:52203`, `ready=true`, `lastError=null`.
+- Code hotfix:
+  - `server.js` now exports and uses `sameExternalEndpoint()`.
+  - `CodexAppServerClient.ensure()` resolves the current shared endpoint before reusing an open transport. If the endpoint file changed while the old TCP socket is still open, it logs the drift, closes the stale socket, and reconnects to the current mux.
+  - Added `test/protocol.test.js` coverage for same/different JSONL TCP and WebSocket endpoints.
+  - Updated `.agent-context/PROJECT_CONTEXT.md` with the durable endpoint-drift rule.
+- Activation:
+  - Restarted only the 8787 Node listener to load the `server.js` fix.
+  - Old 8787 PID `46628`; new 8787 PID `35164`.
+  - Did not restart the shared mux/app-server chain.
+  - Post-restart `/api/status` reports endpoint port `52203`, matching endpoint file; `lastError=null`.
+  - Restored Hermes-Codex worker PID `55300` continued polling after the 8787 restart.
+- Validation:
+  - `node --check server.js` passed.
+  - Targeted `node --test test\protocol.test.js` passed: 9/9.
+  - `npm.cmd test` passed: 100/100.
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+- Status:
+  - Runtime split is repaired for future requests.
+  - The already interrupted `Hermes 05-23` turn will not resume by itself; after refresh/reopen, the user should send the next instruction in that thread to continue on the now-correct mux.
+
+## 2026-05-23 Interrupted Turn Steering Fix
+
+- User follow-up:
+  - After reconnecting the app-server stream, the `Hermes 05-23` thread still did not reply when the user tried to continue it.
+- Diagnosis:
+  - Service-chain state was healthy: 8787 `/api/status` and `%USERPROFILE%\.codex\app-server-mux\endpoint.json` both pointed at the same mux port, and the Hermes-Codex worker was still polling.
+  - The `Hermes 05-23` latest turn was already `interrupted`, with no new turn created after reconnect.
+  - The v69 frontend treated any `interrupted` turn without completion/duration fields as a live/steerable turn. That meant an old interrupted turn could keep the composer in steer/guide mode and route new text to `turn/steer` instead of starting a fresh turn.
+- Local fix:
+  - `public/app.js` now treats a turn as live only when it is the explicit `state.activeTurnId`, the latest turn in a running thread, or has a running status.
+  - Bare stale `interrupted` turns are no longer steerable and no longer display as `syncing` unless they are actually live.
+  - PWA shell build/cache bumped to `codex-mobile-shell-v70` / `0.1.9|codex-mobile-shell-v70`.
+  - `test/steering-active-turn.test.js` covers the stale-interrupted-turn guard.
+- Validation:
+  - `node --check public\app.js` passed.
+  - Targeted `node --test test\steering-active-turn.test.js test\turn-timer.test.js test\mobile-viewport.test.js` passed: 8/8.
+  - `npm.cmd test` passed: 101/101.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+- Status:
+  - `/api/public-config` returns `clientBuildId: 0.1.9|codex-mobile-shell-v70` and `shellCacheName: codex-mobile-shell-v70`.
+  - This is a frontend/static-asset fix; the user must accept the page refresh prompt or hard refresh the PWA before retrying the `Hermes 05-23` thread.
+
+## 2026-05-23 Guide Button Delayed Click Interrupt Fix
+
+- User follow-up:
+  - The `Hermes 05-23` thread could receive a new message stream again, but tapping `引导` could still cause the running turn to pause/interrupt.
+- Evidence:
+  - `Hermes 05-23` latest turn after the report was `interrupted`, while service-chain state remained healthy.
+  - The composer submit button had both `pointerup` and `click` listeners. On iOS/PWA, a delayed `click` from the same physical tap can arrive after the `pointerup` path has already sent the guide message and cleared the composer. At that point the same button can be in empty-input `Stop` mode and call the interrupt path.
+- Local fix:
+  - `public/app.js` now records `lastSendButtonPointerUpAt`.
+  - A `click` within 2500 ms after a send-button `pointerup` is suppressed.
+  - General send-button debounce was raised from 650 ms to 1200 ms.
+  - PWA shell build/cache bumped to `codex-mobile-shell-v71` / `0.1.9|codex-mobile-shell-v71`.
+  - `test/steering-active-turn.test.js` covers the delayed-click suppression.
+- Validation:
+  - `node --check public\app.js` passed.
+  - Targeted `node --test test\steering-active-turn.test.js test\turn-timer.test.js test\mobile-viewport.test.js` passed: 9/9.
+  - `npm.cmd test` passed: 102/102.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Edited source/test files have no UTF-8 BOM.
+- Status:
+  - `/api/public-config` returns `clientBuildId: 0.1.9|codex-mobile-shell-v71` and `shellCacheName: codex-mobile-shell-v71`.
+  - This is a frontend/static-asset fix; no 8787 listener restart is needed, but mobile clients must refresh to v71.
+
+## 2026-05-23 Recoverable Guide Message Echo
+
+- User follow-up:
+  - During a running turn, tapping `引导` no longer interrupted the turn, but the guide text disappeared after exiting the app and reopening the thread.
+  - Before exit, the guide text was visible; after re-entering, the thread detail did not show that guide text, and the Agent did not visibly respond to it.
+- Evidence:
+  - `Hermes 05-23` thread detail showed recent durable turns with only app-server `userMessage` items; the just-sent guide text was absent after reload.
+  - The frontend merge path only preserved `mux-user-*` synthetic user messages, not `local-user-*`.
+  - The current-thread send path did not record a local recoverable echo after successful `turn/steer` / existing-thread submission.
+- Local fix:
+  - `public/app.js` adds `codexMobileSubmittedUserMessages` localStorage recovery for recent submitted user messages.
+  - Current-thread sends and steering submissions now create a `local-user-*` item after the POST succeeds, record it with thread/turn id, and upsert it into the visible turn.
+  - Thread detail load/refresh applies recent submitted-user records back into the thread before rendering.
+  - Synthetic user-message matching now covers both `mux-user-*` and `local-user-*`; when a real matching `userMessage` later appears, the synthetic echo is shadowed.
+  - Records are TTL-limited to 30 minutes and capped at 80 entries.
+  - PWA shell build/cache bumped to `codex-mobile-shell-v72` / `0.1.9|codex-mobile-shell-v72`.
+  - `test/steering-active-turn.test.js` covers recoverable local guide echoes.
+- Validation:
+  - `node --check public\app.js` passed.
+  - Targeted `node --test test\steering-active-turn.test.js test\turn-timer.test.js test\mobile-viewport.test.js test\draft-store.test.js` passed: 15/15.
+  - `npm.cmd test` passed: 103/103.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Edited source/test files have no UTF-8 BOM.
+- Status:
+  - `/api/public-config` returns `clientBuildId: 0.1.9|codex-mobile-shell-v72` and `shellCacheName: codex-mobile-shell-v72`.
+  - This preserves newly submitted guide text across app reloads after the client has refreshed to v72. It cannot reconstruct guide text that was submitted before v72 because that text was never stored in local recovery state.
+
+## 2026-05-23 Guide Echo Ordering Fix
+
+- User follow-up:
+  - v72 made guide text visible after re-entering the conversation, but it appeared above the newer conversation content, requiring scrolling upward and breaking information-flow order.
+- Cause:
+  - `applySubmittedUserMessagesToThread()` merged the local guide echo as the existing item list and the durable turn items as incoming items, which placed the recovered `local-user-*` message at the top of the turn.
+- Local fix:
+  - Reversed the merge direction for recovered submitted-user records:
+    - existing durable `turn.items` stay first;
+    - recovered `local-user-*` guide echo appends after them unless shadowed by a real matching `userMessage`.
+  - PWA shell build/cache bumped to `codex-mobile-shell-v73` / `0.1.9|codex-mobile-shell-v73`.
+  - `test/steering-active-turn.test.js` asserts the append-order merge.
+- Validation:
+  - `node --check public\app.js` passed.
+  - Targeted `node --test test\steering-active-turn.test.js test\mobile-viewport.test.js` passed: 8/8.
+  - `npm.cmd test` passed: 103/103.
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+- Status:
+  - `/api/public-config` returns `clientBuildId: 0.1.9|codex-mobile-shell-v73` and `shellCacheName: codex-mobile-shell-v73`.
+  - Static frontend fix only; mobile clients must refresh to v73.
+
+## 2026-05-23 Reverted Private Product Code To Public v63
+
+- User decision:
+  - Stop iterating on the guide/steer fixes and directly overwrite private product code with the current public repository version.
+- Source used:
+  - Public repo path: `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - `git pull --ff-only` reported already up to date.
+  - Public HEAD: `b541fef 修正移动端发送与旋转后的底部滚动保持`.
+- Sync performed:
+  - Copied all public tracked files from public repo into private repo.
+  - Preserved private `.agent-context` and runtime files.
+  - Removed the local untracked files introduced during the abandoned guide/worker work:
+    - `adapters\hermes-codex-mux-worker-service.js`
+    - `scripts\codex-hermes-mux-worker.js`
+    - `test\hermes-codex-mux-worker-service.test.js`
+    - `test\steering-active-turn.test.js`
+    - `test\turn-timer.test.js`
+- Resulting frontend:
+  - `public/app.js` is back to `CLIENT_BUILD_ID = "0.1.9|codex-mobile-shell-v63"`.
+  - `public/sw.js` is back to `codex-mobile-shell-v63`.
+  - The abandoned local additions are absent:
+    - no `composerGoal`;
+    - no `codexMobileSubmittedUserMessages`;
+    - no `lastSendButtonPointerUpAt`;
+    - no `currentSteerableTurnId`;
+    - no v70/v71/v72/v73 cache strings.
+- Validation:
+  - `npm.cmd test` passed: 92/92.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `/api/public-config` returns `clientBuildId: 0.1.9|codex-mobile-shell-v63` and `shellCacheName: codex-mobile-shell-v63`.
+- Status:
+  - No commit or push was performed.
+  - `git status --short` still shows line-ending touched files after the cross-repo copy, but `git diff --name-status` shows real content diffs only in `.agent-context/HANDOFF.md`, `.agent-context/PROJECT_CONTEXT.md`, `README.md`, and `public/app.js`.
+  - The `README.md` / `public/app.js` real product diff is the public-safe restart wording replacing the private wording that named Hermes/Gateway.
+
+## 2026-05-23 Restarted 8787 After Public v63 Revert
+
+- User request:
+  - Restart the server after reverting private product files to the public version.
+- Action:
+  - Restarted only the Codex Mobile Web 8787 Node listener by stopping old PID `35164`.
+  - The existing hidden/windowless supervisor restarted it as PID `18744`.
+  - Did not intentionally restart Hermes Mobile, Gateway, WSL, Codex Desktop, or the full shared chain.
+- Verification:
+  - `GET http://127.0.0.1:8787/api/public-config` returns `clientBuildId: 0.1.9|codex-mobile-shell-v63` and `shellCacheName: codex-mobile-shell-v63`.
+  - Authenticated `/api/status` returns `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, and `lastError=null`.
+  - New listener command line is `node.exe C:\Users\xuxin\Documents\codex-mobile-web\server.js`.
+
+## 2026-05-23 Manual Reconnect After Public v63 Restart
+
+- User report:
+  - After restarting the 8787 server on the reverted public v63 code, replies were not visible again.
+- Diagnosis:
+  - `/api/status` reported Mobile Web connected to mux port `63967`.
+  - `%USERPROFILE%\.codex\app-server-mux\endpoint.json` pointed to mux port `53683`.
+  - This reproduced the endpoint drift problem. The public v63 code does not include the later automatic endpoint-drift protection that had been reverted.
+- Immediate repair:
+  - Called authenticated `POST /api/app-server/reconnect`.
+  - After reconnect, `/api/status` and endpoint file both report mux port `53683`, `ready=true`, and `lastError=null`.
+- Status:
+  - Replies should be visible again after the browser reconnects/refreshes.
+  - Because the code is back to public v63, future mux endpoint changes can still require manual `/api/app-server/reconnect` unless the endpoint-drift hotfix is reintroduced.
+
+## 2026-05-23 Repeated Endpoint Drift Caused User-Only Completed Turns
+
+- User report:
+  - After another message, the turn ended instantly, but no reply content was visible.
+- Evidence:
+  - `/api/status` showed Mobile Web connected to mux port `62862`.
+  - `%USERPROFILE%\.codex\app-server-mux\endpoint.json` had already moved to mux port `63008`.
+  - `Hermes 05-23` detail showed the latest turns as `completed` with only `userMessage` items and no `agentMessage` items.
+  - Thread status was `systemError`.
+- Immediate repair:
+  - Called authenticated `POST /api/app-server/reconnect`.
+  - After reconnect, `/api/status` and endpoint file both report mux port `63008`, `ready=true`, `lastError=null`.
+- Status:
+  - The no-output user-only turns already created in the stale stream will not generate replies retroactively.
+  - The user needs to send again after reconnect.
+  - Because public v63 lacks automatic endpoint-drift detection, this can recur while the endpoint file keeps changing.
+
+## 2026-05-23 Shared Endpoint Rebuilt After Dead Endpoint File
+
+- User report:
+  - Codex Mobile could not connect and showed an app-server endpoint-not-found/unavailable condition after restarts and mux/app-server cleanup.
+- Runtime evidence:
+  - `%USERPROFILE%\.codex\app-server-mux\endpoint.json` existed but pointed to port `56740`, mux PID `52280`, and child app-server PID `67392`.
+  - Those PIDs were no longer running, and port `56740` was not listening.
+  - The 8787 Node listener was still running as PID `18744`, but authenticated status failed with `shared app-server endpoint unavailable (connect ECONNREFUSED 127.0.0.1:56740)`.
+- Recovery:
+  - Ran the controlled shared-chain restart script:
+    - `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\restart-codex-mobile-shared-chain.ps1 -MaxWaitSeconds 60`
+  - The script stopped only the Codex Mobile Web shared chain, removed the stale endpoint file, started the `Codex Mobile Web` scheduled task, and reported ready.
+- Verified current state:
+  - Endpoint file now points to port `53146`, mux PID `60184`, child app-server PID `9428`.
+  - Both endpoint processes exist and the endpoint port is listening.
+  - 8787 listener is PID `55796`.
+  - Authenticated `/api/status` returns `ready=true`, `transport=external-jsonl-tcp`, endpoint port `53146`, and `lastError=null`.
+  - `/api/public-config` remains public v63: `clientBuildId: 0.1.9|codex-mobile-shell-v63`, `shellCacheName: codex-mobile-shell-v63`.
+- Assessment:
+  - The immediate failure was a stale/dead endpoint file, not a frontend failure.
+  - There is not enough evidence to attribute this directly to a new Codex CLI bug. The runtime Codex executable reports `codex-cli 0.129.0-alpha.15`, and a fresh mux/app-server started by the same executable is currently healthy.
+  - The observed endpoint churn is consistent with repeated Mobile Web/shared-chain restarts, manual reconnects, public v63 rollback removing the private endpoint-drift hotfix, and prior cleanup of extra mux/app-server processes.
+
+## 2026-05-23 Hermes Continuation Handoff-Late Recovery
+
+- User report:
+  - The Hermes Mobile continuation job had stayed for a long time at "源线程仍在写交接文件，继续后台等待".
+- Diagnosis:
+  - Active continuation job id: `36ef1180-35f4-432a-b548-5097f6df02c6`.
+  - Source thread id: `019e54b8-7064-7763-9a37-f23c26a6bb32`.
+  - Source workspace: `C:\Users\xuxin\Documents\Agent`.
+  - Expected handoff target:
+    - `C:\Users\xuxin\Documents\Agent\.agent-context\thread-handoffs\2026-05-23T14-16-53-086Z-019e54b8-7064-7763-9a37-f23c26a6bb32-1772db71.md`
+  - The source rollout showed the handoff-generation turn completed at `2026-05-23T14:17:03Z` with `last_agent_message:null`, and no handoff file was created.
+  - The source thread was already in the same context-saturation/no-output failure mode: later turns showed `token_count total=258400`, `lastInput=0`, `lastOutput=0`, and `task_complete last_agent_message:null`.
+- Recovery:
+  - Wrote a manual runtime handoff file at the expected target path using the compacted Agent workspace context.
+  - The continuation job immediately advanced from `handoff-late` to `archive-source` and then `done`.
+  - New continuation thread id: `019e553a-fdda-7fc2-8913-cccbcdd0368a`.
+  - New continuation rollout:
+    - `C:\Users\xuxin\.codex\sessions\2026\05\23\rollout-2026-05-23T22-26-29-019e553a-fdda-7fc2-8913-cccbcdd0368a.jsonl`
+  - Source thread was archived by the continuation job.
+- Notes:
+  - This was not a normal slow handoff write. The source thread had already failed to produce any assistant output, so waiting longer would not have produced the file.
+  - The manual handoff file is under `.agent-context/thread-handoffs/` and remains runtime continuation context, not product code.
+
+## 2026-05-23 Automatic Workspace Handoff Compaction For Continuation
+
+- User request:
+  - Add real handoff compaction to the Codex Mobile rollout continuation flow so a workspace's long-lived `.agent-context/HANDOFF.md` does not keep growing and poisoning future continuation context.
+- Code changes:
+  - Added `adapters/continuation-handoff-compaction-service.js`.
+    - If `.agent-context/HANDOFF.md` exceeds `CODEX_MOBILE_CONTINUATION_CONTEXT_HANDOFF_COMPACT_BYTES` (default `300KB`), it copies the full original to `.agent-context/archive/context-compaction-<timestamp>/HANDOFF.full.md`.
+    - It rewrites the active handoff to a compact file containing the archive path, startup guidance, and a recent Markdown-section tail.
+    - Recent preservation size is controlled by `CODEX_MOBILE_CONTINUATION_CONTEXT_HANDOFF_PRESERVE_CHARS` (default `60000`).
+  - `server.js` now calls this service at the start of `startThreadFromRequestBody()` after workspace visibility validation and before source snapshot / source handoff generation.
+  - Continuation job public status now exposes `contextCompaction` so the UI/API can show whether compaction happened and where the archive is.
+  - `package.json` check script now syntax-checks the new service.
+  - Added `test/continuation-handoff-compaction-service.test.js`.
+- Validation:
+  - `node --test test\continuation-handoff-compaction-service.test.js test\continuation-lineage.test.js` passed.
+  - `npm.cmd run check` passed.
+  - `npm.cmd test` passed: 95/95.
+- Status:
+  - Code is local and not committed or pushed.
+  - Restarted only the 8787 Node listener to activate the server-side continuation compaction code.
+  - New 8787 PID: `67624`.
+  - Authenticated `/api/status` reports `ready=true`, `transport=external-jsonl-tcp`, `lastError=null`.
+  - Mobile Web remains attached to the existing mux endpoint port `53146`; endpoint file and `/api/status` match.
+
+## 2026-05-23 Public PR Batch Integration And 0.1.10 Sync
+
+- User request:
+  - Commit and push current work, including public.
+  - Integrate the currently open public PRs together.
+- Public repository:
+  - Path: `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Integrated PRs manually on top of public `main`:
+    - #33 `显示移动端消息卡片时间戳`.
+    - #34 `修复移动端 Markdown 有序列表起始编号`.
+    - #35 `增加移动端本地文件预览`.
+    - #37 `增加 PWA 刷新并重连入口`.
+    - #38 `修复子 mux 覆盖共享 endpoint`.
+    - #39 `修复 Markdown 有序列表续号渲染`.
+    - #40 `避免 Mobile 用户消息在 Desktop 重复显示`.
+  - PR #34 and #39 had overlapping Markdown ordered-list expectations. Final behavior:
+    - default chat rendering resets detached continuation numbering;
+    - `orderedListMode: "source"` preserves source numbering.
+  - Added the continuation handoff compaction implementation from private into the same public release.
+  - Public version bumped to `0.1.10`.
+  - Public PWA shell cache/build id bumped to `codex-mobile-shell-v64` / `0.1.10|codex-mobile-shell-v64`.
+  - Public README gained detailed Chinese release notes and the two continuation compaction environment variables.
+  - Public commit pushed:
+    - `af0881d 发布移动端预览、PWA 重连与续接 handoff 压缩`.
+  - PRs #33/#34/#35/#37/#38/#39/#40 were commented with the integration commit and closed because final integration was a combined local commit with README/version/cache updates.
+- Public validation:
+  - `node --test test\markdown-render.test.js test\message-timestamp.test.js test\mobile-viewport.test.js test\continuation-handoff-compaction-service.test.js` passed.
+  - `npm.cmd test` passed: 118/118.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Staged public diff privacy scan found no local `C:\Users\xuxin` path, LAN/Tailscale marker, raw access key, or Web Push runtime secret-file path. The only matches were public-safe runtime directory examples, test paths, and sensitive filename deny-list strings.
+- Private sync:
+  - Product files were copied from public `main` back into `C:\Users\xuxin\Documents\codex-mobile-web` using public tracked files as the source.
+  - Local-only private overlays such as `.agent-context` were not copied from public.
+  - Private validation after sync:
+    - `npm.cmd test` passed: 118/118.
+    - `npm.cmd run check` passed.
+    - `npm.cmd run check:macos` passed.
+    - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+- Status:
+  - Public release is pushed.
+  - Private synced code is ready for private commit and push.
