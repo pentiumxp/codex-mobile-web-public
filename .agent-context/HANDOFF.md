@@ -3867,4 +3867,9 @@
     - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
 - Status:
   - Public release is pushed.
-  - Private synced code is ready for private commit and push.
+  - Private synced commit was pushed as `d5bd43b 同步 public PR 集成并加入续接 handoff 压缩`.
+  - Restarted only the 8787 Node listener after the push to load `server.js` and static asset changes.
+  - 8787 listener changed from PID `67624` to PID `66888`.
+  - `GET http://127.0.0.1:8787/api/public-config` returns `version: 0.1.10`, `clientBuildId: 0.1.10|codex-mobile-shell-v64`, and `shellCacheName: codex-mobile-shell-v64`.
+  - Authenticated `/api/status` returns `ready=true`, `transport=external-jsonl-tcp`, endpoint port `53146`, and `lastError=null`.
+  - `%USERPROFILE%\.codex\app-server-mux\endpoint.json` still points to port `53146`, and that port is listening under mux PID `60184`.
