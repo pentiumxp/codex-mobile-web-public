@@ -77,6 +77,7 @@ const state = {
   maxUploadFiles: 12,
   rolloutWarningThresholdBytes: 100 * 1024 * 1024,
   appVersion: "",
+  serverPlatform: "",
   appUpdateStatus: null,
   appUpdateBusy: false,
   appUpdateError: "",
@@ -87,6 +88,7 @@ const state = {
   serverAssetBuildId: "",
   pageRefreshAvailable: false,
   pageRefreshBuildId: "",
+  pageRefreshReason: "",
   pageRefreshPreparedConfig: null,
   pageRefreshBusy: false,
   pageRefreshReloading: false,
@@ -140,7 +142,7 @@ const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
 const MAX_RETAINED_OPERATIONS_PER_TURN = 1;
-const CLIENT_BUILD_ID = "0.1.9|codex-mobile-shell-v63";
+const CLIENT_BUILD_ID = "0.1.10|codex-mobile-shell-v64";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -470,6 +472,22 @@ function formatTime(seconds, nowMs = Date.now()) {
   }
   if (diffMs < 30 * day) return `${Math.floor(diffMs / day)}天前`;
   return formatAbsoluteTime(seconds);
+}
+
+function sameLocalDate(left, right) {
+  return left.getFullYear() === right.getFullYear()
+    && left.getMonth() === right.getMonth()
+    && left.getDate() === right.getDate();
+}
+
+function formatCardTimestamp(ms, nowMs = Date.now()) {
+  const value = Number(ms || 0);
+  if (!Number.isFinite(value) || value <= 0) return "";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (sameLocalDate(date, new Date(nowMs))) return time;
+  return `${date.toLocaleDateString([], { month: "2-digit", day: "2-digit" })} ${time}`;
 }
 
 function formatElapsedTime(seconds) {
@@ -1164,11 +1182,20 @@ function renderSharedRestartButton() {
 
 async function handleSharedRestartClick() {
   if (state.sharedRestartBusy || state.sharedRestarting) return;
+  const isMac = state.serverPlatform === "darwin";
+  const scopeLines = isMac
+    ? [
+      "这会短暂断开当前页面连接，并重启这台 Mac 上的 Mobile Web 服务。",
+      "不会重启 Codex Desktop、shared mux 或其它本机服务。",
+    ]
+    : [
+      "这会短暂断开当前页面连接，并重启 Mobile Web、shared mux 和本地 app-server。",
+      "不会重启 WSL、Codex Desktop 或其它本机服务。",
+    ];
   const confirmed = window.confirm([
     "确认重启 Codex Mobile Web？",
     "",
-    "这会短暂断开当前页面连接，并重启 Mobile Web、shared mux 和本地 app-server。",
-    "不会重启 WSL、Codex Desktop 或其它本机服务。",
+    ...scopeLines,
   ].join("\n"));
   if (!confirmed) return;
   state.sharedRestartBusy = true;
@@ -1181,10 +1208,16 @@ async function handleSharedRestartClick() {
     });
     state.sharedRestarting = true;
     state.sharedRestartBusy = false;
+    state.pageRefreshAvailable = true;
+    state.pageRefreshReason = "reconnect";
+    state.pageRefreshPreparedConfig = null;
     const connection = $("connectionState");
     if (connection) connection.textContent = "Restarting";
     renderSharedRestartButton();
-    window.setTimeout(() => window.location.reload(), Math.max(2500, Number(result.restartInMs || 900) + 3500));
+    renderPageRefreshPrompt();
+    window.setTimeout(() => {
+      refreshPageForNewBuild().catch(showError);
+    }, Math.max(1800, Number(result.restartInMs || 900) + 1200));
   } catch (err) {
     state.sharedRestartBusy = false;
     renderSharedRestartButton();
@@ -1281,12 +1314,27 @@ function initializePageBuildState(config) {
 function renderPageRefreshPrompt() {
   const el = $("pageRefreshPrompt");
   if (!el) return;
+  const reconnecting = state.pageRefreshReason === "reconnect";
   el.classList.toggle("hidden", !state.pageRefreshAvailable && !state.pageRefreshReloading);
   el.disabled = state.pageRefreshReloading;
-  el.textContent = state.pageRefreshReloading ? "正在刷新页面…" : "页面有新版本，点击刷新";
-  el.title = state.pageRefreshBuildId
+  if (state.pageRefreshReloading) {
+    el.textContent = reconnecting ? "正在刷新并重连…" : "正在刷新页面…";
+  } else {
+    el.textContent = reconnecting ? "服务重启中，点击刷新并重连" : "页面有新版本，点击刷新";
+  }
+  el.title = reconnecting
+    ? "Mobile Web 服务恢复后会刷新页面并重新连接"
+    : state.pageRefreshBuildId
     ? `服务端版本已变为 ${state.pageRefreshBuildId}，点击刷新页面`
     : "服务端页面资源已更新，点击刷新页面";
+}
+
+function showReconnectRefreshPrompt() {
+  if (state.pageRefreshReloading) return;
+  state.pageRefreshAvailable = true;
+  state.pageRefreshReason = "reconnect";
+  state.pageRefreshPreparedConfig = null;
+  renderPageRefreshPrompt();
 }
 
 async function checkPageRefreshAvailability(options = {}) {
@@ -1311,6 +1359,7 @@ async function checkPageRefreshAvailability(options = {}) {
     if (clientChanged || assetsChanged) {
       await preparePageShellAssets(config, { populateCache: true });
       state.pageRefreshAvailable = true;
+      state.pageRefreshReason = "build";
       state.pageRefreshBuildId = nextBuildId;
       state.pageRefreshPreparedConfig = config;
       renderPageRefreshPrompt();
@@ -1336,6 +1385,21 @@ function startPageRefreshChecks() {
   }, PAGE_REFRESH_CHECK_INTERVAL_MS);
 }
 
+async function waitForPageBuildConfig(timeoutMs = 18000) {
+  const startedAt = Date.now();
+  let lastError = null;
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const config = await fetchPageBuildConfig();
+      if (config) return config;
+    } catch (err) {
+      lastError = err;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 900));
+  }
+  throw lastError || new Error("Mobile Web is still unavailable");
+}
+
 async function refreshPageForNewBuild() {
   if (state.pageRefreshReloading) return;
   state.pageRefreshReloading = true;
@@ -1343,7 +1407,9 @@ async function refreshPageForNewBuild() {
   saveCurrentDraftNow();
   let config = state.pageRefreshPreparedConfig;
   try {
-    const latestConfig = await fetchPageBuildConfig();
+    const latestConfig = state.pageRefreshReason === "reconnect"
+      ? await waitForPageBuildConfig()
+      : await fetchPageBuildConfig();
     if (latestConfig) config = latestConfig;
     if (!config) throw new Error("page refresh build config unavailable");
     if (config) await preparePageShellAssets(config, { populateCache: true });
@@ -1354,9 +1420,12 @@ async function refreshPageForNewBuild() {
     await pruneOldShellCaches(String(config && config.shellCacheName || "").trim());
     window.location.reload();
   } catch (_) {
-    state.pageRefreshAvailable = false;
     state.pageRefreshReloading = false;
     state.pageRefreshPreparedConfig = null;
+    if (state.pageRefreshReason !== "reconnect") {
+      state.pageRefreshAvailable = false;
+      state.pageRefreshReason = "";
+    }
     renderPageRefreshPrompt();
     schedulePageRefreshCheck(5000, { force: true });
   }
@@ -4922,13 +4991,65 @@ function renderItem(item, turn = null, previousKeys = new Set(), index = 0) {
   const key = stableItemKey(turn, item, index);
   const itemCopyKey = rememberCopyText(copyTextForItem(item));
   const itemCopyButton = copyButtonHtml(itemCopyKey, "复制全文", "item-copy-button");
+  const timestampHtml = renderItemTimestampHtml(item, turn);
   return `<section class="item${entryAnimationClass(key, previousKeys)} ${escapeHtml(type)}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">
     <div class="item-head">
       <span>${escapeHtml(labelForItem(item))}</span>
-      <span class="item-head-actions"><span>${escapeHtml(item.status ? statusText(item.status) : "")}</span>${itemCopyButton}</span>
+      <span class="item-head-actions">${timestampHtml}<span>${escapeHtml(item.status ? statusText(item.status) : "")}</span>${itemCopyButton}</span>
     </div>
     <div class="item-body">${renderItemBody(item, turn)}</div>
   </section>`;
+}
+
+function renderItemTimestampHtml(item, turn = null) {
+  const timestampMs = itemTimestampMs(item, turn);
+  if (!timestampMs) return "";
+  const label = formatCardTimestamp(timestampMs, state.nowMs);
+  if (!label) return "";
+  const title = new Date(timestampMs).toLocaleString([], {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `<time class="item-timestamp" datetime="${escapeHtml(new Date(timestampMs).toISOString())}" title="${escapeHtml(title)}">${escapeHtml(label)}</time>`;
+}
+
+function itemTimestampMs(item, turn = null) {
+  if (!item) return 0;
+  const itemStarted = numericTimestampMs(item.createdAtMs)
+    || numericTimestampMs(item.createdAt)
+    || numericTimestampMs(item.created_at_ms)
+    || numericTimestampMs(item.created_at)
+    || numericTimestampMs(item.startedAtMs)
+    || numericTimestampMs(item.startedAt)
+    || numericTimestampMs(item.started_at_ms)
+    || numericTimestampMs(item.started_at)
+    || numericTimestampMs(item.timestampMs)
+    || numericTimestampMs(item.timestamp);
+  if (itemStarted) return itemStarted;
+  if (item.type === "agentMessage" || item.type === "plan") {
+    return numericTimestampMs(item.completedAtMs)
+      || numericTimestampMs(item.completedAt)
+      || numericTimestampMs(item.completed_at_ms)
+      || numericTimestampMs(item.completed_at)
+      || turnCompletedAtMs(turn, state.currentThread)
+      || turnStartedAtMs(turn);
+  }
+  return turnStartedAtMs(turn) || turnCompletedAtMs(turn, state.currentThread);
+}
+
+function turnStartedAtMs(turn) {
+  if (!turn) return 0;
+  return numericTimestampMs(turn.startedAtMs)
+    || numericTimestampMs(turn.startedAt)
+    || numericTimestampMs(turn.started_at_ms)
+    || numericTimestampMs(turn.started_at)
+    || numericTimestampMs(turn.createdAtMs)
+    || numericTimestampMs(turn.createdAt)
+    || numericTimestampMs(turn.created_at_ms)
+    || numericTimestampMs(turn.created_at);
 }
 
 function renderLiveReasoning(item, turn) {
@@ -5071,6 +5192,135 @@ function renderMarkdown(value) {
     rememberCopyText,
     copyButtonHtml,
   });
+}
+
+function closeFilePreview() {
+  const dialog = $("filePreviewDialog");
+  if (!dialog) return;
+  dialog.classList.add("hidden");
+  $("filePreviewBody").innerHTML = "";
+  $("filePreviewMeta").textContent = "";
+  $("filePreviewPath").textContent = "";
+}
+
+function filePreviewMetaText(file) {
+  const parts = [];
+  if (file && file.kind) parts.push(String(file.kind).toUpperCase());
+  if (file && file.contentType) parts.push(String(file.contentType).split(";")[0]);
+  if (file && Number.isFinite(Number(file.sizeBytes))) parts.push(`${Number(file.sizeBytes).toLocaleString()} bytes`);
+  if (file && file.truncated) parts.push(`已截断到 ${Number(file.maxBytes || 0).toLocaleString()} bytes`);
+  return parts.join(" · ");
+}
+
+function filePreviewContentUrl(file) {
+  if (file && file.contentUrl) return String(file.contentUrl);
+  if (!file || !file.path) return "";
+  return `/api/files/preview/content?threadId=${encodeURIComponent(state.currentThreadId || "")}&path=${encodeURIComponent(file.path)}`;
+}
+
+function renderJsonPreview(content) {
+  try {
+    return `<pre class="file-preview-text"><code>${escapeHtml(JSON.stringify(JSON.parse(content), null, 2))}</code></pre>`;
+  } catch (_) {
+    return `<pre class="file-preview-text"><code>${escapeHtml(content)}</code></pre>`;
+  }
+}
+
+function parseCsvPreviewRows(content) {
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let quoted = false;
+  const source = String(content || "");
+  for (let index = 0; index < source.length; index += 1) {
+    const ch = source[index];
+    const next = source[index + 1];
+    if (ch === '"' && quoted && next === '"') {
+      cell += '"';
+      index += 1;
+    } else if (ch === '"') {
+      quoted = !quoted;
+    } else if (ch === "," && !quoted) {
+      row.push(cell);
+      cell = "";
+    } else if ((ch === "\n" || ch === "\r") && !quoted) {
+      if (ch === "\r" && next === "\n") index += 1;
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+      if (rows.length >= 50) break;
+    } else {
+      cell += ch;
+    }
+  }
+  if (rows.length < 50 && (cell || row.length)) {
+    row.push(cell);
+    rows.push(row);
+  }
+  return rows.filter((entry) => entry.some((cellValue) => String(cellValue || "").trim()));
+}
+
+function renderCsvPreview(content) {
+  const rows = parseCsvPreviewRows(content);
+  if (!rows.length) return `<pre class="file-preview-text"><code>${escapeHtml(content)}</code></pre>`;
+  const head = rows[0];
+  const bodyRows = rows.slice(1);
+  const headHtml = head.map((cell) => `<th>${escapeHtml(cell)}</th>`).join("");
+  const bodyHtml = bodyRows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("");
+  return `<div class="file-preview-table-wrap"><table class="file-preview-table"><thead><tr>${headHtml}</tr></thead><tbody>${bodyHtml}</tbody></table></div>`;
+}
+
+function renderFilePreviewContent(file) {
+  const content = String((file && file.content) || "");
+  if (file && file.kind === "markdown") return renderMarkdown(content);
+  if (file && file.kind === "image") {
+    const src = filePreviewContentUrl(file);
+    return `<div class="file-preview-media"><img class="file-preview-image" src="${escapeHtml(src)}" alt="${escapeHtml(file.fileName || "image preview")}"></div>`;
+  }
+  if (file && file.kind === "pdf") {
+    const src = filePreviewContentUrl(file);
+    return `<div class="file-preview-pdf"><iframe src="${escapeHtml(src)}" title="${escapeHtml(file.fileName || "PDF preview")}"></iframe><a href="${escapeHtml(src)}" target="_blank" rel="noreferrer">打开 PDF 预览</a></div>`;
+  }
+  if (file && file.kind === "json") return renderJsonPreview(content);
+  if (file && file.kind === "csv") return renderCsvPreview(content);
+  return `<pre class="file-preview-text"><code>${escapeHtml(content)}</code></pre>`;
+}
+
+function showFilePreviewLoading(label, filePath) {
+  const dialog = $("filePreviewDialog");
+  if (!dialog) return;
+  $("filePreviewTitle").textContent = label || "文件预览";
+  $("filePreviewPath").textContent = filePath || "";
+  $("filePreviewMeta").textContent = "";
+  $("filePreviewBody").textContent = "正在加载文件...";
+  const copyButton = $("filePreviewCopyPath");
+  if (copyButton) {
+    copyButton.dataset.copyKey = rememberCopyText(filePath || "");
+    copyButton.textContent = "复制路径";
+  }
+  dialog.classList.remove("hidden");
+}
+
+async function openLocalFilePreview(link) {
+  const filePath = link && link.dataset ? link.dataset.localFilePath || "" : "";
+  if (!filePath) return;
+  const label = (link && link.dataset && link.dataset.localFileLabel) || (link && link.textContent ? link.textContent.replace(/预览文件\s*$/, "").trim() : "") || "文件预览";
+  showFilePreviewLoading(label, filePath);
+  try {
+    const file = await api(`/api/files/preview?threadId=${encodeURIComponent(state.currentThreadId || "")}&path=${encodeURIComponent(filePath)}`, {
+      timeoutMs: 15000,
+    });
+    $("filePreviewTitle").textContent = file.fileName || label;
+    $("filePreviewPath").textContent = file.relativePath || file.path || filePath;
+    $("filePreviewMeta").textContent = filePreviewMetaText(file);
+    $("filePreviewBody").innerHTML = renderFilePreviewContent(file);
+    const copyButton = $("filePreviewCopyPath");
+    if (copyButton) copyButton.dataset.copyKey = rememberCopyText(file.path || filePath);
+  } catch (err) {
+    $("filePreviewMeta").textContent = "";
+    $("filePreviewBody").innerHTML = `<div class="file-preview-error">${escapeHtml(err && err.message ? err.message : String(err))}</div>`;
+  }
 }
 
 function nestedStringValue(value, keys, depth = 0, seen = new Set()) {
@@ -5286,10 +5536,10 @@ function appendToItem(turnId, itemId, itemType, field, delta, index = 0) {
   markActivity(activityLabelForItem({ type: itemType }));
   let item = (turn.items || []).find((x) => x.id === itemId);
   if (!item) {
-    item = { id: itemId, type: itemType };
-    if (itemType === "reasoning") item.startedAtMs = Date.now();
+    item = { id: itemId, type: itemType, startedAtMs: Date.now() };
     turn.items.push(item);
   }
+  if (!item.startedAtMs) item.startedAtMs = Date.now();
   if (field === "aggregatedOutput") {
     appendCommandOutput(item, delta);
   } else if (Array.isArray(item[field])) {
@@ -5537,6 +5787,7 @@ function connectEvents() {
       if (state.events && state.events.readyState !== EventSource.OPEN && document.visibilityState !== "hidden") {
         markActivity("重连");
         updateConnectionState(null, "Reconnecting");
+        showReconnectRefreshPrompt();
       }
     }, 3000);
     clearTimeout(state.recoveryTimer);
@@ -5550,6 +5801,7 @@ function connectEvents() {
         await refreshCurrentThread();
         ensureEventConnection();
       } catch (err) {
+        showReconnectRefreshPrompt();
         showError(err);
       }
     }, 8000);
@@ -6197,6 +6449,7 @@ function localUserMessageItem(text, attachments, clientSubmissionId) {
   return {
     id: `local-user-${clientSubmissionId || Date.now()}`,
     type: "userMessage",
+    startedAtMs: Date.now(),
     content: [{
       type: "text",
       text: appendLocalAttachmentSummary(text, attachments),
@@ -7003,6 +7256,13 @@ function wireUi() {
       });
       return;
     }
+    const localFileLink = event.target.closest("[data-local-file-path]");
+    if (localFileLink) {
+      event.preventDefault();
+      event.stopPropagation();
+      openLocalFilePreview(localFileLink).catch(showError);
+      return;
+    }
     const button = event.target.closest("[data-approval-action]");
     if (button) {
       answerApproval(button.dataset.approvalId, button.dataset.approvalAction).catch(showError);
@@ -7062,6 +7322,26 @@ function wireUi() {
   $("attachmentList").addEventListener("click", (event) => {
     const button = event.target.closest("[data-remove-attachment]");
     if (button) removeAttachment(button.dataset.removeAttachment);
+  });
+  if ($("filePreviewClose")) $("filePreviewClose").addEventListener("click", closeFilePreview);
+  if ($("filePreviewDialog")) $("filePreviewDialog").addEventListener("click", (event) => {
+    if (event.target === $("filePreviewDialog")) {
+      closeFilePreview();
+      return;
+    }
+    const copyButton = event.target.closest("[data-copy-key]");
+    if (copyButton) {
+      event.preventDefault();
+      handleCopyButtonClick(copyButton).catch(() => {
+        copyButton.textContent = "复制失败";
+      });
+      return;
+    }
+    const localFileLink = event.target.closest("[data-local-file-path]");
+    if (localFileLink) {
+      event.preventDefault();
+      openLocalFilePreview(localFileLink).catch(showError);
+    }
   });
   $("composer").addEventListener("dragover", (event) => {
     if (!(state.currentThreadId || state.newThreadDraft) || !hasTransferFiles(event)) return;
@@ -7146,6 +7426,7 @@ async function start() {
   initializePageBuildState(config);
   startPageRefreshChecks();
   state.appVersion = String(config.version || "");
+  state.serverPlatform = String(config.platform || "");
   state.maxUploadBytes = Number(config.maxUploadBytes || state.maxUploadBytes);
   state.maxUploadFiles = Number(config.maxUploadFiles || state.maxUploadFiles);
   state.rolloutWarningThresholdBytes = Number(config.rolloutWarningBytes || state.rolloutWarningThresholdBytes);

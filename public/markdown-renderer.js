@@ -47,6 +47,36 @@
     return "";
   }
 
+  function stripMarkdownLinkTarget(value) {
+    const target = String(value || "").trim();
+    if (target.startsWith("<") && target.endsWith(">")) return target.slice(1, -1).trim();
+    return target;
+  }
+
+  function decodeMarkdownLinkTarget(value) {
+    const target = stripMarkdownLinkTarget(value);
+    if (/^file:\/\//i.test(target)) {
+      try {
+        return decodeURIComponent(new URL(target).pathname);
+      } catch (_) {
+        return target.replace(/^file:\/\//i, "");
+      }
+    }
+    try {
+      return decodeURIComponent(target);
+    } catch (_) {
+      return target;
+    }
+  }
+
+  function isLocalFileTarget(value) {
+    const target = stripMarkdownLinkTarget(value);
+    return target.startsWith("/")
+      || /^file:\/\//i.test(target)
+      || /^[A-Za-z]:[\\/]/.test(target)
+      || /^\\\\/.test(target);
+  }
+
   function autolinkUrlParts(rawUrl) {
     let href = String(rawUrl || "");
     let suffix = "";
@@ -61,8 +91,14 @@
     return { href, suffix };
   }
 
-  function renderMarkdownLink(label, rawUrl) {
-    const safeUrl = safeMarkdownUrl(String(rawUrl || "").replaceAll("&amp;", "&"));
+  function renderMarkdownLink(rawLabel, rawUrl) {
+    const label = escapeHtml(rawLabel);
+    const target = stripMarkdownLinkTarget(rawUrl);
+    if (isLocalFileTarget(target)) {
+      const filePath = decodeMarkdownLinkTarget(target);
+      return `<button class="local-file-preview-link" type="button" data-local-file-path="${escapeHtml(filePath)}" data-local-file-label="${escapeHtml(rawLabel)}" title="预览查看这个文件">${label}<span>预览文件</span></button>`;
+    }
+    const safeUrl = safeMarkdownUrl(String(target || "").replaceAll("&amp;", "&"));
     if (!safeUrl) return null;
     return `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noreferrer">${label}</a>`;
   }
@@ -84,8 +120,8 @@
       return token;
     });
 
-    text = text.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (match, label, url) => {
-      const rendered = renderMarkdownLink(escapeHtml(label), url);
+    text = text.replace(/\[([^\]\n]+)\]\((<[^>\n]+>|[^)\s]+)\)/g, (match, label, url) => {
+      const rendered = renderMarkdownLink(label, url);
       if (!rendered) return match;
       const token = `${tokenPrefix}${placeholders.length}END`;
       placeholders.push(rendered);
@@ -114,13 +150,22 @@
   </table></div>`;
   }
 
-  function renderMarkdownList(lines, ordered) {
+  function orderedListStart(lines, options) {
+    const numbers = lines
+      .map((line) => /^\s*(\d+)[.)]\s+/.exec(line))
+      .filter(Boolean)
+      .map((match) => Number(match[1]) || 1);
+    const first = numbers[0] || 1;
+    if (options && options.orderedListMode === "source") return first;
+    return lines.length <= 1 ? first : 1;
+  }
+
+  function renderMarkdownList(lines, ordered, options) {
     const tag = ordered ? "ol" : "ul";
     const itemPattern = ordered ? /^\s*(\d+)[.)]\s+(.+)$/ : /^\s*[-*+]\s+(.+)$/;
-    let start = 1;
+    const start = ordered ? orderedListStart(lines, options) : 1;
     const items = lines.map((line) => {
       const match = itemPattern.exec(line);
-      if (ordered && match) start = Number(match[1]) || start;
       const text = match ? match[ordered ? 2 : 1] : line.trim();
       return `<li>${renderInlineMarkdown(text)}</li>`;
     });
@@ -206,7 +251,7 @@
           list.push(lines[i]);
           i += 1;
         }
-        blocks.push(renderMarkdownList(list, false));
+        blocks.push(renderMarkdownList(list, false, options));
         continue;
       }
 
@@ -216,7 +261,7 @@
           list.push(lines[i]);
           i += 1;
         }
-        blocks.push(renderMarkdownList(list, true));
+        blocks.push(renderMarkdownList(list, true, options));
         continue;
       }
 
