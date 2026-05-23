@@ -91,9 +91,9 @@ This workspace owns the standalone Codex Mobile Web app.
 
 - Mobile rendering is interaction-first.
 - Historical command/tool/file-change payloads are hidden.
-- Only the latest turn's latest live operation can render as a compact status card.
+- The latest visible turn may render compact operation cards in source order.
 - If app-server `thread/read` omits operation items, Mobile Web may synthesize one compact latest operation card from the thread rollout JSONL tail (`exec_command_end`, `patch_apply_end`, `function_call`, `custom_tool_call`, or Web Search events), without command output or diffs.
-- Live operation cards stay in source order within the turn; newer normal content renders below them. Consecutive operation updates should show only the latest operation card. At most one older visible operation card may be retained only when visible non-operation content has arrived after it, so a later operation can appear in the newer content segment without stacking consecutive command/file cards.
+- Live operation cards stay in source order within the latest turn; newer normal content renders below them according to the original item order. Older anti-flicker behavior that removed previous command/file/tool cards or kept temporary leaving cards should not run for compact operation cards. Repeated status updates for the same operation target must merge into one card keyed by command executable, file set, search summary, or tool identity; command parameters/script changes refresh that one card's detail instead of creating new command cards. The card keeps its first position and refreshes to the latest status/detail. Operation cards must render as compact two-row status blocks: the first row shows operation type with status immediately following it, and the second row shows the command, file list, or tool/search summary as a single clipped detail line.
 - File-change cards show compact file names only, not diffs or full change payloads.
 - Web Search items are rendered as compact live operation cards like command/tool calls, not expanded structured payloads.
 - Reasoning items are not rendered in the conversation and reasoning deltas must not remove or replace live command/file/tool operation cards.
@@ -103,6 +103,7 @@ This workspace owns the standalone Codex Mobile Web app.
 - If a real `userMessage` and a matching synthetic `mux-user-*` echo are both present, the real item wins and the mux echo must be dropped. This covers delayed mux notification replay after the real app-server item has already reached the browser.
 - Thread refresh merges also treat matching ordinary `userMessage` items with different ids as the same visible input when they are in the same turn. This covers the case where a live local item and the later app-server snapshot have identical text or overlapping upload paths, preventing duplicate `You` cards in the browser while the durable app-server history still contains only one item.
 - Turn completion and thread refresh merges must not replace locally streamed visible turn items with an empty or shorter server snapshot; preserve local visible items until an equal or fuller snapshot arrives.
+- Conversation card timestamps should prefer item timestamps, then explicit turn completion timestamps for completed agent/plan messages, then turn start time. Running/incomplete turns must not fall back to thread-level `updatedAt`, because continuation threads can keep stale thread summary times such as the continuation creation time.
 - Uploaded images are sent as app-server `localImage` input items.
 - Uploaded non-image files are saved locally and referenced in message text by absolute path.
 - Uploaded files under `%USERPROFILE%\.codex-mobile-web\uploads` can be served back to the authenticated browser through `/api/uploads/file?path=<absolute-upload-path>`; the server must only allow paths inside the upload root.

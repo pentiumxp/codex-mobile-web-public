@@ -866,3 +866,77 @@ The previous full handoff was archived and should be opened only when old proven
   - `GET http://127.0.0.1:8787/api/public-config` returns `version: 0.1.11`, `clientBuildId: 0.1.11|codex-mobile-shell-v65`, and `shellCacheName: codex-mobile-shell-v65`.
   - Authenticated `/api/status` returns `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, and `lastError=null`.
   - `/api/status` endpoint port and `%USERPROFILE%\.codex\app-server-mux\endpoint.json` still match at port `53146`; mux PID `60184`, child app-server PID `9428`.
+
+## 2026-05-23 Two-Line Tool Operation Cards
+
+- User request:
+  - Tool-call display was too tall; first asked to compress it to one line, then clarified one line was too short.
+  - Follow-up requested a cleaner two-line layout: first row shows operation type such as `File Change` / `Command` plus concrete status; second row shows the specific command, file list, or tool/search summary.
+  - Follow-up clarified that the previous anti-flicker/latest-operation replacement rules can be removed now that each operation card is only two rows, and status should sit immediately after `Command` / `File Change` instead of at the far right.
+  - Screenshot follow-up showed repeated identical `Command completed` boxes; user clarified that status updates for the same file/operation target must merge into one card instead of producing many boxes.
+  - Follow-up requested smaller first-row text and slightly larger second-row detail text.
+  - Follow-up clarified that command parameters may differ, but the card should still merge when the command executable is the same; parameters should refresh inside the same card.
+- Local fix:
+  - `public/app.js` now renders latest-turn operation cards in original item order instead of filtering to only the latest operation.
+  - Repeated operation status updates now merge by operation target: command executable, file set, search summary, or tool identity. The merged card keeps its first visible position and refreshes to the latest item/status/detail.
+  - Removed the active render path for old leaving/retained operation cards and the turn-completed operation removal, avoiding the previous command/file/tool card replacement flicker.
+  - Operation cards render as two aligned rows: `.operation-meta-line` for type/status and `.operation-detail-line` for the single clipped detail line.
+  - `public/styles.css` uses a left-aligned top row where status follows the operation type directly, plus a single-line ellipsis detail row. The first row uses slightly smaller text and the detail row uses slightly larger monospace text for readability.
+  - PWA shell cache/build id bumped to `codex-mobile-shell-v70` / `0.1.11|codex-mobile-shell-v70`.
+  - `.agent-context/PROJECT_CONTEXT.md` now records that compact operation cards should render in source order, merge same-target status updates by command executable/file set/tool/search identity, and should not use the old anti-flicker replacement path.
+- Validation status:
+  - `node --check public\app.js` passed.
+  - `node --test test\collab-agent-render.test.js test\mobile-viewport.test.js` passed: 6/6.
+  - `npm.cmd test` passed: 119/119.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Edited source/test/context files were checked for UTF-8 BOM; no BOM.
+  - `GET http://127.0.0.1:8787/api/public-config` returns `clientBuildId: 0.1.11|codex-mobile-shell-v70` and `shellCacheName: codex-mobile-shell-v70`.
+  - Direct HTTP checks for `/app.js` and `/sw.js` confirmed v70 content and command-executable grouping code.
+
+## 2026-05-24 Conversation Card Timestamp Fallback Fix
+
+- User report:
+  - Screenshot in `Hermes 05-23` showed current/near-current Codex message cards displaying `05/23 22:26` while the phone clock was already `00:20` on 2026-05-24.
+  - The visible wrong time matched the continuation thread creation/summary time, not the active turn output time.
+- Evidence:
+  - Authenticated detail read for thread `019e553a-fdda-7fc2-8913-cccbcdd0368a` showed thread `updatedAt=1779546389` (`2026-05-23 22:26 +08:00`) even though recent turns had `startedAt` / `completedAt` around `2026-05-24 00:18-00:22 +08:00`.
+  - `itemTimestampMs()` used `turnCompletedAtMs()` for agent messages before falling back to turn start time.
+  - `turnCompletedAtMs()` treated thread-level `updatedAt` as a completion fallback even for running/incomplete turns, so live cards with no item timestamp could show stale continuation creation time.
+- Local fix:
+  - `turnCompletedAtMs()` now returns explicit completed/finished timestamps first.
+  - It returns `0` for incomplete/running turns instead of falling back to thread-level `updatedAt`.
+  - For completed turns without explicit completion time, it accepts `turn.updatedAt` / `thread.updatedAt` only when the fallback is not earlier than `turnStartedAtMs(turn)`.
+  - `itemTimestampMs()` therefore falls back to turn start time for running agent messages instead of stale thread summary time.
+  - PWA shell cache/build id bumped to `codex-mobile-shell-v71` / `0.1.11|codex-mobile-shell-v71`.
+  - `.agent-context/PROJECT_CONTEXT.md` records the timestamp fallback rule.
+- Validation status:
+  - `node --check public\app.js` passed.
+  - `node --test test\message-timestamp.test.js test\mobile-viewport.test.js` passed: 7/7.
+  - `npm.cmd test` passed: 120/120.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Edited source/test/context files were checked for UTF-8 BOM; no BOM.
+  - `GET http://127.0.0.1:8787/api/public-config` returns `clientBuildId: 0.1.11|codex-mobile-shell-v71` and `shellCacheName: codex-mobile-shell-v71`.
+  - Direct HTTP checks for `/app.js` and `/sw.js` confirmed v71 content plus the incomplete-turn and stale-fallback timestamp guards.
+
+## 2026-05-24 Public Operation Card And Timestamp Release
+
+- User requested commit and push including public.
+- Public repository:
+  - Path: `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Synced product files from private: `public/app.js`, `public/styles.css`, `public/sw.js`, `test/collab-agent-render.test.js`, `test/message-timestamp.test.js`, and `test/mobile-viewport.test.js`.
+  - Added a Chinese `2026-05-24 Public 发布说明` to `README.md` describing the two-line operation cards, same-target merge behavior, timestamp fallback fix, and PWA cache activation note.
+  - Public pushed commit: `e180725 优化移动端操作卡片与消息时间显示`.
+- Public validation:
+  - `node --test test\collab-agent-render.test.js test\message-timestamp.test.js test\mobile-viewport.test.js` passed: 10/10.
+  - `npm.cmd test` passed: 120/120.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` and `git diff --cached --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Staged privacy scan found no local `C:\Users\xuxin` path, LAN/Tailscale marker, raw access-key marker, Web Push runtime file marker, upload path marker, or Hermes private runtime path.
+- Private sync:
+  - Copied public product files back into private: `README.md`, `public/app.js`, `public/styles.css`, `public/sw.js`, `test/collab-agent-render.test.js`, `test/message-timestamp.test.js`, and `test/mobile-viewport.test.js`.
+  - Local-only `.agent-context` updates remain private-only and should not be copied to public.

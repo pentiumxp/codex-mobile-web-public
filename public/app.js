@@ -121,8 +121,6 @@ const state = {
   fontSize: localStorage.getItem("codexMobileFontSize") || "default",
   activityLabel: "",
   activityAtMs: 0,
-  leavingItems: new Map(),
-  leavingCleanupTimer: null,
   lastSendButtonSubmitAt: 0,
   lastSendSubmitStartedAt: 0,
   uiWatchdogTimer: null,
@@ -141,8 +139,7 @@ const state = {
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const MAX_RETAINED_OPERATIONS_PER_TURN = 1;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v65";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v71";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -1886,6 +1883,23 @@ function stableItemKey(turn, item, index = 0, prefix = "item") {
   return [prefix, threadId, turnId, itemId].map((part) => String(part || "")).join("|");
 }
 
+function stableTextHash(value) {
+  const text = String(value || "");
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function stableOperationRenderKey(turn, item, index = 0) {
+  const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "thread";
+  const turnId = turn && (turn.id || turn.startedAt || "turn");
+  const groupKey = operationGroupKey(item) || `item:${item && (item.id || index)}`;
+  return ["live-operation", threadId, turnId, groupKey].map((part) => String(part || "")).join("|");
+}
+
 function stableTurnKey(turn, suffix = "") {
   const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "thread";
   return ["turn", threadId, turn && (turn.id || turn.startedAt || "turn"), suffix].filter(Boolean).join("|");
@@ -1903,71 +1917,6 @@ function entryAnimationClass(key, previousKeys) {
   return previousKeys && previousKeys.has(key) ? "" : " entry-animate";
 }
 
-function cleanupLeavingItems() {
-  const now = Date.now();
-  let needsRecheck = false;
-  for (const [key, value] of state.leavingItems.entries()) {
-    if (!value) {
-      state.leavingItems.delete(key);
-      continue;
-    }
-    if (value.keepUntilOutOfView) {
-      if (value.maxExpiresAt && value.maxExpiresAt <= now) {
-        state.leavingItems.delete(key);
-        continue;
-      }
-      if (value.minExpiresAt && value.minExpiresAt > now) {
-        needsRecheck = true;
-        continue;
-      }
-      const node = renderNodeByKey(value.renderKey || key);
-      if (node && isNodeInConversationViewport(node)) {
-        needsRecheck = true;
-        continue;
-      }
-      state.leavingItems.delete(key);
-      continue;
-    }
-    if (value.expiresAt <= now) state.leavingItems.delete(key);
-  }
-  if (needsRecheck) scheduleLeavingCleanup();
-}
-
-function leavingItemsForTurn(turn) {
-  cleanupLeavingItems();
-  const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
-  return Array.from(state.leavingItems.values())
-    .filter((value) => value.threadId === threadId && value.turnId === turn.id)
-    .map((value) => ({
-      html: value.html,
-      sourceIndex: Number.isFinite(value.sourceIndex) ? value.sourceIndex : Number.MAX_SAFE_INTEGER,
-      order: Number.isFinite(value.order) ? value.order : 0,
-    }));
-}
-
-function renderNodeByKey(key) {
-  const conversation = $("conversation");
-  if (!conversation || !key) return null;
-  return Array.from(conversation.querySelectorAll("[data-render-key]"))
-    .find((node) => node.dataset.renderKey === key) || null;
-}
-
-function liveOperationNodeForItem(item) {
-  const conversation = $("conversation");
-  if (!conversation || !item || !item.id) return null;
-  return Array.from(conversation.querySelectorAll(".live-operation"))
-    .find((node) => node.dataset.item === String(item.id)) || null;
-}
-
-function isNodeInConversationViewport(node) {
-  const conversation = $("conversation");
-  if (!conversation || !node) return false;
-  const viewport = conversation.getBoundingClientRect();
-  const rect = node.getBoundingClientRect();
-  const margin = 24;
-  return rect.bottom > viewport.top + margin && rect.top < viewport.bottom - margin;
-}
-
 function isNodeAboveConversationViewport(node) {
   const conversation = $("conversation");
   if (!conversation || !node) return false;
@@ -1976,104 +1925,25 @@ function isNodeAboveConversationViewport(node) {
   return rect.bottom < viewport.top + 24;
 }
 
-function scheduleLeavingCleanup(delay = 1200) {
-  if (state.leavingCleanupTimer) return;
-  state.leavingCleanupTimer = setTimeout(() => {
-    state.leavingCleanupTimer = null;
-    scheduleRenderCurrentThread();
-  }, delay);
-}
-
-function trimRetainedOperationsForTurn(threadId, turnId, keepKey = "") {
-  const retained = Array.from(state.leavingItems.entries())
-    .filter(([, value]) => value
-      && value.keepUntilOutOfView
-      && value.threadId === threadId
-      && value.turnId === turnId)
-    .sort((a, b) => (Number(b[1].createdAt || 0) - Number(a[1].createdAt || 0)));
-  if (keepKey && MAX_RETAINED_OPERATIONS_PER_TURN <= 1) {
-    retained.forEach(([key]) => {
-      if (key !== keepKey) state.leavingItems.delete(key);
-    });
-    return;
-  }
-  retained.forEach(([key], index) => {
-    if (key === keepKey) return;
-    if (index >= MAX_RETAINED_OPERATIONS_PER_TURN) state.leavingItems.delete(key);
-  });
-}
-
-function rememberLeavingOperation(turn, item, index, options = {}) {
-  if (!turn || !item || !isLatestTurn(turn)) return;
-  const keepUntilOutOfView = Boolean(options.keepUntilOutOfView);
-  if (options.onlyIfInViewport && !isNodeInConversationViewport(liveOperationNodeForItem(item))) return;
-  const key = stableItemKey(turn, item, index, keepUntilOutOfView ? "retained-operation" : "leaving-operation");
-  if (state.leavingItems.has(key)) return;
-  const lines = operationSummaryLines(item);
-  const body = lines.length ? `<div class="operation-body">${escapeHtml(lines.join("\n"))}</div>` : "";
-  const status = statusText(item.status) || (item.completedAtMs ? "completed" : "running");
-  const title = operationTitle(item, status);
-  const type = item.type || "item";
-  const now = Date.now();
-  const transitionClass = keepUntilOutOfView ? "retained-operation" : "entry-leave";
-  const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
-  const turnId = turn.id;
-  state.leavingItems.set(key, {
-    threadId,
-    turnId,
-    sourceIndex: index,
-    order: 0,
-    renderKey: key,
-    keepUntilOutOfView,
-    createdAt: now,
-    minExpiresAt: keepUntilOutOfView ? now + 450 : 0,
-    maxExpiresAt: keepUntilOutOfView ? now + 30000 : 0,
-    expiresAt: now + (keepUntilOutOfView ? 30000 : 180),
-    html: `<section class="item live-operation ${transitionClass} ${isCompletedStatus(status) ? "completed" : ""} ${escapeHtml(type)}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">
-    <div class="item-head"><span>${escapeHtml(title)}</span><span>${escapeHtml(status)}</span></div>
-    ${body}
-  </section>`,
-  });
-  if (keepUntilOutOfView) trimRetainedOperationsForTurn(threadId, turnId, key);
-  setTimeout(() => scheduleRenderCurrentThread(), keepUntilOutOfView ? 480 : 190);
-}
-
-function visibleOperationIndex(turn) {
-  if (!isLatestTurn(turn) || !isLiveTurn(turn)) return -1;
-  const items = Array.isArray(turn.items) ? turn.items : [];
-  for (let index = items.length - 1; index >= 0; index -= 1) {
-    if (isOperationalItem(items[index])) return index;
-  }
-  return -1;
-}
-
-function latestVisibleOperationItem(turn) {
-  const index = visibleOperationIndex(turn);
-  if (index < 0) return null;
-  const item = turn && Array.isArray(turn.items) ? turn.items[index] : null;
-  return item ? { item, index } : null;
-}
-
-function visibleNonOperationalItemsForTurn(turn) {
-  return (turn.items || []).filter((item) => !isReasoningItem(item) && !isOperationalItem(item));
-}
-
 function visibleItemsForTurn(turn) {
-  const operation = latestVisibleOperationItem(turn);
-  return (turn.items || []).map((item, index) => {
-    if (!item || isReasoningItem(item)) return null;
-    if (isOperationalItem(item) && (!operation || operation.item !== item)) return null;
-    return { item, sourceIndex: index };
-  }).filter(Boolean);
-}
-
-function hasVisibleNonOperationAfterIndex(turn, sourceIndex) {
-  const items = turn && Array.isArray(turn.items) ? turn.items : [];
-  for (let index = sourceIndex + 1; index < items.length; index += 1) {
-    const item = items[index];
-    if (item && !isOperationalItem(item) && !isReasoningItem(item) && itemVisibleWeight(item) > 0) return true;
-  }
-  return false;
+  const showOperations = isLatestTurn(turn);
+  const visible = [];
+  const operationEntryByKey = new Map();
+  (turn.items || []).forEach((item, index) => {
+    if (!item || isReasoningItem(item)) return;
+    if (isOperationalItem(item)) {
+      if (!showOperations) return;
+      const groupKey = operationGroupKey(item) || `item:${item.id || index}`;
+      const existing = operationEntryByKey.get(groupKey);
+      if (existing) {
+        visible[existing.visibleIndex] = { item, sourceIndex: existing.sourceIndex };
+        return;
+      }
+      operationEntryByKey.set(groupKey, { visibleIndex: visible.length, sourceIndex: index });
+    }
+    visible.push({ item, sourceIndex: index });
+  });
+  return visible;
 }
 
 function visibleItemSignature(item) {
@@ -2088,6 +1958,7 @@ function visibleItemSignature(item) {
       tool: item.tool || "",
       server: item.server || "",
       namespace: item.namespace || "",
+      detail: operationDetailText(item),
     };
   }
   return {
@@ -2390,13 +2261,8 @@ function conversationRenderSignature(thread) {
   if (!thread) return "home";
   if (thread.mobileLoadError) return `load-error|${state.currentThreadId || thread.id || ""}|${thread.mobileLoadError}`;
   if (thread.mobileLoading) return `loading|${state.currentThreadId || thread.id || ""}`;
-  cleanupLeavingItems();
   const turns = (thread.turns || []).slice(-MAX_VISIBLE_TURNS);
   const omitted = Number(thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread.turns || []).length - turns.length);
-  const leavingKeys = Array.from(state.leavingItems.entries())
-    .filter(([, value]) => value && value.threadId === (state.currentThreadId || thread.id || ""))
-    .map(([key]) => key)
-    .sort();
   const payload = {
     threadId: state.currentThreadId || thread.id || "",
     rolloutSizeBytes: rolloutSizeBytes(thread),
@@ -2404,7 +2270,6 @@ function conversationRenderSignature(thread) {
     rolloutWarningDismissed: isRolloutWarningDismissed(thread),
     rolloutWarningThresholdBytes: rolloutThresholdBytes(thread),
     omitted,
-    leavingKeys,
     approvals: approvalRequestsSignature(state.currentThreadId || thread.id || ""),
     turns: turns.map((turn) => {
       const timerShowsStatus = isLatestTurn(turn) && (isLiveTurn(turn) || turnFinalSeconds(turn) != null);
@@ -2420,23 +2285,6 @@ function conversationRenderSignature(thread) {
     }),
   };
   return JSON.stringify(payload);
-}
-
-function removeOperationalItemsFromTurn(turn) {
-  if (!turn || !Array.isArray(turn.items)) return;
-  let visibleIndex = visibleOperationIndex(turn);
-  if (visibleIndex < 0 && isLatestTurn(turn) && !isLiveTurn(turn)) {
-    for (let index = turn.items.length - 1; index >= 0; index -= 1) {
-      if (isOperationalItem(turn.items[index])) {
-        visibleIndex = index;
-        break;
-      }
-    }
-  }
-  turn.items.forEach((item, index) => {
-    if (index === visibleIndex && isOperationalItem(item)) rememberLeavingOperation(turn, item, index);
-  });
-  turn.items = turn.items.filter((item) => !isOperationalItem(item));
 }
 
 function isPathLikeValue(value) {
@@ -3037,7 +2885,6 @@ function clearCurrentThreadSelection(options = {}) {
   state.activeTurnId = "";
   clearRecentCompletedReplyAnchor();
   clearConversationAutoScrollHold();
-  state.leavingItems.clear();
   localStorage.removeItem(STORAGE_THREAD_ID);
   setComposerText("");
   replacePendingAttachments([], { saveDraft: false });
@@ -4195,7 +4042,6 @@ function renderCurrentThread(options = {}) {
     || (!shouldHoldAutoScrollForCurrentTurn()
       && (options.stickToBottom === true || isConversationNearBottom()));
   const previousKeys = existingConversationRenderKeys();
-  cleanupLeavingItems();
   const titleEl = $("threadTitle");
   const metaEl = $("threadMeta");
   if (titleEl) titleEl.textContent = thread.name || thread.preview || thread.id;
@@ -4884,7 +4730,6 @@ function renderTurn(turn, previousKeys = new Set()) {
     return { html, sourceIndex, order: 1 };
   }).filter((entry) => entry && entry.html);
   const items = renderedItems
-    .concat(leavingItemsForTurn(turn))
     .sort((a, b) => (a.sourceIndex - b.sourceIndex) || (a.order - b.order))
     .map((entry) => entry.html)
     .join("");
@@ -4906,23 +4751,38 @@ function renderTurn(turn, previousKeys = new Set()) {
 }
 
 function renderLiveOperation(item, turn, previousKeys = new Set(), index = 0) {
-  const operation = latestVisibleOperationItem(turn);
-  if (!operation || operation.item !== item) return "";
-  const lines = operationSummaryLines(item);
-  const body = lines.length ? `<div class="operation-body">${escapeHtml(lines.join("\n"))}</div>` : "";
   const status = statusText(item.status) || (item.completedAtMs ? "completed" : "running");
-  const title = operationTitle(item, status);
-  const key = stableTurnKey(turn, "live-operation");
-  return `<section class="item live-operation ${isCompletedStatus(status) ? "completed" : ""} ${escapeHtml(item.type || "item")}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">
-    <div class="item-head"><span>${escapeHtml(title)}</span><span>${escapeHtml(status)}</span></div>
+  const key = stableOperationRenderKey(turn, item, index);
+  return renderOperationCard(item, key, { status });
+}
+
+function renderOperationCard(item, key, options = {}) {
+  const status = options.status || statusText(item.status) || (item.completedAtMs ? "completed" : "running");
+  const type = options.type || item.type || "item";
+  const title = operationTitle(item);
+  const detail = operationDetailText(item);
+  const classes = [
+    "item",
+    "live-operation",
+    options.extraClass || "",
+    isCompletedStatus(status) ? "completed" : "",
+    type,
+  ].filter(Boolean).map(escapeHtml).join(" ");
+  const body = detail
+    ? `<div class="operation-detail-line"><span class="operation-detail">${escapeHtml(detail)}</span></div>`
+    : "";
+  return `<section class="${classes}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">
+    <div class="operation-meta-line"><span class="operation-title">${escapeHtml(title)}</span><span class="operation-status">${escapeHtml(status)}</span></div>
     ${body}
   </section>`;
 }
 
-function operationTitle(item, status) {
-  const label = labelForItem(item);
-  if (isCompletedStatus(status)) return `${label} Completed`;
-  return label;
+function operationTitle(item) {
+  return labelForItem(item);
+}
+
+function operationDetailText(item) {
+  return operationSummaryLines(item).filter(Boolean).join(" | ");
 }
 
 function truncateSingleLine(value, maxChars = 96) {
@@ -4931,11 +4791,76 @@ function truncateSingleLine(value, maxChars = 96) {
   return `${text.slice(0, Math.max(0, maxChars - 1))}...`;
 }
 
-function operationFileNames(item) {
+function normalizeOperationIdentityValue(value) {
+  return String(value || "").replace(/\\/g, "/").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function stripMatchingOuterQuotes(value) {
+  const text = String(value || "").trim();
+  if (text.length >= 2) {
+    const first = text[0];
+    const last = text[text.length - 1];
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) return text.slice(1, -1).trim();
+  }
+  return text;
+}
+
+function operationCommandSummary(item) {
+  const raw = String(item && item.command || "").replace(/\s+/g, " ").trim();
+  if (!raw) return "";
+  const commandMatch = raw.match(/(?:^|\s)-(?:Command|c)\s+([\s\S]+)$/i);
+  if (commandMatch && /(?:powershell|pwsh)(?:\.exe)?/i.test(raw.slice(0, commandMatch.index + commandMatch[0].length))) {
+    const script = stripMatchingOuterQuotes(commandMatch[1]);
+    if (script) return truncateSingleLine(script, 180);
+  }
+  if (/(?:^|\s)-(?:EncodedCommand|enc|e)\b/i.test(raw) && /(?:powershell|pwsh)(?:\.exe)?/i.test(raw)) {
+    return "PowerShell -EncodedCommand";
+  }
+  return truncateSingleLine(raw, 180);
+}
+
+function operationCommandName(item) {
+  const raw = String(item && item.command || "").trim();
+  if (!raw) return "";
+  const quoted = raw.match(/^["']([^"']+)["']/);
+  const token = quoted ? quoted[1] : raw.split(/\s+/, 1)[0];
+  const name = shortPath(stripMatchingOuterQuotes(token));
+  return name || stripMatchingOuterQuotes(token);
+}
+
+function operationCommandGroupText(item) {
+  return operationCommandName(item);
+}
+
+function operationRawFileNames(item) {
   const values = Array.isArray(item.fileNames) && item.fileNames.length
     ? item.fileNames
     : collectFileNames(item.changes || item.arguments || item.result || item.contentItems);
-  return [...new Set(values.map((name) => truncateSingleLine(shortPath(name), 72)).filter(Boolean))].slice(0, 5);
+  return [...new Set(values.map((name) => String(name || "").trim()).filter(Boolean))].slice(0, 5);
+}
+
+function operationFileNames(item) {
+  return operationRawFileNames(item)
+    .map((name) => truncateSingleLine(shortPath(name), 72))
+    .filter(Boolean);
+}
+
+function operationGroupKey(item) {
+  if (!item || !isOperationalItem(item)) return "";
+  const type = isWebSearchLikeItem(item) ? "webSearch" : (item.type || "item");
+  const fileNames = operationRawFileNames(item)
+    .map(normalizeOperationIdentityValue)
+    .filter(Boolean)
+    .sort();
+  if (fileNames.length) return `${type}:files:${stableTextHash(fileNames.join("|"))}`;
+  if (item.command) return `${type}:command:${stableTextHash(normalizeOperationIdentityValue(operationCommandGroupText(item)))}`;
+  const searchSummary = isWebSearchLikeItem(item) ? operationSearchSummary(item) : "";
+  if (searchSummary) return `${type}:search:${stableTextHash(normalizeOperationIdentityValue(searchSummary))}`;
+  const toolParts = [item.server, item.namespace, item.tool].map(normalizeOperationIdentityValue).filter(Boolean);
+  if (toolParts.length) return `${type}:tool:${stableTextHash(toolParts.join("|"))}`;
+  const detail = operationDetailText(item);
+  if (detail) return `${type}:detail:${stableTextHash(normalizeOperationIdentityValue(detail))}`;
+  return item.id ? `${type}:item:${item.id}` : "";
 }
 
 function collectSearchSummaries(value, out = [], keyHint = "") {
@@ -4974,7 +4899,7 @@ function operationSummaryLines(item) {
     const names = operationFileNames(item);
     return names.length ? [names.join(", ")] : [];
   }
-  if (item.command) return [truncateMiddle(item.command, 180, "command")];
+  if (item.command) return [operationCommandSummary(item)];
   const searchSummary = isWebSearchLikeItem(item) ? operationSearchSummary(item) : "";
   if (searchSummary) return [truncateMiddle(searchSummary, 180, "search")];
   const names = operationFileNames(item);
@@ -5486,19 +5411,6 @@ function upsertItem(turnId, item) {
   if (item.type === "agentMessage" || item.type === "plan") {
     turn.items = turn.items.filter((existing) => existing.id === item.id || !visibleTextItemsLikelySame(existing, item));
   }
-  if (isOperationalItem(item)) {
-    turn.items.forEach((existing, existingIndex) => {
-      if (isOperationalItem(existing) && existing.id !== item.id) {
-        if (hasVisibleNonOperationAfterIndex(turn, existingIndex)) {
-          rememberLeavingOperation(turn, existing, existingIndex, {
-            keepUntilOutOfView: true,
-            onlyIfInViewport: true,
-          });
-        }
-      }
-    });
-    turn.items = turn.items.filter((existing) => !isOperationalItem(existing) || existing.id === item.id);
-  }
   const index = turn.items.findIndex((x) => x.id === item.id);
   if (index >= 0 && !item.startedAtMs && turn.items[index].startedAtMs) item.startedAtMs = turn.items[index].startedAtMs;
   if (item.type === "reasoning" && !item.startedAtMs) item.startedAtMs = Date.now();
@@ -5716,7 +5628,6 @@ function applyNotification(method, params) {
   if (method === "turn/completed") {
     const turn = ensureTurn(params.turn.id);
     Object.assign(turn, mergeTurnPreservingVisibleItems(turn, params.turn));
-    removeOperationalItemsFromTurn(turn);
     rememberRecentCompletedTurnReply(params.turn.id);
     const completedPendingSteer = isPendingSteerForTurn(params.turn.id);
     state.activeTurnId = "";
@@ -6128,15 +6039,20 @@ function numericTimestampMs(value) {
 
 function turnCompletedAtMs(turn, thread = null) {
   if (!turn) return 0;
-  return numericTimestampMs(turn.completedAtMs)
+  const explicitCompletedAt = numericTimestampMs(turn.completedAtMs)
     || numericTimestampMs(turn.completedAt)
     || numericTimestampMs(turn.completed_at_ms)
     || numericTimestampMs(turn.completed_at)
     || numericTimestampMs(turn.finishedAt)
-    || numericTimestampMs(turn.finished_at)
-    || numericTimestampMs(turn.updatedAt)
+    || numericTimestampMs(turn.finished_at);
+  if (explicitCompletedAt) return explicitCompletedAt;
+  if (!isTurnComplete(turn)) return 0;
+  const startedAt = turnStartedAtMs(turn);
+  const fallback = numericTimestampMs(turn.updatedAt)
     || numericTimestampMs(turn.updated_at)
     || numericTimestampMs(thread && (thread.updatedAt || thread.updated_at));
+  if (!fallback || (startedAt && fallback < startedAt)) return 0;
+  return fallback;
 }
 
 function isRecentReplyJumpTurn(turn) {
@@ -7248,7 +7164,6 @@ function wireUi() {
   $("conversation").addEventListener("wheel", rememberConversationScrollIntent, { passive: true });
   $("conversation").addEventListener("wheel", handleSubagentWheelSwipe, { passive: true });
   $("conversation").addEventListener("scroll", () => {
-    if (state.leavingItems.size) scheduleLeavingCleanup(120);
     updateRecentCompletedReplyAnchorFromScroll();
     updateConversationAutoScrollHoldFromScroll();
     updateScrollToBottomButton();
