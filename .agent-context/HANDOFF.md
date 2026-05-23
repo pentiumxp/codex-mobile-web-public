@@ -860,3 +860,9 @@ The previous full handoff was archived and should be opened only when old proven
 - Runtime note:
   - Before restarting the 8787 Node listener, `/api/public-config` still returned `version: 0.1.10` because the old Node process had loaded package metadata before the package version bump, while dynamic static resources already reported `shellCacheName: codex-mobile-shell-v65`.
   - Restart only the 8787 Node listener after committing private sync so runtime `/api/public-config` reports `0.1.11|codex-mobile-shell-v65`.
+- Runtime activation:
+  - Restarted only the 8787 Node listener after the private sync commit.
+  - 8787 listener changed from PID `66888` to PID `64548`.
+  - `GET http://127.0.0.1:8787/api/public-config` returns `version: 0.1.11`, `clientBuildId: 0.1.11|codex-mobile-shell-v65`, and `shellCacheName: codex-mobile-shell-v65`.
+  - Authenticated `/api/status` returns `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, and `lastError=null`.
+  - `/api/status` endpoint port and `%USERPROFILE%\.codex\app-server-mux\endpoint.json` still match at port `53146`; mux PID `60184`, child app-server PID `9428`.
