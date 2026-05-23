@@ -24,6 +24,13 @@ test("card timestamps fall back from item time to turn time", () => {
   assert.match(appJs, /function turnStartedAtMs\(turn\)/);
 });
 
+test("running turn timestamps do not fall back to stale thread updated time", () => {
+  assert.match(appJs, /function turnCompletedAtMs\(turn,\s*thread = null\)/);
+  assert.match(appJs, /if \(!isTurnComplete\(turn\)\) return 0;/);
+  assert.match(appJs, /const startedAt = turnStartedAtMs\(turn\);/);
+  assert.match(appJs, /if \(!fallback \|\| \(startedAt && fallback < startedAt\)\) return 0;/);
+});
+
 test("locally created visible messages receive a timestamp immediately", () => {
   assert.match(appJs, /item = \{ id: itemId,\s*type: itemType,\s*startedAtMs: Date\.now\(\) \}/);
   assert.match(appJs, /startedAtMs: Date\.now\(\),\r?\n\s*content:/);
