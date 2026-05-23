@@ -142,7 +142,7 @@ const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
 const MAX_RETAINED_OPERATIONS_PER_TURN = 1;
-const CLIENT_BUILD_ID = "0.1.10|codex-mobile-shell-v64";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v65";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -1208,13 +1208,10 @@ async function handleSharedRestartClick() {
     });
     state.sharedRestarting = true;
     state.sharedRestartBusy = false;
-    state.pageRefreshAvailable = true;
-    state.pageRefreshReason = "reconnect";
-    state.pageRefreshPreparedConfig = null;
+    showReconnectRefreshPrompt("restart");
     const connection = $("connectionState");
     if (connection) connection.textContent = "Restarting";
     renderSharedRestartButton();
-    renderPageRefreshPrompt();
     window.setTimeout(() => {
       refreshPageForNewBuild().catch(showError);
     }, Math.max(1800, Number(result.restartInMs || 900) + 1200));
@@ -1314,25 +1311,36 @@ function initializePageBuildState(config) {
 function renderPageRefreshPrompt() {
   const el = $("pageRefreshPrompt");
   if (!el) return;
-  const reconnecting = state.pageRefreshReason === "reconnect";
+  const restarting = state.pageRefreshReason === "restart";
+  const reconnecting = state.pageRefreshReason === "reconnect" || restarting;
   el.classList.toggle("hidden", !state.pageRefreshAvailable && !state.pageRefreshReloading);
   el.disabled = state.pageRefreshReloading;
   if (state.pageRefreshReloading) {
-    el.textContent = reconnecting ? "正在刷新并重连…" : "正在刷新页面…";
+    el.textContent = restarting ? "正在等待服务恢复…" : reconnecting ? "正在刷新并重连…" : "正在刷新页面…";
   } else {
-    el.textContent = reconnecting ? "服务重启中，点击刷新并重连" : "页面有新版本，点击刷新";
+    el.textContent = restarting ? "服务重启中，点击刷新并重连" : reconnecting ? "连接中断，点击刷新并重连" : "页面有新版本，点击刷新";
   }
-  el.title = reconnecting
+  el.title = restarting
     ? "Mobile Web 服务恢复后会刷新页面并重新连接"
+    : reconnecting
+    ? "当前连接中断；点击后会等待 Mobile Web 恢复并重新连接"
     : state.pageRefreshBuildId
     ? `服务端版本已变为 ${state.pageRefreshBuildId}，点击刷新页面`
     : "服务端页面资源已更新，点击刷新页面";
 }
 
-function showReconnectRefreshPrompt() {
+function showReconnectRefreshPrompt(reason = "reconnect") {
   if (state.pageRefreshReloading) return;
   state.pageRefreshAvailable = true;
-  state.pageRefreshReason = "reconnect";
+  state.pageRefreshReason = reason === "restart" ? "restart" : "reconnect";
+  state.pageRefreshPreparedConfig = null;
+  renderPageRefreshPrompt();
+}
+
+function clearReconnectRefreshPrompt() {
+  if (state.pageRefreshReason !== "reconnect" || state.pageRefreshReloading) return;
+  state.pageRefreshAvailable = false;
+  state.pageRefreshReason = "";
   state.pageRefreshPreparedConfig = null;
   renderPageRefreshPrompt();
 }
@@ -1407,7 +1415,8 @@ async function refreshPageForNewBuild() {
   saveCurrentDraftNow();
   let config = state.pageRefreshPreparedConfig;
   try {
-    const latestConfig = state.pageRefreshReason === "reconnect"
+    const reconnectRefresh = state.pageRefreshReason === "reconnect" || state.pageRefreshReason === "restart";
+    const latestConfig = reconnectRefresh
       ? await waitForPageBuildConfig()
       : await fetchPageBuildConfig();
     if (latestConfig) config = latestConfig;
@@ -1422,7 +1431,7 @@ async function refreshPageForNewBuild() {
   } catch (_) {
     state.pageRefreshReloading = false;
     state.pageRefreshPreparedConfig = null;
-    if (state.pageRefreshReason !== "reconnect") {
+    if (state.pageRefreshReason !== "reconnect" && state.pageRefreshReason !== "restart") {
       state.pageRefreshAvailable = false;
       state.pageRefreshReason = "";
     }
@@ -5764,6 +5773,7 @@ function connectEvents() {
   state.events = new EventSource(`/api/events?${params.toString()}`);
   state.events.onopen = () => {
     clearReconnectTimers();
+    clearReconnectRefreshPrompt();
     if (state.connectionStatus) restoreConnectionState();
   };
   state.events.onmessage = (event) => {
@@ -5787,7 +5797,6 @@ function connectEvents() {
       if (state.events && state.events.readyState !== EventSource.OPEN && document.visibilityState !== "hidden") {
         markActivity("重连");
         updateConnectionState(null, "Reconnecting");
-        showReconnectRefreshPrompt();
       }
     }, 3000);
     clearTimeout(state.recoveryTimer);
@@ -5796,12 +5805,13 @@ function connectEvents() {
       try {
         const status = await api("/api/status");
         updateConnectionState(status);
+        clearReconnectRefreshPrompt();
         if (status.rateLimits || status.rateLimitsByModel) rememberRateLimits(status.rateLimits, status.rateLimitsByModel);
         await loadThreads();
         await refreshCurrentThread();
         ensureEventConnection();
       } catch (err) {
-        showReconnectRefreshPrompt();
+        showReconnectRefreshPrompt("reconnect");
         showError(err);
       }
     }, 8000);

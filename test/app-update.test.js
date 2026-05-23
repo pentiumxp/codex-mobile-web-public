@@ -49,13 +49,17 @@ test("page prompts for refresh when server client build changes", () => {
 
 test("page refresh prompt also handles server restart reconnects", () => {
   assert.match(appJs, /pageRefreshReason:\s*""/);
-  assert.match(appJs, /function showReconnectRefreshPrompt\(\)/);
-  assert.match(appJs, /state\.pageRefreshReason = "reconnect"/);
+  assert.match(appJs, /function showReconnectRefreshPrompt\(reason = "reconnect"\)/);
+  assert.match(appJs, /state\.pageRefreshReason = reason === "restart" \? "restart" : "reconnect"/);
+  assert.match(appJs, /function clearReconnectRefreshPrompt\(\)/);
   assert.match(appJs, /服务重启中，点击刷新并重连/);
+  assert.match(appJs, /连接中断，点击刷新并重连/);
   assert.match(appJs, /正在刷新并重连/);
   assert.match(appJs, /async function waitForPageBuildConfig\(timeoutMs = 18000\)/);
-  assert.match(appJs, /state\.pageRefreshReason === "reconnect"[\s\S]*await waitForPageBuildConfig\(\)/);
-  assert.match(appJs, /showReconnectRefreshPrompt\(\);[\s\S]*showError\(err\)/);
+  assert.match(appJs, /state\.pageRefreshReason === "reconnect" \|\| state\.pageRefreshReason === "restart"[\s\S]*await waitForPageBuildConfig\(\)/);
+  assert.match(appJs, /showReconnectRefreshPrompt\("reconnect"\);[\s\S]*showError\(err\)/);
+  assert.match(appJs, /showReconnectRefreshPrompt\("restart"\)/);
+  assert.doesNotMatch(appJs, /updateConnectionState\(null, "Reconnecting"\);\s*showReconnectRefreshPrompt/);
   assert.match(appJs, /refreshPageForNewBuild\(\)\.catch\(showError\)/);
 });
 
