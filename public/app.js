@@ -140,7 +140,7 @@ const state = {
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v81";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v82";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -5050,8 +5050,10 @@ function itemTimestampMs(item, turn = null) {
       || numericTimestampMs(item.completed_at_ms)
       || numericTimestampMs(item.completed_at)
       || turnCompletedAtMs(turn, state.currentThread)
-      || turnStartedAtMs(turn);
+      || (isLiveTurn(turn) ? 0 : turnStartedAtMs(turn))
+      || 0;
   }
+  if (isLiveTurn(turn) && isOperationalItem(item)) return 0;
   return turnStartedAtMs(turn) || turnCompletedAtMs(turn, state.currentThread);
 }
 

@@ -1751,6 +1751,63 @@ function rolloutItemTimestampCandidateType(entry) {
   return "";
 }
 
+function normalizeTimestampMatchText(value) {
+  if (value == null) return "";
+  if (typeof value === "string") return value.replace(/\s+/g, " ").trim();
+  if (Array.isArray(value)) {
+    return value.map((entry) => {
+      if (typeof entry === "string") return entry;
+      if (!entry || typeof entry !== "object") return "";
+      return entry.text || entry.message || entry.content || "";
+    }).join(" ").replace(/\s+/g, " ").trim();
+  }
+  if (typeof value === "object") {
+    return normalizeTimestampMatchText(value.text || value.message || value.content || value.summary || "");
+  }
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function rolloutItemTimestampCandidateText(entry) {
+  const payload = entry && entry.payload;
+  if (!payload || typeof payload !== "object") return "";
+  return normalizeTimestampMatchText(
+    payload.message
+    || payload.text
+    || payload.content
+    || payload.summary
+    || payload.output,
+  );
+}
+
+function rolloutItemTimestampCandidateId(entry) {
+  const payload = entry && entry.payload;
+  return String((payload && (payload.id || payload.call_id || payload.item_id || payload.itemId)) || "");
+}
+
+function itemTimestampCandidateId(item) {
+  return String((item && (item.id || item.call_id || item.callId || item.item_id || item.itemId)) || "");
+}
+
+function itemTimestampMatchText(item) {
+  if (!item || typeof item !== "object") return "";
+  return normalizeTimestampMatchText(
+    item.text
+    || item.message
+    || item.content
+    || item.summary
+    || item.output,
+  );
+}
+
+function timestampTextsMatch(left, right) {
+  const a = normalizeTimestampMatchText(left);
+  const b = normalizeTimestampMatchText(right);
+  if (!a || !b) return false;
+  const shortA = a.slice(0, 240);
+  const shortB = b.slice(0, 240);
+  return shortA === shortB || shortA.startsWith(shortB) || shortB.startsWith(shortA);
+}
+
 const DEDUPED_ROLLOUT_TIMESTAMP_TYPES = new Set(["userMessage", "agentMessage", "reasoning"]);
 
 function appendRolloutItemTimestampCandidate(list, candidate) {
@@ -1760,6 +1817,7 @@ function appendRolloutItemTimestampCandidate(list, candidate) {
     && DEDUPED_ROLLOUT_TIMESTAMP_TYPES.has(candidate.itemType)
     && last.itemType === candidate.itemType
     && Math.abs(last.timestampMs - candidate.timestampMs) <= 50) {
+    if (!last.text && candidate.text) last.text = candidate.text;
     return;
   }
   list.push(candidate);
@@ -1813,6 +1871,8 @@ function readRolloutItemTimestampCandidates(rolloutPath) {
       itemType,
       timestampMs,
       timestamp: new Date(timestampMs).toISOString(),
+      entryId: rolloutItemTimestampCandidateId(entry),
+      text: rolloutItemTimestampCandidateText(entry),
     };
     if (turnId) {
       if (!byTurn.has(turnId)) byTurn.set(turnId, []);
@@ -1872,6 +1932,33 @@ function takeNextTimestampCandidate(candidates, aliases) {
   return null;
 }
 
+function takeTimestampCandidateForItem(candidates, item, aliases) {
+  if (!Array.isArray(candidates) || !candidates.length || !item || !Array.isArray(aliases) || !aliases.length) return null;
+  const itemId = itemTimestampCandidateId(item);
+  if (itemId) {
+    for (const candidate of candidates) {
+      if (!candidate || candidate.used) continue;
+      if (!aliases.includes(candidate.itemType)) continue;
+      if (candidate.entryId !== itemId) continue;
+      candidate.used = true;
+      return candidate;
+    }
+  }
+  const itemType = String(item.type || "");
+  const itemText = itemTimestampMatchText(item);
+  if ((itemType === "agentMessage" || itemType === "userMessage" || itemType === "plan") && itemText) {
+    for (const candidate of candidates) {
+      if (!candidate || candidate.used) continue;
+      if (!aliases.includes(candidate.itemType)) continue;
+      if (!timestampTextsMatch(candidate.text, itemText)) continue;
+      candidate.used = true;
+      return candidate;
+    }
+    return null;
+  }
+  return takeNextTimestampCandidate(candidates, aliases);
+}
+
 function applyRolloutItemTimestamp(item, candidate) {
   if (!item || !candidate || !candidate.timestampMs || itemDisplayTimestampMs(item)) return;
   item.startedAtMs = candidate.timestampMs;
@@ -1883,7 +1970,7 @@ function enrichTurnItemTimestampsFromCandidates(turn, candidates) {
   const orderedCandidates = candidates.map((candidate) => Object.assign({}, candidate, { used: false }));
   for (const item of turn.items) {
     if (!item || itemDisplayTimestampMs(item)) continue;
-    const candidate = takeNextTimestampCandidate(orderedCandidates, timestampCandidateTypesForItem(item));
+    const candidate = takeTimestampCandidateForItem(orderedCandidates, item, timestampCandidateTypesForItem(item));
     if (candidate) applyRolloutItemTimestamp(item, candidate);
   }
   return turn;

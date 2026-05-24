@@ -84,3 +84,65 @@ test("compacted live operation items keep rollout-derived timestamps", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("agent message timestamps are matched by text instead of only sequence", () => {
+  const { dir, rolloutPath } = writeRollout([
+    event("2026-05-24T10:20:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-3" }),
+    event("2026-05-24T10:20:02.000Z", "event_msg", { type: "agent_message", message: "first visible card" }),
+    event("2026-05-24T10:20:05.000Z", "event_msg", { type: "agent_message", message: "second visible card" }),
+    event("2026-05-24T10:20:08.000Z", "event_msg", { type: "agent_message", message: "third visible card" }),
+  ]);
+  try {
+    const thread = {
+      id: "thread-3",
+      path: rolloutPath,
+      turns: [{
+        id: "turn-3",
+        items: [
+          { id: "a2", type: "agentMessage", text: "second visible card" },
+          { id: "a3", type: "agentMessage", text: "third visible card" },
+        ],
+      }],
+    };
+
+    enrichThreadItemTimestampsFromRollout(thread);
+
+    assert.equal(thread.turns[0].items[0].startedAtMs, Date.parse("2026-05-24T10:20:05.000Z"));
+    assert.equal(thread.turns[0].items[1].startedAtMs, Date.parse("2026-05-24T10:20:08.000Z"));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("operation timestamps prefer matching rollout call id", () => {
+  const { dir, rolloutPath } = writeRollout([
+    event("2026-05-24T10:30:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-4" }),
+    event("2026-05-24T10:30:02.000Z", "response_item", {
+      type: "function_call",
+      call_id: "call-old",
+      arguments: JSON.stringify({ command: "echo old" }),
+    }),
+    event("2026-05-24T10:30:07.000Z", "response_item", {
+      type: "function_call",
+      call_id: "call-current",
+      arguments: JSON.stringify({ command: "echo current" }),
+    }),
+  ]);
+  try {
+    const thread = {
+      id: "thread-4",
+      path: rolloutPath,
+      turns: [{
+        id: "turn-4",
+        status: { type: "running" },
+        items: [{ id: "call-current", type: "commandExecution", command: "echo current", status: "running" }],
+      }],
+    };
+
+    enrichThreadItemTimestampsFromRollout(thread);
+
+    assert.equal(thread.turns[0].items[0].startedAtMs, Date.parse("2026-05-24T10:30:07.000Z"));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
