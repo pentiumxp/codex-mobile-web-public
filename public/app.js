@@ -139,7 +139,7 @@ const state = {
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v71";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v73";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -1929,8 +1929,17 @@ function visibleItemsForTurn(turn) {
   const showOperations = isLatestTurn(turn);
   const visible = [];
   const operationEntryByKey = new Map();
+  const contextEntryByKey = new Map();
   (turn.items || []).forEach((item, index) => {
     if (!item || isReasoningItem(item)) return;
+    if (isContextCompactionItem(item)) {
+      const groupKey = "context-compaction";
+      const existing = contextEntryByKey.get(groupKey);
+      if (existing) visible[existing.visibleIndex] = null;
+      contextEntryByKey.set(groupKey, { visibleIndex: visible.length });
+      visible.push({ item, sourceIndex: index });
+      return;
+    }
     if (isOperationalItem(item)) {
       if (!showOperations) return;
       const groupKey = operationGroupKey(item) || `item:${item.id || index}`;
@@ -1943,11 +1952,21 @@ function visibleItemsForTurn(turn) {
     }
     visible.push({ item, sourceIndex: index });
   });
-  return visible;
+  return visible.filter(Boolean);
 }
 
-function visibleItemSignature(item) {
+function visibleItemSignature(item, turn = null) {
   if (!item || isReasoningItem(item)) return null;
+  if (isContextCompactionItem(item)) {
+    return {
+      id: item.id || "",
+      type: item.type || "",
+      status: statusText(item.status),
+      mobileCompactionStatus: item.mobileCompactionStatus || "",
+      mobileNotice: item.mobileNotice || "",
+      notice: contextCompactionNotice(item, turn),
+    };
+  }
   if (isOperationalItem(item)) {
     return {
       id: item.id || "",
@@ -2133,19 +2152,47 @@ function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
   return merged;
 }
 
+function mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem) {
+  const merged = mergeItemPreservingVisibleFields(existingItem, incomingItem);
+  if (!existingItem || !incomingItem || !merged || !visibleTextItemsLikelySame(existingItem, incomingItem)) return merged;
+  if (existingItem.id) merged.id = existingItem.id;
+  if (existingItem.startedAtMs && !incomingItem.startedAtMs) merged.startedAtMs = existingItem.startedAtMs;
+  return merged;
+}
+
 function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserveLocalVisible = false) {
   const incomingById = new Map((incomingItems || [])
     .filter((item) => item && item.id)
     .map((item) => [item.id, item]));
   const added = new Set();
+  const addedIncomingItems = new Set();
   const merged = [];
   for (const existingItem of existingItems || []) {
     if (!existingItem) continue;
     const id = existingItem.id;
     if (id && incomingById.has(id)) {
-      merged.push(mergeItemPreservingVisibleFields(existingItem, incomingById.get(id)));
+      const incomingMatch = incomingById.get(id);
+      merged.push(mergeItemPreservingVisibleFields(existingItem, incomingMatch));
       added.add(id);
+      addedIncomingItems.add(incomingMatch);
     } else if (hasMatchingIncomingVisibleItem(existingItem, incomingItems)) {
+      const incomingUserMatch = (incomingItems || []).find((incomingItem) => incomingItem
+        && incomingItem.id !== id
+        && incomingItem.type === "userMessage"
+        && existingItem.type === "userMessage"
+        && userMessagesLikelySame(existingItem, incomingItem));
+      const incomingTextMatch = incomingUserMatch
+        ? null
+        : (incomingItems || []).find((incomingItem) => visibleTextItemsLikelySame(existingItem, incomingItem));
+      if (incomingUserMatch) {
+        merged.push(mergeItemPreservingVisibleFields(existingItem, incomingUserMatch));
+        if (incomingUserMatch.id) added.add(incomingUserMatch.id);
+        addedIncomingItems.add(incomingUserMatch);
+      } else if (incomingTextMatch) {
+        merged.push(mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingTextMatch));
+        if (incomingTextMatch.id) added.add(incomingTextMatch.id);
+        addedIncomingItems.add(incomingTextMatch);
+      }
       if (id) added.add(id);
     } else if (shouldPreserveLocalOnlyItem(existingItem, preserveLocalVisible)) {
       merged.push(existingItem);
@@ -2154,6 +2201,7 @@ function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserve
   }
   for (const incomingItem of incomingItems || []) {
     if (!incomingItem) continue;
+    if (addedIncomingItems.has(incomingItem)) continue;
     if (incomingItem.id && added.has(incomingItem.id)) continue;
     if (hasMatchingRealUserMessage(incomingItem, merged) || hasMatchingRealUserMessage(incomingItem, incomingItems)) continue;
     merged.push(incomingItem);
@@ -2279,7 +2327,7 @@ function conversationRenderSignature(thread) {
         durationMs: timerShowsStatus ? "" : (turn.durationMs || ""),
         items: visibleItemsForTurn(turn).map((entry) => ({
           sourceIndex: entry.sourceIndex,
-          item: visibleItemSignature(entry.item),
+          item: visibleItemSignature(entry.item, turn),
         })).filter((entry) => entry.item),
       };
     }),
@@ -5317,7 +5365,7 @@ function renderItemBody(item, turn = null) {
   if (isContextCompactionItem(item)) return escapeHtml(contextCompactionNotice(item, turn));
   if (item.type === "userMessage") return renderInputContent(item.content);
   if (item.type === "agentMessage") {
-    return isLiveTurn(turn) ? escapeHtml(item.text || "") : renderMarkdown(item.text || "");
+    return renderMarkdown(item.text || "");
   }
   if (item.type === "reasoning") {
     const summary = (item.summary || []).join("\n");
