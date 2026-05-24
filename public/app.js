@@ -139,7 +139,7 @@ const state = {
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v73";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v76";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -1828,21 +1828,34 @@ function isContextCompactionItem(item) {
     || item.mobileCompactionStatus);
 }
 
-function isContextCompactionPending(item, turn = null) {
-  if (!item) return false;
-  if (isCompletedStatus(item.status)) return false;
-  const stateText = String(item.mobileCompactionStatus || "").toLowerCase();
-  if (/running|active|queued|processing|inprogress|in_progress|in-progress|pending|started/.test(stateText)) return true;
-  if (/completed|failed|cancel|error|interrupted/.test(stateText)) return false;
-  const itemStatus = statusText(item.status).toLowerCase();
-  if (/running|active|queued|processing|inprogress|in_progress|in-progress|pending|started/.test(itemStatus)) return true;
-  return Boolean(turn && isLiveTurn(turn) && isContextCompactionType(item.type));
+function contextCompactionStatusKind(value) {
+  const text = statusText(value).toLowerCase();
+  if (!text) return "";
+  if (/completed|failed|cancel|error|interrupted/.test(text)) return "complete";
+  if (/running|active|queued|processing|inprogress|in_progress|in-progress|pending|started/.test(text)) return "pending";
+  return "";
+}
+
+function canShowPendingContextCompaction(turn = null) {
+  return !turn || (isLatestTurn(turn) && isLiveTurn(turn));
+}
+
+function contextCompactionState(item, turn = null) {
+  if (!item) return "";
+  const itemKind = contextCompactionStatusKind(item.status);
+  const mobileKind = contextCompactionStatusKind(item.mobileCompactionStatus);
+  if (itemKind === "complete" || mobileKind === "complete" || item.mobileNotice === CONTEXT_COMPACTION_COMPLETE_NOTICE) return "complete";
+  if (itemKind === "pending" || mobileKind === "pending" || item.mobileNotice === CONTEXT_COMPACTION_PENDING_NOTICE) {
+    return canShowPendingContextCompaction(turn) ? "pending" : "";
+  }
+  return "";
 }
 
 function contextCompactionNotice(item, turn = null) {
-  return isContextCompactionPending(item, turn)
-    ? CONTEXT_COMPACTION_PENDING_NOTICE
-    : CONTEXT_COMPACTION_COMPLETE_NOTICE;
+  const stateText = contextCompactionState(item, turn);
+  if (stateText === "pending") return CONTEXT_COMPACTION_PENDING_NOTICE;
+  if (stateText === "complete") return CONTEXT_COMPACTION_COMPLETE_NOTICE;
+  return "";
 }
 
 function latestTurn() {
@@ -1928,43 +1941,62 @@ function isNodeAboveConversationViewport(node) {
 function visibleItemsForTurn(turn) {
   const showOperations = isLatestTurn(turn);
   const visible = [];
-  const operationEntryByKey = new Map();
+  let lastOperationEntry = null;
   const contextEntryByKey = new Map();
   (turn.items || []).forEach((item, index) => {
     if (!item || isReasoningItem(item)) return;
     if (isContextCompactionItem(item)) {
+      const notice = contextCompactionNotice(item, turn);
+      if (!notice) return;
       const groupKey = "context-compaction";
       const existing = contextEntryByKey.get(groupKey);
       if (existing) visible[existing.visibleIndex] = null;
       contextEntryByKey.set(groupKey, { visibleIndex: visible.length });
       visible.push({ item, sourceIndex: index });
+      lastOperationEntry = null;
       return;
     }
     if (isOperationalItem(item)) {
       if (!showOperations) return;
       const groupKey = operationGroupKey(item) || `item:${item.id || index}`;
-      const existing = operationEntryByKey.get(groupKey);
+      const existing = lastOperationEntry && lastOperationEntry.groupKey === groupKey ? lastOperationEntry : null;
       if (existing) {
         visible[existing.visibleIndex] = { item, sourceIndex: existing.sourceIndex };
         return;
       }
-      operationEntryByKey.set(groupKey, { visibleIndex: visible.length, sourceIndex: index });
+      lastOperationEntry = { groupKey, visibleIndex: visible.length, sourceIndex: index };
+      visible.push({ item, sourceIndex: index });
+      return;
     }
+    lastOperationEntry = null;
     visible.push({ item, sourceIndex: index });
   });
-  return visible.filter(Boolean);
+  return trimTrailingOperationCards(visible.filter(Boolean));
+}
+
+function trimTrailingOperationCards(entries) {
+  let trailingOperationCount = 0;
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (!entry || !isOperationalItem(entry.item)) break;
+    trailingOperationCount += 1;
+    if (trailingOperationCount > 1) entries[index] = null;
+  }
+  return entries.filter(Boolean);
 }
 
 function visibleItemSignature(item, turn = null) {
   if (!item || isReasoningItem(item)) return null;
   if (isContextCompactionItem(item)) {
+    const notice = contextCompactionNotice(item, turn);
+    if (!notice) return null;
     return {
       id: item.id || "",
       type: item.type || "",
       status: statusText(item.status),
       mobileCompactionStatus: item.mobileCompactionStatus || "",
       mobileNotice: item.mobileNotice || "",
-      notice: contextCompactionNotice(item, turn),
+      notice,
     };
   }
   if (isOperationalItem(item)) {
@@ -2141,7 +2173,12 @@ function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
   if (typeof existingItem.text === "string") merged.text = existingItem.text;
   if (Array.isArray(existingItem.content)) merged.content = existingItem.content;
   if (Array.isArray(existingItem.summary)) merged.summary = existingItem.summary;
-  if (existingItem.mobileNotice) merged.mobileNotice = existingItem.mobileNotice;
+  if (isContextCompactionItem(existingItem) || isContextCompactionItem(incomingItem)) {
+    if (!Object.prototype.hasOwnProperty.call(incomingItem, "mobileNotice")) delete merged.mobileNotice;
+    if (!Object.prototype.hasOwnProperty.call(incomingItem, "mobileCompactionStatus")) delete merged.mobileCompactionStatus;
+  } else if (existingItem.mobileNotice) {
+    merged.mobileNotice = existingItem.mobileNotice;
+  }
   if (isOperationalItem(existingItem)) {
     if (existingItem.command) merged.command = existingItem.command;
     if (Array.isArray(existingItem.fileNames)) merged.fileNames = existingItem.fileNames;
@@ -4962,8 +4999,10 @@ function displayTurnStatus(turn) {
 }
 
 function renderContextCompaction(item, turn = null, previousKeys = new Set(), index = 0) {
+  const notice = contextCompactionNotice(item, turn);
+  if (!notice) return "";
   const key = stableItemKey(turn, item, index, "context");
-  return `<div class="context-compaction-note${entryAnimationClass(key, previousKeys)}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">${escapeHtml(contextCompactionNotice(item, turn))}</div>`;
+  return `<div class="context-compaction-note${entryAnimationClass(key, previousKeys)}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">${escapeHtml(notice)}</div>`;
 }
 
 function renderItem(item, turn = null, previousKeys = new Set(), index = 0) {

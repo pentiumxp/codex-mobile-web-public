@@ -26,12 +26,29 @@ function functionBody(name) {
 test("context compaction notices update status and collapse repeated turn notices", () => {
   assert.match(functionBody("visibleItemsForTurn"), /const contextEntryByKey = new Map\(\)/);
   assert.match(functionBody("visibleItemsForTurn"), /isContextCompactionItem\(item\)/);
+  assert.match(functionBody("visibleItemsForTurn"), /const notice = contextCompactionNotice\(item, turn\)/);
+  assert.match(functionBody("visibleItemsForTurn"), /if \(!notice\) return/);
   assert.match(functionBody("visibleItemsForTurn"), /visible\[existing\.visibleIndex\] = null/);
-  assert.match(functionBody("visibleItemsForTurn"), /return visible\.filter\(Boolean\)/);
+  assert.match(functionBody("visibleItemsForTurn"), /return trimTrailingOperationCards\(visible\.filter\(Boolean\)\)/);
   assert.match(functionBody("visibleItemSignature"), /isContextCompactionItem\(item\)/);
+  assert.match(functionBody("visibleItemSignature"), /const notice = contextCompactionNotice\(item, turn\)/);
+  assert.match(functionBody("visibleItemSignature"), /if \(!notice\) return null/);
   assert.match(functionBody("visibleItemSignature"), /mobileCompactionStatus: item\.mobileCompactionStatus/);
-  assert.match(functionBody("visibleItemSignature"), /notice: contextCompactionNotice\(item, turn\)/);
+  assert.match(functionBody("visibleItemSignature"), /notice,/);
   assert.match(functionBody("conversationRenderSignature"), /visibleItemSignature\(entry\.item, turn\)/);
+});
+
+test("context compaction notices require explicit state and do not infer pending from live turns", () => {
+  assert.match(appJs, /function contextCompactionState\(/);
+  assert.match(functionBody("contextCompactionState"), /itemKind === "complete"/);
+  assert.match(functionBody("contextCompactionState"), /mobileKind === "complete"/);
+  assert.match(functionBody("contextCompactionState"), /itemKind === "pending"/);
+  assert.match(functionBody("contextCompactionState"), /canShowPendingContextCompaction\(turn\)/);
+  assert.match(functionBody("contextCompactionState"), /return ""/);
+  assert.match(functionBody("canShowPendingContextCompaction"), /isLatestTurn\(turn\) && isLiveTurn\(turn\)/);
+  assert.doesNotMatch(functionBody("contextCompactionState"), /isContextCompactionType\(item\.type\)/);
+  assert.match(functionBody("renderContextCompaction"), /const notice = contextCompactionNotice\(item, turn\)/);
+  assert.match(functionBody("renderContextCompaction"), /if \(!notice\) return ""/);
 });
 
 test("long agent messages keep a stable render path when a turn completes", () => {
@@ -42,6 +59,14 @@ test("long agent messages keep a stable render path when a turn completes", () =
   assert.match(functionBody("mergeItemsPreservingLocalVisible"), /mergeVisibleTextItemPreservingRenderIdentity\(existingItem, incomingTextMatch\)/);
   assert.match(functionBody("mergeItemsPreservingLocalVisible"), /const addedIncomingItems = new Set\(\)/);
   assert.match(functionBody("mergeItemsPreservingLocalVisible"), /if \(addedIncomingItems\.has\(incomingItem\)\) continue/);
+});
+
+test("context compaction merge does not preserve stale mobile notices", () => {
+  const body = functionBody("mergeItemPreservingVisibleFields");
+  assert.match(body, /isContextCompactionItem\(existingItem\) \|\| isContextCompactionItem\(incomingItem\)/);
+  assert.match(body, /delete merged\.mobileNotice/);
+  assert.match(body, /delete merged\.mobileCompactionStatus/);
+  assert.match(body, /else if \(existingItem\.mobileNotice\)/);
 });
 
 test("matching user messages keep their original turn position after final refresh", () => {
