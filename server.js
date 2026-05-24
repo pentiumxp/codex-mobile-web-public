@@ -11,6 +11,10 @@ const { shouldTrackTurnForWebPush } = require("./adapters/push-notification-serv
 const { createSharedChainRestartService } = require("./adapters/shared-chain-restart-service");
 const { runSqliteJson } = require("./adapters/sqlite-cli");
 const { compactWorkspaceHandoff } = require("./adapters/continuation-handoff-compaction-service");
+const {
+  parsePersistExtendedHistoryEnv,
+  shouldPersistExtendedHistoryForUploads,
+} = require("./adapters/message-input-service");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -69,6 +73,7 @@ const MAX_START_THREAD_DEVELOPER_INSTRUCTIONS_CHARS = 120000;
 const MAX_UPLOAD_BYTES = Math.max(1, Number(process.env.CODEX_MOBILE_MAX_UPLOAD_BYTES || String(64 * 1024 * 1024)));
 const MAX_UPLOAD_FILES = Math.max(1, Math.min(50, Number(process.env.CODEX_MOBILE_MAX_UPLOAD_FILES || "12")));
 const UPLOAD_ROOT = process.env.CODEX_MOBILE_UPLOAD_DIR || path.join(RUNTIME_ROOT, "uploads");
+const PERSIST_EXTENDED_HISTORY_POLICY = parsePersistExtendedHistoryEnv(process.env);
 const FILE_PREVIEW_MAX_BYTES = Math.max(1024, Number(process.env.CODEX_MOBILE_FILE_PREVIEW_MAX_BYTES || String(512 * 1024)));
 const FILE_PREVIEW_MEDIA_MAX_BYTES = Math.max(1024 * 1024, Number(process.env.CODEX_MOBILE_FILE_PREVIEW_MEDIA_MAX_BYTES || String(24 * 1024 * 1024)));
 const MAX_COMMAND_OUTPUT_CHARS = 8000;
@@ -304,6 +309,7 @@ function appShellBuildId() {
     "markdown-renderer.js",
     "viewport-metrics.js",
     "conversation-scroll.js",
+    "image-compressor.js",
     "app.js",
     "sw.js",
     "manifest.json",
@@ -1294,6 +1300,18 @@ function contextCompactionNotice(pending) {
   return pending ? "历史上下文正在压缩" : "历史上下文已压缩";
 }
 
+function contextCompactionMobileState(item, options = {}) {
+  if (options.contextCompactionPending === true) return "pending";
+  if (options.contextCompactionPending === false) return "complete";
+  const text = statusText(item && item.status).toLowerCase();
+  if (!text) return "";
+  if (isCompletedStatus(text)) return "complete";
+  if (/(running|active|queued|processing|inprogress|in_progress|in-progress|pending|started)/.test(text)) {
+    return "pending";
+  }
+  return "";
+}
+
 function isPathLikeValue(value) {
   const text = String(value || "");
   if (!text || text.includes("\n") || text.includes("\r")) return false;
@@ -1948,12 +1966,16 @@ function compactItem(item, options = {}) {
   if (!item || typeof item !== "object") return item;
   const out = Object.assign({}, item);
   if (isContextCompactionType(out.type)) {
-    const pending = options.contextCompactionPending === true
-      || (options.contextCompactionPending !== false && statusText(out.status) && !isCompletedStatus(out.status));
-    return {
+    const compactionState = contextCompactionMobileState(out, options);
+    const compacted = {
       id: out.id,
       type: out.type,
       status: out.status,
+    };
+    if (!compactionState) return compacted;
+    const pending = compactionState === "pending";
+    return {
+      ...compacted,
       mobileCompactionStatus: pending ? "running" : "completed",
       mobileNotice: contextCompactionNotice(pending),
     };
@@ -1988,8 +2010,7 @@ function compactTurn(turn, options = {}) {
   const out = Object.assign({}, turn);
   if (Array.isArray(out.items)) {
     const lastLiveOperationIndex = trailingOperationIndex(out.items, Boolean(options.allowLiveOperation) && isLiveTurn(out));
-    const contextCompactionPending = isLiveTurn(out);
-    out.items = out.items.map((item) => compactItem(item, { contextCompactionPending })).filter((item, index) => {
+    out.items = out.items.map((item) => compactItem(item)).filter((item, index) => {
       if (!isOperationalItem(item)) return true;
       return index === lastLiveOperationIndex;
     });
@@ -3085,6 +3106,10 @@ function buildTurnInput(text, uploads) {
     if (file.isImage) input.push({ type: "localImage", path: file.path });
   }
   return input;
+}
+
+function persistExtendedHistoryForUploads(uploads) {
+  return shouldPersistExtendedHistoryForUploads(uploads, PERSIST_EXTENDED_HISTORY_POLICY);
 }
 
 function uploadDedupeFingerprint(file) {
@@ -5446,6 +5471,7 @@ async function handleApi(req, res) {
       ? String(body.effort || "").trim()
       : "";
     const input = buildTurnInput(text, uploads);
+    const persistExtendedHistory = persistExtendedHistoryForUploads(uploads);
     if (!cwd) {
       sendJson(res, 400, { error: "Workspace is required to start a new thread" });
       return;
@@ -5474,7 +5500,7 @@ async function handleApi(req, res) {
           dynamicTools: null,
           mockExperimentalField: null,
           experimentalRawEvents: false,
-          persistExtendedHistory: true,
+          persistExtendedHistory,
         }, runtimeSettings);
         if (requestedModel) startParams.model = requestedModel;
         const startResult = await codex.request("thread/start", startParams, {
@@ -5832,6 +5858,7 @@ async function handleApi(req, res) {
     const { fields: body, uploads } = await readMessageBody(req, threadId);
     const text = String(body.text || "").trim();
     const input = buildTurnInput(text, uploads);
+    const persistExtendedHistory = persistExtendedHistoryForUploads(uploads);
     if (!input.length) {
       logMessageSubmit("empty", {
         threadId,
@@ -5888,7 +5915,7 @@ async function handleApi(req, res) {
           await codex.request("thread/resume", applyResumeRuntimeSettings({
             threadId,
             cwd: body.cwd || null,
-            persistExtendedHistory: true,
+            persistExtendedHistory,
           }, runtimeSettings), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
         } catch (err) {
           if (!/already|loaded|active/i.test(err.message || "")) throw err;

@@ -2479,6 +2479,32 @@ html.visual-recovering body::before {
   text-align: center;
 }
 
+.image-view {
+  margin: 8px 0 0;
+  display: grid;
+  gap: 7px;
+  max-width: 100%;
+}
+
+.image-view img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  max-height: min(62vh, 720px);
+  object-fit: contain;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--code);
+}
+
+.image-view figcaption {
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--content-small-font-size);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .input-attachment {
   margin-top: 8px;
   display: grid;

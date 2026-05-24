@@ -976,3 +976,286 @@ The previous full handoff was archived and should be opened only when old proven
   - Public README includes a Chinese `2026-05-24 Public 发布说明（续）` covering context-compaction notice order, long-output completion flicker reduction, render identity preservation, and duplicate `You` message prevention.
   - Private README was synced back from public so the product documentation matches the public release.
   - Static frontend fix only; no Node listener restart is required, but mobile clients need to accept the page refresh prompt or hard-refresh/reopen the PWA to load v73.
+
+## 2026-05-24 Context Compaction Pending False-Positive Fix
+
+- User report:
+  - The mobile UI still showed `历史上下文正在压缩` too often.
+  - Some turns did not actually compact context, and sometimes the line appeared after the turn output had already ended.
+- Diagnosis:
+  - `public/app.js` still inferred pending compaction from `contextCompaction` type plus `isLiveTurn(turn)`.
+  - That made a type-only marker render as `历史上下文正在压缩` whenever the latest turn was considered live, even without explicit compaction status.
+  - `mergeItemPreservingVisibleFields()` also preserved an existing `mobileNotice`, which could keep a stale pending notice after a later snapshot no longer carried that notice.
+- Local fix:
+  - `contextCompactionNotice()` now returns a visible notice only from explicit state:
+    - pending/running status or explicit pending notice, and only while the latest turn is still live;
+    - completed/failed/cancel/error status or explicit completed notice.
+  - Type-only context-compaction markers no longer render a visible notice.
+  - Completed/non-live turns no longer show stale pending notices.
+  - Context-compaction merges no longer preserve stale `mobileNotice` / `mobileCompactionStatus` when the incoming snapshot omits them.
+  - PWA shell cache/build id initially bumped to `codex-mobile-shell-v74` / `0.1.11|codex-mobile-shell-v74`, then superseded by v75 in the adjacent-operation-card follow-up below.
+  - Added focused coverage in `test/conversation-render.test.js` and updated `test/mobile-viewport.test.js`.
+- Validation:
+  - `node --check public\app.js` passed.
+  - `node --test test\conversation-render.test.js test\mobile-viewport.test.js` passed: 8/8.
+  - `npm.cmd test` passed: 125/125.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+- Status:
+  - Local private workspace has uncommitted changes that are superseded by the v75 follow-up below.
+  - Static frontend fix only; no Node listener restart is required, but mobile clients need to accept the page refresh prompt or hard-refresh/reopen the PWA to load the latest shell cache.
+
+## 2026-05-24 Adjacent Operation Card Merge Boundary
+
+- User follow-up:
+  - The two-line command/tool cards should not globally refresh a card that has already scrolled above normal output.
+  - Desired behavior: if adjacent operation cards have the same command executable / file set / tool identity, merge them and refresh parameters/status in one card; if normal system output or another visible card appears in between, a later same command may create a new lower card.
+- Local fix:
+  - `public/app.js` changed `visibleItemsForTurn()` from a whole-turn `operationEntryByKey` map to a single `lastOperationEntry`.
+  - Only the immediately previous visible operation card with the same `operationGroupKey()` is replaced/refreshed.
+  - Visible context-compaction notices and normal conversation items reset the adjacent operation merge boundary.
+  - A different operation card also becomes the new boundary, so `Command A`, `File Change B`, `Command A` remains three visible operation positions instead of merging the two A cards across B.
+  - PWA shell cache/build id initially bumped to `codex-mobile-shell-v75` / `0.1.11|codex-mobile-shell-v75`, then superseded by v76 in the bottom-operation-card follow-up below.
+  - `test/collab-agent-render.test.js` and `test/mobile-viewport.test.js` updated.
+- Validation:
+  - `node --check public\app.js` passed.
+  - `node --test test\collab-agent-render.test.js test\conversation-render.test.js test\mobile-viewport.test.js` passed: 11/11.
+  - `npm.cmd test` passed: 125/125.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+- Status:
+  - Local private workspace has uncommitted changes that are superseded by the v76 follow-up below.
+  - Static frontend fix only; no Node listener restart is required, but mobile clients need to accept the page refresh prompt or hard-refresh/reopen the PWA to load the latest shell cache.
+
+## 2026-05-24 Bottom Operation Card Limit
+
+- User follow-up:
+  - Further constrain the mobile UI so the bottom area shows at most one tool/command/file operation box.
+- Local fix:
+  - `public/app.js` now runs `trimTrailingOperationCards()` after building the visible item list.
+  - If the latest turn ends with a contiguous run of operation cards, only the newest operation card remains visible at the bottom.
+  - Operation cards separated earlier by normal output remain visible according to the adjacent-merge rule from v75.
+  - PWA shell cache/build id bumped to `codex-mobile-shell-v76` / `0.1.11|codex-mobile-shell-v76`.
+  - `test/collab-agent-render.test.js` and `test/mobile-viewport.test.js` updated.
+- Validation:
+  - `node --check public\app.js` passed.
+  - `node --test test\collab-agent-render.test.js test\conversation-render.test.js test\mobile-viewport.test.js` passed: 11/11.
+  - `npm.cmd test` passed: 125/125.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+- Status:
+  - Local private workspace has uncommitted v76 changes.
+  - Static frontend fix only; no Node listener restart is required, but mobile clients need to accept the page refresh prompt or hard-refresh/reopen the PWA to load v76.
+
+## 2026-05-24 Public v76 Operation Card And Context Notice Push
+
+- User request:
+  - Push the current v76 operation-card/context-compaction-notice fixes to the public repository.
+- Public repository:
+  - Path: `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Synced product/test files from private: `public/app.js`, `public/sw.js`, `test/collab-agent-render.test.js`, `test/conversation-render.test.js`, and `test/mobile-viewport.test.js`.
+  - Updated public `README.md` with Chinese `2026-05-24 Public 发布说明（续二）` documenting:
+    - explicit-only context-compaction pending/completed notice behavior;
+    - adjacent-only operation-card merge boundary;
+    - at-most-one trailing bottom operation card;
+    - PWA shell cache `codex-mobile-shell-v76`, version still `0.1.11`.
+  - Public pushed commit: `b758099 收紧上下文压缩提示与底部操作卡显示`.
+- Public validation:
+  - `node --test test\collab-agent-render.test.js test\conversation-render.test.js test\mobile-viewport.test.js` passed: 11/11.
+  - `npm.cmd test` passed: 125/125.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` and `git diff --cached --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Staged public privacy scan found no private path, LAN/Tailscale marker, raw access-key marker, Web Push runtime secret-file marker, `.agent-context`, Hermes Mobile, or Gateway marker.
+- Status:
+  - Public `origin/main` is updated to `b758099`.
+  - Private workspace still has local uncommitted v76 product/test/context changes; do not assume they have been pushed to private unless a later entry says so.
+  - Static frontend fix only; no Node listener restart is required, but mobile clients need to accept the page refresh prompt or hard-refresh/reopen the PWA to load v76.
+
+## 2026-05-24 Context Compaction Completed False-Positive Fix
+
+- User report:
+  - After a long turn ended, Mobile Web still sometimes inserted `历史上下文已压缩` / context-memory-compaction notice even when the turn did not actually compact context.
+- Diagnosis:
+  - The v74 frontend fix stopped inferring pending notices in `public/app.js`, but `server.js` still synthesized `mobileCompactionStatus: "completed"` and `mobileNotice: "历史上下文已压缩"` for any item whose type matched context compaction when the parent turn was no longer live.
+  - `compactTurn()` passed `contextCompactionPending = isLiveTurn(out)` to every compacted item, so a completed long-output turn could convert a type-only context marker into a completed mobile notice.
+- Local fix:
+  - `server.js` added `contextCompactionMobileState()`.
+  - `compactItem()` now emits context-compaction mobile notices only from explicit item state:
+    - `contextCompactionPending: true` from an explicit `item/started` notification;
+    - `contextCompactionPending: false` from an explicit `item/completed` notification;
+    - or an item's own explicit pending/completed status.
+  - Type-only context-compaction items now stay compact but do not receive `mobileCompactionStatus` or `mobileNotice`.
+  - `compactTurn()` no longer passes parent-turn live/completed state into context-compaction items.
+  - PWA shell cache/build id bumped to `codex-mobile-shell-v77` / `0.1.11|codex-mobile-shell-v77`.
+  - `test/conversation-render.test.js` covers the server-side no-synthesis rule, and `test/mobile-viewport.test.js` was updated for v77.
+- Validation:
+  - `node --check server.js` passed.
+  - `node --check public\app.js` passed.
+  - `node --test test\conversation-render.test.js test\mobile-viewport.test.js` passed: 9/9.
+  - `npm.cmd test` passed: 126/126.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Edited source/test/context files were checked for UTF-8 BOM; no BOM.
+- Activation:
+  - Restarted only the 8787 Node listener to load the `server.js` fix.
+  - Old PID `70700`; new PID `7548`.
+  - `GET http://127.0.0.1:8787/api/public-config` returns `clientBuildId: 0.1.11|codex-mobile-shell-v77` and `shellCacheName: codex-mobile-shell-v77`.
+  - Authenticated `/api/status` returns `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, endpoint port `61382`, and `lastError=null`.
+- Status:
+  - Local private workspace has uncommitted v77 changes.
+  - Public repository has not been synced or pushed for v77 yet.
+  - Mobile clients need to accept the page refresh prompt or hard-refresh/reopen the PWA to load v77; the server-side fix is already active on the restarted 8787 listener.
+
+## 2026-05-24 Hermes 05-23 Stalled Turn Interrupt
+
+- User report:
+  - The Hermes Mobile Codex thread looked stuck.
+- Diagnosis:
+  - Target thread: `Hermes 05-23`, id `019e553a-fdda-7fc2-8913-cccbcdd0368a`.
+  - Codex Mobile service state was healthy:
+    - authenticated `/api/status`: `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, endpoint port `61382`, `lastError=null`;
+    - `%USERPROFILE%\.codex\app-server-mux\endpoint.json` also pointed to port `61382`, so this was not endpoint drift.
+  - Thread detail used `large-rollout-turns-list` because the rollout was about `279MB`.
+  - Latest turn `019e58df-902a-7151-b1de-318a487094d0` was `inProgress`, but rollout writes had stopped at `2026-05-24T15:25:31+08:00`.
+  - A 12-second recheck showed no rollout growth, no pending approvals, and negligible mux/app-server CPU activity, so it was a stale active turn rather than slow visible output.
+- Action:
+  - Called authenticated `POST /api/threads/019e553a-fdda-7fc2-8913-cccbcdd0368a/turns/019e58df-902a-7151-b1de-318a487094d0/interrupt`.
+- Result:
+  - Thread status became `idle`.
+  - Latest turn status became `interrupted`, with `completedAt=1779608124`.
+  - Authenticated `/api/status` remained healthy with endpoint port `61382` and `lastError=null`.
+- Notes:
+  - This was a Codex Mobile / Codex app-server thread stall, not the Codex-to-Hermes bridge worker path and not a Hermes Mobile 8797 service outage.
+  - The interrupted turn will not resume by itself; the user should send the next instruction again in `Hermes 05-23`.
+
+## 2026-05-24 Hermes 05-23 Repeated Slow/Stalled Turn
+
+- User report:
+  - After the previous stale turn was interrupted, the next `Hermes 05-23` turn recovered and did useful work, but then became very slow and appeared stuck again.
+- Diagnosis:
+  - Target thread remained `Hermes 05-23`, id `019e553a-fdda-7fc2-8913-cccbcdd0368a`.
+  - Codex Mobile service state was healthy:
+    - authenticated `/api/status`: `ready=true`, `transport=external-jsonl-tcp`, endpoint port `61382`, `lastError=null`;
+    - endpoint file still pointed to the same mux port `61382`;
+    - no pending approvals.
+  - Latest turn `019e58ea-1f16-7510-81d8-e0e8c99ed69f` was `inProgress`.
+  - The turn was active from about `2026-05-24T15:36:39+08:00`, made progress through code edits, production sync, focused checks, and Hermes 8797 smoke up to static client version `20260524-skill-menu-compact-v177`.
+  - Last rollout write before diagnosis was `2026-05-24T15:45:34+08:00`, after a `git status --short --untracked-files=all` command output.
+  - Rechecks showed:
+    - rollout size stayed unchanged for 30 seconds at about `279,365,207` bytes;
+    - latest turn stayed `inProgress`;
+    - mux/app-server CPU delta stayed near idle;
+    - latest token-count snapshots showed very large per-step input around `210k` tokens in a `258400` context window.
+- Assessment:
+  - This was not endpoint drift, not a Hermes Mobile 8797 outage, not the Codex-to-Hermes bridge worker, not pending approval, and not a still-running local command.
+  - It was a stale model-next-response wait inside an oversized Codex thread. The `Hermes 05-23` rollout is now about `279MB`, so continuing work in that thread is likely to stay slow and can repeatedly stall.
+- Action:
+  - Called authenticated `POST /api/threads/019e553a-fdda-7fc2-8913-cccbcdd0368a/turns/019e58ea-1f16-7510-81d8-e0e8c99ed69f/interrupt`.
+- Result:
+  - Thread status became `idle`.
+  - Latest turn status became `interrupted`, with `completedAt=1779609247`.
+  - Authenticated `/api/status` remained healthy with endpoint port `61382` and `lastError=null`.
+- Notes:
+  - The turn had already modified/deployed Hermes files before stalling; future Hermes work should inspect `C:\Users\xuxin\Documents\Agent` live git status and production version before assuming the interrupted turn completed all cleanup, commit, or handoff steps.
+  - Strong recommendation for next Hermes work: start a fresh continuation/new thread with a compact handoff instead of continuing this 279MB thread.
+
+## 2026-05-24 Image Upload Context Growth Diagnosis And v78 Mitigation
+
+- User clarified the key issue:
+  - The Hermes thread did not become oversized merely because normal rollout logs are large.
+  - The problematic growth happened immediately after image uploads; screenshots are temporary visual references and should not keep being carried into future model context.
+- Evidence from `Hermes 05-23` rollout:
+  - Rollout path: `%USERPROFILE%\.codex\sessions\2026\05\23\rollout-2026-05-23T22-26-29-019e553a-fdda-7fc2-8913-cccbcdd0368a.jsonl`.
+  - Total analyzed size: about `266.42 MiB`.
+  - `type=compacted` records were `221.40 MiB` / `83.1%`.
+  - There were only 24 compacted records, but each wrote a full `payload.replacement_history` snapshot.
+  - Unique replacement-history content was about `15.61 MiB`, while repeated appearances accounted for about `221.40 MiB`.
+  - Latest compacted snapshot contained 84 history entries and about `14.64 MiB` of image parts.
+  - The large entries were user messages with `input_image` parts; command output was not the dominant growth source.
+- Local code changes:
+  - Added `public/image-compressor.js`.
+    - Browser-side compression targets supported image uploads (`jpeg`, `png`, `webp`) before they enter `FormData`.
+    - Default target is max edge `1280px`, JPEG quality `0.72`, and only keeps the compressed blob when it materially saves bytes.
+    - Composer disables send while attachment compression is in progress.
+  - Added `adapters/message-input-service.js`.
+    - `shouldPersistExtendedHistoryForUploads()` defaults image-upload turns to not request app-server `persistExtendedHistory`.
+    - `CODEX_MOBILE_PERSIST_EXTENDED_HISTORY=0` disables this request globally.
+    - `CODEX_MOBILE_PERSIST_IMAGE_EXTENDED_HISTORY=1` restores extended-history persistence for image-upload turns if historical image rehydration is intentionally needed.
+  - `server.js` now uses the upload-aware extended-history policy for `/api/threads/new-message` and existing-thread `/messages`.
+  - App shell cache/build id bumped to `codex-mobile-shell-v78` / `0.1.11|codex-mobile-shell-v78`.
+  - README and `.agent-context/PROJECT_CONTEXT.md` document the image compression and temporary-image extended-history policy.
+- Validation:
+  - `node --check public\image-compressor.js`, `node --check public\app.js`, `node --check server.js`, and `node --check adapters\message-input-service.js` passed.
+  - Focused tests passed: `node --test test\image-compressor.test.js test\message-input-service.test.js test\mobile-viewport.test.js test\new-thread-route.test.js test\composer-draft.test.js`.
+  - Full `npm.cmd test` passed: 132/132.
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Edited files were checked for UTF-8 BOM; no BOM.
+- Activation:
+  - Restarted only the 8787 Node listener to load the `server.js` policy change.
+  - Old PID `7548`; new PID `18076`.
+  - `GET http://127.0.0.1:8787/api/public-config` returns `clientBuildId: 0.1.11|codex-mobile-shell-v78` and `shellCacheName: codex-mobile-shell-v78`.
+  - Authenticated `/api/status` returns `ready=true`, `transport=external-jsonl-tcp`, endpoint port `61382`, and `lastError=null`.
+- Limitations:
+  - This mitigation cannot remove images already held in a currently loaded app-server in-memory thread.
+  - It also cannot rewrite old rollout `compacted.replacement_history` entries without directly editing Codex runtime state, which remains a separate risk decision.
+  - Active-turn `turn/steer` image uploads are compressed before upload, but known app-server API fields do not provide a clean mid-turn extended-history persistence switch.
+- Status:
+  - Local private workspace has uncommitted v78 changes plus previous local v77 changes.
+  - Public repository has not been synced or pushed for v77/v78 in this turn.
+
+## 2026-05-24 ImageView Direct Rendering Fix
+
+- User report:
+  - The mobile conversation rendered an app-server `imageView` item as a raw JSON card with fields such as `type`, `id`, and `path`.
+  - Expected behavior: `imageView` should directly display the referenced image.
+- Local fix:
+  - `public/app.js`
+    - Added `imageViewPath()`, `imageViewUrl()`, and `renderImageView()`.
+    - `renderItemBody()` now renders `item.type === "imageView"` as a direct image figure.
+    - `labelForItem()` labels these cards as `Image`.
+    - `visibleItemSignature()` includes the `imageView` path/url so path changes repaint.
+    - `filePreviewContentUrl()` now routes through `localFilePreviewContentUrl()`, which appends the current auth key for image/iframe loads that cannot set request headers.
+  - `public/styles.css` adds `.image-view` styling: full card width, contained image, max-height bounded to viewport, and compact caption.
+  - Static shell cache/build id bumped to `codex-mobile-shell-v79` / `0.1.11|codex-mobile-shell-v79`.
+  - `test/file-preview-ui.test.js` and `test/mobile-viewport.test.js` updated.
+- Validation:
+  - `node --check public\app.js` and `node --check public\sw.js` passed.
+  - Focused `node --test test\file-preview-ui.test.js test\mobile-viewport.test.js test\conversation-render.test.js` passed.
+  - Full `npm.cmd test` passed: 132/132.
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - `GET http://127.0.0.1:8787/api/public-config` returns `clientBuildId: 0.1.11|codex-mobile-shell-v79` and `shellCacheName: codex-mobile-shell-v79`.
+  - `curl.exe` confirmed `/app.js` contains `renderImageView()` and v79, `/styles.css` contains `.image-view`.
+  - The screenshot path `C:\Users\xuxin\Documents\Agent\.agent-context\tmp\samsung-current-screen.png` existed and the existing file preview content route returned `200 OK`, `Content-Type: image/png`, `Content-Length: 262851` when called with a thread in the Agent workspace.
+- Status:
+  - Static frontend fix only; no Node listener restart required after this v79 change.
+  - Mobile clients need to accept the page refresh prompt or hard-refresh/reopen the PWA to load v79.
+  - Local private workspace remains uncommitted; public repository has not been synced or pushed for v79.
+
+## 2026-05-24 Public v79 Image Context And ImageView Push
+
+- User request:
+  - Commit and push the latest image/context/ImageView fixes, including the public repository.
+- Public repository:
+  - Path: `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Synced v77/v78/v79 product files and tests from private, without copying `.agent-context` or runtime state.
+  - Public README gained Chinese `2026-05-24 Public 发布说明（续三）` plus Uploads / environment-variable documentation for:
+    - explicit-only context-compaction mobile notices;
+    - browser-side image upload compression;
+    - upload-aware extended-history persistence defaults;
+    - direct `imageView` rendering through the authenticated file-preview content route.
+  - Public pushed commit: `5d62d6b 发布图片上下文压缩与 ImageView 直显修正`.
+- Public validation:
+  - Focused `node --test test\file-preview-ui.test.js test\image-compressor.test.js test\message-input-service.test.js test\conversation-render.test.js test\mobile-viewport.test.js` passed.
+  - `npm.cmd test` passed: 132/132.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` and `git diff --cached --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Edited/staged text files were checked for UTF-8 BOM; no BOM.
+  - Staged public privacy scan found no private user path, LAN/Tailscale marker, raw access-key marker, Web Push runtime secret-file marker, upload runtime path, Hermes Mobile marker, or Gateway marker.
+- Private sync status:
+  - Private `README.md` was synced back from public so the v76 and v79 public release notes are both present locally.
+  - Private still needs its local commit/push for the same v77/v78/v79 code and context updates.
