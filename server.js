@@ -236,6 +236,7 @@ let latestRateLimits = null;
 const latestRateLimitsByModel = new Map();
 let lastRolloutRateLimitScanAt = 0;
 const latestRuntimeContextByPath = new Map();
+const latestItemTimestampsByPath = new Map();
 const recentStartedThreads = new Map();
 const continuationJobs = new Map();
 const activeContinuationJobsBySource = new Map();
@@ -1397,6 +1398,29 @@ function searchSummaryFromOperation(item) {
   return [...new Set(summaries)].slice(0, 3).join(" | ");
 }
 
+function compactItemTimestampFields(item) {
+  const fields = {};
+  for (const key of [
+    "createdAtMs",
+    "createdAt",
+    "created_at_ms",
+    "created_at",
+    "startedAtMs",
+    "startedAt",
+    "started_at_ms",
+    "started_at",
+    "timestampMs",
+    "timestamp",
+    "completedAtMs",
+    "completedAt",
+    "completed_at_ms",
+    "completed_at",
+  ]) {
+    if (item && item[key] !== undefined) fields[key] = item[key];
+  }
+  return fields;
+}
+
 function compactOperationalItem(out) {
   const isWebSearch = isWebSearchLikeItem(out);
   const command = typeof out.command === "string"
@@ -1405,6 +1429,7 @@ function compactOperationalItem(out) {
   const compact = {
     id: out.id,
     type: isWebSearch ? "dynamicToolCall" : out.type,
+    ...compactItemTimestampFields(out),
     status: out.status,
     server: out.server,
     namespace: out.namespace,
@@ -1679,6 +1704,213 @@ function readRolloutTail(rolloutPath) {
   }
 }
 
+function rememberItemTimestampCandidates(key, payload) {
+  latestItemTimestampsByPath.set(key, {
+    cachedAt: Date.now(),
+    payload: payload || null,
+  });
+  while (latestItemTimestampsByPath.size > RUNTIME_CONTEXT_CACHE_MAX) {
+    const firstKey = latestItemTimestampsByPath.keys().next().value;
+    latestItemTimestampsByPath.delete(firstKey);
+  }
+}
+
+function rolloutEntryTurnId(entry) {
+  const payload = entry && entry.payload;
+  return String((payload && (
+    payload.turn_id
+    || payload.turnId
+    || (payload.turn && payload.turn.id)
+    || (payload.turn && payload.turn.turn_id)
+  )) || entry.turn_id || entry.turnId || "");
+}
+
+function rolloutItemTimestampCandidateType(entry) {
+  if (!entry || !entry.payload) return "";
+  const payload = entry.payload;
+  if (entry.type === "event_msg") {
+    if (payload.type === "user_message") return "userMessage";
+    if (payload.type === "agent_message") return "agentMessage";
+    if (payload.type === "agent_reasoning") return "reasoning";
+    if (payload.type === "exec_command_end") return "commandExecution";
+    if (payload.type === "patch_apply_end") return "fileChange";
+    if (payload.type === "web_search_end") return "dynamicToolCall";
+    if (payload.type === "context_compacted" || isContextCompactionType(payload.type)) return "contextCompaction";
+    return "";
+  }
+  if (entry.type !== "response_item") return "";
+  if (payload.type === "message") {
+    if (payload.role === "user") return "userMessage";
+    if (payload.role === "assistant") return "agentMessage";
+    return "";
+  }
+  if (payload.type === "reasoning") return "reasoning";
+  if (payload.type === "function_call") return "commandExecution";
+  if (payload.type === "web_search_call") return "dynamicToolCall";
+  if (payload.type === "custom_tool_call") return payload.name === "apply_patch" ? "fileChange" : "dynamicToolCall";
+  return "";
+}
+
+const DEDUPED_ROLLOUT_TIMESTAMP_TYPES = new Set(["userMessage", "agentMessage", "reasoning"]);
+
+function appendRolloutItemTimestampCandidate(list, candidate) {
+  if (!candidate || !candidate.itemType || !candidate.timestampMs) return;
+  const last = list.length ? list[list.length - 1] : null;
+  if (last
+    && DEDUPED_ROLLOUT_TIMESTAMP_TYPES.has(candidate.itemType)
+    && last.itemType === candidate.itemType
+    && Math.abs(last.timestampMs - candidate.timestampMs) <= 50) {
+    return;
+  }
+  list.push(candidate);
+}
+
+function rolloutTimestampFields(entry) {
+  const timestampMs = timestampToMs(entry && entry.timestamp);
+  if (!timestampMs) return {};
+  return {
+    startedAtMs: timestampMs,
+    startedAt: new Date(timestampMs).toISOString(),
+  };
+}
+
+function readRolloutItemTimestampCandidates(rolloutPath) {
+  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) {
+    return { byTurn: new Map(), unscoped: [], scopedCount: 0 };
+  }
+  let cacheKey = "";
+  try {
+    const stat = fs.statSync(rolloutPath);
+    cacheKey = runtimeContextCacheKey(rolloutPath, stat);
+    const cached = latestItemTimestampsByPath.get(cacheKey);
+    if (cached && Date.now() - cached.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS) {
+      return cached.payload || { byTurn: new Map(), unscoped: [], scopedCount: 0 };
+    }
+  } catch (_) {
+    return { byTurn: new Map(), unscoped: [], scopedCount: 0 };
+  }
+  const byTurn = new Map();
+  const unscoped = [];
+  let scopedCount = 0;
+  let currentTurnId = "";
+  const tail = readRolloutTail(rolloutPath);
+  for (const line of tail.split(/\r?\n/)) {
+    if (!line || !line.trim()) continue;
+    const entry = parseJsonLine(line);
+    if (!entry || !entry.type) continue;
+    const payload = entry.payload || {};
+    const explicitTurnId = rolloutEntryTurnId(entry);
+    if (entry.type === "turn_context" && explicitTurnId) currentTurnId = explicitTurnId;
+    if (entry.type === "event_msg" && payload.type === "task_started" && explicitTurnId) {
+      currentTurnId = explicitTurnId;
+    }
+    const itemType = rolloutItemTimestampCandidateType(entry);
+    const timestampMs = timestampToMs(entry.timestamp);
+    if (!itemType || !timestampMs) continue;
+    const turnId = explicitTurnId || currentTurnId;
+    const candidate = {
+      turnId,
+      itemType,
+      timestampMs,
+      timestamp: new Date(timestampMs).toISOString(),
+    };
+    if (turnId) {
+      if (!byTurn.has(turnId)) byTurn.set(turnId, []);
+      appendRolloutItemTimestampCandidate(byTurn.get(turnId), candidate);
+      scopedCount += 1;
+    } else {
+      appendRolloutItemTimestampCandidate(unscoped, candidate);
+    }
+  }
+  const payload = { byTurn, unscoped, scopedCount };
+  if (cacheKey) rememberItemTimestampCandidates(cacheKey, payload);
+  return payload;
+}
+
+function itemDisplayTimestampMs(item) {
+  for (const key of [
+    "createdAtMs",
+    "createdAt",
+    "created_at_ms",
+    "created_at",
+    "startedAtMs",
+    "startedAt",
+    "started_at_ms",
+    "started_at",
+    "timestampMs",
+    "timestamp",
+  ]) {
+    const timestamp = timestampToMs(item && item[key]);
+    if (timestamp) return timestamp;
+  }
+  return 0;
+}
+
+function timestampCandidateTypesForItem(item) {
+  if (!item || typeof item !== "object") return [];
+  const type = String(item.type || "");
+  if (!type) return [];
+  const aliases = [type];
+  if (isContextCompactionType(type)) aliases.push("contextCompaction");
+  if (isWebSearchLikeItem(item)) aliases.push("dynamicToolCall");
+  if (isOperationalItem(item)) {
+    if (type === "commandExecution") aliases.push("commandExecution");
+    else if (type === "fileChange") aliases.push("fileChange");
+    else aliases.push("dynamicToolCall");
+  }
+  return [...new Set(aliases.filter(Boolean))];
+}
+
+function takeNextTimestampCandidate(candidates, aliases) {
+  if (!Array.isArray(candidates) || !candidates.length || !Array.isArray(aliases) || !aliases.length) return null;
+  for (const candidate of candidates) {
+    if (!candidate || candidate.used) continue;
+    if (!aliases.includes(candidate.itemType)) continue;
+    candidate.used = true;
+    return candidate;
+  }
+  return null;
+}
+
+function applyRolloutItemTimestamp(item, candidate) {
+  if (!item || !candidate || !candidate.timestampMs || itemDisplayTimestampMs(item)) return;
+  item.startedAtMs = candidate.timestampMs;
+  item.startedAt = candidate.timestamp || new Date(candidate.timestampMs).toISOString();
+}
+
+function enrichTurnItemTimestampsFromCandidates(turn, candidates) {
+  if (!turn || !Array.isArray(turn.items) || !Array.isArray(candidates) || !candidates.length) return turn;
+  const orderedCandidates = candidates.map((candidate) => Object.assign({}, candidate, { used: false }));
+  for (const item of turn.items) {
+    if (!item || itemDisplayTimestampMs(item)) continue;
+    const candidate = takeNextTimestampCandidate(orderedCandidates, timestampCandidateTypesForItem(item));
+    if (candidate) applyRolloutItemTimestamp(item, candidate);
+  }
+  return turn;
+}
+
+function enrichThreadItemTimestampsFromRollout(thread) {
+  if (!thread || typeof thread !== "object" || !Array.isArray(thread.turns) || !thread.turns.length) return thread;
+  const rolloutPath = rolloutPathForThread(thread);
+  if (!rolloutPath) return thread;
+  const candidates = readRolloutItemTimestampCandidates(rolloutPath);
+  if (!candidates) return thread;
+  const latestIndex = thread.turns.length - 1;
+  thread.turns.forEach((turn, index) => {
+    const turnId = String((turn && turn.id) || "");
+    let turnCandidates = turnId && candidates.byTurn ? candidates.byTurn.get(turnId) : null;
+    if ((!turnCandidates || !turnCandidates.length)
+      && index === latestIndex
+      && candidates.scopedCount === 0
+      && Array.isArray(candidates.unscoped)
+      && candidates.unscoped.length) {
+      turnCandidates = candidates.unscoped;
+    }
+    enrichTurnItemTimestampsFromCandidates(turn, turnCandidates || []);
+  });
+  return thread;
+}
+
 function rolloutPathForThread(thread) {
   return thread && (thread.path || thread.rolloutPath || thread.rollout_path) || "";
 }
@@ -1894,6 +2126,7 @@ function rawOperationFromEntry(entry) {
     return compactOperationalItem({
       id: `raw-${payload.call_id || entry.timestamp || "web-search"}`,
       type: "web_search_call",
+      ...rolloutTimestampFields(entry),
       status: statusFromRawOperation(payload),
       tool: "Web Search",
       command: searchSummaryFromOperation(payload),
@@ -1904,6 +2137,7 @@ function rawOperationFromEntry(entry) {
     return compactOperationalItem({
       id: `raw-${payload.call_id || entry.timestamp || "command"}`,
       type: "commandExecution",
+      ...rolloutTimestampFields(entry),
       status: statusFromRawOperation(payload),
       command: commandFromRawPayload(payload),
     });
@@ -1912,6 +2146,7 @@ function rawOperationFromEntry(entry) {
     return compactOperationalItem({
       id: `raw-${payload.call_id || entry.timestamp || "patch"}`,
       type: "fileChange",
+      ...rolloutTimestampFields(entry),
       status: statusFromRawOperation(payload),
       fileNames: Object.keys(payload.changes || {}).slice(0, 5),
     });
@@ -1920,6 +2155,7 @@ function rawOperationFromEntry(entry) {
     return compactOperationalItem({
       id: `raw-${payload.call_id || entry.timestamp || "function"}`,
       type: "commandExecution",
+      ...rolloutTimestampFields(entry),
       status: statusFromRawOperation(payload),
       command: commandFromRawPayload(payload),
     });
@@ -1928,6 +2164,7 @@ function rawOperationFromEntry(entry) {
     return compactOperationalItem({
       id: `raw-${payload.call_id || entry.timestamp || "web-search"}`,
       type: "web_search_call",
+      ...rolloutTimestampFields(entry),
       status: statusFromRawOperation(payload),
       tool: "Web Search",
       command: searchSummaryFromOperation(payload),
@@ -1939,6 +2176,7 @@ function rawOperationFromEntry(entry) {
     return compactOperationalItem({
       id: `raw-${payload.call_id || entry.timestamp || "tool"}`,
       type: fileNames.length ? "fileChange" : "dynamicToolCall",
+      ...rolloutTimestampFields(entry),
       status: statusFromRawOperation(payload),
       tool: payload.name,
       fileNames,
@@ -1970,6 +2208,7 @@ function compactItem(item, options = {}) {
     const compacted = {
       id: out.id,
       type: out.type,
+      ...compactItemTimestampFields(out),
       status: out.status,
     };
     if (!compactionState) return compacted;
@@ -2049,6 +2288,7 @@ function compactThread(thread, options = {}) {
       out.mobileOmittedTurnCount = omitted;
       out.turns = out.turns.slice(-maxTurns);
     }
+    enrichThreadItemTimestampsFromRollout(out);
     const latestIndex = out.turns.length - 1;
     out.turns = out.turns.map((turn, index) => compactTurn(turn, { allowLiveOperation: index === latestIndex }));
     const latest = out.turns[latestIndex];
@@ -6060,9 +6300,12 @@ if (require.main === module) {
 
 module.exports = {
   approvalResponsePayload,
+  compactThread,
+  enrichThreadItemTimestampsFromRollout,
   filePreviewContentDisposition,
   filePreviewContentType,
   readFilePreview,
+  readRolloutItemTimestampCandidates,
   resolveFilePreviewPath,
   publicServerRequest,
   serveFilePreviewContent,
