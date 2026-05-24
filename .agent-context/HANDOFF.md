@@ -1259,3 +1259,74 @@ The previous full handoff was archived and should be opened only when old proven
 - Private sync status:
   - Private `README.md` was synced back from public so the v76 and v79 public release notes are both present locally.
   - Private still needs its local commit/push for the same v77/v78/v79 code and context updates.
+
+## 2026-05-24 Global Single Operation Card v80
+
+- User report:
+  - The mobile UI still showed many `Command` cards after the v76 rule because older operation cards were allowed once they had moved above the bottom area.
+  - Desired behavior: the latest turn should show only one operation/tool card globally, not just at the bottom.
+- Local fix:
+  - `public/app.js` changed `visibleItemsForTurn()` so every new visible operation item clears the previously visible operation entry.
+  - The latest turn now exposes only the newest command/file/tool/search operation card, even if older operation cards have scrolled upward or intervening output exists.
+  - Removed the now-obsolete trailing-only `trimTrailingOperationCards()` path.
+  - PWA shell cache/build id bumped to `codex-mobile-shell-v80` / `0.1.11|codex-mobile-shell-v80`.
+  - `.agent-context/PROJECT_CONTEXT.md` updated with the new global single-card rule.
+  - `test/collab-agent-render.test.js`, `test/conversation-render.test.js`, and `test/mobile-viewport.test.js` updated.
+- Validation:
+  - `node --check public\app.js` and `node --check public\sw.js` passed.
+  - Targeted `node --test test\collab-agent-render.test.js test\conversation-render.test.js test\mobile-viewport.test.js` passed: 12/12.
+  - `npm.cmd test` passed: 132/132.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Edited files were checked for UTF-8 BOM; no BOM.
+- Status:
+  - Local private workspace has uncommitted v80 changes.
+  - Public repository has not been synced or pushed for v80 yet.
+  - Static frontend fix only; no Node listener restart is required, but mobile clients need to accept the page refresh prompt or hard-refresh/reopen the PWA to load v80.
+
+## 2026-05-24 Three-Line Single Operation Card v81
+
+- User follow-up:
+  - Since the latest turn now has only one global operation card, the two-line card is too short and can show too little command/file detail.
+  - Desired behavior: keep the global single-card rule, but allow a compact three-line card.
+- Local fix:
+  - `public/styles.css` changed `.operation-detail` from single-line `nowrap` truncation to a two-line clamped detail block with `-webkit-line-clamp: 2`, `max-height: calc(1.26em * 2)`, and `overflow-wrap: anywhere`.
+  - The operation card visual layout is now: first row type/status, second and third rows command/file/tool/search detail.
+  - `public/app.js` / `public/sw.js` bumped the shell build/cache to `codex-mobile-shell-v81` / `0.1.11|codex-mobile-shell-v81`.
+  - `.agent-context/PROJECT_CONTEXT.md` updated to record that operation cards may use the three-line layout because only one operation card is visible.
+  - `test/collab-agent-render.test.js` and `test/mobile-viewport.test.js` updated.
+- Validation:
+  - `node --check public\app.js` and `node --check public\sw.js` passed.
+  - Targeted `node --test test\collab-agent-render.test.js test\conversation-render.test.js test\mobile-viewport.test.js` passed: 12/12.
+  - `npm.cmd test` passed: 132/132.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Edited files were checked for UTF-8 BOM; no BOM.
+  - Local 8787 `/api/public-config` returns `clientBuildId: 0.1.11|codex-mobile-shell-v81` and `shellCacheName: codex-mobile-shell-v81`.
+- Status:
+  - Local private workspace has uncommitted v80/v81 operation-card changes.
+  - Public repository has not been synced or pushed for v80/v81 yet.
+  - Static frontend fix only; no Node listener restart is required, but mobile clients need to accept the page refresh prompt or hard-refresh/reopen the PWA to load v81.
+
+## 2026-05-24 Public v81 Single Operation Card Push
+
+- User request:
+  - Push and commit the global single-operation-card / three-line operation-card fix to public.
+- Public repository:
+  - Path: `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Synced v80/v81 product/test files from private: `public/app.js`, `public/styles.css`, `public/sw.js`, `test/collab-agent-render.test.js`, `test/conversation-render.test.js`, and `test/mobile-viewport.test.js`.
+  - Public README gained Chinese `2026-05-24 Public 发布说明（续四）` documenting the global single operation card, three-line visual layout, and PWA shell cache `codex-mobile-shell-v81`.
+  - Public pushed commit: `d8cfbc3 优化移动端单操作卡三行显示`.
+- Public validation:
+  - Targeted `node --test test\collab-agent-render.test.js test\conversation-render.test.js test\mobile-viewport.test.js` passed: 12/12.
+  - `npm.cmd test` passed: 132/132.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` and `git diff --cached --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Edited/staged public text files were checked for UTF-8 BOM; no BOM.
+  - Staged public privacy scan found no private user path, LAN/Tailscale marker, raw access-key marker, Web Push runtime secret-file marker, upload runtime path, Hermes Mobile marker, or Gateway marker.
+- Private sync status:
+  - Private `README.md` was synced back from public so the v81 public release note is present locally.
+  - Private still needs its local commit/push for the same v80/v81 code and context updates.

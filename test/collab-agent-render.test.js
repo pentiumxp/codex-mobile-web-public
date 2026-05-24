@@ -25,6 +25,15 @@ function functionBody(name) {
   throw new Error(`could not parse function ${name}`);
 }
 
+function cssRuleBody(selector) {
+  const start = stylesCss.indexOf(`${selector} {`);
+  assert.notEqual(start, -1, `missing css rule ${selector}`);
+  const bodyStart = stylesCss.indexOf("{", start);
+  const bodyEnd = stylesCss.indexOf("}", bodyStart);
+  assert.notEqual(bodyEnd, -1, `missing css rule end ${selector}`);
+  return stylesCss.slice(bodyStart + 1, bodyEnd);
+}
+
 test("collab agent tool calls render as compact summary cards", () => {
   assert.match(appJs, /collabAgentToolCall:\s*"协作 Agent"/);
   assert.match(appJs, /function renderCollabAgentToolCall\(/);
@@ -35,7 +44,7 @@ test("collab agent tool calls render as compact summary cards", () => {
   assert.match(stylesCss, /\.collab-agent-card/);
 });
 
-test("live operation cards stay compact with a two-line summary", () => {
+test("live operation cards stay compact, three-line, and expose only the newest operation", () => {
   assert.match(functionBody("renderLiveOperation"), /renderOperationCard\(item, key, \{ status \}\)/);
   assert.match(functionBody("renderLiveOperation"), /stableOperationRenderKey\(turn, item, index\)/);
   assert.match(functionBody("renderOperationCard"), /operation-meta-line/);
@@ -43,18 +52,13 @@ test("live operation cards stay compact with a two-line summary", () => {
   assert.match(functionBody("renderOperationCard"), /operation-title[\s\S]*operation-status/);
   assert.match(functionBody("operationDetailText"), /join\(" \\| "\)/);
   assert.match(functionBody("visibleItemsForTurn"), /const showOperations = isLatestTurn\(turn\)/);
-  assert.match(functionBody("visibleItemsForTurn"), /let lastOperationEntry = null/);
-  assert.match(functionBody("visibleItemsForTurn"), /operationGroupKey\(item\)/);
-  assert.match(functionBody("visibleItemsForTurn"), /lastOperationEntry && lastOperationEntry\.groupKey === groupKey/);
-  assert.match(functionBody("visibleItemsForTurn"), /visible\[existing\.visibleIndex\] = \{ item, sourceIndex: existing\.sourceIndex \}/);
-  assert.match(functionBody("visibleItemsForTurn"), /lastOperationEntry = \{ groupKey, visibleIndex: visible\.length, sourceIndex: index \}/);
-  assert.match(functionBody("visibleItemsForTurn"), /lastOperationEntry = null/);
-  assert.match(functionBody("visibleItemsForTurn"), /trimTrailingOperationCards\(visible\.filter\(Boolean\)\)/);
-  assert.match(appJs, /function trimTrailingOperationCards\(/);
-  assert.match(functionBody("trimTrailingOperationCards"), /trailingOperationCount > 1/);
-  assert.match(functionBody("trimTrailingOperationCards"), /entries\[index\] = null/);
-  assert.match(functionBody("trimTrailingOperationCards"), /if \(!entry \|\| !isOperationalItem\(entry\.item\)\) break/);
+  assert.match(functionBody("visibleItemsForTurn"), /let latestOperationEntry = null/);
+  assert.match(functionBody("visibleItemsForTurn"), /if \(latestOperationEntry\) visible\[latestOperationEntry\.visibleIndex\] = null/);
+  assert.match(functionBody("visibleItemsForTurn"), /latestOperationEntry = \{ visibleIndex: visible\.length, sourceIndex: index \}/);
+  assert.match(functionBody("visibleItemsForTurn"), /return visible\.filter\(Boolean\)/);
   assert.doesNotMatch(functionBody("visibleItemsForTurn"), /operationEntryByKey = new Map/);
+  assert.doesNotMatch(functionBody("visibleItemsForTurn"), /lastOperationEntry/);
+  assert.doesNotMatch(appJs, /function trimTrailingOperationCards\(/);
   assert.match(functionBody("stableOperationRenderKey"), /operationGroupKey\(item\)/);
   assert.match(functionBody("operationGroupKey"), /item\.command/);
   assert.match(functionBody("operationGroupKey"), /operationCommandGroupText\(item\)/);
@@ -69,9 +73,12 @@ test("live operation cards stay compact with a two-line summary", () => {
   assert.match(stylesCss, /\.operation-meta-line\s*{[\s\S]*justify-content:\s*flex-start;/);
   assert.match(stylesCss, /\.operation-title\s*{[\s\S]*font-size:\s*calc\(var\(--content-small-font-size\) \* 0\.92\);/);
   assert.match(stylesCss, /\.operation-status\s*{[\s\S]*font-size:\s*calc\(var\(--content-small-font-size\) \* 0\.92\);/);
-  assert.match(stylesCss, /\.operation-detail\s*{[\s\S]*font-size:\s*calc\(var\(--content-code-font-size\) \* 1\.06\);/);
-  assert.match(stylesCss, /\.operation-detail\s*{[\s\S]*text-overflow:\s*ellipsis;/);
-  assert.match(stylesCss, /\.operation-detail\s*{[\s\S]*white-space:\s*nowrap;/);
+  const operationDetailCss = cssRuleBody(".operation-detail");
+  assert.match(operationDetailCss, /font-size:\s*calc\(var\(--content-code-font-size\) \* 1\.06\);/);
+  assert.match(operationDetailCss, /-webkit-line-clamp:\s*2;/);
+  assert.match(operationDetailCss, /max-height:\s*calc\(1\.26em \* 2\);/);
+  assert.match(operationDetailCss, /white-space:\s*normal;/);
+  assert.doesNotMatch(operationDetailCss, /white-space:\s*nowrap;/);
 });
 
 test("current-turn subagent panel opens from a left swipe without a topbar button", () => {

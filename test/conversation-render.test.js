@@ -38,7 +38,7 @@ test("context compaction notices update status and collapse repeated turn notice
   assert.match(functionBody("visibleItemsForTurn"), /const notice = contextCompactionNotice\(item, turn\)/);
   assert.match(functionBody("visibleItemsForTurn"), /if \(!notice\) return/);
   assert.match(functionBody("visibleItemsForTurn"), /visible\[existing\.visibleIndex\] = null/);
-  assert.match(functionBody("visibleItemsForTurn"), /return trimTrailingOperationCards\(visible\.filter\(Boolean\)\)/);
+  assert.match(functionBody("visibleItemsForTurn"), /return visible\.filter\(Boolean\)/);
   assert.match(functionBody("visibleItemSignature"), /isContextCompactionItem\(item\)/);
   assert.match(functionBody("visibleItemSignature"), /const notice = contextCompactionNotice\(item, turn\)/);
   assert.match(functionBody("visibleItemSignature"), /if \(!notice\) return null/);
