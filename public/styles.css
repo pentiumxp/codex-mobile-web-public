@@ -2130,15 +2130,18 @@ html.visual-recovering body::before {
 }
 
 .operation-detail {
-  display: block;
+  display: -webkit-box;
   min-width: 0;
+  max-height: calc(1.26em * 2);
   overflow: hidden;
   color: var(--muted-code-text);
   font-family: "Cascadia Mono", "Consolas", "Microsoft YaHei", monospace;
   font-size: calc(var(--content-code-font-size) * 1.06);
-  line-height: 1.28;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.26;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
 }
 
 .item-head {

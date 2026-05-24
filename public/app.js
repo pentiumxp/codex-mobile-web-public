@@ -140,7 +140,7 @@ const state = {
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v79";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v81";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -1944,7 +1944,7 @@ function isNodeAboveConversationViewport(node) {
 function visibleItemsForTurn(turn) {
   const showOperations = isLatestTurn(turn);
   const visible = [];
-  let lastOperationEntry = null;
+  let latestOperationEntry = null;
   const contextEntryByKey = new Map();
   (turn.items || []).forEach((item, index) => {
     if (!item || isReasoningItem(item)) return;
@@ -1956,36 +1956,18 @@ function visibleItemsForTurn(turn) {
       if (existing) visible[existing.visibleIndex] = null;
       contextEntryByKey.set(groupKey, { visibleIndex: visible.length });
       visible.push({ item, sourceIndex: index });
-      lastOperationEntry = null;
       return;
     }
     if (isOperationalItem(item)) {
       if (!showOperations) return;
-      const groupKey = operationGroupKey(item) || `item:${item.id || index}`;
-      const existing = lastOperationEntry && lastOperationEntry.groupKey === groupKey ? lastOperationEntry : null;
-      if (existing) {
-        visible[existing.visibleIndex] = { item, sourceIndex: existing.sourceIndex };
-        return;
-      }
-      lastOperationEntry = { groupKey, visibleIndex: visible.length, sourceIndex: index };
+      if (latestOperationEntry) visible[latestOperationEntry.visibleIndex] = null;
+      latestOperationEntry = { visibleIndex: visible.length, sourceIndex: index };
       visible.push({ item, sourceIndex: index });
       return;
     }
-    lastOperationEntry = null;
     visible.push({ item, sourceIndex: index });
   });
-  return trimTrailingOperationCards(visible.filter(Boolean));
-}
-
-function trimTrailingOperationCards(entries) {
-  let trailingOperationCount = 0;
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const entry = entries[index];
-    if (!entry || !isOperationalItem(entry.item)) break;
-    trailingOperationCount += 1;
-    if (trailingOperationCount > 1) entries[index] = null;
-  }
-  return entries.filter(Boolean);
+  return visible.filter(Boolean);
 }
 
 function visibleItemSignature(item, turn = null) {
