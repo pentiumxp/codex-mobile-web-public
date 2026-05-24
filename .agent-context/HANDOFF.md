@@ -940,3 +940,39 @@ The previous full handoff was archived and should be opened only when old proven
 - Private sync:
   - Copied public product files back into private: `README.md`, `public/app.js`, `public/styles.css`, `public/sw.js`, `test/collab-agent-render.test.js`, `test/message-timestamp.test.js`, and `test/mobile-viewport.test.js`.
   - Local-only `.agent-context` updates remain private-only and should not be copied to public.
+
+## 2026-05-24 Context Compaction Notice And Long Output Flicker Fix
+
+- User report:
+  - In long turns, `历史上下文已压缩` and `历史上下文正在压缩` could appear in a visually reversed/confusing order.
+  - After a long output ends, the mobile conversation sometimes shows a broad/full-screen flash.
+- Diagnosis:
+  - Context-compaction render signatures did not include `mobileCompactionStatus` or the derived notice text, so pending/completed state changes could fail to repaint deterministically.
+  - A long turn can contain multiple context-compaction items. Showing all of them can leave an older completed note above a newer in-progress note.
+  - Agent messages rendered live as escaped plain text, then switched to Markdown after turn completion. For long replies this changes a large DOM subtree at completion.
+  - Final app-server snapshots can carry the same agent/plan text under a different item id, causing existing visible text nodes to get new render keys and reanimate.
+- Local fix:
+  - `public/app.js` now includes context-compaction status and `contextCompactionNotice()` in `visibleItemSignature()`.
+  - `visibleItemsForTurn()` collapses repeated context-compaction notices inside one turn to the latest notice.
+  - `agentMessage` bodies now use the Markdown renderer for both live and completed states, avoiding a live-text to final-Markdown layout switch at completion.
+  - `mergeVisibleTextItemPreservingRenderIdentity()` preserves the existing render identity when a final snapshot contains the same agent/plan text under another id.
+  - Follow-up duplicate `You` card regression fixed: matching `userMessage` items with different ids are merged at the original visible position and the incoming duplicate is marked consumed, so final turn refreshes do not append old user messages to the bottom.
+  - PWA shell cache/build id bumped to `codex-mobile-shell-v73` / `0.1.11|codex-mobile-shell-v73`.
+  - Added `test/conversation-render.test.js` and updated `test/mobile-viewport.test.js`.
+- Validation:
+  - `node --check public\app.js` passed.
+  - `node --test test\conversation-render.test.js test\mobile-viewport.test.js` passed: 6/6 after the duplicate user-message follow-up.
+  - `npm.cmd test` passed: 123/123 after the v73 duplicate user-message follow-up.
+  - `npm.cmd run check` passed after v73.
+  - `npm.cmd run check:macos` passed after v73.
+  - Earlier targeted `node --test test\conversation-render.test.js test\mobile-viewport.test.js test\collab-agent-render.test.js test\message-timestamp.test.js` passed: 12/12.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - `GET http://127.0.0.1:8787/api/public-config` should return `clientBuildId: 0.1.11|codex-mobile-shell-v73` and `shellCacheName: codex-mobile-shell-v73` after the v73 static files are served.
+- Status:
+  - Public repository was synced and pushed on 2026-05-24.
+  - Public pushed commit: `1975fe7 修正长 turn 完成后的对话重复与闪动`.
+  - Public README includes a Chinese `2026-05-24 Public 发布说明（续）` covering context-compaction notice order, long-output completion flicker reduction, render identity preservation, and duplicate `You` message prevention.
+  - Private README was synced back from public so the product documentation matches the public release.
+  - Static frontend fix only; no Node listener restart is required, but mobile clients need to accept the page refresh prompt or hard-refresh/reopen the PWA to load v73.
