@@ -21,6 +21,7 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(indexHtml, /lastTouchEndAt < 320/);
   assert.match(indexHtml, /<script src="\/viewport-metrics\.js"><\/script>/);
   assert.match(indexHtml, /<script src="\/conversation-scroll\.js"><\/script>/);
+  assert.match(indexHtml, /<script src="\/image-compressor\.js"><\/script>/);
   assert.match(appJs, /const viewportMetrics = window\.CodexViewportMetrics/);
   assert.match(appJs, /viewportMetrics\.measureViewport\(\{/);
   assert.match(viewportMetricsJs, /const keyboardShrunk = keyboardCandidate && keyboardInputActive/);
@@ -36,16 +37,18 @@ test("mobile viewport and early guards disable page zoom", () => {
 });
 
 test("public app shell cache advances after frontend visibility changes", () => {
-  assert.match(swJs, /codex-mobile-shell-v76/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v76"/);
+  assert.match(swJs, /codex-mobile-shell-v79/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v79"/);
   assert.match(swJs, /"\/api-client\.js"/);
   assert.match(swJs, /"\/runtime-settings\.js"/);
   assert.match(swJs, /"\/draft-store\.js"/);
   assert.match(swJs, /"\/markdown-renderer\.js"/);
   assert.match(swJs, /"\/viewport-metrics\.js"/);
   assert.match(swJs, /"\/conversation-scroll\.js"/);
+  assert.match(swJs, /"\/image-compressor\.js"/);
   assert.match(appJs, /"\/viewport-metrics\.js"/);
   assert.match(appJs, /"\/conversation-scroll\.js"/);
+  assert.match(appJs, /"\/image-compressor\.js"/);
   assert.match(appJs, /navigator\.serviceWorker\.register\("\/sw\.js"\)/);
   assert.match(appJs, /state\.serviceWorkerRegistration\.update\(\)\.catch/);
 });

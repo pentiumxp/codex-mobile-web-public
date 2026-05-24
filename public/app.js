@@ -134,12 +134,13 @@ const state = {
   copyFeedbackTimers: new Map(),
   steerFeedback: null,
   steerFeedbackTimer: null,
+  attachmentProcessingCount: 0,
 };
 
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v76";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v79";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -152,6 +153,7 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/markdown-renderer.js",
   "/viewport-metrics.js",
   "/conversation-scroll.js",
+  "/image-compressor.js",
   "/app.js",
   "/manifest.json",
   "/sw.js",
@@ -199,6 +201,7 @@ const apiClient = window.CodexApiClient.createApiClient({
 const runtimeSettings = window.CodexRuntimeSettings;
 const viewportMetrics = window.CodexViewportMetrics;
 const conversationScroll = window.CodexConversationScroll;
+const imageCompressor = window.CodexImageCompressor;
 const draftStore = window.CodexDraftStore.createDraftStore({
   storage: localStorage,
   indexedDB: window.indexedDB,
@@ -2010,6 +2013,15 @@ function visibleItemSignature(item, turn = null) {
       server: item.server || "",
       namespace: item.namespace || "",
       detail: operationDetailText(item),
+    };
+  }
+  if (item.type === "imageView") {
+    return {
+      id: item.id || "",
+      type: item.type || "",
+      status: statusText(item.status),
+      path: imageViewPath(item),
+      url: imageSourceSignature(imageViewUrl(item)),
     };
   }
   return {
@@ -5089,6 +5101,7 @@ function labelForItem(item) {
     commandExecution: "Command",
     fileChange: "File Change",
     collabAgentToolCall: "协作 Agent",
+    imageView: "Image",
     mcpToolCall: `MCP ${item.server || ""}.${item.tool || ""}`,
     dynamicToolCall: `${item.namespace ? item.namespace + "." : ""}${item.tool || "Tool"}`,
     plan: "Plan",
@@ -5236,7 +5249,17 @@ function filePreviewMetaText(file) {
 function filePreviewContentUrl(file) {
   if (file && file.contentUrl) return String(file.contentUrl);
   if (!file || !file.path) return "";
-  return `/api/files/preview/content?threadId=${encodeURIComponent(state.currentThreadId || "")}&path=${encodeURIComponent(file.path)}`;
+  return localFilePreviewContentUrl(file.path);
+}
+
+function localFilePreviewContentUrl(filePath) {
+  if (!filePath) return "";
+  const params = new URLSearchParams({
+    threadId: state.currentThreadId || "",
+    path: String(filePath),
+  });
+  if (state.key) params.set("key", state.key);
+  return `/api/files/preview/content?${params.toString()}`;
 }
 
 function renderJsonPreview(content) {
@@ -5306,6 +5329,42 @@ function renderFilePreviewContent(file) {
   if (file && file.kind === "json") return renderJsonPreview(content);
   if (file && file.kind === "csv") return renderCsvPreview(content);
   return `<pre class="file-preview-text"><code>${escapeHtml(content)}</code></pre>`;
+}
+
+function imageViewPath(item) {
+  return String((item && (
+    item.path
+    || item.filePath
+    || item.file_path
+    || item.imagePath
+    || item.image_path
+    || item.sourcePath
+    || item.source_path
+    || item.arguments && (item.arguments.path || item.arguments.filePath || item.arguments.imagePath)
+    || item.result && (item.result.path || item.result.filePath || item.result.imagePath)
+  )) || "");
+}
+
+function imageViewUrl(item) {
+  return String((item && (
+    item.url
+    || item.imageUrl
+    || item.image_url
+    || item.arguments && (item.arguments.url || item.arguments.imageUrl || item.arguments.image_url)
+    || item.result && (item.result.url || item.result.imageUrl || item.result.image_url)
+  )) || "");
+}
+
+function renderImageView(item) {
+  const filePath = imageViewPath(item);
+  const url = imageViewUrl(item);
+  const src = filePath ? localFilePreviewContentUrl(filePath) : url;
+  const label = shortPath(filePath || url || item.id || "image");
+  if (!src) return renderStructuredBlock(item, "Image");
+  return `<figure class="image-view">
+    <img src="${escapeHtml(src)}" alt="${escapeHtml(label)}" loading="lazy">
+    ${label ? `<figcaption>${escapeHtml(label)}</figcaption>` : ""}
+  </figure>`;
 }
 
 function showFilePreviewLoading(label, filePath) {
@@ -5412,6 +5471,7 @@ function renderItemBody(item, turn = null) {
     return escapeHtml([summary, content].filter(Boolean).join("\n\n"));
   }
   if (item.type === "plan") return renderMarkdown(item.text || "");
+  if (item.type === "imageView") return renderImageView(item);
   if (item.type === "commandExecution") {
     return `<div class="mono">${escapeHtml(item.command || "")}</div>${renderOutputBlock(item.aggregatedOutput, item)}`;
   }
@@ -6481,13 +6541,45 @@ function pendingAttachmentBytes(extra = []) {
     + extra.reduce((total, file) => total + file.size, 0);
 }
 
-function addAttachmentFiles(fileList) {
+async function prepareAttachmentFile(file) {
+  if (!imageCompressor || typeof imageCompressor.compressImageFile !== "function") return file;
+  try {
+    return await imageCompressor.compressImageFile(file);
+  } catch (err) {
+    postClientEvent("attachment_image_compression_failed", {
+      name: file && file.name ? String(file.name).slice(0, 120) : "",
+      type: file && file.type ? String(file.type).slice(0, 80) : "",
+      size: file && Number.isFinite(file.size) ? Number(file.size) : 0,
+      message: err && err.message ? err.message : String(err),
+    });
+    return file;
+  }
+}
+
+async function prepareAttachmentFiles(files) {
+  const prepared = [];
+  for (const file of files) {
+    prepared.push(await prepareAttachmentFile(file));
+  }
+  return prepared;
+}
+
+async function addAttachmentFiles(fileList) {
   const files = Array.from(fileList || []).filter(Boolean);
   if (!files.length) return;
+  state.attachmentProcessingCount += 1;
+  updateComposerControls();
+  let preparedFiles = files;
+  try {
+    preparedFiles = await prepareAttachmentFiles(files);
+  } finally {
+    state.attachmentProcessingCount = Math.max(0, state.attachmentProcessingCount - 1);
+    updateComposerControls();
+  }
   const draftKey = currentDraftKey();
   const startIndex = state.pendingAttachments.length;
   const accepted = [];
-  for (const file of files) {
+  for (const file of preparedFiles) {
     if (state.pendingAttachments.length + accepted.length >= state.maxUploadFiles) {
       showError(new Error(`Too many attachments; max ${state.maxUploadFiles}`));
       break;
@@ -6761,7 +6853,7 @@ function updateComposerControls() {
     && !state.currentThread.mobileLoadError);
   const hasNewThreadDraft = Boolean(state.newThreadDraft);
   const canComposeNewThread = Boolean(hasNewThreadDraft && state.selectedCwd);
-  const disabled = !(hasThread || canComposeNewThread) || state.composerBusy;
+  const disabled = !(hasThread || canComposeNewThread) || state.composerBusy || state.attachmentProcessingCount > 0;
   const hasContent = composerHasContent();
   const interruptMode = Boolean(!hasNewThreadDraft && state.activeTurnId) && !hasContent;
   const steerMode = Boolean(!hasNewThreadDraft && state.activeTurnId) && hasContent;
@@ -7315,7 +7407,7 @@ function wireUi() {
   });
   $("messageInput").addEventListener("paste", (event) => {
     const files = Array.from((event.clipboardData && event.clipboardData.files) || []);
-    if (files.length) addAttachmentFiles(files);
+    if (files.length) addAttachmentFiles(files).catch(showError);
     const text = event.clipboardData && event.clipboardData.getData("text/plain");
     if (text) {
       event.preventDefault();
@@ -7328,7 +7420,7 @@ function wireUi() {
     $("fileInput").click();
   });
   $("fileInput").addEventListener("change", (event) => {
-    addAttachmentFiles(event.target.files);
+    addAttachmentFiles(event.target.files).catch(showError);
     event.target.value = "";
   });
   $("attachmentList").addEventListener("click", (event) => {
@@ -7365,7 +7457,7 @@ function wireUi() {
     if (!(state.currentThreadId || state.newThreadDraft) || !hasTransferFiles(event)) return;
     event.preventDefault();
     $("composer").classList.remove("drag-over");
-    addAttachmentFiles(event.dataTransfer.files);
+    addAttachmentFiles(event.dataTransfer.files).catch(showError);
   });
   updateViewportVars();
   applyFontSizePreference();

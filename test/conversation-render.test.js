@@ -7,20 +7,29 @@ const { test } = require("node:test");
 
 const root = path.resolve(__dirname, "..");
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
+const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
 
-function functionBody(name) {
-  const start = appJs.indexOf(`function ${name}(`);
+function functionBodyFrom(source, name) {
+  const start = source.indexOf(`function ${name}(`);
   assert.notEqual(start, -1, `missing function ${name}`);
-  const bodyStart = appJs.indexOf(") {", start) + 2;
+  const bodyStart = source.indexOf(") {", start) + 2;
   assert.notEqual(bodyStart, 1, `missing function body ${name}`);
   let depth = 0;
-  for (let index = bodyStart; index < appJs.length; index += 1) {
-    const char = appJs[index];
+  for (let index = bodyStart; index < source.length; index += 1) {
+    const char = source[index];
     if (char === "{") depth += 1;
     if (char === "}") depth -= 1;
-    if (depth === 0) return appJs.slice(bodyStart + 1, index);
+    if (depth === 0) return source.slice(bodyStart + 1, index);
   }
   throw new Error(`could not parse function ${name}`);
+}
+
+function functionBody(name) {
+  return functionBodyFrom(appJs, name);
+}
+
+function serverFunctionBody(name) {
+  return functionBodyFrom(serverJs, name);
 }
 
 test("context compaction notices update status and collapse repeated turn notices", () => {
@@ -67,6 +76,20 @@ test("context compaction merge does not preserve stale mobile notices", () => {
   assert.match(body, /delete merged\.mobileNotice/);
   assert.match(body, /delete merged\.mobileCompactionStatus/);
   assert.match(body, /else if \(existingItem\.mobileNotice\)/);
+});
+
+test("server only emits context compaction notices from explicit item state", () => {
+  const itemBody = serverFunctionBody("compactItem");
+  const turnBody = serverFunctionBody("compactTurn");
+  assert.match(serverJs, /function contextCompactionMobileState\(/);
+  assert.match(serverFunctionBody("contextCompactionMobileState"), /options\.contextCompactionPending === true/);
+  assert.match(serverFunctionBody("contextCompactionMobileState"), /options\.contextCompactionPending === false/);
+  assert.match(serverFunctionBody("contextCompactionMobileState"), /if \(!text\) return ""/);
+  assert.match(itemBody, /const compactionState = contextCompactionMobileState\(out, options\)/);
+  assert.match(itemBody, /if \(!compactionState\) return compacted/);
+  assert.doesNotMatch(itemBody, /options\.contextCompactionPending !== false/);
+  assert.doesNotMatch(turnBody, /contextCompactionPending = isLiveTurn\(out\)/);
+  assert.match(turnBody, /out\.items = out\.items\.map\(\(item\) => compactItem\(item\)\)/);
 });
 
 test("matching user messages keep their original turn position after final refresh", () => {
