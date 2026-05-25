@@ -2053,9 +2053,17 @@ html.visual-recovering body::before {
 .operation-meta-line {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.operation-meta-main {
+  display: flex;
+  align-items: center;
   gap: 6px;
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .operation-detail-line {
@@ -2084,6 +2092,17 @@ html.visual-recovering body::before {
   border: 1px solid rgba(122, 199, 167, 0.22);
   border-radius: 999px;
   background: rgba(8, 18, 24, 0.12);
+  white-space: nowrap;
+}
+
+.operation-duration {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--muted);
+  font-family: "Cascadia Mono", "Consolas", "Microsoft YaHei", monospace;
+  font-size: calc(var(--content-small-font-size) * 0.92);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
   white-space: nowrap;
 }
 

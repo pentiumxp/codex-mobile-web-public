@@ -674,6 +674,17 @@ Behavior:
 - README 的界面说明已同步更新，`test/thread-archive.test.js` 覆盖“长按菜单归档、无左滑归档残留”，`test/mobile-viewport.test.js` 覆盖 v83 shell cache。
 - 已打开到主屏幕的 PWA 需要点击页面刷新提示、硬刷新或关闭重开，拿到 `codex-mobile-shell-v83` 后，才能看到新的长按菜单归档入口。
 
+### 2026-05-25 Public 发布说明（续）
+
+本次 public 发布继续处理移动端长 turn 的操作状态与消息提交稳定性。版本保持 `0.1.11`，Public PWA shell 缓存升到 `codex-mobile-shell-v85`，用于让已打开的移动端客户端拿到新的 active-turn 状态和操作卡显示逻辑。
+
+- 最新 turn 只保留一个全局操作卡的规则保持不变，但操作卡第一行右侧现在会显示该命令、文件变更、工具或搜索操作的已运行时间。运行中的操作会随顶部计时器同步刷新；已完成操作优先使用服务端或 rollout 中已有的完成时间、耗时字段。
+- 服务端会从 rollout JSONL 中补齐操作项的逐条时间戳，压缩后的 `Command` / `File Change` / tool / search 卡片也会保留 `startedAtMs` / `startedAt`，让移动端能计算并显示操作耗时。
+- 现有线程发送消息时，服务端会先检查浏览器提交的 `activeTurnId` 是否已经被新的 durable turn 取代、是否在最近 turn 列表中缺失并超过短暂宽限期、或是否是 app-server 已返回 stale 错误的旧 active turn。命中这些场景时，Mobile Web 会中断旧 active marker，再走 `thread/resume` + `turn/start`，避免用户消息只作为本地 echo 短暂出现、重新进入线程后消失。
+- 对最新 durable live turn 的处理已收紧：即使 rollout 一段时间没有写入，或者最后一个可见 item 是已完成命令、工具、文件、搜索操作或 context-compaction marker，Mobile Web 也不会自动把这个最新 live turn 当作 stale turn 中断。用户在这种情况下发送的引导消息应继续走 `turn/steer`，避免把正常的“补充指令”误变成 `turn_aborted reason=interrupted`。
+- 前端 active 状态现在只跟随最新 durable turn。较旧的 `inProgress` turn 如果已经被更新的 durable turn 取代，不再让 composer 保持 `Stop`、不再让顶部 timer 继续显示运行中，也不会再接收新的 `turn/steer` 引导。
+- 本次新增 `adapters/active-turn-staleness-service.js` 和 `test/active-turn-staleness-service.test.js`，并更新 `test/new-thread-route.test.js`、`test/conversation-render.test.js`、`test/collab-agent-render.test.js`、`test/message-timestamp.test.js`、`test/thread-item-timestamp-enrichment.test.js` 和 `test/mobile-viewport.test.js`。已打开到主屏幕的 PWA 需要点击页面刷新提示、硬刷新或关闭重开，拿到 `codex-mobile-shell-v85` 后，才能看到新的 active-state 和操作耗时显示。
+
 ## Current Update Notes
 
 This section summarizes the current integration behavior for someone cloning or taking over the repository.
@@ -720,6 +731,8 @@ This section summarizes the current integration behavior for someone cloning or 
 - If the same request id, or the same legacy content fingerprint, is repeated within `CODEX_MOBILE_MESSAGE_DEDUPE_WINDOW_MS`, the server returns the original in-flight/completed result and does not call `turn/start` or `turn/steer` again.
 - During an active turn, Mobile Web posts the active turn id. The server uses app-server `turn/steer` when available so Desktop and Mobile stay on the same active stream.
 - After a successful active-turn `turn/steer`, the server also sends a deterministic mux-local `mux/userMessage` echo keyed by `clientSubmissionId`. This makes the user's mid-turn input visible in Mobile Web even when the app-server accepts the steering request without replaying a user-message item.
+- Existing-thread submission preflights the submitted `activeTurnId` before steering. Superseded or missing stale active ids fall through to `thread/resume` + `turn/start`, while the latest durable live turn is not auto-interrupted only because it is quiet or because its last visible item is a completed operation or context-compaction marker.
+- The browser active-turn UI follows only the latest durable turn. Older `inProgress` turns that have been superseded do not keep the composer in `Stop`, keep the top timer active, or receive new steering input.
 - Message submission now writes compact server-side `[message-submit]` diagnostics for received, empty, completed, and failed submissions. These logs include ids and counts, not raw message text.
 - The browser can post compact `[client-event]` diagnostics such as UI stalls, send stalls, send-button no-submit cases, and send failures. These events are best-effort and are used only for local operational diagnosis.
 - The browser preserves `mux-user-*` user-message echo items during thread refresh merges, because these synthetic visible inputs may not exist in the durable thread snapshot returned by app-server.

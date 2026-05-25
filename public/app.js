@@ -138,7 +138,7 @@ const state = {
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v83";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v85";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -1781,7 +1781,8 @@ function syncActiveTurnFromThread() {
   const turns = state.currentThread && Array.isArray(state.currentThread.turns)
     ? state.currentThread.turns
     : [];
-  const running = turns.slice().reverse().find((turn) => !isTurnComplete(turn) && isRunningStatus(turn.status));
+  const latest = turns.length ? turns[turns.length - 1] : null;
+  const running = latest && !isTurnComplete(latest) && isRunningStatus(latest.status) ? latest : null;
   state.activeTurnId = running ? running.id : "";
   const interrupt = $("interruptTurn");
   if (interrupt) interrupt.disabled = !state.activeTurnId;
@@ -1987,6 +1988,9 @@ function visibleItemSignature(item, turn = null) {
       id: item.id || "",
       type: item.type || "",
       status: statusText(item.status),
+      startedAtMs: item.startedAtMs || item.startedAt || item.started_at_ms || item.started_at || "",
+      completedAtMs: item.completedAtMs || item.completedAt || item.completed_at_ms || item.completed_at || "",
+      durationMs: item.durationMs || item.duration_ms || item.elapsedMs || item.elapsed_ms || "",
       command: item.command || "",
       fileNames: Array.isArray(item.fileNames) ? item.fileNames : [],
       tool: item.tool || "",
@@ -2275,13 +2279,36 @@ function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
     return existingTurn ? mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) : incomingTurn;
   });
   const incomingIds = new Set(merged.turns.map((turn) => turn && turn.id).filter(Boolean));
+  const latestIncoming = merged.turns.length ? merged.turns[merged.turns.length - 1] : null;
   for (const existingTurn of existingTurns) {
     if (!existingTurn || incomingIds.has(existingTurn.id)) continue;
+    if (turnIsSupersededBy(existingTurn, latestIncoming)) continue;
     if (existingTurn.id === state.activeTurnId || (!isTurnComplete(existingTurn) && turnVisibleWeight(existingTurn) > 0)) {
       merged.turns.push(existingTurn);
     }
   }
   return merged;
+}
+
+function turnOrderMs(turn) {
+  if (!turn) return 0;
+  return numericTimestampMs(turn.completedAtMs)
+    || numericTimestampMs(turn.completedAt)
+    || numericTimestampMs(turn.completed_at_ms)
+    || numericTimestampMs(turn.completed_at)
+    || numericTimestampMs(turn.startedAtMs)
+    || numericTimestampMs(turn.startedAt)
+    || numericTimestampMs(turn.started_at_ms)
+    || numericTimestampMs(turn.started_at)
+    || 0;
+}
+
+function turnIsSupersededBy(turn, newerTurn) {
+  if (!turn || !newerTurn || turn.id === newerTurn.id) return false;
+  const left = turnOrderMs(turn);
+  const right = turnOrderMs(newerTurn);
+  if (left && right) return right > left;
+  return isTurnComplete(newerTurn) && !isTurnComplete(turn);
 }
 
 function approvalThreadId(request) {
@@ -2420,11 +2447,12 @@ function currentLiveTurn() {
   const turns = state.currentThread && Array.isArray(state.currentThread.turns)
     ? state.currentThread.turns
     : [];
+  const latest = turns.length ? turns[turns.length - 1] : null;
   if (state.activeTurnId) {
-    const active = turns.find((turn) => turn.id === state.activeTurnId);
+    const active = latest && latest.id === state.activeTurnId ? latest : null;
     if (active && isLiveTurn(active)) return active;
   }
-  return turns.slice().reverse().find((turn) => isLiveTurn(turn)) || null;
+  return latest && isLiveTurn(latest) ? latest : null;
 }
 
 function turnElapsedSeconds(turn) {
@@ -2464,6 +2492,7 @@ function updateTurnTimer() {
   const el = $("turnTimer");
   if (!el) return;
   updateComposerHeightVar();
+  updateOperationDurationBadges();
   const turn = currentLiveTurn();
   if (!turn) {
     const latest = latestTurn();
@@ -2495,6 +2524,74 @@ function updateTickTimer() {
     state.nowMs = Date.now();
     updateTurnTimer();
   }, 1000);
+}
+
+function operationStartedAtMs(item) {
+  return numericTimestampMs(item && item.startedAtMs)
+    || numericTimestampMs(item && item.startedAt)
+    || numericTimestampMs(item && item.started_at_ms)
+    || numericTimestampMs(item && item.started_at)
+    || numericTimestampMs(item && item.createdAtMs)
+    || numericTimestampMs(item && item.createdAt)
+    || numericTimestampMs(item && item.timestampMs)
+    || numericTimestampMs(item && item.timestamp);
+}
+
+function operationCompletedAtMs(item) {
+  return numericTimestampMs(item && item.completedAtMs)
+    || numericTimestampMs(item && item.completedAt)
+    || numericTimestampMs(item && item.completed_at_ms)
+    || numericTimestampMs(item && item.completed_at);
+}
+
+function operationExplicitDurationMs(item) {
+  const value = Number((item && (item.durationMs || item.duration_ms || item.elapsedMs || item.elapsed_ms)) || 0);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function operationDurationData(item, status = "") {
+  const explicitMs = operationExplicitDurationMs(item);
+  const startedMs = operationStartedAtMs(item);
+  const completedMs = operationCompletedAtMs(item);
+  let durationMs = explicitMs;
+  if (!durationMs && startedMs) {
+    const endMs = completedMs || (isCompletedStatus(status) ? 0 : state.nowMs);
+    if (endMs > startedMs) durationMs = endMs - startedMs;
+  }
+  if (!durationMs) return null;
+  const seconds = Math.max(0, Math.round(durationMs / 1000));
+  return {
+    text: formatElapsedTime(seconds),
+    startedMs,
+    completedMs,
+    durationMs: explicitMs,
+  };
+}
+
+function operationDurationAttrs(data) {
+  return [
+    `data-started-ms="${escapeHtml(data.startedMs || "")}"`,
+    `data-completed-ms="${escapeHtml(data.completedMs || "")}"`,
+    `data-duration-ms="${escapeHtml(data.durationMs || "")}"`,
+  ].join(" ");
+}
+
+function updateOperationDurationBadges(root = document) {
+  const badges = root.querySelectorAll ? root.querySelectorAll(".operation-duration") : [];
+  badges.forEach((badge) => {
+    const explicitMs = Number(badge.dataset.durationMs || 0);
+    const startedMs = Number(badge.dataset.startedMs || 0);
+    const completedMs = Number(badge.dataset.completedMs || 0);
+    let durationMs = Number.isFinite(explicitMs) && explicitMs > 0 ? explicitMs : 0;
+    if (!durationMs && Number.isFinite(startedMs) && startedMs > 0) {
+      const endMs = Number.isFinite(completedMs) && completedMs > 0 ? completedMs : state.nowMs;
+      durationMs = Math.max(0, endMs - startedMs);
+    }
+    if (!durationMs) return;
+    const next = formatElapsedTime(Math.round(durationMs / 1000));
+    if (badge.textContent !== next) badge.textContent = next;
+    if (badge.getAttribute("title") !== `Elapsed ${next}`) badge.setAttribute("title", `Elapsed ${next}`);
+  });
 }
 
 function startRelativeTimeTimer() {
@@ -4655,6 +4752,10 @@ function renderOperationCard(item, key, options = {}) {
   const type = options.type || item.type || "item";
   const title = operationTitle(item);
   const detail = operationDetailText(item);
+  const durationData = operationDurationData(item, status);
+  const duration = durationData
+    ? `<time class="operation-duration" ${operationDurationAttrs(durationData)} title="${escapeHtml(`Elapsed ${durationData.text}`)}">${escapeHtml(durationData.text)}</time>`
+    : "";
   const classes = [
     "item",
     "live-operation",
@@ -4666,7 +4767,7 @@ function renderOperationCard(item, key, options = {}) {
     ? `<div class="operation-detail-line"><span class="operation-detail">${escapeHtml(detail)}</span></div>`
     : "";
   return `<section class="${classes}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">
-    <div class="operation-meta-line"><span class="operation-title">${escapeHtml(title)}</span><span class="operation-status">${escapeHtml(status)}</span></div>
+    <div class="operation-meta-line"><span class="operation-meta-main"><span class="operation-title">${escapeHtml(title)}</span><span class="operation-status">${escapeHtml(status)}</span></span>${duration}</div>
     ${body}
   </section>`;
 }

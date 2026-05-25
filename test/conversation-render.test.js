@@ -101,3 +101,23 @@ test("matching user messages keep their original turn position after final refre
   assert.match(body, /addedIncomingItems\.add\(incomingUserMatch\)/);
   assert.match(body, /const incomingTextMatch = incomingUserMatch[\s\S]*visibleTextItemsLikelySame\(existingItem, incomingItem\)/);
 });
+
+test("active turn state follows only the latest durable turn", () => {
+  const syncBody = functionBody("syncActiveTurnFromThread");
+  assert.match(syncBody, /const latest = turns\.length \? turns\[turns\.length - 1\] : null/);
+  assert.match(syncBody, /const running = latest && !isTurnComplete\(latest\) && isRunningStatus\(latest\.status\) \? latest : null/);
+  assert.doesNotMatch(syncBody, /reverse\(\)\.find/);
+
+  const liveBody = functionBody("currentLiveTurn");
+  assert.match(liveBody, /const latest = turns\.length \? turns\[turns\.length - 1\] : null/);
+  assert.match(liveBody, /const active = latest && latest\.id === state\.activeTurnId \? latest : null/);
+  assert.match(liveBody, /return latest && isLiveTurn\(latest\) \? latest : null/);
+  assert.doesNotMatch(liveBody, /reverse\(\)\.find/);
+});
+
+test("thread merge drops superseded stale active turns", () => {
+  assert.match(appJs, /function turnIsSupersededBy\(/);
+  assert.match(functionBody("turnIsSupersededBy"), /return isTurnComplete\(newerTurn\) && !isTurnComplete\(turn\)/);
+  assert.match(functionBody("mergeThreadPreservingVisibleItems"), /const latestIncoming = merged\.turns\.length \? merged\.turns\[merged\.turns\.length - 1\] : null/);
+  assert.match(functionBody("mergeThreadPreservingVisibleItems"), /if \(turnIsSupersededBy\(existingTurn, latestIncoming\)\) continue/);
+});

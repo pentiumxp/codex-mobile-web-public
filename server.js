@@ -15,6 +15,9 @@ const {
   parsePersistExtendedHistoryEnv,
   shouldPersistExtendedHistoryForUploads,
 } = require("./adapters/message-input-service");
+const {
+  detectStaleActiveTurnForSubmission,
+} = require("./adapters/active-turn-staleness-service");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -110,6 +113,8 @@ const THREAD_DETAIL_RPC_TIMEOUT_MS = Math.min(6000, READ_RPC_TIMEOUT_MS);
 const MUTATION_RPC_TIMEOUT_MS = 120000;
 const MESSAGE_DEDUPE_WINDOW_MS = Math.max(5_000, Number(process.env.CODEX_MOBILE_MESSAGE_DEDUPE_WINDOW_MS || "90000"));
 const MESSAGE_DEDUPE_MAX = Math.max(20, Number(process.env.CODEX_MOBILE_MESSAGE_DEDUPE_MAX || "300"));
+const STALE_ACTIVE_TURN_MS = Math.max(30_000, Number(process.env.CODEX_MOBILE_STALE_ACTIVE_TURN_MS || "180000"));
+const TERMINAL_IDLE_ACTIVE_TURN_MS = Math.max(10_000, Number(process.env.CODEX_MOBILE_TERMINAL_IDLE_ACTIVE_TURN_MS || "45000"));
 const STARTED_THREAD_CACHE_TTL_MS = Math.max(60_000, Number(process.env.CODEX_MOBILE_STARTED_THREAD_CACHE_TTL_MS || "900000"));
 const STARTED_THREAD_CACHE_MAX = Math.max(10, Number(process.env.CODEX_MOBILE_STARTED_THREAD_CACHE_MAX || "80"));
 const MAX_ROLLOUT_CONTEXT_BYTES = Math.max(256 * 1024, Number(process.env.CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES || String(4 * 1024 * 1024)));
@@ -845,6 +850,50 @@ function logContinuation(event, details = {}) {
 function logMessageSubmit(event, details = {}) {
   trimRuntimeLogs();
   console.log(`[message-submit] ${event} ${JSON.stringify(safeLogDetails(details))}`);
+}
+
+function isTurnSteerUnsupportedError(err) {
+  const message = String((err && err.message) || err || "").toLowerCase();
+  return /method not found|unknown method/.test(message);
+}
+
+function isStaleActiveTurnError(err) {
+  const message = String((err && err.message) || err || "").toLowerCase();
+  return /not found|not active|inactive|completed|interrupted|expected turn|turn.*not.*running|turn.*not.*active/.test(message);
+}
+
+async function staleActiveTurnPreflight(codexClient, threadId, activeTurnId) {
+  if (!activeTurnId) return { stale: false, reason: "no-active-turn" };
+  const summary = readStateDbThread(threadId) || readStartedThread(threadId);
+  const rolloutStats = summary ? rolloutStatsForPath(rolloutPathForThread(summary)) : null;
+  if (!rolloutStats) return { stale: false, reason: "no-rollout-stats" };
+  if (Date.now() - rolloutStats.mtimeMs < TERMINAL_IDLE_ACTIVE_TURN_MS) {
+    return { stale: false, reason: "rollout-recent" };
+  }
+  let turnsResult = null;
+  try {
+    turnsResult = await codexClient.request("thread/turns/list", {
+      threadId,
+      limit: 20,
+      sortDirection: "desc",
+    }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS, retry: false, resetOnTimeout: false });
+  } catch (err) {
+    return {
+      stale: false,
+      reason: "turns-list-error",
+      error: err.message || String(err),
+    };
+  }
+  return detectStaleActiveTurnForSubmission({
+    activeTurnId,
+    threadId,
+    turnsResult,
+    rolloutStats,
+    pendingServerRequests: codexClient.pendingServerRequests(),
+    nowMs: Date.now(),
+    staleMs: STALE_ACTIVE_TURN_MS,
+    terminalIdleMs: TERMINAL_IDLE_ACTIVE_TURN_MS,
+  });
 }
 
 function logClientEvent(event, details = {}) {
@@ -6213,7 +6262,35 @@ async function handleApi(req, res) {
     let result;
     try {
       result = await runMessageSubmissionOnce(submissionKeys, uploads, async () => {
+        let skipTurnSteer = false;
         if (body.activeTurnId) {
+          const stalePreflight = await staleActiveTurnPreflight(codex, threadId, String(body.activeTurnId));
+          if (stalePreflight.stale) {
+            skipTurnSteer = true;
+            logMessageSubmit("active-turn-stale-preflight", {
+              threadId,
+              turnId: String(body.activeTurnId),
+              clientSubmissionId: body.clientSubmissionId,
+              reason: stalePreflight.reason,
+              quietMs: stalePreflight.quietMs,
+            });
+            try {
+              await codex.request("turn/interrupt", {
+                threadId,
+                turnId: String(body.activeTurnId),
+              }, { timeoutMs: 20000, retry: false });
+              await new Promise((resolve) => setTimeout(resolve, 250));
+            } catch (err) {
+              logMessageSubmit("active-turn-stale-interrupt-failed", {
+                threadId,
+                turnId: String(body.activeTurnId),
+                clientSubmissionId: body.clientSubmissionId,
+                error: err.message || String(err),
+              });
+            }
+          }
+        }
+        if (body.activeTurnId && !skipTurnSteer) {
           try {
             const result = await codex.request("turn/steer", {
               threadId,
@@ -6228,14 +6305,22 @@ async function handleApi(req, res) {
             });
             return result;
           } catch (err) {
-            if (!/method not found|unknown method|not found/i.test(err.message || "")) throw err;
-            codex.notifyMuxUserMessage({
+            if (isTurnSteerUnsupportedError(err)) {
+              codex.notifyMuxUserMessage({
+                threadId,
+                turnId: String(body.activeTurnId),
+                input,
+                clientSubmissionId: body.clientSubmissionId,
+              });
+              return {};
+            }
+            if (!isStaleActiveTurnError(err)) throw err;
+            logMessageSubmit("active-turn-stale", {
               threadId,
               turnId: String(body.activeTurnId),
-              input,
               clientSubmissionId: body.clientSubmissionId,
+              error: err.message || String(err),
             });
-            return {};
           }
         }
         try {
