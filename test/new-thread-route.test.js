@@ -91,6 +91,8 @@ test("existing-message route falls back when active turn steering is stale", () 
   const preflightLogIndex = routeBody.indexOf('logMessageSubmit("active-turn-stale-preflight"');
   const interruptIndex = routeBody.indexOf('codex.request("turn/interrupt"', preflightLogIndex);
   const steerIndex = routeBody.indexOf('codex.request("turn/steer"', interruptIndex);
+  const pendingEchoIndex = routeBody.indexOf("pendingSteerEchoStore.remember", interruptIndex);
+  const forgetEchoIndex = routeBody.indexOf("pendingSteerEchoStore.forget", pendingEchoIndex);
   const staleLogIndex = routeBody.indexOf('logMessageSubmit("active-turn-stale"');
   const resumeIndex = routeBody.indexOf('codex.request("thread/resume"', staleLogIndex);
   const turnStartIndex = routeBody.indexOf('codex.request("turn/start"', resumeIndex);
@@ -98,6 +100,8 @@ test("existing-message route falls back when active turn steering is stale", () 
   assert.ok(preflightLogIndex > preflightCallIndex, "message route should log stale active-turn preflight");
   assert.ok(interruptIndex > preflightLogIndex, "stale active turn should be interrupted before starting a new turn");
   assert.ok(steerIndex > interruptIndex, "normal turn/steer path should remain after preflight");
+  assert.ok(pendingEchoIndex > interruptIndex && pendingEchoIndex < steerIndex, "pending steer echo should be remembered before turn/steer can block");
+  assert.ok(forgetEchoIndex > steerIndex, "pending steer echo should be forgotten when turn/steer falls through as stale");
   assert.match(routeBody, /if \(body\.activeTurnId && !skipTurnSteer\)/, "stale preflight should skip turn/steer");
   assert.ok(staleLogIndex > 0, "message route should log stale active turn steering");
   assert.ok(resumeIndex > staleLogIndex, "stale active turn should fall through to thread/resume");

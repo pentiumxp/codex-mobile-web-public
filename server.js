@@ -15,6 +15,7 @@ const {
   parsePersistExtendedHistoryEnv,
   shouldPersistExtendedHistoryForUploads,
 } = require("./adapters/message-input-service");
+const { createPendingSteerEchoStore } = require("./adapters/message-pending-echo-service");
 const {
   detectStaleActiveTurnForSubmission,
 } = require("./adapters/active-turn-staleness-service");
@@ -53,6 +54,7 @@ const sharedChainRestartService = createSharedChainRestartService({
   taskName: SHARED_CHAIN_RESTART_TASK_NAME,
   port: PORT,
 });
+const pendingSteerEchoStore = createPendingSteerEchoStore();
 const PUSH_VAPID_FILE = process.env.CODEX_MOBILE_PUSH_VAPID_FILE || path.join(RUNTIME_ROOT, "web-push-vapid.json");
 const PUSH_SUBSCRIPTIONS_FILE = process.env.CODEX_MOBILE_PUSH_SUBSCRIPTIONS_FILE || path.join(RUNTIME_ROOT, "web-push-subscriptions.json");
 const DEFAULT_PUSH_SUBJECT = "mailto:codex-mobile-web@example.com";
@@ -1483,6 +1485,7 @@ function compactOperationalItem(out) {
     server: out.server,
     namespace: out.namespace,
     tool: isWebSearch ? "Web Search" : out.tool,
+    callId: out.callId || out.call_id,
     command: typeof command === "string" ? truncateMiddle(command, 180, "command") : undefined,
     fileNames: [...new Set(Array.isArray(out.fileNames) && out.fileNames.length
       ? out.fileNames
@@ -2262,6 +2265,7 @@ function rawOperationFromEntry(entry) {
     return compactOperationalItem({
       id: `raw-${payload.call_id || entry.timestamp || "web-search"}`,
       type: "web_search_call",
+      callId: payload.call_id,
       ...rolloutTimestampFields(entry),
       status: statusFromRawOperation(payload),
       tool: "Web Search",
@@ -2273,6 +2277,7 @@ function rawOperationFromEntry(entry) {
     return compactOperationalItem({
       id: `raw-${payload.call_id || entry.timestamp || "command"}`,
       type: "commandExecution",
+      callId: payload.call_id,
       ...rolloutTimestampFields(entry),
       status: statusFromRawOperation(payload),
       command: commandFromRawPayload(payload),
@@ -2282,6 +2287,7 @@ function rawOperationFromEntry(entry) {
     return compactOperationalItem({
       id: `raw-${payload.call_id || entry.timestamp || "patch"}`,
       type: "fileChange",
+      callId: payload.call_id,
       ...rolloutTimestampFields(entry),
       status: statusFromRawOperation(payload),
       fileNames: Object.keys(payload.changes || {}).slice(0, 5),
@@ -2291,6 +2297,7 @@ function rawOperationFromEntry(entry) {
     return compactOperationalItem({
       id: `raw-${payload.call_id || entry.timestamp || "function"}`,
       type: "commandExecution",
+      callId: payload.call_id,
       ...rolloutTimestampFields(entry),
       status: statusFromRawOperation(payload),
       command: commandFromRawPayload(payload),
@@ -2300,6 +2307,7 @@ function rawOperationFromEntry(entry) {
     return compactOperationalItem({
       id: `raw-${payload.call_id || entry.timestamp || "web-search"}`,
       type: "web_search_call",
+      callId: payload.call_id,
       ...rolloutTimestampFields(entry),
       status: statusFromRawOperation(payload),
       tool: "Web Search",
@@ -2312,6 +2320,7 @@ function rawOperationFromEntry(entry) {
     return compactOperationalItem({
       id: `raw-${payload.call_id || entry.timestamp || "tool"}`,
       type: fileNames.length ? "fileChange" : "dynamicToolCall",
+      callId: payload.call_id,
       ...rolloutTimestampFields(entry),
       status: statusFromRawOperation(payload),
       tool: payload.name,
@@ -2321,14 +2330,56 @@ function rawOperationFromEntry(entry) {
   return null;
 }
 
-function readLatestRawOperation(thread) {
+function rawOperationOutputCallId(entry) {
+  if (!entry || !entry.payload) return "";
+  const payload = entry.payload;
+  if (entry.type === "response_item" && /^(function_call_output|custom_tool_call_output)$/.test(String(payload.type || ""))) {
+    return String(payload.call_id || "");
+  }
+  if (entry.type === "event_msg" && /^(exec_command_end|patch_apply_end|web_search_end)$/.test(String(payload.type || ""))) {
+    return String(payload.call_id || "");
+  }
+  return "";
+}
+
+function readLatestRawOperation(thread, turnId = "") {
   const rolloutPath = thread && (thread.path || thread.rolloutPath || thread.rollout_path);
   if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) return null;
   try {
     const lines = fs.readFileSync(rolloutPath, "utf8").split(/\r?\n/).filter(Boolean).slice(-800);
-    for (let index = lines.length - 1; index >= 0; index -= 1) {
-      const operation = rawOperationFromEntry(parseJsonLine(lines[index]));
-      if (operation) return operation;
+    const operations = [];
+    const completedCallIds = new Set();
+    let currentTurnId = "";
+    for (const line of lines) {
+      const entry = parseJsonLine(line);
+      if (!entry || !entry.payload) continue;
+      const payload = entry.payload || {};
+      const explicitTurnId = rolloutEntryTurnId(entry);
+      if (entry.type === "turn_context" && explicitTurnId) currentTurnId = explicitTurnId;
+      if (entry.type === "event_msg" && payload.type === "task_started" && explicitTurnId) {
+        currentTurnId = explicitTurnId;
+      }
+      const outputCallId = rawOperationOutputCallId(entry);
+      if (outputCallId) {
+        completedCallIds.add(outputCallId);
+        for (const operation of operations) {
+          if (operation && operation.callId === outputCallId && !isCompletedStatus(operation.status)) {
+            operation.status = statusFromRawOperation(payload);
+          }
+        }
+      }
+      const operation = rawOperationFromEntry(entry);
+      if (!operation) continue;
+      operation.rolloutTurnId = explicitTurnId || currentTurnId || "";
+      if (operation.callId && completedCallIds.has(operation.callId)) operation.status = "completed";
+      operations.push(operation);
+    }
+    const targetTurnId = String(turnId || "");
+    for (let index = operations.length - 1; index >= 0; index -= 1) {
+      const operation = operations[index];
+      if (operation.callId && completedCallIds.has(operation.callId)) continue;
+      if (targetTurnId && operation.rolloutTurnId && operation.rolloutTurnId !== targetTurnId) continue;
+      return operation;
     }
   } catch (_) {
     return null;
@@ -2424,13 +2475,14 @@ function compactThread(thread, options = {}) {
       out.mobileOmittedTurnCount = omitted;
       out.turns = out.turns.slice(-maxTurns);
     }
+    pendingSteerEchoStore.injectIntoThread(out);
     enrichThreadItemTimestampsFromRollout(out);
     const latestIndex = out.turns.length - 1;
     out.turns = out.turns.map((turn, index) => compactTurn(turn, { allowLiveOperation: index === latestIndex }));
     const latest = out.turns[latestIndex];
     if (latest && isLiveTurn(latest) && Array.isArray(latest.items)
       && !latest.items.some((item) => isOperationalItem(item))) {
-      const rawOperation = readLatestRawOperation(out);
+      const rawOperation = readLatestRawOperation(out, latest.id);
       if (rawOperation) latest.items.push(rawOperation);
     }
   }
@@ -6291,7 +6343,14 @@ async function handleApi(req, res) {
           }
         }
         if (body.activeTurnId && !skipTurnSteer) {
+          let pendingSteerEchoKey = "";
           try {
+            pendingSteerEchoKey = pendingSteerEchoStore.remember({
+              threadId,
+              turnId: String(body.activeTurnId),
+              input,
+              clientSubmissionId: body.clientSubmissionId,
+            });
             const result = await codex.request("turn/steer", {
               threadId,
               input,
@@ -6314,6 +6373,7 @@ async function handleApi(req, res) {
               });
               return {};
             }
+            if (pendingSteerEchoKey) pendingSteerEchoStore.forget(pendingSteerEchoKey);
             if (!isStaleActiveTurnError(err)) throw err;
             logMessageSubmit("active-turn-stale", {
               threadId,

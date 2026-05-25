@@ -1676,6 +1676,55 @@ The previous full handoff was archived and should be opened only when old proven
   - Public repository has not been synced or pushed for v84/v85 or the stale-active-turn hotfixes.
   - Mobile clients must refresh/hard-reopen the PWA to load the v85 frontend active-state fix; the server-side latest-live steering fix is active after the 8787 restart.
 
+## 2026-05-25 Pending Active-Turn Steer Echo Hotfix
+
+- User report:
+  - In `Hermes 05-25`, a live turn appeared stuck after Gateway Pool recovery work.
+  - The bottom visible card was not a command card; new mobile guidance appeared to send, but after leaving and re-entering the thread the sent user message was not visible until the long wait later resolved.
+- Runtime evidence:
+  - Codex Mobile `/api/status` remained healthy on mux endpoint `127.0.0.1:61382`, `lastError=null`, and no pending approvals were returned.
+  - `Hermes 05-25` rollout showed the earlier Gateway Pool scheduled-task wait was a real long PowerShell wait, not an `rg` scan:
+    - `17:32:46` to `17:40:51`, about 484 seconds.
+    - `17:45:25` to `17:51:04`, about 339 seconds.
+  - Later `rg` commands in the same Hermes thread resolved quickly in the rollout around `17:56:31`; a manual repeat of the matching `rg` query from `C:\Users\xuxin\Documents\Agent` took about 72ms.
+  - After those tool outputs, the latest turn could still remain `inProgress` with no rollout growth and near-idle mux/app-server CPU, indicating a model/turn-finalization wait rather than a still-running local `rg.exe`.
+- Diagnosis:
+  - The v85 stale-active-turn fix covered stale/superseded active turn IDs and prevented auto-interrupting the latest durable live turn.
+  - It did not cover the case where the latest durable live turn is genuinely waiting inside `turn/steer` while a long tool/model-finalization step is still unresolved.
+  - During that wait, the browser may show only transient local feedback; a reload/re-enter can lose the visible user message until app-server later emits a durable `user_message`.
+- Local fix:
+  - Added `adapters/message-pending-echo-service.js`.
+    - Maintains a bounded short-lived pending active-turn steer echo store.
+    - Normalizes text/localImage input into a synthetic `mux-user-*` userMessage item.
+    - Injects the pending userMessage into thread detail responses only if the app-server snapshot does not already contain a matching real user message.
+    - Expires pending echoes after a short TTL and removes them on stale-active-turn fallthrough.
+  - `server.js`
+    - Creates `pendingSteerEchoStore`.
+    - Existing-thread `/messages` remembers pending echo before awaiting `turn/steer`, so thread reloads can still show the just-submitted guidance while the RPC is waiting.
+    - `compactThread()` injects pending steer echoes before timestamp enrichment and compaction.
+    - If `turn/steer` fails as stale and the route falls through to `thread/resume` + `turn/start`, the pending echo is forgotten to avoid cross-turn duplicates.
+  - `package.json`
+    - `npm run check` now syntax-checks `adapters/message-pending-echo-service.js`.
+  - Tests:
+    - Added `test/message-pending-echo-service.test.js`.
+    - Updated `test/new-thread-route.test.js` to assert pending echo is remembered before `turn/steer` can block and forgotten on stale fallthrough.
+- Validation:
+  - `node --check server.js` passed.
+  - `node --check adapters\message-pending-echo-service.js` passed.
+  - Focused `node --test test\message-pending-echo-service.test.js test\new-thread-route.test.js` passed: 11/11.
+  - `npm.cmd test` passed: 152/152.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - BOM check passed for touched files.
+- Status:
+  - Local private workspace has uncommitted pending-echo changes.
+  - Public repository has not been synced or pushed for this fix.
+  - This is a server-side Mobile Web fix; no PWA shell cache bump is required.
+  - Activated by restarting only the 8787 Node listener: old PID `68712`, new PID `63960`.
+  - Post-restart `/api/public-config` remains `0.1.11|codex-mobile-shell-v85`; authenticated `/api/status` returned `ready=true`, endpoint `127.0.0.1:61382`, `lastError=null`.
+  - It still does not make a genuinely stuck model/tool-finalization step complete; it only keeps mobile-submitted guidance visible across reload/re-entry while the active-turn steering request is pending.
+
 ## 2026-05-25 Continuation Reasoning Effort Inheritance Finding
 
 - User report:
@@ -1725,3 +1774,43 @@ The previous full handoff was archived and should be opened only when old proven
 - Private status:
   - Private `README.md` was synced back from public so the new v85 public release note is present locally.
   - Private publish commit includes the v82/v83/v84/v85 product/test changes, `.agent-context` updates, the reasoning-effort inheritance finding above, and this handoff entry. Use `git log -1 --oneline --decorate` for the exact final private commit hash after the commit is written.
+
+## 2026-05-25 Raw Operation Cross-Turn Display Hotfix
+
+- User report:
+  - In `Hermes 05-25`, after a previous turn had been interrupted, the mobile UI showed a new `You` message and then a `Command running` card for an older `rg -n "context-assembly|conversation|history|compact|context"` command.
+  - The screenshot showed the operation as running for about nine minutes even though the real `rg` commands in the rollout had already returned.
+- Diagnosis:
+  - Current `rg` is installed and resolves to `C:\Users\xuxin\.local\bin\rg.exe`, version `ripgrep 15.1.0`.
+  - Recent Hermes rollout evidence showed the relevant `rg` commands returned quickly; a manual repeat of the matching query from `C:\Users\xuxin\Documents\Agent` took about 72ms.
+  - The stale `Command running` card was a Mobile Web server-side fallback display bug, not a live `rg.exe` process.
+  - `server.js` `readLatestRawOperation()` scanned rollout tail entries globally and could return the latest raw `function_call` as running without respecting the current latest live turn boundary or later `function_call_output` completion.
+  - `compactThread()` then appended that stale raw operation to the latest live turn when the app-server snapshot did not contain an operation item.
+- Local fix:
+  - `server.js`
+    - Raw operation fallback now tracks rollout turn boundaries from `turn_context` and `task_started` records.
+    - Raw operation fallback records `callId` for function/custom/web/exec/patch operations when available.
+    - Raw operation fallback tracks completion output records such as `function_call_output`, `custom_tool_call_output`, `exec_command_end`, `patch_apply_end`, and `web_search_end`.
+    - `compactThread()` calls `readLatestRawOperation(out, latest.id)`, so only an unfinished raw operation from the same latest live turn can be appended.
+    - Completed or cross-turn raw operations are ignored instead of being rendered as current running cards.
+  - Tests:
+    - `test/thread-item-timestamp-enrichment.test.js` now covers both:
+      - not attaching a completed older-turn raw operation to a new live turn;
+      - attaching an unfinished raw operation from the same live turn.
+- Validation:
+  - `node --check server.js` passed.
+  - `node --check adapters\message-pending-echo-service.js` passed.
+  - Focused `node --test test\thread-item-timestamp-enrichment.test.js test\message-pending-echo-service.test.js test\new-thread-route.test.js` passed: 17/17.
+  - `npm.cmd test` passed: 154/154.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - BOM check passed for touched files.
+- Activation:
+  - Restarted only the 8787 Node listener after the raw-operation fix: old PID `63960`, new PID `73580`.
+  - Post-restart `/api/public-config` remains `0.1.11|codex-mobile-shell-v85`; authenticated `/api/status` returned `ready=true`, endpoint `127.0.0.1:61382`, `lastError=null`.
+  - Authenticated detail check of `Hermes 05-25` showed the latest live turn no longer had the stale `rg` operation attached; the latest operation in that turn was a real completed `fileChange`.
+- Status:
+  - Local private workspace has uncommitted pending-echo and raw-operation-display fixes.
+  - Public repository has not been synced or pushed for these two hotfixes.
+  - No PWA shell cache bump is required for the raw-operation fallback because this is server-side detail-response behavior.
