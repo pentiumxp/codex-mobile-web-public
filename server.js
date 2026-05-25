@@ -15,6 +15,9 @@ const {
   parsePersistExtendedHistoryEnv,
   shouldPersistExtendedHistoryForUploads,
 } = require("./adapters/message-input-service");
+const {
+  detectStaleActiveTurnForSubmission,
+} = require("./adapters/active-turn-staleness-service");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -110,6 +113,8 @@ const THREAD_DETAIL_RPC_TIMEOUT_MS = Math.min(6000, READ_RPC_TIMEOUT_MS);
 const MUTATION_RPC_TIMEOUT_MS = 120000;
 const MESSAGE_DEDUPE_WINDOW_MS = Math.max(5_000, Number(process.env.CODEX_MOBILE_MESSAGE_DEDUPE_WINDOW_MS || "90000"));
 const MESSAGE_DEDUPE_MAX = Math.max(20, Number(process.env.CODEX_MOBILE_MESSAGE_DEDUPE_MAX || "300"));
+const STALE_ACTIVE_TURN_MS = Math.max(30_000, Number(process.env.CODEX_MOBILE_STALE_ACTIVE_TURN_MS || "180000"));
+const TERMINAL_IDLE_ACTIVE_TURN_MS = Math.max(10_000, Number(process.env.CODEX_MOBILE_TERMINAL_IDLE_ACTIVE_TURN_MS || "45000"));
 const STARTED_THREAD_CACHE_TTL_MS = Math.max(60_000, Number(process.env.CODEX_MOBILE_STARTED_THREAD_CACHE_TTL_MS || "900000"));
 const STARTED_THREAD_CACHE_MAX = Math.max(10, Number(process.env.CODEX_MOBILE_STARTED_THREAD_CACHE_MAX || "80"));
 const MAX_ROLLOUT_CONTEXT_BYTES = Math.max(256 * 1024, Number(process.env.CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES || String(4 * 1024 * 1024)));
@@ -236,6 +241,7 @@ let latestRateLimits = null;
 const latestRateLimitsByModel = new Map();
 let lastRolloutRateLimitScanAt = 0;
 const latestRuntimeContextByPath = new Map();
+const latestItemTimestampsByPath = new Map();
 const recentStartedThreads = new Map();
 const continuationJobs = new Map();
 const activeContinuationJobsBySource = new Map();
@@ -846,6 +852,50 @@ function logMessageSubmit(event, details = {}) {
   console.log(`[message-submit] ${event} ${JSON.stringify(safeLogDetails(details))}`);
 }
 
+function isTurnSteerUnsupportedError(err) {
+  const message = String((err && err.message) || err || "").toLowerCase();
+  return /method not found|unknown method/.test(message);
+}
+
+function isStaleActiveTurnError(err) {
+  const message = String((err && err.message) || err || "").toLowerCase();
+  return /not found|not active|inactive|completed|interrupted|expected turn|turn.*not.*running|turn.*not.*active/.test(message);
+}
+
+async function staleActiveTurnPreflight(codexClient, threadId, activeTurnId) {
+  if (!activeTurnId) return { stale: false, reason: "no-active-turn" };
+  const summary = readStateDbThread(threadId) || readStartedThread(threadId);
+  const rolloutStats = summary ? rolloutStatsForPath(rolloutPathForThread(summary)) : null;
+  if (!rolloutStats) return { stale: false, reason: "no-rollout-stats" };
+  if (Date.now() - rolloutStats.mtimeMs < TERMINAL_IDLE_ACTIVE_TURN_MS) {
+    return { stale: false, reason: "rollout-recent" };
+  }
+  let turnsResult = null;
+  try {
+    turnsResult = await codexClient.request("thread/turns/list", {
+      threadId,
+      limit: 20,
+      sortDirection: "desc",
+    }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS, retry: false, resetOnTimeout: false });
+  } catch (err) {
+    return {
+      stale: false,
+      reason: "turns-list-error",
+      error: err.message || String(err),
+    };
+  }
+  return detectStaleActiveTurnForSubmission({
+    activeTurnId,
+    threadId,
+    turnsResult,
+    rolloutStats,
+    pendingServerRequests: codexClient.pendingServerRequests(),
+    nowMs: Date.now(),
+    staleMs: STALE_ACTIVE_TURN_MS,
+    terminalIdleMs: TERMINAL_IDLE_ACTIVE_TURN_MS,
+  });
+}
+
 function logClientEvent(event, details = {}) {
   trimRuntimeLogs();
   console.log(`[client-event] ${event} ${JSON.stringify(safeLogDetails(details))}`);
@@ -1397,6 +1447,29 @@ function searchSummaryFromOperation(item) {
   return [...new Set(summaries)].slice(0, 3).join(" | ");
 }
 
+function compactItemTimestampFields(item) {
+  const fields = {};
+  for (const key of [
+    "createdAtMs",
+    "createdAt",
+    "created_at_ms",
+    "created_at",
+    "startedAtMs",
+    "startedAt",
+    "started_at_ms",
+    "started_at",
+    "timestampMs",
+    "timestamp",
+    "completedAtMs",
+    "completedAt",
+    "completed_at_ms",
+    "completed_at",
+  ]) {
+    if (item && item[key] !== undefined) fields[key] = item[key];
+  }
+  return fields;
+}
+
 function compactOperationalItem(out) {
   const isWebSearch = isWebSearchLikeItem(out);
   const command = typeof out.command === "string"
@@ -1405,6 +1478,7 @@ function compactOperationalItem(out) {
   const compact = {
     id: out.id,
     type: isWebSearch ? "dynamicToolCall" : out.type,
+    ...compactItemTimestampFields(out),
     status: out.status,
     server: out.server,
     namespace: out.namespace,
@@ -1679,6 +1753,300 @@ function readRolloutTail(rolloutPath) {
   }
 }
 
+function rememberItemTimestampCandidates(key, payload) {
+  latestItemTimestampsByPath.set(key, {
+    cachedAt: Date.now(),
+    payload: payload || null,
+  });
+  while (latestItemTimestampsByPath.size > RUNTIME_CONTEXT_CACHE_MAX) {
+    const firstKey = latestItemTimestampsByPath.keys().next().value;
+    latestItemTimestampsByPath.delete(firstKey);
+  }
+}
+
+function rolloutEntryTurnId(entry) {
+  const payload = entry && entry.payload;
+  return String((payload && (
+    payload.turn_id
+    || payload.turnId
+    || (payload.turn && payload.turn.id)
+    || (payload.turn && payload.turn.turn_id)
+  )) || entry.turn_id || entry.turnId || "");
+}
+
+function rolloutItemTimestampCandidateType(entry) {
+  if (!entry || !entry.payload) return "";
+  const payload = entry.payload;
+  if (entry.type === "event_msg") {
+    if (payload.type === "user_message") return "userMessage";
+    if (payload.type === "agent_message") return "agentMessage";
+    if (payload.type === "agent_reasoning") return "reasoning";
+    if (payload.type === "exec_command_end") return "commandExecution";
+    if (payload.type === "patch_apply_end") return "fileChange";
+    if (payload.type === "web_search_end") return "dynamicToolCall";
+    if (payload.type === "context_compacted" || isContextCompactionType(payload.type)) return "contextCompaction";
+    return "";
+  }
+  if (entry.type !== "response_item") return "";
+  if (payload.type === "message") {
+    if (payload.role === "user") return "userMessage";
+    if (payload.role === "assistant") return "agentMessage";
+    return "";
+  }
+  if (payload.type === "reasoning") return "reasoning";
+  if (payload.type === "function_call") return "commandExecution";
+  if (payload.type === "web_search_call") return "dynamicToolCall";
+  if (payload.type === "custom_tool_call") return payload.name === "apply_patch" ? "fileChange" : "dynamicToolCall";
+  return "";
+}
+
+function normalizeTimestampMatchText(value) {
+  if (value == null) return "";
+  if (typeof value === "string") return value.replace(/\s+/g, " ").trim();
+  if (Array.isArray(value)) {
+    return value.map((entry) => {
+      if (typeof entry === "string") return entry;
+      if (!entry || typeof entry !== "object") return "";
+      return entry.text || entry.message || entry.content || "";
+    }).join(" ").replace(/\s+/g, " ").trim();
+  }
+  if (typeof value === "object") {
+    return normalizeTimestampMatchText(value.text || value.message || value.content || value.summary || "");
+  }
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function rolloutItemTimestampCandidateText(entry) {
+  const payload = entry && entry.payload;
+  if (!payload || typeof payload !== "object") return "";
+  return normalizeTimestampMatchText(
+    payload.message
+    || payload.text
+    || payload.content
+    || payload.summary
+    || payload.output,
+  );
+}
+
+function rolloutItemTimestampCandidateId(entry) {
+  const payload = entry && entry.payload;
+  return String((payload && (payload.id || payload.call_id || payload.item_id || payload.itemId)) || "");
+}
+
+function itemTimestampCandidateId(item) {
+  return String((item && (item.id || item.call_id || item.callId || item.item_id || item.itemId)) || "");
+}
+
+function itemTimestampMatchText(item) {
+  if (!item || typeof item !== "object") return "";
+  return normalizeTimestampMatchText(
+    item.text
+    || item.message
+    || item.content
+    || item.summary
+    || item.output,
+  );
+}
+
+function timestampTextsMatch(left, right) {
+  const a = normalizeTimestampMatchText(left);
+  const b = normalizeTimestampMatchText(right);
+  if (!a || !b) return false;
+  const shortA = a.slice(0, 240);
+  const shortB = b.slice(0, 240);
+  return shortA === shortB || shortA.startsWith(shortB) || shortB.startsWith(shortA);
+}
+
+const DEDUPED_ROLLOUT_TIMESTAMP_TYPES = new Set(["userMessage", "agentMessage", "reasoning"]);
+
+function appendRolloutItemTimestampCandidate(list, candidate) {
+  if (!candidate || !candidate.itemType || !candidate.timestampMs) return;
+  const last = list.length ? list[list.length - 1] : null;
+  if (last
+    && DEDUPED_ROLLOUT_TIMESTAMP_TYPES.has(candidate.itemType)
+    && last.itemType === candidate.itemType
+    && Math.abs(last.timestampMs - candidate.timestampMs) <= 50) {
+    if (!last.text && candidate.text) last.text = candidate.text;
+    return;
+  }
+  list.push(candidate);
+}
+
+function rolloutTimestampFields(entry) {
+  const timestampMs = timestampToMs(entry && entry.timestamp);
+  if (!timestampMs) return {};
+  return {
+    startedAtMs: timestampMs,
+    startedAt: new Date(timestampMs).toISOString(),
+  };
+}
+
+function readRolloutItemTimestampCandidates(rolloutPath) {
+  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) {
+    return { byTurn: new Map(), unscoped: [], scopedCount: 0 };
+  }
+  let cacheKey = "";
+  try {
+    const stat = fs.statSync(rolloutPath);
+    cacheKey = runtimeContextCacheKey(rolloutPath, stat);
+    const cached = latestItemTimestampsByPath.get(cacheKey);
+    if (cached && Date.now() - cached.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS) {
+      return cached.payload || { byTurn: new Map(), unscoped: [], scopedCount: 0 };
+    }
+  } catch (_) {
+    return { byTurn: new Map(), unscoped: [], scopedCount: 0 };
+  }
+  const byTurn = new Map();
+  const unscoped = [];
+  let scopedCount = 0;
+  let currentTurnId = "";
+  const tail = readRolloutTail(rolloutPath);
+  for (const line of tail.split(/\r?\n/)) {
+    if (!line || !line.trim()) continue;
+    const entry = parseJsonLine(line);
+    if (!entry || !entry.type) continue;
+    const payload = entry.payload || {};
+    const explicitTurnId = rolloutEntryTurnId(entry);
+    if (entry.type === "turn_context" && explicitTurnId) currentTurnId = explicitTurnId;
+    if (entry.type === "event_msg" && payload.type === "task_started" && explicitTurnId) {
+      currentTurnId = explicitTurnId;
+    }
+    const itemType = rolloutItemTimestampCandidateType(entry);
+    const timestampMs = timestampToMs(entry.timestamp);
+    if (!itemType || !timestampMs) continue;
+    const turnId = explicitTurnId || currentTurnId;
+    const candidate = {
+      turnId,
+      itemType,
+      timestampMs,
+      timestamp: new Date(timestampMs).toISOString(),
+      entryId: rolloutItemTimestampCandidateId(entry),
+      text: rolloutItemTimestampCandidateText(entry),
+    };
+    if (turnId) {
+      if (!byTurn.has(turnId)) byTurn.set(turnId, []);
+      appendRolloutItemTimestampCandidate(byTurn.get(turnId), candidate);
+      scopedCount += 1;
+    } else {
+      appendRolloutItemTimestampCandidate(unscoped, candidate);
+    }
+  }
+  const payload = { byTurn, unscoped, scopedCount };
+  if (cacheKey) rememberItemTimestampCandidates(cacheKey, payload);
+  return payload;
+}
+
+function itemDisplayTimestampMs(item) {
+  for (const key of [
+    "createdAtMs",
+    "createdAt",
+    "created_at_ms",
+    "created_at",
+    "startedAtMs",
+    "startedAt",
+    "started_at_ms",
+    "started_at",
+    "timestampMs",
+    "timestamp",
+  ]) {
+    const timestamp = timestampToMs(item && item[key]);
+    if (timestamp) return timestamp;
+  }
+  return 0;
+}
+
+function timestampCandidateTypesForItem(item) {
+  if (!item || typeof item !== "object") return [];
+  const type = String(item.type || "");
+  if (!type) return [];
+  const aliases = [type];
+  if (isContextCompactionType(type)) aliases.push("contextCompaction");
+  if (isWebSearchLikeItem(item)) aliases.push("dynamicToolCall");
+  if (isOperationalItem(item)) {
+    if (type === "commandExecution") aliases.push("commandExecution");
+    else if (type === "fileChange") aliases.push("fileChange");
+    else aliases.push("dynamicToolCall");
+  }
+  return [...new Set(aliases.filter(Boolean))];
+}
+
+function takeNextTimestampCandidate(candidates, aliases) {
+  if (!Array.isArray(candidates) || !candidates.length || !Array.isArray(aliases) || !aliases.length) return null;
+  for (const candidate of candidates) {
+    if (!candidate || candidate.used) continue;
+    if (!aliases.includes(candidate.itemType)) continue;
+    candidate.used = true;
+    return candidate;
+  }
+  return null;
+}
+
+function takeTimestampCandidateForItem(candidates, item, aliases) {
+  if (!Array.isArray(candidates) || !candidates.length || !item || !Array.isArray(aliases) || !aliases.length) return null;
+  const itemId = itemTimestampCandidateId(item);
+  if (itemId) {
+    for (const candidate of candidates) {
+      if (!candidate || candidate.used) continue;
+      if (!aliases.includes(candidate.itemType)) continue;
+      if (candidate.entryId !== itemId) continue;
+      candidate.used = true;
+      return candidate;
+    }
+  }
+  const itemType = String(item.type || "");
+  const itemText = itemTimestampMatchText(item);
+  if ((itemType === "agentMessage" || itemType === "userMessage" || itemType === "plan") && itemText) {
+    for (const candidate of candidates) {
+      if (!candidate || candidate.used) continue;
+      if (!aliases.includes(candidate.itemType)) continue;
+      if (!timestampTextsMatch(candidate.text, itemText)) continue;
+      candidate.used = true;
+      return candidate;
+    }
+    return null;
+  }
+  return takeNextTimestampCandidate(candidates, aliases);
+}
+
+function applyRolloutItemTimestamp(item, candidate) {
+  if (!item || !candidate || !candidate.timestampMs || itemDisplayTimestampMs(item)) return;
+  item.startedAtMs = candidate.timestampMs;
+  item.startedAt = candidate.timestamp || new Date(candidate.timestampMs).toISOString();
+}
+
+function enrichTurnItemTimestampsFromCandidates(turn, candidates) {
+  if (!turn || !Array.isArray(turn.items) || !Array.isArray(candidates) || !candidates.length) return turn;
+  const orderedCandidates = candidates.map((candidate) => Object.assign({}, candidate, { used: false }));
+  for (const item of turn.items) {
+    if (!item || itemDisplayTimestampMs(item)) continue;
+    const candidate = takeTimestampCandidateForItem(orderedCandidates, item, timestampCandidateTypesForItem(item));
+    if (candidate) applyRolloutItemTimestamp(item, candidate);
+  }
+  return turn;
+}
+
+function enrichThreadItemTimestampsFromRollout(thread) {
+  if (!thread || typeof thread !== "object" || !Array.isArray(thread.turns) || !thread.turns.length) return thread;
+  const rolloutPath = rolloutPathForThread(thread);
+  if (!rolloutPath) return thread;
+  const candidates = readRolloutItemTimestampCandidates(rolloutPath);
+  if (!candidates) return thread;
+  const latestIndex = thread.turns.length - 1;
+  thread.turns.forEach((turn, index) => {
+    const turnId = String((turn && turn.id) || "");
+    let turnCandidates = turnId && candidates.byTurn ? candidates.byTurn.get(turnId) : null;
+    if ((!turnCandidates || !turnCandidates.length)
+      && index === latestIndex
+      && candidates.scopedCount === 0
+      && Array.isArray(candidates.unscoped)
+      && candidates.unscoped.length) {
+      turnCandidates = candidates.unscoped;
+    }
+    enrichTurnItemTimestampsFromCandidates(turn, turnCandidates || []);
+  });
+  return thread;
+}
+
 function rolloutPathForThread(thread) {
   return thread && (thread.path || thread.rolloutPath || thread.rollout_path) || "";
 }
@@ -1894,6 +2262,7 @@ function rawOperationFromEntry(entry) {
     return compactOperationalItem({
       id: `raw-${payload.call_id || entry.timestamp || "web-search"}`,
       type: "web_search_call",
+      ...rolloutTimestampFields(entry),
       status: statusFromRawOperation(payload),
       tool: "Web Search",
       command: searchSummaryFromOperation(payload),
@@ -1904,6 +2273,7 @@ function rawOperationFromEntry(entry) {
     return compactOperationalItem({
       id: `raw-${payload.call_id || entry.timestamp || "command"}`,
       type: "commandExecution",
+      ...rolloutTimestampFields(entry),
       status: statusFromRawOperation(payload),
       command: commandFromRawPayload(payload),
     });
@@ -1912,6 +2282,7 @@ function rawOperationFromEntry(entry) {
     return compactOperationalItem({
       id: `raw-${payload.call_id || entry.timestamp || "patch"}`,
       type: "fileChange",
+      ...rolloutTimestampFields(entry),
       status: statusFromRawOperation(payload),
       fileNames: Object.keys(payload.changes || {}).slice(0, 5),
     });
@@ -1920,6 +2291,7 @@ function rawOperationFromEntry(entry) {
     return compactOperationalItem({
       id: `raw-${payload.call_id || entry.timestamp || "function"}`,
       type: "commandExecution",
+      ...rolloutTimestampFields(entry),
       status: statusFromRawOperation(payload),
       command: commandFromRawPayload(payload),
     });
@@ -1928,6 +2300,7 @@ function rawOperationFromEntry(entry) {
     return compactOperationalItem({
       id: `raw-${payload.call_id || entry.timestamp || "web-search"}`,
       type: "web_search_call",
+      ...rolloutTimestampFields(entry),
       status: statusFromRawOperation(payload),
       tool: "Web Search",
       command: searchSummaryFromOperation(payload),
@@ -1939,6 +2312,7 @@ function rawOperationFromEntry(entry) {
     return compactOperationalItem({
       id: `raw-${payload.call_id || entry.timestamp || "tool"}`,
       type: fileNames.length ? "fileChange" : "dynamicToolCall",
+      ...rolloutTimestampFields(entry),
       status: statusFromRawOperation(payload),
       tool: payload.name,
       fileNames,
@@ -1970,6 +2344,7 @@ function compactItem(item, options = {}) {
     const compacted = {
       id: out.id,
       type: out.type,
+      ...compactItemTimestampFields(out),
       status: out.status,
     };
     if (!compactionState) return compacted;
@@ -2049,6 +2424,7 @@ function compactThread(thread, options = {}) {
       out.mobileOmittedTurnCount = omitted;
       out.turns = out.turns.slice(-maxTurns);
     }
+    enrichThreadItemTimestampsFromRollout(out);
     const latestIndex = out.turns.length - 1;
     out.turns = out.turns.map((turn, index) => compactTurn(turn, { allowLiveOperation: index === latestIndex }));
     const latest = out.turns[latestIndex];
@@ -5886,7 +6262,35 @@ async function handleApi(req, res) {
     let result;
     try {
       result = await runMessageSubmissionOnce(submissionKeys, uploads, async () => {
+        let skipTurnSteer = false;
         if (body.activeTurnId) {
+          const stalePreflight = await staleActiveTurnPreflight(codex, threadId, String(body.activeTurnId));
+          if (stalePreflight.stale) {
+            skipTurnSteer = true;
+            logMessageSubmit("active-turn-stale-preflight", {
+              threadId,
+              turnId: String(body.activeTurnId),
+              clientSubmissionId: body.clientSubmissionId,
+              reason: stalePreflight.reason,
+              quietMs: stalePreflight.quietMs,
+            });
+            try {
+              await codex.request("turn/interrupt", {
+                threadId,
+                turnId: String(body.activeTurnId),
+              }, { timeoutMs: 20000, retry: false });
+              await new Promise((resolve) => setTimeout(resolve, 250));
+            } catch (err) {
+              logMessageSubmit("active-turn-stale-interrupt-failed", {
+                threadId,
+                turnId: String(body.activeTurnId),
+                clientSubmissionId: body.clientSubmissionId,
+                error: err.message || String(err),
+              });
+            }
+          }
+        }
+        if (body.activeTurnId && !skipTurnSteer) {
           try {
             const result = await codex.request("turn/steer", {
               threadId,
@@ -5901,14 +6305,22 @@ async function handleApi(req, res) {
             });
             return result;
           } catch (err) {
-            if (!/method not found|unknown method|not found/i.test(err.message || "")) throw err;
-            codex.notifyMuxUserMessage({
+            if (isTurnSteerUnsupportedError(err)) {
+              codex.notifyMuxUserMessage({
+                threadId,
+                turnId: String(body.activeTurnId),
+                input,
+                clientSubmissionId: body.clientSubmissionId,
+              });
+              return {};
+            }
+            if (!isStaleActiveTurnError(err)) throw err;
+            logMessageSubmit("active-turn-stale", {
               threadId,
               turnId: String(body.activeTurnId),
-              input,
               clientSubmissionId: body.clientSubmissionId,
+              error: err.message || String(err),
             });
-            return {};
           }
         }
         try {
@@ -6060,9 +6472,12 @@ if (require.main === module) {
 
 module.exports = {
   approvalResponsePayload,
+  compactThread,
+  enrichThreadItemTimestampsFromRollout,
   filePreviewContentDisposition,
   filePreviewContentType,
   readFilePreview,
+  readRolloutItemTimestampCandidates,
   resolveFilePreviewPath,
   publicServerRequest,
   serveFilePreviewContent,

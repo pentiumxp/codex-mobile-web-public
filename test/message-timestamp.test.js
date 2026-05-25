@@ -31,6 +31,12 @@ test("running turn timestamps do not fall back to stale thread updated time", ()
   assert.match(appJs, /if \(!fallback \|\| \(startedAt && fallback < startedAt\)\) return 0;/);
 });
 
+test("live agent message timestamps do not pretend turn start is item time", () => {
+  const body = appJs.slice(appJs.indexOf("function itemTimestampMs"), appJs.indexOf("function turnStartedAtMs"));
+  assert.match(body, /isLiveTurn\(turn\) \? 0 : turnStartedAtMs\(turn\)/);
+  assert.match(body, /if \(isLiveTurn\(turn\) && isOperationalItem\(item\)\) return 0;/);
+});
+
 test("locally created visible messages receive a timestamp immediately", () => {
   assert.match(appJs, /item = \{ id: itemId,\s*type: itemType,\s*startedAtMs: Date\.now\(\) \}/);
   assert.match(appJs, /startedAtMs: Date\.now\(\),\r?\n\s*content:/);

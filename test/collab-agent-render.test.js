@@ -50,6 +50,12 @@ test("live operation cards stay compact, three-line, and expose only the newest 
   assert.match(functionBody("renderOperationCard"), /operation-meta-line/);
   assert.match(functionBody("renderOperationCard"), /operation-detail-line/);
   assert.match(functionBody("renderOperationCard"), /operation-title[\s\S]*operation-status/);
+  assert.match(functionBody("renderOperationCard"), /operation-duration/);
+  assert.match(functionBody("renderOperationCard"), /operationDurationData\(item, status\)/);
+  assert.match(functionBody("updateTurnTimer"), /updateOperationDurationBadges\(\)/);
+  assert.match(functionBody("operationDurationData"), /operationStartedAtMs\(item\)/);
+  assert.match(functionBody("operationDurationData"), /operationCompletedAtMs\(item\)/);
+  assert.match(functionBody("updateOperationDurationBadges"), /querySelectorAll\("\.operation-duration"\)/);
   assert.match(functionBody("operationDetailText"), /join\(" \\| "\)/);
   assert.match(functionBody("visibleItemsForTurn"), /const showOperations = isLatestTurn\(turn\)/);
   assert.match(functionBody("visibleItemsForTurn"), /let latestOperationEntry = null/);
@@ -70,9 +76,11 @@ test("live operation cards stay compact, three-line, and expose only the newest 
   assert.doesNotMatch(appJs, /function latestVisibleOperationItem\(/);
   assert.doesNotMatch(appJs, /function removeOperationalItemsFromTurn\(/);
   assert.match(stylesCss, /\.operation-meta-line\s*{[\s\S]*display:\s*flex;/);
-  assert.match(stylesCss, /\.operation-meta-line\s*{[\s\S]*justify-content:\s*flex-start;/);
+  assert.match(stylesCss, /\.operation-meta-line\s*{[\s\S]*justify-content:\s*space-between;/);
+  assert.match(stylesCss, /\.operation-meta-main\s*{[\s\S]*flex:\s*1 1 auto;/);
   assert.match(stylesCss, /\.operation-title\s*{[\s\S]*font-size:\s*calc\(var\(--content-small-font-size\) \* 0\.92\);/);
   assert.match(stylesCss, /\.operation-status\s*{[\s\S]*font-size:\s*calc\(var\(--content-small-font-size\) \* 0\.92\);/);
+  assert.match(stylesCss, /\.operation-duration\s*{[\s\S]*font-variant-numeric:\s*tabular-nums;/);
   const operationDetailCss = cssRuleBody(".operation-detail");
   assert.match(operationDetailCss, /font-size:\s*calc\(var\(--content-code-font-size\) \* 1\.06\);/);
   assert.match(operationDetailCss, /-webkit-line-clamp:\s*2;/);

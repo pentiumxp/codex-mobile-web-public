@@ -6,11 +6,16 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
 
-test("thread list swipe action archives instead of starting continuation", () => {
-  assert.match(appJs, /data-thread-archive/);
-  assert.match(appJs, /function archiveThreadFromList\(/);
+test("thread long-press action sheet archives instead of using left swipe", () => {
+  assert.match(indexHtml, /data-thread-action="archive"/);
+  assert.match(appJs, /async function archiveThread\(/);
+  assert.match(appJs, /action === "archive"/);
+  assert.doesNotMatch(appJs, /data-thread-archive/);
+  assert.doesNotMatch(appJs, /beginThreadSwipe/);
+  assert.doesNotMatch(appJs, /thread-row-actions/);
   assert.doesNotMatch(appJs, /function startNewThreadFromList\(/);
   assert.doesNotMatch(appJs, /data-new-thread-from-thread/);
 });

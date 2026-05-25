@@ -1330,3 +1330,398 @@ The previous full handoff was archived and should be opened only when old proven
 - Private sync status:
   - Private `README.md` was synced back from public so the v81 public release note is present locally.
   - Private still needs its local commit/push for the same v80/v81 code and context updates.
+
+## 2026-05-24 Chrome Extension Install State
+
+- User request:
+  - The user wanted the Codex Chrome Extension made usable on Windows because the Chrome Web Store page said the item could not be purchased or downloaded.
+- Findings:
+  - Correct extension id: `hehggadaopoacecdllhhajmbjkdcmajg`.
+  - Correct Web Store URL: `https://chromewebstore.google.com/detail/codex/hehggadaopoacecdllhhajmbjkdcmajg`.
+  - Google CRX update service returned the official `1.1.5` package, so the backend download path was available even though the Web Store UI disabled direct install.
+  - Chrome profile in use is `C:\Users\xuxin\AppData\Local\Google\Chrome\User Data\Default`.
+  - Native host manifest is valid at `C:\Users\xuxin\AppData\Local\OpenAI\extension\com.openai.codexextension.json`, with HKCU registry key `Software\Google\Chrome\NativeMessagingHosts\com.openai.codexextension`.
+- Actions:
+  - Added user external-extension registry key `HKCU\Software\Google\Chrome\Extensions\hehggadaopoacecdllhhajmbjkdcmajg` with `update_url=https://clients2.google.com/service/update2/crx`.
+  - Restarted Chrome through `chrome://restart`.
+  - Chrome downloaded and registered extension version `1.1.5_0`.
+  - User enabled the extension in `chrome://extensions`; follow-up check showed `installed=true`, `registered=true`, `enabled=true`, `disabled=false`, `disableReasons=[]`.
+  - Chrome launched `extension-host.exe`, confirming the extension/native-host side is active.
+- Remaining limitation:
+  - The current Codex Mobile Web thread's Node REPL metadata does not include `import.meta.__codexNativePipe`; `browser-client.mjs` still fails with `privileged native pipe bridge is not available; browser-client is not trusted`.
+  - This is no longer a Web Store/install/Chrome-extension-disabled problem. It is the current Codex session/plugin runtime trust bridge.
+  - Next practical step is to start a fresh Codex thread after the extension is enabled, or remove/re-add the Chrome plugin from the Codex Plugins UI if a fresh thread still lacks the native pipe.
+
+## 2026-05-24 Per-Item Conversation Timestamp Fix
+
+- User report:
+  - Conversation item/card headers showed the same time across multiple receipts/messages in one turn.
+  - Expected behavior: each visible item should show the time that item was emitted.
+- Diagnosis:
+  - Live inspection of the current Mobile Web thread showed app-server `thread/read` items did not carry item-level `startedAt` / `createdAt` / `timestamp` fields.
+  - The browser therefore fell back to the turn-level completion/start time, making several cards in the same turn display identical timestamps.
+  - The underlying rollout JSONL does contain distinct top-level event timestamps for `event_msg` / `response_item` records.
+- Local fix:
+  - `server.js` now reads recent rollout JSONL event timestamps and enriches returned thread items with `startedAtMs` / `startedAt` before compacting thread detail responses.
+  - Message/reasoning timestamp candidates are de-duplicated when app-server records both `event_msg` and `response_item` for the same emitted content.
+  - Compacted operation/context-compaction items preserve timestamp fields, so live command/file/tool cards do not lose their item time during mobile compaction.
+  - Added `test/thread-item-timestamp-enrichment.test.js` to cover per-item message timestamps and compacted live operation timestamp preservation.
+- Validation:
+  - `node --test test\thread-item-timestamp-enrichment.test.js test\message-timestamp.test.js` passed: 6/6.
+  - `npm.cmd test` passed: 134/134.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+- Activation:
+  - Restarted only the 8787 Node listener under the existing hidden supervisor; PID changed from `49412` to `49644`.
+  - `GET http://127.0.0.1:8787/api/public-config` still returns `version: 0.1.11`, `clientBuildId: 0.1.11|codex-mobile-shell-v81`, and `shellCacheName: codex-mobile-shell-v81`.
+  - Authenticated current-thread detail recheck returned distinct `startedAtMs` values for recent visible `agentMessage` cards in the current turn.
+- Status:
+  - Local private workspace has uncommitted changes: `server.js`, `test/thread-item-timestamp-enrichment.test.js`, and this handoff update.
+  - This is a server-side detail-response fix; no PWA shell cache bump is required, but an open client may need a normal refresh/detail reload to repaint existing card headers.
+  - Public repository has been synced and pushed for this fix as `92cf35c 修正移动端逐条消息时间戳显示`.
+
+## 2026-05-24 Public Per-Item Timestamp Push
+
+- User request:
+  - Commit and push the per-item conversation timestamp fix to the public repository.
+- Public repository:
+  - Path: `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Synced product/test files from private: `server.js` and `test/thread-item-timestamp-enrichment.test.js`.
+  - Public README gained Chinese `2026-05-24 Public 发布说明（续五）` documenting rollout-derived per-item timestamps, no static shell cache bump, and reload behavior for already-open clients.
+  - Public pushed commit: `92cf35c 修正移动端逐条消息时间戳显示`.
+- Public validation:
+  - Focused `node --test test\thread-item-timestamp-enrichment.test.js test\message-timestamp.test.js` passed: 6/6.
+  - `npm.cmd test` passed: 134/134.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` and `git diff --cached --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Edited/staged public text files were checked for UTF-8 BOM; no BOM.
+  - Staged public privacy scan found no private user path, LAN/Tailscale marker, raw access-key marker, Web Push runtime secret-file marker, upload runtime path, `.agent-context`, Hermes Mobile, or Gateway marker.
+- Private status:
+  - Private local workspace still has uncommitted changes for this fix plus the handoff update.
+  - Runtime 8787 listener has already been restarted to load the server-side fix; `/api/public-config` remains `0.1.11|codex-mobile-shell-v81`.
+
+## 2026-05-24 Live Timestamp Fallback Stabilization v82
+
+- User report:
+  - In `Hermes 05-24`, a newly visible Codex card showed `21:41` even though the phone clock was around `22:20`.
+  - The card was in the current live turn; `21:41` was the turn start time, not the item emission time.
+- Diagnosis:
+  - Thread `019e5913-951c-7d52-a12b-654f42279de0` (`Hermes 05-24`) was in `large-rollout-turns-list` mode with latest turn `019e5a38-6a54-7493-bb4f-67ab50d72844`.
+  - The first per-item timestamp enrichment matched `agentMessage` items mostly by sequence. In long live turns with many messages/tools, this could drift when the app-server snapshot and rollout event stream did not line up perfectly.
+  - When a live `agentMessage` remained without item timestamp, `public/app.js` fell back to `turnStartedAtMs(turn)`, causing newly emitted cards to display the turn start time.
+- Local fix:
+  - `server.js` now stores text and call id on rollout timestamp candidates.
+  - `agentMessage` / `userMessage` timestamp enrichment prefers text matching instead of type-only sequence matching.
+  - Operation timestamp enrichment prefers matching rollout `call_id` to the compacted operation item id.
+  - `public/app.js` no longer displays turn start time for live `agentMessage` / `plan` items or live operation cards when no item-level timestamp is available; it hides the timestamp until a real item time is available.
+  - App shell cache/build id bumped to `codex-mobile-shell-v82` / `0.1.11|codex-mobile-shell-v82`.
+  - Tests updated in `test/thread-item-timestamp-enrichment.test.js`, `test/message-timestamp.test.js`, and `test/mobile-viewport.test.js`.
+- Validation:
+  - Focused `node --test test\thread-item-timestamp-enrichment.test.js test\message-timestamp.test.js test\mobile-viewport.test.js` passed: 12/12.
+  - `npm.cmd test` passed: 137/137.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Edited files were checked for UTF-8 BOM; no BOM.
+- Activation:
+  - Restarted only the 8787 Node listener under the existing hidden supervisor; PID changed to `77488`.
+  - `GET http://127.0.0.1:8787/api/public-config` returns `version: 0.1.11`, `clientBuildId: 0.1.11|codex-mobile-shell-v82`, and `shellCacheName: codex-mobile-shell-v82`.
+  - Authenticated recheck of `Hermes 05-24` detail showed the formerly wrong cards now carry distinct item times such as `22:14:59` and `22:18:14` local time instead of falling back to `21:41`.
+- Status:
+  - Local private workspace has uncommitted v82 changes.
+  - Public repository has been synced and pushed for v82 as `4ae1c88 稳定移动端长 turn 逐条时间戳显示`.
+  - Mobile clients need to accept the page refresh prompt or hard-refresh/reopen the PWA to load v82; otherwise old v81 frontend code can still show live-item turn-start fallback.
+
+## 2026-05-24 Public v82 Timestamp Stabilization Push
+
+- User request:
+  - Commit and push the v82 long live-turn timestamp stabilization fix to the public repository.
+- Public repository:
+  - Path: `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Synced product/test files from private: `server.js`, `public/app.js`, `public/sw.js`, `test/thread-item-timestamp-enrichment.test.js`, `test/message-timestamp.test.js`, and `test/mobile-viewport.test.js`.
+  - Public README gained Chinese `2026-05-24 Public 发布说明（续六）` documenting text/call-id timestamp matching, live-item no-turn-start fallback, and PWA shell cache `codex-mobile-shell-v82`.
+  - Public pushed commit: `4ae1c88 稳定移动端长 turn 逐条时间戳显示`.
+- Public validation:
+  - Focused `node --test test\thread-item-timestamp-enrichment.test.js test\message-timestamp.test.js test\mobile-viewport.test.js` passed: 12/12.
+  - `npm.cmd test` passed: 137/137.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` and `git diff --cached --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Edited/staged public text files were checked for UTF-8 BOM; no BOM.
+  - Staged public privacy scan found no private user path, LAN/Tailscale marker, raw access-key marker, Web Push runtime secret-file marker, upload runtime path, `.agent-context`, Hermes Mobile, or Gateway marker.
+- Private status:
+  - Private local workspace still has uncommitted v82 changes plus this handoff update.
+  - Runtime 8787 listener is already on `0.1.11|codex-mobile-shell-v82`.
+
+## 2026-05-25 Thread Archive Long-Press Menu v83
+
+- User request:
+  - Move the thread archive action out of the left-swipe row affordance and integrate it into the long-press menu.
+- Local fix:
+  - `public/index.html` adds `data-thread-action="archive"` to the existing thread action sheet, alongside rename and continuation.
+  - `public/app.js` removes the thread-row left-swipe archive reveal path:
+    - no hidden `data-thread-archive` row button;
+    - no `threadSwipe` state;
+    - no pointer/touch swipe listeners for thread-row archive;
+    - no `swipe-open` / `thread-row-actions` render signature state.
+  - `public/app.js` adds generic `archiveThread(threadId, button)` and wires the long-press action sheet archive button to the existing `POST /api/threads/<threadId>/archive` route after confirmation.
+  - `public/styles.css` removes the row-reveal archive styles and adds a subdued danger treatment for the action-sheet archive item.
+  - `README.md` and `.agent-context/PROJECT_CONTEXT.md` now document that archive lives in the long-press action sheet; thread-row left swipe no longer reveals archive.
+  - App shell cache/build id bumped to `codex-mobile-shell-v83` / `0.1.11|codex-mobile-shell-v83`.
+  - `test/thread-archive.test.js` and `test/mobile-viewport.test.js` updated.
+- Validation:
+  - `node --check public\app.js` passed.
+  - `node --check public\sw.js` passed.
+  - Focused `node --test test\thread-archive.test.js test\mobile-viewport.test.js` passed: 6/6.
+  - `npm.cmd test` passed: 137/137.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Edited files were checked for UTF-8 BOM; no BOM.
+  - `GET http://127.0.0.1:8787/api/public-config` returns `version: 0.1.11`, `clientBuildId: 0.1.11|codex-mobile-shell-v83`, and `shellCacheName: codex-mobile-shell-v83`.
+- Status:
+  - Local private workspace has uncommitted v82 timestamp changes plus the new v83 archive-menu changes.
+  - Public repository has since been synced and pushed for v83 as `c5c3c97 整合线程归档入口到长按菜单`.
+  - Static frontend fix only; no Node listener restart is required, but mobile clients need to accept the page refresh prompt or hard-refresh/reopen the PWA to load v83.
+
+## 2026-05-25 Public v83 Archive Menu Push
+
+- User request:
+  - Commit and push the v83 thread archive long-press menu change to the public repository.
+- Public repository:
+  - Path: `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Synced v83 product/test files from private: `public/app.js`, `public/index.html`, `public/styles.css`, `public/sw.js`, `test/thread-archive.test.js`, and `test/mobile-viewport.test.js`.
+  - Public `README.md` was updated in-place to preserve v82 release notes while adding:
+    - updated interface documentation that archive now lives in the thread-row long-press menu;
+    - Chinese `2026-05-25 Public 发布说明` documenting the removal of left-swipe archive, the new action-sheet archive path, unchanged backend archive/continuation behavior, and PWA shell cache `codex-mobile-shell-v83`.
+  - Public pushed commit: `c5c3c97 整合线程归档入口到长按菜单`.
+- Public validation:
+  - Focused `node --test test\thread-archive.test.js test\mobile-viewport.test.js` passed: 6/6.
+  - `npm.cmd test` passed: 137/137.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` and `git diff --cached --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Edited/staged public text files were checked for UTF-8 BOM; no BOM.
+  - Staged public privacy scan found no private user path, runtime upload path, raw access-key marker, Web Push runtime secret-file marker, `.agent-context`, LAN/Tailscale marker, Hermes Mobile, or Gateway marker.
+- Private sync status:
+  - Private `README.md` was synced back from public so the v82/v83 public release notes are present locally.
+  - Private local workspace still has uncommitted v82 timestamp changes, v83 archive-menu changes, `.agent-context` updates, and this handoff update.
+
+## 2026-05-25 Stale Active-Turn Message Submission Hotfix
+
+- User report:
+  - Codex Mobile and Hermes Mobile Codex threads both appeared to accept mobile messages but then produced no new reply.
+  - The two threads began showing the symptom at roughly the same time.
+  - User also noticed Hermes Mobile Keyfile/log path text, but the immediate check did not show Hermes 8797 or Codex Mobile mux endpoint drift as the shared blocker.
+- Runtime diagnosis:
+  - Codex Mobile Web 8787 listener was reachable.
+  - Authenticated `/api/status` reported `ready=true`, `transport=external-jsonl-tcp`, endpoint `127.0.0.1:61382`, `sharedRequired=true`, and `lastError=null`.
+  - `%USERPROFILE%\.codex\app-server-mux\endpoint.json` and the 8787 status endpoint matched on mux port `61382`.
+  - Hermes Mobile 8797 reported `ok=true`; Gateway Pool had 14 workers with 13 healthy and only `officialclean1` unhealthy.
+  - `Hermes 05-24` had a stale in-progress turn `019e5d1d-7a5c-72f3-ac21-c434c62e71a2`; it was interrupted and the thread returned to idle/interrupted.
+  - `Codex Mobile 05-24` backend detail did contain later `agentMessage` items, so the phone-side “no response” view was not caused by 8787/mux/app-server being disconnected.
+- Code diagnosis:
+  - Existing-thread `/api/threads/<id>/messages` tried `turn/steer` whenever the browser submitted `activeTurnId`.
+  - The catch path treated generic `not found` as equivalent to old app-server `turn/steer` unsupported errors.
+  - Therefore a stale browser `activeTurnId` could make `turn/steer` fail, get swallowed, and return `{}` without falling back to `thread/resume` + `turn/start`.
+- Local fix:
+  - `server.js` adds separate helpers:
+    - `isTurnSteerUnsupportedError()` only matches method-support errors such as `method not found` / `unknown method`.
+    - `isStaleActiveTurnError()` matches stale active-turn cases such as not found, not active, completed, interrupted, or expected-turn mismatch.
+  - Existing-message submission now logs `active-turn-stale` and falls through to `thread/resume` + `turn/start` when the submitted `activeTurnId` is stale.
+  - It still preserves the old compatibility behavior for app-server implementations that truly do not support `turn/steer`.
+  - No frontend shell bump was required because this is a server-side route fix.
+  - `test/new-thread-route.test.js` covers the stale-active-turn fallback.
+- Validation:
+  - `node --check server.js` passed.
+  - `node --test test\new-thread-route.test.js` passed: 7/7.
+  - `npm.cmd test` passed: 138/138.
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+- Activation:
+  - Restarted only the 8787 `server.js` Node listener so the current mux/app-server running the active Codex turn was not killed.
+  - 8787 listener changed from PID `77488` to PID `67044`.
+  - Post-restart `/api/public-config` returns `0.1.11|codex-mobile-shell-v83`.
+  - Post-restart authenticated `/api/status` remains `ready=true`, endpoint `127.0.0.1:61382`, `lastError=null`.
+- Status:
+  - Local private workspace has uncommitted v82/v83 changes plus this server-side stale active-turn hotfix.
+  - Public repository has not been synced or pushed for this server hotfix.
+
+## 2026-05-25 Terminal-Idle Active Turn Preflight Hotfix
+
+- User report:
+  - `Hermes 05-24` and another Mobile Web thread again appeared to accept messages but produced no visible reply.
+  - Re-entering the thread made the newly sent guidance disappear.
+  - The user suspected an app-server-level stall rather than a specific Hermes Mobile command.
+- Runtime diagnosis:
+  - 8787 remained reachable and authenticated `/api/status` reported `ready=true`, endpoint `127.0.0.1:61382`, and `lastError=null`.
+  - `%USERPROFILE%\.codex\app-server-mux\endpoint.json` still matched the 8787 status endpoint on port `61382`.
+  - `Hermes 05-24` latest turn `019e5d61-e0ab-7bb2-b0e3-18fb784124f9` was still `inProgress`, but rollout writes had stopped at `2026-05-25 12:33:01 +08:00`.
+  - A short recheck showed no rollout growth.
+  - `/api/approvals` returned no pending requests.
+  - mux/app-server/8787 processes were responsive with near-idle CPU.
+  - The latest visible command in the turn was already `completed`; the last item was a `contextCompaction` marker. This was not a still-running PowerShell command.
+- Immediate recovery:
+  - Called authenticated `POST /api/threads/019e5913-951c-7d52-a12b-654f42279de0/turns/019e5d61-e0ab-7bb2-b0e3-18fb784124f9/interrupt`.
+  - The thread returned to `idle`; latest turn became `interrupted`.
+  - Post-interrupt `/api/status` remained healthy on endpoint `127.0.0.1:61382`.
+- Code diagnosis:
+  - The earlier stale-active-turn hotfix only treated a turn as stale after `CODEX_MOBILE_STALE_ACTIVE_TURN_MS` (default 180s) of rollout silence.
+  - Today's failure often entered a fake-active state immediately after `contextCompaction` or a completed operation. During the first 180s, mobile submissions still used `turn/steer`; app-server could return success with the same turn id but not produce a durable user-message item, so the browser's temporary echo disappeared after detail reload.
+- Local fix:
+  - `adapters/active-turn-staleness-service.js` now recognizes a shorter terminal-idle stale state.
+  - If the active turn has no pending item or server request and the latest visible item is `contextCompaction` or a completed command/tool/file/search operation, `CODEX_MOBILE_TERMINAL_IDLE_ACTIVE_TURN_MS` (default 45s) of rollout silence is enough to interrupt the fake-active turn before submission.
+  - Long quiet turns still use the broader `CODEX_MOBILE_STALE_ACTIVE_TURN_MS` default 180s rule.
+  - `server.js` passes both thresholds into the service before attempting `turn/steer`.
+  - Added focused coverage for short quiet context-compaction fake-active turns and for avoiding short-threshold interruption after a normal assistant message.
+- Validation:
+  - `node --check adapters\active-turn-staleness-service.js` passed.
+  - `node --check server.js` passed.
+  - `node --test test\active-turn-staleness-service.test.js test\new-thread-route.test.js` passed: 13/13.
+  - `npm.cmd test` passed: 144/144.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Edited key files were checked for UTF-8 BOM; no BOM.
+- Activation:
+  - Restarted only the 8787 `server.js` Node listener to load the server-side route fix.
+  - 8787 listener changed from PID `56692` to PID `61128`.
+  - Post-restart `/api/public-config` returns `0.1.11|codex-mobile-shell-v83`.
+  - Post-restart authenticated `/api/status` remains `ready=true`, endpoint `127.0.0.1:61382`, `lastError=null`.
+- Status:
+  - Local private workspace has uncommitted v82/v83 changes plus the stale-active-turn terminal-idle hotfix.
+  - Public repository has not been synced or pushed for this terminal-idle hotfix.
+
+## 2026-05-25 Superseded Active-Turn Preflight Follow-up
+
+- User report:
+  - The same "sent message is visible locally, then disappears after re-entering the thread" symptom recurred across two Mobile Web threads.
+  - The user described both threads as previously healthy and then suddenly frozen.
+- Runtime diagnosis:
+  - 8787 and the shared mux were healthy: authenticated `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, endpoint `127.0.0.1:61382`, and `lastError=null`.
+  - `%USERPROFILE%\.codex\app-server-mux\endpoint.json` still matched endpoint port `61382`.
+  - `/api/approvals` returned no pending requests.
+  - `Codex Mobile 05-24` showed a different fake-active shape: turn `019e5d60-7058-72d3-8ba2-0702fe2082fe` remained `inProgress`, but a newer turn `019e5d6e-d22d-7e80-b8a7-f7011938f264` had already completed after it.
+  - This means the browser could keep submitting stale `activeTurnId` through `turn/steer`, even though durable thread history had already advanced past that active turn.
+  - `Hermes 05-24` was `idle` at the time of this check; its last problematic turn was already `interrupted`.
+- Code diagnosis:
+  - The terminal-idle hotfix only treated the active turn as stale when it was the latest durable turn and had gone quiet.
+  - If the submitted `activeTurnId` was no longer the latest turn, `detectStaleActiveTurnForSubmission()` returned `active-turn-not-latest` as non-stale.
+  - That left the message route free to attempt `turn/steer` into an old active marker, which can create a transient mobile echo that disappears after reload.
+- Local fix:
+  - `adapters/active-turn-staleness-service.js` now treats an active turn as stale when it is present in recent turn history but superseded by newer durable turns.
+  - If the active turn is missing from recent history, it is treated as stale only after the terminal-idle window, preserving a short grace period for newly started but not-yet-materialized active turns.
+  - The preflight now asks `thread/turns/list` for the latest 20 turns instead of only the latest one, so it can see whether the browser's active turn has been superseded.
+  - Existing safeguards remain: pending server requests and pending items still prevent interruption.
+- Validation:
+  - `node --check adapters\active-turn-staleness-service.js` passed.
+  - `node --check server.js` passed.
+  - `node --test test\active-turn-staleness-service.test.js test\new-thread-route.test.js` passed: 15/15.
+  - `npm.cmd test` passed: 146/146.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Edited key files were checked for UTF-8 BOM; no BOM.
+- Activation:
+  - Restarted only the 8787 `server.js` Node listener to load the server-side fix.
+  - 8787 listener changed from PID `61128` to PID `8852`.
+  - Post-restart `/api/public-config` returns `0.1.11|codex-mobile-shell-v83`.
+  - Post-restart authenticated `/api/status` remains `ready=true`, endpoint `127.0.0.1:61382`, `lastError=null`.
+- Status:
+  - Local private workspace has uncommitted v82/v83 changes plus stale-active-turn hotfixes.
+  - Public repository has not been synced or pushed for these stale-active-turn hotfixes.
+
+## 2026-05-25 Latest Live Turn Steering v85
+
+- User correction:
+  - The user did not intentionally interrupt the Codex Mobile turn; they sent a guidance message.
+  - The rollout still recorded `turn_aborted reason=interrupted` for the current Codex Mobile Web turn, which means Mobile Web/app-server state handling caused an automatic interrupt-like path.
+- Diagnosis:
+  - The terminal-idle active-turn preflight was too aggressive for the latest durable live turn.
+  - It could treat a quiet latest live turn whose last visible item was a completed operation or context-compaction marker as stale, then call `turn/interrupt` before starting a new turn.
+  - That is wrong for user guidance: guidance submitted while the latest durable turn is live should go through `turn/steer`, not silently interrupt the live turn.
+  - A separate frontend issue could keep old `inProgress` turns sticky in active UI state after newer durable turns existed, so the composer/timer could look active even when the durable latest turn had moved on.
+- Local fix:
+  - `adapters/active-turn-staleness-service.js`
+    - Latest durable live active turn is never auto-interrupted merely for rollout quietness or terminal-idle shape.
+    - Such cases now return non-stale reasons `latest-live-terminal-idle`, `latest-live-rollout-quiet`, or `active-turn-latest-live`.
+    - Superseded active turns remain stale when a newer durable turn exists.
+    - Missing active turns are stale only after the terminal-idle grace window.
+    - Pending server requests and pending items still prevent cleanup.
+  - `public/app.js`
+    - `syncActiveTurnFromThread()` only derives `state.activeTurnId` from the latest durable turn.
+    - `currentLiveTurn()` only returns the latest durable live turn, or the latest turn matching the active id; it no longer scans older turns.
+    - `mergeThreadPreservingVisibleItems()` drops superseded stale active turns instead of preserving old in-progress rows after newer durable turns exist.
+    - Shell cache/build id bumped to `codex-mobile-shell-v85` / `0.1.11|codex-mobile-shell-v85`.
+  - `public/sw.js` and `test/mobile-viewport.test.js` updated for v85.
+  - `test/active-turn-staleness-service.test.js` now asserts latest quiet live active turns are not auto-interrupted.
+  - `test/conversation-render.test.js` now asserts active UI state follows only the latest durable turn and that superseded stale turns are dropped during merge.
+- Validation:
+  - `node --check public\app.js` passed.
+  - `node --check adapters\active-turn-staleness-service.js` passed.
+  - Focused `node --test test\active-turn-staleness-service.test.js test\conversation-render.test.js test\mobile-viewport.test.js test\collab-agent-render.test.js` passed: 22/22.
+  - `npm.cmd test` passed: 148/148.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+- Activation:
+  - Restarted only the 8787 `server.js` Node listener.
+  - 8787 listener changed from PID `8852` to PID `68712`.
+  - Post-restart `/api/public-config` returns `version=0.1.11`, `clientBuildId=0.1.11|codex-mobile-shell-v85`, and `shellCacheName=codex-mobile-shell-v85`.
+  - Post-restart authenticated `/api/status` remains `ready=true`, `transport=external-jsonl-tcp`, endpoint `127.0.0.1:61382`, and `lastError=null`.
+- Status:
+  - Local private workspace has uncommitted v82/v83/v84/v85 changes plus stale-active-turn hotfixes.
+  - Public repository has not been synced or pushed for v84/v85 or the stale-active-turn hotfixes.
+  - Mobile clients must refresh/hard-reopen the PWA to load the v85 frontend active-state fix; the server-side latest-live steering fix is active after the 8787 restart.
+
+## 2026-05-25 Continuation Reasoning Effort Inheritance Finding
+
+- User report:
+  - A source thread configured with reasoning effort `medium` produced a continuation thread that started as `xhigh`.
+- Read-only diagnosis:
+  - `%USERPROFILE%\.codex\config.toml` currently has `model_reasoning_effort = "xhigh"`.
+  - `/api/public-config` therefore exposes `defaultReasoningEffort: "xhigh"`.
+  - Source rollout evidence can carry `turn_context.effort = "medium"` and `collaboration_mode.settings.reasoning_effort = "medium"`.
+  - `state_5.sqlite.threads.reasoning_effort` can also contain a thread-level value, but current continuation runtime-setting resolution does not return it.
+  - `threadRuntimeSettings()` currently returns approval/sandbox/summary/verbosity, but not reasoning effort.
+  - `applyStartThreadRuntimeSettings()` and `applyTurnRuntimeSettings()` therefore cannot pass inherited effort into continuation `thread/start` or bootstrap `turn/start`.
+- Assessment:
+  - Current continuation threads fall back to app-server / Codex config default reasoning effort when the continuation code does not explicitly pass `effort`.
+  - This explains a `medium` source thread becoming `xhigh` after continuation.
+- Status:
+  - No code change for this finding has been made yet in this publish cycle.
+  - A future fix should read source `turn_context.effort` / `collaboration_mode.settings.reasoning_effort` / `state_5.sqlite.threads.reasoning_effort`, expose it in runtime settings, and pass it to continuation bootstrap `turn/start` where the app-server protocol supports `effort`.
+
+## 2026-05-25 Public v85 Active Turn Stability Push
+
+- User request:
+  - Commit, push, and publish the accumulated Mobile Web fixes.
+- Public repository:
+  - Path: `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Public pushed commit: `c35e981 发布移动端 active turn 稳定性与操作耗时显示`.
+  - Synced product/test files from private for v84/v85 and stale active-turn handling, including:
+    - `server.js`
+    - `adapters/active-turn-staleness-service.js`
+    - `public/app.js`
+    - `public/styles.css`
+    - `public/sw.js`
+    - `package.json`
+    - `test/active-turn-staleness-service.test.js`
+    - `test/collab-agent-render.test.js`
+    - `test/conversation-render.test.js`
+    - `test/mobile-viewport.test.js`
+    - `test/new-thread-route.test.js`
+  - Public README gained a Chinese `2026-05-25 Public 发布说明（续）` documenting operation-duration display, rollout-derived operation timestamps, stale active-turn fallback, latest-live turn steering protection, latest-durable-turn active UI state, and PWA shell cache `codex-mobile-shell-v85`.
+- Public validation:
+  - Focused `node --test test\active-turn-staleness-service.test.js test\new-thread-route.test.js test\conversation-render.test.js test\collab-agent-render.test.js test\mobile-viewport.test.js` passed: 29/29.
+  - `npm.cmd test` passed: 148/148.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` and `git diff --cached --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Edited/staged public text files were checked for UTF-8 BOM; no BOM.
+  - Staged public privacy scan found no added-line hits for private user paths, LAN/Tailscale markers, raw key markers, Web Push runtime files, `.agent-context`, upload runtime path, Hermes Mobile, Gateway, or local owner-key markers.
+- Private status:
+  - Private `README.md` was synced back from public so the new v85 public release note is present locally.
+  - Private publish commit includes the v82/v83/v84/v85 product/test changes, `.agent-context` updates, the reasoning-effort inheritance finding above, and this handoff entry. Use `git log -1 --oneline --decorate` for the exact final private commit hash after the commit is written.

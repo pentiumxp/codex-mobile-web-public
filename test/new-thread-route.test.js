@@ -67,3 +67,39 @@ test("existing-message route forwards runtime settings on next turn", () => {
   assert.match(routeBody, /if \(requestedModel\) params\.model = requestedModel;/, "turn/start should receive requested model");
   assert.match(routeBody, /if \(requestedEffort\) params\.effort = requestedEffort;/, "turn/start should receive requested reasoning effort");
 });
+
+test("existing-message route falls back when active turn steering is stale", () => {
+  const helperIndex = serverJs.indexOf("function isTurnSteerUnsupportedError(");
+  const staleHelperIndex = serverJs.indexOf("function isStaleActiveTurnError(");
+  const preflightIndex = serverJs.indexOf("async function staleActiveTurnPreflight(");
+  assert.ok(helperIndex > 0, "missing turn/steer unsupported helper");
+  assert.ok(staleHelperIndex > helperIndex, "missing stale active-turn helper");
+  assert.ok(preflightIndex > staleHelperIndex, "missing stale active-turn preflight helper");
+
+  const helperBody = serverJs.slice(helperIndex, serverJs.indexOf("function logClientEvent", helperIndex));
+  assert.match(helperBody, /method not found\|unknown method/, "unsupported helper should only match method support errors");
+  assert.doesNotMatch(helperBody, /method not found\|unknown method\|not found/, "generic not found must not be treated as unsupported turn/steer");
+  assert.match(helperBody, /not found\|not active\|inactive\|completed\|interrupted/, "stale helper should catch stale active-turn errors");
+  assert.match(helperBody, /detectStaleActiveTurnForSubmission/, "preflight should use service-owned stale-turn detection");
+  assert.match(helperBody, /thread\/turns\/list/, "preflight should inspect latest durable turn state");
+  assert.match(helperBody, /limit:\s*20/, "preflight should inspect enough recent turns to detect superseded active turns");
+
+  const routeIndex = serverJs.indexOf('const messages = url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/messages$/);');
+  const fallbackIndex = serverJs.indexOf('const interrupt = url.pathname.match', routeIndex);
+  const routeBody = serverJs.slice(routeIndex, fallbackIndex);
+  const preflightCallIndex = routeBody.indexOf("staleActiveTurnPreflight(");
+  const preflightLogIndex = routeBody.indexOf('logMessageSubmit("active-turn-stale-preflight"');
+  const interruptIndex = routeBody.indexOf('codex.request("turn/interrupt"', preflightLogIndex);
+  const steerIndex = routeBody.indexOf('codex.request("turn/steer"', interruptIndex);
+  const staleLogIndex = routeBody.indexOf('logMessageSubmit("active-turn-stale"');
+  const resumeIndex = routeBody.indexOf('codex.request("thread/resume"', staleLogIndex);
+  const turnStartIndex = routeBody.indexOf('codex.request("turn/start"', resumeIndex);
+  assert.ok(preflightCallIndex > 0, "message route should preflight stale active turns before steering");
+  assert.ok(preflightLogIndex > preflightCallIndex, "message route should log stale active-turn preflight");
+  assert.ok(interruptIndex > preflightLogIndex, "stale active turn should be interrupted before starting a new turn");
+  assert.ok(steerIndex > interruptIndex, "normal turn/steer path should remain after preflight");
+  assert.match(routeBody, /if \(body\.activeTurnId && !skipTurnSteer\)/, "stale preflight should skip turn/steer");
+  assert.ok(staleLogIndex > 0, "message route should log stale active turn steering");
+  assert.ok(resumeIndex > staleLogIndex, "stale active turn should fall through to thread/resume");
+  assert.ok(turnStartIndex > resumeIndex, "stale active turn should fall through to turn/start");
+});
