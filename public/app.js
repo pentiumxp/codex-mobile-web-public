@@ -133,12 +133,13 @@ const state = {
   steerFeedback: null,
   steerFeedbackTimer: null,
   attachmentProcessingCount: 0,
+  filePreviewSwipe: null,
 };
 
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v86";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v91";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -178,6 +179,7 @@ const SIDEBAR_EDGE_OPEN_MIN_PX = 76;
 const SIDEBAR_EDGE_OPEN_RATIO = 0.22;
 const SUBAGENT_SWIPE_MIN_PX = 70;
 const SUBAGENT_WHEEL_SWIPE_MIN_PX = 48;
+const FILE_PREVIEW_SWIPE_CLOSE_MIN_PX = 62;
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
 const HIDDEN_SERVER_REQUEST_METHODS = new Set(["item/tool/call"]);
 const USER_INPUT_REQUEST_METHODS = new Set(["item/tool/requestUserInput", "mcpServer/elicitation/request"]);
@@ -5029,17 +5031,37 @@ function isTruncatedImagePayloadPart(part) {
   return /data:image\//i.test(preview) || /"type"\s*:\s*"image"/i.test(preview);
 }
 
+function attachmentSummaryMarkerMatch(source) {
+  return /(^|\r?\n)[ \t]*(?:>[ \t]*)?Uploaded attachments:[ \t]*(?:\r?\n|$)/.exec(source);
+}
+
+function stripAttachmentSummaryLinePrefix(line) {
+  return String(line || "").trim().replace(/^>[ \t]?/, "").trim();
+}
+
 function splitAttachmentSummaryText(text) {
   const source = String(text || "");
-  const marker = "Uploaded attachments:\n";
-  const markerIndex = source.indexOf(marker);
-  if (markerIndex < 0) return { text: source, attachments: [] };
-  const before = source.slice(0, markerIndex).trimEnd();
-  const lines = source.slice(markerIndex + marker.length)
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  return { text: before, attachments: lines.map(parseAttachmentLine).filter(Boolean) };
+  const markerMatch = attachmentSummaryMarkerMatch(source);
+  if (!markerMatch) return { text: source, attachments: [] };
+  const markerStart = markerMatch.index + (markerMatch[1] || "").length;
+  const before = source.slice(0, markerStart).trimEnd();
+  const attachments = [];
+  const remainder = [];
+  let parsingAttachments = true;
+  for (const line of source.slice(markerMatch.index + markerMatch[0].length).split(/\r?\n/)) {
+    const trimmed = stripAttachmentSummaryLinePrefix(line);
+    if (parsingAttachments && !trimmed) continue;
+    const attachment = parsingAttachments ? parseAttachmentLine(trimmed) : null;
+    if (attachment) {
+      attachments.push(attachment);
+      continue;
+    }
+    parsingAttachments = false;
+    remainder.push(line);
+  }
+  const after = remainder.join("\n").trimStart();
+  const visibleText = [before, after].filter(Boolean).join(before && after ? "\n\n" : "");
+  return { text: visibleText, attachments };
 }
 
 function parseAttachmentLine(line) {
@@ -5049,7 +5071,7 @@ function parseAttachmentLine(line) {
   return {
     name: match[1] || "attachment",
     meta,
-    path: match[3] || "",
+    path: (match[3] || "").trim(),
     isImage: /\bimage\b/i.test(meta),
   };
 }
@@ -5101,6 +5123,28 @@ function renderInputAttachment(attachment) {
   </div>`;
 }
 
+function renderAttachmentSummary(attachments, imageParts = []) {
+  const html = [];
+  const imageAttachments = (attachments || []).filter((attachment) => attachment.isImage);
+  const parts = Array.isArray(imageParts) ? imageParts : [];
+  parts.forEach((part, index) => {
+    html.push(renderInputImage(part, imageAttachments[index] || null, index));
+  });
+  const renderedImageAttachments = new Set();
+  if (!parts.length) {
+    imageAttachments
+      .filter(canRenderImageAttachment)
+      .forEach((attachment, index) => {
+        renderedImageAttachments.add(attachment);
+        html.push(renderInputImage({ path: attachment.path }, attachment, index));
+      });
+  }
+  (attachments || [])
+    .filter((attachment) => !renderedImageAttachments.has(attachment) && (!attachment.isImage || !parts.length))
+    .forEach((attachment) => html.push(renderInputAttachment(attachment)));
+  return html.join("");
+}
+
 function renderInputContent(content) {
   const parts = content || [];
   const imageParts = parts.filter(isInputImagePart);
@@ -5116,22 +5160,7 @@ function renderInputContent(content) {
     }
     html.push(`<div class="input-text">${escapeHtml(compactStructuredForSignature(part))}</div>`);
   }
-  const imageAttachments = attachments.filter((attachment) => attachment.isImage);
-  imageParts.forEach((part, index) => {
-    html.push(renderInputImage(part, imageAttachments[index] || null, index));
-  });
-  const renderedImageAttachments = new Set();
-  if (!imageParts.length) {
-    imageAttachments
-      .filter(canRenderImageAttachment)
-      .forEach((attachment, index) => {
-        renderedImageAttachments.add(attachment);
-        html.push(renderInputImage({ path: attachment.path }, attachment, index));
-      });
-  }
-  attachments
-    .filter((attachment) => !renderedImageAttachments.has(attachment) && (!attachment.isImage || !imageParts.length))
-    .forEach((attachment) => html.push(renderInputAttachment(attachment)));
+  html.push(renderAttachmentSummary(attachments, imageParts));
   return html.join("");
 }
 
@@ -5146,13 +5175,80 @@ function renderMarkdown(value) {
   });
 }
 
+function renderMarkdownWithAttachmentSummary(value) {
+  const split = splitAttachmentSummaryText(value || "");
+  if (!split.attachments.length) return renderMarkdown(value || "");
+  return [
+    split.text ? renderMarkdown(split.text) : "",
+    renderAttachmentSummary(split.attachments),
+  ].filter(Boolean).join("");
+}
+
 function closeFilePreview() {
   const dialog = $("filePreviewDialog");
   if (!dialog) return;
+  state.filePreviewSwipe = null;
   dialog.classList.add("hidden");
   $("filePreviewBody").innerHTML = "";
   $("filePreviewMeta").textContent = "";
   $("filePreviewPath").textContent = "";
+}
+
+function filePreviewOpen() {
+  const dialog = $("filePreviewDialog");
+  return Boolean(dialog && !dialog.classList.contains("hidden"));
+}
+
+function beginFilePreviewSwipe(event) {
+  if (!filePreviewOpen()) return;
+  if (event.touches && event.touches.length > 1) return;
+  const touch = primaryTouch(event);
+  if (!touch) return;
+  event.stopPropagation();
+  state.filePreviewSwipe = {
+    startX: touch.clientX,
+    startY: touch.clientY,
+    currentX: touch.clientX,
+    currentY: touch.clientY,
+    moved: false,
+  };
+}
+
+function moveFilePreviewSwipe(event) {
+  const swipe = state.filePreviewSwipe;
+  if (!swipe) return;
+  event.stopPropagation();
+  const touch = primaryTouch(event);
+  if (!touch) return;
+  const dx = touch.clientX - swipe.startX;
+  const dy = touch.clientY - swipe.startY;
+  if (!swipe.moved) {
+    if (Math.abs(dx) < 10 && Math.abs(dy) < 12) return;
+    if (dx <= 0 || Math.abs(dy) > Math.abs(dx)) {
+      state.filePreviewSwipe = null;
+      return;
+    }
+  }
+  swipe.moved = true;
+  swipe.currentX = touch.clientX;
+  swipe.currentY = touch.clientY;
+  if (event.cancelable !== false) event.preventDefault();
+}
+
+function finishFilePreviewSwipe(event) {
+  const swipe = state.filePreviewSwipe;
+  state.filePreviewSwipe = null;
+  if (!swipe) return;
+  if (event && typeof event.stopPropagation === "function") event.stopPropagation();
+  if (!swipe.moved) return;
+  const dx = Number(swipe.currentX || swipe.startX) - swipe.startX;
+  const dy = Number(swipe.currentY || swipe.startY) - swipe.startY;
+  if (dx >= FILE_PREVIEW_SWIPE_CLOSE_MIN_PX && Math.abs(dy) <= Math.abs(dx) * 0.85) closeFilePreview();
+}
+
+function cancelFilePreviewSwipe(event) {
+  state.filePreviewSwipe = null;
+  if (event && typeof event.stopPropagation === "function") event.stopPropagation();
 }
 
 function filePreviewMetaText(file) {
@@ -5381,14 +5477,14 @@ function renderItemBody(item, turn = null) {
   if (isContextCompactionItem(item)) return escapeHtml(contextCompactionNotice(item, turn));
   if (item.type === "userMessage") return renderInputContent(item.content);
   if (item.type === "agentMessage") {
-    return renderMarkdown(item.text || "");
+    return renderMarkdownWithAttachmentSummary(item.text || "");
   }
   if (item.type === "reasoning") {
     const summary = (item.summary || []).join("\n");
     const content = (item.content || []).join("\n");
     return escapeHtml([summary, content].filter(Boolean).join("\n\n"));
   }
-  if (item.type === "plan") return renderMarkdown(item.text || "");
+  if (item.type === "plan") return renderMarkdownWithAttachmentSummary(item.text || "");
   if (item.type === "imageView") return renderImageView(item);
   if (item.type === "commandExecution") {
     return `<div class="mono">${escapeHtml(item.command || "")}</div>${renderOutputBlock(item.aggregatedOutput, item)}`;
@@ -7337,7 +7433,13 @@ function wireUi() {
     if (button) removeAttachment(button.dataset.removeAttachment);
   });
   if ($("filePreviewClose")) $("filePreviewClose").addEventListener("click", closeFilePreview);
-  if ($("filePreviewDialog")) $("filePreviewDialog").addEventListener("click", (event) => {
+  if ($("filePreviewDialog")) {
+    const filePreviewDialog = $("filePreviewDialog");
+    filePreviewDialog.addEventListener("touchstart", beginFilePreviewSwipe, { passive: false });
+    filePreviewDialog.addEventListener("touchmove", moveFilePreviewSwipe, { passive: false });
+    filePreviewDialog.addEventListener("touchend", finishFilePreviewSwipe, { passive: false });
+    filePreviewDialog.addEventListener("touchcancel", cancelFilePreviewSwipe, { passive: true });
+    filePreviewDialog.addEventListener("click", (event) => {
     if (event.target === $("filePreviewDialog")) {
       closeFilePreview();
       return;
@@ -7355,7 +7457,8 @@ function wireUi() {
       event.preventDefault();
       openLocalFilePreview(localFileLink).catch(showError);
     }
-  });
+    });
+  }
   $("composer").addEventListener("dragover", (event) => {
     if (!(state.currentThreadId || state.newThreadDraft) || !hasTransferFiles(event)) return;
     event.preventDefault();

@@ -98,4 +98,20 @@ test("markdown file targets strip angle brackets and file urls", () => {
   assert.equal(stripMarkdownFileTarget("</Users/frank/A B.md>"), "/Users/frank/A B.md");
   assert.equal(stripMarkdownFileTarget("file:///Users/frank/A%20B.md"), "/Users/frank/A B.md");
   assert.equal(stripMarkdownFileTarget("/Users/frank/Obsidian%20Vault/A%20B.md"), "/Users/frank/Obsidian Vault/A B.md");
+  assert.equal(stripMarkdownFileTarget("/Users/frank/Obsidian%20Vault/A%20B.md:12"), "/Users/frank/Obsidian Vault/A B.md");
+  assert.equal(stripMarkdownFileTarget("/Users/frank/Obsidian%20Vault/A%20B.md:12:3"), "/Users/frank/Obsidian Vault/A B.md");
+  assert.equal(stripMarkdownFileTarget("/Users/frank/Obsidian%20Vault/A%20B.md#L12"), "/Users/frank/Obsidian Vault/A B.md");
+});
+
+test("file preview accepts markdown targets with line suffixes", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-preview-line-"));
+  const file = path.join(root, "docs", "PROJECT_STATUS.md");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, "# Project\n\n- ready\n", "utf8");
+
+  const preview = readFilePreview(`${file}:12`, [root]);
+
+  assert.equal(preview.path, fs.realpathSync.native ? fs.realpathSync.native(file) : fs.realpathSync(file));
+  assert.equal(preview.kind, "markdown");
+  assert.equal(preview.content, "# Project\n\n- ready\n");
 });

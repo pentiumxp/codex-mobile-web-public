@@ -1047,17 +1047,21 @@ function previewRootsForThread(threadId, globalState = readGlobalState()) {
 function stripMarkdownFileTarget(value) {
   let target = String(value || "").trim();
   if (target.startsWith("<") && target.endsWith(">")) target = target.slice(1, -1).trim();
+  const stripLocationSuffix = (entry) => String(entry || "")
+    .replace(/#L\d+(?:-L?\d+)?$/i, "")
+    .replace(/#line-\d+$/i, "")
+    .replace(/^(.+\.[^\\/:]+):\d+(?::\d+)?$/i, "$1");
   if (/^file:\/\//i.test(target)) {
     try {
-      return decodeURIComponent(new URL(target).pathname);
+      return stripLocationSuffix(decodeURIComponent(new URL(target).pathname));
     } catch (_) {
-      return target.replace(/^file:\/\//i, "");
+      return stripLocationSuffix(target.replace(/^file:\/\//i, ""));
     }
   }
   try {
-    return decodeURIComponent(target);
+    return stripLocationSuffix(decodeURIComponent(target));
   } catch (_) {
-    return target;
+    return stripLocationSuffix(target);
   }
 }
 

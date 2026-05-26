@@ -103,13 +103,15 @@ Implementation path:
 
 1. Keep upload files under the runtime upload root.
 2. Validate preview routes against allowed roots; never serve arbitrary local paths.
-3. Keep browser image compression in `public/image-compressor.js`.
-4. Keep upload-aware model input and history persistence in `adapters/message-input-service.js`.
-5. Preserve the default `CODEX_MOBILE_IMAGE_CONTEXT_MODE=reference` behavior unless the feature explicitly requires vision input.
-6. If vision is required, prefer `latest`/`vision` over legacy `all`, and document that app-server current history may still retain the image until a fresh continuation.
-7. Render saved image uploads as bounded thumbnails from the upload/file preview route even when model context stays reference-only.
-8. Render app-server `imageView` items as direct image views; never stringify data URLs into conversation text.
-9. Test with upload/file/image focused tests.
+3. Treat Codex-style file-location suffixes such as `:line`, `:line:column`, and `#Lline` as preview metadata, not as part of the filename.
+4. Keep local preview links visually clickable without redundant helper text, keep preview panels viewport-bounded without horizontal dragging, and capture preview-layer right swipes so they close the preview instead of navigating the underlying page.
+5. Keep browser image compression in `public/image-compressor.js`.
+6. Keep upload-aware model input and history persistence in `adapters/message-input-service.js`.
+7. Preserve the default `CODEX_MOBILE_IMAGE_CONTEXT_MODE=reference` behavior unless the feature explicitly requires vision input.
+8. If vision is required, prefer `latest`/`vision` over legacy `all`, and document that app-server current history may still retain the image until a fresh continuation.
+9. Render saved image uploads as bounded thumbnails from the upload/file preview route even when model context stays reference-only, including quoted `Uploaded attachments:` summaries in Codex/plan replies. Keep this parser tolerant of CRLF line endings and Markdown blockquote-style quoted summaries.
+10. Render app-server `imageView` items as direct image views; never stringify data URLs into conversation text.
+11. Test with upload/file/image focused tests.
 
 ## Runtime Settings Inheritance
 
