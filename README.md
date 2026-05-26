@@ -4,6 +4,15 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+## Project Documentation
+
+Engineering docs are split under [`docs/`](docs/README.md):
+
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for process boundaries, request flows, runtime state, and invariants.
+- [`docs/MODULES.md`](docs/MODULES.md) for module ownership and the test map.
+- [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) for live diagnosis of stuck turns, disappearing messages, PWA cache issues, Push, mux drift, uploads, and Hermes/ChatGPT Pro bridge checks.
+- [`docs/COMPLEX_FEATURE_PATHS.md`](docs/COMPLEX_FEATURE_PATHS.md) for implementation paths on cross-cutting features.
+
 ## Platform Status
 
 | Platform | Standalone Mobile Web | Desktop live sync through mux | Notes |

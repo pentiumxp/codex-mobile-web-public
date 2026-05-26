@@ -7,11 +7,13 @@ const crypto = require("node:crypto");
 const { spawn } = require("node:child_process");
 const net = require("node:net");
 const webPush = require("web-push");
-const { shouldTrackTurnForWebPush } = require("./adapters/push-notification-service");
+const { completedTurnHasNoFinalAgentMessage, shouldTrackTurnForWebPush } = require("./adapters/push-notification-service");
 const { createSharedChainRestartService } = require("./adapters/shared-chain-restart-service");
 const { runSqliteJson } = require("./adapters/sqlite-cli");
 const { compactWorkspaceHandoff } = require("./adapters/continuation-handoff-compaction-service");
 const {
+  localImageUploadsForContext,
+  parseImageContextPolicyEnv,
   parsePersistExtendedHistoryEnv,
   shouldPersistExtendedHistoryForUploads,
 } = require("./adapters/message-input-service");
@@ -78,6 +80,7 @@ const MAX_START_THREAD_DEVELOPER_INSTRUCTIONS_CHARS = 120000;
 const MAX_UPLOAD_BYTES = Math.max(1, Number(process.env.CODEX_MOBILE_MAX_UPLOAD_BYTES || String(64 * 1024 * 1024)));
 const MAX_UPLOAD_FILES = Math.max(1, Math.min(50, Number(process.env.CODEX_MOBILE_MAX_UPLOAD_FILES || "12")));
 const UPLOAD_ROOT = process.env.CODEX_MOBILE_UPLOAD_DIR || path.join(RUNTIME_ROOT, "uploads");
+const IMAGE_CONTEXT_POLICY = parseImageContextPolicyEnv(process.env);
 const PERSIST_EXTENDED_HISTORY_POLICY = parsePersistExtendedHistoryEnv(process.env);
 const FILE_PREVIEW_MAX_BYTES = Math.max(1024, Number(process.env.CODEX_MOBILE_FILE_PREVIEW_MAX_BYTES || String(512 * 1024)));
 const FILE_PREVIEW_MEDIA_MAX_BYTES = Math.max(1024 * 1024, Number(process.env.CODEX_MOBILE_FILE_PREVIEW_MEDIA_MAX_BYTES || String(24 * 1024 * 1024)));
@@ -127,7 +130,13 @@ const THREAD_DETAIL_ROLLOUT_MAX_BYTES = Math.max(
   1 * 1024 * 1024,
   Number(process.env.CODEX_MOBILE_THREAD_DETAIL_ROLLOUT_MAX_BYTES || String(DEFAULT_THREAD_DETAIL_ROLLOUT_MAX_BYTES)),
 );
-const MAX_CONTINUATION_BOOTSTRAP_CHARS = Math.max(20_000, Number(process.env.CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS || "120000"));
+const MAX_CONTINUATION_BOOTSTRAP_CHARS = Math.max(20_000, Number(process.env.CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS || "52000"));
+const CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS = Math.max(2_000, Number(process.env.CODEX_MOBILE_CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS || "12000"));
+const CONTINUATION_SOURCE_HANDOFF_STORED_CHARS = Math.max(CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS, Number(process.env.CODEX_MOBILE_CONTINUATION_SOURCE_HANDOFF_STORED_CHARS || "18000"));
+const CONTINUATION_WORKSPACE_PROJECT_CONTEXT_CHARS = Math.max(4_000, Number(process.env.CODEX_MOBILE_CONTINUATION_WORKSPACE_PROJECT_CONTEXT_CHARS || "18000"));
+const CONTINUATION_WORKSPACE_HANDOFF_TAIL_CHARS = Math.max(4_000, Number(process.env.CODEX_MOBILE_CONTINUATION_WORKSPACE_HANDOFF_TAIL_CHARS || "18000"));
+const CONTINUATION_ITEM_SUMMARY_CHARS = Math.max(300, Number(process.env.CODEX_MOBILE_CONTINUATION_ITEM_SUMMARY_CHARS || "1200"));
+const CONTINUATION_TURN_SUMMARY_ITEMS = Math.max(1, Math.min(8, Number(process.env.CODEX_MOBILE_CONTINUATION_TURN_SUMMARY_ITEMS || "4")));
 const CONTINUATION_RECENT_TURNS = Math.max(1, Math.min(30, Number(process.env.CODEX_MOBILE_CONTINUATION_RECENT_TURNS || "12")));
 const CONTINUATION_HANDOFF_TIMEOUT_MS = Math.max(30_000, Number(process.env.CODEX_MOBILE_CONTINUATION_HANDOFF_TIMEOUT_MS || "240000"));
 const CONTINUATION_LATE_HANDOFF_TIMEOUT_MS = Math.max(30_000, Number(process.env.CODEX_MOBILE_CONTINUATION_LATE_HANDOFF_TIMEOUT_MS || "600000"));
@@ -137,7 +146,7 @@ const CONTINUATION_HANDOFF_TURN_COMPLETION_TIMEOUT_MS = Math.max(5_000, Number(p
 const CONTINUATION_JOB_TTL_MS = Math.max(60_000, Number(process.env.CODEX_MOBILE_CONTINUATION_JOB_TTL_MS || "1800000"));
 const CONTINUATION_JOB_MAX = Math.max(10, Number(process.env.CODEX_MOBILE_CONTINUATION_JOB_MAX || "50"));
 const CONTINUATION_LINEAGE_MAX_DEPTH = Math.max(0, Math.min(5, Number(process.env.CODEX_MOBILE_CONTINUATION_LINEAGE_MAX_DEPTH || "2")));
-const CONTINUATION_LINEAGE_MAX_CHARS = Math.max(2_000, Number(process.env.CODEX_MOBILE_CONTINUATION_LINEAGE_MAX_CHARS || "30000"));
+const CONTINUATION_LINEAGE_MAX_CHARS = Math.max(2_000, Number(process.env.CODEX_MOBILE_CONTINUATION_LINEAGE_MAX_CHARS || "12000"));
 const CONTINUATION_CONTEXT_HANDOFF_COMPACT_BYTES = Math.max(64 * 1024, Number(process.env.CODEX_MOBILE_CONTINUATION_CONTEXT_HANDOFF_COMPACT_BYTES || String(300 * 1024)));
 const CONTINUATION_CONTEXT_HANDOFF_PRESERVE_CHARS = Math.max(8_000, Number(process.env.CODEX_MOBILE_CONTINUATION_CONTEXT_HANDOFF_PRESERVE_CHARS || "60000"));
 const RUNTIME_CONTEXT_CACHE_TTL_MS = Math.max(1000, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_CACHE_TTL_MS || "30000"));
@@ -3364,6 +3373,10 @@ function maybeSendTurnCompletedPush(method, params) {
   if (isOldPushTurnEvent(params, ["completedAt", "updatedAt"])) return;
   const meta = pushTurnMeta(params, pushObservedTurns.get(turnId));
   pushObservedTurns.delete(turnId);
+  if (completedTurnHasNoFinalAgentMessage(params)) {
+    logWebPushDecision("turn/completed", { track: false, reason: "no-final-agent-message" }, meta);
+    return;
+  }
   const decision = shouldTrackTurnForWebPush(meta, {
     classifyThread: classifyWebPushThreadId,
   });
@@ -3530,8 +3543,8 @@ function buildTurnInput(text, uploads) {
   const input = [];
   const messageText = appendAttachmentSummary(text, uploads).trim();
   if (messageText) input.push({ type: "text", text: messageText, text_elements: [] });
-  for (const file of uploads) {
-    if (file.isImage) input.push({ type: "localImage", path: file.path });
+  for (const file of localImageUploadsForContext(uploads, IMAGE_CONTEXT_POLICY)) {
+    input.push({ type: "localImage", path: file.path });
   }
   return input;
 }
@@ -4387,8 +4400,8 @@ function readWorkspaceContextFile(cwd, relativePath, maxChars) {
 }
 
 function continuationWorkspaceContextSections(cwd) {
-  const project = readWorkspaceContextFile(cwd, ".agent-context/PROJECT_CONTEXT.md", 42000);
-  const handoff = readWorkspaceContextFile(cwd, ".agent-context/HANDOFF.md", 240000);
+  const project = readWorkspaceContextFile(cwd, ".agent-context/PROJECT_CONTEXT.md", CONTINUATION_WORKSPACE_PROJECT_CONTEXT_CHARS);
+  const handoff = readWorkspaceContextFile(cwd, ".agent-context/HANDOFF.md", CONTINUATION_WORKSPACE_HANDOFF_TAIL_CHARS * 2);
   const sections = [];
   if (project.exists) {
     sections.push(`### .agent-context/PROJECT_CONTEXT.md\n${project.text}`);
@@ -4396,7 +4409,7 @@ function continuationWorkspaceContextSections(cwd) {
     sections.push(`### .agent-context/PROJECT_CONTEXT.md\nUnavailable: ${project.error || "missing"} (${project.path})`);
   }
   if (handoff.exists) {
-    sections.push(`### .agent-context/HANDOFF.md latest tail\n${truncateTail(handoff.text, 52000, ".agent-context/HANDOFF.md")}`);
+    sections.push(`### .agent-context/HANDOFF.md latest tail\n${truncateTail(handoff.text, CONTINUATION_WORKSPACE_HANDOFF_TAIL_CHARS, ".agent-context/HANDOFF.md")}`);
   } else {
     sections.push(`### .agent-context/HANDOFF.md\nUnavailable: ${handoff.error || "missing"} (${handoff.path})`);
   }
@@ -4456,7 +4469,7 @@ function continuationItemSummary(item) {
       fileNames: item.fileNames || undefined,
     }));
   }
-  text = truncateMiddle(String(text || "").replace(/\r\n/g, "\n").trim(), 5000, `${label} item`);
+  text = truncateMiddle(String(text || "").replace(/\r\n/g, "\n").trim(), CONTINUATION_ITEM_SUMMARY_CHARS, `${label} item`);
   return `- ${label}${status ? ` [${status}]` : ""}: ${text || "(no visible text)"}`;
 }
 
@@ -4466,7 +4479,7 @@ function continuationTurnSummaries(turns) {
     const items = Array.isArray(turn && turn.items) ? turn.items.filter((item) => item && item.type !== "reasoning") : [];
     const userItems = items.filter((item) => item.type === "userMessage");
     const otherItems = items.filter((item) => item.type !== "userMessage");
-    const selected = userItems.concat(otherItems.slice(-6));
+    const selected = userItems.concat(otherItems.slice(-CONTINUATION_TURN_SUMMARY_ITEMS));
     const omitted = Math.max(0, items.length - selected.length);
     const itemLines = selected.map(continuationItemSummary).filter(Boolean);
     if (omitted > 0) itemLines.unshift(`- ${omitted} older visible item(s) omitted from this turn summary.`);
@@ -4740,7 +4753,7 @@ function continuationHandoffFromText(target, text, extra = {}) {
     id: marker && marker[1] ? marker[1].trim() : target.id,
     path: target.file,
     relativePath: target.relativePath,
-    text: truncateMiddle(trimmed, 56000, "source continuation handoff"),
+    text: truncateMiddle(trimmed, CONTINUATION_SOURCE_HANDOFF_STORED_CHARS, "source continuation handoff"),
     chars: trimmed.length,
   }, extra);
 }
@@ -4951,13 +4964,16 @@ function sourceHandoffSection(sourceHandoff) {
   if (!sourceHandoff) {
     return "No source-thread-generated handoff file was requested or available.";
   }
+  const excerpt = truncateMiddle(sourceHandoff.text || "", CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS, "source handoff excerpt");
   return [
     `- Handoff file: ${sourceHandoff.path}`,
     `- Handoff id: ${sourceHandoff.id}`,
     `- Handoff chars: ${sourceHandoff.chars || 0}`,
+    `- Handoff excerpt chars included: ${Math.min(excerpt.length, CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS)}`,
+    "- Read the full handoff file above when exact prior state is needed.",
     "",
-    "### Source-thread-generated handoff",
-    sourceHandoff.text || "(empty)",
+    "### Source-thread-generated handoff excerpt",
+    excerpt || "(empty)",
   ].join("\n");
 }
 
@@ -5687,6 +5703,7 @@ async function handleApi(req, res) {
       shellCacheName: readServiceWorkerCacheName(),
       maxUploadBytes: MAX_UPLOAD_BYTES,
       maxUploadFiles: MAX_UPLOAD_FILES,
+      imageContextMode: IMAGE_CONTEXT_POLICY.imageContextMode,
       rolloutWarningBytes: ROLLOUT_WARNING_BYTES,
       modelOptions: MODEL_OPTIONS,
       reasoningEffortOptions: REASONING_EFFORT_OPTIONS,

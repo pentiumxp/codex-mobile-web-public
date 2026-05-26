@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 
-const { shouldTrackTurnForWebPush } = require("../adapters/push-notification-service");
+const { completedTurnHasNoFinalAgentMessage, shouldTrackTurnForWebPush } = require("../adapters/push-notification-service");
 const { sqliteCandidates } = require("../adapters/sqlite-cli");
 
 test("web push tracks normal thread turn completions", () => {
@@ -61,6 +61,29 @@ test("web push skips completed events when no thread id can be resolved", () => 
   });
 
   assert.deepEqual(decision, { track: false, reason: "missing-thread-id" });
+});
+
+test("web push recognizes completed turns with explicit missing final agent message", () => {
+  assert.equal(completedTurnHasNoFinalAgentMessage({
+    turn: {
+      id: "turn-without-final",
+      last_agent_message: null,
+    },
+  }), true);
+  assert.equal(completedTurnHasNoFinalAgentMessage({
+    lastAgentMessage: "",
+  }), true);
+  assert.equal(completedTurnHasNoFinalAgentMessage({
+    turn: {
+      id: "turn-with-final",
+      lastAgentMessage: { type: "message", role: "assistant" },
+    },
+  }), false);
+  assert.equal(completedTurnHasNoFinalAgentMessage({
+    turn: {
+      id: "turn-without-explicit-final-field",
+    },
+  }), false);
 });
 
 test("web push may temporarily observe started events before thread id is known", () => {

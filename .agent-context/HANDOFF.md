@@ -1811,6 +1811,117 @@ The previous full handoff was archived and should be opened only when old proven
   - Post-restart `/api/public-config` remains `0.1.11|codex-mobile-shell-v85`; authenticated `/api/status` returned `ready=true`, endpoint `127.0.0.1:61382`, `lastError=null`.
   - Authenticated detail check of `Hermes 05-25` showed the latest live turn no longer had the stale `rg` operation attached; the latest operation in that turn was a real completed `fileChange`.
 - Status:
-  - Local private workspace has uncommitted pending-echo and raw-operation-display fixes.
+  - Private commit `6551c8b 修正移动端 active turn 回显与旧命令显示` contains the pending-echo and raw-operation-display fixes and was pushed to private `origin/main`.
   - Public repository has not been synced or pushed for these two hotfixes.
   - No PWA shell cache bump is required for the raw-operation fallback because this is server-side detail-response behavior.
+
+## 2026-05-25 Project Docs And Codex Mobile Web Skill
+
+- User request:
+  - Fill in project documentation from architecture design and module descriptions through troubleshooting and complex feature implementation paths.
+  - Create a skill that constrains future agents to read the relevant project docs when needed.
+- Documentation added:
+  - `docs/README.md`
+    - Reading guide, source-of-truth order, safety rules, and standard validation commands.
+  - `docs/ARCHITECTURE.md`
+    - Runtime process model, browser/server/app-server/mux boundaries, runtime state, request flows, PWA cache/build rules, message submission, SSE, uploads, continuation, Push, and invariants.
+  - `docs/MODULES.md`
+    - Root runtime files, adapter services, public frontend files, test map, ownership boundaries, and new-module rules.
+  - `docs/TROUBLESHOOTING.md`
+    - Live triage commands and evidence paths for mux drift, disappearing messages, stuck turns, stale command cards, `rg`, PWA cache mismatch, Push, image context growth, continuation runtime settings, and Hermes/ChatGPT Pro bridge checks.
+  - `docs/COMPLEX_FEATURE_PATHS.md`
+    - Implementation paths for active-turn/message submission, conversation rendering, rollout continuation, mux/Desktop live sync, PWA/service worker, Web Push, uploads, runtime settings inheritance, Hermes/ChatGPT Pro integration, and public/private publish.
+  - `README.md`
+    - Added a `Project Documentation` entry linking to the new docs.
+- Skill created:
+  - Local skill path: `C:\Users\xuxin\.codex\skills\codex-mobile-web-project`.
+  - Skill frontmatter triggers on Codex Mobile Web workspace, architecture, modules, troubleshooting, app-server/mux, PWA/service worker, active-turn/message submission, continuation, Web Push, uploads, public/private publish, and non-trivial project work.
+  - Skill workflow requires reading `.agent-context/PROJECT_CONTEXT.md`, `.agent-context/HANDOFF.md`, `docs/README.md`, then the smallest relevant project doc.
+  - Follow-up update: the skill now treats documentation as part of the done criteria for behavior changes. Future feature/fix work should update the matching architecture, module, troubleshooting, complex-feature-path, README/public README, or handoff documentation when the change affects those areas.
+  - Skill UI metadata was aligned so the default prompt says to read relevant docs before changes and update matching docs when project behavior changes.
+  - Skill validation passed with `skill-creator` `quick_validate.py`.
+- Validation:
+  - `git diff --check` passed with only the existing Windows LF-to-CRLF working-copy warning on `README.md`.
+  - BOM checks passed for README, all new docs, and the new skill files.
+- Status:
+  - Documentation changes are local and uncommitted.
+  - The local skill is outside this repository and is not part of Git.
+  - No runtime restart is required for documentation/skill-only changes.
+
+## 2026-05-26 No-Final-Agent-Message Completion Push Guard
+
+- User report:
+  - In `Hermes 05-25`, an external Web Push said the turn ended, but opening the thread showed no normal final reply.
+  - The next guidance turn correctly continued the implementation, so the issue was the previous turn being marked complete without a final assistant message.
+- Runtime finding:
+  - Target thread: `019e5e12-0141-7d93-9a7a-7d3ff3eda657` (`Hermes 05-25`).
+  - Previous turn: `019e626a-6c0e-7a42-a5fa-c419eec07004`.
+  - Rollout event at `2026-05-26T04:01:52.294Z` was `task_complete`, not `turn_aborted`, `interrupted`, timeout, or pending approval.
+  - Its payload had `last_agent_message: null`; other normal `task_complete` records in the same rollout had a final agent message.
+  - Therefore the app-server/runtime emitted a terminal completion without final assistant reply, and Mobile Web treated the corresponding completion as a normal turn-ended Push.
+- Local fix:
+  - `adapters/push-notification-service.js` adds `completedTurnHasNoFinalAgentMessage()`, recognizing explicit missing final-message fields such as `last_agent_message: null`.
+  - `server.js` now suppresses normal turn-completed Web Push when the completed notification payload explicitly indicates no final assistant message, logging reason `no-final-agent-message`.
+  - `test/push-notification-service.test.js` covers explicit no-final-message detection while leaving unknown/missing fields as normal unknown rather than suppressing all completions.
+  - `docs/ARCHITECTURE.md` and `docs/TROUBLESHOOTING.md` document the no-final-message completion-push guard and diagnosis path.
+- Validation:
+  - `node --check adapters\push-notification-service.js` passed.
+  - `node --check server.js` passed.
+  - `node --test test\push-notification-service.test.js` passed: 10/10.
+  - `npm.cmd test` passed: 155/155.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - BOM checks passed for touched source, test, docs, and handoff files.
+- Activation:
+  - Restarted only the 8787 Node listener after the server-side Push guard: old PID `73580`, new PID `55456`.
+  - Post-restart `/api/public-config` remains `0.1.11|codex-mobile-shell-v85`.
+  - Authenticated `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, endpoint `127.0.0.1:61382`, and `lastError=null`.
+- Status:
+  - Local code/docs changes are uncommitted.
+  - This is server-side Push behavior; no PWA shell cache bump is required.
+
+## 2026-05-26 Context And Continuation Strategy v86
+
+- User request:
+  - Turn the context strategy and compression-continuation strategy into project documentation, fold it into the prior documentation rules, and implement the new policy.
+  - The immediate driver was evidence that Hermes Mobile threads still reached 100k+ input tokens because image uploads were retained in app-server `replacement_history` despite the earlier extended-history mitigation.
+- Diagnosis carried into the implementation:
+  - The v78 mitigation only stopped Mobile Web from requesting app-server `persistExtendedHistory` for image-upload turns.
+  - `server.js` still sent every uploaded image as an app-server `localImage` input part, so app-server could still put `input_image` payloads into current history and compacted `replacement_history`.
+  - Continuation bootstrap also remained too large: defaults allowed a 120k inline bootstrap, full-ish source handoff text, 52k workspace handoff tail, and 5k per visible item summary.
+- Local fix:
+  - `adapters/message-input-service.js` now owns image context policy:
+    - default `CODEX_MOBILE_IMAGE_CONTEXT_MODE=reference` sends no app-server `localImage` parts;
+    - `latest` / `vision` sends only the latest uploaded image;
+    - `all` restores legacy all-image behavior.
+  - `server.js` now builds turn input through that policy. Uploaded images are still summarized by local path in message text, but image pixels are not sent to the model by default.
+  - `/api/public-config` now exposes `imageContextMode` for runtime diagnosis.
+  - Continuation bootstrap defaults were tightened:
+    - `CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS=52000`;
+    - source handoff excerpt `12000`;
+    - workspace project context excerpt `18000`;
+    - workspace handoff tail `18000`;
+    - per-item summary `1200`;
+    - non-user items per recent turn `4`;
+    - lineage max `12000`.
+  - `sourceHandoffSection()` now lists the full source handoff file path and includes only a bounded excerpt, so future continuation threads should read the handoff file rather than inheriting a large inline copy.
+  - Added `docs/CONTEXT_STRATEGY.md` and linked it from `docs/README.md`.
+  - Updated `docs/ARCHITECTURE.md`, `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, `docs/COMPLEX_FEATURE_PATHS.md`, `.agent-context/PROJECT_CONTEXT.md`, and the local skill `C:\Users\xuxin\.codex\skills\codex-mobile-web-project\SKILL.md` to make context-size and continuation-size docs part of the doc-update rule.
+- Validation:
+  - `node --check adapters\message-input-service.js` passed.
+  - `node --check server.js` passed.
+  - Focused `node --test test\message-input-service.test.js test\continuation-lineage.test.js` passed: 10/10.
+  - `npm.cmd test` passed: 158/158.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - BOM checks passed for touched source, tests, docs, project context, and the local skill file.
+- Activation:
+  - Restarted only the 8787 Node listener to load the server-side image-context policy: old PID `55456`, new PID `47440`.
+  - Post-restart `/api/public-config` returns `version=0.1.11`, `clientBuildId=0.1.11|codex-mobile-shell-v85`, `shellCacheName=codex-mobile-shell-v85`, and `imageContextMode=reference`.
+  - Post-restart authenticated `/api/status` remains `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, and `lastError=null`.
+- Status:
+  - Local code/docs/skill changes are uncommitted.
+  - This is a server-side input/continuation-policy fix plus docs; no PWA shell cache bump is required.
+  - Existing oversized/polluted app-server threads are not shrunk by this change. They need a fresh continuation after the new policy is active; old rollout records and in-memory `replacement_history` are not rewritten.
