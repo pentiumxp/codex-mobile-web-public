@@ -138,7 +138,7 @@ const state = {
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v85";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v86";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -5067,6 +5067,15 @@ function imageSourceForPart(part, attachment = null) {
   return url || "";
 }
 
+function isLikelyAbsoluteLocalPath(value) {
+  const text = String(value || "").trim();
+  return /^[a-zA-Z]:[\\/]/.test(text) || /^\\\\/.test(text);
+}
+
+function canRenderImageAttachment(attachment) {
+  return Boolean(attachment && attachment.isImage && isLikelyAbsoluteLocalPath(attachment.path));
+}
+
 function renderInputText(text) {
   if (!String(text || "").trim()) return "";
   return `<div class="input-text">${escapeHtml(text)}</div>`;
@@ -5111,8 +5120,17 @@ function renderInputContent(content) {
   imageParts.forEach((part, index) => {
     html.push(renderInputImage(part, imageAttachments[index] || null, index));
   });
+  const renderedImageAttachments = new Set();
+  if (!imageParts.length) {
+    imageAttachments
+      .filter(canRenderImageAttachment)
+      .forEach((attachment, index) => {
+        renderedImageAttachments.add(attachment);
+        html.push(renderInputImage({ path: attachment.path }, attachment, index));
+      });
+  }
   attachments
-    .filter((attachment) => !attachment.isImage || !imageParts.length)
+    .filter((attachment) => !renderedImageAttachments.has(attachment) && (!attachment.isImage || !imageParts.length))
     .forEach((attachment) => html.push(renderInputAttachment(attachment)));
   return html.join("");
 }

@@ -102,6 +102,8 @@ Browser-side image compression happens before upload when supported. Uploaded at
 
 Image uploads are reference-only by default: Mobile Web does not send app-server `localImage` input parts unless `CODEX_MOBILE_IMAGE_CONTEXT_MODE` explicitly opts into `latest`/`vision` or legacy `all`. This is separate from extended-history persistence. Reference-only mode prevents new uploads from becoming `input_image` payloads in app-server current history and compacted `replacement_history` snapshots.
 
+The browser display remains visual: user messages parse the uploaded image summary and render saved image paths as centered thumbnails through the authenticated upload preview route. This display path must not be used as a reason to re-enable model `localImage` input by default.
+
 By default, Mobile Web also does not request app-server extended-history persistence for image-upload turns. This reduces repeated historical payload retention for future uploads but cannot remove old images already retained in app-server memory or historical rollout records.
 
 Uploaded files stay under the Mobile Web runtime upload root. Authenticated preview routes must only serve paths under allowed roots.

@@ -107,8 +107,9 @@ Implementation path:
 4. Keep upload-aware model input and history persistence in `adapters/message-input-service.js`.
 5. Preserve the default `CODEX_MOBILE_IMAGE_CONTEXT_MODE=reference` behavior unless the feature explicitly requires vision input.
 6. If vision is required, prefer `latest`/`vision` over legacy `all`, and document that app-server current history may still retain the image until a fresh continuation.
-7. Render images as bounded thumbnails or direct image views; never stringify data URLs into conversation text.
-8. Test with upload/file/image focused tests.
+7. Render saved image uploads as bounded thumbnails from the upload/file preview route even when model context stays reference-only.
+8. Render app-server `imageView` items as direct image views; never stringify data URLs into conversation text.
+9. Test with upload/file/image focused tests.
 
 ## Runtime Settings Inheritance
 

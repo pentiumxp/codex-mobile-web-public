@@ -1925,3 +1925,64 @@ The previous full handoff was archived and should be opened only when old proven
   - Local code/docs/skill changes are uncommitted.
   - This is a server-side input/continuation-policy fix plus docs; no PWA shell cache bump is required.
   - Existing oversized/polluted app-server threads are not shrunk by this change. They need a fresh continuation after the new policy is active; old rollout records and in-memory `replacement_history` are not rewritten.
+
+## 2026-05-26 Uploaded Image Thumbnail Display v86
+
+- User feedback:
+  - The reference-only image context policy is correct for model history, but showing only an uploaded image path in the conversation is awkward for users.
+- Local fix:
+  - `public/app.js`
+    - Keeps `CODEX_MOBILE_IMAGE_CONTEXT_MODE=reference` behavior unchanged for model input.
+    - `renderInputContent()` now parses `Uploaded attachments` image summaries and renders saved absolute upload paths as centered thumbnails even when there are no app-server `localImage` parts.
+    - Browser-local filename-only attachment rows are left as compact attachment rows instead of rendering broken images.
+  - `public/sw.js` / `public/app.js` shell cache/build id bumped to `codex-mobile-shell-v86` / `0.1.11|codex-mobile-shell-v86`.
+  - `README.md`, `docs/CONTEXT_STRATEGY.md`, `docs/ARCHITECTURE.md`, `docs/COMPLEX_FEATURE_PATHS.md`, and `.agent-context/PROJECT_CONTEXT.md` now explicitly separate model context policy from user-visible image thumbnail rendering.
+  - `test/file-preview-ui.test.js` and `test/mobile-viewport.test.js` cover the thumbnail rendering path and v86 shell cache.
+- Validation:
+  - Focused `node --test test\file-preview-ui.test.js test\mobile-viewport.test.js` passed: 4/4.
+  - `node --check public\app.js` passed.
+  - `node --check public\sw.js` passed.
+  - `npm.cmd test` passed: 158/158.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - BOM checks passed for touched source, tests, docs, and project context files.
+- Activation:
+  - Static frontend/PWA change; no Node listener restart required.
+  - `GET http://127.0.0.1:8787/api/public-config` now returns `clientBuildId=0.1.11|codex-mobile-shell-v86`, `shellCacheName=codex-mobile-shell-v86`, and `imageContextMode=reference`.
+- Status:
+  - Local changes are uncommitted.
+  - Mobile clients need the refresh prompt, hard refresh, or PWA close/reopen to load v86.
+
+## 2026-05-26 Public v86 Context And Thumbnail Push
+
+- User request:
+  - Commit and push the current v86 changes, including the public repository.
+- Public repository:
+  - Path: `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Synced public-safe product/docs/test files from private:
+    - `server.js`, `package.json`;
+    - `public/app.js`, `public/sw.js`;
+    - `adapters/message-input-service.js`, `adapters/message-pending-echo-service.js`, `adapters/push-notification-service.js`;
+    - `test/continuation-lineage.test.js`, `test/file-preview-ui.test.js`, `test/message-input-service.test.js`, `test/message-pending-echo-service.test.js`, `test/mobile-viewport.test.js`, `test/push-notification-service.test.js`;
+    - `docs/README.md`, `docs/ARCHITECTURE.md`, `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, `docs/COMPLEX_FEATURE_PATHS.md`, `docs/CONTEXT_STRATEGY.md`;
+    - `README.md`.
+  - Public README gained Chinese `2026-05-26 Public 发布说明` documenting:
+    - default reference-only image model context;
+    - `CODEX_MOBILE_IMAGE_CONTEXT_MODE=latest|vision|all` opt-ins;
+    - mobile thumbnail rendering from saved uploaded-image paths without re-enabling `localImage`;
+    - bounded file-first continuation bootstrap strategy;
+    - new project docs and context strategy docs;
+    - no-final-agent-message Web Push guard;
+    - PWA shell cache `codex-mobile-shell-v86`.
+  - Public docs were sanitized to avoid local Hermes/Gateway deployment diagnostics; public staged privacy scan found no private user path, Hermes/Gateway marker, Tailscale/LAN marker, raw key marker, Web Push runtime secret-file marker, or upload runtime path.
+  - Public pushed commit: `faf8cfc 发布图片上下文与续接启动策略收紧`.
+- Public validation:
+  - Focused `node --test test\file-preview-ui.test.js test\mobile-viewport.test.js test\message-input-service.test.js test\message-pending-echo-service.test.js test\continuation-lineage.test.js test\push-notification-service.test.js` passed: 28/28.
+  - `npm.cmd test` passed: 156/156.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --cached --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - BOM checks passed for touched public source, tests, docs, and README files.
+- Private status:
+  - Private workspace still needs the local v86 thumbnail/docs/handoff commit and push after this handoff entry.

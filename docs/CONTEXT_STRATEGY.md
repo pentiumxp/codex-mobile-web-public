@@ -26,6 +26,17 @@ Default image behavior is reference-only:
 
 Reference-only is the production default because app-server current history can keep `input_image` payloads inside compacted `replacement_history` snapshots even when Mobile Web does not request extended-history persistence.
 
+## UI Display Policy
+
+Model context policy and user-visible rendering are separate:
+
+- The model receives the attachment summary and local file path in text.
+- The Mobile Web conversation should render uploaded image references as centered thumbnails when the saved upload path is available.
+- The thumbnail uses the authenticated upload/file preview route and must not require sending `localImage` parts to app-server.
+- If only a non-durable browser-local filename is available, keep the compact attachment row instead of rendering a broken image.
+
+This keeps uploads understandable for the user while preserving the reference-only default for model context.
+
 ## Extended History Policy
 
 `adapters/message-input-service.js` owns the upload-aware policy:

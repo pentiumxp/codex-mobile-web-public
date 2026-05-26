@@ -11,6 +11,7 @@ Engineering docs are split under [`docs/`](docs/README.md):
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for process boundaries, request flows, runtime state, and invariants.
 - [`docs/MODULES.md`](docs/MODULES.md) for module ownership and the test map.
 - [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) for live diagnosis of stuck turns, disappearing messages, PWA cache issues, Push, mux drift, uploads, and Hermes/ChatGPT Pro bridge checks.
+- [`docs/CONTEXT_STRATEGY.md`](docs/CONTEXT_STRATEGY.md) for model context size, image-upload context policy, and continuation bootstrap bounds.
 - [`docs/COMPLEX_FEATURE_PATHS.md`](docs/COMPLEX_FEATURE_PATHS.md) for implementation paths on cross-cutting features.
 
 ## Platform Status
@@ -337,7 +338,8 @@ CODEX_MOBILE_MAX_UPLOAD_FILES=12
 Behavior:
 
 - Supported browser image uploads (`jpeg`, `png`, `webp`) are compressed in the browser before submission. The default target is a maximum 1280px edge and JPEG quality `0.72`, keeping UI screenshots readable while avoiding multi-MB image payloads entering Codex context.
-- Images are sent to Codex as `localImage` input items after compression.
+- By default, images are shown in Mobile Web as centered thumbnails but sent to Codex only as local file-path references in text. This keeps the UI visual without making image pixels part of app-server history.
+- Set `CODEX_MOBILE_IMAGE_CONTEXT_MODE=latest` or `vision` only when the model must inspect the latest uploaded image. Set `CODEX_MOBILE_IMAGE_CONTEXT_MODE=all` only for legacy all-image behavior.
 - Turns that include image uploads no longer request app-server extended-history persistence by default. This treats images as temporary visual references and reduces repeated `replacement_history` image retention in later rollout compaction records. Set `CODEX_MOBILE_PERSIST_IMAGE_EXTENDED_HISTORY=1` only when historical image rehydration is required.
 - Image messages render as centered thumbnails in the web UI.
 - Non-image files are saved locally and referenced in message text by absolute path so Codex can read them through normal file access.
@@ -693,6 +695,18 @@ Behavior:
 - 对最新 durable live turn 的处理已收紧：即使 rollout 一段时间没有写入，或者最后一个可见 item 是已完成命令、工具、文件、搜索操作或 context-compaction marker，Mobile Web 也不会自动把这个最新 live turn 当作 stale turn 中断。用户在这种情况下发送的引导消息应继续走 `turn/steer`，避免把正常的“补充指令”误变成 `turn_aborted reason=interrupted`。
 - 前端 active 状态现在只跟随最新 durable turn。较旧的 `inProgress` turn 如果已经被更新的 durable turn 取代，不再让 composer 保持 `Stop`、不再让顶部 timer 继续显示运行中，也不会再接收新的 `turn/steer` 引导。
 - 本次新增 `adapters/active-turn-staleness-service.js` 和 `test/active-turn-staleness-service.test.js`，并更新 `test/new-thread-route.test.js`、`test/conversation-render.test.js`、`test/collab-agent-render.test.js`、`test/message-timestamp.test.js`、`test/thread-item-timestamp-enrichment.test.js` 和 `test/mobile-viewport.test.js`。已打开到主屏幕的 PWA 需要点击页面刷新提示、硬刷新或关闭重开，拿到 `codex-mobile-shell-v85` 后，才能看到新的 active-state 和操作耗时显示。
+
+### 2026-05-26 Public 发布说明
+
+本次 public 发布继续收紧图片上下文、压缩续接启动上下文，并修正 reference-only 图片上传后的移动端显示。版本保持 `0.1.11`，Public PWA shell 缓存升到 `codex-mobile-shell-v86`，用于让已打开的移动端客户端拿到新的图片缩略图渲染逻辑。
+
+- 图片上传现在默认使用 `CODEX_MOBILE_IMAGE_CONTEXT_MODE=reference`：模型只收到附件摘要和本地文件路径，不再默认收到 app-server `localImage` 输入。这可以避免新上传图片继续进入 app-server 当前历史和 compacted `replacement_history`，从源头降低后续 turn 的上下文/token 成本。
+- 如果确实需要模型读取图片像素，可以显式设置 `CODEX_MOBILE_IMAGE_CONTEXT_MODE=latest` 或 `vision`，只发送最新一张图片；`all` 仅用于恢复旧版全部图片行为。`CODEX_MOBILE_PERSIST_IMAGE_EXTENDED_HISTORY=1` 仍只控制 extended-history 请求，不会清理当前 app-server 内存或旧 rollout 中已经存在的图片 payload。
+- 移动端对话展示与模型上下文策略已经分离：即使模型只收到路径引用，浏览器也会从 `Uploaded attachments` 摘要里识别已保存的本地图片路径，并通过认证上传预览接口渲染居中缩略图。用户不再只看到一长串路径，非图片附件仍保持紧凑的文件信息行。
+- 压缩续接 bootstrap 改成 file-first 的小摘要策略：新线程仍会拿到源线程 handoff 文件路径、必要的运行设置、最近 turn 摘要和工作区上下文摘录，但默认总量从过去偏大的 inline 上下文收紧到约 `52000` 字符，并限制 source handoff、workspace handoff、lineage 和单条 item 摘要大小。完整事实应回到 `.agent-context/thread-handoffs/<id>.md` 和项目文档读取。
+- 新增 `docs/` 项目文档集与 `docs/CONTEXT_STRATEGY.md`，把架构、模块边界、故障排除、复杂功能实现路径、上下文策略和文档更新规则固化下来。后续修改模型输入、图片保留、续接 bootstrap 或 handoff 压缩策略时，需要同步更新对应文档。
+- Web Push 完成通知增加 no-final-agent-message 保护：当 app-server 完成事件明确表示没有最终 assistant 回复时，Mobile Web 不再发送普通“turn ended”推送，避免用户收到结束通知但打开线程看不到正常结束回执。
+- 本次更新覆盖 `server.js`、`public/app.js`、`public/sw.js`、`adapters/message-input-service.js`、`adapters/push-notification-service.js`、新增 `docs/` 文档和相关测试。已打开到主屏幕的 PWA 需要点击页面刷新提示、硬刷新或关闭重开，拿到 `codex-mobile-shell-v86` 后，才能看到图片路径缩略图显示。
 
 ## Current Update Notes
 
@@ -1129,13 +1143,19 @@ VAPID details:
 | `CODEX_MOBILE_UPLOAD_DIR` | Upload storage directory. |
 | `CODEX_MOBILE_MAX_UPLOAD_BYTES` | Max total upload bytes per message. |
 | `CODEX_MOBILE_MAX_UPLOAD_FILES` | Max files per message. |
+| `CODEX_MOBILE_IMAGE_CONTEXT_MODE` | Image model-context mode. Default `reference` sends images as path text only while still showing thumbnails in the UI. `latest` / `vision` sends only the latest uploaded image as `localImage`; `all` restores legacy all-image behavior. |
 | `CODEX_MOBILE_SQLITE3_EXE` | Optional absolute path to `sqlite3.exe` for reading Codex `state_5.sqlite`. When unset, Mobile Web also checks common user-local Platform Tools / WinGet install paths before falling back to `sqlite3` on `PATH`. |
 | `CODEX_MOBILE_THREAD_TURNS` | Number of recent turns returned to the phone when Mobile Web falls back to `thread/turns/list`, default `12`. |
 | `CODEX_MOBILE_FULL_THREAD_TURNS` | Number of turns returned after normal-size sessions are fully read with `thread/read`, default `80`, capped at `200`. |
 | `CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES` | Tail bytes read from a thread rollout to recover inherited turn runtime settings, default `4194304`. |
 | `CODEX_MOBILE_ROLLOUT_WARNING_BYTES` | Rollout JSONL size threshold for UI warnings and the continuation action, default `209715200` (`200MB`). |
 | `CODEX_MOBILE_THREAD_DETAIL_ROLLOUT_MAX_BYTES` | Rollout JSONL size threshold where Mobile Web skips expensive full `thread/read` detail RPCs and uses bounded `thread/turns/list` first, default `33554432` (`32MB`). This is intentionally lower than the `200MB` warning threshold so large sessions can still open quickly without showing a warning. |
-| `CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS` | Max characters in the rollout continuation bootstrap message, default `120000`. |
+| `CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS` | Max characters in the rollout continuation bootstrap message, default `52000`. |
+| `CODEX_MOBILE_CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS` | Max source handoff excerpt characters included inline in a continuation bootstrap, default `12000`. |
+| `CODEX_MOBILE_CONTINUATION_WORKSPACE_PROJECT_CONTEXT_CHARS` | Max project context characters included inline in a continuation bootstrap, default `18000`. |
+| `CODEX_MOBILE_CONTINUATION_WORKSPACE_HANDOFF_TAIL_CHARS` | Max workspace handoff tail characters included inline in a continuation bootstrap, default `18000`. |
+| `CODEX_MOBILE_CONTINUATION_ITEM_SUMMARY_CHARS` | Max characters per visible source-turn item summary in a continuation bootstrap, default `1200`. |
+| `CODEX_MOBILE_CONTINUATION_TURN_SUMMARY_ITEMS` | Max non-user visible items kept per recent source turn in a continuation bootstrap, default `4`. |
 | `CODEX_MOBILE_CONTINUATION_RECENT_TURNS` | Recent source turns summarized into the continuation bootstrap, default `12`, capped at `30`. |
 | `CODEX_MOBILE_CONTINUATION_HANDOFF_TIMEOUT_MS` | How long Mobile Web waits for the source thread to write its continuation handoff file before creating the new thread, default `240000`. |
 | `CODEX_MOBILE_CONTINUATION_LATE_HANDOFF_TIMEOUT_MS` | Extra background wait when the first handoff wait expires but the source thread may still be writing, default `600000`. |
@@ -1145,7 +1165,7 @@ VAPID details:
 | `CODEX_MOBILE_CONTINUATION_JOB_TTL_MS` | How long finished continuation jobs stay queryable for the mobile UI, default `1800000` (`30 minutes`). |
 | `CODEX_MOBILE_CONTINUATION_JOB_MAX` | Maximum continuation jobs retained in memory, default `50`. |
 | `CODEX_MOBILE_CONTINUATION_LINEAGE_MAX_DEPTH` | Maximum previous continuation links included in a new bootstrap, default `2`, capped at `5`. |
-| `CODEX_MOBILE_CONTINUATION_LINEAGE_MAX_CHARS` | Maximum characters used for lineage instructions and handoff excerpts inside a bootstrap, default `30000`. |
+| `CODEX_MOBILE_CONTINUATION_LINEAGE_MAX_CHARS` | Maximum characters used for lineage instructions and handoff excerpts inside a bootstrap, default `12000`. |
 | `CODEX_MOBILE_CONTINUATION_CONTEXT_HANDOFF_COMPACT_BYTES` | Size threshold for automatically compacting workspace `.agent-context/HANDOFF.md` before rollout continuation, default `307200` (`300KB`). |
 | `CODEX_MOBILE_CONTINUATION_CONTEXT_HANDOFF_PRESERVE_CHARS` | Approximate number of recent handoff characters preserved in the compact active handoff after archival, default `60000`. |
 | `CODEX_MOBILE_PERSIST_EXTENDED_HISTORY` | Controls whether Mobile Web asks app-server to persist extended history on thread start/resume, default enabled. Set to `0` to disable for all Mobile Web turns. |
