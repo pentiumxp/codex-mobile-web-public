@@ -120,6 +120,18 @@ Rules:
 - Server-only behavior fixes do not need a PWA bump, but open clients may need a thread reload.
 - If the phone still shows old UI, confirm it loaded the current `clientBuildId` and has accepted the refresh prompt or hard-reopened the PWA.
 
+## File Preview Says Unsupported
+
+If an agent reply shows a local Markdown/text file preview action but clicking it says the type is unsupported, inspect the exact `data-local-file-path` / `/api/files/preview?path=...` target. Codex source links often include location suffixes such as `README.md:12`, `README.md:12:3`, or `README.md#L12`.
+
+Current server behavior strips those location suffixes before extension detection and root validation. The remaining path must still be an absolute local path, stay under the current thread workspace, an enclosing Obsidian vault, or `CODEX_MOBILE_FILE_PREVIEW_ROOTS`, and pass the sensitive-path denylist.
+
+Focused checks:
+
+```powershell
+node --test test\file-preview.test.js test\file-preview-ui.test.js test\markdown-render.test.js
+```
+
 ## Web Push
 
 Checks:

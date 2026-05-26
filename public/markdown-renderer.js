@@ -96,7 +96,7 @@
     const target = stripMarkdownLinkTarget(rawUrl);
     if (isLocalFileTarget(target)) {
       const filePath = decodeMarkdownLinkTarget(target);
-      return `<button class="local-file-preview-link" type="button" data-local-file-path="${escapeHtml(filePath)}" data-local-file-label="${escapeHtml(rawLabel)}" title="预览查看这个文件">${label}<span>预览文件</span></button>`;
+      return `<button class="local-file-preview-link" type="button" data-local-file-path="${escapeHtml(filePath)}" data-local-file-label="${escapeHtml(rawLabel)}" title="预览查看这个文件">${label}</button>`;
     }
     const safeUrl = safeMarkdownUrl(String(target || "").replaceAll("&amp;", "&"));
     if (!safeUrl) return null;

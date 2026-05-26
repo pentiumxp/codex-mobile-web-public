@@ -63,7 +63,8 @@ test("local file markdown links render as explicit preview actions", () => {
 
   assert.match(html, /class="local-file-preview-link"/);
   assert.match(html, /data-local-file-path="\/Users\/frank\/Obsidian Vault\/01_Work\/PROJECT_STATUS\.md"/);
-  assert.match(html, /PROJECT_STATUS\.md<span>预览文件<\/span>/);
+  assert.match(html, /PROJECT_STATUS\.md<\/button>/);
+  assert.doesNotMatch(html, />预览文件</);
 });
 
 test("local file markdown links decode url-encoded path segments", () => {

@@ -1986,3 +1986,119 @@ The previous full handoff was archived and should be opened only when old proven
   - BOM checks passed for touched public source, tests, docs, and README files.
 - Private status:
   - Private workspace still needs the local v86 thumbnail/docs/handoff commit and push after this handoff entry.
+
+## 2026-05-26 Markdown File Preview Line-Suffix Fix
+
+- User report:
+  - Markdown documents showed a Mobile Web preview action, but clicking preview returned an unsupported-preview message.
+- Diagnosis:
+  - The frontend Markdown renderer correctly renders local file links as in-page preview actions.
+  - Codex-style local source links can include location suffixes such as `README.md:12`, `README.md:12:3`, or `README.md#L12`.
+  - `server.js` previously passed that full target into extension detection, so a Markdown file could look like extension `.md:12` and be rejected as unsupported.
+- Local fix:
+  - `server.js` `stripMarkdownFileTarget()` now strips common source-location suffixes before preview extension detection, stat lookup, allowed-root validation, and public field generation.
+  - The existing root checks, sensitive-path denylist, extension allowlist, and size limits remain unchanged.
+  - `test/file-preview.test.js` covers suffix stripping and previewing a Markdown file target with `:line`.
+  - `docs/ARCHITECTURE.md`, `docs/TROUBLESHOOTING.md`, `docs/COMPLEX_FEATURE_PATHS.md`, and `.agent-context/PROJECT_CONTEXT.md` document the line-suffix preview rule.
+- Validation:
+  - `node --test test\file-preview.test.js test\file-preview-ui.test.js test\markdown-render.test.js` passed: 20/20.
+  - `node --check server.js` passed.
+  - `npm.cmd test` passed: 159/159.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+- Status:
+  - Local changes are uncommitted.
+  - This is a server-side file-preview route fix; no PWA shell cache bump is required, but the 8787 Node listener must be restarted for the currently running service to use it.
+
+## 2026-05-26 Local File Preview UI v87
+
+- User feedback:
+  - After Markdown preview started working, local file links still showed an extra "preview file" helper suffix even though the path was already styled as a clickable preview target.
+  - The preview dialog could be dragged horizontally; the desired behavior is viewport-bounded width without horizontal scrolling.
+- Local fix:
+  - `public/markdown-renderer.js` now renders local-file preview actions as only the linked path label, without the extra helper `<span>`.
+  - `public/styles.css` bounds `.file-preview-panel` to `min(980px, calc(100vw - 36px))`, hides horizontal overflow in the preview body, and wraps Markdown code blocks/tables inside file preview.
+  - Static shell cache/build id bumped to `codex-mobile-shell-v87` / `0.1.11|codex-mobile-shell-v87`.
+  - `test/markdown-render.test.js`, `test/file-preview-ui.test.js`, and `test/mobile-viewport.test.js` cover the label removal, no-horizontal-preview CSS, and v87 cache.
+  - `docs/ARCHITECTURE.md`, `docs/COMPLEX_FEATURE_PATHS.md`, and `.agent-context/PROJECT_CONTEXT.md` document the local-file preview UI rule.
+- Validation:
+  - Focused `node --test test\markdown-render.test.js test\file-preview-ui.test.js test\mobile-viewport.test.js` passed: 15/15.
+  - `node --check public\markdown-renderer.js`, `node --check public\app.js`, and `node --check public\sw.js` passed.
+  - `npm.cmd test` passed: 159/159.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+- Status:
+  - Local changes are uncommitted.
+  - This is a static frontend/PWA shell change; no Node listener restart is required, but mobile clients must accept the refresh prompt, hard refresh, or close/reopen the PWA to load v87.
+
+## 2026-05-26 Local File Preview Wrapping v88
+
+- User feedback:
+  - The preview panel width was bounded, but long preview content still did not fit; it should wrap instead of being clipped or requiring horizontal dragging.
+- Local fix:
+  - `public/styles.css`
+    - `.local-file-preview-link` now uses `inline-block` plus `white-space: normal`, `overflow-wrap: anywhere`, and `word-break: break-word`, so long local paths wrap inside the message card.
+    - File-preview Markdown content now forces `min-width: 0` / `max-width: 100%` on Markdown blocks, code blocks, and table wrappers.
+    - File-preview code blocks and code content now use `pre-wrap` and aggressive word breaking inside the bounded preview width.
+  - `public/app.js` / `public/sw.js` bumped the shell build/cache to `codex-mobile-shell-v88` / `0.1.11|codex-mobile-shell-v88`.
+  - `test/file-preview-ui.test.js` and `test/mobile-viewport.test.js` cover the wrapping CSS and v88 cache.
+  - `docs/ARCHITECTURE.md` and `.agent-context/PROJECT_CONTEXT.md` now explicitly state that local preview links must wrap long paths.
+- Validation:
+  - Focused `node --test test\markdown-render.test.js test\file-preview-ui.test.js test\mobile-viewport.test.js` passed: 15/15.
+  - `node --check public\markdown-renderer.js`, `node --check public\app.js`, and `node --check public\sw.js` passed.
+  - `npm.cmd test` passed: 159/159.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+- Status:
+  - Local changes are uncommitted.
+  - This is a static frontend/PWA shell change; no Node listener restart is required, but mobile clients must accept the refresh prompt, hard refresh, or close/reopen the PWA to load v88.
+
+## 2026-05-26 File Preview Right-Swipe Close v89
+
+- User feedback:
+  - While inside the file preview dialog, right swipe should exit the preview. Instead, the gesture propagated to the underlying page and caused the parent conversation/page to exit.
+- Local fix:
+  - `public/app.js`
+    - Added preview-layer touch gesture state and handlers: `beginFilePreviewSwipe()`, `moveFilePreviewSwipe()`, `finishFilePreviewSwipe()`, and `cancelFilePreviewSwipe()`.
+    - The preview dialog now captures touch start/move/end while open. Horizontal right swipes prevent default behavior and close the preview; vertical movement is left available for preview scrolling.
+    - The preview gesture stops propagation so sidebar/conversation navigation does not receive the same swipe.
+    - `closeFilePreview()` clears preview swipe state.
+  - `public/app.js` / `public/sw.js` bumped the shell build/cache to `codex-mobile-shell-v89` / `0.1.11|codex-mobile-shell-v89`.
+  - `test/file-preview-ui.test.js` and `test/mobile-viewport.test.js` cover the preview swipe wiring and v89 cache.
+  - `docs/ARCHITECTURE.md`, `docs/COMPLEX_FEATURE_PATHS.md`, and `.agent-context/PROJECT_CONTEXT.md` document that preview-layer right swipes close the preview instead of propagating to the underlying page.
+- Validation:
+  - Focused `node --test test\markdown-render.test.js test\file-preview-ui.test.js test\mobile-viewport.test.js` passed: 15/15.
+  - `node --check public\app.js` and `node --check public\sw.js` passed.
+  - `npm.cmd test` passed: 159/159.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+- Status:
+  - Local changes are uncommitted.
+  - This is a static frontend/PWA shell change; no Node listener restart is required, but mobile clients must accept the refresh prompt, hard refresh, or close/reopen the PWA to load v89.
+
+## 2026-05-26 Quoted Uploaded Image Thumbnail v90
+
+- User report:
+  - The user's own uploaded image message rendered as a thumbnail, but when Codex quoted/re-emitted the same `Uploaded attachments:` block in a reply, it displayed as raw text/path again.
+- Diagnosis:
+  - `renderInputContent()` parsed `Uploaded attachments:` summaries only for `userMessage` items.
+  - `agentMessage` and `plan` items went directly through `renderMarkdown()`, so quoted uploaded-image summaries stayed plain Markdown/text.
+- Local fix:
+  - `public/app.js`
+    - Added reusable `renderAttachmentSummary()`.
+    - `renderInputContent()` now uses that shared renderer for user uploads.
+    - Added `renderMarkdownWithAttachmentSummary()`, used by `agentMessage` and `plan`, so Codex/plan replies that quote an `Uploaded attachments:` block render saved image paths as the same centered thumbnails.
+    - `splitAttachmentSummaryText()` now preserves ordinary text after the attachment lines instead of dropping it.
+  - `public/app.js` / `public/sw.js` bumped the shell build/cache to `codex-mobile-shell-v90` / `0.1.11|codex-mobile-shell-v90`.
+  - `test/conversation-render.test.js` covers Codex/plan attachment-summary thumbnail routing and preserving trailing text.
+  - `docs/ARCHITECTURE.md`, `docs/CONTEXT_STRATEGY.md`, `docs/COMPLEX_FEATURE_PATHS.md`, `README.md`, and `.agent-context/PROJECT_CONTEXT.md` now state that uploaded-image thumbnail rendering applies to quoted `Uploaded attachments:` summaries in Codex/plan replies too.
+- Validation:
+  - Focused `node --test test\conversation-render.test.js test\file-preview-ui.test.js test\mobile-viewport.test.js` passed: 13/13.
+  - `node --check public\app.js` and `node --check public\sw.js` passed.
+  - `npm.cmd test` passed: 160/160.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+- Status:
+  - Local changes are uncommitted.
+  - This is a static frontend/PWA shell change; no Node listener restart is required, but mobile clients must accept the refresh prompt, hard refresh, or close/reopen the PWA to load v90.

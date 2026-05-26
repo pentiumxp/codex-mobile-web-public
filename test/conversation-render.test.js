@@ -61,13 +61,24 @@ test("context compaction notices require explicit state and do not infer pending
 });
 
 test("long agent messages keep a stable render path when a turn completes", () => {
-  assert.match(functionBody("renderItemBody"), /if \(item\.type === "agentMessage"\) \{[\s\S]*return renderMarkdown\(item\.text \|\| ""\);/);
+  assert.match(functionBody("renderItemBody"), /if \(item\.type === "agentMessage"\) \{[\s\S]*return renderMarkdownWithAttachmentSummary\(item\.text \|\| ""\);/);
   assert.doesNotMatch(functionBody("renderItemBody"), /isLiveTurn\(turn\) \? escapeHtml/);
   assert.match(appJs, /function mergeVisibleTextItemPreservingRenderIdentity\(/);
   assert.match(functionBody("mergeVisibleTextItemPreservingRenderIdentity"), /merged\.id = existingItem\.id/);
   assert.match(functionBody("mergeItemsPreservingLocalVisible"), /mergeVisibleTextItemPreservingRenderIdentity\(existingItem, incomingTextMatch\)/);
   assert.match(functionBody("mergeItemsPreservingLocalVisible"), /const addedIncomingItems = new Set\(\)/);
   assert.match(functionBody("mergeItemsPreservingLocalVisible"), /if \(addedIncomingItems\.has\(incomingItem\)\) continue/);
+});
+
+test("agent markdown can render uploaded image summaries as thumbnails", () => {
+  assert.match(appJs, /function renderMarkdownWithAttachmentSummary\(value\)/);
+  assert.match(functionBody("renderMarkdownWithAttachmentSummary"), /splitAttachmentSummaryText\(value \|\| ""\)/);
+  assert.match(functionBody("renderMarkdownWithAttachmentSummary"), /renderAttachmentSummary\(split\.attachments\)/);
+  assert.match(functionBody("splitAttachmentSummaryText"), /const remainder = \[\]/);
+  assert.match(functionBody("splitAttachmentSummaryText"), /const visibleText = \[before, after\]/);
+  assert.match(functionBody("renderAttachmentSummary"), /canRenderImageAttachment/);
+  assert.match(functionBody("renderAttachmentSummary"), /renderInputImage\(\{ path: attachment\.path \}, attachment, index\)/);
+  assert.match(functionBody("renderItemBody"), /item\.type === "plan"[\s\S]*renderMarkdownWithAttachmentSummary\(item\.text \|\| ""\)/);
 });
 
 test("context compaction merge does not preserve stale mobile notices", () => {
