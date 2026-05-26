@@ -26,6 +26,8 @@ test("mobile file preview UI is wired from markdown link to preview API", () => 
   assert.match(appJs, /function renderImageView\(item\)/);
   assert.match(appJs, /if \(item\.type === "imageView"\) return renderImageView\(item\)/);
   assert.match(appJs, /imageView: "Image"/);
+  assert.match(appJs, /function canRenderImageAttachment\(attachment\)/);
+  assert.match(appJs, /imageAttachments[\s\S]*\.filter\(canRenderImageAttachment\)[\s\S]*renderInputImage\(\{ path: attachment\.path \}, attachment, index\)/);
   assert.match(appJs, /renderCsvPreview/);
   assert.match(appJs, /\/api\/files\/preview\?threadId=/);
   assert.match(appJs, /\/api\/files\/preview\/content\?\$\{params\.toString\(\)\}/);

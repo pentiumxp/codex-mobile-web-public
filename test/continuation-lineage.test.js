@@ -61,6 +61,28 @@ test("bootstrap makes lineage visible to the next agent", () => {
   assert.match(bootstrapBody, /MAX_CONTINUATION_BOOTSTRAP_CHARS/);
 });
 
+test("continuation bootstrap keeps heavy context as bounded excerpts", () => {
+  assert.match(serverJs, /CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS \|\| "52000"/);
+  assert.match(serverJs, /CODEX_MOBILE_CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS \|\| "12000"/);
+  assert.match(serverJs, /CODEX_MOBILE_CONTINUATION_WORKSPACE_HANDOFF_TAIL_CHARS \|\| "18000"/);
+  assert.match(serverJs, /CODEX_MOBILE_CONTINUATION_ITEM_SUMMARY_CHARS \|\| "1200"/);
+
+  const workspaceBody = functionBody("continuationWorkspaceContextSections");
+  assert.match(workspaceBody, /CONTINUATION_WORKSPACE_PROJECT_CONTEXT_CHARS/);
+  assert.match(workspaceBody, /CONTINUATION_WORKSPACE_HANDOFF_TAIL_CHARS/);
+
+  const itemBody = functionBody("continuationItemSummary");
+  assert.match(itemBody, /CONTINUATION_ITEM_SUMMARY_CHARS/);
+
+  const turnBody = functionBody("continuationTurnSummaries");
+  assert.match(turnBody, /CONTINUATION_TURN_SUMMARY_ITEMS/);
+
+  const handoffBody = functionBody("sourceHandoffSection");
+  assert.match(handoffBody, /CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS/);
+  assert.match(handoffBody, /Source-thread-generated handoff excerpt/);
+  assert.doesNotMatch(handoffBody, /sourceHandoff\.text \|\| "\(/);
+});
+
 test("continuation result persists lineage after bootstrap and archive attempt", () => {
   const startBody = functionBody("startThreadFromRequestBody");
   assert.match(startBody, /const sourceLineage = continuationLineageSection\(cwd, sourceThreadId\)/);
