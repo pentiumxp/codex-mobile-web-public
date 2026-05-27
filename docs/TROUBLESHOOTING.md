@@ -91,7 +91,7 @@ This is usually display attribution, not a live process, when:
 - The real `function_call_output` or `exec_command_end` exists later in the rollout.
 - `Get-Process` shows no matching tool process.
 
-Current server behavior should only attach raw operation fallback when the operation belongs to the same latest live turn and has no completion output. If this regresses, inspect `readLatestRawOperation()` and `compactThread()` in `server.js`, then add coverage in `test/thread-item-timestamp-enrichment.test.js`.
+Current server behavior keeps at most one operation card for the latest turn, including the newest same-turn completed operation after refresh/re-entry. Raw fallback may attach a completed operation only when the rollout event is tied to the same latest turn id; older completed operations must not attach to a newer live turn. If this regresses, inspect `readLatestRawOperation()` and `compactThread()` in `server.js`, then add coverage in `test/thread-item-timestamp-enrichment.test.js`.
 
 ## `rg` Appears Related To A Stall
 
@@ -145,6 +145,18 @@ Focused checks:
 ```powershell
 node --test test\conversation-render.test.js test\mobile-viewport.test.js
 ```
+
+## Usage Card Shows Zero Tokens
+
+If a completed-turn `Usage` card shows `0` for context window and token usage even though the turn clearly used the model, inspect the rollout `token_count` events for that turn.
+
+Known app-server behavior can emit a final sentinel-shaped `token_count` immediately before `task_complete`:
+
+- `last_token_usage` fields are all `0`.
+- `total_token_usage.input_tokens`, `cached_input_tokens`, `output_tokens`, and `reasoning_output_tokens` are all `0`.
+- `total_token_usage.total_tokens` equals `model_context_window`.
+
+That event is not real usage. Mobile Web should ignore it and preserve the latest prior valid `token_count` for the same turn. If no valid token event exists, omit the `Usage` card instead of displaying a guessed zero summary.
 
 ## Web Push
 
@@ -214,7 +226,7 @@ Do not confuse two different integrations:
 For `@ChatGPT Pro` slow/no feedback:
 
 1. Check Hermes 8797 `/api/status?detail=1` for Gateway Pool health and active runs.
-2. Check `C:\ProgramData\HermesMobile\data\chatgpt-pro-bridge-state.json` for the target Codex thread id.
+2. Check the deployment's configured ChatGPT Pro bridge-state file for the target Codex thread id.
 3. Read that Codex thread through Mobile Web API.
 4. Check its rollout mtime and whether Chrome/ChatGPT Pro automation is still emitting events.
 

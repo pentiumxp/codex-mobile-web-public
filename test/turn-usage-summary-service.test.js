@@ -48,6 +48,102 @@ test("collects token_count events under the current rollout turn", () => {
   assert.equal(summary.totalTokenUsage.totalTokens, 124_000);
 });
 
+test("ignores final zero window token_count sentinel and preserves prior valid usage", () => {
+  const entries = [
+    { type: "turn_context", timestamp: "2026-05-27T10:44:59.075Z", payload: { turn_id: "turn-sentinel" } },
+    {
+      type: "event_msg",
+      timestamp: "2026-05-27T10:48:56.171Z",
+      payload: {
+        type: "token_count",
+        info: {
+          last_token_usage: {
+            input_tokens: 208_473,
+            cached_input_tokens: 201_600,
+            output_tokens: 918,
+            reasoning_output_tokens: 433,
+            total_tokens: 209_391,
+          },
+          total_token_usage: {
+            input_tokens: 811_881,
+            cached_input_tokens: 642_048,
+            output_tokens: 3_466,
+            reasoning_output_tokens: 1_869,
+            total_tokens: 1_073_747,
+          },
+          model_context_window: 258_400,
+        },
+      },
+    },
+    {
+      type: "event_msg",
+      timestamp: "2026-05-27T10:53:17.789Z",
+      payload: {
+        type: "token_count",
+        info: {
+          last_token_usage: {
+            input_tokens: 0,
+            cached_input_tokens: 0,
+            output_tokens: 0,
+            reasoning_output_tokens: 0,
+            total_tokens: 0,
+          },
+          total_token_usage: {
+            input_tokens: 0,
+            cached_input_tokens: 0,
+            output_tokens: 0,
+            reasoning_output_tokens: 0,
+            total_tokens: 258_400,
+          },
+          model_context_window: 258_400,
+        },
+      },
+    },
+  ];
+
+  const summaries = collectTurnUsageSummariesFromEntries(entries);
+  const summary = summaries.byTurnId.get("turn-sentinel");
+
+  assert.equal(summary.timestamp, "2026-05-27T10:48:56.171Z");
+  assert.equal(summary.contextWindowUsedTokens, 208_473);
+  assert.equal(summary.contextRiskLevel, "warn");
+  assert.equal(summary.lastTokenUsage.inputTokens, 208_473);
+  assert.equal(summary.totalTokenUsage.totalTokens, 1_073_747);
+});
+
+test("omits usage summary when a turn only has zero window sentinel token_count", () => {
+  const summaries = collectTurnUsageSummariesFromEntries([
+    { type: "turn_context", timestamp: "2026-05-27T10:39:21.731Z", payload: { turn_id: "turn-only-sentinel" } },
+    {
+      type: "event_msg",
+      timestamp: "2026-05-27T10:41:58.198Z",
+      payload: {
+        type: "token_count",
+        info: {
+          last_token_usage: {
+            input_tokens: 0,
+            cached_input_tokens: 0,
+            output_tokens: 0,
+            reasoning_output_tokens: 0,
+            total_tokens: 0,
+          },
+          total_token_usage: {
+            input_tokens: 0,
+            cached_input_tokens: 0,
+            output_tokens: 0,
+            reasoning_output_tokens: 0,
+            total_tokens: 258_400,
+          },
+          model_context_window: 258_400,
+        },
+      },
+    },
+  ]);
+
+  assert.equal(summaries.byTurnId.has("turn-only-sentinel"), false);
+  assert.equal(summaries.unscoped.length, 0);
+});
+
 test("parses rollout jsonl token counts and ignores malformed lines", () => {
   const text = [
     JSON.stringify({ type: "turn_context", payload: { turn_id: "turn-jsonl" } }),

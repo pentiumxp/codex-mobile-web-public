@@ -2490,13 +2490,19 @@ function rawOperationOutputCallId(entry) {
   return "";
 }
 
-function readLatestRawOperation(thread, turnId = "") {
+function statusFromRawOperationOutput(payload) {
+  const status = statusFromRawOperation(payload || {});
+  return status === "running" ? "completed" : status;
+}
+
+function readLatestRawOperation(thread, turnId = "", options = {}) {
   const rolloutPath = thread && (thread.path || thread.rolloutPath || thread.rollout_path);
   if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) return null;
   try {
     const lines = fs.readFileSync(rolloutPath, "utf8").split(/\r?\n/).filter(Boolean).slice(-800);
     const operations = [];
     const completedCallIds = new Set();
+    const completedCallStatuses = new Map();
     let currentTurnId = "";
     for (const line of lines) {
       const entry = parseJsonLine(line);
@@ -2509,24 +2515,33 @@ function readLatestRawOperation(thread, turnId = "") {
       }
       const outputCallId = rawOperationOutputCallId(entry);
       if (outputCallId) {
+        const outputStatus = statusFromRawOperationOutput(payload);
         completedCallIds.add(outputCallId);
+        completedCallStatuses.set(outputCallId, outputStatus);
         for (const operation of operations) {
           if (operation && operation.callId === outputCallId && !isCompletedStatus(operation.status)) {
-            operation.status = statusFromRawOperation(payload);
+            operation.status = outputStatus;
           }
         }
       }
       const operation = rawOperationFromEntry(entry);
       if (!operation) continue;
       operation.rolloutTurnId = explicitTurnId || currentTurnId || "";
-      if (operation.callId && completedCallIds.has(operation.callId)) operation.status = "completed";
+      if (operation.callId && completedCallIds.has(operation.callId)) {
+        operation.status = completedCallStatuses.get(operation.callId) || "completed";
+      }
       operations.push(operation);
     }
     const targetTurnId = String(turnId || "");
+    const includeCompleted = Boolean(options.includeCompleted);
     for (let index = operations.length - 1; index >= 0; index -= 1) {
       const operation = operations[index];
-      if (operation.callId && completedCallIds.has(operation.callId)) continue;
-      if (targetTurnId && operation.rolloutTurnId && operation.rolloutTurnId !== targetTurnId) continue;
+      const operationTurnId = String(operation.rolloutTurnId || "");
+      const operationCompleted = isCompletedStatus(operation.status)
+        || (operation.callId && completedCallIds.has(operation.callId));
+      if (targetTurnId && operationTurnId && operationTurnId !== targetTurnId) continue;
+      if (operationCompleted && !includeCompleted) continue;
+      if (targetTurnId && operationCompleted && operationTurnId !== targetTurnId) continue;
       return operation;
     }
   } catch (_) {
@@ -2583,10 +2598,12 @@ function compactTurn(turn, options = {}) {
   if (!turn || typeof turn !== "object") return turn;
   const out = Object.assign({}, turn);
   if (Array.isArray(out.items)) {
-    const lastLiveOperationIndex = trailingOperationIndex(out.items, Boolean(options.allowLiveOperation) && isLiveTurn(out));
+    const allowOperation = Boolean(options.allowLatestOperation)
+      || (Boolean(options.allowLiveOperation) && isLiveTurn(out));
+    const lastOperationIndex = trailingOperationIndex(out.items, allowOperation);
     out.items = out.items.map((item) => compactItem(item)).filter((item, index) => {
       if (!isOperationalItem(item)) return true;
-      return index === lastLiveOperationIndex;
+      return index === lastOperationIndex;
     });
     let remainingOutputBudget = MAX_COMMAND_OUTPUT_CHARS_PER_TURN;
     for (let i = out.items.length - 1; i >= 0; i--) {
@@ -2629,11 +2646,11 @@ function compactThread(thread, options = {}) {
     enrichThreadItemTimestampsFromRollout(out);
     attachTurnUsageSummaries(out, readRolloutTurnUsageSummaries(rolloutPath), { rolloutStats });
     const latestIndex = out.turns.length - 1;
-    out.turns = out.turns.map((turn, index) => compactTurn(turn, { allowLiveOperation: index === latestIndex }));
+    out.turns = out.turns.map((turn, index) => compactTurn(turn, { allowLatestOperation: index === latestIndex }));
     const latest = out.turns[latestIndex];
-    if (latest && isLiveTurn(latest) && Array.isArray(latest.items)
+    if (latest && Array.isArray(latest.items)
       && !latest.items.some((item) => isOperationalItem(item))) {
-      const rawOperation = readLatestRawOperation(out, latest.id);
+      const rawOperation = readLatestRawOperation(out, latest.id, { includeCompleted: true });
       if (rawOperation) latest.items.push(rawOperation);
     }
   }

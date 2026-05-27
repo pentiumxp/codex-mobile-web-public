@@ -211,3 +211,58 @@ test("raw operation fallback can attach an unfinished operation from the same li
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("latest completed turn keeps the newest compact operation card", () => {
+  const compacted = compactThread({
+    id: "thread-7",
+    turns: [{
+      id: "turn-completed",
+      status: { type: "completed" },
+      items: [
+        { id: "user-1", type: "userMessage", content: [{ type: "text", text: "run checks" }] },
+        { id: "op-old", type: "commandExecution", command: "npm.cmd test", status: "completed" },
+        { id: "op-new", type: "commandExecution", command: "npm.cmd run check", status: "completed" },
+        { id: "agent-1", type: "agentMessage", text: "Done." },
+      ],
+    }],
+  });
+
+  const commands = compacted.turns[0].items.filter((item) => item.type === "commandExecution");
+  assert.equal(commands.length, 1);
+  assert.equal(commands[0].command, "npm.cmd run check");
+  assert.equal(commands[0].status, "completed");
+});
+
+test("raw operation fallback can attach a completed operation from the same latest turn", () => {
+  const { dir, rolloutPath } = writeRollout([
+    event("2026-05-24T11:00:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-done" }),
+    event("2026-05-24T11:00:02.000Z", "response_item", {
+      type: "function_call",
+      call_id: "call-done",
+      arguments: JSON.stringify({ command: "npm.cmd run check" }),
+    }),
+    event("2026-05-24T11:00:08.000Z", "response_item", {
+      type: "function_call_output",
+      call_id: "call-done",
+      output: "Exit code: 0\nWall time: 1.2 seconds\nOutput:\n",
+    }),
+  ]);
+  try {
+    const compacted = compactThread({
+      id: "thread-8",
+      path: rolloutPath,
+      turns: [{
+        id: "turn-done",
+        status: { type: "completed" },
+        items: [{ id: "agent-done", type: "agentMessage", text: "Done." }],
+      }],
+    });
+
+    const command = compacted.turns[0].items.find((item) => item.type === "commandExecution");
+    assert.ok(command);
+    assert.equal(command.status, "completed");
+    assert.equal(command.command, "npm.cmd run check");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

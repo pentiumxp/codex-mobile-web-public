@@ -382,6 +382,7 @@ Behavior:
 - After the latest turn finishes, the timer switches to muted styling and shows `已结束` instead of any in-progress activity label.
 - Live reasoning is not rendered as conversation rows.
 - Command/file/tool activity appears as compact operation cards. The latest-turn operation card uses a four-line visual budget: one metadata row plus up to three clipped detail lines.
+- The latest turn keeps the newest operation card visible after refresh or re-entry even if the command/tool or the turn has already completed, so users can still see the final operation status.
 - Consecutive command/file operation updates show only the latest operation card unless normal visible content appears between two operations.
 - The left-swipe Subagent status panel shows Subagents from the current live turn, treating completed/closed spawn-call rows in that live turn as current because the child Agent can still be running after the spawn call closes. Older historical Subagent records are omitted so long-running collaboration sessions do not show hundreds of stale entries.
 - Page refresh prompts are gated by a full app-shell preflight. The browser must fetch and populate the target shell cache with the new HTML, CSS, JavaScript modules, manifest, service worker, and icons before the prompt is shown; clicking the prompt repeats that check and reloads only after the target cache is ready.
@@ -722,6 +723,15 @@ Behavior:
 - 上传图片缩略图显示继续保持 reference-only 模型上下文策略：模型默认只收到附件摘要和本地路径，不默认收到图片像素。浏览器仍会从 `Uploaded attachments:` 摘要渲染居中缩略图，包括用户消息、Codex/plan 引用摘要、CRLF、Markdown blockquote，以及 app-server 原始 `input_text` / `input_image` / `image_url` content part。
 - 上传文件预览接口现在为 `.jpg`、`.jpeg`、`.webp`、`.gif`、`.png` 等保存的图片路径返回真实图片 MIME，例如 `image/jpeg`，避免浏览器尤其是 iOS/Safari 因 `application/octet-stream` 而不显示 `<img>` 缩略图。
 - 本次同步新增 `adapters/turn-usage-summary-service.js` 和 `adapters/public-pull-request-service.js`，并更新 `server.js`、`public/app.js`、`public/styles.css`、`public/sw.js`、文档与相关测试。部署者更新后应运行测试/check，并重启服务端 listener 以加载上传 MIME 与 public PR/usage summary 路由。
+
+### 2026-05-27 Public 发布说明（续）
+
+本次 public 发布继续同步移动端线程详情的服务端修复。版本仍为 `0.1.11`，不改变前端 PWA shell 缓存；更新后需要重启 8787 Node listener，让服务端加载新的 thread detail 压缩和 Usage 解析逻辑。
+
+- Usage 诊断卡会忽略 app-server 在部分 turn 结束前输出的零值/window 哨兵 `token_count`。如果同一 turn 前面已经有有效 token 用量，Mobile Web 会保留最新有效值；如果只有哨兵事件，则不生成 Usage 卡，避免显示 `0/258400` 这类误导性用量。
+- 最新 turn 重新进入或刷新后会继续保留最新一个命令/工具/文件/搜索操作卡，即使该操作或 turn 已经完成。这样用户能看到最后执行过的命令和完成状态，不会因为操作框被隐藏而误判线程是否还在运行。
+- 从 rollout tail 补回已完成操作卡时，服务端只接受能确认属于同一最新 turn 的操作，避免把旧 turn 的已完成命令误贴到新的 live turn。
+- 本次同步更新 `server.js`、`adapters/turn-usage-summary-service.js`、`test/turn-usage-summary-service.test.js`、`test/thread-item-timestamp-enrichment.test.js` 和相关文档；无需前端刷新提示或 service worker cache bump。
 
 ## Current Update Notes
 

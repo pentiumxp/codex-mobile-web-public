@@ -2464,3 +2464,119 @@ The previous full handoff was archived and should be opened only when old proven
     - `npm.cmd run check:macos` passed.
     - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
   - Private commit and push are handled after this handoff update in the same publish turn.
+
+## 2026-05-27 Runtime Listener And Hermes Thumbnail Diagnosis
+
+- Runtime repair:
+  - A parentless/orphan `node server.js` listener was holding `0.0.0.0:8787` at PID `49880` while the expected hidden/windowless supervisor kept trying to start another listener and logging `EADDRINUSE`.
+  - Stopped only the orphan listener. The existing `start-codex-mobile-web-windowless.ps1` supervisor PID `61104` restarted the listener as PID `76920`.
+  - Post-repair checks showed a single 8787 listener, `/api/public-config` still on `0.1.11|codex-mobile-shell-v98`, authenticated `/api/status` with `ready=true` and `lastError=null`, and no new `EADDRINUSE` in the latest log tail.
+- Hermes thumbnail diagnosis:
+  - Current normal Codex Mobile thread `019e63ea-b64f-7e93-a92f-4c1dd9a79326` had `IMG_5441.png` as a `userMessage` and an `agentMessage` quote; both used standard `Uploaded attachments:\n- ...` text and the user confirmed the quote rendered as a thumbnail.
+  - Hermes target thread `019e64e8-f29a-7fc1-8679-fee7b16f88ad` did not contain any `agentMessage` / assistant quote with an upload path. The matching uploaded-image records returned by `/api/threads/<id>` were all `itemType=userMessage`.
+  - The six inspected Hermes upload paths (`IMG_5429.jpg`, `IMG_5433.jpg`, `503.jpg`, `IMG_5437.jpg`, `IMG_5438.jpg`, `IMG_5440.jpg`) all returned `HTTP 200` with `Content-Type: image/jpeg` from `/api/uploads/file`.
+  - Evaluating the current v98 `renderInputContent()` against representative Hermes `userMessage` text generated `<figure class="input-image">` with `/api/uploads/file?path=...` and did not leak the raw `Uploaded attachments:` marker.
+- Current interpretation:
+  - If Hermes thread images still display as raw paths on the phone, the remaining likely cause is client-side runtime state: an old PWA shell, stale already-rendered DOM, or the phone viewing a browser/PWA context that has not reloaded the v98 app bundle. The backend item type, parser input, and upload MIME path were not the failing layer in this check.
+
+## 2026-05-27 Hermes Usage Zero Diagnosis
+
+- User asked why a Hermes `Usage` card showed all token fields as `0`.
+- Evidence:
+  - The screenshot was from Hermes thread `019e64e8-f29a-7fc1-8679-fee7b16f88ad`, not the current Codex Mobile thread.
+  - `/api/threads/019e64e8-f29a-7fc1-8679-fee7b16f88ad` showed two completed turns with generated `turnUsageSummary` values where `lastTokenUsage` was all zero and `totalTokenUsage.totalTokens` was exactly `258400`, matching the model context window.
+  - Raw rollout inspection showed the affected turns had valid `token_count` events earlier in the same turn, but a final `token_count` immediately before `task_complete` reported:
+    - `last_token_usage` all zero;
+    - `total_token_usage.input_tokens/cached_input_tokens/output_tokens/reasoning_output_tokens` all zero;
+    - `total_token_usage.total_tokens = 258400`;
+    - `model_context_window = 258400`.
+- Diagnosis:
+  - The zero card is caused by Mobile Web using the latest `token_count` event for a turn. In these Hermes turns, app-server emitted a final zero/window sentinel-style token count after normal usage events, so the valid usage was overwritten by the final invalid-looking event.
+  - Real earlier usage for the screenshot turn was nonzero, for example prior events in the same turn showed context/input values around `200k+` tokens before the final zero sentinel.
+- Likely fix:
+  - `adapters/turn-usage-summary-service.js` should ignore sentinel token-count payloads where `last_token_usage` is all zero and `total_token_usage` has zero component fields while `total_tokens` equals `model_context_window`.
+  - It should preserve the latest valid token-count event for that turn, or omit the summary if no valid event exists.
+- Local fix now applied:
+  - `adapters/turn-usage-summary-service.js` adds a narrow zero/window sentinel filter before collecting a `token_count` summary.
+  - `test/turn-usage-summary-service.test.js` covers preserving the prior valid usage when a final sentinel follows it, and omitting the summary when only a sentinel exists.
+  - `docs/CONTEXT_STRATEGY.md`, `docs/ARCHITECTURE.md`, and `docs/TROUBLESHOOTING.md` document the sentinel behavior and expected filtering.
+- Validation and activation:
+  - Focused `node --test test\turn-usage-summary-service.test.js` passed: 6/6.
+  - `node --check adapters\turn-usage-summary-service.js` passed.
+  - `npm.cmd test` passed: 178/178.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - BOM check for touched source, tests, docs, and handoff files produced no output.
+  - Recomputed affected Hermes turns with the new parser:
+    - `019e6904-7a76-7ed3-8667-b84ac4fc0195`: `contextWindowUsedTokens=208287`, `contextWindowUsedPercent=80.6%`, not zero.
+    - `019e6909-9c45-7a93-9f74-f946f6948b49`: `contextWindowUsedTokens=208473`, `contextWindowUsedPercent=80.7%`, not zero.
+  - Restarted the 8787 listener to load the server-side adapter fix: old PID `76920`, new PID `75852`, parent supervisor PID `61104`.
+  - Post-restart `/api/public-config` remains `0.1.11|codex-mobile-shell-v98`; authenticated `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, `lastError=null`.
+  - Post-restart authenticated `/api/threads/019e64e8-f29a-7fc1-8679-fee7b16f88ad` returned nonzero Usage summaries for both affected turns.
+
+## 2026-05-27 Latest Operation Card Re-entry Fix
+
+- User report:
+  - After exiting and re-entering a thread, the command card for the last operation was often missing. Even if that command had already completed, hiding the frame made the conversation state easy to misread.
+- Diagnosis:
+  - `compactTurn()` only preserved operation cards when `allowLiveOperation` was set and the turn was still live.
+  - `compactThread()` only attached rollout raw-operation fallback for the latest live turn.
+  - `readLatestRawOperation()` skipped completed call ids, so a completed command/tool could not be restored from rollout tail after re-entry.
+- Local fix:
+  - `server.js`
+    - Latest-thread detail compaction now preserves at most one newest operation card for the latest turn even after the operation or turn has completed.
+    - Raw-operation fallback can include completed operations only when the rollout operation is tied to the same latest turn id, so older completed operations still cannot attach to a newer live turn.
+    - `function_call_output` / tool output records now mark the matched raw operation completed when no explicit status/exit code is present.
+  - `test/thread-item-timestamp-enrichment.test.js` covers preserving the newest operation in a completed latest turn and restoring a completed same-turn raw operation from rollout tail.
+  - `README.md`, `docs/ARCHITECTURE.md`, `docs/COMPLEX_FEATURE_PATHS.md`, `docs/TROUBLESHOOTING.md`, and `.agent-context/PROJECT_CONTEXT.md` document the latest-turn completed-operation card rule.
+- Validation:
+  - Focused `node --test test\thread-item-timestamp-enrichment.test.js test\conversation-render.test.js test\collab-agent-render.test.js` passed: 26/26.
+  - `node --check server.js` passed.
+  - `npm.cmd test` passed: 180/180.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - BOM check for touched source, tests, docs, README, and handoff files produced no output.
+- Activation:
+  - Restarted the 8787 listener to load the server-side compaction fix: old PID `75852`, new PID `19764`.
+  - Post-restart `/api/public-config` remains `0.1.11|codex-mobile-shell-v98`.
+  - Post-restart authenticated `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, `lastError=null`.
+- Status:
+  - Local changes are uncommitted.
+  - This is a server-side thread-detail compaction fix; no PWA shell cache bump is required.
+
+## 2026-05-27 Public Usage Sentinel And Operation Card Publish
+
+- User request:
+  - Commit and push current fixes, including public.
+- Pre-publish check:
+  - Authenticated `/api/public-pull-requests/status?force=1` returned `hasOpenPullRequests=false`, `openPullRequestCount=0`; no public PR merge prompt blocked publishing.
+- Public repository:
+  - Path: `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Synced public-safe files from private:
+    - `server.js`;
+    - `adapters/turn-usage-summary-service.js`;
+    - `test/thread-item-timestamp-enrichment.test.js`;
+    - `test/turn-usage-summary-service.test.js`;
+    - `docs/ARCHITECTURE.md`, `docs/COMPLEX_FEATURE_PATHS.md`, `docs/CONTEXT_STRATEGY.md`, `docs/TROUBLESHOOTING.md`;
+    - `README.md`.
+  - Public README gained a Chinese `2026-05-27 Public 发布说明（续）` documenting:
+    - zero/window sentinel `token_count` filtering for Usage cards;
+    - latest-turn operation card retention after refresh/re-entry even when the operation or turn completed;
+    - same-turn-id guard for completed raw-operation fallback;
+    - no PWA shell cache bump and listener-restart requirement.
+  - Public docs were sanitized so ChatGPT Pro bridge-state references use deployment-configured wording instead of a local Hermes `ProgramData` path.
+  - Public pushed commit: `0765085 发布 Usage 零值过滤与最新操作卡保留`.
+- Public validation:
+  - Authenticated public PR status check passed with no open PRs.
+  - Focused public tests passed: 32/32.
+  - Public `npm.cmd test` passed: 180/180.
+  - Public `npm.cmd run check` passed.
+  - Public `npm.cmd run check:macos` passed.
+  - Public `git diff --check` and `git diff --cached --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Public BOM checks produced no output.
+  - Public staged privacy scan found no private user path, Tailscale host, specific upload directory, local Hermes path, owner key, or raw key.
+- Private follow-up:
+  - Public-sanitized `docs/COMPLEX_FEATURE_PATHS.md` and `docs/TROUBLESHOOTING.md` were copied back to private so future public sync does not reintroduce local Hermes paths from shared docs.
+  - Private commit/push is the next step in the same turn.
