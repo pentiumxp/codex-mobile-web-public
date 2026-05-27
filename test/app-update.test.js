@@ -63,6 +63,19 @@ test("page refresh prompt also handles server restart reconnects", () => {
   assert.match(appJs, /refreshPageForNewBuild\(\)\.catch\(showError\)/);
 });
 
+test("public pull request check prompts before public publishing work", () => {
+  assert.match(indexHtml, /id="publicPrStatus"/);
+  assert.match(stylesCss, /\.public-pr-status/);
+  assert.match(serverJs, /publicPullRequests:/);
+  assert.match(serverJs, /\/api\/public-pull-requests\/status/);
+  assert.match(serverJs, /publicPullRequestApiUrl\(PUBLIC_PR_REPOSITORY\)/);
+  assert.match(appJs, /function renderPublicPrStatus\(\)/);
+  assert.match(appJs, /function maybePromptPublicPrMerge\(status\)/);
+  assert.match(appJs, /function publicPrMergeInstruction\(status\)/);
+  assert.match(appJs, /scheduleStartupPublicPrCheck\(\)/);
+  assert.match(appJs, /handlePublicPrStatusClick\(\)\.catch\(showError\)/);
+});
+
 test("README documents manual-start update restart requirement", () => {
   assert.match(readme, /直接手动运行 `node server\.js`、`npm start` 或一次性 shell 命令/);
   assert.match(readme, /自更新会完成文件更新并停止旧服务/);

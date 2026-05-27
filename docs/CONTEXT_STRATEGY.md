@@ -68,6 +68,14 @@ Default bootstrap limits are intentionally conservative:
 
 The bootstrap must list the full handoff file path and instruct the new thread to read it first. Do not raise bootstrap limits to work around a missing documentation update; put durable facts into `.agent-context` or `docs/`.
 
+## Per-Turn Context Diagnostics
+
+Thread detail may attach a synthetic `turnUsageSummary` item to completed turns when the rollout tail contains app-server `token_count` events. The summary reports latest-turn token usage, cumulative token usage, model context-window usage percentage, risk level, and rollout JSONL size.
+
+When a token event includes `cachedInputTokens`, the UI displays `in` as uncached input (`inputTokens - cachedInputTokens`) and shows cached input separately. Model context-window usage and risk still use the raw input-token count because cached input still occupies the prompt window.
+
+This is diagnostic display only. It must not change model input construction, continuation bootstrap content, app-server history, or rollout files. If a turn has no scoped `token_count` event, Mobile Web should omit the summary rather than guessing.
+
 ## Recovery For Existing Oversized Threads
 
 These changes only affect future submissions and continuations after the 8787 listener is restarted.
@@ -83,4 +91,4 @@ Do not edit `.codex` rollout files or SQLite state directly unless the user expl
 
 ## Documentation Rule
 
-Any change that affects model input size, image retention, continuation prompt construction, or handoff compaction must update this document plus the smallest relevant docs in `docs/README.md`, `docs/ARCHITECTURE.md`, `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, or `docs/COMPLEX_FEATURE_PATHS.md`.
+Any change that affects model input size, image retention, continuation prompt construction, handoff compaction, or token/context diagnostics must update this document plus the smallest relevant docs in `docs/README.md`, `docs/ARCHITECTURE.md`, `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, or `docs/COMPLEX_FEATURE_PATHS.md`.

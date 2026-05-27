@@ -80,6 +80,12 @@ const state = {
   appUpdateBusy: false,
   appUpdateError: "",
   appUpdateRestarting: false,
+  publicPrStatus: null,
+  publicPrBusy: false,
+  publicPrError: "",
+  publicPrEnabled: false,
+  publicPrRepository: "",
+  publicPrPromptedKey: localStorage.getItem("codexMobilePublicPrPromptKey") || "",
   sharedRestartBusy: false,
   sharedRestarting: false,
   serverBuildId: "",
@@ -139,7 +145,7 @@ const state = {
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v92";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v98";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -162,6 +168,7 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/icons/apple-touch-icon.png",
 ]);
 const TURN_REPLY_JUMP_WINDOW_MS = 10 * 60 * 1000;
+const CONVERSATION_SCROLL_INTENT_MS = 1200;
 const STORAGE_THREAD_ID = "codexMobileCurrentThreadId";
 const STORAGE_CONTINUATION_JOB = "codexMobileContinuationJobId";
 const STORAGE_RUNNING_THREAD_IDS = "codexMobileRunningThreadIds";
@@ -170,6 +177,7 @@ const STORAGE_DISMISSED_ROLLOUT_WARNINGS = "codexMobileDismissedRolloutWarnings"
 const STORAGE_FONT_SIZE = "codexMobileFontSize";
 const STORAGE_RATE_LIMITS = "codexMobileRateLimits";
 const STORAGE_RATE_LIMITS_BY_MODEL = "codexMobileRateLimitsByModel";
+const STORAGE_PUBLIC_PR_PROMPT = "codexMobilePublicPrPromptKey";
 const DRAFT_SAVE_DEBOUNCE_MS = 250;
 const FONT_SIZE_VALUES = new Set(["small", "default", "large", "xlarge", "xxlarge"]);
 const MENU_OVERLAY_MEDIA = "(max-width: 1180px), (pointer: coarse) and (max-width: 1400px)";
@@ -1111,6 +1119,159 @@ function scheduleStartupUpdateCheck() {
   }, 900);
 }
 
+function publicPrPromptKey(status) {
+  if (!status || !status.hasOpenPullRequests) return "";
+  const pullRequests = Array.isArray(status.pullRequests) ? status.pullRequests : [];
+  const marker = pullRequests
+    .map((pr) => `#${pr.number || ""}:${pr.updatedAt || ""}`)
+    .filter(Boolean)
+    .join("|");
+  return `${status.repository || ""}|${status.openPullRequestCount || pullRequests.length}|${marker}`;
+}
+
+function publicPrSummaryText(status) {
+  const pullRequests = Array.isArray(status && status.pullRequests) ? status.pullRequests : [];
+  if (!pullRequests.length) return "";
+  return pullRequests
+    .map((pr) => `#${pr.number} ${pr.title || ""}`.trim())
+    .join("; ");
+}
+
+function renderPublicPrStatus() {
+  const el = $("publicPrStatus");
+  if (!el) return;
+  const status = state.publicPrStatus || {};
+  const enabled = state.publicPrEnabled && status.enabled !== false;
+  const checking = state.publicPrBusy || Boolean(status.checking);
+  const hasPrs = Boolean(status.hasOpenPullRequests);
+  const blocked = Boolean(status.error || status.supported === false);
+  let label = "Public PR";
+  let title = state.publicPrRepository ? `Check ${state.publicPrRepository} pull requests` : "Check public pull requests";
+  if (checking) {
+    label = "PR...";
+    title = "Checking public pull requests";
+  } else if (hasPrs) {
+    label = `PR ${status.openPullRequestCount || (status.pullRequests || []).length}`;
+    title = `Open public PRs: ${publicPrSummaryText(status) || label}`;
+  } else if (status.checkedAt && enabled) {
+    label = "No PR";
+    title = `No open public PRs in ${status.repository || state.publicPrRepository || "public repo"}`;
+  } else if (blocked) {
+    label = "PR ?";
+    title = status.error || status.reason || "Public PR check is unavailable";
+  }
+  el.textContent = label;
+  el.title = title;
+  el.classList.toggle("hidden", !enabled && !status.error);
+  el.classList.toggle("available", hasPrs);
+  el.classList.toggle("blocked", blocked);
+  el.classList.toggle("checking", checking);
+  el.disabled = state.publicPrBusy;
+}
+
+async function refreshPublicPrStatus(options = {}) {
+  if (!state.key || !state.publicPrEnabled) return null;
+  if (state.publicPrBusy && !options.force) return state.publicPrStatus;
+  state.publicPrBusy = true;
+  if (!options.silent) renderPublicPrStatus();
+  try {
+    const params = new URLSearchParams();
+    if (options.force) params.set("force", "1");
+    const status = await api(`/api/public-pull-requests/status${params.toString() ? `?${params.toString()}` : ""}`, {
+      timeoutMs: 18000,
+    });
+    state.publicPrStatus = status;
+    state.publicPrError = status && status.error ? status.error : "";
+    if (!options.skipPrompt) maybePromptPublicPrMerge(status);
+    return status;
+  } catch (err) {
+    state.publicPrError = err.message || String(err);
+    state.publicPrStatus = Object.assign({}, state.publicPrStatus || {}, {
+      enabled: state.publicPrEnabled,
+      repository: state.publicPrRepository,
+      error: state.publicPrError,
+    });
+    return state.publicPrStatus;
+  } finally {
+    state.publicPrBusy = false;
+    renderPublicPrStatus();
+  }
+}
+
+function scheduleStartupPublicPrCheck() {
+  if (!state.key || !state.publicPrEnabled) return;
+  window.setTimeout(() => {
+    refreshPublicPrStatus({ force: true, silent: true }).catch(() => {});
+  }, 1600);
+}
+
+function publicPrMergeInstruction(status) {
+  const summary = publicPrSummaryText(status);
+  const repository = status && status.repository || state.publicPrRepository || "pentiumxp/codex-mobile-web-public";
+  return [
+    `请检查 public 仓库 ${repository} 的开放 PR${summary ? `：${summary}` : ""}。`,
+    "按当前项目规则先评估 PR 是否可合并；如要合并，更新 public README 的中文发布说明，运行验证和隐私扫描，再提交并推送 public。",
+    "不要复制 .agent-context、runtime state、本地密钥、上传内容或机器特定诊断。完成 public 后再同步回 private 并重新验证。",
+  ].join("\n");
+}
+
+function preparePublicPrMergePrompt(status) {
+  const text = publicPrMergeInstruction(status);
+  if (composerHasContent()) {
+    window.alert("检测到 public 开放 PR，但输入框已有内容。请处理当前草稿后点击 Public PR 按钮。");
+    return;
+  }
+  setComposerText(text);
+  scheduleCurrentDraftSave();
+  updateComposerControls();
+}
+
+function rememberPublicPrPrompt(status) {
+  const key = publicPrPromptKey(status);
+  if (!key) return;
+  state.publicPrPromptedKey = key;
+  localStorage.setItem(STORAGE_PUBLIC_PR_PROMPT, key);
+}
+
+function maybePromptPublicPrMerge(status) {
+  if (!status || !status.hasOpenPullRequests) return;
+  const key = publicPrPromptKey(status);
+  if (!key || key === state.publicPrPromptedKey) return;
+  const confirmed = window.confirm([
+    `检测到 public 仓库有 ${status.openPullRequestCount || (status.pullRequests || []).length} 个开放 PR。`,
+    publicPrSummaryText(status),
+    "",
+    "是否准备一条合并/发布检查任务？",
+  ].filter(Boolean).join("\n"));
+  rememberPublicPrPrompt(status);
+  if (confirmed) preparePublicPrMergePrompt(status);
+}
+
+async function handlePublicPrStatusClick() {
+  if (state.publicPrBusy) return;
+  let status = state.publicPrStatus;
+  if (!status || !status.checkedAt || status.error) {
+    status = await refreshPublicPrStatus({ force: true, skipPrompt: true });
+  }
+  if (!status) return;
+  if (status.error && !status.hasOpenPullRequests) {
+    window.alert(`public PR 检查失败：${status.error}`);
+    return;
+  }
+  if (!status.hasOpenPullRequests) {
+    window.alert("当前未检测到 public 开放 PR。");
+    return;
+  }
+  const confirmed = window.confirm([
+    `检测到 public 仓库有 ${status.openPullRequestCount || (status.pullRequests || []).length} 个开放 PR。`,
+    publicPrSummaryText(status),
+    "",
+    "是否准备一条合并/发布检查任务？",
+  ].filter(Boolean).join("\n"));
+  rememberPublicPrPrompt(status);
+  if (confirmed) preparePublicPrMergePrompt(status);
+}
+
 async function handleAppUpdateClick() {
   if (state.appUpdateBusy || state.appUpdateRestarting) return;
   let status = state.appUpdateStatus;
@@ -1934,12 +2095,12 @@ function entryAnimationClass(key, previousKeys) {
   return previousKeys && previousKeys.has(key) ? "" : " entry-animate";
 }
 
-function isNodeAboveConversationViewport(node) {
+function isNodeStartAboveConversationViewport(node) {
   const conversation = $("conversation");
   if (!conversation || !node) return false;
   const viewport = conversation.getBoundingClientRect();
   const rect = node.getBoundingClientRect();
-  return rect.bottom < viewport.top + 24;
+  return rect.top < viewport.top + 24;
 }
 
 function visibleItemsForTurn(turn) {
@@ -1999,6 +2160,14 @@ function visibleItemSignature(item, turn = null) {
       server: item.server || "",
       namespace: item.namespace || "",
       detail: operationDetailText(item),
+    };
+  }
+  if (item.type === "turnUsageSummary") {
+    return {
+      id: item.id || "",
+      type: item.type || "",
+      status: statusText(item.status),
+      mobileUsageSummary: item.mobileUsageSummary || {},
     };
   }
   if (item.type === "imageView") {
@@ -2858,6 +3027,7 @@ async function bootstrap() {
   await restoreThreadSelection();
   connectEvents();
   scheduleStartupUpdateCheck();
+  scheduleStartupPublicPrCheck();
   initializePushControls().catch((err) => {
     state.pushError = err.message || String(err);
     updatePushButton();
@@ -4165,10 +4335,14 @@ function renderCurrentThread(options = {}) {
     return;
   }
   updateSubagentPanelUi();
-  const shouldFollowBottom = shouldFollowSubmittedMessageToBottom() || shouldFollowViewportChangeToBottom();
-  const shouldStickToBottom = shouldFollowBottom
-    || (!shouldHoldAutoScrollForCurrentTurn()
-      && (options.stickToBottom === true || isConversationNearBottom()));
+  const nearBottom = isConversationNearBottom();
+  const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom });
+  const shouldFollowBottom = !userReadingCurrentTurn
+    && (shouldFollowSubmittedMessageToBottom() || shouldFollowViewportChangeToBottom());
+  const shouldStickToBottom = !userReadingCurrentTurn
+    && (shouldFollowBottom
+      || (!shouldHoldAutoScrollForCurrentTurn()
+        && (options.stickToBottom === true || nearBottom)));
   const previousKeys = existingConversationRenderKeys();
   const titleEl = $("threadTitle");
   const metaEl = $("threadMeta");
@@ -5008,6 +5182,7 @@ function labelForItem(item) {
     dynamicToolCall: `${item.namespace ? item.namespace + "." : ""}${item.tool || "Tool"}`,
     plan: "Plan",
     contextCompaction: "Context",
+    turnUsageSummary: "Usage",
   };
   return map[item.type] || item.type || "Item";
 }
@@ -5494,8 +5669,91 @@ function renderCollabAgentToolCall(item) {
   </div>`;
 }
 
+function formatTokenCount(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toLocaleString() : "--";
+}
+
+function displayInputTokensExcludingCached(usage) {
+  const input = Number(usage && usage.inputTokens);
+  if (!Number.isFinite(input)) return usage && usage.inputTokens;
+  const cached = Number(usage && usage.cachedInputTokens);
+  if (!Number.isFinite(cached)) return input;
+  return Math.max(0, input - cached);
+}
+
+function formatUsagePercent(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "--";
+  if (number < 10) return `${number.toFixed(1)}%`;
+  return `${Math.round(number)}%`;
+}
+
+function tokenUsageSummaryText(usage) {
+  const value = usage && typeof usage === "object" ? usage : {};
+  const parts = [
+    `in ${formatTokenCount(displayInputTokensExcludingCached(value))}`,
+    value.cachedInputTokens !== undefined ? `cached ${formatTokenCount(value.cachedInputTokens)}` : "",
+    `out ${formatTokenCount(value.outputTokens)}`,
+    value.reasoningOutputTokens !== undefined ? `reasoning ${formatTokenCount(value.reasoningOutputTokens)}` : "",
+    `total ${formatTokenCount(value.totalTokens)}`,
+  ].filter(Boolean);
+  return parts.join(" / ");
+}
+
+function contextRiskLabel(level) {
+  const map = {
+    normal: "normal",
+    warn: "watch",
+    high: "high",
+    critical: "critical",
+    unknown: "unknown",
+  };
+  return map[level] || "unknown";
+}
+
+function renderUsageMetric(label, value, detail = "") {
+  return `<div class="turn-usage-metric">
+    <span>${escapeHtml(label)}</span>
+    <strong>${escapeHtml(value)}</strong>
+    ${detail ? `<small>${escapeHtml(detail)}</small>` : ""}
+  </div>`;
+}
+
+function renderTurnUsageSummary(item) {
+  const summary = item && item.mobileUsageSummary && typeof item.mobileUsageSummary === "object"
+    ? item.mobileUsageSummary
+    : {};
+  const contextTokens = Number(summary.contextWindowUsedTokens);
+  const contextWindow = Number(summary.modelContextWindow);
+  const contextDetail = Number.isFinite(contextTokens) && Number.isFinite(contextWindow) && contextWindow > 0
+    ? `${formatTokenCount(contextTokens)} / ${formatTokenCount(contextWindow)}`
+    : "";
+  const lastUsage = tokenUsageSummaryText(summary.lastTokenUsage || {});
+  const totalUsage = tokenUsageSummaryText(summary.totalTokenUsage || {});
+  const rolloutSize = Number(summary.rolloutSizeBytes);
+  const rolloutThreshold = Number(summary.rolloutWarningThresholdBytes);
+  const rolloutDetail = Number.isFinite(rolloutThreshold) && rolloutThreshold > 0
+    ? `warn ${formatFileSize(rolloutThreshold)}`
+    : "";
+  const risk = contextRiskLabel(summary.contextRiskLevel || "unknown");
+  return `<div class="turn-usage-summary risk-${escapeHtml(risk)}">
+    <div class="turn-usage-summary-head">
+      <span>Context and token usage</span>
+      <strong>${escapeHtml(risk)}</strong>
+    </div>
+    <div class="turn-usage-grid">
+      ${renderUsageMetric("context window", formatUsagePercent(summary.contextWindowUsedPercent), contextDetail)}
+      ${renderUsageMetric("last turn", lastUsage)}
+      ${renderUsageMetric("thread total", totalUsage)}
+      ${renderUsageMetric("rollout", Number.isFinite(rolloutSize) ? formatFileSize(rolloutSize) : "--", rolloutDetail)}
+    </div>
+  </div>`;
+}
+
 function renderItemBody(item, turn = null) {
   if (isContextCompactionItem(item)) return escapeHtml(contextCompactionNotice(item, turn));
+  if (item.type === "turnUsageSummary") return renderTurnUsageSummary(item);
   if (item.type === "userMessage") return renderInputContent(item.content);
   if (item.type === "agentMessage") {
     return renderMarkdownWithAttachmentSummary(item.text || "");
@@ -6059,6 +6317,10 @@ function clearViewportBottomFollow() {
 }
 
 function shouldFollowSubmittedMessageToBottom() {
+  if (isUserReadingCurrentTurn()) {
+    clearSubmittedMessageBottomFollow();
+    return false;
+  }
   const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
   const shouldFollow = conversationScroll.shouldFollowSubmittedMessage(state.submittedMessageBottomFollow, {
     threadId,
@@ -6069,6 +6331,10 @@ function shouldFollowSubmittedMessageToBottom() {
 }
 
 function shouldFollowViewportChangeToBottom() {
+  if (isUserReadingCurrentTurn()) {
+    clearViewportBottomFollow();
+    return false;
+  }
   const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
   const shouldFollow = conversationScroll.shouldFollowViewport(state.viewportBottomFollow, {
     threadId,
@@ -6154,6 +6420,10 @@ function syncConversationScrollPosition(options = {}) {
   noteConversationBottomState(options);
 }
 
+function hasRecentConversationScrollIntent(nowMs = Date.now()) {
+  return nowMs - Number(state.conversationScrollIntentAtMs || 0) <= CONVERSATION_SCROLL_INTENT_MS;
+}
+
 function rememberConversationScrollIntent() {
   state.conversationScrollIntentAtMs = Date.now();
   clearSubmittedMessageBottomFollow();
@@ -6166,7 +6436,7 @@ function clearConversationAutoScrollHold() {
 }
 
 function rememberConversationAutoScrollHold() {
-  const turn = currentLiveTurn() || latestTurn();
+  const turn = turnForConversationAutoScrollHold();
   const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
   if (!threadId || !turn || !turn.id) return;
   state.autoScrollHold = {
@@ -6183,14 +6453,30 @@ function shouldHoldAutoScrollForCurrentTurn() {
   return Boolean(threadId && turn && hold.threadId === String(threadId) && hold.turnId === String(turn.id || ""));
 }
 
+function turnForConversationAutoScrollHold() {
+  const live = currentLiveTurn();
+  if (live) return live;
+  const turn = latestTurn();
+  return isRecentReplyJumpTurn(turn) ? turn : null;
+}
+
+function isUserReadingCurrentTurn(options = {}) {
+  const nearBottom = Object.prototype.hasOwnProperty.call(options, "nearBottom")
+    ? Boolean(options.nearBottom)
+    : isConversationNearBottom();
+  if (nearBottom) return false;
+  if (shouldHoldAutoScrollForCurrentTurn()) return true;
+  if (!hasRecentConversationScrollIntent()) return false;
+  return Boolean(turnForConversationAutoScrollHold());
+}
+
 function updateConversationAutoScrollHoldFromScroll() {
-  if (Date.now() < state.programmaticScrollUntilMs) return;
   if (isConversationNearBottom()) {
     clearConversationAutoScrollHold();
     return;
   }
-  if (Date.now() - Number(state.conversationScrollIntentAtMs || 0) > 1200) return;
-  if (currentLiveTurn()) rememberConversationAutoScrollHold();
+  if (!hasRecentConversationScrollIntent()) return;
+  if (turnForConversationAutoScrollHold()) rememberConversationAutoScrollHold();
 }
 
 function clearRecentCompletedReplyAnchor() {
@@ -6200,11 +6486,20 @@ function clearRecentCompletedReplyAnchor() {
 function rememberRecentCompletedTurnReply(turnId) {
   const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
   if (!threadId || !turnId) return;
+  const normalizedThreadId = String(threadId);
+  const normalizedTurnId = String(turnId);
+  const previousAnchor = state.recentCompletedReplyAnchor;
+  const keepActivatedByUserScroll = Boolean(
+    previousAnchor
+      && previousAnchor.threadId === normalizedThreadId
+      && previousAnchor.turnId === normalizedTurnId
+      && previousAnchor.activatedByUserScroll,
+  );
   state.recentCompletedReplyAnchor = {
-    threadId: String(threadId),
-    turnId: String(turnId),
+    threadId: normalizedThreadId,
+    turnId: normalizedTurnId,
     completedAtMs: Date.now(),
-    activatedByUserScroll: false,
+    activatedByUserScroll: keepActivatedByUserScroll,
   };
 }
 
@@ -6265,9 +6560,9 @@ function updateRecentCompletedReplyAnchorFromScroll() {
   const previousTop = Number(state.conversationLastScrollTop || 0);
   const delta = currentTop - previousTop;
   state.conversationLastScrollTop = currentTop;
-  noteConversationBottomState({ userIntent: Date.now() - Number(state.conversationScrollIntentAtMs || 0) <= 1200 });
+  noteConversationBottomState({ userIntent: hasRecentConversationScrollIntent() });
   if (Date.now() < state.programmaticScrollUntilMs) return;
-  if (Date.now() - Number(state.conversationScrollIntentAtMs || 0) > 1200) return;
+  if (!hasRecentConversationScrollIntent()) return;
   if (delta < -2) {
     activateRecentCompletedReplyAnchorFromUserScroll();
   } else if (delta > 2) {
@@ -6297,13 +6592,15 @@ function turnNodeForId(turnId) {
     .find((node) => node.dataset.turn === String(turnId)) || null;
 }
 
-function turnReplyStartNode(anchor = currentRecentCompletedReplyAnchor()) {
+function turnFinalReceiptNode(anchor = currentRecentCompletedReplyAnchor()) {
   if (!anchor) return null;
   const turnNode = turnNodeForId(anchor.turnId);
   if (!turnNode) return null;
-  const replies = Array.from(turnNode.querySelectorAll(".item.agentMessage"));
-  if (replies.length) return replies[0];
-  return turnNode.querySelector(".item:not(.userMessage):not(.live-operation)") || turnNode;
+  const finalReceipts = Array.from(turnNode.querySelectorAll(".item.agentMessage, .item.plan"));
+  if (finalReceipts.length) return finalReceipts[finalReceipts.length - 1];
+  const fallbackItems = Array.from(turnNode.querySelectorAll(".item:not(.userMessage):not(.live-operation):not(.turnUsageSummary)"));
+  if (fallbackItems.length) return fallbackItems[fallbackItems.length - 1];
+  return turnNode;
 }
 
 function scrollNodeIntoConversationView(node, margin = 12) {
@@ -6318,7 +6615,7 @@ function scrollNodeIntoConversationView(node, margin = 12) {
 }
 
 function scrollConversationToTurnReply() {
-  const target = turnReplyStartNode();
+  const target = turnFinalReceiptNode();
   if (!target) return;
   clearSubmittedMessageBottomFollow();
   clearViewportBottomFollow();
@@ -6356,14 +6653,14 @@ function updateScrollToBottomButton() {
   button.tabIndex = shouldShow ? 0 : -1;
   if (!replyButton) return;
   const replyAnchor = currentRecentCompletedReplyAnchor();
-  const replyNode = turnReplyStartNode(replyAnchor);
+  const replyNode = turnFinalReceiptNode(replyAnchor);
   const shouldShowReply = Boolean(
     state.currentThread
       && !state.currentThread.mobileLoading
       && !state.currentThread.mobileLoadError
       && isScrollable
       && replyNode
-      && isNodeAboveConversationViewport(replyNode),
+      && isNodeStartAboveConversationViewport(replyNode),
   );
   replyButton.classList.toggle("hidden", !shouldShowReply);
   replyButton.setAttribute("aria-hidden", shouldShowReply ? "false" : "true");
@@ -7280,6 +7577,7 @@ function wireUi() {
   $("refreshThreads").addEventListener("click", () => loadThreads().catch(showError));
   $("pushNotifications").addEventListener("click", () => handlePushButtonClick().catch(showError));
   if ($("appUpdateStatus")) $("appUpdateStatus").addEventListener("click", () => handleAppUpdateClick().catch(showError));
+  if ($("publicPrStatus")) $("publicPrStatus").addEventListener("click", () => handlePublicPrStatusClick().catch(showError));
   if ($("sharedRestartButton")) $("sharedRestartButton").addEventListener("click", () => handleSharedRestartClick().catch(showError));
   const settingsPanel = $("themeSettingsPanel");
   if (settingsPanel) settingsPanel.addEventListener("click", handleFontSizeChoice);
@@ -7585,7 +7883,14 @@ async function start() {
     remote: config.update && config.update.remote || "origin",
     branch: config.update && config.update.branch || "main",
   };
+  state.publicPrEnabled = Boolean(config.publicPullRequests && config.publicPullRequests.enabled);
+  state.publicPrRepository = String(config.publicPullRequests && config.publicPullRequests.repository || "");
+  state.publicPrStatus = {
+    enabled: state.publicPrEnabled,
+    repository: state.publicPrRepository,
+  };
   renderAppUpdateStatus();
+  renderPublicPrStatus();
   renderSharedRestartButton();
   renderComposerSettings();
   rememberRateLimits(config.rateLimits || null, config.rateLimitsByModel || null);

@@ -21,6 +21,15 @@ const { createPendingSteerEchoStore } = require("./adapters/message-pending-echo
 const {
   detectStaleActiveTurnForSubmission,
 } = require("./adapters/active-turn-staleness-service");
+const {
+  attachTurnUsageSummaries,
+  collectTurnUsageSummariesFromRolloutText,
+} = require("./adapters/turn-usage-summary-service");
+const {
+  buildPublicPullRequestStatus,
+  normalizeRepositorySlug,
+  publicPullRequestApiUrl,
+} = require("./adapters/public-pull-request-service");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -45,6 +54,10 @@ const APP_UPDATE_CHECK_TIMEOUT_MS = Math.max(1000, Number(process.env.CODEX_MOBI
 const APP_UPDATE_APPLY_TIMEOUT_MS = Math.max(5000, Number(process.env.CODEX_MOBILE_UPDATE_APPLY_TIMEOUT_MS || "120000"));
 const APP_UPDATE_RESTART_DELAY_MS = Math.max(500, Number(process.env.CODEX_MOBILE_UPDATE_RESTART_DELAY_MS || "1200"));
 const APP_UPDATE_CACHE_MS = Math.max(30_000, Number(process.env.CODEX_MOBILE_UPDATE_CACHE_MS || "900000"));
+const PUBLIC_PR_CHECK_DISABLED = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_DISABLE_PUBLIC_PR_CHECK || "");
+const PUBLIC_PR_REPOSITORY = normalizeRepositorySlug(process.env.CODEX_MOBILE_PUBLIC_PR_REPOSITORY || "pentiumxp/codex-mobile-web-public");
+const PUBLIC_PR_CHECK_TIMEOUT_MS = Math.max(1000, Number(process.env.CODEX_MOBILE_PUBLIC_PR_CHECK_TIMEOUT_MS || "12000"));
+const PUBLIC_PR_CHECK_CACHE_MS = Math.max(30_000, Number(process.env.CODEX_MOBILE_PUBLIC_PR_CHECK_CACHE_MS || "900000"));
 const SHARED_CHAIN_RESTART_TASK_NAME = process.env.CODEX_MOBILE_RESTART_TASK_NAME || "Codex Mobile Web";
 const SHARED_CHAIN_RESTART_DELAY_MS = Math.max(500, Number(process.env.CODEX_MOBILE_SHARED_CHAIN_RESTART_DELAY_MS || "900"));
 const DISABLE_AUTH = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_DISABLE_AUTH || "");
@@ -246,6 +259,8 @@ let appUpdateStatus = null;
 let appUpdateCheckInFlight = null;
 let appUpdateApplying = false;
 let appUpdateRestartScheduled = false;
+let publicPullRequestStatus = null;
+let publicPullRequestCheckInFlight = null;
 let clients = new Map();
 let clientHeartbeats = new WeakMap();
 let latestRateLimits = null;
@@ -253,6 +268,7 @@ const latestRateLimitsByModel = new Map();
 let lastRolloutRateLimitScanAt = 0;
 const latestRuntimeContextByPath = new Map();
 const latestItemTimestampsByPath = new Map();
+const latestTurnUsageSummariesByPath = new Map();
 const recentStartedThreads = new Map();
 const continuationJobs = new Map();
 const activeContinuationJobsBySource = new Map();
@@ -768,6 +784,94 @@ async function refreshAppUpdateStatus(options = {}) {
       appUpdateCheckInFlight = null;
     });
   return appUpdateCheckInFlight;
+}
+
+function publicPullRequestError(err) {
+  return String(err && err.message || err || "").replace(/\s+/g, " ").slice(0, 240);
+}
+
+async function fetchJsonWithTimeout(url, options = {}) {
+  if (typeof fetch !== "function") throw new Error("fetch is unavailable in this Node runtime");
+  const timeoutMs = Math.max(1000, Number(options.timeoutMs || PUBLIC_PR_CHECK_TIMEOUT_MS));
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  if (typeof timer.unref === "function") timer.unref();
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Accept: "application/vnd.github+json",
+        "User-Agent": "codex-mobile-web",
+      },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`GitHub PR check failed with HTTP ${response.status}`);
+    }
+    return await response.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function unsupportedPublicPullRequestStatus(reason, extra = {}) {
+  return Object.assign({
+    supported: false,
+    enabled: !PUBLIC_PR_CHECK_DISABLED,
+    repository: PUBLIC_PR_REPOSITORY,
+    checkedAt: new Date().toISOString(),
+    openPullRequestCount: 0,
+    hasOpenPullRequests: false,
+    pullRequests: [],
+    reason,
+  }, extra);
+}
+
+function publicPullRequestStatusForClient(status, overrides = {}) {
+  const value = status || unsupportedPublicPullRequestStatus("not checked");
+  const publicValue = Object.assign({}, value);
+  delete publicValue.checkedAtMs;
+  return Object.assign({}, publicValue, {
+    checking: Boolean(publicPullRequestCheckInFlight),
+  }, overrides);
+}
+
+async function readPublicPullRequestStatus() {
+  if (PUBLIC_PR_CHECK_DISABLED) {
+    return unsupportedPublicPullRequestStatus("disabled");
+  }
+  try {
+    const pullRequests = await fetchJsonWithTimeout(publicPullRequestApiUrl(PUBLIC_PR_REPOSITORY), {
+      timeoutMs: PUBLIC_PR_CHECK_TIMEOUT_MS,
+    });
+    return buildPublicPullRequestStatus({
+      repository: PUBLIC_PR_REPOSITORY,
+      pullRequests,
+      checkedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    return unsupportedPublicPullRequestStatus(publicPullRequestError(err), {
+      supported: true,
+      error: publicPullRequestError(err),
+    });
+  }
+}
+
+async function refreshPublicPullRequestStatus(options = {}) {
+  const now = Date.now();
+  if (!options.force && publicPullRequestStatus && publicPullRequestStatus.checkedAtMs
+    && now - publicPullRequestStatus.checkedAtMs < PUBLIC_PR_CHECK_CACHE_MS) {
+    return publicPullRequestStatusForClient(publicPullRequestStatus);
+  }
+  if (publicPullRequestCheckInFlight) return publicPullRequestCheckInFlight;
+  publicPullRequestCheckInFlight = readPublicPullRequestStatus()
+    .then((status) => {
+      publicPullRequestStatus = Object.assign({}, status, { checkedAtMs: Date.now() });
+      return publicPullRequestStatusForClient(publicPullRequestStatus, { checking: false });
+    })
+    .finally(() => {
+      publicPullRequestCheckInFlight = null;
+    });
+  return publicPullRequestCheckInFlight;
 }
 
 async function applyAppUpdate() {
@@ -1780,6 +1884,17 @@ function rememberItemTimestampCandidates(key, payload) {
   }
 }
 
+function rememberTurnUsageSummaries(key, payload) {
+  latestTurnUsageSummariesByPath.set(key, {
+    cachedAt: Date.now(),
+    payload: payload || null,
+  });
+  while (latestTurnUsageSummariesByPath.size > RUNTIME_CONTEXT_CACHE_MAX) {
+    const firstKey = latestTurnUsageSummariesByPath.keys().next().value;
+    latestTurnUsageSummariesByPath.delete(firstKey);
+  }
+}
+
 function rolloutEntryTurnId(entry) {
   const payload = entry && entry.payload;
   return String((payload && (
@@ -1949,6 +2064,26 @@ function readRolloutItemTimestampCandidates(rolloutPath) {
   }
   const payload = { byTurn, unscoped, scopedCount };
   if (cacheKey) rememberItemTimestampCandidates(cacheKey, payload);
+  return payload;
+}
+
+function readRolloutTurnUsageSummaries(rolloutPath) {
+  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) {
+    return { byTurnId: new Map(), unscoped: [] };
+  }
+  let cacheKey = "";
+  try {
+    const stat = fs.statSync(rolloutPath);
+    cacheKey = runtimeContextCacheKey(rolloutPath, stat);
+    const cached = latestTurnUsageSummariesByPath.get(cacheKey);
+    if (cached && Date.now() - cached.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS) {
+      return cached.payload || { byTurnId: new Map(), unscoped: [] };
+    }
+  } catch (_) {
+    return { byTurnId: new Map(), unscoped: [] };
+  }
+  const payload = collectTurnUsageSummariesFromRolloutText(readRolloutTail(rolloutPath));
+  if (cacheKey) rememberTurnUsageSummaries(cacheKey, payload);
   return payload;
 }
 
@@ -2481,6 +2616,8 @@ function compactTurn(turn, options = {}) {
 function compactThread(thread, options = {}) {
   if (!thread || typeof thread !== "object") return thread;
   const out = Object.assign({}, thread);
+  const rolloutPath = rolloutPathForThread(out);
+  const rolloutStats = rolloutStatsForPath(rolloutPath);
   const maxTurns = Math.max(1, Math.min(200, Number(options.maxTurns || MAX_THREAD_TURNS)));
   if (Array.isArray(out.turns)) {
     const omitted = Math.max(0, out.turns.length - maxTurns);
@@ -2490,6 +2627,7 @@ function compactThread(thread, options = {}) {
     }
     pendingSteerEchoStore.injectIntoThread(out);
     enrichThreadItemTimestampsFromRollout(out);
+    attachTurnUsageSummaries(out, readRolloutTurnUsageSummaries(rolloutPath), { rolloutStats });
     const latestIndex = out.turns.length - 1;
     out.turns = out.turns.map((turn, index) => compactTurn(turn, { allowLiveOperation: index === latestIndex }));
     const latest = out.turns[latestIndex];
@@ -3631,13 +3769,12 @@ async function runMessageSubmissionOnce(keys, duplicateUploads, fn) {
 
 function mimeFor(file) {
   const ext = path.extname(file).toLowerCase();
+  if (FILE_PREVIEW_IMAGE_CONTENT_TYPES.has(ext)) return FILE_PREVIEW_IMAGE_CONTENT_TYPES.get(ext);
   return {
     ".html": "text/html; charset=utf-8",
     ".css": "text/css; charset=utf-8",
     ".js": "text/javascript; charset=utf-8",
     ".json": "application/json; charset=utf-8",
-    ".svg": "image/svg+xml",
-    ".png": "image/png",
     ".ico": "image/x-icon",
   }[ext] || "application/octet-stream";
 }
@@ -5722,6 +5859,10 @@ async function handleApi(req, res) {
         remote: APP_UPDATE_REMOTE,
         branch: APP_UPDATE_BRANCH,
       },
+      publicPullRequests: {
+        enabled: !PUBLIC_PR_CHECK_DISABLED,
+        repository: PUBLIC_PR_REPOSITORY,
+      },
     });
     return;
   }
@@ -5770,6 +5911,11 @@ async function handleApi(req, res) {
     } catch (err) {
       sendJson(res, err.statusCode || 500, { error: safeAppUpdateError(err) });
     }
+    return;
+  }
+  if (url.pathname === "/api/public-pull-requests/status" && req.method === "GET") {
+    const force = /^(1|true|yes|on)$/i.test(url.searchParams.get("force") || "");
+    sendJson(res, 200, await refreshPublicPullRequestStatus({ force }));
     return;
   }
   if (url.pathname === "/api/restart/shared-chain" && req.method === "POST") {
@@ -6557,6 +6703,7 @@ module.exports = {
   enrichThreadItemTimestampsFromRollout,
   filePreviewContentDisposition,
   filePreviewContentType,
+  mimeFor,
   readFilePreview,
   readRolloutItemTimestampCandidates,
   resolveFilePreviewPath,

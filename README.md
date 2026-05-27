@@ -338,10 +338,10 @@ CODEX_MOBILE_MAX_UPLOAD_FILES=12
 Behavior:
 
 - Supported browser image uploads (`jpeg`, `png`, `webp`) are compressed in the browser before submission. The default target is a maximum 1280px edge and JPEG quality `0.72`, keeping UI screenshots readable while avoiding multi-MB image payloads entering Codex context.
-- By default, images are shown in Mobile Web as centered thumbnails but sent to Codex only as local file-path references in text. This keeps the UI visual without making image pixels part of app-server history.
+- By default, images are shown in Mobile Web as centered thumbnails but sent to Codex only as local file-path references in text. This keeps the UI visual without making image pixels part of app-server history. The authenticated upload preview route must return browser-renderable image MIME types such as `image/jpeg` for saved upload paths.
 - Set `CODEX_MOBILE_IMAGE_CONTEXT_MODE=latest` or `vision` only when the model must inspect the latest uploaded image. Set `CODEX_MOBILE_IMAGE_CONTEXT_MODE=all` only for legacy all-image behavior.
 - Turns that include image uploads no longer request app-server extended-history persistence by default. This treats images as temporary visual references and reduces repeated `replacement_history` image retention in later rollout compaction records. Set `CODEX_MOBILE_PERSIST_IMAGE_EXTENDED_HISTORY=1` only when historical image rehydration is required.
-- Image messages render as centered thumbnails in the web UI.
+- Image messages render as centered thumbnails in the web UI, including saved `.jpg` / `.jpeg` / `.webp` upload paths served through `/api/uploads/file`.
 - Non-image files are saved locally and referenced in message text by absolute path so Codex can read them through normal file access.
 - Uploaded file contents are local runtime state and must not be committed.
 
@@ -350,13 +350,13 @@ Behavior:
 - Home view shows recent workspaces and recent threads.
 - The sidebar menu header includes a compact settings button. The settings panel contains the theme control (`跟随系统` / `深色` / `浅色`) and the font-size control (`小字` / `标准` / `大字` / `特大` / `超大`) using the same segmented-button style.
 - Theme and font-size choices are saved in the browser. Theme updates the page theme color metadata; iOS PWA status-bar color changes may require closing and reopening the installed app. The light theme now uses a slightly warmer page background so the daytime view is less cold gray while cards and controls stay crisp. Font size adjusts conversation text, markdown, code/table content, approval details, and the composer input.
-- The sidebar header also shows the app version/update pill and a same-size `Restart` button. After login, Mobile Web checks the configured GitHub remote in the background. If the remote branch is ahead, the pill becomes an update action; tapping it asks for confirmation, applies only a clean fast-forward update, then exits the Node listener so the existing startup supervisor can restart it from the updated files. The `Restart` button is separate from Git self-update and asks for confirmation before restarting the local Mobile Web shared chain.
+- The sidebar header also shows the app version/update pill, a public PR status pill, and a same-size `Restart` button. After login, Mobile Web checks the configured GitHub remote in the background. If the remote branch is ahead, the pill becomes an update action; tapping it asks for confirmation, applies only a clean fast-forward update, then exits the Node listener so the existing startup supervisor can restart it from the updated files. The public PR pill checks the clean public repository for open pull requests and prompts whether to prepare a merge/publish review task; it does not merge or push public by itself. The `Restart` button is separate from Git self-update and asks for confirmation before restarting the local Mobile Web shared chain.
 - When a conversation is scrollable and the user is away from the newest messages, a floating down-arrow button appears above the composer. Tapping it jumps directly back to the latest turn; normal rendering still avoids forcing the scroll position while the user is reading older content.
 - 中文说明：长对话如果因为恢复、切换线程或手动滚动停在历史消息中间，页面会在输入框上方显示“回到底部”浮动按钮。按钮只在当前线程已加载、内容可滚动且不在底部时出现；点击后立即回到最新 turn。用户阅读历史内容时，普通刷新仍不会强制自动滚到底部。PWA/手机浏览器如果仍显示旧界面，需要刷新一次或等待新的 service worker 缓存 `codex-mobile-shell-v36` 激活。
 - On phones and tablet portrait/touch layouts, the sidebar menu is not persistent: the main conversation fills the viewport, and the menu opens only after the user taps the top-left menu button. Wide desktop layouts keep the persistent sidebar. On coarse-pointer landscape tablets with enough room, Mobile Web uses a two-column layout with a persistent sidebar and full conversation pane.
 - On coarse-pointer landscape tablets, the composer uses a viewport-contained two-row compact layout: runtime indicators and quota on the first row, then attach/input/send on the second row. The split layout constrains both sidebar and main pane height so the composer stays inside the visible app surface.
 - On mobile/touch layouts, swiping right from the left screen edge opens the session list without waiting for a network refresh. If the existing session list is newer than 60 seconds, Mobile Web reuses it immediately; older lists open first and then refresh quietly in the background.
-- Thread lists and thread detail monitor rollout JSONL size. At the default `200MB` threshold, Mobile Web shows a context-size warning and offers a same-workspace continuation action. The warning can be skipped for the current thread size, and will reappear if that thread grows again past the stored size. After user confirmation, the action first asks the source thread to write a thread-specific handoff file, creates a source-named/date-suffixed continuation thread, sends a scoped bootstrap message, then archives the source thread.
+- Thread lists and thread detail monitor rollout JSONL size. At the default `200MB` threshold, Mobile Web shows a context-size warning and offers a same-workspace continuation action. The warning can be skipped for the current thread size, and will reappear if that thread grows again past the stored size. Completed turns can also show a lightweight context/token usage summary parsed from rollout `token_count` events: latest-turn token use, cumulative token use, model context-window percentage, risk level, and rollout size. In usage summary rows, `in` displays uncached input (`inputTokens - cachedInputTokens`) when cached input is reported, while the context-window percentage still uses raw input tokens. After user confirmation, the continuation action first asks the source thread to write a thread-specific handoff file, creates a source-named/date-suffixed continuation thread, sends a scoped bootstrap message, then archives the source thread.
 - The continuation bootstrap message explicitly carries source thread metadata, rollout size, inherited runtime settings, the source-thread-generated handoff file, bounded continuation lineage, recent visible turn summaries, and current-workspace `.agent-context/PROJECT_CONTEXT.md` / `.agent-context/HANDOFF.md` excerpts. It does not inject fixed private/public GitHub release rules; those appear only if the current workspace context or source-thread handoff says they are relevant.
 - Long-pressing a session row opens a mobile action sheet with rename, continuation, and archive actions. Archive asks for confirmation, calls `/api/threads/<threadId>/archive`, and refreshes the list after success. The row disables accidental system text selection during the long press, while rename input fields still allow normal text selection and editing.
 - Agent replies include a `复制全文` action. Markdown code blocks and command/output detail blocks include smaller copy buttons so users can copy structured text without manually selecting content on iOS.
@@ -381,7 +381,7 @@ Behavior:
 - The timer uses a fixed elapsed-time segment, so activity label length changes do not move the `本轮 HH:MM:SS` text.
 - After the latest turn finishes, the timer switches to muted styling and shows `已结束` instead of any in-progress activity label.
 - Live reasoning is not rendered as conversation rows.
-- Command/file/tool activity appears as compact operation cards.
+- Command/file/tool activity appears as compact operation cards. The latest-turn operation card uses a four-line visual budget: one metadata row plus up to three clipped detail lines.
 - Consecutive command/file operation updates show only the latest operation card unless normal visible content appears between two operations.
 - The left-swipe Subagent status panel shows Subagents from the current live turn, treating completed/closed spawn-call rows in that live turn as current because the child Agent can still be running after the spawn call closes. Older historical Subagent records are omitted so long-running collaboration sessions do not show hundreds of stale entries.
 - Page refresh prompts are gated by a full app-shell preflight. The browser must fetch and populate the target shell cache with the new HTML, CSS, JavaScript modules, manifest, service worker, and icons before the prompt is shown; clicking the prompt repeats that check and reloads only after the target cache is ready.
@@ -521,7 +521,7 @@ Behavior:
 本次 public 发布调整“回到本轮回复”的触发逻辑。上一版按钮会根据最近完成的 turn 自动出现，后台线程刚完成后切换进去也可能出现；这与实际阅读动作不完全一致。本版改为只在用户主动向上滚动当前对话区后出现，表示用户明确想从底部回看本轮回答内容。
 
 - “回到本轮回复”按钮不再因为线程刚完成、线程未读或切换到后台完成线程而自动显示。进入线程后如果没有手动向上滚动，页面只保留正常的底部阅读状态。
-- 用户在当前 live turn 或最近完成的最新 turn 中手动向上滚动时，前端会记录本轮回答锚点，然后显示向上浮动按钮。点击后定位到本轮第一条 `agentMessage`，也就是本次回答的起始位置；如果没有 `agentMessage`，再回退到本轮第一个非用户、非 live-operation 项。
+- 用户在当前 live turn 或最近完成的最新 turn 中手动向上滚动时，前端会记录本轮回答锚点，然后显示向上浮动按钮。点击后定位到本轮最后一条 `agentMessage`/`plan`，也就是最终回执或总结位置；如果没有这类回执，再回退到本轮最后一个非用户、非 live-operation 项。
 - 按钮仍然限制在近期上下文内：当前正在输出的 turn 可以触发；已完成 turn 只在现有 10 分钟窗口内触发，避免很久以前的旧会话随便上滑也出现本轮跳转提示。
 - “回到底部”向下按钮和“回到本轮回复”向上按钮现在可以同时存在。向上按钮在样式上向左错开，避免两个浮动按钮重叠；点击向下按钮会清掉本轮回复跳转状态。
 - live 输出期间的手动滚动暂停自动贴底行为继续保留。本次只是调整向上跳转按钮的显示条件和跳转目标，不改变发送、线程读取、额度显示或后端 app-server/mux 行为。
@@ -571,7 +571,7 @@ Behavior:
 - 前端新增 `public/conversation-scroll.js`，把“是否接近底部”、发送后的底部跟随、视口变化后的底部跟随拆成可测试的小模块；`public/app.js` 只负责接入当前线程状态和 DOM 滚动。
 - 当前线程发送消息成功发起后，会进入短时间的同线程底部跟随窗口。后续用户消息、turn start、首段输出或键盘/Composer 高度变化触发重绘时，页面会继续回到底部，避免停在会话中段。
 - `orientationchange`、窗口 `resize`、`visualViewport.resize` 和 `visualViewport.scroll` 也会触发短时间底部跟随，但只在当前线程当前或最近确实位于底部时生效；如果用户已经手动滚动查看历史内容，则不会强制拉回底部。
-- 用户真实的触摸、指针或滚轮滚动会立即取消发送跟随和视口跟随；点击上箭头跳回回答开头也会取消视口跟随，避免有意查看上方内容时被再次拉回底部。
+- 用户真实的触摸、指针或滚轮滚动会立即取消发送跟随和视口跟随；点击上箭头跳回本轮最终回执/总结也会取消视口跟随，避免有意查看上方内容时被再次拉回底部。
 - Public PWA shell 缓存升到 `codex-mobile-shell-v63`，版本仍为 `0.1.9`。已安装到主屏幕的 PWA 需要点页面刷新提示、关闭重开，或等待新的 service worker 激活后，才能拿到本次滚动保持修正。
 
 ### 2026-05-18 Mobile 文件预览说明
@@ -708,16 +708,20 @@ Behavior:
 - Web Push 完成通知增加 no-final-agent-message 保护：当 app-server 完成事件明确表示没有最终 assistant 回复时，Mobile Web 不再发送普通“turn ended”推送，避免用户收到结束通知但打开线程看不到正常结束回执。
 - 本次更新覆盖 `server.js`、`public/app.js`、`public/sw.js`、`adapters/message-input-service.js`、`adapters/push-notification-service.js`、新增 `docs/` 文档和相关测试。已打开到主屏幕的 PWA 需要点击页面刷新提示、硬刷新或关闭重开，拿到 `codex-mobile-shell-v86` 后，才能看到图片路径缩略图显示。
 
-### 2026-05-26 Public 发布说明（续：文件预览与引用图片）
+### 2026-05-27 Public 发布说明
 
-本次 public 发布继续保持版本号 `0.1.11`，Public PWA shell 缓存升到 `codex-mobile-shell-v92`。重点修正移动端文件预览和引用上传图片的显示一致性。
+本次 public 发布同步 v93-v98 的移动端阅读、诊断和上传图片显示修正。版本保持 `0.1.11`，Public PWA shell 缓存升到 `codex-mobile-shell-v98`；已打开到主屏幕的 PWA 需要点击页面刷新提示、硬刷新或关闭重开，才能拿到新的前端资源。服务端上传 MIME 修正需要重启 8787 Node listener 后生效。
 
-- Markdown 本地文件预览现在能识别 Codex 风格的位置后缀，例如 `README.md:12`、`README.md:12:3`、`README.md#L12` 和 `README.md#line-12`。服务端会在扩展名识别、根目录校验和只读预览前剥离这些位置后缀，避免 `.md:12` 被误判成不支持的类型。
-- Agent 回复里的本地文件链接不再额外显示“预览文件”之类的重复提示，只保留可点击的路径文本。长路径、Markdown 代码块和表格会在预览面板固定宽度内换行，减少移动端横向拖动。
-- 文件预览层支持右滑关闭，并阻止该手势穿透到底层会话页或侧栏导航。预览内纵向滚动仍保留给正文内容。
-- `Uploaded attachments:` 摘要里的已保存上传图片路径会继续渲染为居中缩略图；当 Codex 或 plan 回复再次引用同一段附件摘要时，也会走同一缩略图路径。v91 兼容 CRLF 换行和 Markdown 引用块格式，例如 `> Uploaded attachments:` / `> - IMG_0001.jpg (...)`；v92 进一步兼容 live/app-server 原始 `input_text`、`input_image` 和对象形态 `image_url.url` content part，避免桥接或实时目标线程在消息里退回成 raw 路径文本。
-- 这些显示规则不改变模型上下文策略：默认 `CODEX_MOBILE_IMAGE_CONTEXT_MODE=reference` 仍只把图片作为路径文本发送给模型，不恢复默认 `localImage` 输入。
-- 本次 v92 增量同步覆盖 `public/app.js`、`public/sw.js`、项目文档、README 和相关测试。已打开到主屏幕的 PWA 需要点击刷新提示、硬刷新或关闭重开，拿到 `codex-mobile-shell-v92` 后才能看到新的引用图片解析逻辑。
+- 当前 turn 的向上浮动箭头现在定位到本轮最终回执/总结位置，而不是本轮第一条 assistant 回复。目标优先选择本轮最后一条 `agentMessage` 或 `plan`，没有最终回执时才回退到最后一个非用户、非 live-operation 项。
+- 如果用户已经在 live 输出期间向上滚动，`turn/completed` 不会覆盖这个已激活的当前 turn 锚点；最终总结很长时，只要目标起点在可视区上方，向上箭头就可以显示并跳回总结开头。
+- 最终回执刷新期间，页面不再在用户阅读时持续强制滚到底部。用户最近的手动滚动如果让对话区离开底部，会建立当前 turn 阅读保持状态；render-time stick-to-bottom、发送后底部跟随和 viewport 跟随都会暂停，直到用户回到底部或点击向下箭头。
+- 最新 turn 的命令/工具/文件/搜索操作卡从三行视觉预算改为四行：一行类型/状态元信息，加上最多三行详情。这样长命令、文件列表或工具摘要在手机上更容易读，同时仍避免操作卡无限变高。
+- 完成的 turn 可以显示 `Context and token usage` 诊断卡。该卡来自 rollout `token_count` 事件，展示本轮 token、累计 token、context window 使用比例/风险和 rollout 大小；没有 scoped token 事件时不会猜测生成。诊断卡不会成为向上箭头的最终回执目标。
+- Usage 诊断卡里 `in` 的显示口径调整为未缓存输入量：当上游提供 `cachedInputTokens` 时，`in` 显示 `inputTokens - cachedInputTokens`，同时继续单独显示 `cached`。context window 百分比和风险仍按 raw input/context token 计算，因为 cached input 仍占用模型上下文窗口。
+- 侧栏新增 prompt-only 的 Public PR 检查。浏览器会检查配置的 public 仓库是否有开放 PR；发现 PR 时只提示是否准备合并/发布评审任务，不会自动 merge、sync、commit 或 push。
+- 上传图片缩略图显示继续保持 reference-only 模型上下文策略：模型默认只收到附件摘要和本地路径，不默认收到图片像素。浏览器仍会从 `Uploaded attachments:` 摘要渲染居中缩略图，包括用户消息、Codex/plan 引用摘要、CRLF、Markdown blockquote，以及 app-server 原始 `input_text` / `input_image` / `image_url` content part。
+- 上传文件预览接口现在为 `.jpg`、`.jpeg`、`.webp`、`.gif`、`.png` 等保存的图片路径返回真实图片 MIME，例如 `image/jpeg`，避免浏览器尤其是 iOS/Safari 因 `application/octet-stream` 而不显示 `<img>` 缩略图。
+- 本次同步新增 `adapters/turn-usage-summary-service.js` 和 `adapters/public-pull-request-service.js`，并更新 `server.js`、`public/app.js`、`public/styles.css`、`public/sw.js`、文档与相关测试。部署者更新后应运行测试/check，并重启服务端 listener 以加载上传 MIME 与 public PR/usage summary 路由。
 
 ## Current Update Notes
 
@@ -779,6 +783,8 @@ This section summarizes the current integration behavior for someone cloning or 
 
 - Conversation rendering uses a lightweight keyed DOM patcher so status polls and no-op refreshes do not replace the whole conversation.
 - Live reasoning deltas update the timer activity label but do not create visible conversation rows.
+- The upward floating button for the current turn targets the final receipt/summary position, using the last `agentMessage` or `plan` in that turn before falling back to the last non-user, non-live-operation item. If the user already scrolled upward during live output, that activated jump state must survive `turn/completed`; the button should also appear when the target item's start is above the viewport, even if a long summary still extends into view.
+- Live/final output must not keep forcing the conversation downward while the user is reading. A recent manual scroll that moves the conversation away from bottom establishes a current-turn reading hold even if programmatic bottom-scroll was active; render-time stick-to-bottom, submitted-message follow, and viewport follow must all stop until the user returns to bottom or taps the down arrow.
 - Mobile foreground recovery handles `visibilitychange`, `pageshow`, `focus`, `orientationchange`, `visualViewport` changes, and window resize.
 - On iOS, returning from input-method or permission screens can leave a stale/blank composited viewport. The app maintains a JS-driven `--app-height` and runs several lightweight visual recovery passes after resume.
 - Uploaded image messages render as centered thumbnails, not full-width raw images or data URLs.
@@ -1148,6 +1154,10 @@ VAPID details:
 | `CODEX_MOBILE_UPDATE_BRANCH` | Git branch used by the self-update check, default `main`. |
 | `CODEX_MOBILE_UPDATE_CHECK_TIMEOUT_MS` | Timeout for update-check Git commands, default `15000`. |
 | `CODEX_MOBILE_UPDATE_APPLY_TIMEOUT_MS` | Timeout for the fast-forward update command, default `120000`. |
+| `CODEX_MOBILE_DISABLE_PUBLIC_PR_CHECK` | Disable the public-repository open-PR prompt when set to `1`, `true`, `yes`, or `on`. |
+| `CODEX_MOBILE_PUBLIC_PR_REPOSITORY` | GitHub `owner/repo` slug checked for open public pull requests, default `pentiumxp/codex-mobile-web-public`. |
+| `CODEX_MOBILE_PUBLIC_PR_CHECK_TIMEOUT_MS` | Timeout for the unauthenticated GitHub public PR check, default `12000`. |
+| `CODEX_MOBILE_PUBLIC_PR_CHECK_CACHE_MS` | In-memory cache window for public PR status checks, default `900000` (`15 minutes`). |
 | `CODEX_MOBILE_KEY` | Inline web access key. |
 | `CODEX_MOBILE_KEY_FILE` | Custom access-key file path. |
 | `CODEX_MOBILE_DISABLE_AUTH` | Disable auth when set to `1`, `true`, `yes`, or `on`. |

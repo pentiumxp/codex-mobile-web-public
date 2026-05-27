@@ -44,7 +44,7 @@ test("collab agent tool calls render as compact summary cards", () => {
   assert.match(stylesCss, /\.collab-agent-card/);
 });
 
-test("live operation cards stay compact, three-line, and expose only the newest operation", () => {
+test("live operation cards stay compact, four-line, and expose only the newest operation", () => {
   assert.match(functionBody("renderLiveOperation"), /renderOperationCard\(item, key, \{ status \}\)/);
   assert.match(functionBody("renderLiveOperation"), /stableOperationRenderKey\(turn, item, index\)/);
   assert.match(functionBody("renderOperationCard"), /operation-meta-line/);
@@ -83,8 +83,8 @@ test("live operation cards stay compact, three-line, and expose only the newest 
   assert.match(stylesCss, /\.operation-duration\s*{[\s\S]*font-variant-numeric:\s*tabular-nums;/);
   const operationDetailCss = cssRuleBody(".operation-detail");
   assert.match(operationDetailCss, /font-size:\s*calc\(var\(--content-code-font-size\) \* 1\.06\);/);
-  assert.match(operationDetailCss, /-webkit-line-clamp:\s*2;/);
-  assert.match(operationDetailCss, /max-height:\s*calc\(1\.26em \* 2\);/);
+  assert.match(operationDetailCss, /-webkit-line-clamp:\s*3;/);
+  assert.match(operationDetailCss, /max-height:\s*calc\(1\.26em \* 3\);/);
   assert.match(operationDetailCss, /white-space:\s*normal;/);
   assert.doesNotMatch(operationDetailCss, /white-space:\s*nowrap;/);
 });

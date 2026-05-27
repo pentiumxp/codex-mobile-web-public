@@ -35,11 +35,14 @@ Implementation path:
 
 1. Decide whether the behavior belongs in server compaction or browser rendering.
 2. Server should compact, enrich, and bound data volume; browser should render stable visible items without broad DOM churn.
-3. Operation cards in the latest turn should globally show only the newest operation card, with compact multi-line detail.
+3. Operation cards in the latest turn should globally show only the newest operation card, with a compact four-line visual budget: one metadata row plus up to three clipped detail lines.
 4. Raw operation fallback must respect latest live turn id and completion outputs.
 5. Live reasoning should update the timer/activity label, not insert reasoning rows.
 6. Type-only context compaction markers must not synthesize visible pending/completed notices.
-7. Test with `test/thread-item-timestamp-enrichment.test.js`, `test/conversation-render.test.js`, `test/collab-agent-render.test.js`, `test/message-timestamp.test.js`, and `test/mobile-viewport.test.js`.
+7. Current-turn upward scroll jump targets the final receipt/summary: the last `agentMessage` or `plan`, then the last non-user, non-live-operation fallback. It should not jump to the first assistant reply. Preserve an already activated live-turn anchor across `turn/completed`, and show the button when the target item's start is above the viewport.
+8. Live/final receipt rendering must not force-scroll while the user is reading. Recent manual scroll away from bottom should create a current-turn hold even during programmatic bottom-scroll; render stick-to-bottom and bottom-follow timers must respect that hold.
+9. Completed-turn context/token usage summaries should be synthetic diagnostic items from rollout `token_count` events. They must be omitted when no scoped token event exists and must not become the upward final-receipt jump target. If cached input is present, the displayed `in` value should exclude cached input while context-window percent/risk stays based on raw input tokens.
+10. Test with `test/thread-item-timestamp-enrichment.test.js`, `test/conversation-render.test.js`, `test/collab-agent-render.test.js`, `test/message-timestamp.test.js`, `test/turn-scroll-controls.test.js`, `test/turn-usage-summary-service.test.js`, and `test/mobile-viewport.test.js`.
 
 ## Rollout Continuation
 
@@ -109,7 +112,7 @@ Implementation path:
 6. Keep upload-aware model input and history persistence in `adapters/message-input-service.js`.
 7. Preserve the default `CODEX_MOBILE_IMAGE_CONTEXT_MODE=reference` behavior unless the feature explicitly requires vision input.
 8. If vision is required, prefer `latest`/`vision` over legacy `all`, and document that app-server current history may still retain the image until a fresh continuation.
-9. Render saved image uploads as bounded thumbnails from the upload/file preview route even when model context stays reference-only, including quoted `Uploaded attachments:` summaries in Codex/plan replies. Keep this parser tolerant of CRLF line endings, Markdown blockquote-style quoted summaries, and raw app-server `input_text` / `input_image` / `image_url` content parts.
+9. Render saved image uploads as bounded thumbnails from the upload/file preview route even when model context stays reference-only, including quoted `Uploaded attachments:` summaries in Codex/plan replies. Keep this parser tolerant of CRLF line endings, Markdown blockquote-style quoted summaries, and raw app-server `input_text` / `input_image` / `image_url` content parts. The upload preview response must use a real image MIME type for `.jpg`, `.jpeg`, `.webp`, `.gif`, and related saved upload paths.
 10. Render app-server `imageView` items as direct image views; never stringify data URLs into conversation text.
 11. Test with upload/file/image focused tests.
 
@@ -125,6 +128,19 @@ Implementation path:
 4. Add tests that cover both small threads and large-rollout fallback paths.
 5. Re-check `/api/public-config` and a real continuation/new send path after activation.
 
+## Hermes / ChatGPT Pro Integration
+
+Use when diagnosing or changing local Hermes-to-Codex integration.
+
+Implementation path:
+
+1. Identify which integration is active:
+   - ChatGPT Pro bridge: Hermes Gateway plugin -> `bridge-host.js` `/bridge/chatgpt-pro` -> Codex Mobile thread API.
+   - Legacy polling worker: `codex-hermes-main` -> `/api/codex-mux/...`.
+2. For ChatGPT Pro, inspect the deployment's configured bridge-state file for the Codex thread id, then inspect that thread through Mobile Web.
+3. Do not assume `/api/codex-mux` exists on current Hermes production; a 404 means that legacy queue path is unavailable.
+4. Do not print bridge keys or owner keys.
+
 ## Public/Private Publish
 
 Use when user explicitly asks to publish public or sync public.
@@ -132,8 +148,9 @@ Use when user explicitly asks to publish public or sync public.
 Implementation path:
 
 1. Re-read `.agent-context/PROJECT_CONTEXT.md` public release rules.
-2. Sync only product files to the clean public repo.
-3. Do not copy `.agent-context`, runtime state, uploads, logs, raw key paths, VAPID/subscription files, or local-only scripts unless explicitly public-safe.
-4. Public commit must include detailed Chinese README update and detailed Chinese commit message.
-5. Run public tests/checks and staged privacy scan before push.
-6. Sync public README back to private only when appropriate.
+2. If the sidebar public PR check reports open pull requests, prompt the user whether to handle them. The check can prepare a review task, but merge/sync/commit/push still require explicit user approval.
+3. Sync only product files to the clean public repo.
+4. Do not copy `.agent-context`, runtime state, uploads, logs, raw key paths, VAPID/subscription files, or local-only scripts unless explicitly public-safe.
+5. Public commit must include detailed Chinese README update and detailed Chinese commit message.
+6. Run public tests/checks and staged privacy scan before push.
+7. Sync public README back to private only when appropriate.

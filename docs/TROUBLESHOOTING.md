@@ -138,6 +138,8 @@ If the original user upload renders as a thumbnail but a later Codex/plan reply 
 
 The parser should recognize LF and CRLF summaries, plus Markdown blockquote-style quoted lines such as `> Uploaded attachments:` and `> - IMG_0001.jpg (...)`. It should also treat raw app-server `input_text` parts as text and `input_image` / `image_url` parts as images, including object-shaped `image_url.url`. The saved upload path must still be under `%USERPROFILE%\.codex-mobile-web\uploads` so `/api/uploads/file?path=...` can serve it to the authenticated browser.
 
+If the DOM contains an `<img>` for the saved upload path but the browser still shows a broken or blank thumbnail, check the upload route response headers. Saved `.jpg`, `.jpeg`, `.webp`, `.gif`, and `.png` files must return image MIME types such as `image/jpeg` rather than `application/octet-stream`.
+
 Focused checks:
 
 ```powershell
@@ -201,3 +203,19 @@ If a continuation starts with unexpectedly high input tokens, inspect the bootst
 - Source handoff should be listed by file path with a small excerpt, not pasted in full.
 - Workspace handoff and prior lineage excerpts should stay bounded.
 - Durable project facts should move to `.agent-context` and `docs/`, not into a larger bootstrap prompt.
+
+## Hermes / ChatGPT Pro Bridge Checks
+
+Do not confuse two different integrations:
+
+- Legacy/experimental `codex-hermes-main` polling worker uses `/api/codex-mux/...`. If production Hermes returns `404` for that route, that worker path is not serving current tasks.
+- Current ChatGPT Pro generation path is Hermes Gateway plugin -> `bridge-host.js` `/bridge/chatgpt-pro` -> Codex Mobile `/api/threads/...` -> a `ChatGPT Pro` Codex thread.
+
+For `@ChatGPT Pro` slow/no feedback:
+
+1. Check Hermes 8797 `/api/status?detail=1` for Gateway Pool health and active runs.
+2. Check the deployment's configured ChatGPT Pro bridge-state file for the target Codex thread id.
+3. Read that Codex thread through Mobile Web API.
+4. Check its rollout mtime and whether Chrome/ChatGPT Pro automation is still emitting events.
+
+If rollout is still growing, it is slow, not stuck.
