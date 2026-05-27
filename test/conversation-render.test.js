@@ -50,6 +50,36 @@ function evaluatedAttachmentSummaryParser() {
   return Function(`${sources.join("\n")}\nreturn splitAttachmentSummaryText;`)();
 }
 
+function evaluatedInputContentRenderer() {
+  const sources = [
+    "escapeHtml",
+    "shortPath",
+    "imageUrlValue",
+    "isInputTextPart",
+    "inputTextValue",
+    "isTruncatedImagePayloadPart",
+    "isInputImagePart",
+    "attachmentSummaryMarkerMatch",
+    "stripAttachmentSummaryLinePrefix",
+    "parseAttachmentLine",
+    "splitAttachmentSummaryText",
+    "isLikelyAbsoluteLocalPath",
+    "canRenderImageAttachment",
+    "uploadFileUrl",
+    "imageSourceForPart",
+    "compactStructuredForSignature",
+    "renderInputText",
+    "renderInputImage",
+    "renderInputAttachment",
+    "renderAttachmentSummary",
+    "renderInputContent",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(
+    "URLSearchParams",
+    `const state = { key: "" };\n${sources.join("\n")}\nreturn renderInputContent;`,
+  )(URLSearchParams);
+}
+
 test("context compaction notices update status and collapse repeated turn notices", () => {
   assert.match(functionBody("visibleItemsForTurn"), /const contextEntryByKey = new Map\(\)/);
   assert.match(functionBody("visibleItemsForTurn"), /isContextCompactionItem\(item\)/);
@@ -116,6 +146,36 @@ test("uploaded image summaries parse CRLF and markdown blockquote references", (
     assert.equal(split.attachments[0].path, uploadPath);
     assert.equal(split.attachments[0].isImage, true);
   }
+});
+
+test("raw app-server input text upload summaries render as thumbnails", () => {
+  const renderInputContent = evaluatedInputContentRenderer();
+  const uploadPath = "C:\\Users\\example\\.codex-mobile-web\\uploads\\2026-05-27\\thread-id\\1779843711115-IMG_5433.jpg";
+  const html = renderInputContent([
+    {
+      type: "input_text",
+      text: `Uploaded attachments:\n- IMG_5433.jpg (image, image/jpeg, 122.6 KB): ${uploadPath}`,
+    },
+  ]);
+
+  assert.match(html, /class="input-image"/);
+  assert.match(html, /\/api\/uploads\/file\?path=/);
+  assert.match(html, /IMG_5433\.jpg/);
+  assert.doesNotMatch(html, /<code>C:\\Users\\example/);
+});
+
+test("raw app-server input image parts use object image urls", () => {
+  const renderInputContent = evaluatedInputContentRenderer();
+  const html = renderInputContent([
+    {
+      type: "input_image",
+      image_url: { url: "data:image/png;base64,abc123" },
+    },
+  ]);
+
+  assert.match(html, /class="input-image"/);
+  assert.match(html, /src="data:image\/png;base64,abc123"/);
+  assert.doesNotMatch(html, /\[object Object\]/);
 });
 
 test("context compaction merge does not preserve stale mobile notices", () => {

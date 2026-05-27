@@ -139,7 +139,7 @@ const state = {
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v91";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v92";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -2024,12 +2024,12 @@ function visibleItemSignature(item, turn = null) {
 function inputContentSignature(content) {
   return (content || []).map((part) => {
     if (!part || typeof part !== "object") return String(part || "");
-    if (part.type === "text") return { type: "text", text: part.text || "" };
+    if (isInputTextPart(part)) return { type: "text", text: inputTextValue(part) };
     if (isInputImagePart(part)) {
       return {
         type: part.type || "image",
         path: part.path || "",
-        url: imageSourceSignature(part.url || part.image_url || ""),
+        url: imageSourceSignature(imageUrlValue(part)),
       };
     }
     return compactStructuredForSignature(part);
@@ -5017,12 +5017,33 @@ function copyTextForItem(item) {
   return item.text || "";
 }
 
+function imageUrlValue(part) {
+  if (!part || typeof part !== "object") return "";
+  const raw = part.url || part.image_url || part.imageUrl || "";
+  if (raw && typeof raw === "object") return String(raw.url || raw.uri || "");
+  return String(raw || "");
+}
+
+function isInputTextPart(part) {
+  if (!part || typeof part !== "object") return false;
+  const type = String(part.type || "");
+  return type === "text" || type === "input_text";
+}
+
+function inputTextValue(part) {
+  if (!part || typeof part !== "object") return "";
+  if (typeof part.text === "string") return part.text;
+  if (typeof part.input_text === "string") return part.input_text;
+  if (part.type === "input_text" && typeof part.content === "string") return part.content;
+  return "";
+}
+
 function isInputImagePart(part) {
   if (!part || typeof part !== "object") return false;
   const type = String(part.type || "");
-  const url = String(part.url || part.image_url || "");
+  const url = imageUrlValue(part);
   if (isTruncatedImagePayloadPart(part)) return true;
-  return type === "image" || type === "localImage" || /^data:image\//i.test(url);
+  return type === "image" || type === "localImage" || type === "input_image" || type === "image_url" || /^data:image\//i.test(url);
 }
 
 function isTruncatedImagePayloadPart(part) {
@@ -5085,7 +5106,7 @@ function uploadFileUrl(filePath) {
 function imageSourceForPart(part, attachment = null) {
   if (attachment && attachment.path) return uploadFileUrl(attachment.path);
   if (part.path) return uploadFileUrl(part.path);
-  const url = String(part.url || part.image_url || "");
+  const url = imageUrlValue(part);
   return url || "";
 }
 
@@ -5105,7 +5126,7 @@ function renderInputText(text) {
 
 function renderInputImage(part, attachment = null, index = 0) {
   const src = imageSourceForPart(part, attachment);
-  const label = (attachment && attachment.name) || shortPath(part.path || part.url || "") || `Image ${index + 1}`;
+  const label = (attachment && attachment.name) || shortPath(part.path || imageUrlValue(part) || "") || `Image ${index + 1}`;
   if (!src) return `<div class="input-attachment">${escapeHtml(label)}</div>`;
   return `<figure class="input-image">
     <img src="${escapeHtml(src)}" alt="${escapeHtml(label)}" loading="lazy">
@@ -5152,8 +5173,8 @@ function renderInputContent(content) {
   const html = [];
   for (const part of parts) {
     if (!part || isInputImagePart(part)) continue;
-    if (part.type === "text") {
-      const split = splitAttachmentSummaryText(part.text || "");
+    if (isInputTextPart(part)) {
+      const split = splitAttachmentSummaryText(inputTextValue(part));
       if (split.text) html.push(renderInputText(split.text));
       attachments.push(...split.attachments);
       continue;

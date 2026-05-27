@@ -31,7 +31,7 @@ Reference-only is the production default because app-server current history can 
 Model context policy and user-visible rendering are separate:
 
 - The model receives the attachment summary and local file path in text.
-- The Mobile Web conversation should render uploaded image references as centered thumbnails when the saved upload path is available, including when Codex quotes the same `Uploaded attachments:` summary in a later reply. The parser must tolerate CRLF line endings and Markdown blockquote-style quoted summaries.
+- The Mobile Web conversation should render uploaded image references as centered thumbnails when the saved upload path is available, including when Codex quotes the same `Uploaded attachments:` summary in a later reply. The parser must tolerate CRLF line endings, Markdown blockquote-style quoted summaries, and raw app-server `input_text` / `input_image` / `image_url` content parts.
 - The thumbnail uses the authenticated upload/file preview route and must not require sending `localImage` parts to app-server.
 - If only a non-durable browser-local filename is available, keep the compact attachment row instead of rendering a broken image.
 

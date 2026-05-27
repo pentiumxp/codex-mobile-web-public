@@ -702,7 +702,7 @@ Behavior:
 
 - 图片上传现在默认使用 `CODEX_MOBILE_IMAGE_CONTEXT_MODE=reference`：模型只收到附件摘要和本地文件路径，不再默认收到 app-server `localImage` 输入。这可以避免新上传图片继续进入 app-server 当前历史和 compacted `replacement_history`，从源头降低后续 turn 的上下文/token 成本。
 - 如果确实需要模型读取图片像素，可以显式设置 `CODEX_MOBILE_IMAGE_CONTEXT_MODE=latest` 或 `vision`，只发送最新一张图片；`all` 仅用于恢复旧版全部图片行为。`CODEX_MOBILE_PERSIST_IMAGE_EXTENDED_HISTORY=1` 仍只控制 extended-history 请求，不会清理当前 app-server 内存或旧 rollout 中已经存在的图片 payload。
-- 移动端对话展示与模型上下文策略已经分离：即使模型只收到路径引用，浏览器也会从 `Uploaded attachments` 摘要里识别已保存的本地图片路径，并通过认证上传预览接口渲染居中缩略图。这个规则也适用于 Codex/plan 回复里再次引用同一段附件摘要的情况，并兼容 CRLF 换行和 Markdown 引用块；用户不再只看到一长串路径，非图片附件仍保持紧凑的文件信息行。
+- 移动端对话展示与模型上下文策略已经分离：即使模型只收到路径引用，浏览器也会从 `Uploaded attachments` 摘要里识别已保存的本地图片路径，并通过认证上传预览接口渲染居中缩略图。这个规则也适用于 Codex/plan 回复里再次引用同一段附件摘要的情况，并兼容 CRLF 换行、Markdown 引用块以及 app-server 原始 `input_text` / `input_image` / `image_url` content part；用户不再只看到一长串路径，非图片附件仍保持紧凑的文件信息行。
 - 压缩续接 bootstrap 改成 file-first 的小摘要策略：新线程仍会拿到源线程 handoff 文件路径、必要的运行设置、最近 turn 摘要和工作区上下文摘录，但默认总量从过去偏大的 inline 上下文收紧到约 `52000` 字符，并限制 source handoff、workspace handoff、lineage 和单条 item 摘要大小。完整事实应回到 `.agent-context/thread-handoffs/<id>.md` 和项目文档读取。
 - 新增 `docs/` 项目文档集与 `docs/CONTEXT_STRATEGY.md`，把架构、模块边界、故障排除、复杂功能实现路径、上下文策略和文档更新规则固化下来。后续修改模型输入、图片保留、续接 bootstrap 或 handoff 压缩策略时，需要同步更新对应文档。
 - Web Push 完成通知增加 no-final-agent-message 保护：当 app-server 完成事件明确表示没有最终 assistant 回复时，Mobile Web 不再发送普通“turn ended”推送，避免用户收到结束通知但打开线程看不到正常结束回执。
@@ -710,14 +710,14 @@ Behavior:
 
 ### 2026-05-26 Public 发布说明（续：文件预览与引用图片）
 
-本次 public 发布继续保持版本号 `0.1.11`，Public PWA shell 缓存升到 `codex-mobile-shell-v91`。重点修正移动端文件预览和引用上传图片的显示一致性。
+本次 public 发布继续保持版本号 `0.1.11`，Public PWA shell 缓存升到 `codex-mobile-shell-v92`。重点修正移动端文件预览和引用上传图片的显示一致性。
 
 - Markdown 本地文件预览现在能识别 Codex 风格的位置后缀，例如 `README.md:12`、`README.md:12:3`、`README.md#L12` 和 `README.md#line-12`。服务端会在扩展名识别、根目录校验和只读预览前剥离这些位置后缀，避免 `.md:12` 被误判成不支持的类型。
 - Agent 回复里的本地文件链接不再额外显示“预览文件”之类的重复提示，只保留可点击的路径文本。长路径、Markdown 代码块和表格会在预览面板固定宽度内换行，减少移动端横向拖动。
 - 文件预览层支持右滑关闭，并阻止该手势穿透到底层会话页或侧栏导航。预览内纵向滚动仍保留给正文内容。
-- `Uploaded attachments:` 摘要里的已保存上传图片路径会继续渲染为居中缩略图；当 Codex 或 plan 回复再次引用同一段附件摘要时，也会走同一缩略图路径。v91 进一步兼容 CRLF 换行和 Markdown 引用块格式，例如 `> Uploaded attachments:` / `> - IMG_0001.jpg (...)`。
+- `Uploaded attachments:` 摘要里的已保存上传图片路径会继续渲染为居中缩略图；当 Codex 或 plan 回复再次引用同一段附件摘要时，也会走同一缩略图路径。v91 兼容 CRLF 换行和 Markdown 引用块格式，例如 `> Uploaded attachments:` / `> - IMG_0001.jpg (...)`；v92 进一步兼容 live/app-server 原始 `input_text`、`input_image` 和对象形态 `image_url.url` content part，避免桥接或实时目标线程在消息里退回成 raw 路径文本。
 - 这些显示规则不改变模型上下文策略：默认 `CODEX_MOBILE_IMAGE_CONTEXT_MODE=reference` 仍只把图片作为路径文本发送给模型，不恢复默认 `localImage` 输入。
-- 本次同步覆盖 `server.js`、`public/app.js`、`public/markdown-renderer.js`、`public/styles.css`、`public/sw.js`、项目文档、README 和相关测试。已打开到主屏幕的 PWA 需要点击刷新提示、硬刷新或关闭重开，拿到 `codex-mobile-shell-v91` 后才能看到新的引用图片解析逻辑。
+- 本次 v92 增量同步覆盖 `public/app.js`、`public/sw.js`、项目文档、README 和相关测试。已打开到主屏幕的 PWA 需要点击刷新提示、硬刷新或关闭重开，拿到 `codex-mobile-shell-v92` 后才能看到新的引用图片解析逻辑。
 
 ## Current Update Notes
 
