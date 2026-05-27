@@ -51,6 +51,40 @@ function compactTokenUsage(usage) {
   return Object.fromEntries(Object.entries(compacted).filter(([, value]) => value !== null));
 }
 
+function numericUsageValue(usage, key) {
+  const value = Number(usage && usage[key]);
+  return Number.isFinite(value) ? value : null;
+}
+
+function tokenUsageHasPositiveComponent(usage) {
+  return [
+    "inputTokens",
+    "cachedInputTokens",
+    "outputTokens",
+    "reasoningOutputTokens",
+  ].some((key) => {
+    const value = numericUsageValue(usage, key);
+    return value !== null && value > 0;
+  });
+}
+
+function tokenUsageTotalIsZero(usage) {
+  const total = numericUsageValue(usage, "totalTokens");
+  return total !== null && total === 0;
+}
+
+function isZeroWindowTokenCountSentinel(lastTokenUsage, totalTokenUsage, modelContextWindow) {
+  const window = numberValue(modelContextWindow);
+  const total = numericUsageValue(totalTokenUsage, "totalTokens");
+  return Boolean(
+    window
+    && total === window
+    && tokenUsageTotalIsZero(lastTokenUsage)
+    && !tokenUsageHasPositiveComponent(lastTokenUsage)
+    && !tokenUsageHasPositiveComponent(totalTokenUsage)
+  );
+}
+
 function contextRiskLevel(percent) {
   const value = Number(percent);
   if (!Number.isFinite(value)) return "unknown";
@@ -67,6 +101,7 @@ function tokenCountSummaryFromPayload(payload, meta = {}) {
   const totalTokenUsage = compactTokenUsage(info.total_token_usage || info.totalTokenUsage);
   if (!lastTokenUsage && !totalTokenUsage) return null;
   const modelContextWindow = numberValue(info.model_context_window ?? info.modelContextWindow);
+  if (isZeroWindowTokenCountSentinel(lastTokenUsage, totalTokenUsage, modelContextWindow)) return null;
   const contextWindowUsedTokens = lastTokenUsage && Number.isFinite(Number(lastTokenUsage.inputTokens))
     ? Number(lastTokenUsage.inputTokens)
     : null;
@@ -178,6 +213,7 @@ module.exports = {
   collectTurnUsageSummariesFromRolloutText,
   compactTokenUsage,
   contextRiskLevel,
+  isZeroWindowTokenCountSentinel,
   tokenCountSummaryFromPayload,
   turnUsageSummaryItem,
 };

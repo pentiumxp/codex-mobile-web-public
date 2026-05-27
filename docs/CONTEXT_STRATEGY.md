@@ -74,6 +74,8 @@ Thread detail may attach a synthetic `turnUsageSummary` item to completed turns 
 
 When a token event includes `cachedInputTokens`, the UI displays `in` as uncached input (`inputTokens - cachedInputTokens`) and shows cached input separately. Model context-window usage and risk still use the raw input-token count because cached input still occupies the prompt window.
 
+Some app-server turns can emit a final zero/window sentinel after valid usage events: `last_token_usage` is all zero, `total_token_usage` component fields are zero, and `total_token_usage.total_tokens` equals `model_context_window`. This is not real usage and must be ignored so the latest valid scoped token event remains visible.
+
 This is diagnostic display only. It must not change model input construction, continuation bootstrap content, app-server history, or rollout files. If a turn has no scoped `token_count` event, Mobile Web should omit the summary rather than guessing.
 
 ## Recovery For Existing Oversized Threads

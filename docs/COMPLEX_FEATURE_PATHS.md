@@ -35,8 +35,8 @@ Implementation path:
 
 1. Decide whether the behavior belongs in server compaction or browser rendering.
 2. Server should compact, enrich, and bound data volume; browser should render stable visible items without broad DOM churn.
-3. Operation cards in the latest turn should globally show only the newest operation card, with a compact four-line visual budget: one metadata row plus up to three clipped detail lines.
-4. Raw operation fallback must respect latest live turn id and completion outputs.
+3. Operation cards in the latest turn should globally show only the newest operation card, with a compact four-line visual budget: one metadata row plus up to three clipped detail lines. The newest same-turn operation card should remain visible after refresh/re-entry even if the operation or turn has completed.
+4. Raw operation fallback must respect latest turn id and completion outputs. Completed fallback is allowed only when the completed operation is tied to the same latest turn, so older completed operations cannot attach to a newer live turn.
 5. Live reasoning should update the timer/activity label, not insert reasoning rows.
 6. Type-only context compaction markers must not synthesize visible pending/completed notices.
 7. Current-turn upward scroll jump targets the final receipt/summary: the last `agentMessage` or `plan`, then the last non-user, non-live-operation fallback. It should not jump to the first assistant reply. Preserve an already activated live-turn anchor across `turn/completed`, and show the button when the target item's start is above the viewport.

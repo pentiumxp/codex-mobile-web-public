@@ -146,3 +146,123 @@ test("operation timestamps prefer matching rollout call id", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("raw operation fallback does not attach a completed older turn operation to a new live turn", () => {
+  const { dir, rolloutPath } = writeRollout([
+    event("2026-05-24T10:40:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-old" }),
+    event("2026-05-24T10:40:02.000Z", "response_item", {
+      type: "function_call",
+      call_id: "call-old",
+      arguments: JSON.stringify({ command: "rg -n old public" }),
+    }),
+    event("2026-05-24T10:40:05.000Z", "response_item", {
+      type: "function_call_output",
+      call_id: "call-old",
+      output: "Exit code: 0\nWall time: 0.1 seconds\nOutput:\n",
+    }),
+    event("2026-05-24T10:41:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-new" }),
+    event("2026-05-24T10:41:01.000Z", "response_item", { type: "message", role: "user" }),
+  ]);
+  try {
+    const compacted = compactThread({
+      id: "thread-5",
+      path: rolloutPath,
+      turns: [
+        { id: "turn-old", status: "interrupted", items: [] },
+        {
+          id: "turn-new",
+          status: { type: "running" },
+          items: [{ id: "user-new", type: "userMessage", content: [{ type: "text", text: "continue" }] }],
+        },
+      ],
+    });
+
+    assert.equal(compacted.turns[1].items.some((item) => item.type === "commandExecution"), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("raw operation fallback can attach an unfinished operation from the same live turn", () => {
+  const { dir, rolloutPath } = writeRollout([
+    event("2026-05-24T10:50:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-live" }),
+    event("2026-05-24T10:50:02.000Z", "response_item", {
+      type: "function_call",
+      call_id: "call-live",
+      arguments: JSON.stringify({ command: "rg -n live public" }),
+    }),
+  ]);
+  try {
+    const compacted = compactThread({
+      id: "thread-6",
+      path: rolloutPath,
+      turns: [{
+        id: "turn-live",
+        status: { type: "running" },
+        items: [{ id: "user-live", type: "userMessage", content: [{ type: "text", text: "continue" }] }],
+      }],
+    });
+
+    const command = compacted.turns[0].items.find((item) => item.type === "commandExecution");
+    assert.ok(command);
+    assert.equal(command.status, "running");
+    assert.equal(command.command, "rg -n live public");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("latest completed turn keeps the newest compact operation card", () => {
+  const compacted = compactThread({
+    id: "thread-7",
+    turns: [{
+      id: "turn-completed",
+      status: { type: "completed" },
+      items: [
+        { id: "user-1", type: "userMessage", content: [{ type: "text", text: "run checks" }] },
+        { id: "op-old", type: "commandExecution", command: "npm.cmd test", status: "completed" },
+        { id: "op-new", type: "commandExecution", command: "npm.cmd run check", status: "completed" },
+        { id: "agent-1", type: "agentMessage", text: "Done." },
+      ],
+    }],
+  });
+
+  const commands = compacted.turns[0].items.filter((item) => item.type === "commandExecution");
+  assert.equal(commands.length, 1);
+  assert.equal(commands[0].command, "npm.cmd run check");
+  assert.equal(commands[0].status, "completed");
+});
+
+test("raw operation fallback can attach a completed operation from the same latest turn", () => {
+  const { dir, rolloutPath } = writeRollout([
+    event("2026-05-24T11:00:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-done" }),
+    event("2026-05-24T11:00:02.000Z", "response_item", {
+      type: "function_call",
+      call_id: "call-done",
+      arguments: JSON.stringify({ command: "npm.cmd run check" }),
+    }),
+    event("2026-05-24T11:00:08.000Z", "response_item", {
+      type: "function_call_output",
+      call_id: "call-done",
+      output: "Exit code: 0\nWall time: 1.2 seconds\nOutput:\n",
+    }),
+  ]);
+  try {
+    const compacted = compactThread({
+      id: "thread-8",
+      path: rolloutPath,
+      turns: [{
+        id: "turn-done",
+        status: { type: "completed" },
+        items: [{ id: "agent-done", type: "agentMessage", text: "Done." }],
+      }],
+    });
+
+    const command = compacted.turns[0].items.find((item) => item.type === "commandExecution");
+    assert.ok(command);
+    assert.equal(command.status, "completed");
+    assert.equal(command.command, "npm.cmd run check");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

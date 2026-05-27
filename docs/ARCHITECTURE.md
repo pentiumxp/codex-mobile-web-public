@@ -67,7 +67,7 @@ Thread detail has two modes:
 - Small rollout: prefer full `thread/read includeTurns:true`.
 - Large rollout: skip expensive full reads and prefer bounded `thread/turns/list`, then local summary fallback.
 
-The detail path compacts command/tool/file/search items, enriches item timestamps from rollout events, injects pending steer echoes when needed, and may attach a raw operation fallback only when it belongs to the same latest live turn and has not completed. Completed turns may also receive a synthetic `turnUsageSummary` item from rollout `token_count` events. That summary is diagnostic UI only: latest-turn token use, cumulative token use, model context-window percentage/risk, and rollout size. The usage row's `in` value displays uncached input when cached input is reported; context-window usage still uses raw input tokens.
+The detail path compacts command/tool/file/search items, enriches item timestamps from rollout events, injects pending steer echoes when needed, and may attach a raw operation fallback only when it belongs to the same latest turn. The latest turn keeps at most one operation card even after the operation or turn has completed, so re-entering a thread still shows the last command/tool status instead of looking idle or ambiguous. Completed raw fallback is accepted only with a matching latest turn id; old completed operations must not attach to newer live turns. Completed turns may also receive a synthetic `turnUsageSummary` item from rollout `token_count` events. That summary is diagnostic UI only: latest-turn token use, cumulative token use, model context-window percentage/risk, and rollout size. The usage row's `in` value displays uncached input when cached input is reported; context-window usage still uses raw input tokens. If app-server emits a final zero/window sentinel token event after valid usage, Mobile Web ignores that sentinel and keeps the latest valid scoped token event.
 
 ### Conversation Navigation
 
@@ -141,7 +141,7 @@ The public PR check is prompt-only. `server.js` checks the configured public Git
 
 - Shared-stream mode must not silently fall back to a managed app-server child.
 - Mux endpoint drift must be detected before using a stale live socket.
-- Mobile UI should compact live operations and avoid rendering full command outputs, full diffs, or reasoning rows. The latest-turn operation card uses a compact four-line visual budget: one metadata row plus up to three clipped detail lines.
+- Mobile UI should compact latest-turn operations and avoid rendering full command outputs, full diffs, or reasoning rows. The latest-turn operation card uses a compact four-line visual budget: one metadata row plus up to three clipped detail lines, and the newest same-turn completed operation should remain visible after refresh/re-entry.
 - User-visible mobile input should not disappear on refresh while steering is pending.
 - Old operation cards must not be attached to newer live turns.
 - PWA and service worker changes require explicit build/cache bumps.
