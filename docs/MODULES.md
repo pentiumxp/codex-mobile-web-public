@@ -19,6 +19,8 @@
 | `adapters/message-pending-echo-service.js` | Short-lived pending user-message echo injection for active-turn steering that is still waiting. |
 | `adapters/message-input-service.js` | Upload-aware model input policy, image context mode, and extended-history persistence policy. |
 | `adapters/continuation-handoff-compaction-service.js` | Workspace handoff compaction before rollout continuation. |
+| `adapters/turn-usage-summary-service.js` | Rollout `token_count` parsing and completed-turn context/token usage summary attachment. |
+| `adapters/public-pull-request-service.js` | Public GitHub pull request status normalization for prompt-only public PR checks. |
 | `adapters/push-notification-service.js` | Web Push turn tracking and sub-agent suppression classification. |
 | `adapters/shared-chain-restart-service.js` | Authenticated restart endpoint orchestration. |
 | `adapters/sqlite-cli.js` | Cross-environment `sqlite3` discovery and JSON result execution. |
@@ -50,8 +52,8 @@ Add new service modules when logic has independent inputs/outputs, state rules, 
 | active-turn send behavior | `test/active-turn-staleness-service.test.js`, `test/new-thread-route.test.js`, `test/message-pending-echo-service.test.js` |
 | conversation rendering and operation cards | `test/conversation-render.test.js`, `test/collab-agent-render.test.js`, `test/thread-item-timestamp-enrichment.test.js`, `test/message-timestamp.test.js` |
 | continuation | `test/continuation-lineage.test.js`, `test/continuation-handoff-compaction-service.test.js` |
-| context and bootstrap size policy | `test/message-input-service.test.js`, `test/continuation-lineage.test.js` |
-| PWA/update/mobile viewport | `test/mobile-viewport.test.js`, `test/app-update.test.js`, `test/tablet-layout.test.js`, `test/manual-restart-ui.test.js` |
+| context and bootstrap size policy | `test/message-input-service.test.js`, `test/continuation-lineage.test.js`, `test/turn-usage-summary-service.test.js` |
+| PWA/update/mobile viewport | `test/mobile-viewport.test.js`, `test/app-update.test.js`, `test/tablet-layout.test.js`, `test/manual-restart-ui.test.js`, `test/public-pull-request-service.test.js` |
 | uploads/files/images | `test/image-compressor.test.js`, `test/message-input-service.test.js`, `test/file-preview.test.js`, `test/file-preview-ui.test.js`, `test/composer-draft.test.js` |
 | Push | `test/push-notification-service.test.js` |
 | runtime settings | `test/runtime-settings.test.js`, `test/composer-quota.test.js` |

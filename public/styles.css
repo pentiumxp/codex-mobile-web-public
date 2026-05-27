@@ -410,6 +410,7 @@ html.visual-recovering body::before {
 }
 
 .update-status,
+.public-pr-status,
 .restart-button {
   appearance: none;
   -webkit-appearance: none;
@@ -431,29 +432,34 @@ html.visual-recovering body::before {
   white-space: nowrap;
 }
 
-.update-status {
+.update-status,
+.public-pr-status {
   color: var(--muted);
   background: var(--control-muted-bg);
 }
 
-.update-status.available {
+.update-status.available,
+.public-pr-status.available {
   color: var(--text-on-accent);
   background: var(--accent-strong);
   border-color: var(--accent-strong);
 }
 
-.update-status.blocked {
+.update-status.blocked,
+.public-pr-status.blocked {
   color: var(--danger-soft-text);
   background: rgba(247, 132, 124, 0.12);
   border-color: rgba(247, 132, 124, 0.4);
 }
 
-.update-status.checking {
+.update-status.checking,
+.public-pr-status.checking {
   color: var(--accent-strong);
   border-color: rgba(122, 199, 167, 0.42);
 }
 
-.update-status:disabled {
+.update-status:disabled,
+.public-pr-status:disabled {
   opacity: 0.75;
 }
 
@@ -2035,6 +2041,10 @@ html.visual-recovering body::before {
   background: rgba(240, 180, 108, 0.08);
 }
 
+.item.turnUsageSummary {
+  background: rgba(122, 199, 167, 0.055);
+}
+
 .item.live-reasoning .item-head {
   border-bottom: 0;
 }
@@ -2114,7 +2124,7 @@ html.visual-recovering body::before {
 .operation-detail {
   display: -webkit-box;
   min-width: 0;
-  max-height: calc(1.26em * 2);
+  max-height: calc(1.26em * 3);
   overflow: hidden;
   color: var(--muted-code-text);
   font-family: "Cascadia Mono", "Consolas", "Microsoft YaHei", monospace;
@@ -2122,7 +2132,7 @@ html.visual-recovering body::before {
   line-height: 1.26;
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   white-space: normal;
 }
 
@@ -2167,6 +2177,80 @@ html.visual-recovering body::before {
   line-height: var(--content-line-height);
   white-space: pre-wrap;
   word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.turn-usage-summary {
+  display: grid;
+  gap: 10px;
+  white-space: normal;
+}
+
+.turn-usage-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text);
+  font-size: var(--content-small-font-size);
+  font-weight: 750;
+}
+
+.turn-usage-summary-head strong {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border: 1px solid rgba(122, 199, 167, 0.28);
+  border-radius: 999px;
+  color: var(--accent-strong);
+  background: rgba(122, 199, 167, 0.1);
+  font-size: calc(var(--content-small-font-size) * 0.92);
+  line-height: 1.2;
+}
+
+.turn-usage-summary.risk-watch .turn-usage-summary-head strong,
+.turn-usage-summary.risk-high .turn-usage-summary-head strong {
+  color: var(--warning-text);
+  background: rgba(240, 180, 108, 0.12);
+  border-color: rgba(240, 180, 108, 0.36);
+}
+
+.turn-usage-summary.risk-critical .turn-usage-summary-head strong {
+  color: var(--danger-soft-text);
+  background: rgba(247, 132, 124, 0.12);
+  border-color: rgba(247, 132, 124, 0.4);
+}
+
+.turn-usage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.turn-usage-metric {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 8px 9px;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.028);
+}
+
+.turn-usage-metric span,
+.turn-usage-metric small {
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--content-small-font-size);
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.turn-usage-metric strong {
+  min-width: 0;
+  color: var(--text);
+  font-family: "Cascadia Mono", "Consolas", "Microsoft YaHei", monospace;
+  font-size: calc(var(--content-small-font-size) * 1.02);
+  line-height: 1.25;
   overflow-wrap: anywhere;
 }
 

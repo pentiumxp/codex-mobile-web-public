@@ -80,6 +80,15 @@ function evaluatedInputContentRenderer() {
   )(URLSearchParams);
 }
 
+function evaluatedTokenUsageSummaryText() {
+  const sources = [
+    "formatTokenCount",
+    "displayInputTokensExcludingCached",
+    "tokenUsageSummaryText",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`${sources.join("\n")}\nreturn tokenUsageSummaryText;`)();
+}
+
 test("context compaction notices update status and collapse repeated turn notices", () => {
   assert.match(functionBody("visibleItemsForTurn"), /const contextEntryByKey = new Map\(\)/);
   assert.match(functionBody("visibleItemsForTurn"), /isContextCompactionItem\(item\)/);
@@ -164,6 +173,23 @@ test("raw app-server input text upload summaries render as thumbnails", () => {
   assert.doesNotMatch(html, /<code>C:\\Users\\example/);
 });
 
+test("user message text before upload summaries still renders jpg thumbnails", () => {
+  const renderInputContent = evaluatedInputContentRenderer();
+  const uploadPath = "C:\\Users\\example\\.codex-mobile-web\\uploads\\2026-05-27\\thread-id\\1779850921578-IMG_5435.jpg";
+  const html = renderInputContent([
+    {
+      type: "input_text",
+      text: `把 in 排除 cast in。\n\nUploaded attachments:\n- IMG_5435.jpg (image, image/jpeg, 101.3 KB): ${uploadPath}`,
+    },
+  ]);
+
+  assert.match(html, /class="input-text"/);
+  assert.match(html, /class="input-image"/);
+  assert.match(html, /\/api\/uploads\/file\?path=/);
+  assert.match(html, /IMG_5435\.jpg/);
+  assert.doesNotMatch(html, /Uploaded attachments:/);
+});
+
 test("raw app-server input image parts use object image urls", () => {
   const renderInputContent = evaluatedInputContentRenderer();
   const html = renderInputContent([
@@ -228,4 +254,30 @@ test("thread merge drops superseded stale active turns", () => {
   assert.match(functionBody("turnIsSupersededBy"), /return isTurnComplete\(newerTurn\) && !isTurnComplete\(turn\)/);
   assert.match(functionBody("mergeThreadPreservingVisibleItems"), /const latestIncoming = merged\.turns\.length \? merged\.turns\[merged\.turns\.length - 1\] : null/);
   assert.match(functionBody("mergeThreadPreservingVisibleItems"), /if \(turnIsSupersededBy\(existingTurn, latestIncoming\)\) continue/);
+});
+
+test("completed turns can render context and token usage summaries", () => {
+  assert.match(serverJs, /attachTurnUsageSummaries\(out, readRolloutTurnUsageSummaries\(rolloutPath\), \{ rolloutStats \}\)/);
+  assert.match(appJs, /function renderTurnUsageSummary\(item\)/);
+  assert.match(functionBody("labelForItem"), /turnUsageSummary:\s*"Usage"/);
+  assert.match(functionBody("renderItemBody"), /item\.type === "turnUsageSummary"[\s\S]*renderTurnUsageSummary\(item\)/);
+  assert.match(functionBody("visibleItemSignature"), /item\.type === "turnUsageSummary"/);
+  assert.match(functionBody("visibleItemSignature"), /mobileUsageSummary: item\.mobileUsageSummary/);
+  assert.match(functionBody("turnFinalReceiptNode"), /:not\(\.turnUsageSummary\)/);
+});
+
+test("turn usage input display excludes cached input tokens", () => {
+  const tokenUsageSummaryText = evaluatedTokenUsageSummaryText();
+  const text = tokenUsageSummaryText({
+    inputTokens: 159639,
+    cachedInputTokens: 158080,
+    outputTokens: 805,
+    reasoningOutputTokens: 395,
+    totalTokens: 160444,
+  });
+
+  assert.match(text, /in 1,559/);
+  assert.match(text, /cached 158,080/);
+  assert.match(text, /out 805/);
+  assert.doesNotMatch(text, /in 159,639/);
 });

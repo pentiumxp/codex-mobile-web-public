@@ -2202,3 +2202,265 @@ The previous full handoff was archived and should be opened only when old proven
 - Status:
   - This is a static frontend/PWA change; no Node listener restart is required.
   - Mobile clients must accept the refresh prompt, hard refresh, or close/reopen the PWA to load `codex-mobile-shell-v92`.
+
+## 2026-05-27 Turn Up-Arrow Final Receipt Target v93
+
+- User request:
+  - The current-turn upward arrow should jump to the turn's final receipt/summary rather than the first assistant reply, because the summary is the main content the user wants to review.
+- Local fix:
+  - `public/app.js`
+    - Replaced the first-reply target helper with `turnFinalReceiptNode()`.
+    - The upward arrow now targets the last `.item.agentMessage` or `.item.plan` in the anchored current live/recently completed turn.
+    - If no agent/plan receipt exists, it falls back to the last non-user, non-live-operation item, then the turn container.
+    - `CLIENT_BUILD_ID` bumped to `0.1.11|codex-mobile-shell-v93`.
+  - `public/index.html`
+    - Updated the upward arrow accessible label/title from "回到本轮回复" to "回到本轮总结".
+  - `public/sw.js`
+    - Shell cache bumped to `codex-mobile-shell-v93`.
+  - `test/turn-scroll-controls.test.js` and `test/mobile-viewport.test.js` cover the final-receipt target and v93 cache.
+  - `README.md`, `docs/ARCHITECTURE.md`, `docs/COMPLEX_FEATURE_PATHS.md`, and `.agent-context/PROJECT_CONTEXT.md` document that the up-arrow target is final receipt/summary, not answer start.
+- Validation:
+  - Focused `node --test test\turn-scroll-controls.test.js test\mobile-viewport.test.js` passed: 7/7.
+  - `node --check public\app.js` and `node --check public\sw.js` passed.
+  - `npm.cmd test` passed: 163/163.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - BOM check for touched files produced no output.
+  - `/api/public-config` returns `clientBuildId=0.1.11|codex-mobile-shell-v93`, `shellCacheName=codex-mobile-shell-v93`, and `imageContextMode=reference`.
+- Status:
+  - Local changes are uncommitted.
+  - Public repository was not touched because this turn did not request publish/public sync.
+  - This is a static frontend/PWA change; no Node listener restart is required, but mobile clients must accept the refresh prompt, hard refresh, or close/reopen the PWA to load `codex-mobile-shell-v93`.
+
+## 2026-05-27 Turn Up-Arrow Visibility Fix v94
+
+- User report:
+  - After the final receipt/summary appears, the current-turn upward arrow sometimes does not show.
+- Diagnosis:
+  - If the user had already scrolled upward during live output, `turn/completed` called `rememberRecentCompletedTurnReply()` and overwrote the already activated current-turn anchor with `activatedByUserScroll=false`, so the button could disappear exactly when the final receipt arrived.
+  - The button visibility check also required the whole target item to be above the viewport. Long final receipt/summary items can have their start above the viewport while their bottom still extends into view, so the old check could hide the jump even though clicking it would move to the desired summary start.
+- Local fix:
+  - `public/app.js`
+    - `rememberRecentCompletedTurnReply()` now preserves `activatedByUserScroll` when the existing anchor is for the same thread and turn.
+    - Replaced the whole-node-above check with `isNodeStartAboveConversationViewport()`, so the up-arrow appears when the target summary/receipt start is above the viewport.
+    - `CLIENT_BUILD_ID` bumped to `0.1.11|codex-mobile-shell-v94`.
+  - `public/sw.js`
+    - Shell cache bumped to `codex-mobile-shell-v94`.
+  - `test/turn-scroll-controls.test.js` and `test/mobile-viewport.test.js` cover the preserved activation path, target-start visibility check, and v94 cache.
+  - `README.md`, `docs/ARCHITECTURE.md`, `docs/COMPLEX_FEATURE_PATHS.md`, and `.agent-context/PROJECT_CONTEXT.md` document the v94 up-arrow visibility rule.
+- Validation:
+  - Focused `node --test test\turn-scroll-controls.test.js test\mobile-viewport.test.js` passed: 7/7.
+  - `node --check public\app.js` and `node --check public\sw.js` passed.
+  - `npm.cmd test` passed: 163/163.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - BOM check for touched files produced no output.
+  - `/api/public-config` returns `clientBuildId=0.1.11|codex-mobile-shell-v94`, `shellCacheName=codex-mobile-shell-v94`, and `imageContextMode=reference`.
+- Status:
+  - Local changes are uncommitted.
+  - Public repository remains untouched and clean because this turn did not request publish/public sync.
+  - This is a static frontend/PWA change; no Node listener restart is required, but mobile clients must accept the refresh prompt, hard refresh, or close/reopen the PWA to load `codex-mobile-shell-v94`.
+
+## 2026-05-27 Reading Hold For Final Receipt Scroll v95
+
+- User report:
+  - When a long final receipt/summary refreshes, the conversation can keep scrolling downward while the user is reading. Manual dragging may not take effect because the UI continues forcing bottom scroll.
+- Diagnosis:
+  - The previous live-output hold was set only from a real scroll event outside the programmatic bottom-scroll window.
+  - During long final output/final refresh, programmatic bottom-scroll could still be active while the user tried to drag, so `updateConversationAutoScrollHoldFromScroll()` returned before setting a hold. Later render passes still saw a bottom-follow or near-bottom state and kept scrolling down.
+- Local fix:
+  - `public/app.js`
+    - Added `CONVERSATION_SCROLL_INTENT_MS` and `hasRecentConversationScrollIntent()`.
+    - Added `turnForConversationAutoScrollHold()` and `isUserReadingCurrentTurn()`.
+    - `renderCurrentThread()` now computes the current near-bottom state once and blocks render-time stick-to-bottom when the user is reading the current live or recently completed turn.
+    - `shouldFollowSubmittedMessageToBottom()` and `shouldFollowViewportChangeToBottom()` now cancel their follow state when the user-reading hold is active.
+    - `updateConversationAutoScrollHoldFromScroll()` now sets the hold whenever recent user scroll intent moved the conversation away from bottom, even if a programmatic bottom-scroll window is still active. The hold can apply to the live turn or the recent completed turn so final receipt refreshes stop pulling the viewport down.
+    - `CLIENT_BUILD_ID` bumped to `0.1.11|codex-mobile-shell-v95`.
+  - `public/sw.js`
+    - Shell cache bumped to `codex-mobile-shell-v95`.
+  - `test/turn-scroll-controls.test.js` and `test/mobile-viewport.test.js` cover the reading-hold guard and v95 cache.
+  - `README.md`, `docs/ARCHITECTURE.md`, `docs/COMPLEX_FEATURE_PATHS.md`, and `.agent-context/PROJECT_CONTEXT.md` document that live/final output must stop auto-scrolling while the user is reading.
+- Validation:
+  - Focused `node --test test\turn-scroll-controls.test.js test\mobile-viewport.test.js` passed: 7/7.
+  - `node --check public\app.js` and `node --check public\sw.js` passed.
+  - `npm.cmd test` passed: 163/163.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - BOM check for touched files produced no output.
+  - `/api/public-config` returns `clientBuildId=0.1.11|codex-mobile-shell-v95`, `shellCacheName=codex-mobile-shell-v95`, and `imageContextMode=reference`.
+- Status:
+  - Local changes are uncommitted.
+  - Public repository remains untouched and clean because this turn did not request publish/public sync.
+  - This is a static frontend/PWA change; no Node listener restart is required, but mobile clients must accept the refresh prompt, hard refresh, or close/reopen the PWA to load `codex-mobile-shell-v95`.
+
+## 2026-05-27 Four-Line Operation Card v96
+
+- User request:
+  - Change the command/operation card from three visual lines to four visual lines.
+- Local fix:
+  - `public/styles.css`
+    - `.operation-detail` now clamps to three detail lines with `-webkit-line-clamp: 3` and `max-height: calc(1.26em * 3)`.
+    - The total compact operation card budget is now one metadata/status row plus up to three detail lines.
+  - `public/app.js`
+    - `CLIENT_BUILD_ID` bumped to `0.1.11|codex-mobile-shell-v96`.
+  - `public/sw.js`
+    - Shell cache bumped to `codex-mobile-shell-v96`.
+  - `test/collab-agent-render.test.js` and `test/mobile-viewport.test.js` cover the four-line card CSS and v96 cache.
+  - `README.md`, `docs/ARCHITECTURE.md`, `docs/COMPLEX_FEATURE_PATHS.md`, and `.agent-context/PROJECT_CONTEXT.md` document the current four-line operation-card rule.
+- Validation:
+  - Focused `node --test test\collab-agent-render.test.js test\mobile-viewport.test.js` passed: 6/6.
+  - `node --check public\app.js` and `node --check public\sw.js` passed.
+  - `npm.cmd test` passed: 163/163.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - BOM check for touched files produced no output.
+  - `/api/public-config` returns `clientBuildId=0.1.11|codex-mobile-shell-v96`, `shellCacheName=codex-mobile-shell-v96`, and `imageContextMode=reference`.
+- Status:
+  - Local changes are uncommitted.
+  - Public repository remains untouched because this turn did not request publish/public sync.
+  - This is a static frontend/PWA change; no Node listener restart is required, but mobile clients must accept the refresh prompt, hard refresh, or close/reopen the PWA to load `codex-mobile-shell-v96`.
+
+## 2026-05-27 Turn Usage Summary And Public PR Prompt v97
+
+- User request:
+  - After each turn ends, show context status and token usage so oversized-context risk is visible earlier.
+  - If the public repository has open PRs, prompt whether to merge/integrate them.
+- Local fix:
+  - Added `adapters/turn-usage-summary-service.js`.
+    - Parses rollout JSONL `event_msg` `token_count` events under the current `turn_context`.
+    - Produces completed-turn diagnostic summaries with latest-turn token usage, cumulative token usage, model context-window usage percentage/risk, and rollout size.
+    - `server.js` attaches synthetic `turnUsageSummary` items during thread detail compaction. These are display-only and are omitted when no scoped token count exists.
+  - Added `adapters/public-pull-request-service.js`.
+    - Normalizes the public GitHub repo slug and open PR response data.
+    - `server.js` exposes authenticated `GET /api/public-pull-requests/status` and `publicPullRequests` config from `/api/public-config`.
+    - The check is prompt-only. It does not merge, sync, commit, or push public automatically.
+  - `public/app.js`
+    - Renders `turnUsageSummary` cards after completed turns.
+    - Excludes `turnUsageSummary` from the up-arrow final-receipt fallback target.
+    - Adds startup/click public PR status checks. When open PRs are detected, the browser asks whether to prepare a merge/publish review task in the composer instead of auto-sending or auto-merging.
+    - `CLIENT_BUILD_ID` bumped to `0.1.11|codex-mobile-shell-v97`.
+  - `public/index.html` / `public/styles.css`
+    - Added a compact `Public PR` status pill beside the update and restart controls.
+    - Added bounded styles for turn usage summary cards.
+  - `public/sw.js`
+    - Shell cache bumped to `codex-mobile-shell-v97`.
+  - `package.json`
+    - `npm run check` now syntax-checks the two new adapter modules.
+  - Tests added/updated:
+    - New `test/turn-usage-summary-service.test.js`.
+    - New `test/public-pull-request-service.test.js`.
+    - `test/conversation-render.test.js`, `test/app-update.test.js`, and `test/mobile-viewport.test.js` cover the render path, public PR prompt wiring, final-receipt exclusion, and v97 shell.
+  - Docs updated:
+    - `README.md`, `docs/ARCHITECTURE.md`, `docs/MODULES.md`, `docs/CONTEXT_STRATEGY.md`, `docs/COMPLEX_FEATURE_PATHS.md`, and `.agent-context/PROJECT_CONTEXT.md`.
+- Validation:
+  - Focused `node --test test\turn-usage-summary-service.test.js test\public-pull-request-service.test.js` passed: 8/8.
+  - Focused `node --test test\conversation-render.test.js test\app-update.test.js test\mobile-viewport.test.js` passed: 21/21.
+  - `node --check adapters\turn-usage-summary-service.js`, `node --check adapters\public-pull-request-service.js`, `node --check server.js`, `node --check public\app.js`, and `node --check public\sw.js` passed.
+  - `npm.cmd test` passed: 173/173.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - BOM check for touched source, test, docs, README, and project-context files produced no output.
+- Activation:
+  - Restarted the 8787 Node listener to load server-side usage summaries and public PR route: old PID `70560`, new PID `56180`.
+  - Post-restart `/api/public-config` returns `clientBuildId=0.1.11|codex-mobile-shell-v97`, `shellCacheName=codex-mobile-shell-v97`, `imageContextMode=reference`, and `publicPullRequests.enabled=true` for `pentiumxp/codex-mobile-web-public`.
+  - Post-restart authenticated `/api/status` returns `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, and `lastError=null`.
+  - Post-restart authenticated `/api/public-pull-requests/status?force=1` returns enabled with `hasOpenPullRequests=false`, `openPullRequestCount=0`, and no error.
+- Status:
+  - Local changes are uncommitted.
+  - Public repository was not touched because this turn did not request publish/public sync.
+  - v97 includes both server-side and static PWA changes. The 8787 listener is already restarted, but mobile clients must accept the refresh prompt, hard refresh, or close/reopen the PWA to load `codex-mobile-shell-v97`.
+
+## 2026-05-27 Uploaded JPG MIME And Uncached Usage Input v98
+
+- User reports:
+  - Quoted/uploaded `.jpg` image summaries still sometimes showed no thumbnail even when the same `Uploaded attachments:` text was parsed.
+  - The turn usage summary `in` field should exclude cached input, while cached input remains visible separately.
+  - During diagnosis, a long in-progress turn felt stuck for more than ten minutes.
+- Diagnosis:
+  - `renderInputContent()` already generated thumbnail markup for text before `Uploaded attachments:` summaries.
+  - The authenticated upload route served saved `.jpg` uploads as `application/octet-stream`; the same request should be browser-renderable `image/jpeg`, especially for iOS/Safari `<img>` rendering.
+  - The usage summary UI displayed raw `inputTokens` in `in`, so a turn with mostly cached input looked much larger than the paid/noncached input surface. Context-window usage still needs raw input because cached input still occupies prompt context.
+  - Runtime checks during the slow-turn report showed `/api/status` healthy, mux endpoint healthy, no pending approvals/requests, fast thread-detail API reads, rollout sizes below warning thresholds, and both inspected turns still `inProgress`. The observed slowness was not a Mobile Web API block.
+- Local fix:
+  - `server.js`
+    - `mimeFor()` now reuses `FILE_PREVIEW_IMAGE_CONTENT_TYPES` for upload/static file serving so `.jpg`, `.jpeg`, `.webp`, `.gif`, `.bmp`, `.avif`, `.heic`, `.heif`, `.tif`, `.tiff`, and `.png` return real image MIME types.
+    - Exported `mimeFor()` for focused coverage.
+  - `public/app.js`
+    - Added `displayInputTokensExcludingCached()`.
+    - `tokenUsageSummaryText()` now shows `in` as `inputTokens - cachedInputTokens` when cached input is present, and still shows `cached` separately.
+    - Context-window percent/detail remains based on raw context-window tokens.
+    - `CLIENT_BUILD_ID` bumped to `0.1.11|codex-mobile-shell-v98`.
+  - `public/sw.js`
+    - Shell cache bumped to `codex-mobile-shell-v98`.
+  - Tests:
+    - `test/file-preview.test.js` covers browser-renderable image MIME types for uploaded image route use.
+    - `test/conversation-render.test.js` covers text-before-upload-summary thumbnail rendering and uncached `in` display.
+    - `test/mobile-viewport.test.js` covers v98 shell cache.
+  - Docs updated:
+    - `README.md`, `docs/ARCHITECTURE.md`, `docs/CONTEXT_STRATEGY.md`, `docs/COMPLEX_FEATURE_PATHS.md`, `docs/TROUBLESHOOTING.md`, and `.agent-context/PROJECT_CONTEXT.md`.
+- Validation:
+  - Focused `node --test test\conversation-render.test.js test\file-preview.test.js test\mobile-viewport.test.js` passed: 27/27.
+  - `node --check server.js`, `node --check public\app.js`, and `node --check public\sw.js` passed.
+  - `npm.cmd test` passed: 176/176.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - BOM check for touched source, test, docs, README, and project-context files produced no output.
+- Activation:
+  - Restarted the 8787 Node listener to load the server-side MIME fix: old PID `56180`, new PID `49880`.
+  - Post-restart `/api/public-config` returns `clientBuildId=0.1.11|codex-mobile-shell-v98`, `shellCacheName=codex-mobile-shell-v98`, `imageContextMode=reference`, and public PR checks enabled.
+  - Post-restart authenticated `/api/status` returns `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, and `lastError=null`.
+  - Post-restart authenticated `GET /api/uploads/file?path=...IMG_5435.jpg` returned `HTTP 200` with `Content-Type: image/jpeg`.
+- Status:
+  - Local changes remain uncommitted.
+  - Public repository was not touched because this turn did not request publish/public sync.
+  - v98 includes both server-side and static PWA changes. The 8787 listener is already restarted, but mobile clients must accept the refresh prompt, hard refresh, or close/reopen the PWA to load `codex-mobile-shell-v98`.
+
+## 2026-05-27 Public v98 Publish
+
+- User request:
+  - Commit and push the current changes, including public.
+- Pre-publish checks:
+  - Authenticated `/api/public-pull-requests/status?force=1` returned `hasOpenPullRequests=false` and `openPullRequestCount=0`, so there was no public PR merge prompt to resolve before publishing.
+  - Public repository started clean at `f260bb7 发布实时引用图片兼容修正`.
+- Public repository:
+  - Path: `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Synced public-safe product/docs/test files from private:
+    - `server.js`, `package.json`;
+    - `public/app.js`, `public/index.html`, `public/styles.css`, `public/sw.js`;
+    - `adapters/turn-usage-summary-service.js`, `adapters/public-pull-request-service.js`;
+    - focused and full test files for update UI, operation cards, conversation render, file preview, mobile viewport, turn scroll controls, public PR status, and turn usage summaries;
+    - `docs/ARCHITECTURE.md`, `docs/COMPLEX_FEATURE_PATHS.md`, `docs/CONTEXT_STRATEGY.md`, `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`;
+    - `README.md`.
+  - Public README gained a detailed Chinese `2026-05-27 Public 发布说明` covering v93-v98:
+    - final-receipt up-arrow target and visibility;
+    - reading hold during final receipt refresh;
+    - four-line operation cards;
+    - completed-turn context/token usage summaries;
+    - uncached `in` display while context-window risk still uses raw input;
+    - prompt-only public PR checks;
+    - reference-only uploaded-image thumbnail rendering;
+    - real image MIME for saved uploaded images;
+    - `codex-mobile-shell-v98` and listener restart note.
+  - Public docs were sanitized to avoid copying local Hermes deployment paths; staged privacy scan found no private user path, Tailscale marker, private upload date path, owner-key marker, or local Hermes data path.
+  - Public pushed commit: `4862fd7 发布移动端回执定位、用量诊断和图片缩略图修正`.
+- Public validation:
+  - Focused public tests passed: 47/47.
+  - Public `npm.cmd test` passed: 174/174.
+  - Public `npm.cmd run check` passed.
+  - Public `npm.cmd run check:macos` passed.
+  - Public `git diff --check` and `git diff --cached --check` passed with only Windows LF-to-CRLF working-copy warnings before staging.
+  - Public staged privacy scan passed.
+- Private follow-up:
+  - Public README was copied back to private `README.md` so the private repo records the public v98 release note too.
+  - Private validation after README sync passed:
+    - `npm.cmd test` passed: 176/176.
+    - `npm.cmd run check` passed.
+    - `npm.cmd run check:macos` passed.
+    - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Private commit and push are handled after this handoff update in the same publish turn.

@@ -9,6 +9,7 @@ const { test } = require("node:test");
 const {
   filePreviewContentDisposition,
   filePreviewContentType,
+  mimeFor,
   readFilePreview,
   resolveFilePreviewPath,
   stripMarkdownFileTarget,
@@ -70,6 +71,14 @@ test("file preview returns media metadata without reading binary content", () =>
   assert.match(imagePreview.contentUrl, /\/api\/files\/preview\/content\?threadId=thread-1&path=/);
   assert.equal(pdfPreview.kind, "pdf");
   assert.equal(pdfPreview.contentType, "application/pdf");
+});
+
+test("uploaded image route returns browser-renderable image mime types", () => {
+  assert.equal(mimeFor("photo.jpg"), "image/jpeg");
+  assert.equal(mimeFor("photo.jpeg"), "image/jpeg");
+  assert.equal(mimeFor("photo.webp"), "image/webp");
+  assert.equal(mimeFor("photo.gif"), "image/gif");
+  assert.equal(mimeFor("photo.png"), "image/png");
 });
 
 test("file preview supports common code and data document types", () => {
