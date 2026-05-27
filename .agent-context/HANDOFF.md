@@ -2102,3 +2102,103 @@ The previous full handoff was archived and should be opened only when old proven
 - Status:
   - Local changes are uncommitted.
   - This is a static frontend/PWA shell change; no Node listener restart is required, but mobile clients must accept the refresh prompt, hard refresh, or close/reopen the PWA to load v90.
+
+## 2026-05-26 CodeGraph Initialization
+
+- User request:
+  - Initialize CodeGraph for this `codex-mobile-web` workspace.
+- Local setup:
+  - Ran `codegraph init -i` from `C:\Users\xuxin\Documents\codex-mobile-web`.
+  - Created local `.codegraph/` index data; root `.gitignore` now ignores `.codegraph/` so the SQLite index stays local and is not offered for commit.
+  - `.agent-context/PROJECT_CONTEXT.md` records that CodeGraph MCP calls may need `projectPath: "C:\\Users\\xuxin\\Documents\\codex-mobile-web"` when workspace auto-detection fails.
+- Verification:
+  - `mcp__codegraph__.codegraph_status` with explicit `projectPath` succeeds.
+  - Current index reports 54 files, 1540 nodes, 4809 edges, and a 3.96 MB database.
+- Status:
+  - No product code changed for this setup step.
+  - Pre-existing v87-v90 product/docs/test changes remain uncommitted.
+
+## 2026-05-26 Private v90 File Preview And Thumbnail Push
+
+- User request:
+  - Commit and push the previous private fix without an explicit public publish request.
+- Scope:
+  - Committed only the staged private v87-v90 product/docs/test changes.
+  - Left the later CodeGraph setup changes local and uncommitted: `.gitignore`, plus the CodeGraph notes in `.agent-context/PROJECT_CONTEXT.md` and this handoff.
+  - Public repository was not touched.
+- Validation before commit:
+  - `npm.cmd test` passed: 160/160.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --cached --check` passed.
+  - BOM check for staged files produced no output.
+- Commit:
+  - Private pushed commit: `6531dbf 修正文件预览与上传图片缩略图显示`.
+- Status:
+  - Private `origin/main` now includes the v87-v90 file preview and quoted uploaded-image thumbnail fixes.
+  - Local working tree still has uncommitted CodeGraph setup context/ignore changes.
+
+## 2026-05-26 Quoted Uploaded Image CRLF Fix v91
+
+- User report:
+  - A newly uploaded image rendered in the original message, but when Codex Mobile quoted the same `Uploaded attachments:` block the image thumbnail did not appear.
+  - Example path existed under `%USERPROFILE%\.codex-mobile-web\uploads\2026-05-26\...`.
+- Diagnosis:
+  - The uploaded file existed and authenticated `/api/uploads/file?path=...` returned HTTP 200.
+  - The frontend parser only looked for exact `Uploaded attachments:\n`, so quoted summaries with CRLF line endings or Markdown blockquote-style prefixes were not parsed as attachments.
+- Local fix:
+  - `public/app.js`
+    - Added line-based `attachmentSummaryMarkerMatch()` and `stripAttachmentSummaryLinePrefix()`.
+    - `splitAttachmentSummaryText()` now recognizes LF, CRLF, and quoted lines such as `> Uploaded attachments:` / `> - IMG_0001.jpg (...)`.
+    - Attachment paths are trimmed after parsing.
+    - `CLIENT_BUILD_ID` bumped to `0.1.11|codex-mobile-shell-v91`.
+  - `public/sw.js` bumped to `codex-mobile-shell-v91`.
+  - `test/conversation-render.test.js` now functionally covers the reported `IMG_5430.jpg` summary shape with CRLF and blockquote quoting.
+  - `test/mobile-viewport.test.js`, `README.md`, `docs/ARCHITECTURE.md`, `docs/CONTEXT_STRATEGY.md`, `docs/COMPLEX_FEATURE_PATHS.md`, `docs/TROUBLESHOOTING.md`, and `.agent-context/PROJECT_CONTEXT.md` were updated for the v91 rule.
+- Validation:
+  - Focused `node --test test\conversation-render.test.js test\mobile-viewport.test.js` passed: 13/13.
+  - `node --check public\app.js` passed.
+  - `node --check public\sw.js` passed.
+  - `npm.cmd run check` passed.
+  - `npm.cmd test` passed: 161/161.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - `/api/public-config` returns `clientBuildId=0.1.11|codex-mobile-shell-v91`, `shellCacheName=codex-mobile-shell-v91`, and `imageContextMode=reference`.
+- Status:
+  - Local changes are uncommitted.
+  - Static frontend/PWA change; no Node listener restart is required, but mobile clients must accept the refresh prompt, hard refresh, or close/reopen the PWA to load v91.
+
+## 2026-05-27 Raw App-Server Uploaded Image Part Fix v92
+
+- User report:
+  - A Hermes/bridge target thread still showed an uploaded-image `Uploaded attachments:` message as raw text/path even after the v91 CRLF and Markdown blockquote parser fix.
+- Diagnosis:
+  - The current `Hermes 05-26` target thread detail contained a recent `userMessage` item with `Uploaded attachments:` and a saved upload path under `%USERPROFILE%\.codex-mobile-web\uploads\2026-05-27\...`.
+  - Running the exact target item through the current renderer produced `<figure class="input-image">`, so the persisted thread detail path was valid.
+  - The remaining gap was live/bridge raw app-server content parts: `renderInputContent()` and `inputContentSignature()` only treated `type: "text"` as text, while raw app-server payloads can use `input_text`; image parts can also arrive as `input_image` or object-shaped `image_url.url`.
+- Local fix:
+  - `public/app.js`
+    - Added `imageUrlValue()`, `isInputTextPart()`, and `inputTextValue()`.
+    - `renderInputContent()` and `inputContentSignature()` now treat `text` and `input_text` as text for uploaded-attachment parsing and render signatures.
+    - `isInputImagePart()` now recognizes `input_image`, `image_url`, and object-shaped `image_url.url`, while keeping existing `image`, `localImage`, data URL, and truncated payload handling.
+    - `imageSourceForPart()` and `renderInputImage()` now avoid stringifying `{ image_url: { url } }` as `[object Object]`.
+    - `CLIENT_BUILD_ID` bumped to `0.1.11|codex-mobile-shell-v92`.
+  - `public/sw.js` bumped to `codex-mobile-shell-v92`.
+  - `test/conversation-render.test.js` now functionally covers raw `input_text` uploaded summaries and raw `input_image` object `image_url.url`.
+  - `test/mobile-viewport.test.js`, `README.md`, `docs/ARCHITECTURE.md`, `docs/CONTEXT_STRATEGY.md`, `docs/COMPLEX_FEATURE_PATHS.md`, `docs/TROUBLESHOOTING.md`, and `.agent-context/PROJECT_CONTEXT.md` document the v92 rule.
+- Validation:
+  - Focused `node --test test\conversation-render.test.js test\mobile-viewport.test.js` passed: 15/15.
+  - `node --check public\app.js` and `node --check public\sw.js` passed.
+  - Private `npm.cmd test` passed: 163/163.
+  - Private `npm.cmd run check` passed.
+  - Private `npm.cmd run check:macos` passed.
+  - Private `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - BOM checks for touched private files produced no output.
+  - `/api/public-config` returns `clientBuildId=0.1.11|codex-mobile-shell-v92`, `shellCacheName=codex-mobile-shell-v92`, and `imageContextMode=reference`.
+- Public release:
+  - Synced public-safe v92 frontend, docs, README, and tests to `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Public validation passed: `npm.cmd test` 161/161, `npm.cmd run check`, `npm.cmd run check:macos`, `git diff --cached --check`, BOM check, and staged privacy scan.
+  - Public pushed commit: `f260bb7 发布实时引用图片兼容修正`.
+- Status:
+  - This is a static frontend/PWA change; no Node listener restart is required.
+  - Mobile clients must accept the refresh prompt, hard refresh, or close/reopen the PWA to load `codex-mobile-shell-v92`.

@@ -24,12 +24,60 @@ function functionBodyFrom(source, name) {
   throw new Error(`could not parse function ${name}`);
 }
 
+function functionSourceFrom(source, name) {
+  const start = source.indexOf(`function ${name}(`);
+  assert.notEqual(start, -1, `missing function ${name}`);
+  const body = functionBodyFrom(source, name);
+  const open = source.indexOf("{", start);
+  return `${source.slice(start, open + 1)}${body}}`;
+}
+
 function functionBody(name) {
   return functionBodyFrom(appJs, name);
 }
 
 function serverFunctionBody(name) {
   return functionBodyFrom(serverJs, name);
+}
+
+function evaluatedAttachmentSummaryParser() {
+  const sources = [
+    "attachmentSummaryMarkerMatch",
+    "stripAttachmentSummaryLinePrefix",
+    "parseAttachmentLine",
+    "splitAttachmentSummaryText",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`${sources.join("\n")}\nreturn splitAttachmentSummaryText;`)();
+}
+
+function evaluatedInputContentRenderer() {
+  const sources = [
+    "escapeHtml",
+    "shortPath",
+    "imageUrlValue",
+    "isInputTextPart",
+    "inputTextValue",
+    "isTruncatedImagePayloadPart",
+    "isInputImagePart",
+    "attachmentSummaryMarkerMatch",
+    "stripAttachmentSummaryLinePrefix",
+    "parseAttachmentLine",
+    "splitAttachmentSummaryText",
+    "isLikelyAbsoluteLocalPath",
+    "canRenderImageAttachment",
+    "uploadFileUrl",
+    "imageSourceForPart",
+    "compactStructuredForSignature",
+    "renderInputText",
+    "renderInputImage",
+    "renderInputAttachment",
+    "renderAttachmentSummary",
+    "renderInputContent",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(
+    "URLSearchParams",
+    `const state = { key: "" };\n${sources.join("\n")}\nreturn renderInputContent;`,
+  )(URLSearchParams);
 }
 
 test("context compaction notices update status and collapse repeated turn notices", () => {
@@ -74,11 +122,60 @@ test("agent markdown can render uploaded image summaries as thumbnails", () => {
   assert.match(appJs, /function renderMarkdownWithAttachmentSummary\(value\)/);
   assert.match(functionBody("renderMarkdownWithAttachmentSummary"), /splitAttachmentSummaryText\(value \|\| ""\)/);
   assert.match(functionBody("renderMarkdownWithAttachmentSummary"), /renderAttachmentSummary\(split\.attachments\)/);
-  assert.match(functionBody("splitAttachmentSummaryText"), /const remainder = \[\]/);
+  assert.match(functionBody("splitAttachmentSummaryText"), /attachmentSummaryMarkerMatch/);
+  assert.match(functionBody("splitAttachmentSummaryText"), /stripAttachmentSummaryLinePrefix/);
   assert.match(functionBody("splitAttachmentSummaryText"), /const visibleText = \[before, after\]/);
   assert.match(functionBody("renderAttachmentSummary"), /canRenderImageAttachment/);
   assert.match(functionBody("renderAttachmentSummary"), /renderInputImage\(\{ path: attachment\.path \}, attachment, index\)/);
   assert.match(functionBody("renderItemBody"), /item\.type === "plan"[\s\S]*renderMarkdownWithAttachmentSummary\(item\.text \|\| ""\)/);
+});
+
+test("uploaded image summaries parse CRLF and markdown blockquote references", () => {
+  const splitAttachmentSummaryText = evaluatedAttachmentSummaryParser();
+  const uploadPath = "C:\\Users\\example\\.codex-mobile-web\\uploads\\2026-05-26\\thread-id\\1779810277313-IMG_5430.jpg";
+  const line = `- IMG_5430.jpg (image, image/jpeg, 104.1 KB): ${uploadPath}`;
+  for (const source of [
+    `Uploaded attachments:\r\n${line}`,
+    `Before\r\nUploaded attachments:\r\n${line}\r\nAfter`,
+    `> Uploaded attachments:\n> ${line}`,
+  ]) {
+    const split = splitAttachmentSummaryText(source);
+    assert.equal(split.attachments.length, 1);
+    assert.equal(split.attachments[0].name, "IMG_5430.jpg");
+    assert.equal(split.attachments[0].meta, "image, image/jpeg, 104.1 KB");
+    assert.equal(split.attachments[0].path, uploadPath);
+    assert.equal(split.attachments[0].isImage, true);
+  }
+});
+
+test("raw app-server input text upload summaries render as thumbnails", () => {
+  const renderInputContent = evaluatedInputContentRenderer();
+  const uploadPath = "C:\\Users\\example\\.codex-mobile-web\\uploads\\2026-05-27\\thread-id\\1779843711115-IMG_5433.jpg";
+  const html = renderInputContent([
+    {
+      type: "input_text",
+      text: `Uploaded attachments:\n- IMG_5433.jpg (image, image/jpeg, 122.6 KB): ${uploadPath}`,
+    },
+  ]);
+
+  assert.match(html, /class="input-image"/);
+  assert.match(html, /\/api\/uploads\/file\?path=/);
+  assert.match(html, /IMG_5433\.jpg/);
+  assert.doesNotMatch(html, /<code>C:\\Users\\example/);
+});
+
+test("raw app-server input image parts use object image urls", () => {
+  const renderInputContent = evaluatedInputContentRenderer();
+  const html = renderInputContent([
+    {
+      type: "input_image",
+      image_url: { url: "data:image/png;base64,abc123" },
+    },
+  ]);
+
+  assert.match(html, /class="input-image"/);
+  assert.match(html, /src="data:image\/png;base64,abc123"/);
+  assert.doesNotMatch(html, /\[object Object\]/);
 });
 
 test("context compaction merge does not preserve stale mobile notices", () => {

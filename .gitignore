@@ -19,6 +19,7 @@ uploads/
 *.err.log
 *.log.err
 codex-app-server-mux.exe
+.codegraph/
 
 .DS_Store
 Thumbs.db

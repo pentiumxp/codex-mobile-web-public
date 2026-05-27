@@ -132,6 +132,18 @@ Focused checks:
 node --test test\file-preview.test.js test\file-preview-ui.test.js test\markdown-render.test.js
 ```
 
+## Quoted Uploaded Images Stay As Text
+
+If the original user upload renders as a thumbnail but a later Codex/plan reply shows raw `Uploaded attachments:` text, inspect `public/app.js` attachment-summary parsing first.
+
+The parser should recognize LF and CRLF summaries, plus Markdown blockquote-style quoted lines such as `> Uploaded attachments:` and `> - IMG_0001.jpg (...)`. It should also treat raw app-server `input_text` parts as text and `input_image` / `image_url` parts as images, including object-shaped `image_url.url`. The saved upload path must still be under `%USERPROFILE%\.codex-mobile-web\uploads` so `/api/uploads/file?path=...` can serve it to the authenticated browser.
+
+Focused checks:
+
+```powershell
+node --test test\conversation-render.test.js test\mobile-viewport.test.js
+```
+
 ## Web Push
 
 Checks:
