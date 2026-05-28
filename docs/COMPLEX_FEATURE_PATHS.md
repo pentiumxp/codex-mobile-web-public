@@ -35,8 +35,8 @@ Implementation path:
 
 1. Decide whether the behavior belongs in server compaction or browser rendering.
 2. Server should compact, enrich, and bound data volume; browser should render stable visible items without broad DOM churn.
-3. Operation cards in the latest turn should globally show only the newest operation card, with a compact four-line visual budget: one metadata row plus up to three clipped detail lines. The newest same-turn operation card should remain visible after refresh/re-entry even if the operation or turn has completed.
-4. Raw operation fallback must respect latest turn id and completion outputs. Completed fallback is allowed only when the completed operation is tied to the same latest turn, so older completed operations cannot attach to a newer live turn.
+3. Operation cards in the latest live turn should globally show only the newest operation card, with a compact four-line visual budget: one metadata row plus up to three clipped detail lines. Completed turns should not keep operation cards below the final reply; when Usage data exists, the final frame should be `turnUsageSummary`.
+4. Raw operation fallback must respect latest live turn id and completion outputs. Completed fallback is allowed only while the latest turn is still live and the completed operation is tied to that same turn, so older completed operations cannot attach to a newer live turn.
 5. Live reasoning should update the timer/activity label, not insert reasoning rows.
 6. Type-only context compaction markers must not synthesize visible pending/completed notices.
 7. Current-turn upward scroll jump targets the final receipt/summary: the last `agentMessage` or `plan`, then the last non-user, non-live-operation fallback. It should not jump to the first assistant reply. Preserve an already activated live-turn anchor across `turn/completed`, and show the button when the target item's start is above the viewport.
@@ -114,7 +114,8 @@ Implementation path:
 8. If vision is required, prefer `latest`/`vision` over legacy `all`, and document that app-server current history may still retain the image until a fresh continuation.
 9. Render saved image uploads as bounded thumbnails from the upload/file preview route even when model context stays reference-only, including quoted `Uploaded attachments:` summaries in Codex/plan replies. Keep this parser tolerant of CRLF line endings, Markdown blockquote-style quoted summaries, and raw app-server `input_text` / `input_image` / `image_url` content parts. The upload preview response must use a real image MIME type for `.jpg`, `.jpeg`, `.webp`, `.gif`, and related saved upload paths.
 10. Render app-server `imageView` items as direct image views; never stringify data URLs into conversation text.
-11. Test with upload/file/image focused tests.
+11. If an `imageView` points at a tool-generated screenshot outside the workspace/upload roots, cache the file into the runtime generated-image cache and serve that cached copy through an authenticated Mobile Web URL instead of expanding arbitrary local preview roots.
+12. Test with upload/file/image focused tests.
 
 ## Runtime Settings Inheritance
 

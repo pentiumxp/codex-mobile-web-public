@@ -382,7 +382,7 @@ Behavior:
 - After the latest turn finishes, the timer switches to muted styling and shows `已结束` instead of any in-progress activity label.
 - Live reasoning is not rendered as conversation rows.
 - Command/file/tool activity appears as compact operation cards. The latest-turn operation card uses a four-line visual budget: one metadata row plus up to three clipped detail lines.
-- The latest turn keeps the newest operation card visible after refresh or re-entry even if the command/tool or the turn has already completed, so users can still see the final operation status.
+- Operation cards are shown only while the latest turn is still running. After a turn completes, command/tool/file/search cards are removed from the compact mobile detail; when usage data exists, the final frame is the Usage summary.
 - Consecutive command/file operation updates show only the latest operation card unless normal visible content appears between two operations.
 - The left-swipe Subagent status panel shows Subagents from the current live turn, treating completed/closed spawn-call rows in that live turn as current because the child Agent can still be running after the spawn call closes. Older historical Subagent records are omitted so long-running collaboration sessions do not show hundreds of stale entries.
 - Page refresh prompts are gated by a full app-shell preflight. The browser must fetch and populate the target shell cache with the new HTML, CSS, JavaScript modules, manifest, service worker, and icons before the prompt is shown; clicking the prompt repeats that check and reloads only after the target cache is ready.
@@ -729,9 +729,37 @@ Behavior:
 本次 public 发布继续同步移动端线程详情的服务端修复。版本仍为 `0.1.11`，不改变前端 PWA shell 缓存；更新后需要重启 8787 Node listener，让服务端加载新的 thread detail 压缩和 Usage 解析逻辑。
 
 - Usage 诊断卡会忽略 app-server 在部分 turn 结束前输出的零值/window 哨兵 `token_count`。如果同一 turn 前面已经有有效 token 用量，Mobile Web 会保留最新有效值；如果只有哨兵事件，则不生成 Usage 卡，避免显示 `0/258400` 这类误导性用量。
-- 最新 turn 重新进入或刷新后会继续保留最新一个命令/工具/文件/搜索操作卡，即使该操作或 turn 已经完成。这样用户能看到最后执行过的命令和完成状态，不会因为操作框被隐藏而误判线程是否还在运行。
-- 从 rollout tail 补回已完成操作卡时，服务端只接受能确认属于同一最新 turn 的操作，避免把旧 turn 的已完成命令误贴到新的 live turn。
+- 最新 turn 只有在仍处于运行状态时才保留最新一个命令/工具/文件/搜索操作卡。turn 完成后，紧凑移动端详情不再在最终回执下面保留命令框；如果有 Usage 数据，最后一个诊断框应是 Usage summary。
+- 从 rollout tail 补回已完成操作卡时，服务端只在最新 turn 仍然 live 且操作能确认属于同一 turn 时补回，避免把旧 turn 的已完成命令误贴到新的 live turn。
 - 本次同步更新 `server.js`、`adapters/turn-usage-summary-service.js`、`test/turn-usage-summary-service.test.js`、`test/thread-item-timestamp-enrichment.test.js` 和相关文档；无需前端刷新提示或 service worker cache bump。
+
+### 2026-05-27 本地更新说明
+
+本次本地更新把操作卡显示规则收紧为 live-only，并将 PWA shell 缓存升到 `codex-mobile-shell-v99`。
+
+- 最新 turn 仍在运行时，移动端继续显示最新一个命令/工具/文件/搜索操作卡，用于判断当前正在执行或刚执行过的操作。
+- turn 完成后，移动端不再在最终回执下面保留命令框；如果有 Usage 数据，最后一个诊断框应是 Usage summary。
+- 这同时在服务端 thread detail 压缩和前端 `visibleItemsForTurn()` 上生效，避免 completed turn 的本地 live merge 残留操作卡继续显示。
+
+### 2026-05-28 本地更新说明
+
+本次本地更新修复 Codex 自己做视觉核验时生成的 `imageView` 截图卡片显示问题，并将 PWA shell 缓存升到 `codex-mobile-shell-v100`。
+
+- `view_image` / `imageView` 截图可能来自 `%TEMP%` 下的工具生成文件，不属于用户上传，也不在当前 workspace 文件预览根内。旧前端会把它当普通本地预览路径请求，导致手机端 `Image` 卡显示破图。
+- 服务端现在会在压缩 `imageView` 项时，把符合图片类型和大小限制的源文件复制到 Mobile Web 运行目录的 `generated-images` 缓存，再给前端一个受认证保护的 `/api/generated-images/file` URL。
+- 前端 `renderImageView()` 优先使用服务端附带的 `contentUrl`，并在需要时补上认证 key；只有没有缓存 URL 时才回退到旧的本地文件预览路径。
+- 这个修复不会把 `%TEMP%` 加进通用文件预览根，也不会放宽 Markdown/本地文件预览的 workspace-root 校验。若源临时截图在 Mobile Web 首次看到之前已经被删除，历史卡片仍无法仅凭路径恢复。
+
+### 2026-05-28 Public 发布说明
+
+本次 public 发布包含 v99/v100 两组移动端可见修正：完成 turn 不再保留命令框，以及 Codex 自己生成的视觉核验截图可以在 `Image` 卡中稳定显示。版本保持 `0.1.11`，PWA shell 缓存升到 `codex-mobile-shell-v100`。
+
+- 最新 turn 仍在运行时，移动端继续显示最新一个 `Command` / `File Change` / tool / search 操作卡；turn 完成后，紧凑详情不再把命令框留在最终回执下面。如果 rollout 中有 scoped `token_count` 数据，最后的诊断框应是 Usage summary。
+- 这条规则同时在服务端 thread detail 压缩和前端 `visibleItemsForTurn()` 中执行，避免刷新或重新进入线程后把已结束 turn 的旧操作卡误当成仍在运行。
+- `view_image` / `imageView` 视觉核验截图可能来自工具临时目录，而不是用户上传目录或当前 workspace。服务端现在会把符合图片类型和大小限制的 `imageView` 源文件复制到运行目录的 `generated-images` 缓存，并通过受认证保护的 `/api/generated-images/file` URL 给浏览器渲染。
+- 前端 `renderImageView()` 优先使用服务端返回的 `contentUrl`，并为同源 `/api/` 图片地址补认证 key；没有缓存 URL 时才回退到原来的本地文件预览路径。
+- 该修复不把 `%TEMP%` 加入通用文件预览根，也不放宽 Markdown/本地文件预览的 workspace-root 校验。若源临时截图在 Mobile Web 首次读取前已被删除，历史卡片仍无法仅靠路径恢复。
+- 新增 `adapters/generated-image-cache-service.js` 和 `test/generated-image-cache-service.test.js`，并把新 adapter 纳入 `npm run check`。发布前 public PR 检查无开放 PR。
 
 ## Current Update Notes
 

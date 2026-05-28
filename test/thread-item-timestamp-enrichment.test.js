@@ -212,28 +212,53 @@ test("raw operation fallback can attach an unfinished operation from the same li
   }
 });
 
-test("latest completed turn keeps the newest compact operation card", () => {
-  const compacted = compactThread({
-    id: "thread-7",
-    turns: [{
-      id: "turn-completed",
-      status: { type: "completed" },
-      items: [
-        { id: "user-1", type: "userMessage", content: [{ type: "text", text: "run checks" }] },
-        { id: "op-old", type: "commandExecution", command: "npm.cmd test", status: "completed" },
-        { id: "op-new", type: "commandExecution", command: "npm.cmd run check", status: "completed" },
-        { id: "agent-1", type: "agentMessage", text: "Done." },
-      ],
-    }],
-  });
+test("latest completed turn drops operation cards and ends with usage summary", () => {
+  const { dir, rolloutPath } = writeRollout([
+    event("2026-05-24T11:00:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-completed" }),
+    event("2026-05-24T11:00:10.000Z", "event_msg", {
+      type: "token_count",
+      info: {
+        last_token_usage: {
+          input_tokens: 1200,
+          cached_input_tokens: 800,
+          output_tokens: 100,
+          reasoning_output_tokens: 20,
+          total_tokens: 1300,
+        },
+        total_token_usage: {
+          input_tokens: 2500,
+          output_tokens: 200,
+          total_tokens: 2700,
+        },
+        model_context_window: 100000,
+      },
+    }),
+  ]);
+  try {
+    const compacted = compactThread({
+      id: "thread-7",
+      path: rolloutPath,
+      turns: [{
+        id: "turn-completed",
+        status: { type: "completed" },
+        items: [
+          { id: "user-1", type: "userMessage", content: [{ type: "text", text: "run checks" }] },
+          { id: "op-old", type: "commandExecution", command: "npm.cmd test", status: "completed" },
+          { id: "op-new", type: "commandExecution", command: "npm.cmd run check", status: "completed" },
+          { id: "agent-1", type: "agentMessage", text: "Done." },
+        ],
+      }],
+    });
 
-  const commands = compacted.turns[0].items.filter((item) => item.type === "commandExecution");
-  assert.equal(commands.length, 1);
-  assert.equal(commands[0].command, "npm.cmd run check");
-  assert.equal(commands[0].status, "completed");
+    const items = compacted.turns[0].items;
+    assert.equal(items.some((item) => item.type === "commandExecution"), false);
+    assert.equal(items[items.length - 1].type, "turnUsageSummary");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
-test("raw operation fallback can attach a completed operation from the same latest turn", () => {
+test("raw operation fallback can attach a completed operation from the same live latest turn", () => {
   const { dir, rolloutPath } = writeRollout([
     event("2026-05-24T11:00:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-done" }),
     event("2026-05-24T11:00:02.000Z", "response_item", {
@@ -253,8 +278,8 @@ test("raw operation fallback can attach a completed operation from the same late
       path: rolloutPath,
       turns: [{
         id: "turn-done",
-        status: { type: "completed" },
-        items: [{ id: "agent-done", type: "agentMessage", text: "Done." }],
+        status: { type: "running" },
+        items: [{ id: "agent-live", type: "agentMessage", text: "Still running." }],
       }],
     });
 
@@ -262,6 +287,37 @@ test("raw operation fallback can attach a completed operation from the same late
     assert.ok(command);
     assert.equal(command.status, "completed");
     assert.equal(command.command, "npm.cmd run check");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("raw operation fallback does not attach a completed operation to a completed latest turn", () => {
+  const { dir, rolloutPath } = writeRollout([
+    event("2026-05-24T11:10:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-finished" }),
+    event("2026-05-24T11:10:02.000Z", "response_item", {
+      type: "function_call",
+      call_id: "call-finished",
+      arguments: JSON.stringify({ command: "npm.cmd test" }),
+    }),
+    event("2026-05-24T11:10:08.000Z", "response_item", {
+      type: "function_call_output",
+      call_id: "call-finished",
+      output: "Exit code: 0\nWall time: 1.2 seconds\nOutput:\n",
+    }),
+  ]);
+  try {
+    const compacted = compactThread({
+      id: "thread-9",
+      path: rolloutPath,
+      turns: [{
+        id: "turn-finished",
+        status: { type: "completed" },
+        items: [{ id: "agent-finished", type: "agentMessage", text: "Done." }],
+      }],
+    });
+
+    assert.equal(compacted.turns[0].items.some((item) => item.type === "commandExecution"), false);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

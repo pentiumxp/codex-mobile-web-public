@@ -2580,3 +2580,121 @@ The previous full handoff was archived and should be opened only when old proven
 - Private follow-up:
   - Public-sanitized `docs/COMPLEX_FEATURE_PATHS.md` and `docs/TROUBLESHOOTING.md` were copied back to private so future public sync does not reintroduce local Hermes paths from shared docs.
   - Private commit/push is the next step in the same turn.
+
+## 2026-05-27 Operation Cards Live-Only v99
+
+- User correction:
+  - If a turn has ended, there should not be a command/tool operation card below the final response. The last frame should be the Usage summary when Usage exists.
+  - If a turn is still running, the latest operation card is still needed.
+- Local fix:
+  - `server.js`
+    - `compactTurn()` now preserves operation cards only when `allowLiveOperation` is true and the turn is live.
+    - `compactThread()` passes `allowLiveOperation` only for the latest turn and only attaches raw-operation fallback while that latest turn is live.
+    - Completed raw-operation fallback can still be used for a live latest turn when the latest operation completed but the turn remains running; completed turns do not synthesize operation cards.
+  - `public/app.js`
+    - `visibleItemsForTurn()` now renders operation cards only when `isLatestTurn(turn) && isLiveTurn(turn)`, so a completed local/live-merged turn cannot keep showing a stale command box.
+    - `CLIENT_BUILD_ID` bumped to `0.1.11|codex-mobile-shell-v99`.
+  - `public/sw.js`
+    - Shell cache bumped to `codex-mobile-shell-v99`.
+  - Tests:
+    - `test/thread-item-timestamp-enrichment.test.js` now covers completed latest turns dropping operations and ending with `turnUsageSummary`, live latest turns restoring a completed same-turn raw operation, and completed latest turns not restoring completed raw operations.
+    - `test/collab-agent-render.test.js` covers live-only frontend operation visibility.
+    - `test/mobile-viewport.test.js` covers v99 shell cache.
+  - Docs updated:
+    - `README.md`, `docs/ARCHITECTURE.md`, `docs/COMPLEX_FEATURE_PATHS.md`, `docs/TROUBLESHOOTING.md`, and `.agent-context/PROJECT_CONTEXT.md`.
+- Validation so far:
+  - Focused `node --test test\thread-item-timestamp-enrichment.test.js test\conversation-render.test.js test\collab-agent-render.test.js test\mobile-viewport.test.js` passed: 30/30.
+  - `node --check server.js`, `node --check public\app.js`, and `node --check public\sw.js` passed.
+- Final validation:
+  - `npm.cmd test` passed: 181/181.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - BOM check for touched source, tests, docs, README, and handoff files produced no output.
+- Activation:
+  - Restarted the 8787 listener to load the server-side live-only operation compaction and v99 static config: old PID `19764`, new PID `66572`.
+  - Post-restart `/api/public-config` returns `clientBuildId=0.1.11|codex-mobile-shell-v99`, `shellCacheName=codex-mobile-shell-v99`, and `imageContextMode=reference`.
+  - Post-restart authenticated `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, `lastError=null`.
+- Status:
+  - Local changes are uncommitted.
+  - This includes both server-side detail compaction and static PWA shell changes; mobile clients need the v99 refresh/hard reload/close-reopen path.
+
+## 2026-05-28 Generated ImageView Screenshot Cache v100
+
+- User report:
+  - A Hermes turn showed an `Image` card for a visual verification screenshot, but the mobile thumbnail was broken.
+  - Rollout evidence showed the image came from Codex's own `view_image` tool against a `%TEMP%` screenshot path, not from the user's upload root.
+- Diagnosis:
+  - `renderImageView()` treated local `imageView` paths like normal file-preview targets and built `/api/files/preview/content?threadId=...&path=...`.
+  - That preview route correctly allows only current workspace, Obsidian, or configured preview roots. A tool-generated `%TEMP%` screenshot is outside those roots; if the temp file is later deleted, a historical card cannot be recovered from the path alone.
+- Local fix:
+  - Added `adapters/generated-image-cache-service.js`.
+    - Extracts `imageView` source paths from direct, `arguments`, and `result` fields.
+    - Copies small supported image files into `%USERPROFILE%\.codex-mobile-web\generated-images` or `CODEX_MOBILE_GENERATED_IMAGE_CACHE_DIR`.
+    - Resolves generated-image ids back only under that runtime cache root.
+  - `server.js`
+    - `compactItem()` now attaches a generated-image `contentUrl` for `imageView` items when the source image is still available.
+    - Added authenticated `GET /api/generated-images/file?id=...` to serve cached generated images with browser-renderable image MIME and no arbitrary temp-root preview broadening.
+    - `compactTurn()` / live notification compaction now pass thread id options through to image caching.
+  - `public/app.js`
+    - `renderImageView()` now prefers server-provided `contentUrl` and adds the auth key to same-origin `/api/` media URLs when needed.
+    - `visibleItemSignature()` includes `imageView` `contentUrl` so cached-url changes repaint.
+    - `CLIENT_BUILD_ID` bumped to `0.1.11|codex-mobile-shell-v100`.
+  - `public/sw.js`
+    - Shell cache bumped to `codex-mobile-shell-v100`.
+  - Tests/docs:
+    - Added `test/generated-image-cache-service.test.js`.
+    - Updated image/file UI and mobile viewport tests.
+    - Updated README, architecture, module map, troubleshooting, complex feature paths, and project context.
+- Validation:
+  - Focused `node --test test\generated-image-cache-service.test.js test\file-preview-ui.test.js test\file-preview.test.js test\conversation-render.test.js test\mobile-viewport.test.js` passed: 31/31.
+  - `node --check adapters\generated-image-cache-service.js`, `server.js`, `public\app.js`, and `public\sw.js` passed.
+  - `npm.cmd test` passed: 184/184.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - BOM check for touched source, tests, docs, README, and project-context files produced no output.
+  - Runtime smoke `GET /api/generated-images/file?id=route-smoke/...` returned `HTTP 200` with `Content-Type: image/png`.
+- Status:
+  - Local changes are uncommitted.
+  - This fix includes server-side generated-image caching and a static PWA shell bump.
+- Activation:
+  - Restarted the 8787 Node listener to load generated-image caching: old PID `22144`, new PID `25104`.
+  - Post-restart `/api/public-config` returns `clientBuildId=0.1.11|codex-mobile-shell-v100`, `shellCacheName=codex-mobile-shell-v100`, and `imageContextMode=reference`.
+  - Post-restart authenticated `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, and `lastError=null`.
+  - Mobile clients must load `codex-mobile-shell-v100` through refresh prompt, hard reload, or PWA close/reopen.
+
+## 2026-05-28 Public v99/v100 Publish
+
+- User request:
+  - Commit and push the current changes, including public.
+- Pre-publish check:
+  - Authenticated `/api/public-pull-requests/status?force=1` returned `hasOpenPullRequests=false`, `openPullRequestCount=0`; no public PR merge prompt blocked publishing.
+- Public repository:
+  - Path: `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Synced public-safe files from private:
+    - `server.js`, `package.json`;
+    - `public/app.js`, `public/sw.js`;
+    - `adapters/generated-image-cache-service.js`;
+    - `test/generated-image-cache-service.test.js`, `test/thread-item-timestamp-enrichment.test.js`, `test/conversation-render.test.js`, `test/collab-agent-render.test.js`, `test/file-preview-ui.test.js`, `test/mobile-viewport.test.js`;
+    - `docs/ARCHITECTURE.md`, `docs/COMPLEX_FEATURE_PATHS.md`, `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`;
+    - `README.md`.
+  - Public README gained a detailed Chinese `2026-05-28 Public 发布说明` covering:
+    - live-only operation card behavior after turn completion;
+    - Usage summary as the final completed-turn diagnostic frame;
+    - generated-image cache for Codex `view_image` / `imageView` visual verification screenshots;
+    - authenticated `/api/generated-images/file` rendering;
+    - no broadening of `%TEMP%` or local file-preview roots;
+    - PWA shell `codex-mobile-shell-v100`.
+  - Public pushed commit: `5913849 发布完成回执操作卡收敛与 ImageView 截图缓存`.
+- Public validation:
+  - Focused public tests passed: 43/43.
+  - Public `npm.cmd test` passed: 184/184.
+  - Public `npm.cmd run check` passed.
+  - Public `npm.cmd run check:macos` passed.
+  - Public `git diff --check` and `git diff --cached --check` passed with only Windows LF-to-CRLF working-copy warnings before staging.
+  - Public BOM checks produced no output.
+  - Public staged privacy scan found no private user path, Tailscale/LAN marker, local Hermes path, owner key, raw key, Web Push runtime secret-file marker, or private upload runtime path.
+- Private follow-up:
+  - Private README now includes the same public release note.
+  - Private commit/push remains to be completed after final validation in the same turn.

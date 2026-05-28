@@ -57,7 +57,7 @@ test("live operation cards stay compact, four-line, and expose only the newest o
   assert.match(functionBody("operationDurationData"), /operationCompletedAtMs\(item\)/);
   assert.match(functionBody("updateOperationDurationBadges"), /querySelectorAll\("\.operation-duration"\)/);
   assert.match(functionBody("operationDetailText"), /join\(" \\| "\)/);
-  assert.match(functionBody("visibleItemsForTurn"), /const showOperations = isLatestTurn\(turn\)/);
+  assert.match(functionBody("visibleItemsForTurn"), /const showOperations = isLatestTurn\(turn\) && isLiveTurn\(turn\)/);
   assert.match(functionBody("visibleItemsForTurn"), /let latestOperationEntry = null/);
   assert.match(functionBody("visibleItemsForTurn"), /if \(latestOperationEntry\) visible\[latestOperationEntry\.visibleIndex\] = null/);
   assert.match(functionBody("visibleItemsForTurn"), /latestOperationEntry = \{ visibleIndex: visible\.length, sourceIndex: index \}/);
