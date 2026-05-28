@@ -1,5 +1,13 @@
 "use strict";
 
+const TOKEN_USAGE_KEYS = [
+  "inputTokens",
+  "cachedInputTokens",
+  "outputTokens",
+  "reasoningOutputTokens",
+  "totalTokens",
+];
+
 function numberValue(value) {
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : null;
@@ -52,19 +60,76 @@ function compactTokenUsage(usage) {
 }
 
 function numericUsageValue(usage, key) {
+  if (!usage || typeof usage !== "object") return null;
   const value = Number(usage && usage[key]);
   return Number.isFinite(value) ? value : null;
 }
 
 function tokenUsageHasPositiveComponent(usage) {
-  return [
-    "inputTokens",
-    "cachedInputTokens",
-    "outputTokens",
-    "reasoningOutputTokens",
-  ].some((key) => {
+  return TOKEN_USAGE_KEYS.filter((key) => key !== "totalTokens").some((key) => {
     const value = numericUsageValue(usage, key);
     return value !== null && value > 0;
+  });
+}
+
+function tokenUsageHasAnyValue(usage) {
+  return TOKEN_USAGE_KEYS.some((key) => numericUsageValue(usage, key) !== null);
+}
+
+function cloneTokenUsage(usage) {
+  if (!usage || typeof usage !== "object") return null;
+  const cloned = {};
+  for (const key of TOKEN_USAGE_KEYS) {
+    const value = numericUsageValue(usage, key);
+    if (value !== null) cloned[key] = value;
+  }
+  return Object.keys(cloned).length ? cloned : null;
+}
+
+function addTokenUsage(total, delta) {
+  const next = cloneTokenUsage(total) || {};
+  for (const key of TOKEN_USAGE_KEYS) {
+    const value = numericUsageValue(delta, key);
+    if (value === null) continue;
+    next[key] = (numericUsageValue(next, key) || 0) + value;
+  }
+  return next;
+}
+
+function comparableTokenUsageDelta(current, previous) {
+  if (!tokenUsageHasAnyValue(current) || !tokenUsageHasAnyValue(previous)) return null;
+  const delta = {};
+  let compared = false;
+  for (const key of TOKEN_USAGE_KEYS) {
+    const currentValue = numericUsageValue(current, key);
+    if (currentValue === null) continue;
+    const previousValue = numericUsageValue(previous, key);
+    if (previousValue === null) continue;
+    if (currentValue < previousValue) return null;
+    delta[key] = currentValue - previousValue;
+    compared = true;
+  }
+  return compared ? delta : null;
+}
+
+function eventTokenUsageDelta(summary, previousTotalTokenUsage) {
+  const totalDelta = comparableTokenUsageDelta(
+    summary && summary.totalTokenUsage,
+    previousTotalTokenUsage,
+  );
+  if (totalDelta) return totalDelta;
+  return cloneTokenUsage(summary && summary.lastTokenUsage);
+}
+
+function summaryWithTurnTokenUsage(summary, turnTokenUsage) {
+  if (!summary || typeof summary !== "object") return summary;
+  const normalizedTurnUsage = cloneTokenUsage(turnTokenUsage)
+    || cloneTokenUsage(summary.lastTokenUsage)
+    || {};
+  return Object.assign({}, summary, {
+    finalTokenUsage: cloneTokenUsage(summary.lastTokenUsage) || {},
+    turnTokenUsage: normalizedTurnUsage,
+    lastTokenUsage: normalizedTurnUsage,
   });
 }
 
@@ -133,6 +198,7 @@ function collectTurnUsageSummariesFromEntries(entries) {
   const byTurnId = new Map();
   const unscoped = [];
   let currentTurnId = "";
+  let previousTotalTokenUsage = null;
   for (const entry of entries || []) {
     if (!entry || !entry.payload) continue;
     const payload = entry.payload || {};
@@ -146,10 +212,28 @@ function collectTurnUsageSummariesFromEntries(entries) {
       timestamp: entry.timestamp,
     });
     if (!summary) continue;
-    if (turnId) byTurnId.set(turnId, summary);
-    else unscoped.push(summary);
+    const usageDelta = eventTokenUsageDelta(summary, previousTotalTokenUsage);
+    if (turnId) {
+      const accumulator = byTurnId.get(turnId) || {
+        latestSummary: null,
+        turnTokenUsage: {},
+      };
+      accumulator.latestSummary = summary;
+      accumulator.turnTokenUsage = addTokenUsage(accumulator.turnTokenUsage, usageDelta);
+      byTurnId.set(turnId, accumulator);
+    } else {
+      unscoped.push(summaryWithTurnTokenUsage(summary, usageDelta));
+    }
+    if (tokenUsageHasAnyValue(summary.totalTokenUsage)) previousTotalTokenUsage = summary.totalTokenUsage;
   }
-  return { byTurnId, unscoped };
+  const normalizedByTurnId = new Map();
+  for (const [turnId, accumulator] of byTurnId.entries()) {
+    normalizedByTurnId.set(
+      turnId,
+      summaryWithTurnTokenUsage(accumulator.latestSummary, accumulator.turnTokenUsage),
+    );
+  }
+  return { byTurnId: normalizedByTurnId, unscoped };
 }
 
 function collectTurnUsageSummariesFromRolloutText(text) {

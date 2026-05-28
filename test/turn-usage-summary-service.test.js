@@ -45,7 +45,128 @@ test("collects token_count events under the current rollout turn", () => {
   assert.equal(summary.contextWindowUsedPercent, 90);
   assert.equal(summary.contextRiskLevel, "high");
   assert.equal(summary.lastTokenUsage.cachedInputTokens, 40_000);
+  assert.equal(summary.turnTokenUsage.cachedInputTokens, 40_000);
+  assert.equal(summary.finalTokenUsage.cachedInputTokens, 40_000);
   assert.equal(summary.totalTokenUsage.totalTokens, 124_000);
+});
+
+test("derives turn token usage from cumulative token deltas across repeated token_count events", () => {
+  const entries = [
+    { type: "turn_context", timestamp: "2026-05-27T00:59:00.000Z", payload: { turn_id: "previous" } },
+    {
+      type: "event_msg",
+      timestamp: "2026-05-27T00:59:30.000Z",
+      payload: {
+        type: "token_count",
+        info: {
+          last_token_usage: {
+            input_tokens: 1_000,
+            cached_input_tokens: 400,
+            output_tokens: 100,
+            reasoning_output_tokens: 50,
+            total_tokens: 1_100,
+          },
+          total_token_usage: {
+            input_tokens: 10_000,
+            cached_input_tokens: 4_000,
+            output_tokens: 1_000,
+            reasoning_output_tokens: 500,
+            total_tokens: 11_000,
+          },
+          model_context_window: 20_000,
+        },
+      },
+    },
+    { type: "turn_context", timestamp: "2026-05-27T01:00:00.000Z", payload: { turn_id: "turn-multi" } },
+    {
+      type: "event_msg",
+      timestamp: "2026-05-27T01:00:20.000Z",
+      payload: {
+        type: "token_count",
+        info: {
+          last_token_usage: {
+            input_tokens: 1_200,
+            cached_input_tokens: 600,
+            output_tokens: 60,
+            reasoning_output_tokens: 30,
+            total_tokens: 1_260,
+          },
+          total_token_usage: {
+            input_tokens: 10_200,
+            cached_input_tokens: 4_100,
+            output_tokens: 1_060,
+            reasoning_output_tokens: 530,
+            total_tokens: 11_260,
+          },
+          model_context_window: 20_000,
+        },
+      },
+    },
+    {
+      type: "event_msg",
+      timestamp: "2026-05-27T01:00:21.000Z",
+      payload: {
+        type: "token_count",
+        info: {
+          last_token_usage: {
+            input_tokens: 1_200,
+            cached_input_tokens: 600,
+            output_tokens: 60,
+            reasoning_output_tokens: 30,
+            total_tokens: 1_260,
+          },
+          total_token_usage: {
+            input_tokens: 10_200,
+            cached_input_tokens: 4_100,
+            output_tokens: 1_060,
+            reasoning_output_tokens: 530,
+            total_tokens: 11_260,
+          },
+          model_context_window: 20_000,
+        },
+      },
+    },
+    {
+      type: "event_msg",
+      timestamp: "2026-05-27T01:01:00.000Z",
+      payload: {
+        type: "token_count",
+        info: {
+          last_token_usage: {
+            input_tokens: 1_500,
+            cached_input_tokens: 1_300,
+            output_tokens: 70,
+            reasoning_output_tokens: 20,
+            total_tokens: 1_570,
+          },
+          total_token_usage: {
+            input_tokens: 10_600,
+            cached_input_tokens: 4_300,
+            output_tokens: 1_120,
+            reasoning_output_tokens: 550,
+            total_tokens: 11_720,
+          },
+          model_context_window: 20_000,
+        },
+      },
+    },
+  ];
+
+  const summaries = collectTurnUsageSummariesFromEntries(entries);
+  const summary = summaries.byTurnId.get("turn-multi");
+
+  assert.equal(summary.timestamp, "2026-05-27T01:01:00.000Z");
+  assert.equal(summary.contextWindowUsedTokens, 1_500);
+  assert.equal(summary.finalTokenUsage.inputTokens, 1_500);
+  assert.equal(summary.finalTokenUsage.outputTokens, 70);
+  assert.equal(summary.turnTokenUsage.inputTokens, 600);
+  assert.equal(summary.turnTokenUsage.cachedInputTokens, 300);
+  assert.equal(summary.turnTokenUsage.outputTokens, 120);
+  assert.equal(summary.turnTokenUsage.reasoningOutputTokens, 50);
+  assert.equal(summary.turnTokenUsage.totalTokens, 720);
+  assert.equal(summary.lastTokenUsage.inputTokens, 600);
+  assert.equal(summary.lastTokenUsage.totalTokens, 720);
+  assert.equal(summary.totalTokenUsage.totalTokens, 11_720);
 });
 
 test("ignores final zero window token_count sentinel and preserves prior valid usage", () => {
