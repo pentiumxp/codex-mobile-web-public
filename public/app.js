@@ -145,7 +145,7 @@ const state = {
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v98";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v100";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -2104,7 +2104,7 @@ function isNodeStartAboveConversationViewport(node) {
 }
 
 function visibleItemsForTurn(turn) {
-  const showOperations = isLatestTurn(turn);
+  const showOperations = isLatestTurn(turn) && isLiveTurn(turn);
   const visible = [];
   let latestOperationEntry = null;
   const contextEntryByKey = new Map();
@@ -2176,6 +2176,7 @@ function visibleItemSignature(item, turn = null) {
       type: item.type || "",
       status: statusText(item.status),
       path: imageViewPath(item),
+      contentUrl: imageSourceSignature(imageViewContentUrl(item)),
       url: imageSourceSignature(imageViewUrl(item)),
     };
   }
@@ -5457,9 +5458,22 @@ function filePreviewMetaText(file) {
 }
 
 function filePreviewContentUrl(file) {
-  if (file && file.contentUrl) return String(file.contentUrl);
+  if (file && file.contentUrl) return authenticatedApiContentUrl(file.contentUrl);
   if (!file || !file.path) return "";
   return localFilePreviewContentUrl(file.path);
+}
+
+function authenticatedApiContentUrl(value) {
+  const raw = String(value || "");
+  if (!raw || !state.key) return raw;
+  try {
+    const parsed = new URL(raw, window.location.origin);
+    if (parsed.origin === window.location.origin && parsed.pathname.startsWith("/api/") && !parsed.searchParams.has("key")) {
+      parsed.searchParams.set("key", state.key);
+      return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    }
+  } catch (_) {}
+  return raw;
 }
 
 function localFilePreviewContentUrl(filePath) {
@@ -5565,10 +5579,19 @@ function imageViewUrl(item) {
   )) || "");
 }
 
+function imageViewContentUrl(item) {
+  return String((item && (
+    item.contentUrl
+    || item.content_url
+    || item.result && (item.result.contentUrl || item.result.content_url)
+  )) || "");
+}
+
 function renderImageView(item) {
   const filePath = imageViewPath(item);
+  const contentUrl = imageViewContentUrl(item);
   const url = imageViewUrl(item);
-  const src = filePath ? localFilePreviewContentUrl(filePath) : url;
+  const src = contentUrl ? authenticatedApiContentUrl(contentUrl) : (filePath ? localFilePreviewContentUrl(filePath) : url);
   const label = shortPath(filePath || url || item.id || "image");
   if (!src) return renderStructuredBlock(item, "Image");
   return `<figure class="image-view">

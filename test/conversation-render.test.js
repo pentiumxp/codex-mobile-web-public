@@ -223,7 +223,7 @@ test("server only emits context compaction notices from explicit item state", ()
   assert.match(itemBody, /if \(!compactionState\) return compacted/);
   assert.doesNotMatch(itemBody, /options\.contextCompactionPending !== false/);
   assert.doesNotMatch(turnBody, /contextCompactionPending = isLiveTurn\(out\)/);
-  assert.match(turnBody, /out\.items = out\.items\.map\(\(item\) => compactItem\(item\)\)/);
+  assert.match(turnBody, /out\.items = out\.items\.map\(\(item\) => compactItem\(item, options\)\)/);
 });
 
 test("matching user messages keep their original turn position after final refresh", () => {

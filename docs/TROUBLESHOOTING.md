@@ -91,7 +91,7 @@ This is usually display attribution, not a live process, when:
 - The real `function_call_output` or `exec_command_end` exists later in the rollout.
 - `Get-Process` shows no matching tool process.
 
-Current server behavior keeps at most one operation card for the latest turn, including the newest same-turn completed operation after refresh/re-entry. Raw fallback may attach a completed operation only when the rollout event is tied to the same latest turn id; older completed operations must not attach to a newer live turn. If this regresses, inspect `readLatestRawOperation()` and `compactThread()` in `server.js`, then add coverage in `test/thread-item-timestamp-enrichment.test.js`.
+Current server behavior keeps at most one operation card only while the latest turn is live. Completed turns should not keep command/tool/file/search operation cards below the final reply; when scoped usage exists, the final frame should be the Usage summary. Raw fallback may attach a completed operation only when the latest turn is still live and the rollout event is tied to that same turn id; older completed operations must not attach to a newer live turn. If this regresses, inspect `readLatestRawOperation()` and `compactThread()` in `server.js`, then add coverage in `test/thread-item-timestamp-enrichment.test.js`.
 
 ## `rg` Appears Related To A Stall
 
@@ -144,6 +144,18 @@ Focused checks:
 
 ```powershell
 node --test test\conversation-render.test.js test\mobile-viewport.test.js
+```
+
+## ImageView Screenshot Shows Broken Image
+
+If a Codex turn displays an `Image` card for a visual verification screenshot but the thumbnail is broken, distinguish it from uploaded attachments first. Tool-generated screenshots often come from `view_image` / `imageView` paths under `%TEMP%`, not `%USERPROFILE%\.codex-mobile-web\uploads`.
+
+Current behavior should cache small imageView source files into `%USERPROFILE%\.codex-mobile-web\generated-images` and serve them through `/api/generated-images/file`. Do not fix this by adding `%TEMP%` to `CODEX_MOBILE_FILE_PREVIEW_ROOTS`; that would broaden local file preview access beyond the current thread workspace. If the source temp file was already deleted before Mobile Web saw the item, the historical card cannot be recovered from the path alone.
+
+Focused checks:
+
+```powershell
+node --test test\generated-image-cache-service.test.js test\file-preview-ui.test.js test\mobile-viewport.test.js
 ```
 
 ## Usage Card Shows Zero Tokens

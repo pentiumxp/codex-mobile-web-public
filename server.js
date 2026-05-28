@@ -30,6 +30,11 @@ const {
   normalizeRepositorySlug,
   publicPullRequestApiUrl,
 } = require("./adapters/public-pull-request-service");
+const {
+  cacheGeneratedImageForItem,
+  generatedImagePathForId,
+  imageContentTypeForPath,
+} = require("./adapters/generated-image-cache-service");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -93,6 +98,7 @@ const MAX_START_THREAD_DEVELOPER_INSTRUCTIONS_CHARS = 120000;
 const MAX_UPLOAD_BYTES = Math.max(1, Number(process.env.CODEX_MOBILE_MAX_UPLOAD_BYTES || String(64 * 1024 * 1024)));
 const MAX_UPLOAD_FILES = Math.max(1, Math.min(50, Number(process.env.CODEX_MOBILE_MAX_UPLOAD_FILES || "12")));
 const UPLOAD_ROOT = process.env.CODEX_MOBILE_UPLOAD_DIR || path.join(RUNTIME_ROOT, "uploads");
+const GENERATED_IMAGE_ROOT = process.env.CODEX_MOBILE_GENERATED_IMAGE_CACHE_DIR || path.join(RUNTIME_ROOT, "generated-images");
 const IMAGE_CONTEXT_POLICY = parseImageContextPolicyEnv(process.env);
 const PERSIST_EXTENDED_HISTORY_POLICY = parsePersistExtendedHistoryEnv(process.env);
 const FILE_PREVIEW_MAX_BYTES = Math.max(1024, Number(process.env.CODEX_MOBILE_FILE_PREVIEW_MAX_BYTES || String(512 * 1024)));
@@ -1341,6 +1347,30 @@ function serveFilePreviewContent(req, res, requestedPath, allowedRoots) {
   fs.createReadStream(resolved.path).pipe(res);
 }
 
+function generatedImageContentUrl(cacheId) {
+  return `/api/generated-images/file?id=${encodeURIComponent(cacheId || "")}`;
+}
+
+function attachGeneratedImageContent(item, options = {}) {
+  if (!item || item.type !== "imageView") return item;
+  if (item.contentUrl || item.content_url) return item;
+  const cached = cacheGeneratedImageForItem(item, {
+    cacheRoot: GENERATED_IMAGE_ROOT,
+    threadId: options.threadId || "",
+    maxBytes: FILE_PREVIEW_MEDIA_MAX_BYTES,
+    contentTypes: FILE_PREVIEW_IMAGE_CONTENT_TYPES,
+    isDeniedPath: hasDeniedPreviewPathSegment,
+  });
+  if (!cached) return item;
+  item.contentUrl = generatedImageContentUrl(cached.cacheId);
+  item.generatedImage = {
+    fileName: cached.fileName,
+    contentType: cached.contentType,
+    sizeBytes: cached.sizeBytes,
+  };
+  return item;
+}
+
 function isBackupRolloutPath(value) {
   return /\.jsonl\.(bak|backup|old)(?:\b|[-_.])/i.test(String(value || ""));
 }
@@ -2572,6 +2602,7 @@ function compactItem(item, options = {}) {
   if (isOperationalItem(out)) {
     return compactOperationalItem(out);
   }
+  if (out.type === "imageView") attachGeneratedImageContent(out, options);
   if (typeof out.text === "string") out.text = truncateMiddle(out.text, MAX_TEXT_CHARS, "text");
   if (Array.isArray(out.content)) out.content = compactStringArray(out.content, MAX_TEXT_CHARS, "content");
   if (Array.isArray(out.summary)) out.summary = compactStringArray(out.summary, MAX_TEXT_CHARS, "summary");
@@ -2598,10 +2629,9 @@ function compactTurn(turn, options = {}) {
   if (!turn || typeof turn !== "object") return turn;
   const out = Object.assign({}, turn);
   if (Array.isArray(out.items)) {
-    const allowOperation = Boolean(options.allowLatestOperation)
-      || (Boolean(options.allowLiveOperation) && isLiveTurn(out));
+    const allowOperation = Boolean(options.allowLiveOperation) && isLiveTurn(out);
     const lastOperationIndex = trailingOperationIndex(out.items, allowOperation);
-    out.items = out.items.map((item) => compactItem(item)).filter((item, index) => {
+    out.items = out.items.map((item) => compactItem(item, options)).filter((item, index) => {
       if (!isOperationalItem(item)) return true;
       return index === lastOperationIndex;
     });
@@ -2646,9 +2676,12 @@ function compactThread(thread, options = {}) {
     enrichThreadItemTimestampsFromRollout(out);
     attachTurnUsageSummaries(out, readRolloutTurnUsageSummaries(rolloutPath), { rolloutStats });
     const latestIndex = out.turns.length - 1;
-    out.turns = out.turns.map((turn, index) => compactTurn(turn, { allowLatestOperation: index === latestIndex }));
+    out.turns = out.turns.map((turn, index) => compactTurn(turn, {
+      allowLiveOperation: index === latestIndex,
+      threadId: out.id || out.threadId || "",
+    }));
     const latest = out.turns[latestIndex];
-    if (latest && Array.isArray(latest.items)
+    if (latest && isLiveTurn(latest) && Array.isArray(latest.items)
       && !latest.items.some((item) => isOperationalItem(item))) {
       const rawOperation = readLatestRawOperation(out, latest.id, { includeCompleted: true });
       if (rawOperation) latest.items.push(rawOperation);
@@ -2688,8 +2721,10 @@ function compactNotification(payload) {
     method: payload.method,
     params: Object.assign({}, payload.params),
   };
+  const threadId = notificationThreadId(payload);
   if (out.params.item) {
     out.params.item = compactItem(out.params.item, {
+      threadId,
       contextCompactionPending: payload.method === "item/started"
         ? true
         : payload.method === "item/completed"
@@ -2697,7 +2732,7 @@ function compactNotification(payload) {
           : undefined,
     });
   }
-  if (out.params.turn) out.params.turn = compactTurn(out.params.turn, { allowLiveOperation: true });
+  if (out.params.turn) out.params.turn = compactTurn(out.params.turn, { allowLiveOperation: true, threadId });
   if (payload.method === "account/rateLimits/updated" && out.params.rateLimits) {
     out.params.rateLimits = compactRateLimits(out.params.rateLimits);
   }
@@ -3822,6 +3857,41 @@ function serveUploadedFile(req, res) {
       "Cache-Control": "private, max-age=300",
       "Content-Length": stat.size,
       "Content-Disposition": `inline; filename="${path.basename(target).replace(/"/g, "_")}"`,
+    });
+    fs.createReadStream(target).pipe(res);
+  });
+}
+
+function serveGeneratedImageFile(req, res) {
+  const url = getUrl(req);
+  let target;
+  try {
+    target = generatedImagePathForId(GENERATED_IMAGE_ROOT, url.searchParams.get("id") || "");
+  } catch (err) {
+    sendJson(res, err.statusCode || 400, { error: err.message || String(err) });
+    return;
+  }
+  const contentType = imageContentTypeForPath(target, FILE_PREVIEW_IMAGE_CONTENT_TYPES);
+  if (!contentType) {
+    sendJson(res, 415, { error: "This generated image type is not supported" });
+    return;
+  }
+  fs.stat(target, (statErr, stat) => {
+    if (statErr || !stat.isFile()) {
+      res.writeHead(404);
+      res.end("Not found");
+      return;
+    }
+    if (stat.size > FILE_PREVIEW_MEDIA_MAX_BYTES) {
+      sendJson(res, 413, { error: `File is too large for mobile preview (${Math.round(FILE_PREVIEW_MEDIA_MAX_BYTES / 1024 / 1024)} MB limit)` });
+      return;
+    }
+    res.writeHead(200, {
+      "Content-Type": contentType,
+      "Cache-Control": "private, max-age=300",
+      "Content-Length": stat.size,
+      "X-Content-Type-Options": "nosniff",
+      "Content-Disposition": filePreviewContentDisposition(target),
     });
     fs.createReadStream(target).pipe(res);
   });
@@ -5998,6 +6068,10 @@ async function handleApi(req, res) {
     serveUploadedFile(req, res);
     return;
   }
+  if (url.pathname === "/api/generated-images/file" && req.method === "GET") {
+    serveGeneratedImageFile(req, res);
+    return;
+  }
   if (url.pathname === "/api/files/preview" && req.method === "GET") {
     const requestedPath = url.searchParams.get("path") || "";
     const threadId = url.searchParams.get("threadId") || "";
@@ -6720,6 +6794,7 @@ module.exports = {
   enrichThreadItemTimestampsFromRollout,
   filePreviewContentDisposition,
   filePreviewContentType,
+  generatedImageContentUrl,
   mimeFor,
   readFilePreview,
   readRolloutItemTimestampCandidates,
