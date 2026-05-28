@@ -356,7 +356,7 @@ Behavior:
 - On phones and tablet portrait/touch layouts, the sidebar menu is not persistent: the main conversation fills the viewport, and the menu opens only after the user taps the top-left menu button. Wide desktop layouts keep the persistent sidebar. On coarse-pointer landscape tablets with enough room, Mobile Web uses a two-column layout with a persistent sidebar and full conversation pane.
 - On coarse-pointer landscape tablets, the composer uses a viewport-contained two-row compact layout: runtime indicators and quota on the first row, then attach/input/send on the second row. The split layout constrains both sidebar and main pane height so the composer stays inside the visible app surface.
 - On mobile/touch layouts, swiping right from the left screen edge opens the session list without waiting for a network refresh. If the existing session list is newer than 60 seconds, Mobile Web reuses it immediately; older lists open first and then refresh quietly in the background.
-- Thread lists and thread detail monitor rollout JSONL size. At the default `200MB` threshold, Mobile Web shows a context-size warning and offers a same-workspace continuation action. The warning can be skipped for the current thread size, and will reappear if that thread grows again past the stored size. Completed turns can also show a lightweight context/token usage summary parsed from rollout `token_count` events: latest-turn token use, cumulative token use, model context-window percentage, risk level, and rollout size. In usage summary rows, `in` displays uncached input (`inputTokens - cachedInputTokens`) when cached input is reported, while the context-window percentage still uses raw input tokens. After user confirmation, the continuation action first asks the source thread to write a thread-specific handoff file, creates a source-named/date-suffixed continuation thread, sends a scoped bootstrap message, then archives the source thread.
+- Thread lists and thread detail monitor rollout JSONL size. At the default `200MB` threshold, Mobile Web shows a context-size warning and offers a same-workspace continuation action. The warning can be skipped for the current thread size, and will reappear if that thread grows again past the stored size. Completed turns can also show a lightweight context/token usage summary parsed from rollout `token_count` events: turn-level token use derived from cumulative token deltas across the scoped turn, cumulative token use, model context-window percentage, risk level, and rollout size. In usage summary rows, `in` displays uncached input (`inputTokens - cachedInputTokens`) when cached input is reported, while the context-window percentage still uses raw input tokens. After user confirmation, the continuation action first asks the source thread to write a thread-specific handoff file, creates a source-named/date-suffixed continuation thread, sends a scoped bootstrap message, then archives the source thread.
 - The continuation bootstrap message explicitly carries source thread metadata, rollout size, inherited runtime settings, the source-thread-generated handoff file, bounded continuation lineage, recent visible turn summaries, and current-workspace `.agent-context/PROJECT_CONTEXT.md` / `.agent-context/HANDOFF.md` excerpts. It does not inject fixed private/public GitHub release rules; those appear only if the current workspace context or source-thread handoff says they are relevant.
 - Long-pressing a session row opens a mobile action sheet with rename, continuation, and archive actions. Archive asks for confirmation, calls `/api/threads/<threadId>/archive`, and refreshes the list after success. The row disables accidental system text selection during the long press, while rename input fields still allow normal text selection and editing.
 - Agent replies include a `复制全文` action. Markdown code blocks and command/output detail blocks include smaller copy buttons so users can copy structured text without manually selecting content on iOS.
@@ -718,6 +718,7 @@ Behavior:
 - 最终回执刷新期间，页面不再在用户阅读时持续强制滚到底部。用户最近的手动滚动如果让对话区离开底部，会建立当前 turn 阅读保持状态；render-time stick-to-bottom、发送后底部跟随和 viewport 跟随都会暂停，直到用户回到底部或点击向下箭头。
 - 最新 turn 的命令/工具/文件/搜索操作卡从三行视觉预算改为四行：一行类型/状态元信息，加上最多三行详情。这样长命令、文件列表或工具摘要在手机上更容易读，同时仍避免操作卡无限变高。
 - 完成的 turn 可以显示 `Context and token usage` 诊断卡。该卡来自 rollout `token_count` 事件，展示本轮 token、累计 token、context window 使用比例/风险和 rollout 大小；没有 scoped token 事件时不会猜测生成。诊断卡不会成为向上箭头的最终回执目标。
+- Usage 诊断卡的本轮 token 不再只取同一 turn 最后一个 `token_count.last_token_usage`。服务端会按连续 `total_token_usage` 差值累计本 turn 内多次模型调用，并对重复的相同累计事件计 0；最终 context window 百分比仍取本 turn 最后一个有效事件。
 - Usage 诊断卡里 `in` 的显示口径调整为未缓存输入量：当上游提供 `cachedInputTokens` 时，`in` 显示 `inputTokens - cachedInputTokens`，同时继续单独显示 `cached`。context window 百分比和风险仍按 raw input/context token 计算，因为 cached input 仍占用模型上下文窗口。
 - 侧栏新增 prompt-only 的 Public PR 检查。浏览器会检查配置的 public 仓库是否有开放 PR；发现 PR 时只提示是否准备合并/发布评审任务，不会自动 merge、sync、commit 或 push。
 - 上传图片缩略图显示继续保持 reference-only 模型上下文策略：模型默认只收到附件摘要和本地路径，不默认收到图片像素。浏览器仍会从 `Uploaded attachments:` 摘要渲染居中缩略图，包括用户消息、Codex/plan 引用摘要、CRLF、Markdown blockquote，以及 app-server 原始 `input_text` / `input_image` / `image_url` content part。
@@ -760,6 +761,16 @@ Behavior:
 - 前端 `renderImageView()` 优先使用服务端返回的 `contentUrl`，并为同源 `/api/` 图片地址补认证 key；没有缓存 URL 时才回退到原来的本地文件预览路径。
 - 该修复不把 `%TEMP%` 加入通用文件预览根，也不放宽 Markdown/本地文件预览的 workspace-root 校验。若源临时截图在 Mobile Web 首次读取前已被删除，历史卡片仍无法仅靠路径恢复。
 - 新增 `adapters/generated-image-cache-service.js` 和 `test/generated-image-cache-service.test.js`，并把新 adapter 纳入 `npm run check`。发布前 public PR 检查无开放 PR。
+
+### 2026-05-28 Public 发布说明（Usage 本轮统计修正）
+
+本次 public 发布修正完成回执里 `Usage` 诊断卡的本轮 token 统计口径。版本保持 `0.1.11`，不改变 PWA shell 缓存；更新后需要重启 8787 Node listener，让服务端加载新的 rollout `token_count` 解析逻辑。
+
+- `last turn` 行不再只取同一 turn 最后一个有效 `token_count.last_token_usage`。长 turn 如果包含多次模型调用、工具后续总结或多段推理，前面几次调用也会进入本轮统计。
+- 服务端现在按连续 `total_token_usage` 的差值累计本 turn 内所有有效 scoped token 事件；重复的相同累计事件贡献 0，避免 app-server 重放相同 token 事件时重复计数。
+- context window 使用比例和风险仍取本 turn 最后一个有效事件，因为它描述的是最终上下文窗口占用，不是所有模型调用输入的简单求和。
+- 零值/window 哨兵过滤继续保留：如果 app-server 在 turn 结束前输出 `last_token_usage=0` 且 `total_tokens` 等于窗口大小的哨兵事件，Mobile Web 会忽略它。
+- 本次同步更新 `adapters/turn-usage-summary-service.js`、`test/turn-usage-summary-service.test.js`、README、架构/上下文策略/故障排除/复杂路径文档。发布前 public PR 检查无开放 PR。
 
 ## Current Update Notes
 

@@ -70,11 +70,13 @@ The bootstrap must list the full handoff file path and instruct the new thread t
 
 ## Per-Turn Context Diagnostics
 
-Thread detail may attach a synthetic `turnUsageSummary` item to completed turns when the rollout tail contains app-server `token_count` events. The summary reports latest-turn token usage, cumulative token usage, model context-window usage percentage, risk level, and rollout JSONL size.
+Thread detail may attach a synthetic `turnUsageSummary` item to completed turns when the rollout tail contains app-server `token_count` events. The summary reports turn-level token usage, cumulative token usage, model context-window usage percentage, risk level, and rollout JSONL size.
+
+Turn-level token usage must account for all valid scoped `token_count` events in the completed turn, not only the final event's `last_token_usage`. Mobile Web derives this value from consecutive cumulative `total_token_usage` deltas, treats duplicate identical cumulative events as zero additional usage, and falls back to the event's `last_token_usage` only when no reliable cumulative baseline exists. The context-window percentage and risk remain a final valid-event snapshot because they describe the prompt window at the end of the turn, not the sum of all model calls.
 
 When a token event includes `cachedInputTokens`, the UI displays `in` as uncached input (`inputTokens - cachedInputTokens`) and shows cached input separately. Model context-window usage and risk still use the raw input-token count because cached input still occupies the prompt window.
 
-Some app-server turns can emit a final zero/window sentinel after valid usage events: `last_token_usage` is all zero, `total_token_usage` component fields are zero, and `total_token_usage.total_tokens` equals `model_context_window`. This is not real usage and must be ignored so the latest valid scoped token event remains visible.
+Some app-server turns can emit a final zero/window sentinel after valid usage events: `last_token_usage` is all zero, `total_token_usage` component fields are zero, and `total_token_usage.total_tokens` equals `model_context_window`. This is not real usage and must be ignored so the latest valid scoped token event remains the final context snapshot.
 
 This is diagnostic display only. It must not change model input construction, continuation bootstrap content, app-server history, or rollout files. If a turn has no scoped `token_count` event, Mobile Web should omit the summary rather than guessing.
 

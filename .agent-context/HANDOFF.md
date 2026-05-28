@@ -2697,4 +2697,75 @@ The previous full handoff was archived and should be opened only when old proven
   - Public staged privacy scan found no private user path, Tailscale/LAN marker, local Hermes path, owner key, raw key, Web Push runtime secret-file marker, or private upload runtime path.
 - Private follow-up:
   - Private README now includes the same public release note.
+  - Private validation after public README/handoff update passed:
+    - `npm.cmd test` passed: 185/185.
+    - `npm.cmd run check` passed.
+    - `npm.cmd run check:macos` passed.
+    - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+    - BOM check for touched source, tests, docs, README, project-context, and handoff files produced no output.
+  - This entry is included in the private commit/push for the same turn.
+
+## 2026-05-28 Turn Usage Delta Accounting
+
+- User report:
+  - The completed-turn `Usage` card's `last turn` row looked too small and appeared to count only the final reply/model call rather than the whole turn.
+- Diagnosis:
+  - Raw rollout inspection for current thread turn `019e6cec-9a4a-7933-b24c-617684bc71d5` showed 28 valid scoped `token_count` events in one turn.
+  - The existing parser stored only the latest valid event per turn, so the card used final-event `last_token_usage` (`input=195073`, `out=282`, `reasoning=74`) and missed earlier model calls in the same turn.
+- Local fix:
+  - `adapters/turn-usage-summary-service.js` now accumulates turn-level usage from consecutive cumulative `total_token_usage` deltas across valid scoped events.
+  - Duplicate events with identical cumulative totals add zero; zero/window sentinel events remain ignored.
+  - The final valid event still provides context-window percent/risk, and `finalTokenUsage` preserves the final-call snapshot.
+  - `lastTokenUsage` is normalized to the turn-level total for backward compatibility with the current frontend `last turn` row.
+  - Updated `test/turn-usage-summary-service.test.js`, `README.md`, `docs/ARCHITECTURE.md`, `docs/CONTEXT_STRATEGY.md`, `docs/TROUBLESHOOTING.md`, `docs/COMPLEX_FEATURE_PATHS.md`, and `.agent-context/PROJECT_CONTEXT.md`.
+- Validation:
+  - Focused `node --test test\turn-usage-summary-service.test.js` passed: 7/7.
+  - `node --check adapters\turn-usage-summary-service.js` passed.
+  - `npm.cmd test` passed: 185/185.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - BOM check for touched source, tests, docs, README, and project-context files produced no output.
+  - Recomputed the reported turn with the new parser:
+    - final context snapshot remains `input=195073`, context window `75.49%`;
+    - turn-level usage becomes `input=4393070`, `cached=4196864`, `out=10548`, `reasoning=2990`, `total=4403618`.
+- Activation:
+  - Restarted the 8787 Node listener to load the server-side parser fix: old PID `25104`, new PID `51460`.
+  - Post-restart `/api/public-config` returns `clientBuildId=0.1.11|codex-mobile-shell-v100`, `shellCacheName=codex-mobile-shell-v100`, and `imageContextMode=reference`.
+  - Post-restart authenticated `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, and `lastError=null`.
+  - Post-restart authenticated thread detail for turn `019e6cec-9a4a-7933-b24c-617684bc71d5` returns `turnUsageSummary.lastTokenUsage.inputTokens=4393070`, `cachedInputTokens=4196864`, `outputTokens=10548`, `reasoningOutputTokens=2990`, and `finalTokenUsage.inputTokens=195073`.
+- Status:
+  - Local changes are uncommitted.
+  - This is a server-side usage parser/documentation change; no PWA shell cache bump is required.
+
+## 2026-05-28 Public Usage Delta Publish
+
+- User request:
+  - Commit and push the Usage turn-delta accounting fix, including public.
+- Pre-publish check:
+  - Authenticated `/api/public-pull-requests/status?force=1` returned `hasOpenPullRequests=false`, `openPullRequestCount=0`; no public PR merge prompt blocked publishing.
+- Public repository:
+  - Path: `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Synced public-safe files from private:
+    - `README.md`;
+    - `adapters/turn-usage-summary-service.js`;
+    - `test/turn-usage-summary-service.test.js`;
+    - `docs/ARCHITECTURE.md`, `docs/COMPLEX_FEATURE_PATHS.md`, `docs/CONTEXT_STRATEGY.md`, `docs/TROUBLESHOOTING.md`.
+  - Public README gained Chinese `2026-05-28 Public 发布说明（Usage 本轮统计修正）` documenting:
+    - `last turn` now counts all valid scoped token events in the turn rather than only the final `last_token_usage`;
+    - turn-level usage comes from consecutive cumulative `total_token_usage` deltas;
+    - duplicate cumulative events add zero;
+    - context-window percent/risk still uses the final valid event;
+    - zero/window sentinel filtering remains.
+  - Public pushed commit: `eff8fbc 发布 Usage 本轮统计修正`.
+- Public validation:
+  - Focused `node --test test\turn-usage-summary-service.test.js` passed: 7/7.
+  - Public `npm.cmd test` passed: 185/185.
+  - Public `npm.cmd run check` passed.
+  - Public `npm.cmd run check:macos` passed.
+  - Public `git diff --check` and `git diff --cached --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Public BOM checks produced no output.
+  - Public staged privacy scan found only existing generic guardrail/runtime-path documentation, with no raw secrets or user-specific upload/runtime paths introduced by this change.
+- Private follow-up:
+  - Private README now includes the same public release note.
   - Private commit/push remains to be completed after final validation in the same turn.
