@@ -80,6 +80,21 @@ session and scrubs the one-time URL instead of storing the long-lived Access Key
 If Hermes Mobile is served over HTTPS, the Codex Mobile entry must also be
 HTTPS. Set `CODEX_MOBILE_HERMES_PLUGIN_BASE_URL` or
 `CODEX_MOBILE_PUBLIC_BASE_URL` so the manifest advertises that external URL.
+On Windows, the included startup scripts accept `-HermesPluginBaseUrl`,
+`-PublicBaseUrl`, and `-HermesPluginFrameOrigins`, so a scheduled-task
+deployment can persist the HTTPS entry URL and the allowed Hermes iframe
+origins instead of relying on a temporary shell environment. Example:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-codex-mobile-web-startup.ps1 -RunNow `
+  -HermesPluginBaseUrl "https://codex.example.test:8443" `
+  -HermesPluginFrameOrigins "https://hermes.example.test"
+```
+
+After that, a manifest request with
+`?hermesOrigin=https%3A%2F%2Fhermes.example.test` should return an HTTPS
+`entry.url` and `program_api.base_url`; launch responses still return only a
+relative `entry_path` with a short-lived token.
 `/?embed=hermes` runs the same app as an iframe-embedded secondary app, hides
 standalone navigation chrome, reports navigation state with
 `codex-mobile.plugin.navigation`, handles `hermes.plugin.back` inside the
@@ -1293,6 +1308,9 @@ VAPID details:
 | `CODEX_MOBILE_KEY` | Inline web access key. |
 | `CODEX_MOBILE_KEY_FILE` | Custom access-key file path. |
 | `CODEX_MOBILE_DISABLE_AUTH` | Disable auth when set to `1`, `true`, `yes`, or `on`. |
+| `CODEX_MOBILE_HERMES_PLUGIN_BASE_URL` | External HTTPS base URL advertised by the Hermes plugin manifest for `entry.url` and `program_api.base_url`. Prefer the Windows `-HermesPluginBaseUrl` startup parameter for scheduled deployments. |
+| `CODEX_MOBILE_PUBLIC_BASE_URL` | General external base URL fallback used when `CODEX_MOBILE_HERMES_PLUGIN_BASE_URL` is not set. |
+| `CODEX_MOBILE_HERMES_PLUGIN_FRAME_ORIGINS` | Semicolon/newline-separated Hermes iframe origins added to plugin CSP `frame-ancestors` at process start. Runtime `/api/v1/hermes/plugin/origins` registration can also add origins. |
 | `CODEX_MOBILE_UPLOAD_DIR` | Upload storage directory. |
 | `CODEX_MOBILE_MAX_UPLOAD_BYTES` | Max total upload bytes per message. |
 | `CODEX_MOBILE_MAX_UPLOAD_FILES` | Max files per message. |

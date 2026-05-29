@@ -282,12 +282,25 @@ For plugin setup:
    this launch token through `/api/v1/hermes/plugin/session`, removes the
    one-time token from the URL, and keeps only an in-memory plugin session.
 
+6. For a Windows scheduled-task deployment, persist the external HTTPS Codex
+   URL and the Hermes iframe origin in the task arguments rather than only in
+   the current shell:
+
+   ```powershell
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-codex-mobile-web-startup.ps1 -RunNow `
+     -HermesPluginBaseUrl "https://codex.example.test:8443" `
+     -HermesPluginFrameOrigins "https://hermes.example.test"
+   ```
+
 If Hermes Mobile is served over HTTPS, the plugin entry URL must also be HTTPS
 or the browser may block the embedded frame as mixed content. The fix is a
 deployment URL/TLS configuration change, not a Codex Access Key change. Set
 `CODEX_MOBILE_HERMES_PLUGIN_BASE_URL` or `CODEX_MOBILE_PUBLIC_BASE_URL` to the
 external HTTPS Codex Mobile URL when the Node listener itself only sees local
-HTTP.
+HTTP. If the manifest still returns `http://127.0.0.1:8787/?embed=hermes` for a
+HTTPS Hermes origin, check the current Node process environment or the
+scheduled-task action arguments; the registered Hermes origin only controls
+`frame-ancestors`, not the Codex entry/base URL.
 
 If the iframe opens a standalone login panel after a valid launch, check:
 

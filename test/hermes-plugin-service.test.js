@@ -97,6 +97,18 @@ test("manifest reports HTTPS Hermes mixed-content diagnostics for HTTP Codex ent
   assert.equal(manifest.frame_embedding.diagnostics[0].code, "https_hermes_cannot_embed_http_codex_entry");
 });
 
+test("manifest advertises configured HTTPS Codex entry for HTTPS Hermes origins", () => {
+  const service = createHermesPluginService({ version: "0.1.11", hermesOrigins: "https://hermes.example.test" });
+  const manifest = service.manifest({
+    baseUrl: "https://codex.example.test:8443",
+    hermesOrigin: "https://hermes.example.test",
+  });
+  assert.equal(manifest.entry.url, "https://codex.example.test:8443/?embed=hermes");
+  assert.equal(manifest.program_api.base_url, "https://codex.example.test:8443");
+  assert.deepEqual(manifest.frame_embedding.frame_ancestors, ["'self'", "https://hermes.example.test"]);
+  assert.deepEqual(manifest.frame_embedding.diagnostics, []);
+});
+
 test("launch returns only a short entry path and browser exchanges it for a plugin session", () => {
   let now = 1000;
   const service = createHermesPluginService({

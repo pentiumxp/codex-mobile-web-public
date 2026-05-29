@@ -3,6 +3,9 @@ param(
     [int]$Port = 8787,
     [string]$CodexExe = "",
     [string]$UserProfilePath = "",
+    [string]$HermesPluginBaseUrl = "",
+    [string]$PublicBaseUrl = "",
+    [string]$HermesPluginFrameOrigins = "",
     [switch]$EnsureStandaloneMux,
     [switch]$RequireSharedAppServer,
     [switch]$NoAuth,
@@ -186,6 +189,15 @@ $parameters = @{
 
 if (-not [string]::IsNullOrWhiteSpace($CodexExe)) {
     $parameters.CodexExe = $CodexExe
+}
+if (-not [string]::IsNullOrWhiteSpace($HermesPluginBaseUrl)) {
+    $parameters.HermesPluginBaseUrl = $HermesPluginBaseUrl
+}
+if (-not [string]::IsNullOrWhiteSpace($PublicBaseUrl)) {
+    $parameters.PublicBaseUrl = $PublicBaseUrl
+}
+if (-not [string]::IsNullOrWhiteSpace($HermesPluginFrameOrigins)) {
+    $parameters.HermesPluginFrameOrigins = $HermesPluginFrameOrigins
 }
 if ($RequireSharedAppServer) {
     $parameters.RequireSharedAppServer = $true

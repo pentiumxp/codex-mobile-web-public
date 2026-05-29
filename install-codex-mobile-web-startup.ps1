@@ -5,6 +5,9 @@ param(
     [string]$CodexExe = "",
     [string]$UserId = "",
     [string]$UserProfilePath = "",
+    [string]$HermesPluginBaseUrl = "",
+    [string]$PublicBaseUrl = "",
+    [string]$HermesPluginFrameOrigins = "",
     [switch]$RunAsSystem,
     [switch]$InteractiveLogon,
     [switch]$AllowManagedFallback,
@@ -69,6 +72,15 @@ $arguments = @(
 
 if (-not [string]::IsNullOrWhiteSpace($CodexExe)) {
     $arguments += @("-CodexExe", (Quote-TaskArgument $CodexExe))
+}
+if (-not [string]::IsNullOrWhiteSpace($HermesPluginBaseUrl)) {
+    $arguments += @("-HermesPluginBaseUrl", (Quote-TaskArgument $HermesPluginBaseUrl))
+}
+if (-not [string]::IsNullOrWhiteSpace($PublicBaseUrl)) {
+    $arguments += @("-PublicBaseUrl", (Quote-TaskArgument $PublicBaseUrl))
+}
+if (-not [string]::IsNullOrWhiteSpace($HermesPluginFrameOrigins)) {
+    $arguments += @("-HermesPluginFrameOrigins", (Quote-TaskArgument $HermesPluginFrameOrigins))
 }
 if (-not $AllowManagedFallback) {
     $arguments += "-EnsureStandaloneMux"

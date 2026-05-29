@@ -92,7 +92,14 @@ origins>` and does not hard-code any personal domain. If HTTPS Hermes would
 embed an HTTP Codex entry, the manifest reports a mixed-content diagnostic; the
 fix is to expose Codex through HTTPS and set `CODEX_MOBILE_HERMES_PLUGIN_BASE_URL`
 or `CODEX_MOBILE_PUBLIC_BASE_URL` so the plugin manifest advertises the HTTPS
-entry URL instead of the local listener URL.
+entry URL instead of the local listener URL. The Windows foreground, windowless,
+and scheduled-task startup scripts can persist that deployment setting through
+`-HermesPluginBaseUrl` / `-PublicBaseUrl`; the same startup chain can also set
+`-HermesPluginFrameOrigins` so a headless/scheduled listener emits the required
+CSP frame ancestors immediately after restart. If neither an explicit base URL
+nor reverse-proxy `X-Forwarded-Proto: https` / `X-Forwarded-Host` headers are
+present, manifest generation correctly falls back to the local request host,
+which is suitable only for local HTTP debugging.
 
 `/?embed=hermes` is a real iframe app mode, not just a launch URL. It hides
 standalone navigation chrome and login splash, keeps the current iframe DOM

@@ -154,7 +154,10 @@ Implementation path:
    `CODEX_MOBILE_HERMES_PLUGIN_BASE_URL` or `CODEX_MOBILE_PUBLIC_BASE_URL` so
    the manifest advertises the external HTTPS entry URL. HTTPS Hermes cannot
    embed an HTTP Codex entry; return/report a diagnostic rather than silently
-   advertising an unusable iframe URL.
+   advertising an unusable iframe URL. On Windows, keep this configuration in
+   the startup chain with `-HermesPluginBaseUrl` / `-PublicBaseUrl`; use
+   `-HermesPluginFrameOrigins` when the Hermes iframe origin must be present at
+   process start instead of relying only on runtime registration.
 7. Launch must return a short-lived `codexPluginLaunch` iframe entry path, not
    the long-lived Access Key. The browser should exchange that one-time token
    for an in-memory plugin session and scrub the URL so tab switches do not

@@ -7,7 +7,7 @@
 | `server.js` | Main HTTP server, app-server client, auth, routes, thread detail compaction, uploads, continuation jobs, Web Push, update/restart endpoints | Treat as composition glue. Extract reusable logic instead of expanding large inline blocks. |
 | `codex-app-server-mux.js` | Shared Desktop/Mobile app-server bridge, endpoint publication, TCP server, app-server notification replay, approval proxying | Stdout is protocol data for Desktop; diagnostics must go to mux log. |
 | `codex-app-server-mux-shim.cs` | Windows `.exe` shim for Desktop `CODEX_CLI_PATH` | Rebuild/relaunch Desktop through the shared launcher after changes. |
-| `start-codex-mobile-web*.ps1/.vbs` | Windows startup wrappers and hidden scheduled-task startup | User-logon task is preferred when WSL access is needed. |
+| `start-codex-mobile-web*.ps1/.vbs` | Windows startup wrappers and hidden scheduled-task startup | User-logon task is preferred when WSL access is needed; plugin HTTPS base URL and Hermes frame-origin settings must be passed here for scheduled deployments. |
 | `restart-codex-mobile-shared-chain.ps1` | Scoped restart for Mobile Web chain | Does not restart Hermes Mobile, WSL, Codex Desktop, or unrelated services. |
 | `start-codex-*-macos.sh` | macOS standalone/shared launch helpers | Keep shell syntax validated with `npm run check:macos`. |
 

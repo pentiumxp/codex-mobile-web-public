@@ -2867,3 +2867,47 @@ The previous full handoff was archived and should be opened only when old proven
   - Local changes are uncommitted.
   - Server-side route/CSP/session changes are active in the current 8787 listener.
   - Mobile/PWA clients must refresh, hard reload, or close/reopen to activate `codex-mobile-shell-v102`; old v101 service-worker shells will not have the full embed contract until refreshed.
+
+## 2026-05-29 Hermes Plugin HTTPS Base URL Startup Wiring
+
+- User report:
+  - Hermes Mobile has registered Codex Mobile and registered Hermes PWA origin `https://hermes-xuxin.synology.me:8445`.
+  - Direct manifest call with `hermesOrigin=https%3A%2F%2Fhermes-xuxin.synology.me%3A8445` still returned `entry.url=http://127.0.0.1:8787/?embed=hermes` and `program_api.base_url=http://127.0.0.1:8787`.
+  - This is valid for local debug only and is blocked as mixed content when HTTPS Hermes embeds the plugin iframe.
+- Diagnosis:
+  - Existing plugin service already honors `CODEX_MOBILE_HERMES_PLUGIN_BASE_URL` / `CODEX_MOBILE_PUBLIC_BASE_URL` and uses registered origins for `frame-ancestors`.
+  - Current Windows scheduled task had no way to persist these values into the hidden/windowless Node process, so restarts fell back to request-local `127.0.0.1`.
+- Local fix:
+  - `start-codex-mobile-web.ps1` now accepts `-HermesPluginBaseUrl`, `-PublicBaseUrl`, and `-HermesPluginFrameOrigins`, then sets:
+    - `CODEX_MOBILE_HERMES_PLUGIN_BASE_URL`;
+    - `CODEX_MOBILE_PUBLIC_BASE_URL`;
+    - `CODEX_MOBILE_HERMES_PLUGIN_FRAME_ORIGINS`.
+  - `start-codex-mobile-web-windowless.ps1` forwards those values to the foreground startup script.
+  - `install-codex-mobile-web-startup.ps1` persists those values into the Windows scheduled-task action arguments, so production HTTPS plugin deployment does not depend on a temporary shell environment.
+  - Tests now assert the startup script chain can persist the HTTPS base URL and frame-origin settings.
+  - `test/hermes-plugin-service.test.js` now covers HTTPS Hermes origin + configured HTTPS Codex base URL returning HTTPS `entry.url` / `program_api.base_url` with no mixed-content diagnostic.
+  - Updated README, architecture, module map, troubleshooting, complex feature path docs, and project context.
+- Validation:
+  - PowerShell parser check passed for:
+    - `start-codex-mobile-web.ps1`;
+    - `start-codex-mobile-web-windowless.ps1`;
+    - `install-codex-mobile-web-startup.ps1`.
+  - Focused `node --test test\hermes-plugin-service.test.js test\hermes-plugin-route.test.js test\plugin-embed.test.js test\mobile-viewport.test.js` passed: 18/18.
+  - `npm.cmd test` passed: 200/200.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - BOM check for touched source, tests, docs, README, and project-context files produced no output.
+- Runtime smoke:
+  - Live manifest with simulated reverse-proxy headers `X-Forwarded-Proto=https` and `X-Forwarded-Host=codex.example.test:8443` returned:
+    - `entry.url=https://codex.example.test:8443/?embed=hermes`;
+    - `program_api.base_url=https://codex.example.test:8443`;
+    - `frame_ancestors='self' https://hermes-xuxin.synology.me:8445`;
+    - no diagnostic code.
+  - Live direct manifest without external base URL still returns `http://127.0.0.1:8787/?embed=hermes` plus diagnostic `https_hermes_cannot_embed_http_codex_entry`, confirming the current process still needs a real `-HermesPluginBaseUrl` deployment value to satisfy HTTPS Hermes embedding.
+  - Authenticated launch smoke returned fields `entry_path,expires_in,ok`, `entry_path` was relative, and it did not contain the long-lived Access Key.
+- Status:
+  - Local changes are uncommitted.
+  - No Node listener restart was performed for this wiring-only source change.
+  - To activate for the real Hermes PWA, re-register/restart the Windows task with the actual external HTTPS Codex Mobile origin, for example:
+    `.\install-codex-mobile-web-startup.ps1 -RunNow -HermesPluginBaseUrl "https://<codex-https-origin>" -HermesPluginFrameOrigins "https://hermes-xuxin.synology.me:8445"`.
