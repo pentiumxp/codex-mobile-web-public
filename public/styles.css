@@ -315,6 +315,114 @@ textarea {
   background: var(--bg);
 }
 
+html.embed-hermes,
+html.embed-hermes body {
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+html.embed-hermes .app {
+  width: 100%;
+  max-width: none;
+  height: 100dvh;
+  min-height: 100%;
+  grid-template-columns: minmax(0, 1fr);
+  background: var(--bg);
+}
+
+html.embed-hermes #openMenu,
+html.embed-hermes #pageRefreshPrompt,
+html.embed-hermes .version-actions {
+  display: none !important;
+}
+
+html.embed-hermes .sidebar {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  width: 100vw;
+  max-width: 100vw;
+  display: flex;
+  transform: translateX(-105%);
+  transition: transform 160ms ease;
+  box-shadow: var(--shadow);
+}
+
+html.embed-hermes .sidebar.open {
+  transform: translateX(0);
+}
+
+html.embed-hermes .sidebar.edge-dragging {
+  transition: none;
+  transform: translateX(calc(-100% + var(--sidebar-edge-x, 0px)));
+}
+
+html.embed-hermes .sidebar .mobile-only {
+  display: grid;
+}
+
+html.embed-hermes.embed-hermes-primary .app {
+  grid-template-columns: minmax(0, 1fr);
+  overflow: hidden;
+}
+
+html.embed-hermes.embed-hermes-primary .sidebar {
+  position: relative;
+  inset: auto;
+  z-index: 1;
+  width: 100%;
+  max-width: none;
+  height: 100dvh;
+  min-height: 100%;
+  transform: none !important;
+  transition: none;
+  box-shadow: none;
+  border-right: 0;
+}
+
+html.embed-hermes.embed-hermes-primary #closeMenu {
+  display: none !important;
+}
+
+html.embed-hermes.embed-hermes-primary .theme-settings {
+  position: static;
+  inset: auto;
+  box-shadow: none;
+}
+
+html.embed-hermes.embed-hermes-primary .main {
+  display: none;
+}
+
+html.embed-hermes .main {
+  min-width: 0;
+  width: 100%;
+}
+
+html.embed-hermes .topbar {
+  min-height: 48px;
+  padding-left: max(12px, env(safe-area-inset-left, 0px));
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
+}
+
+html.embed-hermes .conversation {
+  padding-left: max(10px, env(safe-area-inset-left, 0px));
+  padding-right: max(10px, env(safe-area-inset-right, 0px));
+}
+
+html.embed-hermes .login {
+  padding: 16px;
+  background: var(--bg);
+}
+
+html.embed-hermes .plugin-embed-login-panel input,
+html.embed-hermes .plugin-embed-login-panel button {
+  display: none !important;
+}
+
 @supports not (height: 100dvh) {
   .app {
     height: var(--app-height, 100%);

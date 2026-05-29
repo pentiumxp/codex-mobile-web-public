@@ -2,6 +2,9 @@ param(
     [string]$HostAddress = "0.0.0.0",
     [int]$Port = 8787,
     [string]$CodexExe = "",
+    [string]$HermesPluginBaseUrl = "",
+    [string]$PublicBaseUrl = "",
+    [string]$HermesPluginFrameOrigins = "",
     [switch]$RequireSharedAppServer,
     [switch]$NoAuth
 )
@@ -27,6 +30,15 @@ if (($CodexExe -match '[\\/]') -and -not (Test-Path -LiteralPath $CodexExe)) {
 $env:CODEX_MOBILE_HOST = $HostAddress
 $env:CODEX_MOBILE_PORT = [string]$Port
 $env:CODEX_MOBILE_CODEX_EXE = $CodexExe
+if (-not [string]::IsNullOrWhiteSpace($HermesPluginBaseUrl)) {
+    $env:CODEX_MOBILE_HERMES_PLUGIN_BASE_URL = $HermesPluginBaseUrl
+}
+if (-not [string]::IsNullOrWhiteSpace($PublicBaseUrl)) {
+    $env:CODEX_MOBILE_PUBLIC_BASE_URL = $PublicBaseUrl
+}
+if (-not [string]::IsNullOrWhiteSpace($HermesPluginFrameOrigins)) {
+    $env:CODEX_MOBILE_HERMES_PLUGIN_FRAME_ORIGINS = $HermesPluginFrameOrigins
+}
 if ($RequireSharedAppServer) {
     $env:CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER = "1"
 }
@@ -36,6 +48,14 @@ if ($NoAuth) {
 
 Write-Host "Starting Codex Mobile Web on http://$HostAddress`:$Port"
 Write-Host "Codex exe: $CodexExe"
+if (-not [string]::IsNullOrWhiteSpace($HermesPluginBaseUrl)) {
+    Write-Host "Hermes plugin base URL: $HermesPluginBaseUrl"
+} elseif (-not [string]::IsNullOrWhiteSpace($PublicBaseUrl)) {
+    Write-Host "Public base URL: $PublicBaseUrl"
+}
+if (-not [string]::IsNullOrWhiteSpace($HermesPluginFrameOrigins)) {
+    Write-Host "Hermes plugin frame origins: $HermesPluginFrameOrigins"
+}
 if ($RequireSharedAppServer) {
     Write-Host "Shared app-server is required; managed fallback is disabled."
 }

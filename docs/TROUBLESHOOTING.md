@@ -234,18 +234,99 @@ If a continuation starts with unexpectedly high input tokens, inspect the bootst
 - Workspace handoff and prior lineage excerpts should stay bounded.
 - Durable project facts should move to `.agent-context` and `docs/`, not into a larger bootstrap prompt.
 
-## Hermes / ChatGPT Pro Bridge Checks
+## Hermes Mobile Plugin Checks
 
-Do not confuse two different integrations:
+Codex Mobile Web's Hermes integration is an independent embedded-app plugin.
+Do not diagnose it through a worker queue or collaboration queue.
 
-- Legacy/experimental `codex-hermes-main` polling worker uses `/api/codex-mux/...`. If production Hermes returns `404` for that route, that worker path is not serving current tasks.
-- Current ChatGPT Pro generation path is Hermes Gateway plugin -> `bridge-host.js` `/bridge/chatgpt-pro` -> Codex Mobile `/api/threads/...` -> a `ChatGPT Pro` Codex thread.
+For plugin setup:
 
-For `@ChatGPT Pro` slow/no feedback:
+1. Check the manifest:
 
-1. Check Hermes 8797 `/api/status?detail=1` for Gateway Pool health and active runs.
-2. Check the deployment's configured ChatGPT Pro bridge-state file for the target Codex thread id.
-3. Read that Codex thread through Mobile Web API.
-4. Check its rollout mtime and whether Chrome/ChatGPT Pro automation is still emitting events.
+   ```powershell
+   Invoke-RestMethod http://127.0.0.1:8787/api/v1/hermes/plugin/manifest | ConvertTo-Json -Depth 6
+   ```
 
-If rollout is still growing, it is slow, not stuck.
+2. Register the Hermes callback URL with the Codex Mobile Access Key. The
+   callback may be an HTTPS domain:
+
+   ```powershell
+   Invoke-RestMethod http://127.0.0.1:8787/api/v1/hermes/plugin/workspaces `
+     -Method Post `
+     -Headers @{ Authorization = "Bearer <codex-mobile-access-key>" } `
+     -ContentType "application/json" `
+     -Body '{"workspace_id":"owner","hermes_callback_url":"https://hermes.example.test/api/plugins/codex-mobile/callback"}'
+   ```
+
+3. Register the Hermes PWA iframe origin for CSP `frame-ancestors`. Use the
+   deployment's real HTTPS origin; do not hard-code a personal domain in source:
+
+   ```powershell
+   Invoke-RestMethod http://127.0.0.1:8787/api/v1/hermes/plugin/origins `
+     -Method Post `
+     -Headers @{ Authorization = "Bearer <codex-mobile-access-key>" } `
+     -ContentType "application/json" `
+     -Body '{"workspace_id":"owner","hermes_origin":"https://hermes.example.test"}'
+   ```
+
+4. Confirm the registration without printing the Access Key:
+
+   ```powershell
+   Invoke-RestMethod "http://127.0.0.1:8787/api/v1/hermes/plugin/registration?workspaceId=owner" `
+     -Headers @{ Authorization = "Bearer <codex-mobile-access-key>" }
+   ```
+
+5. Test launch through `POST /api/v1/hermes/plugin/launch`. The response should
+   contain a short-lived `entry_path` with `codexPluginLaunch`; it must not
+   contain the long-lived Access Key. In the browser iframe, the app exchanges
+   this launch token through `/api/v1/hermes/plugin/session`, removes the
+   one-time token from the URL, and keeps only an in-memory plugin session.
+
+6. For a Windows scheduled-task deployment, persist the external HTTPS Codex
+   URL and the Hermes iframe origin in the task arguments rather than only in
+   the current shell:
+
+   ```powershell
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-codex-mobile-web-startup.ps1 -RunNow `
+     -HermesPluginBaseUrl "https://codex.example.test:8443" `
+     -HermesPluginFrameOrigins "https://hermes.example.test"
+   ```
+
+If Hermes Mobile is served over HTTPS, the plugin entry URL must also be HTTPS
+or the browser may block the embedded frame as mixed content. The fix is a
+deployment URL/TLS configuration change, not a Codex Access Key change. Set
+`CODEX_MOBILE_HERMES_PLUGIN_BASE_URL` or `CODEX_MOBILE_PUBLIC_BASE_URL` to the
+external HTTPS Codex Mobile URL when the Node listener itself only sees local
+HTTP. If the manifest still returns `http://127.0.0.1:8787/?embed=hermes` for a
+HTTPS Hermes origin, check the current Node process environment or the
+scheduled-task action arguments; the registered Hermes origin only controls
+`frame-ancestors`, not the Codex entry/base URL.
+
+If the iframe opens a standalone login panel after a valid launch, check:
+
+- the launch token was exchanged before its TTL expired;
+- the Node listener has not restarted and lost in-memory launch/session tokens;
+- the iframe URL has `embed=hermes` and no stale `codexPluginLaunch` after the
+  first successful exchange;
+- `/api/v1/hermes/plugin/session` is included in `/api/public-config.hermesPlugin`.
+
+If a right-swipe on a normal Codex plugin thread does nothing on iOS, check the
+`codex-mobile.plugin.navigation` message first: normal
+thread/workspace/new-thread routes must report `canGoBack: true` so Hermes
+forwards its back affordance as `{ type: "hermes.plugin.back", version: 1 }`.
+Codex should handle that secondary-page back by returning to the embedded
+primary thread-switcher/settings page. That primary page must report
+`canGoBack:false`, allowing Hermes Mobile's bottom tabs to remain visible. If
+right-swipe instead opens Codex's standalone initial Workspace page, check the
+`hermes.plugin.back` handler: thread-page back must clear only the selected
+thread detail, not leave the iframe in the standalone home route. If the primary
+thread-switcher/settings page is still shown as a drawer or closes back to the
+thread, check the `embed-hermes-primary` class and CSS rules. When file preview,
+rename/action dialog, or subagent panel is already open, the same back event
+should close that transient layer before page-level back is applied. Hermes
+should use postMessage only; it must not inspect Codex DOM or call internal
+Codex route functions.
+
+The validated target behavior after v108 is: Codex's thread-switcher/settings
+surface is the embedded primary page with Hermes bottom tabs visible; a Codex
+thread page is secondary and right-swipe/back returns to that primary page.

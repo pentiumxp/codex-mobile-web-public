@@ -129,18 +129,55 @@ Implementation path:
 4. Add tests that cover both small threads and large-rollout fallback paths.
 5. Re-check `/api/public-config` and a real continuation/new send path after activation.
 
-## Hermes / ChatGPT Pro Integration
+## Hermes Mobile Plugin Deployment
 
-Use when diagnosing or changing local Hermes-to-Codex integration.
+Use when changing Codex Mobile Web as a Hermes Mobile embedded-app plugin.
 
 Implementation path:
 
-1. Identify which integration is active:
-   - ChatGPT Pro bridge: Hermes Gateway plugin -> `bridge-host.js` `/bridge/chatgpt-pro` -> Codex Mobile thread API.
-   - Legacy polling worker: `codex-hermes-main` -> `/api/codex-mux/...`.
-2. For ChatGPT Pro, inspect the deployment's configured bridge-state file for the Codex thread id, then inspect that thread through Mobile Web.
-3. Do not assume `/api/codex-mux` exists on current Hermes production; a 404 means that legacy queue path is unavailable.
-4. Do not print bridge keys or owner keys.
+1. Treat Codex Mobile as an independent plugin service, not as a worker or
+   collaboration queue.
+2. Keep authentication independent. Registration and launch must require the
+   Codex Mobile Access Key through `Authorization: Bearer` or
+   `X-Codex-Mobile-Key`; do not accept Hermes owner auth as a substitute.
+3. Keep the manifest metadata-only. It may expose endpoint paths and plugin
+   capabilities, but no Access Key, launch token, callback secret, upload path,
+   or local deployment secret.
+4. Store only bounded registration metadata in runtime state:
+   workspace id, Hermes callback URL, Hermes app origin, label, and timestamps.
+   The callback URL may be `https`.
+5. Register the Hermes iframe origin through
+   `POST /api/v1/hermes/plugin/origins` or
+   `CODEX_MOBILE_HERMES_PLUGIN_FRAME_ORIGINS`; use those origins for CSP
+   `frame-ancestors` instead of hard-coding a personal deployment domain.
+6. If Codex Mobile is reverse-proxied behind HTTPS, set
+   `CODEX_MOBILE_HERMES_PLUGIN_BASE_URL` or `CODEX_MOBILE_PUBLIC_BASE_URL` so
+   the manifest advertises the external HTTPS entry URL. HTTPS Hermes cannot
+   embed an HTTP Codex entry; return/report a diagnostic rather than silently
+   advertising an unusable iframe URL. On Windows, keep this configuration in
+   the startup chain with `-HermesPluginBaseUrl` / `-PublicBaseUrl`; use
+   `-HermesPluginFrameOrigins` when the Hermes iframe origin must be present at
+   process start instead of relying only on runtime registration.
+7. Launch must return a short-lived `codexPluginLaunch` iframe entry path, not
+   the long-lived Access Key. The browser should exchange that one-time token
+   for an in-memory plugin session and scrub the URL so tab switches do not
+   replay expired launch URLs.
+8. `/?embed=hermes` must behave as an embedded secondary app: hide standalone
+   chrome/splash, keep state on visibility/focus changes, stay inside the same
+   iframe, post `codex-mobile.plugin.navigation`, and handle
+   `hermes.plugin.back` only for iframe-owned transient layers such as
+   modals/edit panels. The thread-switcher/settings surface should be the
+   plugin primary page, not an overlay sidebar; it reports `canGoBack:false` so
+   Hermes bottom tabs remain visible. Thread detail and new-thread routes should
+   report `canGoBack:true` so iOS Hermes forwards right-swipe/back to the iframe;
+   Codex should handle that secondary-page back by returning to the primary
+   thread-switcher/settings page. Do not implement thread-page back by showing
+   Codex's standalone first-launch Workspace page or by opening a sidebar drawer
+   inside the iframe.
+9. Add service tests for manifest/registration/token behavior, route tests for
+   the public/authenticated paths, frontend embed harness tests for
+   navigation/back/windowing, and bump the PWA shell cache if frontend launch
+   behavior changes.
 
 ## Public/Private Publish
 

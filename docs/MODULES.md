@@ -7,7 +7,7 @@
 | `server.js` | Main HTTP server, app-server client, auth, routes, thread detail compaction, uploads, continuation jobs, Web Push, update/restart endpoints | Treat as composition glue. Extract reusable logic instead of expanding large inline blocks. |
 | `codex-app-server-mux.js` | Shared Desktop/Mobile app-server bridge, endpoint publication, TCP server, app-server notification replay, approval proxying | Stdout is protocol data for Desktop; diagnostics must go to mux log. |
 | `codex-app-server-mux-shim.cs` | Windows `.exe` shim for Desktop `CODEX_CLI_PATH` | Rebuild/relaunch Desktop through the shared launcher after changes. |
-| `start-codex-mobile-web*.ps1/.vbs` | Windows startup wrappers and hidden scheduled-task startup | User-logon task is preferred when WSL access is needed. |
+| `start-codex-mobile-web*.ps1/.vbs` | Windows startup wrappers and hidden scheduled-task startup | User-logon task is preferred when WSL access is needed; plugin HTTPS base URL and Hermes frame-origin settings must be passed here for scheduled deployments. |
 | `restart-codex-mobile-shared-chain.ps1` | Scoped restart for Mobile Web chain | Does not restart Hermes Mobile, WSL, Codex Desktop, or unrelated services. |
 | `start-codex-*-macos.sh` | macOS standalone/shared launch helpers | Keep shell syntax validated with `npm run check:macos`. |
 
@@ -24,6 +24,7 @@
 | `adapters/push-notification-service.js` | Web Push turn tracking and sub-agent suppression classification. |
 | `adapters/shared-chain-restart-service.js` | Authenticated restart endpoint orchestration. |
 | `adapters/generated-image-cache-service.js` | Caches app-server `imageView` screenshot files into runtime-owned generated-image storage before browser rendering. |
+| `adapters/hermes-plugin-service.js` | Independent Hermes Mobile embedded-app plugin manifest, callback/origin registration, launch/session token policy, and frame-ancestor metadata. |
 | `adapters/sqlite-cli.js` | Cross-environment `sqlite3` discovery and JSON result execution. |
 
 Add new service modules when logic has independent inputs/outputs, state rules, route policies, or tests. Keep route handlers thin and make service behavior directly testable.
@@ -42,6 +43,7 @@ Add new service modules when logic has independent inputs/outputs, state rules, 
 | `public/viewport-metrics.js` | Visual viewport and keyboard-shrink helpers. |
 | `public/conversation-scroll.js` | Scroll position and bottom-follow helpers. |
 | `public/image-compressor.js` | Browser-side image compression before upload. |
+| `public/plugin-embed.js` | Hermes iframe embed-mode helper for launch detection, navigation messages, back messages, and internal-window policy. |
 
 `public/app.js` is large. For new frontend behavior, first check whether the change belongs in an existing helper module or can be extracted into a new public helper with focused tests.
 
@@ -56,6 +58,7 @@ Add new service modules when logic has independent inputs/outputs, state rules, 
 | context and bootstrap size policy | `test/message-input-service.test.js`, `test/continuation-lineage.test.js`, `test/turn-usage-summary-service.test.js` |
 | PWA/update/mobile viewport | `test/mobile-viewport.test.js`, `test/app-update.test.js`, `test/tablet-layout.test.js`, `test/manual-restart-ui.test.js`, `test/public-pull-request-service.test.js` |
 | uploads/files/images | `test/image-compressor.test.js`, `test/message-input-service.test.js`, `test/generated-image-cache-service.test.js`, `test/file-preview.test.js`, `test/file-preview-ui.test.js`, `test/composer-draft.test.js` |
+| Hermes Mobile plugin mode | `test/hermes-plugin-service.test.js`, `test/hermes-plugin-route.test.js`, `test/plugin-embed.test.js` |
 | Push | `test/push-notification-service.test.js` |
 | runtime settings | `test/runtime-settings.test.js`, `test/composer-quota.test.js` |
 | scroll and markdown | `test/conversation-scroll.test.js`, `test/turn-scroll-controls.test.js`, `test/markdown-render.test.js` |
