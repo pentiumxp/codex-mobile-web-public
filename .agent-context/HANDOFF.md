@@ -2911,3 +2911,169 @@ The previous full handoff was archived and should be opened only when old proven
   - No Node listener restart was performed for this wiring-only source change.
   - To activate for the real Hermes PWA, re-register/restart the Windows task with the actual external HTTPS Codex Mobile origin, for example:
     `.\install-codex-mobile-web-startup.ps1 -RunNow -HermesPluginBaseUrl "https://<codex-https-origin>" -HermesPluginFrameOrigins "https://hermes-xuxin.synology.me:8445"`.
+
+## 2026-05-29 Hermes Plugin Normal-Page Back State v104
+
+- User correction:
+  - In Hermes Mobile, right-swipe on a normal secondary page should behave like the independent Hermes PWA and reach the Hermes outer settings/menu surface.
+  - Codex plugin normal thread/workspace pages must not treat themselves as iframe-backable, because that causes Hermes to forward the gesture into Codex and can dump the user into Codex's initial Workspace list.
+  - No fallback topbar button should be added.
+- Local fix:
+  - `public/plugin-embed.js`
+    - Normal thread/workspace/new-thread routes still report their route, but `canGoBack=false`.
+    - `canGoBack=true` is now limited to iframe-owned transient layers: file preview, sidebar/settings drawer state, rename/action dialogs, and subagent panel.
+  - `public/app.js`
+    - Removed the plugin back path that cleared current thread/workspace selection and returned to the initial Workspace list.
+    - `hermes.plugin.back` now only closes iframe-owned transient UI if one is open.
+    - Sidebar edge-swipe handling is disabled in `?embed=hermes`, so normal plugin pages leave the outer gesture to Hermes.
+    - Shell build id bumped to `0.1.11|codex-mobile-shell-v104`.
+  - `public/sw.js`
+    - Shell cache bumped to `codex-mobile-shell-v104`.
+  - Tests/docs:
+    - Updated `test/plugin-embed.test.js`, `test/hermes-plugin-route.test.js`, and `test/mobile-viewport.test.js`.
+    - Updated README, `docs/ARCHITECTURE.md`, `docs/COMPLEX_FEATURE_PATHS.md`, `docs/TROUBLESHOOTING.md`, and `.agent-context/PROJECT_CONTEXT.md`.
+- Validation:
+  - `node --check public\app.js`, `node --check public\plugin-embed.js`, and `node --check public\sw.js` passed.
+  - Focused `node --test test\plugin-embed.test.js test\hermes-plugin-route.test.js test\mobile-viewport.test.js` passed: 11/11.
+  - `npm.cmd test` passed: 200/200.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+- Runtime smoke:
+  - `/api/public-config` returns `clientBuildId=0.1.11|codex-mobile-shell-v104` and `shellCacheName=codex-mobile-shell-v104`.
+  - Android emulator Hermes PWA was reloaded through Chrome DevTools Protocol, then the Codex tab was opened. After v104 load, the Hermes host top-left control on the Codex plugin thread showed `Open menu` instead of `Back`, confirming the normal thread route no longer advertises iframe back state.
+  - ADB synthetic edge-swipe was not treated as definitive gesture evidence because it can trigger Chrome/Hermes host reload/navigation paths; the reliable evidence for this fix is the posted navigation state and host control state.
+- Status:
+  - Local changes are uncommitted.
+  - Static frontend/PWA change only; no Node listener restart required.
+  - Mobile/PWA clients must refresh, hard reload, or close/reopen to activate `codex-mobile-shell-v104`.
+
+## 2026-05-29 Hermes Plugin Sidebar Gesture v105
+
+- User correction:
+  - In the Hermes embedded Codex tab, right-swipe on a normal thread page should behave like standalone Codex Mobile Web by opening Codex's own sidebar/settings surface.
+  - The previous v104 change prevented the wrong Workspace-root navigation but also disabled the iframe's sidebar edge gesture, leaving the user stuck on the thread page.
+- Local fix:
+  - `public/app.js`
+    - Restored left-edge sidebar swipe handling in `?embed=hermes` while preserving the rule that `hermes.plugin.back` never clears `currentThreadId` or `selectedCwd` into the initial Workspace page.
+    - Shell build id bumped to `0.1.11|codex-mobile-shell-v105`.
+  - `public/styles.css`
+    - Embedded mode no longer hides the sidebar permanently.
+    - The sidebar remains off-canvas by default and appears only as an overlay when opened or edge-dragged; the standalone top-left menu button remains hidden.
+  - `public/sw.js`
+    - Shell cache bumped to `codex-mobile-shell-v105`.
+  - Tests/docs:
+    - Updated `test/hermes-plugin-route.test.js` and `test/mobile-viewport.test.js`.
+    - Updated README, `docs/ARCHITECTURE.md`, `docs/COMPLEX_FEATURE_PATHS.md`, `docs/TROUBLESHOOTING.md`, and `.agent-context/PROJECT_CONTEXT.md`.
+- Status:
+  - Local changes are uncommitted.
+  - Static frontend/PWA change only; no Node listener restart is required.
+  - Mobile/PWA clients must refresh, hard reload, or close/reopen to activate `codex-mobile-shell-v105`.
+
+## 2026-05-29 Hermes Plugin Back-To-Sidebar v106
+
+- User correction:
+  - On iOS Hermes Mobile, the embedded Codex thread page still could not leave the secondary page.
+  - The desired behavior is not the first-launch Workspace page. Right-swipe/back from a normal thread page should open Codex's sidebar that contains the thread switcher and settings button.
+- Diagnosis:
+  - v105 restored an iframe-local left-edge sidebar gesture, but iOS Hermes still needs normal thread/workspace routes to advertise `canGoBack=true` before the host forwards its right-swipe/back affordance into the iframe.
+  - v104/v105 were too strict by keeping normal routes at `canGoBack=false`.
+- Local fix:
+  - `public/plugin-embed.js`
+    - Normal `currentThreadId`, `newThreadDraft`, and `selectedCwd` routes now contribute `canGoBack=true`.
+  - `public/app.js`
+    - If `hermes.plugin.back` arrives on a normal thread/new-thread/workspace route with no transient layer open, Codex opens `openSidebarMenu()` instead of clearing current selection.
+    - Existing transient handling remains first: preview, rename dialog, action sheet, subagent panel, settings panel, and open sidebar are closed before normal-page sidebar opening is considered.
+    - Shell build id bumped to `0.1.11|codex-mobile-shell-v106`.
+  - `public/sw.js`
+    - Shell cache bumped to `codex-mobile-shell-v106`.
+  - Tests/docs:
+    - Updated `test/plugin-embed.test.js`, `test/hermes-plugin-route.test.js`, and `test/mobile-viewport.test.js`.
+    - Updated README, `docs/ARCHITECTURE.md`, `docs/COMPLEX_FEATURE_PATHS.md`, `docs/TROUBLESHOOTING.md`, and `.agent-context/PROJECT_CONTEXT.md`.
+- Status:
+  - User verified on iOS Hermes Mobile PWA that the behavior now works: right-swipe from the Codex thread page opens Codex's sidebar/thread switcher with the settings button instead of the first-launch Workspace page.
+  - Local changes are uncommitted.
+  - Static frontend/PWA change only; no Node listener restart is required.
+  - Mobile/PWA clients must refresh, hard reload, or close/reopen to activate `codex-mobile-shell-v106`.
+
+## 2026-05-29 Hermes Plugin Host-Back Result v107
+
+- User correction:
+  - Right-swipe/back from the Codex thread page now opens the Codex sidebar/settings surface correctly.
+  - A second right-swipe/back while that sidebar/settings surface is open should return to Hermes Mobile's host navigation/tab surface, not close Codex back to the thread page where Hermes bottom tabs are hidden.
+- Local fix:
+  - `public/plugin-embed.js`
+    - Added `codex-mobile.plugin.back_result` message helpers.
+  - `public/app.js`
+    - `handlePluginBack()` still closes iframe-owned modal/edit surfaces such as file preview, rename/action dialog, and subagent panel.
+    - Normal thread/workspace/new-thread back still opens the Codex sidebar with the thread switcher/settings button.
+    - If the Codex sidebar or settings surface is already open, `handlePluginBack()` now posts `codex-mobile.plugin.back_result` with `handled:false` and a bounded route instead of calling `closeSidebarMenu()`.
+    - Shell build id bumped to `0.1.11|codex-mobile-shell-v107`.
+  - `adapters/hermes-plugin-service.js`
+    - Manifest navigation metadata now declares `back_result_message.type = codex-mobile.plugin.back_result`.
+  - `public/sw.js`
+    - Shell cache bumped to `codex-mobile-shell-v107`.
+  - Tests/docs:
+    - Updated `test/plugin-embed.test.js`, `test/hermes-plugin-service.test.js`, `test/hermes-plugin-route.test.js`, and `test/mobile-viewport.test.js`.
+    - Updated README, `docs/ARCHITECTURE.md`, `docs/COMPLEX_FEATURE_PATHS.md`, `docs/TROUBLESHOOTING.md`, and `.agent-context/PROJECT_CONTEXT.md`.
+- Status:
+  - Local changes are uncommitted.
+  - Hermes Mobile host still needs to consume `codex-mobile.plugin.back_result` with `handled:false` and perform host-level back/return; otherwise the iframe-side message alone cannot change Hermes navigation.
+  - Static frontend/PWA change only; no Node listener restart is required after source load, but mobile/PWA clients must refresh, hard reload, or close/reopen to activate `codex-mobile-shell-v107`.
+
+## 2026-05-29 Hermes Plugin Primary Page v108
+
+- User correction:
+  - The Codex thread-switcher/settings surface should not be a sidebar drawer inside Hermes.
+  - It should be the plugin's first-level main page so Hermes Mobile can show its bottom navigation tabs there; Codex thread pages should be second-level pages.
+- Local fix:
+  - `public/plugin-embed.js`
+    - Added `ui.primaryPage` route handling. The embedded primary page reports route `kind=root` and `canGoBack=false`.
+    - `selectedCwd` alone no longer makes the plugin iframe backable; only thread detail, new-thread draft, and modal/edit transient states do.
+  - `public/app.js`
+    - Added `isHermesPluginPrimaryPage()`, `syncHermesPluginPageLevel()`, and `showHermesPluginPrimaryPage()`.
+    - In `?embed=hermes`, thread detail/new-thread back now clears the selected detail and returns to the primary thread-switcher/settings page.
+    - The local left-edge sidebar drawer gesture is disabled inside the Hermes iframe.
+    - Shell build id bumped to `0.1.11|codex-mobile-shell-v108`.
+  - `public/styles.css`
+    - `html.embed-hermes.embed-hermes-primary` renders `#sidebar` as the full-width primary page, hides `.main`, hides the close-menu button, and makes the settings panel flow within the page instead of acting as a drawer overlay.
+  - `public/sw.js`
+    - Shell cache bumped to `codex-mobile-shell-v108`.
+  - Tests/docs:
+    - Updated `test/plugin-embed.test.js`, `test/hermes-plugin-route.test.js`, and `test/mobile-viewport.test.js`.
+    - Updated README, `docs/ARCHITECTURE.md`, `docs/COMPLEX_FEATURE_PATHS.md`, `docs/TROUBLESHOOTING.md`, and `.agent-context/PROJECT_CONTEXT.md`.
+- Status:
+  - Local changes are uncommitted.
+  - Static frontend/PWA change only; no Node listener restart is required after source load, but mobile/PWA clients must refresh, hard reload, or close/reopen to activate `codex-mobile-shell-v108`.
+
+## 2026-05-29 Public And Private Publish v108
+
+- User request:
+  - Commit and push the current Codex Mobile Web changes, including the public repository.
+- Public repository:
+  - Path: `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Synced public-safe changes from private since the previous public Usage release, including:
+    - Hermes Mobile embedded plugin service and routes;
+    - launch/session/origin registration contract;
+    - HTTPS plugin base URL startup wiring;
+    - `/?embed=hermes` frontend session/bootstrap/windowing/navigation handling;
+    - v104-v108 Hermes iframe back/primary-page behavior;
+    - shell cache `codex-mobile-shell-v108`;
+    - README public release notes and project docs/tests.
+  - Public commit pushed: `c15877f 发布 Hermes Mobile 嵌入插件能力`.
+- Validation before publish:
+  - Private `npm.cmd test` passed: 201/201.
+  - Private `npm.cmd run check` passed.
+  - Private `npm.cmd run check:macos` passed.
+  - Private `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Private BOM check produced no output.
+  - Public `npm.cmd test` passed: 201/201.
+  - Public `npm.cmd run check` passed.
+  - Public `npm.cmd run check:macos` passed.
+  - Public `git diff --check` and staged `git diff --cached --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Public BOM check produced no output.
+  - Public privacy scan found no real local user path, personal Hermes/Tailscale/Synology domain, raw secret, Web Push runtime secret file content, or upload file content. Expected false positives were documentation warnings about VAPID private keys and fixed fake test tokens.
+- Status:
+  - Public repository is pushed at `c15877f`.
+  - Private repository is being committed/pushed with this handoff entry.
+  - Runtime/static note remains: server route/CSP/session/startup changes require a Node listener restart to activate in a running deployment; PWA clients must load `codex-mobile-shell-v108`.

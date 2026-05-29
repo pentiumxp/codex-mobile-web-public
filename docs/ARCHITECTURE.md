@@ -111,13 +111,20 @@ after session exchange. Internal route changes post:
 { "type": "codex-mobile.plugin.navigation", "version": 1, "canGoBack": true, "route": { "kind": "thread", "threadId": "..." } }
 ```
 
-Hermes can send `{ "type": "hermes.plugin.back", "version": 1 }`. Codex handles
-that inside the iframe by closing preview modals, edit dialogs, action sheets,
-drawers, and panels before returning from detail/new-thread views to the
-list/root state. Hermes must not inspect Codex DOM or call Codex route
-functions. Embedded mode also blocks `window.open`, `target=_blank`, external
-browser handoffs, and second-window launches so plugin pages stay in the same
-iframe.
+The embedded thread switcher/settings surface is a plugin primary page, not an
+overlay drawer. That primary page reports `canGoBack: false`, so Hermes Mobile
+can show its own bottom navigation tabs. Thread detail and new-thread composer
+routes are secondary pages and report `canGoBack: true` so iOS Hermes Mobile
+forwards its right-swipe/back affordance to the iframe. Codex handles that
+secondary-page back by returning to the primary thread-switcher/settings page.
+It must not show the standalone first-launch Workspace page or treat the
+thread-switcher/settings surface as an overlay sidebar in Hermes embed mode.
+Once a file preview, rename/action dialog, or subagent panel is open, Codex
+handles `{ "type": "hermes.plugin.back", "version": 1 }` by closing that
+transient layer before page-level back is applied. Hermes must not inspect Codex
+DOM or call Codex route functions.
+Embedded mode also blocks `window.open`, `target=_blank`, external browser
+handoffs, and second-window launches so plugin pages stay in the same iframe.
 
 ### Thread List And Detail
 

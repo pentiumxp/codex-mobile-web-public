@@ -310,7 +310,23 @@ If the iframe opens a standalone login panel after a valid launch, check:
   first successful exchange;
 - `/api/v1/hermes/plugin/session` is included in `/api/public-config.hermesPlugin`.
 
-If the Hermes back button does nothing, inspect browser `postMessage` traffic.
-Codex expects `{ type: "hermes.plugin.back", version: 1 }` and responds with
-`codex-mobile.plugin.navigation`. Hermes should use those messages only; it
-must not inspect Codex DOM or call internal Codex route functions.
+If a right-swipe on a normal Codex plugin thread does nothing on iOS, check the
+`codex-mobile.plugin.navigation` message first: normal
+thread/workspace/new-thread routes must report `canGoBack: true` so Hermes
+forwards its back affordance as `{ type: "hermes.plugin.back", version: 1 }`.
+Codex should handle that secondary-page back by returning to the embedded
+primary thread-switcher/settings page. That primary page must report
+`canGoBack:false`, allowing Hermes Mobile's bottom tabs to remain visible. If
+right-swipe instead opens Codex's standalone initial Workspace page, check the
+`hermes.plugin.back` handler: thread-page back must clear only the selected
+thread detail, not leave the iframe in the standalone home route. If the primary
+thread-switcher/settings page is still shown as a drawer or closes back to the
+thread, check the `embed-hermes-primary` class and CSS rules. When file preview,
+rename/action dialog, or subagent panel is already open, the same back event
+should close that transient layer before page-level back is applied. Hermes
+should use postMessage only; it must not inspect Codex DOM or call internal
+Codex route functions.
+
+The validated target behavior after v108 is: Codex's thread-switcher/settings
+surface is the embedded primary page with Hermes bottom tabs visible; a Codex
+thread page is secondary and right-swipe/back returns to that primary page.

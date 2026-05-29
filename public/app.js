@@ -14,6 +14,7 @@ const pluginEmbedApi = window.CodexPluginEmbed || {
   isBackMessage: () => false,
   navigationMessage: () => null,
   parentOriginFromReferrer: () => "",
+  postBackResult: () => null,
   postNavigation: () => null,
 };
 const INITIAL_PLUGIN_EMBED = pluginEmbedApi.detect(window.location.href);
@@ -169,7 +170,7 @@ const state = {
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v102";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v108";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -3594,7 +3595,41 @@ function closeSidebarMenu() {
   sidebar.classList.remove("open", "edge-dragging");
   sidebar.style.removeProperty("--sidebar-edge-x");
   state.sidebarEdgeSwipe = null;
+  const settingsPanel = $("themeSettingsPanel");
+  const settingsToggle = $("themeSettingsToggle");
+  if (settingsPanel) settingsPanel.classList.add("hidden");
+  if (settingsToggle) settingsToggle.setAttribute("aria-expanded", "false");
   publishPluginNavigationState();
+}
+
+function isHermesPluginPrimaryPage() {
+  return isHermesEmbedMode() && !state.currentThreadId && !state.newThreadDraft;
+}
+
+function syncHermesPluginPageLevel() {
+  if (!isHermesEmbedMode()) return;
+  document.documentElement.classList.toggle("embed-hermes-primary", isHermesPluginPrimaryPage());
+}
+
+function showHermesPluginPrimaryPage() {
+  if (!isHermesEmbedMode()) return false;
+  clearCurrentThreadSelection();
+  state.newThreadDraft = false;
+  const sidebar = $("sidebar");
+  if (sidebar) {
+    sidebar.classList.remove("open", "edge-dragging");
+    sidebar.style.removeProperty("--sidebar-edge-x");
+  }
+  state.sidebarEdgeSwipe = null;
+  renderComposerSettings();
+  renderThreads();
+  renderCurrentThread();
+  updateComposerControls();
+  restoreConnectionState();
+  syncHermesPluginPageLevel();
+  publishPluginNavigationState({ force: true });
+  refreshSidebarListAfterOpen();
+  return true;
 }
 
 function refreshSidebarListAfterOpen() {
@@ -3614,6 +3649,10 @@ function refreshSidebarListAfterOpen() {
 }
 
 function openSidebarMenu() {
+  if (isHermesEmbedMode()) {
+    showHermesPluginPrimaryPage();
+    return;
+  }
   const sidebar = $("sidebar");
   if (!sidebar) return;
   sidebar.classList.remove("edge-dragging");
@@ -3636,7 +3675,7 @@ function isInteractiveGestureTarget(target) {
 }
 
 function beginSidebarEdgeSwipe(event) {
-  if (!isMobileViewport() || isSidebarOpen() || state.renameThreadId || state.threadActionMenuId) return;
+  if (!isMobileViewport() || isHermesEmbedMode() || isSidebarOpen() || state.renameThreadId || state.threadActionMenuId) return;
   if (event.touches && event.touches.length > 1) return;
   if (isInteractiveGestureTarget(event.target)) return;
   const touch = primaryTouch(event);
@@ -4010,12 +4049,15 @@ function closeRenameDialog(options = {}) {
 function pluginNavigationUiState() {
   return {
     filePreviewOpen: filePreviewOpen(),
+    primaryPage: isHermesPluginPrimaryPage(),
     sidebarOpen: isSidebarOpen(),
+    settingsOpen: Boolean($("themeSettingsPanel") && !$("themeSettingsPanel").classList.contains("hidden")),
   };
 }
 
 function publishPluginNavigationState(options = {}) {
   if (!isHermesEmbedMode()) return;
+  syncHermesPluginPageLevel();
   const message = pluginEmbedApi.navigationMessage
     ? pluginEmbedApi.navigationMessage(state, pluginNavigationUiState())
     : null;
@@ -4029,28 +4071,14 @@ function publishPluginNavigationState(options = {}) {
   });
 }
 
-function returnPluginRootStep() {
-  if (state.currentThreadId || state.newThreadDraft) {
-    clearCurrentThreadSelection();
-    state.newThreadDraft = false;
-    renderComposerSettings();
-    renderThreads();
-    renderCurrentThread();
-    updateComposerControls();
-    restoreConnectionState();
-    return true;
-  }
-  if (state.selectedCwd) {
-    state.selectedCwd = "";
-    syncSidebarWorkspaceSelect();
-    updateWorkspacePath();
-    renderThreads();
-    renderCurrentThread();
-    updateComposerControls();
-    loadThreads({ silent: true }).catch(showError);
-    return true;
-  }
-  return false;
+function postPluginBackResult(handled, reason) {
+  if (!isHermesEmbedMode() || !pluginEmbedApi.postBackResult) return null;
+  return pluginEmbedApi.postBackResult(window.parent, state, {
+    targetOrigin: state.pluginParentOrigin || "*",
+    ui: pluginNavigationUiState(),
+    handled,
+    reason,
+  });
 }
 
 function handlePluginBack(event) {
@@ -4073,13 +4101,14 @@ function handlePluginBack(event) {
     updateSubagentPanelUi();
     renderCurrentThread();
     handled = true;
+  } else if (state.currentThreadId || state.newThreadDraft || state.selectedCwd) {
+    handled = showHermesPluginPrimaryPage();
   } else if (isSidebarOpen()) {
     closeSidebarMenu();
     handled = true;
-  } else {
-    handled = returnPluginRootStep();
   }
   publishPluginNavigationState({ force: true });
+  if (handled) postPluginBackResult(true, "handled_in_iframe");
   return handled;
 }
 
@@ -7814,6 +7843,9 @@ function wireUi() {
   if ($("appUpdateStatus")) $("appUpdateStatus").addEventListener("click", () => handleAppUpdateClick().catch(showError));
   if ($("publicPrStatus")) $("publicPrStatus").addEventListener("click", () => handlePublicPrStatusClick().catch(showError));
   if ($("sharedRestartButton")) $("sharedRestartButton").addEventListener("click", () => handleSharedRestartClick().catch(showError));
+  if ($("themeSettingsToggle")) $("themeSettingsToggle").addEventListener("click", () => {
+    setTimeout(() => publishPluginNavigationState({ force: true }), 0);
+  });
   const settingsPanel = $("themeSettingsPanel");
   if (settingsPanel) settingsPanel.addEventListener("click", handleFontSizeChoice);
   const runtimeControls = [

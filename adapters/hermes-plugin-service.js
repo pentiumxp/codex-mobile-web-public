@@ -307,6 +307,10 @@ function createHermesPluginService(options = {}) {
           type: "hermes.plugin.back",
           version: 1,
         },
+        back_result_message: {
+          type: "codex-mobile.plugin.back_result",
+          version: 1,
+        },
       },
       callback_registration: {
         accepts: ["http", "https"],

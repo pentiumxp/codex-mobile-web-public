@@ -34,6 +34,8 @@ test("builds a Hermes embedded-app plugin manifest", () => {
   assert.equal(manifest.owner_binding.strategy, "workspace_bound_codex_mobile_key");
   assert.equal(manifest.owner_binding.raw_key_returned_by_codex_mobile, false);
   assert.equal(manifest.owner_binding.local_paths_returned_by_manifest, false);
+  assert.equal(manifest.navigation.back_result_message.type, "codex-mobile.plugin.back_result");
+  assert.equal(manifest.navigation.back_result_message.version, 1);
   assert.deepEqual(manifest.frame_embedding.frame_ancestors, ["'self'"]);
   assert.doesNotMatch(JSON.stringify(manifest), /access_key_file|config_file|Bearer|secret|C:\\Users|\.codex-mobile-web[\\/]/i);
 });

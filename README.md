@@ -97,9 +97,15 @@ After that, a manifest request with
 relative `entry_path` with a short-lived token.
 `/?embed=hermes` runs the same app as an iframe-embedded secondary app, hides
 standalone navigation chrome, reports navigation state with
-`codex-mobile.plugin.navigation`, handles `hermes.plugin.back` inside the
-iframe, and blocks `window.open` / `_blank` handoffs that would create an
-external secondary window.
+`codex-mobile.plugin.navigation`, and blocks `window.open` / `_blank` handoffs
+that would create an external secondary window. Normal thread/workspace routes
+report `canGoBack: true` so iOS Hermes Mobile forwards right-swipe/back to the
+iframe. Codex handles ordinary thread-page back by returning to its embedded
+primary page, which contains the thread switcher and settings controls. That
+primary page reports `canGoBack: false`, so Hermes Mobile can show its own
+bottom navigation tabs. `hermes.plugin.back` closes modal/edit transient layers
+such as file previews, dialogs, and subagent panels before page-level back is
+applied.
 
 ## Clone And Validate
 
@@ -831,6 +837,20 @@ Behavior:
 - 零值/window 哨兵过滤继续保留：如果 app-server 在 turn 结束前输出 `last_token_usage=0` 且 `total_tokens` 等于窗口大小的哨兵事件，Mobile Web 会忽略它。
 - 本次同步更新 `adapters/turn-usage-summary-service.js`、`test/turn-usage-summary-service.test.js`、README、架构/上下文策略/故障排除/复杂路径文档。发布前 public PR 检查无开放 PR。
 
+### 2026-05-29 Public 发布说明（Hermes Mobile 插件嵌入）
+
+本次 public 发布同步 Codex Mobile Web 的 Hermes Mobile 独立嵌入插件能力，以及 v104-v108 的 iframe 内导航修正。版本保持 `0.1.11`，PWA shell 缓存升到 `codex-mobile-shell-v108`；已安装到主屏幕或被 service worker 缓存的客户端需要点击刷新提示、硬刷新或关闭重开后，才能拿到新的嵌入页面和手势行为。
+
+- Codex Mobile 现在可以作为 Hermes Mobile 的独立 `embedded_app` 插件注册。插件接口位于 `/api/v1/hermes/plugin/...`，包含 manifest、workspace/callback/origin 注册、launch 和 session 交换；注册和 launch 仍使用 Codex Mobile 自己的 Access Key，不复用 Hermes owner auth。
+- Manifest 只返回插件元数据、entry URL、launch/session/origin endpoint、owner binding、frame embedding 和 navigation contract，不返回长期 Access Key、launch token secret、本地 secret path、DB path、上传内容或私有状态 dump。
+- Launch 只返回短期相对 `entry_path`，浏览器在 `/?embed=hermes` 中把一次性 `codexPluginLaunch` 换成内存态 plugin session 并清理 URL。长期 Access Key 不写入 iframe URL、`localStorage` 或插件注册状态。
+- HTTPS Hermes PWA 需要 HTTPS Codex entry。部署者应设置 `CODEX_MOBILE_HERMES_PLUGIN_BASE_URL` 或 `CODEX_MOBILE_PUBLIC_BASE_URL`；Windows 启动脚本和安装脚本新增 `-HermesPluginBaseUrl`、`-PublicBaseUrl`、`-HermesPluginFrameOrigins`，可把外部 HTTPS Codex 地址和 Hermes iframe origin 持久化到隐藏启动任务。
+- `POST /api/v1/hermes/plugin/origins` 和 `CODEX_MOBILE_HERMES_PLUGIN_FRAME_ORIGINS` 用于注册 Hermes PWA origin，并写入 HTML CSP `frame-ancestors`。HTTPS Hermes 请求如果只能得到 HTTP Codex entry，manifest 会返回 mixed-content 诊断，而不是尝试绕过浏览器安全策略。
+- `/?embed=hermes` 隐藏独立 Web App 的重复 chrome/login splash，保持 iframe 内状态，不在 visibility/focus 变化时强制 reload，并阻止 `window.open`、`target=_blank` 和外部二级窗口 handoff。
+- Codex iframe 通过 `codex-mobile.plugin.navigation` 向 Hermes 上报 route 与 `canGoBack`。Hermes 通过 `hermes.plugin.back` 请求 iframe 先处理文件预览、编辑弹窗、action sheet、subagent 面板等内部 transient 层；Hermes 不需要检查 Codex DOM 或调用 Codex 内部 route 函数。
+- v108 将 Codex 的线程切换器和设置区域改为 Hermes 插件一级主页面，不再是侧边栏抽屉。该主页面上报 `canGoBack=false`，让 Hermes Mobile 可以显示自己的底部导航；线程详情和新线程输入页是二级页面，back 会回到 Codex 插件主页面，而不是首次进入 Web App 时的 Workspace 列表。
+- 本次同步更新 `server.js`、`adapters/hermes-plugin-service.js`、Windows 启动脚本、`public/app.js`、`public/plugin-embed.js`、`public/styles.css`、`public/sw.js`、`public/index.html`、README、架构/模块/故障排除/复杂路径文档以及 Hermes plugin 相关测试。服务端 route/CSP/session/startup 变更需要重启 8787 Node listener；静态 PWA 行为需要客户端加载 `codex-mobile-shell-v108`。
+
 ## Current Update Notes
 
 This section summarizes the current integration behavior for someone cloning or taking over the repository.
@@ -959,11 +979,75 @@ plugin. The shell cache advances to `codex-mobile-shell-v102`.
   and keeps the plugin session in memory.
 - `/?embed=hermes` hides standalone chrome, preserves iframe state across
   visibility/focus changes without forcing reload checks, posts
-  `codex-mobile.plugin.navigation`, handles `hermes.plugin.back`, and keeps
-  internal navigation in the same iframe.
+  `codex-mobile.plugin.navigation`, keeps normal thread/workspace routes
+  `canGoBack=true` so iOS Hermes forwards right-swipe/back to Codex, and handles
+  `hermes.plugin.back` by opening or closing iframe-owned navigation layers.
 - Embedded mode blocks `window.open`, `target=_blank`, and external-link
   browser handoffs so Hermes Mobile does not need to inspect Codex DOM or call
   Codex route internals.
+
+## 2026-05-29 Local Hermes Plugin Gesture-State v104
+
+- Normal thread/workspace/new-thread routes now report `canGoBack=false` in
+  `codex-mobile.plugin.navigation`, so Hermes keeps its own right-swipe/settings
+  behavior instead of forwarding a back action into Codex and showing the
+  initial Workspace list.
+- Codex still handles `hermes.plugin.back` for iframe-owned transient layers
+  such as file previews, dialogs, embedded drawers, and panels.
+- The shell cache advances to `codex-mobile-shell-v104`.
+
+## 2026-05-29 Local Hermes Plugin Sidebar Gesture v105
+
+- Restored the standalone Mobile Web left-edge right-swipe behavior inside
+  `/?embed=hermes`: swiping from a normal thread page opens Codex's overlay
+  sidebar/settings surface instead of doing nothing.
+- The plugin still does not clear the current thread/workspace to return to the
+  initial Workspace page. `hermes.plugin.back` is only used to close iframe-owned
+  transient layers such as the sidebar, settings panel, previews, dialogs, and
+  subagent panels.
+- The shell cache advances to `codex-mobile-shell-v105`.
+
+## 2026-05-29 Local Hermes Plugin Back-To-Sidebar v106
+
+- Normal thread/workspace/new-thread routes now report `canGoBack=true` in
+  `codex-mobile.plugin.navigation`, so iOS Hermes Mobile forwards the right-swipe
+  affordance into the iframe.
+- On a normal Codex thread page, `hermes.plugin.back` opens Codex's overlay
+  sidebar with the thread switcher and settings button. It does not clear the
+  current thread into the first-launch Workspace page.
+- If the sidebar, settings panel, preview, dialog, or subagent panel is already
+  open, `hermes.plugin.back` closes that transient layer.
+- iOS Hermes Mobile PWA verification confirmed this behavior: right-swipe from
+  a Codex thread opens the Codex sidebar/thread switcher with the settings
+  button, and does not return to the first-launch Workspace page.
+- The shell cache advances to `codex-mobile-shell-v106`.
+
+## 2026-05-29 Local Hermes Plugin Host-Back Result v107
+
+- Codex now declares and emits `codex-mobile.plugin.back_result` for embedded
+  back handling. Modal/edit surfaces still return `handled:true` after Codex
+  closes them inside the iframe.
+- When the Codex sidebar or settings surface is already open and Hermes sends
+  `hermes.plugin.back`, Codex leaves that surface open and posts
+  `handled:false` with a bounded route. Hermes should treat that as a request to
+  handle the back action at the host level and return to its own navigation/tab
+  surface, instead of the iframe closing back to the Codex thread page.
+- The shell cache advances to `codex-mobile-shell-v107`.
+
+## 2026-05-29 Local Hermes Plugin Primary Page v108
+
+- In `/?embed=hermes`, the Codex thread switcher/settings surface is now the
+  plugin's primary page, not a sidebar drawer. The primary page occupies the
+  iframe as normal content and reports `canGoBack=false`, allowing Hermes
+  Mobile's bottom tabs to remain visible.
+- Codex thread detail and new-thread composer pages are secondary pages. When
+  Hermes sends `hermes.plugin.back` from a thread page, Codex clears the thread
+  detail and returns to the primary thread-switcher/settings page instead of
+  opening or closing an overlay drawer.
+- The local left-edge sidebar drawer gesture is disabled inside the Hermes
+  iframe because page-level navigation is owned by the plugin primary/secondary
+  route contract.
+- The shell cache advances to `codex-mobile-shell-v108`.
 
 ### Which Restart Is Needed After Changes
 

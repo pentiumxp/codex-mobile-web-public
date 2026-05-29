@@ -9,6 +9,7 @@
   }
 }(typeof globalThis !== "undefined" ? globalThis : null, function (root) {
   const NAVIGATION_TYPE = "codex-mobile.plugin.navigation";
+  const BACK_RESULT_TYPE = "codex-mobile.plugin.back_result";
   const BACK_TYPE = "hermes.plugin.back";
 
   function stringValue(value) {
@@ -55,6 +56,16 @@
     if (state.subagentPanelOpen) {
       return { kind: "panel", panel: "subagent", threadId: stringValue(state.currentThreadId) };
     }
+    if (ui.primaryPage) {
+      return {
+        kind: "root",
+        workspace: stringValue(state.selectedCwd),
+        settingsOpen: Boolean(ui.settingsOpen),
+      };
+    }
+    if (ui.settingsOpen) {
+      return { kind: "panel", panel: "settings", threadId: stringValue(state.currentThreadId) };
+    }
     if (ui.sidebarOpen) {
       return { kind: "drawer", drawer: "threadList", threadId: stringValue(state.currentThreadId) };
     }
@@ -73,13 +84,11 @@
   function canGoBack(state = {}, ui = {}) {
     return Boolean(
       ui.filePreviewOpen
-      || ui.sidebarOpen
       || state.renameThreadId
       || state.threadActionMenuId
       || state.subagentPanelOpen
       || state.newThreadDraft
       || state.currentThreadId
-      || state.selectedCwd
     );
   }
 
@@ -95,6 +104,25 @@
   function postNavigation(parentWindow, state = {}, options = {}) {
     if (!parentWindow || parentWindow === root) return null;
     const message = navigationMessage(state, options.ui || {});
+    parentWindow.postMessage(message, options.targetOrigin || "*");
+    return message;
+  }
+
+  function backResultMessage(state = {}, options = {}) {
+    const message = {
+      type: BACK_RESULT_TYPE,
+      version: 1,
+      handled: Boolean(options.handled),
+      route: routeFromState(state, options.ui || {}),
+    };
+    const reason = stringValue(options.reason);
+    if (reason) message.reason = reason;
+    return message;
+  }
+
+  function postBackResult(parentWindow, state = {}, options = {}) {
+    if (!parentWindow || parentWindow === root) return null;
+    const message = backResultMessage(state, options);
     parentWindow.postMessage(message, options.targetOrigin || "*");
     return message;
   }
@@ -118,13 +146,16 @@
 
   return {
     BACK_TYPE,
+    BACK_RESULT_TYPE,
     NAVIGATION_TYPE,
+    backResultMessage,
     canGoBack,
     detect,
     isBackMessage,
     isInternalUrl,
     navigationMessage,
     parentOriginFromReferrer,
+    postBackResult,
     postNavigation,
     routeFromState,
   };

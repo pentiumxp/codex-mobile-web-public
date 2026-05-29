@@ -165,8 +165,15 @@ Implementation path:
 8. `/?embed=hermes` must behave as an embedded secondary app: hide standalone
    chrome/splash, keep state on visibility/focus changes, stay inside the same
    iframe, post `codex-mobile.plugin.navigation`, and handle
-   `hermes.plugin.back` by closing modals/drawers/edit panels before returning
-   detail views to list/root.
+   `hermes.plugin.back` only for iframe-owned transient layers such as
+   modals/edit panels. The thread-switcher/settings surface should be the
+   plugin primary page, not an overlay sidebar; it reports `canGoBack:false` so
+   Hermes bottom tabs remain visible. Thread detail and new-thread routes should
+   report `canGoBack:true` so iOS Hermes forwards right-swipe/back to the iframe;
+   Codex should handle that secondary-page back by returning to the primary
+   thread-switcher/settings page. Do not implement thread-page back by showing
+   Codex's standalone first-launch Workspace page or by opening a sidebar drawer
+   inside the iframe.
 9. Add service tests for manifest/registration/token behavior, route tests for
    the public/authenticated paths, frontend embed harness tests for
    navigation/back/windowing, and bump the PWA shell cache if frontend launch
