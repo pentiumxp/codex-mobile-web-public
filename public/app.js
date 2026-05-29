@@ -1,7 +1,31 @@
 "use strict";
 
+function initialPluginLaunchKeyFromUrl() {
+  try {
+    const params = new URL(window.location.href, window.location.origin).searchParams;
+    return String(params.get("codexPluginLaunch") || params.get("pluginLaunch") || "").trim();
+  } catch (_) {
+    return "";
+  }
+}
+
+const pluginEmbedApi = window.CodexPluginEmbed || {
+  detect: () => ({ embedded: false, launchKey: initialPluginLaunchKeyFromUrl(), workspaceId: "" }),
+  isBackMessage: () => false,
+  navigationMessage: () => null,
+  parentOriginFromReferrer: () => "",
+  postNavigation: () => null,
+};
+const INITIAL_PLUGIN_EMBED = pluginEmbedApi.detect(window.location.href);
+const INITIAL_PLUGIN_LAUNCH_KEY = INITIAL_PLUGIN_EMBED.launchKey || initialPluginLaunchKeyFromUrl();
+
 const state = {
-  key: localStorage.getItem("codexMobileKey") || "",
+  key: INITIAL_PLUGIN_LAUNCH_KEY || (INITIAL_PLUGIN_EMBED.embedded ? "" : localStorage.getItem("codexMobileKey")) || "",
+  pluginEmbed: INITIAL_PLUGIN_EMBED,
+  pluginLaunchSession: Boolean(INITIAL_PLUGIN_LAUNCH_KEY),
+  pluginSessionActive: false,
+  pluginParentOrigin: pluginEmbedApi.parentOriginFromReferrer(document.referrer) || "*",
+  pluginNavigationSignature: "",
   workspaces: [],
   selectedCwd: "",
   threads: [],
@@ -145,7 +169,7 @@ const state = {
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v100";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v102";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -159,6 +183,7 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/viewport-metrics.js",
   "/conversation-scroll.js",
   "/image-compressor.js",
+  "/plugin-embed.js",
   "/app.js",
   "/manifest.json",
   "/sw.js",
@@ -203,7 +228,8 @@ const apiClient = window.CodexApiClient.createApiClient({
     return state.key;
   },
   onUnauthorized() {
-    showLogin();
+    if (isHermesEmbedMode()) showPluginEmbedAuthError("Codex Mobile plugin session is not authorized. Ask Hermes Mobile to launch the plugin again.");
+    else showLogin();
   },
 });
 const runtimeSettings = window.CodexRuntimeSettings;
@@ -2987,7 +3013,53 @@ async function handlePushButtonClick() {
   }
 }
 
+function isHermesEmbedMode() {
+  return Boolean(state.pluginEmbed && state.pluginEmbed.embedded);
+}
+
+function scrubPluginLaunchUrl() {
+  if (!isHermesEmbedMode()) return;
+  try {
+    const url = new URL(window.location.href, window.location.origin);
+    url.searchParams.set("embed", "hermes");
+    url.searchParams.delete("codexPluginLaunch");
+    url.searchParams.delete("pluginLaunch");
+    if (state.pluginEmbed.workspaceId) url.searchParams.set("workspaceId", state.pluginEmbed.workspaceId);
+    window.history.replaceState({}, "", `${url.pathname || "/"}?${url.searchParams.toString()}${url.hash || ""}`);
+  } catch (_) {
+    // URL scrubbing is best-effort; auth state is already held in memory.
+  }
+}
+
+function pluginRootPath() {
+  if (!isHermesEmbedMode()) return window.location.pathname || "/";
+  const params = new URLSearchParams({ embed: "hermes" });
+  if (state.pluginEmbed && state.pluginEmbed.workspaceId) params.set("workspaceId", state.pluginEmbed.workspaceId);
+  return `/?${params.toString()}`;
+}
+
+function showPluginEmbedAuthError(message = "") {
+  const app = $("app");
+  const login = $("login");
+  const panel = document.querySelector("#login .login-panel");
+  if (app) app.classList.add("hidden");
+  if (login) login.classList.remove("hidden");
+  if (panel) panel.classList.add("plugin-embed-login-panel");
+  const brand = document.querySelector("#login .brand");
+  if (brand) brand.textContent = "Codex Mobile";
+  const input = $("loginKey");
+  const submit = document.querySelector("#loginForm button[type='submit']");
+  if (input) input.classList.add("hidden");
+  if (submit) submit.classList.add("hidden");
+  $("loginError").textContent = message || "Codex Mobile plugin launch is invalid or expired.";
+  publishPluginNavigationState();
+}
+
 function showLogin(message = "") {
+  if (isHermesEmbedMode()) {
+    showPluginEmbedAuthError(message);
+    return;
+  }
   $("app").classList.add("hidden");
   $("login").classList.remove("hidden");
   $("loginError").textContent = message;
@@ -2997,7 +3069,9 @@ function showApp() {
   updateViewportVars();
   $("login").classList.add("hidden");
   $("app").classList.remove("hidden");
+  if (isHermesEmbedMode()) document.documentElement.classList.add("embed-hermes");
   updateComposerHeightVar();
+  publishPluginNavigationState();
 }
 
 async function login(key) {
@@ -3009,9 +3083,25 @@ async function login(key) {
     if (!res.ok) throw new Error("Access key is not valid");
   });
   state.key = key;
+  state.pluginLaunchSession = false;
+  state.pluginSessionActive = false;
   localStorage.setItem("codexMobileKey", key);
   showApp();
   await bootstrap();
+}
+
+async function exchangePluginLaunchSession() {
+  if (!isHermesEmbedMode() || !state.pluginLaunchSession || !state.key) return;
+  const result = await api("/api/v1/hermes/plugin/session", {
+    method: "POST",
+    body: JSON.stringify({ codexPluginLaunch: state.key }),
+    timeoutMs: 12000,
+  });
+  if (!result || !result.session_key) throw new Error("Plugin session exchange failed");
+  state.key = String(result.session_key || "");
+  state.pluginLaunchSession = false;
+  state.pluginSessionActive = true;
+  scrubPluginLaunchUrl();
 }
 
 async function bootstrap() {
@@ -3046,7 +3136,7 @@ function threadIdFromUrlValue(value) {
 
 function clearThreadUrl() {
   try {
-    window.history.replaceState({}, "", window.location.pathname || "/");
+    window.history.replaceState({}, "", isHermesEmbedMode() ? pluginRootPath() : (window.location.pathname || "/"));
   } catch (_) {
     // URL cleanup is best-effort after external thread selection.
   }
@@ -3504,6 +3594,7 @@ function closeSidebarMenu() {
   sidebar.classList.remove("open", "edge-dragging");
   sidebar.style.removeProperty("--sidebar-edge-x");
   state.sidebarEdgeSwipe = null;
+  publishPluginNavigationState();
 }
 
 function refreshSidebarListAfterOpen() {
@@ -3530,6 +3621,7 @@ function openSidebarMenu() {
   sidebar.classList.add("open");
   state.sidebarEdgeSwipe = null;
   refreshSidebarListAfterOpen();
+  publishPluginNavigationState({ force: true });
 }
 
 function isSidebarOpen() {
@@ -3837,6 +3929,7 @@ function closeThreadActionSheet() {
   const sheet = $("threadActionSheet");
   if (sheet) sheet.classList.add("hidden");
   state.threadActionMenuId = "";
+  publishPluginNavigationState();
 }
 
 function scheduleThreadLongPress(target, x, y) {
@@ -3911,6 +4004,115 @@ function closeRenameDialog(options = {}) {
   const dialog = $("renameDialog");
   if (dialog) dialog.classList.add("hidden");
   state.renameThreadId = "";
+  publishPluginNavigationState();
+}
+
+function pluginNavigationUiState() {
+  return {
+    filePreviewOpen: filePreviewOpen(),
+    sidebarOpen: isSidebarOpen(),
+  };
+}
+
+function publishPluginNavigationState(options = {}) {
+  if (!isHermesEmbedMode()) return;
+  const message = pluginEmbedApi.navigationMessage
+    ? pluginEmbedApi.navigationMessage(state, pluginNavigationUiState())
+    : null;
+  if (!message) return;
+  const signature = JSON.stringify(message);
+  if (!options.force && signature === state.pluginNavigationSignature) return;
+  state.pluginNavigationSignature = signature;
+  pluginEmbedApi.postNavigation(window.parent, state, {
+    targetOrigin: state.pluginParentOrigin || "*",
+    ui: pluginNavigationUiState(),
+  });
+}
+
+function returnPluginRootStep() {
+  if (state.currentThreadId || state.newThreadDraft) {
+    clearCurrentThreadSelection();
+    state.newThreadDraft = false;
+    renderComposerSettings();
+    renderThreads();
+    renderCurrentThread();
+    updateComposerControls();
+    restoreConnectionState();
+    return true;
+  }
+  if (state.selectedCwd) {
+    state.selectedCwd = "";
+    syncSidebarWorkspaceSelect();
+    updateWorkspacePath();
+    renderThreads();
+    renderCurrentThread();
+    updateComposerControls();
+    loadThreads({ silent: true }).catch(showError);
+    return true;
+  }
+  return false;
+}
+
+function handlePluginBack(event) {
+  if (!isHermesEmbedMode()) return;
+  if (event && typeof event.preventDefault === "function") event.preventDefault();
+  if (event && typeof event.stopPropagation === "function") event.stopPropagation();
+  let handled = false;
+  if (filePreviewOpen()) {
+    closeFilePreview();
+    handled = true;
+  } else if (state.renameThreadId) {
+    closeRenameDialog({ force: true });
+    handled = true;
+  } else if (state.threadActionMenuId) {
+    closeThreadActionSheet();
+    handled = true;
+  } else if (state.subagentPanelOpen) {
+    state.subagentPanelOpen = false;
+    cancelSubagentSwipe();
+    updateSubagentPanelUi();
+    renderCurrentThread();
+    handled = true;
+  } else if (isSidebarOpen()) {
+    closeSidebarMenu();
+    handled = true;
+  } else {
+    handled = returnPluginRootStep();
+  }
+  publishPluginNavigationState({ force: true });
+  return handled;
+}
+
+function installPluginWindowingGuards() {
+  if (!isHermesEmbedMode()) return;
+  const originalOpen = window.open;
+  window.open = function guardedPluginOpen(url, target, features) {
+    const value = String(url || "");
+    if (pluginEmbedApi.isInternalUrl && pluginEmbedApi.isInternalUrl(value, window.location.origin)) {
+      window.location.assign(value);
+      return window;
+    }
+    postClientEvent("plugin_window_blocked", {
+      url: value.slice(0, 240),
+      target: String(target || "").slice(0, 80),
+      features: String(features || "").slice(0, 160),
+    });
+    return null;
+  };
+  window.open.originalCodexMobileOpen = originalOpen;
+  document.addEventListener("click", (event) => {
+    const link = event.target && event.target.closest ? event.target.closest("a[href]") : null;
+    if (!link) return;
+    const href = link.getAttribute("href") || "";
+    const target = String(link.getAttribute("target") || "").toLowerCase();
+    const internal = pluginEmbedApi.isInternalUrl ? pluginEmbedApi.isInternalUrl(href, window.location.origin) : false;
+    if (target === "_blank" || !internal) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (internal) window.location.assign(new URL(href, window.location.origin).toString());
+      else postClientEvent("plugin_external_link_blocked", { href: href.slice(0, 240) });
+    }
+  }, true);
 }
 
 async function submitRename(event) {
@@ -4267,13 +4469,17 @@ function renderHome() {
       isRolloutOverThreshold(thread),
     ]),
   });
-  if (!updateConversationHtml(html, signature)) return;
+  if (!updateConversationHtml(html, signature)) {
+    publishPluginNavigationState();
+    return;
+  }
   $("conversation").querySelectorAll("[data-home-workspace]").forEach((button) => {
     button.addEventListener("click", () => selectWorkspaceShortcut(button.dataset.homeWorkspace).catch(showError));
   });
   $("conversation").querySelectorAll("[data-home-thread]").forEach((button) => {
     button.addEventListener("click", () => loadThread(button.dataset.homeThread, { source: "home" }).catch(showError));
   });
+  publishPluginNavigationState();
 }
 
 function renderThreadLoadError(err) {
@@ -4356,6 +4562,7 @@ function renderCurrentThread(options = {}) {
       { stickToBottom: shouldStickToBottom },
     );
     updateTickTimer();
+    publishPluginNavigationState();
     return;
   }
   if (thread.mobileLoadError) {
@@ -4370,6 +4577,7 @@ function renderCurrentThread(options = {}) {
     const retry = $("retryCurrentThread");
     if (retry) retry.onclick = () => loadThread(thread.id || state.currentThreadId, { source: "retry" }).catch(showError);
     updateTickTimer();
+    publishPluginNavigationState();
     return;
   }
   const turns = (thread.turns || []).slice(-MAX_VISIBLE_TURNS);
@@ -4399,6 +4607,7 @@ function renderCurrentThread(options = {}) {
   updateConversationHtml(html, conversationRenderSignature(thread), { stickToBottom: shouldStickToBottom });
   bindCurrentThreadActions();
   updateTickTimer();
+  publishPluginNavigationState();
 }
 
 function renderNewThreadDraft() {
@@ -4500,6 +4709,7 @@ function renderNewThreadDraft() {
   renderComposerSettings();
   updateComposerControls();
   updateTurnTimer();
+  publishPluginNavigationState();
 }
 
 function enterNewThreadDraft() {
@@ -5389,6 +5599,7 @@ function closeFilePreview() {
   $("filePreviewBody").innerHTML = "";
   $("filePreviewMeta").textContent = "";
   $("filePreviewPath").textContent = "";
+  publishPluginNavigationState();
 }
 
 function filePreviewOpen() {
@@ -5613,6 +5824,7 @@ function showFilePreviewLoading(label, filePath) {
     copyButton.textContent = "复制路径";
   }
   dialog.classList.remove("hidden");
+  publishPluginNavigationState({ force: true });
 }
 
 async function openLocalFilePreview(link) {
@@ -7817,6 +8029,10 @@ function wireUi() {
   applyFontSizePreference();
   renderFontSizeControl();
   installLaunchQueueHandler();
+  installPluginWindowingGuards();
+  window.addEventListener("message", (event) => {
+    if (pluginEmbedApi.isBackMessage && pluginEmbedApi.isBackMessage(event)) handlePluginBack(event);
+  });
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.addEventListener("message", handleServiceWorkerMessage);
   }
@@ -7826,7 +8042,7 @@ function wireUi() {
       currentThreadId: state.currentThreadId || "",
       eventOpen: Boolean(state.events && state.events.readyState === EventSource.OPEN),
     });
-    if (document.visibilityState === "visible") schedulePageRefreshCheck(200, { force: true });
+    if (!isHermesEmbedMode() && document.visibilityState === "visible") schedulePageRefreshCheck(200, { force: true });
     scheduleMobileResume("visibility");
   });
   window.addEventListener("pageshow", (event) => {
@@ -7835,12 +8051,12 @@ function wireUi() {
       currentThreadId: state.currentThreadId || "",
     });
     const threadId = applyUrlThreadSelection({ load: true });
-    schedulePageRefreshCheck(200, { force: true });
+    if (!isHermesEmbedMode()) schedulePageRefreshCheck(200, { force: true });
     scheduleMobileResume("pageshow", threadId ? 240 : 80);
   });
   window.addEventListener("focus", () => {
     const threadId = applyUrlThreadSelection({ load: true });
-    schedulePageRefreshCheck(600);
+    if (!isHermesEmbedMode()) schedulePageRefreshCheck(600);
     scheduleMobileResume("focus", threadId ? 300 : 150);
   });
   window.addEventListener("blur", () => scheduleVisualRecovery("window-blur", 180, { render: false }));
@@ -7882,7 +8098,7 @@ async function start() {
   startUiWatchdog();
   const config = await fetch("/api/public-config").then((res) => res.json());
   initializePageBuildState(config);
-  startPageRefreshChecks();
+  if (!isHermesEmbedMode()) startPageRefreshChecks();
   state.appVersion = String(config.version || "");
   state.serverPlatform = String(config.platform || "");
   state.maxUploadBytes = Number(config.maxUploadBytes || state.maxUploadBytes);
@@ -7918,14 +8134,26 @@ async function start() {
   renderComposerSettings();
   rememberRateLimits(config.rateLimits || null, config.rateLimitsByModel || null);
   updatePushButton();
+  if (isHermesEmbedMode() && state.pluginLaunchSession) {
+    try {
+      await exchangePluginLaunchSession();
+    } catch (err) {
+      showPluginEmbedAuthError(err.message || String(err));
+      return;
+    }
+  }
   if (config.authRequired && !state.key) {
-    showLogin();
+    if (isHermesEmbedMode()) showPluginEmbedAuthError("Codex Mobile plugin is missing a valid Hermes launch session.");
+    else showLogin();
     return;
   }
   showApp();
   await bootstrap().catch((err) => {
     showError(err);
-    if (/unauthorized/i.test(err.message)) showLogin();
+    if (/unauthorized/i.test(err.message)) {
+      if (isHermesEmbedMode()) showPluginEmbedAuthError("Codex Mobile plugin session is unauthorized or expired.");
+      else showLogin();
+    }
   });
   resumeRememberedContinuationJob().catch(showError);
 }

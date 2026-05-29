@@ -35,6 +35,7 @@ const {
   generatedImagePathForId,
   imageContentTypeForPath,
 } = require("./adapters/generated-image-cache-service");
+const { createHermesPluginService } = require("./adapters/hermes-plugin-service");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -68,6 +69,28 @@ const SHARED_CHAIN_RESTART_DELAY_MS = Math.max(500, Number(process.env.CODEX_MOB
 const DISABLE_AUTH = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_DISABLE_AUTH || "");
 const AUTH_KEY_FILE = process.env.CODEX_MOBILE_KEY_FILE || path.join(RUNTIME_ROOT, "access_key");
 const AUTH_KEY = DISABLE_AUTH ? "" : loadAuthKey();
+const HERMES_PLUGIN_REGISTRATION_FILE = process.env.CODEX_MOBILE_HERMES_PLUGIN_REGISTRATION_FILE
+  || path.join(RUNTIME_ROOT, "hermes-plugin-registration.json");
+const HERMES_PLUGIN_BASE_URL = process.env.CODEX_MOBILE_HERMES_PLUGIN_BASE_URL
+  || process.env.CODEX_MOBILE_PUBLIC_BASE_URL
+  || "";
+const HERMES_PLUGIN_LAUNCH_TOKEN_TTL_MS = Math.max(
+  30_000,
+  Number(process.env.CODEX_MOBILE_HERMES_PLUGIN_LAUNCH_TOKEN_TTL_MS || String(5 * 60 * 1000)),
+);
+const HERMES_PLUGIN_SESSION_TTL_MS = Math.max(
+  5 * 60_000,
+  Number(process.env.CODEX_MOBILE_HERMES_PLUGIN_SESSION_TTL_MS || String(12 * 60 * 60 * 1000)),
+);
+const HERMES_PLUGIN_FRAME_ORIGINS = process.env.CODEX_MOBILE_HERMES_PLUGIN_FRAME_ORIGINS || "";
+const hermesPluginService = createHermesPluginService({
+  registrationFile: HERMES_PLUGIN_REGISTRATION_FILE,
+  launchTokenTtlMs: HERMES_PLUGIN_LAUNCH_TOKEN_TTL_MS,
+  pluginSessionTtlMs: HERMES_PLUGIN_SESSION_TTL_MS,
+  hermesOrigins: HERMES_PLUGIN_FRAME_ORIGINS,
+  version: APP_VERSION,
+  baseUrl: HERMES_PLUGIN_BASE_URL,
+});
 const sharedChainRestartService = createSharedChainRestartService({
   workspacePath: APP_ROOT,
   userProfilePath: USER_HOME,
@@ -441,13 +464,30 @@ function getUrl(req) {
   return new URL(req.url, `http://${req.headers.host || "localhost"}`);
 }
 
-function isAuthorized(req) {
-  if (DISABLE_AUTH) return true;
+function bearerTokenFromRequest(req) {
+  const header = String(req.headers.authorization || req.headers.Authorization || "").trim();
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : "";
+}
+
+function requestAuthToken(req) {
   const url = getUrl(req);
-  const key = req.headers["x-codex-mobile-key"]
+  return req.headers["x-codex-mobile-key"]
+    || bearerTokenFromRequest(req)
     || url.searchParams.get("key")
+    || url.searchParams.get("codexPluginLaunch")
     || parseCookies(req.headers.cookie).codex_mobile_key;
-  return timingSafeEquals(key, AUTH_KEY);
+}
+
+function isAccessKeyAuthorized(req) {
+  if (DISABLE_AUTH) return true;
+  return timingSafeEquals(requestAuthToken(req), AUTH_KEY);
+}
+
+function isAuthorized(req) {
+  if (isAccessKeyAuthorized(req)) return true;
+  if (hermesPluginService.isSessionAuthorized(requestAuthToken(req))) return true;
+  return hermesPluginService.isLaunchTokenAuthorized(requestAuthToken(req));
 }
 
 function sendJson(res, status, data) {
@@ -459,6 +499,23 @@ function sendJson(res, status, data) {
     "Cache-Control": "no-store",
   });
   res.end(body);
+}
+
+function hermesOriginFromRequest(req, url) {
+  return String(
+    (url && (url.searchParams.get("hermesOrigin") || url.searchParams.get("hermes_origin") || url.searchParams.get("appOrigin") || url.searchParams.get("origin")))
+    || req.headers["x-hermes-origin"]
+    || req.headers.origin
+    || "",
+  ).trim();
+}
+
+function requestBaseUrl(req) {
+  const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim().toLowerCase();
+  const forwardedHost = String(req.headers["x-forwarded-host"] || "").split(",")[0].trim();
+  const proto = forwardedProto === "https" ? "https" : "http";
+  const host = forwardedHost || String(req.headers.host || "").trim();
+  return host ? `${proto}://${host}` : "";
 }
 
 let lastLogTrimAt = 0;
@@ -3912,10 +3969,14 @@ function serveStatic(req, res) {
       res.end("Not found");
       return;
     }
-    res.writeHead(200, {
+    const headers = {
       "Content-Type": mimeFor(target),
       "Cache-Control": "no-cache",
-    });
+    };
+    if (target.endsWith(".html")) {
+      headers["Content-Security-Policy"] = `frame-ancestors ${hermesPluginService.frameAncestorsHeader()}`;
+    }
+    res.writeHead(200, headers);
     res.end(data);
   });
 }
@@ -5919,6 +5980,14 @@ async function listWorkspaces() {
 
 async function handleApi(req, res) {
   const url = getUrl(req);
+  if (url.pathname === "/api/v1/hermes/plugin/manifest" && req.method === "GET") {
+    sendJson(res, 200, hermesPluginService.manifest({
+      baseUrl: HERMES_PLUGIN_BASE_URL || requestBaseUrl(req),
+      hermesOrigin: hermesOriginFromRequest(req, url),
+      version: APP_VERSION,
+    }));
+    return;
+  }
   if (url.pathname === "/api/public-config") {
     loadRecentRateLimitsFromRollouts();
     sendJson(res, 200, {
@@ -5950,6 +6019,15 @@ async function handleApi(req, res) {
         enabled: !PUBLIC_PR_CHECK_DISABLED,
         repository: PUBLIC_PR_REPOSITORY,
       },
+      hermesPlugin: {
+        id: "codex-mobile",
+        manifestPath: "/api/v1/hermes/plugin/manifest",
+        workspaceRegistrationPath: "/api/v1/hermes/plugin/workspaces",
+        callbackRegistrationPath: "/api/v1/hermes/plugin/callbacks",
+        originRegistrationPath: "/api/v1/hermes/plugin/origins",
+        launchPath: "/api/v1/hermes/plugin/launch",
+        sessionPath: "/api/v1/hermes/plugin/session",
+      },
     });
     return;
   }
@@ -5968,6 +6046,84 @@ async function handleApi(req, res) {
   }
   if (!isAuthorized(req)) {
     sendJson(res, 401, { error: "Unauthorized" });
+    return;
+  }
+  if (url.pathname === "/api/v1/hermes/plugin/session" && req.method === "POST") {
+    try {
+      const body = await readBody(req);
+      const session = hermesPluginService.createSession(Object.assign({}, body, {
+        token: body.codexPluginLaunch || body.pluginLaunch || body.launchToken || body.token || requestAuthToken(req),
+      }));
+      sendJson(res, 200, session);
+    } catch (err) {
+      sendJson(res, err.statusCode || 400, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  if (url.pathname === "/api/v1/hermes/plugin/workspaces" && req.method === "POST") {
+    if (!isAccessKeyAuthorized(req)) {
+      sendJson(res, 401, { ok: false, error: "Codex Mobile access key is required" });
+      return;
+    }
+    try {
+      const body = await readBody(req);
+      const registration = hermesPluginService.registerWorkspace(body);
+      sendJson(res, 200, { ok: true, registration });
+    } catch (err) {
+      sendJson(res, err.statusCode || 400, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  if (url.pathname === "/api/v1/hermes/plugin/callbacks" && req.method === "POST") {
+    if (!isAccessKeyAuthorized(req)) {
+      sendJson(res, 401, { ok: false, error: "Codex Mobile access key is required" });
+      return;
+    }
+    try {
+      const body = await readBody(req);
+      const registration = hermesPluginService.registerWorkspace(body);
+      sendJson(res, 200, { ok: true, registration });
+    } catch (err) {
+      sendJson(res, err.statusCode || 400, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  if (url.pathname === "/api/v1/hermes/plugin/origins" && req.method === "POST") {
+    if (!isAccessKeyAuthorized(req)) {
+      sendJson(res, 401, { ok: false, error: "Codex Mobile access key is required" });
+      return;
+    }
+    try {
+      const body = await readBody(req);
+      const registration = hermesPluginService.registerOrigin(body);
+      sendJson(res, 200, {
+        ok: true,
+        registration,
+        frame_ancestors: hermesPluginService.frameAncestors(),
+      });
+    } catch (err) {
+      sendJson(res, err.statusCode || 400, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  if (url.pathname === "/api/v1/hermes/plugin/registration" && req.method === "GET") {
+    const registration = hermesPluginService.registration({
+      workspaceId: url.searchParams.get("workspaceId") || url.searchParams.get("workspace_id") || "owner",
+    });
+    sendJson(res, 200, { ok: true, registration });
+    return;
+  }
+  if (url.pathname === "/api/v1/hermes/plugin/launch" && req.method === "POST") {
+    if (!isAccessKeyAuthorized(req)) {
+      sendJson(res, 401, { ok: false, error: "Codex Mobile access key is required" });
+      return;
+    }
+    try {
+      const body = await readBody(req);
+      sendJson(res, 200, hermesPluginService.createLaunch(body));
+    } catch (err) {
+      sendJson(res, err.statusCode || 400, { ok: false, error: err.message || String(err) });
+    }
     return;
   }
   if (url.pathname === "/api/client-events" && req.method === "POST") {

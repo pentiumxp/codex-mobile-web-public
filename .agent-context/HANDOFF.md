@@ -2769,3 +2769,101 @@ The previous full handoff was archived and should be opened only when old proven
 - Private follow-up:
   - Private README now includes the same public release note.
   - Private commit/push remains to be completed after final validation in the same turn.
+
+## 2026-05-28 Hermes Mobile Independent Plugin Mode v101
+
+- User clarification:
+  - Codex Mobile Web must be deployed as an independent Hermes Mobile plugin, following the current embedded-plugin pattern used by Wardrobe.
+  - This is not related to the retired Hermes/Codex worker or collaboration queue, and active docs for that old path should be removed.
+  - Authentication remains independent: Hermes Mobile must provide the Codex Mobile Access Key for registration and launch.
+  - Registration must include a Hermes callback URL, which may be an HTTPS domain.
+- Local fix:
+  - Added `adapters/hermes-plugin-service.js`:
+    - builds a Hermes `embedded_app` manifest for `codex-mobile`;
+    - registers workspace/callback metadata in runtime state without storing Access Keys;
+    - validates callback URLs as `http` or `https` and rejects unsafe schemes/credentials;
+    - issues short-lived `codexPluginLaunch` iframe tokens for launch.
+  - `server.js` now exposes:
+    - public `GET /api/v1/hermes/plugin/manifest`;
+    - Access-Key-protected `POST /api/v1/hermes/plugin/workspaces`;
+    - Access-Key-protected `POST /api/v1/hermes/plugin/callbacks`;
+    - Access-Key-protected `POST /api/v1/hermes/plugin/launch`;
+    - authenticated `GET /api/v1/hermes/plugin/registration`;
+    - `/api/public-config.hermesPlugin` endpoint metadata.
+  - `server.js` accepts `Authorization: Bearer <codex-mobile-access-key>` in addition to the existing `X-Codex-Mobile-Key`, cookie, and query auth paths.
+  - Plugin launch tokens authorize normal Mobile Web API/SSE calls while valid, but registration and launch still require the long-lived Codex Mobile Access Key.
+  - `public/app.js` can bootstrap from `?codexPluginLaunch=...` or `?pluginLaunch=...` as an in-memory browser-session key without writing it to `localStorage`.
+  - `public/app.js` / `public/sw.js` bumped the shell build/cache to `codex-mobile-shell-v101` / `0.1.11|codex-mobile-shell-v101`.
+  - `CODEX_MOBILE_HERMES_PLUGIN_BASE_URL` or `CODEX_MOBILE_PUBLIC_BASE_URL` can pin the manifest base URL to an external HTTPS Codex Mobile deployment.
+  - Removed active documentation references to the old Hermes/Codex worker path from `.agent-context/PROJECT_CONTEXT.md`, `docs/COMPLEX_FEATURE_PATHS.md`, and `docs/TROUBLESHOOTING.md`.
+  - Updated `README.md`, `docs/ARCHITECTURE.md`, `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, `docs/COMPLEX_FEATURE_PATHS.md`, and `.agent-context/PROJECT_CONTEXT.md`.
+  - Added `test/hermes-plugin-service.test.js` and `test/hermes-plugin-route.test.js`; `package.json` syntax check now includes the new adapter.
+- Validation:
+  - Focused `node --test test\hermes-plugin-service.test.js test\hermes-plugin-route.test.js test\mobile-viewport.test.js` passed: 9/9.
+  - `node --check server.js`, `node --check adapters\hermes-plugin-service.js`, `node --check public\app.js`, and `node --check public\sw.js` passed.
+  - `npm.cmd test` passed: 191/191.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - Runtime smoke after listener restart:
+    - `/api/public-config` returns `clientBuildId=0.1.11|codex-mobile-shell-v101`, `shellCacheName=codex-mobile-shell-v101`, and the `hermesPlugin` endpoint map.
+    - unauthenticated `GET /api/v1/hermes/plugin/manifest` returns `id=codex-mobile`, `kind=embedded_app`, entry `http://127.0.0.1:8787/?embed=hermes`, and registration/launch paths.
+    - authenticated `POST /api/v1/hermes/plugin/launch` returns a short-lived `codexPluginLaunch` entry path with `expires_in=300`.
+    - `/api/status?codexPluginLaunch=<short-token>` returned `ready=true`, `transport=external-jsonl-tcp`.
+    - invalid callback registration with `ftp://...` returned HTTP 400; this smoke avoided writing a fake runtime callback registration.
+- Activation:
+  - The authenticated shared-chain restart endpoint returned accepted but did not stop the existing old listener under the windowless supervisor.
+  - Stopped only the old 8787 listener child PID `51460`; the existing windowless supervisor restarted `server.js` as PID `57584`.
+  - Post-restart authenticated `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, and `lastError=null`.
+- Status:
+  - Local changes are uncommitted.
+  - This change includes server-side plugin routes, runtime-state policy, frontend launch-token bootstrap, docs, and a static PWA shell bump.
+  - Mobile clients need the refresh prompt, hard refresh, or PWA close/reopen to load `codex-mobile-shell-v101`.
+
+## 2026-05-29 Hermes Mobile Embedded Plugin Contract v102
+
+- User request:
+  - Complete the Hermes Mobile embedded-plugin contract on the Codex Mobile side so it works as a real iframe secondary app, following the Wardrobe plugin pattern.
+  - This is independent from the retired Hermes/Codex worker/collaboration flow.
+- Local fix:
+  - `adapters/hermes-plugin-service.js`
+    - Manifest keeps `id=codex-mobile`, `kind=embedded_app`, `entry.url`, `program_api.plugin_launch`, and `owner_binding`, and now also exposes `origin_registration`, `plugin_session`, `frame_embedding`, and navigation contract metadata.
+    - Manifest no longer includes local access-key/config paths and is covered by a no-secret-shape test.
+    - Added origin-only registration through `registerOrigin()` and frame ancestor helpers.
+    - Added launch-to-session exchange: `POST /api/v1/hermes/plugin/launch` returns only `{ ok, entry_path, expires_in }`; the browser exchanges the short `codexPluginLaunch` token for a scoped `cps_...` in-memory plugin session through `/api/v1/hermes/plugin/session`.
+    - HTTPS Hermes + HTTP Codex entry now reports a manifest diagnostic `https_hermes_cannot_embed_http_codex_entry`.
+  - `server.js`
+    - Added `CODEX_MOBILE_HERMES_PLUGIN_SESSION_TTL_MS` and `CODEX_MOBILE_HERMES_PLUGIN_FRAME_ORIGINS`.
+    - Added authenticated `POST /api/v1/hermes/plugin/origins` and launch-token-backed `POST /api/v1/hermes/plugin/session`.
+    - Session tokens authorize normal app API calls without exposing the long-lived Codex Mobile Access Key.
+    - Static HTML responses now include CSP `frame-ancestors 'self' <registered-origins>`.
+    - `/api/public-config.hermesPlugin` now lists origin and session endpoint paths.
+  - Frontend:
+    - Added `public/plugin-embed.js` for embed detection, navigation message shape, back-message detection, and internal URL policy.
+    - `public/index.html` sets `html.embed-hermes` before CSS loads and includes `plugin-embed.js`.
+    - `public/app.js` in `?embed=hermes` mode ignores standalone `localStorage` access keys, exchanges launch tokens for plugin sessions, scrubs the launch URL, avoids page-refresh checks on visibility/focus, hides the login form on plugin auth failures, posts `codex-mobile.plugin.navigation`, handles `hermes.plugin.back`, closes preview/edit/action/drawer/panel before returning detail/new-thread views to root/list, and blocks `window.open`, `target=_blank`, external browser handoff, and second-window launches.
+    - `public/styles.css` hides standalone chrome in embed mode and constrains the iframe layout to one full-width column without side gutters.
+    - Shell cache/build id bumped to `codex-mobile-shell-v102` / `0.1.11|codex-mobile-shell-v102`; `public/sw.js` caches `plugin-embed.js`.
+  - Tests/docs:
+    - Added `test/plugin-embed.test.js`.
+    - Expanded `test/hermes-plugin-service.test.js`, `test/hermes-plugin-route.test.js`, and `test/mobile-viewport.test.js`.
+    - Updated README, `docs/ARCHITECTURE.md`, `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, `docs/COMPLEX_FEATURE_PATHS.md`, and `.agent-context/PROJECT_CONTEXT.md`.
+- Validation:
+  - Focused `node --test test\hermes-plugin-service.test.js test\hermes-plugin-route.test.js test\plugin-embed.test.js test\mobile-viewport.test.js` passed: 16/16.
+  - `npm.cmd test` passed: 198/198.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+  - BOM check for touched source, tests, docs, README, project context, and handoff files produced no output.
+- Runtime smoke:
+  - Restarted only the 8787 Node listener to load server-side plugin/session/CSP changes: old PID `57584`, new PID `61208`.
+  - `/api/public-config` returns `clientBuildId=0.1.11|codex-mobile-shell-v102`, `shellCacheName=codex-mobile-shell-v102`, and Hermes plugin paths including `originRegistrationPath` and `sessionPath`.
+  - Authenticated `/api/status` returned `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, and `lastError=null`.
+  - Manifest smoke returned `id=codex-mobile`, `kind=embedded_app`, launch/session/origin endpoint paths, owner strategy `workspace_bound_codex_mobile_key`, no secret/path leak by regex scan, and the expected HTTPS-Hermes/HTTP-entry diagnostic.
+  - Launch/session smoke returned expected fields `entry_path,expires_in,ok`, exchanged to a scoped session key without printing token material, and the session key authorized `/api/status`.
+  - Temporary origin registration smoke confirmed registered origin appears in frame ancestors and HTML CSP, then restored the runtime registration file to its prior absent state.
+  - Browser smoke initially hit old v101 service-worker shell; after clearing that test browser's old shell cache, v102 embed launch scrubbed `codexPluginLaunch` from the URL, kept `embed=hermes&workspaceId=owner`, entered the app without login, hid the sidebar/menu, and filled the iframe width.
+- Status:
+  - Local changes are uncommitted.
+  - Server-side route/CSP/session changes are active in the current 8787 listener.
+  - Mobile/PWA clients must refresh, hard reload, or close/reopen to activate `codex-mobile-shell-v102`; old v101 service-worker shells will not have the full embed contract until refreshed.

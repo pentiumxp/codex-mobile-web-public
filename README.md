@@ -10,7 +10,7 @@ Engineering docs are split under [`docs/`](docs/README.md):
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for process boundaries, request flows, runtime state, and invariants.
 - [`docs/MODULES.md`](docs/MODULES.md) for module ownership and the test map.
-- [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) for live diagnosis of stuck turns, disappearing messages, PWA cache issues, Push, mux drift, uploads, and Hermes/ChatGPT Pro bridge checks.
+- [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) for live diagnosis of stuck turns, disappearing messages, PWA cache issues, Push, mux drift, uploads, and Hermes Mobile plugin setup.
 - [`docs/CONTEXT_STRATEGY.md`](docs/CONTEXT_STRATEGY.md) for model context size, image-upload context policy, and continuation bootstrap bounds.
 - [`docs/COMPLEX_FEATURE_PATHS.md`](docs/COMPLEX_FEATURE_PATHS.md) for implementation paths on cross-cutting features.
 
@@ -41,6 +41,50 @@ codex --version
 ```
 
 If Codex CLI is not authenticated, authenticate it first using the normal Codex CLI/Desktop flow for that machine.
+
+## Hermes Mobile Plugin Mode
+
+Codex Mobile Web can expose itself as an independent Hermes Mobile embedded-app
+plugin. It is not a worker queue and does not use shared Hermes owner
+authentication. Hermes must provide the normal Codex Mobile Access Key when it
+registers or launches the plugin.
+
+Plugin endpoints:
+
+```text
+GET  /api/v1/hermes/plugin/manifest
+POST /api/v1/hermes/plugin/workspaces
+POST /api/v1/hermes/plugin/callbacks
+POST /api/v1/hermes/plugin/origins
+POST /api/v1/hermes/plugin/launch
+POST /api/v1/hermes/plugin/session
+```
+
+`/api/v1/hermes/plugin/manifest` is metadata-only and returns no secret
+material. Registration and launch require the Codex Mobile Access Key through
+`Authorization: Bearer <key>` or `X-Codex-Mobile-Key: <key>`.
+
+Workspace registration stores only bounded Hermes metadata under the runtime
+directory, normally:
+
+```text
+%USERPROFILE%\.codex-mobile-web\hermes-plugin-registration.json
+```
+
+The callback URL may be `http` or `https`; production Hermes Mobile deployments
+should also register their HTTPS iframe origin through `/origins` so Codex can
+emit the correct CSP `frame-ancestors`. The Access Key is never stored in that
+registration file. Launch returns a short-lived `codexPluginLaunch` entry path
+for the iframe; the browser immediately exchanges it for an in-memory plugin
+session and scrubs the one-time URL instead of storing the long-lived Access Key.
+If Hermes Mobile is served over HTTPS, the Codex Mobile entry must also be
+HTTPS. Set `CODEX_MOBILE_HERMES_PLUGIN_BASE_URL` or
+`CODEX_MOBILE_PUBLIC_BASE_URL` so the manifest advertises that external URL.
+`/?embed=hermes` runs the same app as an iframe-embedded secondary app, hides
+standalone navigation chrome, reports navigation state with
+`codex-mobile.plugin.navigation`, handles `hermes.plugin.back` inside the
+iframe, and blocks `window.open` / `_blank` handoffs that would create an
+external secondary window.
 
 ## Clone And Validate
 
@@ -866,6 +910,45 @@ This section summarizes the current integration behavior for someone cloning or 
 - 需要自动拉起的部署，应通过 Windows 启动任务、windowless supervisor 或 macOS shared launcher 运行。直接手动运行 `node server.js`、`npm start` 或一次性 shell 命令时，自更新会完成文件更新并停止旧服务，但不会凭空创建新的 Node 进程；这时需要在部署机重新执行启动命令。
 - 本次 public 发布把 `package.json` 版本升到 `0.1.1`，高于当前 private 工作区的 `0.1.0`，便于用旧 public clone 测试“发现更新 -> 拉取 -> 重启 -> 版本升高”的完整链路。
 - 本次 public PWA shell cache 同步升到 `codex-mobile-shell-v12`，安装到主屏幕的浏览器在 service worker 激活后会重新加载新的 HTML、CSS 和 JavaScript 资源。
+
+## 2026-05-28 Local Hermes Mobile Plugin Mode v101
+
+This local update adds an independent Hermes Mobile embedded-app plugin surface.
+It exposes the metadata manifest, workspace registration, callback registration,
+and launch-token endpoints under `/api/v1/hermes/plugin/...`. Registration and
+launch require the Codex Mobile Access Key through `Authorization: Bearer` or
+`X-Codex-Mobile-Key`; the Hermes callback URL may be an HTTPS domain and is
+stored only in runtime state. The manifest can be pinned to an external HTTPS
+base URL with `CODEX_MOBILE_HERMES_PLUGIN_BASE_URL` or
+`CODEX_MOBILE_PUBLIC_BASE_URL`. The browser app shell cache advances to
+`codex-mobile-shell-v101` so iframe launch URLs can use short-lived
+`codexPluginLaunch` tokens without writing the long-lived Access Key to
+`localStorage`.
+
+## 2026-05-29 Local Hermes Mobile Embedded Plugin Contract v102
+
+This local update completes the embedded iframe contract for the Hermes Mobile
+plugin. The shell cache advances to `codex-mobile-shell-v102`.
+
+- The manifest now includes `origin_registration`, `plugin_session`,
+  `frame_embedding`, launch/session, and navigation contract metadata while
+  still omitting raw Access Keys, token material, local secret paths, DB paths,
+  uploads, and private content.
+- Hermes can register a generic HTTPS iframe origin through
+  `POST /api/v1/hermes/plugin/origins`; Codex serves HTML with CSP
+  `frame-ancestors 'self' <registered origins>`. The manifest reports a clear
+  diagnostic when an HTTPS Hermes origin would embed an HTTP Codex entry.
+- `POST /api/v1/hermes/plugin/launch` returns only a short-lived `entry_path`.
+  The iframe exchanges `codexPluginLaunch` through
+  `/api/v1/hermes/plugin/session`, then removes the one-time token from the URL
+  and keeps the plugin session in memory.
+- `/?embed=hermes` hides standalone chrome, preserves iframe state across
+  visibility/focus changes without forcing reload checks, posts
+  `codex-mobile.plugin.navigation`, handles `hermes.plugin.back`, and keeps
+  internal navigation in the same iframe.
+- Embedded mode blocks `window.open`, `target=_blank`, and external-link
+  browser handoffs so Hermes Mobile does not need to inspect Codex DOM or call
+  Codex route internals.
 
 ### Which Restart Is Needed After Changes
 

@@ -166,15 +166,24 @@ This workspace owns the standalone Codex Mobile Web app.
 - Thread lists hide archived/deleted/removed sessions, spawned Sub Agent child sessions, and sessions outside Codex Desktop visible workspace roots.
 - Weak-network recovery may use `state_5.sqlite` metadata fallback, but should not resurface archived/deleted/old-workspace sessions.
 
-## Hermes-Codex Mux Bridge
+## Hermes Mobile Plugin
 
-- Codex Mobile owns the first-stage Hermes-Codex Mux polling worker for fixed worker identity `codex-hermes-main`.
-- The worker service lives in `adapters/hermes-codex-mux-worker-service.js`; the CLI entrypoint is `scripts/codex-hermes-mux-worker.js`.
-- Run one poll with `npm.cmd run mux:worker -- --once`; run continuous polling with `npm.cmd run mux:worker -- --base-url http://127.0.0.1:8797 --poll-ms 5000`.
-- Hermes Mux API routes are owner-authenticated and accept the local header `x-hermes-web-key`. For local recovery, set `CODEX_HERMES_MUX_AUTH_HEADER_NAME=x-hermes-web-key` and `CODEX_HERMES_MUX_AUTH_VALUE_FILE=C:\ProgramData\HermesMobile\data\secrets\owner-web-key.secret`; do not print or persist the file contents.
-- The worker calls `GET /api/codex-mux/tasks?assignedWorker=codex-hermes-main&status=open,running`, `GET /api/codex-mux/tasks/:taskId`, `GET /api/codex-mux/tasks/:taskId/events`, `POST /api/codex-mux/tasks/:taskId/events`, and `POST /api/codex-mux/workers/codex-hermes-main/heartbeat`.
-- Current restored background worker logs are under `%USERPROFILE%\.codex-mobile-web\hermes-codex-mux-worker-restored.out.log` and `.err.log`.
-- Manual Codex Mobile shared-chain restart does not guarantee this separate Hermes-Codex polling worker is running. If Hermes Mobile stops receiving Codex Mux updates after a restart, first check the worker process, log tail, and Hermes heartbeat for `codex-hermes-main`.
+- Current Hermes integration is an independent embedded-app plugin. Do not diagnose it through any worker queue, collaboration queue, or polling worker path.
+- Codex Mobile Web is now exposed as an independent Hermes Mobile `embedded_app` plugin through:
+  - `GET /api/v1/hermes/plugin/manifest`
+  - `POST /api/v1/hermes/plugin/workspaces`
+  - `POST /api/v1/hermes/plugin/callbacks`
+  - `POST /api/v1/hermes/plugin/origins`
+  - `POST /api/v1/hermes/plugin/launch`
+  - `POST /api/v1/hermes/plugin/session`
+- Plugin registration and launch require the Codex Mobile Access Key (`Authorization: Bearer <key>` or `X-Codex-Mobile-Key`). Hermes owner auth is not a substitute.
+- The manifest is metadata-only and must not expose Access Keys, launch tokens, callback secrets, local secret/config paths, DB paths, upload paths, or private content dumps.
+- Hermes callback URLs and iframe origins may be HTTPS domains. Registration state is stored under `%USERPROFILE%\.codex-mobile-web\hermes-plugin-registration.json` by default, or `CODEX_MOBILE_HERMES_PLUGIN_REGISTRATION_FILE` when overridden. It stores workspace id, callback URL, app origin, label, and timestamps only.
+- Hermes iframe origins come from `POST /api/v1/hermes/plugin/origins` or `CODEX_MOBILE_HERMES_PLUGIN_FRAME_ORIGINS`; Codex uses them for CSP `frame-ancestors` and must not hard-code a personal Hermes domain.
+- If Codex Mobile is externally served through HTTPS, set `CODEX_MOBILE_HERMES_PLUGIN_BASE_URL` or `CODEX_MOBILE_PUBLIC_BASE_URL` so the manifest advertises the HTTPS plugin entry URL.
+- HTTPS Hermes cannot embed an HTTP Codex entry. The manifest should report this as a mixed-content diagnostic; fix deployment URL/TLS config rather than weakening browser security.
+- Launch returns a short-lived `codexPluginLaunch` iframe entry path. The browser exchanges it through `/api/v1/hermes/plugin/session`, scrubs the one-time URL, and keeps only an in-memory plugin session. The long-lived Access Key must not be placed in the iframe URL, stored in `localStorage`, or stored in plugin registration state.
+- `/?embed=hermes` hides standalone chrome/login splash, preserves iframe state across visibility/focus changes without forced reload checks, posts `{ type: "codex-mobile.plugin.navigation", version: 1, canGoBack, route }`, handles `{ type: "hermes.plugin.back", version: 1 }` inside the iframe, and blocks `window.open`, `target=_blank`, external browser handoffs, and second-window launches. Hermes must consume the postMessage contract and must not inspect Codex DOM or call internal Codex route functions.
 
 ## Safety
 
