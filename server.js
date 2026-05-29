@@ -9,6 +9,7 @@ const net = require("node:net");
 const webPush = require("web-push");
 const { completedTurnHasNoFinalAgentMessage, shouldTrackTurnForWebPush } = require("./adapters/push-notification-service");
 const { createSharedChainRestartService } = require("./adapters/shared-chain-restart-service");
+const { createHermesNotificationDelegateService } = require("./adapters/hermes-notification-delegate-service");
 const { runSqliteJson } = require("./adapters/sqlite-cli");
 const { compactWorkspaceHandoff } = require("./adapters/continuation-handoff-compaction-service");
 const {
@@ -25,6 +26,7 @@ const {
   attachTurnUsageSummaries,
   collectTurnUsageSummariesFromRolloutText,
 } = require("./adapters/turn-usage-summary-service");
+const { buildTurnCompletionDetailMessage } = require("./adapters/turn-completion-receipt-service");
 const {
   buildPublicPullRequestStatus,
   normalizeRepositorySlug,
@@ -36,6 +38,7 @@ const {
   imageContentTypeForPath,
 } = require("./adapters/generated-image-cache-service");
 const { createHermesPluginService } = require("./adapters/hermes-plugin-service");
+const { createThreadTaskCardService } = require("./adapters/thread-task-card-service");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -83,6 +86,15 @@ const HERMES_PLUGIN_SESSION_TTL_MS = Math.max(
   Number(process.env.CODEX_MOBILE_HERMES_PLUGIN_SESSION_TTL_MS || String(12 * 60 * 60 * 1000)),
 );
 const HERMES_PLUGIN_FRAME_ORIGINS = process.env.CODEX_MOBILE_HERMES_PLUGIN_FRAME_ORIGINS || "";
+const HERMES_PLUGIN_NOTIFICATION_BASE_URL = process.env.CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_BASE_URL || "";
+const HERMES_PLUGIN_NOTIFICATION_KEY = process.env.CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_KEY
+  || process.env.CODEX_MOBILE_HERMES_WEB_KEY
+  || "";
+const HERMES_PLUGIN_NOTIFICATION_KEY_FILE = process.env.CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_KEY_FILE
+  || process.env.CODEX_MOBILE_HERMES_WEB_KEY_FILE
+  || "";
+const THREAD_TASK_CARD_FILE = process.env.CODEX_MOBILE_THREAD_TASK_CARD_FILE
+  || path.join(RUNTIME_ROOT, "thread-task-cards.json");
 const hermesPluginService = createHermesPluginService({
   registrationFile: HERMES_PLUGIN_REGISTRATION_FILE,
   launchTokenTtlMs: HERMES_PLUGIN_LAUNCH_TOKEN_TTL_MS,
@@ -91,6 +103,13 @@ const hermesPluginService = createHermesPluginService({
   version: APP_VERSION,
   baseUrl: HERMES_PLUGIN_BASE_URL,
 });
+const hermesNotificationDelegateService = createHermesNotificationDelegateService({
+  pluginId: "codex-mobile",
+  baseUrl: HERMES_PLUGIN_NOTIFICATION_BASE_URL,
+  webKey: HERMES_PLUGIN_NOTIFICATION_KEY,
+  webKeyFile: HERMES_PLUGIN_NOTIFICATION_KEY_FILE,
+  registrationForWorkspace: (workspaceId) => hermesPluginService.registration({ workspaceId }),
+});
 const sharedChainRestartService = createSharedChainRestartService({
   workspacePath: APP_ROOT,
   userProfilePath: USER_HOME,
@@ -98,6 +117,31 @@ const sharedChainRestartService = createSharedChainRestartService({
   port: PORT,
 });
 const pendingSteerEchoStore = createPendingSteerEchoStore();
+const threadTaskCardService = createThreadTaskCardService({
+  storageFile: THREAD_TASK_CARD_FILE,
+  executeApprovedCard: async (card, message) => {
+    const runtimeSettings = await resolveThreadRuntimeSettings(card.target.threadId);
+    try {
+      await codex.request("thread/resume", applyResumeRuntimeSettings({
+        threadId: card.target.threadId,
+        cwd: null,
+        persistExtendedHistory: true,
+      }, runtimeSettings), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+    } catch (err) {
+      if (!/already|loaded|active/i.test(err.message || "")) throw err;
+    }
+    const turnParams = applyTurnRuntimeSettings({
+      threadId: card.target.threadId,
+      input: [{ type: "text", text: message.text }],
+    }, runtimeSettings);
+    const result = await codex.request("turn/start", turnParams, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+    return {
+      threadId: String(card.target.threadId || ""),
+      turnId: String((result && result.turnId) || (result && result.turn && result.turn.id) || ""),
+      result,
+    };
+  },
+});
 const PUSH_VAPID_FILE = process.env.CODEX_MOBILE_PUSH_VAPID_FILE || path.join(RUNTIME_ROOT, "web-push-vapid.json");
 const PUSH_SUBSCRIPTIONS_FILE = process.env.CODEX_MOBILE_PUSH_SUBSCRIPTIONS_FILE || path.join(RUNTIME_ROOT, "web-push-subscriptions.json");
 const DEFAULT_PUSH_SUBJECT = "mailto:codex-mobile-web@example.com";
@@ -2174,6 +2218,27 @@ function readRolloutTurnUsageSummaries(rolloutPath) {
   return payload;
 }
 
+function turnCompletionUsageSummary(threadId, turnId) {
+  const summary = readStateDbThread(threadId) || readStartedThread(threadId);
+  const rolloutPath = rolloutPathForThread(summary);
+  if (!rolloutPath) return null;
+  const summaries = readRolloutTurnUsageSummaries(rolloutPath);
+  const turnSummary = turnId && summaries.byTurnId instanceof Map
+    ? summaries.byTurnId.get(String(turnId))
+    : null;
+  const unscoped = Array.isArray(summaries.unscoped) && summaries.unscoped.length
+    ? summaries.unscoped[summaries.unscoped.length - 1]
+    : null;
+  const usageSummary = turnSummary || unscoped;
+  if (!usageSummary) return null;
+  const stats = rolloutStatsForPath(rolloutPath);
+  return Object.assign({}, usageSummary, {
+    rolloutSizeBytes: Number(stats.sizeBytes) || undefined,
+    rolloutWarningThresholdBytes: Number(stats.warningThresholdBytes) || undefined,
+    rolloutOverWarningThreshold: Boolean(stats.overWarningThreshold),
+  });
+}
+
 function itemDisplayTimestampMs(item) {
   for (const key of [
     "createdAtMs",
@@ -3601,6 +3666,40 @@ async function sendWebPushToAll(payload) {
   return Object.assign({ sent, failed, removed: dead.size }, lastError ? { lastError } : {});
 }
 
+function delegateTurnCompletedNotification(meta, turnId, completedAt, threadTitle, params = null) {
+  const workspaceId = "owner";
+  if (!hermesNotificationDelegateService.isConfiguredForWorkspace(workspaceId)) return false;
+  const threadId = String(meta && meta.threadId || "");
+  const detailMessage = buildTurnCompletionDetailMessage({
+    threadTitle,
+    completedAt,
+    turnId,
+    params,
+    turnUsageSummary: turnCompletionUsageSummary(threadId, turnId),
+    maxChars: 12_000,
+  });
+  hermesNotificationDelegateService.send({
+    workspaceId,
+    eventId: `codex-mobile:turn-completed:${threadId || "unknown"}:${turnId}`,
+    title: threadTitle || shortIdentifier(threadId || turnId) || "Codex Mobile Web",
+    summary: `This turn 已结束 · ${pushTimestamp(completedAt)}`,
+    itemType: "info",
+    priority: "normal",
+    route: {
+      name: "thread",
+      tab: "codex",
+      itemId: threadId || turnId,
+      threadId: threadId || "",
+      taskId: turnId,
+    },
+    openMode: "plugin",
+    detailMessage,
+  }).catch((err) => {
+    console.error(`[hermes plugin notifications] turn completed delegation failed: ${err.message || String(err)}`);
+  });
+  return true;
+}
+
 function maybeSendTurnCompletedPush(method, params) {
   if (method === "turn/started") {
     const id = pushTurnId(params);
@@ -3642,6 +3741,7 @@ function maybeSendTurnCompletedPush(method, params) {
   pushSentTurns.set(key, Date.now());
   const completedAt = meta.completedAt || Date.now();
   const threadTitle = meta.threadTitle || pushThreadTitle(params, meta.threadId);
+  if (delegateTurnCompletedNotification(meta, turnId, completedAt, threadTitle, params)) return;
   const threadMark = shortIdentifier(meta.threadId || turnId);
   const payload = {
     title: threadTitle || threadMark || "Codex Mobile Web",
@@ -4563,7 +4663,7 @@ function rowToFallbackThread(row) {
   const updatedAt = Number(row.updated_at || row.updatedAt || 0);
   const name = row.title || row.thread_name || null;
   const preview = row.first_user_message || row.preview || name || row.id;
-  return annotateThreadRolloutStats({
+  return attachThreadTaskCardCountsToSummary(annotateThreadRolloutStats({
     id: row.id,
     name,
     preview,
@@ -4581,7 +4681,7 @@ function rowToFallbackThread(row) {
     sandboxPolicy: row.sandbox_policy || null,
     approvalPolicy: row.approval_mode || null,
     mobileFallback: true,
-  });
+  }));
 }
 
 function sqlString(value) {
@@ -5833,10 +5933,42 @@ function fallbackThreadReadResult(threadId, summary, runtimeSettings, warning, m
     mobileReadMode: mode,
   }, summary || {}, { id: threadId, turns: [], mobileReadMode: mode }));
   if (fallbackThread) fallbackThread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
-  return {
+  return attachThreadTaskCardsToResult({
     thread: fallbackThread,
     mobileReadWarning: warning || "",
-  };
+  });
+}
+
+function attachThreadTaskCardsToThread(thread) {
+  if (!thread || typeof thread !== "object" || !thread.id) return thread;
+  thread.threadTaskCards = threadTaskCardService.listForThread(thread.id);
+  const taskCardCounts = threadTaskCardService.pendingCountsForThread(thread.id);
+  thread.pendingTaskCardCount = taskCardCounts.pendingTotal;
+  thread.pendingIncomingTaskCardCount = taskCardCounts.pendingIncoming;
+  thread.pendingOutgoingTaskCardCount = taskCardCounts.pendingOutgoing;
+  return thread;
+}
+
+function attachThreadTaskCardCountsToSummary(thread) {
+  if (!thread || typeof thread !== "object" || !thread.id) return thread;
+  const taskCardCounts = threadTaskCardService.pendingCountsForThread(thread.id);
+  thread.pendingTaskCardCount = taskCardCounts.pendingTotal;
+  thread.pendingIncomingTaskCardCount = taskCardCounts.pendingIncoming;
+  thread.pendingOutgoingTaskCardCount = taskCardCounts.pendingOutgoing;
+  return thread;
+}
+
+function attachThreadTaskCardCountsToThreadListResult(result) {
+  if (!result || typeof result !== "object") return result;
+  if (Array.isArray(result.data)) result.data.forEach(attachThreadTaskCardCountsToSummary);
+  if (Array.isArray(result.threads)) result.threads.forEach(attachThreadTaskCardCountsToSummary);
+  return result;
+}
+
+function attachThreadTaskCardsToResult(result) {
+  if (!result || typeof result !== "object" || !result.thread) return result;
+  attachThreadTaskCardsToThread(result.thread);
+  return result;
 }
 
 async function turnsListThreadReadResult(threadId, summary, runtimeSettings, warning, mode = "turns-list", threadLog = null) {
@@ -5867,7 +5999,7 @@ async function turnsListThreadReadResult(threadId, summary, runtimeSettings, war
       mode,
     });
   }
-  return result;
+  return attachThreadTaskCardsToResult(result);
 }
 
 function filterFallbackThreads(threads, filters = {}) {
@@ -6027,6 +6159,8 @@ async function handleApi(req, res) {
         originRegistrationPath: "/api/v1/hermes/plugin/origins",
         launchPath: "/api/v1/hermes/plugin/launch",
         sessionPath: "/api/v1/hermes/plugin/session",
+        notificationDelegatePath: "/api/v1/hermes/plugin/notifications",
+        notificationDelegateConfigured: hermesNotificationDelegateService.isConfiguredForWorkspace("owner"),
       },
     });
     return;
@@ -6123,6 +6257,19 @@ async function handleApi(req, res) {
       sendJson(res, 200, hermesPluginService.createLaunch(body));
     } catch (err) {
       sendJson(res, err.statusCode || 400, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  if (url.pathname === "/api/v1/hermes/plugin/notifications" && req.method === "POST") {
+    if (!isAccessKeyAuthorized(req)) {
+      sendJson(res, 401, { ok: false, error: "Codex Mobile access key is required" });
+      return;
+    }
+    try {
+      const body = await readBody(req);
+      sendJson(res, 200, await hermesNotificationDelegateService.send(body));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
     }
     return;
   }
@@ -6269,6 +6416,67 @@ async function handleApi(req, res) {
     const body = await readBody(req);
     const request = codex.answerServerRequest(requestId, body);
     sendJson(res, 200, { ok: true, request });
+    return;
+  }
+  if (url.pathname === "/api/thread-task-cards" && req.method === "POST") {
+    const body = await readBody(req);
+    const sourceSummary = readStateDbThread(body.sourceThreadId) || readStartedThread(body.sourceThreadId);
+    const targetSummary = readStateDbThread(body.targetThreadId) || readStartedThread(body.targetThreadId);
+    sendJson(res, 200, {
+      ok: true,
+      card: await threadTaskCardService.create(Object.assign({}, body, {
+        sourceWorkspaceId: body.sourceWorkspaceId || body.sourceWorkspace || (sourceSummary && sourceSummary.cwd) || "",
+        targetWorkspaceId: body.targetWorkspaceId || body.targetWorkspace || (targetSummary && targetSummary.cwd) || "",
+        sourceThreadTitle: body.sourceThreadTitle || (sourceSummary && (sourceSummary.name || sourceSummary.preview || sourceSummary.id)) || body.sourceThreadId || "",
+      })),
+    });
+    return;
+  }
+  const threadTaskCardRead = url.pathname.match(/^\/api\/thread-task-cards\/([^/]+)$/);
+  if (threadTaskCardRead && req.method === "GET") {
+    const cardId = decodeURIComponent(threadTaskCardRead[1]);
+    const threadId = url.searchParams.get("threadId") || "";
+    sendJson(res, 200, { ok: true, card: threadTaskCardService.get(cardId, threadId) });
+    return;
+  }
+  const threadTaskCardApprove = url.pathname.match(/^\/api\/thread-task-cards\/([^/]+)\/approve$/);
+  if (threadTaskCardApprove && req.method === "POST") {
+    const cardId = decodeURIComponent(threadTaskCardApprove[1]);
+    const body = await readBody(req);
+    sendJson(res, 200, Object.assign({ ok: true }, await threadTaskCardService.approve(cardId, body.threadId || body.actorThreadId || "")));
+    return;
+  }
+  const threadTaskCardDelete = url.pathname.match(/^\/api\/thread-task-cards\/([^/]+)\/delete$/);
+  if (threadTaskCardDelete && req.method === "POST") {
+    const cardId = decodeURIComponent(threadTaskCardDelete[1]);
+    const body = await readBody(req);
+    sendJson(res, 200, {
+      ok: true,
+      card: await threadTaskCardService.deleteCard(cardId, body.threadId || body.actorThreadId || ""),
+    });
+    return;
+  }
+  const threadTaskCardRevoke = url.pathname.match(/^\/api\/thread-task-cards\/([^/]+)\/revoke$/);
+  if (threadTaskCardRevoke && req.method === "POST") {
+    const cardId = decodeURIComponent(threadTaskCardRevoke[1]);
+    const body = await readBody(req);
+    sendJson(res, 200, {
+      ok: true,
+      card: await threadTaskCardService.revoke(cardId, body.threadId || body.actorThreadId || ""),
+    });
+    return;
+  }
+  const threadTaskCardReply = url.pathname.match(/^\/api\/thread-task-cards\/([^/]+)\/reply$/);
+  if (threadTaskCardReply && req.method === "POST") {
+    const cardId = decodeURIComponent(threadTaskCardReply[1]);
+    const body = await readBody(req);
+    const actorThreadId = body.threadId || body.actorThreadId || "";
+    const actorSummary = readStateDbThread(actorThreadId) || readStartedThread(actorThreadId);
+    sendJson(res, 200, Object.assign({ ok: true }, await threadTaskCardService.reply(cardId, actorThreadId, Object.assign({}, body, {
+      sourceWorkspaceId: body.sourceWorkspaceId || (actorSummary && actorSummary.cwd) || "",
+      sourceThreadId: body.sourceThreadId || actorThreadId,
+      sourceThreadTitle: body.sourceThreadTitle || (actorSummary && (actorSummary.name || actorSummary.preview || actorSummary.id)) || actorThreadId,
+    }))));
     return;
   }
   if (url.pathname === "/api/workspaces" && req.method === "GET") {
@@ -6424,7 +6632,7 @@ async function handleApi(req, res) {
       const result = filterVisibleThreads(await codex.request("thread/list", params, { timeoutMs: READ_RPC_TIMEOUT_MS }), globalState);
       if (Array.isArray(result.data)) result.data = result.data.slice(0, limit);
       if (Array.isArray(result.threads)) result.threads = result.threads.slice(0, limit);
-      sendJson(res, 200, result);
+      sendJson(res, 200, attachThreadTaskCardCountsToThreadListResult(result));
     } catch (err) {
       const fallback = [
         ...readStateDbFallback(limit, { cwd, searchTerm, globalState }),
@@ -6432,7 +6640,7 @@ async function handleApi(req, res) {
       ].slice(0, limit);
       if (fallback.length) {
         sendJson(res, 200, {
-          data: fallback,
+          data: fallback.map(attachThreadTaskCardCountsToSummary),
           mobileFallback: true,
           warning: err.message || String(err),
         });
@@ -6601,7 +6809,7 @@ async function handleApi(req, res) {
         returnedTurns: result.thread && Array.isArray(result.thread.turns) ? result.thread.turns.length : null,
         omittedTurns: result.thread && result.thread.mobileOmittedTurnCount ? result.thread.mobileOmittedTurnCount : 0,
       });
-      sendJson(res, 200, result);
+      sendJson(res, 200, attachThreadTaskCardsToResult(result));
       threadLog("complete", { status: 200, mode: "thread-read" });
     } catch (readErr) {
       threadLog("thread_read_error", {

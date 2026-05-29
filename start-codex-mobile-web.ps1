@@ -5,6 +5,9 @@ param(
     [string]$HermesPluginBaseUrl = "",
     [string]$PublicBaseUrl = "",
     [string]$HermesPluginFrameOrigins = "",
+    [string]$HermesPluginNotificationBaseUrl = "",
+    [string]$HermesPluginNotificationKey = "",
+    [string]$HermesPluginNotificationKeyFile = "",
     [switch]$RequireSharedAppServer,
     [switch]$NoAuth
 )
@@ -39,6 +42,15 @@ if (-not [string]::IsNullOrWhiteSpace($PublicBaseUrl)) {
 if (-not [string]::IsNullOrWhiteSpace($HermesPluginFrameOrigins)) {
     $env:CODEX_MOBILE_HERMES_PLUGIN_FRAME_ORIGINS = $HermesPluginFrameOrigins
 }
+if (-not [string]::IsNullOrWhiteSpace($HermesPluginNotificationBaseUrl)) {
+    $env:CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_BASE_URL = $HermesPluginNotificationBaseUrl
+}
+if (-not [string]::IsNullOrWhiteSpace($HermesPluginNotificationKey)) {
+    $env:CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_KEY = $HermesPluginNotificationKey
+}
+if (-not [string]::IsNullOrWhiteSpace($HermesPluginNotificationKeyFile)) {
+    $env:CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_KEY_FILE = $HermesPluginNotificationKeyFile
+}
 if ($RequireSharedAppServer) {
     $env:CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER = "1"
 }
@@ -55,6 +67,12 @@ if (-not [string]::IsNullOrWhiteSpace($HermesPluginBaseUrl)) {
 }
 if (-not [string]::IsNullOrWhiteSpace($HermesPluginFrameOrigins)) {
     Write-Host "Hermes plugin frame origins: $HermesPluginFrameOrigins"
+}
+if (-not [string]::IsNullOrWhiteSpace($HermesPluginNotificationBaseUrl)) {
+    Write-Host "Hermes notification base URL: $HermesPluginNotificationBaseUrl"
+}
+if (-not [string]::IsNullOrWhiteSpace($HermesPluginNotificationKeyFile)) {
+    Write-Host "Hermes notification key file: $HermesPluginNotificationKeyFile"
 }
 if ($RequireSharedAppServer) {
     Write-Host "Shared app-server is required; managed fallback is disabled."

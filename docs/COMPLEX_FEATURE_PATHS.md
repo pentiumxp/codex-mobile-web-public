@@ -173,12 +173,74 @@ Implementation path:
    Codex should handle that secondary-page back by returning to the primary
    thread-switcher/settings page. Do not implement thread-page back by showing
    Codex's standalone first-launch Workspace page or by opening a sidebar drawer
-   inside the iframe.
-9. Add service tests for manifest/registration/token behavior, route tests for
+   inside the iframe. Hermes notification opens may also supply bounded query
+   hints such as `pluginId=codex-mobile`, `pluginRoute`, `pluginThreadId`,
+   `pluginTaskId`, and `pluginItemId`; consume them inside the iframe, focus the
+   matching thread/task when still present, scrub them from the URL, and fall
+   back to the normal embedded primary page plus a bounded diagnostic when the
+   target is missing.
+9. Plugin notifications must be delegated from the backend to Hermes Mobile
+   Action Inbox through `POST /api/hermes-plugins/codex-mobile/notifications`.
+   Keep the Hermes Web/Owner key server-side only, require a stable `eventId` or
+   `sourceId`, send only bounded title/summary plus route metadata, and reject
+   raw keys, bearer tokens, launch tokens, Push endpoints, DB paths, prompts,
+   raw model responses, private manifest dumps, and long logs. For completed-turn
+   notifications, send a short preview for Push/InBox plus an optional bounded
+   Markdown `detailMessage` for Hermes thread-message storage; do not overload
+   the short summary field with the long receipt body. In `/?embed=hermes`,
+   browser Web Push registration should be disabled so Hermes owns the Inbox and
+   Web Push delivery path.
+10. Add service tests for manifest/registration/token behavior, route tests for
    the public/authenticated paths, frontend embed harness tests for
    navigation/back/windowing, and bump the PWA shell cache if frontend launch
    behavior changes.
 
+## Cross-Thread Task Cards
+
+Use when planning or implementing controlled task cards sent from one thread to
+another thread without immediately entering the target thread's message flow.
+
+Implementation path:
+
+1. Read:
+   - `docs/CROSS_THREAD_TASK_CARDS_REQUIREMENTS.md`
+   - `docs/CROSS_THREAD_TASK_CARDS_DESIGN.md`
+   - `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md`
+2. Keep pending cards outside normal `thread.turns[*].items` until approval.
+3. Put normalization, authorization, idempotency, and state transitions in a
+   dedicated server-side adapter instead of expanding `server.js`.
+4. Treat approval as the only path that injects a real target-thread message.
+5. Treat delete and revoke as card-state transitions only; they must not create
+   target-thread messages.
+6. Reply should create a controlled reverse-direction card, not a silent direct
+   message injection.
+7. Preserve source/target audit metadata after approval injection.
+8. The current implementation uses:
+   - `adapters/thread-task-card-service.js`
+   - `POST /api/thread-task-cards`
+   - `GET /api/thread-task-cards/:id`
+   - `POST /api/thread-task-cards/:id/approve|delete|revoke|reply`
+   - `thread.threadTaskCards` on thread-detail responses
+   - `public/app.js` task-card stack rendered outside normal turn items
+9. Approval currently injects the approved card as a real new target-thread
+   `turn/start` input, not as a fake static `userMessage`.
+10. Keep `test/thread-task-card-harness.test.js` green, and cover real behavior
+   with `test/thread-task-card-service.test.js` and
+   `test/thread-task-card-route.test.js`.
+11. `#`-prefixed composer input is now reserved for natural-language task-card
+    commands. Convert them into a bounded draft-request prompt for the current
+    Codex thread, including the visible target-thread list and exact XML/JSON
+    response schema.
+ 12. Render the returned
+     `<codex-mobile-thread-task-card-draft>...</codex-mobile-thread-task-card-draft>`
+     assistant block as a local approval card, not as raw markdown, and only
+     then call `POST /api/thread-task-cards`.
+ 13. Keep the command path conservative: if the model does not return one valid
+     visible `targetThreadId`, do not auto-send to any other thread.
+  14. Source-side draft approval must feel immediate: use a stable draft-scoped
+      idempotency key, surface incoming pending-card counts on thread summaries,
+      and switch directly to the target thread after creation instead of waiting
+      for a potentially slow source-thread re-read.
 ## Public/Private Publish
 
 Use when user explicitly asks to publish public or sync public.

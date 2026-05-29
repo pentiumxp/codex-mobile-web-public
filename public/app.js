@@ -10,7 +10,7 @@ function initialPluginLaunchKeyFromUrl() {
 }
 
 const pluginEmbedApi = window.CodexPluginEmbed || {
-  detect: () => ({ embedded: false, launchKey: initialPluginLaunchKeyFromUrl(), workspaceId: "" }),
+  detect: () => ({ embedded: false, launchKey: initialPluginLaunchKeyFromUrl(), workspaceId: "", routeHint: null }),
   isBackMessage: () => false,
   navigationMessage: () => null,
   parentOriginFromReferrer: () => "",
@@ -25,8 +25,12 @@ const state = {
   pluginEmbed: INITIAL_PLUGIN_EMBED,
   pluginLaunchSession: Boolean(INITIAL_PLUGIN_LAUNCH_KEY),
   pluginSessionActive: false,
+  pluginLaunchTarget: null,
+  queuedPluginRouteHint: INITIAL_PLUGIN_EMBED.routeHint || null,
+  pendingPluginRouteHint: null,
   pluginParentOrigin: pluginEmbedApi.parentOriginFromReferrer(document.referrer) || "*",
   pluginNavigationSignature: "",
+  pluginRefreshRequestSignature: "",
   workspaces: [],
   selectedCwd: "",
   threads: [],
@@ -144,6 +148,7 @@ const state = {
   pushError: "",
   serviceWorkerRegistration: null,
   pendingApprovals: new Map(),
+  threadTaskCardDraftStates: new Map(),
   runningThreadIds: loadStringSetStorage("codexMobileRunningThreadIds"),
   unreadThreadIds: loadStringSetStorage("codexMobileUnreadThreadIds"),
   rolloutWarningDismissals: loadStringSetStorage("codexMobileDismissedRolloutWarnings"),
@@ -170,7 +175,7 @@ const state = {
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v108";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v121";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -205,6 +210,8 @@ const STORAGE_RATE_LIMITS = "codexMobileRateLimits";
 const STORAGE_RATE_LIMITS_BY_MODEL = "codexMobileRateLimitsByModel";
 const STORAGE_PUBLIC_PR_PROMPT = "codexMobilePublicPrPromptKey";
 const DRAFT_SAVE_DEBOUNCE_MS = 250;
+const THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";
+const THREAD_TASK_CARD_DRAFT_TAG = "codex-mobile-thread-task-card-draft";
 const FONT_SIZE_VALUES = new Set(["small", "default", "large", "xlarge", "xxlarge"]);
 const MENU_OVERLAY_MEDIA = "(max-width: 1180px), (pointer: coarse) and (max-width: 1400px)";
 const TABLET_SPLIT_MEDIA = "(pointer: coarse) and (orientation: landscape) and (min-width: 900px) and (min-height: 600px)";
@@ -229,8 +236,17 @@ const apiClient = window.CodexApiClient.createApiClient({
     return state.key;
   },
   onUnauthorized() {
-    if (isHermesEmbedMode()) showPluginEmbedAuthError("Codex Mobile plugin session is not authorized. Ask Hermes Mobile to launch the plugin again.");
+    if (isHermesEmbedMode()) {
+      requestHermesPluginRefresh("auth_state_changed");
+      showPluginEmbedAuthError("Codex Mobile plugin session is not authorized. Ask Hermes Mobile to launch the plugin again.");
+    }
     else showLogin();
+  },
+  onResponseError(details) {
+    if (!isHermesEmbedMode()) return;
+    const reason = pluginRefreshReasonForApiError(details);
+    if (!reason) return;
+    requestHermesPluginRefresh(reason);
   },
 });
 const runtimeSettings = window.CodexRuntimeSettings;
@@ -363,6 +379,7 @@ function pushSubscriptionToJson(subscription) {
 }
 
 function pushBrowserAvailable() {
+  if (isHermesEmbedMode()) return false;
   return Boolean(state.pushServerSupported
     && window.isSecureContext
     && "serviceWorker" in navigator
@@ -377,6 +394,12 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function escapeSelectorAttr(value) {
+  const text = String(value ?? "");
+  if (typeof CSS !== "undefined" && CSS && typeof CSS.escape === "function") return CSS.escape(text);
+  return text.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
 function resetCopyTextStore() {
@@ -627,6 +650,7 @@ function primeCompletionAudio() {
 }
 
 function showCompletionAlert(threadId, threadName) {
+  if (isHermesEmbedMode()) return;
   if (!state.completionSoundEnabled) return;
   const now = Date.now();
   if (now - state.lastCompletionSoundAt < 1800) return;
@@ -1499,6 +1523,11 @@ function initializePageBuildState(config) {
 function renderPageRefreshPrompt() {
   const el = $("pageRefreshPrompt");
   if (!el) return;
+  if (isHermesEmbedMode()) {
+    el.classList.add("hidden");
+    el.disabled = false;
+    return;
+  }
   const restarting = state.pageRefreshReason === "restart";
   const reconnecting = state.pageRefreshReason === "reconnect" || restarting;
   el.classList.toggle("hidden", !state.pageRefreshAvailable && !state.pageRefreshReloading);
@@ -1553,6 +1582,12 @@ async function checkPageRefreshAvailability(options = {}) {
     const clientChanged = Boolean(nextBuildId && nextBuildId !== state.serverBuildId);
     const assetsChanged = Boolean(nextAssetBuildId && state.serverAssetBuildId && nextAssetBuildId !== state.serverAssetBuildId);
     if (clientChanged || assetsChanged) {
+      if (isHermesEmbedMode()) {
+        state.pageRefreshBuildId = nextBuildId;
+        state.pageRefreshReason = "build";
+        requestHermesPluginRefresh("server_build_changed", { force: true });
+        return;
+      }
       await preparePageShellAssets(config, { populateCache: true });
       state.pageRefreshAvailable = true;
       state.pageRefreshReason = "build";
@@ -1598,6 +1633,10 @@ async function waitForPageBuildConfig(timeoutMs = 18000) {
 
 async function refreshPageForNewBuild() {
   if (state.pageRefreshReloading) return;
+  if (isHermesEmbedMode()) {
+    requestHermesPluginRefresh("server_build_changed", { force: true });
+    return;
+  }
   state.pageRefreshReloading = true;
   renderPageRefreshPrompt();
   saveCurrentDraftNow();
@@ -2560,6 +2599,25 @@ function approvalRequestsSignature(threadId) {
   }));
 }
 
+function threadTaskCardsForThread(thread) {
+  const cards = Array.isArray(thread && thread.threadTaskCards) ? thread.threadTaskCards : [];
+  return cards
+    .filter((card) => String(card && card.status || "") === "pending")
+    .slice()
+    .sort((a, b) => Number(b && b.updatedAt ? Date.parse(b.updatedAt) : 0) - Number(a && a.updatedAt ? Date.parse(a.updatedAt) : 0));
+}
+
+function threadTaskCardsSignature(thread) {
+  return threadTaskCardsForThread(thread).map((card) => ({
+    id: card.id,
+    status: card.status,
+    updatedAt: card.updatedAt,
+    threadRole: card.threadRole,
+    replyCardId: card.replyCardId || "",
+    injectedTurnId: card.injectedTurnId || "",
+  }));
+}
+
 function conversationRenderSignature(thread) {
   if (!thread) return "home";
   if (thread.mobileLoadError) return `load-error|${state.currentThreadId || thread.id || ""}|${thread.mobileLoadError}`;
@@ -2574,6 +2632,7 @@ function conversationRenderSignature(thread) {
     rolloutWarningThresholdBytes: rolloutThresholdBytes(thread),
     omitted,
     approvals: approvalRequestsSignature(state.currentThreadId || thread.id || ""),
+    taskCards: threadTaskCardsSignature(thread),
     turns: turns.map((turn) => {
       const timerShowsStatus = isLatestTurn(turn) && (isLiveTurn(turn) || turnFinalSeconds(turn) != null);
       return {
@@ -3018,6 +3077,119 @@ function isHermesEmbedMode() {
   return Boolean(state.pluginEmbed && state.pluginEmbed.embedded);
 }
 
+function normalizePluginParentOrigin(value) {
+  const origin = String(value || "").trim();
+  if (origin && origin !== "*") return origin;
+  const referrerOrigin = pluginEmbedApi.parentOriginFromReferrer
+    ? pluginEmbedApi.parentOriginFromReferrer(document.referrer)
+    : "";
+  return String(referrerOrigin || "").trim();
+}
+
+function boundedPluginRefreshValue(value, maxLength) {
+  const text = String(value || "").trim();
+  return text ? text.slice(0, Math.max(0, Number(maxLength) || 0)) : "";
+}
+
+function pluginRefreshReasonForApiError(details = {}) {
+  const status = Number(details && details.status || 0);
+  const path = String(details && details.path || "").trim();
+  const message = String(details && details.message || "").trim().toLowerCase();
+  if (!(status === 401 || status === 403)) return "";
+  if (path === "/api/v1/hermes/plugin/session") return "plugin_launch_invalid";
+  if (message.includes("plugin_launch_invalid_or_expired")) return "plugin_launch_invalid";
+  if (message.includes("invalid launch") || message.includes("invalid session")) return "plugin_session_invalid";
+  if (message.includes("session is unauthorized") || message.includes("session expired")) return "plugin_session_invalid";
+  if (message.includes("unauthorized") || message.includes("forbidden")) return "auth_state_changed";
+  return "";
+}
+
+function currentHermesRefreshRoute(options = {}) {
+  const explicit = options && typeof options.route === "object" ? options.route : null;
+  const hinted = normalizePluginRouteHint(state.pendingPluginRouteHint)
+    || normalizePluginRouteHint(state.queuedPluginRouteHint);
+  const route = {};
+  const name = boundedPluginRefreshValue(
+    explicit && explicit.name
+      ? explicit.name
+      : (state.currentThreadId || (hinted && hinted.threadId) ? "thread" : "root"),
+    48,
+  );
+  const threadId = boundedPluginRefreshValue(
+    explicit && explicit.threadId
+      ? explicit.threadId
+      : (state.currentThreadId || (hinted && hinted.threadId) || (state.pluginLaunchTarget && state.pluginLaunchTarget.threadId) || ""),
+    160,
+  );
+  const itemId = boundedPluginRefreshValue(
+    explicit && explicit.itemId
+      ? explicit.itemId
+      : (hinted && (hinted.itemId || hinted.taskId)) || "",
+    160,
+  );
+  const pluginRoute = boundedPluginRefreshValue(
+    explicit && explicit.pluginRoute
+      ? explicit.pluginRoute
+      : (hinted && hinted.route) || "",
+    80,
+  );
+  const pluginThreadId = boundedPluginRefreshValue(
+    explicit && explicit.pluginThreadId
+      ? explicit.pluginThreadId
+      : threadId,
+    160,
+  );
+  const pluginTaskId = boundedPluginRefreshValue(
+    explicit && explicit.pluginTaskId
+      ? explicit.pluginTaskId
+      : (hinted && hinted.taskId) || "",
+    160,
+  );
+  const pluginItemId = boundedPluginRefreshValue(
+    explicit && explicit.pluginItemId
+      ? explicit.pluginItemId
+      : itemId,
+    160,
+  );
+  if (name) route.name = name;
+  if (threadId) route.threadId = threadId;
+  if (itemId) route.itemId = itemId;
+  if (pluginRoute) route.pluginRoute = pluginRoute;
+  if (pluginThreadId) route.pluginThreadId = pluginThreadId;
+  if (pluginTaskId) route.pluginTaskId = pluginTaskId;
+  if (pluginItemId) route.pluginItemId = pluginItemId;
+  return route;
+}
+
+function requestHermesPluginRefresh(reason, options = {}) {
+  if (!isHermesEmbedMode() || !pluginEmbedApi.postRefreshRequired) return false;
+  const normalizedReason = boundedPluginRefreshValue(reason || "refresh_required", 80) || "refresh_required";
+  const route = currentHermesRefreshRoute(options);
+  const targetOrigin = normalizePluginParentOrigin(state.pluginParentOrigin);
+  const signature = JSON.stringify({
+    reason: normalizedReason,
+    targetOrigin: targetOrigin || "*",
+    route,
+  });
+  if (!options.force && signature === state.pluginRefreshRequestSignature) return false;
+  state.pluginRefreshRequestSignature = signature;
+  if (targetOrigin) state.pluginParentOrigin = targetOrigin;
+  pluginEmbedApi.postRefreshRequired(window.parent, {
+    reason: normalizedReason,
+    route,
+  }, {
+    targetOrigin: targetOrigin || "*",
+  });
+  postClientEvent("plugin_refresh_required", {
+    reason: normalizedReason,
+    targetOrigin: targetOrigin || "*",
+    hasThreadId: Boolean(route.threadId),
+    hasItemId: Boolean(route.itemId),
+    usedWildcardFallback: !targetOrigin,
+  });
+  return true;
+}
+
 function scrubPluginLaunchUrl() {
   if (!isHermesEmbedMode()) return;
   try {
@@ -3100,13 +3272,47 @@ async function exchangePluginLaunchSession() {
   });
   if (!result || !result.session_key) throw new Error("Plugin session exchange failed");
   state.key = String(result.session_key || "");
+  const hermesOrigin = normalizePluginParentOrigin(result && result.hermes_origin);
+  if (hermesOrigin) state.pluginParentOrigin = hermesOrigin;
+  state.pluginLaunchTarget = result && result.target && typeof result.target === "object" ? result.target : null;
+  if (state.pluginLaunchTarget && state.pluginLaunchTarget.cwd && !state.currentThreadId) {
+    state.selectedCwd = String(state.pluginLaunchTarget.cwd || "").trim();
+  }
   state.pluginLaunchSession = false;
   state.pluginSessionActive = true;
   scrubPluginLaunchUrl();
 }
 
+async function applyPluginLaunchTarget() {
+  const target = state.pluginLaunchTarget && typeof state.pluginLaunchTarget === "object" ? state.pluginLaunchTarget : null;
+  if (!target) return false;
+  state.pluginLaunchTarget = null;
+  const threadId = String(target.threadId || "").trim();
+  if (threadId) {
+    localStorage.setItem(STORAGE_THREAD_ID, threadId);
+    clearThreadUrl();
+    await loadThread(threadId, { source: "plugin-launch" });
+    return true;
+  }
+  const cwd = String(target.cwd || "").trim();
+  if (!cwd) return false;
+  const workspace = state.workspaces.find((ws) => normalizeFsPath(ws.cwd) === normalizeFsPath(cwd));
+  saveCurrentDraftNow();
+  state.selectedCwd = workspace ? workspace.cwd : cwd;
+  clearCurrentThreadSelection({ saveDraft: false });
+  state.newThreadDraft = true;
+  restoreDraftForCurrentTarget();
+  syncSidebarWorkspaceSelect();
+  updateWorkspacePath();
+  renderThreads();
+  renderCurrentThread();
+  updateComposerControls();
+  return true;
+}
+
 async function bootstrap() {
   applyUrlThreadSelection();
+  applyUrlPluginRouteHint();
   const status = await api("/api/status").catch((err) => {
     $("connectionState").textContent = err.message;
     $("connectionState").classList.add("error");
@@ -3116,7 +3322,17 @@ async function bootstrap() {
   if (status && (status.rateLimits || status.rateLimitsByModel)) rememberRateLimits(status.rateLimits, status.rateLimitsByModel);
   await loadWorkspaces();
   await loadThreads();
-  await restoreThreadSelection();
+  let appliedPluginLaunchTarget = false;
+  let appliedPluginRouteHint = false;
+  try {
+    appliedPluginLaunchTarget = await applyPluginLaunchTarget();
+    if (!appliedPluginLaunchTarget) {
+      appliedPluginRouteHint = await openHermesPluginRouteHint(state.queuedPluginRouteHint);
+    }
+  } catch (err) {
+    showError(err);
+  }
+  if (!appliedPluginLaunchTarget && !appliedPluginRouteHint) await restoreThreadSelection();
   connectEvents();
   scheduleStartupUpdateCheck();
   scheduleStartupPublicPrCheck();
@@ -3135,6 +3351,47 @@ function threadIdFromUrlValue(value) {
   }
 }
 
+function normalizePluginRouteHint(value) {
+  if (!value || typeof value !== "object") return null;
+  const pluginId = String(value.pluginId || "").trim().slice(0, 80);
+  const route = String(value.route || "").trim().slice(0, 80);
+  const itemId = String(value.itemId || "").trim().slice(0, 160);
+  const threadId = String(value.threadId || "").trim().slice(0, 160);
+  const taskId = String(value.taskId || "").trim().slice(0, 160);
+  if (!(pluginId || route || itemId || threadId || taskId)) return null;
+  return { pluginId, route, itemId, threadId, taskId };
+}
+
+function pluginRouteHintFromUrl(value) {
+  try {
+    const detected = pluginEmbedApi.detect ? pluginEmbedApi.detect(value || window.location.href) : null;
+    const normalized = normalizePluginRouteHint(detected && detected.routeHint);
+    if (normalized) return normalized;
+    const url = new URL(value || window.location.href, window.location.origin);
+    return normalizePluginRouteHint({
+      pluginId: url.searchParams.get("pluginId"),
+      route: url.searchParams.get("pluginRoute"),
+      itemId: url.searchParams.get("pluginItemId"),
+      threadId: url.searchParams.get("pluginThreadId"),
+      taskId: url.searchParams.get("pluginTaskId"),
+    });
+  } catch (_) {
+    return null;
+  }
+}
+
+function pluginRouteHintTargetId(hint) {
+  if (!hint) return "";
+  return String(hint.taskId || hint.itemId || "").trim();
+}
+
+function setPluginRouteDiagnostic(message, options = {}) {
+  const text = String(message || "").trim().slice(0, 240);
+  if (!text) return;
+  $("connectionState").textContent = text;
+  $("connectionState").classList.toggle("error", options.error !== false);
+}
+
 function clearThreadUrl() {
   try {
     window.history.replaceState({}, "", isHermesEmbedMode() ? pluginRootPath() : (window.location.pathname || "/"));
@@ -3143,14 +3400,57 @@ function clearThreadUrl() {
   }
 }
 
-async function openExternalThreadSelection(threadId) {
+function findPluginRouteTargetNode(hint) {
+  const targetId = pluginRouteHintTargetId(hint);
+  if (!targetId) return null;
+  const conversation = $("conversation");
+  if (!conversation) return null;
+  return conversation.querySelector(`[data-approval-card="${escapeSelectorAttr(targetId)}"]`)
+    || conversation.querySelector(`[data-task-card="${escapeSelectorAttr(targetId)}"]`)
+    || conversation.querySelector(`[data-item="${escapeSelectorAttr(targetId)}"]`);
+}
+
+function focusPluginRouteTargetNode(hint) {
+  const node = findPluginRouteTargetNode(hint);
+  if (!node) return false;
+  markProgrammaticConversationScroll();
+  if (typeof node.scrollIntoView === "function") {
+    node.scrollIntoView({ block: "center", inline: "nearest" });
+  }
+  scheduleScrollToBottomButtonUpdate();
+  return true;
+}
+
+function applyPendingPluginRouteHintFocus() {
+  const hint = normalizePluginRouteHint(state.pendingPluginRouteHint);
+  if (!hint) return false;
+  const threadId = String(state.currentThreadId || "").trim();
+  if (!threadId || hint.threadId !== threadId) return false;
+  const targetId = pluginRouteHintTargetId(hint);
+  if (!targetId) {
+    state.pendingPluginRouteHint = null;
+    return false;
+  }
+  const focused = focusPluginRouteTargetNode(hint);
+  if (focused) {
+    state.pendingPluginRouteHint = null;
+    setPluginRouteDiagnostic("Opened notification target", { error: false });
+    return true;
+  }
+  state.pendingPluginRouteHint = null;
+  showHermesPluginPrimaryPage();
+  setPluginRouteDiagnostic("Notification target is no longer available", { error: true });
+  return false;
+}
+
+async function openExternalThreadSelection(threadId, options = {}) {
   const id = String(threadId || "").trim();
   if (!id) return;
   localStorage.setItem(STORAGE_THREAD_ID, id);
   clearThreadUrl();
   if (!state.key) return;
   $("connectionState").classList.remove("error");
-  $("connectionState").textContent = "Opening notification thread";
+  $("connectionState").textContent = String(options.statusMessage || "Opening notification thread");
   if (!state.workspaces.length) {
     try {
       await loadWorkspaces();
@@ -3161,13 +3461,73 @@ async function openExternalThreadSelection(threadId) {
   await loadThread(id, { source: "external" });
 }
 
+async function openHermesPluginRouteHint(hint) {
+  const normalized = normalizePluginRouteHint(hint);
+  if (!normalized || normalized.pluginId !== "codex-mobile") return false;
+  state.queuedPluginRouteHint = null;
+  clearThreadUrl();
+  const threadId = String(normalized.threadId || "").trim();
+  const targetId = pluginRouteHintTargetId(normalized);
+  if (!threadId && !targetId) {
+    if (normalized.route && normalized.route !== "root") {
+      setPluginRouteDiagnostic("Notification target is unavailable", { error: true });
+    }
+    showHermesPluginPrimaryPage();
+    return true;
+  }
+  if (!threadId) {
+    showHermesPluginPrimaryPage();
+    setPluginRouteDiagnostic("Notification thread is unavailable", { error: true });
+    return true;
+  }
+  try {
+    state.pendingPluginRouteHint = targetId ? normalized : null;
+    await openExternalThreadSelection(threadId, {
+      statusMessage: targetId ? "Opening notification target" : "Opening notification thread",
+    });
+    if (!targetId) {
+      setPluginRouteDiagnostic("Opened notification thread", { error: false });
+    } else {
+      applyPendingPluginRouteHintFocus();
+    }
+    return true;
+  } catch (error) {
+    state.pendingPluginRouteHint = null;
+    showHermesPluginPrimaryPage();
+    setPluginRouteDiagnostic(targetId ? "Notification target is unavailable" : "Notification thread is unavailable", {
+      error: true,
+    });
+    return true;
+  }
+}
+
+function applyUrlPluginRouteHint(options = {}) {
+  if (!isHermesEmbedMode()) return null;
+  try {
+    const hint = pluginRouteHintFromUrl(window.location.href);
+    if (!hint || hint.pluginId !== "codex-mobile") return null;
+    state.queuedPluginRouteHint = hint;
+    clearThreadUrl();
+    if (options.load) openHermesPluginRouteHint(hint).catch(showError);
+    return hint;
+  } catch (_) {
+    return null;
+  }
+}
+
 function applyUrlThreadSelection(options = {}) {
   try {
     const threadId = threadIdFromUrlValue(window.location.href);
     if (!threadId) return "";
     localStorage.setItem(STORAGE_THREAD_ID, threadId);
     clearThreadUrl();
-    if (options.load) openExternalThreadSelection(threadId).catch(showError);
+    if (options.load) {
+      if (threadId === state.currentThreadId && state.currentThread && !state.currentThread.mobileLoadError) {
+        scheduleCurrentThreadRefresh(250);
+      } else {
+        openExternalThreadSelection(threadId).catch(showError);
+      }
+    }
     return threadId;
   } catch (_) {
     // URL thread selection is best-effort for notification clicks.
@@ -4229,6 +4589,10 @@ function renderThreads(result = null) {
     const iconKind = statusIconInfo(thread.status, thread.id)?.kind || "";
     const active = thread.id === state.currentThreadId ? " active" : "";
     const emphasis = iconKind ? ` has-status-${iconKind}` : "";
+    const pendingIncomingTaskCards = Math.max(0, Number(thread && thread.pendingIncomingTaskCardCount) || 0);
+    const taskCardBadge = pendingIncomingTaskCards
+      ? `<div class="thread-card-task-badge" title="Pending incoming task cards">${escapeHtml(`Task ${pendingIncomingTaskCards}`)}</div>`
+      : "";
     const sizeBadge = sizeText
       ? `<div class="thread-card-size${sizeWarn ? " warn" : ""}" title="Rollout file size">${escapeHtml(sizeText)}</div>`
       : "";
@@ -4243,7 +4607,10 @@ function renderThreads(result = null) {
             <span class="thread-card-path${isWorkspaceLess ? " thread-card-path-chat" : ""}">${escapeHtml(pathText)}</span>
             ${timeText ? `<span class="thread-card-time" title="${escapeHtml(updatedTitle)}">${escapeHtml(timeText)}</span>` : ""}
           </div>
-          ${sizeBadge}
+          <div class="thread-card-meta-badges">
+            ${taskCardBadge}
+            ${sizeBadge}
+          </div>
         </div>
       </button>
     </div>`;
@@ -4259,11 +4626,12 @@ function renderThreads(result = null) {
       thread.updatedAt,
       statusText(thread.status),
       statusIconInfo(thread.status, thread.id)?.kind || "",
-      state.unreadThreadIds.has(thread.id) ? 1 : 0,
-      rolloutSizeBytes(thread),
-      isRolloutOverThreshold(thread),
-    ]),
-  });
+        state.unreadThreadIds.has(thread.id) ? 1 : 0,
+        Number(thread.pendingIncomingTaskCardCount || 0),
+        rolloutSizeBytes(thread),
+        isRolloutOverThreshold(thread),
+      ]),
+    });
   if (state.renderedThreadListSignature === signature) return;
   list.innerHTML = html;
   state.renderedThreadListSignature = signature;
@@ -4540,6 +4908,13 @@ function renderRolloutWarning(thread, previousKeys = new Set()) {
   </div>`;
 }
 
+function renderThreadTaskToolbar(thread) {
+  if (!thread || !thread.id) return "";
+  return `<div class="rollout-warning-actions thread-task-toolbar">
+    <button class="approval-button allow" type="button" data-create-thread-task-card>Send task card</button>
+  </div>`;
+}
+
 function threadReadWarningMessage(thread) {
   const rawWarning = String(thread && thread.mobileReadWarning ? thread.mobileReadWarning : "");
   const mode = String(thread && thread.mobileReadMode ? thread.mobileReadMode : "");
@@ -4621,9 +4996,11 @@ function renderCurrentThread(options = {}) {
     ? `<div class="history-note${entryAnimationClass(readWarningKey, previousKeys)}" data-render-key="${escapeHtml(readWarningKey)}">${escapeHtml(readWarningMessage)}</div>`
     : "";
   const rolloutWarning = renderRolloutWarning(thread, previousKeys);
+  const taskToolbar = renderThreadTaskToolbar(thread);
   const visibleTurnIds = new Set(turns.map((turn) => turn && turn.id).filter(Boolean).map(String));
   resetCopyTextStore();
   const turnsHtml = turns.map((turn) => renderTurn(turn, previousKeys)).join("");
+  const taskCardsHtml = renderThreadTaskCards(thread, previousKeys);
   const approvalsHtml = renderPendingApprovals(thread, previousKeys, (request) => {
     const turnId = approvalTurnId(request);
     if (turnId && visibleTurnIds.has(turnId)) return false;
@@ -4632,9 +5009,10 @@ function renderCurrentThread(options = {}) {
   const emptyMessage = readWarningMessage
     ? "暂时没有可显示的完整消息。共享模式恢复后刷新这个页面即可继续读取。"
     : "No visible turns.";
-  const html = rolloutWarning + omittedBanner + readWarning + (turnsHtml || approvalsHtml ? `${turnsHtml}${approvalsHtml}` : `<div class="empty-state entry-animate">${escapeHtml(emptyMessage)}</div>`);
+    const html = rolloutWarning + taskToolbar + omittedBanner + readWarning + (turnsHtml || approvalsHtml || taskCardsHtml ? `${turnsHtml}${approvalsHtml}${taskCardsHtml}` : `<div class="empty-state entry-animate">${escapeHtml(emptyMessage)}</div>`);
   updateConversationHtml(html, conversationRenderSignature(thread), { stickToBottom: shouldStickToBottom });
   bindCurrentThreadActions();
+  applyPendingPluginRouteHintFocus();
   updateTickTimer();
   publishPluginNavigationState();
 }
@@ -4761,8 +5139,237 @@ function enterNewThreadDraft() {
 function bindCurrentThreadActions() {
   const button = $("conversation").querySelector("[data-new-thread-from-current]");
   if (button) button.addEventListener("click", startNewThreadFromCurrent);
+  const taskButton = $("conversation").querySelector("[data-create-thread-task-card]");
+  if (taskButton) taskButton.addEventListener("click", createThreadTaskCardFromCurrent);
   const dismiss = $("conversation").querySelector("[data-dismiss-rollout-warning]");
   if (dismiss) dismiss.addEventListener("click", () => dismissRolloutWarning(state.currentThread));
+}
+
+function findThreadTaskCard(cardId) {
+  const cards = threadTaskCardsForThread(state.currentThread || {});
+  return cards.find((card) => card.id === String(cardId || "")) || null;
+}
+
+function summarizeTaskCardText(value) {
+  return truncateSingleLine(String(value || "").replace(/\s+/g, " ").trim(), 280);
+}
+
+function isThreadTaskCardCommandText(value) {
+  return String(value || "").trim().startsWith("#");
+}
+
+function threadTaskCardCommandText(value) {
+  return String(value || "").trim().replace(/^#+\s*/, "").trim();
+}
+
+function threadTaskCardVisibleTargets() {
+  return (state.threads || [])
+    .filter((thread) => thread && thread.id && thread.id !== state.currentThreadId)
+    .slice(0, 40)
+    .map((thread) => ({
+      threadId: String(thread.id || ""),
+      title: threadTitleForDisplay(thread) || String(thread.id || ""),
+      cwd: String(thread.cwd || ""),
+    }));
+}
+
+function buildThreadTaskCardDraftRequestText(commandText) {
+  const original = String(commandText || "").trim();
+  const compactCommand = threadTaskCardCommandText(original);
+  if (!compactCommand) throw new Error("Task-card command is empty");
+  const sourceThread = state.currentThread || {};
+  const envelope = {
+    version: 1,
+    sourceThreadId: String(state.currentThreadId || ""),
+    sourceThreadTitle: threadTitleForDisplay(sourceThread) || String(state.currentThreadId || ""),
+    availableTargets: threadTaskCardVisibleTargets(),
+  };
+  return [
+    original,
+    "",
+    `<${THREAD_TASK_CARD_REQUEST_TAG}>`,
+    JSON.stringify(envelope, null, 2),
+    `</${THREAD_TASK_CARD_REQUEST_TAG}>`,
+    "",
+    "Interpret the # command above as a cross-thread pending task card request.",
+    "Return only one XML block in exactly this format:",
+    `<${THREAD_TASK_CARD_DRAFT_TAG}>`,
+    "{\"targetThreadId\":\"exact threadId from availableTargets\",\"title\":\"short title\",\"summary\":\"one-line summary\",\"body\":\"full markdown body\",\"error\":\"\"}",
+    `</${THREAD_TASK_CARD_DRAFT_TAG}>`,
+    "Rules:",
+    "- Choose targetThreadId only from availableTargets.threadId.",
+    "- Do not invent a thread id.",
+    "- If the command is unclear or no target fits, set targetThreadId to an empty string and explain the problem in error.",
+    "- Keep title under 120 chars and summary under 280 chars.",
+    "- Put the actual requested work in body.",
+    "- Do not add any explanation outside the XML block.",
+  ].join("\n");
+}
+
+function threadTaskCardRequestMarkerMatch(value) {
+  const text = String(value || "");
+  const pattern = new RegExp(`\\n\\s*<${THREAD_TASK_CARD_REQUEST_TAG}>[\\s\\S]*?<\\/${THREAD_TASK_CARD_REQUEST_TAG}>[\\s\\S]*$`, "i");
+  return pattern.exec(text);
+}
+
+function visibleThreadTaskCardCommandText(value) {
+  const text = String(value || "");
+  const match = threadTaskCardRequestMarkerMatch(text);
+  return match ? text.slice(0, match.index).trimEnd() : text;
+}
+
+function parseThreadTaskCardDraftText(value) {
+  const text = String(value || "");
+  const match = new RegExp(`<${THREAD_TASK_CARD_DRAFT_TAG}>\\s*([\\s\\S]*?)\\s*<\\/${THREAD_TASK_CARD_DRAFT_TAG}>`, "i").exec(text);
+  if (!match) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(match[1]);
+  } catch (_) {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+  return {
+    rawText: text,
+    targetThreadId: String(parsed.targetThreadId || "").trim(),
+    title: truncateSingleLine(String(parsed.title || "").trim(), 120),
+    summary: truncateSingleLine(String(parsed.summary || "").trim(), 280),
+    body: String(parsed.body || "").trim(),
+    error: truncateSingleLine(String(parsed.error || "").trim(), 280),
+  };
+}
+
+function threadTaskCardDraftKey(turnId, itemId) {
+  return `task-card-draft|${String(turnId || "")}|${String(itemId || "")}`;
+}
+
+function findThreadById(threadId) {
+  const id = String(threadId || "").trim();
+  return (state.threads || []).find((thread) => String(thread && thread.id || "") === id) || null;
+}
+
+function upsertThreadTaskCardOnThread(thread, card) {
+  if (!thread || !card) return;
+  const existing = Array.isArray(thread.threadTaskCards) ? thread.threadTaskCards : [];
+  thread.threadTaskCards = [card, ...existing.filter((entry) => String(entry && entry.id || "") !== String(card.id || ""))];
+}
+
+function incrementPendingIncomingTaskCardCount(threadId, delta = 1) {
+  const thread = findThreadById(threadId);
+  const currentThread = state.currentThread && String(state.currentThread.id || "") === String(threadId || "") ? state.currentThread : null;
+  const base = thread || currentThread;
+  if (!base) return;
+  const current = Math.max(0, Number(base.pendingIncomingTaskCardCount) || 0);
+  const next = Math.max(0, current + Number(delta || 0));
+  const outgoing = Math.max(0, Number(base.pendingOutgoingTaskCardCount) || 0);
+  if (thread) {
+    thread.pendingIncomingTaskCardCount = next;
+    thread.pendingTaskCardCount = next + outgoing;
+  }
+  if (currentThread) {
+    currentThread.pendingIncomingTaskCardCount = next;
+    currentThread.pendingTaskCardCount = next + outgoing;
+  }
+}
+
+function incrementPendingOutgoingTaskCardCount(threadId, delta = 1) {
+  const thread = findThreadById(threadId);
+  const currentThread = state.currentThread && String(state.currentThread.id || "") === String(threadId || "") ? state.currentThread : null;
+  const base = thread || currentThread;
+  if (!base) return;
+  const current = Math.max(0, Number(base.pendingOutgoingTaskCardCount) || 0);
+  const next = Math.max(0, current + Number(delta || 0));
+  const incoming = Math.max(0, Number(base.pendingIncomingTaskCardCount) || 0);
+  if (thread) {
+    thread.pendingOutgoingTaskCardCount = next;
+    thread.pendingTaskCardCount = incoming + next;
+  }
+  if (currentThread) {
+    currentThread.pendingOutgoingTaskCardCount = next;
+    currentThread.pendingTaskCardCount = incoming + next;
+  }
+}
+
+function settleCurrentThreadTaskCard(cardId, nextStatus, nextCard = null) {
+  const thread = state.currentThread;
+  if (!thread || !Array.isArray(thread.threadTaskCards)) return;
+  const id = String(cardId || "").trim();
+  if (!id) return;
+  let settledCard = null;
+  thread.threadTaskCards = thread.threadTaskCards.map((entry) => {
+    if (String(entry && entry.id || "") !== id) return entry;
+    settledCard = Object.assign({}, entry || {}, nextCard || {}, { status: nextStatus || (nextCard && nextCard.status) || entry.status });
+    return settledCard;
+  });
+  if (!settledCard) return;
+  if (settledCard.threadRole === "incoming") incrementPendingIncomingTaskCardCount(thread.id, -1);
+  if (settledCard.threadRole === "outgoing") incrementPendingOutgoingTaskCardCount(thread.id, -1);
+  renderThreads();
+  renderCurrentThread();
+}
+
+function resolveTargetThreadReference(input) {
+  const raw = String(input || "").trim();
+  if (!raw) return null;
+  const lowered = raw.toLowerCase();
+  return state.threads.find((thread) => thread
+    && thread.id !== state.currentThreadId
+    && (
+      String(thread.id || "").toLowerCase() === lowered
+      || String(threadTitleForDisplay(thread) || "").trim().toLowerCase() === lowered
+    )) || null;
+}
+
+async function refreshCurrentThreadAfterTaskCard() {
+  if (!state.currentThreadId) return;
+  await loadThread(state.currentThreadId, { source: "task-card" });
+  loadThreads({ silent: true }).catch(showError);
+}
+
+async function createThreadTaskCardFromCurrent(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  const thread = state.currentThread;
+  if (!thread || !thread.id) return;
+  const targetInput = window.prompt("Target thread id or exact title", "");
+  if (targetInput == null) return;
+  const targetThread = resolveTargetThreadReference(targetInput);
+  const targetThreadId = String((targetThread && targetThread.id) || targetInput || "").trim();
+  if (!targetThreadId || targetThreadId === thread.id) {
+    showError(new Error("A different target thread is required"));
+    return;
+  }
+  const title = window.prompt("Task card title", `Need response from ${threadTitleForDisplay(thread) || thread.id}`) || "";
+  if (!String(title).trim()) return;
+  const body = window.prompt("Task card body", "") || "";
+  if (!String(body).trim()) return;
+  $("connectionState").classList.remove("error");
+  $("connectionState").textContent = "Creating task card";
+  try {
+    await api("/api/thread-task-cards", {
+      method: "POST",
+      body: JSON.stringify({
+        sourceWorkspaceId: thread.cwd || state.selectedCwd || "",
+        sourceThreadId: thread.id,
+        sourceTurnId: currentLiveTurn() ? currentLiveTurn().id : "",
+        sourceThreadTitle: threadTitleForDisplay(thread) || thread.id,
+        targetWorkspaceId: (targetThread && targetThread.cwd) || "",
+        targetThreadId,
+        idempotencyKey: `task-card:${thread.id}:${Date.now()}:${Math.random().toString(16).slice(2, 8)}`,
+        format: "markdown",
+        title: String(title).trim(),
+        summary: summarizeTaskCardText(body),
+        body: String(body).trim(),
+      }),
+      timeoutMs: 30000,
+    });
+    $("connectionState").textContent = "Task card created";
+    await refreshCurrentThreadAfterTaskCard();
+  } catch (err) {
+    showError(err);
+  }
 }
 
 function startThreadRequestBody(sourceThread = null, options = {}) {
@@ -4984,6 +5591,131 @@ async function archiveThread(threadId, button = null) {
   } finally {
     if (button) button.disabled = false;
   }
+}
+
+function taskCardStatusLabel(status) {
+  const text = String(status || "pending");
+  return {
+    pending: "Pending",
+    approved: "Approved",
+    deleted: "Deleted",
+    revoked: "Revoked",
+    replied: "Replied",
+  }[text] || text;
+}
+
+function taskCardDirectionLabel(card) {
+  if (!card) return "Task card";
+  if (card.threadRole === "target") {
+    return `Task card from ${card.source && (card.source.title || card.source.threadId || card.source.workspaceId || "source thread")}`;
+  }
+  if (card.threadRole === "source") {
+    return `Task card to ${card.target && (card.target.threadId || card.target.workspaceId || "target thread")}`;
+  }
+  return "Task card";
+}
+
+function taskCardDetailLines(card) {
+  if (!card) return [];
+  return [
+    card.message && card.message.summary ? `Summary: ${card.message.summary}` : "",
+    card.target && card.threadRole === "source" ? `Target thread: ${card.target.threadId}` : "",
+    card.source && card.threadRole === "target" ? `Source workspace: ${card.source.workspaceId}` : "",
+    card.injectedTurnId ? `Injected turn: ${card.injectedTurnId}` : "",
+  ].filter(Boolean);
+}
+
+function renderThreadTaskCardActions(card) {
+  if (!card) return "";
+  if (card.canApprove || card.canDelete || card.canReply || card.canRevoke) {
+    const buttons = [];
+    if (card.canApprove) buttons.push(`<button class="approval-button allow" type="button" data-task-card-action="approve" data-task-card-id="${escapeHtml(card.id)}">Approve</button>`);
+    if (card.canReply) buttons.push(`<button class="approval-button allow" type="button" data-task-card-action="reply" data-task-card-id="${escapeHtml(card.id)}">Reply</button>`);
+    if (card.canDelete) buttons.push(`<button class="approval-button deny" type="button" data-task-card-action="delete" data-task-card-id="${escapeHtml(card.id)}">Delete</button>`);
+    if (card.canRevoke) buttons.push(`<button class="approval-button deny" type="button" data-task-card-action="revoke" data-task-card-id="${escapeHtml(card.id)}">Revoke</button>`);
+    return `<div class="approval-actions">${buttons.join("")}</div>`;
+  }
+  return "";
+}
+
+function renderThreadTaskCard(card, previousKeys = new Set()) {
+  const key = `task-card|${card.id}`;
+  const status = String(card.status || "pending");
+  const detail = taskCardDetailLines(card).join("\n");
+  const body = card.message && card.message.body ? `<pre class="approval-detail">${escapeHtml(card.message.body)}</pre>` : "";
+  const compact = status !== "pending" ? " compact" : "";
+  return `<section class="approval-card thread-task-card${compact}${entryAnimationClass(key, previousKeys)} ${escapeHtml(status)}" data-render-key="${escapeHtml(key)}" data-task-card="${escapeHtml(card.id)}">
+    <div class="approval-head">
+      <div>
+        <div class="approval-title">${escapeHtml(taskCardDirectionLabel(card))}</div>
+        <div class="approval-method">${escapeHtml(card.message && card.message.title || "Task card")}</div>
+      </div>
+      <span class="approval-status">${escapeHtml(taskCardStatusLabel(status))}</span>
+    </div>
+    ${detail ? `<pre class="approval-detail">${escapeHtml(detail)}</pre>` : ""}
+    ${body}
+    ${renderThreadTaskCardActions(card)}
+  </section>`;
+}
+
+function renderThreadTaskCards(thread, previousKeys = new Set()) {
+  const cards = threadTaskCardsForThread(thread);
+  if (!cards.length) return "";
+  return `<div class="approval-stack thread-task-card-stack">
+    ${cards.map((card) => renderThreadTaskCard(card, previousKeys)).join("")}
+  </div>`;
+}
+
+function threadTaskCardDraftState(key) {
+  return state.threadTaskCardDraftStates.get(String(key || "")) || { status: "pending", error: "", cardId: "" };
+}
+
+function threadTaskCardDraftStatusLabel(status) {
+  return {
+    pending: "Draft",
+    creating: "Creating",
+    created: "Created",
+    dismissed: "Dismissed",
+    failed: "Retry",
+  }[status] || "Draft";
+}
+
+function threadTaskCardDraftDetailLines(draft, targetThread, draftState) {
+  return [
+    targetThread ? `Target thread: ${targetThread.title || targetThread.id || draft.targetThreadId}` : (draft.targetThreadId ? `Target thread: ${draft.targetThreadId}` : ""),
+    draft.summary ? `Summary: ${draft.summary}` : "",
+    draft.error ? `Model note: ${draft.error}` : "",
+    draftState.error ? `Last error: ${draftState.error}` : "",
+  ].filter(Boolean);
+}
+
+function renderThreadTaskCardDraftActions(draftKey, draft, draftState) {
+  if (!draft || draftState.status === "creating" || draftState.status === "created" || draftState.status === "dismissed") return "";
+  return `<div class="approval-actions">
+    <button class="approval-button allow" type="button" data-task-card-draft-action="approve" data-task-card-draft-key="${escapeHtml(draftKey)}">Approve</button>
+    <button class="approval-button deny" type="button" data-task-card-draft-action="dismiss" data-task-card-draft-key="${escapeHtml(draftKey)}">Dismiss</button>
+  </div>`;
+}
+
+function renderThreadTaskCardDraft(draft, item, turn, previousKeys = new Set()) {
+  if (!draft || !item || !turn) return "";
+  const draftKey = threadTaskCardDraftKey(turn.id, item.id || "");
+  const draftState = threadTaskCardDraftState(draftKey);
+  const targetThread = findThreadById(draft.targetThreadId);
+  const compact = draftState.status === "created" || draftState.status === "dismissed" ? " compact" : "";
+  const detail = threadTaskCardDraftDetailLines(draft, targetThread, draftState).join("\n");
+  return `<section class="approval-card thread-task-card-draft${compact}${entryAnimationClass(draftKey, previousKeys)} ${escapeHtml(draftState.status)}" data-render-key="${escapeHtml(draftKey)}" data-task-card-draft="${escapeHtml(draftKey)}">
+    <div class="approval-head">
+      <div>
+        <div class="approval-title">Cross-thread task card draft</div>
+        <div class="approval-method">${escapeHtml(draft.title || "Task card draft")}</div>
+      </div>
+      <span class="approval-status">${escapeHtml(threadTaskCardDraftStatusLabel(draftState.status))}</span>
+    </div>
+    ${detail ? `<pre class="approval-detail">${escapeHtml(detail)}</pre>` : ""}
+    ${draft.body ? `<pre class="approval-detail">${escapeHtml(draft.body)}</pre>` : ""}
+    ${renderThreadTaskCardDraftActions(draftKey, draft, draftState)}
+  </section>`;
 }
 
 function approvalTitle(method) {
@@ -5589,7 +6321,7 @@ function renderInputContent(content) {
   for (const part of parts) {
     if (!part || isInputImagePart(part)) continue;
     if (isInputTextPart(part)) {
-      const split = splitAttachmentSummaryText(inputTextValue(part));
+      const split = splitAttachmentSummaryText(visibleThreadTaskCardCommandText(inputTextValue(part)));
       if (split.text) html.push(renderInputText(split.text));
       attachments.push(...split.attachments);
       continue;
@@ -5618,6 +6350,12 @@ function renderMarkdownWithAttachmentSummary(value) {
     split.text ? renderMarkdown(split.text) : "",
     renderAttachmentSummary(split.attachments),
   ].filter(Boolean).join("");
+}
+
+function renderThreadTaskCardDraftMessage(value, item, turn) {
+  const draft = parseThreadTaskCardDraftText(value);
+  if (!draft) return "";
+  return renderThreadTaskCardDraft(draft, item, turn);
 }
 
 function closeFilePreview() {
@@ -6020,14 +6758,14 @@ function renderItemBody(item, turn = null) {
   if (item.type === "turnUsageSummary") return renderTurnUsageSummary(item);
   if (item.type === "userMessage") return renderInputContent(item.content);
   if (item.type === "agentMessage") {
-    return renderMarkdownWithAttachmentSummary(item.text || "");
+    return renderThreadTaskCardDraftMessage(item.text || "", item, turn) || renderMarkdownWithAttachmentSummary(item.text || "");
   }
   if (item.type === "reasoning") {
     const summary = (item.summary || []).join("\n");
     const content = (item.content || []).join("\n");
     return escapeHtml([summary, content].filter(Boolean).join("\n\n"));
   }
-  if (item.type === "plan") return renderMarkdownWithAttachmentSummary(item.text || "");
+  if (item.type === "plan") return renderThreadTaskCardDraftMessage(item.text || "", item, turn) || renderMarkdownWithAttachmentSummary(item.text || "");
   if (item.type === "imageView") return renderImageView(item);
   if (item.type === "commandExecution") {
     return `<div class="mono">${escapeHtml(item.command || "")}</div>${renderOutputBlock(item.aggregatedOutput, item)}`;
@@ -6536,8 +7274,13 @@ async function resumeMobileSession(reason = "resume") {
     updateConnectionState(status);
     if (status.rateLimits || status.rateLimitsByModel) rememberRateLimits(status.rateLimits, status.rateLimitsByModel);
     await loadThreads({ silent: Boolean(state.threads.length) });
-    if (state.currentThreadId) await refreshCurrentThread();
-    else await restoreThreadSelection();
+    if (state.currentThreadId && state.currentThread && !state.currentThread.mobileLoading) {
+      scheduleCurrentThreadRefresh(250);
+    } else if (state.currentThreadId) {
+      await refreshCurrentThread();
+    } else {
+      await restoreThreadSelection();
+    }
     scheduleLivePollIfNeeded(1200);
     const elapsedMs = roundedDurationMs(startedAt);
     if (elapsedMs > 1200) {
@@ -7451,6 +8194,7 @@ function updateComposerControls() {
   const canComposeNewThread = Boolean(hasNewThreadDraft && state.selectedCwd);
   const disabled = !(hasThread || canComposeNewThread) || state.composerBusy || state.attachmentProcessingCount > 0;
   const hasContent = composerHasContent();
+  const commandMode = Boolean(!hasNewThreadDraft && isThreadTaskCardCommandText(composerText()));
   const interruptMode = Boolean(!hasNewThreadDraft && state.activeTurnId) && !hasContent;
   const steerMode = Boolean(!hasNewThreadDraft && state.activeTurnId) && hasContent;
   const sendButton = $("sendMessage");
@@ -7488,6 +8232,10 @@ function updateComposerControls() {
     sendButton.title = "Retry sending message";
     sendButton.classList.add("send-failed");
     sendButton.classList.remove("sending", "interrupt-mode", "steer-mode");
+  } else if (commandMode) {
+    sendButton.textContent = "Task card";
+    sendButton.title = "Ask Codex to draft a cross-thread task card";
+    sendButton.classList.remove("sending", "send-failed", "interrupt-mode", "steer-mode");
   } else if (steerMode) {
     sendButton.textContent = "引导";
     sendButton.title = "Guide the current running turn";
@@ -7522,6 +8270,12 @@ async function sendMessage(event) {
     return;
   }
   if ((!text && !state.pendingAttachments.length) || !state.currentThreadId) return;
+  const threadTaskCardCommand = isThreadTaskCardCommandText(text);
+  if (threadTaskCardCommand && state.pendingAttachments.length) {
+    showError(new Error("Task-card commands do not support attachments yet"));
+    return;
+  }
+  const outboundText = threadTaskCardCommand ? buildThreadTaskCardDraftRequestText(text) : text;
   const steering = Boolean(state.activeTurnId && hasContent);
   const steerTurnId = steering ? String(state.activeTurnId) : "";
   const submittedDraftKey = currentDraftKey();
@@ -7530,16 +8284,16 @@ async function sendMessage(event) {
   state.sendButtonHint = "";
   startSendProgressWatchdog(state.currentThreadId);
   if (steering) setSteerFeedback("sending", { threadId: state.currentThreadId, turnId: steerTurnId, clientSubmissionId });
-  else markActivity("发送");
+  else markActivity(threadTaskCardCommand ? "任务卡片" : "发送");
   updateComposerControls();
   if (state.sendProgressWarned) {
-    $("connectionState").textContent = steering ? "引导中…" : "发送中…";
+    $("connectionState").textContent = steering ? "引导中…" : (threadTaskCardCommand ? "Task card draft request" : "发送中…");
     $("connectionState").classList.remove("error");
   }
   try {
     const body = new FormData();
     body.append("clientSubmissionId", clientSubmissionId);
-    body.append("text", text);
+    body.append("text", outboundText);
     if (state.currentThread && state.currentThread.cwd) body.append("cwd", state.currentThread.cwd);
     if (steerTurnId) body.append("activeTurnId", steerTurnId);
     body.append("model", selectedComposerModel());
@@ -7567,8 +8321,8 @@ async function sendMessage(event) {
     $("connectionState").classList.remove("error");
     if (steering) setSteerFeedback("delivered", { threadId: state.currentThreadId, turnId: steerTurnId, clientSubmissionId });
     else {
-      $("connectionState").textContent = "Sent";
-      markActivity("已发送");
+      $("connectionState").textContent = threadTaskCardCommand ? "Task card draft requested" : "Sent";
+      markActivity(threadTaskCardCommand ? "草案已请求" : "已发送");
     }
     scheduleCurrentThreadRefresh(600);
     scheduleLivePollIfNeeded(1200);
@@ -7789,6 +8543,138 @@ function declineServerRequest(requestId) {
   return answerApproval(key, "deny");
 }
 
+async function mutateThreadTaskCard(cardId, action, body = {}) {
+  const id = String(cardId || "").trim();
+  if (!id || !state.currentThreadId) return;
+  $("connectionState").classList.remove("error");
+  $("connectionState").textContent = `${action} task card`;
+  try {
+    const result = await api(`/api/thread-task-cards/${encodeURIComponent(id)}/${encodeURIComponent(action)}`, {
+      method: "POST",
+      body: JSON.stringify(Object.assign({ threadId: state.currentThreadId }, body)),
+      timeoutMs: 30000,
+    });
+    if (action === "approve" && result && result.execution && result.execution.turnId) {
+      $("connectionState").textContent = "Task card approved and injected";
+    } else {
+      $("connectionState").textContent = "Task card updated";
+    }
+    settleCurrentThreadTaskCard(id, action === "approve" ? "approved" : action === "delete" ? "deleted" : action === "revoke" ? "revoked" : "replied", result && result.card ? result.card : null);
+    await refreshCurrentThreadAfterTaskCard();
+  } catch (err) {
+    showError(err);
+  }
+}
+
+function replyTaskCard(cardId) {
+  const card = findThreadTaskCard(cardId);
+  if (!card) return Promise.resolve();
+  const body = window.prompt("Reply body", "") || "";
+  if (!String(body).trim()) return Promise.resolve();
+  const title = `Reply: ${card.message && card.message.title ? card.message.title : "Task card"}`;
+  return mutateThreadTaskCard(card.id, "reply", {
+    format: "markdown",
+    title,
+    summary: summarizeTaskCardText(body),
+    body: String(body).trim(),
+    idempotencyKey: `task-card-reply:${card.id}:${Date.now()}:${Math.random().toString(16).slice(2, 8)}`,
+  });
+}
+
+function findThreadTaskCardDraftByKey(draftKey) {
+  const key = String(draftKey || "");
+  const thread = state.currentThread;
+  const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+  for (const turn of turns) {
+    const items = Array.isArray(turn && turn.items) ? turn.items : [];
+    for (const item of items) {
+      if (!item || (item.type !== "agentMessage" && item.type !== "plan")) continue;
+      const itemKey = threadTaskCardDraftKey(turn.id, item.id || "");
+      if (itemKey !== key) continue;
+      const draft = parseThreadTaskCardDraftText(item.text || "");
+      if (!draft) return null;
+      return { key, draft, turn, item };
+    }
+  }
+  return null;
+}
+
+function setThreadTaskCardDraftState(draftKey, nextState) {
+  const key = String(draftKey || "");
+  if (!key) return;
+  state.threadTaskCardDraftStates.set(key, Object.assign({}, threadTaskCardDraftState(key), nextState || {}));
+  renderCurrentThread();
+}
+
+function dismissThreadTaskCardDraft(draftKey) {
+  setThreadTaskCardDraftState(draftKey, { status: "dismissed", error: "" });
+}
+
+async function approveThreadTaskCardDraft(draftKey) {
+  const resolved = findThreadTaskCardDraftByKey(draftKey);
+  if (!resolved || !state.currentThreadId || !state.currentThread) return;
+  const { draft, turn } = resolved;
+  const targetThread = findThreadById(draft.targetThreadId);
+  if (!targetThread) {
+    setThreadTaskCardDraftState(draftKey, { status: "failed", error: draft.error || "Target thread is missing from the visible thread list" });
+    return;
+  }
+  if (!draft.title || !draft.body) {
+    setThreadTaskCardDraftState(draftKey, { status: "failed", error: draft.error || "Draft is incomplete" });
+    return;
+  }
+  setThreadTaskCardDraftState(draftKey, { status: "creating", error: "" });
+  $("connectionState").classList.remove("error");
+  $("connectionState").textContent = "Creating task card";
+  try {
+    const result = await api("/api/thread-task-cards", {
+      method: "POST",
+      body: JSON.stringify({
+        sourceWorkspaceId: state.currentThread.cwd || state.selectedCwd || "",
+        sourceThreadId: state.currentThreadId,
+        sourceTurnId: String(turn && turn.id || ""),
+        sourceThreadTitle: threadTitleForDisplay(state.currentThread) || state.currentThreadId,
+        targetWorkspaceId: String(targetThread.cwd || ""),
+        targetThreadId: draft.targetThreadId,
+        idempotencyKey: `task-card-draft:${state.currentThreadId}:${draftKey}`,
+        format: "markdown",
+        title: draft.title,
+        summary: draft.summary || summarizeTaskCardText(draft.body),
+        body: draft.body,
+      }),
+      timeoutMs: 30000,
+    });
+    const createdCard = result && result.card ? result.card : null;
+    if (createdCard && state.currentThread && String(state.currentThread.id || "") === String(state.currentThreadId || "")) {
+      upsertThreadTaskCardOnThread(state.currentThread, createdCard);
+      incrementPendingOutgoingTaskCardCount(state.currentThreadId, 1);
+      incrementPendingIncomingTaskCardCount(draft.targetThreadId, 1);
+    }
+    setThreadTaskCardDraftState(draftKey, {
+      status: "created",
+      error: "",
+      cardId: String(createdCard && createdCard.id || ""),
+    });
+    $("connectionState").classList.remove("error");
+    $("connectionState").textContent = "Task card created; opening target thread";
+    state.pendingPluginRouteHint = createdCard ? normalizePluginRouteHint({
+      pluginId: "codex-mobile",
+      route: "thread-task-card",
+      threadId: draft.targetThreadId,
+      taskId: createdCard.id,
+    }) : null;
+    renderThreads();
+    loadThreads({ silent: true }).catch(showError);
+    await loadThread(draft.targetThreadId, { source: "task-card-created" });
+  } catch (err) {
+    setThreadTaskCardDraftState(draftKey, {
+      status: "failed",
+      error: normalizeClientErrorMessage(err && err.message ? err.message : String(err)) || "Task card creation failed",
+    });
+    throw err;
+  }
+}
+
 function wireUi() {
   $("loginForm").addEventListener("submit", (event) => {
     event.preventDefault();
@@ -7963,6 +8849,25 @@ function wireUi() {
       answerApproval(button.dataset.approvalId, button.dataset.approvalAction).catch(showError);
       return;
     }
+    const taskButton = event.target.closest("[data-task-card-action]");
+    if (taskButton) {
+      const action = taskButton.dataset.taskCardAction || "";
+      const cardId = taskButton.dataset.taskCardId || "";
+      if (action === "reply") {
+        replyTaskCard(cardId).catch(showError);
+      } else if (action === "approve" || action === "delete" || action === "revoke") {
+        mutateThreadTaskCard(cardId, action).catch(showError);
+      }
+      return;
+    }
+    const taskDraftButton = event.target.closest("[data-task-card-draft-action]");
+    if (taskDraftButton) {
+      const action = String(taskDraftButton.dataset.taskCardDraftAction || "");
+      const draftKey = String(taskDraftButton.dataset.taskCardDraftKey || "");
+      if (action === "approve") approveThreadTaskCardDraft(draftKey).catch(showError);
+      if (action === "dismiss") dismissThreadTaskCardDraft(draftKey);
+      return;
+    }
     const option = event.target.closest("[data-server-response-text]");
     if (option) {
       const requestId = option.dataset.serverRequestId;
@@ -8074,7 +8979,7 @@ function wireUi() {
       currentThreadId: state.currentThreadId || "",
       eventOpen: Boolean(state.events && state.events.readyState === EventSource.OPEN),
     });
-    if (!isHermesEmbedMode() && document.visibilityState === "visible") schedulePageRefreshCheck(200, { force: true });
+    if (document.visibilityState === "visible") schedulePageRefreshCheck(200, { force: true });
     scheduleMobileResume("visibility");
   });
   window.addEventListener("pageshow", (event) => {
@@ -8083,13 +8988,15 @@ function wireUi() {
       currentThreadId: state.currentThreadId || "",
     });
     const threadId = applyUrlThreadSelection({ load: true });
-    if (!isHermesEmbedMode()) schedulePageRefreshCheck(200, { force: true });
-    scheduleMobileResume("pageshow", threadId ? 240 : 80);
+    const pluginRouteHint = applyUrlPluginRouteHint({ load: true });
+    schedulePageRefreshCheck(200, { force: true });
+    scheduleMobileResume("pageshow", threadId || pluginRouteHint ? 240 : 80);
   });
   window.addEventListener("focus", () => {
     const threadId = applyUrlThreadSelection({ load: true });
-    if (!isHermesEmbedMode()) schedulePageRefreshCheck(600);
-    scheduleMobileResume("focus", threadId ? 300 : 150);
+    const pluginRouteHint = applyUrlPluginRouteHint({ load: true });
+    schedulePageRefreshCheck(600);
+    scheduleMobileResume("focus", threadId || pluginRouteHint ? 300 : 150);
   });
   window.addEventListener("blur", () => scheduleVisualRecovery("window-blur", 180, { render: false }));
   window.addEventListener("pagehide", saveCurrentDraftNow);
@@ -8130,7 +9037,7 @@ async function start() {
   startUiWatchdog();
   const config = await fetch("/api/public-config").then((res) => res.json());
   initializePageBuildState(config);
-  if (!isHermesEmbedMode()) startPageRefreshChecks();
+  startPageRefreshChecks();
   state.appVersion = String(config.version || "");
   state.serverPlatform = String(config.platform || "");
   state.maxUploadBytes = Number(config.maxUploadBytes || state.maxUploadBytes);
@@ -8170,20 +9077,35 @@ async function start() {
     try {
       await exchangePluginLaunchSession();
     } catch (err) {
+      requestHermesPluginRefresh(pluginRefreshReasonForApiError({
+        status: 401,
+        message: err && err.message ? err.message : String(err),
+        path: "/api/v1/hermes/plugin/session",
+      }) || "plugin_launch_invalid", { force: true });
       showPluginEmbedAuthError(err.message || String(err));
       return;
     }
   }
   if (config.authRequired && !state.key) {
-    if (isHermesEmbedMode()) showPluginEmbedAuthError("Codex Mobile plugin is missing a valid Hermes launch session.");
+    if (isHermesEmbedMode()) {
+      requestHermesPluginRefresh("plugin_session_missing", { force: true });
+      showPluginEmbedAuthError("Codex Mobile plugin is missing a valid Hermes launch session.");
+    }
     else showLogin();
     return;
   }
   showApp();
   await bootstrap().catch((err) => {
     showError(err);
-    if (/unauthorized/i.test(err.message)) {
-      if (isHermesEmbedMode()) showPluginEmbedAuthError("Codex Mobile plugin session is unauthorized or expired.");
+    if (/unauthorized|forbidden|session expired|invalid session|invalid launch/i.test(err.message || "")) {
+      if (isHermesEmbedMode()) {
+        requestHermesPluginRefresh(pluginRefreshReasonForApiError({
+          status: /forbidden/i.test(err.message || "") ? 403 : 401,
+          message: err && err.message ? err.message : String(err),
+          path: "",
+        }) || "auth_state_changed", { force: true });
+        showPluginEmbedAuthError("Codex Mobile plugin session is unauthorized or expired.");
+      }
       else showLogin();
     }
   });

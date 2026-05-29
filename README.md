@@ -58,6 +58,7 @@ POST /api/v1/hermes/plugin/callbacks
 POST /api/v1/hermes/plugin/origins
 POST /api/v1/hermes/plugin/launch
 POST /api/v1/hermes/plugin/session
+POST /api/v1/hermes/plugin/notifications
 ```
 
 `/api/v1/hermes/plugin/manifest` is metadata-only and returns no secret
@@ -77,6 +78,10 @@ emit the correct CSP `frame-ancestors`. The Access Key is never stored in that
 registration file. Launch returns a short-lived `codexPluginLaunch` entry path
 for the iframe; the browser immediately exchanges it for an in-memory plugin
 session and scrubs the one-time URL instead of storing the long-lived Access Key.
+Launch may also carry a bounded plugin target such as a workspace `cwd` or a
+thread id. After session exchange, the embedded browser should prefer that
+target over stale local restore state so Hermes-launched Wardrobe/Codex
+workflows land in the intended workspace and keep the correct MCP context.
 If Hermes Mobile is served over HTTPS, the Codex Mobile entry must also be
 HTTPS. Set `CODEX_MOBILE_HERMES_PLUGIN_BASE_URL` or
 `CODEX_MOBILE_PUBLIC_BASE_URL` so the manifest advertises that external URL.
@@ -95,6 +100,18 @@ After that, a manifest request with
 `?hermesOrigin=https%3A%2F%2Fhermes.example.test` should return an HTTPS
 `entry.url` and `program_api.base_url`; launch responses still return only a
 relative `entry_path` with a short-lived token.
+Plugin-mode notifications are delegated to Hermes Mobile instead of registering
+Web Push inside the iframe. When configured, the Codex Mobile backend calls
+Hermes `POST /api/hermes-plugins/codex-mobile/notifications` with a server-side
+`X-Hermes-Web-Key` and a small Action Inbox payload containing a stable
+`eventId`, title, summary, item type, priority, and route metadata. The Hermes
+key is read only from `CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_KEY`,
+`CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_KEY_FILE`, or the
+`CODEX_MOBILE_HERMES_WEB_KEY` fallbacks; it is never placed in the iframe URL,
+frontend JavaScript, manifest, or plugin session. If the delegate is not
+configured, standalone Mobile Web keeps its existing local Web Push behavior.
+`/?embed=hermes` suppresses browser Push registration and local completion
+alerts so Hermes owns both the Inbox record and Web Push delivery.
 `/?embed=hermes` runs the same app as an iframe-embedded secondary app, hides
 standalone navigation chrome, reports navigation state with
 `codex-mobile.plugin.navigation`, and blocks `window.open` / `_blank` handoffs
@@ -106,6 +123,87 @@ primary page reports `canGoBack: false`, so Hermes Mobile can show its own
 bottom navigation tabs. `hermes.plugin.back` closes modal/edit transient layers
 such as file previews, dialogs, and subagent panels before page-level back is
 applied.
+Hermes notification opens may also include bounded iframe query hints such as
+`pluginRoute`, `pluginThreadId`, `pluginTaskId`, and `pluginItemId` with
+`pluginId=codex-mobile`. In embedded mode, Codex consumes those hints, opens
+the matching thread when it still exists, scrolls the matching task/item card
+into view when possible, then scrubs the URL back to the embed root. Missing
+targets fall back to the normal embedded primary page plus a small in-app
+diagnostic instead of exposing raw task content or leaving stale ids in the
+address bar.
+When the embedded iframe determines that its current session cannot recover
+safely in place, it now asks Hermes to relaunch the plugin by posting
+`codex-mobile.plugin.refresh_required` to the confirmed Hermes origin. The
+payload is intentionally bounded: `type`, `version`, `reason`, and small route
+hints such as `route.name`, `route.threadId`, `route.itemId`, `pluginRoute`,
+`pluginThreadId`, `pluginTaskId`, and `pluginItemId`. It must not include the
+Access Key, plugin session token, launch token, cookies, local paths, raw
+logs, or prompt/tool payloads. Current refresh-required triggers cover
+unrecoverable embed auth/session failures and server shell build changes
+detected by the embedded iframe.
+For Hermes plugin notifications, Codex Mobile now separates the short Push/InBox
+preview from the long completed-turn receipt. The delegated notification keeps a
+short `title + summary` for Web Push and Inbox preview, while the same backend
+payload may also include a bounded Markdown `detailMessage` containing the final
+assistant receipt text and Usage summary for Hermes thread-message storage. The
+standalone Web App Push path stays unchanged.
+
+## Cross-thread Task Cards
+
+Codex Mobile Web now has a first implementation of controlled cross-thread task
+cards:
+
+- `POST /api/thread-task-cards`
+- `GET /api/thread-task-cards/:id`
+- `POST /api/thread-task-cards/:id/approve`
+- `POST /api/thread-task-cards/:id/delete`
+- `POST /api/thread-task-cards/:id/revoke`
+- `POST /api/thread-task-cards/:id/reply`
+
+Behavior:
+
+- A source thread can create a pending task card for a target thread.
+- The pending card appears outside the target thread's normal message flow.
+- The target thread can `Approve`, `Delete`, or `Reply`.
+- The source thread can `Revoke` while the card is still pending.
+- `Approve` injects the request as a real new target-thread turn, not as a fake
+  static message row.
+- `Reply` creates a reverse-direction pending card.
+
+The browser currently exposes a minimal `Send task card` entry inside the thread
+detail view. It resolves the target by exact visible thread title or explicit
+thread id and uses the browser prompt flow for title/body entry. The stable
+behavior boundary is the API plus `thread.threadTaskCards` in thread-detail
+responses; the compose UX can evolve later without changing the state machine.
+
+The composer also reserves `#` at the start of a message for natural-language
+cross-thread task-card commands. Those commands do not go through a separate
+parse route. Instead, Mobile Web sends a bounded draft request to the current
+Codex thread, lets the model interpret the command against the visible thread
+list, renders the returned draft as an approval card, and only then creates a
+pending task card. After approval, the create call now uses a stable
+draft-scoped idempotency key, the thread list shows an incoming `Task N` badge
+on the target thread, and the browser immediately switches to that target
+thread so the pending card is visible without manual navigation. When the card
+id is known, Mobile Web also reuses its existing route-hint focus path to
+scroll the target thread directly to that pending card instead of leaving the
+user at the bottom of a long conversation. Pending cross-thread task cards now
+render after the visible turn list and approval stack, so they stay at the
+bottom of the thread rather than appearing above historical messages. Once a
+card is approved, deleted, revoked, or replied, it no longer renders in thread
+detail; the injected turn becomes the visible follow-up surface. The current
+thread now also removes a settled card immediately after a successful action
+response instead of waiting for a leave/re-enter refresh cycle. Examples:
+
+```text
+# 发给 Finance Review：请核验 5 月结账映射
+# 让 Hermes 05-26 配合处理插件刷新联动
+```
+
+If the model cannot choose one visible target thread, the draft stays
+unapproved and shows the model-side error instead of auto-sending to the wrong
+thread. `#` commands still reject attachments for now.
+user to refine the command.
 
 ## Clone And Validate
 
@@ -915,6 +1013,7 @@ This section summarizes the current integration behavior for someone cloning or 
 - Live/final output must not keep forcing the conversation downward while the user is reading. A recent manual scroll that moves the conversation away from bottom establishes a current-turn reading hold even if programmatic bottom-scroll was active; render-time stick-to-bottom, submitted-message follow, and viewport follow must all stop until the user returns to bottom or taps the down arrow.
 - Mobile foreground recovery handles `visibilitychange`, `pageshow`, `focus`, `orientationchange`, `visualViewport` changes, and window resize.
 - On iOS, returning from input-method or permission screens can leave a stale/blank composited viewport. The app maintains a JS-driven `--app-height` and runs several lightweight visual recovery passes after resume.
+- When the current thread is already open, foreground recovery should preserve the current screen and refresh it silently instead of re-entering `loadThread()` for the same thread. Returning from another app should not flash `Loading thread...` merely to refresh the current thread.
 - Uploaded image messages render as centered thumbnails, not full-width raw images or data URLs.
 - Non-image uploads are stored locally and referenced by absolute path in the message text.
 
@@ -1048,6 +1147,23 @@ plugin. The shell cache advances to `codex-mobile-shell-v102`.
   iframe because page-level navigation is owned by the plugin primary/secondary
   route contract.
 - The shell cache advances to `codex-mobile-shell-v108`.
+
+## 2026-05-29 Local Hermes Plugin Notification Delegation v109
+
+- Codex Mobile plugin notifications now use Hermes Mobile as the notification
+  owner. The backend delegates safe, summary-only events to
+  `POST /api/hermes-plugins/codex-mobile/notifications` with a server-side
+  `X-Hermes-Web-Key`; the iframe does not register Web Push or receive the
+  Hermes key.
+- The manifest advertises the notification delegation contract and the local
+  protected test path `/api/v1/hermes/plugin/notifications`, while still
+  omitting Access Keys, launch tokens, Push endpoints, private file paths,
+  prompts, model responses, and long logs.
+- Turn-completed notifications are delegated to Hermes Action Inbox/Web Push
+  when the Hermes notification delegate is configured. Standalone Mobile Web
+  continues to use the existing local Web Push fallback when it is not
+  configured.
+- The shell cache advances to `codex-mobile-shell-v109`.
 
 ### Which Restart Is Needed After Changes
 
@@ -1395,6 +1511,11 @@ VAPID details:
 | `CODEX_MOBILE_HERMES_PLUGIN_BASE_URL` | External HTTPS base URL advertised by the Hermes plugin manifest for `entry.url` and `program_api.base_url`. Prefer the Windows `-HermesPluginBaseUrl` startup parameter for scheduled deployments. |
 | `CODEX_MOBILE_PUBLIC_BASE_URL` | General external base URL fallback used when `CODEX_MOBILE_HERMES_PLUGIN_BASE_URL` is not set. |
 | `CODEX_MOBILE_HERMES_PLUGIN_FRAME_ORIGINS` | Semicolon/newline-separated Hermes iframe origins added to plugin CSP `frame-ancestors` at process start. Runtime `/api/v1/hermes/plugin/origins` registration can also add origins. |
+| `CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_BASE_URL` | Hermes Mobile base URL used by the backend notification delegate. When unset, Codex derives the Hermes origin from the registered workspace callback URL or app origin. |
+| `CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_KEY` | Server-side Hermes Web/Owner access key used only for backend notification delegation. Do not expose it to the iframe or manifest. |
+| `CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_KEY_FILE` | Server-side file containing the Hermes notification delegation key. Prefer this over inline keys for deployments. |
+| `CODEX_MOBILE_HERMES_WEB_KEY` | Fallback inline Hermes key for plugin backend calls when the notification-specific key is unset. |
+| `CODEX_MOBILE_HERMES_WEB_KEY_FILE` | Fallback Hermes key file for plugin backend calls when the notification-specific key file is unset. |
 | `CODEX_MOBILE_UPLOAD_DIR` | Upload storage directory. |
 | `CODEX_MOBILE_MAX_UPLOAD_BYTES` | Max total upload bytes per message. |
 | `CODEX_MOBILE_MAX_UPLOAD_FILES` | Max files per message. |
@@ -1520,3 +1641,16 @@ npm run check
    - On macOS, use `start-codex-desktop-shared-macos.sh` and state that the Desktop bridge is not verified until the checklist passes on a real Mac.
 
 Record durable setup facts in `.agent-context/HANDOFF.md` if this repo is being modified.
+
+## 2026-05-30 Public 发布说明
+
+本次 public 发布同步 2026-05-29 到 2026-05-30 的 Hermes 插件协作、跨线程待办卡片与移动端前台恢复修正。版本保持 `0.1.11`，Public PWA shell 缓存升到 `codex-mobile-shell-v121`；已打开或已安装到主屏幕的客户端需要点击刷新提示、硬刷新或关闭重开，才能拿到新的前端资源。
+
+- Hermes Mobile 插件通知委托合同已接入：Codex Mobile Web 在插件模式下不再要求 iframe 自己注册 Web Push。后端可通过 `/api/v1/hermes/plugin/notifications` 使用 Hermes Access Key 把事件委托给 Hermes Mobile，由 Hermes 负责写 Action Inbox 并按需要发 Web Push。通知 payload 保持有界，不返回长期 key、launch token、push endpoint、本地路径或原始提示/日志。
+- Hermes 插件完成通知现在拆成两层：Web Push / Inbox 预览仍使用短 `title + summary`，同时支持有界 `detailMessage`，用于把 turn 最终回执和 Usage 摘要写入 Hermes 侧的详情消息，而不是把长正文塞进 push 摘要里。
+- `/?embed=hermes` 现在支持宿主刷新联动。插件 session、auth 或 server build 已知失效时，Codex 会向父窗口发送 `codex-mobile.plugin.refresh_required`，目标 origin 使用已注册的 Hermes origin，而不是 `*`。payload 只包含有界的 `reason` 和 route hint，不包含 key/token/cookie/raw log/path/prompt。
+- Hermes 通知路由 hint 已接入嵌入页面启动：`pluginRoute`、`pluginThreadId`、`pluginTaskId`、`pluginItemId` 会在 `?embed=hermes` 模式下被读取，用来在 iframe 内直接打开对应线程或定位待办/审批项。找不到目标时会留在正常列表并显示有界诊断，不会把敏感内容写进 URL。
+- 新增跨线程待办卡片能力：一条线程可以向另一条线程发送 `pending` task card，目标侧可 `Approve` / `Delete` / `Reply`，源侧可 `Revoke`。只有目标侧批准后，系统才会在目标线程里注入一条真实新 turn；卡片本身不会默认进入消息流。
+- `#` 前缀现在作为跨线程卡片草案请求入口。前端把 `# ...` 发送给当前线程，并附带受控的候选线程清单；当前 Codex 线程返回结构化 `<codex-mobile-thread-task-card-draft>` 草案，浏览器渲染批准卡片，只有用户点 `Approve` 才真正创建待办卡片。这样避免了本地规则解析误判，同时保留人工批准门槛。
+- 跨线程卡片交互路径做了几轮移动端可见性修正：目标线程卡片显示在线程底部而不是历史顶部；`Approve` 成功后，当前线程会立即把该卡片本地结算并从 UI 移除，不需要退出再进入；创建草案批准后会直接切到目标线程；线程列表会显示 `Task N` 徽标，提示有待处理卡片。
+- 从别的应用切回 Mobile Web 时，前台恢复不再为了刷新同一条当前线程而重新进入 `loadThread()`。当前线程会保留在屏幕上，列表静默刷新，当前线程只做后台 merge/poll 刷新，避免无意义地闪出 `Loading thread...`。

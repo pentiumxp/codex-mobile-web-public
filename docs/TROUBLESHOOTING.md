@@ -189,6 +189,110 @@ Notification clicks should focus/open the app shell and pass the thread id throu
 
 If a Push says a turn ended but the thread has no final assistant reply, inspect the rollout `task_complete` payload for that turn. A normal completed turn should have `last_agent_message`; if it is explicitly null or empty, the app-server/runtime ended the turn without a final response. Current Mobile Web suppresses normal completion Push in that explicit no-final-message case.
 
+When Codex runs inside Hermes Mobile as `/?embed=hermes`, the iframe should not
+register its own Web Push subscription. Check
+`/api/public-config.hermesPlugin.notificationDelegateConfigured`: if it is
+true, turn-completed notifications are delegated to Hermes Action Inbox/Web
+Push; if false, embedded clients should remain quiet and standalone Mobile Web
+keeps the local Push fallback.
+
+If a Hermes Inbox click opens the Codex iframe but not the intended thread/task,
+check whether the iframe URL only contains bounded route hints such as
+`pluginId=codex-mobile`, `pluginRoute`, `pluginThreadId`, `pluginTaskId`, or
+`pluginItemId`. Current embed mode consumes those hints, opens the matching
+thread when available, and scrubs them from the URL. If the target was deleted
+or is no longer visible, Codex should stay on the normal embedded primary page
+and show a small in-app diagnostic such as `Notification target is unavailable`
+instead of leaving a broken detail page selected.
+
+If Hermes receives only the short notification preview but not the long
+completed-turn receipt, inspect the delegated notification payload rather than
+the standalone Web Push path. Current plugin delegation keeps Web Push preview
+short and sends the long receipt through `detailMessage`. The receipt is built
+from the final assistant message plus Usage summary; if both are missing, Codex
+will not fabricate a long body from command output or reasoning noise.
+
+## Cross-Thread Task Card Does Not Inject
+
+If a target-side `Approve` succeeds visually but no new target-thread turn
+appears, separate these cases:
+
+- the card never left `pending`;
+- the card changed to `approved`, but target-thread injection failed before
+  `turn/start`;
+- the new target turn started, but the browser is still showing stale detail.
+
+Checks:
+
+```powershell
+$headers = @{ "x-codex-mobile-key" = $key }
+Invoke-RestMethod http://127.0.0.1:8787/api/threads/<target-thread-id> -Headers $headers | ConvertTo-Json -Depth 6
+Invoke-RestMethod http://127.0.0.1:8787/api/thread-task-cards/<card-id>?threadId=<target-thread-id> -Headers $headers | ConvertTo-Json -Depth 6
+```
+
+Current implementation rules:
+
+- pending task cards live in `thread.threadTaskCards`, not in
+  `thread.turns[*].items`;
+- thread-list summaries now carry `pendingIncomingTaskCardCount`, so the target
+  thread can show a `Task N` badge before the detail view is opened;
+- only target-side approve may inject;
+- approval injects a real new target-thread `turn/start` input;
+- delete and revoke never inject;
+- reply creates a reverse-direction pending card, not a direct source-thread
+  message.
+
+If source-side draft `Approve` appears to hang, check whether the card was
+already created in `%USERPROFILE%\.codex-mobile-web\thread-task-cards.json`.
+Current draft approval uses a stable key derived from the source thread and
+draft item, so repeated taps should reuse the same pending card instead of
+creating duplicates. After creation the browser should switch directly to the
+target thread; it should not wait for a slow source-thread detail refresh. If
+the target thread is long, Mobile Web should also focus the specific pending
+card via the existing route-hint target lookup instead of leaving the view at
+the conversation bottom. Pending task cards should now render at the bottom of
+the thread, after visible turns and detached approvals, so opening the target
+thread normally should also leave the card near the latest content instead of at
+the top of a long history. Settled cards are no longer rendered in thread
+detail, so if a card was approved and a new turn started, look for the injected
+turn rather than expecting the old card to remain visible. If `Approve` does
+start a new turn but the old card still lingers in the current thread until you
+leave and re-enter, the browser build is stale; current builds locally settle
+the card immediately after a successful approve/delete/revoke/reply response,
+then follow with the normal thread refresh.
+
+If a target thread already has an incompatible live app-server state, approval
+may fail at the `thread/resume` / `turn/start` stage. In that case the card
+should remain actionable instead of silently disappearing.
+
+## `#` Task-card Command Does Not Parse
+
+`#` at the start of the composer is now reserved for cross-thread task-card
+commands. It should not enter the normal message-send route.
+
+Current behavior:
+
+- bare `#` is invalid;
+- `#` commands do not support attachments yet;
+- the browser sends a bounded draft request to the current Codex thread;
+- the model must return a bounded draft block with one visible
+  `targetThreadId`, or an empty target plus an error.
+
+Working examples:
+
+# 发给 Finance Review：请核验 5 月结账映射
+# 让 Hermes 05-26 配合处理插件刷新联动
+# 请让线程「Hermes 发布检查」确认插件通知回执是否已入库
+If no draft card appears, inspect:
+
+- whether the current sent message contains the
+  `<codex-mobile-thread-task-card-request>` envelope;
+- whether the assistant reply contains a valid
+  `<codex-mobile-thread-task-card-draft>...</codex-mobile-thread-task-card-draft>`
+  JSON block;
+- whether the returned `targetThreadId` is still present in the visible thread
+  list;
+- whether attachments were present, which still blocks `#` commands.
 ## Image Upload Context Growth
 
 Large rollout growth after image upload often comes from repeated `compacted.replacement_history` snapshots with `input_image` payloads.
@@ -292,6 +396,27 @@ For plugin setup:
      -HermesPluginFrameOrigins "https://hermes.example.test"
    ```
 
+7. Check notification delegation without printing the Hermes key. The Codex
+   route is protected by the Codex Mobile Access Key, then the backend reads the
+   Hermes key from `CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_KEY_FILE`,
+   `CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_KEY`, or the
+   `CODEX_MOBILE_HERMES_WEB_KEY` fallbacks:
+
+   ```powershell
+   Invoke-RestMethod http://127.0.0.1:8787/api/v1/hermes/plugin/notifications `
+     -Method Post `
+     -Headers @{ Authorization = "Bearer <codex-mobile-access-key>" } `
+     -ContentType "application/json" `
+     -Body '{"workspaceId":"owner","eventId":"codex-test-1","title":"Codex test","summary":"Test notification","itemType":"info","priority":"normal","route":{"name":"thread","tab":"codex","itemId":"test-thread"},"notify":false}'
+   ```
+
+   A successful call should return an `inboxItem.id` or `inboxItemId`. Reusing
+   the same stable `eventId` should let Hermes dedupe. `notify:false` should
+   create only an Inbox item. `openMode:"plugin"` may request plugin-tab
+   opening while still creating the Inbox record. A 401/403 response means the
+   Hermes workspace/key binding is wrong or unauthorized. Do not put the Hermes
+   key in the request body, iframe URL, frontend JavaScript, manifest, or logs.
+
 If Hermes Mobile is served over HTTPS, the plugin entry URL must also be HTTPS
 or the browser may block the embedded frame as mixed content. The fix is a
 deployment URL/TLS configuration change, not a Codex Access Key change. Set
@@ -330,3 +455,18 @@ Codex route functions.
 The validated target behavior after v108 is: Codex's thread-switcher/settings
 surface is the embedded primary page with Hermes bottom tabs visible; a Codex
 thread page is secondary and right-swipe/back returns to that primary page.
+
+## Returning From Another App Shows `Loading thread...`
+
+If Mobile Web flashes `Loading thread...` when the user simply switches back
+from another app, the foreground recovery path is too heavy.
+
+Expected behavior after `codex-mobile-shell-v121`:
+
+- `resumeMobileSession()` keeps the current thread rendered in place.
+- The thread list refresh stays silent.
+- The active current thread refreshes through background merge/poll work rather
+  than a same-thread `loadThread()` reset.
+- URL thread hints still open a different thread when needed, but if the hinted
+  thread already matches the current thread, the app should schedule a
+  lightweight refresh instead of a full reload.

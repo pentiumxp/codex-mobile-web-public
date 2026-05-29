@@ -8,6 +8,9 @@ param(
     [string]$HermesPluginBaseUrl = "",
     [string]$PublicBaseUrl = "",
     [string]$HermesPluginFrameOrigins = "",
+    [string]$HermesPluginNotificationBaseUrl = "",
+    [string]$HermesPluginNotificationKey = "",
+    [string]$HermesPluginNotificationKeyFile = "",
     [switch]$RunAsSystem,
     [switch]$InteractiveLogon,
     [switch]$AllowManagedFallback,
@@ -81,6 +84,15 @@ if (-not [string]::IsNullOrWhiteSpace($PublicBaseUrl)) {
 }
 if (-not [string]::IsNullOrWhiteSpace($HermesPluginFrameOrigins)) {
     $arguments += @("-HermesPluginFrameOrigins", (Quote-TaskArgument $HermesPluginFrameOrigins))
+}
+if (-not [string]::IsNullOrWhiteSpace($HermesPluginNotificationBaseUrl)) {
+    $arguments += @("-HermesPluginNotificationBaseUrl", (Quote-TaskArgument $HermesPluginNotificationBaseUrl))
+}
+if (-not [string]::IsNullOrWhiteSpace($HermesPluginNotificationKey)) {
+    $arguments += @("-HermesPluginNotificationKey", (Quote-TaskArgument $HermesPluginNotificationKey))
+}
+if (-not [string]::IsNullOrWhiteSpace($HermesPluginNotificationKeyFile)) {
+    $arguments += @("-HermesPluginNotificationKeyFile", (Quote-TaskArgument $HermesPluginNotificationKeyFile))
 }
 if (-not $AllowManagedFallback) {
     $arguments += "-EnsureStandaloneMux"

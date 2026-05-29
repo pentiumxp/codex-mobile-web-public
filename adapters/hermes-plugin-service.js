@@ -175,6 +175,28 @@ function pluginSessionTokenFromRequestValue(value) {
   return token && /^cps_[A-Za-z0-9_-]{16,}$/.test(token) ? token : "";
 }
 
+function boundedOptionalString(value, maxLength) {
+  const text = stringValue(value);
+  if (!text) return "";
+  return text.slice(0, Math.max(1, maxLength || 1));
+}
+
+function launchTargetFromBody(body = {}) {
+  const route = body && typeof body.route === "object" && !Array.isArray(body.route) ? body.route : {};
+  const cwd = boundedOptionalString(
+    body.cwd || body.workspace_cwd || body.workspaceCwd || route.cwd || route.workspace || "",
+    4096,
+  );
+  const threadId = boundedOptionalString(
+    body.thread_id || body.threadId || route.threadId || route.itemId || "",
+    200,
+  );
+  const target = {};
+  if (cwd) target.cwd = cwd;
+  if (threadId) target.threadId = threadId;
+  return Object.keys(target).length ? target : null;
+}
+
 function createHermesPluginService(options = {}) {
   const registrationFile = options.registrationFile;
   const pluginId = stringValue(options.pluginId || DEFAULT_PLUGIN_ID);
@@ -272,6 +294,8 @@ function createHermesPluginService(options = {}) {
         origin_registration: "/api/v1/hermes/plugin/origins",
         plugin_launch: "/api/v1/hermes/plugin/launch",
         plugin_session: "/api/v1/hermes/plugin/session",
+        notification_delegate_test: "/api/v1/hermes/plugin/notifications",
+        hermes_notification_endpoint: `/api/hermes-plugins/${pluginId}/notifications`,
         sync_schema_version: DEFAULT_SYNC_SCHEMA_VERSION,
       },
       owner_binding: {
@@ -311,6 +335,21 @@ function createHermesPluginService(options = {}) {
           type: "codex-mobile.plugin.back_result",
           version: 1,
         },
+      },
+      notifications: {
+        strategy: "hermes_action_inbox_delegate",
+        backend_only: true,
+        hermes_endpoint: `/api/hermes-plugins/${pluginId}/notifications`,
+        auth_header: "X-Hermes-Web-Key",
+        stable_event_id_required: true,
+        default_click_target: "hermes_inbox_item",
+        supports_open_mode_plugin: true,
+        supports_notify_false: true,
+        route_metadata_only: true,
+        stores_summary_only: false,
+        supports_detail_message: true,
+        detail_message_formats: ["markdown", "text"],
+        raw_sensitive_material_returned: false,
       },
       callback_registration: {
         accepts: ["http", "https"],
@@ -375,12 +414,14 @@ function createHermesPluginService(options = {}) {
   function createLaunch(body = {}) {
     pruneLaunchTokens();
     const workspaceId = normalizeWorkspaceId(body.workspace_id || body.workspaceId);
+    const target = launchTargetFromBody(body);
     const token = launchTokenFromRequestValue(randomToken()) || `cpl_${crypto.randomBytes(24).toString("base64url")}`;
     const createdAtMs = nowMs();
     const expiresAtMs = createdAtMs + tokenTtlMs;
     launchTokens.set(token, {
       token,
       workspaceId,
+      target,
       createdAtMs,
       expiresAtMs,
     });
@@ -413,15 +454,20 @@ function createHermesPluginService(options = {}) {
     pluginSessions.set(sessionKey, {
       token: sessionKey,
       workspaceId: launch.workspaceId,
+      target: launch.target || null,
       createdAtMs,
       expiresAtMs,
     });
-    return {
+    const registrationRecord = registration({ workspaceId: launch.workspaceId });
+    const response = {
       ok: true,
       session_key: sessionKey,
       expires_in: Math.max(1, Math.floor(sessionTtlMs / 1000)),
       token_type: "codex_mobile_plugin_session",
     };
+    if (launch.target) response.target = launch.target;
+    if (registrationRecord && registrationRecord.appOrigin) response.hermes_origin = registrationRecord.appOrigin;
+    return response;
   }
 
   function isLaunchTokenAuthorized(value) {

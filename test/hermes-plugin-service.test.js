@@ -31,13 +31,24 @@ test("builds a Hermes embedded-app plugin manifest", () => {
   assert.equal(manifest.program_api.origin_registration, "/api/v1/hermes/plugin/origins");
   assert.equal(manifest.program_api.plugin_launch, "/api/v1/hermes/plugin/launch");
   assert.equal(manifest.program_api.plugin_session, "/api/v1/hermes/plugin/session");
+  assert.equal(manifest.program_api.notification_delegate_test, "/api/v1/hermes/plugin/notifications");
+  assert.equal(manifest.program_api.hermes_notification_endpoint, "/api/hermes-plugins/codex-mobile/notifications");
   assert.equal(manifest.owner_binding.strategy, "workspace_bound_codex_mobile_key");
   assert.equal(manifest.owner_binding.raw_key_returned_by_codex_mobile, false);
   assert.equal(manifest.owner_binding.local_paths_returned_by_manifest, false);
   assert.equal(manifest.navigation.back_result_message.type, "codex-mobile.plugin.back_result");
   assert.equal(manifest.navigation.back_result_message.version, 1);
+  assert.equal(manifest.notifications.strategy, "hermes_action_inbox_delegate");
+  assert.equal(manifest.notifications.backend_only, true);
+  assert.equal(manifest.notifications.auth_header, "X-Hermes-Web-Key");
+  assert.equal(manifest.notifications.stable_event_id_required, true);
+  assert.equal(manifest.notifications.route_metadata_only, true);
+  assert.equal(manifest.notifications.stores_summary_only, false);
+  assert.equal(manifest.notifications.supports_detail_message, true);
+  assert.deepEqual(manifest.notifications.detail_message_formats, ["markdown", "text"]);
+  assert.equal(manifest.notifications.raw_sensitive_material_returned, false);
   assert.deepEqual(manifest.frame_embedding.frame_ancestors, ["'self'"]);
-  assert.doesNotMatch(JSON.stringify(manifest), /access_key_file|config_file|Bearer|secret|C:\\Users|\.codex-mobile-web[\\/]/i);
+  assert.doesNotMatch(JSON.stringify(manifest), /access_key_file|config_file|Bearer|secret|push_endpoint|C:\\Users|\.codex-mobile-web[\\/]/i);
 });
 
 test("registers HTTPS Hermes callback and frame origin without storing access-key material", (t) => {
@@ -138,4 +149,53 @@ test("launch returns only a short entry path and browser exchanges it for a plug
   assert.equal(service.isSessionAuthorized("cps_testSessionToken_1234567890"), true);
   now += 60_000;
   assert.equal(service.isSessionAuthorized("cps_testSessionToken_1234567890"), false);
+});
+
+test("launch can carry a bounded workspace or thread target into the plugin session", () => {
+  const service = createHermesPluginService({
+    randomToken: () => "cpl_testLaunchToken_target_1234567890",
+    randomSessionToken: () => "cps_testSessionToken_target_1234567890",
+  });
+
+  const launch = service.createLaunch({
+    workspace_id: "owner",
+    cwd: "C:\\Users\\xuxin\\Documents\\wardrobe",
+  });
+  assert.match(launch.entry_path, /^\/\?embed=hermes&codexPluginLaunch=cpl_testLaunchToken_target_1234567890&workspaceId=owner$/);
+  const session = service.createSession({ codexPluginLaunch: "cpl_testLaunchToken_target_1234567890" });
+  assert.deepEqual(session.target, {
+    cwd: "C:\\Users\\xuxin\\Documents\\wardrobe",
+  });
+
+  const launchByRoute = service.createLaunch({
+    workspace_id: "owner",
+    route: {
+      name: "thread",
+      itemId: "thread_wardrobe_123",
+    },
+  });
+  assert.match(launchByRoute.entry_path, /^\/\?embed=hermes&codexPluginLaunch=/);
+  const sessionByRoute = service.createSession({
+    codexPluginLaunch: launchByRoute.entry_path.match(/codexPluginLaunch=([^&]+)/)[1],
+  });
+  assert.deepEqual(sessionByRoute.target, {
+    threadId: "thread_wardrobe_123",
+  });
+});
+
+test("plugin session returns the registered Hermes origin for iframe refresh messaging", (t) => {
+  const registrationFile = tempRegistrationFile(t);
+  const service = createHermesPluginService({
+    registrationFile,
+    randomToken: () => "cpl_testLaunchToken_origin_1234567890",
+    randomSessionToken: () => "cps_testSessionToken_origin_1234567890",
+  });
+
+  service.registerOrigin({
+    workspace_id: "owner",
+    hermes_origin: "https://hermes.example.test:8445",
+  });
+  service.createLaunch({ workspace_id: "owner" });
+  const session = service.createSession({ codexPluginLaunch: "cpl_testLaunchToken_origin_1234567890" });
+  assert.equal(session.hermes_origin, "https://hermes.example.test:8445");
 });

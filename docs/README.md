@@ -17,6 +17,7 @@ Always start substantial work by reading:
 | Live production issue, stuck turn, missing message, PWA cache, Push, mux drift | `docs/TROUBLESHOOTING.md` |
 | Model context size, image upload context, continuation bootstrap strategy | `docs/CONTEXT_STRATEGY.md` |
 | Non-trivial feature or cross-cutting fix | `docs/COMPLEX_FEATURE_PATHS.md` |
+| Cross-thread task-card collaboration planning | `docs/CROSS_THREAD_TASK_CARDS_DESIGN.md` |
 | Public/private release decision | `.agent-context/PROJECT_CONTEXT.md` plus current git state |
 
 ## Source Of Truth Order
