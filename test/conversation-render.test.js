@@ -54,6 +54,8 @@ function evaluatedInputContentRenderer() {
   const sources = [
     "escapeHtml",
     "shortPath",
+    "threadTaskCardRequestMarkerMatch",
+    "visibleThreadTaskCardCommandText",
     "imageUrlValue",
     "isInputTextPart",
     "inputTextValue",
@@ -76,7 +78,7 @@ function evaluatedInputContentRenderer() {
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(
     "URLSearchParams",
-    `const state = { key: "" };\n${sources.join("\n")}\nreturn renderInputContent;`,
+    `const state = { key: "" };\nconst THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";\n${sources.join("\n")}\nreturn renderInputContent;`,
   )(URLSearchParams);
 }
 
@@ -118,7 +120,7 @@ test("context compaction notices require explicit state and do not infer pending
 });
 
 test("long agent messages keep a stable render path when a turn completes", () => {
-  assert.match(functionBody("renderItemBody"), /if \(item\.type === "agentMessage"\) \{[\s\S]*return renderMarkdownWithAttachmentSummary\(item\.text \|\| ""\);/);
+  assert.match(functionBody("renderItemBody"), /if \(item\.type === "agentMessage"\) \{[\s\S]*renderThreadTaskCardDraftMessage\(item\.text \|\| "", item, turn\) \|\| renderMarkdownWithAttachmentSummary\(item\.text \|\| ""\);/);
   assert.doesNotMatch(functionBody("renderItemBody"), /isLiveTurn\(turn\) \? escapeHtml/);
   assert.match(appJs, /function mergeVisibleTextItemPreservingRenderIdentity\(/);
   assert.match(functionBody("mergeVisibleTextItemPreservingRenderIdentity"), /merged\.id = existingItem\.id/);
@@ -171,6 +173,28 @@ test("raw app-server input text upload summaries render as thumbnails", () => {
   assert.match(html, /\/api\/uploads\/file\?path=/);
   assert.match(html, /IMG_5433\.jpg/);
   assert.doesNotMatch(html, /<code>C:\\Users\\example/);
+});
+
+test("thread task card request prompts render only the original hash command in user messages", () => {
+  const renderInputContent = evaluatedInputContentRenderer();
+  const html = renderInputContent([
+    {
+      type: "input_text",
+      text: [
+        "# 发给 Hermes 05-26：如果需要刷新插件更新，请配合处理。",
+        "",
+        "<codex-mobile-thread-task-card-request>",
+        "{\"version\":1,\"availableTargets\":[]}",
+        "</codex-mobile-thread-task-card-request>",
+        "",
+        "Return only one XML block.",
+      ].join("\n"),
+    },
+  ]);
+
+  assert.match(html, /# 发给 Hermes 05-26/);
+  assert.doesNotMatch(html, /codex-mobile-thread-task-card-request/);
+  assert.doesNotMatch(html, /Return only one XML block/);
 });
 
 test("user message text before upload summaries still renders jpg thumbnails", () => {

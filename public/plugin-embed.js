@@ -10,10 +10,16 @@
 }(typeof globalThis !== "undefined" ? globalThis : null, function (root) {
   const NAVIGATION_TYPE = "codex-mobile.plugin.navigation";
   const BACK_RESULT_TYPE = "codex-mobile.plugin.back_result";
+  const REFRESH_REQUIRED_TYPE = "codex-mobile.plugin.refresh_required";
   const BACK_TYPE = "hermes.plugin.back";
 
   function stringValue(value) {
     return String(value || "").trim();
+  }
+
+  function boundedString(value, maxLength) {
+    const text = stringValue(value);
+    return text ? text.slice(0, Math.max(0, Number(maxLength) || 0)) : "";
   }
 
   function urlFrom(value) {
@@ -28,10 +34,18 @@
   function detect(value) {
     const url = urlFrom(value);
     const params = url ? url.searchParams : new URLSearchParams();
+    const routeHint = {
+      pluginId: boundedString(params.get("pluginId"), 80),
+      route: boundedString(params.get("pluginRoute"), 80),
+      itemId: boundedString(params.get("pluginItemId"), 160),
+      threadId: boundedString(params.get("pluginThreadId"), 160),
+      taskId: boundedString(params.get("pluginTaskId"), 160),
+    };
     return {
       embedded: params.get("embed") === "hermes",
       launchKey: stringValue(params.get("codexPluginLaunch") || params.get("pluginLaunch")),
       workspaceId: stringValue(params.get("workspaceId") || params.get("workspace_id")),
+      routeHint,
     };
   }
 
@@ -127,6 +141,43 @@
     return message;
   }
 
+  function refreshRequiredRoute(route = {}) {
+    const next = {};
+    const name = boundedString(route.name || route.kind || "", 48);
+    const threadId = boundedString(route.threadId || "", 160);
+    const itemId = boundedString(route.itemId || "", 160);
+    const pluginRoute = boundedString(route.pluginRoute || route.route || "", 80);
+    const pluginThreadId = boundedString(route.pluginThreadId || threadId || "", 160);
+    const pluginTaskId = boundedString(route.pluginTaskId || route.taskId || "", 160);
+    const pluginItemId = boundedString(route.pluginItemId || itemId || "", 160);
+    if (name) next.name = name;
+    if (threadId) next.threadId = threadId;
+    if (itemId) next.itemId = itemId;
+    if (pluginRoute) next.pluginRoute = pluginRoute;
+    if (pluginThreadId) next.pluginThreadId = pluginThreadId;
+    if (pluginTaskId) next.pluginTaskId = pluginTaskId;
+    if (pluginItemId) next.pluginItemId = pluginItemId;
+    return next;
+  }
+
+  function refreshRequiredMessage(input = {}) {
+    const message = {
+      type: REFRESH_REQUIRED_TYPE,
+      version: 1,
+      reason: boundedString(input.reason || "refresh_required", 80) || "refresh_required",
+    };
+    const route = refreshRequiredRoute(input.route || {});
+    if (Object.keys(route).length > 0) message.route = route;
+    return message;
+  }
+
+  function postRefreshRequired(parentWindow, input = {}, options = {}) {
+    if (!parentWindow || parentWindow === root) return null;
+    const message = refreshRequiredMessage(input);
+    parentWindow.postMessage(message, options.targetOrigin || "*");
+    return message;
+  }
+
   function isBackMessage(event) {
     const data = event && event.data;
     return Boolean(data && data.type === BACK_TYPE && data.version === 1);
@@ -147,6 +198,7 @@
   return {
     BACK_TYPE,
     BACK_RESULT_TYPE,
+    REFRESH_REQUIRED_TYPE,
     NAVIGATION_TYPE,
     backResultMessage,
     canGoBack,
@@ -156,7 +208,9 @@
     navigationMessage,
     parentOriginFromReferrer,
     postBackResult,
+    postRefreshRequired,
     postNavigation,
+    refreshRequiredMessage,
     routeFromState,
   };
 }));

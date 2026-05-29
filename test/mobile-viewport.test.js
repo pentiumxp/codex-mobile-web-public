@@ -33,13 +33,21 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(stylesCss, /html,\s*\nbody\s*{[\s\S]*touch-action:\s*pan-x pan-y;/);
   assert.match(stylesCss, /html\s*{[\s\S]*height:\s*-webkit-fill-available;/);
   assert.match(stylesCss, /body\s*{[\s\S]*min-height:\s*-webkit-fill-available;/);
+  assert.match(stylesCss, /html\.embed-hermes \.composer\s*{[\s\S]*padding-bottom:\s*calc\(18px \+ env\(safe-area-inset-bottom, 0px\)\);/);
+  assert.match(stylesCss, /html\.embed-hermes\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*14px;/);
   assert.match(stylesCss, /html\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*12px;/);
+  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.embed-hermes \.composer\s*{[\s\S]*padding-bottom:\s*calc\(14px \+ env\(safe-area-inset-bottom, 0px\)\);/);
+  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.embed-hermes\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*10px;/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*7px;/);
 });
 
-test("public app shell cache advances after frontend visibility changes", () => {
-  assert.match(swJs, /codex-mobile-shell-v108/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v108"/);
+test("public app shell cache advances after foreground refresh changes", () => {
+  assert.match(swJs, /codex-mobile-shell-v121/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v121"/);
+  assert.match(appJs, /if \(threadId === state\.currentThreadId && state\.currentThread && !state\.currentThread\.mobileLoadError\) \{/);
+  assert.match(appJs, /scheduleCurrentThreadRefresh\(250\);[\s\S]*openExternalThreadSelection\(threadId\)\.catch\(showError\);/);
+  assert.match(appJs, /if \(state\.currentThreadId && state\.currentThread && !state\.currentThread\.mobileLoading\) \{/);
+  assert.match(appJs, /scheduleCurrentThreadRefresh\(250\);[\s\S]*else if \(state\.currentThreadId\) \{[\s\S]*await refreshCurrentThread\(\);[\s\S]*else \{[\s\S]*await restoreThreadSelection\(\);/);
   assert.match(swJs, /"\/api-client\.js"/);
   assert.match(swJs, /"\/runtime-settings\.js"/);
   assert.match(swJs, /"\/draft-store\.js"/);

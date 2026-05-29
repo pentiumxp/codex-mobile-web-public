@@ -413,6 +413,14 @@ html.embed-hermes .conversation {
   padding-right: max(10px, env(safe-area-inset-right, 0px));
 }
 
+html.embed-hermes .composer {
+  padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+}
+
+html.embed-hermes.keyboard-open .composer {
+  padding-bottom: 14px;
+}
+
 html.embed-hermes .login {
   padding: 16px;
   background: var(--bg);
@@ -1288,6 +1296,13 @@ html.visual-recovering body::before {
   gap: 8px;
 }
 
+.thread-card-meta-badges {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .thread-card-meta {
   min-width: 0;
   flex: 1 1 auto;
@@ -1383,6 +1398,18 @@ html.visual-recovering body::before {
   border-radius: 7px;
   font-size: 11px;
   line-height: 1;
+}
+
+.thread-card-task-badge {
+  flex: 0 0 auto;
+  padding: 3px 6px;
+  color: var(--text-on-accent);
+  background: var(--accent-strong);
+  border: 1px solid var(--accent-strong);
+  border-radius: 7px;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .thread-card-size.warn {
@@ -3817,8 +3844,16 @@ html.keyboard-open .composer {
     padding: 8px 12px 7px;
   }
 
+  html.embed-hermes .composer {
+    padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  }
+
   html.keyboard-open .composer {
     padding-bottom: 7px;
+  }
+
+  html.embed-hermes.keyboard-open .composer {
+    padding-bottom: 10px;
   }
 
   .composer-body {

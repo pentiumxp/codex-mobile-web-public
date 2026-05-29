@@ -79,6 +79,10 @@ Plugin endpoints:
   with `codexPluginLaunch`, not the long-lived Access Key.
 - `POST /api/v1/hermes/plugin/session` exchanges the one-time launch token for
   an in-memory browser plugin session key.
+- `POST /api/v1/hermes/plugin/notifications` is a Codex-authenticated backend
+  test/delegation route that forwards safe plugin events to Hermes Action
+  Inbox. It uses a server-side Hermes key and never accepts or returns that key
+  in the iframe session.
 
 The registration state is stored under
 `%USERPROFILE%\.codex-mobile-web\hermes-plugin-registration.json` by default,
@@ -123,8 +127,27 @@ Once a file preview, rename/action dialog, or subagent panel is open, Codex
 handles `{ "type": "hermes.plugin.back", "version": 1 }` by closing that
 transient layer before page-level back is applied. Hermes must not inspect Codex
 DOM or call Codex route functions.
+Hermes notification deep-links may also add bounded iframe query hints such as
+`pluginId=codex-mobile`, `pluginRoute`, `pluginThreadId`, `pluginTaskId`, and
+`pluginItemId`. `public/plugin-embed.js` parses those hints, and
+`public/app.js` consumes them only in `/?embed=hermes`: it opens the hinted
+thread, focuses the matching approval/item card when still present, and then
+scrubs the URL back to the embed root. Missing targets fall back to the normal
+embedded primary page plus a bounded in-app diagnostic.
 Embedded mode also blocks `window.open`, `target=_blank`, external browser
 handoffs, and second-window launches so plugin pages stay in the same iframe.
+Embedded mode also disables browser Web Push registration and local completion
+alerts. Plugin notifications are delegated by the backend to Hermes Mobile via
+the same notification endpoint, but the payload is now two-layered: a short
+`title + summary` preview for Web Push / Inbox and an optional bounded
+Markdown `detailMessage` for Hermes thread-message storage. The detail message
+is built from the completed turn's final assistant receipt plus Usage summary.
+`POST /api/hermes-plugins/codex-mobile/notifications` with
+`X-Hermes-Web-Key`. The payload must contain a stable `eventId` or `sourceId`,
+bounded title/summary fields, one of the allowed item types and priorities, and
+small route metadata only. It must not include Access Keys, bearer tokens,
+launch tokens, Push endpoints, database paths, upload paths, prompts, model raw
+responses, private manifest dumps, or long logs.
 
 ### Thread List And Detail
 
@@ -137,6 +160,18 @@ Thread detail has two modes:
 
 The detail path compacts command/tool/file/search items, enriches item timestamps from rollout events, injects pending steer echoes when needed, and may attach a raw operation fallback only when it belongs to the same latest live turn. A running latest turn keeps at most one operation card so the current command/tool state remains visible. Once a turn has completed, operation cards are removed from the compact mobile detail; the final diagnostic frame should be the synthetic `turnUsageSummary` item when scoped rollout `token_count` data exists. Completed raw fallback is accepted only while the latest turn is still live and the operation has a matching latest turn id; old completed operations must not attach to newer live turns. The usage summary is diagnostic UI only: turn-level token use, cumulative token use, model context-window percentage/risk, and rollout size. Turn-level use is derived from cumulative `total_token_usage` deltas across all valid scoped token events in the turn, so multi-call turns are not reduced to the final model call. The usage row's `in` value displays uncached input when cached input is reported; context-window usage still uses raw input tokens from the final valid event. If app-server emits a final zero/window sentinel token event after valid usage, Mobile Web ignores that sentinel and keeps the latest valid scoped token event.
 
+Thread detail responses may also include `thread.threadTaskCards`. These are
+cross-thread collaboration cards that stay outside normal `thread.turns[*].items`
+until the target thread explicitly approves them. The browser renders them in a
+separate stack before the visible turn list so they do not pollute message flow.
+The composer also reserves `#...` at the start of a message as a cross-thread
+task-card command path. Those messages do not use a separate parse endpoint.
+Instead, `public/app.js` wraps the original `#` command in a bounded request
+envelope that includes the visible target-thread list, sends it through the
+normal current-thread message path, and expects the model to return exactly one
+`<codex-mobile-thread-task-card-draft>...</codex-mobile-thread-task-card-draft>`
+JSON block. The browser renders that assistant reply as a local approval card
+and only then creates a real pending task card through `POST /api/thread-task-cards`.
 ### Conversation Navigation
 
 The browser owns conversation scroll controls. The return-to-bottom button appears only when the current thread is loaded, scrollable, and away from the newest content.
@@ -156,7 +191,26 @@ New-thread and explicit-resume sends use `thread/start` after applying runtime s
 
 The latest durable live turn must not be auto-interrupted only because it is quiet or ended with a completed operation/context marker. User guidance during a real latest live turn should steer that turn.
 
-### SSE And Replay
+Cross-thread task-card approval is a separate path. Approval does not attempt to
+append a fake static message to the target thread. Instead, after target-side
+approval, Mobile Web resumes the target thread if needed and injects the card
+payload as a real new `turn/start` user input. Delete and revoke are state
+transitions only and must not create target-thread messages.
+Source-side draft approval is also intentionally lightweight: once a `#`-draft
+approval creates the pending card, the browser does not block on re-reading the
+source thread before showing success. It updates local draft state, refreshes
+thread summaries in the background, and immediately opens the target thread so
+the pending card is visible where it was delivered. Cross-thread task cards now
+render below the visible turns and detached approval stack, keeping them at the
+bottom of the thread rather than above historical conversation content. Only
+`pending` task cards render in thread detail; once a card reaches `approved`,
+`deleted`, `revoked`, or `replied`, the browser stops rendering that card and
+the injected turn or later reply becomes the user-visible surface.
+The current `#` task-card path is still bounded and conservative, but the
+interpretation now lives in the model turn rather than a browser/server regex
+parser. The browser provides only the visible thread list and required response
+schema. If the model does not return one valid visible `targetThreadId`, Mobile
+Web does not auto-create a pending card.
 
 The browser connects to `/api/events` with the current thread id. `server.js` filters app-server notifications to the current thread where possible, forwards status/rate-limit/thread-level notifications, and drops large diff notifications that the UI does not render.
 
@@ -167,6 +221,12 @@ The mux keeps a replay buffer for recent app-server notifications and unresolved
 Turn-ended Web Push notifications are driven by app-server `turn/completed` notifications after Mobile Web has observed the matching `turn/started` event. They must fail closed for unknown thread ids and sub-agent child threads.
 
 If the completion payload explicitly says the turn has no final assistant message, Mobile Web must not send a normal "turn ended" Push notification. That shape means the runtime ended the turn without a final reply, so treating it as a normal completed turn is misleading.
+
+When the Hermes plugin notification delegate is configured, turn-completed
+events are sent to Hermes Action Inbox/Web Push instead of Mobile Web's direct
+Web Push subscription list. If the delegate is not configured, standalone
+Mobile Web keeps the existing local Web Push path. The iframe plugin mode never
+registers its own Push subscription.
 
 ### Approvals And Server Requests
 

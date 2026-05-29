@@ -18,6 +18,7 @@
     const FormDataCtor = options.FormDataCtor || (typeof FormData === "function" ? FormData : null);
     const getKey = typeof options.getKey === "function" ? options.getKey : () => "";
     const onUnauthorized = typeof options.onUnauthorized === "function" ? options.onUnauthorized : () => {};
+    const onResponseError = typeof options.onResponseError === "function" ? options.onResponseError : () => {};
 
     async function request(path, requestOptions = {}) {
       if (!fetchRef) throw new Error("Fetch is unavailable");
@@ -45,16 +46,20 @@
       }
       try {
         const res = await fetchRef(path, fetchOptions);
-        if (res.status === 401) {
-          onUnauthorized();
-          throw new Error("Unauthorized");
-        }
         if (!res.ok) {
           let message = `${res.status} ${res.statusText}`;
           try {
             const body = await res.json();
             if (body.error) message = body.error;
           } catch (_) {}
+          onResponseError({
+            status: res.status,
+            message,
+            path,
+          });
+          if (res.status === 401) {
+            onUnauthorized();
+          }
           throw new Error(message);
         }
         if (res.status === 204) return null;

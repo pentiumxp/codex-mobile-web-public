@@ -3077,3 +3077,486 @@ The previous full handoff was archived and should be opened only when old proven
   - Public repository is pushed at `c15877f`.
   - Private repository is being committed/pushed with this handoff entry.
   - Runtime/static note remains: server route/CSP/session/startup changes require a Node listener restart to activate in a running deployment; PWA clients must load `codex-mobile-shell-v108`.
+
+## 2026-05-29 Hermes Plugin Notification Delegation v109
+
+- User request:
+  - Connect Codex Mobile to the Hermes Mobile plugin notification delegation contract.
+  - The plugin iframe must not register Web Push by itself. Notification events should be sent by the Codex backend to Hermes Mobile so Hermes writes Action Inbox items and sends Web Push through Hermes PWA subscriptions.
+- Local fix:
+  - Added `adapters/hermes-notification-delegate-service.js`.
+    - Normalizes safe summary-only notification payloads.
+    - Requires stable `eventId` or `sourceId`.
+    - Allows only bounded title/summary, allowed item type/priority, and small route metadata.
+    - Rejects raw access keys, bearer tokens, launch tokens, Push endpoint markers, local runtime paths, DB paths, private content fields, and long unsafe values.
+    - Sends server-side `POST /api/hermes-plugins/codex-mobile/notifications` with `X-Hermes-Web-Key`.
+    - Resolves Hermes base URL from `CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_BASE_URL` or the registered workspace callback/app origin.
+    - Reads the Hermes key from `CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_KEY`, `CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_KEY_FILE`, or `CODEX_MOBILE_HERMES_WEB_KEY` fallbacks.
+  - `server.js`
+    - Wires the delegate service.
+    - Adds Codex-authenticated `POST /api/v1/hermes/plugin/notifications` as a backend test/delegation route.
+    - Exposes `hermesPlugin.notificationDelegatePath` and `notificationDelegateConfigured` in `/api/public-config`.
+    - Delegates turn-completed notifications to Hermes when configured; direct Mobile Web Push remains the standalone fallback when not configured.
+  - `adapters/hermes-plugin-service.js`
+    - Manifest now advertises the metadata-only notification delegation contract and Hermes endpoint path without returning any key, token, Push endpoint, local secret path, or private content.
+  - `public/app.js`
+    - `/?embed=hermes` disables browser Push registration and local completion alerts so Hermes owns Inbox/Web Push delivery.
+    - Shell build id bumped to `0.1.11|codex-mobile-shell-v109`.
+  - `public/sw.js`
+    - Shell cache bumped to `codex-mobile-shell-v109`.
+  - Tests/docs:
+    - Added `test/hermes-notification-delegate-service.test.js`.
+    - Updated Hermes plugin route/manifest/mobile viewport tests.
+    - Updated README, architecture, modules, troubleshooting, complex feature path, and project context docs.
+- Validation:
+  - Focused `node --test test\hermes-notification-delegate-service.test.js test\hermes-plugin-service.test.js test\hermes-plugin-route.test.js test\mobile-viewport.test.js` passed: 21/21.
+  - `node --check adapters\hermes-notification-delegate-service.js` passed.
+  - `node --check server.js`, `node --check public\app.js`, and `node --check public\sw.js` passed.
+  - `npm.cmd test` passed: 208/208.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+- Activation:
+  - Restarted only the 8787 Node listener to load the new server route/delegate wiring: old PID `61208`, new PID `31916`.
+  - `/api/public-config` now returns `clientBuildId=0.1.11|codex-mobile-shell-v109`, `shellCacheName=codex-mobile-shell-v109`, and `hermesPlugin.notificationDelegatePath=/api/v1/hermes/plugin/notifications`.
+  - `hermesPlugin.notificationDelegateConfigured=false` in the current process because no Hermes notification key is configured.
+  - Authenticated `/api/status` returns `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`, and `lastError=null`.
+  - Authenticated runtime route check against `/api/v1/hermes/plugin/notifications` reaches the new route and returns `503 hermes_notification_key_not_configured`, which is expected until a server-side Hermes key is configured.
+- Status:
+  - Local changes are uncommitted.
+  - Static/PWA clients must refresh, hard reload, or close/reopen to load `codex-mobile-shell-v109`.
+
+## 2026-05-29 Hermes Plugin Notification Startup Wiring
+
+- User request:
+  - Fix the immediate Hermes plugin notification/InBox failure with the smallest possible change set because the remaining Codex quota was low.
+  - Reconfigure and restart the 8787 service so plugin Web Push delegation remains enabled after future scheduled-task restarts.
+- Local fix:
+  - Added startup-script parameter wiring for the Hermes notification delegate:
+    - `start-codex-mobile-web.ps1`
+    - `start-codex-mobile-web-windowless.ps1`
+    - `install-codex-mobile-web-startup.ps1`
+  - New startup parameters:
+    - `-HermesPluginNotificationBaseUrl`
+    - `-HermesPluginNotificationKey`
+    - `-HermesPluginNotificationKeyFile`
+  - Updated `test/hermes-plugin-route.test.js` to assert the startup/install scripts persist those notification parameters.
+- Validation:
+  - Focused `node --test test\hermes-plugin-route.test.js test\hermes-notification-delegate-service.test.js` passed: 11/11.
+  - `node --check server.js` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings.
+- Activation:
+  - Re-registered the `Codex Mobile Web` scheduled task so its action now includes:
+    - `-HermesPluginNotificationBaseUrl "https://hermes-xuxin.synology.me:8445"`
+    - `-HermesPluginNotificationKeyFile "C:\ProgramData\HermesMobile\data\secrets\owner-web-key.secret"`
+  - The first restart attempt only replaced the child `node server.js` process; the old windowless supervisor kept relaunching it with stale arguments.
+  - Stopped the old scheduled-task chain (`wscript.exe` / `start-codex-mobile-web-windowless.ps1` / `server.js`) and cold-started the task again.
+  - Fresh process chain now shows the new notification arguments:
+    - supervisor PID `57584`
+    - node listener PID `16264`
+  - `/api/public-config.hermesPlugin.notificationDelegateConfigured` is now `true`.
+  - Authenticated runtime test against `POST /api/v1/hermes/plugin/notifications` now succeeds and Hermes returns `202` with Inbox item id `ainb_mpqoef9j_8c235fcb`.
+- Status:
+  - Plugin notification delegation is now live on the current 8787 service and persisted in the scheduled-task startup path.
+  - Local code/docs changes remain uncommitted.
+
+## 2026-05-29 Hermes Plugin Composer Bottom Spacing v110
+
+- User report:
+  - In the Hermes embedded plugin, the composer/input area sat too close to the bottom edge.
+- Local fix:
+  - `public/styles.css`
+    - Added Hermes-embed-only composer bottom padding so the iframe composer keeps more space above the device bottom edge and host chrome.
+    - Added matching `html.embed-hermes.keyboard-open` padding overrides.
+    - Added narrower `@media (max-width: 760px)` Hermes-embed overrides so phone-sized iframe layouts keep the extra bottom spacing too.
+  - `public/app.js` / `public/sw.js`
+    - Bumped the static shell build/cache to `0.1.11|codex-mobile-shell-v110` / `codex-mobile-shell-v110` so mobile/PWA/plugin clients pick up the CSS change.
+  - `test/mobile-viewport.test.js`
+    - Added assertions for the Hermes-embed composer padding overrides and updated the shell version check to `v110`.
+- Validation:
+  - Focused `node --test test\mobile-viewport.test.js test\hermes-plugin-route.test.js` passed: 7/7.
+  - `node --check public\app.js` and `node --check public\sw.js` passed.
+- Status:
+  - Static frontend/PWA change only; no Node listener restart is required.
+  - Embedded/plugin clients must refresh, hard reload, or close/reopen to load `codex-mobile-shell-v110`.
+
+## 2026-05-29 Hermes Plugin Route Hints v111
+
+- User request:
+  - Hermes Mobile notification opens now pass bounded iframe query hints such as
+    `pluginRoute`, `pluginItemId`, `pluginThreadId`, `pluginTaskId`, and
+    `pluginId=codex-mobile`.
+  - In `/?embed=hermes`, Codex should consume those hints, focus the matching
+    thread/task when available, and otherwise stay on the normal embedded
+    primary page with a bounded in-app diagnostic.
+- Local fix:
+  - `public/plugin-embed.js`
+    - `detect()` now parses bounded route-hint fields from the iframe URL.
+  - `public/app.js`
+    - Added bounded route-hint normalization and URL parsing.
+    - Added `openHermesPluginRouteHint()` / `applyUrlPluginRouteHint()` so
+      embedded startup, `pageshow`, and `focus` consume Hermes route hints.
+    - Matching `pluginThreadId` opens that thread inside the iframe.
+    - Matching `pluginTaskId` or `pluginItemId` focuses the approval/item card
+      in the conversation when it still exists.
+    - Missing targets now return to the embedded primary page and show bounded
+      diagnostics such as `Notification target is unavailable`, instead of
+      leaving a broken detail route selected.
+    - Consumed route hints are scrubbed from the URL back to the embed root.
+    - Static shell build id bumped to `0.1.11|codex-mobile-shell-v111`.
+  - `public/sw.js`
+    - Shell cache bumped to `codex-mobile-shell-v111`.
+  - Tests/docs:
+    - Updated `test/plugin-embed.test.js`, `test/hermes-plugin-route.test.js`,
+      and `test/mobile-viewport.test.js`.
+    - Updated README, architecture, troubleshooting, complex feature paths, and
+      project context docs.
+- Validation:
+  - `node --check public\app.js` passed.
+  - `node --check public\plugin-embed.js` passed.
+  - `node --check public\sw.js` passed.
+  - Focused `node --test test\plugin-embed.test.js test\hermes-plugin-route.test.js test\mobile-viewport.test.js` passed: 12/12.
+- Status:
+  - Static frontend/PWA change only; no Node listener restart is required.
+  - Embedded/plugin clients must refresh, hard reload, or close/reopen to load `codex-mobile-shell-v111`.
+
+## 2026-05-29 Dual CODEX_HOME Investigation
+
+- User request:
+  - Explore whether two ChatGPT/Codex accounts can coexist on the same PC and later support separate workspace/account selection, with Desktop being non-essential and CLI considered sufficient.
+- What was implemented locally:
+  - Created two independent CLI homes:
+    - `C:\Users\xuxin\.codex-homes\current`
+    - `C:\Users\xuxin\.codex-homes\previous`
+  - Copied base `config.toml` into both homes and rewired embedded `CODEX_HOME` / Node REPL trusted-path settings to the corresponding home.
+  - Kept shared non-auth assets via junctions to the existing global directories where practical (`plugins`, `skills`, `memories`, cache-like folders), while leaving per-home auth/config/state files local to each home.
+  - Added desktop helper launchers:
+    - `C:\Users\xuxin\OneDrive\Desktop\Codex-Current-Account.cmd`
+    - `C:\Users\xuxin\OneDrive\Desktop\Codex-Current-Account-Login.cmd`
+    - `C:\Users\xuxin\OneDrive\Desktop\Codex-Previous-Account.cmd`
+    - `C:\Users\xuxin\OneDrive\Desktop\Codex-Previous-Account-Login.cmd`
+  - The `.cmd` launchers now default to opening `C:\Users\xuxin\Documents\Agent` unless a workspace path argument is supplied.
+- Verified findings:
+  - CLI isolation works at the file/auth level:
+    - `CODEX_HOME=current` login status: `Logged in using ChatGPT`
+    - `CODEX_HOME=previous` login status: `Not logged in`
+  - `C:\Users\xuxin\.codex-homes\previous\auth.json` was still absent after trying the Desktop-oriented login flow.
+  - Conclusion: current Codex Desktop App GUI login is not isolated by `CODEX_HOME`; it appears to use global app-package state rather than per-home `auth.json`.
+- Durable conclusion:
+  - `CODEX_HOME` is good enough for multi-account Codex CLI separation.
+  - `CODEX_HOME` is not enough for two concurrently independent Codex Desktop GUI ChatGPT logins on this machine.
+  - A dedicated implementation note now exists at `docs/MULTI_ACCOUNT_CODEX_CLI.md`.
+  - If future work resumes, the clean path is CLI-first:
+    - log the second account into `C:\Users\xuxin\.codex-homes\previous` using a CLI flow that really writes that home's `auth.json`;
+    - then, if needed, build two separate Codex Mobile Web instances, one per account, with different ports/runtime dirs/access keys and different CLI backends.
+- Current status:
+  - This investigation changed only local helper files outside the repo plus the shared-context notes here.
+  - No Codex Mobile runtime/service change was made from this investigation alone.
+
+## 2026-05-29 Hermes Plugin Detailed Completion Receipt
+
+- User requirement:
+  - Standalone Web App Push should keep the old short format.
+  - Hermes plugin notifications should still send a short Web Push/InBox preview,
+    but Inbox/thread detail should also include the long completed-turn receipt.
+- Local implementation:
+  - Added `adapters/turn-completion-receipt-service.js`.
+    - Extracts final assistant receipt text from `turn/completed` payloads.
+    - Builds bounded Markdown `detailMessage` content.
+    - Appends Usage summary when rollout token stats are available.
+  - Extended `adapters/hermes-notification-delegate-service.js`.
+    - Supports `detailMessage`.
+    - Supports small route metadata fields `threadId` and `taskId`.
+    - Contract now advertises short preview plus optional detail message instead
+      of summary-only storage.
+  - `server.js`
+    - Hermes turn-completed delegation now includes:
+      - short `title + summary` preview;
+      - route metadata with both `threadId` and `taskId`;
+      - bounded Markdown `detailMessage` built from final receipt + Usage.
+    - Standalone Web Push fallback path remains unchanged.
+  - `adapters/hermes-plugin-service.js`
+    - Manifest notifications contract now advertises
+      `supports_detail_message=true` and `stores_summary_only=false`.
+- Validation:
+  - `node --check adapters\turn-completion-receipt-service.js` passed.
+  - `node --check adapters\hermes-notification-delegate-service.js` passed.
+  - `node --check adapters\hermes-plugin-service.js` passed.
+  - `node --check server.js` passed.
+  - Focused `node --test test\turn-completion-receipt-service.test.js test\hermes-notification-delegate-service.test.js test\hermes-plugin-service.test.js test\hermes-plugin-route.test.js` passed: 23/23.
+- Activation:
+  - Server-side change; requires 8787 Node listener restart to take effect.
+
+## 2026-05-29 Cross-Thread Task Card Planning Docs And Harness
+
+- User request:
+  - Before implementing cross-thread task cards, add dedicated requirement,
+    design, and implementation docs plus a related harness.
+  - The feature direction is:
+    - source thread sends a pending task card to a target thread;
+    - target user can approve to inject into message flow, delete, or reply;
+    - source user can revoke while pending.
+- Added docs:
+  - `docs/CROSS_THREAD_TASK_CARDS_REQUIREMENTS.md`
+  - `docs/CROSS_THREAD_TASK_CARDS_DESIGN.md`
+  - `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md`
+  - `docs/README.md` now links the design doc from the reading guide.
+  - `docs/COMPLEX_FEATURE_PATHS.md` now has a dedicated implementation path
+    section for cross-thread task cards.
+- Added harness:
+  - `test/thread-task-card-harness.test.js`
+  - This is an executable contract/state-machine harness, not the production
+    implementation. It fixes the planned behavior for:
+    - bounded create payloads;
+    - target approve -> injected message;
+    - target delete -> no injection;
+    - source revoke while pending;
+    - target reply -> reverse-direction controlled card.
+- Added context references:
+  - `.agent-context/PROJECT_CONTEXT.md`
+  - `docs/MODULES.md` test map
+- Status:
+  - This step adds planning docs and harness only.
+  - No cross-thread task-card product routes/UI/storage are implemented yet.
+
+## 2026-05-29 Cross-Thread Task Cards v112
+
+- User request:
+  - Move from planning docs/harness into a real first implementation.
+- Local implementation:
+  - Added `adapters/thread-task-card-service.js`.
+    - Normalizes bounded create/reply payloads.
+    - Persists card state in `%USERPROFILE%\.codex-mobile-web\thread-task-cards.json` by default, or `CODEX_MOBILE_THREAD_TASK_CARD_FILE` when overridden.
+    - Enforces source/target thread role checks, idempotency, and state transitions.
+    - Approve triggers a real target-thread injection payload instead of a fake static message.
+  - `server.js`
+    - Instantiates the task-card service.
+    - Adds routes:
+      - `POST /api/thread-task-cards`
+      - `GET /api/thread-task-cards/:id`
+      - `POST /api/thread-task-cards/:id/approve`
+      - `POST /api/thread-task-cards/:id/delete`
+      - `POST /api/thread-task-cards/:id/revoke`
+      - `POST /api/thread-task-cards/:id/reply`
+    - Thread detail responses now attach bounded `thread.threadTaskCards`.
+    - Target-side approve resumes the target thread if needed and injects a real new `turn/start` input into that thread.
+  - `public/app.js`
+    - Adds `threadTaskCards` render signature support.
+    - Renders task cards in a separate stack outside normal turn items.
+    - Adds per-card actions for approve, delete, revoke, and reply.
+    - Adds a minimal `Send task card` entry in thread detail using prompt-based target/title/body capture.
+    - Plugin route-target focus can now land on task-card DOM nodes through `data-task-card`.
+  - `public/sw.js` / `public/app.js`
+    - Shell cache/build bumped to `codex-mobile-shell-v112` / `0.1.11|codex-mobile-shell-v112`.
+  - Tests:
+    - Added `test/thread-task-card-service.test.js`
+    - Added `test/thread-task-card-route.test.js`
+    - Existing `test/thread-task-card-harness.test.js` kept green.
+- Validation:
+  - Focused `node --test test\thread-task-card-harness.test.js test\thread-task-card-service.test.js test\thread-task-card-route.test.js test\mobile-viewport.test.js` passed: 13/13.
+  - `npm.cmd test` passed: 223/223.
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only existing Windows LF-to-CRLF working-copy warnings.
+- Activation:
+  - Server route/service changes require restarting the 8787 Node listener.
+  - Static browser behavior changed too; clients need `codex-mobile-shell-v112`.
+- Current boundary:
+  - The task-card state machine and API are implemented.
+  - The browser compose entry is intentionally minimal; target resolution currently depends on exact visible thread title or explicit thread id.
+  - There is no live SSE push path for task-card updates yet; browser actions refresh thread detail after each mutation.
+
+## 2026-05-29 `#` Natural-Language Thread Task Cards v113
+
+- User request:
+  - Reserve `#` in the composer so the current thread can issue natural-language
+    cross-thread task-card commands.
+  - Parse them into a task-card draft, then confirm before send.
+- Local implementation:
+  - Added `adapters/thread-task-card-intent-service.js`.
+    - Strips leading `#`.
+    - Parses a bounded set of command-like natural-language patterns.
+    - Builds draft `title` / `summary` / `body`.
+    - Scores target-thread candidates from visible threads/state and refuses to
+      auto-select ambiguous matches.
+  - `server.js`
+    - Instantiates the intent parser service.
+    - Adds `POST /api/thread-task-cards/parse`.
+    - Uses visible thread metadata from `thread/list` with state-db/session-index fallback.
+  - `public/app.js`
+    - `#...` at the start of a message now bypasses the normal message-send path.
+    - Sends the command to `/api/thread-task-cards/parse`.
+    - Shows a browser confirmation dialog for the parsed draft.
+    - On confirmation, creates a normal pending task card through the existing task-card API.
+    - Bare `#`, missing target/body, attachments, and ambiguous targets fail closed with an error instead of silently sending.
+  - `public/app.js` / `public/sw.js`
+    - Shell build/cache bumped to `0.1.11|codex-mobile-shell-v113` / `codex-mobile-shell-v113`.
+  - Tests:
+    - Added `test/thread-task-card-intent-service.test.js`
+    - Updated `test/thread-task-card-route.test.js`
+    - Updated `test/mobile-viewport.test.js`
+- Validation:
+  - Focused `node --test test\thread-task-card-intent-service.test.js test\thread-task-card-service.test.js test\thread-task-card-route.test.js test\thread-task-card-harness.test.js test\mobile-viewport.test.js` passed: 16/16.
+  - `npm.cmd test` passed: 223/223.
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only existing Windows LF-to-CRLF working-copy warnings.
+- Activation:
+  - Static browser behavior changed and server route changed.
+  - Restart 8787 listener and refresh/reopen clients to load `codex-mobile-shell-v113`.
+- Current boundary:
+  - This is model-like natural-language command parsing but still bounded and conservative; it is not a free-form agent that can safely infer arbitrary targets.
+  - The confirmation step remains mandatory before creating the pending task card.
+## 2026-05-29 `#` Task-card Drafts v114
+
+- User correction:
+  - The dedicated `/api/thread-task-cards/parse` route and local regex command parser were the wrong architecture.
+  - `#` commands should be interpreted by the current Codex thread, with the user approving the resulting draft before any real cross-thread card is created.
+- Local implementation:
+  - Removed `adapters/thread-task-card-intent-service.js` and the `POST /api/thread-task-cards/parse` route.
+  - `public/app.js`
+    - `#...` now sends through the normal current-thread message path, but the browser wraps the original command in a bounded draft-request envelope that includes the visible target-thread list and a required XML/JSON response schema.
+    - User-message rendering hides that internal envelope and shows only the original `#` command text.
+    - Agent/plan messages that return `<codex-mobile-thread-task-card-draft>...</codex-mobile-thread-task-card-draft>` now render as a local approval card instead of raw markdown.
+    - Approving that draft creates a real pending task card through the existing task-card API; dismissing it stays local to the browser.
+  - `public/app.js` / `public/sw.js`
+    - Static shell build/cache bumped to `0.1.11|codex-mobile-shell-v114` / `codex-mobile-shell-v114`.
+  - Tests/docs:
+    - Removed `test/thread-task-card-intent-service.test.js`.
+    - Updated task-card route tests, conversation render tests, composer draft tests, architecture, modules, troubleshooting, README, project context, and this handoff.
+- Validation:
+  - Focused `node --test test\thread-task-card-route.test.js test\conversation-render.test.js test\composer-draft.test.js test\thread-task-card-service.test.js test\thread-task-card-harness.test.js` passed: 29/29.
+  - `node --check public\app.js` passed.
+  - `node --check server.js` passed.
+- Status:
+  - This supersedes the earlier v113 parse-route path.
+  - Server restart and client refresh are still required before `v114` becomes active everywhere.
+
+## 2026-05-30 Task-card Draft Approve Visibility v115
+
+- User report:
+  - Clicking `Approve` on a `#`-generated task-card draft looked ineffective.
+  - After a long wait the action ended, and the target thread appeared not to receive the pending card.
+- Diagnosis:
+  - Pending cards were already being persisted successfully in `%USERPROFILE%\.codex-mobile-web\thread-task-cards.json`.
+  - The perceived failure was mainly a visibility/UX problem:
+    - source-side draft approval used a timestamped idempotency key, so repeated taps created duplicate pending cards;
+    - the draft-approval path waited on a source-thread reread after creation, which could feel hung on large threads;
+    - thread-list summaries did not expose incoming pending-card counts, so the target thread had no obvious badge;
+    - the draft approval UI read `result.id` even though the route returns `{ ok, card }`.
+- Local implementation:
+  - `adapters/thread-task-card-service.js`
+    - Added `pendingCountsForThread()` so thread summaries can expose pending incoming/outgoing counts without relying on bounded detail-card lists.
+  - `server.js`
+    - Thread-detail enrichment now adds:
+      - `pendingTaskCardCount`
+      - `pendingIncomingTaskCardCount`
+      - `pendingOutgoingTaskCardCount`
+    - Thread-list and fallback thread-list responses now also attach those summary counts.
+  - `public/app.js`
+    - Source-side draft approval now uses stable idempotency key `task-card-draft:<sourceThreadId>:<draftKey>`.
+    - Corrected create-response handling to read `result.card.id`.
+    - Added local summary/count updates after successful creation.
+    - Added immediate target-thread open after successful draft approval instead of waiting for source-thread reread.
+    - Thread-list rows now show an incoming `Task N` badge when `pendingIncomingTaskCardCount > 0`.
+  - `public/styles.css`
+    - Added task-badge styling for thread-list rows.
+  - `public/app.js` / `public/sw.js`
+    - Shell build/cache bumped to `0.1.11|codex-mobile-shell-v115` / `codex-mobile-shell-v115`.
+- Validation:
+  - Focused `node --test test\thread-task-card-service.test.js test\thread-task-card-route.test.js test\mobile-viewport.test.js` passed: 8/8.
+  - `node --check public\app.js` passed.
+  - `node --check server.js` passed.
+  - `git diff --check` passed with only existing Windows LF-to-CRLF working-copy warnings.
+- Activation:
+  - Server and frontend both changed.
+  - Restart the 8787 Node listener.
+  - Refresh/reopen clients to load `codex-mobile-shell-v115`.
+
+## 2026-05-30 Task-card Target Focus v116
+
+- Follow-up diagnosis:
+  - Target-thread API responses already contained `thread.threadTaskCards`.
+  - The remaining visibility bug was that pending cards render above the turn list, while opening a long target thread still followed the normal "show latest content" path and left the browser at the bottom.
+- Local implementation:
+  - `public/app.js`
+    - After source-side `#` draft approval creates a card, Mobile Web now stores a local route-hint target for that exact task-card id.
+    - The existing `applyPendingPluginRouteHintFocus()` path then scrolls the target thread directly to the pending task card after the thread loads, instead of leaving the user at the bottom of the long conversation.
+  - `public/app.js` / `public/sw.js`
+    - Static shell build/cache bumped to `0.1.11|codex-mobile-shell-v116` / `codex-mobile-shell-v116`.
+- Validation:
+  - Focused `node --test test\thread-task-card-route.test.js test\mobile-viewport.test.js` passed: 5/5.
+  - `node --check public\app.js` passed.
+- Activation:
+  - Static frontend change only.
+  - Refresh/reopen clients to load `codex-mobile-shell-v116`.
+
+## 2026-05-30 Task-card Bottom Placement v117
+
+- User correction:
+  - Cross-thread task cards should live at the bottom of the target thread, not above the historical conversation.
+- Local implementation:
+  - `public/app.js`
+    - Reordered target-thread detail rendering so `threadTaskCards` now render after visible turns and detached approval cards.
+    - Kept the exact-card route-hint focus path in place for cases where a specific pending card still needs direct focus.
+  - `public/app.js` / `public/sw.js`
+    - Static shell build/cache bumped to `0.1.11|codex-mobile-shell-v117` / `codex-mobile-shell-v117`.
+- Validation:
+  - Focused `node --test test\thread-task-card-route.test.js test\mobile-viewport.test.js` passed: 5/5.
+  - `node --check public\app.js` passed.
+- Activation:
+  - Static frontend change only.
+  - Refresh/reopen clients to load `codex-mobile-shell-v117`.
+
+## 2026-05-30 Hide Settled Task Cards v118
+
+- User correction:
+  - Once a cross-thread task card is approved, the card itself should get out of the way. Keeping a large approved card at the bottom can still obscure the newly injected turn.
+- Local implementation:
+  - `public/app.js`
+    - `threadTaskCardsForThread()` now renders only `pending` cards in thread detail.
+    - `approved`, `deleted`, `revoked`, and `replied` cards remain in runtime audit/state but no longer render in the conversation UI.
+  - `public/app.js` / `public/sw.js`
+    - Static shell build/cache bumped to `0.1.11|codex-mobile-shell-v118` / `codex-mobile-shell-v118`.
+- Validation:
+  - Focused `node --test test\thread-task-card-route.test.js test\mobile-viewport.test.js` passed: 5/5.
+  - `node --check public\app.js` passed.
+- Activation:
+  - Static frontend change only.
+  - Refresh/reopen clients to load `codex-mobile-shell-v118`.
+
+## 2026-05-30 Immediate Current-Thread Task Card Settlement v120
+
+- User correction:
+  - After target-side `Approve`, the current thread should remove the pending task card immediately.
+  - Waiting until leave/re-enter to hide the card is too slow and makes it look like the action did not finish.
+- Local implementation:
+  - `public/app.js`
+    - `incrementPendingIncomingTaskCardCount()` and `incrementPendingOutgoingTaskCardCount()` now also update the active `state.currentThread` counts when the current thread is the affected thread.
+    - Added `settleCurrentThreadTaskCard(cardId, nextStatus, nextCard)` to mark the active current-thread card as settled locally and re-render immediately.
+    - `mutateThreadTaskCard()` now calls that local settlement path as soon as approve/delete/revoke/reply returns successfully, before the follow-up `loadThread()` refresh finishes.
+  - `public/app.js` / `public/sw.js`
+    - Static shell build/cache bumped to `0.1.11|codex-mobile-shell-v120` / `codex-mobile-shell-v120`.
+- Validation:
+  - `node --check public\app.js` passed.
+  - `node --check public\sw.js` passed.
+  - Focused `node --test test\thread-task-card-route.test.js test\mobile-viewport.test.js` passed: 5/5.
+- Activation:
+  - Static frontend change only.
+  - Refresh/reopen clients to load `codex-mobile-shell-v120`.
+
+## 2026-05-30 Foreground Current-Thread Silent Refresh v121
+
+- User report:
+  - Returning to Mobile Web from another app could show `Loading thread...` again for the already open current thread.
+- Local implementation:
+  - `public/app.js`
+    - `resumeMobileSession()` now keeps an already open current thread rendered, silently refreshes the thread list, and schedules a lightweight current-thread refresh instead of blocking on a same-thread reload path.
+    - `applyUrlThreadSelection()` now avoids re-opening the current thread through `loadThread()` when a URL hint already matches the active thread; it schedules a lightweight refresh instead.
+  - `public/app.js` / `public/sw.js`
+    - Static shell build/cache bumped to `0.1.11|codex-mobile-shell-v121` / `codex-mobile-shell-v121`.
+- Validation:
+  - `node --check public\app.js` passed.
+  - `node --check public\sw.js` passed.
+  - Focused `node --test test\mobile-viewport.test.js test\thread-task-card-route.test.js` passed.
+- Activation:
+  - Static frontend change only.
+  - Refresh/reopen clients to load `codex-mobile-shell-v121`.

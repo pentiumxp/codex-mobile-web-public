@@ -13,13 +13,21 @@ const startScript = fs.readFileSync(path.resolve(__dirname, "..", "start-codex-m
 const windowlessStartScript = fs.readFileSync(path.resolve(__dirname, "..", "start-codex-mobile-web-windowless.ps1"), "utf8");
 const startupInstallScript = fs.readFileSync(path.resolve(__dirname, "..", "install-codex-mobile-web-startup.ps1"), "utf8");
 
-test("server exposes Hermes plugin manifest, registration, origin, launch, and session routes", () => {
+test("server exposes Hermes plugin manifest, registration, origin, launch, session, and notification routes", () => {
   assert.match(serverJs, /"\/api\/v1\/hermes\/plugin\/manifest"/);
   assert.match(serverJs, /"\/api\/v1\/hermes\/plugin\/workspaces"/);
   assert.match(serverJs, /"\/api\/v1\/hermes\/plugin\/callbacks"/);
   assert.match(serverJs, /"\/api\/v1\/hermes\/plugin\/origins"/);
   assert.match(serverJs, /"\/api\/v1\/hermes\/plugin\/launch"/);
   assert.match(serverJs, /"\/api\/v1\/hermes\/plugin\/session"/);
+  assert.match(serverJs, /"\/api\/v1\/hermes\/plugin\/notifications"/);
+  assert.match(serverJs, /createHermesNotificationDelegateService/);
+  assert.match(serverJs, /buildTurnCompletionDetailMessage/);
+  assert.match(serverJs, /detailMessage/);
+  assert.match(serverJs, /CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_BASE_URL/);
+  assert.match(serverJs, /CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_KEY_FILE/);
+  assert.match(serverJs, /notificationDelegateConfigured/);
+  assert.match(serverJs, /delegateTurnCompletedNotification/);
   assert.match(serverJs, /isAccessKeyAuthorized\(req\)/);
   assert.match(serverJs, /isSessionAuthorized\(requestAuthToken\(req\)\)/);
   assert.match(serverJs, /Authorization/);
@@ -34,7 +42,18 @@ test("Hermes plugin launch token is a browser-session key, not local storage log
   assert.match(appJs, /codexPluginLaunch/);
   assert.match(appJs, /INITIAL_PLUGIN_EMBED\.embedded \? "" : localStorage\.getItem\("codexMobileKey"\)/);
   assert.match(appJs, /pluginLaunchSession: Boolean\(INITIAL_PLUGIN_LAUNCH_KEY\)/);
+  assert.match(appJs, /pluginLaunchTarget: null/);
+  assert.match(appJs, /queuedPluginRouteHint: INITIAL_PLUGIN_EMBED\.routeHint \|\| null/);
   assert.match(appJs, /\/api\/v1\/hermes\/plugin\/session/);
+  assert.match(appJs, /state\.pluginLaunchTarget = result && result\.target/);
+  assert.match(appJs, /async function applyPluginLaunchTarget\(\)/);
+  assert.match(appJs, /function normalizePluginRouteHint\(value\)/);
+  assert.match(appJs, /function applyUrlPluginRouteHint\(options = \{\}\)/);
+  assert.match(appJs, /async function openHermesPluginRouteHint\(hint\)/);
+  assert.match(appJs, /pluginRouteHintFromUrl\(window\.location\.href\)/);
+  assert.match(appJs, /Notification target is unavailable/);
+  assert.match(appJs, /Notification target is no longer available/);
+  assert.match(appJs, /Opened notification target/);
   assert.match(appJs, /scrubPluginLaunchUrl\(\)/);
 });
 
@@ -66,8 +85,19 @@ test("embedded plugin mode hides standalone chrome and installs navigation/windo
   assert.doesNotMatch(appJs, /function returnPluginRootStep/);
   assert.doesNotMatch(appJs, /function openPluginNavigationSurface/);
   assert.match(appJs, /addEventListener\("touchstart", beginSidebarEdgeSwipe, \{ passive: true \}\)/);
+  assert.match(appJs, /function pushBrowserAvailable\(\) \{\s*if \(isHermesEmbedMode\(\)\) return false;/);
+  assert.match(appJs, /function showCompletionAlert\(threadId, threadName\) \{\s*if \(isHermesEmbedMode\(\)\) return;/);
   assert.match(appJs, /installPluginWindowingGuards\(\)/);
   assert.match(appJs, /window\.open = function guardedPluginOpen/);
+  assert.match(appJs, /function requestHermesPluginRefresh\(reason, options = \{\}\)/);
+  assert.match(appJs, /if \(!isHermesEmbedMode\(\) \|\| !pluginEmbedApi\.postRefreshRequired\) return false;/);
+  assert.match(appJs, /pluginEmbedApi\.postRefreshRequired\(window\.parent, \{/);
+  assert.match(appJs, /requestHermesPluginRefresh\("server_build_changed"/);
+  assert.match(appJs, /requestHermesPluginRefresh\("auth_state_changed"/);
+  assert.match(appJs, /targetOrigin:\s*targetOrigin \|\| "\*"/);
+  assert.match(appJs, /const hermesOrigin = normalizePluginParentOrigin\(result && result\.hermes_origin\)/);
+  assert.match(appJs, /state\.pluginParentOrigin = hermesOrigin/);
+  assert.match(appJs, /if \(isHermesEmbedMode\(\)\) \{\s*state\.pageRefreshBuildId = nextBuildId;[\s\S]*requestHermesPluginRefresh\("server_build_changed", \{ force: true \}\);[\s\S]*return;/);
 });
 
 test("Windows startup scripts can persist HTTPS Hermes plugin deployment settings", () => {
@@ -77,12 +107,20 @@ test("Windows startup scripts can persist HTTPS Hermes plugin deployment setting
   assert.match(startScript, /\$env:CODEX_MOBILE_PUBLIC_BASE_URL = \$PublicBaseUrl/);
   assert.match(startScript, /\[string\]\$HermesPluginFrameOrigins/);
   assert.match(startScript, /\$env:CODEX_MOBILE_HERMES_PLUGIN_FRAME_ORIGINS = \$HermesPluginFrameOrigins/);
+  assert.match(startScript, /\[string\]\$HermesPluginNotificationBaseUrl/);
+  assert.match(startScript, /\$env:CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_BASE_URL = \$HermesPluginNotificationBaseUrl/);
+  assert.match(startScript, /\[string\]\$HermesPluginNotificationKeyFile/);
+  assert.match(startScript, /\$env:CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_KEY_FILE = \$HermesPluginNotificationKeyFile/);
 
   assert.match(windowlessStartScript, /\[string\]\$HermesPluginBaseUrl/);
   assert.match(windowlessStartScript, /\$parameters\.HermesPluginBaseUrl = \$HermesPluginBaseUrl/);
   assert.match(windowlessStartScript, /\$parameters\.HermesPluginFrameOrigins = \$HermesPluginFrameOrigins/);
+  assert.match(windowlessStartScript, /\$parameters\.HermesPluginNotificationBaseUrl = \$HermesPluginNotificationBaseUrl/);
+  assert.match(windowlessStartScript, /\$parameters\.HermesPluginNotificationKeyFile = \$HermesPluginNotificationKeyFile/);
 
   assert.match(startupInstallScript, /\[string\]\$HermesPluginBaseUrl/);
   assert.match(startupInstallScript, /"-HermesPluginBaseUrl", \(Quote-TaskArgument \$HermesPluginBaseUrl\)/);
   assert.match(startupInstallScript, /"-HermesPluginFrameOrigins", \(Quote-TaskArgument \$HermesPluginFrameOrigins\)/);
+  assert.match(startupInstallScript, /"-HermesPluginNotificationBaseUrl", \(Quote-TaskArgument \$HermesPluginNotificationBaseUrl\)/);
+  assert.match(startupInstallScript, /"-HermesPluginNotificationKeyFile", \(Quote-TaskArgument \$HermesPluginNotificationKeyFile\)/);
 });

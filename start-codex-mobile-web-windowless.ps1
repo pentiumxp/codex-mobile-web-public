@@ -6,6 +6,9 @@ param(
     [string]$HermesPluginBaseUrl = "",
     [string]$PublicBaseUrl = "",
     [string]$HermesPluginFrameOrigins = "",
+    [string]$HermesPluginNotificationBaseUrl = "",
+    [string]$HermesPluginNotificationKey = "",
+    [string]$HermesPluginNotificationKeyFile = "",
     [switch]$EnsureStandaloneMux,
     [switch]$RequireSharedAppServer,
     [switch]$NoAuth,
@@ -198,6 +201,15 @@ if (-not [string]::IsNullOrWhiteSpace($PublicBaseUrl)) {
 }
 if (-not [string]::IsNullOrWhiteSpace($HermesPluginFrameOrigins)) {
     $parameters.HermesPluginFrameOrigins = $HermesPluginFrameOrigins
+}
+if (-not [string]::IsNullOrWhiteSpace($HermesPluginNotificationBaseUrl)) {
+    $parameters.HermesPluginNotificationBaseUrl = $HermesPluginNotificationBaseUrl
+}
+if (-not [string]::IsNullOrWhiteSpace($HermesPluginNotificationKey)) {
+    $parameters.HermesPluginNotificationKey = $HermesPluginNotificationKey
+}
+if (-not [string]::IsNullOrWhiteSpace($HermesPluginNotificationKeyFile)) {
+    $parameters.HermesPluginNotificationKeyFile = $HermesPluginNotificationKeyFile
 }
 if ($RequireSharedAppServer) {
     $parameters.RequireSharedAppServer = $true

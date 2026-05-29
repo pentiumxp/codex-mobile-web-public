@@ -6,10 +6,17 @@ const { test } = require("node:test");
 const pluginEmbed = require("../public/plugin-embed");
 
 test("detects Hermes embed mode and launch parameters", () => {
-  const detected = pluginEmbed.detect("https://codex.example.test/?embed=hermes&codexPluginLaunch=cpl_abc123456789012345&workspaceId=owner");
+  const detected = pluginEmbed.detect("https://codex.example.test/?embed=hermes&codexPluginLaunch=cpl_abc123456789012345&workspaceId=owner&pluginId=codex-mobile&pluginRoute=thread&pluginThreadId=thread-123&pluginTaskId=req-9");
   assert.equal(detected.embedded, true);
   assert.equal(detected.launchKey, "cpl_abc123456789012345");
   assert.equal(detected.workspaceId, "owner");
+  assert.deepEqual(detected.routeHint, {
+    pluginId: "codex-mobile",
+    route: "thread",
+    itemId: "",
+    threadId: "thread-123",
+    taskId: "req-9",
+  });
 });
 
 test("builds Codex plugin navigation messages without exposing DOM internals", () => {
@@ -64,4 +71,32 @@ test("recognizes Hermes plugin back messages and internal URLs", () => {
   assert.equal(pluginEmbed.isBackMessage({ data: { type: "hermes.plugin.back", version: 2 } }), false);
   assert.equal(pluginEmbed.isInternalUrl("/api/status", "http://127.0.0.1:8787"), true);
   assert.equal(pluginEmbed.isInternalUrl("https://external.example.test/", "http://127.0.0.1:8787"), false);
+});
+
+test("builds bounded Hermes refresh-required messages without sensitive payloads", () => {
+  const message = pluginEmbed.refreshRequiredMessage({
+    reason: "auth_state_changed",
+    route: {
+      name: "thread",
+      threadId: "thread-123",
+      itemId: "item-456",
+      pluginRoute: "thread",
+      pluginTaskId: "task-789",
+      pluginItemId: "item-456",
+      ignored: "C:\\Users\\xuxin\\.codex-mobile-web\\secret",
+    },
+  });
+  assert.equal(message.type, "codex-mobile.plugin.refresh_required");
+  assert.equal(message.version, 1);
+  assert.equal(message.reason, "auth_state_changed");
+  assert.deepEqual(message.route, {
+    name: "thread",
+    threadId: "thread-123",
+    itemId: "item-456",
+    pluginRoute: "thread",
+    pluginThreadId: "thread-123",
+    pluginTaskId: "task-789",
+    pluginItemId: "item-456",
+  });
+  assert.doesNotMatch(JSON.stringify(message), /access[_ -]?key|token|cookie|Authorization|C:\\Users/i);
 });
