@@ -1201,7 +1201,7 @@ plugin. The shell cache advances to `codex-mobile-shell-v102`.
 ### 2026-05-30 Public 发布说明
 
 本次 public 同步把 Hermes 插件嵌入体验、跨线程待办卡片体验和前台恢复稳定性一起推进到
-`codex-mobile-shell-v129`。
+`codex-mobile-shell-v130`。
 
 - Hermes 插件嵌入态：
   - 线程长按菜单里的 `压缩续接` 不再依赖浏览器原生 `window.confirm()`，改为 iframe 内应用弹框，避免 Hermes 插件环境里“菜单能点但确认框不弹”的问题。
@@ -1209,6 +1209,7 @@ plugin. The shell cache advances to `codex-mobile-shell-v102`.
   - 从其他 App 切回当前线程时，不再优先走同线程 `Loading thread...` 重载，而是静默刷新当前屏。
   - Hermes 插件启动或 session/auth 失效但已请求宿主刷新时，不再先闪红色 `Codex` 错误框，而是显示中性的恢复态。
   - 当 Codex 需要 Hermes 宿主刷新插件页时，会先在 iframe 内显示显式的 `Refreshing plugin page...` 提示，并在约 10 秒后自动清除，避免长期停留成误导性横幅。
+  - 合并 PR #41 后，PWA 底部输入栏进一步补上了 `safe-area-inset-bottom` 保护，减少底部安全区遮挡。
 - Public PR / Restart：
   - 插件嵌入态保留版本号、`Restart` 和 `Public PR` 可见性，不再把整条版本操作区一起隐藏。
   - 接受 Public PR 提示后，草稿任务会回到 Codex Mobile Web 当前工作区的新线程草稿，而不是误投到当前打开的 Hermes 线程。

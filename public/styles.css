@@ -3151,7 +3151,7 @@ html.visual-recovering body::before {
   max-width: 100%;
   gap: 10px;
   align-items: flex-end;
-  padding: 12px 18px calc(12px + env(safe-area-inset-bottom));
+  padding: 12px 18px calc(12px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--line);
   background: var(--composer-bg);
 }
@@ -3940,7 +3940,7 @@ html.keyboard-open .composer {
       "attachments attachments attachments"
       "attach input send";
     gap: 8px;
-    padding: 8px 12px 7px;
+    padding: 8px 12px max(12px, calc(7px + env(safe-area-inset-bottom, 0px)));
   }
 
   html.embed-hermes .composer {

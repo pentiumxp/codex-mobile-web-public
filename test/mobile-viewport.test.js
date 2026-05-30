@@ -48,8 +48,8 @@ test("mobile viewport and early guards disable page zoom", () => {
 });
 
 test("public app shell cache advances after embed action and task-card stabilization", () => {
-  assert.match(swJs, /codex-mobile-shell-v129/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v129"/);
+  assert.match(swJs, /codex-mobile-shell-v130/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v130"/);
   assert.match(appJs, /startupThreadOpenPending: false/);
   assert.match(appJs, /state\.startupThreadOpenPending = Boolean\(startupThreadId \|\| savedThreadId \|\| \(startupPluginRouteHint && startupPluginRouteHint\.threadId\)\);/);
   assert.match(appJs, /await loadThreads\(\{ silent: state\.startupThreadOpenPending \}\);/);
