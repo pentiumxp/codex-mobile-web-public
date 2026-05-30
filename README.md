@@ -542,6 +542,12 @@ Behavior:
 ## Interface Notes
 
 - Home view shows recent workspaces and recent threads.
+- The Workspace dropdown ends with a `Create Workspace` action. It creates or
+  registers a simple local folder under an allowed parent, stores only bounded
+  metadata in `%USERPROFILE%\.codex-mobile-web\workspace-registry.json`, selects
+  the new cwd, and opens a new-thread draft. Configure allowed parents with
+  `CODEX_MOBILE_WORKSPACE_CREATE_ROOTS`; do not edit `.codex` global state for
+  this path.
 - The sidebar menu header includes a compact settings button. The settings panel contains the theme control (`跟随系统` / `深色` / `浅色`) and the font-size control (`小字` / `标准` / `大字` / `特大` / `超大`) using the same segmented-button style.
 - Theme and font-size choices are saved in the browser. Theme updates the page theme color metadata; iOS PWA status-bar color changes may require closing and reopening the installed app. The light theme now uses a slightly warmer page background so the daytime view is less cold gray while cards and controls stay crisp. Font size adjusts conversation text, markdown, code/table content, approval details, and the composer input.
 - The sidebar header also shows the app version/update pill, a public PR status pill, and a same-size `Restart` button. After login, Mobile Web checks the configured GitHub remote in the background. If the remote branch is ahead, the pill becomes an update action; tapping it asks for confirmation, applies only a clean fast-forward update, then exits the Node listener so the existing startup supervisor can restart it from the updated files. The public PR pill checks the clean public repository for open pull requests and prompts whether to prepare a merge/publish review task; it does not merge or push public by itself. The `Restart` button is separate from Git self-update and asks for confirmation before restarting the local Mobile Web shared chain.

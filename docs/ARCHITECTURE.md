@@ -45,6 +45,7 @@ Tracked source files live in the repository. Runtime state stays outside Git:
 | --- | --- |
 | `%USERPROFILE%\.codex` | Codex Desktop/app-server state, session rollout JSONL, `state_5.sqlite`, shared mux endpoint |
 | `%USERPROFILE%\.codex-mobile-web` | Mobile Web access key, uploads, Web Push files, logs, local Codex executable copy, Hermes plugin registration state |
+| `%USERPROFILE%\.codex-mobile-web\workspace-registry.json` | Mobile Web-created workspace folders. This augments Mobile Web visibility without editing `.codex` global state. |
 | `%USERPROFILE%\.codex\app-server-mux\endpoint.json` | Shared mux JSONL TCP endpoint used by Mobile Web and Desktop bridge |
 | `.agent-context/` | Durable local project context, not public release content |
 
@@ -57,6 +58,27 @@ Keep `.codex` read-only except through app-server RPCs. Do not patch rollout fil
 `GET /api/public-config` exposes auth requirement, version/build ids, runtime option lists, upload limits, rollout warning threshold, quota snapshots, Push support, self-update availability, public PR check availability, and the Hermes plugin endpoint paths. The browser uses this before showing the app shell.
 
 Authentication uses `x-codex-mobile-key`, `Authorization: Bearer`, the existing cookie, or the existing `key` query parameter against the runtime access key file. Do not print the key in logs or chat output.
+
+### Workspace List And Creation
+
+`GET /api/workspaces` combines Codex Desktop/app-server visible workspace roots
+from `.codex` global state with Mobile Web-created roots from
+`adapters/workspace-registry-service.js`. The registry lives under
+`%USERPROFILE%\.codex-mobile-web\workspace-registry.json` by default and is
+not copied to public release or `.agent-context`.
+
+`POST /api/workspaces` creates or registers one local workspace folder under an
+allowed create root, then makes that cwd visible to Mobile Web thread-list and
+new-thread routes. It accepts only a simple folder name, rejects path traversal,
+absolute paths, Windows reserved names, and invalid path characters, and never
+writes `%USERPROFILE%\.codex\.codex-global-state.json` directly. Allowed roots
+default to `%USERPROFILE%\Documents` and `%USERPROFILE%`; deployments can
+override them with `CODEX_MOBILE_WORKSPACE_CREATE_ROOTS`, and the registry file
+can be moved with `CODEX_MOBILE_WORKSPACE_REGISTRY_FILE`.
+
+The browser exposes creation from the bottom of the Workspace dropdown list,
+not beside the new-thread button. After creation, it selects the new cwd and
+opens a new-thread draft for that workspace.
 
 ### Hermes Mobile Plugin Mode
 

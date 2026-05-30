@@ -27,6 +27,28 @@ Implementation path:
 
 Runtime activation is server-side unless browser active-state rendering changes; browser changes require shell cache/build bump.
 
+## Workspace List And Creation
+
+Use when changing Workspace dropdown behavior, `GET /api/workspaces`,
+`POST /api/workspaces`, or the new-thread workspace visibility gate.
+
+Implementation path:
+
+1. Keep Codex `.codex` state read-only; do not patch
+   `.codex-global-state.json` to add Mobile Web-created roots.
+2. Keep folder-name validation, allowed-root enforcement, registry persistence,
+   and public workspace shape in `adapters/workspace-registry-service.js`.
+3. `server.js` should only compose the registry with Codex-visible roots and
+   expose thin HTTP routes.
+4. The browser create affordance belongs at the bottom of the Workspace
+   dropdown list. Do not add a second button beside the new-thread entry.
+5. After successful creation, select the new cwd, open a new-thread draft, and
+   refresh the thread list silently.
+6. Browser changes require a `CLIENT_BUILD_ID` / `public/sw.js` cache bump.
+7. Test with `test/workspace-registry-service.test.js`,
+   `test/new-thread-route.test.js`, `test/mobile-viewport.test.js`, and
+   `test/new-thread-ui.test.js` when the new-thread draft path changes.
+
 ## Thread Detail And Conversation Rendering
 
 Use when changing visible items, operation cards, timestamps, compaction notices, image views, or merge behavior.

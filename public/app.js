@@ -35,6 +35,10 @@ const state = {
   pluginRefreshPendingTimer: null,
   startupThreadOpenPending: false,
   workspaces: [],
+  workspaceCreateEnabled: true,
+  workspaceCreateRoot: "",
+  workspaceCreateRoots: [],
+  workspaceCreateBusy: false,
   selectedCwd: "",
   threads: [],
   currentThread: null,
@@ -180,7 +184,7 @@ const state = {
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v130";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v131";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -3688,14 +3692,11 @@ async function loadWorkspaces() {
   }
   if (select) {
     select.textContent = state.selectedCwd ? selectedWorkspaceLabel() : "All workspaces";
-    select.disabled = !state.workspaces.length;
-    select.setAttribute("title", state.workspaces.length ? "选择 Workspace" : "暂无可用 Workspace");
+    select.disabled = !state.workspaces.length && !state.workspaceCreateEnabled;
+    select.setAttribute("title", state.workspaces.length ? "Select Workspace" : "Create Workspace");
   }
   if (menu) {
     menu.innerHTML = workspaceSidebarOptionsHtml();
-    if (!state.workspaces.length) {
-      menu.innerHTML = `<div class=\"workspace-select-empty\">暂无可用 Workspace</div>`;
-    }
   }
   updateWorkspacePath();
   if (!state.currentThread) renderCurrentThread();
@@ -3704,12 +3705,17 @@ async function loadWorkspaces() {
 function workspaceSidebarOptionsHtml() {
   const allSelected = !state.selectedCwd ? " is-selected" : "";
   const allOption = `<button type="button" class="workspace-select-option${allSelected}" data-workspace-value="">All workspaces</button>`;
-  return allOption + state.workspaces.map((ws) => {
+  const workspaceOptions = state.workspaces.length ? state.workspaces.map((ws) => {
     const count = ws.recentThreadCount ? ` (${ws.recentThreadCount})` : "";
     const label = `${ws.label}${count} - ${ws.cwd}`;
     const selected = normalizeFsPath(ws.cwd) === normalizeFsPath(state.selectedCwd) ? " is-selected" : "";
     return `<button type="button" class="workspace-select-option${selected}" data-workspace-value="${escapeHtml(ws.cwd)}">${escapeHtml(label)}</button>`;
-  }).join("");
+  }).join("") : `<div class="workspace-select-empty">No Workspace yet</div>`;
+  const createRoot = state.workspaceCreateRoot ? `Under ${state.workspaceCreateRoot}` : "Create a local folder";
+  const createOption = state.workspaceCreateEnabled
+    ? `<button type="button" class="workspace-select-option workspace-create-option" data-create-workspace><span class="workspace-create-title">Create Workspace</span><span class="workspace-create-meta">${escapeHtml(createRoot)}</span></button>`
+    : "";
+  return allOption + workspaceOptions + createOption;
 }
 
 function syncSidebarWorkspaceSelect() {
@@ -3719,9 +3725,6 @@ function syncSidebarWorkspaceSelect() {
   select.textContent = state.selectedCwd ? selectedWorkspaceLabel() : "All workspaces";
   if (menu) {
     menu.innerHTML = workspaceSidebarOptionsHtml();
-    if (!state.workspaces.length) {
-      menu.innerHTML = `<div class=\"workspace-select-empty\">暂无可用 Workspace</div>`;
-    }
   }
 }
 
@@ -4145,7 +4148,7 @@ function isInteractiveGestureTarget(target) {
 }
 
 function beginSidebarEdgeSwipe(event) {
-  if (!isMobileViewport() || isHermesEmbedMode() || isSidebarOpen() || state.renameThreadId || state.threadActionMenuId || state.continuationDialogThreadId) return;
+  if (!isMobileViewport() || isHermesEmbedMode() || isSidebarOpen() || state.renameThreadId || createWorkspaceDialogOpen() || state.threadActionMenuId || state.continuationDialogThreadId) return;
   if (event.touches && event.touches.length > 1) return;
   if (isInteractiveGestureTarget(event.target)) return;
   const touch = primaryTouch(event);
@@ -4516,6 +4519,110 @@ function closeRenameDialog(options = {}) {
   publishPluginNavigationState();
 }
 
+function createWorkspaceDialogOpen() {
+  const dialog = $("createWorkspaceDialog");
+  return Boolean(dialog && !dialog.classList.contains("hidden"));
+}
+
+function workspaceCreateRootLabel() {
+  return state.workspaceCreateRoot || state.workspaceCreateRoots[0] || "";
+}
+
+function setCreateWorkspaceError(message) {
+  const errorNode = $("createWorkspaceError");
+  if (errorNode) {
+    errorNode.textContent = message || "";
+    errorNode.hidden = !message;
+  }
+}
+
+function setCreateWorkspaceBusy(busy) {
+  state.workspaceCreateBusy = Boolean(busy);
+  const input = $("createWorkspaceInput");
+  const submit = $("createWorkspaceSubmit");
+  const cancel = $("createWorkspaceCancel");
+  if (input) input.disabled = state.workspaceCreateBusy;
+  if (submit) submit.disabled = state.workspaceCreateBusy;
+  if (cancel) cancel.disabled = state.workspaceCreateBusy;
+}
+
+function openCreateWorkspaceDialog() {
+  if (!state.workspaceCreateEnabled) {
+    showError(new Error("Workspace creation is not enabled"));
+    return;
+  }
+  const dialog = $("createWorkspaceDialog");
+  const input = $("createWorkspaceInput");
+  const root = $("createWorkspaceRoot");
+  if (!dialog || !input) return;
+  input.value = "";
+  setCreateWorkspaceError("");
+  setCreateWorkspaceBusy(false);
+  if (root) root.textContent = workspaceCreateRootLabel() ? `Create under ${workspaceCreateRootLabel()}` : "Create a local workspace folder";
+  dialog.classList.remove("hidden");
+  setTimeout(() => input.focus(), 30);
+  publishPluginNavigationState({ force: true });
+}
+
+function closeCreateWorkspaceDialog(options = {}) {
+  if (state.workspaceCreateBusy && !options.force) return;
+  const dialog = $("createWorkspaceDialog");
+  if (dialog) dialog.classList.add("hidden");
+  setCreateWorkspaceBusy(false);
+  setCreateWorkspaceError("");
+  publishPluginNavigationState({ force: true });
+}
+
+async function selectCreatedWorkspace(workspace) {
+  if (!workspace || !workspace.cwd) throw new Error("Workspace create response did not include a path");
+  await loadWorkspaces();
+  if (!state.workspaces.some((ws) => normalizeFsPath(ws.cwd) === normalizeFsPath(workspace.cwd))) {
+    state.workspaces.push(workspace);
+  }
+  saveCurrentDraftNow();
+  state.selectedCwd = workspace.cwd;
+  clearCurrentThreadSelection({ saveDraft: false });
+  state.newThreadDraft = true;
+  state.sendButtonHint = "";
+  state.threads = [];
+  state.renderedThreadListSignature = "";
+  restoreDraftForCurrentTarget();
+  syncSidebarWorkspaceSelect();
+  updateWorkspacePath();
+  renderComposerSettings();
+  renderThreads();
+  renderCurrentThread();
+  updateComposerControls();
+  restoreConnectionState("Workspace created");
+  loadThreads({ silent: true }).catch(showError);
+}
+
+async function submitCreateWorkspace(event) {
+  if (event) event.preventDefault();
+  if (state.workspaceCreateBusy) return;
+  const input = $("createWorkspaceInput");
+  const name = String(input && input.value || "").trim();
+  if (!name) {
+    setCreateWorkspaceError("Workspace name is required");
+    if (input) input.focus();
+    return;
+  }
+  setCreateWorkspaceBusy(true);
+  setCreateWorkspaceError("");
+  try {
+    const result = await api("/api/workspaces", {
+      method: "POST",
+      timeoutMs: 30000,
+      body: JSON.stringify({ name }),
+    });
+    closeCreateWorkspaceDialog({ force: true });
+    await selectCreatedWorkspace(result && result.workspace);
+  } catch (err) {
+    setCreateWorkspaceError(err.message || String(err));
+    setCreateWorkspaceBusy(false);
+  }
+}
+
 function continuationDialogOpen() {
   const dialog = $("continuationDialog");
   return Boolean(dialog && !dialog.classList.contains("hidden"));
@@ -4560,6 +4667,7 @@ function closeContinuationDialog() {
 function pluginNavigationUiState() {
   return {
     filePreviewOpen: filePreviewOpen(),
+    createWorkspaceOpen: createWorkspaceDialogOpen(),
     primaryPage: isHermesPluginPrimaryPage(),
     sidebarOpen: isSidebarOpen(),
     settingsOpen: Boolean($("themeSettingsPanel") && !$("themeSettingsPanel").classList.contains("hidden")),
@@ -4602,6 +4710,9 @@ function handlePluginBack(event) {
     handled = true;
   } else if (state.renameThreadId) {
     closeRenameDialog({ force: true });
+    handled = true;
+  } else if (createWorkspaceDialogOpen()) {
+    closeCreateWorkspaceDialog({ force: true });
     handled = true;
   } else if (state.continuationDialogThreadId) {
     closeContinuationDialog();
@@ -8978,6 +9089,14 @@ function wireUi() {
       document.removeEventListener("pointerdown", onSidebarWorkspaceOutsidePointer);
     };
     const onSidebarWorkspaceOption = (event) => {
+      const createOption = event.target.closest("[data-create-workspace]");
+      if (createOption) {
+        event.preventDefault();
+        event.stopPropagation();
+        closeSidebarWorkspaceMenu();
+        openCreateWorkspaceDialog();
+        return;
+      }
       const option = event.target.closest("[data-workspace-value]");
       if (!option) return;
       const selectedWorkspace = option.dataset.workspaceValue || "";
@@ -9087,6 +9206,11 @@ function wireUi() {
   if ($("renameCancel")) $("renameCancel").addEventListener("click", closeRenameDialog);
   if ($("renameDialog")) $("renameDialog").addEventListener("click", (event) => {
     if (event.target === $("renameDialog")) closeRenameDialog();
+  });
+  if ($("createWorkspaceForm")) $("createWorkspaceForm").addEventListener("submit", submitCreateWorkspace);
+  if ($("createWorkspaceCancel")) $("createWorkspaceCancel").addEventListener("click", closeCreateWorkspaceDialog);
+  if ($("createWorkspaceDialog")) $("createWorkspaceDialog").addEventListener("click", (event) => {
+    if (event.target === $("createWorkspaceDialog")) closeCreateWorkspaceDialog();
   });
   document.addEventListener("touchstart", beginSidebarEdgeSwipe, { passive: true });
   document.addEventListener("touchmove", moveSidebarEdgeSwipe, { passive: false });
@@ -9361,6 +9485,9 @@ async function start() {
   state.publicPrEnabled = Boolean(config.publicPullRequests && config.publicPullRequests.enabled);
   state.publicPrRepository = String(config.publicPullRequests && config.publicPullRequests.repository || "");
   state.appWorkspacePath = String(config.workspacePath || state.appWorkspacePath || "").trim();
+  state.workspaceCreateEnabled = config.workspaceCreate ? config.workspaceCreate.enabled !== false : true;
+  state.workspaceCreateRoot = String(config.workspaceCreate && config.workspaceCreate.defaultRoot || "").trim();
+  state.workspaceCreateRoots = normalizeOptionList(config.workspaceCreate && config.workspaceCreate.roots || []);
   state.publicPrStatus = {
     enabled: state.publicPrEnabled,
     repository: state.publicPrRepository,

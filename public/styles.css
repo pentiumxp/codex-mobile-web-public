@@ -742,6 +742,25 @@ html.visual-recovering body::before {
   white-space: nowrap;
 }
 
+.workspace-create-option {
+  display: grid;
+  gap: 3px;
+  margin-top: 2px;
+  border-color: var(--accent-strong);
+  white-space: normal;
+}
+
+.workspace-create-title {
+  font-weight: 700;
+}
+
+.workspace-create-meta {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .workspace-select-option.is-selected,
 .workspace-select-option:hover,
 .workspace-select-option:focus-visible {
@@ -1218,6 +1237,19 @@ html.visual-recovering body::before {
 .rename-input:focus {
   border-color: rgba(122, 199, 167, 0.64);
   box-shadow: 0 0 0 3px rgba(122, 199, 167, 0.12);
+}
+
+.create-workspace-root {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.create-workspace-error {
+  color: var(--danger-text);
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .rename-actions {

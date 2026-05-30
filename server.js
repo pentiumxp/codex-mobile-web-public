@@ -39,6 +39,7 @@ const {
 } = require("./adapters/generated-image-cache-service");
 const { createHermesPluginService } = require("./adapters/hermes-plugin-service");
 const { createThreadTaskCardService } = require("./adapters/thread-task-card-service");
+const { createWorkspaceRegistryService } = require("./adapters/workspace-registry-service");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -95,6 +96,9 @@ const HERMES_PLUGIN_NOTIFICATION_KEY_FILE = process.env.CODEX_MOBILE_HERMES_PLUG
   || "";
 const THREAD_TASK_CARD_FILE = process.env.CODEX_MOBILE_THREAD_TASK_CARD_FILE
   || path.join(RUNTIME_ROOT, "thread-task-cards.json");
+const WORKSPACE_REGISTRY_FILE = process.env.CODEX_MOBILE_WORKSPACE_REGISTRY_FILE
+  || path.join(RUNTIME_ROOT, "workspace-registry.json");
+const WORKSPACE_CREATE_ROOTS = process.env.CODEX_MOBILE_WORKSPACE_CREATE_ROOTS || "";
 const hermesPluginService = createHermesPluginService({
   registrationFile: HERMES_PLUGIN_REGISTRATION_FILE,
   launchTokenTtlMs: HERMES_PLUGIN_LAUNCH_TOKEN_TTL_MS,
@@ -117,6 +121,11 @@ const sharedChainRestartService = createSharedChainRestartService({
   port: PORT,
 });
 const pendingSteerEchoStore = createPendingSteerEchoStore();
+const workspaceRegistryService = createWorkspaceRegistryService({
+  storageFile: WORKSPACE_REGISTRY_FILE,
+  homeDir: USER_HOME,
+  createRoots: WORKSPACE_CREATE_ROOTS,
+});
 const threadTaskCardService = createThreadTaskCardService({
   storageFile: THREAD_TASK_CARD_FILE,
   executeApprovedCard: async (card, message) => {
@@ -1180,6 +1189,9 @@ function visibleWorkspaceRoots(globalState = readGlobalState()) {
     for (const value of values) {
       if (typeof value === "string" && value.trim()) roots.add(value);
     }
+  }
+  for (const workspace of workspaceRegistryService.list()) {
+    if (workspace && workspace.cwd) roots.add(workspace.cwd);
   }
   return roots;
 }
@@ -6079,6 +6091,7 @@ async function listWorkspaces() {
   const globalState = readGlobalState();
   const roots = visibleWorkspaceRoots(globalState);
   const visibility = visibilityFromGlobalState(globalState);
+  const registered = new Map(workspaceRegistryService.list().map((workspace) => [normalizeFsPath(workspace.cwd), workspace]));
   let recentThreads = [];
   try {
     const result = await codex.request("thread/list", {
@@ -6102,12 +6115,17 @@ async function listWorkspaces() {
     const key = normalizeFsPath(thread.cwd);
     counts.set(key, (counts.get(key) || 0) + 1);
   }
-  return [...roots].map((cwd) => ({
-    cwd,
-    label: path.basename(cwd.replace(/^\\\\\?\\/, "")) || cwd,
-    active: active.includes(cwd),
-    recentThreadCount: counts.get(normalizeFsPath(cwd)) || 0,
-  })).sort((a, b) => Number(b.active) - Number(a.active) || a.label.localeCompare(b.label));
+  return [...roots].map((cwd) => {
+    const key = normalizeFsPath(cwd);
+    const registryEntry = registered.get(key);
+    return {
+      cwd,
+      label: registryEntry && registryEntry.label || path.basename(cwd.replace(/^\\\\\?\\/, "")) || cwd,
+      active: active.includes(cwd),
+      recentThreadCount: counts.get(key) || 0,
+      source: registryEntry ? "mobile" : "codex",
+    };
+  }).sort((a, b) => Number(b.active) - Number(a.active) || a.label.localeCompare(b.label));
 }
 
 async function handleApi(req, res) {
@@ -6151,6 +6169,11 @@ async function handleApi(req, res) {
       publicPullRequests: {
         enabled: !PUBLIC_PR_CHECK_DISABLED,
         repository: PUBLIC_PR_REPOSITORY,
+      },
+      workspaceCreate: {
+        enabled: true,
+        defaultRoot: workspaceRegistryService.defaultCreateRoot(),
+        roots: workspaceRegistryService.createRoots(),
       },
       hermesPlugin: {
         id: "codex-mobile",
@@ -6420,68 +6443,101 @@ async function handleApi(req, res) {
     return;
   }
   if (url.pathname === "/api/thread-task-cards" && req.method === "POST") {
-    const body = await readBody(req);
-    const sourceSummary = readStateDbThread(body.sourceThreadId) || readStartedThread(body.sourceThreadId);
-    const targetSummary = readStateDbThread(body.targetThreadId) || readStartedThread(body.targetThreadId);
-    sendJson(res, 200, {
-      ok: true,
-      card: await threadTaskCardService.create(Object.assign({}, body, {
-        sourceWorkspaceId: body.sourceWorkspaceId || body.sourceWorkspace || (sourceSummary && sourceSummary.cwd) || "",
-        targetWorkspaceId: body.targetWorkspaceId || body.targetWorkspace || (targetSummary && targetSummary.cwd) || "",
-        sourceThreadTitle: body.sourceThreadTitle || (sourceSummary && (sourceSummary.name || sourceSummary.preview || sourceSummary.id)) || body.sourceThreadId || "",
-      })),
-    });
+    try {
+      const body = await readBody(req);
+      const sourceSummary = readStateDbThread(body.sourceThreadId) || readStartedThread(body.sourceThreadId);
+      const targetSummary = readStateDbThread(body.targetThreadId) || readStartedThread(body.targetThreadId);
+      sendJson(res, 200, {
+        ok: true,
+        card: await threadTaskCardService.create(Object.assign({}, body, {
+          sourceWorkspaceId: body.sourceWorkspaceId || body.sourceWorkspace || (sourceSummary && sourceSummary.cwd) || "",
+          targetWorkspaceId: body.targetWorkspaceId || body.targetWorkspace || (targetSummary && targetSummary.cwd) || "",
+          sourceThreadTitle: body.sourceThreadTitle || (sourceSummary && (sourceSummary.name || sourceSummary.preview || sourceSummary.id)) || body.sourceThreadId || "",
+        })),
+      });
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
     return;
   }
   const threadTaskCardRead = url.pathname.match(/^\/api\/thread-task-cards\/([^/]+)$/);
   if (threadTaskCardRead && req.method === "GET") {
-    const cardId = decodeURIComponent(threadTaskCardRead[1]);
-    const threadId = url.searchParams.get("threadId") || "";
-    sendJson(res, 200, { ok: true, card: threadTaskCardService.get(cardId, threadId) });
+    try {
+      const cardId = decodeURIComponent(threadTaskCardRead[1]);
+      const threadId = url.searchParams.get("threadId") || "";
+      sendJson(res, 200, { ok: true, card: threadTaskCardService.get(cardId, threadId) });
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
     return;
   }
   const threadTaskCardApprove = url.pathname.match(/^\/api\/thread-task-cards\/([^/]+)\/approve$/);
   if (threadTaskCardApprove && req.method === "POST") {
-    const cardId = decodeURIComponent(threadTaskCardApprove[1]);
-    const body = await readBody(req);
-    sendJson(res, 200, Object.assign({ ok: true }, await threadTaskCardService.approve(cardId, body.threadId || body.actorThreadId || "")));
+    try {
+      const cardId = decodeURIComponent(threadTaskCardApprove[1]);
+      const body = await readBody(req);
+      sendJson(res, 200, Object.assign({ ok: true }, await threadTaskCardService.approve(cardId, body.threadId || body.actorThreadId || "")));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
     return;
   }
   const threadTaskCardDelete = url.pathname.match(/^\/api\/thread-task-cards\/([^/]+)\/delete$/);
   if (threadTaskCardDelete && req.method === "POST") {
-    const cardId = decodeURIComponent(threadTaskCardDelete[1]);
-    const body = await readBody(req);
-    sendJson(res, 200, {
-      ok: true,
-      card: await threadTaskCardService.deleteCard(cardId, body.threadId || body.actorThreadId || ""),
-    });
+    try {
+      const cardId = decodeURIComponent(threadTaskCardDelete[1]);
+      const body = await readBody(req);
+      sendJson(res, 200, {
+        ok: true,
+        card: await threadTaskCardService.deleteCard(cardId, body.threadId || body.actorThreadId || ""),
+      });
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
     return;
   }
   const threadTaskCardRevoke = url.pathname.match(/^\/api\/thread-task-cards\/([^/]+)\/revoke$/);
   if (threadTaskCardRevoke && req.method === "POST") {
-    const cardId = decodeURIComponent(threadTaskCardRevoke[1]);
-    const body = await readBody(req);
-    sendJson(res, 200, {
-      ok: true,
-      card: await threadTaskCardService.revoke(cardId, body.threadId || body.actorThreadId || ""),
-    });
+    try {
+      const cardId = decodeURIComponent(threadTaskCardRevoke[1]);
+      const body = await readBody(req);
+      sendJson(res, 200, {
+        ok: true,
+        card: await threadTaskCardService.revoke(cardId, body.threadId || body.actorThreadId || ""),
+      });
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
     return;
   }
   const threadTaskCardReply = url.pathname.match(/^\/api\/thread-task-cards\/([^/]+)\/reply$/);
   if (threadTaskCardReply && req.method === "POST") {
-    const cardId = decodeURIComponent(threadTaskCardReply[1]);
-    const body = await readBody(req);
-    const actorThreadId = body.threadId || body.actorThreadId || "";
-    const actorSummary = readStateDbThread(actorThreadId) || readStartedThread(actorThreadId);
-    sendJson(res, 200, Object.assign({ ok: true }, await threadTaskCardService.reply(cardId, actorThreadId, Object.assign({}, body, {
-      sourceWorkspaceId: body.sourceWorkspaceId || (actorSummary && actorSummary.cwd) || "",
-      sourceThreadId: body.sourceThreadId || actorThreadId,
-      sourceThreadTitle: body.sourceThreadTitle || (actorSummary && (actorSummary.name || actorSummary.preview || actorSummary.id)) || actorThreadId,
-    }))));
+    try {
+      const cardId = decodeURIComponent(threadTaskCardReply[1]);
+      const body = await readBody(req);
+      const actorThreadId = body.threadId || body.actorThreadId || "";
+      const actorSummary = readStateDbThread(actorThreadId) || readStartedThread(actorThreadId);
+      sendJson(res, 200, Object.assign({ ok: true }, await threadTaskCardService.reply(cardId, actorThreadId, Object.assign({}, body, {
+        sourceWorkspaceId: body.sourceWorkspaceId || (actorSummary && actorSummary.cwd) || "",
+        sourceThreadId: body.sourceThreadId || actorThreadId,
+        sourceThreadTitle: body.sourceThreadTitle || (actorSummary && (actorSummary.name || actorSummary.preview || actorSummary.id)) || actorThreadId,
+      }))));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
     return;
   }
   if (url.pathname === "/api/workspaces" && req.method === "GET") {
     sendJson(res, 200, { data: await listWorkspaces() });
+    return;
+  }
+  if (url.pathname === "/api/workspaces" && req.method === "POST") {
+    try {
+      const body = await readBody(req);
+      sendJson(res, 200, workspaceRegistryService.create(body));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
     return;
   }
   if (url.pathname === "/api/thread-continuations" && req.method === "POST") {

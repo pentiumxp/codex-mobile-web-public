@@ -68,6 +68,18 @@ test("existing-message route forwards runtime settings on next turn", () => {
   assert.match(routeBody, /if \(requestedEffort\) params\.effort = requestedEffort;/, "turn/start should receive requested reasoning effort");
 });
 
+test("workspace creation route stores mobile-visible workspaces outside Codex global state", () => {
+  const routeIndex = serverJs.indexOf('url.pathname === "/api/workspaces" && req.method === "POST"');
+  const newMessageIndex = serverJs.indexOf("/api/threads/new-message");
+  assert.ok(routeIndex > 0, "missing POST /api/workspaces route");
+  assert.ok(routeIndex < newMessageIndex, "workspace creation should be available before new-thread submission");
+  assert.match(serverJs, /createWorkspaceRegistryService/, "server should use the workspace registry service");
+  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_REGISTRY_FILE/, "workspace registry storage should be configurable");
+  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_CREATE_ROOTS/, "workspace creation roots should be configurable");
+  assert.match(serverJs, /workspaceRegistryService\.create\(body\)/, "POST route should delegate creation to the registry service");
+  assert.match(serverJs, /workspaceRegistryService\.list\(\)[\s\S]*roots\.add\(workspace\.cwd\)/, "registered workspaces should become visible to thread routes");
+});
+
 test("existing-message route falls back when active turn steering is stale", () => {
   const helperIndex = serverJs.indexOf("function isTurnSteerUnsupportedError(");
   const staleHelperIndex = serverJs.indexOf("function isStaleActiveTurnError(");

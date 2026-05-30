@@ -227,6 +227,19 @@
     </form>
   </div>
 
+  <div id="createWorkspaceDialog" class="rename-dialog hidden" role="dialog" aria-labelledby="createWorkspaceTitle">
+    <form id="createWorkspaceForm" class="rename-panel">
+      <div id="createWorkspaceTitle" class="rename-title">Create Workspace</div>
+      <div id="createWorkspaceRoot" class="create-workspace-root"></div>
+      <input id="createWorkspaceInput" class="rename-input" type="text" maxlength="80" autocomplete="off" placeholder="Folder name">
+      <div id="createWorkspaceError" class="create-workspace-error" role="alert" hidden></div>
+      <div class="rename-actions">
+        <button id="createWorkspaceCancel" class="rename-cancel" type="button">取消</button>
+        <button id="createWorkspaceSubmit" class="rename-submit" type="submit">创建</button>
+      </div>
+    </form>
+  </div>
+
   <div id="continuationDialog" class="continuation-dialog hidden" role="dialog" aria-labelledby="continuationTitle">
     <div class="continuation-panel">
       <div id="continuationTitle" class="continuation-title">压缩续接</div>

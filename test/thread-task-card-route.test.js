@@ -27,8 +27,23 @@ test("server exposes thread task card routes and enriches thread detail response
   assert.match(serverJs, /await threadTaskCardService\.reply/);
 });
 
+test("thread task card routes preserve service status codes", () => {
+  const routeBlock = serverJs.slice(
+    serverJs.indexOf('if (url.pathname === "/api/thread-task-cards" && req.method === "POST")'),
+    serverJs.indexOf('if (url.pathname === "/api/workspaces" && req.method === "GET")'),
+  );
+  assert.match(routeBlock, /threadTaskCardService\.create/);
+  assert.match(routeBlock, /threadTaskCardService\.get/);
+  assert.match(routeBlock, /threadTaskCardService\.approve/);
+  assert.match(routeBlock, /threadTaskCardService\.deleteCard/);
+  assert.match(routeBlock, /threadTaskCardService\.revoke/);
+  assert.match(routeBlock, /threadTaskCardService\.reply/);
+  const statusPreservingErrors = routeBlock.match(/sendJson\(res, err\.statusCode \|\| 500, \{ ok: false, error: err\.message \|\| String\(err\) \}\);/g) || [];
+  assert.equal(statusPreservingErrors.length, 6);
+});
+
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v130"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v131"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
   assert.match(appJs, /function settleCurrentThreadTaskCard\(/);

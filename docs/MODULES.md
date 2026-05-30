@@ -28,6 +28,7 @@
 | `adapters/hermes-notification-delegate-service.js` | Backend-only Hermes Action Inbox notification delegation, safe payload normalization, Hermes endpoint/key resolution, and response sanitization. |
 | `adapters/turn-completion-receipt-service.js` | Builds bounded completed-turn detail receipts for Hermes plugin Inbox/thread-message delegation from final assistant text plus usage summary. |
 | `adapters/thread-task-card-service.js` | Cross-thread task-card normalization, JSON store persistence, idempotency, source/target authorization, state transitions, and approval injection payload generation. |
+| `adapters/workspace-registry-service.js` | Mobile Web-created workspace folder validation, runtime registry persistence, allowed-root policy, and public workspace shape. |
 | `adapters/sqlite-cli.js` | Cross-environment `sqlite3` discovery and JSON result execution. |
 
 Add new service modules when logic has independent inputs/outputs, state rules, route policies, or tests. Keep route handlers thin and make service behavior directly testable.
@@ -56,6 +57,7 @@ Add new service modules when logic has independent inputs/outputs, state rules, 
 | --- | --- |
 | app-server/mux protocol | `test/protocol.test.js` |
 | active-turn send behavior | `test/active-turn-staleness-service.test.js`, `test/new-thread-route.test.js`, `test/message-pending-echo-service.test.js` |
+| workspace list/create | `test/workspace-registry-service.test.js`, `test/new-thread-route.test.js`, `test/mobile-viewport.test.js` |
 | conversation rendering and operation cards | `test/conversation-render.test.js`, `test/collab-agent-render.test.js`, `test/thread-item-timestamp-enrichment.test.js`, `test/message-timestamp.test.js` |
 | continuation | `test/continuation-lineage.test.js`, `test/continuation-handoff-compaction-service.test.js` |
 | context and bootstrap size policy | `test/message-input-service.test.js`, `test/continuation-lineage.test.js`, `test/turn-usage-summary-service.test.js` |

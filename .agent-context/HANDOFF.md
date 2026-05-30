@@ -3750,3 +3750,151 @@ The previous full handoff was archived and should be opened only when old proven
   - Public focused tests for app-update, Hermes plugin route, manual restart UI, mobile viewport, thread-task-card route, and composer quota passed.
   - Public `npm.cmd test`, `npm.cmd run check`, and `git diff --check` passed before the merge commit was pushed.
   - GitHub now reports PR `#41` as `MERGED` with merge commit `0d89f28a4cd317829823d96deeaeda1eb62e31b2`.
+
+## 2026-05-30 Mobile Workspace Creation v131
+
+- User request:
+  - Add a create-workspace feature, but place the entry at the bottom of the
+    Workspace dropdown list instead of beside the new-thread button.
+- Local implementation:
+  - Added `adapters/workspace-registry-service.js`.
+    - Creates or registers a simple local workspace folder under allowed parent
+      roots.
+    - Rejects absolute paths, path traversal, slash/backslash names, invalid
+      Windows filename characters, and reserved Windows device names.
+    - Stores only bounded metadata in
+      `%USERPROFILE%\.codex-mobile-web\workspace-registry.json` by default.
+    - Uses `CODEX_MOBILE_WORKSPACE_CREATE_ROOTS` for allowed parent roots and
+      `CODEX_MOBILE_WORKSPACE_REGISTRY_FILE` for registry-file override.
+  - `server.js`
+    - `GET /api/workspaces` now merges Codex-visible roots with Mobile
+      Web-created registry roots.
+    - `POST /api/workspaces` creates/registers a workspace through the adapter.
+    - `visibleWorkspaceRoots()` includes registry roots so new-thread
+      visibility checks accept Mobile Web-created cwd values without editing
+      `.codex` global state.
+    - `/api/public-config` exposes safe `workspaceCreate` diagnostics.
+  - `public/app.js`, `public/index.html`, `public/styles.css`
+    - Workspace dropdown appends a bottom `Create Workspace` action.
+    - Creation opens a small dialog, then selects the created cwd and opens a
+      new-thread draft.
+    - The new-thread button placement is unchanged; no extra button was added
+      beside it.
+    - Static shell build/cache bumped to
+      `0.1.11|codex-mobile-shell-v131` / `codex-mobile-shell-v131`.
+  - Documentation updated in README, Architecture, Modules, Troubleshooting,
+    Complex Feature Paths, and this handoff.
+- Validation:
+  - `node --check adapters\workspace-registry-service.js`, `node --check
+    server.js`, `node --check public\app.js`, and `node --check public\sw.js`
+    passed.
+  - Focused `node --test test\workspace-registry-service.test.js
+    test\new-thread-route.test.js test\mobile-viewport.test.js
+    test\new-thread-ui.test.js test\thread-task-card-route.test.js` passed:
+    22/22.
+  - Hidden-window rerun after Windows process recovery:
+    - focused tests passed: 22/22;
+    - `npm.cmd run check` passed;
+    - `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings;
+    - `npm.cmd test` passed: 233/233;
+    - `npm.cmd run check:macos` passed.
+- Status:
+  - Local changes are uncommitted.
+  - Static frontend/PWA change requires clients to refresh/reopen to load v131
+    after deployment.
+
+## 2026-05-31 Hermes Plugin HTTPS Manifest Runtime Fix
+
+- User report:
+  - The Hermes embedded Codex plugin eventually opened, but its settings page
+    showed an update-settings check failure.
+- Diagnosis:
+  - `/api/public-config` was reachable and returned
+    `0.1.11|codex-mobile-shell-v131`.
+  - Authenticated `/api/status` was healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `lastError=null`.
+  - Authenticated `/api/app-update/status?force=1` did not fail; it returned
+    `state=blocked`, `reason=working tree has local changes`, `dirty=true`.
+    That is expected while v131 local changes are uncommitted.
+  - The Hermes plugin manifest for
+    `hermesOrigin=https://hermes-xuxin.synology.me:8445` still returned
+    `entry.url=http://127.0.0.1:8787/?embed=hermes` and
+    `program_api.base_url=http://127.0.0.1:8787`, because the running
+    windowless supervisor had been started without `-HermesPluginBaseUrl` or
+    `-PublicBaseUrl`.
+  - The `Codex Mobile Web` scheduled task was updated, but the old windowless
+    supervisor kept running with stale arguments until its specific process tree
+    was stopped.
+- Runtime fix:
+  - Updated the `Codex Mobile Web` Scheduled Task arguments to include:
+    - `-HermesPluginBaseUrl "https://gmk.tail62e8ce.ts.net:8443"`;
+    - `-PublicBaseUrl "https://gmk.tail62e8ce.ts.net:8443"`;
+    - `-HermesPluginFrameOrigins "https://hermes-xuxin.synology.me:8445"`;
+    - existing Hermes notification delegate base URL and key-file parameters.
+  - Stopped only the verified stale Mobile Web process tree for this workspace:
+    the old `server.js` listener, its `start-codex-mobile-web-windowless.ps1`
+    parent, and the hidden VBS launcher parent.
+  - Started the updated `Codex Mobile Web` scheduled task.
+- Verification:
+  - New 8787 listener PID `21640` is parented by
+    `start-codex-mobile-web-windowless.ps1` with the new
+    `-HermesPluginBaseUrl`, `-PublicBaseUrl`, and `-HermesPluginFrameOrigins`
+    arguments.
+  - Manifest now returns:
+    - `entry.url=https://gmk.tail62e8ce.ts.net:8443/?embed=hermes`;
+    - `program_api.base_url=https://gmk.tail62e8ce.ts.net:8443`;
+    - `frame_ancestors='self' https://hermes-xuxin.synology.me:8445`;
+    - empty mixed-content diagnostics.
+  - Authenticated `/api/status` remains healthy.
+- Status:
+  - This was an operational scheduled-task/runtime fix plus context update.
+  - No code was changed for this fix, and nothing was committed or pushed.
+
+## 2026-05-31 Thread Task Card Route Error-Code Closure
+
+- User request:
+  - Confirm the cross-thread task-card implementation was not affected by the
+    recent runtime/startup rollback work, then close the small issue found and
+    commit/push.
+- Diagnosis:
+  - CodeGraph and direct inspection confirmed the card implementation still
+    exists:
+    - `adapters/thread-task-card-service.js`;
+    - `/api/thread-task-cards*` routes in `server.js`;
+    - `thread.threadTaskCards` detail enrichment;
+    - frontend `#` draft path, pending-card rendering, and approve/focus logic.
+  - Focused harness passed for card creation, target approval injection, delete,
+    revoke, reply, route exposure, thread-detail enrichment, frontend signatures,
+    and XML-suppression.
+  - A no-side-effect runtime probe for a missing card reached the route but
+    returned a generic 500. The service already throws `statusCode=404`; the
+    route was letting that escape to the top-level 500 handler.
+- Local fix:
+  - `server.js`
+    - Wrapped all thread-task-card routes (`create`, `get`, `approve`, `delete`,
+      `revoke`, `reply`) in route-local error handlers that preserve
+      `err.statusCode || 500`.
+    - Missing-card reads now return `404 task_card_not_found`; wrong-thread and
+      settled-card actions can return their existing `403` / `409` service codes.
+  - `test/thread-task-card-route.test.js`
+    - Added a static harness assertion that the route block preserves service
+      status codes for all six task-card routes.
+  - `docs/TROUBLESHOOTING.md`
+    - Documented expected `404` / `403` / `409` task-card API diagnostics.
+- Status:
+  - Validation:
+    - `node --check server.js` passed.
+    - Focused `node --test test\thread-task-card-harness.test.js
+      test\thread-task-card-service.test.js test\thread-task-card-route.test.js
+      test\conversation-render.test.js test\mobile-viewport.test.js` passed:
+      31/31.
+    - `npm.cmd test` passed: 234/234.
+    - `npm.cmd run check` passed.
+    - `npm.cmd run check:macos` passed.
+    - `git diff --check` passed with only Windows LF-to-CRLF warnings.
+  - Deployment:
+    - Restarted the verified stale Mobile Web process tree and started the
+      `Codex Mobile Web` scheduled task.
+    - New 8787 listener PID is `29796`.
+    - Runtime missing-card probe now returns HTTP `404` instead of generic `500`.
+  - Commit/push are the next required steps in this turn.
