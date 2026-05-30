@@ -42,8 +42,8 @@ test("mobile viewport and early guards disable page zoom", () => {
 });
 
 test("public app shell cache advances after foreground refresh changes", () => {
-  assert.match(swJs, /codex-mobile-shell-v121/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v121"/);
+  assert.match(swJs, /codex-mobile-shell-v122/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v122"/);
   assert.match(appJs, /if \(threadId === state\.currentThreadId && state\.currentThread && !state\.currentThread\.mobileLoadError\) \{/);
   assert.match(appJs, /scheduleCurrentThreadRefresh\(250\);[\s\S]*openExternalThreadSelection\(threadId\)\.catch\(showError\);/);
   assert.match(appJs, /if \(state\.currentThreadId && state\.currentThread && !state\.currentThread\.mobileLoading\) \{/);
