@@ -66,12 +66,15 @@ test("page refresh prompt also handles server restart reconnects", () => {
 test("public pull request check prompts before public publishing work", () => {
   assert.match(indexHtml, /id="publicPrStatus"/);
   assert.match(stylesCss, /\.public-pr-status/);
+  assert.match(serverJs, /workspacePath:\s*APP_ROOT/);
   assert.match(serverJs, /publicPullRequests:/);
   assert.match(serverJs, /\/api\/public-pull-requests\/status/);
   assert.match(serverJs, /publicPullRequestApiUrl\(PUBLIC_PR_REPOSITORY\)/);
   assert.match(appJs, /function renderPublicPrStatus\(\)/);
   assert.match(appJs, /function maybePromptPublicPrMerge\(status\)/);
   assert.match(appJs, /function publicPrMergeInstruction\(status\)/);
+  assert.match(appJs, /state\.appWorkspacePath = String\(config\.workspacePath \|\| state\.appWorkspacePath \|\| ""\)\.trim\(\);/);
+  assert.match(appJs, /saveCurrentDraftNow\(\);[\s\S]*clearCurrentThreadSelection\(\{ saveDraft: false \}\);[\s\S]*state\.selectedCwd = workspacePath;[\s\S]*state\.newThreadDraft = true;/);
   assert.match(appJs, /scheduleStartupPublicPrCheck\(\)/);
   assert.match(appJs, /handlePublicPrStatusClick\(\)\.catch\(showError\)/);
 });

@@ -259,7 +259,10 @@ turn rather than expecting the old card to remain visible. If `Approve` does
 start a new turn but the old card still lingers in the current thread until you
 leave and re-enter, the browser build is stale; current builds locally settle
 the card immediately after a successful approve/delete/revoke/reply response,
-then follow with the normal thread refresh.
+then follow with a forced current-thread refresh instead of the old same-thread
+`loadThread()` cache path. Current builds also keep polling briefly for the
+returned injected `turnId`; once that turn becomes visible, the browser scrolls
+to the injected turn instead of leaving the user to back out and re-enter.
 
 If a target thread already has an incompatible live app-server state, approval
 may fail at the `thread/resume` / `turn/start` stage. In that case the card
@@ -293,6 +296,61 @@ If no draft card appears, inspect:
 - whether the returned `targetThreadId` is still present in the visible thread
   list;
 - whether attachments were present, which still blocks `#` commands.
+
+Current UI rules:
+
+- while the current turn is still waiting for the model to emit a bounded draft,
+  the browser should show a pending draft placeholder card instead of a blank
+  gap;
+- if the assistant has started streaming
+  `<codex-mobile-thread-task-card-draft>...` but the JSON block is not complete
+  yet, the browser should suppress the raw XML and keep showing the pending
+  placeholder until the full draft card is ready;
+- pending draft cards and pending task cards should default to a medium card
+  with summary visible and the long body/details behind an explicit expand
+  action, rather than rendering the full body immediately.
+
+## Hermes Embed Missing Version/Restart/PR Actions
+
+If the plugin sidebar is missing the version pill, public-PR status, or
+`Restart`, check whether embed CSS is hiding the whole `.version-actions` row.
+Current builds should hide only the duplicate main-pane version actions, not the
+sidebar header row.
+
+## Hermes Embed 压缩续接确认框不出现
+
+If `压缩续接` can be selected from the thread action sheet but no confirmation
+popup appears in Hermes embed mode, check whether the browser is still using the
+old native `window.confirm(...)` path. Current builds should render an in-app
+continuation dialog inside the iframe, because native confirm dialogs are not
+reliable in the plugin host path.
+
+## Hermes Plugin Seems To Reload Without Explanation
+
+When Mobile Web sends `codex-mobile.plugin.refresh_required` to Hermes, the
+current iframe should first show an in-app refresh notice such as "Refreshing
+plugin page..." so the user can distinguish a deliberate host-driven reload from
+an unexplained crash/reload. If the iframe reloads with no visible notice, the
+browser build is stale or the refresh-required path regressed.
+
+## Shared-Chain Restart Stops 8787 But Mobile Web Does Not Come Back
+
+Do not treat "the restart command was sent" or "the old Node listener exited" as
+proof that Mobile Web is healthy again. The success condition is stricter:
+
+- a new `8787` listener exists; and
+- `/api/public-config` is reachable again.
+
+If either check is missing, Mobile Web should be treated as down even if a
+restart script or detached PowerShell command was already launched.
+
+## Public PR Prompt Targets The Wrong Thread
+
+Public-PR review preparation must not reuse an arbitrary currently open thread.
+Current builds should route the generated review text into a new-thread draft for
+the app workspace path reported by `/api/public-config.workspacePath`. If the
+prompt still lands inside an unrelated Agent/Hermes thread, the browser build is
+stale or the client never loaded the workspace-path config.
 ## Image Upload Context Growth
 
 Large rollout growth after image upload often comes from repeated `compacted.replacement_history` snapshots with `input_image` payloads.
@@ -470,3 +528,61 @@ Expected behavior after `codex-mobile-shell-v121`:
 - URL thread hints still open a different thread when needed, but if the hinted
   thread already matches the current thread, the app should schedule a
   lightweight refresh instead of a full reload.
+
+## First Load Flashes Workspace Home Before Opening A Thread
+
+If Mobile Web already knows the startup target thread from the saved current
+thread id, URL `?thread=...`, or Hermes plugin route hint, the app should not
+briefly render the Workspace/recent-thread home panel first.
+
+Expected behavior after `codex-mobile-shell-v122`:
+
+- Startup marks thread-open intent before the first thread-list fetch finishes.
+- The main panel stays in a stable `Opening thread...` state until the target
+  thread is restored.
+- The initial thread-list fetch stays silent while that direct-thread startup is
+  pending, reducing visible flicker in the main panel.
+
+## Hermes Embed Startup Briefly Shows A Red Codex Error Panel
+
+If an embedded Hermes launch/session is already being recovered through
+`codex-mobile.plugin.refresh_required`, the iframe should not first flash the
+red Codex auth/login error panel.
+
+Expected behavior after `codex-mobile-shell-v123`:
+
+- Plugin launch/session/auth failures that already trigger a Hermes refresh stay
+  in a neutral in-app recovering state.
+- The iframe shows a bounded `Refreshing Codex Mobile plugin...` style message
+  while Hermes rebuilds the iframe.
+- The red plugin auth panel should be reserved for non-recovering states, not
+  for transient launch/session churn that Hermes can immediately replace.
+
+## Source `#` Task-Card Draft Reappears After Approve Or Dismiss
+
+If the source thread hides a `#`-generated draft card immediately after
+`Approve` or `Dismiss`, but the same draft comes back after leaving and
+re-entering the thread, the draft-settled state was only held in browser memory.
+
+Expected behavior after `codex-mobile-shell-v129`:
+
+- Draft-card settled states are persisted in browser storage under
+  `codexMobileThreadTaskCardDraftStates`.
+- Source-thread draft cards with status `created` or `dismissed` stay hidden
+  after a thread reload or app re-entry.
+- Pending/in-flight draft creation states are not persisted as durable settled
+  state.
+
+## Hermes Plugin Refresh Notice Stays On Screen Too Long
+
+If Hermes embed mode shows `Refreshing plugin page...` and the notice never
+clears even when the host-driven refresh does not happen immediately, the page
+should bound that notice to a short lifetime.
+
+Expected behavior after `codex-mobile-shell-v129`:
+
+- `codex-mobile.plugin.refresh_required` first shows the in-app refresh notice.
+- The notice auto-dismisses after about 10 seconds if the page has not already
+  been replaced by the Hermes host refresh flow.
+- Recovering screens such as plugin launch/session refresh clear the pending
+  notice immediately instead of stacking the two states.

@@ -6127,6 +6127,7 @@ async function handleApi(req, res) {
       title: "Codex Mobile Web",
       version: APP_VERSION,
       platform: process.platform,
+      workspacePath: APP_ROOT,
       buildId: appShellBuildId(),
       clientBuildId: clientBuildId(),
       shellCacheName: readServiceWorkerCacheName(),

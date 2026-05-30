@@ -35,15 +35,37 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(stylesCss, /body\s*{[\s\S]*min-height:\s*-webkit-fill-available;/);
   assert.match(stylesCss, /html\.embed-hermes \.composer\s*{[\s\S]*padding-bottom:\s*calc\(18px \+ env\(safe-area-inset-bottom, 0px\)\);/);
   assert.match(stylesCss, /html\.embed-hermes\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*14px;/);
+  assert.match(stylesCss, /html\.embed-hermes \.main \.version-actions/);
+  assert.match(indexHtml, /id="continuationDialog"/);
+  assert.match(appJs, /function openContinuationDialog\(/);
+  assert.match(appJs, /function continuationDialogOpen\(/);
+  assert.match(appJs, /function closeContinuationDialog\(/);
+  assert.match(stylesCss, /\.continuation-dialog/);
   assert.match(stylesCss, /html\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*12px;/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.embed-hermes \.composer\s*{[\s\S]*padding-bottom:\s*calc\(14px \+ env\(safe-area-inset-bottom, 0px\)\);/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.embed-hermes\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*10px;/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*7px;/);
 });
 
-test("public app shell cache advances after foreground refresh changes", () => {
-  assert.match(swJs, /codex-mobile-shell-v121/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v121"/);
+test("public app shell cache advances after embed action and task-card stabilization", () => {
+  assert.match(swJs, /codex-mobile-shell-v129/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v129"/);
+  assert.match(appJs, /startupThreadOpenPending: false/);
+  assert.match(appJs, /state\.startupThreadOpenPending = Boolean\(startupThreadId \|\| savedThreadId \|\| \(startupPluginRouteHint && startupPluginRouteHint\.threadId\)\);/);
+  assert.match(appJs, /await loadThreads\(\{ silent: state\.startupThreadOpenPending \}\);/);
+  assert.match(appJs, /function renderStartupThreadOpening\(\)/);
+  assert.match(appJs, /Opening thread\.\.\./);
+  assert.match(appJs, /if \(state\.startupThreadOpenPending\) \{[\s\S]*renderStartupThreadOpening\(\);[\s\S]*return;/);
+  assert.match(appJs, /function showPluginEmbedRecovering\(message = ""\)/);
+  assert.match(appJs, /Refreshing Codex Mobile plugin session\.\.\./);
+  assert.match(appJs, /Refreshing Codex Mobile plugin launch\.\.\./);
+  assert.match(appJs, /Refreshing plugin page from Hermes Mobile\.\.\./);
+  assert.match(appJs, /state\.pluginRefreshPendingTimer = window\.setTimeout\(\(\) => \{/);
+  assert.match(appJs, /function clearPluginRefreshPendingNotice\(\)/);
+  assert.match(appJs, /Generating cross-thread task card draft\.\.\./);
+  assert.match(stylesCss, /\.plugin-refresh-pending/);
+  assert.match(stylesCss, /\.approval-details/);
+  assert.match(stylesCss, /\.approval-summary-line/);
   assert.match(appJs, /if \(threadId === state\.currentThreadId && state\.currentThread && !state\.currentThread\.mobileLoadError\) \{/);
   assert.match(appJs, /scheduleCurrentThreadRefresh\(250\);[\s\S]*openExternalThreadSelection\(threadId\)\.catch\(showError\);/);
   assert.match(appJs, /if \(state\.currentThreadId && state\.currentThread && !state\.currentThread\.mobileLoading\) \{/);

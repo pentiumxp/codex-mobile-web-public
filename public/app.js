@@ -31,6 +31,9 @@ const state = {
   pluginParentOrigin: pluginEmbedApi.parentOriginFromReferrer(document.referrer) || "*",
   pluginNavigationSignature: "",
   pluginRefreshRequestSignature: "",
+  pluginRefreshPendingNotice: "",
+  pluginRefreshPendingTimer: null,
+  startupThreadOpenPending: false,
   workspaces: [],
   selectedCwd: "",
   threads: [],
@@ -86,6 +89,7 @@ const state = {
   threadActionMenuId: "",
   threadLongPress: null,
   renameThreadId: "",
+  continuationDialogThreadId: "",
   renameBusy: false,
   sidebarEdgeSwipe: null,
   subagentSwipe: null,
@@ -115,6 +119,7 @@ const state = {
   publicPrEnabled: false,
   publicPrRepository: "",
   publicPrPromptedKey: localStorage.getItem("codexMobilePublicPrPromptKey") || "",
+  appWorkspacePath: "",
   sharedRestartBusy: false,
   sharedRestarting: false,
   serverBuildId: "",
@@ -148,7 +153,7 @@ const state = {
   pushError: "",
   serviceWorkerRegistration: null,
   pendingApprovals: new Map(),
-  threadTaskCardDraftStates: new Map(),
+  threadTaskCardDraftStates: new Map(Object.entries(loadJsonStorage("codexMobileThreadTaskCardDraftStates", {}))),
   runningThreadIds: loadStringSetStorage("codexMobileRunningThreadIds"),
   unreadThreadIds: loadStringSetStorage("codexMobileUnreadThreadIds"),
   rolloutWarningDismissals: loadStringSetStorage("codexMobileDismissedRolloutWarnings"),
@@ -175,7 +180,7 @@ const state = {
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v121";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v129";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -209,6 +214,7 @@ const STORAGE_FONT_SIZE = "codexMobileFontSize";
 const STORAGE_RATE_LIMITS = "codexMobileRateLimits";
 const STORAGE_RATE_LIMITS_BY_MODEL = "codexMobileRateLimitsByModel";
 const STORAGE_PUBLIC_PR_PROMPT = "codexMobilePublicPrPromptKey";
+const STORAGE_TASK_CARD_DRAFT_STATES = "codexMobileThreadTaskCardDraftStates";
 const DRAFT_SAVE_DEBOUNCE_MS = 250;
 const THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";
 const THREAD_TASK_CARD_DRAFT_TAG = "codex-mobile-thread-task-card-draft";
@@ -238,7 +244,7 @@ const apiClient = window.CodexApiClient.createApiClient({
   onUnauthorized() {
     if (isHermesEmbedMode()) {
       requestHermesPluginRefresh("auth_state_changed");
-      showPluginEmbedAuthError("Codex Mobile plugin session is not authorized. Ask Hermes Mobile to launch the plugin again.");
+      showPluginEmbedRecovering("Refreshing Codex Mobile plugin session...");
     }
     else showLogin();
   },
@@ -292,6 +298,25 @@ function saveStringSetStorage(key, value) {
     localStorage.setItem(key, JSON.stringify([...value].filter(Boolean)));
   } catch (_) {
     // Status hints are best-effort UI state.
+  }
+}
+
+function saveThreadTaskCardDraftStates() {
+  try {
+    const entries = {};
+    for (const [key, value] of state.threadTaskCardDraftStates.entries()) {
+      if (!key || !value || typeof value !== "object") continue;
+      const status = String(value.status || "").trim();
+      if (!status || status === "pending" || status === "creating") continue;
+      entries[key] = {
+        status,
+        error: String(value.error || ""),
+        cardId: String(value.cardId || ""),
+      };
+    }
+    localStorage.setItem(STORAGE_TASK_CARD_DRAFT_STATES, JSON.stringify(entries));
+  } catch (_) {
+    // Draft-state persistence is best-effort UI state.
   }
 }
 
@@ -1272,9 +1297,27 @@ function preparePublicPrMergePrompt(status) {
     window.alert("检测到 public 开放 PR，但输入框已有内容。请处理当前草稿后点击 Public PR 按钮。");
     return;
   }
+  const workspacePath = String(state.appWorkspacePath || state.selectedCwd || (state.currentThread && state.currentThread.cwd) || "").trim();
+  if (!workspacePath) {
+    setComposerText(text);
+    scheduleCurrentDraftSave();
+    updateComposerControls();
+    return;
+  }
+  saveCurrentDraftNow();
+  clearCurrentThreadSelection({ saveDraft: false });
+  state.selectedCwd = workspacePath;
+  state.newThreadDraft = true;
+  state.sendButtonHint = "";
+  restoreDraftForCurrentTarget();
   setComposerText(text);
-  scheduleCurrentDraftSave();
+  syncSidebarWorkspaceSelect();
+  updateWorkspacePath();
+  renderThreads();
+  renderCurrentThread();
   updateComposerControls();
+  scheduleCurrentDraftSave();
+  if (isMenuOverlayMode()) closeSidebarMenu();
 }
 
 function rememberPublicPrPrompt(status) {
@@ -2626,6 +2669,7 @@ function conversationRenderSignature(thread) {
   const omitted = Number(thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread.turns || []).length - turns.length);
   const payload = {
     threadId: state.currentThreadId || thread.id || "",
+    pluginRefreshPendingNotice: String(state.pluginRefreshPendingNotice || ""),
     rolloutSizeBytes: rolloutSizeBytes(thread),
     rolloutWarning: isRolloutOverThreshold(thread),
     rolloutWarningDismissed: isRolloutWarningDismissed(thread),
@@ -3174,6 +3218,18 @@ function requestHermesPluginRefresh(reason, options = {}) {
   if (!options.force && signature === state.pluginRefreshRequestSignature) return false;
   state.pluginRefreshRequestSignature = signature;
   if (targetOrigin) state.pluginParentOrigin = targetOrigin;
+  if (state.pluginRefreshPendingTimer) {
+    clearTimeout(state.pluginRefreshPendingTimer);
+    state.pluginRefreshPendingTimer = null;
+  }
+  state.pluginRefreshPendingNotice = pluginRefreshPendingMessage(normalizedReason);
+  state.pluginRefreshPendingTimer = window.setTimeout(() => {
+    state.pluginRefreshPendingTimer = null;
+    clearPluginRefreshPendingNotice();
+  }, 10000);
+  if (state.currentThreadId || state.currentThread) renderCurrentThread();
+  else if (state.newThreadDraft) renderNewThreadDraft();
+  if ($("connectionState")) $("connectionState").textContent = state.pluginRefreshPendingNotice || "Requesting plugin refresh...";
   pluginEmbedApi.postRefreshRequired(window.parent, {
     reason: normalizedReason,
     route,
@@ -3188,6 +3244,33 @@ function requestHermesPluginRefresh(reason, options = {}) {
     usedWildcardFallback: !targetOrigin,
   });
   return true;
+}
+
+function pluginRefreshPendingMessage(reason) {
+  const normalized = boundedPluginRefreshValue(reason || "refresh_required", 80) || "refresh_required";
+  if (normalized === "server_build_changed") return "Refreshing plugin page for a new Mobile Web build...";
+  if (normalized === "plugin_session_missing" || normalized === "plugin_launch_invalid") return "Refreshing plugin page because the Hermes launch session is no longer valid...";
+  if (normalized === "auth_state_changed") return "Refreshing plugin page because the Codex auth/session state changed...";
+  return "Refreshing plugin page from Hermes Mobile...";
+}
+
+function clearPluginRefreshPendingNotice() {
+  if (state.pluginRefreshPendingTimer) {
+    clearTimeout(state.pluginRefreshPendingTimer);
+    state.pluginRefreshPendingTimer = null;
+  }
+  if (!state.pluginRefreshPendingNotice) return;
+  state.pluginRefreshPendingNotice = "";
+  if (state.currentThreadId || state.currentThread) renderCurrentThread();
+  else if (state.newThreadDraft) renderNewThreadDraft();
+}
+
+function renderPluginRefreshPendingNotice(previousKeys = new Set()) {
+  if (!isHermesEmbedMode()) return "";
+  const message = String(state.pluginRefreshPendingNotice || "").trim();
+  if (!message) return "";
+  const key = `plugin-refresh-pending|${message}`;
+  return `<div class="history-note plugin-refresh-pending${entryAnimationClass(key, previousKeys)}" data-render-key="${escapeHtml(key)}">${escapeHtml(message)}</div>`;
 }
 
 function scrubPluginLaunchUrl() {
@@ -3226,6 +3309,27 @@ function showPluginEmbedAuthError(message = "") {
   if (submit) submit.classList.add("hidden");
   $("loginError").textContent = message || "Codex Mobile plugin launch is invalid or expired.";
   publishPluginNavigationState();
+}
+
+function showPluginEmbedRecovering(message = "") {
+  showApp();
+  clearPluginRefreshPendingNotice();
+  state.newThreadDraft = false;
+  state.startupThreadOpenPending = false;
+  state.currentThread = null;
+  state.currentThreadId = "";
+  state.activeTurnId = "";
+  clearInterval(state.tickTimer);
+  state.tickTimer = null;
+  updateSubagentPanelUi();
+  updateTurnTimer();
+  $("threadTitle").textContent = "Refreshing plugin";
+  $("threadMeta").textContent = "Waiting for Hermes Mobile to relaunch Codex";
+  $("conversation").innerHTML = `<div class="empty-state entry-animate">${escapeHtml(message || "Refreshing Codex Mobile plugin session...")}</div>`;
+  state.renderedConversationSignature = `plugin-recovering|${String(message || "").slice(0, 120)}`;
+  $("connectionState").classList.remove("error");
+  $("connectionState").textContent = message || "Refreshing Codex Mobile plugin session...";
+  publishPluginNavigationState({ force: true });
 }
 
 function showLogin(message = "") {
@@ -3301,6 +3405,7 @@ async function applyPluginLaunchTarget() {
   state.selectedCwd = workspace ? workspace.cwd : cwd;
   clearCurrentThreadSelection({ saveDraft: false });
   state.newThreadDraft = true;
+  state.startupThreadOpenPending = false;
   restoreDraftForCurrentTarget();
   syncSidebarWorkspaceSelect();
   updateWorkspacePath();
@@ -3311,8 +3416,10 @@ async function applyPluginLaunchTarget() {
 }
 
 async function bootstrap() {
-  applyUrlThreadSelection();
-  applyUrlPluginRouteHint();
+  const startupThreadId = applyUrlThreadSelection();
+  const startupPluginRouteHint = applyUrlPluginRouteHint();
+  const savedThreadId = localStorage.getItem(STORAGE_THREAD_ID) || "";
+  state.startupThreadOpenPending = Boolean(startupThreadId || savedThreadId || (startupPluginRouteHint && startupPluginRouteHint.threadId));
   const status = await api("/api/status").catch((err) => {
     $("connectionState").textContent = err.message;
     $("connectionState").classList.add("error");
@@ -3321,7 +3428,7 @@ async function bootstrap() {
   if (status) updateConnectionState(status);
   if (status && (status.rateLimits || status.rateLimitsByModel)) rememberRateLimits(status.rateLimits, status.rateLimitsByModel);
   await loadWorkspaces();
-  await loadThreads();
+  await loadThreads({ silent: state.startupThreadOpenPending });
   let appliedPluginLaunchTarget = false;
   let appliedPluginRouteHint = false;
   try {
@@ -3333,6 +3440,7 @@ async function bootstrap() {
     showError(err);
   }
   if (!appliedPluginLaunchTarget && !appliedPluginRouteHint) await restoreThreadSelection();
+  else state.startupThreadOpenPending = false;
   connectEvents();
   scheduleStartupUpdateCheck();
   scheduleStartupPublicPrCheck();
@@ -3407,6 +3515,7 @@ function findPluginRouteTargetNode(hint) {
   if (!conversation) return null;
   return conversation.querySelector(`[data-approval-card="${escapeSelectorAttr(targetId)}"]`)
     || conversation.querySelector(`[data-task-card="${escapeSelectorAttr(targetId)}"]`)
+    || conversation.querySelector(`[data-turn="${escapeSelectorAttr(targetId)}"]`)
     || conversation.querySelector(`[data-item="${escapeSelectorAttr(targetId)}"]`);
 }
 
@@ -3780,6 +3889,7 @@ async function loadThread(threadId, options = {}) {
   markThreadViewed(threadId);
   const summary = state.threads.find((thread) => thread.id === threadId);
   state.currentThreadId = threadId;
+  state.startupThreadOpenPending = false;
   state.currentThread = summary ? Object.assign({ turns: [], mobileLoading: true }, summary) : {
     id: threadId,
     name: threadId,
@@ -4030,12 +4140,12 @@ function isSidebarOpen() {
 
 function isInteractiveGestureTarget(target) {
   return Boolean(target && target.closest && target.closest(
-    "a, button, input, textarea, select, label, [contenteditable='true'], .rename-input, .composer, .thread-action-sheet"
+    "a, button, input, textarea, select, label, [contenteditable='true'], .rename-input, .composer, .thread-action-sheet, .continuation-dialog"
   ));
 }
 
 function beginSidebarEdgeSwipe(event) {
-  if (!isMobileViewport() || isHermesEmbedMode() || isSidebarOpen() || state.renameThreadId || state.threadActionMenuId) return;
+  if (!isMobileViewport() || isHermesEmbedMode() || isSidebarOpen() || state.renameThreadId || state.threadActionMenuId || state.continuationDialogThreadId) return;
   if (event.touches && event.touches.length > 1) return;
   if (isInteractiveGestureTarget(event.target)) return;
   const touch = primaryTouch(event);
@@ -4406,6 +4516,47 @@ function closeRenameDialog(options = {}) {
   publishPluginNavigationState();
 }
 
+function continuationDialogOpen() {
+  const dialog = $("continuationDialog");
+  return Boolean(dialog && !dialog.classList.contains("hidden"));
+}
+
+function openContinuationDialog(sourceThread) {
+  const thread = sourceThread || state.currentThread || {};
+  const threadId = String(thread.id || state.currentThreadId || "").trim();
+  const cwd = thread.cwd ? String(thread.cwd).trim() : String(state.selectedCwd || "").trim();
+  if (!cwd) {
+    showError(new Error("Thread has no workspace path"));
+    return false;
+  }
+  const dialog = $("continuationDialog");
+  if (!dialog) return false;
+  state.continuationDialogThreadId = threadId || "__current__";
+  const title = thread.name || thread.preview || thread.id || "current thread";
+  const titleNode = $("continuationTitle");
+  const summaryNode = $("continuationSummary");
+  if (titleNode) titleNode.textContent = `压缩续接“${title}”`;
+  if (summaryNode) {
+    const size = rolloutSizeText(thread);
+    summaryNode.textContent = [
+      "会创建一个同工作区的新线程。",
+      "成功后自动归档旧线程。",
+      size ? `当前 rollout 大小：${size}` : "",
+    ].filter(Boolean).join(" ");
+  }
+  dialog.classList.remove("hidden");
+  setTimeout(clearTextSelection, 0);
+  publishPluginNavigationState({ force: true });
+  return true;
+}
+
+function closeContinuationDialog() {
+  const dialog = $("continuationDialog");
+  if (dialog) dialog.classList.add("hidden");
+  state.continuationDialogThreadId = "";
+  publishPluginNavigationState({ force: true });
+}
+
 function pluginNavigationUiState() {
   return {
     filePreviewOpen: filePreviewOpen(),
@@ -4451,6 +4602,9 @@ function handlePluginBack(event) {
     handled = true;
   } else if (state.renameThreadId) {
     closeRenameDialog({ force: true });
+    handled = true;
+  } else if (state.continuationDialogThreadId) {
+    closeContinuationDialog();
     handled = true;
   } else if (state.threadActionMenuId) {
     closeThreadActionSheet();
@@ -4600,7 +4754,7 @@ function renderThreads(result = null) {
       <button class="thread-card${active}${emphasis}${sizeWarn ? " rollout-warn" : ""}" type="button" data-thread="${escapeHtml(thread.id)}">
         <div class="thread-card-title-row">
           <div class="thread-card-title">${escapeHtml(title)}</div>
-          ${statusIcon}
+          <div class="thread-card-title-actions">${statusIcon}</div>
         </div>
         <div class="thread-card-meta-row">
           <div class="thread-card-meta">
@@ -4644,6 +4798,7 @@ async function restoreThreadSelection() {
   if (state.currentThread) return;
   const savedThreadId = localStorage.getItem(STORAGE_THREAD_ID) || "";
   if (!state.threads.length && !savedThreadId) {
+    state.startupThreadOpenPending = false;
     restoreNewThreadDraftSelection();
     return;
   }
@@ -4651,12 +4806,14 @@ async function restoreThreadSelection() {
   const active = state.threads.find((thread) => isRunningStatus(thread.status));
   const target = saved || (savedThreadId ? { id: savedThreadId } : active);
   if (!target) {
+    state.startupThreadOpenPending = false;
     restoreNewThreadDraftSelection();
     return;
   }
   try {
     await loadThread(target.id, { source: "restore" });
   } catch (err) {
+    state.startupThreadOpenPending = false;
     if (target.id === savedThreadId) localStorage.removeItem(STORAGE_THREAD_ID);
     showError(err);
     renderCurrentThread();
@@ -4879,6 +5036,19 @@ function renderHome() {
   publishPluginNavigationState();
 }
 
+function renderStartupThreadOpening() {
+  clearInterval(state.tickTimer);
+  state.tickTimer = null;
+  state.subagentPanelOpen = false;
+  updateSubagentPanelUi();
+  updateTurnTimer();
+  $("threadTitle").textContent = "Opening thread";
+  $("threadMeta").textContent = "Restoring your current conversation";
+  $("conversation").innerHTML = `<div class="empty-state entry-animate">Opening thread...</div>`;
+  state.renderedConversationSignature = "startup-thread-open-pending";
+  publishPluginNavigationState();
+}
+
 function renderThreadLoadError(err) {
   const list = $("threadList");
   list.innerHTML = `<div class="empty-state">
@@ -4942,6 +5112,10 @@ function renderCurrentThread(options = {}) {
   }
   const thread = state.currentThread;
   if (!thread) {
+    if (state.startupThreadOpenPending) {
+      renderStartupThreadOpening();
+      return;
+    }
     renderHome();
     return;
   }
@@ -4997,6 +5171,7 @@ function renderCurrentThread(options = {}) {
     : "";
   const rolloutWarning = renderRolloutWarning(thread, previousKeys);
   const taskToolbar = renderThreadTaskToolbar(thread);
+  const pluginRefreshNotice = renderPluginRefreshPendingNotice(previousKeys);
   const visibleTurnIds = new Set(turns.map((turn) => turn && turn.id).filter(Boolean).map(String));
   resetCopyTextStore();
   const turnsHtml = turns.map((turn) => renderTurn(turn, previousKeys)).join("");
@@ -5009,7 +5184,7 @@ function renderCurrentThread(options = {}) {
   const emptyMessage = readWarningMessage
     ? "暂时没有可显示的完整消息。共享模式恢复后刷新这个页面即可继续读取。"
     : "No visible turns.";
-    const html = rolloutWarning + taskToolbar + omittedBanner + readWarning + (turnsHtml || approvalsHtml || taskCardsHtml ? `${turnsHtml}${approvalsHtml}${taskCardsHtml}` : `<div class="empty-state entry-animate">${escapeHtml(emptyMessage)}</div>`);
+    const html = rolloutWarning + taskToolbar + omittedBanner + readWarning + (turnsHtml || approvalsHtml || taskCardsHtml ? `${turnsHtml}${approvalsHtml}${taskCardsHtml}${pluginRefreshNotice}` : `${pluginRefreshNotice || ""}<div class="empty-state entry-animate">${escapeHtml(emptyMessage)}</div>`);
   updateConversationHtml(html, conversationRenderSignature(thread), { stickToBottom: shouldStickToBottom });
   bindCurrentThreadActions();
   applyPendingPluginRouteHintFocus();
@@ -5035,8 +5210,10 @@ function renderNewThreadDraft() {
   const selectedModel = newThreadSelectedModel();
   const selectedEffort = newThreadSelectedEffort();
   const selectedPermission = newThreadSelectedPermissionMode();
+  const pluginRefreshNotice = renderPluginRefreshPendingNotice();
   const html = `<div class="new-thread-page">
     <div class="new-thread-panel">
+      ${pluginRefreshNotice}
       <div class="new-thread-kicker">New chat</div>
       <h1>新建对话</h1>
       <div class="new-thread-workspace">
@@ -5239,6 +5416,57 @@ function parseThreadTaskCardDraftText(value) {
   };
 }
 
+function hasThreadTaskCardDraftTag(value) {
+  return String(value || "").includes(`<${THREAD_TASK_CARD_DRAFT_TAG}>`);
+}
+
+function turnHasThreadTaskCardRequest(turn) {
+  const items = Array.isArray(turn && turn.items) ? turn.items : [];
+  return items.some((item) => {
+    if (!item || item.type !== "userMessage") return false;
+    const parts = Array.isArray(item.content) ? item.content : [];
+    return parts.some((part) => isInputTextPart(part) && Boolean(threadTaskCardRequestMarkerMatch(inputTextValue(part))));
+  });
+}
+
+function turnHasThreadTaskCardDraftResponse(turn) {
+  const items = Array.isArray(turn && turn.items) ? turn.items : [];
+  return items.some((item) => item && (item.type === "agentMessage" || item.type === "plan") && hasThreadTaskCardDraftTag(item.text || ""));
+}
+
+function renderTurnThreadTaskCardDraft(turn, previousKeys = new Set()) {
+  const items = Array.isArray(turn && turn.items) ? turn.items : [];
+  for (const item of items) {
+    if (!item || (item.type !== "agentMessage" && item.type !== "plan")) continue;
+    const text = String(item.text || "");
+    const draft = parseThreadTaskCardDraftText(text);
+    if (draft) {
+      const draftKey = threadTaskCardDraftKey(turn.id, item.id || "");
+      const draftState = threadTaskCardDraftState(draftKey);
+      if (draftState.status === "created" || draftState.status === "dismissed") return "";
+      return renderThreadTaskCardDraft(draft, item, turn, previousKeys);
+    }
+    if (hasThreadTaskCardDraftTag(text)) {
+      return renderPendingThreadTaskCardDraft("Generating cross-thread task card draft...", "Generating");
+    }
+  }
+  return "";
+}
+
+function renderPendingThreadTaskCardDraft(message, status = "Generating") {
+  const detail = escapeHtml(String(message || "Generating cross-thread task card draft..."));
+  return `<section class="approval-card thread-task-card-draft pending synthetic">
+    <div class="approval-head">
+      <div>
+        <div class="approval-title">Cross-thread task card draft</div>
+        <div class="approval-method">Pending</div>
+      </div>
+      <span class="approval-status">${escapeHtml(String(status || "Generating"))}</span>
+    </div>
+    <div class="approval-summary-line">${detail}</div>
+  </section>`;
+}
+
 function threadTaskCardDraftKey(turnId, itemId) {
   return `task-card-draft|${String(turnId || "")}|${String(itemId || "")}`;
 }
@@ -5322,8 +5550,39 @@ function resolveTargetThreadReference(input) {
 
 async function refreshCurrentThreadAfterTaskCard() {
   if (!state.currentThreadId) return;
-  await loadThread(state.currentThreadId, { source: "task-card" });
+  await refreshCurrentThread();
   loadThreads({ silent: true }).catch(showError);
+}
+
+function currentThreadHasTurn(turnId) {
+  const targetTurnId = String(turnId || "").trim();
+  if (!targetTurnId || !state.currentThread) return false;
+  const turns = Array.isArray(state.currentThread.turns) ? state.currentThread.turns : [];
+  return turns.some((turn) => String(turn && turn.id || "") === targetTurnId);
+}
+
+async function waitForCurrentThreadTurn(turnId, options = {}) {
+  const targetTurnId = String(turnId || "").trim();
+  if (!targetTurnId || !state.currentThreadId) return false;
+  const timeoutMs = Math.max(500, Number(options.timeoutMs) || 10000);
+  const intervalMs = Math.max(150, Number(options.intervalMs) || 500);
+  const deadline = Date.now() + timeoutMs;
+  while (state.currentThreadId && Date.now() <= deadline) {
+    await refreshCurrentThread();
+    if (!state.currentThreadId) return false;
+    if (currentThreadHasTurn(targetTurnId)) {
+      state.pendingPluginRouteHint = normalizePluginRouteHint({
+        pluginId: "codex-mobile",
+        route: "thread-turn",
+        threadId: state.currentThreadId,
+        itemId: targetTurnId,
+      });
+      renderCurrentThread();
+      return true;
+    }
+    await sleep(intervalMs);
+  }
+  return currentThreadHasTurn(targetTurnId);
 }
 
 async function createThreadTaskCardFromCurrent(event) {
@@ -5509,20 +5768,15 @@ async function startNewThreadFromThread(sourceThread, event) {
   if (event) event.preventDefault();
   if (event) event.stopPropagation();
   if (state.continuationBusy) return;
-  const button = event && event.currentTarget;
   const thread = sourceThread || state.currentThread || {};
-  const sourceThreadId = thread.id || state.currentThreadId || "";
-  const title = thread.name || thread.preview || thread.id || "current thread";
-  const size = rolloutSizeText(thread);
+  if (!continuationDialogOpen()) {
+    openContinuationDialog(thread);
+    return;
+  }
+  const button = event && event.currentTarget;
   const cwd = thread.cwd ? String(thread.cwd).trim() : String(state.selectedCwd || "").trim();
-  const archiveConfirmed = window.confirm([
-    `压缩续接“${title}”？`,
-    "",
-    "会创建一个同工作区的新 session。",
-    "成功后自动归档旧 session。",
-    size ? `当前大小：${size}` : "",
-  ].filter((line) => line !== "").join("\n"));
-  if (!archiveConfirmed) return;
+  closeContinuationDialog();
+  const sourceThreadId = thread.id || state.currentThreadId || "";
   const body = {
     cwd,
     sourceThreadId: thread.id || "",
@@ -5618,11 +5872,23 @@ function taskCardDirectionLabel(card) {
 function taskCardDetailLines(card) {
   if (!card) return [];
   return [
-    card.message && card.message.summary ? `Summary: ${card.message.summary}` : "",
     card.target && card.threadRole === "source" ? `Target thread: ${card.target.threadId}` : "",
     card.source && card.threadRole === "target" ? `Source workspace: ${card.source.workspaceId}` : "",
     card.injectedTurnId ? `Injected turn: ${card.injectedTurnId}` : "",
   ].filter(Boolean);
+}
+
+function threadTaskCardSummaryLine(text) {
+  return truncateSingleLine(String(text || "").trim(), 220);
+}
+
+function renderThreadTaskCardExpandable(preview, sections) {
+  const blocks = (Array.isArray(sections) ? sections : []).filter(Boolean);
+  if (!blocks.length) return "";
+  return `<details class="approval-details">
+    <summary><span>${escapeHtml(threadTaskCardSummaryLine(preview) || "Show details")}</span></summary>
+    ${blocks.join("")}
+  </details>`;
 }
 
 function renderThreadTaskCardActions(card) {
@@ -5642,8 +5908,13 @@ function renderThreadTaskCard(card, previousKeys = new Set()) {
   const key = `task-card|${card.id}`;
   const status = String(card.status || "pending");
   const detail = taskCardDetailLines(card).join("\n");
+  const summary = threadTaskCardSummaryLine(card.message && card.message.summary ? card.message.summary : "");
   const body = card.message && card.message.body ? `<pre class="approval-detail">${escapeHtml(card.message.body)}</pre>` : "";
   const compact = status !== "pending" ? " compact" : "";
+  const detailBlocks = [
+    detail ? `<pre class="approval-detail">${escapeHtml(detail)}</pre>` : "",
+    body,
+  ];
   return `<section class="approval-card thread-task-card${compact}${entryAnimationClass(key, previousKeys)} ${escapeHtml(status)}" data-render-key="${escapeHtml(key)}" data-task-card="${escapeHtml(card.id)}">
     <div class="approval-head">
       <div>
@@ -5652,8 +5923,8 @@ function renderThreadTaskCard(card, previousKeys = new Set()) {
       </div>
       <span class="approval-status">${escapeHtml(taskCardStatusLabel(status))}</span>
     </div>
-    ${detail ? `<pre class="approval-detail">${escapeHtml(detail)}</pre>` : ""}
-    ${body}
+    ${summary ? `<div class="approval-summary-line">${escapeHtml(summary)}</div>` : ""}
+    ${renderThreadTaskCardExpandable(summary || detail || (card.message && card.message.title) || "Task card details", detailBlocks)}
     ${renderThreadTaskCardActions(card)}
   </section>`;
 }
@@ -5683,7 +5954,6 @@ function threadTaskCardDraftStatusLabel(status) {
 function threadTaskCardDraftDetailLines(draft, targetThread, draftState) {
   return [
     targetThread ? `Target thread: ${targetThread.title || targetThread.id || draft.targetThreadId}` : (draft.targetThreadId ? `Target thread: ${draft.targetThreadId}` : ""),
-    draft.summary ? `Summary: ${draft.summary}` : "",
     draft.error ? `Model note: ${draft.error}` : "",
     draftState.error ? `Last error: ${draftState.error}` : "",
   ].filter(Boolean);
@@ -5704,6 +5974,11 @@ function renderThreadTaskCardDraft(draft, item, turn, previousKeys = new Set()) 
   const targetThread = findThreadById(draft.targetThreadId);
   const compact = draftState.status === "created" || draftState.status === "dismissed" ? " compact" : "";
   const detail = threadTaskCardDraftDetailLines(draft, targetThread, draftState).join("\n");
+  const summary = threadTaskCardSummaryLine(draft.summary || draft.error || "");
+  const detailBlocks = [
+    detail ? `<pre class="approval-detail">${escapeHtml(detail)}</pre>` : "",
+    draft.body ? `<pre class="approval-detail">${escapeHtml(draft.body)}</pre>` : "",
+  ];
   return `<section class="approval-card thread-task-card-draft${compact}${entryAnimationClass(draftKey, previousKeys)} ${escapeHtml(draftState.status)}" data-render-key="${escapeHtml(draftKey)}" data-task-card-draft="${escapeHtml(draftKey)}">
     <div class="approval-head">
       <div>
@@ -5712,8 +5987,8 @@ function renderThreadTaskCardDraft(draft, item, turn, previousKeys = new Set()) 
       </div>
       <span class="approval-status">${escapeHtml(threadTaskCardDraftStatusLabel(draftState.status))}</span>
     </div>
-    ${detail ? `<pre class="approval-detail">${escapeHtml(detail)}</pre>` : ""}
-    ${draft.body ? `<pre class="approval-detail">${escapeHtml(draft.body)}</pre>` : ""}
+    ${summary ? `<div class="approval-summary-line">${escapeHtml(summary)}</div>` : ""}
+    ${renderThreadTaskCardExpandable(summary || detail || draft.title || "Task card draft details", detailBlocks)}
     ${renderThreadTaskCardDraftActions(draftKey, draft, draftState)}
   </section>`;
 }
@@ -5877,7 +6152,11 @@ function renderTurn(turn, previousKeys = new Set()) {
   const approvalsHtml = turnApprovals.length
     ? `<div class="approval-stack in-turn">${turnApprovals.map((request) => renderApprovalRequest(request, previousKeys)).join("")}</div>`
     : "";
-  if (!items.trim() && !approvalsHtml.trim()) return "";
+  const draftHtml = renderTurnThreadTaskCardDraft(turn, previousKeys);
+  const pendingDraftHtml = !draftHtml && !turnHasThreadTaskCardDraftResponse(turn) && isLatestTurn(turn) && isLiveTurn(turn) && turnHasThreadTaskCardRequest(turn)
+    ? renderPendingThreadTaskCardDraft("Generating cross-thread task card draft...", "Generating")
+    : "";
+  if (!items.trim() && !approvalsHtml.trim() && !draftHtml.trim() && !pendingDraftHtml.trim()) return "";
   const turnKey = stableTurnKey(turn);
   const statusKey = stableTurnKey(turn, "status");
   const duration = turn.durationMs ? ` | ${formatElapsedTime(Math.round(turn.durationMs / 1000))}` : "";
@@ -5886,6 +6165,7 @@ function renderTurn(turn, previousKeys = new Set()) {
   return `<article class="turn" data-turn="${escapeHtml(turn.id)}" data-render-key="${escapeHtml(turnKey)}">
     ${items}${approvalsHtml}
     ${showStatusLine ? `<div class="turn-status${entryAnimationClass(statusKey, previousKeys)}" data-render-key="${escapeHtml(statusKey)}">${escapeHtml(displayTurnStatus(turn))}${duration}</div>` : ""}
+    ${draftHtml}${pendingDraftHtml}
   </article>`;
 }
 
@@ -6353,9 +6633,10 @@ function renderMarkdownWithAttachmentSummary(value) {
 }
 
 function renderThreadTaskCardDraftMessage(value, item, turn) {
-  const draft = parseThreadTaskCardDraftText(value);
-  if (!draft) return "";
-  return renderThreadTaskCardDraft(draft, item, turn);
+  const text = String(value || "");
+  if (parseThreadTaskCardDraftText(value)) return "";
+  if (hasThreadTaskCardDraftTag(text)) return "";
+  return "";
 }
 
 function closeFilePreview() {
@@ -8547,7 +8828,7 @@ async function mutateThreadTaskCard(cardId, action, body = {}) {
   const id = String(cardId || "").trim();
   if (!id || !state.currentThreadId) return;
   $("connectionState").classList.remove("error");
-  $("connectionState").textContent = `${action} task card`;
+  $("connectionState").textContent = action === "approve" ? "Approving task card" : `${action} task card`;
   try {
     const result = await api(`/api/thread-task-cards/${encodeURIComponent(id)}/${encodeURIComponent(action)}`, {
       method: "POST",
@@ -8555,11 +8836,17 @@ async function mutateThreadTaskCard(cardId, action, body = {}) {
       timeoutMs: 30000,
     });
     if (action === "approve" && result && result.execution && result.execution.turnId) {
-      $("connectionState").textContent = "Task card approved and injected";
+      $("connectionState").textContent = "Task card approved; starting target turn";
     } else {
       $("connectionState").textContent = "Task card updated";
     }
     settleCurrentThreadTaskCard(id, action === "approve" ? "approved" : action === "delete" ? "deleted" : action === "revoke" ? "revoked" : "replied", result && result.card ? result.card : null);
+    if (action === "approve" && result && result.execution && result.execution.turnId) {
+      const injectedVisible = await waitForCurrentThreadTurn(result.execution.turnId, { timeoutMs: 10000, intervalMs: 500 });
+      $("connectionState").textContent = injectedVisible ? "Task card approved and injected" : "Task card approved; waiting for thread refresh";
+      loadThreads({ silent: true }).catch(showError);
+      return;
+    }
     await refreshCurrentThreadAfterTaskCard();
   } catch (err) {
     showError(err);
@@ -8603,6 +8890,7 @@ function setThreadTaskCardDraftState(draftKey, nextState) {
   const key = String(draftKey || "");
   if (!key) return;
   state.threadTaskCardDraftStates.set(key, Object.assign({}, threadTaskCardDraftState(key), nextState || {}));
+  saveThreadTaskCardDraftStates();
   renderCurrentThread();
 }
 
@@ -8786,6 +9074,15 @@ function wireUi() {
   $("threadList").addEventListener("touchcancel", cancelThreadLongPress, { passive: true });
   $("threadList").addEventListener("contextmenu", handleThreadListContextMenu);
   if ($("threadActionSheet")) $("threadActionSheet").addEventListener("click", handleThreadAction);
+  if ($("continuationConfirm")) $("continuationConfirm").addEventListener("click", () => {
+    const threadId = state.continuationDialogThreadId;
+    const thread = threadId === "__current__" ? (state.currentThread || null) : threadById(threadId);
+    startNewThreadFromThread(thread).catch(showError);
+  });
+  if ($("continuationCancel")) $("continuationCancel").addEventListener("click", closeContinuationDialog);
+  if ($("continuationDialog")) $("continuationDialog").addEventListener("click", (event) => {
+    if (event.target === $("continuationDialog")) closeContinuationDialog();
+  });
   if ($("renameForm")) $("renameForm").addEventListener("submit", submitRename);
   if ($("renameCancel")) $("renameCancel").addEventListener("click", closeRenameDialog);
   if ($("renameDialog")) $("renameDialog").addEventListener("click", (event) => {
@@ -9063,6 +9360,7 @@ async function start() {
   };
   state.publicPrEnabled = Boolean(config.publicPullRequests && config.publicPullRequests.enabled);
   state.publicPrRepository = String(config.publicPullRequests && config.publicPullRequests.repository || "");
+  state.appWorkspacePath = String(config.workspacePath || state.appWorkspacePath || "").trim();
   state.publicPrStatus = {
     enabled: state.publicPrEnabled,
     repository: state.publicPrRepository,
@@ -9082,14 +9380,14 @@ async function start() {
         message: err && err.message ? err.message : String(err),
         path: "/api/v1/hermes/plugin/session",
       }) || "plugin_launch_invalid", { force: true });
-      showPluginEmbedAuthError(err.message || String(err));
+      showPluginEmbedRecovering("Refreshing Codex Mobile plugin launch...");
       return;
     }
   }
   if (config.authRequired && !state.key) {
     if (isHermesEmbedMode()) {
       requestHermesPluginRefresh("plugin_session_missing", { force: true });
-      showPluginEmbedAuthError("Codex Mobile plugin is missing a valid Hermes launch session.");
+      showPluginEmbedRecovering("Refreshing Codex Mobile plugin session...");
     }
     else showLogin();
     return;
@@ -9104,7 +9402,7 @@ async function start() {
           message: err && err.message ? err.message : String(err),
           path: "",
         }) || "auth_state_changed", { force: true });
-        showPluginEmbedAuthError("Codex Mobile plugin session is unauthorized or expired.");
+        showPluginEmbedRecovering("Refreshing Codex Mobile plugin session...");
       }
       else showLogin();
     }

@@ -16,6 +16,7 @@ const pkg = fs.readFileSync(path.join(root, "package.json"), "utf8");
 test("sidebar exposes a confirmed manual restart action beside the version pill", () => {
   assert.match(indexHtml, /class="version-actions"[\s\S]*id="appUpdateStatus"[\s\S]*id="sharedRestartButton"/);
   assert.match(stylesCss, /\.version-actions/);
+  assert.match(stylesCss, /html\.embed-hermes \.main \.version-actions/);
   assert.match(stylesCss, /\.restart-button/);
   assert.match(appJs, /function handleSharedRestartClick\(\)/);
   assert.match(appJs, /window\.confirm\(/);
