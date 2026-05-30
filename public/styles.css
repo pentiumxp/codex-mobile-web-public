@@ -335,7 +335,7 @@ html.embed-hermes .app {
 
 html.embed-hermes #openMenu,
 html.embed-hermes #pageRefreshPrompt,
-html.embed-hermes .version-actions {
+html.embed-hermes .main .version-actions {
   display: none !important;
 }
 
@@ -908,7 +908,8 @@ html.visual-recovering body::before {
 }
 
 .thread-action-sheet,
-.rename-dialog {
+.rename-dialog,
+.continuation-dialog {
   position: fixed;
   inset: 0;
   z-index: 50;
@@ -923,6 +924,11 @@ html.visual-recovering body::before {
 .thread-action-title,
 .thread-action-item,
 .thread-action-cancel,
+.continuation-panel,
+.continuation-title,
+.continuation-summary,
+.continuation-confirm,
+.continuation-cancel,
 .thread-list,
 .thread-card,
 .thread-card * {
@@ -932,7 +938,8 @@ html.visual-recovering body::before {
 }
 
 .thread-action-panel,
-.rename-panel {
+.rename-panel,
+.continuation-panel {
   width: min(460px, 100%);
   margin: 0 auto;
   display: grid;
@@ -946,7 +953,8 @@ html.visual-recovering body::before {
 }
 
 .thread-action-title,
-.rename-title {
+.rename-title,
+.continuation-title {
   min-width: 0;
   padding: 5px 4px 8px;
   color: var(--muted);
@@ -980,13 +988,47 @@ html.visual-recovering body::before {
   background: transparent;
 }
 
-.rename-dialog {
+.rename-dialog,
+.continuation-dialog {
   align-items: center;
 }
 
-.rename-panel {
+.rename-panel,
+.continuation-panel {
   gap: 12px;
   padding: 14px;
+}
+
+.continuation-summary {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.continuation-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.continuation-confirm,
+.continuation-cancel {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid var(--line-soft);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.continuation-cancel {
+  color: var(--muted);
+  background: transparent;
+}
+
+.continuation-confirm {
+  color: var(--text);
+  background: var(--control-bg);
 }
 
 .file-preview-dialog {
@@ -1275,6 +1317,13 @@ html.visual-recovering body::before {
   display: flex;
   align-items: center;
   gap: 9px;
+}
+
+.thread-card-title-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .thread-card-title {
@@ -1889,6 +1938,14 @@ html.visual-recovering body::before {
   font-size: var(--content-small-font-size);
 }
 
+.plugin-refresh-pending {
+  color: var(--warning-text);
+  background: rgba(248, 221, 182, 0.18);
+  border-color: rgba(248, 221, 182, 0.5);
+  box-shadow: 0 0 0 1px rgba(248, 221, 182, 0.12) inset;
+  font-weight: 700;
+}
+
 .rollout-warning {
   max-width: 980px;
   margin: 0 auto 14px;
@@ -1986,6 +2043,12 @@ html.visual-recovering body::before {
 .approval-card.resolved {
   border-color: rgba(122, 199, 167, 0.34);
   background: var(--approval-resolved-bg);
+}
+
+.approval-summary-line {
+  margin: 0 12px 10px;
+  color: var(--text-muted);
+  line-height: 1.45;
 }
 
 .approval-line {
@@ -2313,6 +2376,42 @@ html.visual-recovering body::before {
   white-space: pre-wrap;
   word-break: break-word;
   overflow-wrap: anywhere;
+}
+
+.approval-details {
+  min-width: 0;
+  max-width: 100%;
+  margin: 0 12px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.approval-details summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  padding: 9px 10px;
+  color: var(--text-muted);
+  list-style: none;
+}
+
+.approval-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.approval-details summary span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.approval-details .approval-detail {
+  margin: 0;
+  border-top: 1px solid var(--line-soft);
+  border-radius: 0;
 }
 
 .turn-usage-summary {
@@ -3052,7 +3151,7 @@ html.visual-recovering body::before {
   max-width: 100%;
   gap: 10px;
   align-items: flex-end;
-  padding: 12px 18px calc(12px + env(safe-area-inset-bottom));
+  padding: 12px 18px calc(12px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--line);
   background: var(--composer-bg);
 }
@@ -3841,7 +3940,7 @@ html.keyboard-open .composer {
       "attachments attachments attachments"
       "attach input send";
     gap: 8px;
-    padding: 8px 12px 7px;
+    padding: 8px 12px max(12px, calc(7px + env(safe-area-inset-bottom, 0px)));
   }
 
   html.embed-hermes .composer {

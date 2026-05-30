@@ -3560,3 +3560,193 @@ The previous full handoff was archived and should be opened only when old proven
 - Activation:
   - Static frontend change only.
   - Refresh/reopen clients to load `codex-mobile-shell-v121`.
+
+## 2026-05-30 Startup Thread Opening Stabilization v122
+
+- User report:
+  - First load when opening directly into a thread still flashed the Workspace/recent-thread home screen before the target thread appeared.
+- Local implementation:
+  - `public/app.js`
+    - `bootstrap()` now marks a startup thread-open-pending state when startup already knows a direct thread target from a saved thread id, URL `thread` hint, or Hermes plugin route-hint thread id.
+    - While that state is pending, the first `loadThreads()` call stays silent and the main panel renders a stable `Opening thread...` placeholder instead of the Workspace/recent-thread home view.
+    - The pending state clears as soon as the real thread opens or startup falls back to the normal home/new-thread path.
+  - `public/app.js` / `public/sw.js`
+    - Static shell build/cache bumped to `0.1.11|codex-mobile-shell-v122` / `codex-mobile-shell-v122`.
+- Validation:
+  - `node --check public\app.js` passed.
+  - `node --check public\sw.js` passed.
+  - Focused `node --test test\mobile-viewport.test.js test\thread-task-card-route.test.js` passed.
+- Activation:
+  - Static frontend change only.
+  - Refresh/reopen clients to load `codex-mobile-shell-v122`.
+
+## 2026-05-30 Hermes Embed Recovering State v123
+
+- User report:
+  - Hermes plugin startup could still flash a red `Codex` auth/session error panel, then succeed after one more refresh.
+- Local implementation:
+  - `public/app.js`
+    - Added `showPluginEmbedRecovering()` for embed-mode launch/session/auth failures that already request a Hermes-side iframe refresh.
+    - `onUnauthorized`, launch-session exchange failure, missing plugin session, and bootstrap unauthorized-session recovery now keep the iframe in a neutral recovering state instead of showing the red plugin auth/login panel first.
+  - `public/app.js` / `public/sw.js`
+    - Static shell build/cache bumped to `0.1.11|codex-mobile-shell-v123` / `codex-mobile-shell-v123`.
+- Validation:
+  - `node --check public\app.js` passed.
+  - `node --check public\sw.js` passed.
+  - Focused `node --test test\mobile-viewport.test.js test\thread-task-card-route.test.js test\hermes-plugin-route.test.js` passed.
+- Activation:
+  - Static frontend change only.
+  - Refresh/reopen clients to load `codex-mobile-shell-v123`.
+
+## 2026-05-30 Task-card Draft/Approve Feedback Stabilization v124
+
+- User report:
+  - Before the formal cross-thread draft card appeared, the conversation could briefly show raw XML/code from the bounded draft schema.
+  - `#` draft generation had no visible in-thread progress state while the current turn was still producing the draft.
+  - Target-side `Approve` could look hung even after the backend had started injection, because the current thread reused the same-thread `loadThread()` cache path and did not immediately show the injected turn.
+  - Pending task cards and draft cards were too large because the full body rendered immediately.
+- Local implementation:
+  - `public/app.js`
+    - Added pending draft placeholders for `#` command turns while the current live turn is still generating a draft.
+    - Suppresses raw `<codex-mobile-thread-task-card-draft>...</...>` streaming text until a valid draft block is ready.
+    - Changed `refreshCurrentThreadAfterTaskCard()` to use `refreshCurrentThread()` instead of same-thread `loadThread()`.
+    - Added `waitForCurrentThreadTurn()` so target-side `Approve` briefly polls for the returned injected `turnId` and then focuses that turn directly once it becomes visible.
+    - Pending task-card drafts and pending task cards now render as medium cards with a visible summary line and collapsed details/body.
+  - `public/styles.css`
+    - Added collapsed task-card detail styling via `.approval-summary-line` and `.approval-details`.
+  - `public/app.js` / `public/sw.js`
+    - Static shell build/cache bumped to `0.1.11|codex-mobile-shell-v124` / `codex-mobile-shell-v124`.
+- Validation:
+  - `node --check public\app.js` passed.
+  - `node --check public\sw.js` passed.
+  - Focused `node --test test\thread-task-card-route.test.js test\mobile-viewport.test.js test\conversation-render.test.js` passed: 21/21.
+- Activation:
+  - Static frontend change only.
+  - Refresh/reopen clients to load `codex-mobile-shell-v124`.
+
+## 2026-05-30 Hermes Embed Action Visibility And PR Routing v125
+
+- User report:
+  - In Hermes embed mode, the version pill plus `Restart` / `Public PR` controls disappeared from the sidebar header.
+  - Thread-level actions such as `压缩续接` were unreliable because the embed experience still depended on long-press only.
+  - Accepting the public-PR prompt could prepare the merge-review task inside an unrelated currently open Hermes/Agent thread instead of the Codex Mobile Web workspace.
+- Local implementation:
+  - `public/styles.css`
+    - Hermes embed now hides only `.main .version-actions`, leaving the sidebar header version-action row visible.
+    - Added `.thread-card-menu-button` styling for an explicit thread action button in embed thread rows.
+  - `public/app.js`
+    - Embed thread rows now render a direct `⋯` action button that opens the existing action sheet without relying only on long-press timing.
+    - Added `handleThreadMenuButtonClick()`.
+    - `preparePublicPrMergePrompt()` now clears the current thread selection, opens a new-thread draft for `state.appWorkspacePath`, and places the review task text there instead of reusing the currently open thread.
+    - Client startup now stores `config.workspacePath` from `/api/public-config` in `state.appWorkspacePath`.
+  - `server.js`
+    - `/api/public-config` now includes `workspacePath: APP_ROOT` so the browser can route public-PR review tasks back into this workspace.
+  - `public/app.js` / `public/sw.js`
+    - Static shell build/cache bumped to `0.1.11|codex-mobile-shell-v125` / `codex-mobile-shell-v125`.
+- Validation:
+  - `node --check public\app.js` passed.
+  - `node --check server.js` passed.
+  - Focused `node --test test\app-update.test.js test\manual-restart-ui.test.js test\mobile-viewport.test.js test\thread-task-card-route.test.js` passed: 13/13.
+- Activation:
+  - Frontend and server changed.
+  - Restart the 8787 Node listener, then refresh/reopen clients to load `codex-mobile-shell-v125`.
+
+## 2026-05-30 Hermes Embed Continuation Dialog Fix v126
+
+- User correction:
+  - The real embed bug was not missing access to the thread action sheet itself.
+  - Long-press was already enough to open the menu, but choosing `压缩续接` did not show the confirmation popup inside the Hermes plugin iframe.
+- Local implementation:
+  - `public/app.js`
+    - Replaced the `window.confirm(...)` continuation confirmation path with an in-app `#continuationDialog` flow.
+    - Added `openContinuationDialog()`, `closeContinuationDialog()`, and `continuationDialogOpen()` so `压缩续接` can confirm entirely inside the iframe.
+    - Hermes plugin back handling now closes the continuation dialog before falling through to other navigation layers.
+    - Removed the earlier experimental embed-only thread-row menu button path and went back to the original long-press action-sheet trigger.
+  - `public/index.html`
+    - Added the continuation confirmation dialog markup.
+  - `public/styles.css`
+    - Added continuation-dialog styling and removed the temporary `.thread-card-menu-button` styling.
+  - `public/app.js` / `public/sw.js`
+    - Static shell build/cache bumped to `0.1.11|codex-mobile-shell-v126` / `codex-mobile-shell-v126`.
+- Validation:
+  - `node --check public\app.js` passed.
+  - `node --check public\sw.js` passed.
+  - Focused `node --test test\app-update.test.js test\manual-restart-ui.test.js test\mobile-viewport.test.js test\thread-task-card-route.test.js` passed: 13/13.
+- Activation:
+  - Static frontend change only for the continuation dialog itself.
+  - The earlier v125 `/api/public-config.workspacePath` server fix still requires the 8787 Node listener restart if it has not been restarted yet.
+  - Refresh/reopen clients to load `codex-mobile-shell-v126`.
+
+## 2026-05-30 Restart Readiness Harness
+
+- User report:
+  - A restart attempt stopped the old `8787` listener, but Mobile Web did not come back immediately and the browser became unusable until a later Desktop-side recovery.
+- Local follow-up:
+  - Added a focused harness for `restart-codex-mobile-shared-chain.ps1` so future edits keep the correct success definition:
+    - wait for both HTTP readiness and mux endpoint readiness;
+    - only log `Shared-chain restart finished.` after `Wait-Ready`;
+    - timeout if replacement readiness never arrives.
+  - Updated README, troubleshooting, and project context to state the operational rule:
+    - "old listener exited" does not count as restart success;
+    - success requires a new `8787` listener plus reachable `/api/public-config`.
+
+## 2026-05-30 Hermes Plugin Refresh Notice Emphasis v128
+
+- User feedback:
+  - The new in-app "Refreshing plugin page..." notice was visible, but its color blended in too much with ordinary history notes.
+- Local implementation:
+  - `public/styles.css`
+    - Added a stronger warning-like `plugin-refresh-pending` visual treatment with higher-contrast text/background/border.
+  - `public/app.js` / `public/sw.js`
+    - Static shell build/cache bumped to `0.1.11|codex-mobile-shell-v128` / `codex-mobile-shell-v128`.
+- Validation:
+  - Focused `node --test test\hermes-plugin-route.test.js test\mobile-viewport.test.js` passed as part of the current frontend regression set.
+- Activation:
+  - Static frontend change only.
+  - Refresh/reopen clients to load `codex-mobile-shell-v128`.
+
+## 2026-05-30 Draft Persistence And Timed Refresh Notice v129
+
+- User report:
+  - In the source thread, a `#`-generated cross-thread draft card could disappear immediately after `Approve`, but then reappear after leaving and re-entering the thread.
+  - Hermes plugin refresh notices should explain an automatic host-driven refresh, but should not remain visible indefinitely.
+- Local implementation:
+  - `public/app.js`
+    - Added durable browser storage for settled source draft-card state under `codexMobileThreadTaskCardDraftStates`.
+    - `setThreadTaskCardDraftState()` now persists durable states through `saveThreadTaskCardDraftStates()`.
+    - `renderTurnThreadTaskCardDraft()` now suppresses source draft cards whose stored state is already `created` or `dismissed`, preventing old draft XML from recreating visible source cards after thread re-entry.
+    - Added `clearPluginRefreshPendingNotice()` plus a 10-second timeout in `requestHermesPluginRefresh()` so the Hermes embed refresh notice auto-clears when the host refresh does not immediately replace the page.
+    - Recovering states such as `showPluginEmbedRecovering()` now clear any pending refresh notice first.
+  - `public/app.js` / `public/sw.js`
+    - Static shell build/cache bumped to `0.1.11|codex-mobile-shell-v129` / `codex-mobile-shell-v129`.
+- Validation:
+  - `node --check public\app.js` passed.
+  - `node --check public\sw.js` passed.
+  - Focused `node --test test\hermes-plugin-route.test.js test\mobile-viewport.test.js test\thread-task-card-route.test.js test\conversation-render.test.js` passed.
+- Activation:
+  - Static frontend change only.
+  - Refresh/reopen clients to load `codex-mobile-shell-v129`.
+
+## 2026-05-30 Public PR #41 Merge And Safe-Area Sync v130
+
+- User request:
+  - Push the current public update first, then merge public PR `#41` (`修复 PWA 底部输入栏安全区遮挡`).
+- Public repository:
+  - Public-safe current private changes were synced to `C:\Users\xuxin\Documents\codex-mobile-web-public`, validated, committed, and pushed as `2e1c63a 发布 Hermes 插件续接确认修复、跨线程卡片持久化与刷新提示收口`.
+  - PR `#41` could not be merged by GitHub directly because `main` had moved and the PR had conflicts against the newer Hermes/task-card/frontend work.
+  - The PR head was fetched locally as `pr-41`, merged into public `main` with manual conflict resolution, and pushed as merge commit `0d89f28 Merge pull request #41 from franksong2702/fix-pwa-composer-safe-area`.
+  - The resolved merge preserved current Hermes/task-card functionality and also kept the PR's PWA bottom safe-area composer padding fix.
+- Private follow-up:
+  - Synced the merged product files back into the private workspace to avoid drift:
+    - `public/app.js`
+    - `public/sw.js`
+    - `public/styles.css`
+    - `README.md`
+    - `test/composer-quota.test.js`
+    - `test/mobile-viewport.test.js`
+    - `test/thread-task-card-route.test.js`
+  - Static shell build/cache is now `0.1.11|codex-mobile-shell-v130` / `codex-mobile-shell-v130`.
+- Validation:
+  - Public focused tests for app-update, Hermes plugin route, manual restart UI, mobile viewport, thread-task-card route, and composer quota passed.
+  - Public `npm.cmd test`, `npm.cmd run check`, and `git diff --check` passed before the merge commit was pushed.
+  - GitHub now reports PR `#41` as `MERGED` with merge commit `0d89f28a4cd317829823d96deeaeda1eb62e31b2`.

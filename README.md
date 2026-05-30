@@ -192,7 +192,32 @@ render after the visible turn list and approval stack, so they stay at the
 bottom of the thread rather than appearing above historical messages. Once a
 card is approved, deleted, revoked, or replied, it no longer renders in thread
 detail; the injected turn becomes the visible follow-up surface. The current
-thread now also removes a settled card immediately after a successful action
+thread now also removes a settled card immediately after a successful action.
+Current browser builds also suppress raw draft XML while the model is still
+streaming the bounded draft reply, show a visible pending draft placeholder
+during that gap, wait for the injected target-thread turn after target-side
+`Approve`, and scroll to that injected turn when it becomes visible. Task-card
+drafts and pending task cards now default to a medium card with a collapsed
+details section instead of rendering the full body immediately. Source-thread
+draft cards also persist their settled `created` / `dismissed` state in browser
+storage, so leaving and re-entering the thread does not resurrect an already
+approved or dismissed draft from the old bounded XML response.
+
+In Hermes embed mode, the sidebar now keeps the version pill, public-PR status,
+and restart action visible instead of hiding the whole version-action row.
+`压缩续接` still comes from the existing long-press thread menu, but the
+confirmation step now uses an in-app dialog instead of `window.confirm`, so the
+plugin iframe no longer depends on a host-blocked native confirm popup. When a
+public-PR prompt is accepted, Mobile Web now routes that review task into
+this workspace's new-thread draft instead of reusing whichever unrelated thread
+happens to be open.
+
+When Mobile Web decides the Hermes host must reload the embedded plugin iframe,
+the current page now shows an explicit in-app refresh notice immediately before
+posting `codex-mobile.plugin.refresh_required`, instead of appearing to reload
+for no visible reason. That notice is intentionally bounded: if Hermes does not
+replace the iframe immediately, Mobile Web auto-clears the notice after about
+10 seconds rather than leaving a stale warning banner on screen.
 response instead of waiting for a leave/re-enter refresh cycle. Examples:
 
 ```text
@@ -290,6 +315,12 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-codex-mobile-w
 The daily `Codex Mobile Web Shared Chain Restart` scheduled task is no longer installed by default. The same scoped restart is now exposed as a manual control in the mobile sidebar: the header shows a small `Restart` button next to the version/update pill, and tapping it asks for confirmation before restarting.
 
 The manual restart calls the authenticated `POST /api/restart/shared-chain` endpoint. On Windows, the endpoint launches `restart-codex-mobile-shared-chain.ps1` after the HTTP response has been sent, so the page can show the confirmation result before the current Node listener exits. The script stops only the Codex Mobile Web shared chain: the `Codex Mobile Web` startup task, this workspace's hidden/windowless launchers, this workspace's `server.js`, this workspace's mux process, and `%USERPROFILE%\.codex-mobile-web\codex.exe app-server`. It removes the stale mux endpoint file, starts `Codex Mobile Web` again, and waits for HTTP plus mux readiness.
+
+Operational rule: do not treat the restart as successful merely because the old
+listener exited or the restart command was dispatched. Success means a new
+`8787` listener exists and `/api/public-config` is reachable again. If a manual
+or tool-driven restart stops the old listener but never confirms replacement
+readiness, Mobile Web should be treated as down, not as "restarting normally."
 
 On macOS, the same endpoint restarts only the current Mobile Web listener through a detached `launchctl submit` command. It keeps Codex Desktop and the shared mux running, so the user can restart the `8789` browser server from the PWA without triggering the macOS `Quit Codex?` confirmation.
 
@@ -1014,6 +1045,8 @@ This section summarizes the current integration behavior for someone cloning or 
 - Mobile foreground recovery handles `visibilitychange`, `pageshow`, `focus`, `orientationchange`, `visualViewport` changes, and window resize.
 - On iOS, returning from input-method or permission screens can leave a stale/blank composited viewport. The app maintains a JS-driven `--app-height` and runs several lightweight visual recovery passes after resume.
 - When the current thread is already open, foreground recovery should preserve the current screen and refresh it silently instead of re-entering `loadThread()` for the same thread. Returning from another app should not flash `Loading thread...` merely to refresh the current thread.
+- On first load, if Mobile Web already knows it should open a specific thread, startup should keep the main panel in a stable thread-opening state instead of briefly rendering the Workspace/recent-thread home screen and then replacing it with the target thread.
+- In Hermes embed mode, if startup detects an invalid/expired launch or session and already asks Hermes to relaunch the iframe, the page should stay in a neutral plugin-recovering state instead of flashing the red Codex login/auth error panel first.
 - Uploaded image messages render as centered thumbnails, not full-width raw images or data URLs.
 - Non-image uploads are stored locally and referenced by absolute path in the message text.
 
@@ -1164,6 +1197,31 @@ plugin. The shell cache advances to `codex-mobile-shell-v102`.
   continues to use the existing local Web Push fallback when it is not
   configured.
 - The shell cache advances to `codex-mobile-shell-v109`.
+
+### 2026-05-30 Public 发布说明
+
+本次 public 同步把 Hermes 插件嵌入体验、跨线程待办卡片体验和前台恢复稳定性一起推进到
+`codex-mobile-shell-v130`。
+
+- Hermes 插件嵌入态：
+  - 线程长按菜单里的 `压缩续接` 不再依赖浏览器原生 `window.confirm()`，改为 iframe 内应用弹框，避免 Hermes 插件环境里“菜单能点但确认框不弹”的问题。
+  - 左侧主区首次直进线程时，不再先明显闪回 Workspace / Recent 主页；会保持稳定的 `Opening thread...` 过渡态。
+  - 从其他 App 切回当前线程时，不再优先走同线程 `Loading thread...` 重载，而是静默刷新当前屏。
+  - Hermes 插件启动或 session/auth 失效但已请求宿主刷新时，不再先闪红色 `Codex` 错误框，而是显示中性的恢复态。
+  - 当 Codex 需要 Hermes 宿主刷新插件页时，会先在 iframe 内显示显式的 `Refreshing plugin page...` 提示，并在约 10 秒后自动清除，避免长期停留成误导性横幅。
+  - 合并 PR #41 后，PWA 底部输入栏进一步补上了 `safe-area-inset-bottom` 保护，减少底部安全区遮挡。
+- Public PR / Restart：
+  - 插件嵌入态保留版本号、`Restart` 和 `Public PR` 可见性，不再把整条版本操作区一起隐藏。
+  - 接受 Public PR 提示后，草稿任务会回到 Codex Mobile Web 当前工作区的新线程草稿，而不是误投到当前打开的 Hermes 线程。
+  - shared-chain 重启脚本新增 harness，固定“旧 8787 listener 退出不算成功；必须等到新的 HTTP 与 mux readiness 都恢复”这一规则。
+- 跨线程待办卡片：
+  - `#` 开头的跨线程请求在 draft 生成期会显示占位卡，不再短暂暴露原始 XML draft 片段。
+  - draft / pending task card 默认改为中型卡片，正文折叠，需要时再展开。
+  - 目标线程 `Approve` 后会等待并定位到真正注入出来的新 turn，而不是只看到卡片状态变化。
+  - 原线程中的 draft 卡在 `Approve` 或 `Dismiss` 后会把 settled 状态持久化到浏览器存储，重新进入线程时不会从旧 XML 响应里“复活”。
+- 测试与验证：
+  - 同步更新了 `app-update`、Hermes plugin route、manual restart、mobile viewport、thread-task-card route 和 shared-chain restart script 相关测试。
+  - 发布前通过 focused Node tests、`npm test`、`npm run check`、`npm run check:macos` 和 `git diff --check`。
 
 ### Which Restart Is Needed After Changes
 
