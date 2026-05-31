@@ -158,7 +158,16 @@ preview from the long completed-turn receipt. The delegated notification keeps a
 short `title + summary` for Web Push and Inbox preview, while the same backend
 payload may also include a bounded Markdown `detailMessage` containing the final
 assistant receipt text and Usage summary for Hermes thread-message storage. The
-standalone Web App Push path stays unchanged.
+delegated Push/InBox `title` is resolved from the actual Codex thread name or
+explicit nested thread title before falling back to preview text, so Hermes
+plugin notifications do not show a generic plugin/post label as the thread
+name. The backend uses an adapter-owned display-summary cache populated from
+app-server `thread/list` and `thread/read` results before the local SQLite
+fallback, because older continuation threads can keep a stale bootstrap prompt
+as their SQLite title. If a completed-turn notification arrives before the
+cache is warm, the server refreshes that thread's app-server summary before
+sending the Push/InBox payload. The standalone Web App Push path stays
+unchanged.
 
 ## Cross-thread Task Cards
 

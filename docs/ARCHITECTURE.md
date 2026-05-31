@@ -280,7 +280,19 @@ When the Hermes plugin notification delegate is configured, turn-completed
 events are sent to Hermes Action Inbox/Web Push instead of Mobile Web's direct
 Web Push subscription list. If the delegate is not configured, standalone
 Mobile Web keeps the existing local Web Push path. The iframe plugin mode never
-registers its own Push subscription.
+registers its own Push subscription. Delegated plugin notifications must use
+the actual Codex thread name as the payload title: explicit `threadTitle`,
+`thread.name` / `thread.title`, and nested `turn.thread.name` /
+`turn.thread.title` win over stale started-turn labels, route/plugin names, or
+preview text. Persisted thread `name` is preferred over `preview`; preview is
+only a fallback when no real thread name is available.
+`adapters/push-notification-service.js` owns the bounded in-memory cache of
+app-server `thread/list` and `thread/read` display summaries, and `server.js`
+checks that display cache before the local SQLite fallback. This prevents old continuation threads whose
+`state_5.sqlite` title still contains the bootstrap prompt from producing a
+wrong external notification title. If the cache is empty when a completed-turn
+event arrives, the notification path performs a bounded app-server summary
+refresh before sending the Hermes delegate payload or standalone Web Push.
 
 ### Approvals And Server Requests
 

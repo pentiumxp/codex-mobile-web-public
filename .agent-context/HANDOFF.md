@@ -4189,3 +4189,81 @@ The previous full handoff was archived and should be opened only when old proven
   - Local changes remain uncommitted.
   - This is server-side service behavior; no static shell cache bump was
     required.
+
+## 2026-05-31 Hermes Plugin Notification Thread Title Fix
+
+- User report:
+  - Web Push / Hermes plugin delegated notifications did not show the correct
+    Codex thread name; the posted notification title could use a wrong generic
+    plugin/post label.
+  - Follow-up screenshot showed the top external notification title as the
+    old continuation bootstrap prompt (`# 压缩续接启动上下文...`) instead of
+    `Codex Mobile 05-26`.
+- Diagnosis:
+  - The local `state_5.sqlite` row for the current thread still carried the
+    old bootstrap prompt as `title` / `first_user_message`.
+  - The first resolver fix was insufficient because completed-turn events may
+    not carry an explicit thread name, and `pushThreadSummary()` still checked
+    SQLite before any app-server display summary.
+- Local fix:
+  - `adapters/push-notification-service.js`
+    - Added `resolveThreadTitleForNotification()`.
+    - Completed-turn notification title resolution now prefers explicit
+      app-server thread names/titles, including nested `turn.thread.name` and
+      `turn.thread.title`, before stale started-turn labels or preview text.
+    - Persisted thread `name` wins over persisted `preview`; preview remains
+      only a fallback.
+    - Owns the bounded app-server display-summary cache used by notification
+      title resolution before the local SQLite fallback.
+  - `server.js`
+    - Uses the new resolver for both direct Web Push and Hermes plugin
+      delegated notifications.
+    - Instantiates the adapter-owned display cache and populates it from
+      successful app-server `thread/list` and `thread/read` display summaries.
+    - `pushThreadSummary()` now checks this app-server display cache before
+      the local SQLite fallback so stale continuation bootstrap titles do not
+      win over the name the Mobile Web UI is already showing.
+    - Completed-turn notification sending refreshes the app-server summary
+      before delivery when the display cache is empty, so a freshly restarted
+      server is not forced back to the stale SQLite title.
+  - Documentation updated:
+    - README
+    - `docs/ARCHITECTURE.md`
+    - `docs/MODULES.md`
+    - `.agent-context/PROJECT_CONTEXT.md`
+    - this handoff.
+- Validation:
+  - `node --check adapters\push-notification-service.js` passed.
+  - `node --check server.js` passed.
+  - Focused `node --test test\push-notification-service.test.js
+    test\hermes-notification-delegate-service.test.js
+    test\hermes-plugin-route.test.js` passed: 28/28.
+  - `npm.cmd test` passed: 252/252.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+  - BOM check for touched source/test/docs/context files had no output.
+- Deployment/runtime verification:
+  - Restarted the 8787 Node listener through the Windows scheduled-task
+    configuration, then stopped the old child Node PID `65488` and relaunched
+    with the same hidden scheduled-task parameters. Final listener PID after
+    the service-boundary follow-up: `82632`.
+  - `/api/public-config` still returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v134` and
+    `shellCacheName=codex-mobile-shell-v134`; Hermes notification delegate is
+    configured and `imageContextMode=reference`.
+  - Authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`.
+  - Authenticated `/api/threads?limit=200` finds current thread
+    `019e63ea-b64f-7e93-a92f-4c1dd9a79326` with display `name=Codex Mobile
+    05-26` while its preview still starts with the old continuation bootstrap,
+    confirming the display-summary source needed for Push titles.
+- Status:
+  - This entry is included in the local private commit for the notification
+    title fix and service-boundary cleanup; use `git log -1 --oneline` for the
+    final commit hash.
+  - Public repository was not synced or pushed.
+  - This is server-side notification behavior; no static shell cache bump is
+    required.

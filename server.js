@@ -7,7 +7,12 @@ const crypto = require("node:crypto");
 const { spawn } = require("node:child_process");
 const net = require("node:net");
 const webPush = require("web-push");
-const { completedTurnHasNoFinalAgentMessage, shouldTrackTurnForWebPush } = require("./adapters/push-notification-service");
+const {
+  completedTurnHasNoFinalAgentMessage,
+  createThreadDisplaySummaryCache,
+  resolveThreadTitleForNotification,
+  shouldTrackTurnForWebPush,
+} = require("./adapters/push-notification-service");
 const { createSharedChainRestartService } = require("./adapters/shared-chain-restart-service");
 const { createHermesNotificationDelegateService } = require("./adapters/hermes-notification-delegate-service");
 const { runSqliteJson } = require("./adapters/sqlite-cli");
@@ -217,6 +222,8 @@ const STALE_ACTIVE_TURN_MS = Math.max(30_000, Number(process.env.CODEX_MOBILE_ST
 const TERMINAL_IDLE_ACTIVE_TURN_MS = Math.max(10_000, Number(process.env.CODEX_MOBILE_TERMINAL_IDLE_ACTIVE_TURN_MS || "45000"));
 const STARTED_THREAD_CACHE_TTL_MS = Math.max(60_000, Number(process.env.CODEX_MOBILE_STARTED_THREAD_CACHE_TTL_MS || "900000"));
 const STARTED_THREAD_CACHE_MAX = Math.max(10, Number(process.env.CODEX_MOBILE_STARTED_THREAD_CACHE_MAX || "80"));
+const THREAD_DISPLAY_SUMMARY_CACHE_TTL_MS = Math.max(60_000, Number(process.env.CODEX_MOBILE_THREAD_DISPLAY_SUMMARY_CACHE_TTL_MS || "7200000"));
+const THREAD_DISPLAY_SUMMARY_CACHE_MAX = Math.max(20, Number(process.env.CODEX_MOBILE_THREAD_DISPLAY_SUMMARY_CACHE_MAX || "500"));
 const MAX_ROLLOUT_CONTEXT_BYTES = Math.max(256 * 1024, Number(process.env.CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES || String(4 * 1024 * 1024)));
 const MAX_RUNTIME_CONTEXT_SCAN_BYTES = Math.max(MAX_ROLLOUT_CONTEXT_BYTES, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_SCAN_BYTES || String(512 * 1024 * 1024)));
 const ROLLOUT_WARNING_BYTES = Math.max(1 * 1024 * 1024, Number(process.env.CODEX_MOBILE_ROLLOUT_WARNING_BYTES || String(200 * 1024 * 1024)));
@@ -352,6 +359,11 @@ const latestRuntimeContextByPath = new Map();
 const latestItemTimestampsByPath = new Map();
 const latestTurnUsageSummariesByPath = new Map();
 const recentStartedThreads = new Map();
+const threadDisplaySummaryCache = createThreadDisplaySummaryCache({
+  ttlMs: THREAD_DISPLAY_SUMMARY_CACHE_TTL_MS,
+  maxEntries: THREAD_DISPLAY_SUMMARY_CACHE_MAX,
+  decorateSummary: annotateThreadRolloutStats,
+});
 const continuationJobs = new Map();
 const activeContinuationJobsBySource = new Map();
 let pushVapidKeys = null;
@@ -3549,35 +3561,21 @@ function pushThreadId(params) {
     || "");
 }
 
-function pushThreadSummaryTitle(threadId) {
+function pushThreadSummary(threadId) {
   const id = String(threadId || "");
-  if (!id) return "";
-  const summary = readStateDbThread(id) || readStartedThread(id);
-  return compactOneLine(summary && (summary.name || summary.preview));
+  return id ? (threadDisplaySummaryCache.read(id) || readStateDbThread(id) || readStartedThread(id) || null) : null;
 }
 
-function pushThreadTitleFromParams(params) {
-  const candidates = [
-    params && params.threadTitle,
-    params && params.threadName,
-    params && params.thread && params.thread.name,
-    params && params.thread && params.thread.title,
-    params && params.thread && params.thread.preview,
-    params && params.turn && params.turn.threadTitle,
-    params && params.turn && params.turn.threadName,
-  ];
-  for (const candidate of candidates) {
-    const text = compactOneLine(candidate);
-    if (text) return text;
-  }
-  return "";
-}
-
-function pushThreadTitle(params, threadId = "") {
+function pushThreadTitle(params, threadId = "", existingTitle = "") {
   const id = String(threadId || pushThreadId(params) || "");
-  return pushThreadSummaryTitle(id)
-    || pushThreadTitleFromParams(params)
-    || compactOneLine(shortIdentifier(id) || "Codex Mobile Web");
+  const summary = pushThreadSummary(id);
+  return resolveThreadTitleForNotification({
+    params,
+    threadId: id,
+    existingTitle,
+    summary,
+    fallbackTitle: shortIdentifier(id) || "Codex Mobile Web",
+  });
 }
 
 function pushThreadAgentMetadataFromParams(params) {
@@ -3615,7 +3613,7 @@ function pushTurnMeta(params, existing = null) {
   return {
     turnId,
     threadId,
-    threadTitle: existingTitle || pushThreadTitle(params, threadId),
+    threadTitle: pushThreadTitle(params, threadId, existingTitle),
     agentNickname: (existing && existing.agentNickname) || agentMetadata.agentNickname,
     agentRole: (existing && existing.agentRole) || agentMetadata.agentRole,
     observedAt: (existing && existing.observedAt) || Date.now(),
@@ -3712,6 +3710,42 @@ function delegateTurnCompletedNotification(meta, turnId, completedAt, threadTitl
   return true;
 }
 
+async function resolveCompletedPushThreadTitle(meta, params) {
+  const threadId = String(meta && meta.threadId || pushThreadId(params) || "");
+  if (threadId && !threadDisplaySummaryCache.read(threadId)) {
+    try {
+      await readThreadSummaryFromAppServer(codex, threadId);
+    } catch (err) {
+      console.error(`[web push] thread title app-server refresh failed: ${err.message || String(err)}`);
+    }
+  }
+  return pushThreadTitle(params, threadId, meta && meta.threadTitle);
+}
+
+function sendTurnCompletedPush(meta, turnId, completedAt, params) {
+  resolveCompletedPushThreadTitle(meta, params).then((threadTitle) => {
+    if (delegateTurnCompletedNotification(meta, turnId, completedAt, threadTitle, params)) return;
+    const threadMark = shortIdentifier(meta.threadId || turnId);
+    const payload = {
+      title: threadTitle || threadMark || "Codex Mobile Web",
+      body: `This turn 已结束 · ${pushTimestamp(completedAt)}`,
+      tag: `codex-turn-${meta.threadId || turnId}`,
+      data: {
+        url: notificationUrlForThread(meta.threadId),
+        threadId: meta.threadId || "",
+        turnId,
+        threadTitle,
+        completedAt,
+      },
+    };
+    sendWebPushToAll(payload).catch((err) => {
+      console.error(`[web push] turn completed send failed: ${err.message || String(err)}`);
+    });
+  }).catch((err) => {
+    console.error(`[web push] turn completed notification failed: ${err.message || String(err)}`);
+  });
+}
+
 function maybeSendTurnCompletedPush(method, params) {
   if (method === "turn/started") {
     const id = pushTurnId(params);
@@ -3752,24 +3786,7 @@ function maybeSendTurnCompletedPush(method, params) {
   if (pushSentTurns.has(key)) return;
   pushSentTurns.set(key, Date.now());
   const completedAt = meta.completedAt || Date.now();
-  const threadTitle = meta.threadTitle || pushThreadTitle(params, meta.threadId);
-  if (delegateTurnCompletedNotification(meta, turnId, completedAt, threadTitle, params)) return;
-  const threadMark = shortIdentifier(meta.threadId || turnId);
-  const payload = {
-    title: threadTitle || threadMark || "Codex Mobile Web",
-    body: `This turn 已结束 · ${pushTimestamp(completedAt)}`,
-    tag: `codex-turn-${meta.threadId || turnId}`,
-    data: {
-      url: notificationUrlForThread(meta.threadId),
-      threadId: meta.threadId || "",
-      turnId,
-      threadTitle,
-      completedAt,
-    },
-  };
-  sendWebPushToAll(payload).catch((err) => {
-    console.error(`[web push] turn completed notification failed: ${err.message || String(err)}`);
-  });
+  sendTurnCompletedPush(meta, turnId, completedAt, params);
 }
 
 function multipartBoundary(contentType) {
@@ -5878,7 +5895,7 @@ async function readThreadSummaryFromAppServer(codex, threadId) {
       ? result.threads
       : [];
   const thread = threads.find((thread) => String(thread && thread.id) === String(threadId)) || null;
-  return annotateThreadRolloutStats(thread);
+  return threadDisplaySummaryCache.remember(thread) || annotateThreadRolloutStats(thread);
 }
 
 function sortTurnsChronologically(turns) {
@@ -6698,6 +6715,7 @@ async function handleApi(req, res) {
     if (searchTerm) params.searchTerm = searchTerm;
     try {
       const result = filterVisibleThreads(await codex.request("thread/list", params, { timeoutMs: READ_RPC_TIMEOUT_MS }), globalState);
+      threadDisplaySummaryCache.rememberList(result);
       if (Array.isArray(result.data)) result.data = result.data.slice(0, limit);
       if (Array.isArray(result.threads)) result.threads = result.threads.slice(0, limit);
       sendJson(res, 200, attachThreadTaskCardCountsToThreadListResult(result));
@@ -6860,6 +6878,7 @@ async function handleApi(req, res) {
         resetOnTimeout: false,
       }), { maxTurns: MAX_FULL_THREAD_TURNS });
       if (result.thread) {
+        threadDisplaySummaryCache.remember(result.thread);
         result.thread = mergeThreadRuntimeFromStateDb(result.thread, summary);
         result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
         result.thread.mobileReadMode = "thread-read";

@@ -21,7 +21,7 @@
 | `adapters/continuation-handoff-compaction-service.js` | Workspace handoff compaction before rollout continuation. |
 | `adapters/turn-usage-summary-service.js` | Rollout `token_count` parsing and completed-turn context/token usage summary attachment. |
 | `adapters/public-pull-request-service.js` | Public GitHub pull request status normalization for prompt-only public PR checks. |
-| `adapters/push-notification-service.js` | Web Push turn tracking and sub-agent suppression classification. |
+| `adapters/push-notification-service.js` | Web Push turn tracking, sub-agent suppression classification, completed-turn notification thread-title resolution, and the bounded app-server display-summary cache used before SQLite fallback. |
 | `adapters/shared-chain-restart-service.js` | Authenticated restart endpoint orchestration. |
 | `adapters/generated-image-cache-service.js` | Caches app-server `imageView` screenshot files into runtime-owned generated-image storage before browser rendering. |
 | `adapters/hermes-plugin-service.js` | Independent Hermes Mobile embedded-app plugin manifest, callback/origin registration, launch/session token policy, frame-ancestor metadata, and bounded launch/session appearance sync. |
