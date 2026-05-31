@@ -261,13 +261,18 @@ Source-side draft creation is also intentionally lightweight: once a valid
 source thread before showing success. It updates local draft state and refreshes
 thread summaries in the background. Single-target drafts still open the
 target thread so the pending card is visible where it was delivered;
-multi-target drafts stay on the source thread and show the outgoing cards
-instead of arbitrarily choosing one recipient. Cross-thread task cards now
-render below the visible turns and detached approval stack, keeping them at the
-bottom of the thread rather than above historical conversation content. Only
-`pending` task cards render in thread detail; once a card reaches `approved`,
-`deleted`, `revoked`, or `replied`, the browser stops rendering that card and
-the injected turn or later reply becomes the user-visible surface.
+multi-target drafts stay on the source thread without rendering outgoing cards
+as local work items. Cross-thread task cards now render below the visible turns
+and detached approval stack, keeping them at the bottom of the target thread
+rather than above historical conversation content. Only `pending` cards whose
+`threadRole` is `target` render in thread detail; source-side outgoing pending
+cards remain store/audit state and badge/count state only. Once a card reaches
+`approved`, `deleted`, `revoked`, or `replied`, the browser stops rendering that
+card and the injected turn or later reply becomes the user-visible surface.
+Source-side `#` draft settlement uses a stable key derived from the turn id and
+draft content, not the app-server item id. On thread re-entry, the browser also
+checks existing stored cards from the same source turn before auto-sending a
+draft again, so item-id drift after refresh/compaction cannot recreate a card.
 The current `#` task-card path is still bounded and conservative, but the
 interpretation now lives in the model turn rather than a browser/server regex
 parser. The browser provides only the visible thread list and required response

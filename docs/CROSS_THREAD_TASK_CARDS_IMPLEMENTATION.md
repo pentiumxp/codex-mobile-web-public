@@ -31,6 +31,12 @@ layout and test strategy.
   - action handlers
   - source-side `#` draft parsing and automatic pending-card creation; source
     drafts must not require a second local approval click
+  - stable source draft settlement keyed by turn id plus draft content, with a
+    matching-card lookup so app-server item-id drift does not re-send an already
+    created card
+  - target-thread detail rendering only for `pending` cards whose
+    `threadRole` is `target`; source outgoing pending cards should not render
+    as local work items
 
 - future optional helper:
   - `public/thread-task-cards.js`
@@ -124,6 +130,9 @@ After implementation begins, expand coverage with:
 - SSE/live update tests if task cards are pushed in real time.
 - frontend/static harness checks that source-side draft cards auto-send and no
   `data-task-card-draft-action="approve"` control is shipped.
+- frontend/static harness checks that source draft keys are content-stable, that
+  existing matching cards mark a draft created, and that only target-side
+  pending cards render in thread detail.
 
 ## Activation Expectations
 

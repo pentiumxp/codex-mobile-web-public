@@ -37,7 +37,7 @@ Add new service modules when logic has independent inputs/outputs, state rules, 
 
 | File | Responsibility |
 | --- | --- |
-| `public/app.js` | Main app state, rendering, thread list/detail, composer, SSE, Push UI, update/restart UI, continuation UI, source-side `#` task-card auto-send orchestration, and runtime application of plugin session appearance. |
+| `public/app.js` | Main app state, rendering, thread list/detail, composer, SSE, Push UI, update/restart UI, continuation UI, source-side `#` task-card auto-send orchestration with stable draft settlement, target-side-only pending task-card rendering, and runtime application of plugin session appearance. |
 | `public/styles.css` | Full app shell, mobile/tablet layout, operation cards, composer, sidebar, modals, PWA-safe layout. |
 | `public/sw.js` | Service worker, app-shell cache, Web Push notification click handling. |
 | `public/api-client.js` | Authenticated fetch helper. |
@@ -64,7 +64,7 @@ Add new service modules when logic has independent inputs/outputs, state rules, 
 | PWA/update/mobile viewport | `test/mobile-viewport.test.js`, `test/app-update.test.js`, `test/tablet-layout.test.js`, `test/manual-restart-ui.test.js`, `test/public-pull-request-service.test.js` |
 | uploads/files/images | `test/image-compressor.test.js`, `test/message-input-service.test.js`, `test/generated-image-cache-service.test.js`, `test/file-preview.test.js`, `test/file-preview-ui.test.js`, `test/composer-draft.test.js` |
 | Hermes Mobile plugin mode | `test/hermes-plugin-service.test.js`, `test/hermes-plugin-route.test.js`, `test/hermes-notification-delegate-service.test.js`, `test/plugin-embed.test.js` |
-| cross-thread task cards | `test/thread-task-card-harness.test.js`, `test/thread-task-card-service.test.js`, `test/thread-task-card-route.test.js`, `test/conversation-render.test.js`; include readable-text/encoding-damage, approve-in-flight, and autonomous workflow same-pair coverage when changing sender or store paths |
+| cross-thread task cards | `test/thread-task-card-harness.test.js`, `test/thread-task-card-service.test.js`, `test/thread-task-card-route.test.js`, `test/conversation-render.test.js`; include readable-text/encoding-damage, approve-in-flight, autonomous workflow same-pair coverage, stable source-draft settlement, and target-side-only pending render coverage when changing sender or store paths |
 | Push | `test/push-notification-service.test.js` |
 | runtime settings | `test/runtime-settings.test.js`, `test/composer-quota.test.js` |
 | scroll and markdown | `test/conversation-scroll.test.js`, `test/turn-scroll-controls.test.js`, `test/markdown-render.test.js` |

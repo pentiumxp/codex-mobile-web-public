@@ -188,7 +188,7 @@ const state = {
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v135";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v136";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -321,6 +321,7 @@ function saveThreadTaskCardDraftStates() {
         status,
         error: String(value.error || ""),
         cardId: String(value.cardId || ""),
+        cardIds: Array.isArray(value.cardIds) ? value.cardIds.map((id) => String(id || "")).filter(Boolean).slice(0, 12) : [],
       };
     }
     localStorage.setItem(STORAGE_TASK_CARD_DRAFT_STATES, JSON.stringify(entries));
@@ -2693,6 +2694,7 @@ function threadTaskCardsForThread(thread) {
   const cards = Array.isArray(thread && thread.threadTaskCards) ? thread.threadTaskCards : [];
   return cards
     .filter((card) => String(card && card.status || "") === "pending")
+    .filter((card) => String(card && card.threadRole || "") === "target")
     .slice()
     .sort((a, b) => Number(b && b.updatedAt ? Date.parse(b.updatedAt) : 0) - Number(a && a.updatedAt ? Date.parse(a.updatedAt) : 0));
 }
@@ -5641,8 +5643,20 @@ function renderTurnThreadTaskCardDraft(turn, previousKeys = new Set()) {
     const text = String(item.text || "");
     const draft = parseThreadTaskCardDraftText(text);
     if (draft) {
-      const draftKey = threadTaskCardDraftKey(turn.id, item.id || "");
+      const draftKey = threadTaskCardDraftKeyForDraft(turn, draft, item);
       let draftState = threadTaskCardDraftState(draftKey);
+      if (draftState.status === "pending") {
+        const existing = matchingThreadTaskCardsForDraft(draft, turn);
+        if (existing.length) {
+          setThreadTaskCardDraftState(draftKey, {
+            status: "created",
+            error: "",
+            cardId: String(existing[0] && existing[0].id || ""),
+            cardIds: existing.map((card) => String(card && card.id || "")).filter(Boolean),
+          }, { render: false });
+          draftState = threadTaskCardDraftState(draftKey);
+        }
+      }
       if (draftState.status === "created" || draftState.status === "dismissed") return "";
       if (draftState.status === "pending") {
         queueThreadTaskCardDraftCreation(draftKey);
@@ -5676,6 +5690,25 @@ function threadTaskCardDraftKey(turnId, itemId) {
   return `task-card-draft|${String(turnId || "")}|${String(itemId || "")}`;
 }
 
+function threadTaskCardDraftPayloadKey(draft) {
+  const targetThreadIds = threadTaskCardDraftTargetIds(draft).sort();
+  return stableTextHash(JSON.stringify({
+    targetThreadIds,
+    workflowMode: normalizeThreadTaskCardWorkflowMode(draft && draft.workflowMode),
+    workflowId: String(draft && draft.workflowId || "").trim(),
+    title: String(draft && draft.title || "").trim(),
+    summary: String(draft && draft.summary || "").trim(),
+    body: String(draft && draft.body || "").trim(),
+  }));
+}
+
+function threadTaskCardDraftKeyForDraft(turn, draft, item = null) {
+  const turnId = String(turn && turn.id || "");
+  const payloadKey = threadTaskCardDraftPayloadKey(draft);
+  if (turnId && payloadKey) return threadTaskCardDraftKey(turnId, `draft-${payloadKey}`);
+  return threadTaskCardDraftKey(turnId, item && item.id || "");
+}
+
 function findThreadById(threadId) {
   const id = String(threadId || "").trim();
   return (state.threads || []).find((thread) => String(thread && thread.id || "") === id) || null;
@@ -5690,6 +5723,25 @@ function threadTaskCardDraftTargetThreads(draft) {
     threadId,
     thread: findThreadById(threadId),
   }));
+}
+
+function matchingThreadTaskCardsForDraft(draft, turn) {
+  const thread = state.currentThread;
+  const cards = Array.isArray(thread && thread.threadTaskCards) ? thread.threadTaskCards : [];
+  const targetIds = new Set(threadTaskCardDraftTargetIds(draft));
+  const sourceThreadId = String(thread && thread.id || state.currentThreadId || "");
+  const sourceTurnId = String(turn && turn.id || "");
+  const title = String(draft && draft.title || "").trim();
+  const body = String(draft && draft.body || "").trim();
+  return cards.filter((card) => {
+    if (!card) return false;
+    if (sourceThreadId && String(card.source && card.source.threadId || "") !== sourceThreadId) return false;
+    if (sourceTurnId && String(card.source && card.source.turnId || "") !== sourceTurnId) return false;
+    if (targetIds.size && !targetIds.has(String(card.target && card.target.threadId || ""))) return false;
+    if (title && String(card.message && card.message.title || "").trim() !== title) return false;
+    if (body && String(card.message && card.message.body || "").trim() !== body) return false;
+    return true;
+  });
 }
 
 function upsertThreadTaskCardOnThread(thread, card) {
@@ -5746,8 +5798,8 @@ function settleCurrentThreadTaskCard(cardId, nextStatus, nextCard = null) {
     return settledCard;
   });
   if (!settledCard) return;
-  if (settledCard.threadRole === "incoming") incrementPendingIncomingTaskCardCount(thread.id, -1);
-  if (settledCard.threadRole === "outgoing") incrementPendingOutgoingTaskCardCount(thread.id, -1);
+  if (settledCard.threadRole === "target") incrementPendingIncomingTaskCardCount(thread.id, -1);
+  if (settledCard.threadRole === "source") incrementPendingOutgoingTaskCardCount(thread.id, -1);
   renderThreads();
   renderCurrentThread();
 }
@@ -9132,10 +9184,11 @@ function findThreadTaskCardDraftByKey(draftKey) {
     const items = Array.isArray(turn && turn.items) ? turn.items : [];
     for (const item of items) {
       if (!item || (item.type !== "agentMessage" && item.type !== "plan")) continue;
-      const itemKey = threadTaskCardDraftKey(turn.id, item.id || "");
-      if (itemKey !== key) continue;
       const draft = parseThreadTaskCardDraftText(item.text || "");
       if (!draft) return null;
+      const itemKey = threadTaskCardDraftKeyForDraft(turn, draft, item);
+      const legacyItemKey = threadTaskCardDraftKey(turn.id, item.id || "");
+      if (itemKey !== key && legacyItemKey !== key) continue;
       return { key, draft, turn, item };
     }
   }

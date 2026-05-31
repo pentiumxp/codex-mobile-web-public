@@ -207,16 +207,16 @@ Target thread:
 
 Source thread:
 
-- show mirrored status card or timeline entry:
-  - sent
-  - approved
-  - deleted
-  - revoked
+- do not render outgoing pending cards as local work items after auto-send;
+- keep outgoing cards in the store/audit state and thread summary counts only;
 - do not show an approval prompt for its own `#` draft; a valid draft auto-sends
   to target pending cards, and only the target thread approval injects a real
   `userMessage`;
-- for a multi-target draft, keep the source thread open after creation and show
-  the outgoing cards there instead of automatically jumping to one recipient.
+- for a multi-target draft, keep the source thread open after creation instead
+  of automatically jumping to one recipient;
+- persist source draft settlement using a stable key derived from the turn id
+  and draft content, and treat already stored matching source-turn cards as
+  created so thread re-entry or item-id drift cannot re-send the same draft.
 
 Autonomous workflow cards should make the first-approval boundary visible. The
 first pending target card can label its approve action as `Approve workflow`;

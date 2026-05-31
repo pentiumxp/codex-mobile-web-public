@@ -43,10 +43,13 @@ test("thread task card routes preserve service status codes", () => {
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v135"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v136"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
+  assert.match(appJs, /filter\(\(card\) => String\(card && card\.threadRole \|\| ""\) === "target"\)/);
   assert.match(appJs, /function settleCurrentThreadTaskCard\(/);
+  assert.match(appJs, /settledCard\.threadRole === "target"/);
+  assert.match(appJs, /settledCard\.threadRole === "source"/);
   assert.match(appJs, /settleCurrentThreadTaskCard\(id, action === "approve" \? "approved" : action === "delete" \? "deleted" : action === "revoke" \? "revoked" : "replied"/);
   assert.match(appJs, /function threadTaskCardsSignature\(/);
   assert.match(appJs, /taskCards: threadTaskCardsSignature\(thread\)/);
@@ -75,6 +78,10 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /function renderTurnThreadTaskCardDraft\(/);
   assert.match(appJs, /function waitForCurrentThreadTurn\(/);
   assert.match(appJs, /function renderThreadTaskCardDraft\(/);
+  assert.match(appJs, /function threadTaskCardDraftKeyForDraft\(/);
+  assert.match(appJs, /function threadTaskCardDraftPayloadKey\(/);
+  assert.match(appJs, /function matchingThreadTaskCardsForDraft\(/);
+  assert.match(appJs, /matchingThreadTaskCardsForDraft\(draft, turn\)/);
   assert.match(appJs, /function renderThreadTaskCardExpandable\(/);
   assert.match(appJs, /const STORAGE_TASK_CARD_DRAFT_STATES = "codexMobileThreadTaskCardDraftStates"/);
   assert.match(appJs, /function saveThreadTaskCardDraftStates\(\)/);

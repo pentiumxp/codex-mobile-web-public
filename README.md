@@ -206,12 +206,12 @@ parses successfully. The source thread does not show a second local `Approve`
 step. The create call uses a stable draft-scoped idempotency key, the thread
 list shows incoming `Task N` badges on every target thread, and a single-target
 draft still switches to that target thread so the pending card is visible
-without manual navigation. Multi-target
-drafts create one pending card per target and keep the source thread visible
-with the outgoing cards updated instead of jumping to only one recipient. When
-the card id is known for a single target, Mobile Web also reuses its existing
-route-hint focus path to scroll the target thread directly to that pending card
-instead of leaving the user at the bottom of a long conversation. Pending cross-thread task cards now
+without manual navigation. Multi-target drafts create one pending card per
+target and keep the source thread visible without rendering outgoing cards as
+local work items. When the card id is known for a single target, Mobile Web also
+reuses its existing route-hint focus path to scroll the target thread directly
+to that pending card instead of leaving the user at the bottom of a long
+conversation. Pending cross-thread task cards now
 render after the visible turn list and approval stack, so they stay at the
 bottom of the thread rather than appearing above historical messages. Once a
 card is approved, deleted, revoked, or replied, it no longer renders in thread
@@ -238,8 +238,10 @@ during that gap, wait for the injected target-thread turn after target-side
 drafts and pending task cards now default to a medium card with a collapsed
 details section instead of rendering the full body immediately. Source-thread
 draft cards also persist their settled `created` / `dismissed` state in browser
-storage, so leaving and re-entering the thread does not resurrect an already
-created or dismissed draft from the old bounded XML response.
+storage using a stable turn-and-draft-content key, and re-check already stored
+cards for the source turn before auto-sending. Leaving and re-entering the
+source or target thread therefore must not resurrect an already created draft or
+create a duplicate target card from the old bounded XML response.
 
 In Hermes embed mode, the sidebar now keeps the version pill, public-PR status,
 and restart action visible instead of hiding the whole version-action row.
