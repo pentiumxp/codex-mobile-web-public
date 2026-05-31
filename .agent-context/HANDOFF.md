@@ -20,6 +20,34 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-01 Public PR #42/#43 Merge And Private Sync
+
+- User request:
+  - Review open public PRs `pentiumxp/codex-mobile-web-public` #42 and #43.
+  - If mergeable, update public README Chinese release notes, run validation and privacy scan, push public, then sync back to private and revalidate.
+- Public result:
+  - PR #42 `允许预览已知工作区内的本地文件` was merge-committed to public main as `ba7eddbd44df2e75458a1bdc9712d29dd4d69bc8`.
+  - PR #43 `修复 worktree 线程在 Mobile 中不可见` was merge-committed to public main as `8540fe0272a5f4103ae95ca3d52f12546a87ca0b`.
+  - Follow-up public docs commit `0cc2c98` synced the public `docs/` architecture/module/troubleshooting/complex-path docs for PR #42/#43.
+  - GitHub reports both PRs as `MERGED`.
+  - Public README now has separate 2026-06-01 Chinese release notes for known-workspace file preview, worktree thread visibility, and public docs synchronization.
+- Product behavior:
+  - Local file preview roots now include explicit env roots, visible workspace roots, current thread cwd, and enclosing Obsidian vaults when present; it still rejects out-of-root paths, sensitive file types, unsupported binary content, and broad runtime/temp/.codex/upload/diagnostic roots.
+  - Markdown file preview preserves source ordered-list numbering.
+  - Thread visibility accepts Codex worktree cwd values under `%USERPROFILE%\.codex\worktrees\<id>\<repo>` only when `<repo>` matches a visible workspace basename.
+  - Thread list responses merge bounded state DB / session-index fallback rows when app-server omits visible rows, and `thread/turns/list` fallback sorting can use rollout item timestamps.
+  - Static browser build/cache advanced to `0.1.11|codex-mobile-shell-v140` / `codex-mobile-shell-v140`.
+- Private sync:
+  - Synced only product files and public docs from public into private: README, `server.js`, `public/app.js`, `public/sw.js`, focused tests, new `test/thread-visibility.test.js`, and the tracked `docs/` updates.
+  - Updated private docs and project context: `docs/ARCHITECTURE.md`, `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`, `docs/COMPLEX_FEATURE_PATHS.md`, `.agent-context/PROJECT_CONTEXT.md`, and this handoff.
+  - Did not copy `.agent-context` from public, runtime state, local keys, uploads, or machine-specific diagnostics.
+- Validation:
+  - Public: focused tests passed 24/24; after code PR merge `npm.cmd test` passed 262/262, `npm.cmd run check` passed, `npm.cmd run check:macos` passed, `git diff --check HEAD~2..HEAD` passed, privacy scan passed, and BOM check passed. After the public docs follow-up, `npm.cmd test` again passed 262/262, `npm.cmd run check` passed, `npm.cmd run check:macos` passed, `git diff --check` passed, privacy scan passed, and BOM check passed.
+  - Private after sync: focused tests passed 24/24; `npm.cmd test` passed 262/262; `npm.cmd run check` passed; `npm.cmd run check:macos` passed; `git diff --check` passed with only Windows LF-to-CRLF working-copy warnings; privacy scan passed.
+- Activation:
+  - Server-side changes require restarting the 8787 Node listener.
+  - Static frontend/PWA changes require clients to accept the refresh prompt, hard refresh, or close/reopen to load `codex-mobile-shell-v140`.
+
 ## Preserved Recent Handoff Tail
 
 ## 2026-05-29 Cross-Thread Task Card Planning Docs And Harness

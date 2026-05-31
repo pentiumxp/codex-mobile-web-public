@@ -49,6 +49,26 @@ Implementation path:
    `test/new-thread-route.test.js`, `test/mobile-viewport.test.js`, and
    `test/new-thread-ui.test.js` when the new-thread draft path changes.
 
+## Thread Visibility And Worktree Filtering
+
+Use when changing thread-list visibility, workspace cwd filtering, local state
+DB/session-index fallback, or Codex worktree handling.
+
+Implementation path:
+
+1. Keep archived/deleted/removed, backup rollout, old-workspace, and Sub Agent
+   suppression rules active before adding new visibility allowances.
+2. Treat `%USERPROFILE%\.codex\worktrees\<id>\<repo>` as visible only when
+   `<repo>` matches a visible workspace basename. Do not make all `.codex`
+   worktrees globally visible.
+3. Apply the same cwd matching in server filters and browser-side hidden-thread
+   checks so refreshes do not disagree.
+4. If app-server `thread/list` can omit rows, merge bounded state DB and
+   session-index fallback rows, then dedupe by thread id and reapply filters.
+5. Browser changes require a `CLIENT_BUILD_ID` / `public/sw.js` cache bump.
+6. Test with `test/thread-visibility.test.js` and `test/mobile-viewport.test.js`;
+   add thread detail or render tests if the detail shape changes.
+
 ## Thread Detail And Conversation Rendering
 
 Use when changing visible items, operation cards, timestamps, compaction notices, image views, or merge behavior.

@@ -1312,6 +1312,44 @@ plugin. The shell cache advances to `codex-mobile-shell-v102`.
   remain pending.
 - The shell cache advances to `codex-mobile-shell-v135`.
 
+### 2026-05-31 Public 发布说明（Hermes 外观同步、跨线程卡片修复与 Fast 圆点）
+
+本次 public 同步把 private 中已验证的 v133-v139 产品改动发布到公开仓库。版本仍为 `0.1.11`，PWA shell cache 升到 `codex-mobile-shell-v139`。部署后需要让 8787 Node listener 重新加载服务端文件；已安装到主屏幕或被 service worker 缓存的移动端客户端需要接受刷新提示、硬刷新或关闭重开，才能拿到新的静态界面。
+
+- Hermes 插件嵌入：launch/session 支持安全的 `appearance.theme` 与 `appearance.fontSize` 同步，iframe 会在主样式和主脚本加载前应用主题/字号，减少嵌入态从默认主题闪到 Hermes 主题的视觉跳变。
+- Hermes 通知标题：完成通知优先使用 app-server 线程显示名和嵌套 thread title，再回退到本地 SQLite；这避免旧续接线程把 bootstrap 提示误当作 Web Push / Hermes Inbox 标题。
+- 跨线程任务卡片：`#` 自然语言卡片命令继续由当前 Codex 线程生成 bounded draft，但 source 线程不再显示二次 `Approve` 或临时 `Sending` 卡片；已创建或已 dismiss 的 draft 用稳定的 turn+draft 内容 key 持久化，重新进入线程不会因为 app-server item id 改变而复活。
+- 目标线程卡片：thread detail 只渲染 target-side `pending` 卡片；source outgoing、`approved`、`deleted`、`revoked`、`replied` 和 transient `approving` 状态仍保留在运行态审计中，但不再作为可操作卡片堵在会话底部。`Approve` 在调用外部 `turn/start` 前先落盘为 `approving`，避免刷新、重连或压缩续接窗口里重新出现第二个可点的 `Approve`。
+- 跨线程自主 workflow：draft 可以显式请求 `workflowMode:"autonomous"`。同一个 workflow id 和同一对 source/target 线程在首次人工批准后可继续自动注入后续卡片；复用到其他线程对时仍回到 pending，需要单独批准。
+- 运行栏 Fast 圆点：模型前新增一个极小的持久化状态点，绿色表示普通模式，点击变红表示下一次新 `turn/start` 使用 Codex Fast 服务层。前端只提交隐藏 `fastMode` 字段，服务端映射为 `serviceTier: "priority"`；不会把可见 `/Fast` 文本插入用户消息，也不会改变模型、推理等级或权限设置。active-turn steering 不能改变已经开始的 turn 的速度层级。
+- 发布同步还包含 workspace registry 服务、共享链重启安装脚本、多账号 CLI 文档、相关 README/docs 更新和覆盖测试。发布前 private 验证通过 `npm test` 255/255、`npm run check`、`npm run check:macos`、`git diff --check`；public 发布前应在 public 工作区重新运行同等检查。
+
+### 2026-06-01 Public 发布说明（已知工作区本地文件预览）
+
+本次 public 合入 PR #42，修复移动端无法预览已知 workspace 内本地文件的问题。版本仍为 `0.1.11`，不改变 PWA shell cache；更新后需要重启 8787 Node listener 以加载新的服务端文件预览根策略。
+
+- 文件预览允许读取已知 workspace root 内的文件，也允许读取当前线程 cwd 内的文件；Markdown 预览继续按源文本列表编号渲染，避免预览内容把原始编号重新从 1 开始排。
+- 安全边界没有放宽到任意磁盘目录：预览仍只解析显式允许根目录内的路径，并继续拒绝根目录外路径、敏感文件类型和不支持的二进制内容。
+- 本次 public 同步没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
+
+### 2026-06-01 Public 发布说明（worktree 线程可见性）
+
+本次 public 合入 PR #43，修复 Codex worktree 中产生的线程在 Mobile Web 线程列表里不可见的问题。版本仍为 `0.1.11`，PWA shell cache 升到 `codex-mobile-shell-v140`；更新后需要重启 8787 Node listener，并让已打开的浏览器/PWA 接受刷新提示、硬刷新或关闭重开，才能拿到新的前端过滤逻辑。
+
+- Mobile Web 现在把 `%USERPROFILE%\.codex\worktrees\<id>\<repo>` 形式的 cwd 映射回已知 workspace 的仓库名。线程列表、选中 workspace 后的过滤、服务端 fallback 线程补全和前端隐藏规则都会接受同名仓库 worktree。
+- 服务端 `thread/list` 读取后会合并 state DB / session index fallback 线程，避免 app-server 列表遗漏 worktree 线程时 Mobile 端仍然空缺。
+- `thread/turns/list` fallback 会结合 rollout item 时间戳排序 turns，避免只有随机 turn id 或缺少标准 started/completed 时间字段时把最近内容排错。
+- 新增 `test/thread-visibility.test.js` 覆盖 worktree 可见性、无关 worktree 隐藏、归档线程隐藏、fallback 合并和 turn 时间排序。本次 public 同步仍不复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
+
+### 2026-06-01 Public 文档同步说明
+
+本次 public 追加同步 `docs/` 项目文档，确保公开仓库中的架构、模块、排障和复杂路径说明与 PR #42/#43 的实际行为一致。该提交只更新公开文档和 README，不包含 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
+
+- `docs/ARCHITECTURE.md` 记录 worktree cwd 可见性、state DB/session-index fallback 合并，以及本地文件预览允许根的安全边界。
+- `docs/MODULES.md` 增加 thread visibility/worktree filtering 测试映射，并明确 `server.js` 负责线程可见性过滤和本地文件预览根组合。
+- `docs/TROUBLESHOOTING.md` 增加 worktree 线程缺失排查步骤，并澄清文件预览不要通过加入宽泛根目录来修复。
+- `docs/COMPLEX_FEATURE_PATHS.md` 增加 Thread Visibility And Worktree Filtering 实现路径，要求同一套 cwd 匹配同时作用于服务端和前端过滤。
+
 ### Which Restart Is Needed After Changes
 
 Use this table after pulling updates:
