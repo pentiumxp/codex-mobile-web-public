@@ -1212,6 +1212,12 @@ function visibleWorkspaceKeys(globalState = readGlobalState()) {
   return new Set([...visibleWorkspaceRoots(globalState)].map(normalizeFsPath).filter(Boolean));
 }
 
+function visibleWorkspaceNames(globalState = readGlobalState()) {
+  return new Set([...visibleWorkspaceRoots(globalState)]
+    .map((root) => path.basename(path.resolve(root)))
+    .filter(Boolean));
+}
+
 function visibleProjectlessThreadIds(globalState = readGlobalState()) {
   const ids = globalState["projectless-thread-ids"];
   return new Set(Array.isArray(ids) ? ids.filter((id) => typeof id === "string" && id) : []);
@@ -1220,8 +1226,34 @@ function visibleProjectlessThreadIds(globalState = readGlobalState()) {
 function visibilityFromGlobalState(globalState = readGlobalState()) {
   return {
     workspaceKeys: visibleWorkspaceKeys(globalState),
+    workspaceNames: visibleWorkspaceNames(globalState),
     projectlessThreadIds: visibleProjectlessThreadIds(globalState),
   };
+}
+
+function codexWorktreeRepoName(cwd) {
+  const value = String(cwd || "").trim();
+  if (!value) return "";
+  const relative = path.relative(path.join(CODEX_HOME, "worktrees"), path.resolve(value));
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return "";
+  const parts = relative.split(path.sep).filter(Boolean);
+  return parts.length >= 2 ? parts[1] : "";
+}
+
+function threadWorkspaceVisible(cwd, visibility = null) {
+  const view = visibility || visibilityFromGlobalState();
+  const cwdKey = normalizeFsPath(cwd);
+  if (cwdKey && view.workspaceKeys && view.workspaceKeys.has(cwdKey)) return true;
+  const worktreeRepo = codexWorktreeRepoName(cwd);
+  return Boolean(worktreeRepo && view.workspaceNames && view.workspaceNames.has(worktreeRepo));
+}
+
+function threadMatchesWorkspaceCwd(threadCwd, selectedCwd) {
+  const selected = String(selectedCwd || "").trim();
+  if (!selected) return true;
+  if (normalizeFsPath(threadCwd) === normalizeFsPath(selected)) return true;
+  const worktreeRepo = codexWorktreeRepoName(threadCwd);
+  return Boolean(worktreeRepo && worktreeRepo === path.basename(path.resolve(selected)));
 }
 
 function filePreviewEnvRoots() {
@@ -1531,11 +1563,39 @@ function isHiddenThread(thread, visibility = null) {
   if (/[/\\](archived|deleted|trash|removed)[_-]?sessions[/\\]/.test(location)) return true;
   if (isBackupRolloutPath(location)) return true;
   if (view.workspaceKeys && view.workspaceKeys.size > 0) {
-    const cwd = normalizeFsPath(thread.cwd);
-    if (cwd) return !view.workspaceKeys.has(cwd);
+    const cwd = String(thread.cwd || "").trim();
+    if (cwd) return !threadWorkspaceVisible(cwd, view);
     return !view.projectlessThreadIds.has(thread.id);
   }
   return false;
+}
+
+function filterThreadListByCwd(result, cwd) {
+  if (!cwd || !result || typeof result !== "object") return result;
+  const out = Object.assign({}, result);
+  if (Array.isArray(out.data)) out.data = out.data.filter((thread) => threadMatchesWorkspaceCwd(thread && thread.cwd, cwd));
+  if (Array.isArray(out.threads)) out.threads = out.threads.filter((thread) => threadMatchesWorkspaceCwd(thread && thread.cwd, cwd));
+  return out;
+}
+
+function mergeThreadListFallback(result, fallbackThreads = [], limit = 80) {
+  const out = result && typeof result === "object" ? Object.assign({}, result) : {};
+  const existing = Array.isArray(out.data)
+    ? out.data
+    : (Array.isArray(out.threads) ? out.threads : []);
+  const merged = [];
+  const seen = new Set();
+  const addThread = (thread) => {
+    if (!thread || !thread.id || seen.has(thread.id)) return;
+    seen.add(thread.id);
+    merged.push(thread);
+  };
+  existing.forEach(addThread);
+  fallbackThreads.forEach(addThread);
+  const capped = merged.slice(0, Math.max(1, limit));
+  if (Array.isArray(out.data) || !Array.isArray(out.threads)) out.data = capped;
+  if (Array.isArray(out.threads)) out.threads = capped;
+  return out;
 }
 
 function filterVisibleThreads(result, globalState = readGlobalState()) {
@@ -5909,11 +5969,39 @@ async function readThreadSummaryFromAppServer(codex, threadId) {
 
 function sortTurnsChronologically(turns) {
   return (turns || []).slice().sort((a, b) => {
-    const left = Date.parse(a && (a.startedAt || a.completedAt || ""));
-    const right = Date.parse(b && (b.startedAt || b.completedAt || ""));
+    const left = turnSortTimestampMs(a);
+    const right = turnSortTimestampMs(b);
     if (Number.isFinite(left) && Number.isFinite(right) && left !== right) return left - right;
     return String((a && a.id) || "").localeCompare(String((b && b.id) || ""));
   });
+}
+
+function turnSortTimestampMs(turn) {
+  for (const key of [
+    "startedAtMs",
+    "startedAt",
+    "started_at_ms",
+    "started_at",
+    "createdAtMs",
+    "createdAt",
+    "created_at_ms",
+    "created_at",
+    "completedAtMs",
+    "completedAt",
+    "completed_at_ms",
+    "completed_at",
+    "updatedAtMs",
+    "updatedAt",
+    "updated_at_ms",
+    "updated_at",
+  ]) {
+    const timestamp = timestampToMs(turn && turn[key]);
+    if (timestamp) return timestamp;
+  }
+  const itemTimestamps = ((turn && turn.items) || [])
+    .map(itemDisplayTimestampMs)
+    .filter(Boolean);
+  return itemTimestamps.length ? Math.min(...itemTimestamps) : NaN;
 }
 
 function threadFromTurnsList(threadId, summary, turnsResult) {
@@ -5922,7 +6010,8 @@ function threadFromTurnsList(threadId, summary, turnsResult) {
     : Array.isArray(turnsResult && turnsResult.turns)
       ? turnsResult.turns
       : [];
-  const turns = sortTurnsChronologically(data).slice(-MAX_THREAD_TURNS);
+  const enriched = enrichThreadItemTimestampsFromRollout(Object.assign({ turns: data }, summary || {}, { id: threadId }));
+  const turns = sortTurnsChronologically(enriched.turns).slice(-MAX_THREAD_TURNS);
   const latest = turns[turns.length - 1];
   const status = latest && isLiveTurn(latest) ? { type: "active" } : (summary && summary.status) || { type: "notLoaded" };
   return annotateThreadRolloutStats(Object.assign({
@@ -6043,11 +6132,11 @@ async function turnsListThreadReadResult(threadId, summary, runtimeSettings, war
 function filterFallbackThreads(threads, filters = {}) {
   const globalState = filters.globalState || readGlobalState();
   const visibility = visibilityFromGlobalState(globalState);
-  const cwdKey = normalizeFsPath(filters.cwd);
+  const cwdFilter = String(filters.cwd || "").trim();
   const search = String(filters.searchTerm || "").trim().toLowerCase();
   return threads
     .filter((thread) => !isHiddenThread(thread, visibility))
-    .filter((thread) => !cwdKey || normalizeFsPath(thread.cwd) === cwdKey)
+    .filter((thread) => threadMatchesWorkspaceCwd(thread && thread.cwd, cwdFilter))
     .filter((thread) => {
       if (!search) return true;
       return [thread.name, thread.preview, thread.cwd, thread.id]
@@ -6721,10 +6810,17 @@ async function handleApi(req, res) {
       useStateDbOnly: true,
       sourceKinds: [],
     };
-    if (cwd) params.cwd = cwd;
     if (searchTerm) params.searchTerm = searchTerm;
     try {
-      const result = filterVisibleThreads(await codex.request("thread/list", params, { timeoutMs: READ_RPC_TIMEOUT_MS }), globalState);
+      const appServerResult = filterThreadListByCwd(
+        filterVisibleThreads(await codex.request("thread/list", params, { timeoutMs: READ_RPC_TIMEOUT_MS }), globalState),
+        cwd,
+      );
+      const fallback = [
+        ...readStateDbFallback(limit, { cwd, searchTerm, globalState }),
+        ...readSessionIndexFallback(limit, { cwd, searchTerm, globalState }),
+      ].slice(0, limit);
+      const result = mergeThreadListFallback(appServerResult, fallback, limit);
       threadDisplaySummaryCache.rememberList(result);
       if (Array.isArray(result.data)) result.data = result.data.slice(0, limit);
       if (Array.isArray(result.threads)) result.threads = result.threads.slice(0, limit);
@@ -7257,6 +7353,8 @@ module.exports = {
   filePreviewContentDisposition,
   filePreviewContentType,
   generatedImageContentUrl,
+  isHiddenThread,
+  mergeThreadListFallback,
   mimeFor,
   readFilePreview,
   readRolloutItemTimestampCandidates,
@@ -7264,5 +7362,7 @@ module.exports = {
   publicServerRequest,
   serveFilePreviewContent,
   serverRequestResponsePayload,
+  sortTurnsChronologically,
   stripMarkdownFileTarget,
+  threadMatchesWorkspaceCwd,
 };

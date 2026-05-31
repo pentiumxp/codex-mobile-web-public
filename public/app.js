@@ -191,7 +191,7 @@ const state = {
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v139";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v140";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -2074,6 +2074,42 @@ function visibleWorkspaceKeys() {
   return new Set(state.workspaces.map((ws) => normalizeFsPath(ws.cwd)).filter(Boolean));
 }
 
+function basenameForFsPath(value) {
+  const parts = normalizeFsPath(value).split("\\").filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : "";
+}
+
+function visibleWorkspaceNames() {
+  return new Set(state.workspaces.map((ws) => basenameForFsPath(ws.cwd)).filter(Boolean));
+}
+
+function codexWorktreeRepoName(value) {
+  const normalized = normalizeFsPath(value);
+  const marker = "\\.codex\\worktrees\\";
+  const index = normalized.indexOf(marker);
+  if (index < 0) return "";
+  const parts = normalized.slice(index + marker.length).split("\\").filter(Boolean);
+  return parts.length >= 2 ? parts[1] : "";
+}
+
+function threadMatchesWorkspaceCwd(threadCwd, workspaceCwd) {
+  const threadKey = normalizeFsPath(threadCwd);
+  const workspaceKey = normalizeFsPath(workspaceCwd);
+  if (!workspaceKey) return true;
+  if (threadKey === workspaceKey) return true;
+  const repoName = codexWorktreeRepoName(threadCwd);
+  return Boolean(repoName && repoName === basenameForFsPath(workspaceCwd));
+}
+
+function threadMatchesVisibleWorkspace(threadCwd) {
+  const cwd = normalizeFsPath(threadCwd);
+  const keys = visibleWorkspaceKeys();
+  if (keys.size <= 0 || !cwd) return true;
+  if (keys.has(cwd)) return true;
+  const repoName = codexWorktreeRepoName(threadCwd);
+  return Boolean(repoName && visibleWorkspaceNames().has(repoName));
+}
+
 function isHiddenThread(thread) {
   if (!thread) return true;
   const status = statusText(thread.status).toLowerCase();
@@ -2084,9 +2120,8 @@ function isHiddenThread(thread) {
   if (/[/\\](archived|deleted|trash|removed)[_-]?sessions[/\\]/.test(location)) return true;
   if (/\.jsonl\.(bak|backup|old)(?:\b|[-_.])/.test(location)) return true;
   const cwd = normalizeFsPath(thread.cwd);
-  if (state.selectedCwd && cwd !== normalizeFsPath(state.selectedCwd)) return true;
-  const keys = visibleWorkspaceKeys();
-  if (keys.size > 0 && cwd && !keys.has(cwd)) return true;
+  if (state.selectedCwd && !threadMatchesWorkspaceCwd(thread.cwd, state.selectedCwd)) return true;
+  if (cwd && !threadMatchesVisibleWorkspace(thread.cwd)) return true;
   return false;
 }
 
