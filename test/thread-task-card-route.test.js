@@ -32,7 +32,7 @@ test("thread task card routes preserve service status codes", () => {
     serverJs.indexOf('if (url.pathname === "/api/thread-task-cards" && req.method === "POST")'),
     serverJs.indexOf('if (url.pathname === "/api/workspaces" && req.method === "GET")'),
   );
-  assert.match(routeBlock, /threadTaskCardService\.create/);
+  assert.match(routeBlock, /threadTaskCardService\.createMany/);
   assert.match(routeBlock, /threadTaskCardService\.get/);
   assert.match(routeBlock, /threadTaskCardService\.approve/);
   assert.match(routeBlock, /threadTaskCardService\.deleteCard/);
@@ -43,7 +43,7 @@ test("thread task card routes preserve service status codes", () => {
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v131"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v134"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
   assert.match(appJs, /function settleCurrentThreadTaskCard\(/);
@@ -67,6 +67,7 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /function replyTaskCard\(/);
   assert.match(appJs, /function isThreadTaskCardCommandText\(/);
   assert.match(appJs, /function buildThreadTaskCardDraftRequestText\(/);
+  assert.match(appJs, /targetThreadIds/);
   assert.match(appJs, /function parseThreadTaskCardDraftText\(/);
   assert.match(appJs, /function renderPendingThreadTaskCardDraft\(/);
   assert.match(appJs, /function renderTurnThreadTaskCardDraft\(/);
@@ -75,13 +76,18 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /function renderThreadTaskCardExpandable\(/);
   assert.match(appJs, /const STORAGE_TASK_CARD_DRAFT_STATES = "codexMobileThreadTaskCardDraftStates"/);
   assert.match(appJs, /function saveThreadTaskCardDraftStates\(\)/);
-  assert.match(appJs, /data-task-card-draft-action="approve"/);
+  assert.match(appJs, /function queueThreadTaskCardDraftCreation\(/);
+  assert.match(appJs, /function createThreadTaskCardDraft\(/);
+  assert.match(appJs, /Sending cross-thread task card/);
+  assert.doesNotMatch(appJs, /data-task-card-draft-action="approve"/);
+  assert.doesNotMatch(appJs, /approveThreadTaskCardDraft/);
   assert.match(appJs, /data-task-card-draft-action="dismiss"/);
   assert.match(appJs, /idempotencyKey: `task-card-draft:\$\{state\.currentThreadId\}:\$\{draftKey\}`/);
   assert.match(appJs, /Task card created; opening target thread/);
-  assert.match(appJs, /state\.pendingPluginRouteHint = createdCard \? normalizePluginRouteHint\(\{/);
-  assert.match(appJs, /taskId: createdCard\.id/);
-  assert.match(appJs, /await loadThread\(draft\.targetThreadId, \{ source: "task-card-created" \}\)/);
+  assert.match(appJs, /Task cards created: \$\{createdCards\.length\}/);
+  assert.match(appJs, /state\.pendingPluginRouteHint = createdCards\.length === 1 \? normalizePluginRouteHint\(\{/);
+  assert.match(appJs, /taskId: createdCards\[0\]\.id/);
+  assert.match(appJs, /if \(createdCards\.length === 1\) \{/);
   assert.match(appJs, /if \(draftState\.status === "created" \|\| draftState\.status === "dismissed"\) return "";/);
   assert.match(appJs, /conversation\.querySelector\(`\[data-turn="\$\{escapeSelectorAttr\(targetId\)\}"\]`\)/);
   assert.match(appJs, /Task card approved; starting target turn/);

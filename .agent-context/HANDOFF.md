@@ -3898,3 +3898,294 @@ The previous full handoff was archived and should be opened only when old proven
     - New 8787 listener PID is `29796`.
     - Runtime missing-card probe now returns HTTP `404` instead of generic `500`.
   - Commit/push are the next required steps in this turn.
+
+## 2026-05-31 Multi-Target Task Cards And Embed Primary Startup v132
+
+- User request:
+  - Let cross-thread task cards target multiple threads.
+  - In Hermes plugin mode, do not automatically enter the most recent/restored
+    Codex thread.
+- Local implementation:
+  - `adapters/thread-task-card-service.js`
+    - Added `createMany()` and multi-target normalization.
+    - A batch request expands to one stored pending card per unique target
+      thread, with target-specific idempotency keys.
+    - The existing single-target `create()` path remains compatible.
+  - `server.js`
+    - `POST /api/thread-task-cards` now accepts either `targetThreadId` or
+      `targetThreadIds`.
+    - The response keeps `card` for old callers and adds `cards` for the full
+      batch result.
+  - `public/app.js`
+    - `#` draft prompts now ask the model for `targetThreadIds`.
+    - Draft parsing still accepts legacy `targetThreadId`.
+    - Source-side draft approval creates all target cards in one request.
+    - Single-target drafts still open the target thread directly; multi-target
+      drafts stay on the source thread and update outgoing/incoming card counts.
+    - The manual `Send task card` prompt accepts comma/semicolon/newline
+      separated target names or ids.
+    - Hermes `?embed=hermes` startup ignores locally saved recent thread restore
+      when there is no explicit launch target, URL thread hint, or Hermes route
+      hint, so the plugin opens on the embedded primary thread-switcher/settings
+      page.
+  - `public/app.js` / `public/sw.js`
+    - Static shell build/cache bumped to `0.1.11|codex-mobile-shell-v132` /
+      `codex-mobile-shell-v132`.
+  - Documentation updated:
+    - README, Architecture, Modules, Complex Feature Paths, Cross-Thread design
+      and implementation docs, Project Context, and this handoff.
+- Validation:
+  - `node --check adapters\thread-task-card-service.js`, `node --check server.js`,
+    `node --check public\app.js`, and `node --check public\sw.js` passed.
+  - Focused `node --test test\thread-task-card-service.test.js
+    test\thread-task-card-route.test.js test\conversation-render.test.js
+    test\mobile-viewport.test.js test\plugin-embed.test.js` passed: 33/33.
+  - `npm.cmd test` passed: 235/235.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+- Deployment:
+  - Restarted the 8787 Node listener: old PID `29796`, new PID `50680`.
+  - `/api/public-config` now returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v132` and
+    `shellCacheName=codex-mobile-shell-v132`.
+  - Authenticated `/api/status` remains healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`.
+- Status:
+  - Local changes are uncommitted.
+  - Static frontend/PWA changes require clients to refresh/reopen to load v132.
+
+## 2026-05-31 Hermes Plugin Appearance Sync v133
+
+- User request:
+  - When Hermes opens embedded plugins, pass the current tone/theme and font
+    settings into the plugin and make the plugin apply them before initializing,
+    so the iframe does not flash the wrong appearance.
+  - After Codex implementation, send cross-thread task cards to the Hermes/Codex,
+    Finance, and Wardrobe-related threads for host/plugin cooperation.
+- Local implementation:
+  - `adapters/hermes-plugin-service.js`
+    - Added a metadata-only `appearance_sync` manifest contract.
+    - `POST /api/v1/hermes/plugin/launch` now accepts bounded
+      `appearance.theme` (`system`, `dark`, `light`) and
+      `appearance.fontSize` (`small`, `default`, `large`, `xlarge`,
+      `xxlarge`).
+    - The short `entry_path` carries only safe `pluginTheme` /
+      `pluginFontSize` query params, and `/session` returns the same sanitized
+      `appearance` object.
+  - `public/plugin-embed.js`
+    - Parses bounded appearance query params alongside launch and route hints.
+  - `public/index.html`
+    - Applies plugin theme and font size before `styles.css` and `public/app.js`
+      load, reusing local preferences only when Hermes provides no appearance.
+  - `public/app.js`
+    - Applies session appearance after launch-token exchange, preserves safe
+      appearance params when scrubbing the launch token, and keeps standalone
+      `localStorage` preferences unchanged outside embed mode.
+  - `public/app.js` / `public/sw.js`
+    - Static shell build/cache bumped to
+      `0.1.11|codex-mobile-shell-v133` / `codex-mobile-shell-v133`.
+  - Documentation updated:
+    - README, Architecture, Modules, Complex Feature Paths, Project Context,
+      and this handoff.
+- Validation/status:
+  - `node --check adapters\hermes-plugin-service.js`,
+    `node --check public\plugin-embed.js`, `node --check public\app.js`, and
+    `node --check public\sw.js` passed.
+  - Focused `node --test test\hermes-plugin-service.test.js
+    test\hermes-plugin-route.test.js test\plugin-embed.test.js
+    test\mobile-viewport.test.js` passed: 25/25.
+  - `npm.cmd test` passed: 237/237.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+  - Deployment:
+    - The first `/api/restart/shared-chain` request returned accepted but did
+      not change the 8787 listener PID, so the service was restarted through the
+      Windows scheduled task path with explicit old-PID verification.
+    - Old listener PID `50680` was stopped; new listener PID `47248` is serving
+      `clientBuildId=0.1.11|codex-mobile-shell-v133` and
+      `shellCacheName=codex-mobile-shell-v133`.
+    - Authenticated `/api/status` is healthy:
+      `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+      `lastError=null`.
+    - Manifest probe for Hermes HTTPS origin returns the HTTPS Codex entry,
+      `appearance_sync`, registered frame ancestor, and no mixed-content
+      diagnostics.
+    - Launch/session probe with `appearance.theme=light` and
+      `appearance.fontSize=xlarge` returned safe `pluginTheme` /
+      `pluginFontSize` in `entry_path` and sanitized session `appearance`
+      without leaking the injected test field.
+  - Cross-thread cards:
+    - A first PowerShell-sent Chinese JSON request created mojibake task-card
+      content. Two pending cards were revoked. The Wardrobe card had already
+      been approved into turn `019e7b62-f45c-78f1-81f3-05b49d7c14ed`, so that
+      bad turn was interrupted and left in `interrupted` state.
+    - Replacement ASCII/UTF-8-safe pending cards were created:
+      `ttc_4ea4082609d6e8fa1d` for Hermes 05-26,
+      `ttc_c720ba1fe6eb724c97` for Finance, and
+      `ttc_cb2fdc78f4ca2b3098` for Wardrobe.
+  - Local changes are uncommitted.
+  - Static frontend/PWA changes require clients to refresh/reopen or receive a
+    Hermes plugin refresh to load v133.
+
+## 2026-05-31 Thread Task Card Sending Harness Hardening
+
+- User request:
+  - Solidify the cross-thread task-card sending flow with harness coverage after
+    a manual PowerShell-sent Chinese JSON request created duplicate/mojibake
+    cards.
+  - Also send the appearance-sync coordination card to the Finance thread.
+- Local implementation:
+  - `adapters/thread-task-card-service.js`
+    - Added a readable visible-text guard for task-card `title`, `summary`, and
+      `body`.
+    - The service now rejects likely encoding-damaged card text before
+      persistence, including replacement characters, typical UTF-8/Latin-1
+      mojibake markers, and high-density repeated `?` clusters such as
+      `?? Hermes ?????? v133`.
+    - Oversized optional source-thread title metadata is truncated to its
+      existing 200-character bound instead of failing otherwise valid card
+      creation. Visible card title/summary/body bounds still reject over-limit
+      content.
+  - Harness/tests:
+    - `test/thread-task-card-harness.test.js` now asserts encoding-damaged
+      visible card text is rejected.
+    - `test/thread-task-card-service.test.js` now covers UTF-8 card text
+      preservation, stable idempotency, bad-text rejection before store writes,
+      replacement-character rejection, oversized source-title metadata bounding,
+      and reply bad-text rejection without settling the original card.
+  - Documentation updated:
+    - `.agent-context/PROJECT_CONTEXT.md`
+    - `docs/CROSS_THREAD_TASK_CARDS_DESIGN.md`
+    - `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md`
+    - `docs/MODULES.md`
+- Validation:
+  - `node --check adapters\thread-task-card-service.js` passed.
+  - Focused `node --test test\thread-task-card-harness.test.js
+    test\thread-task-card-service.test.js test\thread-task-card-route.test.js
+    test\conversation-render.test.js` passed: 34/34.
+  - `npm.cmd test` passed: 243/243.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+  - BOM check for touched source/test/docs/context files had no output.
+- Deployment/runtime verification:
+  - Restarted the 8787 Node listener after the service change: old PID `60804`,
+    new PID `57788`.
+  - Authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `lastError=null`.
+  - Runtime bad-card probe returned HTTP `400` with
+    `task_card_text_encoding_damaged:title` and did not persist the probe card.
+- Finance card:
+  - Sent a replacement safe ASCII task card to Finance thread
+    `019e6e22-e3d3-7e60-bcc2-027d40895193`.
+  - New card id: `ttc_fccaf8f25a9438d02e`.
+  - Status after runtime verification: `pending`.
+- Status:
+  - Local changes remain uncommitted.
+  - No public repository sync was performed.
+
+## 2026-05-31 Source-Side Task Card Auto-Send v134
+
+- User report:
+  - A feature had regressed: when sending a cross-thread card from the source
+    thread, the source thread should not require a local approval step. The
+    target thread is where `Approve` belongs.
+- Diagnosis:
+  - `public/app.js` still rendered the parsed `#` command draft as a
+    source-side `Cross-thread task card draft` approval card with
+    `data-task-card-draft-action="approve"`.
+  - `.agent-context/PROJECT_CONTEXT.md` and README still described the older
+    source-side approval behavior, so the current code and docs both reflected
+    the stale rule.
+- Local fix:
+  - `public/app.js`
+    - A valid parsed `#` draft now queues automatic pending-card creation via
+      `queueThreadTaskCardDraftCreation()` / `createThreadTaskCardDraft()`.
+    - The shipped source-side draft UI no longer includes
+      `data-task-card-draft-action="approve"` and no longer references
+      `approveThreadTaskCardDraft`.
+    - While the automatic create request is in progress, the source turn shows
+      only a short `Sending cross-thread task card...` placeholder.
+    - If the model draft is incomplete or names missing target threads, the
+      source thread shows a bounded failed diagnostic that can be dismissed.
+    - Target-side pending cards still keep `Approve`; only target approval
+      injects a real target-thread turn.
+  - `public/app.js` / `public/sw.js`
+    - Static shell build/cache bumped to
+      `0.1.11|codex-mobile-shell-v134` / `codex-mobile-shell-v134`.
+  - Documentation updated:
+    - README
+    - `.agent-context/PROJECT_CONTEXT.md`
+    - `docs/CROSS_THREAD_TASK_CARDS_DESIGN.md`
+    - `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md`
+    - `docs/MODULES.md`
+- Validation:
+  - `node --check public\app.js` passed.
+  - `node --check public\sw.js` passed.
+  - Focused `node --test test\thread-task-card-route.test.js
+    test\conversation-render.test.js test\mobile-viewport.test.js` passed:
+    23/23.
+  - `npm.cmd test` passed: 243/243.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+- Status:
+  - Local changes remain uncommitted.
+  - Static frontend/PWA change requires clients to refresh/reopen or receive a
+    Hermes plugin refresh to load v134.
+
+## 2026-05-31 Target Task Card Approve Compaction Race Fix
+
+- User report:
+  - A target-thread cross-thread task card was approved and began executing,
+    but a continuation compaction happened during that window. After compaction,
+    the same actionable `Approve` card appeared again even though the injected
+    target turn was already running.
+- Diagnosis:
+  - `adapters/thread-task-card-service.js` previously called the external
+    target-thread `turn/start` path while the card still had `status=pending`,
+    and only persisted `approved` after that external call returned.
+  - Any thread refresh, reconnect, or continuation compaction during that
+    in-flight window could re-read the task-card store and render a duplicate
+    pending approval card.
+- Local fix:
+  - `approve()` now persists a transient non-pending `approving` state before
+    calling the external injected-turn path.
+  - `approving` cards do not count as pending and are not actionable in thread
+    detail, so refresh/compaction cannot resurrect a second `Approve` button.
+  - If external execution fails before acceptance, the service restores the
+    card to `pending` with a bounded `approvalError` audit field so the target
+    can retry.
+  - Documentation updated in README, Architecture, Modules, Cross-Thread design
+    and implementation docs, Project Context, and this handoff.
+- Validation:
+  - `node --check adapters\thread-task-card-service.js` passed.
+  - Focused `node --test test\thread-task-card-service.test.js
+    test\thread-task-card-harness.test.js test\thread-task-card-route.test.js
+    test\conversation-render.test.js` passed: 37/37.
+  - `npm.cmd test` passed: 246/246.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+  - BOM check for touched source/test/docs/context files had no output.
+- Deployment/runtime verification:
+  - Restarted the 8787 Node listener by stopping old PID `57788`; the existing
+    hidden windowless launcher restarted it as PID `49964`.
+  - `/api/public-config` still returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v134` and
+    `shellCacheName=codex-mobile-shell-v134`.
+  - Authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`.
+- Status:
+  - Local changes remain uncommitted.
+  - This is server-side service behavior; no static shell cache bump was
+    required.

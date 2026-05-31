@@ -8,6 +8,7 @@ const MAX_TITLE_CHARS = 120;
 const MAX_SUMMARY_CHARS = 300;
 const MAX_BODY_CHARS = 8_000;
 const DEFAULT_RECENT_LIMIT = 24;
+const MAX_BATCH_TARGETS = 12;
 const SETTLED_STATUSES = new Set(["approved", "deleted", "revoked", "replied"]);
 
 function nowIso(nowFn) {
@@ -30,6 +31,43 @@ function boundedString(value, fieldName, maxLength, required = true) {
   const text = stringValue(value);
   if (required && !text) throw errorWithStatus(`${fieldName}_required`);
   if (text.length > maxLength) throw errorWithStatus(`${fieldName}_too_long`);
+  return text;
+}
+
+function boundedMetadataString(value, maxLength) {
+  const text = stringValue(value);
+  if (!text) return "";
+  return text.length > maxLength ? text.slice(0, maxLength) : text;
+}
+
+function boundedErrorMessage(value) {
+  const text = stringValue(value && value.message ? value.message : value);
+  const singleLine = text.replace(/\s+/g, " ").trim();
+  return singleLine ? boundedMetadataString(singleLine, 500) : "approval_execution_failed";
+}
+
+function hasLikelyQuestionMarkReplacementDamage(text) {
+  const questionCount = (text.match(/\?/g) || []).length;
+  if (questionCount < 6 || !/\?{2,}/.test(text)) return false;
+  const hasRepeatedClusters = /\?{4,}/.test(text) || /\?{2,}[\s\S]{0,40}\?{2,}/.test(text);
+  if (!hasRepeatedClusters) return false;
+  const ratio = questionCount / Math.max(1, text.length);
+  return ratio >= 0.12 || questionCount >= 16;
+}
+
+function hasLikelyEncodingDamage(text) {
+  if (!text) return false;
+  if (/[\uFFFD\u0080-\u009F]/.test(text)) return true;
+  if (/[ÃÂ]/.test(text)) return true;
+  if (/â[€™€œ€]/.test(text)) return true;
+  return hasLikelyQuestionMarkReplacementDamage(text);
+}
+
+function readableCardText(value, fieldName, maxLength, required = true) {
+  const text = boundedString(value, fieldName, maxLength, required);
+  if (text && hasLikelyEncodingDamage(text)) {
+    throw errorWithStatus(`task_card_text_encoding_damaged:${fieldName}`);
+  }
   return text;
 }
 
@@ -120,15 +158,57 @@ function normalizeCreateRequest(input = {}) {
     sourceWorkspaceId: boundedString(input.sourceWorkspaceId, "source_workspace_id", 260),
     sourceThreadId: boundedString(input.sourceThreadId, "source_thread_id", 220),
     sourceTurnId: boundedString(input.sourceTurnId, "source_turn_id", 220, false),
-    sourceThreadTitle: boundedString(input.sourceThreadTitle, "source_thread_title", 200, false),
+    sourceThreadTitle: boundedMetadataString(input.sourceThreadTitle, 200),
     targetWorkspaceId: boundedString(input.targetWorkspaceId, "target_workspace_id", 260),
     targetThreadId: boundedString(input.targetThreadId, "target_thread_id", 220),
     idempotencyKey: boundedString(input.idempotencyKey, "idempotency_key", 220),
     format: normalizedFormat(input.format),
-    title: boundedString(input.title, "title", MAX_TITLE_CHARS),
-    summary: boundedString(input.summary, "summary", MAX_SUMMARY_CHARS),
-    body: boundedString(input.body, "body", MAX_BODY_CHARS),
+    title: readableCardText(input.title, "title", MAX_TITLE_CHARS),
+    summary: readableCardText(input.summary, "summary", MAX_SUMMARY_CHARS),
+    body: readableCardText(input.body, "body", MAX_BODY_CHARS),
   };
+}
+
+function normalizeTargetThreadIds(input = {}) {
+  const raw = Array.isArray(input.targetThreadIds) && input.targetThreadIds.length
+    ? input.targetThreadIds
+    : [input.targetThreadId];
+  const seen = new Set();
+  const ids = [];
+  for (const value of raw) {
+    const id = boundedString(value, "target_thread_id", 220, false);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  if (!ids.length) throw errorWithStatus("target_thread_id_required");
+  if (ids.length > MAX_BATCH_TARGETS) throw errorWithStatus("target_thread_ids_too_many");
+  return ids;
+}
+
+function idempotencyKeyForTarget(baseKey, targetThreadId, index, total) {
+  const base = boundedString(baseKey, "idempotency_key", 180);
+  if (total <= 1) return base;
+  return boundedString(`${base}:${index + 1}:${targetThreadId}`, "idempotency_key", 220);
+}
+
+function targetWorkspaceIdForInput(input, targetThreadId) {
+  const map = input && input.targetWorkspaceIds && typeof input.targetWorkspaceIds === "object"
+    ? input.targetWorkspaceIds
+    : null;
+  if (map && Object.prototype.hasOwnProperty.call(map, targetThreadId)) {
+    return map[targetThreadId];
+  }
+  return input.targetWorkspaceId || input.targetWorkspace;
+}
+
+function normalizeCreateRequests(input = {}) {
+  const targetThreadIds = normalizeTargetThreadIds(input);
+  return targetThreadIds.map((targetThreadId, index) => normalizeCreateRequest(Object.assign({}, input, {
+    targetThreadId,
+    targetWorkspaceId: targetWorkspaceIdForInput(input, targetThreadId),
+    idempotencyKey: idempotencyKeyForTarget(input.idempotencyKey, targetThreadId, index, targetThreadIds.length),
+  })));
 }
 
 function normalizeReplyRequest(input = {}) {
@@ -136,12 +216,12 @@ function normalizeReplyRequest(input = {}) {
   return {
     sourceWorkspaceId: boundedString(input.sourceWorkspaceId, "source_workspace_id", 260, false),
     sourceThreadId: boundedString(input.sourceThreadId, "source_thread_id", 220, false),
-    sourceThreadTitle: boundedString(input.sourceThreadTitle, "source_thread_title", 200, false),
+    sourceThreadTitle: boundedMetadataString(input.sourceThreadTitle, 200),
     idempotencyKey: boundedString(input.idempotencyKey, "idempotency_key", 220),
     format: normalizedFormat(input.format || "markdown"),
-    title: boundedString(input.title, "title", MAX_TITLE_CHARS),
-    summary: boundedString(input.summary, "summary", MAX_SUMMARY_CHARS),
-    body: boundedString(input.body, "body", MAX_BODY_CHARS),
+    title: readableCardText(input.title, "title", MAX_TITLE_CHARS),
+    summary: readableCardText(input.summary, "summary", MAX_SUMMARY_CHARS),
+    body: readableCardText(input.body, "body", MAX_BODY_CHARS),
   };
 }
 
@@ -209,47 +289,58 @@ function createThreadTaskCardService(options = {}) {
     return safeArray(store.cards).find((card) => stringValue(card.idempotencyKey) === stringValue(key)) || null;
   }
 
+  function findById(store, id) {
+    return safeArray(store.cards).find((entry) => stringValue(entry.id) === stringValue(id)) || null;
+  }
+
+  function createCardFromRequest(request, store) {
+    if (request.sourceThreadId === request.targetThreadId) throw errorWithStatus("target_thread_must_differ_from_source_thread");
+    const existing = findByIdempotency(store, request.idempotencyKey);
+    if (existing) return publicCard(existing, request.sourceThreadId);
+    const timestamp = nowIso(options.now);
+    const card = {
+      id: idGenerator(),
+      status: "pending",
+      idempotencyKey: request.idempotencyKey,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      source: {
+        workspaceId: request.sourceWorkspaceId,
+        threadId: request.sourceThreadId,
+        turnId: request.sourceTurnId || "",
+        title: request.sourceThreadTitle || request.sourceThreadId,
+      },
+      target: {
+        workspaceId: request.targetWorkspaceId,
+        threadId: request.targetThreadId,
+      },
+      message: {
+        format: request.format,
+        title: request.title,
+        summary: request.summary,
+        body: request.body,
+      },
+      delivery: {
+        injectOnApprove: true,
+        allowReply: true,
+        allowRevoke: true,
+      },
+      audit: {
+        createdAt: timestamp,
+      },
+    };
+    store.cards.push(card);
+    return publicCard(card, request.sourceThreadId);
+  }
+
   async function create(input) {
     const request = normalizeCreateRequest(input);
-    if (request.sourceThreadId === request.targetThreadId) throw errorWithStatus("target_thread_must_differ_from_source_thread");
-    return withStore(async (store) => {
-      const existing = findByIdempotency(store, request.idempotencyKey);
-      if (existing) return publicCard(existing, request.sourceThreadId);
-      const timestamp = nowIso(options.now);
-      const card = {
-        id: idGenerator(),
-        status: "pending",
-        idempotencyKey: request.idempotencyKey,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        source: {
-          workspaceId: request.sourceWorkspaceId,
-          threadId: request.sourceThreadId,
-          turnId: request.sourceTurnId || "",
-          title: request.sourceThreadTitle || request.sourceThreadId,
-        },
-        target: {
-          workspaceId: request.targetWorkspaceId,
-          threadId: request.targetThreadId,
-        },
-        message: {
-          format: request.format,
-          title: request.title,
-          summary: request.summary,
-          body: request.body,
-        },
-        delivery: {
-          injectOnApprove: true,
-          allowReply: true,
-          allowRevoke: true,
-        },
-        audit: {
-          createdAt: timestamp,
-        },
-      };
-      store.cards.push(card);
-      return publicCard(card, request.sourceThreadId);
-    });
+    return withStore(async (store) => createCardFromRequest(request, store));
+  }
+
+  async function createMany(input) {
+    const requests = normalizeCreateRequests(input);
+    return withStore(async (store) => requests.map((request) => createCardFromRequest(request, store)));
   }
 
   function listForThread(threadId) {
@@ -266,31 +357,64 @@ function createThreadTaskCardService(options = {}) {
     const id = stringValue(cardId);
     if (!id) throw errorWithStatus("task_card_id_required");
     const store = loadStore(storageFile);
-    const card = safeArray(store.cards).find((entry) => stringValue(entry.id) === id);
+    const card = findById(store, id);
     if (!card) throw errorWithStatus("task_card_not_found", 404);
     return publicCard(card, threadId || card.source.threadId || card.target.threadId || "");
   }
 
   async function approve(cardId, actorThreadId) {
     const id = stringValue(cardId);
-    return withStore(async (store) => {
-      const card = safeArray(store.cards).find((entry) => stringValue(entry.id) === id);
+    const actorThread = stringValue(actorThreadId);
+    const prepared = await withStore(async (store) => {
+      const card = findById(store, id);
       transitionAllowed(card, "approve", actorThreadId);
-      const execution = await executeApprovedCard(clone(card), {
-        text: injectedMessageText(card),
+      const timestamp = nowIso(options.now);
+      card.status = "approving";
+      card.updatedAt = timestamp;
+      card.audit = Object.assign({}, card.audit || {}, {
+        approvingAt: timestamp,
+        approvingByThreadId: actorThread,
       });
+      return clone(card);
+    });
+
+    let execution;
+    try {
+      execution = await executeApprovedCard(clone(prepared), {
+        text: injectedMessageText(prepared),
+      });
+    } catch (err) {
+      await withStore(async (store) => {
+        const card = findById(store, id);
+        if (card && card.status === "approving") {
+          const timestamp = nowIso(options.now);
+          card.status = "pending";
+          card.updatedAt = timestamp;
+          card.audit = Object.assign({}, card.audit || {}, {
+            approvalFailedAt: timestamp,
+            approvalError: boundedErrorMessage(err),
+          });
+        }
+        return null;
+      });
+      throw err;
+    }
+
+    return withStore(async (store) => {
+      const card = findById(store, id);
+      if (!card) throw errorWithStatus("task_card_not_found", 404);
       const timestamp = nowIso(options.now);
       card.status = "approved";
       card.updatedAt = timestamp;
       card.audit = Object.assign({}, card.audit || {}, {
         approvedAt: timestamp,
-        approvedByThreadId: stringValue(actorThreadId),
+        approvedByThreadId: actorThread,
       });
       if (execution && execution.turnId) card.injectedTurnId = String(execution.turnId);
       if (execution && execution.threadId) card.injectedThreadId = String(execution.threadId);
       if (execution && execution.result) card.injectionResult = execution.result;
       return {
-        card: publicCard(card, actorThreadId),
+        card: publicCard(card, actorThread),
         execution,
       };
     });
@@ -399,6 +523,7 @@ function createThreadTaskCardService(options = {}) {
   return {
     approve,
     create,
+    createMany,
     deleteCard,
     get,
     injectedMessageText,
@@ -413,6 +538,8 @@ function createThreadTaskCardService(options = {}) {
 module.exports = {
   createThreadTaskCardService,
   injectedMessageText,
+  hasLikelyEncodingDamage,
+  normalizeCreateRequests,
   normalizeCreateRequest,
   normalizeReplyRequest,
   publicCard,

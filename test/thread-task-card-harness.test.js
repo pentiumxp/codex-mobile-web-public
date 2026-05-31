@@ -3,6 +3,8 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 
+const { normalizeCreateRequest } = require("../adapters/thread-task-card-service");
+
 function sampleCreateRequest(overrides = {}) {
   return Object.assign({
     sourceWorkspaceId: "finance",
@@ -106,12 +108,34 @@ test("task-card create request stays bounded and separate from message flow", ()
   assert.doesNotMatch(JSON.stringify(request), /userMessage|turn\/steer|activeTurnId/);
 });
 
+test("task-card create request rejects likely encoding-damaged visible text", () => {
+  assert.throws(
+    () => normalizeCreateRequest(sampleCreateRequest({
+      title: "?? Hermes ?????? v133",
+      summary: "?????? Hermes ?????????",
+      body: "????????????????????????????????",
+    })),
+    /task_card_text_encoding_damaged:title/,
+  );
+});
+
 test("target approval injects a real message only after approval", () => {
   const next = applyAction(sampleTaskCard(), "approve", "target");
   assert.equal(next.status, "approved");
   assert.equal(next.injectedMessage.type, "userMessage");
   assert.match(next.injectedMessage.text, /\[跨线程待办已批准导入\]/);
   assert.equal(next.injectedMessage.bridgeSource.cardId, "ttc_01");
+});
+
+test("target approval leaves pending state before external turn injection settles", () => {
+  const approving = sampleTaskCard({
+    status: "approving",
+    audit: {
+      createdAt: "2026-05-29T00:00:00Z",
+      approvingAt: "2026-05-29T00:01:00Z",
+    },
+  });
+  assert.throws(() => applyAction(approving, "approve", "target"), /card_not_pending:approving/);
 });
 
 test("target delete removes the pending card without injection", () => {

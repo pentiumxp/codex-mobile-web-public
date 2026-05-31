@@ -24,10 +24,10 @@
 | `adapters/push-notification-service.js` | Web Push turn tracking and sub-agent suppression classification. |
 | `adapters/shared-chain-restart-service.js` | Authenticated restart endpoint orchestration. |
 | `adapters/generated-image-cache-service.js` | Caches app-server `imageView` screenshot files into runtime-owned generated-image storage before browser rendering. |
-| `adapters/hermes-plugin-service.js` | Independent Hermes Mobile embedded-app plugin manifest, callback/origin registration, launch/session token policy, and frame-ancestor metadata. |
+| `adapters/hermes-plugin-service.js` | Independent Hermes Mobile embedded-app plugin manifest, callback/origin registration, launch/session token policy, frame-ancestor metadata, and bounded launch/session appearance sync. |
 | `adapters/hermes-notification-delegate-service.js` | Backend-only Hermes Action Inbox notification delegation, safe payload normalization, Hermes endpoint/key resolution, and response sanitization. |
 | `adapters/turn-completion-receipt-service.js` | Builds bounded completed-turn detail receipts for Hermes plugin Inbox/thread-message delegation from final assistant text plus usage summary. |
-| `adapters/thread-task-card-service.js` | Cross-thread task-card normalization, JSON store persistence, idempotency, source/target authorization, state transitions, and approval injection payload generation. |
+| `adapters/thread-task-card-service.js` | Cross-thread task-card normalization, readable visible-text guards, JSON store persistence, idempotency, single/multi-target creation, source/target authorization, state transitions, approval in-flight persistence, and approval injection payload generation. |
 | `adapters/workspace-registry-service.js` | Mobile Web-created workspace folder validation, runtime registry persistence, allowed-root policy, and public workspace shape. |
 | `adapters/sqlite-cli.js` | Cross-environment `sqlite3` discovery and JSON result execution. |
 
@@ -37,7 +37,7 @@ Add new service modules when logic has independent inputs/outputs, state rules, 
 
 | File | Responsibility |
 | --- | --- |
-| `public/app.js` | Main app state, rendering, thread list/detail, composer, SSE, Push UI, update/restart UI, continuation UI. |
+| `public/app.js` | Main app state, rendering, thread list/detail, composer, SSE, Push UI, update/restart UI, continuation UI, source-side `#` task-card auto-send orchestration, and runtime application of plugin session appearance. |
 | `public/styles.css` | Full app shell, mobile/tablet layout, operation cards, composer, sidebar, modals, PWA-safe layout. |
 | `public/sw.js` | Service worker, app-shell cache, Web Push notification click handling. |
 | `public/api-client.js` | Authenticated fetch helper. |
@@ -47,7 +47,7 @@ Add new service modules when logic has independent inputs/outputs, state rules, 
 | `public/viewport-metrics.js` | Visual viewport and keyboard-shrink helpers. |
 | `public/conversation-scroll.js` | Scroll position and bottom-follow helpers. |
 | `public/image-compressor.js` | Browser-side image compression before upload. |
-| `public/plugin-embed.js` | Hermes iframe embed-mode helper for launch detection, navigation messages, back messages, and internal-window policy. |
+| `public/plugin-embed.js` | Hermes iframe embed-mode helper for launch detection, bounded appearance query parsing, navigation messages, back messages, and internal-window policy. |
 
 `public/app.js` is large. For new frontend behavior, first check whether the change belongs in an existing helper module or can be extracted into a new public helper with focused tests.
 
@@ -64,7 +64,7 @@ Add new service modules when logic has independent inputs/outputs, state rules, 
 | PWA/update/mobile viewport | `test/mobile-viewport.test.js`, `test/app-update.test.js`, `test/tablet-layout.test.js`, `test/manual-restart-ui.test.js`, `test/public-pull-request-service.test.js` |
 | uploads/files/images | `test/image-compressor.test.js`, `test/message-input-service.test.js`, `test/generated-image-cache-service.test.js`, `test/file-preview.test.js`, `test/file-preview-ui.test.js`, `test/composer-draft.test.js` |
 | Hermes Mobile plugin mode | `test/hermes-plugin-service.test.js`, `test/hermes-plugin-route.test.js`, `test/hermes-notification-delegate-service.test.js`, `test/plugin-embed.test.js` |
-| cross-thread task cards | `test/thread-task-card-harness.test.js`, `test/thread-task-card-service.test.js`, `test/thread-task-card-route.test.js`, `test/conversation-render.test.js` |
+| cross-thread task cards | `test/thread-task-card-harness.test.js`, `test/thread-task-card-service.test.js`, `test/thread-task-card-route.test.js`, `test/conversation-render.test.js`; include readable-text/encoding-damage and approve-in-flight harness coverage when changing sender or store paths |
 | Push | `test/push-notification-service.test.js` |
 | runtime settings | `test/runtime-settings.test.js`, `test/composer-quota.test.js` |
 | scroll and markdown | `test/conversation-scroll.test.js`, `test/turn-scroll-controls.test.js`, `test/markdown-render.test.js` |

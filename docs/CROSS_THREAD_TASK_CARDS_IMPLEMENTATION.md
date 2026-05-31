@@ -9,11 +9,14 @@ layout and test strategy.
 
 - `adapters/thread-task-card-service.js`
   - normalization
+  - readable-text guard for `title`, `summary`, and `body`
   - authorization checks
   - status transitions
+  - target-side approval in-flight persistence before external `turn/start`
   - idempotency
   - storage
   - injection payload generation
+  - multi-target expansion into one stored card per target
 
 - `server.js`
   - route wiring only
@@ -25,6 +28,8 @@ layout and test strategy.
   - minimal orchestration
   - render task-card stack
   - action handlers
+  - source-side `#` draft parsing and automatic pending-card creation; source
+    drafts must not require a second local approval click
 
 - future optional helper:
   - `public/thread-task-cards.js`
@@ -74,6 +79,9 @@ If sqlite is chosen, keep it separate from normal thread message history.
 5. Add approve/delete/revoke/reply handlers.
 6. Add injection path for approved cards.
 7. Add audit logging and focused diagnostics.
+8. For the `#` natural-language path, ask the model for `targetThreadIds`, keep
+   accepting legacy `targetThreadId`, and automatically create target pending
+   cards when the draft parses. Do not show a source-side `Approve` button.
 
 ## Harness
 
@@ -84,7 +92,10 @@ The initial harness for this feature lives in:
 This harness is intentionally implementation-light. It codifies:
 
 - payload shape expectations;
+- readable UTF-8 expectations for visible card text;
 - status transitions;
+- target approval leaving `pending` before external injection settles, so
+  refresh/compaction cannot resurrect a duplicate `Approve` card;
 - allowed actor/action combinations;
 - injected message shape after approval;
 - reply-card direction reversal.
@@ -97,9 +108,14 @@ added.
 After implementation begins, expand coverage with:
 
 - service tests for normalization/state transitions/idempotency;
+- service tests rejecting likely encoding-damaged visible card text before store
+  writes;
+- service tests for multi-target create count and per-target pending counts;
 - route tests for authorization and action endpoints;
 - conversation/thread-detail tests for card rendering outside message flow;
 - SSE/live update tests if task cards are pushed in real time.
+- frontend/static harness checks that source-side draft cards auto-send and no
+  `data-task-card-draft-action="approve"` control is shipped.
 
 ## Activation Expectations
 
@@ -117,9 +133,21 @@ Expected activation rules:
 - ambiguous authorization between source and target users;
 - reply/revoke race conditions;
 - duplicated injected messages without idempotency enforcement;
+- visible mojibake if a caller sends non-ASCII card payloads through an unsafe
+  shell/encoding path.
 - overloading `public/app.js` if card rendering is not extracted in time.
 
 ## Decision Rule
 
 Do not implement this feature by pretending pending cards are ordinary
 `userMessage` items. That would violate the main safety requirement.
+`POST /api/thread-task-cards` accepts either `targetThreadId` or
+`targetThreadIds`. For multiple targets, `server.js` resolves safe target
+workspace metadata per id, calls `threadTaskCardService.createMany()`, returns
+`cards`, and keeps `card` as the first result for compatibility.
+
+For manual or operational sending, use the browser flow, a checked Node script,
+or another UTF-8-safe JSON client. Do not hand-compose Chinese card JSON through
+PowerShell command strings. The service now rejects likely damaged text, but the
+canonical sending path should still use stable idempotency keys and a
+UTF-8-safe request builder.

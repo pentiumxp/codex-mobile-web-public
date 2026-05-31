@@ -133,6 +133,18 @@ state across visibility/focus changes, exchanges launch tokens without writing
 them to `localStorage`, and scrubs one-time launch tokens from the address bar
 after session exchange. Internal route changes post:
 
+Hermes may pass bounded host appearance settings during plugin launch. The
+manifest advertises `appearance_sync` with supported `theme` values
+`system|dark|light` and `fontSize` values
+`small|default|large|xlarge|xxlarge`. `POST /api/v1/hermes/plugin/launch`
+accepts those values under `appearance`, echoes them through the short-lived
+entry path as `pluginTheme` / `pluginFontSize`, and returns the same sanitized
+appearance through the browser session exchange. The iframe head script applies
+both theme and font size before `styles.css` and `public/app.js` initialize, so
+Hermes-hosted plugins do not flash the standalone/default appearance. These
+fields are session appearance metadata only; they must not carry tokens, local
+paths, raw settings dumps, or private content.
+
 ```json
 { "type": "codex-mobile.plugin.navigation", "version": 1, "canGoBack": true, "route": { "kind": "thread", "threadId": "..." } }
 ```
@@ -145,6 +157,11 @@ forwards its right-swipe/back affordance to the iframe. Codex handles that
 secondary-page back by returning to the primary thread-switcher/settings page.
 It must not show the standalone first-launch Workspace page or treat the
 thread-switcher/settings surface as an overlay sidebar in Hermes embed mode.
+When there is no explicit plugin launch target, URL thread hint, or bounded
+Hermes route hint, embedded startup stays on this primary page. It must not
+restore the last locally opened thread or auto-enter a recent active thread,
+because that hides the host navigation surface and can land the plugin in a
+stale Codex thread.
 Once a file preview, rename/action dialog, or subagent panel is open, Codex
 handles `{ "type": "hermes.plugin.back", "version": 1 }` by closing that
 transient layer before page-level back is applied. Hermes must not inspect Codex
@@ -185,15 +202,23 @@ The detail path compacts command/tool/file/search items, enriches item timestamp
 Thread detail responses may also include `thread.threadTaskCards`. These are
 cross-thread collaboration cards that stay outside normal `thread.turns[*].items`
 until the target thread explicitly approves them. The browser renders them in a
-separate stack before the visible turn list so they do not pollute message flow.
+separate stack after the visible turn list and detached approvals, so they stay
+near the active bottom surface without polluting message flow.
 The composer also reserves `#...` at the start of a message as a cross-thread
 task-card command path. Those messages do not use a separate parse endpoint.
 Instead, `public/app.js` wraps the original `#` command in a bounded request
 envelope that includes the visible target-thread list, sends it through the
 normal current-thread message path, and expects the model to return exactly one
 `<codex-mobile-thread-task-card-draft>...</codex-mobile-thread-task-card-draft>`
-JSON block. The browser renders that assistant reply as a local approval card
-and only then creates a real pending task card through `POST /api/thread-task-cards`.
+JSON block. The preferred draft shape uses `targetThreadIds: [...]`; the parser
+also accepts the legacy single `targetThreadId` field. The browser suppresses
+the raw draft XML, shows a bounded placeholder while generation is in flight,
+and automatically creates real pending target cards when a valid draft arrives.
+The source thread must not require a local `Approve` step. Creation goes
+through `POST /api/thread-task-cards`. That route accepts either a single
+`targetThreadId` or multiple `targetThreadIds`, creates one stored card per
+target, and returns both the compatibility `card` field and the full `cards`
+array.
 ### Conversation Navigation
 
 The browser owns conversation scroll controls. The return-to-bottom button appears only when the current thread is loaded, scrollable, and away from the newest content.
@@ -217,12 +242,19 @@ Cross-thread task-card approval is a separate path. Approval does not attempt to
 append a fake static message to the target thread. Instead, after target-side
 approval, Mobile Web resumes the target thread if needed and injects the card
 payload as a real new `turn/start` user input. Delete and revoke are state
-transitions only and must not create target-thread messages.
-Source-side draft approval is also intentionally lightweight: once a `#`-draft
-approval creates the pending card, the browser does not block on re-reading the
-source thread before showing success. It updates local draft state, refreshes
-thread summaries in the background, and immediately opens the target thread so
-the pending card is visible where it was delivered. Cross-thread task cards now
+transitions only and must not create target-thread messages. Target-side
+approval first persists a transient non-pending `approving` state before the
+external `turn/start` call, preventing reconnect, refresh, or continuation
+compaction from rendering a duplicate actionable `Approve` card while the
+approved turn is already starting. If the external call fails before
+acceptance, the card is restored to `pending` with a bounded audit error.
+Source-side draft creation is also intentionally lightweight: once a valid
+`#`-draft creates pending cards, the browser does not block on re-reading the
+source thread before showing success. It updates local draft state and refreshes
+thread summaries in the background. Single-target drafts still open the
+target thread so the pending card is visible where it was delivered;
+multi-target drafts stay on the source thread and show the outgoing cards
+instead of arbitrarily choosing one recipient. Cross-thread task cards now
 render below the visible turns and detached approval stack, keeping them at the
 bottom of the thread rather than above historical conversation content. Only
 `pending` task cards render in thread detail; once a card reaches `approved`,

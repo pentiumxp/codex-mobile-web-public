@@ -82,6 +82,18 @@ Launch may also carry a bounded plugin target such as a workspace `cwd` or a
 thread id. After session exchange, the embedded browser should prefer that
 target over stale local restore state so Hermes-launched Wardrobe/Codex
 workflows land in the intended workspace and keep the correct MCP context.
+Launch may also carry bounded host appearance under `appearance.theme` and
+`appearance.fontSize`. Supported theme values are `system`, `dark`, and
+`light`; supported font-size values are `small`, `default`, `large`, `xlarge`,
+and `xxlarge`. Codex copies only those whitelisted values into the short iframe
+entry path as `pluginTheme` / `pluginFontSize` and into the plugin session
+response as `appearance`. The embedded head script applies them before loading
+the stylesheet and main app bundle, so Hermes-hosted plugins do not flash the
+standalone/default theme or font size during initialization.
+When Hermes does not provide an explicit launch target or bounded route hint,
+`/?embed=hermes` stays on the embedded primary page instead of restoring the
+last locally opened thread. This prevents the plugin tab from auto-entering a
+stale recent Codex thread and hiding Hermes's own bottom navigation.
 If Hermes Mobile is served over HTTPS, the Codex Mobile entry must also be
 HTTPS. Set `CODEX_MOBILE_HERMES_PLUGIN_BASE_URL` or
 `CODEX_MOBILE_PUBLIC_BASE_URL` so the manifest advertises that external URL.
@@ -162,7 +174,7 @@ cards:
 
 Behavior:
 
-- A source thread can create a pending task card for a target thread.
+- A source thread can create pending task cards for one or more target threads.
 - The pending card appears outside the target thread's normal message flow.
 - The target thread can `Approve`, `Delete`, or `Reply`.
 - The source thread can `Revoke` while the card is still pending.
@@ -180,19 +192,28 @@ The composer also reserves `#` at the start of a message for natural-language
 cross-thread task-card commands. Those commands do not go through a separate
 parse route. Instead, Mobile Web sends a bounded draft request to the current
 Codex thread, lets the model interpret the command against the visible thread
-list, renders the returned draft as an approval card, and only then creates a
-pending task card. After approval, the create call now uses a stable
-draft-scoped idempotency key, the thread list shows an incoming `Task N` badge
-on the target thread, and the browser immediately switches to that target
-thread so the pending card is visible without manual navigation. When the card
-id is known, Mobile Web also reuses its existing route-hint focus path to
-scroll the target thread directly to that pending card instead of leaving the
-user at the bottom of a long conversation. Pending cross-thread task cards now
+list, and immediately creates pending target cards when the returned draft
+parses successfully. The source thread does not show a second local `Approve`
+step. The create call uses a stable draft-scoped idempotency key, the thread
+list shows incoming `Task N` badges on every target thread, and a single-target
+draft still switches to that target thread so the pending card is visible
+without manual navigation. Multi-target
+drafts create one pending card per target and keep the source thread visible
+with the outgoing cards updated instead of jumping to only one recipient. When
+the card id is known for a single target, Mobile Web also reuses its existing
+route-hint focus path to scroll the target thread directly to that pending card
+instead of leaving the user at the bottom of a long conversation. Pending cross-thread task cards now
 render after the visible turn list and approval stack, so they stay at the
 bottom of the thread rather than appearing above historical messages. Once a
 card is approved, deleted, revoked, or replied, it no longer renders in thread
 detail; the injected turn becomes the visible follow-up surface. The current
 thread now also removes a settled card immediately after a successful action.
+Target-side approval also persists a transient non-pending `approving` state
+before calling the external target-thread `turn/start`, so reconnect,
+continuation compaction, or thread refresh cannot resurrect the same `Approve`
+card while the approved turn is already starting. If the external call fails
+before acceptance, the service restores the card to `pending` with a bounded
+audit error.
 Current browser builds also suppress raw draft XML while the model is still
 streaming the bounded draft reply, show a visible pending draft placeholder
 during that gap, wait for the injected target-thread turn after target-side
@@ -201,7 +222,7 @@ drafts and pending task cards now default to a medium card with a collapsed
 details section instead of rendering the full body immediately. Source-thread
 draft cards also persist their settled `created` / `dismissed` state in browser
 storage, so leaving and re-entering the thread does not resurrect an already
-approved or dismissed draft from the old bounded XML response.
+created or dismissed draft from the old bounded XML response.
 
 In Hermes embed mode, the sidebar now keeps the version pill, public-PR status,
 and restart action visible instead of hiding the whole version-action row.
@@ -225,10 +246,9 @@ response instead of waiting for a leave/re-enter refresh cycle. Examples:
 # 让 Hermes 05-26 配合处理插件刷新联动
 ```
 
-If the model cannot choose one visible target thread, the draft stays
-unapproved and shows the model-side error instead of auto-sending to the wrong
+If the model cannot choose at least one visible target thread, the source thread
+shows a bounded failed draft diagnostic instead of auto-sending to the wrong
 thread. `#` commands still reject attachments for now.
-user to refine the command.
 
 ## Clone And Validate
 
@@ -1228,6 +1248,33 @@ plugin. The shell cache advances to `codex-mobile-shell-v102`.
 - 测试与验证：
   - 同步更新了 `app-update`、Hermes plugin route、manual restart、mobile viewport、thread-task-card route 和 shared-chain restart script 相关测试。
   - 发布前通过 focused Node tests、`npm test`、`npm run check`、`npm run check:macos` 和 `git diff --check`。
+
+## 2026-05-31 Local Hermes Plugin Appearance Sync v133
+
+- Hermes plugin manifest now advertises a bounded `appearance_sync` contract:
+  launch may pass `appearance.theme` (`system|dark|light`) and
+  `appearance.fontSize` (`small|default|large|xlarge|xxlarge`).
+- Plugin launch copies only those safe values into the short relative iframe
+  entry path as `pluginTheme` / `pluginFontSize`; the browser session exchange
+  returns the same sanitized `appearance` object. Long-lived Access Keys,
+  session tokens, local paths, raw settings dumps, and private content are not
+  included in that appearance payload.
+- The embedded HTML head script applies host theme and font size before
+  `styles.css` and `public/app.js` load, then `public/app.js` keeps the session
+  appearance after token scrubbing. This avoids flashing the standalone/default
+  theme or font size while Hermes initializes the iframe.
+- The shell cache advances to `codex-mobile-shell-v133`.
+
+## 2026-05-31 Local Cross-Thread Task Card Auto-Send v134
+
+- `#` natural-language cross-thread card commands now auto-send after the model
+  returns a valid bounded draft. The source thread no longer asks for a second
+  local `Approve`; only the target thread's pending card keeps `Approve` for
+  injecting a real target-thread turn.
+- The task-card service rejects likely encoding-damaged visible card text before
+  persistence, so PowerShell/encoding-damaged `?? ?????` payloads cannot create
+  unreadable pending cards.
+- The shell cache advances to `codex-mobile-shell-v134`.
 
 ### Which Restart Is Needed After Changes
 

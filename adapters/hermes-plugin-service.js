@@ -9,6 +9,10 @@ const DEFAULT_PLUGIN_TITLE = "Codex Mobile";
 const DEFAULT_LAUNCH_TOKEN_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_PLUGIN_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const DEFAULT_SYNC_SCHEMA_VERSION = 1;
+const PLUGIN_THEME_VALUES = Object.freeze(["system", "dark", "light"]);
+const PLUGIN_FONT_SIZE_VALUES = Object.freeze(["small", "default", "large", "xlarge", "xxlarge"]);
+const PLUGIN_THEME_VALUE_SET = new Set(PLUGIN_THEME_VALUES);
+const PLUGIN_FONT_SIZE_VALUE_SET = new Set(PLUGIN_FONT_SIZE_VALUES);
 
 function stringValue(value) {
   return String(value || "").trim();
@@ -181,8 +185,17 @@ function boundedOptionalString(value, maxLength) {
   return text.slice(0, Math.max(1, maxLength || 1));
 }
 
+function normalizedEnumValue(value, allowedValues) {
+  const text = stringValue(value).toLowerCase();
+  return allowedValues.has(text) ? text : "";
+}
+
+function objectValue(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
 function launchTargetFromBody(body = {}) {
-  const route = body && typeof body.route === "object" && !Array.isArray(body.route) ? body.route : {};
+  const route = objectValue(body.route);
   const cwd = boundedOptionalString(
     body.cwd || body.workspace_cwd || body.workspaceCwd || route.cwd || route.workspace || "",
     4096,
@@ -195,6 +208,35 @@ function launchTargetFromBody(body = {}) {
   if (cwd) target.cwd = cwd;
   if (threadId) target.threadId = threadId;
   return Object.keys(target).length ? target : null;
+}
+
+function pluginAppearanceFromBody(body = {}) {
+  const route = objectValue(body.route);
+  const sources = [
+    objectValue(body.appearance),
+    objectValue(body.ui),
+    objectValue(route.appearance),
+    objectValue(route.ui),
+    body,
+  ];
+  const appearance = {};
+  for (const source of sources) {
+    if (!appearance.theme) {
+      const theme = normalizedEnumValue(
+        source.theme || source.pluginTheme || source.tone || source.colorScheme || source.color_scheme,
+        PLUGIN_THEME_VALUE_SET,
+      );
+      if (theme) appearance.theme = theme;
+    }
+    if (!appearance.fontSize) {
+      const fontSize = normalizedEnumValue(
+        source.fontSize || source.pluginFontSize || source.font_size || source.textSize || source.text_size,
+        PLUGIN_FONT_SIZE_VALUE_SET,
+      );
+      if (fontSize) appearance.fontSize = fontSize;
+    }
+  }
+  return Object.keys(appearance).length ? appearance : null;
 }
 
 function createHermesPluginService(options = {}) {
@@ -297,6 +339,16 @@ function createHermesPluginService(options = {}) {
         notification_delegate_test: "/api/v1/hermes/plugin/notifications",
         hermes_notification_endpoint: `/api/hermes-plugins/${pluginId}/notifications`,
         sync_schema_version: DEFAULT_SYNC_SCHEMA_VERSION,
+      },
+      appearance_sync: {
+        schema_version: 1,
+        launch_fields: ["appearance.theme", "appearance.fontSize"],
+        entry_query_params: ["pluginTheme", "pluginFontSize"],
+        session_response_field: "appearance",
+        apply_before_initialization: true,
+        theme_values: PLUGIN_THEME_VALUES,
+        font_size_values: PLUGIN_FONT_SIZE_VALUES,
+        raw_sensitive_material_returned: false,
       },
       owner_binding: {
         strategy: "workspace_bound_codex_mobile_key",
@@ -415,6 +467,7 @@ function createHermesPluginService(options = {}) {
     pruneLaunchTokens();
     const workspaceId = normalizeWorkspaceId(body.workspace_id || body.workspaceId);
     const target = launchTargetFromBody(body);
+    const appearance = pluginAppearanceFromBody(body);
     const token = launchTokenFromRequestValue(randomToken()) || `cpl_${crypto.randomBytes(24).toString("base64url")}`;
     const createdAtMs = nowMs();
     const expiresAtMs = createdAtMs + tokenTtlMs;
@@ -422,6 +475,7 @@ function createHermesPluginService(options = {}) {
       token,
       workspaceId,
       target,
+      appearance,
       createdAtMs,
       expiresAtMs,
     });
@@ -430,6 +484,8 @@ function createHermesPluginService(options = {}) {
       codexPluginLaunch: token,
       workspaceId,
     });
+    if (appearance && appearance.theme) params.set("pluginTheme", appearance.theme);
+    if (appearance && appearance.fontSize) params.set("pluginFontSize", appearance.fontSize);
     return {
       ok: true,
       entry_path: `/?${params.toString()}`,
@@ -455,6 +511,7 @@ function createHermesPluginService(options = {}) {
       token: sessionKey,
       workspaceId: launch.workspaceId,
       target: launch.target || null,
+      appearance: launch.appearance || null,
       createdAtMs,
       expiresAtMs,
     });
@@ -466,6 +523,7 @@ function createHermesPluginService(options = {}) {
       token_type: "codex_mobile_plugin_session",
     };
     if (launch.target) response.target = launch.target;
+    if (launch.appearance) response.appearance = launch.appearance;
     if (registrationRecord && registrationRecord.appOrigin) response.hermes_origin = registrationRecord.appOrigin;
     return response;
   }

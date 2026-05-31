@@ -10,7 +10,7 @@ function initialPluginLaunchKeyFromUrl() {
 }
 
 const pluginEmbedApi = window.CodexPluginEmbed || {
-  detect: () => ({ embedded: false, launchKey: initialPluginLaunchKeyFromUrl(), workspaceId: "", routeHint: null }),
+  detect: () => ({ embedded: false, launchKey: initialPluginLaunchKeyFromUrl(), workspaceId: "", routeHint: null, appearance: {} }),
   isBackMessage: () => false,
   navigationMessage: () => null,
   parentOriginFromReferrer: () => "",
@@ -26,6 +26,7 @@ const state = {
   pluginLaunchSession: Boolean(INITIAL_PLUGIN_LAUNCH_KEY),
   pluginSessionActive: false,
   pluginLaunchTarget: null,
+  pluginAppearance: INITIAL_PLUGIN_EMBED.appearance || null,
   queuedPluginRouteHint: INITIAL_PLUGIN_EMBED.routeHint || null,
   pendingPluginRouteHint: null,
   pluginParentOrigin: pluginEmbedApi.parentOriginFromReferrer(document.referrer) || "*",
@@ -158,10 +159,13 @@ const state = {
   serviceWorkerRegistration: null,
   pendingApprovals: new Map(),
   threadTaskCardDraftStates: new Map(Object.entries(loadJsonStorage("codexMobileThreadTaskCardDraftStates", {}))),
+  scheduledThreadTaskCardDraftCreations: new Set(),
   runningThreadIds: loadStringSetStorage("codexMobileRunningThreadIds"),
   unreadThreadIds: loadStringSetStorage("codexMobileUnreadThreadIds"),
   rolloutWarningDismissals: loadStringSetStorage("codexMobileDismissedRolloutWarnings"),
-  fontSize: localStorage.getItem("codexMobileFontSize") || "default",
+  fontSize: (INITIAL_PLUGIN_EMBED.appearance && INITIAL_PLUGIN_EMBED.appearance.fontSize)
+    || localStorage.getItem("codexMobileFontSize")
+    || "default",
   activityLabel: "",
   activityAtMs: 0,
   lastSendButtonSubmitAt: 0,
@@ -184,7 +188,7 @@ const state = {
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v131";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v134";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -222,6 +226,7 @@ const STORAGE_TASK_CARD_DRAFT_STATES = "codexMobileThreadTaskCardDraftStates";
 const DRAFT_SAVE_DEBOUNCE_MS = 250;
 const THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";
 const THREAD_TASK_CARD_DRAFT_TAG = "codex-mobile-thread-task-card-draft";
+const THEME_VALUES = new Set(["system", "dark", "light"]);
 const FONT_SIZE_VALUES = new Set(["small", "default", "large", "xlarge", "xxlarge"]);
 const MENU_OVERLAY_MEDIA = "(max-width: 1180px), (pointer: coarse) and (max-width: 1400px)";
 const TABLET_SPLIT_MEDIA = "(pointer: coarse) and (orientation: landscape) and (min-width: 900px) and (min-height: 600px)";
@@ -327,6 +332,44 @@ function saveThreadTaskCardDraftStates() {
 function normalizeFontSizeValue(value) {
   const normalized = String(value || "default").trim().toLowerCase();
   return FONT_SIZE_VALUES.has(normalized) ? normalized : "default";
+}
+
+function normalizeThemeValue(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return THEME_VALUES.has(normalized) ? normalized : "";
+}
+
+function normalizePluginFontSizeValue(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return FONT_SIZE_VALUES.has(normalized) ? normalized : "";
+}
+
+function normalizePluginAppearance(value) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const appearance = {};
+  const theme = normalizeThemeValue(source.theme || source.pluginTheme || source.tone || source.colorScheme || source.color_scheme);
+  const hasFontSize = source.fontSize || source.pluginFontSize || source.font_size;
+  const fontSize = hasFontSize ? normalizePluginFontSizeValue(hasFontSize) : "";
+  if (theme) appearance.theme = theme;
+  if (fontSize) appearance.fontSize = fontSize;
+  return Object.keys(appearance).length ? appearance : null;
+}
+
+function applyPluginAppearancePreference(value) {
+  if (!isHermesEmbedMode()) return;
+  const appearance = normalizePluginAppearance(value);
+  if (!appearance) return;
+  state.pluginAppearance = Object.assign({}, state.pluginAppearance || {}, appearance);
+  if (appearance.theme && window.codexMobileTheme && typeof window.codexMobileTheme.apply === "function") {
+    window.codexMobileTheme.apply(appearance.theme);
+  }
+  if (appearance.fontSize) {
+    state.fontSize = appearance.fontSize;
+    applyFontSizePreference();
+    renderFontSizeControl();
+    const input = $("messageInput");
+    if (input) autoSizeMessageInput(input);
+  }
 }
 
 function applyFontSizePreference() {
@@ -3285,6 +3328,9 @@ function scrubPluginLaunchUrl() {
     url.searchParams.delete("codexPluginLaunch");
     url.searchParams.delete("pluginLaunch");
     if (state.pluginEmbed.workspaceId) url.searchParams.set("workspaceId", state.pluginEmbed.workspaceId);
+    const appearance = normalizePluginAppearance(state.pluginAppearance);
+    if (appearance && appearance.theme) url.searchParams.set("pluginTheme", appearance.theme);
+    if (appearance && appearance.fontSize) url.searchParams.set("pluginFontSize", appearance.fontSize);
     window.history.replaceState({}, "", `${url.pathname || "/"}?${url.searchParams.toString()}${url.hash || ""}`);
   } catch (_) {
     // URL scrubbing is best-effort; auth state is already held in memory.
@@ -3383,6 +3429,7 @@ async function exchangePluginLaunchSession() {
   const hermesOrigin = normalizePluginParentOrigin(result && result.hermes_origin);
   if (hermesOrigin) state.pluginParentOrigin = hermesOrigin;
   state.pluginLaunchTarget = result && result.target && typeof result.target === "object" ? result.target : null;
+  applyPluginAppearancePreference(result && result.appearance);
   if (state.pluginLaunchTarget && state.pluginLaunchTarget.cwd && !state.currentThreadId) {
     state.selectedCwd = String(state.pluginLaunchTarget.cwd || "").trim();
   }
@@ -3422,7 +3469,7 @@ async function applyPluginLaunchTarget() {
 async function bootstrap() {
   const startupThreadId = applyUrlThreadSelection();
   const startupPluginRouteHint = applyUrlPluginRouteHint();
-  const savedThreadId = localStorage.getItem(STORAGE_THREAD_ID) || "";
+  const savedThreadId = isHermesEmbedMode() ? "" : (localStorage.getItem(STORAGE_THREAD_ID) || "");
   state.startupThreadOpenPending = Boolean(startupThreadId || savedThreadId || (startupPluginRouteHint && startupPluginRouteHint.threadId));
   const status = await api("/api/status").catch((err) => {
     $("connectionState").textContent = err.message;
@@ -3443,8 +3490,19 @@ async function bootstrap() {
   } catch (err) {
     showError(err);
   }
-  if (!appliedPluginLaunchTarget && !appliedPluginRouteHint) await restoreThreadSelection();
-  else state.startupThreadOpenPending = false;
+  if (!appliedPluginLaunchTarget && !appliedPluginRouteHint && startupThreadId) {
+    try {
+      await openExternalThreadSelection(startupThreadId, { statusMessage: "Opening linked thread" });
+    } catch (err) {
+      showError(err);
+    } finally {
+      state.startupThreadOpenPending = false;
+    }
+  } else if (!appliedPluginLaunchTarget && !appliedPluginRouteHint) {
+    await restoreThreadSelection();
+  } else {
+    state.startupThreadOpenPending = false;
+  }
   connectEvents();
   scheduleStartupUpdateCheck();
   scheduleStartupPublicPrCheck();
@@ -4907,6 +4965,11 @@ function renderThreads(result = null) {
 
 async function restoreThreadSelection() {
   if (state.currentThread) return;
+  if (isHermesEmbedMode()) {
+    state.startupThreadOpenPending = false;
+    showHermesPluginPrimaryPage();
+    return;
+  }
   const savedThreadId = localStorage.getItem(STORAGE_THREAD_ID) || "";
   if (!state.threads.length && !savedThreadId) {
     state.startupThreadOpenPending = false;
@@ -5482,12 +5545,12 @@ function buildThreadTaskCardDraftRequestText(commandText) {
     "Interpret the # command above as a cross-thread pending task card request.",
     "Return only one XML block in exactly this format:",
     `<${THREAD_TASK_CARD_DRAFT_TAG}>`,
-    "{\"targetThreadId\":\"exact threadId from availableTargets\",\"title\":\"short title\",\"summary\":\"one-line summary\",\"body\":\"full markdown body\",\"error\":\"\"}",
+    "{\"targetThreadIds\":[\"one or more exact threadId values from availableTargets\"],\"title\":\"short title\",\"summary\":\"one-line summary\",\"body\":\"full markdown body\",\"error\":\"\"}",
     `</${THREAD_TASK_CARD_DRAFT_TAG}>`,
     "Rules:",
-    "- Choose targetThreadId only from availableTargets.threadId.",
-    "- Do not invent a thread id.",
-    "- If the command is unclear or no target fits, set targetThreadId to an empty string and explain the problem in error.",
+    "- Choose one or more targetThreadIds only from availableTargets.threadId.",
+    "- Do not invent a thread id; when the request names multiple clear targets, include all of them.",
+    "- If the command is unclear or no target fits, set targetThreadIds to an empty array and explain the problem in error.",
     "- Keep title under 120 chars and summary under 280 chars.",
     "- Put the actual requested work in body.",
     "- Do not add any explanation outside the XML block.",
@@ -5498,6 +5561,20 @@ function threadTaskCardRequestMarkerMatch(value) {
   const text = String(value || "");
   const pattern = new RegExp(`\\n\\s*<${THREAD_TASK_CARD_REQUEST_TAG}>[\\s\\S]*?<\\/${THREAD_TASK_CARD_REQUEST_TAG}>[\\s\\S]*$`, "i");
   return pattern.exec(text);
+}
+
+function uniqueThreadTaskCardTargetIds(values, fallbackValue = "") {
+  const raw = Array.isArray(values) && values.length ? values : [fallbackValue];
+  const seen = new Set();
+  const ids = [];
+  for (const value of raw) {
+    const id = String(value || "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+    if (ids.length >= 12) break;
+  }
+  return ids;
 }
 
 function visibleThreadTaskCardCommandText(value) {
@@ -5517,9 +5594,11 @@ function parseThreadTaskCardDraftText(value) {
     return null;
   }
   if (!parsed || typeof parsed !== "object") return null;
+  const targetThreadIds = uniqueThreadTaskCardTargetIds(parsed.targetThreadIds, parsed.targetThreadId);
   return {
     rawText: text,
-    targetThreadId: String(parsed.targetThreadId || "").trim(),
+    targetThreadId: targetThreadIds[0] || "",
+    targetThreadIds,
     title: truncateSingleLine(String(parsed.title || "").trim(), 120),
     summary: truncateSingleLine(String(parsed.summary || "").trim(), 280),
     body: String(parsed.body || "").trim(),
@@ -5553,8 +5632,13 @@ function renderTurnThreadTaskCardDraft(turn, previousKeys = new Set()) {
     const draft = parseThreadTaskCardDraftText(text);
     if (draft) {
       const draftKey = threadTaskCardDraftKey(turn.id, item.id || "");
-      const draftState = threadTaskCardDraftState(draftKey);
+      let draftState = threadTaskCardDraftState(draftKey);
       if (draftState.status === "created" || draftState.status === "dismissed") return "";
+      if (draftState.status === "pending") {
+        queueThreadTaskCardDraftCreation(draftKey);
+        draftState = Object.assign({}, draftState, { status: "creating" });
+      }
+      if (draftState.status === "creating") return renderPendingThreadTaskCardDraft("Sending cross-thread task card...", "Sending");
       return renderThreadTaskCardDraft(draft, item, turn, previousKeys);
     }
     if (hasThreadTaskCardDraftTag(text)) {
@@ -5585,6 +5669,17 @@ function threadTaskCardDraftKey(turnId, itemId) {
 function findThreadById(threadId) {
   const id = String(threadId || "").trim();
   return (state.threads || []).find((thread) => String(thread && thread.id || "") === id) || null;
+}
+
+function threadTaskCardDraftTargetIds(draft) {
+  return uniqueThreadTaskCardTargetIds(draft && draft.targetThreadIds, draft && draft.targetThreadId);
+}
+
+function threadTaskCardDraftTargetThreads(draft) {
+  return threadTaskCardDraftTargetIds(draft).map((threadId) => ({
+    threadId,
+    thread: findThreadById(threadId),
+  }));
 }
 
 function upsertThreadTaskCardOnThread(thread, card) {
@@ -5659,6 +5754,24 @@ function resolveTargetThreadReference(input) {
     )) || null;
 }
 
+function resolveTargetThreadReferences(input) {
+  const parts = String(input || "")
+    .split(/[\n,;，；]+/u)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const seen = new Set();
+  const targets = [];
+  for (const part of parts) {
+    const thread = resolveTargetThreadReference(part);
+    const id = String((thread && thread.id) || part || "").trim();
+    if (!id || id === state.currentThreadId || seen.has(id)) continue;
+    seen.add(id);
+    targets.push({ threadId: id, thread });
+    if (targets.length >= 12) break;
+  }
+  return targets;
+}
+
 async function refreshCurrentThreadAfterTaskCard() {
   if (!state.currentThreadId) return;
   await refreshCurrentThread();
@@ -5703,12 +5816,11 @@ async function createThreadTaskCardFromCurrent(event) {
   }
   const thread = state.currentThread;
   if (!thread || !thread.id) return;
-  const targetInput = window.prompt("Target thread id or exact title", "");
+  const targetInput = window.prompt("Target thread id or exact title; separate multiple targets with commas", "");
   if (targetInput == null) return;
-  const targetThread = resolveTargetThreadReference(targetInput);
-  const targetThreadId = String((targetThread && targetThread.id) || targetInput || "").trim();
-  if (!targetThreadId || targetThreadId === thread.id) {
-    showError(new Error("A different target thread is required"));
+  const targets = resolveTargetThreadReferences(targetInput);
+  if (!targets.length) {
+    showError(new Error("At least one different target thread is required"));
     return;
   }
   const title = window.prompt("Task card title", `Need response from ${threadTitleForDisplay(thread) || thread.id}`) || "";
@@ -5718,6 +5830,10 @@ async function createThreadTaskCardFromCurrent(event) {
   $("connectionState").classList.remove("error");
   $("connectionState").textContent = "Creating task card";
   try {
+    const targetWorkspaceIds = {};
+    for (const target of targets) {
+      if (target.thread) targetWorkspaceIds[target.threadId] = String(target.thread.cwd || "");
+    }
     await api("/api/thread-task-cards", {
       method: "POST",
       body: JSON.stringify({
@@ -5725,8 +5841,8 @@ async function createThreadTaskCardFromCurrent(event) {
         sourceThreadId: thread.id,
         sourceTurnId: currentLiveTurn() ? currentLiveTurn().id : "",
         sourceThreadTitle: threadTitleForDisplay(thread) || thread.id,
-        targetWorkspaceId: (targetThread && targetThread.cwd) || "",
-        targetThreadId,
+        targetThreadIds: targets.map((target) => target.threadId),
+        targetWorkspaceIds,
         idempotencyKey: `task-card:${thread.id}:${Date.now()}:${Math.random().toString(16).slice(2, 8)}`,
         format: "markdown",
         title: String(title).trim(),
@@ -6058,22 +6174,35 @@ function threadTaskCardDraftStatusLabel(status) {
     creating: "Creating",
     created: "Created",
     dismissed: "Dismissed",
-    failed: "Retry",
+    failed: "Failed",
   }[status] || "Draft";
 }
 
-function threadTaskCardDraftDetailLines(draft, targetThread, draftState) {
+function threadTaskCardDraftDetailLines(draft, targetRefs, draftState) {
+  const refs = Array.isArray(targetRefs) ? targetRefs : [];
+  const targetLine = refs.length
+    ? `Target threads: ${refs.map((entry) => {
+      const thread = entry && entry.thread;
+      return thread ? (thread.title || thread.id || entry.threadId) : (entry && entry.threadId || "");
+    }).filter(Boolean).join(", ")}`
+    : "";
+  const missing = refs.filter((entry) => entry && !entry.thread).map((entry) => entry.threadId).filter(Boolean);
   return [
-    targetThread ? `Target thread: ${targetThread.title || targetThread.id || draft.targetThreadId}` : (draft.targetThreadId ? `Target thread: ${draft.targetThreadId}` : ""),
+    targetLine,
+    missing.length ? `Missing targets: ${missing.join(", ")}` : "",
     draft.error ? `Model note: ${draft.error}` : "",
     draftState.error ? `Last error: ${draftState.error}` : "",
   ].filter(Boolean);
 }
 
 function renderThreadTaskCardDraftActions(draftKey, draft, draftState) {
-  if (!draft || draftState.status === "creating" || draftState.status === "created" || draftState.status === "dismissed") return "";
+  if (!draft || draftState.status === "pending" || draftState.status === "creating" || draftState.status === "created" || draftState.status === "dismissed") return "";
+  if (draftState.status === "failed") {
+    return `<div class="approval-actions">
+      <button class="approval-button deny" type="button" data-task-card-draft-action="dismiss" data-task-card-draft-key="${escapeHtml(draftKey)}">Dismiss</button>
+    </div>`;
+  }
   return `<div class="approval-actions">
-    <button class="approval-button allow" type="button" data-task-card-draft-action="approve" data-task-card-draft-key="${escapeHtml(draftKey)}">Approve</button>
     <button class="approval-button deny" type="button" data-task-card-draft-action="dismiss" data-task-card-draft-key="${escapeHtml(draftKey)}">Dismiss</button>
   </div>`;
 }
@@ -6082,9 +6211,9 @@ function renderThreadTaskCardDraft(draft, item, turn, previousKeys = new Set()) 
   if (!draft || !item || !turn) return "";
   const draftKey = threadTaskCardDraftKey(turn.id, item.id || "");
   const draftState = threadTaskCardDraftState(draftKey);
-  const targetThread = findThreadById(draft.targetThreadId);
+  const targetRefs = threadTaskCardDraftTargetThreads(draft);
   const compact = draftState.status === "created" || draftState.status === "dismissed" ? " compact" : "";
-  const detail = threadTaskCardDraftDetailLines(draft, targetThread, draftState).join("\n");
+  const detail = threadTaskCardDraftDetailLines(draft, targetRefs, draftState).join("\n");
   const summary = threadTaskCardSummaryLine(draft.summary || draft.error || "");
   const detailBlocks = [
     detail ? `<pre class="approval-detail">${escapeHtml(detail)}</pre>` : "",
@@ -8997,25 +9126,41 @@ function findThreadTaskCardDraftByKey(draftKey) {
   return null;
 }
 
-function setThreadTaskCardDraftState(draftKey, nextState) {
+function setThreadTaskCardDraftState(draftKey, nextState, options = {}) {
   const key = String(draftKey || "");
   if (!key) return;
   state.threadTaskCardDraftStates.set(key, Object.assign({}, threadTaskCardDraftState(key), nextState || {}));
   saveThreadTaskCardDraftStates();
-  renderCurrentThread();
+  if (options.render !== false) renderCurrentThread();
 }
 
 function dismissThreadTaskCardDraft(draftKey) {
   setThreadTaskCardDraftState(draftKey, { status: "dismissed", error: "" });
 }
 
-async function approveThreadTaskCardDraft(draftKey) {
+function queueThreadTaskCardDraftCreation(draftKey) {
+  const key = String(draftKey || "");
+  if (!key || state.scheduledThreadTaskCardDraftCreations.has(key)) return;
+  state.scheduledThreadTaskCardDraftCreations.add(key);
+  setThreadTaskCardDraftState(key, { status: "creating", error: "" }, { render: false });
+  window.setTimeout(() => {
+    state.scheduledThreadTaskCardDraftCreations.delete(key);
+    createThreadTaskCardDraft(key).catch(showError);
+  }, 0);
+}
+
+async function createThreadTaskCardDraft(draftKey) {
   const resolved = findThreadTaskCardDraftByKey(draftKey);
-  if (!resolved || !state.currentThreadId || !state.currentThread) return;
+  if (!resolved || !state.currentThreadId || !state.currentThread) {
+    setThreadTaskCardDraftState(draftKey, { status: "pending", error: "" }, { render: false });
+    return;
+  }
   const { draft, turn } = resolved;
-  const targetThread = findThreadById(draft.targetThreadId);
-  if (!targetThread) {
-    setThreadTaskCardDraftState(draftKey, { status: "failed", error: draft.error || "Target thread is missing from the visible thread list" });
+  const targetRefs = threadTaskCardDraftTargetThreads(draft);
+  const targetThreadIds = targetRefs.map((entry) => entry.threadId).filter(Boolean);
+  const missingTargets = targetRefs.filter((entry) => !entry.thread).map((entry) => entry.threadId).filter(Boolean);
+  if (!targetThreadIds.length || missingTargets.length) {
+    setThreadTaskCardDraftState(draftKey, { status: "failed", error: draft.error || `Target thread is missing from the visible thread list${missingTargets.length ? `: ${missingTargets.join(", ")}` : ""}` });
     return;
   }
   if (!draft.title || !draft.body) {
@@ -9026,6 +9171,10 @@ async function approveThreadTaskCardDraft(draftKey) {
   $("connectionState").classList.remove("error");
   $("connectionState").textContent = "Creating task card";
   try {
+    const targetWorkspaceIds = {};
+    for (const entry of targetRefs) {
+      if (entry.thread) targetWorkspaceIds[entry.threadId] = String(entry.thread.cwd || "");
+    }
     const result = await api("/api/thread-task-cards", {
       method: "POST",
       body: JSON.stringify({
@@ -9033,8 +9182,8 @@ async function approveThreadTaskCardDraft(draftKey) {
         sourceThreadId: state.currentThreadId,
         sourceTurnId: String(turn && turn.id || ""),
         sourceThreadTitle: threadTitleForDisplay(state.currentThread) || state.currentThreadId,
-        targetWorkspaceId: String(targetThread.cwd || ""),
-        targetThreadId: draft.targetThreadId,
+        targetThreadIds,
+        targetWorkspaceIds,
         idempotencyKey: `task-card-draft:${state.currentThreadId}:${draftKey}`,
         format: "markdown",
         title: draft.title,
@@ -9043,28 +9192,39 @@ async function approveThreadTaskCardDraft(draftKey) {
       }),
       timeoutMs: 30000,
     });
-    const createdCard = result && result.card ? result.card : null;
-    if (createdCard && state.currentThread && String(state.currentThread.id || "") === String(state.currentThreadId || "")) {
-      upsertThreadTaskCardOnThread(state.currentThread, createdCard);
-      incrementPendingOutgoingTaskCardCount(state.currentThreadId, 1);
-      incrementPendingIncomingTaskCardCount(draft.targetThreadId, 1);
+    const createdCards = Array.isArray(result && result.cards)
+      ? result.cards.filter(Boolean)
+      : (result && result.card ? [result.card] : []);
+    if (state.currentThread && String(state.currentThread.id || "") === String(state.currentThreadId || "")) {
+      for (const createdCard of createdCards) {
+        upsertThreadTaskCardOnThread(state.currentThread, createdCard);
+        incrementPendingOutgoingTaskCardCount(state.currentThreadId, 1);
+        incrementPendingIncomingTaskCardCount(createdCard && createdCard.target && createdCard.target.threadId, 1);
+      }
     }
     setThreadTaskCardDraftState(draftKey, {
       status: "created",
       error: "",
-      cardId: String(createdCard && createdCard.id || ""),
+      cardId: String(createdCards[0] && createdCards[0].id || ""),
+      cardIds: createdCards.map((card) => String(card && card.id || "")).filter(Boolean),
     });
     $("connectionState").classList.remove("error");
-    $("connectionState").textContent = "Task card created; opening target thread";
-    state.pendingPluginRouteHint = createdCard ? normalizePluginRouteHint({
+    $("connectionState").textContent = createdCards.length === 1
+      ? "Task card created; opening target thread"
+      : `Task cards created: ${createdCards.length}`;
+    state.pendingPluginRouteHint = createdCards.length === 1 ? normalizePluginRouteHint({
       pluginId: "codex-mobile",
       route: "thread-task-card",
-      threadId: draft.targetThreadId,
-      taskId: createdCard.id,
+      threadId: createdCards[0].target && createdCards[0].target.threadId || targetThreadIds[0],
+      taskId: createdCards[0].id,
     }) : null;
     renderThreads();
     loadThreads({ silent: true }).catch(showError);
-    await loadThread(draft.targetThreadId, { source: "task-card-created" });
+    if (createdCards.length === 1) {
+      await loadThread(createdCards[0].target && createdCards[0].target.threadId || targetThreadIds[0], { source: "task-card-created" });
+    } else {
+      renderCurrentThread();
+    }
   } catch (err) {
     setThreadTaskCardDraftState(draftKey, {
       status: "failed",
@@ -9285,7 +9445,6 @@ function wireUi() {
     if (taskDraftButton) {
       const action = String(taskDraftButton.dataset.taskCardDraftAction || "");
       const draftKey = String(taskDraftButton.dataset.taskCardDraftKey || "");
-      if (action === "approve") approveThreadTaskCardDraft(draftKey).catch(showError);
       if (action === "dismiss") dismissThreadTaskCardDraft(draftKey);
       return;
     }
@@ -9384,6 +9543,7 @@ function wireUi() {
     addAttachmentFiles(event.dataTransfer.files).catch(showError);
   });
   updateViewportVars();
+  applyPluginAppearancePreference(state.pluginAppearance);
   applyFontSizePreference();
   renderFontSizeControl();
   installLaunchQueueHandler();

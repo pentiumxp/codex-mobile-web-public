@@ -14,14 +14,19 @@ thread history.
 
 ## High-Level Flow
 
-1. Source thread creates a task card addressed to a target thread.
-2. Server stores the card in a cross-thread task-card store.
-3. Target thread fetch/render path includes pending task cards.
-4. Target user chooses:
+1. Source thread creates a task-card request addressed to one or more target
+   threads.
+2. For `#` natural-language commands, the model only drafts the bounded card
+   JSON. Once the draft parses and names visible target threads, the source
+   client creates the real pending cards immediately; the source thread must not
+   require a separate local `Approve` step.
+3. Server stores one card per target thread in a cross-thread task-card store.
+4. Each target thread fetch/render path includes its own pending task cards.
+5. Target user chooses:
    - approve
    - delete
    - reply
-5. Source user may revoke while the card is still pending.
+6. Source user may revoke while the card is still pending.
 
 ## Data Model
 
@@ -67,6 +72,8 @@ Planned canonical object:
 Allowed states:
 
 - `pending`
+- `approving` (transient target-side state after approval is accepted locally
+  but before the external target-thread `turn/start` call settles)
 - `approved`
 - `deleted`
 - `revoked`
@@ -82,11 +89,23 @@ Allowed actions:
   - delete while pending
   - reply while pending or approved, depending on final policy
 
+Target-side approval must leave `pending` before calling the external
+target-thread turn injection path. This prevents thread refresh, continuation
+compaction, or reconnect reads from showing a second actionable `Approve` card
+while the approved turn is already starting. If the external call fails before
+acceptance, the service may restore the card to `pending` with a bounded audit
+error so the target can retry.
+
 ## API Shape
 
 ### Create
 
 `POST /api/thread-task-cards`
+
+The create route accepts either the original single-target `targetThreadId` or
+the batch field `targetThreadIds`. Batch creation returns one stored card per
+target in `cards` while keeping `card` as the first created card for older
+callers.
 
 ### Read one
 
@@ -167,6 +186,11 @@ Source thread:
   - approved
   - deleted
   - revoked
+- do not show an approval prompt for its own `#` draft; a valid draft auto-sends
+  to target pending cards, and only the target thread approval injects a real
+  `userMessage`;
+- for a multi-target draft, keep the source thread open after creation and show
+  the outgoing cards there instead of automatically jumping to one recipient.
 
 ## Storage
 
@@ -183,6 +207,14 @@ Recommended first-version bounds:
 - `body <= 8k` to `12k`
 
 Markdown and text only.
+
+Visible `title`, `summary`, and `body` text must be readable user-facing text.
+The service rejects likely encoding-damaged payloads before persistence,
+including replacement characters, typical UTF-8/Latin-1 mojibake markers, and
+high-density repeated `?` clusters such as the PowerShell-damaged
+`?? Hermes ?????? v133` pattern. A rejected card must not be written to the
+task-card store, so retrying with a corrected UTF-8 payload does not create a
+second visible card.
 
 ## Observability
 

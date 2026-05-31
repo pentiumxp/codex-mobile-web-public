@@ -6446,14 +6446,25 @@ async function handleApi(req, res) {
     try {
       const body = await readBody(req);
       const sourceSummary = readStateDbThread(body.sourceThreadId) || readStartedThread(body.sourceThreadId);
-      const targetSummary = readStateDbThread(body.targetThreadId) || readStartedThread(body.targetThreadId);
+      const requestedTargetIds = Array.isArray(body.targetThreadIds) && body.targetThreadIds.length
+        ? body.targetThreadIds
+        : [body.targetThreadId];
+      const targetWorkspaceIds = Object.assign({}, body.targetWorkspaceIds && typeof body.targetWorkspaceIds === "object" ? body.targetWorkspaceIds : {});
+      for (const targetThreadId of requestedTargetIds) {
+        const id = String(targetThreadId || "").trim();
+        if (!id || targetWorkspaceIds[id]) continue;
+        const targetSummary = readStateDbThread(id) || readStartedThread(id);
+        targetWorkspaceIds[id] = body.targetWorkspaceId || body.targetWorkspace || (targetSummary && targetSummary.cwd) || "";
+      }
+      const cards = await threadTaskCardService.createMany(Object.assign({}, body, {
+        sourceWorkspaceId: body.sourceWorkspaceId || body.sourceWorkspace || (sourceSummary && sourceSummary.cwd) || "",
+        targetWorkspaceIds,
+        sourceThreadTitle: body.sourceThreadTitle || (sourceSummary && (sourceSummary.name || sourceSummary.preview || sourceSummary.id)) || body.sourceThreadId || "",
+      }));
       sendJson(res, 200, {
         ok: true,
-        card: await threadTaskCardService.create(Object.assign({}, body, {
-          sourceWorkspaceId: body.sourceWorkspaceId || body.sourceWorkspace || (sourceSummary && sourceSummary.cwd) || "",
-          targetWorkspaceId: body.targetWorkspaceId || body.targetWorkspace || (targetSummary && targetSummary.cwd) || "",
-          sourceThreadTitle: body.sourceThreadTitle || (sourceSummary && (sourceSummary.name || sourceSummary.preview || sourceSummary.id)) || body.sourceThreadId || "",
-        })),
+        card: cards[0] || null,
+        cards,
       });
     } catch (err) {
       sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });

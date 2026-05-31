@@ -5,8 +5,8 @@ const { test } = require("node:test");
 
 const pluginEmbed = require("../public/plugin-embed");
 
-test("detects Hermes embed mode and launch parameters", () => {
-  const detected = pluginEmbed.detect("https://codex.example.test/?embed=hermes&codexPluginLaunch=cpl_abc123456789012345&workspaceId=owner&pluginId=codex-mobile&pluginRoute=thread&pluginThreadId=thread-123&pluginTaskId=req-9");
+test("detects Hermes embed mode, launch parameters, and host appearance", () => {
+  const detected = pluginEmbed.detect("https://codex.example.test/?embed=hermes&codexPluginLaunch=cpl_abc123456789012345&workspaceId=owner&pluginId=codex-mobile&pluginRoute=thread&pluginThreadId=thread-123&pluginTaskId=req-9&pluginTheme=light&pluginFontSize=xlarge");
   assert.equal(detected.embedded, true);
   assert.equal(detected.launchKey, "cpl_abc123456789012345");
   assert.equal(detected.workspaceId, "owner");
@@ -17,6 +17,16 @@ test("detects Hermes embed mode and launch parameters", () => {
     threadId: "thread-123",
     taskId: "req-9",
   });
+  assert.deepEqual(detected.appearance, {
+    theme: "light",
+    fontSize: "xlarge",
+  });
+});
+
+test("ignores unsupported Hermes plugin appearance values", () => {
+  const detected = pluginEmbed.detect("https://codex.example.test/?embed=hermes&pluginTheme=javascript:alert(1)&pluginFontSize=huge");
+  assert.equal(detected.embedded, true);
+  assert.deepEqual(detected.appearance, {});
 });
 
 test("builds Codex plugin navigation messages without exposing DOM internals", () => {
