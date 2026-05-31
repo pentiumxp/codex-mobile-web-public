@@ -55,6 +55,9 @@ function applyAction(card, action, actor) {
   if (action === "approve") {
     if (actor !== "target") throw new Error("approve_requires_target_actor");
     current.status = "approved";
+    if (current.workflow && current.workflow.mode === "autonomous") {
+      current.workflow.authorized = true;
+    }
     current.injectedMessage = {
       type: "userMessage",
       text: `[跨线程待办已批准导入]\n\n来源工作区：${current.source.workspaceId}\n来源线程：${current.source.title}\n\n${current.message.body}`,
@@ -99,6 +102,19 @@ function applyAction(card, action, actor) {
   throw new Error(`unknown_action:${action}`);
 }
 
+function canAutoApproveInWorkflow(card, workflow) {
+  if (!card || !workflow) return false;
+  if (card.status !== "pending") return false;
+  if (!card.workflow || card.workflow.mode !== "autonomous" || !card.workflow.id) return false;
+  const cardThreadIds = [card.source.threadId, card.target.threadId].sort();
+  const workflowThreadIds = Array.isArray(workflow.threadIds) ? workflow.threadIds.slice().sort() : [];
+  return workflow.status === "active"
+    && workflow.mode === "autonomous"
+    && workflow.id === card.workflow.id
+    && cardThreadIds[0] === workflowThreadIds[0]
+    && cardThreadIds[1] === workflowThreadIds[1];
+}
+
 test("task-card create request stays bounded and separate from message flow", () => {
   const request = sampleCreateRequest();
   assert.equal(request.format, "markdown");
@@ -136,6 +152,43 @@ test("target approval leaves pending state before external turn injection settle
     },
   });
   assert.throws(() => applyAction(approving, "approve", "target"), /card_not_pending:approving/);
+});
+
+test("autonomous workflow still requires first target approval before later same-pair auto-run", () => {
+  const first = sampleTaskCard({
+    workflow: {
+      mode: "autonomous",
+      id: "workflow-1",
+      authorized: false,
+    },
+  });
+  assert.equal(canAutoApproveInWorkflow(first, null), false);
+  const approved = applyAction(first, "approve", "target");
+  assert.equal(approved.workflow.authorized, true);
+  const activeWorkflow = {
+    id: "workflow-1",
+    mode: "autonomous",
+    status: "active",
+    threadIds: ["thread_src", "thread_dst"],
+  };
+  assert.equal(canAutoApproveInWorkflow(sampleTaskCard({
+    workflow: {
+      mode: "autonomous",
+      id: "workflow-1",
+      authorized: false,
+    },
+  }), activeWorkflow), true);
+  assert.equal(canAutoApproveInWorkflow(sampleTaskCard({
+    target: {
+      workspaceId: "ops",
+      threadId: "thread_other",
+    },
+    workflow: {
+      mode: "autonomous",
+      id: "workflow-1",
+      authorized: false,
+    },
+  }), activeWorkflow), false);
 });
 
 test("target delete removes the pending card without injection", () => {

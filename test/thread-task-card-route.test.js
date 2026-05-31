@@ -43,7 +43,7 @@ test("thread task card routes preserve service status codes", () => {
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v134"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v135"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
   assert.match(appJs, /function settleCurrentThreadTaskCard\(/);
@@ -68,6 +68,8 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /function isThreadTaskCardCommandText\(/);
   assert.match(appJs, /function buildThreadTaskCardDraftRequestText\(/);
   assert.match(appJs, /targetThreadIds/);
+  assert.match(appJs, /workflowMode/);
+  assert.match(appJs, /Approve workflow/);
   assert.match(appJs, /function parseThreadTaskCardDraftText\(/);
   assert.match(appJs, /function renderPendingThreadTaskCardDraft\(/);
   assert.match(appJs, /function renderTurnThreadTaskCardDraft\(/);

@@ -219,6 +219,10 @@ through `POST /api/thread-task-cards`. That route accepts either a single
 `targetThreadId` or multiple `targetThreadIds`, creates one stored card per
 target, and returns both the compatibility `card` field and the full `cards`
 array.
+The draft schema may include `workflowMode:"autonomous"` only when the command
+explicitly asks for no further approval or automatic collaboration. The first
+target-side approval activates a workflow grant scoped to the workflow id and
+the same two participating thread ids; ordinary cards remain manual.
 ### Conversation Navigation
 
 The browser owns conversation scroll controls. The return-to-bottom button appears only when the current thread is loaded, scrollable, and away from the newest content.
@@ -248,6 +252,10 @@ external `turn/start` call, preventing reconnect, refresh, or continuation
 compaction from rendering a duplicate actionable `Approve` card while the
 approved turn is already starting. If the external call fails before
 acceptance, the card is restored to `pending` with a bounded audit error.
+For autonomous workflow follow-ups, the service uses the same approval path
+without a human click only when an active workflow grant matches both the
+workflow id and the unordered source/target thread pair. A matching id with a
+different thread pair remains pending and does not auto-inject.
 Source-side draft creation is also intentionally lightweight: once a valid
 `#`-draft creates pending cards, the browser does not block on re-reading the
 source thread before showing success. It updates local draft state and refreshes

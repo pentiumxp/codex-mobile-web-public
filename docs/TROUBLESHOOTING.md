@@ -241,6 +241,16 @@ Current implementation rules:
 - delete and revoke never inject;
 - reply creates a reverse-direction pending card, not a direct source-thread
   message.
+- autonomous workflow cards still require the first target-side approval; only
+  later cards with the same workflow id and the same unordered pair of
+  source/target thread ids may auto-inject without another click.
+
+If an autonomous follow-up card does not auto-run, inspect the stored card and
+workflow fields in `%USERPROFILE%\.codex-mobile-web\thread-task-cards.json`.
+The card should have `workflow.mode="autonomous"` and a non-empty `workflow.id`.
+The store should also contain an active workflow with the same id and the same
+two thread ids. Reusing the same workflow id for a different thread pair is
+intentionally treated as unapproved and will leave the card pending.
 
 If source-side draft `Approve` appears to hang, check whether the card was
 already created in `%USERPROFILE%\.codex-mobile-web\thread-task-cards.json`.

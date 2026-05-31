@@ -217,6 +217,14 @@ bottom of the thread rather than appearing above historical messages. Once a
 card is approved, deleted, revoked, or replied, it no longer renders in thread
 detail; the injected turn becomes the visible follow-up surface. The current
 thread now also removes a settled card immediately after a successful action.
+For normal cards, target-side `Approve` remains mandatory. If a `#` draft
+explicitly asks for an automatic collaboration/no-further-approval workflow,
+the draft may set `workflowMode:"autonomous"`. The first target-side approval
+then activates a workflow grant scoped to that exact `workflowId` and the same
+two thread ids. Later cards carrying that workflow id between the same two
+threads auto-inject as real target-thread turns without another manual click,
+including reverse-direction follow-up cards. A reused workflow id with a
+different thread pair still stays pending and requires its own first approval.
 Target-side approval also persists a transient non-pending `approving` state
 before calling the external target-thread `turn/start`, so reconnect,
 continuation compaction, or thread refresh cannot resurrect the same `Approve`
@@ -1284,6 +1292,18 @@ plugin. The shell cache advances to `codex-mobile-shell-v102`.
   persistence, so PowerShell/encoding-damaged `?? ?????` payloads cannot create
   unreadable pending cards.
 - The shell cache advances to `codex-mobile-shell-v134`.
+
+## 2026-05-31 Local Cross-Thread Autonomous Workflow v135
+
+- `#` task-card drafts may now explicitly request `workflowMode:"autonomous"`
+  for cooperating-thread workflows that should continue after one human
+  approval.
+- Ordinary cards still require target-side `Approve`. For autonomous workflows,
+  the first target approval activates a workflow grant scoped to the workflow id
+  and the same two thread ids. Later cards with that same workflow id between
+  the same pair auto-inject as real target-thread turns; unrelated pairs still
+  remain pending.
+- The shell cache advances to `codex-mobile-shell-v135`.
 
 ### Which Restart Is Needed After Changes
 

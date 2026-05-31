@@ -4267,3 +4267,81 @@ The previous full handoff was archived and should be opened only when old proven
   - Public repository was not synced or pushed.
   - This is server-side notification behavior; no static shell cache bump is
     required.
+
+## 2026-05-31 Cross-Thread Autonomous Workflow v135
+
+- User request:
+  - Cross-thread task-card collaboration should support a special workflow in
+    which only the first card requires human approval. After that approval, the
+    cooperating threads can send cards back and forth inside the same workflow
+    without another manual approval click.
+- Local fix:
+  - `adapters/thread-task-card-service.js`
+    - Store now preserves an optional `workflows` array alongside `cards`.
+    - Create/reply normalization accepts `workflowMode` and `workflowId`.
+    - Ordinary cards remain manual.
+    - `workflowMode="autonomous"` creates an autonomous workflow card with a
+      bounded workflow id. If no id is supplied, the service derives a stable
+      id from source thread, target thread, and idempotency key.
+    - The first target-side approval executes normally, then activates a
+      workflow grant scoped to the workflow id plus the unordered pair of the
+      source and target thread ids.
+    - Later pending cards with the same workflow id and same two thread ids use
+      the same approval/injection path automatically. A reused workflow id with
+      a different thread pair stays pending and needs its own first approval.
+    - Automatic execution still persists `approving` before external
+      `turn/start`; if injection fails before acceptance, the card is restored
+      to `pending` with a bounded audit error.
+  - `public/app.js`
+    - `#` draft schema now lets the model return
+      `workflowMode:"manual|autonomous"` and optional `workflowId`.
+    - Draft rules tell the model to use autonomous mode only when the command
+      explicitly asks for automatic/no-further-approval collaboration.
+    - First autonomous target cards label the action as `Approve workflow` and
+      show workflow id/status in details.
+    - Source-side pending counters only increment for returned cards that are
+      still `pending`, so auto-approved follow-up cards do not create stale
+      task badges.
+  - `public/app.js` / `public/sw.js`
+    - Static shell build/cache bumped to
+      `0.1.11|codex-mobile-shell-v135` / `codex-mobile-shell-v135`.
+  - Documentation updated:
+    - README
+    - `.agent-context/PROJECT_CONTEXT.md`
+    - `docs/ARCHITECTURE.md`
+    - `docs/MODULES.md`
+    - `docs/TROUBLESHOOTING.md`
+    - `docs/COMPLEX_FEATURE_PATHS.md`
+    - `docs/CROSS_THREAD_TASK_CARDS_REQUIREMENTS.md`
+    - `docs/CROSS_THREAD_TASK_CARDS_DESIGN.md`
+    - `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md`
+- Validation:
+  - `node --check adapters\thread-task-card-service.js` passed.
+  - `node --check public\app.js` passed.
+  - `node --check public\sw.js` passed.
+  - Focused `node --test test\thread-task-card-service.test.js
+    test\thread-task-card-harness.test.js test\thread-task-card-route.test.js
+    test\conversation-render.test.js test\mobile-viewport.test.js` passed:
+    44/44.
+  - `npm.cmd test` passed: 255/255.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+  - BOM check for touched source, test, docs, README, and context files had no
+    output.
+- Status:
+  - Local changes are uncommitted.
+  - Restarted the 8787 Node listener after the service/frontend change:
+    old PID `82632`, new PID `88428`.
+  - Post-restart `/api/public-config` returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v135`,
+    `shellCacheName=codex-mobile-shell-v135`, and
+    `imageContextMode=reference`.
+  - Post-restart authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`.
+  - This is both server-side task-card behavior and static frontend/PWA
+    behavior. Open clients need the refresh prompt, hard refresh, close/reopen,
+    or the Hermes plugin refresh path to load v135.
+  - Public repository was not synced or pushed.

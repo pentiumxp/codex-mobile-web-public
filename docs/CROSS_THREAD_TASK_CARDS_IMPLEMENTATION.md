@@ -13,6 +13,7 @@ layout and test strategy.
   - authorization checks
   - status transitions
   - target-side approval in-flight persistence before external `turn/start`
+  - autonomous workflow grants after first target approval
   - idempotency
   - storage
   - injection payload generation
@@ -67,6 +68,8 @@ Requirements:
 - idempotency key index
 - source/target queryability
 - status transition audit trail
+- optional `workflows` array for autonomous workflow grants scoped by
+  workflow id plus participating thread ids
 
 If sqlite is chosen, keep it separate from normal thread message history.
 
@@ -82,6 +85,8 @@ If sqlite is chosen, keep it separate from normal thread message history.
 8. For the `#` natural-language path, ask the model for `targetThreadIds`, keep
    accepting legacy `targetThreadId`, and automatically create target pending
    cards when the draft parses. Do not show a source-side `Approve` button.
+   The draft may include `workflowMode:"autonomous"` only when the command
+   explicitly requests an automatic/no-further-approval collaboration loop.
 
 ## Harness
 
@@ -99,6 +104,7 @@ This harness is intentionally implementation-light. It codifies:
 - allowed actor/action combinations;
 - injected message shape after approval;
 - reply-card direction reversal.
+- autonomous workflow first-approval semantics and same-pair-only auto-run.
 
 The harness should be kept green while the real server/browser implementation is
 added.
@@ -111,6 +117,8 @@ After implementation begins, expand coverage with:
 - service tests rejecting likely encoding-damaged visible card text before store
   writes;
 - service tests for multi-target create count and per-target pending counts;
+- service tests for autonomous workflow activation, same-pair auto-approval,
+  reverse-direction auto-approval, and unrelated-pair rejection;
 - route tests for authorization and action endpoints;
 - conversation/thread-detail tests for card rendering outside message flow;
 - SSE/live update tests if task cards are pushed in real time.
@@ -133,6 +141,7 @@ Expected activation rules:
 - ambiguous authorization between source and target users;
 - reply/revoke race conditions;
 - duplicated injected messages without idempotency enforcement;
+- accidental workflow-id reuse across unrelated threads;
 - visible mojibake if a caller sends non-ASCII card payloads through an unsafe
   shell/encoding path.
 - overloading `public/app.js` if card rendering is not extracted in time.

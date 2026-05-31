@@ -201,6 +201,129 @@ test("approve runs injected execution and marks the card approved", async () => 
   assert.match(executions[0].message.text, /\[Cross-thread task card approved\]/);
 });
 
+test("autonomous workflow requires first target approval, then auto-approves follow-up cards for the same thread pair", async () => {
+  const executions = [];
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card, message) => {
+      executions.push({ card, message });
+      return { threadId: card.target.threadId, turnId: `turn-auto-${executions.length}` };
+    },
+  });
+  const first = await service.create({
+    sourceWorkspaceId: "codex",
+    sourceThreadId: "thread-a",
+    sourceTurnId: "turn-src",
+    sourceThreadTitle: "Codex Mobile",
+    targetWorkspaceId: "hermes",
+    targetThreadId: "thread-b",
+    idempotencyKey: "workflow:first",
+    format: "markdown",
+    title: "Start workflow",
+    summary: "Approve once to allow workflow cards.",
+    body: "Please start the workflow.",
+    workflowMode: "autonomous",
+  });
+
+  assert.equal(first.status, "pending");
+  assert.equal(first.workflow.mode, "autonomous");
+  assert.equal(first.workflow.authorized, false);
+  assert.equal(executions.length, 0);
+
+  const approved = await service.approve(first.id, "thread-b");
+  const workflowId = approved.card.workflow.id;
+  assert.equal(approved.card.status, "approved");
+  assert.equal(approved.card.workflow.authorized, true);
+  assert.equal(executions.length, 1);
+  assert.match(executions[0].message.text, new RegExp(`Workflow id: ${workflowId}`));
+
+  const followUp = await service.create({
+    sourceWorkspaceId: "codex",
+    sourceThreadId: "thread-a",
+    sourceTurnId: "turn-src-2",
+    sourceThreadTitle: "Codex Mobile",
+    targetWorkspaceId: "hermes",
+    targetThreadId: "thread-b",
+    idempotencyKey: "workflow:second",
+    format: "markdown",
+    title: "Follow up",
+    summary: "This card should auto-run.",
+    body: "Continue without another manual approval.",
+    workflowMode: "autonomous",
+    workflowId,
+  });
+
+  assert.equal(followUp.status, "approved");
+  assert.equal(followUp.workflow.authorized, true);
+  assert.equal(followUp.injectedTurnId, "turn-auto-2");
+  assert.equal(executions.length, 2);
+  assert.deepEqual(service.pendingCountsForThread("thread-b"), {
+    pendingTotal: 0,
+    pendingIncoming: 0,
+    pendingOutgoing: 0,
+  });
+});
+
+test("autonomous workflow auto-approval is scoped to the same two thread ids", async () => {
+  const executions = [];
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card) => {
+      executions.push(card);
+      return { threadId: card.target.threadId, turnId: `turn-${executions.length}` };
+    },
+  });
+  const first = await service.create({
+    sourceWorkspaceId: "codex",
+    sourceThreadId: "thread-a",
+    targetWorkspaceId: "hermes",
+    targetThreadId: "thread-b",
+    idempotencyKey: "workflow:scoped:first",
+    format: "markdown",
+    title: "Start workflow",
+    summary: "Approve once.",
+    body: "Please start the workflow.",
+    workflowMode: "autonomous",
+    workflowId: "shared-workflow",
+  });
+  await service.approve(first.id, "thread-b");
+
+  const reverse = await service.create({
+    sourceWorkspaceId: "hermes",
+    sourceThreadId: "thread-b",
+    targetWorkspaceId: "codex",
+    targetThreadId: "thread-a",
+    idempotencyKey: "workflow:scoped:reverse",
+    format: "markdown",
+    title: "Reverse follow-up",
+    summary: "Same pair, reverse direction.",
+    body: "Report back.",
+    workflowMode: "autonomous",
+    workflowId: "shared-workflow",
+  });
+  assert.equal(reverse.status, "approved");
+  assert.equal(reverse.target.threadId, "thread-a");
+  assert.equal(executions.length, 2);
+
+  const unrelated = await service.create({
+    sourceWorkspaceId: "codex",
+    sourceThreadId: "thread-a",
+    targetWorkspaceId: "finance",
+    targetThreadId: "thread-c",
+    idempotencyKey: "workflow:scoped:other",
+    format: "markdown",
+    title: "Other target",
+    summary: "Same workflow id but different pair.",
+    body: "This must still wait for approval.",
+    workflowMode: "autonomous",
+    workflowId: "shared-workflow",
+  });
+  assert.equal(unrelated.status, "pending");
+  assert.equal(unrelated.canApprove, false);
+  assert.equal(service.get(unrelated.id, "thread-c").canApprove, true);
+  assert.equal(executions.length, 2);
+});
+
 test("approve persists a non-pending in-flight state before injected execution finishes", async () => {
   let markExecutionStarted;
   let releaseExecution;

@@ -188,7 +188,7 @@ const state = {
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v134";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v135";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -5545,11 +5545,13 @@ function buildThreadTaskCardDraftRequestText(commandText) {
     "Interpret the # command above as a cross-thread pending task card request.",
     "Return only one XML block in exactly this format:",
     `<${THREAD_TASK_CARD_DRAFT_TAG}>`,
-    "{\"targetThreadIds\":[\"one or more exact threadId values from availableTargets\"],\"title\":\"short title\",\"summary\":\"one-line summary\",\"body\":\"full markdown body\",\"error\":\"\"}",
+    "{\"targetThreadIds\":[\"one or more exact threadId values from availableTargets\"],\"workflowMode\":\"manual|autonomous\",\"workflowId\":\"optional existing workflow id\",\"title\":\"short title\",\"summary\":\"one-line summary\",\"body\":\"full markdown body\",\"error\":\"\"}",
     `</${THREAD_TASK_CARD_DRAFT_TAG}>`,
     "Rules:",
     "- Choose one or more targetThreadIds only from availableTargets.threadId.",
     "- Do not invent a thread id; when the request names multiple clear targets, include all of them.",
+    "- Default workflowMode to manual. Use autonomous only when the command explicitly asks for no further approval, automatic collaboration, or a card workflow after first approval.",
+    "- For a new autonomous workflow, leave workflowId empty. Reuse workflowId only when the command or visible context provides an existing id.",
     "- If the command is unclear or no target fits, set targetThreadIds to an empty array and explain the problem in error.",
     "- Keep title under 120 chars and summary under 280 chars.",
     "- Put the actual requested work in body.",
@@ -5577,6 +5579,12 @@ function uniqueThreadTaskCardTargetIds(values, fallbackValue = "") {
   return ids;
 }
 
+function normalizeThreadTaskCardWorkflowMode(value) {
+  const mode = String(value || "manual").trim().toLowerCase();
+  if (mode === "autonomous" || mode === "auto" || mode === "automatic") return "autonomous";
+  return "manual";
+}
+
 function visibleThreadTaskCardCommandText(value) {
   const text = String(value || "");
   const match = threadTaskCardRequestMarkerMatch(text);
@@ -5599,6 +5607,8 @@ function parseThreadTaskCardDraftText(value) {
     rawText: text,
     targetThreadId: targetThreadIds[0] || "",
     targetThreadIds,
+    workflowMode: normalizeThreadTaskCardWorkflowMode(parsed.workflowMode),
+    workflowId: truncateSingleLine(String(parsed.workflowId || "").trim(), 220),
     title: truncateSingleLine(String(parsed.title || "").trim(), 120),
     summary: truncateSingleLine(String(parsed.summary || "").trim(), 280),
     body: String(parsed.body || "").trim(),
@@ -6078,6 +6088,7 @@ function taskCardStatusLabel(status) {
   const text = String(status || "pending");
   return {
     pending: "Pending",
+    approving: "Approving",
     approved: "Approved",
     deleted: "Deleted",
     revoked: "Revoked",
@@ -6098,9 +6109,12 @@ function taskCardDirectionLabel(card) {
 
 function taskCardDetailLines(card) {
   if (!card) return [];
+  const workflow = card.workflow && card.workflow.mode === "autonomous" ? card.workflow : null;
   return [
     card.target && card.threadRole === "source" ? `Target thread: ${card.target.threadId}` : "",
     card.source && card.threadRole === "target" ? `Source workspace: ${card.source.workspaceId}` : "",
+    workflow ? `Workflow: autonomous${workflow.authorized ? " (authorized)" : " (first approval required)"}` : "",
+    workflow && workflow.id ? `Workflow id: ${workflow.id}` : "",
     card.injectedTurnId ? `Injected turn: ${card.injectedTurnId}` : "",
   ].filter(Boolean);
 }
@@ -6122,7 +6136,8 @@ function renderThreadTaskCardActions(card) {
   if (!card) return "";
   if (card.canApprove || card.canDelete || card.canReply || card.canRevoke) {
     const buttons = [];
-    if (card.canApprove) buttons.push(`<button class="approval-button allow" type="button" data-task-card-action="approve" data-task-card-id="${escapeHtml(card.id)}">Approve</button>`);
+    const approveLabel = card.workflow && card.workflow.mode === "autonomous" ? "Approve workflow" : "Approve";
+    if (card.canApprove) buttons.push(`<button class="approval-button allow" type="button" data-task-card-action="approve" data-task-card-id="${escapeHtml(card.id)}">${escapeHtml(approveLabel)}</button>`);
     if (card.canReply) buttons.push(`<button class="approval-button allow" type="button" data-task-card-action="reply" data-task-card-id="${escapeHtml(card.id)}">Reply</button>`);
     if (card.canDelete) buttons.push(`<button class="approval-button deny" type="button" data-task-card-action="delete" data-task-card-id="${escapeHtml(card.id)}">Delete</button>`);
     if (card.canRevoke) buttons.push(`<button class="approval-button deny" type="button" data-task-card-action="revoke" data-task-card-id="${escapeHtml(card.id)}">Revoke</button>`);
@@ -6189,6 +6204,7 @@ function threadTaskCardDraftDetailLines(draft, targetRefs, draftState) {
   const missing = refs.filter((entry) => entry && !entry.thread).map((entry) => entry.threadId).filter(Boolean);
   return [
     targetLine,
+    draft && draft.workflowMode === "autonomous" ? `Workflow: autonomous${draft.workflowId ? ` (${draft.workflowId})` : " (new)"}` : "",
     missing.length ? `Missing targets: ${missing.join(", ")}` : "",
     draft.error ? `Model note: ${draft.error}` : "",
     draftState.error ? `Last error: ${draftState.error}` : "",
@@ -9189,6 +9205,8 @@ async function createThreadTaskCardDraft(draftKey) {
         title: draft.title,
         summary: draft.summary || summarizeTaskCardText(draft.body),
         body: draft.body,
+        workflowMode: draft.workflowMode || "manual",
+        workflowId: draft.workflowId || "",
       }),
       timeoutMs: 30000,
     });
@@ -9197,9 +9215,12 @@ async function createThreadTaskCardDraft(draftKey) {
       : (result && result.card ? [result.card] : []);
     if (state.currentThread && String(state.currentThread.id || "") === String(state.currentThreadId || "")) {
       for (const createdCard of createdCards) {
+        const pending = String(createdCard && createdCard.status || "pending") === "pending";
         upsertThreadTaskCardOnThread(state.currentThread, createdCard);
-        incrementPendingOutgoingTaskCardCount(state.currentThreadId, 1);
-        incrementPendingIncomingTaskCardCount(createdCard && createdCard.target && createdCard.target.threadId, 1);
+        if (pending) {
+          incrementPendingOutgoingTaskCardCount(state.currentThreadId, 1);
+          incrementPendingIncomingTaskCardCount(createdCard && createdCard.target && createdCard.target.threadId, 1);
+        }
       }
     }
     setThreadTaskCardDraftState(draftKey, {

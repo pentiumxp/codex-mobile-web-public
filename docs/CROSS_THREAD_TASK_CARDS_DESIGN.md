@@ -12,6 +12,13 @@ approve, delete, or reply.
 Only the approval path produces a real injected `userMessage` inside the target
 thread history.
 
+Autonomous workflow cards are a special mode, not the default. The first card
+in the workflow is still a normal pending target card. Once the target approves
+that first card, the service stores a workflow grant scoped to the workflow id
+and the exact two participating thread ids. Later cards carrying that same
+workflow id between those same two threads can auto-approve and inject without
+another target click.
+
 ## High-Level Flow
 
 1. Source thread creates a task-card request addressed to one or more target
@@ -27,6 +34,9 @@ thread history.
    - delete
    - reply
 6. Source user may revoke while the card is still pending.
+7. If the approved card has `workflow.mode=autonomous`, that approval activates
+   the workflow grant. Later same-workflow cards between the same thread pair
+   skip the pending UI and execute the approval path automatically.
 
 ## Data Model
 
@@ -56,7 +66,13 @@ Planned canonical object:
   "delivery": {
     "injectOnApprove": true,
     "allowReply": true,
-    "allowRevoke": true
+    "allowRevoke": true,
+    "autoRunAfterFirstApproval": false
+  },
+  "workflow": {
+    "mode": "manual|autonomous",
+    "id": "workflow-id",
+    "authorized": false
   },
   "audit": {
     "createdAt": "2026-05-29T00:00:00Z",
@@ -95,6 +111,11 @@ compaction, or reconnect reads from showing a second actionable `Approve` card
 while the approved turn is already starting. If the external call fails before
 acceptance, the service may restore the card to `pending` with a bounded audit
 error so the target can retry.
+
+For autonomous workflows, the same `approving` state is used for automatic
+follow-up execution. If automatic injection fails before acceptance, the card is
+restored to `pending` with an audit error so it can be inspected or retried
+manually instead of being silently dropped.
 
 ## API Shape
 
@@ -167,6 +188,11 @@ Three layers are required:
 No cross-thread card creation should succeed merely because the caller has a
 global session key.
 
+Autonomous workflow grants add a fourth check: the grant must be active, have
+the same workflow id, and match the unordered pair of source/target thread ids.
+The same workflow id with any other thread pair is not authorized and remains a
+normal pending card until that pair receives its own first approval.
+
 ## UI Model
 
 Target thread:
@@ -191,6 +217,11 @@ Source thread:
   `userMessage`;
 - for a multi-target draft, keep the source thread open after creation and show
   the outgoing cards there instead of automatically jumping to one recipient.
+
+Autonomous workflow cards should make the first-approval boundary visible. The
+first pending target card can label its approve action as `Approve workflow`;
+after approval, follow-up cards normally do not render because they immediately
+become approved injected turns.
 
 ## Storage
 

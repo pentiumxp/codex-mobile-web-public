@@ -250,36 +250,41 @@ Implementation path:
    target-thread messages.
 7. Reply should create a controlled reverse-direction card, not a silent direct
    message injection.
-8. Preserve source/target audit metadata after approval injection.
-9. The current implementation uses:
+8. Ordinary task cards remain manual. If a `#` draft explicitly requests an
+   autonomous/no-further-approval collaboration workflow, the first target
+   approval may activate a workflow grant. Auto-run is allowed only for later
+   cards with the same workflow id and the same unordered pair of source/target
+   thread ids; a reused id with a different pair must stay pending.
+9. Preserve source/target audit metadata after approval injection.
+10. The current implementation uses:
    - `adapters/thread-task-card-service.js`
    - `POST /api/thread-task-cards`
    - `GET /api/thread-task-cards/:id`
    - `POST /api/thread-task-cards/:id/approve|delete|revoke|reply`
    - `thread.threadTaskCards` on thread-detail responses
    - `public/app.js` task-card stack rendered outside normal turn items
-10. Approval currently injects the approved card as a real new target-thread
+11. Approval currently injects the approved card as a real new target-thread
    `turn/start` input, not as a fake static `userMessage`.
-11. Keep `test/thread-task-card-harness.test.js` green, and cover real behavior
+12. Keep `test/thread-task-card-harness.test.js` green, and cover real behavior
    with `test/thread-task-card-service.test.js` and
    `test/thread-task-card-route.test.js`.
-12. `#`-prefixed composer input is now reserved for natural-language task-card
+13. `#`-prefixed composer input is now reserved for natural-language task-card
     commands. Convert them into a bounded draft-request prompt for the current
     Codex thread, including the visible target-thread list and exact XML/JSON
     response schema.
-13. Suppress the raw returned
+14. Suppress the raw returned
      `<codex-mobile-thread-task-card-draft>...</codex-mobile-thread-task-card-draft>`
      assistant block, show a bounded placeholder while it is generating, and
      automatically call `POST /api/thread-task-cards` once a valid draft names
      visible targets. Do not show a source-side local `Approve` step.
-14. Keep the command path conservative: if the model does not return at least
+15. Keep the command path conservative: if the model does not return at least
      one valid visible target id, do not auto-send to any other thread. The
      preferred draft field is `targetThreadIds`, with legacy `targetThreadId`
      accepted for backward compatibility.
-15. Multi-target creation must create one stored pending card per target. Keep
+16. Multi-target creation must create one stored pending card per target. Keep
      the server route compatible by returning `card` for old callers plus
      `cards` for the complete batch result.
-16. Source-side draft creation must feel immediate: use a stable draft-scoped
+17. Source-side draft creation must feel immediate: use a stable draft-scoped
      idempotency key, surface incoming pending-card counts on thread summaries,
      and switch directly to the target thread only for single-target drafts.
      Multi-target drafts should stay on the source thread after creation,
