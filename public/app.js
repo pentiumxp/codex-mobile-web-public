@@ -164,6 +164,7 @@ const state = {
   runningThreadIds: loadStringSetStorage("codexMobileRunningThreadIds"),
   unreadThreadIds: loadStringSetStorage("codexMobileUnreadThreadIds"),
   rolloutWarningDismissals: loadStringSetStorage("codexMobileDismissedRolloutWarnings"),
+  codexFastMode: localStorage.getItem("codexMobileCodexFastMode") === "on",
   fontSize: (INITIAL_PLUGIN_EMBED.appearance && INITIAL_PLUGIN_EMBED.appearance.fontSize)
     || localStorage.getItem("codexMobileFontSize")
     || "default",
@@ -182,6 +183,7 @@ const state = {
   copyFeedbackTimers: new Map(),
   steerFeedback: null,
   steerFeedbackTimer: null,
+  composerFastHintTimer: null,
   attachmentProcessingCount: 0,
   filePreviewSwipe: null,
 };
@@ -189,7 +191,7 @@ const state = {
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v137";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v139";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -220,6 +222,7 @@ const STORAGE_RUNNING_THREAD_IDS = "codexMobileRunningThreadIds";
 const STORAGE_UNREAD_THREAD_IDS = "codexMobileUnreadThreadIds";
 const STORAGE_DISMISSED_ROLLOUT_WARNINGS = "codexMobileDismissedRolloutWarnings";
 const STORAGE_FONT_SIZE = "codexMobileFontSize";
+const STORAGE_CODEX_FAST_MODE = "codexMobileCodexFastMode";
 const STORAGE_RATE_LIMITS = "codexMobileRateLimits";
 const STORAGE_RATE_LIMITS_BY_MODEL = "codexMobileRateLimitsByModel";
 const STORAGE_PUBLIC_PR_PROMPT = "codexMobilePublicPrPromptKey";
@@ -1787,6 +1790,19 @@ function restoreConnectionState(fallbackText = "Connected") {
   el.textContent = fallbackText;
   el.classList.remove("error");
   el.title = "";
+}
+
+function showComposerFastHint(enabled) {
+  const el = $("connectionState");
+  if (!el) return;
+  if (state.composerFastHintTimer) window.clearTimeout(state.composerFastHintTimer);
+  el.classList.remove("error");
+  el.textContent = enabled ? "Fast on" : "Fast off";
+  el.title = enabled ? "Codex Fast service tier enabled" : "Codex Fast service tier disabled";
+  state.composerFastHintTimer = window.setTimeout(() => {
+    state.composerFastHintTimer = null;
+    restoreConnectionState();
+  }, 1600);
 }
 
 function clearReconnectTimers() {
@@ -8669,6 +8685,20 @@ function runtimeSelectedValue(kind) {
   return "";
 }
 
+function codexFastCommandEnabled() {
+  return Boolean(state.codexFastMode);
+}
+
+function setCodexFastCommandEnabled(enabled) {
+  state.codexFastMode = Boolean(enabled);
+  if (state.codexFastMode) localStorage.setItem(STORAGE_CODEX_FAST_MODE, "on");
+  else localStorage.removeItem(STORAGE_CODEX_FAST_MODE);
+  renderComposerSettings();
+  updateComposerControls();
+  saveDraftForCurrentTarget();
+  showComposerFastHint(state.codexFastMode);
+}
+
 function applyRuntimeSelection(kind, value) {
   const selected = String(value || "").trim();
   if (!selected) return;
@@ -8779,13 +8809,20 @@ function toggleQuotaDetails(anchor) {
 }
 
 function renderComposerSettings() {
+  const commandControl = $("composerCommandControl");
   const modelControl = $("composerModelControl");
   const effortControl = $("composerEffortControl");
   const permissionControl = $("composerPermissionControl");
-  if (!modelControl || !effortControl || !permissionControl) return;
+  if (!commandControl || !modelControl || !effortControl || !permissionControl) return;
   const selectedModel = selectedComposerModel();
   const selectedEffort = selectedComposerEffort();
   const selectedPermission = selectedComposerPermissionMode();
+  const fastEnabled = codexFastCommandEnabled();
+  commandControl.classList.toggle("is-fast", fastEnabled);
+  commandControl.setAttribute("aria-pressed", fastEnabled ? "true" : "false");
+  commandControl.title = fastEnabled ? "Fast on" : "Fast off";
+  commandControl.setAttribute("aria-label", fastEnabled ? "Fast on" : "Fast off");
+  commandControl.disabled = state.composerBusy;
   const controls = [
     [modelControl, selectedModel ? labelForModel(selectedModel) : "--", state.newThreadDraft || state.composerModel ? "下一轮使用" : "当前记录"],
     [effortControl, selectedEffort ? labelForEffort(selectedEffort) : "--", state.newThreadDraft || state.composerEffort ? "下一轮使用" : "当前记录"],
@@ -8826,7 +8863,7 @@ function updateComposerControls() {
   attachButton.classList.toggle("disabled", disabled);
   attachButton.setAttribute("aria-disabled", disabled ? "true" : "false");
   attachButton.tabIndex = disabled ? -1 : 0;
-  for (const id of ["composerModelControl", "composerEffortControl", "composerPermissionControl", "quotaUsage"]) {
+  for (const id of ["composerCommandControl", "composerModelControl", "composerEffortControl", "composerPermissionControl", "quotaUsage"]) {
     const button = $(id);
     if (button) button.disabled = disabled;
   }
@@ -8915,6 +8952,7 @@ async function sendMessage(event) {
     body.append("model", selectedComposerModel());
     body.append("effort", selectedComposerEffort());
     body.append("permissionMode", selectedComposerPermissionMode());
+    if (codexFastCommandEnabled()) body.append("fastMode", "1");
     for (const item of state.pendingAttachments) {
       body.append("attachments", item.file, item.file.name || "upload");
     }
@@ -8983,6 +9021,7 @@ async function sendNewThreadMessage(text, hasContent, input) {
     body.append("model", newThreadSelectedModel());
     body.append("effort", newThreadSelectedEffort());
     body.append("permissionMode", newThreadSelectedPermissionMode());
+    if (codexFastCommandEnabled()) body.append("fastMode", "1");
     for (const item of state.pendingAttachments) {
       body.append("attachments", item.file, item.file.name || "upload");
     }
@@ -9413,6 +9452,16 @@ function wireUi() {
   });
   const settingsPanel = $("themeSettingsPanel");
   if (settingsPanel) settingsPanel.addEventListener("click", handleFontSizeChoice);
+  const commandControl = $("composerCommandControl");
+  if (commandControl) {
+    commandControl.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (commandControl.disabled) return;
+      closeComposerRuntimeMenu();
+      setCodexFastCommandEnabled(!codexFastCommandEnabled());
+    });
+  }
   const runtimeControls = [
     ["composerModelControl", "model"],
     ["composerEffortControl", "effort"],

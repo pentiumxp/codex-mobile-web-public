@@ -27,7 +27,9 @@ test("new-message route forwards new-thread runtime settings", () => {
 
   assert.match(routeBody, /const requestedModel\s*=/, "new-thread route should read requested model");
   assert.match(routeBody, /const requestedEffort\s*=/, "new-thread route should read requested reasoning effort");
+  assert.match(routeBody, /const requestedFastMode = requestedCodexFastMode\(body\.fastMode\);/, "new-thread route should read requested Fast service tier");
   assert.match(routeBody, /if \(requestedModel\) startParams\.model = requestedModel;/, "thread/start should receive requested model");
+  assert.match(routeBody, /applyCodexFastServiceTier\(applyTurnRuntimeSettings\(/, "turn/start should apply requested Fast service tier");
   assert.match(routeBody, /if \(requestedModel\) turnParams\.model = requestedModel;/, "turn/start should receive requested model");
   assert.match(routeBody, /if \(requestedEffort\) turnParams\.effort = requestedEffort;/, "turn/start should receive requested reasoning effort");
 });
@@ -64,6 +66,8 @@ test("existing-message route forwards runtime settings on next turn", () => {
 
   assert.match(routeBody, /const requestedModel\s*=/, "message route should read requested model");
   assert.match(routeBody, /const requestedEffort\s*=/, "message route should read requested reasoning effort");
+  assert.match(routeBody, /const requestedFastMode = requestedCodexFastMode\(body\.fastMode\);/, "message route should read requested Fast service tier");
+  assert.match(routeBody, /applyCodexFastServiceTier\(applyTurnRuntimeSettings\(/, "turn/start should apply requested Fast service tier");
   assert.match(routeBody, /if \(requestedModel\) params\.model = requestedModel;/, "turn/start should receive requested model");
   assert.match(routeBody, /if \(requestedEffort\) params\.effort = requestedEffort;/, "turn/start should receive requested reasoning effort");
 });

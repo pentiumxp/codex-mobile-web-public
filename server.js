@@ -2553,6 +2553,15 @@ function applyTurnRuntimeSettings(params, settings) {
   return params;
 }
 
+function requestedCodexFastMode(value) {
+  return /^(1|true|on|yes|fast|priority)$/i.test(String(value || "").trim());
+}
+
+function applyCodexFastServiceTier(params, enabled) {
+  if (enabled) params.serviceTier = "priority";
+  return params;
+}
+
 function statusFromRawOperation(payload) {
   const status = String(payload.status || "").toLowerCase();
   if (status) return status;
@@ -6605,6 +6614,7 @@ async function handleApi(req, res) {
     const requestedEffort = REASONING_EFFORT_OPTIONS.includes(String(body.effort || "").trim())
       ? String(body.effort || "").trim()
       : "";
+    const requestedFastMode = requestedCodexFastMode(body.fastMode);
     const input = buildTurnInput(text, uploads);
     const persistExtendedHistory = persistExtendedHistoryForUploads(uploads);
     if (!cwd) {
@@ -6644,11 +6654,11 @@ async function handleApi(req, res) {
         });
         const threadId = threadIdFromStartResult(startResult);
         if (!threadId) throw new Error("New thread creation failed: app-server did not return threadId");
-        const turnParams = applyTurnRuntimeSettings({
+        const turnParams = applyCodexFastServiceTier(applyTurnRuntimeSettings({
           threadId,
           input,
           cwd,
-        }, runtimeSettings);
+        }, runtimeSettings), requestedFastMode);
         if (requestedModel) turnParams.model = requestedModel;
         if (requestedEffort) turnParams.effort = requestedEffort;
         const turnResult = await codex.request("turn/start", turnParams, {
@@ -7020,6 +7030,7 @@ async function handleApi(req, res) {
     const requestedEffort = REASONING_EFFORT_OPTIONS.includes(String(body.effort || "").trim())
       ? String(body.effort || "").trim()
       : "";
+    const requestedFastMode = requestedCodexFastMode(body.fastMode);
     let result;
     try {
       result = await runMessageSubmissionOnce(submissionKeys, uploads, async () => {
@@ -7101,10 +7112,10 @@ async function handleApi(req, res) {
         } catch (err) {
           if (!/already|loaded|active/i.test(err.message || "")) throw err;
         }
-        const params = applyTurnRuntimeSettings({
+        const params = applyCodexFastServiceTier(applyTurnRuntimeSettings({
           threadId,
           input,
-        }, runtimeSettings);
+        }, runtimeSettings), requestedFastMode);
         if (body.cwd) params.cwd = body.cwd;
         if (requestedModel) params.model = requestedModel;
         if (requestedEffort) params.effort = requestedEffort;

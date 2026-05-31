@@ -3241,7 +3241,7 @@ html.keyboard-open .composer {
   --composer-control-height: 44px;
   position: relative;
   display: grid;
-  grid-template-columns: repeat(4, minmax(112px, 160px));
+  grid-template-columns: 18px repeat(3, minmax(96px, 146px)) minmax(104px, 150px);
   justify-content: end;
   align-items: stretch;
   gap: 6px;
@@ -3311,6 +3311,44 @@ html.keyboard-open .composer {
 .composer-control-card:disabled {
   cursor: default;
   opacity: 0.62;
+}
+
+.composer-fast-toggle {
+  align-self: center;
+  justify-self: start;
+  width: 18px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  transform: translateX(-1px);
+}
+
+.composer-fast-toggle:disabled {
+  cursor: default;
+  opacity: 0.62;
+}
+
+.composer-fast-toggle:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 3px;
+}
+
+.composer-fast-dot {
+  display: block;
+  width: 11px;
+  height: 11px;
+  margin: auto;
+  border-radius: 999px;
+  background: #4fbf7a;
+  box-shadow: 0 0 0 3px rgba(79, 191, 122, 0.16);
+}
+
+.composer-fast-toggle.is-fast .composer-fast-dot {
+  background: #e45858;
+  box-shadow: 0 0 0 3px rgba(228, 88, 88, 0.18);
 }
 
 .model-effort-display {
@@ -3892,7 +3930,7 @@ html.keyboard-open .composer {
 
   .composer-controls {
     grid-area: controls;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 0.85fr) repeat(2, minmax(0, 1fr));
+    grid-template-columns: 18px minmax(0, 0.96fr) minmax(0, 0.78fr) minmax(0, 0.84fr) minmax(0, 1.06fr);
     justify-content: stretch;
   }
 
@@ -3994,7 +4032,7 @@ html.keyboard-open .composer {
   .composer-controls {
     grid-area: controls;
     --composer-control-height: 30px;
-    grid-template-columns: minmax(0, 0.98fr) minmax(0, 0.96fr) minmax(0, 0.98fr) minmax(0, 1.08fr);
+    grid-template-columns: 18px minmax(0, 0.96fr) minmax(0, 0.78fr) minmax(0, 0.84fr) minmax(0, 1.06fr);
     justify-content: stretch;
     gap: 4px;
   }

@@ -37,7 +37,7 @@ Add new service modules when logic has independent inputs/outputs, state rules, 
 
 | File | Responsibility |
 | --- | --- |
-| `public/app.js` | Main app state, rendering, thread list/detail, composer, SSE, Push UI, update/restart UI, continuation UI, source-side `#` task-card auto-send orchestration with stable draft settlement and silent in-conversation `creating` state, target-side-only pending task-card rendering, and runtime application of plugin session appearance. |
+| `public/app.js` | Main app state, rendering, thread list/detail, composer, SSE, Push UI, update/restart UI, continuation UI, composer runtime Fast-dot/model/effort/permission/quota controls including the hidden Codex Fast service-tier toggle, source-side `#` task-card auto-send orchestration with stable draft settlement and silent in-conversation `creating` state, target-side-only pending task-card rendering, and runtime application of plugin session appearance. |
 | `public/styles.css` | Full app shell, mobile/tablet layout, operation cards, composer, sidebar, modals, PWA-safe layout. |
 | `public/sw.js` | Service worker, app-shell cache, Web Push notification click handling. |
 | `public/api-client.js` | Authenticated fetch helper. |

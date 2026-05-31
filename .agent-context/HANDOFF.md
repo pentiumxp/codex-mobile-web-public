@@ -535,7 +535,66 @@ The previous full handoff was archived and should be opened only when old proven
     - `npm.cmd run check:macos` passed.
 - Status:
   - Local changes are uncommitted.
-  - Static frontend/PWA change requires clients to refresh/reopen to load v131
+
+## 2026-05-31 Composer Fast Dot Toggle v139
+
+- User request:
+  - Add a Codex Fast switch, not a Spark-model switch or reasoning-effort change.
+  - Place it in the runtime row before model/reasoning/permission/quota while
+    keeping the footprint minimal.
+- Local fix:
+  - `public/index.html`
+    - Added `composerCommandControl` before `composerModelControl` as a tiny
+      Fast status dot instead of a full-width command card.
+  - `public/app.js`
+    - Added persistent `codexMobileCodexFastMode` browser state.
+    - The dot toggles directly: green is normal mode, red is Fast mode.
+    - Toggling briefly shows `Fast on` / `Fast off` in the connection status
+      area and updates the button title / `aria-label`.
+    - When Fast is enabled, normal existing-thread and new-thread message
+      submissions include hidden `fastMode=1` instead of adding visible `/Fast`
+      text.
+  - `server.js`
+    - Maps requested `fastMode` to Codex `serviceTier: "priority"` on the next
+      `turn/start`, matching the Fast service tier exposed in
+      `%USERPROFILE%\.codex\models_cache.json`.
+    - The Fast toggle does not change model, reasoning effort, permission mode,
+      quota grouping, or Spark model selection.
+    - `#` cross-thread task-card commands keep their bounded draft-request flow
+      and active-turn steering waits until the next new turn for the speed tier.
+  - `public/styles.css`
+    - Composer runtime row now uses a left-aligned 18px Fast dot column before
+      model, reasoning, permission, and quota.
+  - `public/app.js` / `public/sw.js`
+    - Static shell build/cache bumped to
+      `0.1.11|codex-mobile-shell-v139` / `codex-mobile-shell-v139`.
+  - Documentation updated:
+    - README
+    - `.agent-context/PROJECT_CONTEXT.md`
+    - `docs/MODULES.md`
+- Validation/status:
+  - `node --check public\app.js` and `node --check public\sw.js` passed.
+  - Focused `node --test test\composer-quota.test.js
+    test\mobile-viewport.test.js test\tablet-layout.test.js
+    test\new-thread-route.test.js` passed: 19/19.
+  - Focused `node --test test\thread-task-card-route.test.js
+    test\composer-quota.test.js test\mobile-viewport.test.js
+    test\tablet-layout.test.js test\new-thread-route.test.js` passed: 22/22.
+  - `npm.cmd test` passed: 255/255.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+  - BOM check for touched source/test/docs/context files had no output.
+  - Restart was attempted after validation but was interrupted by the next user
+    request. Last observed 8787 listener before the v139 restart was PID
+    `29792`, still serving the pre-bump runtime.
+  - The last authenticated `/api/status` check before the v139 restart attempt
+    was healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`.
+  - Static frontend/PWA change requires restarting/reloading the Mobile Web
+    listener and clients refreshing/reopening to load v139
     after deployment.
 
 ## 2026-05-31 Hermes Plugin HTTPS Manifest Runtime Fix
