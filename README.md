@@ -1341,6 +1341,15 @@ plugin. The shell cache advances to `codex-mobile-shell-v102`.
 - `thread/turns/list` fallback 会结合 rollout item 时间戳排序 turns，避免只有随机 turn id 或缺少标准 started/completed 时间字段时把最近内容排错。
 - 新增 `test/thread-visibility.test.js` 覆盖 worktree 可见性、无关 worktree 隐藏、归档线程隐藏、fallback 合并和 turn 时间排序。本次 public 同步仍不复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
 
+### 2026-06-01 Public 文档同步说明
+
+本次 public 追加同步 `docs/` 项目文档，确保公开仓库中的架构、模块、排障和复杂路径说明与 PR #42/#43 的实际行为一致。该提交只更新公开文档和 README，不包含 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
+
+- `docs/ARCHITECTURE.md` 记录 worktree cwd 可见性、state DB/session-index fallback 合并，以及本地文件预览允许根的安全边界。
+- `docs/MODULES.md` 增加 thread visibility/worktree filtering 测试映射，并明确 `server.js` 负责线程可见性过滤和本地文件预览根组合。
+- `docs/TROUBLESHOOTING.md` 增加 worktree 线程缺失排查步骤，并澄清文件预览不要通过加入宽泛根目录来修复。
+- `docs/COMPLEX_FEATURE_PATHS.md` 增加 Thread Visibility And Worktree Filtering 实现路径，要求同一套 cwd 匹配同时作用于服务端和前端过滤。
+
 ### Which Restart Is Needed After Changes
 
 Use this table after pulling updates:

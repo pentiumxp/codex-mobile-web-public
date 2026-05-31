@@ -124,12 +124,29 @@ Rules:
 
 If an agent reply shows a local Markdown/text file preview action but clicking it says the type is unsupported, inspect the exact `data-local-file-path` / `/api/files/preview?path=...` target. Codex source links often include location suffixes such as `README.md:12`, `README.md:12:3`, or `README.md#L12`.
 
-Current server behavior strips those location suffixes before extension detection and root validation. The remaining path must still be an absolute local path, stay under the current thread workspace, an enclosing Obsidian vault, or `CODEX_MOBILE_FILE_PREVIEW_ROOTS`, and pass the sensitive-path denylist.
+Current server behavior strips those location suffixes before extension detection and root validation. The remaining path must still be an absolute local path, stay under an explicit `CODEX_MOBILE_FILE_PREVIEW_ROOTS` root, a known visible workspace root, the current thread cwd, or an enclosing Obsidian vault, and pass the sensitive-path denylist.
 
 Focused checks:
 
 ```powershell
 node --test test\file-preview.test.js test\file-preview-ui.test.js test\markdown-render.test.js
+```
+
+Do not fix file-preview misses by adding broad roots such as `%USERPROFILE%`, `%TEMP%`, `.codex`, the upload directory, or machine diagnostic folders. The intended fix for normal repository files is that visible workspace roots and the current thread cwd are already accepted.
+
+## Worktree Thread Missing From The Thread List
+
+Codex may run a task in `%USERPROFILE%\.codex\worktrees\<id>\<repo>` while the visible workspace is the primary repository path such as `%USERPROFILE%\Documents\<repo>`. Current visibility logic should treat that worktree as visible when `<repo>` matches a known workspace basename.
+
+If a worktree thread is missing:
+
+- Confirm `GET /api/workspaces` includes the primary repository root.
+- Confirm the thread cwd follows the Codex worktree shape and the final repo directory name matches the visible workspace basename.
+- Check that the row is not archived/deleted, a backup rollout, a spawned Sub Agent child session, or outside the selected workspace filter.
+- Run focused coverage:
+
+```powershell
+node --test test\thread-visibility.test.js test\mobile-viewport.test.js
 ```
 
 ## Quoted Uploaded Images Stay As Text

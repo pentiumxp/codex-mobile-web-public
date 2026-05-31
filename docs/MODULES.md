@@ -4,7 +4,7 @@
 
 | File | Responsibility | Notes |
 | --- | --- | --- |
-| `server.js` | Main HTTP server, app-server client, auth, routes, thread detail compaction, uploads, continuation jobs, Web Push, update/restart endpoints | Treat as composition glue. Extract reusable logic instead of expanding large inline blocks. |
+| `server.js` | Main HTTP server, app-server client, auth, routes, thread detail compaction, uploads, continuation jobs, Web Push, update/restart endpoints, thread visibility filtering, and local-file preview roots | Treat as composition glue. Extract reusable logic instead of expanding large inline blocks. |
 | `codex-app-server-mux.js` | Shared Desktop/Mobile app-server bridge, endpoint publication, TCP server, app-server notification replay, approval proxying | Stdout is protocol data for Desktop; diagnostics must go to mux log. |
 | `codex-app-server-mux-shim.cs` | Windows `.exe` shim for Desktop `CODEX_CLI_PATH` | Rebuild/relaunch Desktop through the shared launcher after changes. |
 | `start-codex-mobile-web*.ps1/.vbs` | Windows startup wrappers and hidden scheduled-task startup | User-logon task is preferred when WSL access is needed; plugin HTTPS base URL and Hermes frame-origin settings must be passed here for scheduled deployments. |
@@ -62,6 +62,7 @@ Add new service modules when logic has independent inputs/outputs, state rules, 
 | continuation | `test/continuation-lineage.test.js`, `test/continuation-handoff-compaction-service.test.js` |
 | context and bootstrap size policy | `test/message-input-service.test.js`, `test/continuation-lineage.test.js`, `test/turn-usage-summary-service.test.js` |
 | PWA/update/mobile viewport | `test/mobile-viewport.test.js`, `test/app-update.test.js`, `test/tablet-layout.test.js`, `test/manual-restart-ui.test.js`, `test/public-pull-request-service.test.js` |
+| thread visibility/worktree filtering | `test/thread-visibility.test.js`, `test/mobile-viewport.test.js` |
 | uploads/files/images | `test/image-compressor.test.js`, `test/message-input-service.test.js`, `test/generated-image-cache-service.test.js`, `test/file-preview.test.js`, `test/file-preview-ui.test.js`, `test/composer-draft.test.js` |
 | Hermes Mobile plugin mode | `test/hermes-plugin-service.test.js`, `test/hermes-plugin-route.test.js`, `test/hermes-notification-delegate-service.test.js`, `test/plugin-embed.test.js` |
 | cross-thread task cards | `test/thread-task-card-harness.test.js`, `test/thread-task-card-service.test.js`, `test/thread-task-card-route.test.js`, `test/conversation-render.test.js`; include readable-text/encoding-damage, approve-in-flight, autonomous workflow same-pair coverage, stable source-draft settlement, silent source auto-send, and target-side-only pending render coverage when changing sender or store paths |
