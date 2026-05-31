@@ -26,7 +26,7 @@ test("mobile file preview UI is wired from markdown link to preview API", () => 
   assert.match(stylesCss, /\.local-file-preview-link \{[\s\S]*display: inline-block;[\s\S]*overflow-wrap: anywhere;[\s\S]*word-break: break-word;/);
   assert.doesNotMatch(stylesCss, /\.local-file-preview-link span/);
   assert.match(appJs, /data-local-file-path/);
-  assert.match(appJs, /file && file\.kind === "markdown"\) return renderMarkdown\(content\)/);
+  assert.match(appJs, /file && file\.kind === "markdown"\) return renderMarkdown\(content, \{ orderedListMode: "source" \}\)/);
   assert.match(appJs, /file && file\.kind === "image"/);
   assert.match(appJs, /file && file\.kind === "pdf"/);
   assert.match(appJs, /function renderImageView\(item\)/);

@@ -6963,7 +6963,7 @@ function renderInputContent(content) {
   return html.join("");
 }
 
-function renderMarkdown(value) {
+function renderMarkdown(value, markdownOptions = {}) {
   const renderer = window.CodexMarkdownRenderer;
   if (!renderer || typeof renderer.renderMarkdown !== "function") {
     return `<div class="markdown-body"><p>${escapeHtml(value || "")}</p></div>`;
@@ -6971,6 +6971,7 @@ function renderMarkdown(value) {
   return renderer.renderMarkdown(value, {
     rememberCopyText,
     copyButtonHtml,
+    ...markdownOptions,
   });
 }
 
@@ -7151,7 +7152,7 @@ function renderCsvPreview(content) {
 
 function renderFilePreviewContent(file) {
   const content = String((file && file.content) || "");
-  if (file && file.kind === "markdown") return renderMarkdown(content);
+  if (file && file.kind === "markdown") return renderMarkdown(content, { orderedListMode: "source" });
   if (file && file.kind === "image") {
     const src = filePreviewContentUrl(file);
     return `<div class="file-preview-media"><img class="file-preview-image" src="${escapeHtml(src)}" alt="${escapeHtml(file.fileName || "image preview")}"></div>`;

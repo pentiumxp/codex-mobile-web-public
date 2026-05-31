@@ -10,6 +10,7 @@ const {
   filePreviewContentDisposition,
   filePreviewContentType,
   mimeFor,
+  previewRootsForThread,
   readFilePreview,
   resolveFilePreviewPath,
   stripMarkdownFileTarget,
@@ -28,6 +29,41 @@ test("file preview reads allowed markdown files with relative display paths", ()
   assert.equal(preview.kind, "markdown");
   assert.equal(preview.content, "# Project\n\n- ready\n");
   assert.equal(preview.truncated, false);
+});
+
+test("file preview allows files from visible workspace roots", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-preview-visible-"));
+  const file = path.join(root, "10_Family", "Home network", "Personal AI Homelab.md");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, "# Homelab\n", "utf8");
+
+  const roots = previewRootsForThread("", {
+    "electron-saved-workspace-roots": [root],
+  });
+  const preview = readFilePreview(file, roots);
+
+  assert.equal(preview.fileName, "Personal AI Homelab.md");
+  assert.equal(preview.relativePath, path.join("10_Family", "Home network", "Personal AI Homelab.md"));
+  assert.equal(preview.content, "# Homelab\n");
+});
+
+test("file preview allows the current thread cwd even when workspace roots are visible", () => {
+  const visibleRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-preview-visible-root-"));
+  const threadRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-preview-thread-root-"));
+  const file = path.join(threadRoot, "artifacts", "daily-oblique-full", "index.html");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, "<!doctype html><title>Daily</title>\n", "utf8");
+
+  const roots = previewRootsForThread("thread-1", {
+    "electron-saved-workspace-roots": [visibleRoot],
+  }, {
+    threadSummary: { cwd: threadRoot },
+  });
+  const preview = readFilePreview(file, roots);
+
+  assert.equal(preview.fileName, "index.html");
+  assert.equal(preview.relativePath, path.join("artifacts", "daily-oblique-full", "index.html"));
+  assert.equal(preview.kind, "text");
 });
 
 test("file preview rejects files outside allowed roots", () => {
