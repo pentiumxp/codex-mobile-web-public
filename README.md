@@ -1332,6 +1332,15 @@ plugin. The shell cache advances to `codex-mobile-shell-v102`.
 - 安全边界没有放宽到任意磁盘目录：预览仍只解析显式允许根目录内的路径，并继续拒绝根目录外路径、敏感文件类型和不支持的二进制内容。
 - 本次 public 同步没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
 
+### 2026-06-01 Public 发布说明（worktree 线程可见性）
+
+本次 public 合入 PR #43，修复 Codex worktree 中产生的线程在 Mobile Web 线程列表里不可见的问题。版本仍为 `0.1.11`，PWA shell cache 升到 `codex-mobile-shell-v140`；更新后需要重启 8787 Node listener，并让已打开的浏览器/PWA 接受刷新提示、硬刷新或关闭重开，才能拿到新的前端过滤逻辑。
+
+- Mobile Web 现在把 `%USERPROFILE%\.codex\worktrees\<id>\<repo>` 形式的 cwd 映射回已知 workspace 的仓库名。线程列表、选中 workspace 后的过滤、服务端 fallback 线程补全和前端隐藏规则都会接受同名仓库 worktree。
+- 服务端 `thread/list` 读取后会合并 state DB / session index fallback 线程，避免 app-server 列表遗漏 worktree 线程时 Mobile 端仍然空缺。
+- `thread/turns/list` fallback 会结合 rollout item 时间戳排序 turns，避免只有随机 turn id 或缺少标准 started/completed 时间字段时把最近内容排错。
+- 新增 `test/thread-visibility.test.js` 覆盖 worktree 可见性、无关 worktree 隐藏、归档线程隐藏、fallback 合并和 turn 时间排序。本次 public 同步仍不复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
+
 ### Which Restart Is Needed After Changes
 
 Use this table after pulling updates:
