@@ -1147,3 +1147,67 @@ The previous full handoff was archived and should be opened only when old proven
     `lastError=null`.
   - Static frontend/PWA change requires clients to refresh/reopen or receive a
     Hermes plugin refresh to load v136.
+
+## 2026-05-31 Source Task Card Auto-Send UI Regression v137
+
+- User report:
+  - After the v136 source-side auto-send change, a newly sent cross-thread card
+    showed a source-thread `Cross-thread task card draft` card with status
+    `Sending` and text `Sending cross-thread task card...`.
+  - The behavior reproduced when sending to another target thread, so it was a
+    regression in the source-thread auto-send UI rather than an old cached card
+    or a specific target-thread failure.
+- Diagnosis:
+  - `public/app.js` parsed a valid assistant draft, queued
+    `/api/thread-task-cards`, changed the local draft state to `creating`, and
+    rendered that `creating` state as a visible source-side `Sending` draft
+    card.
+  - Runtime checks showed no persisted task card for the source screenshot
+    thread, confirming the visible card was browser-local draft state rather
+    than a real server-side pending card.
+- Local fix:
+  - `public/app.js`
+    - Source-side `creating` state is now silent in the conversation. A valid
+      draft still queues automatic card creation, but no interim `Sending`
+      source draft card is rendered.
+    - Real creation failures still render a bounded dismissible diagnostic.
+    - The creation path now guards duplicate active create attempts and returns
+      a bounded failure if the server returns no created cards.
+    - Failure rendering uses the same stable turn-and-draft-content key as the
+      auto-send path instead of falling back to volatile app-server item ids.
+  - `public/app.js` / `public/sw.js`
+    - Static shell build/cache bumped to
+      `0.1.11|codex-mobile-shell-v137` / `codex-mobile-shell-v137`.
+  - Documentation updated:
+    - README
+    - `.agent-context/PROJECT_CONTEXT.md`
+    - `docs/ARCHITECTURE.md`
+    - `docs/MODULES.md`
+    - `docs/CROSS_THREAD_TASK_CARDS_DESIGN.md`
+    - `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md`
+- Validation/status:
+  - Focused `node --check public\app.js` and `node --check public\sw.js`
+    passed.
+  - Focused `node --test test\thread-task-card-route.test.js
+    test\conversation-render.test.js test\mobile-viewport.test.js` passed:
+    23/23.
+  - Focused `node --test test\thread-task-card-service.test.js
+    test\thread-task-card-harness.test.js test\thread-task-card-route.test.js
+    test\conversation-render.test.js test\mobile-viewport.test.js` passed:
+    44/44.
+  - `npm.cmd test` passed: 255/255.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+  - BOM check for touched source/test/docs/context files had no output.
+  - Restarted the 8787 Node listener after the static/frontend change:
+    old PID `49812`, new PID `49176`.
+  - Post-restart `/api/public-config` returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v137`,
+    `shellCacheName=codex-mobile-shell-v137`, and
+    `imageContextMode=reference`.
+  - Post-restart authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`.
+  - Local changes are uncommitted.

@@ -258,11 +258,13 @@ workflow id and the unordered source/target thread pair. A matching id with a
 different thread pair remains pending and does not auto-inject.
 Source-side draft creation is also intentionally lightweight: once a valid
 `#`-draft creates pending cards, the browser does not block on re-reading the
-source thread before showing success. It updates local draft state and refreshes
-thread summaries in the background. Single-target drafts still open the
-target thread so the pending card is visible where it was delivered;
-multi-target drafts stay on the source thread without rendering outgoing cards
-as local work items. Cross-thread task cards now render below the visible turns
+source thread before settling local state. It updates local draft state and
+refreshes thread summaries in the background, and it does not render an interim
+source-side `Sending` draft card during automatic creation. Single-target drafts
+still open the target thread so the pending card is visible where it was
+delivered; multi-target drafts stay on the source thread without rendering
+outgoing cards as local work items. Cross-thread task cards now render below the
+visible turns
 and detached approval stack, keeping them at the bottom of the target thread
 rather than above historical conversation content. Only `pending` cards whose
 `threadRole` is `target` render in thread detail; source-side outgoing pending

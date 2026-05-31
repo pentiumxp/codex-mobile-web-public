@@ -31,6 +31,9 @@ layout and test strategy.
   - action handlers
   - source-side `#` draft parsing and automatic pending-card creation; source
     drafts must not require a second local approval click
+  - source-side automatic creation must not render an interim `Sending` draft
+    card in the conversation; only real creation failures should render a
+    bounded dismissible diagnostic
   - stable source draft settlement keyed by turn id plus draft content, with a
     matching-card lookup so app-server item-id drift does not re-send an already
     created card
@@ -129,7 +132,8 @@ After implementation begins, expand coverage with:
 - conversation/thread-detail tests for card rendering outside message flow;
 - SSE/live update tests if task cards are pushed in real time.
 - frontend/static harness checks that source-side draft cards auto-send and no
-  `data-task-card-draft-action="approve"` control is shipped.
+  `data-task-card-draft-action="approve"` control is shipped, and that the
+  auto-create `creating` state is silent instead of rendering a `Sending` card.
 - frontend/static harness checks that source draft keys are content-stable, that
   existing matching cards mark a draft created, and that only target-side
   pending cards render in thread detail.

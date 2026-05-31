@@ -236,12 +236,15 @@ streaming the bounded draft reply, show a visible pending draft placeholder
 during that gap, wait for the injected target-thread turn after target-side
 `Approve`, and scroll to that injected turn when it becomes visible. Task-card
 drafts and pending task cards now default to a medium card with a collapsed
-details section instead of rendering the full body immediately. Source-thread
-draft cards also persist their settled `created` / `dismissed` state in browser
-storage using a stable turn-and-draft-content key, and re-check already stored
-cards for the source turn before auto-sending. Leaving and re-entering the
-source or target thread therefore must not resurrect an already created draft or
-create a duplicate target card from the old bounded XML response.
+details section instead of rendering the full body immediately. During
+source-side automatic creation, the source thread does not render an interim
+`Sending` draft card; only a real creation failure renders a dismissible
+diagnostic. Source-thread draft cards also persist their settled `created` /
+`dismissed` state in browser storage using a stable turn-and-draft-content key,
+and re-check already stored cards for the source turn before auto-sending.
+Leaving and re-entering the source or target thread therefore must not resurrect
+an already created draft or create a duplicate target card from the old bounded
+XML response.
 
 In Hermes embed mode, the sidebar now keeps the version pill, public-PR status,
 and restart action visible instead of hiding the whole version-action row.

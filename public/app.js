@@ -160,6 +160,7 @@ const state = {
   pendingApprovals: new Map(),
   threadTaskCardDraftStates: new Map(Object.entries(loadJsonStorage("codexMobileThreadTaskCardDraftStates", {}))),
   scheduledThreadTaskCardDraftCreations: new Set(),
+  activeThreadTaskCardDraftCreations: new Set(),
   runningThreadIds: loadStringSetStorage("codexMobileRunningThreadIds"),
   unreadThreadIds: loadStringSetStorage("codexMobileUnreadThreadIds"),
   rolloutWarningDismissals: loadStringSetStorage("codexMobileDismissedRolloutWarnings"),
@@ -188,7 +189,7 @@ const state = {
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v136";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v137";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -224,6 +225,8 @@ const STORAGE_RATE_LIMITS_BY_MODEL = "codexMobileRateLimitsByModel";
 const STORAGE_PUBLIC_PR_PROMPT = "codexMobilePublicPrPromptKey";
 const STORAGE_TASK_CARD_DRAFT_STATES = "codexMobileThreadTaskCardDraftStates";
 const DRAFT_SAVE_DEBOUNCE_MS = 250;
+const THREAD_TASK_CARD_DRAFT_CREATE_STALE_MS = 45000;
+const THREAD_TASK_CARD_DRAFT_CREATE_MAX_ATTEMPTS = 3;
 const THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";
 const THREAD_TASK_CARD_DRAFT_TAG = "codex-mobile-thread-task-card-draft";
 const THEME_VALUES = new Set(["system", "dark", "light"]);
@@ -5658,12 +5661,26 @@ function renderTurnThreadTaskCardDraft(turn, previousKeys = new Set()) {
         }
       }
       if (draftState.status === "created" || draftState.status === "dismissed") return "";
+      if (draftState.status === "creating" && isThreadTaskCardDraftCreationStale(draftKey, draftState)) {
+        const attempts = Math.max(1, Number(draftState.attempts || 1));
+        if (attempts < THREAD_TASK_CARD_DRAFT_CREATE_MAX_ATTEMPTS) {
+          setThreadTaskCardDraftState(draftKey, { status: "pending", error: "", attempts }, { render: false });
+          queueThreadTaskCardDraftCreation(draftKey);
+          draftState = Object.assign({}, draftState, { status: "creating", attempts: attempts + 1 });
+        } else {
+          setThreadTaskCardDraftState(draftKey, {
+            status: "failed",
+            error: "Task card creation timed out before the server stored a card",
+          }, { render: false });
+          draftState = threadTaskCardDraftState(draftKey);
+        }
+      }
       if (draftState.status === "pending") {
         queueThreadTaskCardDraftCreation(draftKey);
         draftState = Object.assign({}, draftState, { status: "creating" });
       }
-      if (draftState.status === "creating") return renderPendingThreadTaskCardDraft("Sending cross-thread task card...", "Sending");
-      return renderThreadTaskCardDraft(draft, item, turn, previousKeys);
+      if (draftState.status === "creating") return "";
+      return renderThreadTaskCardDraft(draft, item, turn, previousKeys, draftKey, draftState);
     }
     if (hasThreadTaskCardDraftTag(text)) {
       return renderPendingThreadTaskCardDraft("Generating cross-thread task card draft...", "Generating");
@@ -5688,6 +5705,16 @@ function renderPendingThreadTaskCardDraft(message, status = "Generating") {
 
 function threadTaskCardDraftKey(turnId, itemId) {
   return `task-card-draft|${String(turnId || "")}|${String(itemId || "")}`;
+}
+
+function isThreadTaskCardDraftCreationStale(draftKey, draftState) {
+  if (!draftKey || !draftState || draftState.status !== "creating") return false;
+  const updatedAtMs = Number(draftState.updatedAtMs || 0);
+  if (!updatedAtMs) return false;
+  if (Date.now() - updatedAtMs < THREAD_TASK_CARD_DRAFT_CREATE_STALE_MS) return false;
+  state.scheduledThreadTaskCardDraftCreations.delete(String(draftKey));
+  state.activeThreadTaskCardDraftCreations.delete(String(draftKey));
+  return true;
 }
 
 function threadTaskCardDraftPayloadKey(draft) {
@@ -6275,13 +6302,13 @@ function renderThreadTaskCardDraftActions(draftKey, draft, draftState) {
   </div>`;
 }
 
-function renderThreadTaskCardDraft(draft, item, turn, previousKeys = new Set()) {
+function renderThreadTaskCardDraft(draft, item, turn, previousKeys = new Set(), draftKey = "", draftState = null) {
   if (!draft || !item || !turn) return "";
-  const draftKey = threadTaskCardDraftKey(turn.id, item.id || "");
-  const draftState = threadTaskCardDraftState(draftKey);
+  const resolvedDraftKey = draftKey || threadTaskCardDraftKeyForDraft(turn, draft, item);
+  const resolvedDraftState = draftState || threadTaskCardDraftState(resolvedDraftKey);
   const targetRefs = threadTaskCardDraftTargetThreads(draft);
-  const compact = draftState.status === "created" || draftState.status === "dismissed" ? " compact" : "";
-  const detail = threadTaskCardDraftDetailLines(draft, targetRefs, draftState).join("\n");
+  const compact = resolvedDraftState.status === "created" || resolvedDraftState.status === "dismissed" ? " compact" : "";
+  const detail = threadTaskCardDraftDetailLines(draft, targetRefs, resolvedDraftState).join("\n");
   const summary = threadTaskCardSummaryLine(draft.summary || draft.error || "");
   const detailBlocks = [
     detail ? `<pre class="approval-detail">${escapeHtml(detail)}</pre>` : "",
@@ -6293,11 +6320,11 @@ function renderThreadTaskCardDraft(draft, item, turn, previousKeys = new Set()) 
         <div class="approval-title">Cross-thread task card draft</div>
         <div class="approval-method">${escapeHtml(draft.title || "Task card draft")}</div>
       </div>
-      <span class="approval-status">${escapeHtml(threadTaskCardDraftStatusLabel(draftState.status))}</span>
+      <span class="approval-status">${escapeHtml(threadTaskCardDraftStatusLabel(resolvedDraftState.status))}</span>
     </div>
     ${summary ? `<div class="approval-summary-line">${escapeHtml(summary)}</div>` : ""}
     ${renderThreadTaskCardExpandable(summary || detail || draft.title || "Task card draft details", detailBlocks)}
-    ${renderThreadTaskCardDraftActions(draftKey, draft, draftState)}
+    ${renderThreadTaskCardDraftActions(resolvedDraftKey, draft, resolvedDraftState)}
   </section>`;
 }
 
@@ -9198,7 +9225,7 @@ function findThreadTaskCardDraftByKey(draftKey) {
 function setThreadTaskCardDraftState(draftKey, nextState, options = {}) {
   const key = String(draftKey || "");
   if (!key) return;
-  state.threadTaskCardDraftStates.set(key, Object.assign({}, threadTaskCardDraftState(key), nextState || {}));
+  state.threadTaskCardDraftStates.set(key, Object.assign({}, threadTaskCardDraftState(key), nextState || {}, { updatedAtMs: Date.now() }));
   saveThreadTaskCardDraftStates();
   if (options.render !== false) renderCurrentThread();
 }
@@ -9209,9 +9236,14 @@ function dismissThreadTaskCardDraft(draftKey) {
 
 function queueThreadTaskCardDraftCreation(draftKey) {
   const key = String(draftKey || "");
-  if (!key || state.scheduledThreadTaskCardDraftCreations.has(key)) return;
+  if (!key || state.scheduledThreadTaskCardDraftCreations.has(key) || state.activeThreadTaskCardDraftCreations.has(key)) return;
   state.scheduledThreadTaskCardDraftCreations.add(key);
-  setThreadTaskCardDraftState(key, { status: "creating", error: "" }, { render: false });
+  const current = threadTaskCardDraftState(key);
+  setThreadTaskCardDraftState(key, {
+    status: "creating",
+    error: "",
+    attempts: Math.max(0, Number(current.attempts || 0)) + 1,
+  }, { render: false });
   window.setTimeout(() => {
     state.scheduledThreadTaskCardDraftCreations.delete(key);
     createThreadTaskCardDraft(key).catch(showError);
@@ -9219,27 +9251,30 @@ function queueThreadTaskCardDraftCreation(draftKey) {
 }
 
 async function createThreadTaskCardDraft(draftKey) {
-  const resolved = findThreadTaskCardDraftByKey(draftKey);
-  if (!resolved || !state.currentThreadId || !state.currentThread) {
-    setThreadTaskCardDraftState(draftKey, { status: "pending", error: "" }, { render: false });
-    return;
-  }
-  const { draft, turn } = resolved;
-  const targetRefs = threadTaskCardDraftTargetThreads(draft);
-  const targetThreadIds = targetRefs.map((entry) => entry.threadId).filter(Boolean);
-  const missingTargets = targetRefs.filter((entry) => !entry.thread).map((entry) => entry.threadId).filter(Boolean);
-  if (!targetThreadIds.length || missingTargets.length) {
-    setThreadTaskCardDraftState(draftKey, { status: "failed", error: draft.error || `Target thread is missing from the visible thread list${missingTargets.length ? `: ${missingTargets.join(", ")}` : ""}` });
-    return;
-  }
-  if (!draft.title || !draft.body) {
-    setThreadTaskCardDraftState(draftKey, { status: "failed", error: draft.error || "Draft is incomplete" });
-    return;
-  }
-  setThreadTaskCardDraftState(draftKey, { status: "creating", error: "" });
-  $("connectionState").classList.remove("error");
-  $("connectionState").textContent = "Creating task card";
+  const activeKey = String(draftKey || "");
+  if (!activeKey || state.activeThreadTaskCardDraftCreations.has(activeKey)) return;
+  state.activeThreadTaskCardDraftCreations.add(activeKey);
   try {
+    const resolved = findThreadTaskCardDraftByKey(draftKey);
+    if (!resolved || !state.currentThreadId || !state.currentThread) {
+      setThreadTaskCardDraftState(draftKey, { status: "pending", error: "" }, { render: false });
+      return;
+    }
+    const { draft, turn } = resolved;
+    const targetRefs = threadTaskCardDraftTargetThreads(draft);
+    const targetThreadIds = targetRefs.map((entry) => entry.threadId).filter(Boolean);
+    const missingTargets = targetRefs.filter((entry) => !entry.thread).map((entry) => entry.threadId).filter(Boolean);
+    if (!targetThreadIds.length || missingTargets.length) {
+      setThreadTaskCardDraftState(draftKey, { status: "failed", error: draft.error || `Target thread is missing from the visible thread list${missingTargets.length ? `: ${missingTargets.join(", ")}` : ""}` });
+      return;
+    }
+    if (!draft.title || !draft.body) {
+      setThreadTaskCardDraftState(draftKey, { status: "failed", error: draft.error || "Draft is incomplete" });
+      return;
+    }
+    setThreadTaskCardDraftState(draftKey, { status: "creating", error: "" });
+    $("connectionState").classList.remove("error");
+    $("connectionState").textContent = "Creating task card";
     const targetWorkspaceIds = {};
     for (const entry of targetRefs) {
       if (entry.thread) targetWorkspaceIds[entry.threadId] = String(entry.thread.cwd || "");
@@ -9266,6 +9301,7 @@ async function createThreadTaskCardDraft(draftKey) {
     const createdCards = Array.isArray(result && result.cards)
       ? result.cards.filter(Boolean)
       : (result && result.card ? [result.card] : []);
+    if (!createdCards.length) throw new Error("Task card creation returned no cards");
     if (state.currentThread && String(state.currentThread.id || "") === String(state.currentThreadId || "")) {
       for (const createdCard of createdCards) {
         const pending = String(createdCard && createdCard.status || "pending") === "pending";
@@ -9305,6 +9341,8 @@ async function createThreadTaskCardDraft(draftKey) {
       error: normalizeClientErrorMessage(err && err.message ? err.message : String(err)) || "Task card creation failed",
     });
     throw err;
+  } finally {
+    state.activeThreadTaskCardDraftCreations.delete(activeKey);
   }
 }
 

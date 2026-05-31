@@ -43,7 +43,7 @@ test("thread task card routes preserve service status codes", () => {
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v136"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v137"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.threadRole \|\| ""\) === "target"\)/);
@@ -84,10 +84,18 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /matchingThreadTaskCardsForDraft\(draft, turn\)/);
   assert.match(appJs, /function renderThreadTaskCardExpandable\(/);
   assert.match(appJs, /const STORAGE_TASK_CARD_DRAFT_STATES = "codexMobileThreadTaskCardDraftStates"/);
+  assert.match(appJs, /THREAD_TASK_CARD_DRAFT_CREATE_STALE_MS/);
+  assert.match(appJs, /THREAD_TASK_CARD_DRAFT_CREATE_MAX_ATTEMPTS/);
+  assert.match(appJs, /activeThreadTaskCardDraftCreations: new Set\(\)/);
+  assert.match(appJs, /function isThreadTaskCardDraftCreationStale\(/);
   assert.match(appJs, /function saveThreadTaskCardDraftStates\(\)/);
   assert.match(appJs, /function queueThreadTaskCardDraftCreation\(/);
+  assert.match(appJs, /state\.activeThreadTaskCardDraftCreations\.has\(key\)/);
   assert.match(appJs, /function createThreadTaskCardDraft\(/);
-  assert.match(appJs, /Sending cross-thread task card/);
+  assert.match(appJs, /Task card creation timed out before the server stored a card/);
+  assert.match(appJs, /Task card creation returned no cards/);
+  assert.match(appJs, /if \(draftState\.status === "creating"\) return "";/);
+  assert.doesNotMatch(appJs, /Sending cross-thread task card/);
   assert.doesNotMatch(appJs, /data-task-card-draft-action="approve"/);
   assert.doesNotMatch(appJs, /approveThreadTaskCardDraft/);
   assert.match(appJs, /data-task-card-draft-action="dismiss"/);

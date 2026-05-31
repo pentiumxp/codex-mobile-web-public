@@ -214,6 +214,9 @@ Source thread:
   `userMessage`;
 - for a multi-target draft, keep the source thread open after creation instead
   of automatically jumping to one recipient;
+- keep source-side automatic creation silent in the conversation: do not render
+  an interim `Sending` draft card after a valid draft is parsed, while still
+  surfacing a bounded dismissible diagnostic if card creation actually fails;
 - persist source draft settlement using a stable key derived from the turn id
   and draft content, and treat already stored matching source-turn cards as
   created so thread re-entry or item-id drift cannot re-send the same draft.
