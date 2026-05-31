@@ -47,10 +47,11 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*7px;/);
 });
 
-test("public app shell cache advances after embed action and task-card stabilization", () => {
-  assert.match(swJs, /codex-mobile-shell-v130/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v130"/);
+test("public app shell cache advances after composer Fast dot", () => {
+  assert.match(swJs, /codex-mobile-shell-v139/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v139"/);
   assert.match(appJs, /startupThreadOpenPending: false/);
+  assert.match(appJs, /const savedThreadId = isHermesEmbedMode\(\) \? "" : \(localStorage\.getItem\(STORAGE_THREAD_ID\) \|\| ""\);/);
   assert.match(appJs, /state\.startupThreadOpenPending = Boolean\(startupThreadId \|\| savedThreadId \|\| \(startupPluginRouteHint && startupPluginRouteHint\.threadId\)\);/);
   assert.match(appJs, /await loadThreads\(\{ silent: state\.startupThreadOpenPending \}\);/);
   assert.match(appJs, /function renderStartupThreadOpening\(\)/);
@@ -70,6 +71,7 @@ test("public app shell cache advances after embed action and task-card stabiliza
   assert.match(appJs, /scheduleCurrentThreadRefresh\(250\);[\s\S]*openExternalThreadSelection\(threadId\)\.catch\(showError\);/);
   assert.match(appJs, /if \(state\.currentThreadId && state\.currentThread && !state\.currentThread\.mobileLoading\) \{/);
   assert.match(appJs, /scheduleCurrentThreadRefresh\(250\);[\s\S]*else if \(state\.currentThreadId\) \{[\s\S]*await refreshCurrentThread\(\);[\s\S]*else \{[\s\S]*await restoreThreadSelection\(\);/);
+  assert.match(appJs, /async function restoreThreadSelection\(\) \{[\s\S]*if \(isHermesEmbedMode\(\)\) \{[\s\S]*showHermesPluginPrimaryPage\(\);[\s\S]*return;/);
   assert.match(swJs, /"\/api-client\.js"/);
   assert.match(swJs, /"\/runtime-settings\.js"/);
   assert.match(swJs, /"\/draft-store\.js"/);
@@ -84,6 +86,20 @@ test("public app shell cache advances after embed action and task-card stabiliza
   assert.match(appJs, /"\/plugin-embed\.js"/);
   assert.match(appJs, /navigator\.serviceWorker\.register\("\/sw\.js"\)/);
   assert.match(appJs, /state\.serviceWorkerRegistration\.update\(\)\.catch/);
+});
+
+test("workspace creation lives at the bottom of the Workspace menu", () => {
+  assert.match(indexHtml, /id="workspaceSelectMenu"/);
+  assert.match(indexHtml, /id="newThreadButton"/);
+  assert.match(indexHtml, /id="createWorkspaceDialog"/);
+  assert.match(indexHtml, /id="createWorkspaceForm"/);
+  assert.match(appJs, /function workspaceSidebarOptionsHtml\(\)/);
+  assert.match(appJs, /data-create-workspace/);
+  assert.match(appJs, /return allOption \+ workspaceOptions \+ createOption;/);
+  assert.match(appJs, /openCreateWorkspaceDialog\(\)/);
+  assert.match(appJs, /api\("\/api\/workspaces", \{[\s\S]*method: "POST"/);
+  assert.match(stylesCss, /\.workspace-create-option/);
+  assert.doesNotMatch(indexHtml, /newThreadButton[\s\S]{0,240}createWorkspace/i);
 });
 
 test("push notification control stays hidden when the browser cannot enable it", () => {

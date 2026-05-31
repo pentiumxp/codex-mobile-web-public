@@ -12,6 +12,8 @@
   const BACK_RESULT_TYPE = "codex-mobile.plugin.back_result";
   const REFRESH_REQUIRED_TYPE = "codex-mobile.plugin.refresh_required";
   const BACK_TYPE = "hermes.plugin.back";
+  const THEME_VALUES = new Set(["system", "dark", "light"]);
+  const FONT_SIZE_VALUES = new Set(["small", "default", "large", "xlarge", "xxlarge"]);
 
   function stringValue(value) {
     return String(value || "").trim();
@@ -20,6 +22,11 @@
   function boundedString(value, maxLength) {
     const text = stringValue(value);
     return text ? text.slice(0, Math.max(0, Number(maxLength) || 0)) : "";
+  }
+
+  function normalizedEnum(value, allowedValues) {
+    const text = stringValue(value).toLowerCase();
+    return allowedValues.has(text) ? text : "";
   }
 
   function urlFrom(value) {
@@ -41,11 +48,17 @@
       threadId: boundedString(params.get("pluginThreadId"), 160),
       taskId: boundedString(params.get("pluginTaskId"), 160),
     };
+    const appearance = {};
+    const theme = normalizedEnum(params.get("pluginTheme") || params.get("theme"), THEME_VALUES);
+    const fontSize = normalizedEnum(params.get("pluginFontSize") || params.get("fontSize"), FONT_SIZE_VALUES);
+    if (theme) appearance.theme = theme;
+    if (fontSize) appearance.fontSize = fontSize;
     return {
       embedded: params.get("embed") === "hermes",
       launchKey: stringValue(params.get("codexPluginLaunch") || params.get("pluginLaunch")),
       workspaceId: stringValue(params.get("workspaceId") || params.get("workspace_id")),
       routeHint,
+      appearance,
     };
   }
 

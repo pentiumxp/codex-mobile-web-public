@@ -82,6 +82,18 @@ Launch may also carry a bounded plugin target such as a workspace `cwd` or a
 thread id. After session exchange, the embedded browser should prefer that
 target over stale local restore state so Hermes-launched Wardrobe/Codex
 workflows land in the intended workspace and keep the correct MCP context.
+Launch may also carry bounded host appearance under `appearance.theme` and
+`appearance.fontSize`. Supported theme values are `system`, `dark`, and
+`light`; supported font-size values are `small`, `default`, `large`, `xlarge`,
+and `xxlarge`. Codex copies only those whitelisted values into the short iframe
+entry path as `pluginTheme` / `pluginFontSize` and into the plugin session
+response as `appearance`. The embedded head script applies them before loading
+the stylesheet and main app bundle, so Hermes-hosted plugins do not flash the
+standalone/default theme or font size during initialization.
+When Hermes does not provide an explicit launch target or bounded route hint,
+`/?embed=hermes` stays on the embedded primary page instead of restoring the
+last locally opened thread. This prevents the plugin tab from auto-entering a
+stale recent Codex thread and hiding Hermes's own bottom navigation.
 If Hermes Mobile is served over HTTPS, the Codex Mobile entry must also be
 HTTPS. Set `CODEX_MOBILE_HERMES_PLUGIN_BASE_URL` or
 `CODEX_MOBILE_PUBLIC_BASE_URL` so the manifest advertises that external URL.
@@ -146,7 +158,16 @@ preview from the long completed-turn receipt. The delegated notification keeps a
 short `title + summary` for Web Push and Inbox preview, while the same backend
 payload may also include a bounded Markdown `detailMessage` containing the final
 assistant receipt text and Usage summary for Hermes thread-message storage. The
-standalone Web App Push path stays unchanged.
+delegated Push/InBox `title` is resolved from the actual Codex thread name or
+explicit nested thread title before falling back to preview text, so Hermes
+plugin notifications do not show a generic plugin/post label as the thread
+name. The backend uses an adapter-owned display-summary cache populated from
+app-server `thread/list` and `thread/read` results before the local SQLite
+fallback, because older continuation threads can keep a stale bootstrap prompt
+as their SQLite title. If a completed-turn notification arrives before the
+cache is warm, the server refreshes that thread's app-server summary before
+sending the Push/InBox payload. The standalone Web App Push path stays
+unchanged.
 
 ## Cross-thread Task Cards
 
@@ -162,7 +183,7 @@ cards:
 
 Behavior:
 
-- A source thread can create a pending task card for a target thread.
+- A source thread can create pending task cards for one or more target threads.
 - The pending card appears outside the target thread's normal message flow.
 - The target thread can `Approve`, `Delete`, or `Reply`.
 - The source thread can `Revoke` while the card is still pending.
@@ -180,28 +201,50 @@ The composer also reserves `#` at the start of a message for natural-language
 cross-thread task-card commands. Those commands do not go through a separate
 parse route. Instead, Mobile Web sends a bounded draft request to the current
 Codex thread, lets the model interpret the command against the visible thread
-list, renders the returned draft as an approval card, and only then creates a
-pending task card. After approval, the create call now uses a stable
-draft-scoped idempotency key, the thread list shows an incoming `Task N` badge
-on the target thread, and the browser immediately switches to that target
-thread so the pending card is visible without manual navigation. When the card
-id is known, Mobile Web also reuses its existing route-hint focus path to
-scroll the target thread directly to that pending card instead of leaving the
-user at the bottom of a long conversation. Pending cross-thread task cards now
+list, and immediately creates pending target cards when the returned draft
+parses successfully. The source thread does not show a second local `Approve`
+step. The create call uses a stable draft-scoped idempotency key, the thread
+list shows incoming `Task N` badges on every target thread, and a single-target
+draft still switches to that target thread so the pending card is visible
+without manual navigation. Multi-target drafts create one pending card per
+target and keep the source thread visible without rendering outgoing cards as
+local work items. When the card id is known for a single target, Mobile Web also
+reuses its existing route-hint focus path to scroll the target thread directly
+to that pending card instead of leaving the user at the bottom of a long
+conversation. Pending cross-thread task cards now
 render after the visible turn list and approval stack, so they stay at the
 bottom of the thread rather than appearing above historical messages. Once a
 card is approved, deleted, revoked, or replied, it no longer renders in thread
 detail; the injected turn becomes the visible follow-up surface. The current
 thread now also removes a settled card immediately after a successful action.
+For normal cards, target-side `Approve` remains mandatory. If a `#` draft
+explicitly asks for an automatic collaboration/no-further-approval workflow,
+the draft may set `workflowMode:"autonomous"`. The first target-side approval
+then activates a workflow grant scoped to that exact `workflowId` and the same
+two thread ids. Later cards carrying that workflow id between the same two
+threads auto-inject as real target-thread turns without another manual click,
+including reverse-direction follow-up cards. A reused workflow id with a
+different thread pair still stays pending and requires its own first approval.
+Target-side approval also persists a transient non-pending `approving` state
+before calling the external target-thread `turn/start`, so reconnect,
+continuation compaction, or thread refresh cannot resurrect the same `Approve`
+card while the approved turn is already starting. If the external call fails
+before acceptance, the service restores the card to `pending` with a bounded
+audit error.
 Current browser builds also suppress raw draft XML while the model is still
 streaming the bounded draft reply, show a visible pending draft placeholder
 during that gap, wait for the injected target-thread turn after target-side
 `Approve`, and scroll to that injected turn when it becomes visible. Task-card
 drafts and pending task cards now default to a medium card with a collapsed
-details section instead of rendering the full body immediately. Source-thread
-draft cards also persist their settled `created` / `dismissed` state in browser
-storage, so leaving and re-entering the thread does not resurrect an already
-approved or dismissed draft from the old bounded XML response.
+details section instead of rendering the full body immediately. During
+source-side automatic creation, the source thread does not render an interim
+`Sending` draft card; only a real creation failure renders a dismissible
+diagnostic. Source-thread draft cards also persist their settled `created` /
+`dismissed` state in browser storage using a stable turn-and-draft-content key,
+and re-check already stored cards for the source turn before auto-sending.
+Leaving and re-entering the source or target thread therefore must not resurrect
+an already created draft or create a duplicate target card from the old bounded
+XML response.
 
 In Hermes embed mode, the sidebar now keeps the version pill, public-PR status,
 and restart action visible instead of hiding the whole version-action row.
@@ -225,10 +268,9 @@ response instead of waiting for a leave/re-enter refresh cycle. Examples:
 # 让 Hermes 05-26 配合处理插件刷新联动
 ```
 
-If the model cannot choose one visible target thread, the draft stays
-unapproved and shows the model-side error instead of auto-sending to the wrong
+If the model cannot choose at least one visible target thread, the source thread
+shows a bounded failed draft diagnostic instead of auto-sending to the wrong
 thread. `#` commands still reject attachments for now.
-user to refine the command.
 
 ## Clone And Validate
 
@@ -542,8 +584,16 @@ Behavior:
 ## Interface Notes
 
 - Home view shows recent workspaces and recent threads.
+- The Workspace dropdown ends with a `Create Workspace` action. It creates or
+  registers a simple local folder under an allowed parent, stores only bounded
+  metadata in `%USERPROFILE%\.codex-mobile-web\workspace-registry.json`, selects
+  the new cwd, and opens a new-thread draft. Configure allowed parents with
+  `CODEX_MOBILE_WORKSPACE_CREATE_ROOTS`; do not edit `.codex` global state for
+  this path.
 - The sidebar menu header includes a compact settings button. The settings panel contains the theme control (`跟随系统` / `深色` / `浅色`) and the font-size control (`小字` / `标准` / `大字` / `特大` / `超大`) using the same segmented-button style.
 - Theme and font-size choices are saved in the browser. Theme updates the page theme color metadata; iOS PWA status-bar color changes may require closing and reopening the installed app. The light theme now uses a slightly warmer page background so the daytime view is less cold gray while cards and controls stay crisp. Font size adjusts conversation text, markdown, code/table content, approval details, and the composer input.
+- The composer runtime row starts with a tiny persistent Fast status dot before model/reasoning/permission/quota. Green means normal mode; tapping it turns red, briefly shows `Fast on`, and sends a hidden `fastMode` request so the server forwards Codex's `serviceTier: "priority"` Fast tier on the next `turn/start`. It does not change the selected model, reasoning effort, permission mode, or visible message text. `#` cross-thread task-card commands keep their bounded draft-request flow; active-turn steering cannot change the speed tier until the next new turn.
+- The shell cache advances to `codex-mobile-shell-v139` for the Fast-dot UI.
 - The sidebar header also shows the app version/update pill, a public PR status pill, and a same-size `Restart` button. After login, Mobile Web checks the configured GitHub remote in the background. If the remote branch is ahead, the pill becomes an update action; tapping it asks for confirmation, applies only a clean fast-forward update, then exits the Node listener so the existing startup supervisor can restart it from the updated files. The public PR pill checks the clean public repository for open pull requests and prompts whether to prepare a merge/publish review task; it does not merge or push public by itself. The `Restart` button is separate from Git self-update and asks for confirmation before restarting the local Mobile Web shared chain.
 - When a conversation is scrollable and the user is away from the newest messages, a floating down-arrow button appears above the composer. Tapping it jumps directly back to the latest turn; normal rendering still avoids forcing the scroll position while the user is reading older content.
 - 中文说明：长对话如果因为恢复、切换线程或手动滚动停在历史消息中间，页面会在输入框上方显示“回到底部”浮动按钮。按钮只在当前线程已加载、内容可滚动且不在底部时出现；点击后立即回到最新 turn。用户阅读历史内容时，普通刷新仍不会强制自动滚到底部。PWA/手机浏览器如果仍显示旧界面，需要刷新一次或等待新的 service worker 缓存 `codex-mobile-shell-v36` 激活。
@@ -1222,6 +1272,57 @@ plugin. The shell cache advances to `codex-mobile-shell-v102`.
 - 测试与验证：
   - 同步更新了 `app-update`、Hermes plugin route、manual restart、mobile viewport、thread-task-card route 和 shared-chain restart script 相关测试。
   - 发布前通过 focused Node tests、`npm test`、`npm run check`、`npm run check:macos` 和 `git diff --check`。
+
+## 2026-05-31 Local Hermes Plugin Appearance Sync v133
+
+- Hermes plugin manifest now advertises a bounded `appearance_sync` contract:
+  launch may pass `appearance.theme` (`system|dark|light`) and
+  `appearance.fontSize` (`small|default|large|xlarge|xxlarge`).
+- Plugin launch copies only those safe values into the short relative iframe
+  entry path as `pluginTheme` / `pluginFontSize`; the browser session exchange
+  returns the same sanitized `appearance` object. Long-lived Access Keys,
+  session tokens, local paths, raw settings dumps, and private content are not
+  included in that appearance payload.
+- The embedded HTML head script applies host theme and font size before
+  `styles.css` and `public/app.js` load, then `public/app.js` keeps the session
+  appearance after token scrubbing. This avoids flashing the standalone/default
+  theme or font size while Hermes initializes the iframe.
+- The shell cache advances to `codex-mobile-shell-v133`.
+
+## 2026-05-31 Local Cross-Thread Task Card Auto-Send v134
+
+- `#` natural-language cross-thread card commands now auto-send after the model
+  returns a valid bounded draft. The source thread no longer asks for a second
+  local `Approve`; only the target thread's pending card keeps `Approve` for
+  injecting a real target-thread turn.
+- The task-card service rejects likely encoding-damaged visible card text before
+  persistence, so PowerShell/encoding-damaged `?? ?????` payloads cannot create
+  unreadable pending cards.
+- The shell cache advances to `codex-mobile-shell-v134`.
+
+## 2026-05-31 Local Cross-Thread Autonomous Workflow v135
+
+- `#` task-card drafts may now explicitly request `workflowMode:"autonomous"`
+  for cooperating-thread workflows that should continue after one human
+  approval.
+- Ordinary cards still require target-side `Approve`. For autonomous workflows,
+  the first target approval activates a workflow grant scoped to the workflow id
+  and the same two thread ids. Later cards with that same workflow id between
+  the same pair auto-inject as real target-thread turns; unrelated pairs still
+  remain pending.
+- The shell cache advances to `codex-mobile-shell-v135`.
+
+### 2026-05-31 Public 发布说明（Hermes 外观同步、跨线程卡片修复与 Fast 圆点）
+
+本次 public 同步把 private 中已验证的 v133-v139 产品改动发布到公开仓库。版本仍为 `0.1.11`，PWA shell cache 升到 `codex-mobile-shell-v139`。部署后需要让 8787 Node listener 重新加载服务端文件；已安装到主屏幕或被 service worker 缓存的移动端客户端需要接受刷新提示、硬刷新或关闭重开，才能拿到新的静态界面。
+
+- Hermes 插件嵌入：launch/session 支持安全的 `appearance.theme` 与 `appearance.fontSize` 同步，iframe 会在主样式和主脚本加载前应用主题/字号，减少嵌入态从默认主题闪到 Hermes 主题的视觉跳变。
+- Hermes 通知标题：完成通知优先使用 app-server 线程显示名和嵌套 thread title，再回退到本地 SQLite；这避免旧续接线程把 bootstrap 提示误当作 Web Push / Hermes Inbox 标题。
+- 跨线程任务卡片：`#` 自然语言卡片命令继续由当前 Codex 线程生成 bounded draft，但 source 线程不再显示二次 `Approve` 或临时 `Sending` 卡片；已创建或已 dismiss 的 draft 用稳定的 turn+draft 内容 key 持久化，重新进入线程不会因为 app-server item id 改变而复活。
+- 目标线程卡片：thread detail 只渲染 target-side `pending` 卡片；source outgoing、`approved`、`deleted`、`revoked`、`replied` 和 transient `approving` 状态仍保留在运行态审计中，但不再作为可操作卡片堵在会话底部。`Approve` 在调用外部 `turn/start` 前先落盘为 `approving`，避免刷新、重连或压缩续接窗口里重新出现第二个可点的 `Approve`。
+- 跨线程自主 workflow：draft 可以显式请求 `workflowMode:"autonomous"`。同一个 workflow id 和同一对 source/target 线程在首次人工批准后可继续自动注入后续卡片；复用到其他线程对时仍回到 pending，需要单独批准。
+- 运行栏 Fast 圆点：模型前新增一个极小的持久化状态点，绿色表示普通模式，点击变红表示下一次新 `turn/start` 使用 Codex Fast 服务层。前端只提交隐藏 `fastMode` 字段，服务端映射为 `serviceTier: "priority"`；不会把可见 `/Fast` 文本插入用户消息，也不会改变模型、推理等级或权限设置。active-turn steering 不能改变已经开始的 turn 的速度层级。
+- 发布同步还包含 workspace registry 服务、共享链重启安装脚本、多账号 CLI 文档、相关 README/docs 更新和覆盖测试。发布前 private 验证通过 `npm test` 255/255、`npm run check`、`npm run check:macos`、`git diff --check`；public 发布前应在 public 工作区重新运行同等检查。
 
 ### Which Restart Is Needed After Changes
 

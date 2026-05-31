@@ -8,7 +8,10 @@ const MAX_TITLE_CHARS = 120;
 const MAX_SUMMARY_CHARS = 300;
 const MAX_BODY_CHARS = 8_000;
 const DEFAULT_RECENT_LIMIT = 24;
+const MAX_BATCH_TARGETS = 12;
 const SETTLED_STATUSES = new Set(["approved", "deleted", "revoked", "replied"]);
+const WORKFLOW_MODE_MANUAL = "manual";
+const WORKFLOW_MODE_AUTONOMOUS = "autonomous";
 
 function nowIso(nowFn) {
   const value = typeof nowFn === "function" ? nowFn() : Date.now();
@@ -33,10 +36,54 @@ function boundedString(value, fieldName, maxLength, required = true) {
   return text;
 }
 
+function boundedMetadataString(value, maxLength) {
+  const text = stringValue(value);
+  if (!text) return "";
+  return text.length > maxLength ? text.slice(0, maxLength) : text;
+}
+
+function boundedErrorMessage(value) {
+  const text = stringValue(value && value.message ? value.message : value);
+  const singleLine = text.replace(/\s+/g, " ").trim();
+  return singleLine ? boundedMetadataString(singleLine, 500) : "approval_execution_failed";
+}
+
+function hasLikelyQuestionMarkReplacementDamage(text) {
+  const questionCount = (text.match(/\?/g) || []).length;
+  if (questionCount < 6 || !/\?{2,}/.test(text)) return false;
+  const hasRepeatedClusters = /\?{4,}/.test(text) || /\?{2,}[\s\S]{0,40}\?{2,}/.test(text);
+  if (!hasRepeatedClusters) return false;
+  const ratio = questionCount / Math.max(1, text.length);
+  return ratio >= 0.12 || questionCount >= 16;
+}
+
+function hasLikelyEncodingDamage(text) {
+  if (!text) return false;
+  if (/[\uFFFD\u0080-\u009F]/.test(text)) return true;
+  if (/[ÃÂ]/.test(text)) return true;
+  if (/â[€™€œ€]/.test(text)) return true;
+  return hasLikelyQuestionMarkReplacementDamage(text);
+}
+
+function readableCardText(value, fieldName, maxLength, required = true) {
+  const text = boundedString(value, fieldName, maxLength, required);
+  if (text && hasLikelyEncodingDamage(text)) {
+    throw errorWithStatus(`task_card_text_encoding_damaged:${fieldName}`);
+  }
+  return text;
+}
+
 function normalizedFormat(value) {
   const format = boundedString(value || "markdown", "format", 40);
   if (format !== "markdown" && format !== "text") throw errorWithStatus("format_invalid");
   return format;
+}
+
+function normalizedWorkflowMode(value) {
+  const mode = stringValue(value || WORKFLOW_MODE_MANUAL).toLowerCase();
+  if (!mode || mode === WORKFLOW_MODE_MANUAL) return WORKFLOW_MODE_MANUAL;
+  if (mode === WORKFLOW_MODE_AUTONOMOUS || mode === "auto" || mode === "automatic") return WORKFLOW_MODE_AUTONOMOUS;
+  throw errorWithStatus("workflow_mode_invalid");
 }
 
 function safeArray(value) {
@@ -48,14 +95,17 @@ function clone(value) {
 }
 
 function defaultStore() {
-  return { cards: [] };
+  return { cards: [], workflows: [] };
 }
 
 function loadStore(file) {
   try {
     const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
     if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.cards)) return defaultStore();
-    return { cards: parsed.cards };
+    return {
+      cards: parsed.cards,
+      workflows: Array.isArray(parsed.workflows) ? parsed.workflows : [],
+    };
   } catch (_) {
     return defaultStore();
   }
@@ -120,15 +170,59 @@ function normalizeCreateRequest(input = {}) {
     sourceWorkspaceId: boundedString(input.sourceWorkspaceId, "source_workspace_id", 260),
     sourceThreadId: boundedString(input.sourceThreadId, "source_thread_id", 220),
     sourceTurnId: boundedString(input.sourceTurnId, "source_turn_id", 220, false),
-    sourceThreadTitle: boundedString(input.sourceThreadTitle, "source_thread_title", 200, false),
+    sourceThreadTitle: boundedMetadataString(input.sourceThreadTitle, 200),
     targetWorkspaceId: boundedString(input.targetWorkspaceId, "target_workspace_id", 260),
     targetThreadId: boundedString(input.targetThreadId, "target_thread_id", 220),
     idempotencyKey: boundedString(input.idempotencyKey, "idempotency_key", 220),
     format: normalizedFormat(input.format),
-    title: boundedString(input.title, "title", MAX_TITLE_CHARS),
-    summary: boundedString(input.summary, "summary", MAX_SUMMARY_CHARS),
-    body: boundedString(input.body, "body", MAX_BODY_CHARS),
+    title: readableCardText(input.title, "title", MAX_TITLE_CHARS),
+    summary: readableCardText(input.summary, "summary", MAX_SUMMARY_CHARS),
+    body: readableCardText(input.body, "body", MAX_BODY_CHARS),
+    workflowMode: normalizedWorkflowMode(input.workflowMode),
+    workflowId: boundedString(input.workflowId, "workflow_id", 220, false),
   };
+}
+
+function normalizeTargetThreadIds(input = {}) {
+  const raw = Array.isArray(input.targetThreadIds) && input.targetThreadIds.length
+    ? input.targetThreadIds
+    : [input.targetThreadId];
+  const seen = new Set();
+  const ids = [];
+  for (const value of raw) {
+    const id = boundedString(value, "target_thread_id", 220, false);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  if (!ids.length) throw errorWithStatus("target_thread_id_required");
+  if (ids.length > MAX_BATCH_TARGETS) throw errorWithStatus("target_thread_ids_too_many");
+  return ids;
+}
+
+function idempotencyKeyForTarget(baseKey, targetThreadId, index, total) {
+  const base = boundedString(baseKey, "idempotency_key", 180);
+  if (total <= 1) return base;
+  return boundedString(`${base}:${index + 1}:${targetThreadId}`, "idempotency_key", 220);
+}
+
+function targetWorkspaceIdForInput(input, targetThreadId) {
+  const map = input && input.targetWorkspaceIds && typeof input.targetWorkspaceIds === "object"
+    ? input.targetWorkspaceIds
+    : null;
+  if (map && Object.prototype.hasOwnProperty.call(map, targetThreadId)) {
+    return map[targetThreadId];
+  }
+  return input.targetWorkspaceId || input.targetWorkspace;
+}
+
+function normalizeCreateRequests(input = {}) {
+  const targetThreadIds = normalizeTargetThreadIds(input);
+  return targetThreadIds.map((targetThreadId, index) => normalizeCreateRequest(Object.assign({}, input, {
+    targetThreadId,
+    targetWorkspaceId: targetWorkspaceIdForInput(input, targetThreadId),
+    idempotencyKey: idempotencyKeyForTarget(input.idempotencyKey, targetThreadId, index, targetThreadIds.length),
+  })));
 }
 
 function normalizeReplyRequest(input = {}) {
@@ -136,13 +230,106 @@ function normalizeReplyRequest(input = {}) {
   return {
     sourceWorkspaceId: boundedString(input.sourceWorkspaceId, "source_workspace_id", 260, false),
     sourceThreadId: boundedString(input.sourceThreadId, "source_thread_id", 220, false),
-    sourceThreadTitle: boundedString(input.sourceThreadTitle, "source_thread_title", 200, false),
+    sourceThreadTitle: boundedMetadataString(input.sourceThreadTitle, 200),
     idempotencyKey: boundedString(input.idempotencyKey, "idempotency_key", 220),
     format: normalizedFormat(input.format || "markdown"),
-    title: boundedString(input.title, "title", MAX_TITLE_CHARS),
-    summary: boundedString(input.summary, "summary", MAX_SUMMARY_CHARS),
-    body: boundedString(input.body, "body", MAX_BODY_CHARS),
+    title: readableCardText(input.title, "title", MAX_TITLE_CHARS),
+    summary: readableCardText(input.summary, "summary", MAX_SUMMARY_CHARS),
+    body: readableCardText(input.body, "body", MAX_BODY_CHARS),
+    workflowMode: normalizedWorkflowMode(input.workflowMode),
+    workflowModeExplicit: stringValue(input.workflowMode) !== "",
+    workflowId: boundedString(input.workflowId, "workflow_id", 220, false),
   };
+}
+
+function isAutonomousWorkflow(workflow) {
+  return Boolean(workflow && workflow.mode === WORKFLOW_MODE_AUTONOMOUS && stringValue(workflow.id));
+}
+
+function workflowIdForRequest(request) {
+  if (!request || request.workflowMode !== WORKFLOW_MODE_AUTONOMOUS) return "";
+  if (request.workflowId) return request.workflowId;
+  const hash = crypto.createHash("sha256")
+    .update([
+      request.sourceThreadId,
+      request.targetThreadId,
+      request.idempotencyKey,
+    ].map(stringValue).join("|"))
+    .digest("hex")
+    .slice(0, 24);
+  return `twf_${hash}`;
+}
+
+function workflowForRequest(request) {
+  if (!request || request.workflowMode !== WORKFLOW_MODE_AUTONOMOUS) return null;
+  return {
+    mode: WORKFLOW_MODE_AUTONOMOUS,
+    id: workflowIdForRequest(request),
+    authorized: false,
+  };
+}
+
+function workflowThreadIdsForCard(card) {
+  const ids = [
+    stringValue(card && card.source && card.source.threadId),
+    stringValue(card && card.target && card.target.threadId),
+  ].filter(Boolean).sort();
+  return ids.length === 2 ? ids : [];
+}
+
+function sameWorkflowThreadIds(left, right) {
+  return Array.isArray(left)
+    && Array.isArray(right)
+    && left.length === 2
+    && right.length === 2
+    && left[0] === right[0]
+    && left[1] === right[1];
+}
+
+function activeWorkflowForCard(store, card) {
+  if (!isAutonomousWorkflow(card && card.workflow)) return null;
+  const threadIds = workflowThreadIdsForCard(card);
+  if (threadIds.length !== 2) return null;
+  return safeArray(store && store.workflows).find((workflow) => workflow
+    && workflow.status === "active"
+    && workflow.mode === WORKFLOW_MODE_AUTONOMOUS
+    && stringValue(workflow.id) === stringValue(card.workflow.id)
+    && sameWorkflowThreadIds(safeArray(workflow.threadIds).map(stringValue).sort(), threadIds)) || null;
+}
+
+function markCardWorkflowAuthorized(card, workflow) {
+  if (!card || !isAutonomousWorkflow(card.workflow) || !workflow) return;
+  card.workflow = Object.assign({}, card.workflow, {
+    authorized: true,
+    authorizedAt: workflow.approvedAt || workflow.updatedAt || "",
+    authorizedByThreadId: workflow.approvedByThreadId || "",
+  });
+}
+
+function activateWorkflowForCard(store, card, actorThreadId, timestamp) {
+  if (!isAutonomousWorkflow(card && card.workflow)) return null;
+  const threadIds = workflowThreadIdsForCard(card);
+  if (threadIds.length !== 2) return null;
+  store.workflows = safeArray(store.workflows);
+  let workflow = activeWorkflowForCard(store, card);
+  if (!workflow) {
+    workflow = {
+      id: card.workflow.id,
+      mode: WORKFLOW_MODE_AUTONOMOUS,
+      status: "active",
+      threadIds,
+      rootCardId: card.id,
+      approvedByThreadId: stringValue(actorThreadId),
+      approvedAt: timestamp,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    store.workflows.push(workflow);
+  } else {
+    workflow.updatedAt = timestamp;
+  }
+  markCardWorkflowAuthorized(card, workflow);
+  return workflow;
 }
 
 function injectedMessageText(card) {
@@ -152,6 +339,8 @@ function injectedMessageText(card) {
     `Source workspace: ${card.source.workspaceId}`,
     `Source thread: ${card.source.title || card.source.threadId}`,
     card.message && card.message.title ? `Title: ${card.message.title}` : "",
+    isAutonomousWorkflow(card.workflow) ? `Workflow mode: ${card.workflow.mode}` : "",
+    isAutonomousWorkflow(card.workflow) ? `Workflow id: ${card.workflow.id}` : "",
     "",
     stringValue(card.message && card.message.body),
   ].filter((line, index, all) => line !== "" || (index > 0 && all[index - 1] !== ""));
@@ -209,47 +398,168 @@ function createThreadTaskCardService(options = {}) {
     return safeArray(store.cards).find((card) => stringValue(card.idempotencyKey) === stringValue(key)) || null;
   }
 
+  function findById(store, id) {
+    return safeArray(store.cards).find((entry) => stringValue(entry.id) === stringValue(id)) || null;
+  }
+
+  function createCardFromRequest(request, store) {
+    if (request.sourceThreadId === request.targetThreadId) throw errorWithStatus("target_thread_must_differ_from_source_thread");
+    const existing = findByIdempotency(store, request.idempotencyKey);
+    if (existing) return publicCard(existing, request.sourceThreadId);
+    const timestamp = nowIso(options.now);
+    const card = {
+      id: idGenerator(),
+      status: "pending",
+      idempotencyKey: request.idempotencyKey,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      source: {
+        workspaceId: request.sourceWorkspaceId,
+        threadId: request.sourceThreadId,
+        turnId: request.sourceTurnId || "",
+        title: request.sourceThreadTitle || request.sourceThreadId,
+      },
+      target: {
+        workspaceId: request.targetWorkspaceId,
+        threadId: request.targetThreadId,
+      },
+      message: {
+        format: request.format,
+        title: request.title,
+        summary: request.summary,
+        body: request.body,
+      },
+      delivery: {
+        injectOnApprove: true,
+        allowReply: true,
+        allowRevoke: true,
+        autoRunAfterFirstApproval: request.workflowMode === WORKFLOW_MODE_AUTONOMOUS,
+      },
+      workflow: workflowForRequest(request),
+      audit: {
+        createdAt: timestamp,
+      },
+    };
+    store.cards.push(card);
+    return publicCard(card, request.sourceThreadId);
+  }
+
+  async function executeCardApproval(cardId, actorThreadId, approvalOptions = {}) {
+    const id = stringValue(cardId);
+    const automatic = approvalOptions.automatic === true;
+    const actorThread = stringValue(actorThreadId);
+    const publicThreadId = stringValue(approvalOptions.publicThreadId || actorThread);
+    const prepared = await withStore(async (store) => {
+      const card = findById(store, id);
+      let workflow = null;
+      if (automatic) {
+        if (!card) throw errorWithStatus("task_card_not_found", 404);
+        if (card.status !== "pending") return null;
+        workflow = activeWorkflowForCard(store, card);
+        if (!workflow) return null;
+        markCardWorkflowAuthorized(card, workflow);
+      } else {
+        transitionAllowed(card, "approve", actorThreadId);
+      }
+      const timestamp = nowIso(options.now);
+      card.status = "approving";
+      card.updatedAt = timestamp;
+      card.audit = Object.assign({}, card.audit || {}, automatic ? {
+        autoApprovingAt: timestamp,
+        autoApprovedByWorkflowId: card.workflow.id,
+      } : {
+        approvingAt: timestamp,
+        approvingByThreadId: actorThread,
+      });
+      return clone(card);
+    });
+    if (!prepared) return null;
+
+    let execution;
+    try {
+      execution = await executeApprovedCard(clone(prepared), {
+        text: injectedMessageText(prepared),
+      });
+    } catch (err) {
+      await withStore(async (store) => {
+        const card = findById(store, id);
+        if (card && card.status === "approving") {
+          const timestamp = nowIso(options.now);
+          card.status = "pending";
+          card.updatedAt = timestamp;
+          card.audit = Object.assign({}, card.audit || {}, {
+            approvalFailedAt: timestamp,
+            approvalError: boundedErrorMessage(err),
+          }, automatic && prepared.workflow ? {
+            autoApprovalFailedAt: timestamp,
+            autoApprovedByWorkflowId: prepared.workflow.id,
+          } : {});
+        }
+        return null;
+      });
+      throw err;
+    }
+
+    return withStore(async (store) => {
+      const card = findById(store, id);
+      if (!card) throw errorWithStatus("task_card_not_found", 404);
+      const timestamp = nowIso(options.now);
+      card.status = "approved";
+      card.updatedAt = timestamp;
+      const workflow = automatic
+        ? activeWorkflowForCard(store, card)
+        : activateWorkflowForCard(store, card, actorThread, timestamp);
+      if (workflow) markCardWorkflowAuthorized(card, workflow);
+      card.audit = Object.assign({}, card.audit || {}, automatic && card.workflow ? {
+        approvedAt: timestamp,
+        approvedByThreadId: card.target && card.target.threadId || "",
+        autoApprovedAt: timestamp,
+        autoApprovedByWorkflowId: card.workflow.id,
+      } : {
+        approvedAt: timestamp,
+        approvedByThreadId: actorThread,
+      });
+      if (execution && execution.turnId) card.injectedTurnId = String(execution.turnId);
+      if (execution && execution.threadId) card.injectedThreadId = String(execution.threadId);
+      if (execution && execution.result) card.injectionResult = execution.result;
+      return {
+        card: publicCard(card, publicThreadId || actorThread || card.target.threadId),
+        execution,
+      };
+    });
+  }
+
+  async function maybeAutoApprovePublicCard(card, publicThreadId) {
+    if (!card || !isAutonomousWorkflow(card.workflow) || card.status !== "pending") return card;
+    try {
+      const result = await executeCardApproval(card.id, "", {
+        automatic: true,
+        publicThreadId,
+      });
+      return result && result.card ? result.card : card;
+    } catch (_) {
+      try {
+        return get(card.id, publicThreadId);
+      } catch (err) {
+        return card;
+      }
+    }
+  }
+
   async function create(input) {
     const request = normalizeCreateRequest(input);
-    if (request.sourceThreadId === request.targetThreadId) throw errorWithStatus("target_thread_must_differ_from_source_thread");
-    return withStore(async (store) => {
-      const existing = findByIdempotency(store, request.idempotencyKey);
-      if (existing) return publicCard(existing, request.sourceThreadId);
-      const timestamp = nowIso(options.now);
-      const card = {
-        id: idGenerator(),
-        status: "pending",
-        idempotencyKey: request.idempotencyKey,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        source: {
-          workspaceId: request.sourceWorkspaceId,
-          threadId: request.sourceThreadId,
-          turnId: request.sourceTurnId || "",
-          title: request.sourceThreadTitle || request.sourceThreadId,
-        },
-        target: {
-          workspaceId: request.targetWorkspaceId,
-          threadId: request.targetThreadId,
-        },
-        message: {
-          format: request.format,
-          title: request.title,
-          summary: request.summary,
-          body: request.body,
-        },
-        delivery: {
-          injectOnApprove: true,
-          allowReply: true,
-          allowRevoke: true,
-        },
-        audit: {
-          createdAt: timestamp,
-        },
-      };
-      store.cards.push(card);
-      return publicCard(card, request.sourceThreadId);
-    });
+    const card = await withStore(async (store) => createCardFromRequest(request, store));
+    return maybeAutoApprovePublicCard(card, request.sourceThreadId);
+  }
+
+  async function createMany(input) {
+    const requests = normalizeCreateRequests(input);
+    const cards = await withStore(async (store) => requests.map((request) => createCardFromRequest(request, store)));
+    const results = [];
+    for (const card of cards) {
+      results.push(await maybeAutoApprovePublicCard(card, card && card.source && card.source.threadId));
+    }
+    return results;
   }
 
   function listForThread(threadId) {
@@ -266,34 +576,13 @@ function createThreadTaskCardService(options = {}) {
     const id = stringValue(cardId);
     if (!id) throw errorWithStatus("task_card_id_required");
     const store = loadStore(storageFile);
-    const card = safeArray(store.cards).find((entry) => stringValue(entry.id) === id);
+    const card = findById(store, id);
     if (!card) throw errorWithStatus("task_card_not_found", 404);
     return publicCard(card, threadId || card.source.threadId || card.target.threadId || "");
   }
 
   async function approve(cardId, actorThreadId) {
-    const id = stringValue(cardId);
-    return withStore(async (store) => {
-      const card = safeArray(store.cards).find((entry) => stringValue(entry.id) === id);
-      transitionAllowed(card, "approve", actorThreadId);
-      const execution = await executeApprovedCard(clone(card), {
-        text: injectedMessageText(card),
-      });
-      const timestamp = nowIso(options.now);
-      card.status = "approved";
-      card.updatedAt = timestamp;
-      card.audit = Object.assign({}, card.audit || {}, {
-        approvedAt: timestamp,
-        approvedByThreadId: stringValue(actorThreadId),
-      });
-      if (execution && execution.turnId) card.injectedTurnId = String(execution.turnId);
-      if (execution && execution.threadId) card.injectedThreadId = String(execution.threadId);
-      if (execution && execution.result) card.injectionResult = execution.result;
-      return {
-        card: publicCard(card, actorThreadId),
-        execution,
-      };
-    });
+    return executeCardApproval(cardId, actorThreadId);
   }
 
   async function deleteCard(cardId, actorThreadId) {
@@ -331,11 +620,24 @@ function createThreadTaskCardService(options = {}) {
   async function reply(cardId, actorThreadId, payload) {
     const id = stringValue(cardId);
     const replyRequest = normalizeReplyRequest(payload);
-    return withStore(async (store) => {
+    const result = await withStore(async (store) => {
       const card = safeArray(store.cards).find((entry) => stringValue(entry.id) === id);
       transitionAllowed(card, "reply", actorThreadId);
       const existing = findByIdempotency(store, replyRequest.idempotencyKey);
       const timestamp = nowIso(options.now);
+      const replyWorkflowMode = replyRequest.workflowModeExplicit
+        ? replyRequest.workflowMode
+        : (isAutonomousWorkflow(card.workflow) ? WORKFLOW_MODE_AUTONOMOUS : WORKFLOW_MODE_MANUAL);
+      const replySourceThreadId = replyRequest.sourceThreadId || card.target.threadId;
+      const replyTargetThreadId = card.source.threadId;
+      const replyWorkflowId = replyRequest.workflowId
+        || (replyWorkflowMode === WORKFLOW_MODE_AUTONOMOUS && card.workflow ? card.workflow.id : "")
+        || workflowIdForRequest({
+          workflowMode: replyWorkflowMode,
+          sourceThreadId: replySourceThreadId,
+          targetThreadId: replyTargetThreadId,
+          idempotencyKey: replyRequest.idempotencyKey,
+        });
       card.status = "replied";
       card.updatedAt = timestamp;
       card.audit = Object.assign({}, card.audit || {}, {
@@ -352,13 +654,13 @@ function createThreadTaskCardService(options = {}) {
           updatedAt: timestamp,
           source: {
             workspaceId: replyRequest.sourceWorkspaceId || card.target.workspaceId,
-            threadId: replyRequest.sourceThreadId || card.target.threadId,
+            threadId: replySourceThreadId,
             turnId: "",
             title: replyRequest.sourceThreadTitle || card.target.threadId,
           },
           target: {
             workspaceId: card.source.workspaceId,
-            threadId: card.source.threadId,
+            threadId: replyTargetThreadId,
           },
           message: {
             format: replyRequest.format,
@@ -370,7 +672,13 @@ function createThreadTaskCardService(options = {}) {
             injectOnApprove: true,
             allowReply: true,
             allowRevoke: true,
+            autoRunAfterFirstApproval: replyWorkflowMode === WORKFLOW_MODE_AUTONOMOUS,
           },
+          workflow: replyWorkflowMode === WORKFLOW_MODE_AUTONOMOUS ? {
+            mode: WORKFLOW_MODE_AUTONOMOUS,
+            id: replyWorkflowId,
+            authorized: false,
+          } : null,
           audit: {
             createdAt: timestamp,
             replyToCardId: card.id,
@@ -384,6 +692,8 @@ function createThreadTaskCardService(options = {}) {
         replyCard: publicCard(replyCard, card.source.threadId),
       };
     });
+    result.replyCard = await maybeAutoApprovePublicCard(result.replyCard, result.replyCard && result.replyCard.target && result.replyCard.target.threadId);
+    return result;
   }
 
   function pendingCountForThread(threadId) {
@@ -399,6 +709,7 @@ function createThreadTaskCardService(options = {}) {
   return {
     approve,
     create,
+    createMany,
     deleteCard,
     get,
     injectedMessageText,
@@ -413,6 +724,8 @@ function createThreadTaskCardService(options = {}) {
 module.exports = {
   createThreadTaskCardService,
   injectedMessageText,
+  hasLikelyEncodingDamage,
+  normalizeCreateRequests,
   normalizeCreateRequest,
   normalizeReplyRequest,
   publicCard,

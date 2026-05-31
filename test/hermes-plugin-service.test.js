@@ -38,6 +38,14 @@ test("builds a Hermes embedded-app plugin manifest", () => {
   assert.equal(manifest.owner_binding.local_paths_returned_by_manifest, false);
   assert.equal(manifest.navigation.back_result_message.type, "codex-mobile.plugin.back_result");
   assert.equal(manifest.navigation.back_result_message.version, 1);
+  assert.equal(manifest.appearance_sync.schema_version, 1);
+  assert.deepEqual(manifest.appearance_sync.launch_fields, ["appearance.theme", "appearance.fontSize"]);
+  assert.deepEqual(manifest.appearance_sync.entry_query_params, ["pluginTheme", "pluginFontSize"]);
+  assert.equal(manifest.appearance_sync.session_response_field, "appearance");
+  assert.equal(manifest.appearance_sync.apply_before_initialization, true);
+  assert.deepEqual(manifest.appearance_sync.theme_values, ["system", "dark", "light"]);
+  assert.deepEqual(manifest.appearance_sync.font_size_values, ["small", "default", "large", "xlarge", "xxlarge"]);
+  assert.equal(manifest.appearance_sync.raw_sensitive_material_returned, false);
   assert.equal(manifest.notifications.strategy, "hermes_action_inbox_delegate");
   assert.equal(manifest.notifications.backend_only, true);
   assert.equal(manifest.notifications.auth_header, "X-Hermes-Web-Key");
@@ -181,6 +189,30 @@ test("launch can carry a bounded workspace or thread target into the plugin sess
   assert.deepEqual(sessionByRoute.target, {
     threadId: "thread_wardrobe_123",
   });
+});
+
+test("launch carries bounded host appearance into entry path and plugin session", () => {
+  const service = createHermesPluginService({
+    randomToken: () => "cpl_testLaunchToken_appearance_1234567890",
+    randomSessionToken: () => "cps_testSessionToken_appearance_1234567890",
+  });
+
+  const launch = service.createLaunch({
+    workspace_id: "owner",
+    appearance: {
+      theme: "light",
+      fontSize: "xlarge",
+      accessKey: "must-not-leak",
+    },
+  });
+  assert.equal(launch.entry_path, "/?embed=hermes&codexPluginLaunch=cpl_testLaunchToken_appearance_1234567890&workspaceId=owner&pluginTheme=light&pluginFontSize=xlarge");
+  assert.doesNotMatch(JSON.stringify(launch), /must-not-leak|accessKey|Bearer|Authorization/i);
+  const session = service.createSession({ codexPluginLaunch: "cpl_testLaunchToken_appearance_1234567890" });
+  assert.deepEqual(session.appearance, {
+    theme: "light",
+    fontSize: "xlarge",
+  });
+  assert.doesNotMatch(JSON.stringify(session), /must-not-leak|accessKey|Bearer|Authorization/i);
 });
 
 test("plugin session returns the registered Hermes origin for iframe refresh messaging", (t) => {

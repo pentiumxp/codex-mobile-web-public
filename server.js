@@ -7,7 +7,12 @@ const crypto = require("node:crypto");
 const { spawn } = require("node:child_process");
 const net = require("node:net");
 const webPush = require("web-push");
-const { completedTurnHasNoFinalAgentMessage, shouldTrackTurnForWebPush } = require("./adapters/push-notification-service");
+const {
+  completedTurnHasNoFinalAgentMessage,
+  createThreadDisplaySummaryCache,
+  resolveThreadTitleForNotification,
+  shouldTrackTurnForWebPush,
+} = require("./adapters/push-notification-service");
 const { createSharedChainRestartService } = require("./adapters/shared-chain-restart-service");
 const { createHermesNotificationDelegateService } = require("./adapters/hermes-notification-delegate-service");
 const { runSqliteJson } = require("./adapters/sqlite-cli");
@@ -39,6 +44,7 @@ const {
 } = require("./adapters/generated-image-cache-service");
 const { createHermesPluginService } = require("./adapters/hermes-plugin-service");
 const { createThreadTaskCardService } = require("./adapters/thread-task-card-service");
+const { createWorkspaceRegistryService } = require("./adapters/workspace-registry-service");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -95,6 +101,9 @@ const HERMES_PLUGIN_NOTIFICATION_KEY_FILE = process.env.CODEX_MOBILE_HERMES_PLUG
   || "";
 const THREAD_TASK_CARD_FILE = process.env.CODEX_MOBILE_THREAD_TASK_CARD_FILE
   || path.join(RUNTIME_ROOT, "thread-task-cards.json");
+const WORKSPACE_REGISTRY_FILE = process.env.CODEX_MOBILE_WORKSPACE_REGISTRY_FILE
+  || path.join(RUNTIME_ROOT, "workspace-registry.json");
+const WORKSPACE_CREATE_ROOTS = process.env.CODEX_MOBILE_WORKSPACE_CREATE_ROOTS || "";
 const hermesPluginService = createHermesPluginService({
   registrationFile: HERMES_PLUGIN_REGISTRATION_FILE,
   launchTokenTtlMs: HERMES_PLUGIN_LAUNCH_TOKEN_TTL_MS,
@@ -117,6 +126,11 @@ const sharedChainRestartService = createSharedChainRestartService({
   port: PORT,
 });
 const pendingSteerEchoStore = createPendingSteerEchoStore();
+const workspaceRegistryService = createWorkspaceRegistryService({
+  storageFile: WORKSPACE_REGISTRY_FILE,
+  homeDir: USER_HOME,
+  createRoots: WORKSPACE_CREATE_ROOTS,
+});
 const threadTaskCardService = createThreadTaskCardService({
   storageFile: THREAD_TASK_CARD_FILE,
   executeApprovedCard: async (card, message) => {
@@ -208,6 +222,8 @@ const STALE_ACTIVE_TURN_MS = Math.max(30_000, Number(process.env.CODEX_MOBILE_ST
 const TERMINAL_IDLE_ACTIVE_TURN_MS = Math.max(10_000, Number(process.env.CODEX_MOBILE_TERMINAL_IDLE_ACTIVE_TURN_MS || "45000"));
 const STARTED_THREAD_CACHE_TTL_MS = Math.max(60_000, Number(process.env.CODEX_MOBILE_STARTED_THREAD_CACHE_TTL_MS || "900000"));
 const STARTED_THREAD_CACHE_MAX = Math.max(10, Number(process.env.CODEX_MOBILE_STARTED_THREAD_CACHE_MAX || "80"));
+const THREAD_DISPLAY_SUMMARY_CACHE_TTL_MS = Math.max(60_000, Number(process.env.CODEX_MOBILE_THREAD_DISPLAY_SUMMARY_CACHE_TTL_MS || "7200000"));
+const THREAD_DISPLAY_SUMMARY_CACHE_MAX = Math.max(20, Number(process.env.CODEX_MOBILE_THREAD_DISPLAY_SUMMARY_CACHE_MAX || "500"));
 const MAX_ROLLOUT_CONTEXT_BYTES = Math.max(256 * 1024, Number(process.env.CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES || String(4 * 1024 * 1024)));
 const MAX_RUNTIME_CONTEXT_SCAN_BYTES = Math.max(MAX_ROLLOUT_CONTEXT_BYTES, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_SCAN_BYTES || String(512 * 1024 * 1024)));
 const ROLLOUT_WARNING_BYTES = Math.max(1 * 1024 * 1024, Number(process.env.CODEX_MOBILE_ROLLOUT_WARNING_BYTES || String(200 * 1024 * 1024)));
@@ -343,6 +359,11 @@ const latestRuntimeContextByPath = new Map();
 const latestItemTimestampsByPath = new Map();
 const latestTurnUsageSummariesByPath = new Map();
 const recentStartedThreads = new Map();
+const threadDisplaySummaryCache = createThreadDisplaySummaryCache({
+  ttlMs: THREAD_DISPLAY_SUMMARY_CACHE_TTL_MS,
+  maxEntries: THREAD_DISPLAY_SUMMARY_CACHE_MAX,
+  decorateSummary: annotateThreadRolloutStats,
+});
 const continuationJobs = new Map();
 const activeContinuationJobsBySource = new Map();
 let pushVapidKeys = null;
@@ -1180,6 +1201,9 @@ function visibleWorkspaceRoots(globalState = readGlobalState()) {
     for (const value of values) {
       if (typeof value === "string" && value.trim()) roots.add(value);
     }
+  }
+  for (const workspace of workspaceRegistryService.list()) {
+    if (workspace && workspace.cwd) roots.add(workspace.cwd);
   }
   return roots;
 }
@@ -2529,6 +2553,15 @@ function applyTurnRuntimeSettings(params, settings) {
   return params;
 }
 
+function requestedCodexFastMode(value) {
+  return /^(1|true|on|yes|fast|priority)$/i.test(String(value || "").trim());
+}
+
+function applyCodexFastServiceTier(params, enabled) {
+  if (enabled) params.serviceTier = "priority";
+  return params;
+}
+
 function statusFromRawOperation(payload) {
   const status = String(payload.status || "").toLowerCase();
   if (status) return status;
@@ -3537,35 +3570,21 @@ function pushThreadId(params) {
     || "");
 }
 
-function pushThreadSummaryTitle(threadId) {
+function pushThreadSummary(threadId) {
   const id = String(threadId || "");
-  if (!id) return "";
-  const summary = readStateDbThread(id) || readStartedThread(id);
-  return compactOneLine(summary && (summary.name || summary.preview));
+  return id ? (threadDisplaySummaryCache.read(id) || readStateDbThread(id) || readStartedThread(id) || null) : null;
 }
 
-function pushThreadTitleFromParams(params) {
-  const candidates = [
-    params && params.threadTitle,
-    params && params.threadName,
-    params && params.thread && params.thread.name,
-    params && params.thread && params.thread.title,
-    params && params.thread && params.thread.preview,
-    params && params.turn && params.turn.threadTitle,
-    params && params.turn && params.turn.threadName,
-  ];
-  for (const candidate of candidates) {
-    const text = compactOneLine(candidate);
-    if (text) return text;
-  }
-  return "";
-}
-
-function pushThreadTitle(params, threadId = "") {
+function pushThreadTitle(params, threadId = "", existingTitle = "") {
   const id = String(threadId || pushThreadId(params) || "");
-  return pushThreadSummaryTitle(id)
-    || pushThreadTitleFromParams(params)
-    || compactOneLine(shortIdentifier(id) || "Codex Mobile Web");
+  const summary = pushThreadSummary(id);
+  return resolveThreadTitleForNotification({
+    params,
+    threadId: id,
+    existingTitle,
+    summary,
+    fallbackTitle: shortIdentifier(id) || "Codex Mobile Web",
+  });
 }
 
 function pushThreadAgentMetadataFromParams(params) {
@@ -3603,7 +3622,7 @@ function pushTurnMeta(params, existing = null) {
   return {
     turnId,
     threadId,
-    threadTitle: existingTitle || pushThreadTitle(params, threadId),
+    threadTitle: pushThreadTitle(params, threadId, existingTitle),
     agentNickname: (existing && existing.agentNickname) || agentMetadata.agentNickname,
     agentRole: (existing && existing.agentRole) || agentMetadata.agentRole,
     observedAt: (existing && existing.observedAt) || Date.now(),
@@ -3700,6 +3719,42 @@ function delegateTurnCompletedNotification(meta, turnId, completedAt, threadTitl
   return true;
 }
 
+async function resolveCompletedPushThreadTitle(meta, params) {
+  const threadId = String(meta && meta.threadId || pushThreadId(params) || "");
+  if (threadId && !threadDisplaySummaryCache.read(threadId)) {
+    try {
+      await readThreadSummaryFromAppServer(codex, threadId);
+    } catch (err) {
+      console.error(`[web push] thread title app-server refresh failed: ${err.message || String(err)}`);
+    }
+  }
+  return pushThreadTitle(params, threadId, meta && meta.threadTitle);
+}
+
+function sendTurnCompletedPush(meta, turnId, completedAt, params) {
+  resolveCompletedPushThreadTitle(meta, params).then((threadTitle) => {
+    if (delegateTurnCompletedNotification(meta, turnId, completedAt, threadTitle, params)) return;
+    const threadMark = shortIdentifier(meta.threadId || turnId);
+    const payload = {
+      title: threadTitle || threadMark || "Codex Mobile Web",
+      body: `This turn 已结束 · ${pushTimestamp(completedAt)}`,
+      tag: `codex-turn-${meta.threadId || turnId}`,
+      data: {
+        url: notificationUrlForThread(meta.threadId),
+        threadId: meta.threadId || "",
+        turnId,
+        threadTitle,
+        completedAt,
+      },
+    };
+    sendWebPushToAll(payload).catch((err) => {
+      console.error(`[web push] turn completed send failed: ${err.message || String(err)}`);
+    });
+  }).catch((err) => {
+    console.error(`[web push] turn completed notification failed: ${err.message || String(err)}`);
+  });
+}
+
 function maybeSendTurnCompletedPush(method, params) {
   if (method === "turn/started") {
     const id = pushTurnId(params);
@@ -3740,24 +3795,7 @@ function maybeSendTurnCompletedPush(method, params) {
   if (pushSentTurns.has(key)) return;
   pushSentTurns.set(key, Date.now());
   const completedAt = meta.completedAt || Date.now();
-  const threadTitle = meta.threadTitle || pushThreadTitle(params, meta.threadId);
-  if (delegateTurnCompletedNotification(meta, turnId, completedAt, threadTitle, params)) return;
-  const threadMark = shortIdentifier(meta.threadId || turnId);
-  const payload = {
-    title: threadTitle || threadMark || "Codex Mobile Web",
-    body: `This turn 已结束 · ${pushTimestamp(completedAt)}`,
-    tag: `codex-turn-${meta.threadId || turnId}`,
-    data: {
-      url: notificationUrlForThread(meta.threadId),
-      threadId: meta.threadId || "",
-      turnId,
-      threadTitle,
-      completedAt,
-    },
-  };
-  sendWebPushToAll(payload).catch((err) => {
-    console.error(`[web push] turn completed notification failed: ${err.message || String(err)}`);
-  });
+  sendTurnCompletedPush(meta, turnId, completedAt, params);
 }
 
 function multipartBoundary(contentType) {
@@ -5866,7 +5904,7 @@ async function readThreadSummaryFromAppServer(codex, threadId) {
       ? result.threads
       : [];
   const thread = threads.find((thread) => String(thread && thread.id) === String(threadId)) || null;
-  return annotateThreadRolloutStats(thread);
+  return threadDisplaySummaryCache.remember(thread) || annotateThreadRolloutStats(thread);
 }
 
 function sortTurnsChronologically(turns) {
@@ -6079,6 +6117,7 @@ async function listWorkspaces() {
   const globalState = readGlobalState();
   const roots = visibleWorkspaceRoots(globalState);
   const visibility = visibilityFromGlobalState(globalState);
+  const registered = new Map(workspaceRegistryService.list().map((workspace) => [normalizeFsPath(workspace.cwd), workspace]));
   let recentThreads = [];
   try {
     const result = await codex.request("thread/list", {
@@ -6102,12 +6141,17 @@ async function listWorkspaces() {
     const key = normalizeFsPath(thread.cwd);
     counts.set(key, (counts.get(key) || 0) + 1);
   }
-  return [...roots].map((cwd) => ({
-    cwd,
-    label: path.basename(cwd.replace(/^\\\\\?\\/, "")) || cwd,
-    active: active.includes(cwd),
-    recentThreadCount: counts.get(normalizeFsPath(cwd)) || 0,
-  })).sort((a, b) => Number(b.active) - Number(a.active) || a.label.localeCompare(b.label));
+  return [...roots].map((cwd) => {
+    const key = normalizeFsPath(cwd);
+    const registryEntry = registered.get(key);
+    return {
+      cwd,
+      label: registryEntry && registryEntry.label || path.basename(cwd.replace(/^\\\\\?\\/, "")) || cwd,
+      active: active.includes(cwd),
+      recentThreadCount: counts.get(key) || 0,
+      source: registryEntry ? "mobile" : "codex",
+    };
+  }).sort((a, b) => Number(b.active) - Number(a.active) || a.label.localeCompare(b.label));
 }
 
 async function handleApi(req, res) {
@@ -6151,6 +6195,11 @@ async function handleApi(req, res) {
       publicPullRequests: {
         enabled: !PUBLIC_PR_CHECK_DISABLED,
         repository: PUBLIC_PR_REPOSITORY,
+      },
+      workspaceCreate: {
+        enabled: true,
+        defaultRoot: workspaceRegistryService.defaultCreateRoot(),
+        roots: workspaceRegistryService.createRoots(),
       },
       hermesPlugin: {
         id: "codex-mobile",
@@ -6420,68 +6469,112 @@ async function handleApi(req, res) {
     return;
   }
   if (url.pathname === "/api/thread-task-cards" && req.method === "POST") {
-    const body = await readBody(req);
-    const sourceSummary = readStateDbThread(body.sourceThreadId) || readStartedThread(body.sourceThreadId);
-    const targetSummary = readStateDbThread(body.targetThreadId) || readStartedThread(body.targetThreadId);
-    sendJson(res, 200, {
-      ok: true,
-      card: await threadTaskCardService.create(Object.assign({}, body, {
+    try {
+      const body = await readBody(req);
+      const sourceSummary = readStateDbThread(body.sourceThreadId) || readStartedThread(body.sourceThreadId);
+      const requestedTargetIds = Array.isArray(body.targetThreadIds) && body.targetThreadIds.length
+        ? body.targetThreadIds
+        : [body.targetThreadId];
+      const targetWorkspaceIds = Object.assign({}, body.targetWorkspaceIds && typeof body.targetWorkspaceIds === "object" ? body.targetWorkspaceIds : {});
+      for (const targetThreadId of requestedTargetIds) {
+        const id = String(targetThreadId || "").trim();
+        if (!id || targetWorkspaceIds[id]) continue;
+        const targetSummary = readStateDbThread(id) || readStartedThread(id);
+        targetWorkspaceIds[id] = body.targetWorkspaceId || body.targetWorkspace || (targetSummary && targetSummary.cwd) || "";
+      }
+      const cards = await threadTaskCardService.createMany(Object.assign({}, body, {
         sourceWorkspaceId: body.sourceWorkspaceId || body.sourceWorkspace || (sourceSummary && sourceSummary.cwd) || "",
-        targetWorkspaceId: body.targetWorkspaceId || body.targetWorkspace || (targetSummary && targetSummary.cwd) || "",
+        targetWorkspaceIds,
         sourceThreadTitle: body.sourceThreadTitle || (sourceSummary && (sourceSummary.name || sourceSummary.preview || sourceSummary.id)) || body.sourceThreadId || "",
-      })),
-    });
+      }));
+      sendJson(res, 200, {
+        ok: true,
+        card: cards[0] || null,
+        cards,
+      });
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
     return;
   }
   const threadTaskCardRead = url.pathname.match(/^\/api\/thread-task-cards\/([^/]+)$/);
   if (threadTaskCardRead && req.method === "GET") {
-    const cardId = decodeURIComponent(threadTaskCardRead[1]);
-    const threadId = url.searchParams.get("threadId") || "";
-    sendJson(res, 200, { ok: true, card: threadTaskCardService.get(cardId, threadId) });
+    try {
+      const cardId = decodeURIComponent(threadTaskCardRead[1]);
+      const threadId = url.searchParams.get("threadId") || "";
+      sendJson(res, 200, { ok: true, card: threadTaskCardService.get(cardId, threadId) });
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
     return;
   }
   const threadTaskCardApprove = url.pathname.match(/^\/api\/thread-task-cards\/([^/]+)\/approve$/);
   if (threadTaskCardApprove && req.method === "POST") {
-    const cardId = decodeURIComponent(threadTaskCardApprove[1]);
-    const body = await readBody(req);
-    sendJson(res, 200, Object.assign({ ok: true }, await threadTaskCardService.approve(cardId, body.threadId || body.actorThreadId || "")));
+    try {
+      const cardId = decodeURIComponent(threadTaskCardApprove[1]);
+      const body = await readBody(req);
+      sendJson(res, 200, Object.assign({ ok: true }, await threadTaskCardService.approve(cardId, body.threadId || body.actorThreadId || "")));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
     return;
   }
   const threadTaskCardDelete = url.pathname.match(/^\/api\/thread-task-cards\/([^/]+)\/delete$/);
   if (threadTaskCardDelete && req.method === "POST") {
-    const cardId = decodeURIComponent(threadTaskCardDelete[1]);
-    const body = await readBody(req);
-    sendJson(res, 200, {
-      ok: true,
-      card: await threadTaskCardService.deleteCard(cardId, body.threadId || body.actorThreadId || ""),
-    });
+    try {
+      const cardId = decodeURIComponent(threadTaskCardDelete[1]);
+      const body = await readBody(req);
+      sendJson(res, 200, {
+        ok: true,
+        card: await threadTaskCardService.deleteCard(cardId, body.threadId || body.actorThreadId || ""),
+      });
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
     return;
   }
   const threadTaskCardRevoke = url.pathname.match(/^\/api\/thread-task-cards\/([^/]+)\/revoke$/);
   if (threadTaskCardRevoke && req.method === "POST") {
-    const cardId = decodeURIComponent(threadTaskCardRevoke[1]);
-    const body = await readBody(req);
-    sendJson(res, 200, {
-      ok: true,
-      card: await threadTaskCardService.revoke(cardId, body.threadId || body.actorThreadId || ""),
-    });
+    try {
+      const cardId = decodeURIComponent(threadTaskCardRevoke[1]);
+      const body = await readBody(req);
+      sendJson(res, 200, {
+        ok: true,
+        card: await threadTaskCardService.revoke(cardId, body.threadId || body.actorThreadId || ""),
+      });
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
     return;
   }
   const threadTaskCardReply = url.pathname.match(/^\/api\/thread-task-cards\/([^/]+)\/reply$/);
   if (threadTaskCardReply && req.method === "POST") {
-    const cardId = decodeURIComponent(threadTaskCardReply[1]);
-    const body = await readBody(req);
-    const actorThreadId = body.threadId || body.actorThreadId || "";
-    const actorSummary = readStateDbThread(actorThreadId) || readStartedThread(actorThreadId);
-    sendJson(res, 200, Object.assign({ ok: true }, await threadTaskCardService.reply(cardId, actorThreadId, Object.assign({}, body, {
-      sourceWorkspaceId: body.sourceWorkspaceId || (actorSummary && actorSummary.cwd) || "",
-      sourceThreadId: body.sourceThreadId || actorThreadId,
-      sourceThreadTitle: body.sourceThreadTitle || (actorSummary && (actorSummary.name || actorSummary.preview || actorSummary.id)) || actorThreadId,
-    }))));
+    try {
+      const cardId = decodeURIComponent(threadTaskCardReply[1]);
+      const body = await readBody(req);
+      const actorThreadId = body.threadId || body.actorThreadId || "";
+      const actorSummary = readStateDbThread(actorThreadId) || readStartedThread(actorThreadId);
+      sendJson(res, 200, Object.assign({ ok: true }, await threadTaskCardService.reply(cardId, actorThreadId, Object.assign({}, body, {
+        sourceWorkspaceId: body.sourceWorkspaceId || (actorSummary && actorSummary.cwd) || "",
+        sourceThreadId: body.sourceThreadId || actorThreadId,
+        sourceThreadTitle: body.sourceThreadTitle || (actorSummary && (actorSummary.name || actorSummary.preview || actorSummary.id)) || actorThreadId,
+      }))));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
     return;
   }
   if (url.pathname === "/api/workspaces" && req.method === "GET") {
     sendJson(res, 200, { data: await listWorkspaces() });
+    return;
+  }
+  if (url.pathname === "/api/workspaces" && req.method === "POST") {
+    try {
+      const body = await readBody(req);
+      sendJson(res, 200, workspaceRegistryService.create(body));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
     return;
   }
   if (url.pathname === "/api/thread-continuations" && req.method === "POST") {
@@ -6521,6 +6614,7 @@ async function handleApi(req, res) {
     const requestedEffort = REASONING_EFFORT_OPTIONS.includes(String(body.effort || "").trim())
       ? String(body.effort || "").trim()
       : "";
+    const requestedFastMode = requestedCodexFastMode(body.fastMode);
     const input = buildTurnInput(text, uploads);
     const persistExtendedHistory = persistExtendedHistoryForUploads(uploads);
     if (!cwd) {
@@ -6560,11 +6654,11 @@ async function handleApi(req, res) {
         });
         const threadId = threadIdFromStartResult(startResult);
         if (!threadId) throw new Error("New thread creation failed: app-server did not return threadId");
-        const turnParams = applyTurnRuntimeSettings({
+        const turnParams = applyCodexFastServiceTier(applyTurnRuntimeSettings({
           threadId,
           input,
           cwd,
-        }, runtimeSettings);
+        }, runtimeSettings), requestedFastMode);
         if (requestedModel) turnParams.model = requestedModel;
         if (requestedEffort) turnParams.effort = requestedEffort;
         const turnResult = await codex.request("turn/start", turnParams, {
@@ -6631,6 +6725,7 @@ async function handleApi(req, res) {
     if (searchTerm) params.searchTerm = searchTerm;
     try {
       const result = filterVisibleThreads(await codex.request("thread/list", params, { timeoutMs: READ_RPC_TIMEOUT_MS }), globalState);
+      threadDisplaySummaryCache.rememberList(result);
       if (Array.isArray(result.data)) result.data = result.data.slice(0, limit);
       if (Array.isArray(result.threads)) result.threads = result.threads.slice(0, limit);
       sendJson(res, 200, attachThreadTaskCardCountsToThreadListResult(result));
@@ -6793,6 +6888,7 @@ async function handleApi(req, res) {
         resetOnTimeout: false,
       }), { maxTurns: MAX_FULL_THREAD_TURNS });
       if (result.thread) {
+        threadDisplaySummaryCache.remember(result.thread);
         result.thread = mergeThreadRuntimeFromStateDb(result.thread, summary);
         result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
         result.thread.mobileReadMode = "thread-read";
@@ -6934,6 +7030,7 @@ async function handleApi(req, res) {
     const requestedEffort = REASONING_EFFORT_OPTIONS.includes(String(body.effort || "").trim())
       ? String(body.effort || "").trim()
       : "";
+    const requestedFastMode = requestedCodexFastMode(body.fastMode);
     let result;
     try {
       result = await runMessageSubmissionOnce(submissionKeys, uploads, async () => {
@@ -7015,10 +7112,10 @@ async function handleApi(req, res) {
         } catch (err) {
           if (!/already|loaded|active/i.test(err.message || "")) throw err;
         }
-        const params = applyTurnRuntimeSettings({
+        const params = applyCodexFastServiceTier(applyTurnRuntimeSettings({
           threadId,
           input,
-        }, runtimeSettings);
+        }, runtimeSettings), requestedFastMode);
         if (body.cwd) params.cwd = body.cwd;
         if (requestedModel) params.model = requestedModel;
         if (requestedEffort) params.effort = requestedEffort;

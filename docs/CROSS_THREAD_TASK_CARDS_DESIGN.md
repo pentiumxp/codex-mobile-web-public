@@ -12,16 +12,31 @@ approve, delete, or reply.
 Only the approval path produces a real injected `userMessage` inside the target
 thread history.
 
+Autonomous workflow cards are a special mode, not the default. The first card
+in the workflow is still a normal pending target card. Once the target approves
+that first card, the service stores a workflow grant scoped to the workflow id
+and the exact two participating thread ids. Later cards carrying that same
+workflow id between those same two threads can auto-approve and inject without
+another target click.
+
 ## High-Level Flow
 
-1. Source thread creates a task card addressed to a target thread.
-2. Server stores the card in a cross-thread task-card store.
-3. Target thread fetch/render path includes pending task cards.
-4. Target user chooses:
+1. Source thread creates a task-card request addressed to one or more target
+   threads.
+2. For `#` natural-language commands, the model only drafts the bounded card
+   JSON. Once the draft parses and names visible target threads, the source
+   client creates the real pending cards immediately; the source thread must not
+   require a separate local `Approve` step.
+3. Server stores one card per target thread in a cross-thread task-card store.
+4. Each target thread fetch/render path includes its own pending task cards.
+5. Target user chooses:
    - approve
    - delete
    - reply
-5. Source user may revoke while the card is still pending.
+6. Source user may revoke while the card is still pending.
+7. If the approved card has `workflow.mode=autonomous`, that approval activates
+   the workflow grant. Later same-workflow cards between the same thread pair
+   skip the pending UI and execute the approval path automatically.
 
 ## Data Model
 
@@ -51,7 +66,13 @@ Planned canonical object:
   "delivery": {
     "injectOnApprove": true,
     "allowReply": true,
-    "allowRevoke": true
+    "allowRevoke": true,
+    "autoRunAfterFirstApproval": false
+  },
+  "workflow": {
+    "mode": "manual|autonomous",
+    "id": "workflow-id",
+    "authorized": false
   },
   "audit": {
     "createdAt": "2026-05-29T00:00:00Z",
@@ -67,6 +88,8 @@ Planned canonical object:
 Allowed states:
 
 - `pending`
+- `approving` (transient target-side state after approval is accepted locally
+  but before the external target-thread `turn/start` call settles)
 - `approved`
 - `deleted`
 - `revoked`
@@ -82,11 +105,28 @@ Allowed actions:
   - delete while pending
   - reply while pending or approved, depending on final policy
 
+Target-side approval must leave `pending` before calling the external
+target-thread turn injection path. This prevents thread refresh, continuation
+compaction, or reconnect reads from showing a second actionable `Approve` card
+while the approved turn is already starting. If the external call fails before
+acceptance, the service may restore the card to `pending` with a bounded audit
+error so the target can retry.
+
+For autonomous workflows, the same `approving` state is used for automatic
+follow-up execution. If automatic injection fails before acceptance, the card is
+restored to `pending` with an audit error so it can be inspected or retried
+manually instead of being silently dropped.
+
 ## API Shape
 
 ### Create
 
 `POST /api/thread-task-cards`
+
+The create route accepts either the original single-target `targetThreadId` or
+the batch field `targetThreadIds`. Batch creation returns one stored card per
+target in `cards` while keeping `card` as the first created card for older
+callers.
 
 ### Read one
 
@@ -148,6 +188,11 @@ Three layers are required:
 No cross-thread card creation should succeed merely because the caller has a
 global session key.
 
+Autonomous workflow grants add a fourth check: the grant must be active, have
+the same workflow id, and match the unordered pair of source/target thread ids.
+The same workflow id with any other thread pair is not authorized and remains a
+normal pending card until that pair receives its own first approval.
+
 ## UI Model
 
 Target thread:
@@ -162,11 +207,24 @@ Target thread:
 
 Source thread:
 
-- show mirrored status card or timeline entry:
-  - sent
-  - approved
-  - deleted
-  - revoked
+- do not render outgoing pending cards as local work items after auto-send;
+- keep outgoing cards in the store/audit state and thread summary counts only;
+- do not show an approval prompt for its own `#` draft; a valid draft auto-sends
+  to target pending cards, and only the target thread approval injects a real
+  `userMessage`;
+- for a multi-target draft, keep the source thread open after creation instead
+  of automatically jumping to one recipient;
+- keep source-side automatic creation silent in the conversation: do not render
+  an interim `Sending` draft card after a valid draft is parsed, while still
+  surfacing a bounded dismissible diagnostic if card creation actually fails;
+- persist source draft settlement using a stable key derived from the turn id
+  and draft content, and treat already stored matching source-turn cards as
+  created so thread re-entry or item-id drift cannot re-send the same draft.
+
+Autonomous workflow cards should make the first-approval boundary visible. The
+first pending target card can label its approve action as `Approve workflow`;
+after approval, follow-up cards normally do not render because they immediately
+become approved injected turns.
 
 ## Storage
 
@@ -183,6 +241,14 @@ Recommended first-version bounds:
 - `body <= 8k` to `12k`
 
 Markdown and text only.
+
+Visible `title`, `summary`, and `body` text must be readable user-facing text.
+The service rejects likely encoding-damaged payloads before persistence,
+including replacement characters, typical UTF-8/Latin-1 mojibake markers, and
+high-density repeated `?` clusters such as the PowerShell-damaged
+`?? Hermes ?????? v133` pattern. A rejected card must not be written to the
+task-card store, so retrying with a corrected UTF-8 payload does not create a
+second visible card.
 
 ## Observability
 

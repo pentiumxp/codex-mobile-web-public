@@ -33,12 +33,37 @@
   <script>
     (function () {
       var allowedThemes = { system: true, dark: true, light: true };
+      var allowedFontSizes = { small: true, default: true, large: true, xlarge: true, xxlarge: true };
+      function readPluginAppearance() {
+        var appearance = {};
+        try {
+          var params = new URL(window.location.href, window.location.origin).searchParams;
+          if (params.get("embed") !== "hermes") return appearance;
+          var theme = String(params.get("pluginTheme") || params.get("theme") || "").trim().toLowerCase();
+          var fontSize = String(params.get("pluginFontSize") || params.get("fontSize") || "").trim().toLowerCase();
+          if (allowedThemes[theme]) appearance.theme = theme;
+          if (allowedFontSizes[fontSize]) appearance.fontSize = fontSize;
+        } catch (_) {}
+        return appearance;
+      }
       function readTheme() {
+        var pluginAppearance = readPluginAppearance();
+        if (pluginAppearance.theme) return pluginAppearance.theme;
         try {
           var value = localStorage.getItem("codexMobileTheme") || "system";
           return allowedThemes[value] ? value : "system";
         } catch (_) {
           return "system";
+        }
+      }
+      function readFontSize() {
+        var pluginAppearance = readPluginAppearance();
+        if (pluginAppearance.fontSize) return pluginAppearance.fontSize;
+        try {
+          var value = localStorage.getItem("codexMobileFontSize") || "default";
+          return allowedFontSizes[value] ? value : "default";
+        } catch (_) {
+          return "default";
         }
       }
       function effectiveTheme(theme) {
@@ -62,11 +87,23 @@
         var statusMeta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
         if (statusMeta) statusMeta.setAttribute("content", appleStatusBarStyle(safeTheme));
       }
+      function applyFontSize(fontSize) {
+        var safeFontSize = allowedFontSizes[fontSize] ? fontSize : "default";
+        document.documentElement.setAttribute("data-font-size", safeFontSize);
+      }
       var initialTheme = readTheme();
+      var initialFontSize = readFontSize();
       document.documentElement.setAttribute("data-theme", initialTheme);
+      document.documentElement.setAttribute("data-font-size", initialFontSize);
       writeMeta("theme-color", themeColor(initialTheme));
       writeMeta("apple-mobile-web-app-status-bar-style", appleStatusBarStyle(initialTheme));
-      window.codexMobileTheme = { read: readTheme, apply: applyTheme };
+      window.codexMobileTheme = {
+        read: readTheme,
+        apply: applyTheme,
+        readFontSize: readFontSize,
+        applyFontSize: applyFontSize,
+        readPluginAppearance: readPluginAppearance
+      };
     }());
   </script>
   <meta name="mobile-web-app-capable" content="yes">
@@ -182,6 +219,9 @@
         </label>
         <div class="composer-body">
           <div class="composer-controls">
+            <button id="composerCommandControl" class="composer-fast-toggle" type="button" aria-pressed="false" title="Fast off" aria-label="Fast off">
+              <span class="composer-fast-dot" aria-hidden="true"></span>
+            </button>
             <button id="composerModelControl" class="composer-control-card" type="button" aria-haspopup="listbox" aria-expanded="false">
               <span class="composer-chip-label">模型</span>
               <span class="composer-chip-value">--</span>
@@ -223,6 +263,19 @@
       <div class="rename-actions">
         <button id="renameCancel" class="rename-cancel" type="button">取消</button>
         <button id="renameSubmit" class="rename-submit" type="submit">保存</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="createWorkspaceDialog" class="rename-dialog hidden" role="dialog" aria-labelledby="createWorkspaceTitle">
+    <form id="createWorkspaceForm" class="rename-panel">
+      <div id="createWorkspaceTitle" class="rename-title">Create Workspace</div>
+      <div id="createWorkspaceRoot" class="create-workspace-root"></div>
+      <input id="createWorkspaceInput" class="rename-input" type="text" maxlength="80" autocomplete="off" placeholder="Folder name">
+      <div id="createWorkspaceError" class="create-workspace-error" role="alert" hidden></div>
+      <div class="rename-actions">
+        <button id="createWorkspaceCancel" class="rename-cancel" type="button">取消</button>
+        <button id="createWorkspaceSubmit" class="rename-submit" type="submit">创建</button>
       </div>
     </form>
   </div>

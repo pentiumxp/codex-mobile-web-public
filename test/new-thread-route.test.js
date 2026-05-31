@@ -27,7 +27,9 @@ test("new-message route forwards new-thread runtime settings", () => {
 
   assert.match(routeBody, /const requestedModel\s*=/, "new-thread route should read requested model");
   assert.match(routeBody, /const requestedEffort\s*=/, "new-thread route should read requested reasoning effort");
+  assert.match(routeBody, /const requestedFastMode = requestedCodexFastMode\(body\.fastMode\);/, "new-thread route should read requested Fast service tier");
   assert.match(routeBody, /if \(requestedModel\) startParams\.model = requestedModel;/, "thread/start should receive requested model");
+  assert.match(routeBody, /applyCodexFastServiceTier\(applyTurnRuntimeSettings\(/, "turn/start should apply requested Fast service tier");
   assert.match(routeBody, /if \(requestedModel\) turnParams\.model = requestedModel;/, "turn/start should receive requested model");
   assert.match(routeBody, /if \(requestedEffort\) turnParams\.effort = requestedEffort;/, "turn/start should receive requested reasoning effort");
 });
@@ -64,8 +66,22 @@ test("existing-message route forwards runtime settings on next turn", () => {
 
   assert.match(routeBody, /const requestedModel\s*=/, "message route should read requested model");
   assert.match(routeBody, /const requestedEffort\s*=/, "message route should read requested reasoning effort");
+  assert.match(routeBody, /const requestedFastMode = requestedCodexFastMode\(body\.fastMode\);/, "message route should read requested Fast service tier");
+  assert.match(routeBody, /applyCodexFastServiceTier\(applyTurnRuntimeSettings\(/, "turn/start should apply requested Fast service tier");
   assert.match(routeBody, /if \(requestedModel\) params\.model = requestedModel;/, "turn/start should receive requested model");
   assert.match(routeBody, /if \(requestedEffort\) params\.effort = requestedEffort;/, "turn/start should receive requested reasoning effort");
+});
+
+test("workspace creation route stores mobile-visible workspaces outside Codex global state", () => {
+  const routeIndex = serverJs.indexOf('url.pathname === "/api/workspaces" && req.method === "POST"');
+  const newMessageIndex = serverJs.indexOf("/api/threads/new-message");
+  assert.ok(routeIndex > 0, "missing POST /api/workspaces route");
+  assert.ok(routeIndex < newMessageIndex, "workspace creation should be available before new-thread submission");
+  assert.match(serverJs, /createWorkspaceRegistryService/, "server should use the workspace registry service");
+  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_REGISTRY_FILE/, "workspace registry storage should be configurable");
+  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_CREATE_ROOTS/, "workspace creation roots should be configurable");
+  assert.match(serverJs, /workspaceRegistryService\.create\(body\)/, "POST route should delegate creation to the registry service");
+  assert.match(serverJs, /workspaceRegistryService\.list\(\)[\s\S]*roots\.add\(workspace\.cwd\)/, "registered workspaces should become visible to thread routes");
 });
 
 test("existing-message route falls back when active turn steering is stale", () => {
@@ -91,6 +107,8 @@ test("existing-message route falls back when active turn steering is stale", () 
   const preflightLogIndex = routeBody.indexOf('logMessageSubmit("active-turn-stale-preflight"');
   const interruptIndex = routeBody.indexOf('codex.request("turn/interrupt"', preflightLogIndex);
   const steerIndex = routeBody.indexOf('codex.request("turn/steer"', interruptIndex);
+  const pendingEchoIndex = routeBody.indexOf("pendingSteerEchoStore.remember", interruptIndex);
+  const forgetEchoIndex = routeBody.indexOf("pendingSteerEchoStore.forget", pendingEchoIndex);
   const staleLogIndex = routeBody.indexOf('logMessageSubmit("active-turn-stale"');
   const resumeIndex = routeBody.indexOf('codex.request("thread/resume"', staleLogIndex);
   const turnStartIndex = routeBody.indexOf('codex.request("turn/start"', resumeIndex);
@@ -98,6 +116,8 @@ test("existing-message route falls back when active turn steering is stale", () 
   assert.ok(preflightLogIndex > preflightCallIndex, "message route should log stale active-turn preflight");
   assert.ok(interruptIndex > preflightLogIndex, "stale active turn should be interrupted before starting a new turn");
   assert.ok(steerIndex > interruptIndex, "normal turn/steer path should remain after preflight");
+  assert.ok(pendingEchoIndex > interruptIndex && pendingEchoIndex < steerIndex, "pending steer echo should be remembered before turn/steer can block");
+  assert.ok(forgetEchoIndex > steerIndex, "pending steer echo should be forgotten when turn/steer falls through as stale");
   assert.match(routeBody, /if \(body\.activeTurnId && !skipTurnSteer\)/, "stale preflight should skip turn/steer");
   assert.ok(staleLogIndex > 0, "message route should log stale active turn steering");
   assert.ok(resumeIndex > staleLogIndex, "stale active turn should fall through to thread/resume");

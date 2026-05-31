@@ -24,6 +24,11 @@ The target thread should show that card as a separate actionable item, not as a
 normal chat message. Only after explicit user approval may the task content
 enter the target thread's message flow.
 
+There is one controlled exception for collaboration loops: an explicitly
+requested autonomous workflow still requires the first target-side approval,
+but that approval grants automatic execution only for later cards with the same
+workflow id and the same two participating thread ids.
+
 ## Required User Behaviors
 
 ### Source side
@@ -42,6 +47,9 @@ The target thread user can:
 - approve it and inject it into the target thread's message flow;
 - delete it without injecting it;
 - reply back to the source thread through the same controlled card mechanism.
+- approve the first card in an explicitly marked autonomous workflow, allowing
+  later same-workflow cards between the same two threads to execute without
+  another manual click.
 
 ## Required Delivery Rules
 
@@ -54,6 +62,9 @@ The target thread user can:
   pending.
 - Reply should create a controlled reverse-direction card, not a freeform
   silent cross-thread injection.
+- Autonomous workflow execution is allowed only after the first approved target
+  card establishes the workflow grant. The grant is scoped by workflow id plus
+  the unordered pair of source/target thread ids.
 
 ## States
 
@@ -70,7 +81,8 @@ The first implementation should support at least:
 - Cross-thread sending must be explicitly controlled by workspace and thread
   policy.
 - A target thread must be able to opt in or opt out of receiving such cards.
-- No automatic message-flow injection without an explicit approval action.
+- No automatic message-flow injection without an explicit approval action,
+  except follow-up cards inside an already approved autonomous workflow grant.
 - All operations must be auditable.
 - The source of an injected message must remain traceable after approval.
 
@@ -93,7 +105,7 @@ Binary attachments are out of scope for the first implementation.
 - automatic live-turn steering into another active turn;
 - attachment forwarding;
 - direct hidden model-context injection;
-- automatic approval rules;
+- default automatic approval rules for ordinary task cards;
 - cross-machine or federated trust outside the current controlled server.
 
 ## Acceptance Criteria
@@ -106,4 +118,6 @@ The feature is acceptable when:
 4. Deleting the card does not create a target-thread message.
 5. Revoking a pending card from the source side prevents future approval.
 6. Reply creates a reverse-direction controlled task card.
-7. All actions are bounded, authorized, auditable, and idempotent.
+7. Autonomous workflow follow-ups auto-execute only after first approval and
+   only for the same workflow id plus same two thread ids.
+8. All actions are bounded, authorized, auditable, and idempotent.

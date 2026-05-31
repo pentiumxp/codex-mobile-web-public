@@ -27,6 +27,28 @@ Implementation path:
 
 Runtime activation is server-side unless browser active-state rendering changes; browser changes require shell cache/build bump.
 
+## Workspace List And Creation
+
+Use when changing Workspace dropdown behavior, `GET /api/workspaces`,
+`POST /api/workspaces`, or the new-thread workspace visibility gate.
+
+Implementation path:
+
+1. Keep Codex `.codex` state read-only; do not patch
+   `.codex-global-state.json` to add Mobile Web-created roots.
+2. Keep folder-name validation, allowed-root enforcement, registry persistence,
+   and public workspace shape in `adapters/workspace-registry-service.js`.
+3. `server.js` should only compose the registry with Codex-visible roots and
+   expose thin HTTP routes.
+4. The browser create affordance belongs at the bottom of the Workspace
+   dropdown list. Do not add a second button beside the new-thread entry.
+5. After successful creation, select the new cwd, open a new-thread draft, and
+   refresh the thread list silently.
+6. Browser changes require a `CLIENT_BUILD_ID` / `public/sw.js` cache bump.
+7. Test with `test/workspace-registry-service.test.js`,
+   `test/new-thread-route.test.js`, `test/mobile-viewport.test.js`, and
+   `test/new-thread-ui.test.js` when the new-thread draft path changes.
+
 ## Thread Detail And Conversation Rendering
 
 Use when changing visible items, operation cards, timestamps, compaction notices, image views, or merge behavior.
@@ -162,7 +184,14 @@ Implementation path:
    the long-lived Access Key. The browser should exchange that one-time token
    for an in-memory plugin session and scrub the URL so tab switches do not
    replay expired launch URLs.
-8. `/?embed=hermes` must behave as an embedded secondary app: hide standalone
+8. Host appearance sync must be launch/session metadata, not frontend guessing.
+   The manifest should advertise the supported `appearance_sync` values.
+   `POST /api/v1/hermes/plugin/launch` may accept `appearance.theme` and
+   `appearance.fontSize`, copy only whitelisted values to `pluginTheme` /
+   `pluginFontSize` query params, and return the same sanitized appearance from
+   `/session`. The iframe must apply those values before stylesheet/app
+   initialization to avoid a flash of the standalone theme or font size.
+9. `/?embed=hermes` must behave as an embedded secondary app: hide standalone
    chrome/splash, keep state on visibility/focus changes, stay inside the same
    iframe, post `codex-mobile.plugin.navigation`, and handle
    `hermes.plugin.back` only for iframe-owned transient layers such as
@@ -173,13 +202,16 @@ Implementation path:
    Codex should handle that secondary-page back by returning to the primary
    thread-switcher/settings page. Do not implement thread-page back by showing
    Codex's standalone first-launch Workspace page or by opening a sidebar drawer
-   inside the iframe. Hermes notification opens may also supply bounded query
+   inside the iframe. In embedded startup, restore only explicit launch or route
+   targets; when Hermes provides no target, stay on the plugin primary page
+   instead of restoring localStorage's last thread or the latest active recent
+   thread. Hermes notification opens may also supply bounded query
    hints such as `pluginId=codex-mobile`, `pluginRoute`, `pluginThreadId`,
    `pluginTaskId`, and `pluginItemId`; consume them inside the iframe, focus the
    matching thread/task when still present, scrub them from the URL, and fall
    back to the normal embedded primary page plus a bounded diagnostic when the
    target is missing.
-9. Plugin notifications must be delegated from the backend to Hermes Mobile
+10. Plugin notifications must be delegated from the backend to Hermes Mobile
    Action Inbox through `POST /api/hermes-plugins/codex-mobile/notifications`.
    Keep the Hermes Web/Owner key server-side only, require a stable `eventId` or
    `sourceId`, send only bounded title/summary plus route metadata, and reject
@@ -190,7 +222,7 @@ Implementation path:
    the short summary field with the long receipt body. In `/?embed=hermes`,
    browser Web Push registration should be disabled so Hermes owns the Inbox and
    Web Push delivery path.
-10. Add service tests for manifest/registration/token behavior, route tests for
+11. Add service tests for manifest/registration/token behavior, route tests for
    the public/authenticated paths, frontend embed harness tests for
    navigation/back/windowing, and bump the PWA shell cache if frontend launch
    behavior changes.
@@ -210,37 +242,53 @@ Implementation path:
 3. Put normalization, authorization, idempotency, and state transitions in a
    dedicated server-side adapter instead of expanding `server.js`.
 4. Treat approval as the only path that injects a real target-thread message.
-5. Treat delete and revoke as card-state transitions only; they must not create
+5. Target-side approval must leave `pending` immediately by persisting a
+   transient `approving` state before external `turn/start`, so thread refresh
+   or continuation compaction cannot show a duplicate actionable `Approve`
+   card while the target turn is already starting.
+6. Treat delete and revoke as card-state transitions only; they must not create
    target-thread messages.
-6. Reply should create a controlled reverse-direction card, not a silent direct
+7. Reply should create a controlled reverse-direction card, not a silent direct
    message injection.
-7. Preserve source/target audit metadata after approval injection.
-8. The current implementation uses:
+8. Ordinary task cards remain manual. If a `#` draft explicitly requests an
+   autonomous/no-further-approval collaboration workflow, the first target
+   approval may activate a workflow grant. Auto-run is allowed only for later
+   cards with the same workflow id and the same unordered pair of source/target
+   thread ids; a reused id with a different pair must stay pending.
+9. Preserve source/target audit metadata after approval injection.
+10. The current implementation uses:
    - `adapters/thread-task-card-service.js`
    - `POST /api/thread-task-cards`
    - `GET /api/thread-task-cards/:id`
    - `POST /api/thread-task-cards/:id/approve|delete|revoke|reply`
    - `thread.threadTaskCards` on thread-detail responses
    - `public/app.js` task-card stack rendered outside normal turn items
-9. Approval currently injects the approved card as a real new target-thread
+11. Approval currently injects the approved card as a real new target-thread
    `turn/start` input, not as a fake static `userMessage`.
-10. Keep `test/thread-task-card-harness.test.js` green, and cover real behavior
+12. Keep `test/thread-task-card-harness.test.js` green, and cover real behavior
    with `test/thread-task-card-service.test.js` and
    `test/thread-task-card-route.test.js`.
-11. `#`-prefixed composer input is now reserved for natural-language task-card
+13. `#`-prefixed composer input is now reserved for natural-language task-card
     commands. Convert them into a bounded draft-request prompt for the current
     Codex thread, including the visible target-thread list and exact XML/JSON
     response schema.
- 12. Render the returned
+14. Suppress the raw returned
      `<codex-mobile-thread-task-card-draft>...</codex-mobile-thread-task-card-draft>`
-     assistant block as a local approval card, not as raw markdown, and only
-     then call `POST /api/thread-task-cards`.
- 13. Keep the command path conservative: if the model does not return one valid
-     visible `targetThreadId`, do not auto-send to any other thread.
-  14. Source-side draft approval must feel immediate: use a stable draft-scoped
-      idempotency key, surface incoming pending-card counts on thread summaries,
-      and switch directly to the target thread after creation instead of waiting
-      for a potentially slow source-thread re-read.
+     assistant block, show a bounded placeholder while it is generating, and
+     automatically call `POST /api/thread-task-cards` once a valid draft names
+     visible targets. Do not show a source-side local `Approve` step.
+15. Keep the command path conservative: if the model does not return at least
+     one valid visible target id, do not auto-send to any other thread. The
+     preferred draft field is `targetThreadIds`, with legacy `targetThreadId`
+     accepted for backward compatibility.
+16. Multi-target creation must create one stored pending card per target. Keep
+     the server route compatible by returning `card` for old callers plus
+     `cards` for the complete batch result.
+17. Source-side draft creation must feel immediate: use a stable draft-scoped
+     idempotency key, surface incoming pending-card counts on thread summaries,
+     and switch directly to the target thread only for single-target drafts.
+     Multi-target drafts should stay on the source thread after creation,
+     because jumping to one recipient would hide the other delivered cards.
 ## Public/Private Publish
 
 Use when user explicitly asks to publish public or sync public.

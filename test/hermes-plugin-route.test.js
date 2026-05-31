@@ -43,9 +43,14 @@ test("Hermes plugin launch token is a browser-session key, not local storage log
   assert.match(appJs, /INITIAL_PLUGIN_EMBED\.embedded \? "" : localStorage\.getItem\("codexMobileKey"\)/);
   assert.match(appJs, /pluginLaunchSession: Boolean\(INITIAL_PLUGIN_LAUNCH_KEY\)/);
   assert.match(appJs, /pluginLaunchTarget: null/);
+  assert.match(appJs, /pluginAppearance: INITIAL_PLUGIN_EMBED\.appearance \|\| null/);
   assert.match(appJs, /queuedPluginRouteHint: INITIAL_PLUGIN_EMBED\.routeHint \|\| null/);
   assert.match(appJs, /\/api\/v1\/hermes\/plugin\/session/);
   assert.match(appJs, /state\.pluginLaunchTarget = result && result\.target/);
+  assert.match(appJs, /applyPluginAppearancePreference\(result && result\.appearance\)/);
+  assert.match(appJs, /function applyPluginAppearancePreference\(value\)/);
+  assert.match(appJs, /pluginTheme/);
+  assert.match(appJs, /pluginFontSize/);
   assert.match(appJs, /async function applyPluginLaunchTarget\(\)/);
   assert.match(appJs, /function normalizePluginRouteHint\(value\)/);
   assert.match(appJs, /function applyUrlPluginRouteHint\(options = \{\}\)/);
@@ -59,6 +64,10 @@ test("Hermes plugin launch token is a browser-session key, not local storage log
 
 test("embedded plugin mode hides standalone chrome and installs navigation/windowing hooks", () => {
   assert.match(indexHtml, /params\.get\("embed"\) === "hermes"/);
+  assert.match(indexHtml, /function readPluginAppearance\(\)/);
+  assert.match(indexHtml, /params\.get\("pluginTheme"\)/);
+  assert.match(indexHtml, /params\.get\("pluginFontSize"\)/);
+  assert.match(indexHtml, /document\.documentElement\.setAttribute\("data-font-size", initialFontSize\)/);
   assert.match(indexHtml, /documentElement\.classList\.add\("embed-hermes"\)/);
   assert.match(indexHtml, /<script src="\/plugin-embed\.js"><\/script>/);
   assert.doesNotMatch(indexHtml, /id="embedSettingsToggle"/);

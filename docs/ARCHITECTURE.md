@@ -45,6 +45,7 @@ Tracked source files live in the repository. Runtime state stays outside Git:
 | --- | --- |
 | `%USERPROFILE%\.codex` | Codex Desktop/app-server state, session rollout JSONL, `state_5.sqlite`, shared mux endpoint |
 | `%USERPROFILE%\.codex-mobile-web` | Mobile Web access key, uploads, Web Push files, logs, local Codex executable copy, Hermes plugin registration state |
+| `%USERPROFILE%\.codex-mobile-web\workspace-registry.json` | Mobile Web-created workspace folders. This augments Mobile Web visibility without editing `.codex` global state. |
 | `%USERPROFILE%\.codex\app-server-mux\endpoint.json` | Shared mux JSONL TCP endpoint used by Mobile Web and Desktop bridge |
 | `.agent-context/` | Durable local project context, not public release content |
 
@@ -57,6 +58,27 @@ Keep `.codex` read-only except through app-server RPCs. Do not patch rollout fil
 `GET /api/public-config` exposes auth requirement, version/build ids, runtime option lists, upload limits, rollout warning threshold, quota snapshots, Push support, self-update availability, public PR check availability, and the Hermes plugin endpoint paths. The browser uses this before showing the app shell.
 
 Authentication uses `x-codex-mobile-key`, `Authorization: Bearer`, the existing cookie, or the existing `key` query parameter against the runtime access key file. Do not print the key in logs or chat output.
+
+### Workspace List And Creation
+
+`GET /api/workspaces` combines Codex Desktop/app-server visible workspace roots
+from `.codex` global state with Mobile Web-created roots from
+`adapters/workspace-registry-service.js`. The registry lives under
+`%USERPROFILE%\.codex-mobile-web\workspace-registry.json` by default and is
+not copied to public release or `.agent-context`.
+
+`POST /api/workspaces` creates or registers one local workspace folder under an
+allowed create root, then makes that cwd visible to Mobile Web thread-list and
+new-thread routes. It accepts only a simple folder name, rejects path traversal,
+absolute paths, Windows reserved names, and invalid path characters, and never
+writes `%USERPROFILE%\.codex\.codex-global-state.json` directly. Allowed roots
+default to `%USERPROFILE%\Documents` and `%USERPROFILE%`; deployments can
+override them with `CODEX_MOBILE_WORKSPACE_CREATE_ROOTS`, and the registry file
+can be moved with `CODEX_MOBILE_WORKSPACE_REGISTRY_FILE`.
+
+The browser exposes creation from the bottom of the Workspace dropdown list,
+not beside the new-thread button. After creation, it selects the new cwd and
+opens a new-thread draft for that workspace.
 
 ### Hermes Mobile Plugin Mode
 
@@ -111,6 +133,18 @@ state across visibility/focus changes, exchanges launch tokens without writing
 them to `localStorage`, and scrubs one-time launch tokens from the address bar
 after session exchange. Internal route changes post:
 
+Hermes may pass bounded host appearance settings during plugin launch. The
+manifest advertises `appearance_sync` with supported `theme` values
+`system|dark|light` and `fontSize` values
+`small|default|large|xlarge|xxlarge`. `POST /api/v1/hermes/plugin/launch`
+accepts those values under `appearance`, echoes them through the short-lived
+entry path as `pluginTheme` / `pluginFontSize`, and returns the same sanitized
+appearance through the browser session exchange. The iframe head script applies
+both theme and font size before `styles.css` and `public/app.js` initialize, so
+Hermes-hosted plugins do not flash the standalone/default appearance. These
+fields are session appearance metadata only; they must not carry tokens, local
+paths, raw settings dumps, or private content.
+
 ```json
 { "type": "codex-mobile.plugin.navigation", "version": 1, "canGoBack": true, "route": { "kind": "thread", "threadId": "..." } }
 ```
@@ -123,6 +157,11 @@ forwards its right-swipe/back affordance to the iframe. Codex handles that
 secondary-page back by returning to the primary thread-switcher/settings page.
 It must not show the standalone first-launch Workspace page or treat the
 thread-switcher/settings surface as an overlay sidebar in Hermes embed mode.
+When there is no explicit plugin launch target, URL thread hint, or bounded
+Hermes route hint, embedded startup stays on this primary page. It must not
+restore the last locally opened thread or auto-enter a recent active thread,
+because that hides the host navigation surface and can land the plugin in a
+stale Codex thread.
 Once a file preview, rename/action dialog, or subagent panel is open, Codex
 handles `{ "type": "hermes.plugin.back", "version": 1 }` by closing that
 transient layer before page-level back is applied. Hermes must not inspect Codex
@@ -163,15 +202,27 @@ The detail path compacts command/tool/file/search items, enriches item timestamp
 Thread detail responses may also include `thread.threadTaskCards`. These are
 cross-thread collaboration cards that stay outside normal `thread.turns[*].items`
 until the target thread explicitly approves them. The browser renders them in a
-separate stack before the visible turn list so they do not pollute message flow.
+separate stack after the visible turn list and detached approvals, so they stay
+near the active bottom surface without polluting message flow.
 The composer also reserves `#...` at the start of a message as a cross-thread
 task-card command path. Those messages do not use a separate parse endpoint.
 Instead, `public/app.js` wraps the original `#` command in a bounded request
 envelope that includes the visible target-thread list, sends it through the
 normal current-thread message path, and expects the model to return exactly one
 `<codex-mobile-thread-task-card-draft>...</codex-mobile-thread-task-card-draft>`
-JSON block. The browser renders that assistant reply as a local approval card
-and only then creates a real pending task card through `POST /api/thread-task-cards`.
+JSON block. The preferred draft shape uses `targetThreadIds: [...]`; the parser
+also accepts the legacy single `targetThreadId` field. The browser suppresses
+the raw draft XML, shows a bounded placeholder while generation is in flight,
+and automatically creates real pending target cards when a valid draft arrives.
+The source thread must not require a local `Approve` step. Creation goes
+through `POST /api/thread-task-cards`. That route accepts either a single
+`targetThreadId` or multiple `targetThreadIds`, creates one stored card per
+target, and returns both the compatibility `card` field and the full `cards`
+array.
+The draft schema may include `workflowMode:"autonomous"` only when the command
+explicitly asks for no further approval or automatic collaboration. The first
+target-side approval activates a workflow grant scoped to the workflow id and
+the same two participating thread ids; ordinary cards remain manual.
 ### Conversation Navigation
 
 The browser owns conversation scroll controls. The return-to-bottom button appears only when the current thread is loaded, scrollable, and away from the newest content.
@@ -195,17 +246,35 @@ Cross-thread task-card approval is a separate path. Approval does not attempt to
 append a fake static message to the target thread. Instead, after target-side
 approval, Mobile Web resumes the target thread if needed and injects the card
 payload as a real new `turn/start` user input. Delete and revoke are state
-transitions only and must not create target-thread messages.
-Source-side draft approval is also intentionally lightweight: once a `#`-draft
-approval creates the pending card, the browser does not block on re-reading the
-source thread before showing success. It updates local draft state, refreshes
-thread summaries in the background, and immediately opens the target thread so
-the pending card is visible where it was delivered. Cross-thread task cards now
-render below the visible turns and detached approval stack, keeping them at the
-bottom of the thread rather than above historical conversation content. Only
-`pending` task cards render in thread detail; once a card reaches `approved`,
-`deleted`, `revoked`, or `replied`, the browser stops rendering that card and
-the injected turn or later reply becomes the user-visible surface.
+transitions only and must not create target-thread messages. Target-side
+approval first persists a transient non-pending `approving` state before the
+external `turn/start` call, preventing reconnect, refresh, or continuation
+compaction from rendering a duplicate actionable `Approve` card while the
+approved turn is already starting. If the external call fails before
+acceptance, the card is restored to `pending` with a bounded audit error.
+For autonomous workflow follow-ups, the service uses the same approval path
+without a human click only when an active workflow grant matches both the
+workflow id and the unordered source/target thread pair. A matching id with a
+different thread pair remains pending and does not auto-inject.
+Source-side draft creation is also intentionally lightweight: once a valid
+`#`-draft creates pending cards, the browser does not block on re-reading the
+source thread before settling local state. It updates local draft state and
+refreshes thread summaries in the background, and it does not render an interim
+source-side `Sending` draft card during automatic creation. Single-target drafts
+still open the target thread so the pending card is visible where it was
+delivered; multi-target drafts stay on the source thread without rendering
+outgoing cards as local work items. Cross-thread task cards now render below the
+visible turns
+and detached approval stack, keeping them at the bottom of the target thread
+rather than above historical conversation content. Only `pending` cards whose
+`threadRole` is `target` render in thread detail; source-side outgoing pending
+cards remain store/audit state and badge/count state only. Once a card reaches
+`approved`, `deleted`, `revoked`, or `replied`, the browser stops rendering that
+card and the injected turn or later reply becomes the user-visible surface.
+Source-side `#` draft settlement uses a stable key derived from the turn id and
+draft content, not the app-server item id. On thread re-entry, the browser also
+checks existing stored cards from the same source turn before auto-sending a
+draft again, so item-id drift after refresh/compaction cannot recreate a card.
 The current `#` task-card path is still bounded and conservative, but the
 interpretation now lives in the model turn rather than a browser/server regex
 parser. The browser provides only the visible thread list and required response
@@ -226,7 +295,19 @@ When the Hermes plugin notification delegate is configured, turn-completed
 events are sent to Hermes Action Inbox/Web Push instead of Mobile Web's direct
 Web Push subscription list. If the delegate is not configured, standalone
 Mobile Web keeps the existing local Web Push path. The iframe plugin mode never
-registers its own Push subscription.
+registers its own Push subscription. Delegated plugin notifications must use
+the actual Codex thread name as the payload title: explicit `threadTitle`,
+`thread.name` / `thread.title`, and nested `turn.thread.name` /
+`turn.thread.title` win over stale started-turn labels, route/plugin names, or
+preview text. Persisted thread `name` is preferred over `preview`; preview is
+only a fallback when no real thread name is available.
+`adapters/push-notification-service.js` owns the bounded in-memory cache of
+app-server `thread/list` and `thread/read` display summaries, and `server.js`
+checks that display cache before the local SQLite fallback. This prevents old continuation threads whose
+`state_5.sqlite` title still contains the bootstrap prompt from producing a
+wrong external notification title. If the cache is empty when a completed-turn
+event arrives, the notification path performs a bounded app-server summary
+refresh before sending the Hermes delegate payload or standalone Web Push.
 
 ### Approvals And Server Requests
 

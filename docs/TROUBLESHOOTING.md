@@ -241,6 +241,16 @@ Current implementation rules:
 - delete and revoke never inject;
 - reply creates a reverse-direction pending card, not a direct source-thread
   message.
+- autonomous workflow cards still require the first target-side approval; only
+  later cards with the same workflow id and the same unordered pair of
+  source/target thread ids may auto-inject without another click.
+
+If an autonomous follow-up card does not auto-run, inspect the stored card and
+workflow fields in `%USERPROFILE%\.codex-mobile-web\thread-task-cards.json`.
+The card should have `workflow.mode="autonomous"` and a non-empty `workflow.id`.
+The store should also contain an active workflow with the same id and the same
+two thread ids. Reusing the same workflow id for a different thread pair is
+intentionally treated as unapproved and will leave the card pending.
 
 If source-side draft `Approve` appears to hang, check whether the card was
 already created in `%USERPROFILE%\.codex-mobile-web\thread-task-cards.json`.
@@ -267,6 +277,12 @@ to the injected turn instead of leaving the user to back out and re-enter.
 If a target thread already has an incompatible live app-server state, approval
 may fail at the `thread/resume` / `turn/start` stage. In that case the card
 should remain actionable instead of silently disappearing.
+
+The thread-task-card API preserves service-level error codes. A missing card
+read should return `404 task_card_not_found`; wrong-thread actions should return
+`403`; settled-card actions should return `409`. If these appear as a generic
+500, the route error wrapper has regressed and the browser may show an
+ambiguous failure instead of a bounded task-card diagnostic.
 
 ## `#` Task-card Command Does Not Parse
 
@@ -557,6 +573,26 @@ Expected behavior after `codex-mobile-shell-v123`:
   while Hermes rebuilds the iframe.
 - The red plugin auth panel should be reserved for non-recovering states, not
   for transient launch/session churn that Hermes can immediately replace.
+
+## Workspace Creation Is Missing Or New Thread Says Workspace Is Not Visible
+
+Workspace creation is intentionally exposed at the bottom of the Workspace
+dropdown list, not beside the new-thread button. If the entry is missing or a
+newly created workspace is rejected by `/api/threads/new-message`, check:
+
+- `/api/public-config.workspaceCreate.enabled` should be true.
+- `CODEX_MOBILE_WORKSPACE_CREATE_ROOTS` should point only at existing parent
+  directories. If unset, Mobile Web uses the user's Documents folder, then the
+  user profile folder.
+- `%USERPROFILE%\.codex-mobile-web\workspace-registry.json` should contain only
+  bounded metadata for Mobile Web-created workspaces: cwd, label, parent,
+  source, and timestamps.
+- `GET /api/workspaces` should include the created cwd with `source:"mobile"`.
+- `visibleWorkspaceRoots()` should merge the registry service list before the
+  new-thread route checks workspace visibility.
+
+Do not fix this by editing `.codex\.codex-global-state.json` manually. Use the
+Mobile Web registry route or Codex/Desktop workspace selection paths.
 
 ## Source `#` Task-Card Draft Reappears After Approve Or Dismiss
 
