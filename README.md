@@ -1324,6 +1324,14 @@ plugin. The shell cache advances to `codex-mobile-shell-v102`.
 - 运行栏 Fast 圆点：模型前新增一个极小的持久化状态点，绿色表示普通模式，点击变红表示下一次新 `turn/start` 使用 Codex Fast 服务层。前端只提交隐藏 `fastMode` 字段，服务端映射为 `serviceTier: "priority"`；不会把可见 `/Fast` 文本插入用户消息，也不会改变模型、推理等级或权限设置。active-turn steering 不能改变已经开始的 turn 的速度层级。
 - 发布同步还包含 workspace registry 服务、共享链重启安装脚本、多账号 CLI 文档、相关 README/docs 更新和覆盖测试。发布前 private 验证通过 `npm test` 255/255、`npm run check`、`npm run check:macos`、`git diff --check`；public 发布前应在 public 工作区重新运行同等检查。
 
+### 2026-06-01 Public 发布说明（已知工作区本地文件预览）
+
+本次 public 合入 PR #42，修复移动端无法预览已知 workspace 内本地文件的问题。版本仍为 `0.1.11`，不改变 PWA shell cache；更新后需要重启 8787 Node listener 以加载新的服务端文件预览根策略。
+
+- 文件预览允许读取已知 workspace root 内的文件，也允许读取当前线程 cwd 内的文件；Markdown 预览继续按源文本列表编号渲染，避免预览内容把原始编号重新从 1 开始排。
+- 安全边界没有放宽到任意磁盘目录：预览仍只解析显式允许根目录内的路径，并继续拒绝根目录外路径、敏感文件类型和不支持的二进制内容。
+- 本次 public 同步没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
+
 ### Which Restart Is Needed After Changes
 
 Use this table after pulling updates:

@@ -1259,20 +1259,24 @@ function isPathInsideRoot(targetPath, rootPath) {
   return relative === "" || (relative && !relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
-function previewRootsForThread(threadId, globalState = readGlobalState()) {
+function previewRootsForThread(threadId, globalState = readGlobalState(), options = {}) {
   const roots = new Map(filePreviewEnvRoots().map((root) => [root, "env"]));
-  const summary = readStateDbThread(threadId) || readStartedThread(threadId);
+  const visibleRoots = visibleWorkspaceRoots(globalState);
+  for (const root of visibleRoots) roots.set(root, "workspace");
+  const summary = options.threadSummary || readStateDbThread(threadId) || readStartedThread(threadId);
   const cwd = summary && typeof summary.cwd === "string" ? summary.cwd : "";
   const obsidianRoot = cwd ? nearestAncestorWithChild(cwd, ".obsidian") : "";
   if (cwd) {
     roots.set(cwd, "thread");
     if (obsidianRoot) roots.set(obsidianRoot, "obsidian");
   }
-  const visible = visibleWorkspaceKeys(globalState);
+  const visible = new Set([...visibleRoots].map(normalizeFsPath).filter(Boolean));
   return [...roots.entries()]
     .map(([root, source]) => ({ root: path.resolve(root), source }))
     .filter((entry) => entry.root && fs.existsSync(entry.root))
     .filter((entry) => entry.source === "env"
+      || entry.source === "workspace"
+      || entry.source === "thread"
       || !visible.size
       || visible.has(normalizeFsPath(entry.root))
       || entry.root === obsidianRoot)
@@ -7258,6 +7262,7 @@ module.exports = {
   filePreviewContentType,
   generatedImageContentUrl,
   mimeFor,
+  previewRootsForThread,
   readFilePreview,
   readRolloutItemTimestampCandidates,
   resolveFilePreviewPath,
