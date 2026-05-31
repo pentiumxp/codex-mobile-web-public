@@ -597,6 +597,36 @@ The previous full handoff was archived and should be opened only when old proven
     listener and clients refreshing/reopening to load v139
     after deployment.
 
+## 2026-05-31 Public Sync v139
+
+- User request:
+  - Push the current private product state to the clean public repository.
+- Public repository:
+  - Path: `C:\Users\xuxin\Documents\codex-mobile-web-public`
+  - Commit pushed: `d66cc63 发布 Hermes 外观同步、跨线程卡片修复与 Fast 圆点`
+  - Remote branch: `origin/main`
+- Scope:
+  - Synchronized public-safe product, docs, scripts, and tests from private
+    through v139.
+  - Excluded `.agent-context`, `AGENTS.md`, runtime state, uploads, keys, and
+    machine-local diagnostics.
+  - Added a detailed Chinese public README release note covering Hermes
+    appearance sync, notification title resolution, task-card re-entry /
+    source Sending fixes, autonomous workflows, workspace registry, and the
+    Fast dot service-tier toggle.
+- Public validation:
+  - `npm.cmd test` passed: 255/255.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` / staged check passed with only Windows LF-to-CRLF
+    working-copy warnings.
+  - BOM check had no output.
+  - Staged privacy scan found no raw secrets.
+- Status:
+  - Public repository is clean and aligned with `origin/main`.
+  - Private repository product code remains clean; this handoff entry is the
+    only follow-up private context update.
+
 ## 2026-05-31 Hermes Plugin HTTPS Manifest Runtime Fix
 
 - User report:
