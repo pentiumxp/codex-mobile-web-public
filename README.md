@@ -359,7 +359,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-codex-mobile-w
 
 The daily `Codex Mobile Web Shared Chain Restart` scheduled task is no longer installed by default. The same scoped restart is now exposed as a manual control in the mobile sidebar: the header shows a small `Restart` button next to the version/update pill, and tapping it asks for confirmation before restarting.
 
-The manual restart calls the authenticated `POST /api/restart/shared-chain` endpoint. On Windows, the endpoint launches `restart-codex-mobile-shared-chain.ps1` after the HTTP response has been sent, so the page can show the confirmation result before the current Node listener exits. The script stops only the Codex Mobile Web shared chain: the `Codex Mobile Web` startup task, this workspace's hidden/windowless launchers, this workspace's `server.js`, this workspace's mux process, and `%USERPROFILE%\.codex-mobile-web\codex.exe app-server`. It removes the stale mux endpoint file, starts `Codex Mobile Web` again, and waits for HTTP plus mux readiness.
+The manual restart calls the authenticated `POST /api/restart/shared-chain` endpoint. On Windows, the endpoint launches `restart-codex-mobile-shared-chain.ps1` after the HTTP response has been sent, so the page can show the confirmation result before the current Node listener exits. The script stops only the Codex Mobile Web shared chain: the `Codex Mobile Web` startup task, this workspace's hidden/windowless launchers, this workspace's `server.js`, and the selected profile mux/child process recorded in that profile's endpoint file. It removes the stale mux endpoint file, starts `Codex Mobile Web` again, and waits for HTTP plus mux readiness.
 
 Operational rule: do not treat the restart as successful merely because the old
 listener exited or the restart command was dispatched. Success means a new
@@ -375,7 +375,7 @@ The task still uses your normal Codex data paths by passing the installing user'
 
 ```text
 USERPROFILE=<your Windows user profile>
-CODEX_HOME=<your Windows user profile>\.codex
+CODEX_HOME=<active profile home, defaulting to <your Windows user profile>\.codex>
 CODEX_MOBILE_RUNTIME_DIR=<your Windows user profile>\.codex-mobile-web
 ```
 
@@ -384,6 +384,19 @@ The task runs `wscript.exe` against `start-codex-mobile-web-hidden.vbs`, which t
 ```text
 wscript.exe start-codex-mobile-web-hidden.vbs
 ```
+
+The sidebar settings panel can also show local Codex profiles and switch the
+single active Mobile Web profile. The profile switcher is deliberately not a
+dual-provider mode: one listener still uses one `CODEX_HOME` and one mux/app-
+server chain at a time. The settings panel lists the configured profiles,
+shows the safely derived logged-in account label/email and recent quota
+snapshot for each profile, and calls the authenticated
+`POST /api/codex-profiles/active` endpoint when switching. The endpoint writes
+`%USERPROFILE%\.codex-mobile-web\codex-profiles.json` and restarts the Mobile
+Web shared chain. The Windows restart script and hidden/windowless launcher
+both read the same active profile store before resolving the mux endpoint, so
+after restart all workspaces use the selected profile's `CODEX_HOME`. Raw
+token values from `auth.json` are never returned to the browser.
 
 By default, the startup task passes `-EnsureStandaloneMux -RequireSharedAppServer`, so Mobile Web connects to a single mux-backed app-server endpoint instead of silently creating a separate managed app-server stream. Codex Desktop can later attach to the existing mux endpoint when it is launched through `start-codex-desktop-shared.ps1`.
 
@@ -1431,6 +1444,23 @@ cd C:\path\to\codex-mobile-web
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\start-codex-desktop-shared.ps1
 ```
 
+When Mobile Web's profile switcher is in use, launch Desktop with the matching
+profile so Desktop and Mobile attach to the same mux endpoint:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\start-codex-desktop-shared.ps1 -ProfileId default
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\start-codex-desktop-shared.ps1 -ProfileId current
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\start-codex-desktop-shared.ps1 -ProfileId previous
+```
+
+The repository also includes `start-codex-desktop-default.cmd`,
+`start-codex-desktop-current.cmd`, and `start-codex-desktop-previous.cmd`.
+These wrappers pass `-ForceRestartMux` so the Desktop escape hatch starts from
+the selected profile's current bridge files. Use `-CodexHome <path>` only for a
+custom CLI home. Desktop's GUI ChatGPT login may still be global to the
+installed app package; the reliable sharing boundary is the selected
+`CODEX_HOME` plus its `<CODEX_HOME>\app-server-mux\endpoint.json`.
+
 3. Start or reconnect Mobile Web.
 
 The launcher sets `CODEX_CLI_PATH` only for the Desktop process it starts. It builds `codex-app-server-mux.exe` from `codex-app-server-mux-shim.cs` when needed, because Windows Codex Desktop expects `CODEX_CLI_PATH` to point to a real `.exe`.
@@ -1448,7 +1478,7 @@ This stops the mux PID recorded in the endpoint file before launching Desktop, s
 The mux writes its endpoint file here:
 
 ```text
-%USERPROFILE%\.codex\app-server-mux\endpoint.json
+<CODEX_HOME>\app-server-mux\endpoint.json
 ```
 
 Mobile Web auto-detects that endpoint. If Mobile Web was already running before the mux was available, restart Mobile Web or call:

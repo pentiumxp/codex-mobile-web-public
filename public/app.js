@@ -152,6 +152,11 @@ const state = {
   newThreadPermissionMode: "full",
   rateLimits: loadJsonStorage("codexMobileRateLimits", null),
   rateLimitsByModel: loadJsonStorage("codexMobileRateLimitsByModel", {}),
+  codexProfiles: [],
+  activeCodexProfileId: "",
+  codexProfileSwitchSupported: false,
+  codexProfileSwitchBusy: false,
+  codexProfileRestarting: false,
   pushServerSupported: false,
   pushSubscribed: false,
   pushBusy: false,
@@ -191,7 +196,7 @@ const state = {
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v141";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v142";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -1165,6 +1170,98 @@ function renderQuotaDetailPanel(fiveHour, weekly, model) {
     quotaDetailLineHtml("5小时额度", fiveHour, 60),
     quotaDetailLineHtml("周额度", weekly, 1440),
   ].join("");
+}
+
+function quotaShortTextFromSnapshot(quota) {
+  const rateLimits = quota && quota.rateLimits || null;
+  const fiveHour = fiveHourRateLimit(rateLimits);
+  const weekly = weeklyRateLimit(rateLimits);
+  return `5h ${quotaRemainingText(fiveHour)} / week ${quotaRemainingText(weekly)}`;
+}
+
+function rememberCodexProfiles(value) {
+  const profiles = value && Array.isArray(value.profiles) ? value.profiles : [];
+  state.codexProfiles = profiles;
+  state.activeCodexProfileId = String(value && value.activeProfileId || "");
+  state.codexProfileSwitchSupported = value ? value.switchSupported !== false : false;
+  renderCodexProfileSettings();
+}
+
+function codexProfileAccountLabel(profile) {
+  const auth = profile && profile.auth || {};
+  if (auth.status === "loggedIn") {
+    return auth.email || auth.name || auth.label || auth.accountId || "Logged in";
+  }
+  if (auth.status === "error") return "Auth unreadable";
+  return "Not logged in";
+}
+
+function renderCodexProfileSettings() {
+  const el = $("codexProfileSettings");
+  if (!el) return;
+  const profiles = Array.isArray(state.codexProfiles) ? state.codexProfiles : [];
+  if (!profiles.length) {
+    el.innerHTML = '<div class="codex-profile-empty">No Codex profiles found</div>';
+    return;
+  }
+  el.innerHTML = profiles.map((profile) => {
+    const id = String(profile.id || "");
+    const active = Boolean(profile.active) || id === state.activeCodexProfileId;
+    const loggedIn = profile.auth && profile.auth.status === "loggedIn";
+    const disabled = active || state.codexProfileSwitchBusy || state.codexProfileRestarting || !state.codexProfileSwitchSupported || !loggedIn;
+    const action = active ? "Active" : "Switch";
+    const title = !state.codexProfileSwitchSupported
+      ? "Profile switching is disabled for this app-server configuration"
+      : !loggedIn
+        ? "Login to this Codex home before switching"
+        : active
+          ? "Current active profile"
+          : "Switch all workspaces to this profile";
+    return `<div class="codex-profile-row${active ? " active" : ""}">`
+      + `<div class="codex-profile-main">`
+      + `<strong>${escapeHtml(profile.label || id)}</strong>`
+      + `<span>${escapeHtml(codexProfileAccountLabel(profile))}</span>`
+      + `<small>${escapeHtml(profile.codexHome || "")}</small>`
+      + `</div>`
+      + `<div class="codex-profile-side">`
+      + `<span class="codex-profile-quota">${escapeHtml(quotaShortTextFromSnapshot(profile.quota))}</span>`
+      + `<button type="button" data-codex-profile-id="${escapeHtml(id)}" ${disabled ? "disabled" : ""} title="${escapeHtml(title)}">${escapeHtml(action)}</button>`
+      + `</div>`
+      + `</div>`;
+  }).join("");
+}
+
+async function loadCodexProfiles() {
+  const profiles = await api("/api/codex-profiles", { timeoutMs: 12000 });
+  rememberCodexProfiles(profiles);
+  return profiles;
+}
+
+async function handleCodexProfileSettingsClick(event) {
+  const button = event.target.closest("[data-codex-profile-id]");
+  if (!button || button.disabled) return;
+  const profileId = button.getAttribute("data-codex-profile-id") || "";
+  if (!profileId || state.codexProfileSwitchBusy || state.codexProfileRestarting) return;
+  const profile = state.codexProfiles.find((item) => String(item.id || "") === profileId);
+  const label = profile ? `${profile.label || profileId} (${codexProfileAccountLabel(profile)})` : profileId;
+  if (!window.confirm(`Switch all Codex Mobile workspaces to ${label}?`)) return;
+  state.codexProfileSwitchBusy = true;
+  $("connectionState").textContent = "Switching Codex profile...";
+  renderCodexProfileSettings();
+  try {
+    await api("/api/codex-profiles/active", {
+      method: "POST",
+      body: JSON.stringify({ profileId }),
+      timeoutMs: 12000,
+    });
+    state.codexProfileRestarting = true;
+    $("connectionState").textContent = "Codex profile switched. Restarting...";
+    renderCodexProfileSettings();
+    showReconnectRefreshPrompt("restart");
+  } finally {
+    state.codexProfileSwitchBusy = false;
+    renderCodexProfileSettings();
+  }
 }
 
 function appVersionText(status = state.appUpdateStatus) {
@@ -3534,6 +3631,7 @@ async function bootstrap() {
   });
   if (status) updateConnectionState(status);
   if (status && (status.rateLimits || status.rateLimitsByModel)) rememberRateLimits(status.rateLimits, status.rateLimitsByModel);
+  if (status && status.codexProfiles) rememberCodexProfiles(status.codexProfiles);
   await loadWorkspaces();
   await loadThreads({ silent: state.startupThreadOpenPending });
   let appliedPluginLaunchTarget = false;
@@ -7805,6 +7903,7 @@ function connectEvents() {
       if (payload.status.rateLimits || payload.status.rateLimitsByModel) {
         rememberRateLimits(payload.status.rateLimits, payload.status.rateLimitsByModel);
       }
+      if (payload.status.codexProfiles) rememberCodexProfiles(payload.status.codexProfiles);
       return;
     }
     if (payload.type === "notification") applyNotification(payload.method, payload.params);
@@ -7828,6 +7927,7 @@ function connectEvents() {
         updateConnectionState(status);
         clearReconnectRefreshPrompt();
         if (status.rateLimits || status.rateLimitsByModel) rememberRateLimits(status.rateLimits, status.rateLimitsByModel);
+        if (status.codexProfiles) rememberCodexProfiles(status.codexProfiles);
         await loadThreads();
         await refreshCurrentThread();
         ensureEventConnection();
@@ -7941,6 +8041,7 @@ async function resumeMobileSession(reason = "resume") {
     const status = await api("/api/status");
     updateConnectionState(status);
     if (status.rateLimits || status.rateLimitsByModel) rememberRateLimits(status.rateLimits, status.rateLimitsByModel);
+    if (status.codexProfiles) rememberCodexProfiles(status.codexProfiles);
     await loadThreads({ silent: Boolean(state.threads.length) });
     if (state.currentThreadId && state.currentThread && !state.currentThread.mobileLoading) {
       scheduleCurrentThreadRefresh(250);
@@ -9484,10 +9585,14 @@ function wireUi() {
   if ($("publicPrStatus")) $("publicPrStatus").addEventListener("click", () => handlePublicPrStatusClick().catch(showError));
   if ($("sharedRestartButton")) $("sharedRestartButton").addEventListener("click", () => handleSharedRestartClick().catch(showError));
   if ($("themeSettingsToggle")) $("themeSettingsToggle").addEventListener("click", () => {
+    loadCodexProfiles().catch(showError);
     setTimeout(() => publishPluginNavigationState({ force: true }), 0);
   });
   const settingsPanel = $("themeSettingsPanel");
-  if (settingsPanel) settingsPanel.addEventListener("click", handleFontSizeChoice);
+  if (settingsPanel) {
+    settingsPanel.addEventListener("click", handleFontSizeChoice);
+    settingsPanel.addEventListener("click", (event) => handleCodexProfileSettingsClick(event).catch(showError));
+  }
   const commandControl = $("composerCommandControl");
   if (commandControl) {
     commandControl.addEventListener("pointerdown", (event) => {
@@ -9854,6 +9959,7 @@ async function start() {
   renderSharedRestartButton();
   renderComposerSettings();
   rememberRateLimits(config.rateLimits || null, config.rateLimitsByModel || null);
+  rememberCodexProfiles(config.codexProfiles || null);
   updatePushButton();
   if (isHermesEmbedMode() && state.pluginLaunchSession) {
     try {

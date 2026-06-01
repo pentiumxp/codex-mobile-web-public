@@ -616,6 +616,41 @@ newly created workspace is rejected by `/api/threads/new-message`, check:
 Do not fix this by editing `.codex\.codex-global-state.json` manually. Use the
 Mobile Web registry route or Codex/Desktop workspace selection paths.
 
+## Codex Profile Switch Does Not Change Account
+
+The settings-panel profile switcher changes the single active Mobile Web
+`CODEX_HOME` after a listener restart. It does not live-switch the current Node
+process and it does not change Codex Desktop GUI login state.
+
+Check these facts in order:
+
+- `/api/codex-profiles` should list each profile with `auth.status`,
+  `auth.email` or another safe account label, and `activeProfileId`.
+- `%USERPROFILE%\.codex-mobile-web\codex-profiles.json` should contain the
+  selected `activeProfileId`.
+- After switching, the hidden/windowless launcher must restart the shared
+  chain; `/api/status.codexHome` should match the selected profile home.
+- The restart log should show the same `codexHome=...` value and the mux
+  endpoint should be under that profile's
+  `<CODEX_HOME>\app-server-mux\endpoint.json`, not always the default
+  `%USERPROFILE%\.codex` endpoint.
+- If Desktop must be used as a recovery path, fully quit Desktop and relaunch
+  it through `start-codex-desktop-shared.ps1 -ProfileId <id>` or the matching
+  `start-codex-desktop-<id>.cmd` wrapper so Desktop and Mobile share the same
+  profile mux. Desktop GUI login may still be global; verify shared state by
+  comparing the selected `CODEX_HOME` and endpoint.
+- The shared-chain restart should only stop the selected endpoint's recorded
+  mux/child PIDs. If a dry run lists many unrelated profile muxes, treat that
+  as a regression before running a real restart.
+- If `switchSupported=false`, the process is pinned to a fixed
+  `CODEX_MOBILE_MUX_ENDPOINT_FILE`, `CODEX_MOBILE_APP_SERVER_WS`, or
+  `CODEX_MOBILE_APP_SERVER_TCP`; those deployments cannot be switched by a
+  profile file.
+- Inactive quota values are recent rollout snapshots. They can be stale or
+  unavailable until that profile has produced recent `rate_limits` events.
+
+The browser should never display or log raw token fields from `auth.json`.
+
 ## Source `#` Task-Card Draft Reappears After Approve Or Dismiss
 
 If the source thread hides a `#`-generated draft card immediately after

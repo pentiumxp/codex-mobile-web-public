@@ -2,6 +2,8 @@ param(
   [string]$TaskName = "Codex Mobile Web",
   [string]$WorkspacePath = (Split-Path -Parent $MyInvocation.MyCommand.Path),
   [string]$UserProfilePath = $env:USERPROFILE,
+  [string]$ProfileId = "",
+  [string]$CodexHome = "",
   [int]$Port = 8787,
   [int]$MaxWaitSeconds = 45,
   [switch]$NoStart,
@@ -33,10 +35,57 @@ function Test-ContainsPath {
   return $CommandLine.IndexOf($Path, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
 }
 
+function Resolve-CodexHomeFromProfile {
+  param(
+    [string]$RequestedProfileId,
+    [string]$RequestedCodexHome,
+    [string]$RuntimePath,
+    [string]$ProfilePath
+  )
+
+  if (-not [string]::IsNullOrWhiteSpace($RequestedCodexHome)) {
+    return [System.IO.Path]::GetFullPath($RequestedCodexHome)
+  }
+
+  $storePath = Join-Path $RuntimePath "codex-profiles.json"
+  $profile = if ([string]::IsNullOrWhiteSpace($RequestedProfileId)) { "" } else { $RequestedProfileId.Trim().ToLowerInvariant() }
+
+  if ([string]::IsNullOrWhiteSpace($profile) -and (Test-Path -LiteralPath $storePath)) {
+    try {
+      $store = Get-Content -LiteralPath $storePath -Raw -Encoding UTF8 | ConvertFrom-Json
+      $profile = ([string]$store.activeProfileId).Trim().ToLowerInvariant()
+    } catch {
+      $profile = ""
+    }
+  }
+
+  if ([string]::IsNullOrWhiteSpace($profile) -or $profile -eq "default") {
+    return (Join-Path $ProfilePath ".codex")
+  }
+  if ($profile -eq "current" -or $profile -eq "previous") {
+    return (Join-Path (Join-Path $ProfilePath ".codex-homes") $profile)
+  }
+
+  if (Test-Path -LiteralPath $storePath) {
+    try {
+      $store = Get-Content -LiteralPath $storePath -Raw -Encoding UTF8 | ConvertFrom-Json
+      foreach ($item in @($store.profiles)) {
+        if ([string]$item.id -eq $profile -and -not [string]::IsNullOrWhiteSpace([string]$item.codexHome)) {
+          return [System.IO.Path]::GetFullPath([string]$item.codexHome)
+        }
+      }
+    } catch {
+      throw "Failed to read Codex profile store ${storePath}: $($_.Exception.Message)"
+    }
+  }
+
+  throw "Unknown Codex profile '$RequestedProfileId'. Use default/current/previous or pass -CodexHome."
+}
+
 $WorkspacePath = Resolve-ExistingPath $WorkspacePath
 $UserProfilePath = Resolve-ExistingPath $UserProfilePath
 $RuntimeRoot = Join-Path $UserProfilePath ".codex-mobile-web"
-$CodexHome = Join-Path $UserProfilePath ".codex"
+$CodexHome = Resolve-CodexHomeFromProfile -RequestedProfileId $ProfileId -RequestedCodexHome $CodexHome -RuntimePath $RuntimeRoot -ProfilePath $UserProfilePath
 $EndpointFile = Join-Path $CodexHome "app-server-mux\endpoint.json"
 $LogPath = Join-Path $RuntimeRoot "shared-chain-restart.log"
 
@@ -62,7 +111,28 @@ function Write-RestartLog {
   }
 }
 
+function Get-EndpointProcessIds {
+  if (-not (Test-Path -LiteralPath $EndpointFile)) {
+    return @()
+  }
+
+  try {
+    $endpoint = Get-Content -LiteralPath $EndpointFile -Raw | ConvertFrom-Json
+    $ids = @()
+    foreach ($value in @($endpoint.pid, $endpoint.childPid)) {
+      if ($value -and [int]$value -gt 0) {
+        $ids += [int]$value
+      }
+    }
+    return @($ids | Select-Object -Unique)
+  } catch {
+    Write-RestartLog "Failed to read endpoint process ids from '$EndpointFile': $($_.Exception.Message)"
+    return @()
+  }
+}
+
 function Get-TargetProcesses {
+  $endpointProcessIds = Get-EndpointProcessIds
   $processes = Get-CimInstance Win32_Process | Where-Object {
     $name = $_.Name
     $cmd = $_.CommandLine
@@ -79,14 +149,16 @@ function Get-TargetProcesses {
     if ($name -ieq "node.exe" -and (Test-ContainsPath $cmd $ServerPath)) {
       return $true
     }
-    if ($name -ieq "node.exe" -and (Test-ContainsPath $cmd $MuxScriptPath)) {
-      return $true
-    }
-    if ($name -ieq "codex-app-server-mux.exe" -and (Test-ContainsPath $cmd $MuxExePath)) {
-      return $true
-    }
-    if ($name -ieq "codex.exe" -and (Test-ContainsPath $cmd $RuntimeCodexExePath) -and ($cmd -match "(^|\s)app-server(\s|$)")) {
-      return $true
+    if ($endpointProcessIds -contains [int]$_.ProcessId) {
+      if ($name -ieq "node.exe" -and (Test-ContainsPath $cmd $MuxScriptPath)) {
+        return $true
+      }
+      if ($name -ieq "codex-app-server-mux.exe" -and (Test-ContainsPath $cmd $MuxExePath)) {
+        return $true
+      }
+      if ($name -ieq "codex.exe" -and (Test-ContainsPath $cmd $RuntimeCodexExePath) -and ($cmd -match "(^|\s)app-server(\s|$)")) {
+        return $true
+      }
     }
     return $false
   }
@@ -226,7 +298,7 @@ function Wait-Ready {
   throw "Timed out waiting for Codex Mobile Web shared chain to become ready."
 }
 
-Write-RestartLog "Starting shared-chain restart. workspace='$WorkspacePath' task='$TaskName' dryRun=$DryRun noStart=$NoStart"
+Write-RestartLog "Starting shared-chain restart. workspace='$WorkspacePath' task='$TaskName' codexHome='$CodexHome' dryRun=$DryRun noStart=$NoStart"
 Stop-MobileTask
 Stop-TargetProcesses
 Remove-EndpointFile

@@ -30,6 +30,21 @@ test("restart command targets the existing shared-chain restart script", () => {
   assert.match(command, /-Port 8787/);
 });
 
+test("restart command can target an explicit Codex profile home", () => {
+  const command = buildRestartPowerShellCommand({
+    scriptPath: "C:\\repo\\restart-codex-mobile-shared-chain.ps1",
+    taskName: "Codex Mobile Web",
+    workspacePath: "C:\\repo",
+    userProfilePath: "C:\\Users\\xuxin",
+    profileId: "previous",
+    codexHome: "C:\\Users\\xuxin\\.codex-homes\\previous",
+    port: 8787,
+  });
+
+  assert.match(command, /-ProfileId 'previous'/);
+  assert.match(command, /-CodexHome 'C:\\Users\\xuxin\\\.codex-homes\\previous'/);
+});
+
 test("restart service spawns a detached hidden PowerShell process", () => {
   const root = path.resolve(__dirname, "..");
   let spawnCall = null;
@@ -76,6 +91,7 @@ test("restart service spawns a detached hidden PowerShell process", () => {
   const decoded = Buffer.from(encoded, "base64").toString("utf16le");
   assert.match(decoded, /restart-codex-mobile-shared-chain\.ps1/);
   assert.match(decoded, /-TaskName 'Codex Mobile Web'/);
+  assert.doesNotMatch(decoded, /-CodexHome/);
 });
 
 test("macOS restart command relaunches Mobile Web through launchctl only", () => {

@@ -16,7 +16,7 @@ This document is about:
 
 This document is not about:
 
-- sharing one Codex Mobile instance across multiple accounts;
+- running one Codex Mobile instance as two accounts at the same time;
 - changing Codex Desktop package internals;
 - storing raw secrets in the repository.
 
@@ -170,6 +170,38 @@ one instance has:
 - one access key boundary;
 - one app-server/CLI chain;
 - one port/listener identity.
+
+The implemented simple Mobile Web path is therefore a single active profile
+switcher, not concurrent providers:
+
+- `adapters/codex-profile-service.js` owns profile discovery, safe
+  `auth.json` account display, quota snapshots from rollout evidence, and the
+  persisted active profile file.
+- The settings panel lists `Default`, `Current`, and `Previous` when present,
+  including the logged-in account label/email when it can be safely derived
+  from `auth.json`. It never returns raw tokens.
+- `POST /api/codex-profiles/active` writes the active profile to
+  `%USERPROFILE%\.codex-mobile-web\codex-profiles.json` and restarts the
+  Mobile Web shared chain.
+- `start-codex-mobile-web-windowless.ps1` reads that active profile before it
+  starts the mux or Node listener, so the selected `CODEX_HOME` applies to all
+  Mobile Web workspaces after restart.
+- `restart-codex-mobile-shared-chain.ps1` also resolves the active profile
+  store before removing or waiting on the mux endpoint, so a profile switch
+  does not restart against the default `.codex` endpoint by mistake.
+- `start-codex-desktop-shared.ps1 -ProfileId default|current|previous` and the
+  matching `start-codex-desktop-*.cmd` wrappers are the Desktop recovery path
+  for this design. They set `CODEX_HOME` for the launched Desktop bridge and
+  point it at the selected profile's
+  `<CODEX_HOME>\app-server-mux\endpoint.json`. This does not prove that the
+  Desktop GUI ChatGPT login is independently isolated; it makes the mux/app-
+  server sharing path profile-aware.
+- This switcher is disabled when Mobile Web is pinned to
+  `CODEX_MOBILE_MUX_ENDPOINT_FILE`, `CODEX_MOBILE_APP_SERVER_WS`, or
+  `CODEX_MOBILE_APP_SERVER_TCP`, because those fixed endpoints are outside the
+  per-profile mux path.
+- Inactive profile quota is a recent snapshot from that profile's rollout
+  files, not a live API call unless that profile has recently been active.
 
 If future work requires dual-account Codex Mobile while avoiding Desktop:
 

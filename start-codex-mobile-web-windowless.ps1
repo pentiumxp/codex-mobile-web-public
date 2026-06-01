@@ -19,16 +19,51 @@ param(
 $ErrorActionPreference = "Stop"
 
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+function Resolve-CodexHomeFromProfileStore {
+    param(
+        [string]$ProfilePath,
+        [string]$RuntimePath
+    )
+    if ([string]::IsNullOrWhiteSpace($ProfilePath) -or [string]::IsNullOrWhiteSpace($RuntimePath)) {
+        return ""
+    }
+    $storePath = Join-Path $RuntimePath "codex-profiles.json"
+    if (-not (Test-Path -LiteralPath $storePath)) {
+        return ""
+    }
+    try {
+        $store = Get-Content -LiteralPath $storePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $activeProfileId = [string]$store.activeProfileId
+        if ([string]::IsNullOrWhiteSpace($activeProfileId) -or -not $store.profiles) {
+            return ""
+        }
+        foreach ($profile in @($store.profiles)) {
+            if ([string]$profile.id -eq $activeProfileId -and -not [string]::IsNullOrWhiteSpace([string]$profile.codexHome)) {
+                return [string]$profile.codexHome
+            }
+        }
+    } catch {
+        return ""
+    }
+    return ""
+}
+
 if (-not [string]::IsNullOrWhiteSpace($UserProfilePath)) {
     $env:USERPROFILE = $UserProfilePath
     $env:HOME = $UserProfilePath
     $env:HOMEDRIVE = Split-Path -Qualifier $UserProfilePath
     $env:HOMEPATH = $UserProfilePath.Substring($env:HOMEDRIVE.Length)
-    if ([string]::IsNullOrWhiteSpace($env:CODEX_HOME)) {
-        $env:CODEX_HOME = Join-Path $UserProfilePath ".codex"
-    }
     if ([string]::IsNullOrWhiteSpace($env:CODEX_MOBILE_RUNTIME_DIR)) {
         $env:CODEX_MOBILE_RUNTIME_DIR = Join-Path $UserProfilePath ".codex-mobile-web"
+    }
+    if ([string]::IsNullOrWhiteSpace($env:CODEX_HOME)) {
+        $profileCodexHome = Resolve-CodexHomeFromProfileStore -ProfilePath $UserProfilePath -RuntimePath $env:CODEX_MOBILE_RUNTIME_DIR
+        if (-not [string]::IsNullOrWhiteSpace($profileCodexHome)) {
+            $env:CODEX_HOME = $profileCodexHome
+        } else {
+            $env:CODEX_HOME = Join-Path $UserProfilePath ".codex"
+        }
     }
 }
 

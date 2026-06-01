@@ -46,6 +46,7 @@ Tracked source files live in the repository. Runtime state stays outside Git:
 | `%USERPROFILE%\.codex` | Codex Desktop/app-server state, session rollout JSONL, `state_5.sqlite`, shared mux endpoint |
 | `%USERPROFILE%\.codex-mobile-web` | Mobile Web access key, uploads, Web Push files, logs, local Codex executable copy, Hermes plugin registration state |
 | `%USERPROFILE%\.codex-mobile-web\workspace-registry.json` | Mobile Web-created workspace folders. This augments Mobile Web visibility without editing `.codex` global state. |
+| `%USERPROFILE%\.codex-mobile-web\codex-profiles.json` | Active Codex profile selection for the single-profile switcher. Contains profile ids, labels, and `CODEX_HOME` paths only; never auth tokens. |
 | `%USERPROFILE%\.codex\app-server-mux\endpoint.json` | Shared mux JSONL TCP endpoint used by Mobile Web and Desktop bridge |
 | `.agent-context/` | Durable local project context, not public release content |
 
@@ -58,6 +59,33 @@ Keep `.codex` read-only except through app-server RPCs. Do not patch rollout fil
 `GET /api/public-config` exposes auth requirement, version/build ids, runtime option lists, upload limits, rollout warning threshold, quota snapshots, Push support, self-update availability, public PR check availability, and the Hermes plugin endpoint paths. The browser uses this before showing the app shell.
 
 Authentication uses `x-codex-mobile-key`, `Authorization: Bearer`, the existing cookie, or the existing `key` query parameter against the runtime access key file. Do not print the key in logs or chat output.
+
+### Codex Profile Switching
+
+Mobile Web supports a simple single-active-profile switcher for local Codex CLI
+homes. This is not concurrent provider routing: the Node listener, mux endpoint,
+state DB, sessions, and all workspaces use one active `CODEX_HOME` at a time.
+
+`adapters/codex-profile-service.js` discovers the default `.codex` home plus
+`%USERPROFILE%\.codex-homes\current` and `previous` when present. It reads
+`auth.json` only to return safe account identity fields such as email/name or a
+redacted account id, and it scans recent rollout tails for per-profile quota
+snapshots. Raw tokens never leave the service.
+
+The authenticated `POST /api/codex-profiles/active` endpoint persists the
+selected profile to `%USERPROFILE%\.codex-mobile-web\codex-profiles.json` and
+then delegates to the shared-chain restart service. On Windows, the restart
+script and windowless/hidden launcher read that active profile before resolving
+the mux endpoint, starting the standalone mux, and starting the Node listener,
+so the selected `CODEX_HOME` applies globally after restart. The Desktop escape
+hatch can be launched through `start-codex-desktop-shared.ps1 -ProfileId
+default|current|previous` or a matching `.cmd` wrapper so Desktop and Mobile
+share the same profile mux endpoint. Desktop GUI login isolation is not assumed;
+the supported sharing boundary is the CLI `CODEX_HOME` plus mux endpoint. Fixed
+external endpoint deployments using
+`CODEX_MOBILE_MUX_ENDPOINT_FILE`, `CODEX_MOBILE_APP_SERVER_WS`, or
+`CODEX_MOBILE_APP_SERVER_TCP` disable switching because the endpoint is no
+longer derived from the selected home.
 
 ### Workspace List And Creation
 

@@ -19,6 +19,26 @@ test("shared-chain restart script waits for both HTTP and mux endpoint readiness
   assert.match(script, /Write-RestartLog "Codex Mobile Web shared chain is ready\."/);
 });
 
+test("shared-chain restart script resolves mux endpoint from selected Codex profile", () => {
+  assert.match(script, /\[string\]\$ProfileId = ""/);
+  assert.match(script, /\[string\]\$CodexHome = ""/);
+  assert.match(script, /function Resolve-CodexHomeFromProfile/);
+  assert.match(script, /codex-profiles\.json/);
+  assert.match(script, /\$store\.activeProfileId/);
+  assert.match(script, /\$CodexHome = Resolve-CodexHomeFromProfile/);
+  assert.match(script, /\$EndpointFile = Join-Path \$CodexHome "app-server-mux\\endpoint\.json"/);
+  assert.doesNotMatch(script, /\$CodexHome = Join-Path \$UserProfilePath "\.codex"/);
+});
+
+test("shared-chain restart script scopes mux cleanup to selected endpoint pids", () => {
+  assert.match(script, /function Get-EndpointProcessIds/);
+  assert.match(script, /\$endpoint\.pid/);
+  assert.match(script, /\$endpoint\.childPid/);
+  assert.match(script, /\$endpointProcessIds = Get-EndpointProcessIds/);
+  assert.match(script, /if \(\$endpointProcessIds -contains \[int\]\$_\.ProcessId\) \{/);
+  assert.match(script, /if \(\$endpointProcessIds -contains \[int\]\$_\.ProcessId\) \{[\s\S]*codex-app-server-mux\.exe[\s\S]*codex\.exe[\s\S]*\n    \}/);
+});
+
 test("shared-chain restart script only reports finished after readiness succeeds", () => {
   assert.match(script, /Start-MobileTask\s+Wait-Ready\s+Write-RestartLog "Shared-chain restart finished\."/s);
   assert.match(script, /throw "Timed out waiting for Codex Mobile Web shared chain to become ready\."/);
