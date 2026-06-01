@@ -23,7 +23,8 @@ test("self-update UI explains supervisor-dependent restart", () => {
 test("page prompts for refresh when server client build changes", () => {
   assert.match(serverJs, /function clientBuildId\(\)/);
   assert.match(serverJs, /clientBuildId:\s*clientBuildId\(\)/);
-  assert.match(serverJs, /shellCacheName:\s*readServiceWorkerCacheName\(\)/);
+  assert.match(serverJs, /shellCacheName:\s*STARTUP_SHELL_CACHE_NAME/);
+  assert.match(serverJs, /STARTUP_APP_SHELL_BUILD_ID = appShellBuildId\(STARTUP_SHELL_CACHE_NAME\)/);
   assert.match(indexHtml, /id="pageRefreshPrompt"/);
   assert.match(appJs, /const PAGE_SHELL_ASSETS = Object\.freeze\(\[/);
   assert.match(appJs, /"\/styles\.css"/);
@@ -52,6 +53,10 @@ test("page refresh prompt also handles server restart reconnects", () => {
   assert.match(appJs, /function showReconnectRefreshPrompt\(reason = "reconnect"\)/);
   assert.match(appJs, /state\.pageRefreshReason = reason === "restart" \? "restart" : "reconnect"/);
   assert.match(appJs, /function clearReconnectRefreshPrompt\(\)/);
+  assert.match(appJs, /function scheduleVisiblePageRefreshCheck\(delayMs = 0, options = \{\}\)/);
+  assert.match(appJs, /state\.events\.onopen = \(\) => \{[\s\S]*scheduleVisiblePageRefreshCheck\(200, \{ force: true \}\)/);
+  assert.match(appJs, /payload\.type === "status"[\s\S]*scheduleVisiblePageRefreshCheck\(1200\)/);
+  assert.match(appJs, /renderThreads\(result\);[\s\S]*scheduleVisiblePageRefreshCheck\(500\)/);
   assert.match(appJs, /服务重启中，点击刷新并重连/);
   assert.match(appJs, /连接中断，点击刷新并重连/);
   assert.match(appJs, /正在刷新并重连/);

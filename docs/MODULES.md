@@ -21,6 +21,7 @@
 | `adapters/message-input-service.js` | Upload-aware model input policy, image context mode, and extended-history persistence policy. |
 | `adapters/continuation-handoff-compaction-service.js` | Workspace handoff compaction before rollout continuation. |
 | `adapters/turn-usage-summary-service.js` | Rollout `token_count` parsing and completed-turn context/token usage summary attachment. |
+| `adapters/token-usage-stats-service.js` | Runtime SQLite token ledger for completed turns, keyed by `thread_id + turn_id`, with Workspace/day aggregation for sidebar stats. |
 | `adapters/public-pull-request-service.js` | Public GitHub pull request status normalization for prompt-only public PR checks. |
 | `adapters/push-notification-service.js` | Web Push turn tracking, sub-agent suppression classification, completed-turn notification thread-title resolution, and the bounded app-server display-summary cache used before SQLite fallback. |
 | `adapters/shared-chain-restart-service.js` | Authenticated restart endpoint orchestration. |
@@ -63,6 +64,7 @@ Add new service modules when logic has independent inputs/outputs, state rules, 
 | conversation rendering and operation cards | `test/conversation-render.test.js`, `test/collab-agent-render.test.js`, `test/thread-item-timestamp-enrichment.test.js`, `test/message-timestamp.test.js` |
 | continuation | `test/continuation-lineage.test.js`, `test/continuation-handoff-compaction-service.test.js` |
 | context and bootstrap size policy | `test/message-input-service.test.js`, `test/continuation-lineage.test.js`, `test/turn-usage-summary-service.test.js` |
+| Workspace token usage ledger | `test/token-usage-stats-service.test.js`, `test/turn-usage-summary-service.test.js`, `test/mobile-viewport.test.js` |
 | PWA/update/mobile viewport | `test/mobile-viewport.test.js`, `test/app-update.test.js`, `test/tablet-layout.test.js`, `test/manual-restart-ui.test.js`, `test/public-pull-request-service.test.js` |
 | thread visibility/worktree filtering | `test/thread-visibility.test.js`, `test/mobile-viewport.test.js` |
 | uploads/files/images | `test/image-compressor.test.js`, `test/message-input-service.test.js`, `test/generated-image-cache-service.test.js`, `test/file-preview.test.js`, `test/file-preview-ui.test.js`, `test/composer-draft.test.js` |
