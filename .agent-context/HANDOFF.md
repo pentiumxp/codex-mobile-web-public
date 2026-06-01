@@ -2,6 +2,153 @@
 
 Last compacted: 2026-05-31T03:26:40.298Z
 
+## 2026-06-01 Startup Resume Dedup v153
+
+- User report:
+  - After refreshing and logging in on mobile, requested log inspection. User
+    also noted Chrome could be used for reproduction.
+- Log finding:
+  - The v152 `startup_stage` events showed the first visible state was already
+    early: `early_opening_rendered` at about 10 ms and `public_config_done` at
+    about 319 ms.
+  - The main remaining slow path was not a single slow thread detail call. A
+    `pageshow` resume fired during cold startup and ran full
+    `resumeMobileSession()` while bootstrap was already restoring the saved
+    thread, ending as `mobile_resume_slow` around 3443 ms.
+  - The same startup log showed duplicated status/list/detail activity during
+    that overlap.
+- Local fix:
+  - `public/app.js`
+    - Added `state.startupInProgress`.
+    - `scheduleMobileResume()` now skips the full network resume path during
+      startup, runs only visual recovery, and logs
+      `mobile_resume_skipped_startup`.
+    - Static shell bumped to `0.1.11|codex-mobile-shell-v153`.
+  - `public/sw.js`
+    - App shell cache bumped to `codex-mobile-shell-v153`.
+  - Tests/docs:
+    - Updated mobile viewport/static shell assertions.
+    - Updated README, Troubleshooting, Project Context, and this handoff.
+- Status:
+  - Validation, Chrome reproduction, and runtime restart still need to be
+    completed in this turn.
+  - Local changes are uncommitted at this handoff update point.
+
+## 2026-06-01 Startup Timing Logs And Earlier Detail Restore v152
+
+- User report:
+  - v151 still felt obviously slow. Requested startup log inspection to find
+    where time is being spent and fix the problematic path.
+- Log evidence:
+  - Existing server-side thread-detail logs in
+    `%USERPROFILE%\.codex-mobile-web\codex-mobile-web.startup.log` showed the
+    current thread detail route itself is fast: recent `thread-detail complete`
+    entries for thread `019e7c13-f9fa-76d1-afef-cb9f9b833b71` were roughly
+    187-266 ms, with `thread/read` roughly 88-162 ms.
+  - Local authenticated timing after v151:
+    `/api/public-config` about 0.28-0.39 s, `/api/status` about 0.28-0.35 s,
+    `/api/workspaces` about 0.02 s, `/api/threads?limit=40` about
+    0.65-1.35 s, and current thread detail about 0.19-0.48 s.
+  - Existing logs did not include enough frontend startup milestones to explain
+    the user's several-second mobile delay, so client-side startup stage
+    diagnostics were needed.
+- Local fix:
+  - `public/app.js`
+    - Added bounded `startup_stage` client events for `public_config_done`,
+      `early_opening_rendered`, `app_shown`, `bootstrap_start`,
+      `restore_start`, `status_done`, `workspaces_done`, `threads_done`, and
+      `bootstrap_done`.
+    - The saved-thread `restore-startup` detail read now starts before awaiting
+      `/api/status`, so known-thread detail can overlap status/workspace/list
+      refresh instead of waiting for them.
+    - When a local key and startup thread intent exist, the app shell renders
+      the stable `Opening thread...` state before `/api/public-config`
+      completes; config still fills in model/quota/settings once it arrives.
+    - Static shell bumped to `0.1.11|codex-mobile-shell-v152`.
+  - `public/sw.js`
+    - App shell cache bumped to `codex-mobile-shell-v152`.
+  - Tests/docs:
+    - Updated mobile viewport/static shell assertions.
+    - Updated README, Architecture, Troubleshooting, Project Context, and this
+      handoff.
+- Status:
+  - `node --check public\app.js` passed.
+  - `node --check public\sw.js` passed.
+  - Focused `node --test test\mobile-viewport.test.js
+    test\thread-task-card-route.test.js test\app-update.test.js` passed: 12/12.
+  - `npm.cmd test` passed: 284/284.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+  - BOM check for touched source/test/docs/context files had no output.
+  - Restarted the 8787 Node listener by stopping old PID `103896`; the
+    windowless supervisor restarted it as PID `59580`.
+  - `/api/public-config` now returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v152`,
+    `shellCacheName=codex-mobile-shell-v152`, and
+    `imageContextMode=reference`.
+  - Authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`.
+  - Local changes are uncommitted at this handoff update point.
+
+## 2026-06-01 Startup Thread Loading v151
+
+- User report:
+  - v150 only slightly improved startup. On mobile, the page still stayed on
+    `Select a thread` for about two seconds, then `Loading thread` for another
+    two seconds, creating a roughly four-to-five second perceived delay.
+  - Screenshot confirmed the first pause was the standalone empty detail state
+    `Select a thread / Select a thread from the menu`, not the Hermes startup
+    loading gate.
+- Diagnosis:
+  - Local authenticated timing after v150 was not slow by itself:
+    `/api/status` about 0.28-0.39 s, `/api/workspaces` about 0.02 s,
+    `/api/threads?limit=40` about 0.65-0.74 s, and current thread detail about
+    0.19-0.26 s.
+  - The frontend still revealed the app shell through `showApp()` before
+    `bootstrap()` set `startupThreadOpenPending`, so a saved-thread cold start
+    could briefly render the empty home state.
+  - The saved-thread detail read also waited until after the thread list
+    response, creating a serial list-then-detail wait on higher-latency mobile
+    connections.
+- Local fix:
+  - `public/app.js`
+    - Added `hasStartupThreadOpenIntent()` and calls it before `showApp()`.
+    - If a saved current thread exists, the first visible app state is now
+      `Opening thread...` instead of `Select a thread`.
+    - Saved-thread detail loading starts as `restore-startup` in parallel with
+      workspace/list refresh, so detail no longer waits for the list response.
+    - Static shell bumped to `0.1.11|codex-mobile-shell-v151`.
+  - `public/sw.js`
+    - App shell cache bumped to `codex-mobile-shell-v151`.
+  - Tests/docs:
+    - Updated static mobile viewport coverage.
+    - Updated README, Architecture, Troubleshooting, Project Context, and this
+      handoff.
+- Status:
+  - `node --check public\app.js` passed.
+  - `node --check public\sw.js` passed.
+  - Focused `node --test test\mobile-viewport.test.js
+    test\thread-task-card-route.test.js test\app-update.test.js` passed: 12/12.
+  - `npm.cmd test` passed: 284/284.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+  - BOM check for touched source/test/docs/context files had no output.
+  - Restarted the 8787 Node listener by stopping old PID `120076`; the
+    windowless supervisor restarted it as PID `103896`.
+  - `/api/public-config` now returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v151`,
+    `shellCacheName=codex-mobile-shell-v151`, and
+    `imageContextMode=reference`.
+  - Authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`.
+  - Local changes are uncommitted at this handoff update point.
+
 ## 2026-06-01 Thread List Loading Limit v150
 
 - User report:
@@ -2081,3 +2228,74 @@ The previous full handoff was archived and should be opened only when old proven
 - Status:
   - Local changes are uncommitted.
   - Validation and runtime restart still need to be rerun for v146.
+
+## 2026-06-01 Startup Loading Instrumentation and Resume Dedupe v153
+
+- User report:
+  - Cold opening a saved thread still felt slow. The visible flow paused on the
+    app shell and then again on `Loading thread...`.
+  - User asked to inspect startup logs and also suggested using Chrome for a
+    local reproduction.
+- Diagnosis:
+  - Backend thread detail reads were not the main bottleneck for the current
+    thread; recent `thread_switch_complete` detail calls were generally in the
+    low hundreds of milliseconds, with larger rollout threads using the
+    bounded `large-rollout-turns-list` mode.
+  - The remaining cold-start path still did too much serial work and emitted no
+    precise client-side startup timings.
+  - After adding startup diagnostics, iPhone logs showed `pageshow` scheduling
+    a full `resumeMobileSession()` while `bootstrap()` was already opening the
+    saved thread. That produced duplicate status/workspace/thread-list/detail
+    reads and a `mobile_resume_slow` around 3.2-3.7s.
+- Local fix:
+  - `public/app.js`
+    - Shows `Opening thread...` as soon as a stored thread intent is known,
+      before waiting for `/api/public-config`.
+    - Starts the saved-thread restore read in parallel with `/api/status`,
+      workspace loading, and thread-list loading.
+    - Emits `startup_stage` client events for early shell render, public config,
+      app shown, bootstrap start, restore start, status, workspaces, threads,
+      bootstrap done, and startup done.
+    - Tracks `state.startupInProgress`.
+    - `scheduleMobileResume()` now skips the full network resume during startup,
+      keeps only visual recovery, and emits `mobile_resume_skipped_startup`.
+  - `public/app.js` / `public/sw.js`
+    - Static shell bumped to `0.1.11|codex-mobile-shell-v153` /
+      `codex-mobile-shell-v153`.
+  - Tests and docs updated:
+    - `test/mobile-viewport.test.js`
+    - `test/thread-task-card-route.test.js`
+    - README, Project Context, Architecture, and Troubleshooting.
+- Validation:
+  - `node --check public\app.js` passed.
+  - `node --check public\sw.js` passed.
+  - Focused `node --test test\mobile-viewport.test.js
+    test\thread-task-card-route.test.js test\app-update.test.js` passed: 12/12.
+  - `npm.cmd test` passed: 284/284.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+  - BOM check for touched files had no output.
+- Runtime verification:
+  - Restarted the 8787 listener after validation: old PID `59580`, new PID
+    `103360`.
+  - `/api/public-config` returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v153`,
+    `shellCacheName=codex-mobile-shell-v153`, and
+    `imageContextMode=reference`.
+  - Authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`.
+  - Chrome headless reproduction through CDP with a temporary profile loaded
+    the saved thread successfully. Server client-event logs show
+    `mobile_resume_skipped_startup` during startup and no Chrome
+    `mobile_resume_slow`; the Chrome run reached `thread_switch_complete` in
+    about 1.4s and `bootstrap_done` in about 2.1s.
+  - Fresh iPhone logs after v153 also show `mobile_resume_skipped_startup`; a
+    subsequent startup reached `thread_switch_complete` in about 1.1s and
+    `bootstrap_done` in about 2.0s.
+- Status:
+  - Local changes are uncommitted.
+  - Open clients need the v153 refresh prompt, hard refresh, close/reopen, or
+    Hermes plugin refresh path to load the new startup behavior.

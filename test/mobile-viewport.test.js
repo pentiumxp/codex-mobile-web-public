@@ -48,8 +48,8 @@ test("mobile viewport and early guards disable page zoom", () => {
 });
 
 test("public app shell cache advances after quota and token stat display fixes", () => {
-  assert.match(swJs, /codex-mobile-shell-v150/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v150"/);
+  assert.match(swJs, /codex-mobile-shell-v153/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v153"/);
   assert.match(appJs, /startupThreadOpenPending: false/);
   assert.match(indexHtml, /id="pluginStartupLoading"/);
   assert.match(indexHtml, /data-plugin-startup-title>正在加载 Codex\.\.\.</);
@@ -63,8 +63,17 @@ test("public app shell cache advances after quota and token stat display fixes",
   assert.doesNotMatch(appJs, /thread-card-token-badge/);
   assert.doesNotMatch(stylesCss, /thread-card-token-badge/);
   assert.match(appJs, /const savedThreadId = isHermesEmbedMode\(\) \? "" : \(localStorage\.getItem\(STORAGE_THREAD_ID\) \|\| ""\);/);
+  assert.match(appJs, /function hasStartupThreadOpenIntent\(\)/);
+  assert.match(appJs, /postClientEvent\("startup_stage"/);
+  assert.match(appJs, /state\.startupThreadOpenPending = hasStartupThreadOpenIntent\(\);[\s\S]*early_opening_rendered/);
+  assert.match(appJs, /postStartupStage\("public_config_done"/);
   assert.match(appJs, /state\.startupThreadOpenPending = Boolean\(startupThreadId \|\| savedThreadId \|\| \(startupPluginRouteHint && startupPluginRouteHint\.threadId\)\);/);
-  assert.match(appJs, /await loadThreads\(\{ silent: state\.startupThreadOpenPending \}\);/);
+  assert.match(appJs, /const earlyRestorePromise = savedThreadId && !startupThreadId[\s\S]*loadThread\(savedThreadId, \{ source: "restore-startup" \}\)/);
+  assert.match(appJs, /postStartupStage\("status_done"/);
+  assert.match(appJs, /postStartupStage\("threads_done"/);
+  assert.match(appJs, /startupInProgress: false/);
+  assert.match(appJs, /mobile_resume_skipped_startup/);
+  assert.match(appJs, /await loadThreads\(\{ silent: startupThreadOpenPending \}\);/);
   assert.match(appJs, /function renderStartupThreadOpening\(\)/);
   assert.match(appJs, /Opening thread\.\.\./);
   assert.match(appJs, /if \(state\.startupThreadOpenPending\) \{[\s\S]*renderStartupThreadOpening\(\);[\s\S]*return;/);

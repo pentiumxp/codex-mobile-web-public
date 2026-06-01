@@ -623,7 +623,7 @@ thread page is secondary and right-swipe/back returns to that primary page.
 If Mobile Web flashes `Loading thread...` when the user simply switches back
 from another app, the foreground recovery path is too heavy.
 
-Expected behavior after `codex-mobile-shell-v121`:
+Expected behavior after `codex-mobile-shell-v152`:
 
 - `resumeMobileSession()` keeps the current thread rendered in place.
 - The thread list refresh stays silent.
@@ -632,6 +632,20 @@ Expected behavior after `codex-mobile-shell-v121`:
 - URL thread hints still open a different thread when needed, but if the hinted
   thread already matches the current thread, the app should schedule a
   lightweight refresh instead of a full reload.
+- On cold startup with a saved current thread, `start()` should set the opening
+  intent before showing the app shell, so the user sees a stable
+  `Opening thread...` state instead of a transient `Select a thread` empty page.
+- The saved-thread detail request should start in parallel with workspace/list
+  refresh instead of waiting for the list response first.
+- Startup emits `startup_stage` client events for `public_config_done`,
+  `bootstrap_start`, `status_done`, `workspaces_done`, `threads_done`, and
+  `bootstrap_done`; compare these with `thread_switch_complete` to identify
+  whether the delay is network, list refresh, detail read, or client rendering.
+- `pageshow`, `focus`, and visibility resume events that fire while startup is
+  still in progress should not run the full network resume path. They should
+  log `mobile_resume_skipped_startup` and only run visual recovery, otherwise
+  cold startup duplicates status/list/detail requests and can report a slow
+  `mobile_resume_slow` even though bootstrap is already opening the thread.
 
 If the page is slow before or around the thread detail load, measure
 `/api/threads` by requested limit before changing thread-detail code. The mobile

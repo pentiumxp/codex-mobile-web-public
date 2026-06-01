@@ -77,6 +77,7 @@ const state = {
   resumeTimer: null,
   resumeVisualTimers: [],
   resumeSeq: 0,
+  startupInProgress: false,
   draftSaveTimer: null,
   draftRestoreSeq: 0,
   draftAttachmentWarningShown: false,
@@ -202,7 +203,7 @@ const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v150";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v153";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -238,6 +239,26 @@ const STORAGE_RATE_LIMITS = "codexMobileRateLimits";
 const STORAGE_RATE_LIMITS_BY_MODEL = "codexMobileRateLimitsByModel";
 const STORAGE_PUBLIC_PR_PROMPT = "codexMobilePublicPrPromptKey";
 const STORAGE_TASK_CARD_DRAFT_STATES = "codexMobileThreadTaskCardDraftStates";
+
+function hasStartupThreadOpenIntent() {
+  if (threadIdFromUrlValue(window.location.href)) return true;
+  if (isHermesEmbedMode()) {
+    const routeHint = pluginRouteHintFromUrl(window.location.href) || normalizePluginRouteHint(state.queuedPluginRouteHint);
+    return Boolean(routeHint && routeHint.threadId);
+  }
+  return Boolean(localStorage.getItem(STORAGE_THREAD_ID) || "");
+}
+
+function postStartupStage(stage, startedAt, details = {}) {
+  postClientEvent("startup_stage", Object.assign({
+    stage,
+    elapsedMs: roundedDurationMs(startedAt),
+    hasThreadOpenIntent: Boolean(state.startupThreadOpenPending),
+    currentThreadId: state.currentThreadId || "",
+    threadListCount: Array.isArray(state.threads) ? state.threads.length : 0,
+  }, details || {}));
+}
+
 const DRAFT_SAVE_DEBOUNCE_MS = 250;
 const THREAD_TASK_CARD_DRAFT_CREATE_STALE_MS = 45000;
 const THREAD_TASK_CARD_DRAFT_CREATE_MAX_ATTEMPTS = 3;
@@ -3685,21 +3706,52 @@ async function applyPluginLaunchTarget() {
 }
 
 async function bootstrap() {
+  const bootstrapStartedAt = nowPerfMs();
   if (isHermesEmbedMode()) showPluginStartupLoading();
   const startupThreadId = applyUrlThreadSelection();
   const startupPluginRouteHint = applyUrlPluginRouteHint();
   const savedThreadId = isHermesEmbedMode() ? "" : (localStorage.getItem(STORAGE_THREAD_ID) || "");
   state.startupThreadOpenPending = Boolean(startupThreadId || savedThreadId || (startupPluginRouteHint && startupPluginRouteHint.threadId));
+  const startupThreadOpenPending = state.startupThreadOpenPending;
+  postStartupStage("bootstrap_start", bootstrapStartedAt, {
+    hasStartupThreadId: Boolean(startupThreadId),
+    hasSavedThreadId: Boolean(savedThreadId),
+    hasPluginRouteThreadId: Boolean(startupPluginRouteHint && startupPluginRouteHint.threadId),
+  });
+  const earlyRestorePromise = savedThreadId && !startupThreadId
+    ? loadThread(savedThreadId, { source: "restore-startup" }).catch((err) => {
+      localStorage.removeItem(STORAGE_THREAD_ID);
+      showError(err);
+      renderCurrentThread();
+      return null;
+    })
+    : null;
+  if (earlyRestorePromise) postStartupStage("restore_start", bootstrapStartedAt, { threadId: savedThreadId });
+  const statusStartedAt = nowPerfMs();
   const status = await api("/api/status").catch((err) => {
     $("connectionState").textContent = err.message;
     $("connectionState").classList.add("error");
     return null;
   });
+  postStartupStage("status_done", bootstrapStartedAt, {
+    durationMs: roundedDurationMs(statusStartedAt),
+    ok: Boolean(status),
+  });
   if (status) updateConnectionState(status);
   if (status && (status.rateLimits || status.rateLimitsByModel)) rememberRateLimits(status.rateLimits, status.rateLimitsByModel);
   if (status && status.codexProfiles) rememberCodexProfiles(status.codexProfiles);
+  const workspacesStartedAt = nowPerfMs();
   await loadWorkspaces();
-  await loadThreads({ silent: state.startupThreadOpenPending });
+  postStartupStage("workspaces_done", bootstrapStartedAt, {
+    durationMs: roundedDurationMs(workspacesStartedAt),
+    workspaceCount: Array.isArray(state.workspaces) ? state.workspaces.length : 0,
+  });
+  const threadsStartedAt = nowPerfMs();
+  await loadThreads({ silent: startupThreadOpenPending });
+  postStartupStage("threads_done", bootstrapStartedAt, {
+    durationMs: roundedDurationMs(threadsStartedAt),
+    threadCount: Array.isArray(state.threads) ? state.threads.length : 0,
+  });
   let appliedPluginLaunchTarget = false;
   let appliedPluginRouteHint = false;
   try {
@@ -3719,11 +3771,15 @@ async function bootstrap() {
       state.startupThreadOpenPending = false;
     }
   } else if (!appliedPluginLaunchTarget && !appliedPluginRouteHint) {
-    await restoreThreadSelection();
+    if (earlyRestorePromise) await earlyRestorePromise;
+    else await restoreThreadSelection();
   } else {
     state.startupThreadOpenPending = false;
   }
   connectEvents();
+  postStartupStage("bootstrap_done", bootstrapStartedAt, {
+    hasCurrentThread: Boolean(state.currentThread),
+  });
   scheduleStartupUpdateCheck();
   scheduleStartupPublicPrCheck();
   initializePushControls().catch((err) => {
@@ -8190,6 +8246,15 @@ function scheduleVisualRecovery(reason = "visual", delay = 0, options = {}) {
 
 function scheduleMobileResume(reason = "resume", delay = 80) {
   if (document.visibilityState === "hidden") return;
+  if (state.startupInProgress) {
+    forceVisualRecovery(reason);
+    postClientEvent("mobile_resume_skipped_startup", {
+      reason,
+      currentThreadId: state.currentThreadId || "",
+      hasThreadOpenIntent: Boolean(state.startupThreadOpenPending),
+    });
+    return;
+  }
   const seq = ++state.resumeSeq;
   clearTimeout(state.resumeTimer);
   clearResumeVisualTimers();
@@ -10107,11 +10172,21 @@ function wireUi() {
 }
 
 async function start() {
+  const startStartedAt = nowPerfMs();
+  state.startupInProgress = true;
   wireUi();
   if (isHermesEmbedMode()) showPluginStartupLoading();
   startRelativeTimeTimer();
   startUiWatchdog();
+  state.startupThreadOpenPending = hasStartupThreadOpenIntent();
+  if (state.key && state.startupThreadOpenPending) {
+    showApp();
+    renderCurrentThread();
+    postStartupStage("early_opening_rendered", startStartedAt);
+  }
+  const configStartedAt = nowPerfMs();
   const config = await fetch("/api/public-config").then((res) => res.json());
+  postStartupStage("public_config_done", startStartedAt, { durationMs: roundedDurationMs(configStartedAt) });
   initializePageBuildState(config);
   startPageRefreshChecks();
   state.appVersion = String(config.version || "");
@@ -10164,6 +10239,7 @@ async function start() {
         path: "/api/v1/hermes/plugin/session",
       }) || "plugin_launch_invalid", { force: true });
       showPluginEmbedRecovering("Refreshing Codex Mobile plugin launch...");
+      state.startupInProgress = false;
       return;
     }
   }
@@ -10173,9 +10249,12 @@ async function start() {
       showPluginEmbedRecovering("Refreshing Codex Mobile plugin session...");
     }
     else showLogin();
+    state.startupInProgress = false;
     return;
   }
   showApp();
+  if (state.startupThreadOpenPending) renderCurrentThread();
+  postStartupStage("app_shown", startStartedAt);
   await bootstrap().catch((err) => {
     hidePluginStartupLoading();
     showError(err);
@@ -10191,6 +10270,8 @@ async function start() {
       else showLogin();
     }
   });
+  state.startupInProgress = false;
+  postStartupStage("startup_done", startStartedAt);
   resumeRememberedContinuationJob().catch(showError);
 }
 
