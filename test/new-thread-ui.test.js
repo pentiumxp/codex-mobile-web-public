@@ -55,6 +55,13 @@ test("quota display falls back only to a compatible account quota group", () => 
   assert.match(body, /isRateLimitCompatibleWithModel\(state\.rateLimits,\s*modelKey\)/, "quota should fall back only within the same quota group");
 });
 
+test("quota UI ignores source-less rate-limit notifications", () => {
+  const body = functionBody("applyNotification");
+
+  assert.match(body, /method === "account\/rateLimits\/updated"/);
+  assert.doesNotMatch(body, /rememberRateLimits\(params\.rateLimits/, "source-less quota notifications should not overwrite composer quota");
+});
+
 test("quota grouping treats Spark as independent and other Codex models as shared", () => {
   const body = functionBody("rateLimitModelKeys");
 

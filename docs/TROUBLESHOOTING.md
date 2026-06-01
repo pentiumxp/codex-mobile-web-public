@@ -221,6 +221,12 @@ If the sidebar still shows zero after a known completed turn, inspect the local
 runtime DB rather than the frontend cache. Do not edit `.codex` state to repair
 this ledger.
 
+If the full-screen `统计` project list shows a garbled Workspace name while
+`/api/workspaces` shows the same root correctly, inspect the `cwd` values in the
+token usage DB. Current builds normalize known Windows mojibake such as
+`ϵͳ¹¤¾ß` back to the visible Unicode Workspace root during record and query, so
+old rows should merge into the correct project after the 8787 listener restarts.
+
 ## Page Refresh Prompt Appears While Files Are Still Being Edited
 
 `/api/public-config` should report the app-shell build/cache snapshot captured
@@ -238,6 +244,20 @@ If the prompt does not appear after a real server restart into a newer shell
 build, check whether the loaded browser code calls `scheduleVisiblePageRefreshCheck()`
 from EventSource `onopen`, `status` messages, and successful `loadThreads()`.
 Older open pages may only check on a 60-second timer or foreground/focus events.
+
+## Composer Quota Jumps Between Two Weekly Percentages
+
+If the composer quota alternates between two weekly remaining percentages in the
+same open thread, compare authenticated `/api/public-config`, authenticated
+`/api/status`, and recent rollout `rate_limits` events. A shared mux can observe
+source-less `account/rateLimits/updated` events from another workspace, and
+recent rollout scans can contain different snapshots for the same `limitId=codex`.
+
+Current builds keep rollout-scanned quota as a cold-start fallback only and do
+not broadcast source-less rate-limit notifications directly to browsers. The
+composer quota should follow active `/api/public-config` / `/api/status`
+snapshots for the current Mobile Web chain, while profile settings can still use
+stored or scanned snapshots for inactive profile rows.
 
 ## Web Push
 
@@ -603,7 +623,7 @@ thread page is secondary and right-swipe/back returns to that primary page.
 If Mobile Web flashes `Loading thread...` when the user simply switches back
 from another app, the foreground recovery path is too heavy.
 
-Expected behavior after `codex-mobile-shell-v121`:
+Expected behavior after `codex-mobile-shell-v152`:
 
 - `resumeMobileSession()` keeps the current thread rendered in place.
 - The thread list refresh stays silent.
@@ -612,6 +632,26 @@ Expected behavior after `codex-mobile-shell-v121`:
 - URL thread hints still open a different thread when needed, but if the hinted
   thread already matches the current thread, the app should schedule a
   lightweight refresh instead of a full reload.
+- On cold startup with a saved current thread, `start()` should set the opening
+  intent before showing the app shell, so the user sees a stable
+  `Opening thread...` state instead of a transient `Select a thread` empty page.
+- The saved-thread detail request should start in parallel with workspace/list
+  refresh instead of waiting for the list response first.
+- Startup emits `startup_stage` client events for `public_config_done`,
+  `bootstrap_start`, `status_done`, `workspaces_done`, `threads_done`, and
+  `bootstrap_done`; compare these with `thread_switch_complete` to identify
+  whether the delay is network, list refresh, detail read, or client rendering.
+- `pageshow`, `focus`, and visibility resume events that fire while startup is
+  still in progress should not run the full network resume path. They should
+  log `mobile_resume_skipped_startup` and only run visual recovery, otherwise
+  cold startup duplicates status/list/detail requests and can report a slow
+  `mobile_resume_slow` even though bootstrap is already opening the thread.
+
+If the page is slow before or around the thread detail load, measure
+`/api/threads` by requested limit before changing thread-detail code. The mobile
+frontend should keep its default list page at `THREAD_LIST_PAGE_LIMIT = 40`; on
+this Windows deployment, requesting 60 or 80 rows made the list route roughly
+twice as slow even though the visible list was much smaller.
 
 ## First Load Flashes Workspace Home Before Opening A Thread
 
@@ -626,6 +666,21 @@ Expected behavior after `codex-mobile-shell-v122`:
   thread is restored.
 - The initial thread-list fetch stays silent while that direct-thread startup is
   pending, reducing visible flicker in the main panel.
+
+## Hermes Embed Startup Shows Several Intermediate Screens
+
+If slow network startup shows `Select a thread`, then `Loading threads...`, then
+the final plugin primary page, inspect the embedded startup loading gate.
+
+Expected behavior after `codex-mobile-shell-v147`:
+
+- `/?embed=hermes` shows a stable `正在加载 Codex...` loading layer during initial
+  bootstrap.
+- The app shell stays hidden behind that layer until `loadWorkspaces()`,
+  `loadThreads()`, and the final primary page, launch target, or route hint have
+  rendered.
+- Recovering/auth paths must clear the startup layer before showing the bounded
+  plugin-recovering or auth state.
 
 ## Hermes Embed Startup Briefly Shows A Red Codex Error Panel
 

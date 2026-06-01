@@ -23,7 +23,7 @@ test("settings panel exposes Codex profile account and switch UI", () => {
 test("server exposes profile list and active profile switch endpoints", () => {
   assert.match(serverJs, /createCodexProfileService/);
   assert.match(serverJs, /codexProfiles:\s*codexProfileService\.profiles\(\{/);
-  assert.match(serverJs, /activeQuota:\s*\{\s*rateLimits:\s*latestRateLimits/);
+  assert.match(serverJs, /activeQuota:\s*\{\s*rateLimits:\s*activeRateLimits\(\)/);
   assert.match(serverJs, /url\.pathname === "\/api\/codex-profiles"/);
   assert.match(serverJs, /url\.pathname === "\/api\/codex-profiles\/active"/);
   assert.match(serverJs, /sharedChainRestartService\.restart/);

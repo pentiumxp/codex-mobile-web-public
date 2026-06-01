@@ -372,8 +372,10 @@ let publicPullRequestStatus = null;
 let publicPullRequestCheckInFlight = null;
 let clients = new Map();
 let clientHeartbeats = new WeakMap();
-let latestRateLimits = null;
-const latestRateLimitsByModel = new Map();
+let latestLiveRateLimits = null;
+let latestSnapshotRateLimits = null;
+const latestLiveRateLimitsByModel = new Map();
+const latestSnapshotRateLimitsByModel = new Map();
 let lastRolloutRateLimitScanAt = 0;
 const latestRuntimeContextByPath = new Map();
 const latestItemTimestampsByPath = new Map();
@@ -3079,14 +3081,30 @@ function hasCurrentRateLimitWindow(rateLimits) {
   });
 }
 
-function recordRateLimits(value) {
-  const compacted = compactRateLimits(value);
-  if (!compacted || !hasCurrentRateLimitWindow(compacted)) return null;
-  latestRateLimits = compacted;
+function storeRateLimits(compacted, byModel) {
   for (const key of compacted.modelKeys || rateLimitModelKeys(compacted)) {
-    latestRateLimitsByModel.set(normalizeModelKey(key), compacted);
+    byModel.set(normalizeModelKey(key), compacted);
   }
   return compacted;
+}
+
+function recordRateLimits(value, options = {}) {
+  const compacted = compactRateLimits(value);
+  if (!compacted || !hasCurrentRateLimitWindow(compacted)) return null;
+  if (options.source === "rollout") {
+    latestSnapshotRateLimits = compacted;
+    return storeRateLimits(compacted, latestSnapshotRateLimitsByModel);
+  }
+  latestLiveRateLimits = compacted;
+  return storeRateLimits(compacted, latestLiveRateLimitsByModel);
+}
+
+function activeRateLimits() {
+  return latestLiveRateLimits || latestSnapshotRateLimits;
+}
+
+function activeRateLimitsByModelMap() {
+  return latestLiveRateLimitsByModel.size ? latestLiveRateLimitsByModel : latestSnapshotRateLimitsByModel;
 }
 
 function collectRecentRolloutFiles(root, options = {}) {
@@ -3174,12 +3192,12 @@ function loadRecentRateLimitsFromRollouts(options = {}) {
     }
   }
   for (const entry of [...latestByGroup.values()].sort((a, b) => a.eventMs - b.eventMs)) {
-    recordRateLimits(entry.rateLimits);
+    recordRateLimits(entry.rateLimits, { source: "rollout" });
   }
 }
 
 function rateLimitsByModelObject() {
-  return Object.fromEntries([...latestRateLimitsByModel.entries()]);
+  return Object.fromEntries([...activeRateLimitsByModelMap().entries()]);
 }
 
 function compactApprovalText(value, maxChars = 1200) {
@@ -3734,6 +3752,7 @@ function maybeRecordTurnTokenUsage(method, params) {
     threadId,
     turnId,
     cwd: threadSummary && threadSummary.cwd || "",
+    workspaceCwds: tokenUsageWorkspaceCwds(),
     completedAtMs: turnTimestampMs(params, "completedAt") || turnTimestampMs(params, "updatedAt") || Date.now(),
     model: threadSummary && threadSummary.model || usageSummary.model || "",
     usageSummary,
@@ -4256,7 +4275,7 @@ function notificationThreadId(payload) {
 
 function shouldSendEventToClient(payload, client = {}) {
   if (!payload || payload.type !== "notification") return true;
-  if (payload.method === "account/rateLimits/updated") return true;
+  if (payload.method === "account/rateLimits/updated") return false;
   if (payload.method === "thread/started"
     || payload.method === "thread/status/changed"
     || payload.method === "thread/name/updated"
@@ -4795,10 +4814,10 @@ class CodexAppServerClient {
       userAgent: this.info ? this.info.userAgent : null,
       lastError: this.lastError,
       sharedRequired: this.requireSharedAppServer,
-      rateLimits: latestRateLimits,
+      rateLimits: activeRateLimits(),
       rateLimitsByModel: rateLimitsByModelObject(),
       codexProfiles: codexProfileService.profiles({
-        activeQuota: { rateLimits: latestRateLimits, rateLimitsByModel: rateLimitsByModelObject() },
+        activeQuota: { rateLimits: activeRateLimits(), rateLimitsByModel: rateLimitsByModelObject() },
       }),
     };
   }
@@ -6301,6 +6320,13 @@ async function listWorkspaces() {
   }).sort((a, b) => Number(b.active) - Number(a.active) || a.label.localeCompare(b.label));
 }
 
+function tokenUsageWorkspaceCwds(globalState = readGlobalState()) {
+  return [
+    ...visibleWorkspaceRoots(globalState),
+    ...workspaceRegistryService.list().map((workspace) => workspace && workspace.cwd).filter(Boolean),
+  ];
+}
+
 async function handleApi(req, res) {
   const url = getUrl(req);
   if (url.pathname === "/api/v1/hermes/plugin/manifest" && req.method === "GET") {
@@ -6331,10 +6357,10 @@ async function handleApi(req, res) {
       permissionModeOptions: PERMISSION_MODE_OPTIONS,
       defaultModel: CODEX_CONFIG_DEFAULTS.model || DEFAULT_MODEL,
       defaultReasoningEffort: CODEX_CONFIG_DEFAULTS.reasoningEffort,
-      rateLimits: latestRateLimits,
+      rateLimits: activeRateLimits(),
       rateLimitsByModel: rateLimitsByModelObject(),
       codexProfiles: codexProfileService.profiles({
-        activeQuota: { rateLimits: latestRateLimits, rateLimitsByModel: rateLimitsByModelObject() },
+        activeQuota: { rateLimits: activeRateLimits(), rateLimitsByModel: rateLimitsByModelObject() },
       }),
       push: pushSubscriptionPublicStatus(),
       update: {
@@ -6367,7 +6393,7 @@ async function handleApi(req, res) {
   }
   if (url.pathname === "/api/codex-profiles" && req.method === "GET") {
     sendJson(res, 200, codexProfileService.profiles({
-      activeQuota: { rateLimits: latestRateLimits, rateLimitsByModel: rateLimitsByModelObject() },
+      activeQuota: { rateLimits: activeRateLimits(), rateLimitsByModel: rateLimitsByModelObject() },
     }));
     return;
   }
@@ -6904,7 +6930,7 @@ async function handleApi(req, res) {
       if (Array.isArray(result.threads)) result.threads = result.threads.slice(0, limit);
       sendJson(res, 200, tokenUsageStatsService.decorateThreadListResult(
         attachThreadTaskCardCountsToThreadListResult(result),
-        { cwd, days: 31 },
+        { cwd, days: 31, workspaceCwds: tokenUsageWorkspaceCwds(globalState) },
       ));
     } catch (err) {
       const fallback = [
@@ -6916,7 +6942,7 @@ async function handleApi(req, res) {
           data: fallback.map(attachThreadTaskCardCountsToSummary),
           mobileFallback: true,
           warning: err.message || String(err),
-        }, { cwd, days: 31 }));
+        }, { cwd, days: 31, workspaceCwds: tokenUsageWorkspaceCwds(globalState) }));
         return;
       }
       throw err;
