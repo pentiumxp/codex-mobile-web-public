@@ -37,6 +37,9 @@ layout and test strategy.
   - stable source draft settlement keyed by turn id plus draft content, with a
     matching-card lookup so app-server item-id drift does not re-send an already
     created card
+  - queued source draft creation must scan the current thread until it finds
+    the matching draft key; ordinary earlier assistant/plan messages are skipped
+    rather than treated as lookup failure
   - target-thread detail rendering only for `pending` cards whose
     `threadRole` is `target`; source outgoing pending cards should not render
     as local work items

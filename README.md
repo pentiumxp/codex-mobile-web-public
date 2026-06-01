@@ -242,6 +242,9 @@ source-side automatic creation, the source thread does not render an interim
 diagnostic. Source-thread draft cards also persist their settled `created` /
 `dismissed` state in browser storage using a stable turn-and-draft-content key,
 and re-check already stored cards for the source turn before auto-sending.
+That re-check continues past ordinary assistant or plan messages in long source
+threads, so a later valid draft still reaches `/api/thread-task-cards` instead
+of being dropped before the task-card store is updated.
 Leaving and re-entering the source or target thread therefore must not resurrect
 an already created draft or create a duplicate target card from the old bounded
 XML response.
@@ -1349,6 +1352,14 @@ plugin. The shell cache advances to `codex-mobile-shell-v102`.
 - `docs/MODULES.md` 增加 thread visibility/worktree filtering 测试映射，并明确 `server.js` 负责线程可见性过滤和本地文件预览根组合。
 - `docs/TROUBLESHOOTING.md` 增加 worktree 线程缺失排查步骤，并澄清文件预览不要通过加入宽泛根目录来修复。
 - `docs/COMPLEX_FEATURE_PATHS.md` 增加 Thread Visibility And Worktree Filtering 实现路径，要求同一套 cwd 匹配同时作用于服务端和前端过滤。
+
+### 2026-06-01 Public 发布说明（跨线程任务卡片 draft 自动创建修复）
+
+本次修复 `#` 跨线程任务卡片在长源线程里可能只生成 draft、但没有真正写入任务卡 store 的问题。PWA shell cache 升到 `codex-mobile-shell-v141`；更新后需要让已打开的浏览器/PWA 接受刷新提示、硬刷新或关闭重开。
+
+- 诊断结果：Hermes 源线程已返回有效 `<codex-mobile-thread-task-card-draft>`，目标是衣橱线程，但 `%USERPROFILE%\.codex-mobile-web\thread-task-cards.json` 没有新的 2026-06-01 记录，衣橱线程 pending 计数也为 0。
+- 根因：前端按 draft key 回查当前线程时，遇到第一个普通 assistant/plan 消息就提前停止扫描；长线程中真正的 draft 往往在后面，导致 `/api/thread-task-cards` 创建请求没有发出。
+- 修复后：回查逻辑会跳过非 draft 消息并继续扫描，找到后面的有效 draft 后再执行自动创建。新增测试防止再次把 `continue` 退回成提前 `return null`。
 
 ### Which Restart Is Needed After Changes
 

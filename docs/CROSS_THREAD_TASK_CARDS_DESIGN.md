@@ -220,6 +220,10 @@ Source thread:
 - persist source draft settlement using a stable key derived from the turn id
   and draft content, and treat already stored matching source-turn cards as
   created so thread re-entry or item-id drift cannot re-send the same draft.
+- when resolving a queued draft key in a long source thread, continue scanning
+  past ordinary assistant or plan messages that do not contain a valid draft;
+  a non-draft item must not abort lookup before a later valid draft can create
+  the target pending cards.
 
 Autonomous workflow cards should make the first-approval boundary visible. The
 first pending target card can label its approve action as `Approve workflow`;

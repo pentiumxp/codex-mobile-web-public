@@ -326,6 +326,11 @@ If no draft card appears, inspect:
 - whether the assistant reply contains a valid
   `<codex-mobile-thread-task-card-draft>...</codex-mobile-thread-task-card-draft>`
   JSON block;
+- whether `%USERPROFILE%\.codex-mobile-web\thread-task-cards.json` was updated
+  after the draft appeared. If the draft exists but the store timestamp and
+  target pending count do not change, inspect the browser-side queued draft
+  lookup in `public/app.js`; it must skip earlier non-draft assistant/plan
+  messages instead of aborting before the later draft item;
 - whether the returned `targetThreadId` is still present in the visible thread
   list;
 - whether attachments were present, which still blocks `#` commands.

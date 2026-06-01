@@ -48,6 +48,62 @@ The previous full handoff was archived and should be opened only when old proven
   - Server-side changes require restarting the 8787 Node listener.
   - Static frontend/PWA changes require clients to accept the refresh prompt, hard refresh, or close/reopen to load `codex-mobile-shell-v140`.
 
+## 2026-06-01 Cross-Thread Task Card Draft Lookup v141
+
+- User report:
+  - From Hermes, a `#` cross-thread task card was sent to the Wardrobe thread,
+    but Wardrobe did not receive a pending task card.
+- Diagnosis:
+  - Runtime task-card store `%USERPROFILE%\.codex-mobile-web\thread-task-cards.json`
+    was still last written on `2026-05-31T09:05:23Z`; it had 33 cards and no
+    new 2026-06-01 entry.
+  - Wardrobe target thread `019e7c0b-96d0-7e92-84fa-cb7b55d73466` had
+    `pendingIncomingTaskCardCount=0` and no attached `threadTaskCards`.
+  - Hermes source rollout `019e7c19-c797-7ed0-bd7d-494b5efea678` did contain a
+    valid `<codex-mobile-thread-task-card-draft>` targeting that Wardrobe
+    thread, so the model draft existed but the browser did not create the real
+    `/api/thread-task-cards` record.
+  - Root cause was `public/app.js` `findThreadTaskCardDraftByKey()`: while
+    scanning current-thread items for the queued draft key, it returned `null`
+    on the first non-draft assistant/plan item instead of continuing. Long
+    source threads usually have earlier assistant messages before the final
+    draft, so auto-create was skipped before the API call.
+- Local fix:
+  - `public/app.js` now continues scanning past non-draft assistant/plan items.
+  - `public/app.js` / `public/sw.js` bumped to
+    `0.1.11|codex-mobile-shell-v141` / `codex-mobile-shell-v141`.
+  - `test/thread-task-card-route.test.js` now asserts the queued draft lookup
+    uses `continue` and does not regress to early `return null`.
+  - Documentation updated in README, Architecture, Modules, Troubleshooting,
+    Cross-Thread design/implementation docs, Project Context, and this handoff.
+- Validation/status:
+  - `node --check public\app.js` passed.
+  - `node --check public\sw.js` passed.
+  - Focused `node --test test\thread-task-card-route.test.js
+    test\conversation-render.test.js test\mobile-viewport.test.js` passed:
+    23/23.
+  - `npm.cmd test` passed: 262/262.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+  - BOM check for touched source/test/docs/context files had no output.
+  - Restarted the 8787 Node listener: old PID `41696`, new PID `88388`.
+  - Post-restart `/api/public-config` returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v141`,
+    `shellCacheName=codex-mobile-shell-v141`, and
+    `imageContextMode=reference`.
+  - Post-restart authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`.
+  - After v141 activation, the previously generated Hermes draft was converted
+    into task card `ttc_13b81b24283ad6fa0b` for Wardrobe thread
+    `019e7c0b-96d0-7e92-84fa-cb7b55d73466`, then approved from the target side
+    into injected turn `019e8089-1558-79f2-b164-9c53f7cb1fc5`.
+  - Public repository was synced, validated, committed, and pushed:
+    `1a386c4 修复跨线程任务卡片 draft 自动创建`.
+  - Private local changes are still uncommitted at this handoff update point.
+
 ## Preserved Recent Handoff Tail
 
 ## 2026-05-29 Cross-Thread Task Card Planning Docs And Harness

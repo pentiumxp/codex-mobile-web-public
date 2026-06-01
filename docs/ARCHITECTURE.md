@@ -219,6 +219,11 @@ through `POST /api/thread-task-cards`. That route accepts either a single
 `targetThreadId` or multiple `targetThreadIds`, creates one stored card per
 target, and returns both the compatibility `card` field and the full `cards`
 array.
+When the browser later resolves the queued draft key for automatic creation, it
+must keep scanning past ordinary assistant or plan messages until it finds the
+matching draft block. Long source threads often contain many earlier
+non-draft messages, and those must not prevent the later draft from reaching
+the task-card API.
 The draft schema may include `workflowMode:"autonomous"` only when the command
 explicitly asks for no further approval or automatic collaboration. The first
 target-side approval activates a workflow grant scoped to the workflow id and
