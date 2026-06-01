@@ -5,6 +5,7 @@ const { test } = require("node:test");
 
 const {
   attachTurnUsageSummaries,
+  collectTokenUsageStatsFromEntries,
   collectTurnUsageSummariesFromEntries,
   collectTurnUsageSummariesFromRolloutText,
   contextRiskLevel,
@@ -329,4 +330,61 @@ test("context risk thresholds match visible warning levels", () => {
   assert.equal(contextRiskLevel(85), "high");
   assert.equal(contextRiskLevel(95), "critical");
   assert.equal(contextRiskLevel(Number.NaN), "unknown");
+});
+
+test("aggregates daily token usage stats from scoped token_count deltas", () => {
+  const entries = [
+    { type: "turn_context", timestamp: "2026-05-31T22:00:00.000+08:00", payload: { turn_id: "old" } },
+    {
+      type: "event_msg",
+      timestamp: "2026-05-31T22:00:20.000+08:00",
+      payload: {
+        type: "token_count",
+        info: {
+          last_token_usage: { input_tokens: 9_000, output_tokens: 1_000, total_tokens: 10_000 },
+          total_token_usage: { input_tokens: 9_000, output_tokens: 1_000, total_tokens: 10_000 },
+          model_context_window: 20_000,
+        },
+      },
+    },
+    { type: "turn_context", timestamp: "2026-06-01T09:00:00.000+08:00", payload: { turn_id: "today" } },
+    {
+      type: "event_msg",
+      timestamp: "2026-06-01T09:00:10.000+08:00",
+      payload: {
+        type: "token_count",
+        info: {
+          last_token_usage: { input_tokens: 12_000, cached_input_tokens: 2_000, output_tokens: 2_000, total_tokens: 14_000 },
+          total_token_usage: { input_tokens: 21_000, cached_input_tokens: 2_000, output_tokens: 3_000, total_tokens: 24_000 },
+          model_context_window: 30_000,
+        },
+      },
+    },
+    {
+      type: "event_msg",
+      timestamp: "2026-06-01T09:01:10.000+08:00",
+      payload: {
+        type: "token_count",
+        info: {
+          last_token_usage: { input_tokens: 2_000, output_tokens: 1_000, total_tokens: 3_000 },
+          total_token_usage: { input_tokens: 23_000, cached_input_tokens: 2_000, output_tokens: 4_000, total_tokens: 27_000 },
+          model_context_window: 30_000,
+        },
+      },
+    },
+  ];
+
+  const stats = collectTokenUsageStatsFromEntries(entries, {
+    nowMs: Date.parse("2026-06-01T12:00:00.000+08:00"),
+  });
+
+  assert.equal(stats.totals.totalTokens, 27_000);
+  assert.equal(stats.today.totalTokens, 17_000);
+  assert.equal(stats.week.totalTokens, 17_000);
+  assert.equal(stats.daily[0].date, "2026-06-01");
+  assert.equal(stats.daily[0].totalTokens, 17_000);
+  assert.equal(stats.daily[1].date, "2026-05-31");
+  assert.equal(stats.daily[1].totalTokens, 10_000);
+  assert.equal(stats.byTurnId.get("today").totalTokens, 17_000);
+  assert.equal(stats.eventCount, 3);
 });

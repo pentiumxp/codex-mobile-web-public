@@ -620,6 +620,63 @@ The previous full handoff was archived and should be opened only when old proven
 - Status:
   - Local changes are uncommitted.
 
+## 2026-06-01 Workspace Token Usage SQLite Ledger v143
+
+- User request:
+  - Add token consumption statistics with Workspace as the primary unit.
+  - Persist in real time to SQLite because continuation compaction or rollout
+    cleanup can remove transient context; do not depend on browser memory or
+    later rollout scans for project totals.
+  - Sidebar should show Workspace cumulative, weekly, and daily usage in `万`,
+    with a button for per-day details. Per-thread stats are secondary because
+    completed turns already show their own Usage card.
+- Local implementation:
+  - Added `adapters/token-usage-stats-service.js`.
+    - Creates `%USERPROFILE%\.codex-mobile-web\token-usage-stats.sqlite` by
+      default, overrideable with `CODEX_MOBILE_TOKEN_USAGE_DB`.
+    - Stores one row per `(thread_id, turn_id)` with cwd, local day, token
+      components, model, and source.
+    - Upserts repeated turn completions instead of double-counting.
+    - Aggregates Workspace total/today/week/daily stats for `/api/threads`.
+  - Extended `adapters/sqlite-cli.js` with `runSqliteExec()` for schema/upsert
+    execution.
+  - `server.js`
+    - Records completed-turn usage into SQLite on `turn/completed` after
+      resolving the scoped turn usage summary.
+    - Decorates thread-list results with Workspace `mobileTokenUsage`.
+    - Changed `/api/public-config` build/cache reporting to use the shell
+      snapshot captured at server startup, so editing static files on disk does
+      not trigger "页面有新版本" before the 8787 listener actually restarts into
+      the new build.
+  - `public/app.js` / `public/index.html` / `public/styles.css`
+    - Adds Workspace token summary under the Workspace selector:
+      `总 / 周 / 今`, unit `万`.
+    - Adds a compact `每日` toggle with recent per-day totals.
+    - Keeps thread-list token display as a small today badge only.
+  - `public/app.js` / `public/sw.js`
+    - Static shell bumped to `0.1.11|codex-mobile-shell-v143` /
+      `codex-mobile-shell-v143`.
+  - Documentation updated:
+    - README
+    - `.agent-context/PROJECT_CONTEXT.md`
+    - `docs/ARCHITECTURE.md`
+    - `docs/MODULES.md`
+    - `docs/COMPLEX_FEATURE_PATHS.md`
+    - `docs/TROUBLESHOOTING.md`
+- Validation so far:
+  - `node --check adapters\sqlite-cli.js` passed.
+  - `node --check adapters\token-usage-stats-service.js` passed.
+  - `node --check adapters\turn-usage-summary-service.js` passed.
+  - `node --check server.js` passed.
+  - `node --check public\app.js` passed.
+  - `node --check public\sw.js` passed.
+  - Focused `node --test test\token-usage-stats-service.test.js
+    test\turn-usage-summary-service.test.js` passed: 11/11.
+- Status:
+  - Local changes are uncommitted.
+  - Need rerun focused mobile viewport test after updating its shell-cache
+    expectation to v143, then run broader validation.
+
 ## 2026-06-01 Codex Profile Switcher v142
 
 - User request:
@@ -1593,3 +1650,152 @@ The previous full handoff was archived and should be opened only when old proven
     `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
     `lastError=null`.
   - Local changes are uncommitted.
+
+## 2026-06-01 Workspace Token Usage SQLite Ledger v143 Final
+
+- User request:
+  - Track token consumption primarily by Workspace/project.
+  - Persist immediately to SQLite because continuation compaction and rollout
+    cleanup can remove transient context.
+  - Show Workspace cumulative, week, today, and per-day detail in the sidebar.
+  - Per-thread stats are secondary because completed turns already show Usage.
+- Implemented:
+  - Added `adapters/token-usage-stats-service.js`.
+    - Default DB:
+      `%USERPROFILE%\.codex-mobile-web\token-usage-stats.sqlite`.
+    - Optional override: `CODEX_MOBILE_TOKEN_USAGE_DB`.
+    - One row per `(thread_id, turn_id)`, with cwd, local day, token fields,
+      model, and source.
+    - Upsert prevents duplicate completion notifications from double-counting.
+  - Extended `adapters/sqlite-cli.js` with `runSqliteExec()`.
+  - `server.js` records completed-turn usage on `turn/completed` and decorates
+    `/api/threads` with Workspace `mobileTokenUsage`.
+  - `public/index.html`, `public/app.js`, and `public/styles.css` show the
+    Workspace token ledger below the Workspace selector as total/week/today in
+    unit `wan`, with a compact daily-detail toggle. Thread rows keep only a
+    small today badge.
+  - Static shell bumped to `0.1.11|codex-mobile-shell-v143` /
+    `codex-mobile-shell-v143`.
+  - `/api/public-config` now reports the app-shell build/cache snapshot captured
+    at 8787 listener startup. Static files edited on disk should not trigger
+    a page-refresh prompt until the server actually restarts into the new
+    build and the browser preflights the target shell cache.
+  - Documentation updated in README, Project Context, Architecture, Modules,
+    Complex Feature Paths, Troubleshooting, and this handoff.
+- Validation:
+  - Focused `node --test test\app-update.test.js
+    test\thread-task-card-route.test.js test\mobile-viewport.test.js
+    test\token-usage-stats-service.test.js
+    test\turn-usage-summary-service.test.js` passed: 23/23.
+  - `npm.cmd test` passed: 281/281.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+- Status:
+  - Local changes are uncommitted.
+  - Restarted the 8787 listener after validation: old PID `58832`, new PID
+    `67896`.
+  - Post-restart `/api/public-config` returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v143`,
+    `shellCacheName=codex-mobile-shell-v143`, and
+    `imageContextMode=reference`.
+  - Authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`.
+  - Authenticated `/api/threads?limit=3&archived=false` returns a
+    `mobileTokenUsage` object with local `todayDate=2026-06-01` and
+    `weekStartDate=2026-06-01`; totals are currently zero until future
+    completed turns are recorded into the new SQLite ledger.
+  - Open clients need the v143 refresh prompt, hard refresh, or close/reopen
+    to load the new sidebar UI.
+
+## 2026-06-01 Page Refresh Prompt Detection v144
+
+- User report:
+  - After the server had actually restarted into a newer shell build, an
+    already-open client still did not show the page-refresh prompt.
+- Diagnosis:
+  - The v143 server-side startup build snapshot was correct: it prevents
+    mid-edit files from appearing as a new build before restart.
+  - The open browser client still relied mainly on startup, a 60-second timer,
+    visibility/pageshow/focus events, and the manual refresh button path to
+    discover a changed `/api/public-config` build id.
+  - EventSource reconnect/open, status events, and successful thread-list
+    refreshes could prove the server was alive again without immediately
+    forcing a shell-build check, so a real restart could be missed or delayed
+    on an unchanged foreground page.
+- Local fix:
+  - `public/app.js`
+    - Added `scheduleVisiblePageRefreshCheck()`.
+    - EventSource `onopen` now forces a build check shortly after reconnect.
+    - EventSource `status` messages schedule a visible-page build check.
+    - Successful `loadThreads()` schedules a normal visible-page build check.
+  - `public/app.js` / `public/sw.js`
+    - Static shell bumped to `0.1.11|codex-mobile-shell-v144` /
+      `codex-mobile-shell-v144`.
+  - Documentation updated in README, Project Context, Architecture, Complex
+    Feature Paths, Troubleshooting, and this handoff.
+- Status:
+  - Local changes are uncommitted.
+  - Validation and runtime restart still need to be rerun for v144.
+  - An already-open pre-v144 page may need one manual refresh to load the
+    stronger detection path; v144 is intended to prevent the same class of
+    missed prompt on future restarts.
+
+## 2026-06-01 Workspace Token Daily Breakdown v145
+
+- User request:
+  - In the Workspace token daily detail, distinguish cached input, uncached
+    input, and output because these token classes do not have the same value.
+- Local fix:
+  - `public/app.js`
+    - Daily Workspace token rows now show total plus:
+      - uncached input: `inputTokens - cachedInputTokens`;
+      - cached input;
+      - output;
+      - reasoning output.
+  - `public/styles.css`
+    - Daily detail rows now use a compact two-column breakdown under each
+      date/total header.
+  - `public/app.js` / `public/sw.js`
+    - Static shell bumped to `0.1.11|codex-mobile-shell-v145` /
+      `codex-mobile-shell-v145`.
+  - Documentation updated in README, Project Context, Architecture, Complex
+    Feature Paths, Troubleshooting, and this handoff.
+- Status:
+  - Local changes are uncommitted.
+  - Validation and runtime restart still need to be rerun for v145.
+
+## 2026-06-01 Workspace Token Full-Screen Stats v146
+
+- User refinement:
+  - Keep only one compact Workspace token row under the Workspace selector.
+  - Rename the detail button to `统计`.
+  - Clicking `统计` should open a full-screen stats page instead of expanding
+    inline details.
+  - The compact sidebar `总/周/今` row should be red; the full-screen page should
+    carry the detailed daily/project breakdown.
+- Local fix:
+  - `adapters/token-usage-stats-service.js`
+    - `workspaceSummary()` now also returns `workspaces`, grouped by `cwd`
+      across all recorded Workspace rows, ordered by total tokens.
+  - `public/index.html`
+    - Added `workspaceStatsDialog`, a full-screen stats page container.
+  - `public/app.js`
+    - The Workspace token line is now a compact red `总/周/今` row with a
+      `统计` button.
+    - `统计` opens the full-screen stats page with overview, daily detail, and
+      per-project detail.
+    - Daily and project rows split uncached input, cached input, output, and
+      reasoning output.
+  - `public/styles.css`
+    - Added full-screen stats page styling and red compact sidebar row styling.
+  - `public/app.js` / `public/sw.js`
+    - Static shell bumped to `0.1.11|codex-mobile-shell-v146` /
+      `codex-mobile-shell-v146`.
+  - Documentation updated in README, Project Context, Architecture, Complex
+    Feature Paths, Troubleshooting, and this handoff.
+- Status:
+  - Local changes are uncommitted.
+  - Validation and runtime restart still need to be rerun for v146.

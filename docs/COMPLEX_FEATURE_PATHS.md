@@ -69,6 +69,34 @@ Implementation path:
 6. Test with `test/thread-visibility.test.js` and `test/mobile-viewport.test.js`;
    add thread detail or render tests if the detail shape changes.
 
+## Workspace Token Usage Ledger
+
+Use when changing Workspace-level token totals, daily usage detail, completed-turn
+usage persistence, or the sidebar usage display.
+
+Implementation path:
+
+1. Keep the durable ledger in `%USERPROFILE%\.codex-mobile-web\token-usage-stats.sqlite`.
+2. Record usage on completed turns as soon as the scoped usage summary is
+   available; do not depend on future rollout scans or browser state for the
+   project total.
+3. Use `(thread_id, turn_id)` as the SQLite primary key so duplicate completion
+   notifications update the same turn instead of double-counting.
+4. Aggregate primarily by Workspace `cwd` and local day. Per-thread fields may
+   be returned for small badges/debugging, but the product surface is the
+   Workspace ledger.
+5. Include an all-Workspace breakdown grouped by `cwd` so the stats page can
+   show per-project consumption without switching Workspace filters.
+6. Keep daily/project detail split by uncached input, cached input, output, and
+   reasoning output because these token classes have different usage/cost
+   meaning.
+7. Keep SQL/schema/query logic in `adapters/token-usage-stats-service.js`;
+   `server.js` should only call the service from notification and thread-list
+   routes.
+8. Browser changes require a `CLIENT_BUILD_ID` / `public/sw.js` cache bump.
+9. Test with `test/token-usage-stats-service.test.js`,
+   `test/turn-usage-summary-service.test.js`, and `test/mobile-viewport.test.js`.
+
 ## Thread Detail And Conversation Rendering
 
 Use when changing visible items, operation cards, timestamps, compaction notices, image views, or merge behavior.
@@ -122,7 +150,7 @@ Use when changing static assets, mobile layout, refresh prompts, Push click beha
 Implementation path:
 
 1. Update `public/app.js` `CLIENT_BUILD_ID` and `public/sw.js` shell cache name together.
-2. Ensure refresh prompt verifies the target shell cache before pruning old caches or reloading.
+2. Ensure refresh prompt verifies the target shell cache before pruning old caches or reloading, and that server-started build checks run on reconnect/status/list refresh paths as well as timers and foreground/focus recovery.
 3. Keep iOS standalone behavior; do not use display-mode checks as a blocking gate.
 4. Respect safe areas, keyboard/visual viewport rules, and touch layout breakpoints.
 5. Test with `test/mobile-viewport.test.js`, `test/app-update.test.js`, and relevant UI tests.

@@ -41,6 +41,9 @@ const state = {
   workspaceCreateRoots: [],
   workspaceCreateBusy: false,
   selectedCwd: "",
+  workspaceTokenUsage: null,
+  workspaceTokenUsageDetailsOpen: false,
+  workspaceTokenStatsOpen: false,
   threads: [],
   currentThread: null,
   currentThreadId: "",
@@ -196,7 +199,7 @@ const state = {
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v142";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v146";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -874,6 +877,26 @@ function rolloutSizeText(thread) {
   return size > 0 ? formatFileSize(size) : "";
 }
 
+function tokenCountValue(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
+function formatTokenWan(value) {
+  const tokens = tokenCountValue(value);
+  if (!tokens) return "0万";
+  const wan = tokens / 10000;
+  if (wan >= 100) return `${wan.toFixed(0)}万`;
+  if (wan >= 10) return `${wan.toFixed(1)}万`;
+  return `${wan.toFixed(2)}万`;
+}
+
+function tokenUsageForThread(thread) {
+  return thread && thread.mobileTokenUsage && typeof thread.mobileTokenUsage === "object"
+    ? thread.mobileTokenUsage
+    : null;
+}
+
 function normalizeOptionList(values) {
   return runtimeSettings.normalizeOptionList(values);
 }
@@ -1464,6 +1487,7 @@ function preparePublicPrMergePrompt(status) {
   setComposerText(text);
   syncSidebarWorkspaceSelect();
   updateWorkspacePath();
+  renderWorkspaceTokenUsage();
   renderThreads();
   renderCurrentThread();
   updateComposerControls();
@@ -1800,6 +1824,11 @@ function schedulePageRefreshCheck(delayMs = 0, options = {}) {
   window.setTimeout(() => {
     checkPageRefreshAvailability(options).catch(() => {});
   }, Math.max(0, Number(delayMs || 0)));
+}
+
+function scheduleVisiblePageRefreshCheck(delayMs = 0, options = {}) {
+  if (document.visibilityState === "hidden") return;
+  schedulePageRefreshCheck(delayMs, options);
 }
 
 function startPageRefreshChecks() {
@@ -3992,6 +4021,108 @@ function updateWorkspacePath() {
   el.textContent = state.selectedCwd || "";
 }
 
+function renderWorkspaceTokenUsage() {
+  const el = $("workspaceTokenUsage");
+  if (!el) return;
+  const usage = state.workspaceTokenUsage;
+  if (!usage || typeof usage !== "object") {
+    el.hidden = true;
+    el.innerHTML = "";
+    return;
+  }
+  const hasAny = tokenCountValue(usage.totalTokens) || tokenCountValue(usage.todayTokens) || tokenCountValue(usage.weekTokens);
+  if (!hasAny) {
+    el.hidden = true;
+    el.innerHTML = "";
+    return;
+  }
+  el.hidden = false;
+  el.innerHTML = `<div class="workspace-token-usage-summary">
+    <span title="当前 Workspace 累计 token">总 ${escapeHtml(formatTokenWan(usage.totalTokens))}</span>
+    <span title="本周 token">周 ${escapeHtml(formatTokenWan(usage.weekTokens))}</span>
+    <span title="今日 token">今 ${escapeHtml(formatTokenWan(usage.todayTokens))}</span>
+    <button type="button" class="workspace-token-usage-toggle" data-workspace-token-usage-toggle>统计</button>
+  </div>`;
+  renderWorkspaceStatsDialog();
+}
+
+function tokenBreakdownHtml(entry, className = "workspace-token-usage-breakdown") {
+  return `<div class="${escapeHtml(className)}" aria-label="Token usage breakdown">
+    <span title="Uncached input tokens">Uncached ${escapeHtml(formatTokenWan(displayInputTokensExcludingCached(entry)))}</span>
+    <span title="Cached input tokens">Cached ${escapeHtml(formatTokenWan(entry && entry.cachedInputTokens))}</span>
+    <span title="Output tokens">Out ${escapeHtml(formatTokenWan(entry && entry.outputTokens))}</span>
+    <span title="Reasoning output tokens">Reason ${escapeHtml(formatTokenWan(entry && entry.reasoningOutputTokens))}</span>
+  </div>`;
+}
+
+function renderWorkspaceStatsDialog() {
+  const dialog = $("workspaceStatsDialog");
+  const content = $("workspaceStatsContent");
+  const subtitle = $("workspaceStatsSubtitle");
+  if (!dialog || !content) return;
+  if (!state.workspaceTokenStatsOpen) {
+    dialog.classList.add("hidden");
+    content.innerHTML = "";
+    return;
+  }
+  const usage = state.workspaceTokenUsage && typeof state.workspaceTokenUsage === "object"
+    ? state.workspaceTokenUsage
+    : {};
+  const daily = Array.isArray(usage.daily) ? usage.daily.slice(0, 31) : [];
+  const workspaces = Array.isArray(usage.workspaces) ? usage.workspaces.slice(0, 50) : [];
+  if (subtitle) {
+    subtitle.textContent = state.selectedCwd ? `当前 Workspace: ${state.selectedCwd}` : "All workspaces";
+  }
+  content.innerHTML = `<section class="workspace-stats-section">
+    <div class="workspace-stats-section-title">总览</div>
+    <div class="workspace-stats-summary-grid">
+      <div><span>总计</span><strong>${escapeHtml(formatTokenWan(usage.totalTokens))}</strong></div>
+      <div><span>本周</span><strong>${escapeHtml(formatTokenWan(usage.weekTokens))}</strong></div>
+      <div><span>今日</span><strong>${escapeHtml(formatTokenWan(usage.todayTokens))}</strong></div>
+    </div>
+    ${tokenBreakdownHtml(usage, "workspace-stats-breakdown")}
+  </section>
+  <section class="workspace-stats-section">
+    <div class="workspace-stats-section-title">按天</div>
+    <div class="workspace-stats-list">
+      ${daily.length ? daily.map((entry) => `<article class="workspace-stats-row">
+        <div class="workspace-stats-row-head">
+          <span>${escapeHtml(entry.date || "")}</span>
+          <strong>${escapeHtml(formatTokenWan(entry.totalTokens))}</strong>
+        </div>
+        ${tokenBreakdownHtml(entry, "workspace-stats-breakdown")}
+      </article>`).join("") : `<div class="workspace-token-usage-empty">暂无每日明细</div>`}
+    </div>
+  </section>
+  <section class="workspace-stats-section">
+    <div class="workspace-stats-section-title">按项目</div>
+    <div class="workspace-stats-list">
+      ${workspaces.length ? workspaces.map((entry) => `<article class="workspace-stats-row">
+        <div class="workspace-stats-row-head">
+          <span title="${escapeHtml(entry.cwd || "")}">${escapeHtml(shortPath(entry.cwd) || entry.cwd || "")}</span>
+          <strong>${escapeHtml(formatTokenWan(entry.totalTokens))}</strong>
+        </div>
+        <div class="workspace-stats-row-meta">
+          <span>周 ${escapeHtml(formatTokenWan(entry.weekTokens))}</span>
+          <span>今 ${escapeHtml(formatTokenWan(entry.todayTokens))}</span>
+        </div>
+        ${tokenBreakdownHtml(entry, "workspace-stats-breakdown")}
+      </article>`).join("") : `<div class="workspace-token-usage-empty">暂无项目明细</div>`}
+    </div>
+  </section>`;
+  dialog.classList.remove("hidden");
+}
+
+function openWorkspaceStatsDialog() {
+  state.workspaceTokenStatsOpen = true;
+  renderWorkspaceStatsDialog();
+}
+
+function closeWorkspaceStatsDialog() {
+  state.workspaceTokenStatsOpen = false;
+  renderWorkspaceStatsDialog();
+}
+
 function clearCurrentThreadSelection(options = {}) {
   if (options.saveDraft !== false) saveCurrentDraftNow();
   state.threadLoadSeq += 1;
@@ -4038,10 +4169,13 @@ async function loadThreads(options = {}) {
     const result = await api(`/api/threads?${params}`, { timeoutMs: 45000, signal: controller.signal });
     if (seq !== state.threadListLoadSeq) return null;
     state.threads = visibleThreads(result.data || []);
+    state.workspaceTokenUsage = result.mobileTokenUsage || null;
     state.threadListLoadedAtMs = Date.now();
     reconcileThreadStatusHints(state.threads);
+    renderWorkspaceTokenUsage();
     renderThreads(result);
     restoreConnectionState(result.mobileFallback ? "Recovered from session index" : "Connected");
+    scheduleVisiblePageRefreshCheck(500);
     if (!state.currentThread) renderCurrentThread();
     return result;
   } catch (err) {
@@ -5067,8 +5201,14 @@ function renderThreads(result = null) {
     const active = thread.id === state.currentThreadId ? " active" : "";
     const emphasis = iconKind ? ` has-status-${iconKind}` : "";
     const pendingIncomingTaskCards = Math.max(0, Number(thread && thread.pendingIncomingTaskCardCount) || 0);
+    const tokenUsage = tokenUsageForThread(thread);
+    const threadTodayTokens = tokenUsage ? tokenCountValue(tokenUsage.todayTokens) : 0;
+    const threadTotalTokens = tokenUsage ? tokenCountValue(tokenUsage.totalTokens) : 0;
     const taskCardBadge = pendingIncomingTaskCards
       ? `<div class="thread-card-task-badge" title="Pending incoming task cards">${escapeHtml(`Task ${pendingIncomingTaskCards}`)}</div>`
+      : "";
+    const tokenBadge = threadTodayTokens || threadTotalTokens
+      ? `<div class="thread-card-token-badge" title="${escapeHtml(`累计 ${formatTokenWan(threadTotalTokens)}`)}">${escapeHtml(`今 ${formatTokenWan(threadTodayTokens)}`)}</div>`
       : "";
     const sizeBadge = sizeText
       ? `<div class="thread-card-size${sizeWarn ? " warn" : ""}" title="Rollout file size">${escapeHtml(sizeText)}</div>`
@@ -5086,6 +5226,7 @@ function renderThreads(result = null) {
           </div>
           <div class="thread-card-meta-badges">
             ${taskCardBadge}
+            ${tokenBadge}
             ${sizeBadge}
           </div>
         </div>
@@ -5105,6 +5246,8 @@ function renderThreads(result = null) {
       statusIconInfo(thread.status, thread.id)?.kind || "",
         state.unreadThreadIds.has(thread.id) ? 1 : 0,
         Number(thread.pendingIncomingTaskCardCount || 0),
+        tokenUsageForThread(thread) ? tokenCountValue(tokenUsageForThread(thread).todayTokens) : 0,
+        tokenUsageForThread(thread) ? tokenCountValue(tokenUsageForThread(thread).totalTokens) : 0,
         rolloutSizeBytes(thread),
         isRolloutOverThreshold(thread),
       ]),
@@ -7894,6 +8037,7 @@ function connectEvents() {
     clearReconnectTimers();
     clearReconnectRefreshPrompt();
     if (state.connectionStatus) restoreConnectionState();
+    scheduleVisiblePageRefreshCheck(200, { force: true });
   };
   state.events.onmessage = (event) => {
     const payload = JSON.parse(event.data);
@@ -7904,6 +8048,7 @@ function connectEvents() {
         rememberRateLimits(payload.status.rateLimits, payload.status.rateLimitsByModel);
       }
       if (payload.status.codexProfiles) rememberCodexProfiles(payload.status.codexProfiles);
+      scheduleVisiblePageRefreshCheck(1200);
       return;
     }
     if (payload.type === "notification") applyNotification(payload.method, payload.params);
@@ -9577,6 +9722,22 @@ function wireUi() {
     sidebarWorkspaceSelect.addEventListener("pointerdown", toggleSidebarWorkspaceMenu);
     sidebarWorkspaceMenu.addEventListener("click", onSidebarWorkspaceOption);
     closeSidebarWorkspaceMenu();
+  }
+  const workspaceTokenUsage = $("workspaceTokenUsage");
+  if (workspaceTokenUsage) {
+    workspaceTokenUsage.addEventListener("click", (event) => {
+      const button = event.target && event.target.closest("[data-workspace-token-usage-toggle]");
+      if (!button) return;
+      openWorkspaceStatsDialog();
+    });
+  }
+  const workspaceStatsClose = $("workspaceStatsClose");
+  if (workspaceStatsClose) workspaceStatsClose.addEventListener("click", closeWorkspaceStatsDialog);
+  const workspaceStatsDialog = $("workspaceStatsDialog");
+  if (workspaceStatsDialog) {
+    workspaceStatsDialog.addEventListener("click", (event) => {
+      if (event.target === workspaceStatsDialog) closeWorkspaceStatsDialog();
+    });
   }
   $("newThreadButton").addEventListener("click", enterNewThreadDraft);
   $("refreshThreads").addEventListener("click", () => loadThreads().catch(showError));

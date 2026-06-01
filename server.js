@@ -31,6 +31,7 @@ const {
   attachTurnUsageSummaries,
   collectTurnUsageSummariesFromRolloutText,
 } = require("./adapters/turn-usage-summary-service");
+const { createTokenUsageStatsService } = require("./adapters/token-usage-stats-service");
 const { buildTurnCompletionDetailMessage } = require("./adapters/turn-completion-receipt-service");
 const {
   buildPublicPullRequestStatus,
@@ -112,6 +113,8 @@ const THREAD_TASK_CARD_FILE = process.env.CODEX_MOBILE_THREAD_TASK_CARD_FILE
   || path.join(RUNTIME_ROOT, "thread-task-cards.json");
 const WORKSPACE_REGISTRY_FILE = process.env.CODEX_MOBILE_WORKSPACE_REGISTRY_FILE
   || path.join(RUNTIME_ROOT, "workspace-registry.json");
+const TOKEN_USAGE_STATS_DB = process.env.CODEX_MOBILE_TOKEN_USAGE_DB
+  || path.join(RUNTIME_ROOT, "token-usage-stats.sqlite");
 const WORKSPACE_CREATE_ROOTS = process.env.CODEX_MOBILE_WORKSPACE_CREATE_ROOTS || "";
 const hermesPluginService = createHermesPluginService({
   registrationFile: HERMES_PLUGIN_REGISTRATION_FILE,
@@ -144,6 +147,9 @@ const codexProfileService = createCodexProfileService({
   userHome: USER_HOME,
   runtimeRoot: RUNTIME_ROOT,
   activeCodexHome: CODEX_HOME,
+});
+const tokenUsageStatsService = createTokenUsageStatsService({
+  dbPath: TOKEN_USAGE_STATS_DB,
 });
 const threadTaskCardService = createThreadTaskCardService({
   storageFile: THREAD_TASK_CARD_FILE,
@@ -439,8 +445,11 @@ function readServiceWorkerCacheName() {
   }
 }
 
-function appShellBuildId() {
-  const parts = [`app=${APP_VERSION}`, `sw=${readServiceWorkerCacheName()}`];
+let STARTUP_SHELL_CACHE_NAME = "";
+let STARTUP_APP_SHELL_BUILD_ID = "";
+
+function appShellBuildId(cacheName = readServiceWorkerCacheName()) {
+  const parts = [`app=${APP_VERSION}`, `sw=${cacheName}`];
   for (const file of [
     "index.html",
     "styles.css",
@@ -466,9 +475,12 @@ function appShellBuildId() {
 }
 
 function clientBuildId() {
-  const cacheName = readServiceWorkerCacheName();
-  return `${APP_VERSION}|${cacheName || appShellBuildId()}`;
+  const cacheName = STARTUP_SHELL_CACHE_NAME || readServiceWorkerCacheName();
+  return `${APP_VERSION}|${cacheName || STARTUP_APP_SHELL_BUILD_ID || appShellBuildId(cacheName)}`;
 }
+
+STARTUP_SHELL_CACHE_NAME = readServiceWorkerCacheName();
+STARTUP_APP_SHELL_BUILD_ID = appShellBuildId(STARTUP_SHELL_CACHE_NAME);
 
 function readCodexConfigDefaults() {
   const configPath = path.join(CODEX_HOME, "config.toml");
@@ -3709,6 +3721,30 @@ function pushTurnMeta(params, existing = null) {
   };
 }
 
+function maybeRecordTurnTokenUsage(method, params) {
+  if (method !== "turn/completed") return;
+  const turnId = pushTurnId(params);
+  if (!turnId || isOldPushTurnEvent(params, ["completedAt", "updatedAt"])) return;
+  const threadId = pushThreadId(params);
+  if (!threadId) return;
+  const usageSummary = turnCompletionUsageSummary(threadId, turnId);
+  if (!usageSummary) return;
+  const threadSummary = pushThreadSummary(threadId) || readStateDbThread(threadId) || null;
+  const result = tokenUsageStatsService.recordTurnUsage({
+    threadId,
+    turnId,
+    cwd: threadSummary && threadSummary.cwd || "",
+    completedAtMs: turnTimestampMs(params, "completedAt") || turnTimestampMs(params, "updatedAt") || Date.now(),
+    model: threadSummary && threadSummary.model || usageSummary.model || "",
+    usageSummary,
+    source: "turn_completed",
+  });
+  if (result && !result.ok && !result.skipped) {
+    const err = result.error;
+    console.error(`[token usage] record failed: ${err && err.message ? err.message : String(err)}`);
+  }
+}
+
 function logWebPushDecision(event, decision, meta) {
   if (decision && decision.track && !decision.reason) return;
   const reason = String((decision && decision.reason) || "tracked");
@@ -4578,6 +4614,7 @@ class CodexAppServerClient {
       if (msg.method === "serverRequest/resolved" && msg.params && msg.params.requestId != null) {
         this.markServerRequestResolved(msg.params.requestId, "resolved");
       }
+      maybeRecordTurnTokenUsage(msg.method, msg.params || null);
       maybeSendTurnCompletedPush(msg.method, msg.params || null);
       broadcast({ type: "notification", method: msg.method, params: msg.params || null });
     }
@@ -6282,9 +6319,9 @@ async function handleApi(req, res) {
       version: APP_VERSION,
       platform: process.platform,
       workspacePath: APP_ROOT,
-      buildId: appShellBuildId(),
+      buildId: STARTUP_APP_SHELL_BUILD_ID,
       clientBuildId: clientBuildId(),
-      shellCacheName: readServiceWorkerCacheName(),
+      shellCacheName: STARTUP_SHELL_CACHE_NAME,
       maxUploadBytes: MAX_UPLOAD_BYTES,
       maxUploadFiles: MAX_UPLOAD_FILES,
       imageContextMode: IMAGE_CONTEXT_POLICY.imageContextMode,
@@ -6865,18 +6902,21 @@ async function handleApi(req, res) {
       threadDisplaySummaryCache.rememberList(result);
       if (Array.isArray(result.data)) result.data = result.data.slice(0, limit);
       if (Array.isArray(result.threads)) result.threads = result.threads.slice(0, limit);
-      sendJson(res, 200, attachThreadTaskCardCountsToThreadListResult(result));
+      sendJson(res, 200, tokenUsageStatsService.decorateThreadListResult(
+        attachThreadTaskCardCountsToThreadListResult(result),
+        { cwd, days: 31 },
+      ));
     } catch (err) {
       const fallback = [
         ...readStateDbFallback(limit, { cwd, searchTerm, globalState }),
         ...readSessionIndexFallback(limit, { cwd, searchTerm, globalState }),
       ].slice(0, limit);
       if (fallback.length) {
-        sendJson(res, 200, {
+        sendJson(res, 200, tokenUsageStatsService.decorateThreadListResult({
           data: fallback.map(attachThreadTaskCardCountsToSummary),
           mobileFallback: true,
           warning: err.message || String(err),
-        });
+        }, { cwd, days: 31 }));
         return;
       }
       throw err;

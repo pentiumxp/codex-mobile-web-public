@@ -133,6 +133,120 @@ function summaryWithTurnTokenUsage(summary, turnTokenUsage) {
   });
 }
 
+function dateKeyFromTimestampMs(timestampMs) {
+  const value = Number(timestampMs);
+  if (!Number.isFinite(value) || value <= 0) return "";
+  const date = new Date(value);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function addStatsUsage(target, usage) {
+  if (!target || !usage || typeof usage !== "object") return target;
+  const totalTokens = Number(usage.totalTokens);
+  if (Number.isFinite(totalTokens) && totalTokens > 0) target.totalTokens += totalTokens;
+  const inputTokens = Number(usage.inputTokens);
+  if (Number.isFinite(inputTokens) && inputTokens > 0) target.inputTokens += inputTokens;
+  const cachedInputTokens = Number(usage.cachedInputTokens);
+  if (Number.isFinite(cachedInputTokens) && cachedInputTokens > 0) target.cachedInputTokens += cachedInputTokens;
+  const outputTokens = Number(usage.outputTokens);
+  if (Number.isFinite(outputTokens) && outputTokens > 0) target.outputTokens += outputTokens;
+  const reasoningOutputTokens = Number(usage.reasoningOutputTokens);
+  if (Number.isFinite(reasoningOutputTokens) && reasoningOutputTokens > 0) target.reasoningOutputTokens += reasoningOutputTokens;
+  return target;
+}
+
+function emptyUsageStats() {
+  return {
+    totalTokens: 0,
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    outputTokens: 0,
+    reasoningOutputTokens: 0,
+  };
+}
+
+function normalizeDailyStats(dailyMap) {
+  return [...dailyMap.entries()]
+    .sort((a, b) => a[0] < b[0] ? 1 : a[0] > b[0] ? -1 : 0)
+    .map(([date, usage]) => Object.assign({ date }, usage));
+}
+
+function collectTokenUsageStatsFromEntries(entries, options = {}) {
+  const now = options.now instanceof Date ? options.now : new Date(options.nowMs || Date.now());
+  const today = dateKeyFromTimestampMs(now.getTime());
+  const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const day = weekStart.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  weekStart.setDate(weekStart.getDate() + mondayOffset);
+  weekStart.setHours(0, 0, 0, 0);
+  const weekStartKey = dateKeyFromTimestampMs(weekStart.getTime());
+  const totals = emptyUsageStats();
+  const todayTotals = emptyUsageStats();
+  const weekTotals = emptyUsageStats();
+  const dailyMap = new Map();
+  const byTurnId = new Map();
+  let eventCount = 0;
+  let currentTurnId = "";
+  let previousTotalTokenUsage = null;
+
+  for (const entry of entries || []) {
+    if (!entry || !entry.payload) continue;
+    const payload = entry.payload || {};
+    const explicitTurnId = rolloutEntryTurnId(entry);
+    if (entry.type === "turn_context" && explicitTurnId) currentTurnId = explicitTurnId;
+    if (entry.type === "event_msg" && payload.type === "task_started" && explicitTurnId) currentTurnId = explicitTurnId;
+    if (entry.type !== "event_msg" || payload.type !== "token_count") continue;
+    const turnId = explicitTurnId || currentTurnId || "";
+    const summary = tokenCountSummaryFromPayload(payload, {
+      turnId,
+      timestamp: entry.timestamp,
+    });
+    if (!summary) continue;
+    const usageDelta = eventTokenUsageDelta(summary, previousTotalTokenUsage);
+    const eventUsage = cloneTokenUsage(usageDelta) || {};
+    const eventTotal = Number(eventUsage.totalTokens);
+    if (Number.isFinite(eventTotal) && eventTotal > 0) {
+      eventCount += 1;
+      addStatsUsage(totals, eventUsage);
+      const date = dateKeyFromTimestampMs(summary.timestampMs);
+      if (date) {
+        if (!dailyMap.has(date)) dailyMap.set(date, emptyUsageStats());
+        addStatsUsage(dailyMap.get(date), eventUsage);
+        if (date === today) addStatsUsage(todayTotals, eventUsage);
+        if (date >= weekStartKey) addStatsUsage(weekTotals, eventUsage);
+      }
+      if (turnId) {
+        if (!byTurnId.has(turnId)) byTurnId.set(turnId, emptyUsageStats());
+        addStatsUsage(byTurnId.get(turnId), eventUsage);
+      }
+    }
+    if (tokenUsageHasAnyValue(summary.totalTokenUsage)) previousTotalTokenUsage = summary.totalTokenUsage;
+  }
+
+  return {
+    totals,
+    today: todayTotals,
+    week: weekTotals,
+    daily: normalizeDailyStats(dailyMap),
+    byTurnId,
+    todayDate: today,
+    weekStartDate: weekStartKey,
+    eventCount,
+  };
+}
+
+function collectTokenUsageStatsFromRolloutText(text, options = {}) {
+  const entries = String(text || "")
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map(parseJsonLine)
+    .filter(Boolean);
+  return collectTokenUsageStatsFromEntries(entries, options);
+}
+
 function tokenUsageTotalIsZero(usage) {
   const total = numericUsageValue(usage, "totalTokens");
   return total !== null && total === 0;
@@ -293,6 +407,8 @@ function attachTurnUsageSummaries(thread, summaries, options = {}) {
 
 module.exports = {
   attachTurnUsageSummaries,
+  collectTokenUsageStatsFromEntries,
+  collectTokenUsageStatsFromRolloutText,
   collectTurnUsageSummariesFromEntries,
   collectTurnUsageSummariesFromRolloutText,
   compactTokenUsage,

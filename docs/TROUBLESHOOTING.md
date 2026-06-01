@@ -119,6 +119,7 @@ Rules:
 - Static browser behavior changes require bumping `CLIENT_BUILD_ID` in `public/app.js` and cache name in `public/sw.js`.
 - Server-only behavior fixes do not need a PWA bump, but open clients may need a thread reload.
 - If the phone still shows old UI, confirm it loaded the current `clientBuildId` and has accepted the refresh prompt or hard-reopened the PWA.
+- Current clients should check for a new server-started shell build after startup, foreground/focus recovery, EventSource reconnect/status, and successful thread-list refresh. If `/api/public-config.clientBuildId` is newer but no prompt appears on an already-open old page, that page may still be running a pre-v144 client and needs one manual refresh to load the stronger detection path.
 
 ## File Preview Says Unsupported
 
@@ -192,6 +193,51 @@ That event is not real usage. Mobile Web should ignore it and preserve the lates
 If the `Usage` card's `last turn` row looks like it only counted the final answer segment, inspect all scoped rollout `token_count` events for that turn. Multi-call turns can emit many valid token events before `task_complete`; a final event's `last_token_usage` is only the final model call, not the whole turn.
 
 Mobile Web should compute the displayed turn-level usage from cumulative `total_token_usage` deltas across valid scoped events, while using the final valid event only for context-window percentage/risk. Duplicate token events with the same cumulative totals should add zero, and zero/window sentinel events should still be ignored.
+
+## Workspace Token Totals Are Missing Or Wrong
+
+Workspace `总/周/今` totals come from
+`%USERPROFILE%\.codex-mobile-web\token-usage-stats.sqlite`, not from the browser
+session or a fresh rollout scan. The write happens on `turn/completed` after
+Mobile Web resolves the scoped `Usage` summary for that turn.
+
+Checks:
+
+- The 8787 listener is running the build that includes
+  `adapters/token-usage-stats-service.js`.
+- `CODEX_MOBILE_TOKEN_USAGE_DB` is unset or points to the intended SQLite file.
+- The local `sqlite3` executable is discoverable through `CODEX_MOBILE_SQLITE3_EXE`,
+  `SQLITE3_EXE`, the Android Platform Tools paths, or `PATH`.
+- The completed turn has a valid scoped `token_count`; turns with only the
+  zero/window sentinel are intentionally not recorded.
+- Repeated completion notifications should replace the same `(thread_id,
+  turn_id)` row, not add another row.
+- Daily/project detail should split uncached input (`inputTokens -
+  cachedInputTokens`), cached input, output, and reasoning output. If a category
+  is missing, inspect the corresponding SQLite columns and the grouped `cwd`
+  query before changing the frontend display.
+
+If the sidebar still shows zero after a known completed turn, inspect the local
+runtime DB rather than the frontend cache. Do not edit `.codex` state to repair
+this ledger.
+
+## Page Refresh Prompt Appears While Files Are Still Being Edited
+
+`/api/public-config` should report the app-shell build/cache snapshot captured
+when the 8787 listener started. It should not change merely because `public/`
+files have been edited on disk while the old listener is still running. A normal
+"页面有新版本" prompt should appear only after the listener has restarted into the
+new build and the browser has preflighted the full target shell cache.
+
+If the prompt appears immediately after a source edit and before a server
+restart, check whether `clientBuildId()`, `shellCacheName`, or `buildId` has
+regressed to dynamically reading `public/sw.js` / static asset mtimes on each
+`/api/public-config` request.
+
+If the prompt does not appear after a real server restart into a newer shell
+build, check whether the loaded browser code calls `scheduleVisiblePageRefreshCheck()`
+from EventSource `onopen`, `status` messages, and successful `loadThreads()`.
+Older open pages may only check on a 60-second timer or foreground/focus events.
 
 ## Web Push
 

@@ -47,9 +47,9 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*7px;/);
 });
 
-test("public app shell cache advances after Codex profile switcher", () => {
-  assert.match(swJs, /codex-mobile-shell-v142/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v142"/);
+test("public app shell cache advances after workspace token usage stats", () => {
+  assert.match(swJs, /codex-mobile-shell-v146/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v146"/);
   assert.match(appJs, /startupThreadOpenPending: false/);
   assert.match(appJs, /const savedThreadId = isHermesEmbedMode\(\) \? "" : \(localStorage\.getItem\(STORAGE_THREAD_ID\) \|\| ""\);/);
   assert.match(appJs, /state\.startupThreadOpenPending = Boolean\(startupThreadId \|\| savedThreadId \|\| \(startupPluginRouteHint && startupPluginRouteHint\.threadId\)\);/);
@@ -86,6 +86,20 @@ test("public app shell cache advances after Codex profile switcher", () => {
   assert.match(appJs, /"\/plugin-embed\.js"/);
   assert.match(appJs, /navigator\.serviceWorker\.register\("\/sw\.js"\)/);
   assert.match(appJs, /state\.serviceWorkerRegistration\.update\(\)\.catch/);
+  assert.match(indexHtml, /id="workspaceTokenUsage"/);
+  assert.match(indexHtml, /id="workspaceStatsDialog"/);
+  assert.match(appJs, /workspaceTokenUsage: null/);
+  assert.match(appJs, /function renderWorkspaceTokenUsage\(\)/);
+  assert.match(appJs, /function renderWorkspaceStatsDialog\(\)/);
+  assert.match(appJs, /data-workspace-token-usage-toggle>统计<\/button>/);
+  assert.match(appJs, /Uncached \$\{escapeHtml\(formatTokenWan\(displayInputTokensExcludingCached\(entry\)\)\)\}/);
+  assert.match(appJs, /Cached \$\{escapeHtml\(formatTokenWan\(entry && entry\.cachedInputTokens\)\)\}/);
+  assert.match(appJs, /Out \$\{escapeHtml\(formatTokenWan\(entry && entry\.outputTokens\)\)\}/);
+  assert.match(appJs, /Reason \$\{escapeHtml\(formatTokenWan\(entry && entry\.reasoningOutputTokens\)\)\}/);
+  assert.match(stylesCss, /\.workspace-token-usage/);
+  assert.match(stylesCss, /\.workspace-token-usage-summary span[\s\S]*color:\s*var\(--danger-text\)/);
+  assert.match(stylesCss, /\.workspace-stats-dialog/);
+  assert.match(stylesCss, /\.workspace-stats-breakdown/);
 });
 
 test("workspace creation lives at the bottom of the Workspace menu", () => {

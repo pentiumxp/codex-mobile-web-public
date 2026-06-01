@@ -88,7 +88,38 @@ function runSqliteJson(dbPath, query, options = {}) {
   return { ok: false, rows: [], command: "", error: lastError || new Error("sqlite3 not found") };
 }
 
+function runSqliteExec(dbPath, query, options = {}) {
+  const timeout = Math.max(1000, Number(options.timeoutMs || 5000));
+  const maxBuffer = Math.max(1024 * 1024, Number(options.maxBuffer || 1024 * 1024));
+  const candidates = cachedSqliteCommand
+    ? [cachedSqliteCommand, ...sqliteCandidates(options)]
+    : sqliteCandidates(options);
+  let lastError = null;
+  for (const command of candidates) {
+    if (!sqliteCommandExists(command)) continue;
+    let result;
+    try {
+      result = spawnSync(command, [dbPath, query], {
+        encoding: "utf8",
+        timeout,
+        windowsHide: true,
+        maxBuffer,
+      });
+    } catch (err) {
+      lastError = err;
+      continue;
+    }
+    if (!result.error && result.status === 0) {
+      cachedSqliteCommand = command;
+      return { ok: true, command };
+    }
+    lastError = result.error || new Error(result.stderr || `sqlite3 exited with ${result.status}`);
+  }
+  return { ok: false, command: "", error: lastError || new Error("sqlite3 not found") };
+}
+
 module.exports = {
+  runSqliteExec,
   runSqliteJson,
   sqliteCandidates,
 };
