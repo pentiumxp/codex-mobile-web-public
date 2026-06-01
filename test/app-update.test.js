@@ -84,6 +84,20 @@ test("public pull request check prompts before public publishing work", () => {
   assert.match(appJs, /handlePublicPrStatusClick\(\)\.catch\(showError\)/);
 });
 
+test("version button opens an update panel with Public release status", () => {
+  assert.match(indexHtml, /id="updateDialog"/);
+  assert.match(stylesCss, /\.update-dialog/);
+  assert.match(serverJs, /publicRelease:/);
+  assert.match(serverJs, /\/api\/public-release\/status/);
+  assert.match(serverJs, /function publicRepositoryCommitApiUrl\(/);
+  assert.match(serverJs, /currentCheckoutUsesPublicRelease/);
+  assert.match(appJs, /function renderUpdatePanel\(\)/);
+  assert.match(appJs, /function refreshPublicReleaseStatus\(options = \{\}\)/);
+  assert.match(appJs, /function currentUpdateUsesPublicRelease\(/);
+  assert.match(appJs, /appUpdateStatus"\)\.addEventListener\("click", openUpdatePanel\)/);
+  assert.match(appJs, /updateActionButton\("apply-current"/);
+});
+
 test("README documents manual-start update restart requirement", () => {
   assert.match(readme, /直接手动运行 `node server\.js`、`npm start` 或一次性 shell 命令/);
   assert.match(readme, /自更新会完成文件更新并停止旧服务/);

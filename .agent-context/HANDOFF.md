@@ -2,6 +2,214 @@
 
 Last compacted: 2026-05-31T03:26:40.298Z
 
+## 2026-06-01 Updates Panel And Public Release Check v157
+
+- User request:
+  - Keep the sidebar version entry as the update entry point, but make it an
+    Updates panel.
+  - A public-installed version should be able to discover and apply public
+    updates. Private checkout behavior can remain separate.
+- Local fix:
+  - `server.js`
+    - Added `/api/public-release/status`.
+    - The endpoint checks the configured public repository
+      `pentiumxp/codex-mobile-web-public` on branch `main`, returns the latest
+      public commit, compares it to the running checkout HEAD, and reports
+      whether the running checkout's update remote already tracks that public
+      repository.
+    - The endpoint is informational for private checkouts. It does not merge,
+      sync, commit, or push public/private repositories.
+    - `/api/public-config` now exposes `publicRelease` config.
+  - `public/index.html`, `public/styles.css`, `public/app.js`
+    - The version pill now opens an Updates dialog instead of immediately
+      running the old update click handler.
+    - The dialog has a current-checkout section using the existing safe
+      fast-forward `/api/app-update/*` path and a Public release section using
+      `/api/public-release/status`.
+    - If the current checkout tracks the public repository, the current update
+      action is labeled as a Public update; otherwise Public latest is shown
+      as reference only.
+    - Static shell bumped to `0.1.11|codex-mobile-shell-v157` /
+      `codex-mobile-shell-v157`.
+  - Tests/docs:
+    - Added `test/app-update.test.js` coverage for the update panel and public
+      release endpoint wiring.
+    - Updated static shell tests and docs.
+- Validation:
+  - `node --check server.js`, `node --check public\app.js`, and
+    `node --check public\sw.js` passed.
+  - Focused `node --test test\app-update.test.js
+    test\mobile-viewport.test.js test\thread-task-card-route.test.js` passed:
+    13/13.
+  - `npm.cmd test` passed: 286/286.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+  - BOM check for touched files had no output.
+- Runtime verification:
+  - Restarted the 8787 listener after validation: old PID `46356`, new PID
+    `65700`.
+  - `/api/public-config` returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v157`,
+    `shellCacheName=codex-mobile-shell-v157`, and public release config
+    `pentiumxp/codex-mobile-web-public/main`.
+  - Authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`.
+  - Authenticated `/api/public-release/status?force=1` returned:
+    public latest `889c2fe`, local checkout `5dca5ed`,
+    `currentCheckoutUsesPublicRelease=false`, and
+    `canUpdateThroughCurrentCheckout=false`, which is expected for this private
+    checkout.
+  - Open clients need the v157 refresh prompt, hard refresh, close/reopen, or
+    Hermes plugin refresh path to load the new Updates dialog.
+  - Public sync:
+    - Synced public-safe product, test, docs, and README files to
+      `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+    - Public validation passed: `npm.cmd test` 286/286,
+      `npm.cmd run check`, `npm.cmd run check:macos`,
+      `git diff --check`, and `git diff --cached --check`.
+    - Staged privacy scan only matched public documentation/placeholders and
+      source references to runtime key/VAPID handling; no raw secrets or
+      runtime files were added.
+    - Public commit pushed:
+      `eb52dd4 发布线程加载、Token 统计归并与更新面板 v157`.
+  - Private commit/push is next.
+
+## 2026-06-01 Workspace Token Mojibake Merge Harness v156
+
+- User report:
+  - The full-screen token stats page again showed two garbled Workspace rows.
+  - Runtime `/api/threads?limit=40&archived=false` confirmed the backend was
+    returning separate `mobileTokenUsage.workspaces` rows for historical cwd
+    values such as `C:\Users\xuxin\Documents\²ÆÎñ` and
+    `C:\Users\xuxin\Documents\ÄÐװÒ³÷`, while `/api/workspaces` exposed the
+    correct Unicode roots `财务` and `男装衣橱`.
+- Local fix:
+  - `adapters/token-usage-stats-service.js`
+    - Expanded known Windows cwd mojibake repair for the observed Finance,
+      Wardrobe, and System Tools path segments.
+    - Added a small GB18030 repair fallback for mojibake path segments whose
+      bytes survived as Latin-1-style code points or known Windows-mapped
+      multi-byte code points.
+    - Existing rows are still left in SQLite unchanged; query-time grouping
+      now merges them under visible Workspace roots.
+  - `test/token-usage-stats-service.test.js`
+    - Added harness coverage that injects historical mojibake rows for
+      `财务`, `男装衣橱`, and `系统工具` through a fake SQLite result and asserts
+      the public Workspace summary shows only the canonical Unicode cwd rows.
+- Status:
+  - Validation passed:
+    - `node --check adapters\token-usage-stats-service.js`
+    - Focused `node --test test\token-usage-stats-service.test.js
+      test\mobile-viewport.test.js` passed: 9/9.
+    - `npm.cmd test` passed: 285/285.
+    - `npm.cmd run check` passed.
+    - `npm.cmd run check:macos` passed.
+    - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+      warnings.
+    - BOM check for touched files had no output.
+  - Restarted the 8787 listener after the server-side service change:
+    old PID `2592`, new PID `46356`.
+  - `/api/public-config` still returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v155` and
+    `shellCacheName=codex-mobile-shell-v155`; no PWA shell bump was needed.
+  - Authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`.
+  - Authenticated `/api/threads?limit=40&archived=false` now returns the
+    affected Workspace token rows as canonical Unicode cwd values:
+    `财务`, `男装衣橱`, and `系统工具`; the separate mojibake rows are gone.
+  - Local changes remain uncommitted.
+
+## 2026-06-01 Cross-Thread Draft Target Id Recovery v155
+
+- User report:
+  - Cross-thread task-card draft failed for the second time today.
+  - Screenshot showed a source-side `Cross-thread task card draft` card in
+    `Failed` state for a Hermes -> Finance request.
+- Diagnosis:
+  - The runtime task-card store did not receive a new card for this failure,
+    so the failure happened before a server-side card was persisted.
+  - Thread detail for Hermes thread `019e7c19-c797-7ed0-bd7d-494b5efea678`
+    showed the assistant draft target id was
+    `019e6e22-e3d3-7d1-afef-cb9f9b833b71`, while the real Finance thread id is
+    `019e6e22-e3d3-7e60-bcc2-027d40895193`.
+  - The model copied the target id prefix correctly but corrupted the suffix.
+    The browser previously required exact id matching and therefore marked the
+    source draft failed as "target missing from visible thread list".
+- Local fix:
+  - `public/app.js`
+    - Added a conservative target-id recovery path for source-side drafts.
+    - If a returned target id is not exact, Mobile Web now recovers it only
+      when exactly one visible target thread has a sufficiently long common id
+      prefix.
+    - Failed drafts whose only problem was a now-recoverable missing target are
+      moved back to pending and retried after the refreshed client loads, so an
+      already-visible failed card can self-heal instead of requiring a resend.
+    - Static build id bumped to `0.1.11|codex-mobile-shell-v155`.
+  - `public/sw.js`
+    - App shell cache bumped to `codex-mobile-shell-v155`.
+  - Docs/tests:
+    - Updated README, Architecture, Project Context, mobile viewport test, and
+      task-card route test expectations.
+- Status:
+  - Validation passed:
+    - `node --check public\app.js` and `node --check public\sw.js`.
+    - Focused `node --test test\thread-task-card-route.test.js
+      test\mobile-viewport.test.js test\thread-task-card-service.test.js`
+      passed: 20/20.
+    - `npm.cmd test` passed: 284/284.
+    - `npm.cmd run check` passed.
+    - `npm.cmd run check:macos` passed.
+    - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+      warnings.
+    - BOM check for touched files had no output.
+  - Restarted the 8787 listener after validation: old PID `105844`, new PID
+    `2592`.
+  - `/api/public-config` returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v155`,
+    `shellCacheName=codex-mobile-shell-v155`, and
+    `imageContextMode=reference`.
+  - Authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`.
+  - Local changes are uncommitted.
+  - Open clients need the v155 refresh prompt, hard refresh, close/reopen, or
+    Hermes plugin refresh path to load the recovered draft behavior.
+
+## 2026-06-01 Large Rollout Thread Turn Limit v154
+
+- User report:
+  - `Loading thread` still felt slow on long sessions.
+  - Asked how much Mobile Web currently reads from large raw/rollout sessions
+    and whether it can read less.
+- Diagnosis:
+  - Current large-rollout threshold is
+    `CODEX_MOBILE_THREAD_DETAIL_ROLLOUT_MAX_BYTES`, default `32MB`.
+  - Threads above that threshold already skip full `thread/read` and use
+    bounded `thread/turns/list`.
+  - Runtime logs for long thread `019e7c19-c797-7ed0-bd7d-494b5efea678`
+    showed a rollout around 70MB, `limit=12`, `returnedTurns=12`, with
+    `thread/turns/list` commonly around 260-330ms and one mobile cold-start
+    sample around 731ms; overall restore-startup was around 1.57s.
+- Local fix:
+  - `server.js`
+    - Changed default `CODEX_MOBILE_THREAD_TURNS` fallback from `12` to `8`.
+    - Operators can still override through the environment variable.
+  - `public/app.js`
+    - Changed `MAX_VISIBLE_TURNS` from `12` to `8`.
+    - Static build id bumped to `0.1.11|codex-mobile-shell-v154`.
+  - `public/sw.js`
+    - App shell cache bumped to `codex-mobile-shell-v154`.
+  - Docs/tests:
+    - Updated README, Architecture, Project Context, mobile viewport test, and
+      task-card route test expectations.
+- Status:
+  - Local changes are uncommitted.
+  - Validation and runtime restart still need to be run for v154.
+
 ## 2026-06-01 Startup Resume Dedup v153
 
 - User report:

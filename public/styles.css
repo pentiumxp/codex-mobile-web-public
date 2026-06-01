@@ -636,6 +636,130 @@ html.visual-recovering body::before {
   opacity: 0.75;
 }
 
+.update-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 97;
+  display: grid;
+  align-items: center;
+  justify-items: center;
+  padding: 18px;
+  background: rgba(10, 14, 18, 0.48);
+}
+
+.update-dialog.hidden {
+  display: none;
+}
+
+.update-panel {
+  width: min(560px, 100%);
+  max-height: min(720px, calc(100vh - 36px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+
+.update-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.update-panel-title {
+  font-size: 18px;
+  font-weight: 760;
+}
+
+.update-panel-subtitle,
+.update-row-meta,
+.update-row-detail {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.update-panel-close {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 32px;
+  height: 32px;
+  color: var(--muted);
+  background: var(--control-muted-bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+}
+
+.update-panel-content {
+  display: grid;
+  gap: 12px;
+  overflow: auto;
+  padding: 14px;
+}
+
+.update-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+}
+
+.update-card-title {
+  font-size: 14px;
+  font-weight: 740;
+}
+
+.update-row {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.update-row strong {
+  font-weight: 740;
+}
+
+.update-row-detail {
+  overflow-wrap: anywhere;
+}
+
+.update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.update-action-button {
+  appearance: none;
+  -webkit-appearance: none;
+  min-height: 32px;
+  padding: 5px 10px;
+  color: var(--text);
+  background: var(--control-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.update-action-button.primary {
+  color: var(--text-on-accent);
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+.update-action-button:disabled {
+  opacity: 0.6;
+}
+
 .restart-button {
   flex: 0 0 auto;
   color: var(--accent-strong);

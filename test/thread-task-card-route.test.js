@@ -43,7 +43,7 @@ test("thread task card routes preserve service status codes", () => {
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v153"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v157"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.threadRole \|\| ""\) === "target"\)/);
@@ -80,6 +80,10 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /function renderThreadTaskCardDraft\(/);
   assert.match(appJs, /function threadTaskCardDraftKeyForDraft\(/);
   assert.match(appJs, /function threadTaskCardDraftPayloadKey\(/);
+  assert.match(appJs, /function recoverVisibleThreadForDraftTargetId\(/);
+  assert.match(appJs, /function canRecoverFailedThreadTaskCardDraft\(/);
+  assert.match(appJs, /commonPrefixLength\(id, thread\.id\)/);
+  assert.match(appJs, /entry\.prefix >= 14/);
   assert.match(appJs, /function matchingThreadTaskCardsForDraft\(/);
   assert.match(appJs, /matchingThreadTaskCardsForDraft\(draft, turn\)/);
   assert.match(appJs, /function renderThreadTaskCardExpandable\(/);

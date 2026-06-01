@@ -124,6 +124,12 @@ const state = {
   appUpdateBusy: false,
   appUpdateError: "",
   appUpdateRestarting: false,
+  updatePanelOpen: false,
+  publicReleaseStatus: null,
+  publicReleaseBusy: false,
+  publicReleaseEnabled: false,
+  publicReleaseRepository: "",
+  publicReleaseBranch: "main",
   publicPrStatus: null,
   publicPrBusy: false,
   publicPrError: "",
@@ -201,9 +207,9 @@ const state = {
 
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
-const MAX_VISIBLE_TURNS = 12;
+const MAX_VISIBLE_TURNS = 8;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v153";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v157";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -1384,6 +1390,144 @@ async function refreshAppUpdateStatus(options = {}) {
   } finally {
     state.appUpdateBusy = false;
     renderAppUpdateStatus();
+    renderUpdatePanel();
+  }
+}
+
+function currentUpdateUsesPublicRelease(status = state.appUpdateStatus) {
+  const remoteUrl = String(status && status.remoteUrl || "").toLowerCase();
+  const repository = String(state.publicReleaseRepository || state.publicPrRepository || "").toLowerCase();
+  if (!remoteUrl || !repository) return false;
+  return remoteUrl.includes(`github.com/${repository}`) || remoteUrl.endsWith(`/${repository}.git`) || remoteUrl.endsWith(`/${repository}`);
+}
+
+function updateStatusLine(status) {
+  if (!status) return "Not checked";
+  if (state.appUpdateRestarting || status.restartScheduled) return "Restart pending";
+  if (state.appUpdateBusy || status.checking) return "Checking";
+  if (status.applying) return "Updating";
+  if (status.error) return `Error: ${status.error}`;
+  if (status.supported === false) return status.reason || "Not supported";
+  if (status.updateAvailable && status.canFastForward) return `Update available: ${status.remoteShort || status.remoteCommit || ""}`.trim();
+  if (status.updateAvailable) return `Update blocked: ${status.reason || "cannot fast-forward"}`;
+  return "Up to date";
+}
+
+function publicReleaseStatusLine(status) {
+  if (!state.publicReleaseEnabled) return "Public release check disabled";
+  if (!status) return "Not checked";
+  if (state.publicReleaseBusy || status.checking) return "Checking";
+  if (status.error) return `Error: ${status.error}`;
+  if (status.supported === false) return status.reason || "Not supported";
+  if (status.updateAvailable) return `Public latest: ${status.publicShort || ""}`.trim();
+  return "Matches Public latest";
+}
+
+function updateActionButton(action, label, options = {}) {
+  const classes = ["update-action-button"];
+  if (options.primary) classes.push("primary");
+  return `<button type="button" class="${escapeHtml(classes.join(" "))}" data-update-action="${escapeHtml(action)}" ${options.disabled ? "disabled" : ""}>${escapeHtml(label)}</button>`;
+}
+
+function renderUpdatePanel() {
+  const dialog = $("updateDialog");
+  const content = $("updatePanelContent");
+  if (!dialog || !content) return;
+  dialog.classList.toggle("hidden", !state.updatePanelOpen);
+  if (!state.updatePanelOpen) return;
+  const current = state.appUpdateStatus || {};
+  const release = state.publicReleaseStatus || {};
+  const publicCheckout = currentUpdateUsesPublicRelease(current) || Boolean(release.currentCheckoutUsesPublicRelease);
+  const canApplyCurrent = Boolean(current.updateAvailable && current.canFastForward && !state.appUpdateBusy && !state.appUpdateRestarting);
+  const currentButtons = [
+    updateActionButton("refresh-current", state.appUpdateBusy ? "Checking..." : "Check current", { disabled: state.appUpdateBusy }),
+    updateActionButton("apply-current", publicCheckout ? "Update from Public" : "Apply current update", {
+      primary: canApplyCurrent,
+      disabled: !canApplyCurrent,
+    }),
+  ].join("");
+  const publicButtons = [
+    updateActionButton("refresh-public", state.publicReleaseBusy ? "Checking..." : "Check Public", {
+      disabled: state.publicReleaseBusy || !state.publicReleaseEnabled,
+    }),
+    updateActionButton("public-pr", state.publicPrBusy ? "Checking PR..." : "Public PR", {
+      disabled: state.publicPrBusy || !state.publicPrEnabled,
+    }),
+  ].join("");
+  content.innerHTML = `
+    <section class="update-card">
+      <div class="update-card-title">Current checkout</div>
+      <div class="update-row">
+        <strong>${escapeHtml(updateStatusLine(current))}</strong>
+        <span class="update-row-meta">${escapeHtml(current.remote || "origin")}/${escapeHtml(current.branch || "main")} ${escapeHtml(current.localShort || "")}${current.remoteShort ? ` -> ${escapeHtml(current.remoteShort)}` : ""}</span>
+        <span class="update-row-detail">${escapeHtml(current.reason || current.remoteUrl || "Checks the Git remote configured for this running checkout.")}</span>
+      </div>
+      <div class="update-actions">${currentButtons}</div>
+    </section>
+    <section class="update-card">
+      <div class="update-card-title">Public release</div>
+      <div class="update-row">
+        <strong>${escapeHtml(publicReleaseStatusLine(release))}</strong>
+        <span class="update-row-meta">${escapeHtml(release.repository || state.publicReleaseRepository || "")}/${escapeHtml(release.branch || state.publicReleaseBranch || "main")} ${escapeHtml(release.publicShort || "")}</span>
+        <span class="update-row-detail">${escapeHtml(publicCheckout ? "This checkout tracks Public, so the current update button applies Public fast-forward updates." : "This checkout does not track Public; Public latest is shown for reference here.")}</span>
+      </div>
+      <div class="update-actions">${publicButtons}</div>
+    </section>`;
+}
+
+async function refreshPublicReleaseStatus(options = {}) {
+  if (!state.key || !state.publicReleaseEnabled) return null;
+  if (state.publicReleaseBusy && !options.force) return state.publicReleaseStatus;
+  state.publicReleaseBusy = true;
+  renderUpdatePanel();
+  try {
+    const params = new URLSearchParams();
+    if (options.force) params.set("force", "1");
+    const status = await api(`/api/public-release/status${params.toString() ? `?${params.toString()}` : ""}`, {
+      timeoutMs: 18000,
+    });
+    state.publicReleaseStatus = status;
+    return status;
+  } catch (err) {
+    state.publicReleaseStatus = Object.assign({}, state.publicReleaseStatus || {}, {
+      enabled: state.publicReleaseEnabled,
+      repository: state.publicReleaseRepository,
+      branch: state.publicReleaseBranch,
+      error: err.message || String(err),
+    });
+    return state.publicReleaseStatus;
+  } finally {
+    state.publicReleaseBusy = false;
+    renderUpdatePanel();
+  }
+}
+
+function openUpdatePanel() {
+  state.updatePanelOpen = true;
+  renderUpdatePanel();
+  publishPluginNavigationState({ force: true });
+  refreshAppUpdateStatus({ fetch: true, force: true, silent: true }).then(renderUpdatePanel).catch(() => renderUpdatePanel());
+  refreshPublicReleaseStatus({ force: true }).catch(() => renderUpdatePanel());
+}
+
+function closeUpdatePanel() {
+  state.updatePanelOpen = false;
+  renderUpdatePanel();
+  publishPluginNavigationState({ force: true });
+}
+
+function handleUpdatePanelClick(event) {
+  const button = event.target && event.target.closest("[data-update-action]");
+  if (!button) return;
+  const action = button.dataset.updateAction;
+  if (action === "refresh-current") {
+    refreshAppUpdateStatus({ fetch: true, force: true, silent: true }).then(renderUpdatePanel).catch(showError);
+  } else if (action === "apply-current") {
+    handleAppUpdateClick().then(renderUpdatePanel).catch(showError);
+  } else if (action === "refresh-public") {
+    refreshPublicReleaseStatus({ force: true }).catch(showError);
+  } else if (action === "public-pr") {
+    handlePublicPrStatusClick().catch(showError);
   }
 }
 
@@ -1470,6 +1614,7 @@ async function refreshPublicPrStatus(options = {}) {
   } finally {
     state.publicPrBusy = false;
     renderPublicPrStatus();
+    renderUpdatePanel();
   }
 }
 
@@ -1622,6 +1767,7 @@ async function handleAppUpdateClick() {
   } finally {
     state.appUpdateBusy = false;
     renderAppUpdateStatus();
+    renderUpdatePanel();
   }
 }
 
@@ -4583,12 +4729,12 @@ function isSidebarOpen() {
 
 function isInteractiveGestureTarget(target) {
   return Boolean(target && target.closest && target.closest(
-    "a, button, input, textarea, select, label, [contenteditable='true'], .rename-input, .composer, .thread-action-sheet, .continuation-dialog"
+    "a, button, input, textarea, select, label, [contenteditable='true'], .rename-input, .composer, .thread-action-sheet, .continuation-dialog, .update-dialog"
   ));
 }
 
 function beginSidebarEdgeSwipe(event) {
-  if (!isMobileViewport() || isHermesEmbedMode() || isSidebarOpen() || state.renameThreadId || createWorkspaceDialogOpen() || state.threadActionMenuId || state.continuationDialogThreadId) return;
+  if (!isMobileViewport() || isHermesEmbedMode() || isSidebarOpen() || state.renameThreadId || createWorkspaceDialogOpen() || updatePanelOpen() || state.threadActionMenuId || state.continuationDialogThreadId) return;
   if (event.touches && event.touches.length > 1) return;
   if (isInteractiveGestureTarget(event.target)) return;
   const touch = primaryTouch(event);
@@ -4964,6 +5110,11 @@ function createWorkspaceDialogOpen() {
   return Boolean(dialog && !dialog.classList.contains("hidden"));
 }
 
+function updatePanelOpen() {
+  const dialog = $("updateDialog");
+  return Boolean(dialog && !dialog.classList.contains("hidden"));
+}
+
 function workspaceCreateRootLabel() {
   return state.workspaceCreateRoot || state.workspaceCreateRoots[0] || "";
 }
@@ -5108,6 +5259,7 @@ function pluginNavigationUiState() {
   return {
     filePreviewOpen: filePreviewOpen(),
     createWorkspaceOpen: createWorkspaceDialogOpen(),
+    updatePanelOpen: updatePanelOpen(),
     primaryPage: isHermesPluginPrimaryPage(),
     sidebarOpen: isSidebarOpen(),
     settingsOpen: Boolean($("themeSettingsPanel") && !$("themeSettingsPanel").classList.contains("hidden")),
@@ -5153,6 +5305,9 @@ function handlePluginBack(event) {
     handled = true;
   } else if (createWorkspaceDialogOpen()) {
     closeCreateWorkspaceDialog({ force: true });
+    handled = true;
+  } else if (updatePanelOpen()) {
+    closeUpdatePanel();
     handled = true;
   } else if (state.continuationDialogThreadId) {
     closeContinuationDialog();
@@ -6037,6 +6192,11 @@ function renderTurnThreadTaskCardDraft(turn, previousKeys = new Set()) {
           draftState = threadTaskCardDraftState(draftKey);
         }
       }
+      if (canRecoverFailedThreadTaskCardDraft(draft, draftState)) {
+        setThreadTaskCardDraftState(draftKey, { status: "pending", error: "" }, { render: false });
+        queueThreadTaskCardDraftCreation(draftKey);
+        draftState = Object.assign({}, draftState, { status: "creating" });
+      }
       if (draftState.status === "created" || draftState.status === "dismissed") return "";
       if (draftState.status === "creating" && isThreadTaskCardDraftCreationStale(draftKey, draftState)) {
         const attempts = Math.max(1, Number(draftState.attempts || 1));
@@ -6122,11 +6282,46 @@ function threadTaskCardDraftTargetIds(draft) {
   return uniqueThreadTaskCardTargetIds(draft && draft.targetThreadIds, draft && draft.targetThreadId);
 }
 
+function commonPrefixLength(a, b) {
+  const left = String(a || "");
+  const right = String(b || "");
+  const max = Math.min(left.length, right.length);
+  let index = 0;
+  while (index < max && left[index] === right[index]) index += 1;
+  return index;
+}
+
+function recoverVisibleThreadForDraftTargetId(threadId) {
+  const id = String(threadId || "").trim();
+  if (!id || id.length < 12) return null;
+  if (findThreadById(id)) return null;
+  const candidates = (state.threads || [])
+    .filter((thread) => thread && thread.id && thread.id !== state.currentThreadId)
+    .map((thread) => ({
+      thread,
+      prefix: commonPrefixLength(id, thread.id),
+    }))
+    .filter((entry) => entry.prefix >= 14)
+    .sort((a, b) => b.prefix - a.prefix);
+  if (!candidates.length) return null;
+  const bestPrefix = candidates[0].prefix;
+  const best = candidates.filter((entry) => entry.prefix === bestPrefix);
+  return best.length === 1 ? best[0].thread : null;
+}
+
 function threadTaskCardDraftTargetThreads(draft) {
   return threadTaskCardDraftTargetIds(draft).map((threadId) => ({
     threadId,
-    thread: findThreadById(threadId),
+    thread: findThreadById(threadId) || recoverVisibleThreadForDraftTargetId(threadId),
   }));
+}
+
+function canRecoverFailedThreadTaskCardDraft(draft, draftState) {
+  if (!draft || !draftState || draftState.status !== "failed") return false;
+  const error = String(draftState.error || "");
+  if (!/Target thread is missing from the visible thread list/i.test(error)) return false;
+  const refs = threadTaskCardDraftTargetThreads(draft);
+  return Boolean(refs.length && refs.every((entry) => entry.thread && entry.thread.id));
 }
 
 function matchingThreadTaskCardsForDraft(draft, turn) {
@@ -9679,7 +9874,10 @@ async function createThreadTaskCardDraft(draftKey) {
     }
     const { draft, turn } = resolved;
     const targetRefs = threadTaskCardDraftTargetThreads(draft);
-    const targetThreadIds = targetRefs.map((entry) => entry.threadId).filter(Boolean);
+    const targetThreadIds = uniqueThreadTaskCardTargetIds(
+      targetRefs.map((entry) => entry.thread && entry.thread.id ? entry.thread.id : entry.threadId),
+      "",
+    );
     const missingTargets = targetRefs.filter((entry) => !entry.thread).map((entry) => entry.threadId).filter(Boolean);
     if (!targetThreadIds.length || missingTargets.length) {
       setThreadTaskCardDraftState(draftKey, { status: "failed", error: draft.error || `Target thread is missing from the visible thread list${missingTargets.length ? `: ${missingTargets.join(", ")}` : ""}` });
@@ -9838,8 +10036,13 @@ function wireUi() {
   $("newThreadButton").addEventListener("click", enterNewThreadDraft);
   $("refreshThreads").addEventListener("click", () => loadThreads().catch(showError));
   $("pushNotifications").addEventListener("click", () => handlePushButtonClick().catch(showError));
-  if ($("appUpdateStatus")) $("appUpdateStatus").addEventListener("click", () => handleAppUpdateClick().catch(showError));
+  if ($("appUpdateStatus")) $("appUpdateStatus").addEventListener("click", openUpdatePanel);
   if ($("publicPrStatus")) $("publicPrStatus").addEventListener("click", () => handlePublicPrStatusClick().catch(showError));
+  if ($("updateDialogClose")) $("updateDialogClose").addEventListener("click", closeUpdatePanel);
+  if ($("updatePanelContent")) $("updatePanelContent").addEventListener("click", handleUpdatePanelClick);
+  if ($("updateDialog")) $("updateDialog").addEventListener("click", (event) => {
+    if (event.target === $("updateDialog")) closeUpdatePanel();
+  });
   if ($("sharedRestartButton")) $("sharedRestartButton").addEventListener("click", () => handleSharedRestartClick().catch(showError));
   if ($("themeSettingsToggle")) $("themeSettingsToggle").addEventListener("click", () => {
     loadCodexProfiles().catch(showError);
@@ -10214,6 +10417,9 @@ async function start() {
   };
   state.publicPrEnabled = Boolean(config.publicPullRequests && config.publicPullRequests.enabled);
   state.publicPrRepository = String(config.publicPullRequests && config.publicPullRequests.repository || "");
+  state.publicReleaseEnabled = Boolean(config.publicRelease && config.publicRelease.enabled);
+  state.publicReleaseRepository = String(config.publicRelease && config.publicRelease.repository || state.publicPrRepository || "");
+  state.publicReleaseBranch = String(config.publicRelease && config.publicRelease.branch || "main");
   state.appWorkspacePath = String(config.workspacePath || state.appWorkspacePath || "").trim();
   state.workspaceCreateEnabled = config.workspaceCreate ? config.workspaceCreate.enabled !== false : true;
   state.workspaceCreateRoot = String(config.workspaceCreate && config.workspaceCreate.defaultRoot || "").trim();
@@ -10222,8 +10428,14 @@ async function start() {
     enabled: state.publicPrEnabled,
     repository: state.publicPrRepository,
   };
+  state.publicReleaseStatus = {
+    enabled: state.publicReleaseEnabled,
+    repository: state.publicReleaseRepository,
+    branch: state.publicReleaseBranch,
+  };
   renderAppUpdateStatus();
   renderPublicPrStatus();
+  renderUpdatePanel();
   renderSharedRestartButton();
   renderComposerSettings();
   rememberRateLimits(config.rateLimits || null, config.rateLimitsByModel || null);

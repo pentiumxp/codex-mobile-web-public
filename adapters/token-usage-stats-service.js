@@ -16,6 +16,16 @@ const MOJIBAKE_PATH_SEGMENTS = new Map([
   ["ϵͳ¹¤¾ß", "系统工具"],
 ]);
 
+MOJIBAKE_PATH_SEGMENTS.set("\u00b2\u00c6\u00ce\u00f1", "\u8d22\u52a1");
+MOJIBAKE_PATH_SEGMENTS.set("\u00c4\u00d0\u05f0\u00d2\u00b3\u00f7", "\u7537\u88c5\u8863\u6a71");
+MOJIBAKE_PATH_SEGMENTS.set("\u03f5\u0373\u00b9\u00a4\u00be\u00df", "\u7cfb\u7edf\u5de5\u5177");
+
+const MOJIBAKE_CODEPOINT_BYTES = new Map([
+  [0x0373, [0xcd, 0xb3]],
+  [0x03f5, [0xcf, 0xb5]],
+  [0x05f0, [0xd7, 0xb0]],
+]);
+
 function sqlString(value) {
   return `'${String(value ?? "").replace(/'/g, "''")}'`;
 }
@@ -40,7 +50,40 @@ function replacePathSegments(value, replacer) {
 }
 
 function repairKnownMojibakePath(value) {
-  return replacePathSegments(value, (segment) => MOJIBAKE_PATH_SEGMENTS.get(segment) || segment);
+  return replacePathSegments(value, (segment) => MOJIBAKE_PATH_SEGMENTS.get(segment) || repairGb18030MojibakeSegment(segment));
+}
+
+function bytesFromMojibakeSegment(segment) {
+  const bytes = [];
+  let hasNonAscii = false;
+  for (const char of String(segment || "")) {
+    const code = char.codePointAt(0);
+    if (code <= 0x7f) {
+      bytes.push(code);
+      continue;
+    }
+    hasNonAscii = true;
+    if (code <= 0xff) {
+      bytes.push(code);
+      continue;
+    }
+    const mapped = MOJIBAKE_CODEPOINT_BYTES.get(code);
+    if (!mapped) return null;
+    bytes.push(...mapped);
+  }
+  return hasNonAscii ? bytes : null;
+}
+
+function repairGb18030MojibakeSegment(segment) {
+  const bytes = bytesFromMojibakeSegment(segment);
+  if (!bytes || bytes.length < 2) return segment;
+  try {
+    const repaired = new TextDecoder("gb18030", { fatal: true }).decode(Buffer.from(bytes));
+    if (!repaired || /[\u0000-\u001f\u007f\ufffd]/u.test(repaired)) return segment;
+    return repaired;
+  } catch (_err) {
+    return segment;
+  }
 }
 
 function knownMojibakeVariants(value) {
