@@ -128,3 +128,28 @@ test("decorates thread list results while keeping workspace totals primary", () 
   assert.equal(result.data[0].mobileTokenUsage.totalTokens, 8000);
   assert.equal(result.data[1].mobileTokenUsage, undefined);
 });
+
+test("normalizes known mojibake workspace paths for project stats", () => {
+  const dbPath = tempDbPath("mojibake");
+  const service = createTokenUsageStatsService({ dbPath });
+  const canonicalCwd = "C:\\Users\\xuxin\\Documents\\系统工具";
+  const mojibakeCwd = "C:\\Users\\xuxin\\Documents\\ϵͳ¹¤¾ß";
+
+  assert.equal(service.recordTurnUsage({
+    threadId: "thread-a",
+    turnId: "turn-1",
+    cwd: mojibakeCwd,
+    completedAtMs: Date.parse("2026-06-01T09:00:00.000Z"),
+    usage: { totalTokens: 490000, inputTokens: 480000, outputTokens: 10000 },
+  }).ok, true);
+
+  const selected = service.workspaceSummary({
+    cwd: canonicalCwd,
+    workspaceCwds: [canonicalCwd],
+    nowMs: Date.parse("2026-06-01T12:00:00.000Z"),
+  });
+  assert.equal(selected.totalTokens, 490000);
+  assert.equal(selected.workspaces.length, 1);
+  assert.equal(selected.workspaces[0].cwd, canonicalCwd);
+  assert.equal(selected.workspaces[0].totalTokens, 490000);
+});

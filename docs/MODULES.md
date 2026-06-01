@@ -21,7 +21,7 @@
 | `adapters/message-input-service.js` | Upload-aware model input policy, image context mode, and extended-history persistence policy. |
 | `adapters/continuation-handoff-compaction-service.js` | Workspace handoff compaction before rollout continuation. |
 | `adapters/turn-usage-summary-service.js` | Rollout `token_count` parsing and completed-turn context/token usage summary attachment. |
-| `adapters/token-usage-stats-service.js` | Runtime SQLite token ledger for completed turns, keyed by `thread_id + turn_id`, with Workspace/day aggregation for sidebar stats. |
+| `adapters/token-usage-stats-service.js` | Runtime SQLite token ledger for completed turns, keyed by `thread_id + turn_id`, with Workspace/day aggregation for sidebar stats and known Windows mojibake cwd normalization. |
 | `adapters/public-pull-request-service.js` | Public GitHub pull request status normalization for prompt-only public PR checks. |
 | `adapters/push-notification-service.js` | Web Push turn tracking, sub-agent suppression classification, completed-turn notification thread-title resolution, and the bounded app-server display-summary cache used before SQLite fallback. |
 | `adapters/shared-chain-restart-service.js` | Authenticated restart endpoint orchestration. |

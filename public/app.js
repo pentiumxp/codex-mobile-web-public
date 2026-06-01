@@ -34,6 +34,8 @@ const state = {
   pluginRefreshRequestSignature: "",
   pluginRefreshPendingNotice: "",
   pluginRefreshPendingTimer: null,
+  pluginStartupLoading: Boolean(INITIAL_PLUGIN_EMBED.embedded),
+  pluginStartupMessage: "",
   startupThreadOpenPending: false,
   workspaces: [],
   workspaceCreateEnabled: true,
@@ -199,7 +201,7 @@ const state = {
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v146";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v149";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -882,13 +884,14 @@ function tokenCountValue(value) {
   return Number.isFinite(number) && number > 0 ? number : 0;
 }
 
-function formatTokenWan(value) {
+function formatTokenMillion(value) {
   const tokens = tokenCountValue(value);
-  if (!tokens) return "0万";
-  const wan = tokens / 10000;
-  if (wan >= 100) return `${wan.toFixed(0)}万`;
-  if (wan >= 10) return `${wan.toFixed(1)}万`;
-  return `${wan.toFixed(2)}万`;
+  if (!tokens) return "0百万";
+  const million = tokens / 1000000;
+  if (million >= 100) return `${million.toFixed(0)}百万`;
+  if (million >= 10) return `${million.toFixed(1)}百万`;
+  if (million >= 0.01) return `${million.toFixed(2)}百万`;
+  return "<0.01百万";
 }
 
 function tokenUsageForThread(thread) {
@@ -3527,6 +3530,7 @@ function pluginRootPath() {
 }
 
 function showPluginEmbedAuthError(message = "") {
+  hidePluginStartupLoading();
   const app = $("app");
   const login = $("login");
   const panel = document.querySelector("#login .login-panel");
@@ -3545,6 +3549,7 @@ function showPluginEmbedAuthError(message = "") {
 
 function showPluginEmbedRecovering(message = "") {
   showApp();
+  hidePluginStartupLoading();
   clearPluginRefreshPendingNotice();
   state.newThreadDraft = false;
   state.startupThreadOpenPending = false;
@@ -3574,11 +3579,41 @@ function showLogin(message = "") {
   $("loginError").textContent = message;
 }
 
+function pluginStartupLoadingText(message = "") {
+  const text = String(message || "").trim();
+  return text || "正在加载 Codex...";
+}
+
+function showPluginStartupLoading(message = "") {
+  if (!isHermesEmbedMode()) return;
+  state.pluginStartupLoading = true;
+  state.pluginStartupMessage = pluginStartupLoadingText(message);
+  document.documentElement.classList.add("plugin-startup-loading");
+  const loading = $("pluginStartupLoading");
+  if (loading) {
+    loading.classList.remove("hidden");
+    const title = loading.querySelector("[data-plugin-startup-title]");
+    if (title) title.textContent = state.pluginStartupMessage;
+  }
+}
+
+function hidePluginStartupLoading() {
+  if (!isHermesEmbedMode()) return;
+  state.pluginStartupLoading = false;
+  state.pluginStartupMessage = "";
+  document.documentElement.classList.remove("plugin-startup-loading");
+  const loading = $("pluginStartupLoading");
+  if (loading) loading.classList.add("hidden");
+}
+
 function showApp() {
   updateViewportVars();
+  if (isHermesEmbedMode()) {
+    document.documentElement.classList.add("embed-hermes");
+    if (state.pluginStartupLoading) showPluginStartupLoading();
+  }
   $("login").classList.add("hidden");
   $("app").classList.remove("hidden");
-  if (isHermesEmbedMode()) document.documentElement.classList.add("embed-hermes");
   updateComposerHeightVar();
   publishPluginNavigationState();
 }
@@ -3649,6 +3684,7 @@ async function applyPluginLaunchTarget() {
 }
 
 async function bootstrap() {
+  if (isHermesEmbedMode()) showPluginStartupLoading();
   const startupThreadId = applyUrlThreadSelection();
   const startupPluginRouteHint = applyUrlPluginRouteHint();
   const savedThreadId = isHermesEmbedMode() ? "" : (localStorage.getItem(STORAGE_THREAD_ID) || "");
@@ -3693,6 +3729,7 @@ async function bootstrap() {
     state.pushError = err.message || String(err);
     updatePushButton();
   });
+  hidePluginStartupLoading();
 }
 
 function threadIdFromUrlValue(value) {
@@ -4038,9 +4075,9 @@ function renderWorkspaceTokenUsage() {
   }
   el.hidden = false;
   el.innerHTML = `<div class="workspace-token-usage-summary">
-    <span title="当前 Workspace 累计 token">总 ${escapeHtml(formatTokenWan(usage.totalTokens))}</span>
-    <span title="本周 token">周 ${escapeHtml(formatTokenWan(usage.weekTokens))}</span>
-    <span title="今日 token">今 ${escapeHtml(formatTokenWan(usage.todayTokens))}</span>
+    <span title="当前 Workspace 累计 token">总 ${escapeHtml(formatTokenMillion(usage.totalTokens))}</span>
+    <span title="本周 token">周 ${escapeHtml(formatTokenMillion(usage.weekTokens))}</span>
+    <span title="今日 token">今 ${escapeHtml(formatTokenMillion(usage.todayTokens))}</span>
     <button type="button" class="workspace-token-usage-toggle" data-workspace-token-usage-toggle>统计</button>
   </div>`;
   renderWorkspaceStatsDialog();
@@ -4048,10 +4085,10 @@ function renderWorkspaceTokenUsage() {
 
 function tokenBreakdownHtml(entry, className = "workspace-token-usage-breakdown") {
   return `<div class="${escapeHtml(className)}" aria-label="Token usage breakdown">
-    <span title="Uncached input tokens">Uncached ${escapeHtml(formatTokenWan(displayInputTokensExcludingCached(entry)))}</span>
-    <span title="Cached input tokens">Cached ${escapeHtml(formatTokenWan(entry && entry.cachedInputTokens))}</span>
-    <span title="Output tokens">Out ${escapeHtml(formatTokenWan(entry && entry.outputTokens))}</span>
-    <span title="Reasoning output tokens">Reason ${escapeHtml(formatTokenWan(entry && entry.reasoningOutputTokens))}</span>
+    <span title="Uncached input tokens">Uncached ${escapeHtml(formatTokenMillion(displayInputTokensExcludingCached(entry)))}</span>
+    <span title="Cached input tokens">Cached ${escapeHtml(formatTokenMillion(entry && entry.cachedInputTokens))}</span>
+    <span title="Output tokens">Out ${escapeHtml(formatTokenMillion(entry && entry.outputTokens))}</span>
+    <span title="Reasoning output tokens">Reason ${escapeHtml(formatTokenMillion(entry && entry.reasoningOutputTokens))}</span>
   </div>`;
 }
 
@@ -4076,9 +4113,9 @@ function renderWorkspaceStatsDialog() {
   content.innerHTML = `<section class="workspace-stats-section">
     <div class="workspace-stats-section-title">总览</div>
     <div class="workspace-stats-summary-grid">
-      <div><span>总计</span><strong>${escapeHtml(formatTokenWan(usage.totalTokens))}</strong></div>
-      <div><span>本周</span><strong>${escapeHtml(formatTokenWan(usage.weekTokens))}</strong></div>
-      <div><span>今日</span><strong>${escapeHtml(formatTokenWan(usage.todayTokens))}</strong></div>
+      <div><span>总计</span><strong>${escapeHtml(formatTokenMillion(usage.totalTokens))}</strong></div>
+      <div><span>本周</span><strong>${escapeHtml(formatTokenMillion(usage.weekTokens))}</strong></div>
+      <div><span>今日</span><strong>${escapeHtml(formatTokenMillion(usage.todayTokens))}</strong></div>
     </div>
     ${tokenBreakdownHtml(usage, "workspace-stats-breakdown")}
   </section>
@@ -4088,7 +4125,7 @@ function renderWorkspaceStatsDialog() {
       ${daily.length ? daily.map((entry) => `<article class="workspace-stats-row">
         <div class="workspace-stats-row-head">
           <span>${escapeHtml(entry.date || "")}</span>
-          <strong>${escapeHtml(formatTokenWan(entry.totalTokens))}</strong>
+          <strong>${escapeHtml(formatTokenMillion(entry.totalTokens))}</strong>
         </div>
         ${tokenBreakdownHtml(entry, "workspace-stats-breakdown")}
       </article>`).join("") : `<div class="workspace-token-usage-empty">暂无每日明细</div>`}
@@ -4100,11 +4137,11 @@ function renderWorkspaceStatsDialog() {
       ${workspaces.length ? workspaces.map((entry) => `<article class="workspace-stats-row">
         <div class="workspace-stats-row-head">
           <span title="${escapeHtml(entry.cwd || "")}">${escapeHtml(shortPath(entry.cwd) || entry.cwd || "")}</span>
-          <strong>${escapeHtml(formatTokenWan(entry.totalTokens))}</strong>
+          <strong>${escapeHtml(formatTokenMillion(entry.totalTokens))}</strong>
         </div>
         <div class="workspace-stats-row-meta">
-          <span>周 ${escapeHtml(formatTokenWan(entry.weekTokens))}</span>
-          <span>今 ${escapeHtml(formatTokenWan(entry.todayTokens))}</span>
+          <span>周 ${escapeHtml(formatTokenMillion(entry.weekTokens))}</span>
+          <span>今 ${escapeHtml(formatTokenMillion(entry.todayTokens))}</span>
         </div>
         ${tokenBreakdownHtml(entry, "workspace-stats-breakdown")}
       </article>`).join("") : `<div class="workspace-token-usage-empty">暂无项目明细</div>`}
@@ -5201,14 +5238,8 @@ function renderThreads(result = null) {
     const active = thread.id === state.currentThreadId ? " active" : "";
     const emphasis = iconKind ? ` has-status-${iconKind}` : "";
     const pendingIncomingTaskCards = Math.max(0, Number(thread && thread.pendingIncomingTaskCardCount) || 0);
-    const tokenUsage = tokenUsageForThread(thread);
-    const threadTodayTokens = tokenUsage ? tokenCountValue(tokenUsage.todayTokens) : 0;
-    const threadTotalTokens = tokenUsage ? tokenCountValue(tokenUsage.totalTokens) : 0;
     const taskCardBadge = pendingIncomingTaskCards
       ? `<div class="thread-card-task-badge" title="Pending incoming task cards">${escapeHtml(`Task ${pendingIncomingTaskCards}`)}</div>`
-      : "";
-    const tokenBadge = threadTodayTokens || threadTotalTokens
-      ? `<div class="thread-card-token-badge" title="${escapeHtml(`累计 ${formatTokenWan(threadTotalTokens)}`)}">${escapeHtml(`今 ${formatTokenWan(threadTodayTokens)}`)}</div>`
       : "";
     const sizeBadge = sizeText
       ? `<div class="thread-card-size${sizeWarn ? " warn" : ""}" title="Rollout file size">${escapeHtml(sizeText)}</div>`
@@ -5226,7 +5257,6 @@ function renderThreads(result = null) {
           </div>
           <div class="thread-card-meta-badges">
             ${taskCardBadge}
-            ${tokenBadge}
             ${sizeBadge}
           </div>
         </div>
@@ -5244,14 +5274,12 @@ function renderThreads(result = null) {
       thread.updatedAt,
       statusText(thread.status),
       statusIconInfo(thread.status, thread.id)?.kind || "",
-        state.unreadThreadIds.has(thread.id) ? 1 : 0,
-        Number(thread.pendingIncomingTaskCardCount || 0),
-        tokenUsageForThread(thread) ? tokenCountValue(tokenUsageForThread(thread).todayTokens) : 0,
-        tokenUsageForThread(thread) ? tokenCountValue(tokenUsageForThread(thread).totalTokens) : 0,
-        rolloutSizeBytes(thread),
-        isRolloutOverThreshold(thread),
-      ]),
-    });
+      state.unreadThreadIds.has(thread.id) ? 1 : 0,
+      Number(thread.pendingIncomingTaskCardCount || 0),
+      rolloutSizeBytes(thread),
+      isRolloutOverThreshold(thread),
+    ]),
+  });
   if (state.renderedThreadListSignature === signature) return;
   list.innerHTML = html;
   state.renderedThreadListSignature = signature;
@@ -7895,7 +7923,9 @@ function resolveServerRequest(payload) {
 function applyNotification(method, params) {
   if (!params) return;
   if (method === "account/rateLimits/updated") {
-    rememberRateLimits(params.rateLimits || null, null);
+    // Rate-limit notifications do not carry a thread/workspace/profile source.
+    // Use status/public-config snapshots from the active Mobile Web chain
+    // instead of letting unrelated workspace events overwrite the composer UI.
     return;
   }
   if (shouldThrottleThreadNotification(method, params)) return;
@@ -10077,6 +10107,7 @@ function wireUi() {
 
 async function start() {
   wireUi();
+  if (isHermesEmbedMode()) showPluginStartupLoading();
   startRelativeTimeTimer();
   startUiWatchdog();
   const config = await fetch("/api/public-config").then((res) => res.json());
@@ -10145,6 +10176,7 @@ async function start() {
   }
   showApp();
   await bootstrap().catch((err) => {
+    hidePluginStartupLoading();
     showError(err);
     if (/unauthorized|forbidden|session expired|invalid session|invalid launch/i.test(err.message || "")) {
       if (isHermesEmbedMode()) {

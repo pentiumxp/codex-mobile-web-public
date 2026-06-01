@@ -333,6 +333,63 @@ html.embed-hermes .app {
   background: var(--bg);
 }
 
+html.embed-hermes.plugin-startup-loading .app,
+html.embed-hermes.plugin-startup-loading .login {
+  visibility: hidden;
+}
+
+.plugin-startup-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.plugin-startup-loading.hidden {
+  display: none !important;
+}
+
+.plugin-startup-panel {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  min-width: 0;
+  text-align: center;
+}
+
+.plugin-startup-spinner {
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent-strong);
+  border-radius: 999px;
+  animation: plugin-startup-spin 850ms linear infinite;
+}
+
+.plugin-startup-title {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 760;
+  line-height: 1.25;
+}
+
+.plugin-startup-subtitle {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+@keyframes plugin-startup-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 html.embed-hermes #openMenu,
 html.embed-hermes #pageRefreshPrompt,
 html.embed-hermes .main .version-actions {
@@ -1798,26 +1855,16 @@ html.visual-recovering body::before {
   line-height: 1;
 }
 
-.thread-card-task-badge,
-.thread-card-token-badge {
+.thread-card-task-badge {
   flex: 0 0 auto;
   padding: 3px 6px;
+  color: var(--text-on-accent);
+  background: var(--accent-strong);
+  border: 1px solid var(--accent-strong);
   border-radius: 7px;
   font-size: 11px;
   line-height: 1;
   white-space: nowrap;
-}
-
-.thread-card-task-badge {
-  color: var(--text-on-accent);
-  background: var(--accent-strong);
-  border: 1px solid var(--accent-strong);
-}
-
-.thread-card-token-badge {
-  color: var(--muted);
-  background: var(--control-bg);
-  border: 1px solid var(--line-soft);
 }
 
 .thread-card-size.warn {

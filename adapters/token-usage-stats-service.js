@@ -12,6 +12,10 @@ const USAGE_KEYS = [
   "reasoningOutputTokens",
 ];
 
+const MOJIBAKE_PATH_SEGMENTS = new Map([
+  ["ϵͳ¹¤¾ß", "系统工具"],
+]);
+
 function sqlString(value) {
   return `'${String(value ?? "").replace(/'/g, "''")}'`;
 }
@@ -23,6 +27,53 @@ function sqlNumber(value) {
 
 function normalizeFsPath(value) {
   return String(value || "").trim().replace(/\\/g, "/").replace(/\/+$/g, "").toLowerCase();
+}
+
+function pathSegments(value) {
+  return String(value || "").trim().replace(/^\\\\\?\\/, "").split(/[\\/]+/).filter(Boolean);
+}
+
+function replacePathSegments(value, replacer) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  return text.split(/([\\/]+)/).map((part) => replacer(part)).join("");
+}
+
+function repairKnownMojibakePath(value) {
+  return replacePathSegments(value, (segment) => MOJIBAKE_PATH_SEGMENTS.get(segment) || segment);
+}
+
+function knownMojibakeVariants(value) {
+  const text = String(value || "").trim();
+  const variants = new Set([text, repairKnownMojibakePath(text)].filter(Boolean));
+  for (const [bad, good] of MOJIBAKE_PATH_SEGMENTS.entries()) {
+    if (text.includes(good)) variants.add(text.split(good).join(bad));
+  }
+  return [...variants].filter(Boolean);
+}
+
+function workspaceAliasMap(workspaceCwds = []) {
+  const map = new Map();
+  for (const cwd of workspaceCwds || []) {
+    const canonical = String(cwd || "").trim();
+    if (!canonical) continue;
+    for (const variant of knownMojibakeVariants(canonical)) {
+      const key = normalizeFsPath(variant);
+      if (key) map.set(key, canonical);
+    }
+  }
+  return map;
+}
+
+function canonicalWorkspaceCwd(value, aliasMap = new Map()) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const rawKey = normalizeFsPath(raw);
+  if (rawKey && aliasMap.has(rawKey)) return aliasMap.get(rawKey);
+  const repaired = repairKnownMojibakePath(raw);
+  const repairedKey = normalizeFsPath(repaired);
+  if (repairedKey && aliasMap.has(repairedKey)) return aliasMap.get(repairedKey);
+  return repaired || raw;
 }
 
 function localDateKey(timestampMs) {
@@ -88,9 +139,33 @@ function dailyRows(rows) {
     .filter((row) => row.date);
 }
 
-function workspaceRows(rows) {
-  return (rows || []).map((row) => Object.assign({ cwd: String(row && row.cwd || "") }, publicUsage(row)))
-    .filter((row) => row.cwd);
+function addUsage(target, row) {
+  for (const key of USAGE_KEYS) target[key] = sqlNumber(target[key]) + sqlNumber(row && row[key]);
+  target.todayTokens = sqlNumber(target.todayTokens) + sqlNumber(row && row.todayTokens);
+  target.weekTokens = sqlNumber(target.weekTokens) + sqlNumber(row && row.weekTokens);
+}
+
+function workspaceRows(rows, options = {}) {
+  const aliases = workspaceAliasMap(options.workspaceCwds || []);
+  const byCwd = new Map();
+  for (const row of rows || []) {
+    const cwd = canonicalWorkspaceCwd(row && row.cwd, aliases);
+    if (!cwd) continue;
+    if (!byCwd.has(cwd)) {
+      byCwd.set(cwd, {
+        cwd,
+        totalTokens: 0,
+        todayTokens: 0,
+        weekTokens: 0,
+        inputTokens: 0,
+        cachedInputTokens: 0,
+        outputTokens: 0,
+        reasoningOutputTokens: 0,
+      });
+    }
+    addUsage(byCwd.get(cwd), publicUsage(row));
+  }
+  return [...byCwd.values()].sort((a, b) => b.totalTokens - a.totalTokens);
 }
 
 function createTokenUsageStatsService(options = {}) {
@@ -152,7 +227,7 @@ CREATE INDEX IF NOT EXISTS idx_token_usage_turns_cwd_day ON token_usage_turns(cw
     if (!usageHasTokens(usage)) return { ok: false, skipped: true, reason: "empty-usage" };
     const completedAtMs = Number(input.completedAtMs) || Number(input.timestampMs) || now();
     const day = localDateKey(completedAtMs);
-    const cwd = String(input.cwd || "").trim();
+    const cwd = canonicalWorkspaceCwd(input.cwd || "", workspaceAliasMap(input.workspaceCwds || []));
     const model = String(input.model || input.usageSummary && input.usageSummary.model || "").trim();
     const source = String(input.source || "turn_completed").trim() || "turn_completed";
     const sql = `
@@ -197,9 +272,12 @@ ON CONFLICT(thread_id, turn_id) DO UPDATE SET
     return Array.isArray(result.rows) ? result.rows : [];
   }
 
-  function buildWorkspaceWhere(cwd) {
-    const normalized = normalizeFsPath(cwd);
-    return normalized ? `WHERE lower(cwd) = lower(${sqlString(String(cwd || "").trim())})` : "";
+  function buildWorkspaceWhere(cwd, optionsForQuery = {}) {
+    const canonical = canonicalWorkspaceCwd(cwd, workspaceAliasMap(optionsForQuery.workspaceCwds || []));
+    const variants = knownMojibakeVariants(canonical || cwd);
+    const values = [...new Set(variants.map((value) => String(value || "").trim()).filter(Boolean))];
+    if (!values.length) return "";
+    return `WHERE lower(cwd) IN (${values.map((value) => `lower(${sqlString(value)})`).join(",")})`;
   }
 
   function summaryForThreads(threadIds = [], optionsForQuery = {}) {
@@ -231,7 +309,7 @@ GROUP BY thread_id
     const nowMs = Number(optionsForQuery.nowMs) || now();
     const today = localDateKey(nowMs);
     const weekStart = weekStartDateKey(nowMs);
-    const where = buildWorkspaceWhere(optionsForQuery.cwd || "");
+    const where = buildWorkspaceWhere(optionsForQuery.cwd || "", optionsForQuery);
     const workspaceLimit = Math.max(1, Math.min(200, Number(optionsForQuery.workspaceLimit || 50)));
     const rows = queryRows(`
 SELECT
@@ -274,7 +352,7 @@ WHERE length(trim(cwd)) > 0
 GROUP BY cwd
 ORDER BY total_tokens DESC
 LIMIT ${workspaceLimit}
-`));
+`), optionsForQuery).slice(0, workspaceLimit);
     return Object.assign(publicUsage(rows[0] || {}), {
       todayDate: today,
       weekStartDate: weekStart,
@@ -312,6 +390,7 @@ LIMIT ${workspaceLimit}
 
 module.exports = {
   createTokenUsageStatsService,
+  repairKnownMojibakePath,
   localDateKey,
   normalizeUsage,
   usageFromTurnSummary,

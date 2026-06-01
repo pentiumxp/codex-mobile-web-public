@@ -50,11 +50,22 @@ test("server maps quota groups to shared Codex and independent Spark models", ()
   assert.match(body, /limitId === "codex"[\s\S]*!isSparkModelKey\(modelKey\)/, "Codex quota should map to non-Spark models");
 });
 
-test("server can hydrate quota snapshots from rollout token_count events", () => {
+test("server hydrates rollout quota snapshots without overwriting live quota", () => {
   assert.match(serverJs, /function loadRecentRateLimitsFromRollouts\(/, "server should scan local rollout evidence");
   assert.match(serverJs, /entry && entry\.payload && entry\.payload\.rate_limits/, "server should read native rollout rate_limits");
-  assert.match(serverJs, /loadRecentRateLimitsFromRollouts\(\);[\s\S]*sendJson\(res, 200, \{[\s\S]*rateLimits: latestRateLimits/, "public config should include hydrated quota snapshots");
+  assert.match(serverJs, /recordRateLimits\(entry\.rateLimits,\s*\{\s*source:\s*"rollout"\s*\}\)/, "rollout scan should write snapshot quota");
+  assert.match(serverJs, /function activeRateLimits\(\)[\s\S]*latestLiveRateLimits \|\| latestSnapshotRateLimits/, "live quota should win over rollout snapshots");
+  assert.match(serverJs, /loadRecentRateLimitsFromRollouts\(\);[\s\S]*sendJson\(res, 200, \{[\s\S]*rateLimits: activeRateLimits\(\)/, "public config should include active quota");
   assert.match(serverJs, /loadRecentRateLimitsFromRollouts\(\);[\s\S]*sendJson\(res, 200, codex\.status\(\)\)/, "status should include hydrated quota snapshots");
+});
+
+test("server does not broadcast source-less quota notifications to clients", () => {
+  const start = serverJs.indexOf("function shouldSendEventToClient(");
+  const end = serverJs.indexOf("function removeEventClient(", start);
+  assert.ok(start > 0 && end > start, "missing event filtering function");
+  const body = serverJs.slice(start, end);
+
+  assert.match(body, /payload\.method === "account\/rateLimits\/updated"[\s\S]*return false;/);
 });
 
 test("existing-message route forwards runtime settings on next turn", () => {

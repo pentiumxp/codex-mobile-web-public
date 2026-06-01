@@ -47,10 +47,21 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*7px;/);
 });
 
-test("public app shell cache advances after workspace token usage stats", () => {
-  assert.match(swJs, /codex-mobile-shell-v146/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v146"/);
+test("public app shell cache advances after quota and token stat display fixes", () => {
+  assert.match(swJs, /codex-mobile-shell-v149/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v149"/);
   assert.match(appJs, /startupThreadOpenPending: false/);
+  assert.match(indexHtml, /id="pluginStartupLoading"/);
+  assert.match(indexHtml, /data-plugin-startup-title>正在加载 Codex\.\.\.</);
+  assert.match(appJs, /pluginStartupLoading: Boolean\(INITIAL_PLUGIN_EMBED\.embedded\)/);
+  assert.match(appJs, /function showPluginStartupLoading\(message = ""\)/);
+  assert.match(appJs, /function hidePluginStartupLoading\(\)/);
+  assert.match(appJs, /if \(isHermesEmbedMode\(\)\) showPluginStartupLoading\(\);/);
+  assert.match(appJs, /hidePluginStartupLoading\(\);[\s\S]*}\s*\n\s*function threadIdFromUrlValue/);
+  assert.match(stylesCss, /html\.embed-hermes\.plugin-startup-loading \.app/);
+  assert.match(stylesCss, /\.plugin-startup-loading\s*{[\s\S]*position:\s*fixed;[\s\S]*place-items:\s*center;/);
+  assert.doesNotMatch(appJs, /thread-card-token-badge/);
+  assert.doesNotMatch(stylesCss, /thread-card-token-badge/);
   assert.match(appJs, /const savedThreadId = isHermesEmbedMode\(\) \? "" : \(localStorage\.getItem\(STORAGE_THREAD_ID\) \|\| ""\);/);
   assert.match(appJs, /state\.startupThreadOpenPending = Boolean\(startupThreadId \|\| savedThreadId \|\| \(startupPluginRouteHint && startupPluginRouteHint\.threadId\)\);/);
   assert.match(appJs, /await loadThreads\(\{ silent: state\.startupThreadOpenPending \}\);/);
@@ -92,10 +103,11 @@ test("public app shell cache advances after workspace token usage stats", () => 
   assert.match(appJs, /function renderWorkspaceTokenUsage\(\)/);
   assert.match(appJs, /function renderWorkspaceStatsDialog\(\)/);
   assert.match(appJs, /data-workspace-token-usage-toggle>统计<\/button>/);
-  assert.match(appJs, /Uncached \$\{escapeHtml\(formatTokenWan\(displayInputTokensExcludingCached\(entry\)\)\)\}/);
-  assert.match(appJs, /Cached \$\{escapeHtml\(formatTokenWan\(entry && entry\.cachedInputTokens\)\)\}/);
-  assert.match(appJs, /Out \$\{escapeHtml\(formatTokenWan\(entry && entry\.outputTokens\)\)\}/);
-  assert.match(appJs, /Reason \$\{escapeHtml\(formatTokenWan\(entry && entry\.reasoningOutputTokens\)\)\}/);
+  assert.match(appJs, /function formatTokenMillion\(value\)/);
+  assert.match(appJs, /Uncached \$\{escapeHtml\(formatTokenMillion\(displayInputTokensExcludingCached\(entry\)\)\)\}/);
+  assert.match(appJs, /Cached \$\{escapeHtml\(formatTokenMillion\(entry && entry\.cachedInputTokens\)\)\}/);
+  assert.match(appJs, /Out \$\{escapeHtml\(formatTokenMillion\(entry && entry\.outputTokens\)\)\}/);
+  assert.match(appJs, /Reason \$\{escapeHtml\(formatTokenMillion\(entry && entry\.reasoningOutputTokens\)\)\}/);
   assert.match(stylesCss, /\.workspace-token-usage/);
   assert.match(stylesCss, /\.workspace-token-usage-summary span[\s\S]*color:\s*var\(--danger-text\)/);
   assert.match(stylesCss, /\.workspace-stats-dialog/);

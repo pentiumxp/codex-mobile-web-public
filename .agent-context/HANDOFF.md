@@ -20,6 +20,240 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-01 Quota Source Isolation And Million Token Units v149
+
+- User request:
+  - Token stats should display in millions instead of ten-thousands.
+  - Composer quota was jumping between weekly remaining `59%` and `83%` in the
+    same thread; diagnose whether the current workspace/account was wrong, then
+    prevent other quota sources from overwriting the current display.
+- Diagnosis:
+  - Current active profile is `default`, logged in as
+    `5gdxrncpzf@privaterelay.appleid.com`; `current` / LKF and `previous` are
+    inactive.
+  - Authenticated `/api/public-config`, `/api/status`, and active profile quota
+    agreed on `limitId=codex`, weekly `usedPercent=17`, remaining `83%`.
+  - Recent rollout evidence also contained `limitId=codex`, weekly
+    `usedPercent=41`, remaining `59%`, from an `Agent` workspace thread. The
+    two snapshots alternated in recent rollout events, so the symptom was not
+    evidence of the active Mobile Web profile switching accounts.
+- Local fix:
+  - `server.js`
+    - Split quota storage into live app-server quota and rollout-scanned
+      snapshot quota.
+    - `loadRecentRateLimitsFromRollouts()` records only snapshot quota.
+    - `activeRateLimits()` / `rateLimitsByModelObject()` prefer live quota and
+      use rollout snapshots only as a cold-start fallback.
+    - Source-less `account/rateLimits/updated` notifications are recorded but
+      no longer broadcast directly to browser SSE clients.
+  - `public/app.js`
+    - Browser ignores source-less `account/rateLimits/updated` notifications and
+      keeps composer quota tied to `/api/public-config` / `/api/status`
+      snapshots for the active Mobile Web chain.
+    - Token stats formatting now uses millions (`百万`) instead of `万`.
+  - `public/app.js` / `public/sw.js`
+    - Static shell bumped to `0.1.11|codex-mobile-shell-v149` /
+      `codex-mobile-shell-v149`.
+- Tests/docs:
+    - Updated quota, profile, mobile viewport, and task-card static shell tests.
+    - Updated README, Architecture, Troubleshooting, Project Context, and this
+      handoff.
+- Validation:
+  - `node --check server.js` passed.
+  - `node --check public\app.js` passed.
+  - `node --check public\sw.js` passed.
+  - Focused `node --test test\new-thread-route.test.js
+    test\new-thread-ui.test.js test\codex-profile-ui.test.js
+    test\mobile-viewport.test.js test\thread-task-card-route.test.js
+    test\token-usage-stats-service.test.js` passed: 29/29.
+  - `npm.cmd test` passed: 284/284.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+  - BOM check for touched source/test/docs/context files had no output.
+- Deployment/runtime:
+  - Restarted the 8787 Node listener by stopping old PID `92664`; the
+    windowless supervisor restarted it as PID `79708`.
+  - `/api/public-config` now returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v149`,
+    `shellCacheName=codex-mobile-shell-v149`, and
+    `imageContextMode=reference`.
+  - Authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`.
+  - Authenticated `/api/status` / `/api/codex-profiles` confirm active profile
+    `default`, account `5gdxrncpzf@privaterelay.appleid.com`, and `codex`
+    weekly `usedPercent=17` after restart.
+- Status:
+  - Local changes remain uncommitted.
+  - Open clients need the refresh prompt, hard refresh, close/reopen, or Hermes
+    plugin refresh to load v149.
+
+## 2026-06-01 Thread List Token Badge Removal v148
+
+- User request:
+  - Remove the per-thread "today token" consumption display from the thread
+    list because it has low value and makes the list look worse.
+- Local fix:
+  - `public/app.js`
+    - Removed the per-thread `thread-card-token-badge` from thread rows.
+    - Removed today/total per-thread token values from the thread-list render
+      signature.
+    - Kept Workspace token stats, full-screen stats, and turn-level usage
+      summaries intact.
+  - `public/styles.css`
+    - Removed the unused `thread-card-token-badge` style.
+  - `public/app.js` / `public/sw.js`
+    - Static shell bumped to `0.1.11|codex-mobile-shell-v148` /
+      `codex-mobile-shell-v148`.
+  - Tests/docs:
+    - Updated mobile viewport/static shell tests to assert the badge is absent.
+    - Updated README, Architecture, Project Context, and this handoff.
+- Validation:
+  - `node --check public\app.js` passed.
+  - `node --check public\sw.js` passed.
+  - Focused `node --test test\mobile-viewport.test.js
+    test\thread-task-card-route.test.js test\token-usage-stats-service.test.js`
+    passed: 11/11.
+  - `npm.cmd test` passed: 282/282.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+  - BOM check for touched source/test/docs/context files had no output.
+- Deployment/runtime:
+  - Restarted the 8787 Node listener by stopping old PID `6244`; the
+    windowless supervisor restarted it as PID `92664`.
+  - `/api/public-config` now returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v148`,
+    `shellCacheName=codex-mobile-shell-v148`, and
+    `imageContextMode=reference`.
+  - Authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`.
+- Status:
+  - Local changes remain uncommitted.
+  - This is a static frontend/PWA behavior change. Open clients need the refresh
+    prompt, hard refresh, close/reopen, or Hermes plugin refresh to load v148.
+  - Public repository was not synced or pushed.
+
+## 2026-06-01 Hermes Plugin Startup Loading Gate v147
+
+- User report:
+  - In Hermes plugin embed mode, slow network startup visibly stepped through
+    multiple intermediate screens: the default `Select a thread` main pane,
+    a `Loading threads...` primary/sidebar state, then the final plugin page.
+  - Desired behavior is one stable loading hint and then the final page.
+- Local fix:
+  - `public/index.html`
+    - Added `#pluginStartupLoading`, a stable embed startup loading layer with
+      `正在加载 Codex...`.
+  - `public/app.js`
+    - Added `pluginStartupLoading` state plus
+      `showPluginStartupLoading()` / `hidePluginStartupLoading()`.
+    - `start()` shows the loading layer immediately in `/?embed=hermes`, before
+      `/api/public-config` and plugin session exchange can expose a blank or
+      partial page.
+    - `showApp()` keeps embed app layout hidden behind the loading layer.
+    - `bootstrap()` only hides the layer after Workspace/thread-list loading
+      and final primary page, launch target, or route hint rendering completes.
+    - Auth/recovering paths clear the startup layer before showing their bounded
+      plugin recovering/auth state.
+  - `public/styles.css`
+    - Added fixed full-iframe loading layer styling and hides app/login while
+      `html.embed-hermes.plugin-startup-loading` is active.
+  - `public/app.js` / `public/sw.js`
+    - Static shell bumped to `0.1.11|codex-mobile-shell-v147` /
+      `codex-mobile-shell-v147`.
+  - Tests/docs:
+    - Updated `test/mobile-viewport.test.js` and
+      `test/thread-task-card-route.test.js`.
+    - Updated README, Architecture, Troubleshooting, Project Context, and this
+      handoff.
+- Validation:
+  - `node --check public\app.js` passed.
+  - `node --check public\sw.js` passed.
+  - Focused `node --test test\mobile-viewport.test.js
+    test\plugin-embed.test.js` passed: 11/11.
+  - `npm.cmd test` passed: 281/281.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+  - BOM check for touched source/test/docs/context files had no output.
+- Deployment/runtime:
+  - Restarted the 8787 Node listener by stopping old PID `97032`; the
+    windowless supervisor restarted it as PID `86808`.
+  - `/api/public-config` now returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v147`,
+    `shellCacheName=codex-mobile-shell-v147`, and
+    `imageContextMode=reference`.
+  - Authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`.
+- Status:
+  - Local changes remain uncommitted.
+  - This is a static frontend/PWA behavior change. Open clients need the refresh
+    prompt, hard refresh, close/reopen, or Hermes plugin refresh to load v147.
+  - Public repository was not synced or pushed.
+
+## 2026-06-01 Workspace Token Stats Mojibake Cwd Fix
+
+- User report:
+  - In the full-screen `Token 统计` page, the project list showed a garbled
+    Workspace row `ϵͳ¹¤¾ß` below normal rows like `Agent`,
+    `codex-mobile-web`, and `email`.
+- Diagnosis:
+  - Authenticated `/api/threads?limit=3&archived=false` already returned a
+    `mobileTokenUsage.workspaces` row with
+    `cwd=C:\Users\xuxin\Documents\ϵͳ¹¤¾ß`.
+  - Authenticated `/api/workspaces` returned the real visible Workspace root as
+    `C:\Users\xuxin\Documents\系统工具`, confirming the bug was in the token
+    usage SQLite cwd grouping, not the frontend layout.
+- Local fix:
+  - `adapters/token-usage-stats-service.js`
+    - Added known Windows mojibake path-segment normalization.
+    - New `recordTurnUsage()` calls normalize cwd before writing future rows.
+    - `workspaceSummary()` / `decorateThreadListResult()` now accept visible
+      `workspaceCwds` aliases, merge historical mojibake cwd rows into the real
+      Unicode Workspace cwd, and include mojibake variants when filtering a
+      selected Workspace.
+  - `server.js`
+    - Passes visible Codex and Mobile-registered Workspace roots into token
+      usage decoration and recording.
+  - Tests/docs:
+    - Added service coverage for merging `ϵͳ¹¤¾ß` into `系统工具`.
+    - Updated README, Architecture, Modules, Troubleshooting, Project Context,
+      and this handoff.
+- Validation:
+  - `node --check adapters\token-usage-stats-service.js` passed.
+  - `node --check server.js` passed.
+  - Focused `node --test test\token-usage-stats-service.test.js
+    test\mobile-viewport.test.js` passed: 8/8.
+  - `npm.cmd test` passed: 282/282.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+  - BOM check for touched source/test/docs/context files had no output.
+- Deployment/runtime:
+  - Restarted the 8787 Node listener by stopping old PID `86808`; the
+    windowless supervisor restarted it as PID `6244`.
+  - `/api/public-config` still returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v147` and
+    `shellCacheName=codex-mobile-shell-v147`.
+  - Authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`.
+  - Authenticated `/api/threads?limit=3&archived=false` now returns the
+    project stats row as `C:\Users\xuxin\Documents\系统工具` instead of
+    `C:\Users\xuxin\Documents\ϵͳ¹¤¾ß`.
+- Status:
+  - Local changes remain uncommitted.
+  - This is a server-side stats/API fix; no static PWA shell bump is required.
+  - Public repository was not synced or pushed.
+
 ## 2026-06-01 Public PR #42/#43 Merge And Private Sync
 
 - User request:
