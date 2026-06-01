@@ -30,14 +30,23 @@ function buildRestartPowerShellCommand(options = {}) {
   if (delayMs > 0) {
     parts.push(`Start-Sleep -Milliseconds ${delayMs}`);
   }
-  parts.push([
+  const scriptArgs = [
     `& ${psQuote(options.scriptPath)}`,
     `-TaskName ${psQuote(options.taskName || "Codex Mobile Web")}`,
     `-WorkspacePath ${psQuote(options.workspacePath)}`,
     `-UserProfilePath ${psQuote(options.userProfilePath)}`,
+  ];
+  if (options.profileId) {
+    scriptArgs.push(`-ProfileId ${psQuote(options.profileId)}`);
+  }
+  if (options.codexHome) {
+    scriptArgs.push(`-CodexHome ${psQuote(options.codexHome)}`);
+  }
+  scriptArgs.push(
     `-Port ${Math.max(1, Number(options.port || 8787))}`,
     `-MaxWaitSeconds ${Math.max(1, Number(options.maxWaitSeconds || 45))}`,
-  ].join(" "));
+  );
+  parts.push(scriptArgs.join(" "));
   return parts.join("; ");
 }
 
@@ -196,6 +205,8 @@ function createSharedChainRestartService(deps = {}) {
       taskName,
       workspacePath,
       userProfilePath,
+      profileId: options.profileId || deps.profileId,
+      codexHome: options.codexHome || deps.codexHome,
       port,
       maxWaitSeconds,
     });

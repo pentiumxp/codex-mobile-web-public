@@ -3,6 +3,8 @@ param(
     [string]$MuxCommand = "",
     [string]$MuxScript = "",
     [string]$RealCodexExe = "",
+    [string]$ProfileId = "",
+    [string]$CodexHome = "",
     [switch]$ForceRestartMux,
     [switch]$NoMuxKeepAlive,
     [switch]$PrintOnly
@@ -13,6 +15,43 @@ $ErrorActionPreference = "Stop"
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $runtimeRoot = if ($env:CODEX_MOBILE_RUNTIME_DIR) { $env:CODEX_MOBILE_RUNTIME_DIR } else { Join-Path $env:USERPROFILE ".codex-mobile-web" }
 $runtimeCodexExe = Join-Path $runtimeRoot "codex.exe"
+
+function Resolve-CodexHomeFromProfile {
+    param(
+        [string]$RequestedProfileId,
+        [string]$RequestedCodexHome,
+        [string]$RuntimePath,
+        [string]$UserProfilePath
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($RequestedCodexHome)) {
+        return [System.IO.Path]::GetFullPath($RequestedCodexHome)
+    }
+
+    $profile = if ([string]::IsNullOrWhiteSpace($RequestedProfileId)) { "default" } else { $RequestedProfileId.Trim().ToLowerInvariant() }
+    if ($profile -eq "default") {
+        return (Join-Path $UserProfilePath ".codex")
+    }
+    if ($profile -eq "current" -or $profile -eq "previous") {
+        return (Join-Path (Join-Path $UserProfilePath ".codex-homes") $profile)
+    }
+
+    $storePath = Join-Path $RuntimePath "codex-profiles.json"
+    if (Test-Path -LiteralPath $storePath) {
+        try {
+            $store = Get-Content -LiteralPath $storePath -Raw -Encoding UTF8 | ConvertFrom-Json
+            foreach ($item in @($store.profiles)) {
+                if ([string]$item.id -eq $profile -and -not [string]::IsNullOrWhiteSpace([string]$item.codexHome)) {
+                    return [System.IO.Path]::GetFullPath([string]$item.codexHome)
+                }
+            }
+        } catch {
+            throw "Failed to read Codex profile store ${storePath}: $($_.Exception.Message)"
+        }
+    }
+
+    throw "Unknown Codex profile '$RequestedProfileId'. Use default/current/previous or pass -CodexHome."
+}
 
 function Find-CSharpCompiler {
     $candidates = @(
@@ -91,6 +130,11 @@ if (-not (Test-Path -LiteralPath $MuxCommand)) {
     throw "Mux command not found: $MuxCommand"
 }
 
+$selectedCodexHome = Resolve-CodexHomeFromProfile -RequestedProfileId $ProfileId -RequestedCodexHome $CodexHome -RuntimePath $runtimeRoot -UserProfilePath $env:USERPROFILE
+if (-not (Test-Path -LiteralPath $selectedCodexHome)) {
+    New-Item -ItemType Directory -Force -Path $selectedCodexHome | Out-Null
+}
+
 if ([string]::IsNullOrWhiteSpace($RealCodexExe)) {
     if (Test-Path -LiteralPath $runtimeCodexExe) {
         $RealCodexExe = $runtimeCodexExe
@@ -103,7 +147,7 @@ if (($RealCodexExe -match '[\\/]') -and -not (Test-Path -LiteralPath $RealCodexE
     throw "Real Codex executable not found: $RealCodexExe"
 }
 
-$endpointFile = Join-Path $env:USERPROFILE ".codex\app-server-mux\endpoint.json"
+$endpointFile = Join-Path $selectedCodexHome "app-server-mux\endpoint.json"
 if ($ForceRestartMux) {
     if (Test-Path -LiteralPath $endpointFile) {
         try {
@@ -141,6 +185,7 @@ if ([string]::IsNullOrWhiteSpace($CodexDesktopExe) -or -not (Test-Path -LiteralP
 $env:CODEX_CLI_PATH = $MuxCommand
 $env:CODEX_MUX_SCRIPT_PATH = $MuxScript
 $env:CODEX_MUX_CODEX_EXE = $RealCodexExe
+$env:CODEX_HOME = $selectedCodexHome
 if ($NoMuxKeepAlive) {
     Remove-Item Env:\CODEX_MUX_KEEP_ALIVE -ErrorAction SilentlyContinue
 } else {
@@ -155,6 +200,7 @@ Write-Host "Codex Desktop shared app-server launch environment:"
 Write-Host "  CODEX_CLI_PATH=$env:CODEX_CLI_PATH"
 Write-Host "  CODEX_MUX_SCRIPT_PATH=$env:CODEX_MUX_SCRIPT_PATH"
 Write-Host "  CODEX_MUX_CODEX_EXE=$env:CODEX_MUX_CODEX_EXE"
+Write-Host "  CODEX_HOME=$env:CODEX_HOME"
 if ($env:CODEX_MUX_NODE_EXE) {
     Write-Host "  CODEX_MUX_NODE_EXE=$env:CODEX_MUX_NODE_EXE"
 }

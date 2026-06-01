@@ -7,8 +7,9 @@
 | `server.js` | Main HTTP server, app-server client, auth, routes, thread detail compaction, uploads, continuation jobs, Web Push, update/restart endpoints, thread visibility filtering, and local-file preview roots | Treat as composition glue. Extract reusable logic instead of expanding large inline blocks. |
 | `codex-app-server-mux.js` | Shared Desktop/Mobile app-server bridge, endpoint publication, TCP server, app-server notification replay, approval proxying | Stdout is protocol data for Desktop; diagnostics must go to mux log. |
 | `codex-app-server-mux-shim.cs` | Windows `.exe` shim for Desktop `CODEX_CLI_PATH` | Rebuild/relaunch Desktop through the shared launcher after changes. |
-| `start-codex-mobile-web*.ps1/.vbs` | Windows startup wrappers and hidden scheduled-task startup | User-logon task is preferred when WSL access is needed; plugin HTTPS base URL and Hermes frame-origin settings must be passed here for scheduled deployments. |
-| `restart-codex-mobile-shared-chain.ps1` | Scoped restart for Mobile Web chain | Does not restart Hermes Mobile, WSL, Codex Desktop, or unrelated services. |
+| `start-codex-mobile-web*.ps1/.vbs` | Windows startup wrappers and hidden scheduled-task startup | User-logon task is preferred when WSL access is needed; plugin HTTPS base URL, Hermes frame-origin settings, and active Codex profile resolution must be preserved here for scheduled deployments. |
+| `restart-codex-mobile-shared-chain.ps1` | Scoped restart for Mobile Web chain | Resolves the active profile `CODEX_HOME` before removing/waiting on the mux endpoint. Does not restart Hermes Mobile, WSL, Codex Desktop, or unrelated services. |
+| `start-codex-desktop-shared.ps1` / `start-codex-desktop-*.cmd` | Windows Desktop shared-mux launcher and profile escape hatch | Use `-ProfileId default|current|previous` or `-CodexHome` so Desktop attaches to the same selected profile endpoint as Mobile Web. |
 | `start-codex-*-macos.sh` | macOS standalone/shared launch helpers | Keep shell syntax validated with `npm run check:macos`. |
 
 ## Adapter Services
@@ -29,6 +30,7 @@
 | `adapters/turn-completion-receipt-service.js` | Builds bounded completed-turn detail receipts for Hermes plugin Inbox/thread-message delegation from final assistant text plus usage summary. |
 | `adapters/thread-task-card-service.js` | Cross-thread task-card normalization, readable visible-text guards, JSON store persistence, idempotency, single/multi-target creation, source/target authorization, state transitions, approval in-flight persistence, autonomous workflow grants, same-pair auto-approval, and approval injection payload generation. |
 | `adapters/workspace-registry-service.js` | Mobile Web-created workspace folder validation, runtime registry persistence, allowed-root policy, and public workspace shape. |
+| `adapters/codex-profile-service.js` | Single-active Codex profile discovery, safe `auth.json` account display, per-profile quota snapshots from rollout tails, active-profile persistence, and switch eligibility policy. |
 | `adapters/sqlite-cli.js` | Cross-environment `sqlite3` discovery and JSON result execution. |
 
 Add new service modules when logic has independent inputs/outputs, state rules, route policies, or tests. Keep route handlers thin and make service behavior directly testable.
@@ -37,7 +39,7 @@ Add new service modules when logic has independent inputs/outputs, state rules, 
 
 | File | Responsibility |
 | --- | --- |
-| `public/app.js` | Main app state, rendering, thread list/detail, composer, SSE, Push UI, update/restart UI, continuation UI, composer runtime Fast-dot/model/effort/permission/quota controls including the hidden Codex Fast service-tier toggle, source-side `#` task-card auto-send orchestration with stable draft settlement, queued draft lookup across long threads, silent in-conversation `creating` state, target-side-only pending task-card rendering, and runtime application of plugin session appearance. |
+| `public/app.js` | Main app state, rendering, thread list/detail, composer, SSE, Push UI, update/restart UI, continuation UI, settings-panel Codex profile display/switching, composer runtime Fast-dot/model/effort/permission/quota controls including the hidden Codex Fast service-tier toggle, source-side `#` task-card auto-send orchestration with stable draft settlement, queued draft lookup across long threads, silent in-conversation `creating` state, target-side-only pending task-card rendering, and runtime application of plugin session appearance. |
 | `public/styles.css` | Full app shell, mobile/tablet layout, operation cards, composer, sidebar, modals, PWA-safe layout. |
 | `public/sw.js` | Service worker, app-shell cache, Web Push notification click handling. |
 | `public/api-client.js` | Authenticated fetch helper. |
@@ -68,6 +70,7 @@ Add new service modules when logic has independent inputs/outputs, state rules, 
 | cross-thread task cards | `test/thread-task-card-harness.test.js`, `test/thread-task-card-service.test.js`, `test/thread-task-card-route.test.js`, `test/conversation-render.test.js`; include readable-text/encoding-damage, approve-in-flight, autonomous workflow same-pair coverage, stable source-draft settlement, queued source draft lookup across earlier non-draft messages, silent source auto-send, and target-side-only pending render coverage when changing sender or store paths |
 | Push | `test/push-notification-service.test.js` |
 | runtime settings | `test/runtime-settings.test.js`, `test/composer-quota.test.js` |
+| Codex profile switching | `test/codex-profile-service.test.js`, `test/codex-profile-ui.test.js`, `test/manual-restart-ui.test.js`, `test/mobile-viewport.test.js` |
 | scroll and markdown | `test/conversation-scroll.test.js`, `test/turn-scroll-controls.test.js`, `test/markdown-render.test.js` |
 
 Use focused tests first for local iteration, then run `npm.cmd test`, `npm.cmd run check`, `npm.cmd run check:macos`, and `git diff --check` before commit/push or release.

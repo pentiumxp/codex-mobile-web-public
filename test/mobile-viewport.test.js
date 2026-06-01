@@ -47,9 +47,9 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*7px;/);
 });
 
-test("public app shell cache advances after composer Fast dot", () => {
-  assert.match(swJs, /codex-mobile-shell-v141/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v141"/);
+test("public app shell cache advances after Codex profile switcher", () => {
+  assert.match(swJs, /codex-mobile-shell-v142/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v142"/);
   assert.match(appJs, /startupThreadOpenPending: false/);
   assert.match(appJs, /const savedThreadId = isHermesEmbedMode\(\) \? "" : \(localStorage\.getItem\(STORAGE_THREAD_ID\) \|\| ""\);/);
   assert.match(appJs, /state\.startupThreadOpenPending = Boolean\(startupThreadId \|\| savedThreadId \|\| \(startupPluginRouteHint && startupPluginRouteHint\.threadId\)\);/);

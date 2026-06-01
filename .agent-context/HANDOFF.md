@@ -620,6 +620,123 @@ The previous full handoff was archived and should be opened only when old proven
 - Status:
   - Local changes are uncommitted.
 
+## 2026-06-01 Codex Profile Switcher v142
+
+- User request:
+  - Continue the simpler dual-Codex-provider direction as a single active
+    profile switcher.
+  - Settings should show `previous` and `current` with the logged-in account,
+    not only profile ids, and switching should apply to all workspaces.
+- Local fix:
+  - Added `adapters/codex-profile-service.js`.
+    - Discovers the default `.codex` home plus `.codex-homes\current` and
+      `.codex-homes\previous`.
+    - Safely reads `auth.json` to expose account labels such as email/name or a
+      redacted account id without returning raw token fields.
+    - Scans recent rollout tails per profile for quota snapshots.
+    - Persists the selected `activeProfileId` in
+      `%USERPROFILE%\.codex-mobile-web\codex-profiles.json`.
+    - Disables switching when the process is pinned to fixed external app-
+      server endpoints instead of the per-profile mux endpoint path.
+  - `server.js`
+    - Uses the profile store during startup when `CODEX_HOME` is not explicitly
+      set.
+    - Adds authenticated `GET /api/codex-profiles` and
+      `POST /api/codex-profiles/active`.
+    - Includes `codexProfiles` in `/api/public-config` and `/api/status`.
+    - Active-profile switching writes the store and delegates to the shared-
+      chain restart service.
+  - `start-codex-mobile-web-windowless.ps1`
+    - Reads `%USERPROFILE%\.codex-mobile-web\codex-profiles.json` before
+      starting the standalone mux or Node listener, so the selected
+      `CODEX_HOME` applies after restart.
+  - `public/app.js`, `public/index.html`, `public/styles.css`
+    - Settings panel now renders Codex profile rows with profile label,
+      logged-in account label, `CODEX_HOME` path, quota snapshot, and switch
+      button.
+    - Switching shows a confirmation, calls `/api/codex-profiles/active`, then
+      waits for restart/reconnect.
+  - `public/app.js` / `public/sw.js`
+    - Static shell build/cache bumped to
+      `0.1.11|codex-mobile-shell-v142` / `codex-mobile-shell-v142`.
+  - Documentation updated:
+    - README
+    - `docs/ARCHITECTURE.md`
+    - `docs/MODULES.md`
+    - `docs/MULTI_ACCOUNT_CODEX_CLI.md`
+    - `docs/TROUBLESHOOTING.md`
+    - `.agent-context/PROJECT_CONTEXT.md`
+- Validation/status:
+  - Focused `node --test test\codex-profile-service.test.js
+    test\codex-profile-ui.test.js test\mobile-viewport.test.js
+    test\manual-restart-ui.test.js test\composer-quota.test.js` passed: 20/20.
+  - `npm.cmd test` passed: 269/269.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+  - BOM check for touched source/test/docs/context files had no output.
+  - Restarted the 8787 listener by stopping old PID `88388`; the hidden
+    launcher restarted it as PID `63732`.
+  - Post-restart `/api/public-config` returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v142` and
+    `shellCacheName=codex-mobile-shell-v142`.
+  - Post-restart authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `lastError=null`.
+  - Post-restart `GET /api/codex-profiles` returns:
+    - active profile: `default`
+    - `default`: logged in as `5gdxrncpzf@privaterelay.appleid.com`
+    - `current`: logged in as `lkf12101975@icloud.com`
+    - `previous`: not logged in
+  - Local changes are uncommitted.
+- Follow-up note:
+  - User suggested deferring client refresh prompts until server-side restart
+    and resource readiness are fully confirmed. This was not implemented in
+    v142, but should be considered for the next frontend update/restart prompt
+    pass so a client is not prompted to refresh before the new listener is
+    actually ready.
+
+## 2026-06-01 Codex Profile Quota Snapshot Persistence
+
+- User report:
+  - Non-active profiles were expected to show quota snapshots when available,
+    but the settings panel showed no snapshot for `current` / `previous`.
+- Diagnosis:
+  - `/api/codex-profiles` returned live quota for active `default`, but
+    `.codex-homes\current` and `.codex-homes\previous` had no rollout JSONL
+    files with `rate_limits` events, so there was no snapshot to scan.
+  - The first v142 implementation also did not persist the active profile's
+    live quota into the profile store, so a profile would lose its last known
+    quota display after it became inactive unless a rollout file contained
+    usable `rate_limits`.
+- Local fix:
+  - `adapters/codex-profile-service.js`
+    - Added `quotaSnapshots` persistence in
+      `%USERPROFILE%\.codex-mobile-web\codex-profiles.json`.
+    - `profiles({ activeQuota })` now stores the current active profile's live
+      quota snapshot and reuses stored snapshots when rollout scanning has no
+      usable data.
+  - `server.js`
+    - Passes active `latestRateLimits` / `rateLimitsByModelObject()` into
+      profile responses for `/api/public-config`, `/api/status`, and
+      `/api/codex-profiles`.
+  - `test/codex-profile-service.test.js` now covers persisted snapshot reuse
+    and snapshot assignment to the selected active profile.
+- Validation/status:
+  - Focused `node --test test\codex-profile-service.test.js
+    test\codex-profile-ui.test.js test\composer-quota.test.js` passed: 15/15.
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+  - Restarted 8787 by stopping old PID `63732`; hidden launcher restarted it
+    as PID `58832`.
+  - Runtime `GET /api/codex-profiles` now persists `default` quota snapshot:
+    5-hour used `66%` and weekly used `22%`, stored under
+    `quotaSnapshots.default`.
+  - `current` and `previous` still have no quota snapshot yet because their
+    homes currently have no rollout `rate_limits` events and have not been
+    active under the new snapshot-persistence code.
+
 ## 2026-05-31 Composer Fast Dot Toggle v139
 
 - User request:
@@ -1173,6 +1290,98 @@ The previous full handoff was archived and should be opened only when old proven
     title fix and service-boundary cleanup; use `git log -1 --oneline` for the
     final commit hash.
   - Public repository was not synced or pushed.
+
+## 2026-06-01 Profile-Aware Desktop Recovery And Restart Scope
+
+- User concern:
+  - Even though Mobile Web can now switch Codex CLI profiles, Desktop remains
+    important as an escape hatch if Mobile Web breaks. Desktop/Mobile must not
+    silently diverge when profiles are switched.
+- Local fix:
+  - `start-codex-desktop-shared.ps1`
+    - Added `-ProfileId default|current|previous` and `-CodexHome`.
+    - Resolves the selected profile home and uses that profile's
+      `<CODEX_HOME>\app-server-mux\endpoint.json`.
+    - Sets `CODEX_HOME` for the launched Desktop bridge process.
+  - Added convenience wrappers:
+    - `start-codex-desktop-default.cmd`
+    - `start-codex-desktop-current.cmd`
+    - `start-codex-desktop-previous.cmd`
+    - The wrappers call the shared launcher with `-ForceRestartMux` so the
+      Desktop recovery path starts from the selected profile's current bridge
+      files.
+  - `restart-codex-mobile-shared-chain.ps1`
+    - Added `-ProfileId` and `-CodexHome`.
+    - Resolves the active profile from
+      `%USERPROFILE%\.codex-mobile-web\codex-profiles.json` before selecting the
+      mux endpoint.
+    - Stops only the selected endpoint's recorded mux/child PIDs plus the
+      Mobile Web listener/launcher processes, instead of sweeping every mux
+      process created from this repository.
+  - `adapters/shared-chain-restart-service.js`
+    - `buildRestartPowerShellCommand()` can pass explicit `-ProfileId` or
+      `-CodexHome`; the normal restart path leaves them unset so the script
+      reads the latest active profile store after a profile switch request.
+  - Documentation updated:
+    - README
+    - `.agent-context/PROJECT_CONTEXT.md`
+    - `docs/ARCHITECTURE.md`
+    - `docs/MODULES.md`
+    - `docs/TROUBLESHOOTING.md`
+    - `docs/MULTI_ACCOUNT_CODEX_CLI.md`
+- Validation:
+  - Focused `node --test test\desktop-profile-launcher.test.js
+    test\shared-chain-restart-script.test.js
+    test\shared-chain-restart-service.test.js
+    test\codex-profile-service.test.js test\codex-profile-ui.test.js` passed:
+    22/22.
+  - `npm.cmd test` passed: 277/277.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+  - Dry-run verification:
+    - `restart-codex-mobile-shared-chain.ps1 -DryRun -NoStart -ProfileId
+      default` resolved `C:\Users\xuxin\.codex` and listed only the default
+      endpoint mux/child PIDs plus Mobile Web listener/launcher processes.
+    - `... -ProfileId previous` resolved
+      `C:\Users\xuxin\.codex-homes\previous`; because that profile currently
+      has no endpoint file, it did not list unrelated profile mux/child PIDs.
+- Status:
+  - Local changes remain uncommitted.
+  - No public repository sync was performed in this continuation after this
+    change.
+  - Desktop shortcuts were created under
+    `C:\Users\xuxin\OneDrive\Desktop\Codecs 快捷方式` and renamed by safe login
+    account label: `5gdxrncpzf@privaterelay.appleid.com.lnk`,
+    `lkf12101975@icloud.com.lnk`, and `2261065@qq.com.lnk`. They point to the
+    repository `start-codex-desktop-*.cmd` wrappers.
+
+## 2026-06-01 Public/Profile v142 Publish
+
+- User request:
+  - Commit and push, including public.
+- Public repository:
+  - Path: `C:\Users\xuxin\Documents\codex-mobile-web-public`
+  - Commit pushed: `fc85ee4 发布 Codex Profile 切换与 Desktop 逃生路径`
+  - Scope:
+    - Codex profile service and settings UI.
+    - v142 PWA shell.
+    - Profile-aware Windows windowless startup, shared-chain restart, and
+      Desktop shared launcher wrappers.
+    - Profile/restart/Desktop launcher tests.
+    - README and docs updates.
+  - Validation before public commit:
+    - `npm.cmd test` passed: 277/277.
+    - `npm.cmd run check` passed.
+    - `npm.cmd run check:macos` passed.
+    - `git diff --check` and `git diff --cached --check` passed with only
+      Windows LF-to-CRLF working-copy warnings.
+    - Staged privacy scan found only documentation placeholders and fake test
+      token fixtures; no real token/private key/account email/runtime state was
+      staged.
+- Private repository:
+  - This handoff records the public publish state before the private commit.
   - This is server-side notification behavior; no static shell cache bump is
     required.
 

@@ -45,12 +45,21 @@ const {
 const { createHermesPluginService } = require("./adapters/hermes-plugin-service");
 const { createThreadTaskCardService } = require("./adapters/thread-task-card-service");
 const { createWorkspaceRegistryService } = require("./adapters/workspace-registry-service");
+const {
+  createCodexProfileService,
+  resolveActiveCodexHomeFromStore,
+} = require("./adapters/codex-profile-service");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
 const USER_HOME = process.env.USERPROFILE || process.env.HOME || process.cwd();
 const RUNTIME_ROOT = process.env.CODEX_MOBILE_RUNTIME_DIR || path.join(USER_HOME, ".codex-mobile-web");
-const CODEX_HOME = process.env.CODEX_HOME || path.join(USER_HOME, ".codex");
+const CODEX_PROFILE_BOOTSTRAP = resolveActiveCodexHomeFromStore({
+  userHome: USER_HOME,
+  runtimeRoot: RUNTIME_ROOT,
+  env: process.env,
+});
+const CODEX_HOME = process.env.CODEX_HOME || CODEX_PROFILE_BOOTSTRAP.codexHome || path.join(USER_HOME, ".codex");
 const STATE_DB = path.join(CODEX_HOME, "state_5.sqlite");
 const SESSIONS_DIR = path.join(CODEX_HOME, "sessions");
 const ARCHIVED_SESSIONS_DIR = path.join(CODEX_HOME, "archived_sessions");
@@ -130,6 +139,11 @@ const workspaceRegistryService = createWorkspaceRegistryService({
   storageFile: WORKSPACE_REGISTRY_FILE,
   homeDir: USER_HOME,
   createRoots: WORKSPACE_CREATE_ROOTS,
+});
+const codexProfileService = createCodexProfileService({
+  userHome: USER_HOME,
+  runtimeRoot: RUNTIME_ROOT,
+  activeCodexHome: CODEX_HOME,
 });
 const threadTaskCardService = createThreadTaskCardService({
   storageFile: THREAD_TASK_CARD_FILE,
@@ -4746,6 +4760,9 @@ class CodexAppServerClient {
       sharedRequired: this.requireSharedAppServer,
       rateLimits: latestRateLimits,
       rateLimitsByModel: rateLimitsByModelObject(),
+      codexProfiles: codexProfileService.profiles({
+        activeQuota: { rateLimits: latestRateLimits, rateLimitsByModel: rateLimitsByModelObject() },
+      }),
     };
   }
 }
@@ -6279,6 +6296,9 @@ async function handleApi(req, res) {
       defaultReasoningEffort: CODEX_CONFIG_DEFAULTS.reasoningEffort,
       rateLimits: latestRateLimits,
       rateLimitsByModel: rateLimitsByModelObject(),
+      codexProfiles: codexProfileService.profiles({
+        activeQuota: { rateLimits: latestRateLimits, rateLimitsByModel: rateLimitsByModelObject() },
+      }),
       push: pushSubscriptionPublicStatus(),
       update: {
         enabled: !APP_UPDATE_DISABLED,
@@ -6306,6 +6326,23 @@ async function handleApi(req, res) {
         notificationDelegateConfigured: hermesNotificationDelegateService.isConfiguredForWorkspace("owner"),
       },
     });
+    return;
+  }
+  if (url.pathname === "/api/codex-profiles" && req.method === "GET") {
+    sendJson(res, 200, codexProfileService.profiles({
+      activeQuota: { rateLimits: latestRateLimits, rateLimitsByModel: rateLimitsByModelObject() },
+    }));
+    return;
+  }
+  if (url.pathname === "/api/codex-profiles/active" && req.method === "POST") {
+    try {
+      const body = await readBody(req);
+      const profile = codexProfileService.setActiveProfile(body.profileId || body.id || "");
+      const restart = sharedChainRestartService.restart({ delayMs: SHARED_CHAIN_RESTART_DELAY_MS });
+      sendJson(res, 202, Object.assign({ ok: true, activeProfileId: profile.id, profile }, restart));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { error: err.message || String(err) });
+    }
     return;
   }
   if (url.pathname === "/api/login" && req.method === "POST") {
