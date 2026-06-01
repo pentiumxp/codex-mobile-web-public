@@ -191,7 +191,7 @@ const state = {
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v140";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v141";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -9287,7 +9287,7 @@ function findThreadTaskCardDraftByKey(draftKey) {
     for (const item of items) {
       if (!item || (item.type !== "agentMessage" && item.type !== "plan")) continue;
       const draft = parseThreadTaskCardDraftText(item.text || "");
-      if (!draft) return null;
+      if (!draft) continue;
       const itemKey = threadTaskCardDraftKeyForDraft(turn, draft, item);
       const legacyItemKey = threadTaskCardDraftKey(turn.id, item.id || "");
       if (itemKey !== key && legacyItemKey !== key) continue;
