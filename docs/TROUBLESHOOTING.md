@@ -633,6 +633,12 @@ Expected behavior after `codex-mobile-shell-v121`:
   thread already matches the current thread, the app should schedule a
   lightweight refresh instead of a full reload.
 
+If the page is slow before or around the thread detail load, measure
+`/api/threads` by requested limit before changing thread-detail code. The mobile
+frontend should keep its default list page at `THREAD_LIST_PAGE_LIMIT = 40`; on
+this Windows deployment, requesting 60 or 80 rows made the list route roughly
+twice as slow even though the visible list was much smaller.
+
 ## First Load Flashes Workspace Home Before Opening A Thread
 
 If Mobile Web already knows the startup target thread from the saved current

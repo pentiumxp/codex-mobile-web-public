@@ -201,7 +201,8 @@ const state = {
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 12;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v149";
+const THREAD_LIST_PAGE_LIMIT = 40;
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v150";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -4197,7 +4198,7 @@ async function loadThreads(options = {}) {
   if (state.threadListLoadController) state.threadListLoadController.abort();
   const controller = new AbortController();
   state.threadListLoadController = controller;
-  const params = new URLSearchParams({ limit: "80", archived: "false" });
+  const params = new URLSearchParams({ limit: String(THREAD_LIST_PAGE_LIMIT), archived: "false" });
   if (state.selectedCwd) params.set("cwd", state.selectedCwd);
   const search = $("threadSearch").value.trim();
   if (search) params.set("search", search);

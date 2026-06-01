@@ -48,8 +48,8 @@ test("mobile viewport and early guards disable page zoom", () => {
 });
 
 test("public app shell cache advances after quota and token stat display fixes", () => {
-  assert.match(swJs, /codex-mobile-shell-v149/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v149"/);
+  assert.match(swJs, /codex-mobile-shell-v150/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v150"/);
   assert.match(appJs, /startupThreadOpenPending: false/);
   assert.match(indexHtml, /id="pluginStartupLoading"/);
   assert.match(indexHtml, /data-plugin-startup-title>正在加载 Codex\.\.\.</);
@@ -104,6 +104,8 @@ test("public app shell cache advances after quota and token stat display fixes",
   assert.match(appJs, /function renderWorkspaceStatsDialog\(\)/);
   assert.match(appJs, /data-workspace-token-usage-toggle>统计<\/button>/);
   assert.match(appJs, /function formatTokenMillion\(value\)/);
+  assert.match(appJs, /const THREAD_LIST_PAGE_LIMIT = 40;/);
+  assert.match(appJs, /new URLSearchParams\(\{ limit: String\(THREAD_LIST_PAGE_LIMIT\), archived: "false" \}\)/);
   assert.match(appJs, /Uncached \$\{escapeHtml\(formatTokenMillion\(displayInputTokensExcludingCached\(entry\)\)\)\}/);
   assert.match(appJs, /Cached \$\{escapeHtml\(formatTokenMillion\(entry && entry\.cachedInputTokens\)\)\}/);
   assert.match(appJs, /Out \$\{escapeHtml\(formatTokenMillion\(entry && entry\.outputTokens\)\)\}/);

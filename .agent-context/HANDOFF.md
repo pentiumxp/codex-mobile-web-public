@@ -2,6 +2,54 @@
 
 Last compacted: 2026-05-31T03:26:40.298Z
 
+## 2026-06-01 Thread List Loading Limit v150
+
+- User report:
+  - `Loading Thread` felt slower today; requested a check before committing.
+- Diagnosis:
+  - Current thread detail reads were not the main bottleneck in local probes:
+    the current Codex Mobile detail loaded in about 372 ms, Hermes large-rollout
+    detail in about 371 ms, and Finance large-rollout detail in about 312 ms.
+  - The thread-list route was sensitive to requested page size:
+    `/api/threads?limit=12/20/30/40` returned in roughly 0.6-0.75 seconds,
+    while `limit=60/80` returned in roughly 1.27-1.40 seconds even though only
+    17 visible rows were returned.
+  - The frontend `loadThreads()` still requested `limit=80`, so startup,
+    foreground resume, Hermes plugin startup, and switching flows could spend
+    extra time on list refresh before opening or refreshing a thread.
+- Local fix:
+  - `public/app.js`
+    - Added `THREAD_LIST_PAGE_LIMIT = 40`.
+    - `loadThreads()` now uses that bounded default instead of hard-coded `80`.
+    - Static shell bumped to `0.1.11|codex-mobile-shell-v150`.
+  - `public/sw.js`
+    - App shell cache bumped to `codex-mobile-shell-v150`.
+  - Tests/docs:
+    - Updated mobile viewport/static shell coverage.
+    - Updated README, Architecture, Troubleshooting, Project Context, and this
+      handoff.
+- Status:
+  - `node --check public\app.js` passed.
+  - `node --check public\sw.js` passed.
+  - Focused `node --test test\mobile-viewport.test.js
+    test\thread-task-card-route.test.js` passed: 7/7.
+  - `npm.cmd test` passed: 284/284.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+  - BOM check for touched source/test/docs/context files had no output.
+  - Restarted the 8787 Node listener by stopping old PID `79708`; the
+    windowless supervisor restarted it as PID `120076`.
+  - `/api/public-config` now returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v150`,
+    `shellCacheName=codex-mobile-shell-v150`, and
+    `imageContextMode=reference`.
+  - Authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`.
+  - Local changes are uncommitted at this handoff update point.
+
 This active handoff was automatically compacted before a Codex Mobile continuation.
 The previous full handoff was archived and should be opened only when old provenance is explicitly needed.
 
