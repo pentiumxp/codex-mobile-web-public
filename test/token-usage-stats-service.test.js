@@ -153,3 +153,51 @@ test("normalizes known mojibake workspace paths for project stats", () => {
   assert.equal(selected.workspaces[0].cwd, canonicalCwd);
   assert.equal(selected.workspaces[0].totalTokens, 490000);
 });
+
+test("merges historical Windows mojibake workspace rows under visible workspace cwd", () => {
+  const financeCwd = "C:\\Users\\xuxin\\Documents\\\u8d22\u52a1";
+  const wardrobeCwd = "C:\\Users\\xuxin\\Documents\\\u7537\u88c5\u8863\u6a71";
+  const toolsCwd = "C:\\Users\\xuxin\\Documents\\\u7cfb\u7edf\u5de5\u5177";
+  const financeBad = "C:\\Users\\xuxin\\Documents\\\u00b2\u00c6\u00ce\u00f1";
+  const wardrobeBad = "C:\\Users\\xuxin\\Documents\\\u00c4\u00d0\u05f0\u00d2\u00b3\u00f7";
+  const toolsBad = "C:\\Users\\xuxin\\Documents\\\u03f5\u0373\u00b9\u00a4\u00be\u00df";
+  const workspaceRows = [
+    { cwd: financeBad, total_tokens: 32000000, today_tokens: 32000000, week_tokens: 32000000, input_tokens: 30000000, cached_input_tokens: 1000000, output_tokens: 2000000, reasoning_output_tokens: 0 },
+    { cwd: wardrobeBad, total_tokens: 16000000, today_tokens: 16000000, week_tokens: 16000000, input_tokens: 15000000, cached_input_tokens: 500000, output_tokens: 1000000, reasoning_output_tokens: 0 },
+    { cwd: toolsBad, total_tokens: 1500000, today_tokens: 1500000, week_tokens: 1500000, input_tokens: 1400000, cached_input_tokens: 100000, output_tokens: 100000, reasoning_output_tokens: 0 },
+  ];
+  const service = createTokenUsageStatsService({
+    dbPath: tempDbPath("historical-mojibake"),
+    sqlite: {
+      exec: () => ({ ok: true }),
+      json: (_dbPath, sql) => {
+        if (/GROUP BY cwd/i.test(sql)) return { ok: true, rows: workspaceRows };
+        if (/GROUP BY day/i.test(sql)) return { ok: true, rows: [] };
+        if (sql.includes("WHERE lower(cwd)") && sql.includes(financeBad)) {
+          return { ok: true, rows: [{ total_tokens: 32000000, today_tokens: 32000000, week_tokens: 32000000, input_tokens: 30000000, cached_input_tokens: 1000000, output_tokens: 2000000, reasoning_output_tokens: 0 }] };
+        }
+        return { ok: true, rows: [{ total_tokens: 49500000, today_tokens: 49500000, week_tokens: 49500000, input_tokens: 46400000, cached_input_tokens: 1600000, output_tokens: 3100000, reasoning_output_tokens: 0 }] };
+      },
+    },
+  });
+
+  const summary = service.workspaceSummary({
+    workspaceCwds: [financeCwd, wardrobeCwd, toolsCwd],
+    nowMs: Date.parse("2026-06-01T12:00:00.000Z"),
+  });
+  const byCwd = new Map(summary.workspaces.map((workspace) => [workspace.cwd, workspace]));
+
+  assert.equal(byCwd.get(financeCwd).totalTokens, 32000000);
+  assert.equal(byCwd.get(wardrobeCwd).totalTokens, 16000000);
+  assert.equal(byCwd.get(toolsCwd).totalTokens, 1500000);
+  assert.equal(byCwd.has(financeBad), false);
+  assert.equal(byCwd.has(wardrobeBad), false);
+  assert.equal(byCwd.has(toolsBad), false);
+
+  const selectedFinance = service.workspaceSummary({
+    cwd: financeCwd,
+    workspaceCwds: [financeCwd, wardrobeCwd, toolsCwd],
+    nowMs: Date.parse("2026-06-01T12:00:00.000Z"),
+  });
+  assert.equal(selectedFinance.totalTokens, 32000000);
+});

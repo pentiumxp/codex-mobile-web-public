@@ -83,6 +83,10 @@ const PUBLIC_PR_CHECK_DISABLED = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOB
 const PUBLIC_PR_REPOSITORY = normalizeRepositorySlug(process.env.CODEX_MOBILE_PUBLIC_PR_REPOSITORY || "pentiumxp/codex-mobile-web-public");
 const PUBLIC_PR_CHECK_TIMEOUT_MS = Math.max(1000, Number(process.env.CODEX_MOBILE_PUBLIC_PR_CHECK_TIMEOUT_MS || "12000"));
 const PUBLIC_PR_CHECK_CACHE_MS = Math.max(30_000, Number(process.env.CODEX_MOBILE_PUBLIC_PR_CHECK_CACHE_MS || "900000"));
+const PUBLIC_RELEASE_CHECK_DISABLED = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_DISABLE_PUBLIC_RELEASE_CHECK || "");
+const PUBLIC_RELEASE_REPOSITORY = normalizeRepositorySlug(process.env.CODEX_MOBILE_PUBLIC_RELEASE_REPOSITORY || PUBLIC_PR_REPOSITORY);
+const PUBLIC_RELEASE_BRANCH = process.env.CODEX_MOBILE_PUBLIC_RELEASE_BRANCH || "main";
+const PUBLIC_RELEASE_CHECK_CACHE_MS = Math.max(30_000, Number(process.env.CODEX_MOBILE_PUBLIC_RELEASE_CHECK_CACHE_MS || "900000"));
 const SHARED_CHAIN_RESTART_TASK_NAME = process.env.CODEX_MOBILE_RESTART_TASK_NAME || "Codex Mobile Web";
 const SHARED_CHAIN_RESTART_DELAY_MS = Math.max(500, Number(process.env.CODEX_MOBILE_SHARED_CHAIN_RESTART_DELAY_MS || "900"));
 const DISABLE_AUTH = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_DISABLE_AUTH || "");
@@ -208,7 +212,7 @@ const MAX_COMMAND_OUTPUT_CHARS = 8000;
 const MAX_COMMAND_OUTPUT_CHARS_PER_TURN = 48000;
 const MAX_STRUCTURED_CHARS = 24000;
 const MAX_DELTA_CHARS = 12000;
-const MAX_THREAD_TURNS = Math.max(1, Math.min(100, Number(process.env.CODEX_MOBILE_THREAD_TURNS || "12")));
+const MAX_THREAD_TURNS = Math.max(1, Math.min(100, Number(process.env.CODEX_MOBILE_THREAD_TURNS || "8")));
 const MAX_FULL_THREAD_TURNS = Math.max(MAX_THREAD_TURNS, Math.min(200, Number(process.env.CODEX_MOBILE_FULL_THREAD_TURNS || "80")));
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
 const MODEL_OPTIONS = optionListFromEnv("CODEX_MOBILE_MODEL_OPTIONS", [
@@ -370,6 +374,8 @@ let appUpdateApplying = false;
 let appUpdateRestartScheduled = false;
 let publicPullRequestStatus = null;
 let publicPullRequestCheckInFlight = null;
+let publicReleaseStatus = null;
+let publicReleaseCheckInFlight = null;
 let clients = new Map();
 let clientHeartbeats = new WeakMap();
 let latestLiveRateLimits = null;
@@ -708,6 +714,19 @@ function shortCommit(value) {
   return text ? text.slice(0, 7) : "";
 }
 
+function publicRepositoryCommitApiUrl(repository = PUBLIC_RELEASE_REPOSITORY, branch = PUBLIC_RELEASE_BRANCH) {
+  const slug = normalizeRepositorySlug(repository);
+  const ref = encodeURIComponent(assertSafeGitBranch(branch, "public release branch"));
+  return `https://api.github.com/repos/${slug}/commits/${ref}`;
+}
+
+function remoteUrlLooksLikeRepository(remoteUrl, repository) {
+  const slug = normalizeRepositorySlug(repository).toLowerCase();
+  const text = safeRemoteUrl(remoteUrl).toLowerCase().replace(/\.git(?:[#?].*)?$/i, "");
+  if (!text) return false;
+  return text.includes(`github.com/${slug}`) || text.endsWith(`/${slug}`) || text.endsWith(`:${slug}`);
+}
+
 function makeStatusError(statusCode, message) {
   const err = new Error(message);
   err.statusCode = statusCode;
@@ -982,6 +1001,20 @@ function unsupportedPublicPullRequestStatus(reason, extra = {}) {
   }, extra);
 }
 
+function unsupportedPublicReleaseStatus(reason, extra = {}) {
+  return Object.assign({
+    supported: false,
+    enabled: !PUBLIC_RELEASE_CHECK_DISABLED,
+    repository: PUBLIC_RELEASE_REPOSITORY,
+    branch: PUBLIC_RELEASE_BRANCH,
+    checkedAt: new Date().toISOString(),
+    updateAvailable: false,
+    canUpdateThroughCurrentCheckout: false,
+    currentCheckoutUsesPublicRelease: false,
+    reason,
+  }, extra);
+}
+
 function publicPullRequestStatusForClient(status, overrides = {}) {
   const value = status || unsupportedPublicPullRequestStatus("not checked");
   const publicValue = Object.assign({}, value);
@@ -1028,6 +1061,33 @@ async function refreshPublicPullRequestStatus(options = {}) {
       publicPullRequestCheckInFlight = null;
     });
   return publicPullRequestCheckInFlight;
+}
+
+function publicReleaseStatusForClient(status, overrides = {}) {
+  const value = status || unsupportedPublicReleaseStatus("not checked");
+  const publicValue = Object.assign({}, value);
+  delete publicValue.checkedAtMs;
+  return Object.assign({}, publicValue, {
+    checking: Boolean(publicReleaseCheckInFlight),
+  }, overrides);
+}
+
+async function refreshPublicReleaseStatus(options = {}) {
+  const now = Date.now();
+  if (!options.force && publicReleaseStatus && publicReleaseStatus.checkedAtMs
+    && now - publicReleaseStatus.checkedAtMs < PUBLIC_RELEASE_CHECK_CACHE_MS) {
+    return publicReleaseStatusForClient(publicReleaseStatus);
+  }
+  if (publicReleaseCheckInFlight) return publicReleaseCheckInFlight;
+  publicReleaseCheckInFlight = readPublicReleaseStatus()
+    .then((status) => {
+      publicReleaseStatus = Object.assign({}, status, { checkedAtMs: Date.now() });
+      return publicReleaseStatusForClient(publicReleaseStatus, { checking: false });
+    })
+    .finally(() => {
+      publicReleaseCheckInFlight = null;
+    });
+  return publicReleaseCheckInFlight;
 }
 
 async function applyAppUpdate() {
@@ -3193,6 +3253,56 @@ function loadRecentRateLimitsFromRollouts(options = {}) {
   }
   for (const entry of [...latestByGroup.values()].sort((a, b) => a.eventMs - b.eventMs)) {
     recordRateLimits(entry.rateLimits, { source: "rollout" });
+  }
+}
+
+async function readPublicReleaseStatus() {
+  if (PUBLIC_RELEASE_CHECK_DISABLED) {
+    return unsupportedPublicReleaseStatus("disabled");
+  }
+  let branch;
+  try {
+    branch = assertSafeGitBranch(PUBLIC_RELEASE_BRANCH, "public release branch");
+  } catch (err) {
+    return unsupportedPublicReleaseStatus(err.message, { error: safeAppUpdateError(err) });
+  }
+  try {
+    const commit = await fetchJsonWithTimeout(publicRepositoryCommitApiUrl(PUBLIC_RELEASE_REPOSITORY, branch), {
+      timeoutMs: PUBLIC_PR_CHECK_TIMEOUT_MS,
+    });
+    const publicCommit = String(commit && commit.sha || "").trim();
+    const local = await tryGit(["rev-parse", "HEAD"], { timeoutMs: APP_UPDATE_CHECK_TIMEOUT_MS });
+    const localCommit = local.error ? "" : local.stdout.trim();
+    const remoteUrl = await tryGit(["remote", "get-url", APP_UPDATE_REMOTE], { timeoutMs: APP_UPDATE_CHECK_TIMEOUT_MS });
+    const currentRemoteUrl = remoteUrl.error ? "" : safeRemoteUrl(remoteUrl.stdout);
+    const currentCheckoutUsesPublicRelease = remoteUrlLooksLikeRepository(currentRemoteUrl, PUBLIC_RELEASE_REPOSITORY);
+    return {
+      supported: true,
+      enabled: true,
+      repository: PUBLIC_RELEASE_REPOSITORY,
+      branch,
+      checkedAt: new Date().toISOString(),
+      localCommit,
+      localShort: shortCommit(localCommit),
+      publicCommit,
+      publicShort: shortCommit(publicCommit),
+      publicHtmlUrl: String(commit && commit.html_url || ""),
+      publicCommittedAt: String(commit && commit.commit && commit.commit.committer && commit.commit.committer.date || ""),
+      publicMessage: String(commit && commit.commit && commit.commit.message || "").split(/\r?\n/)[0].slice(0, 240),
+      currentRemote: APP_UPDATE_REMOTE,
+      currentRemoteUrl,
+      currentCheckoutUsesPublicRelease,
+      updateAvailable: Boolean(localCommit && publicCommit && localCommit !== publicCommit),
+      canUpdateThroughCurrentCheckout: currentCheckoutUsesPublicRelease,
+      reason: currentCheckoutUsesPublicRelease
+        ? "current checkout tracks public release"
+        : "current checkout does not track the public release repository",
+    };
+  } catch (err) {
+    return unsupportedPublicReleaseStatus(publicPullRequestError(err), {
+      supported: true,
+      error: publicPullRequestError(err),
+    });
   }
 }
 
@@ -6372,6 +6482,11 @@ async function handleApi(req, res) {
         enabled: !PUBLIC_PR_CHECK_DISABLED,
         repository: PUBLIC_PR_REPOSITORY,
       },
+      publicRelease: {
+        enabled: !PUBLIC_RELEASE_CHECK_DISABLED,
+        repository: PUBLIC_RELEASE_REPOSITORY,
+        branch: PUBLIC_RELEASE_BRANCH,
+      },
       workspaceCreate: {
         enabled: true,
         defaultRoot: workspaceRegistryService.defaultCreateRoot(),
@@ -6549,6 +6664,11 @@ async function handleApi(req, res) {
   if (url.pathname === "/api/public-pull-requests/status" && req.method === "GET") {
     const force = /^(1|true|yes|on)$/i.test(url.searchParams.get("force") || "");
     sendJson(res, 200, await refreshPublicPullRequestStatus({ force }));
+    return;
+  }
+  if (url.pathname === "/api/public-release/status" && req.method === "GET") {
+    const force = /^(1|true|yes|on)$/i.test(url.searchParams.get("force") || "");
+    sendJson(res, 200, await refreshPublicReleaseStatus({ force }));
     return;
   }
   if (url.pathname === "/api/restart/shared-chain" && req.method === "POST") {
