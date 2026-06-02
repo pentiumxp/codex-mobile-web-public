@@ -3013,3 +3013,38 @@ The previous full handoff was archived and should be opened only when old proven
     `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
     `lastError=null`, `codexHome=C:\Users\xuxin\.codex-homes\previous`.
   - Local changes remain uncommitted.
+
+## 2026-06-02 Public Sync for v160-v162
+
+- User request:
+  - Push Public after private commit `e816f87 修复自动协作回传、账号切换线程延续与刷新额度 v162`.
+- Public repository:
+  - Path: `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Synced public-safe product, test, docs, README, and startup-script files:
+    `README.md`, `server.js`, `adapters/thread-task-card-service.js`,
+    `public/app.js`, `public/sw.js`,
+    `start-codex-mobile-web-windowless.ps1`, relevant docs, and relevant
+    tests for app update, profile UI/restart, protocol, viewport, and
+    task-card service/route behavior.
+  - Did not sync `.agent-context`, uploads, runtime databases, access keys,
+    VAPID/subscription files, profile auth/config backups, state backups, or
+    other machine-local runtime state.
+  - Added detailed Chinese README release notes for v160-v162:
+    autonomous task-card completion auto-return, profile switch shared thread
+    state, explicit profile restart handling, and v162 page-refresh quota
+    snapshot application.
+  - Public commit pushed:
+    `a41dfa2 发布自动协作回传、Profile 线程延续与刷新额度 v162`.
+- Public validation:
+  - `npm.cmd test` passed: 292/292.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` and `git diff --cached --check` passed with only
+    Windows LF-to-CRLF working-copy warnings.
+  - Staged path scan found no private/runtime files.
+  - Staged sensitive-content scan only matched README documentation saying
+    runtime access key / VAPID / subscription files are excluded; no raw secret
+    values were staged.
+- Status:
+  - Public repository is clean on `main...origin/main` after push.
+  - Private repository needs this handoff update committed after this entry.
