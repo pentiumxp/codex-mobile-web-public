@@ -2675,3 +2675,36 @@ The previous full handoff was archived and should be opened only when old proven
   - Local changes are uncommitted.
   - Open clients need the v153 refresh prompt, hard refresh, close/reopen, or
     Hermes plugin refresh path to load the new startup behavior.
+
+## 2026-06-02 Public Sync for Generated Image Rendering v159
+
+- User request:
+  - Push and sync public after the private v159 generated-image rendering fix.
+- Private repository:
+  - Already committed and pushed `a4638f6 支持生成图片渲染 v159`.
+  - Final private status before this handoff-only update was clean on
+    `main...origin/main`.
+- Public repository:
+  - Path: `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+  - Synced only public-safe product, docs, README, and tests from private:
+    README, `server.js`, `adapters/generated-image-cache-service.js`,
+    `public/app.js`, `public/markdown-renderer.js`, `public/styles.css`,
+    `public/sw.js`, generated-image/Markdown/mobile viewport/file preview/task
+    card route tests, and the relevant docs.
+  - Did not sync `.agent-context`, uploads, runtime databases, access keys,
+    VAPID/subscription files, or other machine-local state.
+  - Added a detailed Chinese public README release note for v158-v159:
+    safe bitmap data URL rendering, `imageGeneration.savedPath` generated PNG
+    cache rendering, authenticated `/api/generated-images/file`, and
+    `codex-mobile-shell-v159`.
+  - Public commit pushed:
+    `2f9caab 发布生成图片渲染 v159`.
+- Public validation:
+  - `npm.cmd test` passed: 289/289.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` and `git diff --cached --check` passed with only
+    Windows LF-to-CRLF working-copy warnings.
+  - Staged privacy scan found no staged private/runtime files or raw secret
+    values; matches were only documentation statements about excluded uploads
+    and context paths.
