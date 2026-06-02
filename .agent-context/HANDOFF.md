@@ -3048,3 +3048,62 @@ The previous full handoff was archived and should be opened only when old proven
 - Status:
   - Public repository is clean on `main...origin/main` after push.
   - Private repository needs this handoff update committed after this entry.
+
+## 2026-06-02 Codex Profile Switch Docs And Harness Hardening
+
+- User request:
+  - Backfill today's Codex account/profile switching details into durable docs
+    and harness coverage.
+- Local docs update:
+  - `docs/MULTI_ACCOUNT_CODEX_CLI.md`
+    - Reframed the current implementation as single-active-profile Mobile Web
+      with profile-local `auth.json` / `config.toml` and shared thread state.
+    - Documented the exact non-auth state paths linked from default `.codex`
+      into non-default profiles:
+      `.codex-global-state.json`, `state_5.sqlite*`, `session_index.jsonl`,
+      `sessions/`, and `archived_sessions/`.
+    - Documented auth/config backup under `profile-auth-backups` and replaced
+      profile-local state backup under `profile-state-backups`.
+    - Replaced the older `previous` no-auth observation with a Desktop-GUI
+      isolation caveat so it cannot be mistaken for the current Mobile Web
+      profile state.
+    - Added explicit harness rules for profile switching work.
+  - `docs/MODULES.md`
+    - Expanded Codex profile switching test-map expectations to include safe
+      account display, fixed-endpoint disablement, quota clearing, explicit
+      restart profile args, auth/config preservation, shared-state links, and
+      multi-account doc regression coverage.
+  - `docs/TROUBLESHOOTING.md`
+    - Added a `Codex Profile Switch Hides Workspaces Or Threads` checklist
+      for hardlink/junction state, auth/config preservation, runtime backups,
+      and expected tests.
+  - `.agent-context/PROJECT_CONTEXT.md`
+    - Added the durable rule that harness must fail if auth/config are added
+      to the shared-state link list, restart stops passing `profileId` /
+      `codexHome`, or the multi-account doc reverts to the old no-auth
+      conclusion.
+- Harness update:
+  - `test/codex-profile-ui.test.js`
+    - Added `profile shared-state harness excludes account auth files`, which
+      inspects the windowless launcher shared-state body and fails if
+      `auth.json` or `config.toml` become linked state paths.
+    - Added `multi-account docs describe current shared-thread-state profile
+      design`, which checks current docs and rejects stale `previous` no-auth
+      recovery instructions.
+- Validation:
+  - Focused `node --test test\codex-profile-ui.test.js
+    test\codex-profile-service.test.js test\manual-restart-ui.test.js
+    test\mobile-viewport.test.js` passed: 20/20.
+  - `node --check public\app.js` passed.
+  - Search for stale multi-account doc phrases (`did not yet have`,
+    `verify previous still has no`, `Not logged in`, etc.) had no output.
+  - `npm.cmd test` passed: 294/294.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+  - BOM check for touched docs/test/context files had no output.
+- Status:
+  - Local changes are uncommitted.
+  - This is docs and harness hardening only; no static shell cache bump or
+    runtime restart was required.

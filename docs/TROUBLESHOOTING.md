@@ -810,6 +810,47 @@ Check these facts in order:
 
 The browser should never display or log raw token fields from `auth.json`.
 
+## Codex Profile Switch Hides Workspaces Or Threads
+
+If switching Mobile Web to another Codex profile makes most workspaces or
+threads disappear, inspect the shared-state link setup before changing thread
+visibility code.
+
+Expected behavior:
+
+- The active profile owns `auth.json` and `config.toml`.
+- Non-default profiles link shared thread/workspace state back to the default
+  `%USERPROFILE%\.codex` home:
+  `.codex-global-state.json`, `state_5.sqlite*`, `session_index.jsonl`,
+  `sessions/`, and `archived_sessions/`.
+- File state paths should be hard links. Directory state paths should be
+  junctions.
+- Existing profile-local copies of those state paths should be moved under
+  `%USERPROFILE%\.codex-mobile-web\profile-state-backups` before links are
+  created.
+- Profile-local `auth.json` and `config.toml` should be copied only to
+  `%USERPROFILE%\.codex-mobile-web\profile-auth-backups`; they must not be
+  replaced by default-account files.
+
+Useful checks on Windows:
+
+```powershell
+Get-Item C:\Users\xuxin\.codex-homes\previous\sessions | Format-List FullName,LinkType,Target
+Get-Item C:\Users\xuxin\.codex-homes\previous\state_5.sqlite | Format-List FullName,LinkType,Target
+Test-Path C:\Users\xuxin\.codex-homes\previous\auth.json
+Test-Path C:\Users\xuxin\.codex-homes\previous\config.toml
+```
+
+Harness expectations:
+
+- `test/codex-profile-ui.test.js` should fail if the windowless shared-state
+  list starts including `auth.json` or `config.toml`.
+- `test/codex-profile-ui.test.js` should also fail if
+  `docs/MULTI_ACCOUNT_CODEX_CLI.md` reverts to the old observation that
+  `previous` has no `auth.json` or that all state remains isolated per profile.
+- `test/manual-restart-ui.test.js` should continue checking that profile
+  switches pass explicit `profileId` / `codexHome` restart arguments.
+
 ## Page Refresh Does Not Update Quota
 
 The page-refresh prompt and quota refresh are related but not identical. The

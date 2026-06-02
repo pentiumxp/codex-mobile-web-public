@@ -10,7 +10,10 @@ requirement.
 This document is about:
 
 - multiple Codex CLI homes on one Windows machine;
-- per-account `CODEX_HOME` separation;
+- per-account `CODEX_HOME` authentication separation;
+- Mobile Web's single-active-profile switcher;
+- the shared-thread-state links that keep existing workspaces and conversations
+  visible after a Mobile Web account switch;
 - the boundary between CLI isolation and Desktop App global state;
 - how a future dual-account Codex Mobile design should build on CLI isolation.
 
@@ -24,12 +27,13 @@ This document is not about:
 
 On this machine:
 
-- `CODEX_HOME` is sufficient to isolate Codex CLI file state such as:
+- `CODEX_HOME` is sufficient to isolate Codex CLI account identity files such
+  as:
   - `auth.json`
   - `config.toml`
-  - local state/history databases
-  - goals
-  - local indexes and per-home runtime metadata
+- Mobile Web deliberately shares selected conversation/workspace state across
+  profile homes so an account switch does not hide existing workspaces or
+  threads.
 - `CODEX_HOME` is not sufficient to isolate the current Codex Desktop App GUI
   ChatGPT login state.
 
@@ -51,13 +55,14 @@ C:\Users\xuxin\.codex-homes\
 
 Current state observed during implementation:
 
-- `current`
-  - has its own `auth.json`
-  - `codex login status` returned `Logged in using ChatGPT`
-- `previous`
-  - had its own `config.toml`
-  - did not yet have `auth.json`
-  - `codex login status` returned `Not logged in`
+- `default`: `%USERPROFILE%\.codex`
+- `current`: `%USERPROFILE%\.codex-homes\current`
+- `previous`: `%USERPROFILE%\.codex-homes\previous`
+
+Current Mobile Web profile switching is built around these homes. Each profile
+keeps its own `auth.json` and `config.toml`; non-default profile homes link the
+conversation/workspace state listed below back to the default `.codex` home.
+This deliberately separates account identity from conversation continuity.
 
 ## Shared vs Isolated Files
 
@@ -67,11 +72,34 @@ These should remain per-account / per-home:
 
 - `auth.json`
 - `config.toml`
-- `.codex-global-state.json`
-- local state/history sqlite files
-- per-home goals/session index files
 
-### Shared by junction where acceptable
+Mobile Web must not copy the default account's `auth.json` or `config.toml`
+over another profile. The Windows hidden/windowless launcher backs up existing
+profile `auth.json` and `config.toml` under
+`%USERPROFILE%\.codex-mobile-web\profile-auth-backups` before it prepares shared
+state links, but those files remain profile-owned and are not committed.
+
+### Shared by Mobile Web for thread continuity
+
+To keep existing workspaces and conversations visible after switching Mobile
+Web from one profile to another, the Windows windowless launcher links these
+non-auth state paths from the default `%USERPROFILE%\.codex` home into a
+non-default profile home:
+
+- `.codex-global-state.json`
+- `state_5.sqlite`
+- `state_5.sqlite-wal`
+- `state_5.sqlite-shm`
+- `session_index.jsonl`
+- `sessions/`
+- `archived_sessions/`
+
+Files are linked as hard links. Directories are linked as junctions. If a
+non-default profile already has a local copy of one of those state paths, it is
+moved under `%USERPROFILE%\.codex-mobile-web\profile-state-backups` before the
+link is created. That backup path is runtime state, not repository content.
+
+### Other shared or reused assets
 
 To avoid unnecessary duplication, some non-auth assets may be shared from the
 existing global Codex directories when the operational goal is CLI account
@@ -86,7 +114,7 @@ used shared/junction-style reuse for directories such as:
 
 This is acceptable only because these shared directories are not the primary
 account-identity boundary. The account boundary is the isolated home-level auth
-and state files.
+and config files.
 
 ## Current Local Launchers
 
@@ -147,13 +175,14 @@ Test-Path C:\Users\xuxin\.codex-homes\previous\auth.json
 
 ## Important Boundary: Desktop App
 
-Observed behavior in this environment:
+Historical pre-switcher observation in this environment:
 
-- a Desktop/App-oriented login attempt under the `previous` launcher did not
-  create `C:\Users\xuxin\.codex-homes\previous\auth.json`;
+- a Desktop/App-oriented login attempt under a profile-specific launcher did
+  not prove that the Desktop GUI login had been isolated per `CODEX_HOME`;
 - the Desktop App still reflected the already logged-in current account.
 
-Therefore, the working assumption for future agents should be:
+That old observation is about Desktop GUI isolation, not the current Mobile Web
+CLI profile state. Future agents should still assume:
 
 - Codex Desktop GUI login state is global to the installed app package on this
   machine;
@@ -186,6 +215,10 @@ switcher, not concurrent providers:
 - `start-codex-mobile-web-windowless.ps1` reads that active profile before it
   starts the mux or Node listener, so the selected `CODEX_HOME` applies to all
   Mobile Web workspaces after restart.
+- For non-default profiles, `start-codex-mobile-web-windowless.ps1` preserves
+  profile-local `auth.json` and `config.toml`, then links shared conversation
+  state back to default `%USERPROFILE%\.codex`. This is why account switching
+  does not hide the existing workspace/thread list.
 - `restart-codex-mobile-shared-chain.ps1` also resolves the active profile
   store before removing or waiting on the mux endpoint, so a profile switch
   does not restart against the default `.codex` endpoint by mistake.
@@ -202,6 +235,31 @@ switcher, not concurrent providers:
   per-profile mux path.
 - Inactive profile quota is a recent snapshot from that profile's rollout
   files, not a live API call unless that profile has recently been active.
+- The browser clears local cached quota when the user confirms a profile switch.
+  After restart, `/api/public-config` and `/api/status` snapshots repopulate the
+  composer quota. The page-refresh prompt also applies the latest
+  `/api/public-config` quota snapshot before reload.
+
+## Harness Rules
+
+Future profile-switching work should preserve these harness expectations:
+
+- `test/codex-profile-service.test.js` covers safe account display, active
+  profile persistence, active quota snapshot ownership, and disabling profile
+  switch under fixed external endpoints.
+- `test/codex-profile-ui.test.js` covers the settings UI, browser quota-cache
+  clearing before switch restart, active-profile route wiring, and the
+  windowless launcher's shared-state link list.
+- `test/manual-restart-ui.test.js` covers explicit `profileId` / `codexHome`
+  restart arguments for profile switches and manual restarts.
+- `test/thread-visibility.test.js` / `test/mobile-viewport.test.js` should keep
+  Codex worktree visibility compatible with both the active profile home and
+  default `.codex`, because shared-state mode can expose default-home
+  worktrees while the active auth profile is non-default.
+- Documentation harness should fail if this document reverts to the old
+  conclusion that `previous` has no `auth.json` or that all state files must be
+  isolated per profile. That older fact was a temporary observation before the
+  current shared-thread-state design.
 
 If future work requires dual-account Codex Mobile while avoiding Desktop:
 
@@ -228,15 +286,21 @@ Account B
 
 ## Recommended Next Step When Work Resumes
 
-When this effort resumes, do not start with Codex Mobile.
+For the current single-active-profile Mobile Web path, start by checking:
 
-Start with the missing CLI account login boundary:
+1. `/api/codex-profiles` safe account labels and `activeProfileId`;
+2. `%USERPROFILE%\.codex-mobile-web\codex-profiles.json`;
+3. `/api/status.codexHome` after the controlled restart;
+4. whether non-default profile homes still have local `auth.json` and
+   `config.toml`;
+5. whether `sessions/`, `archived_sessions/`, `state_5.sqlite*`,
+   `.codex-global-state.json`, and `session_index.jsonl` are hard links or
+   junctions to the default `.codex` state.
 
-1. verify `previous` still has no `auth.json`;
-2. run a CLI login flow that truly writes to
-   `C:\Users\xuxin\.codex-homes\previous`;
-3. re-run `codex login status` under both homes;
-4. only after that, design dual Mobile Web service instances.
+If future work requires true concurrent dual-account Mobile Web while avoiding
+Desktop, do not extend the single-profile switcher into two simultaneous
+providers. Run one Mobile Web instance per account with separate runtime dirs,
+ports, access keys, and app-server/mux chains.
 
 ## Safety
 
