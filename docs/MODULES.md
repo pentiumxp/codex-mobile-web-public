@@ -25,7 +25,7 @@
 | `adapters/public-pull-request-service.js` | Public GitHub pull request status normalization for prompt-only public PR checks. |
 | `adapters/push-notification-service.js` | Web Push turn tracking, sub-agent suppression classification, completed-turn notification thread-title resolution, and the bounded app-server display-summary cache used before SQLite fallback. |
 | `adapters/shared-chain-restart-service.js` | Authenticated restart endpoint orchestration. |
-| `adapters/generated-image-cache-service.js` | Caches app-server `imageView` screenshot files into runtime-owned generated-image storage before browser rendering. |
+| `adapters/generated-image-cache-service.js` | Caches app-server `imageView` screenshot files and `imageGeneration.savedPath` PNGs into runtime-owned generated-image storage before browser rendering. |
 | `adapters/hermes-plugin-service.js` | Independent Hermes Mobile embedded-app plugin manifest, callback/origin registration, launch/session token policy, frame-ancestor metadata, and bounded launch/session appearance sync. |
 | `adapters/hermes-notification-delegate-service.js` | Backend-only Hermes Action Inbox notification delegation, safe payload normalization, Hermes endpoint/key resolution, and response sanitization. |
 | `adapters/turn-completion-receipt-service.js` | Builds bounded completed-turn detail receipts for Hermes plugin Inbox/thread-message delegation from final assistant text plus usage summary. |

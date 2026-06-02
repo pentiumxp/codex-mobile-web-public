@@ -35,10 +35,13 @@ test("mobile file preview UI is wired from markdown link to preview API", () => 
   assert.match(appJs, /contentUrl \? authenticatedApiContentUrl\(contentUrl\)/);
   assert.match(appJs, /contentUrl: imageSourceSignature\(imageViewContentUrl\(item\)\)/);
   assert.match(appJs, /if \(item\.type === "imageView"\) return renderImageView\(item\)/);
+  assert.match(appJs, /if \(item\.type === "imageGeneration"\) return renderImageView\(item\)/);
   assert.match(appJs, /imageView: "Image"/);
+  assert.match(appJs, /imageGeneration: "Image"/);
   assert.match(serverJs, /GENERATED_IMAGE_ROOT/);
   assert.match(serverJs, /cacheGeneratedImageForItem/);
   assert.match(serverJs, /\/api\/generated-images\/file/);
+  assert.match(serverJs, /out\.type === "imageView" \|\| out\.type === "imageGeneration"/);
   assert.match(appJs, /function canRenderImageAttachment\(attachment\)/);
   assert.match(appJs, /imageAttachments[\s\S]*\.filter\(canRenderImageAttachment\)[\s\S]*renderInputImage\(\{ path: attachment\.path \}, attachment, index\)/);
   assert.match(appJs, /FILE_PREVIEW_SWIPE_CLOSE_MIN_PX/);

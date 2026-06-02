@@ -81,6 +81,31 @@ test("unsafe markdown links are escaped instead of rendered clickable", () => {
   assert.doesNotMatch(html, /<script>/);
 });
 
+test("markdown images render safe data png base64 images", () => {
+  const html = renderer.renderMarkdown("![效果图](data:image/png;base64,iVBORw0KGgo=)");
+
+  assert.match(html, /class="markdown-image"/);
+  assert.match(html, /<img src="data:image\/png;base64,iVBORw0KGgo="/);
+  assert.match(html, /alt="效果图"/);
+  assert.doesNotMatch(html, /data:image\/svg\+xml/);
+});
+
+test("bare data png base64 lines render as generated images", () => {
+  const html = renderer.renderMarkdown("data:image/png;base64,iVBORw0KGgo=");
+
+  assert.match(html, /class="markdown-image"/);
+  assert.match(html, /<img src="data:image\/png;base64,iVBORw0KGgo="/);
+  assert.match(html, /Generated image/);
+  assert.doesNotMatch(html, /<p>data:image/);
+});
+
+test("markdown image renderer rejects unsafe data image formats", () => {
+  const html = renderer.renderMarkdown("![bad](data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=)");
+
+  assert.doesNotMatch(html, /<img/);
+  assert.match(html, /!\[bad\]\(data:image\/svg\+xml;base64,PHN2Zz48L3N2Zz4=\)/);
+});
+
 test("code blocks can receive app copy button hooks", () => {
   const html = renderer.renderMarkdown("```js\nconsole.log(1)\n```", {
     rememberCopyText(value) {

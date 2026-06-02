@@ -12,10 +12,12 @@ function imageViewSourcePath(item) {
     item.file_path,
     item.imagePath,
     item.image_path,
+    item.savedPath,
+    item.saved_path,
     item.sourcePath,
     item.source_path,
-    item.arguments && (item.arguments.path || item.arguments.filePath || item.arguments.imagePath),
-    item.result && (item.result.path || item.result.filePath || item.result.imagePath),
+    item.arguments && (item.arguments.path || item.arguments.filePath || item.arguments.imagePath || item.arguments.savedPath),
+    item.result && (item.result.path || item.result.filePath || item.result.imagePath || item.result.savedPath),
   ];
   const found = candidates.find((value) => typeof value === "string" && value.trim());
   return found ? found.trim() : "";

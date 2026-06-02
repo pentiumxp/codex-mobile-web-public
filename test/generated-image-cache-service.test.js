@@ -22,6 +22,7 @@ test("image view source path is extracted from direct and nested item fields", (
   assert.equal(imageViewSourcePath({ type: "imageView", path: "C:\\tmp\\a.png" }), "C:\\tmp\\a.png");
   assert.equal(imageViewSourcePath({ type: "imageView", arguments: { imagePath: "C:\\tmp\\b.png" } }), "C:\\tmp\\b.png");
   assert.equal(imageViewSourcePath({ type: "imageView", result: { filePath: "C:\\tmp\\c.png" } }), "C:\\tmp\\c.png");
+  assert.equal(imageViewSourcePath({ type: "imageGeneration", savedPath: "C:\\tmp\\generated.png" }), "C:\\tmp\\generated.png");
 });
 
 test("generated image cache copies imageView screenshots into a runtime-safe cache", () => {

@@ -598,7 +598,7 @@ Behavior:
 - By default, images are shown in Mobile Web as centered thumbnails but sent to Codex only as local file-path references in text. This keeps the UI visual without making image pixels part of app-server history. The authenticated upload preview route must return browser-renderable image MIME types such as `image/jpeg` for saved upload paths.
 - Set `CODEX_MOBILE_IMAGE_CONTEXT_MODE=latest` or `vision` only when the model must inspect the latest uploaded image. Set `CODEX_MOBILE_IMAGE_CONTEXT_MODE=all` only for legacy all-image behavior.
 - Turns that include image uploads no longer request app-server extended-history persistence by default. This treats images as temporary visual references and reduces repeated `replacement_history` image retention in later rollout compaction records. Set `CODEX_MOBILE_PERSIST_IMAGE_EXTENDED_HISTORY=1` only when historical image rehydration is required.
-- Image messages render as centered thumbnails in the web UI, including saved `.jpg` / `.jpeg` / `.webp` upload paths served through `/api/uploads/file`.
+- Image messages render as centered thumbnails in the web UI, including saved `.jpg` / `.jpeg` / `.png` / `.webp` upload paths served through `/api/uploads/file` and Codex-generated Markdown `data:image/png;base64,...` images.
 - Non-image files are saved locally and referenced in message text by absolute path so Codex can read them through normal file access.
 - Uploaded file contents are local runtime state and must not be committed.
 
@@ -1013,9 +1013,9 @@ Behavior:
 
 本次本地更新修复 Codex 自己做视觉核验时生成的 `imageView` 截图卡片显示问题，并将 PWA shell 缓存升到 `codex-mobile-shell-v100`。
 
-- `view_image` / `imageView` 截图可能来自 `%TEMP%` 下的工具生成文件，不属于用户上传，也不在当前 workspace 文件预览根内。旧前端会把它当普通本地预览路径请求，导致手机端 `Image` 卡显示破图。
-- 服务端现在会在压缩 `imageView` 项时，把符合图片类型和大小限制的源文件复制到 Mobile Web 运行目录的 `generated-images` 缓存，再给前端一个受认证保护的 `/api/generated-images/file` URL。
-- 前端 `renderImageView()` 优先使用服务端附带的 `contentUrl`，并在需要时补上认证 key；只有没有缓存 URL 时才回退到旧的本地文件预览路径。
+- `view_image` / `imageView` 截图可能来自 `%TEMP%` 下的工具生成文件；Codex `imageGeneration` 效果图可能保存为 `%USERPROFILE%\.codex\generated_images\...\*.png`。这些文件不属于用户上传，也不在当前 workspace 文件预览根内。旧前端会把它们当普通 JSON 或本地预览路径显示，导致手机端 `Image` / `imageGeneration` 卡只显示原始 JSON 或破图。
+- 服务端现在会在压缩 `imageView` 或带 `savedPath` 的 `imageGeneration` 项时，把符合图片类型和大小限制的源文件复制到 Mobile Web 运行目录的 `generated-images` 缓存，再给前端一个受认证保护的 `/api/generated-images/file` URL。
+- 前端 `renderImageView()` 优先使用服务端附带的 `contentUrl`，并在需要时补上认证 key；`imageGeneration` 也复用该渲染路径。只有没有缓存 URL 时才回退到旧的本地文件预览路径。
 - 这个修复不会把 `%TEMP%` 加进通用文件预览根，也不会放宽 Markdown/本地文件预览的 workspace-root 校验。若源临时截图在 Mobile Web 首次看到之前已经被删除，历史卡片仍无法仅凭路径恢复。
 
 ### 2026-05-28 Public 发布说明
@@ -1024,7 +1024,7 @@ Behavior:
 
 - 最新 turn 仍在运行时，移动端继续显示最新一个 `Command` / `File Change` / tool / search 操作卡；turn 完成后，紧凑详情不再把命令框留在最终回执下面。如果 rollout 中有 scoped `token_count` 数据，最后的诊断框应是 Usage summary。
 - 这条规则同时在服务端 thread detail 压缩和前端 `visibleItemsForTurn()` 中执行，避免刷新或重新进入线程后把已结束 turn 的旧操作卡误当成仍在运行。
-- `view_image` / `imageView` 视觉核验截图可能来自工具临时目录，而不是用户上传目录或当前 workspace。服务端现在会把符合图片类型和大小限制的 `imageView` 源文件复制到运行目录的 `generated-images` 缓存，并通过受认证保护的 `/api/generated-images/file` URL 给浏览器渲染。
+- `view_image` / `imageView` 视觉核验截图可能来自工具临时目录，而不是用户上传目录或当前 workspace；Codex `imageGeneration` 效果图也可能保存到 `.codex\generated_images`。服务端现在会把符合图片类型和大小限制的 `imageView` / `imageGeneration.savedPath` 源文件复制到运行目录的 `generated-images` 缓存，并通过受认证保护的 `/api/generated-images/file` URL 给浏览器渲染。
 - 前端 `renderImageView()` 优先使用服务端返回的 `contentUrl`，并为同源 `/api/` 图片地址补认证 key；没有缓存 URL 时才回退到原来的本地文件预览路径。
 - 该修复不把 `%TEMP%` 加入通用文件预览根，也不放宽 Markdown/本地文件预览的 workspace-root 校验。若源临时截图在 Mobile Web 首次读取前已被删除，历史卡片仍无法仅靠路径恢复。
 - 新增 `adapters/generated-image-cache-service.js` 和 `test/generated-image-cache-service.test.js`，并把新 adapter 纳入 `npm run check`。发布前 public PR 检查无开放 PR。
@@ -1390,6 +1390,16 @@ plugin. The shell cache advances to `codex-mobile-shell-v102`.
 - 跨线程任务卡片 draft 现在可以在目标 id 后半段被模型写坏、但前缀能唯一匹配可见线程时，恢复为真实目标线程 id，避免源线程停在 failed draft。
 - Workspace Token 统计补齐历史 Windows 路径乱码归并。已经写入 SQLite 的 `财务`、`男装衣橱`、`系统工具` 乱码 cwd 会在查询时合并到正确 Unicode Workspace，不再在统计页显示为单独乱码项目；新增 harness 覆盖已经持久化的坏 cwd 行。
 - 侧栏版本号现在打开 Updates 面板。Current checkout 继续使用原有安全 fast-forward 自更新路径；Public release 区域会检查 `pentiumxp/codex-mobile-web-public/main` 最新提交。只有当前安装本身就是 public checkout 时，才会通过同一个 fast-forward 路径应用 public 更新；private checkout 只显示 public 最新状态，避免把 public 发布树覆盖到私有开发树。
+
+### 2026-06-02 Public 发布说明（生成图片与 PNG 渲染 v159）
+
+本次 public 发布同步 private 中已经验证的 v158-v159 图片显示改动。版本仍为 `0.1.11`，PWA shell cache 升到 `codex-mobile-shell-v159`。部署后需要重启 8787 Node listener；已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开，才能拿到新的前端渲染路径。
+
+- Markdown 回复中的安全位图 data URL 会直接显示为受限图片，包括 `data:image/png;base64,...` 以及 JPEG、WebP、GIF；SVG data image 仍被拒绝，避免把可执行 SVG 内容引入消息流。
+- Codex `imageGeneration` 生成图如果带有 `%USERPROFILE%\.codex\generated_images\...\*.png` 的 `savedPath`，服务端会把符合类型和大小限制的源文件复制到 Mobile Web 运行目录的 `generated-images` 缓存，并通过受认证保护的 `/api/generated-images/file` URL 给前端渲染。
+- 前端现在把 `imageGeneration` 和 `imageView` 走同一套图片卡片路径，不再在手机端显示 raw JSON 或停留在 `generating` 文本；没有缓存 URL 时才回退到本地文件预览路径。
+- 本次同步包含 README、架构、模块、复杂路径、故障排除文档和对应 harness 测试；public 同步不包含 `.agent-context`、上传目录、运行态数据库、access key、VAPID/subscription 文件或其他本机私有状态。
+- private 侧发布前已验证 `npm test` 289/289、`npm run check`、`npm run check:macos`、`git diff --check`，并用 Hermes 05-31 的生成图片回读确认 `/api/generated-images/file` 返回 `image/png`。
 
 ### Which Restart Is Needed After Changes
 

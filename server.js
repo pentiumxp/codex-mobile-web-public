@@ -1601,7 +1601,7 @@ function generatedImageContentUrl(cacheId) {
 }
 
 function attachGeneratedImageContent(item, options = {}) {
-  if (!item || item.type !== "imageView") return item;
+  if (!item || (item.type !== "imageView" && item.type !== "imageGeneration")) return item;
   if (item.contentUrl || item.content_url) return item;
   const cached = cacheGeneratedImageForItem(item, {
     cacheRoot: GENERATED_IMAGE_ROOT,
@@ -2909,7 +2909,7 @@ function compactItem(item, options = {}) {
   if (isOperationalItem(out)) {
     return compactOperationalItem(out);
   }
-  if (out.type === "imageView") attachGeneratedImageContent(out, options);
+  if (out.type === "imageView" || out.type === "imageGeneration") attachGeneratedImageContent(out, options);
   if (typeof out.text === "string") out.text = truncateMiddle(out.text, MAX_TEXT_CHARS, "text");
   if (Array.isArray(out.content)) out.content = compactStringArray(out.content, MAX_TEXT_CHARS, "content");
   if (Array.isArray(out.summary)) out.summary = compactStringArray(out.summary, MAX_TEXT_CHARS, "summary");

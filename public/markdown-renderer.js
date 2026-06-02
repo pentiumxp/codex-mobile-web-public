@@ -47,6 +47,15 @@
     return "";
   }
 
+  function safeMarkdownImageUrl(value) {
+    const url = String(value || "").trim();
+    if (/^https?:/i.test(url)) return url;
+    if (/^data:image\/(?:png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=\s]+$/i.test(url)) {
+      return url.replace(/\s+/g, "");
+    }
+    return "";
+  }
+
   function stripMarkdownLinkTarget(value) {
     const target = String(value || "").trim();
     if (target.startsWith("<") && target.endsWith(">")) return target.slice(1, -1).trim();
@@ -103,6 +112,14 @@
     return `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noreferrer">${label}</a>`;
   }
 
+  function renderMarkdownImage(rawLabel, rawUrl) {
+    const target = stripMarkdownLinkTarget(rawUrl);
+    const safeUrl = safeMarkdownImageUrl(String(target || "").replaceAll("&amp;", "&"));
+    if (!safeUrl) return null;
+    const label = String(rawLabel || "image").trim() || "image";
+    return `<figure class="markdown-image"><img src="${escapeHtml(safeUrl)}" alt="${escapeHtml(label)}" loading="lazy"><figcaption>${escapeHtml(label)}</figcaption></figure>`;
+  }
+
   function renderAutolinkUrl(rawUrl) {
     const parts = autolinkUrlParts(rawUrl);
     const href = parts.href.startsWith("www.") ? `https://${parts.href}` : parts.href;
@@ -117,6 +134,14 @@
     let text = String(value || "").replace(/`([^`\n]+)`/g, (_match, code) => {
       const token = `${tokenPrefix}${placeholders.length}END`;
       placeholders.push(`<code>${escapeHtml(code)}</code>`);
+      return token;
+    });
+
+    text = text.replace(/!\[([^\]\n]*)\]\((<[^>\n]+>|[^)\s]+)\)/g, (match, label, url) => {
+      const rendered = renderMarkdownImage(label, url);
+      if (!rendered) return match;
+      const token = `${tokenPrefix}${placeholders.length}END`;
+      placeholders.push(rendered);
       return token;
     });
 
@@ -182,6 +207,12 @@
     return `<div class="markdown-code-block"><div class="markdown-code-head">${langLabel}${copyButton}</div><pre><code>${escapeHtml(codeText)}</code></pre></div>`;
   }
 
+  function renderBareDataImage(value) {
+    const safeUrl = safeMarkdownImageUrl(value);
+    if (!safeUrl) return "";
+    return `<figure class="markdown-image"><img src="${escapeHtml(safeUrl)}" alt="Generated image" loading="lazy"><figcaption>Generated image</figcaption></figure>`;
+  }
+
   function renderMarkdown(value, options = {}) {
     const source = String(value || "");
     if (!source.trim()) return "";
@@ -192,6 +223,13 @@
     while (i < lines.length) {
       const line = lines[i];
       if (!line.trim()) {
+        i += 1;
+        continue;
+      }
+
+      const bareDataImage = renderBareDataImage(line.trim());
+      if (bareDataImage) {
+        blocks.push(bareDataImage);
         i += 1;
         continue;
       }
@@ -282,8 +320,10 @@
     safeMarkdownUrl,
     autolinkUrlParts,
     renderMarkdownLink,
+    renderMarkdownImage,
     renderAutolinkUrl,
     renderInlineMarkdown,
+    safeMarkdownImageUrl,
     isMarkdownTableSeparator,
     splitMarkdownTableRow,
     isMarkdownBlockStart,
