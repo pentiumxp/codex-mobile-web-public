@@ -3309,7 +3309,8 @@ html.visual-recovering body::before {
   border: 0;
 }
 
-.input-image {
+.input-image,
+.markdown-image {
   margin: 8px auto 0;
   display: grid;
   gap: 6px;
@@ -3318,7 +3319,8 @@ html.visual-recovering body::before {
   justify-items: center;
 }
 
-.input-image img {
+.input-image img,
+.markdown-image img {
   display: block;
   width: auto;
   height: auto;
@@ -3331,13 +3333,15 @@ html.visual-recovering body::before {
 }
 
 .input-image figcaption,
+.markdown-image figcaption,
 .input-attachment {
   color: var(--muted);
   font-size: var(--content-small-font-size);
   line-height: 1.35;
 }
 
-.input-image figcaption {
+.input-image figcaption,
+.markdown-image figcaption {
   text-align: center;
 }
 

@@ -209,7 +209,7 @@ const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 8;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v157";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v159";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -7337,6 +7337,7 @@ function labelForItem(item) {
     fileChange: "File Change",
     collabAgentToolCall: "协作 Agent",
     imageView: "Image",
+    imageGeneration: "Image",
     mcpToolCall: `MCP ${item.server || ""}.${item.tool || ""}`,
     dynamicToolCall: `${item.namespace ? item.namespace + "." : ""}${item.tool || "Tool"}`,
     plan: "Plan",
@@ -7729,10 +7730,12 @@ function imageViewPath(item) {
     || item.file_path
     || item.imagePath
     || item.image_path
+    || item.savedPath
+    || item.saved_path
     || item.sourcePath
     || item.source_path
-    || item.arguments && (item.arguments.path || item.arguments.filePath || item.arguments.imagePath)
-    || item.result && (item.result.path || item.result.filePath || item.result.imagePath)
+    || item.arguments && (item.arguments.path || item.arguments.filePath || item.arguments.imagePath || item.arguments.savedPath)
+    || item.result && (item.result.path || item.result.filePath || item.result.imagePath || item.result.savedPath)
   )) || "");
 }
 
@@ -7956,6 +7959,7 @@ function renderItemBody(item, turn = null) {
   }
   if (item.type === "plan") return renderThreadTaskCardDraftMessage(item.text || "", item, turn) || renderMarkdownWithAttachmentSummary(item.text || "");
   if (item.type === "imageView") return renderImageView(item);
+  if (item.type === "imageGeneration") return renderImageView(item);
   if (item.type === "commandExecution") {
     return `<div class="mono">${escapeHtml(item.command || "")}</div>${renderOutputBlock(item.aggregatedOutput, item)}`;
   }

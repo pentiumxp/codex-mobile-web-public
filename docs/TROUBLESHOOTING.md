@@ -158,6 +158,8 @@ The parser should recognize LF and CRLF summaries, plus Markdown blockquote-styl
 
 If the DOM contains an `<img>` for the saved upload path but the browser still shows a broken or blank thumbnail, check the upload route response headers. Saved `.jpg`, `.jpeg`, `.webp`, `.gif`, and `.png` files must return image MIME types such as `image/jpeg` rather than `application/octet-stream`.
 
+If Codex generates an image as Markdown or plain text `data:image/png;base64,...`, inspect `public/markdown-renderer.js`. Current builds render safe bitmap data images (`png`, `jpeg`, `webp`, `gif`) as bounded `<img>` figures and intentionally reject SVG data images.
+
 Focused checks:
 
 ```powershell
@@ -166,9 +168,9 @@ node --test test\conversation-render.test.js test\mobile-viewport.test.js
 
 ## ImageView Screenshot Shows Broken Image
 
-If a Codex turn displays an `Image` card for a visual verification screenshot but the thumbnail is broken, distinguish it from uploaded attachments first. Tool-generated screenshots often come from `view_image` / `imageView` paths under `%TEMP%`, not `%USERPROFILE%\.codex-mobile-web\uploads`.
+If a Codex turn displays an `Image` card for a visual verification screenshot but the thumbnail is broken, distinguish it from uploaded attachments first. Tool-generated screenshots often come from `view_image` / `imageView` paths under `%TEMP%`, not `%USERPROFILE%\.codex-mobile-web\uploads`. Codex-generated effect images can also arrive as `imageGeneration` items with `savedPath` under `%USERPROFILE%\.codex\generated_images`.
 
-Current behavior should cache small imageView source files into `%USERPROFILE%\.codex-mobile-web\generated-images` and serve them through `/api/generated-images/file`. Do not fix this by adding `%TEMP%` to `CODEX_MOBILE_FILE_PREVIEW_ROOTS`; that would broaden local file preview access beyond the current thread workspace. If the source temp file was already deleted before Mobile Web saw the item, the historical card cannot be recovered from the path alone.
+Current behavior should cache small `imageView` and `imageGeneration.savedPath` source files into `%USERPROFILE%\.codex-mobile-web\generated-images` and serve them through `/api/generated-images/file`. Do not fix this by adding `%TEMP%` or `%USERPROFILE%\.codex` to `CODEX_MOBILE_FILE_PREVIEW_ROOTS`; that would broaden local file preview access beyond the current thread workspace. If the source temp/generated file was already deleted before Mobile Web saw the item, the historical card cannot be recovered from the path alone.
 
 Focused checks:
 

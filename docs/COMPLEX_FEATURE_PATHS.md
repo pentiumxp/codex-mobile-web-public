@@ -182,9 +182,9 @@ Implementation path:
 6. Keep upload-aware model input and history persistence in `adapters/message-input-service.js`.
 7. Preserve the default `CODEX_MOBILE_IMAGE_CONTEXT_MODE=reference` behavior unless the feature explicitly requires vision input.
 8. If vision is required, prefer `latest`/`vision` over legacy `all`, and document that app-server current history may still retain the image until a fresh continuation.
-9. Render saved image uploads as bounded thumbnails from the upload/file preview route even when model context stays reference-only, including quoted `Uploaded attachments:` summaries in Codex/plan replies. Keep this parser tolerant of CRLF line endings, Markdown blockquote-style quoted summaries, and raw app-server `input_text` / `input_image` / `image_url` content parts. The upload preview response must use a real image MIME type for `.jpg`, `.jpeg`, `.webp`, `.gif`, and related saved upload paths.
-10. Render app-server `imageView` items as direct image views; never stringify data URLs into conversation text.
-11. If an `imageView` points at a tool-generated screenshot outside the workspace/upload roots, cache the file into the runtime generated-image cache and serve that cached copy through an authenticated Mobile Web URL instead of expanding arbitrary local preview roots.
+9. Render saved image uploads as bounded thumbnails from the upload/file preview route even when model context stays reference-only, including quoted `Uploaded attachments:` summaries in Codex/plan replies. Keep this parser tolerant of CRLF line endings, Markdown blockquote-style quoted summaries, and raw app-server `input_text` / `input_image` / `image_url` content parts. The upload preview response must use a real image MIME type for `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, and related saved upload paths. Generated assistant Markdown data images such as `data:image/png;base64,...` should render as bounded images while unsafe data image formats such as SVG stay blocked.
+10. Render app-server `imageView` items and completed `imageGeneration` items with `savedPath` as direct image views; never stringify data URLs or image-generation JSON into conversation text.
+11. If an `imageView` or `imageGeneration.savedPath` points at a generated screenshot/image outside the workspace/upload roots, cache the file into the runtime generated-image cache and serve that cached copy through an authenticated Mobile Web URL instead of expanding arbitrary local preview roots.
 12. Test with upload/file/image focused tests.
 
 ## Runtime Settings Inheritance

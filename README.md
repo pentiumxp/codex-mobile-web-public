@@ -598,7 +598,7 @@ Behavior:
 - By default, images are shown in Mobile Web as centered thumbnails but sent to Codex only as local file-path references in text. This keeps the UI visual without making image pixels part of app-server history. The authenticated upload preview route must return browser-renderable image MIME types such as `image/jpeg` for saved upload paths.
 - Set `CODEX_MOBILE_IMAGE_CONTEXT_MODE=latest` or `vision` only when the model must inspect the latest uploaded image. Set `CODEX_MOBILE_IMAGE_CONTEXT_MODE=all` only for legacy all-image behavior.
 - Turns that include image uploads no longer request app-server extended-history persistence by default. This treats images as temporary visual references and reduces repeated `replacement_history` image retention in later rollout compaction records. Set `CODEX_MOBILE_PERSIST_IMAGE_EXTENDED_HISTORY=1` only when historical image rehydration is required.
-- Image messages render as centered thumbnails in the web UI, including saved `.jpg` / `.jpeg` / `.webp` upload paths served through `/api/uploads/file`.
+- Image messages render as centered thumbnails in the web UI, including saved `.jpg` / `.jpeg` / `.png` / `.webp` upload paths served through `/api/uploads/file` and Codex-generated Markdown `data:image/png;base64,...` images.
 - Non-image files are saved locally and referenced in message text by absolute path so Codex can read them through normal file access.
 - Uploaded file contents are local runtime state and must not be committed.
 
@@ -1013,9 +1013,9 @@ Behavior:
 
 本次本地更新修复 Codex 自己做视觉核验时生成的 `imageView` 截图卡片显示问题，并将 PWA shell 缓存升到 `codex-mobile-shell-v100`。
 
-- `view_image` / `imageView` 截图可能来自 `%TEMP%` 下的工具生成文件，不属于用户上传，也不在当前 workspace 文件预览根内。旧前端会把它当普通本地预览路径请求，导致手机端 `Image` 卡显示破图。
-- 服务端现在会在压缩 `imageView` 项时，把符合图片类型和大小限制的源文件复制到 Mobile Web 运行目录的 `generated-images` 缓存，再给前端一个受认证保护的 `/api/generated-images/file` URL。
-- 前端 `renderImageView()` 优先使用服务端附带的 `contentUrl`，并在需要时补上认证 key；只有没有缓存 URL 时才回退到旧的本地文件预览路径。
+- `view_image` / `imageView` 截图可能来自 `%TEMP%` 下的工具生成文件；Codex `imageGeneration` 效果图可能保存为 `%USERPROFILE%\.codex\generated_images\...\*.png`。这些文件不属于用户上传，也不在当前 workspace 文件预览根内。旧前端会把它们当普通 JSON 或本地预览路径显示，导致手机端 `Image` / `imageGeneration` 卡只显示原始 JSON 或破图。
+- 服务端现在会在压缩 `imageView` 或带 `savedPath` 的 `imageGeneration` 项时，把符合图片类型和大小限制的源文件复制到 Mobile Web 运行目录的 `generated-images` 缓存，再给前端一个受认证保护的 `/api/generated-images/file` URL。
+- 前端 `renderImageView()` 优先使用服务端附带的 `contentUrl`，并在需要时补上认证 key；`imageGeneration` 也复用该渲染路径。只有没有缓存 URL 时才回退到旧的本地文件预览路径。
 - 这个修复不会把 `%TEMP%` 加进通用文件预览根，也不会放宽 Markdown/本地文件预览的 workspace-root 校验。若源临时截图在 Mobile Web 首次看到之前已经被删除，历史卡片仍无法仅凭路径恢复。
 
 ### 2026-05-28 Public 发布说明
@@ -1024,7 +1024,7 @@ Behavior:
 
 - 最新 turn 仍在运行时，移动端继续显示最新一个 `Command` / `File Change` / tool / search 操作卡；turn 完成后，紧凑详情不再把命令框留在最终回执下面。如果 rollout 中有 scoped `token_count` 数据，最后的诊断框应是 Usage summary。
 - 这条规则同时在服务端 thread detail 压缩和前端 `visibleItemsForTurn()` 中执行，避免刷新或重新进入线程后把已结束 turn 的旧操作卡误当成仍在运行。
-- `view_image` / `imageView` 视觉核验截图可能来自工具临时目录，而不是用户上传目录或当前 workspace。服务端现在会把符合图片类型和大小限制的 `imageView` 源文件复制到运行目录的 `generated-images` 缓存，并通过受认证保护的 `/api/generated-images/file` URL 给浏览器渲染。
+- `view_image` / `imageView` 视觉核验截图可能来自工具临时目录，而不是用户上传目录或当前 workspace；Codex `imageGeneration` 效果图也可能保存到 `.codex\generated_images`。服务端现在会把符合图片类型和大小限制的 `imageView` / `imageGeneration.savedPath` 源文件复制到运行目录的 `generated-images` 缓存，并通过受认证保护的 `/api/generated-images/file` URL 给浏览器渲染。
 - 前端 `renderImageView()` 优先使用服务端返回的 `contentUrl`，并为同源 `/api/` 图片地址补认证 key；没有缓存 URL 时才回退到原来的本地文件预览路径。
 - 该修复不把 `%TEMP%` 加入通用文件预览根，也不放宽 Markdown/本地文件预览的 workspace-root 校验。若源临时截图在 Mobile Web 首次读取前已被删除，历史卡片仍无法仅靠路径恢复。
 - 新增 `adapters/generated-image-cache-service.js` 和 `test/generated-image-cache-service.test.js`，并把新 adapter 纳入 `npm run check`。发布前 public PR 检查无开放 PR。

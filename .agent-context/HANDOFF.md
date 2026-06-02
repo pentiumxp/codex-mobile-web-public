@@ -541,6 +541,174 @@ The previous full handoff was archived and should be opened only when old proven
     prompt, hard refresh, close/reopen, or Hermes plugin refresh to load v148.
   - Public repository was not synced or pushed.
 
+## 2026-06-02 Codex App-Server Residual Process Cleanup
+
+- User report:
+  - Codex weekly quota still appeared to drop while the user was not actively
+    working.
+- Diagnosis:
+  - Active Mobile Web profile was the default main account
+    `5gdxrncpzf@privaterelay.appleid.com`.
+  - `/api/public-config` and authenticated `/api/status` agreed on the same
+    active quota source; no split quota source was observed.
+  - `/api/threads?limit=80&archived=false` showed no active/running turn in the
+    current visible list.
+  - Local token usage SQLite showed 2026-06-02 completed-turn usage mainly from
+    `Hermes 05-31` (`C:\Users\xuxin\Documents\Agent`) and `Email`
+    (`C:\Users\xuxin\Documents\email`), not from this `codex-mobile-web`
+    workspace.
+  - Process inspection found 16 `codex-app-server-mux.js app-server` processes
+    and 16 child `codex.exe app-server` processes. A 3-second CPU sample showed
+    no CPU delta, so they were residual/idle at that moment rather than proven
+    active model consumption.
+- Cleanup:
+  - Preserved the current Mobile Web listener PID `65700`.
+  - Preserved the current endpoint mux PID `27004` on port `64816` and its child
+    `codex.exe app-server` PID `21860`.
+  - Stopped 15 stale mux Node processes and their 15 child `codex.exe
+    app-server` processes.
+- Verification:
+  - Post-cleanup only one mux/app-server pair remained:
+    - mux PID `27004`
+    - child app-server PID `21860`
+  - Authenticated `/api/status` stayed healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`.
+  - `/api/public-config` still returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v157` and
+    `shellCacheName=codex-mobile-shell-v157`.
+  - Private git status was clean before this handoff update.
+- Note:
+  - During the diagnostic/cleanup turn, the 5-hour active quota used percentage
+    changed from `49%` to `52%`; this was observed while the current Codex
+    diagnostic turn itself was running, so it is not evidence that the stopped
+    residual processes were still consuming quota.
+
+## 2026-06-02 Generated PNG Base64 Markdown Rendering v158
+
+- User request:
+  - Codex-generated effect images can arrive as PNG `data:image/png;base64,...`
+    content rather than saved upload files; Mobile Web should render them as
+    images.
+- Local fix:
+  - `public/markdown-renderer.js`
+    - Added safe Markdown image rendering for bitmap data URLs:
+      `png`, `jpeg`, `webp`, and `gif`.
+    - Added support for a bare single-line `data:image/png;base64,...` block,
+      rendering it as a bounded generated image instead of a long text string.
+    - SVG data images remain blocked.
+  - `public/styles.css`
+    - Reused the bounded thumbnail treatment for `.markdown-image`.
+  - `public/app.js` / `public/sw.js`
+    - Static shell bumped to
+      `0.1.11|codex-mobile-shell-v158` / `codex-mobile-shell-v158`.
+  - Tests and docs updated:
+    - `test/markdown-render.test.js`
+    - README, Architecture, Complex Feature Paths, Troubleshooting, and Project
+      Context.
+- Validation:
+  - Focused `node --test test\markdown-render.test.js
+    test\conversation-render.test.js test\file-preview.test.js
+    test\image-compressor.test.js` passed: 44/44.
+  - `node --check public\markdown-renderer.js`, `node --check public\app.js`,
+    and `node --check public\sw.js` passed.
+  - Focused rerun `node --test test\mobile-viewport.test.js
+    test\thread-task-card-route.test.js test\markdown-render.test.js` passed:
+    21/21.
+  - `npm.cmd test` passed: 289/289.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+- Status:
+  - Restarted the 8787 listener after validation:
+    old PID `65700`, new PID `88964`.
+  - Post-restart `/api/public-config` returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v158`,
+    `shellCacheName=codex-mobile-shell-v158`, and
+    `imageContextMode=reference`.
+  - Post-restart authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`.
+  - Post-restart process check still shows only one mux/app-server pair:
+    mux PID `27004`, app-server PID `21860`.
+  - Open clients need the v158 refresh prompt, hard refresh, close/reopen, or
+    Hermes plugin refresh path to load the new Markdown image renderer.
+
+## 2026-06-02 ImageGeneration Saved PNG Rendering v159
+
+- User report:
+  - In `Hermes 05-31`, Codex generated two effect images, but Mobile Web showed
+    raw `imageGeneration` JSON cards with `status=generating` instead of the
+    PNG images.
+- Diagnosis:
+  - Last Hermes turn `019e8723-b2c5-7c92-b8a5-32e973c939db` was completed.
+  - It contained two `imageGeneration` items that still had
+    `status=generating`, but each item also had a real `savedPath` under
+    `%USERPROFILE%\.codex\generated_images\...`.
+  - Both saved PNG files existed locally:
+    - first size about 1.23 MB
+    - second size about 1.18 MB
+  - The existing Mobile Web generated-image cache only handled `imageView`, so
+    `imageGeneration` fell through to generic JSON rendering.
+- Local fix:
+  - `adapters/generated-image-cache-service.js`
+    - `imageViewSourcePath()` now also recognizes `savedPath` /
+      `saved_path`, including `imageGeneration.savedPath`.
+  - `server.js`
+    - `attachGeneratedImageContent()` now accepts both `imageView` and
+      `imageGeneration`.
+    - Thread compaction attaches authenticated `/api/generated-images/file`
+      content URLs to supported `imageGeneration.savedPath` files.
+  - `public/app.js`
+    - `imageViewPath()` recognizes `savedPath`.
+    - `renderItemBody()` renders `imageGeneration` through
+      `renderImageView()` instead of generic JSON.
+    - Label map shows `imageGeneration` as `Image`.
+  - `public/app.js` / `public/sw.js`
+    - Static shell bumped to
+      `0.1.11|codex-mobile-shell-v159` / `codex-mobile-shell-v159`.
+  - Tests/docs updated:
+    - `test/generated-image-cache-service.test.js`
+    - `test/file-preview-ui.test.js`
+    - `test/mobile-viewport.test.js`
+    - `test/thread-task-card-route.test.js`
+    - README, Architecture, Modules, Complex Feature Paths, Troubleshooting,
+      and Project Context.
+- Validation:
+  - Focused `node --test test\generated-image-cache-service.test.js
+    test\file-preview-ui.test.js test\mobile-viewport.test.js
+    test\thread-task-card-route.test.js test\conversation-render.test.js`
+    passed: 27/27.
+  - `node --check adapters\generated-image-cache-service.js`,
+    `node --check server.js`, `node --check public\app.js`, and
+    `node --check public\sw.js` passed.
+  - `npm.cmd test` passed: 289/289.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+- Runtime verification:
+  - Restarted the 8787 listener after validation:
+    old PID `88964`, new PID `79304`.
+  - Post-restart `/api/public-config` returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v159` and
+    `shellCacheName=codex-mobile-shell-v159`.
+  - Authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`.
+  - Process check still shows one mux/app-server pair:
+    mux PID `27004`, app-server PID `21860`.
+  - Re-reading `Hermes 05-31` last turn now shows both `imageGeneration` items
+    have authenticated `/api/generated-images/file` content URLs and
+    `generatedImage.contentType=image/png`.
+  - Fetching one generated-image URL returned `HTTP 200`, `Content-Type:
+    image/png`, `Content-Length: 1288868`, and `X-Content-Type-Options:
+    nosniff`.
+- Status:
+  - Open clients need the v159 refresh prompt, hard refresh, close/reopen, or
+    Hermes plugin refresh path to load the new frontend renderer.
+
 ## 2026-06-01 Hermes Plugin Startup Loading Gate v147
 
 - User report:
