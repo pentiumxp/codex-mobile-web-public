@@ -32,7 +32,10 @@ const {
   collectTurnUsageSummariesFromRolloutText,
 } = require("./adapters/turn-usage-summary-service");
 const { createTokenUsageStatsService } = require("./adapters/token-usage-stats-service");
-const { buildTurnCompletionDetailMessage } = require("./adapters/turn-completion-receipt-service");
+const {
+  buildTurnCompletionDetailMessage,
+  finalReceiptTextFromParams,
+} = require("./adapters/turn-completion-receipt-service");
 const {
   buildPublicPullRequestStatus,
   normalizeRepositorySlug,
@@ -60,7 +63,8 @@ const CODEX_PROFILE_BOOTSTRAP = resolveActiveCodexHomeFromStore({
   runtimeRoot: RUNTIME_ROOT,
   env: process.env,
 });
-const CODEX_HOME = process.env.CODEX_HOME || CODEX_PROFILE_BOOTSTRAP.codexHome || path.join(USER_HOME, ".codex");
+const DEFAULT_CODEX_HOME = path.join(USER_HOME, ".codex");
+const CODEX_HOME = process.env.CODEX_HOME || CODEX_PROFILE_BOOTSTRAP.codexHome || DEFAULT_CODEX_HOME;
 const STATE_DB = path.join(CODEX_HOME, "state_5.sqlite");
 const SESSIONS_DIR = path.join(CODEX_HOME, "sessions");
 const ARCHIVED_SESSIONS_DIR = path.join(CODEX_HOME, "archived_sessions");
@@ -152,6 +156,16 @@ const codexProfileService = createCodexProfileService({
   runtimeRoot: RUNTIME_ROOT,
   activeCodexHome: CODEX_HOME,
 });
+
+function activeProfileRestartOptions(profile = null) {
+  const selected = profile || codexProfileService.profiles().profiles.find((item) => item.active) || null;
+  if (!selected || !selected.id || !selected.codexHome) return {};
+  return {
+    profileId: selected.id,
+    codexHome: selected.codexHome,
+  };
+}
+
 const tokenUsageStatsService = createTokenUsageStatsService({
   dbPath: TOKEN_USAGE_STATS_DB,
 });
@@ -1322,10 +1336,14 @@ function visibilityFromGlobalState(globalState = readGlobalState()) {
 function codexWorktreeRepoName(cwd) {
   const value = String(cwd || "").trim();
   if (!value) return "";
-  const relative = path.relative(path.join(CODEX_HOME, "worktrees"), path.resolve(value));
-  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return "";
-  const parts = relative.split(path.sep).filter(Boolean);
-  return parts.length >= 2 ? parts[1] : "";
+  const homes = [CODEX_HOME, DEFAULT_CODEX_HOME].filter(Boolean);
+  for (const home of homes) {
+    const relative = path.relative(path.join(home, "worktrees"), path.resolve(value));
+    if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) continue;
+    const parts = relative.split(path.sep).filter(Boolean);
+    if (parts.length >= 2) return parts[1];
+  }
+  return "";
 }
 
 function threadWorkspaceVisible(cwd, visibility = null) {
@@ -3874,6 +3892,23 @@ function maybeRecordTurnTokenUsage(method, params) {
   }
 }
 
+function maybeAutoReplyThreadTaskCard(method, params) {
+  if (method !== "turn/completed") return;
+  const turnId = pushTurnId(params);
+  if (!turnId || isOldPushTurnEvent(params, ["completedAt", "updatedAt"])) return;
+  const threadId = pushThreadId(params);
+  if (!threadId) return;
+  const completedAtMs = turnTimestampMs(params, "completedAt") || turnTimestampMs(params, "updatedAt") || Date.now();
+  threadTaskCardService.maybeAutoReplyCompletedTurn({
+    threadId,
+    turnId,
+    completedAt: new Date(completedAtMs).toISOString(),
+    finalReceiptText: finalReceiptTextFromParams(params),
+  }).catch((err) => {
+    console.error(`[thread task card] auto-return failed: ${err.message || String(err)}`);
+  });
+}
+
 function logWebPushDecision(event, decision, meta) {
   if (decision && decision.track && !decision.reason) return;
   const reason = String((decision && decision.reason) || "tracked");
@@ -4744,6 +4779,7 @@ class CodexAppServerClient {
         this.markServerRequestResolved(msg.params.requestId, "resolved");
       }
       maybeRecordTurnTokenUsage(msg.method, msg.params || null);
+      maybeAutoReplyThreadTaskCard(msg.method, msg.params || null);
       maybeSendTurnCompletedPush(msg.method, msg.params || null);
       broadcast({ type: "notification", method: msg.method, params: msg.params || null });
     }
@@ -6516,7 +6552,9 @@ async function handleApi(req, res) {
     try {
       const body = await readBody(req);
       const profile = codexProfileService.setActiveProfile(body.profileId || body.id || "");
-      const restart = sharedChainRestartService.restart({ delayMs: SHARED_CHAIN_RESTART_DELAY_MS });
+      const restart = sharedChainRestartService.restart(Object.assign({
+        delayMs: SHARED_CHAIN_RESTART_DELAY_MS,
+      }, activeProfileRestartOptions(profile)));
       sendJson(res, 202, Object.assign({ ok: true, activeProfileId: profile.id, profile }, restart));
     } catch (err) {
       sendJson(res, err.statusCode || 500, { error: err.message || String(err) });
@@ -6673,7 +6711,9 @@ async function handleApi(req, res) {
   }
   if (url.pathname === "/api/restart/shared-chain" && req.method === "POST") {
     try {
-      const result = sharedChainRestartService.restart({ delayMs: SHARED_CHAIN_RESTART_DELAY_MS });
+      const result = sharedChainRestartService.restart(Object.assign({
+        delayMs: SHARED_CHAIN_RESTART_DELAY_MS,
+      }, activeProfileRestartOptions()));
       sendJson(res, 202, result);
     } catch (err) {
       sendJson(res, err.statusCode || 500, { error: err.message || String(err) });

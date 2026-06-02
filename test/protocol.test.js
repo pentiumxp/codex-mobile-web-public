@@ -102,6 +102,7 @@ test("stdio app-server mux does not overwrite an available shared endpoint", asy
       CODEX_HOME: codexHome,
       CODEX_MUX_HOST: "127.0.0.1",
       CODEX_MUX_PORT: "0",
+      CODEX_MUX_STANDALONE: "1",
       CODEX_MUX_CODEX_EXE: process.execPath,
       CODEX_MUX_CODEX_ARGS: mockCodexPath,
       CODEX_MUX_LOG_FILE: logFile,
@@ -125,7 +126,7 @@ test("stdio app-server mux does not overwrite an available shared endpoint", asy
     } catch (_) {
       return false;
     }
-  });
+  }, 10000);
 
   assert.deepEqual(readJsonFile(endpointFile), existingEndpoint);
   assert.equal(stderr, "");

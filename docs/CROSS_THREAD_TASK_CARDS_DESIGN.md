@@ -12,12 +12,17 @@ approve, delete, or reply.
 Only the approval path produces a real injected `userMessage` inside the target
 thread history.
 
-Autonomous workflow cards are a special mode, not the default. The first card
-in the workflow is still a normal pending target card. Once the target approves
-that first card, the service stores a workflow grant scoped to the workflow id
-and the exact two participating thread ids. Later cards carrying that same
-workflow id between those same two threads can auto-approve and inject without
-another target click.
+Autonomous workflow cards are a special mode for automatic collaboration; the
+ordinary task-card mode remains manual. The first autonomous card in the
+workflow is still a normal pending target card. Once the target approves that
+first card, the service stores a workflow grant scoped to the workflow id and
+the exact two participating thread ids. Later cards carrying that same workflow
+id between those same two threads can auto-approve and inject without another
+target click. Completion auto-return is part of the default autonomous workflow
+contract: when the injected target turn for an approved autonomous card
+completes, the server creates an automatic reverse-direction return card that
+carries the completed turn receipt, reuses the same workflow id, and
+auto-injects back into the source thread through the same grant.
 
 ## High-Level Flow
 
@@ -37,6 +42,11 @@ another target click.
 7. If the approved card has `workflow.mode=autonomous`, that approval activates
    the workflow grant. Later same-workflow cards between the same thread pair
    skip the pending UI and execute the approval path automatically.
+8. If the injected target turn for an approved autonomous card completes, the
+   service creates one idempotent reverse-direction return card keyed by the
+   original card id plus completed turn id. Because the workflow grant already
+   covers the same two thread ids, that return card auto-approves and starts a
+   real source-thread turn without another click.
 
 ## Data Model
 
@@ -116,6 +126,13 @@ For autonomous workflows, the same `approving` state is used for automatic
 follow-up execution. If automatic injection fails before acceptance, the card is
 restored to `pending` with an audit error so it can be inspected or retried
 manually instead of being silently dropped.
+
+Automatic completion returns are not model-prompt best effort. The server
+observes `turn/completed` for the injected target turn recorded on the approved
+card, extracts a bounded final receipt when available, creates a reverse card,
+and records `autoReplyCardId` / `autoReturn*` audit fields on the original
+card. Repeated or replayed completion notifications are idempotent and do not
+create a second return card.
 
 ## API Shape
 
@@ -228,7 +245,10 @@ Source thread:
 Autonomous workflow cards should make the first-approval boundary visible. The
 first pending target card can label its approve action as `Approve workflow`;
 after approval, follow-up cards normally do not render because they immediately
-become approved injected turns.
+become approved injected turns. Completion auto-return cards are the default
+for autonomous workflows and normally do not render as pending UI: they are
+created from the completed injected target turn, auto-approved by the existing
+workflow grant, and surface as a real new turn in the original source thread.
 
 ## Storage
 

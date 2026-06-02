@@ -38,7 +38,9 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(serverJs, /"conversation-scroll\.js"/);
   assert.match(appJs, /function checkPageRefreshAvailability\(/);
   assert.match(appJs, /function refreshPageForNewBuild\(/);
+  assert.match(appJs, /function rememberRateLimitsFromConfig\(config\)/);
   assert.match(appJs, /function preparePageShellAssets\(config, options = \{\}\)/);
+  assert.match(appJs, /rememberRateLimitsFromConfig\(config\);[\s\S]*await preparePageShellAssets\(config, \{ populateCache: true \}\)/);
   assert.match(appJs, /await preparePageShellAssets\(config, \{ populateCache: true \}\)/);
   assert.match(appJs, /cache:\s*"no-store"/);
   assert.match(appJs, /function pruneOldShellCaches\(expectedCacheName\)/);

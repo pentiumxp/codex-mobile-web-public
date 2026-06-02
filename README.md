@@ -230,6 +230,13 @@ two thread ids. Later cards carrying that workflow id between the same two
 threads auto-inject as real target-thread turns without another manual click,
 including reverse-direction follow-up cards. A reused workflow id with a
 different thread pair still stays pending and requires its own first approval.
+Autonomous workflow approval also enables completion auto-return by default:
+when the target turn injected by an approved autonomous card completes, Mobile
+Web creates a reverse-direction return task card with the completed turn
+receipt, reuses the same workflow id, and immediately auto-approves it back into
+the source thread. The auto-return is idempotent by original card id plus
+completed turn id, so repeated `turn/completed` notifications do not create
+duplicate return turns.
 Target-side approval also persists a transient non-pending `approving` state
 before calling the external target-thread `turn/start`, so reconnect,
 continuation compaction, or thread refresh cannot resurrect the same `Approve`
@@ -392,15 +399,19 @@ wscript.exe start-codex-mobile-web-hidden.vbs
 
 The sidebar settings panel can also show local Codex profiles and switch the
 single active Mobile Web profile. The profile switcher is deliberately not a
-dual-provider mode: one listener still uses one `CODEX_HOME` and one mux/app-
-server chain at a time. The settings panel lists the configured profiles,
-shows the safely derived logged-in account label/email and recent quota
-snapshot for each profile, and calls the authenticated
+dual-provider mode: one listener still uses one active auth profile and one
+mux/app-server chain at a time. The settings panel lists the configured
+profiles, shows the safely derived logged-in account label/email and recent
+quota snapshot for each profile, and calls the authenticated
 `POST /api/codex-profiles/active` endpoint when switching. The endpoint writes
 `%USERPROFILE%\.codex-mobile-web\codex-profiles.json` and restarts the Mobile
 Web shared chain. The Windows restart script and hidden/windowless launcher
-both read the same active profile store before resolving the mux endpoint, so
-after restart all workspaces use the selected profile's `CODEX_HOME`. Raw
+both read the same active profile store before resolving the mux endpoint. For
+non-default profiles, the launcher preserves that profile's own `auth.json` and
+`config.toml` but links thread/workspace state files such as `state_5.sqlite`,
+`.codex-global-state.json`, `session_index.jsonl`, `sessions/`, and
+`archived_sessions/` back to the default `%USERPROFILE%\.codex` home, so
+switching accounts keeps the same visible workspaces and conversations. Raw
 token values from `auth.json` are never returned to the browser.
 
 By default, the startup task passes `-EnsureStandaloneMux -RequireSharedAppServer`, so Mobile Web connects to a single mux-backed app-server endpoint instead of silently creating a separate managed app-server stream. Codex Desktop can later attach to the existing mux endpoint when it is launched through `start-codex-desktop-shared.ps1`.
@@ -652,10 +663,10 @@ Behavior:
 - Operation cards are shown only while the latest turn is still running. After a turn completes, command/tool/file/search cards are removed from the compact mobile detail; when usage data exists, the final frame is the Usage summary.
 - Consecutive command/file operation updates show only the latest operation card unless normal visible content appears between two operations.
 - The left-swipe Subagent status panel shows Subagents from the current live turn, treating completed/closed spawn-call rows in that live turn as current because the child Agent can still be running after the spawn call closes. Older historical Subagent records are omitted so long-running collaboration sessions do not show hundreds of stale entries.
-- Page refresh prompts are gated by a server-started build id and a full app-shell preflight. `/api/public-config` reports the shell cache/build snapshot captured when the 8787 listener started, not whatever files happen to be mid-edit on disk. The browser checks for this after startup, foreground/focus recovery, EventSource reconnect/status, and successful thread-list refresh, then fetches and populates the target shell cache with the new HTML, CSS, JavaScript modules, manifest, service worker, and icons before the prompt is shown; clicking the prompt repeats that check and reloads only after the target cache is ready.
+- Page refresh prompts are gated by a server-started build id and a full app-shell preflight. `/api/public-config` reports the shell cache/build snapshot captured when the 8787 listener started, not whatever files happen to be mid-edit on disk. The browser checks for this after startup, foreground/focus recovery, EventSource reconnect/status, and successful thread-list refresh, then fetches and populates the target shell cache with the new HTML, CSS, JavaScript modules, manifest, service worker, and icons before the prompt is shown; clicking the prompt repeats that check, applies the latest `/api/public-config` quota snapshot to the composer immediately, and reloads only after the target cache is ready.
 - The composer shows model, reasoning effort, permission, and quota as four compact runtime cards.
 - Model, reasoning effort, and permission can be changed before sending. Existing-thread sends submit the selected values with the next `turn/start`; new-thread first messages submit the selected values when creating and starting the first turn.
-- The composer shows 5-hour and weekly quota as separate reset-aware chips from `/api/public-config` / `/api/status` snapshots for the active Mobile Web chain. Source-less `account/rateLimits/updated` notifications are recorded server-side but not broadcast to the browser, and rollout scans are only a cold-start snapshot fallback, so another workspace's quota event does not overwrite the current composer display. Rate-limit snapshots are cached by model key, and mobile quota display follows the currently selected composer model.
+- The composer shows 5-hour and weekly quota as separate reset-aware chips from `/api/public-config` / `/api/status` snapshots for the active Mobile Web chain. Source-less `account/rateLimits/updated` notifications are recorded server-side but not broadcast to the browser, and rollout scans are only a cold-start snapshot fallback, so another workspace's quota event does not overwrite the current composer display. Rate-limit snapshots are cached by model key, mobile quota display follows the currently selected composer model, and clicking the page-refresh prompt also refreshes the visible quota snapshot before the browser reloads.
 - The send button follows Codex Desktop behavior: empty composer during an active turn shows `Stop`; typed text or attachments switch it back to `Send`.
 - When message submission is slow or fails, the UI shows an explicit sending/failed state, keeps the text and attachments available for retry, and logs a compact client event to `/api/client-events` for diagnostics. Quota/rate-limit failures are normalized into a model-specific "额度不足，请切换模型后重试" message when the backend error text indicates an exhausted limit.
 - Composer drafts are saved in the browser per thread and per new-thread workspace. Text uses `localStorage`, attachments use IndexedDB when available, and the submitted draft is cleared only after a successful send.

@@ -209,7 +209,7 @@ const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 8;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v159";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v162";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -1058,6 +1058,21 @@ function rememberRateLimits(rateLimits, rateLimitsByModel) {
   renderQuotaUsage();
 }
 
+function clearStoredRateLimits() {
+  state.rateLimits = null;
+  state.rateLimitsByModel = {};
+  localStorage.removeItem(STORAGE_RATE_LIMITS);
+  localStorage.removeItem(STORAGE_RATE_LIMITS_BY_MODEL);
+  renderQuotaUsage();
+}
+
+function rememberRateLimitsFromConfig(config) {
+  if (!config || typeof config !== "object") return;
+  if (config.rateLimits || config.rateLimitsByModel) {
+    rememberRateLimits(config.rateLimits || null, config.rateLimitsByModel || null);
+  }
+}
+
 function rateLimitWindows(rateLimits) {
   return [rateLimits && rateLimits.primary, rateLimits && rateLimits.secondary]
     .filter((windowInfo) => windowInfo && Number.isFinite(Number(windowInfo.usedPercent)));
@@ -1300,6 +1315,7 @@ async function handleCodexProfileSettingsClick(event) {
   const label = profile ? `${profile.label || profileId} (${codexProfileAccountLabel(profile)})` : profileId;
   if (!window.confirm(`Switch all Codex Mobile workspaces to ${label}?`)) return;
   state.codexProfileSwitchBusy = true;
+  clearStoredRateLimits();
   $("connectionState").textContent = "Switching Codex profile...";
   renderCodexProfileSettings();
   try {
@@ -2042,6 +2058,7 @@ async function refreshPageForNewBuild() {
       : await fetchPageBuildConfig();
     if (latestConfig) config = latestConfig;
     if (!config) throw new Error("page refresh build config unavailable");
+    rememberRateLimitsFromConfig(config);
     if (config) await preparePageShellAssets(config, { populateCache: true });
     if ("serviceWorker" in navigator) {
       const registration = await navigator.serviceWorker.getRegistration();
@@ -6088,6 +6105,7 @@ function buildThreadTaskCardDraftRequestText(commandText) {
     "- Choose one or more targetThreadIds only from availableTargets.threadId.",
     "- Do not invent a thread id; when the request names multiple clear targets, include all of them.",
     "- Default workflowMode to manual. Use autonomous only when the command explicitly asks for no further approval, automatic collaboration, or a card workflow after first approval.",
+    "- Autonomous workflow means the target approves the first card once; after the target turn completes, Mobile Web sends the return card back automatically without another approval.",
     "- For a new autonomous workflow, leave workflowId empty. Reuse workflowId only when the command or visible context provides an existing id.",
     "- If the command is unclear or no target fits, set targetThreadIds to an empty array and explain the problem in error.",
     "- Keep title under 120 chars and summary under 280 chars.",
@@ -10442,7 +10460,7 @@ async function start() {
   renderUpdatePanel();
   renderSharedRestartButton();
   renderComposerSettings();
-  rememberRateLimits(config.rateLimits || null, config.rateLimitsByModel || null);
+  rememberRateLimitsFromConfig(config);
   rememberCodexProfiles(config.codexProfiles || null);
   updatePushButton();
   if (isHermesEmbedMode() && state.pluginLaunchSession) {

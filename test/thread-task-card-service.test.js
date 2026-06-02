@@ -324,6 +324,63 @@ test("autonomous workflow auto-approval is scoped to the same two thread ids", a
   assert.equal(executions.length, 2);
 });
 
+test("autonomous workflow auto-returns to the source when the injected target turn completes", async () => {
+  const executions = [];
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card, message) => {
+      executions.push({ card, message });
+      return { threadId: card.target.threadId, turnId: `turn-${executions.length}` };
+    },
+  });
+  const first = await service.create({
+    sourceWorkspaceId: "codex",
+    sourceThreadId: "thread-a",
+    sourceTurnId: "turn-src",
+    sourceThreadTitle: "Codex Mobile",
+    targetWorkspaceId: "hermes",
+    targetThreadId: "thread-b",
+    idempotencyKey: "workflow:auto-return:first",
+    format: "markdown",
+    title: "Start workflow",
+    summary: "Approve once.",
+    body: "Please complete this and return the result.",
+    workflowMode: "autonomous",
+    workflowId: "auto-return-workflow",
+  });
+
+  const approved = await service.approve(first.id, "thread-b");
+  assert.equal(approved.card.injectedTurnId, "turn-1");
+  assert.equal(approved.card.delivery.autoReturnOnCompletion, true);
+  assert.match(executions[0].message.text, /Auto-return:/);
+
+  const returned = await service.maybeAutoReplyCompletedTurn({
+    threadId: "thread-b",
+    turnId: "turn-1",
+    completedAt: "2026-06-02T09:00:00.000Z",
+    finalReceiptText: "Implemented and validated.",
+  });
+
+  assert.equal(returned.card.status, "approved");
+  assert.equal(returned.card.source.threadId, "thread-b");
+  assert.equal(returned.card.target.threadId, "thread-a");
+  assert.equal(returned.card.workflow.id, "auto-return-workflow");
+  assert.equal(returned.card.injectedTurnId, "turn-2");
+  assert.match(executions[1].message.text, /Implemented and validated/);
+  assert.match(executions[1].message.text, /Workflow id: auto-return-workflow/);
+  const original = service.get(first.id, "thread-b");
+  assert.equal(original.autoReplyCardId, returned.card.id);
+
+  const duplicate = await service.maybeAutoReplyCompletedTurn({
+    threadId: "thread-b",
+    turnId: "turn-1",
+    completedAt: "2026-06-02T09:00:00.000Z",
+    finalReceiptText: "Implemented and validated.",
+  });
+  assert.equal(duplicate, null);
+  assert.equal(executions.length, 2);
+});
+
 test("approve persists a non-pending in-flight state before injected execution finishes", async () => {
   let markExecutionStarted;
   let releaseExecution;

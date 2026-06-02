@@ -38,12 +38,15 @@ test("thread task card routes preserve service status codes", () => {
   assert.match(routeBlock, /threadTaskCardService\.deleteCard/);
   assert.match(routeBlock, /threadTaskCardService\.revoke/);
   assert.match(routeBlock, /threadTaskCardService\.reply/);
+  assert.match(serverJs, /function maybeAutoReplyThreadTaskCard\(/);
+  assert.match(serverJs, /threadTaskCardService\.maybeAutoReplyCompletedTurn/);
+  assert.match(serverJs, /maybeAutoReplyThreadTaskCard\(msg\.method, msg\.params \|\| null\)/);
   const statusPreservingErrors = routeBlock.match(/sendJson\(res, err\.statusCode \|\| 500, \{ ok: false, error: err\.message \|\| String\(err\) \}\);/g) || [];
   assert.equal(statusPreservingErrors.length, 6);
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v159"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v162"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.threadRole \|\| ""\) === "target"\)/);

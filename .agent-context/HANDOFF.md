@@ -541,6 +541,182 @@ The previous full handoff was archived and should be opened only when old proven
     prompt, hard refresh, close/reopen, or Hermes plugin refresh to load v148.
   - Public repository was not synced or pushed.
 
+## 2026-06-02 Profile Switch Controlled Restart Fix
+
+- User report:
+  - After switching the Codex account/profile, quota display did not refresh.
+  - The active profile store showed `previous`, but Mobile Web was still using
+    `C:\Users\xuxin\.codex`.
+- Diagnosis:
+  - `%USERPROFILE%\.codex-mobile-web\codex-profiles.json` correctly persisted
+    `activeProfileId=previous`.
+  - Before the fix, `/api/public-config` and authenticated `/api/status`
+    still reported `activeCodexHome=C:\Users\xuxin\.codex`.
+  - The previous-profile mux endpoint did not exist, while the default
+    `.codex\app-server-mux\endpoint.json` still existed.
+  - `start-codex-mobile-web-windowless.ps1` only read the active profile store
+    when process-level `CODEX_HOME` was empty, so a stale/default environment
+    value could override the selected profile during scheduled-task startup.
+  - The restart API returned accepted during one attempt without replacing the
+    listener; direct script dry-run showed the restart script itself could
+    resolve `previous` and target the old listener correctly.
+- Local fix:
+  - `start-codex-mobile-web-windowless.ps1`
+    - Always resolves `%USERPROFILE%\.codex-mobile-web\codex-profiles.json`
+      first and sets `CODEX_HOME` to the selected profile home when present.
+    - Falls back to existing `CODEX_HOME` / default `.codex` only when the
+      profile store has no selected home.
+  - `server.js`
+    - Added `activeProfileRestartOptions()`.
+    - `POST /api/codex-profiles/active` now passes the selected `profileId`
+      and `codexHome` into the shared-chain restart service.
+    - `POST /api/restart/shared-chain` now passes the current active
+      profile's `profileId` and `codexHome` instead of depending on stale
+      process environment.
+  - Harness/tests:
+    - `test/codex-profile-ui.test.js` asserts the windowless launcher reads
+      the profile store before honoring `CODEX_HOME`.
+    - `test/manual-restart-ui.test.js` asserts profile switch/manual restart
+      routes pass active profile restart options.
+  - Documentation updated:
+    - `.agent-context/PROJECT_CONTEXT.md`
+    - this handoff.
+- Validation:
+  - `node --check server.js` passed.
+  - PowerShell parser checks passed for:
+    - `start-codex-mobile-web-windowless.ps1`
+    - `restart-codex-mobile-shared-chain.ps1`
+  - Focused `node --test test\manual-restart-ui.test.js
+    test\shared-chain-restart-service.test.js
+    test\shared-chain-restart-script.test.js test\codex-profile-ui.test.js
+    test\codex-profile-service.test.js test\desktop-profile-launcher.test.js`
+    passed: 26/26.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+- Runtime:
+  - Explicit dry-run:
+    - `restart-codex-mobile-shared-chain.ps1 -ProfileId previous -DryRun`
+      resolved `codexHome='C:\Users\xuxin\.codex-homes\previous'` and would
+      stop the old `node.exe pid=124576`.
+  - First explicit controlled restart stopped old `node.exe pid=124576` and
+    started Mobile Web on `previous`.
+  - Second explicit controlled restart loaded the server route fix:
+    - stopped `node.exe pid=62856`, previous mux child `codex.exe pid=49092`,
+      and mux wrapper `node.exe pid=105396`;
+    - final 8787 listener PID: `94704`.
+  - Final `/api/public-config`:
+    - `clientBuildId=0.1.11|codex-mobile-shell-v160`
+    - `shellCacheName=codex-mobile-shell-v160`
+    - `activeProfileId=previous`
+    - `activeCodexHome=C:\Users\xuxin\.codex-homes\previous`
+    - account labels:
+      - default: `5gdxrncpzf@privaterelay.appleid.com`
+      - current: `lkf12101975@icloud.com`
+      - previous: `2261065@qq.com`
+  - Final authenticated `/api/status`:
+    - `ready=true`
+    - `transport=external-jsonl-tcp`
+    - `sharedRequired=true`
+    - `lastError=null`
+    - `activeCodexHome=C:\Users\xuxin\.codex-homes\previous`
+  - Final endpoints:
+    - default endpoint still exists at `.codex\app-server-mux\endpoint.json`
+      from the older default chain.
+    - active previous endpoint exists at
+      `.codex-homes\previous\app-server-mux\endpoint.json` with port `49979`.
+- Status:
+  - Local changes remain uncommitted.
+  - Public repository was not synced or pushed for this runtime/profile fix.
+
+## 2026-06-02 Profile Switch Shared Thread State
+
+- User report:
+  - After switching Codex Mobile Web to another Codex account/profile and
+    performing a controlled restart, Mobile Web could only see two workspaces
+    and no threads.
+  - The user clarified the desired behavior: switching accounts should preserve
+    the existing workspaces, threads, and conversation continuity while new
+    turns use the selected account.
+- Diagnosis:
+  - Runtime was on `activeProfileId=previous` with
+    `activeCodexHome=C:\Users\xuxin\.codex-homes\previous`.
+  - The default home `C:\Users\xuxin\.codex` had a large
+    `state_5.sqlite` and 201 session JSONL files.
+  - The previous profile home had its own auth/config but no `sessions/`
+    rollout files and only a small profile-local SQLite state, so switching
+    the whole `CODEX_HOME` hid the original thread/workspace state.
+- Local fix:
+  - `start-codex-mobile-web-windowless.ps1`
+    - Added `Backup-ProfileAuthFiles()`.
+    - Added `Ensure-SharedProfileState()`.
+    - For non-default profile homes, startup now keeps that profile's
+      `auth.json` and `config.toml`, but links conversation state back to the
+      default `.codex` home:
+      - `.codex-global-state.json`
+      - `state_5.sqlite`
+      - `state_5.sqlite-wal`
+      - `state_5.sqlite-shm`
+      - `session_index.jsonl`
+      - `sessions/`
+      - `archived_sessions/`
+    - Files use hardlinks and directories use junctions.
+    - Existing auth/config are copied to
+      `%USERPROFILE%\.codex-mobile-web\profile-auth-backups`.
+    - Replaced profile-local state is moved to
+      `%USERPROFILE%\.codex-mobile-web\profile-state-backups`.
+  - Harness/tests:
+    - `test/codex-profile-ui.test.js` now asserts the launcher backs up
+      auth/config, shares only state paths, and uses hardlink/junction link
+      types.
+  - Documentation updated:
+    - README
+    - `docs/ARCHITECTURE.md`
+    - `docs/MODULES.md`
+    - `docs/TROUBLESHOOTING.md`
+    - `.agent-context/PROJECT_CONTEXT.md`
+    - this handoff.
+- Validation:
+  - PowerShell parser check passed for
+    `start-codex-mobile-web-windowless.ps1` and
+    `restart-codex-mobile-shared-chain.ps1`.
+  - Focused `node --test test\codex-profile-ui.test.js
+    test\codex-profile-service.test.js test\manual-restart-ui.test.js
+    test\shared-chain-restart-script.test.js
+    test\shared-chain-restart-service.test.js` passed: 24/24.
+  - `node --check server.js` passed.
+  - `npm.cmd test` passed: 292/292.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+- Runtime:
+  - Manually backed up all three profile auth/config files under
+    `%USERPROFILE%\.codex-mobile-web\profile-auth-backups\manual-20260602-194104`.
+  - Switched store to `previous` and ran explicit controlled restart through
+    `restart-codex-mobile-shared-chain.ps1 -ProfileId previous`.
+  - Final `/api/public-config`:
+    - `activeProfileId=previous`
+    - `activeCodexHome=C:\Users\xuxin\.codex-homes\previous`
+    - active account label: `2261065@qq.com`
+    - `clientBuildId=0.1.11|codex-mobile-shell-v161`
+    - `shellCacheName=codex-mobile-shell-v161`
+  - Final authenticated `/api/status`:
+    - `ready=true`
+    - `transport=external-jsonl-tcp`
+    - `lastError=null`
+  - `C:\Users\xuxin\.codex-homes\previous` now has hardlinks to default
+    `.codex` for `state_5.sqlite*`, `.codex-global-state.json`, and
+    `session_index.jsonl`, and junctions for `sessions/` and
+    `archived_sessions/`.
+  - Auth/config remained ordinary profile-local files in the previous profile
+    home.
+  - Authenticated `/api/threads?limit=10` returned 10 threads, including
+    `Codex Mobile 05-31`, `Hermes 05-31`, `记账 06-01`, and `Email`, proving
+    previous-account runtime can see the shared default conversation state.
+- Status:
+  - Local changes remain uncommitted.
+  - Public repository was not synced or pushed for this change.
+
 ## 2026-06-02 Codex App-Server Residual Process Cleanup
 
 - User report:
@@ -2708,3 +2884,132 @@ The previous full handoff was archived and should be opened only when old proven
   - Staged privacy scan found no staged private/runtime files or raw secret
     values; matches were only documentation statements about excluded uploads
     and context paths.
+
+## 2026-06-02 Autonomous Task Card Completion Auto-Return
+
+- User report:
+  - The user expected an autonomous cross-thread workflow to send a return card
+    automatically after the target thread finished. The current implementation
+    only auto-approved later cards that already existed with the same
+    workflow id; it did not create the return card when the target turn
+    completed.
+  - Follow-up clarification: this auto-return behavior is the default contract
+    for automatic/autonomous collaboration cards. The unrelated plugin
+    provisioning note was sent to the wrong thread and should not be treated as
+    part of this workspace change.
+- Diagnosis:
+  - Runtime `thread-task-cards.json` showed recent autonomous Health workflow
+    cards were approved and active workflow grants existed, but no
+    reverse-direction Health -> Hermes card was created after target work.
+  - This was an implementation gap rather than a user prompt issue.
+- Local fix:
+  - `adapters/thread-task-card-service.js`
+    - Added `maybeAutoReplyCompletedTurn()`.
+    - When an approved autonomous card's recorded `injectedTurnId` completes
+      in the target thread, the service creates one reverse-direction return
+      card carrying the completed turn receipt.
+    - The return card reuses the same workflow id and is auto-approved through
+      the existing workflow grant, creating a real source-thread turn.
+    - The return is idempotent by original card id plus completed turn id, and
+      the original card records `autoReplyCardId` / `autoReturn*` audit fields.
+  - `server.js`
+    - Imports `finalReceiptTextFromParams()`.
+    - Calls `threadTaskCardService.maybeAutoReplyCompletedTurn()` on fresh
+      `turn/completed` notifications, independently of Web Push delivery.
+  - `public/app.js` / `public/sw.js`
+    - The `#` draft prompt now states that autonomous workflow means first
+      approval once, then automatic return after target completion without
+      another approval.
+    - Static shell bumped to `0.1.11|codex-mobile-shell-v160` /
+      `codex-mobile-shell-v160`.
+  - Documentation updated:
+    - README
+    - `docs/ARCHITECTURE.md`
+    - `docs/COMPLEX_FEATURE_PATHS.md`
+    - `docs/CROSS_THREAD_TASK_CARDS_REQUIREMENTS.md`
+    - `docs/CROSS_THREAD_TASK_CARDS_DESIGN.md`
+    - `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md`
+    - `docs/MODULES.md`
+    - `docs/TROUBLESHOOTING.md`
+    - `.agent-context/PROJECT_CONTEXT.md`
+- Validation:
+  - `node --check adapters\thread-task-card-service.js` passed.
+  - `node --check server.js` passed.
+  - `node --check public\app.js` passed.
+  - `node --check public\sw.js` passed.
+  - Focused `node --test test\thread-task-card-service.test.js
+    test\thread-task-card-route.test.js test\conversation-render.test.js
+    test\mobile-viewport.test.js` passed: 37/37.
+  - `npm.cmd test` passed: 290/290.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+  - BOM check for touched source, tests, docs, README, and context files had
+    no output.
+- Runtime:
+  - Restarted the 8787 Node listener so the server-side hook is active:
+    first old PID `79304`, intermediate PID `53452`, final PID `124576`.
+  - `/api/public-config` returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v160` and
+    `shellCacheName=codex-mobile-shell-v160`.
+  - Authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`.
+- Status:
+  - Local changes are uncommitted.
+  - This is both server-side task-card behavior and static frontend/PWA
+    behavior. Open clients need the v160 refresh prompt, hard refresh,
+    close/reopen, or Hermes plugin refresh path to load the updated `#` draft
+    prompt and shell cache.
+  - Public repository was not synced or pushed.
+
+## 2026-06-02 Page Refresh Applies Quota Snapshot v162
+
+- User report:
+  - After the page showed `页面有新版本，点击刷新`, tapping the prompt did not
+    refresh the visible quota chips.
+  - Killing and reopening the PWA did refresh quota, proving the shell-refresh
+    path and full app restart path were not equivalent for quota state.
+- Diagnosis:
+  - `refreshPageForNewBuild()` fetched `/api/public-config` to preflight the
+    target shell cache and then called `window.location.reload()`.
+  - Quota state was only applied on startup, `/api/status`, or SSE status
+    snapshots. On iOS/PWA, a reload can fail to behave like a full app process
+    restart, leaving the old browser quota cache visible.
+- Local fix:
+  - `public/app.js`
+    - Added `rememberRateLimitsFromConfig(config)`.
+    - Startup and the page-refresh click path now share the same public-config
+      quota snapshot application.
+    - `refreshPageForNewBuild()` applies latest `rateLimits` /
+      `rateLimitsByModel` before service-worker update, cache pruning, and
+      `window.location.reload()`.
+  - `public/app.js` / `public/sw.js`
+    - Static shell bumped to `0.1.11|codex-mobile-shell-v162` /
+      `codex-mobile-shell-v162`.
+  - Tests/docs:
+    - `test/app-update.test.js` now checks that refresh prompt handling applies
+      public-config quota before preparing shell assets.
+    - README, Architecture, Troubleshooting, Project Context, and this handoff
+      document that page refresh and quota refresh are separate paths joined by
+      the v162 fix.
+- Validation:
+  - `node --check public\app.js` passed.
+  - `node --check public\sw.js` passed.
+  - Focused `node --test test\app-update.test.js test\codex-profile-ui.test.js
+    test\mobile-viewport.test.js test\thread-task-card-route.test.js` passed:
+    17/17.
+  - `npm.cmd test` passed: 292/292.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+- Status:
+  - Runtime restart completed before commit. Listener PID `97568` is serving
+    `clientBuildId=0.1.11|codex-mobile-shell-v162` and
+    `shellCacheName=codex-mobile-shell-v162`.
+  - Authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`, `codexHome=C:\Users\xuxin\.codex-homes\previous`.
+  - Local changes remain uncommitted.

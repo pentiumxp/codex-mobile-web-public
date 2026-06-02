@@ -7,6 +7,7 @@ const crypto = require("node:crypto");
 const MAX_TITLE_CHARS = 120;
 const MAX_SUMMARY_CHARS = 300;
 const MAX_BODY_CHARS = 8_000;
+const AUTO_REPLY_BODY_CHARS = 6_000;
 const DEFAULT_RECENT_LIMIT = 24;
 const MAX_BATCH_TARGETS = 12;
 const SETTLED_STATUSES = new Set(["approved", "deleted", "revoked", "replied"]);
@@ -46,6 +47,14 @@ function boundedErrorMessage(value) {
   const text = stringValue(value && value.message ? value.message : value);
   const singleLine = text.replace(/\s+/g, " ").trim();
   return singleLine ? boundedMetadataString(singleLine, 500) : "approval_execution_failed";
+}
+
+function boundedVisibleText(value, maxLength) {
+  const text = String(value || "").replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  if (!text) return "";
+  if (text.length <= maxLength) return text;
+  const suffix = "\n\n...(truncated)";
+  return `${text.slice(0, Math.max(0, maxLength - suffix.length)).trimEnd()}${suffix}`;
 }
 
 function hasLikelyQuestionMarkReplacementDamage(text) {
@@ -333,18 +342,36 @@ function activateWorkflowForCard(store, card, actorThreadId, timestamp) {
 }
 
 function injectedMessageText(card) {
+  const autonomous = isAutonomousWorkflow(card.workflow);
   const lines = [
     "[Cross-thread task card approved]",
     "",
     `Source workspace: ${card.source.workspaceId}`,
     `Source thread: ${card.source.title || card.source.threadId}`,
     card.message && card.message.title ? `Title: ${card.message.title}` : "",
-    isAutonomousWorkflow(card.workflow) ? `Workflow mode: ${card.workflow.mode}` : "",
-    isAutonomousWorkflow(card.workflow) ? `Workflow id: ${card.workflow.id}` : "",
+    autonomous ? `Workflow mode: ${card.workflow.mode}` : "",
+    autonomous ? `Workflow id: ${card.workflow.id}` : "",
+    autonomous ? "Auto-return: when this injected turn completes, Codex Mobile Web will send a return task card back to the source thread in this workflow." : "",
     "",
     stringValue(card.message && card.message.body),
   ].filter((line, index, all) => line !== "" || (index > 0 && all[index - 1] !== ""));
   return lines.join("\n");
+}
+
+function autoReplyBodyForCompletedTurn(card, completed = {}) {
+  const finalReceipt = boundedVisibleText(completed.finalReceiptText, AUTO_REPLY_BODY_CHARS);
+  const lines = [
+    "## Automatic workflow return",
+    "",
+    `Completed target thread: ${card.target.threadId}`,
+    completed.turnId ? `Completed turn: ${completed.turnId}` : "",
+    completed.completedAt ? `Completed at: ${completed.completedAt}` : "",
+    card.workflow && card.workflow.id ? `Workflow id: ${card.workflow.id}` : "",
+    "",
+    finalReceipt ? "## Target result" : "",
+    finalReceipt,
+  ].filter((line, index, all) => line !== "" || (index > 0 && all[index - 1] !== ""));
+  return boundedVisibleText(lines.join("\n"), MAX_BODY_CHARS);
 }
 
 function transitionAllowed(card, action, actorThreadId) {
@@ -434,6 +461,7 @@ function createThreadTaskCardService(options = {}) {
         allowReply: true,
         allowRevoke: true,
         autoRunAfterFirstApproval: request.workflowMode === WORKFLOW_MODE_AUTONOMOUS,
+        autoReturnOnCompletion: request.workflowMode === WORKFLOW_MODE_AUTONOMOUS,
       },
       workflow: workflowForRequest(request),
       audit: {
@@ -696,6 +724,80 @@ function createThreadTaskCardService(options = {}) {
     return result;
   }
 
+  async function maybeAutoReplyCompletedTurn(completed = {}) {
+    const turnId = stringValue(completed.turnId);
+    const threadId = stringValue(completed.threadId);
+    if (!turnId || !threadId) return null;
+    const prepared = await withStore(async (store) => {
+      const card = safeArray(store.cards).find((entry) => entry
+        && entry.status === "approved"
+        && isAutonomousWorkflow(entry.workflow)
+        && stringValue(entry.injectedTurnId) === turnId
+        && (stringValue(entry.injectedThreadId || (entry.target && entry.target.threadId)) === threadId)
+        && !stringValue(entry.autoReplyCardId)) || null;
+      if (!card) return null;
+      const workflow = activeWorkflowForCard(store, card);
+      if (!workflow) return null;
+      const timestamp = nowIso(options.now);
+      const idempotencyKey = boundedString(`auto-return:${card.id}:${turnId}`, "idempotency_key", 220);
+      let replyCard = findByIdempotency(store, idempotencyKey);
+      if (!replyCard) {
+        replyCard = {
+          id: idGenerator(),
+          status: "pending",
+          idempotencyKey,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          source: {
+            workspaceId: card.target && card.target.workspaceId || "",
+            threadId: card.target && card.target.threadId || "",
+            turnId,
+            title: card.target && card.target.threadId || "",
+          },
+          target: {
+            workspaceId: card.source && card.source.workspaceId || "",
+            threadId: card.source && card.source.threadId || "",
+          },
+          message: {
+            format: "markdown",
+            title: boundedVisibleText(`Auto return: ${card.message && card.message.title || "Task card"}`, MAX_TITLE_CHARS),
+            summary: boundedVisibleText(completed.summary || "Target thread completed and returned the result automatically.", MAX_SUMMARY_CHARS),
+            body: autoReplyBodyForCompletedTurn(card, completed),
+          },
+          delivery: {
+            injectOnApprove: true,
+            allowReply: true,
+            allowRevoke: true,
+            autoRunAfterFirstApproval: true,
+            autoReturnOnCompletion: true,
+          },
+          workflow: {
+            mode: WORKFLOW_MODE_AUTONOMOUS,
+            id: card.workflow.id,
+            authorized: false,
+          },
+          audit: {
+            createdAt: timestamp,
+            autoReturnToCardId: card.id,
+            autoReturnForTurnId: turnId,
+          },
+        };
+        store.cards.push(replyCard);
+      }
+      card.autoReplyCardId = replyCard.id;
+      card.updatedAt = timestamp;
+      card.audit = Object.assign({}, card.audit || {}, {
+        autoReturnCreatedAt: timestamp,
+        autoReturnCardId: replyCard.id,
+        autoReturnForTurnId: turnId,
+      });
+      return publicCard(replyCard, replyCard.target.threadId);
+    });
+    if (!prepared) return null;
+    const replyCard = await maybeAutoApprovePublicCard(prepared, prepared && prepared.target && prepared.target.threadId);
+    return replyCard ? { card: replyCard } : null;
+  }
+
   function pendingCountForThread(threadId) {
     const store = loadStore(storageFile);
     return countsForThreadFromStore(store, threadId).pendingTotal;
@@ -714,6 +816,7 @@ function createThreadTaskCardService(options = {}) {
     get,
     injectedMessageText,
     listForThread,
+    maybeAutoReplyCompletedTurn,
     pendingCountForThread,
     pendingCountsForThread,
     reply,

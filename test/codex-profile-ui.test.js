@@ -17,6 +17,8 @@ test("settings panel exposes Codex profile account and switch UI", () => {
   assert.match(appJs, /function renderCodexProfileSettings\(\)/);
   assert.match(appJs, /codexProfileAccountLabel/);
   assert.match(appJs, /\/api\/codex-profiles\/active/);
+  assert.match(appJs, /function clearStoredRateLimits\(\)/);
+  assert.match(appJs, /clearStoredRateLimits\(\);\s*\$\("connectionState"\)\.textContent = "Switching Codex profile\.\.\."/);
   assert.match(stylesCss, /\.codex-profile-row/);
 });
 
@@ -33,5 +35,23 @@ test("windowless launcher reads active profile store before starting mux", () =>
   assert.match(launcher, /function Resolve-CodexHomeFromProfileStore/);
   assert.match(launcher, /codex-profiles\.json/);
   assert.match(launcher, /\$profileCodexHome = Resolve-CodexHomeFromProfileStore/);
+  assert.match(launcher, /if \(-not \[string\]::IsNullOrWhiteSpace\(\$profileCodexHome\)\) \{/);
+  assert.match(launcher, /\$env:CODEX_HOME = \$profileCodexHome/);
+  assert.doesNotMatch(launcher, /if \(\[string\]::IsNullOrWhiteSpace\(\$env:CODEX_HOME\)\) \{\s*\$profileCodexHome = Resolve-CodexHomeFromProfileStore/);
+  assert.match(launcher, /Ensure-SharedProfileState -ProfilePath \$UserProfilePath -CodexHome \$env:CODEX_HOME/);
   assert.match(launcher, /Start-StandaloneMuxIfNeeded/);
+});
+
+test("windowless launcher shares thread state without replacing profile auth", () => {
+  assert.match(launcher, /function Backup-ProfileAuthFiles/);
+  assert.match(launcher, /profile-auth-backups/);
+  assert.match(launcher, /foreach \(\$name in @\("auth\.json", "config\.toml"\)\)/);
+  assert.match(launcher, /function Ensure-SharedProfileState/);
+  assert.match(launcher, /Name = "state_5\.sqlite"/);
+  assert.match(launcher, /Name = "\.codex-global-state\.json"/);
+  assert.match(launcher, /Name = "session_index\.jsonl"/);
+  assert.match(launcher, /Name = "sessions"; Kind = "Directory"/);
+  assert.match(launcher, /Name = "archived_sessions"; Kind = "Directory"/);
+  assert.match(launcher, /New-Item -ItemType HardLink/);
+  assert.match(launcher, /New-Item -ItemType Junction/);
 });
