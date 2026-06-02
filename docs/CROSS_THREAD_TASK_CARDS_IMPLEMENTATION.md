@@ -14,13 +14,15 @@ layout and test strategy.
   - status transitions
   - target-side approval in-flight persistence before external `turn/start`
   - autonomous workflow grants after first target approval
+  - automatic completion return cards for autonomous workflows
   - idempotency
   - storage
   - injection payload generation
   - multi-target expansion into one stored card per target
 
 - `server.js`
-  - route wiring only
+  - route wiring
+  - `turn/completed` notification hook for autonomous completion auto-return
   - SSE/broadcast integration only
 
 ### Browser-side
@@ -99,6 +101,12 @@ If sqlite is chosen, keep it separate from normal thread message history.
    cards when the draft parses. Do not show a source-side `Approve` button.
    The draft may include `workflowMode:"autonomous"` only when the command
    explicitly requests an automatic/no-further-approval collaboration loop.
+9. For autonomous workflow cards, observe `turn/completed` for the recorded
+   `injectedTurnId`. `server.js` calls
+   `threadTaskCardService.maybeAutoReplyCompletedTurn()`, which creates an
+   idempotent reverse-direction card with the completed turn receipt and the
+   same workflow id. The existing workflow grant auto-approves that return card
+   and injects it into the original source thread.
 
 ## Harness
 
@@ -117,6 +125,8 @@ This harness is intentionally implementation-light. It codifies:
 - injected message shape after approval;
 - reply-card direction reversal.
 - autonomous workflow first-approval semantics and same-pair-only auto-run.
+- automatic completion return for autonomous workflows, including duplicate
+  `turn/completed` idempotency.
 
 The harness should be kept green while the real server/browser implementation is
 added.
@@ -131,7 +141,11 @@ After implementation begins, expand coverage with:
 - service tests for multi-target create count and per-target pending counts;
 - service tests for autonomous workflow activation, same-pair auto-approval,
   reverse-direction auto-approval, and unrelated-pair rejection;
+- service tests for target injected-turn completion creating one auto-approved
+  reverse card back to the source thread;
 - route tests for authorization and action endpoints;
+- route/static tests that `server.js` wires `turn/completed` through
+  `maybeAutoReplyCompletedTurn`;
 - conversation/thread-detail tests for card rendering outside message flow;
 - SSE/live update tests if task cards are pushed in real time.
 - frontend/static harness checks that source-side draft cards auto-send and no

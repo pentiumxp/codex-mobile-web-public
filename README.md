@@ -230,6 +230,13 @@ two thread ids. Later cards carrying that workflow id between the same two
 threads auto-inject as real target-thread turns without another manual click,
 including reverse-direction follow-up cards. A reused workflow id with a
 different thread pair still stays pending and requires its own first approval.
+Autonomous workflow approval also enables completion auto-return by default:
+when the target turn injected by an approved autonomous card completes, Mobile
+Web creates a reverse-direction return task card with the completed turn
+receipt, reuses the same workflow id, and immediately auto-approves it back into
+the source thread. The auto-return is idempotent by original card id plus
+completed turn id, so repeated `turn/completed` notifications do not create
+duplicate return turns.
 Target-side approval also persists a transient non-pending `approving` state
 before calling the external target-thread `turn/start`, so reconnect,
 continuation compaction, or thread refresh cannot resurrect the same `Approve`
@@ -392,15 +399,19 @@ wscript.exe start-codex-mobile-web-hidden.vbs
 
 The sidebar settings panel can also show local Codex profiles and switch the
 single active Mobile Web profile. The profile switcher is deliberately not a
-dual-provider mode: one listener still uses one `CODEX_HOME` and one mux/app-
-server chain at a time. The settings panel lists the configured profiles,
-shows the safely derived logged-in account label/email and recent quota
-snapshot for each profile, and calls the authenticated
+dual-provider mode: one listener still uses one active auth profile and one
+mux/app-server chain at a time. The settings panel lists the configured
+profiles, shows the safely derived logged-in account label/email and recent
+quota snapshot for each profile, and calls the authenticated
 `POST /api/codex-profiles/active` endpoint when switching. The endpoint writes
 `%USERPROFILE%\.codex-mobile-web\codex-profiles.json` and restarts the Mobile
 Web shared chain. The Windows restart script and hidden/windowless launcher
-both read the same active profile store before resolving the mux endpoint, so
-after restart all workspaces use the selected profile's `CODEX_HOME`. Raw
+both read the same active profile store before resolving the mux endpoint. For
+non-default profiles, the launcher preserves that profile's own `auth.json` and
+`config.toml` but links thread/workspace state files such as `state_5.sqlite`,
+`.codex-global-state.json`, `session_index.jsonl`, `sessions/`, and
+`archived_sessions/` back to the default `%USERPROFILE%\.codex` home, so
+switching accounts keeps the same visible workspaces and conversations. Raw
 token values from `auth.json` are never returned to the browser.
 
 By default, the startup task passes `-EnsureStandaloneMux -RequireSharedAppServer`, so Mobile Web connects to a single mux-backed app-server endpoint instead of silently creating a separate managed app-server stream. Codex Desktop can later attach to the existing mux endpoint when it is launched through `start-codex-desktop-shared.ps1`.
@@ -652,10 +663,10 @@ Behavior:
 - Operation cards are shown only while the latest turn is still running. After a turn completes, command/tool/file/search cards are removed from the compact mobile detail; when usage data exists, the final frame is the Usage summary.
 - Consecutive command/file operation updates show only the latest operation card unless normal visible content appears between two operations.
 - The left-swipe Subagent status panel shows Subagents from the current live turn, treating completed/closed spawn-call rows in that live turn as current because the child Agent can still be running after the spawn call closes. Older historical Subagent records are omitted so long-running collaboration sessions do not show hundreds of stale entries.
-- Page refresh prompts are gated by a server-started build id and a full app-shell preflight. `/api/public-config` reports the shell cache/build snapshot captured when the 8787 listener started, not whatever files happen to be mid-edit on disk. The browser checks for this after startup, foreground/focus recovery, EventSource reconnect/status, and successful thread-list refresh, then fetches and populates the target shell cache with the new HTML, CSS, JavaScript modules, manifest, service worker, and icons before the prompt is shown; clicking the prompt repeats that check and reloads only after the target cache is ready.
+- Page refresh prompts are gated by a server-started build id and a full app-shell preflight. `/api/public-config` reports the shell cache/build snapshot captured when the 8787 listener started, not whatever files happen to be mid-edit on disk. The browser checks for this after startup, foreground/focus recovery, EventSource reconnect/status, and successful thread-list refresh, then fetches and populates the target shell cache with the new HTML, CSS, JavaScript modules, manifest, service worker, and icons before the prompt is shown; clicking the prompt repeats that check, applies the latest `/api/public-config` quota snapshot to the composer immediately, and reloads only after the target cache is ready.
 - The composer shows model, reasoning effort, permission, and quota as four compact runtime cards.
 - Model, reasoning effort, and permission can be changed before sending. Existing-thread sends submit the selected values with the next `turn/start`; new-thread first messages submit the selected values when creating and starting the first turn.
-- The composer shows 5-hour and weekly quota as separate reset-aware chips from `/api/public-config` / `/api/status` snapshots for the active Mobile Web chain. Source-less `account/rateLimits/updated` notifications are recorded server-side but not broadcast to the browser, and rollout scans are only a cold-start snapshot fallback, so another workspace's quota event does not overwrite the current composer display. Rate-limit snapshots are cached by model key, and mobile quota display follows the currently selected composer model.
+- The composer shows 5-hour and weekly quota as separate reset-aware chips from `/api/public-config` / `/api/status` snapshots for the active Mobile Web chain. Source-less `account/rateLimits/updated` notifications are recorded server-side but not broadcast to the browser, and rollout scans are only a cold-start snapshot fallback, so another workspace's quota event does not overwrite the current composer display. Rate-limit snapshots are cached by model key, mobile quota display follows the currently selected composer model, and clicking the page-refresh prompt also refreshes the visible quota snapshot before the browser reloads.
 - The send button follows Codex Desktop behavior: empty composer during an active turn shows `Stop`; typed text or attachments switch it back to `Send`.
 - When message submission is slow or fails, the UI shows an explicit sending/failed state, keeps the text and attachments available for retry, and logs a compact client event to `/api/client-events` for diagnostics. Quota/rate-limit failures are normalized into a model-specific "额度不足，请切换模型后重试" message when the backend error text indicates an exhausted limit.
 - Composer drafts are saved in the browser per thread and per new-thread workspace. Text uses `localStorage`, attachments use IndexedDB when available, and the submitted draft is cleared only after a successful send.
@@ -1391,16 +1402,6 @@ plugin. The shell cache advances to `codex-mobile-shell-v102`.
 - Workspace Token 统计补齐历史 Windows 路径乱码归并。已经写入 SQLite 的 `财务`、`男装衣橱`、`系统工具` 乱码 cwd 会在查询时合并到正确 Unicode Workspace，不再在统计页显示为单独乱码项目；新增 harness 覆盖已经持久化的坏 cwd 行。
 - 侧栏版本号现在打开 Updates 面板。Current checkout 继续使用原有安全 fast-forward 自更新路径；Public release 区域会检查 `pentiumxp/codex-mobile-web-public/main` 最新提交。只有当前安装本身就是 public checkout 时，才会通过同一个 fast-forward 路径应用 public 更新；private checkout 只显示 public 最新状态，避免把 public 发布树覆盖到私有开发树。
 
-### 2026-06-02 Public 发布说明（生成图片与 PNG 渲染 v159）
-
-本次 public 发布同步 private 中已经验证的 v158-v159 图片显示改动。版本仍为 `0.1.11`，PWA shell cache 升到 `codex-mobile-shell-v159`。部署后需要重启 8787 Node listener；已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开，才能拿到新的前端渲染路径。
-
-- Markdown 回复中的安全位图 data URL 会直接显示为受限图片，包括 `data:image/png;base64,...` 以及 JPEG、WebP、GIF；SVG data image 仍被拒绝，避免把可执行 SVG 内容引入消息流。
-- Codex `imageGeneration` 生成图如果带有 `%USERPROFILE%\.codex\generated_images\...\*.png` 的 `savedPath`，服务端会把符合类型和大小限制的源文件复制到 Mobile Web 运行目录的 `generated-images` 缓存，并通过受认证保护的 `/api/generated-images/file` URL 给前端渲染。
-- 前端现在把 `imageGeneration` 和 `imageView` 走同一套图片卡片路径，不再在手机端显示 raw JSON 或停留在 `generating` 文本；没有缓存 URL 时才回退到本地文件预览路径。
-- 本次同步包含 README、架构、模块、复杂路径、故障排除文档和对应 harness 测试；public 同步不包含 `.agent-context`、上传目录、运行态数据库、access key、VAPID/subscription 文件或其他本机私有状态。
-- private 侧发布前已验证 `npm test` 289/289、`npm run check`、`npm run check:macos`、`git diff --check`，并用 Hermes 05-31 的生成图片回读确认 `/api/generated-images/file` 返回 `image/png`。
-
 ### Which Restart Is Needed After Changes
 
 Use this table after pulling updates:
@@ -1425,6 +1426,17 @@ Mobile Web restart on Windows:
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\start-codex-mobile-web.ps1 -HostAddress 0.0.0.0 -Port 8787 -RequireSharedAppServer
 ```
+
+### 2026-06-02 Public 发布说明（自动协作回传、Profile 线程延续与刷新额度 v162）
+
+本次 public 发布同步 private 中已验证的 v160-v162 改动。版本仍为 `0.1.11`，PWA shell cache 升到 `codex-mobile-shell-v162`。部署后需要重启 8787 Node listener；已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开，才能拿到新的前端刷新和任务卡片提示逻辑。
+
+- 跨线程自动协作卡片补齐“完成后自动回传”的默认合同。自主 workflow 的第一张目标卡片仍需要目标线程人工批准；批准后，同一 workflow、同一对源/目标线程之间的后续卡片可以自动注入。目标线程完成被注入的 turn 后，服务端会创建一张反向回传卡片，沿用同一个 workflow id，并通过已有 workflow 授权自动注入回源线程。回传按原始卡片 id 和完成 turn id 做幂等，避免重复回传。
+- 目标卡片批准流程继续先进入非 pending 的 `approving` 状态，再调用外部 `turn/start`。这样刷新、重连或压缩续接期间不会把已经开始执行的同一张卡片重新显示为可点击 `Approve`。
+- Codex profile 切换改为保留各 profile 自己的 `auth.json` / `config.toml`，同时把非默认 profile 的共享线程状态链接回默认 `%USERPROFILE%\.codex`：`state_5.sqlite*`、`.codex-global-state.json`、`session_index.jsonl`、`sessions/` 和 `archived_sessions/`。这样切换账号后仍能看到原有工作区和线程，但 app-server 使用的是选中 profile 的认证文件。
+- Windows windowless 启动器和 shared-chain restart 路径会显式读取/传递选中的 `profileId` / `CODEX_HOME`，避免旧进程环境把服务重启回上一个账号。启动器在替换 profile 本地状态前会备份 auth/config，并把被替换的 profile-local 状态移到 runtime backup 目录；这些 runtime backup 不属于 Git。
+- 页面刷新提示与额度刷新现在接在一起。点击 `页面有新版本，点击刷新` 时，前端会先重新读取 `/api/public-config`，立即应用其中的 `rateLimits` / `rateLimitsByModel` 到 Composer 额度 chips，然后再更新 service worker、预填充新 shell cache、清理旧 cache 并 reload。这样 iOS/PWA 即使没有像“杀掉 APP 重进”那样完整重建进程，也不会继续显示旧额度。
+- 本次同步更新 `server.js`、`adapters/thread-task-card-service.js`、`public/app.js`、`public/sw.js`、Windows windowless 启动脚本、README/docs 和相关测试。private 验证已通过 `npm test` 292/292、`npm run check`、`npm run check:macos`、`git diff --check`，并已确认 private 8787 listener 服务 `codex-mobile-shell-v162`；public 发布前也会在 public 工作区重新运行测试和隐私扫描。
 
 ## App-Server Bridge Design
 

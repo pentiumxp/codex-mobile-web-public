@@ -56,15 +56,15 @@ Keep `.codex` read-only except through app-server RPCs. Do not patch rollout fil
 
 ### Public Config And Login
 
-`GET /api/public-config` exposes auth requirement, version/build ids, runtime option lists, upload limits, rollout warning threshold, quota snapshots, Push support, self-update availability, public PR check availability, and the Hermes plugin endpoint paths. The browser uses this before showing the app shell.
+`GET /api/public-config` exposes auth requirement, version/build ids, runtime option lists, upload limits, rollout warning threshold, quota snapshots, Push support, self-update availability, public PR check availability, and the Hermes plugin endpoint paths. The browser uses this before showing the app shell and also reuses the same quota snapshot when a page-refresh prompt is clicked, so a PWA reload that does not fully recreate the iOS app scene still updates the visible quota chips.
 
 Authentication uses `x-codex-mobile-key`, `Authorization: Bearer`, the existing cookie, or the existing `key` query parameter against the runtime access key file. Do not print the key in logs or chat output.
 
 ### Codex Profile Switching
 
 Mobile Web supports a simple single-active-profile switcher for local Codex CLI
-homes. This is not concurrent provider routing: the Node listener, mux endpoint,
-state DB, sessions, and all workspaces use one active `CODEX_HOME` at a time.
+auth homes. This is not concurrent provider routing: the Node listener and mux
+endpoint use one active profile at a time.
 
 `adapters/codex-profile-service.js` discovers the default `.codex` home plus
 `%USERPROFILE%\.codex-homes\current` and `previous` when present. It reads
@@ -77,7 +77,14 @@ selected profile to `%USERPROFILE%\.codex-mobile-web\codex-profiles.json` and
 then delegates to the shared-chain restart service. On Windows, the restart
 script and windowless/hidden launcher read that active profile before resolving
 the mux endpoint, starting the standalone mux, and starting the Node listener,
-so the selected `CODEX_HOME` applies globally after restart. The Desktop escape
+so the selected profile auth applies globally after restart. For non-default
+profiles, the launcher keeps that profile's own `auth.json` and `config.toml`
+but links conversation state back to the default `.codex` home:
+`state_5.sqlite`, `state_5.sqlite-wal`, `state_5.sqlite-shm`,
+`.codex-global-state.json`, `session_index.jsonl`, `sessions/`, and
+`archived_sessions/`. This keeps visible workspaces and conversations continuous
+after an account switch while the active app-server uses the selected account's
+auth file. The Desktop escape
 hatch can be launched through `start-codex-desktop-shared.ps1 -ProfileId
 default|current|previous` or a matching `.cmd` wrapper so Desktop and Mobile
 share the same profile mux endpoint. Desktop GUI login isolation is not assumed;
@@ -263,7 +270,12 @@ the task-card API.
 The draft schema may include `workflowMode:"autonomous"` only when the command
 explicitly asks for no further approval or automatic collaboration. The first
 target-side approval activates a workflow grant scoped to the workflow id and
-the same two participating thread ids; ordinary cards remain manual.
+the same two participating thread ids; ordinary cards remain manual. Completion
+auto-return is part of the default autonomous contract: for an approved
+autonomous card, the server observes completion of the injected target turn and
+creates one reverse-direction auto-return card with the final receipt. That
+return card reuses the same workflow id and auto-injects back into the source
+thread through the active grant.
 ### Conversation Navigation
 
 The browser owns conversation scroll controls. The return-to-bottom button appears only when the current thread is loaded, scrollable, and away from the newest content.
@@ -296,7 +308,13 @@ acceptance, the card is restored to `pending` with a bounded audit error.
 For autonomous workflow follow-ups, the service uses the same approval path
 without a human click only when an active workflow grant matches both the
 workflow id and the unordered source/target thread pair. A matching id with a
-different thread pair remains pending and does not auto-inject.
+different thread pair remains pending and does not auto-inject. Completion
+auto-return is driven by app-server `turn/completed`: `server.js` calls
+`threadTaskCardService.maybeAutoReplyCompletedTurn()` for completed turns, and
+the service matches `injectedTurnId` / target thread id to an approved
+autonomous card. The auto-return idempotency key is based on the original card
+id plus completed turn id, so replayed completion notifications do not create
+duplicate return turns.
 Source-side draft creation is also intentionally lightweight: once a valid
 `#`-draft creates pending cards, the browser does not block on re-reading the
 source thread before settling local state. It updates local draft state and
@@ -388,7 +406,7 @@ The bootstrap message is an index plus bounded excerpts. The generated source ha
 - `CLIENT_BUILD_ID` in `public/app.js`
 - `SHELL_CACHE_NAME` in `public/sw.js`
 
-The refresh prompt should only reload after the target shell cache is populated. The browser checks for a new server-started build after startup, foreground/focus recovery, EventSource reconnect/status, and successful thread-list refresh, so a real 8787 restart is not missed merely because the page stayed open. Server-only fixes do not need a shell bump, but open clients may need a normal detail refresh.
+The refresh prompt should only reload after the target shell cache is populated. The browser checks for a new server-started build after startup, foreground/focus recovery, EventSource reconnect/status, and successful thread-list refresh, so a real 8787 restart is not missed merely because the page stayed open. When the prompt is clicked, the browser applies the latest `/api/public-config` quota snapshot before pruning old caches and calling `window.location.reload()`. This keeps quota display correct even on PWA/iOS paths where a reload does not behave like killing and reopening the app. Server-only fixes do not need a shell bump, but open clients may need a normal detail refresh.
 
 ### Public PR Prompt
 

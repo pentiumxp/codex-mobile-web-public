@@ -25,6 +25,9 @@ Interpretation:
 | PWA still shows old UI | `/api/public-config.clientBuildId`, browser shell cache, service worker cache name |
 | Push missing | HTTPS/Tailscale access, VAPID files, subscription count, sub-agent suppression |
 | Push says turn ended but no final reply appears | rollout `task_complete.last_agent_message`, completion-push no-final-message guard |
+| Profile switch hides workspaces or threads | active `codexProfiles.activeCodexHome`, non-default profile shared-state links, `/api/threads?limit=10` |
+| Quota chips show the previous account after switch | `/api/status.rateLimits`, browser quota localStorage, profile-switch cache clearing |
+| After profile switch only a few workspaces or no threads appear | `/api/public-config.codexProfiles.activeCodexHome`, profile state links, and `state_5.sqlite` / `sessions` under the active home |
 
 ## Shared Mux Drift
 
@@ -39,6 +42,46 @@ Recovery:
 1. Call authenticated `POST /api/app-server/reconnect` when only Mobile Web is stale.
 2. If bridge code changed or endpoint process is stale, fully quit Desktop and relaunch once with `start-codex-desktop-shared.ps1 -ForceRestartMux`.
 3. Avoid starting an independent managed app-server when shared mode is required; that creates a divergent stream.
+
+## Codex Profile Switch Shows Empty Threads
+
+Profile switching should preserve conversations while changing the active
+account. For non-default profiles, `auth.json` and `config.toml` stay local to
+that profile, but the windowless launcher links these state paths back to the
+default `%USERPROFILE%\.codex` home:
+
+```text
+.codex-global-state.json
+state_5.sqlite
+state_5.sqlite-wal
+state_5.sqlite-shm
+session_index.jsonl
+sessions/
+archived_sessions/
+```
+
+Checks:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8787/api/public-config |
+  Select-Object -ExpandProperty codexProfiles | ConvertTo-Json -Depth 6
+Get-ChildItem "$env:USERPROFILE\.codex-homes\previous" -Force |
+  Where-Object { $_.Name -match 'state_5|session_index|codex-global-state|sessions|auth|config' } |
+  Select-Object Name,LinkType,Target,Length
+```
+
+If the active profile home has its own small `state_5.sqlite` and no linked
+`sessions/` junction, restart the shared chain through
+`restart-codex-mobile-shared-chain.ps1 -ProfileId <id>`. The startup wrapper
+backs up `auth.json` / `config.toml` to
+`%USERPROFILE%\.codex-mobile-web\profile-auth-backups` and moves any replaced
+profile-local state into `profile-state-backups`; it must not overwrite auth
+files.
+
+If threads are visible but quota chips still show the previous account, compare
+the browser with authenticated `/api/status.rateLimits`. The frontend clears
+`codexMobileRateLimits` / `codexMobileRateLimitsByModel` when profile switching
+starts, then repopulates them from the restarted server's status/config.
 
 ## Sent Message Disappears After Re-entering Thread
 
@@ -329,6 +372,10 @@ Current implementation rules:
 - autonomous workflow cards still require the first target-side approval; only
   later cards with the same workflow id and the same unordered pair of
   source/target thread ids may auto-inject without another click.
+- autonomous workflow target completion creates an automatic reverse-direction
+  return card by default. The return card is keyed by original card id plus the
+  completed target turn id and should auto-inject into the source thread
+  through the same workflow grant.
 
 If an autonomous follow-up card does not auto-run, inspect the stored card and
 workflow fields in `%USERPROFILE%\.codex-mobile-web\thread-task-cards.json`.
@@ -336,6 +383,15 @@ The card should have `workflow.mode="autonomous"` and a non-empty `workflow.id`.
 The store should also contain an active workflow with the same id and the same
 two thread ids. Reusing the same workflow id for a different thread pair is
 intentionally treated as unapproved and will leave the card pending.
+
+If the first autonomous target card runs once but does not return after the
+target turn completes, inspect the original card's `injectedTurnId`,
+`injectedThreadId`, and `autoReplyCardId`. If `autoReplyCardId` is absent,
+confirm that Mobile Web received a fresh `turn/completed` notification for that
+`injectedTurnId` and that `server.js` has restarted into a build containing
+`maybeAutoReplyThreadTaskCard()`. If `autoReplyCardId` exists, inspect the
+return card status and `injectedTurnId`; it should be `approved` with the same
+`workflow.id` and target the original source thread.
 
 If source-side draft `Approve` appears to hang, check whether the card was
 already created in `%USERPROFILE%\.codex-mobile-web\thread-task-cards.json`.
@@ -753,6 +809,24 @@ Check these facts in order:
   unavailable until that profile has produced recent `rate_limits` events.
 
 The browser should never display or log raw token fields from `auth.json`.
+
+## Page Refresh Does Not Update Quota
+
+The page-refresh prompt and quota refresh are related but not identical. The
+prompt is primarily a PWA shell/cache update path; quota chips come from active
+`/api/public-config` and `/api/status` snapshots.
+
+Expected behavior after `codex-mobile-shell-v162`:
+
+- Clicking `页面有新版本，点击刷新` fetches the latest `/api/public-config`.
+- The browser applies `rateLimits` / `rateLimitsByModel` from that config before
+  pruning old shell caches or calling `window.location.reload()`.
+- Killing and reopening the PWA should no longer be required merely to update
+  visible quota after a profile switch or controlled restart.
+- If quota is still stale, compare authenticated `/api/status.rateLimits` with
+  the composer chips. If `/api/status` is correct but the UI is not, the open
+  client is still running an older shell and needs a hard refresh or close/reopen
+  once to load v162 or newer.
 
 ## Source `#` Task-Card Draft Reappears After Approve Or Dismiss
 

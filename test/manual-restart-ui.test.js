@@ -28,8 +28,17 @@ test("manual restart route delegates to the shared-chain restart service", () =>
   assert.match(serverJs, /createSharedChainRestartService/);
   assert.match(serverJs, /sharedChainRestartService\.restart/);
   assert.match(serverJs, /\/api\/restart\/shared-chain/);
+  assert.match(serverJs, /activeProfileRestartOptions\(\)/);
   assert.match(serverJs, /sendJson\(res,\s*202,\s*result\)/);
   assert.match(pkg, /adapters\/shared-chain-restart-service\.js/);
+});
+
+test("profile switch restart passes the selected profile to the shared-chain script", () => {
+  assert.match(serverJs, /function activeProfileRestartOptions\(profile = null\)/);
+  assert.match(serverJs, /profileId:\s*selected\.id/);
+  assert.match(serverJs, /codexHome:\s*selected\.codexHome/);
+  assert.match(serverJs, /codexProfileService\.setActiveProfile/);
+  assert.match(serverJs, /activeProfileRestartOptions\(profile\)/);
 });
 
 test("manual restart distinguishes macOS Mobile Web restart scope", () => {
