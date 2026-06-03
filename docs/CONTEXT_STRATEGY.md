@@ -99,6 +99,7 @@ The continuation route uses the strong thresholds by default:
 
 - `CODEX_MOBILE_CONTINUATION_CONTEXT_FILE_COMPACT_BYTES`, default `100 KB`.
 - `CODEX_MOBILE_CONTINUATION_CONTEXT_PAIR_COMPACT_BYTES`, default `200 KB`.
+- `CODEX_MOBILE_CONTINUATION_CONTEXT_HANDOFF_PROMPT_BYTES`, default `200 KB`.
 - `CODEX_MOBILE_CONTINUATION_CONTEXT_COMPACT_PRESERVE_CHARS`, default
   `18,000`.
 
@@ -173,6 +174,10 @@ When workspace context or rollout size crosses the configured continuation
 thresholds, the completed-turn Usage block may show a compact `压缩续接` action
 beside the risk badge. This uses the same continuation path as the top rollout
 warning and should not create a separate compaction mechanism.
+The `HANDOFF.md` single-file Usage prompt uses the separate handoff prompt
+threshold, default `200 KB`, so compacted handoffs near `100 KB` do not
+immediately ask for another continuation. `PROJECT_CONTEXT.md` still uses the
+context file threshold, and the live pair still uses the pair threshold.
 
 ## Recovery For Existing Oversized Threads
 

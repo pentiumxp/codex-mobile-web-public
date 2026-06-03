@@ -322,6 +322,7 @@ test("attaches summaries only to completed turns and includes rollout stats", ()
       agentsSizeBytes: 512,
       workspaceContextPairSizeBytes: 12288,
       fileThresholdBytes: 102400,
+      handoffPromptThresholdBytes: 204800,
       pairThresholdBytes: 204800,
     },
   });
@@ -332,6 +333,7 @@ test("attaches summaries only to completed turns and includes rollout stats", ()
   assert.equal(thread.turns[0].items[0].mobileUsageSummary.projectContextSizeBytes, 4096);
   assert.equal(thread.turns[0].items[0].mobileUsageSummary.handoffSizeBytes, 8192);
   assert.equal(thread.turns[0].items[0].mobileUsageSummary.workspaceContextPairSizeBytes, 12288);
+  assert.equal(thread.turns[0].items[0].mobileUsageSummary.workspaceHandoffPromptThresholdBytes, 204800);
   assert.equal(thread.turns[1].items.length, 0);
 });
 

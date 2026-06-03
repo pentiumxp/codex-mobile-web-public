@@ -213,7 +213,7 @@ const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 8;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v170";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v171";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -8068,17 +8068,18 @@ function renderTurnUsageSummary(item) {
   const handoffSize = Number(summary.handoffSizeBytes);
   const pairSize = Number(summary.workspaceContextPairSizeBytes);
   const fileThreshold = Number(summary.workspaceContextFileThresholdBytes);
+  const handoffThreshold = Number(summary.workspaceHandoffPromptThresholdBytes || summary.workspaceContextFileThresholdBytes);
   const pairThreshold = Number(summary.workspaceContextPairThresholdBytes);
   const contextRisk = (Number.isFinite(pairSize) && Number.isFinite(pairThreshold) && pairThreshold > 0 && pairSize >= pairThreshold)
     || (Number.isFinite(projectContextSize) && Number.isFinite(fileThreshold) && fileThreshold > 0 && projectContextSize >= fileThreshold)
-    || (Number.isFinite(handoffSize) && Number.isFinite(fileThreshold) && fileThreshold > 0 && handoffSize >= fileThreshold);
+    || (Number.isFinite(handoffSize) && Number.isFinite(handoffThreshold) && handoffThreshold > 0 && handoffSize >= handoffThreshold);
   const rolloutRisk = Boolean(summary.rolloutOverWarningThreshold)
     || (Number.isFinite(rolloutSize) && Number.isFinite(rolloutThreshold) && rolloutThreshold > 0 && rolloutSize >= rolloutThreshold);
   const contextDetailFiles = [];
   if (Number.isFinite(pairSize) && pairSize > 0) contextDetailFiles.push(`pair ${formatFileSize(pairSize)}`);
   if (Number.isFinite(fileThreshold) && fileThreshold > 0) contextDetailFiles.push(`warn ${formatFileSize(fileThreshold)}`);
-  const handoffDetail = Number.isFinite(fileThreshold) && fileThreshold > 0
-    ? `warn ${formatFileSize(fileThreshold)}`
+  const handoffDetail = Number.isFinite(handoffThreshold) && handoffThreshold > 0
+    ? `warn ${formatFileSize(handoffThreshold)}`
     : "";
   const compactButton = (contextRisk || rolloutRisk)
     ? `<button class="turn-usage-new-thread" type="button" data-new-thread-from-current>压缩续接</button>`

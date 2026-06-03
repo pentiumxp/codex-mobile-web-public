@@ -382,3 +382,49 @@ The previous full handoff was archived and should be opened only when old proven
   - Public repository was not synced.
   - Open Hermes plugin clients need the v170 host refresh, hard refresh, or
     close/reopen once before the Topic-tab flash fix is active.
+
+## 2026-06-03 Handoff Usage Prompt Raised To 200KB v171
+
+- User report:
+  - After running compression continuation in other workspaces, compacted
+    handoffs could still sit near 100KB and immediately show another
+    `压缩续接` prompt.
+- Local fix:
+  - `server.js`
+    - Added `CODEX_MOBILE_CONTINUATION_CONTEXT_HANDOFF_PROMPT_BYTES`, default
+      `200 KB`.
+    - Usage summaries now include `workspaceHandoffPromptThresholdBytes`.
+  - `adapters/turn-usage-summary-service.js`
+    - Propagates the separate handoff prompt threshold into
+      `mobileUsageSummary`.
+  - `public/app.js`
+    - Uses the 200KB handoff prompt threshold for `HANDOFF.md` single-file
+      risk while keeping `PROJECT_CONTEXT.md` on the existing 100KB file
+      threshold and keeping the pair threshold unchanged.
+    - Static shell bumped to `0.1.11|codex-mobile-shell-v171`.
+  - `public/sw.js`
+    - Cache bumped to `codex-mobile-shell-v171`.
+  - Tests/docs updated:
+    - `test/conversation-render.test.js`
+    - `test/turn-usage-summary-service.test.js`
+    - `test/mobile-viewport.test.js`
+    - `test/thread-task-card-route.test.js`
+    - `docs/CONTEXT_STRATEGY.md`
+    - `docs/ARCHITECTURE.md`
+- Status:
+  - Validation passed:
+    - `node --check server.js`
+    - `node --check adapters\turn-usage-summary-service.js`
+    - `node --check public\app.js`
+    - `node --check public\sw.js`
+    - Focused `node --test test\turn-usage-summary-service.test.js
+      test\conversation-render.test.js test\mobile-viewport.test.js
+      test\thread-task-card-route.test.js` passed: 34/34.
+    - `npm.cmd test` passed: 301/301.
+    - `npm.cmd run check` passed.
+    - `npm.cmd run check:macos` passed.
+    - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+      warnings.
+    - BOM check for touched source/test/docs/context files had no output.
+  - Local changes are uncommitted.
+  - Public repository was not synced.

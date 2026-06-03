@@ -380,6 +380,7 @@ function turnUsageSummaryItem(turn, summary, options = {}) {
     agentsSizeBytes: numberValue(workspaceContextStats.agentsSizeBytes),
     workspaceContextPairSizeBytes: numberValue(workspaceContextStats.workspaceContextPairSizeBytes),
     workspaceContextFileThresholdBytes: numberValue(workspaceContextStats.fileThresholdBytes),
+    workspaceHandoffPromptThresholdBytes: numberValue(workspaceContextStats.handoffPromptThresholdBytes),
     workspaceContextPairThresholdBytes: numberValue(workspaceContextStats.pairThresholdBytes),
   });
   return {

@@ -321,6 +321,7 @@ test("completed turn usage summary renders workspace context sizes and compact a
       handoffSizeBytes: 180 * 1024,
       workspaceContextPairSizeBytes: 255 * 1024,
       workspaceContextFileThresholdBytes: 100 * 1024,
+      workspaceHandoffPromptThresholdBytes: 200 * 1024,
       workspaceContextPairThresholdBytes: 200 * 1024,
     },
   });
@@ -329,6 +330,34 @@ test("completed turn usage summary renders workspace context sizes and compact a
   assert.match(html, /handoff/);
   assert.match(html, /pair 255\.0 KB/);
   assert.match(html, /data-new-thread-from-current/);
+});
+
+test("handoff usage prompt waits for the 200KB handoff threshold", () => {
+  const renderTurnUsageSummary = evaluatedTurnUsageSummaryRenderer();
+  const below = renderTurnUsageSummary({
+    mobileUsageSummary: {
+      handoffSizeBytes: 180 * 1024,
+      projectContextSizeBytes: 20 * 1024,
+      workspaceContextPairSizeBytes: 200 * 1024 - 1,
+      workspaceContextFileThresholdBytes: 100 * 1024,
+      workspaceHandoffPromptThresholdBytes: 200 * 1024,
+      workspaceContextPairThresholdBytes: 200 * 1024,
+    },
+  });
+  const above = renderTurnUsageSummary({
+    mobileUsageSummary: {
+      handoffSizeBytes: 201 * 1024,
+      projectContextSizeBytes: 20 * 1024,
+      workspaceContextPairSizeBytes: 221 * 1024,
+      workspaceContextFileThresholdBytes: 100 * 1024,
+      workspaceHandoffPromptThresholdBytes: 200 * 1024,
+      workspaceContextPairThresholdBytes: 500 * 1024,
+    },
+  });
+
+  assert.doesNotMatch(below, /data-new-thread-from-current/);
+  assert.match(below, /warn 200\.0 KB/);
+  assert.match(above, /data-new-thread-from-current/);
 });
 
 test("turn usage input display excludes cached input tokens", () => {
