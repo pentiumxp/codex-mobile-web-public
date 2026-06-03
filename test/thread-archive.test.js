@@ -29,6 +29,20 @@ test("archive state merge keeps backup and archived-session filters active", () 
   assert.ok(serverJs.includes("url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/archive$/)"));
 });
 
+test("projectless session-index fallback skips archived sessions", () => {
+  assert.match(serverJs, /function readSessionIndexFallback\(/);
+  const start = serverJs.indexOf("function readSessionIndexFallback(");
+  const end = serverJs.indexOf("\nfunction ", start + 1);
+  const body = serverJs.slice(start, end);
+  assert.match(body, /const archivedIds = archivedSessionThreadIds\(\);/);
+  assert.match(body, /if \(!projectlessThreadIds\.has\(entry\.id\)\) continue;/);
+  assert.match(body, /if \(archivedIds\.has\(entry\.id\)\) continue;/);
+  assert.ok(
+    body.indexOf("if (!projectlessThreadIds.has(entry.id)) continue;")
+      < body.indexOf("if (archivedIds.has(entry.id)) continue;"),
+  );
+});
+
 test("thread list hides subagent child threads", () => {
   assert.match(serverJs, /function isSubagentThreadSummary\(/);
   assert.match(serverJs, /agentNickname/);
