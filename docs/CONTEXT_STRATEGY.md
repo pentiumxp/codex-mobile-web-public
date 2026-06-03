@@ -52,21 +52,25 @@ This policy reduces app-server history persistence requests. It does not purge i
 Continuation has two artifacts:
 
 - The source handoff file under `.agent-context/thread-handoffs/`, which is the high-priority fact source for the next thread.
-- The bootstrap message sent to the new Codex thread, which should be a small index and excerpt, not a full copy of all context.
+- The bootstrap message sent to the new Codex thread, which should be a small index, not a full copy of handoff, lineage, workspace context, or recent-turn content.
+
+The default bootstrap is reference-first. It lists the source handoff file, workspace context files, docs entrypoint, lineage index, and source-thread metadata. The new thread must use tools to read those files on demand. Do not inline file contents merely because they are available locally.
+
+Startup file loading should also be bounded. The source handoff may be read first, but if it is large the new thread should start with top metadata plus recent tail and then search/read specific sections. Workspace context should default to the `PROJECT_CONTEXT.md` routing section and the recent `HANDOFF.md` tail, not a full read of archived history or oversized live files.
 
 Default bootstrap limits are intentionally conservative:
 
 | Environment variable | Default | Purpose |
 | --- | ---: | --- |
-| `CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS` | `52000` | Final bootstrap message hard cap. |
-| `CODEX_MOBILE_CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS` | `12000` | Source handoff excerpt included inline. |
+| `CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS` | `12000` | Final bootstrap message hard cap. |
+| `CODEX_MOBILE_CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS` | `12000` | Legacy source handoff excerpt cap; the default bootstrap no longer inlines this excerpt. |
 | `CODEX_MOBILE_CONTINUATION_WORKSPACE_PROJECT_CONTEXT_CHARS` | `18000` | Project context excerpt cap. |
 | `CODEX_MOBILE_CONTINUATION_WORKSPACE_HANDOFF_TAIL_CHARS` | `18000` | Workspace handoff tail cap. |
 | `CODEX_MOBILE_CONTINUATION_ITEM_SUMMARY_CHARS` | `1200` | Per visible item summary cap. |
 | `CODEX_MOBILE_CONTINUATION_TURN_SUMMARY_ITEMS` | `4` | Non-user items kept per recent turn. |
 | `CODEX_MOBILE_CONTINUATION_LINEAGE_MAX_CHARS` | `12000` | Prior continuation lineage cap. |
 
-The bootstrap must list the full handoff file path and instruct the new thread to read it first. Do not raise bootstrap limits to work around a missing documentation update; put durable facts into `.agent-context` or `docs/`.
+The bootstrap must list the full handoff file path and instruct the new thread to read it first. It should not include source handoff excerpts, recent source-turn summaries, workspace context excerpts, or lineage handoff excerpts by default. Do not raise bootstrap limits to work around a missing documentation update; put durable facts into `.agent-context` or `docs/`.
 
 ## Workspace Context Compaction Policy
 

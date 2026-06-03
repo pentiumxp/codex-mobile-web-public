@@ -136,11 +136,12 @@ Implementation path:
 6. Keep compact live context as a routing index plus current state card. Move
    long history into archive/on-demand references rather than the default read
    path.
-7. Keep the new-thread bootstrap as a bounded index plus excerpts; the full source handoff lives in `.agent-context/thread-handoffs/` and must be read by the new thread when exact state matters.
-8. Include source id/title/cwd/rollout path/rollout size/status, latest runtime settings, recent turn summaries, workspace context excerpts, and lineage index.
-9. Avoid injecting unrelated private thread rules into the new bootstrap.
-10. For runtime settings, read rollout `turn_context` and SQLite/app-server metadata; pass only fields supported by app-server.
-11. Test with `test/continuation-lineage.test.js`, `test/continuation-handoff-compaction-service.test.js`, `test/new-thread-route.test.js`, and relevant runtime-settings tests. Keep focused workspace context compaction service tests green before changing route/UI wiring.
+7. Keep the new-thread bootstrap as a reference-only index by default; the full source handoff lives in `.agent-context/thread-handoffs/` and must be read by the new thread when exact state matters.
+8. Include source id/title/cwd/rollout path/rollout size/status, latest runtime settings, the source handoff path, workspace context paths, docs entrypoint, and lineage index path. Do not inline recent turn summaries, workspace context excerpts, source handoff excerpts, or lineage handoff excerpts by default.
+9. Instruct the new thread to use bounded reads for large handoff/context files: top metadata plus recent tail first, targeted search next, full reads only when needed.
+10. Avoid injecting unrelated private thread rules into the new bootstrap.
+11. For runtime settings, read rollout `turn_context` and SQLite/app-server metadata; pass only fields supported by app-server.
+12. Test with `test/continuation-lineage.test.js`, `test/continuation-handoff-compaction-service.test.js`, `test/new-thread-route.test.js`, and relevant runtime-settings tests. Keep focused workspace context compaction service tests green before changing route/UI wiring.
 
 ## Mux And Desktop Live Sync
 

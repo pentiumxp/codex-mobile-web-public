@@ -49,27 +49,32 @@ test("continuation lineage follows prior continuation threads by newThreadId", (
   assert.match(chainBody, /chain\.length < maxDepth/);
 });
 
-test("bootstrap makes lineage visible to the next agent", () => {
+test("bootstrap exposes lineage as file references instead of inline excerpts", () => {
   const lineageBody = functionBody("continuationLineageSection");
-  assert.match(lineageBody, /## 续接 lineage/);
-  assert.match(lineageBody, /Agent 可见的历史交接索引/);
-  assert.match(lineageBody, /先读取 lineage 指向的 handoff 文件/);
   assert.match(lineageBody, /continuationLineageHandoffExcerpt\(entry, perHandoffChars\)/);
 
+  const referenceBody = functionBody("continuationLineageIndexReference");
+  assert.match(referenceBody, /Lineage index file/);
+  assert.match(referenceBody, /Prior lineage handoff contents are intentionally not inlined/);
+  assert.doesNotMatch(referenceBody, /continuationLineageHandoffExcerpt/);
+
   const bootstrapBody = functionBody("newThreadBootstrapPromptScoped");
-  assert.match(bootstrapBody, /sourceLineage \|\| continuationLineageSection\(cwd, sourceThreadId\)/);
+  assert.match(bootstrapBody, /continuationLineageIndexReference\(cwd, sourceThreadId\)/);
+  assert.doesNotMatch(bootstrapBody, /continuationLineageSection\(cwd, sourceThreadId\)/);
   assert.match(bootstrapBody, /MAX_CONTINUATION_BOOTSTRAP_CHARS/);
 });
 
-test("continuation bootstrap keeps heavy context as bounded excerpts", () => {
-  assert.match(serverJs, /CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS \|\| "52000"/);
+test("continuation bootstrap keeps heavy context behind file references", () => {
+  assert.match(serverJs, /CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS \|\| "12000"/);
   assert.match(serverJs, /CODEX_MOBILE_CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS \|\| "12000"/);
   assert.match(serverJs, /CODEX_MOBILE_CONTINUATION_WORKSPACE_HANDOFF_TAIL_CHARS \|\| "18000"/);
   assert.match(serverJs, /CODEX_MOBILE_CONTINUATION_ITEM_SUMMARY_CHARS \|\| "1200"/);
 
-  const workspaceBody = functionBody("continuationWorkspaceContextSections");
-  assert.match(workspaceBody, /CONTINUATION_WORKSPACE_PROJECT_CONTEXT_CHARS/);
-  assert.match(workspaceBody, /CONTINUATION_WORKSPACE_HANDOFF_TAIL_CHARS/);
+  const workspaceBody = functionBody("workspaceContextReference");
+  assert.match(workspaceBody, /PROJECT_CONTEXT\.md/);
+  assert.match(workspaceBody, /HANDOFF\.md/);
+  assert.match(workspaceBody, /These files are intentionally not inlined/);
+  assert.doesNotMatch(workspaceBody, /readWorkspaceContextFile/);
 
   const itemBody = functionBody("continuationItemSummary");
   assert.match(itemBody, /CONTINUATION_ITEM_SUMMARY_CHARS/);
@@ -78,15 +83,33 @@ test("continuation bootstrap keeps heavy context as bounded excerpts", () => {
   assert.match(turnBody, /CONTINUATION_TURN_SUMMARY_ITEMS/);
 
   const handoffBody = functionBody("sourceHandoffSection");
-  assert.match(handoffBody, /CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS/);
-  assert.match(handoffBody, /Source-thread-generated handoff excerpt/);
+  assert.match(handoffBody, /The handoff content is intentionally not inlined/);
+  assert.doesNotMatch(handoffBody, /CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS/);
+  assert.doesNotMatch(handoffBody, /Source-thread-generated handoff excerpt/);
   assert.doesNotMatch(handoffBody, /sourceHandoff\.text \|\| "\(/);
+
+  const bootstrapBody = functionBody("newThreadBootstrapPromptScoped");
+  assert.match(bootstrapBody, /Continuation Bootstrap Index/);
+  assert.match(bootstrapBody, /bounded file sections/);
+  assert.match(bootstrapBody, /top metadata and recent tail first/);
+  assert.match(bootstrapBody, /sourceHandoffSection\(sourceHandoff\)/);
+  assert.match(bootstrapBody, /workspaceContextReference\(cwd\)/);
+  assert.doesNotMatch(bootstrapBody, /\?\?\?\?/);
+  assert.doesNotMatch(bootstrapBody, /continuationTurnSummaries\(snapshot\.turns\)/);
+  assert.doesNotMatch(bootstrapBody, /continuationWorkspaceContextSections\(cwd\)/);
+});
+
+test("source handoff generation prompt is ascii-safe", () => {
+  const promptBody = functionBody("sourceContinuationHandoffPrompt");
+  assert.match(promptBody, /Continuation Handoff File Generation/);
+  assert.match(promptBody, /Target file: \$\{handoffFile\}/);
+  assert.doesNotMatch(promptBody, /\?\?\?\?/);
 });
 
 test("continuation result persists lineage after bootstrap and archive attempt", () => {
   const startBody = functionBody("startThreadFromRequestBody");
-  assert.match(startBody, /const sourceLineage = continuationLineageSection\(cwd, sourceThreadId\)/);
-  assert.match(startBody, /input: newThreadBootstrapInput\(\{ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff, sourceLineage \}\)/);
+  assert.doesNotMatch(startBody, /const sourceLineage = continuationLineageSection\(cwd, sourceThreadId\)/);
+  assert.match(startBody, /input: newThreadBootstrapInput\(\{ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff \}\)/);
   assert.match(startBody, /const lineage = appendContinuationLineageEntry\(cwd, \{/);
   assert.match(startBody, /sourceArchived: Boolean\(sourceArchive && sourceArchive\.archived\)/);
   assert.match(startBody, /lineage,/);

@@ -273,7 +273,7 @@ const THREAD_DETAIL_ROLLOUT_MAX_BYTES = Math.max(
   1 * 1024 * 1024,
   Number(process.env.CODEX_MOBILE_THREAD_DETAIL_ROLLOUT_MAX_BYTES || String(DEFAULT_THREAD_DETAIL_ROLLOUT_MAX_BYTES)),
 );
-const MAX_CONTINUATION_BOOTSTRAP_CHARS = Math.max(20_000, Number(process.env.CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS || "52000"));
+const MAX_CONTINUATION_BOOTSTRAP_CHARS = Math.max(4_000, Number(process.env.CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS || "12000"));
 const CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS = Math.max(2_000, Number(process.env.CODEX_MOBILE_CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS || "12000"));
 const CONTINUATION_SOURCE_HANDOFF_STORED_CHARS = Math.max(CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS, Number(process.env.CODEX_MOBILE_CONTINUATION_SOURCE_HANDOFF_STORED_CHARS || "18000"));
 const CONTINUATION_WORKSPACE_PROJECT_CONTEXT_CHARS = Math.max(4_000, Number(process.env.CODEX_MOBILE_CONTINUATION_WORKSPACE_PROJECT_CONTEXT_CHARS || "18000"));
@@ -5587,29 +5587,28 @@ function turnIdFromResult(result) {
 
 function sourceContinuationHandoffPrompt({ handoffId, handoffFile, cwd, sourceThreadId, sourceThreadTitle }) {
   return [
-    "# 压缩续接交接文件生成",
+    "# Continuation Handoff File Generation",
     "",
-    "你正在源线程中执行续接前的交接整理。请基于本源线程自己的历史、当前工作区文件和实际仓库状态，总结交接重点并写入指定文件。",
+    "You are running inside the source thread before a continuation thread is created. Write a concise, evidence-grounded handoff file for the next thread.",
     "",
-    `目标文件：${handoffFile}`,
+    `Target file: ${handoffFile}`,
     "",
-    "必须执行：",
-    "1. 读取当前工作区的 `.agent-context/PROJECT_CONTEXT.md` 和 `.agent-context/HANDOFF.md`（如果存在），只把与当前工作区和本源线程有关的事实写入交接文件。",
-    "2. 检查当前工作区的关键状态，例如 `git status`、最近修改、未完成任务、验证结果、运行/部署注意事项；按实际需要读取相关文件。",
-    "3. 交接文件必须由本源线程重新总结，不能只复制固定模板，也不能混入其他线程或其他工作区的提交规则。",
-    "4. 只有当前工作区文件或本源线程历史明确涉及 private/public/README/release 规则时，才写这些规则，并标明来源；否则不要写。",
-    "5. 不要写入 raw secrets、access tokens、passwords、一次性授权状态、隐藏 UI 状态或长日志。",
-    "6. 覆盖写入目标文件。写完后只简短回复已写入该文件；不要提交、推送或修改无关文件。",
+    "Required actions:",
+    "1. Read the current workspace `.agent-context/PROJECT_CONTEXT.md` and `.agent-context/HANDOFF.md` if they exist, and include only facts relevant to this workspace and source thread.",
+    "2. Check the current repository state as needed, such as git status, recent changes, unfinished tasks, validation results, runtime status, and deployment caveats.",
+    "3. The handoff must be freshly summarized from this source thread and the local workspace. Do not copy a fixed template and do not mix in rules from another workspace.",
+    "4. Include private/public/README/release rules only when current workspace files or this source thread explicitly establish them, and name the source.",
+    "5. Do not write raw secrets, access tokens, passwords, one-time approval state, hidden UI state, long logs, full rollouts, or full prompts.",
+    "6. Overwrite the target file. After writing, reply only briefly that the file was written. Do not commit, push, or modify unrelated files.",
     "",
-    "交接文件格式要求：",
-    `- 第一行必须是：Continuation handoff marker: ${handoffId}`,
-    `- 必须包含：Source thread id: ${sourceThreadId || "(unknown)"}`,
-    `- 必须包含：Source thread title: ${sourceThreadTitle || "(unknown)"}`,
-    `- 必须包含：Workspace: ${cwd || "(unknown)"}`,
-    "- 后续用 Markdown 分节：当前目标、已完成事项、未完成事项、关键文件/命令、验证结果、风险/注意事项、下一线程建议。",
+    "Handoff file format:",
+    `- First line must be: Continuation handoff marker: ${handoffId}`,
+    `- Must include: Source thread id: ${sourceThreadId || "(unknown)"}`,
+    `- Must include: Source thread title: ${sourceThreadTitle || "(unknown)"}`,
+    `- Must include: Workspace: ${cwd || "(unknown)"}`,
+    "- Then use Markdown sections: Current goal, Completed work, Unfinished work, Key files/commands, Validation results, Risks/caveats, Next-thread suggestions.",
   ].join("\n");
 }
-
 async function waitForContinuationHandoffFile(target, timeoutMs = CONTINUATION_HANDOFF_TIMEOUT_MS) {
   const deadline = Date.now() + timeoutMs;
   let lastError = "";
@@ -5744,62 +5743,89 @@ function sourceHandoffSection(sourceHandoff) {
   if (!sourceHandoff) {
     return "No source-thread-generated handoff file was requested or available.";
   }
-  const excerpt = truncateMiddle(sourceHandoff.text || "", CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS, "source handoff excerpt");
   return [
     `- Handoff file: ${sourceHandoff.path}`,
+    `- Handoff relative path: ${sourceHandoff.relativePath || "(unknown)"}`,
     `- Handoff id: ${sourceHandoff.id}`,
     `- Handoff chars: ${sourceHandoff.chars || 0}`,
-    `- Handoff excerpt chars included: ${Math.min(excerpt.length, CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS)}`,
-    "- Read the full handoff file above when exact prior state is needed.",
-    "",
-    "### Source-thread-generated handoff excerpt",
-    excerpt || "(empty)",
+    "- The handoff content is intentionally not inlined in this bootstrap.",
+    "- Read this file first when exact source-thread state is needed.",
   ].join("\n");
 }
 
-function newThreadBootstrapPromptScoped({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff, sourceLineage }) {
+function continuationLineageIndexReference(cwd, sourceThreadId) {
+  const indexPath = continuationLineageIndexPath(cwd);
+  const chain = buildContinuationLineageChain(cwd, sourceThreadId);
+  const lines = [
+    `- Lineage index file: ${indexPath}`,
+    `- Prior continuation chain depth available: ${chain.length}`,
+    "- Prior lineage handoff contents are intentionally not inlined.",
+    "- Read the index, then the referenced handoff files only when older continuation provenance is needed.",
+  ];
+  if (chain.length) {
+    lines.push("- Prior lineage references:");
+    for (const entry of chain) {
+      lines.push(`  - ${entry.newThreadId} <- ${entry.sourceThreadId}; handoff: ${entry.handoffFile || entry.handoffRelativePath || "(unknown)"}; chars: ${entry.handoffChars || 0}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+function workspaceContextReference(cwd) {
+  return [
+    `- Project context: ${path.join(cwd || "", ".agent-context", "PROJECT_CONTEXT.md")}`,
+    `- Active handoff: ${path.join(cwd || "", ".agent-context", "HANDOFF.md")}`,
+    `- Docs entry: ${path.join(cwd || "", "docs", "README.md")}`,
+    "- These files are intentionally not inlined in this bootstrap.",
+    "- Read only the smallest relevant docs after the project context and active handoff.",
+  ].join("\n");
+}
+
+function newThreadBootstrapPromptScoped({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff }) {
   const snapshot = sourceSnapshot || { threadId: sourceThreadId, title: sourceThreadTitle, turns: [], readWarnings: [] };
   const publicRuntime = publicRuntimeSettings(runtimeSettings);
   const parts = [
-    "# 压缩续接启动上下文",
+    "# Continuation Bootstrap Index",
     "",
-    "本线程是 Codex Mobile Web 为了降低源线程 rollout JSONL 体积而创建的同工作区续接线程，不是普通新项目。",
-    "续接依据必须来自源线程刚生成的交接文件、当前工作区持久上下文文件和重新读取的本地仓库状态。",
+    "This thread is a same-workspace continuation created by Codex Mobile Web. This message is an index only; it does not inline old thread body, handoff excerpts, workspace context excerpts, or lineage excerpts.",
+    "Use tools to read bounded file sections when evidence is needed, or re-check the local repository and runtime state.",
     "",
-    "启动步骤：",
-    "1. 先读取下方“源线程交接文件”中列出的文件，并把它作为本线程的最高优先级交接事实源。",
-    "2. 再读取当前工作区的 `.agent-context/PROJECT_CONTEXT.md` 和 `.agent-context/HANDOFF.md`（如果存在），只加载与当前工作区有关的规则。",
-    "3. 用简短要点确认已加载的关键事实；不要确认与当前工作区无关的 private/public/README/release 规则。",
-    "4. 本轮不要修改文件、不要提交、不要推送，除非用户在续接线程里给出新的明确任务。",
+    "Startup steps:",
+    "1. Read the source-thread handoff file listed below first. If it is over 20KB, read its top metadata and recent tail first, then search/read specific sections as needed.",
+    "2. Read the current workspace context with bounded reads: `.agent-context/PROJECT_CONTEXT.md` top routing section and `.agent-context/HANDOFF.md` recent tail. Do not load archived/full context by default.",
+    "3. Read `docs/README.md`, then only the smallest relevant docs for the current task.",
+    "4. Confirm the loaded key facts briefly.",
+    "5. Do not edit files, commit, or push in the first continuation turn unless the user gives a new explicit task.",
     "",
-    "不要假设新线程继承了旧聊天流、临时 shell 状态、一次性审批、隐藏 UI 状态或旧线程的内存推理。需要依赖的内容必须来自工作区文件、源线程交接文件、下面的有限续接上下文，或重新读取本地仓库。",
+    "Do not assume the new thread inherited old chat flow, temporary shell state, one-time approvals, hidden UI state, or old-thread reasoning.",
     "",
-    "## 当前续接目标",
-    `- 新线程标题：${desiredTitle || "(not set)"}`,
-    `- 当前工作区：${cwd || "(unknown)"}`,
-    `- 创建时间：${new Date().toISOString()}`,
+    "## Continuation Target",
+    `- New thread title: ${desiredTitle || "(not set)"}`,
+    `- Workspace: ${cwd || "(unknown)"}`,
+    `- Created at: ${new Date().toISOString()}`,
     "",
-    "## 源线程",
+    "## Source Thread",
     continuationSourceThreadSection(snapshot),
     "",
-    "## 源线程交接文件",
+    "## Source Thread Handoff",
     sourceHandoffSection(sourceHandoff),
     "",
-    sourceLineage || continuationLineageSection(cwd, sourceThreadId),
+    "## Workspace Context Files",
+    workspaceContextReference(cwd),
     "",
-    "## 运行设置",
-    `- Mobile Web 传给续接线程的运行设置：${Object.keys(publicRuntime || {}).length ? JSON.stringify(publicRuntime) : "(none detected)"}`,
-    "- 如果后续任务需要更高权限或不同模型，按当前线程 UI/用户指令处理；不要假设旧线程的一次性授权仍然有效。",
+    "## Continuation Lineage",
+    continuationLineageIndexReference(cwd, sourceThreadId),
     "",
-    "## 最近源线程上下文摘录",
-    continuationTurnSummaries(snapshot.turns),
+    "## Runtime Settings",
+    `- Runtime settings passed by Mobile Web: ${Object.keys(publicRuntime || {}).length ? JSON.stringify(publicRuntime) : "(none detected)"}`,
+    "- If later work needs different permissions or a different model, follow the current thread UI/user instruction; do not assume old one-time approvals still apply.",
     "",
-    "## 工作区持久上下文摘录",
-    continuationWorkspaceContextSections(cwd),
+    "## Privacy And Size Constraints",
+    "- Do not copy handoff bodies, lineage handoff bodies, rollout bodies, or workspace context bodies back into chat unless the user explicitly asks.",
+    "- Do not write or display raw secrets, access keys, VAPID private keys, subscription endpoints, upload contents, full rollouts, full prompts, or one-time approval state.",
   ];
   return truncateMiddle(parts.join("\n"), MAX_CONTINUATION_BOOTSTRAP_CHARS, "continuation bootstrap");
 }
-
 async function tryUpdateThreadTitle(threadId, title) {
   if (!threadId || !title) return false;
   const attempts = [
@@ -5995,7 +6021,6 @@ async function startThreadFromRequestBody(body, options = {}) {
       turnCompletion: sourceHandoff.turnCompletion || null,
     };
   }
-  const sourceLineage = continuationLineageSection(cwd, sourceThreadId);
   progress("thread-start", "正在创建续接线程");
   const params = applyStartThreadRuntimeSettings({
     cwd,
@@ -6016,7 +6041,7 @@ async function startThreadFromRequestBody(body, options = {}) {
   const titleUpdatedBeforeBootstrap = await tryUpdateThreadTitle(threadId, desiredTitle).catch(() => false);
   const bootstrapParams = applyTurnRuntimeSettings({
     threadId,
-    input: newThreadBootstrapInput({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff, sourceLineage }),
+    input: newThreadBootstrapInput({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff }),
     cwd,
     summary: "auto",
   }, runtimeSettings);

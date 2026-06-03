@@ -68,6 +68,91 @@ The previous full handoff was archived and should be opened only when old proven
 - Status:
   - Local changes are uncommitted.
   - Public repository was not synced.
+
+## 2026-06-03 Continuation Bootstrap Uses Reference-only Index
+
+- User request:
+  - Reduce continuation prompt cost by storing full handoff/context in files and
+    sending only a short startup index to the new thread.
+  - Apply the same principle used for cross-thread cards: do not put large
+    payloads into chat when a durable file reference is enough.
+  - Keep repository docs in English; use Chinese only in direct replies to the
+    user.
+- Local implementation:
+  - `server.js`
+    - Lowered default `CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS` from `52,000`
+      to `12,000`.
+    - Changed `newThreadBootstrapPromptScoped()` to a reference-only index.
+      It now lists the source handoff path, workspace context paths, docs
+      entrypoint, lineage index path, source-thread metadata, and runtime
+      settings.
+    - Startup instructions now require bounded reads for large handoff/context
+      files: top metadata plus recent tail first, targeted search next, and full
+      reads only when needed.
+    - The bootstrap no longer inlines source handoff excerpts, recent
+      source-turn summaries, workspace context excerpts, or lineage handoff
+      excerpts.
+    - Replaced the source handoff generation prompt with English ASCII text to
+      avoid recurring Windows mojibake when this path is edited.
+  - `test/continuation-lineage.test.js`
+    - Updated coverage so continuation bootstrap must use file references for
+      handoff/context/lineage and must not contain obvious `????` replacement
+      text in the edited prompt bodies.
+  - Documentation updated:
+    - `docs/CONTEXT_STRATEGY.md`
+    - `docs/ARCHITECTURE.md`
+    - `docs/COMPLEX_FEATURE_PATHS.md`
+- Validation so far:
+  - `node --check server.js` passed.
+  - Focused `node --test test\continuation-lineage.test.js
+    test\continuation-handoff-compaction-service.test.js
+    test\new-thread-route.test.js` passed: 20/20.
+  - `npm.cmd test` passed: 302/302 before the bounded-read wording update.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+  - BOM check for touched files had no output.
+  - Restarted the 8787 Node listener during smoke: old PID `132060`, new PID
+    `84240`.
+  - `/api/public-config` returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v171`,
+    `shellCacheName=codex-mobile-shell-v171`, and
+    `imageContextMode=reference`.
+  - Authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`, `codexHome=C:\Users\xuxin\.codex-homes\previous`.
+  - Real continuation smoke using idle source thread
+    `019e8bad-1431-7241-b4b7-e0dc727e082d` completed:
+    job `48906b3d-c1b8-4c38-b3c8-273d9af7f886`,
+    new thread `019e8d98-a265-7f31-8de8-d3920ee4a954`,
+    source handoff chars `7351`, bootstrap chars `3857`.
+  - Smoke confirmed the new bootstrap rollout contains
+    `Continuation Bootstrap Index`, does not contain the old
+    `Source-thread-generated handoff excerpt` heading, and does not inline
+    recent source-turn summaries. It also showed that default full reads of
+    workspace context can still grow the next thread, which led to the
+    bounded-read instruction update above.
+- Status:
+  - Local changes are uncommitted.
+  - Public repository was not synced.
+  - Final validation after the bounded-read wording update passed:
+    - `node --check server.js`
+    - Focused `node --test test\continuation-lineage.test.js
+      test\continuation-handoff-compaction-service.test.js
+      test\new-thread-route.test.js` passed: 20/20.
+    - `npm.cmd run check` passed.
+    - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+      warnings.
+  - Restarted the 8787 Node listener again after the final server.js update:
+    old PID `84240`, actual listener PID `5416`.
+  - `/api/public-config` still returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v171`,
+    `shellCacheName=codex-mobile-shell-v171`, and
+    `imageContextMode=reference`.
+  - Authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`, `codexHome=C:\Users\xuxin\.codex-homes\previous`.
   - Open clients need the v167 refresh prompt, hard refresh, close/reopen, or
     Hermes plugin refresh path before this frontend send-path fix is active.
 

@@ -407,11 +407,11 @@ App-server `imageView` items and completed `imageGeneration` items with a `saved
 
 ### Rollout Continuation
 
-The preferred continuation endpoint is `POST /api/thread-continuations`. It creates a background job, compacts oversized live workspace context when needed, asks the source thread to write a handoff file, creates the new thread, sends a scoped bootstrap message, and returns the new thread id for browser switching. Workspace context compaction archives full `.agent-context/PROJECT_CONTEXT.md` and `.agent-context/HANDOFF.md` originals under `.agent-context/archive/context-compaction-<timestamp>/`, rewrites the live files into short routing/current-state documents, and records a manifest/report so older provenance remains available on demand.
+The preferred continuation endpoint is `POST /api/thread-continuations`. It creates a background job, compacts oversized live workspace context when needed, asks the source thread to write a handoff file, creates the new thread, sends a scoped bootstrap index, and returns the new thread id for browser switching. Workspace context compaction archives full `.agent-context/PROJECT_CONTEXT.md` and `.agent-context/HANDOFF.md` originals under `.agent-context/archive/context-compaction-<timestamp>/`, rewrites the live files into short routing/current-state documents, and records a manifest/report so older provenance remains available on demand.
 
-Continuation bootstraps must include enough context for a fresh thread without injecting unrelated private thread rules. Runtime settings inheritance should come from current rollout `turn_context` and SQLite/app-server metadata where supported.
+Continuation bootstraps must include enough references for a fresh thread without injecting unrelated private thread rules or old thread bodies. Runtime settings inheritance should come from current rollout `turn_context` and SQLite/app-server metadata where supported.
 
-The bootstrap message is an index plus bounded excerpts. The generated source handoff file under `.agent-context/thread-handoffs/` remains the high-priority full fact source, and the new thread is instructed to read that file instead of relying on a full inline paste.
+The bootstrap message is a reference-only index by default. It lists the generated source handoff file, workspace context files, docs entrypoint, lineage index, source-thread metadata, and runtime settings. It does not inline source handoff excerpts, recent source-turn summaries, workspace context excerpts, or lineage handoff excerpts. The generated source handoff file under `.agent-context/thread-handoffs/` remains the high-priority fact source, but large handoffs and workspace context files should be loaded through bounded head/tail reads plus targeted search before full reads are used.
 
 ### PWA Shell Cache And Build Id
 
