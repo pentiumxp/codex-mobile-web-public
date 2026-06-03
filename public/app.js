@@ -139,6 +139,10 @@ const state = {
   appWorkspacePath: "",
   sharedRestartBusy: false,
   sharedRestarting: false,
+  sharedRestartDialogOpen: false,
+  sharedRestartRiskThreads: [],
+  sharedRestartScopeLines: [],
+  sharedRestartConfirmResolve: null,
   serverBuildId: "",
   serverAssetBuildId: "",
   pageRefreshAvailable: false,
@@ -209,7 +213,7 @@ const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 8;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v162";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v163";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -1797,10 +1801,9 @@ function renderSharedRestartButton() {
   el.classList.toggle("checking", state.sharedRestartBusy || restarting);
 }
 
-async function handleSharedRestartClick() {
-  if (state.sharedRestartBusy || state.sharedRestarting) return;
+function sharedRestartScopeLines() {
   const isMac = state.serverPlatform === "darwin";
-  const scopeLines = isMac
+  return isMac
     ? [
       "这会短暂断开当前页面连接，并重启这台 Mac 上的 Mobile Web 服务。",
       "不会重启 Codex Desktop、shared mux 或其它本机服务。",
@@ -1809,15 +1812,119 @@ async function handleSharedRestartClick() {
       "这会短暂断开当前页面连接，并重启 Mobile Web、shared mux 和本地 app-server。",
       "不会重启 WSL、Codex Desktop 或其它本机服务。",
     ];
-  const confirmed = window.confirm([
-    "确认重启 Codex Mobile Web？",
-    "",
-    ...scopeLines,
-  ].join("\n"));
-  if (!confirmed) return;
+}
+
+function restartRiskThreads(threads) {
+  const seen = new Set();
+  const result = [];
+  for (const thread of threads || []) {
+    const id = String(thread && thread.id || "");
+    if (!id || seen.has(id) || !isRunningStatus(thread.status)) continue;
+    seen.add(id);
+    result.push(thread);
+  }
+  if (state.currentThreadId && state.activeTurnId && !seen.has(String(state.currentThreadId))) {
+    const current = state.currentThread || threadById(state.currentThreadId) || { id: state.currentThreadId, name: "Current session", status: { type: "active" } };
+    result.unshift(current);
+  }
+  return result;
+}
+
+async function fetchRestartRiskThreads() {
+  const params = new URLSearchParams({ limit: "200", archived: "false" });
+  const result = await api(`/api/threads?${params}`, { timeoutMs: 45000 });
+  return restartRiskThreads(visibleThreads(result.data || []));
+}
+
+function restartRiskThreadTitle(thread) {
+  return String(thread && (thread.name || thread.preview || thread.id) || "Untitled session").trim();
+}
+
+function restartRiskThreadMeta(thread) {
+  const parts = [];
+  const cwd = shortPath(thread && thread.cwd);
+  if (cwd) parts.push(cwd);
+  const status = statusText(thread && thread.status);
+  if (status) parts.push(status);
+  return parts.join(" | ");
+}
+
+function renderSharedRestartDialog() {
+  const dialog = $("restartConfirmDialog");
+  const subtitle = $("restartConfirmSubtitle");
+  const content = $("restartConfirmContent");
+  const proceed = $("restartConfirmProceed");
+  if (!dialog || !content || !subtitle || !proceed) return;
+  dialog.classList.toggle("hidden", !state.sharedRestartDialogOpen);
+  if (!state.sharedRestartDialogOpen) {
+    content.innerHTML = "";
+    return;
+  }
+  const riskThreads = state.sharedRestartRiskThreads || [];
+  const hasRisk = riskThreads.length > 0;
+  subtitle.textContent = hasRisk
+    ? `${riskThreads.length} running session${riskThreads.length === 1 ? "" : "s"} may be interrupted`
+    : "No running sessions were found";
+  proceed.textContent = hasRisk ? "仍然重启" : "Restart";
+  proceed.classList.toggle("danger", hasRisk);
+  const scopeHtml = (state.sharedRestartScopeLines || [])
+    .map((line) => `<div class="restart-confirm-line">${escapeHtml(line)}</div>`)
+    .join("");
+  const riskHtml = hasRisk
+    ? `<div class="restart-risk-block">
+        <div class="restart-risk-title">Running sessions</div>
+        <div class="restart-risk-list">
+          ${riskThreads.slice(0, 6).map((thread) => {
+            const meta = restartRiskThreadMeta(thread);
+            return `<div class="restart-risk-item">
+              <div class="restart-risk-item-title">${escapeHtml(restartRiskThreadTitle(thread))}</div>
+              ${meta ? `<div class="restart-risk-item-meta">${escapeHtml(meta)}</div>` : ""}
+            </div>`;
+          }).join("")}
+          ${riskThreads.length > 6 ? `<div class="restart-risk-more">另有 ${escapeHtml(String(riskThreads.length - 6))} 个 running session</div>` : ""}
+        </div>
+      </div>`
+    : `<div class="restart-safe-block">当前没有检测到 running session。重启仍会短暂断开本页面连接。</div>`;
+  content.innerHTML = `
+    <div class="restart-confirm-message">
+      ${hasRisk
+        ? "重启可能会打断正在通过 Codex Mobile 同步或运行的 session。建议等它们结束后再重启。"
+        : "确认重启 Codex Mobile Web？"}
+    </div>
+    ${riskHtml}
+    <div class="restart-confirm-scope">${scopeHtml}</div>
+  `;
+}
+
+function closeSharedRestartDialog(confirmed = false) {
+  const resolve = state.sharedRestartConfirmResolve;
+  state.sharedRestartDialogOpen = false;
+  state.sharedRestartRiskThreads = [];
+  state.sharedRestartScopeLines = [];
+  state.sharedRestartConfirmResolve = null;
+  renderSharedRestartDialog();
+  if (resolve) resolve(Boolean(confirmed));
+}
+
+function requestSharedRestartConfirmation(riskThreads, scopeLines) {
+  if (state.sharedRestartConfirmResolve) closeSharedRestartDialog(false);
+  state.sharedRestartRiskThreads = riskThreads || [];
+  state.sharedRestartScopeLines = scopeLines || [];
+  state.sharedRestartDialogOpen = true;
+  renderSharedRestartDialog();
+  return new Promise((resolve) => {
+    state.sharedRestartConfirmResolve = resolve;
+  });
+}
+
+async function handleSharedRestartClick() {
+  if (state.sharedRestartBusy || state.sharedRestarting) return;
   state.sharedRestartBusy = true;
   renderSharedRestartButton();
   try {
+    const riskThreads = await fetchRestartRiskThreads();
+    const confirmed = await requestSharedRestartConfirmation(riskThreads, sharedRestartScopeLines());
+    if (!confirmed) return;
     const result = await api("/api/restart/shared-chain", {
       method: "POST",
       body: "{}",
@@ -1833,9 +1940,12 @@ async function handleSharedRestartClick() {
       refreshPageForNewBuild().catch(showError);
     }, Math.max(1800, Number(result.restartInMs || 900) + 1200));
   } catch (err) {
-    state.sharedRestartBusy = false;
-    renderSharedRestartButton();
     showError(err);
+  } finally {
+    if (!state.sharedRestarting) {
+      state.sharedRestartBusy = false;
+      renderSharedRestartButton();
+    }
   }
 }
 
@@ -10066,6 +10176,11 @@ function wireUi() {
     if (event.target === $("updateDialog")) closeUpdatePanel();
   });
   if ($("sharedRestartButton")) $("sharedRestartButton").addEventListener("click", () => handleSharedRestartClick().catch(showError));
+  if ($("restartConfirmCancel")) $("restartConfirmCancel").addEventListener("click", () => closeSharedRestartDialog(false));
+  if ($("restartConfirmProceed")) $("restartConfirmProceed").addEventListener("click", () => closeSharedRestartDialog(true));
+  if ($("restartConfirmDialog")) $("restartConfirmDialog").addEventListener("click", (event) => {
+    if (event.target === $("restartConfirmDialog")) closeSharedRestartDialog(false);
+  });
   if ($("themeSettingsToggle")) $("themeSettingsToggle").addEventListener("click", () => {
     loadCodexProfiles().catch(showError);
     setTimeout(() => publishPluginNavigationState({ force: true }), 0);

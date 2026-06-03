@@ -777,6 +777,155 @@ html.visual-recovering body::before {
   background: rgba(122, 199, 167, 0.1);
 }
 
+.restart-confirm-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 98;
+  display: grid;
+  align-items: end;
+  justify-items: center;
+  padding: 16px 14px calc(16px + env(safe-area-inset-bottom, 0px));
+  background: rgba(10, 14, 18, 0.52);
+}
+
+.restart-confirm-dialog.hidden {
+  display: none;
+}
+
+.restart-confirm-panel {
+  width: min(480px, 100%);
+  max-height: min(680px, calc(100vh - 32px - env(safe-area-inset-bottom, 0px)));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.restart-confirm-head {
+  padding: 14px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.restart-confirm-title {
+  font-size: 17px;
+  font-weight: 760;
+}
+
+.restart-confirm-subtitle {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.restart-confirm-content {
+  display: grid;
+  gap: 12px;
+  overflow: auto;
+  padding: 14px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.restart-confirm-message {
+  color: var(--text);
+}
+
+.restart-risk-block,
+.restart-safe-block,
+.restart-confirm-scope {
+  padding: 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+}
+
+.restart-risk-block {
+  border-color: rgba(241, 135, 125, 0.42);
+}
+
+.restart-risk-title {
+  margin-bottom: 8px;
+  color: var(--danger-text);
+  font-size: 12px;
+  font-weight: 760;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.restart-risk-list {
+  display: grid;
+  gap: 8px;
+}
+
+.restart-risk-item {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 8px;
+  background: var(--control-muted-bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+}
+
+.restart-risk-item-title {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 740;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.restart-risk-item-meta,
+.restart-risk-more,
+.restart-confirm-line {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.restart-confirm-scope {
+  display: grid;
+  gap: 4px;
+}
+
+.restart-confirm-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.restart-confirm-cancel,
+.restart-confirm-proceed {
+  min-height: 42px;
+  border-radius: 8px;
+  border: 1px solid var(--line-soft);
+  font-size: 14px;
+  font-weight: 740;
+}
+
+.restart-confirm-cancel {
+  color: var(--muted);
+  background: transparent;
+}
+
+.restart-confirm-proceed {
+  color: var(--text-on-accent);
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+.restart-confirm-proceed.danger {
+  color: var(--danger-text);
+  background: rgba(241, 135, 125, 0.14);
+  border-color: rgba(241, 135, 125, 0.5);
+}
+
 .field-label {
   text-transform: uppercase;
   letter-spacing: 0.08em;

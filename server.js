@@ -6393,6 +6393,7 @@ function readSessionIndexFallback(limit = 80, filters = {}) {
     const globalState = filters.globalState || readGlobalState();
     const projectlessThreadIds = visibleProjectlessThreadIds(globalState);
     if (filters.cwd || projectlessThreadIds.size === 0) return [];
+    const archivedIds = archivedSessionThreadIds();
     const lines = fs.readFileSync(p, "utf8").split(/\r?\n/).filter(Boolean).slice(-1000);
     const byId = new Map();
     for (const line of lines) {
@@ -6404,6 +6405,7 @@ function readSessionIndexFallback(limit = 80, filters = {}) {
       }
       if (!entry.id) continue;
       if (!projectlessThreadIds.has(entry.id)) continue;
+      if (archivedIds.has(entry.id)) continue;
       const updatedAt = entry.updated_at ? Math.floor(Date.parse(entry.updated_at) / 1000) : 0;
       byId.set(entry.id, rowToFallbackThread({
         id: entry.id,
