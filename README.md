@@ -1427,6 +1427,10 @@ Mobile Web restart on Windows:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\start-codex-mobile-web.ps1 -HostAddress 0.0.0.0 -Port 8787 -RequireSharedAppServer
 ```
 
+### 2026-06-03 Public 热修说明（Restart 前 running session 保护 v163）
+
+本次 public 热修把 Mobile Web 的手动 Restart 从浏览器原生确认框改为自定义确认面板。点击 Restart 时，前端会先读取最近线程列表并检查 running session；如果检测到正在运行的 session，会在面板里列出风险 session，并提示重启可能中断通过 Codex Mobile 同步或运行的任务。版本仍为 `0.1.11`，PWA shell cache 升到 `codex-mobile-shell-v163`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能看到新的保护面板。
+
 ### 2026-06-02 Public 发布说明（自动协作回传、Profile 线程延续与刷新额度 v162）
 
 本次 public 发布同步 private 中已验证的 v160-v162 改动。版本仍为 `0.1.11`，PWA shell cache 升到 `codex-mobile-shell-v162`。部署后需要重启 8787 Node listener；已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开，才能拿到新的前端刷新和任务卡片提示逻辑。
