@@ -16,7 +16,7 @@ const {
 const { createSharedChainRestartService } = require("./adapters/shared-chain-restart-service");
 const { createHermesNotificationDelegateService } = require("./adapters/hermes-notification-delegate-service");
 const { runSqliteJson } = require("./adapters/sqlite-cli");
-const { compactWorkspaceHandoff } = require("./adapters/continuation-handoff-compaction-service");
+const { compactWorkspaceContext } = require("./adapters/continuation-handoff-compaction-service");
 const {
   localImageUploadsForContext,
   parseImageContextPolicyEnv,
@@ -292,6 +292,9 @@ const CONTINUATION_LINEAGE_MAX_DEPTH = Math.max(0, Math.min(5, Number(process.en
 const CONTINUATION_LINEAGE_MAX_CHARS = Math.max(2_000, Number(process.env.CODEX_MOBILE_CONTINUATION_LINEAGE_MAX_CHARS || "12000"));
 const CONTINUATION_CONTEXT_HANDOFF_COMPACT_BYTES = Math.max(64 * 1024, Number(process.env.CODEX_MOBILE_CONTINUATION_CONTEXT_HANDOFF_COMPACT_BYTES || String(300 * 1024)));
 const CONTINUATION_CONTEXT_HANDOFF_PRESERVE_CHARS = Math.max(8_000, Number(process.env.CODEX_MOBILE_CONTINUATION_CONTEXT_HANDOFF_PRESERVE_CHARS || "60000"));
+const CONTINUATION_CONTEXT_FILE_COMPACT_BYTES = Math.max(50 * 1024, Number(process.env.CODEX_MOBILE_CONTINUATION_CONTEXT_FILE_COMPACT_BYTES || String(100 * 1024)));
+const CONTINUATION_CONTEXT_PAIR_COMPACT_BYTES = Math.max(CONTINUATION_CONTEXT_FILE_COMPACT_BYTES, Number(process.env.CODEX_MOBILE_CONTINUATION_CONTEXT_PAIR_COMPACT_BYTES || String(200 * 1024)));
+const CONTINUATION_CONTEXT_COMPACT_PRESERVE_CHARS = Math.max(6_000, Number(process.env.CODEX_MOBILE_CONTINUATION_CONTEXT_COMPACT_PRESERVE_CHARS || "18000"));
 const RUNTIME_CONTEXT_CACHE_TTL_MS = Math.max(1000, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_CACHE_TTL_MS || "30000"));
 const RUNTIME_CONTEXT_CACHE_MAX = Math.max(20, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_CACHE_MAX || "200"));
 const MUX_REPLAY_NOTIFICATION_LIMIT = Math.max(0, Number(process.env.CODEX_MOBILE_MUX_REPLAY_NOTIFICATION_LIMIT || "200"));
@@ -2567,6 +2570,40 @@ function rolloutStatsForPath(rolloutPath) {
   }
 }
 
+function fileSizeBytes(filePath) {
+  if (!filePath || typeof filePath !== "string") return 0;
+  try {
+    const stat = fs.statSync(filePath);
+    return stat.isFile() ? stat.size : 0;
+  } catch (_) {
+    return 0;
+  }
+}
+
+function workspaceContextStatsForCwd(cwd) {
+  const root = String(cwd || "").trim();
+  if (!root) {
+    return {
+      projectContextSizeBytes: 0,
+      handoffSizeBytes: 0,
+      agentsSizeBytes: 0,
+      workspaceContextPairSizeBytes: 0,
+      fileThresholdBytes: CONTINUATION_CONTEXT_FILE_COMPACT_BYTES,
+      pairThresholdBytes: CONTINUATION_CONTEXT_PAIR_COMPACT_BYTES,
+    };
+  }
+  const projectContextSizeBytes = fileSizeBytes(path.join(root, ".agent-context", "PROJECT_CONTEXT.md"));
+  const handoffSizeBytes = fileSizeBytes(path.join(root, ".agent-context", "HANDOFF.md"));
+  return {
+    projectContextSizeBytes,
+    handoffSizeBytes,
+    agentsSizeBytes: fileSizeBytes(path.join(root, "AGENTS.md")),
+    workspaceContextPairSizeBytes: projectContextSizeBytes + handoffSizeBytes,
+    fileThresholdBytes: CONTINUATION_CONTEXT_FILE_COMPACT_BYTES,
+    pairThresholdBytes: CONTINUATION_CONTEXT_PAIR_COMPACT_BYTES,
+  };
+}
+
 function annotateThreadRolloutStats(thread) {
   if (!thread || typeof thread !== "object") return thread;
   const out = Object.assign({}, thread);
@@ -3002,7 +3039,10 @@ function compactThread(thread, options = {}) {
     }
     pendingSteerEchoStore.injectIntoThread(out);
     enrichThreadItemTimestampsFromRollout(out);
-    attachTurnUsageSummaries(out, readRolloutTurnUsageSummaries(rolloutPath), { rolloutStats });
+    attachTurnUsageSummaries(out, readRolloutTurnUsageSummaries(rolloutPath), {
+      rolloutStats,
+      workspaceContextStats: workspaceContextStatsForCwd(out.cwd),
+    });
     const latestIndex = out.turns.length - 1;
     out.turns = out.turns.map((turn, index) => compactTurn(turn, {
       allowLiveOperation: index === latestIndex,
@@ -5910,19 +5950,21 @@ async function startThreadFromRequestBody(body, options = {}) {
   if (visibility.workspaceKeys.size > 0 && !visibility.workspaceKeys.has(normalizeFsPath(cwd))) {
     throw httpStatusError(403, "Workspace is not visible in Codex Desktop");
   }
-  progress("context-compaction", "Checking workspace handoff size");
-  const contextCompaction = compactWorkspaceHandoff({
+  progress("context-compaction", "Checking workspace context size");
+  const contextCompaction = compactWorkspaceContext({
     cwd,
-    thresholdBytes: CONTINUATION_CONTEXT_HANDOFF_COMPACT_BYTES,
-    preserveChars: CONTINUATION_CONTEXT_HANDOFF_PRESERVE_CHARS,
+    thresholdBytes: CONTINUATION_CONTEXT_FILE_COMPACT_BYTES,
+    combinedThresholdBytes: CONTINUATION_CONTEXT_PAIR_COMPACT_BYTES,
+    preserveChars: CONTINUATION_CONTEXT_COMPACT_PRESERVE_CHARS,
   });
   if (job) job.contextCompaction = contextCompaction;
   if (contextCompaction && contextCompaction.compacted) {
-    progress("context-compaction", "Workspace handoff compacted", {
-      handoffPath: contextCompaction.handoffPath,
-      archivePath: contextCompaction.archivePath,
+    progress("context-compaction", "Workspace context compacted", {
+      archiveDir: contextCompaction.archiveDir,
+      manifestPath: contextCompaction.manifestPath,
       originalBytes: contextCompaction.originalBytes,
       compactedBytes: contextCompaction.compactedBytes,
+      reductionPercent: contextCompaction.reductionPercent,
     });
   }
   const sourceThreadId = String(body.sourceThreadId || "").trim();

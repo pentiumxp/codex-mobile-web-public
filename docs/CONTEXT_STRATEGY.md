@@ -68,9 +68,98 @@ Default bootstrap limits are intentionally conservative:
 
 The bootstrap must list the full handoff file path and instruct the new thread to read it first. Do not raise bootstrap limits to work around a missing documentation update; put durable facts into `.agent-context` or `docs/`.
 
+## Workspace Context Compaction Policy
+
+Continuation now compacts the workspace's live durable context before source
+handoff generation when the configured thresholds are exceeded. This is separate
+from shrinking the new-thread bootstrap: if `.agent-context/PROJECT_CONTEXT.md` or
+`.agent-context/HANDOFF.md` stays large, every later continuation can keep
+reloading the same oversized live context even when the bootstrap excerpt is
+bounded.
+
+The implemented MVP handles only:
+
+- `.agent-context/PROJECT_CONTEXT.md`
+- `.agent-context/HANDOFF.md`
+
+Do not include `AGENTS.md` in the first automated rewrite. `AGENTS.md` is a
+startup instruction file and may be loaded before the app can present a
+workspace-maintenance prompt. It can be diagnosed and reported, but its content
+should be manually edited into a short routing index unless the user explicitly
+approves an `AGENTS.md` rewrite.
+
+Default thresholds:
+
+| File class | Suggest | Strong candidate |
+| --- | ---: | ---: |
+| Live project context or handoff | `> 50 KB` | `> 100 KB` |
+| Combined `.agent-context` live pair | `> 100 KB` | `> 200 KB` |
+
+The continuation route uses the strong thresholds by default:
+
+- `CODEX_MOBILE_CONTINUATION_CONTEXT_FILE_COMPACT_BYTES`, default `100 KB`.
+- `CODEX_MOBILE_CONTINUATION_CONTEXT_PAIR_COMPACT_BYTES`, default `200 KB`.
+- `CODEX_MOBILE_CONTINUATION_CONTEXT_COMPACT_PRESERVE_CHARS`, default
+  `18,000`.
+
+Planned modes:
+
+- `disabled`: report only.
+- `suggest-only`: show a continuation warning and offer a workspace context
+  compaction action.
+- `auto-compact-above-threshold`: perform compaction only for ignored
+  `.agent-context` files that exceed the strong threshold and pass the safety
+  checks below.
+
+Safety requirements:
+
+1. Archive before rewrite under
+   `.agent-context/archive/context-compaction-<timestamp>/`.
+2. Copy the full original files to names such as
+   `PROJECT_CONTEXT.full-before-context-budget.md` and
+   `HANDOFF.full-before-context-budget.md`.
+3. Confirm the archive path is under the current workspace's `.agent-context`
+   tree and is ignored by Git before writing. If the workspace is a Git
+   checkout and the archive path is not ignored, skip compaction and report
+   `archive-not-ignored` rather than writing full historical context.
+4. Do not archive, print, or rewrite raw access keys, VAPID private keys,
+   subscription endpoints, uploaded file contents, full rollout logs, or
+   `.codex` runtime state.
+5. Do not create `.agent-context` in a workspace that does not already use it;
+   in that case, report suggestions only.
+6. Do not touch product code as part of this action.
+
+The compacted live files should become short routing documents:
+
+- `PROJECT_CONTEXT.md`: durable rules, source-of-truth order, public/private
+  release rules, safety boundaries, docs entrypoints, current product anchors,
+  and archive-loading criteria.
+- `HANDOFF.md`: current repo/runtime state, latest production version, latest
+  validation snapshot, current unfinished work, next steps, and archive/source
+  handoff pointers.
+
+Historical release logs, old risk lists, long diagnosis trails, and stale
+deployment records should move to the archive and be loaded only when the new
+task explicitly needs that history.
+
+Every compaction report should include:
+
+- before/after bytes and lines for each file;
+- total reduction percentage;
+- archive file paths;
+- rewritten live file paths;
+- Git ignore/tracked status for the live and archive paths;
+- whether any file was skipped and why.
+
+The current route performs the compaction inline when thresholds are exceeded
+and the workspace already has `.agent-context`. Future UI can expose
+`suggest-only` before the continuation starts: show the workspace context budget
+warning next to rollout/bootstrap size, then let the user run compaction before
+creating the next thread.
+
 ## Per-Turn Context Diagnostics
 
-Thread detail may attach a synthetic `turnUsageSummary` item to completed turns when the rollout tail contains app-server `token_count` events. The summary reports turn-level token usage, cumulative token usage, model context-window usage percentage, risk level, and rollout JSONL size.
+Thread detail may attach a synthetic `turnUsageSummary` item to completed turns when the rollout tail contains app-server `token_count` events. The summary reports turn-level token usage, cumulative token usage, model context-window usage percentage, risk level, rollout JSONL size, and current workspace context file sizes for `.agent-context/PROJECT_CONTEXT.md` and `.agent-context/HANDOFF.md`.
 
 Turn-level token usage must account for all valid scoped `token_count` events in the completed turn, not only the final event's `last_token_usage`. Mobile Web derives this value from consecutive cumulative `total_token_usage` deltas, treats duplicate identical cumulative events as zero additional usage, and falls back to the event's `last_token_usage` only when no reliable cumulative baseline exists. The context-window percentage and risk remain a final valid-event snapshot because they describe the prompt window at the end of the turn, not the sum of all model calls.
 
@@ -79,6 +168,11 @@ When a token event includes `cachedInputTokens`, the UI displays `in` as uncache
 Some app-server turns can emit a final zero/window sentinel after valid usage events: `last_token_usage` is all zero, `total_token_usage` component fields are zero, and `total_token_usage.total_tokens` equals `model_context_window`. This is not real usage and must be ignored so the latest valid scoped token event remains the final context snapshot.
 
 This is diagnostic display only. It must not change model input construction, continuation bootstrap content, app-server history, or rollout files. If a turn has no scoped `token_count` event, Mobile Web should omit the summary rather than guessing.
+
+When workspace context or rollout size crosses the configured continuation
+thresholds, the completed-turn Usage block may show a compact `压缩续接` action
+beside the risk badge. This uses the same continuation path as the top rollout
+warning and should not create a separate compaction mechanism.
 
 ## Recovery For Existing Oversized Threads
 

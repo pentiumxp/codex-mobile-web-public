@@ -91,6 +91,21 @@ function evaluatedTokenUsageSummaryText() {
   return Function(`${sources.join("\n")}\nreturn tokenUsageSummaryText;`)();
 }
 
+function evaluatedTurnUsageSummaryRenderer() {
+  const sources = [
+    "escapeHtml",
+    "formatFileSize",
+    "formatTokenCount",
+    "displayInputTokensExcludingCached",
+    "tokenUsageSummaryText",
+    "formatUsagePercent",
+    "contextRiskLabel",
+    "renderUsageMetric",
+    "renderTurnUsageSummary",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`${sources.join("\n")}\nreturn renderTurnUsageSummary;`)();
+}
+
 test("context compaction notices update status and collapse repeated turn notices", () => {
   assert.match(functionBody("visibleItemsForTurn"), /const contextEntryByKey = new Map\(\)/);
   assert.match(functionBody("visibleItemsForTurn"), /isContextCompactionItem\(item\)/);
@@ -281,13 +296,39 @@ test("thread merge drops superseded stale active turns", () => {
 });
 
 test("completed turns can render context and token usage summaries", () => {
-  assert.match(serverJs, /attachTurnUsageSummaries\(out, readRolloutTurnUsageSummaries\(rolloutPath\), \{ rolloutStats \}\)/);
+  assert.match(serverJs, /workspaceContextStats:\s*workspaceContextStatsForCwd\(out\.cwd\)/);
   assert.match(appJs, /function renderTurnUsageSummary\(item\)/);
   assert.match(functionBody("labelForItem"), /turnUsageSummary:\s*"Usage"/);
   assert.match(functionBody("renderItemBody"), /item\.type === "turnUsageSummary"[\s\S]*renderTurnUsageSummary\(item\)/);
   assert.match(functionBody("visibleItemSignature"), /item\.type === "turnUsageSummary"/);
   assert.match(functionBody("visibleItemSignature"), /mobileUsageSummary: item\.mobileUsageSummary/);
   assert.match(functionBody("turnFinalReceiptNode"), /:not\(\.turnUsageSummary\)/);
+});
+
+test("completed turn usage summary renders workspace context sizes and compact action", () => {
+  const renderTurnUsageSummary = evaluatedTurnUsageSummaryRenderer();
+  const html = renderTurnUsageSummary({
+    mobileUsageSummary: {
+      contextRiskLevel: "normal",
+      contextWindowUsedPercent: 25,
+      contextWindowUsedTokens: 25000,
+      modelContextWindow: 100000,
+      lastTokenUsage: { inputTokens: 1000, totalTokens: 1000 },
+      totalTokenUsage: { inputTokens: 2000, totalTokens: 2000 },
+      rolloutSizeBytes: 1024,
+      rolloutWarningThresholdBytes: 2048,
+      projectContextSizeBytes: 75 * 1024,
+      handoffSizeBytes: 180 * 1024,
+      workspaceContextPairSizeBytes: 255 * 1024,
+      workspaceContextFileThresholdBytes: 100 * 1024,
+      workspaceContextPairThresholdBytes: 200 * 1024,
+    },
+  });
+
+  assert.match(html, /context/);
+  assert.match(html, /handoff/);
+  assert.match(html, /pair 255\.0 KB/);
+  assert.match(html, /data-new-thread-from-current/);
 });
 
 test("turn usage input display excludes cached input tokens", () => {

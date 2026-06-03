@@ -255,7 +255,7 @@ Mobile Web should compute the displayed turn-level usage from cumulative `total_
 
 ## Workspace Token Totals Are Missing Or Wrong
 
-Workspace `总/周/今` totals come from
+Workspace `鎬?鍛?浠奰 totals come from
 `%USERPROFILE%\.codex-mobile-web\token-usage-stats.sqlite`, not from the browser
 session or a fresh rollout scan. The write happens on `turn/completed` after
 Mobile Web resolves the scoped `Usage` summary for that turn.
@@ -280,10 +280,10 @@ If the sidebar still shows zero after a known completed turn, inspect the local
 runtime DB rather than the frontend cache. Do not edit `.codex` state to repair
 this ledger.
 
-If the full-screen `统计` project list shows a garbled Workspace name while
+If the full-screen `缁熻` project list shows a garbled Workspace name while
 `/api/workspaces` shows the same root correctly, inspect the `cwd` values in the
 token usage DB. Current builds normalize known Windows mojibake such as
-`ϵͳ¹¤¾ß` back to the visible Unicode Workspace root during record and query, so
+`系统鹿陇戮脽` back to the visible Unicode Workspace root during record and query, so
 old rows should merge into the correct project after the 8787 listener restarts.
 
 ## Page Refresh Prompt Appears While Files Are Still Being Edited
@@ -291,8 +291,22 @@ old rows should merge into the correct project after the 8787 listener restarts.
 `/api/public-config` should report the app-shell build/cache snapshot captured
 when the 8787 listener started. It should not change merely because `public/`
 files have been edited on disk while the old listener is still running. A normal
-"页面有新版本" prompt should appear only after the listener has restarted into the
-new build and the browser has preflighted the full target shell cache.
+`New version available. Tap to refresh.` prompt should appear only after the
+listener has restarted into the new build.
+
+Current standalone behavior after `codex-mobile-shell-v170` is intentionally
+manual: version checks only show the visible refresh button. They must not
+prewarm shell caches, call `window.location.reload()`, or schedule a timed reload
+after shared-chain restart. The only normal standalone reload trigger is a user
+click on `#pageRefreshPrompt`.
+
+Hermes embed mode is stricter about host refreshes. It may request a Hermes host
+iframe refresh when `clientBuildId` / shell cache changes, because the open
+iframe is running old frontend code. It must not request a host refresh for a
+server-only asset `buildId` change. Foregrounding the plugin or tapping the
+Hermes bottom Topic tab can run a build check, and server-only asset drift should
+be recorded silently rather than causing a visible old-page-to-new-page iframe
+reload.
 
 If the prompt appears immediately after a source edit and before a server
 restart, check whether `clientBuildId()`, `shellCacheName`, or `buildId` has
@@ -389,7 +403,10 @@ Current implementation rules:
 - autonomous workflow target completion creates an automatic reverse-direction
   return card by default. The return card is keyed by original card id plus the
   completed target turn id and should auto-inject into the source thread
-  through the same workflow grant.
+  through the same workflow grant. That return card should have
+  `delivery.autoReturnOnCompletion=false`; its own completed turn must not
+  create another return card. Its title should contain only one `Auto return:`
+  prefix even if the original title already had that prefix.
 
 If an autonomous follow-up card does not auto-run, inspect the stored card and
 workflow fields in `%USERPROFILE%\.codex-mobile-web\thread-task-cards.json`.
@@ -404,8 +421,13 @@ target turn completes, inspect the original card's `injectedTurnId`,
 confirm that Mobile Web received a fresh `turn/completed` notification for that
 `injectedTurnId` and that `server.js` has restarted into a build containing
 `maybeAutoReplyThreadTaskCard()`. If `autoReplyCardId` exists, inspect the
-return card status and `injectedTurnId`; it should be `approved` with the same
-`workflow.id` and target the original source thread.
+return card status, `injectedTurnId`, `workflow.id`, target thread, and
+`delivery.autoReturnOnCompletion`; it should be `approved`, target the original
+source thread, keep the same workflow id, and have
+`autoReturnOnCompletion=false`. If a return card completion creates another
+return, or the title grows into `Auto return: Auto return: ...`, restart Mobile
+Web into a build containing the terminal-return guard in
+`adapters/thread-task-card-service.js`.
 
 If source-side draft `Approve` appears to hang, check whether the card was
 already created in `%USERPROFILE%\.codex-mobile-web\thread-task-cards.json`.
@@ -439,26 +461,24 @@ read should return `404 task_card_not_found`; wrong-thread actions should return
 500, the route error wrapper has regressed and the browser may show an
 ambiguous failure instead of a bounded task-card diagnostic.
 
-## `#自由协作` Task-card Command Does Not Parse
+## `#鑷敱鍗忎綔` Task-card Command Does Not Parse
 
-Only the exact `#自由协作` prefix is reserved for cross-thread task-card
-commands. Ordinary `#...` text and `# 自由协作` with a space after `#` should
+Only the exact `#鑷敱鍗忎綔` prefix is reserved for cross-thread task-card
+commands. Ordinary `#...` text and `# 鑷敱鍗忎綔` with a space after `#` should
 enter the normal message-send route.
 
 Current behavior:
 
 - bare `#` is a normal message, not a task-card command;
-- `#自由协作` commands do not support attachments yet;
+- `#鑷敱鍗忎綔` commands do not support attachments yet;
 - the browser sends a bounded draft request to the current Codex thread;
 - the model must return a bounded draft block with one visible
   `targetThreadId`, or an empty target plus an error.
 
 Working examples:
 
-#自由协作 发给 Finance Review：请核验 5 月结账映射
-#自由协作 让 Hermes 05-26 配合处理插件刷新联动
-#自由协作 请让线程「Hermes 发布检查」确认插件通知回执是否已入库
-If no draft card appears, inspect:
+#鑷敱鍗忎綔 鍙戠粰 Finance Review锛氳鏍搁獙 5 鏈堢粨璐︽槧灏?#鑷敱鍗忎綔 璁?Hermes 05-26 閰嶅悎澶勭悊鎻掍欢鍒锋柊鑱斿姩
+#鑷敱鍗忎綔 璇疯绾跨▼銆孒ermes 鍙戝竷妫€鏌ャ€嶇‘璁ゆ彃浠堕€氱煡鍥炴墽鏄惁宸插叆搴?If no draft card appears, inspect:
 
 - whether the current sent message contains the
   `<codex-mobile-thread-task-card-request>` envelope;
@@ -472,7 +492,7 @@ If no draft card appears, inspect:
   messages instead of aborting before the later draft item;
 - whether the returned `targetThreadId` is still present in the visible thread
   list;
-- whether attachments were present, which still blocks `#自由协作` commands.
+- whether attachments were present, which still blocks `#鑷敱鍗忎綔` commands.
 
 Current UI rules:
 
@@ -494,9 +514,9 @@ If the plugin sidebar is missing the version pill, public-PR status, or
 Current builds should hide only the duplicate main-pane version actions, not the
 sidebar header row.
 
-## Hermes Embed 压缩续接确认框不出现
+## Hermes Embed 鍘嬬缉缁帴纭妗嗕笉鍑虹幇
 
-If `压缩续接` can be selected from the thread action sheet but no confirmation
+If `鍘嬬缉缁帴` can be selected from the thread action sheet but no confirmation
 popup appears in Hermes embed mode, check whether the browser is still using the
 old native `window.confirm(...)` path. Current builds should render an in-app
 continuation dialog inside the iframe, because native confirm dialogs are not
@@ -757,7 +777,7 @@ the final plugin primary page, inspect the embedded startup loading gate.
 
 Expected behavior after `codex-mobile-shell-v147`:
 
-- `/?embed=hermes` shows a stable `正在加载 Codex...` loading layer during initial
+- `/?embed=hermes` shows a stable `姝ｅ湪鍔犺浇 Codex...` loading layer during initial
   bootstrap.
 - The app shell stays hidden behind that layer until `loadWorkspaces()`,
   `loadThreads()`, and the final primary page, launch target, or route hint have
@@ -882,21 +902,26 @@ The page-refresh prompt and quota refresh are related but not identical. The
 prompt is primarily a PWA shell/cache update path; quota chips come from active
 `/api/public-config` and `/api/status` snapshots.
 
-Expected behavior after `codex-mobile-shell-v162`:
+Expected behavior after `codex-mobile-shell-v170`:
 
-- Clicking `页面有新版本，点击刷新` fetches the latest `/api/public-config`.
+- No automatic reload should happen after build detection, foreground recovery,
+  reconnect, or shared-chain restart. Those paths only show the visible refresh
+  button.
+- Clicking `New version available. Tap to refresh.` fetches the latest
+  `/api/public-config`.
 - The browser applies `rateLimits` / `rateLimitsByModel` from that config before
-  pruning old shell caches or calling `window.location.reload()`.
+  preparing shell assets, pruning old shell caches, and calling
+  `window.location.reload()`.
 - Killing and reopening the PWA should no longer be required merely to update
   visible quota after a profile switch or controlled restart.
 - If quota is still stale, compare authenticated `/api/status.rateLimits` with
   the composer chips. If `/api/status` is correct but the UI is not, the open
-  client is still running an older shell and needs a hard refresh or close/reopen
-  once to load v162 or newer.
+  client is still running an older shell and needs one manual refresh or
+  close/reopen once to load v170 or newer.
 
-## Source `#自由协作` Task-Card Draft Reappears After Approve Or Dismiss
+## Source `#鑷敱鍗忎綔` Task-Card Draft Reappears After Approve Or Dismiss
 
-If the source thread hides a `#自由协作`-generated draft card immediately after
+If the source thread hides a `#鑷敱鍗忎綔`-generated draft card immediately after
 `Approve` or `Dismiss`, but the same draft comes back after leaving and
 re-entering the thread, the draft-settled state was only held in browser memory.
 
@@ -911,7 +936,7 @@ Expected behavior after `codex-mobile-shell-v129`:
 
 ## Cross-Thread Task Card Does Not Reach Target
 
-If a `#自由协作` cross-thread card appears to finish in the source thread but no
+If a `#鑷敱鍗忎綔` cross-thread card appears to finish in the source thread but no
 pending card appears in the target thread, check the server-side materialization
 path before blaming the model response.
 

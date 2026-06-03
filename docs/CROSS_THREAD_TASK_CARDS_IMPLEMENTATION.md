@@ -14,7 +14,8 @@ layout and test strategy.
   - status transitions
   - target-side approval in-flight persistence before external `turn/start`
   - autonomous workflow grants after first target approval
-  - automatic completion return cards for autonomous workflows
+  - automatic completion return cards for autonomous workflows, with terminal
+    return-card delivery flags and single-prefix `Auto return:` titles
   - idempotency
   - storage
   - injection payload generation
@@ -119,7 +120,10 @@ If sqlite is chosen, keep it separate from normal thread message history.
    `threadTaskCardService.maybeAutoReplyCompletedTurn()`, which creates an
    idempotent reverse-direction card with the completed turn receipt and the
    same workflow id. The existing workflow grant auto-approves that return card
-   and injects it into the original source thread.
+   and injects it into the original source thread. Return cards must set
+   `delivery.autoReturnOnCompletion=false` and their injected message must not
+   advertise another auto-return; otherwise a completed return turn can start an
+   indefinite ping-pong loop.
 
 ## Harness
 
@@ -155,7 +159,8 @@ After implementation begins, expand coverage with:
 - service tests for autonomous workflow activation, same-pair auto-approval,
   reverse-direction auto-approval, and unrelated-pair rejection;
 - service tests for target injected-turn completion creating one auto-approved
-  reverse card back to the source thread;
+  reverse card back to the source thread, refusing recursive completion returns,
+  and collapsing stacked `Auto return:` title prefixes;
 - route tests for authorization and action endpoints;
 - route/static tests that `server.js` wires `turn/completed` through
   `maybeAutoReplyCompletedTurn`;

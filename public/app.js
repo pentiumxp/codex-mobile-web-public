@@ -213,7 +213,7 @@ const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 8;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v166";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v170";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -1938,9 +1938,6 @@ async function handleSharedRestartClick() {
     const connection = $("connectionState");
     if (connection) connection.textContent = "Restarting";
     renderSharedRestartButton();
-    window.setTimeout(() => {
-      refreshPageForNewBuild().catch(showError);
-    }, Math.max(1800, Number(result.restartInMs || 900) + 1200));
   } catch (err) {
     showError(err);
   } finally {
@@ -2032,7 +2029,8 @@ function initializePageBuildState(config) {
   const currentServerBuildId = serverBuildIdFromConfig(config);
   if (state.serverBuildId && currentServerBuildId && currentServerBuildId !== state.serverBuildId) {
     state.pageRefreshBuildId = currentServerBuildId;
-    schedulePageRefreshCheck(0, { force: true });
+    state.pageRefreshReason = "build";
+    state.pageRefreshAvailable = true;
   }
   renderPageRefreshPrompt();
 }
@@ -2040,29 +2038,21 @@ function initializePageBuildState(config) {
 function renderPageRefreshPrompt() {
   const el = $("pageRefreshPrompt");
   if (!el) return;
-  if (isHermesEmbedMode()) {
-    el.classList.add("hidden");
-    el.disabled = false;
-    return;
-  }
   const restarting = state.pageRefreshReason === "restart";
   const reconnecting = state.pageRefreshReason === "reconnect" || restarting;
   el.classList.toggle("hidden", !state.pageRefreshAvailable && !state.pageRefreshReloading);
   el.disabled = state.pageRefreshReloading;
   if (state.pageRefreshReloading) {
-    el.textContent = restarting ? "正在等待服务恢复…" : reconnecting ? "正在刷新并重连…" : "正在刷新页面…";
+    el.textContent = restarting ? "Waiting for service, then refreshing..." : reconnecting ? "Refreshing and reconnecting..." : "Refreshing page...";
   } else {
-    el.textContent = restarting ? "服务重启中，点击刷新并重连" : reconnecting ? "连接中断，点击刷新并重连" : "页面有新版本，点击刷新";
+    el.textContent = restarting ? "Service restarted. Tap to refresh." : reconnecting ? "Connection changed. Tap to refresh." : "New version available. Tap to refresh.";
   }
-  el.title = restarting
-    ? "Mobile Web 服务恢复后会刷新页面并重新连接"
-    : reconnecting
-    ? "当前连接中断；点击后会等待 Mobile Web 恢复并重新连接"
+  el.title = restarting || reconnecting
+    ? "Manual refresh only; the page will not reload until this button is tapped."
     : state.pageRefreshBuildId
-    ? `服务端版本已变为 ${state.pageRefreshBuildId}，点击刷新页面`
-    : "服务端页面资源已更新，点击刷新页面";
+    ? `Server version is ${state.pageRefreshBuildId}. Tap to refresh manually.`
+    : "Server page assets changed. Tap to refresh manually.";
 }
-
 function showReconnectRefreshPrompt(reason = "reconnect") {
   if (state.pageRefreshReloading) return;
   state.pageRefreshAvailable = true;
@@ -2100,12 +2090,16 @@ async function checkPageRefreshAvailability(options = {}) {
     const assetsChanged = Boolean(nextAssetBuildId && state.serverAssetBuildId && nextAssetBuildId !== state.serverAssetBuildId);
     if (clientChanged || assetsChanged) {
       if (isHermesEmbedMode()) {
-        state.pageRefreshBuildId = nextBuildId;
-        state.pageRefreshReason = "build";
-        requestHermesPluginRefresh("server_build_changed", { force: true });
+        if (clientChanged) {
+          state.pageRefreshBuildId = nextBuildId;
+          state.pageRefreshPreparedConfig = config;
+          requestHermesPluginRefresh("server_build_changed", { force: true });
+        }
+        if (!clientChanged && assetsChanged) {
+          state.serverAssetBuildId = nextAssetBuildId;
+        }
         return;
       }
-      await preparePageShellAssets(config, { populateCache: true });
       state.pageRefreshAvailable = true;
       state.pageRefreshReason = "build";
       state.pageRefreshBuildId = nextBuildId;
@@ -2155,10 +2149,6 @@ async function waitForPageBuildConfig(timeoutMs = 18000) {
 
 async function refreshPageForNewBuild() {
   if (state.pageRefreshReloading) return;
-  if (isHermesEmbedMode()) {
-    requestHermesPluginRefresh("server_build_changed", { force: true });
-    return;
-  }
   state.pageRefreshReloading = true;
   renderPageRefreshPrompt();
   saveCurrentDraftNow();
@@ -2186,7 +2176,6 @@ async function refreshPageForNewBuild() {
       state.pageRefreshReason = "";
     }
     renderPageRefreshPrompt();
-    schedulePageRefreshCheck(5000, { force: true });
   }
 }
 
@@ -6154,8 +6143,9 @@ function enterNewThreadDraft() {
 }
 
 function bindCurrentThreadActions() {
-  const button = $("conversation").querySelector("[data-new-thread-from-current]");
-  if (button) button.addEventListener("click", startNewThreadFromCurrent);
+  $("conversation").querySelectorAll("[data-new-thread-from-current]").forEach((button) => {
+    button.addEventListener("click", startNewThreadFromCurrent);
+  });
   const taskButton = $("conversation").querySelector("[data-create-thread-task-card]");
   if (taskButton) taskButton.addEventListener("click", createThreadTaskCardFromCurrent);
   const dismiss = $("conversation").querySelector("[data-dismiss-rollout-warning]");
@@ -8074,17 +8064,41 @@ function renderTurnUsageSummary(item) {
   const rolloutDetail = Number.isFinite(rolloutThreshold) && rolloutThreshold > 0
     ? `warn ${formatFileSize(rolloutThreshold)}`
     : "";
+  const projectContextSize = Number(summary.projectContextSizeBytes);
+  const handoffSize = Number(summary.handoffSizeBytes);
+  const pairSize = Number(summary.workspaceContextPairSizeBytes);
+  const fileThreshold = Number(summary.workspaceContextFileThresholdBytes);
+  const pairThreshold = Number(summary.workspaceContextPairThresholdBytes);
+  const contextRisk = (Number.isFinite(pairSize) && Number.isFinite(pairThreshold) && pairThreshold > 0 && pairSize >= pairThreshold)
+    || (Number.isFinite(projectContextSize) && Number.isFinite(fileThreshold) && fileThreshold > 0 && projectContextSize >= fileThreshold)
+    || (Number.isFinite(handoffSize) && Number.isFinite(fileThreshold) && fileThreshold > 0 && handoffSize >= fileThreshold);
+  const rolloutRisk = Boolean(summary.rolloutOverWarningThreshold)
+    || (Number.isFinite(rolloutSize) && Number.isFinite(rolloutThreshold) && rolloutThreshold > 0 && rolloutSize >= rolloutThreshold);
+  const contextDetailFiles = [];
+  if (Number.isFinite(pairSize) && pairSize > 0) contextDetailFiles.push(`pair ${formatFileSize(pairSize)}`);
+  if (Number.isFinite(fileThreshold) && fileThreshold > 0) contextDetailFiles.push(`warn ${formatFileSize(fileThreshold)}`);
+  const handoffDetail = Number.isFinite(fileThreshold) && fileThreshold > 0
+    ? `warn ${formatFileSize(fileThreshold)}`
+    : "";
+  const compactButton = (contextRisk || rolloutRisk)
+    ? `<button class="turn-usage-new-thread" type="button" data-new-thread-from-current>压缩续接</button>`
+    : "";
   const risk = contextRiskLabel(summary.contextRiskLevel || "unknown");
   return `<div class="turn-usage-summary risk-${escapeHtml(risk)}">
     <div class="turn-usage-summary-head">
       <span>Context and token usage</span>
-      <strong>${escapeHtml(risk)}</strong>
+      <div class="turn-usage-summary-head-actions">
+        ${compactButton}
+        <strong>${escapeHtml(risk)}</strong>
+      </div>
     </div>
     <div class="turn-usage-grid">
       ${renderUsageMetric("context window", formatUsagePercent(summary.contextWindowUsedPercent), contextDetail)}
       ${renderUsageMetric("last turn", lastUsage)}
       ${renderUsageMetric("thread total", totalUsage)}
       ${renderUsageMetric("rollout", Number.isFinite(rolloutSize) ? formatFileSize(rolloutSize) : "--", rolloutDetail)}
+      ${renderUsageMetric("context", Number.isFinite(projectContextSize) && projectContextSize > 0 ? formatFileSize(projectContextSize) : "--", contextDetailFiles.join(" | "))}
+      ${renderUsageMetric("handoff", Number.isFinite(handoffSize) && handoffSize > 0 ? formatFileSize(handoffSize) : "--", handoffDetail)}
     </div>
   </div>`;
 }
@@ -9650,7 +9664,7 @@ async function sendMessage(event) {
     return;
   }
   const outboundText = threadTaskCardCommand ? buildThreadTaskCardDraftRequestText(text) : text;
-  const steering = Boolean(state.activeTurnId && hasContent);
+  const steering = Boolean(!threadTaskCardCommand && state.activeTurnId && hasContent);
   const steerTurnId = steering ? String(state.activeTurnId) : "";
   const submittedDraftKey = currentDraftKey();
   const clientSubmissionId = createSubmissionId();

@@ -12,6 +12,23 @@ const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 
+function functionBody(source, name) {
+  let start = source.indexOf(`function ${name}(`);
+  if (start === -1) start = source.indexOf(`async function ${name}(`);
+  assert.notEqual(start, -1, `${name} not found`);
+  const signatureEnd = source.indexOf(") {", start);
+  const brace = source.indexOf("{", signatureEnd === -1 ? start : signatureEnd);
+  let depth = 0;
+  for (let i = brace; i < source.length; i += 1) {
+    if (source[i] === "{") depth += 1;
+    if (source[i] === "}") {
+      depth -= 1;
+      if (depth === 0) return source.slice(start, i + 1);
+    }
+  }
+  throw new Error(`${name} body not closed`);
+}
+
 test("self-update UI explains supervisor-dependent restart", () => {
   assert.match(appJs, /等待重启…/);
   assert.match(appJs, /服务会退出并等待启动任务或守护脚本拉起/);
@@ -41,12 +58,17 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(appJs, /function rememberRateLimitsFromConfig\(config\)/);
   assert.match(appJs, /function preparePageShellAssets\(config, options = \{\}\)/);
   assert.match(appJs, /rememberRateLimitsFromConfig\(config\);[\s\S]*await preparePageShellAssets\(config, \{ populateCache: true \}\)/);
-  assert.match(appJs, /await preparePageShellAssets\(config, \{ populateCache: true \}\)/);
+  assert.doesNotMatch(functionBody(appJs, "checkPageRefreshAvailability"), /preparePageShellAssets\(config, \{ populateCache: true \}\)/);
+  assert.match(functionBody(appJs, "checkPageRefreshAvailability"), /if \(isHermesEmbedMode\(\)\) \{[\s\S]*if \(clientChanged\) \{[\s\S]*requestHermesPluginRefresh\("server_build_changed", \{ force: true \}\);/);
+  assert.match(functionBody(appJs, "checkPageRefreshAvailability"), /if \(!clientChanged && assetsChanged\) \{[\s\S]*state\.serverAssetBuildId = nextAssetBuildId;/);
+  assert.match(functionBody(appJs, "renderPageRefreshPrompt"), /New version available\. Tap to refresh\./);
+  assert.match(functionBody(appJs, "renderPageRefreshPrompt"), /Manual refresh only/);
   assert.match(appJs, /cache:\s*"no-store"/);
   assert.match(appJs, /function pruneOldShellCaches\(expectedCacheName\)/);
   assert.match(appJs, /key !== expectedCacheName/);
   assert.match(appJs, /window\.location\.reload\(\)/);
   assert.match(appJs, /addEventListener\("click", refreshPageForNewBuild\)/);
+  assert.doesNotMatch(stylesCss, /html\.embed-hermes #pageRefreshPrompt/);
   assert.match(stylesCss, /\.page-refresh-prompt/);
 });
 
@@ -59,15 +81,16 @@ test("page refresh prompt also handles server restart reconnects", () => {
   assert.match(appJs, /state\.events\.onopen = \(\) => \{[\s\S]*scheduleVisiblePageRefreshCheck\(200, \{ force: true \}\)/);
   assert.match(appJs, /payload\.type === "status"[\s\S]*scheduleVisiblePageRefreshCheck\(1200\)/);
   assert.match(appJs, /renderThreads\(result\);[\s\S]*scheduleVisiblePageRefreshCheck\(500\)/);
-  assert.match(appJs, /服务重启中，点击刷新并重连/);
-  assert.match(appJs, /连接中断，点击刷新并重连/);
-  assert.match(appJs, /正在刷新并重连/);
+  assert.match(appJs, /Service restarted\. Tap to refresh\./);
+  assert.match(appJs, /Connection changed\. Tap to refresh\./);
+  assert.match(appJs, /Refreshing and reconnecting\.\.\./);
   assert.match(appJs, /async function waitForPageBuildConfig\(timeoutMs = 18000\)/);
   assert.match(appJs, /state\.pageRefreshReason === "reconnect" \|\| state\.pageRefreshReason === "restart"[\s\S]*await waitForPageBuildConfig\(\)/);
   assert.match(appJs, /showReconnectRefreshPrompt\("reconnect"\);[\s\S]*showError\(err\)/);
   assert.match(appJs, /showReconnectRefreshPrompt\("restart"\)/);
   assert.doesNotMatch(appJs, /updateConnectionState\(null, "Reconnecting"\);\s*showReconnectRefreshPrompt/);
-  assert.match(appJs, /refreshPageForNewBuild\(\)\.catch\(showError\)/);
+  assert.match(appJs, /pageRefreshPrompt\.addEventListener\("click", refreshPageForNewBuild\)/);
+  assert.doesNotMatch(functionBody(appJs, "handleSharedRestartClick"), /refreshPageForNewBuild\(\)\.catch\(showError\)/);
 });
 
 test("public pull request check prompts before public publishing work", () => {

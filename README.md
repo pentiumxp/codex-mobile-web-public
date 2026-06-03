@@ -237,7 +237,10 @@ Web creates a reverse-direction return task card with the completed turn
 receipt, reuses the same workflow id, and immediately auto-approves it back into
 the source thread. The auto-return is idempotent by original card id plus
 completed turn id, so repeated `turn/completed` notifications do not create
-duplicate return turns.
+duplicate return turns. The return card is terminal: it can auto-inject back to
+the source through the existing grant, but its own completion does not create a
+second return. Auto-return titles also collapse repeated `Auto return:` prefixes
+to a single prefix.
 Target-side approval also persists a transient non-pending `approving` state
 before calling the external target-thread `turn/start`, so reconnect,
 continuation compaction, or thread refresh cannot resurrect the same `Approve`

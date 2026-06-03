@@ -365,9 +365,12 @@ test("autonomous workflow auto-returns to the source when the injected target tu
   assert.equal(returned.card.source.threadId, "thread-b");
   assert.equal(returned.card.target.threadId, "thread-a");
   assert.equal(returned.card.workflow.id, "auto-return-workflow");
+  assert.equal(returned.card.delivery.autoReturnOnCompletion, false);
+  assert.equal(returned.card.message.title, "Auto return: Start workflow");
   assert.equal(returned.card.injectedTurnId, "turn-2");
   assert.match(executions[1].message.text, /Implemented and validated/);
   assert.match(executions[1].message.text, /Workflow id: auto-return-workflow/);
+  assert.doesNotMatch(executions[1].message.text, /when this injected turn completes/);
   const original = service.get(first.id, "thread-b");
   assert.equal(original.autoReplyCardId, returned.card.id);
 
@@ -379,6 +382,47 @@ test("autonomous workflow auto-returns to the source when the injected target tu
   });
   assert.equal(duplicate, null);
   assert.equal(executions.length, 2);
+
+  const recursive = await service.maybeAutoReplyCompletedTurn({
+    threadId: "thread-a",
+    turnId: "turn-2",
+    completedAt: "2026-06-02T09:01:00.000Z",
+    finalReceiptText: "Returned receipt was injected.",
+  });
+  assert.equal(recursive, null);
+  assert.equal(executions.length, 2);
+});
+
+test("autonomous workflow auto-return titles do not stack prefixes", async () => {
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card) => ({ threadId: card.target.threadId, turnId: card.id }),
+  });
+  const first = await service.create({
+    sourceWorkspaceId: "codex",
+    sourceThreadId: "thread-a",
+    sourceTurnId: "turn-src",
+    sourceThreadTitle: "Codex Mobile",
+    targetWorkspaceId: "hermes",
+    targetThreadId: "thread-b",
+    idempotencyKey: "workflow:auto-return:stacked-title",
+    format: "markdown",
+    title: "Auto return: Auto return: Auto return: Auto return: Evaluate compaction",
+    summary: "Approve once.",
+    body: "Please complete this and return the result.",
+    workflowMode: "autonomous",
+    workflowId: "auto-return-title-workflow",
+  });
+
+  const approved = await service.approve(first.id, "thread-b");
+  const returned = await service.maybeAutoReplyCompletedTurn({
+    threadId: "thread-b",
+    turnId: approved.card.injectedTurnId,
+    completedAt: "2026-06-02T09:00:00.000Z",
+    finalReceiptText: "Completed.",
+  });
+
+  assert.equal(returned.card.message.title, "Auto return: Evaluate compaction");
 });
 
 test("approve persists a non-pending in-flight state before injected execution finishes", async () => {

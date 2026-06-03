@@ -15,7 +15,7 @@ Always start substantial work by reading:
 | System design, process boundaries, runtime state, request flow | `docs/ARCHITECTURE.md` |
 | File/module ownership, where to implement changes, test map | `docs/MODULES.md` |
 | Live production issue, stuck turn, missing message, PWA cache, Push, mux drift | `docs/TROUBLESHOOTING.md` |
-| Model context size, image upload context, continuation bootstrap strategy | `docs/CONTEXT_STRATEGY.md` |
+| Model context size, image upload context, continuation bootstrap strategy, workspace context compaction | `docs/CONTEXT_STRATEGY.md` |
 | Non-trivial feature or cross-cutting fix | `docs/COMPLEX_FEATURE_PATHS.md` |
 | Cross-thread task-card collaboration planning | `docs/CROSS_THREAD_TASK_CARDS_DESIGN.md` |
 | Multi-account Codex CLI on this Windows machine | `docs/MULTI_ACCOUNT_CODEX_CLI.md` |

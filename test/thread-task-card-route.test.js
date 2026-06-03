@@ -87,7 +87,7 @@ test("server materializes structured task-card drafts from thread detail", () =>
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v166"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v170"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.threadRole \|\| ""\) === "target"\)/);
@@ -113,6 +113,7 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /function mutateThreadTaskCard\(/);
   assert.match(appJs, /function replyTaskCard\(/);
   assert.match(appJs, /function isThreadTaskCardCommandText\(/);
+  assert.match(functionBody(appJs, "sendMessage"), /const steering = Boolean\(!threadTaskCardCommand && state\.activeTurnId && hasContent\);/);
   assert.match(appJs, /const THREAD_TASK_CARD_COMMAND_PREFIX = "#自由协作"/);
   assert.match(functionBody(appJs, "isThreadTaskCardCommandText"), /startsWith\(THREAD_TASK_CARD_COMMAND_PREFIX\)/);
   assert.doesNotMatch(functionBody(appJs, "isThreadTaskCardCommandText"), /startsWith\("#"\)/);

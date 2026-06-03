@@ -391,7 +391,6 @@ html.embed-hermes.plugin-startup-loading .login {
 }
 
 html.embed-hermes #openMenu,
-html.embed-hermes #pageRefreshPrompt,
 html.embed-hermes .main .version-actions {
   display: none !important;
 }
@@ -3107,6 +3106,25 @@ html.visual-recovering body::before {
   color: var(--text);
   font-size: var(--content-small-font-size);
   font-weight: 750;
+}
+
+.turn-usage-summary-head-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.turn-usage-new-thread {
+  flex: 0 0 auto;
+  min-height: 24px;
+  padding: 3px 8px;
+  color: #09100d;
+  background: var(--accent-strong);
+  border: 0;
+  border-radius: 7px;
+  font-size: var(--content-small-font-size);
+  font-weight: 700;
 }
 
 .turn-usage-summary-head strong {

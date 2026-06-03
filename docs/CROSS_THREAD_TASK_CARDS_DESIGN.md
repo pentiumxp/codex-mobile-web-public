@@ -22,7 +22,10 @@ target click. Completion auto-return is part of the default autonomous workflow
 contract: when the injected target turn for an approved autonomous card
 completes, the server creates an automatic reverse-direction return card that
 carries the completed turn receipt, reuses the same workflow id, and
-auto-injects back into the source thread through the same grant.
+auto-injects back into the source thread through the same grant. That return
+card is terminal: it does not request another completion auto-return after its
+own injected turn completes, and its title collapses repeated `Auto return:`
+prefixes to one prefix.
 
 ## High-Level Flow
 
@@ -50,7 +53,9 @@ auto-injects back into the source thread through the same grant.
    service creates one idempotent reverse-direction return card keyed by the
    original card id plus completed turn id. Because the workflow grant already
    covers the same two thread ids, that return card auto-approves and starts a
-   real source-thread turn without another click.
+   real source-thread turn without another click. The return card's delivery
+   flags disable another completion auto-return so workflows do not ping-pong
+   indefinitely.
 
 ## Data Model
 
@@ -253,6 +258,7 @@ become approved injected turns. Completion auto-return cards are the default
 for autonomous workflows and normally do not render as pending UI: they are
 created from the completed injected target turn, auto-approved by the existing
 workflow grant, and surface as a real new turn in the original source thread.
+They are terminal receipt turns rather than another auto-return source.
 
 ## Storage
 

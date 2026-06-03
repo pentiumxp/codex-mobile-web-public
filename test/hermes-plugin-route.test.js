@@ -117,7 +117,8 @@ test("embedded plugin mode hides standalone chrome and installs navigation/windo
   assert.match(appJs, /targetOrigin:\s*targetOrigin \|\| "\*"/);
   assert.match(appJs, /const hermesOrigin = normalizePluginParentOrigin\(result && result\.hermes_origin\)/);
   assert.match(appJs, /state\.pluginParentOrigin = hermesOrigin/);
-  assert.match(appJs, /if \(isHermesEmbedMode\(\)\) \{\s*state\.pageRefreshBuildId = nextBuildId;[\s\S]*requestHermesPluginRefresh\("server_build_changed", \{ force: true \}\);[\s\S]*return;/);
+  assert.match(appJs, /if \(isHermesEmbedMode\(\)\) \{\s*if \(clientChanged\) \{[\s\S]*requestHermesPluginRefresh\("server_build_changed", \{ force: true \}\);[\s\S]*if \(!clientChanged && assetsChanged\) \{[\s\S]*state\.serverAssetBuildId = nextAssetBuildId;[\s\S]*return;/);
+  assert.doesNotMatch(appJs, /if \(isHermesEmbedMode\(\)\) \{\s*state\.pageRefreshBuildId = nextBuildId;[\s\S]*requestHermesPluginRefresh\("server_build_changed", \{ force: true \}\);[\s\S]*return;/);
 });
 
 test("Windows startup scripts can persist HTTPS Hermes plugin deployment settings", () => {

@@ -116,18 +116,31 @@ Implementation path:
 
 ## Rollout Continuation
 
-Use when changing "压缩续接", handoff generation, lineage, archive-after-continuation, large handoff compaction, or runtime setting inheritance.
+Use when changing "压缩续接", handoff generation, lineage,
+archive-after-continuation, workspace context compaction, large handoff
+compaction, or runtime setting inheritance.
 
 Implementation path:
 
 1. Keep browser flow on `POST /api/thread-continuations` plus job polling.
 2. Keep generated source handoffs under `.agent-context/thread-handoffs/` and ignored.
 3. Keep large workspace handoff compaction in `adapters/continuation-handoff-compaction-service.js`.
-4. Keep the new-thread bootstrap as a bounded index plus excerpts; the full source handoff lives in `.agent-context/thread-handoffs/` and must be read by the new thread when exact state matters.
-5. Include source id/title/cwd/rollout path/rollout size/status, latest runtime settings, recent turn summaries, workspace context excerpts, and lineage index.
-6. Avoid injecting unrelated private thread rules into the new bootstrap.
-7. For runtime settings, read rollout `turn_context` and SQLite/app-server metadata; pass only fields supported by app-server.
-8. Test with `test/continuation-lineage.test.js`, `test/continuation-handoff-compaction-service.test.js`, `test/new-thread-route.test.js`, and relevant runtime-settings tests.
+4. Keep workspace context compaction in the continuation/context strategy
+   service layer. The MVP archives and rewrites only
+   `.agent-context/PROJECT_CONTEXT.md` and `.agent-context/HANDOFF.md`;
+   diagnose `AGENTS.md` size but do not rewrite it without explicit user
+   approval.
+5. Archive full originals before rewriting under
+   `.agent-context/archive/context-compaction-<timestamp>/`, verify the archive
+   stays inside the current workspace, and report Git ignore/tracked status.
+6. Keep compact live context as a routing index plus current state card. Move
+   long history into archive/on-demand references rather than the default read
+   path.
+7. Keep the new-thread bootstrap as a bounded index plus excerpts; the full source handoff lives in `.agent-context/thread-handoffs/` and must be read by the new thread when exact state matters.
+8. Include source id/title/cwd/rollout path/rollout size/status, latest runtime settings, recent turn summaries, workspace context excerpts, and lineage index.
+9. Avoid injecting unrelated private thread rules into the new bootstrap.
+10. For runtime settings, read rollout `turn_context` and SQLite/app-server metadata; pass only fields supported by app-server.
+11. Test with `test/continuation-lineage.test.js`, `test/continuation-handoff-compaction-service.test.js`, `test/new-thread-route.test.js`, and relevant runtime-settings tests. Keep focused workspace context compaction service tests green before changing route/UI wiring.
 
 ## Mux And Desktop Live Sync
 
