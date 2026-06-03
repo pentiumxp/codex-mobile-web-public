@@ -147,6 +147,13 @@ Historical release logs, old risk lists, long diagnosis trails, and stale
 deployment records should move to the archive and be loaded only when the new
 task explicitly needs that history.
 
+Compacted active handoffs must not preserve stale `Latest Product State` style
+sections as if they were still authoritative. When a later task updates a
+latest version, backup, deployment, or runtime-state fact, the agent must verify
+the current value from the latest source-thread handoff, current repo/static
+version strings, or runtime smoke before editing the compact context. Archived
+old sections are provenance only.
+
 Every compaction report should include:
 
 - before/after bytes and lines for each file;

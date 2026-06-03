@@ -85,6 +85,7 @@ test("compacts workspace project context and handoff with full archives and mani
   const compactHandoff = fs.readFileSync(handoffPath, "utf8");
   assert.match(compactHandoff, /automatically compacted before a Codex Mobile continuation/);
   assert.match(compactHandoff, /Archived full handoff:/);
+  assert.match(compactHandoff, /Before changing any latest-version, backup, deployment, or runtime-state fact/);
   assert.match(compactHandoff, /keep latest validation and runtime state/);
   assert.doesNotMatch(compactHandoff, /old handoff old handoff old handoff/);
 
@@ -101,7 +102,7 @@ test("compacts workspace project context and handoff with full archives and mani
   }
 });
 
-test("does not archive full context into a non-ignored git path", (t) => {
+test("creates an archive ignore guard before archiving full context in git workspaces", (t) => {
   const cwd = makeWorkspace();
   t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
   const git = spawnSync("git", ["init"], {
@@ -125,11 +126,21 @@ test("does not archive full context into a non-ignored git path", (t) => {
     now: new Date("2026-06-03T08:10:00Z"),
   });
 
-  assert.equal(result.compacted, false);
-  assert.equal(result.reason, "archive-not-ignored");
-  assert.equal(fs.existsSync(result.archiveDir), false);
-  assert.equal(fs.readFileSync(projectPath, "utf8").includes("project project"), true);
-  assert.equal(fs.readFileSync(handoffPath, "utf8").includes("handoff handoff"), true);
+  assert.equal(result.compacted, true);
+  assert.equal(result.reason, "compacted");
+  assert.equal(result.archiveIgnore.created, true);
+  assert.ok(result.archiveIgnore.path.endsWith(path.join(".agent-context", "archive", ".gitignore")));
+  assert.equal(fs.readFileSync(result.archiveIgnore.path, "utf8"), "# Archived full workspace context must stay out of commits.\n*\n!.gitignore\n");
+  assert.equal(result.archiveGit.ignored, true);
+  const ignoredArchive = spawnSync("git", ["check-ignore", "-q", "--", path.relative(cwd, result.archiveDir)], {
+    cwd,
+    encoding: "utf8",
+    timeout: 5000,
+    windowsHide: true,
+  });
+  assert.equal(ignoredArchive.status, 0);
+  assert.equal(fs.existsSync(path.join(result.archiveDir, "PROJECT_CONTEXT.full-before-context-budget.md")), true);
+  assert.equal(fs.existsSync(path.join(result.archiveDir, "HANDOFF.full-before-context-budget.md")), true);
 });
 
 test("compacts oversized workspace handoff and archives the full original", (t) => {
@@ -167,6 +178,40 @@ test("compacts oversized workspace handoff and archives the full original", (t) 
   assert.match(compacted, /keep this current deployment note/);
   assert.doesNotMatch(compacted, /old line old line old line/);
   assert.ok(Buffer.byteLength(compacted, "utf8") < Buffer.byteLength(oldText, "utf8"));
+});
+
+test("single handoff compaction creates archive ignore guard in git workspaces", (t) => {
+  const cwd = makeWorkspace();
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  const git = spawnSync("git", ["init"], {
+    cwd,
+    encoding: "utf8",
+    timeout: 5000,
+    windowsHide: true,
+  });
+  if (git.status !== 0) return;
+
+  const handoffPath = path.join(cwd, ".agent-context", "HANDOFF.md");
+  fs.writeFileSync(handoffPath, "# HANDOFF\n\n## Old\n" + "old ".repeat(1000) + "\n## Now\nkeep current\n", "utf8");
+
+  const result = compactWorkspaceHandoff({
+    cwd,
+    thresholdBytes: 200,
+    preserveChars: 200,
+    now: new Date("2026-06-03T08:20:00Z"),
+  });
+
+  assert.equal(result.compacted, true);
+  assert.equal(result.archiveIgnore.created, true);
+  assert.equal(result.archiveGit.ignored, true);
+  assert.equal(fs.existsSync(result.archivePath), true);
+  const ignoredArchive = spawnSync("git", ["check-ignore", "-q", "--", path.relative(cwd, result.archiveDir)], {
+    cwd,
+    encoding: "utf8",
+    timeout: 5000,
+    windowsHide: true,
+  });
+  assert.equal(ignoredArchive.status, 0);
 });
 
 test("does not compact handoff below threshold", (t) => {

@@ -413,6 +413,8 @@ Continuation bootstraps must include enough references for a fresh thread withou
 
 The bootstrap message is a reference-only index by default. It lists the generated source handoff file, workspace context files, docs entrypoint, lineage index, source-thread metadata, and runtime settings. It does not inline source handoff excerpts, recent source-turn summaries, workspace context excerpts, or lineage handoff excerpts. The generated source handoff file under `.agent-context/thread-handoffs/` remains the high-priority fact source, but large handoffs and workspace context files should be loaded through bounded head/tail reads plus targeted search before full reads are used.
 
+Before writing full archived context in a Git workspace, the compaction service creates `.agent-context/archive/.gitignore` so archive payloads stay out of commits. If the archive path still is not ignored, compaction must skip instead of writing full context into a committable path. A compact active handoff is current-state only: agents must not infer latest version or deployment transitions from archived old `Latest Product State` sections. Before updating a latest-version, backup, deployment, or runtime-state fact, verify the current value from the latest source-thread handoff, current repo/static version strings, or runtime smoke.
+
 ### PWA Shell Cache And Build Id
 
 `public/sw.js` owns the app-shell cache. Static frontend changes that affect browser behavior must bump both:

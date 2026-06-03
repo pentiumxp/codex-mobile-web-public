@@ -68,6 +68,24 @@ function nextAvailableArchiveDir(root, stamp) {
   throw new Error(`Could not allocate handoff archive directory under ${path.dirname(base)}`);
 }
 
+function archiveIgnorePath(cwd) {
+  return path.join(cwd, ".agent-context", "archive", ".gitignore");
+}
+
+function ensureArchiveIgnoreFile(cwd) {
+  const agentContextDir = path.join(cwd, ".agent-context");
+  const archiveDir = path.join(agentContextDir, "archive");
+  const ignorePath = archiveIgnorePath(cwd);
+  assertInside(agentContextDir, archiveDir);
+  assertInside(archiveDir, ignorePath);
+  fs.mkdirSync(archiveDir, { recursive: true });
+  if (!fs.existsSync(ignorePath)) {
+    fs.writeFileSync(ignorePath, "# Archived full workspace context must stay out of commits.\n*\n!.gitignore\n", "utf8");
+    return { path: ignorePath, created: true };
+  }
+  return { path: ignorePath, created: false };
+}
+
 function assertInside(parent, child) {
   const parentResolved = path.resolve(parent);
   const childResolved = path.resolve(child);
@@ -150,6 +168,7 @@ function buildCompactedHandoff({ cwd, originalText, originalBytes, archivePath, 
     "- Read `.agent-context/PROJECT_CONTEXT.md` first.",
     "- Read this compact `.agent-context/HANDOFF.md` for current status.",
     "- Do not load the archived full handoff unless the user asks for old provenance or the compact handoff is insufficient.",
+    "- Before changing any latest-version, backup, deployment, or runtime-state fact, verify current repo/runtime state or the latest source-thread handoff; archived old sections are provenance only.",
     "- Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.",
     "- Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.",
     "",
@@ -253,6 +272,21 @@ function compactWorkspaceHandoff(options = {}) {
   const stamp = safeStamp(now);
   const archiveDir = nextAvailableArchiveDir(cwd, stamp);
   const archivePath = path.join(archiveDir, "HANDOFF.full.md");
+  const archiveIgnore = ensureArchiveIgnoreFile(cwd);
+  const archiveGit = gitPathState(cwd, archiveDir);
+  if (archiveGit.gitAvailable && !archiveGit.ignored) {
+    return {
+      checked: true,
+      compacted: false,
+      reason: "archive-not-ignored",
+      handoffPath,
+      archiveDir,
+      archiveGit,
+      archiveIgnore,
+      originalBytes: stat.size,
+      thresholdBytes,
+    };
+  }
   fs.mkdirSync(archiveDir, { recursive: true });
   fs.copyFileSync(handoffPath, archivePath);
 
@@ -272,11 +306,14 @@ function compactWorkspaceHandoff(options = {}) {
     compacted: true,
     reason: "compacted",
     handoffPath,
+    archiveDir,
     archivePath,
     originalBytes: stat.size,
     compactedBytes: byteLength(compactedText),
     thresholdBytes,
     preservedChars: preservedText.length,
+    archiveGit,
+    archiveIgnore,
   };
 }
 
@@ -360,6 +397,7 @@ function compactWorkspaceContext(options = {}) {
   const stamp = safeStamp(now);
   const archiveDir = nextAvailableArchiveDir(cwd, stamp);
   assertInside(agentContextDir, archiveDir);
+  const archiveIgnore = ensureArchiveIgnoreFile(cwd);
   const archiveGit = gitPathState(cwd, archiveDir);
   if (archiveGit.gitAvailable && !archiveGit.ignored) {
     return {
@@ -368,6 +406,7 @@ function compactWorkspaceContext(options = {}) {
       reason: "archive-not-ignored",
       archiveDir,
       archiveGit,
+      archiveIgnore,
       thresholdBytes,
       combinedThresholdBytes,
       combinedBytes,
@@ -464,6 +503,7 @@ function compactWorkspaceContext(options = {}) {
     archiveDir,
     manifestPath,
     archiveGit,
+    archiveIgnore,
     thresholdBytes,
     combinedThresholdBytes,
     combinedBytes,

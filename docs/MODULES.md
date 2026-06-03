@@ -19,7 +19,7 @@
 | `adapters/active-turn-staleness-service.js` | Stale/superseded active-turn detection before existing-thread message submission. |
 | `adapters/message-pending-echo-service.js` | Short-lived pending user-message echo injection for active-turn steering that is still waiting. |
 | `adapters/message-input-service.js` | Upload-aware model input policy, image context mode, and extended-history persistence policy. |
-| `adapters/continuation-handoff-compaction-service.js` | Workspace context compaction before rollout continuation, including `.agent-context/PROJECT_CONTEXT.md` and `.agent-context/HANDOFF.md` archive/rewrite/report behavior. |
+| `adapters/continuation-handoff-compaction-service.js` | Workspace context compaction before rollout continuation, including `.agent-context/PROJECT_CONTEXT.md` and `.agent-context/HANDOFF.md` archive/rewrite/report behavior, archive ignore guard creation, and compact-handoff current-state guidance. |
 | `adapters/turn-usage-summary-service.js` | Rollout `token_count` parsing and completed-turn context/token usage summary attachment. |
 | `adapters/token-usage-stats-service.js` | Runtime SQLite token ledger for completed turns, keyed by `thread_id + turn_id`, with Workspace/day aggregation for sidebar stats and known Windows mojibake cwd normalization. |
 | `adapters/public-pull-request-service.js` | Public GitHub pull request status normalization for prompt-only public PR checks. |

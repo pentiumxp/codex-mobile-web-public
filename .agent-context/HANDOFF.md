@@ -17,8 +17,64 @@ The previous full handoff was archived and should be opened only when old proven
 - Read `.agent-context/PROJECT_CONTEXT.md` first.
 - Read this compact `.agent-context/HANDOFF.md` for current status.
 - Do not load the archived full handoff unless the user asks for old provenance or the compact handoff is insufficient.
+- Before changing latest-version, backup, deployment, or runtime-state facts, verify current repo/runtime state or the latest source-thread handoff. Archived old sections are provenance only.
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
+
+## 2026-06-03 Continuation Context Archive Guard And Current-State Repair v173
+
+- User reports:
+  - Finance continuation generated a small source-thread handoff, but active
+    Finance `.agent-context/HANDOFF.md` still measured about 108KB and would
+    keep inflating future thread context if fully read.
+  - Hermes Mobile later updated active context from stale v522/v526-era
+    current-state text to v547, showing that compact context could still
+    contain stale `Latest Product State` sections and agents could treat old
+    preserved state as current.
+- Local fixes in this workspace:
+  - `adapters/continuation-handoff-compaction-service.js`
+    - Added automatic `.agent-context/archive/.gitignore` creation before
+      writing full archived context in Git workspaces.
+    - `compactWorkspaceHandoff()` now uses the same archive ignore guard and
+      returns `archiveDir`, `archiveGit`, and `archiveIgnore` metadata.
+    - Compact handoff startup guidance now requires current repo/runtime or
+      latest source-thread handoff verification before changing latest-version,
+      backup, deployment, or runtime-state facts. Archived old sections are
+      provenance only.
+  - `test/continuation-handoff-compaction-service.test.js`
+    - Covers archive ignore guard creation for workspace-context and
+      single-handoff compaction.
+    - Covers the new compact handoff current-state guidance.
+  - Documentation updated:
+    - `docs/CONTEXT_STRATEGY.md`
+    - `docs/ARCHITECTURE.md`
+    - `docs/MODULES.md`
+- Cross-workspace repairs:
+  - Finance workspace `C:\Users\xuxin\Documents\财务`
+    - Active `.agent-context/HANDOFF.md` compacted from `110667` bytes to
+      `18193` bytes.
+    - Full old handoff archived at
+      `.agent-context/archive/context-compaction-20260603_133744/HANDOFF.full.md`.
+    - `.agent-context/archive/.gitignore` was created; `git check-ignore`
+      confirmed the full archive payload is ignored.
+  - Agent/Hermes workspace `C:\Users\xuxin\Documents\Agent`
+    - Active `.agent-context/HANDOFF.md` rewritten to a short current-state
+      router around v547, about 6.3KB.
+    - `.agent-context/PROJECT_CONTEXT.md` now says latest version/deployment
+      facts must be verified from current repo/runtime or source-thread
+      handoff; archived old `Latest Product State` sections are provenance
+      only.
+- Validation:
+  - `node --check adapters\continuation-handoff-compaction-service.js` passed.
+  - `node --test test\continuation-handoff-compaction-service.test.js
+    test\continuation-lineage.test.js` passed: 12/12.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+- Status:
+  - Codex Mobile changes are uncommitted.
+  - Finance and Agent context repairs are local context-file changes only; no
+    product code was changed in those workspaces by this repair.
+  - Public repo was not touched.
 
 ## Preserved Recent Handoff Tail
 
