@@ -28,10 +28,14 @@ auto-injects back into the source thread through the same grant.
 
 1. Source thread creates a task-card request addressed to one or more target
    threads.
-2. For `#` natural-language commands, the model only drafts the bounded card
-   JSON. Once the draft parses and names visible target threads, the source
-   client creates the real pending cards immediately; the source thread must not
-   require a separate local `Approve` step.
+2. For exact `#自由协作` natural-language commands, the model only drafts the
+   bounded card JSON. Once the draft parses, Mobile Web materializes the real
+   pending cards through the task-card service; the source thread must not
+   require a separate local `Approve` step. The browser may initiate creation,
+   but the server also scans fresh `turn/completed` notifications and
+   thread-detail reads so card creation does not depend on the open page,
+   workspace filter, or PWA state. Ordinary `#...` text remains a normal
+   message.
 3. Server stores one card per target thread in a cross-thread task-card store.
 4. Each target thread fetch/render path includes its own pending task cards.
 5. Target user chooses:
@@ -226,9 +230,9 @@ Source thread:
 
 - do not render outgoing pending cards as local work items after auto-send;
 - keep outgoing cards in the store/audit state and thread summary counts only;
-- do not show an approval prompt for its own `#` draft; a valid draft auto-sends
-  to target pending cards, and only the target thread approval injects a real
-  `userMessage`;
+- do not show an approval prompt for its own `#自由协作` draft; a valid draft
+  auto-sends to target pending cards, and only the target thread approval
+  injects a real `userMessage`;
 - for a multi-target draft, keep the source thread open after creation instead
   of automatically jumping to one recipient;
 - keep source-side automatic creation silent in the conversation: do not render
@@ -262,9 +266,14 @@ Recommended first-version bounds:
 
 - `title <= 120`
 - `summary <= 300`
-- `body <= 8k` to `12k`
+- `body <= 8k`
 
 Markdown and text only.
+
+Structured model drafts may be more verbose than the persisted card limit. The
+server and browser both truncate draft bodies to the 8k service limit with a
+head/tail marker before calling the store, so a useful card is still created
+instead of failing the whole workflow with `body_too_long`.
 
 Visible `title`, `summary`, and `body` text must be readable user-facing text.
 The service rejects likely encoding-damaged payloads before persistence,

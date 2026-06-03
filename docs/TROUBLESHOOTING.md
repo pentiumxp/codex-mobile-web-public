@@ -27,6 +27,7 @@ Interpretation:
 | Push says turn ended but no final reply appears | rollout `task_complete.last_agent_message`, completion-push no-final-message guard |
 | Profile switch hides workspaces or threads | active `codexProfiles.activeCodexHome`, non-default profile shared-state links, `/api/threads?limit=10` |
 | Quota chips show the previous account after switch | `/api/status.rateLimits`, browser quota localStorage, profile-switch cache clearing |
+| Archived projectless thread reappears | session-index fallback, `archived_sessions`, `test/thread-archive.test.js` |
 | After profile switch only a few workspaces or no threads appear | `/api/public-config.codexProfiles.activeCodexHome`, profile state links, and `state_5.sqlite` / `sessions` under the active home |
 
 ## Shared Mux Drift
@@ -191,6 +192,19 @@ If a worktree thread is missing:
 
 ```powershell
 node --test test\thread-visibility.test.js test\mobile-viewport.test.js
+```
+
+## Archived Thread Reappears In Fallback List
+
+If an archived projectless session returns to the thread list after app-server
+omits it from the primary `thread/list`, inspect `readSessionIndexFallback()` in
+`server.js`. Current builds should call `archivedSessionThreadIds()` and skip
+matching ids after verifying `visibleProjectlessThreadIds()`.
+
+Run:
+
+```powershell
+node --test test\thread-archive.test.js test\thread-visibility.test.js
 ```
 
 ## Quoted Uploaded Images Stay As Text
@@ -425,24 +439,25 @@ read should return `404 task_card_not_found`; wrong-thread actions should return
 500, the route error wrapper has regressed and the browser may show an
 ambiguous failure instead of a bounded task-card diagnostic.
 
-## `#` Task-card Command Does Not Parse
+## `#自由协作` Task-card Command Does Not Parse
 
-`#` at the start of the composer is now reserved for cross-thread task-card
-commands. It should not enter the normal message-send route.
+Only the exact `#自由协作` prefix is reserved for cross-thread task-card
+commands. Ordinary `#...` text and `# 自由协作` with a space after `#` should
+enter the normal message-send route.
 
 Current behavior:
 
-- bare `#` is invalid;
-- `#` commands do not support attachments yet;
+- bare `#` is a normal message, not a task-card command;
+- `#自由协作` commands do not support attachments yet;
 - the browser sends a bounded draft request to the current Codex thread;
 - the model must return a bounded draft block with one visible
   `targetThreadId`, or an empty target plus an error.
 
 Working examples:
 
-# 发给 Finance Review：请核验 5 月结账映射
-# 让 Hermes 05-26 配合处理插件刷新联动
-# 请让线程「Hermes 发布检查」确认插件通知回执是否已入库
+#自由协作 发给 Finance Review：请核验 5 月结账映射
+#自由协作 让 Hermes 05-26 配合处理插件刷新联动
+#自由协作 请让线程「Hermes 发布检查」确认插件通知回执是否已入库
 If no draft card appears, inspect:
 
 - whether the current sent message contains the
@@ -457,7 +472,7 @@ If no draft card appears, inspect:
   messages instead of aborting before the later draft item;
 - whether the returned `targetThreadId` is still present in the visible thread
   list;
-- whether attachments were present, which still blocks `#` commands.
+- whether attachments were present, which still blocks `#自由协作` commands.
 
 Current UI rules:
 
@@ -505,6 +520,16 @@ proof that Mobile Web is healthy again. The success condition is stricter:
 
 If either check is missing, Mobile Web should be treated as down even if a
 restart script or detached PowerShell command was already launched.
+
+Before the restart request is sent, current browser builds should show an
+in-app confirmation panel instead of a native `window.confirm()`. The panel
+checks `/api/threads?limit=200&archived=false` and lists running sessions that
+may be interrupted. If the panel is missing or does not show running-session
+risk, verify that the open client loaded the current `clientBuildId` and run:
+
+```powershell
+node --test test\manual-restart-ui.test.js test\mobile-viewport.test.js
+```
 
 ## Public PR Prompt Targets The Wrong Thread
 
@@ -869,9 +894,9 @@ Expected behavior after `codex-mobile-shell-v162`:
   client is still running an older shell and needs a hard refresh or close/reopen
   once to load v162 or newer.
 
-## Source `#` Task-Card Draft Reappears After Approve Or Dismiss
+## Source `#自由协作` Task-Card Draft Reappears After Approve Or Dismiss
 
-If the source thread hides a `#`-generated draft card immediately after
+If the source thread hides a `#自由协作`-generated draft card immediately after
 `Approve` or `Dismiss`, but the same draft comes back after leaving and
 re-entering the thread, the draft-settled state was only held in browser memory.
 
@@ -883,6 +908,40 @@ Expected behavior after `codex-mobile-shell-v129`:
   after a thread reload or app re-entry.
 - Pending/in-flight draft creation states are not persisted as durable settled
   state.
+
+## Cross-Thread Task Card Does Not Reach Target
+
+If a `#自由协作` cross-thread card appears to finish in the source thread but no
+pending card appears in the target thread, check the server-side materialization
+path before blaming the model response.
+
+Expected behavior after `codex-mobile-shell-v164`:
+
+- The model response may contain a structured
+  `<codex-mobile-thread-task-card-draft>` block, but the browser is not the only
+  component that can create the stored card.
+- On fresh `turn/completed`, the Node listener fetches a bounded recent-turn
+  window, parses assistant/plan draft XML, resolves source/target workspaces
+  from Codex state, truncates overlong draft bodies to the 8k service limit, and
+  calls `threadTaskCardService.createMany()` with a stable idempotency key.
+- Thread detail reads run the same materialization before attaching
+  `thread.threadTaskCards`, including large-rollout `thread/turns/list` mode.
+- A deleted/revoked/replied/approved card stays settled and should not be
+  recreated by re-entering the source thread. If the target card was deleted,
+  send a new source request instead of expecting the old idempotency key to
+  resurrect it.
+
+Useful checks:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8787/api/public-config |
+  Select-Object clientBuildId,shellCacheName
+```
+
+Use a UTF-8-safe Node script, not `ConvertFrom-Json`, to inspect
+`%USERPROFILE%\.codex-mobile-web\thread-task-cards.json`; historical Chinese
+payloads can make PowerShell JSON parsing brittle. Check whether a card exists
+for the target thread id and whether its status is still `pending`.
 
 ## Hermes Plugin Refresh Notice Stays On Screen Too Long
 

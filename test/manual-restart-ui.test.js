@@ -15,13 +15,20 @@ const pkg = fs.readFileSync(path.join(root, "package.json"), "utf8");
 
 test("sidebar exposes a confirmed manual restart action beside the version pill", () => {
   assert.match(indexHtml, /class="version-actions"[\s\S]*id="appUpdateStatus"[\s\S]*id="sharedRestartButton"/);
+  assert.match(indexHtml, /id="restartConfirmDialog"[\s\S]*id="restartConfirmProceed"/);
   assert.match(stylesCss, /\.version-actions/);
   assert.match(stylesCss, /html\.embed-hermes \.main \.version-actions/);
   assert.match(stylesCss, /\.restart-button/);
+  assert.match(stylesCss, /\.restart-confirm-dialog/);
+  assert.match(stylesCss, /\.restart-confirm-panel/);
   assert.match(appJs, /function handleSharedRestartClick\(\)/);
-  assert.match(appJs, /window\.confirm\(/);
+  const restartBody = appJs.slice(appJs.indexOf("async function handleSharedRestartClick()"), appJs.indexOf("function serverBuildIdFromConfig"));
+  assert.doesNotMatch(restartBody, /window\.confirm\(/);
+  assert.match(restartBody, /fetchRestartRiskThreads\(\)/);
+  assert.match(restartBody, /requestSharedRestartConfirmation/);
   assert.match(appJs, /\/api\/restart\/shared-chain/);
   assert.match(appJs, /sharedRestartButton"\)\)\s*\$\("sharedRestartButton"\)\.addEventListener\("click"/);
+  assert.match(appJs, /restartConfirmProceed"\)\)\s*\$\("restartConfirmProceed"\)\.addEventListener\("click"/);
 });
 
 test("manual restart route delegates to the shared-chain restart service", () => {

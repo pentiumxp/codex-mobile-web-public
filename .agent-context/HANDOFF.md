@@ -2,6 +2,103 @@
 
 Last compacted: 2026-05-31T03:26:40.298Z
 
+## 2026-06-03 Public PR #44/#45 Integration And Private Sync v166
+
+- User request:
+  - Inspect public PR #45 "重启 Mobile Web 前提示运行中会话风险" and
+    PR #44 "过滤已归档的聊天线程 fallback 列表".
+  - Evaluate mergeability first; if mergeable, update the public README
+    Chinese release notes, validate, privacy-scan, commit and push public.
+  - Do not copy `.agent-context`, runtime state, local keys, uploads, or
+    machine-specific diagnostics.
+  - After public, sync back to private and revalidate.
+- Public PR assessment:
+  - Both PRs were open, `MERGEABLE`, and scoped.
+  - PR #44 changes `server.js` session-index fallback to skip ids from
+    `archivedSessionThreadIds()` and adds `test/thread-archive.test.js`
+    coverage.
+  - PR #45 replaces the native manual Restart confirm with an in-app
+    confirmation panel that checks recent non-archived threads for running
+    sessions before calling `/api/restart/shared-chain`, adds
+    `public/index.html` / `public/styles.css` dialog UI, bumps public shell to
+    `codex-mobile-shell-v163`, and updates UI tests.
+- Public result:
+  - Applied PR #44 and #45 as one squash-equivalent public commit so the public
+    commit message and README both satisfy the Chinese detailed release rule.
+  - Updated public `README.md` with a Chinese release note covering both the
+    archived fallback filter and Restart running-session risk panel.
+  - Public validation passed:
+    - `node --check server.js`
+    - `node --check public\app.js`
+    - `node --check public\sw.js`
+    - Focused `node --test test\thread-archive.test.js
+      test\manual-restart-ui.test.js test\mobile-viewport.test.js
+      test\thread-task-card-route.test.js` passed: 15/15.
+    - `npm.cmd test` passed: 293/293.
+    - `npm.cmd run check` passed.
+    - `npm.cmd run check:macos` passed.
+    - `git diff --check` and `git diff --cached --check` passed.
+    - BOM check had no output.
+    - Staged path/content privacy scan found no `.agent-context`, runtime
+      state, raw keys, VAPID/private key, Push endpoint, uploads, or machine
+      diagnostics.
+  - Public commit pushed:
+    `abc4600 发布归档 fallback 过滤与重启风险提示 v163`.
+  - Closed PR #44 and PR #45 with comments noting they were equivalently
+    integrated into `main` at `abc4600`.
+- Private sync:
+  - Synced the product behavior into private on top of the existing v165
+    uncommitted local changes without downgrading private shell versions.
+  - Private shell bumped to `0.1.11|codex-mobile-shell-v166` /
+    `codex-mobile-shell-v166`.
+  - Updated private files:
+    - `server.js`
+    - `public/app.js`
+    - `public/index.html`
+    - `public/styles.css`
+    - `public/sw.js`
+    - `test/manual-restart-ui.test.js`
+    - `test/thread-archive.test.js`
+    - `test/mobile-viewport.test.js`
+    - `test/thread-task-card-route.test.js`
+    - `README.md`
+    - `docs/ARCHITECTURE.md`
+    - `docs/MODULES.md`
+    - `docs/TROUBLESHOOTING.md`
+    - `.agent-context/PROJECT_CONTEXT.md`
+    - `.agent-context/HANDOFF.md`
+  - Private validation passed:
+    - `node --check server.js`
+    - `node --check public\app.js`
+    - `node --check public\sw.js`
+    - Focused `node --test test\thread-archive.test.js
+      test\manual-restart-ui.test.js test\mobile-viewport.test.js
+      test\thread-task-card-route.test.js` passed: 16/16.
+    - `npm.cmd test` passed: 296/296.
+    - `npm.cmd run check` passed.
+    - `npm.cmd run check:macos` passed.
+    - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+      warnings.
+    - BOM check had no output.
+    - Private diff privacy scan found no runtime state, raw keys,
+      VAPID/private key, Push endpoint, uploads, or machine diagnostics.
+- Runtime:
+  - Restarted only this repo's 8787 Node listener so `server.js` and the v166
+    startup-captured shell snapshot are active; old PID `110404`, new PID
+    `91904`.
+  - `/api/public-config` returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v166` and
+    `shellCacheName=codex-mobile-shell-v166`.
+  - Authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`, `codexHome=C:\Users\xuxin\.codex-homes\previous`.
+- Status:
+  - Public repository is clean on `main...origin/main` after push.
+  - Private repository still has existing uncommitted local changes plus this
+    private sync; no private commit or push was requested in this turn.
+  - Open clients need the v166 refresh prompt, hard refresh, close/reopen, or
+    Hermes plugin refresh path to load the Restart risk panel.
+
 ## 2026-06-01 Updates Panel And Public Release Check v157
 
 - User request:
@@ -3107,3 +3204,221 @@ The previous full handoff was archived and should be opened only when old proven
   - Local changes are uncommitted.
   - This is docs and harness hardening only; no static shell cache bump or
     runtime restart was required.
+
+## 2026-06-03 Cross-Workspace Task Card Draft Hotfix v163
+
+- User report:
+  - From Hermes Mobile, an autonomous cross-thread card to the new Note thread
+    failed. The Note thread existed, but no incoming card appeared.
+- Diagnosis:
+  - Runtime `thread-task-cards.json` had no card targeting the Note thread and
+    its mtime still matched the prior Health/Hermes card.
+  - The Hermes source turn had produced a valid
+    `<codex-mobile-thread-task-card-draft>` with exact Note target thread id
+    `019e88be-fbda-77c0-b07b-701c2433ba50`.
+  - Browser-side draft materialization rechecked target ids against the
+    current `state.threads` list. In the Hermes source page that list was
+    filtered to the Agent workspace, so the Note workspace thread was treated
+    as missing before `/api/thread-task-cards` was called.
+- Local fix:
+  - `public/app.js`
+    - `createThreadTaskCardDraft()` now uses the exact draft
+      `targetThreadIds` for creation instead of requiring each target to be in
+      the current browser thread list.
+    - Visible thread summaries are still used when available to fill
+      `targetWorkspaceIds`; otherwise the existing server route resolves the
+      target cwd from state DB / started-thread summaries.
+    - Old local failed draft states with the previous "Target thread is
+      missing from the visible thread list" error now recover and retry when
+      the draft still contains exact target ids.
+    - Static shell build bumped to `0.1.11|codex-mobile-shell-v163`.
+  - `public/sw.js`
+    - Shell cache bumped to `codex-mobile-shell-v163`.
+  - `test/thread-task-card-route.test.js`
+    - Added regression assertions that cross-workspace exact target ids do not
+      fail on "Target thread is missing from the visible thread list".
+  - `test/mobile-viewport.test.js`
+    - Updated shell build/cache expectations to v163.
+- Validation:
+  - `node --check public\app.js` passed.
+  - `node --check public\sw.js` passed.
+  - Focused `node --test test\thread-task-card-route.test.js
+    test\conversation-render.test.js test\mobile-viewport.test.js` passed:
+    23/23.
+- Status:
+  - Runtime restart completed after the hotfix; after the final recovery tweak
+    the listener moved from PID `131012` to PID `36140`.
+  - `/api/public-config` returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v163` and
+    `shellCacheName=codex-mobile-shell-v163`.
+  - Authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`, `codexHome=C:\Users\xuxin\.codex-homes\previous`.
+  - Local changes are uncommitted.
+  - This is a static frontend/PWA behavior change; clients need the v163
+    refresh prompt, hard refresh, close/reopen, or Hermes plugin refresh path.
+  - Follow-up design note: cross-thread task-card materialization should move
+    from browser-side scheduling to server-side listener orchestration so
+    durable workflow creation does not depend on the open page, workspace
+    filter, or PWA state.
+
+## 2026-06-03 Server-Side Task Card Draft Materialization v164
+
+- User request:
+  - Continue moving cross-thread task-card messaging to server-side scheduling.
+  - Automatic collaboration cards had not reliably succeeded; the browser-only
+    path depended on the open page and workspace filter.
+- Diagnosis:
+  - The first server-materialization draft had two defects:
+    - `prepareThreadTaskCardsToResult()` recursively called itself instead of
+      attaching cards after materialization.
+    - Large-rollout `thread/turns/list` detail fallback still called the old
+      attach-only path, so it did not materialize drafts.
+  - The Hermes -> Note source turn did contain a valid assistant
+    `<codex-mobile-thread-task-card-draft>` for Note thread
+    `019e88be-fbda-77c0-b07b-701c2433ba50`.
+  - That draft body was about 9.7k characters, above the task-card service's
+    8k body limit. Without bounding, both browser auto-create and server
+    materialization could fail with `body_too_long`.
+- Local fix:
+  - `server.js`
+    - Fixed `prepareThreadTaskCardsToResult()` to await draft
+      materialization and then call `attachThreadTaskCardsToResult()`.
+    - Changed large-rollout `turnsListThreadReadResult()` to use the same
+      prepare/materialize path before returning thread detail.
+    - Added server-side `turn/completed` draft materialization:
+      the listener fetches a bounded recent-turn window, parses assistant/plan
+      draft XML, resolves target workspace metadata from local Codex state,
+      truncates overlong draft bodies to the 8k service limit, and calls the
+      same idempotent `threadTaskCardService.createMany()` path.
+    - The materialization path keeps idempotency based on the original draft
+      content, so truncating the stored body does not change duplicate
+      detection.
+  - `public/app.js` / `public/sw.js`
+    - Browser auto-create also truncates model-generated draft bodies to the
+      same 8k limit before POSTing.
+    - The `#` draft prompt now asks the model to keep `body` under 7600 chars.
+    - Static shell bumped to
+      `0.1.11|codex-mobile-shell-v164` / `codex-mobile-shell-v164`.
+  - Harness/tests:
+    - `test/thread-task-card-route.test.js` now checks that server detail
+      prepare does not recurse, large-rollout turns-list detail uses the
+      materialize path, `turn/completed` calls
+      `maybeMaterializeThreadTaskCardDrafts()`, and both frontend/server
+      creation paths truncate draft bodies instead of sending `draft.body`
+      directly.
+    - `test/mobile-viewport.test.js` updated for v164 shell/cache.
+  - Documentation updated:
+    - README
+    - `docs/ARCHITECTURE.md`
+    - `docs/COMPLEX_FEATURE_PATHS.md`
+    - `docs/CROSS_THREAD_TASK_CARDS_DESIGN.md`
+    - `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md`
+    - `docs/MODULES.md`
+    - `docs/TROUBLESHOOTING.md`
+    - `.agent-context/PROJECT_CONTEXT.md`
+- Validation:
+  - Focused `node --test test\thread-task-card-route.test.js
+    test\thread-task-card-service.test.js test\conversation-render.test.js
+    test\mobile-viewport.test.js` passed: 38/38.
+  - `npm.cmd test` passed: 295/295.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+  - BOM check for touched source, tests, docs, README, and context files had
+    no output.
+- Runtime:
+  - Restarted the 8787 Node listener after the final server/frontend change:
+    old PID `113520`, new PID `109692`.
+  - `/api/public-config` returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v164`,
+    `shellCacheName=codex-mobile-shell-v164`, and
+    `imageContextMode=reference`.
+  - Authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`, `codexHome=C:\Users\xuxin\.codex-homes\previous`.
+  - Runtime smoke:
+    - Reading Hermes source thread
+      `019e7c19-c797-7ed0-bd7d-494b5efea678` in large-rollout
+      `thread/turns/list` mode materialized the Note target card through the
+      server path.
+    - The created Note-target card id was `ttc_9b39c31e04077ff611`, with
+      source Hermes, target Note, autonomous workflow, Note workspace
+      `C:\Users\xuxin\Documents\Note`, and stored body length 8000.
+    - A repeated source-thread read did not create a duplicate card.
+    - The Note-target card is now settled as `deleted` in runtime state, so it
+      will not render again or be resurrected by re-entering the source thread.
+      To execute the Note task, send a fresh cross-thread card or explicitly
+      perform a controlled resend with a new idempotency key.
+- Status:
+  - Local changes are uncommitted.
+  - Public repository was not synced.
+  - This is both server-side behavior and static frontend/PWA behavior. Open
+    clients need the v164 refresh prompt, hard refresh, close/reopen, or Hermes
+    plugin refresh path to load the frontend truncation/prompt updates; the
+    server-side materializer is already active in the restarted listener.
+
+## 2026-06-03 Exact `#自由协作` Task-card Trigger v165
+
+- User request:
+  - Tighten the hash-command entry point so a task-card flow starts only when
+    `#` is directly followed by the four Chinese characters `自由协作`.
+  - Ordinary `#...` messages and `# 自由协作` with a space after `#` should stay
+    in the normal message route.
+- Local fix:
+  - `public/app.js`
+    - Added `THREAD_TASK_CARD_COMMAND_PREFIX = "#自由协作"`.
+    - `isThreadTaskCardCommandText()` now checks only that exact prefix instead
+      of any leading `#`.
+    - `threadTaskCardCommandText()` strips only the exact prefix for the
+      command body.
+    - The bounded draft prompt now describes `#自由协作` as the autonomous
+      cross-thread request entry and defaults `workflowMode` to `autonomous`
+      unless the user explicitly asks for a one-off manual card.
+    - Attachment rejection text now names `#自由协作` commands.
+  - `public/app.js` / `public/sw.js`
+    - Static shell bumped to
+      `0.1.11|codex-mobile-shell-v165` / `codex-mobile-shell-v165`.
+  - Harness/tests:
+    - `test/thread-task-card-route.test.js` asserts the exact prefix constant,
+      that the trigger no longer checks `startsWith("#")`, and that the draft
+      prompt defaults autonomous for `#自由协作`.
+    - `test/mobile-viewport.test.js` updated for v165 shell/cache.
+  - Documentation updated:
+    - README
+    - `docs/ARCHITECTURE.md`
+    - `docs/COMPLEX_FEATURE_PATHS.md`
+    - `docs/CROSS_THREAD_TASK_CARDS_DESIGN.md`
+    - `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md`
+    - `docs/TROUBLESHOOTING.md`
+    - `.agent-context/PROJECT_CONTEXT.md`
+- Validation:
+  - `node --check public\app.js`, `node --check public\sw.js`, and
+    `node --check server.js` passed.
+  - Focused `node --test test\thread-task-card-route.test.js
+    test\thread-task-card-service.test.js test\conversation-render.test.js
+    test\mobile-viewport.test.js` passed: 38/38.
+  - `npm.cmd test` passed: 295/295.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+  - BOM check for touched source, tests, docs, README, and context files had
+    no output.
+- Runtime:
+  - Restarted the 8787 Node listener after the static frontend change:
+    old PID `109692`, new PID `110404`.
+  - `/api/public-config` returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v165`,
+    `shellCacheName=codex-mobile-shell-v165`, and
+    `imageContextMode=reference`.
+  - Authenticated `/api/status` is healthy:
+    `ready=true`, `transport=external-jsonl-tcp`, `sharedRequired=true`,
+    `lastError=null`.
+- Status:
+  - Local changes are uncommitted.
+  - Public repository was not synced.
+  - This is a static frontend/PWA trigger change. Open clients need the v165
+    refresh prompt, hard refresh, close/reopen, or Hermes plugin refresh path
+    to load the exact-prefix behavior.

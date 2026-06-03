@@ -298,11 +298,12 @@ Implementation path:
    target-thread messages.
 7. Reply should create a controlled reverse-direction card, not a silent direct
    message injection.
-8. Ordinary task cards remain manual. If a `#` draft explicitly requests an
-   autonomous/no-further-approval collaboration workflow, the first target
-   approval may activate a workflow grant. Auto-run is allowed only for later
-   cards with the same workflow id and the same unordered pair of source/target
-   thread ids; a reused id with a different pair must stay pending.
+8. Ordinary task cards remain manual. The `#自由协作` draft path defaults to an
+   autonomous/no-further-approval collaboration workflow unless the user asks
+   for a one-off manual card. The first target approval may activate a workflow
+   grant. Auto-run is allowed only for later cards with the same workflow id and
+   the same unordered pair of source/target thread ids; a reused id with a
+   different pair must stay pending.
 9. Autonomous workflow completion return is server-owned and is part of the
    default autonomous workflow contract: when the approved card's injected
    target turn emits `turn/completed`, create one reverse-direction return card
@@ -323,10 +324,11 @@ Implementation path:
 13. Keep `test/thread-task-card-harness.test.js` green, and cover real behavior
    with `test/thread-task-card-service.test.js` and
    `test/thread-task-card-route.test.js`.
-14. `#`-prefixed composer input is now reserved for natural-language task-card
-    commands. Convert them into a bounded draft-request prompt for the current
-    Codex thread, including the visible target-thread list and exact XML/JSON
-    response schema.
+14. Composer input is routed into the natural-language task-card flow only when
+    it starts with the exact `#自由协作` prefix. Ordinary `#...` text remains a
+    normal message. Convert `#自由协作` inputs into a bounded draft-request prompt
+    for the current Codex thread, including the visible target-thread list and
+    exact XML/JSON response schema.
 15. Suppress the raw returned
      `<codex-mobile-thread-task-card-draft>...</codex-mobile-thread-task-card-draft>`
      assistant block, show a bounded placeholder while it is generating, and
@@ -335,11 +337,21 @@ Implementation path:
 16. Keep the command path conservative: if the model does not return at least
      one valid visible target id, do not auto-send to any other thread. The
      preferred draft field is `targetThreadIds`, with legacy `targetThreadId`
-     accepted for backward compatibility.
-17. Multi-target creation must create one stored pending card per target. Keep
+     accepted for backward compatibility. `#自由协作` defaults to autonomous
+     workflow mode unless the user explicitly asks for a one-off manual card.
+17. Do not rely only on the browser to turn a parsed draft into stored cards.
+     On fresh `turn/completed`, `server.js` should fetch a bounded recent-turn
+     window and materialize assistant/plan draft XML through the same
+     idempotent `createMany()` path. Thread-detail reads should do the same
+     before attaching `thread.threadTaskCards`, including large-rollout
+     `thread/turns/list` reads.
+18. Model-generated draft bodies can exceed the persisted card limit. Truncate
+     draft bodies to the 8k service limit with a marker before create, while
+     keeping idempotency based on the original draft content.
+19. Multi-target creation must create one stored pending card per target. Keep
      the server route compatible by returning `card` for old callers plus
      `cards` for the complete batch result.
-18. Source-side draft creation must feel immediate: use a stable draft-scoped
+20. Source-side draft creation must feel immediate: use a stable draft-scoped
      idempotency key, surface incoming pending-card counts on thread summaries,
      and switch directly to the target thread only for single-target drafts.
      Multi-target drafts should stay on the source thread after creation,

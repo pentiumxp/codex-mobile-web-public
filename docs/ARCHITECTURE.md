@@ -229,7 +229,7 @@ responses, private manifest dumps, or long logs.
 
 ### Thread List And Detail
 
-Thread list reads app-server `thread/list`, then filters archived/deleted/sub-agent/out-of-workspace rows using local visibility rules and SQLite fallback data. The browser's default thread-list refresh requests a 40-row page; raising this casually can make startup, foreground resume, and thread switching noticeably slower because the server may do more app-server and fallback work before returning even when only a small number of rows are visible. On cold startup with a saved current thread, the browser sets `startupThreadOpenPending` before the first app-shell reveal and starts the saved-thread detail read in parallel with status/workspace/list refresh; the startup path should not wait for the list response before beginning the known thread detail read. Startup emits bounded `startup_stage` client events so the runtime log can separate public-config, status, workspace, list, detail, and render delays. Codex worktree cwd values under `%USERPROFILE%\.codex\worktrees\<id>\<repo>` are treated as visible when `<repo>` matches a known workspace basename, so temporary Codex worktree sessions do not disappear merely because their cwd differs from the primary workspace path. When app-server omits visible rows, the list merges state DB and session-index fallback threads before applying the same cwd/search filters.
+Thread list reads app-server `thread/list`, then filters archived/deleted/sub-agent/out-of-workspace rows using local visibility rules and SQLite fallback data. The browser's default thread-list refresh requests a 40-row page; raising this casually can make startup, foreground resume, and thread switching noticeably slower because the server may do more app-server and fallback work before returning even when only a small number of rows are visible. On cold startup with a saved current thread, the browser sets `startupThreadOpenPending` before the first app-shell reveal and starts the saved-thread detail read in parallel with status/workspace/list refresh; the startup path should not wait for the list response before beginning the known thread detail read. Startup emits bounded `startup_stage` client events so the runtime log can separate public-config, status, workspace, list, detail, and render delays. Codex worktree cwd values under `%USERPROFILE%\.codex\worktrees\<id>\<repo>` are treated as visible when `<repo>` matches a known workspace basename, so temporary Codex worktree sessions do not disappear merely because their cwd differs from the primary workspace path. When app-server omits visible rows, the list merges state DB and session-index fallback threads before applying the same cwd/search filters. The session-index fallback must also skip ids present in `archived_sessions`, so projectless archived sessions are not resurrected just because the primary app-server list omitted them.
 
 Thread detail has two modes:
 
@@ -242,16 +242,19 @@ Workspace-level token accounting is a separate persistent ledger. On `turn/compl
 
 The sidebar version pill is the entry point for update checks. It opens an Updates panel rather than immediately applying an update. The current-checkout section uses the existing `/api/app-update/status` and `/api/app-update/apply` path, which only fast-forwards the configured `CODEX_MOBILE_UPDATE_REMOTE` / `CODEX_MOBILE_UPDATE_BRANCH` when the checkout is clean, on the expected branch, and not ahead or diverged. The Public release section calls `/api/public-release/status` to read the latest commit from the configured public repository. It is informational for private checkouts; a public-installed checkout can use the same current-checkout fast-forward path when its update remote already points at the public repository.
 
+The sidebar `Restart` action is separate from self-update. Before calling `/api/restart/shared-chain`, the browser opens an in-app confirmation dialog, reads a bounded recent `/api/threads?limit=200&archived=false` list, and lists running sessions that may be interrupted. This is advisory only: the user can still proceed, and the actual restart scope remains enforced by `adapters/shared-chain-restart-service.js` plus the platform restart scripts.
+
 Thread detail responses may also include `thread.threadTaskCards`. These are
 cross-thread collaboration cards that stay outside normal `thread.turns[*].items`
 until the target thread explicitly approves them. The browser renders them in a
 separate stack after the visible turn list and detached approvals, so they stay
 near the active bottom surface without polluting message flow.
-The composer also reserves `#...` at the start of a message as a cross-thread
-task-card command path. Those messages do not use a separate parse endpoint.
-Instead, `public/app.js` wraps the original `#` command in a bounded request
-envelope that includes the visible target-thread list, sends it through the
-normal current-thread message path, and expects the model to return exactly one
+The composer reserves the exact `#自由协作` prefix as the cross-thread task-card
+command path. Ordinary `#...` text remains a normal message. `#自由协作` commands
+do not use a separate parse endpoint. Instead, `public/app.js` wraps the
+original command in a bounded request envelope that includes the visible
+target-thread list, sends it through the normal current-thread message path,
+and expects the model to return exactly one
 `<codex-mobile-thread-task-card-draft>...</codex-mobile-thread-task-card-draft>`
 JSON block. The preferred draft shape uses `targetThreadIds: [...]`; the parser
 also accepts the legacy single `targetThreadId` field. The browser suppresses
@@ -262,20 +265,28 @@ through `POST /api/thread-task-cards`. That route accepts either a single
 `targetThreadId` or multiple `targetThreadIds`, creates one stored card per
 target, and returns both the compatibility `card` field and the full `cards`
 array.
+Server-side draft materialization backs up the browser path. On fresh
+`turn/completed`, `server.js` fetches a bounded recent-turn window, scans
+assistant/plan items for the same structured draft XML, resolves source/target
+workspace metadata from local Codex state, truncates overlong draft bodies to
+the 8,000-character card limit, and calls the same idempotent `createMany()`
+path. Thread detail reads also run materialization before attaching
+`thread.threadTaskCards`, including large-rollout `thread/turns/list` reads, so
+automatic collaboration does not depend on which browser client is open.
 When the browser later resolves the queued draft key for automatic creation, it
 must keep scanning past ordinary assistant or plan messages until it finds the
 matching draft block. Long source threads often contain many earlier
 non-draft messages, and those must not prevent the later draft from reaching
 the task-card API.
-The draft schema may include `workflowMode:"autonomous"` only when the command
-explicitly asks for no further approval or automatic collaboration. The first
-target-side approval activates a workflow grant scoped to the workflow id and
-the same two participating thread ids; ordinary cards remain manual. Completion
-auto-return is part of the default autonomous contract: for an approved
-autonomous card, the server observes completion of the injected target turn and
-creates one reverse-direction auto-return card with the final receipt. That
-return card reuses the same workflow id and auto-injects back into the source
-thread through the active grant.
+The `#自由协作` draft path defaults `workflowMode` to `autonomous` unless the
+command explicitly asks for a one-off manual card. The first target-side
+approval activates a workflow grant scoped to the workflow id and the same two
+participating thread ids; ordinary cards remain manual. Completion auto-return
+is part of the default autonomous contract: for an approved autonomous card, the
+server observes completion of the injected target turn and creates one
+reverse-direction auto-return card with the final receipt. That return card
+reuses the same workflow id and auto-injects back into the source thread through
+the active grant.
 ### Conversation Navigation
 
 The browser owns conversation scroll controls. The return-to-bottom button appears only when the current thread is loaded, scrollable, and away from the newest content.
@@ -316,8 +327,8 @@ autonomous card. The auto-return idempotency key is based on the original card
 id plus completed turn id, so replayed completion notifications do not create
 duplicate return turns.
 Source-side draft creation is also intentionally lightweight: once a valid
-`#`-draft creates pending cards, the browser does not block on re-reading the
-source thread before settling local state. It updates local draft state and
+`#自由协作` draft creates pending cards, the browser does not block on re-reading
+the source thread before settling local state. It updates local draft state and
 refreshes thread summaries in the background, and it does not render an interim
 source-side `Sending` draft card during automatic creation. Single-target drafts
 still open the target thread so the pending card is visible where it was
@@ -330,20 +341,21 @@ rather than above historical conversation content. Only `pending` cards whose
 cards remain store/audit state and badge/count state only. Once a card reaches
 `approved`, `deleted`, `revoked`, or `replied`, the browser stops rendering that
 card and the injected turn or later reply becomes the user-visible surface.
-Source-side `#` draft settlement uses a stable key derived from the turn id and
-draft content, not the app-server item id. On thread re-entry, the browser also
-checks existing stored cards from the same source turn before auto-sending a
-draft again, so item-id drift after refresh/compaction cannot recreate a card.
+Source-side `#自由协作` draft settlement uses a stable key derived from the turn
+id and draft content, not the app-server item id. On thread re-entry, the
+browser also checks existing stored cards from the same source turn before
+auto-sending a draft again, so item-id drift after refresh/compaction cannot
+recreate a card.
 If the draft contains a target id that is not an exact visible thread id, the
 browser can recover it only when exactly one visible target has a sufficiently
 long common id prefix. This covers model-copy errors where the target id prefix
 is right but the suffix is corrupted, while still failing closed for ambiguous
 or invented targets.
-The current `#` task-card path is still bounded and conservative, but the
-interpretation now lives in the model turn rather than a browser/server regex
-parser. The browser provides only the visible thread list and required response
-schema. If the model does not return one valid visible `targetThreadId`, Mobile
-Web does not auto-create a pending card.
+The current `#自由协作` task-card path is still bounded and conservative, but
+the interpretation now lives in the model turn rather than a browser/server
+regex parser. The browser provides only the visible thread list and required
+response schema. If the model does not return one valid visible
+`targetThreadId`, Mobile Web does not auto-create a pending card.
 
 The browser connects to `/api/events` with the current thread id. `server.js` filters app-server notifications to the current thread where possible, forwards status and thread-level notifications, and drops large diff notifications that the UI does not render. Source-less `account/rateLimits/updated` notifications are recorded server-side but not broadcast to browsers because they can come from another workspace in a shared mux stream. Browser quota display is refreshed from active `/api/public-config` and `/api/status` snapshots; rollout-scanned quota data is kept as a cold-start fallback and does not overwrite live app-server quota.
 

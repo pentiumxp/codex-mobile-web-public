@@ -23,6 +23,10 @@ layout and test strategy.
 - `server.js`
   - route wiring
   - `turn/completed` notification hook for autonomous completion auto-return
+  - `turn/completed` and thread-detail hooks that materialize structured
+    `#自由协作` task-card drafts through the same idempotent create service path
+  - large-rollout `thread/turns/list` detail mode must still run task-card draft
+    materialization before attaching visible cards
   - SSE/broadcast integration only
 
 ### Browser-side
@@ -31,8 +35,8 @@ layout and test strategy.
   - minimal orchestration
   - render task-card stack
   - action handlers
-  - source-side `#` draft parsing and automatic pending-card creation; source
-    drafts must not require a second local approval click
+  - source-side `#自由协作` draft parsing and automatic pending-card creation;
+    source drafts must not require a second local approval click
   - source-side automatic creation must not render an interim `Sending` draft
     card in the conversation; only real creation failures should render a
     bounded dismissible diagnostic
@@ -42,6 +46,9 @@ layout and test strategy.
   - queued source draft creation must scan the current thread until it finds
     the matching draft key; ordinary earlier assistant/plan messages are skipped
     rather than treated as lookup failure
+  - source-side draft body submission must use the same 8k truncation policy as
+    the server, so model verbosity cannot turn a valid target draft into a
+    `body_too_long` failure
   - target-thread detail rendering only for `pending` cards whose
     `threadRole` is `target`; source outgoing pending cards should not render
     as local work items
@@ -96,12 +103,18 @@ If sqlite is chosen, keep it separate from normal thread message history.
 5. Add approve/delete/revoke/reply handlers.
 6. Add injection path for approved cards.
 7. Add audit logging and focused diagnostics.
-8. For the `#` natural-language path, ask the model for `targetThreadIds`, keep
-   accepting legacy `targetThreadId`, and automatically create target pending
-   cards when the draft parses. Do not show a source-side `Approve` button.
-   The draft may include `workflowMode:"autonomous"` only when the command
-   explicitly requests an automatic/no-further-approval collaboration loop.
-9. For autonomous workflow cards, observe `turn/completed` for the recorded
+8. For the exact `#自由协作` natural-language path, ask the model for
+   `targetThreadIds`, keep accepting legacy `targetThreadId`, and automatically
+   create target pending cards when the draft parses. Do not show a source-side
+   `Approve` button. This path defaults to `workflowMode:"autonomous"` unless
+   the command explicitly asks for a one-off manual card.
+9. Back the browser auto-create path with server-side materialization. On fresh
+   `turn/completed`, fetch a bounded recent-turn window, parse assistant/plan
+   draft XML, resolve target workspace metadata, truncate overlong draft bodies
+   to the 8k card limit, and call `createMany()` with a stable draft idempotency
+   key. Thread-detail reads run the same materialization before attaching cards,
+   including large-rollout `thread/turns/list` reads.
+10. For autonomous workflow cards, observe `turn/completed` for the recorded
    `injectedTurnId`. `server.js` calls
    `threadTaskCardService.maybeAutoReplyCompletedTurn()`, which creates an
    idempotent reverse-direction card with the completed turn receipt and the
@@ -146,6 +159,10 @@ After implementation begins, expand coverage with:
 - route tests for authorization and action endpoints;
 - route/static tests that `server.js` wires `turn/completed` through
   `maybeAutoReplyCompletedTurn`;
+- route/static tests that `server.js` wires `turn/completed` through
+  `maybeMaterializeThreadTaskCardDrafts`, that detail reads await
+  `materializeThreadTaskCardDraftsForThread()`, and that materialization
+  truncates draft bodies before `createMany()`;
 - conversation/thread-detail tests for card rendering outside message flow;
 - SSE/live update tests if task cards are pushed in real time.
 - frontend/static harness checks that source-side draft cards auto-send and no

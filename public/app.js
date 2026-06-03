@@ -139,6 +139,10 @@ const state = {
   appWorkspacePath: "",
   sharedRestartBusy: false,
   sharedRestarting: false,
+  sharedRestartDialogOpen: false,
+  sharedRestartRiskThreads: [],
+  sharedRestartScopeLines: [],
+  sharedRestartConfirmResolve: null,
   serverBuildId: "",
   serverAssetBuildId: "",
   pageRefreshAvailable: false,
@@ -209,7 +213,7 @@ const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 8;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v162";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v166";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -268,6 +272,8 @@ function postStartupStage(stage, startedAt, details = {}) {
 const DRAFT_SAVE_DEBOUNCE_MS = 250;
 const THREAD_TASK_CARD_DRAFT_CREATE_STALE_MS = 45000;
 const THREAD_TASK_CARD_DRAFT_CREATE_MAX_ATTEMPTS = 3;
+const THREAD_TASK_CARD_BODY_MAX_CHARS = 8000;
+const THREAD_TASK_CARD_COMMAND_PREFIX = "#自由协作";
 const THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";
 const THREAD_TASK_CARD_DRAFT_TAG = "codex-mobile-thread-task-card-draft";
 const THEME_VALUES = new Set(["system", "dark", "light"]);
@@ -1797,10 +1803,9 @@ function renderSharedRestartButton() {
   el.classList.toggle("checking", state.sharedRestartBusy || restarting);
 }
 
-async function handleSharedRestartClick() {
-  if (state.sharedRestartBusy || state.sharedRestarting) return;
+function sharedRestartScopeLines() {
   const isMac = state.serverPlatform === "darwin";
-  const scopeLines = isMac
+  return isMac
     ? [
       "这会短暂断开当前页面连接，并重启这台 Mac 上的 Mobile Web 服务。",
       "不会重启 Codex Desktop、shared mux 或其它本机服务。",
@@ -1809,15 +1814,119 @@ async function handleSharedRestartClick() {
       "这会短暂断开当前页面连接，并重启 Mobile Web、shared mux 和本地 app-server。",
       "不会重启 WSL、Codex Desktop 或其它本机服务。",
     ];
-  const confirmed = window.confirm([
-    "确认重启 Codex Mobile Web？",
-    "",
-    ...scopeLines,
-  ].join("\n"));
-  if (!confirmed) return;
+}
+
+function restartRiskThreads(threads) {
+  const seen = new Set();
+  const result = [];
+  for (const thread of threads || []) {
+    const id = String(thread && thread.id || "");
+    if (!id || seen.has(id) || !isRunningStatus(thread.status)) continue;
+    seen.add(id);
+    result.push(thread);
+  }
+  if (state.currentThreadId && state.activeTurnId && !seen.has(String(state.currentThreadId))) {
+    const current = state.currentThread || threadById(state.currentThreadId) || { id: state.currentThreadId, name: "Current session", status: { type: "active" } };
+    result.unshift(current);
+  }
+  return result;
+}
+
+async function fetchRestartRiskThreads() {
+  const params = new URLSearchParams({ limit: "200", archived: "false" });
+  const result = await api(`/api/threads?${params}`, { timeoutMs: 45000 });
+  return restartRiskThreads(visibleThreads(result.data || []));
+}
+
+function restartRiskThreadTitle(thread) {
+  return String(thread && (thread.name || thread.preview || thread.id) || "Untitled session").trim();
+}
+
+function restartRiskThreadMeta(thread) {
+  const parts = [];
+  const cwd = shortPath(thread && thread.cwd);
+  if (cwd) parts.push(cwd);
+  const status = statusText(thread && thread.status);
+  if (status) parts.push(status);
+  return parts.join(" | ");
+}
+
+function renderSharedRestartDialog() {
+  const dialog = $("restartConfirmDialog");
+  const subtitle = $("restartConfirmSubtitle");
+  const content = $("restartConfirmContent");
+  const proceed = $("restartConfirmProceed");
+  if (!dialog || !content || !subtitle || !proceed) return;
+  dialog.classList.toggle("hidden", !state.sharedRestartDialogOpen);
+  if (!state.sharedRestartDialogOpen) {
+    content.innerHTML = "";
+    return;
+  }
+  const riskThreads = state.sharedRestartRiskThreads || [];
+  const hasRisk = riskThreads.length > 0;
+  subtitle.textContent = hasRisk
+    ? `${riskThreads.length} running session${riskThreads.length === 1 ? "" : "s"} may be interrupted`
+    : "No running sessions were found";
+  proceed.textContent = hasRisk ? "仍然重启" : "Restart";
+  proceed.classList.toggle("danger", hasRisk);
+  const scopeHtml = (state.sharedRestartScopeLines || [])
+    .map((line) => `<div class="restart-confirm-line">${escapeHtml(line)}</div>`)
+    .join("");
+  const riskHtml = hasRisk
+    ? `<div class="restart-risk-block">
+        <div class="restart-risk-title">Running sessions</div>
+        <div class="restart-risk-list">
+          ${riskThreads.slice(0, 6).map((thread) => {
+            const meta = restartRiskThreadMeta(thread);
+            return `<div class="restart-risk-item">
+              <div class="restart-risk-item-title">${escapeHtml(restartRiskThreadTitle(thread))}</div>
+              ${meta ? `<div class="restart-risk-item-meta">${escapeHtml(meta)}</div>` : ""}
+            </div>`;
+          }).join("")}
+          ${riskThreads.length > 6 ? `<div class="restart-risk-more">另有 ${escapeHtml(String(riskThreads.length - 6))} 个 running session</div>` : ""}
+        </div>
+      </div>`
+    : `<div class="restart-safe-block">当前没有检测到 running session。重启仍会短暂断开本页面连接。</div>`;
+  content.innerHTML = `
+    <div class="restart-confirm-message">
+      ${hasRisk
+        ? "重启可能会打断正在通过 Codex Mobile 同步或运行的 session。建议等它们结束后再重启。"
+        : "确认重启 Codex Mobile Web？"}
+    </div>
+    ${riskHtml}
+    <div class="restart-confirm-scope">${scopeHtml}</div>
+  `;
+}
+
+function closeSharedRestartDialog(confirmed = false) {
+  const resolve = state.sharedRestartConfirmResolve;
+  state.sharedRestartDialogOpen = false;
+  state.sharedRestartRiskThreads = [];
+  state.sharedRestartScopeLines = [];
+  state.sharedRestartConfirmResolve = null;
+  renderSharedRestartDialog();
+  if (resolve) resolve(Boolean(confirmed));
+}
+
+function requestSharedRestartConfirmation(riskThreads, scopeLines) {
+  if (state.sharedRestartConfirmResolve) closeSharedRestartDialog(false);
+  state.sharedRestartRiskThreads = riskThreads || [];
+  state.sharedRestartScopeLines = scopeLines || [];
+  state.sharedRestartDialogOpen = true;
+  renderSharedRestartDialog();
+  return new Promise((resolve) => {
+    state.sharedRestartConfirmResolve = resolve;
+  });
+}
+
+async function handleSharedRestartClick() {
+  if (state.sharedRestartBusy || state.sharedRestarting) return;
   state.sharedRestartBusy = true;
   renderSharedRestartButton();
   try {
+    const riskThreads = await fetchRestartRiskThreads();
+    const confirmed = await requestSharedRestartConfirmation(riskThreads, sharedRestartScopeLines());
+    if (!confirmed) return;
     const result = await api("/api/restart/shared-chain", {
       method: "POST",
       body: "{}",
@@ -1833,9 +1942,12 @@ async function handleSharedRestartClick() {
       refreshPageForNewBuild().catch(showError);
     }, Math.max(1800, Number(result.restartInMs || 900) + 1200));
   } catch (err) {
-    state.sharedRestartBusy = false;
-    renderSharedRestartButton();
     showError(err);
+  } finally {
+    if (!state.sharedRestarting) {
+      state.sharedRestartBusy = false;
+      renderSharedRestartButton();
+    }
   }
 }
 
@@ -6059,12 +6171,27 @@ function summarizeTaskCardText(value) {
   return truncateSingleLine(String(value || "").replace(/\s+/g, " ").trim(), 280);
 }
 
+function truncateThreadTaskCardBody(value, maxChars = THREAD_TASK_CARD_BODY_MAX_CHARS) {
+  const text = String(value || "").trim();
+  const limit = Math.max(0, Number(maxChars) || 0);
+  if (!limit || text.length <= limit) return text;
+  const marker = `\n\n[Task card body truncated: ${text.length} chars total]\n\n`;
+  const available = Math.max(0, limit - marker.length);
+  if (available <= 0) return text.slice(0, limit);
+  const head = Math.ceil(available * 0.6);
+  const tail = Math.max(0, available - head);
+  return `${text.slice(0, head).trimEnd()}${marker}${text.slice(-tail).trimStart()}`.slice(0, limit);
+}
+
 function isThreadTaskCardCommandText(value) {
-  return String(value || "").trim().startsWith("#");
+  return String(value || "").trim().startsWith(THREAD_TASK_CARD_COMMAND_PREFIX);
 }
 
 function threadTaskCardCommandText(value) {
-  return String(value || "").trim().replace(/^#+\s*/, "").trim();
+  const text = String(value || "").trim();
+  return text.startsWith(THREAD_TASK_CARD_COMMAND_PREFIX)
+    ? text.slice(THREAD_TASK_CARD_COMMAND_PREFIX.length).trim()
+    : text.replace(/^#+\s*/, "").trim();
 }
 
 function threadTaskCardVisibleTargets() {
@@ -6096,7 +6223,7 @@ function buildThreadTaskCardDraftRequestText(commandText) {
     JSON.stringify(envelope, null, 2),
     `</${THREAD_TASK_CARD_REQUEST_TAG}>`,
     "",
-    "Interpret the # command above as a cross-thread pending task card request.",
+    "Interpret the #自由协作 command above as an autonomous cross-thread pending task card request.",
     "Return only one XML block in exactly this format:",
     `<${THREAD_TASK_CARD_DRAFT_TAG}>`,
     "{\"targetThreadIds\":[\"one or more exact threadId values from availableTargets\"],\"workflowMode\":\"manual|autonomous\",\"workflowId\":\"optional existing workflow id\",\"title\":\"short title\",\"summary\":\"one-line summary\",\"body\":\"full markdown body\",\"error\":\"\"}",
@@ -6104,12 +6231,12 @@ function buildThreadTaskCardDraftRequestText(commandText) {
     "Rules:",
     "- Choose one or more targetThreadIds only from availableTargets.threadId.",
     "- Do not invent a thread id; when the request names multiple clear targets, include all of them.",
-    "- Default workflowMode to manual. Use autonomous only when the command explicitly asks for no further approval, automatic collaboration, or a card workflow after first approval.",
+    "- Default workflowMode to autonomous for #自由协作. Use manual only if the command explicitly asks for a one-off manual card.",
     "- Autonomous workflow means the target approves the first card once; after the target turn completes, Mobile Web sends the return card back automatically without another approval.",
     "- For a new autonomous workflow, leave workflowId empty. Reuse workflowId only when the command or visible context provides an existing id.",
     "- If the command is unclear or no target fits, set targetThreadIds to an empty array and explain the problem in error.",
     "- Keep title under 120 chars and summary under 280 chars.",
-    "- Put the actual requested work in body.",
+    "- Keep body under 7600 chars and put the actual requested work there.",
     "- Do not add any explanation outside the XML block.",
   ].join("\n");
 }
@@ -6338,8 +6465,7 @@ function canRecoverFailedThreadTaskCardDraft(draft, draftState) {
   if (!draft || !draftState || draftState.status !== "failed") return false;
   const error = String(draftState.error || "");
   if (!/Target thread is missing from the visible thread list/i.test(error)) return false;
-  const refs = threadTaskCardDraftTargetThreads(draft);
-  return Boolean(refs.length && refs.every((entry) => entry.thread && entry.thread.id));
+  return threadTaskCardDraftTargetIds(draft).length > 0;
 }
 
 function matchingThreadTaskCardsForDraft(draft, turn) {
@@ -9520,7 +9646,7 @@ async function sendMessage(event) {
   if ((!text && !state.pendingAttachments.length) || !state.currentThreadId) return;
   const threadTaskCardCommand = isThreadTaskCardCommandText(text);
   if (threadTaskCardCommand && state.pendingAttachments.length) {
-    showError(new Error("Task-card commands do not support attachments yet"));
+    showError(new Error("#自由协作 commands do not support attachments yet"));
     return;
   }
   const outboundText = threadTaskCardCommand ? buildThreadTaskCardDraftRequestText(text) : text;
@@ -9896,13 +10022,9 @@ async function createThreadTaskCardDraft(draftKey) {
     }
     const { draft, turn } = resolved;
     const targetRefs = threadTaskCardDraftTargetThreads(draft);
-    const targetThreadIds = uniqueThreadTaskCardTargetIds(
-      targetRefs.map((entry) => entry.thread && entry.thread.id ? entry.thread.id : entry.threadId),
-      "",
-    );
-    const missingTargets = targetRefs.filter((entry) => !entry.thread).map((entry) => entry.threadId).filter(Boolean);
-    if (!targetThreadIds.length || missingTargets.length) {
-      setThreadTaskCardDraftState(draftKey, { status: "failed", error: draft.error || `Target thread is missing from the visible thread list${missingTargets.length ? `: ${missingTargets.join(", ")}` : ""}` });
+    const targetThreadIds = threadTaskCardDraftTargetIds(draft);
+    if (!targetThreadIds.length) {
+      setThreadTaskCardDraftState(draftKey, { status: "failed", error: draft.error || "Draft did not include a target thread id" });
       return;
     }
     if (!draft.title || !draft.body) {
@@ -9912,6 +10034,7 @@ async function createThreadTaskCardDraft(draftKey) {
     setThreadTaskCardDraftState(draftKey, { status: "creating", error: "" });
     $("connectionState").classList.remove("error");
     $("connectionState").textContent = "Creating task card";
+    const body = truncateThreadTaskCardBody(draft.body);
     const targetWorkspaceIds = {};
     for (const entry of targetRefs) {
       if (entry.thread) targetWorkspaceIds[entry.threadId] = String(entry.thread.cwd || "");
@@ -9928,8 +10051,8 @@ async function createThreadTaskCardDraft(draftKey) {
         idempotencyKey: `task-card-draft:${state.currentThreadId}:${draftKey}`,
         format: "markdown",
         title: draft.title,
-        summary: draft.summary || summarizeTaskCardText(draft.body),
-        body: draft.body,
+        summary: draft.summary || summarizeTaskCardText(body),
+        body,
         workflowMode: draft.workflowMode || "manual",
         workflowId: draft.workflowId || "",
       }),
@@ -10066,6 +10189,11 @@ function wireUi() {
     if (event.target === $("updateDialog")) closeUpdatePanel();
   });
   if ($("sharedRestartButton")) $("sharedRestartButton").addEventListener("click", () => handleSharedRestartClick().catch(showError));
+  if ($("restartConfirmCancel")) $("restartConfirmCancel").addEventListener("click", () => closeSharedRestartDialog(false));
+  if ($("restartConfirmProceed")) $("restartConfirmProceed").addEventListener("click", () => closeSharedRestartDialog(true));
+  if ($("restartConfirmDialog")) $("restartConfirmDialog").addEventListener("click", (event) => {
+    if (event.target === $("restartConfirmDialog")) closeSharedRestartDialog(false);
+  });
   if ($("themeSettingsToggle")) $("themeSettingsToggle").addEventListener("click", () => {
     loadCodexProfiles().catch(showError);
     setTimeout(() => publishPluginNavigationState({ force: true }), 0);

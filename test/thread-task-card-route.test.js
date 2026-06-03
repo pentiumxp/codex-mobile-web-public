@@ -8,6 +8,21 @@ const { test } = require("node:test");
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 
+function functionBody(source, name) {
+  const start = source.indexOf(`function ${name}(`);
+  assert.notEqual(start, -1, `missing function ${name}`);
+  const bodyStart = source.indexOf(") {", start) + 2;
+  assert.notEqual(bodyStart, 1, `missing function body ${name}`);
+  let depth = 0;
+  for (let index = bodyStart; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "{") depth += 1;
+    if (char === "}") depth -= 1;
+    if (depth === 0) return source.slice(bodyStart + 1, index);
+  }
+  throw new Error(`could not parse function ${name}`);
+}
+
 test("server exposes thread task card routes and enriches thread detail responses", () => {
   assert.match(serverJs, /createThreadTaskCardService/);
   assert.doesNotMatch(serverJs, /createThreadTaskCardIntentService/);
@@ -45,8 +60,34 @@ test("thread task card routes preserve service status codes", () => {
   assert.equal(statusPreservingErrors.length, 6);
 });
 
+test("server materializes structured task-card drafts from thread detail", () => {
+  assert.match(serverJs, /const THREAD_TASK_CARD_DRAFT_TAG = "codex-mobile-thread-task-card-draft"/);
+  assert.match(serverJs, /const THREAD_TASK_CARD_BODY_MAX_CHARS = 8_000/);
+  assert.match(serverJs, /const THREAD_TASK_CARD_DRAFT_TURN_LOOKBACK = 4/);
+  assert.match(serverJs, /function parseThreadTaskCardDraftText\(/);
+  assert.match(serverJs, /function truncateThreadTaskCardBody\(/);
+  assert.match(serverJs, /function materializeThreadTaskCardDraftsForThread\(/);
+  assert.match(serverJs, /function maybeMaterializeThreadTaskCardDrafts\(/);
+  assert.match(serverJs, /function prepareThreadTaskCardsToResult\(/);
+  assert.match(functionBody(serverJs, "maybeMaterializeThreadTaskCardDrafts"), /method !== "turn\/completed"/);
+  assert.match(functionBody(serverJs, "maybeMaterializeThreadTaskCardDrafts"), /codex\.request\("thread\/turns\/list"/);
+  assert.match(functionBody(serverJs, "maybeMaterializeThreadTaskCardDrafts"), /await materializeThreadTaskCardDraftsForThread\(thread\)/);
+  assert.match(functionBody(serverJs, "materializeThreadTaskCardDraftsForThread"), /parseThreadTaskCardDraftText\(threadTaskCardItemText\(item\)\)/);
+  assert.match(functionBody(serverJs, "materializeThreadTaskCardDraftsForThread"), /readStateDbThread\(targetThreadId\) \|\| readStartedThread\(targetThreadId\)/);
+  assert.match(functionBody(serverJs, "materializeThreadTaskCardDraftsForThread"), /const body = truncateThreadTaskCardBody\(draft\.body\)/);
+  assert.match(functionBody(serverJs, "materializeThreadTaskCardDraftsForThread"), /threadTaskCardService\.createMany/);
+  assert.match(functionBody(serverJs, "materializeThreadTaskCardDraftsForThread"), /threadTaskCardDraftIdempotencyKey\(sourceThreadId, turnId, draft\)/);
+  assert.doesNotMatch(functionBody(serverJs, "materializeThreadTaskCardDraftsForThread"), /body: draft\.body/);
+  assert.match(functionBody(serverJs, "prepareThreadTaskCardsToResult"), /await materializeThreadTaskCardDraftsForThread\(result\.thread\)/);
+  assert.match(functionBody(serverJs, "prepareThreadTaskCardsToResult"), /return attachThreadTaskCardsToResult\(result\)/);
+  assert.doesNotMatch(functionBody(serverJs, "prepareThreadTaskCardsToResult"), /prepareThreadTaskCardsToResult\(result\)/);
+  assert.match(functionBody(serverJs, "turnsListThreadReadResult"), /return prepareThreadTaskCardsToResult\(result\)/);
+  assert.match(serverJs, /maybeMaterializeThreadTaskCardDrafts\(msg\.method, msg\.params \|\| null\)/);
+  assert.match(serverJs, /sendJson\(res, 200, await prepareThreadTaskCardsToResult\(result\)\)/);
+});
+
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v162"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v166"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.threadRole \|\| ""\) === "target"\)/);
@@ -72,11 +113,19 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /function mutateThreadTaskCard\(/);
   assert.match(appJs, /function replyTaskCard\(/);
   assert.match(appJs, /function isThreadTaskCardCommandText\(/);
+  assert.match(appJs, /const THREAD_TASK_CARD_COMMAND_PREFIX = "#自由协作"/);
+  assert.match(functionBody(appJs, "isThreadTaskCardCommandText"), /startsWith\(THREAD_TASK_CARD_COMMAND_PREFIX\)/);
+  assert.doesNotMatch(functionBody(appJs, "isThreadTaskCardCommandText"), /startsWith\("#"\)/);
+  assert.match(functionBody(appJs, "threadTaskCardCommandText"), /text\.slice\(THREAD_TASK_CARD_COMMAND_PREFIX\.length\)/);
   assert.match(appJs, /function buildThreadTaskCardDraftRequestText\(/);
   assert.match(appJs, /targetThreadIds/);
   assert.match(appJs, /workflowMode/);
   assert.match(appJs, /Approve workflow/);
+  assert.match(functionBody(appJs, "buildThreadTaskCardDraftRequestText"), /#自由协作 command/);
+  assert.match(functionBody(appJs, "buildThreadTaskCardDraftRequestText"), /Default workflowMode to autonomous for #自由协作/);
   assert.match(appJs, /function parseThreadTaskCardDraftText\(/);
+  assert.match(appJs, /const THREAD_TASK_CARD_BODY_MAX_CHARS = 8000/);
+  assert.match(appJs, /function truncateThreadTaskCardBody\(/);
   assert.match(appJs, /function renderPendingThreadTaskCardDraft\(/);
   assert.match(appJs, /function renderTurnThreadTaskCardDraft\(/);
   assert.match(appJs, /function waitForCurrentThreadTurn\(/);
@@ -99,6 +148,14 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /function queueThreadTaskCardDraftCreation\(/);
   assert.match(appJs, /state\.activeThreadTaskCardDraftCreations\.has\(key\)/);
   assert.match(appJs, /function createThreadTaskCardDraft\(/);
+  assert.match(functionBody(appJs, "createThreadTaskCardDraft"), /const targetRefs = threadTaskCardDraftTargetThreads\(draft\);/);
+  assert.match(functionBody(appJs, "createThreadTaskCardDraft"), /const targetThreadIds = threadTaskCardDraftTargetIds\(draft\);/);
+  assert.match(functionBody(appJs, "createThreadTaskCardDraft"), /const body = truncateThreadTaskCardBody\(draft\.body\);/);
+  assert.doesNotMatch(functionBody(appJs, "createThreadTaskCardDraft"), /Target thread is missing from the visible thread list/);
+  assert.doesNotMatch(functionBody(appJs, "createThreadTaskCardDraft"), /missingTargets/);
+  assert.doesNotMatch(functionBody(appJs, "createThreadTaskCardDraft"), /body: draft\.body/);
+  assert.match(functionBody(appJs, "createThreadTaskCardDraft"), /targetWorkspaceIds/);
+  assert.match(functionBody(appJs, "createThreadTaskCardDraft"), /if \(entry\.thread\) targetWorkspaceIds\[entry\.threadId\] = String\(entry\.thread\.cwd \|\| ""\);/);
   assert.match(appJs, /if \(!draft\) continue;/);
   assert.doesNotMatch(appJs, /if \(!draft\) return null;/);
   assert.match(appJs, /Task card creation timed out before the server stored a card/);

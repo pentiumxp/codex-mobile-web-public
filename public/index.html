@@ -330,6 +330,22 @@
     </div>
   </div>
 
+  <div id="restartConfirmDialog" class="restart-confirm-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="restartConfirmTitle">
+    <div class="restart-confirm-panel">
+      <div class="restart-confirm-head">
+        <div>
+          <div id="restartConfirmTitle" class="restart-confirm-title">Restart Mobile Web</div>
+          <div id="restartConfirmSubtitle" class="restart-confirm-subtitle">Checking active sessions before restart</div>
+        </div>
+      </div>
+      <div id="restartConfirmContent" class="restart-confirm-content"></div>
+      <div class="restart-confirm-actions">
+        <button id="restartConfirmCancel" class="restart-confirm-cancel" type="button">Cancel</button>
+        <button id="restartConfirmProceed" class="restart-confirm-proceed" type="button">Restart</button>
+      </div>
+    </div>
+  </div>
+
   <div id="filePreviewDialog" class="file-preview-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="filePreviewTitle">
     <div class="file-preview-panel">
       <div class="file-preview-head">

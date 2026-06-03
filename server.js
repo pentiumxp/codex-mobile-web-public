@@ -119,6 +119,9 @@ const HERMES_PLUGIN_NOTIFICATION_KEY_FILE = process.env.CODEX_MOBILE_HERMES_PLUG
   || "";
 const THREAD_TASK_CARD_FILE = process.env.CODEX_MOBILE_THREAD_TASK_CARD_FILE
   || path.join(RUNTIME_ROOT, "thread-task-cards.json");
+const THREAD_TASK_CARD_DRAFT_TAG = "codex-mobile-thread-task-card-draft";
+const THREAD_TASK_CARD_BODY_MAX_CHARS = 8_000;
+const THREAD_TASK_CARD_DRAFT_TURN_LOOKBACK = 4;
 const WORKSPACE_REGISTRY_FILE = process.env.CODEX_MOBILE_WORKSPACE_REGISTRY_FILE
   || path.join(RUNTIME_ROOT, "workspace-registry.json");
 const TOKEN_USAGE_STATS_DB = process.env.CODEX_MOBILE_TOKEN_USAGE_DB
@@ -3909,6 +3912,29 @@ function maybeAutoReplyThreadTaskCard(method, params) {
   });
 }
 
+function maybeMaterializeThreadTaskCardDrafts(method, params) {
+  if (method !== "turn/completed") return;
+  const turnId = pushTurnId(params);
+  if (!turnId || isOldPushTurnEvent(params, ["completedAt", "updatedAt"])) return;
+  const threadId = pushThreadId(params);
+  if (!threadId) return;
+  const timer = setTimeout(async () => {
+    try {
+      const summary = pushThreadSummary(threadId) || readStateDbThread(threadId) || readStartedThread(threadId) || { id: threadId };
+      const turnsResult = await codex.request("thread/turns/list", {
+        threadId,
+        limit: THREAD_TASK_CARD_DRAFT_TURN_LOOKBACK,
+        sortDirection: "desc",
+      }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS, retry: false, resetOnTimeout: false });
+      const thread = threadFromTurnsList(threadId, summary, turnsResult);
+      await materializeThreadTaskCardDraftsForThread(thread);
+    } catch (err) {
+      console.error(`[thread task card] server completion materialization failed thread=${shortIdentifier(threadId)} turn=${shortIdentifier(turnId)}: ${err.message || String(err)}`);
+    }
+  }, 0);
+  if (timer && typeof timer.unref === "function") timer.unref();
+}
+
 function logWebPushDecision(event, decision, meta) {
   if (decision && decision.track && !decision.reason) return;
   const reason = String((decision && decision.reason) || "tracked");
@@ -4779,6 +4805,7 @@ class CodexAppServerClient {
         this.markServerRequestResolved(msg.params.requestId, "resolved");
       }
       maybeRecordTurnTokenUsage(msg.method, msg.params || null);
+      maybeMaterializeThreadTaskCardDrafts(msg.method, msg.params || null);
       maybeAutoReplyThreadTaskCard(msg.method, msg.params || null);
       maybeSendTurnCompletedPush(msg.method, msg.params || null);
       broadcast({ type: "notification", method: msg.method, params: msg.params || null });
@@ -6321,6 +6348,167 @@ function attachThreadTaskCardsToResult(result) {
   return result;
 }
 
+function stableTextHash(value) {
+  const text = String(value || "");
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function truncateSingleLine(value, maxChars = 96) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text || text.length <= maxChars) return text;
+  return `${text.slice(0, Math.max(0, maxChars - 3)).trimEnd()}...`;
+}
+
+function normalizeThreadTaskCardWorkflowMode(value) {
+  const mode = String(value || "").trim().toLowerCase();
+  if (mode === "autonomous" || mode === "auto" || mode === "automatic") return "autonomous";
+  return "manual";
+}
+
+function uniqueThreadTaskCardTargetIds(values, fallback = "") {
+  const raw = Array.isArray(values) ? values : [values, fallback];
+  const seen = new Set();
+  const out = [];
+  for (const value of raw) {
+    const id = String(value || "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+function parseThreadTaskCardDraftText(value) {
+  const text = String(value || "");
+  const match = new RegExp(`<${THREAD_TASK_CARD_DRAFT_TAG}>\\s*([\\s\\S]*?)\\s*<\\/${THREAD_TASK_CARD_DRAFT_TAG}>`, "i").exec(text);
+  if (!match) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(match[1]);
+  } catch (_) {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const targetThreadIds = uniqueThreadTaskCardTargetIds(parsed.targetThreadIds, parsed.targetThreadId);
+  return {
+    targetThreadId: targetThreadIds[0] || "",
+    targetThreadIds,
+    workflowMode: normalizeThreadTaskCardWorkflowMode(parsed.workflowMode),
+    workflowId: truncateSingleLine(parsed.workflowId || "", 220),
+    title: truncateSingleLine(parsed.title || "", 120),
+    summary: truncateSingleLine(parsed.summary || "", 280),
+    body: String(parsed.body || "").trim(),
+    error: truncateSingleLine(parsed.error || "", 280),
+  };
+}
+
+function threadTaskCardDraftPayloadKey(draft) {
+  const targetThreadIds = uniqueThreadTaskCardTargetIds(draft && draft.targetThreadIds, draft && draft.targetThreadId).sort();
+  return stableTextHash(JSON.stringify({
+    targetThreadIds,
+    workflowMode: normalizeThreadTaskCardWorkflowMode(draft && draft.workflowMode),
+    workflowId: String(draft && draft.workflowId || "").trim(),
+    title: String(draft && draft.title || "").trim(),
+    summary: String(draft && draft.summary || "").trim(),
+    body: String(draft && draft.body || "").trim(),
+  }));
+}
+
+function threadTaskCardDraftIdempotencyKey(threadId, turnId, draft) {
+  const payloadKey = threadTaskCardDraftPayloadKey(draft);
+  return `task-card-draft:${String(threadId || "")}:task-card-draft|${String(turnId || "")}|draft-${payloadKey}`;
+}
+
+function threadTaskCardItemText(item) {
+  if (!item || typeof item !== "object") return "";
+  if (typeof item.text === "string") return item.text;
+  if (typeof item.content === "string") return item.content;
+  if (Array.isArray(item.content)) {
+    return item.content.map((part) => {
+      if (!part || typeof part !== "object") return "";
+      return typeof part.text === "string" ? part.text : "";
+    }).join("\n");
+  }
+  return "";
+}
+
+function summarizeTaskCardText(value) {
+  return truncateSingleLine(String(value || "").replace(/\s+/g, " ").trim(), 280);
+}
+
+function truncateThreadTaskCardBody(value, maxChars = THREAD_TASK_CARD_BODY_MAX_CHARS) {
+  const text = String(value || "").trim();
+  const limit = Math.max(0, Number(maxChars) || 0);
+  if (!limit || text.length <= limit) return text;
+  const marker = `\n\n[Task card body truncated: ${text.length} chars total]\n\n`;
+  const available = Math.max(0, limit - marker.length);
+  if (available <= 0) return text.slice(0, limit);
+  const head = Math.ceil(available * 0.6);
+  const tail = Math.max(0, available - head);
+  return `${text.slice(0, head).trimEnd()}${marker}${text.slice(-tail).trimStart()}`.slice(0, limit);
+}
+
+function threadDisplayTitle(thread) {
+  return String((thread && (thread.name || thread.title || thread.preview || thread.id)) || "").trim();
+}
+
+async function materializeThreadTaskCardDraftsForThread(thread) {
+  if (!thread || typeof thread !== "object" || !thread.id || !Array.isArray(thread.turns)) return [];
+  const sourceThreadId = String(thread.id || "");
+  const sourceWorkspaceId = String(thread.cwd || (readStateDbThread(sourceThreadId) || {}).cwd || "");
+  const sourceThreadTitle = threadDisplayTitle(thread) || sourceThreadId;
+  const created = [];
+  for (const turn of thread.turns) {
+    const turnId = String(turn && turn.id || "");
+    if (!turnId || !Array.isArray(turn && turn.items)) continue;
+    for (const item of turn.items) {
+      if (!item || (item.type !== "agentMessage" && item.type !== "plan")) continue;
+      const draft = parseThreadTaskCardDraftText(threadTaskCardItemText(item));
+      if (!draft || draft.error || !draft.title || !draft.body || !draft.targetThreadIds.length) continue;
+      const targetWorkspaceIds = {};
+      for (const targetThreadId of draft.targetThreadIds) {
+        const targetSummary = readStateDbThread(targetThreadId) || readStartedThread(targetThreadId);
+        targetWorkspaceIds[targetThreadId] = targetSummary && targetSummary.cwd || "";
+      }
+      try {
+        const body = truncateThreadTaskCardBody(draft.body);
+        const cards = await threadTaskCardService.createMany({
+          sourceWorkspaceId,
+          sourceThreadId,
+          sourceTurnId: turnId,
+          sourceThreadTitle,
+          targetThreadIds: draft.targetThreadIds,
+          targetWorkspaceIds,
+          idempotencyKey: threadTaskCardDraftIdempotencyKey(sourceThreadId, turnId, draft),
+          format: "markdown",
+          title: draft.title,
+          summary: draft.summary || summarizeTaskCardText(body),
+          body,
+          workflowMode: draft.workflowMode || "manual",
+          workflowId: draft.workflowId || "",
+        });
+        for (const card of cards || []) {
+          if (card && card.id) created.push(card);
+        }
+      } catch (err) {
+        console.error(`[thread task card] server draft materialization failed thread=${shortIdentifier(sourceThreadId)} turn=${shortIdentifier(turnId)}: ${err.message || String(err)}`);
+      }
+    }
+  }
+  return created;
+}
+
+async function prepareThreadTaskCardsToResult(result) {
+  if (!result || typeof result !== "object" || !result.thread) return result;
+  await materializeThreadTaskCardDraftsForThread(result.thread);
+  return attachThreadTaskCardsToResult(result);
+}
+
 async function turnsListThreadReadResult(threadId, summary, runtimeSettings, warning, mode = "turns-list", threadLog = null) {
   const startedAtMs = Date.now();
   if (threadLog) {
@@ -6349,7 +6537,7 @@ async function turnsListThreadReadResult(threadId, summary, runtimeSettings, war
       mode,
     });
   }
-  return attachThreadTaskCardsToResult(result);
+  return prepareThreadTaskCardsToResult(result);
 }
 
 function filterFallbackThreads(threads, filters = {}) {
@@ -6393,6 +6581,7 @@ function readSessionIndexFallback(limit = 80, filters = {}) {
     const globalState = filters.globalState || readGlobalState();
     const projectlessThreadIds = visibleProjectlessThreadIds(globalState);
     if (filters.cwd || projectlessThreadIds.size === 0) return [];
+    const archivedIds = archivedSessionThreadIds();
     const lines = fs.readFileSync(p, "utf8").split(/\r?\n/).filter(Boolean).slice(-1000);
     const byId = new Map();
     for (const line of lines) {
@@ -6404,6 +6593,7 @@ function readSessionIndexFallback(limit = 80, filters = {}) {
       }
       if (!entry.id) continue;
       if (!projectlessThreadIds.has(entry.id)) continue;
+      if (archivedIds.has(entry.id)) continue;
       const updatedAt = entry.updated_at ? Math.floor(Date.parse(entry.updated_at) / 1000) : 0;
       byId.set(entry.id, rowToFallbackThread({
         id: entry.id,
@@ -7269,7 +7459,7 @@ async function handleApi(req, res) {
         returnedTurns: result.thread && Array.isArray(result.thread.turns) ? result.thread.turns.length : null,
         omittedTurns: result.thread && result.thread.mobileOmittedTurnCount ? result.thread.mobileOmittedTurnCount : 0,
       });
-      sendJson(res, 200, attachThreadTaskCardsToResult(result));
+      sendJson(res, 200, await prepareThreadTaskCardsToResult(result));
       threadLog("complete", { status: 200, mode: "thread-read" });
     } catch (readErr) {
       threadLog("thread_read_error", {
