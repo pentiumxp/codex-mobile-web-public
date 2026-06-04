@@ -367,6 +367,13 @@ The mux keeps a replay buffer for recent app-server notifications and unresolved
 
 Turn-ended Web Push notifications are driven by app-server `turn/completed` notifications after Mobile Web has observed the matching `turn/started` event. They must fail closed for unknown thread ids and sub-agent child threads.
 
+Standalone Web Push completion payloads must carry the stable Codex thread id
+both at the top level and in `notification.data.threadId`, along with a same
+origin deep-link URL such as `/?thread=<thread-id>`. The service worker click
+handler focuses an existing app shell and posts the target id, or opens the
+deep-link URL directly for cold-start/PWA launch so startup thread selection can
+load the matching thread without relying on a late `postMessage`.
+
 If the completion payload explicitly says the turn has no final assistant message, Mobile Web must not send a normal "turn ended" Push notification. That shape means the runtime ended the turn without a final reply, so treating it as a normal completed turn is misleading.
 
 When the Hermes plugin notification delegate is configured, turn-completed

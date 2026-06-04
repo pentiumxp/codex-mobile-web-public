@@ -48,8 +48,8 @@ test("mobile viewport and early guards disable page zoom", () => {
 });
 
 test("public app shell cache advances after quota and token stat display fixes", () => {
-  assert.match(swJs, /codex-mobile-shell-v171/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v171"/);
+  assert.match(swJs, /codex-mobile-shell-v172/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v172"/);
   assert.match(appJs, /startupThreadOpenPending: false/);
   assert.match(indexHtml, /id="pluginStartupLoading"/);
   assert.match(indexHtml, /data-plugin-startup-title>正在加载 Codex\.\.\.</);
@@ -106,6 +106,10 @@ test("public app shell cache advances after quota and token stat display fixes",
   assert.match(appJs, /"\/plugin-embed\.js"/);
   assert.match(appJs, /navigator\.serviceWorker\.register\("\/sw\.js"\)/);
   assert.match(appJs, /state\.serviceWorkerRegistration\.update\(\)\.catch/);
+  assert.match(swJs, /if \(!data\.threadId && payload\.threadId\) data\.threadId = payload\.threadId;/);
+  assert.match(swJs, /if \(threadId && !url\.searchParams\.get\("thread"\)\) \{/);
+  assert.match(swJs, /url\.searchParams\.set\("thread", threadId\);/);
+  assert.match(swJs, /self\.clients\.openWindow\(target\.url\)/);
   assert.match(indexHtml, /id="workspaceTokenUsage"/);
   assert.match(indexHtml, /id="workspaceStatsDialog"/);
   assert.match(appJs, /workspaceTokenUsage: null/);

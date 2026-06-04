@@ -178,9 +178,12 @@ Implementation path:
 
 1. Keep VAPID/subscription runtime files out of source and handoff.
 2. Keep notification click routing through app shell focus/open and service worker message passing.
-3. Fail closed for unknown thread ids or sub-agent child threads.
-4. Test service logic with `test/push-notification-service.test.js` and shell behavior with `test/mobile-viewport.test.js`.
-5. Validate over HTTPS/Tailscale when testing real subscription behavior.
+3. Include the stable Codex thread id in completion payloads and make the
+   service worker cold-start path open `/?thread=<thread-id>` directly, with
+   `postMessage` retained as a focused-client fallback.
+4. Fail closed for unknown thread ids or sub-agent child threads.
+5. Test service logic with `test/push-notification-service.test.js` and shell behavior with `test/mobile-viewport.test.js`.
+6. Validate over HTTPS/Tailscale when testing real subscription behavior.
 
 ## Uploads, Files, And Image Context
 

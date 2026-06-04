@@ -4083,6 +4083,8 @@ function sendTurnCompletedPush(meta, turnId, completedAt, params) {
     if (delegateTurnCompletedNotification(meta, turnId, completedAt, threadTitle, params)) return;
     const threadMark = shortIdentifier(meta.threadId || turnId);
     const payload = {
+      threadId: meta.threadId || "",
+      turnId,
       title: threadTitle || threadMark || "Codex Mobile Web",
       body: `This turn 已结束 · ${pushTimestamp(completedAt)}`,
       tag: `codex-turn-${meta.threadId || turnId}`,

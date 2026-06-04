@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "codex-mobile-shell-v171";
+const CACHE_NAME = "codex-mobile-shell-v172";
 const STATIC_ASSETS = [
   "/",
   "/index.html",
@@ -103,12 +103,15 @@ function pushPayload(event) {
 self.addEventListener("push", (event) => {
   const payload = pushPayload(event);
   const title = payload.title || "Codex Mobile Web";
+  const data = Object.assign({ url: "/" }, payload.data || {});
+  if (!data.threadId && payload.threadId) data.threadId = payload.threadId;
+  if (!data.turnId && payload.turnId) data.turnId = payload.turnId;
   const options = {
     body: payload.body || "Codex update",
     icon: "/icons/icon-192.png",
     badge: "/icons/icon-192.png",
     tag: payload.tag || "codex-mobile-web",
-    data: Object.assign({ url: "/" }, payload.data || {}),
+    data,
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });
@@ -116,9 +119,13 @@ self.addEventListener("push", (event) => {
 function notificationTarget(notification) {
   const data = notification && notification.data ? notification.data : {};
   const url = new URL(data.url || "/", self.location.origin);
+  const threadId = url.searchParams.get("thread") || data.threadId || "";
+  if (threadId && !url.searchParams.get("thread")) {
+    url.searchParams.set("thread", threadId);
+  }
   return {
     url: url.href,
-    threadId: url.searchParams.get("thread") || data.threadId || "",
+    threadId,
   };
 }
 
@@ -148,7 +155,7 @@ self.addEventListener("notificationclick", (event) => {
       }
     }
     if (self.clients.openWindow) {
-      const opened = await self.clients.openWindow("/");
+      const opened = await self.clients.openWindow(target.url);
       postNotificationTarget(opened, target);
     }
   })());

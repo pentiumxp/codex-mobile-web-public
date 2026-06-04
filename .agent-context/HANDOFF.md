@@ -21,6 +21,50 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-04 Web Push Thread Deep-link v172
+
+- User request:
+  - Web Push messages must carry the target thread id, and tapping a
+    notification must return to the matching thread.
+- Local implementation:
+  - `server.js`
+    - Completed-turn Web Push payloads now include top-level `threadId` and
+      `turnId` in addition to `data.threadId`, `data.turnId`, and
+      `data.url=/?thread=<thread-id>`.
+  - `public/sw.js`
+    - Push payload top-level ids are copied into notification data when needed.
+    - Notification click target normalizes `data.threadId` into the same-origin
+      `thread` query parameter.
+    - Cold-start/PWA click opens `target.url` directly instead of always
+      opening `/`, so startup URL handling can load the target thread even
+      before service-worker `postMessage` is received.
+    - Existing focused clients still receive the `codex-open-thread`
+      `postMessage` fallback.
+    - Shell cache bumped to `codex-mobile-shell-v172`.
+  - `public/app.js`
+    - `CLIENT_BUILD_ID` bumped to `0.1.11|codex-mobile-shell-v172`.
+  - Tests updated:
+    - `test/push-notification-service.test.js`
+    - `test/mobile-viewport.test.js`
+    - `test/thread-task-card-route.test.js`
+  - Documentation updated:
+    - `docs/ARCHITECTURE.md`
+    - `docs/COMPLEX_FEATURE_PATHS.md`
+- Validation:
+  - `node --check server.js` passed.
+  - `node --check public\app.js` passed.
+  - `node --check public\sw.js` passed.
+  - `node --test test\push-notification-service.test.js
+    test\mobile-viewport.test.js test\thread-task-card-route.test.js` passed:
+    25/25.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+- Status:
+  - Local changes are uncommitted.
+  - PWA/browser clients need the v172 shell refresh path, hard refresh, or
+    close/reopen before the service worker click behavior is active.
+  - Public repo was not touched.
+
 ## 2026-06-03 Continuation Context Archive Guard And Current-State Repair v173
 
 - User reports:
@@ -71,7 +115,8 @@ The previous full handoff was archived and should be opened only when old proven
   - `git diff --check` passed with only Windows LF-to-CRLF working-copy
     warnings.
 - Status:
-  - Codex Mobile changes are uncommitted.
+  - Codex Mobile changes were committed locally as
+    `207e73f 修复续接上下文归档与版本事实指针 v173`.
   - Finance and Agent context repairs are local context-file changes only; no
     product code was changed in those workspaces by this repair.
   - Public repo was not touched.
