@@ -212,6 +212,9 @@ switcher, not concurrent providers:
 - `POST /api/codex-profiles/active` writes the active profile to
   `%USERPROFILE%\.codex-mobile-web\codex-profiles.json` and restarts the
   Mobile Web shared chain.
+- When that active profile store exists, `server.js` uses it before a stale
+  inherited `CODEX_HOME`; `CODEX_HOME` is only allowed to override the store
+  when `CODEX_MOBILE_CODEX_HOME_OVERRIDE=1` is explicitly set.
 - `start-codex-mobile-web-windowless.ps1` reads that active profile before it
   starts the mux or Node listener, so the selected `CODEX_HOME` applies to all
   Mobile Web workspaces after restart.
@@ -221,7 +224,10 @@ switcher, not concurrent providers:
   does not hide the existing workspace/thread list.
 - `restart-codex-mobile-shared-chain.ps1` also resolves the active profile
   store before removing or waiting on the mux endpoint, so a profile switch
-  does not restart against the default `.codex` endpoint by mistake.
+  does not restart against the default `.codex` endpoint by mistake. On
+  Windows, it also treats the selected port's `node.exe ... server.js` listener
+  as restart-owned even when the old process was started as bare
+  `node server.js` from the workspace directory.
 - `start-codex-desktop-shared.ps1 -ProfileId default|current|previous` and the
   matching `start-codex-desktop-*.cmd` wrappers are the Desktop recovery path
   for this design. They set `CODEX_HOME` for the launched Desktop bridge and
@@ -291,9 +297,12 @@ For the current single-active-profile Mobile Web path, start by checking:
 1. `/api/codex-profiles` safe account labels and `activeProfileId`;
 2. `%USERPROFILE%\.codex-mobile-web\codex-profiles.json`;
 3. `/api/status.codexHome` after the controlled restart;
-4. whether non-default profile homes still have local `auth.json` and
+4. `/api/status.codexHomeSource` and `/api/status.codexHomeEnvIgnored`; a
+   healthy normal switch should report `profile-store`, and a stale shell
+   `CODEX_HOME` should be ignored rather than controlling the running profile;
+5. whether non-default profile homes still have local `auth.json` and
    `config.toml`;
-5. whether `sessions/`, `archived_sessions/`, `state_5.sqlite*`,
+6. whether `sessions/`, `archived_sessions/`, `state_5.sqlite*`,
    `.codex-global-state.json`, and `session_index.jsonl` are hard links or
    junctions to the default `.codex` state.
 

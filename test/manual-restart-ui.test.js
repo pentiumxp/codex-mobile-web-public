@@ -10,6 +10,7 @@ const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const restartScript = fs.readFileSync(path.join(root, "restart-codex-mobile-shared-chain.ps1"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 const pkg = fs.readFileSync(path.join(root, "package.json"), "utf8");
 
@@ -46,6 +47,14 @@ test("profile switch restart passes the selected profile to the shared-chain scr
   assert.match(serverJs, /codexHome:\s*selected\.codexHome/);
   assert.match(serverJs, /codexProfileService\.setActiveProfile/);
   assert.match(serverJs, /activeProfileRestartOptions\(profile\)/);
+});
+
+test("shared-chain restart cleans stale bare node server listener on the selected port", () => {
+  assert.match(restartScript, /function Get-PortListenerProcessIds/);
+  assert.match(restartScript, /Get-NetTCPConnection -LocalPort \$Port -State Listen/);
+  assert.match(restartScript, /\$portListenerProcessIds = Get-PortListenerProcessIds/);
+  assert.match(restartScript, /\$portListenerProcessIds -contains \[int\]\$_\.ProcessId/);
+  assert.match(restartScript, /\$name -ieq "node\.exe"[\s\S]*server\\\.js/);
 });
 
 test("manual restart distinguishes macOS Mobile Web restart scope", () => {

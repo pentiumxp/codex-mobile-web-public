@@ -614,3 +614,78 @@ The previous full handoff was archived and should be opened only when old proven
     - BOM check for touched source/test/docs/context files had no output.
   - Local changes are uncommitted.
   - Public repository was not synced.
+
+## 2026-06-04 Profile Switch Quota Runtime Repair
+
+- User report:
+  - After switching accounts and completing another turn, visible quota did not
+    update to the switched account.
+- Diagnosis:
+  - `%USERPROFILE%\.codex-mobile-web\codex-profiles.json` had
+    `activeProfileId=default` and active `codexHome=C:\Users\xuxin\.codex`.
+  - The live 8787 Node listener was still a manually-started
+    `"node.exe" server.js` process inherited from a shell with
+    `CODEX_HOME=C:\Users\xuxin\.codex-homes\previous`.
+  - Because `server.js` gives `process.env.CODEX_HOME` precedence over the
+    profile store, `/api/status.codexHome` remained
+    `C:\Users\xuxin\.codex-homes\previous`; the completed turn and live quota
+    snapshot were therefore still on the previous profile chain.
+- Runtime repair:
+  - Ran `restart-codex-mobile-shared-chain.ps1 -ProfileId default`, then stopped
+    the lingering manual 8787 listener PID after confirming it was
+    `node.exe server.js`.
+  - The scheduled task/windowless launcher took over 8787 as PID `133084` with
+    absolute command line
+    `C:\Users\xuxin\Documents\codex-mobile-web\server.js`.
+- Verified current state:
+  - Authenticated `/api/status` now reports `ready=true`,
+    `transport=external-jsonl-tcp`, `sharedRequired=true`, and
+    `codexHome=C:\Users\xuxin\.codex`.
+  - Profile store active profile remains `default`.
+- Operational rule:
+  - After account/profile switches, do not restart production 8787 with a bare
+    `node server.js` from an arbitrary shell. Use the profile-aware scheduled
+    task/windowless launcher or `/api/restart/shared-chain` so the active
+    profile store controls `CODEX_HOME`.
+
+## 2026-06-04 Profile Switch Guard Fix
+
+- User concern:
+  - Profile switching must not silently remain on the previous account, because
+    the user cannot reliably detect that quota and turns are still attached to
+    the wrong account.
+- Code fix:
+  - `adapters/codex-profile-service.js`
+    - Added `resolveEffectiveCodexHome()`.
+    - When the active profile store has a selected home, it now wins over a
+      stale inherited shell `CODEX_HOME`.
+    - Explicit env override is still possible only with
+      `CODEX_MOBILE_CODEX_HOME_OVERRIDE=1` or
+      `CODEX_MOBILE_ALLOW_CODEX_HOME_OVERRIDE=1`.
+  - `server.js`
+    - Uses `resolveEffectiveCodexHome()` for bootstrap `CODEX_HOME`.
+    - `/api/status` now exposes `codexHomeSource`,
+      `codexHomeEnvIgnored`, and `codexProfileActiveId` for diagnostics.
+  - `restart-codex-mobile-shared-chain.ps1`
+    - Adds selected-port listener PID discovery.
+    - Stops stale `node.exe ... server.js` listeners on that port even if the
+      command line was bare `node server.js` and lacks the absolute server path.
+- Docs/tests:
+  - Updated `docs/ARCHITECTURE.md`, `docs/MULTI_ACCOUNT_CODEX_CLI.md`, and
+    `docs/TROUBLESHOOTING.md`.
+  - Added regression tests in `test/codex-profile-service.test.js` and
+    `test/manual-restart-ui.test.js`.
+- Validation so far:
+  - `node --check server.js` passed.
+  - `node --check adapters\codex-profile-service.js` passed.
+  - `node --test test\codex-profile-service.test.js test\manual-restart-ui.test.js`
+    passed: 13/13 after rerunning with shell permission for Node test runner
+    child processes.
+  - Focused profile/UI/restart/mobile viewport tests passed: 23/23.
+  - `npm.cmd test` passed: 307/307.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+- Status:
+  - Changes are uncommitted.

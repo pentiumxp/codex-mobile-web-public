@@ -84,7 +84,11 @@ but links conversation state back to the default `.codex` home:
 `.codex-global-state.json`, `session_index.jsonl`, `sessions/`, and
 `archived_sessions/`. This keeps visible workspaces and conversations continuous
 after an account switch while the active app-server uses the selected account's
-auth file. The Desktop escape
+auth file. At server bootstrap, the active profile store takes precedence over
+an inherited `CODEX_HOME` so a stale shell environment cannot silently keep the
+listener on the previous account after a switch. Explicit environment override
+requires `CODEX_MOBILE_CODEX_HOME_OVERRIDE=1`, and status snapshots expose
+`codexHomeSource` plus `codexHomeEnvIgnored` for diagnostics. The Desktop escape
 hatch can be launched through `start-codex-desktop-shared.ps1 -ProfileId
 default|current|previous` or a matching `.cmd` wrapper so Desktop and Mobile
 share the same profile mux endpoint. Desktop GUI login isolation is not assumed;

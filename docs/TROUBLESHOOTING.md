@@ -919,6 +919,22 @@ Expected behavior after `codex-mobile-shell-v170`:
   client is still running an older shell and needs one manual refresh or
   close/reopen once to load v170 or newer.
 
+For account/profile switches, also compare `/api/status.codexHome` with the
+active profile in `%USERPROFILE%\.codex-mobile-web\codex-profiles.json`.
+Expected behavior after this repair is:
+
+- `server.js` prefers the active profile store over an inherited shell
+  `CODEX_HOME`; stale inherited homes are reported as
+  `codexHomeEnvIgnored=true`.
+- Normal profile-switched listeners should report
+  `codexHomeSource=profile-store`.
+- `CODEX_HOME` only overrides the profile store when
+  `CODEX_MOBILE_CODEX_HOME_OVERRIDE=1` is explicitly set.
+- The Windows shared-chain restart script stops the selected port's stale
+  `node.exe ... server.js` listener even if it was started as bare
+  `node server.js` and therefore lacks an absolute server path in its command
+  line.
+
 ## Source `#鑷敱鍗忎綔` Task-Card Draft Reappears After Approve Or Dismiss
 
 If the source thread hides a `#鑷敱鍗忎綔`-generated draft card immediately after

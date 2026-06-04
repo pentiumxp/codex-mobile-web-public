@@ -10,6 +10,7 @@ const {
   authStatusForHome,
   createCodexProfileService,
   resolveActiveCodexHomeFromStore,
+  resolveEffectiveCodexHome,
 } = require("../adapters/codex-profile-service");
 
 function tempDir() {
@@ -93,6 +94,53 @@ test("setting active profile persists the selected codex home for restart bootst
   const bootstrap = resolveActiveCodexHomeFromStore({ userHome, runtimeRoot, env: {} });
   assert.equal(bootstrap.activeProfileId, "previous");
   assert.equal(bootstrap.codexHome, previousHome);
+});
+
+test("effective codex home follows active profile store before stale environment home", () => {
+  const userHome = tempDir();
+  const runtimeRoot = path.join(userHome, ".codex-mobile-web");
+  const defaultHome = path.join(userHome, ".codex");
+  const previousHome = path.join(userHome, ".codex-homes", "previous");
+  writeJson(path.join(runtimeRoot, "codex-profiles.json"), {
+    activeProfileId: "default",
+    profiles: [
+      { id: "default", label: "Default", codexHome: defaultHome },
+      { id: "previous", label: "Previous", codexHome: previousHome },
+    ],
+  });
+
+  const resolved = resolveEffectiveCodexHome({
+    userHome,
+    runtimeRoot,
+    env: { CODEX_HOME: previousHome },
+  });
+  assert.equal(resolved.codexHome, defaultHome);
+  assert.equal(resolved.source, "profile-store");
+  assert.equal(resolved.envCodexHomeIgnored, true);
+  assert.equal(resolved.activeProfileId, "default");
+});
+
+test("effective codex home allows explicit environment override", () => {
+  const userHome = tempDir();
+  const runtimeRoot = path.join(userHome, ".codex-mobile-web");
+  const defaultHome = path.join(userHome, ".codex");
+  const previousHome = path.join(userHome, ".codex-homes", "previous");
+  writeJson(path.join(runtimeRoot, "codex-profiles.json"), {
+    activeProfileId: "default",
+    profiles: [{ id: "default", label: "Default", codexHome: defaultHome }],
+  });
+
+  const resolved = resolveEffectiveCodexHome({
+    userHome,
+    runtimeRoot,
+    env: {
+      CODEX_HOME: previousHome,
+      CODEX_MOBILE_CODEX_HOME_OVERRIDE: "1",
+    },
+  });
+  assert.equal(resolved.codexHome, previousHome);
+  assert.equal(resolved.source, "env-override");
+  assert.equal(resolved.envCodexHomeIgnored, false);
 });
 
 test("active quota snapshots are persisted and reused when rollout data is absent", () => {

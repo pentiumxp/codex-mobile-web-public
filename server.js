@@ -52,6 +52,7 @@ const { createWorkspaceRegistryService } = require("./adapters/workspace-registr
 const {
   createCodexProfileService,
   resolveActiveCodexHomeFromStore,
+  resolveEffectiveCodexHome,
 } = require("./adapters/codex-profile-service");
 
 const APP_ROOT = __dirname;
@@ -64,7 +65,14 @@ const CODEX_PROFILE_BOOTSTRAP = resolveActiveCodexHomeFromStore({
   env: process.env,
 });
 const DEFAULT_CODEX_HOME = path.join(USER_HOME, ".codex");
-const CODEX_HOME = process.env.CODEX_HOME || CODEX_PROFILE_BOOTSTRAP.codexHome || DEFAULT_CODEX_HOME;
+const CODEX_HOME_RESOLUTION = resolveEffectiveCodexHome({
+  userHome: USER_HOME,
+  runtimeRoot: RUNTIME_ROOT,
+  env: process.env,
+  defaultCodexHome: DEFAULT_CODEX_HOME,
+  bootstrap: CODEX_PROFILE_BOOTSTRAP,
+});
+const CODEX_HOME = CODEX_HOME_RESOLUTION.codexHome;
 const STATE_DB = path.join(CODEX_HOME, "state_5.sqlite");
 const SESSIONS_DIR = path.join(CODEX_HOME, "sessions");
 const ARCHIVED_SESSIONS_DIR = path.join(CODEX_HOME, "archived_sessions");
@@ -5028,6 +5036,9 @@ class CodexAppServerClient {
       muxEndpointFile: MUX_ENDPOINT_FILE,
       codexExe: CODEX_EXE,
       codexHome: CODEX_HOME,
+      codexHomeSource: CODEX_HOME_RESOLUTION.source,
+      codexHomeEnvIgnored: Boolean(CODEX_HOME_RESOLUTION.envCodexHomeIgnored),
+      codexProfileActiveId: CODEX_HOME_RESOLUTION.activeProfileId,
       runtimeRoot: RUNTIME_ROOT,
       userAgent: this.info ? this.info.userAgent : null,
       lastError: this.lastError,
