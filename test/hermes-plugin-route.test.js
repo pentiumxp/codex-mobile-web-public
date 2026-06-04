@@ -93,7 +93,7 @@ test("embedded plugin mode hides standalone chrome and installs navigation/windo
   assert.doesNotMatch(appJs, /else if \(\$\("themeSettingsPanel"\)[\s\S]{0,180}closeSidebarMenu\(\);[\s\S]{0,80}handled = true;/);
   assert.doesNotMatch(appJs, /function returnPluginRootStep/);
   assert.doesNotMatch(appJs, /function openPluginNavigationSurface/);
-  assert.match(appJs, /addEventListener\("touchstart", beginSidebarEdgeSwipe, \{ passive: true \}\)/);
+  assert.match(appJs, /addEventListener\("touchstart", beginSidebarEdgeSwipe, \{ passive: false \}\)/);
   assert.match(appJs, /function pushBrowserAvailable\(\) \{\s*if \(isHermesEmbedMode\(\)\) return false;/);
   assert.match(appJs, /function showCompletionAlert\(threadId, threadName\) \{\s*if \(isHermesEmbedMode\(\)\) return;/);
   assert.match(appJs, /installPluginWindowingGuards\(\)/);

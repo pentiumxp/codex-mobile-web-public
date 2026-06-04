@@ -48,8 +48,8 @@ test("mobile viewport and early guards disable page zoom", () => {
 });
 
 test("public app shell cache advances after quota and token stat display fixes", () => {
-  assert.match(swJs, /codex-mobile-shell-v172/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v172"/);
+  assert.match(swJs, /codex-mobile-shell-v176/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v176"/);
   assert.match(appJs, /startupThreadOpenPending: false/);
   assert.match(indexHtml, /id="pluginStartupLoading"/);
   assert.match(indexHtml, /data-plugin-startup-title>正在加载 Codex\.\.\.</);
@@ -127,6 +127,30 @@ test("public app shell cache advances after quota and token stat display fixes",
   assert.match(stylesCss, /\.workspace-token-usage-summary span[\s\S]*color:\s*var\(--danger-text\)/);
   assert.match(stylesCss, /\.workspace-stats-dialog/);
   assert.match(stylesCss, /\.workspace-stats-breakdown/);
+});
+
+test("Android back and edge swipe open the mobile navigation menu", () => {
+  assert.match(appJs, /const ANDROID_SIDEBAR_EDGE_SWIPE_PX = 84/);
+  assert.match(appJs, /const ANDROID_BACK_SIDEBAR_BASE = "base"/);
+  assert.match(appJs, /const ANDROID_BACK_SIDEBAR_TOP = "top"/);
+  assert.match(appJs, /function isAndroidBrowser\(\)/);
+  assert.match(appJs, /function sidebarEdgeSwipeStartLimitPx\(\)/);
+  assert.match(appJs, /touch\.clientX > sidebarEdgeSwipeStartLimitPx\(\)/);
+  assert.match(appJs, /ensureAndroidBackToSidebarSentinel\(\);[\s\S]*if \(event\.cancelable !== false\) event\.preventDefault\(\);/);
+  assert.match(appJs, /if \(event\.cancelable !== false\) event\.preventDefault\(\);/);
+  assert.match(appJs, /addEventListener\("touchstart", beginSidebarEdgeSwipe, \{ passive: false \}\)/);
+  assert.match(appJs, /function ensureAndroidBackToSidebarSentinel\(\)/);
+  assert.match(appJs, /\$\("app"\)\.classList\.remove\("hidden"\);[\s\S]*ensureAndroidBackToSidebarSentinel\(\);/);
+  assert.match(appJs, /window\.history\.replaceState\(Object\.assign\(\{\}, currentState,[\s\S]*ANDROID_BACK_SIDEBAR_BASE/);
+  assert.match(appJs, /window\.history\.pushState\(Object\.assign\(\{\}, currentState,[\s\S]*ANDROID_BACK_SIDEBAR_TOP/);
+  assert.match(appJs, /function handleAndroidBackToSidebarPopState\(event\)/);
+  assert.match(appJs, /&& state\.key/);
+  assert.match(appJs, /&& !app\.classList\.contains\("hidden"\)/);
+  assert.match(appJs, /if \(!isSidebarOpen\(\)\) openSidebarMenu\(\);/);
+  assert.match(appJs, /if \(document\.visibilityState === "visible"\) \{[\s\S]*ensureAndroidBackToSidebarSentinel\(\);/);
+  assert.match(appJs, /window\.addEventListener\("pageshow",[\s\S]*ensureAndroidBackToSidebarSentinel\(\);/);
+  assert.match(appJs, /window\.addEventListener\("focus",[\s\S]*ensureAndroidBackToSidebarSentinel\(\);/);
+  assert.match(appJs, /window\.addEventListener\("popstate", handleAndroidBackToSidebarPopState\)/);
 });
 
 test("workspace creation lives at the bottom of the Workspace menu", () => {

@@ -22,6 +22,31 @@ test("desktop shared launcher uses the selected profile mux endpoint", () => {
   assert.match(launcher, /Write-Host "  CODEX_HOME=\$env:CODEX_HOME"/);
 });
 
+test("desktop shared launcher prepares non-auth shared profile state", () => {
+  assert.match(launcher, /function Ensure-SharedProfileState/);
+  assert.match(
+    launcher,
+    /Ensure-SharedProfileState -ProfilePath \$env:USERPROFILE -CodexHome \$selectedCodexHome -RuntimePath \$runtimeRoot/,
+  );
+  for (const name of [
+    ".codex-global-state.json",
+    "state_5.sqlite",
+    "state_5.sqlite-wal",
+    "state_5.sqlite-shm",
+    "session_index.jsonl",
+    "sessions",
+    "archived_sessions",
+  ]) {
+    assert.match(launcher, new RegExp(`Name = "${name.replace(/[.]/g, "\\.")}"`));
+  }
+  const sharedStateList = launcher.match(
+    /\$backupRoot = Join-Path \(Join-Path \$RuntimePath "profile-state-backups"\)[\s\S]*?foreach \(\$item in @\(([\s\S]*?)\)\) \{\r?\n\s*Ensure-LinkedStatePath/,
+  );
+  assert.ok(sharedStateList);
+  assert.doesNotMatch(sharedStateList[1], /auth\.json/);
+  assert.doesNotMatch(sharedStateList[1], /config\.toml/);
+});
+
 test("desktop profile cmd wrappers call the shared launcher with forced mux restart", () => {
   for (const profile of ["default", "current", "previous"]) {
     const wrapper = fs.readFileSync(path.join(root, `start-codex-desktop-${profile}.cmd`), "utf8");

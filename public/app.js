@@ -103,6 +103,7 @@ const state = {
   continuationDialogThreadId: "",
   renameBusy: false,
   sidebarEdgeSwipe: null,
+  androidBackSidebarSentinelReady: false,
   subagentSwipe: null,
   subagentPanelOpen: false,
   suppressThreadClickUntil: 0,
@@ -213,7 +214,7 @@ const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 8;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v172";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v176";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -281,6 +282,10 @@ const FONT_SIZE_VALUES = new Set(["small", "default", "large", "xlarge", "xxlarg
 const MENU_OVERLAY_MEDIA = "(max-width: 1180px), (pointer: coarse) and (max-width: 1400px)";
 const TABLET_SPLIT_MEDIA = "(pointer: coarse) and (orientation: landscape) and (min-width: 900px) and (min-height: 600px)";
 const SIDEBAR_EDGE_SWIPE_PX = 34;
+const ANDROID_SIDEBAR_EDGE_SWIPE_PX = 84;
+const ANDROID_BACK_SIDEBAR_STATE = "codexMobileAndroidBackSidebar";
+const ANDROID_BACK_SIDEBAR_BASE = "base";
+const ANDROID_BACK_SIDEBAR_TOP = "top";
 const SIDEBAR_EDGE_OPEN_MIN_PX = 76;
 const SIDEBAR_EDGE_OPEN_RATIO = 0.22;
 const SUBAGENT_SWIPE_MIN_PX = 70;
@@ -3901,6 +3906,7 @@ function showApp() {
   $("login").classList.add("hidden");
   $("app").classList.remove("hidden");
   updateComposerHeightVar();
+  ensureAndroidBackToSidebarSentinel();
   publishPluginNavigationState();
 }
 
@@ -4766,6 +4772,15 @@ function isMobileViewport() {
   return isMenuOverlayMode();
 }
 
+function isAndroidBrowser() {
+  const ua = String(navigator.userAgent || navigator.vendor || "").toLowerCase();
+  return ua.includes("android");
+}
+
+function sidebarEdgeSwipeStartLimitPx() {
+  return isAndroidBrowser() ? ANDROID_SIDEBAR_EDGE_SWIPE_PX : SIDEBAR_EDGE_SWIPE_PX;
+}
+
 function closeSidebarMenu() {
   const sidebar = $("sidebar");
   if (!sidebar) return;
@@ -4840,6 +4855,70 @@ function openSidebarMenu() {
   publishPluginNavigationState({ force: true });
 }
 
+function androidBackToSidebarAvailable() {
+  const app = $("app");
+  return Boolean(isAndroidBrowser()
+    && isMobileViewport()
+    && !isHermesEmbedMode()
+    && state.key
+    && app
+    && !app.classList.contains("hidden")
+    && !filePreviewOpen()
+    && !state.renameThreadId
+    && !createWorkspaceDialogOpen()
+    && !updatePanelOpen()
+    && !state.threadActionMenuId
+    && !state.continuationDialogThreadId
+    && !state.sharedRestartDialogOpen);
+}
+
+function currentHistoryStateObject() {
+  return (window.history && window.history.state && typeof window.history.state === "object")
+    ? window.history.state
+    : {};
+}
+
+function androidBackSidebarStateKind(value = null) {
+  const source = value || currentHistoryStateObject();
+  return String(source && source[ANDROID_BACK_SIDEBAR_STATE] || "");
+}
+
+function ensureAndroidBackToSidebarSentinel() {
+  if (!androidBackToSidebarAvailable()) {
+    state.androidBackSidebarSentinelReady = false;
+    return;
+  }
+  try {
+    const currentState = currentHistoryStateObject();
+    const currentKind = androidBackSidebarStateKind(currentState);
+    if (currentKind === ANDROID_BACK_SIDEBAR_TOP) {
+      state.androidBackSidebarSentinelReady = true;
+      return;
+    }
+    if (currentKind !== ANDROID_BACK_SIDEBAR_BASE) {
+      window.history.replaceState(Object.assign({}, currentState, {
+        [ANDROID_BACK_SIDEBAR_STATE]: ANDROID_BACK_SIDEBAR_BASE,
+      }), "", window.location.href);
+    }
+    window.history.pushState(Object.assign({}, currentState, {
+      [ANDROID_BACK_SIDEBAR_STATE]: ANDROID_BACK_SIDEBAR_TOP,
+    }), "", window.location.href);
+    state.androidBackSidebarSentinelReady = true;
+  } catch (_) {
+    state.androidBackSidebarSentinelReady = false;
+  }
+}
+
+function handleAndroidBackToSidebarPopState(event) {
+  state.androidBackSidebarSentinelReady = false;
+  if (!androidBackToSidebarAvailable()) return;
+  const stateKind = androidBackSidebarStateKind(event && event.state);
+  if (stateKind && stateKind !== ANDROID_BACK_SIDEBAR_BASE && stateKind !== ANDROID_BACK_SIDEBAR_TOP) return;
+  if (event && typeof event.preventDefault === "function") event.preventDefault();
+  if (!isSidebarOpen()) openSidebarMenu();
+  window.setTimeout(ensureAndroidBackToSidebarSentinel, 0);
+}
+
 function isSidebarOpen() {
   const sidebar = $("sidebar");
   return Boolean(sidebar && sidebar.classList.contains("open"));
@@ -4856,7 +4935,9 @@ function beginSidebarEdgeSwipe(event) {
   if (event.touches && event.touches.length > 1) return;
   if (isInteractiveGestureTarget(event.target)) return;
   const touch = primaryTouch(event);
-  if (!touch || touch.clientX > SIDEBAR_EDGE_SWIPE_PX) return;
+  if (!touch || touch.clientX > sidebarEdgeSwipeStartLimitPx()) return;
+  ensureAndroidBackToSidebarSentinel();
+  if (event.cancelable !== false) event.preventDefault();
   const sidebar = $("sidebar");
   state.sidebarEdgeSwipe = {
     startX: touch.clientX,
@@ -9716,6 +9797,7 @@ async function sendMessage(event) {
     }
     scheduleCurrentThreadRefresh(600);
     scheduleLivePollIfNeeded(1200);
+    loadThreads({ silent: true }).catch(showError);
   } catch (err) {
     clearSubmittedMessageBottomFollow();
     const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err))
@@ -10299,10 +10381,12 @@ function wireUi() {
   if ($("createWorkspaceDialog")) $("createWorkspaceDialog").addEventListener("click", (event) => {
     if (event.target === $("createWorkspaceDialog")) closeCreateWorkspaceDialog();
   });
-  document.addEventListener("touchstart", beginSidebarEdgeSwipe, { passive: true });
+  document.addEventListener("touchstart", beginSidebarEdgeSwipe, { passive: false });
   document.addEventListener("touchmove", moveSidebarEdgeSwipe, { passive: false });
   document.addEventListener("touchend", finishSidebarEdgeSwipe, { passive: true });
   document.addEventListener("touchcancel", cancelSidebarEdgeSwipe, { passive: true });
+  window.addEventListener("popstate", handleAndroidBackToSidebarPopState);
+  ensureAndroidBackToSidebarSentinel();
   $("openMenu").addEventListener("click", openSidebarMenu);
   $("closeMenu").addEventListener("click", closeSidebarMenu);
   const pageRefreshPrompt = $("pageRefreshPrompt");
@@ -10487,7 +10571,10 @@ function wireUi() {
       currentThreadId: state.currentThreadId || "",
       eventOpen: Boolean(state.events && state.events.readyState === EventSource.OPEN),
     });
-    if (document.visibilityState === "visible") schedulePageRefreshCheck(200, { force: true });
+    if (document.visibilityState === "visible") {
+      ensureAndroidBackToSidebarSentinel();
+      schedulePageRefreshCheck(200, { force: true });
+    }
     scheduleMobileResume("visibility");
   });
   window.addEventListener("pageshow", (event) => {
@@ -10497,12 +10584,14 @@ function wireUi() {
     });
     const threadId = applyUrlThreadSelection({ load: true });
     const pluginRouteHint = applyUrlPluginRouteHint({ load: true });
+    ensureAndroidBackToSidebarSentinel();
     schedulePageRefreshCheck(200, { force: true });
     scheduleMobileResume("pageshow", threadId || pluginRouteHint ? 240 : 80);
   });
   window.addEventListener("focus", () => {
     const threadId = applyUrlThreadSelection({ load: true });
     const pluginRouteHint = applyUrlPluginRouteHint({ load: true });
+    ensureAndroidBackToSidebarSentinel();
     schedulePageRefreshCheck(600);
     scheduleMobileResume("focus", threadId || pluginRouteHint ? 300 : 150);
   });

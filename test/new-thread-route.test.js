@@ -6,6 +6,7 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 
 test("new-message route creates a thread before starting the first turn", () => {
   const routeIndex = serverJs.indexOf("/api/threads/new-message");
@@ -81,6 +82,15 @@ test("existing-message route forwards runtime settings on next turn", () => {
   assert.match(routeBody, /applyCodexFastServiceTier\(applyTurnRuntimeSettings\(/, "turn/start should apply requested Fast service tier");
   assert.match(routeBody, /if \(requestedModel\) params\.model = requestedModel;/, "turn/start should receive requested model");
   assert.match(routeBody, /if \(requestedEffort\) params\.effort = requestedEffort;/, "turn/start should receive requested reasoning effort");
+});
+
+test("existing-thread message send refreshes the sidebar thread list", () => {
+  const start = appJs.indexOf("async function sendMessage(");
+  const end = appJs.indexOf("async function sendNewThreadMessage(", start);
+  assert.ok(start > 0 && end > start, "missing sendMessage body");
+  const body = appJs.slice(start, end);
+
+  assert.match(body, /scheduleCurrentThreadRefresh\(600\);[\s\S]*scheduleLivePollIfNeeded\(1200\);[\s\S]*loadThreads\(\{ silent: true \}\)\.catch\(showError\);/);
 });
 
 test("workspace creation route stores mobile-visible workspaces outside Codex global state", () => {

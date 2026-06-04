@@ -21,6 +21,123 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-04 Profile Switch Thread Recovery And Desktop Shared State
+
+- User report:
+  - After switching Codex account/profile, Mobile Web could keep chatting but
+    thread/workspace lists collapsed after changing threads. Re-login later
+    showed the threads again after the shared-chain restart completed.
+  - User asked to apply the same MUX/shared-state pattern to Codex Desktop's
+    three profile launchers.
+- Diagnosis:
+  - Active Mobile Web profile was `default`, using
+    `C:\Users\xuxin\.codex` and
+    `C:\Users\xuxin\.codex\app-server-mux\endpoint.json`.
+  - `%USERPROFILE%\.codex\state_5.sqlite` failed `pragma quick_check` with
+    `database disk image is malformed`, so the prior SQLite fallback could
+    collapse to a small projectless `session_index` result set.
+  - `.codex-homes\current\state_5.sqlite` returned `ok`; this is evidence of
+    profile-local state divergence, not a database repair.
+- Local implementation:
+  - `server.js`
+    - Added a rollout-session/thread-list fallback that reads bounded rollout
+      session heads and `session_index.jsonl` when `state_5.sqlite` is
+      unavailable or malformed.
+    - Thread detail now falls back to rollout-session data before app-server
+      summary-only detail.
+  - `start-codex-desktop-shared.ps1`
+    - Added the same non-default profile shared-state setup used by the Mobile
+      Web windowless launcher.
+    - Profile-local `auth.json` and `config.toml` are backed up but not
+      replaced. Non-auth thread/workspace state is linked from default
+      `.codex`: `.codex-global-state.json`, `state_5.sqlite*`,
+      `session_index.jsonl`, `sessions`, and `archived_sessions`.
+  - Tests updated:
+    - `test/thread-visibility.test.js`
+    - `test/thread-archive.test.js`
+    - `test/desktop-profile-launcher.test.js`
+  - Documentation updated:
+    - `docs/ARCHITECTURE.md`
+    - `docs/TROUBLESHOOTING.md`
+    - `docs/MODULES.md`
+    - `docs/MULTI_ACCOUNT_CODEX_CLI.md`
+- Validation:
+  - Mobile Web shared-chain restart completed in the background despite the
+    interrupted wait output. Latest observed listener was PID `138472`.
+  - Authenticated `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v172` and
+    `shellCacheName=codex-mobile-shell-v172`.
+  - Authenticated `/api/status` was ready with endpoint source under
+    `.codex\app-server-mux\endpoint.json`.
+  - Authenticated `/api/threads?limit=20` returned 20 threads after restart.
+  - `node --test test\thread-visibility.test.js test\thread-archive.test.js
+    test\mobile-viewport.test.js` passed 15/15 before Desktop changes.
+  - `powershell.exe` scriptblock parse for
+    `start-codex-desktop-shared.ps1` passed.
+  - `node --test test\desktop-profile-launcher.test.js
+    test\codex-profile-ui.test.js` passed 10/10.
+  - Full `npm.cmd test` passed 310/310.
+  - `npm.cmd run check`, `npm.cmd run check:macos`, and `git diff --check`
+    passed; `git diff --check` only emitted Windows LF-to-CRLF working-copy
+    warnings.
+- Status and risk:
+  - Local changes are uncommitted.
+  - Mobile Web thread visibility is live via a read-only recovery fallback; it
+    does not repair the malformed default `.codex\state_5.sqlite`.
+  - Desktop launchers now prepare shared non-auth state before launch. Desktop
+    GUI ChatGPT login isolation is still not proven by this change; validate
+    Desktop behavior by fully quitting Desktop and relaunching via
+    `start-codex-desktop-default.cmd`, `start-codex-desktop-current.cmd`, or
+    `start-codex-desktop-previous.cmd`.
+
+## 2026-06-04 Android Back Gesture Opens Sidebar v174
+
+- User report:
+  - On iPhone, a right swipe at the top-level page opens the Codex navigation
+    menu and a second right swipe while the menu is open does nothing.
+  - On Android, the same edge/right-swipe behavior was closing the PWA and
+    returning to the system launcher.
+- Local implementation:
+  - `public/app.js`
+    - Bumped `CLIENT_BUILD_ID` to `0.1.11|codex-mobile-shell-v174`.
+    - Kept the existing sidebar edge-swipe behavior, widened the Android start
+      zone to 84px, and made the sidebar `touchstart` listener non-passive so
+      it can call `preventDefault()` when it owns the gesture.
+    - Added an Android-only history `popstate` sentinel. When Mobile Web is in
+      the logged-in visible app shell on a mobile overlay viewport, a top-level
+      Android Back event opens the sidebar instead of letting the PWA close to
+      the launcher. If the sidebar is already open, the event is consumed and
+      the sentinel is restored.
+    - Fixed the first v173 attempt by installing the sentinel from `showApp()`,
+      after `state.key` exists and `#app` is visible. Installing it during early
+      initialization returned before login and did not protect the Android PWA.
+  - `public/sw.js`
+    - Bumped shell cache to `codex-mobile-shell-v174`.
+  - Tests updated:
+    - `test/mobile-viewport.test.js`
+    - `test/hermes-plugin-route.test.js`
+    - `test/thread-task-card-route.test.js`
+  - Documentation updated:
+    - `docs/TROUBLESHOOTING.md`
+- Validation/runtime:
+  - Focused `node --test test\mobile-viewport.test.js
+    test\hermes-plugin-route.test.js test\thread-task-card-route.test.js`
+    passed 13/13.
+  - Full `npm.cmd test` passed 311/311.
+  - `npm.cmd run check`, `npm.cmd run check:macos`, and `git diff --check`
+    passed; `git diff --check` only emitted Windows LF-to-CRLF working-copy
+    warnings.
+  - Shared-chain restart completed in the background. Authenticated
+    `/api/public-config` now returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v174` and
+    `shellCacheName=codex-mobile-shell-v174`; 8787 listener PID observed as
+    `134204`.
+- Status and risk:
+  - Local changes are uncommitted.
+  - Existing Android PWA clients must accept the refresh prompt or be fully
+    closed/reopened so they load v174. A client still running v173 or older
+    will not have the fixed `showApp()` sentinel installation.
+
 ## 2026-06-04 Web Push Thread Deep-link v172
 
 - User request:
@@ -688,4 +805,56 @@ The previous full handoff was archived and should be opened only when old proven
   - `git diff --check` passed with only Windows LF-to-CRLF working-copy
     warnings.
 - Status:
+  - Changes are uncommitted.
+
+## 2026-06-04 Thread List Title And Timestamp Refresh v176
+
+- User report:
+  - After profile/MUX sharing, threads became visible across accounts, but some
+    rows still showed temporary UUID-like names and stale sidebar timestamps.
+    Some threads could interact normally while their list time did not update.
+- Diagnosis:
+  - Authenticated `/api/threads` returned the current codex-mobile-web thread
+    with stale `updatedAt` from 2026-06-01, while direct state DB evidence for
+    the same id showed `updated_at=2026-06-04 20:32:30`.
+  - `mergeThreadListFallback()` discarded duplicate fallback rows, so newer
+    state DB / rollout fallback display data could not hydrate an app-server row
+    with stale title/time.
+  - `mergeThreadStateFromStateDb()` did not merge `title`,
+    `first_user_message`, `cwd`, or `updated_at` into app-server rows.
+  - Existing-thread sends refreshed current detail and live polling but did not
+    silently refresh the sidebar thread list.
+- Local fix:
+  - `server.js`
+    - Duplicate fallback rows now merge into existing app-server rows.
+    - Display fields can hydrate stale/missing names/previews/cwd.
+    - The newest `updatedAt` wins when app-server and fallback disagree.
+    - State DB row enrichment now includes title, first user message, cwd, and
+      updated timestamp.
+  - `public/app.js`
+    - Existing-thread message send success now triggers
+      `loadThreads({ silent: true })` after scheduling current-thread refresh.
+    - Static shell bumped to `0.1.11|codex-mobile-shell-v176`.
+  - `public/sw.js`
+    - Shell cache bumped to `codex-mobile-shell-v176`.
+  - Tests/docs:
+    - Added/updated coverage in `test/thread-visibility.test.js`,
+      `test/thread-title-source.test.js`, `test/new-thread-route.test.js`, and
+      `test/mobile-viewport.test.js`.
+    - Updated `docs/ARCHITECTURE.md` and `docs/TROUBLESHOOTING.md`.
+- Validation:
+  - `node --check server.js` passed.
+  - `node --check public\app.js` passed.
+  - `node --check public\sw.js` passed.
+  - Focused `node --test test\thread-visibility.test.js
+    test\thread-title-source.test.js test\new-thread-route.test.js
+    test\mobile-viewport.test.js` passed: 25/25.
+  - `npm.cmd test` passed: 313/313.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+- Status:
+  - `systemError` on the separate `Codex Mobile 06-03` thread was intentionally
+    not changed in this fix.
   - Changes are uncommitted.

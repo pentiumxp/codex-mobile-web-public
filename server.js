@@ -1710,13 +1710,25 @@ function mergeThreadListFallback(result, fallbackThreads = [], limit = 80) {
     : (Array.isArray(out.threads) ? out.threads : []);
   const merged = [];
   const seen = new Set();
+  const indexById = new Map();
   const addThread = (thread) => {
     if (!thread || !thread.id || seen.has(thread.id)) return;
-    seen.add(thread.id);
+    const id = String(thread.id);
+    seen.add(id);
+    indexById.set(id, merged.length);
     merged.push(thread);
   };
   existing.forEach(addThread);
-  fallbackThreads.forEach(addThread);
+  fallbackThreads.forEach((thread) => {
+    if (!thread || !thread.id) return;
+    const id = String(thread.id);
+    const index = indexById.get(id);
+    if (index === undefined) {
+      addThread(thread);
+      return;
+    }
+    merged[index] = mergeThreadDisplaySummary(merged[index], thread);
+  });
   const capped = merged.slice(0, Math.max(1, limit));
   if (Array.isArray(out.data) || !Array.isArray(out.threads)) out.data = capped;
   if (Array.isArray(out.threads)) out.threads = capped;
@@ -1742,7 +1754,7 @@ function mergeThreadStateFromStateDb(threads) {
   if (!ids.length) return threads;
   const inClause = ids.map((id) => sqlString(id)).join(", ");
   const query = [
-    "select id,archived,archived_at,rollout_path,model,reasoning_effort,agent_nickname,agent_role,",
+    "select id,title,first_user_message,cwd,updated_at,archived,archived_at,rollout_path,model,reasoning_effort,agent_nickname,agent_role,",
     "exists(select 1 from thread_spawn_edges where child_thread_id=threads.id) as is_spawned_child",
     "from threads",
     `where id in (${inClause});`,
@@ -1758,6 +1770,10 @@ function mergeThreadStateFromStateDb(threads) {
       const id = String(row && row.id || "").trim();
       if (!id) continue;
       stateById.set(id, {
+        name: row.title || null,
+        preview: row.first_user_message || null,
+        cwd: typeof row.cwd === "string" ? row.cwd.replace(/^\\\\\?\\/, "") : null,
+        updatedAt: Number(row.updated_at || 0),
         archived: Boolean(Number(row.archived || 0))
           || archivedIds.has(id)
           || /[/\\]archived_sessions[/\\]/i.test(String(row.rollout_path || ""))
@@ -1775,6 +1791,10 @@ function mergeThreadStateFromStateDb(threads) {
       const state = stateById.get(String(thread.id || "").trim());
       if (!state) return thread;
       const next = Object.assign({}, thread);
+      if (state.name) next.name = state.name;
+      if (state.preview && (!next.preview || String(next.preview) === String(thread.id || ""))) next.preview = state.preview;
+      if (state.cwd) next.cwd = state.cwd;
+      if (state.updatedAt && timestampToMs(state.updatedAt) >= timestampToMs(thread.updatedAt)) next.updatedAt = state.updatedAt;
       if (state.model) next.model = state.model;
       if (state.effort) next.effort = state.effort;
       if (state.agentNickname) next.agentNickname = state.agentNickname;
@@ -6263,9 +6283,14 @@ function mergeThreadDisplaySummary(base, display) {
   if (!base) return display ? annotateThreadRolloutStats(display) : null;
   if (!display) return base;
   const next = Object.assign({}, base);
-  for (const key of ["name", "preview", "cwd", "updatedAt"]) {
+  for (const key of ["name", "preview", "cwd"]) {
     const value = display[key];
     if (value !== null && value !== undefined && String(value).trim() !== "") next[key] = value;
+  }
+  const displayUpdatedAtMs = timestampToMs(display.updatedAt || display.updated_at || display.updatedAtMs || display.updated_at_ms);
+  const baseUpdatedAtMs = timestampToMs(base.updatedAt || base.updated_at || base.updatedAtMs || base.updated_at_ms);
+  if (displayUpdatedAtMs && displayUpdatedAtMs >= baseUpdatedAtMs) {
+    next.updatedAt = display.updatedAt || display.updated_at || display.updatedAtMs || display.updated_at_ms;
   }
   if (display.status) next.status = display.status;
   return annotateThreadRolloutStats(next);
@@ -6658,15 +6683,17 @@ function readStateDbFallback(limit = 80, filters = {}) {
   }
 }
 
-function readSessionIndexFallback(limit = 80, filters = {}) {
+function fallbackDisplayText(value, maxLength = 500) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function readSessionIndexEntries(maxLines = 2000) {
   const p = path.join(CODEX_HOME, "session_index.jsonl");
+  const byId = new Map();
   try {
-    const globalState = filters.globalState || readGlobalState();
-    const projectlessThreadIds = visibleProjectlessThreadIds(globalState);
-    if (filters.cwd || projectlessThreadIds.size === 0) return [];
-    const archivedIds = archivedSessionThreadIds();
-    const lines = fs.readFileSync(p, "utf8").split(/\r?\n/).filter(Boolean).slice(-1000);
-    const byId = new Map();
+    const lines = fs.readFileSync(p, "utf8").split(/\r?\n/).filter(Boolean).slice(-Math.max(1, maxLines));
     for (const line of lines) {
       let entry;
       try {
@@ -6674,8 +6701,137 @@ function readSessionIndexFallback(limit = 80, filters = {}) {
       } catch (_) {
         continue;
       }
-      if (!entry.id) continue;
-      if (!projectlessThreadIds.has(entry.id)) continue;
+      const id = String(entry && entry.id || "").trim();
+      if (!id) continue;
+      byId.set(id, Object.assign({}, entry, {
+        id,
+        thread_name: fallbackDisplayText(entry.thread_name || entry.name || entry.title),
+      }));
+    }
+  } catch (_) {
+    return byId;
+  }
+  return byId;
+}
+
+function readRolloutHead(rolloutPath, maxBytes = 128 * 1024) {
+  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) return "";
+  let fd = null;
+  try {
+    const stat = fs.statSync(rolloutPath);
+    if (!stat.isFile() || stat.size <= 0) return "";
+    const bytesToRead = Math.min(Math.max(4096, maxBytes), stat.size);
+    const buffer = Buffer.alloc(bytesToRead);
+    fd = fs.openSync(rolloutPath, "r");
+    const bytesRead = fs.readSync(fd, buffer, 0, bytesToRead, 0);
+    return buffer.subarray(0, bytesRead).toString("utf8");
+  } catch (_) {
+    return "";
+  } finally {
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd);
+      } catch (_) {}
+    }
+  }
+}
+
+function rolloutEntryCwd(entry) {
+  if (!entry || typeof entry !== "object") return "";
+  const payload = entry.payload && typeof entry.payload === "object" ? entry.payload : {};
+  return String(entry.cwd || payload.cwd || payload.workspace || payload.workspaceRoot || "").trim();
+}
+
+function rolloutEntryTimestampMs(entry) {
+  if (!entry || typeof entry !== "object") return 0;
+  const payload = entry.payload && typeof entry.payload === "object" ? entry.payload : {};
+  return timestampToMs(entry.timestamp || payload.timestamp || payload.created_at || payload.updated_at);
+}
+
+function readRolloutSessionFallbackThreadFromFile(file, indexEntry = {}) {
+  const rolloutPath = typeof file === "string" ? file : file && file.path;
+  const id = threadIdFromRolloutPath(rolloutPath) || String(indexEntry.id || "").trim();
+  if (!id || !rolloutPath || isBackupRolloutPath(rolloutPath)) return null;
+  let stat = null;
+  try {
+    stat = fs.statSync(rolloutPath);
+  } catch (_) {
+    return null;
+  }
+  if (!stat.isFile()) return null;
+
+  let cwd = "";
+  let timestampMs = 0;
+  let model = "";
+  const lines = readRolloutHead(rolloutPath).split(/\r?\n/).filter(Boolean);
+  for (const line of lines) {
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch (_) {
+      continue;
+    }
+    const payload = entry.payload && typeof entry.payload === "object" ? entry.payload : {};
+    if (!cwd) cwd = rolloutEntryCwd(entry);
+    timestampMs = Math.max(timestampMs, rolloutEntryTimestampMs(entry));
+    if (!model && payload.model) model = String(payload.model || "");
+    if (!model && payload.model_provider) model = String(payload.model_provider || "");
+    if (cwd && timestampMs) break;
+  }
+
+  const updatedMs = timestampToMs(indexEntry.updated_at || indexEntry.updatedAt)
+    || timestampMs
+    || Number(stat.mtimeMs || 0);
+  return rowToFallbackThread({
+    id,
+    thread_name: fallbackDisplayText(indexEntry.thread_name || indexEntry.name || indexEntry.title),
+    cwd,
+    rollout_path: rolloutPath,
+    archived: false,
+    archived_at: null,
+    updatedAt: Math.floor(updatedMs / 1000),
+    model,
+  });
+}
+
+function readRolloutSessionFallback(limit = 80, filters = {}) {
+  const rowLimit = Math.min(1000, Math.max(limit * 8, 200));
+  const indexEntries = readSessionIndexEntries(Math.max(rowLimit * 2, 2000));
+  const archivedIds = archivedSessionThreadIds();
+  const threads = [];
+  const seen = new Set();
+  for (const file of collectRecentRolloutFiles(SESSIONS_DIR, { maxFiles: rowLimit, maxDepth: 6 })) {
+    const id = threadIdFromRolloutPath(file && file.path);
+    if (!id || seen.has(id) || archivedIds.has(id)) continue;
+    seen.add(id);
+    const thread = readRolloutSessionFallbackThreadFromFile(file, indexEntries.get(id) || { id });
+    if (thread) threads.push(thread);
+  }
+  return filterFallbackThreads(threads, filters).slice(0, limit);
+}
+
+function readRolloutSessionFallbackThread(threadId) {
+  const id = String(threadId || "").trim();
+  if (!id) return null;
+  const indexEntries = readSessionIndexEntries();
+  const archivedIds = archivedSessionThreadIds();
+  if (archivedIds.has(id)) return null;
+  for (const file of collectRecentRolloutFiles(SESSIONS_DIR, { maxFiles: 1000, maxDepth: 6 })) {
+    if (threadIdFromRolloutPath(file && file.path) !== id) continue;
+    return readRolloutSessionFallbackThreadFromFile(file, indexEntries.get(id) || { id });
+  }
+  return null;
+}
+
+function readSessionIndexFallback(limit = 80, filters = {}) {
+  try {
+    const globalState = filters.globalState || readGlobalState();
+    const projectlessThreadIds = visibleProjectlessThreadIds(globalState);
+    if (filters.cwd || projectlessThreadIds.size === 0) return [];
+    const archivedIds = archivedSessionThreadIds();
+    const byId = new Map();
+    for (const entry of readSessionIndexEntries(1000).values()) {
+      if (!entry.id || !projectlessThreadIds.has(entry.id)) continue;
       if (archivedIds.has(entry.id)) continue;
       const updatedAt = entry.updated_at ? Math.floor(Date.parse(entry.updated_at) / 1000) : 0;
       byId.set(entry.id, rowToFallbackThread({
@@ -6696,6 +6852,16 @@ function readSessionIndexFallback(limit = 80, filters = {}) {
   } catch (_) {
     return [];
   }
+}
+
+function readThreadListFallback(limit = 80, filters = {}) {
+  const stateDbFallback = readStateDbFallback(limit, filters);
+  const rolloutFallback = stateDbFallback.length >= limit ? [] : readRolloutSessionFallback(limit, filters);
+  return [
+    ...stateDbFallback,
+    ...rolloutFallback,
+    ...readSessionIndexFallback(limit, filters),
+  ].slice(0, limit);
 }
 
 async function listWorkspaces() {
@@ -7353,10 +7519,7 @@ async function handleApi(req, res) {
         filterVisibleThreads(await codex.request("thread/list", params, { timeoutMs: READ_RPC_TIMEOUT_MS }), globalState),
         cwd,
       );
-      const fallback = [
-        ...readStateDbFallback(limit, { cwd, searchTerm, globalState }),
-        ...readSessionIndexFallback(limit, { cwd, searchTerm, globalState }),
-      ].slice(0, limit);
+      const fallback = readThreadListFallback(limit, { cwd, searchTerm, globalState });
       const result = mergeThreadListFallback(appServerResult, fallback, limit);
       threadDisplaySummaryCache.rememberList(result);
       if (Array.isArray(result.data)) result.data = result.data.slice(0, limit);
@@ -7366,10 +7529,7 @@ async function handleApi(req, res) {
         { cwd, days: 31, workspaceCwds: tokenUsageWorkspaceCwds(globalState) },
       ));
     } catch (err) {
-      const fallback = [
-        ...readStateDbFallback(limit, { cwd, searchTerm, globalState }),
-        ...readSessionIndexFallback(limit, { cwd, searchTerm, globalState }),
-      ].slice(0, limit);
+      const fallback = readThreadListFallback(limit, { cwd, searchTerm, globalState });
       if (fallback.length) {
         sendJson(res, 200, tokenUsageStatsService.decorateThreadListResult({
           data: fallback.map(attachThreadTaskCardCountsToSummary),
@@ -7430,6 +7590,10 @@ async function handleApi(req, res) {
     if (!summary) {
       summary = readStartedThread(threadId);
       summarySource = summary ? "started-cache" : "none";
+    }
+    if (!summary) {
+      summary = readRolloutSessionFallbackThread(threadId);
+      summarySource = summary ? "rollout-session" : "none";
     }
     if (!summary) {
       const summaryStartedAtMs = Date.now();
@@ -7899,6 +8063,7 @@ module.exports = {
   previewRootsForThread,
   readFilePreview,
   readRolloutItemTimestampCandidates,
+  readRolloutSessionFallbackThreadFromFile,
   resolveFilePreviewPath,
   publicServerRequest,
   serveFilePreviewContent,

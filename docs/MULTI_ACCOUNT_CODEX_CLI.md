@@ -82,8 +82,8 @@ state links, but those files remain profile-owned and are not committed.
 ### Shared by Mobile Web for thread continuity
 
 To keep existing workspaces and conversations visible after switching Mobile
-Web from one profile to another, the Windows windowless launcher links these
-non-auth state paths from the default `%USERPROFILE%\.codex` home into a
+Web or relaunching Desktop through a profile wrapper, the Windows launchers link
+these non-auth state paths from the default `%USERPROFILE%\.codex` home into a
 non-default profile home:
 
 - `.codex-global-state.json`
@@ -98,6 +98,8 @@ Files are linked as hard links. Directories are linked as junctions. If a
 non-default profile already has a local copy of one of those state paths, it is
 moved under `%USERPROFILE%\.codex-mobile-web\profile-state-backups` before the
 link is created. That backup path is runtime state, not repository content.
+Profile-local `auth.json` and `config.toml` are backed up separately and are not
+replaced by default-account files.
 
 ### Other shared or reused assets
 
@@ -232,9 +234,12 @@ switcher, not concurrent providers:
   matching `start-codex-desktop-*.cmd` wrappers are the Desktop recovery path
   for this design. They set `CODEX_HOME` for the launched Desktop bridge and
   point it at the selected profile's
-  `<CODEX_HOME>\app-server-mux\endpoint.json`. This does not prove that the
+  `<CODEX_HOME>\app-server-mux\endpoint.json`. For non-default profiles they
+  also run the same non-auth shared-state hardlink/junction setup as the Mobile
+  Web windowless launcher before Desktop starts. This does not prove that the
   Desktop GUI ChatGPT login is independently isolated; it makes the mux/app-
-  server sharing path profile-aware.
+  server sharing path and thread/workspace state profile-aware while leaving
+  profile auth/config files separate.
 - This switcher is disabled when Mobile Web is pinned to
   `CODEX_MOBILE_MUX_ENDPOINT_FILE`, `CODEX_MOBILE_APP_SERVER_WS`, or
   `CODEX_MOBILE_APP_SERVER_TCP`, because those fixed endpoints are outside the

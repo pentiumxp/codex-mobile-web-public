@@ -29,6 +29,7 @@ Interpretation:
 | Quota chips show the previous account after switch | `/api/status.rateLimits`, browser quota localStorage, profile-switch cache clearing |
 | Archived projectless thread reappears | session-index fallback, `archived_sessions`, `test/thread-archive.test.js` |
 | After profile switch only a few workspaces or no threads appear | `/api/public-config.codexProfiles.activeCodexHome`, profile state links, and `state_5.sqlite` / `sessions` under the active home |
+| Threads are visible but names/times stay stale | `/api/threads` row `name`/`updatedAt`, state DB `title`/`updated_at`, rollout file mtime, fallback merge tests |
 
 ## Shared Mux Drift
 
@@ -79,10 +80,34 @@ backs up `auth.json` / `config.toml` to
 profile-local state into `profile-state-backups`; it must not overwrite auth
 files.
 
+If `/api/workspaces` still lists the expected workspaces but `/api/threads`
+returns only a projectless fallback thread, check the active `state_5.sqlite`
+before treating it as a lost-account problem:
+
+```powershell
+sqlite3 "$env:USERPROFILE\.codex\state_5.sqlite" "pragma quick_check;"
+```
+
+When quick check reports `database disk image is malformed`, current Mobile Web
+builds recover the list from live `sessions/rollout-*.jsonl` headers plus
+`session_index.jsonl` display names. This is a read-only visibility fallback;
+it does not repair the SQLite file and it does not replace account auth files.
+
 If threads are visible but quota chips still show the previous account, compare
 the browser with authenticated `/api/status.rateLimits`. The frontend clears
 `codexMobileRateLimits` / `codexMobileRateLimitsByModel` when profile switching
 starts, then repopulates them from the restarted server's status/config.
+
+If threads are visible after a profile switch but some rows keep UUID-like names
+or old timestamps, compare `/api/threads?limit=...` with the active
+`state_5.sqlite` row and the rollout file mtime. Current builds merge duplicate
+fallback summaries into app-server rows instead of dropping them, and the newest
+`updatedAt` wins. Existing-thread message sends also trigger a silent sidebar
+list refresh after the current-thread refresh. If this regresses, run:
+
+```powershell
+node --test test\thread-visibility.test.js test\thread-title-source.test.js test\new-thread-route.test.js test\mobile-viewport.test.js
+```
 
 ## Sent Message Disappears After Re-entering Thread
 
@@ -164,6 +189,16 @@ Rules:
 - Server-only behavior fixes do not need a PWA bump, but open clients may need a thread reload.
 - If the phone still shows old UI, confirm it loaded the current `clientBuildId` and has accepted the refresh prompt or hard-reopened the PWA.
 - Current clients should check for a new server-started shell build after startup, foreground/focus recovery, EventSource reconnect/status, and successful thread-list refresh. If `/api/public-config.clientBuildId` is newer but no prompt appears on an already-open old page, that page may still be running a pre-v144 client and needs one manual refresh to load the stronger detection path.
+
+On Android, a right swipe from the left edge can surface as a browser/system
+Back action rather than a normal touch gesture. Current builds use two layers:
+the sidebar edge `touchstart` listener is non-passive and widens the Android
+start zone, and an Android-only two-entry `popstate` sentinel marks the current
+history entry as `base` and pushes a same-URL `top` entry. A top-level Back
+event should land on `base`, open the navigation menu, and immediately restore
+`top` instead of letting the PWA close to the launcher. If this regresses,
+verify `codex-mobile-shell-v175` or newer is loaded and run
+`node --test test\mobile-viewport.test.js`.
 
 ## File Preview Says Unsupported
 
@@ -841,8 +876,9 @@ Check these facts in order:
 - If Desktop must be used as a recovery path, fully quit Desktop and relaunch
   it through `start-codex-desktop-shared.ps1 -ProfileId <id>` or the matching
   `start-codex-desktop-<id>.cmd` wrapper so Desktop and Mobile share the same
-  profile mux. Desktop GUI login may still be global; verify shared state by
-  comparing the selected `CODEX_HOME` and endpoint.
+  profile mux and non-auth thread/workspace state links. Desktop GUI login may
+  still be global; verify shared state by comparing the selected `CODEX_HOME`,
+  endpoint, and linked `sessions`/`state_5.sqlite*` paths.
 - The shared-chain restart should only stop the selected endpoint's recorded
   mux/child PIDs. If a dry run lists many unrelated profile muxes, treat that
   as a regression before running a real restart.
@@ -858,7 +894,8 @@ The browser should never display or log raw token fields from `auth.json`.
 ## Codex Profile Switch Hides Workspaces Or Threads
 
 If switching Mobile Web to another Codex profile makes most workspaces or
-threads disappear, inspect the shared-state link setup before changing thread
+threads disappear, or if Desktop launched from a profile wrapper cannot see the
+expected threads, inspect the shared-state link setup before changing thread
 visibility code.
 
 Expected behavior:

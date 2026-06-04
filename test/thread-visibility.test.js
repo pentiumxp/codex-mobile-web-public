@@ -1,6 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { test } = require("node:test");
@@ -8,6 +9,7 @@ const { test } = require("node:test");
 const {
   isHiddenThread,
   mergeThreadListFallback,
+  readRolloutSessionFallbackThreadFromFile,
   sortTurnsChronologically,
   threadMatchesWorkspaceCwd,
 } = require("../server");
@@ -57,14 +59,75 @@ test("archived Codex worktree threads stay hidden", () => {
 test("thread list merges local fallback threads when app-server list misses them", () => {
   const result = mergeThreadListFallback({
     data: [
-      { id: "thread-1", name: "from app-server" },
+      { id: "thread-1", name: "from app-server", preview: "old preview", updatedAt: 100 },
     ],
   }, [
     { id: "thread-2", name: "from state db" },
-    { id: "thread-1", name: "duplicate fallback" },
+    { id: "thread-1", name: "duplicate fallback", preview: "new preview", updatedAt: 200 },
   ], 10);
 
   assert.deepEqual(result.data.map((thread) => thread.id), ["thread-1", "thread-2"]);
+  assert.equal(result.data[0].name, "duplicate fallback");
+  assert.equal(result.data[0].preview, "new preview");
+  assert.equal(result.data[0].updatedAt, 200);
+});
+
+test("thread list keeps app-server time when duplicate fallback is older", () => {
+  const result = mergeThreadListFallback({
+    data: [
+      { id: "thread-1", name: "from app-server", updatedAt: 300 },
+    ],
+  }, [
+    { id: "thread-1", name: "older fallback", updatedAt: 200 },
+  ], 10);
+
+  assert.equal(result.data[0].name, "older fallback");
+  assert.equal(result.data[0].updatedAt, 300);
+});
+
+test("rollout session fallback recovers thread summary without state db text columns", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-rollout-fallback-"));
+  const threadId = "019e9000-0000-7000-8000-000000000001";
+  const rolloutPath = path.join(dir, `rollout-2026-06-04T10-00-00-${threadId}.jsonl`);
+  fs.writeFileSync(rolloutPath, [
+    JSON.stringify({
+      type: "session_meta",
+      payload: {
+        id: threadId,
+        timestamp: "2026-06-04T10:00:01.000Z",
+        cwd: "C:\\Users\\xuxin\\Documents\\Agent",
+        model: "gpt-5.5",
+      },
+    }),
+    JSON.stringify({
+      type: "turn_context",
+      cwd: "C:\\Users\\xuxin\\Documents\\Agent",
+    }),
+  ].join("\n"), "utf8");
+
+  const summary = readRolloutSessionFallbackThreadFromFile(rolloutPath, {
+    id: threadId,
+    thread_name: "Recovered Thread",
+    updated_at: "2026-06-04T10:01:00.000Z",
+  });
+
+  assert.equal(summary.id, threadId);
+  assert.equal(summary.name, "Recovered Thread");
+  assert.equal(summary.cwd, "C:\\Users\\xuxin\\Documents\\Agent");
+  assert.equal(summary.path, rolloutPath);
+  assert.equal(summary.mobileFallback, true);
+  assert.equal(summary.updatedAt, 1780567260);
+});
+
+test("thread list route uses rollout-aware fallback aggregator", () => {
+  const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+  const routeIndex = serverJs.indexOf('if (url.pathname === "/api/threads" && req.method === "GET")');
+  assert.ok(routeIndex >= 0, "missing thread list route");
+  const routeBody = serverJs.slice(routeIndex, serverJs.indexOf('const threadRename = url.pathname.match', routeIndex));
+
+  assert.match(serverJs, /function readRolloutSessionFallback\(/);
+  assert.match(serverJs, /function readThreadListFallback\(/);
+  assert.match(routeBody, /const fallback = readThreadListFallback\(limit, \{ cwd, searchTerm, globalState \}\);/);
 });
 
 test("turn sorting uses item timestamps when turn ids are not chronological", () => {
