@@ -4,7 +4,7 @@
 
 | File | Responsibility | Notes |
 | --- | --- | --- |
-| `server.js` | Main HTTP server, app-server client, auth, routes, thread detail compaction, uploads, continuation jobs, Web Push, update/restart endpoints, thread visibility filtering, local-file preview roots, and server-side cross-thread task-card draft materialization from completed turns/thread-detail reads | Treat as composition glue. Extract reusable logic instead of expanding large inline blocks. |
+| `server.js` | Main HTTP server, app-server client, auth, routes, thread detail compaction, uploads, continuation jobs, Web Push, update/restart endpoints, thread visibility filtering, local-file preview roots, inherited runtime model/effort application, and server-side cross-thread task-card draft materialization from completed turns/thread-detail reads | Treat as composition glue. Extract reusable logic instead of expanding large inline blocks. |
 | `codex-app-server-mux.js` | Shared Desktop/Mobile app-server bridge, endpoint publication, TCP server, app-server notification replay, approval proxying | Stdout is protocol data for Desktop; diagnostics must go to mux log. |
 | `codex-app-server-mux-shim.cs` | Windows `.exe` shim for Desktop `CODEX_CLI_PATH` | Rebuild/relaunch Desktop through the shared launcher after changes. |
 | `start-codex-mobile-web*.ps1/.vbs` | Windows startup wrappers and hidden scheduled-task startup | User-logon task is preferred when WSL access is needed; plugin HTTPS base URL, Hermes frame-origin settings, active Codex profile resolution, profile auth/config backup without replacement, and non-default profile shared-state hardlink/junction setup must be preserved here for scheduled deployments. |
@@ -45,7 +45,7 @@ Add new service modules when logic has independent inputs/outputs, state rules, 
 | `public/sw.js` | Service worker, app-shell cache, Web Push notification click handling. |
 | `public/api-client.js` | Authenticated fetch helper. |
 | `public/runtime-settings.js` | Model/effort/permission option normalization and labels. |
-| `public/draft-store.js` | Browser-local draft persistence and resumable attachment draft data. |
+| `public/draft-store.js` | Browser-local draft persistence, runtime-only next-turn model/effort/permission draft state, and resumable attachment draft data. |
 | `public/markdown-renderer.js` | Markdown rendering rules for conversation/source text. |
 | `public/viewport-metrics.js` | Visual viewport and keyboard-shrink helpers. |
 | `public/conversation-scroll.js` | Scroll position and bottom-follow helpers. |
@@ -71,7 +71,7 @@ Add new service modules when logic has independent inputs/outputs, state rules, 
 | Hermes Mobile plugin mode | `test/hermes-plugin-service.test.js`, `test/hermes-plugin-route.test.js`, `test/hermes-notification-delegate-service.test.js`, `test/plugin-embed.test.js` |
 | cross-thread task cards | `test/thread-task-card-harness.test.js`, `test/thread-task-card-service.test.js`, `test/thread-task-card-route.test.js`, `test/conversation-render.test.js`; include readable-text/encoding-damage, approve-in-flight, autonomous workflow same-pair coverage, automatic completion return idempotency, stable source-draft settlement, queued source draft lookup across earlier non-draft messages, silent source auto-send, server-side draft materialization on `turn/completed` and thread-detail reads, 8k draft-body truncation before create, and target-side-only pending render coverage when changing sender or store paths |
 | Push | `test/push-notification-service.test.js` |
-| runtime settings | `test/runtime-settings.test.js`, `test/composer-quota.test.js` |
+| runtime settings | `test/runtime-settings.test.js`, `test/composer-quota.test.js`, `test/new-thread-route.test.js`, `test/thread-task-card-route.test.js` |
 | Codex profile switching | `test/codex-profile-service.test.js`, `test/codex-profile-ui.test.js`, `test/manual-restart-ui.test.js`, `test/mobile-viewport.test.js`; include safe account display, active profile persistence, fixed-endpoint switch disablement, browser quota cache clearing, explicit `profileId` / `codexHome` restart arguments, windowless auth/config preservation, non-default profile shared-state link list, and `docs/MULTI_ACCOUNT_CODEX_CLI.md` regression coverage |
 | scroll and markdown | `test/conversation-scroll.test.js`, `test/turn-scroll-controls.test.js`, `test/markdown-render.test.js` |
 

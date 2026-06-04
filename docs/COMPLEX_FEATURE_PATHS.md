@@ -212,9 +212,19 @@ Implementation path:
 
 1. Determine the actual app-server field name and supported protocol shape.
 2. Read the latest rollout `turn_context` and SQLite/app-server thread metadata.
-3. Do not default to global Codex config when a source thread has explicit settings that can be inherited.
-4. Add tests that cover both small threads and large-rollout fallback paths.
-5. Re-check `/api/public-config` and a real continuation/new send path after activation.
+3. Inherit `model` and `reasoning_effort` from the latest rollout
+   `turn_context` first, then state DB/app-server thread metadata, then Codex
+   config defaults. Do not default to global Codex config when a source thread
+   has explicit settings that can be inherited.
+4. Apply inherited model to `thread/start` and `turn/start`; apply inherited
+   reasoning effort to `turn/start`. Explicit browser-selected model/effort on
+   normal message submission must still override inherited values.
+5. `turn/steer` is an active-turn steering path, not a new model invocation; it
+   cannot change the model or reasoning effort of a turn that has already
+   started.
+6. Add tests that cover both small threads and large-rollout fallback paths,
+   plus continuation and cross-thread task-card injection paths.
+7. Re-check `/api/public-config` and a real continuation/new send path after activation.
 
 ## Hermes Mobile Plugin Deployment
 

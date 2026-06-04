@@ -8,6 +8,22 @@ const { test } = require("node:test");
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 
+function functionBody(source, name) {
+  let start = source.indexOf(`function ${name}(`);
+  if (start < 0) start = source.indexOf(`async function ${name}(`);
+  assert.notEqual(start, -1, `missing function ${name}`);
+  const bodyStart = source.indexOf(") {", start) + 2;
+  assert.notEqual(bodyStart, 1, `missing function body ${name}`);
+  let depth = 0;
+  for (let index = bodyStart; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "{") depth += 1;
+    if (char === "}") depth -= 1;
+    if (depth === 0) return source.slice(bodyStart + 1, index);
+  }
+  throw new Error(`could not parse function ${name}`);
+}
+
 test("new-message route creates a thread before starting the first turn", () => {
   const routeIndex = serverJs.indexOf("/api/threads/new-message");
   const fallbackIndex = serverJs.indexOf('sendJson(res, 404, { error: "Not found" })');
@@ -60,6 +76,31 @@ test("server hydrates rollout quota snapshots without overwriting live quota", (
   assert.match(serverJs, /loadRecentRateLimitsFromRollouts\(\);[\s\S]*sendJson\(res, 200, codex\.status\(\)\)/, "status should include hydrated quota snapshots");
 });
 
+test("server runtime inheritance includes model and reasoning effort", () => {
+  const settingsBody = functionBody(serverJs, "threadRuntimeSettings");
+  assert.match(settingsBody, /lastString\(context\.model, thread && thread\.model, CODEX_CONFIG_DEFAULTS\.model\)/, "runtime settings should inherit model from rollout, state DB, or config");
+  assert.match(settingsBody, /lastString\(context\.effort, context\.reasoning_effort, context\.model_reasoning_effort, thread && thread\.effort, CODEX_CONFIG_DEFAULTS\.reasoningEffort\)/, "runtime settings should inherit reasoning effort from rollout, state DB, or config");
+  assert.match(settingsBody, /model,\s*reasoningEffort,/, "runtime settings response should expose inherited model and effort");
+
+  const startBody = functionBody(serverJs, "applyStartThreadRuntimeSettings");
+  assert.match(startBody, /if \(settings\.model\) params\.model = settings\.model;/, "thread/start should inherit model");
+
+  const turnBody = functionBody(serverJs, "applyTurnRuntimeSettings");
+  assert.match(turnBody, /if \(settings\.model\) params\.model = settings\.model;/, "turn/start should inherit model");
+  assert.match(turnBody, /if \(settings\.reasoningEffort\) params\.effort = settings\.reasoningEffort;/, "turn/start should inherit reasoning effort");
+});
+
+test("continuation paths apply inherited model and effort", () => {
+  const sourceHandoffBody = functionBody(serverJs, "createSourceContinuationHandoff");
+  assert.match(sourceHandoffBody, /const params = applyTurnRuntimeSettings\(/, "source handoff generation should use inherited runtime settings");
+  assert.match(sourceHandoffBody, /codex\.request\("turn\/start", params/, "source handoff turn should send inherited runtime settings");
+
+  const startContinuationBody = functionBody(serverJs, "startThreadFromRequestBody");
+  assert.match(startContinuationBody, /const runtimeSettings = applyPermissionModeOverride\(sourceSnapshot\.runtimeSettings \|\| \{\}, body\.permissionMode, cwd\);/);
+  assert.match(startContinuationBody, /const params = applyStartThreadRuntimeSettings\(/, "continuation thread/start should inherit model");
+  assert.match(startContinuationBody, /const bootstrapParams = applyTurnRuntimeSettings\(/, "continuation bootstrap turn should inherit model and effort");
+});
+
 test("server does not broadcast source-less quota notifications to clients", () => {
   const start = serverJs.indexOf("function shouldSendEventToClient(");
   const end = serverJs.indexOf("function removeEventClient(", start);
@@ -82,6 +123,14 @@ test("existing-message route forwards runtime settings on next turn", () => {
   assert.match(routeBody, /applyCodexFastServiceTier\(applyTurnRuntimeSettings\(/, "turn/start should apply requested Fast service tier");
   assert.match(routeBody, /if \(requestedModel\) params\.model = requestedModel;/, "turn/start should receive requested model");
   assert.match(routeBody, /if \(requestedEffort\) params\.effort = requestedEffort;/, "turn/start should receive requested reasoning effort");
+  assert.ok(
+    routeBody.indexOf("const params = applyCodexFastServiceTier(applyTurnRuntimeSettings(") < routeBody.indexOf("if (requestedModel) params.model = requestedModel;"),
+    "explicit requested model should override inherited runtime model",
+  );
+  assert.ok(
+    routeBody.indexOf("const params = applyCodexFastServiceTier(applyTurnRuntimeSettings(") < routeBody.indexOf("if (requestedEffort) params.effort = requestedEffort;"),
+    "explicit requested effort should override inherited runtime effort",
+  );
 });
 
 test("existing-thread message send refreshes the sidebar thread list", () => {

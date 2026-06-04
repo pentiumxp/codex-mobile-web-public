@@ -35,9 +35,14 @@ test("new-thread draft renders model, reasoning, and permission controls", () =>
 test("new-thread message submission includes selected runtime settings", () => {
   const body = functionBody("sendNewThreadMessage");
 
-  assert.match(body, /body\.append\("model",\s*newThreadSelectedModel\(\)\)/);
-  assert.match(body, /body\.append\("effort",\s*newThreadSelectedEffort\(\)\)/);
-  assert.match(body, /body\.append\("permissionMode",\s*newThreadSelectedPermissionMode\(\)\)/);
+  assert.match(body, /const submittedModel = newThreadSelectedModel\(\)/);
+  assert.match(body, /const submittedEffort = newThreadSelectedEffort\(\)/);
+  assert.match(body, /const submittedPermissionMode = newThreadSelectedPermissionMode\(\)/);
+  assert.match(body, /body\.append\("model",\s*submittedModel\)/);
+  assert.match(body, /body\.append\("effort",\s*submittedEffort\)/);
+  assert.match(body, /body\.append\("permissionMode",\s*submittedPermissionMode\)/);
+  assert.match(body, /state\.composerEffort = submittedEffort \|\| "";/);
+  assert.match(body, /writeCurrentDraftToKey\(draftKeyForThread\(threadId\)\)/);
 });
 
 test("existing-thread message submission includes selected runtime settings", () => {

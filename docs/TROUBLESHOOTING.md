@@ -185,7 +185,7 @@ Measure-Command { rg -n "pattern" . -g "!node_modules/**" | Out-Null }
 Get-Process rg -ErrorAction SilentlyContinue
 ```
 
-On Windows, `rg.exe` may be installed outside the active `PATH`, such as under a user-local bin directory. A stale UI command card can make an already-completed `rg` look running; confirm through rollout output and process state.
+On this machine, `rg.exe` may be available through `%USERPROFILE%\.local\bin\rg.exe`. A stale UI command card can make an already-completed `rg` look running; confirm through rollout output and process state.
 
 ## PWA Cache Or Version Mismatch
 
@@ -641,7 +641,27 @@ If a continuation thread starts with wrong runtime settings:
 2. Inspect `state_5.sqlite` thread metadata when available.
 3. Inspect `threadRuntimeSettings()` and `applyStartThreadRuntimeSettings()` in `server.js`.
 
-Known finding: if reasoning effort is not explicitly passed, continuation can fall back to Codex config defaults such as `xhigh` even when the source thread used `medium`.
+Current expected behavior: inherited runtime settings should read `model` and
+`reasoning_effort` from rollout `turn_context`, then state DB/app-server thread
+metadata, then Codex config defaults. Continuation creation applies inherited
+model to `thread/start` and inherited model/effort to bootstrap `turn/start`.
+Cross-thread task-card approval uses the same target-thread inheritance before
+injecting its real target `turn/start`.
+
+If a user changes model/effort while the current thread is still actively
+running, a follow-up message may be sent as `turn/steer`. That path steers the
+already-started turn and cannot change its model or reasoning effort; wait for a
+new turn when verifying runtime-setting changes.
+
+If model/effort changes disappear after closing and reopening Mobile Web, or
+immediately after pressing Send, inspect the browser draft map
+`codexMobileDraftsV1`. Runtime-only drafts are valid: `model`, `effort`, or
+`permissionMode` should keep a thread-keyed draft even when `text` is empty and
+there are no attachments. Existing-thread send success should clear only text
+and attachments, then write the runtime-only draft back while the new turn is
+starting. New-thread send success should move the selected runtime values from
+the workspace draft to a thread-keyed runtime draft once the new thread id is
+known.
 
 If a continuation starts with unexpectedly high input tokens, inspect the bootstrap size and source handoff handling:
 

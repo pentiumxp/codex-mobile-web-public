@@ -2723,6 +2723,14 @@ function readLatestTurnContext(thread) {
 function threadRuntimeSettings(threadId, fallbackThread = null) {
   const thread = readStateDbThread(threadId) || fallbackThread;
   const context = readLatestTurnContext(thread) || {};
+  const model = normalizeEnumValue(
+    lastString(context.model, thread && thread.model, CODEX_CONFIG_DEFAULTS.model),
+    new Set(MODEL_OPTIONS),
+  );
+  const reasoningEffort = normalizeEnumValue(
+    lastString(context.effort, context.reasoning_effort, context.model_reasoning_effort, thread && thread.effort, CODEX_CONFIG_DEFAULTS.reasoningEffort),
+    new Set(REASONING_EFFORT_OPTIONS),
+  );
   const sandboxPolicy = normalizeSandboxPolicy(context.sandbox_policy || (thread && thread.sandboxPolicy));
   const permissionProfile = normalizePermissionProfile(context.permission_profile || (thread && thread.permissionProfile));
   let approvalPolicy = normalizeEnumValue(
@@ -2741,6 +2749,8 @@ function threadRuntimeSettings(threadId, fallbackThread = null) {
     new Set(["low", "medium", "high"]),
   );
   return {
+    model,
+    reasoningEffort,
     approvalPolicy,
     sandboxPolicy,
     sandboxMode: sandboxModeFromPolicy(sandboxPolicy),
@@ -2766,6 +2776,7 @@ function applyResumeRuntimeSettings(params, settings) {
   if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
   if (settings.permissionProfile) params.permissionProfile = settings.permissionProfile;
   else if (settings.sandboxMode) params.sandbox = settings.sandboxMode;
+  if (settings.model) params.model = settings.model;
   const config = {};
   if (settings.reasoningSummary) config.model_reasoning_summary = settings.reasoningSummary;
   if (settings.modelVerbosity) config.model_verbosity = settings.modelVerbosity;
@@ -2778,6 +2789,7 @@ function applyStartThreadRuntimeSettings(params, settings) {
   if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
   if (settings.permissionProfile) params.permissionProfile = settings.permissionProfile;
   else if (settings.sandboxMode) params.sandbox = settings.sandboxMode;
+  if (settings.model) params.model = settings.model;
   const config = {};
   if (settings.reasoningSummary) config.model_reasoning_summary = settings.reasoningSummary;
   if (settings.modelVerbosity) config.model_verbosity = settings.modelVerbosity;
@@ -2790,6 +2802,8 @@ function applyTurnRuntimeSettings(params, settings) {
   if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
   if (settings.sandboxPolicy) params.sandboxPolicy = settings.sandboxPolicy;
   else if (settings.permissionProfile) params.permissionProfile = settings.permissionProfile;
+  if (settings.model) params.model = settings.model;
+  if (settings.reasoningEffort) params.effort = settings.reasoningEffort;
   if (settings.reasoningSummary) params.summary = settings.reasoningSummary;
   return params;
 }

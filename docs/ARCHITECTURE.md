@@ -310,6 +310,16 @@ New-thread and explicit-resume sends use `thread/start` after applying runtime s
 3. If the latest durable turn is live, steer with `turn/steer`.
 4. Preserve visible user input through deterministic `mux-user-*` echoes and pending steer echo injection until app-server durable history catches up.
 
+Browser-selected model, reasoning effort, and permission mode are persisted in
+the browser draft store by thread/workspace key even when the composer text is
+empty. Reopening the app or switching away and back should restore that runtime
+selection. Once an existing-thread non-steering send succeeds, Mobile Web clears
+only text and attachments, then writes the runtime-only draft back under the
+thread key. New-thread send captures selected runtime values before creation and
+writes them back under the newly created thread key after the thread id is
+known. This avoids an immediate UI fallback to stale thread metadata while the
+new turn is starting and before app-server state DB metadata catches up.
+
 The latest durable live turn must not be auto-interrupted only because it is quiet or ended with a completed operation/context marker. User guidance during a real latest live turn should steer that turn.
 
 Cross-thread task-card approval is a separate path. Approval does not attempt to

@@ -214,7 +214,7 @@ const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 8;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v177";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v178";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -2397,14 +2397,20 @@ function saveCurrentDraftNow() {
   if (state.composerBusy) return;
   const key = currentDraftKey();
   if (!key) return;
+  writeCurrentDraftToKey(key);
+}
+
+function writeCurrentDraftToKey(key) {
+  const targetKey = String(key || "");
+  if (!targetKey) return;
   const map = readDraftMap();
   const draft = buildCurrentDraft();
   if (draftHasContent(draft)) {
-    map[key] = draft;
-    if (key.startsWith("new:")) draftStore.setTargetKey(key);
+    map[targetKey] = draft;
+    if (targetKey.startsWith("new:")) draftStore.setTargetKey(targetKey);
   } else {
-    delete map[key];
-    draftStore.clearTargetKeyIfMatches(key);
+    delete map[targetKey];
+    draftStore.clearTargetKeyIfMatches(targetKey);
   }
   writeDraftMap(map);
 }
@@ -4681,6 +4687,7 @@ async function loadThread(threadId, options = {}) {
   localStorage.setItem(STORAGE_THREAD_ID, threadId);
   draftStore.setTargetKey("");
   if (state.events) connectEvents();
+  restoreDraftForCurrentTarget();
   renderComposerSettings();
   syncActiveTurnFromThread();
   renderThreads();
@@ -9539,7 +9546,7 @@ function setCodexFastCommandEnabled(enabled) {
   else localStorage.removeItem(STORAGE_CODEX_FAST_MODE);
   renderComposerSettings();
   updateComposerControls();
-  saveDraftForCurrentTarget();
+  saveCurrentDraftNow();
   showComposerFastHint(state.codexFastMode);
 }
 
@@ -9558,6 +9565,7 @@ function applyRuntimeSelection(kind, value) {
   closeComposerRuntimeMenu();
   renderComposerSettings();
   updateComposerControls();
+  saveCurrentDraftNow();
 }
 
 function closeComposerRuntimeMenu() {
@@ -9808,11 +9816,8 @@ async function sendMessage(event) {
     });
     setComposerText("");
     clearPendingAttachments();
-    clearDraftForKey(submittedDraftKey);
+    writeCurrentDraftToKey(submittedDraftKey);
     if (!steering) {
-      state.composerModel = "";
-      state.composerEffort = "";
-      state.composerPermissionMode = "";
       renderComposerSettings();
     }
     input.blur();
@@ -9851,6 +9856,9 @@ async function sendNewThreadMessage(text, hasContent, input) {
   if (!hasContent) return;
   const submittedDraftKey = currentDraftKey();
   const clientSubmissionId = createSubmissionId();
+  const submittedModel = newThreadSelectedModel();
+  const submittedEffort = newThreadSelectedEffort();
+  const submittedPermissionMode = newThreadSelectedPermissionMode();
   state.composerBusy = true;
   state.sendButtonHint = "";
   $("connectionState").classList.remove("error");
@@ -9863,9 +9871,9 @@ async function sendNewThreadMessage(text, hasContent, input) {
     body.append("clientSubmissionId", clientSubmissionId);
     body.append("text", text);
     if (state.selectedCwd) body.append("cwd", state.selectedCwd);
-    body.append("model", newThreadSelectedModel());
-    body.append("effort", newThreadSelectedEffort());
-    body.append("permissionMode", newThreadSelectedPermissionMode());
+    body.append("model", submittedModel);
+    body.append("effort", submittedEffort);
+    body.append("permissionMode", submittedPermissionMode);
     if (codexFastCommandEnabled()) body.append("fastMode", "1");
     for (const item of state.pendingAttachments) {
       body.append("attachments", item.file, item.file.name || "upload");
@@ -9886,6 +9894,8 @@ async function sendNewThreadMessage(text, hasContent, input) {
       status: { type: "active" },
       turns: [],
     }, result.thread || {});
+    if (!thread.model && submittedModel) thread.model = submittedModel;
+    if (!thread.effort && submittedEffort) thread.effort = submittedEffort;
     if (turnId) {
       const existingTurn = (thread.turns || []).find((turn) => turn && turn.id === turnId);
       if (existingTurn) {
@@ -9906,10 +9916,14 @@ async function sendNewThreadMessage(text, hasContent, input) {
     state.currentThreadId = threadId;
     state.currentThread = thread;
     state.activeTurnId = turnId || state.activeTurnId;
+    state.composerModel = submittedModel || "";
+    state.composerEffort = submittedEffort || "";
+    state.composerPermissionMode = submittedPermissionMode || "";
     if (state.events) connectEvents();
     setComposerText("");
     clearPendingAttachments();
     clearDraftForKey(submittedDraftKey);
+    writeCurrentDraftToKey(draftKeyForThread(threadId));
     if (input) input.blur();
     renderComposerSettings();
     renderThreads();
