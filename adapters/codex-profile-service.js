@@ -311,6 +311,48 @@ function resolveActiveCodexHomeFromStore(options = {}) {
   };
 }
 
+function envFlagEnabled(value) {
+  return /^(1|true|yes|on)$/i.test(String(value || ""));
+}
+
+function resolveEffectiveCodexHome(options = {}) {
+  const env = options.env || process.env;
+  const userHome = options.userHome || env.USERPROFILE || env.HOME || process.cwd();
+  const runtimeRoot = options.runtimeRoot || env.CODEX_MOBILE_RUNTIME_DIR || path.join(userHome, ".codex-mobile-web");
+  const defaultCodexHome = options.defaultCodexHome || path.join(userHome, ".codex");
+  const bootstrap = options.bootstrap || resolveActiveCodexHomeFromStore({
+    userHome,
+    runtimeRoot,
+    env,
+    storeFile: options.storeFile,
+  });
+  const envCodexHome = env.CODEX_HOME ? path.resolve(String(env.CODEX_HOME)) : "";
+  const profileCodexHome = bootstrap && bootstrap.codexHome ? path.resolve(String(bootstrap.codexHome)) : "";
+  const envOverrideAllowed = envFlagEnabled(env.CODEX_MOBILE_CODEX_HOME_OVERRIDE)
+    || envFlagEnabled(env.CODEX_MOBILE_ALLOW_CODEX_HOME_OVERRIDE);
+  const envCodexHomeIgnored = Boolean(
+    profileCodexHome
+    && envCodexHome
+    && !envOverrideAllowed
+    && normalizePathForCompare(profileCodexHome) !== normalizePathForCompare(envCodexHome),
+  );
+  const codexHome = envOverrideAllowed && envCodexHome
+    ? envCodexHome
+    : (profileCodexHome || envCodexHome || defaultCodexHome);
+  return {
+    codexHome,
+    source: envOverrideAllowed && envCodexHome
+      ? "env-override"
+      : (profileCodexHome ? "profile-store" : (envCodexHome ? "env" : "default")),
+    storeFile: bootstrap && bootstrap.storeFile || "",
+    activeProfileId: bootstrap && bootstrap.activeProfileId || "",
+    profileCodexHome,
+    envCodexHome,
+    envOverrideAllowed,
+    envCodexHomeIgnored,
+  };
+}
+
 function createCodexProfileService(options = {}) {
   const env = options.env || process.env;
   const userHome = options.userHome || env.USERPROFILE || env.HOME || process.cwd();
@@ -418,5 +460,6 @@ module.exports = {
   loadRateLimitSnapshotForHome,
   normalizeProfileId,
   resolveActiveCodexHomeFromStore,
+  resolveEffectiveCodexHome,
   safeAccountFromAuth,
 };

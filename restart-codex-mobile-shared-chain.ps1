@@ -131,8 +131,25 @@ function Get-EndpointProcessIds {
   }
 }
 
+function Get-PortListenerProcessIds {
+  try {
+    $connections = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction Stop
+  } catch {
+    return @()
+  }
+
+  $ids = @()
+  foreach ($connection in @($connections)) {
+    if ($connection.OwningProcess -and [int]$connection.OwningProcess -gt 0) {
+      $ids += [int]$connection.OwningProcess
+    }
+  }
+  return @($ids | Select-Object -Unique)
+}
+
 function Get-TargetProcesses {
   $endpointProcessIds = Get-EndpointProcessIds
+  $portListenerProcessIds = Get-PortListenerProcessIds
   $processes = Get-CimInstance Win32_Process | Where-Object {
     $name = $_.Name
     $cmd = $_.CommandLine
@@ -148,6 +165,11 @@ function Get-TargetProcesses {
     }
     if ($name -ieq "node.exe" -and (Test-ContainsPath $cmd $ServerPath)) {
       return $true
+    }
+    if ($portListenerProcessIds -contains [int]$_.ProcessId) {
+      if ($name -ieq "node.exe" -and ($cmd -match "(^|\s)server\.js(\s|$)" -or (Test-ContainsPath $cmd $ServerPath))) {
+        return $true
+      }
     }
     if ($endpointProcessIds -contains [int]$_.ProcessId) {
       if ($name -ieq "node.exe" -and (Test-ContainsPath $cmd $MuxScriptPath)) {

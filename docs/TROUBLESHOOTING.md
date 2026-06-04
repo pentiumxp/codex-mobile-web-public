@@ -27,7 +27,10 @@ Interpretation:
 | Push says turn ended but no final reply appears | rollout `task_complete.last_agent_message`, completion-push no-final-message guard |
 | Profile switch hides workspaces or threads | active `codexProfiles.activeCodexHome`, non-default profile shared-state links, `/api/threads?limit=10` |
 | Quota chips show the previous account after switch | `/api/status.rateLimits`, browser quota localStorage, profile-switch cache clearing |
+| Archived projectless thread reappears | session-index fallback, `archived_sessions`, `test/thread-archive.test.js` |
 | After profile switch only a few workspaces or no threads appear | `/api/public-config.codexProfiles.activeCodexHome`, profile state links, and `state_5.sqlite` / `sessions` under the active home |
+| Threads are visible but names/times stay stale | `/api/threads` row `name`/`updatedAt`, state DB `title`/`updated_at`, rollout file mtime, fallback merge tests |
+| Running-thread indicator disappears | `runningThreadIds`, row `status`, `turn/started` / `turn/completed` notifications, stale browser shell |
 
 ## Shared Mux Drift
 
@@ -78,10 +81,45 @@ backs up `auth.json` / `config.toml` to
 profile-local state into `profile-state-backups`; it must not overwrite auth
 files.
 
+If `/api/workspaces` still lists the expected workspaces but `/api/threads`
+returns only a projectless fallback thread, check the active `state_5.sqlite`
+before treating it as a lost-account problem:
+
+```powershell
+sqlite3 "$env:USERPROFILE\.codex\state_5.sqlite" "pragma quick_check;"
+```
+
+When quick check reports `database disk image is malformed`, current Mobile Web
+builds recover the list from live `sessions/rollout-*.jsonl` headers plus
+`session_index.jsonl` display names. This is a read-only visibility fallback;
+it does not repair the SQLite file and it does not replace account auth files.
+
 If threads are visible but quota chips still show the previous account, compare
 the browser with authenticated `/api/status.rateLimits`. The frontend clears
 `codexMobileRateLimits` / `codexMobileRateLimitsByModel` when profile switching
 starts, then repopulates them from the restarted server's status/config.
+
+If threads are visible after a profile switch but some rows keep UUID-like names
+or old timestamps, compare `/api/threads?limit=...` with the active
+`state_5.sqlite` row and the rollout file mtime. Current builds merge duplicate
+fallback summaries into app-server rows instead of dropping them, and the newest
+`updatedAt` wins. Existing-thread message sends also trigger a silent sidebar
+list refresh after the current-thread refresh. If this regresses, run:
+
+```powershell
+node --test test\thread-visibility.test.js test\thread-title-source.test.js test\new-thread-route.test.js test\mobile-viewport.test.js
+```
+
+If a running thread is interactive but the sidebar/home running indicator is
+missing, first separate this from the page-refresh prompt. The running indicator
+comes from `public/app.js` status hints, not `#pageRefreshPrompt`. Current builds
+keep `runningThreadIds` across thread-list refreshes where the row only says
+`notLoaded`, and current-thread `turn/started` / `turn/completed` notifications
+write back to the matching sidebar row. If this regresses, run:
+
+```powershell
+node --test test\conversation-render.test.js test\mobile-viewport.test.js
+```
 
 ## Sent Message Disappears After Re-entering Thread
 
@@ -147,7 +185,7 @@ Measure-Command { rg -n "pattern" . -g "!node_modules/**" | Out-Null }
 Get-Process rg -ErrorAction SilentlyContinue
 ```
 
-On this machine, `rg.exe` may be available through `%USERPROFILE%\.local\bin\rg.exe`. A stale UI command card can make an already-completed `rg` look running; confirm through rollout output and process state.
+On Windows, `rg.exe` may be installed outside the active `PATH`, such as under a user-local bin directory. A stale UI command card can make an already-completed `rg` look running; confirm through rollout output and process state.
 
 ## PWA Cache Or Version Mismatch
 
@@ -163,6 +201,16 @@ Rules:
 - Server-only behavior fixes do not need a PWA bump, but open clients may need a thread reload.
 - If the phone still shows old UI, confirm it loaded the current `clientBuildId` and has accepted the refresh prompt or hard-reopened the PWA.
 - Current clients should check for a new server-started shell build after startup, foreground/focus recovery, EventSource reconnect/status, and successful thread-list refresh. If `/api/public-config.clientBuildId` is newer but no prompt appears on an already-open old page, that page may still be running a pre-v144 client and needs one manual refresh to load the stronger detection path.
+
+On Android, a right swipe from the left edge can surface as a browser/system
+Back action rather than a normal touch gesture. Current builds use two layers:
+the sidebar edge `touchstart` listener is non-passive and widens the Android
+start zone, and an Android-only two-entry `popstate` sentinel marks the current
+history entry as `base` and pushes a same-URL `top` entry. A top-level Back
+event should land on `base`, open the navigation menu, and immediately restore
+`top` instead of letting the PWA close to the launcher. If this regresses,
+verify `codex-mobile-shell-v175` or newer is loaded and run
+`node --test test\mobile-viewport.test.js`.
 
 ## File Preview Says Unsupported
 
@@ -191,6 +239,19 @@ If a worktree thread is missing:
 
 ```powershell
 node --test test\thread-visibility.test.js test\mobile-viewport.test.js
+```
+
+## Archived Thread Reappears In Fallback List
+
+If an archived projectless session returns to the thread list after app-server
+omits it from the primary `thread/list`, inspect `readSessionIndexFallback()` in
+`server.js`. Current builds should call `archivedSessionThreadIds()` and skip
+matching ids after verifying `visibleProjectlessThreadIds()`.
+
+Run:
+
+```powershell
+node --test test\thread-archive.test.js test\thread-visibility.test.js
 ```
 
 ## Quoted Uploaded Images Stay As Text
@@ -241,7 +302,7 @@ Mobile Web should compute the displayed turn-level usage from cumulative `total_
 
 ## Workspace Token Totals Are Missing Or Wrong
 
-Workspace `总/周/今` totals come from
+Workspace `鎬?鍛?浠奰 totals come from
 `%USERPROFILE%\.codex-mobile-web\token-usage-stats.sqlite`, not from the browser
 session or a fresh rollout scan. The write happens on `turn/completed` after
 Mobile Web resolves the scoped `Usage` summary for that turn.
@@ -266,10 +327,10 @@ If the sidebar still shows zero after a known completed turn, inspect the local
 runtime DB rather than the frontend cache. Do not edit `.codex` state to repair
 this ledger.
 
-If the full-screen `统计` project list shows a garbled Workspace name while
+If the full-screen `缁熻` project list shows a garbled Workspace name while
 `/api/workspaces` shows the same root correctly, inspect the `cwd` values in the
 token usage DB. Current builds normalize known Windows mojibake such as
-`ϵͳ¹¤¾ß` back to the visible Unicode Workspace root during record and query, so
+`系统鹿陇戮脽` back to the visible Unicode Workspace root during record and query, so
 old rows should merge into the correct project after the 8787 listener restarts.
 
 ## Page Refresh Prompt Appears While Files Are Still Being Edited
@@ -277,8 +338,22 @@ old rows should merge into the correct project after the 8787 listener restarts.
 `/api/public-config` should report the app-shell build/cache snapshot captured
 when the 8787 listener started. It should not change merely because `public/`
 files have been edited on disk while the old listener is still running. A normal
-"页面有新版本" prompt should appear only after the listener has restarted into the
-new build and the browser has preflighted the full target shell cache.
+`New version available. Tap to refresh.` prompt should appear only after the
+listener has restarted into the new build.
+
+Current standalone behavior after `codex-mobile-shell-v170` is intentionally
+manual: version checks only show the visible refresh button. They must not
+prewarm shell caches, call `window.location.reload()`, or schedule a timed reload
+after shared-chain restart. The only normal standalone reload trigger is a user
+click on `#pageRefreshPrompt`.
+
+Hermes embed mode is stricter about host refreshes. It may request a Hermes host
+iframe refresh when `clientBuildId` / shell cache changes, because the open
+iframe is running old frontend code. It must not request a host refresh for a
+server-only asset `buildId` change. Foregrounding the plugin or tapping the
+Hermes bottom Topic tab can run a build check, and server-only asset drift should
+be recorded silently rather than causing a visible old-page-to-new-page iframe
+reload.
 
 If the prompt appears immediately after a source edit and before a server
 restart, check whether `clientBuildId()`, `shellCacheName`, or `buildId` has
@@ -375,7 +450,10 @@ Current implementation rules:
 - autonomous workflow target completion creates an automatic reverse-direction
   return card by default. The return card is keyed by original card id plus the
   completed target turn id and should auto-inject into the source thread
-  through the same workflow grant.
+  through the same workflow grant. That return card should have
+  `delivery.autoReturnOnCompletion=false`; its own completed turn must not
+  create another return card. Its title should contain only one `Auto return:`
+  prefix even if the original title already had that prefix.
 
 If an autonomous follow-up card does not auto-run, inspect the stored card and
 workflow fields in `%USERPROFILE%\.codex-mobile-web\thread-task-cards.json`.
@@ -390,8 +468,13 @@ target turn completes, inspect the original card's `injectedTurnId`,
 confirm that Mobile Web received a fresh `turn/completed` notification for that
 `injectedTurnId` and that `server.js` has restarted into a build containing
 `maybeAutoReplyThreadTaskCard()`. If `autoReplyCardId` exists, inspect the
-return card status and `injectedTurnId`; it should be `approved` with the same
-`workflow.id` and target the original source thread.
+return card status, `injectedTurnId`, `workflow.id`, target thread, and
+`delivery.autoReturnOnCompletion`; it should be `approved`, target the original
+source thread, keep the same workflow id, and have
+`autoReturnOnCompletion=false`. If a return card completion creates another
+return, or the title grows into `Auto return: Auto return: ...`, restart Mobile
+Web into a build containing the terminal-return guard in
+`adapters/thread-task-card-service.js`.
 
 If source-side draft `Approve` appears to hang, check whether the card was
 already created in `%USERPROFILE%\.codex-mobile-web\thread-task-cards.json`.
@@ -425,25 +508,24 @@ read should return `404 task_card_not_found`; wrong-thread actions should return
 500, the route error wrapper has regressed and the browser may show an
 ambiguous failure instead of a bounded task-card diagnostic.
 
-## `#` Task-card Command Does Not Parse
+## `#鑷敱鍗忎綔` Task-card Command Does Not Parse
 
-`#` at the start of the composer is now reserved for cross-thread task-card
-commands. It should not enter the normal message-send route.
+Only the exact `#鑷敱鍗忎綔` prefix is reserved for cross-thread task-card
+commands. Ordinary `#...` text and `# 鑷敱鍗忎綔` with a space after `#` should
+enter the normal message-send route.
 
 Current behavior:
 
-- bare `#` is invalid;
-- `#` commands do not support attachments yet;
+- bare `#` is a normal message, not a task-card command;
+- `#鑷敱鍗忎綔` commands do not support attachments yet;
 - the browser sends a bounded draft request to the current Codex thread;
 - the model must return a bounded draft block with one visible
   `targetThreadId`, or an empty target plus an error.
 
 Working examples:
 
-# 发给 Finance Review：请核验 5 月结账映射
-# 让 Hermes 05-26 配合处理插件刷新联动
-# 请让线程「Hermes 发布检查」确认插件通知回执是否已入库
-If no draft card appears, inspect:
+#鑷敱鍗忎綔 鍙戠粰 Finance Review锛氳鏍搁獙 5 鏈堢粨璐︽槧灏?#鑷敱鍗忎綔 璁?Hermes 05-26 閰嶅悎澶勭悊鎻掍欢鍒锋柊鑱斿姩
+#鑷敱鍗忎綔 璇疯绾跨▼銆孒ermes 鍙戝竷妫€鏌ャ€嶇‘璁ゆ彃浠堕€氱煡鍥炴墽鏄惁宸插叆搴?If no draft card appears, inspect:
 
 - whether the current sent message contains the
   `<codex-mobile-thread-task-card-request>` envelope;
@@ -457,7 +539,7 @@ If no draft card appears, inspect:
   messages instead of aborting before the later draft item;
 - whether the returned `targetThreadId` is still present in the visible thread
   list;
-- whether attachments were present, which still blocks `#` commands.
+- whether attachments were present, which still blocks `#鑷敱鍗忎綔` commands.
 
 Current UI rules:
 
@@ -479,9 +561,9 @@ If the plugin sidebar is missing the version pill, public-PR status, or
 Current builds should hide only the duplicate main-pane version actions, not the
 sidebar header row.
 
-## Hermes Embed 压缩续接确认框不出现
+## Hermes Embed 鍘嬬缉缁帴纭妗嗕笉鍑虹幇
 
-If `压缩续接` can be selected from the thread action sheet but no confirmation
+If `鍘嬬缉缁帴` can be selected from the thread action sheet but no confirmation
 popup appears in Hermes embed mode, check whether the browser is still using the
 old native `window.confirm(...)` path. Current builds should render an in-app
 continuation dialog inside the iframe, because native confirm dialogs are not
@@ -505,6 +587,16 @@ proof that Mobile Web is healthy again. The success condition is stricter:
 
 If either check is missing, Mobile Web should be treated as down even if a
 restart script or detached PowerShell command was already launched.
+
+Before the restart request is sent, current browser builds should show an
+in-app confirmation panel instead of a native `window.confirm()`. The panel
+checks `/api/threads?limit=200&archived=false` and lists running sessions that
+may be interrupted. If the panel is missing or does not show running-session
+risk, verify that the open client loaded the current `clientBuildId` and run:
+
+```powershell
+node --test test\manual-restart-ui.test.js test\mobile-viewport.test.js
+```
 
 ## Public PR Prompt Targets The Wrong Thread
 
@@ -732,7 +824,7 @@ the final plugin primary page, inspect the embedded startup loading gate.
 
 Expected behavior after `codex-mobile-shell-v147`:
 
-- `/?embed=hermes` shows a stable `正在加载 Codex...` loading layer during initial
+- `/?embed=hermes` shows a stable `姝ｅ湪鍔犺浇 Codex...` loading layer during initial
   bootstrap.
 - The app shell stays hidden behind that layer until `loadWorkspaces()`,
   `loadThreads()`, and the final primary page, launch target, or route hint have
@@ -796,8 +888,9 @@ Check these facts in order:
 - If Desktop must be used as a recovery path, fully quit Desktop and relaunch
   it through `start-codex-desktop-shared.ps1 -ProfileId <id>` or the matching
   `start-codex-desktop-<id>.cmd` wrapper so Desktop and Mobile share the same
-  profile mux. Desktop GUI login may still be global; verify shared state by
-  comparing the selected `CODEX_HOME` and endpoint.
+  profile mux and non-auth thread/workspace state links. Desktop GUI login may
+  still be global; verify shared state by comparing the selected `CODEX_HOME`,
+  endpoint, and linked `sessions`/`state_5.sqlite*` paths.
 - The shared-chain restart should only stop the selected endpoint's recorded
   mux/child PIDs. If a dry run lists many unrelated profile muxes, treat that
   as a regression before running a real restart.
@@ -810,27 +903,90 @@ Check these facts in order:
 
 The browser should never display or log raw token fields from `auth.json`.
 
+## Codex Profile Switch Hides Workspaces Or Threads
+
+If switching Mobile Web to another Codex profile makes most workspaces or
+threads disappear, or if Desktop launched from a profile wrapper cannot see the
+expected threads, inspect the shared-state link setup before changing thread
+visibility code.
+
+Expected behavior:
+
+- The active profile owns `auth.json` and `config.toml`.
+- Non-default profiles link shared thread/workspace state back to the default
+  `%USERPROFILE%\.codex` home:
+  `.codex-global-state.json`, `state_5.sqlite*`, `session_index.jsonl`,
+  `sessions/`, and `archived_sessions/`.
+- File state paths should be hard links. Directory state paths should be
+  junctions.
+- Existing profile-local copies of those state paths should be moved under
+  `%USERPROFILE%\.codex-mobile-web\profile-state-backups` before links are
+  created.
+- Profile-local `auth.json` and `config.toml` should be copied only to
+  `%USERPROFILE%\.codex-mobile-web\profile-auth-backups`; they must not be
+  replaced by default-account files.
+
+Useful checks on Windows:
+
+```powershell
+Get-Item (Join-Path $env:USERPROFILE ".codex-homes\previous\sessions") | Format-List FullName,LinkType,Target
+Get-Item (Join-Path $env:USERPROFILE ".codex-homes\previous\state_5.sqlite") | Format-List FullName,LinkType,Target
+Test-Path (Join-Path $env:USERPROFILE ".codex-homes\previous\auth.json")
+Test-Path (Join-Path $env:USERPROFILE ".codex-homes\previous\config.toml")
+```
+
+Harness expectations:
+
+- `test/codex-profile-ui.test.js` should fail if the windowless shared-state
+  list starts including `auth.json` or `config.toml`.
+- `test/codex-profile-ui.test.js` should also fail if
+  `docs/MULTI_ACCOUNT_CODEX_CLI.md` reverts to the old observation that
+  `previous` has no `auth.json` or that all state remains isolated per profile.
+- `test/manual-restart-ui.test.js` should continue checking that profile
+  switches pass explicit `profileId` / `codexHome` restart arguments.
+
 ## Page Refresh Does Not Update Quota
 
 The page-refresh prompt and quota refresh are related but not identical. The
 prompt is primarily a PWA shell/cache update path; quota chips come from active
 `/api/public-config` and `/api/status` snapshots.
 
-Expected behavior after `codex-mobile-shell-v162`:
+Expected behavior after `codex-mobile-shell-v170`:
 
-- Clicking `页面有新版本，点击刷新` fetches the latest `/api/public-config`.
+- No automatic reload should happen after build detection, foreground recovery,
+  reconnect, or shared-chain restart. Those paths only show the visible refresh
+  button.
+- Clicking `New version available. Tap to refresh.` fetches the latest
+  `/api/public-config`.
 - The browser applies `rateLimits` / `rateLimitsByModel` from that config before
-  pruning old shell caches or calling `window.location.reload()`.
+  preparing shell assets, pruning old shell caches, and calling
+  `window.location.reload()`.
 - Killing and reopening the PWA should no longer be required merely to update
   visible quota after a profile switch or controlled restart.
 - If quota is still stale, compare authenticated `/api/status.rateLimits` with
   the composer chips. If `/api/status` is correct but the UI is not, the open
-  client is still running an older shell and needs a hard refresh or close/reopen
-  once to load v162 or newer.
+  client is still running an older shell and needs one manual refresh or
+  close/reopen once to load v170 or newer.
 
-## Source `#` Task-Card Draft Reappears After Approve Or Dismiss
+For account/profile switches, also compare `/api/status.codexHome` with the
+active profile in `%USERPROFILE%\.codex-mobile-web\codex-profiles.json`.
+Expected behavior after this repair is:
 
-If the source thread hides a `#`-generated draft card immediately after
+- `server.js` prefers the active profile store over an inherited shell
+  `CODEX_HOME`; stale inherited homes are reported as
+  `codexHomeEnvIgnored=true`.
+- Normal profile-switched listeners should report
+  `codexHomeSource=profile-store`.
+- `CODEX_HOME` only overrides the profile store when
+  `CODEX_MOBILE_CODEX_HOME_OVERRIDE=1` is explicitly set.
+- The Windows shared-chain restart script stops the selected port's stale
+  `node.exe ... server.js` listener even if it was started as bare
+  `node server.js` and therefore lacks an absolute server path in its command
+  line.
+
+## Source `#鑷敱鍗忎綔` Task-Card Draft Reappears After Approve Or Dismiss
+
+If the source thread hides a `#鑷敱鍗忎綔`-generated draft card immediately after
 `Approve` or `Dismiss`, but the same draft comes back after leaving and
 re-entering the thread, the draft-settled state was only held in browser memory.
 
@@ -842,6 +998,40 @@ Expected behavior after `codex-mobile-shell-v129`:
   after a thread reload or app re-entry.
 - Pending/in-flight draft creation states are not persisted as durable settled
   state.
+
+## Cross-Thread Task Card Does Not Reach Target
+
+If a `#鑷敱鍗忎綔` cross-thread card appears to finish in the source thread but no
+pending card appears in the target thread, check the server-side materialization
+path before blaming the model response.
+
+Expected behavior after `codex-mobile-shell-v164`:
+
+- The model response may contain a structured
+  `<codex-mobile-thread-task-card-draft>` block, but the browser is not the only
+  component that can create the stored card.
+- On fresh `turn/completed`, the Node listener fetches a bounded recent-turn
+  window, parses assistant/plan draft XML, resolves source/target workspaces
+  from Codex state, truncates overlong draft bodies to the 8k service limit, and
+  calls `threadTaskCardService.createMany()` with a stable idempotency key.
+- Thread detail reads run the same materialization before attaching
+  `thread.threadTaskCards`, including large-rollout `thread/turns/list` mode.
+- A deleted/revoked/replied/approved card stays settled and should not be
+  recreated by re-entering the source thread. If the target card was deleted,
+  send a new source request instead of expecting the old idempotency key to
+  resurrect it.
+
+Useful checks:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8787/api/public-config |
+  Select-Object clientBuildId,shellCacheName
+```
+
+Use a UTF-8-safe Node script, not `ConvertFrom-Json`, to inspect
+`%USERPROFILE%\.codex-mobile-web\thread-task-cards.json`; historical Chinese
+payloads can make PowerShell JSON parsing brittle. Check whether a card exists
+for the target thread id and whether its status is still `pending`.
 
 ## Hermes Plugin Refresh Notice Stays On Screen Too Long
 

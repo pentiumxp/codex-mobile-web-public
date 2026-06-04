@@ -202,41 +202,45 @@ thread id and uses the browser prompt flow for title/body entry. The stable
 behavior boundary is the API plus `thread.threadTaskCards` in thread-detail
 responses; the compose UX can evolve later without changing the state machine.
 
-The composer also reserves `#` at the start of a message for natural-language
-cross-thread task-card commands. Those commands do not go through a separate
-parse route. Instead, Mobile Web sends a bounded draft request to the current
-Codex thread, lets the model interpret the command against the visible thread
-list, and immediately creates pending target cards when the returned draft
-parses successfully. The source thread does not show a second local `Approve`
-step. The create call uses a stable draft-scoped idempotency key, the thread
-list shows incoming `Task N` badges on every target thread, and a single-target
-draft still switches to that target thread so the pending card is visible
-without manual navigation. Multi-target drafts create one pending card per
-target and keep the source thread visible without rendering outgoing cards as
-local work items. When the card id is known for a single target, Mobile Web also
-reuses its existing route-hint focus path to scroll the target thread directly
-to that pending card instead of leaving the user at the bottom of a long
-conversation. Pending cross-thread task cards now
+The composer reserves the exact `#自由协作` prefix for natural-language
+cross-thread task-card commands. Ordinary `#...` text is sent as a normal
+message. `#自由协作` commands do not go through a separate parse route. Instead,
+Mobile Web sends a bounded draft request to the current Codex thread, lets the
+model interpret the command against the visible thread list, and immediately
+creates pending target cards when the returned draft parses successfully. The
+source thread does not show a second local `Approve` step. The create call uses
+a stable draft-scoped idempotency key, the thread list shows incoming `Task N`
+badges on every target thread, and a single-target draft still switches to that
+target thread so the pending card is visible without manual navigation.
+Multi-target drafts create one pending card per target and keep the source
+thread visible without rendering outgoing cards as local work items. When the
+card id is known for a single target, Mobile Web also reuses its existing
+route-hint focus path to scroll the target thread directly to that pending card
+instead of leaving the user at the bottom of a long conversation. Pending
+cross-thread task cards now
 render after the visible turn list and approval stack, so they stay at the
 bottom of the thread rather than appearing above historical messages. Once a
 card is approved, deleted, revoked, or replied, it no longer renders in thread
 detail; the injected turn becomes the visible follow-up surface. The current
 thread now also removes a settled card immediately after a successful action.
-For normal cards, target-side `Approve` remains mandatory. If a `#` draft
-explicitly asks for an automatic collaboration/no-further-approval workflow,
-the draft may set `workflowMode:"autonomous"`. The first target-side approval
-then activates a workflow grant scoped to that exact `workflowId` and the same
-two thread ids. Later cards carrying that workflow id between the same two
-threads auto-inject as real target-thread turns without another manual click,
-including reverse-direction follow-up cards. A reused workflow id with a
-different thread pair still stays pending and requires its own first approval.
+For normal cards, target-side `Approve` remains mandatory. `#自由协作` defaults
+the draft to `workflowMode:"autonomous"` unless the user explicitly asks for a
+one-off manual card. The first target-side approval then activates a workflow
+grant scoped to that exact `workflowId` and the same two thread ids. Later cards
+carrying that workflow id between the same two threads auto-inject as real
+target-thread turns without another manual click, including reverse-direction
+follow-up cards. A reused workflow id with a different thread pair still stays
+pending and requires its own first approval.
 Autonomous workflow approval also enables completion auto-return by default:
 when the target turn injected by an approved autonomous card completes, Mobile
 Web creates a reverse-direction return task card with the completed turn
 receipt, reuses the same workflow id, and immediately auto-approves it back into
 the source thread. The auto-return is idempotent by original card id plus
 completed turn id, so repeated `turn/completed` notifications do not create
-duplicate return turns.
+duplicate return turns. The return card is terminal: it can auto-inject back to
+the source through the existing grant, but its own completion does not create a
+second return. Auto-return titles also collapse repeated `Auto return:` prefixes
+to a single prefix.
 Target-side approval also persists a transient non-pending `approving` state
 before calling the external target-thread `turn/start`, so reconnect,
 continuation compaction, or thread refresh cannot resurrect the same `Approve`
@@ -261,6 +265,19 @@ Leaving and re-entering the source or target thread therefore must not resurrect
 an already created draft or create a duplicate target card from the old bounded
 XML response.
 
+Server-side task-card draft materialization now backs up the browser path. On a
+fresh `turn/completed` notification, the listener fetches the source thread's
+recent turns, scans assistant/plan items for the structured draft XML, resolves
+target workspace metadata from the local Codex state, and calls the same
+idempotent `createMany()` service path. Thread detail reads run the same
+materialization before attaching visible cards, including the large-rollout
+`thread/turns/list` mode. This keeps automatic collaboration from depending on
+which browser page is open, which workspace filter is active, or whether a PWA
+client refreshed at the right moment. Model-generated draft bodies are also
+bounded before persistence: the card body limit is 8,000 characters, so a verbose
+draft is stored with a head/tail truncation marker instead of failing with
+`body_too_long`.
+
 In Hermes embed mode, the sidebar now keeps the version pill, public-PR status,
 and restart action visible instead of hiding the whole version-action row.
 `压缩续接` still comes from the existing long-press thread menu, but the
@@ -279,13 +296,13 @@ replace the iframe immediately, Mobile Web auto-clears the notice after about
 response instead of waiting for a leave/re-enter refresh cycle. Examples:
 
 ```text
-# 发给 Finance Review：请核验 5 月结账映射
-# 让 Hermes 05-26 配合处理插件刷新联动
+#自由协作 发给 Finance Review：请核验 5 月结账映射
+#自由协作 让 Hermes 05-26 配合处理插件刷新联动
 ```
 
 If the model cannot choose at least one visible target thread, the source thread
 shows a bounded failed draft diagnostic instead of auto-sending to the wrong
-thread. `#` commands still reject attachments for now.
+thread. `#自由协作` commands still reject attachments for now.
 
 ## Clone And Validate
 
@@ -624,9 +641,9 @@ Behavior:
   this path.
 - The sidebar menu header includes a compact settings button. The settings panel contains the theme control (`跟随系统` / `深色` / `浅色`) and the font-size control (`小字` / `标准` / `大字` / `特大` / `超大`) using the same segmented-button style.
 - Theme and font-size choices are saved in the browser. Theme updates the page theme color metadata; iOS PWA status-bar color changes may require closing and reopening the installed app. The light theme now uses a slightly warmer page background so the daytime view is less cold gray while cards and controls stay crisp. Font size adjusts conversation text, markdown, code/table content, approval details, and the composer input.
-- The composer runtime row starts with a tiny persistent Fast status dot before model/reasoning/permission/quota. Green means normal mode; tapping it turns red, briefly shows `Fast on`, and sends a hidden `fastMode` request so the server forwards Codex's `serviceTier: "priority"` Fast tier on the next `turn/start`. It does not change the selected model, reasoning effort, permission mode, or visible message text. `#` cross-thread task-card commands keep their bounded draft-request flow; active-turn steering cannot change the speed tier until the next new turn.
+- The composer runtime row starts with a tiny persistent Fast status dot before model/reasoning/permission/quota. Green means normal mode; tapping it turns red, briefly shows `Fast on`, and sends a hidden `fastMode` request so the server forwards Codex's `serviceTier: "priority"` Fast tier on the next `turn/start`. It does not change the selected model, reasoning effort, permission mode, or visible message text. `#自由协作` cross-thread task-card commands keep their bounded draft-request flow; active-turn steering cannot change the speed tier until the next new turn.
 - The shell cache advances to `codex-mobile-shell-v139` for the Fast-dot UI.
-- The sidebar header also shows the app version/update pill, a public PR status pill, and a same-size `Restart` button. After login, Mobile Web checks the configured GitHub remote in the background. If the remote branch is ahead, the pill becomes an update action; tapping it asks for confirmation, applies only a clean fast-forward update, then exits the Node listener so the existing startup supervisor can restart it from the updated files. The public PR pill checks the clean public repository for open pull requests and prompts whether to prepare a merge/publish review task; it does not merge or push public by itself. The `Restart` button is separate from Git self-update and asks for confirmation before restarting the local Mobile Web shared chain.
+- The sidebar header also shows the app version/update pill, a public PR status pill, and a same-size `Restart` button. After login, Mobile Web checks the configured GitHub remote in the background. If the remote branch is ahead, the pill becomes an update action; tapping it asks for confirmation, applies only a clean fast-forward update, then exits the Node listener so the existing startup supervisor can restart it from the updated files. The public PR pill checks the clean public repository for open pull requests and prompts whether to prepare a merge/publish review task; it does not merge or push public by itself. The `Restart` button is separate from Git self-update and opens an in-app confirmation panel before restarting the local Mobile Web shared chain. That panel first reads the recent thread list and shows any running sessions that may be interrupted.
 - When a conversation is scrollable and the user is away from the newest messages, a floating down-arrow button appears above the composer. Tapping it jumps directly back to the latest turn; normal rendering still avoids forcing the scroll position while the user is reading older content.
 - 中文说明：长对话如果因为恢复、切换线程或手动滚动停在历史消息中间，页面会在输入框上方显示“回到底部”浮动按钮。按钮只在当前线程已加载、内容可滚动且不在底部时出现；点击后立即回到最新 turn。用户阅读历史内容时，普通刷新仍不会强制自动滚到底部。PWA/手机浏览器如果仍显示旧界面，需要刷新一次或等待新的 service worker 缓存 `codex-mobile-shell-v36` 激活。
 - On phones and tablet portrait/touch layouts, the sidebar menu is not persistent: the main conversation fills the viewport, and the menu opens only after the user taps the top-left menu button. Wide desktop layouts keep the persistent sidebar. On coarse-pointer landscape tablets with enough room, Mobile Web uses a two-column layout with a persistent sidebar and full conversation pane.
@@ -1326,10 +1343,12 @@ plugin. The shell cache advances to `codex-mobile-shell-v102`.
 
 ## 2026-05-31 Local Cross-Thread Task Card Auto-Send v134
 
-- `#` natural-language cross-thread card commands now auto-send after the model
-  returns a valid bounded draft. The source thread no longer asks for a second
-  local `Approve`; only the target thread's pending card keeps `Approve` for
-  injecting a real target-thread turn.
+- Natural-language cross-thread card commands now auto-send after the model
+  returns a valid bounded draft. Current builds reserve only the exact
+  `#自由协作` prefix for this flow; ordinary `#...` text remains a normal
+  message. The source thread no longer asks for a second local `Approve`; only
+  the target thread's pending card keeps `Approve` for injecting a real
+  target-thread turn.
 - The task-card service rejects likely encoding-damaged visible card text before
   persistence, so PowerShell/encoding-damaged `?? ?????` payloads cannot create
   unreadable pending cards.
@@ -1337,9 +1356,11 @@ plugin. The shell cache advances to `codex-mobile-shell-v102`.
 
 ## 2026-05-31 Local Cross-Thread Autonomous Workflow v135
 
-- `#` task-card drafts may now explicitly request `workflowMode:"autonomous"`
-  for cooperating-thread workflows that should continue after one human
-  approval.
+- `#自由协作` task-card drafts may now explicitly request
+  `workflowMode:"autonomous"` for cooperating-thread workflows that should
+  continue after one human approval.
+- Current builds route this flow only through the exact `#自由协作` prefix;
+  ordinary `#...` text is no longer treated as a task-card command.
 - Ordinary cards still require target-side `Approve`. For autonomous workflows,
   the first target approval activates a workflow grant scoped to the workflow id
   and the same two thread ids. Later cards with that same workflow id between
@@ -1402,6 +1423,22 @@ plugin. The shell cache advances to `codex-mobile-shell-v102`.
 - Workspace Token 统计补齐历史 Windows 路径乱码归并。已经写入 SQLite 的 `财务`、`男装衣橱`、`系统工具` 乱码 cwd 会在查询时合并到正确 Unicode Workspace，不再在统计页显示为单独乱码项目；新增 harness 覆盖已经持久化的坏 cwd 行。
 - 侧栏版本号现在打开 Updates 面板。Current checkout 继续使用原有安全 fast-forward 自更新路径；Public release 区域会检查 `pentiumxp/codex-mobile-web-public/main` 最新提交。只有当前安装本身就是 public checkout 时，才会通过同一个 fast-forward 路径应用 public 更新；private checkout 只显示 public 最新状态，避免把 public 发布树覆盖到私有开发树。
 
+### 2026-06-03 Public PR 同步说明（归档 fallback 过滤与 Restart 风险提示 v166）
+
+本次 private 同步 public PR #44 和 PR #45 的产品改动，并在当前 private v165 基础上把 PWA shell cache 升到 `codex-mobile-shell-v166`。服务端 session-index fallback 列表现在会再次排除已归档线程，避免 app-server 主列表遗漏线程时把已归档的 projectless session 重新显示出来；更新后需要重启 8787 Node listener 才会加载新的 `server.js`。前端手动 `Restart` 从浏览器原生确认框改为自定义确认面板，点击时会先读取最近线程列表并列出 running session 风险，提示重启可能中断正在通过 Codex Mobile 同步或运行的任务。已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能看到新的保护面板。
+
+### 2026-06-04 Public 发布说明（Profile 共享线程、续接与运行提示 v177）
+
+本次 public 同步 private 已验证的 v164-v177 修复，版本仍为 `0.1.11`，PWA shell cache 升到 `codex-mobile-shell-v177`。更新后需要重启 8787 Node listener，并让已打开的浏览器/PWA 接受刷新提示、硬刷新或关闭重开，才能拿到新的前端状态提示和 profile/线程列表行为。
+
+- Profile 切换现在以单 active profile 为边界：非默认 profile 保留自己的 `auth.json`/`config.toml`，但通过共享 `.codex` 的非认证状态保持 workspaces、thread list、session index、sessions 和 archived sessions 连续；服务端启动时 active profile store 优先于 stale inherited `CODEX_HOME`。
+- Desktop shared launcher 可选择 `default/current/previous` profile 并准备同一套非认证状态链接，让 Desktop 和 Mobile Web 接入同一个 selected profile mux endpoint。
+- 线程列表 fallback 增强：当 app-server list 遗漏或返回 stale row 时，会合并 state DB、rollout session 和 session index 的安全字段；重复 fallback row 可补全标题/cwd/preview，并用最新 `updatedAt` 修正侧栏时间。
+- 运行中线程提示修复：列表刷新返回 `notLoaded` 时不会清掉本地 running hint；`turn/started` / `turn/completed` 会更新侧栏 row 并触发重绘，恢复运行中线程的刷新/旋转提示。
+- 续接/上下文：续接 bootstrap 改为引用式 source handoff/lineage，handoff 压缩提示阈值提升到 200KB，降低刚压缩后立即再次提示的概率。
+- Web Push / Hermes：完成通知 deep link 可携带 thread/task/item hint；Hermes embed 继续使用受限的 plugin route hint，不暴露 access key、launch token secret、本地 DB 路径、上传内容或私有状态 dump。
+- 本次 public 同步不包含 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
+
 ### Which Restart Is Needed After Changes
 
 Use this table after pulling updates:
@@ -1426,21 +1463,6 @@ Mobile Web restart on Windows:
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\start-codex-mobile-web.ps1 -HostAddress 0.0.0.0 -Port 8787 -RequireSharedAppServer
 ```
-
-### 2026-06-03 Public 热修说明（归档 fallback 过滤与 Restart 风险提示 v163）
-
-本次 public 热修合入 PR #44 和 PR #45。服务端 session-index fallback 列表现在会再次排除已归档线程，避免 app-server 主列表遗漏线程时把已归档的 projectless session 重新显示出来；这属于线程列表数据修正，更新后需要重启 8787 Node listener 才会加载新的 `server.js`。前端手动 Restart 从浏览器原生确认框改为自定义确认面板，点击 Restart 时会先读取最近线程列表并检查 running session；如果检测到正在运行的 session，会在面板里列出风险 session，并提示重启可能中断通过 Codex Mobile 同步或运行的任务。版本仍为 `0.1.11`，PWA shell cache 升到 `codex-mobile-shell-v163`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能看到新的保护面板。
-
-### 2026-06-02 Public 发布说明（自动协作回传、Profile 线程延续与刷新额度 v162）
-
-本次 public 发布同步 private 中已验证的 v160-v162 改动。版本仍为 `0.1.11`，PWA shell cache 升到 `codex-mobile-shell-v162`。部署后需要重启 8787 Node listener；已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开，才能拿到新的前端刷新和任务卡片提示逻辑。
-
-- 跨线程自动协作卡片补齐“完成后自动回传”的默认合同。自主 workflow 的第一张目标卡片仍需要目标线程人工批准；批准后，同一 workflow、同一对源/目标线程之间的后续卡片可以自动注入。目标线程完成被注入的 turn 后，服务端会创建一张反向回传卡片，沿用同一个 workflow id，并通过已有 workflow 授权自动注入回源线程。回传按原始卡片 id 和完成 turn id 做幂等，避免重复回传。
-- 目标卡片批准流程继续先进入非 pending 的 `approving` 状态，再调用外部 `turn/start`。这样刷新、重连或压缩续接期间不会把已经开始执行的同一张卡片重新显示为可点击 `Approve`。
-- Codex profile 切换改为保留各 profile 自己的 `auth.json` / `config.toml`，同时把非默认 profile 的共享线程状态链接回默认 `%USERPROFILE%\.codex`：`state_5.sqlite*`、`.codex-global-state.json`、`session_index.jsonl`、`sessions/` 和 `archived_sessions/`。这样切换账号后仍能看到原有工作区和线程，但 app-server 使用的是选中 profile 的认证文件。
-- Windows windowless 启动器和 shared-chain restart 路径会显式读取/传递选中的 `profileId` / `CODEX_HOME`，避免旧进程环境把服务重启回上一个账号。启动器在替换 profile 本地状态前会备份 auth/config，并把被替换的 profile-local 状态移到 runtime backup 目录；这些 runtime backup 不属于 Git。
-- 页面刷新提示与额度刷新现在接在一起。点击 `页面有新版本，点击刷新` 时，前端会先重新读取 `/api/public-config`，立即应用其中的 `rateLimits` / `rateLimitsByModel` 到 Composer 额度 chips，然后再更新 service worker、预填充新 shell cache、清理旧 cache 并 reload。这样 iOS/PWA 即使没有像“杀掉 APP 重进”那样完整重建进程，也不会继续显示旧额度。
-- 本次同步更新 `server.js`、`adapters/thread-task-card-service.js`、`public/app.js`、`public/sw.js`、Windows windowless 启动脚本、README/docs 和相关测试。private 验证已通过 `npm test` 292/292、`npm run check`、`npm run check:macos`、`git diff --check`，并已确认 private 8787 listener 服务 `codex-mobile-shell-v162`；public 发布前也会在 public 工作区重新运行测试和隐私扫描。
 
 ## App-Server Bridge Design
 

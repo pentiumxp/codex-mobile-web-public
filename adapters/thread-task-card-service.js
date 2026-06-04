@@ -13,6 +13,7 @@ const MAX_BATCH_TARGETS = 12;
 const SETTLED_STATUSES = new Set(["approved", "deleted", "revoked", "replied"]);
 const WORKFLOW_MODE_MANUAL = "manual";
 const WORKFLOW_MODE_AUTONOMOUS = "autonomous";
+const AUTO_RETURN_TITLE_PREFIX = "Auto return:";
 
 function nowIso(nowFn) {
   const value = typeof nowFn === "function" ? nowFn() : Date.now();
@@ -55,6 +56,12 @@ function boundedVisibleText(value, maxLength) {
   if (text.length <= maxLength) return text;
   const suffix = "\n\n...(truncated)";
   return `${text.slice(0, Math.max(0, maxLength - suffix.length)).trimEnd()}${suffix}`;
+}
+
+function autoReturnTitleForCard(card) {
+  const rawTitle = stringValue(card && card.message && card.message.title) || "Task card";
+  const baseTitle = rawTitle.replace(/^(?:Auto return:\s*)+/i, "").trim() || "Task card";
+  return boundedVisibleText(`${AUTO_RETURN_TITLE_PREFIX} ${baseTitle}`, MAX_TITLE_CHARS);
 }
 
 function hasLikelyQuestionMarkReplacementDamage(text) {
@@ -343,6 +350,9 @@ function activateWorkflowForCard(store, card, actorThreadId, timestamp) {
 
 function injectedMessageText(card) {
   const autonomous = isAutonomousWorkflow(card.workflow);
+  const autoReturnOnCompletion = autonomous
+    && card.delivery
+    && card.delivery.autoReturnOnCompletion === true;
   const lines = [
     "[Cross-thread task card approved]",
     "",
@@ -351,7 +361,7 @@ function injectedMessageText(card) {
     card.message && card.message.title ? `Title: ${card.message.title}` : "",
     autonomous ? `Workflow mode: ${card.workflow.mode}` : "",
     autonomous ? `Workflow id: ${card.workflow.id}` : "",
-    autonomous ? "Auto-return: when this injected turn completes, Codex Mobile Web will send a return task card back to the source thread in this workflow." : "",
+    autoReturnOnCompletion ? "Auto-return: when this injected turn completes, Codex Mobile Web will send a return task card back to the source thread in this workflow." : "",
     "",
     stringValue(card.message && card.message.body),
   ].filter((line, index, all) => line !== "" || (index > 0 && all[index - 1] !== ""));
@@ -732,6 +742,9 @@ function createThreadTaskCardService(options = {}) {
       const card = safeArray(store.cards).find((entry) => entry
         && entry.status === "approved"
         && isAutonomousWorkflow(entry.workflow)
+        && entry.delivery
+        && entry.delivery.autoReturnOnCompletion === true
+        && !(entry.audit && stringValue(entry.audit.autoReturnToCardId))
         && stringValue(entry.injectedTurnId) === turnId
         && (stringValue(entry.injectedThreadId || (entry.target && entry.target.threadId)) === threadId)
         && !stringValue(entry.autoReplyCardId)) || null;
@@ -760,7 +773,7 @@ function createThreadTaskCardService(options = {}) {
           },
           message: {
             format: "markdown",
-            title: boundedVisibleText(`Auto return: ${card.message && card.message.title || "Task card"}`, MAX_TITLE_CHARS),
+            title: autoReturnTitleForCard(card),
             summary: boundedVisibleText(completed.summary || "Target thread completed and returned the result automatically.", MAX_SUMMARY_CHARS),
             body: autoReplyBodyForCompletedTurn(card, completed),
           },
@@ -769,7 +782,7 @@ function createThreadTaskCardService(options = {}) {
             allowReply: true,
             allowRevoke: true,
             autoRunAfterFirstApproval: true,
-            autoReturnOnCompletion: true,
+            autoReturnOnCompletion: false,
           },
           workflow: {
             mode: WORKFLOW_MODE_AUTONOMOUS,

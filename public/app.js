@@ -103,6 +103,7 @@ const state = {
   continuationDialogThreadId: "",
   renameBusy: false,
   sidebarEdgeSwipe: null,
+  androidBackSidebarSentinelReady: false,
   subagentSwipe: null,
   subagentPanelOpen: false,
   suppressThreadClickUntil: 0,
@@ -213,7 +214,7 @@ const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 8;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v163";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v177";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -272,6 +273,8 @@ function postStartupStage(stage, startedAt, details = {}) {
 const DRAFT_SAVE_DEBOUNCE_MS = 250;
 const THREAD_TASK_CARD_DRAFT_CREATE_STALE_MS = 45000;
 const THREAD_TASK_CARD_DRAFT_CREATE_MAX_ATTEMPTS = 3;
+const THREAD_TASK_CARD_BODY_MAX_CHARS = 8000;
+const THREAD_TASK_CARD_COMMAND_PREFIX = "#自由协作";
 const THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";
 const THREAD_TASK_CARD_DRAFT_TAG = "codex-mobile-thread-task-card-draft";
 const THEME_VALUES = new Set(["system", "dark", "light"]);
@@ -279,6 +282,10 @@ const FONT_SIZE_VALUES = new Set(["small", "default", "large", "xlarge", "xxlarg
 const MENU_OVERLAY_MEDIA = "(max-width: 1180px), (pointer: coarse) and (max-width: 1400px)";
 const TABLET_SPLIT_MEDIA = "(pointer: coarse) and (orientation: landscape) and (min-width: 900px) and (min-height: 600px)";
 const SIDEBAR_EDGE_SWIPE_PX = 34;
+const ANDROID_SIDEBAR_EDGE_SWIPE_PX = 84;
+const ANDROID_BACK_SIDEBAR_STATE = "codexMobileAndroidBackSidebar";
+const ANDROID_BACK_SIDEBAR_BASE = "base";
+const ANDROID_BACK_SIDEBAR_TOP = "top";
 const SIDEBAR_EDGE_OPEN_MIN_PX = 76;
 const SIDEBAR_EDGE_OPEN_RATIO = 0.22;
 const SUBAGENT_SWIPE_MIN_PX = 70;
@@ -844,7 +851,7 @@ function reconcileThreadStatusHints(threads) {
       state.runningThreadIds.add(id);
       state.unreadThreadIds.delete(id);
       changed = true;
-    } else if (!isRunning && wasRunning) {
+    } else if (wasRunning && isCompletedStatus(thread.status)) {
       state.runningThreadIds.delete(id);
       if (id !== state.currentThreadId) state.unreadThreadIds.add(id);
       changed = true;
@@ -858,6 +865,9 @@ function statusIconInfo(status, threadId = "") {
   const normalized = text.toLowerCase();
   if (/active|running|queued|processing|inprogress|in_progress|in-progress|pending|started/.test(normalized)) {
     return { kind: "running", label: text || "running", symbol: "" };
+  }
+  if (threadId && state.runningThreadIds.has(String(threadId))) {
+    return { kind: "running", label: text && text !== "notLoaded" ? text : "running", symbol: "" };
   }
   if (threadId && state.unreadThreadIds.has(String(threadId))) {
     return { kind: "unread", label: "completed, unread", symbol: "" };
@@ -1936,9 +1946,6 @@ async function handleSharedRestartClick() {
     const connection = $("connectionState");
     if (connection) connection.textContent = "Restarting";
     renderSharedRestartButton();
-    window.setTimeout(() => {
-      refreshPageForNewBuild().catch(showError);
-    }, Math.max(1800, Number(result.restartInMs || 900) + 1200));
   } catch (err) {
     showError(err);
   } finally {
@@ -2030,7 +2037,8 @@ function initializePageBuildState(config) {
   const currentServerBuildId = serverBuildIdFromConfig(config);
   if (state.serverBuildId && currentServerBuildId && currentServerBuildId !== state.serverBuildId) {
     state.pageRefreshBuildId = currentServerBuildId;
-    schedulePageRefreshCheck(0, { force: true });
+    state.pageRefreshReason = "build";
+    state.pageRefreshAvailable = true;
   }
   renderPageRefreshPrompt();
 }
@@ -2038,29 +2046,21 @@ function initializePageBuildState(config) {
 function renderPageRefreshPrompt() {
   const el = $("pageRefreshPrompt");
   if (!el) return;
-  if (isHermesEmbedMode()) {
-    el.classList.add("hidden");
-    el.disabled = false;
-    return;
-  }
   const restarting = state.pageRefreshReason === "restart";
   const reconnecting = state.pageRefreshReason === "reconnect" || restarting;
   el.classList.toggle("hidden", !state.pageRefreshAvailable && !state.pageRefreshReloading);
   el.disabled = state.pageRefreshReloading;
   if (state.pageRefreshReloading) {
-    el.textContent = restarting ? "正在等待服务恢复…" : reconnecting ? "正在刷新并重连…" : "正在刷新页面…";
+    el.textContent = restarting ? "Waiting for service, then refreshing..." : reconnecting ? "Refreshing and reconnecting..." : "Refreshing page...";
   } else {
-    el.textContent = restarting ? "服务重启中，点击刷新并重连" : reconnecting ? "连接中断，点击刷新并重连" : "页面有新版本，点击刷新";
+    el.textContent = restarting ? "Service restarted. Tap to refresh." : reconnecting ? "Connection changed. Tap to refresh." : "New version available. Tap to refresh.";
   }
-  el.title = restarting
-    ? "Mobile Web 服务恢复后会刷新页面并重新连接"
-    : reconnecting
-    ? "当前连接中断；点击后会等待 Mobile Web 恢复并重新连接"
+  el.title = restarting || reconnecting
+    ? "Manual refresh only; the page will not reload until this button is tapped."
     : state.pageRefreshBuildId
-    ? `服务端版本已变为 ${state.pageRefreshBuildId}，点击刷新页面`
-    : "服务端页面资源已更新，点击刷新页面";
+    ? `Server version is ${state.pageRefreshBuildId}. Tap to refresh manually.`
+    : "Server page assets changed. Tap to refresh manually.";
 }
-
 function showReconnectRefreshPrompt(reason = "reconnect") {
   if (state.pageRefreshReloading) return;
   state.pageRefreshAvailable = true;
@@ -2098,12 +2098,16 @@ async function checkPageRefreshAvailability(options = {}) {
     const assetsChanged = Boolean(nextAssetBuildId && state.serverAssetBuildId && nextAssetBuildId !== state.serverAssetBuildId);
     if (clientChanged || assetsChanged) {
       if (isHermesEmbedMode()) {
-        state.pageRefreshBuildId = nextBuildId;
-        state.pageRefreshReason = "build";
-        requestHermesPluginRefresh("server_build_changed", { force: true });
+        if (clientChanged) {
+          state.pageRefreshBuildId = nextBuildId;
+          state.pageRefreshPreparedConfig = config;
+          requestHermesPluginRefresh("server_build_changed", { force: true });
+        }
+        if (!clientChanged && assetsChanged) {
+          state.serverAssetBuildId = nextAssetBuildId;
+        }
         return;
       }
-      await preparePageShellAssets(config, { populateCache: true });
       state.pageRefreshAvailable = true;
       state.pageRefreshReason = "build";
       state.pageRefreshBuildId = nextBuildId;
@@ -2153,10 +2157,6 @@ async function waitForPageBuildConfig(timeoutMs = 18000) {
 
 async function refreshPageForNewBuild() {
   if (state.pageRefreshReloading) return;
-  if (isHermesEmbedMode()) {
-    requestHermesPluginRefresh("server_build_changed", { force: true });
-    return;
-  }
   state.pageRefreshReloading = true;
   renderPageRefreshPrompt();
   saveCurrentDraftNow();
@@ -2184,7 +2184,6 @@ async function refreshPageForNewBuild() {
       state.pageRefreshReason = "";
     }
     renderPageRefreshPrompt();
-    schedulePageRefreshCheck(5000, { force: true });
   }
 }
 
@@ -2555,6 +2554,14 @@ function visibleThreads(threads = state.threads) {
 
 function pruneHiddenThreads() {
   state.threads = visibleThreads();
+}
+
+function updateThreadListStatus(threadId, status) {
+  const id = String(threadId || "");
+  if (!id) return;
+  const thread = state.threads.find((entry) => String(entry && entry.id || "") === id);
+  if (thread) thread.status = status;
+  if (state.currentThread && String(state.currentThread.id || "") === id) state.currentThread.status = status;
 }
 
 function isRunningStatus(status) {
@@ -3910,6 +3917,7 @@ function showApp() {
   $("login").classList.add("hidden");
   $("app").classList.remove("hidden");
   updateComposerHeightVar();
+  ensureAndroidBackToSidebarSentinel();
   publishPluginNavigationState();
 }
 
@@ -4775,6 +4783,15 @@ function isMobileViewport() {
   return isMenuOverlayMode();
 }
 
+function isAndroidBrowser() {
+  const ua = String(navigator.userAgent || navigator.vendor || "").toLowerCase();
+  return ua.includes("android");
+}
+
+function sidebarEdgeSwipeStartLimitPx() {
+  return isAndroidBrowser() ? ANDROID_SIDEBAR_EDGE_SWIPE_PX : SIDEBAR_EDGE_SWIPE_PX;
+}
+
 function closeSidebarMenu() {
   const sidebar = $("sidebar");
   if (!sidebar) return;
@@ -4849,6 +4866,70 @@ function openSidebarMenu() {
   publishPluginNavigationState({ force: true });
 }
 
+function androidBackToSidebarAvailable() {
+  const app = $("app");
+  return Boolean(isAndroidBrowser()
+    && isMobileViewport()
+    && !isHermesEmbedMode()
+    && state.key
+    && app
+    && !app.classList.contains("hidden")
+    && !filePreviewOpen()
+    && !state.renameThreadId
+    && !createWorkspaceDialogOpen()
+    && !updatePanelOpen()
+    && !state.threadActionMenuId
+    && !state.continuationDialogThreadId
+    && !state.sharedRestartDialogOpen);
+}
+
+function currentHistoryStateObject() {
+  return (window.history && window.history.state && typeof window.history.state === "object")
+    ? window.history.state
+    : {};
+}
+
+function androidBackSidebarStateKind(value = null) {
+  const source = value || currentHistoryStateObject();
+  return String(source && source[ANDROID_BACK_SIDEBAR_STATE] || "");
+}
+
+function ensureAndroidBackToSidebarSentinel() {
+  if (!androidBackToSidebarAvailable()) {
+    state.androidBackSidebarSentinelReady = false;
+    return;
+  }
+  try {
+    const currentState = currentHistoryStateObject();
+    const currentKind = androidBackSidebarStateKind(currentState);
+    if (currentKind === ANDROID_BACK_SIDEBAR_TOP) {
+      state.androidBackSidebarSentinelReady = true;
+      return;
+    }
+    if (currentKind !== ANDROID_BACK_SIDEBAR_BASE) {
+      window.history.replaceState(Object.assign({}, currentState, {
+        [ANDROID_BACK_SIDEBAR_STATE]: ANDROID_BACK_SIDEBAR_BASE,
+      }), "", window.location.href);
+    }
+    window.history.pushState(Object.assign({}, currentState, {
+      [ANDROID_BACK_SIDEBAR_STATE]: ANDROID_BACK_SIDEBAR_TOP,
+    }), "", window.location.href);
+    state.androidBackSidebarSentinelReady = true;
+  } catch (_) {
+    state.androidBackSidebarSentinelReady = false;
+  }
+}
+
+function handleAndroidBackToSidebarPopState(event) {
+  state.androidBackSidebarSentinelReady = false;
+  if (!androidBackToSidebarAvailable()) return;
+  const stateKind = androidBackSidebarStateKind(event && event.state);
+  if (stateKind && stateKind !== ANDROID_BACK_SIDEBAR_BASE && stateKind !== ANDROID_BACK_SIDEBAR_TOP) return;
+  if (event && typeof event.preventDefault === "function") event.preventDefault();
+  if (!isSidebarOpen()) openSidebarMenu();
+  window.setTimeout(ensureAndroidBackToSidebarSentinel, 0);
+}
+
 function isSidebarOpen() {
   const sidebar = $("sidebar");
   return Boolean(sidebar && sidebar.classList.contains("open"));
@@ -4865,7 +4946,9 @@ function beginSidebarEdgeSwipe(event) {
   if (event.touches && event.touches.length > 1) return;
   if (isInteractiveGestureTarget(event.target)) return;
   const touch = primaryTouch(event);
-  if (!touch || touch.clientX > SIDEBAR_EDGE_SWIPE_PX) return;
+  if (!touch || touch.clientX > sidebarEdgeSwipeStartLimitPx()) return;
+  ensureAndroidBackToSidebarSentinel();
+  if (event.cancelable !== false) event.preventDefault();
   const sidebar = $("sidebar");
   state.sidebarEdgeSwipe = {
     startX: touch.clientX,
@@ -6152,8 +6235,9 @@ function enterNewThreadDraft() {
 }
 
 function bindCurrentThreadActions() {
-  const button = $("conversation").querySelector("[data-new-thread-from-current]");
-  if (button) button.addEventListener("click", startNewThreadFromCurrent);
+  $("conversation").querySelectorAll("[data-new-thread-from-current]").forEach((button) => {
+    button.addEventListener("click", startNewThreadFromCurrent);
+  });
   const taskButton = $("conversation").querySelector("[data-create-thread-task-card]");
   if (taskButton) taskButton.addEventListener("click", createThreadTaskCardFromCurrent);
   const dismiss = $("conversation").querySelector("[data-dismiss-rollout-warning]");
@@ -6169,12 +6253,27 @@ function summarizeTaskCardText(value) {
   return truncateSingleLine(String(value || "").replace(/\s+/g, " ").trim(), 280);
 }
 
+function truncateThreadTaskCardBody(value, maxChars = THREAD_TASK_CARD_BODY_MAX_CHARS) {
+  const text = String(value || "").trim();
+  const limit = Math.max(0, Number(maxChars) || 0);
+  if (!limit || text.length <= limit) return text;
+  const marker = `\n\n[Task card body truncated: ${text.length} chars total]\n\n`;
+  const available = Math.max(0, limit - marker.length);
+  if (available <= 0) return text.slice(0, limit);
+  const head = Math.ceil(available * 0.6);
+  const tail = Math.max(0, available - head);
+  return `${text.slice(0, head).trimEnd()}${marker}${text.slice(-tail).trimStart()}`.slice(0, limit);
+}
+
 function isThreadTaskCardCommandText(value) {
-  return String(value || "").trim().startsWith("#");
+  return String(value || "").trim().startsWith(THREAD_TASK_CARD_COMMAND_PREFIX);
 }
 
 function threadTaskCardCommandText(value) {
-  return String(value || "").trim().replace(/^#+\s*/, "").trim();
+  const text = String(value || "").trim();
+  return text.startsWith(THREAD_TASK_CARD_COMMAND_PREFIX)
+    ? text.slice(THREAD_TASK_CARD_COMMAND_PREFIX.length).trim()
+    : text.replace(/^#+\s*/, "").trim();
 }
 
 function threadTaskCardVisibleTargets() {
@@ -6206,7 +6305,7 @@ function buildThreadTaskCardDraftRequestText(commandText) {
     JSON.stringify(envelope, null, 2),
     `</${THREAD_TASK_CARD_REQUEST_TAG}>`,
     "",
-    "Interpret the # command above as a cross-thread pending task card request.",
+    "Interpret the #自由协作 command above as an autonomous cross-thread pending task card request.",
     "Return only one XML block in exactly this format:",
     `<${THREAD_TASK_CARD_DRAFT_TAG}>`,
     "{\"targetThreadIds\":[\"one or more exact threadId values from availableTargets\"],\"workflowMode\":\"manual|autonomous\",\"workflowId\":\"optional existing workflow id\",\"title\":\"short title\",\"summary\":\"one-line summary\",\"body\":\"full markdown body\",\"error\":\"\"}",
@@ -6214,12 +6313,12 @@ function buildThreadTaskCardDraftRequestText(commandText) {
     "Rules:",
     "- Choose one or more targetThreadIds only from availableTargets.threadId.",
     "- Do not invent a thread id; when the request names multiple clear targets, include all of them.",
-    "- Default workflowMode to manual. Use autonomous only when the command explicitly asks for no further approval, automatic collaboration, or a card workflow after first approval.",
+    "- Default workflowMode to autonomous for #自由协作. Use manual only if the command explicitly asks for a one-off manual card.",
     "- Autonomous workflow means the target approves the first card once; after the target turn completes, Mobile Web sends the return card back automatically without another approval.",
     "- For a new autonomous workflow, leave workflowId empty. Reuse workflowId only when the command or visible context provides an existing id.",
     "- If the command is unclear or no target fits, set targetThreadIds to an empty array and explain the problem in error.",
     "- Keep title under 120 chars and summary under 280 chars.",
-    "- Put the actual requested work in body.",
+    "- Keep body under 7600 chars and put the actual requested work there.",
     "- Do not add any explanation outside the XML block.",
   ].join("\n");
 }
@@ -6448,8 +6547,7 @@ function canRecoverFailedThreadTaskCardDraft(draft, draftState) {
   if (!draft || !draftState || draftState.status !== "failed") return false;
   const error = String(draftState.error || "");
   if (!/Target thread is missing from the visible thread list/i.test(error)) return false;
-  const refs = threadTaskCardDraftTargetThreads(draft);
-  return Boolean(refs.length && refs.every((entry) => entry.thread && entry.thread.id));
+  return threadTaskCardDraftTargetIds(draft).length > 0;
 }
 
 function matchingThreadTaskCardsForDraft(draft, turn) {
@@ -8058,17 +8156,42 @@ function renderTurnUsageSummary(item) {
   const rolloutDetail = Number.isFinite(rolloutThreshold) && rolloutThreshold > 0
     ? `warn ${formatFileSize(rolloutThreshold)}`
     : "";
+  const projectContextSize = Number(summary.projectContextSizeBytes);
+  const handoffSize = Number(summary.handoffSizeBytes);
+  const pairSize = Number(summary.workspaceContextPairSizeBytes);
+  const fileThreshold = Number(summary.workspaceContextFileThresholdBytes);
+  const handoffThreshold = Number(summary.workspaceHandoffPromptThresholdBytes || summary.workspaceContextFileThresholdBytes);
+  const pairThreshold = Number(summary.workspaceContextPairThresholdBytes);
+  const contextRisk = (Number.isFinite(pairSize) && Number.isFinite(pairThreshold) && pairThreshold > 0 && pairSize >= pairThreshold)
+    || (Number.isFinite(projectContextSize) && Number.isFinite(fileThreshold) && fileThreshold > 0 && projectContextSize >= fileThreshold)
+    || (Number.isFinite(handoffSize) && Number.isFinite(handoffThreshold) && handoffThreshold > 0 && handoffSize >= handoffThreshold);
+  const rolloutRisk = Boolean(summary.rolloutOverWarningThreshold)
+    || (Number.isFinite(rolloutSize) && Number.isFinite(rolloutThreshold) && rolloutThreshold > 0 && rolloutSize >= rolloutThreshold);
+  const contextDetailFiles = [];
+  if (Number.isFinite(pairSize) && pairSize > 0) contextDetailFiles.push(`pair ${formatFileSize(pairSize)}`);
+  if (Number.isFinite(fileThreshold) && fileThreshold > 0) contextDetailFiles.push(`warn ${formatFileSize(fileThreshold)}`);
+  const handoffDetail = Number.isFinite(handoffThreshold) && handoffThreshold > 0
+    ? `warn ${formatFileSize(handoffThreshold)}`
+    : "";
+  const compactButton = (contextRisk || rolloutRisk)
+    ? `<button class="turn-usage-new-thread" type="button" data-new-thread-from-current>压缩续接</button>`
+    : "";
   const risk = contextRiskLabel(summary.contextRiskLevel || "unknown");
   return `<div class="turn-usage-summary risk-${escapeHtml(risk)}">
     <div class="turn-usage-summary-head">
       <span>Context and token usage</span>
-      <strong>${escapeHtml(risk)}</strong>
+      <div class="turn-usage-summary-head-actions">
+        ${compactButton}
+        <strong>${escapeHtml(risk)}</strong>
+      </div>
     </div>
     <div class="turn-usage-grid">
       ${renderUsageMetric("context window", formatUsagePercent(summary.contextWindowUsedPercent), contextDetail)}
       ${renderUsageMetric("last turn", lastUsage)}
       ${renderUsageMetric("thread total", totalUsage)}
       ${renderUsageMetric("rollout", Number.isFinite(rolloutSize) ? formatFileSize(rolloutSize) : "--", rolloutDetail)}
+      ${renderUsageMetric("context", Number.isFinite(projectContextSize) && projectContextSize > 0 ? formatFileSize(projectContextSize) : "--", contextDetailFiles.join(" | "))}
+      ${renderUsageMetric("handoff", Number.isFinite(handoffSize) && handoffSize > 0 ? formatFileSize(handoffSize) : "--", handoffDetail)}
     </div>
   </div>`;
 }
@@ -8378,7 +8501,14 @@ function applyNotification(method, params) {
   }
   if (!state.currentThread || params.threadId !== state.currentThread.id) return;
   if (method === "turn/started") {
+    const runningStatus = { type: "active" };
     state.activeTurnId = params.turn.id;
+    updateThreadStatusHints(params.threadId, state.currentThread.status, runningStatus, {
+      thread: state.currentThread,
+      threadName: threadDisplayName(state.currentThread),
+      notify: false,
+    });
+    updateThreadListStatus(params.threadId, runningStatus);
     clearRecentCompletedReplyAnchor();
     clearConversationAutoScrollHold();
     markActivity("开始");
@@ -8386,21 +8516,30 @@ function applyNotification(method, params) {
     updateComposerControls();
     ensureTurn(params.turn.id);
     renderCurrentThread();
+    scheduleRenderThreads();
     scheduleCurrentThreadRefresh(500);
     scheduleLivePollIfNeeded(1200);
     return;
   }
   if (method === "turn/completed") {
+    const completedStatus = (params.turn && params.turn.status) || { type: "completed" };
     const turn = ensureTurn(params.turn.id);
     Object.assign(turn, mergeTurnPreservingVisibleItems(turn, params.turn));
     rememberRecentCompletedTurnReply(params.turn.id);
     const completedPendingSteer = isPendingSteerForTurn(params.turn.id);
+    updateThreadStatusHints(params.threadId, state.currentThread.status, completedStatus, {
+      thread: state.currentThread,
+      threadName: threadDisplayName(state.currentThread),
+      notify: true,
+    });
+    updateThreadListStatus(params.threadId, completedStatus);
     state.activeTurnId = "";
     markActivity("完成");
     if (completedPendingSteer) setSteerFeedback("completed", { turnId: String(params.turn.id) });
     $("interruptTurn").disabled = true;
     updateComposerControls();
     renderCurrentThread();
+    scheduleRenderThreads();
     scheduleCurrentThreadRefresh(700);
     scheduleLivePollIfNeeded(1400);
     return;
@@ -9630,11 +9769,11 @@ async function sendMessage(event) {
   if ((!text && !state.pendingAttachments.length) || !state.currentThreadId) return;
   const threadTaskCardCommand = isThreadTaskCardCommandText(text);
   if (threadTaskCardCommand && state.pendingAttachments.length) {
-    showError(new Error("Task-card commands do not support attachments yet"));
+    showError(new Error("#自由协作 commands do not support attachments yet"));
     return;
   }
   const outboundText = threadTaskCardCommand ? buildThreadTaskCardDraftRequestText(text) : text;
-  const steering = Boolean(state.activeTurnId && hasContent);
+  const steering = Boolean(!threadTaskCardCommand && state.activeTurnId && hasContent);
   const steerTurnId = steering ? String(state.activeTurnId) : "";
   const submittedDraftKey = currentDraftKey();
   const clientSubmissionId = createSubmissionId();
@@ -9685,6 +9824,7 @@ async function sendMessage(event) {
     }
     scheduleCurrentThreadRefresh(600);
     scheduleLivePollIfNeeded(1200);
+    loadThreads({ silent: true }).catch(showError);
   } catch (err) {
     clearSubmittedMessageBottomFollow();
     const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err))
@@ -10006,13 +10146,9 @@ async function createThreadTaskCardDraft(draftKey) {
     }
     const { draft, turn } = resolved;
     const targetRefs = threadTaskCardDraftTargetThreads(draft);
-    const targetThreadIds = uniqueThreadTaskCardTargetIds(
-      targetRefs.map((entry) => entry.thread && entry.thread.id ? entry.thread.id : entry.threadId),
-      "",
-    );
-    const missingTargets = targetRefs.filter((entry) => !entry.thread).map((entry) => entry.threadId).filter(Boolean);
-    if (!targetThreadIds.length || missingTargets.length) {
-      setThreadTaskCardDraftState(draftKey, { status: "failed", error: draft.error || `Target thread is missing from the visible thread list${missingTargets.length ? `: ${missingTargets.join(", ")}` : ""}` });
+    const targetThreadIds = threadTaskCardDraftTargetIds(draft);
+    if (!targetThreadIds.length) {
+      setThreadTaskCardDraftState(draftKey, { status: "failed", error: draft.error || "Draft did not include a target thread id" });
       return;
     }
     if (!draft.title || !draft.body) {
@@ -10022,6 +10158,7 @@ async function createThreadTaskCardDraft(draftKey) {
     setThreadTaskCardDraftState(draftKey, { status: "creating", error: "" });
     $("connectionState").classList.remove("error");
     $("connectionState").textContent = "Creating task card";
+    const body = truncateThreadTaskCardBody(draft.body);
     const targetWorkspaceIds = {};
     for (const entry of targetRefs) {
       if (entry.thread) targetWorkspaceIds[entry.threadId] = String(entry.thread.cwd || "");
@@ -10038,8 +10175,8 @@ async function createThreadTaskCardDraft(draftKey) {
         idempotencyKey: `task-card-draft:${state.currentThreadId}:${draftKey}`,
         format: "markdown",
         title: draft.title,
-        summary: draft.summary || summarizeTaskCardText(draft.body),
-        body: draft.body,
+        summary: draft.summary || summarizeTaskCardText(body),
+        body,
         workflowMode: draft.workflowMode || "manual",
         workflowId: draft.workflowId || "",
       }),
@@ -10271,10 +10408,12 @@ function wireUi() {
   if ($("createWorkspaceDialog")) $("createWorkspaceDialog").addEventListener("click", (event) => {
     if (event.target === $("createWorkspaceDialog")) closeCreateWorkspaceDialog();
   });
-  document.addEventListener("touchstart", beginSidebarEdgeSwipe, { passive: true });
+  document.addEventListener("touchstart", beginSidebarEdgeSwipe, { passive: false });
   document.addEventListener("touchmove", moveSidebarEdgeSwipe, { passive: false });
   document.addEventListener("touchend", finishSidebarEdgeSwipe, { passive: true });
   document.addEventListener("touchcancel", cancelSidebarEdgeSwipe, { passive: true });
+  window.addEventListener("popstate", handleAndroidBackToSidebarPopState);
+  ensureAndroidBackToSidebarSentinel();
   $("openMenu").addEventListener("click", openSidebarMenu);
   $("closeMenu").addEventListener("click", closeSidebarMenu);
   const pageRefreshPrompt = $("pageRefreshPrompt");
@@ -10459,7 +10598,10 @@ function wireUi() {
       currentThreadId: state.currentThreadId || "",
       eventOpen: Boolean(state.events && state.events.readyState === EventSource.OPEN),
     });
-    if (document.visibilityState === "visible") schedulePageRefreshCheck(200, { force: true });
+    if (document.visibilityState === "visible") {
+      ensureAndroidBackToSidebarSentinel();
+      schedulePageRefreshCheck(200, { force: true });
+    }
     scheduleMobileResume("visibility");
   });
   window.addEventListener("pageshow", (event) => {
@@ -10469,12 +10611,14 @@ function wireUi() {
     });
     const threadId = applyUrlThreadSelection({ load: true });
     const pluginRouteHint = applyUrlPluginRouteHint({ load: true });
+    ensureAndroidBackToSidebarSentinel();
     schedulePageRefreshCheck(200, { force: true });
     scheduleMobileResume("pageshow", threadId || pluginRouteHint ? 240 : 80);
   });
   window.addEventListener("focus", () => {
     const threadId = applyUrlThreadSelection({ load: true });
     const pluginRouteHint = applyUrlPluginRouteHint({ load: true });
+    ensureAndroidBackToSidebarSentinel();
     schedulePageRefreshCheck(600);
     scheduleMobileResume("focus", threadId || pluginRouteHint ? 300 : 150);
   });

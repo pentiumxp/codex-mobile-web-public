@@ -239,6 +239,18 @@ test("server caches app-server thread display summaries before sqlite push title
   assert.match(serverJs, /sendTurnCompletedPush\(meta, turnId, completedAt, params\)/);
 });
 
+test("completed web push payload carries thread ids for notification click routing", () => {
+  const serverJs = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  const swJs = fs.readFileSync(path.join(__dirname, "..", "public", "sw.js"), "utf8");
+
+  assert.match(serverJs, /const payload = \{\s*threadId: meta\.threadId \|\| "",\s*turnId,/);
+  assert.match(serverJs, /url: notificationUrlForThread\(meta\.threadId\),/);
+  assert.match(serverJs, /threadId: meta\.threadId \|\| "",/);
+  assert.match(swJs, /if \(!data\.threadId && payload\.threadId\) data\.threadId = payload\.threadId;/);
+  assert.match(swJs, /url\.searchParams\.set\("thread", threadId\);/);
+  assert.match(swJs, /self\.clients\.openWindow\(target\.url\)/);
+});
+
 test("sqlite command discovery covers WinGet platform-tools installs", () => {
   const home = path.join("C:", "Users", "example");
   const candidates = sqliteCandidates({

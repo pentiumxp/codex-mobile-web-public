@@ -369,11 +369,19 @@ function removeExistingSummaryItems(items) {
 
 function turnUsageSummaryItem(turn, summary, options = {}) {
   const rolloutStats = options.rolloutStats || {};
+  const workspaceContextStats = options.workspaceContextStats || {};
   const turnId = turnIdentifier(turn);
   const mobileUsageSummary = Object.assign({}, summary || {}, {
     rolloutSizeBytes: numberValue(rolloutStats.sizeBytes),
     rolloutWarningThresholdBytes: numberValue(rolloutStats.warningThresholdBytes),
     rolloutOverWarningThreshold: Boolean(rolloutStats.overWarningThreshold),
+    projectContextSizeBytes: numberValue(workspaceContextStats.projectContextSizeBytes),
+    handoffSizeBytes: numberValue(workspaceContextStats.handoffSizeBytes),
+    agentsSizeBytes: numberValue(workspaceContextStats.agentsSizeBytes),
+    workspaceContextPairSizeBytes: numberValue(workspaceContextStats.workspaceContextPairSizeBytes),
+    workspaceContextFileThresholdBytes: numberValue(workspaceContextStats.fileThresholdBytes),
+    workspaceHandoffPromptThresholdBytes: numberValue(workspaceContextStats.handoffPromptThresholdBytes),
+    workspaceContextPairThresholdBytes: numberValue(workspaceContextStats.pairThresholdBytes),
   });
   return {
     id: `mobile-turn-usage-${turnId || mobileUsageSummary.timestampMs || "summary"}`,

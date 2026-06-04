@@ -4,12 +4,12 @@
 
 | File | Responsibility | Notes |
 | --- | --- | --- |
-| `server.js` | Main HTTP server, app-server client, auth, routes, thread detail compaction, uploads, continuation jobs, Web Push, update/restart endpoints, thread visibility filtering, and local-file preview roots | Treat as composition glue. Extract reusable logic instead of expanding large inline blocks. |
+| `server.js` | Main HTTP server, app-server client, auth, routes, thread detail compaction, uploads, continuation jobs, Web Push, update/restart endpoints, thread visibility filtering, local-file preview roots, and server-side cross-thread task-card draft materialization from completed turns/thread-detail reads | Treat as composition glue. Extract reusable logic instead of expanding large inline blocks. |
 | `codex-app-server-mux.js` | Shared Desktop/Mobile app-server bridge, endpoint publication, TCP server, app-server notification replay, approval proxying | Stdout is protocol data for Desktop; diagnostics must go to mux log. |
 | `codex-app-server-mux-shim.cs` | Windows `.exe` shim for Desktop `CODEX_CLI_PATH` | Rebuild/relaunch Desktop through the shared launcher after changes. |
-| `start-codex-mobile-web*.ps1/.vbs` | Windows startup wrappers and hidden scheduled-task startup | User-logon task is preferred when WSL access is needed; plugin HTTPS base URL, Hermes frame-origin settings, active Codex profile resolution, auth-file backup, and non-default profile shared-state links must be preserved here for scheduled deployments. |
+| `start-codex-mobile-web*.ps1/.vbs` | Windows startup wrappers and hidden scheduled-task startup | User-logon task is preferred when WSL access is needed; plugin HTTPS base URL, Hermes frame-origin settings, active Codex profile resolution, profile auth/config backup without replacement, and non-default profile shared-state hardlink/junction setup must be preserved here for scheduled deployments. |
 | `restart-codex-mobile-shared-chain.ps1` | Scoped restart for Mobile Web chain | Resolves the active profile `CODEX_HOME` before removing/waiting on the mux endpoint. Does not restart Hermes Mobile, WSL, Codex Desktop, or unrelated services. |
-| `start-codex-desktop-shared.ps1` / `start-codex-desktop-*.cmd` | Windows Desktop shared-mux launcher and profile escape hatch | Use `-ProfileId default|current|previous` or `-CodexHome` so Desktop attaches to the same selected profile endpoint as Mobile Web. |
+| `start-codex-desktop-shared.ps1` / `start-codex-desktop-*.cmd` | Windows Desktop shared-mux launcher and profile escape hatch | Use `-ProfileId default|current|previous` or `-CodexHome` so Desktop attaches to the same selected profile endpoint as Mobile Web; preserve non-default profile auth/config backup and shared thread/workspace state hardlink/junction setup. |
 | `start-codex-*-macos.sh` | macOS standalone/shared launch helpers | Keep shell syntax validated with `npm run check:macos`. |
 
 ## Adapter Services
@@ -19,7 +19,7 @@
 | `adapters/active-turn-staleness-service.js` | Stale/superseded active-turn detection before existing-thread message submission. |
 | `adapters/message-pending-echo-service.js` | Short-lived pending user-message echo injection for active-turn steering that is still waiting. |
 | `adapters/message-input-service.js` | Upload-aware model input policy, image context mode, and extended-history persistence policy. |
-| `adapters/continuation-handoff-compaction-service.js` | Workspace handoff compaction before rollout continuation. |
+| `adapters/continuation-handoff-compaction-service.js` | Workspace context compaction before rollout continuation, including `.agent-context/PROJECT_CONTEXT.md` and `.agent-context/HANDOFF.md` archive/rewrite/report behavior, archive ignore guard creation, and compact-handoff current-state guidance. |
 | `adapters/turn-usage-summary-service.js` | Rollout `token_count` parsing and completed-turn context/token usage summary attachment. |
 | `adapters/token-usage-stats-service.js` | Runtime SQLite token ledger for completed turns, keyed by `thread_id + turn_id`, with Workspace/day aggregation for sidebar stats and known Windows mojibake cwd normalization. |
 | `adapters/public-pull-request-service.js` | Public GitHub pull request status normalization for prompt-only public PR checks. |
@@ -65,14 +65,14 @@ Add new service modules when logic has independent inputs/outputs, state rules, 
 | continuation | `test/continuation-lineage.test.js`, `test/continuation-handoff-compaction-service.test.js` |
 | context and bootstrap size policy | `test/message-input-service.test.js`, `test/continuation-lineage.test.js`, `test/turn-usage-summary-service.test.js` |
 | Workspace token usage ledger | `test/token-usage-stats-service.test.js`, `test/turn-usage-summary-service.test.js`, `test/mobile-viewport.test.js`; include historical Windows mojibake cwd rows when changing Workspace grouping/normalization |
-| PWA/update/mobile viewport | `test/mobile-viewport.test.js`, `test/app-update.test.js`, `test/tablet-layout.test.js`, `test/manual-restart-ui.test.js`, `test/public-pull-request-service.test.js` |
-| thread visibility/worktree filtering | `test/thread-visibility.test.js`, `test/mobile-viewport.test.js` |
+| PWA/update/mobile viewport | `test/mobile-viewport.test.js`, `test/app-update.test.js`, `test/tablet-layout.test.js`, `test/manual-restart-ui.test.js`, `test/public-pull-request-service.test.js`; include the in-app Restart confirmation panel and running-session risk check when changing restart UI |
+| thread visibility/worktree filtering | `test/thread-visibility.test.js`, `test/thread-archive.test.js`, `test/mobile-viewport.test.js`; include archived-session filtering for state DB/session-index fallback paths and rollout-session recovery when `state_5.sqlite` is unavailable or malformed |
 | uploads/files/images | `test/image-compressor.test.js`, `test/message-input-service.test.js`, `test/generated-image-cache-service.test.js`, `test/file-preview.test.js`, `test/file-preview-ui.test.js`, `test/composer-draft.test.js` |
 | Hermes Mobile plugin mode | `test/hermes-plugin-service.test.js`, `test/hermes-plugin-route.test.js`, `test/hermes-notification-delegate-service.test.js`, `test/plugin-embed.test.js` |
-| cross-thread task cards | `test/thread-task-card-harness.test.js`, `test/thread-task-card-service.test.js`, `test/thread-task-card-route.test.js`, `test/conversation-render.test.js`; include readable-text/encoding-damage, approve-in-flight, autonomous workflow same-pair coverage, automatic completion return idempotency, stable source-draft settlement, queued source draft lookup across earlier non-draft messages, silent source auto-send, and target-side-only pending render coverage when changing sender or store paths |
+| cross-thread task cards | `test/thread-task-card-harness.test.js`, `test/thread-task-card-service.test.js`, `test/thread-task-card-route.test.js`, `test/conversation-render.test.js`; include readable-text/encoding-damage, approve-in-flight, autonomous workflow same-pair coverage, automatic completion return idempotency, stable source-draft settlement, queued source draft lookup across earlier non-draft messages, silent source auto-send, server-side draft materialization on `turn/completed` and thread-detail reads, 8k draft-body truncation before create, and target-side-only pending render coverage when changing sender or store paths |
 | Push | `test/push-notification-service.test.js` |
 | runtime settings | `test/runtime-settings.test.js`, `test/composer-quota.test.js` |
-| Codex profile switching | `test/codex-profile-service.test.js`, `test/codex-profile-ui.test.js`, `test/manual-restart-ui.test.js`, `test/mobile-viewport.test.js` |
+| Codex profile switching | `test/codex-profile-service.test.js`, `test/codex-profile-ui.test.js`, `test/manual-restart-ui.test.js`, `test/mobile-viewport.test.js`; include safe account display, active profile persistence, fixed-endpoint switch disablement, browser quota cache clearing, explicit `profileId` / `codexHome` restart arguments, windowless auth/config preservation, non-default profile shared-state link list, and `docs/MULTI_ACCOUNT_CODEX_CLI.md` regression coverage |
 | scroll and markdown | `test/conversation-scroll.test.js`, `test/turn-scroll-controls.test.js`, `test/markdown-render.test.js` |
 
 Use focused tests first for local iteration, then run `npm.cmd test`, `npm.cmd run check`, `npm.cmd run check:macos`, and `git diff --check` before commit/push or release.

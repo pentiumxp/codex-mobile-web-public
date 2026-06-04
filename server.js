@@ -16,7 +16,7 @@ const {
 const { createSharedChainRestartService } = require("./adapters/shared-chain-restart-service");
 const { createHermesNotificationDelegateService } = require("./adapters/hermes-notification-delegate-service");
 const { runSqliteJson } = require("./adapters/sqlite-cli");
-const { compactWorkspaceHandoff } = require("./adapters/continuation-handoff-compaction-service");
+const { compactWorkspaceContext } = require("./adapters/continuation-handoff-compaction-service");
 const {
   localImageUploadsForContext,
   parseImageContextPolicyEnv,
@@ -52,6 +52,7 @@ const { createWorkspaceRegistryService } = require("./adapters/workspace-registr
 const {
   createCodexProfileService,
   resolveActiveCodexHomeFromStore,
+  resolveEffectiveCodexHome,
 } = require("./adapters/codex-profile-service");
 
 const APP_ROOT = __dirname;
@@ -64,7 +65,14 @@ const CODEX_PROFILE_BOOTSTRAP = resolveActiveCodexHomeFromStore({
   env: process.env,
 });
 const DEFAULT_CODEX_HOME = path.join(USER_HOME, ".codex");
-const CODEX_HOME = process.env.CODEX_HOME || CODEX_PROFILE_BOOTSTRAP.codexHome || DEFAULT_CODEX_HOME;
+const CODEX_HOME_RESOLUTION = resolveEffectiveCodexHome({
+  userHome: USER_HOME,
+  runtimeRoot: RUNTIME_ROOT,
+  env: process.env,
+  defaultCodexHome: DEFAULT_CODEX_HOME,
+  bootstrap: CODEX_PROFILE_BOOTSTRAP,
+});
+const CODEX_HOME = CODEX_HOME_RESOLUTION.codexHome;
 const STATE_DB = path.join(CODEX_HOME, "state_5.sqlite");
 const SESSIONS_DIR = path.join(CODEX_HOME, "sessions");
 const ARCHIVED_SESSIONS_DIR = path.join(CODEX_HOME, "archived_sessions");
@@ -119,6 +127,9 @@ const HERMES_PLUGIN_NOTIFICATION_KEY_FILE = process.env.CODEX_MOBILE_HERMES_PLUG
   || "";
 const THREAD_TASK_CARD_FILE = process.env.CODEX_MOBILE_THREAD_TASK_CARD_FILE
   || path.join(RUNTIME_ROOT, "thread-task-cards.json");
+const THREAD_TASK_CARD_DRAFT_TAG = "codex-mobile-thread-task-card-draft";
+const THREAD_TASK_CARD_BODY_MAX_CHARS = 8_000;
+const THREAD_TASK_CARD_DRAFT_TURN_LOOKBACK = 4;
 const WORKSPACE_REGISTRY_FILE = process.env.CODEX_MOBILE_WORKSPACE_REGISTRY_FILE
   || path.join(RUNTIME_ROOT, "workspace-registry.json");
 const TOKEN_USAGE_STATS_DB = process.env.CODEX_MOBILE_TOKEN_USAGE_DB
@@ -270,7 +281,7 @@ const THREAD_DETAIL_ROLLOUT_MAX_BYTES = Math.max(
   1 * 1024 * 1024,
   Number(process.env.CODEX_MOBILE_THREAD_DETAIL_ROLLOUT_MAX_BYTES || String(DEFAULT_THREAD_DETAIL_ROLLOUT_MAX_BYTES)),
 );
-const MAX_CONTINUATION_BOOTSTRAP_CHARS = Math.max(20_000, Number(process.env.CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS || "52000"));
+const MAX_CONTINUATION_BOOTSTRAP_CHARS = Math.max(4_000, Number(process.env.CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS || "12000"));
 const CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS = Math.max(2_000, Number(process.env.CODEX_MOBILE_CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS || "12000"));
 const CONTINUATION_SOURCE_HANDOFF_STORED_CHARS = Math.max(CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS, Number(process.env.CODEX_MOBILE_CONTINUATION_SOURCE_HANDOFF_STORED_CHARS || "18000"));
 const CONTINUATION_WORKSPACE_PROJECT_CONTEXT_CHARS = Math.max(4_000, Number(process.env.CODEX_MOBILE_CONTINUATION_WORKSPACE_PROJECT_CONTEXT_CHARS || "18000"));
@@ -289,6 +300,10 @@ const CONTINUATION_LINEAGE_MAX_DEPTH = Math.max(0, Math.min(5, Number(process.en
 const CONTINUATION_LINEAGE_MAX_CHARS = Math.max(2_000, Number(process.env.CODEX_MOBILE_CONTINUATION_LINEAGE_MAX_CHARS || "12000"));
 const CONTINUATION_CONTEXT_HANDOFF_COMPACT_BYTES = Math.max(64 * 1024, Number(process.env.CODEX_MOBILE_CONTINUATION_CONTEXT_HANDOFF_COMPACT_BYTES || String(300 * 1024)));
 const CONTINUATION_CONTEXT_HANDOFF_PRESERVE_CHARS = Math.max(8_000, Number(process.env.CODEX_MOBILE_CONTINUATION_CONTEXT_HANDOFF_PRESERVE_CHARS || "60000"));
+const CONTINUATION_CONTEXT_FILE_COMPACT_BYTES = Math.max(50 * 1024, Number(process.env.CODEX_MOBILE_CONTINUATION_CONTEXT_FILE_COMPACT_BYTES || String(100 * 1024)));
+const CONTINUATION_CONTEXT_PAIR_COMPACT_BYTES = Math.max(CONTINUATION_CONTEXT_FILE_COMPACT_BYTES, Number(process.env.CODEX_MOBILE_CONTINUATION_CONTEXT_PAIR_COMPACT_BYTES || String(200 * 1024)));
+const CONTINUATION_CONTEXT_HANDOFF_PROMPT_BYTES = Math.max(CONTINUATION_CONTEXT_FILE_COMPACT_BYTES, Number(process.env.CODEX_MOBILE_CONTINUATION_CONTEXT_HANDOFF_PROMPT_BYTES || String(200 * 1024)));
+const CONTINUATION_CONTEXT_COMPACT_PRESERVE_CHARS = Math.max(6_000, Number(process.env.CODEX_MOBILE_CONTINUATION_CONTEXT_COMPACT_PRESERVE_CHARS || "18000"));
 const RUNTIME_CONTEXT_CACHE_TTL_MS = Math.max(1000, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_CACHE_TTL_MS || "30000"));
 const RUNTIME_CONTEXT_CACHE_MAX = Math.max(20, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_CACHE_MAX || "200"));
 const MUX_REPLAY_NOTIFICATION_LIMIT = Math.max(0, Number(process.env.CODEX_MOBILE_MUX_REPLAY_NOTIFICATION_LIMIT || "200"));
@@ -1695,13 +1710,25 @@ function mergeThreadListFallback(result, fallbackThreads = [], limit = 80) {
     : (Array.isArray(out.threads) ? out.threads : []);
   const merged = [];
   const seen = new Set();
+  const indexById = new Map();
   const addThread = (thread) => {
     if (!thread || !thread.id || seen.has(thread.id)) return;
-    seen.add(thread.id);
+    const id = String(thread.id);
+    seen.add(id);
+    indexById.set(id, merged.length);
     merged.push(thread);
   };
   existing.forEach(addThread);
-  fallbackThreads.forEach(addThread);
+  fallbackThreads.forEach((thread) => {
+    if (!thread || !thread.id) return;
+    const id = String(thread.id);
+    const index = indexById.get(id);
+    if (index === undefined) {
+      addThread(thread);
+      return;
+    }
+    merged[index] = mergeThreadDisplaySummary(merged[index], thread);
+  });
   const capped = merged.slice(0, Math.max(1, limit));
   if (Array.isArray(out.data) || !Array.isArray(out.threads)) out.data = capped;
   if (Array.isArray(out.threads)) out.threads = capped;
@@ -1727,7 +1754,7 @@ function mergeThreadStateFromStateDb(threads) {
   if (!ids.length) return threads;
   const inClause = ids.map((id) => sqlString(id)).join(", ");
   const query = [
-    "select id,archived,archived_at,rollout_path,model,reasoning_effort,agent_nickname,agent_role,",
+    "select id,title,first_user_message,cwd,updated_at,archived,archived_at,rollout_path,model,reasoning_effort,agent_nickname,agent_role,",
     "exists(select 1 from thread_spawn_edges where child_thread_id=threads.id) as is_spawned_child",
     "from threads",
     `where id in (${inClause});`,
@@ -1743,6 +1770,10 @@ function mergeThreadStateFromStateDb(threads) {
       const id = String(row && row.id || "").trim();
       if (!id) continue;
       stateById.set(id, {
+        name: row.title || null,
+        preview: row.first_user_message || null,
+        cwd: typeof row.cwd === "string" ? row.cwd.replace(/^\\\\\?\\/, "") : null,
+        updatedAt: Number(row.updated_at || 0),
         archived: Boolean(Number(row.archived || 0))
           || archivedIds.has(id)
           || /[/\\]archived_sessions[/\\]/i.test(String(row.rollout_path || ""))
@@ -1760,6 +1791,10 @@ function mergeThreadStateFromStateDb(threads) {
       const state = stateById.get(String(thread.id || "").trim());
       if (!state) return thread;
       const next = Object.assign({}, thread);
+      if (state.name) next.name = state.name;
+      if (state.preview && (!next.preview || String(next.preview) === String(thread.id || ""))) next.preview = state.preview;
+      if (state.cwd) next.cwd = state.cwd;
+      if (state.updatedAt && timestampToMs(state.updatedAt) >= timestampToMs(thread.updatedAt)) next.updatedAt = state.updatedAt;
       if (state.model) next.model = state.model;
       if (state.effort) next.effort = state.effort;
       if (state.agentNickname) next.agentNickname = state.agentNickname;
@@ -2564,6 +2599,42 @@ function rolloutStatsForPath(rolloutPath) {
   }
 }
 
+function fileSizeBytes(filePath) {
+  if (!filePath || typeof filePath !== "string") return 0;
+  try {
+    const stat = fs.statSync(filePath);
+    return stat.isFile() ? stat.size : 0;
+  } catch (_) {
+    return 0;
+  }
+}
+
+function workspaceContextStatsForCwd(cwd) {
+  const root = String(cwd || "").trim();
+  if (!root) {
+    return {
+      projectContextSizeBytes: 0,
+      handoffSizeBytes: 0,
+      agentsSizeBytes: 0,
+      workspaceContextPairSizeBytes: 0,
+      fileThresholdBytes: CONTINUATION_CONTEXT_FILE_COMPACT_BYTES,
+      handoffPromptThresholdBytes: CONTINUATION_CONTEXT_HANDOFF_PROMPT_BYTES,
+      pairThresholdBytes: CONTINUATION_CONTEXT_PAIR_COMPACT_BYTES,
+    };
+  }
+  const projectContextSizeBytes = fileSizeBytes(path.join(root, ".agent-context", "PROJECT_CONTEXT.md"));
+  const handoffSizeBytes = fileSizeBytes(path.join(root, ".agent-context", "HANDOFF.md"));
+  return {
+    projectContextSizeBytes,
+    handoffSizeBytes,
+    agentsSizeBytes: fileSizeBytes(path.join(root, "AGENTS.md")),
+    workspaceContextPairSizeBytes: projectContextSizeBytes + handoffSizeBytes,
+    fileThresholdBytes: CONTINUATION_CONTEXT_FILE_COMPACT_BYTES,
+    handoffPromptThresholdBytes: CONTINUATION_CONTEXT_HANDOFF_PROMPT_BYTES,
+    pairThresholdBytes: CONTINUATION_CONTEXT_PAIR_COMPACT_BYTES,
+  };
+}
+
 function annotateThreadRolloutStats(thread) {
   if (!thread || typeof thread !== "object") return thread;
   const out = Object.assign({}, thread);
@@ -2999,7 +3070,10 @@ function compactThread(thread, options = {}) {
     }
     pendingSteerEchoStore.injectIntoThread(out);
     enrichThreadItemTimestampsFromRollout(out);
-    attachTurnUsageSummaries(out, readRolloutTurnUsageSummaries(rolloutPath), { rolloutStats });
+    attachTurnUsageSummaries(out, readRolloutTurnUsageSummaries(rolloutPath), {
+      rolloutStats,
+      workspaceContextStats: workspaceContextStatsForCwd(out.cwd),
+    });
     const latestIndex = out.turns.length - 1;
     out.turns = out.turns.map((turn, index) => compactTurn(turn, {
       allowLiveOperation: index === latestIndex,
@@ -3909,6 +3983,29 @@ function maybeAutoReplyThreadTaskCard(method, params) {
   });
 }
 
+function maybeMaterializeThreadTaskCardDrafts(method, params) {
+  if (method !== "turn/completed") return;
+  const turnId = pushTurnId(params);
+  if (!turnId || isOldPushTurnEvent(params, ["completedAt", "updatedAt"])) return;
+  const threadId = pushThreadId(params);
+  if (!threadId) return;
+  const timer = setTimeout(async () => {
+    try {
+      const summary = pushThreadSummary(threadId) || readStateDbThread(threadId) || readStartedThread(threadId) || { id: threadId };
+      const turnsResult = await codex.request("thread/turns/list", {
+        threadId,
+        limit: THREAD_TASK_CARD_DRAFT_TURN_LOOKBACK,
+        sortDirection: "desc",
+      }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS, retry: false, resetOnTimeout: false });
+      const thread = threadFromTurnsList(threadId, summary, turnsResult);
+      await materializeThreadTaskCardDraftsForThread(thread);
+    } catch (err) {
+      console.error(`[thread task card] server completion materialization failed thread=${shortIdentifier(threadId)} turn=${shortIdentifier(turnId)}: ${err.message || String(err)}`);
+    }
+  }, 0);
+  if (timer && typeof timer.unref === "function") timer.unref();
+}
+
 function logWebPushDecision(event, decision, meta) {
   if (decision && decision.track && !decision.reason) return;
   const reason = String((decision && decision.reason) || "tracked");
@@ -4014,6 +4111,8 @@ function sendTurnCompletedPush(meta, turnId, completedAt, params) {
     if (delegateTurnCompletedNotification(meta, turnId, completedAt, threadTitle, params)) return;
     const threadMark = shortIdentifier(meta.threadId || turnId);
     const payload = {
+      threadId: meta.threadId || "",
+      turnId,
       title: threadTitle || threadMark || "Codex Mobile Web",
       body: `This turn 已结束 · ${pushTimestamp(completedAt)}`,
       tag: `codex-turn-${meta.threadId || turnId}`,
@@ -4779,6 +4878,7 @@ class CodexAppServerClient {
         this.markServerRequestResolved(msg.params.requestId, "resolved");
       }
       maybeRecordTurnTokenUsage(msg.method, msg.params || null);
+      maybeMaterializeThreadTaskCardDrafts(msg.method, msg.params || null);
       maybeAutoReplyThreadTaskCard(msg.method, msg.params || null);
       maybeSendTurnCompletedPush(msg.method, msg.params || null);
       broadcast({ type: "notification", method: msg.method, params: msg.params || null });
@@ -4956,6 +5056,9 @@ class CodexAppServerClient {
       muxEndpointFile: MUX_ENDPOINT_FILE,
       codexExe: CODEX_EXE,
       codexHome: CODEX_HOME,
+      codexHomeSource: CODEX_HOME_RESOLUTION.source,
+      codexHomeEnvIgnored: Boolean(CODEX_HOME_RESOLUTION.envCodexHomeIgnored),
+      codexProfileActiveId: CODEX_HOME_RESOLUTION.activeProfileId,
       runtimeRoot: RUNTIME_ROOT,
       userAgent: this.info ? this.info.userAgent : null,
       lastError: this.lastError,
@@ -5517,29 +5620,28 @@ function turnIdFromResult(result) {
 
 function sourceContinuationHandoffPrompt({ handoffId, handoffFile, cwd, sourceThreadId, sourceThreadTitle }) {
   return [
-    "# 压缩续接交接文件生成",
+    "# Continuation Handoff File Generation",
     "",
-    "你正在源线程中执行续接前的交接整理。请基于本源线程自己的历史、当前工作区文件和实际仓库状态，总结交接重点并写入指定文件。",
+    "You are running inside the source thread before a continuation thread is created. Write a concise, evidence-grounded handoff file for the next thread.",
     "",
-    `目标文件：${handoffFile}`,
+    `Target file: ${handoffFile}`,
     "",
-    "必须执行：",
-    "1. 读取当前工作区的 `.agent-context/PROJECT_CONTEXT.md` 和 `.agent-context/HANDOFF.md`（如果存在），只把与当前工作区和本源线程有关的事实写入交接文件。",
-    "2. 检查当前工作区的关键状态，例如 `git status`、最近修改、未完成任务、验证结果、运行/部署注意事项；按实际需要读取相关文件。",
-    "3. 交接文件必须由本源线程重新总结，不能只复制固定模板，也不能混入其他线程或其他工作区的提交规则。",
-    "4. 只有当前工作区文件或本源线程历史明确涉及 private/public/README/release 规则时，才写这些规则，并标明来源；否则不要写。",
-    "5. 不要写入 raw secrets、access tokens、passwords、一次性授权状态、隐藏 UI 状态或长日志。",
-    "6. 覆盖写入目标文件。写完后只简短回复已写入该文件；不要提交、推送或修改无关文件。",
+    "Required actions:",
+    "1. Read the current workspace `.agent-context/PROJECT_CONTEXT.md` and `.agent-context/HANDOFF.md` if they exist, and include only facts relevant to this workspace and source thread.",
+    "2. Check the current repository state as needed, such as git status, recent changes, unfinished tasks, validation results, runtime status, and deployment caveats.",
+    "3. The handoff must be freshly summarized from this source thread and the local workspace. Do not copy a fixed template and do not mix in rules from another workspace.",
+    "4. Include private/public/README/release rules only when current workspace files or this source thread explicitly establish them, and name the source.",
+    "5. Do not write raw secrets, access tokens, passwords, one-time approval state, hidden UI state, long logs, full rollouts, or full prompts.",
+    "6. Overwrite the target file. After writing, reply only briefly that the file was written. Do not commit, push, or modify unrelated files.",
     "",
-    "交接文件格式要求：",
-    `- 第一行必须是：Continuation handoff marker: ${handoffId}`,
-    `- 必须包含：Source thread id: ${sourceThreadId || "(unknown)"}`,
-    `- 必须包含：Source thread title: ${sourceThreadTitle || "(unknown)"}`,
-    `- 必须包含：Workspace: ${cwd || "(unknown)"}`,
-    "- 后续用 Markdown 分节：当前目标、已完成事项、未完成事项、关键文件/命令、验证结果、风险/注意事项、下一线程建议。",
+    "Handoff file format:",
+    `- First line must be: Continuation handoff marker: ${handoffId}`,
+    `- Must include: Source thread id: ${sourceThreadId || "(unknown)"}`,
+    `- Must include: Source thread title: ${sourceThreadTitle || "(unknown)"}`,
+    `- Must include: Workspace: ${cwd || "(unknown)"}`,
+    "- Then use Markdown sections: Current goal, Completed work, Unfinished work, Key files/commands, Validation results, Risks/caveats, Next-thread suggestions.",
   ].join("\n");
 }
-
 async function waitForContinuationHandoffFile(target, timeoutMs = CONTINUATION_HANDOFF_TIMEOUT_MS) {
   const deadline = Date.now() + timeoutMs;
   let lastError = "";
@@ -5674,62 +5776,89 @@ function sourceHandoffSection(sourceHandoff) {
   if (!sourceHandoff) {
     return "No source-thread-generated handoff file was requested or available.";
   }
-  const excerpt = truncateMiddle(sourceHandoff.text || "", CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS, "source handoff excerpt");
   return [
     `- Handoff file: ${sourceHandoff.path}`,
+    `- Handoff relative path: ${sourceHandoff.relativePath || "(unknown)"}`,
     `- Handoff id: ${sourceHandoff.id}`,
     `- Handoff chars: ${sourceHandoff.chars || 0}`,
-    `- Handoff excerpt chars included: ${Math.min(excerpt.length, CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS)}`,
-    "- Read the full handoff file above when exact prior state is needed.",
-    "",
-    "### Source-thread-generated handoff excerpt",
-    excerpt || "(empty)",
+    "- The handoff content is intentionally not inlined in this bootstrap.",
+    "- Read this file first when exact source-thread state is needed.",
   ].join("\n");
 }
 
-function newThreadBootstrapPromptScoped({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff, sourceLineage }) {
+function continuationLineageIndexReference(cwd, sourceThreadId) {
+  const indexPath = continuationLineageIndexPath(cwd);
+  const chain = buildContinuationLineageChain(cwd, sourceThreadId);
+  const lines = [
+    `- Lineage index file: ${indexPath}`,
+    `- Prior continuation chain depth available: ${chain.length}`,
+    "- Prior lineage handoff contents are intentionally not inlined.",
+    "- Read the index, then the referenced handoff files only when older continuation provenance is needed.",
+  ];
+  if (chain.length) {
+    lines.push("- Prior lineage references:");
+    for (const entry of chain) {
+      lines.push(`  - ${entry.newThreadId} <- ${entry.sourceThreadId}; handoff: ${entry.handoffFile || entry.handoffRelativePath || "(unknown)"}; chars: ${entry.handoffChars || 0}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+function workspaceContextReference(cwd) {
+  return [
+    `- Project context: ${path.join(cwd || "", ".agent-context", "PROJECT_CONTEXT.md")}`,
+    `- Active handoff: ${path.join(cwd || "", ".agent-context", "HANDOFF.md")}`,
+    `- Docs entry: ${path.join(cwd || "", "docs", "README.md")}`,
+    "- These files are intentionally not inlined in this bootstrap.",
+    "- Read only the smallest relevant docs after the project context and active handoff.",
+  ].join("\n");
+}
+
+function newThreadBootstrapPromptScoped({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff }) {
   const snapshot = sourceSnapshot || { threadId: sourceThreadId, title: sourceThreadTitle, turns: [], readWarnings: [] };
   const publicRuntime = publicRuntimeSettings(runtimeSettings);
   const parts = [
-    "# 压缩续接启动上下文",
+    "# Continuation Bootstrap Index",
     "",
-    "本线程是 Codex Mobile Web 为了降低源线程 rollout JSONL 体积而创建的同工作区续接线程，不是普通新项目。",
-    "续接依据必须来自源线程刚生成的交接文件、当前工作区持久上下文文件和重新读取的本地仓库状态。",
+    "This thread is a same-workspace continuation created by Codex Mobile Web. This message is an index only; it does not inline old thread body, handoff excerpts, workspace context excerpts, or lineage excerpts.",
+    "Use tools to read bounded file sections when evidence is needed, or re-check the local repository and runtime state.",
     "",
-    "启动步骤：",
-    "1. 先读取下方“源线程交接文件”中列出的文件，并把它作为本线程的最高优先级交接事实源。",
-    "2. 再读取当前工作区的 `.agent-context/PROJECT_CONTEXT.md` 和 `.agent-context/HANDOFF.md`（如果存在），只加载与当前工作区有关的规则。",
-    "3. 用简短要点确认已加载的关键事实；不要确认与当前工作区无关的 private/public/README/release 规则。",
-    "4. 本轮不要修改文件、不要提交、不要推送，除非用户在续接线程里给出新的明确任务。",
+    "Startup steps:",
+    "1. Read the source-thread handoff file listed below first. If it is over 20KB, read its top metadata and recent tail first, then search/read specific sections as needed.",
+    "2. Read the current workspace context with bounded reads: `.agent-context/PROJECT_CONTEXT.md` top routing section and `.agent-context/HANDOFF.md` recent tail. Do not load archived/full context by default.",
+    "3. Read `docs/README.md`, then only the smallest relevant docs for the current task.",
+    "4. Confirm the loaded key facts briefly.",
+    "5. Do not edit files, commit, or push in the first continuation turn unless the user gives a new explicit task.",
     "",
-    "不要假设新线程继承了旧聊天流、临时 shell 状态、一次性审批、隐藏 UI 状态或旧线程的内存推理。需要依赖的内容必须来自工作区文件、源线程交接文件、下面的有限续接上下文，或重新读取本地仓库。",
+    "Do not assume the new thread inherited old chat flow, temporary shell state, one-time approvals, hidden UI state, or old-thread reasoning.",
     "",
-    "## 当前续接目标",
-    `- 新线程标题：${desiredTitle || "(not set)"}`,
-    `- 当前工作区：${cwd || "(unknown)"}`,
-    `- 创建时间：${new Date().toISOString()}`,
+    "## Continuation Target",
+    `- New thread title: ${desiredTitle || "(not set)"}`,
+    `- Workspace: ${cwd || "(unknown)"}`,
+    `- Created at: ${new Date().toISOString()}`,
     "",
-    "## 源线程",
+    "## Source Thread",
     continuationSourceThreadSection(snapshot),
     "",
-    "## 源线程交接文件",
+    "## Source Thread Handoff",
     sourceHandoffSection(sourceHandoff),
     "",
-    sourceLineage || continuationLineageSection(cwd, sourceThreadId),
+    "## Workspace Context Files",
+    workspaceContextReference(cwd),
     "",
-    "## 运行设置",
-    `- Mobile Web 传给续接线程的运行设置：${Object.keys(publicRuntime || {}).length ? JSON.stringify(publicRuntime) : "(none detected)"}`,
-    "- 如果后续任务需要更高权限或不同模型，按当前线程 UI/用户指令处理；不要假设旧线程的一次性授权仍然有效。",
+    "## Continuation Lineage",
+    continuationLineageIndexReference(cwd, sourceThreadId),
     "",
-    "## 最近源线程上下文摘录",
-    continuationTurnSummaries(snapshot.turns),
+    "## Runtime Settings",
+    `- Runtime settings passed by Mobile Web: ${Object.keys(publicRuntime || {}).length ? JSON.stringify(publicRuntime) : "(none detected)"}`,
+    "- If later work needs different permissions or a different model, follow the current thread UI/user instruction; do not assume old one-time approvals still apply.",
     "",
-    "## 工作区持久上下文摘录",
-    continuationWorkspaceContextSections(cwd),
+    "## Privacy And Size Constraints",
+    "- Do not copy handoff bodies, lineage handoff bodies, rollout bodies, or workspace context bodies back into chat unless the user explicitly asks.",
+    "- Do not write or display raw secrets, access keys, VAPID private keys, subscription endpoints, upload contents, full rollouts, full prompts, or one-time approval state.",
   ];
   return truncateMiddle(parts.join("\n"), MAX_CONTINUATION_BOOTSTRAP_CHARS, "continuation bootstrap");
 }
-
 async function tryUpdateThreadTitle(threadId, title) {
   if (!threadId || !title) return false;
   const attempts = [
@@ -5883,19 +6012,21 @@ async function startThreadFromRequestBody(body, options = {}) {
   if (visibility.workspaceKeys.size > 0 && !visibility.workspaceKeys.has(normalizeFsPath(cwd))) {
     throw httpStatusError(403, "Workspace is not visible in Codex Desktop");
   }
-  progress("context-compaction", "Checking workspace handoff size");
-  const contextCompaction = compactWorkspaceHandoff({
+  progress("context-compaction", "Checking workspace context size");
+  const contextCompaction = compactWorkspaceContext({
     cwd,
-    thresholdBytes: CONTINUATION_CONTEXT_HANDOFF_COMPACT_BYTES,
-    preserveChars: CONTINUATION_CONTEXT_HANDOFF_PRESERVE_CHARS,
+    thresholdBytes: CONTINUATION_CONTEXT_FILE_COMPACT_BYTES,
+    combinedThresholdBytes: CONTINUATION_CONTEXT_PAIR_COMPACT_BYTES,
+    preserveChars: CONTINUATION_CONTEXT_COMPACT_PRESERVE_CHARS,
   });
   if (job) job.contextCompaction = contextCompaction;
   if (contextCompaction && contextCompaction.compacted) {
-    progress("context-compaction", "Workspace handoff compacted", {
-      handoffPath: contextCompaction.handoffPath,
-      archivePath: contextCompaction.archivePath,
+    progress("context-compaction", "Workspace context compacted", {
+      archiveDir: contextCompaction.archiveDir,
+      manifestPath: contextCompaction.manifestPath,
       originalBytes: contextCompaction.originalBytes,
       compactedBytes: contextCompaction.compactedBytes,
+      reductionPercent: contextCompaction.reductionPercent,
     });
   }
   const sourceThreadId = String(body.sourceThreadId || "").trim();
@@ -5923,7 +6054,6 @@ async function startThreadFromRequestBody(body, options = {}) {
       turnCompletion: sourceHandoff.turnCompletion || null,
     };
   }
-  const sourceLineage = continuationLineageSection(cwd, sourceThreadId);
   progress("thread-start", "正在创建续接线程");
   const params = applyStartThreadRuntimeSettings({
     cwd,
@@ -5944,7 +6074,7 @@ async function startThreadFromRequestBody(body, options = {}) {
   const titleUpdatedBeforeBootstrap = await tryUpdateThreadTitle(threadId, desiredTitle).catch(() => false);
   const bootstrapParams = applyTurnRuntimeSettings({
     threadId,
-    input: newThreadBootstrapInput({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff, sourceLineage }),
+    input: newThreadBootstrapInput({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff }),
     cwd,
     summary: "auto",
   }, runtimeSettings);
@@ -6153,9 +6283,14 @@ function mergeThreadDisplaySummary(base, display) {
   if (!base) return display ? annotateThreadRolloutStats(display) : null;
   if (!display) return base;
   const next = Object.assign({}, base);
-  for (const key of ["name", "preview", "cwd", "updatedAt"]) {
+  for (const key of ["name", "preview", "cwd"]) {
     const value = display[key];
     if (value !== null && value !== undefined && String(value).trim() !== "") next[key] = value;
+  }
+  const displayUpdatedAtMs = timestampToMs(display.updatedAt || display.updated_at || display.updatedAtMs || display.updated_at_ms);
+  const baseUpdatedAtMs = timestampToMs(base.updatedAt || base.updated_at || base.updatedAtMs || base.updated_at_ms);
+  if (displayUpdatedAtMs && displayUpdatedAtMs >= baseUpdatedAtMs) {
+    next.updatedAt = display.updatedAt || display.updated_at || display.updatedAtMs || display.updated_at_ms;
   }
   if (display.status) next.status = display.status;
   return annotateThreadRolloutStats(next);
@@ -6321,6 +6456,167 @@ function attachThreadTaskCardsToResult(result) {
   return result;
 }
 
+function stableTextHash(value) {
+  const text = String(value || "");
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function truncateSingleLine(value, maxChars = 96) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text || text.length <= maxChars) return text;
+  return `${text.slice(0, Math.max(0, maxChars - 3)).trimEnd()}...`;
+}
+
+function normalizeThreadTaskCardWorkflowMode(value) {
+  const mode = String(value || "").trim().toLowerCase();
+  if (mode === "autonomous" || mode === "auto" || mode === "automatic") return "autonomous";
+  return "manual";
+}
+
+function uniqueThreadTaskCardTargetIds(values, fallback = "") {
+  const raw = Array.isArray(values) ? values : [values, fallback];
+  const seen = new Set();
+  const out = [];
+  for (const value of raw) {
+    const id = String(value || "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+function parseThreadTaskCardDraftText(value) {
+  const text = String(value || "");
+  const match = new RegExp(`<${THREAD_TASK_CARD_DRAFT_TAG}>\\s*([\\s\\S]*?)\\s*<\\/${THREAD_TASK_CARD_DRAFT_TAG}>`, "i").exec(text);
+  if (!match) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(match[1]);
+  } catch (_) {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const targetThreadIds = uniqueThreadTaskCardTargetIds(parsed.targetThreadIds, parsed.targetThreadId);
+  return {
+    targetThreadId: targetThreadIds[0] || "",
+    targetThreadIds,
+    workflowMode: normalizeThreadTaskCardWorkflowMode(parsed.workflowMode),
+    workflowId: truncateSingleLine(parsed.workflowId || "", 220),
+    title: truncateSingleLine(parsed.title || "", 120),
+    summary: truncateSingleLine(parsed.summary || "", 280),
+    body: String(parsed.body || "").trim(),
+    error: truncateSingleLine(parsed.error || "", 280),
+  };
+}
+
+function threadTaskCardDraftPayloadKey(draft) {
+  const targetThreadIds = uniqueThreadTaskCardTargetIds(draft && draft.targetThreadIds, draft && draft.targetThreadId).sort();
+  return stableTextHash(JSON.stringify({
+    targetThreadIds,
+    workflowMode: normalizeThreadTaskCardWorkflowMode(draft && draft.workflowMode),
+    workflowId: String(draft && draft.workflowId || "").trim(),
+    title: String(draft && draft.title || "").trim(),
+    summary: String(draft && draft.summary || "").trim(),
+    body: String(draft && draft.body || "").trim(),
+  }));
+}
+
+function threadTaskCardDraftIdempotencyKey(threadId, turnId, draft) {
+  const payloadKey = threadTaskCardDraftPayloadKey(draft);
+  return `task-card-draft:${String(threadId || "")}:task-card-draft|${String(turnId || "")}|draft-${payloadKey}`;
+}
+
+function threadTaskCardItemText(item) {
+  if (!item || typeof item !== "object") return "";
+  if (typeof item.text === "string") return item.text;
+  if (typeof item.content === "string") return item.content;
+  if (Array.isArray(item.content)) {
+    return item.content.map((part) => {
+      if (!part || typeof part !== "object") return "";
+      return typeof part.text === "string" ? part.text : "";
+    }).join("\n");
+  }
+  return "";
+}
+
+function summarizeTaskCardText(value) {
+  return truncateSingleLine(String(value || "").replace(/\s+/g, " ").trim(), 280);
+}
+
+function truncateThreadTaskCardBody(value, maxChars = THREAD_TASK_CARD_BODY_MAX_CHARS) {
+  const text = String(value || "").trim();
+  const limit = Math.max(0, Number(maxChars) || 0);
+  if (!limit || text.length <= limit) return text;
+  const marker = `\n\n[Task card body truncated: ${text.length} chars total]\n\n`;
+  const available = Math.max(0, limit - marker.length);
+  if (available <= 0) return text.slice(0, limit);
+  const head = Math.ceil(available * 0.6);
+  const tail = Math.max(0, available - head);
+  return `${text.slice(0, head).trimEnd()}${marker}${text.slice(-tail).trimStart()}`.slice(0, limit);
+}
+
+function threadDisplayTitle(thread) {
+  return String((thread && (thread.name || thread.title || thread.preview || thread.id)) || "").trim();
+}
+
+async function materializeThreadTaskCardDraftsForThread(thread) {
+  if (!thread || typeof thread !== "object" || !thread.id || !Array.isArray(thread.turns)) return [];
+  const sourceThreadId = String(thread.id || "");
+  const sourceWorkspaceId = String(thread.cwd || (readStateDbThread(sourceThreadId) || {}).cwd || "");
+  const sourceThreadTitle = threadDisplayTitle(thread) || sourceThreadId;
+  const created = [];
+  for (const turn of thread.turns) {
+    const turnId = String(turn && turn.id || "");
+    if (!turnId || !Array.isArray(turn && turn.items)) continue;
+    for (const item of turn.items) {
+      if (!item || (item.type !== "agentMessage" && item.type !== "plan")) continue;
+      const draft = parseThreadTaskCardDraftText(threadTaskCardItemText(item));
+      if (!draft || draft.error || !draft.title || !draft.body || !draft.targetThreadIds.length) continue;
+      const targetWorkspaceIds = {};
+      for (const targetThreadId of draft.targetThreadIds) {
+        const targetSummary = readStateDbThread(targetThreadId) || readStartedThread(targetThreadId);
+        targetWorkspaceIds[targetThreadId] = targetSummary && targetSummary.cwd || "";
+      }
+      try {
+        const body = truncateThreadTaskCardBody(draft.body);
+        const cards = await threadTaskCardService.createMany({
+          sourceWorkspaceId,
+          sourceThreadId,
+          sourceTurnId: turnId,
+          sourceThreadTitle,
+          targetThreadIds: draft.targetThreadIds,
+          targetWorkspaceIds,
+          idempotencyKey: threadTaskCardDraftIdempotencyKey(sourceThreadId, turnId, draft),
+          format: "markdown",
+          title: draft.title,
+          summary: draft.summary || summarizeTaskCardText(body),
+          body,
+          workflowMode: draft.workflowMode || "manual",
+          workflowId: draft.workflowId || "",
+        });
+        for (const card of cards || []) {
+          if (card && card.id) created.push(card);
+        }
+      } catch (err) {
+        console.error(`[thread task card] server draft materialization failed thread=${shortIdentifier(sourceThreadId)} turn=${shortIdentifier(turnId)}: ${err.message || String(err)}`);
+      }
+    }
+  }
+  return created;
+}
+
+async function prepareThreadTaskCardsToResult(result) {
+  if (!result || typeof result !== "object" || !result.thread) return result;
+  await materializeThreadTaskCardDraftsForThread(result.thread);
+  return attachThreadTaskCardsToResult(result);
+}
+
 async function turnsListThreadReadResult(threadId, summary, runtimeSettings, warning, mode = "turns-list", threadLog = null) {
   const startedAtMs = Date.now();
   if (threadLog) {
@@ -6349,7 +6645,7 @@ async function turnsListThreadReadResult(threadId, summary, runtimeSettings, war
       mode,
     });
   }
-  return attachThreadTaskCardsToResult(result);
+  return prepareThreadTaskCardsToResult(result);
 }
 
 function filterFallbackThreads(threads, filters = {}) {
@@ -6387,15 +6683,17 @@ function readStateDbFallback(limit = 80, filters = {}) {
   }
 }
 
-function readSessionIndexFallback(limit = 80, filters = {}) {
+function fallbackDisplayText(value, maxLength = 500) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function readSessionIndexEntries(maxLines = 2000) {
   const p = path.join(CODEX_HOME, "session_index.jsonl");
+  const byId = new Map();
   try {
-    const globalState = filters.globalState || readGlobalState();
-    const projectlessThreadIds = visibleProjectlessThreadIds(globalState);
-    if (filters.cwd || projectlessThreadIds.size === 0) return [];
-    const archivedIds = archivedSessionThreadIds();
-    const lines = fs.readFileSync(p, "utf8").split(/\r?\n/).filter(Boolean).slice(-1000);
-    const byId = new Map();
+    const lines = fs.readFileSync(p, "utf8").split(/\r?\n/).filter(Boolean).slice(-Math.max(1, maxLines));
     for (const line of lines) {
       let entry;
       try {
@@ -6403,8 +6701,137 @@ function readSessionIndexFallback(limit = 80, filters = {}) {
       } catch (_) {
         continue;
       }
-      if (!entry.id) continue;
-      if (!projectlessThreadIds.has(entry.id)) continue;
+      const id = String(entry && entry.id || "").trim();
+      if (!id) continue;
+      byId.set(id, Object.assign({}, entry, {
+        id,
+        thread_name: fallbackDisplayText(entry.thread_name || entry.name || entry.title),
+      }));
+    }
+  } catch (_) {
+    return byId;
+  }
+  return byId;
+}
+
+function readRolloutHead(rolloutPath, maxBytes = 128 * 1024) {
+  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) return "";
+  let fd = null;
+  try {
+    const stat = fs.statSync(rolloutPath);
+    if (!stat.isFile() || stat.size <= 0) return "";
+    const bytesToRead = Math.min(Math.max(4096, maxBytes), stat.size);
+    const buffer = Buffer.alloc(bytesToRead);
+    fd = fs.openSync(rolloutPath, "r");
+    const bytesRead = fs.readSync(fd, buffer, 0, bytesToRead, 0);
+    return buffer.subarray(0, bytesRead).toString("utf8");
+  } catch (_) {
+    return "";
+  } finally {
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd);
+      } catch (_) {}
+    }
+  }
+}
+
+function rolloutEntryCwd(entry) {
+  if (!entry || typeof entry !== "object") return "";
+  const payload = entry.payload && typeof entry.payload === "object" ? entry.payload : {};
+  return String(entry.cwd || payload.cwd || payload.workspace || payload.workspaceRoot || "").trim();
+}
+
+function rolloutEntryTimestampMs(entry) {
+  if (!entry || typeof entry !== "object") return 0;
+  const payload = entry.payload && typeof entry.payload === "object" ? entry.payload : {};
+  return timestampToMs(entry.timestamp || payload.timestamp || payload.created_at || payload.updated_at);
+}
+
+function readRolloutSessionFallbackThreadFromFile(file, indexEntry = {}) {
+  const rolloutPath = typeof file === "string" ? file : file && file.path;
+  const id = threadIdFromRolloutPath(rolloutPath) || String(indexEntry.id || "").trim();
+  if (!id || !rolloutPath || isBackupRolloutPath(rolloutPath)) return null;
+  let stat = null;
+  try {
+    stat = fs.statSync(rolloutPath);
+  } catch (_) {
+    return null;
+  }
+  if (!stat.isFile()) return null;
+
+  let cwd = "";
+  let timestampMs = 0;
+  let model = "";
+  const lines = readRolloutHead(rolloutPath).split(/\r?\n/).filter(Boolean);
+  for (const line of lines) {
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch (_) {
+      continue;
+    }
+    const payload = entry.payload && typeof entry.payload === "object" ? entry.payload : {};
+    if (!cwd) cwd = rolloutEntryCwd(entry);
+    timestampMs = Math.max(timestampMs, rolloutEntryTimestampMs(entry));
+    if (!model && payload.model) model = String(payload.model || "");
+    if (!model && payload.model_provider) model = String(payload.model_provider || "");
+    if (cwd && timestampMs) break;
+  }
+
+  const updatedMs = timestampToMs(indexEntry.updated_at || indexEntry.updatedAt)
+    || timestampMs
+    || Number(stat.mtimeMs || 0);
+  return rowToFallbackThread({
+    id,
+    thread_name: fallbackDisplayText(indexEntry.thread_name || indexEntry.name || indexEntry.title),
+    cwd,
+    rollout_path: rolloutPath,
+    archived: false,
+    archived_at: null,
+    updatedAt: Math.floor(updatedMs / 1000),
+    model,
+  });
+}
+
+function readRolloutSessionFallback(limit = 80, filters = {}) {
+  const rowLimit = Math.min(1000, Math.max(limit * 8, 200));
+  const indexEntries = readSessionIndexEntries(Math.max(rowLimit * 2, 2000));
+  const archivedIds = archivedSessionThreadIds();
+  const threads = [];
+  const seen = new Set();
+  for (const file of collectRecentRolloutFiles(SESSIONS_DIR, { maxFiles: rowLimit, maxDepth: 6 })) {
+    const id = threadIdFromRolloutPath(file && file.path);
+    if (!id || seen.has(id) || archivedIds.has(id)) continue;
+    seen.add(id);
+    const thread = readRolloutSessionFallbackThreadFromFile(file, indexEntries.get(id) || { id });
+    if (thread) threads.push(thread);
+  }
+  return filterFallbackThreads(threads, filters).slice(0, limit);
+}
+
+function readRolloutSessionFallbackThread(threadId) {
+  const id = String(threadId || "").trim();
+  if (!id) return null;
+  const indexEntries = readSessionIndexEntries();
+  const archivedIds = archivedSessionThreadIds();
+  if (archivedIds.has(id)) return null;
+  for (const file of collectRecentRolloutFiles(SESSIONS_DIR, { maxFiles: 1000, maxDepth: 6 })) {
+    if (threadIdFromRolloutPath(file && file.path) !== id) continue;
+    return readRolloutSessionFallbackThreadFromFile(file, indexEntries.get(id) || { id });
+  }
+  return null;
+}
+
+function readSessionIndexFallback(limit = 80, filters = {}) {
+  try {
+    const globalState = filters.globalState || readGlobalState();
+    const projectlessThreadIds = visibleProjectlessThreadIds(globalState);
+    if (filters.cwd || projectlessThreadIds.size === 0) return [];
+    const archivedIds = archivedSessionThreadIds();
+    const byId = new Map();
+    for (const entry of readSessionIndexEntries(1000).values()) {
+      if (!entry.id || !projectlessThreadIds.has(entry.id)) continue;
       if (archivedIds.has(entry.id)) continue;
       const updatedAt = entry.updated_at ? Math.floor(Date.parse(entry.updated_at) / 1000) : 0;
       byId.set(entry.id, rowToFallbackThread({
@@ -6425,6 +6852,16 @@ function readSessionIndexFallback(limit = 80, filters = {}) {
   } catch (_) {
     return [];
   }
+}
+
+function readThreadListFallback(limit = 80, filters = {}) {
+  const stateDbFallback = readStateDbFallback(limit, filters);
+  const rolloutFallback = stateDbFallback.length >= limit ? [] : readRolloutSessionFallback(limit, filters);
+  return [
+    ...stateDbFallback,
+    ...rolloutFallback,
+    ...readSessionIndexFallback(limit, filters),
+  ].slice(0, limit);
 }
 
 async function listWorkspaces() {
@@ -7082,10 +7519,7 @@ async function handleApi(req, res) {
         filterVisibleThreads(await codex.request("thread/list", params, { timeoutMs: READ_RPC_TIMEOUT_MS }), globalState),
         cwd,
       );
-      const fallback = [
-        ...readStateDbFallback(limit, { cwd, searchTerm, globalState }),
-        ...readSessionIndexFallback(limit, { cwd, searchTerm, globalState }),
-      ].slice(0, limit);
+      const fallback = readThreadListFallback(limit, { cwd, searchTerm, globalState });
       const result = mergeThreadListFallback(appServerResult, fallback, limit);
       threadDisplaySummaryCache.rememberList(result);
       if (Array.isArray(result.data)) result.data = result.data.slice(0, limit);
@@ -7095,10 +7529,7 @@ async function handleApi(req, res) {
         { cwd, days: 31, workspaceCwds: tokenUsageWorkspaceCwds(globalState) },
       ));
     } catch (err) {
-      const fallback = [
-        ...readStateDbFallback(limit, { cwd, searchTerm, globalState }),
-        ...readSessionIndexFallback(limit, { cwd, searchTerm, globalState }),
-      ].slice(0, limit);
+      const fallback = readThreadListFallback(limit, { cwd, searchTerm, globalState });
       if (fallback.length) {
         sendJson(res, 200, tokenUsageStatsService.decorateThreadListResult({
           data: fallback.map(attachThreadTaskCardCountsToSummary),
@@ -7159,6 +7590,10 @@ async function handleApi(req, res) {
     if (!summary) {
       summary = readStartedThread(threadId);
       summarySource = summary ? "started-cache" : "none";
+    }
+    if (!summary) {
+      summary = readRolloutSessionFallbackThread(threadId);
+      summarySource = summary ? "rollout-session" : "none";
     }
     if (!summary) {
       const summaryStartedAtMs = Date.now();
@@ -7271,7 +7706,7 @@ async function handleApi(req, res) {
         returnedTurns: result.thread && Array.isArray(result.thread.turns) ? result.thread.turns.length : null,
         omittedTurns: result.thread && result.thread.mobileOmittedTurnCount ? result.thread.mobileOmittedTurnCount : 0,
       });
-      sendJson(res, 200, attachThreadTaskCardsToResult(result));
+      sendJson(res, 200, await prepareThreadTaskCardsToResult(result));
       threadLog("complete", { status: 200, mode: "thread-read" });
     } catch (readErr) {
       threadLog("thread_read_error", {
@@ -7628,6 +8063,7 @@ module.exports = {
   previewRootsForThread,
   readFilePreview,
   readRolloutItemTimestampCandidates,
+  readRolloutSessionFallbackThreadFromFile,
   resolveFilePreviewPath,
   publicServerRequest,
   serveFilePreviewContent,

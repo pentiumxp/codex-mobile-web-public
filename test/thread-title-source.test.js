@@ -21,7 +21,8 @@ test("thread display summary keeps local runtime fields while accepting display 
   const helperBody = serverJs.slice(helperStart, helperEnd);
 
   assert.match(helperBody, /Object\.assign\(\{\}, base\)/);
-  assert.match(helperBody, /for \(const key of \["name", "preview", "cwd", "updatedAt"\]\)/);
+  assert.match(helperBody, /for \(const key of \["name", "preview", "cwd"\]\)/);
+  assert.match(helperBody, /displayUpdatedAtMs[\s\S]*>= baseUpdatedAtMs/);
   assert.match(helperBody, /if \(display\.status\) next\.status = display\.status;/);
   assert.doesNotMatch(helperBody, /model|effort|sandboxPolicy|approvalPolicy/);
 });

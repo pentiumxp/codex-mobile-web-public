@@ -93,7 +93,7 @@ test("embedded plugin mode hides standalone chrome and installs navigation/windo
   assert.doesNotMatch(appJs, /else if \(\$\("themeSettingsPanel"\)[\s\S]{0,180}closeSidebarMenu\(\);[\s\S]{0,80}handled = true;/);
   assert.doesNotMatch(appJs, /function returnPluginRootStep/);
   assert.doesNotMatch(appJs, /function openPluginNavigationSurface/);
-  assert.match(appJs, /addEventListener\("touchstart", beginSidebarEdgeSwipe, \{ passive: true \}\)/);
+  assert.match(appJs, /addEventListener\("touchstart", beginSidebarEdgeSwipe, \{ passive: false \}\)/);
   assert.match(appJs, /function pushBrowserAvailable\(\) \{\s*if \(isHermesEmbedMode\(\)\) return false;/);
   assert.match(appJs, /function showCompletionAlert\(threadId, threadName\) \{\s*if \(isHermesEmbedMode\(\)\) return;/);
   assert.match(appJs, /installPluginWindowingGuards\(\)/);
@@ -117,7 +117,8 @@ test("embedded plugin mode hides standalone chrome and installs navigation/windo
   assert.match(appJs, /targetOrigin:\s*targetOrigin \|\| "\*"/);
   assert.match(appJs, /const hermesOrigin = normalizePluginParentOrigin\(result && result\.hermes_origin\)/);
   assert.match(appJs, /state\.pluginParentOrigin = hermesOrigin/);
-  assert.match(appJs, /if \(isHermesEmbedMode\(\)\) \{\s*state\.pageRefreshBuildId = nextBuildId;[\s\S]*requestHermesPluginRefresh\("server_build_changed", \{ force: true \}\);[\s\S]*return;/);
+  assert.match(appJs, /if \(isHermesEmbedMode\(\)\) \{\s*if \(clientChanged\) \{[\s\S]*requestHermesPluginRefresh\("server_build_changed", \{ force: true \}\);[\s\S]*if \(!clientChanged && assetsChanged\) \{[\s\S]*state\.serverAssetBuildId = nextAssetBuildId;[\s\S]*return;/);
+  assert.doesNotMatch(appJs, /if \(isHermesEmbedMode\(\)\) \{\s*state\.pageRefreshBuildId = nextBuildId;[\s\S]*requestHermesPluginRefresh\("server_build_changed", \{ force: true \}\);[\s\S]*return;/);
 });
 
 test("Windows startup scripts can persist HTTPS Hermes plugin deployment settings", () => {

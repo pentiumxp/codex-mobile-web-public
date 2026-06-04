@@ -53,6 +53,112 @@ function Resolve-CodexHomeFromProfile {
     throw "Unknown Codex profile '$RequestedProfileId'. Use default/current/previous or pass -CodexHome."
 }
 
+function Normalize-PathKey {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return ""
+    }
+    return ([System.IO.Path]::GetFullPath($Path).TrimEnd("\")).ToLowerInvariant()
+}
+
+function Backup-ProfileAuthFiles {
+    param(
+        [string]$CodexHome,
+        [string]$RuntimePath
+    )
+    if ([string]::IsNullOrWhiteSpace($CodexHome) -or [string]::IsNullOrWhiteSpace($RuntimePath)) {
+        return
+    }
+    $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    $profileName = Split-Path -Leaf ([System.IO.Path]::GetFullPath($CodexHome))
+    if ([string]::IsNullOrWhiteSpace($profileName)) {
+        $profileName = "default"
+    }
+    $backupRoot = Join-Path (Join-Path $RuntimePath "profile-auth-backups") $profileName
+    $backupDir = Join-Path $backupRoot $timestamp
+    foreach ($name in @("auth.json", "config.toml")) {
+        $source = Join-Path $CodexHome $name
+        if (Test-Path -LiteralPath $source) {
+            New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
+            Copy-Item -LiteralPath $source -Destination (Join-Path $backupDir $name) -Force
+        }
+    }
+}
+
+function Backup-AndRemove-StatePath {
+    param(
+        [string]$Path,
+        [string]$BackupRoot
+    )
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+    New-Item -ItemType Directory -Force -Path $BackupRoot | Out-Null
+    $name = Split-Path -Leaf $Path
+    $destination = Join-Path $BackupRoot $name
+    if (Test-Path -LiteralPath $destination) {
+        $destination = Join-Path $BackupRoot ("{0}-{1}" -f $name, (Get-Date -Format "HHmmssfff"))
+    }
+    Move-Item -LiteralPath $Path -Destination $destination -Force
+}
+
+function Ensure-LinkedStatePath {
+    param(
+        [string]$Source,
+        [string]$Target,
+        [string]$Kind,
+        [string]$BackupRoot
+    )
+    if (-not (Test-Path -LiteralPath $Source)) {
+        return
+    }
+    Backup-AndRemove-StatePath -Path $Target -BackupRoot $BackupRoot
+    if ($Kind -eq "Directory") {
+        New-Item -ItemType Junction -Path $Target -Target $Source | Out-Null
+    } else {
+        New-Item -ItemType HardLink -Path $Target -Target $Source | Out-Null
+    }
+}
+
+function Ensure-SharedProfileState {
+    param(
+        [string]$ProfilePath,
+        [string]$CodexHome,
+        [string]$RuntimePath
+    )
+    if ([string]::IsNullOrWhiteSpace($ProfilePath) -or [string]::IsNullOrWhiteSpace($CodexHome)) {
+        return
+    }
+    $defaultHome = Join-Path $ProfilePath ".codex"
+    if ((Normalize-PathKey $CodexHome) -eq (Normalize-PathKey $defaultHome)) {
+        return
+    }
+    if (-not (Test-Path -LiteralPath $defaultHome)) {
+        return
+    }
+    New-Item -ItemType Directory -Force -Path $CodexHome | Out-Null
+    Backup-ProfileAuthFiles -CodexHome $CodexHome -RuntimePath $RuntimePath
+
+    $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    $profileName = Split-Path -Leaf ([System.IO.Path]::GetFullPath($CodexHome))
+    $backupRoot = Join-Path (Join-Path $RuntimePath "profile-state-backups") (Join-Path $profileName $timestamp)
+    foreach ($item in @(
+        @{ Name = ".codex-global-state.json"; Kind = "File" },
+        @{ Name = "state_5.sqlite"; Kind = "File" },
+        @{ Name = "state_5.sqlite-wal"; Kind = "File" },
+        @{ Name = "state_5.sqlite-shm"; Kind = "File" },
+        @{ Name = "session_index.jsonl"; Kind = "File" },
+        @{ Name = "sessions"; Kind = "Directory" },
+        @{ Name = "archived_sessions"; Kind = "Directory" }
+    )) {
+        Ensure-LinkedStatePath `
+            -Source (Join-Path $defaultHome $item.Name) `
+            -Target (Join-Path $CodexHome $item.Name) `
+            -Kind $item.Kind `
+            -BackupRoot $backupRoot
+    }
+}
+
 function Find-CSharpCompiler {
     $candidates = @(
         (Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"),
@@ -134,6 +240,7 @@ $selectedCodexHome = Resolve-CodexHomeFromProfile -RequestedProfileId $ProfileId
 if (-not (Test-Path -LiteralPath $selectedCodexHome)) {
     New-Item -ItemType Directory -Force -Path $selectedCodexHome | Out-Null
 }
+Ensure-SharedProfileState -ProfilePath $env:USERPROFILE -CodexHome $selectedCodexHome -RuntimePath $runtimeRoot
 
 if ([string]::IsNullOrWhiteSpace($RealCodexExe)) {
     if (Test-Path -LiteralPath $runtimeCodexExe) {

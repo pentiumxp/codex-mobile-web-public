@@ -11,6 +11,7 @@ const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const launcher = fs.readFileSync(path.join(root, "start-codex-mobile-web-windowless.ps1"), "utf8");
+const multiAccountDoc = fs.readFileSync(path.join(root, "docs", "MULTI_ACCOUNT_CODEX_CLI.md"), "utf8");
 
 test("settings panel exposes Codex profile account and switch UI", () => {
   assert.match(indexHtml, /id="codexProfileSettings"/);
@@ -54,4 +55,32 @@ test("windowless launcher shares thread state without replacing profile auth", (
   assert.match(launcher, /Name = "archived_sessions"; Kind = "Directory"/);
   assert.match(launcher, /New-Item -ItemType HardLink/);
   assert.match(launcher, /New-Item -ItemType Junction/);
+});
+
+test("profile shared-state harness excludes account auth files", () => {
+  const sharedStateStart = launcher.indexOf("function Ensure-SharedProfileState");
+  const sharedStateEnd = launcher.indexOf("if (-not [string]::IsNullOrWhiteSpace($UserProfilePath))", sharedStateStart);
+  assert.ok(sharedStateStart > 0 && sharedStateEnd > sharedStateStart, "missing shared-state launcher body");
+  const sharedStateBody = launcher.slice(sharedStateStart, sharedStateEnd);
+
+  assert.match(sharedStateBody, /Backup-ProfileAuthFiles -CodexHome \$CodexHome -RuntimePath \$RuntimePath/);
+  assert.match(sharedStateBody, /profile-state-backups/);
+  assert.doesNotMatch(sharedStateBody, /Name = "auth\.json"/);
+  assert.doesNotMatch(sharedStateBody, /Name = "config\.toml"/);
+  assert.match(sharedStateBody, /Name = "state_5\.sqlite-wal"/);
+  assert.match(sharedStateBody, /Name = "state_5\.sqlite-shm"/);
+});
+
+test("multi-account docs describe current shared-thread-state profile design", () => {
+  assert.match(multiAccountDoc, /Each profile\s+keeps its own `auth\.json` and `config\.toml`/);
+  assert.match(multiAccountDoc, /Shared by Mobile Web for thread continuity/);
+  assert.match(multiAccountDoc, /profile-auth-backups/);
+  assert.match(multiAccountDoc, /profile-state-backups/);
+  assert.match(multiAccountDoc, /test\/codex-profile-ui\.test\.js/);
+  assert.match(multiAccountDoc, /Documentation harness should fail/);
+  assert.match(multiAccountDoc, /Historical pre-switcher observation/);
+  assert.match(multiAccountDoc, /That old observation is about Desktop GUI isolation, not the current Mobile Web/);
+  assert.doesNotMatch(multiAccountDoc, /previous`[\s\S]{0,120}did not yet have `auth\.json`/);
+  assert.doesNotMatch(multiAccountDoc, /previous`[\s\S]{0,160}did not[\s\S]{0,40}create `C:\\Users\\xuxin\\\.codex-homes\\previous\\auth\.json`/);
+  assert.doesNotMatch(multiAccountDoc, /verify `previous` still has no `auth\.json`/);
 });

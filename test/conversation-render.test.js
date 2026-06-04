@@ -91,6 +91,21 @@ function evaluatedTokenUsageSummaryText() {
   return Function(`${sources.join("\n")}\nreturn tokenUsageSummaryText;`)();
 }
 
+function evaluatedTurnUsageSummaryRenderer() {
+  const sources = [
+    "escapeHtml",
+    "formatFileSize",
+    "formatTokenCount",
+    "displayInputTokensExcludingCached",
+    "tokenUsageSummaryText",
+    "formatUsagePercent",
+    "contextRiskLabel",
+    "renderUsageMetric",
+    "renderTurnUsageSummary",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`${sources.join("\n")}\nreturn renderTurnUsageSummary;`)();
+}
+
 test("context compaction notices update status and collapse repeated turn notices", () => {
   assert.match(functionBody("visibleItemsForTurn"), /const contextEntryByKey = new Map\(\)/);
   assert.match(functionBody("visibleItemsForTurn"), /isContextCompactionItem\(item\)/);
@@ -273,6 +288,23 @@ test("active turn state follows only the latest durable turn", () => {
   assert.doesNotMatch(liveBody, /reverse\(\)\.find/);
 });
 
+test("thread running hints survive notLoaded list refreshes", () => {
+  assert.match(appJs, /function updateThreadListStatus\(/);
+  assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(String\(threadId\)\)/);
+  assert.match(functionBody("reconcileThreadStatusHints"), /else if \(wasRunning && isCompletedStatus\(thread\.status\)\)/);
+  assert.doesNotMatch(functionBody("reconcileThreadStatusHints"), /else if \(!isRunning && wasRunning\)/);
+
+  const notificationBody = functionBody("applyNotification");
+  assert.match(notificationBody, /const runningStatus = \{ type: "active" \};/);
+  assert.match(notificationBody, /updateThreadStatusHints\(params\.threadId, state\.currentThread\.status, runningStatus/);
+  assert.match(notificationBody, /updateThreadListStatus\(params\.threadId, runningStatus\)/);
+  assert.match(notificationBody, /const completedStatus = \(params\.turn && params\.turn\.status\) \|\| \{ type: "completed" \};/);
+  assert.match(notificationBody, /updateThreadStatusHints\(params\.threadId, state\.currentThread\.status, completedStatus/);
+  assert.match(notificationBody, /updateThreadListStatus\(params\.threadId, completedStatus\)/);
+  assert.match(notificationBody, /scheduleRenderThreads\(\);[\s\S]*scheduleCurrentThreadRefresh\(500\)/);
+  assert.match(notificationBody, /scheduleRenderThreads\(\);[\s\S]*scheduleCurrentThreadRefresh\(700\)/);
+});
+
 test("thread merge drops superseded stale active turns", () => {
   assert.match(appJs, /function turnIsSupersededBy\(/);
   assert.match(functionBody("turnIsSupersededBy"), /return isTurnComplete\(newerTurn\) && !isTurnComplete\(turn\)/);
@@ -281,13 +313,68 @@ test("thread merge drops superseded stale active turns", () => {
 });
 
 test("completed turns can render context and token usage summaries", () => {
-  assert.match(serverJs, /attachTurnUsageSummaries\(out, readRolloutTurnUsageSummaries\(rolloutPath\), \{ rolloutStats \}\)/);
+  assert.match(serverJs, /workspaceContextStats:\s*workspaceContextStatsForCwd\(out\.cwd\)/);
   assert.match(appJs, /function renderTurnUsageSummary\(item\)/);
   assert.match(functionBody("labelForItem"), /turnUsageSummary:\s*"Usage"/);
   assert.match(functionBody("renderItemBody"), /item\.type === "turnUsageSummary"[\s\S]*renderTurnUsageSummary\(item\)/);
   assert.match(functionBody("visibleItemSignature"), /item\.type === "turnUsageSummary"/);
   assert.match(functionBody("visibleItemSignature"), /mobileUsageSummary: item\.mobileUsageSummary/);
   assert.match(functionBody("turnFinalReceiptNode"), /:not\(\.turnUsageSummary\)/);
+});
+
+test("completed turn usage summary renders workspace context sizes and compact action", () => {
+  const renderTurnUsageSummary = evaluatedTurnUsageSummaryRenderer();
+  const html = renderTurnUsageSummary({
+    mobileUsageSummary: {
+      contextRiskLevel: "normal",
+      contextWindowUsedPercent: 25,
+      contextWindowUsedTokens: 25000,
+      modelContextWindow: 100000,
+      lastTokenUsage: { inputTokens: 1000, totalTokens: 1000 },
+      totalTokenUsage: { inputTokens: 2000, totalTokens: 2000 },
+      rolloutSizeBytes: 1024,
+      rolloutWarningThresholdBytes: 2048,
+      projectContextSizeBytes: 75 * 1024,
+      handoffSizeBytes: 180 * 1024,
+      workspaceContextPairSizeBytes: 255 * 1024,
+      workspaceContextFileThresholdBytes: 100 * 1024,
+      workspaceHandoffPromptThresholdBytes: 200 * 1024,
+      workspaceContextPairThresholdBytes: 200 * 1024,
+    },
+  });
+
+  assert.match(html, /context/);
+  assert.match(html, /handoff/);
+  assert.match(html, /pair 255\.0 KB/);
+  assert.match(html, /data-new-thread-from-current/);
+});
+
+test("handoff usage prompt waits for the 200KB handoff threshold", () => {
+  const renderTurnUsageSummary = evaluatedTurnUsageSummaryRenderer();
+  const below = renderTurnUsageSummary({
+    mobileUsageSummary: {
+      handoffSizeBytes: 180 * 1024,
+      projectContextSizeBytes: 20 * 1024,
+      workspaceContextPairSizeBytes: 200 * 1024 - 1,
+      workspaceContextFileThresholdBytes: 100 * 1024,
+      workspaceHandoffPromptThresholdBytes: 200 * 1024,
+      workspaceContextPairThresholdBytes: 200 * 1024,
+    },
+  });
+  const above = renderTurnUsageSummary({
+    mobileUsageSummary: {
+      handoffSizeBytes: 201 * 1024,
+      projectContextSizeBytes: 20 * 1024,
+      workspaceContextPairSizeBytes: 221 * 1024,
+      workspaceContextFileThresholdBytes: 100 * 1024,
+      workspaceHandoffPromptThresholdBytes: 200 * 1024,
+      workspaceContextPairThresholdBytes: 500 * 1024,
+    },
+  });
+
+  assert.doesNotMatch(below, /data-new-thread-from-current/);
+  assert.match(below, /warn 200\.0 KB/);
+  assert.match(above, /data-new-thread-from-current/);
 });
 
 test("turn usage input display excludes cached input tokens", () => {
