@@ -214,7 +214,7 @@ const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 8;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v176";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v177";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -851,7 +851,7 @@ function reconcileThreadStatusHints(threads) {
       state.runningThreadIds.add(id);
       state.unreadThreadIds.delete(id);
       changed = true;
-    } else if (!isRunning && wasRunning) {
+    } else if (wasRunning && isCompletedStatus(thread.status)) {
       state.runningThreadIds.delete(id);
       if (id !== state.currentThreadId) state.unreadThreadIds.add(id);
       changed = true;
@@ -865,6 +865,9 @@ function statusIconInfo(status, threadId = "") {
   const normalized = text.toLowerCase();
   if (/active|running|queued|processing|inprogress|in_progress|in-progress|pending|started/.test(normalized)) {
     return { kind: "running", label: text || "running", symbol: "" };
+  }
+  if (threadId && state.runningThreadIds.has(String(threadId))) {
+    return { kind: "running", label: text && text !== "notLoaded" ? text : "running", symbol: "" };
   }
   if (threadId && state.unreadThreadIds.has(String(threadId))) {
     return { kind: "unread", label: "completed, unread", symbol: "" };
@@ -2551,6 +2554,14 @@ function visibleThreads(threads = state.threads) {
 
 function pruneHiddenThreads() {
   state.threads = visibleThreads();
+}
+
+function updateThreadListStatus(threadId, status) {
+  const id = String(threadId || "");
+  if (!id) return;
+  const thread = state.threads.find((entry) => String(entry && entry.id || "") === id);
+  if (thread) thread.status = status;
+  if (state.currentThread && String(state.currentThread.id || "") === id) state.currentThread.status = status;
 }
 
 function isRunningStatus(status) {
@@ -8490,7 +8501,14 @@ function applyNotification(method, params) {
   }
   if (!state.currentThread || params.threadId !== state.currentThread.id) return;
   if (method === "turn/started") {
+    const runningStatus = { type: "active" };
     state.activeTurnId = params.turn.id;
+    updateThreadStatusHints(params.threadId, state.currentThread.status, runningStatus, {
+      thread: state.currentThread,
+      threadName: threadDisplayName(state.currentThread),
+      notify: false,
+    });
+    updateThreadListStatus(params.threadId, runningStatus);
     clearRecentCompletedReplyAnchor();
     clearConversationAutoScrollHold();
     markActivity("开始");
@@ -8498,21 +8516,30 @@ function applyNotification(method, params) {
     updateComposerControls();
     ensureTurn(params.turn.id);
     renderCurrentThread();
+    scheduleRenderThreads();
     scheduleCurrentThreadRefresh(500);
     scheduleLivePollIfNeeded(1200);
     return;
   }
   if (method === "turn/completed") {
+    const completedStatus = (params.turn && params.turn.status) || { type: "completed" };
     const turn = ensureTurn(params.turn.id);
     Object.assign(turn, mergeTurnPreservingVisibleItems(turn, params.turn));
     rememberRecentCompletedTurnReply(params.turn.id);
     const completedPendingSteer = isPendingSteerForTurn(params.turn.id);
+    updateThreadStatusHints(params.threadId, state.currentThread.status, completedStatus, {
+      thread: state.currentThread,
+      threadName: threadDisplayName(state.currentThread),
+      notify: true,
+    });
+    updateThreadListStatus(params.threadId, completedStatus);
     state.activeTurnId = "";
     markActivity("完成");
     if (completedPendingSteer) setSteerFeedback("completed", { turnId: String(params.turn.id) });
     $("interruptTurn").disabled = true;
     updateComposerControls();
     renderCurrentThread();
+    scheduleRenderThreads();
     scheduleCurrentThreadRefresh(700);
     scheduleLivePollIfNeeded(1400);
     return;

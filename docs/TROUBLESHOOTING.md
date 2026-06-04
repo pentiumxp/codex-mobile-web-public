@@ -30,6 +30,7 @@ Interpretation:
 | Archived projectless thread reappears | session-index fallback, `archived_sessions`, `test/thread-archive.test.js` |
 | After profile switch only a few workspaces or no threads appear | `/api/public-config.codexProfiles.activeCodexHome`, profile state links, and `state_5.sqlite` / `sessions` under the active home |
 | Threads are visible but names/times stay stale | `/api/threads` row `name`/`updatedAt`, state DB `title`/`updated_at`, rollout file mtime, fallback merge tests |
+| Running-thread indicator disappears | `runningThreadIds`, row `status`, `turn/started` / `turn/completed` notifications, stale browser shell |
 
 ## Shared Mux Drift
 
@@ -107,6 +108,17 @@ list refresh after the current-thread refresh. If this regresses, run:
 
 ```powershell
 node --test test\thread-visibility.test.js test\thread-title-source.test.js test\new-thread-route.test.js test\mobile-viewport.test.js
+```
+
+If a running thread is interactive but the sidebar/home running indicator is
+missing, first separate this from the page-refresh prompt. The running indicator
+comes from `public/app.js` status hints, not `#pageRefreshPrompt`. Current builds
+keep `runningThreadIds` across thread-list refreshes where the row only says
+`notLoaded`, and current-thread `turn/started` / `turn/completed` notifications
+write back to the matching sidebar row. If this regresses, run:
+
+```powershell
+node --test test\conversation-render.test.js test\mobile-viewport.test.js
 ```
 
 ## Sent Message Disappears After Re-entering Thread

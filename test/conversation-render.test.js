@@ -288,6 +288,23 @@ test("active turn state follows only the latest durable turn", () => {
   assert.doesNotMatch(liveBody, /reverse\(\)\.find/);
 });
 
+test("thread running hints survive notLoaded list refreshes", () => {
+  assert.match(appJs, /function updateThreadListStatus\(/);
+  assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(String\(threadId\)\)/);
+  assert.match(functionBody("reconcileThreadStatusHints"), /else if \(wasRunning && isCompletedStatus\(thread\.status\)\)/);
+  assert.doesNotMatch(functionBody("reconcileThreadStatusHints"), /else if \(!isRunning && wasRunning\)/);
+
+  const notificationBody = functionBody("applyNotification");
+  assert.match(notificationBody, /const runningStatus = \{ type: "active" \};/);
+  assert.match(notificationBody, /updateThreadStatusHints\(params\.threadId, state\.currentThread\.status, runningStatus/);
+  assert.match(notificationBody, /updateThreadListStatus\(params\.threadId, runningStatus\)/);
+  assert.match(notificationBody, /const completedStatus = \(params\.turn && params\.turn\.status\) \|\| \{ type: "completed" \};/);
+  assert.match(notificationBody, /updateThreadStatusHints\(params\.threadId, state\.currentThread\.status, completedStatus/);
+  assert.match(notificationBody, /updateThreadListStatus\(params\.threadId, completedStatus\)/);
+  assert.match(notificationBody, /scheduleRenderThreads\(\);[\s\S]*scheduleCurrentThreadRefresh\(500\)/);
+  assert.match(notificationBody, /scheduleRenderThreads\(\);[\s\S]*scheduleCurrentThreadRefresh\(700\)/);
+});
+
 test("thread merge drops superseded stale active turns", () => {
   assert.match(appJs, /function turnIsSupersededBy\(/);
   assert.match(functionBody("turnIsSupersededBy"), /return isTurnComplete\(newerTurn\) && !isTurnComplete\(turn\)/);

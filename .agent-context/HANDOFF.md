@@ -858,3 +858,53 @@ The previous full handoff was archived and should be opened only when old proven
   - `systemError` on the separate `Codex Mobile 06-03` thread was intentionally
     not changed in this fix.
   - Changes are uncommitted.
+
+## 2026-06-04 Running Thread Indicator Refresh v177
+
+- User report:
+  - Thread names and update times recovered, but working threads no longer
+    showed the prior running/refresh indicator in the thread list.
+- Diagnosis:
+  - Runtime `/api/threads` rows can still report `status.type=notLoaded` even
+    when the thread is active and interactive.
+  - `reconcileThreadStatusHints()` cleared browser-local `runningThreadIds`
+    whenever a refreshed list row was not running, so a silent list refresh could
+    erase the running hint from an active thread.
+  - `statusIconInfo()` did not consult `runningThreadIds`, so preserved hints
+    could not render the running indicator.
+  - Current-thread `turn/started` / `turn/completed` notifications updated
+    detail state but did not explicitly write the sidebar row status or schedule
+    a sidebar repaint.
+- Local fix:
+  - `public/app.js`
+    - `notLoaded` list rows no longer clear known running hints; only terminal
+      statuses clear them.
+    - Sidebar/home status icons now render from `runningThreadIds` when the row
+      status itself is not running.
+    - Current-thread `turn/started` writes `{ type: "active" }` to the matching
+      thread row, updates running hints, and schedules thread-list repaint.
+    - Current-thread `turn/completed` writes a terminal status, updates hints,
+      and schedules thread-list repaint.
+    - Static shell bumped to `0.1.11|codex-mobile-shell-v177`.
+  - `public/sw.js`
+    - Shell cache bumped to `codex-mobile-shell-v177`.
+  - Tests/docs:
+    - Added coverage in `test/conversation-render.test.js`.
+    - Updated `test/mobile-viewport.test.js` and
+      `test/thread-task-card-route.test.js` for v177.
+    - Updated `docs/ARCHITECTURE.md` and `docs/TROUBLESHOOTING.md`.
+- Validation:
+  - `node --check public\app.js` passed.
+  - `node --check public\sw.js` passed.
+  - Focused `node --test test\conversation-render.test.js
+    test\mobile-viewport.test.js test\thread-task-card-route.test.js` passed:
+    28/28.
+  - `npm.cmd test` passed: 314/314.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+- Status:
+  - `systemError` on the separate `Codex Mobile 06-03` thread remains outside
+    this fix.
+  - Changes are uncommitted.
