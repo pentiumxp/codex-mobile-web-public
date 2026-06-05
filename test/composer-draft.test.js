@@ -56,6 +56,37 @@ test("switching targets saves the previous draft and restores the next draft", (
   assert.match(newThreadBody, /restoreDraftForCurrentTarget\(\)/);
 });
 
+test("composer runtime selections persist without typed text", () => {
+  const draftStoreBody = draftStoreJs.slice(
+    draftStoreJs.indexOf("function draftHasContent("),
+    draftStoreJs.indexOf("function attachmentStorageKey(", draftStoreJs.indexOf("function draftHasContent(")),
+  );
+  assert.match(draftStoreBody, /draft\.model/);
+  assert.match(draftStoreBody, /draft\.effort/);
+  assert.match(draftStoreBody, /draft\.permissionMode/);
+
+  const selectionBody = functionBody("applyRuntimeSelection");
+  assert.match(selectionBody, /if \(kind === "effort"\) state\.composerEffort = selected;/);
+  assert.match(selectionBody, /saveCurrentDraftNow\(\)/, "runtime selection should persist even when the composer text is empty");
+
+  const saveBody = functionBody("saveCurrentDraftNow");
+  assert.match(saveBody, /if \(state\.composerBusy\) return;/);
+  assert.match(saveBody, /writeCurrentDraftToKey\(key\)/);
+  assert.match(functionBody("writeCurrentDraftToKey"), /if \(draftHasContent\(draft\)\)/);
+
+  const sendBody = functionBody("sendMessage");
+  assert.match(sendBody, /setComposerText\(""\);[\s\S]*clearPendingAttachments\(\);[\s\S]*writeCurrentDraftToKey\(submittedDraftKey\)/, "send success should preserve runtime-only draft while clearing text and attachments");
+  assert.doesNotMatch(sendBody, /state\.composerEffort = "";/, "send success should not immediately revert selected effort to the previous thread default");
+
+  const fastBody = functionBody("setCodexFastCommandEnabled");
+  assert.match(fastBody, /saveCurrentDraftNow\(\)/, "Fast toggle should use the existing draft save path");
+  assert.doesNotMatch(appJs, /saveDraftForCurrentTarget/, "runtime controls must not call a missing draft-save helper");
+
+  const loadThreadBody = functionBody("loadThread");
+  assert.match(loadThreadBody, /state\.currentThread = mergeThreadPreservingVisibleItems/);
+  assert.match(loadThreadBody, /restoreDraftForCurrentTarget\(\);[\s\S]*renderComposerSettings\(\)/, "thread load should restore persisted runtime selections");
+});
+
 test("draft attachments use IndexedDB and are cleared only after a successful send", () => {
   assert.match(draftStoreJs, /indexedDBRef\.open\(config\.dbName,\s*config\.dbVersion\)/);
   assert.match(appJs, /function storeDraftAttachment\(/);
@@ -70,9 +101,13 @@ test("draft attachments use IndexedDB and are cleared only after a successful se
   assert.match(sendBody, /const submittedDraftKey = currentDraftKey\(\)/);
   assert.match(sendBody, /const threadTaskCardCommand = isThreadTaskCardCommandText\(text\)/);
   assert.match(sendBody, /const outboundText = threadTaskCardCommand \? buildThreadTaskCardDraftRequestText\(text\) : text/);
-  assert.match(sendBody, /clearDraftForKey\(submittedDraftKey\)/);
+  assert.match(sendBody, /writeCurrentDraftToKey\(submittedDraftKey\)/);
+  assert.doesNotMatch(sendBody, /clearDraftForKey\(submittedDraftKey\)/);
 
   const newSendBody = functionBody("sendNewThreadMessage");
   assert.match(newSendBody, /const submittedDraftKey = currentDraftKey\(\)/);
+  assert.match(newSendBody, /const submittedEffort = newThreadSelectedEffort\(\)/);
   assert.match(newSendBody, /clearDraftForKey\(submittedDraftKey\)/);
+  assert.match(newSendBody, /state\.composerEffort = submittedEffort \|\| "";/);
+  assert.match(newSendBody, /writeCurrentDraftToKey\(draftKeyForThread\(threadId\)\)/);
 });

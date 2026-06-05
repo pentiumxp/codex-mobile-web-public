@@ -239,7 +239,9 @@ switcher, not concurrent providers:
   Web windowless launcher before Desktop starts. This does not prove that the
   Desktop GUI ChatGPT login is independently isolated; it makes the mux/app-
   server sharing path and thread/workspace state profile-aware while leaving
-  profile auth/config files separate.
+  profile auth/config files separate. The Desktop GUI is the only intended
+  visible process; mux, Node, and app-server helper children started by the
+  shared bridge must be launched without visible console windows.
 - This switcher is disabled when Mobile Web is pinned to
   `CODEX_MOBILE_MUX_ENDPOINT_FILE`, `CODEX_MOBILE_APP_SERVER_WS`, or
   `CODEX_MOBILE_APP_SERVER_TCP`, because those fixed endpoints are outside the

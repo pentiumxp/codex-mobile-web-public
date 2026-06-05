@@ -18,12 +18,33 @@ $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $runtimeRoot = if ($env:CODEX_MOBILE_RUNTIME_DIR) { $env:CODEX_MOBILE_RUNTIME_DIR } else { Join-Path $env:USERPROFILE ".codex-mobile-web" }
 $runtimeCodexExe = Join-Path $runtimeRoot "codex.exe"
 
-if ([string]::IsNullOrWhiteSpace($CodexExe)) {
-    if (Test-Path -LiteralPath $runtimeCodexExe) {
-        $CodexExe = $runtimeCodexExe
-    } else {
-        $CodexExe = "codex"
+function Resolve-CodexExecutable {
+    param([string]$RuntimeCodexExe)
+
+    if (-not [string]::IsNullOrWhiteSpace($env:CODEX_MOBILE_CODEX_EXE)) {
+        return $env:CODEX_MOBILE_CODEX_EXE
     }
+
+    $candidates = @()
+    $localBin = Join-Path $env:LOCALAPPDATA "OpenAI\Codex\bin"
+    if (Test-Path -LiteralPath $localBin) {
+        $candidates += Get-ChildItem -LiteralPath $localBin -Recurse -Filter "codex.exe" -ErrorAction SilentlyContinue
+    }
+    if (Test-Path -LiteralPath $RuntimeCodexExe) {
+        $candidates += Get-Item -LiteralPath $RuntimeCodexExe
+    }
+    $selected = $candidates |
+        Where-Object { $_ -and $_.FullName -and (Test-Path -LiteralPath $_.FullName) } |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+    if ($selected -and $selected.FullName) {
+        return $selected.FullName
+    }
+    return "codex"
+}
+
+if ([string]::IsNullOrWhiteSpace($CodexExe)) {
+    $CodexExe = Resolve-CodexExecutable -RuntimeCodexExe $runtimeCodexExe
 }
 
 if (($CodexExe -match '[\\/]') -and -not (Test-Path -LiteralPath $CodexExe)) {

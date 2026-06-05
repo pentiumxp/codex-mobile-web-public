@@ -7,6 +7,9 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const {
+  anyThreadMatchesVisibleWorkspace,
+  filterFallbackThreads,
+  hydrateThreadListTitlesFromSessionIndex,
   isHiddenThread,
   mergeThreadListFallback,
   readRolloutSessionFallbackThreadFromFile,
@@ -27,6 +30,14 @@ function visibilityFor(root) {
     workspaceKeys: new Set([normalizeFsPath(root)]),
     workspaceNames: new Set([path.basename(path.resolve(root))]),
     projectlessThreadIds: new Set(),
+  };
+}
+
+function globalStateForRoots(roots) {
+  return {
+    "active-workspace-roots": roots,
+    "electron-saved-workspace-roots": roots,
+    "project-order": roots,
   };
 }
 
@@ -54,6 +65,24 @@ test("archived Codex worktree threads stay hidden", () => {
   const visibility = visibilityFor(repoRoot);
 
   assert.equal(isHiddenThread({ id: "thread-1", cwd: worktreeRoot, archived: true }, visibility), true);
+});
+
+test("fallback thread list keeps migrated Windows cwd rows when no visible workspace matches", () => {
+  const macWorkspace = "/Users/xuxin/HermesMobile";
+  const windowsCwd = "C:\\Users\\xuxin\\Documents\\Agent";
+  const visibility = visibilityFor(macWorkspace);
+
+  assert.equal(anyThreadMatchesVisibleWorkspace([{ id: "thread-1", cwd: windowsCwd }], visibility), false);
+
+  const filtered = filterFallbackThreads([
+    { id: "thread-1", cwd: windowsCwd, name: "Windows history", updatedAt: 300 },
+    { id: "thread-archived", cwd: windowsCwd, name: "Archived", archived: true, updatedAt: 400 },
+    { id: "thread-subagent", cwd: windowsCwd, name: "Subagent", agent_role: "subagent", updatedAt: 500 },
+  ], {
+    globalState: globalStateForRoots([macWorkspace]),
+  });
+
+  assert.deepEqual(filtered.map((thread) => thread.id), ["thread-1"]);
 });
 
 test("thread list merges local fallback threads when app-server list misses them", () => {
@@ -85,6 +114,64 @@ test("thread list keeps app-server time when duplicate fallback is older", () =>
   assert.equal(result.data[0].updatedAt, 300);
 });
 
+test("thread list sorts fallback threads before older app-server rows before applying limit", () => {
+  const result = mergeThreadListFallback({
+    data: [
+      { id: "thread-1", name: "old app-server row", updatedAt: 100 },
+      { id: "thread-2", name: "older app-server row", updatedAt: 90 },
+    ],
+  }, [
+    { id: "thread-3", name: "recent rollout fallback", updatedAt: 300 },
+  ], 2);
+
+  assert.deepEqual(result.data.map((thread) => thread.id), ["thread-3", "thread-1"]);
+});
+
+test("thread list hydrates id-like titles from the Mobile session index", () => {
+  const threadId = "019e936c-d163-75b3-adf4-d5ae69e46936";
+  const hydrated = hydrateThreadListTitlesFromSessionIndex([
+    { id: threadId, name: threadId, preview: threadId, updatedAt: 100 },
+    { id: "thread-2", name: "Existing title", preview: "Existing title", updatedAt: 200 },
+  ], new Map([
+    [threadId, {
+      id: threadId,
+      thread_name: "记账 06-05",
+      updated_at: "2026-06-04T16:51:13.524Z",
+    }],
+    ["thread-2", {
+      id: "thread-2",
+      thread_name: "Should Not Override",
+      updated_at: "2026-06-05T00:00:00.000Z",
+    }],
+  ]));
+
+  assert.equal(hydrated[0].name, "记账 06-05");
+  assert.equal(hydrated[0].preview, "记账 06-05");
+  assert.equal(hydrated[0].updatedAt, 1780591873);
+  assert.equal(hydrated[1].name, "Existing title");
+});
+
+test("thread list hydrates continuation bootstrap titles from the Mobile session index", () => {
+  const threadId = "019e9566-c222-7560-af45-2b3665862188";
+  const hydrated = hydrateThreadListTitlesFromSessionIndex([
+    {
+      id: threadId,
+      name: "# Continuation Bootstrap Index\n\nThis thread is a same-workspace continuation created by Codex Mobile Web.",
+      preview: "# Continuation Bootstrap Index",
+      updatedAt: 100,
+    },
+  ], new Map([
+    [threadId, {
+      id: threadId,
+      thread_name: "Hermes 06-05",
+      updated_at: "2026-06-05T01:30:00.113Z",
+    }],
+  ]));
+
+  assert.equal(hydrated[0].name, "Hermes 06-05");
+  assert.equal(hydrated[0].preview, "Hermes 06-05");
+});
+
 test("rollout session fallback recovers thread summary without state db text columns", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-rollout-fallback-"));
   const threadId = "019e9000-0000-7000-8000-000000000001";
@@ -104,6 +191,11 @@ test("rollout session fallback recovers thread summary without state db text col
       cwd: "C:\\Users\\xuxin\\Documents\\Agent",
     }),
   ].join("\n"), "utf8");
+  fs.utimesSync(
+    rolloutPath,
+    new Date("2026-06-04T10:00:30.000Z"),
+    new Date("2026-06-04T10:00:30.000Z"),
+  );
 
   const summary = readRolloutSessionFallbackThreadFromFile(rolloutPath, {
     id: threadId,
@@ -117,6 +209,121 @@ test("rollout session fallback recovers thread summary without state db text col
   assert.equal(summary.path, rolloutPath);
   assert.equal(summary.mobileFallback, true);
   assert.equal(summary.updatedAt, 1780567260);
+});
+
+test("rollout session fallback uses rollout mtime when it is newer than session index", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-rollout-mtime-"));
+  const threadId = "019e9000-0000-7000-8000-000000000002";
+  const rolloutPath = path.join(dir, `rollout-2026-06-04T10-00-00-${threadId}.jsonl`);
+  fs.writeFileSync(rolloutPath, [
+    JSON.stringify({
+      type: "session_meta",
+      payload: {
+        id: threadId,
+        timestamp: "2026-06-04T10:00:01.000Z",
+        cwd: "C:\\Users\\xuxin\\Documents\\Agent",
+      },
+    }),
+  ].join("\n"), "utf8");
+  fs.utimesSync(
+    rolloutPath,
+    new Date("2026-06-04T10:05:30.000Z"),
+    new Date("2026-06-04T10:05:30.000Z"),
+  );
+
+  const summary = readRolloutSessionFallbackThreadFromFile(rolloutPath, {
+    id: threadId,
+    thread_name: "Recovered Thread",
+    updated_at: "2026-06-04T10:01:00.000Z",
+  });
+
+  assert.equal(summary.updatedAt, 1780567530);
+});
+
+test("rollout session fallback infers active and completed status from rollout tail", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-rollout-status-"));
+  const activeThreadId = "019e9000-0000-7000-8000-000000000003";
+  const completedThreadId = "019e9000-0000-7000-8000-000000000004";
+  const touchedThreadId = "019e9000-0000-7000-8000-000000000005";
+  const now = new Date();
+  const earlier = new Date(now.getTime() - 1000);
+  const activePath = path.join(dir, `rollout-2026-06-04T10-00-00-${activeThreadId}.jsonl`);
+  const completedPath = path.join(dir, `rollout-2026-06-04T10-00-00-${completedThreadId}.jsonl`);
+  const touchedPath = path.join(dir, `rollout-2026-06-04T10-00-00-${touchedThreadId}.jsonl`);
+  fs.writeFileSync(activePath, [
+    JSON.stringify({
+      type: "session_meta",
+      payload: {
+        id: activeThreadId,
+        timestamp: earlier.toISOString(),
+        cwd: "C:\\Users\\xuxin\\Documents\\Agent",
+      },
+    }),
+    JSON.stringify({
+      timestamp: earlier.toISOString(),
+      type: "event_msg",
+      payload: {
+        type: "task_started",
+        turn_id: "turn-active",
+      },
+    }),
+    JSON.stringify({
+      timestamp: now.toISOString(),
+      type: "response_item",
+      payload: {
+        type: "function_call",
+      },
+    }),
+  ].join("\n"), "utf8");
+  fs.utimesSync(activePath, now, now);
+
+  fs.writeFileSync(completedPath, [
+    JSON.stringify({
+      type: "session_meta",
+      payload: {
+        id: completedThreadId,
+        timestamp: earlier.toISOString(),
+        cwd: "C:\\Users\\xuxin\\Documents\\Agent",
+      },
+    }),
+    JSON.stringify({
+      timestamp: earlier.toISOString(),
+      type: "event_msg",
+      payload: {
+        type: "task_started",
+        turn_id: "turn-completed",
+      },
+    }),
+    JSON.stringify({
+      timestamp: now.toISOString(),
+      type: "event_msg",
+      payload: {
+        type: "task_complete",
+        turn_id: "turn-completed",
+      },
+    }),
+  ].join("\n"), "utf8");
+  fs.utimesSync(completedPath, now, now);
+
+  fs.writeFileSync(touchedPath, [
+    JSON.stringify({
+      type: "session_meta",
+      payload: {
+        id: touchedThreadId,
+        timestamp: earlier.toISOString(),
+        cwd: "C:\\Users\\xuxin\\Documents\\Agent",
+      },
+    }),
+  ].join("\n"), "utf8");
+  fs.utimesSync(touchedPath, now, now);
+
+  const active = readRolloutSessionFallbackThreadFromFile(activePath, { id: activeThreadId });
+  const completed = readRolloutSessionFallbackThreadFromFile(completedPath, { id: completedThreadId });
+  const touched = readRolloutSessionFallbackThreadFromFile(touchedPath, { id: touchedThreadId });
+
+  assert.equal(active.status.type, "active");
+  assert.equal(completed.status.type, "completed");
+  assert.equal(touched.status.type, "notLoaded");
 });
 
 test("thread list route uses rollout-aware fallback aggregator", () => {

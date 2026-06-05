@@ -46,8 +46,16 @@ const {
   generatedImagePathForId,
   imageContentTypeForPath,
 } = require("./adapters/generated-image-cache-service");
+const {
+  createMobileArchiveIndexService,
+  normalizeThreadId,
+} = require("./adapters/mobile-archive-index-service");
 const { createHermesPluginService } = require("./adapters/hermes-plugin-service");
 const { createThreadTaskCardService } = require("./adapters/thread-task-card-service");
+const {
+  createThreadGoalService,
+  normalizeThreadGoalStatus,
+} = require("./adapters/thread-goal-service");
 const { createWorkspaceRegistryService } = require("./adapters/workspace-registry-service");
 const {
   createCodexProfileService,
@@ -74,9 +82,12 @@ const CODEX_HOME_RESOLUTION = resolveEffectiveCodexHome({
 });
 const CODEX_HOME = CODEX_HOME_RESOLUTION.codexHome;
 const STATE_DB = path.join(CODEX_HOME, "state_5.sqlite");
+const GOALS_DB = path.join(CODEX_HOME, "goals_1.sqlite");
 const SESSIONS_DIR = path.join(CODEX_HOME, "sessions");
 const ARCHIVED_SESSIONS_DIR = path.join(CODEX_HOME, "archived_sessions");
-const CODEX_EXE = process.env.CODEX_MOBILE_CODEX_EXE || "codex";
+const MOBILE_ARCHIVED_THREAD_IDS_FILE = process.env.CODEX_MOBILE_ARCHIVED_THREAD_IDS_FILE
+  || path.join(RUNTIME_ROOT, "archived-thread-ids.json");
+const CODEX_EXE = resolveDefaultCodexExecutable();
 const MUX_ENDPOINT_FILE = process.env.CODEX_MOBILE_MUX_ENDPOINT_FILE || path.join(CODEX_HOME, "app-server-mux", "endpoint.json");
 const EXTERNAL_APP_SERVER_WS = process.env.CODEX_MOBILE_APP_SERVER_WS || "";
 const EXTERNAL_APP_SERVER_TCP = process.env.CODEX_MOBILE_APP_SERVER_TCP || "";
@@ -162,6 +173,9 @@ const workspaceRegistryService = createWorkspaceRegistryService({
   homeDir: USER_HOME,
   createRoots: WORKSPACE_CREATE_ROOTS,
 });
+const mobileArchiveIndexService = createMobileArchiveIndexService({
+  storageFile: MOBILE_ARCHIVED_THREAD_IDS_FILE,
+});
 const codexProfileService = createCodexProfileService({
   userHome: USER_HOME,
   runtimeRoot: RUNTIME_ROOT,
@@ -179,6 +193,10 @@ function activeProfileRestartOptions(profile = null) {
 
 const tokenUsageStatsService = createTokenUsageStatsService({
   dbPath: TOKEN_USAGE_STATS_DB,
+});
+const threadGoalService = createThreadGoalService({
+  dbPath: GOALS_DB,
+  userHome: USER_HOME,
 });
 const threadTaskCardService = createThreadTaskCardService({
   storageFile: THREAD_TASK_CARD_FILE,
@@ -276,6 +294,7 @@ const THREAD_DISPLAY_SUMMARY_CACHE_MAX = Math.max(20, Number(process.env.CODEX_M
 const MAX_ROLLOUT_CONTEXT_BYTES = Math.max(256 * 1024, Number(process.env.CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES || String(4 * 1024 * 1024)));
 const MAX_RUNTIME_CONTEXT_SCAN_BYTES = Math.max(MAX_ROLLOUT_CONTEXT_BYTES, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_SCAN_BYTES || String(512 * 1024 * 1024)));
 const ROLLOUT_WARNING_BYTES = Math.max(1 * 1024 * 1024, Number(process.env.CODEX_MOBILE_ROLLOUT_WARNING_BYTES || String(200 * 1024 * 1024)));
+const ROLLOUT_ACTIVE_STATUS_WINDOW_MS = Math.max(60_000, Number(process.env.CODEX_MOBILE_ROLLOUT_ACTIVE_STATUS_WINDOW_MS || String(30 * 60 * 1000)));
 const DEFAULT_THREAD_DETAIL_ROLLOUT_MAX_BYTES = 32 * 1024 * 1024;
 const THREAD_DETAIL_ROLLOUT_MAX_BYTES = Math.max(
   1 * 1024 * 1024,
@@ -547,11 +566,79 @@ function commandNeedsFilesystemCheck(command) {
   return path.isAbsolute(value) || value.includes("/") || value.includes("\\");
 }
 
+function pathEntriesFromEnvPath(value) {
+  return String(value || "")
+    .split(path.delimiter)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function executableCandidateNames(command) {
+  const value = String(command || "").trim();
+  if (!value) return [];
+  if (commandNeedsFilesystemCheck(value) || process.platform !== "win32") return [value];
+  const pathext = String(process.env.PATHEXT || ".EXE;.CMD;.BAT;.COM")
+    .split(";")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+  const lower = value.toLowerCase();
+  if (pathext.some((ext) => lower.endsWith(ext))) return [value];
+  return [value, ...pathext.map((ext) => `${value}${ext}`)];
+}
+
+function isExecutableFile(filePath) {
+  try {
+    fs.accessSync(filePath, fs.constants.X_OK);
+    return true;
+  } catch (_) {
+    return process.platform === "win32" && fs.existsSync(filePath);
+  }
+}
+
+function findExecutableInDirs(command, dirs) {
+  const names = executableCandidateNames(command);
+  for (const dir of dirs) {
+    for (const name of names) {
+      const candidate = path.join(dir, name);
+      if (isExecutableFile(candidate)) return candidate;
+    }
+  }
+  return "";
+}
+
+function commonCodexExecutableDirs() {
+  const dirs = pathEntriesFromEnvPath(process.env.PATH);
+  if (process.platform !== "win32") {
+    dirs.push(
+      "/opt/homebrew/bin",
+      "/usr/local/bin",
+      "/opt/local/bin",
+      "/usr/bin",
+      path.join(USER_HOME, ".local", "bin"),
+      path.join(USER_HOME, ".npm-global", "bin"),
+      path.join(USER_HOME, ".yarn", "bin"),
+      path.join(USER_HOME, ".bun", "bin"),
+      path.join(USER_HOME, ".cargo", "bin"),
+      path.join(USER_HOME, "Library", "pnpm"),
+    );
+  }
+  return Array.from(new Set(dirs));
+}
+
+function resolveDefaultCodexExecutable() {
+  const explicit = String(process.env.CODEX_MOBILE_CODEX_EXE || "").trim();
+  if (explicit) return explicit;
+  return findExecutableInDirs("codex", commonCodexExecutableDirs()) || "codex";
+}
+
 function assertCommandAvailable(command, label) {
   const value = String(command || "").trim();
   if (!value) throw new Error(`${label} is not configured`);
-  if (commandNeedsFilesystemCheck(value) && !fs.existsSync(value)) {
+  if (commandNeedsFilesystemCheck(value) && !isExecutableFile(value)) {
     throw new Error(`${label} not found: ${value}`);
+  }
+  if (!commandNeedsFilesystemCheck(value) && !findExecutableInDirs(value, pathEntriesFromEnvPath(process.env.PATH))) {
+    throw new Error(`${label} not found on PATH: ${value}`);
   }
 }
 
@@ -1369,6 +1456,18 @@ function threadWorkspaceVisible(cwd, visibility = null) {
   return Boolean(worktreeRepo && view.workspaceNames && view.workspaceNames.has(worktreeRepo));
 }
 
+function anyThreadMatchesVisibleWorkspace(threads, visibility = null) {
+  const view = visibility || visibilityFromGlobalState();
+  if (!view.workspaceKeys || view.workspaceKeys.size <= 0) return false;
+  for (const thread of Array.isArray(threads) ? threads : []) {
+    if (!thread || typeof thread !== "object" || threadHasArchiveSignal(thread) || isSubagentThreadSummary(thread)) continue;
+    const cwd = String(thread.cwd || "").trim();
+    if (cwd && threadWorkspaceVisible(cwd, view)) return true;
+    if (!cwd && view.projectlessThreadIds && view.projectlessThreadIds.has(thread.id)) return true;
+  }
+  return false;
+}
+
 function threadMatchesWorkspaceCwd(threadCwd, selectedCwd) {
   const selected = String(selectedCwd || "").trim();
   if (!selected) return true;
@@ -1665,28 +1764,89 @@ function isSubagentThreadSummary(thread) {
   ));
 }
 
-function archivedSessionThreadIds() {
+function archivedSessionDirectories() {
+  const dirs = new Set([ARCHIVED_SESSIONS_DIR]);
+  dirs.add(path.join(DEFAULT_CODEX_HOME, "archived_sessions"));
+  const homesRoot = path.join(USER_HOME, ".codex-homes");
   try {
-    return new Set(fs.readdirSync(ARCHIVED_SESSIONS_DIR)
-      .map((name) => String(name || "").match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i))
-      .filter(Boolean)
-      .map((match) => match[1]));
+    for (const entry of fs.readdirSync(homesRoot, { withFileTypes: true })) {
+      if (!entry || !entry.isDirectory()) continue;
+      dirs.add(path.join(homesRoot, entry.name, "archived_sessions"));
+    }
   } catch (_) {
-    return new Set();
+    // Older installs may not have profile-specific homes.
   }
+  return [...dirs];
+}
+
+function addArchivedSessionIdsFromDir(ids, dir) {
+  try {
+    for (const name of fs.readdirSync(dir)) {
+      const match = String(name || "").match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+      const id = normalizeThreadId(match && match[1]);
+      if (id) ids.add(id);
+    }
+  } catch (_) {
+    // Missing archived_sessions directories are normal for fresh profiles.
+  }
+}
+
+function archivedSessionThreadIds() {
+  const ids = mobileArchiveIndexService.threadIds();
+  for (const dir of archivedSessionDirectories()) {
+    addArchivedSessionIdsFromDir(ids, dir);
+  }
+  return ids;
+}
+
+function threadHasArchiveSignal(thread) {
+  if (!thread || typeof thread !== "object") return false;
+  const id = normalizeThreadId(thread.id);
+  const status = statusText(thread.status).toLowerCase();
+  const location = String(thread.path || thread.rolloutPath || thread.rollout_path || "").toLowerCase();
+  return Boolean(thread.archived || thread.archivedAt || thread.archived_at || thread.isArchived)
+    || Boolean(thread.deleted || thread.deletedAt || thread.deleted_at || thread.isDeleted || thread.removed || thread.removedAt)
+    || Boolean(id && archivedSessionThreadIds().has(id))
+    || /archived|deleted|removed/.test(status)
+    || /[/\\](archived|deleted|trash|removed)[_-]?sessions[/\\]/.test(location)
+    || isBackupRolloutPath(location);
+}
+
+function rememberMobileArchivedThreadId(threadId) {
+  try {
+    return mobileArchiveIndexService.remember(threadId);
+  } catch (err) {
+    console.warn(`Failed to update Mobile archived thread index: ${err.message || String(err)}`);
+    return false;
+  }
+}
+
+function archivedResultWithMobileIndex(result, threadId) {
+  if (result && typeof result === "object" && result.archived === false) return result;
+  const mobileArchived = rememberMobileArchivedThreadId(threadId);
+  const out = result && typeof result === "object" ? Object.assign({}, result) : { archived: true };
+  if (!Object.prototype.hasOwnProperty.call(out, "archived")) out.archived = true;
+  if (mobileArchived) out.mobileArchived = true;
+  return out;
+}
+
+function alreadyArchivedResult(source, threadId, shouldRemember = true) {
+  const out = { archived: true, alreadyArchived: true };
+  if (source) out.source = source;
+  if (shouldRemember && rememberMobileArchivedThreadId(threadId)) out.mobileArchived = true;
+  return out;
+}
+
+function isThreadIdArchivedLocally(threadId) {
+  const id = normalizeThreadId(threadId);
+  return Boolean(id && archivedSessionThreadIds().has(id));
 }
 
 function isHiddenThread(thread, visibility = null) {
   if (!thread || typeof thread !== "object") return true;
   const view = visibility || visibilityFromGlobalState();
-  const status = statusText(thread.status).toLowerCase();
-  const location = String(thread.path || thread.rolloutPath || thread.rollout_path || "").toLowerCase();
-  if (thread.archived || thread.archivedAt || thread.archived_at || thread.isArchived) return true;
-  if (thread.deleted || thread.deletedAt || thread.deleted_at || thread.isDeleted || thread.removed || thread.removedAt) return true;
+  if (threadHasArchiveSignal(thread)) return true;
   if (isSubagentThreadSummary(thread)) return true;
-  if (/archived|deleted|removed/.test(status)) return true;
-  if (/[/\\](archived|deleted|trash|removed)[_-]?sessions[/\\]/.test(location)) return true;
-  if (isBackupRolloutPath(location)) return true;
   if (view.workspaceKeys && view.workspaceKeys.size > 0) {
     const cwd = String(thread.cwd || "").trim();
     if (cwd) return !threadWorkspaceVisible(cwd, view);
@@ -1703,48 +1863,104 @@ function filterThreadListByCwd(result, cwd) {
   return out;
 }
 
+function isThreadIdLikeTitle(value, threadId = "") {
+  const text = String(value || "").trim();
+  const id = String(threadId || "").trim();
+  if (!text) return true;
+  if (id && text === id) return true;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(text);
+}
+
+function isRecoverableThreadListTitle(value, threadId = "") {
+  const text = String(value || "").trim();
+  return isThreadIdLikeTitle(text, threadId)
+    || /^#\s*Continuation Bootstrap Index\b/i.test(text)
+    || /This thread is a same-workspace continuation created by Codex Mobile Web/i.test(text);
+}
+
+function sessionIndexDisplayName(entry) {
+  return fallbackDisplayText(entry && (entry.thread_name || entry.name || entry.title), 120);
+}
+
+function hydrateThreadListTitlesFromSessionIndex(threads, indexEntries = readSessionIndexEntries()) {
+  if (!Array.isArray(threads) || !threads.length || !indexEntries || typeof indexEntries.get !== "function") {
+    return threads;
+  }
+  return threads.map((thread) => {
+    if (!thread || typeof thread !== "object") return thread;
+    const id = String(thread.id || "").trim();
+    if (!id) return thread;
+    const entry = indexEntries.get(id);
+    const name = sessionIndexDisplayName(entry);
+    if (!name) return thread;
+    const next = Object.assign({}, thread);
+    if (isRecoverableThreadListTitle(next.name || next.title, id)) next.name = name;
+    if (isRecoverableThreadListTitle(next.preview, id)) next.preview = name;
+    const updatedAt = entry && (entry.updated_at || entry.updatedAt);
+    if (updatedAt && timestampToMs(updatedAt) >= timestampToMs(next.updatedAt || next.updated_at)) {
+      next.updatedAt = Math.floor(timestampToMs(updatedAt) / 1000);
+    }
+    return next;
+  });
+}
+
+function mergeThreadSummaryList(threads) {
+  const archivedIds = archivedSessionThreadIds();
+  const byId = new Map();
+  for (const thread of Array.isArray(threads) ? threads : []) {
+    if (!thread || !thread.id) continue;
+    const id = String(thread.id);
+    if (archivedIds.has(id)) continue;
+    byId.set(id, byId.has(id) ? mergeThreadDisplaySummary(byId.get(id), thread) : thread);
+  }
+  return sortThreadListSummaries(hydrateThreadListTitlesFromSessionIndex([...byId.values()]));
+}
+
 function mergeThreadListFallback(result, fallbackThreads = [], limit = 80) {
   const out = result && typeof result === "object" ? Object.assign({}, result) : {};
   const existing = Array.isArray(out.data)
     ? out.data
     : (Array.isArray(out.threads) ? out.threads : []);
-  const merged = [];
-  const seen = new Set();
-  const indexById = new Map();
-  const addThread = (thread) => {
-    if (!thread || !thread.id || seen.has(thread.id)) return;
-    const id = String(thread.id);
-    seen.add(id);
-    indexById.set(id, merged.length);
-    merged.push(thread);
-  };
-  existing.forEach(addThread);
-  fallbackThreads.forEach((thread) => {
-    if (!thread || !thread.id) return;
-    const id = String(thread.id);
-    const index = indexById.get(id);
-    if (index === undefined) {
-      addThread(thread);
-      return;
-    }
-    merged[index] = mergeThreadDisplaySummary(merged[index], thread);
-  });
-  const capped = merged.slice(0, Math.max(1, limit));
+  const capped = mergeThreadSummaryList([...existing, ...fallbackThreads]).slice(0, Math.max(1, limit));
   if (Array.isArray(out.data) || !Array.isArray(out.threads)) out.data = capped;
   if (Array.isArray(out.threads)) out.threads = capped;
   return out;
+}
+
+function threadListSummaryTimestampMs(thread) {
+  if (!thread || typeof thread !== "object") return 0;
+  return Math.max(
+    timestampToMs(thread.updatedAtMs || thread.updated_at_ms),
+    timestampToMs(thread.updatedAt || thread.updated_at),
+    Number(thread.rolloutSizeUpdatedAtMs || 0),
+  );
+}
+
+function sortThreadListSummaries(threads) {
+  return (Array.isArray(threads) ? threads : [])
+    .map((thread, index) => ({ thread, index, timestampMs: threadListSummaryTimestampMs(thread) }))
+    .sort((a, b) => (b.timestampMs - a.timestampMs) || (a.index - b.index))
+    .map((entry) => entry.thread);
 }
 
 function filterVisibleThreads(result, globalState = readGlobalState()) {
   const visibility = visibilityFromGlobalState(globalState);
   if (!result || typeof result !== "object") return result;
   const out = Object.assign({}, result);
-  if (Array.isArray(out.data)) out.data = mergeThreadStateFromStateDb(out.data)
-    .filter((thread) => !isHiddenThread(thread, visibility))
-    .map(annotateThreadRolloutStats);
-  if (Array.isArray(out.threads)) out.threads = mergeThreadStateFromStateDb(out.threads)
-    .filter((thread) => !isHiddenThread(thread, visibility))
-    .map(annotateThreadRolloutStats);
+  if (Array.isArray(out.data)) {
+    const merged = mergeThreadStateFromStateDb(out.data);
+    const shouldFilterByWorkspace = anyThreadMatchesVisibleWorkspace(merged, visibility);
+    out.data = merged
+      .filter((thread) => !(shouldFilterByWorkspace ? isHiddenThread(thread, visibility) : (threadHasArchiveSignal(thread) || isSubagentThreadSummary(thread))))
+      .map(annotateThreadRolloutStats);
+  }
+  if (Array.isArray(out.threads)) {
+    const merged = mergeThreadStateFromStateDb(out.threads);
+    const shouldFilterByWorkspace = anyThreadMatchesVisibleWorkspace(merged, visibility);
+    out.threads = merged
+      .filter((thread) => !(shouldFilterByWorkspace ? isHiddenThread(thread, visibility) : (threadHasArchiveSignal(thread) || isSubagentThreadSummary(thread))))
+      .map(annotateThreadRolloutStats);
+  }
   return out;
 }
 
@@ -2723,6 +2939,14 @@ function readLatestTurnContext(thread) {
 function threadRuntimeSettings(threadId, fallbackThread = null) {
   const thread = readStateDbThread(threadId) || fallbackThread;
   const context = readLatestTurnContext(thread) || {};
+  const model = normalizeEnumValue(
+    lastString(context.model, thread && thread.model, CODEX_CONFIG_DEFAULTS.model),
+    new Set(MODEL_OPTIONS),
+  );
+  const reasoningEffort = normalizeEnumValue(
+    lastString(context.effort, context.reasoning_effort, context.model_reasoning_effort, thread && thread.effort, CODEX_CONFIG_DEFAULTS.reasoningEffort),
+    new Set(REASONING_EFFORT_OPTIONS),
+  );
   const sandboxPolicy = normalizeSandboxPolicy(context.sandbox_policy || (thread && thread.sandboxPolicy));
   const permissionProfile = normalizePermissionProfile(context.permission_profile || (thread && thread.permissionProfile));
   let approvalPolicy = normalizeEnumValue(
@@ -2741,6 +2965,8 @@ function threadRuntimeSettings(threadId, fallbackThread = null) {
     new Set(["low", "medium", "high"]),
   );
   return {
+    model,
+    reasoningEffort,
     approvalPolicy,
     sandboxPolicy,
     sandboxMode: sandboxModeFromPolicy(sandboxPolicy),
@@ -2766,6 +2992,7 @@ function applyResumeRuntimeSettings(params, settings) {
   if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
   if (settings.permissionProfile) params.permissionProfile = settings.permissionProfile;
   else if (settings.sandboxMode) params.sandbox = settings.sandboxMode;
+  if (settings.model) params.model = settings.model;
   const config = {};
   if (settings.reasoningSummary) config.model_reasoning_summary = settings.reasoningSummary;
   if (settings.modelVerbosity) config.model_verbosity = settings.modelVerbosity;
@@ -2778,6 +3005,7 @@ function applyStartThreadRuntimeSettings(params, settings) {
   if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
   if (settings.permissionProfile) params.permissionProfile = settings.permissionProfile;
   else if (settings.sandboxMode) params.sandbox = settings.sandboxMode;
+  if (settings.model) params.model = settings.model;
   const config = {};
   if (settings.reasoningSummary) config.model_reasoning_summary = settings.reasoningSummary;
   if (settings.modelVerbosity) config.model_verbosity = settings.modelVerbosity;
@@ -2790,6 +3018,8 @@ function applyTurnRuntimeSettings(params, settings) {
   if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
   if (settings.sandboxPolicy) params.sandboxPolicy = settings.sandboxPolicy;
   else if (settings.permissionProfile) params.permissionProfile = settings.permissionProfile;
+  if (settings.model) params.model = settings.model;
+  if (settings.reasoningEffort) params.effort = settings.reasoningEffort;
   if (settings.reasoningSummary) params.summary = settings.reasoningSummary;
   return params;
 }
@@ -5087,6 +5317,9 @@ function rowToFallbackThread(row) {
   const updatedAt = Number(row.updated_at || row.updatedAt || 0);
   const name = row.title || row.thread_name || null;
   const preview = row.first_user_message || row.preview || name || row.id;
+  const status = row.status && typeof row.status === "object"
+    ? row.status
+    : { type: String(row.status || "notLoaded") };
   return attachThreadTaskCardCountsToSummary(annotateThreadRolloutStats({
     id: row.id,
     name,
@@ -5096,7 +5329,7 @@ function rowToFallbackThread(row) {
     updatedAt,
     archived: Boolean(Number(row.archived || 0)),
     archivedAt: row.archived_at || null,
-    status: { type: "notLoaded" },
+    status,
     model: row.model || null,
     effort: row.reasoning_effort || null,
     agentNickname: row.agent_nickname || null,
@@ -5171,6 +5404,25 @@ function localTitleDate(date = new Date()) {
 function newThreadTitle({ cwd, sourceThreadTitle }) {
   const base = shortThreadTitle(sourceThreadTitle, path.basename(String(cwd || "").replace(/^\\\\\?\\/, "")) || "Codex Mobile");
   return `${base} ${localTitleDate()}`;
+}
+
+function continuationTitleCandidate(value) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text || /^#\s/.test(text)) return "";
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(text)) return "";
+  return text;
+}
+
+function sourceTitleForContinuation(sourceSnapshot, requestedTitle, cwd) {
+  const summary = sourceSnapshot && sourceSnapshot.summary && typeof sourceSnapshot.summary === "object"
+    ? sourceSnapshot.summary
+    : {};
+  const fallback = path.basename(String(cwd || "").replace(/^\\\\\?\\/, "")) || "Codex Mobile";
+  for (const value of [summary.name, requestedTitle, summary.title, summary.preview]) {
+    const candidate = continuationTitleCandidate(value);
+    if (candidate) return candidate;
+  }
+  return fallback;
 }
 
 function formatByteCount(bytes) {
@@ -5883,6 +6135,11 @@ async function tryUpdateThreadTitle(threadId, title) {
   return false;
 }
 
+function isRecoverableThreadTitleUpdateError(err) {
+  const message = String((err && err.message) || "");
+  return /thread metadata unavailable before name update|metadata unavailable before name update|database disk image is malformed/i.test(message);
+}
+
 async function archiveVisibleThread(threadId, visibility) {
   if (!threadId) return { archived: false };
   const summary = readStateDbThread(threadId)
@@ -5891,7 +6148,8 @@ async function archiveVisibleThread(threadId, visibility) {
   if (summary && isHiddenThread(summary, visibility)) {
     throw new Error("Source thread is archived, deleted, or outside visible workspaces");
   }
-  return await codex.request("thread/archive", { threadId }, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+  const result = await codex.request("thread/archive", { threadId }, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+  return archivedResultWithMobileIndex(result, threadId);
 }
 
 function isThreadArchiveNoOpError(err) {
@@ -5903,23 +6161,24 @@ function isThreadArchiveNoOpError(err) {
 
 async function archiveThreadId(threadId, visibility = visibilityFromGlobalState()) {
   if (!threadId) return { archived: false };
+  if (isThreadIdArchivedLocally(threadId)) return alreadyArchivedResult("mobile-index", threadId, false);
   const summary = readStateDbThread(threadId) || readStartedThread(threadId);
   if (summary && isHiddenThread(summary, visibility)) {
-    return { archived: true, alreadyArchived: true, source: "state-db" };
+    return alreadyArchivedResult("state-db", threadId);
   }
   try {
     const result = await codex.request("thread/archive", { threadId }, {
       timeoutMs: MUTATION_RPC_TIMEOUT_MS,
       retry: false,
     });
-    return result || { archived: true };
+    return archivedResultWithMobileIndex(result, threadId);
   } catch (err) {
     const rechecked = readStateDbThread(threadId) || readStartedThread(threadId);
     if (rechecked && isHiddenThread(rechecked, visibility)) {
-      return { archived: true, alreadyArchived: true, source: "state-db" };
+      return alreadyArchivedResult("state-db", threadId);
     }
     if (isThreadArchiveNoOpError(err)) {
-      return { archived: true, alreadyArchived: true };
+      return alreadyArchivedResult("", threadId);
     }
     throw err;
   }
@@ -5929,6 +6188,90 @@ function httpStatusError(statusCode, message) {
   const err = new Error(message);
   err.statusCode = statusCode;
   return err;
+}
+
+function normalizeThreadGoalObjectiveInput(value) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  return text.length > 1200 ? text.slice(0, 1200).trimEnd() : text;
+}
+
+function normalizeThreadGoalTokenBudgetInput(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return null;
+  return Math.trunc(number);
+}
+
+function isThreadGoalRpcUnsupportedError(err) {
+  const message = String((err && err.message) || "").toLowerCase();
+  const code = String((err && err.code) || "").toLowerCase();
+  return /method not found|unknown method|not supported|unsupported|thread\/goal\/(set|clear|get)/.test(message)
+    || /method_not_found|method-not-found|unsupported|not_supported/.test(code);
+}
+
+function threadGoalFromRpcResult(result) {
+  if (!result || typeof result !== "object") return null;
+  const goal = result.goal && typeof result.goal === "object" ? result.goal : result;
+  return goal && typeof goal === "object" ? goal : null;
+}
+
+function isCompletedThreadGoal(goal) {
+  if (!goal || typeof goal !== "object") return false;
+  return normalizeThreadGoalStatus(goal.status) === "complete";
+}
+
+function currentThreadGoalForSet(threadId) {
+  try {
+    return threadGoalService.goalForThread(threadId);
+  } catch {
+    return null;
+  }
+}
+
+async function clearThreadGoalForSet(threadId) {
+  return codex.request("thread/goal/clear", { threadId }, {
+    timeoutMs: MUTATION_RPC_TIMEOUT_MS,
+    retry: false,
+  });
+}
+
+async function setThreadGoalRpc(params) {
+  return codex.request("thread/goal/set", params, {
+    timeoutMs: MUTATION_RPC_TIMEOUT_MS,
+    retry: false,
+  });
+}
+
+async function setThreadGoal(threadId, input = {}) {
+  const id = String(threadId || "").trim();
+  const objective = normalizeThreadGoalObjectiveInput(input.objective || input.goal || input.text);
+  if (!id) throw httpStatusError(400, "Thread id is required");
+  if (!objective) throw httpStatusError(400, "Goal objective is required");
+  const params = { threadId: id, objective };
+  const tokenBudget = normalizeThreadGoalTokenBudgetInput(input.tokenBudget ?? input.token_budget);
+  if (tokenBudget !== null) params.tokenBudget = tokenBudget;
+  try {
+    let clearedCompletedGoal = false;
+    if (isCompletedThreadGoal(currentThreadGoalForSet(id))) {
+      await clearThreadGoalForSet(id);
+      clearedCompletedGoal = true;
+    }
+    let result = await setThreadGoalRpc(params);
+    let goal = threadGoalFromRpcResult(result);
+    if (!clearedCompletedGoal && isCompletedThreadGoal(goal)) {
+      await clearThreadGoalForSet(id);
+      clearedCompletedGoal = true;
+      result = await setThreadGoalRpc(params);
+      goal = threadGoalFromRpcResult(result);
+    }
+    return { ok: true, goal: goal || result, result, clearedCompletedGoal };
+  } catch (err) {
+    if (isThreadGoalRpcUnsupportedError(err)) {
+      throw httpStatusError(501, "Thread goal set is not supported by the running Codex app-server; restart Mobile Web with Codex CLI 0.135.0 or newer.");
+    }
+    throw err;
+  }
 }
 
 function continuationJobSourceKey(body) {
@@ -5955,6 +6298,7 @@ function publicContinuationJob(job) {
     sourceArchive: job.sourceArchive || null,
     sourceHandoff: job.sourceHandoff || null,
     lineage: job.lineage || null,
+    titleIndexed: Boolean(job.titleIndexed),
     result: job.status === "done" ? job.result : null,
     error: job.error || "",
     createdAt: new Date(job.createdAt).toISOString(),
@@ -6030,11 +6374,12 @@ async function startThreadFromRequestBody(body, options = {}) {
     });
   }
   const sourceThreadId = String(body.sourceThreadId || "").trim();
-  const sourceThreadTitle = String(body.sourceThreadTitle || "").trim();
+  const requestedSourceThreadTitle = String(body.sourceThreadTitle || "").trim();
   const archiveSourceThread = Boolean(body.archiveSourceThread && sourceThreadId);
-  const desiredTitle = newThreadTitle({ cwd, sourceThreadTitle });
   progress("source-snapshot", "正在读取源线程摘要", { sourceThreadId });
-  const sourceSnapshot = await continuationSourceSnapshot(sourceThreadId, sourceThreadTitle, visibility);
+  const sourceSnapshot = await continuationSourceSnapshot(sourceThreadId, requestedSourceThreadTitle, visibility);
+  const sourceThreadTitle = sourceTitleForContinuation(sourceSnapshot, requestedSourceThreadTitle, cwd);
+  const desiredTitle = newThreadTitle({ cwd, sourceThreadTitle });
   const runtimeSettings = applyPermissionModeOverride(sourceSnapshot.runtimeSettings || {}, body.permissionMode, cwd);
   progress("handoff", "正在生成源线程交接文件", { sourceThreadId });
   const sourceHandoff = await createSourceContinuationHandoff({
@@ -6070,6 +6415,8 @@ async function startThreadFromRequestBody(body, options = {}) {
   const result = await codex.request("thread/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
   const threadId = threadIdFromStartResult(result);
   if (job) job.threadId = threadId;
+  const titleIndexed = persistThreadTitleToSessionIndex(threadId, desiredTitle);
+  if (job) job.titleIndexed = titleIndexed;
   progress("title", "正在设置续接线程标题", { threadId });
   const titleUpdatedBeforeBootstrap = await tryUpdateThreadTitle(threadId, desiredTitle).catch(() => false);
   const bootstrapParams = applyTurnRuntimeSettings({
@@ -6138,6 +6485,7 @@ async function startThreadFromRequestBody(body, options = {}) {
     thread,
     title: desiredTitle,
     titleUpdated: Boolean(titleUpdatedBeforeBootstrap || titleUpdatedAfterBootstrap),
+    titleIndexed,
     sourceArchive,
     sourceContextWarnings: sourceSnapshot.readWarnings || [],
     sourceHandoff: sourceHandoff ? {
@@ -6434,6 +6782,10 @@ function attachThreadTaskCardsToThread(thread) {
   return thread;
 }
 
+function attachThreadGoalToThread(thread) {
+  return threadGoalService.attachGoalToThread(thread);
+}
+
 function attachThreadTaskCardCountsToSummary(thread) {
   if (!thread || typeof thread !== "object" || !thread.id) return thread;
   const taskCardCounts = threadTaskCardService.pendingCountsForThread(thread.id);
@@ -6443,6 +6795,10 @@ function attachThreadTaskCardCountsToSummary(thread) {
   return thread;
 }
 
+function attachThreadGoalsToThreadListResult(result) {
+  return threadGoalService.attachGoalsToThreadListResult(result);
+}
+
 function attachThreadTaskCardCountsToThreadListResult(result) {
   if (!result || typeof result !== "object") return result;
   if (Array.isArray(result.data)) result.data.forEach(attachThreadTaskCardCountsToSummary);
@@ -6450,8 +6806,13 @@ function attachThreadTaskCardCountsToThreadListResult(result) {
   return result;
 }
 
+function attachThreadListStateToResult(result) {
+  return attachThreadTaskCardCountsToThreadListResult(attachThreadGoalsToThreadListResult(result));
+}
+
 function attachThreadTaskCardsToResult(result) {
   if (!result || typeof result !== "object" || !result.thread) return result;
+  attachThreadGoalToThread(result.thread);
   attachThreadTaskCardsToThread(result.thread);
   return result;
 }
@@ -6653,8 +7014,9 @@ function filterFallbackThreads(threads, filters = {}) {
   const visibility = visibilityFromGlobalState(globalState);
   const cwdFilter = String(filters.cwd || "").trim();
   const search = String(filters.searchTerm || "").trim().toLowerCase();
+  const shouldFilterByWorkspace = anyThreadMatchesVisibleWorkspace(threads, visibility);
   return threads
-    .filter((thread) => !isHiddenThread(thread, visibility))
+    .filter((thread) => !(shouldFilterByWorkspace ? isHiddenThread(thread, visibility) : (threadHasArchiveSignal(thread) || isSubagentThreadSummary(thread))))
     .filter((thread) => threadMatchesWorkspaceCwd(thread && thread.cwd, cwdFilter))
     .filter((thread) => {
       if (!search) return true;
@@ -6714,6 +7076,22 @@ function readSessionIndexEntries(maxLines = 2000) {
   return byId;
 }
 
+function persistThreadTitleToSessionIndex(threadId, threadName, updatedAt = new Date()) {
+  const id = String(threadId || "").trim();
+  const name = fallbackDisplayText(threadName, 120);
+  if (!id || !name) return false;
+  const date = updatedAt instanceof Date ? updatedAt : new Date(updatedAt || Date.now());
+  const timestamp = Number.isFinite(date.getTime()) ? date.toISOString() : new Date().toISOString();
+  const p = path.join(CODEX_HOME, "session_index.jsonl");
+  try {
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.appendFileSync(p, `${JSON.stringify({ id, thread_name: name, updated_at: timestamp })}\n`, "utf8");
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 function readRolloutHead(rolloutPath, maxBytes = 128 * 1024) {
   if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) return "";
   let fd = null;
@@ -6734,6 +7112,76 @@ function readRolloutHead(rolloutPath, maxBytes = 128 * 1024) {
       } catch (_) {}
     }
   }
+}
+
+const ROLLOUT_TERMINAL_EVENT_TYPES = new Set([
+  "task_complete",
+  "task_completed",
+  "task_failed",
+  "task_interrupted",
+  "task_cancelled",
+  "task_canceled",
+  "turn_completed",
+  "turn_failed",
+  "turn_interrupted",
+  "turn_cancelled",
+  "turn_canceled",
+]);
+
+const ROLLOUT_ACTIVITY_EVENT_TYPES = new Set([
+  "task_started",
+  "user_message",
+  "agent_message",
+  "agent_reasoning",
+  "exec_command_begin",
+  "exec_command_end",
+  "patch_apply_begin",
+  "patch_apply_end",
+  "web_search_begin",
+  "web_search_end",
+]);
+
+function rolloutEntryPayloadType(entry) {
+  const payload = entry && entry.payload && typeof entry.payload === "object" ? entry.payload : {};
+  return String(payload.type || "");
+}
+
+function isRolloutTerminalEntry(entry) {
+  return entry && entry.type === "event_msg" && ROLLOUT_TERMINAL_EVENT_TYPES.has(rolloutEntryPayloadType(entry));
+}
+
+function isRolloutActivityEntry(entry) {
+  if (!entry || !entry.type) return false;
+  if (entry.type === "response_item") return true;
+  if (entry.type === "turn_context") return true;
+  return entry.type === "event_msg" && ROLLOUT_ACTIVITY_EVENT_TYPES.has(rolloutEntryPayloadType(entry));
+}
+
+function inferRolloutFallbackStatus(rolloutPath, stat = null, nowMs = Date.now()) {
+  if (!rolloutPath) return null;
+  const mtimeMs = Number(stat && stat.mtimeMs || 0);
+  const tail = readRolloutTail(rolloutPath);
+  if (!tail) return null;
+  let lastActivityMs = 0;
+  let lastTerminalMs = 0;
+  for (const line of tail.split(/\r?\n/)) {
+    if (!line || !line.trim()) continue;
+    const entry = parseJsonLine(line);
+    if (!entry || !entry.type) continue;
+    const timestampMs = timestampToMs(entry.timestamp || (entry.payload && entry.payload.timestamp));
+    if (!timestampMs) continue;
+    if (isRolloutTerminalEntry(entry)) {
+      lastTerminalMs = Math.max(lastTerminalMs, timestampMs);
+      continue;
+    }
+    if (isRolloutActivityEntry(entry)) lastActivityMs = Math.max(lastActivityMs, timestampMs);
+  }
+  if (lastTerminalMs && lastTerminalMs >= lastActivityMs) return { type: "completed" };
+  const recentActivityMs = lastActivityMs > lastTerminalMs ? Math.max(lastActivityMs, mtimeMs) : 0;
+  if (recentActivityMs && nowMs - recentActivityMs <= ROLLOUT_ACTIVE_STATUS_WINDOW_MS) {
+    return { type: "active" };
+  }
+  return null;
 }
 
 function rolloutEntryCwd(entry) {
@@ -6779,9 +7227,11 @@ function readRolloutSessionFallbackThreadFromFile(file, indexEntry = {}) {
     if (cwd && timestampMs) break;
   }
 
-  const updatedMs = timestampToMs(indexEntry.updated_at || indexEntry.updatedAt)
-    || timestampMs
-    || Number(stat.mtimeMs || 0);
+  const updatedMs = Math.max(
+    timestampToMs(indexEntry.updated_at || indexEntry.updatedAt),
+    timestampMs,
+    Number(stat.mtimeMs || 0),
+  );
   return rowToFallbackThread({
     id,
     thread_name: fallbackDisplayText(indexEntry.thread_name || indexEntry.name || indexEntry.title),
@@ -6791,6 +7241,7 @@ function readRolloutSessionFallbackThreadFromFile(file, indexEntry = {}) {
     archived_at: null,
     updatedAt: Math.floor(updatedMs / 1000),
     model,
+    status: inferRolloutFallbackStatus(rolloutPath, stat) || undefined,
   });
 }
 
@@ -6856,12 +7307,12 @@ function readSessionIndexFallback(limit = 80, filters = {}) {
 
 function readThreadListFallback(limit = 80, filters = {}) {
   const stateDbFallback = readStateDbFallback(limit, filters);
-  const rolloutFallback = stateDbFallback.length >= limit ? [] : readRolloutSessionFallback(limit, filters);
-  return [
+  const rolloutFallback = readRolloutSessionFallback(limit, filters);
+  return mergeThreadSummaryList([
     ...stateDbFallback,
     ...rolloutFallback,
     ...readSessionIndexFallback(limit, filters),
-  ].slice(0, limit);
+  ]).slice(0, limit);
 }
 
 async function listWorkspaces() {
@@ -7491,6 +7942,17 @@ async function handleApi(req, res) {
     sendJson(res, 200, result || { archived: true });
     return;
   }
+  const threadGoal = url.pathname.match(/^\/api\/threads\/([^/]+)\/goal$/);
+  if (threadGoal && req.method === "POST") {
+    try {
+      const threadId = decodeURIComponent(threadGoal[1]);
+      const body = await readBody(req);
+      sendJson(res, 200, await setThreadGoal(threadId, body));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
   if (url.pathname === "/api/threads" && req.method === "GET") {
     const globalState = readGlobalState();
     const visibility = visibilityFromGlobalState(globalState);
@@ -7525,14 +7987,16 @@ async function handleApi(req, res) {
       if (Array.isArray(result.data)) result.data = result.data.slice(0, limit);
       if (Array.isArray(result.threads)) result.threads = result.threads.slice(0, limit);
       sendJson(res, 200, tokenUsageStatsService.decorateThreadListResult(
-        attachThreadTaskCardCountsToThreadListResult(result),
+        attachThreadListStateToResult(result),
         { cwd, days: 31, workspaceCwds: tokenUsageWorkspaceCwds(globalState) },
       ));
     } catch (err) {
       const fallback = readThreadListFallback(limit, { cwd, searchTerm, globalState });
       if (fallback.length) {
         sendJson(res, 200, tokenUsageStatsService.decorateThreadListResult({
-          data: fallback.map(attachThreadTaskCardCountsToSummary),
+          data: attachThreadGoalsToThreadListResult({
+            data: fallback.map(attachThreadTaskCardCountsToSummary),
+          }).data,
           mobileFallback: true,
           warning: err.message || String(err),
         }, { cwd, days: 31, workspaceCwds: tokenUsageWorkspaceCwds(globalState) }));
@@ -7561,12 +8025,46 @@ async function handleApi(req, res) {
     }
     try {
       const updated = await tryUpdateThreadTitle(threadId, name);
-      if (!updated) {
+      const titleIndexed = persistThreadTitleToSessionIndex(threadId, name);
+      if (!updated && !titleIndexed) {
         sendJson(res, 501, { error: "Thread rename is not supported by this app-server" });
         return;
       }
-      sendJson(res, 200, { ok: true, threadId, name });
+      rememberStartedThread(Object.assign({}, readStartedThread(threadId) || readRolloutSessionFallbackThread(threadId) || {}, {
+        id: threadId,
+        name,
+        preview: name,
+        status: { type: "notLoaded" },
+      }));
+      sendJson(res, 200, {
+        ok: true,
+        threadId,
+        name,
+        titleUpdated: updated,
+        titleIndexed,
+        warning: updated ? "" : "Thread rename was stored in the Mobile fallback index; app-server rename is unavailable.",
+      });
     } catch (err) {
+      if (isRecoverableThreadTitleUpdateError(err)) {
+        const titleIndexed = persistThreadTitleToSessionIndex(threadId, name);
+        if (titleIndexed) {
+          rememberStartedThread(Object.assign({}, readStartedThread(threadId) || readRolloutSessionFallbackThread(threadId) || {}, {
+            id: threadId,
+            name,
+            preview: name,
+            status: { type: "notLoaded" },
+          }));
+          sendJson(res, 200, {
+            ok: true,
+            threadId,
+            name,
+            titleUpdated: false,
+            titleIndexed,
+            warning: "Thread rename was stored in the Mobile fallback index; app-server title update is temporarily unavailable.",
+          });
+          return;
+        }
+      }
       sendJson(res, err.statusCode || 500, { error: err.message || String(err) });
     }
     return;
@@ -8052,11 +8550,14 @@ if (require.main === module) {
 
 module.exports = {
   approvalResponsePayload,
+  anyThreadMatchesVisibleWorkspace,
   compactThread,
   enrichThreadItemTimestampsFromRollout,
+  filterFallbackThreads,
   filePreviewContentDisposition,
   filePreviewContentType,
   generatedImageContentUrl,
+  hydrateThreadListTitlesFromSessionIndex,
   isHiddenThread,
   mergeThreadListFallback,
   mimeFor,

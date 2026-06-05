@@ -33,8 +33,8 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(stylesCss, /html,\s*\nbody\s*{[\s\S]*touch-action:\s*pan-x pan-y;/);
   assert.match(stylesCss, /html\s*{[\s\S]*height:\s*-webkit-fill-available;/);
   assert.match(stylesCss, /body\s*{[\s\S]*min-height:\s*-webkit-fill-available;/);
-  assert.match(stylesCss, /html\.embed-hermes \.composer\s*{[\s\S]*padding-bottom:\s*calc\(18px \+ env\(safe-area-inset-bottom, 0px\)\);/);
-  assert.match(stylesCss, /html\.embed-hermes\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*14px;/);
+  assert.match(stylesCss, /html\.embed-hermes \.composer\s*{[\s\S]*padding-bottom:\s*clamp\(12px, calc\(env\(safe-area-inset-bottom, 0px\) - 82px\), 56px\);/);
+  assert.match(stylesCss, /html\.embed-hermes\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*10px;/);
   assert.match(stylesCss, /html\.embed-hermes \.main \.version-actions/);
   assert.match(indexHtml, /id="continuationDialog"/);
   assert.match(appJs, /function openContinuationDialog\(/);
@@ -42,14 +42,15 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(appJs, /function closeContinuationDialog\(/);
   assert.match(stylesCss, /\.continuation-dialog/);
   assert.match(stylesCss, /html\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*12px;/);
-  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.embed-hermes \.composer\s*{[\s\S]*padding-bottom:\s*calc\(14px \+ env\(safe-area-inset-bottom, 0px\)\);/);
-  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.embed-hermes\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*10px;/);
+  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.composer\s*{[\s\S]*gap:\s*6px;[\s\S]*padding:\s*7px 12px clamp\(8px, calc\(env\(safe-area-inset-bottom, 0px\) - 88px\), 52px\);/);
+  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.embed-hermes \.composer\s*{[\s\S]*padding-bottom:\s*clamp\(8px, calc\(env\(safe-area-inset-bottom, 0px\) - 84px\), 56px\);/);
+  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.embed-hermes\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*8px;/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*7px;/);
 });
 
-test("public app shell cache advances after quota and token stat display fixes", () => {
-  assert.match(swJs, /codex-mobile-shell-v177/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v177"/);
+test("public app shell cache advances after WeChat-style composer bottom adjustment", () => {
+  assert.match(swJs, /codex-mobile-shell-v189/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v189"/);
   assert.match(appJs, /startupThreadOpenPending: false/);
   assert.match(indexHtml, /id="pluginStartupLoading"/);
   assert.match(indexHtml, /data-plugin-startup-title>正在加载 Codex\.\.\.</);

@@ -165,6 +165,8 @@ test("mux forwards server requests and returns client responses with the origina
   const endpoint = await waitFor(() => readJsonFile(endpointFile));
   assert.equal(endpoint.protocol, "jsonl-tcp");
   assert.equal(endpoint.host, "127.0.0.1");
+  assert.equal(endpoint.codexExe, process.execPath);
+  assert.equal(endpoint.capabilities.threadGoalRpc, true);
 
   const socket = await connectJsonl(endpoint.port);
   t.after(() => socket.destroy());

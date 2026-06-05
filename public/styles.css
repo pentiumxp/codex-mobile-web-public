@@ -470,11 +470,11 @@ html.embed-hermes .conversation {
 }
 
 html.embed-hermes .composer {
-  padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: clamp(12px, calc(env(safe-area-inset-bottom, 0px) - 82px), 56px);
 }
 
 html.embed-hermes.keyboard-open .composer {
-  padding-bottom: 14px;
+  padding-bottom: 10px;
 }
 
 html.embed-hermes .login {
@@ -648,6 +648,129 @@ html.visual-recovering body::before {
 
 .update-dialog.hidden {
   display: none;
+}
+
+.goal-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 98;
+  display: grid;
+  align-items: center;
+  justify-items: center;
+  padding: 18px;
+  background: rgba(10, 14, 18, 0.52);
+}
+
+.goal-dialog.hidden {
+  display: none;
+}
+
+.goal-panel {
+  width: min(520px, 100%);
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.goal-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.goal-panel-title {
+  font-size: 17px;
+  font-weight: 760;
+}
+
+.goal-panel-subtitle {
+  max-width: min(72vw, 400px);
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.goal-panel-close {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 32px;
+  height: 32px;
+  color: var(--muted);
+  background: var(--control-muted-bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+}
+
+.goal-field {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.goal-field textarea,
+.goal-field input {
+  width: 100%;
+  min-width: 0;
+  color: var(--text);
+  background: var(--control-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+}
+
+.goal-field textarea {
+  min-height: 108px;
+  resize: vertical;
+  padding: 10px;
+  line-height: 1.45;
+}
+
+.goal-field input {
+  min-height: 40px;
+  padding: 0 10px;
+}
+
+.goal-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.goal-cancel,
+.goal-submit {
+  min-height: 40px;
+  border-radius: 8px;
+  border: 1px solid var(--line-soft);
+  font-size: 14px;
+  font-weight: 740;
+}
+
+.goal-cancel {
+  color: var(--muted);
+  background: transparent;
+}
+
+.goal-submit {
+  color: var(--text-on-accent);
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+.goal-cancel:disabled,
+.goal-submit:disabled,
+.goal-panel-close:disabled {
+  opacity: 0.6;
 }
 
 .update-panel {
@@ -2139,6 +2262,35 @@ html.visual-recovering body::before {
   white-space: nowrap;
 }
 
+.thread-card-goal-badge {
+  flex: 0 0 auto;
+  max-width: 70px;
+  padding: 3px 6px;
+  color: var(--accent-strong);
+  background: rgba(122, 199, 167, 0.12);
+  border: 1px solid rgba(122, 199, 167, 0.42);
+  border-radius: 7px;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.thread-card-goal-badge.status-complete {
+  color: var(--muted);
+  background: var(--control-bg);
+  border-color: var(--line-soft);
+}
+
+.thread-card-goal-badge.status-budgetlimited,
+.thread-card-goal-badge.status-usagelimited,
+.thread-card-goal-badge.status-blocked {
+  color: var(--danger-text);
+  background: rgba(241, 135, 125, 0.14);
+  border-color: rgba(241, 135, 125, 0.5);
+}
+
 .thread-card-size.warn {
   color: var(--danger-text);
   border-color: rgba(241, 135, 125, 0.5);
@@ -2450,6 +2602,75 @@ html.visual-recovering body::before {
   color: var(--muted);
   padding: 32px 0;
   text-align: center;
+}
+
+.thread-goal-card {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 11px 12px;
+  color: var(--text);
+  background: rgba(122, 199, 167, 0.08);
+  border: 1px solid rgba(122, 199, 167, 0.34);
+  border-radius: 8px;
+}
+
+.thread-goal-card.status-complete {
+  color: var(--muted);
+  background: var(--panel);
+  border-color: var(--line-soft);
+}
+
+.thread-goal-card.status-budgetlimited,
+.thread-goal-card.status-usagelimited,
+.thread-goal-card.status-blocked {
+  background: rgba(241, 135, 125, 0.1);
+  border-color: rgba(241, 135, 125, 0.42);
+}
+
+.thread-goal-card-top {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.thread-goal-card-label {
+  flex: 0 0 auto;
+  color: var(--accent-strong);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.thread-goal-card.status-complete .thread-goal-card-label {
+  color: var(--muted);
+}
+
+.thread-goal-card.status-budgetlimited .thread-goal-card-label,
+.thread-goal-card.status-usagelimited .thread-goal-card-label,
+.thread-goal-card.status-blocked .thread-goal-card-label {
+  color: var(--danger-text);
+}
+
+.thread-goal-card-meta {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.thread-goal-card-objective {
+  min-width: 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.42;
+  overflow-wrap: anywhere;
 }
 
 .home-shortcuts {
@@ -4678,12 +4899,12 @@ html.keyboard-open .composer {
       "controls controls controls"
       "attachments attachments attachments"
       "attach input send";
-    gap: 8px;
-    padding: 8px 12px max(12px, calc(7px + env(safe-area-inset-bottom, 0px)));
+    gap: 6px;
+    padding: 7px 12px clamp(8px, calc(env(safe-area-inset-bottom, 0px) - 88px), 52px);
   }
 
   html.embed-hermes .composer {
-    padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: clamp(8px, calc(env(safe-area-inset-bottom, 0px) - 84px), 56px);
   }
 
   html.keyboard-open .composer {
@@ -4691,7 +4912,7 @@ html.keyboard-open .composer {
   }
 
   html.embed-hermes.keyboard-open .composer {
-    padding-bottom: 10px;
+    padding-bottom: 8px;
   }
 
   .composer-body {

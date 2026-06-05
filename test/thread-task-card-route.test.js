@@ -60,6 +60,19 @@ test("thread task card routes preserve service status codes", () => {
   assert.equal(statusPreservingErrors.length, 6);
 });
 
+test("approved task cards inherit target thread model and effort", () => {
+  const setupBlock = serverJs.slice(
+    serverJs.indexOf("const threadTaskCardService = createThreadTaskCardService"),
+    serverJs.indexOf("const PUSH_VAPID_FILE"),
+  );
+  assert.match(setupBlock, /const runtimeSettings = await resolveThreadRuntimeSettings\(card\.target\.threadId\);/);
+  assert.match(setupBlock, /thread\/resume", applyResumeRuntimeSettings\(/);
+  assert.match(setupBlock, /const turnParams = applyTurnRuntimeSettings\(/);
+  assert.match(setupBlock, /codex\.request\("turn\/start", turnParams/);
+  assert.match(functionBody(serverJs, "applyTurnRuntimeSettings"), /if \(settings\.reasoningEffort\) params\.effort = settings\.reasoningEffort;/);
+  assert.match(functionBody(serverJs, "applyTurnRuntimeSettings"), /if \(settings\.model\) params\.model = settings\.model;/);
+});
+
 test("server materializes structured task-card drafts from thread detail", () => {
   assert.match(serverJs, /const THREAD_TASK_CARD_DRAFT_TAG = "codex-mobile-thread-task-card-draft"/);
   assert.match(serverJs, /const THREAD_TASK_CARD_BODY_MAX_CHARS = 8_000/);
@@ -87,7 +100,7 @@ test("server materializes structured task-card drafts from thread detail", () =>
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v177"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v189"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.threadRole \|\| ""\) === "target"\)/);

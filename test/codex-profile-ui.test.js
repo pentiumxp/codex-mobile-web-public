@@ -41,6 +41,8 @@ test("windowless launcher reads active profile store before starting mux", () =>
   assert.doesNotMatch(launcher, /if \(\[string\]::IsNullOrWhiteSpace\(\$env:CODEX_HOME\)\) \{\s*\$profileCodexHome = Resolve-CodexHomeFromProfileStore/);
   assert.match(launcher, /Ensure-SharedProfileState -ProfilePath \$UserProfilePath -CodexHome \$env:CODEX_HOME/);
   assert.match(launcher, /Start-StandaloneMuxIfNeeded/);
+  assert.match(launcher, /Test-MuxEndpoint -EndpointFile \$endpointFile -ExpectedCodexExe \$resolvedCodexExe/);
+  assert.match(launcher, /if \(-not \$endpoint\.codexExe\) \{/);
 });
 
 test("windowless launcher shares thread state without replacing profile auth", () => {
