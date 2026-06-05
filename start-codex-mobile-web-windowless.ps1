@@ -217,13 +217,50 @@ if ([string]::IsNullOrWhiteSpace($LogPath)) {
     $LogPath = Join-Path $runtimeRoot "codex-mobile-web.startup.log"
 }
 
+function Resolve-CodexExecutable {
+    param(
+        [string]$RuntimePath,
+        [string]$RequestedCodexExe
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($RequestedCodexExe)) {
+        return $RequestedCodexExe
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:CODEX_MOBILE_CODEX_EXE)) {
+        return $env:CODEX_MOBILE_CODEX_EXE
+    }
+
+    $candidates = @()
+    $localBin = Join-Path $env:LOCALAPPDATA "OpenAI\Codex\bin"
+    if (Test-Path -LiteralPath $localBin) {
+        $candidates += Get-ChildItem -LiteralPath $localBin -Recurse -Filter "codex.exe" -ErrorAction SilentlyContinue
+    }
+    $runtimeCodexExe = Join-Path $RuntimePath "codex.exe"
+    if (Test-Path -LiteralPath $runtimeCodexExe) {
+        $candidates += Get-Item -LiteralPath $runtimeCodexExe
+    }
+    $selected = $candidates |
+        Where-Object { $_ -and $_.FullName -and (Test-Path -LiteralPath $_.FullName) } |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+    if ($selected -and $selected.FullName) {
+        return $selected.FullName
+    }
+    return "codex"
+}
+
+$CodexExe = Resolve-CodexExecutable -RuntimePath $runtimeRoot -RequestedCodexExe $CodexExe
+
 $startScript = Join-Path $scriptRoot "start-codex-mobile-web.ps1"
 if (-not (Test-Path -LiteralPath $startScript)) {
     throw "Startup script not found: $startScript"
 }
 
 function Test-MuxEndpoint {
-    param([string]$EndpointFile)
+    param(
+        [string]$EndpointFile,
+        [string]$ExpectedCodexExe = ""
+    )
 
     try {
         if (-not (Test-Path -LiteralPath $EndpointFile)) {
@@ -232,6 +269,24 @@ function Test-MuxEndpoint {
         $endpoint = Get-Content -LiteralPath $EndpointFile -Raw | ConvertFrom-Json
         if (-not $endpoint.host -or -not $endpoint.port) {
             return $false
+        }
+        if (-not [string]::IsNullOrWhiteSpace($ExpectedCodexExe)) {
+            if (-not $endpoint.codexExe) {
+                return $false
+            }
+            try {
+                $expectedPath = (Get-Item -LiteralPath $ExpectedCodexExe -ErrorAction Stop).FullName
+            } catch {
+                $expectedPath = $ExpectedCodexExe
+            }
+            try {
+                $actualPath = (Get-Item -LiteralPath ([string]$endpoint.codexExe) -ErrorAction Stop).FullName
+            } catch {
+                $actualPath = [string]$endpoint.codexExe
+            }
+            if (-not [string]::Equals($actualPath, $expectedPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+                return $false
+            }
         }
         $client = [System.Net.Sockets.TcpClient]::new()
         try {
@@ -260,7 +315,8 @@ function Start-StandaloneMuxIfNeeded {
     $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $ProfilePath ".codex" }
     $muxRuntimeDir = Join-Path $codexHome "app-server-mux"
     $endpointFile = Join-Path $muxRuntimeDir "endpoint.json"
-    if (Test-MuxEndpoint -EndpointFile $endpointFile) {
+    $resolvedCodexExe = Resolve-CodexExecutable -RuntimePath $RuntimePath -RequestedCodexExe $RequestedCodexExe
+    if (Test-MuxEndpoint -EndpointFile $endpointFile -ExpectedCodexExe $resolvedCodexExe) {
         "[$(Get-Date -Format "yyyy-MM-dd HH:mm:ss zzz")] Reusing existing mux endpoint: $endpointFile" | Add-Content -LiteralPath $LogPath -Encoding Unicode
         return
     }
@@ -275,16 +331,6 @@ function Start-StandaloneMuxIfNeeded {
     $nodeCommand = Get-Command "node.exe" -ErrorAction SilentlyContinue
     if (-not $nodeCommand -or -not $nodeCommand.Source) {
         throw "node.exe not found in PATH"
-    }
-
-    $resolvedCodexExe = $RequestedCodexExe
-    if ([string]::IsNullOrWhiteSpace($resolvedCodexExe)) {
-        $runtimeCodexExe = Join-Path $RuntimePath "codex.exe"
-        if (Test-Path -LiteralPath $runtimeCodexExe) {
-            $resolvedCodexExe = $runtimeCodexExe
-        } else {
-            $resolvedCodexExe = "codex"
-        }
     }
 
     $oldMuxStandalone = $env:CODEX_MUX_STANDALONE
@@ -315,7 +361,7 @@ function Start-StandaloneMuxIfNeeded {
 
     $deadline = (Get-Date).AddSeconds(12)
     while ((Get-Date) -lt $deadline) {
-        if (Test-MuxEndpoint -EndpointFile $endpointFile) {
+        if (Test-MuxEndpoint -EndpointFile $endpointFile -ExpectedCodexExe $resolvedCodexExe) {
             "[$(Get-Date -Format "yyyy-MM-dd HH:mm:ss zzz")] Standalone mux endpoint is ready: $endpointFile" | Add-Content -LiteralPath $LogPath -Encoding Unicode
             return
         }

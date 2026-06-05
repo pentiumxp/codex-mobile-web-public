@@ -141,7 +141,11 @@ Implementation path:
 9. Instruct the new thread to use bounded reads for large handoff/context files: top metadata plus recent tail first, targeted search next, full reads only when needed.
 10. Avoid injecting unrelated private thread rules into the new bootstrap.
 11. For runtime settings, read rollout `turn_context` and SQLite/app-server metadata; pass only fields supported by app-server.
-12. Test with `test/continuation-lineage.test.js`, `test/continuation-handoff-compaction-service.test.js`, `test/new-thread-route.test.js`, and relevant runtime-settings tests. Keep focused workspace context compaction service tests green before changing route/UI wiring.
+12. Persist the computed continuation title to `session_index.jsonl` after
+    `thread/start`. App-server rename RPCs are best-effort; fallback list
+    refreshes must still recover the intended title instead of showing the new
+    thread id or bootstrap prompt.
+13. Test with `test/continuation-lineage.test.js`, `test/continuation-handoff-compaction-service.test.js`, `test/new-thread-route.test.js`, and relevant runtime-settings tests. Keep focused workspace context compaction service tests green before changing route/UI wiring.
 
 ## Mux And Desktop Live Sync
 
@@ -225,6 +229,22 @@ Implementation path:
 6. Add tests that cover both small threads and large-rollout fallback paths,
    plus continuation and cross-thread task-card injection paths.
 7. Re-check `/api/public-config` and a real continuation/new send path after activation.
+
+## Thread Goals
+
+Use when changing CLI/Desktop goal visibility, goal status display, or thread-level goal state.
+
+Implementation path:
+
+1. Inspect the generated app-server protocol from the local Codex CLI before adding UI actions. Codex app-server 0.135.0 and newer expose `thread/goal/set`, `thread/goal/get`, and `thread/goal/clear` requests plus `thread/goal/updated` and `thread/goal/cleared` notifications.
+2. Keep Mobile Web goal state app-server-owned. Do not write `<CODEX_HOME>\goals_1.sqlite` directly; Mobile should call the official app-server goal RPC and treat sqlite as a fallback read path.
+3. Use `adapters/thread-goal-service.js` to read `<CODEX_HOME>\goals_1.sqlite` as a cold-start/list/detail fallback and normalize sqlite statuses such as `budget_limited` into public camelCase status values.
+4. Decorate both `GET /api/threads` list rows and `GET /api/threads/:id` detail responses with `thread.goal`; sqlite errors, missing tables, missing db files, or lock contention must not break the thread list.
+5. In `public/app.js`, handle `thread/goal/updated` and `thread/goal/cleared` before the current-thread-only notification guard so non-current list rows update.
+6. Include the goal signature in both the thread-list render signature and `conversationRenderSignature`; otherwise a valid notification may update state without repainting.
+7. For Mobile goal creation, use the composer `/g` command to open the goal dialog, then call `POST /api/threads/:id/goal`; `server.js` should forward that to app-server `thread/goal/set`. If the running app-server is older and lacks the method, return a clear unsupported-version error instead of sending a normal chat message and asking the model to guess.
+8. If the set response succeeds but lacks a public goal object, keep the user-visible target explicit by rendering a submitted-goal card from the dialog objective/token budget until `thread/goal/updated` or sqlite fallback data replaces it.
+9. If the frontend shell changes, bump `CLIENT_BUILD_ID`, `public/sw.js` cache name, and the matching tests.
 
 ## Hermes Mobile Plugin Deployment
 

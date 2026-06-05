@@ -10,7 +10,7 @@ const USER_HOME = process.env.USERPROFILE || process.env.HOME || process.cwd();
 const RUNTIME_ROOT = process.env.CODEX_MOBILE_RUNTIME_DIR || path.join(USER_HOME, ".codex-mobile-web");
 const CODEX_HOME = process.env.CODEX_HOME || path.join(USER_HOME, ".codex");
 const RUNTIME_CODEX_EXE = path.join(RUNTIME_ROOT, "codex.exe");
-const CODEX_EXE = process.env.CODEX_MUX_CODEX_EXE || (fs.existsSync(RUNTIME_CODEX_EXE) ? RUNTIME_CODEX_EXE : "codex");
+const CODEX_EXE = process.env.CODEX_MUX_CODEX_EXE || resolveCodexExecutable();
 const PASSTHROUGH_ARGS = process.argv.slice(2);
 const CODEX_ARGS = process.env.CODEX_MUX_CODEX_ARGS
   ? process.env.CODEX_MUX_CODEX_ARGS.split(/\s+/).filter(Boolean)
@@ -59,6 +59,45 @@ let nextSyntheticItemId = 1;
 let nextReplaySeq = 1;
 let initializeResult = null;
 let lastLogTrimAt = 0;
+
+function codexExeCandidatesFromDir(dir, maxDepth = 2) {
+  const out = [];
+  function visit(current, depth) {
+    if (!current || depth > maxDepth) return;
+    let entries = [];
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch (_) {
+      return;
+    }
+    for (const entry of entries) {
+      const fullPath = path.join(current, entry.name);
+      if (entry.isFile() && entry.name.toLowerCase() === "codex.exe") out.push(fullPath);
+      else if (entry.isDirectory()) visit(fullPath, depth + 1);
+    }
+  }
+  visit(dir, 0);
+  return out;
+}
+
+function resolveCodexExecutable() {
+  const candidates = [];
+  const localAppData = process.env.LOCALAPPDATA || path.join(USER_HOME, "AppData", "Local");
+  candidates.push(...codexExeCandidatesFromDir(path.join(localAppData, "OpenAI", "Codex", "bin"), 2));
+  candidates.push(RUNTIME_CODEX_EXE);
+  const existing = candidates
+    .filter(Boolean)
+    .filter((candidate) => {
+      try {
+        return fs.statSync(candidate).isFile();
+      } catch (_) {
+        return false;
+      }
+    })
+    .map((candidate) => ({ candidate, mtimeMs: fs.statSync(candidate).mtimeMs }))
+    .sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return existing[0] ? existing[0].candidate : "codex";
+}
 
 function trimLogFile(filePath, maxBytes, keepBytes) {
   try {
@@ -685,11 +724,13 @@ function startTcpServer() {
       port: address.port,
       pid: process.pid,
       childPid: child ? child.pid : null,
+      codexExe: CODEX_EXE,
       startedAt: new Date().toISOString(),
       capabilities: {
         mobileUserMessageEcho: true,
         serverRequestProxy: true,
         notificationReplay: true,
+        threadGoalRpc: true,
       },
     };
     const publish = await shouldPublishEndpoint();

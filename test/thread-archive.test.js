@@ -23,10 +23,25 @@ test("thread long-press action sheet archives instead of using left swipe", () =
 test("archive state merge keeps backup and archived-session filters active", () => {
   const matches = serverJs.match(/function mergeThreadStateFromStateDb\(/g) || [];
   assert.equal(matches.length, 1);
+  assert.match(serverJs, /MOBILE_ARCHIVED_THREAD_IDS_FILE/);
+  assert.match(serverJs, /createMobileArchiveIndexService/);
   assert.match(serverJs, /function isBackupRolloutPath\(/);
   assert.match(serverJs, /archivedSessionThreadIds\(\)/);
+  assert.match(serverJs, /mobileArchiveIndexService\.threadIds\(\)/);
+  assert.match(serverJs, /threadHasArchiveSignal\(thread\)/);
   assert.match(serverJs, /isBackupRolloutPath\(row\.rollout_path\)/);
   assert.ok(serverJs.includes("url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/archive$/)"));
+});
+
+test("archive route remembers ids in Mobile local archive index", () => {
+  assert.match(serverJs, /function rememberMobileArchivedThreadId\(/);
+  assert.match(serverJs, /function archivedResultWithMobileIndex\(/);
+  assert.match(serverJs, /function alreadyArchivedResult\(/);
+  assert.match(serverJs, /function isThreadIdArchivedLocally\(/);
+  assert.match(serverJs, /if \(isThreadIdArchivedLocally\(threadId\)\) return alreadyArchivedResult\("mobile-index", threadId, false\);/);
+  assert.match(serverJs, /return archivedResultWithMobileIndex\(result, threadId\);/);
+  assert.match(serverJs, /return alreadyArchivedResult\("state-db", threadId\);/);
+  assert.match(serverJs, /return alreadyArchivedResult\("", threadId\);/);
 });
 
 test("projectless session-index fallback skips archived sessions", () => {

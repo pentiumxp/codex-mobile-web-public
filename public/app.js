@@ -111,6 +111,8 @@ const state = {
   continuationSourceThreadId: "",
   continuationNewThreadId: "",
   continuationJobId: "",
+  goalDialogThreadId: "",
+  goalSubmitBusy: false,
   pendingAttachments: [],
   composerBusy: false,
   sendButtonHint: "",
@@ -184,6 +186,7 @@ const state = {
   scheduledThreadTaskCardDraftCreations: new Set(),
   activeThreadTaskCardDraftCreations: new Set(),
   runningThreadIds: loadStringSetStorage("codexMobileRunningThreadIds"),
+  runningThreadHintedAtById: loadNumberMapStorage("codexMobileRunningThreadHintedAtById", {}),
   unreadThreadIds: loadStringSetStorage("codexMobileUnreadThreadIds"),
   rolloutWarningDismissals: loadStringSetStorage("codexMobileDismissedRolloutWarnings"),
   codexFastMode: localStorage.getItem("codexMobileCodexFastMode") === "on",
@@ -214,9 +217,10 @@ const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 8;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v178";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v186";
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
+const RUNNING_THREAD_HINT_STALE_MS = 20 * 60 * 1000;
 const PAGE_SHELL_ASSETS = Object.freeze([
   "/",
   "/index.html",
@@ -242,6 +246,7 @@ const CONVERSATION_SCROLL_INTENT_MS = 1200;
 const STORAGE_THREAD_ID = "codexMobileCurrentThreadId";
 const STORAGE_CONTINUATION_JOB = "codexMobileContinuationJobId";
 const STORAGE_RUNNING_THREAD_IDS = "codexMobileRunningThreadIds";
+const STORAGE_RUNNING_THREAD_HINTED_AT = "codexMobileRunningThreadHintedAtById";
 const STORAGE_UNREAD_THREAD_IDS = "codexMobileUnreadThreadIds";
 const STORAGE_DISMISSED_ROLLOUT_WARNINGS = "codexMobileDismissedRolloutWarnings";
 const STORAGE_FONT_SIZE = "codexMobileFontSize";
@@ -275,6 +280,7 @@ const THREAD_TASK_CARD_DRAFT_CREATE_STALE_MS = 45000;
 const THREAD_TASK_CARD_DRAFT_CREATE_MAX_ATTEMPTS = 3;
 const THREAD_TASK_CARD_BODY_MAX_CHARS = 8000;
 const THREAD_TASK_CARD_COMMAND_PREFIX = "#自由协作";
+const THREAD_GOAL_COMMAND_PREFIX = "/g";
 const THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";
 const THREAD_TASK_CARD_DRAFT_TAG = "codex-mobile-thread-task-card-draft";
 const THEME_VALUES = new Set(["system", "dark", "light"]);
@@ -354,6 +360,30 @@ function loadStringSetStorage(key) {
     return new Set(Array.isArray(value) ? value.map((item) => String(item || "")).filter(Boolean) : []);
   } catch (_) {
     return new Set();
+  }
+}
+
+function loadNumberMapStorage(key, fallback = {}) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || "{}");
+    if (!value || typeof value !== "object" || Array.isArray(value)) return fallback;
+    const out = {};
+    for (const [id, timestamp] of Object.entries(value)) {
+      const keyId = String(id || "").trim();
+      const number = Number(timestamp || 0);
+      if (keyId && Number.isFinite(number) && number > 0) out[keyId] = number;
+    }
+    return out;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function saveNumberMapStorage(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value && typeof value === "object" ? value : {}));
+  } catch (_) {
+    // Status hints are best-effort UI state.
   }
 }
 
@@ -692,6 +722,7 @@ function statusText(status) {
 
 function saveThreadStatusHints() {
   saveStringSetStorage(STORAGE_RUNNING_THREAD_IDS, state.runningThreadIds);
+  saveNumberMapStorage(STORAGE_RUNNING_THREAD_HINTED_AT, state.runningThreadHintedAtById);
   saveStringSetStorage(STORAGE_UNREAD_THREAD_IDS, state.unreadThreadIds);
 }
 
@@ -813,6 +844,54 @@ function markThreadViewed(threadId) {
   saveThreadStatusHints();
 }
 
+function noteRunningThreadHint(threadId, nowMs = Date.now()) {
+  const id = String(threadId || "");
+  if (!id) return false;
+  let changed = false;
+  if (!state.runningThreadIds.has(id)) {
+    state.runningThreadIds.add(id);
+    changed = true;
+  }
+  const previous = Number(state.runningThreadHintedAtById[id] || 0);
+  if (!previous || Math.abs(nowMs - previous) > 1000) {
+    state.runningThreadHintedAtById[id] = nowMs;
+    changed = true;
+  }
+  return changed;
+}
+
+function clearRunningThreadHint(threadId) {
+  const id = String(threadId || "");
+  if (!id) return false;
+  let changed = false;
+  if (state.runningThreadIds.delete(id)) changed = true;
+  if (Object.prototype.hasOwnProperty.call(state.runningThreadHintedAtById, id)) {
+    delete state.runningThreadHintedAtById[id];
+    changed = true;
+  }
+  return changed;
+}
+
+function threadUpdatedAtMs(thread) {
+  return numericTimestampMs(thread && (thread.updatedAtMs || thread.updatedAt || thread.updated_at_ms || thread.updated_at));
+}
+
+function runningThreadHintAgeMs(threadId, thread, nowMs = Date.now()) {
+  const hintedAt = Number(state.runningThreadHintedAtById[String(threadId || "")] || 0);
+  if (hintedAt > 0) return nowMs - hintedAt;
+  const updatedAt = threadUpdatedAtMs(thread);
+  if (updatedAt > 0) return nowMs - updatedAt;
+  return RUNNING_THREAD_HINT_STALE_MS + 1;
+}
+
+function shouldExpireRunningThreadHint(threadId, thread, nowMs = Date.now()) {
+  const id = String(threadId || "");
+  if (!id || !state.runningThreadIds.has(id)) return false;
+  if (isRunningStatus(thread && thread.status) || isCompletedStatus(thread && thread.status)) return false;
+  if (id === state.currentThreadId && state.activeTurnId) return false;
+  return runningThreadHintAgeMs(id, thread, nowMs) > RUNNING_THREAD_HINT_STALE_MS;
+}
+
 function updateThreadStatusHints(threadId, previousStatus, nextStatus, options = {}) {
   const id = String(threadId || "");
   if (!id) return;
@@ -821,13 +900,10 @@ function updateThreadStatusHints(threadId, previousStatus, nextStatus, options =
   let changed = false;
   let shouldAlert = false;
   if (isRunning) {
-    if (!state.runningThreadIds.has(id)) {
-      state.runningThreadIds.add(id);
-      changed = true;
-    }
+    if (noteRunningThreadHint(id)) changed = true;
     if (state.unreadThreadIds.delete(id)) changed = true;
   } else if (wasRunning) {
-    if (state.runningThreadIds.delete(id)) changed = true;
+    if (clearRunningThreadHint(id)) changed = true;
     if (id !== state.currentThreadId && !state.unreadThreadIds.has(id)) {
       state.unreadThreadIds.add(id);
       changed = true;
@@ -841,6 +917,7 @@ function updateThreadStatusHints(threadId, previousStatus, nextStatus, options =
 }
 
 function reconcileThreadStatusHints(threads) {
+  const nowMs = Date.now();
   let changed = false;
   for (const thread of threads || []) {
     const id = String(thread && thread.id || "");
@@ -848,13 +925,15 @@ function reconcileThreadStatusHints(threads) {
     const wasRunning = state.runningThreadIds.has(id);
     const isRunning = isRunningStatus(thread.status);
     if (isRunning && !wasRunning) {
-      state.runningThreadIds.add(id);
+      if (noteRunningThreadHint(id, nowMs)) changed = true;
       state.unreadThreadIds.delete(id);
-      changed = true;
+    } else if (isRunning) {
+      if (noteRunningThreadHint(id, nowMs)) changed = true;
     } else if (wasRunning && isCompletedStatus(thread.status)) {
-      state.runningThreadIds.delete(id);
+      if (clearRunningThreadHint(id)) changed = true;
       if (id !== state.currentThreadId) state.unreadThreadIds.add(id);
-      changed = true;
+    } else if (shouldExpireRunningThreadHint(id, thread, nowMs)) {
+      if (clearRunningThreadHint(id)) changed = true;
     }
   }
   if (changed) saveThreadStatusHints();
@@ -940,6 +1019,169 @@ function tokenUsageForThread(thread) {
   return thread && thread.mobileTokenUsage && typeof thread.mobileTokenUsage === "object"
     ? thread.mobileTokenUsage
     : null;
+}
+
+function normalizeThreadGoalStatus(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "active";
+  const normalized = raw.replace(/[-\s]+/g, "_").toLowerCase();
+  if (normalized === "active") return "active";
+  if (normalized === "paused") return "paused";
+  if (normalized === "complete" || normalized === "completed") return "complete";
+  if (normalized === "budget_limited" || normalized === "budgetlimited") return "budgetLimited";
+  if (normalized === "usage_limited" || normalized === "usagelimited") return "usageLimited";
+  if (normalized === "blocked") return "blocked";
+  return normalized.replace(/_([a-z])/g, (_, char) => char.toUpperCase());
+}
+
+function normalizeThreadGoal(goal, fallbackThreadId = "") {
+  if (!goal || typeof goal !== "object") return null;
+  const threadId = String(goal.threadId || fallbackThreadId || "").trim();
+  const objective = String(goal.objective || "").replace(/\s+/g, " ").trim();
+  if (!threadId || !objective) return null;
+  const tokenBudget = goal.tokenBudget === null || goal.tokenBudget === undefined || goal.tokenBudget === ""
+    ? null
+    : Math.max(0, Math.trunc(Number(goal.tokenBudget) || 0));
+  return {
+    threadId,
+    objective,
+    status: normalizeThreadGoalStatus(goal.status),
+    tokenBudget,
+    tokensUsed: Math.max(0, Math.trunc(Number(goal.tokensUsed) || 0)),
+    timeUsedSeconds: Math.max(0, Math.trunc(Number(goal.timeUsedSeconds) || 0)),
+    createdAt: Math.max(0, Math.trunc(Number(goal.createdAt) || 0)),
+    updatedAt: Math.max(0, Math.trunc(Number(goal.updatedAt) || 0)),
+  };
+}
+
+function submittedThreadGoal(threadId, objective, tokenBudget = null) {
+  const now = Date.now();
+  return normalizeThreadGoal({
+    threadId,
+    objective,
+    status: "active",
+    tokenBudget,
+    tokensUsed: 0,
+    timeUsedSeconds: 0,
+    createdAt: now,
+    updatedAt: now,
+  }, threadId);
+}
+
+function threadGoalForThread(thread) {
+  return normalizeThreadGoal(thread && thread.goal, thread && thread.id);
+}
+
+function threadGoalStatusLabel(status) {
+  const value = normalizeThreadGoalStatus(status);
+  if (value === "paused") return "Paused";
+  if (value === "complete") return "Done";
+  if (value === "budgetLimited") return "Budget";
+  if (value === "usageLimited") return "Limited";
+  if (value === "blocked") return "Blocked";
+  return "Goal";
+}
+
+function threadGoalStatusClass(status) {
+  return normalizeThreadGoalStatus(status).replace(/[^a-z0-9_-]+/gi, "-").toLowerCase();
+}
+
+function threadGoalSignature(thread) {
+  const goal = threadGoalForThread(thread);
+  if (!goal) return null;
+  return {
+    objective: goal.objective,
+    status: goal.status,
+    tokenBudget: goal.tokenBudget,
+    tokensUsed: goal.tokensUsed,
+    timeUsedSeconds: goal.timeUsedSeconds,
+    updatedAt: goal.updatedAt,
+  };
+}
+
+function threadGoalBudgetText(goal) {
+  if (!goal) return "";
+  const parts = [];
+  if (Number.isFinite(Number(goal.tokenBudget)) && Number(goal.tokenBudget) > 0) {
+    parts.push(`${Number(goal.tokensUsed || 0).toLocaleString()}/${Number(goal.tokenBudget).toLocaleString()} tokens`);
+  } else if (Number(goal.tokensUsed || 0) > 0) {
+    parts.push(`${Number(goal.tokensUsed || 0).toLocaleString()} tokens`);
+  }
+  if (Number(goal.timeUsedSeconds || 0) > 0) parts.push(formatElapsedTime(goal.timeUsedSeconds));
+  return parts.join(" | ");
+}
+
+function renderThreadGoalBadge(goal) {
+  if (!goal) return "";
+  const status = normalizeThreadGoalStatus(goal.status);
+  const statusClass = threadGoalStatusClass(status);
+  const label = threadGoalStatusLabel(status);
+  const title = `${label}: ${goal.objective}`;
+  return `<div class="thread-card-goal-badge status-${escapeHtml(statusClass)}" title="${escapeHtml(title)}">${escapeHtml(label)}</div>`;
+}
+
+function renderThreadGoal(thread, previousKeys = new Set()) {
+  const goal = threadGoalForThread(thread);
+  if (!goal) return "";
+  const key = `thread-goal|${goal.threadId}|${goal.status}|${goal.updatedAt}|${goal.objective}`;
+  const statusClass = threadGoalStatusClass(goal.status);
+  const budget = threadGoalBudgetText(goal);
+  return `<section class="thread-goal-card status-${escapeHtml(statusClass)}${entryAnimationClass(key, previousKeys)}" data-render-key="${escapeHtml(key)}">
+    <div class="thread-goal-card-top">
+      <span class="thread-goal-card-label">${escapeHtml(threadGoalStatusLabel(goal.status))}</span>
+      ${budget ? `<span class="thread-goal-card-meta">${escapeHtml(budget)}</span>` : ""}
+    </div>
+    <div class="thread-goal-card-objective">${escapeHtml(goal.objective)}</div>
+  </section>`;
+}
+
+function currentGoalDialogThread() {
+  const threadId = String(state.goalDialogThreadId || state.currentThreadId || "").trim();
+  return threadById(threadId) || (state.currentThread && String(state.currentThread.id || "") === threadId ? state.currentThread : null);
+}
+
+function setThreadGoalDialogBusy(busy) {
+  state.goalSubmitBusy = Boolean(busy);
+  ["goalObjectiveInput", "goalTokenBudgetInput", "goalSubmitButton", "goalCancelButton", "goalDialogClose"].forEach((id) => {
+    const el = $(id);
+    if (el) el.disabled = state.goalSubmitBusy;
+  });
+  const button = $("goalSubmitButton");
+  if (button) button.textContent = state.goalSubmitBusy ? "Sending..." : "Send";
+}
+
+function openThreadGoalDialog(threadId = state.currentThreadId) {
+  const id = String(threadId || "").trim();
+  if (!id) {
+    showError(new Error("No thread is selected"));
+    return;
+  }
+  const thread = threadById(id) || (state.currentThread && String(state.currentThread.id || "") === id ? state.currentThread : null);
+  if (!thread) {
+    showError(new Error("Thread is not loaded"));
+    return;
+  }
+  const dialog = $("goalDialog");
+  const objectiveInput = $("goalObjectiveInput");
+  const budgetInput = $("goalTokenBudgetInput");
+  if (!dialog || !objectiveInput || !budgetInput) return;
+  const goal = threadGoalForThread(thread);
+  state.goalDialogThreadId = id;
+  objectiveInput.value = goal ? goal.objective : "";
+  budgetInput.value = goal && Number(goal.tokenBudget || 0) > 0 ? String(goal.tokenBudget) : "";
+  const subtitle = $("goalDialogSubtitle");
+  if (subtitle) subtitle.textContent = threadTitleForDisplay(thread) || id;
+  dialog.classList.remove("hidden");
+  setThreadGoalDialogBusy(false);
+  window.setTimeout(() => objectiveInput.focus(), 0);
+}
+
+function closeThreadGoalDialog(force = false) {
+  if (state.goalSubmitBusy && !force) return;
+  const dialog = $("goalDialog");
+  if (dialog) dialog.classList.add("hidden");
+  state.goalDialogThreadId = "";
+  setThreadGoalDialogBusy(false);
 }
 
 function normalizeOptionList(values) {
@@ -3215,6 +3457,7 @@ function conversationRenderSignature(thread) {
     rolloutWarningDismissed: isRolloutWarningDismissed(thread),
     rolloutWarningThresholdBytes: rolloutThresholdBytes(thread),
     omitted,
+    goal: threadGoalSignature(thread),
     approvals: approvalRequestsSignature(state.currentThreadId || thread.id || ""),
     taskCards: threadTaskCardsSignature(thread),
     turns: turns.map((turn) => {
@@ -5666,6 +5909,8 @@ function renderThreads(result = null) {
     const iconKind = statusIconInfo(thread.status, thread.id)?.kind || "";
     const active = thread.id === state.currentThreadId ? " active" : "";
     const emphasis = iconKind ? ` has-status-${iconKind}` : "";
+    const goal = threadGoalForThread(thread);
+    const goalBadge = renderThreadGoalBadge(goal);
     const pendingIncomingTaskCards = Math.max(0, Number(thread && thread.pendingIncomingTaskCardCount) || 0);
     const taskCardBadge = pendingIncomingTaskCards
       ? `<div class="thread-card-task-badge" title="Pending incoming task cards">${escapeHtml(`Task ${pendingIncomingTaskCards}`)}</div>`
@@ -5685,6 +5930,7 @@ function renderThreads(result = null) {
             ${timeText ? `<span class="thread-card-time" title="${escapeHtml(updatedTitle)}">${escapeHtml(timeText)}</span>` : ""}
           </div>
           <div class="thread-card-meta-badges">
+            ${goalBadge}
             ${taskCardBadge}
             ${sizeBadge}
           </div>
@@ -5703,6 +5949,7 @@ function renderThreads(result = null) {
       thread.updatedAt,
       statusText(thread.status),
       statusIconInfo(thread.status, thread.id)?.kind || "",
+      threadGoalSignature(thread),
       state.unreadThreadIds.has(thread.id) ? 1 : 0,
       Number(thread.pendingIncomingTaskCardCount || 0),
       rolloutSizeBytes(thread),
@@ -6097,6 +6344,7 @@ function renderCurrentThread(options = {}) {
   const readWarning = readWarningMessage
     ? `<div class="history-note${entryAnimationClass(readWarningKey, previousKeys)}" data-render-key="${escapeHtml(readWarningKey)}">${escapeHtml(readWarningMessage)}</div>`
     : "";
+  const goalCard = renderThreadGoal(thread, previousKeys);
   const rolloutWarning = renderRolloutWarning(thread, previousKeys);
   const taskToolbar = renderThreadTaskToolbar(thread);
   const pluginRefreshNotice = renderPluginRefreshPendingNotice(previousKeys);
@@ -6112,7 +6360,7 @@ function renderCurrentThread(options = {}) {
   const emptyMessage = readWarningMessage
     ? "暂时没有可显示的完整消息。共享模式恢复后刷新这个页面即可继续读取。"
     : "No visible turns.";
-    const html = rolloutWarning + taskToolbar + omittedBanner + readWarning + (turnsHtml || approvalsHtml || taskCardsHtml ? `${turnsHtml}${approvalsHtml}${taskCardsHtml}${pluginRefreshNotice}` : `${pluginRefreshNotice || ""}<div class="empty-state entry-animate">${escapeHtml(emptyMessage)}</div>`);
+    const html = goalCard + rolloutWarning + taskToolbar + omittedBanner + readWarning + (turnsHtml || approvalsHtml || taskCardsHtml ? `${turnsHtml}${approvalsHtml}${taskCardsHtml}${pluginRefreshNotice}` : `${pluginRefreshNotice || ""}<div class="empty-state entry-animate">${escapeHtml(emptyMessage)}</div>`);
   updateConversationHtml(html, conversationRenderSignature(thread), { stickToBottom: shouldStickToBottom });
   bindCurrentThreadActions();
   applyPendingPluginRouteHintFocus();
@@ -6274,6 +6522,10 @@ function truncateThreadTaskCardBody(value, maxChars = THREAD_TASK_CARD_BODY_MAX_
 
 function isThreadTaskCardCommandText(value) {
   return String(value || "").trim().startsWith(THREAD_TASK_CARD_COMMAND_PREFIX);
+}
+
+function isThreadGoalCommandText(value) {
+  return String(value || "").trim().toLowerCase() === THREAD_GOAL_COMMAND_PREFIX;
 }
 
 function threadTaskCardCommandText(value) {
@@ -8434,6 +8686,23 @@ function resolveServerRequest(payload) {
   scheduleApprovalRemoval(requestId);
 }
 
+function updateThreadGoalState(threadId, goal) {
+  const id = String(threadId || goal && goal.threadId || "").trim();
+  if (!id) return;
+  const normalizedGoal = goal ? normalizeThreadGoal(goal, id) : null;
+  const thread = state.threads.find((entry) => String(entry && entry.id || "") === id);
+  if (thread) {
+    if (normalizedGoal) thread.goal = normalizedGoal;
+    else delete thread.goal;
+  }
+  if (state.currentThread && String(state.currentThread.id || "") === id) {
+    if (normalizedGoal) state.currentThread.goal = normalizedGoal;
+    else delete state.currentThread.goal;
+    scheduleRenderCurrentThread();
+  }
+  scheduleRenderThreads();
+}
+
 function applyNotification(method, params) {
   if (!params) return;
   if (method === "account/rateLimits/updated") {
@@ -8488,6 +8757,14 @@ function applyNotification(method, params) {
       renderCurrentThread();
     }
     scheduleRenderThreads();
+    return;
+  }
+  if (method === "thread/goal/updated") {
+    updateThreadGoalState(params.threadId, params.goal);
+    return;
+  }
+  if (method === "thread/goal/cleared") {
+    updateThreadGoalState(params.threadId, null);
     return;
   }
   if (method === "thread/archived") {
@@ -9699,6 +9976,7 @@ function updateComposerControls() {
   const canComposeNewThread = Boolean(hasNewThreadDraft && state.selectedCwd);
   const disabled = !(hasThread || canComposeNewThread) || state.composerBusy || state.attachmentProcessingCount > 0;
   const hasContent = composerHasContent();
+  const goalCommandMode = Boolean(!hasNewThreadDraft && isThreadGoalCommandText(composerText()));
   const commandMode = Boolean(!hasNewThreadDraft && isThreadTaskCardCommandText(composerText()));
   const interruptMode = Boolean(!hasNewThreadDraft && state.activeTurnId) && !hasContent;
   const steerMode = Boolean(!hasNewThreadDraft && state.activeTurnId) && hasContent;
@@ -9737,6 +10015,10 @@ function updateComposerControls() {
     sendButton.title = "Retry sending message";
     sendButton.classList.add("send-failed");
     sendButton.classList.remove("sending", "interrupt-mode", "steer-mode");
+  } else if (goalCommandMode) {
+    sendButton.textContent = "Goal";
+    sendButton.title = "Open goal dialog";
+    sendButton.classList.remove("sending", "send-failed", "interrupt-mode", "steer-mode");
   } else if (commandMode) {
     sendButton.textContent = "Task card";
     sendButton.title = "Ask Codex to draft a cross-thread task card";
@@ -9759,6 +10041,77 @@ function hasTransferFiles(event) {
   return types.includes("Files");
 }
 
+async function submitThreadGoalMessage(event) {
+  if (event && typeof event.preventDefault === "function") event.preventDefault();
+  if (state.goalSubmitBusy || state.composerBusy) {
+    if (state.composerBusy) showError(new Error("A message is already sending"));
+    return;
+  }
+  const thread = currentGoalDialogThread();
+  const threadId = String(thread && thread.id || state.goalDialogThreadId || "").trim();
+  const objectiveInput = $("goalObjectiveInput");
+  const budgetInput = $("goalTokenBudgetInput");
+  const objective = String(objectiveInput && objectiveInput.value || "").trim();
+  const rawBudget = String(budgetInput && budgetInput.value || "").trim();
+  if (!threadId) {
+    showError(new Error("No thread is selected"));
+    return;
+  }
+  if (!objective) {
+    showError(new Error("Goal objective is required"));
+    if (objectiveInput) objectiveInput.focus();
+    return;
+  }
+  let tokenBudget = 0;
+  if (rawBudget) {
+    tokenBudget = Number(rawBudget);
+    if (!Number.isFinite(tokenBudget) || tokenBudget <= 0) {
+      showError(new Error("Token budget must be a positive number"));
+      if (budgetInput) budgetInput.focus();
+      return;
+    }
+    tokenBudget = Math.trunc(tokenBudget);
+  }
+  state.composerBusy = true;
+  state.sendButtonHint = "";
+  setThreadGoalDialogBusy(true);
+  markActivity("Goal set");
+  updateComposerControls();
+  try {
+    const result = await api(`/api/threads/${encodeURIComponent(threadId)}/goal`, {
+      method: "POST",
+      body: JSON.stringify({
+        objective,
+        tokenBudget: tokenBudget > 0 ? tokenBudget : null,
+      }),
+      timeoutMs: 30000,
+    });
+    const responseGoal = normalizeThreadGoal(result && result.goal, threadId);
+    const visibleGoal = responseGoal || submittedThreadGoal(threadId, objective, tokenBudget > 0 ? tokenBudget : null);
+    if (visibleGoal) updateThreadGoalState(threadId, visibleGoal);
+    closeThreadGoalDialog(true);
+    $("connectionState").classList.remove("error");
+    $("connectionState").textContent = "Goal set";
+    markActivity("Goal set");
+    if (threadId === state.currentThreadId) scheduleCurrentThreadRefresh(600);
+    loadThreads({ silent: true }).catch(showError);
+  } catch (err) {
+    const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err))
+      || "Goal set failed";
+    $("connectionState").classList.add("error");
+    $("connectionState").textContent = message;
+    postClientEvent("goal_request_failure", {
+      threadId,
+      message,
+    });
+    showError(new Error(message));
+  } finally {
+    state.composerBusy = false;
+    setThreadGoalDialogBusy(false);
+    updateComposerControls();
+  }
+}
+
 async function sendMessage(event) {
   if (event && typeof event.preventDefault === "function") event.preventDefault();
   if (state.composerBusy) return;
@@ -9766,6 +10119,22 @@ async function sendMessage(event) {
   const input = $("messageInput");
   const text = composerText();
   const hasContent = Boolean(text || state.pendingAttachments.length);
+  const threadGoalCommand = isThreadGoalCommandText(text);
+  if (threadGoalCommand) {
+    if (state.newThreadDraft) {
+      showError(new Error("/g is only available in an existing thread"));
+      return;
+    }
+    if (state.pendingAttachments.length) {
+      showError(new Error("/g does not support attachments"));
+      return;
+    }
+    if (!state.currentThreadId) return;
+    setComposerText("");
+    scheduleCurrentDraftSave();
+    openThreadGoalDialog(state.currentThreadId);
+    return;
+  }
   if (state.newThreadDraft) {
     await sendNewThreadMessage(text, hasContent, input);
     return;
@@ -10331,6 +10700,12 @@ function wireUi() {
   if ($("restartConfirmProceed")) $("restartConfirmProceed").addEventListener("click", () => closeSharedRestartDialog(true));
   if ($("restartConfirmDialog")) $("restartConfirmDialog").addEventListener("click", (event) => {
     if (event.target === $("restartConfirmDialog")) closeSharedRestartDialog(false);
+  });
+  if ($("goalForm")) $("goalForm").addEventListener("submit", (event) => submitThreadGoalMessage(event).catch(showError));
+  if ($("goalCancelButton")) $("goalCancelButton").addEventListener("click", () => closeThreadGoalDialog(false));
+  if ($("goalDialogClose")) $("goalDialogClose").addEventListener("click", () => closeThreadGoalDialog(false));
+  if ($("goalDialog")) $("goalDialog").addEventListener("click", (event) => {
+    if (event.target === $("goalDialog")) closeThreadGoalDialog(false);
   });
   if ($("themeSettingsToggle")) $("themeSettingsToggle").addEventListener("click", () => {
     loadCodexProfiles().catch(showError);

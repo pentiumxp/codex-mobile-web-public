@@ -101,6 +101,38 @@ test("continuation paths apply inherited model and effort", () => {
   assert.match(startContinuationBody, /const bootstrapParams = applyTurnRuntimeSettings\(/, "continuation bootstrap turn should inherit model and effort");
 });
 
+test("continuation titles survive app-server rename gaps", () => {
+  const titleBody = functionBody(serverJs, "sourceTitleForContinuation");
+  assert.match(titleBody, /summary\.name, requestedTitle, summary\.title, summary\.preview/, "source title should prefer app-server display name before fallbacks");
+
+  const indexBody = functionBody(serverJs, "persistThreadTitleToSessionIndex");
+  assert.match(indexBody, /session_index\.jsonl/, "fallback title persistence should use Codex session index");
+  assert.match(indexBody, /thread_name: name/, "session index entry should persist display title");
+  assert.match(indexBody, /updated_at: timestamp/, "session index entry should include update timestamp");
+
+  const startContinuationBody = functionBody(serverJs, "startThreadFromRequestBody");
+  assert.match(startContinuationBody, /sourceTitleForContinuation\(sourceSnapshot, requestedSourceThreadTitle, cwd\)/, "continuation should reselect source title after reading source snapshot");
+  assert.match(startContinuationBody, /persistThreadTitleToSessionIndex\(threadId, desiredTitle\)/, "continuation should persist desired title before bootstrap can fail or restart");
+  assert.match(startContinuationBody, /titleIndexed,/, "continuation response should expose title index persistence");
+});
+
+test("manual rename falls back to Mobile title index when app-server metadata is unavailable", () => {
+  const helperBody = functionBody(serverJs, "isRecoverableThreadTitleUpdateError");
+  assert.match(helperBody, /thread metadata unavailable before name update/, "metadata-unavailable rename error should be recognized");
+  assert.match(helperBody, /database disk image is malformed/, "malformed state db rename error should be recognized");
+
+  const routeIndex = serverJs.indexOf('const threadRename = url.pathname.match');
+  const routeEnd = serverJs.indexOf('const threadRead = url.pathname.match', routeIndex);
+  assert.ok(routeIndex > 0 && routeEnd > routeIndex, "missing thread rename route");
+  const routeBody = serverJs.slice(routeIndex, routeEnd);
+
+  assert.match(routeBody, /persistThreadTitleToSessionIndex\(threadId, name\)/, "manual rename should persist fallback title");
+  assert.match(routeBody, /titleUpdated: updated/, "manual rename response should expose app-server update status");
+  assert.match(routeBody, /titleUpdated: false/, "metadata-unavailable fallback should report app-server update did not happen");
+  assert.match(routeBody, /isRecoverableThreadTitleUpdateError\(err\)/, "manual rename should recover transient app-server title errors");
+  assert.match(routeBody, /rememberStartedThread\(Object\.assign/, "manual rename should update the in-memory summary cache");
+});
+
 test("server does not broadcast source-less quota notifications to clients", () => {
   const start = serverJs.indexOf("function shouldSendEventToClient(");
   const end = serverJs.indexOf("function removeEventClient(", start);

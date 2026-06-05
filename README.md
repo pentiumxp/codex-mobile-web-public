@@ -347,13 +347,16 @@ http://192.168.1.25:8787
 http://100.x.y.z:8787
 ```
 
-The startup script prefers this local runtime binary when it exists:
+When `-CodexExe` / `CODEX_MOBILE_CODEX_EXE` is not explicit, the Windows
+startup scripts prefer the newest installed OpenAI Codex binary under
+`%LOCALAPPDATA%\OpenAI\Codex\bin\*\codex.exe`, then fall back to this local
+runtime binary when it exists:
 
 ```text
 %USERPROFILE%\.codex-mobile-web\codex.exe
 ```
 
-If that file does not exist, it falls back to `codex` from `PATH`.
+If none of those files exists, it falls back to `codex` from `PATH`.
 
 ## Windows Background Startup
 
@@ -650,6 +653,15 @@ Behavior:
 - On coarse-pointer landscape tablets, the composer uses a viewport-contained two-row compact layout: runtime indicators and quota on the first row, then attach/input/send on the second row. The split layout constrains both sidebar and main pane height so the composer stays inside the visible app surface.
 - On mobile/touch layouts, swiping right from the left screen edge opens the session list without waiting for a network refresh. If the existing session list is newer than 60 seconds, Mobile Web reuses it immediately; older lists open first and then refresh quietly in the background.
 - Thread lists and thread detail monitor rollout JSONL size. The mobile thread-list refresh requests a bounded 40-row page by default so startup, foreground resume, and thread switching do not pay the heavier 60/80-row list path when the visible list is small. Cold startup with a saved current thread sets the opening intent before the first app-shell reveal, then starts the saved-thread detail read in parallel with status/workspace/list refresh so users do not first sit on a transient `Select a thread` empty page. Startup emits bounded `startup_stage` diagnostics through `/api/client-events` so the local log can separate public-config, status, workspace, list, detail, and render delays. Resume events that fire during startup only run visual recovery and skip the full network resume path, avoiding duplicate status/list/detail requests while bootstrap is already opening the thread. At the default `200MB` threshold, Mobile Web shows a context-size warning and offers a same-workspace continuation action. The warning can be skipped for the current thread size, and will reappear if that thread grows again past the stored size. Completed turns can also show a lightweight context/token usage summary parsed from rollout `token_count` events: turn-level token use derived from cumulative token deltas across the scoped turn, cumulative token use, model context-window percentage, risk level, and rollout size. In usage summary rows, `in` displays uncached input (`inputTokens - cachedInputTokens`) when cached input is reported, while the context-window percentage still uses raw input tokens. Separately, Mobile Web persists completed-turn token usage into `%USERPROFILE%\.codex-mobile-web\token-usage-stats.sqlite` in real time and aggregates it by Workspace for a compact red sidebar `总/周/今` row. Its `统计` button opens a full-screen stats page with per-day and per-project totals, splitting uncached input, cached input, output, and reasoning output because these token classes have different usage/cost meaning. Token stats display in millions rather than ten-thousands. Thread rows intentionally do not show a per-thread "today token" badge; the list stays focused on thread identity, task cards, and rollout size. Project rows normalize known Windows path mojibake against visible Workspace roots, so historical rows with a garbled cwd are merged under the readable Unicode Workspace name after the server restarts. The sidebar version pill opens an Updates panel: the current-checkout section keeps the existing safe fast-forward Git update path, while the Public release section checks the configured public repository's latest commit and only offers the same update action when the running checkout itself tracks that public repository. After user confirmation, the continuation action first asks the source thread to write a thread-specific handoff file, creates a source-named/date-suffixed continuation thread, sends a scoped bootstrap message, then archives the source thread.
+
+- 中文说明：线程列表里的运行中刷新提示现在有超时兜底。Mobile Web 仍会在 app-server 列表暂时只返回 `notLoaded` 时保留运行提示，避免真实运行中的线程被普通刷新清掉；但如果同一提示超过固定窗口仍没有运行状态或完成事件，且当前线程也没有 active turn，前端会自动清掉这个本地提示，避免任务已经结束后列表仍一直显示刷新中。PWA shell 缓存升级到 `codex-mobile-shell-v181`，已打开的手机/PWA 需要点页面刷新提示、硬刷新或关闭重开后才能拿到这次前端修正。
+- 中文说明：服务端 fallback 线程列表现在会从 rollout 尾部的安全事件类型推断 `active` / `completed`，并用 rollout 文件 mtime 修正 fallback `updatedAt`。这修复了 Hermes/远端正在写同一 rollout、但 app-server 列表行仍是 `notLoaded` 时运行中刷新提示不显示的问题，也能在 `task_complete` 后让旧本地提示立即清掉。这是服务端修正，重启 8787 listener 后旧前端也能读取新的状态。
+- 中文说明：iPhone / Hermes embed 的底部 composer 现在改为更接近微信底栏的贴底方式。早期手机 composer 底部只留约 `7px`，后续 iOS 安全区适配改为完整叠加 `safe-area` 后在 Home Indicator / Hermes iframe 机型上抬得过高；本次移动端改用 `clamp()` 限制底部安全区保留量，让底栏背景继续铺满到底，但输入框、发送按钮和模型/推理/权限/额度行不再被大 inset 顶到半空。安卓 `safe-area=0` 时仍停在 8px 下限。PWA shell 缓存升级到 `codex-mobile-shell-v184`，已打开的手机/PWA 需要点页面刷新提示、硬刷新或关闭重开后才能拿到这次 CSS 修正。
+- 中文说明：线程手动改名现在也会兜底处理 app-server thread-store 的 `database disk image is malformed`。如果底层 `state_5.sqlite` 写标题失败，但 Mobile fallback `session_index.jsonl` 写入成功，改名接口会返回成功并用 fallback 标题刷新列表；这不会修复 SQLite 本体，只避免 Mobile 端改名被已知坏库阻断。
+- 中文说明：线程列表现在即使 app-server / `state_5.sqlite` 已经恢复可读，也会继续合并 `sessions/rollout-*.jsonl` 与 `session_index.jsonl` 的本地摘要。这样 recover 后 SQLite 缺少最近线程行时，带 rollout 的线程仍能回到列表；SQLite 行标题为空、退化成 thread id、或把 `Continuation Bootstrap Index` 当作长标题时，会用 `session_index.jsonl` 里的用户命名恢复显示。归档线程仍按 `archived_sessions`、DB 归档标记和备份 rollout 路径过滤，不会因为一条旧 index 记录重新显示。
+- 中文说明：`/g` 目标提交成功后，前端会立即把刚输入的 objective 和可选 token budget 显示成线程顶部目标卡。这样即使 app-server 接受 `thread/goal/set` 后立刻开始执行任务、但响应体暂时没有返回完整 goal 对象，用户输入的目标也不会从界面上消失；后续 `thread/goal/updated` 通知或 `goals_1.sqlite` fallback 会覆盖这张本地显示卡。PWA shell 缓存升级到 `codex-mobile-shell-v186`。
+- 中文说明：`/g` 目标入口现在直接调用 Mobile 后端的 `POST /api/threads/<threadId>/goal`，由服务端转发到 Codex app-server `thread/goal/set`，不再发送一条普通消息让模型自己尝试创建目标。这个能力要求运行中的 app-server 来自 Codex CLI 0.135.0 或更新版本；Windows 启动脚本在未显式传 `-CodexExe` 时会优先选择 `%LOCALAPPDATA%\OpenAI\Codex\bin\*\codex.exe` 中最新的安装版，再回退旧的 `%USERPROFILE%\.codex-mobile-web\codex.exe`。mux endpoint 现在会记录真实 `codexExe`，windowless 启动器复用 endpoint 前会校验它是否匹配本次解析出的 Codex binary，避免继续复用旧 0.129 app-server。PWA shell 缓存升级到 `codex-mobile-shell-v185`。
+- 中文说明：线程归档现在还会写入 `%USERPROFILE%\.codex-mobile-web\archived-thread-ids.json` 的 Mobile 本地索引，只保存 thread id 和归档时间。这样 state DB recover 或旧 profile 行重新出现在列表时，重新归档也能被 Mobile 自己的列表过滤识别，不需要依赖 app-server 成功改写那条旧 SQLite 记录。
 - The continuation bootstrap message explicitly carries source thread metadata, rollout size, inherited runtime settings, the source-thread-generated handoff file, bounded continuation lineage, recent visible turn summaries, and current-workspace `.agent-context/PROJECT_CONTEXT.md` / `.agent-context/HANDOFF.md` excerpts. It does not inject fixed private/public GitHub release rules; those appear only if the current workspace context or source-thread handoff says they are relevant.
 - Long-pressing a session row opens a mobile action sheet with rename, continuation, and archive actions. Archive asks for confirmation, calls `/api/threads/<threadId>/archive`, and refreshes the list after success. The row disables accidental system text selection during the long press, while rename input fields still allow normal text selection and editing.
 - Agent replies include a `复制全文` action. Markdown code blocks and command/output detail blocks include smaller copy buttons so users can copy structured text without manually selecting content on iOS.
@@ -1427,27 +1439,21 @@ plugin. The shell cache advances to `codex-mobile-shell-v102`.
 
 本次 private 同步 public PR #44 和 PR #45 的产品改动，并在当前 private v165 基础上把 PWA shell cache 升到 `codex-mobile-shell-v166`。服务端 session-index fallback 列表现在会再次排除已归档线程，避免 app-server 主列表遗漏线程时把已归档的 projectless session 重新显示出来；更新后需要重启 8787 Node listener 才会加载新的 `server.js`。前端手动 `Restart` 从浏览器原生确认框改为自定义确认面板，点击时会先读取最近线程列表并列出 running session 风险，提示重启可能中断正在通过 Codex Mobile 同步或运行的任务。已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能看到新的保护面板。
 
-### 2026-06-04 Public 发布说明（Profile 共享线程、续接与运行提示 v177）
+### 2026-06-04 本地更新说明（CLI 目标 `/g` 入口 v180）
 
-本次 public 同步 private 已验证的 v164-v177 修复，版本仍为 `0.1.11`，PWA shell cache 升到 `codex-mobile-shell-v177`。更新后需要重启 8787 Node listener，并让已打开的浏览器/PWA 接受刷新提示、硬刷新或关闭重开，才能拿到新的前端状态提示和 profile/线程列表行为。
+本次更新在 v179 目标状态显示的基础上，增加一个不占界面的 `/g` composer 命令。版本仍为 `0.1.11`，PWA shell cache 升到 `codex-mobile-shell-v180`；更新后需要重启 8787 Node listener，并让已打开的浏览器/PWA 接受刷新提示、硬刷新或关闭重开。
 
-- Profile 切换现在以单 active profile 为边界：非默认 profile 保留自己的 `auth.json`/`config.toml`，但通过共享 `.codex` 的非认证状态保持 workspaces、thread list、session index、sessions 和 archived sessions 连续；服务端启动时 active profile store 优先于 stale inherited `CODEX_HOME`。
-- Desktop shared launcher 可选择 `default/current/previous` profile 并准备同一套非认证状态链接，让 Desktop 和 Mobile Web 接入同一个 selected profile mux endpoint。
-- 线程列表 fallback 增强：当 app-server list 遗漏或返回 stale row 时，会合并 state DB、rollout session 和 session index 的安全字段；重复 fallback row 可补全标题/cwd/preview，并用最新 `updatedAt` 修正侧栏时间。
-- 运行中线程提示修复：列表刷新返回 `notLoaded` 时不会清掉本地 running hint；`turn/started` / `turn/completed` 会更新侧栏 row 并触发重绘，恢复运行中线程的刷新/旋转提示。
-- 续接/上下文：续接 bootstrap 改为引用式 source handoff/lineage，handoff 压缩提示阈值提升到 200KB，降低刚压缩后立即再次提示的概率。
-- Web Push / Hermes：完成通知 deep link 可携带 thread/task/item hint；Hermes embed 继续使用受限的 plugin route hint，不暴露 access key、launch token secret、本地 DB 路径、上传内容或私有状态 dump。
-- 本次 public 同步不包含 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
+- 在已有线程的 composer 中输入 `/g` 并发送，会打开目标填写对话框；填写 objective 和可选 token budget 后，当前构建通过 `/api/threads/:id/goal` 转发到 app-server `thread/goal/set`。
+- `/g` 不再发送普通 Codex 消息，也不再依赖模型自己调用目标工具；目标创建要求运行中的 Codex app-server 支持 0.135.0 级别的 goal RPC。
+- Mobile Web 仍不直接写 `goals_1.sqlite`。目标创建、状态变更和完成语义继续由 Codex app-server / CLI 运行时处理。
 
-### 2026-06-04 Public 发布说明（运行时设置持久化 v178）
+### 2026-06-04 本地更新说明（CLI 目标状态显示 v179）
 
-本次 public 同步运行时模型、推理等级和权限选择的持久化修复，版本仍为 `0.1.11`，PWA shell cache 升到 `codex-mobile-shell-v178`。更新后需要重启 8787 Node listener；已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开，才能拿到新的 composer 行为。
+本次更新让 Mobile Web 能显示 Codex CLI/Desktop 已支持的线程目标状态。版本仍为 `0.1.11`，PWA shell cache 升到 `codex-mobile-shell-v179`；更新后需要重启 8787 Node listener，并让已打开的浏览器/PWA 接受刷新提示、硬刷新或关闭重开，才能同时拿到服务端目标读取和前端目标卡片。
 
-- Composer 中选择的 model、reasoning effort 和 permission 会作为每线程 runtime-only draft 保存，即使输入框为空也会保留。退出重进或切换线程后，界面应恢复用户刚选过的运行时设置，而不是回到 stale metadata 的默认值。
-- 发送现有线程消息后，Mobile Web 只清空文本和附件，不再清掉 runtime-only draft；因此用户把推理等级改成 XHigh 后点击 Send，composer 不应立即显示回 Medium。已经开始的 active turn 仍不能被中途改变，新的选择用于下一次 `turn/start`。
-- 新建线程首条消息会先捕获提交时的 model、reasoning effort 和 permission，再把这些设置写到新线程自己的 draft key 下，避免创建成功后被默认值覆盖。
-- 服务端新 turn 继承路径现在会从 rollout `turn_context`、state DB/app-server 线程 metadata 和 Codex config 默认值中读取 model 与 reasoning effort，并在 continuation/bootstrap 与跨线程任务卡片批准注入时一并转发。
-- 本次 public 同步更新 README、架构/模块/故障排除/复杂路径文档和相关回归测试；不包含 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
+- 服务端新增 `adapters/thread-goal-service.js`，只读读取当前 `<CODEX_HOME>\goals_1.sqlite` 的 `thread_goals`，把 `budget_limited` 等 sqlite 状态规范化成前端可显示的公开状态，并给 `/api/threads` 列表和 `/api/threads/:id` 详情附加 `thread.goal`。
+- 前端处理 app-server `thread/goal/updated` 和 `thread/goal/cleared` 通知；列表行显示紧凑 Goal/Paused/Budget/Done 徽标，线程详情顶部显示目标文本和预算/用时摘要。
+- 0.135.0 级别的 app-server 协议提供 `thread/goal/set`、`thread/goal/get`、`thread/goal/clear`，但 Mobile Web 仍不直接写 `goals_1.sqlite`；旧 app-server 如果缺少 set RPC，会返回 unsupported-version 错误。
 
 ### Which Restart Is Needed After Changes
 
@@ -1825,6 +1831,7 @@ VAPID details:
 | `CODEX_MOBILE_THREAD_TURNS` | Number of recent turns returned to the phone when Mobile Web falls back to `thread/turns/list`, default `8`. |
 | `CODEX_MOBILE_FULL_THREAD_TURNS` | Number of turns returned after normal-size sessions are fully read with `thread/read`, default `80`, capped at `200`. |
 | `CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES` | Tail bytes read from a thread rollout to recover inherited turn runtime settings, default `4194304`. |
+| `CODEX_MOBILE_ROLLOUT_ACTIVE_STATUS_WINDOW_MS` | Recent-activity window used when rollout-session fallback infers an `active` thread-list status from bounded rollout-tail events, default `1800000` (`30 minutes`). |
 | `CODEX_MOBILE_ROLLOUT_WARNING_BYTES` | Rollout JSONL size threshold for UI warnings and the continuation action, default `209715200` (`200MB`). |
 | `CODEX_MOBILE_THREAD_DETAIL_ROLLOUT_MAX_BYTES` | Rollout JSONL size threshold where Mobile Web skips expensive full `thread/read` detail RPCs and uses bounded `thread/turns/list` first, default `33554432` (`32MB`). This is intentionally lower than the `200MB` warning threshold so large sessions can still open quickly without showing a warning. |
 | `CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS` | Max characters in the rollout continuation bootstrap message, default `52000`. |

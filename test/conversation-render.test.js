@@ -290,9 +290,17 @@ test("active turn state follows only the latest durable turn", () => {
 
 test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(appJs, /function updateThreadListStatus\(/);
+  assert.match(appJs, /const RUNNING_THREAD_HINT_STALE_MS = 20 \* 60 \* 1000;/);
+  assert.match(appJs, /runningThreadHintedAtById: loadNumberMapStorage\("codexMobileRunningThreadHintedAtById", \{\}\)/);
+  assert.match(functionBody("saveThreadStatusHints"), /saveNumberMapStorage\(STORAGE_RUNNING_THREAD_HINTED_AT, state\.runningThreadHintedAtById\)/);
   assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(String\(threadId\)\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /else if \(wasRunning && isCompletedStatus\(thread\.status\)\)/);
+  assert.match(functionBody("reconcileThreadStatusHints"), /shouldExpireRunningThreadHint\(id, thread, nowMs\)/);
   assert.doesNotMatch(functionBody("reconcileThreadStatusHints"), /else if \(!isRunning && wasRunning\)/);
+
+  const expireBody = functionBody("shouldExpireRunningThreadHint");
+  assert.match(expireBody, /id === state\.currentThreadId && state\.activeTurnId/);
+  assert.match(expireBody, /runningThreadHintAgeMs\(id, thread, nowMs\) > RUNNING_THREAD_HINT_STALE_MS/);
 
   const notificationBody = functionBody("applyNotification");
   assert.match(notificationBody, /const runningStatus = \{ type: "active" \};/);

@@ -30,7 +30,7 @@ Interpretation:
 | Archived projectless thread reappears | session-index fallback, `archived_sessions`, `test/thread-archive.test.js` |
 | After profile switch only a few workspaces or no threads appear | `/api/public-config.codexProfiles.activeCodexHome`, profile state links, and `state_5.sqlite` / `sessions` under the active home |
 | Threads are visible but names/times stay stale | `/api/threads` row `name`/`updatedAt`, state DB `title`/`updated_at`, rollout file mtime, fallback merge tests |
-| Running-thread indicator disappears | `runningThreadIds`, row `status`, `turn/started` / `turn/completed` notifications, stale browser shell |
+| Running-thread indicator disappears | `/api/threads` row `status` and `rolloutSizeUpdatedAtMs`, rollout tail `task_started` / `task_complete`, `runningThreadIds`, stale browser shell |
 
 ## Shared Mux Drift
 
@@ -99,12 +99,21 @@ the browser with authenticated `/api/status.rateLimits`. The frontend clears
 `codexMobileRateLimits` / `codexMobileRateLimitsByModel` when profile switching
 starts, then repopulates them from the restarted server's status/config.
 
-If threads are visible after a profile switch but some rows keep UUID-like names
-or old timestamps, compare `/api/threads?limit=...` with the active
-`state_5.sqlite` row and the rollout file mtime. Current builds merge duplicate
-fallback summaries into app-server rows instead of dropping them, and the newest
-`updatedAt` wins. Existing-thread message sends also trigger a silent sidebar
-list refresh after the current-thread refresh. If this regresses, run:
+If threads are visible after a profile switch or state DB recovery but some rows
+keep UUID-like names or old timestamps, compare `/api/threads?limit=...` with the
+active `state_5.sqlite` row, `%CODEX_HOME%\session_index.jsonl`, and the rollout
+file mtime. A recovered SQLite file can pass `pragma quick_check` while still
+missing recent `threads` rows or titles that only exist in rollout files and the
+Mobile session index. Current builds merge rollout/session-index summaries even
+when app-server and `state_5.sqlite` are readable, sort the merged list before
+applying the requested limit, and use `session_index.jsonl` to replace empty or
+thread-id-like titles. It also replaces continuation bootstrap messages such as
+`# Continuation Bootstrap Index` when app-server accidentally exposes them as
+the thread title. Archived ids from `archived_sessions`, profile
+`archived_sessions`, `%USERPROFILE%\.codex-mobile-web\archived-thread-ids.json`,
+DB archive flags, and backup rollout paths remain hidden. Existing-thread
+message sends also trigger a silent sidebar list refresh after the current-thread refresh. If this
+regresses, run:
 
 ```powershell
 node --test test\thread-visibility.test.js test\thread-title-source.test.js test\new-thread-route.test.js test\mobile-viewport.test.js
@@ -112,13 +121,21 @@ node --test test\thread-visibility.test.js test\thread-title-source.test.js test
 
 If a running thread is interactive but the sidebar/home running indicator is
 missing, first separate this from the page-refresh prompt. The running indicator
-comes from `public/app.js` status hints, not `#pageRefreshPrompt`. Current builds
-keep `runningThreadIds` across thread-list refreshes where the row only says
-`notLoaded`, and current-thread `turn/started` / `turn/completed` notifications
-write back to the matching sidebar row. If this regresses, run:
+comes from thread row `status` plus `public/app.js` status hints, not
+`#pageRefreshPrompt`. Current server builds infer rollout-session fallback
+`active` / `completed` status from bounded rollout-tail event types and use
+rollout file mtime as a fallback `updatedAt` source. This lets a Hermes/remote
+client show or clear the spinner even when app-server only returns `notLoaded`.
+The browser still keeps `runningThreadIds` across thread-list refreshes where
+the row only says `notLoaded`, and current-thread `turn/started` /
+`turn/completed` notifications write back to the matching sidebar row. Those
+hints also carry `codexMobileRunningThreadHintedAtById` timestamps; if a row
+stays `notLoaded` without a terminal status and the current thread has no
+active turn, the hint expires after the stale window so completed work does not
+keep a permanent spinner. If this regresses, run:
 
 ```powershell
-node --test test\conversation-render.test.js test\mobile-viewport.test.js
+node --test test\thread-visibility.test.js test\conversation-render.test.js test\mobile-viewport.test.js
 ```
 
 ## Sent Message Disappears After Re-entering Thread
@@ -244,14 +261,18 @@ node --test test\thread-visibility.test.js test\mobile-viewport.test.js
 ## Archived Thread Reappears In Fallback List
 
 If an archived projectless session returns to the thread list after app-server
-omits it from the primary `thread/list`, inspect `readSessionIndexFallback()` in
-`server.js`. Current builds should call `archivedSessionThreadIds()` and skip
-matching ids after verifying `visibleProjectlessThreadIds()`.
+omits it from the primary `thread/list`, inspect `archivedSessionThreadIds()` and
+`readSessionIndexFallback()` in `server.js`. Current builds should merge ids from
+the active/default/profile `archived_sessions` directories and
+`%USERPROFILE%\.codex-mobile-web\archived-thread-ids.json`, then skip matching
+ids after verifying `visibleProjectlessThreadIds()`. The Mobile-local index
+contains only ids and timestamps, so re-archiving a recovered or old-profile row
+can hide it even when the app-server cannot update the original state DB row.
 
 Run:
 
 ```powershell
-node --test test\thread-archive.test.js test\thread-visibility.test.js
+node --test test\thread-archive.test.js test\mobile-archive-index-service.test.js test\thread-visibility.test.js
 ```
 
 ## Quoted Uploaded Images Stay As Text
@@ -648,6 +669,31 @@ model to `thread/start` and inherited model/effort to bootstrap `turn/start`.
 Cross-thread task-card approval uses the same target-thread inheritance before
 injecting its real target `turn/start`.
 
+If a continuation thread appears with `name=null`, the thread id as preview, or
+the bootstrap prompt as its title after refreshing/restarting Mobile Web:
+
+1. Check the new rollout file exists under the active `%CODEX_HOME%\sessions`
+   tree and that `session_meta.payload.originator` is `codex-mobile-web`.
+2. Check `%CODEX_HOME%\session_index.jsonl` has a tail entry for the new thread
+   id with the intended `thread_name`.
+3. Check the workspace-local `.agent-context/thread-handoffs/index.jsonl` for
+   source/new thread lineage. The index is workspace-local, so inspect the
+   target workspace, not only the Mobile Web repository.
+4. Treat app-server title RPCs as best-effort. `tryUpdateThreadTitle()` may
+   return false on older app-server builds, but Mobile Web should still recover
+   the intended title from `session_index.jsonl` during fallback list reads.
+
+If manual rename shows
+`thread-store internal error: thread metadata unavailable before name update`,
+the thread exists but app-server has not materialized its metadata row yet. If
+it shows `database disk image is malformed`, the app-server title update is
+hitting the known corrupt `state_5.sqlite` path. Current Mobile Web builds
+treat both as recoverable rename failures: the requested name is stored in
+`session_index.jsonl`, the short-lived in-memory summary is updated, and
+`/api/threads` should return `titleUpdated=false` with `titleIndexed=true`
+instead of failing the save. This does not repair the SQLite database; it only
+keeps the Mobile thread list title usable through the fallback index.
+
 If a user changes model/effort while the current thread is still actively
 running, a follow-up message may be sent as `turn/steer`. That path steers the
 already-started turn and cannot change its model or reasoning effort; wait for a
@@ -669,6 +715,51 @@ If a continuation starts with unexpectedly high input tokens, inspect the bootst
 - Source handoff should be listed by file path with a small excerpt, not pasted in full.
 - Workspace handoff and prior lineage excerpts should stay bounded.
 - Durable project facts should move to `.agent-context` and `docs/`, not into a larger bootstrap prompt.
+
+## Thread Goal Display
+
+If a CLI/Desktop goal does not appear in Mobile Web:
+
+1. Confirm the active CLI app-server protocol includes `thread/goal/set`,
+   `thread/goal/get`, `thread/goal/clear`, `thread/goal/updated`, and
+   `thread/goal/cleared`. Goal creation requires Codex CLI/app-server 0.135.0
+   or newer.
+2. Inspect the active profile home reported by `/api/public-config`; Mobile Web
+   reads `<CODEX_HOME>\goals_1.sqlite`, not an arbitrary default home.
+3. Check whether the thread has a row in `goals_1.sqlite` `thread_goals`.
+   Mobile Web reads this database only as fallback and must not write it.
+4. Check the browser EventSource stream for `thread/goal/updated` or
+   `thread/goal/cleared`. These notifications should update non-current list
+   rows as well as the open thread detail card.
+5. If sqlite is locked or missing, thread list/detail should still load without
+   goals; wait for the CLI/runtime to release the lock, then refresh the list or
+   reopen the thread.
+
+If `/g` does not create a goal:
+
+1. Confirm the composer text is exactly `/g` in an existing thread. The command
+   opens a local dialog; it is not available from a new-thread draft.
+2. After the dialog submit, check that the browser sends
+   `POST /api/threads/:id/goal`. Mobile Web forwards this to app-server
+   `thread/goal/set`; it does not write `goals_1.sqlite` directly.
+3. If the response says the running app-server does not support goal set, check
+   the real `codex.exe` used by the mux/listener. On Windows the launchers
+   should prefer the newest installed `%LOCALAPPDATA%\OpenAI\Codex\bin\*\codex.exe`
+   over the older `%USERPROFILE%\.codex-mobile-web\codex.exe` runtime copy when
+   `-CodexExe` / `CODEX_MOBILE_CODEX_EXE` is not explicit.
+4. Inspect `%USERPROFILE%\.codex\app-server-mux\endpoint.json`. Current
+   endpoints should include `codexExe` and `capabilities.threadGoalRpc=true`.
+   If `codexExe` is missing or still points at
+   `%USERPROFILE%\.codex-mobile-web\codex.exe`, remove the stale endpoint by
+   restarting the shared chain so the windowless launcher can start a fresh mux.
+5. If the route succeeds but the card does not appear, first confirm the browser
+   shell is current. Current frontend builds synthesize a submitted-goal card
+   from the just-entered objective/token budget when the app-server accepts
+   `thread/goal/set` but does not return a public goal object in the immediate
+   response.
+6. If a current shell still does not show the card, inspect the EventSource
+   stream for `thread/goal/updated`, then refresh the thread detail/list so the
+   sqlite fallback can decorate `thread.goal`.
 
 ## Hermes Mobile Plugin Checks
 
