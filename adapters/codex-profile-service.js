@@ -157,6 +157,36 @@ function hasCurrentRateLimitWindow(rateLimits, nowMs = Date.now()) {
   });
 }
 
+function realPathOrResolved(value) {
+  const resolved = path.resolve(String(value || ""));
+  try {
+    return fs.realpathSync.native ? fs.realpathSync.native(resolved) : fs.realpathSync(resolved);
+  } catch (_) {
+    return resolved;
+  }
+}
+
+function pathContains(parentPath, childPath) {
+  const parent = realPathOrResolved(parentPath);
+  const child = realPathOrResolved(childPath);
+  const relative = path.relative(parent, child);
+  return !relative || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function isRateLimitRolloutSourceAccountScoped(codexHome) {
+  if (!codexHome) return false;
+  for (const name of ["sessions", "archived_sessions"]) {
+    const candidate = path.join(codexHome, name);
+    try {
+      if (!fs.existsSync(candidate)) continue;
+      if (!pathContains(codexHome, candidate)) return false;
+    } catch (_) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function collectRecentRolloutFiles(root, options = {}) {
   const maxFiles = Number(options.maxFiles || 80);
   const maxDepth = Number(options.maxDepth || 6);
@@ -205,6 +235,9 @@ function readRolloutTail(filePath, maxBytes = 2 * 1024 * 1024) {
 }
 
 function loadRateLimitSnapshotForHome(codexHome, options = {}) {
+  if (!isRateLimitRolloutSourceAccountScoped(codexHome)) {
+    return { rateLimits: null, rateLimitsByModel: {}, source: "shared-rollout-skipped" };
+  }
   const nowMs = Number(options.nowMs || Date.now());
   const files = [
     ...collectRecentRolloutFiles(path.join(codexHome, "sessions"), { maxFiles: 80 }),
@@ -240,7 +273,7 @@ function loadRateLimitSnapshotForHome(codexHome, options = {}) {
       rateLimitsByModel[normalizeModelKey(key)] = entry.rateLimits;
     }
   }
-  return { rateLimits, rateLimitsByModel };
+  return { rateLimits, rateLimitsByModel, source: hasQuotaSnapshot({ rateLimits, rateLimitsByModel }) ? "rollout" : null };
 }
 
 function hasQuotaSnapshot(value) {
@@ -248,7 +281,7 @@ function hasQuotaSnapshot(value) {
 }
 
 function normalizeQuotaSnapshot(value) {
-  if (!value || typeof value !== "object") return { rateLimits: null, rateLimitsByModel: {} };
+  if (!value || typeof value !== "object") return { rateLimits: null, rateLimitsByModel: {}, source: null, updatedAt: null };
   const rateLimits = compactRateLimits(value.rateLimits);
   const rateLimitsByModel = {};
   if (value.rateLimitsByModel && typeof value.rateLimitsByModel === "object") {
@@ -263,7 +296,18 @@ function normalizeQuotaSnapshot(value) {
       rateLimitsByModel[normalizeModelKey(key)] = rateLimits;
     }
   }
-  return { rateLimits, rateLimitsByModel };
+  return {
+    rateLimits,
+    rateLimitsByModel,
+    source: typeof value.source === "string" ? value.source : null,
+    updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : null,
+  };
+}
+
+function hasReusableStoredQuotaSnapshot(value, codexHome) {
+  return isRateLimitRolloutSourceAccountScoped(codexHome)
+    && hasQuotaSnapshot(value)
+    && value.source === "active-live";
 }
 
 function defaultProfiles(userHome, activeCodexHome = "") {
@@ -395,11 +439,17 @@ function createCodexProfileService(options = {}) {
       ? Object.assign({}, store.quotaSnapshots)
       : {};
     const activeQuota = normalizeQuotaSnapshot(options.activeQuota);
-    if (activeId && hasQuotaSnapshot(activeQuota)) {
-      quotaSnapshots[activeId] = Object.assign({}, activeQuota, { updatedAt: new Date().toISOString(), source: "active" });
+    const activeQuotaAccountScoped = Boolean(activeProfile && isRateLimitRolloutSourceAccountScoped(activeProfile.codexHome));
+    const activeManagedChildQuota = activeQuota.source === "managed-child-live" && hasQuotaSnapshot(activeQuota);
+    if (activeId && activeQuotaAccountScoped && hasQuotaSnapshot(activeQuota)) {
+      quotaSnapshots[activeId] = Object.assign({}, activeQuota, { updatedAt: new Date().toISOString(), source: "active-live" });
       if (JSON.stringify(store.quotaSnapshots || {}) !== JSON.stringify(quotaSnapshots)) {
         writeStore(store, { activeProfileId: activeId, quotaSnapshots });
       }
+    } else if (activeId && !activeQuotaAccountScoped
+      && quotaSnapshots[activeId] && quotaSnapshots[activeId].source === "active-live") {
+      delete quotaSnapshots[activeId];
+      writeStore(store, { activeProfileId: activeId, quotaSnapshots });
     }
     return {
       activeProfileId: activeId,
@@ -410,7 +460,13 @@ function createCodexProfileService(options = {}) {
       profiles: normalized.map((profile) => {
         const rolloutQuota = loadRateLimitSnapshotForHome(profile.codexHome);
         const storedQuota = normalizeQuotaSnapshot(quotaSnapshots[profile.id]);
-        const quota = hasQuotaSnapshot(rolloutQuota) ? rolloutQuota : storedQuota;
+        const quota = profile.id === activeId && activeManagedChildQuota
+          ? activeQuota
+          : (hasQuotaSnapshot(rolloutQuota)
+            ? rolloutQuota
+            : (hasReusableStoredQuotaSnapshot(storedQuota, profile.codexHome)
+              ? storedQuota
+              : { rateLimits: null, rateLimitsByModel: {}, source: null, updatedAt: null }));
         return Object.assign({}, profile, {
           active: profile.id === activeId,
           exists: fs.existsSync(profile.codexHome),
@@ -457,6 +513,7 @@ module.exports = {
   authStatusForHome,
   createCodexProfileService,
   decodeJwtPayload,
+  isRateLimitRolloutSourceAccountScoped,
   loadRateLimitSnapshotForHome,
   normalizeProfileId,
   resolveActiveCodexHomeFromStore,

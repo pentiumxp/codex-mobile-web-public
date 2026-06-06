@@ -2837,6 +2837,28 @@ html.visual-recovering body::before {
   font-size: var(--content-small-font-size);
 }
 
+.history-loader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.history-load-button {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  padding: 6px 9px;
+}
+
+.history-load-button:disabled {
+  opacity: 0.55;
+}
+
 .plugin-refresh-pending {
   color: var(--warning-text);
   background: rgba(248, 221, 182, 0.18);

@@ -48,7 +48,7 @@ The practical result is:
 The current local CLI-home layout is:
 
 ```text
-C:\Users\xuxin\.codex-homes\
+%USERPROFILE%\.codex-homes\
   current\
   previous\
 ```
@@ -122,15 +122,15 @@ and config files.
 
 The current local helper launchers are outside the repository:
 
-- `C:\Users\xuxin\OneDrive\Desktop\Codex-Current-Account.cmd`
-- `C:\Users\xuxin\OneDrive\Desktop\Codex-Current-Account-Login.cmd`
-- `C:\Users\xuxin\OneDrive\Desktop\Codex-Previous-Account.cmd`
-- `C:\Users\xuxin\OneDrive\Desktop\Codex-Previous-Account-Login.cmd`
+- `%USERPROFILE%\OneDrive\Desktop\Codex-Current-Account.cmd`
+- `%USERPROFILE%\OneDrive\Desktop\Codex-Current-Account-Login.cmd`
+- `%USERPROFILE%\OneDrive\Desktop\Codex-Previous-Account.cmd`
+- `%USERPROFILE%\OneDrive\Desktop\Codex-Previous-Account-Login.cmd`
 
 Current launcher behavior:
 
 - set `CODEX_HOME` to the selected home;
-- default the workspace to `C:\Users\xuxin\Documents\Agent` if no path argument
+- default the workspace to `%USERPROFILE%\Documents\Agent` if no path argument
   is provided;
 - allow a custom workspace path as the first argument.
 
@@ -138,18 +138,18 @@ Conceptually they are equivalent to:
 
 ```cmd
 @echo off
-set "CODEX_HOME=C:\Users\xuxin\.codex-homes\current"
+set "CODEX_HOME=%USERPROFILE%\.codex-homes\current"
 set "CODEX_WORKSPACE=%~1"
-if "%CODEX_WORKSPACE%"=="" set "CODEX_WORKSPACE=C:\Users\xuxin\Documents\Agent"
-start "" "C:\Users\xuxin\AppData\Local\OpenAI\Codex\bin\codex.exe" app "%CODEX_WORKSPACE%"
+if "%CODEX_WORKSPACE%"=="" set "CODEX_WORKSPACE=%USERPROFILE%\Documents\Agent"
+start "" "%LOCALAPPDATA%\OpenAI\Codex\bin\codex.exe" app "%CODEX_WORKSPACE%"
 ```
 
 and:
 
 ```cmd
 @echo off
-set "CODEX_HOME=C:\Users\xuxin\.codex-homes\previous"
-"C:\Users\xuxin\AppData\Local\OpenAI\Codex\bin\codex.exe" login --device-auth
+set "CODEX_HOME=%USERPROFILE%\.codex-homes\previous"
+"%LOCALAPPDATA%\OpenAI\Codex\bin\codex.exe" login --device-auth
 pause
 ```
 
@@ -158,21 +158,21 @@ pause
 Use explicit `CODEX_HOME` when verifying which account/home is active:
 
 ```powershell
-$env:CODEX_HOME='C:\Users\xuxin\.codex-homes\current'
-& 'C:\Users\xuxin\AppData\Local\OpenAI\Codex\bin\codex.exe' login status
+$env:CODEX_HOME = Join-Path $env:USERPROFILE '.codex-homes\current'
+& (Join-Path $env:LOCALAPPDATA 'OpenAI\Codex\bin\codex.exe') login status
 ```
 
 ```powershell
-$env:CODEX_HOME='C:\Users\xuxin\.codex-homes\previous'
-& 'C:\Users\xuxin\AppData\Local\OpenAI\Codex\bin\codex.exe' login status
+$env:CODEX_HOME = Join-Path $env:USERPROFILE '.codex-homes\previous'
+& (Join-Path $env:LOCALAPPDATA 'OpenAI\Codex\bin\codex.exe') login status
 ```
 
 Useful file checks:
 
 ```powershell
-Get-ChildItem C:\Users\xuxin\.codex-homes\current
-Get-ChildItem C:\Users\xuxin\.codex-homes\previous
-Test-Path C:\Users\xuxin\.codex-homes\previous\auth.json
+Get-ChildItem (Join-Path $env:USERPROFILE '.codex-homes\current')
+Get-ChildItem (Join-Path $env:USERPROFILE '.codex-homes\previous')
+Test-Path (Join-Path $env:USERPROFILE '.codex-homes\previous\auth.json')
 ```
 
 ## Important Boundary: Desktop App
@@ -289,11 +289,11 @@ Example conceptual shape:
 
 ```text
 Account A
-  CODEX_HOME = C:\Users\xuxin\.codex-homes\current
+  CODEX_HOME = %USERPROFILE%\.codex-homes\current
   Mobile Web port = 8787
 
 Account B
-  CODEX_HOME = C:\Users\xuxin\.codex-homes\previous
+  CODEX_HOME = %USERPROFILE%\.codex-homes\previous
   Mobile Web port = 8788
 ```
 

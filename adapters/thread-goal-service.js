@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { runSqliteJson } = require("./sqlite-cli");
 
-const MAX_GOAL_OBJECTIVE_CHARS = 500;
+const MAX_GOAL_OBJECTIVE_CHARS = 4000;
 
 function sqlString(value) {
   return `'${String(value ?? "").replace(/'/g, "''")}'`;

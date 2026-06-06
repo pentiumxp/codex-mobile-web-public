@@ -60,11 +60,16 @@ test("prioritizes modal and drawer back states before thread navigation", () => 
     { kind: "modal", modal: "filePreview", threadId: "thread-1" },
   );
   assert.equal(pluginEmbed.navigationMessage({ currentThreadId: "thread-1" }, { filePreviewOpen: true }).canGoBack, true);
+  assert.equal(pluginEmbed.navigationMessage({}, { createWorkspaceOpen: true }).canGoBack, true);
+  assert.equal(pluginEmbed.navigationMessage({}, { updatePanelOpen: true }).canGoBack, true);
+  assert.equal(pluginEmbed.navigationMessage({ currentThreadId: "thread-1" }, { sidebarOpen: true }).canGoBack, true);
+  assert.equal(pluginEmbed.navigationMessage({ currentThreadId: "thread-1" }, { settingsOpen: true }).canGoBack, true);
   assert.deepEqual(
     pluginEmbed.navigationMessage({ selectedCwd: "C:\\Work" }, { primaryPage: true, settingsOpen: true }).route,
     { kind: "root", workspace: "C:\\Work", settingsOpen: true },
   );
   assert.equal(pluginEmbed.navigationMessage({ selectedCwd: "C:\\Work" }, { primaryPage: true, settingsOpen: true }).canGoBack, false);
+  assert.equal(pluginEmbed.navigationMessage({ currentThreadId: "thread-1" }, { primaryPage: true }).canGoBack, false);
   assert.deepEqual(
     pluginEmbed.navigationMessage({ currentThreadId: "thread-1" }, { sidebarOpen: true, settingsOpen: true }).route,
     { kind: "panel", panel: "settings", threadId: "thread-1" },

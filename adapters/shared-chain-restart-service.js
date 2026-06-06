@@ -84,6 +84,14 @@ function buildRestartEnvArgs(assignments) {
     .join(" ");
 }
 
+function safeLaunchdServiceLabel(value) {
+  const label = String(value || "").trim();
+  if (!/^[A-Za-z0-9_.-]+$/.test(label)) return "";
+  if (!label.includes(".")) return "";
+  if (/^application[.-]/i.test(label)) return "";
+  return label;
+}
+
 function buildRestartMacShellCommand(options = {}) {
   const delayMs = Math.max(0, Number(options.delayMs || 0));
   const delaySeconds = (delayMs / 1000).toFixed(3);
@@ -96,6 +104,10 @@ function buildRestartMacShellCommand(options = {}) {
   const logPath = path.resolve(options.logPath || path.join(options.runtimeDir || path.join(process.env.HOME || workspacePath, ".codex-mobile-web"), "logs", "mobile-web.log"));
   const logDir = path.dirname(logPath);
   const labelPrefix = String(options.labelPrefix || `com.xuefusong.codex-mobile-web.${port}`).replace(/[^A-Za-z0-9_.-]/g, "-");
+  const serviceLabel = safeLaunchdServiceLabel(
+    options.serviceLabel
+      || (options.env && (options.env.CODEX_MOBILE_LAUNCHD_LABEL || options.env.XPC_SERVICE_NAME)),
+  );
   const envArgs = buildRestartEnvArgs(safeRestartEnvAssignments(options.env || process.env, {
     CODEX_HOME: options.codexHome || (options.env && options.env.CODEX_HOME),
     CODEX_MOBILE_HOST: options.host || (options.env && options.env.CODEX_MOBILE_HOST) || "0.0.0.0",
@@ -103,12 +115,32 @@ function buildRestartMacShellCommand(options = {}) {
     CODEX_MOBILE_RUNTIME_DIR: options.runtimeDir || (options.env && options.env.CODEX_MOBILE_RUNTIME_DIR),
   }));
 
-  return [
+  const commonLines = [
     "set -euo pipefail",
     `sleep ${delaySeconds}`,
     `label_prefix=${shQuote(labelPrefix)}`,
-    "label=\"${label_prefix}.$$.${RANDOM:-0}\"",
+    `service_label=${shQuote(serviceLabel)}`,
+    `launchctl_path=${shQuote(launchctlPath)}`,
+    "launchd_domain=\"gui/$(/usr/bin/id -u)\"",
     `mkdir -p ${shQuote(logDir)}`,
+    "while IFS= read -r old_label; do",
+    "  [[ -n \"$old_label\" ]] || continue",
+    "  \"$launchctl_path\" bootout \"$launchd_domain/$old_label\" >/dev/null 2>&1 || true",
+    `done < <("$launchctl_path" list | /usr/bin/awk -v prefix="$label_prefix" 'index($3, prefix) == 1 { print $3 }')`,
+  ];
+  if (serviceLabel) {
+    return commonLines.concat([
+      "if \"$launchctl_path\" kickstart -k \"$launchd_domain/$service_label\" >/dev/null 2>&1; then exit 0; fi",
+      `if /bin/kill ${currentPid} >/dev/null 2>&1; then exit 0; fi`,
+      "exit 1",
+    ]).join("\n");
+  }
+
+  return commonLines.concat([
+    "if [[ -n \"$service_label\" ]]; then",
+    "  \"$launchctl_path\" kickstart -k \"$launchd_domain/$service_label\"",
+    "  exit 0",
+    "fi",
     `old_pids="$( { /usr/sbin/lsof -tiTCP:${port} -sTCP:LISTEN 2>/dev/null || true; printf '%s\\n' ${currentPid}; } | awk 'NF' | sort -u )"`,
     "for pid in $old_pids; do",
     "  command=\"$(/bin/ps -p \"$pid\" -o command= 2>/dev/null || true)\"",
@@ -121,17 +153,14 @@ function buildRestartMacShellCommand(options = {}) {
     "  sleep 0.25",
     "done",
     [
-      `exec ${shQuote(launchctlPath)} submit -l "$label"`,
-      `-o ${shQuote(logPath)}`,
-      `-e ${shQuote(logPath)}`,
-      "-- /usr/bin/env",
+      "nohup /usr/bin/env",
       envArgs,
-      "CODEX_MOBILE_LAUNCHD_LABEL=\"$label\"",
       `CODEX_MOBILE_LAUNCHD_LABEL_PREFIX=${shQuote(labelPrefix)}`,
       shQuote(nodePath),
       shQuote(serverPath),
+      `>> ${shQuote(logPath)} 2>&1 < /dev/null &`,
     ].filter(Boolean).join(" "),
-  ].join("\n");
+  ]).join("\n");
 }
 
 function createSharedChainRestartService(deps = {}) {

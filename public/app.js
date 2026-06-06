@@ -212,13 +212,18 @@ const state = {
   composerFastHintTimer: null,
   attachmentProcessingCount: 0,
   filePreviewSwipe: null,
+  threadHistoryBusy: false,
+  threadHistoryError: "",
 };
 
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
-const MAX_VISIBLE_TURNS = 8;
+const MAX_VISIBLE_TURNS = 10;
+const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v189";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v201";
+const LONG_RECEIPT_SCROLL_CHARS = 1200;
+const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const RUNNING_THREAD_HINT_STALE_MS = 20 * 60 * 1000;
@@ -280,7 +285,8 @@ const DRAFT_SAVE_DEBOUNCE_MS = 250;
 const THREAD_TASK_CARD_DRAFT_CREATE_STALE_MS = 45000;
 const THREAD_TASK_CARD_DRAFT_CREATE_MAX_ATTEMPTS = 3;
 const THREAD_TASK_CARD_BODY_MAX_CHARS = 8000;
-const THREAD_TASK_CARD_COMMAND_PREFIX = "#自由协作";
+const THREAD_TASK_CARD_COMMAND_PREFIX = "#";
+const THREAD_TASK_CARD_LEGACY_COMMAND_PREFIX = "#自由协作";
 const THREAD_GOAL_COMMAND_PREFIX = "/g";
 const THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";
 const THREAD_TASK_CARD_DRAFT_TAG = "codex-mobile-thread-task-card-draft";
@@ -290,6 +296,8 @@ const MENU_OVERLAY_MEDIA = "(max-width: 1180px), (pointer: coarse) and (max-widt
 const TABLET_SPLIT_MEDIA = "(pointer: coarse) and (orientation: landscape) and (min-width: 900px) and (min-height: 600px)";
 const SIDEBAR_EDGE_SWIPE_PX = 34;
 const ANDROID_SIDEBAR_EDGE_SWIPE_PX = 84;
+const PLUGIN_EMBED_BACK_EDGE_SWIPE_PX = 44;
+const PLUGIN_EMBED_BACK_SWIPE_MIN_PX = 58;
 const ANDROID_BACK_SIDEBAR_STATE = "codexMobileAndroidBackSidebar";
 const ANDROID_BACK_SIDEBAR_BASE = "base";
 const ANDROID_BACK_SIDEBAR_TOP = "top";
@@ -1329,10 +1337,21 @@ function clearStoredRateLimits() {
   renderQuotaUsage();
 }
 
+function hasRateLimitSnapshot(rateLimits, rateLimitsByModel) {
+  if (rateLimits && typeof rateLimits === "object" && hasCurrentRateLimitWindow(rateLimits)) return true;
+  if (!rateLimitsByModel || typeof rateLimitsByModel !== "object") return false;
+  return Object.values(rateLimitsByModel).some((value) => value && typeof value === "object" && hasCurrentRateLimitWindow(value));
+}
+
 function rememberRateLimitsFromConfig(config) {
   if (!config || typeof config !== "object") return;
-  if (config.rateLimits || config.rateLimitsByModel) {
-    rememberRateLimits(config.rateLimits || null, config.rateLimitsByModel || null);
+  if (Object.prototype.hasOwnProperty.call(config, "rateLimits")
+    || Object.prototype.hasOwnProperty.call(config, "rateLimitsByModel")) {
+    if (hasRateLimitSnapshot(config.rateLimits || null, config.rateLimitsByModel || null)) {
+      rememberRateLimits(config.rateLimits || null, config.rateLimitsByModel || null);
+    } else {
+      clearStoredRateLimits();
+    }
   }
 }
 
@@ -2350,7 +2369,7 @@ async function checkPageRefreshAvailability(options = {}) {
         if (clientChanged) {
           state.pageRefreshBuildId = nextBuildId;
           state.pageRefreshPreparedConfig = config;
-          requestHermesPluginRefresh("server_build_changed", { force: true });
+          requestHermesPluginRefresh("server_build_changed");
         }
         if (!clientChanged && assetsChanged) {
           state.serverAssetBuildId = nextAssetBuildId;
@@ -3349,11 +3368,28 @@ function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
   });
   const incomingIds = new Set(merged.turns.map((turn) => turn && turn.id).filter(Boolean));
   const latestIncoming = merged.turns.length ? merged.turns[merged.turns.length - 1] : null;
+  const preserveExpandedHistory = Boolean(existingThread.mobileHistoryExpanded)
+    && (/turns-list/i.test(String(incomingThread.mobileReadMode || ""))
+      || Boolean(incomingThread.mobileOlderTurnsCursor)
+      || Number(incomingThread.mobileOmittedTurnCount || 0) > 0);
+  let preservedExpandedTurnCount = 0;
   for (const existingTurn of existingTurns) {
     if (!existingTurn || incomingIds.has(existingTurn.id)) continue;
+    if (preserveExpandedHistory) {
+      merged.turns.push(existingTurn);
+      preservedExpandedTurnCount += 1;
+      continue;
+    }
     if (turnIsSupersededBy(existingTurn, latestIncoming)) continue;
     if (existingTurn.id === state.activeTurnId || (!isTurnComplete(existingTurn) && turnVisibleWeight(existingTurn) > 0)) {
       merged.turns.push(existingTurn);
+    }
+  }
+  if (preserveExpandedHistory) {
+    merged.mobileHistoryExpanded = true;
+    merged.turns = sortTurnsForDisplay(merged.turns).slice(-MAX_EXPANDED_VISIBLE_TURNS);
+    if (preservedExpandedTurnCount > 0) {
+      merged.mobileOmittedTurnCount = Math.max(0, Number(merged.mobileOmittedTurnCount || 0) - preservedExpandedTurnCount);
     }
   }
   return merged;
@@ -3454,7 +3490,7 @@ function conversationRenderSignature(thread) {
   if (!thread) return "home";
   if (thread.mobileLoadError) return `load-error|${state.currentThreadId || thread.id || ""}|${thread.mobileLoadError}`;
   if (thread.mobileLoading) return `loading|${state.currentThreadId || thread.id || ""}`;
-  const turns = (thread.turns || []).slice(-MAX_VISIBLE_TURNS);
+  const turns = (thread.turns || []).slice(-maxVisibleTurnsForThread(thread));
   const omitted = Number(thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread.turns || []).length - turns.length);
   const payload = {
     threadId: state.currentThreadId || thread.id || "",
@@ -3464,6 +3500,10 @@ function conversationRenderSignature(thread) {
     rolloutWarningDismissed: isRolloutWarningDismissed(thread),
     rolloutWarningThresholdBytes: rolloutThresholdBytes(thread),
     omitted,
+    olderTurnsCursor: threadTurnsCursorSignature(thread.mobileOlderTurnsCursor),
+    historyExpanded: Boolean(thread.mobileHistoryExpanded),
+    historyBusy: Boolean(state.threadHistoryBusy),
+    historyError: String(state.threadHistoryError || ""),
     goal: threadGoalSignature(thread),
     approvals: approvalRequestsSignature(state.currentThreadId || thread.id || ""),
     taskCards: threadTaskCardsSignature(thread),
@@ -4137,6 +4177,28 @@ function showLogin(message = "") {
   $("loginError").textContent = message;
 }
 
+function sortTurnsForDisplay(turns) {
+  return (turns || []).slice().sort((leftTurn, rightTurn) => {
+    const left = turnOrderMs(leftTurn);
+    const right = turnOrderMs(rightTurn);
+    if (left && right && left !== right) return left - right;
+    return String(leftTurn && leftTurn.id || "").localeCompare(String(rightTurn && rightTurn.id || ""));
+  });
+}
+
+function maxVisibleTurnsForThread(thread) {
+  return thread && thread.mobileHistoryExpanded ? MAX_EXPANDED_VISIBLE_TURNS : MAX_VISIBLE_TURNS;
+}
+
+function threadTurnsCursorSignature(cursor) {
+  if (!cursor) return "";
+  try {
+    return JSON.stringify(cursor);
+  } catch (_) {
+    return String(cursor || "");
+  }
+}
+
 function pluginStartupLoadingText(message = "") {
   const text = String(message || "").trim();
   return text || "正在加载 Codex...";
@@ -4275,7 +4337,7 @@ async function bootstrap() {
     ok: Boolean(status),
   });
   if (status) updateConnectionState(status);
-  if (status && (status.rateLimits || status.rateLimitsByModel)) rememberRateLimits(status.rateLimits, status.rateLimitsByModel);
+  if (status) rememberRateLimitsFromConfig(status);
   if (status && status.codexProfiles) rememberCodexProfiles(status.codexProfiles);
   const workspacesStartedAt = nowPerfMs();
   await loadWorkspaces();
@@ -4847,7 +4909,7 @@ async function loadThread(threadId, options = {}) {
     && !state.currentThread.mobileLoading
     && !state.currentThread.mobileLoadError) {
     renderThreads();
-    renderCurrentThread();
+    renderCurrentThread({ stickToBottom: true });
     if (isMenuOverlayMode()) closeSidebarMenu();
     postClientEvent("thread_switch_cached", {
       source,
@@ -4859,6 +4921,8 @@ async function loadThread(threadId, options = {}) {
   const seq = state.threadLoadSeq + 1;
   state.threadLoadSeq = seq;
   state.sendButtonHint = "";
+  state.threadHistoryBusy = false;
+  state.threadHistoryError = "";
   clearRecentCompletedReplyAnchor();
   clearConversationAutoScrollHold();
   abortCurrentThreadRefresh();
@@ -4882,6 +4946,7 @@ async function loadThread(threadId, options = {}) {
   syncActiveTurnFromThread();
   renderThreads();
   renderCurrentThread({ stickToBottom: true });
+  publishPluginNavigationState({ force: true });
   updateComposerControls();
   $("connectionState").classList.remove("error");
   $("connectionState").textContent = "Loading thread";
@@ -4942,6 +5007,7 @@ async function loadThread(threadId, options = {}) {
   syncActiveTurnFromThread();
   renderThreads();
   renderCurrentThread({ stickToBottom: true });
+  publishPluginNavigationState({ force: true });
   restoreConnectionState();
   scheduleLivePollIfNeeded(1200);
   updateComposerControls();
@@ -4987,6 +5053,95 @@ async function refreshCurrentThread() {
   renderThreads();
   renderCurrentThread();
   scheduleLivePollIfNeeded();
+}
+
+function threadTurnsCursorParam(cursor) {
+  if (!cursor) return "";
+  return typeof cursor === "string" ? cursor : JSON.stringify(cursor);
+}
+
+function turnsArrayFromListResult(result) {
+  if (Array.isArray(result && result.data)) return result.data;
+  if (Array.isArray(result && result.turns)) return result.turns;
+  return [];
+}
+
+function preserveConversationScrollAfterPrepend(previousScrollTop, previousScrollHeight) {
+  const conversation = $("conversation");
+  if (!conversation) return;
+  const nextScrollHeight = conversation.scrollHeight;
+  const delta = Math.max(0, nextScrollHeight - Number(previousScrollHeight || 0));
+  if (delta <= 0) return;
+  markProgrammaticConversationScroll();
+  conversation.scrollTop = Number(previousScrollTop || 0) + delta;
+  syncConversationScrollPosition();
+  scheduleScrollToBottomButtonUpdate();
+}
+
+async function loadOlderThreadTurns(options = {}) {
+  const thread = state.currentThread;
+  const threadId = state.currentThreadId || (thread && thread.id) || "";
+  const cursor = thread && thread.mobileOlderTurnsCursor;
+  if (!thread || !threadId || !cursor || state.threadHistoryBusy) return;
+  const preserveScroll = Boolean(options.preserveScroll);
+  const conversation = $("conversation");
+  const previousScrollTop = preserveScroll && conversation ? conversation.scrollTop : 0;
+  const previousScrollHeight = preserveScroll && conversation ? conversation.scrollHeight : 0;
+  state.threadHistoryBusy = true;
+  state.threadHistoryError = "";
+  renderCurrentThread({ stickToBottom: false });
+  try {
+    const params = new URLSearchParams({
+      limit: String(MAX_VISIBLE_TURNS),
+      sortDirection: "desc",
+      cursor: threadTurnsCursorParam(cursor),
+    });
+    const result = await api(`/api/threads/${encodeURIComponent(threadId)}/turns?${params.toString()}`, {
+      timeoutMs: 30000,
+    });
+    if (state.currentThreadId !== threadId || !state.currentThread) return;
+    const incomingTurns = sortTurnsForDisplay(turnsArrayFromListResult(result));
+    const existingTurns = Array.isArray(state.currentThread.turns) ? state.currentThread.turns : [];
+    const existingById = new Map(existingTurns.map((turn) => [String(turn && turn.id || ""), turn]));
+    const mergedById = new Map();
+    let newlyLoadedTurnCount = 0;
+    for (const incomingTurn of incomingTurns) {
+      if (!incomingTurn || !incomingTurn.id) continue;
+      const existingTurn = existingById.get(String(incomingTurn.id));
+      if (!existingTurn) newlyLoadedTurnCount += 1;
+      mergedById.set(String(incomingTurn.id), existingTurn ? mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) : incomingTurn);
+    }
+    for (const existingTurn of existingTurns) {
+      if (!existingTurn || !existingTurn.id) continue;
+      if (!mergedById.has(String(existingTurn.id))) mergedById.set(String(existingTurn.id), existingTurn);
+    }
+    state.currentThread.turns = sortTurnsForDisplay(Array.from(mergedById.values())).slice(-MAX_EXPANDED_VISIBLE_TURNS);
+    state.currentThread.mobileHistoryExpanded = true;
+    if (newlyLoadedTurnCount > 0) {
+      state.currentThread.mobileOmittedTurnCount = Math.max(0, Number(state.currentThread.mobileOmittedTurnCount || 0) - newlyLoadedTurnCount);
+    }
+    state.currentThread.mobileOlderTurnsCursor = result && result.nextCursor ? result.nextCursor : null;
+    state.currentThread.mobileNewerTurnsCursor = result && result.backwardsCursor ? result.backwardsCursor : state.currentThread.mobileNewerTurnsCursor;
+    markIdleActivity("History loaded");
+  } catch (err) {
+    state.threadHistoryError = `Older history failed: ${normalizeClientErrorMessage(err && err.message ? err.message : String(err)) || String(err && err.message || err)}`;
+    showError(new Error(state.threadHistoryError));
+  } finally {
+    state.threadHistoryBusy = false;
+    renderCurrentThread({ stickToBottom: false });
+    if (preserveScroll && state.currentThreadId === threadId) {
+      preserveConversationScrollAfterPrepend(previousScrollTop, previousScrollHeight);
+    }
+  }
+}
+
+function maybeLoadOlderThreadTurnsFromScroll() {
+  const conversation = $("conversation");
+  const thread = state.currentThread;
+  if (!conversation || !thread || !thread.mobileOlderTurnsCursor || state.threadHistoryBusy) return;
+  if (!hasRecentConversationScrollIntent()) return;
+  if (conversation.scrollTop > THREAD_HISTORY_TOP_LOAD_PX) return;
+  loadOlderThreadTurns({ preserveScroll: true, source: "scroll-top" }).catch(showError);
 }
 
 function scheduleCurrentThreadRefresh(delay = 600) {
@@ -5759,6 +5914,93 @@ function postPluginBackResult(handled, reason) {
   });
 }
 
+function pluginEmbedBackSwipeCanHandle() {
+  if (!isHermesEmbedMode() || !pluginEmbedApi.navigationMessage) return false;
+  const message = pluginEmbedApi.navigationMessage(state, pluginNavigationUiState());
+  return Boolean(message && message.canGoBack);
+}
+
+function pluginEmbedBackSwipeInteractiveTarget(target) {
+  return Boolean(target?.closest?.(
+    "input, select, textarea, button, a, [role='button'], [contenteditable='true'], .composer, .dialog, .modal, .file-preview-dialog"
+  ));
+}
+
+function installHermesPluginBackSwipeGuard() {
+  if (!isHermesEmbedMode()) return;
+  const root = document.documentElement;
+  if (!root || root.dataset.pluginBackSwipeGuardBound) return;
+  root.dataset.pluginBackSwipeGuardBound = "1";
+  let swipe = null;
+  const clear = () => {
+    swipe = null;
+  };
+  const stopNativeBack = (event) => {
+    if (event && event.cancelable) event.preventDefault();
+    event?.stopPropagation?.();
+    event?.stopImmediatePropagation?.();
+  };
+  const startPluginBackSwipe = (event) => {
+    if (!isHermesEmbedMode() || event.touches?.length !== 1 || !pluginEmbedBackSwipeCanHandle()) {
+      clear();
+      return;
+    }
+    if (pluginEmbedBackSwipeInteractiveTarget(event.target)) {
+      clear();
+      return;
+    }
+    const point = event.touches[0];
+    if (!point || point.clientX > PLUGIN_EMBED_BACK_EDGE_SWIPE_PX) {
+      clear();
+      return;
+    }
+    swipe = {
+      startX: point.clientX,
+      startY: point.clientY,
+      lastX: point.clientX,
+      startedAt: performance.now(),
+      moved: false,
+    };
+    stopNativeBack(event);
+  };
+  const movePluginBackSwipe = (event) => {
+    if (!swipe || !isHermesEmbedMode() || event.touches?.length !== 1) return;
+    const point = event.touches[0];
+    const dx = point.clientX - swipe.startX;
+    const dy = point.clientY - swipe.startY;
+    const horizontal = Math.abs(dx);
+    const vertical = Math.abs(dy);
+    if (dx <= 0 || horizontal < 10 || horizontal < vertical * 1.1) {
+      stopNativeBack(event);
+      return;
+    }
+    swipe.moved = true;
+    swipe.lastX = point.clientX;
+    stopNativeBack(event);
+  };
+  const finishPluginBackSwipe = (event) => {
+    const current = swipe;
+    clear();
+    if (!current || !isHermesEmbedMode()) return;
+    stopNativeBack(event);
+    const point = event.changedTouches?.[0];
+    const dx = (point ? point.clientX : current.lastX) - current.startX;
+    const elapsed = Math.max(1, performance.now() - (current.startedAt || performance.now()));
+    const velocity = dx / elapsed;
+    if (!current.moved && dx < 12) return;
+    if (dx >= PLUGIN_EMBED_BACK_SWIPE_MIN_PX || velocity > 0.55) {
+      handlePluginBack({
+        preventDefault() {},
+        stopPropagation() {},
+      });
+    }
+  };
+  document.addEventListener("touchstart", startPluginBackSwipe, { passive: false, capture: true });
+  document.addEventListener("touchmove", movePluginBackSwipe, { passive: false, capture: true });
+  document.addEventListener("touchend", finishPluginBackSwipe, { passive: false, capture: true });
+  document.addEventListener("touchcancel", clear, { passive: true, capture: true });
+}
+
 function handlePluginBack(event) {
   if (!isHermesEmbedMode()) return;
   if (event && typeof event.preventDefault === "function") event.preventDefault();
@@ -6280,10 +6522,33 @@ function threadReadWarningMessage(thread) {
   if (mode === "summary-timeout-fallback") {
     return "线程详情读取超时，先显示本地摘要；稍后刷新会继续补全。";
   }
-  if (mode === "summary-large-rollout-fallback") {
-    return "这个会话上下文太大，手机端先显示本地摘要；建议压缩续接后再继续使用。";
-  }
   return "线程详情暂时没有完整读到，先显示本地摘要；稍后刷新会继续补全。";
+}
+
+function renderThreadHistoryNote(thread, omitted, previousKeys = new Set()) {
+  const olderCursor = thread && thread.mobileOlderTurnsCursor;
+  const hasOlder = Boolean(olderCursor);
+  const busy = Boolean(state.threadHistoryBusy);
+  const error = String(state.threadHistoryError || "");
+  if (!omitted && !hasOlder && !busy && !error) return "";
+  const loaded = Array.isArray(thread && thread.turns) ? thread.turns.length : 0;
+  const key = `history|${state.currentThreadId || thread.id || ""}|${omitted}|${threadTurnsCursorSignature(olderCursor)}|${busy}|${error}`;
+  const parts = [];
+  if (omitted > 0) {
+    parts.push(`Older history hidden on mobile: ${omitted.toLocaleString()} turn(s).`);
+  } else if (hasOlder) {
+    parts.push(`Showing ${loaded.toLocaleString()} recent turn(s). Older history is available.`);
+  } else if (thread && thread.mobileHistoryExpanded) {
+    parts.push(`Showing ${loaded.toLocaleString()} loaded turn(s).`);
+  }
+  if (error) parts.push(error);
+  const button = hasOlder
+    ? `<button class="history-load-button" type="button" data-load-older-turns ${busy ? "disabled" : ""}>${busy ? "Loading..." : "Load older"}</button>`
+    : "";
+  return `<div class="history-note history-loader${entryAnimationClass(key, previousKeys)}" data-render-key="${escapeHtml(key)}">
+    <span>${escapeHtml(parts.join(" "))}</span>
+    ${button}
+  </div>`;
 }
 
 function renderCurrentThread(options = {}) {
@@ -6304,9 +6569,12 @@ function renderCurrentThread(options = {}) {
   updateSubagentPanelUi();
   const nearBottom = isConversationNearBottom();
   const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom });
+  const explicitNoStickToBottom = options.stickToBottom === false || Boolean(options.scrollToTurnReceiptStart);
   const shouldFollowBottom = !userReadingCurrentTurn
+    && !explicitNoStickToBottom
     && (shouldFollowSubmittedMessageToBottom() || shouldFollowViewportChangeToBottom());
   const shouldStickToBottom = !userReadingCurrentTurn
+    && !explicitNoStickToBottom
     && (shouldFollowBottom
       || (!shouldHoldAutoScrollForCurrentTurn()
         && (options.stickToBottom === true || nearBottom)));
@@ -6340,12 +6608,9 @@ function renderCurrentThread(options = {}) {
     publishPluginNavigationState();
     return;
   }
-  const turns = (thread.turns || []).slice(-MAX_VISIBLE_TURNS);
+  const turns = (thread.turns || []).slice(-maxVisibleTurnsForThread(thread));
   const omitted = Number(thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread.turns || []).length - turns.length);
-  const omittedKey = `history|${state.currentThreadId}|${omitted}`;
-  const omittedBanner = omitted > 0
-    ? `<div class="history-note${entryAnimationClass(omittedKey, previousKeys)}" data-render-key="${escapeHtml(omittedKey)}">Older history hidden on mobile: ${omitted.toLocaleString()} turn(s)</div>`
-    : "";
+  const omittedBanner = renderThreadHistoryNote(thread, omitted, previousKeys);
   const readWarningKey = `read-warning|${state.currentThreadId}|${thread.mobileReadMode || ""}|${thread.mobileReadWarning || ""}`;
   const readWarningMessage = threadReadWarningMessage(thread);
   const readWarning = readWarningMessage
@@ -6370,6 +6635,7 @@ function renderCurrentThread(options = {}) {
     const html = goalCard + rolloutWarning + taskToolbar + omittedBanner + readWarning + (turnsHtml || approvalsHtml || taskCardsHtml ? `${turnsHtml}${approvalsHtml}${taskCardsHtml}${pluginRefreshNotice}` : `${pluginRefreshNotice || ""}<div class="empty-state entry-animate">${escapeHtml(emptyMessage)}</div>`);
   updateConversationHtml(html, conversationRenderSignature(thread), { stickToBottom: shouldStickToBottom });
   bindCurrentThreadActions();
+  if (options.scrollToTurnReceiptStart) scrollConversationToTurnReceiptStart(options.scrollToTurnReceiptStart);
   applyPendingPluginRouteHintFocus();
   updateTickTimer();
   publishPluginNavigationState();
@@ -6504,6 +6770,8 @@ function bindCurrentThreadActions() {
   if (taskButton) taskButton.addEventListener("click", createThreadTaskCardFromCurrent);
   const dismiss = $("conversation").querySelector("[data-dismiss-rollout-warning]");
   if (dismiss) dismiss.addEventListener("click", () => dismissRolloutWarning(state.currentThread));
+  const olderTurns = $("conversation").querySelector("[data-load-older-turns]");
+  if (olderTurns) olderTurns.addEventListener("click", () => loadOlderThreadTurns({ preserveScroll: true, source: "button" }).catch(showError));
 }
 
 function findThreadTaskCard(cardId) {
@@ -6528,7 +6796,9 @@ function truncateThreadTaskCardBody(value, maxChars = THREAD_TASK_CARD_BODY_MAX_
 }
 
 function isThreadTaskCardCommandText(value) {
-  return String(value || "").trim().startsWith(THREAD_TASK_CARD_COMMAND_PREFIX);
+  const text = String(value || "").trim();
+  return text.startsWith(THREAD_TASK_CARD_COMMAND_PREFIX)
+    && threadTaskCardCommandText(text).length > 0;
 }
 
 function isThreadGoalCommandText(value) {
@@ -6537,9 +6807,12 @@ function isThreadGoalCommandText(value) {
 
 function threadTaskCardCommandText(value) {
   const text = String(value || "").trim();
+  if (text.startsWith(THREAD_TASK_CARD_LEGACY_COMMAND_PREFIX)) {
+    return text.slice(THREAD_TASK_CARD_LEGACY_COMMAND_PREFIX.length).trim();
+  }
   return text.startsWith(THREAD_TASK_CARD_COMMAND_PREFIX)
     ? text.slice(THREAD_TASK_CARD_COMMAND_PREFIX.length).trim()
-    : text.replace(/^#+\s*/, "").trim();
+    : "";
 }
 
 function threadTaskCardVisibleTargets() {
@@ -6557,6 +6830,7 @@ function buildThreadTaskCardDraftRequestText(commandText) {
   const original = String(commandText || "").trim();
   const compactCommand = threadTaskCardCommandText(original);
   if (!compactCommand) throw new Error("Task-card command is empty");
+  const legacyAutonomousCommand = original.startsWith(THREAD_TASK_CARD_LEGACY_COMMAND_PREFIX);
   const sourceThread = state.currentThread || {};
   const envelope = {
     version: 1,
@@ -6571,7 +6845,7 @@ function buildThreadTaskCardDraftRequestText(commandText) {
     JSON.stringify(envelope, null, 2),
     `</${THREAD_TASK_CARD_REQUEST_TAG}>`,
     "",
-    "Interpret the #自由协作 command above as an autonomous cross-thread pending task card request.",
+    "Interpret the # command above as a cross-thread pending task card request.",
     "Return only one XML block in exactly this format:",
     `<${THREAD_TASK_CARD_DRAFT_TAG}>`,
     "{\"targetThreadIds\":[\"one or more exact threadId values from availableTargets\"],\"workflowMode\":\"manual|autonomous\",\"workflowId\":\"optional existing workflow id\",\"title\":\"short title\",\"summary\":\"one-line summary\",\"body\":\"full markdown body\",\"error\":\"\"}",
@@ -6579,7 +6853,11 @@ function buildThreadTaskCardDraftRequestText(commandText) {
     "Rules:",
     "- Choose one or more targetThreadIds only from availableTargets.threadId.",
     "- Do not invent a thread id; when the request names multiple clear targets, include all of them.",
-    "- Default workflowMode to autonomous for #自由协作. Use manual only if the command explicitly asks for a one-off manual card.",
+    "- Default workflowMode to manual for plain # single-card commands.",
+    "- Use autonomous only when the command uses #自由协作 or explicitly asks for autonomous/free collaboration/auto-return workflow.",
+    legacyAutonomousCommand
+      ? "- This command used #自由协作, so default workflowMode to autonomous unless it explicitly asks for manual."
+      : "- This command used plain #, so default workflowMode to manual unless it explicitly asks for autonomous/free collaboration.",
     "- Autonomous workflow means the target approves the first card once; after the target turn completes, Mobile Web sends the return card back automatically without another approval.",
     "- For a new autonomous workflow, leave workflowId empty. Reuse workflowId only when the command or visible context provides an existing id.",
     "- If the command is unclear or no target fits, set targetThreadIds to an empty array and explain the problem in error.",
@@ -8541,6 +8819,24 @@ function ensureTurn(turnId) {
   return turn;
 }
 
+function turnHasOperationalItems(turn) {
+  const items = Array.isArray(turn && turn.items) ? turn.items : [];
+  return items.some((item) => isOperationalItem(item));
+}
+
+function shouldDeferLiveFinalReceipt(turn, itemType) {
+  return Boolean(
+    itemType === "agentMessage"
+    && isLatestTurn(turn)
+    && isLiveTurn(turn)
+    && turnHasOperationalItems(turn)
+  );
+}
+
+function shouldRenderAfterUpsert(turn, item) {
+  return !shouldDeferLiveFinalReceipt(turn, item && item.type);
+}
+
 function upsertItem(turnId, item) {
   const turn = ensureTurn(turnId);
   if (!turn || !item || !item.id) return;
@@ -8570,7 +8866,7 @@ function upsertItem(turnId, item) {
   if (index >= 0) turn.items[index] = mergeItemPreservingVisibleFields(turn.items[index], item);
   else turn.items.push(item);
   turn.items = removeShadowedMuxUserMessages(turn.items);
-  scheduleRenderCurrentThread();
+  if (shouldRenderAfterUpsert(turn, item)) scheduleRenderCurrentThread();
 }
 
 function removeItem(turnId, itemId) {
@@ -8598,7 +8894,16 @@ function ensureTimerItem(turnId, itemId, itemType) {
   scheduleRenderCurrentThread();
 }
 
-function appendToItem(turnId, itemId, itemType, field, delta, index = 0) {
+function shouldRenderAfterAppend(turn, itemType, field, previousValue, nextValue, options = {}) {
+  if (options.render === false) return false;
+  if (options.render === "defer-final-receipt" && shouldDeferLiveFinalReceipt(turn, itemType)) return false;
+  if (options.render !== "defer-final-receipt") return true;
+  if (itemType !== "agentMessage" || field !== "text") return true;
+  if (!isLatestTurn(turn) || !isLiveTurn(turn)) return true;
+  return true;
+}
+
+function appendToItem(turnId, itemId, itemType, field, delta, index = 0, options = {}) {
   const turn = ensureTurn(turnId);
   if (!turn) return;
   if (itemType === "reasoning") {
@@ -8613,14 +8918,19 @@ function appendToItem(turnId, itemId, itemType, field, delta, index = 0) {
     turn.items.push(item);
   }
   if (!item.startedAtMs) item.startedAtMs = Date.now();
+  const previousValue = Array.isArray(item[field]) ? item[field][index] : item[field];
+  let nextValue = previousValue;
   if (field === "aggregatedOutput") {
     appendCommandOutput(item, delta);
+    nextValue = item[field];
   } else if (Array.isArray(item[field])) {
     item[field][index] = (item[field][index] || "") + delta;
+    nextValue = item[field][index];
   } else {
     item[field] = compactLiveText((item[field] || "") + delta);
+    nextValue = item[field];
   }
-  scheduleRenderCurrentThread();
+  if (shouldRenderAfterAppend(turn, itemType, field, previousValue, nextValue, options)) scheduleRenderCurrentThread();
 }
 
 function scheduleRenderCurrentThread() {
@@ -8829,7 +9139,7 @@ function applyNotification(method, params) {
     if (completedPendingSteer) setSteerFeedback("completed", { turnId: String(params.turn.id) });
     $("interruptTurn").disabled = true;
     updateComposerControls();
-    renderCurrentThread();
+    renderCurrentThread(shouldScrollToLongReceiptStart(turn) ? { scrollToTurnReceiptStart: params.turn.id } : {});
     scheduleRenderThreads();
     scheduleCurrentThreadRefresh(700);
     scheduleLivePollIfNeeded(1400);
@@ -8843,7 +9153,7 @@ function applyNotification(method, params) {
   }
   if (method === "item/agentMessage/delta") {
     markActivity("输出");
-    appendToItem(params.turnId, params.itemId, "agentMessage", "text", params.delta || "");
+    appendToItem(params.turnId, params.itemId, "agentMessage", "text", params.delta || "", 0, { render: "defer-final-receipt" });
     markSteerAppliedIfNeeded(params.turnId, { type: "agentMessage" });
     return;
   }
@@ -8888,9 +9198,7 @@ function connectEvents() {
     if (payload.type === "status") {
       clearReconnectTimers();
       updateConnectionState(payload.status);
-      if (payload.status.rateLimits || payload.status.rateLimitsByModel) {
-        rememberRateLimits(payload.status.rateLimits, payload.status.rateLimitsByModel);
-      }
+      rememberRateLimitsFromConfig(payload.status);
       if (payload.status.codexProfiles) rememberCodexProfiles(payload.status.codexProfiles);
       scheduleVisiblePageRefreshCheck(1200);
       return;
@@ -8915,7 +9223,7 @@ function connectEvents() {
         const status = await api("/api/status");
         updateConnectionState(status);
         clearReconnectRefreshPrompt();
-        if (status.rateLimits || status.rateLimitsByModel) rememberRateLimits(status.rateLimits, status.rateLimitsByModel);
+        rememberRateLimitsFromConfig(status);
         if (status.codexProfiles) rememberCodexProfiles(status.codexProfiles);
         await loadThreads();
         await refreshCurrentThread();
@@ -9038,7 +9346,7 @@ async function resumeMobileSession(reason = "resume") {
     state.pollStableCount = 0;
     const status = await api("/api/status");
     updateConnectionState(status);
-    if (status.rateLimits || status.rateLimitsByModel) rememberRateLimits(status.rateLimits, status.rateLimitsByModel);
+    rememberRateLimitsFromConfig(status);
     if (status.codexProfiles) rememberCodexProfiles(status.codexProfiles);
     await loadThreads({ silent: Boolean(state.threads.length) });
     if (state.currentThreadId && state.currentThread && !state.currentThread.mobileLoading) {
@@ -9375,6 +9683,35 @@ function turnFinalReceiptNode(anchor = currentRecentCompletedReplyAnchor()) {
   const fallbackItems = Array.from(turnNode.querySelectorAll(".item:not(.userMessage):not(.live-operation):not(.turnUsageSummary)"));
   if (fallbackItems.length) return fallbackItems[fallbackItems.length - 1];
   return turnNode;
+}
+
+function finalReceiptItemForTurn(turn) {
+  const items = Array.isArray(turn && turn.items) ? turn.items : [];
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    const item = items[i];
+    if (item && (item.type === "agentMessage" || item.type === "plan")) return item;
+  }
+  return null;
+}
+
+function finalReceiptTextForTurn(turn) {
+  const item = finalReceiptItemForTurn(turn);
+  return String(item && item.text || "").trim();
+}
+
+function shouldScrollToLongReceiptStart(turn) {
+  return Boolean(turn && isTurnComplete(turn) && finalReceiptTextForTurn(turn).length >= LONG_RECEIPT_SCROLL_CHARS);
+}
+
+function scrollConversationToTurnReceiptStart(turnId) {
+  if (!turnId) return;
+  const target = turnFinalReceiptNode({ turnId });
+  if (!target) return;
+  clearSubmittedMessageBottomFollow();
+  clearViewportBottomFollow();
+  clearConversationNearBottomState();
+  scrollNodeIntoConversationView(target);
+  scheduleScrollToBottomButtonUpdate();
 }
 
 function scrollNodeIntoConversationView(node, margin = 12) {
@@ -10187,7 +10524,7 @@ async function sendMessage(event) {
   if ((!text && !state.pendingAttachments.length) || !state.currentThreadId) return;
   const threadTaskCardCommand = isThreadTaskCardCommandText(text);
   if (threadTaskCardCommand && state.pendingAttachments.length) {
-    showError(new Error("#自由协作 commands do not support attachments yet"));
+    showError(new Error("# task-card commands do not support attachments yet"));
     return;
   }
   const outboundText = threadTaskCardCommand ? buildThreadTaskCardDraftRequestText(text) : text;
@@ -10878,6 +11215,7 @@ function wireUi() {
     updateRecentCompletedReplyAnchorFromScroll();
     updateConversationAutoScrollHoldFromScroll();
     updateScrollToBottomButton();
+    maybeLoadOlderThreadTurnsFromScroll();
   }, { passive: true });
   $("conversation").addEventListener("click", (event) => {
     const copyButton = event.target.closest("[data-copy-key]");
@@ -11022,6 +11360,7 @@ function wireUi() {
   renderFontSizeControl();
   installLaunchQueueHandler();
   installPluginWindowingGuards();
+  installHermesPluginBackSwipeGuard();
   window.addEventListener("message", (event) => {
     if (pluginEmbedApi.isBackMessage && pluginEmbedApi.isBackMessage(event)) handlePluginBack(event);
   });

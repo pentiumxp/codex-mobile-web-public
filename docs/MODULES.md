@@ -26,14 +26,14 @@
 | `adapters/mobile-archive-index-service.js` | Runtime JSON archive tombstone index for Mobile-hidden thread ids, used when recovered/old-profile rows cannot be reliably hidden through app-server or SQLite state. |
 | `adapters/public-pull-request-service.js` | Public GitHub pull request status normalization for prompt-only public PR checks. |
 | `adapters/push-notification-service.js` | Web Push turn tracking, sub-agent suppression classification, completed-turn notification thread-title resolution, and the bounded app-server display-summary cache used before SQLite fallback. |
-| `adapters/shared-chain-restart-service.js` | Authenticated restart endpoint orchestration. |
+| `adapters/shared-chain-restart-service.js` | Authenticated restart endpoint orchestration, including Windows hidden shared-chain restarts and macOS LaunchAgent `kickstart` / one-shot fallback policy. |
 | `adapters/generated-image-cache-service.js` | Caches app-server `imageView` screenshot files and `imageGeneration.savedPath` PNGs into runtime-owned generated-image storage before browser rendering. |
 | `adapters/hermes-plugin-service.js` | Independent Hermes Mobile embedded-app plugin manifest, callback/origin registration, launch/session token policy, frame-ancestor metadata, and bounded launch/session appearance sync. |
 | `adapters/hermes-notification-delegate-service.js` | Backend-only Hermes Action Inbox notification delegation, safe payload normalization, Hermes endpoint/key resolution, and response sanitization. |
 | `adapters/turn-completion-receipt-service.js` | Builds bounded completed-turn detail receipts for Hermes plugin Inbox/thread-message delegation from final assistant text plus usage summary. |
 | `adapters/thread-task-card-service.js` | Cross-thread task-card normalization, readable visible-text guards, JSON store persistence, idempotency, single/multi-target creation, source/target authorization, state transitions, approval in-flight persistence, autonomous workflow grants, same-pair auto-approval, automatic completion return cards, and approval injection payload generation. |
 | `adapters/workspace-registry-service.js` | Mobile Web-created workspace folder validation, runtime registry persistence, allowed-root policy, and public workspace shape. |
-| `adapters/codex-profile-service.js` | Single-active Codex profile discovery, safe `auth.json` account display, per-profile quota snapshots from rollout tails, active-profile persistence, and switch eligibility policy. |
+| `adapters/codex-profile-service.js` | Single-active Codex profile discovery, safe `auth.json` account display, account-scoped profile quota snapshots with shared-rollout protection, active-profile persistence, and switch eligibility policy. |
 | `adapters/sqlite-cli.js` | Cross-environment `sqlite3` discovery and JSON result execution. |
 
 Add new service modules when logic has independent inputs/outputs, state rules, route policies, or tests. Keep route handlers thin and make service behavior directly testable.
@@ -42,7 +42,7 @@ Add new service modules when logic has independent inputs/outputs, state rules, 
 
 | File | Responsibility |
 | --- | --- |
-| `public/app.js` | Main app state, rendering, thread list/detail, read-only thread goal display and SSE updates, composer `/g` goal dialog submission through the goal route with immediate submitted-goal card display, Push UI, update/restart UI, continuation UI, settings-panel Codex profile display/switching, composer runtime Fast-dot/model/effort/permission/quota controls including the hidden Codex Fast service-tier toggle, source-side `#` task-card auto-send orchestration with stable draft settlement, queued draft lookup across long threads, silent in-conversation `creating` state, target-side-only pending task-card rendering, and runtime application of plugin session appearance. |
+| `public/app.js` | Main app state, rendering, thread list/detail including older-turn pagination for fallback detail windows, read-only thread goal display and SSE updates, composer `/g` goal dialog submission through the goal route with immediate submitted-goal card display, Push UI, update/restart UI, continuation UI, settings-panel Codex profile display/switching, composer runtime Fast-dot/model/effort/permission/quota controls including the hidden Codex Fast service-tier toggle, source-side `#` task-card auto-send orchestration with stable draft settlement, queued draft lookup across long threads, silent in-conversation `creating` state, target-side-only pending task-card rendering, runtime application of plugin session appearance, and Hermes embed iframe-owned back/edge-swipe behavior. |
 | `public/styles.css` | Full app shell, mobile/tablet layout, operation cards, composer, sidebar, modals, PWA-safe layout. |
 | `public/sw.js` | Service worker, app-shell cache, Web Push notification click handling. |
 | `public/api-client.js` | Authenticated fetch helper. |
@@ -52,7 +52,7 @@ Add new service modules when logic has independent inputs/outputs, state rules, 
 | `public/viewport-metrics.js` | Visual viewport and keyboard-shrink helpers. |
 | `public/conversation-scroll.js` | Scroll position and bottom-follow helpers. |
 | `public/image-compressor.js` | Browser-side image compression before upload. |
-| `public/plugin-embed.js` | Hermes iframe embed-mode helper for launch detection, bounded appearance query parsing, navigation messages, back messages, and internal-window policy. |
+| `public/plugin-embed.js` | Hermes iframe embed-mode helper for launch detection, bounded appearance query parsing, navigation/back eligibility messages, back messages, and internal-window policy. |
 
 `public/app.js` is large. For new frontend behavior, first check whether the change belongs in an existing helper module or can be extracted into a new public helper with focused tests.
 
@@ -75,8 +75,8 @@ Add new service modules when logic has independent inputs/outputs, state rules, 
 | cross-thread task cards | `test/thread-task-card-harness.test.js`, `test/thread-task-card-service.test.js`, `test/thread-task-card-route.test.js`, `test/conversation-render.test.js`; include readable-text/encoding-damage, approve-in-flight, autonomous workflow same-pair coverage, automatic completion return idempotency, stable source-draft settlement, queued source draft lookup across earlier non-draft messages, silent source auto-send, server-side draft materialization on `turn/completed` and thread-detail reads, 8k draft-body truncation before create, and target-side-only pending render coverage when changing sender or store paths |
 | Push | `test/push-notification-service.test.js` |
 | runtime settings | `test/runtime-settings.test.js`, `test/composer-quota.test.js`, `test/new-thread-route.test.js`, `test/thread-task-card-route.test.js` |
-| Codex profile switching | `test/codex-profile-service.test.js`, `test/codex-profile-ui.test.js`, `test/manual-restart-ui.test.js`, `test/mobile-viewport.test.js`; include safe account display, active profile persistence, fixed-endpoint switch disablement, browser quota cache clearing, explicit `profileId` / `codexHome` restart arguments, windowless auth/config preservation, non-default profile shared-state link list, and `docs/MULTI_ACCOUNT_CODEX_CLI.md` regression coverage |
-| scroll and markdown | `test/conversation-scroll.test.js`, `test/turn-scroll-controls.test.js`, `test/markdown-render.test.js` |
+| Codex profile switching | `test/codex-profile-service.test.js`, `test/codex-profile-ui.test.js`, `test/manual-restart-ui.test.js`, `test/mobile-viewport.test.js`, `test/new-thread-ui.test.js`; include safe account display, active profile persistence, fixed-endpoint switch disablement, browser quota cache clearing, account-scoped quota fallback, explicit `profileId` / `codexHome` restart arguments, windowless auth/config preservation, non-default profile shared-state link list, and `docs/MULTI_ACCOUNT_CODEX_CLI.md` regression coverage |
+| scroll and markdown | `test/conversation-scroll.test.js`, `test/turn-scroll-controls.test.js`, `test/markdown-render.test.js`, `test/conversation-render.test.js`, `test/mobile-viewport.test.js`; include thread-detail older-history top pagination, scroll-position preservation after prepending turns, operational-turn final-receipt deferred rendering, and long final-receipt start positioning |
 
 Use focused tests first for local iteration, then run `npm.cmd test`, `npm.cmd run check`, `npm.cmd run check:macos`, and `git diff --check` before commit/push or release.
 

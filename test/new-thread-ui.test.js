@@ -67,6 +67,13 @@ test("quota UI ignores source-less rate-limit notifications", () => {
   assert.doesNotMatch(body, /rememberRateLimits\(params\.rateLimits/, "source-less quota notifications should not overwrite composer quota");
 });
 
+test("quota UI clears stale cache when config has no valid quota snapshot", () => {
+  const body = functionBody("rememberRateLimitsFromConfig");
+
+  assert.match(body, /hasRateLimitSnapshot\(config\.rateLimits \|\| null,\s*config\.rateLimitsByModel \|\| null\)/);
+  assert.match(body, /clearStoredRateLimits\(\)/);
+});
+
 test("quota grouping treats Spark as independent and other Codex models as shared", () => {
   const body = functionBody("rateLimitModelKeys");
 

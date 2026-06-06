@@ -24,9 +24,9 @@ layout and test strategy.
 - `server.js`
   - route wiring
   - `turn/completed` notification hook for autonomous completion auto-return
-  - `turn/completed` and thread-detail hooks that materialize structured
-    `#自由协作` task-card drafts through the same idempotent create service path
-  - large-rollout `thread/turns/list` detail mode must still run task-card draft
+  - `turn/completed` and thread-detail hooks that materialize structured `#`
+    task-card drafts through the same idempotent create service path
+  - fallback `thread/turns/list` detail mode must still run task-card draft
     materialization before attaching visible cards
   - SSE/broadcast integration only
 
@@ -36,7 +36,7 @@ layout and test strategy.
   - minimal orchestration
   - render task-card stack
   - action handlers
-  - source-side `#自由协作` draft parsing and automatic pending-card creation;
+  - source-side `#` task-card draft parsing and automatic pending-card creation;
     source drafts must not require a second local approval click
   - source-side automatic creation must not render an interim `Sending` draft
     card in the conversation; only real creation failures should render a
@@ -104,17 +104,19 @@ If sqlite is chosen, keep it separate from normal thread message history.
 5. Add approve/delete/revoke/reply handlers.
 6. Add injection path for approved cards.
 7. Add audit logging and focused diagnostics.
-8. For the exact `#自由协作` natural-language path, ask the model for
+8. For the leading non-empty `#` natural-language path, ask the model for
    `targetThreadIds`, keep accepting legacy `targetThreadId`, and automatically
    create target pending cards when the draft parses. Do not show a source-side
-   `Approve` button. This path defaults to `workflowMode:"autonomous"` unless
-   the command explicitly asks for a one-off manual card.
+   `Approve` button. Plain `#` defaults to `workflowMode:"manual"` unless the
+   command explicitly asks for autonomous/free collaboration; `#自由协作` defaults
+   to `workflowMode:"autonomous"` unless the command explicitly asks for a
+   one-off manual card.
 9. Back the browser auto-create path with server-side materialization. On fresh
    `turn/completed`, fetch a bounded recent-turn window, parse assistant/plan
    draft XML, resolve target workspace metadata, truncate overlong draft bodies
    to the 8k card limit, and call `createMany()` with a stable draft idempotency
    key. Thread-detail reads run the same materialization before attaching cards,
-   including large-rollout `thread/turns/list` reads.
+   including fallback `thread/turns/list` reads.
 10. For autonomous workflow cards, observe `turn/completed` for the recorded
    `injectedTurnId`. `server.js` calls
    `threadTaskCardService.maybeAutoReplyCompletedTurn()`, which creates an

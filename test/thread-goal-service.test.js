@@ -42,7 +42,7 @@ test("thread goal service normalizes sqlite rows for public thread state", () =>
   const goal = publicThreadGoal({
     thread_id: "thread-1",
     goal_id: "private-id",
-    objective: `  ${"x".repeat(520)}  `,
+    objective: `  ${"x".repeat(4100)}  `,
     status: "budget_limited",
     token_budget: 1000,
     tokens_used: 25,
@@ -59,7 +59,8 @@ test("thread goal service normalizes sqlite rows for public thread state", () =>
   assert.equal(goal.createdAt, 10);
   assert.equal(goal.updatedAt, 20);
   assert.equal(Object.hasOwn(goal, "goalId"), false);
-  assert.ok(goal.objective.length <= 500);
+  assert.equal(goal.objective.length, 4000);
+  assert.ok(goal.objective.endsWith("..."));
 });
 
 test("thread goal service attaches goals to list results without requiring writes", () => {
@@ -123,7 +124,9 @@ test("server enriches thread list and detail responses with thread goals", () =>
   assert.match(serverJs, /normalizeThreadGoalStatus/);
   assert.match(serverJs, /const GOALS_DB = path\.join\(CODEX_HOME, "goals_1\.sqlite"\)/);
   assert.match(serverJs, /const threadGoalService = createThreadGoalService/);
+  assert.match(serverJs, /const THREAD_GOAL_OBJECTIVE_MAX_CHARS = 4000/);
   assert.match(serverJs, /async function setThreadGoal\(/);
+  assert.match(functionBody(serverJs, "normalizeThreadGoalObjectiveInput"), /THREAD_GOAL_OBJECTIVE_MAX_CHARS/);
   assert.match(serverJs, /codex\.request\("thread\/goal\/set"/);
   assert.match(serverJs, /codex\.request\("thread\/goal\/clear"/);
   assert.match(serverJs, /function isCompletedThreadGoal\(/);
@@ -147,7 +150,7 @@ test("server enriches thread list and detail responses with thread goals", () =>
 });
 
 test("mobile client renders and updates thread goals from app-server notifications", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v189"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v201"/);
   assert.match(appJs, /function normalizeThreadGoal\(/);
   assert.match(appJs, /function submittedThreadGoal\(/);
   assert.match(appJs, /function renderThreadGoal\(/);
@@ -173,6 +176,7 @@ test("mobile client opens goal dialog from /g and sets goal through app-server r
   assert.match(indexHtml, /id="goalDialog"/);
   assert.match(indexHtml, /id="goalForm"/);
   assert.match(indexHtml, /id="goalObjectiveInput"/);
+  assert.match(indexHtml, /id="goalObjectiveInput"[\s\S]*maxlength="4000"/);
   assert.match(indexHtml, /id="goalTokenBudgetInput"/);
   assert.match(appJs, /const THREAD_GOAL_COMMAND_PREFIX = "\/g"/);
   assert.match(appJs, /function isThreadGoalCommandText\(/);

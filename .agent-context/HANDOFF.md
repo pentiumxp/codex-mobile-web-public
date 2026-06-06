@@ -21,6 +21,1176 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-06 Longer `/g` Goal Objective Limit v201
+
+- User reported that pasting a longer objective into the `/g` goal dialog was
+  truncated.
+- Root cause: the browser textarea had `maxlength="1200"`, and the Mobile Web
+  `thread/goal/set` proxy also normalized objective text down to 1200 chars.
+  The `goals_1.sqlite` fallback public display was even shorter at 500 chars.
+- Implemented:
+  - `public/index.html` goal objective textarea `maxlength` increased to 4000.
+  - `server.js` now uses `THREAD_GOAL_OBJECTIVE_MAX_CHARS = 4000` when
+    normalizing objective text before forwarding app-server `thread/goal/set`.
+  - `adapters/thread-goal-service.js` public fallback objective display cap
+    increased to 4000 so a long accepted goal does not shrink after refresh.
+  - Static shell advanced to `0.1.11|codex-mobile-shell-v201` /
+    `codex-mobile-shell-v201`.
+  - README and `docs/TROUBLESHOOTING.md` document the aligned 4000-char limit.
+- Validation:
+  - `node --check server.js; node --check public\app.js; node --check
+    public\sw.js` passed.
+  - Focused tests passed:
+    `node --test test\thread-goal-service.test.js test\mobile-viewport.test.js
+    test\thread-task-card-route.test.js`.
+  - `npm.cmd test` passed with 349 tests.
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only CRLF working-tree warnings.
+  - UTF-8 BOM checks for edited files showed no BOM.
+- Runtime:
+  - Restarted Windows listener by stopping PID `142372` and starting scheduled
+    task `Codex Mobile Web`.
+  - Current Windows listener PID is `115332`.
+  - `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v201` and
+    `shellCacheName=codex-mobile-shell-v201`.
+  - Served `/index.html` contains `goalObjectiveInput` `maxlength="4000"`;
+    served `/app.js` and `/sw.js` contain v201 and not v200.
+
+## 2026-06-06 Operational Final Receipt One-shot Render v200
+
+- User reported that long final receipts were still streaming. Root cause: the
+  v199 hotfix used a length-threshold strategy for live `agentMessage` deltas:
+  it streamed until `LONG_RECEIPT_SCROLL_CHARS`, then stopped repainting.
+- `public/app.js` now distinguishes plain chat replies from operational final
+  receipts:
+  - Plain latest live chat `agentMessage` deltas may still stream normally.
+  - If the latest live turn already has command/file/tool/search operation
+    items, subsequent live `agentMessage` content is treated as the final
+    receipt. The browser stores `item/agentMessage/delta` text without
+    repainting from the first delta, suppresses `agentMessage` upsert repaint in
+    that same operational-live case, and renders the full receipt once on
+    `turn/completed`.
+  - Long completed receipts still scroll to the receipt start rather than the
+    bottom.
+- Static shell advanced to `0.1.11|codex-mobile-shell-v200` /
+  `codex-mobile-shell-v200`.
+- Docs/tests updated:
+  - README interface note, `docs/ARCHITECTURE.md`, `docs/TROUBLESHOOTING.md`,
+    and `docs/MODULES.md`.
+  - `test/conversation-render.test.js` now asserts
+    `shouldDeferLiveFinalReceipt()`, `turnHasOperationalItems()`, and
+    `shouldRenderAfterUpsert()` so future changes do not reintroduce started
+    empty final-receipt streaming.
+  - Build-id assertions updated in `test/mobile-viewport.test.js`,
+    `test/thread-goal-service.test.js`, and
+    `test/thread-task-card-route.test.js`.
+- Validation:
+  - `node --check public\app.js; node --check public\sw.js` passed.
+  - Focused tests passed:
+    `node --test test\conversation-render.test.js
+    test\mobile-viewport.test.js test\turn-scroll-controls.test.js
+    test\thread-goal-service.test.js test\thread-task-card-route.test.js`.
+  - `npm.cmd run check` passed.
+  - `npm.cmd test` passed with 349 tests.
+  - `git diff --check` passed with only CRLF working-tree warnings.
+  - UTF-8 BOM checks for edited source/docs/tests showed no BOM.
+- Runtime:
+  - Restarted Windows listener by stopping PID `48116` and starting scheduled
+    task `Codex Mobile Web`.
+  - Current Windows listener PID is `142372`.
+  - `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v200` and
+    `shellCacheName=codex-mobile-shell-v200`.
+  - Served `/app.js` contains `defer-final-receipt`, does not contain
+    `defer-long-agent`, and served `/sw.js` contains v200 only.
+- Public release:
+  - `C:\Users\xuxin\Documents\codex-mobile-web-public` was synced from the
+    tracked public-safe product files only. `.agent-context`, runtime state,
+    uploads, local keys, tokens, and machine-specific diagnostics were not
+    copied.
+  - Open PR check for `pentiumxp/codex-mobile-web-public` returned no open PRs.
+  - Public commit `47d534c` (`修复操作型长回执一次性渲染 v200`) was pushed to
+    `origin/main` on 2026-06-06.
+  - Public validation before push:
+    `npm.cmd test` passed with 349 tests, `npm.cmd run check` passed,
+    `git diff --check` and `git diff --cached --check` passed, BOM checks
+    showed no BOM, and staged privacy scans found no sensitive file paths, raw
+    keys, local absolute paths, or private host names.
+
+## 2026-06-06 Ten-turn Detail Pagination And Long Receipt Render v198
+
+- Immediate follow-up v199 hotfix:
+  - User reported that after accepting the v198 refresh, active/running threads
+    showed only the user's own message and no running assistant messages.
+  - Root cause: v198 hid the latest live `agentMessage` entirely until
+    `turn/completed`, which made normal running replies disappear.
+  - `public/app.js` now removes `shouldDeferLiveAgentMessage` and keeps live
+    `agentMessage` items visible. `item/agentMessage/delta` uses
+    `{ render: "defer-long-agent" }`: it renders normally until the long-receipt
+    threshold, then stops repeated live redraws and waits for `turn/completed`
+    to render the full receipt at the receipt start.
+  - Static shell advanced again to `0.1.11|codex-mobile-shell-v199` /
+    `codex-mobile-shell-v199`.
+  - Validation:
+    `node --check server.js; node --check public\app.js; node --check public\sw.js`,
+    `node --test test\conversation-render.test.js test\mobile-viewport.test.js
+    test\turn-scroll-controls.test.js test\thread-visibility.test.js`,
+    `node --test test\thread-task-card-route.test.js
+    test\thread-goal-service.test.js test\thread-item-timestamp-enrichment.test.js`,
+    `npm.cmd run check`, `git diff --check`, and UTF-8 BOM checks passed.
+  - Runtime:
+    restarted Windows listener by stopping PID `55792` and starting scheduled
+    task `Codex Mobile Web`; current PID is `48116`.
+    `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v199` and
+    `shellCacheName=codex-mobile-shell-v199`.
+    Served `/app.js` contains v199, does not contain
+    `shouldDeferLiveAgentMessage`, and contains the new
+    `render: "defer-long-agent"` mode.
+  - Public release:
+    `C:\Users\xuxin\Documents\codex-mobile-web-public` was synced from the
+    tracked public-safe product files, excluding `.agent-context`, runtime
+    state, uploads, keys, local tokens, and machine-specific diagnostics.
+    Open PR check for `pentiumxp/codex-mobile-web-public` returned no open PRs.
+    Commit `55030e0` (`发布多账号、插件导航与长线程修复 v199`) was pushed to
+    `origin/main` on 2026-06-06. Public validation before push:
+    `npm.cmd test` passed with 349 tests, `npm.cmd run check` passed,
+    `git diff --check` passed with only CRLF working-tree warnings, and staged
+    privacy scans found no sensitive file paths, raw keys, local absolute paths,
+    or private host names. The public multi-account CLI doc examples were
+    generalized from local absolute paths to `%USERPROFILE%` / `%LOCALAPPDATA%`.
+  - Private sync-back validation after the public push:
+    `docs/MULTI_ACCOUNT_CODEX_CLI.md` was kept aligned with the public-safe
+    path examples, `test/thread-title-source.test.js` was updated for the newer
+    status-merge helper assertion, and private `npm.cmd test` passed with 349
+    tests, `npm.cmd run check` passed, and `git diff --check` passed with only
+    CRLF working-tree warnings.
+
+- User requested replacing the 80-turn mobile detail window with a smaller
+  recent window plus incremental top pagination, and rendering long final
+  receipts once at completion while stopping at the receipt start instead of
+  snapping to bottom.
+- Server/mobile detail:
+  - `CODEX_MOBILE_THREAD_TURNS` and `CODEX_MOBILE_FULL_THREAD_TURNS` now
+    default to `10`.
+  - `compactThread()` now sets `mobileOlderTurnsCursor` from the oldest retained
+    turn when it omits older turns, so normal `thread-read` detail can paginate
+    older history without using the former 32MB special path.
+- Browser:
+  - Initial thread detail shows 10 recent turns by default.
+  - Scrolling to the top with recent user scroll intent calls
+    `/api/threads/<id>/turns?limit=10&sortDirection=desc&cursor=...`, prepends
+    older turns, preserves the current reading position, and decrements the
+    omitted-turn count.
+  - Previously loaded older turns are preserved across normal compacted
+    `thread-read` refreshes while an older cursor or omitted count exists.
+  - Latest live `agentMessage` deltas are stored but not rendered during live
+    streaming. On `turn/completed`, the final receipt renders once. If the final
+    receipt is at least `LONG_RECEIPT_SCROLL_CHARS` characters, the render
+    scrolls to the start of that receipt and suppresses bottom-stick behavior.
+  - Static shell advanced to `0.1.11|codex-mobile-shell-v198` /
+    `codex-mobile-shell-v198`.
+- Docs/tests updated:
+  - README, `docs/ARCHITECTURE.md`, `docs/TROUBLESHOOTING.md`,
+    `docs/MODULES.md`, and `docs/COMPLEX_FEATURE_PATHS.md`.
+  - Focused assertions updated in `test/mobile-viewport.test.js`,
+    `test/conversation-render.test.js`, `test/turn-scroll-controls.test.js`,
+    `test/thread-visibility.test.js`, `test/thread-goal-service.test.js`, and
+    `test/thread-task-card-route.test.js`.
+- Validation:
+  - `node --check server.js`, `node --check public/app.js`, and
+    `node --check public/sw.js` passed.
+  - Focused tests passed:
+    `node --test test\thread-visibility.test.js test\mobile-viewport.test.js
+    test\conversation-render.test.js test\turn-scroll-controls.test.js`.
+  - Focused regression tests passed:
+    `node --test test\thread-task-card-route.test.js
+    test\thread-goal-service.test.js test\thread-item-timestamp-enrichment.test.js`.
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only existing CRLF warnings.
+  - UTF-8 BOM check for edited source/docs/tests showed no BOM.
+- Runtime:
+  - Restarted Windows listener by stopping PID `23176` and starting the
+    `Codex Mobile Web` scheduled task.
+  - Current Windows listener PID is `55792`.
+  - `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v198` and
+    `shellCacheName=codex-mobile-shell-v198`.
+  - Authenticated smoke for thread
+    `019e8050-5a2d-7da3-9307-a3ca7148a016` returned
+    `mobileReadMode=thread-read`, 10 turns, omitted 73, and an older cursor.
+    Fetching the cursor through `/api/threads/<id>/turns?limit=10` returned 10
+    older turns and another next cursor.
+
+## 2026-06-06 Remove 32MB Thread-detail Special Path v197
+
+- User clarified that Mobile Web must enter thread detail at the bottom, and
+  requested cancelling the special handling for threads over 32 MB.
+- Reverted the v196 top-of-history open behavior:
+  - Removed `shouldOpenLargeThreadHistoryAtTop()`,
+    `threadOpenRenderOptions()`, `scrollConversationToTop()`, and all
+    `scrollToTop` render handling from `public/app.js`.
+  - Cached same-thread re-entry and normal detail completion both call
+    `renderCurrentThread({ stickToBottom: true })` again.
+- Removed the 32 MB server-side detail skip:
+  - Deleted `CODEX_MOBILE_THREAD_DETAIL_ROLLOUT_MAX_BYTES`,
+    `THREAD_DETAIL_ROLLOUT_MAX_BYTES`, `shouldSkipThreadDetailRpc()`, and
+    `threadDetailTooLargeWarning()` from `server.js`.
+  - Removed the `/api/threads/:id` branch that returned
+    `large-rollout-turns-list` solely because rollout size exceeded the
+    threshold.
+  - Continuation snapshot code no longer treats a source thread as too large
+    to inspect solely by rollout size.
+  - `thread/turns/list` remains only as a fallback after `thread/read` fails
+    and as the explicit older-turn pagination endpoint.
+- Static shell advanced to `0.1.11|codex-mobile-shell-v197` /
+  `codex-mobile-shell-v197`.
+- Validation:
+  - `node --check server.js`, `node --check public/app.js`, and
+    `node --check public/sw.js` passed.
+  - Focused tests passed:
+    `node --test test\thread-visibility.test.js test\mobile-viewport.test.js`
+    and
+    `node --test test\thread-task-card-route.test.js
+    test\thread-goal-service.test.js test\thread-item-timestamp-enrichment.test.js
+    test\conversation-render.test.js`.
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only existing CRLF warnings.
+  - UTF-8 BOM check for edited files showed no BOM.
+- Runtime:
+  - Restarted Windows listener by killing stale PID `143296` and starting the
+    `Codex Mobile Web` scheduled task.
+  - Current Windows listener PID is `23176`.
+  - `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v197` and
+    `shellCacheName=codex-mobile-shell-v197`.
+  - Post-restart metadata-only detail smokes:
+    - `Codex mobile`
+      (`019e8050-5a2d-7da3-9307-a3ca7148a016`), rollout about 34.73 MB:
+      `mobileReadMode=thread-read`, 80 turns, omitted 1.
+    - `Hermes 06-05`
+      (`019e9566-c222-7560-af45-2b3665862188`), rollout about 73.01 MB:
+      `mobileReadMode=thread-read`, 80 turns, omitted 6.
+
+## 2026-06-06 Large Thread Re-entry Viewport v196
+
+- User showed that after leaving and re-entering a >32 MB thread, Mobile Web
+  appeared to show only the latest live turn/receipt area rather than the
+  loaded recent-history window.
+- Live API check for thread `019e8050-5a2d-7da3-9307-a3ca7148a016`
+  (`Codex mobile`) proved the server was returning
+  `mobileReadMode=large-rollout-turns-list`, 8 turns, and an older-turn cursor.
+  The missing history was therefore in the browser view state, not server
+  history retrieval.
+- `public/app.js` now treats large-rollout `turns-list` detail windows with
+  `mobileOlderTurnsCursor` as recent-history windows on open/re-entry:
+  `threadOpenRenderOptions()` disables bottom snapping and explicitly scrolls
+  `#conversation` to top. This also runs on the cached same-thread branch so
+  returning from the thread list does not reuse the old live-turn scroll
+  position.
+- `updateConversationHtml()` now honors `scrollToTop` even when the render
+  signature is unchanged. `scrollConversationToTop()` clears near-bottom state
+  after setting `scrollTop=0`.
+- Static shell advanced to `0.1.11|codex-mobile-shell-v196` /
+  `codex-mobile-shell-v196`.
+- Validation:
+  - `node --check public/app.js`, `node --check public/sw.js`, and
+    `node --check server.js` passed.
+  - Focused tests passed:
+    `node --test test\mobile-viewport.test.js test\conversation-render.test.js
+    test\thread-visibility.test.js` and
+    `node --test test\thread-task-card-route.test.js
+    test\thread-goal-service.test.js
+    test\thread-item-timestamp-enrichment.test.js`.
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only existing CRLF warnings.
+  - UTF-8 BOM check for edited files showed no BOM.
+- Runtime:
+  - Killed stale Windows listener PID `95016` after scheduled-task stop/start
+    did not replace it, then started the `Codex Mobile Web` scheduled task.
+  - Current Windows listener PID is `143296`.
+  - `GET /api/public-config` now reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v196` and
+    `shellCacheName=codex-mobile-shell-v196`.
+  - Post-restart metadata-only detail smoke for `Codex mobile` returned
+    `large-rollout-turns-list`, 8 turns, older cursor present, latest active
+    turn `019e9bd0-fe15-7b53-94a9-fa9bb86aacd8`.
+
+## 2026-06-06 Hash Task-card Command And Large Thread History v195
+
+- User reports:
+  - Composer `#` should send a single Task card; before this change only
+    `#自由协作` switched the send button to Task card mode.
+  - Codex Mobile threads over about 30 MB stopped exposing older history; each
+    new turn made the phone feel limited to a tiny recent window.
+- Task-card command fix:
+  - `public/app.js` now treats leading non-empty `#` as the Task card command.
+    Bare `#` is still empty and does not send a card.
+  - Legacy `#自由协作` remains accepted and defaults to autonomous workflow.
+    Plain `#` defaults to manual single-card workflow unless the command asks
+    for autonomous/free collaboration.
+  - Updated README and cross-thread task-card docs/tests so ordinary non-empty
+    `# ...` is no longer documented or tested as a normal message.
+- Large-thread history fix:
+  - Root cause: detail reads over
+    `CODEX_MOBILE_THREAD_DETAIL_ROLLOUT_MAX_BYTES` skip full `thread/read` and
+    use bounded `thread/turns/list`. That first page is intentionally 8 turns by
+    default, but Mobile had no older-turn pagination and the cursor route could
+    fail when a cursor was double encoded.
+  - `server.js` now attaches `mobileOlderTurnsCursor` and
+    `mobileNewerTurnsCursor` to large-rollout detail responses, normalizes
+    cursor query strings before forwarding them, and keeps the app-server cursor
+    type as a string.
+  - `public/app.js` now shows a `Load older` history control when an older cursor
+    exists. It loads another bounded page through `/api/threads/<id>/turns`,
+    merges turns chronologically, expands visible history up to 80 loaded turns,
+    and preserves that expanded history across normal refreshes.
+  - PWA shell cache/client build advanced to
+    `0.1.11|codex-mobile-shell-v195`.
+- Validation:
+  - `node --check public/app.js`, `node --check public/sw.js`, and
+    `node --check server.js` passed.
+  - Focused tests passed:
+    `node --test test\thread-visibility.test.js test\mobile-viewport.test.js
+    test\thread-task-card-route.test.js test\thread-goal-service.test.js`.
+  - Additional focused tests passed:
+    `node --test test\thread-item-timestamp-enrichment.test.js
+    test\conversation-render.test.js test\message-input-service.test.js`.
+  - `npm.cmd run check` passed.
+  - `git diff --check` passed with only existing line-ending warnings.
+  - UTF-8 BOM check for edited source/docs/tests showed no BOM.
+- Runtime:
+  - Restarted Windows `Codex Mobile Web` scheduled task to load v195.
+  - Current local listener PID after restart is `95016`.
+  - `GET /api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v195` and
+    `shellCacheName=codex-mobile-shell-v195`.
+  - Live metadata-only validation on thread
+    `019e8050-5a2d-7da3-9307-a3ca7148a016` (`Codex mobile`) returned
+    `mobileReadMode=large-rollout-turns-list`, 8 first-page turns, an older
+    cursor, and a second page with 8 older turns plus another next cursor.
+    Double-encoded cursor input also returned 8 turns instead of an app-server
+    cursor error.
+
+## 2026-06-06 Windows Refresh, Hermes Stale Turn, And Mac Host Cache v575
+
+- User report:
+  - After re-login, Mac-hosted Hermes plugin still right-swiped from Codex
+    thread detail back to the Hermes host instead of Codex's embedded primary
+    page.
+  - Windows-hosted Codex Mobile began showing frequent refresh prompts again.
+  - Windows `Hermes 06-05` thread stopped showing new information.
+- Windows refresh diagnosis and repair:
+  - Local `GET /api/public-config` still reported
+    `0.1.11|codex-mobile-shell-v192`, while served `/app.js` and `/sw.js`
+    already contained v193. That mismatch is sufficient to trigger repeated
+    refresh prompts.
+  - Restarted only the Windows 8787 listener under the hidden windowless
+    launcher; final listener PID after later code restart is `110072`.
+  - Post-restart `GET /api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v193` and
+    `shellCacheName=codex-mobile-shell-v193`.
+- Windows Hermes stale-turn diagnosis and repair:
+  - Thread id: `019e9566-c222-7560-af45-2b3665862188` (`Hermes 06-05`).
+  - Latest stale turn id:
+    `019e9b35-f17d-7131-b85a-3e315cfcd71d`.
+  - Detail showed the latest turn as `inProgress`, but the rollout file had
+    not grown over a 20 second sample; latest write was
+    `2026-06-06T04:54:30Z`, current sampled time was about
+    `2026-06-06T05:01:36Z`.
+  - Authenticated `/api/events` returned status plus keepalive, `/api/status`
+    had no `activeThreadIds`, and `/api/approvals` had zero pending approvals.
+    This was not an EventSource outage.
+  - Interrupted only the stale Hermes turn through the Mobile route. Detail then
+    showed thread status `idle`, latest turn status `interrupted`, and
+    `completedAt=1780722169`.
+- Thread-list stale-active code fix:
+  - After interrupt, detail was `idle` but the thread list still showed the
+    same row as `active`. Root cause: `mergeThreadDisplaySummary()` always let
+    rollout fallback status override app-server status for duplicate thread ids.
+  - `server.js` now gives list-status merge a small precedence rule: stale or
+    same-time rollout `active` cannot override app-server/detail `idle`, while
+    genuinely newer rollout activity can still revive an older completed or
+    notLoaded row to `active`.
+  - Added regression coverage in `test/thread-visibility.test.js`.
+  - Restarted Windows 8787 again to load the fix; PID changed from `93296` to
+    `110072`.
+  - Post-restart validation for `Hermes 06-05`: list status `idle`, detail
+    status `idle`, latest turn `interrupted`, no active thread ids.
+  - Deployed the same `server.js`, `test/thread-visibility.test.js`, and
+    `docs/TROUBLESHOOTING.md` fix to Mac active Codex plugin directory
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Mac Codex plugin backup:
+    `/Users/xuxin/.codex-mobile-web/source-backup-before-thread-list-stale-active-20260606_131353`.
+  - Restarted Mac `com.hermesmobile.plugin.codex-mobile`; PID is now `9914`.
+    Mac 8787 `/api/public-config` still reports
+    `0.1.11|codex-mobile-shell-v193`.
+- Mac/Windows Hermes host cache repair:
+  - The previous Mac host bridge file was correct, but the host still referenced
+    `app-embedded-plugin-ui.js?v=20260606-capability-touch-longpress-v574` and
+    served the script with long-lived caching. An iPhone could keep using the
+    old v574 URL even after re-login.
+  - Bumped Hermes host static/cache version to
+    `20260606-plugin-origin-allow-v575` on Windows host source
+    `C:\ProgramData\HermesMobile\app`, Mac xuxin source
+    `/Users/xuxin/HermesMobile/app`, and Mac active system daemon directory
+    `/Users/hermes-host/HermesMobile/app`.
+  - Windows backups:
+    `%USERPROFILE%\.codex-mobile-web\hermes-host-win-backup-before-plugin-origin-cache-v575-20260606_130502`
+    and
+    `%USERPROFILE%\.codex-mobile-web\hermes-host-win-backup-before-task-list-v575-20260606_130514`.
+  - Mac backups:
+    `/Users/xuxin/.codex-mobile-web/hermes-host-backup-before-plugin-origin-cache-v575-20260606_130613_Users_xuxin_HermesMobile_app`
+    and
+    `/Users/xuxin/.codex-mobile-web/hermes-host-backup-before-plugin-origin-cache-v575-20260606_130613_Users_hermes-host_HermesMobile_app`.
+  - Restarted Mac `com.hermesmobile.listener`; PID is now `9336`.
+- Validation:
+  - Local Codex Mobile focused checks passed:
+    `node --check server.js` and
+    `node --test test\thread-visibility.test.js test\conversation-render.test.js
+    test\thread-item-timestamp-enrichment.test.js` passed 45/45.
+  - Local `npm.cmd run check` passed.
+  - Mac Codex plugin `node --check server.js` and
+    `node --test test/thread-visibility.test.js` passed after deployment.
+  - Windows Hermes host checks passed:
+    `node --check public\app-embedded-plugin-ui.js`,
+    `node --check public\service-worker.js`, and
+    `node --test tests\embedded-plugin-refresh-harness.test.js
+    tests\static-cache-version-harness.test.js`.
+  - Mac active Hermes host checks passed with the pinned Node runtime:
+    `public/app-embedded-plugin-ui.js`, `public/service-worker.js`,
+    `tests/embedded-plugin-refresh-harness.test.js`, and
+    `tests/static-cache-version-harness.test.js`.
+  - HTTP checks:
+    - Windows 8787 public config reports v193.
+    - Windows 8797 root and service worker report
+      `20260606-plugin-origin-allow-v575`.
+    - Mac LAN `http://192.168.10.110:8797/` and
+      `/service-worker.js` report
+      `20260606-plugin-origin-allow-v575`.
+    - Mac LAN
+      `/app-embedded-plugin-ui.js?v=20260606-plugin-origin-allow-v575`
+      returns sha16 `d0290a18ec97d550` and contains
+      `embeddedPluginCurrentFrameOrigin`.
+- Client note:
+  - Windows clients may need one normal refresh to load Codex Mobile v193.
+  - Mac-hosted Hermes pages should now request a new v575 host script URL; one
+    fresh load should be enough to bypass the old v574 script cache.
+
+## 2026-06-06 Mac Hermes Host Plugin Back-Swipe Origin Repair
+
+- User clarification:
+  - Windows-hosted Hermes plugin behavior is correct: right-swipe from a Codex
+    thread detail returns to the Codex embedded primary thread/settings page.
+  - Mac-hosted Hermes plugin behavior was wrong: the same gesture returned to
+    the Hermes Mobile host/modal context.
+- Diagnosis:
+  - The Codex plugin iframe files served by 8787 matched between Windows and
+    Mac: `/app.js`, `/plugin-embed.js`, and `/sw.js` had the same hashes and
+    v193 shell markers.
+  - The difference was the Hermes host shell on 8797. Windows served
+    `public/app-embedded-plugin-ui.js` with hash prefix `d0290a18ec97d550` and
+    function `embeddedPluginCurrentFrameOrigin(def)`, while the active Mac host
+    initially served an older `app-embedded-plugin-ui.js` from the
+    `/Users/hermes-host/HermesMobile/app` LaunchDaemon directory.
+  - Version strings alone were insufficient: both hosts could advertise the
+    same Hermes host static version while the active Mac file content differed.
+  - Without `embeddedPluginCurrentFrameOrigin(def)`, the Mac host could reject
+    proxied iframe `codex-mobile.plugin.navigation` messages whose actual
+    `event.origin` was the current iframe `src` origin. The host then never
+    learned `canGoBack:true`, so right-swipe fell through to Hermes host
+    navigation instead of sending `{ type: "hermes.plugin.back", version: 1 }`
+    to Codex.
+- Repair:
+  - Backed up the old active host file under
+    `/Users/xuxin/.codex-mobile-web/hermes-host-backup-before-plugin-origin-allow-20260606_124519`.
+  - Copied the correct host bridge file from
+    `/Users/xuxin/HermesMobile/app/public/app-embedded-plugin-ui.js` to the
+    active daemon path
+    `/Users/hermes-host/HermesMobile/app/public/app-embedded-plugin-ui.js`.
+  - Preserved active-daemon ownership/mode as `hermes-host:staff` and `0644`.
+  - Restarted `com.hermesmobile.listener`; PID changed from `205` to `7820`.
+- Validation:
+  - Mac local 8797 now serves
+    `app-embedded-plugin-ui.js` sha256
+    `d0290a18ec97d550d735116d1d479064b1df7a52040e3bd6054fbb5ed8d3371d`.
+  - Windows-to-Mac LAN HTTP sees the same 8797 host file:
+    status 200, length 47435, sha16 `d0290a18ec97d550`, marker
+    `embeddedPluginCurrentFrameOrigin`.
+  - Windows and Mac 8787 plugin static files match:
+    `/app.js` sha16 `712c073baafc23ad`, `/plugin-embed.js` sha16
+    `f30d6798986c685d`, `/sw.js` sha16 `452d1c61997ec19e`.
+  - Host root `http://127.0.0.1:8797/` returned HTTP 200 after restart.
+  - Remote `node --check public/app-embedded-plugin-ui.js` and
+    `tests/embedded-plugin-refresh-harness.test.js` passed before restart.
+    `tests/static-cache-version-harness.test.js` still failed on an adjacent
+    test metadata assertion requiring `tests/task-list-ui.test.js` to include
+    the current client version; that was not the origin/back-swipe failure.
+- Client note:
+  - Already-open iPhone pages may need one reload/reopen of the Mac-hosted
+    Hermes Web App to replace the old top-level host JavaScript. After that,
+    Mac should follow the Windows behavior for Codex thread-detail right-swipe.
+
+## 2026-06-06 Mac Profile Quota And Plugin Refresh v193
+
+- User report:
+  - After reopening/re-logging into the Mac-hosted Hermes plugin, the top-right
+    reconnect state was gone, but the page still refreshed and the visible quota
+    belonged to the wrong account.
+- Diagnosis:
+  - The active Mac listener process ran from
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - The profile store selected `previous`, and `/api/status.codexHome` correctly
+    reported `/Users/xuxin/.codex-homes/previous` with
+    `codexHomeSource=profile-store`.
+  - The system LaunchDaemon still carried a stale
+    `CODEX_HOME=/Users/xuxin/.codex`. `server.js` ignored that for its own
+    resolved paths, but the managed `codex app-server` child was spawned without
+    an explicit `env`, so the child inherited the stale default home. This made
+    live quota come from the default account while Mobile status appeared to use
+    the selected profile.
+  - The remaining non-reconnect refresh path can also happen when an old cached
+    Hermes iframe repeatedly detects the same client shell mismatch. Before
+    v193, embedded build-change checks used `force: true`, bypassing the
+    `codex-mobile.plugin.refresh_required` signature dedupe.
+- Repairs:
+  - `server.js` now spawns managed `codex app-server` with
+    `env: Object.assign({}, process.env, { CODEX_HOME })`, so the child uses the
+    resolved active profile home even when the service environment is stale.
+  - `public/app.js` no longer forces repeated `server_build_changed` plugin
+    refresh requests for the same signature.
+  - Bumped the PWA shell from `codex-mobile-shell-v192` to
+    `codex-mobile-shell-v193`.
+  - Updated focused tests and docs:
+    `test/new-thread-route.test.js`, `test/app-update.test.js`,
+    `test/hermes-plugin-route.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-goal-service.test.js`, `test/thread-task-card-route.test.js`,
+    README, `docs/ARCHITECTURE.md`, and `docs/TROUBLESHOOTING.md`.
+- Mac deployment:
+  - Backed up active production files to
+    `/Users/xuxin/.codex-mobile-web/source-backup-before-codehome-child-env-v193-20260606_120239`.
+  - Deployed changed source files to
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Restarted the 8787 listener by terminating the old listener and relying on
+    LaunchDaemon KeepAlive. Listener PID changed from `3462` to `3785`.
+- Validation:
+  - Local syntax checks passed:
+    `node --check server.js`, `node --check public/app.js`, and
+    `node --check public/sw.js`.
+  - Local focused tests passed:
+    `node --test test\new-thread-route.test.js test\app-update.test.js
+    test\hermes-plugin-route.test.js test\codex-profile-service.test.js
+    test\codex-profile-ui.test.js test\mobile-viewport.test.js
+    test\thread-goal-service.test.js test\thread-task-card-route.test.js`
+    passed 59/59.
+  - Remote Mac focused checks passed with the pinned Node runtime, 59/59.
+  - Post-restart Mac smoke:
+    - `http://192.168.10.110:8787/api/public-config` returned HTTP 200 with
+      `clientBuildId=0.1.11|codex-mobile-shell-v193` and
+      `shellCacheName=codex-mobile-shell-v193`.
+    - `http://192.168.10.110:8797/` returned HTTP 200.
+    - Authenticated `/api/status` returned `ready=true`,
+      `transport=managed-ws-child`, `codexHome=/Users/xuxin/.codex-homes/previous`,
+      `codexHomeSource=profile-store`, `codexHomeEnvIgnored=true`, and
+      `lastError=null`.
+    - The managed app-server child process environment now reports
+      `CODEX_HOME=/Users/xuxin/.codex-homes/previous`.
+    - Live active quota changed from the stale default-account sample
+      `38% / 38% used` to the selected-profile child sample `7% / 17% used`,
+      with source `managed-child-live`.
+- Client note:
+  - Existing iPhone plugin frames must load v193 once. One refresh for the shell
+    bump is expected; repeated refreshes after the iframe is on v193 should be
+    treated as a new host/browser-cache issue.
+
+## 2026-06-06 Mac Hermes Plugin Reconnect And Quota Read Repair
+
+- User report:
+  - Mac-hosted Codex Mobile in Hermes plugin mode still showed the top-right
+    `重连` state and refresh prompts after the previous 8787 listener address
+    repair.
+  - Wrong-account quota was gone, but the correct quota was initially blank.
+- Diagnosis:
+  - The Codex plugin listener was already corrected to listen on `*:8787`, and
+    both `http://127.0.0.1:8787/api/public-config` and
+    `http://192.168.10.110:8787/api/public-config` returned HTTP 200.
+  - Direct Codex `/api/events` stayed open and produced the 25s keepalive.
+  - The active Hermes host same-origin plugin proxy in
+    `/Users/hermes-host/HermesMobile/app/server-routes/hermes-plugin-api-routes.js`
+    treated non-JSON/non-HTML responses as `await upstream.arrayBuffer()`.
+    For `Content-Type: text/event-stream`, this means the iframe EventSource
+    receives no initial status event or keepalive until the upstream ends,
+    which makes iOS/Hermes plugin pages enter reconnect/recovery and sometimes
+    show a refresh prompt.
+- Repairs:
+  - Hermes host production:
+    - Added a `text/event-stream` branch to the same-origin plugin proxy. It
+      writes the upstream status/headers immediately, preserves no-buffering
+      headers, and pipes the upstream body through `Readable.fromWeb(...)`
+      instead of buffering it.
+    - Updated `/Users/hermes-host/HermesMobile/app/docs/MODULES/plugins.md`
+      with the SSE streaming proxy rule.
+    - Backups:
+      `/Users/xuxin/.codex-mobile-web/hermes-host-backup-before-plugin-proxy-sse-20260606_1110xx`
+      and
+      `/Users/xuxin/.codex-mobile-web/hermes-host-doc-backup-before-plugin-proxy-sse-20260606_111742`.
+    - Restarted `com.hermesmobile.listener`; post-restart PID was `205`.
+  - Codex Mobile production:
+    - `server.js` now calls official app-server RPC
+      `account/rateLimits/read` after `initialize`, before broadcasting ready
+      status. This hydrates current quota without waiting for a later
+      `account/rateLimits/updated` notification.
+    - Shared-profile homes still expose quota only when the source is this
+      listener's own managed child app-server (`managed-child-live`); that
+      snapshot is not persisted as reusable profile quota.
+    - Deployed `server.js`, `adapters/codex-profile-service.js`,
+      `test/codex-profile-service.test.js`, `test/new-thread-route.test.js`,
+      README, `docs/ARCHITECTURE.md`, and `docs/TROUBLESHOOTING.md` to
+      `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+    - Backup:
+      `/Users/xuxin/.codex-mobile-web/source-backup-before-quota-read-rpc-20260606_111510`.
+    - Restarted Codex plugin listener; post-restart PID was `710`.
+- Validation:
+  - Local Codex checks passed:
+    `node --check server.js`,
+    `node --check adapters\codex-profile-service.js`, and focused
+    `node --test test\codex-profile-service.test.js
+    test\codex-profile-ui.test.js test\new-thread-route.test.js` passed 33/33.
+  - Mac Codex production focused checks passed with the pinned Node runtime:
+    syntax checks plus the same focused test set, 33/33.
+  - Hermes host focused check passed:
+    `node --check server-routes/hermes-plugin-api-routes.js` and
+    `node --test tests/hermes-plugin-api-routes.test.js`.
+  - Post-restart Mac smoke:
+    - `127.0.0.1:8787/api/public-config` HTTP 200, about 0.16s.
+    - `192.168.10.110:8787/api/public-config` HTTP 200, about 0.14s.
+    - Authenticated `/api/status` showed `ready=true`,
+      `transport=managed-ws-child`, active profile `previous`,
+      `topQuota=true`, active quota source `managed-child-live`,
+      5h quota `36%`, weekly quota `37%`, and `lastError=null`.
+    - Host proxy SSE smoke through
+      `/api/hermes-plugins/codex-mobile/proxy/api/events` with a real plugin
+      session returned a status event and a keepalive within a 32s sample.
+      Curl ended with its max-time timeout, which is expected for SSE.
+- Client note:
+  - An already-open iPhone iframe may still show its old reconnect/refresh
+    notice until the page reloads once. After the host restart and one fresh
+    plugin load, new EventSource connections should receive proxy-streamed
+    status and keepalive instead of staying silent behind the proxy.
+
+## 2026-06-05 Hermes 06-05 Stale Turn Recovery
+
+- User report:
+  - The Windows-hosted `Hermes 06-05` Codex thread appeared stuck. After the
+    user stopped the old turn and sent another message, the new turn also did
+    not progress.
+- Evidence:
+  - Thread id: `019e9566-c222-7560-af45-2b3665862188`.
+  - Latest stuck turn before repair:
+    `019e984d-f938-7902-ac11-635438beaf90`.
+  - Rollout path:
+    `%USERPROFILE%\.codex\sessions\2026\06\05\rollout-2026-06-05T09-30-00-019e9566-c222-7560-af45-2b3665862188.jsonl`.
+  - The previous stale turn `019e9842-ed02-7be3-ac74-36f81877c571` had already
+    moved to `interrupted` after the user stop.
+  - The new turn had only `task_started`, `turn_context`, and user-message
+    events. The rollout size stayed unchanged across a short sample, there were
+    no pending approvals, and no assistant/tool/token/complete event followed.
+  - Another thread, `Codex mobile`, was still active and its rollout was
+    growing, so the shared app-server was not globally down.
+- Repair:
+  - Used the Mobile Web authenticated interrupt route for only the Hermes turn:
+    `POST /api/threads/019e9566-c222-7560-af45-2b3665862188/turns/019e984d-f938-7902-ac11-635438beaf90/interrupt`.
+  - Did not restart the listener, mux, or shared app-server, to avoid
+    disrupting the active `Codex mobile` thread.
+- Validation:
+  - After interrupt, latest Hermes turn status was `interrupted` with
+    `completedAt=1780672335`, and thread status returned to `idle`.
+- Caveat:
+  - Root cause was not fully isolated. The observed failure mode is that the
+    real app-server emits `turn/started` but the rollout then receives no first
+    model/tool event for that Hermes thread. If it recurs on the next send,
+    inspect mux/client connection churn and the real app-server child before
+    restarting; avoid app-server restart while another important turn is active.
+  - Follow-up clarification: the simultaneously active `Codex mobile` thread
+    was the current diagnostic Codex thread. Do not treat Hermes no-growth as
+    definitely stale while the diagnostic thread itself is still running and
+    occupying the shared app-server/model execution path. Recheck Hermes only
+    after the diagnostic turn has ended or after the other active turn is known
+    to be unrelated.
+  - Second recurrence: after the user resent again, Hermes created turn
+    `019e9859-93cb-7bd0-98b4-c1ea94d88e89` at `2026-06-05T15:14:27Z` and again
+    emitted only startup/user-message events with no rollout growth and no
+    pending approvals. It was interrupted through the Mobile Web route at
+    `completedAt=1780672808`; thread status returned to `idle`. The user opened
+    a new handoff/continuation thread because the old Hermes thread is not
+    currently usable for work.
+  - Later recovery: the old Hermes thread did not revive the interrupted turn;
+    it accepted later new turns. `019e9866-4aaa-7e30-90af-0cf1cb2a0777` and
+    `019e9868-15e0-7f03-9f69-20261d4be1b4` completed after the interruptions.
+    A later turn `61b34ecd-3fa1-4813-ae0c-dcf161950ee8` was active with a
+    `commandExecution` item when checked. Treat the earlier issue as delayed or
+    starved scheduling for specific submitted turns, not permanent thread
+    loss.
+
+## 2026-06-05 Windows Refresh Prompt And Mac Host Active-Path Repair
+
+- User report:
+  - Windows-hosted Mobile Web still showed frequent refresh prompts.
+  - On the same iPhone, the Windows-hosted Hermes plugin could return from a
+    Codex thread detail to the Codex primary plugin page, while the Mac-hosted
+    Hermes plugin still right-swiped directly back to Hermes Mobile.
+- Diagnosis:
+  - Windows 8787 `/api/public-config` reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v191` and
+    `shellCacheName=codex-mobile-shell-v191`, while the workspace disk files
+    `public/app.js` and `public/sw.js` already contained v192. That listener
+    was an old Node process and had not restarted into the current shell.
+  - Mac Codex plugin 8787 was healthy on v192, but the active Hermes host
+    system daemon `com.hermesmobile.listener` served host static version
+    `20260605-gateway-key-run-status-v562` from
+    `/Users/hermes-host/HermesMobile/app`.
+  - The earlier v568 host bridge fix had been deployed to
+    `/Users/xuxin/HermesMobile/app/public`, which was not the active system
+    daemon working directory after the host moved to `hermes-host`.
+  - This explains why the same phone behaved differently: the Windows host had
+    the v568 embedded-plugin bridge, while the Mac system host was still on old
+    v562 static files and could still reject the current proxied iframe
+    navigation origin.
+- Repair:
+  - Windows: no active thread was reported by local `/api/status`; manually
+    stopped only the 8787 listener PID and restarted `node server.js` hidden
+    from `C:\Users\xuxin\Documents\codex-mobile-web`. The new listener PID is
+    `42024`.
+  - Mac: copied the v568 Hermes host files from
+    `/Users/xuxin/HermesMobile/app` into the active system daemon directory
+    `/Users/hermes-host/HermesMobile/app`, limited to:
+    `public/app-embedded-plugin-ui.js`, `public/index.html`,
+    `public/service-worker.js`, `public/directory-viewer.html`,
+    `tests/embedded-plugin-refresh-harness.test.js`,
+    `tests/static-cache-version-harness.test.js`, and
+    `tests/task-list-ui.test.js`.
+  - Mac backups:
+    `/Users/xuxin/.codex-mobile-web/hermes-host-system-backup-before-host-v568-active-20260605_193031`
+    and
+    `/Users/xuxin/.codex-mobile-web/hermes-host-system-backup-before-task-list-test-v568-20260605_193136`.
+  - Restarted Mac `com.hermesmobile.listener`; host PID changed from `98822` to
+    `681`.
+- Validation:
+  - Windows `/api/public-config`, served `/app.js`, and served `/sw.js` now all
+    report/include `codex-mobile-shell-v192`.
+  - Mac active host root and `service-worker.js` now both report
+    `20260605-capability-entry-hub-v568` from
+    `/Users/hermes-host/HermesMobile/app`.
+  - Mac focused host tests passed with
+    `/Users/hermes-host/HermesMobile/runtime/node-current/bin/node`:
+    `tests/embedded-plugin-refresh-harness.test.js` and
+    `tests/static-cache-version-harness.test.js`.
+  - Mac Codex plugin 8787 still reports `clientBuildId=0.1.11|codex-mobile-shell-v192`.
+  - Mac Hermes host plugin manifest is healthy:
+    `available=true`, `tokenStatus=launch_token_issued`; the proxied Codex
+    plugin entry returned HTTP 200 and contained the Codex Mobile shell.
+- Client note:
+  - iPhone clients may need one host/plugin refresh or close/reopen to replace
+    cached v562/v191 service worker shells. Repeated prompts after loading these
+    versions would be a new issue, not the same version mismatch.
+
+## 2026-06-05 Mac Hermes Host Codex Plugin Key Path Repair
+
+- User report:
+  - On Mac production, Hermes Mobile could not load the Codex Mobile plugin and
+    reported that the workspace access key file could not be found.
+- Diagnosis:
+  - Codex Mobile listener `com.hermesmobile.plugin.codex-mobile` on 8787 was
+    healthy: `/api/public-config` and `/api/v1/hermes/plugin/manifest` returned
+    valid responses.
+  - The error string came from Hermes host
+    `/Users/xuxin/HermesMobile/app/adapters/hermes-plugin-service.js`, not from
+    the Codex plugin listener.
+  - The active Hermes host is the system LaunchDaemon
+    `com.hermesmobile.listener`, running as user `hermes-host` from
+    `/Users/hermes-host/HermesMobile/app`.
+  - `findCodexMobileAccessKeyPath()` defaults to the host process home
+    `.codex-mobile-web/access_key`; for `hermes-host` that path did not exist.
+    The real Codex Mobile access key was under the `xuxin` runtime path.
+- Repair:
+  - Created a secret copy at
+    `/Users/hermes-host/HermesMobile/data/secrets/codex-mobile-access-key.secret`.
+    It is owned by `hermes-host:staff` with mode `600`.
+  - Backed up `/Library/LaunchDaemons/com.hermesmobile.listener.plist` to
+    `/Users/xuxin/.codex-mobile-web/launchdaemon-backup-com.hermesmobile.listener-20260605_190822.plist`.
+  - Added `HERMES_MOBILE_CODEX_PLUGIN_ACCESS_KEY_PATH` to
+    `com.hermesmobile.listener.plist`, pointing to the secret copy.
+  - `launchctl kickstart` alone did not reload the edited environment, so the
+    service was reloaded with `bootout` plus `bootstrap`. Final listener PID was
+    `98822`, and live `launchctl print` showed the new environment variable.
+- Validation:
+  - Through Hermes host auth on `http://127.0.0.1:8797` using the
+    `x-hermes-web-key` header backed by `HERMES_WEB_AUTH_KEY_PATH`, the Codex
+    plugin manifest changed from `available=false`,
+    `code=plugin_launch_key_missing`, `tokenStatus=workspace_key_missing` to
+    `available=true`, `tokenStatus=launch_token_issued`.
+  - LAN address `http://192.168.10.110:8797` returned the same healthy plugin
+    manifest state.
+  - Codex plugin proxy entry returned HTTP 200 with the Codex Mobile shell.
+  - Recent `listener.err.log` had no new workspace-access-key related errors.
+- Operational note:
+  - Password SSH to this Mac was verified with user `xuxin`; the local note that
+    said `xuxinXP` did not authenticate in this session. Do not record or print
+    the password.
+  - Do not use the Codex plugin access key as the Hermes host API auth key.
+    The host API auth header is `x-hermes-web-key`; the plugin access key is
+    only the host-readable plugin launch key material.
+
+## 2026-06-05 Mac Reconnect / LaunchDaemon Split-Brain
+
+- User report:
+  - Mac-hosted Codex Mobile frequently showed the top-right `重连` activity
+    state and sometimes refreshed the whole embedded app.
+- Evidence and immediate repair:
+  - A stale user submitted `launchctl submit` job label under the
+    `com.xuefusong.codex-mobile-web.8787...` prefix had repeatedly tried to
+    start another `server.js` on 8787. `mobile-web.log` had 563
+    `EADDRINUSE` entries.
+  - Removed that stale submitted job. Afterward, the `EADDRINUSE` count stayed
+    at 563 over repeated checks, and authenticated `/api/events` stayed
+    connected to a keepalive.
+  - Found a second deployment split:
+    - The active production listener is managed by system LaunchDaemon
+      `/Library/LaunchDaemons/com.hermesmobile.plugin.codex-mobile.plist`,
+      running as user `xuxin` from
+      `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+    - A user LaunchAgent backup under `~/Library/LaunchAgents` points at
+      `/Users/xuxin/HermesMobile/plugins/codex-mobile-web`.
+  - Restoring the user LaunchAgent made it compete with the system daemon.
+    Removed the user LaunchAgent again so only the system daemon owns 8787.
+    The user-agent EADDRINUSE log count then stayed stable at 24 over 15s.
+  - Current Mac smoke after cleanup:
+    - 8787 is served by the system daemon's `node server.js`.
+    - `/api/status` reports `ready=true`, transport `managed-ws-child`,
+      `codexHomeSource=profile-store`, active profile `previous`, and no
+      lastError.
+    - Authenticated `/api/events` produced data plus keepalive with no error.
+- Local implementation to prevent recurrence:
+  - `adapters/shared-chain-restart-service.js`
+    - Added safe LaunchAgent service-label detection from
+      `CODEX_MOBILE_LAUNCHD_LABEL` / `XPC_SERVICE_NAME`.
+    - macOS restart now cleans same-prefix submitted jobs and, when running
+      under a LaunchAgent/LaunchDaemon label, calls
+      `launchctl kickstart -k` for the existing service label.
+    - Removed creation of persistent `launchctl submit` jobs. The non-service
+      fallback is now a one-shot detached `nohup` listener.
+  - `test/shared-chain-restart-service.test.js`
+    - Added coverage for LaunchAgent `kickstart`, one-shot fallback, and
+      absence of `launchctl submit`.
+  - Updated `README.md`, `docs/ARCHITECTURE.md`, `docs/MODULES.md`, and
+    `docs/TROUBLESHOOTING.md` with the macOS restart and EADDRINUSE diagnosis
+    rule.
+- Validation:
+  - Local `node --check adapters\shared-chain-restart-service.js` passed.
+  - Local focused `node --test test\shared-chain-restart-service.test.js
+    test\manual-restart-ui.test.js` passed 12/12.
+  - Local `npm.cmd run check` passed.
+  - Local `npm.cmd run check:macos` passed.
+  - Local `npm.cmd test` passed 341/341.
+  - Local `git diff --check` passed, with only expected Windows LF-to-CRLF
+    working-copy warnings.
+- Deployment status and blocker:
+  - User authorized using the SSH/sudo password stored in Desktop `NAS.TXT`;
+    the password was used only as stdin and was not recorded.
+  - The active system production directory
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web` was backed up
+    and updated with the restart adapter, test, README, and docs changes.
+    Latest backup:
+    `/Users/xuxin/.codex-mobile-web/source-backup-before-macos-reconnect-restart-v193-kill-fallback-20260605_181033`.
+  - During validation, a system LaunchDaemon edge was found: user-level
+    `launchctl kickstart system/com.hermesmobile.plugin.codex-mobile` can leave
+    the listener down. The final adapter therefore tries only GUI-domain
+    `kickstart`; if that fails under a service label, it kills only the current
+    listener and relies on LaunchDaemon KeepAlive. A controlled plain `kill`
+    test confirmed KeepAlive restarted 8787 quickly.
+  - Production focused checks passed in
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web` with
+    `/Users/hermes-host/HermesMobile/runtime/node-current/bin/node`.
+  - After sudo `launchctl kickstart -k
+    system/com.hermesmobile.plugin.codex-mobile`, the loaded production listener
+    was tested through the real authenticated `POST /api/restart/shared-chain`
+    endpoint. PID changed from 69008 to 69106, `/api/status` returned
+    `ready=true`, stale submitted labels were absent, and EADDRINUSE counts
+    stayed `mobile 563` and `daemon 0`.
+  - Authenticated `/api/events` stayed connected through a 32s keepalive, and
+    a later 15s EADDRINUSE recheck still showed `mobile 563` and `daemon 0`.
+  - Current Mac runtime is stable and the Mobile Web Restart endpoint is now
+    safe for the system LaunchDaemon deployment.
+
+## 2026-06-05 Mac Profile Quota Isolation v192
+
+- User report:
+  - Same iPhone accesses separate Windows-hosted and Mac-hosted Web Apps.
+  - On Mac, Codex Mobile quota looked like the Windows account even though the
+    Mac profile is a different Codex account.
+  - Mac Codex Mobile also frequently showed reconnect/reload behavior.
+- Evidence:
+  - Mac 8787 process was running from
+    `/Users/xuxin/HermesMobile/plugins/codex-mobile-web`, transport
+    `managed-ws-child`, with
+    `codexHome=/Users/xuxin/.codex-homes/previous`,
+    `codexHomeSource=profile-store`, and `codexProfileActiveId=previous`.
+  - Mac profile homes `current` and `previous` keep their own auth/config but
+    link `sessions/`, `archived_sessions/`, and `state_5.sqlite` to the default
+    `/Users/xuxin/.codex` state so thread visibility is shared.
+  - Before this fix, Mac `/api/public-config` decorated all profiles with the
+    same rollout-derived quota snapshot. That was unsafe after shared thread
+    state because rollout quota is no longer account-scoped.
+- Local implementation:
+  - `adapters/codex-profile-service.js`
+    - Added account-scoped rollout detection. If a profile's `sessions/` or
+      `archived_sessions/` resolves outside that profile home, rollout quota is
+      skipped for that profile.
+    - Stored profile quota snapshots are now reusable only when written from a
+      live active account snapshot (`source=active-live`); legacy snapshots
+      without that provenance are ignored.
+  - `server.js`
+    - `loadRecentRateLimitsFromRollouts()` now skips rollout quota fallback
+      when the active `CODEX_HOME` shares session state outside the profile
+      home.
+    - Profile list decoration receives only live quota snapshots, not
+      activeRateLimits that may come from rollout fallback.
+  - `public/app.js`
+    - When `/api/public-config`, `/api/status`, or EventSource status explicitly
+      contains no valid quota snapshot, the browser clears stale local quota
+      cache instead of keeping a previous-account value.
+    - Bumped client build to `0.1.11|codex-mobile-shell-v192`.
+  - `public/sw.js`
+    - Bumped shell cache to `codex-mobile-shell-v192`.
+  - Updated tests/docs:
+    - `test/codex-profile-service.test.js`
+    - `test/codex-profile-ui.test.js`
+    - `test/new-thread-route.test.js`
+    - `test/new-thread-ui.test.js`
+    - `test/mobile-viewport.test.js`
+    - `test/thread-goal-service.test.js`
+    - `test/thread-task-card-route.test.js`
+    - `README.md`
+    - `docs/ARCHITECTURE.md`
+    - `docs/MODULES.md`
+    - `docs/TROUBLESHOOTING.md`
+- Validation:
+  - `node --check server.js adapters\codex-profile-service.js public\app.js
+    public\sw.js` passed.
+  - Focused `node --test test\codex-profile-service.test.js
+    test\codex-profile-ui.test.js test\new-thread-route.test.js
+    test\new-thread-ui.test.js test\mobile-viewport.test.js
+    test\thread-goal-service.test.js test\thread-task-card-route.test.js`
+    passed 54/54.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `npm.cmd test` passed 340/340.
+- Mac runtime:
+  - Checked Mac visible threads before restart; no running thread was reported.
+  - Backup created:
+    `~/.codex-mobile-web/source-backup-before-profile-quota-v192-20260605_172526`.
+  - Deployed the changed runtime/source/test/doc files to
+    `/Users/xuxin/HermesMobile/plugins/codex-mobile-web/`.
+  - Remote syntax and focused tests passed on Mac with
+    `/Users/xuxin/HermesMobile/runtime/node-current/bin/node`.
+  - Restarted Mac LaunchAgent `com.homeai.plugin.codex-mobile`; listener PID
+    changed from `38722` to `53162`.
+  - Mac `/api/public-config` now reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v192` and
+    `shellCacheName=codex-mobile-shell-v192`.
+  - After restart, active profile `previous` no longer receives the shared
+    default rollout quota. Active top-level quota is currently absent until the
+    live app-server account emits a quota snapshot; this is intentional because
+    showing no quota is safer than showing another account's shared-rollout
+    quota.
+  - Mac endpoint timings after restart were approximately:
+    `/api/public-config` 0.18s, `/api/status` 0.14s,
+    `/api/threads?limit=40` 0.93s. This removes the shared-rollout quota scan
+    as a reconnect contributor.
+- Status:
+  - Local changes are uncommitted.
+  - Public repository was not synced or pushed.
+  - iPhone clients should accept the v192 refresh prompt or close/reopen the
+    Mac-hosted Web App once so local quota cache is cleared by the new shell.
+
+## 2026-06-05 Mac Hermes Host Plugin Origin v568
+
+- User clarification:
+  - The same iPhone accesses two different Web Apps: one served by the Windows
+    host and one served by the Mac production host. Windows host behavior was
+    acceptable; Mac host still exited from Codex thread detail to the Hermes
+    plugin context page and sometimes refreshed while inside a thread.
+- Diagnosis:
+  - This is a host deployment/configuration difference, not an iPhone browser
+    difference.
+  - The shared symptom is consistent with the Hermes host rejecting the Codex
+    iframe `codex-mobile.plugin.navigation` postMessage. When that navigation
+    state is not accepted, host right-swipe falls through to plugin context
+    home and the launch-health timer can refresh the iframe after about 30s.
+  - Mac Hermes host was still serving shell version
+    `20260605-capability-entry-hub-v567`; Windows host had the patched host
+    bridge staged for v568.
+- Host implementation outside this repository:
+  - In `C:\ProgramData\HermesMobile\app\public\app-embedded-plugin-ui.js`,
+    `embeddedPluginMessageOriginAllowed()` now accepts the exact origin derived
+    from the currently rendered iframe `src`, in addition to the existing
+    manifest/record origins. This keeps the check origin-exact while allowing
+    same-origin Hermes proxy iframe deployments.
+  - Bumped Hermes host static shell/cache version to
+    `20260605-capability-entry-hub-v568` in host `public/index.html`,
+    `public/service-worker.js`, and `public/directory-viewer.html`; updated
+    the host test version sentinel.
+  - Added host harness coverage for accepting navigation from the current proxy
+    frame origin.
+- Validation:
+  - Windows host focused checks passed:
+    `node --check public\app-embedded-plugin-ui.js public\service-worker.js`;
+    `node --test tests\embedded-plugin-refresh-harness.test.js
+    tests\static-cache-version-harness.test.js`.
+  - BOM checks for edited Windows host files passed.
+  - Mac production checks passed after deployment:
+    remote syntax checks for `public/app-embedded-plugin-ui.js` and
+    `public/service-worker.js`; remote focused host tests
+    `embedded-plugin-refresh-harness.test.js` and
+    `static-cache-version-harness.test.js`; no old `v567` static version
+    string remains under Mac host `public/` or `tests/`.
+  - Remote public-file BOM checks showed no UTF-8 BOM.
+- Runtime:
+  - Mac host backup:
+    `~/.codex-mobile-web/hermes-host-backup-before-plugin-origin-v568-20260605_161936`.
+  - Deployed host files to `/Users/xuxin/HermesMobile/app/public/` and test
+    harness files to `/Users/xuxin/HermesMobile/app/tests/`.
+  - Restarted Mac LaunchAgent `com.homeai.hermes-mobile`; host PID changed
+    from `9119` to `39557`.
+  - Codex plugin listener LaunchAgent `com.homeai.plugin.codex-mobile` stayed
+    on PID `38722`.
+  - Mac host HTTP root reports
+    `data-client-version="20260605-capability-entry-hub-v568"` and
+    `service-worker.js` reports
+    `HERMES_SW_VERSION = "20260605-capability-entry-hub-v568"`.
+  - Mac Codex plugin shell remains on
+    `clientBuildId=0.1.11|codex-mobile-shell-v191` /
+    `shellCacheName=codex-mobile-shell-v191`.
+- Status:
+  - Local Codex Mobile repository changes remain uncommitted.
+  - Public repository was not synced or pushed.
+  - The iPhone may need to accept the Hermes Web App refresh prompt or close
+    and reopen the Mac-hosted Web App once so the host service worker loads
+    v568.
+
+## 2026-06-05 Hermes Embed iOS Iframe Swipe v191
+
+- User report:
+  - Windows H5 could return from a Codex plugin thread detail to the Codex
+    plugin thread/settings primary page, but Mac production inside Hermes
+    Mobile still right-swiped directly back to the Hermes modal/topic page.
+  - Windows also repeatedly showed a new-version refresh prompt.
+- Evidence:
+  - Mac production Codex plugin static files and `/api/public-config` were
+    already on v190 before this fix; the Mac Hermes host JS hashes matched the
+    Windows production host JS for the embedded plugin bridge, back-swipe
+    target, right-swipe guard, service worker, and index shell.
+  - Windows 8787 listener reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v189` while the served
+    `/app.js` and `/sw.js` files contained v190/v191 static shell constants.
+    That listener/static mismatch caused the repeated refresh prompt.
+- Local implementation:
+  - `public/app.js`
+    - Added an iframe-owned Hermes embed left-edge swipe guard. In embed mode,
+      if Codex's own navigation message would report `canGoBack:true`, an iOS
+      left-edge right-swipe inside the iframe calls the same `handlePluginBack`
+      path as `hermes.plugin.back` and returns to the embedded primary page.
+    - Bumped client build to `0.1.11|codex-mobile-shell-v191`.
+  - `public/sw.js`
+    - Bumped shell cache to `codex-mobile-shell-v191`.
+  - Updated tests/docs:
+    - `test/mobile-viewport.test.js`
+    - `test/thread-goal-service.test.js`
+    - `test/thread-task-card-route.test.js`
+    - `README.md`
+    - `docs/ARCHITECTURE.md`
+    - `docs/COMPLEX_FEATURE_PATHS.md`
+    - `docs/MODULES.md`
+    - `docs/TROUBLESHOOTING.md`
+- Validation:
+  - `node --check public\app.js public\plugin-embed.js public\sw.js` passed.
+  - Focused `node --test test\mobile-viewport.test.js
+    test\plugin-embed.test.js test\thread-goal-service.test.js
+    test\thread-task-card-route.test.js` passed 23/23.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `npm.cmd test` passed 337/337.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+- Runtime:
+  - Mac production backup created at
+    `~/.codex-mobile-web/source-backup-before-embed-back-v191-20260605_160934`.
+  - Deployed `public/app.js`, `public/plugin-embed.js`, and `public/sw.js` to
+    `/Users/xuxin/HermesMobile/plugins/codex-mobile-web/public/`.
+  - Remote syntax checks passed for those three files.
+  - Restarted Mac LaunchAgent `com.homeai.plugin.codex-mobile`; listener PID
+    changed from `28819` to `38722`.
+  - Mac `/api/public-config` now reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v191` and
+    `shellCacheName=codex-mobile-shell-v191`.
+  - Restarted only the Windows 8787 `server.js` listener; PID changed from
+    `129652` to `75948`, leaving mux PID `77796` unchanged.
+  - Windows `/api/public-config`, `/app.js`, and `/sw.js` now all report or
+    contain `codex-mobile-shell-v191`.
+- Status:
+  - Local changes are uncommitted.
+  - Public repository was not synced.
+  - iOS clients should accept the refresh prompt or close/reopen Hermes Mobile
+    once so the iframe loads v191.
+
+## 2026-06-05 Hermes Embed Back Navigation v190
+
+- User report:
+  - On Mac production inside Hermes Mobile, right-swipe from a Codex plugin
+    thread detail secondary page returned directly to Hermes Mobile instead of
+    returning to Codex's embedded thread-switcher/settings page.
+- Local implementation:
+  - `public/plugin-embed.js`
+    - `canGoBack()` now treats the embedded primary page as an explicit
+      `false` boundary even if stale thread state is present.
+    - It now includes iframe-owned transient/detail states such as create
+      workspace, update panel, settings panel, and thread-list drawer in
+      `canGoBack:true` eligibility.
+  - `public/app.js`
+    - Bumped client build to `0.1.11|codex-mobile-shell-v190`.
+    - `loadThread()` force-publishes plugin navigation immediately after
+      selecting `currentThreadId` and again after the detail read completes, so
+      the host sees `canGoBack:true` during the thread loading shell.
+  - `public/sw.js`
+    - Bumped shell cache to `codex-mobile-shell-v190`.
+  - Tests/docs updated:
+    - `test/plugin-embed.test.js`
+    - `test/mobile-viewport.test.js`
+    - `README.md`
+    - `docs/ARCHITECTURE.md`
+    - `docs/COMPLEX_FEATURE_PATHS.md`
+    - `docs/MODULES.md`
+    - `docs/TROUBLESHOOTING.md`
+- Validation:
+  - `node --check public\app.js public\plugin-embed.js public\sw.js` passed.
+  - Focused `node --test test\plugin-embed.test.js test\mobile-viewport.test.js`
+    passed 12/12.
+  - `npm.cmd run check` passed.
+  - `npm.cmd test` passed 337/337.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only Windows LF-to-CRLF working-copy
+    warnings.
+- Runtime:
+  - Deployed `public/app.js`, `public/plugin-embed.js`, and `public/sw.js` to
+    Mac production plugin directory after backup:
+    `~/.codex-mobile-web/source-backup-before-embed-back-v190-20260605_155358`.
+  - Restarted LaunchAgent `com.homeai.plugin.codex-mobile`; observed listener
+    PID `27710`.
+  - `/api/public-config` on Mac production reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v190` and
+    `shellCacheName=codex-mobile-shell-v190`.
+
 ## 2026-06-05 Goal RPC And Mobile Archive Index v185
 
 - User report:
@@ -1924,3 +3094,104 @@ The previous full handoff was archived and should be opened only when old proven
   - Frontend/PWA clients must load v181 through the page refresh prompt, hard
     refresh, or close/reopen before stale running hints can be cleared.
   - Changes are uncommitted.
+
+## 2026-06-05 Large Rollout Live Operation Rehydration
+
+- User report:
+  - A revived `Hermes 06-05` goal thread streamed many cards while open, but
+    after leaving the thread and entering it again, many visible cards
+    disappeared.
+- Diagnosis:
+  - The raw rollout still contained the live-turn events. The disappearance was
+    a server rehydration/compaction issue, not model output loss.
+  - Large thread detail can use `large-rollout-turns-list`; the previous
+    `compactThread` path kept at most one operational card for the latest live
+    turn, and separate turns-list compaction dropped operation cards entirely.
+- Local fix:
+  - `server.js`
+    - Added bounded `CODEX_MOBILE_LIVE_OPERATION_ITEMS` support, defaulting to
+      12 recent live operation cards.
+    - Added raw-rollout recent-operation rehydration for the latest live turn.
+    - Merges by `callId` where possible, updates existing status/timestamps,
+      falls back to command/tool/file signatures when `callId` is absent, and
+      only reads operations from the matching live turn id.
+    - Completed turns remain compact and do not reopen full operation history.
+  - `test/thread-item-timestamp-enrichment.test.js`
+    - Added regression coverage for a live turn whose server turn object only
+      has user/agent messages while rollout contains several recent operations.
+  - `docs/TROUBLESHOOTING.md`
+    - Added an active-goal large-rollout disappearance section.
+- Validation:
+  - `node --check server.js` passed.
+  - `node --test test\thread-item-timestamp-enrichment.test.js` passed: 10/10.
+- Status:
+  - Listener was not restarted in this pass because the user had an active goal
+    running in the affected thread. The fix is local until the app-server is
+    restarted.
+
+## 2026-06-06 Mac Shared-Profile Live Quota Isolation
+
+- User report:
+  - Mac production Codex Mobile was using the `previous` profile account
+    `2261065@qq.com`, matching Mac Codex Desktop, but the quota display still
+    matched the Windows/default account.
+- Diagnosis:
+  - Mac `/api/public-config` before the fix showed active profile `previous`
+    with auth email `2261065@qq.com`, but top-level quota was still populated
+    with the same reset windows as Windows.
+  - v192 skipped shared rollout quota, but still trusted source-less live
+    `account/rateLimits/updated` snapshots. Those notifications do not carry
+    an account id, so they are unsafe when a non-default profile shares
+    `sessions/`, `archived_sessions/`, and `state_5.sqlite` with the default
+    `.codex` home.
+- Local fix:
+  - `server.js`
+    - Added `canExposeRateLimitsForActiveHome()`.
+    - `recordRateLimits()` now ignores and clears source-less live quota when
+      the active `CODEX_HOME` is not account-scoped.
+    - `activeRateLimits()`, `activeRateLimitsByModelMap()`, and
+      `liveQuotaSnapshotForProfiles()` return empty quota for shared-profile
+      homes rather than exposing an unverified account snapshot.
+  - `adapters/codex-profile-service.js`
+    - Stored `active-live` quota snapshots are reusable only for account-scoped
+      profile homes.
+    - A shared-profile active home now deletes stale stored `active-live`
+      snapshots instead of reusing them.
+  - Tests/docs:
+    - Added `test/codex-profile-service.test.js` coverage for shared profile
+      homes not persisting or reusing active live quota snapshots.
+    - Updated `test/new-thread-route.test.js`, README, `docs/ARCHITECTURE.md`,
+      and `docs/TROUBLESHOOTING.md`.
+- Validation:
+  - Local `node --check server.js` and
+    `node --check adapters\codex-profile-service.js` passed.
+  - Local focused `node --test test\codex-profile-service.test.js
+    test\codex-profile-ui.test.js test\new-thread-route.test.js` passed: 32/32.
+  - Local `git diff --check` passed with only expected Windows LF-to-CRLF
+    working-copy warnings.
+  - Mac active production directory:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Mac backup:
+    `/Users/xuxin/.codex-mobile-web/source-backup-before-shared-live-quota-20260606_103741`.
+  - Deployed `server.js`, `adapters/codex-profile-service.js`,
+    `test/codex-profile-service.test.js`, `test/new-thread-route.test.js`,
+    README, `docs/ARCHITECTURE.md`, and `docs/TROUBLESHOOTING.md` to the Mac
+    active production directory.
+  - Remote syntax and focused tests passed on Mac with
+    `/Users/hermes-host/HermesMobile/runtime/node-current/bin/node`: 32/32.
+  - Restarted the Mac 8787 listener by killing PID `69106`; LaunchDaemon
+    KeepAlive started PID `96771`, with app-server child PID `96782`.
+  - Post-restart Mac `/api/public-config` showed active profile `previous`,
+    auth email `2261065@qq.com`, `topQuota=false`, `topModels=0`,
+    `activeQuota=false`, and `activeQuotaSource=null`.
+  - `%HOME%/.codex-mobile-web/codex-profiles.json` on Mac now has
+    `activeProfileId=previous` and `quotaSnapshotKeys=["default"]`; the stale
+    `previous` active-live snapshot was removed.
+  - Mac EADDRINUSE count stayed at `563`; no new port split-brain was observed.
+- Status:
+  - This intentionally suppresses quota for the active Mac `previous` profile
+    while that profile shares thread state with the default `.codex` home and
+    app-server quota notifications remain source-less.
+  - Open iPhone/PWA clients should receive EventSource `status` with
+    `rateLimits=null` and clear local quota cache; if the visible chip remains
+    stale, close/reopen or refresh the Mac-hosted Web App once.

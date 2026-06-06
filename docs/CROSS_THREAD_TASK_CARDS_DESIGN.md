@@ -31,14 +31,14 @@ prefixes to one prefix.
 
 1. Source thread creates a task-card request addressed to one or more target
    threads.
-2. For exact `#自由协作` natural-language commands, the model only drafts the
-   bounded card JSON. Once the draft parses, Mobile Web materializes the real
-   pending cards through the task-card service; the source thread must not
-   require a separate local `Approve` step. The browser may initiate creation,
-   but the server also scans fresh `turn/completed` notifications and
-   thread-detail reads so card creation does not depend on the open page,
-   workspace filter, or PWA state. Ordinary `#...` text remains a normal
-   message.
+2. For leading non-empty `#` natural-language commands, the model only drafts
+   the bounded card JSON. Plain `# ...` defaults to a manual one-off card, while
+   `#自由协作 ...` remains the autonomous compatibility shortcut. Once the draft
+   parses, Mobile Web materializes the real pending cards through the task-card
+   service; the source thread must not require a separate local `Approve` step.
+   The browser may initiate creation, but the server also scans fresh
+   `turn/completed` notifications and thread-detail reads so card creation does
+   not depend on the open page, workspace filter, or PWA state.
 3. Server stores one card per target thread in a cross-thread task-card store.
 4. Each target thread fetch/render path includes its own pending task cards.
 5. Target user chooses:
@@ -235,7 +235,7 @@ Source thread:
 
 - do not render outgoing pending cards as local work items after auto-send;
 - keep outgoing cards in the store/audit state and thread summary counts only;
-- do not show an approval prompt for its own `#自由协作` draft; a valid draft
+- do not show an approval prompt for its own `#` task-card draft; a valid draft
   auto-sends to target pending cards, and only the target thread approval
   injects a real `userMessage`;
 - for a multi-target draft, keep the source thread open after creation instead

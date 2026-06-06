@@ -134,8 +134,10 @@ standalone navigation chrome, reports navigation state with
 `codex-mobile.plugin.navigation`, and blocks `window.open` / `_blank` handoffs
 that would create an external secondary window. Normal thread/workspace routes
 report `canGoBack: true` so iOS Hermes Mobile forwards right-swipe/back to the
-iframe. Codex handles ordinary thread-page back by returning to its embedded
-primary page, which contains the thread switcher and settings controls. That
+iframe, and thread detail publishes that state as soon as a thread id is
+selected, before the detail read finishes. Codex handles ordinary thread-page
+back by returning to its embedded primary page, which contains the thread
+switcher and settings controls. That
 primary page reports `canGoBack: false`, so Hermes Mobile can show its own
 bottom navigation tabs. `hermes.plugin.back` closes modal/edit transient layers
 such as file previews, dialogs, and subagent panels before page-level back is
@@ -202,16 +204,18 @@ thread id and uses the browser prompt flow for title/body entry. The stable
 behavior boundary is the API plus `thread.threadTaskCards` in thread-detail
 responses; the compose UX can evolve later without changing the state machine.
 
-The composer reserves the exact `#自由协作` prefix for natural-language
-cross-thread task-card commands. Ordinary `#...` text is sent as a normal
-message. `#自由协作` commands do not go through a separate parse route. Instead,
-Mobile Web sends a bounded draft request to the current Codex thread, lets the
-model interpret the command against the visible thread list, and immediately
-creates pending target cards when the returned draft parses successfully. The
-source thread does not show a second local `Approve` step. The create call uses
-a stable draft-scoped idempotency key, the thread list shows incoming `Task N`
-badges on every target thread, and a single-target draft still switches to that
-target thread so the pending card is visible without manual navigation.
+The composer reserves a leading non-empty `#` command for natural-language
+cross-thread task-card commands. Plain `# ...` commands default to a manual
+one-off card request; the legacy `#自由协作` prefix remains accepted and defaults
+to autonomous collaboration. Task-card commands do not go through a separate
+parse route. Instead, Mobile Web sends a bounded draft request to the current
+Codex thread, lets the model interpret the command against the visible thread
+list, and immediately creates pending target cards when the returned draft
+parses successfully. The source thread does not show a second local `Approve`
+step. The create call uses a stable draft-scoped idempotency key, the thread
+list shows incoming `Task N` badges on every target thread, and a single-target
+draft still switches to that target thread so the pending card is visible
+without manual navigation.
 Multi-target drafts create one pending card per target and keep the source
 thread visible without rendering outgoing cards as local work items. When the
 card id is known for a single target, Mobile Web also reuses its existing
@@ -223,11 +227,13 @@ bottom of the thread rather than appearing above historical messages. Once a
 card is approved, deleted, revoked, or replied, it no longer renders in thread
 detail; the injected turn becomes the visible follow-up surface. The current
 thread now also removes a settled card immediately after a successful action.
-For normal cards, target-side `Approve` remains mandatory. `#自由协作` defaults
-the draft to `workflowMode:"autonomous"` unless the user explicitly asks for a
-one-off manual card. The first target-side approval then activates a workflow
-grant scoped to that exact `workflowId` and the same two thread ids. Later cards
-carrying that workflow id between the same two threads auto-inject as real
+For normal cards, target-side `Approve` remains mandatory. Plain `#` commands
+default the draft to `workflowMode:"manual"` unless the user explicitly asks for
+autonomous/free collaboration. `#自由协作` defaults the draft to
+`workflowMode:"autonomous"` unless the user explicitly asks for a one-off manual
+card. The first target-side approval then activates a workflow grant scoped to
+that exact `workflowId` and the same two thread ids. Later cards carrying that
+workflow id between the same two threads auto-inject as real
 target-thread turns without another manual click, including reverse-direction
 follow-up cards. A reused workflow id with a different thread pair still stays
 pending and requires its own first approval.
@@ -296,13 +302,14 @@ replace the iframe immediately, Mobile Web auto-clears the notice after about
 response instead of waiting for a leave/re-enter refresh cycle. Examples:
 
 ```text
-#自由协作 发给 Finance Review：请核验 5 月结账映射
+# 发给 Finance Review：请核验 5 月结账映射
+# 让 Hermes 05-26 处理插件刷新联动
 #自由协作 让 Hermes 05-26 配合处理插件刷新联动
 ```
 
 If the model cannot choose at least one visible target thread, the source thread
 shows a bounded failed draft diagnostic instead of auto-sending to the wrong
-thread. `#自由协作` commands still reject attachments for now.
+thread. `#` task-card commands still reject attachments for now.
 
 ## Clone And Validate
 
@@ -399,7 +406,16 @@ listener exited or the restart command was dispatched. Success means a new
 or tool-driven restart stops the old listener but never confirms replacement
 readiness, Mobile Web should be treated as down, not as "restarting normally."
 
-On macOS, the same endpoint restarts only the current Mobile Web listener through a detached `launchctl submit` command. It keeps Codex Desktop and the shared mux running, so the user can restart the `8789` browser server from the PWA without triggering the macOS `Quit Codex?` confirmation.
+On macOS, the same endpoint restarts only the current Mobile Web listener. When
+the listener is running under a LaunchAgent, the endpoint cleans older
+same-prefix submitted jobs and calls `launchctl kickstart -k` for that existing
+service label, preserving the plist-managed environment. If the listener is
+running under a system LaunchDaemon, the restart helper does not attempt
+user-level `launchctl kickstart system/...`; it kills only the current listener
+and lets LaunchDaemon KeepAlive start the replacement. If no service label is
+available, it falls back to a one-shot detached `nohup` listener rather than
+creating a persistent `launchctl submit` job. It keeps Codex Desktop and the shared mux running, so
+the user can restart the `8789` browser server from the PWA without triggering the macOS `Quit Codex?` confirmation.
 
 This manual restart intentionally does not restart WSL, Codex Desktop, or unrelated local services. Logs are written to `%USERPROFILE%\.codex-mobile-web\shared-chain-restart.log`.
 
@@ -650,6 +666,51 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v201 放宽 `/g` 目标 objective 的长度上限。目标对话框输入框、Mobile Web 服务端转发到 `thread/goal/set` 的 objective、以及 `goals_1.sqlite` fallback 公开显示都从原来的短限制提高到 4000 字符，避免粘贴较长目标时被浏览器或服务端截断。PWA shell cache 升级到 `codex-mobile-shell-v201`。
+- 中文说明：v200 修正 v199 的长回执仍会先流式刷新到阈值的问题。普通纯聊天回复仍可流式显示；但当前 live turn 里已经出现命令、文件、工具或搜索操作后，后续 `agentMessage` 会被视为最终回执，前端从第一段 delta 起只缓存不重绘，等 `turn/completed` 后一次性渲染完整回执；长回执仍会停在回执开头。PWA shell cache 升级到 `codex-mobile-shell-v200`。
+- 中文说明：v199 修复 v198 热更后的运行中线程空白回归。运行中 `agentMessage` 会继续正常显示；只有当最新 live 回复超过长回执阈值后，前端才停止继续逐 token 重绘，保留已显示的前段，等 `turn/completed` 后一次性渲染完整回执并停在回执开头。PWA shell cache 升级到 `codex-mobile-shell-v199`。
+- 中文说明：v198 将移动端线程详情首屏从 80 个 turn 调整为最近 10 个 turn；当用户滚动到顶部附近时，客户端会按每页 10 个 turn 自动加载更早历史，并保持当前阅读位置不跳动。最新 live turn 的长最终回执不再逐字流式渲染；完成后一次性显示，如果回执较长，视口停在该回执开头，用户可向下阅读或点向下箭头直接沉底。PWA shell cache 升级到 `codex-mobile-shell-v198`。
+- 中文说明：v197 取消 32MB 以上线程详情的默认特殊路径。线程详情现在不再因为
+  rollout 大小主动跳过 `thread/read`；客户端进入线程仍保持贴底。只有 `thread/read`
+  真实失败时，服务端才会降级到 bounded `thread/turns/list`。PWA shell cache 升级到
+  `codex-mobile-shell-v197`。
+
+- 中文说明：v196 曾尝试让大 rollout 线程进入时停在最近历史窗口顶部；该行为已在 v197
+  回滚，当前客户端进入线程仍保持贴底。
+
+- 中文说明：Task card composer 命令现在以非空 `#` 开头即可进入单卡发送模式；裸
+  `#` 不会触发空卡。`#自由协作` 继续作为兼容入口，并默认请求 autonomous workflow。
+  大 rollout 线程详情仍默认快速读取最近 8 个 turn，但会保留 `thread/turns/list`
+  游标，手机端可继续加载更早历史；展开后的旧 turn 不会被下一次普通刷新立即丢弃。
+  PWA shell cache 升级到 `codex-mobile-shell-v195`。
+- 中文说明：Hermes/profile quota v193 修正 Mac LaunchDaemon 场景下的托管
+  `codex app-server` 账号继承问题。Mobile Web 现在会把解析后的 active
+  `CODEX_HOME` 显式传给子进程，避免 `/api/status.codexHome` 已经是所选
+  profile、但额度仍来自旧服务环境账号。Hermes 嵌入模式的
+  `server_build_changed` 刷新请求也会按签名去重，避免旧缓存 iframe 对同一
+  build mismatch 反复要求宿主刷新。PWA shell cache 升级到
+  `codex-mobile-shell-v193`。
+
+- Hermes/profile quota v192 keeps multi-account quota isolated when profile
+  homes share thread state. The server no longer hydrates quota from shared
+  rollout files, shared-profile homes also ignore source-less live quota
+  snapshots, but they can display non-persistent live quota emitted by this
+  listener's own managed child app-server. Profile quota cards only persist and
+  reuse account-scoped live snapshots, and the browser clears stale local quota
+  cache when `/api/public-config` or `/api/status` reports no valid quota
+  snapshot. PWA shell cache upgrades to `codex-mobile-shell-v192`.
+
+- Hermes embed v191 adds an iframe-owned left-edge swipe guard for iOS. When a
+  Codex thread/detail/new-thread secondary page can go back, the iframe now
+  handles that gesture with the same `hermes.plugin.back` path and returns to
+  the embedded thread-switcher/settings primary page, even if the host page does
+  not receive the initial touch sequence from inside the iframe. PWA shell cache
+  upgrades to `codex-mobile-shell-v191`.
+
+- 中文说明：Hermes Mobile 插件里的线程详情页现在会在线程 id 选中后立即发布
+  `canGoBack: true`，即使详情内容还在加载中，iOS 右滑也应先回到 Codex
+  插件内的线程列表/设置一级页，而不是直接退出到 Hermes Mobile。PWA shell
+  缓存升级到 `codex-mobile-shell-v190`。
 - Home view shows recent workspaces and recent threads.
 - The Workspace dropdown ends with a `Create Workspace` action. It creates or
   registers a simple local folder under an allowed parent, stores only bounded
@@ -659,7 +720,7 @@ Behavior:
   this path.
 - The sidebar menu header includes a compact settings button. The settings panel contains the theme control (`跟随系统` / `深色` / `浅色`) and the font-size control (`小字` / `标准` / `大字` / `特大` / `超大`) using the same segmented-button style.
 - Theme and font-size choices are saved in the browser. Theme updates the page theme color metadata; iOS PWA status-bar color changes may require closing and reopening the installed app. The light theme now uses a slightly warmer page background so the daytime view is less cold gray while cards and controls stay crisp. Font size adjusts conversation text, markdown, code/table content, approval details, and the composer input.
-- The composer runtime row starts with a tiny persistent Fast status dot before model/reasoning/permission/quota. Green means normal mode; tapping it turns red, briefly shows `Fast on`, and sends a hidden `fastMode` request so the server forwards Codex's `serviceTier: "priority"` Fast tier on the next `turn/start`. It does not change the selected model, reasoning effort, permission mode, or visible message text. `#自由协作` cross-thread task-card commands keep their bounded draft-request flow; active-turn steering cannot change the speed tier until the next new turn.
+- The composer runtime row starts with a tiny persistent Fast status dot before model/reasoning/permission/quota. Green means normal mode; tapping it turns red, briefly shows `Fast on`, and sends a hidden `fastMode` request so the server forwards Codex's `serviceTier: "priority"` Fast tier on the next `turn/start`. It does not change the selected model, reasoning effort, permission mode, or visible message text. `#` cross-thread task-card commands keep their bounded draft-request flow; active-turn steering cannot change the speed tier until the next new turn.
 - The shell cache advances to `codex-mobile-shell-v139` for the Fast-dot UI.
 - The sidebar header also shows the app version/update pill, a public PR status pill, and a same-size `Restart` button. After login, Mobile Web checks the configured GitHub remote in the background. If the remote branch is ahead, the pill becomes an update action; tapping it asks for confirmation, applies only a clean fast-forward update, then exits the Node listener so the existing startup supervisor can restart it from the updated files. The public PR pill checks the clean public repository for open pull requests and prompts whether to prepare a merge/publish review task; it does not merge or push public by itself. The `Restart` button is separate from Git self-update and opens an in-app confirmation panel before restarting the local Mobile Web shared chain. That panel first reads the recent thread list and shows any running sessions that may be interrupted.
 - When a conversation is scrollable and the user is away from the newest messages, a floating down-arrow button appears above the composer. Tapping it jumps directly back to the latest turn; normal rendering still avoids forcing the scroll position while the user is reading older content.
@@ -687,7 +748,7 @@ Behavior:
 
 当线程的 rollout JSONL 达到阈值时，界面按钮显示为“压缩续接”。默认提醒阈值是 `200MB`，可用 `CODEX_MOBILE_ROLLOUT_WARNING_BYTES` 覆盖。详情页提示可以点“跳过”暂时隐藏；隐藏记录按“线程 id + 当前 rollout 大小”保存，因此该线程继续增长后会再次提示。确认“压缩续接”后，Mobile Web 会先在旧线程中启动一个交接整理 turn，要求旧线程把本线程真实的交接重点写入当前工作区的 `.agent-context/thread-handoffs/<id>.md` 文件。该文件必须只总结源线程和当前工作区相关的目标、已完成事项、未完成事项、关键文件、验证结果和风险。
 
-线程详情读取还有一个单独的性能阈值：`CODEX_MOBILE_THREAD_DETAIL_ROLLOUT_MAX_BYTES`，默认 `32MB`。当 rollout 超过这个值时，Mobile Web 不再先走昂贵的完整 `thread/read`，而是优先使用有数量上限的 `thread/turns/list` 读取最近 turns；默认读取最近 8 个 turns，可用 `CODEX_MOBILE_THREAD_TURNS` 覆盖。这个阈值故意低于 `200MB` 的界面提醒阈值：例如几十 MB 到一百多 MB 的线程可以更快切换进入，但不会提前显示“压缩续接”警告。只有达到 `200MB` 提醒阈值后，界面才提示压缩续接。
+线程详情读取不再按 rollout 大小主动跳过完整 `thread/read`。即使 rollout 超过 32MB，Mobile Web 也会先向 app-server 请求完整详情；只有 `thread/read` 真实失败时，才降级到有数量上限的 `thread/turns/list` fallback。`CODEX_MOBILE_THREAD_TURNS` 同时控制移动端 compact detail 首屏、fallback、以及 older-turn 分页大小，默认是最近 10 个 turn。`200MB` 的 rollout 阈值只用于界面提醒和压缩续接动作。
 
 跨线程任务卡片 draft 仍要求模型返回可见目标里的精确 `threadId`。如果模型只把目标线程 ID 的后半段抄错，前端只会在可见线程中存在唯一且足够长公共前缀匹配时，把目标恢复为真实线程 ID；无法唯一恢复时仍会把 draft 标为失败，避免把卡片投递到不确定目标。
 
@@ -712,7 +773,7 @@ Behavior:
 - Page refresh prompts are gated by a server-started build id and a full app-shell preflight. `/api/public-config` reports the shell cache/build snapshot captured when the 8787 listener started, not whatever files happen to be mid-edit on disk. The browser checks for this after startup, foreground/focus recovery, EventSource reconnect/status, and successful thread-list refresh, then fetches and populates the target shell cache with the new HTML, CSS, JavaScript modules, manifest, service worker, and icons before the prompt is shown; clicking the prompt repeats that check, applies the latest `/api/public-config` quota snapshot to the composer immediately, and reloads only after the target cache is ready.
 - The composer shows model, reasoning effort, permission, and quota as four compact runtime cards.
 - Model, reasoning effort, and permission can be changed before sending. Existing-thread sends submit the selected values with the next `turn/start`; new-thread first messages submit the selected values when creating and starting the first turn. A per-thread runtime selection is saved in the browser draft store even when the composer text is empty, so leaving and reopening the app restores the model/reasoning/permission choice. After a send, Mobile Web clears only text and attachments; it keeps the runtime-only draft so the composer does not immediately fall back to stale thread metadata while the new turn is starting.
-- The composer shows 5-hour and weekly quota as separate reset-aware chips from `/api/public-config` / `/api/status` snapshots for the active Mobile Web chain. Source-less `account/rateLimits/updated` notifications are recorded server-side but not broadcast to the browser, and rollout scans are only a cold-start snapshot fallback, so another workspace's quota event does not overwrite the current composer display. Rate-limit snapshots are cached by model key, mobile quota display follows the currently selected composer model, and clicking the page-refresh prompt also refreshes the visible quota snapshot before the browser reloads.
+- The composer shows 5-hour and weekly quota as separate reset-aware chips from `/api/public-config` / `/api/status` snapshots for the active Mobile Web chain. Source-less `account/rateLimits/updated` notifications are recorded server-side but not broadcast to the browser, and rollout scans are only a cold-start snapshot fallback, so another workspace's quota event does not overwrite the current composer display. On app-server initialize, Mobile Web also calls `account/rateLimits/read` so a fresh listener can show the current account quota before the next quota notification. A managed child app-server started by the same listener may supply live quota for a shared-profile active home, but that snapshot is not persisted as reusable profile quota. Rate-limit snapshots are cached by model key, mobile quota display follows the currently selected composer model, and clicking the page-refresh prompt also refreshes the visible quota snapshot before the browser reloads.
 - The send button follows Codex Desktop behavior: empty composer during an active turn shows `Stop`; typed text or attachments switch it back to `Send`.
 - When message submission is slow or fails, the UI shows an explicit sending/failed state, keeps the text and attachments available for retry, and logs a compact client event to `/api/client-events` for diagnostics. Quota/rate-limit failures are normalized into a model-specific "额度不足，请切换模型后重试" message when the backend error text indicates an exhausted limit.
 - Composer drafts are saved in the browser per thread and per new-thread workspace. Text uses `localStorage`, attachments use IndexedDB when available, and the submitted draft is cleared only after a successful send.
@@ -1373,8 +1434,8 @@ plugin. The shell cache advances to `codex-mobile-shell-v102`.
 ## 2026-05-31 Local Cross-Thread Task Card Auto-Send v134
 
 - Natural-language cross-thread card commands now auto-send after the model
-  returns a valid bounded draft. Current builds reserve only the exact
-  `#自由协作` prefix for this flow; ordinary `#...` text remains a normal
+  returns a valid bounded draft. The v134 build reserved only the exact
+  `#自由协作` prefix for this flow; ordinary `#...` text remained a normal
   message. The source thread no longer asks for a second local `Approve`; only
   the target thread's pending card keeps `Approve` for injecting a real
   target-thread turn.
@@ -1388,8 +1449,9 @@ plugin. The shell cache advances to `codex-mobile-shell-v102`.
 - `#自由协作` task-card drafts may now explicitly request
   `workflowMode:"autonomous"` for cooperating-thread workflows that should
   continue after one human approval.
-- Current builds route this flow only through the exact `#自由协作` prefix;
-  ordinary `#...` text is no longer treated as a task-card command.
+- The v135 build still routed this flow only through `#自由协作`
+  prefix; v194 supersedes that by making plain non-empty `# ...` the manual
+  task-card command path.
 - Ordinary cards still require target-side `Approve`. For autonomous workflows,
   the first target approval activates a workflow grant scoped to the workflow id
   and the same two thread ids. Later cards with that same workflow id between
@@ -1447,7 +1509,7 @@ plugin. The shell cache advances to `codex-mobile-shell-v102`.
 
 本次 public 发布同步 private 中已经验证的 v154-v157 改动。版本仍为 `0.1.11`，PWA shell cache 升到 `codex-mobile-shell-v157`。部署后需要重启 8787 Node listener；已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开，才能拿到新的更新面板和前端行为。
 
-- 长 rollout 线程详情默认只读取最近 8 个 turn，降低 `Loading thread` 在大 JSONL 会话上的延迟；仍可通过 `CODEX_MOBILE_THREAD_TURNS` 覆盖。
+- 长 rollout 线程详情不再因为超过 32MB 默认改用最近 8 个 turn 的 `thread/turns/list` 首屏；详情仍先走完整 `thread/read`，只有读取失败时才使用 bounded fallback。
 - 跨线程任务卡片 draft 现在可以在目标 id 后半段被模型写坏、但前缀能唯一匹配可见线程时，恢复为真实目标线程 id，避免源线程停在 failed draft。
 - Workspace Token 统计补齐历史 Windows 路径乱码归并。已经写入 SQLite 的 `财务`、`男装衣橱`、`系统工具` 乱码 cwd 会在查询时合并到正确 Unicode Workspace，不再在统计页显示为单独乱码项目；新增 harness 覆盖已经持久化的坏 cwd 行。
 - 侧栏版本号现在打开 Updates 面板。Current checkout 继续使用原有安全 fast-forward 自更新路径；Public release 区域会检查 `pentiumxp/codex-mobile-web-public/main` 最新提交。只有当前安装本身就是 public checkout 时，才会通过同一个 fast-forward 路径应用 public 更新；private checkout 只显示 public 最新状态，避免把 public 发布树覆盖到私有开发树。
@@ -1854,12 +1916,11 @@ VAPID details:
 | `CODEX_MOBILE_MAX_UPLOAD_FILES` | Max files per message. |
 | `CODEX_MOBILE_IMAGE_CONTEXT_MODE` | Image model-context mode. Default `reference` sends images as path text only while still showing thumbnails in the UI. `latest` / `vision` sends only the latest uploaded image as `localImage`; `all` restores legacy all-image behavior. |
 | `CODEX_MOBILE_SQLITE3_EXE` | Optional absolute path to `sqlite3.exe` for reading Codex `state_5.sqlite`. When unset, Mobile Web also checks common user-local Platform Tools / WinGet install paths before falling back to `sqlite3` on `PATH`. |
-| `CODEX_MOBILE_THREAD_TURNS` | Number of recent turns returned to the phone when Mobile Web falls back to `thread/turns/list`, default `8`. |
-| `CODEX_MOBILE_FULL_THREAD_TURNS` | Number of turns returned after normal-size sessions are fully read with `thread/read`, default `80`, capped at `200`. |
+| `CODEX_MOBILE_THREAD_TURNS` | Number of recent turns kept in the compact mobile detail window and requested per older-history page, default `10`. Normal detail reads still prefer `thread/read` regardless of rollout size, then compact the browser payload to this recent window when older turns exist. |
+| `CODEX_MOBILE_FULL_THREAD_TURNS` | Number of turns kept after full `thread/read` before mobile compaction, default `10`, capped at `200`. Keep this aligned with `CODEX_MOBILE_THREAD_TURNS` unless diagnosing payload size behavior. |
 | `CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES` | Tail bytes read from a thread rollout to recover inherited turn runtime settings, default `4194304`. |
 | `CODEX_MOBILE_ROLLOUT_ACTIVE_STATUS_WINDOW_MS` | Recent-activity window used when rollout-session fallback infers an `active` thread-list status from bounded rollout-tail events, default `1800000` (`30 minutes`). |
 | `CODEX_MOBILE_ROLLOUT_WARNING_BYTES` | Rollout JSONL size threshold for UI warnings and the continuation action, default `209715200` (`200MB`). |
-| `CODEX_MOBILE_THREAD_DETAIL_ROLLOUT_MAX_BYTES` | Rollout JSONL size threshold where Mobile Web skips expensive full `thread/read` detail RPCs and uses bounded `thread/turns/list` first, default `33554432` (`32MB`). This is intentionally lower than the `200MB` warning threshold so large sessions can still open quickly without showing a warning. |
 | `CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS` | Max characters in the rollout continuation bootstrap message, default `52000`. |
 | `CODEX_MOBILE_CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS` | Max source handoff excerpt characters included inline in a continuation bootstrap, default `12000`. |
 | `CODEX_MOBILE_CONTINUATION_WORKSPACE_PROJECT_CONTEXT_CHARS` | Max project context characters included inline in a continuation bootstrap, default `18000`. |

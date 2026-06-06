@@ -292,6 +292,68 @@ test("raw operation fallback can attach a completed operation from the same live
   }
 });
 
+test("live latest turn rehydrates several recent raw operations", () => {
+  const { dir, rolloutPath } = writeRollout([
+    event("2026-05-24T11:05:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-live" }),
+    event("2026-05-24T11:05:02.000Z", "response_item", {
+      type: "function_call",
+      call_id: "call-test",
+      arguments: JSON.stringify({ command: "npm.cmd test" }),
+    }),
+    event("2026-05-24T11:05:04.000Z", "response_item", {
+      type: "function_call_output",
+      call_id: "call-test",
+      output: "Exit code: 0\nWall time: 1.2 seconds\nOutput:\n",
+    }),
+    event("2026-05-24T11:05:05.000Z", "response_item", {
+      type: "custom_tool_call",
+      call_id: "call-patch",
+      name: "apply_patch",
+      input: "*** Begin Patch\n*** Update File: public/app.js\n@@\n-old\n+new\n*** End Patch\n",
+    }),
+    event("2026-05-24T11:05:06.000Z", "response_item", {
+      type: "custom_tool_call_output",
+      call_id: "call-patch",
+      output: "Success.",
+    }),
+    event("2026-05-24T11:05:08.000Z", "response_item", {
+      type: "function_call",
+      call_id: "call-check",
+      arguments: JSON.stringify({ command: "node --check server.js" }),
+    }),
+  ]);
+  try {
+    const compacted = compactThread({
+      id: "thread-live-raw",
+      path: rolloutPath,
+      turns: [{
+        id: "turn-live",
+        status: { type: "running" },
+        items: [
+          { id: "user-live", type: "userMessage", content: [{ type: "text", text: "continue" }] },
+          { id: "agent-live", type: "agentMessage", text: "Working." },
+        ],
+      }],
+    });
+
+    const operations = compacted.turns[0].items.filter((item) => {
+      return item.type === "commandExecution" || item.type === "fileChange" || item.type === "dynamicToolCall";
+    });
+    assert.equal(operations.length, 3);
+    assert.equal(operations[0].type, "commandExecution");
+    assert.equal(operations[0].status, "completed");
+    assert.equal(operations[0].command, "npm.cmd test");
+    assert.equal(operations[1].type, "fileChange");
+    assert.equal(operations[1].status, "completed");
+    assert.deepEqual(operations[1].fileNames, ["public/app.js"]);
+    assert.equal(operations[2].type, "commandExecution");
+    assert.equal(operations[2].status, "running");
+    assert.equal(operations[2].command, "node --check server.js");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("raw operation fallback does not attach a completed operation to a completed latest turn", () => {
   const { dir, rolloutPath } = writeRollout([
     event("2026-05-24T11:10:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-finished" }),

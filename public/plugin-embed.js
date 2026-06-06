@@ -109,8 +109,13 @@
   }
 
   function canGoBack(state = {}, ui = {}) {
+    if (ui.primaryPage) return false;
     return Boolean(
       ui.filePreviewOpen
+      || ui.createWorkspaceOpen
+      || ui.updatePanelOpen
+      || ui.settingsOpen
+      || ui.sidebarOpen
       || state.renameThreadId
       || state.threadActionMenuId
       || state.subagentPanelOpen
