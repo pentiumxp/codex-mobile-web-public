@@ -221,7 +221,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v199";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v200";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -8819,6 +8819,24 @@ function ensureTurn(turnId) {
   return turn;
 }
 
+function turnHasOperationalItems(turn) {
+  const items = Array.isArray(turn && turn.items) ? turn.items : [];
+  return items.some((item) => isOperationalItem(item));
+}
+
+function shouldDeferLiveFinalReceipt(turn, itemType) {
+  return Boolean(
+    itemType === "agentMessage"
+    && isLatestTurn(turn)
+    && isLiveTurn(turn)
+    && turnHasOperationalItems(turn)
+  );
+}
+
+function shouldRenderAfterUpsert(turn, item) {
+  return !shouldDeferLiveFinalReceipt(turn, item && item.type);
+}
+
 function upsertItem(turnId, item) {
   const turn = ensureTurn(turnId);
   if (!turn || !item || !item.id) return;
@@ -8848,7 +8866,7 @@ function upsertItem(turnId, item) {
   if (index >= 0) turn.items[index] = mergeItemPreservingVisibleFields(turn.items[index], item);
   else turn.items.push(item);
   turn.items = removeShadowedMuxUserMessages(turn.items);
-  scheduleRenderCurrentThread();
+  if (shouldRenderAfterUpsert(turn, item)) scheduleRenderCurrentThread();
 }
 
 function removeItem(turnId, itemId) {
@@ -8878,12 +8896,11 @@ function ensureTimerItem(turnId, itemId, itemType) {
 
 function shouldRenderAfterAppend(turn, itemType, field, previousValue, nextValue, options = {}) {
   if (options.render === false) return false;
-  if (options.render !== "defer-long-agent") return true;
+  if (options.render === "defer-final-receipt" && shouldDeferLiveFinalReceipt(turn, itemType)) return false;
+  if (options.render !== "defer-final-receipt") return true;
   if (itemType !== "agentMessage" || field !== "text") return true;
   if (!isLatestTurn(turn) || !isLiveTurn(turn)) return true;
-  const previousLength = String(previousValue || "").length;
-  const nextLength = String(nextValue || "").length;
-  return previousLength < LONG_RECEIPT_SCROLL_CHARS && nextLength <= LONG_RECEIPT_SCROLL_CHARS;
+  return true;
 }
 
 function appendToItem(turnId, itemId, itemType, field, delta, index = 0, options = {}) {
@@ -9136,7 +9153,7 @@ function applyNotification(method, params) {
   }
   if (method === "item/agentMessage/delta") {
     markActivity("输出");
-    appendToItem(params.turnId, params.itemId, "agentMessage", "text", params.delta || "", 0, { render: "defer-long-agent" });
+    appendToItem(params.turnId, params.itemId, "agentMessage", "text", params.delta || "", 0, { render: "defer-final-receipt" });
     markSteerAppliedIfNeeded(params.turnId, { type: "agentMessage" });
     return;
   }

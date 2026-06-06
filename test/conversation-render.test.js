@@ -141,10 +141,15 @@ test("long agent messages keep a stable render path when a turn completes", () =
   assert.doesNotMatch(appJs, /function shouldDeferLiveAgentMessage/);
   assert.doesNotMatch(functionBody("visibleItemsForTurn"), /shouldDeferLiveAgentMessage/);
   assert.match(appJs, /function shouldRenderAfterAppend\(turn, itemType, field, previousValue, nextValue, options = \{\}\)/);
-  assert.match(functionBody("shouldRenderAfterAppend"), /options\.render !== "defer-long-agent"/);
-  assert.match(functionBody("shouldRenderAfterAppend"), /previousLength < LONG_RECEIPT_SCROLL_CHARS && nextLength <= LONG_RECEIPT_SCROLL_CHARS/);
+  assert.match(appJs, /function shouldDeferLiveFinalReceipt\(turn, itemType\)/);
+  assert.match(functionBody("shouldDeferLiveFinalReceipt"), /turnHasOperationalItems\(turn\)/);
+  assert.match(appJs, /function shouldRenderAfterUpsert\(turn, item\)/);
+  assert.match(functionBody("shouldRenderAfterUpsert"), /shouldDeferLiveFinalReceipt\(turn, item && item\.type\)/);
+  assert.match(functionBody("upsertItem"), /if \(shouldRenderAfterUpsert\(turn, item\)\) scheduleRenderCurrentThread\(\);/);
+  assert.match(functionBody("shouldRenderAfterAppend"), /options\.render === "defer-final-receipt" && shouldDeferLiveFinalReceipt\(turn, itemType\)/);
+  assert.doesNotMatch(functionBody("shouldRenderAfterAppend"), /previousLength < LONG_RECEIPT_SCROLL_CHARS && nextLength <= LONG_RECEIPT_SCROLL_CHARS/);
   assert.match(functionBody("appendToItem"), /shouldRenderAfterAppend\(turn, itemType, field, previousValue, nextValue, options\)/);
-  assert.match(functionBody("applyNotification"), /appendToItem\(params\.turnId, params\.itemId, "agentMessage", "text", params\.delta \|\| "", 0, \{ render: "defer-long-agent" \}\)/);
+  assert.match(functionBody("applyNotification"), /appendToItem\(params\.turnId, params\.itemId, "agentMessage", "text", params\.delta \|\| "", 0, \{ render: "defer-final-receipt" \}\)/);
   assert.match(appJs, /function shouldScrollToLongReceiptStart\(turn\)/);
   assert.match(functionBody("shouldScrollToLongReceiptStart"), /finalReceiptTextForTurn\(turn\)\.length >= LONG_RECEIPT_SCROLL_CHARS/);
   assert.match(functionBody("applyNotification"), /renderCurrentThread\(shouldScrollToLongReceiptStart\(turn\) \? \{ scrollToTurnReceiptStart: params\.turn\.id \} : \{\}\)/);

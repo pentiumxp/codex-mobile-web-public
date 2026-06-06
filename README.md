@@ -666,6 +666,7 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v200 修正 v199 的长回执仍会先流式刷新到阈值的问题。普通纯聊天回复仍可流式显示；但当前 live turn 里已经出现命令、文件、工具或搜索操作后，后续 `agentMessage` 会被视为最终回执，前端从第一段 delta 起只缓存不重绘，等 `turn/completed` 后一次性渲染完整回执；长回执仍会停在回执开头。PWA shell cache 升级到 `codex-mobile-shell-v200`。
 - 中文说明：v199 修复 v198 热更后的运行中线程空白回归。运行中 `agentMessage` 会继续正常显示；只有当最新 live 回复超过长回执阈值后，前端才停止继续逐 token 重绘，保留已显示的前段，等 `turn/completed` 后一次性渲染完整回执并停在回执开头。PWA shell cache 升级到 `codex-mobile-shell-v199`。
 - 中文说明：v198 将移动端线程详情首屏从 80 个 turn 调整为最近 10 个 turn；当用户滚动到顶部附近时，客户端会按每页 10 个 turn 自动加载更早历史，并保持当前阅读位置不跳动。最新 live turn 的长最终回执不再逐字流式渲染；完成后一次性显示，如果回执较长，视口停在该回执开头，用户可向下阅读或点向下箭头直接沉底。PWA shell cache 升级到 `codex-mobile-shell-v198`。
 - 中文说明：v197 取消 32MB 以上线程详情的默认特殊路径。线程详情现在不再因为

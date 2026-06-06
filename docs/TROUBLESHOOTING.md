@@ -300,9 +300,10 @@ Cause to check:
   large-thread history by changing the open position; first check whether the
   server returned full `thread-read` or a fallback `turns-list` window.
 - Long latest-turn final receipts are intentionally rendered once after
-  `turn/completed`. If the receipt is long, the browser should stop at the
-  receipt start rather than the bottom; the down-arrow remains the explicit
-  skip-to-bottom control.
+  `turn/completed` when the live turn already has command/file/tool/search
+  operation items. Pure chat replies may still stream normally. If the receipt
+  is long, the browser should stop at the receipt start rather than the bottom;
+  the down-arrow remains the explicit skip-to-bottom control.
 
 Useful verification:
 
