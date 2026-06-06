@@ -212,7 +212,11 @@ when app-server and `state_5.sqlite` are readable, sort the merged list before
 applying the requested limit, and use `session_index.jsonl` to replace empty or
 thread-id-like titles. It also replaces continuation bootstrap messages such as
 `# Continuation Bootstrap Index` when app-server accidentally exposes them as
-the thread title. Archived ids from `archived_sessions`, profile
+the thread title. Rollout fallback also carries `session_meta` agent metadata
+into the list filter, and final list merge drops completed/non-live Mobile
+fallback summaries that still have only a UUID after session-index hydration.
+Those UUID-only rows are treated as orphan child-agent or unusable recovered
+sessions rather than user-openable main threads. Archived ids from `archived_sessions`, profile
 `archived_sessions`, `%USERPROFILE%\.codex-mobile-web\archived-thread-ids.json`,
 DB archive flags, and backup rollout paths remain hidden. Existing-thread
 message sends also trigger a silent sidebar list refresh after the current-thread refresh. If this
@@ -414,7 +418,10 @@ node --test test\thread-visibility.test.js test\mobile-viewport.test.js
 
 If an archived projectless session returns to the thread list after app-server
 omits it from the primary `thread/list`, inspect `archivedSessionThreadIds()` and
-`readSessionIndexFallback()` in `server.js`. Current builds should merge ids from
+`readSessionIndexFallback()` in `server.js`. If a completed UUID-only fallback
+row appears and detail cannot open it, inspect `readRolloutSessionFallbackThreadFromFile()`,
+`mergeThreadSummaryList()`, and `shouldHideThreadListSummary()` before mutating
+Codex state. Current builds should merge ids from
 the active/default/profile `archived_sessions` directories and
 `%USERPROFILE%\.codex-mobile-web\archived-thread-ids.json`, then skip matching
 ids after verifying `visibleProjectlessThreadIds()`. The Mobile-local index
@@ -951,35 +958,39 @@ If `/g` does not create a goal:
    and Shift+Enter inserts a newline. If Enter only inserts a newline, the
    browser is still running an older shell; accept the refresh prompt, hard
    refresh, or close/reopen the PWA/Hermes plugin frame.
-3. Current shells also submit from explicit pointer/click handlers on the goal
+3. Current shells allow objective text up to 4000 characters. The browser
+   `maxlength`, the Mobile Web `thread/goal/set` proxy input normalization, and
+   the `goals_1.sqlite` fallback display bound should stay aligned at that
+   value so a long pasted goal does not shrink after submit or refresh.
+4. Current shells also submit from explicit pointer/click handlers on the goal
    Send button rather than relying only on the browser's default form submit.
    Reopening `/g` should not prefill a completed old goal; only unfinished goal
    state is used as editable prefill.
-4. After the dialog submit, the frontend should log a bounded
+5. After the dialog submit, the frontend should log a bounded
    `goal_request_start` client event before sending
    `POST /api/threads/:id/goal`. Mobile Web forwards this to app-server
    `thread/goal/set`; it does not write `goals_1.sqlite` directly.
-5. If `goal_request_start` and `goal_request_success` appear but no new goal
+6. If `goal_request_start` and `goal_request_success` appear but no new goal
    turn starts, inspect the current thread's `thread_goals.status`. A completed
    old goal can cause app-server `thread/goal/set` to update the completed row
    instead of starting a new goal. Current Mobile Web clears a completed goal
    through app-server `thread/goal/clear` before retrying `thread/goal/set`.
-6. If the response says the running app-server does not support goal set, check
+7. If the response says the running app-server does not support goal set, check
    the real `codex.exe` used by the mux/listener. On Windows the launchers
    should prefer the newest installed `%LOCALAPPDATA%\OpenAI\Codex\bin\*\codex.exe`
    over the older `%USERPROFILE%\.codex-mobile-web\codex.exe` runtime copy when
    `-CodexExe` / `CODEX_MOBILE_CODEX_EXE` is not explicit.
-7. Inspect `%USERPROFILE%\.codex\app-server-mux\endpoint.json`. Current
+8. Inspect `%USERPROFILE%\.codex\app-server-mux\endpoint.json`. Current
    endpoints should include `codexExe` and `capabilities.threadGoalRpc=true`.
    If `codexExe` is missing or still points at
    `%USERPROFILE%\.codex-mobile-web\codex.exe`, remove the stale endpoint by
    restarting the shared chain so the windowless launcher can start a fresh mux.
-8. If the route succeeds but the card does not appear, first confirm the browser
+9. If the route succeeds but the card does not appear, first confirm the browser
    shell is current. Current frontend builds synthesize a submitted-goal card
    from the just-entered objective/token budget when the app-server accepts
    `thread/goal/set` but does not return a public goal object in the immediate
    response.
-9. If a current shell still does not show the card, inspect the EventSource
+10. If a current shell still does not show the card, inspect the EventSource
    stream for `thread/goal/updated`, then refresh the thread detail/list so the
    sqlite fallback can decorate `thread.goal`.
 

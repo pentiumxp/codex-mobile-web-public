@@ -355,6 +355,39 @@ test("rollout session fallback infers active and completed status from rollout t
   assert.equal(touched.status.type, "notLoaded");
 });
 
+test("rollout session fallback carries agent metadata so subagent rows stay hidden", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-rollout-agent-"));
+  const threadId = "019e9000-0000-7000-8000-000000000008";
+  const rolloutPath = path.join(dir, `rollout-2026-06-04T10-00-00-${threadId}.jsonl`);
+  fs.writeFileSync(rolloutPath, [
+    JSON.stringify({
+      type: "session_meta",
+      payload: {
+        id: threadId,
+        timestamp: "2026-06-04T10:00:01.000Z",
+        cwd: "C:\\Users\\xuxin\\Documents\\Agent",
+        agent_nickname: "Agent",
+        agent_role: "subagent",
+      },
+    }),
+    JSON.stringify({
+      timestamp: "2026-06-04T10:00:02.000Z",
+      type: "event_msg",
+      payload: {
+        type: "task_complete",
+        turn_id: "turn-agent",
+      },
+    }),
+  ].join("\n"), "utf8");
+
+  const summary = readRolloutSessionFallbackThreadFromFile(rolloutPath, { id: threadId });
+  assert.equal(summary.agentNickname, "Agent");
+  assert.equal(summary.agentRole, "subagent");
+  assert.deepEqual(filterFallbackThreads([summary], {
+    globalState: globalStateForRoots(["C:\\Users\\xuxin\\Documents\\Agent"]),
+  }), []);
+});
+
 test("thread list route uses rollout-aware fallback aggregator", () => {
   const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
   const routeIndex = serverJs.indexOf('if (url.pathname === "/api/threads" && req.method === "GET")');
@@ -403,6 +436,51 @@ test("thread list merge still accepts newer rollout active over old completed su
   }], 10);
 
   assert.equal(result.data[0].status.type, "active");
+});
+
+test("thread list merge removes completed bare-id mobile fallback residues", () => {
+  const residualThreadId = "019e9000-0000-7000-8000-000000000009";
+  const result = mergeThreadListFallback({
+    data: [{
+      id: "main-thread",
+      name: "Main Thread",
+      updatedAt: 1780720000,
+      status: { type: "completed" },
+    }],
+  }, [{
+    id: residualThreadId,
+    name: null,
+    preview: residualThreadId,
+    cwd: "C:\\Users\\xuxin\\Documents\\Agent",
+    updatedAt: 1780720100,
+    status: { type: "completed" },
+    mobileFallback: true,
+  }], 10);
+
+  assert.deepEqual(result.data.map((thread) => thread.id), ["main-thread"]);
+});
+
+test("thread list merge removes rows when duplicate fallback reveals agent metadata", () => {
+  const threadId = "019e9000-0000-7000-8000-000000000010";
+  const result = mergeThreadListFallback({
+    data: [{
+      id: threadId,
+      name: null,
+      preview: threadId,
+      updatedAt: 1780720000,
+      status: { type: "completed" },
+    }],
+  }, [{
+    id: threadId,
+    name: null,
+    preview: threadId,
+    updatedAt: 1780720100,
+    agentRole: "subagent",
+    mobileFallback: true,
+    status: { type: "completed" },
+  }], 10);
+
+  assert.deepEqual(result.data, []);
 });
 
 test("turn sorting uses item timestamps when turn ids are not chronological", () => {
