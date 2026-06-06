@@ -57,6 +57,17 @@ test("server default model falls back to GPT-5.5", () => {
   assert.match(serverJs, /defaultModel: CODEX_CONFIG_DEFAULTS\.model \|\| DEFAULT_MODEL/);
 });
 
+test("server resolves the default Codex executable from macOS install paths", () => {
+  assert.match(serverJs, /const CODEX_EXE = resolveDefaultCodexExecutable\(\);/);
+  assert.match(serverJs, /function resolveDefaultCodexExecutable\(/);
+  assert.match(serverJs, /process\.env\.CODEX_MOBILE_CODEX_EXE/);
+  assert.match(serverJs, /function pathEntriesFromEnvPath\(/);
+  assert.match(serverJs, /path\.delimiter/);
+  assert.match(serverJs, /\/opt\/homebrew\/bin/);
+  assert.match(serverJs, /path\.join\(USER_HOME, "\.local", "bin"\)/);
+  assert.match(serverJs, /findExecutableInDirs\("codex", commonCodexExecutableDirs\(\)\)/);
+});
+
 test("server maps quota groups to shared Codex and independent Spark models", () => {
   const start = serverJs.indexOf("function rateLimitModelKeys(");
   const end = serverJs.indexOf("function recordRateLimits(", start);
@@ -69,8 +80,17 @@ test("server maps quota groups to shared Codex and independent Spark models", ()
 
 test("server hydrates rollout quota snapshots without overwriting live quota", () => {
   assert.match(serverJs, /function loadRecentRateLimitsFromRollouts\(/, "server should scan local rollout evidence");
+  assert.match(serverJs, /isRateLimitRolloutSourceAccountScoped\(CODEX_HOME\)/, "server should only scan account-scoped rollout quota evidence");
   assert.match(serverJs, /entry && entry\.payload && entry\.payload\.rate_limits/, "server should read native rollout rate_limits");
   assert.match(serverJs, /recordRateLimits\(entry\.rateLimits,\s*\{\s*source:\s*"rollout"\s*\}\)/, "rollout scan should write snapshot quota");
+  assert.match(serverJs, /function canExposeRateLimitsForActiveHome\(\)[\s\S]*isRateLimitRolloutSourceAccountScoped\(CODEX_HOME\)/, "server should gate quota exposure to account-scoped homes");
+  assert.match(serverJs, /function canExposeRateLimitsForActiveHome\(\)[\s\S]*latestLiveRateLimitsSource === "managed-child-live"/, "managed child live quota should be exposable for shared profile homes");
+  assert.match(serverJs, /function recordRateLimits\([\s\S]*!isRateLimitRolloutSourceAccountScoped\(CODEX_HOME\)[\s\S]*latestLiveRateLimits = null/, "source-less live quota should be ignored for shared profile homes");
+  assert.match(serverJs, /function recordRateLimitReadResult\([\s\S]*rateLimitsByLimitId[\s\S]*latestLiveRateLimitsSource = source/, "rate-limit read RPC should hydrate model quota snapshots");
+  assert.match(serverJs, /await this\.refreshRateLimits\(\);[\s\S]*this\.ready = true/, "initialize should refresh quota before broadcasting ready status");
+  assert.match(serverJs, /this\.sendRpc\("account\/rateLimits\/read"[\s\S]*resetOnTimeout:\s*false/, "quota refresh should call the official app-server read RPC without resetting the transport on timeout");
+  assert.match(serverJs, /source:\s*this\.transportKind === "managed-ws-child"\s*\?\s*"managed-child-live"\s*:\s*"live"/, "managed child quota notifications should be marked as owned by this listener");
+  assert.match(serverJs, /spawn\(CODEX_EXE,[\s\S]*\{\s*cwd: APP_ROOT,[\s\S]*env: Object\.assign\(\{\}, process\.env, \{\s*CODEX_HOME,\s*\}\)/, "managed child app-server should inherit the resolved active CODEX_HOME");
   assert.match(serverJs, /function activeRateLimits\(\)[\s\S]*latestLiveRateLimits \|\| latestSnapshotRateLimits/, "live quota should win over rollout snapshots");
   assert.match(serverJs, /loadRecentRateLimitsFromRollouts\(\);[\s\S]*sendJson\(res, 200, \{[\s\S]*rateLimits: activeRateLimits\(\)/, "public config should include active quota");
   assert.match(serverJs, /loadRecentRateLimitsFromRollouts\(\);[\s\S]*sendJson\(res, 200, codex\.status\(\)\)/, "status should include hydrated quota snapshots");

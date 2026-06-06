@@ -100,7 +100,7 @@ test("server materializes structured task-card drafts from thread detail", () =>
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v186"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v199"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.threadRole \|\| ""\) === "target"\)/);
@@ -127,16 +127,20 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /function replyTaskCard\(/);
   assert.match(appJs, /function isThreadTaskCardCommandText\(/);
   assert.match(functionBody(appJs, "sendMessage"), /const steering = Boolean\(!threadTaskCardCommand && state\.activeTurnId && hasContent\);/);
-  assert.match(appJs, /const THREAD_TASK_CARD_COMMAND_PREFIX = "#自由协作"/);
+  assert.match(appJs, /const THREAD_TASK_CARD_COMMAND_PREFIX = "#"/);
+  assert.match(appJs, /const THREAD_TASK_CARD_LEGACY_COMMAND_PREFIX = "#自由协作"/);
   assert.match(functionBody(appJs, "isThreadTaskCardCommandText"), /startsWith\(THREAD_TASK_CARD_COMMAND_PREFIX\)/);
-  assert.doesNotMatch(functionBody(appJs, "isThreadTaskCardCommandText"), /startsWith\("#"\)/);
+  assert.match(functionBody(appJs, "isThreadTaskCardCommandText"), /threadTaskCardCommandText\(text\)\.length > 0/);
+  assert.match(functionBody(appJs, "threadTaskCardCommandText"), /text\.startsWith\(THREAD_TASK_CARD_LEGACY_COMMAND_PREFIX\)/);
+  assert.match(functionBody(appJs, "threadTaskCardCommandText"), /text\.slice\(THREAD_TASK_CARD_LEGACY_COMMAND_PREFIX\.length\)/);
   assert.match(functionBody(appJs, "threadTaskCardCommandText"), /text\.slice\(THREAD_TASK_CARD_COMMAND_PREFIX\.length\)/);
   assert.match(appJs, /function buildThreadTaskCardDraftRequestText\(/);
   assert.match(appJs, /targetThreadIds/);
   assert.match(appJs, /workflowMode/);
   assert.match(appJs, /Approve workflow/);
-  assert.match(functionBody(appJs, "buildThreadTaskCardDraftRequestText"), /#自由协作 command/);
-  assert.match(functionBody(appJs, "buildThreadTaskCardDraftRequestText"), /Default workflowMode to autonomous for #自由协作/);
+  assert.match(functionBody(appJs, "buildThreadTaskCardDraftRequestText"), /# command/);
+  assert.match(functionBody(appJs, "buildThreadTaskCardDraftRequestText"), /Default workflowMode to manual for plain # single-card commands/);
+  assert.match(functionBody(appJs, "buildThreadTaskCardDraftRequestText"), /Use autonomous only when the command uses #自由协作/);
   assert.match(appJs, /function parseThreadTaskCardDraftText\(/);
   assert.match(appJs, /const THREAD_TASK_CARD_BODY_MAX_CHARS = 8000/);
   assert.match(appJs, /function truncateThreadTaskCardBody\(/);

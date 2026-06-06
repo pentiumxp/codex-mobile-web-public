@@ -22,6 +22,11 @@ function writeJson(file, value) {
   fs.writeFileSync(file, `${JSON.stringify(value)}\n`, "utf8");
 }
 
+function linkDirectory(target, linkPath) {
+  fs.mkdirSync(path.dirname(linkPath), { recursive: true });
+  fs.symlinkSync(target, linkPath, process.platform === "win32" ? "junction" : "dir");
+}
+
 function fakeJwt(payload) {
   const encoded = Buffer.from(JSON.stringify(payload), "utf8")
     .toString("base64url");
@@ -205,6 +210,153 @@ test("active quota snapshot follows the selected active profile", () => {
   const previous = result.profiles.find((profile) => profile.id === "previous");
   assert.equal(result.activeProfileId, "previous");
   assert.equal(previous.quota.rateLimits.primary.usedPercent, 10);
+});
+
+test("shared rollout quota is not reused across profile homes", () => {
+  const userHome = tempDir();
+  const runtimeRoot = path.join(userHome, ".codex-mobile-web");
+  const defaultHome = path.join(userHome, ".codex");
+  const previousHome = path.join(userHome, ".codex-homes", "previous");
+  const sharedSessions = path.join(defaultHome, "sessions");
+  fs.mkdirSync(sharedSessions, { recursive: true });
+  fs.writeFileSync(path.join(sharedSessions, "rollout.jsonl"), `${JSON.stringify({
+    timestamp: new Date().toISOString(),
+    payload: {
+      rate_limits: {
+        limitId: "codex",
+        primary: { usedPercent: 87, windowDurationMins: 300, resetsAt: Math.floor(Date.now() / 1000) + 3600 },
+      },
+    },
+  })}\n`, "utf8");
+  fs.mkdirSync(previousHome, { recursive: true });
+  linkDirectory(sharedSessions, path.join(previousHome, "sessions"));
+
+  const result = createCodexProfileService({
+    userHome,
+    runtimeRoot,
+    activeCodexHome: previousHome,
+    env: {},
+  }).profiles();
+  const active = result.profiles.find((profile) => profile.active);
+
+  assert.ok(active);
+  assert.equal(active.codexHome, previousHome);
+  assert.equal(active.quota.rateLimits, null);
+  assert.equal(active.quota.source, null);
+});
+
+test("shared profile homes do not persist or reuse active live quota snapshots", () => {
+  const userHome = tempDir();
+  const runtimeRoot = path.join(userHome, ".codex-mobile-web");
+  const defaultHome = path.join(userHome, ".codex");
+  const previousHome = path.join(userHome, ".codex-homes", "previous");
+  const sharedSessions = path.join(defaultHome, "sessions");
+  fs.mkdirSync(sharedSessions, { recursive: true });
+  fs.mkdirSync(previousHome, { recursive: true });
+  linkDirectory(sharedSessions, path.join(previousHome, "sessions"));
+  writeJson(path.join(runtimeRoot, "codex-profiles.json"), {
+    activeProfileId: "previous",
+    profiles: [{ id: "previous", label: "Previous", codexHome: previousHome }],
+    quotaSnapshots: {
+      previous: {
+        source: "active-live",
+        rateLimits: {
+          limitId: "codex",
+          primary: { usedPercent: 88, windowDurationMins: 300, resetsAt: Math.floor(Date.now() / 1000) + 3600 },
+        },
+      },
+    },
+  });
+
+  const result = createCodexProfileService({
+    userHome,
+    runtimeRoot,
+    activeCodexHome: previousHome,
+    env: {},
+  }).profiles({
+    activeQuota: {
+      rateLimits: {
+        limitId: "codex",
+        primary: { usedPercent: 12, windowDurationMins: 300, resetsAt: Math.floor(Date.now() / 1000) + 3600 },
+      },
+    },
+  });
+  const previous = result.profiles.find((profile) => profile.id === "previous");
+  const store = JSON.parse(fs.readFileSync(path.join(runtimeRoot, "codex-profiles.json"), "utf8"));
+
+  assert.equal(previous.quota.rateLimits, null);
+  assert.equal(previous.quota.source, null);
+  assert.equal(store.quotaSnapshots.previous, undefined);
+});
+
+test("shared profile homes expose managed child live quota without persisting it", () => {
+  const userHome = tempDir();
+  const runtimeRoot = path.join(userHome, ".codex-mobile-web");
+  const defaultHome = path.join(userHome, ".codex");
+  const previousHome = path.join(userHome, ".codex-homes", "previous");
+  const sharedSessions = path.join(defaultHome, "sessions");
+  fs.mkdirSync(sharedSessions, { recursive: true });
+  fs.mkdirSync(previousHome, { recursive: true });
+  linkDirectory(sharedSessions, path.join(previousHome, "sessions"));
+  writeJson(path.join(runtimeRoot, "codex-profiles.json"), {
+    activeProfileId: "previous",
+    profiles: [{ id: "previous", label: "Previous", codexHome: previousHome }],
+    quotaSnapshots: {},
+  });
+
+  const result = createCodexProfileService({
+    userHome,
+    runtimeRoot,
+    activeCodexHome: previousHome,
+    env: {},
+  }).profiles({
+    activeQuota: {
+      source: "managed-child-live",
+      rateLimits: {
+        limitId: "codex",
+        primary: { usedPercent: 12, windowDurationMins: 300, resetsAt: Math.floor(Date.now() / 1000) + 3600 },
+        secondary: { usedPercent: 34, windowDurationMins: 10080, resetsAt: Math.floor(Date.now() / 1000) + 7200 },
+      },
+    },
+  });
+  const previous = result.profiles.find((profile) => profile.id === "previous");
+  const store = JSON.parse(fs.readFileSync(path.join(runtimeRoot, "codex-profiles.json"), "utf8"));
+
+  assert.equal(previous.quota.source, "managed-child-live");
+  assert.equal(previous.quota.rateLimits.primary.usedPercent, 12);
+  assert.equal(previous.quota.rateLimits.secondary.usedPercent, 34);
+  assert.deepEqual(store.quotaSnapshots, {});
+});
+
+test("legacy stored quota snapshots without live provenance are ignored", () => {
+  const userHome = tempDir();
+  const runtimeRoot = path.join(userHome, ".codex-mobile-web");
+  const previousHome = path.join(userHome, ".codex-homes", "previous");
+  fs.mkdirSync(previousHome, { recursive: true });
+  writeJson(path.join(runtimeRoot, "codex-profiles.json"), {
+    activeProfileId: "previous",
+    profiles: [{ id: "previous", label: "Previous", codexHome: previousHome }],
+    quotaSnapshots: {
+      previous: {
+        source: "active",
+        rateLimits: {
+          limitId: "codex",
+          primary: { usedPercent: 91, windowDurationMins: 300, resetsAt: Math.floor(Date.now() / 1000) + 3600 },
+        },
+      },
+    },
+  });
+
+  const result = createCodexProfileService({
+    userHome,
+    runtimeRoot,
+    activeCodexHome: previousHome,
+    env: {},
+  }).profiles();
+  const previous = result.profiles.find((profile) => profile.id === "previous");
+
+  assert.equal(previous.quota.rateLimits, null);
+  assert.equal(previous.quota.source, null);
 });
 
 test("profile switching is disabled when a fixed app-server endpoint is configured", () => {

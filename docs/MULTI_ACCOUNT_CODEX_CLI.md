@@ -25,7 +25,7 @@ This document is not about:
 
 ## Current Conclusion
 
-For the supported Windows profile-switching design:
+On this machine:
 
 - `CODEX_HOME` is sufficient to isolate Codex CLI account identity files such
   as:
@@ -41,11 +41,11 @@ The practical result is:
 
 - multi-account Codex CLI is feasible;
 - multi-account Codex Desktop GUI using only `CODEX_HOME` is not currently a
-  valid assumption.
+  valid assumption on this machine.
 
-## Example Layout
+## Local Layout
 
-The recommended CLI-home layout is:
+The current local CLI-home layout is:
 
 ```text
 %USERPROFILE%\.codex-homes\
@@ -53,13 +53,13 @@ The recommended CLI-home layout is:
   previous\
 ```
 
-Supported example homes:
+Current state observed during implementation:
 
 - `default`: `%USERPROFILE%\.codex`
 - `current`: `%USERPROFILE%\.codex-homes\current`
 - `previous`: `%USERPROFILE%\.codex-homes\previous`
 
-Mobile Web profile switching is built around these homes. Each profile
+Current Mobile Web profile switching is built around these homes. Each profile
 keeps its own `auth.json` and `config.toml`; non-default profile homes link the
 conversation/workspace state listed below back to the default `.codex` home.
 This deliberately separates account identity from conversation continuity.
@@ -105,8 +105,8 @@ replaced by default-account files.
 
 To avoid unnecessary duplication, some non-auth assets may be shared from the
 existing global Codex directories when the operational goal is CLI account
-separation rather than full binary/plugin duplication. A deployment may use
-shared/junction-style reuse for directories such as:
+separation rather than full binary/plugin duplication. The current local setup
+used shared/junction-style reuse for directories such as:
 
 - `plugins`
 - `skills`
@@ -118,19 +118,19 @@ This is acceptable only because these shared directories are not the primary
 account-identity boundary. The account boundary is the isolated home-level auth
 and config files.
 
-## Example Launchers
+## Current Local Launchers
 
-Example helper launchers can live outside the repository:
+The current local helper launchers are outside the repository:
 
 - `%USERPROFILE%\OneDrive\Desktop\Codex-Current-Account.cmd`
 - `%USERPROFILE%\OneDrive\Desktop\Codex-Current-Account-Login.cmd`
 - `%USERPROFILE%\OneDrive\Desktop\Codex-Previous-Account.cmd`
 - `%USERPROFILE%\OneDrive\Desktop\Codex-Previous-Account-Login.cmd`
 
-Launcher behavior:
+Current launcher behavior:
 
 - set `CODEX_HOME` to the selected home;
-- default the workspace to `%USERPROFILE%\Documents\<workspace>` if no path argument
+- default the workspace to `%USERPROFILE%\Documents\Agent` if no path argument
   is provided;
 - allow a custom workspace path as the first argument.
 
@@ -140,8 +140,8 @@ Conceptually they are equivalent to:
 @echo off
 set "CODEX_HOME=%USERPROFILE%\.codex-homes\current"
 set "CODEX_WORKSPACE=%~1"
-if "%CODEX_WORKSPACE%"=="" set "CODEX_WORKSPACE=%USERPROFILE%\Documents\<workspace>"
-start "" "%USERPROFILE%\AppData\Local\OpenAI\Codex\bin\codex.exe" app "%CODEX_WORKSPACE%"
+if "%CODEX_WORKSPACE%"=="" set "CODEX_WORKSPACE=%USERPROFILE%\Documents\Agent"
+start "" "%LOCALAPPDATA%\OpenAI\Codex\bin\codex.exe" app "%CODEX_WORKSPACE%"
 ```
 
 and:
@@ -149,7 +149,7 @@ and:
 ```cmd
 @echo off
 set "CODEX_HOME=%USERPROFILE%\.codex-homes\previous"
-"%USERPROFILE%\AppData\Local\OpenAI\Codex\bin\codex.exe" login --device-auth
+"%LOCALAPPDATA%\OpenAI\Codex\bin\codex.exe" login --device-auth
 pause
 ```
 
@@ -158,21 +158,21 @@ pause
 Use explicit `CODEX_HOME` when verifying which account/home is active:
 
 ```powershell
-$env:CODEX_HOME = Join-Path $env:USERPROFILE ".codex-homes\current"
-& (Join-Path $env:USERPROFILE "AppData\Local\OpenAI\Codex\bin\codex.exe") login status
+$env:CODEX_HOME = Join-Path $env:USERPROFILE '.codex-homes\current'
+& (Join-Path $env:LOCALAPPDATA 'OpenAI\Codex\bin\codex.exe') login status
 ```
 
 ```powershell
-$env:CODEX_HOME = Join-Path $env:USERPROFILE ".codex-homes\previous"
-& (Join-Path $env:USERPROFILE "AppData\Local\OpenAI\Codex\bin\codex.exe") login status
+$env:CODEX_HOME = Join-Path $env:USERPROFILE '.codex-homes\previous'
+& (Join-Path $env:LOCALAPPDATA 'OpenAI\Codex\bin\codex.exe') login status
 ```
 
 Useful file checks:
 
 ```powershell
-Get-ChildItem (Join-Path $env:USERPROFILE ".codex-homes\current")
-Get-ChildItem (Join-Path $env:USERPROFILE ".codex-homes\previous")
-Test-Path (Join-Path $env:USERPROFILE ".codex-homes\previous\auth.json")
+Get-ChildItem (Join-Path $env:USERPROFILE '.codex-homes\current')
+Get-ChildItem (Join-Path $env:USERPROFILE '.codex-homes\previous')
+Test-Path (Join-Path $env:USERPROFILE '.codex-homes\previous\auth.json')
 ```
 
 ## Important Boundary: Desktop App
@@ -239,7 +239,9 @@ switcher, not concurrent providers:
   Web windowless launcher before Desktop starts. This does not prove that the
   Desktop GUI ChatGPT login is independently isolated; it makes the mux/app-
   server sharing path and thread/workspace state profile-aware while leaving
-  profile auth/config files separate.
+  profile auth/config files separate. The Desktop GUI is the only intended
+  visible process; mux, Node, and app-server helper children started by the
+  shared bridge must be launched without visible console windows.
 - This switcher is disabled when Mobile Web is pinned to
   `CODEX_MOBILE_MUX_ENDPOINT_FILE`, `CODEX_MOBILE_APP_SERVER_WS`, or
   `CODEX_MOBILE_APP_SERVER_TCP`, because those fixed endpoints are outside the

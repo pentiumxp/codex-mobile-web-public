@@ -94,7 +94,7 @@ test("restart service spawns a detached hidden PowerShell process", () => {
   assert.doesNotMatch(decoded, /-CodexHome/);
 });
 
-test("macOS restart command relaunches Mobile Web through launchctl only", () => {
+test("macOS restart command restarts the existing LaunchAgent when available", () => {
   const root = path.resolve(__dirname, "..");
   const command = buildRestartMacShellCommand({
     delayMs: 1200,
@@ -110,6 +110,7 @@ test("macOS restart command relaunches Mobile Web through launchctl only", () =>
     codexHome: "/Users/xuefusong/.codex",
     runtimeDir: "/Users/xuefusong/.codex-mobile-web",
     env: {
+      XPC_SERVICE_NAME: "com.homeai.plugin.codex-mobile",
       CODEX_MOBILE_CODEX_EXE: "/Users/xuefusong/.local/bin/codex",
       CODEX_MOBILE_AUTH_KEY: "should-not-leak",
       CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER: "1",
@@ -117,18 +118,51 @@ test("macOS restart command relaunches Mobile Web through launchctl only", () =>
   });
 
   assert.match(command, /sleep 1\.200/);
-  assert.match(command, /lsof -tiTCP:8789/);
-  assert.match(command, /\/bin\/kill "\$pid"/);
-  assert.match(command, /\/bin\/launchctl' submit -l "\$label"/);
-  assert.match(command, /CODEX_HOME='\/Users\/xuefusong\/\.codex'/);
-  assert.match(command, /CODEX_MOBILE_RUNTIME_DIR='\/Users\/xuefusong\/\.codex-mobile-web'/);
-  assert.match(command, /CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER='1'/);
-  assert.match(command, /CODEX_MOBILE_LAUNCHD_LABEL="\$label"/);
-  assert.match(command, /\/usr\/local\/bin\/node/);
-  assert.match(command, /server\.js/);
+  assert.match(command, /service_label='com\.homeai\.plugin\.codex-mobile'/);
+  assert.match(command, /bootout "\$launchd_domain\/\$old_label"/);
+  assert.match(command, /kickstart -k "\$launchd_domain\/\$service_label"/);
+  assert.match(command, /\/bin\/kill 4321/);
+  assert.doesNotMatch(command, /kickstart -k "system\/\$service_label"/);
+  assert.doesNotMatch(command, /CODEX_HOME='/);
+  assert.doesNotMatch(command, /CODEX_MOBILE_RUNTIME_DIR='/);
+  assert.doesNotMatch(command, /CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER='/);
+  assert.doesNotMatch(command, /launchctl' submit/);
+  assert.doesNotMatch(command, /nohup \/usr\/bin\/env/);
+  assert.doesNotMatch(command, /CODEX_MOBILE_LAUNCHD_LABEL="\$label"/);
   assert.doesNotMatch(command, /AUTH_KEY/);
   assert.doesNotMatch(command, /Codex\.app/);
   assert.doesNotMatch(command, /osascript/);
+});
+
+test("macOS restart command falls back to a one-shot nohup listener without a LaunchAgent label", () => {
+  const root = path.resolve(__dirname, "..");
+  const command = buildRestartMacShellCommand({
+    delayMs: 900,
+    workspacePath: root,
+    serverPath: path.join(root, "server.js"),
+    nodePath: "/usr/local/bin/node",
+    currentPid: 4321,
+    launchctlPath: "/bin/launchctl",
+    logPath: "/Users/xuefusong/.codex-mobile-web/logs/mobile-web.log",
+    labelPrefix: "com.xuefusong.codex-mobile-web.test",
+    port: 8789,
+    host: "0.0.0.0",
+    codexHome: "/Users/xuefusong/.codex",
+    runtimeDir: "/Users/xuefusong/.codex-mobile-web",
+    env: {
+      CODEX_MOBILE_CODEX_EXE: "/Users/xuefusong/.local/bin/codex",
+      CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER: "1",
+    },
+  });
+
+  assert.match(command, /service_label=''/);
+  assert.match(command, /lsof -tiTCP:8789/);
+  assert.match(command, /\/bin\/kill "\$pid"/);
+  assert.match(command, /nohup \/usr\/bin\/env/);
+  assert.match(command, /CODEX_MOBILE_LAUNCHD_LABEL_PREFIX='com\.xuefusong\.codex-mobile-web\.test'/);
+  assert.match(command, /\/usr\/local\/bin\/node/);
+  assert.match(command, /server\.js/);
+  assert.doesNotMatch(command, /launchctl' submit/);
 });
 
 test("restart service spawns a detached macOS launchctl restart command", () => {
@@ -139,6 +173,7 @@ test("restart service spawns a detached macOS launchctl restart command", () => 
     platform: "darwin",
     env: {
       HOME: "/Users/xuefusong",
+      XPC_SERVICE_NAME: "com.homeai.plugin.codex-mobile",
       CODEX_HOME: "/Users/xuefusong/.codex",
       CODEX_MOBILE_PORT: "8789",
       CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER: "1",
@@ -171,8 +206,11 @@ test("restart service spawns a detached macOS launchctl restart command", () => 
   assert.ok(unrefCalled);
   assert.equal(spawnCall.exe, "/bin/bash");
   assert.deepEqual(spawnCall.args.slice(0, 1), ["-lc"]);
-  assert.match(spawnCall.args[1], /\/bin\/launchctl' submit/);
-  assert.match(spawnCall.args[1], /CODEX_MOBILE_PORT='8789'/);
+  assert.match(spawnCall.args[1], /kickstart -k "\$launchd_domain\/\$service_label"/);
+  assert.match(spawnCall.args[1], /\/bin\/kill 4321/);
+  assert.doesNotMatch(spawnCall.args[1], /kickstart -k "system\/\$service_label"/);
+  assert.doesNotMatch(spawnCall.args[1], /launchctl' submit/);
+  assert.doesNotMatch(spawnCall.args[1], /CODEX_MOBILE_PORT='8789'/);
   assert.equal(spawnCall.options.detached, true);
   assert.equal(spawnCall.options.stdio, "ignore");
 });

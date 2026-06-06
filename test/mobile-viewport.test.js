@@ -48,9 +48,9 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*7px;/);
 });
 
-test("public app shell cache advances after WeChat-style composer bottom adjustment", () => {
-  assert.match(swJs, /codex-mobile-shell-v186/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v186"/);
+test("public app shell cache advances after Hermes embed back navigation hardening", () => {
+  assert.match(swJs, /codex-mobile-shell-v199/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v199"/);
   assert.match(appJs, /startupThreadOpenPending: false/);
   assert.match(indexHtml, /id="pluginStartupLoading"/);
   assert.match(indexHtml, /data-plugin-startup-title>正在加载 Codex\.\.\.</);
@@ -93,6 +93,44 @@ test("public app shell cache advances after WeChat-style composer bottom adjustm
   assert.match(appJs, /if \(state\.currentThreadId && state\.currentThread && !state\.currentThread\.mobileLoading\) \{/);
   assert.match(appJs, /scheduleCurrentThreadRefresh\(250\);[\s\S]*else if \(state\.currentThreadId\) \{[\s\S]*await refreshCurrentThread\(\);[\s\S]*else \{[\s\S]*await restoreThreadSelection\(\);/);
   assert.match(appJs, /async function restoreThreadSelection\(\) \{[\s\S]*if \(isHermesEmbedMode\(\)\) \{[\s\S]*showHermesPluginPrimaryPage\(\);[\s\S]*return;/);
+  assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*publishPluginNavigationState\(\{ force: true \}\);\s*\n\s*updateComposerControls\(\);/);
+  assert.doesNotMatch(appJs, /function shouldOpenLargeThreadHistoryAtTop/);
+  assert.doesNotMatch(appJs, /function threadOpenRenderOptions/);
+  assert.doesNotMatch(appJs, /scrollConversationToTop/);
+  assert.doesNotMatch(appJs, /scrollToTop/);
+  assert.match(appJs, /const explicitNoStickToBottom = options\.stickToBottom === false \|\| Boolean\(options\.scrollToTurnReceiptStart\);/);
+  assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*if \(isMenuOverlayMode\(\)\) closeSidebarMenu\(\);/);
+  assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*publishPluginNavigationState\(\{ force: true \}\);\s*\n\s*restoreConnectionState\(\);/);
+  assert.match(appJs, /const PLUGIN_EMBED_BACK_EDGE_SWIPE_PX = 44/);
+  assert.match(appJs, /function installHermesPluginBackSwipeGuard\(\)/);
+  assert.match(appJs, /pluginEmbedApi\.navigationMessage\(state, pluginNavigationUiState\(\)\)/);
+  assert.match(appJs, /document\.addEventListener\("touchstart", startPluginBackSwipe, \{ passive: false, capture: true \}\)/);
+  assert.match(appJs, /handlePluginBack\(\{\s*\n\s*preventDefault\(\) \{\},\s*\n\s*stopPropagation\(\) \{\},\s*\n\s*\}\);/);
+  assert.match(appJs, /installPluginWindowingGuards\(\);\s*\n\s*installHermesPluginBackSwipeGuard\(\);/);
+  assert.match(appJs, /const MAX_VISIBLE_TURNS = 10/);
+  assert.match(appJs, /const MAX_EXPANDED_VISIBLE_TURNS = 200/);
+  assert.match(appJs, /const THREAD_HISTORY_TOP_LOAD_PX = 64/);
+  assert.match(appJs, /Boolean\(incomingThread\.mobileOlderTurnsCursor\)/);
+  assert.match(appJs, /Number\(incomingThread\.mobileOmittedTurnCount \|\| 0\) > 0/);
+  assert.match(appJs, /preservedExpandedTurnCount \+= 1/);
+  assert.match(appJs, /merged\.mobileOmittedTurnCount = Math\.max\(0, Number\(merged\.mobileOmittedTurnCount \|\| 0\) - preservedExpandedTurnCount\)/);
+  assert.match(appJs, /function loadOlderThreadTurns\(options = \{\}\)/);
+  assert.match(appJs, /const preserveScroll = Boolean\(options\.preserveScroll\)/);
+  assert.match(appJs, /let newlyLoadedTurnCount = 0/);
+  assert.match(appJs, /if \(!existingTurn\) newlyLoadedTurnCount \+= 1/);
+  assert.match(appJs, /state\.currentThread\.mobileOmittedTurnCount = Math\.max\(0, Number\(state\.currentThread\.mobileOmittedTurnCount \|\| 0\) - newlyLoadedTurnCount\)/);
+  assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: false \}\)/);
+  assert.match(appJs, /preserveConversationScrollAfterPrepend\(previousScrollTop, previousScrollHeight\)/);
+  assert.match(appJs, /function maybeLoadOlderThreadTurnsFromScroll\(\)/);
+  assert.match(appJs, /conversation\.scrollTop > THREAD_HISTORY_TOP_LOAD_PX/);
+  assert.match(appJs, /loadOlderThreadTurns\(\{ preserveScroll: true, source: "scroll-top" \}\)/);
+  assert.match(appJs, /maybeLoadOlderThreadTurnsFromScroll\(\);/);
+  assert.match(appJs, /data-load-older-turns/);
+  assert.match(appJs, /loadOlderThreadTurns\(\{ preserveScroll: true, source: "button" \}\)/);
+  assert.match(appJs, /cursor: threadTurnsCursorParam\(cursor\)/);
+  assert.match(appJs, /mobileHistoryExpanded = true/);
+  assert.match(stylesCss, /\.history-loader\s*{[\s\S]*justify-content:\s*space-between;/);
+  assert.match(stylesCss, /\.history-load-button/);
   assert.match(swJs, /"\/api-client\.js"/);
   assert.match(swJs, /"\/runtime-settings\.js"/);
   assert.match(swJs, /"\/draft-store\.js"/);

@@ -8,6 +8,8 @@ START_PORT="${CODEX_MOBILE_START_PORT:-8789}"
 END_PORT="${CODEX_MOBILE_END_PORT:-8899}"
 RESERVED_PORTS="${CODEX_MOBILE_RESERVED_PORTS-8797}"
 CODEX_HOME_VALUE="${CODEX_HOME:-$HOME/.codex}"
+CODEX_EXE_VALUE="${CODEX_MOBILE_CODEX_EXE:-${CODEX_MUX_CODEX_EXE:-}}"
+NODE_EXE_VALUE="${CODEX_MOBILE_NODE_EXE:-${CODEX_MUX_NODE_EXE:-}}"
 RUNTIME_ROOT="${CODEX_MOBILE_RUNTIME_DIR:-$HOME/.codex-mobile-web}"
 LOG_DIR="${CODEX_MOBILE_LOG_DIR:-$RUNTIME_ROOT/logs}"
 PID_DIR="${CODEX_MOBILE_PID_DIR:-$RUNTIME_ROOT}"
@@ -29,6 +31,8 @@ Options:
   --end-port <port>      Last auto port, default 8899
   --reserved-ports <csv> Ports auto mode must skip, default 8797
   --no-reserved-ports    Let auto mode consider every port in the range
+  --codex <path|name>    Codex CLI executable passed to Desktop mux and Mobile Web
+  --node <path|name>     Node executable passed to Desktop mux and Mobile Web
   --codex-home <path>    Codex state directory, default $HOME/.codex
   --no-force-quit        Do not quit an already running Codex Desktop
   --print-only           Print what would be used without starting anything
@@ -151,6 +155,14 @@ while [[ $# -gt 0 ]]; do
       CODEX_HOME_VALUE="${2:?--codex-home requires a value}"
       shift 2
       ;;
+    --codex)
+      CODEX_EXE_VALUE="${2:?--codex requires a value}"
+      shift 2
+      ;;
+    --node)
+      NODE_EXE_VALUE="${2:?--node requires a value}"
+      shift 2
+      ;;
     --no-force-quit)
       FORCE_QUIT=0
       shift
@@ -186,6 +198,12 @@ echo "  Codex home: $CODEX_HOME_VALUE"
 echo "  Mobile Web: http://$HOST_ADDRESS:$CHOSEN_PORT"
 echo "  Reserved ports: ${RESERVED_PORTS:-none}"
 echo "  Mux endpoint: $ENDPOINT_FILE"
+if [[ -n "$CODEX_EXE_VALUE" ]]; then
+  echo "  Codex exe: $CODEX_EXE_VALUE"
+fi
+if [[ -n "$NODE_EXE_VALUE" ]]; then
+  echo "  Node exe: $NODE_EXE_VALUE"
+fi
 echo "  Desktop log: $DESKTOP_LOG"
 echo "  Mobile Web log: $MOBILE_LOG"
 
@@ -199,6 +217,12 @@ desktop_args=(--codex-home "$CODEX_HOME_VALUE")
 if [[ "$FORCE_QUIT" -eq 1 ]]; then
   desktop_args+=(--force-quit)
 fi
+if [[ -n "$CODEX_EXE_VALUE" ]]; then
+  desktop_args+=(--codex "$CODEX_EXE_VALUE")
+fi
+if [[ -n "$NODE_EXE_VALUE" ]]; then
+  desktop_args+=(--node "$NODE_EXE_VALUE")
+fi
 
 echo "Starting Codex Desktop through shared mux..."
 (
@@ -208,11 +232,19 @@ echo "Starting Codex Desktop through shared mux..."
 echo $! > "$DESKTOP_PID_FILE"
 
 echo "Starting Mobile Web on port $CHOSEN_PORT..."
+mobile_args=(
+  --host "$HOST_ADDRESS"
+  --port "$CHOSEN_PORT"
+  --codex-home "$CODEX_HOME_VALUE"
+)
+if [[ -n "$CODEX_EXE_VALUE" ]]; then
+  mobile_args+=(--codex "$CODEX_EXE_VALUE")
+fi
+if [[ -n "$NODE_EXE_VALUE" ]]; then
+  mobile_args+=(--node "$NODE_EXE_VALUE")
+fi
 CODEX_HOME="$CODEX_HOME_VALUE" CODEX_MOBILE_RUNTIME_DIR="$RUNTIME_ROOT" \
-  "$SCRIPT_DIR/start-codex-mobile-web-macos.sh" \
-    --host "$HOST_ADDRESS" \
-    --port "$CHOSEN_PORT" \
-    --codex-home "$CODEX_HOME_VALUE" \
+  "$SCRIPT_DIR/start-codex-mobile-web-macos.sh" "${mobile_args[@]}" \
   >"$MOBILE_LOG" 2>&1 &
 echo $! > "$MOBILE_PID_FILE"
 

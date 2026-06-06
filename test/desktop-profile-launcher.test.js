@@ -7,6 +7,7 @@ const test = require("node:test");
 
 const root = path.resolve(__dirname, "..");
 const launcher = fs.readFileSync(path.join(root, "start-codex-desktop-shared.ps1"), "utf8");
+const muxShim = fs.readFileSync(path.join(root, "codex-app-server-mux-shim.cs"), "utf8");
 
 test("desktop shared launcher can select a Codex profile home", () => {
   assert.match(launcher, /\[string\]\$ProfileId = ""/);
@@ -54,4 +55,13 @@ test("desktop profile cmd wrappers call the shared launcher with forced mux rest
     assert.match(wrapper, new RegExp(`-ProfileId ${profile}`));
     assert.match(wrapper, /-ForceRestartMux/);
   }
+});
+
+test("desktop mux shim starts its node child without a visible window", () => {
+  assert.match(muxShim, /CREATE_NO_WINDOW = 0x08000000/);
+  assert.match(muxShim, /STARTF_USESHOWWINDOW = 0x00000001/);
+  assert.match(muxShim, /SW_HIDE = 0/);
+  assert.match(muxShim, /STARTF_USESTDHANDLES \| STARTF_USESHOWWINDOW/);
+  assert.match(muxShim, /startupInfo\.wShowWindow = SW_HIDE/);
+  assert.match(muxShim, /CREATE_NO_WINDOW,\s*\r?\n\s*IntPtr\.Zero,\s*\r?\n\s*workingDirectory,/);
 });

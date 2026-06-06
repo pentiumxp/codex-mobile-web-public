@@ -23,14 +23,103 @@ Interpretation:
 | Thread looks stuck | rollout size/mtime, pending approvals, live command/tool process, latest turn status |
 | Old command appears running | latest turn id vs raw operation fallback call id/turn id, app version includes raw-operation fix |
 | PWA still shows old UI | `/api/public-config.clientBuildId`, browser shell cache, service worker cache name |
+| Refresh prompt repeats after a static bump | Compare `/api/public-config.clientBuildId` and `shellCacheName` with served `/app.js` and `/sw.js`; if the API is older, the 8787 listener did not restart into the edited files |
 | Push missing | HTTPS/Tailscale access, VAPID files, subscription count, sub-agent suppression |
 | Push says turn ended but no final reply appears | rollout `task_complete.last_agent_message`, completion-push no-final-message guard |
 | Profile switch hides workspaces or threads | active `codexProfiles.activeCodexHome`, non-default profile shared-state links, `/api/threads?limit=10` |
-| Quota chips show the previous account after switch | `/api/status.rateLimits`, browser quota localStorage, profile-switch cache clearing |
+| Quota chips show the previous account after switch | `/api/status.rateLimits`, browser quota localStorage, profile-switch cache clearing, shared `sessions/` quota fallback |
 | Archived projectless thread reappears | session-index fallback, `archived_sessions`, `test/thread-archive.test.js` |
 | After profile switch only a few workspaces or no threads appear | `/api/public-config.codexProfiles.activeCodexHome`, profile state links, and `state_5.sqlite` / `sessions` under the active home |
 | Threads are visible but names/times stay stale | `/api/threads` row `name`/`updatedAt`, state DB `title`/`updated_at`, rollout file mtime, fallback merge tests |
 | Running-thread indicator disappears | `/api/threads` row `status` and `rolloutSizeUpdatedAtMs`, rollout tail `task_started` / `task_complete`, `runningThreadIds`, stale browser shell |
+| macOS shows frequent `重连` or refresh prompts | 8787 listener PID, loopback and LAN `/api/public-config`, `/api/events` keepalive, `mobile-web.log` `EADDRINUSE`, stale `launchctl submit` labels |
+| Hermes host says plugin workspace access key file is missing | Host `com.hermesmobile.listener` env `HERMES_MOBILE_CODEX_PLUGIN_ACCESS_KEY_PATH`, readable key file under Hermes secrets, plugin manifest `tokenStatus` |
+| macOS shows `spawn codex ENOENT` | LaunchAgent/wrapper `PATH`, absolute `CODEX_MOBILE_CODEX_EXE`, `command -v codex` in login vs non-login shell |
+| macOS app-server reports SQLx migration modified | `pragma quick_check`, `_sqlx_migrations` checksums in `state_5.sqlite`, `logs_2.sqlite`, `memories_1.sqlite`, and `goals_1.sqlite`; compare against a temporary same-CLI `CODEX_HOME` before repair |
+
+## macOS Production Startup
+
+LaunchAgent and other non-interactive macOS processes do not inherit the login
+shell PATH. If Mobile Web can serve `/api/public-config` but shows
+`failed to start codex app-server (spawn codex ENOENT)`, set absolute paths in
+the plist or wrapper:
+
+```bash
+CODEX_MOBILE_CODEX_EXE="$HOME/.local/bin/codex"
+CODEX_MOBILE_NODE_EXE="$HOME/HermesMobile/runtime/node-current/bin/node"
+PATH="$HOME/.local/bin:$HOME/HermesMobile/runtime/node-current/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+```
+
+If the Hermes Mobile host can load its shell but the Codex Mobile plugin card or iframe reports `Plugin workspace access key file was not found for this workspace`, separate the host listener from the Codex plugin listener. On the Mac production deployment, `com.hermesmobile.listener` runs as `hermes-host`, while `com.hermesmobile.plugin.codex-mobile` reads the Codex Mobile key from the `xuxin` runtime. The host process must have its own readable key-file path:
+
+```bash
+launchctl print system/com.hermesmobile.listener | grep HERMES_MOBILE_CODEX_PLUGIN_ACCESS_KEY_PATH
+ls -l /Users/hermes-host/HermesMobile/data/secrets/codex-mobile-access-key.secret
+```
+
+The key file should be a secret copy owned by `hermes-host` with mode `600`, and the LaunchDaemon plist should set `HERMES_MOBILE_CODEX_PLUGIN_ACCESS_KEY_PATH` to that path. After changing the plist, use `bootout` plus `bootstrap`; `kickstart` alone does not reload edited LaunchDaemon environment variables. Validate without printing keys by checking `GET /api/hermes-plugins/codex-mobile/manifest?workspaceId=owner` through Hermes host auth and confirming `available=true` and `tokenStatus=launch_token_issued`. The Hermes host auth header is `x-hermes-web-key`, backed by `HERMES_WEB_AUTH_KEY_PATH`; do not use the Codex plugin access key as the host API auth key.
+
+If the iOS client frequently shows the top-right `重连` activity chip or a
+refresh prompt, first verify that only one macOS service owns the browser port.
+Repeated `EADDRINUSE 127.0.0.1:8787` in `~/.codex-mobile-web/logs/mobile-web.log`
+usually means an old `launchctl submit` keepalive job is repeatedly trying to
+start another `server.js` on the same port:
+
+```bash
+launchctl list | grep codex-mobile
+lsof -nP -iTCP:8787 -sTCP:LISTEN
+grep -c EADDRINUSE "$HOME/.codex-mobile-web/logs/mobile-web.log"
+```
+
+Also compare the listener bind address with the plugin base URL advertised to
+Hermes. If `CODEX_MOBILE_HERMES_PLUGIN_BASE_URL` is a LAN URL such as
+`http://192.168.x.x:8787`, the listener must bind to `0.0.0.0` or that LAN
+address. A loopback-only listener can make local `127.0.0.1` probes pass while
+Hermes host proxy calls to the advertised LAN URL fail, which appears in the
+iframe as reconnect and can trigger host-driven refresh recovery:
+
+```bash
+curl -fsS http://127.0.0.1:8787/api/public-config >/dev/null
+curl -fsS http://<mac-lan-ip>:8787/api/public-config >/dev/null
+```
+
+The current restart service removes same-prefix submitted jobs before restarting
+a LaunchAgent/LaunchDaemon-managed listener and no longer creates new
+`launchctl submit` jobs. For a system LaunchDaemon, the helper avoids
+user-level `launchctl kickstart system/...`, kills only the current listener,
+and relies on KeepAlive to start the replacement. If an older submitted job
+remains, remove only that stale label from the current GUI domain, then confirm
+the `EADDRINUSE` count stops growing and `/api/events` produces a status plus
+keepalive:
+
+```bash
+launchctl bootout "gui/$(id -u)/<stale-submitted-label>"
+curl --max-time 32 -N http://127.0.0.1:8787/api/events
+```
+
+If `codex app-server` then fails with `migration 1 was previously applied but
+has been modified`, do not replace the Codex home. First run
+`pragma quick_check` on the affected SQLite files and create a temporary empty
+`CODEX_HOME` with the same Codex CLI to read the expected `_sqlx_migrations`
+checksums. Only when schema objects match should a backed-up repair update the
+checksum rows. Check at least:
+
+```text
+state_5.sqlite
+logs_2.sqlite
+memories_1.sqlite
+goals_1.sqlite
+```
+
+For migrated Windows production state on macOS, the visible workspace roots may
+be Mac paths while historical thread cwd values are Windows paths. Current
+Mobile Web keeps non-archived fallback threads visible in All workspaces when
+none of the returned rows match the visible workspace set; it still hides
+archived and sub-agent rows. If this regresses, run:
+
+```powershell
+node --test test\thread-visibility.test.js
+```
 
 ## Shared Mux Drift
 
@@ -80,6 +169,20 @@ backs up `auth.json` / `config.toml` to
 `%USERPROFILE%\.codex-mobile-web\profile-auth-backups` and moves any replaced
 profile-local state into `profile-state-backups`; it must not overwrite auth
 files.
+
+If thread visibility works after a profile switch but quota looks identical
+across different accounts, check whether the non-default profile's `sessions/`
+or `archived_sessions/` is linked to the default `.codex` home. Current builds
+must not hydrate quota from those shared rollout files. They must also ignore
+source-less live `account/rateLimits/updated` snapshots for shared-profile
+homes, because those notifications do not prove which account produced the
+quota. A shared-profile active home may still show live quota when the snapshot
+comes from the same listener's managed child app-server; that snapshot may be
+read immediately through `account/rateLimits/read` after initialize or later via
+`account/rateLimits/updated`, but it should not be written as reusable profile
+quota. When no account-scoped or managed child live quota is available,
+authenticated `/api/status.rateLimits` should be absent and the browser should
+clear its old local quota cache instead of showing a previous-account value.
 
 If `/api/workspaces` still lists the expected workspaces but `/api/threads`
 returns only a projectless fallback thread, check the active `state_5.sqlite`
@@ -132,10 +235,17 @@ the row only says `notLoaded`, and current-thread `turn/started` /
 hints also carry `codexMobileRunningThreadHintedAtById` timestamps; if a row
 stays `notLoaded` without a terminal status and the current thread has no
 active turn, the hint expires after the stale window so completed work does not
-keep a permanent spinner. If this regresses, run:
+keep a permanent spinner.
+
+If thread detail shows `idle` or latest turn `interrupted`, but the thread list
+still reports the same row as `active`, compare app-server list rows with
+rollout fallback rows. A stale rollout fallback `active` summary must not
+override a same-time or newer app-server `idle` summary during list merge; only
+a genuinely newer rollout activity should revive the row to `active`. If this
+regresses, run:
 
 ```powershell
-node --test test\thread-visibility.test.js test\conversation-render.test.js test\mobile-viewport.test.js
+node --test test\thread-visibility.test.js test\conversation-render.test.js test\thread-item-timestamp-enrichment.test.js test\mobile-viewport.test.js
 ```
 
 ## Sent Message Disappears After Re-entering Thread
@@ -158,6 +268,47 @@ Expected current behavior:
 - Superseded active turns are stale and should fall through to new turn start.
 - Latest durable live turn should be steered, not auto-interrupted.
 - Pending steer echo keeps the user message visible during the wait.
+
+## Active Goal Output Disappears After Re-entering A Large Thread
+
+Symptom:
+
+- While a goal or long task is open, Mobile Web streams many tool/action cards.
+- After leaving the thread and entering it again, only a small subset of those
+  cards remains visible.
+
+Cause to check:
+
+- Thread detail should first use app-server `thread/read` even when the rollout
+  file is over 32MB. If detail reports `mobileReadMode=turns-list`, treat that
+  as a fallback after `thread/read` failed or timed out, not as the normal
+  large-rollout path.
+- A `thread/turns/list` fallback should include `mobileOlderTurnsCursor` when
+  app-server has older turns. The phone can load another bounded page through
+  `/api/threads/<id>/turns?sortDirection=desc&cursor=<json>`. If this returns
+  `invalid cursor`, the route is forwarding the cursor as a raw string instead
+  of parsing the app-server cursor JSON object.
+- A normal compacted `thread/read` detail should also expose
+  `mobileOlderTurnsCursor` when more than `CODEX_MOBILE_THREAD_TURNS` turns
+  exist. The browser defaults to 10 recent turns and loads 10 older turns when
+  the user scrolls to the top of the current detail window.
+- The current compact path should merge a bounded set of recent raw rollout
+  operations into the latest live turn before trimming. Completed turns should
+  still stay compact and use the usage-summary card instead of reopening full
+  operation history.
+- Current clients still enter thread detail at the bottom. Do not fix missing
+  large-thread history by changing the open position; first check whether the
+  server returned full `thread-read` or a fallback `turns-list` window.
+- Long latest-turn final receipts are intentionally rendered once after
+  `turn/completed`. If the receipt is long, the browser should stop at the
+  receipt start rather than the bottom; the down-arrow remains the explicit
+  skip-to-bottom control.
+
+Useful verification:
+
+```powershell
+node --test test\thread-item-timestamp-enrichment.test.js test\mobile-viewport.test.js
+```
 
 ## Thread Stuck Or Very Slow
 
@@ -374,12 +525,31 @@ iframe is running old frontend code. It must not request a host refresh for a
 server-only asset `buildId` change. Foregrounding the plugin or tapping the
 Hermes bottom Topic tab can run a build check, and server-only asset drift should
 be recorded silently rather than causing a visible old-page-to-new-page iframe
-reload.
+reload. If an old cached iframe keeps detecting the same shell mismatch, it
+should send at most one `server_build_changed` refresh request for that
+signature; repeated host reloads for the same `clientBuildId` indicate the
+request dedupe path regressed.
 
 If the prompt appears immediately after a source edit and before a server
 restart, check whether `clientBuildId()`, `shellCacheName`, or `buildId` has
 regressed to dynamically reading `public/sw.js` / static asset mtimes on each
 `/api/public-config` request.
+
+If the prompt repeats after the intended restart, compare the running API and
+the served static files, not just the workspace on disk:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8787/api/public-config |
+  Select-Object clientBuildId,shellCacheName
+(Invoke-WebRequest http://127.0.0.1:8787/app.js -UseBasicParsing).Content.Contains("codex-mobile-shell-vNNN")
+(Invoke-WebRequest http://127.0.0.1:8787/sw.js -UseBasicParsing).Content.Contains("codex-mobile-shell-vNNN")
+```
+
+If `/api/public-config` is older than `/app.js` / `/sw.js`, the browser is
+correct to keep prompting: the 8787 listener is still an old process and must
+be restarted into the current files. On Windows, verify the PID that owns port
+8787 before killing anything; stop only the listener process that is actually
+running this workspace's `server.js`, then start the replacement hidden.
 
 If the prompt does not appear after a real server restart into a newer shell
 build, check whether the loaded browser code calls `scheduleVisiblePageRefreshCheck()`
@@ -529,24 +699,30 @@ read should return `404 task_card_not_found`; wrong-thread actions should return
 500, the route error wrapper has regressed and the browser may show an
 ambiguous failure instead of a bounded task-card diagnostic.
 
-## `#鑷敱鍗忎綔` Task-card Command Does Not Parse
+## `#` Task-card Command Does Not Parse
 
-Only the exact `#鑷敱鍗忎綔` prefix is reserved for cross-thread task-card
-commands. Ordinary `#...` text and `# 鑷敱鍗忎綔` with a space after `#` should
-enter the normal message-send route.
+Leading non-empty `#` commands are reserved for cross-thread task-card
+drafting. Bare `#` remains empty and should not create a card. Plain `# ...`
+defaults to a manual one-off card; `#自由协作 ...` remains supported and defaults
+to autonomous collaboration unless the command explicitly asks for manual mode.
 
 Current behavior:
 
-- bare `#` is a normal message, not a task-card command;
-- `#鑷敱鍗忎綔` commands do not support attachments yet;
+- bare `#` is empty and does not enter the task-card send path;
+- `#` task-card commands do not support attachments yet;
 - the browser sends a bounded draft request to the current Codex thread;
-- the model must return a bounded draft block with one visible
-  `targetThreadId`, or an empty target plus an error.
+- the model must return a bounded draft block with visible `targetThreadIds`,
+  or an empty target list plus an error.
 
 Working examples:
 
-#鑷敱鍗忎綔 鍙戠粰 Finance Review锛氳鏍搁獙 5 鏈堢粨璐︽槧灏?#鑷敱鍗忎綔 璁?Hermes 05-26 閰嶅悎澶勭悊鎻掍欢鍒锋柊鑱斿姩
-#鑷敱鍗忎綔 璇疯绾跨▼銆孒ermes 鍙戝竷妫€鏌ャ€嶇‘璁ゆ彃浠堕€氱煡鍥炴墽鏄惁宸插叆搴?If no draft card appears, inspect:
+```text
+# 发给 Finance Review：请核验 5 月结账映射
+# 让 Hermes 05-26 处理插件刷新联动
+#自由协作 请让线程「Hermes 发布检查」确认插件通知回执是否已入库
+```
+
+If no draft card appears, inspect:
 
 - whether the current sent message contains the
   `<codex-mobile-thread-task-card-request>` envelope;
@@ -597,6 +773,37 @@ current iframe should first show an in-app refresh notice such as "Refreshing
 plugin page..." so the user can distinguish a deliberate host-driven reload from
 an unexplained crash/reload. If the iframe reloads with no visible notice, the
 browser build is stale or the refresh-required path regressed.
+
+If the same phone behaves differently against the Windows-hosted Hermes Web App
+and the Mac-hosted Hermes Web App, treat it as a host deployment/configuration
+difference first. Check the Hermes host shell version in `index.html` /
+`service-worker.js`, then check whether the host accepts the actual current
+iframe `src` origin for `codex-mobile.plugin.navigation`. A host-side origin
+rejection can make thread-detail right-swipe exit to the Hermes plugin context
+page and can also trigger the 30-second launch-health iframe refresh.
+
+On Mac production, do this check against the active LaunchDaemon working
+directory, not only the `xuxin` user's source checkout. `com.hermesmobile.listener`
+may run as `hermes-host` from `/Users/hermes-host/HermesMobile/app`; deploying a
+host bridge fix only to `/Users/xuxin/HermesMobile/app/public` leaves the active
+host on the old shell. Verify with:
+
+```bash
+launchctl print system/com.hermesmobile.listener | grep -E 'working directory|pid ='
+curl -sS http://127.0.0.1:8797/ | grep -o 'data-client-version="[^"]*"'
+curl -sS http://127.0.0.1:8797/service-worker.js | grep HERMES_SW_VERSION
+curl -sS http://127.0.0.1:8797/app-embedded-plugin-ui.js | shasum -a 256
+curl -sS http://127.0.0.1:8797/app-embedded-plugin-ui.js | grep embeddedPluginCurrentFrameOrigin
+```
+
+Do not trust the host static version string alone for this symptom. A Mac host
+can advertise the same version as Windows while serving an older
+`app-embedded-plugin-ui.js` from the active `/Users/hermes-host` daemon
+directory. The working host bridge accepts the exact current iframe `src`
+origin through `embeddedPluginCurrentFrameOrigin(def)`; without that function,
+the host can reject `codex-mobile.plugin.navigation`, never learn
+`canGoBack:true`, and let right-swipe escape to Hermes Mobile instead of asking
+Codex to return to its embedded primary page.
 
 ## Shared-Chain Restart Stops 8787 But Mobile Web Does Not Come Back
 
@@ -739,25 +946,39 @@ If `/g` does not create a goal:
 
 1. Confirm the composer text is exactly `/g` in an existing thread. The command
    opens a local dialog; it is not available from a new-thread draft.
-2. After the dialog submit, check that the browser sends
+2. In current shells, Enter inside the goal objective field submits the dialog
+   and Shift+Enter inserts a newline. If Enter only inserts a newline, the
+   browser is still running an older shell; accept the refresh prompt, hard
+   refresh, or close/reopen the PWA/Hermes plugin frame.
+3. Current shells also submit from explicit pointer/click handlers on the goal
+   Send button rather than relying only on the browser's default form submit.
+   Reopening `/g` should not prefill a completed old goal; only unfinished goal
+   state is used as editable prefill.
+4. After the dialog submit, the frontend should log a bounded
+   `goal_request_start` client event before sending
    `POST /api/threads/:id/goal`. Mobile Web forwards this to app-server
    `thread/goal/set`; it does not write `goals_1.sqlite` directly.
-3. If the response says the running app-server does not support goal set, check
+5. If `goal_request_start` and `goal_request_success` appear but no new goal
+   turn starts, inspect the current thread's `thread_goals.status`. A completed
+   old goal can cause app-server `thread/goal/set` to update the completed row
+   instead of starting a new goal. Current Mobile Web clears a completed goal
+   through app-server `thread/goal/clear` before retrying `thread/goal/set`.
+6. If the response says the running app-server does not support goal set, check
    the real `codex.exe` used by the mux/listener. On Windows the launchers
    should prefer the newest installed `%LOCALAPPDATA%\OpenAI\Codex\bin\*\codex.exe`
    over the older `%USERPROFILE%\.codex-mobile-web\codex.exe` runtime copy when
    `-CodexExe` / `CODEX_MOBILE_CODEX_EXE` is not explicit.
-4. Inspect `%USERPROFILE%\.codex\app-server-mux\endpoint.json`. Current
+7. Inspect `%USERPROFILE%\.codex\app-server-mux\endpoint.json`. Current
    endpoints should include `codexExe` and `capabilities.threadGoalRpc=true`.
    If `codexExe` is missing or still points at
    `%USERPROFILE%\.codex-mobile-web\codex.exe`, remove the stale endpoint by
    restarting the shared chain so the windowless launcher can start a fresh mux.
-5. If the route succeeds but the card does not appear, first confirm the browser
+8. If the route succeeds but the card does not appear, first confirm the browser
    shell is current. Current frontend builds synthesize a submitted-goal card
    from the just-entered objective/token budget when the app-server accepts
    `thread/goal/set` but does not return a public goal object in the immediate
    response.
-6. If a current shell still does not show the card, inspect the EventSource
+9. If a current shell still does not show the card, inspect the EventSource
    stream for `thread/goal/updated`, then refresh the thread detail/list so the
    sqlite fallback can decorate `thread.goal`.
 
@@ -865,6 +1086,10 @@ forwards its back affordance as `{ type: "hermes.plugin.back", version: 1 }`.
 Codex should handle that secondary-page back by returning to the embedded
 primary thread-switcher/settings page. That primary page must report
 `canGoBack:false`, allowing Hermes Mobile's bottom tabs to remain visible. If
+right-swipe instead returns directly to Hermes Mobile, check whether the thread
+detail page published `canGoBack:true` immediately after selecting
+`currentThreadId`; this must happen while the detail page is still loading, not
+only after the read completes. If
 right-swipe instead opens Codex's standalone initial Workspace page, check the
 `hermes.plugin.back` handler: thread-page back must clear only the selected
 thread detail, not leave the iframe in the standalone home route. If the primary
@@ -874,6 +1099,14 @@ rename/action dialog, or subagent panel is already open, the same back event
 should close that transient layer before page-level back is applied. Hermes
 should use postMessage only; it must not inspect Codex DOM or call internal
 Codex route functions.
+
+If this only reproduces on iOS/Mac-hosted Hermes while the Codex plugin and
+Hermes host static files match the working Windows installation, check the
+iframe-owned left-edge swipe guard in `public/app.js`. iOS may start the gesture
+inside the iframe, so the Hermes host document may not receive the touchstart
+sequence even though the iframe can still navigate. In that case the iframe must
+handle the gesture locally when its own navigation message would report
+`canGoBack:true`.
 
 The validated target behavior after v108 is: Codex's thread-switcher/settings
 surface is the embedded primary page with Hermes bottom tabs visible; a Codex
@@ -996,6 +1229,11 @@ Check these facts in order:
   endpoint should be under that profile's
   `<CODEX_HOME>\app-server-mux\endpoint.json`, not always the default
   `%USERPROFILE%\.codex` endpoint.
+- If `/api/status.codexHome` matches the selected profile but live quota still
+  follows another account, check the managed `codex app-server` child
+  environment. The child must be spawned with the resolved active `CODEX_HOME`,
+  not the stale service or LaunchDaemon `CODEX_HOME` that the Node listener
+  itself ignored.
 - If Desktop must be used as a recovery path, fully quit Desktop and relaunch
   it through `start-codex-desktop-shared.ps1 -ProfileId <id>` or the matching
   `start-codex-desktop-<id>.cmd` wrapper so Desktop and Mobile share the same
@@ -1086,6 +1324,9 @@ Expected behavior after this repair is:
 - `server.js` prefers the active profile store over an inherited shell
   `CODEX_HOME`; stale inherited homes are reported as
   `codexHomeEnvIgnored=true`.
+- Managed-child app-server launches must pass that resolved `CODEX_HOME` into
+  the child process. Otherwise `/api/status.codexHome` can look correct while
+  live quota is still read through the stale inherited account.
 - Normal profile-switched listeners should report
   `codexHomeSource=profile-store`.
 - `CODEX_HOME` only overrides the profile store when
@@ -1126,7 +1367,7 @@ Expected behavior after `codex-mobile-shell-v164`:
   from Codex state, truncates overlong draft bodies to the 8k service limit, and
   calls `threadTaskCardService.createMany()` with a stable idempotency key.
 - Thread detail reads run the same materialization before attaching
-  `thread.threadTaskCards`, including large-rollout `thread/turns/list` mode.
+  `thread.threadTaskCards`, including fallback `thread/turns/list` mode.
 - A deleted/revoked/replied/approved card stays settled and should not be
   recreated by re-entering the source thread. If the target card was deleted,
   send a new source request instead of expecting the old idempotency key to

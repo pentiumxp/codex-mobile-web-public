@@ -110,9 +110,10 @@ Implementation path:
 5. Live reasoning should update the timer/activity label, not insert reasoning rows.
 6. Type-only context compaction markers must not synthesize visible pending/completed notices.
 7. Current-turn upward scroll jump targets the final receipt/summary: the last `agentMessage` or `plan`, then the last non-user, non-live-operation fallback. It should not jump to the first assistant reply. Preserve an already activated live-turn anchor across `turn/completed`, and show the button when the target item's start is above the viewport.
-8. Live/final receipt rendering must not force-scroll while the user is reading. Recent manual scroll away from bottom should create a current-turn hold even during programmatic bottom-scroll; render stick-to-bottom and bottom-follow timers must respect that hold.
-9. Completed-turn context/token usage summaries should be synthetic diagnostic items from rollout `token_count` events. They must be omitted when no scoped token event exists and must not become the upward final-receipt jump target. Turn-level token usage should be derived from cumulative `total_token_usage` deltas across all valid scoped events in that turn, not only the final event's `last_token_usage`; context-window percent/risk stays based on the raw input tokens from the final valid event. If cached input is present, the displayed `in` value should exclude cached input.
-10. Test with `test/thread-item-timestamp-enrichment.test.js`, `test/conversation-render.test.js`, `test/collab-agent-render.test.js`, `test/message-timestamp.test.js`, `test/turn-scroll-controls.test.js`, `test/turn-usage-summary-service.test.js`, and `test/mobile-viewport.test.js`.
+8. Live/final receipt rendering must not force-scroll while the user is reading. Recent manual scroll away from bottom should create a current-turn hold even during programmatic bottom-scroll; render stick-to-bottom and bottom-follow timers must respect that hold. The latest live `agentMessage` should be deferred until completion; a long final receipt should render once and position the viewport at the receipt start, not at the bottom.
+9. Thread detail compaction should keep a small recent-turn window by default and expose `mobileOlderTurnsCursor` when older turns exist. Browser top-of-window pagination should request the next bounded page and preserve scroll position after prepending turns.
+10. Completed-turn context/token usage summaries should be synthetic diagnostic items from rollout `token_count` events. They must be omitted when no scoped token event exists and must not become the upward final-receipt jump target. Turn-level token usage should be derived from cumulative `total_token_usage` deltas across all valid scoped events in that turn, not only the final event's `last_token_usage`; context-window percent/risk stays based on the raw input tokens from the final valid event. If cached input is present, the displayed `in` value should exclude cached input.
+11. Test with `test/thread-item-timestamp-enrichment.test.js`, `test/conversation-render.test.js`, `test/collab-agent-render.test.js`, `test/message-timestamp.test.js`, `test/turn-scroll-controls.test.js`, `test/turn-usage-summary-service.test.js`, and `test/mobile-viewport.test.js`.
 
 ## Rollout Continuation
 
@@ -226,7 +227,7 @@ Implementation path:
 5. `turn/steer` is an active-turn steering path, not a new model invocation; it
    cannot change the model or reasoning effort of a turn that has already
    started.
-6. Add tests that cover both small threads and large-rollout fallback paths,
+6. Add tests that cover both normal `thread/read` detail and fallback paths,
    plus continuation and cross-thread task-card injection paths.
 7. Re-check `/api/public-config` and a real continuation/new send path after activation.
 
@@ -295,9 +296,14 @@ Implementation path:
    Hermes bottom tabs remain visible. Thread detail and new-thread routes should
    report `canGoBack:true` so iOS Hermes forwards right-swipe/back to the iframe;
    Codex should handle that secondary-page back by returning to the primary
-   thread-switcher/settings page. Do not implement thread-page back by showing
-   Codex's standalone first-launch Workspace page or by opening a sidebar drawer
-   inside the iframe. In embedded startup, restore only explicit launch or route
+   thread-switcher/settings page. Publish that state as soon as a thread id is
+   selected, even before the detail read completes, so early gestures are still
+   forwarded to the iframe. Also keep an iframe-owned iOS left-edge swipe guard
+   that calls the same back handler when the iframe itself knows
+   `canGoBack:true`, because touch gestures that begin inside the iframe may not
+   reliably reach the Hermes host document. Do not implement thread-page back by showing Codex's
+   standalone first-launch Workspace page or by opening a sidebar drawer inside
+   the iframe. In embedded startup, restore only explicit launch or route
    targets; when Hermes provides no target, stay on the plugin primary page
    instead of restoring localStorage's last thread or the latest active recent
    thread. Hermes notification opens may also supply bounded query
@@ -345,7 +351,8 @@ Implementation path:
    target-thread messages.
 7. Reply should create a controlled reverse-direction card, not a silent direct
    message injection.
-8. Ordinary task cards remain manual. The `#自由协作` draft path defaults to an
+8. Ordinary task cards remain manual. Plain `#` draft commands default to a
+   manual one-off card. The legacy `#自由协作` draft path defaults to an
    autonomous/no-further-approval collaboration workflow unless the user asks
    for a one-off manual card. The first target approval may activate a workflow
    grant. Auto-run is allowed only for later cards with the same workflow id and
@@ -371,11 +378,12 @@ Implementation path:
 13. Keep `test/thread-task-card-harness.test.js` green, and cover real behavior
    with `test/thread-task-card-service.test.js` and
    `test/thread-task-card-route.test.js`.
-14. Composer input is routed into the natural-language task-card flow only when
-    it starts with the exact `#自由协作` prefix. Ordinary `#...` text remains a
-    normal message. Convert `#自由协作` inputs into a bounded draft-request prompt
-    for the current Codex thread, including the visible target-thread list and
-    exact XML/JSON response schema.
+14. Composer input is routed into the natural-language task-card flow when it
+    starts with a leading non-empty `#` command. Plain `# ...` is the manual
+    one-off card path; `#自由协作` remains the autonomous compatibility shortcut.
+    Convert task-card commands into a bounded draft-request prompt for the
+    current Codex thread, including the visible target-thread list and exact
+    XML/JSON response schema.
 15. Suppress the raw returned
      `<codex-mobile-thread-task-card-draft>...</codex-mobile-thread-task-card-draft>`
      assistant block, show a bounded placeholder while it is generating, and
@@ -384,13 +392,15 @@ Implementation path:
 16. Keep the command path conservative: if the model does not return at least
      one valid visible target id, do not auto-send to any other thread. The
      preferred draft field is `targetThreadIds`, with legacy `targetThreadId`
-     accepted for backward compatibility. `#自由协作` defaults to autonomous
-     workflow mode unless the user explicitly asks for a one-off manual card.
+     accepted for backward compatibility. Plain `#` defaults to manual workflow
+     mode unless the user explicitly asks for autonomous/free collaboration;
+     `#自由协作` defaults to autonomous workflow mode unless the user explicitly
+     asks for a one-off manual card.
 17. Do not rely only on the browser to turn a parsed draft into stored cards.
      On fresh `turn/completed`, `server.js` should fetch a bounded recent-turn
      window and materialize assistant/plan draft XML through the same
      idempotent `createMany()` path. Thread-detail reads should do the same
-     before attaching `thread.threadTaskCards`, including large-rollout
+     before attaching `thread.threadTaskCards`, including fallback
      `thread/turns/list` reads.
 18. Model-generated draft bodies can exceed the persisted card limit. Truncate
      draft bodies to the 8k service limit with a marker before create, while

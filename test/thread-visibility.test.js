@@ -6,10 +6,15 @@ const os = require("node:os");
 const path = require("node:path");
 const { test } = require("node:test");
 
+const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+
 const {
+  anyThreadMatchesVisibleWorkspace,
+  filterFallbackThreads,
   hydrateThreadListTitlesFromSessionIndex,
   isHiddenThread,
   mergeThreadListFallback,
+  parseThreadTurnsCursor,
   readRolloutSessionFallbackThreadFromFile,
   sortTurnsChronologically,
   threadMatchesWorkspaceCwd,
@@ -28,6 +33,14 @@ function visibilityFor(root) {
     workspaceKeys: new Set([normalizeFsPath(root)]),
     workspaceNames: new Set([path.basename(path.resolve(root))]),
     projectlessThreadIds: new Set(),
+  };
+}
+
+function globalStateForRoots(roots) {
+  return {
+    "active-workspace-roots": roots,
+    "electron-saved-workspace-roots": roots,
+    "project-order": roots,
   };
 }
 
@@ -55,6 +68,50 @@ test("archived Codex worktree threads stay hidden", () => {
   const visibility = visibilityFor(repoRoot);
 
   assert.equal(isHiddenThread({ id: "thread-1", cwd: worktreeRoot, archived: true }, visibility), true);
+});
+
+test("thread turns cursor accepts app-server JSON cursor objects from query strings", () => {
+  assert.equal(parseThreadTurnsCursor('{"turnId":"turn-1","includeAnchor":false}'), '{"turnId":"turn-1","includeAnchor":false}');
+  assert.equal(parseThreadTurnsCursor('"{\\"turnId\\":\\"turn-2\\",\\"includeAnchor\\":false}"'), '{"turnId":"turn-2","includeAnchor":false}');
+  assert.equal(parseThreadTurnsCursor({ turnId: "turn-3", includeAnchor: false }), '{"turnId":"turn-3","includeAnchor":false}');
+  assert.equal(parseThreadTurnsCursor("opaque-cursor"), "opaque-cursor");
+  assert.equal(parseThreadTurnsCursor(""), null);
+});
+
+test("thread detail no longer skips thread/read at a rollout size threshold", () => {
+  assert.doesNotMatch(serverJs, /CODEX_MOBILE_THREAD_DETAIL_ROLLOUT_MAX_BYTES/);
+  assert.doesNotMatch(serverJs, /THREAD_DETAIL_ROLLOUT_MAX_BYTES/);
+  assert.doesNotMatch(serverJs, /shouldSkipThreadDetailRpc/);
+  assert.doesNotMatch(serverJs, /large-rollout-turns-list/);
+  assert.doesNotMatch(serverJs, /skip_detail_rpc/);
+  assert.match(serverJs, /codex\.request\("thread\/read", \{ threadId, includeTurns: true \}/);
+});
+
+test("thread detail defaults to ten turns and exposes an older cursor when compacted", () => {
+  assert.match(serverJs, /CODEX_MOBILE_THREAD_TURNS \|\| "10"/);
+  assert.match(serverJs, /CODEX_MOBILE_FULL_THREAD_TURNS \|\| "10"/);
+  assert.match(serverJs, /function olderTurnsCursorBeforeTurn\(turn\)/);
+  assert.match(serverJs, /return JSON\.stringify\(\{ turnId, includeAnchor: false \}\);/);
+  assert.match(serverJs, /out\.mobileOlderTurnsCursor = olderTurnsCursorBeforeTurn\(out\.turns\[0\]\);/);
+  assert.match(serverJs, /limit: Math\.max\(1, Math\.min\(100, Number\(url\.searchParams\.get\("limit"\) \|\| String\(MAX_THREAD_TURNS\)\)\)\)/);
+});
+
+test("fallback thread list keeps migrated Windows cwd rows when no visible workspace matches", () => {
+  const macWorkspace = "/Users/xuxin/HermesMobile";
+  const windowsCwd = "C:\\Users\\xuxin\\Documents\\Agent";
+  const visibility = visibilityFor(macWorkspace);
+
+  assert.equal(anyThreadMatchesVisibleWorkspace([{ id: "thread-1", cwd: windowsCwd }], visibility), false);
+
+  const filtered = filterFallbackThreads([
+    { id: "thread-1", cwd: windowsCwd, name: "Windows history", updatedAt: 300 },
+    { id: "thread-archived", cwd: windowsCwd, name: "Archived", archived: true, updatedAt: 400 },
+    { id: "thread-subagent", cwd: windowsCwd, name: "Subagent", agent_role: "subagent", updatedAt: 500 },
+  ], {
+    globalState: globalStateForRoots([macWorkspace]),
+  });
+
+  assert.deepEqual(filtered.map((thread) => thread.id), ["thread-1"]);
 });
 
 test("thread list merges local fallback threads when app-server list misses them", () => {
@@ -307,6 +364,45 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(serverJs, /function readRolloutSessionFallback\(/);
   assert.match(serverJs, /function readThreadListFallback\(/);
   assert.match(routeBody, /const fallback = readThreadListFallback\(limit, \{ cwd, searchTerm, globalState \}\);/);
+});
+
+test("thread list merge keeps app-server idle over stale rollout active", () => {
+  const threadId = "019e9000-0000-7000-8000-000000000006";
+  const result = mergeThreadListFallback({
+    data: [{
+      id: threadId,
+      name: "Hermes",
+      updatedAt: 1780722169,
+      status: { type: "idle" },
+    }],
+  }, [{
+    id: threadId,
+    name: "Hermes",
+    updatedAt: 1780722169,
+    rolloutSizeUpdatedAtMs: 1780722169000,
+    status: { type: "active" },
+  }], 10);
+
+  assert.equal(result.data[0].status.type, "idle");
+});
+
+test("thread list merge still accepts newer rollout active over old completed summary", () => {
+  const threadId = "019e9000-0000-7000-8000-000000000007";
+  const result = mergeThreadListFallback({
+    data: [{
+      id: threadId,
+      name: "Hermes",
+      updatedAt: 1780720000,
+      status: { type: "completed" },
+    }],
+  }, [{
+    id: threadId,
+    name: "Hermes",
+    updatedAt: 1780720100,
+    status: { type: "active" },
+  }], 10);
+
+  assert.equal(result.data[0].status.type, "active");
 });
 
 test("turn sorting uses item timestamps when turn ids are not chronological", () => {

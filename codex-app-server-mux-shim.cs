@@ -7,6 +7,9 @@ using System.Text;
 internal static class Program
 {
     private const int STARTF_USESTDHANDLES = 0x00000100;
+    private const int STARTF_USESHOWWINDOW = 0x00000001;
+    private const short SW_HIDE = 0;
+    private const int CREATE_NO_WINDOW = 0x08000000;
     private const int STD_INPUT_HANDLE = -10;
     private const int STD_OUTPUT_HANDLE = -11;
     private const int STD_ERROR_HANDLE = -12;
@@ -191,7 +194,8 @@ internal static class Program
         {
             STARTUPINFO startupInfo = new STARTUPINFO();
             startupInfo.cb = Marshal.SizeOf(typeof(STARTUPINFO));
-            startupInfo.dwFlags = STARTF_USESTDHANDLES;
+            startupInfo.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+            startupInfo.wShowWindow = SW_HIDE;
             startupInfo.hStdInput = stdin;
             startupInfo.hStdOutput = stdout;
             startupInfo.hStdError = stderr;
@@ -204,7 +208,7 @@ internal static class Program
                 IntPtr.Zero,
                 IntPtr.Zero,
                 true,
-                0,
+                CREATE_NO_WINDOW,
                 IntPtr.Zero,
                 workingDirectory,
                 ref startupInfo,

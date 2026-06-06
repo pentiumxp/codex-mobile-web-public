@@ -69,8 +69,16 @@ endpoint use one active profile at a time.
 `adapters/codex-profile-service.js` discovers the default `.codex` home plus
 `%USERPROFILE%\.codex-homes\current` and `previous` when present. It reads
 `auth.json` only to return safe account identity fields such as email/name or a
-redacted account id, and it scans recent rollout tails for per-profile quota
-snapshots. Raw tokens never leave the service.
+redacted account id. Profile quota snapshots are persisted and reused only when
+the active profile's `sessions/` and `archived_sessions/` directories are
+account-scoped under that profile home. Rollout-tail quota uses the same
+account-scoped condition. If non-default profiles share thread state through
+links to the default `.codex` home, source-less live quota and rollout quota are
+both skipped so one account's shared app-server/thread history does not
+decorate another account's quota. A shared-profile active home may still display
+non-persistent live quota emitted by this listener's own managed child
+app-server, because that stream belongs to the selected `CODEX_HOME`. Raw tokens
+never leave the service.
 
 The authenticated `POST /api/codex-profiles/active` endpoint persists the
 selected profile to `%USERPROFILE%\.codex-mobile-web\codex-profiles.json` and
@@ -86,8 +94,11 @@ but links conversation state back to the default `.codex` home:
 after an account switch while the active app-server uses the selected account's
 auth file. At server bootstrap, the active profile store takes precedence over
 an inherited `CODEX_HOME` so a stale shell environment cannot silently keep the
-listener on the previous account after a switch. Explicit environment override
-requires `CODEX_MOBILE_CODEX_HOME_OVERRIDE=1`, and status snapshots expose
+listener on the previous account after a switch. When Mobile Web starts its own
+managed `codex app-server`, the child process is also launched with this resolved
+`CODEX_HOME`; it must not inherit a stale LaunchDaemon, shell, or service
+environment home. Explicit environment override requires
+`CODEX_MOBILE_CODEX_HOME_OVERRIDE=1`, and status snapshots expose
 `codexHomeSource` plus `codexHomeEnvIgnored` for diagnostics. The Desktop escape
 hatch can be launched through `start-codex-desktop-shared.ps1 -ProfileId
 default|current|previous` or a matching `.cmd` wrapper so Desktop and Mobile
@@ -198,6 +209,16 @@ can show its own bottom navigation tabs. Thread detail and new-thread composer
 routes are secondary pages and report `canGoBack: true` so iOS Hermes Mobile
 forwards its right-swipe/back affordance to the iframe. Codex handles that
 secondary-page back by returning to the primary thread-switcher/settings page.
+Thread detail must publish that secondary-page navigation state immediately
+after `currentThreadId` is selected, including while the detail read still shows
+its loading shell; otherwise the host can treat an early right-swipe as a
+request to leave the plugin.
+Because iOS touch gestures that begin inside an iframe may not reach the Hermes
+host document reliably, the embedded Codex iframe also owns a left-edge swipe
+guard. When its current navigation message would report `canGoBack: true`, that
+guard calls the same `hermes.plugin.back` handler locally and returns to the
+embedded primary page instead of relying only on the host to forward the back
+event.
 It must not show the standalone first-launch Workspace page or treat the
 thread-switcher/settings surface as an overlay sidebar in Hermes embed mode.
 When there is no explicit plugin launch target, URL thread hint, or bounded
@@ -233,16 +254,23 @@ responses, private manifest dumps, or long logs.
 
 ### Thread List And Detail
 
-Thread list reads app-server `thread/list`, then filters archived/deleted/sub-agent/out-of-workspace rows using local visibility rules and SQLite fallback data. The browser's default thread-list refresh requests a 40-row page; raising this casually can make startup, foreground resume, and thread switching noticeably slower because the server may do more app-server and fallback work before returning even when only a small number of rows are visible. On cold startup with a saved current thread, the browser sets `startupThreadOpenPending` before the first app-shell reveal and starts the saved-thread detail read in parallel with status/workspace/list refresh; the startup path should not wait for the list response before beginning the known thread detail read. Startup emits bounded `startup_stage` client events so the runtime log can separate public-config, status, workspace, list, detail, and render delays. Codex worktree cwd values under `%USERPROFILE%\.codex\worktrees\<id>\<repo>` are treated as visible when `<repo>` matches a known workspace basename, so temporary Codex worktree sessions do not disappear merely because their cwd differs from the primary workspace path. When app-server omits visible rows, the list merges state DB, live rollout-session, and session-index fallback threads before applying the same cwd/search filters. Duplicate fallback rows are not discarded blindly: display fields can fill missing/stale app-server titles, and the newest `updatedAt` wins so active shared-state threads move in the sidebar after turns. The rollout-session fallback reads the head of `sessions/rollout-*.jsonl` files to recover thread id, cwd, timestamp, and safe display names from `session_index.jsonl`, then reads a bounded tail to infer fallback `active` / `completed` status from safe event types such as `task_started` and `task_complete`. Its fallback `updatedAt` uses the newest of session-index time, rollout head timestamps, and rollout file mtime, so shared-state turns that keep writing rollout data do not stay pinned to an old index timestamp. It exists so a malformed `state_5.sqlite` does not make all old threads disappear after an account/profile switch. The session-index fallback must also skip ids present in `archived_sessions`, profile-specific `archived_sessions`, and `%USERPROFILE%\.codex-mobile-web\archived-thread-ids.json`; the Mobile local index stores only thread ids and archived timestamps so re-archiving a recovered/old-profile row hides it even when app-server cannot mutate the original SQLite row. After an existing-thread message send succeeds, the browser schedules both current-detail refresh and a silent thread-list refresh; otherwise a usable thread can keep an old sidebar timestamp until a manual list reload or foreground resume. Running-thread sidebar/home indicators are driven by both row status and browser-local `runningThreadIds` hints. A list refresh that returns `notLoaded` must not immediately clear a known running hint, but the hint carries a browser-local timestamp and expires after a bounded stale window when the row still has no running or terminal status and the current thread has no active turn. Terminal statuses such as completed, failed, cancelled, error, or interrupted clear it immediately. Current-thread `turn/started` and `turn/completed` notifications also update the matching thread-list row and schedule a list repaint so the running indicator does not depend on a separate `thread/status/changed` notification.
+Thread list reads app-server `thread/list`, then filters archived/deleted/sub-agent/out-of-workspace rows using local visibility rules and SQLite fallback data. The browser's default thread-list refresh requests a 40-row page; raising this casually can make startup, foreground resume, and thread switching noticeably slower because the server may do more app-server and fallback work before returning even when only a small number of rows are visible. On cold startup with a saved current thread, the browser sets `startupThreadOpenPending` before the first app-shell reveal and starts the saved-thread detail read in parallel with status/workspace/list refresh; the startup path should not wait for the list response before beginning the known thread detail read. Startup emits bounded `startup_stage` client events so the runtime log can separate public-config, status, workspace, list, detail, and render delays. Codex worktree cwd values under `%USERPROFILE%\.codex\worktrees\<id>\<repo>` are treated as visible when `<repo>` matches a known workspace basename, so temporary Codex worktree sessions do not disappear merely because their cwd differs from the primary workspace path. When app-server omits visible rows, the list merges state DB, live rollout-session, and session-index fallback threads before applying the same cwd/search filters. If a migrated macOS production instance has visible Mac workspace roots but all recovered thread cwd values are Windows paths, the All-workspaces fallback keeps non-archived non-sub-agent history visible instead of filtering the list to zero rows. Duplicate fallback rows are not discarded blindly: display fields can fill missing/stale app-server titles, and the newest `updatedAt` wins so active shared-state threads move in the sidebar after turns. The rollout-session fallback reads the head of `sessions/rollout-*.jsonl` files to recover thread id, cwd, timestamp, and safe display names from `session_index.jsonl`, then reads a bounded tail to infer fallback `active` / `completed` status from safe event types such as `task_started` and `task_complete`. Its fallback `updatedAt` uses the newest of session-index time, rollout head timestamps, and rollout file mtime, so shared-state turns that keep writing rollout data do not stay pinned to an old index timestamp. It exists so a malformed `state_5.sqlite` does not make all old threads disappear after an account/profile switch. The session-index fallback must also skip ids present in `archived_sessions`, profile-specific `archived_sessions`, and `%USERPROFILE%\.codex-mobile-web\archived-thread-ids.json`; the Mobile local index stores only thread ids and archived timestamps so re-archiving a recovered/old-profile row hides it even when app-server cannot mutate the original SQLite row. After an existing-thread message send succeeds, the browser schedules both current-detail refresh and a silent thread-list refresh; otherwise a usable thread can keep an old sidebar timestamp until a manual list reload or foreground resume. Running-thread sidebar/home indicators are driven by both row status and browser-local `runningThreadIds` hints. A list refresh that returns `notLoaded` must not immediately clear a known running hint, but the hint carries a browser-local timestamp and expires after a bounded stale window when the row still has no running or terminal status and the current thread has no active turn. Terminal statuses such as completed, failed, cancelled, error, or interrupted clear it immediately. Current-thread `turn/started` and `turn/completed` notifications also update the matching thread-list row and schedule a list repaint so the running indicator does not depend on a separate `thread/status/changed` notification.
 
 Thread goal state is app-server-owned Mobile Web state. Codex app-server 0.135.0 and newer expose `thread/goal/set`, `thread/goal/get`, and `thread/goal/clear` requests plus `thread/goal/updated` and `thread/goal/cleared` notifications. `server.js` calls `thread/goal/set` from `POST /api/threads/:id/goal` and still reads `<CODEX_HOME>\goals_1.sqlite` through `adapters/thread-goal-service.js` as a cold-start/list/detail fallback. The browser command `/g` opens a compact dialog and posts the objective/token budget to the Mobile route; it no longer sends a normal chat message asking the model to create the goal. If the set RPC succeeds but the immediate app-server response does not contain a public goal object, the browser renders a local submitted-goal card from the just-entered objective and token budget so the goal remains visible while the new goal turn starts; later `thread/goal/updated` notifications or sqlite fallback data replace that local display state. If the running app-server is older and lacks `thread/goal/set`, Mobile Web returns a 501 explaining that Codex CLI 0.135.0 or newer is required. Mobile Web must not write `goals_1.sqlite` directly.
 
 On Windows shared-stream startup, `start-codex-mobile-web-windowless.ps1` resolves the intended Codex binary first, then reuses an existing mux endpoint only when that endpoint reports the same `codexExe`. Older endpoints without `codexExe`, or endpoints pointing at the legacy `%USERPROFILE%\.codex-mobile-web\codex.exe`, are treated as stale and replaced before Mobile Web connects.
 
-Thread detail has two modes:
-
-- Small rollout: prefer full `thread/read includeTurns:true`.
-- Large rollout: skip expensive full reads and prefer bounded `thread/turns/list`, then local summary fallback. The default large-rollout read is the latest 8 turns.
+Thread detail no longer has a rollout-size skip threshold. The route always
+prefers full app-server `thread/read includeTurns:true` regardless of rollout
+file size, then compacts the mobile detail payload to the latest
+`CODEX_MOBILE_THREAD_TURNS` turns (default `10`) when older turns exist. The
+compacted result exposes `mobileOlderTurnsCursor` for the oldest retained turn.
+If `thread/read` fails or times out, Mobile Web falls back to bounded
+`thread/turns/list`, then local summary fallback. A `thread/turns/list` response
+can also carry the app-server older-history cursor so the browser can page in
+earlier turns. The browser loads older turns in 10-turn pages when the user
+scrolls to the top of the current detail window and preserves the reading
+position after prepending those turns.
 
 The detail path compacts command/tool/file/search items, enriches item timestamps from rollout events, injects pending steer echoes when needed, and may attach a raw operation fallback only when it belongs to the same latest live turn. A running latest turn keeps at most one operation card so the current command/tool state remains visible. Once a turn has completed, operation cards are removed from the compact mobile detail; the final diagnostic frame should be the synthetic `turnUsageSummary` item when scoped rollout `token_count` data exists. Completed raw fallback is accepted only while the latest turn is still live and the operation has a matching latest turn id; old completed operations must not attach to newer live turns. The usage summary is diagnostic UI only: turn-level token use, cumulative token use, model context-window percentage/risk, rollout size, and current workspace `PROJECT_CONTEXT.md` / `HANDOFF.md` sizes. Turn-level use is derived from cumulative `total_token_usage` deltas across all valid scoped token events in the turn, so multi-call turns are not reduced to the final model call. The usage row's `in` value displays uncached input when cached input is reported; context-window usage still uses raw input tokens from the final valid event. If app-server emits a final zero/window sentinel token event after valid usage, Mobile Web ignores that sentinel and keeps the latest valid scoped token event. If rollout or workspace context sizes cross continuation thresholds, the Usage block may show the same `压缩续接` action used by the top warning.
 
@@ -252,19 +280,20 @@ Workspace-level token accounting is a separate persistent ledger. On `turn/compl
 
 The sidebar version pill is the entry point for update checks. It opens an Updates panel rather than immediately applying an update. The current-checkout section uses the existing `/api/app-update/status` and `/api/app-update/apply` path, which only fast-forwards the configured `CODEX_MOBILE_UPDATE_REMOTE` / `CODEX_MOBILE_UPDATE_BRANCH` when the checkout is clean, on the expected branch, and not ahead or diverged. The Public release section calls `/api/public-release/status` to read the latest commit from the configured public repository. It is informational for private checkouts; a public-installed checkout can use the same current-checkout fast-forward path when its update remote already points at the public repository.
 
-The sidebar `Restart` action is separate from self-update. Before calling `/api/restart/shared-chain`, the browser opens an in-app confirmation dialog, reads a bounded recent `/api/threads?limit=200&archived=false` list, and lists running sessions that may be interrupted. This is advisory only: the user can still proceed, and the actual restart scope remains enforced by `adapters/shared-chain-restart-service.js` plus the platform restart scripts.
+The sidebar `Restart` action is separate from self-update. Before calling `/api/restart/shared-chain`, the browser opens an in-app confirmation dialog, reads a bounded recent `/api/threads?limit=200&archived=false` list, and lists running sessions that may be interrupted. This is advisory only: the user can still proceed, and the actual restart scope remains enforced by `adapters/shared-chain-restart-service.js` plus the platform restart scripts. On macOS, LaunchAgent-managed listeners are restarted through `launchctl kickstart -k` against the existing GUI service label after same-prefix submitted jobs are cleaned. System LaunchDaemon deployments are not restarted with user-level `launchctl kickstart system/...`; the helper kills only the current listener and relies on LaunchDaemon KeepAlive to start the replacement. The fallback non-service path uses a one-shot detached `nohup` server process and must not create persistent `launchctl submit` jobs.
 
 Thread detail responses may also include `thread.threadTaskCards`. These are
 cross-thread collaboration cards that stay outside normal `thread.turns[*].items`
 until the target thread explicitly approves them. The browser renders them in a
 separate stack after the visible turn list and detached approvals, so they stay
 near the active bottom surface without polluting message flow.
-The composer reserves the exact `#自由协作` prefix as the cross-thread task-card
-command path. Ordinary `#...` text remains a normal message. `#自由协作` commands
-do not use a separate parse endpoint. Instead, `public/app.js` wraps the
-original command in a bounded request envelope that includes the visible
-target-thread list, sends it through the normal current-thread message path,
-and expects the model to return exactly one
+The composer reserves leading non-empty `#` commands as the cross-thread
+task-card command path. Plain `# ...` defaults to a manual one-off card request;
+the legacy `#自由协作` prefix remains accepted and defaults to autonomous
+collaboration. Task-card commands do not use a separate parse endpoint. Instead,
+`public/app.js` wraps the original command in a bounded request envelope that
+includes the visible target-thread list, sends it through the normal
+current-thread message path, and expects the model to return exactly one
 `<codex-mobile-thread-task-card-draft>...</codex-mobile-thread-task-card-draft>`
 JSON block. The preferred draft shape uses `targetThreadIds: [...]`; the parser
 also accepts the legacy single `targetThreadId` field. The browser suppresses
@@ -281,19 +310,21 @@ assistant/plan items for the same structured draft XML, resolves source/target
 workspace metadata from local Codex state, truncates overlong draft bodies to
 the 8,000-character card limit, and calls the same idempotent `createMany()`
 path. Thread detail reads also run materialization before attaching
-`thread.threadTaskCards`, including large-rollout `thread/turns/list` reads, so
+`thread.threadTaskCards`, including fallback `thread/turns/list` reads, so
 automatic collaboration does not depend on which browser client is open.
 When the browser later resolves the queued draft key for automatic creation, it
 must keep scanning past ordinary assistant or plan messages until it finds the
 matching draft block. Long source threads often contain many earlier
 non-draft messages, and those must not prevent the later draft from reaching
 the task-card API.
-The `#自由协作` draft path defaults `workflowMode` to `autonomous` unless the
-command explicitly asks for a one-off manual card. The first target-side
-approval activates a workflow grant scoped to the workflow id and the same two
-participating thread ids; ordinary cards remain manual. Completion auto-return
-is part of the default autonomous contract: for an approved autonomous card, the
-server observes completion of the injected target turn and creates one
+Plain `#` draft commands default `workflowMode` to `manual` unless the command
+explicitly asks for autonomous/free collaboration. The legacy `#自由协作` draft
+path defaults `workflowMode` to `autonomous` unless the command explicitly asks
+for a one-off manual card. The first target-side approval activates a workflow
+grant scoped to the workflow id and the same two participating thread ids;
+ordinary cards remain manual. Completion auto-return is part of the default
+autonomous contract: for an approved autonomous card, the server observes
+completion of the injected target turn and creates one
 reverse-direction auto-return card with the final receipt. That return card
 reuses the same workflow id and auto-injects back into the source thread through
 the active grant.
@@ -303,7 +334,7 @@ The browser owns conversation scroll controls. The return-to-bottom button appea
 
 The upward floating button for the current live or recently completed turn is a summary/receipt jump, not a start-of-answer jump. After a real upward user scroll activates the anchor, clicking the button should scroll to the last `agentMessage` or `plan` item in that turn. If no such final receipt exists, it falls back to the last non-user, non-live-operation item, then to the turn container. If the user has already scrolled upward while the turn is live, `turn/completed` must preserve that activated anchor so the final receipt does not make the button disappear. Visibility is based on the target item's start being above the viewport, not on the whole target item being above the viewport, because final summaries can be tall.
 
-Live and final receipt rendering must respect reading position. Once recent manual scroll intent moves the conversation away from the bottom, Mobile Web creates a current-turn auto-scroll hold even if a programmatic bottom-scroll window is active. While that hold is active, render-time stick-to-bottom, submitted-message follow, and viewport follow should not scroll down. The hold clears when the conversation returns to bottom or the user explicitly taps the down-arrow button.
+Live and final receipt rendering must respect reading position. Once recent manual scroll intent moves the conversation away from the bottom, Mobile Web creates a current-turn auto-scroll hold even if a programmatic bottom-scroll window is active. While that hold is active, render-time stick-to-bottom, submitted-message follow, and viewport follow should not scroll down. The hold clears when the conversation returns to bottom or the user explicitly taps the down-arrow button. The latest live `agentMessage` is deferred during streaming and rendered once on `turn/completed`; if the final receipt is long, the completion render scrolls to the start of that receipt instead of the bottom so the user can read downward or tap the down-arrow to skip it.
 
 ### Message Submission
 
@@ -347,7 +378,7 @@ autonomous card. The auto-return idempotency key is based on the original card
 id plus completed turn id, so replayed completion notifications do not create
 duplicate return turns.
 Source-side draft creation is also intentionally lightweight: once a valid
-`#自由协作` draft creates pending cards, the browser does not block on re-reading
+Task-card command drafts create pending cards, the browser does not block on re-reading
 the source thread before settling local state. It updates local draft state and
 refreshes thread summaries in the background, and it does not render an interim
 source-side `Sending` draft card during automatic creation. Single-target drafts
@@ -361,7 +392,7 @@ rather than above historical conversation content. Only `pending` cards whose
 cards remain store/audit state and badge/count state only. Once a card reaches
 `approved`, `deleted`, `revoked`, or `replied`, the browser stops rendering that
 card and the injected turn or later reply becomes the user-visible surface.
-Source-side `#自由协作` draft settlement uses a stable key derived from the turn
+Source-side task-card draft settlement uses a stable key derived from the turn
 id and draft content, not the app-server item id. On thread re-entry, the
 browser also checks existing stored cards from the same source turn before
 auto-sending a draft again, so item-id drift after refresh/compaction cannot
@@ -371,13 +402,13 @@ browser can recover it only when exactly one visible target has a sufficiently
 long common id prefix. This covers model-copy errors where the target id prefix
 is right but the suffix is corrupted, while still failing closed for ambiguous
 or invented targets.
-The current `#自由协作` task-card path is still bounded and conservative, but
+The current `#` task-card path is still bounded and conservative, but
 the interpretation now lives in the model turn rather than a browser/server
 regex parser. The browser provides only the visible thread list and required
 response schema. If the model does not return one valid visible
 `targetThreadId`, Mobile Web does not auto-create a pending card.
 
-The browser connects to `/api/events` with the current thread id. `server.js` filters app-server notifications to the current thread where possible, forwards status and thread-level notifications, and drops large diff notifications that the UI does not render. Source-less `account/rateLimits/updated` notifications are recorded server-side but not broadcast to browsers because they can come from another workspace in a shared mux stream. Browser quota display is refreshed from active `/api/public-config` and `/api/status` snapshots; rollout-scanned quota data is kept as a cold-start fallback and does not overwrite live app-server quota.
+The browser connects to `/api/events` with the current thread id. `server.js` filters app-server notifications to the current thread where possible, forwards status and thread-level notifications, and drops large diff notifications that the UI does not render. Source-less `account/rateLimits/updated` notifications are recorded server-side but not broadcast to browsers because they can come from another workspace in a shared mux stream. Browser quota display is refreshed from active `/api/public-config` and `/api/status` snapshots; the server reads `account/rateLimits/read` after app-server initialize and then accepts later quota notifications from the same trusted source. Rollout-scanned quota data is kept only as an account-scoped cold-start fallback and does not overwrite live app-server quota. For shared-profile homes, only live quota from this listener's own managed child app-server can be exposed, and it is not persisted as reusable profile quota. When the server explicitly reports no valid quota snapshot, the browser clears its local quota cache instead of keeping a stale previous-account value.
 
 The mux keeps a replay buffer for recent app-server notifications and unresolved server requests. Mobile Web declares a bounded replay limit to avoid replaying very large historical streams.
 
@@ -456,11 +487,12 @@ Only a user click on `#pageRefreshPrompt` runs the refresh path: save drafts,
 fetch the latest `/api/public-config`, apply quota snapshots, prepare the target
 shell assets, prune old shell caches, and call `window.location.reload()`. This
 keeps version changes explicit and makes the visible button the standalone reload
-trigger. In Hermes embed mode, the iframe may ask the host for refresh only when
-the client shell build changes. Server-only asset build drift is recorded
-silently so returning through the host bottom tabs does not flash through an
-old/default iframe page. Server-only fixes do not need a shell bump, but open
-clients may need a normal detail refresh.
+trigger. In Hermes embed mode, the iframe may ask the host for refresh when the
+client shell build changes, but the request is signature-deduped so an old cached
+iframe cannot repeatedly force host reloads for the same build mismatch.
+Server-only asset build drift is recorded silently so returning through the host
+bottom tabs does not flash through an old/default iframe page. Server-only fixes
+do not need a shell bump, but open clients may need a normal detail refresh.
 
 ### Public PR Prompt
 
@@ -470,6 +502,11 @@ The public PR check is prompt-only. `server.js` checks the configured public Git
 
 - Shared-stream mode must not silently fall back to a managed app-server child.
 - Mux endpoint drift must be detected before using a stale live socket.
+- Windows background helpers started by Mobile Web or the Desktop shared bridge
+  must be windowless. Use `-WindowStyle Hidden` for PowerShell/Start-Process
+  helpers and `CREATE_NO_WINDOW` / hidden startup flags for shim-spawned
+  Node/mux/app-server children. The Desktop GUI itself is the only normal
+  visible process launched by the Desktop shared shortcut.
 - Mobile UI should compact live latest-turn operations and avoid rendering full command outputs, full diffs, or reasoning rows. The latest live-turn operation card uses a compact four-line visual budget: one metadata row plus up to three clipped detail lines. Completed turns should not keep operation cards below the final reply; the Usage summary is the final diagnostic frame when available.
 - User-visible mobile input should not disappear on refresh while steering is pending.
 - Old operation cards must not be attached to newer live turns.

@@ -30,6 +30,11 @@ test("upward user scroll can jump back to the current turn final receipt", () =>
   assert.match(appJs, /querySelectorAll\("\.item\.agentMessage, \.item\.plan"\)/);
   assert.match(appJs, /return finalReceipts\[finalReceipts\.length - 1\];/);
   assert.match(appJs, /return fallbackItems\[fallbackItems\.length - 1\];/);
+  assert.match(appJs, /function scrollConversationToTurnReceiptStart\(turnId\)/);
+  assert.match(appJs, /const target = turnFinalReceiptNode\(\{ turnId \}\);/);
+  assert.match(appJs, /scrollNodeIntoConversationView\(target\);/);
+  assert.match(appJs, /scrollToTurnReceiptStart/);
+  assert.match(appJs, /const explicitNoStickToBottom = options\.stickToBottom === false \|\| Boolean\(options\.scrollToTurnReceiptStart\);/);
   assert.doesNotMatch(appJs, /return replies\[0\];/);
   assert.match(appJs, /function isNodeStartAboveConversationViewport\(node\)/);
   assert.match(appJs, /return rect\.top < viewport\.top \+ 24;/);

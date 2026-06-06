@@ -59,7 +59,7 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(appJs, /function preparePageShellAssets\(config, options = \{\}\)/);
   assert.match(appJs, /rememberRateLimitsFromConfig\(config\);[\s\S]*await preparePageShellAssets\(config, \{ populateCache: true \}\)/);
   assert.doesNotMatch(functionBody(appJs, "checkPageRefreshAvailability"), /preparePageShellAssets\(config, \{ populateCache: true \}\)/);
-  assert.match(functionBody(appJs, "checkPageRefreshAvailability"), /if \(isHermesEmbedMode\(\)\) \{[\s\S]*if \(clientChanged\) \{[\s\S]*requestHermesPluginRefresh\("server_build_changed", \{ force: true \}\);/);
+  assert.match(functionBody(appJs, "checkPageRefreshAvailability"), /if \(isHermesEmbedMode\(\)\) \{[\s\S]*if \(clientChanged\) \{[\s\S]*requestHermesPluginRefresh\("server_build_changed"\);/);
   assert.match(functionBody(appJs, "checkPageRefreshAvailability"), /if \(!clientChanged && assetsChanged\) \{[\s\S]*state\.serverAssetBuildId = nextAssetBuildId;/);
   assert.match(functionBody(appJs, "renderPageRefreshPrompt"), /New version available\. Tap to refresh\./);
   assert.match(functionBody(appJs, "renderPageRefreshPrompt"), /Manual refresh only/);

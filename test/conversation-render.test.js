@@ -137,6 +137,17 @@ test("context compaction notices require explicit state and do not infer pending
 test("long agent messages keep a stable render path when a turn completes", () => {
   assert.match(functionBody("renderItemBody"), /if \(item\.type === "agentMessage"\) \{[\s\S]*renderThreadTaskCardDraftMessage\(item\.text \|\| "", item, turn\) \|\| renderMarkdownWithAttachmentSummary\(item\.text \|\| ""\);/);
   assert.doesNotMatch(functionBody("renderItemBody"), /isLiveTurn\(turn\) \? escapeHtml/);
+  assert.match(appJs, /const LONG_RECEIPT_SCROLL_CHARS = 1200;/);
+  assert.doesNotMatch(appJs, /function shouldDeferLiveAgentMessage/);
+  assert.doesNotMatch(functionBody("visibleItemsForTurn"), /shouldDeferLiveAgentMessage/);
+  assert.match(appJs, /function shouldRenderAfterAppend\(turn, itemType, field, previousValue, nextValue, options = \{\}\)/);
+  assert.match(functionBody("shouldRenderAfterAppend"), /options\.render !== "defer-long-agent"/);
+  assert.match(functionBody("shouldRenderAfterAppend"), /previousLength < LONG_RECEIPT_SCROLL_CHARS && nextLength <= LONG_RECEIPT_SCROLL_CHARS/);
+  assert.match(functionBody("appendToItem"), /shouldRenderAfterAppend\(turn, itemType, field, previousValue, nextValue, options\)/);
+  assert.match(functionBody("applyNotification"), /appendToItem\(params\.turnId, params\.itemId, "agentMessage", "text", params\.delta \|\| "", 0, \{ render: "defer-long-agent" \}\)/);
+  assert.match(appJs, /function shouldScrollToLongReceiptStart\(turn\)/);
+  assert.match(functionBody("shouldScrollToLongReceiptStart"), /finalReceiptTextForTurn\(turn\)\.length >= LONG_RECEIPT_SCROLL_CHARS/);
+  assert.match(functionBody("applyNotification"), /renderCurrentThread\(shouldScrollToLongReceiptStart\(turn\) \? \{ scrollToTurnReceiptStart: params\.turn\.id \} : \{\}\)/);
   assert.match(appJs, /function mergeVisibleTextItemPreservingRenderIdentity\(/);
   assert.match(functionBody("mergeVisibleTextItemPreservingRenderIdentity"), /merged\.id = existingItem\.id/);
   assert.match(functionBody("mergeItemsPreservingLocalVisible"), /mergeVisibleTextItemPreservingRenderIdentity\(existingItem, incomingTextMatch\)/);
