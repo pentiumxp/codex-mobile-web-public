@@ -2518,7 +2518,7 @@ function showComposerFastHint(enabled) {
   if (state.composerFastHintTimer) window.clearTimeout(state.composerFastHintTimer);
   el.classList.remove("error");
   el.textContent = enabled ? "Fast on" : "Fast off";
-  el.title = enabled ? "Codex Fast service tier enabled" : "Codex Fast service tier disabled";
+  el.title = enabled ? "Fast mode enabled for the next turn" : "Fast mode disabled";
   state.composerFastHintTimer = window.setTimeout(() => {
     state.composerFastHintTimer = null;
     restoreConnectionState();
@@ -10542,8 +10542,8 @@ function renderComposerSettings() {
   const fastEnabled = codexFastCommandEnabled();
   commandControl.classList.toggle("is-fast", fastEnabled);
   commandControl.setAttribute("aria-pressed", fastEnabled ? "true" : "false");
-  commandControl.title = fastEnabled ? "Fast on" : "Fast off";
-  commandControl.setAttribute("aria-label", fastEnabled ? "Fast on" : "Fast off");
+  commandControl.title = fastEnabled ? "Fast mode on" : "Fast mode off";
+  commandControl.setAttribute("aria-label", fastEnabled ? "Fast mode on" : "Fast mode off");
   commandControl.disabled = state.composerBusy;
   const controls = [
     [modelControl, selectedModel ? labelForModel(selectedModel) : "--", state.newThreadDraft || state.composerModel ? "下一轮使用" : "当前记录"],

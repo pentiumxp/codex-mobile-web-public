@@ -232,8 +232,10 @@
         </label>
         <div class="composer-body">
           <div class="composer-controls">
-            <button id="composerCommandControl" class="composer-fast-toggle" type="button" aria-pressed="false" title="Fast off" aria-label="Fast off">
-              <span class="composer-fast-dot" aria-hidden="true"></span>
+            <button id="composerCommandControl" class="composer-fast-toggle" type="button" aria-pressed="false" title="Fast mode off" aria-label="Fast mode off">
+              <svg class="composer-fast-icon" aria-hidden="true" viewBox="0 0 16 16" focusable="false">
+                <path d="M9.1 1.25 3.75 8.2h3.1l-.95 6.55 5.35-6.95H8.15z"></path>
+              </svg>
             </button>
             <button id="composerModelControl" class="composer-control-card" type="button" aria-haspopup="listbox" aria-expanded="false">
               <span class="composer-chip-label">模型</span>
@@ -353,7 +355,6 @@
       </div>
     </form>
   </div>
-
   <div id="restartConfirmDialog" class="restart-confirm-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="restartConfirmTitle">
     <div class="restart-confirm-panel">
       <div class="restart-confirm-head">
