@@ -212,7 +212,11 @@ when app-server and `state_5.sqlite` are readable, sort the merged list before
 applying the requested limit, and use `session_index.jsonl` to replace empty or
 thread-id-like titles. It also replaces continuation bootstrap messages such as
 `# Continuation Bootstrap Index` when app-server accidentally exposes them as
-the thread title. Archived ids from `archived_sessions`, profile
+the thread title. Rollout fallback also carries `session_meta` agent metadata
+into the list filter, and final list merge drops completed/non-live Mobile
+fallback summaries that still have only a UUID after session-index hydration.
+Those UUID-only rows are treated as orphan child-agent or unusable recovered
+sessions rather than user-openable main threads. Archived ids from `archived_sessions`, profile
 `archived_sessions`, `%USERPROFILE%\.codex-mobile-web\archived-thread-ids.json`,
 DB archive flags, and backup rollout paths remain hidden. Existing-thread
 message sends also trigger a silent sidebar list refresh after the current-thread refresh. If this
@@ -414,7 +418,10 @@ node --test test\thread-visibility.test.js test\mobile-viewport.test.js
 
 If an archived projectless session returns to the thread list after app-server
 omits it from the primary `thread/list`, inspect `archivedSessionThreadIds()` and
-`readSessionIndexFallback()` in `server.js`. Current builds should merge ids from
+`readSessionIndexFallback()` in `server.js`. If a completed UUID-only fallback
+row appears and detail cannot open it, inspect `readRolloutSessionFallbackThreadFromFile()`,
+`mergeThreadSummaryList()`, and `shouldHideThreadListSummary()` before mutating
+Codex state. Current builds should merge ids from
 the active/default/profile `archived_sessions` directories and
 `%USERPROFILE%\.codex-mobile-web\archived-thread-ids.json`, then skip matching
 ids after verifying `visibleProjectlessThreadIds()`. The Mobile-local index

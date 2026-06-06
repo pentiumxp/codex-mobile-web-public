@@ -1458,7 +1458,7 @@ function anyThreadMatchesVisibleWorkspace(threads, visibility = null) {
   const view = visibility || visibilityFromGlobalState();
   if (!view.workspaceKeys || view.workspaceKeys.size <= 0) return false;
   for (const thread of Array.isArray(threads) ? threads : []) {
-    if (!thread || typeof thread !== "object" || threadHasArchiveSignal(thread) || isSubagentThreadSummary(thread)) continue;
+    if (!thread || typeof thread !== "object" || shouldHideThreadListSummary(thread)) continue;
     const cwd = String(thread.cwd || "").trim();
     if (cwd && threadWorkspaceVisible(cwd, view)) return true;
     if (!cwd && view.projectlessThreadIds && view.projectlessThreadIds.has(thread.id)) return true;
@@ -1762,6 +1762,29 @@ function isSubagentThreadSummary(thread) {
   ));
 }
 
+function threadSummaryHasDisplayText(thread) {
+  if (!thread || typeof thread !== "object") return false;
+  const id = String(thread.id || "").trim();
+  for (const value of [thread.name, thread.title, thread.preview, thread.first_user_message]) {
+    const text = String(value || "").trim();
+    if (text && !isRecoverableThreadListTitle(text, id)) return true;
+  }
+  return false;
+}
+
+function isResidualFallbackThreadSummary(thread) {
+  if (!thread || typeof thread !== "object" || !thread.mobileFallback) return false;
+  const id = normalizeThreadId(thread.id);
+  if (!id || threadSummaryHasDisplayText(thread)) return false;
+  return !isThreadListLiveStatus(thread.status);
+}
+
+function shouldHideThreadListSummary(thread) {
+  if (threadHasArchiveSignal(thread)) return true;
+  if (isSubagentThreadSummary(thread)) return true;
+  return isResidualFallbackThreadSummary(thread);
+}
+
 function archivedSessionDirectories() {
   const dirs = new Set([ARCHIVED_SESSIONS_DIR]);
   dirs.add(path.join(DEFAULT_CODEX_HOME, "archived_sessions"));
@@ -1843,8 +1866,7 @@ function isThreadIdArchivedLocally(threadId) {
 function isHiddenThread(thread, visibility = null) {
   if (!thread || typeof thread !== "object") return true;
   const view = visibility || visibilityFromGlobalState();
-  if (threadHasArchiveSignal(thread)) return true;
-  if (isSubagentThreadSummary(thread)) return true;
+  if (shouldHideThreadListSummary(thread)) return true;
   if (view.workspaceKeys && view.workspaceKeys.size > 0) {
     const cwd = String(thread.cwd || "").trim();
     if (cwd) return !threadWorkspaceVisible(cwd, view);
@@ -1909,9 +1931,17 @@ function mergeThreadSummaryList(threads) {
     if (!thread || !thread.id) continue;
     const id = String(thread.id);
     if (archivedIds.has(id)) continue;
-    byId.set(id, byId.has(id) ? mergeThreadDisplaySummary(byId.get(id), thread) : thread);
+    const merged = byId.has(id) ? mergeThreadDisplaySummary(byId.get(id), thread) : thread;
+    if (threadHasArchiveSignal(merged) || isSubagentThreadSummary(merged)) {
+      byId.delete(id);
+      continue;
+    }
+    byId.set(id, merged);
   }
-  return sortThreadListSummaries(hydrateThreadListTitlesFromSessionIndex([...byId.values()]));
+  return sortThreadListSummaries(
+    hydrateThreadListTitlesFromSessionIndex([...byId.values()])
+      .filter((thread) => !shouldHideThreadListSummary(thread)),
+  );
 }
 
 function mergeThreadListFallback(result, fallbackThreads = [], limit = 80) {
@@ -1949,14 +1979,14 @@ function filterVisibleThreads(result, globalState = readGlobalState()) {
     const merged = mergeThreadStateFromStateDb(out.data);
     const shouldFilterByWorkspace = anyThreadMatchesVisibleWorkspace(merged, visibility);
     out.data = merged
-      .filter((thread) => !(shouldFilterByWorkspace ? isHiddenThread(thread, visibility) : (threadHasArchiveSignal(thread) || isSubagentThreadSummary(thread))))
+      .filter((thread) => !(shouldFilterByWorkspace ? isHiddenThread(thread, visibility) : shouldHideThreadListSummary(thread)))
       .map(annotateThreadRolloutStats);
   }
   if (Array.isArray(out.threads)) {
     const merged = mergeThreadStateFromStateDb(out.threads);
     const shouldFilterByWorkspace = anyThreadMatchesVisibleWorkspace(merged, visibility);
     out.threads = merged
-      .filter((thread) => !(shouldFilterByWorkspace ? isHiddenThread(thread, visibility) : (threadHasArchiveSignal(thread) || isSubagentThreadSummary(thread))))
+      .filter((thread) => !(shouldFilterByWorkspace ? isHiddenThread(thread, visibility) : shouldHideThreadListSummary(thread)))
       .map(annotateThreadRolloutStats);
   }
   return out;
@@ -6859,6 +6889,12 @@ function mergeThreadDisplaySummary(base, display) {
   if (shouldReplaceThreadDisplayStatus(base.status, display.status, baseUpdatedAtMs, displayUpdatedAtMs)) {
     next.status = display.status;
   }
+  for (const key of ["archived", "archivedAt", "archived_at", "deleted", "deletedAt", "deleted_at", "agentNickname", "agent_nickname", "agentRole", "agent_role"]) {
+    const value = display[key];
+    if (value !== null && value !== undefined && value !== "") next[key] = value;
+  }
+  if (display.isSpawnedChildThread || display.is_spawned_child) next.isSpawnedChildThread = true;
+  if (display.mobileFallback && !next.mobileFallback) next.mobileFallback = true;
   return annotateThreadRolloutStats(next);
 }
 
@@ -7243,7 +7279,13 @@ function filterFallbackThreads(threads, filters = {}) {
   const search = String(filters.searchTerm || "").trim().toLowerCase();
   const shouldFilterByWorkspace = anyThreadMatchesVisibleWorkspace(threads, visibility);
   return threads
-    .filter((thread) => !(shouldFilterByWorkspace ? isHiddenThread(thread, visibility) : (threadHasArchiveSignal(thread) || isSubagentThreadSummary(thread))))
+    .filter((thread) => {
+      if (threadHasArchiveSignal(thread) || isSubagentThreadSummary(thread)) return false;
+      if (!shouldFilterByWorkspace) return true;
+      const cwd = String(thread && thread.cwd || "").trim();
+      if (cwd) return threadWorkspaceVisible(cwd, visibility);
+      return Boolean(visibility.projectlessThreadIds && visibility.projectlessThreadIds.has(thread && thread.id));
+    })
     .filter((thread) => threadMatchesWorkspaceCwd(thread && thread.cwd, cwdFilter))
     .filter((thread) => {
       if (!search) return true;
@@ -7438,6 +7480,8 @@ function readRolloutSessionFallbackThreadFromFile(file, indexEntry = {}) {
   let cwd = "";
   let timestampMs = 0;
   let model = "";
+  let agentNickname = "";
+  let agentRole = "";
   const lines = readRolloutHead(rolloutPath).split(/\r?\n/).filter(Boolean);
   for (const line of lines) {
     let entry;
@@ -7451,7 +7495,13 @@ function readRolloutSessionFallbackThreadFromFile(file, indexEntry = {}) {
     timestampMs = Math.max(timestampMs, rolloutEntryTimestampMs(entry));
     if (!model && payload.model) model = String(payload.model || "");
     if (!model && payload.model_provider) model = String(payload.model_provider || "");
-    if (cwd && timestampMs) break;
+    if (!agentNickname && (payload.agent_nickname || payload.agentNickname)) {
+      agentNickname = String(payload.agent_nickname || payload.agentNickname || "");
+    }
+    if (!agentRole && (payload.agent_role || payload.agentRole)) {
+      agentRole = String(payload.agent_role || payload.agentRole || "");
+    }
+    if (cwd && timestampMs && (agentNickname || agentRole || entry.type !== "session_meta")) break;
   }
 
   const updatedMs = Math.max(
@@ -7468,6 +7518,8 @@ function readRolloutSessionFallbackThreadFromFile(file, indexEntry = {}) {
     archived_at: null,
     updatedAt: Math.floor(updatedMs / 1000),
     model,
+    agent_nickname: agentNickname,
+    agent_role: agentRole,
     status: inferRolloutFallbackStatus(rolloutPath, stat) || undefined,
   });
 }

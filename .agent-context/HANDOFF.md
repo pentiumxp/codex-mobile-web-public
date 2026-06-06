@@ -21,6 +21,46 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-07 Thread List Residue Filter
+
+- User reported completed subagent/residue threads staying in the Mobile thread
+  list as UUID-only rows that could not be opened, including old pre-April-30
+  entries.
+- Root cause: rollout-session fallback rows recovered cwd/time/status but did
+  not carry `session_meta.payload.agent_nickname` / `agent_role`, and final
+  list merging only skipped archived ids. Completed fallback summaries with no
+  real display text could therefore re-enter the list as UUID-only rows even
+  though detail-side visibility rejected them.
+- Implemented:
+  - `server.js` rollout fallback now carries session-meta agent metadata.
+  - thread-list summary merging preserves archive/agent classification fields
+    from duplicate fallback rows.
+  - final merged/hydrated thread list re-applies archive/subagent filtering and
+    removes non-live Mobile fallback summaries that still have only a UUID
+    display after session-index hydration.
+  - docs updated in `docs/ARCHITECTURE.md`, `docs/TROUBLESHOOTING.md`, and
+    `docs/MODULES.md`.
+- Validation:
+  - `node --check server.js` passed.
+  - Focused tests passed:
+    `node --test test\thread-visibility.test.js test\thread-archive.test.js
+    test\mobile-archive-index-service.test.js test\mobile-viewport.test.js`.
+  - `npm.cmd run check` passed.
+  - `npm.cmd test` passed with 352 tests.
+  - `git diff --check` passed with only CRLF working-tree warnings.
+  - UTF-8 BOM checks for edited files showed no BOM.
+- Runtime:
+  - Restarted Windows listener by stopping PID `115332` and starting scheduled
+    task `Codex Mobile Web`.
+  - Current Windows listener PID is `86748`.
+  - `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v201` and
+    `shellCacheName=codex-mobile-shell-v201` because this was server-only.
+  - Authenticated `/api/threads?limit=80&archived=false` returned
+    `bareNonLiveFallbackResidues=0` and `agentMarkedRows=0`.
+  - Authenticated `/api/threads?limit=200&archived=false` returned 18 visible
+    rows, `bareNonLiveFallbackResidues=0`, and `uuidTitleOrPreviewRows=0`.
+
 ## 2026-06-06 Longer `/g` Goal Objective Limit v201
 
 - User reported that pasting a longer objective into the `/g` goal dialog was
