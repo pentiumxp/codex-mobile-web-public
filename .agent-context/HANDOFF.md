@@ -60,6 +60,24 @@ The previous full handoff was archived and should be opened only when old proven
     `bareNonLiveFallbackResidues=0` and `agentMarkedRows=0`.
   - Authenticated `/api/threads?limit=200&archived=false` returned 18 visible
     rows, `bareNonLiveFallbackResidues=0`, and `uuidTitleOrPreviewRows=0`.
+- Public release:
+  - Private commit `1b0f4cf` (`修复线程列表 subagent 残留过滤 v202`) was
+    created before public sync.
+  - `C:\Users\xuxin\Documents\codex-mobile-web-public` was synced from the
+    tracked public-safe product files only. `.agent-context`, runtime state,
+    uploads, local keys, tokens, logs, and machine-specific diagnostics were not
+    copied.
+  - Open PR check for `pentiumxp/codex-mobile-web-public` returned no open PRs.
+  - Public README now includes Chinese v202 and v201 release notes.
+  - Public validation before push:
+    `npm.cmd test` passed with 352 tests, `npm.cmd run check` passed,
+    `npm.cmd run check:macos` passed, staged `git diff --check` passed, UTF-8
+    BOM checks showed no BOM, and staged privacy scans found no sensitive file
+    paths, raw keys, local absolute paths, private host names, runtime state, or
+    upload content.
+  - Public commit `3564f02` (`发布目标长度与线程残留过滤修复 v202`) was pushed to
+    `origin/main` on 2026-06-07; remote `refs/heads/main` resolved to
+    `3564f027a1d249204d3f47bd492e44f78f310968`.
 
 ## 2026-06-06 Longer `/g` Goal Objective Limit v201
 
