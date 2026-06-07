@@ -49,10 +49,29 @@ The previous full handoff was archived and should be opened only when old proven
   - Full `npm test` passed with 358 tests.
   - `npm run check:macos` passed.
   - `git diff --check` passed.
+  - After public publish, the 18 changed public product files were compared
+    back to private with SHA256 and matched. Private `npm run check`,
+    `npm test`, and `npm run check:macos` were rerun and passed.
+- Public:
+  - `codex-mobile-web-public` was synced from private product files only;
+    `.agent-context`, runtime state, uploads, access keys, local secrets, and
+    machine-specific diagnostics were not copied.
+  - Open public PR check returned no open PRs before publish.
+  - Public validation passed: `npm run check`, `npm test` with 358 tests,
+    `npm run check:macos`, `git diff --check`, staged privacy scans, and BOM
+    scan.
+  - Pushed public `main` commit `0f5b1de`:
+    `发布前台恢复、插件导航与线程详情裁剪修复 v208`.
+- Runtime:
+  - Local Windows 8787 listener was restarted after private commit `61ba4b6`.
+  - Local API smoke with the local access key file, without printing content or
+    key material, opened three visible details. Each returned a 10-turn compact
+    window and only one or two state-relevant turns with operation/reasoning
+    items, matching the v208 retention rule.
 - Status:
-  - Private implementation is ready to commit.
-  - Public sync/push still needs to be completed after the private commit and
-    privacy scan.
+  - Private product code is committed in `61ba4b6`.
+  - Public is pushed at `0f5b1de`.
+  - Mac production was not deployed in this update.
 
 ## 2026-06-07 Thread Detail Intermediate Items Regression v207
 
