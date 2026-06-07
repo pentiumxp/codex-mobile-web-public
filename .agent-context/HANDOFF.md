@@ -21,6 +21,52 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-07 Foreground Resume And Thread Detail Read v206
+
+- User reported that returning from another app repeatedly reloads the open
+  thread, and that thread detail still feels slow even after Mobile Web was
+  changed to show only the latest 10 turns.
+- Root cause:
+  - `resumeMobileSession()` refreshed the current thread detail on every mobile
+    foreground/focus recovery when a current thread was loaded.
+  - `/api/threads/:id` still preferred full app-server
+    `thread/read includeTurns:true`, then compacted the response to
+    `CODEX_MOBILE_THREAD_TURNS=10`; the 10-turn window limited browser payload,
+    but did not avoid the full app-server read cost.
+- Implemented:
+  - Bumped shell to `0.1.11|codex-mobile-shell-v206` /
+    `codex-mobile-shell-v206`.
+  - Added `currentThreadNeedsForegroundRefresh()` and
+    `currentThreadListRowChanged()` in `public/app.js`.
+  - Foreground recovery now keeps a stable loaded current thread rendered and
+    skips detail refresh unless the thread is running/loading/error or the
+    refreshed list row shows a newer timestamp/status for that current thread.
+  - `/api/threads/:id` now prefers bounded `thread/turns/list` with
+    `CODEX_MOBILE_THREAD_TURNS` as the normal detail window. Full
+    `thread/read` remains only as `thread-read-fallback` when turns-list fails.
+  - Updated README v206 note, architecture docs, troubleshooting guidance, and
+    focused static tests.
+- Validation:
+  - `node --check server.js public/app.js public/sw.js` passed.
+  - Focused tests passed:
+    `node --test test/mobile-viewport.test.js test/mobile-polling.test.js
+    test/thread-visibility.test.js test/thread-task-card-route.test.js
+    test/thread-goal-service.test.js`.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - Full `npm test` passed with 356 tests.
+  - `git diff --check` passed.
+  - UTF-8 BOM check passed for edited source/docs/tests.
+- Runtime:
+  - Local Windows 8787 listener was restarted after stopping the stale detached
+    Node process that still served v204.
+  - `http://127.0.0.1:8787/api/public-config` now reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v206`,
+    `shellCacheName=codex-mobile-shell-v206`, `platform=win32`.
+- Status:
+  - Changes are local and uncommitted at this point.
+  - Mac production has not been deployed with v206 in this update.
+
 ## 2026-06-07 Hermes Plugin Parent-Origin Back Navigation v205
 
 - User reported that Mac-hosted Hermes plugin no longer reconnects frequently,

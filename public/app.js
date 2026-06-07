@@ -237,7 +237,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v205";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v206";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -2988,6 +2988,24 @@ function shouldPollCurrentThread() {
   if (!turn) return false;
   if (isTurnComplete(turn)) return false;
   return Boolean(state.activeTurnId) || isRunningStatus(turn.status) || isIncompleteInterruptedTurn(turn);
+}
+
+function currentThreadListRowChanged() {
+  if (!state.currentThreadId || !state.currentThread) return false;
+  const row = threadById(state.currentThreadId);
+  if (!row) return false;
+  const rowUpdatedAt = threadUpdatedAtMs(row);
+  const detailUpdatedAt = threadUpdatedAtMs(state.currentThread);
+  if (rowUpdatedAt > 0 && rowUpdatedAt > detailUpdatedAt + 1000) return true;
+  const rowStatus = statusText(row.status);
+  const detailStatus = statusText(state.currentThread.status);
+  return Boolean(rowStatus && detailStatus && rowStatus !== detailStatus);
+}
+
+function currentThreadNeedsForegroundRefresh() {
+  if (!state.currentThreadId || !state.currentThread) return false;
+  if (state.currentThread.mobileLoading || state.currentThread.mobileLoadError) return true;
+  return shouldPollCurrentThread() || currentThreadListRowChanged();
 }
 
 function isLiveTurn(turn) {
@@ -9454,8 +9472,17 @@ async function resumeMobileSession(reason = "resume") {
     rememberRateLimitsFromConfig(status);
     if (status.codexProfiles) rememberCodexProfiles(status.codexProfiles);
     await loadThreads({ silent: Boolean(state.threads.length) });
-    if (state.currentThreadId && state.currentThread && !state.currentThread.mobileLoading) {
-      scheduleCurrentThreadRefresh(250);
+    if (state.currentThreadId && state.currentThread && !state.currentThread.mobileLoading && !state.currentThread.mobileLoadError) {
+      if (currentThreadNeedsForegroundRefresh()) {
+        scheduleCurrentThreadRefresh(250);
+      } else {
+        postClientEvent("mobile_resume_thread_refresh_skipped", {
+          reason,
+          currentThreadId: state.currentThreadId || "",
+          status: statusText(state.currentThread && state.currentThread.status),
+          activeTurnId: state.activeTurnId || "",
+        });
+      }
     } else if (state.currentThreadId) {
       await refreshCurrentThread();
     } else {

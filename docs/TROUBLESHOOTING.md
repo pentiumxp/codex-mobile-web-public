@@ -299,16 +299,16 @@ Symptom:
 
 Cause to check:
 
-- Thread detail should first use app-server `thread/read` even when the rollout
-  file is over 32MB. If detail reports `mobileReadMode=turns-list`, treat that
-  as a fallback after `thread/read` failed or timed out, not as the normal
-  large-rollout path.
-- A `thread/turns/list` fallback should include `mobileOlderTurnsCursor` when
+- Thread detail should normally report `mobileReadMode=turns-list`, because the
+  default path requests only the bounded recent window from app-server. If it
+  reports `mobileReadMode=thread-read-fallback`, `thread/turns/list` failed and
+  the server had to pay for a full compatibility read before compacting.
+- A `thread/turns/list` response should include `mobileOlderTurnsCursor` when
   app-server has older turns. The phone can load another bounded page through
   `/api/threads/<id>/turns?sortDirection=desc&cursor=<json>`. If this returns
   `invalid cursor`, the route is forwarding the cursor as a raw string instead
   of parsing the app-server cursor JSON object.
-- A normal compacted `thread/read` detail should also expose
+- A compacted `thread-read-fallback` detail should also expose
   `mobileOlderTurnsCursor` when more than `CODEX_MOBILE_THREAD_TURNS` turns
   exist. The browser defaults to 10 recent turns and loads 10 older turns when
   the user scrolls to the top of the current detail window.
