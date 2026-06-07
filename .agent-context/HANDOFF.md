@@ -3918,3 +3918,16 @@ The previous full handoff was archived and should be opened only when old proven
       completed turns in the current window had `usageCount=1`.
     - Home AI thread `019e9566...` returned `projection-dynamic`; all completed
       turns in the current window had `usageCount=1`.
+  - Public publishing:
+    - User explicitly requested public push after private commit `50c86fc`.
+    - Public-safe product/docs/tests/README files were synced to
+      `C:\Users\xuxin\Documents\codex-mobile-web-public`; `.agent-context`,
+      runtime state, local keys, uploads, and machine diagnostics were not
+      copied.
+    - Public commit `043576a 发布线程详情投影与 Usage 稳定性修复 v213` was pushed to
+      `pentiumxp/codex-mobile-web-public` `origin/main`.
+    - Public validation passed: `npm.cmd run check`, `npm.cmd run check:macos`,
+      `npm.cmd test` with 365 tests, `git diff --check` with only expected
+      LF/CRLF warnings, BOM checks, and bounded privacy scan. Privacy scan
+      hits were expected documentation/path references or token field names,
+      not raw secrets.
