@@ -212,7 +212,7 @@ test("raw operation fallback can attach an unfinished operation from the same li
   }
 });
 
-test("latest completed turn drops operation cards and ends with usage summary", () => {
+test("latest completed turn keeps all operation cards and ends with usage summary", () => {
   const { dir, rolloutPath } = writeRollout([
     event("2026-05-24T11:00:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-completed" }),
     event("2026-05-24T11:00:10.000Z", "event_msg", {
@@ -235,6 +235,12 @@ test("latest completed turn drops operation cards and ends with usage summary", 
     }),
   ]);
   try {
+    const operations = Array.from({ length: 14 }, (_, index) => ({
+      id: `op-${index}`,
+      type: "commandExecution",
+      command: `echo ${index}`,
+      status: "completed",
+    }));
     const compacted = compactThread({
       id: "thread-7",
       path: rolloutPath,
@@ -243,19 +249,87 @@ test("latest completed turn drops operation cards and ends with usage summary", 
         status: { type: "completed" },
         items: [
           { id: "user-1", type: "userMessage", content: [{ type: "text", text: "run checks" }] },
-          { id: "op-old", type: "commandExecution", command: "npm.cmd test", status: "completed" },
-          { id: "op-new", type: "commandExecution", command: "npm.cmd run check", status: "completed" },
+          ...operations,
           { id: "agent-1", type: "agentMessage", text: "Done." },
         ],
       }],
     });
 
     const items = compacted.turns[0].items;
-    assert.equal(items.some((item) => item.type === "commandExecution"), false);
+    assert.deepEqual(
+      items.filter((item) => item.type === "commandExecution").map((item) => item.command),
+      operations.map((item) => item.command),
+    );
     assert.equal(items[items.length - 1].type, "turnUsageSummary");
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("older compacted turns keep only question and receipt items", () => {
+  const turns = [];
+  for (let index = 0; index < 11; index += 1) {
+    turns.push({
+      id: `turn-${index}`,
+      status: { type: "completed" },
+      items: [
+        { id: `user-${index}`, type: "userMessage", text: `question ${index}` },
+        { id: `op-${index}`, type: "commandExecution", command: `echo ${index}`, status: "completed" },
+        { id: `reason-${index}`, type: "reasoning", text: `reasoning ${index}` },
+        { id: `agent-${index}`, type: "agentMessage", text: `receipt ${index}` },
+      ],
+    });
+  }
+
+  const compacted = compactThread({ id: "thread-old", turns }, { maxTurns: 11 });
+  const olderItems = compacted.turns[0].items;
+  const recentItems = compacted.turns[10].items;
+
+  assert.deepEqual(olderItems.map((item) => item.type), ["userMessage", "agentMessage"]);
+  assert.equal(recentItems.some((item) => item.type === "commandExecution"), true);
+  assert.equal(recentItems.some((item) => item.type === "reasoning"), true);
+});
+
+test("live turn and previous ended turn keep intermediate items while older turns are receipt-only", () => {
+  const turns = [
+    {
+      id: "turn-old",
+      status: { type: "completed" },
+      items: [
+        { id: "user-old", type: "userMessage", text: "old question" },
+        { id: "op-old", type: "commandExecution", command: "echo old", status: "completed" },
+        { id: "reason-old", type: "reasoning", text: "old reasoning" },
+        { id: "agent-old", type: "agentMessage", text: "old receipt" },
+      ],
+    },
+    {
+      id: "turn-previous",
+      status: { type: "completed" },
+      items: [
+        { id: "user-previous", type: "userMessage", text: "previous question" },
+        { id: "op-previous", type: "commandExecution", command: "echo previous", status: "completed" },
+        { id: "reason-previous", type: "reasoning", text: "previous reasoning" },
+        { id: "agent-previous", type: "agentMessage", text: "previous receipt" },
+      ],
+    },
+    {
+      id: "turn-live",
+      status: { type: "running" },
+      items: [
+        { id: "user-live", type: "userMessage", text: "live question" },
+        { id: "op-live", type: "commandExecution", command: "echo live", status: "running" },
+        { id: "reason-live", type: "reasoning", text: "live reasoning" },
+      ],
+    },
+  ];
+
+  const compacted = compactThread({ id: "thread-live-window", turns }, { maxTurns: 3 });
+
+  assert.deepEqual(compacted.turns[0].items.map((item) => item.type), ["userMessage", "agentMessage"]);
+  assert.equal(compacted.turns[1].items.some((item) => item.type === "commandExecution"), true);
+  assert.equal(compacted.turns[1].items.some((item) => item.type === "reasoning"), true);
+  assert.equal(compacted.turns[2].items.some((item) => item.type === "commandExecution"), true);
+  assert.equal(compacted.turns[2].items.some((item) => item.type === "reasoning"), true);
 });
 
 test("raw operation fallback can attach a completed operation from the same live latest turn", () => {

@@ -83,6 +83,21 @@ curl -fsS http://127.0.0.1:8787/api/public-config >/dev/null
 curl -fsS http://<mac-lan-ip>:8787/api/public-config >/dev/null
 ```
 
+For HTTPS reverse-proxy deployments, validate the currently configured public
+entry URL instead of an older host URL unless the deployment config was changed.
+Validate the actual plugin path by checking the active external origin:
+
+```bash
+curl -k -fsS https://new-hermes.example.com/api/public-config >/dev/null
+curl -k -fsS https://new-hermes.example.com/api/hermes-plugins/codex-mobile/manifest?workspaceId=owner >/dev/null
+```
+
+Authenticated SSE probes should receive one `data:` status event and one
+`: keepalive` within about 32 seconds. If the SSE stream fails but ordinary JSON
+routes such as proxied `/api/status` still work, current embed clients fall back
+to bounded polling and retry EventSource with backoff instead of repeatedly
+showing the reconnect/refresh prompt.
+
 The current restart service removes same-prefix submitted jobs before restarting
 a LaunchAgent/LaunchDaemon-managed listener and no longer creates new
 `launchctl submit` jobs. For a system LaunchDaemon, the helper avoids
@@ -284,9 +299,10 @@ Symptom:
 Cause to check:
 
 - Thread detail should first use app-server `thread/read` even when the rollout
-  file is over 32MB. If detail reports `mobileReadMode=turns-list`, treat that
-  as a fallback after `thread/read` failed or timed out, not as the normal
-  large-rollout path.
+  file is over 32MB, because `thread/turns/list` does not reliably preserve the
+  command/tool/file/search operation items expected in Mobile detail. If detail
+  reports `mobileReadMode=turns-list`, treat that as a fallback after
+  `thread/read` failed or timed out, not as the normal large-rollout path.
 - A `thread/turns/list` fallback should include `mobileOlderTurnsCursor` when
   app-server has older turns. The phone can load another bounded page through
   `/api/threads/<id>/turns?sortDirection=desc&cursor=<json>`. If this returns
@@ -296,10 +312,12 @@ Cause to check:
   `mobileOlderTurnsCursor` when more than `CODEX_MOBILE_THREAD_TURNS` turns
   exist. The browser defaults to 10 recent turns and loads 10 older turns when
   the user scrolls to the top of the current detail window.
-- The current compact path should merge a bounded set of recent raw rollout
-  operations into the latest live turn before trimming. Completed turns should
-  still stay compact and use the usage-summary card instead of reopening full
-  operation history.
+- The current compact path should retain intermediate cards for the current
+  live turn and its previous ended turn. If no live turn exists, it should
+  retain intermediate cards for the latest ended turn. Older-history turns
+  loaded through `/api/threads/<id>/turns`, and older turns outside that
+  state-relevant set, should be receipt-only: user question plus assistant
+  receipt, without old operation, reasoning, or diagnostic cards.
 - Current clients still enter thread detail at the bottom. Do not fix missing
   large-thread history by changing the open position; first check whether the
   server returned full `thread-read` or a fallback `turns-list` window.
@@ -345,7 +363,7 @@ This is usually display attribution, not a live process, when:
 - The real `function_call_output` or `exec_command_end` exists later in the rollout.
 - `Get-Process` shows no matching tool process.
 
-Current server behavior keeps at most one operation card only while the latest turn is live. Completed turns should not keep command/tool/file/search operation cards below the final reply; when scoped usage exists, the final frame should be the Usage summary. Raw fallback may attach a completed operation only when the latest turn is still live and the rollout event is tied to that same turn id; older completed operations must not attach to a newer live turn. If this regresses, inspect `readLatestRawOperation()` and `compactThread()` in `server.js`, then add coverage in `test/thread-item-timestamp-enrichment.test.js`.
+Current server behavior keeps compact process cards for the current live turn and the previous ended turn; if no live turn exists, the latest ended turn keeps those cards. Older turns are receipt-only. Raw fallback may attach a completed operation only when the latest turn is still live and the rollout event is tied to that same turn id; older completed operations must not attach to a newer live turn. If this regresses, inspect `readLatestRawOperation()` and `compactThread()` in `server.js`, then add coverage in `test/thread-item-timestamp-enrichment.test.js`.
 
 ## `rg` Appears Related To A Stall
 
@@ -553,11 +571,14 @@ Invoke-RestMethod http://127.0.0.1:8787/api/public-config |
 (Invoke-WebRequest http://127.0.0.1:8787/sw.js -UseBasicParsing).Content.Contains("codex-mobile-shell-vNNN")
 ```
 
-If `/api/public-config` is older than `/app.js` / `/sw.js`, the browser is
-correct to keep prompting: the 8787 listener is still an old process and must
-be restarted into the current files. On Windows, verify the PID that owns port
-8787 before killing anything; stop only the listener process that is actually
-running this workspace's `server.js`, then start the replacement hidden.
+If `/api/public-config` is older than `/app.js` / `/sw.js`, the listener is
+still an old process and must be restarted into the current files. Current
+clients should not enter a visible refresh loop in this state: a loaded
+`codex-mobile-shell-vNNN` that is newer than the listener's startup shell is a
+deployment middle state, and refreshing the page alone cannot fix it. On
+Windows, verify the PID that owns port 8787 before killing anything; stop only
+the listener process that is actually running this workspace's `server.js`, then
+start the replacement hidden.
 
 If the prompt does not appear after a real server restart into a newer shell
 build, check whether the loaded browser code calls `scheduleVisiblePageRefreshCheck()`
@@ -1101,7 +1122,14 @@ primary thread-switcher/settings page. That primary page must report
 right-swipe instead returns directly to Hermes Mobile, check whether the thread
 detail page published `canGoBack:true` immediately after selecting
 `currentThreadId`; this must happen while the detail page is still loading, not
-only after the read completes. If
+only after the read completes. Also check the iframe's postMessage
+`targetOrigin`: when Hermes serves Codex through the same-origin plugin proxy,
+Codex must prefer the live `window.parent.location.origin` over the launch
+session's older `hermes_origin`. A stale target such as
+`https://old-hermes.example.com` while the actual parent is
+`https://new-hermes.example.com` silently drops
+`codex-mobile.plugin.navigation`, leaving the host with `canGoBack:false` and
+making right-swipe fall through to the outer plugin return. If
 right-swipe instead opens Codex's standalone initial Workspace page, check the
 `hermes.plugin.back` handler: thread-page back must clear only the selected
 thread detail, not leave the iframe in the standalone home route. If the primary

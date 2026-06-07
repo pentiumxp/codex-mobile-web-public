@@ -17,6 +17,17 @@ const pluginEmbedApi = window.CodexPluginEmbed || {
   postBackResult: () => null,
   postNavigation: () => null,
 };
+const buildRefreshPolicy = window.CodexBuildRefreshPolicy || {
+  shouldPromptForServerBuildChange(serverBuildId, clientBuildId) {
+    const server = String(serverBuildId || "").trim();
+    const client = String(clientBuildId || "").trim();
+    if (!server || !client || server === client) return false;
+    const serverSeq = server.match(/\bcodex-mobile-shell-v([0-9]+)\b/);
+    const clientSeq = client.match(/\bcodex-mobile-shell-v([0-9]+)\b/);
+    if (serverSeq && clientSeq && Number(serverSeq[1]) < Number(clientSeq[1])) return false;
+    return true;
+  },
+};
 const INITIAL_PLUGIN_EMBED = pluginEmbedApi.detect(window.location.href);
 const INITIAL_PLUGIN_LAUNCH_KEY = INITIAL_PLUGIN_EMBED.launchKey || initialPluginLaunchKeyFromUrl();
 
@@ -74,6 +85,11 @@ const state = {
   refreshTimer: null,
   recoveryTimer: null,
   reconnectNoticeTimer: null,
+  eventRetryTimer: null,
+  eventFallbackPollTimer: null,
+  eventReconnectFailures: 0,
+  eventReconnectDelayMs: 5000,
+  eventFallbackMode: false,
   resumeTimer: null,
   resumeVisualTimers: [],
   resumeSeq: 0,
@@ -221,7 +237,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v201";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v206";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -239,6 +255,7 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/conversation-scroll.js",
   "/image-compressor.js",
   "/plugin-embed.js",
+  "/build-refresh-policy.js",
   "/app.js",
   "/manifest.json",
   "/sw.js",
@@ -2228,6 +2245,13 @@ function serverBuildIdFromConfig(config) {
   return String(config && (config.clientBuildId || config.shellCacheName || config.buildId || config.version) || "").trim();
 }
 
+function shouldPromptForServerBuildChange(serverBuildId, clientBuildId) {
+  if (buildRefreshPolicy && typeof buildRefreshPolicy.shouldPromptForServerBuildChange === "function") {
+    return buildRefreshPolicy.shouldPromptForServerBuildChange(serverBuildId, clientBuildId);
+  }
+  return Boolean(serverBuildId && clientBuildId && serverBuildId !== clientBuildId);
+}
+
 function pageShellAssetUrl(asset, buildId) {
   const url = new URL(asset, window.location.origin);
   url.searchParams.set("shellBuild", buildId || "current");
@@ -2303,7 +2327,7 @@ function initializePageBuildState(config) {
   state.serverBuildId = CLIENT_BUILD_ID || serverBuildIdFromConfig(config);
   state.serverAssetBuildId = String(config && config.buildId || "").trim();
   const currentServerBuildId = serverBuildIdFromConfig(config);
-  if (state.serverBuildId && currentServerBuildId && currentServerBuildId !== state.serverBuildId) {
+  if (shouldPromptForServerBuildChange(currentServerBuildId, state.serverBuildId)) {
     state.pageRefreshBuildId = currentServerBuildId;
     state.pageRefreshReason = "build";
     state.pageRefreshAvailable = true;
@@ -2362,16 +2386,17 @@ async function checkPageRefreshAvailability(options = {}) {
       state.serverAssetBuildId = nextAssetBuildId;
       return;
     }
-    const clientChanged = Boolean(nextBuildId && nextBuildId !== state.serverBuildId);
+    const serverBuildChanged = Boolean(nextBuildId && nextBuildId !== state.serverBuildId);
+    const serverBuildNeedsRefresh = serverBuildChanged && shouldPromptForServerBuildChange(nextBuildId, state.serverBuildId);
     const assetsChanged = Boolean(nextAssetBuildId && state.serverAssetBuildId && nextAssetBuildId !== state.serverAssetBuildId);
-    if (clientChanged || assetsChanged) {
+    if (serverBuildNeedsRefresh || assetsChanged) {
       if (isHermesEmbedMode()) {
-        if (clientChanged) {
+        if (serverBuildNeedsRefresh) {
           state.pageRefreshBuildId = nextBuildId;
           state.pageRefreshPreparedConfig = config;
           requestHermesPluginRefresh("server_build_changed");
         }
-        if (!clientChanged && assetsChanged) {
+        if (!serverBuildNeedsRefresh && assetsChanged) {
           state.serverAssetBuildId = nextAssetBuildId;
         }
         return;
@@ -2499,8 +2524,12 @@ function showComposerFastHint(enabled) {
 function clearReconnectTimers() {
   clearTimeout(state.reconnectNoticeTimer);
   clearTimeout(state.recoveryTimer);
+  clearTimeout(state.eventRetryTimer);
+  clearTimeout(state.eventFallbackPollTimer);
   state.reconnectNoticeTimer = null;
   state.recoveryTimer = null;
+  state.eventRetryTimer = null;
+  state.eventFallbackPollTimer = null;
 }
 
 function markActivity(label) {
@@ -2959,6 +2988,24 @@ function shouldPollCurrentThread() {
   if (!turn) return false;
   if (isTurnComplete(turn)) return false;
   return Boolean(state.activeTurnId) || isRunningStatus(turn.status) || isIncompleteInterruptedTurn(turn);
+}
+
+function currentThreadListRowChanged() {
+  if (!state.currentThreadId || !state.currentThread) return false;
+  const row = threadById(state.currentThreadId);
+  if (!row) return false;
+  const rowUpdatedAt = threadUpdatedAtMs(row);
+  const detailUpdatedAt = threadUpdatedAtMs(state.currentThread);
+  if (rowUpdatedAt > 0 && rowUpdatedAt > detailUpdatedAt + 1000) return true;
+  const rowStatus = statusText(row.status);
+  const detailStatus = statusText(state.currentThread.status);
+  return Boolean(rowStatus && detailStatus && rowStatus !== detailStatus);
+}
+
+function currentThreadNeedsForegroundRefresh() {
+  if (!state.currentThreadId || !state.currentThread) return false;
+  if (state.currentThread.mobileLoading || state.currentThread.mobileLoadError) return true;
+  return shouldPollCurrentThread() || currentThreadListRowChanged();
 }
 
 function isLiveTurn(turn) {
@@ -3951,7 +3998,19 @@ function isHermesEmbedMode() {
   return Boolean(state.pluginEmbed && state.pluginEmbed.embedded);
 }
 
+function currentPluginParentWindowOrigin() {
+  try {
+    if (!window.parent || window.parent === window || !window.parent.location) return "";
+    const origin = String(window.parent.location.origin || "").trim();
+    return origin && origin !== "null" ? origin : "";
+  } catch (_) {
+    return "";
+  }
+}
+
 function normalizePluginParentOrigin(value) {
+  const liveParentOrigin = currentPluginParentWindowOrigin();
+  if (liveParentOrigin) return liveParentOrigin;
   const origin = String(value || "").trim();
   if (origin && origin !== "*") return origin;
   const referrerOrigin = pluginEmbedApi.parentOriginFromReferrer
@@ -5898,16 +5957,20 @@ function publishPluginNavigationState(options = {}) {
   const signature = JSON.stringify(message);
   if (!options.force && signature === state.pluginNavigationSignature) return;
   state.pluginNavigationSignature = signature;
+  const targetOrigin = normalizePluginParentOrigin(state.pluginParentOrigin);
+  if (targetOrigin) state.pluginParentOrigin = targetOrigin;
   pluginEmbedApi.postNavigation(window.parent, state, {
-    targetOrigin: state.pluginParentOrigin || "*",
+    targetOrigin: targetOrigin || "*",
     ui: pluginNavigationUiState(),
   });
 }
 
 function postPluginBackResult(handled, reason) {
   if (!isHermesEmbedMode() || !pluginEmbedApi.postBackResult) return null;
+  const targetOrigin = normalizePluginParentOrigin(state.pluginParentOrigin);
+  if (targetOrigin) state.pluginParentOrigin = targetOrigin;
   return pluginEmbedApi.postBackResult(window.parent, state, {
-    targetOrigin: state.pluginParentOrigin || "*",
+    targetOrigin: targetOrigin || "*",
     ui: pluginNavigationUiState(),
     handled,
     reason,
@@ -9176,6 +9239,71 @@ function applyNotification(method, params) {
   }
 }
 
+function resetEventFallbackState() {
+  clearTimeout(state.eventRetryTimer);
+  clearTimeout(state.eventFallbackPollTimer);
+  state.eventRetryTimer = null;
+  state.eventFallbackPollTimer = null;
+  state.eventReconnectFailures = 0;
+  state.eventReconnectDelayMs = 5000;
+  state.eventFallbackMode = false;
+}
+
+function scheduleEventReconnectRetry() {
+  clearTimeout(state.eventRetryTimer);
+  if (!state.key || !state.events || state.events.readyState === EventSource.OPEN) return;
+  const delay = Math.min(Math.max(Number(state.eventReconnectDelayMs) || 5000, 5000), 45000);
+  state.eventReconnectDelayMs = Math.min(delay * 2, 45000);
+  state.eventRetryTimer = setTimeout(() => {
+    state.eventRetryTimer = null;
+    if (!state.key || document.visibilityState === "hidden") return;
+    if (state.events && state.events.readyState === EventSource.OPEN) return;
+    connectEvents();
+  }, delay);
+}
+
+function scheduleEventFallbackPoll(delayMs = 8000) {
+  clearTimeout(state.eventFallbackPollTimer);
+  if (!isHermesEmbedMode()) return;
+  if (state.events && state.events.readyState === EventSource.OPEN) return;
+  state.eventFallbackMode = true;
+  state.eventFallbackPollTimer = setTimeout(async () => {
+    state.eventFallbackPollTimer = null;
+    if (!state.key || document.visibilityState === "hidden") return;
+    if (state.events && state.events.readyState === EventSource.OPEN) return;
+    try {
+      const status = await api("/api/status");
+      updateConnectionState(status);
+      clearReconnectRefreshPrompt();
+      rememberRateLimitsFromConfig(status);
+      if (status.codexProfiles) rememberCodexProfiles(status.codexProfiles);
+      await loadThreads();
+      await refreshCurrentThread();
+      scheduleEventFallbackPoll();
+    } catch (err) {
+      showReconnectRefreshPrompt("reconnect");
+      showError(err);
+    }
+  }, delayMs);
+}
+
+async function recoverEventStreamWithApiFallback() {
+  const status = await api("/api/status");
+  updateConnectionState(status);
+  clearReconnectRefreshPrompt();
+  rememberRateLimitsFromConfig(status);
+  if (status.codexProfiles) rememberCodexProfiles(status.codexProfiles);
+  await loadThreads();
+  await refreshCurrentThread();
+  if (isHermesEmbedMode()) {
+    state.eventFallbackMode = true;
+    scheduleEventFallbackPoll();
+    scheduleEventReconnectRetry();
+  } else {
+    ensureEventConnection();
+  }
+}
+
 function connectEvents() {
   clearReconnectTimers();
   if (state.events) {
@@ -9189,6 +9317,7 @@ function connectEvents() {
   state.events = new EventSource(`/api/events?${params.toString()}`);
   state.events.onopen = () => {
     clearReconnectTimers();
+    resetEventFallbackState();
     clearReconnectRefreshPrompt();
     if (state.connectionStatus) restoreConnectionState();
     scheduleVisiblePageRefreshCheck(200, { force: true });
@@ -9209,10 +9338,11 @@ function connectEvents() {
   };
   state.events.onerror = () => {
     if (document.visibilityState === "hidden") return;
+    state.eventReconnectFailures += 1;
     clearTimeout(state.reconnectNoticeTimer);
     state.reconnectNoticeTimer = setTimeout(() => {
       if (state.events && state.events.readyState !== EventSource.OPEN && document.visibilityState !== "hidden") {
-        markActivity("重连");
+        if (!isHermesEmbedMode()) markActivity("重连");
         updateConnectionState(null, "Reconnecting");
       }
     }, 3000);
@@ -9220,14 +9350,7 @@ function connectEvents() {
     state.recoveryTimer = setTimeout(async () => {
       if (!state.events || state.events.readyState === EventSource.OPEN || document.visibilityState === "hidden") return;
       try {
-        const status = await api("/api/status");
-        updateConnectionState(status);
-        clearReconnectRefreshPrompt();
-        rememberRateLimitsFromConfig(status);
-        if (status.codexProfiles) rememberCodexProfiles(status.codexProfiles);
-        await loadThreads();
-        await refreshCurrentThread();
-        ensureEventConnection();
+        await recoverEventStreamWithApiFallback();
       } catch (err) {
         showReconnectRefreshPrompt("reconnect");
         showError(err);
@@ -9349,8 +9472,17 @@ async function resumeMobileSession(reason = "resume") {
     rememberRateLimitsFromConfig(status);
     if (status.codexProfiles) rememberCodexProfiles(status.codexProfiles);
     await loadThreads({ silent: Boolean(state.threads.length) });
-    if (state.currentThreadId && state.currentThread && !state.currentThread.mobileLoading) {
-      scheduleCurrentThreadRefresh(250);
+    if (state.currentThreadId && state.currentThread && !state.currentThread.mobileLoading && !state.currentThread.mobileLoadError) {
+      if (currentThreadNeedsForegroundRefresh()) {
+        scheduleCurrentThreadRefresh(250);
+      } else {
+        postClientEvent("mobile_resume_thread_refresh_skipped", {
+          reason,
+          currentThreadId: state.currentThreadId || "",
+          status: statusText(state.currentThread && state.currentThread.status),
+          activeTurnId: state.activeTurnId || "",
+        });
+      }
     } else if (state.currentThreadId) {
       await refreshCurrentThread();
     } else {

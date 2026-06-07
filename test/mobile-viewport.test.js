@@ -48,9 +48,9 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*7px;/);
 });
 
-test("public app shell cache advances after Hermes embed back navigation hardening", () => {
-  assert.match(swJs, /codex-mobile-shell-v201/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v201"/);
+test("public app shell cache advances after foreground resume and detail-read hardening", () => {
+  assert.match(swJs, /codex-mobile-shell-v206/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v206"/);
   assert.match(appJs, /startupThreadOpenPending: false/);
   assert.match(indexHtml, /id="pluginStartupLoading"/);
   assert.match(indexHtml, /data-plugin-startup-title>正在加载 Codex\.\.\.</);
@@ -90,8 +90,13 @@ test("public app shell cache advances after Hermes embed back navigation hardeni
   assert.match(stylesCss, /\.approval-summary-line/);
   assert.match(appJs, /if \(threadId === state\.currentThreadId && state\.currentThread && !state\.currentThread\.mobileLoadError\) \{/);
   assert.match(appJs, /scheduleCurrentThreadRefresh\(250\);[\s\S]*openExternalThreadSelection\(threadId\)\.catch\(showError\);/);
-  assert.match(appJs, /if \(state\.currentThreadId && state\.currentThread && !state\.currentThread\.mobileLoading\) \{/);
-  assert.match(appJs, /scheduleCurrentThreadRefresh\(250\);[\s\S]*else if \(state\.currentThreadId\) \{[\s\S]*await refreshCurrentThread\(\);[\s\S]*else \{[\s\S]*await restoreThreadSelection\(\);/);
+  assert.match(appJs, /function currentThreadNeedsForegroundRefresh\(\)/);
+  assert.match(appJs, /function currentThreadListRowChanged\(\)/);
+  assert.match(appJs, /threadUpdatedAtMs\(row\)/);
+  assert.match(appJs, /mobile_resume_thread_refresh_skipped/);
+  assert.match(appJs, /if \(state\.currentThreadId && state\.currentThread && !state\.currentThread\.mobileLoading && !state\.currentThread\.mobileLoadError\) \{/);
+  assert.match(appJs, /return shouldPollCurrentThread\(\) \|\| currentThreadListRowChanged\(\);/);
+  assert.match(appJs, /if \(currentThreadNeedsForegroundRefresh\(\)\) \{[\s\S]*scheduleCurrentThreadRefresh\(250\);[\s\S]*mobile_resume_thread_refresh_skipped[\s\S]*else if \(state\.currentThreadId\) \{[\s\S]*await refreshCurrentThread\(\);[\s\S]*else \{[\s\S]*await restoreThreadSelection\(\);/);
   assert.match(appJs, /async function restoreThreadSelection\(\) \{[\s\S]*if \(isHermesEmbedMode\(\)\) \{[\s\S]*showHermesPluginPrimaryPage\(\);[\s\S]*return;/);
   assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*publishPluginNavigationState\(\{ force: true \}\);\s*\n\s*updateComposerControls\(\);/);
   assert.doesNotMatch(appJs, /function shouldOpenLargeThreadHistoryAtTop/);
@@ -139,10 +144,12 @@ test("public app shell cache advances after Hermes embed back navigation hardeni
   assert.match(swJs, /"\/conversation-scroll\.js"/);
   assert.match(swJs, /"\/image-compressor\.js"/);
   assert.match(swJs, /"\/plugin-embed\.js"/);
+  assert.match(swJs, /"\/build-refresh-policy\.js"/);
   assert.match(appJs, /"\/viewport-metrics\.js"/);
   assert.match(appJs, /"\/conversation-scroll\.js"/);
   assert.match(appJs, /"\/image-compressor\.js"/);
   assert.match(appJs, /"\/plugin-embed\.js"/);
+  assert.match(appJs, /"\/build-refresh-policy\.js"/);
   assert.match(appJs, /navigator\.serviceWorker\.register\("\/sw\.js"\)/);
   assert.match(appJs, /state\.serviceWorkerRegistration\.update\(\)\.catch/);
   assert.match(swJs, /if \(!data\.threadId && payload\.threadId\) data\.threadId = payload\.threadId;/);
