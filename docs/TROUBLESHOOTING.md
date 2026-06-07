@@ -298,11 +298,26 @@ Symptom:
 
 Cause to check:
 
+- Thread detail may report `mobileReadMode=projection-dynamic` or
+  `mobileReadMode=projection-cache`. That is the expected fast path for large
+  rollout threads once the server has a dynamic or warm projection. If a large
+  stable thread still reports `mobileReadMode=thread-read` every time, inspect
+  `adapters/thread-detail-projection-service.js`, rollout size/mtime changes,
+  and summary `updatedAt/status` changes that may be invalidating the
+  projection signature.
+- The projection index is updated from raw app-server notifications before
+  browser SSE compaction. It should observe `item/started`, `item/completed`,
+  `item/agentMessage/delta`, `item/reasoning/*Delta`,
+  `item/commandExecution/outputDelta`, and `item/fileChange/outputDelta`.
+  If re-entering a running thread misses the latest intermediate output, check
+  whether the listener is receiving raw notifications and whether the current
+  projection entry was seeded before those notifications arrived.
 - Thread detail should first use app-server `thread/read` even when the rollout
   file is over 32MB, because `thread/turns/list` does not reliably preserve the
   command/tool/file/search operation items expected in Mobile detail. If detail
-  reports `mobileReadMode=turns-list`, treat that as a fallback after
-  `thread/read` failed or timed out, not as the normal large-rollout path.
+  reports `mobileReadMode=turns-list`, treat that as a fallback after both
+  projection and `thread/read` were unavailable or timed out, not as the normal
+  large-rollout path.
 - A `thread/turns/list` fallback should include `mobileOlderTurnsCursor` when
   app-server has older turns. The phone can load another bounded page through
   `/api/threads/<id>/turns?sortDirection=desc&cursor=<json>`. If this returns

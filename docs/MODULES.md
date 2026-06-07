@@ -32,6 +32,7 @@
 | `adapters/hermes-notification-delegate-service.js` | Backend-only Hermes Action Inbox notification delegation, safe payload normalization, Hermes endpoint/key resolution, and response sanitization. |
 | `adapters/turn-completion-receipt-service.js` | Builds bounded completed-turn detail receipts for Hermes plugin Inbox/thread-message delegation from final assistant text plus usage summary. |
 | `adapters/thread-task-card-service.js` | Cross-thread task-card normalization, readable visible-text guards, JSON store persistence, idempotency, single/multi-target creation, source/target authorization, state transitions, approval in-flight persistence, autonomous workflow grants, same-pair auto-approval, automatic completion return cards, and approval injection payload generation. |
+| `adapters/thread-detail-projection-service.js` | Runtime Mobile thread-detail projection index and warm cache for large rollout threads. It is seeded from compact detail reads, updated from raw app-server notifications including intermediate deltas, and keeps cache signatures tied to rollout size/mtime, summary state, and projection policy. |
 | `adapters/workspace-registry-service.js` | Mobile Web-created workspace folder validation, runtime registry persistence, allowed-root policy, and public workspace shape. |
 | `adapters/codex-profile-service.js` | Single-active Codex profile discovery, safe `auth.json` account display, account-scoped profile quota snapshots with shared-rollout protection, active-profile persistence, and switch eligibility policy. |
 | `adapters/sqlite-cli.js` | Cross-environment `sqlite3` discovery and JSON result execution. |
@@ -64,7 +65,7 @@ Add new service modules when logic has independent inputs/outputs, state rules, 
 | app-server/mux protocol | `test/protocol.test.js`, `test/desktop-profile-launcher.test.js`; include Desktop shim no-window coverage when changing `codex-app-server-mux-shim.cs` |
 | active-turn send behavior | `test/active-turn-staleness-service.test.js`, `test/new-thread-route.test.js`, `test/message-pending-echo-service.test.js` |
 | workspace list/create | `test/workspace-registry-service.test.js`, `test/new-thread-route.test.js`, `test/mobile-viewport.test.js` |
-| conversation rendering and operation cards | `test/conversation-render.test.js`, `test/collab-agent-render.test.js`, `test/thread-item-timestamp-enrichment.test.js`, `test/message-timestamp.test.js` |
+| conversation rendering and operation cards | `test/conversation-render.test.js`, `test/collab-agent-render.test.js`, `test/thread-item-timestamp-enrichment.test.js`, `test/thread-detail-projection-service.test.js`, `test/message-timestamp.test.js` |
 | continuation | `test/continuation-lineage.test.js`, `test/continuation-handoff-compaction-service.test.js` |
 | context and bootstrap size policy | `test/message-input-service.test.js`, `test/continuation-lineage.test.js`, `test/turn-usage-summary-service.test.js` |
 | Workspace token usage ledger | `test/token-usage-stats-service.test.js`, `test/turn-usage-summary-service.test.js`, `test/mobile-viewport.test.js`; include historical Windows mojibake cwd rows when changing Workspace grouping/normalization |

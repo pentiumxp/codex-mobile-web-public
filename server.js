@@ -63,6 +63,7 @@ const {
   resolveActiveCodexHomeFromStore,
   resolveEffectiveCodexHome,
 } = require("./adapters/codex-profile-service");
+const { createThreadDetailProjectionService } = require("./adapters/thread-detail-projection-service");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -146,6 +147,9 @@ const WORKSPACE_REGISTRY_FILE = process.env.CODEX_MOBILE_WORKSPACE_REGISTRY_FILE
   || path.join(RUNTIME_ROOT, "workspace-registry.json");
 const TOKEN_USAGE_STATS_DB = process.env.CODEX_MOBILE_TOKEN_USAGE_DB
   || path.join(RUNTIME_ROOT, "token-usage-stats.sqlite");
+const THREAD_DETAIL_PROJECTION_CACHE_DIR = process.env.CODEX_MOBILE_THREAD_DETAIL_PROJECTION_CACHE_DIR
+  || path.join(RUNTIME_ROOT, "thread-detail-projections");
+const THREAD_DETAIL_PROJECTION_POLICY_VERSION = "state-relevant-receipt-v1";
 const WORKSPACE_CREATE_ROOTS = process.env.CODEX_MOBILE_WORKSPACE_CREATE_ROOTS || "";
 const hermesPluginService = createHermesPluginService({
   registrationFile: HERMES_PLUGIN_REGISTRATION_FILE,
@@ -199,6 +203,7 @@ const threadGoalService = createThreadGoalService({
   dbPath: GOALS_DB,
   userHome: USER_HOME,
 });
+let threadDetailProjectionService;
 const threadTaskCardService = createThreadTaskCardService({
   storageFile: THREAD_TASK_CARD_FILE,
   executeApprovedCard: async (card, message) => {
@@ -260,6 +265,11 @@ const MAX_THREAD_TURNS = Math.max(1, Math.min(100, Number(process.env.CODEX_MOBI
 const MAX_FULL_THREAD_TURNS = Math.max(MAX_THREAD_TURNS, Math.min(200, Number(process.env.CODEX_MOBILE_FULL_THREAD_TURNS || "10")));
 const MAX_LIVE_OPERATION_ITEMS = Math.max(1, Math.min(30, Number(process.env.CODEX_MOBILE_LIVE_OPERATION_ITEMS || "12")));
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
+threadDetailProjectionService = createThreadDetailProjectionService({
+  cacheDir: THREAD_DETAIL_PROJECTION_CACHE_DIR,
+  policyVersion: THREAD_DETAIL_PROJECTION_POLICY_VERSION,
+  maxTurns: MAX_FULL_THREAD_TURNS,
+});
 const MODEL_OPTIONS = optionListFromEnv("CODEX_MOBILE_MODEL_OPTIONS", [
   "gpt-5.5",
   "gpt-5.4",
@@ -2893,6 +2903,37 @@ function annotateThreadRolloutStats(thread) {
   return out;
 }
 
+function threadDetailProjectionInput(threadId, summary) {
+  const rolloutPath = rolloutPathForThread(summary);
+  const rolloutStats = rolloutStatsForPath(rolloutPath);
+  if (!threadId || !rolloutPath || !rolloutStats) return null;
+  return {
+    threadId,
+    rolloutPath,
+    rolloutStats,
+    maxTurns: MAX_FULL_THREAD_TURNS,
+    summaryUpdatedAtMs: timestampToMs(summary && (summary.updatedAt || summary.updated_at || summary.updatedAtMs || summary.updated_at_ms)),
+    summaryStatus: statusText(summary && summary.status),
+  };
+}
+
+function prepareProjectedThreadReadResult(cached, summary, runtimeSettings) {
+  if (!cached || !cached.result || !cached.result.thread) return null;
+  const result = compactThreadReadResult(cached.result, { maxTurns: MAX_FULL_THREAD_TURNS });
+  if (!result.thread) return null;
+  result.thread = mergeThreadDisplaySummary(result.thread, summary) || result.thread;
+  result.thread = mergeThreadRuntimeFromStateDb(result.thread, summary);
+  result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
+  result.thread.mobileReadMode = cached.dynamic ? "projection-dynamic" : "projection-cache";
+  result.thread.mobileProjection = {
+    source: cached.dynamic ? "dynamic" : "cache",
+    cachedAtMs: cached.cachedAtMs || null,
+    updatedAtMs: cached.updatedAtMs || cached.cachedAtMs || null,
+    ageMs: cached.updatedAtMs ? Math.max(0, Date.now() - cached.updatedAtMs) : null,
+  };
+  return result;
+}
+
 function runtimeContextCacheKey(rolloutPath, stat) {
   return `${normalizeFsPath(rolloutPath)}:${stat.size}:${Math.trunc(Number(stat.mtimeMs || 0))}`;
 }
@@ -5012,6 +5053,13 @@ function serveStatic(req, res) {
 }
 
 function broadcast(payload) {
+  if (payload && payload.type === "notification") {
+    try {
+      threadDetailProjectionService.applyNotification(payload.method, payload.params || {});
+    } catch (err) {
+      console.error(`[thread projection] notification update failed: ${err.message || String(err)}`);
+    }
+  }
   const compacted = compactNotification(payload);
   if (!compacted) return;
   const body = `data: ${JSON.stringify(compacted)}\n\n`;
@@ -8510,6 +8558,33 @@ async function handleApi(req, res) {
       threadLog("complete", { status: 404, mode: "hidden" });
       return;
     }
+    const projectionInput = threadDetailProjectionInput(threadId, summary);
+    const projectionStartedAtMs = Date.now();
+    const projected = projectionInput ? prepareProjectedThreadReadResult(
+      threadDetailProjectionService.get(projectionInput),
+      summary,
+      runtimeSettings,
+    ) : null;
+    if (projected && projected.thread) {
+      if (isHiddenThread(projected.thread, visibility)) {
+        threadLog("projection_hidden", {
+          durationMs: Date.now() - projectionStartedAtMs,
+          status: 404,
+        });
+        sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
+        return;
+      }
+      threadDisplaySummaryCache.remember(projected.thread);
+      threadLog("projection_hit", {
+        durationMs: Date.now() - projectionStartedAtMs,
+        mode: projected.thread.mobileReadMode,
+        returnedTurns: Array.isArray(projected.thread.turns) ? projected.thread.turns.length : null,
+        omittedTurns: projected.thread.mobileOmittedTurnCount || 0,
+      });
+      sendJson(res, 200, await prepareThreadTaskCardsToResult(projected));
+      threadLog("complete", { status: 200, mode: projected.thread.mobileReadMode });
+      return;
+    }
     const readStartedAtMs = Date.now();
     threadLog("thread_read_start", {
       timeoutMs: READ_RPC_TIMEOUT_MS,
@@ -8540,6 +8615,14 @@ async function handleApi(req, res) {
         returnedTurns: result.thread && Array.isArray(result.thread.turns) ? result.thread.turns.length : null,
         omittedTurns: result.thread && result.thread.mobileOmittedTurnCount ? result.thread.mobileOmittedTurnCount : 0,
       });
+      if (projectionInput && result.thread) {
+        try {
+          threadDetailProjectionService.seed(projectionInput, result);
+          result.thread.mobileProjection = { source: "seeded" };
+        } catch (err) {
+          threadLog("projection_seed_error", { error: err.message || String(err) });
+        }
+      }
       sendJson(res, 200, await prepareThreadTaskCardsToResult(result));
       threadLog("complete", { status: 200, mode: "thread-read" });
     } catch (readErr) {
@@ -8761,6 +8844,13 @@ async function handleApi(req, res) {
         clientSubmissionId: body.clientSubmissionId,
         resultTurnId: result && (result.turnId || result.id || result.turn && result.turn.id || ""),
       });
+      const resultTurnId = String(result && (result.turnId || result.id || result.turn && result.turn.id || "") || "");
+      if (resultTurnId) {
+        threadDetailProjectionService.applyNotification("turn/started", {
+          threadId,
+          turn: Object.assign({ id: resultTurnId, status: { type: "active" } }, result.turn && typeof result.turn === "object" ? result.turn : {}),
+        });
+      }
     } catch (err) {
       logMessageSubmit("failed", {
         threadId,

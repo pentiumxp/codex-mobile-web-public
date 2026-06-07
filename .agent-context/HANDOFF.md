@@ -115,6 +115,55 @@ The previous full handoff was archived and should be opened only when old proven
   - Existing browser pages that already loaded the old expanded detail may need
     a manual refresh or thread re-open to drop in-memory old items.
 
+## 2026-06-07 Large Rollout Dynamic Detail Projection v209
+
+- User asked to improve large-rollout thread detail loading and clarified that
+  the cache must be dynamic: turns keep increasing and any intermediate output
+  should update the server-side projection in real time, not only after
+  `turn/completed`.
+- Implemented first stage:
+  - Added `adapters/thread-detail-projection-service.js`.
+  - The service maintains a Mobile thread-detail projection index seeded by
+    compact detail reads and persisted under the runtime projection cache
+    directory.
+  - Projection signatures include rollout size/mtime, summary updated/status,
+    max turn window, and projection policy version. Signature changes miss and
+    fall back to the existing full `thread/read` path.
+  - `broadcast()` now updates the projection service from raw app-server
+    notifications before browser SSE compaction. This includes
+    `item/started`, `item/completed`, agent message deltas, reasoning deltas,
+    command output deltas, and file output deltas.
+  - Existing-thread message send also applies a local `turn/started` projection
+    update when the mutation response contains a new turn id, reducing the race
+    before the app-server notification arrives.
+  - `/api/threads/:id` now checks the projection first. Hits return
+    `mobileReadMode=projection-dynamic` or `projection-cache`; misses still use
+    the existing full `thread/read includeTurns:true`, then seed the projection.
+  - The final response still runs through the existing `compactThreadReadResult`
+    state-relevant retention rules so there is not a second copy of the
+    receipt/operation pruning logic.
+  - Updated README, `docs/ARCHITECTURE.md`, `docs/MODULES.md`, and
+    `docs/TROUBLESHOOTING.md`.
+- Validation:
+  - Focused tests passed:
+    `node --test test/thread-detail-projection-service.test.js
+    test/thread-item-timestamp-enrichment.test.js test/thread-visibility.test.js`.
+  - `npm run check` passed.
+  - Full `npm test` passed with 362 tests.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - CodeGraph status was healthy after edits: 91 indexed files.
+- Runtime:
+  - Restarted Windows 8787 listener.
+  - Local API smoke with the local access key file, without printing key or
+    message content, opened a 150.5MB rollout thread three times. Results:
+    `projection-cache`, 10 turns, 163 omitted turns, about `692ms`, `373ms`,
+    and `376ms`. This compares to the previous sampled 150.2MB thread detail
+    time of about `2138ms` on full `thread/read`.
+- Status:
+  - Private implementation is ready to commit.
+  - Public has not been synced or pushed for v209.
+
 ## 2026-06-07 Thread Detail Intermediate Items Regression v207
 
 - User reported that after v206, opening any thread no longer showed

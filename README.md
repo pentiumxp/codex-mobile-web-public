@@ -666,6 +666,8 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v209 server-only 增加线程详情动态投影索引。服务端会先查 `projection-dynamic` / `projection-cache`，命中时不再等待大 rollout 的完整 `thread/read`；投影由完整详情读取 seed，并在原始 app-server notification 到达时实时追加 `item/started`、`item/completed`、agent/reasoning 文本增量、command/file 输出增量。rollout size/mtime、summary updated/status、turn 窗口和投影策略版本变化会让旧投影失效；miss 时仍回退到现有完整 `thread/read` 路径。该修复不改变 PWA shell cache，更新后需要重启 8787 Node listener。
+
 - 中文说明：v208 server-only 调整线程详情裁剪策略：当前 live turn 会保留全部 compact command/tool/file/search/reasoning 中间过程；如果存在 live turn，它前一个已结束 turn 也会保留这些中间信息，方便刚结束后回查；如果没有 live turn，则最新已结束 turn 保留中间信息。更早的 older-history turn 只保留用户问题和最后一条 assistant/plan 回执，避免旧历史把大量过程重新带回浏览器。该修复不改变 PWA shell cache，更新后需要重启 8787 Node listener。
 - 中文说明：v207 server-only 修复 v206 把线程详情主路径切到 bounded `thread/turns/list` 后丢失 command/tool/file/search 中间信息的回归。`/api/threads/:id` 恢复为先用完整 `thread/read` 读取并裁剪到最近 `CODEX_MOBILE_THREAD_TURNS` 个 turn；`thread/turns/list` 只在 `thread/read` 失败或超时时作为 fallback。该修复不改变 PWA shell cache，更新后需要重启 8787 Node listener。
 - 中文说明：v206 减少从其他 App 切回后的线程详情重刷。当前线程已经加载且不是运行中、加载中、错误状态，也没有从线程列表看到更新时，前台恢复只做状态、线程列表和 SSE 恢复，不再重新读取整个详情；运行中线程仍会继续通过现有轮询/合并路径刷新。PWA shell cache 升级到 `codex-mobile-shell-v206`。
