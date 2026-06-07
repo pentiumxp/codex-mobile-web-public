@@ -21,6 +21,39 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-07 Thread Detail State-Relevant Intermediate Items v208
+
+- User clarified that process/intermediate detail retention cannot be a simple
+  recent-turn window. Mobile Web must preserve all compact intermediate cards
+  for the current active turn, and also for the previous ended turn so users can
+  scroll back to inspect the just-finished work. If no live turn exists, the
+  latest ended turn keeps the intermediate cards.
+- Implemented:
+  - `server.js` now computes state-relevant turn indexes before compacting a
+    thread detail response.
+  - The selected live/latest-ended turn, plus the previous ended turn when a
+    live turn exists, keeps all compact command/tool/file/search/reasoning
+    intermediate cards. Command output is still bounded by the existing per-turn
+    output budget.
+  - Older turns outside that state-relevant set are receipt-only: user question
+    plus assistant receipt. The older-turn pagination fallback is also
+    receipt-only.
+  - README, architecture docs, and troubleshooting docs now describe the
+    state-relevant retention rule instead of the prior recent-window rule.
+- Validation:
+  - `node --check server.js` passed.
+  - Focused tests passed:
+    `node --test test/thread-item-timestamp-enrichment.test.js
+    test/thread-visibility.test.js test/conversation-render.test.js`.
+  - `npm run check` passed.
+  - Full `npm test` passed with 358 tests.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Status:
+  - Private implementation is ready to commit.
+  - Public sync/push still needs to be completed after the private commit and
+    privacy scan.
+
 ## 2026-06-07 Thread Detail Intermediate Items Regression v207
 
 - User reported that after v206, opening any thread no longer showed

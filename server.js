@@ -3362,7 +3362,10 @@ function compactItem(item, options = {}) {
 function trailingOperationIndexes(items, allowLiveOperation, maxOperations = 1) {
   const indexes = new Set();
   if (!allowLiveOperation || !Array.isArray(items)) return indexes;
-  const limit = Math.max(1, Math.min(50, Number(maxOperations || 1)));
+  const requestedLimit = Number(maxOperations || 1);
+  const limit = maxOperations === "all"
+    ? items.length
+    : Math.max(1, Math.min(50, Number.isFinite(requestedLimit) ? requestedLimit : 1));
   for (let index = items.length - 1; index >= 0; index -= 1) {
     if (!isOperationalItem(items[index])) continue;
     indexes.add(index);
@@ -3371,15 +3374,71 @@ function trailingOperationIndexes(items, allowLiveOperation, maxOperations = 1) 
   return indexes;
 }
 
+function isQuestionOrReceiptItem(item) {
+  if (!item || typeof item !== "object") return false;
+  const type = String(item.type || "").toLowerCase();
+  if (type === "usermessage" || type === "agentmessage") return true;
+  if (type === "message") {
+    const role = String(item.role || item.author || "").toLowerCase();
+    return role === "user" || role === "assistant";
+  }
+  return false;
+}
+
+function isEndedTurn(turn) {
+  if (!turn || typeof turn !== "object" || isLiveTurn(turn)) return false;
+  if (isCompletedStatus(turn.status)) return true;
+  return Boolean(turn.completedAt || turn.completed_at || turn.completedAtMs
+    || turn.endedAt || turn.ended_at || turn.finishedAt || turn.finished_at
+    || turn.durationMs || turn.duration_ms);
+}
+
+function findPreviousEndedTurnIndex(turns, startIndex) {
+  for (let index = Math.min(startIndex, turns.length - 1); index >= 0; index -= 1) {
+    if (isEndedTurn(turns[index])) return index;
+  }
+  for (let index = Math.min(startIndex, turns.length - 1); index >= 0; index -= 1) {
+    if (turns[index] && !isLiveTurn(turns[index])) return index;
+  }
+  return -1;
+}
+
+function operationDetailTurnIndexes(turns) {
+  const indexes = new Set();
+  if (!Array.isArray(turns) || turns.length === 0) return indexes;
+  let latestLiveIndex = -1;
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    if (isLiveTurn(turns[index])) {
+      latestLiveIndex = index;
+      break;
+    }
+  }
+  if (latestLiveIndex >= 0) {
+    indexes.add(latestLiveIndex);
+    const previousEndedIndex = findPreviousEndedTurnIndex(turns, latestLiveIndex - 1);
+    if (previousEndedIndex >= 0) indexes.add(previousEndedIndex);
+    return indexes;
+  }
+  const latestEndedIndex = findPreviousEndedTurnIndex(turns, turns.length - 1);
+  indexes.add(latestEndedIndex >= 0 ? latestEndedIndex : turns.length - 1);
+  return indexes;
+}
+
 function compactTurn(turn, options = {}) {
   if (!turn || typeof turn !== "object") return turn;
   const out = Object.assign({}, turn);
   if (Array.isArray(out.items)) {
-    const allowOperation = Boolean(options.allowLiveOperation) && isLiveTurn(out);
-    const liveOperationIndexes = trailingOperationIndexes(out.items, allowOperation, MAX_LIVE_OPERATION_ITEMS);
+    const allowOperation = Boolean(options.allowOperations)
+      || (Boolean(options.allowLiveOperation) && isLiveTurn(out));
+    const operationIndexes = trailingOperationIndexes(
+      out.items,
+      allowOperation,
+      options.maxOperationItems || MAX_LIVE_OPERATION_ITEMS,
+    );
     out.items = out.items.map((item) => compactItem(item, options)).filter((item, index) => {
+      if (options.receiptOnly) return isQuestionOrReceiptItem(item);
       if (!isOperationalItem(item)) return true;
-      return liveOperationIndexes.has(index);
+      return operationIndexes.has(index);
     });
     let remainingOutputBudget = MAX_COMMAND_OUTPUT_CHARS_PER_TURN;
     for (let i = out.items.length - 1; i >= 0; i--) {
@@ -3430,8 +3489,11 @@ function compactThread(thread, options = {}) {
     if (liveLatest && isLiveTurn(liveLatest)) {
       mergeRecentRawOperationsIntoLiveTurn(out, liveLatest);
     }
+    const operationDetailIndexes = operationDetailTurnIndexes(out.turns);
     out.turns = out.turns.map((turn, index) => compactTurn(turn, {
-      allowLiveOperation: index === latestIndex,
+      allowOperations: operationDetailIndexes.has(index),
+      maxOperationItems: operationDetailIndexes.has(index) ? "all" : MAX_LIVE_OPERATION_ITEMS,
+      receiptOnly: !operationDetailIndexes.has(index),
       threadId: out.id || out.threadId || "",
     }));
     const latest = out.turns[latestIndex];
@@ -3454,8 +3516,8 @@ function compactThreadReadResult(result, options = {}) {
 function compactTurnsListResult(result) {
   if (!result || typeof result !== "object") return result;
   const out = Object.assign({}, result);
-  if (Array.isArray(out.data)) out.data = out.data.map((turn) => compactTurn(turn));
-  if (Array.isArray(out.turns)) out.turns = out.turns.map((turn) => compactTurn(turn));
+  if (Array.isArray(out.data)) out.data = out.data.map((turn) => compactTurn(turn, { receiptOnly: true }));
+  if (Array.isArray(out.turns)) out.turns = out.turns.map((turn) => compactTurn(turn, { receiptOnly: true }));
   return out;
 }
 

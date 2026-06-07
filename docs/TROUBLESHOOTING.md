@@ -83,14 +83,13 @@ curl -fsS http://127.0.0.1:8787/api/public-config >/dev/null
 curl -fsS http://<mac-lan-ip>:8787/api/public-config >/dev/null
 ```
 
-On the current Mac production setup, the external HTTPS Hermes entry is
-`https://wardrobe-xuxin.synology.me:8555/?source=pwa`; do not diagnose it through
-the older `hermes-xuxin.synology.me:8445` URL unless the deployment config is
-changed. Validate the actual plugin path by checking that:
+For HTTPS reverse-proxy deployments, validate the currently configured public
+entry URL instead of an older host URL unless the deployment config was changed.
+Validate the actual plugin path by checking the active external origin:
 
 ```bash
-curl -k -fsS https://wardrobe-xuxin.synology.me:8555/api/public-config >/dev/null
-curl -k -fsS https://wardrobe-xuxin.synology.me:8555/api/hermes-plugins/codex-mobile/manifest?workspaceId=owner >/dev/null
+curl -k -fsS https://new-hermes.example.com/api/public-config >/dev/null
+curl -k -fsS https://new-hermes.example.com/api/hermes-plugins/codex-mobile/manifest?workspaceId=owner >/dev/null
 ```
 
 Authenticated SSE probes should receive one `data:` status event and one
@@ -313,10 +312,12 @@ Cause to check:
   `mobileOlderTurnsCursor` when more than `CODEX_MOBILE_THREAD_TURNS` turns
   exist. The browser defaults to 10 recent turns and loads 10 older turns when
   the user scrolls to the top of the current detail window.
-- The current compact path should merge a bounded set of recent raw rollout
-  operations into the latest live turn before trimming. Completed turns should
-  still stay compact and use the usage-summary card instead of reopening full
-  operation history.
+- The current compact path should retain intermediate cards for the current
+  live turn and its previous ended turn. If no live turn exists, it should
+  retain intermediate cards for the latest ended turn. Older-history turns
+  loaded through `/api/threads/<id>/turns`, and older turns outside that
+  state-relevant set, should be receipt-only: user question plus assistant
+  receipt, without old operation, reasoning, or diagnostic cards.
 - Current clients still enter thread detail at the bottom. Do not fix missing
   large-thread history by changing the open position; first check whether the
   server returned full `thread-read` or a fallback `turns-list` window.
@@ -362,7 +363,7 @@ This is usually display attribution, not a live process, when:
 - The real `function_call_output` or `exec_command_end` exists later in the rollout.
 - `Get-Process` shows no matching tool process.
 
-Current server behavior keeps at most one operation card only while the latest turn is live. Completed turns should not keep command/tool/file/search operation cards below the final reply; when scoped usage exists, the final frame should be the Usage summary. Raw fallback may attach a completed operation only when the latest turn is still live and the rollout event is tied to that same turn id; older completed operations must not attach to a newer live turn. If this regresses, inspect `readLatestRawOperation()` and `compactThread()` in `server.js`, then add coverage in `test/thread-item-timestamp-enrichment.test.js`.
+Current server behavior keeps compact process cards for the current live turn and the previous ended turn; if no live turn exists, the latest ended turn keeps those cards. Older turns are receipt-only. Raw fallback may attach a completed operation only when the latest turn is still live and the rollout event is tied to that same turn id; older completed operations must not attach to a newer live turn. If this regresses, inspect `readLatestRawOperation()` and `compactThread()` in `server.js`, then add coverage in `test/thread-item-timestamp-enrichment.test.js`.
 
 ## `rg` Appears Related To A Stall
 
@@ -1125,8 +1126,8 @@ only after the read completes. Also check the iframe's postMessage
 `targetOrigin`: when Hermes serves Codex through the same-origin plugin proxy,
 Codex must prefer the live `window.parent.location.origin` over the launch
 session's older `hermes_origin`. A stale target such as
-`https://hermes-xuxin.synology.me:8445` while the actual parent is
-`https://wardrobe-xuxin.synology.me:8555` silently drops
+`https://old-hermes.example.com` while the actual parent is
+`https://new-hermes.example.com` silently drops
 `codex-mobile.plugin.navigation`, leaving the host with `canGoBack:false` and
 making right-swipe fall through to the outer plugin return. If
 right-swipe instead opens Codex's standalone initial Workspace page, check the
