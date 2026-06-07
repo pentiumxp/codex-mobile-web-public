@@ -298,11 +298,46 @@ Symptom:
 
 Cause to check:
 
+- Thread detail may report `mobileReadMode=projection-dynamic` or
+  `mobileReadMode=projection-cache`. That is the expected fast path for large
+  rollout threads once the server has a dynamic or warm projection. If a large
+  stable thread still reports `mobileReadMode=thread-read` every time, inspect
+  `adapters/thread-detail-projection-service.js`, rollout size/mtime changes,
+  and summary `updatedAt/status` changes that may be invalidating the
+  projection signature.
+- The projection index is updated from raw app-server notifications before
+  browser SSE compaction. It should observe `item/started`, `item/completed`,
+  `item/agentMessage/delta`, `item/reasoning/*Delta`,
+  `item/commandExecution/outputDelta`, and `item/fileChange/outputDelta`.
+  If re-entering a running thread misses the latest intermediate output, check
+  whether the listener is receiving raw notifications and whether the current
+  projection entry was seeded before those notifications arrived.
+- If a completed turn shows two different `Usage` cards or the final assistant
+  receipt disappears after leaving and re-entering, check the
+  `turn/completed` projection merge path first. Completion notifications are
+  patches; they must preserve already-streamed assistant text when their
+  `items` array is missing or shorter, merge replacement assistant/plan
+  receipts by id or matching text, and keep only one `turnUsageSummary` item per
+  turn.
+- If the rollout comparison shows `task_started` and many `token_count` events
+  but no `task_complete` for that turn, the missing final receipt is not a
+  projection-rendering loss: the source turn is incomplete or interrupted.
+  Mobile Web should remove any stale Usage card from that turn instead of
+  rendering Usage as if the final receipt had completed.
+- If raw rollout has valid scoped `token_count` for a recently completed turn
+  but the detail response has no `turnUsageSummary`, check whether the fixed
+  rollout tail no longer contains that turn's token events. Thread detail should
+  pass the returned turn ids into `readRolloutTurnUsageSummaries()` so the
+  server can perform a bounded full-file metadata scan and cache token summaries
+  when the tail result is missing a target turn. Targeted Usage cache hits must
+  also pass this missing-turn check; do not return a target cache entry that
+  lacks any currently returned target turn id.
 - Thread detail should first use app-server `thread/read` even when the rollout
   file is over 32MB, because `thread/turns/list` does not reliably preserve the
   command/tool/file/search operation items expected in Mobile detail. If detail
-  reports `mobileReadMode=turns-list`, treat that as a fallback after
-  `thread/read` failed or timed out, not as the normal large-rollout path.
+  reports `mobileReadMode=turns-list`, treat that as a fallback after both
+  projection and `thread/read` were unavailable or timed out, not as the normal
+  large-rollout path.
 - A `thread/turns/list` fallback should include `mobileOlderTurnsCursor` when
   app-server has older turns. The phone can load another bounded page through
   `/api/threads/<id>/turns?sortDirection=desc&cursor=<json>`. If this returns
@@ -316,8 +351,9 @@ Cause to check:
   live turn and its previous ended turn. If no live turn exists, it should
   retain intermediate cards for the latest ended turn. Older-history turns
   loaded through `/api/threads/<id>/turns`, and older turns outside that
-  state-relevant set, should be receipt-only: user question plus assistant
-  receipt, without old operation, reasoning, or diagnostic cards.
+  state-relevant set, should be receipt-only: user question items plus the last
+  assistant/plan receipt and any `turnUsageSummary` metadata, without old
+  assistant progress updates, operation, reasoning, or other diagnostic cards.
 - Current clients still enter thread detail at the bottom. Do not fix missing
   large-thread history by changing the open position; first check whether the
   server returned full `thread-read` or a fallback `turns-list` window.
@@ -325,7 +361,13 @@ Cause to check:
   `turn/completed` when the live turn already has command/file/tool/search
   operation items. Pure chat replies may still stream normally. If the receipt
   is long, the browser should stop at the receipt start rather than the bottom;
-  the down-arrow remains the explicit skip-to-bottom control.
+  the down-arrow remains the explicit skip-to-bottom control. If the completion
+  notification only carries a short payload, the follow-up thread refresh should
+  preserve the completion anchor and perform the one-time receipt-start jump
+  after the full deferred receipt is merged. If `/api/threads/<id>` already has
+  `turnUsageSummary` but the just-completed browser view does not, inspect the
+  post-completion refresh queue; completion should schedule both an immediate
+  and a delayed detail refresh.
 
 Useful verification:
 
@@ -363,7 +405,7 @@ This is usually display attribution, not a live process, when:
 - The real `function_call_output` or `exec_command_end` exists later in the rollout.
 - `Get-Process` shows no matching tool process.
 
-Current server behavior keeps compact process cards for the current live turn and the previous ended turn; if no live turn exists, the latest ended turn keeps those cards. Older turns are receipt-only. Raw fallback may attach a completed operation only when the latest turn is still live and the rollout event is tied to that same turn id; older completed operations must not attach to a newer live turn. If this regresses, inspect `readLatestRawOperation()` and `compactThread()` in `server.js`, then add coverage in `test/thread-item-timestamp-enrichment.test.js`.
+Current server behavior keeps compact process cards for the current live turn and the previous ended turn; if no live turn exists, the latest ended turn keeps those cards. Older turns are receipt-only: user question items plus the last assistant/plan receipt only. Raw fallback may attach a completed operation only when the latest turn is still live and the rollout event is tied to that same turn id; older completed operations must not attach to a newer live turn. If this regresses, inspect `readLatestRawOperation()` and `compactThread()` in `server.js`, then add coverage in `test/thread-item-timestamp-enrichment.test.js`.
 
 ## `rg` Appears Related To A Stall
 

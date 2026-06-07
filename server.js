@@ -63,6 +63,7 @@ const {
   resolveActiveCodexHomeFromStore,
   resolveEffectiveCodexHome,
 } = require("./adapters/codex-profile-service");
+const { createThreadDetailProjectionService } = require("./adapters/thread-detail-projection-service");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -146,6 +147,9 @@ const WORKSPACE_REGISTRY_FILE = process.env.CODEX_MOBILE_WORKSPACE_REGISTRY_FILE
   || path.join(RUNTIME_ROOT, "workspace-registry.json");
 const TOKEN_USAGE_STATS_DB = process.env.CODEX_MOBILE_TOKEN_USAGE_DB
   || path.join(RUNTIME_ROOT, "token-usage-stats.sqlite");
+const THREAD_DETAIL_PROJECTION_CACHE_DIR = process.env.CODEX_MOBILE_THREAD_DETAIL_PROJECTION_CACHE_DIR
+  || path.join(RUNTIME_ROOT, "thread-detail-projections");
+const THREAD_DETAIL_PROJECTION_POLICY_VERSION = "state-relevant-receipt-v1";
 const WORKSPACE_CREATE_ROOTS = process.env.CODEX_MOBILE_WORKSPACE_CREATE_ROOTS || "";
 const hermesPluginService = createHermesPluginService({
   registrationFile: HERMES_PLUGIN_REGISTRATION_FILE,
@@ -199,6 +203,7 @@ const threadGoalService = createThreadGoalService({
   dbPath: GOALS_DB,
   userHome: USER_HOME,
 });
+let threadDetailProjectionService;
 const threadTaskCardService = createThreadTaskCardService({
   storageFile: THREAD_TASK_CARD_FILE,
   executeApprovedCard: async (card, message) => {
@@ -260,6 +265,11 @@ const MAX_THREAD_TURNS = Math.max(1, Math.min(100, Number(process.env.CODEX_MOBI
 const MAX_FULL_THREAD_TURNS = Math.max(MAX_THREAD_TURNS, Math.min(200, Number(process.env.CODEX_MOBILE_FULL_THREAD_TURNS || "10")));
 const MAX_LIVE_OPERATION_ITEMS = Math.max(1, Math.min(30, Number(process.env.CODEX_MOBILE_LIVE_OPERATION_ITEMS || "12")));
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
+threadDetailProjectionService = createThreadDetailProjectionService({
+  cacheDir: THREAD_DETAIL_PROJECTION_CACHE_DIR,
+  policyVersion: THREAD_DETAIL_PROJECTION_POLICY_VERSION,
+  maxTurns: MAX_FULL_THREAD_TURNS,
+});
 const MODEL_OPTIONS = optionListFromEnv("CODEX_MOBILE_MODEL_OPTIONS", [
   "gpt-5.5",
   "gpt-5.4",
@@ -2479,6 +2489,17 @@ function readRolloutTail(rolloutPath) {
   }
 }
 
+function readRolloutRuntimeScanText(rolloutPath) {
+  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) return "";
+  try {
+    const stat = fs.statSync(rolloutPath);
+    if (!stat.isFile() || stat.size <= 0 || stat.size > MAX_RUNTIME_CONTEXT_SCAN_BYTES) return "";
+    return fs.readFileSync(rolloutPath, "utf8");
+  } catch (_) {
+    return "";
+  }
+}
+
 function rememberItemTimestampCandidates(key, payload) {
   latestItemTimestampsByPath.set(key, {
     cachedAt: Date.now(),
@@ -2673,23 +2694,60 @@ function readRolloutItemTimestampCandidates(rolloutPath) {
   return payload;
 }
 
-function readRolloutTurnUsageSummaries(rolloutPath) {
+function normalizedTurnIdSet(turnIds) {
+  const ids = new Set();
+  for (const id of turnIds || []) {
+    const text = String(id || "").trim();
+    if (text) ids.add(text);
+  }
+  return ids;
+}
+
+function missingUsageTurnIds(payload, turnIds) {
+  const ids = normalizedTurnIdSet(turnIds);
+  if (!ids.size) return [];
+  const byTurnId = payload && payload.byTurnId instanceof Map ? payload.byTurnId : new Map();
+  return Array.from(ids).filter((id) => !byTurnId.has(id));
+}
+
+function targetUsageCacheKey(rolloutPath, turnIds) {
+  const ids = Array.from(normalizedTurnIdSet(turnIds)).sort();
+  if (!ids.length) return "";
+  return `${normalizeFsPath(rolloutPath)}:target-usage:${ids.join(",")}`;
+}
+
+function readRolloutTurnUsageSummaries(rolloutPath, options = {}) {
   if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) {
     return { byTurnId: new Map(), unscoped: [] };
+  }
+  const targetTurnIds = Array.isArray(options.targetTurnIds) ? options.targetTurnIds : [];
+  const targetKey = targetUsageCacheKey(rolloutPath, targetTurnIds);
+  if (targetKey) {
+    const targetCached = latestTurnUsageSummariesByPath.get(targetKey);
+    if (targetCached && Date.now() - targetCached.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS
+      && missingUsageTurnIds(targetCached.payload, targetTurnIds).length === 0) {
+      return targetCached.payload || { byTurnId: new Map(), unscoped: [] };
+    }
   }
   let cacheKey = "";
   try {
     const stat = fs.statSync(rolloutPath);
     cacheKey = runtimeContextCacheKey(rolloutPath, stat);
     const cached = latestTurnUsageSummariesByPath.get(cacheKey);
-    if (cached && Date.now() - cached.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS) {
+    if (cached && Date.now() - cached.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS
+      && missingUsageTurnIds(cached.payload, targetTurnIds).length === 0) {
       return cached.payload || { byTurnId: new Map(), unscoped: [] };
     }
   } catch (_) {
     return { byTurnId: new Map(), unscoped: [] };
   }
-  const payload = collectTurnUsageSummariesFromRolloutText(readRolloutTail(rolloutPath));
+  let payload = collectTurnUsageSummariesFromRolloutText(readRolloutTail(rolloutPath));
+  if (missingUsageTurnIds(payload, targetTurnIds).length > 0) {
+    const scanText = readRolloutRuntimeScanText(rolloutPath);
+    if (scanText) payload = collectTurnUsageSummariesFromRolloutText(scanText);
+  }
   if (cacheKey) rememberTurnUsageSummaries(cacheKey, payload);
+  if (targetKey) rememberTurnUsageSummaries(targetKey, payload);
   return payload;
 }
 
@@ -2891,6 +2949,39 @@ function annotateThreadRolloutStats(thread) {
   out.rolloutSizeUpdatedAtMs = stats.mtimeMs;
   out.rolloutOverWarningThreshold = stats.overWarningThreshold;
   return out;
+}
+
+function threadDetailProjectionInput(threadId, summary) {
+  const rolloutPath = rolloutPathForThread(summary);
+  const rolloutStats = rolloutStatsForPath(rolloutPath);
+  if (!threadId || !rolloutPath || !rolloutStats) return null;
+  return {
+    threadId,
+    rolloutPath,
+    rolloutStats,
+    maxTurns: MAX_FULL_THREAD_TURNS,
+    summaryUpdatedAtMs: timestampToMs(summary && (summary.updatedAt || summary.updated_at || summary.updatedAtMs || summary.updated_at_ms)),
+    summaryStatus: statusText(summary && summary.status),
+  };
+}
+
+function prepareProjectedThreadReadResult(cached, summary, runtimeSettings) {
+  if (!cached || !cached.result || !cached.result.thread) return null;
+  const mergedResult = Object.assign({}, cached.result, {
+    thread: mergeThreadDisplaySummary(cached.result.thread, summary) || cached.result.thread,
+  });
+  const result = compactThreadReadResult(mergedResult, { maxTurns: MAX_FULL_THREAD_TURNS });
+  if (!result.thread) return null;
+  result.thread = mergeThreadRuntimeFromStateDb(result.thread, summary);
+  result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
+  result.thread.mobileReadMode = cached.dynamic ? "projection-dynamic" : "projection-cache";
+  result.thread.mobileProjection = {
+    source: cached.dynamic ? "dynamic" : "cache",
+    cachedAtMs: cached.cachedAtMs || null,
+    updatedAtMs: cached.updatedAtMs || cached.cachedAtMs || null,
+    ageMs: cached.updatedAtMs ? Math.max(0, Date.now() - cached.updatedAtMs) : null,
+  };
+  return result;
 }
 
 function runtimeContextCacheKey(rolloutPath, stat) {
@@ -3374,15 +3465,44 @@ function trailingOperationIndexes(items, allowLiveOperation, maxOperations = 1) 
   return indexes;
 }
 
-function isQuestionOrReceiptItem(item) {
+function isUserQuestionItem(item) {
   if (!item || typeof item !== "object") return false;
   const type = String(item.type || "").toLowerCase();
-  if (type === "usermessage" || type === "agentmessage") return true;
+  if (type === "usermessage") return true;
   if (type === "message") {
     const role = String(item.role || item.author || "").toLowerCase();
-    return role === "user" || role === "assistant";
+    return role === "user";
   }
   return false;
+}
+
+function isAssistantReceiptItem(item) {
+  if (!item || typeof item !== "object") return false;
+  const type = String(item.type || "").toLowerCase();
+  if (type === "agentmessage" || type === "plan") return true;
+  if (type === "message") {
+    const role = String(item.role || item.author || "").toLowerCase();
+    return role === "assistant";
+  }
+  return false;
+}
+
+function isTurnUsageSummaryItem(item) {
+  return Boolean(item && typeof item === "object" && item.type === "turnUsageSummary");
+}
+
+function receiptOnlyItemIndexes(items) {
+  const indexes = new Set();
+  if (!Array.isArray(items)) return indexes;
+  let receiptIndex = -1;
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    if (isUserQuestionItem(item)) indexes.add(index);
+    if (isTurnUsageSummaryItem(item)) indexes.add(index);
+    if (isAssistantReceiptItem(item)) receiptIndex = index;
+  }
+  if (receiptIndex >= 0) indexes.add(receiptIndex);
+  return indexes;
 }
 
 function isEndedTurn(turn) {
@@ -3435,8 +3555,9 @@ function compactTurn(turn, options = {}) {
       allowOperation,
       options.maxOperationItems || MAX_LIVE_OPERATION_ITEMS,
     );
+    const receiptIndexes = options.receiptOnly ? receiptOnlyItemIndexes(out.items) : null;
     out.items = out.items.map((item) => compactItem(item, options)).filter((item, index) => {
-      if (options.receiptOnly) return isQuestionOrReceiptItem(item);
+      if (receiptIndexes) return receiptIndexes.has(index);
       if (!isOperationalItem(item)) return true;
       return operationIndexes.has(index);
     });
@@ -3480,7 +3601,9 @@ function compactThread(thread, options = {}) {
     }
     pendingSteerEchoStore.injectIntoThread(out);
     enrichThreadItemTimestampsFromRollout(out);
-    attachTurnUsageSummaries(out, readRolloutTurnUsageSummaries(rolloutPath), {
+    attachTurnUsageSummaries(out, readRolloutTurnUsageSummaries(rolloutPath, {
+      targetTurnIds: out.turns.map((turn) => turn && turn.id).filter(Boolean),
+    }), {
       rolloutStats,
       workspaceContextStats: workspaceContextStatsForCwd(out.cwd),
     });
@@ -4987,6 +5110,13 @@ function serveStatic(req, res) {
 }
 
 function broadcast(payload) {
+  if (payload && payload.type === "notification") {
+    try {
+      threadDetailProjectionService.applyNotification(payload.method, payload.params || {});
+    } catch (err) {
+      console.error(`[thread projection] notification update failed: ${err.message || String(err)}`);
+    }
+  }
   const compacted = compactNotification(payload);
   if (!compacted) return;
   const body = `data: ${JSON.stringify(compacted)}\n\n`;
@@ -8485,6 +8615,33 @@ async function handleApi(req, res) {
       threadLog("complete", { status: 404, mode: "hidden" });
       return;
     }
+    const projectionInput = threadDetailProjectionInput(threadId, summary);
+    const projectionStartedAtMs = Date.now();
+    const projected = projectionInput ? prepareProjectedThreadReadResult(
+      threadDetailProjectionService.get(projectionInput),
+      summary,
+      runtimeSettings,
+    ) : null;
+    if (projected && projected.thread) {
+      if (isHiddenThread(projected.thread, visibility)) {
+        threadLog("projection_hidden", {
+          durationMs: Date.now() - projectionStartedAtMs,
+          status: 404,
+        });
+        sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
+        return;
+      }
+      threadDisplaySummaryCache.remember(projected.thread);
+      threadLog("projection_hit", {
+        durationMs: Date.now() - projectionStartedAtMs,
+        mode: projected.thread.mobileReadMode,
+        returnedTurns: Array.isArray(projected.thread.turns) ? projected.thread.turns.length : null,
+        omittedTurns: projected.thread.mobileOmittedTurnCount || 0,
+      });
+      sendJson(res, 200, await prepareThreadTaskCardsToResult(projected));
+      threadLog("complete", { status: 200, mode: projected.thread.mobileReadMode });
+      return;
+    }
     const readStartedAtMs = Date.now();
     threadLog("thread_read_start", {
       timeoutMs: READ_RPC_TIMEOUT_MS,
@@ -8515,6 +8672,14 @@ async function handleApi(req, res) {
         returnedTurns: result.thread && Array.isArray(result.thread.turns) ? result.thread.turns.length : null,
         omittedTurns: result.thread && result.thread.mobileOmittedTurnCount ? result.thread.mobileOmittedTurnCount : 0,
       });
+      if (projectionInput && result.thread) {
+        try {
+          threadDetailProjectionService.seed(projectionInput, result);
+          result.thread.mobileProjection = { source: "seeded" };
+        } catch (err) {
+          threadLog("projection_seed_error", { error: err.message || String(err) });
+        }
+      }
       sendJson(res, 200, await prepareThreadTaskCardsToResult(result));
       threadLog("complete", { status: 200, mode: "thread-read" });
     } catch (readErr) {
@@ -8736,6 +8901,13 @@ async function handleApi(req, res) {
         clientSubmissionId: body.clientSubmissionId,
         resultTurnId: result && (result.turnId || result.id || result.turn && result.turn.id || ""),
       });
+      const resultTurnId = String(result && (result.turnId || result.id || result.turn && result.turn.id || "") || "");
+      if (resultTurnId) {
+        threadDetailProjectionService.applyNotification("turn/started", {
+          threadId,
+          turn: Object.assign({ id: resultTurnId, status: { type: "active" } }, result.turn && typeof result.turn === "object" ? result.turn : {}),
+        });
+      }
     } catch (err) {
       logMessageSubmit("failed", {
         threadId,

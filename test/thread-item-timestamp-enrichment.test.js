@@ -268,26 +268,62 @@ test("latest completed turn keeps all operation cards and ends with usage summar
 
 test("older compacted turns keep only question and receipt items", () => {
   const turns = [];
+  const rolloutEvents = [];
   for (let index = 0; index < 11; index += 1) {
+    rolloutEvents.push(
+      event(`2026-05-24T10:${String(index).padStart(2, "0")}:00.000Z`, "event_msg", {
+        type: "task_started",
+        turn_id: `turn-${index}`,
+      }),
+      event(`2026-05-24T10:${String(index).padStart(2, "0")}:30.000Z`, "event_msg", {
+        type: "token_count",
+        turn_id: `turn-${index}`,
+        info: {
+          last_token_usage: {
+            input_tokens: 100 + index,
+            cached_input_tokens: 50,
+            output_tokens: 10,
+            reasoning_output_tokens: 1,
+            total_tokens: 110 + index,
+          },
+          total_token_usage: {
+            input_tokens: 1000 + index,
+            cached_input_tokens: 500,
+            output_tokens: 100,
+            reasoning_output_tokens: 10,
+            total_tokens: 1100 + index,
+          },
+          model_context_window: 200000,
+        },
+      }),
+    );
     turns.push({
       id: `turn-${index}`,
       status: { type: "completed" },
       items: [
         { id: `user-${index}`, type: "userMessage", text: `question ${index}` },
+        { id: `agent-mid-${index}`, type: "agentMessage", text: `middle update ${index}` },
         { id: `op-${index}`, type: "commandExecution", command: `echo ${index}`, status: "completed" },
         { id: `reason-${index}`, type: "reasoning", text: `reasoning ${index}` },
-        { id: `agent-${index}`, type: "agentMessage", text: `receipt ${index}` },
+        { id: `agent-final-${index}`, type: "agentMessage", text: `receipt ${index}` },
       ],
     });
   }
 
-  const compacted = compactThread({ id: "thread-old", turns }, { maxTurns: 11 });
-  const olderItems = compacted.turns[0].items;
-  const recentItems = compacted.turns[10].items;
+  const { dir, rolloutPath } = writeRollout(rolloutEvents);
+  try {
+    const compacted = compactThread({ id: "thread-old", path: rolloutPath, turns }, { maxTurns: 11 });
+    const olderItems = compacted.turns[0].items;
+    const recentItems = compacted.turns[10].items;
 
-  assert.deepEqual(olderItems.map((item) => item.type), ["userMessage", "agentMessage"]);
-  assert.equal(recentItems.some((item) => item.type === "commandExecution"), true);
-  assert.equal(recentItems.some((item) => item.type === "reasoning"), true);
+    assert.deepEqual(olderItems.map((item) => item.type), ["userMessage", "agentMessage", "turnUsageSummary"]);
+    assert.deepEqual(olderItems.map((item) => item.id), ["user-0", "agent-final-0", "mobile-turn-usage-turn-0"]);
+    assert.equal(recentItems.some((item) => item.type === "commandExecution"), true);
+    assert.equal(recentItems.some((item) => item.type === "reasoning"), true);
+    assert.equal(recentItems.some((item) => item.id === "agent-mid-10"), true);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("live turn and previous ended turn keep intermediate items while older turns are receipt-only", () => {
@@ -297,9 +333,10 @@ test("live turn and previous ended turn keep intermediate items while older turn
       status: { type: "completed" },
       items: [
         { id: "user-old", type: "userMessage", text: "old question" },
+        { id: "agent-old-mid", type: "agentMessage", text: "old middle update" },
         { id: "op-old", type: "commandExecution", command: "echo old", status: "completed" },
         { id: "reason-old", type: "reasoning", text: "old reasoning" },
-        { id: "agent-old", type: "agentMessage", text: "old receipt" },
+        { id: "agent-old-final", type: "agentMessage", text: "old receipt" },
       ],
     },
     {
@@ -326,6 +363,7 @@ test("live turn and previous ended turn keep intermediate items while older turn
   const compacted = compactThread({ id: "thread-live-window", turns }, { maxTurns: 3 });
 
   assert.deepEqual(compacted.turns[0].items.map((item) => item.type), ["userMessage", "agentMessage"]);
+  assert.deepEqual(compacted.turns[0].items.map((item) => item.id), ["user-old", "agent-old-final"]);
   assert.equal(compacted.turns[1].items.some((item) => item.type === "commandExecution"), true);
   assert.equal(compacted.turns[1].items.some((item) => item.type === "reasoning"), true);
   assert.equal(compacted.turns[2].items.some((item) => item.type === "commandExecution"), true);

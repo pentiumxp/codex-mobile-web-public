@@ -83,6 +83,10 @@ const state = {
   sendProgressStartAt: 0,
   sendProgressWarned: false,
   refreshTimer: null,
+  postCompletionRefreshTimers: [],
+  usageBackfillTimer: null,
+  usageBackfillKey: "",
+  usageBackfillAttempts: 0,
   recoveryTimer: null,
   reconnectNoticeTimer: null,
   eventRetryTimer: null,
@@ -237,7 +241,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v206";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v213";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -2975,6 +2979,12 @@ function latestTurn() {
   return turns.length ? turns[turns.length - 1] : null;
 }
 
+function turnById(turnId) {
+  const id = String(turnId || "");
+  if (!id || !state.currentThread || !Array.isArray(state.currentThread.turns)) return null;
+  return state.currentThread.turns.find((turn) => String(turn && turn.id || "") === id) || null;
+}
+
 function isIncompleteInterruptedTurn(turn) {
   return turn
     && statusText(turn.status).toLowerCase() === "interrupted"
@@ -3203,6 +3213,20 @@ function isMuxUserMessage(item) {
   return Boolean(item && item.type === "userMessage" && /^mux-user-/.test(String(item.id || "")));
 }
 
+function isTurnUsageSummaryItem(item) {
+  return Boolean(item && item.type === "turnUsageSummary");
+}
+
+function dedupeTurnUsageSummaryItems(items) {
+  if (!Array.isArray(items)) return [];
+  let lastSummaryIndex = -1;
+  items.forEach((item, index) => {
+    if (isTurnUsageSummaryItem(item)) lastSummaryIndex = index;
+  });
+  if (lastSummaryIndex < 0) return items;
+  return items.filter((item, index) => !isTurnUsageSummaryItem(item) || index === lastSummaryIndex);
+}
+
 function normalizeComparableText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
@@ -3375,7 +3399,7 @@ function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserve
     merged.push(incomingItem);
     if (incomingItem.id) added.add(incomingItem.id);
   }
-  return removeShadowedMuxUserMessages(merged);
+  return dedupeTurnUsageSummaryItems(removeShadowedMuxUserMessages(merged));
 }
 
 function mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) {
@@ -5085,6 +5109,60 @@ async function loadThread(threadId, options = {}) {
   });
 }
 
+function isSuccessfulCompletedTurn(turn) {
+  const text = statusText(turn && turn.status).toLowerCase();
+  if (!text || /interrupt|fail|cancel|error|running|active|progress|pending|inprogress|in_progress|in-progress/.test(text)) return false;
+  return /completed|success|succeeded|done|finished|closed/.test(text);
+}
+
+function turnHasUsageSummary(turn) {
+  return Array.isArray(turn && turn.items)
+    && turn.items.some((item) => item && item.type === "turnUsageSummary");
+}
+
+function latestSuccessfulCompletedTurnMissingUsage() {
+  const turns = state.currentThread && Array.isArray(state.currentThread.turns)
+    ? state.currentThread.turns
+    : [];
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    if (!isSuccessfulCompletedTurn(turn)) continue;
+    return turnHasUsageSummary(turn) ? null : turn;
+  }
+  return null;
+}
+
+function clearUsageBackfillRefresh() {
+  clearTimeout(state.usageBackfillTimer);
+  state.usageBackfillTimer = null;
+  state.usageBackfillKey = "";
+  state.usageBackfillAttempts = 0;
+}
+
+function scheduleUsageBackfillRefresh(delay = 1200) {
+  if (!state.currentThreadId || document.visibilityState === "hidden") return;
+  const turn = latestSuccessfulCompletedTurnMissingUsage();
+  if (!turn || !turn.id) {
+    clearUsageBackfillRefresh();
+    return;
+  }
+  const key = `${state.currentThreadId}|${turn.id}`;
+  if (state.usageBackfillKey !== key) {
+    clearTimeout(state.usageBackfillTimer);
+    state.usageBackfillTimer = null;
+    state.usageBackfillKey = key;
+    state.usageBackfillAttempts = 0;
+  }
+  if (state.usageBackfillAttempts >= 6 || state.usageBackfillTimer) return;
+  state.usageBackfillAttempts += 1;
+  state.usageBackfillTimer = setTimeout(() => {
+    state.usageBackfillTimer = null;
+    if (document.visibilityState === "hidden") return;
+    if (!state.currentThreadId || `${state.currentThreadId}|${turn.id}` !== state.usageBackfillKey) return;
+    refreshCurrentThread().catch(showError);
+  }, delay);
+}
+
 async function refreshCurrentThread() {
   if (!state.currentThreadId) return;
   markIdleActivity("同步");
@@ -5110,7 +5188,9 @@ async function refreshCurrentThread() {
   renderComposerSettings();
   syncActiveTurnFromThread();
   renderThreads();
-  renderCurrentThread();
+  const receiptStartTurnId = pendingCompletedReceiptStartTurnId();
+  renderCurrentThread(receiptStartTurnId ? { scrollToTurnReceiptStart: receiptStartTurnId } : {});
+  scheduleUsageBackfillRefresh();
   scheduleLivePollIfNeeded();
 }
 
@@ -5210,8 +5290,26 @@ function scheduleCurrentThreadRefresh(delay = 600) {
   }, delay);
 }
 
+function schedulePostCompletionThreadRefreshes(threadId, delays = [700, 2400]) {
+  const id = String(threadId || "");
+  if (!id) return;
+  state.postCompletionRefreshTimers.forEach((timer) => clearTimeout(timer));
+  state.postCompletionRefreshTimers = delays.map((delay) => {
+    const timer = setTimeout(() => {
+      state.postCompletionRefreshTimers = state.postCompletionRefreshTimers.filter((entry) => entry !== timer);
+    if (document.visibilityState === "hidden") return;
+    if (state.currentThreadId !== id) return;
+    refreshCurrentThread().catch(showError);
+    }, delay);
+    return timer;
+  });
+}
+
 function abortCurrentThreadRefresh() {
   clearTimeout(state.refreshTimer);
+  state.postCompletionRefreshTimers.forEach((timer) => clearTimeout(timer));
+  state.postCompletionRefreshTimers = [];
+  clearUsageBackfillRefresh();
   clearTimeout(state.pollTimer);
   if (state.refreshThreadController) {
     state.refreshThreadController.abort();
@@ -8922,6 +9020,9 @@ function upsertItem(turnId, item) {
   if (item.type === "agentMessage" || item.type === "plan") {
     turn.items = turn.items.filter((existing) => existing.id === item.id || !visibleTextItemsLikelySame(existing, item));
   }
+  if (isTurnUsageSummaryItem(item)) {
+    turn.items = turn.items.filter((existing) => existing.id === item.id || !isTurnUsageSummaryItem(existing));
+  }
   const index = turn.items.findIndex((x) => x.id === item.id);
   if (index >= 0 && !item.startedAtMs && turn.items[index].startedAtMs) item.startedAtMs = turn.items[index].startedAtMs;
   if (item.type === "reasoning" && !item.startedAtMs) item.startedAtMs = Date.now();
@@ -9204,7 +9305,8 @@ function applyNotification(method, params) {
     updateComposerControls();
     renderCurrentThread(shouldScrollToLongReceiptStart(turn) ? { scrollToTurnReceiptStart: params.turn.id } : {});
     scheduleRenderThreads();
-    scheduleCurrentThreadRefresh(700);
+    schedulePostCompletionThreadRefreshes(params.threadId, [700, 2400]);
+    scheduleUsageBackfillRefresh(1400);
     scheduleLivePollIfNeeded(1400);
     return;
   }
@@ -9713,7 +9815,9 @@ function rememberRecentCompletedTurnReply(turnId) {
     threadId: normalizedThreadId,
     turnId: normalizedTurnId,
     completedAtMs: Date.now(),
+    activatedByCompletion: true,
     activatedByUserScroll: keepActivatedByUserScroll,
+    receiptStartLocated: false,
   };
 }
 
@@ -9762,7 +9866,9 @@ function activateRecentCompletedReplyAnchorFromUserScroll() {
     threadId: String(threadId),
     turnId: String(turn.id),
     completedAtMs: Date.now(),
+    activatedByCompletion: false,
     activatedByUserScroll: true,
+    receiptStartLocated: false,
   };
   return true;
 }
@@ -9779,7 +9885,7 @@ function updateRecentCompletedReplyAnchorFromScroll() {
   if (!hasRecentConversationScrollIntent()) return;
   if (delta < -2) {
     activateRecentCompletedReplyAnchorFromUserScroll();
-  } else if (delta > 2) {
+  } else if (delta > 2 && !(state.recentCompletedReplyAnchor && state.recentCompletedReplyAnchor.activatedByCompletion)) {
     clearRecentCompletedReplyAnchor();
   }
 }
@@ -9789,7 +9895,7 @@ function currentRecentCompletedReplyAnchor() {
   if (!anchor) return null;
   const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
   if (!threadId || anchor.threadId !== String(threadId)) return null;
-  if (!anchor.activatedByUserScroll) return null;
+  if (!anchor.activatedByUserScroll && !anchor.activatedByCompletion) return null;
   if (Date.now() - Number(anchor.completedAtMs || 0) > TURN_REPLY_JUMP_WINDOW_MS) {
     clearRecentCompletedReplyAnchor();
     return null;
@@ -9835,6 +9941,14 @@ function shouldScrollToLongReceiptStart(turn) {
   return Boolean(turn && isTurnComplete(turn) && finalReceiptTextForTurn(turn).length >= LONG_RECEIPT_SCROLL_CHARS);
 }
 
+function pendingCompletedReceiptStartTurnId() {
+  const anchor = currentRecentCompletedReplyAnchor();
+  if (!anchor || !anchor.activatedByCompletion || anchor.receiptStartLocated) return "";
+  const turn = turnById(anchor.turnId);
+  if (!shouldScrollToLongReceiptStart(turn)) return "";
+  return String(anchor.turnId || "");
+}
+
 function scrollConversationToTurnReceiptStart(turnId) {
   if (!turnId) return;
   const target = turnFinalReceiptNode({ turnId });
@@ -9843,6 +9957,9 @@ function scrollConversationToTurnReceiptStart(turnId) {
   clearViewportBottomFollow();
   clearConversationNearBottomState();
   scrollNodeIntoConversationView(target);
+  if (state.recentCompletedReplyAnchor && state.recentCompletedReplyAnchor.turnId === String(turnId)) {
+    state.recentCompletedReplyAnchor.receiptStartLocated = true;
+  }
   scheduleScrollToBottomButtonUpdate();
 }
 
@@ -11329,7 +11446,6 @@ function wireUi() {
   $("interruptTurn").addEventListener("click", interruptActiveTurn);
   if ($("scrollToBottom")) $("scrollToBottom").addEventListener("click", () => {
     clearConversationAutoScrollHold();
-    clearRecentCompletedReplyAnchor();
     clearSubmittedMessageBottomFollow();
     clearViewportBottomFollow();
     scrollConversationToBottom();

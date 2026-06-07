@@ -25,8 +25,11 @@ function statusText(status) {
   return "";
 }
 
-function isCompletedStatus(status) {
-  return /completed|failed|cancel|error|interrupted/i.test(statusText(status));
+function canAttachUsageSummary(status) {
+  const text = statusText(status).toLowerCase();
+  if (!text) return false;
+  if (/failed|fail|cancel|error|interrupt|running|active|progress|pending/.test(text)) return false;
+  return /completed|success|succeeded|done|finished|closed/.test(text);
 }
 
 function rolloutEntryTurnId(entry) {
@@ -398,12 +401,12 @@ function attachTurnUsageSummaries(thread, summaries, options = {}) {
   const latestUnscoped = Array.isArray(summaries.unscoped) && summaries.unscoped.length
     ? summaries.unscoped[summaries.unscoped.length - 1]
     : null;
-  const completedTurns = thread.turns.filter((turn) => isCompletedStatus(turn && turn.status));
+  const completedTurns = thread.turns.filter((turn) => canAttachUsageSummary(turn && turn.status));
   const latestCompletedTurn = completedTurns.length ? completedTurns[completedTurns.length - 1] : null;
   for (const turn of thread.turns) {
     if (!turn || typeof turn !== "object") continue;
     turn.items = removeExistingSummaryItems(Array.isArray(turn.items) ? turn.items : []);
-    if (!isCompletedStatus(turn.status)) continue;
+    if (!canAttachUsageSummary(turn.status)) continue;
     const turnId = turnIdentifier(turn);
     const summary = (turnId && byTurnId.get(turnId))
       || (latestUnscoped && latestCompletedTurn === turn ? latestUnscoped : null);

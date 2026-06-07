@@ -1,6 +1,8 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const { test } = require("node:test");
 
 const {
@@ -10,6 +12,8 @@ const {
   collectTurnUsageSummariesFromRolloutText,
   contextRiskLevel,
 } = require("../adapters/turn-usage-summary-service");
+
+const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
 
 test("collects token_count events under the current rollout turn", () => {
   const entries = [
@@ -288,6 +292,16 @@ test("parses rollout jsonl token counts and ignores malformed lines", () => {
   assert.equal(summaries.unscoped.length, 0);
 });
 
+test("thread detail usage read targets returned turns beyond the rollout tail", () => {
+  assert.match(serverJs, /function readRolloutRuntimeScanText\(rolloutPath\)/);
+  assert.match(serverJs, /function missingUsageTurnIds\(payload, turnIds\)/);
+  assert.match(serverJs, /targetCached && Date\.now\(\) - targetCached\.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS\s*&& missingUsageTurnIds\(targetCached\.payload, targetTurnIds\)\.length === 0/);
+  assert.match(serverJs, /if \(missingUsageTurnIds\(payload, targetTurnIds\)\.length > 0\) \{\s*const scanText = readRolloutRuntimeScanText\(rolloutPath\);/);
+  assert.match(serverJs, /readRolloutTurnUsageSummaries\(rolloutPath, \{\s*targetTurnIds: out\.turns\.map\(\(turn\) => turn && turn\.id\)\.filter\(Boolean\),\s*\}\)/);
+  assert.match(serverJs, /const mergedResult = Object\.assign\(\{\}, cached\.result, \{\s*thread: mergeThreadDisplaySummary\(cached\.result\.thread, summary\) \|\| cached\.result\.thread,/);
+  assert.match(serverJs, /compactThreadReadResult\(mergedResult, \{ maxTurns: MAX_FULL_THREAD_TURNS \}\)/);
+});
+
 test("attaches summaries only to completed turns and includes rollout stats", () => {
   const summaries = collectTurnUsageSummariesFromEntries([
     { type: "turn_context", payload: { turn_id: "done" } },
@@ -302,10 +316,23 @@ test("attaches summaries only to completed turns and includes rollout stats", ()
         },
       },
     },
+    { type: "turn_context", payload: { turn_id: "interrupted" } },
+    {
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          last_token_usage: { input_tokens: 30, output_tokens: 4, total_tokens: 34 },
+          total_token_usage: { input_tokens: 50, output_tokens: 7, total_tokens: 57 },
+          model_context_window: 100,
+        },
+      },
+    },
   ]);
   const thread = {
     turns: [
       { id: "done", status: { type: "completed" }, items: [{ id: "old", type: "turnUsageSummary" }] },
+      { id: "interrupted", status: { type: "interrupted" }, items: [{ id: "stale", type: "turnUsageSummary" }] },
       { id: "live", status: { type: "running" }, items: [] },
     ],
   };
@@ -335,6 +362,7 @@ test("attaches summaries only to completed turns and includes rollout stats", ()
   assert.equal(thread.turns[0].items[0].mobileUsageSummary.workspaceContextPairSizeBytes, 12288);
   assert.equal(thread.turns[0].items[0].mobileUsageSummary.workspaceHandoffPromptThresholdBytes, 204800);
   assert.equal(thread.turns[1].items.length, 0);
+  assert.equal(thread.turns[2].items.length, 0);
 });
 
 test("context risk thresholds match visible warning levels", () => {
