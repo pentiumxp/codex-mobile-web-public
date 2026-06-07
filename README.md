@@ -666,6 +666,9 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v205 修复 Hermes 插件宿主域名切换后 Codex 线程详情右滑退出宿主的问题。嵌入模式发送 `codex-mobile.plugin.navigation` 和 `back_result` 前，会优先使用当前 iframe 的实际 `window.parent.location.origin`；只有无法读取父窗口 origin 时，才回退到 launch session 返回的 `hermes_origin` 或 referrer。这样 Mac 生产域名从 `hermes-xuxin.synology.me:8445` 切到 `wardrobe-xuxin.synology.me:8555` 后，线程详情仍能把 `canGoBack=true` 发给宿主，右滑返回 Codex 线程列表而不是退出到 Hermes。PWA shell cache 升级到 `codex-mobile-shell-v205`。
+- 中文说明：v204 增加 app-shell 刷新策略 harness，并修复部署中间态导致的刷新循环。当前浏览器脚本如果已经是较新的 `codex-mobile-shell-vNNN`，而 8787 listener 的 `/api/public-config` 仍停在旧启动快照，前端会把它识别为需要重启 listener 的中间态，不再反复提示“刷新客户端”。只有服务端 shell 明确更新于当前脚本时，Standalone 才显示手动刷新入口，Hermes embed 才请求宿主刷新。PWA shell cache 升级到 `codex-mobile-shell-v204`。
+- 中文说明：v203 改善 Hermes 嵌入模式下的 EventSource 断线恢复。`/api/events` 短暂断开但普通 JSON API 仍可用时，前端会用 `/api/status`、线程列表和当前线程详情进入降级轮询，并按退避节奏重试 SSE；不再反复把顶部活动提示标成“重连”，也不会在 API 健康时弹刷新入口。PWA shell cache 升级到 `codex-mobile-shell-v203`。
 - 中文说明：v202 修复 subagent 结束后线程列表残留 UUID-only 线程的问题。服务端 rollout-session fallback 现在会读取 `session_meta.payload.agent_nickname` / `agent_role`，在线程列表最终合并后再次执行归档、subagent 和裸 UUID fallback 过滤；如果一个 Mobile fallback 摘要在 `session_index.jsonl` 补名后仍没有真实标题、且状态不是 live，就不会再显示成点不进去的历史残留线程。该修复是 server-only，不改变前端 PWA shell cache；更新后需要重启 8787 Node listener 才会生效。
 - 中文说明：v201 放宽 `/g` 目标 objective 的长度上限。目标对话框输入框、Mobile Web 服务端转发到 `thread/goal/set` 的 objective、以及 `goals_1.sqlite` fallback 公开显示都从原来的短限制提高到 4000 字符，避免粘贴较长目标时被浏览器或服务端截断。PWA shell cache 升级到 `codex-mobile-shell-v201`。
 - 中文说明：v200 修正 v199 的长回执仍会先流式刷新到阈值的问题。普通纯聊天回复仍可流式显示；但当前 live turn 里已经出现命令、文件、工具或搜索操作后，后续 `agentMessage` 会被视为最终回执，前端从第一段 delta 起只缓存不重绘，等 `turn/completed` 后一次性渲染完整回执；长回执仍会停在回执开头。PWA shell cache 升级到 `codex-mobile-shell-v200`。

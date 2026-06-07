@@ -408,7 +408,7 @@ regex parser. The browser provides only the visible thread list and required
 response schema. If the model does not return one valid visible
 `targetThreadId`, Mobile Web does not auto-create a pending card.
 
-The browser connects to `/api/events` with the current thread id. `server.js` filters app-server notifications to the current thread where possible, forwards status and thread-level notifications, and drops large diff notifications that the UI does not render. Source-less `account/rateLimits/updated` notifications are recorded server-side but not broadcast to browsers because they can come from another workspace in a shared mux stream. Browser quota display is refreshed from active `/api/public-config` and `/api/status` snapshots; the server reads `account/rateLimits/read` after app-server initialize and then accepts later quota notifications from the same trusted source. Rollout-scanned quota data is kept only as an account-scoped cold-start fallback and does not overwrite live app-server quota. For shared-profile homes, only live quota from this listener's own managed child app-server can be exposed, and it is not persisted as reusable profile quota. When the server explicitly reports no valid quota snapshot, the browser clears its local quota cache instead of keeping a stale previous-account value.
+The browser connects to `/api/events` with the current thread id. `server.js` filters app-server notifications to the current thread where possible, forwards status and thread-level notifications, and drops large diff notifications that the UI does not render. In Hermes embed mode, EventSource is treated as the preferred live channel, not the only recovery path: if `/api/events` errors but normal API calls still work, the browser refreshes `/api/status`, the thread list, and the current thread through ordinary requests, enters a bounded polling fallback, and retries EventSource with backoff. This avoids repeated visible reconnect/refresh prompts when iOS WebKit or a reverse proxy temporarily interrupts the long SSE stream while the JSON API is healthy. Source-less `account/rateLimits/updated` notifications are recorded server-side but not broadcast to browsers because they can come from another workspace in a shared mux stream. Browser quota display is refreshed from active `/api/public-config` and `/api/status` snapshots; the server reads `account/rateLimits/read` after app-server initialize and then accepts later quota notifications from the same trusted source. Rollout-scanned quota data is kept only as an account-scoped cold-start fallback and does not overwrite live app-server quota. For shared-profile homes, only live quota from this listener's own managed child app-server can be exposed, and it is not persisted as reusable profile quota. When the server explicitly reports no valid quota snapshot, the browser clears its local quota cache instead of keeping a stale previous-account value.
 
 The mux keeps a replay buffer for recent app-server notifications and unresolved server requests. Mobile Web declares a bounded replay limit to avoid replaying very large historical streams.
 
@@ -489,7 +489,11 @@ shell assets, prune old shell caches, and call `window.location.reload()`. This
 keeps version changes explicit and makes the visible button the standalone reload
 trigger. In Hermes embed mode, the iframe may ask the host for refresh when the
 client shell build changes, but the request is signature-deduped so an old cached
-iframe cannot repeatedly force host reloads for the same build mismatch.
+iframe cannot repeatedly force host reloads for the same build mismatch. Build
+checks compare the direction of `codex-mobile-shell-vNNN`: a server shell newer
+than the loaded client may prompt/ask the host to refresh, while a loaded client
+newer than the listener's startup `/api/public-config` snapshot is treated as a
+deployment middle state and must not create a refresh loop.
 Server-only asset build drift is recorded silently so returning through the host
 bottom tabs does not flash through an old/default iframe page. Server-only fixes
 do not need a shell bump, but open clients may need a normal detail refresh.

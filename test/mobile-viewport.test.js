@@ -49,8 +49,8 @@ test("mobile viewport and early guards disable page zoom", () => {
 });
 
 test("public app shell cache advances after Hermes embed back navigation hardening", () => {
-  assert.match(swJs, /codex-mobile-shell-v201/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v201"/);
+  assert.match(swJs, /codex-mobile-shell-v205/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v205"/);
   assert.match(appJs, /startupThreadOpenPending: false/);
   assert.match(indexHtml, /id="pluginStartupLoading"/);
   assert.match(indexHtml, /data-plugin-startup-title>正在加载 Codex\.\.\.</);
@@ -139,10 +139,12 @@ test("public app shell cache advances after Hermes embed back navigation hardeni
   assert.match(swJs, /"\/conversation-scroll\.js"/);
   assert.match(swJs, /"\/image-compressor\.js"/);
   assert.match(swJs, /"\/plugin-embed\.js"/);
+  assert.match(swJs, /"\/build-refresh-policy\.js"/);
   assert.match(appJs, /"\/viewport-metrics\.js"/);
   assert.match(appJs, /"\/conversation-scroll\.js"/);
   assert.match(appJs, /"\/image-compressor\.js"/);
   assert.match(appJs, /"\/plugin-embed\.js"/);
+  assert.match(appJs, /"\/build-refresh-policy\.js"/);
   assert.match(appJs, /navigator\.serviceWorker\.register\("\/sw\.js"\)/);
   assert.match(appJs, /state\.serviceWorkerRegistration\.update\(\)\.catch/);
   assert.match(swJs, /if \(!data\.threadId && payload\.threadId\) data\.threadId = payload\.threadId;/);

@@ -115,9 +115,14 @@ test("embedded plugin mode hides standalone chrome and installs navigation/windo
   assert.match(appJs, /showPluginEmbedRecovering\("Refreshing Codex Mobile plugin session\.\.\."\)/);
   assert.match(appJs, /showPluginEmbedRecovering\("Refreshing Codex Mobile plugin launch\.\.\."\)/);
   assert.match(appJs, /targetOrigin:\s*targetOrigin \|\| "\*"/);
+  assert.match(appJs, /function currentPluginParentWindowOrigin\(\)/);
+  assert.match(appJs, /!window\.parent \|\| window\.parent === window \|\| !window\.parent\.location/);
+  assert.match(appJs, /function normalizePluginParentOrigin\(value\) \{\s*const liveParentOrigin = currentPluginParentWindowOrigin\(\);/);
+  assert.match(appJs, /function publishPluginNavigationState\(options = \{\}\) \{[\s\S]*const targetOrigin = normalizePluginParentOrigin\(state\.pluginParentOrigin\);[\s\S]*targetOrigin: targetOrigin \|\| "\*"/);
+  assert.match(appJs, /function postPluginBackResult\(handled, reason\) \{[\s\S]*const targetOrigin = normalizePluginParentOrigin\(state\.pluginParentOrigin\);[\s\S]*targetOrigin: targetOrigin \|\| "\*"/);
   assert.match(appJs, /const hermesOrigin = normalizePluginParentOrigin\(result && result\.hermes_origin\)/);
   assert.match(appJs, /state\.pluginParentOrigin = hermesOrigin/);
-  assert.match(appJs, /if \(isHermesEmbedMode\(\)\) \{\s*if \(clientChanged\) \{[\s\S]*requestHermesPluginRefresh\("server_build_changed"\);[\s\S]*if \(!clientChanged && assetsChanged\) \{[\s\S]*state\.serverAssetBuildId = nextAssetBuildId;[\s\S]*return;/);
+  assert.match(appJs, /if \(isHermesEmbedMode\(\)\) \{\s*if \(serverBuildNeedsRefresh\) \{[\s\S]*requestHermesPluginRefresh\("server_build_changed"\);[\s\S]*if \(!serverBuildNeedsRefresh && assetsChanged\) \{[\s\S]*state\.serverAssetBuildId = nextAssetBuildId;[\s\S]*return;/);
   assert.doesNotMatch(appJs, /if \(isHermesEmbedMode\(\)\) \{\s*state\.pageRefreshBuildId = nextBuildId;[\s\S]*requestHermesPluginRefresh\("server_build_changed", \{ force: true \}\);[\s\S]*return;/);
 });
 

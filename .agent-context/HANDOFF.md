@@ -21,6 +21,70 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-07 Hermes Plugin Parent-Origin Back Navigation v205
+
+- User reported that Mac-hosted Hermes plugin no longer reconnects frequently,
+  but right-swipe from a Codex thread detail still exits to the Hermes host
+  instead of returning to the Codex thread list. Windows-hosted Hermes on the
+  same phone behaved correctly.
+- Root cause confirmed with Appium on Mac iOS Simulator:
+  - The Codex iframe was opened under
+    `https://wardrobe-xuxin.synology.me:8555/api/hermes-plugins/codex-mobile/proxy/`.
+  - Before the fix, `publishPluginNavigationState({ force: true })` sent
+    `codex-mobile.plugin.navigation` to stale targetOrigin
+    `https://hermes-xuxin.synology.me:8445`, inherited from the launch-session
+    `hermes_origin`.
+  - Browser `postMessage` silently dropped those messages because the actual
+    parent origin was `https://wardrobe-xuxin.synology.me:8555`.
+  - Hermes host therefore kept `record.canGoBack=false`, `navigationLastAt=0`,
+    and `backSwipeTarget()` fell through to the outer plugin return.
+- Implemented:
+  - Added `currentPluginParentWindowOrigin()` in `public/app.js`.
+  - `normalizePluginParentOrigin()` now prefers live
+    `window.parent.location.origin` when same-origin proxying makes it
+    readable; it falls back to launch-session `hermes_origin` or referrer only
+    when the live parent origin is unavailable.
+  - `publishPluginNavigationState()` and `postPluginBackResult()` re-normalize
+    `targetOrigin` before posting and update `state.pluginParentOrigin` when a
+    concrete live origin is available.
+  - Bumped the frontend shell to `0.1.11|codex-mobile-shell-v205` /
+    `codex-mobile-shell-v205`.
+  - Added static regression coverage in `test/hermes-plugin-route.test.js` and
+    updated version assertions in shell/version tests.
+  - Added README Chinese v205 release note and troubleshooting notes for stale
+    iframe `targetOrigin` when host domains change.
+- Mac production deployment:
+  - Copied `public/app.js`, `public/sw.js`, `public/index.html`, and
+    `public/build-refresh-policy.js` to
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web/public`.
+  - Backup directory:
+    `/Users/xuxin/.codex-mobile-web/mac-codex-plugin-backup-before-parent-origin-v205-20260607_105839`.
+  - Restarted `system/com.hermesmobile.plugin.codex-mobile` with
+    `launchctl kickstart -k`.
+  - After restart, `http://127.0.0.1:8787/api/public-config` reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v205`,
+    `shellCacheName=codex-mobile-shell-v205`, `platform=darwin`.
+- Appium verification on Mac production:
+  - iframe helper `currentPluginParentWindowOrigin()` returned
+    `https://wardrobe-xuxin.synology.me:8555`.
+  - After opening a thread detail, the Hermes host received
+    `codex-mobile.plugin.navigation` from origin
+    `https://wardrobe-xuxin.synology.me:8555` with `canGoBack=true` and
+    `route.kind=thread`.
+  - Host state became `canGoBack=true`, `backSwipeTarget()=codex-plugin`.
+  - `sendCodexPluginBackOrReturn()` returned the iframe to the Codex primary
+    thread list without leaving `viewMode=codex`.
+  - A real iOS W3C edge-swipe gesture from x=2 to x=280 also returned to the
+    Codex primary thread list; it did not exit to Hermes.
+- Local validation:
+  - Focused tests passed:
+    `node --test test/build-refresh-policy.test.js test/app-update.test.js
+    test/hermes-plugin-route.test.js test/plugin-embed.test.js
+    test/mobile-viewport.test.js test/thread-goal-service.test.js
+    test/thread-task-card-route.test.js`.
+  - `npm run check` passed.
+  - Full `npm test` passed with 356 tests.
+
 ## 2026-06-07 Thread List Residue Filter
 
 - User reported completed subagent/residue threads staying in the Mobile thread
@@ -3253,3 +3317,123 @@ The previous full handoff was archived and should be opened only when old proven
   - Open iPhone/PWA clients should receive EventSource `status` with
     `rateLimits=null` and clear local quota cache; if the visible chip remains
     stale, close/reopen or refresh the Mac-hosted Web App once.
+
+## 2026-06-07 Mac Production Codex Plugin Loopback Binding
+
+- User request:
+  - Mac production Codex Mobile should stop exposing the Codex plugin listener
+    on the LAN. The phone does not need to visit `8787` directly; it should
+    access Codex Mobile through the Hermes embedded-plugin proxy.
+  - The user also observed that Mac Codex Mobile active profile was
+    `2261065@qq.com`, while directly opening Codex Desktop showed another
+    account.
+- Diagnosis:
+  - `192.168.10.110` was reachable over SSH through the `macstudio-110` alias.
+  - `/Library/LaunchDaemons/com.hermesmobile.plugin.codex-mobile.plist` ran
+    Codex Mobile as user `xuxin` and had:
+    - `CODEX_MOBILE_HOST=0.0.0.0`
+    - `CODEX_MOBILE_HERMES_PLUGIN_BASE_URL=http://192.168.10.110:8787`
+    - `CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_BASE_URL=http://192.168.10.110:8797`
+  - `lsof` showed `node ... TCP *:8787 (LISTEN)`.
+  - Hermes host code already supports same-origin plugin proxying, and the
+    active host manifest can rewrite the Codex plugin entry to
+    `/api/hermes-plugins/codex-mobile/proxy/...` when the upstream manifest is
+    `http://127.0.0.1:8787`.
+  - `/api/codex-profiles` on Mac showed active profile `previous`,
+    active home `/Users/xuxin/.codex-homes/previous`, and safe auth label
+    `2261065@qq.com`. This confirms Mobile was using the requested CLI profile.
+    Direct Codex Desktop account state is not isolated by `CODEX_HOME` alone;
+    use the shared Desktop launcher path when Desktop must match Mobile.
+- Operational changes:
+  - Backed up the system plist before each edit:
+    - `/Library/LaunchDaemons/com.hermesmobile.plugin.codex-mobile.plist.bak-20260607_072038`
+    - `/Library/LaunchDaemons/com.hermesmobile.plugin.codex-mobile.plist.bak-20260607_072209`
+    - `/Library/LaunchDaemons/com.hermesmobile.plugin.codex-mobile.plist.bak-20260607_072350`
+  - Updated `/Library/LaunchDaemons/com.hermesmobile.plugin.codex-mobile.plist`:
+    - `CODEX_MOBILE_HOST=127.0.0.1`
+    - `CODEX_MOBILE_HERMES_PLUGIN_BASE_URL=http://127.0.0.1:8787`
+    - `CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_BASE_URL=http://127.0.0.1:8797`
+    - `CODEX_MOBILE_HERMES_PLUGIN_NOTIFICATION_KEY_FILE` points at the
+      server-side HermesMobile secrets directory for the `xuxin` runtime user.
+  - Kept `CODEX_MOBILE_HERMES_PLUGIN_FRAME_ORIGINS` with the Hermes LAN and
+    HTTPS origins, because those are iframe ancestor origins for the Hermes
+    host, not the Codex `8787` listener.
+  - Restarted `com.hermesmobile.plugin.codex-mobile` with `launchctl`; final
+    listener PID was `77618`.
+- Validation:
+  - `lsof -nP -iTCP:8787 -sTCP:LISTEN` showed
+    `TCP 127.0.0.1:8787 (LISTEN)`.
+  - `curl http://127.0.0.1:8787/api/public-config` succeeded.
+  - `curl http://192.168.10.110:8787/api/public-config` was blocked.
+  - Codex plugin manifest now reports:
+    - `entry.url=http://127.0.0.1:8787/?embed=hermes`
+    - `program_api.base_url=http://127.0.0.1:8787`
+  - Hermes host manifest now reports:
+    - `entry.url=/api/hermes-plugins/codex-mobile/proxy/?embed=hermes&...&workspaceId=owner`
+    - `entry.proxiedFromOrigin=http://127.0.0.1:8787`
+  - Fetching the Hermes proxy entry returned HTTP 200 with `text/html`.
+  - `/api/public-config.hermesPlugin.notificationDelegateConfigured` is now
+    `true`.
+- Status:
+  - The Mac phone/plugin path should now be Hermes host -> same-origin proxy ->
+    local Codex `127.0.0.1:8787`; the phone should not directly reach
+    `192.168.10.110:8787`.
+  - If Desktop must share the same Mac account/profile as Mobile, direct
+    Dock/app launch is not enough; use the shared macOS Desktop launcher path
+    and the selected `CODEX_HOME`/mux endpoint.
+
+## 2026-06-07 App-shell Refresh Loop Harness v204
+
+- User reported that after Mac-side Codex Mobile updates, the Windows-hosted
+  Codex Mobile client repeatedly prompted to refresh the client.
+- Diagnosis:
+  - Windows `GET /api/public-config` was still the listener startup snapshot:
+    `clientBuildId=0.1.11|codex-mobile-shell-v201` and
+    `shellCacheName=codex-mobile-shell-v201`.
+  - The same Windows listener was already serving the edited disk `app.js`
+    containing `codex-mobile-shell-v204`.
+  - This old-process/new-static deployment middle state made the old frontend
+    treat every check as a recoverable client-build mismatch, so refresh could
+    reload the page without fixing the process snapshot.
+- Implemented:
+  - Added `public/build-refresh-policy.js`, a pure browser/Node helper for
+    comparing `codex-mobile-shell-vNNN` direction.
+  - `public/app.js` now prompts/asks Hermes for refresh only when the server
+    shell is newer than the loaded client, or when non-comparable build ids
+    conservatively differ. If the loaded client is newer than
+    `/api/public-config`, it treats that as a listener-restart requirement and
+    does not create a visible refresh loop.
+  - Added `test/build-refresh-policy.test.js` harness coverage for:
+    server-newer prompts, client-newer suppression, and non-comparable
+    conservative prompting.
+  - Added the new helper to `index.html`, `public/sw.js`,
+    `public/app.js` app-shell assets, `server.js` `appShellBuildId()`, and
+    `package.json` `npm run check`.
+  - Static shell advanced to
+    `0.1.11|codex-mobile-shell-v204` / `codex-mobile-shell-v204`.
+  - README and docs updated in `docs/ARCHITECTURE.md`,
+    `docs/MODULES.md`, and `docs/TROUBLESHOOTING.md`.
+- Validation:
+  - `node --check public\build-refresh-policy.js public\app.js public\sw.js
+    server.js` passed.
+  - Focused tests passed:
+    `node --test test\build-refresh-policy.test.js test\app-update.test.js
+    test\mobile-viewport.test.js test\thread-goal-service.test.js
+    test\thread-task-card-route.test.js test\hermes-plugin-route.test.js`.
+  - `npm.cmd run check` passed.
+  - `npm.cmd test` passed with 356 tests.
+  - `git diff --check` passed with only Windows LF/CRLF working-tree warnings.
+  - UTF-8 BOM checks for edited source/docs/tests showed no BOM.
+- Runtime:
+  - Restarted the Windows listener by stopping PID `24704` and starting the
+    `Codex Mobile Web` scheduled task.
+  - Current Windows listener PID is `27924`.
+  - `GET http://127.0.0.1:8787/api/public-config` now reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v204`,
+    `shellCacheName=codex-mobile-shell-v204`, `platform=win32`.
+  - Served `/app.js`, `/sw.js`, and `/build-refresh-policy.js` all contain the
+    v204 policy and do not contain the old v201 shell marker.
+- Mac production:
+  - This v204 harness turn did not redeploy Mac production static files. The
+    Mac plugin may still be on the previously deployed v203 EventSource
+    fallback build until explicitly synced/deployed.

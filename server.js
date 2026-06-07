@@ -514,6 +514,8 @@ function appShellBuildId(cacheName = readServiceWorkerCacheName()) {
     "viewport-metrics.js",
     "conversation-scroll.js",
     "image-compressor.js",
+    "plugin-embed.js",
+    "build-refresh-policy.js",
     "app.js",
     "sw.js",
     "manifest.json",

@@ -83,6 +83,22 @@ curl -fsS http://127.0.0.1:8787/api/public-config >/dev/null
 curl -fsS http://<mac-lan-ip>:8787/api/public-config >/dev/null
 ```
 
+On the current Mac production setup, the external HTTPS Hermes entry is
+`https://wardrobe-xuxin.synology.me:8555/?source=pwa`; do not diagnose it through
+the older `hermes-xuxin.synology.me:8445` URL unless the deployment config is
+changed. Validate the actual plugin path by checking that:
+
+```bash
+curl -k -fsS https://wardrobe-xuxin.synology.me:8555/api/public-config >/dev/null
+curl -k -fsS https://wardrobe-xuxin.synology.me:8555/api/hermes-plugins/codex-mobile/manifest?workspaceId=owner >/dev/null
+```
+
+Authenticated SSE probes should receive one `data:` status event and one
+`: keepalive` within about 32 seconds. If the SSE stream fails but ordinary JSON
+routes such as proxied `/api/status` still work, current embed clients fall back
+to bounded polling and retry EventSource with backoff instead of repeatedly
+showing the reconnect/refresh prompt.
+
 The current restart service removes same-prefix submitted jobs before restarting
 a LaunchAgent/LaunchDaemon-managed listener and no longer creates new
 `launchctl submit` jobs. For a system LaunchDaemon, the helper avoids
@@ -553,11 +569,14 @@ Invoke-RestMethod http://127.0.0.1:8787/api/public-config |
 (Invoke-WebRequest http://127.0.0.1:8787/sw.js -UseBasicParsing).Content.Contains("codex-mobile-shell-vNNN")
 ```
 
-If `/api/public-config` is older than `/app.js` / `/sw.js`, the browser is
-correct to keep prompting: the 8787 listener is still an old process and must
-be restarted into the current files. On Windows, verify the PID that owns port
-8787 before killing anything; stop only the listener process that is actually
-running this workspace's `server.js`, then start the replacement hidden.
+If `/api/public-config` is older than `/app.js` / `/sw.js`, the listener is
+still an old process and must be restarted into the current files. Current
+clients should not enter a visible refresh loop in this state: a loaded
+`codex-mobile-shell-vNNN` that is newer than the listener's startup shell is a
+deployment middle state, and refreshing the page alone cannot fix it. On
+Windows, verify the PID that owns port 8787 before killing anything; stop only
+the listener process that is actually running this workspace's `server.js`, then
+start the replacement hidden.
 
 If the prompt does not appear after a real server restart into a newer shell
 build, check whether the loaded browser code calls `scheduleVisiblePageRefreshCheck()`
@@ -1101,7 +1120,14 @@ primary thread-switcher/settings page. That primary page must report
 right-swipe instead returns directly to Hermes Mobile, check whether the thread
 detail page published `canGoBack:true` immediately after selecting
 `currentThreadId`; this must happen while the detail page is still loading, not
-only after the read completes. If
+only after the read completes. Also check the iframe's postMessage
+`targetOrigin`: when Hermes serves Codex through the same-origin plugin proxy,
+Codex must prefer the live `window.parent.location.origin` over the launch
+session's older `hermes_origin`. A stale target such as
+`https://hermes-xuxin.synology.me:8445` while the actual parent is
+`https://wardrobe-xuxin.synology.me:8555` silently drops
+`codex-mobile.plugin.navigation`, leaving the host with `canGoBack:false` and
+making right-swipe fall through to the outer plugin return. If
 right-swipe instead opens Codex's standalone initial Workspace page, check the
 `hermes.plugin.back` handler: thread-page back must clear only the selected
 thread detail, not leave the iframe in the standalone home route. If the primary
