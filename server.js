@@ -8423,81 +8423,101 @@ async function handleApi(req, res) {
       threadLog("complete", { status: 404, mode: "hidden" });
       return;
     }
-    const turnsStartedAtMs = Date.now();
+    const readStartedAtMs = Date.now();
+    threadLog("thread_read_start", {
+      timeoutMs: READ_RPC_TIMEOUT_MS,
+      maxTurns: MAX_FULL_THREAD_TURNS,
+    });
     try {
-      const result = await turnsListThreadReadResult(threadId, summary, runtimeSettings, "", "turns-list", threadLog);
+      const result = compactThreadReadResult(await codex.request("thread/read", { threadId, includeTurns: true }, {
+        timeoutMs: READ_RPC_TIMEOUT_MS,
+        retry: false,
+        resetOnTimeout: false,
+      }), { maxTurns: MAX_FULL_THREAD_TURNS });
+      if (result.thread) {
+        threadDisplaySummaryCache.remember(result.thread);
+        result.thread = mergeThreadRuntimeFromStateDb(result.thread, summary);
+        result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
+        result.thread.mobileReadMode = "thread-read";
+      }
       if (isHiddenThread(result.thread, visibility)) {
-        threadLog("turns_list_hidden", {
-          durationMs: Date.now() - turnsStartedAtMs,
+        threadLog("thread_read_hidden", {
+          durationMs: Date.now() - readStartedAtMs,
           status: 404,
         });
         sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
         return;
       }
-      sendJson(res, 200, result);
-      threadLog("complete", { status: 200, mode: "turns-list" });
-    } catch (turnsErr) {
-      threadLog("turns_list_error", {
-        durationMs: Date.now() - turnsStartedAtMs,
-        timeout: isReadTimeoutError(turnsErr),
-        error: turnsErr.message || String(turnsErr),
-        fallbackTo: "thread-read",
+      threadLog("thread_read_ok", {
+        durationMs: Date.now() - readStartedAtMs,
+        returnedTurns: result.thread && Array.isArray(result.thread.turns) ? result.thread.turns.length : null,
+        omittedTurns: result.thread && result.thread.mobileOmittedTurnCount ? result.thread.mobileOmittedTurnCount : 0,
       });
-      const readStartedAtMs = Date.now();
-      threadLog("thread_read_start", {
-        timeoutMs: READ_RPC_TIMEOUT_MS,
-        maxTurns: MAX_FULL_THREAD_TURNS,
-        fallbackFrom: "turns-list",
+      sendJson(res, 200, await prepareThreadTaskCardsToResult(result));
+      threadLog("complete", { status: 200, mode: "thread-read" });
+    } catch (readErr) {
+      threadLog("thread_read_error", {
+        durationMs: Date.now() - readStartedAtMs,
+        timeout: isReadTimeoutError(readErr),
+        error: readErr.message || String(readErr),
+      });
+      const turnsStartedAtMs = Date.now();
+      threadLog("turns_list_start", {
+        limit: MAX_THREAD_TURNS,
+        timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS,
+        fallbackFrom: "thread-read",
       });
       try {
-        const result = compactThreadReadResult(await codex.request("thread/read", { threadId, includeTurns: true }, {
-          timeoutMs: READ_RPC_TIMEOUT_MS,
-          retry: false,
-          resetOnTimeout: false,
-        }), { maxTurns: MAX_FULL_THREAD_TURNS });
-        if (result.thread) {
-          threadDisplaySummaryCache.remember(result.thread);
-          result.thread = mergeThreadRuntimeFromStateDb(result.thread, summary);
-          result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
-          result.thread.mobileReadMode = "thread-read-fallback";
-        }
+        const result = await turnsListThreadReadResult(
+          threadId,
+          summary,
+          runtimeSettings,
+          `thread/read failed: ${readErr.message || String(readErr)}`,
+          "turns-list",
+          null,
+        );
         if (isHiddenThread(result.thread, visibility)) {
-          threadLog("thread_read_hidden", {
-            durationMs: Date.now() - readStartedAtMs,
+          threadLog("turns_list_hidden", {
+            durationMs: Date.now() - turnsStartedAtMs,
             status: 404,
           });
           sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
           return;
         }
-        threadLog("thread_read_ok", {
-          durationMs: Date.now() - readStartedAtMs,
+        threadLog("turns_list_ok", {
+          durationMs: Date.now() - turnsStartedAtMs,
           returnedTurns: result.thread && Array.isArray(result.thread.turns) ? result.thread.turns.length : null,
-          omittedTurns: result.thread && result.thread.mobileOmittedTurnCount ? result.thread.mobileOmittedTurnCount : 0,
+          mode: result.thread && result.thread.mobileReadMode ? result.thread.mobileReadMode : "turns-list",
         });
-        sendJson(res, 200, await prepareThreadTaskCardsToResult(result));
-        threadLog("complete", { status: 200, mode: "thread-read-fallback" });
-      } catch (readErr) {
-        threadLog("thread_read_error", {
-          durationMs: Date.now() - readStartedAtMs,
-          timeout: isReadTimeoutError(readErr),
-          error: readErr.message || String(readErr),
+        sendJson(res, 200, result);
+        threadLog("complete", { status: 200, mode: "turns-list" });
+      } catch (turnsErr) {
+        threadLog("turns_list_error", {
+          durationMs: Date.now() - turnsStartedAtMs,
+          timeout: isReadTimeoutError(turnsErr),
+          error: turnsErr.message || String(turnsErr),
         });
-
-        const warning = `thread/turns/list failed: ${turnsErr.message || String(turnsErr)}; thread/read failed: ${readErr.message || String(readErr)}`;
-        if (isUnmaterializedThreadError(turnsErr) || isUnmaterializedThreadError(readErr)) {
-          sendJson(res, 200, fallbackThreadReadResult(threadId, summary, runtimeSettings, warning, "unmaterialized"));
+        if (isUnmaterializedThreadError(turnsErr)) {
+          sendJson(res, 200, fallbackThreadReadResult(threadId, summary, runtimeSettings, turnsErr.message || String(turnsErr), "unmaterialized"));
           threadLog("complete", { status: 200, mode: "unmaterialized" });
           return;
         }
 
-        if (isReadTimeoutError(readErr)) {
-          sendJson(res, 200, fallbackThreadReadResult(threadId, summary, runtimeSettings, warning, "summary-timeout-fallback"));
+        if (isReadTimeoutError(turnsErr)) {
+          sendJson(res, 200, fallbackThreadReadResult(threadId, summary, runtimeSettings, turnsErr.message || String(turnsErr), "summary-timeout-fallback"));
           threadLog("complete", { status: 200, mode: "summary-timeout-fallback" });
           return;
         }
 
-        sendJson(res, 200, fallbackThreadReadResult(threadId, summary, runtimeSettings, warning, "summary-error-fallback"));
-        threadLog("complete", { status: 200, mode: "summary-error-fallback" });
+        const mode = isReadTimeoutError(turnsErr) ? "summary-timeout-fallback" : "summary-error-fallback";
+        sendJson(res, 200, fallbackThreadReadResult(
+          threadId,
+          summary,
+          runtimeSettings,
+          `thread/read failed: ${readErr.message || String(readErr)}; thread/turns/list failed: ${turnsErr.message || String(turnsErr)}`,
+          mode,
+        ));
+        threadLog("complete", { status: 200, mode });
       }
     }
     return;

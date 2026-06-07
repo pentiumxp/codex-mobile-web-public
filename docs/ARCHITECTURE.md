@@ -260,17 +260,19 @@ Thread goal state is app-server-owned Mobile Web state. Codex app-server 0.135.0
 
 On Windows shared-stream startup, `start-codex-mobile-web-windowless.ps1` resolves the intended Codex binary first, then reuses an existing mux endpoint only when that endpoint reports the same `codexExe`. Older endpoints without `codexExe`, or endpoints pointing at the legacy `%USERPROFILE%\.codex-mobile-web\codex.exe`, are treated as stale and replaced before Mobile Web connects.
 
-Thread detail no longer has a rollout-size skip threshold. The route normally
-uses bounded app-server `thread/turns/list` with `CODEX_MOBILE_THREAD_TURNS`
-(default `10`) as the initial detail window, so opening or foreground-resuming a
-large thread does not first pay for full `thread/read includeTurns:true`.
-Complete `thread/read` remains only as a compatibility fallback when the bounded
-turns-list path fails, then its payload is compacted to the same recent window.
-The compacted result exposes `mobileOlderTurnsCursor` for the oldest retained
-turn. A `thread/turns/list` response can also carry the app-server older-history
-cursor so the browser can page in earlier turns. The browser loads older turns
-in 10-turn pages when the user scrolls to the top of the current detail window
-and preserves the reading position after prepending those turns.
+Thread detail no longer has a rollout-size skip threshold. The route always
+prefers full app-server `thread/read includeTurns:true` regardless of rollout
+file size because bounded `thread/turns/list` does not reliably preserve the
+command/tool/file/search operation items expected in the Mobile detail view.
+The server then compacts the mobile detail payload to the latest
+`CODEX_MOBILE_THREAD_TURNS` turns (default `10`) when older turns exist. The
+compacted result exposes `mobileOlderTurnsCursor` for the oldest retained turn.
+If `thread/read` fails or times out, Mobile Web falls back to bounded
+`thread/turns/list`, then local summary fallback. A `thread/turns/list` response
+can also carry the app-server older-history cursor so the browser can page in
+earlier turns. The browser loads older turns in 10-turn pages when the user
+scrolls to the top of the current detail window and preserves the reading
+position after prepending those turns.
 
 The detail path compacts command/tool/file/search items, enriches item timestamps from rollout events, injects pending steer echoes when needed, and may attach a raw operation fallback only when it belongs to the same latest live turn. A running latest turn keeps at most one operation card so the current command/tool state remains visible. Once a turn has completed, operation cards are removed from the compact mobile detail; the final diagnostic frame should be the synthetic `turnUsageSummary` item when scoped rollout `token_count` data exists. Completed raw fallback is accepted only while the latest turn is still live and the operation has a matching latest turn id; old completed operations must not attach to newer live turns. The usage summary is diagnostic UI only: turn-level token use, cumulative token use, model context-window percentage/risk, rollout size, and current workspace `PROJECT_CONTEXT.md` / `HANDOFF.md` sizes. Turn-level use is derived from cumulative `total_token_usage` deltas across all valid scoped token events in the turn, so multi-call turns are not reduced to the final model call. The usage row's `in` value displays uncached input when cached input is reported; context-window usage still uses raw input tokens from the final valid event. If app-server emits a final zero/window sentinel token event after valid usage, Mobile Web ignores that sentinel and keeps the latest valid scoped token event. If rollout or workspace context sizes cross continuation thresholds, the Usage block may show the same `压缩续接` action used by the top warning.
 

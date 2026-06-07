@@ -666,7 +666,8 @@ Behavior:
 
 ## Interface Notes
 
-- 中文说明：v206 减少从其他 App 切回后的线程详情重刷，并把线程详情读取主路径改为 bounded `thread/turns/list`。当前线程已经加载且不是运行中、加载中或错误状态时，前台恢复只做状态、线程列表和 SSE 恢复，不再重新读取整个详情；运行中线程仍会继续通过现有轮询/合并路径刷新。服务端 `/api/threads/:id` 现在优先请求最近 `CODEX_MOBILE_THREAD_TURNS` 个 turn，full `thread/read` 只作为兼容 fallback，因此“只显示最近 10 个 turn”不再需要先付出全量读取成本。PWA shell cache 升级到 `codex-mobile-shell-v206`。
+- 中文说明：v207 server-only 修复 v206 把线程详情主路径切到 bounded `thread/turns/list` 后丢失 command/tool/file/search 中间信息的回归。`/api/threads/:id` 恢复为先用完整 `thread/read` 读取并裁剪到最近 `CODEX_MOBILE_THREAD_TURNS` 个 turn；`thread/turns/list` 只在 `thread/read` 失败或超时时作为 fallback。该修复不改变 PWA shell cache，更新后需要重启 8787 Node listener。
+- 中文说明：v206 减少从其他 App 切回后的线程详情重刷。当前线程已经加载且不是运行中、加载中、错误状态，也没有从线程列表看到更新时，前台恢复只做状态、线程列表和 SSE 恢复，不再重新读取整个详情；运行中线程仍会继续通过现有轮询/合并路径刷新。PWA shell cache 升级到 `codex-mobile-shell-v206`。
 - 中文说明：v205 修复 Hermes 插件宿主域名切换后 Codex 线程详情右滑退出宿主的问题。嵌入模式发送 `codex-mobile.plugin.navigation` 和 `back_result` 前，会优先使用当前 iframe 的实际 `window.parent.location.origin`；只有无法读取父窗口 origin 时，才回退到 launch session 返回的 `hermes_origin` 或 referrer。这样 Mac 生产域名从 `hermes-xuxin.synology.me:8445` 切到 `wardrobe-xuxin.synology.me:8555` 后，线程详情仍能把 `canGoBack=true` 发给宿主，右滑返回 Codex 线程列表而不是退出到 Hermes。PWA shell cache 升级到 `codex-mobile-shell-v205`。
 - 中文说明：v204 增加 app-shell 刷新策略 harness，并修复部署中间态导致的刷新循环。当前浏览器脚本如果已经是较新的 `codex-mobile-shell-vNNN`，而 8787 listener 的 `/api/public-config` 仍停在旧启动快照，前端会把它识别为需要重启 listener 的中间态，不再反复提示“刷新客户端”。只有服务端 shell 明确更新于当前脚本时，Standalone 才显示手动刷新入口，Hermes embed 才请求宿主刷新。PWA shell cache 升级到 `codex-mobile-shell-v204`。
 - 中文说明：v203 改善 Hermes 嵌入模式下的 EventSource 断线恢复。`/api/events` 短暂断开但普通 JSON API 仍可用时，前端会用 `/api/status`、线程列表和当前线程详情进入降级轮询，并按退避节奏重试 SSE；不再反复把顶部活动提示标成“重连”，也不会在 API 健康时弹刷新入口。PWA shell cache 升级到 `codex-mobile-shell-v203`。
@@ -753,7 +754,7 @@ Behavior:
 
 当线程的 rollout JSONL 达到阈值时，界面按钮显示为“压缩续接”。默认提醒阈值是 `200MB`，可用 `CODEX_MOBILE_ROLLOUT_WARNING_BYTES` 覆盖。详情页提示可以点“跳过”暂时隐藏；隐藏记录按“线程 id + 当前 rollout 大小”保存，因此该线程继续增长后会再次提示。确认“压缩续接”后，Mobile Web 会先在旧线程中启动一个交接整理 turn，要求旧线程把本线程真实的交接重点写入当前工作区的 `.agent-context/thread-handoffs/<id>.md` 文件。该文件必须只总结源线程和当前工作区相关的目标、已完成事项、未完成事项、关键文件、验证结果和风险。
 
-线程详情读取不再按 rollout 大小切换路径。Mobile Web 默认直接向 app-server 请求有数量上限的 `thread/turns/list`，只读取最近 `CODEX_MOBILE_THREAD_TURNS` 个 turn；只有该 bounded 路径失败时，才降级到完整 `thread/read` 后再裁剪。`CODEX_MOBILE_THREAD_TURNS` 同时控制移动端 compact detail 首屏、主读取窗口、fallback、以及 older-turn 分页大小，默认是最近 10 个 turn。`200MB` 的 rollout 阈值只用于界面提醒和压缩续接动作。
+线程详情读取不再按 rollout 大小主动跳过完整 `thread/read`。即使 rollout 超过 32MB，Mobile Web 也会先向 app-server 请求完整详情并裁剪到最近 `CODEX_MOBILE_THREAD_TURNS` 个 turn；只有 `thread/read` 真实失败时，才降级到有数量上限的 `thread/turns/list` fallback。这样可以保留 `thread/read` 提供的 command/tool/file/search 中间信息。`CODEX_MOBILE_THREAD_TURNS` 同时控制移动端 compact detail 首屏、fallback、以及 older-turn 分页大小，默认是最近 10 个 turn。`200MB` 的 rollout 阈值只用于界面提醒和压缩续接动作。
 
 跨线程任务卡片 draft 仍要求模型返回可见目标里的精确 `threadId`。如果模型只把目标线程 ID 的后半段抄错，前端只会在可见线程中存在唯一且足够长公共前缀匹配时，把目标恢复为真实线程 ID；无法唯一恢复时仍会把 draft 标为失败，避免把卡片投递到不确定目标。
 
@@ -1921,7 +1922,7 @@ VAPID details:
 | `CODEX_MOBILE_MAX_UPLOAD_FILES` | Max files per message. |
 | `CODEX_MOBILE_IMAGE_CONTEXT_MODE` | Image model-context mode. Default `reference` sends images as path text only while still showing thumbnails in the UI. `latest` / `vision` sends only the latest uploaded image as `localImage`; `all` restores legacy all-image behavior. |
 | `CODEX_MOBILE_SQLITE3_EXE` | Optional absolute path to `sqlite3.exe` for reading Codex `state_5.sqlite`. When unset, Mobile Web also checks common user-local Platform Tools / WinGet install paths before falling back to `sqlite3` on `PATH`. |
-| `CODEX_MOBILE_THREAD_TURNS` | Number of recent turns requested for normal mobile detail reads, kept in the compact detail window, and requested per older-history page, default `10`. Full `thread/read` is now a compatibility fallback after bounded `thread/turns/list` fails. |
+| `CODEX_MOBILE_THREAD_TURNS` | Number of recent turns kept in the compact mobile detail window and requested per older-history page, default `10`. Normal detail reads still prefer `thread/read` to preserve full operation items, then compact the browser payload to this recent window when older turns exist. |
 | `CODEX_MOBILE_FULL_THREAD_TURNS` | Number of turns kept after full `thread/read` before mobile compaction, default `10`, capped at `200`. Keep this aligned with `CODEX_MOBILE_THREAD_TURNS` unless diagnosing payload size behavior. |
 | `CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES` | Tail bytes read from a thread rollout to recover inherited turn runtime settings, default `4194304`. |
 | `CODEX_MOBILE_ROLLOUT_ACTIVE_STATUS_WINDOW_MS` | Recent-activity window used when rollout-session fallback infers an `active` thread-list status from bounded rollout-tail events, default `1800000` (`30 minutes`). |

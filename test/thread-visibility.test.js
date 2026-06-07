@@ -78,17 +78,18 @@ test("thread turns cursor accepts app-server JSON cursor objects from query stri
   assert.equal(parseThreadTurnsCursor(""), null);
 });
 
-test("thread detail prefers bounded turns/list before full thread/read fallback", () => {
+test("thread detail uses full thread/read before bounded turns/list fallback", () => {
   assert.doesNotMatch(serverJs, /CODEX_MOBILE_THREAD_DETAIL_ROLLOUT_MAX_BYTES/);
   assert.doesNotMatch(serverJs, /THREAD_DETAIL_ROLLOUT_MAX_BYTES/);
   assert.doesNotMatch(serverJs, /shouldSkipThreadDetailRpc/);
   assert.doesNotMatch(serverJs, /large-rollout-turns-list/);
   assert.doesNotMatch(serverJs, /skip_detail_rpc/);
   const routeStart = serverJs.indexOf("const threadRead = url.pathname.match");
-  const turnsListIndex = serverJs.indexOf('turnsListThreadReadResult(threadId, summary, runtimeSettings, "", "turns-list", threadLog)', routeStart);
   const threadReadIndex = serverJs.indexOf('codex.request("thread/read", { threadId, includeTurns: true }', routeStart);
-  assert.ok(turnsListIndex > routeStart, "thread detail route should call turns-list");
-  assert.ok(threadReadIndex > turnsListIndex, "full thread/read should be fallback after turns-list");
+  const turnsListIndex = serverJs.indexOf('turnsListThreadReadResult(', threadReadIndex);
+  assert.ok(threadReadIndex > routeStart, "thread detail route should call full thread/read");
+  assert.ok(turnsListIndex > threadReadIndex, "bounded turns/list should stay a fallback after thread/read");
+  assert.match(serverJs, /result\.thread\.mobileReadMode = "thread-read";/);
 });
 
 test("thread detail defaults to ten turns and exposes an older cursor when compacted", () => {

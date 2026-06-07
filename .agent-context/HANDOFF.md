@@ -21,6 +21,49 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-07 Thread Detail Intermediate Items Regression v207
+
+- User reported that after v206, opening any thread no longer showed
+  intermediate command/tool/file/search information.
+- Root cause:
+  - v206 changed `/api/threads/:id` to prefer bounded app-server
+    `thread/turns/list`.
+  - That endpoint is fast, but it does not reliably provide the full operation
+    item stream Mobile detail expects. `thread/read includeTurns:true` is still
+    the source that preserves those intermediate items.
+- Implemented:
+  - Restored `/api/threads/:id` to prefer full `thread/read` first, then compact
+    to the latest `CODEX_MOBILE_THREAD_TURNS` turns.
+  - Kept bounded `thread/turns/list` only as fallback after `thread/read` fails
+    or times out.
+  - Kept the v206 foreground-resume optimization: stable loaded current threads
+    are not detail-refreshed when returning from another app unless running,
+    loading/error, or the list row shows a newer timestamp/status.
+  - Added README v207 server-only release note and restored architecture /
+    troubleshooting guidance to treat `turns-list` as fallback.
+  - Updated `test/thread-visibility.test.js` to assert `thread/read` precedes
+    `turnsListThreadReadResult()` in the detail route.
+- Validation:
+  - `node --check server.js public/app.js public/sw.js` passed.
+  - Focused tests passed:
+    `node --test test/thread-visibility.test.js test/thread-task-card-route.test.js
+    test/mobile-viewport.test.js test/conversation-render.test.js
+    test/thread-item-timestamp-enrichment.test.js`.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - Full `npm test` passed with 356 tests.
+  - `git diff --check` passed.
+  - UTF-8 BOM check passed for edited source/docs/tests.
+  - Local API smoke with the local access key file, without printing content or
+    the key, opened the first three visible threads. All reported
+    `mobileReadMode=thread-read`; two operation-heavy threads showed
+    operation-like items in the compact 10-turn detail window.
+- Runtime:
+  - Restarted local Windows 8787 listener. `/api/public-config` still reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v206` /
+    `shellCacheName=codex-mobile-shell-v206`; this is expected because v207 is
+    server-only and does not change the static shell.
+
 ## 2026-06-07 Foreground Resume And Thread Detail Read v206
 
 - User reported that returning from another app repeatedly reloads the open
