@@ -2489,6 +2489,17 @@ function readRolloutTail(rolloutPath) {
   }
 }
 
+function readRolloutRuntimeScanText(rolloutPath) {
+  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) return "";
+  try {
+    const stat = fs.statSync(rolloutPath);
+    if (!stat.isFile() || stat.size <= 0 || stat.size > MAX_RUNTIME_CONTEXT_SCAN_BYTES) return "";
+    return fs.readFileSync(rolloutPath, "utf8");
+  } catch (_) {
+    return "";
+  }
+}
+
 function rememberItemTimestampCandidates(key, payload) {
   latestItemTimestampsByPath.set(key, {
     cachedAt: Date.now(),
@@ -2683,23 +2694,60 @@ function readRolloutItemTimestampCandidates(rolloutPath) {
   return payload;
 }
 
-function readRolloutTurnUsageSummaries(rolloutPath) {
+function normalizedTurnIdSet(turnIds) {
+  const ids = new Set();
+  for (const id of turnIds || []) {
+    const text = String(id || "").trim();
+    if (text) ids.add(text);
+  }
+  return ids;
+}
+
+function missingUsageTurnIds(payload, turnIds) {
+  const ids = normalizedTurnIdSet(turnIds);
+  if (!ids.size) return [];
+  const byTurnId = payload && payload.byTurnId instanceof Map ? payload.byTurnId : new Map();
+  return Array.from(ids).filter((id) => !byTurnId.has(id));
+}
+
+function targetUsageCacheKey(rolloutPath, turnIds) {
+  const ids = Array.from(normalizedTurnIdSet(turnIds)).sort();
+  if (!ids.length) return "";
+  return `${normalizeFsPath(rolloutPath)}:target-usage:${ids.join(",")}`;
+}
+
+function readRolloutTurnUsageSummaries(rolloutPath, options = {}) {
   if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) {
     return { byTurnId: new Map(), unscoped: [] };
+  }
+  const targetTurnIds = Array.isArray(options.targetTurnIds) ? options.targetTurnIds : [];
+  const targetKey = targetUsageCacheKey(rolloutPath, targetTurnIds);
+  if (targetKey) {
+    const targetCached = latestTurnUsageSummariesByPath.get(targetKey);
+    if (targetCached && Date.now() - targetCached.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS
+      && missingUsageTurnIds(targetCached.payload, targetTurnIds).length === 0) {
+      return targetCached.payload || { byTurnId: new Map(), unscoped: [] };
+    }
   }
   let cacheKey = "";
   try {
     const stat = fs.statSync(rolloutPath);
     cacheKey = runtimeContextCacheKey(rolloutPath, stat);
     const cached = latestTurnUsageSummariesByPath.get(cacheKey);
-    if (cached && Date.now() - cached.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS) {
+    if (cached && Date.now() - cached.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS
+      && missingUsageTurnIds(cached.payload, targetTurnIds).length === 0) {
       return cached.payload || { byTurnId: new Map(), unscoped: [] };
     }
   } catch (_) {
     return { byTurnId: new Map(), unscoped: [] };
   }
-  const payload = collectTurnUsageSummariesFromRolloutText(readRolloutTail(rolloutPath));
+  let payload = collectTurnUsageSummariesFromRolloutText(readRolloutTail(rolloutPath));
+  if (missingUsageTurnIds(payload, targetTurnIds).length > 0) {
+    const scanText = readRolloutRuntimeScanText(rolloutPath);
+    if (scanText) payload = collectTurnUsageSummariesFromRolloutText(scanText);
+  }
   if (cacheKey) rememberTurnUsageSummaries(cacheKey, payload);
+  if (targetKey) rememberTurnUsageSummaries(targetKey, payload);
   return payload;
 }
 
@@ -2919,9 +2967,11 @@ function threadDetailProjectionInput(threadId, summary) {
 
 function prepareProjectedThreadReadResult(cached, summary, runtimeSettings) {
   if (!cached || !cached.result || !cached.result.thread) return null;
-  const result = compactThreadReadResult(cached.result, { maxTurns: MAX_FULL_THREAD_TURNS });
+  const mergedResult = Object.assign({}, cached.result, {
+    thread: mergeThreadDisplaySummary(cached.result.thread, summary) || cached.result.thread,
+  });
+  const result = compactThreadReadResult(mergedResult, { maxTurns: MAX_FULL_THREAD_TURNS });
   if (!result.thread) return null;
-  result.thread = mergeThreadDisplaySummary(result.thread, summary) || result.thread;
   result.thread = mergeThreadRuntimeFromStateDb(result.thread, summary);
   result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
   result.thread.mobileReadMode = cached.dynamic ? "projection-dynamic" : "projection-cache";
@@ -3437,6 +3487,10 @@ function isAssistantReceiptItem(item) {
   return false;
 }
 
+function isTurnUsageSummaryItem(item) {
+  return Boolean(item && typeof item === "object" && item.type === "turnUsageSummary");
+}
+
 function receiptOnlyItemIndexes(items) {
   const indexes = new Set();
   if (!Array.isArray(items)) return indexes;
@@ -3444,6 +3498,7 @@ function receiptOnlyItemIndexes(items) {
   for (let index = 0; index < items.length; index += 1) {
     const item = items[index];
     if (isUserQuestionItem(item)) indexes.add(index);
+    if (isTurnUsageSummaryItem(item)) indexes.add(index);
     if (isAssistantReceiptItem(item)) receiptIndex = index;
   }
   if (receiptIndex >= 0) indexes.add(receiptIndex);
@@ -3546,7 +3601,9 @@ function compactThread(thread, options = {}) {
     }
     pendingSteerEchoStore.injectIntoThread(out);
     enrichThreadItemTimestampsFromRollout(out);
-    attachTurnUsageSummaries(out, readRolloutTurnUsageSummaries(rolloutPath), {
+    attachTurnUsageSummaries(out, readRolloutTurnUsageSummaries(rolloutPath, {
+      targetTurnIds: out.turns.map((turn) => turn && turn.id).filter(Boolean),
+    }), {
       rolloutStats,
       workspaceContextStats: workspaceContextStatsForCwd(out.cwd),
     });

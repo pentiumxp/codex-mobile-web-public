@@ -105,6 +105,86 @@ function findTurn(thread, turnId) {
   return thread.turns.find((turn) => String(turn && turn.id || "") === turnId) || null;
 }
 
+function isTextReceiptItem(item) {
+  return Boolean(item && (item.type === "agentMessage" || item.type === "plan"));
+}
+
+function comparableText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function textReceiptsLikelySame(left, right) {
+  if (!isTextReceiptItem(left) || !isTextReceiptItem(right)) return false;
+  if (left.type !== right.type) return false;
+  const leftText = comparableText(left.text);
+  const rightText = comparableText(right.text);
+  if (!leftText || !rightText) return false;
+  return leftText === rightText || leftText.startsWith(rightText) || rightText.startsWith(leftText);
+}
+
+function mergeTextField(existing, incoming, field) {
+  const left = typeof existing[field] === "string" ? existing[field] : "";
+  const right = typeof incoming[field] === "string" ? incoming[field] : "";
+  if (!left) return right || existing[field];
+  if (!right) return left;
+  return right.length >= left.length ? right : left;
+}
+
+function mergeProjectionItem(existing, incoming) {
+  if (!existing || !incoming) return cloneJson(incoming || existing);
+  const merged = Object.assign({}, cloneJson(existing), cloneJson(incoming));
+  if (typeof existing.text === "string" || typeof incoming.text === "string") {
+    merged.text = mergeTextField(existing, incoming, "text");
+  }
+  if (typeof existing.aggregatedOutput === "string" || typeof incoming.aggregatedOutput === "string") {
+    merged.aggregatedOutput = mergeTextField(existing, incoming, "aggregatedOutput");
+  }
+  return merged;
+}
+
+function dedupeProjectionUsageItems(items) {
+  let lastSummaryIndex = -1;
+  items.forEach((item, index) => {
+    if (item && item.type === "turnUsageSummary") lastSummaryIndex = index;
+  });
+  if (lastSummaryIndex < 0) return items;
+  return items.filter((item, index) => !(item && item.type === "turnUsageSummary") || index === lastSummaryIndex);
+}
+
+function mergeProjectionItems(existingItems, incomingItems) {
+  const existing = Array.isArray(existingItems) ? existingItems : [];
+  const incoming = Array.isArray(incomingItems) ? incomingItems : [];
+  if (!existing.length) return dedupeProjectionUsageItems(incoming.map(cloneJson));
+  if (!incoming.length) return dedupeProjectionUsageItems(existing.map(cloneJson));
+
+  const incomingById = new Map(incoming
+    .filter((item) => itemId(item))
+    .map((item) => [itemId(item), item]));
+  const usedIncoming = new Set();
+  const merged = [];
+  for (const existingItem of existing) {
+    const id = itemId(existingItem);
+    const idMatch = id ? incomingById.get(id) : null;
+    if (idMatch) {
+      merged.push(mergeProjectionItem(existingItem, idMatch));
+      usedIncoming.add(idMatch);
+      continue;
+    }
+    const textMatch = incoming.find((incomingItem) => !usedIncoming.has(incomingItem)
+      && textReceiptsLikelySame(existingItem, incomingItem));
+    if (textMatch) {
+      merged.push(mergeProjectionItem(existingItem, textMatch));
+      usedIncoming.add(textMatch);
+      continue;
+    }
+    merged.push(cloneJson(existingItem));
+  }
+  for (const incomingItem of incoming) {
+    if (!usedIncoming.has(incomingItem)) merged.push(cloneJson(incomingItem));
+  }
+  return dedupeProjectionUsageItems(merged);
+}
+
 function ensureTurn(thread, turnId, turnPatch = {}) {
   let turn = findTurn(thread, turnId);
   if (!turn) {
@@ -113,8 +193,10 @@ function ensureTurn(thread, turnId, turnPatch = {}) {
     thread.turns.push(turn);
     return turn;
   }
+  const existingItems = Array.isArray(turn.items) ? turn.items : [];
+  const incomingHasItems = Array.isArray(turnPatch && turnPatch.items);
   Object.assign(turn, turnPatch || {});
-  if (!Array.isArray(turn.items)) turn.items = [];
+  turn.items = incomingHasItems ? mergeProjectionItems(existingItems, turnPatch.items) : existingItems;
   return turn;
 }
 
@@ -125,6 +207,7 @@ function upsertItem(turn, item) {
   const index = id ? turn.items.findIndex((existing) => itemId(existing) === id) : -1;
   if (index >= 0) turn.items[index] = Object.assign({}, turn.items[index], item);
   else turn.items.push(cloneJson(item));
+  turn.items = dedupeProjectionUsageItems(turn.items);
 }
 
 function appendItemText(turn, itemIdValue, itemType, field, delta) {

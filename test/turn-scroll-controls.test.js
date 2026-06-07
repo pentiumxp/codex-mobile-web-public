@@ -17,15 +17,28 @@ test("upward user scroll can jump back to the current turn final receipt", () =>
   assert.match(appJs, /const TURN_REPLY_JUMP_WINDOW_MS = 10 \* 60 \* 1000;/);
   assert.match(appJs, /function rememberRecentCompletedTurnReply\(turnId\)/);
   assert.match(appJs, /rememberRecentCompletedTurnReply\(params\.turn\.id\)/);
+  assert.match(appJs, /postCompletionRefreshTimers: \[\]/);
+  assert.match(appJs, /function schedulePostCompletionThreadRefreshes\(threadId, delays = \[700, 2400\]\)/);
+  assert.match(appJs, /schedulePostCompletionThreadRefreshes\(params\.threadId, \[700, 2400\]\)/);
+  assert.match(appJs, /function latestSuccessfulCompletedTurnMissingUsage\(\)/);
+  assert.match(appJs, /function scheduleUsageBackfillRefresh\(delay = 1200\)/);
+  assert.match(appJs, /scheduleUsageBackfillRefresh\(1400\)/);
+  assert.match(appJs, /state\.usageBackfillAttempts >= 6/);
+  assert.match(appJs, /state\.postCompletionRefreshTimers\.forEach\(\(timer\) => clearTimeout\(timer\)\);/);
+  assert.match(appJs, /clearUsageBackfillRefresh\(\);/);
   assert.match(appJs, /const previousAnchor = state\.recentCompletedReplyAnchor;/);
   assert.match(appJs, /const keepActivatedByUserScroll = Boolean\(/);
+  assert.match(appJs, /activatedByCompletion: true/);
   assert.match(appJs, /activatedByUserScroll: keepActivatedByUserScroll/);
+  assert.match(appJs, /receiptStartLocated: false/);
   assert.match(appJs, /conversationLastScrollTop: 0/);
   assert.match(appJs, /function turnCompletedAtMs\(turn, thread = null\)/);
   assert.match(appJs, /function isRecentReplyJumpTurn\(turn\)/);
   assert.match(appJs, /function updateRecentCompletedReplyAnchorFromScroll\(\)/);
   assert.match(appJs, /if \(delta < -2\) \{\s*activateRecentCompletedReplyAnchorFromUserScroll\(\);/);
+  assert.match(appJs, /delta > 2 && !\(state\.recentCompletedReplyAnchor && state\.recentCompletedReplyAnchor\.activatedByCompletion\)/);
   assert.match(appJs, /activatedByUserScroll: true/);
+  assert.match(appJs, /if \(!anchor\.activatedByUserScroll && !anchor\.activatedByCompletion\) return null;/);
   assert.match(appJs, /function turnFinalReceiptNode\(/);
   assert.match(appJs, /querySelectorAll\("\.item\.agentMessage, \.item\.plan"\)/);
   assert.match(appJs, /return finalReceipts\[finalReceipts\.length - 1\];/);
@@ -33,6 +46,10 @@ test("upward user scroll can jump back to the current turn final receipt", () =>
   assert.match(appJs, /function scrollConversationToTurnReceiptStart\(turnId\)/);
   assert.match(appJs, /const target = turnFinalReceiptNode\(\{ turnId \}\);/);
   assert.match(appJs, /scrollNodeIntoConversationView\(target\);/);
+  assert.match(appJs, /state\.recentCompletedReplyAnchor\.receiptStartLocated = true;/);
+  assert.match(appJs, /function pendingCompletedReceiptStartTurnId\(\)/);
+  assert.match(appJs, /const receiptStartTurnId = pendingCompletedReceiptStartTurnId\(\);/);
+  assert.match(appJs, /renderCurrentThread\(receiptStartTurnId \? \{ scrollToTurnReceiptStart: receiptStartTurnId \} : \{\}\);/);
   assert.match(appJs, /scrollToTurnReceiptStart/);
   assert.match(appJs, /const explicitNoStickToBottom = options\.stickToBottom === false \|\| Boolean\(options\.scrollToTurnReceiptStart\);/);
   assert.doesNotMatch(appJs, /return replies\[0\];/);
@@ -65,7 +82,8 @@ test("manual conversation scroll pauses live auto-stick until the user returns t
   assert.doesNotMatch(appJs, /const shouldStickToBottom = shouldFollowBottom/);
   assert.match(appJs, /addEventListener\("touchstart", rememberConversationScrollIntent/);
   assert.match(appJs, /addEventListener\("wheel", rememberConversationScrollIntent/);
-  assert.match(appJs, /clearConversationAutoScrollHold\(\);\s*clearRecentCompletedReplyAnchor\(\);\s*clearSubmittedMessageBottomFollow\(\);\s*clearViewportBottomFollow\(\);\s*scrollConversationToBottom\(\);/);
+  assert.match(appJs, /clearConversationAutoScrollHold\(\);\s*clearSubmittedMessageBottomFollow\(\);\s*clearViewportBottomFollow\(\);\s*scrollConversationToBottom\(\);/);
+  assert.doesNotMatch(appJs, /scrollToBottom"\)\)\.addEventListener\("click", \(\) => \{[\s\S]*clearRecentCompletedReplyAnchor\(\);[\s\S]*scrollConversationToBottom\(\);/);
 });
 
 test("orientation and viewport resize preserve bottom position when already near bottom", () => {

@@ -3669,3 +3669,252 @@ The previous full handoff was archived and should be opened only when old proven
   - This v204 harness turn did not redeploy Mac production static files. The
     Mac plugin may still be on the previously deployed v203 EventSource
     fallback build until explicitly synced/deployed.
+
+## 2026-06-07 Completion Receipt Anchor and Usage Projection v210
+
+- User reported that after a long completed receipt, the up-arrow anchor was
+  missing and one turn showed Usage while the expected final receipt above it
+  was absent.
+- Diagnosis:
+  - Compared both derived projection cache and raw rollout for thread
+    `019e8050-5a2d-7da3-9307-a3ca7148a016`.
+  - Problem turn `019ea133-19d6-7683-a380-a688365bf60d` was `interrupted`.
+  - Projection cache had stale `turnUsageSummary`; raw rollout lines
+    `24152..24576` had `task_started=1`, `task_complete=0`, `token_count=48`,
+    assistant messages with max text length 216, and no long final receipt.
+  - Root cause for this case was not projection dropping a long receipt: the
+    raw source never wrote a completed final receipt, while stale Usage made the
+    interrupted turn look complete.
+- Implemented:
+  - Static shell advanced to
+    `0.1.11|codex-mobile-shell-v210` / `codex-mobile-shell-v210`.
+  - Projection completion patches now merge into existing items instead of
+    replacing streamed receipts with shorter completion payloads.
+  - Projection and client item merges now dedupe `turnUsageSummary`, preserving
+    one Usage summary per turn.
+  - Usage summaries are attached only to successfully completed-like turn
+    statuses; interrupted, failed, cancelled, active, pending, and in-progress
+    turns do not render Usage even when raw token_count exists.
+  - Completion of a long receipt creates a reply-start anchor automatically.
+    The down-arrow no longer clears that anchor, so after jumping to bottom the
+    user can still jump back to the completed receipt start.
+- Validation:
+  - `node --check` passed for edited browser/service files.
+  - Focused Node tests passed for scroll controls, projection merge,
+    conversation render, viewport/build id, goal route, task card route, and
+    Usage summary service.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `npm.cmd test` passed with 364 tests.
+  - `git diff --check` passed with only expected Windows LF/CRLF working-tree
+    warnings.
+  - UTF-8 BOM checks for edited files showed no BOM.
+- Runtime:
+  - Removed only derived projection cache file
+    `%USERPROFILE%\.codex-mobile-web\thread-detail-projections\95243c8a34648c4fbc52581c7e3c9446.json`
+    after verifying it was inside the projection cache directory.
+  - Restarted Windows shared chain; restart log showed ready at
+    `2026-06-07 16:51:35`.
+  - `GET http://127.0.0.1:8787/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v210`,
+    `shellCacheName=codex-mobile-shell-v210`, `platform=win32`.
+  - Authenticated thread API smoke on thread `019e8050...` returned
+    `mobileReadMode=projection-dynamic`, `mobileProjection.source=dynamic`,
+    `turnCount=10`; interrupted turn `019ea133...` now has `usageCount=0`.
+
+## 2026-06-07 Completion Refresh Backfill v211
+
+- Follow-up issue:
+  - User reported that the latest completed turn did not generate Usage and the
+    long final receipt did not land at the receipt start.
+- Diagnosis:
+  - Thread API after v210 showed recent completed turn `019ea149...` with
+    `usageCount=1`, but older completed turn `019ea132...` had lost Usage after
+    later output grew the rollout.
+  - Usage collection was still primarily reading a fixed rollout tail. In large
+    active rollouts, a recent completed turn's `token_count` can be pushed out
+    of that tail before the visible 10-turn window rotates away.
+  - The long-receipt start jump only ran during the immediate
+    `turn/completed` render. If that completion payload was short and the full
+    deferred final receipt arrived only through the follow-up detail refresh,
+    no second positioning pass occurred.
+- Implemented:
+  - Static shell advanced to
+    `0.1.11|codex-mobile-shell-v211` / `codex-mobile-shell-v211`.
+  - `server.js` now passes the current detail turn ids to
+    `readRolloutTurnUsageSummaries()`. If the tail result is missing target
+    turn summaries and the rollout is within the runtime scan limit, the server
+    scans the rollout file and caches only token summary metadata.
+  - `public/app.js` now keeps a pending completion receipt anchor until the
+    receipt-start jump has actually happened. `refreshCurrentThread()` checks
+    the merged refreshed thread and performs one one-time receipt-start jump if
+    the complete long receipt appears after the completion event.
+- Validation:
+  - Focused tests passed:
+    `node --test test\turn-scroll-controls.test.js
+    test\turn-usage-summary-service.test.js test\conversation-render.test.js
+    test\mobile-viewport.test.js test\thread-detail-projection-service.test.js`.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `npm.cmd test` passed with 365 tests.
+  - `git diff --check` passed with only expected Windows LF/CRLF working-tree
+    warnings.
+  - UTF-8 BOM checks for edited files showed no BOM.
+- Runtime:
+  - Restarted Windows shared chain; restart log showed ready at
+    `2026-06-07 17:01:43`.
+  - `GET http://127.0.0.1:8787/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v211`,
+    `shellCacheName=codex-mobile-shell-v211`, `platform=win32`.
+  - Authenticated thread API smoke on thread `019e8050...` returned
+    `mobileReadMode=projection-dynamic`, `mobileProjection.source=dynamic`,
+    `turnCount=10`; recent completed turn `019ea149...` has `usageCount=1`.
+  - The newest visible turn was still `inProgress` during the smoke test, so it
+    correctly had `usageCount=0` until completion.
+
+## 2026-06-07 Post-completion Usage Refresh v212
+
+- Follow-up issue:
+  - User screenshot showed the just-ended `019ea151...` turn without a Usage
+    card in the browser even though the turn had completed.
+- Diagnosis:
+  - Raw rollout for `019ea149...` and `019ea151...` both had `task_complete=1`
+    and valid scoped `token_count` events.
+  - Full adapter scan produced Usage summaries for both ids.
+  - The server target Usage cache path could still return a target cache entry
+    without re-checking whether all currently returned target turn ids were
+    present.
+  - Separately, the browser could remain on the immediate `turn/completed`
+    render if the first refresh occurred before Usage/projection state was
+    stable.
+- Implemented:
+  - Static shell advanced to
+    `0.1.11|codex-mobile-shell-v212` / `codex-mobile-shell-v212`.
+  - Target Usage cache hits now require
+    `missingUsageTurnIds(targetCached.payload, targetTurnIds).length === 0`;
+    otherwise the server continues to tail/full metadata scan.
+  - Browser completion now schedules two post-completion detail refreshes
+    (`700ms`, `2400ms`) through `schedulePostCompletionThreadRefreshes()`.
+- Validation:
+  - Focused checks passed:
+    `node --check public\app.js public\sw.js server.js` and
+    `node --test test\turn-scroll-controls.test.js
+    test\turn-usage-summary-service.test.js test\mobile-viewport.test.js
+    test\thread-goal-service.test.js test\thread-task-card-route.test.js`.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `npm.cmd test` passed with 365 tests.
+  - `git diff --check` passed with only expected Windows LF/CRLF working-tree
+    warnings.
+  - UTF-8 BOM checks for edited files showed no BOM.
+- Runtime:
+  - Restarted Windows shared chain; restart log showed ready at
+    `2026-06-07 17:11:56`.
+  - `GET http://127.0.0.1:8787/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v212`,
+    `shellCacheName=codex-mobile-shell-v212`, `platform=win32`.
+  - Authenticated thread API smoke on thread `019e8050...` showed completed
+    turn `019ea151...` has `usageCount=1`.
+  - The newest visible turn `019ea15d...` was still `inProgress` during the
+    smoke test, so it correctly had `usageCount=0` until completion.
+
+## 2026-06-07 Usage Backfill Poll v213
+
+- Follow-up issue:
+  - User still saw the completed v212 response without a Usage card in the
+    browser, while `/api/threads/019e8050...` already returned Usage for the
+    corresponding completed turn.
+- Diagnosis:
+  - API had `turnUsageSummary`; frontend filtering and render signatures include
+    `turnUsageSummary`, so a page state that still lacks the card means the
+    browser did not complete a detail refresh merge after Usage became
+    available.
+  - Fixed post-completion refresh timings are still a race against Usage and
+    projection stabilization.
+- Implemented:
+  - Static shell advanced to
+    `0.1.11|codex-mobile-shell-v213` / `codex-mobile-shell-v213`.
+  - Added bounded frontend Usage backfill refresh:
+    - Detect the latest successful completed turn without `turnUsageSummary`.
+    - Retry current-thread detail refresh up to six times.
+    - Stop when Usage appears, the thread changes, the page is hidden, or the
+      attempt cap is reached.
+    - Do not trigger for interrupted, failed, cancelled, active, or in-progress
+      turns.
+- Validation:
+  - Focused checks passed:
+    `node --check public\app.js public\sw.js server.js` and
+    `node --test test\turn-scroll-controls.test.js test\mobile-viewport.test.js
+    test\thread-goal-service.test.js test\thread-task-card-route.test.js
+    test\conversation-render.test.js`.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `npm.cmd test` passed with 365 tests.
+  - `git diff --check` passed with only expected Windows LF/CRLF working-tree
+    warnings.
+  - UTF-8 BOM checks for edited files showed no BOM.
+- Runtime:
+  - Restarted Windows shared chain; restart log showed ready at
+    `2026-06-07 17:20:49`.
+  - `GET http://127.0.0.1:8787/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v213`,
+    `shellCacheName=codex-mobile-shell-v213`, `platform=win32`.
+  - Authenticated thread API smoke on thread `019e8050...` showed recent
+    successful completed turn `019ea15d...` has `usageCount=1`.
+  - The newest visible turn `019ea164...` was still `inProgress` during the
+    smoke test, so it correctly had `usageCount=0` until completion.
+
+## 2026-06-07 Usage Projection Receipt-only Follow-up
+
+- Follow-up issue:
+  - User still saw completed turns without Usage in both the current Codex
+    Mobile thread and the Home AI thread after v213.
+- Diagnosis:
+  - Authenticated API smoke before this follow-up showed the current Codex
+    Mobile thread's latest successful completed turn had `usageCount=1`.
+  - Home AI returned `projection-dynamic`; its raw rollout had valid scoped
+    `token_count` for completed turns, but older completed turns in the 10-turn
+    detail window still returned without `turnUsageSummary`.
+  - Root cause: after Usage was attached from rollout, receipt-only compaction
+    kept only user questions and the final assistant/plan receipt. It treated
+    `turnUsageSummary` as a removable non-receipt item, so older completed
+    turns lost Usage even though rollout parsing succeeded.
+  - Related projection fast-path fix: `prepareProjectedThreadReadResult()` now
+    merges display summary fields before `compactThreadReadResult()`, so
+    compact/Usage code sees the rollout path from the summary.
+- Implemented:
+  - `server.js` now treats `turnUsageSummary` as receipt-only metadata that is
+    retained for older compacted completed turns while still removing old
+    intermediate operation/reasoning/progress cards.
+  - Added a regression assertion in
+    `test/thread-item-timestamp-enrichment.test.js` using a real temporary
+    rollout with scoped `token_count` events.
+  - Updated `docs/ARCHITECTURE.md`, `docs/TROUBLESHOOTING.md`, and public
+    `README.md` to document the server-only follow-up.
+- Validation:
+  - `node --check server.js` passed.
+  - Focused tests passed:
+    `node --test test\thread-item-timestamp-enrichment.test.js
+    test\turn-usage-summary-service.test.js
+    test\thread-detail-projection-service.test.js
+    test\conversation-render.test.js`.
+- Runtime:
+  - Per user instruction, Listener was not restarted after this follow-up.
+  - The running Windows listener still has the previous v213 server process
+    until an explicit restart is approved/requested.
+  - Follow-up runtime check after user retest:
+    - 8787 listener PID `40056` started at `2026-06-07 17:27:42`, before the
+      server-only receipt-only Usage fix was edited.
+    - Live API still drops `turnUsageSummary` after leaving and re-entering
+      older completed turns, matching the user's report.
+    - Offline simulation with current repository code and the real rollout
+      paths for Codex Mobile and Home AI retains `usageCount=1` on every
+      completed turn in the current 10-turn windows, so the code fix is ready
+      but not active in the running listener.
+  - User approved continuing with restart. Shared-chain restart completed at
+    `2026-06-07 17:52:32`; 8787 listener moved to PID `6544`.
+  - Post-restart authenticated API smoke:
+    - Codex Mobile thread `019e8050...` returned `projection-dynamic`; all
+      completed turns in the current window had `usageCount=1`.
+    - Home AI thread `019e9566...` returned `projection-dynamic`; all completed
+      turns in the current window had `usageCount=1`.

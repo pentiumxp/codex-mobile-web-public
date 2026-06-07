@@ -153,6 +153,102 @@ test("thread detail projection updates live intermediate items from notification
   assert.equal(agent.text, "partial reply");
 });
 
+test("thread detail projection keeps streamed receipt when completed turn patch is shorter", () => {
+  const service = createThreadDetailProjectionService({
+    cacheDir: "",
+    policyVersion: "test-v1",
+    maxTurns: 2,
+    now: (() => {
+      let current = 6000;
+      return () => {
+        current += 100;
+        return current;
+      };
+    })(),
+  });
+  service.seed(signatureInput({ summaryStatus: "active" }), {
+    thread: {
+      id: "thread-1",
+      turns: [{ id: "turn-0", status: { type: "completed" }, items: [] }],
+    },
+  });
+
+  service.applyNotification("turn/started", {
+    threadId: "thread-1",
+    turn: { id: "turn-1", status: { type: "active" }, items: [] },
+  });
+  service.applyNotification("item/agentMessage/delta", {
+    threadId: "thread-1",
+    turnId: "turn-1",
+    itemId: "agent-1",
+    delta: "final receipt text",
+  });
+  service.applyNotification("turn/completed", {
+    threadId: "thread-1",
+    turn: {
+      id: "turn-1",
+      status: { type: "completed" },
+      items: [{ id: "user-1", type: "userMessage", text: "question" }],
+    },
+  });
+
+  const cached = service.get(signatureInput({
+    summaryStatus: "completed",
+    rolloutStats: { sizeBytes: 4096, mtimeMs: 9000 },
+    summaryUpdatedAtMs: 6200,
+  }));
+  assert.ok(cached);
+  const turn = cached.result.thread.turns.find((item) => item.id === "turn-1");
+  assert.equal(turn.status.type, "completed");
+  assert.equal(turn.items.some((item) => item.id === "agent-1" && item.text === "final receipt text"), true);
+});
+
+test("thread detail projection merges replacement receipts and keeps one usage summary", () => {
+  const service = createThreadDetailProjectionService({
+    cacheDir: "",
+    policyVersion: "test-v1",
+    maxTurns: 2,
+    now: () => 7000,
+  });
+  service.seed(signatureInput({ summaryStatus: "active" }), {
+    thread: {
+      id: "thread-1",
+      turns: [{
+        id: "turn-1",
+        status: { type: "active" },
+        items: [
+          { id: "agent-stream", type: "agentMessage", text: "partial reply" },
+          { id: "usage-old", type: "turnUsageSummary", mobileUsageSummary: { totalTokenUsage: { totalTokens: 10 } } },
+        ],
+      }],
+    },
+  });
+
+  service.applyNotification("turn/completed", {
+    threadId: "thread-1",
+    turn: {
+      id: "turn-1",
+      status: { type: "completed" },
+      items: [
+        { id: "agent-final", type: "agentMessage", text: "partial reply completed" },
+        { id: "usage-new", type: "turnUsageSummary", mobileUsageSummary: { totalTokenUsage: { totalTokens: 20 } } },
+      ],
+    },
+  });
+
+  const cached = service.get(signatureInput({
+    summaryStatus: "completed",
+    rolloutStats: { sizeBytes: 4096, mtimeMs: 9000 },
+    summaryUpdatedAtMs: 7000,
+  }));
+  assert.ok(cached);
+  const turn = cached.result.thread.turns.find((item) => item.id === "turn-1");
+  assert.equal(turn.items.filter((item) => item.type === "agentMessage").length, 1);
+  assert.equal(turn.items.find((item) => item.type === "agentMessage").text, "partial reply completed");
+  assert.equal(turn.items.filter((item) => item.type === "turnUsageSummary").length, 1);
+  assert.equal(turn.items.find((item) => item.type === "turnUsageSummary").id, "usage-new");
+});
+
 test("thread detail projection does not return unseeded partial notification windows", () => {
   const service = createThreadDetailProjectionService({
     cacheDir: "",

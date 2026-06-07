@@ -326,7 +326,7 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(notificationBody, /updateThreadStatusHints\(params\.threadId, state\.currentThread\.status, completedStatus/);
   assert.match(notificationBody, /updateThreadListStatus\(params\.threadId, completedStatus\)/);
   assert.match(notificationBody, /scheduleRenderThreads\(\);[\s\S]*scheduleCurrentThreadRefresh\(500\)/);
-  assert.match(notificationBody, /scheduleRenderThreads\(\);[\s\S]*scheduleCurrentThreadRefresh\(700\)/);
+  assert.match(notificationBody, /scheduleRenderThreads\(\);[\s\S]*schedulePostCompletionThreadRefreshes\(params\.threadId, \[700, 2400\]\)/);
 });
 
 test("thread merge drops superseded stale active turns", () => {
@@ -339,10 +339,14 @@ test("thread merge drops superseded stale active turns", () => {
 test("completed turns can render context and token usage summaries", () => {
   assert.match(serverJs, /workspaceContextStats:\s*workspaceContextStatsForCwd\(out\.cwd\)/);
   assert.match(appJs, /function renderTurnUsageSummary\(item\)/);
+  assert.match(appJs, /function isTurnUsageSummaryItem\(item\)/);
+  assert.match(appJs, /function dedupeTurnUsageSummaryItems\(items\)/);
   assert.match(functionBody("labelForItem"), /turnUsageSummary:\s*"Usage"/);
   assert.match(functionBody("renderItemBody"), /item\.type === "turnUsageSummary"[\s\S]*renderTurnUsageSummary\(item\)/);
   assert.match(functionBody("visibleItemSignature"), /item\.type === "turnUsageSummary"/);
   assert.match(functionBody("visibleItemSignature"), /mobileUsageSummary: item\.mobileUsageSummary/);
+  assert.match(functionBody("mergeItemsPreservingLocalVisible"), /dedupeTurnUsageSummaryItems\(removeShadowedMuxUserMessages\(merged\)\)/);
+  assert.match(functionBody("upsertItem"), /isTurnUsageSummaryItem\(item\)[\s\S]*!isTurnUsageSummaryItem\(existing\)/);
   assert.match(functionBody("turnFinalReceiptNode"), /:not\(\.turnUsageSummary\)/);
 });
 

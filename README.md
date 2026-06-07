@@ -666,6 +666,11 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v213 server-only 追记修复 Usage 在投影压缩路径中的丢失问题。投影快路径现在会先合并线程摘要中的 rollout path 再进入移动端压缩，确保 target-turn Usage 扫描能找到源 rollout；receipt-only 的旧 turn 压缩也会保留 `turnUsageSummary` 元数据，只去掉旧中间过程。该追记不改变 PWA shell cache，更新后需要重启 8787 Node listener。
+- 中文说明：v213 增加完成态 Usage 自愈刷新。当前线程最新成功完成 turn 如果已经结束但本地状态仍没有 `turnUsageSummary`，前端会进行有限次数的详情 backfill refresh，直到 API 合并出 Usage 或达到次数上限；这用于覆盖 completion 后固定刷新时间点仍早于 Usage/投影稳定的情况。`interrupted`、failed、cancelled、active、in-progress turn 不会触发该自愈路径。PWA shell cache 升级到 `codex-mobile-shell-v213`，更新后需要重启 8787 Node listener 并刷新客户端。
+- 中文说明：v212 修复 v211 后发现的 Usage 刷新兜底问题。服务端 target Usage cache 命中时现在也会检查当前返回的 turn id 是否缺 Usage；缺项时不会直接返回旧缓存，而会继续走 rollout 补扫。前端 `turn/completed` 后会安排两次线程详情刷新，避免第一次刷新早于 Usage/投影稳定时停留在“回执已完成但没有 Usage”的画面。PWA shell cache 升级到 `codex-mobile-shell-v212`，更新后需要重启 8787 Node listener 并刷新客户端。
+- 中文说明：v211 修复 v210 后发现的完成态补偿问题。线程详情 Usage 读取现在会用当前返回的 turn id 做定向补扫；当固定 rollout tail 已经被后续输出挤出目标 turn 的 `token_count` 时，服务端会在运行时扫描上限内补读 rollout 并只保留 token 摘要，避免刚完成或最近已完成 turn 的 Usage 卡消失。长回执定位也会在完成后的线程刷新阶段再次检查：如果 `turn/completed` 事件当下只带了短 payload，后续刷新补齐完整最终回执后会自动定位一次到回执开头。PWA shell cache 升级到 `codex-mobile-shell-v211`，更新后需要重启 8787 Node listener 并刷新客户端。
+- 中文说明：v210 修复完成回执后的定位和合并问题。`turn/completed` 现在会保留一个可跳回最终回执开头的锚点，即使用户已经点向下箭头沉底，也不会把这个锚点清掉；向上箭头仍只在回执开头位于视口上方时显示。线程详情动态投影把完成事件当作补丁合并，避免较短的完成 payload 覆盖掉已流式累计的 assistant 回执；同一 turn 的 `Usage` 卡也会合并为一张，避免出现两个内容不同的 Usage 框。`interrupted`、failed、cancelled、active 或其他未完成 turn 即使 rollout 里已有 `token_count`，也不会渲染完成 Usage 卡，避免把未写出最终回执的 turn 误看成“回执消失”。PWA shell cache 升级到 `codex-mobile-shell-v210`，更新后需要重启 8787 Node listener 并刷新客户端。
 - 中文说明：v209 server-only 增加线程详情动态投影索引。服务端会先查 `projection-dynamic` / `projection-cache`，命中时不再等待大 rollout 的完整 `thread/read`；投影由完整详情读取 seed，并在原始 app-server notification 到达时实时追加 `item/started`、`item/completed`、agent/reasoning 文本增量、command/file 输出增量。rollout size/mtime、summary updated/status、turn 窗口和投影策略版本变化会让旧投影失效；miss 时仍回退到现有完整 `thread/read` 路径。该修复不改变 PWA shell cache，更新后需要重启 8787 Node listener。
 
 - 中文说明：v208 server-only 调整线程详情裁剪策略：当前 live turn 会保留全部 compact command/tool/file/search/reasoning 中间过程；如果存在 live turn，它前一个已结束 turn 也会保留这些中间信息，方便刚结束后回查；如果没有 live turn，则最新已结束 turn 保留中间信息。更早的 older-history turn 只保留用户问题和最后一条 assistant/plan 回执，避免旧历史把大量过程重新带回浏览器。该修复不改变 PWA shell cache，更新后需要重启 8787 Node listener。

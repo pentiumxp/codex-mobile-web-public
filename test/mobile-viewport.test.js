@@ -48,9 +48,9 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*7px;/);
 });
 
-test("public app shell cache advances after foreground resume and detail-read hardening", () => {
-  assert.match(swJs, /codex-mobile-shell-v206/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v206"/);
+test("public app shell cache advances after receipt-anchor and projection hardening", () => {
+  assert.match(swJs, /codex-mobile-shell-v213/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v213"/);
   assert.match(appJs, /startupThreadOpenPending: false/);
   assert.match(indexHtml, /id="pluginStartupLoading"/);
   assert.match(indexHtml, /data-plugin-startup-title>正在加载 Codex\.\.\.</);

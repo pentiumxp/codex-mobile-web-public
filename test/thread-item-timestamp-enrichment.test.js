@@ -268,7 +268,35 @@ test("latest completed turn keeps all operation cards and ends with usage summar
 
 test("older compacted turns keep only question and receipt items", () => {
   const turns = [];
+  const rolloutEvents = [];
   for (let index = 0; index < 11; index += 1) {
+    rolloutEvents.push(
+      event(`2026-05-24T10:${String(index).padStart(2, "0")}:00.000Z`, "event_msg", {
+        type: "task_started",
+        turn_id: `turn-${index}`,
+      }),
+      event(`2026-05-24T10:${String(index).padStart(2, "0")}:30.000Z`, "event_msg", {
+        type: "token_count",
+        turn_id: `turn-${index}`,
+        info: {
+          last_token_usage: {
+            input_tokens: 100 + index,
+            cached_input_tokens: 50,
+            output_tokens: 10,
+            reasoning_output_tokens: 1,
+            total_tokens: 110 + index,
+          },
+          total_token_usage: {
+            input_tokens: 1000 + index,
+            cached_input_tokens: 500,
+            output_tokens: 100,
+            reasoning_output_tokens: 10,
+            total_tokens: 1100 + index,
+          },
+          model_context_window: 200000,
+        },
+      }),
+    );
     turns.push({
       id: `turn-${index}`,
       status: { type: "completed" },
@@ -282,15 +310,20 @@ test("older compacted turns keep only question and receipt items", () => {
     });
   }
 
-  const compacted = compactThread({ id: "thread-old", turns }, { maxTurns: 11 });
-  const olderItems = compacted.turns[0].items;
-  const recentItems = compacted.turns[10].items;
+  const { dir, rolloutPath } = writeRollout(rolloutEvents);
+  try {
+    const compacted = compactThread({ id: "thread-old", path: rolloutPath, turns }, { maxTurns: 11 });
+    const olderItems = compacted.turns[0].items;
+    const recentItems = compacted.turns[10].items;
 
-  assert.deepEqual(olderItems.map((item) => item.type), ["userMessage", "agentMessage"]);
-  assert.deepEqual(olderItems.map((item) => item.id), ["user-0", "agent-final-0"]);
-  assert.equal(recentItems.some((item) => item.type === "commandExecution"), true);
-  assert.equal(recentItems.some((item) => item.type === "reasoning"), true);
-  assert.equal(recentItems.some((item) => item.id === "agent-mid-10"), true);
+    assert.deepEqual(olderItems.map((item) => item.type), ["userMessage", "agentMessage", "turnUsageSummary"]);
+    assert.deepEqual(olderItems.map((item) => item.id), ["user-0", "agent-final-0", "mobile-turn-usage-turn-0"]);
+    assert.equal(recentItems.some((item) => item.type === "commandExecution"), true);
+    assert.equal(recentItems.some((item) => item.type === "reasoning"), true);
+    assert.equal(recentItems.some((item) => item.id === "agent-mid-10"), true);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("live turn and previous ended turn keep intermediate items while older turns are receipt-only", () => {
