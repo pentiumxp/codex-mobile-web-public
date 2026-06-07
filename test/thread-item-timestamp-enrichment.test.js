@@ -274,9 +274,10 @@ test("older compacted turns keep only question and receipt items", () => {
       status: { type: "completed" },
       items: [
         { id: `user-${index}`, type: "userMessage", text: `question ${index}` },
+        { id: `agent-mid-${index}`, type: "agentMessage", text: `middle update ${index}` },
         { id: `op-${index}`, type: "commandExecution", command: `echo ${index}`, status: "completed" },
         { id: `reason-${index}`, type: "reasoning", text: `reasoning ${index}` },
-        { id: `agent-${index}`, type: "agentMessage", text: `receipt ${index}` },
+        { id: `agent-final-${index}`, type: "agentMessage", text: `receipt ${index}` },
       ],
     });
   }
@@ -286,8 +287,10 @@ test("older compacted turns keep only question and receipt items", () => {
   const recentItems = compacted.turns[10].items;
 
   assert.deepEqual(olderItems.map((item) => item.type), ["userMessage", "agentMessage"]);
+  assert.deepEqual(olderItems.map((item) => item.id), ["user-0", "agent-final-0"]);
   assert.equal(recentItems.some((item) => item.type === "commandExecution"), true);
   assert.equal(recentItems.some((item) => item.type === "reasoning"), true);
+  assert.equal(recentItems.some((item) => item.id === "agent-mid-10"), true);
 });
 
 test("live turn and previous ended turn keep intermediate items while older turns are receipt-only", () => {
@@ -297,9 +300,10 @@ test("live turn and previous ended turn keep intermediate items while older turn
       status: { type: "completed" },
       items: [
         { id: "user-old", type: "userMessage", text: "old question" },
+        { id: "agent-old-mid", type: "agentMessage", text: "old middle update" },
         { id: "op-old", type: "commandExecution", command: "echo old", status: "completed" },
         { id: "reason-old", type: "reasoning", text: "old reasoning" },
-        { id: "agent-old", type: "agentMessage", text: "old receipt" },
+        { id: "agent-old-final", type: "agentMessage", text: "old receipt" },
       ],
     },
     {
@@ -326,6 +330,7 @@ test("live turn and previous ended turn keep intermediate items while older turn
   const compacted = compactThread({ id: "thread-live-window", turns }, { maxTurns: 3 });
 
   assert.deepEqual(compacted.turns[0].items.map((item) => item.type), ["userMessage", "agentMessage"]);
+  assert.deepEqual(compacted.turns[0].items.map((item) => item.id), ["user-old", "agent-old-final"]);
   assert.equal(compacted.turns[1].items.some((item) => item.type === "commandExecution"), true);
   assert.equal(compacted.turns[1].items.some((item) => item.type === "reasoning"), true);
   assert.equal(compacted.turns[2].items.some((item) => item.type === "commandExecution"), true);

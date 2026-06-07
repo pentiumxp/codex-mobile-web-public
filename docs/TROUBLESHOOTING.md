@@ -316,8 +316,9 @@ Cause to check:
   live turn and its previous ended turn. If no live turn exists, it should
   retain intermediate cards for the latest ended turn. Older-history turns
   loaded through `/api/threads/<id>/turns`, and older turns outside that
-  state-relevant set, should be receipt-only: user question plus assistant
-  receipt, without old operation, reasoning, or diagnostic cards.
+  state-relevant set, should be receipt-only: user question items plus the last
+  assistant/plan receipt, without old assistant progress updates, operation,
+  reasoning, or diagnostic cards.
 - Current clients still enter thread detail at the bottom. Do not fix missing
   large-thread history by changing the open position; first check whether the
   server returned full `thread-read` or a fallback `turns-list` window.
@@ -363,7 +364,7 @@ This is usually display attribution, not a live process, when:
 - The real `function_call_output` or `exec_command_end` exists later in the rollout.
 - `Get-Process` shows no matching tool process.
 
-Current server behavior keeps compact process cards for the current live turn and the previous ended turn; if no live turn exists, the latest ended turn keeps those cards. Older turns are receipt-only. Raw fallback may attach a completed operation only when the latest turn is still live and the rollout event is tied to that same turn id; older completed operations must not attach to a newer live turn. If this regresses, inspect `readLatestRawOperation()` and `compactThread()` in `server.js`, then add coverage in `test/thread-item-timestamp-enrichment.test.js`.
+Current server behavior keeps compact process cards for the current live turn and the previous ended turn; if no live turn exists, the latest ended turn keeps those cards. Older turns are receipt-only: user question items plus the last assistant/plan receipt only. Raw fallback may attach a completed operation only when the latest turn is still live and the rollout event is tied to that same turn id; older completed operations must not attach to a newer live turn. If this regresses, inspect `readLatestRawOperation()` and `compactThread()` in `server.js`, then add coverage in `test/thread-item-timestamp-enrichment.test.js`.
 
 ## `rg` Appears Related To A Stall
 

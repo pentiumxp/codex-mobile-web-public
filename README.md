@@ -666,7 +666,7 @@ Behavior:
 
 ## Interface Notes
 
-- 中文说明：v208 server-only 调整线程详情裁剪策略：当前 live turn 会保留全部 compact command/tool/file/search/reasoning 中间过程；如果存在 live turn，它前一个已结束 turn 也会保留这些中间信息，方便刚结束后回查；如果没有 live turn，则最新已结束 turn 保留中间信息。更早的 older-history turn 只保留用户问题和最终回执，避免旧历史把大量过程重新带回浏览器。该修复不改变 PWA shell cache，更新后需要重启 8787 Node listener。
+- 中文说明：v208 server-only 调整线程详情裁剪策略：当前 live turn 会保留全部 compact command/tool/file/search/reasoning 中间过程；如果存在 live turn，它前一个已结束 turn 也会保留这些中间信息，方便刚结束后回查；如果没有 live turn，则最新已结束 turn 保留中间信息。更早的 older-history turn 只保留用户问题和最后一条 assistant/plan 回执，避免旧历史把大量过程重新带回浏览器。该修复不改变 PWA shell cache，更新后需要重启 8787 Node listener。
 - 中文说明：v207 server-only 修复 v206 把线程详情主路径切到 bounded `thread/turns/list` 后丢失 command/tool/file/search 中间信息的回归。`/api/threads/:id` 恢复为先用完整 `thread/read` 读取并裁剪到最近 `CODEX_MOBILE_THREAD_TURNS` 个 turn；`thread/turns/list` 只在 `thread/read` 失败或超时时作为 fallback。该修复不改变 PWA shell cache，更新后需要重启 8787 Node listener。
 - 中文说明：v206 减少从其他 App 切回后的线程详情重刷。当前线程已经加载且不是运行中、加载中、错误状态，也没有从线程列表看到更新时，前台恢复只做状态、线程列表和 SSE 恢复，不再重新读取整个详情；运行中线程仍会继续通过现有轮询/合并路径刷新。PWA shell cache 升级到 `codex-mobile-shell-v206`。
 - 中文说明：v205 修复 Hermes 插件宿主域名切换后 Codex 线程详情右滑退出宿主的问题。嵌入模式发送 `codex-mobile.plugin.navigation` 和 `back_result` 前，会优先使用当前 iframe 的实际 `window.parent.location.origin`；只有无法读取父窗口 origin 时，才回退到 launch session 返回的 `hermes_origin` 或 referrer。这样宿主 HTTPS 域名从旧域名切到新域名后，线程详情仍能把 `canGoBack=true` 发给宿主，右滑返回 Codex 线程列表而不是退出到 Hermes。PWA shell cache 升级到 `codex-mobile-shell-v205`。
@@ -755,7 +755,7 @@ Behavior:
 
 当线程的 rollout JSONL 达到阈值时，界面按钮显示为“压缩续接”。默认提醒阈值是 `200MB`，可用 `CODEX_MOBILE_ROLLOUT_WARNING_BYTES` 覆盖。详情页提示可以点“跳过”暂时隐藏；隐藏记录按“线程 id + 当前 rollout 大小”保存，因此该线程继续增长后会再次提示。确认“压缩续接”后，Mobile Web 会先在旧线程中启动一个交接整理 turn，要求旧线程把本线程真实的交接重点写入当前工作区的 `.agent-context/thread-handoffs/<id>.md` 文件。该文件必须只总结源线程和当前工作区相关的目标、已完成事项、未完成事项、关键文件、验证结果和风险。
 
-线程详情读取不再按 rollout 大小主动跳过完整 `thread/read`。即使 rollout 超过 32MB，Mobile Web 也会先向 app-server 请求完整详情并裁剪到最近 `CODEX_MOBILE_THREAD_TURNS` 个 turn；只有 `thread/read` 真实失败时，才降级到有数量上限的 `thread/turns/list` fallback。这样可以保留 `thread/read` 提供的 command/tool/file/search 中间信息。当前 live turn 会保留全部 compact 中间过程；如果存在 live turn，它前一个已结束 turn 也保留中间信息；如果没有 live turn，则最新已结束 turn 保留中间信息。更早的 older-history turn 只保留用户问题和最终回执。`CODEX_MOBILE_THREAD_TURNS` 控制移动端 compact detail 首屏、fallback、以及 older-turn 分页大小，默认是最近 10 个 turn。`200MB` 的 rollout 阈值只用于界面提醒和压缩续接动作。
+线程详情读取不再按 rollout 大小主动跳过完整 `thread/read`。即使 rollout 超过 32MB，Mobile Web 也会先向 app-server 请求完整详情并裁剪到最近 `CODEX_MOBILE_THREAD_TURNS` 个 turn；只有 `thread/read` 真实失败时，才降级到有数量上限的 `thread/turns/list` fallback。这样可以保留 `thread/read` 提供的 command/tool/file/search 中间信息。当前 live turn 会保留全部 compact 中间过程；如果存在 live turn，它前一个已结束 turn 也保留中间信息；如果没有 live turn，则最新已结束 turn 保留中间信息。更早的 older-history turn 只保留用户问题和最后一条 assistant/plan 回执。`CODEX_MOBILE_THREAD_TURNS` 控制移动端 compact detail 首屏、fallback、以及 older-turn 分页大小，默认是最近 10 个 turn。`200MB` 的 rollout 阈值只用于界面提醒和压缩续接动作。
 
 跨线程任务卡片 draft 仍要求模型返回可见目标里的精确 `threadId`。如果模型只把目标线程 ID 的后半段抄错，前端只会在可见线程中存在唯一且足够长公共前缀匹配时，把目标恢复为真实线程 ID；无法唯一恢复时仍会把 draft 标为失败，避免把卡片投递到不确定目标。
 

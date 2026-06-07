@@ -73,6 +73,48 @@ The previous full handoff was archived and should be opened only when old proven
   - Public is pushed at `0f5b1de`.
   - Mac production was not deployed in this update.
 
+## 2026-06-07 Receipt-Only Older Turns Tightening
+
+- User reported that Windows still showed intermediate content after v208 when
+  scrolling far upward.
+- Runtime check:
+  - Windows 8787 was deployed from
+    `C:\Users\xuxin\Documents\codex-mobile-web\server.js`.
+  - The API already limited command/reasoning/operation cards to one or two
+    state-relevant turns, but older receipt-only turns still contained many
+    `agentMessage` items. Example counts before the fix included older turns
+    with `agentMessage=25` or `agentMessage=54`.
+- Root cause:
+  - The receipt-only filter kept every user and assistant message. In Codex
+    rollouts, many process/progress updates are represented as `agentMessage`,
+    so older turns still looked like they contained intermediate content even
+    after command/tool/reasoning cards were removed.
+- Implemented:
+  - Receipt-only turns now retain all user question items plus only the last
+    assistant/plan receipt item.
+  - Current live turn and the previous ended turn still keep their full compact
+    intermediate cards.
+  - README, architecture docs, and troubleshooting docs were tightened to
+    describe the final-receipt-only rule.
+- Validation:
+  - Focused tests passed:
+    `node --test test/thread-item-timestamp-enrichment.test.js
+    test/thread-visibility.test.js test/conversation-render.test.js`.
+  - `npm run check` passed.
+  - Full `npm test` passed with 358 tests.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Runtime:
+  - Restarted Windows 8787 listener after the fix.
+  - Post-restart API smoke opened the first five visible threads without
+    printing key material or message content. Older non-operation turns now
+    report one assistant/plan receipt each; state-relevant turns still retain
+    process items.
+- Status:
+  - Public has not been pushed with this tightening yet.
+  - Existing browser pages that already loaded the old expanded detail may need
+    a manual refresh or thread re-open to drop in-memory old items.
+
 ## 2026-06-07 Thread Detail Intermediate Items Regression v207
 
 - User reported that after v206, opening any thread no longer showed

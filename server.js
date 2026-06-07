@@ -3374,15 +3374,39 @@ function trailingOperationIndexes(items, allowLiveOperation, maxOperations = 1) 
   return indexes;
 }
 
-function isQuestionOrReceiptItem(item) {
+function isUserQuestionItem(item) {
   if (!item || typeof item !== "object") return false;
   const type = String(item.type || "").toLowerCase();
-  if (type === "usermessage" || type === "agentmessage") return true;
+  if (type === "usermessage") return true;
   if (type === "message") {
     const role = String(item.role || item.author || "").toLowerCase();
-    return role === "user" || role === "assistant";
+    return role === "user";
   }
   return false;
+}
+
+function isAssistantReceiptItem(item) {
+  if (!item || typeof item !== "object") return false;
+  const type = String(item.type || "").toLowerCase();
+  if (type === "agentmessage" || type === "plan") return true;
+  if (type === "message") {
+    const role = String(item.role || item.author || "").toLowerCase();
+    return role === "assistant";
+  }
+  return false;
+}
+
+function receiptOnlyItemIndexes(items) {
+  const indexes = new Set();
+  if (!Array.isArray(items)) return indexes;
+  let receiptIndex = -1;
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    if (isUserQuestionItem(item)) indexes.add(index);
+    if (isAssistantReceiptItem(item)) receiptIndex = index;
+  }
+  if (receiptIndex >= 0) indexes.add(receiptIndex);
+  return indexes;
 }
 
 function isEndedTurn(turn) {
@@ -3435,8 +3459,9 @@ function compactTurn(turn, options = {}) {
       allowOperation,
       options.maxOperationItems || MAX_LIVE_OPERATION_ITEMS,
     );
+    const receiptIndexes = options.receiptOnly ? receiptOnlyItemIndexes(out.items) : null;
     out.items = out.items.map((item) => compactItem(item, options)).filter((item, index) => {
-      if (options.receiptOnly) return isQuestionOrReceiptItem(item);
+      if (receiptIndexes) return receiptIndexes.has(index);
       if (!isOperationalItem(item)) return true;
       return operationIndexes.has(index);
     });
