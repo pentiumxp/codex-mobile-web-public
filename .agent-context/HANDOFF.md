@@ -21,6 +21,51 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-07 Mac Plugin Deploy Harness And v213 Production Deploy
+
+- User required Mac production deployment to go through a harness instead of
+  one-off SSH attempts.
+- Implemented:
+  - Added `scripts/deploy-macos-plugin.ps1`.
+  - Added `test/macos-plugin-deploy-harness.test.js`.
+  - Documented the harness in `docs/TROUBLESHOOTING.md` and `docs/MODULES.md`.
+- Harness contract:
+  - Deploys only a clean public git archive.
+  - Rejects private/runtime/secret-like archive paths.
+  - Runs staging `npm run check` and `npm run check:macos` before production
+    backup or sync.
+  - Preserves target `.agent-context`, `node_modules`, `logs`, `data`,
+    `uploads`, `.git`, and `AGENTS.md` during sync.
+  - Runs target checks and focused tests before LaunchDaemon restart.
+  - Reads sudo password and the Mobile access key without printing key
+    material.
+- Deployment notes:
+  - First harness run stopped before restart at target-check time because
+    sudo's timestamp was not reliable across the whole remote script. The
+    target had been synced but the LaunchDaemon was not restarted.
+  - The harness was fixed to route all privileged remote actions through a
+    bounded `run_sudo` wrapper, then rerun from the same public commit.
+  - Mac production deployed public commit `043576a` to the active plugin target.
+  - Remote backup from the successful run:
+    `/tmp/codex-mobile-web-deploy-043576a-20260607_184159.backup.tar.gz`.
+  - Remote target checks passed before restart: `npm run check`,
+    `npm run check:macos`, and 31 focused thread-detail/usage/scroll tests.
+  - Restarted `system/com.hermesmobile.plugin.codex-mobile`.
+  - Post-deploy smoke confirmed Mac 8787 reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v213`,
+    `shellCacheName=codex-mobile-shell-v213`, `platform=darwin`, active
+    profile id `previous`, LaunchDaemon PID `11701`, and listener
+    `127.0.0.1:8787`.
+- Local validation:
+  - PowerShell script parse passed.
+  - `node --test test\macos-plugin-deploy-harness.test.js` passed.
+  - `npm.cmd test` passed with 371 tests.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `git diff --check` passed with only existing LF/CRLF warnings.
+  - Focused scan of source/docs/tests/README/package files found no local sudo
+    password file path, Mac SSH key path, or machine SSH alias.
+
 ## 2026-06-07 Thread Detail State-Relevant Intermediate Items v208
 
 - User clarified that process/intermediate detail retention cannot be a simple

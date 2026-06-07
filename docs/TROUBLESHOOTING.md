@@ -50,6 +50,27 @@ CODEX_MOBILE_NODE_EXE="$HOME/HermesMobile/runtime/node-current/bin/node"
 PATH="$HOME/.local/bin:$HOME/HermesMobile/runtime/node-current/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 ```
 
+For the Mac Hermes plugin production deployment, use the checked deployment
+harness instead of one-off SSH copy commands. The harness deploys a clean public
+git archive, rejects private/runtime paths, runs staging syntax checks before
+touching production, backs up the active target, runs target checks before
+restart, then verifies `/api/public-config` and `/api/status` without printing
+key material:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\deploy-macos-plugin.ps1 `
+  -HostAlias <mac-ssh-alias> `
+  -PublicRepoPath <local-public-repo-path> `
+  -SudoPasswordFile <local-sudo-password-file>
+```
+
+If the harness fails during staging checks, production has not been backed up,
+copied, or restarted yet. If it fails during target checks, the active target
+has already been synced but the LaunchDaemon has not been restarted; inspect the
+bounded failure, repair, and rerun the harness instead of manually patching the
+production directory.
+
 If the Hermes Mobile host can load its shell but the Codex Mobile plugin card or iframe reports `Plugin workspace access key file was not found for this workspace`, separate the host listener from the Codex plugin listener. On the Mac production deployment, `com.hermesmobile.listener` runs as `hermes-host`, while `com.hermesmobile.plugin.codex-mobile` reads the Codex Mobile key from the `xuxin` runtime. The host process must have its own readable key-file path:
 
 ```bash
