@@ -125,6 +125,37 @@
     return `<figure class="markdown-image"><img src="${escapeHtml(safeUrl)}" alt="${escapeHtml(label)}" loading="lazy"><figcaption>${escapeHtml(label)}</figcaption></figure>`;
   }
 
+  function normalizeGithubPreviewUrl(value) {
+    let parsed;
+    try {
+      parsed = new URL(String(value || "").trim());
+    } catch (_) {
+      return "";
+    }
+    const host = String(parsed.hostname || "").toLowerCase();
+    if (host !== "github.com" && host !== "www.github.com") return "";
+    if (parsed.protocol !== "https:") return "";
+    return parsed.toString();
+  }
+
+  function standaloneGithubPreviewUrl(value) {
+    const text = String(value || "").trim();
+    if (!text) return "";
+    const markdownLink = /^\[([^\]\n]+)\]\((<[^>\n]+>|[^)\s]+)\)$/.exec(text);
+    if (markdownLink) return normalizeGithubPreviewUrl(stripMarkdownLinkTarget(markdownLink[2]));
+    if (!/\s/.test(text)) return normalizeGithubPreviewUrl(text.startsWith("www.") ? `https://${text}` : text);
+    return "";
+  }
+
+  function renderGithubLinkCard(url, fallbackLabel = "") {
+    const safeUrl = normalizeGithubPreviewUrl(url);
+    if (!safeUrl) return "";
+    const fallback = renderMarkdownLink(fallbackLabel || safeUrl, safeUrl) || escapeHtml(fallbackLabel || safeUrl);
+    return `<div class="github-link-card-shell" data-github-link-preview-url="${escapeHtml(safeUrl)}">
+      <div class="github-link-card-fallback">${fallback}</div>
+    </div>`;
+  }
+
   function renderAutolinkUrl(rawUrl) {
     const parts = autolinkUrlParts(rawUrl);
     const href = parts.href.startsWith("www.") ? `https://${parts.href}` : parts.href;
@@ -391,6 +422,13 @@
         paragraph.push(lines[i].trim());
         i += 1;
       }
+      if (paragraph.length === 1) {
+        const githubPreviewUrl = standaloneGithubPreviewUrl(paragraph[0]);
+        if (githubPreviewUrl) {
+          blocks.push(renderGithubLinkCard(githubPreviewUrl));
+          continue;
+        }
+      }
       blocks.push(`<p>${paragraph.map(renderInlineMarkdown).join("<br>")}</p>`);
     }
 
@@ -406,6 +444,7 @@
     renderAutolinkUrl,
     renderInlineMarkdown,
     safeMarkdownImageUrl,
+    standaloneGithubPreviewUrl,
     normalizeMermaidSourceForRender,
     isMarkdownTableSeparator,
     splitMarkdownTableRow,
