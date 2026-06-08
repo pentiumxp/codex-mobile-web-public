@@ -666,7 +666,9 @@ Behavior:
 
 ## Interface Notes
 
-- 中文说明：v214 合入 public PR #46 和 PR #47。刷新提示现在只比较真实 app-shell build 信息，不再把普通 `version` 当作客户端 build id；`/api/public-config` 每次请求都会读取当前 shell build，避免磁盘静态资源已更新但旧 listener 仍返回启动快照时造成反复刷新提示。Composer 左侧 Fast 开关从红绿状态点改为闪电图标按钮，开启态用高亮闪电显示，文案统一为 `Fast mode on/off`。PWA shell cache 升级到 `codex-mobile-shell-v214`，更新后需要重启 8787 Node listener，并让已打开的浏览器/PWA 接受刷新提示、硬刷新或关闭重开。
+- 中文说明：v216 同步 public PR #46/#47 到 private。刷新提示现在只比较真实 app-shell build 信息，不再把普通 `version` 当作客户端 build id；`/api/public-config` 每次请求都会读取当前 shell build，避免旧启动快照和磁盘静态资源不一致时反复提示刷新。Composer 左侧 Fast 开关从红绿状态点改为闪电图标按钮，开启态用高亮闪电显示，文案统一为 `Fast mode on/off`。PWA shell cache 升级到 `codex-mobile-shell-v216`，更新后需要重启 8787 Node listener 并刷新客户端。
+- 中文说明：v215 澄清目标弹窗里的 token 口径。目标状态条现在显示 `budget tokens`，表示 Codex app-server 在 `thread_goals.tokens_used` 中维护的目标预算计数，通常接近非 cached input 加输出等预算消耗口径；它不是 rollout 原始 `totalTokens` 总和，也不是完整上下文窗口 token。PWA shell cache 升级到 `codex-mobile-shell-v215`，更新后需要重启 8787 Node listener 并刷新客户端。
+- 中文说明：v214 扩展 `/g` 目标弹窗。当前线程已有未完成目标时，重新输入 `/g` 会显示目标状态和动作区；Continue 会把 paused/blocked 目标恢复为 active，Pause 映射为 app-server 的 blocked 状态，Cancel goal 会通过官方 `thread/goal/clear` 取消目标，Save 继续通过 `thread/goal/set` 修改目标内容或 token budget。PWA shell cache 升级到 `codex-mobile-shell-v214`，更新后需要重启 8787 Node listener 并刷新客户端。
 - 中文说明：v213 server-only 追记修复 Usage 在投影压缩路径中的丢失问题。投影快路径现在会先合并线程摘要中的 rollout path 再进入移动端压缩，确保 target-turn Usage 扫描能找到源 rollout；receipt-only 的旧 turn 压缩也会保留 `turnUsageSummary` 元数据，只去掉旧中间过程。该追记不改变 PWA shell cache，更新后需要重启 8787 Node listener。
 - 中文说明：v213 增加完成态 Usage 自愈刷新。当前线程最新成功完成 turn 如果已经结束但本地状态仍没有 `turnUsageSummary`，前端会进行有限次数的详情 backfill refresh，直到 API 合并出 Usage 或达到次数上限；这用于覆盖 completion 后固定刷新时间点仍早于 Usage/投影稳定的情况。`interrupted`、failed、cancelled、active、in-progress turn 不会触发该自愈路径。PWA shell cache 升级到 `codex-mobile-shell-v213`，更新后需要重启 8787 Node listener 并刷新客户端。
 - 中文说明：v212 修复 v211 后发现的 Usage 刷新兜底问题。服务端 target Usage cache 命中时现在也会检查当前返回的 turn id 是否缺 Usage；缺项时不会直接返回旧缓存，而会继续走 rollout 补扫。前端 `turn/completed` 后会安排两次线程详情刷新，避免第一次刷新早于 Usage/投影稳定时停留在“回执已完成但没有 Usage”的画面。PWA shell cache 升级到 `codex-mobile-shell-v212`，更新后需要重启 8787 Node listener 并刷新客户端。
@@ -755,6 +757,7 @@ Behavior:
 - 中文说明：`/g` 目标提交成功后，前端会立即把刚输入的 objective 和可选 token budget 显示成线程顶部目标卡。这样即使 app-server 接受 `thread/goal/set` 后立刻开始执行任务、但响应体暂时没有返回完整 goal 对象，用户输入的目标也不会从界面上消失；后续 `thread/goal/updated` 通知或 `goals_1.sqlite` fallback 会覆盖这张本地显示卡。PWA shell 缓存升级到 `codex-mobile-shell-v186`。
 - 中文说明：`/g` 目标入口现在直接调用 Mobile 后端的 `POST /api/threads/<threadId>/goal`，由服务端转发到 Codex app-server `thread/goal/set`，不再发送一条普通消息让模型自己尝试创建目标。这个能力要求运行中的 app-server 来自 Codex CLI 0.135.0 或更新版本；Windows 启动脚本在未显式传 `-CodexExe` 时会优先选择 `%LOCALAPPDATA%\OpenAI\Codex\bin\*\codex.exe` 中最新的安装版，再回退旧的 `%USERPROFILE%\.codex-mobile-web\codex.exe`。mux endpoint 现在会记录真实 `codexExe`，windowless 启动器复用 endpoint 前会校验它是否匹配本次解析出的 Codex binary，避免继续复用旧 0.129 app-server。PWA shell 缓存升级到 `codex-mobile-shell-v185`。
 - 中文说明：线程归档现在还会写入 `%USERPROFILE%\.codex-mobile-web\archived-thread-ids.json` 的 Mobile 本地索引，只保存 thread id 和归档时间。这样 state DB recover 或旧 profile 行重新出现在列表时，重新归档也能被 Mobile 自己的列表过滤识别，不需要依赖 app-server 成功改写那条旧 SQLite 记录。
+- 中文说明：压缩续接现在会在新线程 bootstrap 写入成功后迁移源线程的未完成 CLI goal。`active` 目标会复制到新线程并保留 active 状态；源线程会尽量冻结为 `blocked`，避免两个线程同时继续同一个目标。`blocked`/旧 `paused` 目标会复制为新线程的 `blocked` 目标，不会自动开始执行。已完成或非可迁移状态的目标不会复制。迁移只复制 objective 和剩余 token budget，不复制旧线程已经消耗的 `tokens_used` / `time_used_seconds`；所有写入仍通过 app-server `thread/goal/set`，不直接写 `goals_1.sqlite`。
 - The continuation bootstrap message explicitly carries source thread metadata, rollout size, inherited runtime settings, the source-thread-generated handoff file, bounded continuation lineage, recent visible turn summaries, and current-workspace `.agent-context/PROJECT_CONTEXT.md` / `.agent-context/HANDOFF.md` excerpts. It does not inject fixed private/public GitHub release rules; those appear only if the current workspace context or source-thread handoff says they are relevant.
 - Long-pressing a session row opens a mobile action sheet with rename, continuation, and archive actions. Archive asks for confirmation, calls `/api/threads/<threadId>/archive`, and refreshes the list after success. The row disables accidental system text selection during the long press, while rename input fields still allow normal text selection and editing.
 - Agent replies include a `复制全文` action. Markdown code blocks and command/output detail blocks include smaller copy buttons so users can copy structured text without manually selecting content on iOS.
@@ -770,6 +773,8 @@ Behavior:
 旧线程写出交接文件后，Mobile Web 会尽量确认旧线程交接 turn 已完成，然后才创建同工作区的新续接线程，并在首条 bootstrap 消息中带入源线程 ID、标题、工作区、rollout 路径和大小、运行权限摘要、源线程交接文件、续接 lineage、最近源线程上下文，以及当前工作区 `.agent-context/PROJECT_CONTEXT.md` / `.agent-context/HANDOFF.md` 摘录。bootstrap 不再固定注入其他工作区或无关线程的发布/提交规则；只有当前工作区上下文或源线程交接文件明确涉及这些规则时，新线程才应加载它们。前端不会为了发起续接而强制打开源线程，避免源线程过大时先卡在 thread detail 读取；续接任务会通过 job 状态显示当前阶段，手机页面刷新后也会用本地保存的 job id 尝试恢复查询，完成后自动切到新线程。
 
 这个动作不会原地改写或裁剪旧 rollout 文件；它通过“源线程写交接文件 + 新续接线程 + 旧线程归档”降低后续交互需要读取的历史文件体积。旧线程在交接文件生成且续接线程启动成功后才会归档，仍可从归档记录中找回。首条 bootstrap 会要求新线程先读取源线程交接文件，再读取工作区持久上下文，并显式避免确认与当前工作区无关的发布或提交规则。续接成功后，服务端还会把 `newThreadId -> sourceThreadId -> handoffFile` 追加到 `.agent-context/thread-handoffs/index.jsonl`；下一次继续压缩时，bootstrap 会带入最多几层 lineage 摘要，并明确要求 Agent 在历史事实、风险、未完成事项或架构判断不确定时先读取 lineage 指向的 handoff 文件，而不是凭当前上下文猜。
+
+如果源线程有未完成 CLI goal，压缩续接会在新线程 bootstrap 写入完成后把目标复制到新线程。复制范围是 objective、状态和剩余 token budget；旧线程的已消耗 token/时间不迁移。`active` 源目标会在复制后尽量冻结为 `blocked`，`blocked`/旧 `paused` 源目标会在新线程保持 `blocked`，已完成或预算/用量限制等非可迁移状态不会复制。迁移结果会出现在 continuation job/result 和 lineage 的布尔诊断字段里，但 lineage 不写入目标正文。
 
 交接文件和 lineage index 都属于本地运行态资料。创建交接目录时，服务端会在 `.agent-context/thread-handoffs/.gitignore` 写入忽略规则，防止这些自动生成的 Markdown/JSONL 资料被误提交。
 
@@ -1532,12 +1537,6 @@ plugin. The shell cache advances to `codex-mobile-shell-v102`.
 ### 2026-06-03 Public PR 同步说明（归档 fallback 过滤与 Restart 风险提示 v166）
 
 本次 private 同步 public PR #44 和 PR #45 的产品改动，并在当前 private v165 基础上把 PWA shell cache 升到 `codex-mobile-shell-v166`。服务端 session-index fallback 列表现在会再次排除已归档线程，避免 app-server 主列表遗漏线程时把已归档的 projectless session 重新显示出来；更新后需要重启 8787 Node listener 才会加载新的 `server.js`。前端手动 `Restart` 从浏览器原生确认框改为自定义确认面板，点击时会先读取最近线程列表并列出 running session 风险，提示重启可能中断正在通过 Codex Mobile 同步或运行的任务。已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能看到新的保护面板。
-
-### 2026-06-08 Public PR 同步说明（刷新提示与 Fast 开关 v214）
-
-本次 public 合入 PR #46 和 PR #47，并把 PWA shell cache 升到 `codex-mobile-shell-v214`。PR #46 修复刷新提示反复出现的问题：前端不再把普通 `version` 当作 build id，服务端 `/api/public-config` 也改为按请求读取当前 app-shell build 信息。PR #47 把 Composer 左侧 Fast 开关从状态点改成闪电图标按钮，开启态更明确，辅助文案统一为 `Fast mode on/off`。
-
-本次同步只包含 public 产品代码、测试和 README 说明；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。部署后需要重启 8787 Node listener，并让已打开的浏览器/PWA 接受刷新提示、硬刷新或关闭重开，才能加载 v214 静态资源。
 
 ### 2026-06-04 本地更新说明（CLI 目标 `/g` 入口 v180）
 

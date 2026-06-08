@@ -53,6 +53,7 @@ const {
 const { createHermesPluginService } = require("./adapters/hermes-plugin-service");
 const { createThreadTaskCardService } = require("./adapters/thread-task-card-service");
 const {
+  continuationGoalMigrationPlan,
   createThreadGoalService,
   normalizeThreadGoalStatus,
 } = require("./adapters/thread-goal-service");
@@ -439,6 +440,7 @@ let latestSnapshotRateLimits = null;
 const latestLiveRateLimitsByModel = new Map();
 const latestSnapshotRateLimitsByModel = new Map();
 let lastRolloutRateLimitScanAt = 0;
+const LIVE_RATE_LIMIT_REFRESH_MIN_INTERVAL_MS = 10000;
 const latestRuntimeContextByPath = new Map();
 const latestItemTimestampsByPath = new Map();
 const latestTurnUsageSummariesByPath = new Map();
@@ -3782,6 +3784,10 @@ function hasCurrentRateLimitWindow(rateLimits) {
   });
 }
 
+function isTrustedLiveRateLimitSource(source) {
+  return source === "managed-child-live" || source === "profile-mux-live";
+}
+
 function storeRateLimits(compacted, byModel) {
   for (const key of compacted.modelKeys || rateLimitModelKeys(compacted)) {
     byModel.set(normalizeModelKey(key), compacted);
@@ -3797,7 +3803,7 @@ function recordRateLimits(value, options = {}) {
     latestSnapshotRateLimits = compacted;
     return storeRateLimits(compacted, latestSnapshotRateLimitsByModel);
   }
-  if (!isRateLimitRolloutSourceAccountScoped(CODEX_HOME) && source !== "managed-child-live") {
+  if (!isRateLimitRolloutSourceAccountScoped(CODEX_HOME) && !isTrustedLiveRateLimitSource(source)) {
     latestLiveRateLimits = null;
     latestLiveRateLimitsSource = null;
     latestLiveRateLimitsByModel.clear();
@@ -3811,7 +3817,7 @@ function recordRateLimits(value, options = {}) {
 function recordRateLimitReadResult(value, options = {}) {
   if (!value || typeof value !== "object") return null;
   const source = String(options.source || "live");
-  if (source !== "rollout" && !isRateLimitRolloutSourceAccountScoped(CODEX_HOME) && source !== "managed-child-live") {
+  if (source !== "rollout" && !isRateLimitRolloutSourceAccountScoped(CODEX_HOME) && !isTrustedLiveRateLimitSource(source)) {
     latestLiveRateLimits = null;
     latestLiveRateLimitsSource = null;
     latestLiveRateLimitsByModel.clear();
@@ -3850,7 +3856,7 @@ function recordRateLimitReadResult(value, options = {}) {
 }
 
 function canExposeRateLimitsForActiveHome() {
-  return isRateLimitRolloutSourceAccountScoped(CODEX_HOME) || latestLiveRateLimitsSource === "managed-child-live";
+  return isRateLimitRolloutSourceAccountScoped(CODEX_HOME) || isTrustedLiveRateLimitSource(latestLiveRateLimitsSource);
 }
 
 function activeRateLimits() {
@@ -5276,6 +5282,7 @@ class CodexAppServerClient {
     this.lastError = null;
     this.resetting = false;
     this.requireSharedAppServer = REQUIRE_SHARED_APP_SERVER;
+    this.lastRateLimitRefreshAttemptAt = 0;
   }
 
   async ensure() {
@@ -5384,7 +5391,9 @@ class CodexAppServerClient {
   }
 
   rateLimitSource() {
-    return this.transportKind === "managed-ws-child" ? "managed-child-live" : "live";
+    if (this.transportKind === "managed-ws-child") return "managed-child-live";
+    if (this.isMuxEndpoint()) return "profile-mux-live";
+    return "live";
   }
 
   async refreshRateLimits() {
@@ -5396,6 +5405,15 @@ class CodexAppServerClient {
         console.error(`[codex app-server] account/rateLimits/read failed: ${String(err.message || err).slice(0, 300)}`);
       }
     }
+  }
+
+  async refreshRateLimitsIfMissing() {
+    if (!this.ready || !this.isTransportOpen()) return;
+    if (latestLiveRateLimits && hasCurrentRateLimitWindow(latestLiveRateLimits)) return;
+    const now = Date.now();
+    if (now - this.lastRateLimitRefreshAttemptAt < LIVE_RATE_LIMIT_REFRESH_MIN_INTERVAL_MS) return;
+    this.lastRateLimitRefreshAttemptAt = now;
+    await this.refreshRateLimits();
   }
 
   closeTransportOnly() {
@@ -5515,7 +5533,7 @@ class CodexAppServerClient {
     if (msg.method) {
       if (msg.method === "account/rateLimits/updated" && msg.params && msg.params.rateLimits) {
         recordRateLimits(msg.params.rateLimits, {
-          source: this.transportKind === "managed-ws-child" ? "managed-child-live" : "live",
+          source: this.rateLimitSource(),
         });
       }
       if (msg.method === "serverRequest/resolved" && msg.params && msg.params.requestId != null) {
@@ -6092,6 +6110,8 @@ function normalizeContinuationLineageEntry(entry) {
     handoffChars: Number(entry.handoffChars || 0),
     sourceArchived: Boolean(entry.sourceArchived),
     sourceArchiveError: String(entry.sourceArchiveError || ""),
+    sourceGoalMigrated: Boolean(entry.sourceGoalMigrated),
+    sourceGoalMigrationError: String(entry.sourceGoalMigrationError || ""),
   };
 }
 
@@ -6650,11 +6670,50 @@ async function clearThreadGoalForSet(threadId) {
   });
 }
 
+async function getThreadGoalRpc(threadId) {
+  return codex.request("thread/goal/get", { threadId }, {
+    timeoutMs: READ_RPC_TIMEOUT_MS,
+    retry: false,
+  });
+}
+
 async function setThreadGoalRpc(params) {
   return codex.request("thread/goal/set", params, {
     timeoutMs: MUTATION_RPC_TIMEOUT_MS,
     retry: false,
   });
+}
+
+function threadGoalForActionFallback(threadId) {
+  try {
+    return currentThreadGoalForSet(threadId);
+  } catch {
+    return null;
+  }
+}
+
+async function currentThreadGoalForAction(threadId) {
+  try {
+    return threadGoalFromRpcResult(await getThreadGoalRpc(threadId)) || threadGoalForActionFallback(threadId);
+  } catch (err) {
+    if (isThreadGoalRpcUnsupportedError(err)) {
+      throw httpStatusError(501, "Thread goal actions are not supported by the running Codex app-server; restart Mobile Web with Codex CLI 0.135.0 or newer.");
+    }
+    return threadGoalForActionFallback(threadId);
+  }
+}
+
+function threadGoalTokenBudgetParam(inputTokenBudget, currentGoal = null) {
+  const inputBudget = normalizeThreadGoalTokenBudgetInput(inputTokenBudget);
+  if (inputBudget !== null) return inputBudget;
+  const currentBudget = normalizeThreadGoalTokenBudgetInput(currentGoal && (currentGoal.tokenBudget ?? currentGoal.token_budget));
+  return currentBudget;
+}
+
+function threadGoalSetParams(threadId, objective, tokenBudget, extra = {}) {
+  const params = Object.assign({ threadId, objective }, extra || {});
+  if (tokenBudget !== null) params.tokenBudget = tokenBudget;
+  return params;
 }
 
 async function setThreadGoal(threadId, input = {}) {
@@ -6688,6 +6747,153 @@ async function setThreadGoal(threadId, input = {}) {
   }
 }
 
+async function runThreadGoalAction(threadId, input = {}) {
+  const id = String(threadId || "").trim();
+  const action = String(input.action || "").trim().toLowerCase();
+  if (!id) throw httpStatusError(400, "Thread id is required");
+  if (!action) throw httpStatusError(400, "Goal action is required");
+  if (action === "cancel" || action === "clear") {
+    try {
+      await clearThreadGoalForSet(id);
+      return { ok: true, action: "cancel", goal: null };
+    } catch (err) {
+      if (isThreadGoalRpcUnsupportedError(err)) {
+        throw httpStatusError(501, "Thread goal clear is not supported by the running Codex app-server; restart Mobile Web with Codex CLI 0.135.0 or newer.");
+      }
+      throw err;
+    }
+  }
+
+  const currentGoal = await currentThreadGoalForAction(id);
+  const objective = normalizeThreadGoalObjectiveInput(input.objective || input.goal || input.text || currentGoal && currentGoal.objective);
+  if (!objective) throw httpStatusError(400, "Goal objective is required");
+  const tokenBudget = threadGoalTokenBudgetParam(input.tokenBudget ?? input.token_budget, currentGoal);
+
+  if (action === "continue" || action === "resume") {
+    if (normalizeThreadGoalStatus(currentGoal && currentGoal.status) === "active") {
+      return { ok: true, action: "continue", goal: currentGoal, changed: false };
+    }
+    try {
+      await clearThreadGoalForSet(id);
+      const result = await setThreadGoalRpc(threadGoalSetParams(id, objective, tokenBudget));
+      const goal = threadGoalFromRpcResult(result) || await currentThreadGoalForAction(id);
+      return { ok: true, action: "continue", goal: goal || result, result, changed: true };
+    } catch (err) {
+      if (isThreadGoalRpcUnsupportedError(err)) {
+        throw httpStatusError(501, "Thread goal continue is not supported by the running Codex app-server; restart Mobile Web with Codex CLI 0.135.0 or newer.");
+      }
+      throw err;
+    }
+  }
+
+  if (action === "pause") {
+    try {
+      const result = await setThreadGoalRpc(threadGoalSetParams(id, objective, tokenBudget, { status: "blocked" }));
+      let goal = threadGoalFromRpcResult(result);
+      if (normalizeThreadGoalStatus(goal && goal.status) !== "blocked") goal = await currentThreadGoalForAction(id);
+      if (normalizeThreadGoalStatus(goal && goal.status) !== "blocked") {
+        throw httpStatusError(501, "Thread goal pause is not supported by the running Codex app-server.");
+      }
+      return { ok: true, action: "pause", goal, result, changed: true };
+    } catch (err) {
+      if (err && err.statusCode) throw err;
+      if (isThreadGoalRpcUnsupportedError(err)) {
+        throw httpStatusError(501, "Thread goal pause is not supported by the running Codex app-server; restart Mobile Web with Codex CLI 0.135.0 or newer.");
+      }
+      throw err;
+    }
+  }
+
+  throw httpStatusError(400, `Unsupported goal action: ${action}`);
+}
+
+function publicContinuationGoalMigration(migration) {
+  if (!migration || typeof migration !== "object") return null;
+  return {
+    migrated: Boolean(migration.migrated),
+    reason: String(migration.reason || ""),
+    sourceThreadId: String(migration.sourceThreadId || ""),
+    targetThreadId: String(migration.targetThreadId || ""),
+    sourceStatus: String(migration.sourceStatus || ""),
+    targetStatus: String(migration.targetStatus || ""),
+    tokenBudget: migration.tokenBudget === null || migration.tokenBudget === undefined ? null : Number(migration.tokenBudget),
+    sourceTokenBudget: migration.sourceTokenBudget === null || migration.sourceTokenBudget === undefined ? null : Number(migration.sourceTokenBudget),
+    sourceTokensUsed: Number(migration.sourceTokensUsed || 0),
+    sourceFrozen: Boolean(migration.sourceFrozen),
+    sourceFreezeError: String(migration.sourceFreezeError || ""),
+    error: String(migration.error || ""),
+  };
+}
+
+async function migrateContinuationThreadGoal(sourceThreadId, targetThreadId) {
+  const sourceId = String(sourceThreadId || "").trim();
+  const targetId = String(targetThreadId || "").trim();
+  const base = {
+    migrated: false,
+    reason: "",
+    sourceThreadId: sourceId,
+    targetThreadId: targetId,
+    sourceStatus: "",
+    targetStatus: "",
+    tokenBudget: null,
+    sourceTokenBudget: null,
+    sourceTokensUsed: 0,
+    sourceFrozen: false,
+    sourceFreezeError: "",
+    error: "",
+  };
+  if (!sourceId || !targetId) return Object.assign(base, { reason: "missing-thread-id" });
+  if (sourceId === targetId) return Object.assign(base, { reason: "same-thread" });
+
+  let sourceGoal = null;
+  try {
+    sourceGoal = await currentThreadGoalForAction(sourceId);
+  } catch (err) {
+    return Object.assign(base, {
+      reason: isThreadGoalRpcUnsupportedError(err) ? "unsupported" : "read-error",
+      error: err.message || String(err),
+    });
+  }
+
+  const plan = continuationGoalMigrationPlan(sourceGoal || {});
+  const migration = Object.assign(base, {
+    reason: plan.reason || "",
+    sourceStatus: plan.sourceStatus || "",
+    targetStatus: plan.targetStatus || "",
+    tokenBudget: plan.tokenBudget === undefined ? null : plan.tokenBudget,
+    sourceTokenBudget: plan.sourceTokenBudget === undefined ? null : plan.sourceTokenBudget,
+    sourceTokensUsed: plan.sourceTokensUsed || 0,
+  });
+  if (!plan.migrate) return migration;
+
+  try {
+    const targetExtra = plan.targetStatus === "blocked" ? { status: "blocked" } : {};
+    const targetResult = await setThreadGoalRpc(threadGoalSetParams(targetId, plan.objective, plan.tokenBudget, targetExtra));
+    let targetGoal = threadGoalFromRpcResult(targetResult);
+    if (plan.targetStatus === "blocked" && normalizeThreadGoalStatus(targetGoal && targetGoal.status) !== "blocked") {
+      targetGoal = await currentThreadGoalForAction(targetId);
+    }
+    migration.migrated = true;
+    migration.targetStatus = normalizeThreadGoalStatus((targetGoal && targetGoal.status) || plan.targetStatus);
+  } catch (err) {
+    return Object.assign(migration, {
+      reason: isThreadGoalRpcUnsupportedError(err) ? "unsupported" : "set-target-error",
+      error: err.message || String(err),
+    });
+  }
+
+  if (plan.sourceStatus === "active") {
+    try {
+      await setThreadGoalRpc(threadGoalSetParams(sourceId, plan.objective, plan.sourceTokenBudget, { status: "blocked" }));
+      migration.sourceFrozen = true;
+    } catch (err) {
+      migration.sourceFreezeError = err.message || String(err);
+    }
+  }
+
+  return migration;
+}
+
 function continuationJobSourceKey(body) {
   const sourceThreadId = String(body && body.sourceThreadId || "").trim();
   if (!sourceThreadId) return "";
@@ -6710,6 +6916,7 @@ function publicContinuationJob(job) {
     threadId: job.threadId || "",
     contextCompaction: job.contextCompaction || null,
     sourceArchive: job.sourceArchive || null,
+    sourceGoalMigration: job.sourceGoalMigration || null,
     sourceHandoff: job.sourceHandoff || null,
     lineage: job.lineage || null,
     titleIndexed: Boolean(job.titleIndexed),
@@ -6844,6 +7051,14 @@ async function startThreadFromRequestBody(body, options = {}) {
     ? await codex.request("turn/start", bootstrapParams, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false })
     : null;
   const titleUpdatedAfterBootstrap = await tryUpdateThreadTitle(threadId, desiredTitle).catch(() => false);
+  let sourceGoalMigration = null;
+  if (sourceThreadId && threadId && sourceThreadId !== threadId && body.migrateSourceGoal !== false) {
+    progress("goal-migration", "正在迁移旧线程目标", { threadId, sourceThreadId });
+    sourceGoalMigration = publicContinuationGoalMigration(
+      await migrateContinuationThreadGoal(sourceThreadId, threadId),
+    );
+  }
+  if (job) job.sourceGoalMigration = sourceGoalMigration;
   let sourceArchive = null;
   if (archiveSourceThread && sourceThreadId !== threadId) {
     progress("archive-source", "正在归档旧线程", { threadId, sourceThreadId });
@@ -6878,6 +7093,8 @@ async function startThreadFromRequestBody(body, options = {}) {
     handoffChars: sourceHandoff && sourceHandoff.chars,
     sourceArchived: Boolean(sourceArchive && sourceArchive.archived),
     sourceArchiveError: sourceArchive && sourceArchive.error,
+    sourceGoalMigrated: Boolean(sourceGoalMigration && sourceGoalMigration.migrated),
+    sourceGoalMigrationError: sourceGoalMigration && (sourceGoalMigration.error || sourceGoalMigration.sourceFreezeError),
   });
   if (job) job.lineage = lineage;
   const thread = rememberStartedThread(annotateThreadRolloutStats(Object.assign(
@@ -6900,6 +7117,7 @@ async function startThreadFromRequestBody(body, options = {}) {
     title: desiredTitle,
     titleUpdated: Boolean(titleUpdatedBeforeBootstrap || titleUpdatedAfterBootstrap),
     titleIndexed,
+    sourceGoalMigration,
     sourceArchive,
     sourceContextWarnings: sourceSnapshot.readWarnings || [],
     sourceHandoff: sourceHandoff ? {
@@ -6940,6 +7158,7 @@ function createContinuationJob(body) {
     sourceKey,
     threadId: "",
     sourceArchive: null,
+    sourceGoalMigration: null,
     sourceHandoff: null,
     lineage: null,
     result: null,
@@ -6966,6 +7185,7 @@ async function runContinuationJob(job) {
         : "续接线程已就绪",
       threadId: result.threadId || job.threadId,
       sourceArchive: result.sourceArchive || job.sourceArchive,
+      sourceGoalMigration: result.sourceGoalMigration || job.sourceGoalMigration,
       sourceHandoff: result.sourceHandoff || job.sourceHandoff,
       result,
     });
@@ -7850,6 +8070,7 @@ async function handleApi(req, res) {
     return;
   }
   if (url.pathname === "/api/public-config") {
+    await codex.refreshRateLimitsIfMissing();
     loadRecentRateLimitsFromRollouts();
     const buildConfig = currentPublicBuildConfig();
     sendJson(res, 200, {
@@ -8133,6 +8354,7 @@ async function handleApi(req, res) {
     await codex.ensure().catch((err) => {
       codex.lastError = err.message;
     });
+    await codex.refreshRateLimitsIfMissing();
     loadRecentRateLimitsFromRollouts();
     sendJson(res, 200, codex.status());
     return;
@@ -8425,6 +8647,17 @@ async function handleApi(req, res) {
       const threadId = decodeURIComponent(threadGoal[1]);
       const body = await readBody(req);
       sendJson(res, 200, await setThreadGoal(threadId, body));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  const threadGoalAction = url.pathname.match(/^\/api\/threads\/([^/]+)\/goal\/actions$/);
+  if (threadGoalAction && req.method === "POST") {
+    try {
+      const threadId = decodeURIComponent(threadGoalAction[1]);
+      const body = await readBody(req);
+      sendJson(res, 200, await runThreadGoalAction(threadId, body));
     } catch (err) {
       sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
     }

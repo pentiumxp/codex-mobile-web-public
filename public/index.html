@@ -349,12 +349,19 @@
         <span>Token budget</span>
         <input id="goalTokenBudgetInput" type="number" min="1" step="1" inputmode="numeric" autocomplete="off" placeholder="Optional">
       </label>
+      <div id="goalDialogStatus" class="goal-panel-status hidden"></div>
+      <div id="goalStateActions" class="goal-state-actions hidden">
+        <button id="goalContinueButton" class="goal-action goal-action-primary" type="button">Continue</button>
+        <button id="goalPauseButton" class="goal-action" type="button">Pause</button>
+        <button id="goalClearButton" class="goal-action goal-action-danger" type="button">Cancel goal</button>
+      </div>
       <div class="goal-actions">
         <button id="goalCancelButton" class="goal-cancel" type="button">Cancel</button>
         <button id="goalSubmitButton" class="goal-submit" type="submit">Send</button>
       </div>
     </form>
   </div>
+
   <div id="restartConfirmDialog" class="restart-confirm-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="restartConfirmTitle">
     <div class="restart-confirm-panel">
       <div class="restart-confirm-head">

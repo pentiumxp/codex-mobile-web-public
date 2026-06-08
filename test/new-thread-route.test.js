@@ -84,16 +84,18 @@ test("server hydrates rollout quota snapshots without overwriting live quota", (
   assert.match(serverJs, /entry && entry\.payload && entry\.payload\.rate_limits/, "server should read native rollout rate_limits");
   assert.match(serverJs, /recordRateLimits\(entry\.rateLimits,\s*\{\s*source:\s*"rollout"\s*\}\)/, "rollout scan should write snapshot quota");
   assert.match(serverJs, /function canExposeRateLimitsForActiveHome\(\)[\s\S]*isRateLimitRolloutSourceAccountScoped\(CODEX_HOME\)/, "server should gate quota exposure to account-scoped homes");
-  assert.match(serverJs, /function canExposeRateLimitsForActiveHome\(\)[\s\S]*latestLiveRateLimitsSource === "managed-child-live"/, "managed child live quota should be exposable for shared profile homes");
+  assert.match(serverJs, /function isTrustedLiveRateLimitSource\([\s\S]*managed-child-live[\s\S]*profile-mux-live/, "owned live quota should be exposable for shared profile homes");
   assert.match(serverJs, /function recordRateLimits\([\s\S]*!isRateLimitRolloutSourceAccountScoped\(CODEX_HOME\)[\s\S]*latestLiveRateLimits = null/, "source-less live quota should be ignored for shared profile homes");
   assert.match(serverJs, /function recordRateLimitReadResult\([\s\S]*rateLimitsByLimitId[\s\S]*latestLiveRateLimitsSource = source/, "rate-limit read RPC should hydrate model quota snapshots");
   assert.match(serverJs, /await this\.refreshRateLimits\(\);[\s\S]*this\.ready = true/, "initialize should refresh quota before broadcasting ready status");
+  assert.match(serverJs, /async refreshRateLimitsIfMissing\(\)[\s\S]*LIVE_RATE_LIMIT_REFRESH_MIN_INTERVAL_MS/, "server should rehydrate missing live quota after app-server startup");
   assert.match(serverJs, /this\.sendRpc\("account\/rateLimits\/read"[\s\S]*resetOnTimeout:\s*false/, "quota refresh should call the official app-server read RPC without resetting the transport on timeout");
-  assert.match(serverJs, /source:\s*this\.transportKind === "managed-ws-child"\s*\?\s*"managed-child-live"\s*:\s*"live"/, "managed child quota notifications should be marked as owned by this listener");
+  assert.match(serverJs, /rateLimitSource\(\)[\s\S]*this\.isMuxEndpoint\(\)[\s\S]*"profile-mux-live"/, "profile mux quota should be marked as owned by the active profile endpoint");
+  assert.match(serverJs, /recordRateLimits\(msg\.params\.rateLimits,\s*\{[\s\S]*source:\s*this\.rateLimitSource\(\)/, "quota notifications should use the same trusted source classifier as quota reads");
   assert.match(serverJs, /spawn\(CODEX_EXE,[\s\S]*\{\s*cwd: APP_ROOT,[\s\S]*env: Object\.assign\(\{\}, process\.env, \{\s*CODEX_HOME,\s*\}\)/, "managed child app-server should inherit the resolved active CODEX_HOME");
   assert.match(serverJs, /function activeRateLimits\(\)[\s\S]*latestLiveRateLimits \|\| latestSnapshotRateLimits/, "live quota should win over rollout snapshots");
-  assert.match(serverJs, /loadRecentRateLimitsFromRollouts\(\);[\s\S]*sendJson\(res, 200, \{[\s\S]*rateLimits: activeRateLimits\(\)/, "public config should include active quota");
-  assert.match(serverJs, /loadRecentRateLimitsFromRollouts\(\);[\s\S]*sendJson\(res, 200, codex\.status\(\)\)/, "status should include hydrated quota snapshots");
+  assert.match(serverJs, /\/api\/public-config"[\s\S]*await codex\.refreshRateLimitsIfMissing\(\);[\s\S]*rateLimits: activeRateLimits\(\)/, "public config should refresh and include active quota");
+  assert.match(serverJs, /\/api\/status"[\s\S]*await codex\.refreshRateLimitsIfMissing\(\);[\s\S]*sendJson\(res, 200, codex\.status\(\)\)/, "status should refresh and include hydrated quota snapshots");
 });
 
 test("server runtime inheritance includes model and reasoning effort", () => {

@@ -132,6 +132,8 @@ const state = {
   continuationNewThreadId: "",
   continuationJobId: "",
   goalDialogThreadId: "",
+  goalDialogExistingGoal: null,
+  goalDialogBusyText: "",
   goalSubmitBusy: false,
   lastGoalButtonSubmitAt: 0,
   pendingAttachments: [],
@@ -241,7 +243,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v214";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v216";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -1133,9 +1135,9 @@ function threadGoalBudgetText(goal) {
   if (!goal) return "";
   const parts = [];
   if (Number.isFinite(Number(goal.tokenBudget)) && Number(goal.tokenBudget) > 0) {
-    parts.push(`${Number(goal.tokensUsed || 0).toLocaleString()}/${Number(goal.tokenBudget).toLocaleString()} tokens`);
+    parts.push(`${Number(goal.tokensUsed || 0).toLocaleString()}/${Number(goal.tokenBudget).toLocaleString()} budget tokens`);
   } else if (Number(goal.tokensUsed || 0) > 0) {
-    parts.push(`${Number(goal.tokensUsed || 0).toLocaleString()} tokens`);
+    parts.push(`${Number(goal.tokensUsed || 0).toLocaleString()} budget tokens`);
   }
   if (Number(goal.timeUsedSeconds || 0) > 0) parts.push(formatElapsedTime(goal.timeUsedSeconds));
   return parts.join(" | ");
@@ -1176,14 +1178,49 @@ function currentGoalDialogThread() {
   return threadById(threadId) || (state.currentThread && String(state.currentThread.id || "") === threadId ? state.currentThread : null);
 }
 
-function setThreadGoalDialogBusy(busy) {
+function goalDialogStatusText(goal) {
+  if (!goal) return "";
+  const parts = [threadGoalStatusLabel(goal.status)];
+  const budget = threadGoalBudgetText(goal);
+  if (budget) parts.push(budget);
+  return parts.join(" | ");
+}
+
+function updateThreadGoalDialogState(goal = state.goalDialogExistingGoal) {
+  const normalizedGoal = dialogPrefillThreadGoal(goal);
+  state.goalDialogExistingGoal = normalizedGoal;
+  const status = $("goalDialogStatus");
+  if (status) {
+    const text = goalDialogStatusText(normalizedGoal);
+    status.textContent = text;
+    status.classList.toggle("hidden", !text);
+  }
+  const actions = $("goalStateActions");
+  if (actions) actions.classList.toggle("hidden", !normalizedGoal);
+  const submitButton = $("goalSubmitButton");
+  if (submitButton && !state.goalSubmitBusy) submitButton.textContent = normalizedGoal ? "Save" : "Send";
+  const closeButton = $("goalCancelButton");
+  if (closeButton) closeButton.textContent = normalizedGoal ? "Close" : "Cancel";
+}
+
+function setThreadGoalDialogBusy(busy, busyText = "Sending...") {
   state.goalSubmitBusy = Boolean(busy);
-  ["goalObjectiveInput", "goalTokenBudgetInput", "goalSubmitButton", "goalCancelButton", "goalDialogClose"].forEach((id) => {
+  state.goalDialogBusyText = state.goalSubmitBusy ? String(busyText || "Sending...") : "";
+  [
+    "goalObjectiveInput",
+    "goalTokenBudgetInput",
+    "goalSubmitButton",
+    "goalCancelButton",
+    "goalDialogClose",
+    "goalContinueButton",
+    "goalPauseButton",
+    "goalClearButton",
+  ].forEach((id) => {
     const el = $(id);
     if (el) el.disabled = state.goalSubmitBusy;
   });
   const button = $("goalSubmitButton");
-  if (button) button.textContent = state.goalSubmitBusy ? "Sending..." : "Send";
+  if (button) button.textContent = state.goalSubmitBusy ? state.goalDialogBusyText : (state.goalDialogExistingGoal ? "Save" : "Send");
 }
 
 function openThreadGoalDialog(threadId = state.currentThreadId) {
@@ -1207,6 +1244,7 @@ function openThreadGoalDialog(threadId = state.currentThreadId) {
   budgetInput.value = goal && Number(goal.tokenBudget || 0) > 0 ? String(goal.tokenBudget) : "";
   const subtitle = $("goalDialogSubtitle");
   if (subtitle) subtitle.textContent = threadTitleForDisplay(thread) || id;
+  updateThreadGoalDialogState(goal);
   dialog.classList.remove("hidden");
   setThreadGoalDialogBusy(false);
   window.setTimeout(() => objectiveInput.focus(), 0);
@@ -1217,6 +1255,8 @@ function closeThreadGoalDialog(force = false) {
   const dialog = $("goalDialog");
   if (dialog) dialog.classList.add("hidden");
   state.goalDialogThreadId = "";
+  state.goalDialogExistingGoal = null;
+  state.goalDialogBusyText = "";
   setThreadGoalDialogBusy(false);
 }
 
@@ -9181,6 +9221,9 @@ function updateThreadGoalState(threadId, goal) {
     else delete state.currentThread.goal;
     scheduleRenderCurrentThread();
   }
+  if (state.goalDialogThreadId && state.goalDialogThreadId === id) {
+    updateThreadGoalDialogState(normalizedGoal);
+  }
   scheduleRenderThreads();
 }
 
@@ -10634,12 +10677,8 @@ function hasTransferFiles(event) {
   return types.includes("Files");
 }
 
-async function submitThreadGoalMessage(event) {
-  if (event && typeof event.preventDefault === "function") event.preventDefault();
-  if (state.goalSubmitBusy || state.composerBusy) {
-    if (state.composerBusy) showError(new Error("A message is already sending"));
-    return;
-  }
+function goalDialogFormValues(options = {}) {
+  const requireObjective = options.requireObjective !== false;
   const thread = currentGoalDialogThread();
   const threadId = String(thread && thread.id || state.goalDialogThreadId || "").trim();
   const objectiveInput = $("goalObjectiveInput");
@@ -10648,12 +10687,12 @@ async function submitThreadGoalMessage(event) {
   const rawBudget = String(budgetInput && budgetInput.value || "").trim();
   if (!threadId) {
     showError(new Error("No thread is selected"));
-    return;
+    return null;
   }
-  if (!objective) {
+  if (requireObjective && !objective) {
     showError(new Error("Goal objective is required"));
     if (objectiveInput) objectiveInput.focus();
-    return;
+    return null;
   }
   let tokenBudget = 0;
   if (rawBudget) {
@@ -10661,13 +10700,30 @@ async function submitThreadGoalMessage(event) {
     if (!Number.isFinite(tokenBudget) || tokenBudget <= 0) {
       showError(new Error("Token budget must be a positive number"));
       if (budgetInput) budgetInput.focus();
-      return;
+      return null;
     }
     tokenBudget = Math.trunc(tokenBudget);
   }
+  return {
+    thread,
+    threadId,
+    objective,
+    tokenBudget: tokenBudget > 0 ? tokenBudget : null,
+  };
+}
+
+async function submitThreadGoalMessage(event) {
+  if (event && typeof event.preventDefault === "function") event.preventDefault();
+  if (state.goalSubmitBusy || state.composerBusy) {
+    if (state.composerBusy) showError(new Error("A message is already sending"));
+    return;
+  }
+  const values = goalDialogFormValues();
+  if (!values) return;
+  const { threadId, objective, tokenBudget } = values;
   state.composerBusy = true;
   state.sendButtonHint = "";
-  setThreadGoalDialogBusy(true);
+  setThreadGoalDialogBusy(true, "Saving...");
   markActivity("Goal set");
   updateComposerControls();
   try {
@@ -10676,12 +10732,12 @@ async function submitThreadGoalMessage(event) {
       method: "POST",
       body: JSON.stringify({
         objective,
-        tokenBudget: tokenBudget > 0 ? tokenBudget : null,
+        tokenBudget,
       }),
       timeoutMs: 30000,
     });
     const responseGoal = normalizeThreadGoal(result && result.goal, threadId);
-    const visibleGoal = responseGoal || submittedThreadGoal(threadId, objective, tokenBudget > 0 ? tokenBudget : null);
+    const visibleGoal = responseGoal || submittedThreadGoal(threadId, objective, tokenBudget);
     if (visibleGoal) updateThreadGoalState(threadId, visibleGoal);
     closeThreadGoalDialog(true);
     $("connectionState").classList.remove("error");
@@ -10697,6 +10753,80 @@ async function submitThreadGoalMessage(event) {
     $("connectionState").textContent = message;
     postClientEvent("goal_request_failure", {
       threadId,
+      message,
+    });
+    showError(new Error(message));
+  } finally {
+    state.composerBusy = false;
+    setThreadGoalDialogBusy(false);
+    updateComposerControls();
+  }
+}
+
+function threadGoalActionStatusText(action) {
+  if (action === "continue") return "Goal continued";
+  if (action === "pause") return "Goal paused";
+  if (action === "cancel") return "Goal cancelled";
+  return "Goal updated";
+}
+
+function threadGoalActionBusyText(action) {
+  if (action === "continue") return "Continuing...";
+  if (action === "pause") return "Pausing...";
+  if (action === "cancel") return "Cancelling...";
+  return "Sending...";
+}
+
+async function runThreadGoalDialogAction(action, event) {
+  if (event && typeof event.preventDefault === "function") event.preventDefault();
+  if (event && typeof event.stopPropagation === "function") event.stopPropagation();
+  if (state.goalSubmitBusy || state.composerBusy) {
+    if (state.composerBusy) showError(new Error("A message is already sending"));
+    return;
+  }
+  const normalizedAction = String(action || "").trim().toLowerCase();
+  const values = goalDialogFormValues({ requireObjective: normalizedAction !== "cancel" });
+  if (!values) return;
+  const { threadId, objective, tokenBudget } = values;
+  state.composerBusy = true;
+  state.sendButtonHint = "";
+  setThreadGoalDialogBusy(true, threadGoalActionBusyText(normalizedAction));
+  markActivity("Goal action");
+  updateComposerControls();
+  try {
+    postClientEvent("goal_action_start", { threadId, action: normalizedAction });
+    const result = await api(`/api/threads/${encodeURIComponent(threadId)}/goal/actions`, {
+      method: "POST",
+      body: JSON.stringify({
+        action: normalizedAction,
+        objective: objective || undefined,
+        tokenBudget,
+      }),
+      timeoutMs: 30000,
+    });
+    const responseGoal = normalizeThreadGoal(result && result.goal, threadId);
+    if (normalizedAction === "cancel") {
+      updateThreadGoalState(threadId, null);
+    } else if (responseGoal) {
+      updateThreadGoalState(threadId, responseGoal);
+    } else if (objective) {
+      updateThreadGoalState(threadId, submittedThreadGoal(threadId, objective, tokenBudget));
+    }
+    closeThreadGoalDialog(true);
+    $("connectionState").classList.remove("error");
+    $("connectionState").textContent = threadGoalActionStatusText(normalizedAction);
+    markActivity(threadGoalActionStatusText(normalizedAction));
+    postClientEvent("goal_action_success", { threadId, action: normalizedAction, hasResponseGoal: Boolean(responseGoal) });
+    if (threadId === state.currentThreadId) scheduleCurrentThreadRefresh(600);
+    loadThreads({ silent: true }).catch(showError);
+  } catch (err) {
+    const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err))
+      || "Goal action failed";
+    $("connectionState").classList.add("error");
+    $("connectionState").textContent = message;
+    postClientEvent("goal_action_failure", {
+      threadId,
+      action: normalizedAction,
       message,
     });
     showError(new Error(message));
@@ -11335,6 +11465,9 @@ function wireUi() {
   if ($("goalSubmitButton")) $("goalSubmitButton").addEventListener("pointerup", requestGoalDialogSubmitFromButton);
   if ($("goalSubmitButton")) $("goalSubmitButton").addEventListener("touchend", requestGoalDialogSubmitFromButton, { passive: false });
   if ($("goalSubmitButton")) $("goalSubmitButton").addEventListener("click", requestGoalDialogSubmitFromButton);
+  if ($("goalContinueButton")) $("goalContinueButton").addEventListener("click", (event) => runThreadGoalDialogAction("continue", event).catch(showError));
+  if ($("goalPauseButton")) $("goalPauseButton").addEventListener("click", (event) => runThreadGoalDialogAction("pause", event).catch(showError));
+  if ($("goalClearButton")) $("goalClearButton").addEventListener("click", (event) => runThreadGoalDialogAction("cancel", event).catch(showError));
   if ($("goalCancelButton")) $("goalCancelButton").addEventListener("click", () => closeThreadGoalDialog(false));
   if ($("goalDialogClose")) $("goalDialogClose").addEventListener("click", () => closeThreadGoalDialog(false));
   if ($("goalDialog")) $("goalDialog").addEventListener("click", (event) => {

@@ -328,6 +328,43 @@ test("shared profile homes expose managed child live quota without persisting it
   assert.deepEqual(store.quotaSnapshots, {});
 });
 
+test("shared profile homes expose profile mux live quota without persisting it", () => {
+  const userHome = tempDir();
+  const runtimeRoot = path.join(userHome, ".codex-mobile-web");
+  const defaultHome = path.join(userHome, ".codex");
+  const previousHome = path.join(userHome, ".codex-homes", "previous");
+  const sharedSessions = path.join(defaultHome, "sessions");
+  fs.mkdirSync(sharedSessions, { recursive: true });
+  fs.mkdirSync(previousHome, { recursive: true });
+  linkDirectory(sharedSessions, path.join(previousHome, "sessions"));
+  writeJson(path.join(runtimeRoot, "codex-profiles.json"), {
+    activeProfileId: "previous",
+    profiles: [{ id: "previous", label: "Previous", codexHome: previousHome }],
+    quotaSnapshots: {},
+  });
+
+  const result = createCodexProfileService({
+    userHome,
+    runtimeRoot,
+    activeCodexHome: previousHome,
+    env: {},
+  }).profiles({
+    activeQuota: {
+      source: "profile-mux-live",
+      rateLimits: {
+        limitId: "codex",
+        primary: { usedPercent: 21, windowDurationMins: 300, resetsAt: Math.floor(Date.now() / 1000) + 3600 },
+      },
+    },
+  });
+  const previous = result.profiles.find((profile) => profile.id === "previous");
+  const store = JSON.parse(fs.readFileSync(path.join(runtimeRoot, "codex-profiles.json"), "utf8"));
+
+  assert.equal(previous.quota.source, "profile-mux-live");
+  assert.equal(previous.quota.rateLimits.primary.usedPercent, 21);
+  assert.deepEqual(store.quotaSnapshots, {});
+});
+
 test("legacy stored quota snapshots without live provenance are ignored", () => {
   const userHome = tempDir();
   const runtimeRoot = path.join(userHome, ".codex-mobile-web");

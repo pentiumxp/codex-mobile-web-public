@@ -54,6 +54,14 @@ Continuation has two artifacts:
 - The source handoff file under `.agent-context/thread-handoffs/`, which is the high-priority fact source for the next thread.
 - The bootstrap message sent to the new Codex thread, which should be a small index, not a full copy of handoff, lineage, workspace context, or recent-turn content.
 
+Continuation may also migrate app-server-owned runtime goal state after the new
+thread exists. This is not bootstrap content. If the source thread has an
+unfinished CLI goal, Mobile Web copies only the objective, status, and remaining
+token budget to the new thread through app-server `thread/goal/set`; it does not
+copy spent token/time counters and it does not inline the objective into lineage
+metadata. Active source goals are best-effort frozen to `blocked` after the new
+goal is set, so the same task does not keep running in both threads.
+
 The default bootstrap is reference-first. It lists the source handoff file, workspace context files, docs entrypoint, lineage index, and source-thread metadata. The new thread must use tools to read those files on demand. Do not inline file contents merely because they are available locally.
 
 Startup file loading should also be bounded. The source handoff may be read first, but if it is large the new thread should start with top metadata plus recent tail and then search/read specific sections. Workspace context should default to the `PROJECT_CONTEXT.md` routing section and the recent `HANDOFF.md` tail, not a full read of archived history or oversized live files.

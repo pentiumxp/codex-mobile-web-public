@@ -181,6 +181,9 @@ function Ensure-SharedProfileState {
         @{ Name = "state_5.sqlite"; Kind = "File" },
         @{ Name = "state_5.sqlite-wal"; Kind = "File" },
         @{ Name = "state_5.sqlite-shm"; Kind = "File" },
+        @{ Name = "goals_1.sqlite"; Kind = "File" },
+        @{ Name = "goals_1.sqlite-wal"; Kind = "File" },
+        @{ Name = "goals_1.sqlite-shm"; Kind = "File" },
         @{ Name = "session_index.jsonl"; Kind = "File" },
         @{ Name = "sessions"; Kind = "Directory" },
         @{ Name = "archived_sessions"; Kind = "Directory" }

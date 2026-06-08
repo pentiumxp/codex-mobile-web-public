@@ -51,6 +51,7 @@ test("windowless launcher shares thread state without replacing profile auth", (
   assert.match(launcher, /foreach \(\$name in @\("auth\.json", "config\.toml"\)\)/);
   assert.match(launcher, /function Ensure-SharedProfileState/);
   assert.match(launcher, /Name = "state_5\.sqlite"/);
+  assert.match(launcher, /Name = "goals_1\.sqlite"/);
   assert.match(launcher, /Name = "\.codex-global-state\.json"/);
   assert.match(launcher, /Name = "session_index\.jsonl"/);
   assert.match(launcher, /Name = "sessions"; Kind = "Directory"/);
@@ -71,6 +72,8 @@ test("profile shared-state harness excludes account auth files", () => {
   assert.doesNotMatch(sharedStateBody, /Name = "config\.toml"/);
   assert.match(sharedStateBody, /Name = "state_5\.sqlite-wal"/);
   assert.match(sharedStateBody, /Name = "state_5\.sqlite-shm"/);
+  assert.match(sharedStateBody, /Name = "goals_1\.sqlite-wal"/);
+  assert.match(sharedStateBody, /Name = "goals_1\.sqlite-shm"/);
 });
 
 test("multi-account docs describe current shared-thread-state profile design", () => {

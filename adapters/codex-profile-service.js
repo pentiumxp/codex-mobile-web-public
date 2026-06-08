@@ -310,6 +310,10 @@ function hasReusableStoredQuotaSnapshot(value, codexHome) {
     && value.source === "active-live";
 }
 
+function isActiveLiveQuotaSource(source) {
+  return source === "managed-child-live" || source === "profile-mux-live";
+}
+
 function defaultProfiles(userHome, activeCodexHome = "") {
   const candidates = [
     { id: "current", label: "Current", codexHome: path.join(userHome, ".codex-homes", "current") },
@@ -440,7 +444,7 @@ function createCodexProfileService(options = {}) {
       : {};
     const activeQuota = normalizeQuotaSnapshot(options.activeQuota);
     const activeQuotaAccountScoped = Boolean(activeProfile && isRateLimitRolloutSourceAccountScoped(activeProfile.codexHome));
-    const activeManagedChildQuota = activeQuota.source === "managed-child-live" && hasQuotaSnapshot(activeQuota);
+    const activeOwnedLiveQuota = isActiveLiveQuotaSource(activeQuota.source) && hasQuotaSnapshot(activeQuota);
     if (activeId && activeQuotaAccountScoped && hasQuotaSnapshot(activeQuota)) {
       quotaSnapshots[activeId] = Object.assign({}, activeQuota, { updatedAt: new Date().toISOString(), source: "active-live" });
       if (JSON.stringify(store.quotaSnapshots || {}) !== JSON.stringify(quotaSnapshots)) {
@@ -460,7 +464,7 @@ function createCodexProfileService(options = {}) {
       profiles: normalized.map((profile) => {
         const rolloutQuota = loadRateLimitSnapshotForHome(profile.codexHome);
         const storedQuota = normalizeQuotaSnapshot(quotaSnapshots[profile.id]);
-        const quota = profile.id === activeId && activeManagedChildQuota
+        const quota = profile.id === activeId && activeOwnedLiveQuota
           ? activeQuota
           : (hasQuotaSnapshot(rolloutQuota)
             ? rolloutQuota

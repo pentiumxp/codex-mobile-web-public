@@ -741,6 +741,51 @@ html.visual-recovering body::before {
   padding: 0 10px;
 }
 
+.goal-panel-status {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  color: var(--muted);
+  background: var(--control-muted-bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.goal-panel-status.hidden,
+.goal-state-actions.hidden {
+  display: none;
+}
+
+.goal-state-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.goal-action {
+  min-height: 38px;
+  color: var(--text);
+  background: var(--control-muted-bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 740;
+}
+
+.goal-action-primary {
+  color: var(--text-on-accent);
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+.goal-action-danger {
+  color: var(--danger);
+  background: transparent;
+}
+
 .goal-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -768,6 +813,7 @@ html.visual-recovering body::before {
 }
 
 .goal-cancel:disabled,
+.goal-action:disabled,
 .goal-submit:disabled,
 .goal-panel-close:disabled {
   opacity: 0.6;
