@@ -29,7 +29,9 @@ test("server exposes Hermes plugin manifest, registration, origin, launch, sessi
   assert.match(serverJs, /notificationDelegateConfigured/);
   assert.match(serverJs, /delegateTurnCompletedNotification/);
   assert.match(serverJs, /isAccessKeyAuthorized\(req\)/);
-  assert.match(serverJs, /isSessionAuthorized\(requestAuthToken\(req\)\)/);
+  assert.match(serverJs, /const tokens = requestAuthTokens\(req\);[\s\S]*tokens\.some\(\(token\) => hermesPluginService\.isSessionAuthorized\(token\)\)/);
+  assert.match(serverJs, /codex_mobile_plugin_session/);
+  assert.match(serverJs, /pluginSessionCookieHeader\(req, session\)/);
   assert.match(serverJs, /Authorization/);
   assert.match(serverJs, /CODEX_MOBILE_HERMES_PLUGIN_BASE_URL/);
   assert.match(serverJs, /CODEX_MOBILE_PUBLIC_BASE_URL/);
@@ -49,6 +51,8 @@ test("Hermes plugin launch token is a browser-session key, not local storage log
   assert.match(appJs, /state\.pluginLaunchTarget = result && result\.target/);
   assert.match(appJs, /applyPluginAppearancePreference\(result && result\.appearance\)/);
   assert.match(appJs, /function applyPluginAppearancePreference\(value\)/);
+  assert.match(appJs, /function currentPluginAppearanceForHost\(\)/);
+  assert.match(appJs, /syncPluginAppearanceStateFromPreferences\(\)/);
   assert.match(appJs, /pluginTheme/);
   assert.match(appJs, /pluginFontSize/);
   assert.match(appJs, /async function applyPluginLaunchTarget\(\)/);
@@ -71,6 +75,8 @@ test("embedded plugin mode hides standalone chrome and installs navigation/windo
   assert.match(appJs, /fontSize: localStorage\.getItem\("codexMobileFontSize"\)[\s\S]*INITIAL_PLUGIN_EMBED\.appearance && INITIAL_PLUGIN_EMBED\.appearance\.fontSize/);
   assert.match(appJs, /function storedFontSizePreference\(\)/);
   assert.match(appJs, /const storedFontSize = storedFontSizePreference\(\);[\s\S]*if \(appearance\.fontSize && !storedFontSize\)/);
+  assert.match(appJs, /if \(storedFontSize\) \{[\s\S]*state\.pluginAppearance = Object\.assign\([\s\S]*fontSize: storedFontSize/);
+  assert.match(appJs, /if \(isHermesEmbedMode\(\)\) \{[\s\S]*syncPluginAppearanceStateFromPreferences\(\);[\s\S]*scrubPluginLaunchUrl\(\);[\s\S]*publishPluginNavigationState\(\{ force: true \}\);/);
   assert.match(indexHtml, /document\.documentElement\.setAttribute\("data-font-size", initialFontSize\)/);
   assert.match(indexHtml, /documentElement\.classList\.add\("embed-hermes"\)/);
   assert.match(indexHtml, /<script src="\/plugin-embed\.js"><\/script>/);
@@ -104,6 +110,7 @@ test("embedded plugin mode hides standalone chrome and installs navigation/windo
   assert.match(appJs, /window\.open = function guardedPluginOpen/);
   assert.match(appJs, /function requestHermesPluginRefresh\(reason, options = \{\}\)/);
   assert.match(appJs, /if \(!isHermesEmbedMode\(\) \|\| !pluginEmbedApi\.postRefreshRequired\) return false;/);
+  assert.match(appJs, /appearance: currentPluginAppearanceForHost\(\)/);
   assert.match(appJs, /pluginRefreshPendingNotice:\s*""/);
   assert.match(appJs, /function pluginRefreshPendingMessage\(reason\)/);
   assert.match(appJs, /state\.pluginRefreshPendingNotice = pluginRefreshPendingMessage\(normalizedReason\);/);

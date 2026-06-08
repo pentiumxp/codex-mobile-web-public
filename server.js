@@ -744,33 +744,66 @@ function bearerTokenFromRequest(req) {
 }
 
 function requestAuthToken(req) {
+  return requestAuthTokens(req)[0] || "";
+}
+
+function pushUniqueAuthToken(tokens, value) {
+  const token = String(value || "").trim();
+  if (token && !tokens.includes(token)) tokens.push(token);
+}
+
+function requestAuthTokens(req) {
   const url = getUrl(req);
-  return req.headers["x-codex-mobile-key"]
-    || bearerTokenFromRequest(req)
-    || url.searchParams.get("key")
-    || url.searchParams.get("codexPluginLaunch")
-    || parseCookies(req.headers.cookie).codex_mobile_key;
+  const cookies = parseCookies(req.headers.cookie);
+  const tokens = [];
+  pushUniqueAuthToken(tokens, req.headers["x-codex-mobile-key"]);
+  pushUniqueAuthToken(tokens, bearerTokenFromRequest(req));
+  pushUniqueAuthToken(tokens, url.searchParams.get("key"));
+  pushUniqueAuthToken(tokens, url.searchParams.get("codexPluginLaunch"));
+  pushUniqueAuthToken(tokens, cookies.codex_mobile_plugin_session);
+  pushUniqueAuthToken(tokens, cookies.codex_mobile_key);
+  return tokens;
 }
 
 function isAccessKeyAuthorized(req) {
   if (DISABLE_AUTH) return true;
-  return timingSafeEquals(requestAuthToken(req), AUTH_KEY);
+  return requestAuthTokens(req).some((token) => timingSafeEquals(token, AUTH_KEY));
 }
 
 function isAuthorized(req) {
   if (isAccessKeyAuthorized(req)) return true;
-  if (hermesPluginService.isSessionAuthorized(requestAuthToken(req))) return true;
-  return hermesPluginService.isLaunchTokenAuthorized(requestAuthToken(req));
+  const tokens = requestAuthTokens(req);
+  if (tokens.some((token) => hermesPluginService.isSessionAuthorized(token))) return true;
+  return tokens.some((token) => hermesPluginService.isLaunchTokenAuthorized(token));
 }
 
-function sendJson(res, status, data) {
+function isHttpsRequest(req) {
+  return String(req && (req.headers["x-forwarded-proto"] || req.headers["x-forwarded-protocol"]) || "").split(",")[0].trim().toLowerCase() === "https";
+}
+
+function pluginSessionCookieHeader(req, session) {
+  const sessionKey = String(session && session.session_key || "").trim();
+  if (!sessionKey) return "";
+  const maxAge = Math.max(1, Math.floor(Number(session && session.expires_in || 0) || 0));
+  const parts = [
+    `codex_mobile_plugin_session=${encodeURIComponent(sessionKey)}`,
+    "Path=/",
+    `Max-Age=${maxAge}`,
+    "SameSite=Lax",
+    "HttpOnly",
+  ];
+  if (isHttpsRequest(req)) parts.push("Secure");
+  return parts.join("; ");
+}
+
+function sendJson(res, status, data, headers = {}) {
   if (!res || res.destroyed || res.writableEnded) return;
   const body = JSON.stringify(data);
-  res.writeHead(status, {
+  res.writeHead(status, Object.assign({
     "Content-Type": "application/json; charset=utf-8",
     "Content-Length": Buffer.byteLength(body),
     "Cache-Control": "no-store",
-  });
+  }, headers || {}));
   res.end(body);
 }
 
@@ -8556,7 +8589,8 @@ async function handleApi(req, res) {
       const session = hermesPluginService.createSession(Object.assign({}, body, {
         token: body.codexPluginLaunch || body.pluginLaunch || body.launchToken || body.token || requestAuthToken(req),
       }));
-      sendJson(res, 200, session);
+      const cookie = pluginSessionCookieHeader(req, session);
+      sendJson(res, 200, session, cookie ? { "Set-Cookie": cookie } : {});
     } catch (err) {
       sendJson(res, err.statusCode || 400, { ok: false, error: err.message || String(err) });
     }

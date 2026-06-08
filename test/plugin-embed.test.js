@@ -33,11 +33,14 @@ test("builds Codex plugin navigation messages without exposing DOM internals", (
   const message = pluginEmbed.navigationMessage({
     currentThreadId: "thread-1",
     selectedCwd: "C:\\Work",
+    fontSize: "xlarge",
+    pluginAppearance: { theme: "light" },
   });
   assert.equal(message.type, "codex-mobile.plugin.navigation");
   assert.equal(message.version, 1);
   assert.equal(message.canGoBack, true);
   assert.deepEqual(message.route, { kind: "thread", threadId: "thread-1" });
+  assert.deepEqual(message.appearance, { theme: "light", fontSize: "xlarge" });
   assert.doesNotMatch(JSON.stringify(message), /querySelector|document|function|access key/i);
   assert.equal(pluginEmbed.navigationMessage({ selectedCwd: "C:\\Work" }).canGoBack, false);
 });
@@ -100,6 +103,11 @@ test("builds bounded Hermes refresh-required messages without sensitive payloads
       pluginItemId: "item-456",
       ignored: "C:\\Users\\xuxin\\.codex-mobile-web\\secret",
     },
+    appearance: {
+      theme: "dark",
+      fontSize: "xxlarge",
+      accessKey: "must-not-leak",
+    },
   });
   assert.equal(message.type, "codex-mobile.plugin.refresh_required");
   assert.equal(message.version, 1);
@@ -113,5 +121,6 @@ test("builds bounded Hermes refresh-required messages without sensitive payloads
     pluginTaskId: "task-789",
     pluginItemId: "item-456",
   });
+  assert.deepEqual(message.appearance, { theme: "dark", fontSize: "xxlarge" });
   assert.doesNotMatch(JSON.stringify(message), /access[_ -]?key|token|cookie|Authorization|C:\\Users/i);
 });

@@ -240,6 +240,7 @@ const state = {
   composerFastHintTimer: null,
   attachmentProcessingCount: 0,
   filePreviewSwipe: null,
+  imageAuthRefreshRequested: false,
   threadHistoryBusy: false,
   threadHistoryError: "",
 };
@@ -249,7 +250,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v225";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v226";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -501,6 +502,9 @@ function applyPluginAppearancePreference(value) {
     window.codexMobileTheme.apply(appearance.theme);
   }
   const storedFontSize = storedFontSizePreference();
+  if (storedFontSize) {
+    state.pluginAppearance = Object.assign({}, state.pluginAppearance || {}, { fontSize: storedFontSize });
+  }
   if (appearance.fontSize && !storedFontSize) {
     state.fontSize = appearance.fontSize;
     applyFontSizePreference();
@@ -508,6 +512,23 @@ function applyPluginAppearancePreference(value) {
     const input = $("messageInput");
     if (input) autoSizeMessageInput(input);
   }
+}
+
+function currentPluginAppearanceForHost() {
+  if (!isHermesEmbedMode()) return null;
+  const base = normalizePluginAppearance(state.pluginAppearance) || {};
+  const appearance = {};
+  if (base.theme) appearance.theme = base.theme;
+  const fontSize = normalizePluginFontSizeValue(state.fontSize);
+  if (fontSize) appearance.fontSize = fontSize;
+  return Object.keys(appearance).length ? appearance : null;
+}
+
+function syncPluginAppearanceStateFromPreferences() {
+  const appearance = currentPluginAppearanceForHost();
+  if (!appearance) return null;
+  state.pluginAppearance = Object.assign({}, state.pluginAppearance || {}, appearance);
+  return appearance;
 }
 
 function applyFontSizePreference() {
@@ -532,6 +553,11 @@ function setFontSizePreference(value) {
   renderFontSizeControl();
   const input = $("messageInput");
   if (input) autoSizeMessageInput(input);
+  if (isHermesEmbedMode()) {
+    syncPluginAppearanceStateFromPreferences();
+    scrubPluginLaunchUrl();
+    publishPluginNavigationState({ force: true });
+  }
 }
 
 function handleFontSizeChoice(event) {
@@ -4328,6 +4354,7 @@ function requestHermesPluginRefresh(reason, options = {}) {
     reason: normalizedReason,
     targetOrigin: targetOrigin || "*",
     route,
+    appearance: currentPluginAppearanceForHost(),
   });
   if (!options.force && signature === state.pluginRefreshRequestSignature) return false;
   state.pluginRefreshRequestSignature = signature;
@@ -4347,6 +4374,7 @@ function requestHermesPluginRefresh(reason, options = {}) {
   pluginEmbedApi.postRefreshRequired(window.parent, {
     reason: normalizedReason,
     route,
+    appearance: currentPluginAppearanceForHost(),
   }, {
     targetOrigin: targetOrigin || "*",
   });
@@ -4439,7 +4467,7 @@ function scrubPluginLaunchUrl() {
     url.searchParams.delete("codexPluginLaunch");
     url.searchParams.delete("pluginLaunch");
     if (state.pluginEmbed.workspaceId) url.searchParams.set("workspaceId", state.pluginEmbed.workspaceId);
-    const appearance = normalizePluginAppearance(state.pluginAppearance);
+    const appearance = currentPluginAppearanceForHost();
     if (appearance && appearance.theme) url.searchParams.set("pluginTheme", appearance.theme);
     if (appearance && appearance.fontSize) url.searchParams.set("pluginFontSize", appearance.fontSize);
     window.history.replaceState({}, "", `${url.pathname || "/"}?${url.searchParams.toString()}${url.hash || ""}`);
@@ -9203,8 +9231,11 @@ function authenticatedApiContentUrl(value) {
   const raw = String(value || "");
   if (!raw || !state.key) return raw;
   try {
-    const parsed = new URL(raw, window.location.origin);
-    if (parsed.origin === window.location.origin && parsed.pathname.startsWith("/api/") && !parsed.searchParams.has("key")) {
+    const origin = typeof window !== "undefined" && window.location && window.location.origin
+      ? window.location.origin
+      : "http://127.0.0.1";
+    const parsed = new URL(raw, origin);
+    if (parsed.origin === origin && parsed.pathname.startsWith("/api/")) {
       parsed.searchParams.set("key", state.key);
       return `${parsed.pathname}${parsed.search}${parsed.hash}`;
     }
@@ -9341,6 +9372,7 @@ function renderImageView(item) {
 function handleConversationImageError(event) {
   const image = event && event.target && event.target.closest ? event.target.closest("img") : null;
   markFailedAppImage(image);
+  if (typeof probeFailedAuthenticatedImage === "function") probeFailedAuthenticatedImage(image);
 }
 
 function failedAppImageContainer(image) {
@@ -9356,6 +9388,34 @@ function markFailedAppImage(image) {
   else if (image.classList) image.classList.add("image-load-failed");
   image.setAttribute("aria-hidden", "true");
   return true;
+}
+
+function protectedGeneratedImageSrc(value) {
+  const raw = String(value || "");
+  if (!raw) return "";
+  try {
+    const parsed = new URL(raw, window.location.origin);
+    if (parsed.origin === window.location.origin && parsed.pathname === "/api/generated-images/file") {
+      return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    }
+  } catch (_) {}
+  return "";
+}
+
+function probeFailedAuthenticatedImage(image) {
+  const src = protectedGeneratedImageSrc(image && (image.currentSrc || image.src || image.getAttribute("src")));
+  if (!src || !isHermesEmbedMode() || state.imageAuthRefreshRequested) return;
+  const headers = state.key ? { "X-Codex-Mobile-Key": state.key } : {};
+  fetch(src, {
+    method: "GET",
+    headers,
+    credentials: "same-origin",
+    cache: "no-store",
+  }).then((response) => {
+    if (!response || !(response.status === 401 || response.status === 403)) return;
+    state.imageAuthRefreshRequested = true;
+    requestHermesPluginRefresh("auth_state_changed", { force: true });
+  }).catch(() => {});
 }
 
 function scanFailedAppImages(root) {

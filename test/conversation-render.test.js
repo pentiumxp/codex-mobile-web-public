@@ -332,9 +332,22 @@ test("generated image content urls render bounded image cards", () => {
   });
 
   assert.match(html, /class="image-view"/);
-  assert.match(html, /<img src="\/api\/generated-images\/file\?id=thread%2Ftool-output\.png"/);
+  assert.match(html, /<img src="\/api\/generated-images\/file\?id=thread%2Ftool-output\.png&amp;key=test-key"/);
   assert.match(html, /<figcaption>tool-output\.png<\/figcaption>/);
   assert.doesNotMatch(html, /\/api\/files\/preview\/content/);
+});
+
+test("generated image content urls replace stale auth keys with the current session key", () => {
+  const renderImageView = evaluatedImageViewRenderer();
+  const html = renderImageView({
+    type: "imageView",
+    contentUrl: "/api/generated-images/file?id=thread%2Ftool-output.png&key=stale-key",
+    fileName: "tool-output.png",
+  });
+
+  assert.match(html, /class="image-view"/);
+  assert.match(html, /key=test-key/);
+  assert.doesNotMatch(html, /stale-key/);
 });
 
 test("failed conversation images collapse into a neutral fallback", () => {
