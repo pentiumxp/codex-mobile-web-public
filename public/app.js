@@ -61,6 +61,7 @@ const state = {
   currentThread: null,
   currentThreadId: "",
   newThreadDraft: false,
+  newThreadTitle: "",
   activeTurnId: "",
   events: null,
   connectionStatus: null,
@@ -132,6 +133,8 @@ const state = {
   continuationNewThreadId: "",
   continuationJobId: "",
   goalDialogThreadId: "",
+  goalDialogExistingGoal: null,
+  goalDialogBusyText: "",
   goalSubmitBusy: false,
   lastGoalButtonSubmitAt: 0,
   pendingAttachments: [],
@@ -202,6 +205,10 @@ const state = {
   pushBusy: false,
   pushError: "",
   serviceWorkerRegistration: null,
+  mermaidLoadPromise: null,
+  mermaidTheme: "",
+  mermaidRenderSeq: 0,
+  mermaidThemeObserver: null,
   pendingApprovals: new Map(),
   threadTaskCardDraftStates: new Map(Object.entries(loadJsonStorage("codexMobileThreadTaskCardDraftStates", {}))),
   scheduledThreadTaskCardDraftCreations: new Set(),
@@ -241,7 +248,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v213";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v220";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -282,6 +289,11 @@ const STORAGE_RATE_LIMITS = "codexMobileRateLimits";
 const STORAGE_RATE_LIMITS_BY_MODEL = "codexMobileRateLimitsByModel";
 const STORAGE_PUBLIC_PR_PROMPT = "codexMobilePublicPrPromptKey";
 const STORAGE_TASK_CARD_DRAFT_STATES = "codexMobileThreadTaskCardDraftStates";
+const PUBLIC_PR_REVIEW_THREAD_TITLE = "Codex Mobile Public PR";
+const MERMAID_SCRIPT_URL = "/vendor/mermaid.min.js";
+const MERMAID_MIN_SCALE = 0.65;
+const MERMAID_MAX_SCALE = 3.2;
+const MERMAID_ZOOM_STEP = 0.2;
 
 function hasStartupThreadOpenIntent() {
   if (threadIdFromUrlValue(window.location.href)) return true;
@@ -1133,9 +1145,9 @@ function threadGoalBudgetText(goal) {
   if (!goal) return "";
   const parts = [];
   if (Number.isFinite(Number(goal.tokenBudget)) && Number(goal.tokenBudget) > 0) {
-    parts.push(`${Number(goal.tokensUsed || 0).toLocaleString()}/${Number(goal.tokenBudget).toLocaleString()} tokens`);
+    parts.push(`${Number(goal.tokensUsed || 0).toLocaleString()}/${Number(goal.tokenBudget).toLocaleString()} budget tokens`);
   } else if (Number(goal.tokensUsed || 0) > 0) {
-    parts.push(`${Number(goal.tokensUsed || 0).toLocaleString()} tokens`);
+    parts.push(`${Number(goal.tokensUsed || 0).toLocaleString()} budget tokens`);
   }
   if (Number(goal.timeUsedSeconds || 0) > 0) parts.push(formatElapsedTime(goal.timeUsedSeconds));
   return parts.join(" | ");
@@ -1176,14 +1188,49 @@ function currentGoalDialogThread() {
   return threadById(threadId) || (state.currentThread && String(state.currentThread.id || "") === threadId ? state.currentThread : null);
 }
 
-function setThreadGoalDialogBusy(busy) {
+function goalDialogStatusText(goal) {
+  if (!goal) return "";
+  const parts = [threadGoalStatusLabel(goal.status)];
+  const budget = threadGoalBudgetText(goal);
+  if (budget) parts.push(budget);
+  return parts.join(" | ");
+}
+
+function updateThreadGoalDialogState(goal = state.goalDialogExistingGoal) {
+  const normalizedGoal = dialogPrefillThreadGoal(goal);
+  state.goalDialogExistingGoal = normalizedGoal;
+  const status = $("goalDialogStatus");
+  if (status) {
+    const text = goalDialogStatusText(normalizedGoal);
+    status.textContent = text;
+    status.classList.toggle("hidden", !text);
+  }
+  const actions = $("goalStateActions");
+  if (actions) actions.classList.toggle("hidden", !normalizedGoal);
+  const submitButton = $("goalSubmitButton");
+  if (submitButton && !state.goalSubmitBusy) submitButton.textContent = normalizedGoal ? "Save" : "Send";
+  const closeButton = $("goalCancelButton");
+  if (closeButton) closeButton.textContent = normalizedGoal ? "Close" : "Cancel";
+}
+
+function setThreadGoalDialogBusy(busy, busyText = "Sending...") {
   state.goalSubmitBusy = Boolean(busy);
-  ["goalObjectiveInput", "goalTokenBudgetInput", "goalSubmitButton", "goalCancelButton", "goalDialogClose"].forEach((id) => {
+  state.goalDialogBusyText = state.goalSubmitBusy ? String(busyText || "Sending...") : "";
+  [
+    "goalObjectiveInput",
+    "goalTokenBudgetInput",
+    "goalSubmitButton",
+    "goalCancelButton",
+    "goalDialogClose",
+    "goalContinueButton",
+    "goalPauseButton",
+    "goalClearButton",
+  ].forEach((id) => {
     const el = $(id);
     if (el) el.disabled = state.goalSubmitBusy;
   });
   const button = $("goalSubmitButton");
-  if (button) button.textContent = state.goalSubmitBusy ? "Sending..." : "Send";
+  if (button) button.textContent = state.goalSubmitBusy ? state.goalDialogBusyText : (state.goalDialogExistingGoal ? "Save" : "Send");
 }
 
 function openThreadGoalDialog(threadId = state.currentThreadId) {
@@ -1207,6 +1254,7 @@ function openThreadGoalDialog(threadId = state.currentThreadId) {
   budgetInput.value = goal && Number(goal.tokenBudget || 0) > 0 ? String(goal.tokenBudget) : "";
   const subtitle = $("goalDialogSubtitle");
   if (subtitle) subtitle.textContent = threadTitleForDisplay(thread) || id;
+  updateThreadGoalDialogState(goal);
   dialog.classList.remove("hidden");
   setThreadGoalDialogBusy(false);
   window.setTimeout(() => objectiveInput.focus(), 0);
@@ -1217,6 +1265,8 @@ function closeThreadGoalDialog(force = false) {
   const dialog = $("goalDialog");
   if (dialog) dialog.classList.add("hidden");
   state.goalDialogThreadId = "";
+  state.goalDialogExistingGoal = null;
+  state.goalDialogBusyText = "";
   setThreadGoalDialogBusy(false);
 }
 
@@ -1875,6 +1925,43 @@ function publicPrSummaryText(status) {
     .join("; ");
 }
 
+function normalizedPublicPrReviewTitle(value) {
+  return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function publicPrReviewThreadTitle() {
+  return PUBLIC_PR_REVIEW_THREAD_TITLE;
+}
+
+function findPublicPrReviewThread(workspacePath = "") {
+  const titleKey = normalizedPublicPrReviewTitle(publicPrReviewThreadTitle());
+  const workspace = String(workspacePath || "").trim();
+  return state.threads.find((thread) => {
+    if (!thread || !thread.id) return false;
+    const threadTitle = normalizedPublicPrReviewTitle(thread.name || thread.title || thread.preview || "");
+    if (threadTitle !== titleKey) return false;
+    return !workspace || threadMatchesWorkspaceCwd(thread.cwd || "", workspace);
+  }) || null;
+}
+
+async function openPublicPrReviewThreadIfAvailable(workspacePath, text) {
+  let target = findPublicPrReviewThread(workspacePath);
+  if (!target) {
+    try {
+      await loadThreads({ silent: true });
+    } catch (err) {
+      postClientEvent("public_pr_reuse_lookup_failed", { message: err.message || String(err) });
+    }
+    target = findPublicPrReviewThread(workspacePath);
+  }
+  if (!target || !target.id) return false;
+  await loadThread(target.id, { source: "public-pr" });
+  setComposerText(text);
+  scheduleCurrentDraftSave();
+  updateComposerControls();
+  return true;
+}
+
 function renderPublicPrStatus() {
   const el = $("publicPrStatus");
   if (!el) return;
@@ -1954,7 +2041,7 @@ function publicPrMergeInstruction(status) {
   ].join("\n");
 }
 
-function preparePublicPrMergePrompt(status) {
+async function preparePublicPrMergePrompt(status) {
   const text = publicPrMergeInstruction(status);
   if (composerHasContent()) {
     window.alert("检测到 public 开放 PR，但输入框已有内容。请处理当前草稿后点击 Public PR 按钮。");
@@ -1968,11 +2055,21 @@ function preparePublicPrMergePrompt(status) {
     return;
   }
   saveCurrentDraftNow();
+  state.selectedCwd = workspacePath;
+  syncSidebarWorkspaceSelect();
+  updateWorkspacePath();
+  renderWorkspaceTokenUsage();
+  if (await openPublicPrReviewThreadIfAvailable(workspacePath, text)) {
+    if (isMenuOverlayMode()) closeSidebarMenu();
+    return;
+  }
   clearCurrentThreadSelection({ saveDraft: false });
   state.selectedCwd = workspacePath;
   state.newThreadDraft = true;
+  state.newThreadTitle = publicPrReviewThreadTitle();
   state.sendButtonHint = "";
   restoreDraftForCurrentTarget();
+  state.newThreadTitle = publicPrReviewThreadTitle();
   setComposerText(text);
   syncSidebarWorkspaceSelect();
   updateWorkspacePath();
@@ -2002,7 +2099,7 @@ function maybePromptPublicPrMerge(status) {
     "是否准备一条合并/发布检查任务？",
   ].filter(Boolean).join("\n"));
   rememberPublicPrPrompt(status);
-  if (confirmed) preparePublicPrMergePrompt(status);
+  if (confirmed) preparePublicPrMergePrompt(status).catch(showError);
 }
 
 async function handlePublicPrStatusClick() {
@@ -2027,7 +2124,7 @@ async function handlePublicPrStatusClick() {
     "是否准备一条合并/发布检查任务？",
   ].filter(Boolean).join("\n"));
   rememberPublicPrPrompt(status);
-  if (confirmed) preparePublicPrMergePrompt(status);
+  if (confirmed) await preparePublicPrMergePrompt(status);
 }
 
 async function handleAppUpdateClick() {
@@ -2098,6 +2195,18 @@ function renderSharedRestartButton() {
   el.title = restarting ? "Mobile Web is restarting" : "Restart Mobile Web shared chain";
   el.disabled = state.sharedRestartBusy || restarting;
   el.classList.toggle("checking", state.sharedRestartBusy || restarting);
+}
+
+function renderHardRefreshButton() {
+  const el = $("hardRefreshButton");
+  if (!el) return;
+  const reloading = state.pageRefreshReloading;
+  el.textContent = reloading ? "刷新中" : "硬刷新";
+  el.title = reloading
+    ? "Refreshing the current PWA page shell"
+    : "Fetch current page assets, update the service worker, and reload this PWA page";
+  el.disabled = reloading;
+  el.classList.toggle("checking", reloading);
 }
 
 function sharedRestartScopeLines() {
@@ -2246,7 +2355,7 @@ async function handleSharedRestartClick() {
 }
 
 function serverBuildIdFromConfig(config) {
-  return String(config && (config.clientBuildId || config.shellCacheName || config.buildId || config.version) || "").trim();
+  return String(config && (config.clientBuildId || config.shellCacheName || config.buildId) || "").trim();
 }
 
 function shouldPromptForServerBuildChange(serverBuildId, clientBuildId) {
@@ -2327,6 +2436,31 @@ async function pruneOldShellCaches(expectedCacheName) {
     .map((key) => window.caches.delete(key)));
 }
 
+async function clearAllShellCaches() {
+  if (!("caches" in window)) return;
+  const keys = await window.caches.keys();
+  await Promise.all(keys
+    .filter((key) => String(key || "").startsWith("codex-mobile-shell-"))
+    .map((key) => window.caches.delete(key)));
+}
+
+async function resetPageShellServiceWorker() {
+  if (!("serviceWorker" in navigator)) return null;
+  const registrations = await navigator.serviceWorker.getRegistrations();
+  await Promise.all(registrations.map((registration) => registration.unregister().catch(() => false)));
+  state.serviceWorkerRegistration = null;
+  const registration = await navigator.serviceWorker.register("/sw.js");
+  if (registration && registration.update) await registration.update().catch(() => {});
+  state.serviceWorkerRegistration = registration || null;
+  return registration || null;
+}
+
+function pageReloadUrlWithBust() {
+  const url = new URL(window.location.href, window.location.origin);
+  url.searchParams.set("shellReload", String(Date.now()));
+  return url.href;
+}
+
 function initializePageBuildState(config) {
   state.serverBuildId = CLIENT_BUILD_ID || serverBuildIdFromConfig(config);
   state.serverAssetBuildId = String(config && config.buildId || "").trim();
@@ -2356,7 +2490,17 @@ function renderPageRefreshPrompt() {
     : state.pageRefreshBuildId
     ? `Server version is ${state.pageRefreshBuildId}. Tap to refresh manually.`
     : "Server page assets changed. Tap to refresh manually.";
+  renderHardRefreshButton();
 }
+
+async function handleHardRefreshClick() {
+  if (state.pageRefreshReloading) return;
+  state.pageRefreshPreparedConfig = null;
+  state.pageRefreshReason = "build";
+  state.pageRefreshAvailable = true;
+  await refreshPageForNewBuild();
+}
+
 function showReconnectRefreshPrompt(reason = "reconnect") {
   if (state.pageRefreshReloading) return;
   state.pageRefreshAvailable = true;
@@ -2393,16 +2537,15 @@ async function checkPageRefreshAvailability(options = {}) {
     const serverBuildChanged = Boolean(nextBuildId && nextBuildId !== state.serverBuildId);
     const serverBuildNeedsRefresh = serverBuildChanged && shouldPromptForServerBuildChange(nextBuildId, state.serverBuildId);
     const assetsChanged = Boolean(nextAssetBuildId && state.serverAssetBuildId && nextAssetBuildId !== state.serverAssetBuildId);
-    if (serverBuildNeedsRefresh || assetsChanged) {
+    if (assetsChanged && !serverBuildNeedsRefresh) {
+      state.serverAssetBuildId = nextAssetBuildId;
+      return;
+    }
+    if (serverBuildNeedsRefresh) {
       if (isHermesEmbedMode()) {
-        if (serverBuildNeedsRefresh) {
-          state.pageRefreshBuildId = nextBuildId;
-          state.pageRefreshPreparedConfig = config;
-          requestHermesPluginRefresh("server_build_changed");
-        }
-        if (!serverBuildNeedsRefresh && assetsChanged) {
-          state.serverAssetBuildId = nextAssetBuildId;
-        }
+        state.pageRefreshBuildId = nextBuildId;
+        state.pageRefreshPreparedConfig = config;
+        requestHermesPluginRefresh("server_build_changed");
         return;
       }
       state.pageRefreshAvailable = true;
@@ -2466,13 +2609,11 @@ async function refreshPageForNewBuild() {
     if (latestConfig) config = latestConfig;
     if (!config) throw new Error("page refresh build config unavailable");
     rememberRateLimitsFromConfig(config);
+    await clearAllShellCaches();
     if (config) await preparePageShellAssets(config, { populateCache: true });
-    if ("serviceWorker" in navigator) {
-      const registration = await navigator.serviceWorker.getRegistration();
-      if (registration && registration.update) await registration.update();
-    }
+    await resetPageShellServiceWorker();
     await pruneOldShellCaches(String(config && config.shellCacheName || "").trim());
-    window.location.reload();
+    window.location.replace(pageReloadUrlWithBust());
   } catch (_) {
     state.pageRefreshReloading = false;
     state.pageRefreshPreparedConfig = null;
@@ -2518,7 +2659,7 @@ function showComposerFastHint(enabled) {
   if (state.composerFastHintTimer) window.clearTimeout(state.composerFastHintTimer);
   el.classList.remove("error");
   el.textContent = enabled ? "Fast on" : "Fast off";
-  el.title = enabled ? "Codex Fast service tier enabled" : "Codex Fast service tier disabled";
+  el.title = enabled ? "Fast mode enabled for the next turn" : "Fast mode disabled";
   state.composerFastHintTimer = window.setTimeout(() => {
     state.composerFastHintTimer = null;
     restoreConnectionState();
@@ -2640,6 +2781,7 @@ function buildCurrentDraft() {
   };
   if (state.newThreadDraft) {
     draft.cwd = state.selectedCwd || "";
+    if (state.newThreadTitle) draft.threadTitle = state.newThreadTitle;
     if (state.newThreadModel && state.newThreadModel !== defaultNewThreadModel()) draft.model = state.newThreadModel;
     if (state.newThreadEffort && state.newThreadEffort !== defaultNewThreadEffort()) draft.effort = state.newThreadEffort;
     const permission = normalizePermissionModeValue(state.newThreadPermissionMode);
@@ -2750,11 +2892,13 @@ function applyDraftRuntimeSelection(draft) {
   const effort = String(draft && draft.effort || "");
   const permission = normalizePermissionModeValue(draft && draft.permissionMode);
   if (state.newThreadDraft) {
+    state.newThreadTitle = String(draft && draft.threadTitle || "").trim();
     state.newThreadModel = model && state.modelOptions.includes(model) ? model : defaultNewThreadModel();
     state.newThreadEffort = effort && state.reasoningEffortOptions.includes(effort) ? effort : defaultNewThreadEffort();
     state.newThreadPermissionMode = permission || defaultNewThreadPermissionMode();
     return;
   }
+  state.newThreadTitle = "";
   state.composerModel = model && state.modelOptions.includes(model) ? model : "";
   state.composerEffort = effort && state.reasoningEffortOptions.includes(effort) ? effort : "";
   state.composerPermissionMode = permission && state.permissionModeOptions.includes(permission) ? permission : "";
@@ -4904,6 +5048,7 @@ function clearCurrentThreadSelection(options = {}) {
   state.threadLoadSeq += 1;
   state.sendButtonHint = "";
   resetComposerRuntimeSelection();
+  state.newThreadTitle = "";
   if (state.threadLoadController) {
     state.threadLoadController.abort();
     state.threadLoadController = null;
@@ -4966,6 +5111,7 @@ async function loadThreads(options = {}) {
 async function loadThread(threadId, options = {}) {
   saveCurrentDraftNow();
   state.newThreadDraft = false;
+  state.newThreadTitle = "";
   const switchStartedAt = nowPerfMs();
   const fromThreadId = state.currentThreadId || "";
   const source = String(options.source || "unknown").slice(0, 40);
@@ -5444,6 +5590,7 @@ function androidBackToSidebarAvailable() {
     && app
     && !app.classList.contains("hidden")
     && !filePreviewOpen()
+    && !mermaidPreviewOpen()
     && !state.renameThreadId
     && !createWorkspaceDialogOpen()
     && !updatePanelOpen()
@@ -6037,6 +6184,7 @@ function closeContinuationDialog() {
 function pluginNavigationUiState() {
   return {
     filePreviewOpen: filePreviewOpen(),
+    mermaidPreviewOpen: mermaidPreviewOpen(),
     createWorkspaceOpen: createWorkspaceDialogOpen(),
     updatePanelOpen: updatePanelOpen(),
     primaryPage: isHermesPluginPrimaryPage(),
@@ -6167,7 +6315,10 @@ function handlePluginBack(event) {
   if (event && typeof event.preventDefault === "function") event.preventDefault();
   if (event && typeof event.stopPropagation === "function") event.stopPropagation();
   let handled = false;
-  if (filePreviewOpen()) {
+  if (mermaidPreviewOpen()) {
+    closeMermaidPreview();
+    handled = true;
+  } else if (filePreviewOpen()) {
     closeFilePreview();
     handled = true;
   } else if (state.renameThreadId) {
@@ -6521,6 +6672,7 @@ function patchHtml(target, html) {
 function updateConversationHtml(html, signature, options = {}) {
   const conversation = $("conversation");
   if (state.renderedConversationSignature === signature) {
+    scheduleFailedAppImageScan(conversation, [0, 180]);
     scheduleScrollToBottomButtonUpdate();
     return false;
   }
@@ -6531,6 +6683,8 @@ function updateConversationHtml(html, signature, options = {}) {
     console.warn("Conversation patch failed; falling back to full render.", err);
     conversation.innerHTML = html;
   }
+  hydrateMermaidDiagrams(conversation);
+  scheduleFailedAppImageScan(conversation);
   state.renderedConversationSignature = signature;
   if (options.stickToBottom) scrollConversationToBottom();
   else scheduleScrollToBottomButtonUpdate();
@@ -8369,16 +8523,26 @@ function uploadFileUrl(filePath) {
   return `/api/uploads/file?${params.toString()}`;
 }
 
+function isCodexMobileUploadPath(filePath) {
+  const normalized = normalizeFsPath(filePath);
+  return normalized.includes("\\.codex-mobile-web\\uploads\\");
+}
+
+function imageContentUrlForPath(filePath) {
+  if (!filePath) return "";
+  return isCodexMobileUploadPath(filePath) ? uploadFileUrl(filePath) : localFilePreviewContentUrl(filePath);
+}
+
 function imageSourceForPart(part, attachment = null) {
   if (attachment && attachment.path) return uploadFileUrl(attachment.path);
-  if (part.path) return uploadFileUrl(part.path);
+  if (part.path) return imageContentUrlForPath(part.path);
   const url = imageUrlValue(part);
   return url || "";
 }
 
 function isLikelyAbsoluteLocalPath(value) {
   const text = String(value || "").trim();
-  return /^[a-zA-Z]:[\\/]/.test(text) || /^\\\\/.test(text);
+  return /^[a-zA-Z]:[\\/]/.test(text) || /^\\\\/.test(text) || text.startsWith("/");
 }
 
 function canRenderImageAttachment(attachment) {
@@ -8470,6 +8634,378 @@ function renderMarkdownWithAttachmentSummary(value) {
     split.text ? renderMarkdown(split.text) : "",
     renderAttachmentSummary(split.attachments),
   ].filter(Boolean).join("");
+}
+
+function mermaidEffectiveTheme() {
+  const preferred = String(document.documentElement.getAttribute("data-theme") || "system").trim().toLowerCase();
+  if (preferred === "dark" || preferred === "light") return preferred;
+  return window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
+function mermaidThemeName() {
+  return mermaidEffectiveTheme() === "dark" ? "dark" : "default";
+}
+
+function mermaidConfig() {
+  return {
+    startOnLoad: false,
+    securityLevel: "strict",
+    theme: mermaidThemeName(),
+    fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+    flowchart: {
+      useMaxWidth: false,
+      htmlLabels: true,
+    },
+  };
+}
+
+function mermaidPreviewOpen() {
+  const dialog = $("mermaidPreviewDialog");
+  return Boolean(dialog && !dialog.classList.contains("hidden"));
+}
+
+function loadRuntimeScript(src, globalName) {
+  const existing = document.querySelector(`script[data-runtime-script="${src}"]`);
+  if (existing) {
+    if (!globalName || window[globalName]) return Promise.resolve(window[globalName] || true);
+    return new Promise((resolve, reject) => {
+      existing.addEventListener("load", () => resolve(window[globalName] || true), { once: true });
+      existing.addEventListener("error", () => reject(new Error(`Failed to load ${src}`)), { once: true });
+    });
+  }
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.dataset.runtimeScript = src;
+    script.onload = () => resolve(globalName ? window[globalName] : true);
+    script.onerror = () => reject(new Error(`Failed to load ${src}`));
+    document.head.appendChild(script);
+  });
+}
+
+function configureMermaidApi(mermaidApi, options = {}) {
+  if (!mermaidApi || typeof mermaidApi.initialize !== "function") return null;
+  const theme = mermaidThemeName();
+  if (!options.force && state.mermaidTheme === theme) return mermaidApi;
+  mermaidApi.initialize(mermaidConfig());
+  state.mermaidTheme = theme;
+  return mermaidApi;
+}
+
+async function ensureMermaidApi() {
+  if (window.mermaid && typeof window.mermaid.render === "function") {
+    return configureMermaidApi(window.mermaid, { force: !state.mermaidTheme });
+  }
+  if (state.mermaidLoadPromise) return state.mermaidLoadPromise;
+  state.mermaidLoadPromise = loadRuntimeScript(MERMAID_SCRIPT_URL, "mermaid")
+    .then((mermaidApi) => {
+      if (!mermaidApi || typeof mermaidApi.render !== "function") {
+        throw new Error("Mermaid runtime unavailable");
+      }
+      return configureMermaidApi(mermaidApi, { force: true });
+    })
+    .catch((err) => {
+      state.mermaidLoadPromise = null;
+      throw err;
+    });
+  return state.mermaidLoadPromise;
+}
+
+function mermaidCanvas(container) {
+  return container ? container.querySelector("[data-mermaid-canvas]") : null;
+}
+
+function mermaidViewer(container) {
+  return container ? container.querySelector("[data-mermaid-viewer]") : null;
+}
+
+function mermaidSourceFromContainer(container) {
+  const source = container && container.querySelector(".markdown-mermaid-source");
+  return source ? String(source.textContent || "") : String(container && container.dataset && container.dataset.mermaidSource || "");
+}
+
+function mermaidResetButton(container) {
+  return container ? container.querySelector("[data-mermaid-action='reset']") : null;
+}
+
+function updateMermaidResetLabel(container, scale) {
+  const button = mermaidResetButton(container);
+  if (button) button.textContent = `${Math.round(scale * 100)}%`;
+}
+
+function clampMermaidScale(scale) {
+  if (!Number.isFinite(scale)) return 1;
+  return Math.min(MERMAID_MAX_SCALE, Math.max(MERMAID_MIN_SCALE, scale));
+}
+
+function mermaidCurrentScale(container) {
+  return clampMermaidScale(Number(container && container.dataset ? container.dataset.mermaidScale || 1 : 1));
+}
+
+function mermaidSvgSize(svg) {
+  if (!svg) return { width: 640, height: 360 };
+  const viewBox = svg.viewBox && svg.viewBox.baseVal;
+  const width = Number((viewBox && viewBox.width) || svg.getAttribute("width") || 0);
+  const height = Number((viewBox && viewBox.height) || svg.getAttribute("height") || 0);
+  return {
+    width: width > 0 ? width : 640,
+    height: height > 0 ? height : 360,
+  };
+}
+
+function mermaidInitialScale(container, baseWidth) {
+  const viewerEl = mermaidViewer(container);
+  const fitWidth = viewerEl ? Math.max(0, viewerEl.clientWidth - 32) : 0;
+  if (!fitWidth || !Number.isFinite(baseWidth) || baseWidth <= 0 || baseWidth <= fitWidth) return 1;
+  return clampMermaidScale(fitWidth / baseWidth);
+}
+
+function applyMermaidScale(container, scale) {
+  const canvas = mermaidCanvas(container);
+  const artboard = canvas && canvas.querySelector(".markdown-mermaid-artboard");
+  if (!canvas || !artboard) return;
+  const nextScale = clampMermaidScale(scale);
+  const baseWidth = Number(artboard.dataset.baseWidth || 0) || 640;
+  const baseHeight = Number(artboard.dataset.baseHeight || 0) || 360;
+  artboard.style.width = `${Math.max(180, Math.round(baseWidth * nextScale))}px`;
+  artboard.style.height = `${Math.max(120, Math.round(baseHeight * nextScale))}px`;
+  container.dataset.mermaidScale = String(nextScale);
+  updateMermaidResetLabel(container, nextScale);
+}
+
+function showMermaidLoading(container, message = "正在渲染 Mermaid 图...") {
+  const canvas = mermaidCanvas(container);
+  if (!canvas) return;
+  canvas.innerHTML = `<div class="markdown-mermaid-loading">${escapeHtml(message)}</div>`;
+  updateMermaidResetLabel(container, 1);
+}
+
+function showMermaidError(container, sourceText, err) {
+  const canvas = mermaidCanvas(container);
+  if (canvas) {
+    const message = err && err.message ? err.message : String(err || "Mermaid render failed");
+    canvas.innerHTML = `<div class="markdown-mermaid-error">Mermaid 渲染失败<br>${escapeHtml(message)}</div>`;
+  }
+  const sourceDetails = container && container.querySelector(".markdown-mermaid-source-details");
+  if (sourceDetails) sourceDetails.open = true;
+  const previewSource = $("mermaidPreviewSource");
+  if (previewSource && mermaidPreviewOpen() && container === $("mermaidPreviewDialog")) {
+    previewSource.textContent = sourceText || "";
+  }
+}
+
+function isMermaidErrorSvgMarkup(svgMarkup) {
+  const text = String(svgMarkup || "");
+  return /class=["'][^"']*\berror-icon\b/.test(text)
+    || /class=["'][^"']*\berror-text\b/.test(text)
+    || /Syntax error in text/.test(text);
+}
+
+function mermaidRenderArtifactIds(renderId) {
+  const id = String(renderId || "").trim();
+  return id ? [id, `d${id}`, `i${id}`] : [];
+}
+
+function isOwnedMermaidRenderNode(node) {
+  return Boolean(node && node.closest && (
+    node.closest("[data-mermaid-block='true']")
+    || node.closest("#mermaidPreviewDialog")
+    || node.closest(".markdown-mermaid-artboard")
+  ));
+}
+
+function removeNodeIfExternalMermaidArtifact(node) {
+  if (!node || !node.remove || isOwnedMermaidRenderNode(node)) return false;
+  node.remove();
+  return true;
+}
+
+function cleanupMermaidRenderArtifacts(renderId) {
+  mermaidRenderArtifactIds(renderId).forEach((id) => {
+    removeNodeIfExternalMermaidArtifact(document.getElementById(id));
+  });
+}
+
+function cleanupExternalMermaidErrorArtifacts(root = document) {
+  const scope = root && root.querySelectorAll ? root : document;
+  scope.querySelectorAll("svg .error-icon, svg .error-text").forEach((node) => {
+    const svg = node.closest && node.closest("svg");
+    const container = svg && svg.parentElement && /^d?codex-mobile-mermaid-/.test(String(svg.parentElement.id || ""))
+      ? svg.parentElement
+      : svg;
+    removeNodeIfExternalMermaidArtifact(container);
+  });
+}
+
+function renderMermaidSvg(container, svgMarkup, options = {}) {
+  const canvas = mermaidCanvas(container);
+  if (!canvas) return;
+  if (isMermaidErrorSvgMarkup(svgMarkup)) throw new Error("Mermaid syntax error");
+  const artboard = document.createElement("div");
+  artboard.className = "markdown-mermaid-artboard";
+  artboard.innerHTML = String(svgMarkup || "");
+  const svg = artboard.querySelector("svg");
+  if (!svg) throw new Error("Mermaid SVG missing");
+  if (svg.querySelector(".error-icon, .error-text")) throw new Error("Mermaid syntax error");
+  const size = mermaidSvgSize(svg);
+  artboard.dataset.baseWidth = String(size.width);
+  artboard.dataset.baseHeight = String(size.height);
+  svg.removeAttribute("width");
+  svg.removeAttribute("height");
+  svg.setAttribute("preserveAspectRatio", "xMinYMin meet");
+  canvas.innerHTML = "";
+  canvas.appendChild(artboard);
+  applyMermaidScale(container, mermaidInitialScale(container, size.width));
+  if (options.sourceText) {
+    const previewSource = $("mermaidPreviewSource");
+    if (previewSource && container === $("mermaidPreviewDialog")) {
+      previewSource.textContent = options.sourceText;
+    }
+  }
+}
+
+function mermaidRenderCandidates(sourceText) {
+  const raw = String(sourceText || "");
+  const normalizer = window.CodexMarkdownRenderer && typeof window.CodexMarkdownRenderer.normalizeMermaidSourceForRender === "function"
+    ? window.CodexMarkdownRenderer.normalizeMermaidSourceForRender
+    : null;
+  const normalized = normalizer ? String(normalizer(raw) || "") : raw;
+  if (!normalized || normalized === raw) return [raw];
+  return [raw, normalized];
+}
+
+async function renderMermaidIntoContainer(container, sourceText, options = {}) {
+  if (!container || !String(sourceText || "").trim()) return;
+  showMermaidLoading(container, options.loadingMessage || "正在渲染 Mermaid 图...");
+  const mermaidApi = await ensureMermaidApi();
+  configureMermaidApi(mermaidApi);
+  const renderId = `codex-mobile-mermaid-${++state.mermaidRenderSeq}`;
+  let lastError = null;
+  const candidates = mermaidRenderCandidates(sourceText);
+  for (let index = 0; index < candidates.length; index += 1) {
+    const candidateRenderId = `${renderId}-${index}`;
+    try {
+      const result = await mermaidApi.render(candidateRenderId, candidates[index]);
+      cleanupMermaidRenderArtifacts(candidateRenderId);
+      cleanupExternalMermaidErrorArtifacts();
+      renderMermaidSvg(container, result && result.svg ? result.svg : "", { sourceText });
+      const canvas = mermaidCanvas(container);
+      if (canvas && result && typeof result.bindFunctions === "function") result.bindFunctions(canvas);
+      return;
+    } catch (err) {
+      cleanupMermaidRenderArtifacts(candidateRenderId);
+      cleanupExternalMermaidErrorArtifacts();
+      lastError = err;
+    }
+  }
+  throw lastError || new Error("Mermaid render failed");
+}
+
+function hydrateMermaidBlock(block) {
+  const sourceText = mermaidSourceFromContainer(block).trim();
+  if (!block || !sourceText) return;
+  const currentTheme = mermaidThemeName();
+  if (block.dataset.mermaidRendered === "1" && block.dataset.mermaidTheme === currentTheme) return;
+  renderMermaidIntoContainer(block, sourceText)
+    .then(() => {
+      if (!block.isConnected) return;
+      block.dataset.mermaidRendered = "1";
+      block.dataset.mermaidTheme = currentTheme;
+    })
+    .catch((err) => {
+      block.dataset.mermaidRendered = "error";
+      showMermaidError(block, sourceText, err);
+    });
+}
+
+function hydrateMermaidDiagrams(root = document) {
+  if (!root || typeof root.querySelectorAll !== "function") return;
+  root.querySelectorAll("[data-mermaid-block='true']").forEach((block) => hydrateMermaidBlock(block));
+}
+
+function rerenderVisibleMermaidDiagrams() {
+  document.querySelectorAll("[data-mermaid-block='true']").forEach((block) => {
+    block.dataset.mermaidRendered = "";
+    block.dataset.mermaidTheme = "";
+    hydrateMermaidBlock(block);
+  });
+  if (mermaidPreviewOpen()) {
+    const dialog = $("mermaidPreviewDialog");
+    renderMermaidIntoContainer(dialog, mermaidSourceFromContainer(dialog), { loadingMessage: "正在更新 Mermaid 图..." })
+      .catch((err) => showMermaidError(dialog, mermaidSourceFromContainer(dialog), err));
+  }
+}
+
+function installMermaidThemeObserver() {
+  if (state.mermaidThemeObserver || !window.MutationObserver) return;
+  const observer = new MutationObserver(() => {
+    if (state.mermaidTheme && state.mermaidTheme === mermaidThemeName()) return;
+    rerenderVisibleMermaidDiagrams();
+  });
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  state.mermaidThemeObserver = observer;
+}
+
+function mermaidActionContainer(button) {
+  return button.closest("[data-mermaid-block='true']") || button.closest("#mermaidPreviewDialog");
+}
+
+function resetMermaidScale(container) {
+  const canvas = mermaidCanvas(container);
+  const artboard = canvas && canvas.querySelector(".markdown-mermaid-artboard");
+  if (!artboard) return;
+  const baseWidth = Number(artboard.dataset.baseWidth || 0) || 640;
+  applyMermaidScale(container, mermaidInitialScale(container, baseWidth));
+}
+
+function openMermaidPreview(block) {
+  const dialog = $("mermaidPreviewDialog");
+  const sourceText = mermaidSourceFromContainer(block).trim();
+  if (!dialog || !sourceText) return;
+  dialog.dataset.mermaidSource = sourceText;
+  const previewSource = $("mermaidPreviewSource");
+  if (previewSource) previewSource.textContent = sourceText;
+  dialog.classList.remove("hidden");
+  publishPluginNavigationState({ force: true });
+  renderMermaidIntoContainer(dialog, sourceText, { loadingMessage: "正在渲染 Mermaid 图..." })
+    .catch((err) => showMermaidError(dialog, sourceText, err));
+}
+
+function closeMermaidPreview() {
+  const dialog = $("mermaidPreviewDialog");
+  if (!dialog) return;
+  dialog.classList.add("hidden");
+  dialog.dataset.mermaidSource = "";
+  const canvas = mermaidCanvas(dialog);
+  if (canvas) canvas.innerHTML = `<div class="markdown-mermaid-loading">正在渲染 Mermaid 图...</div>`;
+  const previewSource = $("mermaidPreviewSource");
+  if (previewSource) previewSource.textContent = "";
+  updateMermaidResetLabel(dialog, 1);
+  publishPluginNavigationState();
+}
+
+function handleMermaidAction(button) {
+  const action = String(button && button.dataset ? button.dataset.mermaidAction || "" : "");
+  const container = mermaidActionContainer(button);
+  if (!action || !container) return false;
+  if (action === "expand") {
+    openMermaidPreview(container);
+    return true;
+  }
+  if (action === "zoom-in") {
+    applyMermaidScale(container, mermaidCurrentScale(container) + MERMAID_ZOOM_STEP);
+    return true;
+  }
+  if (action === "zoom-out") {
+    applyMermaidScale(container, mermaidCurrentScale(container) - MERMAID_ZOOM_STEP);
+    return true;
+  }
+  if (action === "reset") {
+    resetMermaidScale(container);
+    return true;
+  }
+  return false;
 }
 
 function renderThreadTaskCardDraftMessage(value, item, turn) {
@@ -8692,13 +9228,54 @@ function renderImageView(item) {
   const filePath = imageViewPath(item);
   const contentUrl = imageViewContentUrl(item);
   const url = imageViewUrl(item);
-  const src = contentUrl ? authenticatedApiContentUrl(contentUrl) : (filePath ? localFilePreviewContentUrl(filePath) : url);
+  const src = contentUrl ? authenticatedApiContentUrl(contentUrl) : (filePath ? imageContentUrlForPath(filePath) : url);
   const label = shortPath(filePath || url || item.id || "image");
   if (!src) return renderStructuredBlock(item, "Image");
   return `<figure class="image-view">
     <img src="${escapeHtml(src)}" alt="${escapeHtml(label)}" loading="lazy">
     ${label ? `<figcaption>${escapeHtml(label)}</figcaption>` : ""}
   </figure>`;
+}
+
+function handleConversationImageError(event) {
+  const image = event && event.target && event.target.closest ? event.target.closest("img") : null;
+  markFailedAppImage(image);
+}
+
+function failedAppImageContainer(image) {
+  return image && image.closest
+    ? image.closest(".input-image, .image-view, .markdown-image, .attachment-chip, .file-preview-media, figure")
+    : null;
+}
+
+function markFailedAppImage(image) {
+  if (!image) return false;
+  const container = failedAppImageContainer(image);
+  if (container) container.classList.add("image-load-failed");
+  else if (image.classList) image.classList.add("image-load-failed");
+  image.setAttribute("aria-hidden", "true");
+  return true;
+}
+
+function scanFailedAppImages(root) {
+  if (!root || !root.querySelectorAll) return 0;
+  let marked = 0;
+  root.querySelectorAll("img").forEach((image) => {
+    if (image.complete && image.naturalWidth === 0 && markFailedAppImage(image)) marked += 1;
+  });
+  return marked;
+}
+
+function scheduleFailedAppImageScan(root, delays = [0, 180, 700]) {
+  if (!root) return;
+  delays.forEach((delay) => {
+    window.setTimeout(() => scanFailedAppImages(root), delay);
+  });
+}
+
+function scheduleVisibleImageFailureScan(delays = [0, 180, 700]) {
+  scheduleFailedAppImageScan($("conversation"), delays);
+  scheduleFailedAppImageScan($("attachmentList"), delays);
 }
 
 function showFilePreviewLoading(label, filePath) {
@@ -8730,6 +9307,7 @@ async function openLocalFilePreview(link) {
     $("filePreviewPath").textContent = file.relativePath || file.path || filePath;
     $("filePreviewMeta").textContent = filePreviewMetaText(file);
     $("filePreviewBody").innerHTML = renderFilePreviewContent(file);
+    hydrateMermaidDiagrams($("filePreviewBody"));
     const copyButton = $("filePreviewCopyPath");
     if (copyButton) copyButton.dataset.copyKey = rememberCopyText(file.path || filePath);
   } catch (err) {
@@ -9181,6 +9759,9 @@ function updateThreadGoalState(threadId, goal) {
     else delete state.currentThread.goal;
     scheduleRenderCurrentThread();
   }
+  if (state.goalDialogThreadId && state.goalDialogThreadId === id) {
+    updateThreadGoalDialogState(normalizedGoal);
+  }
   scheduleRenderThreads();
 }
 
@@ -9379,8 +9960,8 @@ function scheduleEventFallbackPoll(delayMs = 8000) {
       clearReconnectRefreshPrompt();
       rememberRateLimitsFromConfig(status);
       if (status.codexProfiles) rememberCodexProfiles(status.codexProfiles);
-      await loadThreads();
-      await refreshCurrentThread();
+      await loadThreads({ silent: true });
+      if (state.currentThreadId) await refreshCurrentThread();
       scheduleEventFallbackPoll();
     } catch (err) {
       showReconnectRefreshPrompt("reconnect");
@@ -9395,8 +9976,9 @@ async function recoverEventStreamWithApiFallback() {
   clearReconnectRefreshPrompt();
   rememberRateLimitsFromConfig(status);
   if (status.codexProfiles) rememberCodexProfiles(status.codexProfiles);
-  await loadThreads();
-  await refreshCurrentThread();
+  const silentThreadRefresh = isHermesEmbedMode() || Boolean(state.threads.length);
+  await loadThreads({ silent: silentThreadRefresh });
+  if (state.currentThreadId) await refreshCurrentThread();
   if (isHermesEmbedMode()) {
     state.eventFallbackMode = true;
     scheduleEventFallbackPoll();
@@ -9444,8 +10026,10 @@ function connectEvents() {
     clearTimeout(state.reconnectNoticeTimer);
     state.reconnectNoticeTimer = setTimeout(() => {
       if (state.events && state.events.readyState !== EventSource.OPEN && document.visibilityState !== "hidden") {
-        if (!isHermesEmbedMode()) markActivity("重连");
-        updateConnectionState(null, "Reconnecting");
+        if (!isHermesEmbedMode()) {
+          markActivity("重连");
+          updateConnectionState(null, "Reconnecting");
+        }
       }
     }, 3000);
     clearTimeout(state.recoveryTimer);
@@ -10542,8 +11126,8 @@ function renderComposerSettings() {
   const fastEnabled = codexFastCommandEnabled();
   commandControl.classList.toggle("is-fast", fastEnabled);
   commandControl.setAttribute("aria-pressed", fastEnabled ? "true" : "false");
-  commandControl.title = fastEnabled ? "Fast on" : "Fast off";
-  commandControl.setAttribute("aria-label", fastEnabled ? "Fast on" : "Fast off");
+  commandControl.title = fastEnabled ? "Fast mode on" : "Fast mode off";
+  commandControl.setAttribute("aria-label", fastEnabled ? "Fast mode on" : "Fast mode off");
   commandControl.disabled = state.composerBusy;
   const controls = [
     [modelControl, selectedModel ? labelForModel(selectedModel) : "--", state.newThreadDraft || state.composerModel ? "下一轮使用" : "当前记录"],
@@ -10634,12 +11218,8 @@ function hasTransferFiles(event) {
   return types.includes("Files");
 }
 
-async function submitThreadGoalMessage(event) {
-  if (event && typeof event.preventDefault === "function") event.preventDefault();
-  if (state.goalSubmitBusy || state.composerBusy) {
-    if (state.composerBusy) showError(new Error("A message is already sending"));
-    return;
-  }
+function goalDialogFormValues(options = {}) {
+  const requireObjective = options.requireObjective !== false;
   const thread = currentGoalDialogThread();
   const threadId = String(thread && thread.id || state.goalDialogThreadId || "").trim();
   const objectiveInput = $("goalObjectiveInput");
@@ -10648,12 +11228,12 @@ async function submitThreadGoalMessage(event) {
   const rawBudget = String(budgetInput && budgetInput.value || "").trim();
   if (!threadId) {
     showError(new Error("No thread is selected"));
-    return;
+    return null;
   }
-  if (!objective) {
+  if (requireObjective && !objective) {
     showError(new Error("Goal objective is required"));
     if (objectiveInput) objectiveInput.focus();
-    return;
+    return null;
   }
   let tokenBudget = 0;
   if (rawBudget) {
@@ -10661,13 +11241,30 @@ async function submitThreadGoalMessage(event) {
     if (!Number.isFinite(tokenBudget) || tokenBudget <= 0) {
       showError(new Error("Token budget must be a positive number"));
       if (budgetInput) budgetInput.focus();
-      return;
+      return null;
     }
     tokenBudget = Math.trunc(tokenBudget);
   }
+  return {
+    thread,
+    threadId,
+    objective,
+    tokenBudget: tokenBudget > 0 ? tokenBudget : null,
+  };
+}
+
+async function submitThreadGoalMessage(event) {
+  if (event && typeof event.preventDefault === "function") event.preventDefault();
+  if (state.goalSubmitBusy || state.composerBusy) {
+    if (state.composerBusy) showError(new Error("A message is already sending"));
+    return;
+  }
+  const values = goalDialogFormValues();
+  if (!values) return;
+  const { threadId, objective, tokenBudget } = values;
   state.composerBusy = true;
   state.sendButtonHint = "";
-  setThreadGoalDialogBusy(true);
+  setThreadGoalDialogBusy(true, "Saving...");
   markActivity("Goal set");
   updateComposerControls();
   try {
@@ -10676,12 +11273,12 @@ async function submitThreadGoalMessage(event) {
       method: "POST",
       body: JSON.stringify({
         objective,
-        tokenBudget: tokenBudget > 0 ? tokenBudget : null,
+        tokenBudget,
       }),
       timeoutMs: 30000,
     });
     const responseGoal = normalizeThreadGoal(result && result.goal, threadId);
-    const visibleGoal = responseGoal || submittedThreadGoal(threadId, objective, tokenBudget > 0 ? tokenBudget : null);
+    const visibleGoal = responseGoal || submittedThreadGoal(threadId, objective, tokenBudget);
     if (visibleGoal) updateThreadGoalState(threadId, visibleGoal);
     closeThreadGoalDialog(true);
     $("connectionState").classList.remove("error");
@@ -10697,6 +11294,80 @@ async function submitThreadGoalMessage(event) {
     $("connectionState").textContent = message;
     postClientEvent("goal_request_failure", {
       threadId,
+      message,
+    });
+    showError(new Error(message));
+  } finally {
+    state.composerBusy = false;
+    setThreadGoalDialogBusy(false);
+    updateComposerControls();
+  }
+}
+
+function threadGoalActionStatusText(action) {
+  if (action === "continue") return "Goal continued";
+  if (action === "pause") return "Goal paused";
+  if (action === "cancel") return "Goal cancelled";
+  return "Goal updated";
+}
+
+function threadGoalActionBusyText(action) {
+  if (action === "continue") return "Continuing...";
+  if (action === "pause") return "Pausing...";
+  if (action === "cancel") return "Cancelling...";
+  return "Sending...";
+}
+
+async function runThreadGoalDialogAction(action, event) {
+  if (event && typeof event.preventDefault === "function") event.preventDefault();
+  if (event && typeof event.stopPropagation === "function") event.stopPropagation();
+  if (state.goalSubmitBusy || state.composerBusy) {
+    if (state.composerBusy) showError(new Error("A message is already sending"));
+    return;
+  }
+  const normalizedAction = String(action || "").trim().toLowerCase();
+  const values = goalDialogFormValues({ requireObjective: normalizedAction !== "cancel" });
+  if (!values) return;
+  const { threadId, objective, tokenBudget } = values;
+  state.composerBusy = true;
+  state.sendButtonHint = "";
+  setThreadGoalDialogBusy(true, threadGoalActionBusyText(normalizedAction));
+  markActivity("Goal action");
+  updateComposerControls();
+  try {
+    postClientEvent("goal_action_start", { threadId, action: normalizedAction });
+    const result = await api(`/api/threads/${encodeURIComponent(threadId)}/goal/actions`, {
+      method: "POST",
+      body: JSON.stringify({
+        action: normalizedAction,
+        objective: objective || undefined,
+        tokenBudget,
+      }),
+      timeoutMs: 30000,
+    });
+    const responseGoal = normalizeThreadGoal(result && result.goal, threadId);
+    if (normalizedAction === "cancel") {
+      updateThreadGoalState(threadId, null);
+    } else if (responseGoal) {
+      updateThreadGoalState(threadId, responseGoal);
+    } else if (objective) {
+      updateThreadGoalState(threadId, submittedThreadGoal(threadId, objective, tokenBudget));
+    }
+    closeThreadGoalDialog(true);
+    $("connectionState").classList.remove("error");
+    $("connectionState").textContent = threadGoalActionStatusText(normalizedAction);
+    markActivity(threadGoalActionStatusText(normalizedAction));
+    postClientEvent("goal_action_success", { threadId, action: normalizedAction, hasResponseGoal: Boolean(responseGoal) });
+    if (threadId === state.currentThreadId) scheduleCurrentThreadRefresh(600);
+    loadThreads({ silent: true }).catch(showError);
+  } catch (err) {
+    const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err))
+      || "Goal action failed";
+    $("connectionState").classList.add("error");
+    $("connectionState").textContent = message;
+    postClientEvent("goal_action_failure", {
+      threadId,
+      action: normalizedAction,
       message,
     });
     showError(new Error(message));
@@ -10855,6 +11526,7 @@ async function sendNewThreadMessage(text, hasContent, input) {
   const submittedModel = newThreadSelectedModel();
   const submittedEffort = newThreadSelectedEffort();
   const submittedPermissionMode = newThreadSelectedPermissionMode();
+  const submittedTitle = String(state.newThreadTitle || "").trim();
   state.composerBusy = true;
   state.sendButtonHint = "";
   $("connectionState").classList.remove("error");
@@ -10870,6 +11542,7 @@ async function sendNewThreadMessage(text, hasContent, input) {
     body.append("model", submittedModel);
     body.append("effort", submittedEffort);
     body.append("permissionMode", submittedPermissionMode);
+    if (submittedTitle) body.append("title", submittedTitle);
     if (codexFastCommandEnabled()) body.append("fastMode", "1");
     for (const item of state.pendingAttachments) {
       body.append("attachments", item.file, item.file.name || "upload");
@@ -10885,11 +11558,16 @@ async function sendNewThreadMessage(text, hasContent, input) {
     const userItem = localUserMessageItem(text, submittedAttachments, clientSubmissionId);
     const thread = Object.assign({
       id: threadId,
-      preview: text || "新建对话",
+      name: submittedTitle || "",
+      preview: submittedTitle || text || "新建对话",
       cwd: (result && result.thread && result.thread.cwd) || state.selectedCwd || "",
       status: { type: "active" },
       turns: [],
     }, result.thread || {});
+    if (submittedTitle) {
+      thread.name = submittedTitle;
+      thread.preview = submittedTitle;
+    }
     if (!thread.model && submittedModel) thread.model = submittedModel;
     if (!thread.effort && submittedEffort) thread.effort = submittedEffort;
     if (turnId) {
@@ -10909,6 +11587,7 @@ async function sendNewThreadMessage(text, hasContent, input) {
     }
     state.threads = [thread, ...state.threads.filter((entry) => entry.id !== threadId)];
     state.newThreadDraft = false;
+    state.newThreadTitle = "";
     state.currentThreadId = threadId;
     state.currentThread = thread;
     state.activeTurnId = turnId || state.activeTurnId;
@@ -11322,6 +12001,7 @@ function wireUi() {
   if ($("updateDialog")) $("updateDialog").addEventListener("click", (event) => {
     if (event.target === $("updateDialog")) closeUpdatePanel();
   });
+  if ($("hardRefreshButton")) $("hardRefreshButton").addEventListener("click", () => handleHardRefreshClick().catch(showError));
   if ($("sharedRestartButton")) $("sharedRestartButton").addEventListener("click", () => handleSharedRestartClick().catch(showError));
   if ($("restartConfirmCancel")) $("restartConfirmCancel").addEventListener("click", () => closeSharedRestartDialog(false));
   if ($("restartConfirmProceed")) $("restartConfirmProceed").addEventListener("click", () => closeSharedRestartDialog(true));
@@ -11335,6 +12015,9 @@ function wireUi() {
   if ($("goalSubmitButton")) $("goalSubmitButton").addEventListener("pointerup", requestGoalDialogSubmitFromButton);
   if ($("goalSubmitButton")) $("goalSubmitButton").addEventListener("touchend", requestGoalDialogSubmitFromButton, { passive: false });
   if ($("goalSubmitButton")) $("goalSubmitButton").addEventListener("click", requestGoalDialogSubmitFromButton);
+  if ($("goalContinueButton")) $("goalContinueButton").addEventListener("click", (event) => runThreadGoalDialogAction("continue", event).catch(showError));
+  if ($("goalPauseButton")) $("goalPauseButton").addEventListener("click", (event) => runThreadGoalDialogAction("pause", event).catch(showError));
+  if ($("goalClearButton")) $("goalClearButton").addEventListener("click", (event) => runThreadGoalDialogAction("cancel", event).catch(showError));
   if ($("goalCancelButton")) $("goalCancelButton").addEventListener("click", () => closeThreadGoalDialog(false));
   if ($("goalDialogClose")) $("goalDialogClose").addEventListener("click", () => closeThreadGoalDialog(false));
   if ($("goalDialog")) $("goalDialog").addEventListener("click", (event) => {
@@ -11485,6 +12168,13 @@ function wireUi() {
       openLocalFilePreview(localFileLink).catch(showError);
       return;
     }
+    const mermaidButton = event.target.closest("[data-mermaid-action]");
+    if (mermaidButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      handleMermaidAction(mermaidButton);
+      return;
+    }
     const button = event.target.closest("[data-approval-action]");
     if (button) {
       answerApproval(button.dataset.approvalId, button.dataset.approvalAction).catch(showError);
@@ -11529,6 +12219,7 @@ function wireUi() {
     const responseText = new FormData(form).get("responseText") || "";
     answerServerRequest(requestId, serverRequestPayload(request, String(responseText), form.dataset.serverQuestionId || "answer")).catch(showError);
   });
+  $("conversation").addEventListener("error", handleConversationImageError, true);
   $("messageInput").addEventListener("input", (event) => {
     autoSizeMessageInput(event.target);
     if (state.sendButtonHint && !state.composerBusy) state.sendButtonHint = "";
@@ -11587,9 +12278,33 @@ function wireUi() {
     if (localFileLink) {
       event.preventDefault();
       openLocalFilePreview(localFileLink).catch(showError);
+      return;
+    }
+    const mermaidButton = event.target.closest("[data-mermaid-action]");
+    if (mermaidButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      handleMermaidAction(mermaidButton);
     }
     });
   }
+  if ($("mermaidPreviewClose")) $("mermaidPreviewClose").addEventListener("click", closeMermaidPreview);
+  if ($("mermaidPreviewDialog")) {
+    const mermaidDialog = $("mermaidPreviewDialog");
+    mermaidDialog.addEventListener("click", (event) => {
+      if (event.target === mermaidDialog) {
+        closeMermaidPreview();
+        return;
+      }
+      const mermaidButton = event.target.closest("[data-mermaid-action]");
+      if (mermaidButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleMermaidAction(mermaidButton);
+      }
+    });
+  }
+  installMermaidThemeObserver();
   $("composer").addEventListener("dragover", (event) => {
     if (!(state.currentThreadId || state.newThreadDraft) || !hasTransferFiles(event)) return;
     event.preventDefault();
@@ -11648,7 +12363,11 @@ function wireUi() {
   window.addEventListener("blur", () => scheduleVisualRecovery("window-blur", 180, { render: false }));
   window.addEventListener("pagehide", saveCurrentDraftNow);
   window.addEventListener("beforeunload", saveCurrentDraftNow);
-  document.addEventListener("focusin", () => scheduleVisualRecovery("focusin", 40, { render: false, heavy: false, delays: [40, 180] }));
+  document.addEventListener("focusin", () => {
+    scheduleVisualRecovery("focusin", 40, { render: false, heavy: false, delays: [40, 180] });
+    scheduleVisibleImageFailureScan([0, 80, 240]);
+    cleanupExternalMermaidErrorArtifacts();
+  });
   document.addEventListener("focusout", () => scheduleVisualRecovery("focusout", 160, { render: false, heavy: false, delays: [160, 420] }));
   window.addEventListener("orientationchange", () => {
     followViewportChangeToBottom("orientation");

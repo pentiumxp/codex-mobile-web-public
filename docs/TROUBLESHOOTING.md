@@ -23,7 +23,7 @@ Interpretation:
 | Thread looks stuck | rollout size/mtime, pending approvals, live command/tool process, latest turn status |
 | Old command appears running | latest turn id vs raw operation fallback call id/turn id, app version includes raw-operation fix |
 | PWA still shows old UI | `/api/public-config.clientBuildId`, browser shell cache, service worker cache name |
-| Refresh prompt repeats after a static bump | Compare `/api/public-config.clientBuildId` and `shellCacheName` with served `/app.js` and `/sw.js`; if the API is older, the 8787 listener did not restart into the edited files |
+| Refresh prompt repeats after a static bump | Compare `/api/public-config.clientBuildId` and `shellCacheName` with served `/app.js` and `/sw.js`; current builds read shell metadata on each config request and do not use plain `version` for this comparison |
 | Push missing | HTTPS/Tailscale access, VAPID files, subscription count, sub-agent suppression |
 | Push says turn ended but no final reply appears | rollout `task_complete.last_agent_message`, completion-push no-final-message guard |
 | Profile switch hides workspaces or threads | active `codexProfiles.activeCodexHome`, non-default profile shared-state links, `/api/threads?limit=10` |
@@ -117,7 +117,10 @@ Authenticated SSE probes should receive one `data:` status event and one
 `: keepalive` within about 32 seconds. If the SSE stream fails but ordinary JSON
 routes such as proxied `/api/status` still work, current embed clients fall back
 to bounded polling and retry EventSource with backoff instead of repeatedly
-showing the reconnect/refresh prompt.
+showing the reconnect/refresh prompt. The thread list should keep its current DOM
+while this fallback is healthy; a visible `Connected -> Reconnecting -> Connected`
+cycle on the plugin thread list means the loaded shell is stale or the JSON
+fallback is also failing.
 
 The current restart service removes same-prefix submitted jobs before restarting
 a LaunchAgent/LaunchDaemon-managed listener and no longer creates new
@@ -213,12 +216,13 @@ must not hydrate quota from those shared rollout files. They must also ignore
 source-less live `account/rateLimits/updated` snapshots for shared-profile
 homes, because those notifications do not prove which account produced the
 quota. A shared-profile active home may still show live quota when the snapshot
-comes from the same listener's managed child app-server; that snapshot may be
-read immediately through `account/rateLimits/read` after initialize or later via
+comes from the same listener's managed child app-server or from the active
+profile home's mux endpoint; that snapshot may be read immediately through
+`account/rateLimits/read` after initialize or later via
 `account/rateLimits/updated`, but it should not be written as reusable profile
-quota. When no account-scoped or managed child live quota is available,
-authenticated `/api/status.rateLimits` should be absent and the browser should
-clear its old local quota cache instead of showing a previous-account value.
+quota. When no account-scoped or trusted live quota is available, authenticated
+`/api/status.rateLimits` should be absent and the browser should clear its old
+local quota cache instead of showing a previous-account value.
 
 If `/api/workspaces` still lists the expected workspaces but `/api/threads`
 returns only a projectless fallback thread, check the active `state_5.sqlite`
@@ -619,10 +623,11 @@ should send at most one `server_build_changed` refresh request for that
 signature; repeated host reloads for the same `clientBuildId` indicate the
 request dedupe path regressed.
 
-If the prompt appears immediately after a source edit and before a server
-restart, check whether `clientBuildId()`, `shellCacheName`, or `buildId` has
-regressed to dynamically reading `public/sw.js` / static asset mtimes on each
-`/api/public-config` request.
+If the prompt repeats after a source edit, first verify that
+`/api/public-config` reports the same `clientBuildId` / `shellCacheName` as the
+served `/app.js` and `/sw.js`. Current builds intentionally read shell metadata
+from disk on each config request and compare only app-shell build fields, not
+the plain `version` string.
 
 If the prompt repeats after the intended restart, compare the running API and
 the served static files, not just the workspace on disk:
@@ -637,7 +642,7 @@ Invoke-RestMethod http://127.0.0.1:8787/api/public-config |
 If `/api/public-config` is older than `/app.js` / `/sw.js`, the listener is
 still an old process and must be restarted into the current files. Current
 clients should not enter a visible refresh loop in this state: a loaded
-`codex-mobile-shell-vNNN` that is newer than the listener's startup shell is a
+`codex-mobile-shell-vNNN` that is newer than the server-reported shell is a
 deployment middle state, and refreshing the page alone cannot fix it. On
 Windows, verify the PID that owns port 8787 before killing anything; stop only
 the listener process that is actually running this workspace's `server.js`, then
@@ -657,10 +662,12 @@ source-less `account/rateLimits/updated` events from another workspace, and
 recent rollout scans can contain different snapshots for the same `limitId=codex`.
 
 Current builds keep rollout-scanned quota as a cold-start fallback only and do
-not broadcast source-less rate-limit notifications directly to browsers. The
-composer quota should follow active `/api/public-config` / `/api/status`
-snapshots for the current Mobile Web chain, while profile settings can still use
-stored or scanned snapshots for inactive profile rows.
+not broadcast source-less rate-limit notifications directly to browsers. For
+shared profile homes, live quota is trusted only when it comes from the managed
+child app-server or the active profile home's mux endpoint. The composer quota
+should follow active `/api/public-config` / `/api/status` snapshots for the
+current Mobile Web chain, while profile settings can still use stored or scanned
+snapshots for inactive profile rows.
 
 ## Web Push
 
@@ -921,10 +928,84 @@ node --test test\manual-restart-ui.test.js test\mobile-viewport.test.js
 ## Public PR Prompt Targets The Wrong Thread
 
 Public-PR review preparation must not reuse an arbitrary currently open thread.
-Current builds should route the generated review text into a new-thread draft for
-the app workspace path reported by `/api/public-config.workspacePath`. If the
-prompt still lands inside an unrelated Agent/Hermes thread, the browser build is
-stale or the client never loaded the workspace-path config.
+Current builds should first reuse a same-workspace thread titled
+`Codex Mobile Public PR`; if no matching thread exists, they route the generated
+review text into a new-thread draft for the app workspace path reported by
+`/api/public-config.workspacePath` and send that fixed title to
+`/api/threads/new-message`. If the prompt still lands inside an unrelated
+Agent/Hermes thread, the browser build is stale or the client never loaded the
+workspace-path config.
+
+## Repeated New Version Prompt
+
+The visible "New version" prompt should be driven by comparable app-shell
+identity, not by every static-file hash change. Check:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8787/api/public-config |
+  Select-Object clientBuildId,shellCacheName,buildId
+```
+
+If the open browser has an older `CLIENT_BUILD_ID` than
+`clientBuildId`/`shellCacheName`, one prompt is expected. After the browser loads
+the newer shell, later asset-only `buildId` changes should be silent. If prompts
+continue after the loaded shell and server `clientBuildId` match, inspect
+`public/app.js` `checkPageRefreshAvailability()` and verify asset-only drift
+still returns after updating `state.serverAssetBuildId` without setting
+`state.pageRefreshAvailable`.
+
+## Windows Shows A Codex Console Window
+
+The shared app-server chain has three possible visible-window sources:
+
+- the user-facing launcher host; and
+- the `CODEX_CLI_PATH` shim that Codex Desktop starts when it needs an
+  app-server process; and
+- a Mobile-owned `codex app-server` process that accidentally inherited
+  Desktop bridge environment variables, then starts CLI tool subprocesses
+  through the shim.
+
+Desktop shortcuts should target `wscript.exe` with
+`start-codex-desktop-shared-hidden.vbs`, or another hidden host. Do not point a
+desktop shortcut at `start-codex-desktop-*.cmd`; a `.cmd` wrapper can open a
+command window before it reaches hidden PowerShell.
+
+The mux shim must be compiled as a Windows subsystem executable:
+
+```powershell
+Select-String .\start-codex-desktop-shared.ps1 -Pattern "/target:winexe"
+```
+
+The current launcher builds `codex-app-server-mux-win.exe` by default. This
+avoids rebuild failures when older Desktop-spawned `codex-app-server-mux.exe`
+processes are still running. Rebuild through the shared launcher without
+starting Desktop:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\start-codex-desktop-shared.ps1 -PrintOnly
+```
+
+Existing Desktop-spawned shim processes keep their original executable image.
+Quit/relaunch Codex Desktop through the hidden shortcut after rebuilding so new
+app-server helper processes use the windowless shim. Current harness coverage is
+`node --test test\desktop-profile-launcher.test.js`.
+
+If Codex Desktop is not running but console windows still flash, inspect the
+Mobile app-server process tree before changing Desktop shortcuts:
+
+```powershell
+Get-CimInstance Win32_Process |
+  Where-Object { $_.CommandLine -match 'codex-app-server-mux|codex.exe|node_repl|cmd.exe|powershell.exe' } |
+  Select-Object ProcessId,ParentProcessId,Name,CommandLine
+```
+
+Seeing `node_repl.exe` or other CLI tool children under Mobile's
+`codex.exe app-server`, followed by `codex-app-server-mux.exe app-server
+--listen stdio://`, indicates leaked `CODEX_CLI_PATH` / `CODEX_MUX_*` state.
+Mobile launchers and the mux/server child-spawn paths must clear those variables
+before starting the real CLI child. The fix applies on the next shared-chain
+restart; existing running CLI children keep their original environment.
+
 ## Image Upload Context Growth
 
 Large rollout growth after image upload often comes from repeated `compacted.replacement_history` snapshots with `input_image` payloads.
@@ -1015,6 +1096,25 @@ If a continuation starts with unexpectedly high input tokens, inspect the bootst
 - Workspace handoff and prior lineage excerpts should stay bounded.
 - Durable project facts should move to `.agent-context` and `docs/`, not into a larger bootstrap prompt.
 
+If a continuation thread does not show the source thread's unfinished goal:
+
+1. Check the continuation job/result for `sourceGoalMigration`. A skipped goal
+   should report a bounded reason such as `no-goal`, `completed`,
+   `status-not-migratable`, `unsupported`, or `set-target-error`.
+2. Check the workspace `.agent-context/thread-handoffs/index.jsonl` entry for
+   `sourceGoalMigrated` and `sourceGoalMigrationError`. The lineage entry must
+   not include the goal objective text.
+3. Only `active`, `blocked`, and legacy `paused` source goals are copied.
+   Completed, budget-limited, usage-limited, missing, or unsupported goals are
+   intentionally skipped.
+4. The new thread gets the same objective and remaining token budget, not the
+   source thread's spent `tokens_used` / `time_used_seconds` counters.
+5. If the source goal was `active`, Mobile Web best-effort freezes it to
+   `blocked` after setting the new thread goal. A non-empty `sourceFreezeError`
+   means the new goal may have been created while the old active goal could not
+   be frozen; inspect app-server goal RPC support before continuing work in both
+   threads.
+
 ## Thread Goal Display
 
 If a CLI/Desktop goal does not appear in Mobile Web:
@@ -1049,34 +1149,55 @@ If `/g` does not create a goal:
 4. Current shells also submit from explicit pointer/click handlers on the goal
    Send button rather than relying only on the browser's default form submit.
    Reopening `/g` should not prefill a completed old goal; only unfinished goal
-   state is used as editable prefill.
+   state is used as editable prefill. If an unfinished goal already exists, the
+   dialog should also show Continue, Pause, and Cancel goal actions. Pause maps
+   to app-server `blocked`; Continue clears and re-sets a blocked goal to make
+   it active again; Cancel goal calls `thread/goal/clear`.
 5. After the dialog submit, the frontend should log a bounded
    `goal_request_start` client event before sending
    `POST /api/threads/:id/goal`. Mobile Web forwards this to app-server
    `thread/goal/set`; it does not write `goals_1.sqlite` directly.
-6. If `goal_request_start` and `goal_request_success` appear but no new goal
+6. Goal action buttons should log `goal_action_start` and call
+   `POST /api/threads/:id/goal/actions`. If actions are missing, the browser is
+   still on an older PWA shell; refresh to the shell containing
+   `codex-mobile-shell-v214` or newer.
+7. If `goal_request_start` and `goal_request_success` appear but no new goal
    turn starts, inspect the current thread's `thread_goals.status`. A completed
    old goal can cause app-server `thread/goal/set` to update the completed row
    instead of starting a new goal. Current Mobile Web clears a completed goal
    through app-server `thread/goal/clear` before retrying `thread/goal/set`.
-7. If the response says the running app-server does not support goal set, check
+8. If the response says the running app-server does not support goal set, check
    the real `codex.exe` used by the mux/listener. On Windows the launchers
    should prefer the newest installed `%LOCALAPPDATA%\OpenAI\Codex\bin\*\codex.exe`
    over the older `%USERPROFILE%\.codex-mobile-web\codex.exe` runtime copy when
    `-CodexExe` / `CODEX_MOBILE_CODEX_EXE` is not explicit.
-8. Inspect `%USERPROFILE%\.codex\app-server-mux\endpoint.json`. Current
+9. Inspect `%USERPROFILE%\.codex\app-server-mux\endpoint.json`. Current
    endpoints should include `codexExe` and `capabilities.threadGoalRpc=true`.
    If `codexExe` is missing or still points at
    `%USERPROFILE%\.codex-mobile-web\codex.exe`, remove the stale endpoint by
    restarting the shared chain so the windowless launcher can start a fresh mux.
-9. If the route succeeds but the card does not appear, first confirm the browser
+10. If the route succeeds but the card does not appear, first confirm the browser
    shell is current. Current frontend builds synthesize a submitted-goal card
    from the just-entered objective/token budget when the app-server accepts
    `thread/goal/set` but does not return a public goal object in the immediate
    response.
-10. If a current shell still does not show the card, inspect the EventSource
+11. If a current shell still does not show the card, inspect the EventSource
    stream for `thread/goal/updated`, then refresh the thread detail/list so the
    sqlite fallback can decorate `thread.goal`.
+
+If goal token progress appears far from Usage cards or rollout totals:
+
+1. The goal dialog/card displays `thread_goals.tokens_used` as budget tokens.
+   This value comes from the Codex app-server goal store and is surfaced through
+   `thread/goal/get`, `thread/goal/updated`, or the sqlite fallback.
+2. Do not compare it directly with rollout raw `totalTokens`. Current observed
+   CLI behavior tracks a budget-consumable basis that is close to non-cached
+   input plus output, while rollout raw totals include cached input events that
+   can be much larger.
+3. To diagnose a mismatch, compare the Mobile API goal object, the
+   `goals_1.sqlite` row, and the rollout `token_count` events over the goal's
+   `created_at_ms` window. Treat this as a read-only check; Mobile Web must not
+   repair `tokens_used` by writing sqlite directly.
 
 ## Hermes Mobile Plugin Checks
 
@@ -1367,8 +1488,8 @@ Expected behavior:
 - The active profile owns `auth.json` and `config.toml`.
 - Non-default profiles link shared thread/workspace state back to the default
   `%USERPROFILE%\.codex` home:
-  `.codex-global-state.json`, `state_5.sqlite*`, `session_index.jsonl`,
-  `sessions/`, and `archived_sessions/`.
+  `.codex-global-state.json`, `state_5.sqlite*`, `goals_1.sqlite*`,
+  `session_index.jsonl`, `sessions/`, and `archived_sessions/`.
 - File state paths should be hard links. Directory state paths should be
   junctions.
 - Existing profile-local copies of those state paths should be moved under
@@ -1383,6 +1504,7 @@ Useful checks on Windows:
 ```powershell
 Get-Item (Join-Path $env:USERPROFILE ".codex-homes\previous\sessions") | Format-List FullName,LinkType,Target
 Get-Item (Join-Path $env:USERPROFILE ".codex-homes\previous\state_5.sqlite") | Format-List FullName,LinkType,Target
+Get-Item (Join-Path $env:USERPROFILE ".codex-homes\previous\goals_1.sqlite") | Format-List FullName,LinkType,Target
 Test-Path (Join-Path $env:USERPROFILE ".codex-homes\previous\auth.json")
 Test-Path (Join-Path $env:USERPROFILE ".codex-homes\previous\config.toml")
 ```

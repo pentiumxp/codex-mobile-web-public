@@ -666,6 +666,16 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v220 收紧 Hermes 插件模式下的 SSE 断线恢复。`/?embed=hermes` 中如果 `/api/events` 短暂断开但 `/api/status` 和普通 JSON API 仍可用，客户端会在后台静默刷新线程列表并按退避节奏重试 EventSource，不再把列表页状态直接打成 `Reconnecting`，也不再用非静默列表加载造成“connected -> reconnecting -> connected”后的可见列表刷新。PWA shell cache 升级到 `codex-mobile-shell-v220`，更新后需要部署静态资源并刷新客户端。
+- 中文说明：v219 同步 public PR #49，修复 Mermaid 预览渲染边界。Mermaid 大图的横向滚动范围现在从正常左边界开始，不再因为 flex 居中产生左侧内容裁切；较小图仍会在预览区域内居中显示。前端 Mermaid 规范化也会把未加引号的中文/括号 `subgraph` 标题转换为稳定 id + quoted title，减少 `subgraph 可见层（不是模型上下文原样）` 这类图表解析失败。本次 private 同步来自 public 发布 `09b1646`，没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
+
+- 中文说明：v219 收口刷新提示和 Public PR 工作线程。页面刷新提示现在只在服务器 `clientBuildId` / `shellCacheName` 表示 app-shell 真正更新时出现；单纯静态资源 `buildId` hash 变化只更新内部记录，不再触发可见提示，避免开发或部署中间态反复弹“New version”。Public PR 提示确认后会优先复用当前 workspace 下标题为 `Codex Mobile Public PR` 的固定工作线程；找不到才创建新线程，并把新线程初始标题固定为该名称，减少每次 PR 检查后都要手动归档一次性线程。PWA shell cache 升级到 `codex-mobile-shell-v219`，更新后需要重启 8787 Node listener 并刷新客户端。
+
+- 中文说明：v218 合并 public PR #48，新增移动端 Mermaid 图预览。Markdown 中的 ```mermaid 代码块会渲染为可缩放图表，手机和 iPad 可打开全屏预览、放大/缩小/重置，并保留可展开的 Mermaid 源码；Hermes 嵌入模式也把 Mermaid 预览作为可返回的 modal 状态处理。前端同时增强硬刷新：侧栏提供“硬刷新”按钮，刷新时会清理 `codex-mobile-shell-*` 缓存、重新注册 service worker，并用 cache-bust URL 重新加载页面。PWA shell cache 升级到 `codex-mobile-shell-v218`，Mermaid runtime 以 public-safe 的同源 `public/vendor/mermaid.min.js` lazy-load 方式随仓库发布。本次 public 发布只包含公开源码、文档、测试和 vendored 前端依赖；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
+
+- 中文说明：v216 同步 public PR #46/#47 到 private。刷新提示现在只比较真实 app-shell build 信息，不再把普通 `version` 当作客户端 build id；`/api/public-config` 每次请求都会读取当前 shell build，避免旧启动快照和磁盘静态资源不一致时反复提示刷新。Composer 左侧 Fast 开关从红绿状态点改为闪电图标按钮，开启态用高亮闪电显示，文案统一为 `Fast mode on/off`。PWA shell cache 升级到 `codex-mobile-shell-v216`，更新后需要重启 8787 Node listener 并刷新客户端。
+- 中文说明：v215 澄清目标弹窗里的 token 口径。目标状态条现在显示 `budget tokens`，表示 Codex app-server 在 `thread_goals.tokens_used` 中维护的目标预算计数，通常接近非 cached input 加输出等预算消耗口径；它不是 rollout 原始 `totalTokens` 总和，也不是完整上下文窗口 token。PWA shell cache 升级到 `codex-mobile-shell-v215`，更新后需要重启 8787 Node listener 并刷新客户端。
+- 中文说明：v214 扩展 `/g` 目标弹窗。当前线程已有未完成目标时，重新输入 `/g` 会显示目标状态和动作区；Continue 会把 paused/blocked 目标恢复为 active，Pause 映射为 app-server 的 blocked 状态，Cancel goal 会通过官方 `thread/goal/clear` 取消目标，Save 继续通过 `thread/goal/set` 修改目标内容或 token budget。PWA shell cache 升级到 `codex-mobile-shell-v214`，更新后需要重启 8787 Node listener 并刷新客户端。
 - 中文说明：v213 server-only 追记修复 Usage 在投影压缩路径中的丢失问题。投影快路径现在会先合并线程摘要中的 rollout path 再进入移动端压缩，确保 target-turn Usage 扫描能找到源 rollout；receipt-only 的旧 turn 压缩也会保留 `turnUsageSummary` 元数据，只去掉旧中间过程。该追记不改变 PWA shell cache，更新后需要重启 8787 Node listener。
 - 中文说明：v213 增加完成态 Usage 自愈刷新。当前线程最新成功完成 turn 如果已经结束但本地状态仍没有 `turnUsageSummary`，前端会进行有限次数的详情 backfill refresh，直到 API 合并出 Usage 或达到次数上限；这用于覆盖 completion 后固定刷新时间点仍早于 Usage/投影稳定的情况。`interrupted`、failed、cancelled、active、in-progress turn 不会触发该自愈路径。PWA shell cache 升级到 `codex-mobile-shell-v213`，更新后需要重启 8787 Node listener 并刷新客户端。
 - 中文说明：v212 修复 v211 后发现的 Usage 刷新兜底问题。服务端 target Usage cache 命中时现在也会检查当前返回的 turn id 是否缺 Usage；缺项时不会直接返回旧缓存，而会继续走 rollout 补扫。前端 `turn/completed` 后会安排两次线程详情刷新，避免第一次刷新早于 Usage/投影稳定时停留在“回执已完成但没有 Usage”的画面。PWA shell cache 升级到 `codex-mobile-shell-v212`，更新后需要重启 8787 Node listener 并刷新客户端。
@@ -754,6 +764,7 @@ Behavior:
 - 中文说明：`/g` 目标提交成功后，前端会立即把刚输入的 objective 和可选 token budget 显示成线程顶部目标卡。这样即使 app-server 接受 `thread/goal/set` 后立刻开始执行任务、但响应体暂时没有返回完整 goal 对象，用户输入的目标也不会从界面上消失；后续 `thread/goal/updated` 通知或 `goals_1.sqlite` fallback 会覆盖这张本地显示卡。PWA shell 缓存升级到 `codex-mobile-shell-v186`。
 - 中文说明：`/g` 目标入口现在直接调用 Mobile 后端的 `POST /api/threads/<threadId>/goal`，由服务端转发到 Codex app-server `thread/goal/set`，不再发送一条普通消息让模型自己尝试创建目标。这个能力要求运行中的 app-server 来自 Codex CLI 0.135.0 或更新版本；Windows 启动脚本在未显式传 `-CodexExe` 时会优先选择 `%LOCALAPPDATA%\OpenAI\Codex\bin\*\codex.exe` 中最新的安装版，再回退旧的 `%USERPROFILE%\.codex-mobile-web\codex.exe`。mux endpoint 现在会记录真实 `codexExe`，windowless 启动器复用 endpoint 前会校验它是否匹配本次解析出的 Codex binary，避免继续复用旧 0.129 app-server。PWA shell 缓存升级到 `codex-mobile-shell-v185`。
 - 中文说明：线程归档现在还会写入 `%USERPROFILE%\.codex-mobile-web\archived-thread-ids.json` 的 Mobile 本地索引，只保存 thread id 和归档时间。这样 state DB recover 或旧 profile 行重新出现在列表时，重新归档也能被 Mobile 自己的列表过滤识别，不需要依赖 app-server 成功改写那条旧 SQLite 记录。
+- 中文说明：压缩续接现在会在新线程 bootstrap 写入成功后迁移源线程的未完成 CLI goal。`active` 目标会复制到新线程并保留 active 状态；源线程会尽量冻结为 `blocked`，避免两个线程同时继续同一个目标。`blocked`/旧 `paused` 目标会复制为新线程的 `blocked` 目标，不会自动开始执行。已完成或非可迁移状态的目标不会复制。迁移只复制 objective 和剩余 token budget，不复制旧线程已经消耗的 `tokens_used` / `time_used_seconds`；所有写入仍通过 app-server `thread/goal/set`，不直接写 `goals_1.sqlite`。
 - The continuation bootstrap message explicitly carries source thread metadata, rollout size, inherited runtime settings, the source-thread-generated handoff file, bounded continuation lineage, recent visible turn summaries, and current-workspace `.agent-context/PROJECT_CONTEXT.md` / `.agent-context/HANDOFF.md` excerpts. It does not inject fixed private/public GitHub release rules; those appear only if the current workspace context or source-thread handoff says they are relevant.
 - Long-pressing a session row opens a mobile action sheet with rename, continuation, and archive actions. Archive asks for confirmation, calls `/api/threads/<threadId>/archive`, and refreshes the list after success. The row disables accidental system text selection during the long press, while rename input fields still allow normal text selection and editing.
 - Agent replies include a `复制全文` action. Markdown code blocks and command/output detail blocks include smaller copy buttons so users can copy structured text without manually selecting content on iOS.
@@ -769,6 +780,8 @@ Behavior:
 旧线程写出交接文件后，Mobile Web 会尽量确认旧线程交接 turn 已完成，然后才创建同工作区的新续接线程，并在首条 bootstrap 消息中带入源线程 ID、标题、工作区、rollout 路径和大小、运行权限摘要、源线程交接文件、续接 lineage、最近源线程上下文，以及当前工作区 `.agent-context/PROJECT_CONTEXT.md` / `.agent-context/HANDOFF.md` 摘录。bootstrap 不再固定注入其他工作区或无关线程的发布/提交规则；只有当前工作区上下文或源线程交接文件明确涉及这些规则时，新线程才应加载它们。前端不会为了发起续接而强制打开源线程，避免源线程过大时先卡在 thread detail 读取；续接任务会通过 job 状态显示当前阶段，手机页面刷新后也会用本地保存的 job id 尝试恢复查询，完成后自动切到新线程。
 
 这个动作不会原地改写或裁剪旧 rollout 文件；它通过“源线程写交接文件 + 新续接线程 + 旧线程归档”降低后续交互需要读取的历史文件体积。旧线程在交接文件生成且续接线程启动成功后才会归档，仍可从归档记录中找回。首条 bootstrap 会要求新线程先读取源线程交接文件，再读取工作区持久上下文，并显式避免确认与当前工作区无关的发布或提交规则。续接成功后，服务端还会把 `newThreadId -> sourceThreadId -> handoffFile` 追加到 `.agent-context/thread-handoffs/index.jsonl`；下一次继续压缩时，bootstrap 会带入最多几层 lineage 摘要，并明确要求 Agent 在历史事实、风险、未完成事项或架构判断不确定时先读取 lineage 指向的 handoff 文件，而不是凭当前上下文猜。
+
+如果源线程有未完成 CLI goal，压缩续接会在新线程 bootstrap 写入完成后把目标复制到新线程。复制范围是 objective、状态和剩余 token budget；旧线程的已消耗 token/时间不迁移。`active` 源目标会在复制后尽量冻结为 `blocked`，`blocked`/旧 `paused` 源目标会在新线程保持 `blocked`，已完成或预算/用量限制等非可迁移状态不会复制。迁移结果会出现在 continuation job/result 和 lineage 的布尔诊断字段里，但 lineage 不写入目标正文。
 
 交接文件和 lineage index 都属于本地运行态资料。创建交接目录时，服务端会在 `.agent-context/thread-handoffs/.gitignore` 写入忽略规则，防止这些自动生成的 Markdown/JSONL 资料被误提交。
 
@@ -1640,9 +1653,17 @@ installed app package; the reliable sharing boundary is the selected
 The launcher sets `CODEX_CLI_PATH` only for the Desktop process it starts. It builds `codex-app-server-mux.exe` from `codex-app-server-mux-shim.cs` when needed, because Windows Codex Desktop expects `CODEX_CLI_PATH` to point to a real `.exe`.
 
 The shared Desktop shortcut may open the Codex Desktop GUI, but every helper it
-starts must stay windowless. The mux shim launches its Node child with
-`CREATE_NO_WINDOW` and hidden startup flags; Mobile Web startup/restart helpers
-use hidden PowerShell/`Start-Process` paths for background mux/app-server work.
+starts must stay windowless. Desktop shortcuts should target
+`start-codex-desktop-shared-hidden.vbs` through `wscript.exe`, not the `.cmd`
+profile wrappers. The default generated shim is `codex-app-server-mux-win.exe`
+so older running `codex-app-server-mux.exe` processes do not block rebuilds. The
+mux shim itself is compiled as `/target:winexe` and then launches its Node child
+with `CREATE_NO_WINDOW` and hidden startup flags; Mobile Web startup/restart
+helpers use hidden PowerShell/`Start-Process` paths for background mux/app-server
+work. Mobile-owned app-server startup also clears Desktop-bridge-only
+`CODEX_CLI_PATH` and `CODEX_MUX_*` variables before starting the real Codex CLI
+child, so tool subprocesses do not loop back through a Desktop shim when Desktop
+is not running.
 
 By default, the launcher sets `CODEX_MUX_KEEP_ALIVE=1`. If Desktop is fully quit, the mux and real app-server should remain alive so Mobile Web can continue using the same stream. Starting Desktop again through the launcher attaches the new Desktop stdio session to the existing mux.
 

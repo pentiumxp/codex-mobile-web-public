@@ -146,7 +146,13 @@ Implementation path:
     `thread/start`. App-server rename RPCs are best-effort; fallback list
     refreshes must still recover the intended title instead of showing the new
     thread id or bootstrap prompt.
-13. Test with `test/continuation-lineage.test.js`, `test/continuation-handoff-compaction-service.test.js`, `test/new-thread-route.test.js`, and relevant runtime-settings tests. Keep focused workspace context compaction service tests green before changing route/UI wiring.
+13. After the new thread bootstrap is started, migrate any unfinished source CLI
+    goal through app-server goal RPCs. Copy only objective, status, and
+    remaining token budget; do not copy spent token/time counters and do not
+    write the goal objective into lineage metadata. Freeze an active source goal
+    to `blocked` after the target goal is set so the same task does not run in
+    both threads.
+14. Test with `test/continuation-lineage.test.js`, `test/continuation-handoff-compaction-service.test.js`, `test/new-thread-route.test.js`, `test/thread-goal-service.test.js`, and relevant runtime-settings tests. Keep focused workspace context compaction service tests green before changing route/UI wiring.
 
 ## Mux And Desktop Live Sync
 
@@ -245,7 +251,9 @@ Implementation path:
 6. Include the goal signature in both the thread-list render signature and `conversationRenderSignature`; otherwise a valid notification may update state without repainting.
 7. For Mobile goal creation, use the composer `/g` command to open the goal dialog, then call `POST /api/threads/:id/goal`; `server.js` should forward that to app-server `thread/goal/set`. If the running app-server is older and lacks the method, return a clear unsupported-version error instead of sending a normal chat message and asking the model to guess.
 8. If the set response succeeds but lacks a public goal object, keep the user-visible target explicit by rendering a submitted-goal card from the dialog objective/token budget until `thread/goal/updated` or sqlite fallback data replaces it.
-9. If the frontend shell changes, bump `CLIENT_BUILD_ID`, `public/sw.js` cache name, and the matching tests.
+9. When `/g` is reopened on a thread with an unfinished goal, keep the same dialog as the action surface: Continue should clear and re-set blocked goals to active, Pause should map to app-server `blocked`, Cancel goal should call `thread/goal/clear`, and Save should keep using `thread/goal/set` for objective/token-budget edits.
+10. During continuation, treat `active`, `blocked`, and legacy `paused` goals as task-level state to copy to the new thread through app-server `thread/goal/set`. Use `adapters/thread-goal-service.js` for the pure migration plan. Completed, budget-limited, usage-limited, missing, or unsupported goals should not be copied. Lineage should record only migrated/error booleans, not the goal objective.
+11. If the frontend shell changes, bump `CLIENT_BUILD_ID`, `public/sw.js` cache name, and the matching tests.
 
 ## Hermes Mobile Plugin Deployment
 

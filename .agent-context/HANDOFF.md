@@ -21,6 +21,486 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-08 Mac Hermes Plugin SSE Reconnect Investigation v220
+
+- User reported that the Mac Hermes plugin thread list showed `connected`,
+  then `reconnecting`, then refreshed the list, while thread detail was mostly
+  stable.
+- Codex Mobile frontend hardening prepared locally:
+  - `public/app.js` now keeps Hermes embed EventSource fallback thread-list
+    refreshes silent and does not set the visible chip to `Reconnecting` while
+    JSON API recovery is healthy.
+  - `CLIENT_BUILD_ID` / `public/sw.js` advanced to
+    `0.1.11|codex-mobile-shell-v220` / `codex-mobile-shell-v220`.
+  - README release note and architecture/troubleshooting/module docs updated.
+  - Static tests updated to assert silent fallback and v220 shell identity.
+- Validation:
+  - `node --check public\app.js; node --check public\sw.js`
+  - `node --test test\app-update.test.js test\mobile-viewport.test.js
+    test\hermes-plugin-route.test.js test\plugin-embed.test.js
+    test\thread-goal-service.test.js test\thread-task-card-route.test.js`
+    passed: 34/34.
+  - `git diff --check` for edited Codex Mobile files passed with only existing
+    CRLF/LF warnings.
+- Production/root-cause evidence came from the Home AI host, not this repo:
+  direct Mac Codex Mobile `/api/events` stayed healthy for 45 seconds and
+  returned status plus keepalive, but the Hermes same-origin plugin proxy was
+  buffering `text/event-stream` with full-body reads. That host-side issue was
+  fixed and deployed from the `C:\Users\xuxin\Documents\Agent` workspace.
+- Current state: Codex Mobile v220 changes are local in this workspace and have
+  not been committed or pushed in this turn.
+
+## 2026-06-08 Public PR #49 Merge And Private Sync v219
+
+- User requested assessment of public PR #49 in
+  `pentiumxp/codex-mobile-web-public`, public README Chinese release notes,
+  validation/privacy scan, public push, then private sync/revalidation.
+- Public PR assessment:
+  - PR #49 `修复 Mermaid 预览渲染边界` was GitHub `MERGEABLE` / `CLEAN`;
+    CI `Node checks` passed; no comments/reviews were present.
+  - PR was still Draft because its body said it was waiting for phone/iPad
+    real-device confirmation. Local evidence covered static layout and Mermaid
+    normalization, not real-device browser screenshots. Per the explicit
+    public release request, the PR was marked ready and merged.
+  - Scope was public-safe frontend/test only: Mermaid subgraph title
+    normalization, Mermaid canvas horizontal scroll bounds, shell v219
+    assertions, and focused tests.
+- Public result:
+  - Merged PR #49. Merge commit:
+    `d6f97258bbb60c391bfa522937fe2b4c07e3a0d8`.
+  - Added public README Chinese release note and pushed public `main` commit
+    `09b164657255300052f511cca40beefee1276d4f`
+    `发布 Mermaid 渲染边界修复 v219`.
+  - Public push did not include `.agent-context`, `AGENTS.md`, runtime state,
+    local keys, uploads, local diagnostics, or machine-specific state.
+- Public validation:
+  - Focused syntax/tests passed before merge:
+    `node --check public\app.js public\markdown-renderer.js public\sw.js`,
+    Mermaid/markdown/conversation/mobile/update focused tests with 56 tests,
+    and goal/task-card focused tests with 12 tests.
+  - After README release note: `npm.cmd run check`, `npm.cmd run check:macos`,
+    and full `npm.cmd test` passed with 385 tests.
+  - `git diff --check` showed only expected Windows LF/CRLF README warning.
+  - BOM scan produced no output; forbidden-path scan produced no output.
+    Raw-secret scan found only environment variable name references in source,
+    not raw key material.
+- Private sync:
+  - Private already had the v219 refresh-prompt/Public-PR-thread work and shell
+    cache ids, so sync was selective instead of copying whole files.
+  - Synced PR #49 Mermaid changes into private:
+    `public/markdown-renderer.js`, `public/styles.css`,
+    `test/mermaid-render.test.js`, plus README v219 PR #49 release note.
+  - Did not copy public `.agent-context`, runtime state, local keys, uploads,
+    diagnostics, or machine-specific state into private.
+- Private validation:
+  - Focused syntax and Mermaid/markdown/conversation/mobile/update/goal/task
+    tests passed with 68 tests.
+  - `npm.cmd run check`, `npm.cmd run check:macos`, and full `npm.cmd test`
+    passed with 388 tests.
+  - `git diff --check` showed only existing Windows LF/CRLF working-tree
+    warnings.
+  - BOM scan produced no output. Raw-secret scan found only environment
+    variable name references. Path scan only matched private
+    `.agent-context/HANDOFF.md`, which was intentionally updated for this
+    local handoff and was not copied to public.
+
+## 2026-06-08 Windows CLI Windowless Env Cleanup v220
+
+- User clarified the frequent Windows console popups were happening without
+  Codex Desktop running; current app-server processes should all come from
+  Codex Mobile invoking the CLI.
+- Runtime diagnosis:
+  - The scheduled `Codex Mobile Web` task was running through the hidden VBS /
+    hidden PowerShell chain, and direct Mobile mux/server child spawns already
+    used `windowsHide: true`.
+  - The process tree still showed Mobile-owned `codex.exe app-server` tool
+    children launching old `codex-app-server-mux.exe app-server --listen
+    stdio://` under `node_repl.exe`. That indicates Desktop bridge environment
+    such as `CODEX_CLI_PATH` / `CODEX_MUX_*` had leaked into the Mobile CLI
+    process, so CLI tool subprocesses could loop back through the old console
+    shim even when Desktop was not open.
+- Implemented:
+  - `codex-app-server-mux.js` now starts the real Codex CLI child with a
+    sanitized environment that preserves `CODEX_HOME` but removes
+    `CODEX_CLI_PATH` and all `CODEX_MUX_*` variables.
+  - `server.js` uses the same sanitized environment for managed child
+    `codex app-server` launches.
+  - `start-codex-mobile-web.ps1` clears Desktop bridge variables before
+    starting the Node listener.
+  - `start-codex-mobile-web-windowless.ps1` saves, clears, and restores Desktop
+    bridge variables around standalone mux startup so Mobile-owned mux children
+    do not inherit stale Desktop bridge state.
+  - Existing Desktop guard work remains: `start-codex-desktop-shared.ps1`
+    builds `codex-app-server-mux-win.exe` with `/target:winexe`, a hidden VBS
+    wrapper exists, and `install-codex-mobile-web-startup.ps1` registers future
+    scheduled tasks with `Hidden=true`.
+  - The currently registered `Codex Mobile Web` scheduled task was updated
+    in-place to `Hidden=True` without restarting it.
+  - Docs/harness updated in `README.md`, `docs/ARCHITECTURE.md`,
+    `docs/MODULES.md`, `docs/MULTI_ACCOUNT_CODEX_CLI.md`,
+    `docs/TROUBLESHOOTING.md`, `test/desktop-profile-launcher.test.js`,
+    `test/new-thread-route.test.js`, and `test/hermes-plugin-route.test.js`.
+- Validation:
+  - `node --check codex-app-server-mux.js; node --check server.js` passed.
+  - PowerShell parser checks passed for the edited startup scripts.
+  - Focused tests passed:
+    `node --test test\desktop-profile-launcher.test.js
+    test\codex-profile-ui.test.js test\new-thread-route.test.js`,
+    `node --test test\protocol.test.js test\desktop-profile-launcher.test.js`,
+    and `node --test test\app-update.test.js test\hermes-plugin-route.test.js`.
+  - `powershell.exe -NoProfile -ExecutionPolicy Bypass -File
+    .\start-codex-desktop-shared.ps1 -PrintOnly` passed and generated
+    `codex-app-server-mux-win.exe`; PE subsystem check returned `2`
+    (Windows GUI).
+  - `npm.cmd run check` passed.
+  - Full `npm.cmd test` passed with 387 tests.
+  - Focused `git diff --check` passed with only expected Windows LF/CRLF
+    warnings. BOM check over edited files produced no output.
+- Runtime:
+  - Listener/shared chain was not restarted in this turn. Existing running
+    Mobile CLI/app-server/tool child processes still have their original
+    environment; the env cleanup applies after the next shared-chain restart.
+  - No `.codex` state, raw keys, upload content, or runtime logs were copied
+    into docs or Git.
+
+## 2026-06-08 Public PR Fixed Thread And Refresh Prompt v219
+
+- User reported two follow-ups after public PR work:
+  - Accepting the public-PR prompt should reuse a stable working thread instead
+    of creating a new disposable thread every time.
+  - The update/refresh prompt was appearing too often even though PR #46 was
+    intended to fix repeated refresh prompts.
+- Diagnosis:
+  - Public PR #46 was directionally correct. It made `/api/public-config` read
+    `buildId`, `clientBuildId`, and `shellCacheName` on each request and removed
+    the old plain-`version` fallback comparison that could cause stale startup
+    build loops.
+  - The remaining issue was frontend policy: `checkPageRefreshAvailability()`
+    still allowed asset-only `buildId` drift to show the visible refresh prompt
+    or ask Hermes to refresh. Because `buildId` is derived from static file
+    size/mtime, normal development or deployment-in-progress edits could keep
+    changing it even when the real app shell identity had not advanced.
+- Implemented:
+  - Static shell advanced to
+    `0.1.11|codex-mobile-shell-v219` / `codex-mobile-shell-v219`.
+  - `public/app.js` now treats `assetsChanged && !serverBuildNeedsRefresh` as
+    silent bookkeeping: update `state.serverAssetBuildId` and return. Only a
+    newer comparable app-shell identity (`clientBuildId` / `shellCacheName`)
+    can show the standalone page refresh prompt or request a Hermes host
+    refresh.
+  - Public PR prompt acceptance now targets the app workspace from
+    `/api/public-config.workspacePath`, first reusing a visible same-workspace
+    thread titled `Codex Mobile Public PR`. If no such thread exists, the new
+    thread draft carries that fixed title.
+  - `POST /api/threads/new-message` accepts optional `title`/`name`, persists it
+    through the session-index title fallback, and best-effort calls the app-server
+    title update path after thread creation.
+  - README and focused docs were updated:
+    `docs/ARCHITECTURE.md`, `docs/MODULES.md`, and `docs/TROUBLESHOOTING.md`.
+- Validation:
+  - `node --check public\app.js`, `public\sw.js`, and `server.js` passed.
+  - Focused tests passed:
+    `node --test test\app-update.test.js test\new-thread-route.test.js
+    test\mobile-viewport.test.js test\thread-goal-service.test.js
+    test\thread-task-card-route.test.js` with 39 tests.
+  - `npm.cmd run check` passed.
+  - Focused `git diff --check` passed with only expected Windows LF/CRLF
+    warnings.
+  - BOM check over edited source/docs/tests produced no output.
+- Runtime:
+  - Local `/api/public-config` currently reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v219`,
+    `shellCacheName=codex-mobile-shell-v219`, and a new static `buildId`.
+  - Existing open v218 clients may see one legitimate update prompt because the
+    app-shell identity really changed to v219. After loading v219, asset-only
+    `buildId` drift should be silent.
+  - The Windows 8787 Node listener has not been restarted in this follow-up yet;
+    the `/api/threads/new-message` server-side title support needs a listener
+    restart before it is active in the running process.
+
+## 2026-06-08 Public PR #48 Merge And Private Sync v218
+
+- User requested assessment/merge of public PR #48
+  `支持移动端 Mermaid 图预览并增强硬刷新`, then public README release notes,
+  validation/privacy scan, public push, and private sync/revalidation.
+- Public PR assessment:
+  - GitHub reported PR #48 as mergeable/clean with CI `Node checks` success.
+  - Local review found a frontend-only scope: Mermaid markdown rendering,
+    mobile preview modal, hard-refresh/page-shell behavior, service-worker
+    shell bump, vendored `public/vendor/mermaid.min.js`, and focused tests.
+  - Mermaid source is stored escaped in markdown output; runtime rendering uses
+    Mermaid `securityLevel: "strict"` and rejects Mermaid error SVG artifacts.
+- Public result:
+  - Merged PR #48 through GitHub. Merge commit:
+    `8c0c2ae3da79d9fb6783211abc8d3c259add1152`.
+  - Added public README Chinese release note for v218 and pushed public
+    `origin/main` commit `ae65529ad9740845516c59dbad43e69da920a7fa`
+    `发布 Mermaid 预览与硬刷新说明 v218`.
+  - Public `origin/main` now resolves to `ae65529`; PR #48 state is `MERGED`.
+  - Public sync/push did not include `.agent-context`, `AGENTS.md`, runtime
+    state, local keys, uploads, `node_modules`, or machine-specific diagnostics.
+- Public validation before/after push:
+  - Focused PR tests passed.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - Full `npm.cmd test` passed with 384 tests.
+  - `git diff --check` / staged check showed only expected Windows LF/CRLF
+    warnings for README.
+  - BOM scan produced no output.
+  - Public tracked-path scan found no forbidden release paths.
+  - Raw-secret scan produced only expected documented runtime path/field-name
+    references, not raw key material.
+- Private sync:
+  - Compared all PR #48 target files against public v217; private current
+    files matched the public v217 baseline before syncing, so replacing them
+    with public v218 did not discard private-only edits.
+  - Synced PR #48 product/test files into private:
+    `public/app.js`, `public/index.html`, `public/markdown-renderer.js`,
+    `public/plugin-embed.js`, `public/styles.css`, `public/sw.js`,
+    `public/vendor/mermaid.min.js`, focused test updates, and new
+    `test/mermaid-render.test.js`.
+  - Added the same v218 README release note to private.
+  - Static shell advanced to
+    `0.1.11|codex-mobile-shell-v218` / `codex-mobile-shell-v218`.
+  - Private working tree still contains earlier uncommitted v217/multi-account
+    changes; this turn did not commit or push private.
+- Private validation after sync:
+  - `node --check public\app.js public\markdown-renderer.js
+    public\plugin-embed.js public\sw.js` passed.
+  - Focused Mermaid/markdown/conversation/update/mobile/goal/task-card tests
+    passed with 67 tests.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - Full `npm.cmd test` passed with 384 tests.
+  - `git diff --check` showed only expected Windows LF/CRLF warnings.
+  - BOM and forbidden-path scans produced no output.
+  - Private raw-secret scan produced only existing documented local path
+    examples / git metadata path hits, not raw key material.
+
+## 2026-06-08 Public Push v217
+
+- User requested `push public` after the continuation-goal migration work.
+- Public repo path:
+  `C:\Users\xuxin\Documents\codex-mobile-web-public`.
+- Published to GitHub:
+  - Repository: `pentiumxp/codex-mobile-web-public`
+  - Branch: `main`
+  - Commit: `4e54b68f3c0c886f912ba3ee4c66daee2ec81114`
+  - Subject: `发布目标迁移与多账号稳定性修复 v217`
+- Public sync scope:
+  - Synced public-safe product source/docs/tests from the private working tree.
+  - Added the Mac plugin deploy harness and its test to public because
+    `docs/MODULES.md` now treats it as a stable product boundary.
+  - Did not copy `.agent-context`, `AGENTS.md`, runtime state, uploads,
+    `node_modules`, raw keys, local secret files, or machine-specific
+    diagnostics.
+- Public validation before push:
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - Focused goal/profile/continuation/deploy-harness tests passed.
+  - Full `npm.cmd test` passed with 373 tests.
+  - Staged path scan found no forbidden release paths.
+  - `git diff --cached --check` passed.
+  - BOM check produced no BOM findings.
+  - Staged raw-secret scan produced no findings.
+  - Extra staged machine-path/address scan produced no findings.
+- Post-push verification:
+  - `origin/main` resolves to `4e54b68f3c0c886f912ba3ee4c66daee2ec81114`.
+  - Public tree path scan found no `.agent-context`, `AGENTS.md`, uploads,
+    logs, data, `node_modules`, `.codex`, or `.codex-mobile-web` paths.
+
+## 2026-06-08 Continuation Goal Migration v217 Server
+
+- User approved the continuation-goal migration plan: when a source thread is
+  compacted/continued into a new thread, unfinished CLI goals should move with
+  the task instead of staying only on the old source thread.
+- Implemented:
+  - `adapters/thread-goal-service.js` owns pure continuation-goal migration
+    planning. Only `active`, `blocked`, and legacy `paused` source statuses are
+    migratable. Completed, budget-limited, usage-limited, missing, or unknown
+    statuses are skipped.
+  - `server.js` now runs a best-effort migration after the new continuation
+    thread has been created and its bootstrap turn has started. The target
+    receives the same objective and remaining token budget when positive;
+    spent token/time counters stay on the source thread. `active` source goals
+    are copied as active and the source is then best-effort frozen to
+    `blocked`; `blocked`/`paused` source goals are copied as blocked.
+  - Goal writes still go only through app-server `thread/goal/set` /
+    `thread/goal/get` routes. Mobile Web still does not directly write
+    `goals_1.sqlite`.
+  - Continuation job/result now exposes a bounded `sourceGoalMigration`
+    diagnostic. Continuation lineage stores only boolean/error fields and must
+    not store the goal objective text.
+  - README and focused docs were updated:
+    `docs/ARCHITECTURE.md`, `docs/CONTEXT_STRATEGY.md`,
+    `docs/MODULES.md`, `docs/COMPLEX_FEATURE_PATHS.md`, and
+    `docs/TROUBLESHOOTING.md`.
+- Existing Home AI continuation backfill:
+  - The old source thread was created before this code path existed, so it was
+    manually backfilled through Mobile Web/app-server HTTP goal routes rather
+    than direct sqlite writes.
+  - Source `019e9566-c222-7560-af45-2b3665862188` had a blocked goal; target
+    `019ea58a-2615-7cd2-a69c-66fbc78baa0b` now has the same goal in blocked
+    state with fresh counters. The old source thread was then hidden through
+    the Mobile archive API/local archive index. No goal objective text was
+    recorded here.
+- Validation:
+  - `node --check server.js adapters\thread-goal-service.js public\app.js
+    public\sw.js` passed.
+  - Focused tests passed:
+    `node --test test\thread-goal-service.test.js
+    test\continuation-lineage.test.js`, then with
+    `test\continuation-handoff-compaction-service.test.js` and
+    `test\new-thread-route.test.js`.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - Full `npm.cmd test` passed with 373 tests.
+  - `git diff --check` passed with only expected Windows LF/CRLF warnings.
+  - BOM check passed for edited source/docs/tests.
+- Runtime:
+  - Restarted only the Windows 8787 Node listener, not the shared mux/app-server.
+  - New listener PID was `39180`; `/api/public-config` reports active profile
+    `previous`, active Codex home under `.codex-homes\previous`, and static
+    shell still `0.1.11|codex-mobile-shell-v216` /
+    `codex-mobile-shell-v216` because this is a server-only behavior change.
+
+## 2026-06-08 Public PR #46/#47 Merge And Private Sync v216
+
+- User requested public PR review/merge for
+  `pentiumxp/codex-mobile-web-public` PR #46 and #47, then private sync.
+- Public PR assessment:
+  - #46 `修复刷新提示反复出现` was mergeable and CI passed.
+  - #47 `调整 Fast 模式开关视觉` was mergeable but its original PR CI failed
+    because a tablet layout test still expected the old 18px Fast dot column.
+  - Local combined integration of #46 + #47 fixed the context for #47, then the
+    remaining tablet test assertion was updated to the new 28px Fast bolt
+    column. The PRs were therefore merged through public `main` with follow-up
+    validation.
+- Public result:
+  - Pushed public `origin/main` commit `2c647b0`
+    `发布刷新提示与 Fast 开关修复 v214`.
+  - GitHub reports PR #46 and PR #47 as `MERGED`.
+  - Public README Chinese release notes were updated and explicitly state that
+    `.agent-context`, runtime state, local keys, uploads, and machine-specific
+    diagnostics were not copied.
+  - Public validation passed: focused app-update/mobile/composer/build tests,
+    `npm.cmd run check`, `npm.cmd run check:macos`, full `npm.cmd test` with
+    365 tests, `git diff --check` with only LF/CRLF warnings, no BOM output,
+    and no raw-secret pattern output.
+- Private sync:
+  - Synced the same behavior into the private working tree without reverting
+    existing v214/v215 goal/profile changes.
+  - Static shell advanced to
+    `0.1.11|codex-mobile-shell-v216` / `codex-mobile-shell-v216`.
+  - `server.js` now computes `/api/public-config` `buildId`,
+    `clientBuildId`, and `shellCacheName` on each request through
+    `currentPublicBuildConfig()`, and the frontend build comparison no longer
+    falls back to plain `config.version`.
+  - Composer Fast control changed from the tiny red/green dot to a 28px
+    lightning icon button with `Fast mode on/off` labels.
+  - README, `docs/ARCHITECTURE.md`, and `docs/TROUBLESHOOTING.md` were updated
+    for v216 build-refresh behavior and Fast control notes.
+- Private validation:
+  - `node --check server.js public\app.js public\sw.js
+    public\build-refresh-policy.js` passed.
+  - Focused app-update/mobile/composer/build/tablet/goal/task-card tests
+    passed.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - Full `npm.cmd test` passed with 372 tests.
+  - `git diff --check` passed with only expected Windows LF/CRLF warnings.
+  - BOM and raw-secret pattern scans produced no findings.
+- Runtime:
+  - Windows 8787 listener was not restarted in this turn.
+  - Open clients need a listener restart plus manual refresh/close-reopen to
+    load the v216 static shell.
+
+## 2026-06-08 Goal Dialog Actions v214
+
+- User clarified that `/g` should reopen the existing-goal dialog when a thread
+  already has an unfinished goal, with Continue, Pause, Cancel goal, and Modify
+  actions. User also clarified that Pause should map to the app-server
+  `blocked` status.
+- Implemented:
+  - Static shell advanced to
+    `0.1.11|codex-mobile-shell-v214` / `codex-mobile-shell-v214`.
+  - `server.js` added `POST /api/threads/:id/goal/actions` as a thin wrapper
+    around official app-server goal RPCs. Cancel calls `thread/goal/clear`;
+    Pause calls `thread/goal/set` with `status: "blocked"` and verifies with
+    `thread/goal/get` when needed; Continue leaves active goals unchanged and
+    clears/re-sets blocked goals so they become active again. Mobile Web still
+    does not write `goals_1.sqlite` directly.
+  - `public/app.js`, `public/index.html`, and `public/styles.css` now show a
+    status/action area in the `/g` dialog when the selected thread has an
+    unfinished goal. Save modifies objective/token budget through the existing
+    `POST /api/threads/:id/goal` route.
+  - README and docs now describe the v214 behavior and Pause=>blocked rule.
+- Validation:
+  - `node --check server.js public\app.js public\sw.js` passed.
+  - Focused goal/profile/task-card tests passed.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `npm.cmd test` passed with 372 tests.
+  - `git diff --check` passed with only expected Windows LF/CRLF working-tree
+    warnings.
+  - BOM check passed for edited source/docs/tests.
+- Runtime:
+  - Windows 8787 listener was restarted by stopping only the old Node listener
+    PID `20016` and starting the `Codex Mobile Web` scheduled task. The shared
+    mux/app-server process was not killed.
+  - Post-restart `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v214`,
+    `shellCacheName=codex-mobile-shell-v214`, and active profile `previous`.
+  - Authenticated smoke confirmed Home AI still has `goalStatus=active` and
+    objective `继续目标`.
+  - A non-destructive `POST /api/threads/:id/goal/actions` smoke with
+    `action=continue` on the already-active Home AI goal returned
+    `ok=true`, `changed=false`, `goalStatus=active`.
+  - Open clients need to accept the refresh prompt or close/reopen the PWA or
+    Hermes plugin frame to load the v214 shell.
+
+## 2026-06-08 Goal Budget Token Label v215
+
+- User reported that the token count shown in the goal dialog looked far from
+  the real usage data.
+- Diagnosis:
+  - The goal dialog displays `goal.tokensUsed` / `goal.timeUsedSeconds`, which
+    come from the app-server-owned goal object and the
+    `goals_1.sqlite.thread_goals.tokens_used` fallback column.
+  - Home AI Mobile API list/detail and the sqlite fallback all reported the
+    same goal token value, so the number was not a frontend computation bug.
+  - Home AI rollout comparison over the current goal window showed raw rollout
+    `totalTokens` was much larger because it includes cached input. After
+    removing cached input, the token count was close to the app-server
+    `tokens_used` value. Treat this as a goal budget counter, not raw rollout
+    total token usage or context-window size.
+- Implemented:
+  - Static shell advanced to
+    `0.1.11|codex-mobile-shell-v215` / `codex-mobile-shell-v215`.
+  - Goal token text now says `budget tokens` in both budgeted and unbudgeted
+    goal progress labels.
+  - README, architecture docs, and troubleshooting docs now document the goal
+    token basis and the reason it differs from raw rollout `totalTokens`.
+- Validation:
+  - Focused goal/mobile/task-card tests passed.
+  - `npm.cmd run check` passed.
+  - `npm.cmd run check:macos` passed.
+  - `npm.cmd test` passed with 372 tests.
+  - `git diff --check` passed with only expected Windows LF/CRLF working-tree
+    warnings.
+  - BOM check passed for edited source/docs/tests.
+- Runtime:
+  - Windows 8787 listener was restarted by stopping only the old Node listener
+    PID `23128` and starting the `Codex Mobile Web` scheduled task. The shared
+    mux/app-server process was not killed.
+  - Post-restart `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v215`,
+    `shellCacheName=codex-mobile-shell-v215`, and active profile `previous`.
+  - Authenticated smoke confirmed Home AI still has `goalStatus=active`; the
+    goal budget token counter continued updating from app-server state.
+  - Open clients need to accept the refresh prompt or close/reopen the PWA or
+    Hermes plugin frame to load the v215 shell.
+
 ## 2026-06-07 Mac Plugin Deploy Harness And v213 Production Deploy
 
 - User required Mac production deployment to go through a harness instead of
@@ -3976,3 +4456,64 @@ The previous full handoff was archived and should be opened only when old proven
       LF/CRLF warnings, BOM checks, and bounded privacy scan. Privacy scan
       hits were expected documentation/path references or token field names,
       not raw secrets.
+
+## 2026-06-07 Windows Profile Mux Quota And Goal-State Follow-up
+
+- User clarification:
+  - Current Codex development machine is Windows. Do not investigate Mac unless
+    explicitly requested again.
+  - Goal UI is not the focus; user can start goals through normal conversation.
+- Diagnosis:
+  - Profile store had active profile `previous` / safe account label
+    `2261065@qq.com`, but the running 8787 listener had been started with the
+    default `C:\Users\xuxin\.codex` home before manual correction.
+  - After manual shared-chain restart with `-ProfileId previous`, 8787 reported
+    `codexHome=C:\Users\xuxin\.codex-homes\previous` but live quota was still
+    absent.
+  - Direct local mux RPC to the `previous` endpoint returned valid quota
+    snapshots (`codex` and `codex_bengalfox`), proving auth/mux were valid and
+    the remaining issue was Mobile Web's trust/exposure path.
+  - Root cause for quota: shared-profile homes intentionally ignore source-less
+    live quota, but the new shared mux path connects through the active profile
+    home's endpoint as `external-jsonl-tcp`. Mobile Web did not classify that
+    endpoint as a trusted live quota source, so valid `account/rateLimits/read`
+    snapshots could be hidden for non-default profile homes.
+  - A second root cause affects thread goals after account/profile switching:
+    launcher shared state linked thread/session state but did not link
+    `goals_1.sqlite*`. The same visible thread could therefore have different
+    goal status in default vs non-default homes.
+- Implemented:
+  - `server.js` now classifies live quota from the active profile home's mux
+    endpoint as `profile-mux-live`; arbitrary external live quota remains
+    untrusted for shared-profile homes.
+  - `server.js` also retries `account/rateLimits/read` when `/api/public-config`
+    or `/api/status` is requested and no valid live quota has been hydrated yet,
+    with a short cooldown to avoid polling pressure.
+  - `adapters/codex-profile-service.js` exposes `profile-mux-live` only for the
+    active profile and still does not persist it as reusable profile quota.
+  - `start-codex-mobile-web-windowless.ps1` and
+    `start-codex-desktop-shared.ps1` now include `goals_1.sqlite`,
+    `goals_1.sqlite-wal`, and `goals_1.sqlite-shm` in the non-auth shared-state
+    hard-link set. Auth files remain profile-owned and are still excluded.
+  - Regression coverage added in `test/codex-profile-service.test.js` and
+    `test/new-thread-route.test.js`; launcher goal-link coverage added in
+    `test/codex-profile-ui.test.js` and `test/desktop-profile-launcher.test.js`.
+  - `docs/ARCHITECTURE.md`, `docs/TROUBLESHOOTING.md`, and
+    `docs/MULTI_ACCOUNT_CODEX_CLI.md` now document trusted live quota and
+    shared goal DB state.
+- Validation:
+  - Targeted profile/goal/launcher tests passed.
+  - `npm run check` passed.
+  - `npm test` passed with 372 tests.
+  - Windows 8787 Node listener was lightly restarted without killing the mux;
+    `/api/public-config` now reports active profile `previous`, active Codex
+    home `C:\Users\xuxin\.codex-homes\previous`, and quota source
+    `profile-mux-live`.
+- Runtime state:
+  - Direct app-server `thread/list` with Mobile's state-db params returned 32
+    rows; `Home AI` was active and `Codex mobile` was idle at inspection time.
+  - Runtime goal DB relink was not forced because `previous\goals_1.sqlite` was
+    locked by the active app-server and `Home AI` was active. The code fix will
+    repair the link on the next full shared-chain restart. Do not kill the mux
+    just to repair this while Home AI is still active unless the user explicitly
+    approves interruption.

@@ -122,7 +122,8 @@ test("embedded plugin mode hides standalone chrome and installs navigation/windo
   assert.match(appJs, /function postPluginBackResult\(handled, reason\) \{[\s\S]*const targetOrigin = normalizePluginParentOrigin\(state\.pluginParentOrigin\);[\s\S]*targetOrigin: targetOrigin \|\| "\*"/);
   assert.match(appJs, /const hermesOrigin = normalizePluginParentOrigin\(result && result\.hermes_origin\)/);
   assert.match(appJs, /state\.pluginParentOrigin = hermesOrigin/);
-  assert.match(appJs, /if \(isHermesEmbedMode\(\)\) \{\s*if \(serverBuildNeedsRefresh\) \{[\s\S]*requestHermesPluginRefresh\("server_build_changed"\);[\s\S]*if \(!serverBuildNeedsRefresh && assetsChanged\) \{[\s\S]*state\.serverAssetBuildId = nextAssetBuildId;[\s\S]*return;/);
+  assert.match(appJs, /if \(assetsChanged && !serverBuildNeedsRefresh\) \{[\s\S]*state\.serverAssetBuildId = nextAssetBuildId;[\s\S]*return;/);
+  assert.match(appJs, /if \(serverBuildNeedsRefresh\) \{\s*if \(isHermesEmbedMode\(\)\) \{[\s\S]*requestHermesPluginRefresh\("server_build_changed"\);[\s\S]*return;/);
   assert.doesNotMatch(appJs, /if \(isHermesEmbedMode\(\)\) \{\s*state\.pageRefreshBuildId = nextBuildId;[\s\S]*requestHermesPluginRefresh\("server_build_changed", \{ force: true \}\);[\s\S]*return;/);
 });
 

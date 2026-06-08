@@ -583,6 +583,7 @@ html.visual-recovering body::before {
 
 .update-status,
 .public-pr-status,
+.hard-refresh-button,
 .restart-button {
   appearance: none;
   -webkit-appearance: none;
@@ -608,6 +609,23 @@ html.visual-recovering body::before {
 .public-pr-status {
   color: var(--muted);
   background: var(--control-muted-bg);
+}
+
+.hard-refresh-button {
+  flex: 0 0 auto;
+  color: var(--text);
+  background: var(--control-muted-bg);
+}
+
+.hard-refresh-button:disabled {
+  color: var(--muted);
+  opacity: 0.72;
+}
+
+.hard-refresh-button.checking {
+  color: var(--accent-strong);
+  border-color: rgba(122, 199, 167, 0.42);
+  background: rgba(122, 199, 167, 0.1);
 }
 
 .update-status.available,
@@ -741,6 +759,51 @@ html.visual-recovering body::before {
   padding: 0 10px;
 }
 
+.goal-panel-status {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  color: var(--muted);
+  background: var(--control-muted-bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.goal-panel-status.hidden,
+.goal-state-actions.hidden {
+  display: none;
+}
+
+.goal-state-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.goal-action {
+  min-height: 38px;
+  color: var(--text);
+  background: var(--control-muted-bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 740;
+}
+
+.goal-action-primary {
+  color: var(--text-on-accent);
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+.goal-action-danger {
+  color: var(--danger);
+  background: transparent;
+}
+
 .goal-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -768,6 +831,7 @@ html.visual-recovering body::before {
 }
 
 .goal-cancel:disabled,
+.goal-action:disabled,
 .goal-submit:disabled,
 .goal-panel-close:disabled {
   opacity: 0.6;
@@ -1828,6 +1892,68 @@ html.visual-recovering body::before {
   justify-content: center;
   padding: 18px;
   background: rgba(0, 0, 0, 0.42);
+}
+
+.mermaid-preview-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 92;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.mermaid-preview-dialog.hidden {
+  display: none;
+}
+
+.mermaid-preview-panel {
+  width: min(1120px, calc(100vw - 24px));
+  max-width: 100%;
+  max-height: calc(100vh - 24px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.mermaid-preview-head {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.mermaid-preview-title {
+  color: var(--text);
+  font-weight: 760;
+  line-height: 1.25;
+}
+
+.mermaid-preview-subtitle {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: var(--content-small-font-size);
+  line-height: 1.35;
+}
+
+.mermaid-preview-viewer {
+  min-height: min(62vh, 760px);
+  border: 0;
+  border-radius: 0;
+}
+
+.mermaid-preview-source {
+  padding: 0 12px 12px;
 }
 
 .file-preview-panel {
@@ -3639,6 +3765,135 @@ html.visual-recovering body::before {
   line-height: 1.5;
 }
 
+.markdown-mermaid-block {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.markdown-mermaid-head {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.markdown-mermaid-label {
+  color: var(--muted-strong);
+  font-size: var(--content-small-font-size);
+  font-weight: 760;
+}
+
+.markdown-mermaid-toolbar,
+.mermaid-preview-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.markdown-mermaid-tool {
+  min-height: 34px;
+  min-width: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--control-bg);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 720;
+  line-height: 1;
+}
+
+.markdown-mermaid-tool-reset {
+  min-width: 56px;
+  font-variant-numeric: tabular-nums;
+}
+
+.markdown-mermaid-viewer {
+  min-width: 0;
+  min-height: 220px;
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--code);
+  scrollbar-width: thin;
+}
+
+.markdown-mermaid-canvas {
+  min-width: 100%;
+  width: max-content;
+  min-height: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 14px;
+  box-sizing: border-box;
+}
+
+.markdown-mermaid-artboard {
+  flex: 0 0 auto;
+  margin-inline: auto;
+  max-width: none;
+}
+
+.markdown-mermaid-artboard svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.markdown-mermaid-loading,
+.markdown-mermaid-error {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.5;
+}
+
+.markdown-mermaid-error {
+  color: var(--danger-text);
+}
+
+.markdown-mermaid-source-details {
+  min-width: 0;
+  color: var(--muted);
+}
+
+.markdown-mermaid-source-details summary {
+  cursor: pointer;
+  font-size: var(--content-small-font-size);
+}
+
+.markdown-mermaid-source-details pre {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  overflow: auto;
+  color: var(--code-text);
+  background: var(--code);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+}
+
+.markdown-mermaid-source-details code {
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
 .markdown-table-wrap {
   min-width: 0;
   max-width: 100%;
@@ -3771,6 +4026,36 @@ html.visual-recovering body::before {
   border: 1px solid var(--line-soft);
   border-radius: 8px;
   background: var(--code);
+}
+
+.input-image.image-load-failed,
+.markdown-image.image-load-failed,
+.image-view.image-load-failed,
+.conversation figure.image-load-failed {
+  min-height: 58px;
+  place-items: center;
+  padding: 10px;
+  color: var(--muted);
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: var(--item-bg);
+}
+
+.input-image.image-load-failed img,
+.markdown-image.image-load-failed img,
+.image-view.image-load-failed img,
+.conversation figure.image-load-failed img,
+.conversation img.image-load-failed {
+  display: none;
+}
+
+.input-image.image-load-failed::before,
+.markdown-image.image-load-failed::before,
+.image-view.image-load-failed::before,
+.conversation figure.image-load-failed::before {
+  content: "图片无法加载";
+  font-size: var(--content-small-font-size);
+  font-weight: 650;
 }
 
 .image-view figcaption {
@@ -4153,7 +4438,7 @@ html.keyboard-open .composer {
   --composer-control-height: 44px;
   position: relative;
   display: grid;
-  grid-template-columns: 18px repeat(3, minmax(96px, 146px)) minmax(104px, 150px);
+  grid-template-columns: 28px repeat(3, minmax(96px, 146px)) minmax(104px, 150px);
   justify-content: end;
   align-items: stretch;
   gap: 6px;
@@ -4228,14 +4513,17 @@ html.keyboard-open .composer {
 .composer-fast-toggle {
   align-self: center;
   justify-self: start;
-  width: 18px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   padding: 0;
-  border: 0;
+  border: 1px solid rgba(143, 152, 170, 0.28);
   border-radius: 999px;
-  background: transparent;
+  background: rgba(143, 152, 170, 0.08);
   cursor: pointer;
+  color: #8f98aa;
   transform: translateX(-1px);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+  transition: color 140ms ease, filter 140ms ease, background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
 }
 
 .composer-fast-toggle:disabled {
@@ -4248,19 +4536,24 @@ html.keyboard-open .composer {
   outline-offset: 3px;
 }
 
-.composer-fast-dot {
+.composer-fast-icon {
   display: block;
-  width: 11px;
-  height: 11px;
+  width: 15px;
+  height: 15px;
   margin: auto;
-  border-radius: 999px;
-  background: #4fbf7a;
-  box-shadow: 0 0 0 3px rgba(79, 191, 122, 0.16);
+  fill: currentColor;
+  filter: drop-shadow(0 0 0 rgba(0, 0, 0, 0));
 }
 
-.composer-fast-toggle.is-fast .composer-fast-dot {
-  background: #e45858;
-  box-shadow: 0 0 0 3px rgba(228, 88, 88, 0.18);
+.composer-fast-toggle.is-fast {
+  color: #f1ae2b;
+  border-color: rgba(241, 174, 43, 0.62);
+  background: rgba(241, 174, 43, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(241, 174, 43, 0.14), 0 0 0 3px rgba(241, 174, 43, 0.08);
+}
+
+.composer-fast-toggle.is-fast .composer-fast-icon {
+  filter: drop-shadow(0 0 5px rgba(241, 174, 43, 0.34));
 }
 
 .model-effort-display {
@@ -4604,6 +4897,10 @@ html.keyboard-open .composer {
   object-fit: cover;
 }
 
+.attachment-chip.image-load-failed .attachment-thumb {
+  display: none;
+}
+
 .attachment-file-icon {
   position: relative;
 }
@@ -4842,7 +5139,7 @@ html.keyboard-open .composer {
 
   .composer-controls {
     grid-area: controls;
-    grid-template-columns: 18px minmax(0, 0.96fr) minmax(0, 0.78fr) minmax(0, 0.84fr) minmax(0, 1.06fr);
+    grid-template-columns: 28px minmax(0, 0.96fr) minmax(0, 0.78fr) minmax(0, 0.84fr) minmax(0, 1.06fr);
     justify-content: stretch;
   }
 
@@ -4865,6 +5162,42 @@ html.keyboard-open .composer {
 }
 
 @media (max-width: 760px) {
+  .markdown-mermaid-block {
+    padding: 8px;
+  }
+
+  .markdown-mermaid-toolbar,
+  .mermaid-preview-actions {
+    gap: 6px;
+  }
+
+  .markdown-mermaid-tool {
+    min-height: 32px;
+    min-width: 32px;
+    padding: 0 8px;
+  }
+
+  .markdown-mermaid-viewer {
+    min-height: 200px;
+  }
+
+  .mermaid-preview-dialog {
+    padding: 8px;
+  }
+
+  .mermaid-preview-panel {
+    width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+  }
+
+  .mermaid-preview-head {
+    grid-template-columns: 1fr;
+  }
+
+  .mermaid-preview-viewer {
+    min-height: 54vh;
+  }
+
   .page-refresh-prompt {
     top: calc(48px + env(safe-area-inset-top, 0px));
     font-size: 12px;
@@ -4944,7 +5277,7 @@ html.keyboard-open .composer {
   .composer-controls {
     grid-area: controls;
     --composer-control-height: 30px;
-    grid-template-columns: 18px minmax(0, 0.96fr) minmax(0, 0.78fr) minmax(0, 0.84fr) minmax(0, 1.06fr);
+    grid-template-columns: 28px minmax(0, 0.96fr) minmax(0, 0.78fr) minmax(0, 0.84fr) minmax(0, 1.06fr);
     justify-content: stretch;
     gap: 4px;
   }

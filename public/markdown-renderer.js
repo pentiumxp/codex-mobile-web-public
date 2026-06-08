@@ -50,6 +50,11 @@
   function safeMarkdownImageUrl(value) {
     const url = String(value || "").trim();
     if (/^https?:/i.test(url)) return url;
+    return safeMarkdownDataImageUrl(url);
+  }
+
+  function safeMarkdownDataImageUrl(value) {
+    const url = String(value || "").trim();
     if (/^data:image\/(?:png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=\s]+$/i.test(url)) {
       return url.replace(/\s+/g, "");
     }
@@ -207,8 +212,84 @@
     return `<div class="markdown-code-block"><div class="markdown-code-head">${langLabel}${copyButton}</div><pre><code>${escapeHtml(codeText)}</code></pre></div>`;
   }
 
+  function escapeMermaidQuotedLabel(value) {
+    return String(value || "").trim().replace(/"/g, "&quot;");
+  }
+
+  function mermaidGeneratedSubgraphId(index) {
+    return `codex_mobile_subgraph_${index + 1}`;
+  }
+
+  function normalizeMermaidSubgraphLine(line, index) {
+    const match = /^(\s*)subgraph\s+(.+?)\s*$/i.exec(String(line || ""));
+    if (!match) return line;
+    const indent = match[1] || "";
+    const body = String(match[2] || "").trim();
+    if (!body || /^end$/i.test(body)) return line;
+    const bracketMatch = /^([A-Za-z][\w-]*)\s*\[(.*)\]$/.exec(body);
+    if (bracketMatch) {
+      const label = String(bracketMatch[2] || "").trim();
+      if (!label || /^".*"$/.test(label)) return line;
+      return `${indent}subgraph ${bracketMatch[1]}["${escapeMermaidQuotedLabel(label)}"]`;
+    }
+    const idTitleMatch = /^([A-Za-z][\w-]*)\s+(.+)$/.exec(body);
+    if (idTitleMatch) {
+      const title = String(idTitleMatch[2] || "").trim();
+      if (!title || /^".*"$/.test(title)) return line;
+      return `${indent}subgraph ${idTitleMatch[1]}["${escapeMermaidQuotedLabel(title)}"]`;
+    }
+    if (/^[A-Za-z][\w-]*$/.test(body) || /^".*"$/.test(body)) return line;
+    return `${indent}subgraph ${mermaidGeneratedSubgraphId(index)}["${escapeMermaidQuotedLabel(body)}"]`;
+  }
+
+  function normalizeMermaidSourceForRender(value) {
+    const source = String(value || "");
+    const withSoftBreaks = source.replace(/\\n/g, "<br/>");
+    const firstLine = withSoftBreaks.split(/\r?\n/, 1)[0].trim();
+    if (!/^(?:flowchart|graph)\b/i.test(firstLine)) return withSoftBreaks;
+    const withQuotedSubgraphs = withSoftBreaks
+      .split(/\r?\n/)
+      .map((line, index) => normalizeMermaidSubgraphLine(line, index))
+      .join("\n");
+    return withQuotedSubgraphs
+      .replace(/(^|[\s;])([A-Za-z][\w-]*)\[([^\]\n]*)\]/gm, (match, prefix, nodeId, label) => {
+        const trimmed = String(label || "").trim();
+        if (!trimmed || /^".*"$/.test(trimmed)) return match;
+        if (!/[()（）]|<br\/>/.test(trimmed)) return match;
+        return `${prefix}${nodeId}["${trimmed.replace(/"/g, "&quot;")}"]`;
+      })
+      .replace(/\|([^|\n]*[()]+[^|\n]*)\|/g, (match, label) => {
+        const normalizedLabel = String(label || "").replace(/\(/g, "（").replace(/\)/g, "）");
+        return `|${normalizedLabel}|`;
+      });
+  }
+
+  function renderMermaidBlock(codeText) {
+    return `<div class="markdown-mermaid-block" data-mermaid-block="true">
+      <div class="markdown-mermaid-head">
+        <span class="markdown-mermaid-label">Mermaid</span>
+        <div class="markdown-mermaid-toolbar">
+          <button class="markdown-mermaid-tool" type="button" data-mermaid-action="zoom-out" aria-label="缩小 Mermaid 图" title="缩小">-</button>
+          <button class="markdown-mermaid-tool markdown-mermaid-tool-reset" type="button" data-mermaid-action="reset" aria-label="重置 Mermaid 图缩放" title="重置">100%</button>
+          <button class="markdown-mermaid-tool" type="button" data-mermaid-action="zoom-in" aria-label="放大 Mermaid 图" title="放大">+</button>
+          <button class="markdown-mermaid-tool" type="button" data-mermaid-action="expand" aria-label="放大查看 Mermaid 图" title="放大查看">展开</button>
+        </div>
+      </div>
+      <div class="markdown-mermaid-viewer" data-mermaid-viewer="inline">
+        <div class="markdown-mermaid-canvas" data-mermaid-canvas>
+          <div class="markdown-mermaid-loading">正在渲染 Mermaid 图...</div>
+        </div>
+      </div>
+      <details class="markdown-mermaid-source-details">
+        <summary>查看 Mermaid 源码</summary>
+        <pre><code class="language-mermaid">${escapeHtml(codeText)}</code></pre>
+      </details>
+      <pre class="markdown-mermaid-source" hidden>${escapeHtml(codeText)}</pre>
+    </div>`;
+  }
+
   function renderBareDataImage(value) {
-    const safeUrl = safeMarkdownImageUrl(value);
+    const safeUrl = safeMarkdownDataImageUrl(value);
     if (!safeUrl) return "";
     return `<figure class="markdown-image"><img src="${escapeHtml(safeUrl)}" alt="Generated image" loading="lazy"><figcaption>Generated image</figcaption></figure>`;
   }
@@ -244,7 +325,8 @@
           i += 1;
         }
         if (i < lines.length) i += 1;
-        blocks.push(renderCodeBlock(code.join("\n"), lang, options));
+        const codeText = code.join("\n");
+        blocks.push(/^mermaid$/i.test(lang) ? renderMermaidBlock(codeText) : renderCodeBlock(codeText, lang, options));
         continue;
       }
 
@@ -324,6 +406,7 @@
     renderAutolinkUrl,
     renderInlineMarkdown,
     safeMarkdownImageUrl,
+    normalizeMermaidSourceForRender,
     isMarkdownTableSeparator,
     splitMarkdownTableRow,
     isMarkdownBlockStart,

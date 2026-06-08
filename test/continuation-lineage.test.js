@@ -110,10 +110,15 @@ test("continuation result persists lineage after bootstrap and archive attempt",
   const startBody = functionBody("startThreadFromRequestBody");
   assert.doesNotMatch(startBody, /const sourceLineage = continuationLineageSection\(cwd, sourceThreadId\)/);
   assert.match(startBody, /input: newThreadBootstrapInput\(\{ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff \}\)/);
+  assert.match(startBody, /await migrateContinuationThreadGoal\(sourceThreadId, threadId\)/);
+  assert.match(startBody, /if \(job\) job\.sourceGoalMigration = sourceGoalMigration/);
   assert.match(startBody, /const lineage = appendContinuationLineageEntry\(cwd, \{/);
+  assert.match(startBody, /sourceGoalMigrated: Boolean\(sourceGoalMigration && sourceGoalMigration\.migrated\)/);
+  assert.match(startBody, /sourceGoalMigrationError: sourceGoalMigration && \(sourceGoalMigration\.error \|\| sourceGoalMigration\.sourceFreezeError\)/);
   assert.match(startBody, /sourceArchived: Boolean\(sourceArchive && sourceArchive\.archived\)/);
   assert.match(startBody, /lineage,/);
 
   const publicJobBody = functionBody("publicContinuationJob");
+  assert.match(publicJobBody, /sourceGoalMigration: job\.sourceGoalMigration \|\| null/);
   assert.match(publicJobBody, /lineage: job\.lineage \|\| null/);
 });

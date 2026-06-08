@@ -5,6 +5,7 @@ const path = require("node:path");
 const { runSqliteJson } = require("./sqlite-cli");
 
 const MAX_GOAL_OBJECTIVE_CHARS = 4000;
+const CONTINUATION_GOAL_MIGRATABLE_STATUSES = new Set(["active", "blocked", "paused"]);
 
 function sqlString(value) {
   return `'${String(value ?? "").replace(/'/g, "''")}'`;
@@ -56,6 +57,40 @@ function publicThreadGoal(row = {}) {
     timeUsedSeconds: positiveInteger(row.time_used_seconds ?? row.timeUsedSeconds),
     createdAt: positiveInteger(row.created_at_ms ?? row.createdAt),
     updatedAt: positiveInteger(row.updated_at_ms ?? row.updatedAt),
+  };
+}
+
+function continuationGoalTokenBudget(goal) {
+  const budget = nullablePositiveInteger(goal && (goal.tokenBudget ?? goal.token_budget));
+  if (budget === null) return null;
+  const used = positiveInteger(goal && (goal.tokensUsed ?? goal.tokens_used));
+  const remaining = budget - used;
+  return remaining > 0 ? remaining : null;
+}
+
+function continuationGoalMigrationPlan(goal = {}) {
+  const sourceGoal = publicThreadGoal(goal);
+  if (!sourceGoal) {
+    return { migrate: false, reason: "no-goal" };
+  }
+  const sourceStatus = normalizeThreadGoalStatus(sourceGoal.status);
+  if (!CONTINUATION_GOAL_MIGRATABLE_STATUSES.has(sourceStatus)) {
+    return {
+      migrate: false,
+      reason: sourceStatus === "complete" ? "completed" : "status-not-migratable",
+      sourceStatus,
+    };
+  }
+  const targetStatus = sourceStatus === "active" ? "active" : "blocked";
+  return {
+    migrate: true,
+    reason: "migratable",
+    objective: sourceGoal.objective,
+    sourceStatus,
+    targetStatus,
+    tokenBudget: continuationGoalTokenBudget(sourceGoal),
+    sourceTokenBudget: nullablePositiveInteger(sourceGoal.tokenBudget),
+    sourceTokensUsed: positiveInteger(sourceGoal.tokensUsed),
   };
 }
 
@@ -163,6 +198,7 @@ WHERE thread_id IN (${ids.map(sqlString).join(",")});
 }
 
 module.exports = {
+  continuationGoalMigrationPlan,
   createThreadGoalService,
   normalizeThreadGoalStatus,
   publicThreadGoal,

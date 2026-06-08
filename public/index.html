@@ -142,6 +142,7 @@
           <div class="version-actions">
             <button id="appUpdateStatus" class="update-status hidden" type="button" aria-live="polite" title="Check for updates">v0.1.0</button>
             <button id="publicPrStatus" class="public-pr-status hidden" type="button" aria-live="polite" title="Check public pull requests">Public PR</button>
+            <button id="hardRefreshButton" class="hard-refresh-button" type="button" title="Hard refresh page shell" aria-label="Hard refresh page shell">硬刷新</button>
             <button id="sharedRestartButton" class="restart-button" type="button" title="Restart Mobile Web" aria-label="Restart Mobile Web">Restart</button>
           </div>
         </div>
@@ -232,8 +233,10 @@
         </label>
         <div class="composer-body">
           <div class="composer-controls">
-            <button id="composerCommandControl" class="composer-fast-toggle" type="button" aria-pressed="false" title="Fast off" aria-label="Fast off">
-              <span class="composer-fast-dot" aria-hidden="true"></span>
+            <button id="composerCommandControl" class="composer-fast-toggle" type="button" aria-pressed="false" title="Fast mode off" aria-label="Fast mode off">
+              <svg class="composer-fast-icon" aria-hidden="true" viewBox="0 0 16 16" focusable="false">
+                <path d="M9.1 1.25 3.75 8.2h3.1l-.95 6.55 5.35-6.95H8.15z"></path>
+              </svg>
             </button>
             <button id="composerModelControl" class="composer-control-card" type="button" aria-haspopup="listbox" aria-expanded="false">
               <span class="composer-chip-label">模型</span>
@@ -347,6 +350,12 @@
         <span>Token budget</span>
         <input id="goalTokenBudgetInput" type="number" min="1" step="1" inputmode="numeric" autocomplete="off" placeholder="Optional">
       </label>
+      <div id="goalDialogStatus" class="goal-panel-status hidden"></div>
+      <div id="goalStateActions" class="goal-state-actions hidden">
+        <button id="goalContinueButton" class="goal-action goal-action-primary" type="button">Continue</button>
+        <button id="goalPauseButton" class="goal-action" type="button">Pause</button>
+        <button id="goalClearButton" class="goal-action goal-action-danger" type="button">Cancel goal</button>
+      </div>
       <div class="goal-actions">
         <button id="goalCancelButton" class="goal-cancel" type="button">Cancel</button>
         <button id="goalSubmitButton" class="goal-submit" type="submit">Send</button>
@@ -384,6 +393,32 @@
       </div>
       <div id="filePreviewMeta" class="file-preview-meta"></div>
       <div id="filePreviewBody" class="file-preview-body">正在加载文件...</div>
+    </div>
+  </div>
+
+  <div id="mermaidPreviewDialog" class="mermaid-preview-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="mermaidPreviewTitle">
+    <div class="mermaid-preview-panel">
+      <div class="mermaid-preview-head">
+        <div>
+          <div id="mermaidPreviewTitle" class="mermaid-preview-title">Mermaid 图</div>
+          <div class="mermaid-preview-subtitle">适合手机和 iPad 的放大查看</div>
+        </div>
+        <div class="mermaid-preview-actions">
+          <button class="markdown-mermaid-tool" id="mermaidPreviewZoomOut" type="button" data-mermaid-action="zoom-out" aria-label="缩小 Mermaid 图" title="缩小">-</button>
+          <button class="markdown-mermaid-tool markdown-mermaid-tool-reset" id="mermaidPreviewZoomReset" type="button" data-mermaid-action="reset" aria-label="重置 Mermaid 图缩放" title="重置">100%</button>
+          <button class="markdown-mermaid-tool" id="mermaidPreviewZoomIn" type="button" data-mermaid-action="zoom-in" aria-label="放大 Mermaid 图" title="放大">+</button>
+          <button id="mermaidPreviewClose" class="icon-button" type="button" aria-label="关闭 Mermaid 预览" title="关闭">×</button>
+        </div>
+      </div>
+      <div id="mermaidPreviewBody" class="markdown-mermaid-viewer mermaid-preview-viewer" data-mermaid-viewer="preview">
+        <div class="markdown-mermaid-canvas" data-mermaid-canvas>
+          <div class="markdown-mermaid-loading">正在渲染 Mermaid 图...</div>
+        </div>
+      </div>
+      <details class="markdown-mermaid-source-details mermaid-preview-source">
+        <summary>查看 Mermaid 源码</summary>
+        <pre><code id="mermaidPreviewSource"></code></pre>
+      </details>
     </div>
   </div>
 

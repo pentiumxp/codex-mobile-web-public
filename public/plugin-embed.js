@@ -71,6 +71,9 @@
   }
 
   function routeFromState(state = {}, ui = {}) {
+    if (ui.mermaidPreviewOpen) {
+      return { kind: "modal", modal: "mermaidPreview", threadId: stringValue(state.currentThreadId) };
+    }
     if (ui.filePreviewOpen) {
       return { kind: "modal", modal: "filePreview", threadId: stringValue(state.currentThreadId) };
     }
@@ -111,7 +114,8 @@
   function canGoBack(state = {}, ui = {}) {
     if (ui.primaryPage) return false;
     return Boolean(
-      ui.filePreviewOpen
+      ui.mermaidPreviewOpen
+      || ui.filePreviewOpen
       || ui.createWorkspaceOpen
       || ui.updatePanelOpen
       || ui.settingsOpen

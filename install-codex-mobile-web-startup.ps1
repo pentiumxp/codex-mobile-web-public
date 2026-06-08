@@ -124,6 +124,7 @@ $settings = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
     -MultipleInstances IgnoreNew `
     -ExecutionTimeLimit ([TimeSpan]::Zero)
+$settings.Hidden = $true
 if ($RunAsSystem) {
     $principal = New-ScheduledTaskPrincipal `
         -UserId "SYSTEM" `

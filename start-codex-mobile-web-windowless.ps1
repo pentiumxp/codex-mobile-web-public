@@ -143,6 +143,9 @@ function Ensure-SharedProfileState {
         @{ Name = "state_5.sqlite"; Kind = "File" },
         @{ Name = "state_5.sqlite-wal"; Kind = "File" },
         @{ Name = "state_5.sqlite-shm"; Kind = "File" },
+        @{ Name = "goals_1.sqlite"; Kind = "File" },
+        @{ Name = "goals_1.sqlite-wal"; Kind = "File" },
+        @{ Name = "goals_1.sqlite-shm"; Kind = "File" },
         @{ Name = "session_index.jsonl"; Kind = "File" },
         @{ Name = "sessions"; Kind = "Directory" },
         @{ Name = "archived_sessions"; Kind = "Directory" }
@@ -209,6 +212,34 @@ if (-not [string]::IsNullOrWhiteSpace($env:CODEX_MOBILE_GIT_SAFE_DIRECTORIES)) {
     )
 }
 Add-GitSafeDirectoryEnv -Directories $configuredSafeDirs
+
+function Save-AndClearCodexBridgeEnvironment {
+    $saved = @{}
+    if (Test-Path Env:\CODEX_CLI_PATH) {
+        $saved["CODEX_CLI_PATH"] = $env:CODEX_CLI_PATH
+        Remove-Item Env:\CODEX_CLI_PATH -ErrorAction SilentlyContinue
+    }
+    Get-ChildItem Env:CODEX_MUX_* -ErrorAction SilentlyContinue | ForEach-Object {
+        $saved[$_.Name] = $_.Value
+        Remove-Item -LiteralPath ("Env:\{0}" -f $_.Name) -ErrorAction SilentlyContinue
+    }
+    return $saved
+}
+
+function Restore-CodexBridgeEnvironment {
+    param([hashtable]$Saved)
+
+    Remove-Item Env:\CODEX_CLI_PATH -ErrorAction SilentlyContinue
+    Get-ChildItem Env:CODEX_MUX_* -ErrorAction SilentlyContinue | ForEach-Object {
+        Remove-Item -LiteralPath ("Env:\{0}" -f $_.Name) -ErrorAction SilentlyContinue
+    }
+    if (-not $Saved) {
+        return
+    }
+    foreach ($name in $Saved.Keys) {
+        [Environment]::SetEnvironmentVariable($name, [string]$Saved[$name], "Process")
+    }
+}
 
 $runtimeRoot = if ($env:CODEX_MOBILE_RUNTIME_DIR) { $env:CODEX_MOBILE_RUNTIME_DIR } else { Join-Path $env:USERPROFILE ".codex-mobile-web" }
 New-Item -ItemType Directory -Force -Path $runtimeRoot | Out-Null
@@ -333,9 +364,7 @@ function Start-StandaloneMuxIfNeeded {
         throw "node.exe not found in PATH"
     }
 
-    $oldMuxStandalone = $env:CODEX_MUX_STANDALONE
-    $oldMuxKeepAlive = $env:CODEX_MUX_KEEP_ALIVE
-    $oldMuxCodexExe = $env:CODEX_MUX_CODEX_EXE
+    $oldBridgeEnvironment = Save-AndClearCodexBridgeEnvironment
     $oldCodeHome = $env:CODEX_HOME
     $oldRuntimeDir = $env:CODEX_MOBILE_RUNTIME_DIR
     try {
@@ -352,9 +381,7 @@ function Start-StandaloneMuxIfNeeded {
             -PassThru
         "[$(Get-Date -Format "yyyy-MM-dd HH:mm:ss zzz")] Started standalone mux PID $($proc.Id)" | Add-Content -LiteralPath $LogPath -Encoding Unicode
     } finally {
-        $env:CODEX_MUX_STANDALONE = $oldMuxStandalone
-        $env:CODEX_MUX_KEEP_ALIVE = $oldMuxKeepAlive
-        $env:CODEX_MUX_CODEX_EXE = $oldMuxCodexExe
+        Restore-CodexBridgeEnvironment -Saved $oldBridgeEnvironment
         $env:CODEX_HOME = $oldCodeHome
         $env:CODEX_MOBILE_RUNTIME_DIR = $oldRuntimeDir
     }

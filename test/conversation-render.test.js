@@ -8,6 +8,7 @@ const { test } = require("node:test");
 const root = path.resolve(__dirname, "..");
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 
 function functionBodyFrom(source, name) {
   const start = source.indexOf(`function ${name}(`);
@@ -65,9 +66,13 @@ function evaluatedInputContentRenderer() {
     "stripAttachmentSummaryLinePrefix",
     "parseAttachmentLine",
     "splitAttachmentSummaryText",
+    "normalizeFsPath",
+    "isCodexMobileUploadPath",
     "isLikelyAbsoluteLocalPath",
     "canRenderImageAttachment",
     "uploadFileUrl",
+    "localFilePreviewContentUrl",
+    "imageContentUrlForPath",
     "imageSourceForPart",
     "compactStructuredForSignature",
     "renderInputText",
@@ -80,6 +85,45 @@ function evaluatedInputContentRenderer() {
     "URLSearchParams",
     `const state = { key: "" };\nconst THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";\n${sources.join("\n")}\nreturn renderInputContent;`,
   )(URLSearchParams);
+}
+
+function evaluatedImageViewRenderer() {
+  const sources = [
+    "escapeHtml",
+    "shortPath",
+    "normalizeFsPath",
+    "isCodexMobileUploadPath",
+    "uploadFileUrl",
+    "authenticatedApiContentUrl",
+    "localFilePreviewContentUrl",
+    "imageContentUrlForPath",
+    "imageViewPath",
+    "imageViewUrl",
+    "imageViewContentUrl",
+    "renderImageView",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(
+    "URLSearchParams",
+    `const state = { key: "test-key", currentThreadId: "thread-id" };\n${sources.join("\n")}\nreturn renderImageView;`,
+  )(URLSearchParams);
+}
+
+function evaluatedConversationImageErrorHandler() {
+  const sources = [
+    "failedAppImageContainer",
+    "markFailedAppImage",
+    "handleConversationImageError",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`${sources.join("\n")}\nreturn handleConversationImageError;`)();
+}
+
+function evaluatedFailedImageScanner() {
+  const sources = [
+    "failedAppImageContainer",
+    "markFailedAppImage",
+    "scanFailedAppImages",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`${sources.join("\n")}\nreturn scanFailedAppImages;`)();
 }
 
 function evaluatedTokenUsageSummaryText() {
@@ -230,7 +274,7 @@ test("thread task card request prompts render only the original hash command in 
 
 test("user message text before upload summaries still renders jpg thumbnails", () => {
   const renderInputContent = evaluatedInputContentRenderer();
-  const uploadPath = "C:\\Users\\example\\.codex-mobile-web\\uploads\\2026-05-27\\thread-id\\1779850921578-IMG_5435.jpg";
+  const uploadPath = "/Users/example/.codex-mobile-web/uploads/2026-05-27/thread-id/1779850921578-IMG_5435.jpg";
   const html = renderInputContent([
     {
       type: "input_text",
@@ -243,6 +287,100 @@ test("user message text before upload summaries still renders jpg thumbnails", (
   assert.match(html, /\/api\/uploads\/file\?path=/);
   assert.match(html, /IMG_5435\.jpg/);
   assert.doesNotMatch(html, /Uploaded attachments:/);
+});
+
+test("imageView upload screenshots use the uploads route instead of file preview", () => {
+  const renderImageView = evaluatedImageViewRenderer();
+  const html = renderImageView({
+    type: "imageView",
+    path: "/Users/example/.codex-mobile-web/uploads/2026-06-08/thread-id/1780893354486-IMG_1618.jpg",
+  });
+
+  assert.match(html, /class="image-view"/);
+  assert.match(html, /\/api\/uploads\/file\?path=/);
+  assert.doesNotMatch(html, /\/api\/files\/preview\/content/);
+});
+
+test("failed conversation images collapse into a neutral fallback", () => {
+  const handleConversationImageError = evaluatedConversationImageErrorHandler();
+  const addedClasses = [];
+  const attributes = {};
+  const figure = {
+    classList: {
+      add(value) {
+        addedClasses.push(value);
+      },
+    },
+  };
+  const image = {
+    closest(selector) {
+      if (String(selector).includes(".input-image")) return figure;
+      return null;
+    },
+    setAttribute(name, value) {
+      attributes[name] = value;
+    },
+  };
+  const target = {
+    closest(selector) {
+      if (selector === "img") return image;
+      return null;
+    },
+  };
+
+  handleConversationImageError({ target });
+
+  assert.deepEqual(addedClasses, ["image-load-failed"]);
+  assert.equal(attributes["aria-hidden"], "true");
+  assert.match(appJs, /\$\("conversation"\)\.addEventListener\("error", handleConversationImageError, true\)/);
+  assert.match(functionBody("updateConversationHtml"), /scheduleFailedAppImageScan\(conversation/);
+  assert.match(appJs, /document\.addEventListener\("focusin", \(\) => \{[\s\S]*scheduleVisibleImageFailureScan\(\[0, 80, 240\]\);/);
+  assert.match(stylesCss, /\.input-image\.image-load-failed,[\s\S]*\.markdown-image\.image-load-failed,[\s\S]*\.image-view\.image-load-failed/);
+  assert.match(stylesCss, /\.input-image\.image-load-failed img,[\s\S]*display: none;/);
+  assert.match(stylesCss, /\.conversation img\.image-load-failed/);
+  assert.match(stylesCss, /\.attachment-chip\.image-load-failed \.attachment-thumb/);
+  assert.match(stylesCss, /content: "图片无法加载";/);
+});
+
+test("already-broken rendered images are proactively marked without a new error event", () => {
+  const scanFailedAppImages = evaluatedFailedImageScanner();
+  const addedClasses = [];
+  const attributes = {};
+  const container = {
+    classList: {
+      add(value) {
+        addedClasses.push(value);
+      },
+    },
+  };
+  const brokenImage = {
+    complete: true,
+    naturalWidth: 0,
+    closest(selector) {
+      if (selector === ".input-image, .image-view, .markdown-image, .attachment-chip, .file-preview-media, figure") return container;
+      return null;
+    },
+    setAttribute(name, value) {
+      attributes[name] = value;
+    },
+  };
+  const loadingImage = {
+    complete: false,
+    naturalWidth: 0,
+    closest() {
+      throw new Error("loading images should not be marked");
+    },
+  };
+  const rootNode = {
+    querySelectorAll(selector) {
+      assert.equal(selector, "img");
+      return [brokenImage, loadingImage];
+    },
+  };
+
+  assert.equal(scanFailedAppImages(rootNode), 1);
+  assert.deepEqual(addedClasses, ["image-load-failed"]);
+  assert.equal(attributes["aria-hidden"], "true");
 });
 
 test("raw app-server input image parts use object image urls", () => {

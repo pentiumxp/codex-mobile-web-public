@@ -99,6 +99,14 @@ test("bare data png base64 lines render as generated images", () => {
   assert.doesNotMatch(html, /<p>data:image/);
 });
 
+test("bare https URLs do not render as generated images", () => {
+  const html = renderer.renderMarkdown("https://github.com/MiniMax-AI/MiniMax-M2.7/issues/52");
+
+  assert.doesNotMatch(html, /class="markdown-image"/);
+  assert.doesNotMatch(html, /Generated image/);
+  assert.match(html, /<p><a href="https:\/\/github\.com\/MiniMax-AI\/MiniMax-M2\.7\/issues\/52" target="_blank" rel="noreferrer">https:\/\/github\.com\/MiniMax-AI\/MiniMax-M2\.7\/issues\/52<\/a><\/p>/);
+});
+
 test("markdown image renderer rejects unsafe data image formats", () => {
   const html = renderer.renderMarkdown("![bad](data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=)");
 

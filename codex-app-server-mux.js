@@ -167,6 +167,17 @@ function assertCommandAvailable(command, label) {
   }
 }
 
+function realCodexChildEnv() {
+  const env = Object.assign({}, process.env, { CODEX_HOME });
+  for (const key of Object.keys(env)) {
+    if (key === "CODEX_CLI_PATH" || key.startsWith("CODEX_MUX_")) {
+      delete env[key];
+    }
+  }
+  env.CODEX_HOME = CODEX_HOME;
+  return env;
+}
+
 function isTruthy(value) {
   return /^(1|true|yes|on)$/i.test(String(value || ""));
 }
@@ -654,6 +665,7 @@ function startChild() {
   assertCommandAvailable(CODEX_EXE, "Codex executable");
   child = spawn(CODEX_EXE, CODEX_ARGS, {
     cwd: APP_ROOT,
+    env: realCodexChildEnv(),
     windowsHide: true,
     stdio: ["pipe", "pipe", "pipe"],
   });
