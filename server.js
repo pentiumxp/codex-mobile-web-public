@@ -42,6 +42,7 @@ const {
   publicPullRequestApiUrl,
 } = require("./adapters/public-pull-request-service");
 const {
+  cacheGeneratedImageDataUrl,
   cacheGeneratedImageForItem,
   generatedImagePathForId,
   imageContentTypeForPath,
@@ -444,6 +445,7 @@ const LIVE_RATE_LIMIT_REFRESH_MIN_INTERVAL_MS = 10000;
 const latestRuntimeContextByPath = new Map();
 const latestItemTimestampsByPath = new Map();
 const latestTurnUsageSummariesByPath = new Map();
+const latestToolOutputImagesByPath = new Map();
 const recentStartedThreads = new Map();
 const threadDisplaySummaryCache = createThreadDisplaySummaryCache({
   ttlMs: THREAD_DISPLAY_SUMMARY_CACHE_TTL_MS,
@@ -1758,9 +1760,58 @@ function generatedImageContentUrl(cacheId) {
   return `/api/generated-images/file?id=${encodeURIComponent(cacheId || "")}`;
 }
 
+function imageViewInlineDataUrl(item) {
+  if (!item || typeof item !== "object") return "";
+  const candidates = [
+    item.url,
+    item.imageUrl,
+    item.image_url,
+    item.arguments && (item.arguments.url || item.arguments.imageUrl || item.arguments.image_url),
+    item.result && (item.result.url || item.result.imageUrl || item.result.image_url),
+  ];
+  for (const candidate of candidates) {
+    const value = candidate && typeof candidate === "object"
+      ? candidate.url || candidate.uri || candidate.href
+      : candidate;
+    if (typeof value === "string" && /^data:image\//i.test(value.trim())) return value.trim();
+  }
+  return "";
+}
+
+function removeInlineDataImageUrls(item) {
+  if (!item || typeof item !== "object") return item;
+  for (const key of ["url", "imageUrl", "image_url"]) {
+    if (typeof item[key] === "string" && /^data:image\//i.test(item[key])) delete item[key];
+  }
+  return item;
+}
+
+function applyGeneratedImageCacheResult(item, cached) {
+  if (!item || !cached) return item;
+  item.contentUrl = generatedImageContentUrl(cached.cacheId);
+  item.generatedImage = {
+    fileName: cached.fileName,
+    contentType: cached.contentType,
+    sizeBytes: cached.sizeBytes,
+  };
+  return item;
+}
+
 function attachGeneratedImageContent(item, options = {}) {
   if (!item || (item.type !== "imageView" && item.type !== "imageGeneration")) return item;
   if (item.contentUrl || item.content_url) return item;
+  const dataUrl = imageViewInlineDataUrl(item);
+  if (dataUrl) {
+    const cachedDataUrl = cacheGeneratedImageDataUrl(dataUrl, {
+      cacheRoot: GENERATED_IMAGE_ROOT,
+      threadId: options.threadId || "",
+      maxBytes: FILE_PREVIEW_MEDIA_MAX_BYTES,
+      contentTypes: FILE_PREVIEW_IMAGE_CONTENT_TYPES,
+    });
+    if (!cachedDataUrl) return item;
+    removeInlineDataImageUrls(item);
+    return applyGeneratedImageCacheResult(item, cachedDataUrl);
+  }
   const cached = cacheGeneratedImageForItem(item, {
     cacheRoot: GENERATED_IMAGE_ROOT,
     threadId: options.threadId || "",
@@ -1769,13 +1820,7 @@ function attachGeneratedImageContent(item, options = {}) {
     isDeniedPath: hasDeniedPreviewPathSegment,
   });
   if (!cached) return item;
-  item.contentUrl = generatedImageContentUrl(cached.cacheId);
-  item.generatedImage = {
-    fileName: cached.fileName,
-    contentType: cached.contentType,
-    sizeBytes: cached.sizeBytes,
-  };
-  return item;
+  return applyGeneratedImageCacheResult(item, cached);
 }
 
 function isBackupRolloutPath(value) {
@@ -2538,6 +2583,17 @@ function rememberTurnUsageSummaries(key, payload) {
   }
 }
 
+function rememberToolOutputImages(key, payload) {
+  latestToolOutputImagesByPath.set(key, {
+    cachedAt: Date.now(),
+    payload: payload || null,
+  });
+  while (latestToolOutputImagesByPath.size > RUNTIME_CONTEXT_CACHE_MAX) {
+    const firstKey = latestToolOutputImagesByPath.keys().next().value;
+    latestToolOutputImagesByPath.delete(firstKey);
+  }
+}
+
 function rolloutEntryTurnId(entry) {
   const payload = entry && entry.payload;
   return String((payload && (
@@ -2609,6 +2665,10 @@ function rolloutItemTimestampCandidateId(entry) {
 
 function itemTimestampCandidateId(item) {
   return String((item && (item.id || item.call_id || item.callId || item.item_id || item.itemId)) || "");
+}
+
+function visibleItemId(item) {
+  return String((item && (item.id || item.itemId || item.item_id)) || "").trim();
 }
 
 function itemTimestampMatchText(item) {
@@ -2765,6 +2825,218 @@ function readRolloutTurnUsageSummaries(rolloutPath, options = {}) {
   if (cacheKey) rememberTurnUsageSummaries(cacheKey, payload);
   if (targetKey) rememberTurnUsageSummaries(targetKey, payload);
   return payload;
+}
+
+function toolOutputImageUrlValue(part) {
+  if (!part || typeof part !== "object") return "";
+  const raw = part.url || part.image_url || part.imageUrl || part.uri || part.href || "";
+  const value = raw && typeof raw === "object" ? raw.url || raw.uri || raw.href : raw;
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function toolOutputImagePathValue(part) {
+  if (!part || typeof part !== "object") return "";
+  const candidates = [
+    part.path,
+    part.filePath,
+    part.file_path,
+    part.imagePath,
+    part.image_path,
+    part.savedPath,
+    part.saved_path,
+    part.sourcePath,
+    part.source_path,
+  ];
+  const found = candidates.find((value) => typeof value === "string" && value.trim());
+  return found ? found.trim() : "";
+}
+
+function isToolOutputImagePart(part) {
+  if (!part || typeof part !== "object") return false;
+  const type = String(part.type || "").replace(/[-_]/g, "").toLowerCase();
+  const url = toolOutputImageUrlValue(part);
+  if (/^data:image\//i.test(url)) return true;
+  return type === "image"
+    || type === "inputimage"
+    || type === "imageurl"
+    || type === "localimage"
+    || type === "imageview"
+    || Boolean(url && /image/i.test(type));
+}
+
+function parseToolOutputStructuredValue(value) {
+  if (typeof value !== "string") return value;
+  const text = value.trim();
+  if (!text || !/^[{\[]/.test(text)) return value;
+  try {
+    return JSON.parse(text);
+  } catch (_) {
+    return value;
+  }
+}
+
+function collectToolOutputImageCandidates(value, out = [], seen = new Set(), depth = 0) {
+  if (out.length >= 20 || value == null || depth > 6) return out;
+  const parsed = parseToolOutputStructuredValue(value);
+  if (typeof parsed === "string") {
+    const text = parsed.trim();
+    if (/^data:image\//i.test(text)) out.push({ url: text });
+    return out;
+  }
+  if (Array.isArray(parsed)) {
+    for (const entry of parsed) collectToolOutputImageCandidates(entry, out, seen, depth + 1);
+    return out;
+  }
+  if (typeof parsed !== "object" || seen.has(parsed)) return out;
+  seen.add(parsed);
+  if (isToolOutputImagePart(parsed)) {
+    const url = toolOutputImageUrlValue(parsed);
+    const imagePath = toolOutputImagePathValue(parsed);
+    if (url || imagePath) out.push({ url, path: imagePath });
+  }
+  for (const entry of Object.values(parsed)) collectToolOutputImageCandidates(entry, out, seen, depth + 1);
+  return out;
+}
+
+function toolOutputImageFingerprint(candidate) {
+  return crypto
+    .createHash("sha256")
+    .update(String(candidate && (candidate.url || candidate.path) || ""))
+    .digest("hex")
+    .slice(0, 16);
+}
+
+function toolOutputImageItemFromCandidate(entry, payload, candidate, index, options = {}) {
+  const fingerprint = toolOutputImageFingerprint(candidate);
+  const callId = String(payload && payload.call_id || "");
+  const id = `tool-output-image-${callId || "call"}-${index}-${fingerprint}`;
+  const imageItem = {
+    id,
+    type: "imageView",
+    callId,
+    source: "tool_output",
+    fileName: "view_image output",
+    label: "view_image output",
+    ...rolloutTimestampFields(entry),
+  };
+  if (candidate && candidate.path) imageItem.path = candidate.path;
+  if (candidate && candidate.url) imageItem.url = candidate.url;
+  attachGeneratedImageContent(imageItem, { threadId: options.threadId || "" });
+  const isInlineDataImage = candidate && typeof candidate.url === "string" && /^data:image\//i.test(candidate.url);
+  const isLocalImagePath = candidate && candidate.path;
+  if ((isInlineDataImage || isLocalImagePath) && !imageItem.contentUrl && !imageItem.content_url) return null;
+  return imageItem;
+}
+
+function cloneRolloutToolOutputImagePayload(payload) {
+  const byTurn = new Map();
+  const sourceByTurn = payload && payload.byTurn instanceof Map ? payload.byTurn : new Map();
+  for (const [turnId, items] of sourceByTurn.entries()) {
+    byTurn.set(turnId, Array.isArray(items) ? items.map((item) => Object.assign({}, item)) : []);
+  }
+  return {
+    byTurn,
+    unscoped: Array.isArray(payload && payload.unscoped)
+      ? payload.unscoped.map((item) => Object.assign({}, item))
+      : [],
+    scopedCount: Number(payload && payload.scopedCount) || 0,
+  };
+}
+
+function readRolloutToolOutputImageItems(rolloutPath, options = {}) {
+  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) {
+    return { byTurn: new Map(), unscoped: [], scopedCount: 0 };
+  }
+  let cacheKey = "";
+  try {
+    const stat = fs.statSync(rolloutPath);
+    cacheKey = runtimeContextCacheKey(rolloutPath, stat);
+    const cached = latestToolOutputImagesByPath.get(cacheKey);
+    if (cached && Date.now() - cached.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS) {
+      return cloneRolloutToolOutputImagePayload(cached.payload);
+    }
+  } catch (_) {
+    return { byTurn: new Map(), unscoped: [], scopedCount: 0 };
+  }
+
+  const text = readRolloutRuntimeScanText(rolloutPath) || readRolloutTail(rolloutPath);
+  const byTurn = new Map();
+  const unscoped = [];
+  const seenIds = new Set();
+  const seenImageKeys = new Set();
+  let scopedCount = 0;
+  let currentTurnId = "";
+  for (const line of text.split(/\r?\n/)) {
+    if (!line || !line.trim()) continue;
+    const entry = parseJsonLine(line);
+    if (!entry || !entry.type) continue;
+    const payload = entry.payload || {};
+    const explicitTurnId = rolloutEntryTurnId(entry);
+    if (entry.type === "turn_context" && explicitTurnId) currentTurnId = explicitTurnId;
+    if (entry.type === "event_msg" && payload.type === "task_started" && explicitTurnId) currentTurnId = explicitTurnId;
+    if (entry.type !== "response_item" || !/^(function_call_output|custom_tool_call_output)$/.test(String(payload.type || ""))) continue;
+    const candidates = collectToolOutputImageCandidates(payload.output);
+    if (!candidates.length) continue;
+    const turnId = explicitTurnId || currentTurnId;
+    const items = candidates
+      .filter((candidate) => {
+        const key = `${String(payload.call_id || "")}:${toolOutputImageFingerprint(candidate)}`;
+        if (seenImageKeys.has(key)) return false;
+        seenImageKeys.add(key);
+        return true;
+      })
+      .map((candidate, index) => toolOutputImageItemFromCandidate(entry, payload, candidate, index, options))
+      .filter(Boolean)
+      .filter((item) => {
+        const id = visibleItemId(item);
+        if (!id || seenIds.has(id)) return false;
+        seenIds.add(id);
+        return true;
+      });
+    if (!items.length) continue;
+    if (turnId) {
+      if (!byTurn.has(turnId)) byTurn.set(turnId, []);
+      byTurn.get(turnId).push(...items);
+      scopedCount += items.length;
+    } else {
+      unscoped.push(...items);
+    }
+  }
+  const payload = { byTurn, unscoped, scopedCount };
+  if (cacheKey) rememberToolOutputImages(cacheKey, payload);
+  return cloneRolloutToolOutputImagePayload(payload);
+}
+
+function appendRolloutToolOutputImagesToThread(thread) {
+  if (!thread || typeof thread !== "object" || !Array.isArray(thread.turns) || !thread.turns.length) return thread;
+  const rolloutPath = rolloutPathForThread(thread);
+  if (!rolloutPath) return thread;
+  const payload = readRolloutToolOutputImageItems(rolloutPath, {
+    threadId: thread.id || thread.threadId || "",
+  });
+  if (!payload) return thread;
+  const latestIndex = thread.turns.length - 1;
+  thread.turns.forEach((turn, index) => {
+    if (!turn || !Array.isArray(turn.items)) return;
+    const turnId = String(turn.id || turn.turnId || "").trim();
+    let imageItems = turnId && payload.byTurn instanceof Map ? payload.byTurn.get(turnId) : null;
+    if ((!imageItems || !imageItems.length)
+      && index === latestIndex
+      && payload.scopedCount === 0
+      && Array.isArray(payload.unscoped)
+      && payload.unscoped.length) {
+      imageItems = payload.unscoped;
+    }
+    if (!Array.isArray(imageItems) || !imageItems.length) return;
+    const existingIds = new Set(turn.items.map(visibleItemId).filter(Boolean));
+    for (const item of imageItems) {
+      const id = visibleItemId(item);
+      if (!id || existingIds.has(id)) continue;
+      turn.items.push(Object.assign({}, item));
+      existingIds.add(id);
+    }
+  });
+  return thread;
 }
 
 function turnCompletionUsageSummary(threadId, turnId) {
@@ -3617,6 +3889,7 @@ function compactThread(thread, options = {}) {
     }
     pendingSteerEchoStore.injectIntoThread(out);
     enrichThreadItemTimestampsFromRollout(out);
+    appendRolloutToolOutputImagesToThread(out);
     attachTurnUsageSummaries(out, readRolloutTurnUsageSummaries(rolloutPath, {
       targetTurnIds: out.turns.map((turn) => turn && turn.id).filter(Boolean),
     }), {

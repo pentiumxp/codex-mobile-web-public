@@ -9229,7 +9229,7 @@ function renderImageView(item) {
   const contentUrl = imageViewContentUrl(item);
   const url = imageViewUrl(item);
   const src = contentUrl ? authenticatedApiContentUrl(contentUrl) : (filePath ? imageContentUrlForPath(filePath) : url);
-  const label = shortPath(filePath || url || item.id || "image");
+  const label = shortPath(filePath || item.label || item.fileName || item.file_name || item.caption || url || item.id || "image");
   if (!src) return renderStructuredBlock(item, "Image");
   return `<figure class="image-view">
     <img src="${escapeHtml(src)}" alt="${escapeHtml(label)}" loading="lazy">

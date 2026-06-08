@@ -301,6 +301,20 @@ test("imageView upload screenshots use the uploads route instead of file preview
   assert.doesNotMatch(html, /\/api\/files\/preview\/content/);
 });
 
+test("generated image content urls render bounded image cards", () => {
+  const renderImageView = evaluatedImageViewRenderer();
+  const html = renderImageView({
+    type: "imageView",
+    contentUrl: "/api/generated-images/file?id=thread%2Ftool-output.png",
+    fileName: "tool-output.png",
+  });
+
+  assert.match(html, /class="image-view"/);
+  assert.match(html, /<img src="\/api\/generated-images\/file\?id=thread%2Ftool-output\.png"/);
+  assert.match(html, /<figcaption>tool-output\.png<\/figcaption>/);
+  assert.doesNotMatch(html, /\/api\/files\/preview\/content/);
+});
+
 test("failed conversation images collapse into a neutral fallback", () => {
   const handleConversationImageError = evaluatedConversationImageErrorHandler();
   const addedClasses = [];
