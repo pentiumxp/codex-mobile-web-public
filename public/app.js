@@ -2246,7 +2246,7 @@ async function handleSharedRestartClick() {
 }
 
 function serverBuildIdFromConfig(config) {
-  return String(config && (config.clientBuildId || config.shellCacheName || config.buildId || config.version) || "").trim();
+  return String(config && (config.clientBuildId || config.shellCacheName || config.buildId) || "").trim();
 }
 
 function shouldPromptForServerBuildChange(serverBuildId, clientBuildId) {

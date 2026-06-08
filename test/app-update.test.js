@@ -38,10 +38,15 @@ test("self-update UI explains supervisor-dependent restart", () => {
 });
 
 test("page prompts for refresh when server client build changes", () => {
-  assert.match(serverJs, /function clientBuildId\(\)/);
-  assert.match(serverJs, /clientBuildId:\s*clientBuildId\(\)/);
-  assert.match(serverJs, /shellCacheName:\s*STARTUP_SHELL_CACHE_NAME/);
-  assert.match(serverJs, /STARTUP_APP_SHELL_BUILD_ID = appShellBuildId\(STARTUP_SHELL_CACHE_NAME\)/);
+  assert.match(serverJs, /function clientBuildId\(/);
+  assert.match(serverJs, /function currentPublicBuildConfig\(\)/);
+  assert.match(serverJs, /const shellCacheName = readServiceWorkerCacheName\(\);/);
+  assert.match(serverJs, /const buildId = appShellBuildId\(shellCacheName\);/);
+  assert.match(serverJs, /clientBuildId:\s*clientBuildId\(shellCacheName, buildId\)/);
+  assert.match(serverJs, /const buildConfig = currentPublicBuildConfig\(\);/);
+  assert.match(serverJs, /buildId:\s*buildConfig\.buildId/);
+  assert.match(serverJs, /clientBuildId:\s*buildConfig\.clientBuildId/);
+  assert.match(serverJs, /shellCacheName:\s*buildConfig\.shellCacheName/);
   assert.match(indexHtml, /id="pageRefreshPrompt"/);
   assert.match(appJs, /const PAGE_SHELL_ASSETS = Object\.freeze\(\[/);
   assert.match(appJs, /"\/styles\.css"/);
