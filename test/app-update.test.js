@@ -63,13 +63,20 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(serverJs, /"viewport-metrics\.js"/);
   assert.match(serverJs, /"conversation-scroll\.js"/);
   assert.match(serverJs, /"build-refresh-policy\.js"/);
+  assert.match(indexHtml, /id="hardRefreshButton"/);
   assert.match(appJs, /function checkPageRefreshAvailability\(/);
   assert.match(appJs, /function refreshPageForNewBuild\(/);
+  assert.match(appJs, /function renderHardRefreshButton\(/);
+  assert.match(appJs, /function handleHardRefreshClick\(/);
   assert.match(appJs, /const buildRefreshPolicy = window\.CodexBuildRefreshPolicy/);
   assert.match(appJs, /function shouldPromptForServerBuildChange\(/);
   assert.match(appJs, /function rememberRateLimitsFromConfig\(config\)/);
   assert.match(appJs, /function preparePageShellAssets\(config, options = \{\}\)/);
+  assert.match(appJs, /function clearAllShellCaches\(\)/);
+  assert.match(appJs, /function resetPageShellServiceWorker\(\)/);
+  assert.match(appJs, /function pageReloadUrlWithBust\(\)/);
   assert.match(appJs, /rememberRateLimitsFromConfig\(config\);[\s\S]*await preparePageShellAssets\(config, \{ populateCache: true \}\)/);
+  assert.match(functionBody(appJs, "refreshPageForNewBuild"), /await clearAllShellCaches\(\);[\s\S]*await preparePageShellAssets\(config, \{ populateCache: true \}\);[\s\S]*await resetPageShellServiceWorker\(\);[\s\S]*window\.location\.replace\(pageReloadUrlWithBust\(\)\);/);
   assert.doesNotMatch(functionBody(appJs, "checkPageRefreshAvailability"), /preparePageShellAssets\(config, \{ populateCache: true \}\)/);
   assert.match(functionBody(appJs, "initializePageBuildState"), /shouldPromptForServerBuildChange\(currentServerBuildId, state\.serverBuildId\)/);
   assert.match(functionBody(appJs, "checkPageRefreshAvailability"), /const serverBuildNeedsRefresh = serverBuildChanged && shouldPromptForServerBuildChange\(nextBuildId, state\.serverBuildId\)/);
@@ -80,10 +87,14 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(appJs, /cache:\s*"no-store"/);
   assert.match(appJs, /function pruneOldShellCaches\(expectedCacheName\)/);
   assert.match(appJs, /key !== expectedCacheName/);
-  assert.match(appJs, /window\.location\.reload\(\)/);
+  assert.match(appJs, /window\.location\.replace\(pageReloadUrlWithBust\(\)\)/);
+  assert.match(functionBody(appJs, "renderPageRefreshPrompt"), /renderHardRefreshButton\(\)/);
+  assert.match(functionBody(appJs, "handleHardRefreshClick"), /state\.pageRefreshPreparedConfig = null;[\s\S]*state\.pageRefreshReason = "build";[\s\S]*state\.pageRefreshAvailable = true;[\s\S]*await refreshPageForNewBuild\(\);/);
+  assert.match(appJs, /hardRefreshButton"\)\.addEventListener\("click", \(\) => handleHardRefreshClick\(\)\.catch\(showError\)\)/);
   assert.match(appJs, /addEventListener\("click", refreshPageForNewBuild\)/);
   assert.doesNotMatch(stylesCss, /html\.embed-hermes #pageRefreshPrompt/);
   assert.match(stylesCss, /\.page-refresh-prompt/);
+  assert.match(stylesCss, /\.hard-refresh-button/);
 });
 
 test("page refresh prompt also handles server restart reconnects", () => {
