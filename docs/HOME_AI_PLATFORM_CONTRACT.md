@@ -34,7 +34,7 @@ behavior, or cross-plugin reference behavior:
 | --- | --- |
 | `plugin_id` | `codex-mobile` |
 | `workspace_path_windows` | `C:\Users\xuxin\Documents\codex-mobile-web` |
-| `current_branch_snapshot` | `main` with local commits through `ab5819c` before this context commit |
+| `current_branch_snapshot` | `main` with local commits through `89cda66` before this production-evidence update |
 | `production_source_path_macos` | `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web` |
 | `production_data_root_macos` | `/Users/xuxin/.codex-mobile-web` |
 | `windows_dev_base_url` | `http://127.0.0.1:8787` |
@@ -114,19 +114,20 @@ Minimum closure for Codex Mobile production changes:
 
 ## Latest Production Evidence
 
-2026-06-08 Mac production deployment:
+2026-06-09 Mac production deployment:
 
 - Production source path:
   `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
 - LaunchDaemon: `system/com.hermesmobile.plugin.codex-mobile`.
 - Loopback production URL: `http://127.0.0.1:8787`.
-- Current verified shell after Public baseline plus Mac hotfix deployment:
-  `0.1.11|codex-mobile-shell-v224`.
+- Current verified shell after Hermes embed recovery deployment:
+  `0.1.11|codex-mobile-shell-v225`.
 - Backup path:
-  `/Users/hermes-host/HermesMobile/backups/deploy/20260608T153157Z-plugin-codex-mobile-web-codex-mobile-public-v222-mac-hotfix-v224`.
-- Production smoke confirmed `/api/public-config`, current account quota
-  projection, Fast lightning icon assets, and Public GitHub link preview
-  service/UI presence.
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260608T163812Z-plugin-codex-mobile-web-codex-mobile-embed-recovery-v225`.
+- Production smoke confirmed `/api/public-config`,
+  `codex-mobile-shell-v225` in `/app.js` and `/sw.js`, plugin manifest
+  `plugin_id=codex-mobile`, embed event-recovery thread-list guard, and
+  optimistic user-message merge support.
 
 ## Open Gaps
 

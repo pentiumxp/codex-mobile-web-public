@@ -772,3 +772,73 @@ The previous full handoff was archived and should be opened only when old proven
   cookie, password, or auth-file contents were recorded.
 - Production deployment still has not been performed for the image projection
   fix or any newly committed dev changes in this turn.
+
+## 2026-06-09 Hermes Embed Recovery Refresh v225
+
+- User reported two production regressions in the Hermes embedded Codex plugin:
+  - the Reconnect banner was hidden, but the thread list still visibly
+    refreshed every few seconds;
+  - after sending a message, the submitted user message often appeared twice
+    briefly, then one copy disappeared after a later refresh.
+- Diagnosis:
+  - In Hermes embed mode, SSE error recovery still called
+    `loadThreads({ silent: true })` on every fallback poll. Because the event
+    stream can remain non-open in the iframe path, this silently re-rendered
+    the already-loaded thread list every poll cycle.
+  - User-message merge logic only treated `type:"text"` parts as comparable
+    text. App-server/user input commonly returns `input_text`, so a local
+    `local-user-*` item or server `mux-user-*` pending echo could fail to match
+    the real userMessage on the first merge.
+- Implemented:
+  - `public/app.js` now routes event recovery thread-list refresh through
+    `refreshThreadListDuringEventRecovery()`. In Hermes embed mode it skips
+    list refresh once a list is already loaded, while still refreshing status
+    and the current thread.
+  - User message comparison now understands `input_text`, string content, and
+    bounded image/path references. Optimistic `local-user-*`,
+    `mux-user-*`, or `mobilePendingSubmission` messages can collapse into a
+    matching real userMessage by normalized text.
+  - Shell advanced to `0.1.11|codex-mobile-shell-v225`.
+  - `docs/HOME_AI_PLATFORM_CONTRACT.md` now declares Mac DEV runtime
+    prerequisites and the checked `ios:pwa:visual` harness command.
+- Validation:
+  - Focused checks passed:
+    `node --check public/app.js public/sw.js`;
+    `node --test test/app-update.test.js test/conversation-render.test.js
+    test/mobile-viewport.test.js test/thread-goal-service.test.js
+    test/thread-task-card-route.test.js`.
+  - `npm run check` passed.
+  - `npm test` passed with 399 tests.
+  - `git diff --check` passed.
+  - Home AI platform contract check passed:
+    `node scripts/plugin-workspace-platform-contract-check.js --plugin
+    codex-mobile --json`.
+- Production deployment:
+  - Commit deployed: `89cda66`.
+  - Shared deploy command used Home AI central Mac deploy script with
+    `--plugin codex-mobile-web`, source
+    `/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web`, restart
+    label `com.hermesmobile.plugin.codex-mobile`, health URL
+    `http://127.0.0.1:8787/api/public-config`, and reason
+    `codex-mobile-embed-recovery-v225`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260608T163812Z-plugin-codex-mobile-web-codex-mobile-embed-recovery-v225`.
+  - LaunchDaemon validation passed and `/api/public-config` reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v225` and
+    `shellCacheName=codex-mobile-shell-v225`.
+  - Production `npm run check` passed in
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Production static smoke confirmed `/app.js` and `/sw.js` serve v225,
+    `/api/v1/hermes/plugin/manifest` returns `codex-mobile`, and `/app.js`
+    contains the event-recovery list guard and optimistic user-message merge
+    logic.
+- Visual toolchain status:
+  - Center live debug server was used per contract and restarted at
+    `http://127.0.0.1:19073/` with WDA MJPEG ports `8101` / `9100`.
+  - `npm run ios:pwa:visual -- --scenario embedded-plugin-shell --plugin-id
+    codex-mobile --debug-url http://127.0.0.1:19073/ --app-url
+    http://127.0.0.1:8797/?source=pwa` could not produce a valid plugin-shell
+    assertion because the Simulator PWA was unauthenticated (`authenticated:
+    false`, app hidden). The harness failure was therefore a Home AI PWA
+    session/auth precondition issue, not a Codex assertion failure.
+  - The temporary live debug server started for this validation was stopped.
