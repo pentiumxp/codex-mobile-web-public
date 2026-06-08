@@ -143,3 +143,22 @@ test("code blocks can receive app copy button hooks", () => {
   assert.match(html, /<span class="markdown-code-lang">js<\/span><button data-copy-key="copy-key" class="markdown-copy-button">复制<\/button>/);
   assert.match(html, /<pre><code>console\.log\(1\)<\/code><\/pre>/);
 });
+
+test("text code blocks can preview markdown tables for chat rendering", () => {
+  const html = renderer.renderMarkdown("```text\n角色 | 做什么\n--- | ---\nUser | 输入目标\nTool | 执行动作\n```", {
+    fencedTableMode: "preview",
+  });
+
+  assert.match(html, /class="markdown-code-table-preview"/);
+  assert.match(html, /class="markdown-table-wrap"/);
+  assert.match(html, /<th>角色<\/th>/);
+  assert.match(html, /<td>输入目标<\/td>/);
+  assert.match(html, /class="markdown-code-table-source-details"/);
+});
+
+test("text code blocks stay raw without preview mode", () => {
+  const html = renderer.renderMarkdown("```text\n角色 | 做什么\n--- | ---\nUser | 输入目标\n```");
+
+  assert.doesNotMatch(html, /class="markdown-code-table-preview"/);
+  assert.match(html, /<pre><code>角色 \| 做什么/);
+});

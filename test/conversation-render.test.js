@@ -144,6 +144,7 @@ function evaluatedTurnUsageSummaryRenderer() {
     "tokenUsageSummaryText",
     "formatUsagePercent",
     "contextRiskLabel",
+    "renderUsageChip",
     "renderUsageMetric",
     "renderTurnUsageSummary",
   ].map((name) => functionSourceFrom(appJs, name));
@@ -208,12 +209,36 @@ test("agent markdown can render uploaded image summaries as thumbnails", () => {
   assert.match(appJs, /function renderMarkdownWithAttachmentSummary\(value\)/);
   assert.match(functionBody("renderMarkdownWithAttachmentSummary"), /splitAttachmentSummaryText\(value \|\| ""\)/);
   assert.match(functionBody("renderMarkdownWithAttachmentSummary"), /renderAttachmentSummary\(split\.attachments\)/);
+  assert.match(functionBody("renderMarkdownWithAttachmentSummary"), /fencedTableMode: "preview"/);
   assert.match(functionBody("splitAttachmentSummaryText"), /attachmentSummaryMarkerMatch/);
   assert.match(functionBody("splitAttachmentSummaryText"), /stripAttachmentSummaryLinePrefix/);
   assert.match(functionBody("splitAttachmentSummaryText"), /const visibleText = \[before, after\]/);
   assert.match(functionBody("renderAttachmentSummary"), /canRenderImageAttachment/);
   assert.match(functionBody("renderAttachmentSummary"), /renderInputImage\(\{ path: attachment\.path \}, attachment, index\)/);
   assert.match(functionBody("renderItemBody"), /item\.type === "plan"[\s\S]*renderMarkdownWithAttachmentSummary\(item\.text \|\| ""\)/);
+});
+
+test("command output renders markdown table previews when exec output contains a markdown document", () => {
+  assert.match(appJs, /function commandOutputBody\(/);
+  assert.match(functionBody("commandOutputBody"), /const marker = "\\nOutput:\\n";/);
+  assert.match(functionBody("commandOutputBody"), /return text\.slice\(markerIndex \+ marker\.length\)\.trim\(\);/);
+  assert.match(appJs, /function containsMarkdownTable\(/);
+  assert.match(functionBody("containsMarkdownTable"), /isMarkdownTableSeparatorLine\(lines\[index \+ 1\]\)/);
+  assert.match(functionBody("commandOutputMarkdownPreview"), /stripCommandOutputLineNumbers\(commandOutputBody\(value\)\)/);
+  assert.match(functionBody("commandOutputMarkdownPreview"), /if \(!containsMarkdownTable\(body\)\) return "";/);
+  assert.match(functionBody("renderOutputBlock"), /const markdownPreview = commandOutputMarkdownPreview\(outputText, item\);/);
+  assert.match(appJs, /class="command-output-markdown-preview"/);
+});
+
+test("command output strips numbered markdown lines before rendering table previews", () => {
+  assert.match(appJs, /function stripCommandOutputLineNumbers\(/);
+  assert.match(functionBody("stripCommandOutputLineNumbers"), /const numberedCount = lines\.filter\(\(line\) => \/\^\\s\*\\d\+\\t\/\.test\(line\)\)\.length;/);
+  assert.ok(functionBody("stripCommandOutputLineNumbers").includes('return lines.map((line) => line.replace(/^\\s*\\d+\\t/, "")).join("\\n");'));
+});
+
+test("plain command output stays raw when no markdown table is present", () => {
+  assert.match(functionBody("commandOutputMarkdownPreview"), /if \(!value \|\| item\.type !== "commandExecution"\) return "";/);
+  assert.match(functionBody("commandOutputMarkdownPreview"), /if \(!containsMarkdownTable\(body\)\) return "";/);
 });
 
 test("uploaded image summaries parse CRLF and markdown blockquote references", () => {
