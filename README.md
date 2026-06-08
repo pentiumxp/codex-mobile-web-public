@@ -666,6 +666,8 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v218 合并 public PR #48，新增移动端 Mermaid 图预览。Markdown 中的 ```mermaid 代码块会渲染为可缩放图表，手机和 iPad 可打开全屏预览、放大/缩小/重置，并保留可展开的 Mermaid 源码；Hermes 嵌入模式也把 Mermaid 预览作为可返回的 modal 状态处理。前端同时增强硬刷新：侧栏提供“硬刷新”按钮，刷新时会清理 `codex-mobile-shell-*` 缓存、重新注册 service worker，并用 cache-bust URL 重新加载页面。PWA shell cache 升级到 `codex-mobile-shell-v218`，Mermaid runtime 以 public-safe 的同源 `public/vendor/mermaid.min.js` lazy-load 方式随仓库发布。本次 public 发布只包含公开源码、文档、测试和 vendored 前端依赖；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
+
 - 中文说明：v216 同步 public PR #46/#47 到 private。刷新提示现在只比较真实 app-shell build 信息，不再把普通 `version` 当作客户端 build id；`/api/public-config` 每次请求都会读取当前 shell build，避免旧启动快照和磁盘静态资源不一致时反复提示刷新。Composer 左侧 Fast 开关从红绿状态点改为闪电图标按钮，开启态用高亮闪电显示，文案统一为 `Fast mode on/off`。PWA shell cache 升级到 `codex-mobile-shell-v216`，更新后需要重启 8787 Node listener 并刷新客户端。
 - 中文说明：v215 澄清目标弹窗里的 token 口径。目标状态条现在显示 `budget tokens`，表示 Codex app-server 在 `thread_goals.tokens_used` 中维护的目标预算计数，通常接近非 cached input 加输出等预算消耗口径；它不是 rollout 原始 `totalTokens` 总和，也不是完整上下文窗口 token。PWA shell cache 升级到 `codex-mobile-shell-v215`，更新后需要重启 8787 Node listener 并刷新客户端。
 - 中文说明：v214 扩展 `/g` 目标弹窗。当前线程已有未完成目标时，重新输入 `/g` 会显示目标状态和动作区；Continue 会把 paused/blocked 目标恢复为 active，Pause 映射为 app-server 的 blocked 状态，Cancel goal 会通过官方 `thread/goal/clear` 取消目标，Save 继续通过 `thread/goal/set` 修改目标内容或 token budget。PWA shell cache 升级到 `codex-mobile-shell-v214`，更新后需要重启 8787 Node listener 并刷新客户端。
