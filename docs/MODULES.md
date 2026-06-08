@@ -4,7 +4,7 @@
 
 | File | Responsibility | Notes |
 | --- | --- | --- |
-| `server.js` | Main HTTP server, app-server client, auth, routes, thread detail compaction, target-turn Usage summary backfill from rollout scans, uploads, continuation jobs, Web Push, update/restart endpoints, thread visibility filtering including migrated Windows-cwd history on macOS, rollout-session fallback time/status inference, local-file preview roots, app-server thread goal set/action/list/detail decoration, inherited runtime model/effort application, and server-side cross-thread task-card draft materialization from completed turns/thread-detail reads | Treat as composition glue. Extract reusable logic instead of expanding large inline blocks. |
+| `server.js` | Main HTTP server, app-server client, auth, routes, thread detail compaction, target-turn Usage summary backfill from rollout scans, uploads, continuation jobs, Web Push, update/restart endpoints, thread visibility filtering including migrated Windows-cwd history on macOS, rollout-session fallback time/status inference, local-file preview roots, authenticated GitHub link-preview route, app-server thread goal set/action/list/detail decoration, inherited runtime model/effort application, and server-side cross-thread task-card draft materialization from completed turns/thread-detail reads | Treat as composition glue. Extract reusable logic instead of expanding large inline blocks. |
 | `codex-app-server-mux.js` | Shared Desktop/Mobile app-server bridge, endpoint publication, TCP server, app-server notification replay, approval proxying | Stdout is protocol data for Desktop; diagnostics must go to mux log. |
 | `codex-app-server-mux-shim.cs` | Windows `.exe` shim for Desktop `CODEX_CLI_PATH` | Rebuild/relaunch Desktop through the shared launcher after changes. Shim-spawned Node must use `CREATE_NO_WINDOW` and hidden startup flags so Desktop bridge helpers never open a console. |
 | `start-codex-mobile-web*.ps1/.vbs` | Windows startup wrappers and hidden scheduled-task startup | User-logon task is preferred when WSL access is needed; plugin HTTPS base URL, Hermes frame-origin settings, active Codex profile resolution, profile auth/config backup without replacement, and non-default profile shared-state hardlink/junction setup must be preserved here for scheduled deployments. |
@@ -26,6 +26,7 @@
 | `adapters/thread-goal-service.js` | Read-only `<CODEX_HOME>\goals_1.sqlite` goal lookup, status normalization, public thread goal shape, list/detail decoration, and pure continuation-goal migration planning. |
 | `adapters/mobile-archive-index-service.js` | Runtime JSON archive tombstone index for Mobile-hidden thread ids, used when recovered/old-profile rows cannot be reliably hidden through app-server or SQLite state. |
 | `adapters/public-pull-request-service.js` | Public GitHub pull request status normalization for prompt-only public PR checks. |
+| `adapters/github-link-preview-service.js` | GitHub repository/issue/pull/commit URL parsing, REST API URL construction, and bounded preview payload normalization. |
 | `adapters/push-notification-service.js` | Web Push turn tracking, sub-agent suppression classification, completed-turn notification thread-title resolution, and the bounded app-server display-summary cache used before SQLite fallback. |
 | `adapters/shared-chain-restart-service.js` | Authenticated restart endpoint orchestration, including Windows hidden shared-chain restarts and macOS LaunchAgent `kickstart` / one-shot fallback policy. |
 | `adapters/generated-image-cache-service.js` | Caches app-server `imageView` screenshot files and `imageGeneration.savedPath` PNGs into runtime-owned generated-image storage before browser rendering. |
@@ -50,7 +51,7 @@ Add new service modules when logic has independent inputs/outputs, state rules, 
 | `public/api-client.js` | Authenticated fetch helper. |
 | `public/runtime-settings.js` | Model/effort/permission option normalization and labels. |
 | `public/draft-store.js` | Browser-local draft persistence, runtime-only next-turn model/effort/permission draft state, and resumable attachment draft data. |
-| `public/markdown-renderer.js` | Markdown rendering rules for conversation/source text. |
+| `public/markdown-renderer.js` | Markdown rendering rules for conversation/source text, including standalone GitHub link preview shells and local-file preview links. |
 | `public/viewport-metrics.js` | Visual viewport and keyboard-shrink helpers. |
 | `public/conversation-scroll.js` | Scroll position and bottom-follow helpers. |
 | `public/image-compressor.js` | Browser-side image compression before upload. |
@@ -80,7 +81,7 @@ Add new service modules when logic has independent inputs/outputs, state rules, 
 | Push | `test/push-notification-service.test.js` |
 | runtime settings | `test/runtime-settings.test.js`, `test/composer-quota.test.js`, `test/new-thread-route.test.js`, `test/thread-task-card-route.test.js` |
 | Codex profile switching | `test/codex-profile-service.test.js`, `test/codex-profile-ui.test.js`, `test/manual-restart-ui.test.js`, `test/mobile-viewport.test.js`, `test/new-thread-ui.test.js`; include safe account display, active profile persistence, fixed-endpoint switch disablement, browser quota cache clearing, account-scoped quota fallback, explicit `profileId` / `codexHome` restart arguments, windowless auth/config preservation, non-default profile shared-state link list, and `docs/MULTI_ACCOUNT_CODEX_CLI.md` regression coverage |
-| scroll and markdown | `test/conversation-scroll.test.js`, `test/turn-scroll-controls.test.js`, `test/markdown-render.test.js`, `test/conversation-render.test.js`, `test/mobile-viewport.test.js`; include thread-detail older-history top pagination, scroll-position preservation after prepending turns, operational-turn final-receipt deferred rendering, and long final-receipt start positioning |
+| scroll, markdown, and link previews | `test/conversation-scroll.test.js`, `test/turn-scroll-controls.test.js`, `test/markdown-render.test.js`, `test/github-link-preview-service.test.js`, `test/github-link-preview-ui.test.js`, `test/conversation-render.test.js`, `test/mobile-viewport.test.js`; include thread-detail older-history top pagination, scroll-position preservation after prepending turns, operational-turn final-receipt deferred rendering, long final-receipt start positioning, and GitHub preview URL parsing/render hydration |
 
 Use focused tests first for local iteration, then run `npm.cmd test`, `npm.cmd run check`, `npm.cmd run check:macos`, and `git diff --check` before commit/push or release.
 
