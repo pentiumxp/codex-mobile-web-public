@@ -666,6 +666,7 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v222 合并 public PR #50，新增 GitHub 链接预览卡片。Markdown 中单独成段的 GitHub 仓库、Issue、Pull request、Commit 链接会先显示安全 fallback 链接，再由已认证的 Mobile Web API 请求 `api.github.com` 读取公开元数据并水合为卡片；句子里的内联 GitHub 链接仍保持普通链接，代码块内链接不会自动预览。服务端只接受 `github.com` / `www.github.com` 的 HTTPS 资源并规范化到 GitHub REST API，不读取本地文件、不携带 Codex Access Key，也不把任意用户 URL 当作 fetch 目标。PWA shell cache 升级到 `codex-mobile-shell-v222`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新资源。本次 public 发布只包含公开源码、README 和测试；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
 - 中文说明：v219 合并 public PR #49，修复 Mermaid 预览渲染边界。Mermaid 大图的横向滚动范围现在从正常左边界开始，不再因为 flex 居中产生左侧内容裁切；较小图仍会在预览区域内居中显示。前端 Mermaid 规范化也会把未加引号的中文/括号 `subgraph` 标题转换为稳定 id + quoted title，减少 `subgraph 可见层（不是模型上下文原样）` 这类图表解析失败。PWA shell cache 升级到 `codex-mobile-shell-v219`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新资源。本次 public 发布只包含公开源码、README 和测试；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
 
 - 中文说明：v218 合并 public PR #48，新增移动端 Mermaid 图预览。Markdown 中的 ```mermaid 代码块会渲染为可缩放图表，手机和 iPad 可打开全屏预览、放大/缩小/重置，并保留可展开的 Mermaid 源码；Hermes 嵌入模式也把 Mermaid 预览作为可返回的 modal 状态处理。前端同时增强硬刷新：侧栏提供“硬刷新”按钮，刷新时会清理 `codex-mobile-shell-*` 缓存、重新注册 service worker，并用 cache-bust URL 重新加载页面。PWA shell cache 升级到 `codex-mobile-shell-v218`，Mermaid runtime 以 public-safe 的同源 `public/vendor/mermaid.min.js` lazy-load 方式随仓库发布。本次 public 发布只包含公开源码、文档、测试和 vendored 前端依赖；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
