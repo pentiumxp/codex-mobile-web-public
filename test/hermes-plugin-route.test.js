@@ -67,6 +67,10 @@ test("embedded plugin mode hides standalone chrome and installs navigation/windo
   assert.match(indexHtml, /function readPluginAppearance\(\)/);
   assert.match(indexHtml, /params\.get\("pluginTheme"\)/);
   assert.match(indexHtml, /params\.get\("pluginFontSize"\)/);
+  assert.match(indexHtml, /localStorage\.getItem\("codexMobileFontSize"\)[\s\S]*if \(allowedFontSizes\[value\]\) return value;[\s\S]*var pluginAppearance = readPluginAppearance\(\);/);
+  assert.match(appJs, /fontSize: localStorage\.getItem\("codexMobileFontSize"\)[\s\S]*INITIAL_PLUGIN_EMBED\.appearance && INITIAL_PLUGIN_EMBED\.appearance\.fontSize/);
+  assert.match(appJs, /function storedFontSizePreference\(\)/);
+  assert.match(appJs, /const storedFontSize = storedFontSizePreference\(\);[\s\S]*if \(appearance\.fontSize && !storedFontSize\)/);
   assert.match(indexHtml, /document\.documentElement\.setAttribute\("data-font-size", initialFontSize\)/);
   assert.match(indexHtml, /documentElement\.classList\.add\("embed-hermes"\)/);
   assert.match(indexHtml, /<script src="\/plugin-embed\.js"><\/script>/);

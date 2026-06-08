@@ -94,6 +94,8 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(appJs, /hardRefreshButton"\)\.addEventListener\("click", \(\) => handleHardRefreshClick\(\)\.catch\(showError\)\)/);
   assert.match(appJs, /addEventListener\("click", refreshPageForNewBuild\)/);
   assert.doesNotMatch(stylesCss, /html\.embed-hermes #pageRefreshPrompt/);
+  assert.match(stylesCss, /html\.embed-hermes #refreshThreads\s*\{[\s\S]*display:\s*none;/);
+  assert.match(stylesCss, /html\.embed-hermes #connectionState\s*\{[\s\S]*display:\s*none;/);
   assert.match(stylesCss, /\.page-refresh-prompt/);
   assert.match(stylesCss, /\.hard-refresh-button/);
 });
@@ -113,9 +115,10 @@ test("page refresh prompt also handles server restart reconnects", () => {
   assert.match(appJs, /Service restarted\. Tap to refresh\./);
   assert.match(appJs, /Connection changed\. Tap to refresh\./);
   assert.match(appJs, /Refreshing and reconnecting\.\.\./);
+  assert.match(functionBody(appJs, "showReconnectRefreshPrompt"), /if \(isHermesEmbedMode\(\) && reason !== "restart"\) return;/);
   assert.match(appJs, /async function waitForPageBuildConfig\(timeoutMs = 18000\)/);
   assert.match(appJs, /state\.pageRefreshReason === "reconnect" \|\| state\.pageRefreshReason === "restart"[\s\S]*await waitForPageBuildConfig\(\)/);
-  assert.match(appJs, /showReconnectRefreshPrompt\("reconnect"\);[\s\S]*showError\(err\)/);
+  assert.match(appJs, /showReconnectRefreshPrompt\("reconnect"\);[\s\S]*if \(!isHermesEmbedMode\(\)\) showError\(err\)/);
   assert.match(appJs, /showReconnectRefreshPrompt\("restart"\)/);
   assert.match(functionBody(appJs, "scheduleEventFallbackPoll"), /await loadThreads\(\{ silent: true \}\);/);
   assert.match(functionBody(appJs, "scheduleEventFallbackPoll"), /if \(state\.currentThreadId\) await refreshCurrentThread\(\);/);

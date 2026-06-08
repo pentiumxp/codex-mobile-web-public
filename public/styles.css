@@ -327,10 +327,11 @@ html.embed-hermes body {
 html.embed-hermes .app {
   width: 100%;
   max-width: none;
-  height: 100dvh;
-  min-height: 100%;
+  height: var(--app-height, 100dvh);
+  min-height: 0;
   grid-template-columns: minmax(0, 1fr);
   background: var(--bg);
+  transform: translateY(var(--app-top, 0px));
 }
 
 html.embed-hermes.plugin-startup-loading .app,
@@ -393,6 +394,14 @@ html.embed-hermes.plugin-startup-loading .login {
 html.embed-hermes #openMenu,
 html.embed-hermes .main .version-actions {
   display: none !important;
+}
+
+html.embed-hermes #refreshThreads {
+  display: none;
+}
+
+html.embed-hermes #connectionState {
+  display: none;
 }
 
 html.embed-hermes .sidebar {

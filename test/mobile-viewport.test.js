@@ -25,14 +25,28 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(indexHtml, /<script src="\/plugin-embed\.js"><\/script>/);
   assert.match(appJs, /const viewportMetrics = window\.CodexViewportMetrics/);
   assert.match(appJs, /viewportMetrics\.measureViewport\(\{/);
-  assert.match(viewportMetricsJs, /const keyboardShrunk = keyboardCandidate && keyboardInputActive/);
-  assert.match(viewportMetricsJs, /const height = keyboardShrunk \? visualBottom : Math\.max\(visualBottom \|\| 0, layout \|\| 0\)/);
+  assert.match(viewportMetricsJs, /const keyboardShrunk = Boolean\(keyboardInputActive && \(keyboardCandidate \|\| offsetKeyboardShifted \|\| scrollKeyboardShifted \|\| hostKeyboardVisible\)\)/);
+  assert.match(viewportMetricsJs, /hostKeyboardBottomInset/);
+  assert.match(viewportMetricsJs, /hostKeyboardVisible/);
+  assert.match(viewportMetricsJs, /offsetKeyboardShifted/);
+  assert.match(viewportMetricsJs, /scrollKeyboardShifted/);
   assert.match(appJs, /if \(viewport\.keyboardShrunk\) \{[\s\S]*--app-height/);
+  assert.match(appJs, /--app-top/);
   assert.match(appJs, /document\.documentElement\.style\.removeProperty\("--app-height"\)/);
   assert.match(appJs, /document\.documentElement\.classList\.toggle\("keyboard-open", viewport\.keyboardShrunk\)/);
+  assert.match(appJs, /pluginHostViewport: null/);
+  assert.match(appJs, /function normalizeHermesPluginViewportMessage\(data\)/);
+  assert.match(appJs, /data\.type !== "hermes\.plugin\.viewport"/);
+  assert.match(appJs, /handleHermesPluginViewportMessage\(event && event\.data\)/);
+  assert.match(appJs, /function isHermesKeyboardInputActive\(\) \{[\s\S]*isHermesEmbedMode\(\)[\s\S]*isKeyboardEditableElement\(document\.activeElement\)/);
+  assert.match(appJs, /window\.visualViewport\.addEventListener\("resize", \(\) => \{[\s\S]*if \(!isHermesKeyboardInputActive\(\)\) \{[\s\S]*scheduleVisualRecovery\("visual-viewport"/);
+  assert.match(appJs, /window\.visualViewport\.addEventListener\("scroll", \(\) => \{[\s\S]*if \(!isHermesKeyboardInputActive\(\)\) \{[\s\S]*scheduleVisualRecovery\("visual-viewport-scroll"/);
   assert.match(stylesCss, /html,\s*\nbody\s*{[\s\S]*touch-action:\s*pan-x pan-y;/);
   assert.match(stylesCss, /html\s*{[\s\S]*height:\s*-webkit-fill-available;/);
   assert.match(stylesCss, /body\s*{[\s\S]*min-height:\s*-webkit-fill-available;/);
+  assert.match(stylesCss, /html\.embed-hermes \.app\s*{[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
+  assert.match(stylesCss, /html\.embed-hermes \.app\s*{[\s\S]*min-height:\s*0;/);
+  assert.match(stylesCss, /html\.embed-hermes \.app\s*{[\s\S]*transform:\s*translateY\(var\(--app-top, 0px\)\);/);
   assert.match(stylesCss, /html\.embed-hermes \.composer\s*{[\s\S]*padding-bottom:\s*clamp\(12px, calc\(env\(safe-area-inset-bottom, 0px\) - 82px\), 56px\);/);
   assert.match(stylesCss, /html\.embed-hermes\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*10px;/);
   assert.match(stylesCss, /html\.embed-hermes \.main \.version-actions/);
@@ -49,8 +63,8 @@ test("mobile viewport and early guards disable page zoom", () => {
 });
 
 test("public app shell cache advances after Fast control and refresh prompt hardening", () => {
-  assert.match(swJs, /codex-mobile-shell-v220/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v220"/);
+  assert.match(swJs, /codex-mobile-shell-v224/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v224"/);
   assert.match(appJs, /function serverBuildIdFromConfig\(config\) \{\s*return String\(config && \(config\.clientBuildId \|\| config\.shellCacheName \|\| config\.buildId\) \|\| ""\)\.trim\(\);/);
   assert.doesNotMatch(appJs, /function serverBuildIdFromConfig\(config\) \{\s*return String\(config && \(config\.clientBuildId \|\| config\.shellCacheName \|\| config\.buildId \|\| config\.version\)/);
   assert.match(appJs, /startupThreadOpenPending: false/);
@@ -111,7 +125,9 @@ test("public app shell cache advances after Fast control and refresh prompt hard
   assert.match(appJs, /const PLUGIN_EMBED_BACK_EDGE_SWIPE_PX = 44/);
   assert.match(appJs, /function installHermesPluginBackSwipeGuard\(\)/);
   assert.match(appJs, /pluginEmbedApi\.navigationMessage\(state, pluginNavigationUiState\(\)\)/);
+  assert.doesNotMatch(appJs, /function pluginEmbedBackSwipeShouldExitHost\(\)/);
   assert.match(appJs, /document\.addEventListener\("touchstart", startPluginBackSwipe, \{ passive: false, capture: true \}\)/);
+  assert.doesNotMatch(appJs, /plugin_root_unhandled/);
   assert.match(appJs, /handlePluginBack\(\{\s*\n\s*preventDefault\(\) \{\},\s*\n\s*stopPropagation\(\) \{\},\s*\n\s*\}\);/);
   assert.match(appJs, /installPluginWindowingGuards\(\);\s*\n\s*installHermesPluginBackSwipeGuard\(\);/);
   assert.match(appJs, /const MAX_VISIBLE_TURNS = 10/);

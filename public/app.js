@@ -41,6 +41,7 @@ const state = {
   queuedPluginRouteHint: INITIAL_PLUGIN_EMBED.routeHint || null,
   pendingPluginRouteHint: null,
   pluginParentOrigin: pluginEmbedApi.parentOriginFromReferrer(document.referrer) || "*",
+  pluginHostViewport: null,
   pluginNavigationSignature: "",
   pluginRefreshRequestSignature: "",
   pluginRefreshPendingNotice: "",
@@ -218,8 +219,8 @@ const state = {
   unreadThreadIds: loadStringSetStorage("codexMobileUnreadThreadIds"),
   rolloutWarningDismissals: loadStringSetStorage("codexMobileDismissedRolloutWarnings"),
   codexFastMode: localStorage.getItem("codexMobileCodexFastMode") === "on",
-  fontSize: (INITIAL_PLUGIN_EMBED.appearance && INITIAL_PLUGIN_EMBED.appearance.fontSize)
-    || localStorage.getItem("codexMobileFontSize")
+  fontSize: localStorage.getItem("codexMobileFontSize")
+    || (INITIAL_PLUGIN_EMBED.appearance && INITIAL_PLUGIN_EMBED.appearance.fontSize)
     || "default",
   activityLabel: "",
   activityAtMs: 0,
@@ -248,7 +249,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v220";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v224";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -472,6 +473,14 @@ function normalizePluginFontSizeValue(value) {
   return FONT_SIZE_VALUES.has(normalized) ? normalized : "";
 }
 
+function storedFontSizePreference() {
+  try {
+    return normalizePluginFontSizeValue(localStorage.getItem(STORAGE_FONT_SIZE) || "");
+  } catch (_) {
+    return "";
+  }
+}
+
 function normalizePluginAppearance(value) {
   const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
   const appearance = {};
@@ -491,7 +500,8 @@ function applyPluginAppearancePreference(value) {
   if (appearance.theme && window.codexMobileTheme && typeof window.codexMobileTheme.apply === "function") {
     window.codexMobileTheme.apply(appearance.theme);
   }
-  if (appearance.fontSize) {
+  const storedFontSize = storedFontSizePreference();
+  if (appearance.fontSize && !storedFontSize) {
     state.fontSize = appearance.fontSize;
     applyFontSizePreference();
     renderFontSizeControl();
@@ -537,12 +547,26 @@ function isMenuOverlayMode() {
 }
 
 function viewportState() {
+  const hostViewport = state.pluginHostViewport && typeof state.pluginHostViewport === "object"
+    ? state.pluginHostViewport
+    : null;
+  const hostKeyboard = hostViewport && hostViewport.keyboard && typeof hostViewport.keyboard === "object"
+    ? hostViewport.keyboard
+    : null;
   return viewportMetrics.measureViewport({
     visualHeight: window.visualViewport && window.visualViewport.height,
     visualOffsetTop: window.visualViewport && window.visualViewport.offsetTop,
+    scrollTop: Math.max(
+      0,
+      Number(window.scrollY || 0) || 0,
+      Number(document.documentElement && document.documentElement.scrollTop || 0) || 0,
+      Number(document.body && document.body.scrollTop || 0) || 0,
+    ),
     innerHeight: window.innerHeight,
     clientHeight: document.documentElement && document.documentElement.clientHeight,
     activeElement: document.activeElement,
+    hostKeyboardVisible: Boolean(isHermesEmbedMode() && hostKeyboard && hostKeyboard.visible),
+    hostKeyboardBottomInset: isHermesEmbedMode() && hostKeyboard ? hostKeyboard.bottomInset : 0,
   });
 }
 
@@ -550,11 +574,23 @@ function viewportHeight() {
   return viewportState().height;
 }
 
+function isKeyboardEditableElement(element) {
+  return Boolean(viewportMetrics
+    && typeof viewportMetrics.isKeyboardEditable === "function"
+    && viewportMetrics.isKeyboardEditable(element));
+}
+
+function isHermesKeyboardInputActive() {
+  return isHermesEmbedMode() && isKeyboardEditableElement(document.activeElement);
+}
+
 function updateViewportVars() {
   const viewport = viewportState();
   if (viewport.keyboardShrunk) {
+    document.documentElement.style.setProperty("--app-top", `${Math.max(0, Math.round(viewport.top || 0))}px`);
     document.documentElement.style.setProperty("--app-height", `${viewport.height}px`);
   } else {
+    document.documentElement.style.removeProperty("--app-top");
     document.documentElement.style.removeProperty("--app-height");
   }
   document.documentElement.classList.toggle("keyboard-open", viewport.keyboardShrunk);
@@ -1414,12 +1450,18 @@ function hasRateLimitSnapshot(rateLimits, rateLimitsByModel) {
   return Object.values(rateLimitsByModel).some((value) => value && typeof value === "object" && hasCurrentRateLimitWindow(value));
 }
 
+function shouldKeepStoredRateLimitsOnEmptyConfig() {
+  return isHermesEmbedMode() && hasRateLimitSnapshot(state.rateLimits, state.rateLimitsByModel);
+}
+
 function rememberRateLimitsFromConfig(config) {
   if (!config || typeof config !== "object") return;
   if (Object.prototype.hasOwnProperty.call(config, "rateLimits")
     || Object.prototype.hasOwnProperty.call(config, "rateLimitsByModel")) {
     if (hasRateLimitSnapshot(config.rateLimits || null, config.rateLimitsByModel || null)) {
       rememberRateLimits(config.rateLimits || null, config.rateLimitsByModel || null);
+    } else if (shouldKeepStoredRateLimitsOnEmptyConfig()) {
+      renderQuotaUsage();
     } else {
       clearStoredRateLimits();
     }
@@ -2503,6 +2545,7 @@ async function handleHardRefreshClick() {
 
 function showReconnectRefreshPrompt(reason = "reconnect") {
   if (state.pageRefreshReloading) return;
+  if (isHermesEmbedMode() && reason !== "restart") return;
   state.pageRefreshAvailable = true;
   state.pageRefreshReason = reason === "restart" ? "restart" : "reconnect";
   state.pageRefreshPreparedConfig = null;
@@ -4320,6 +4363,50 @@ function clearPluginRefreshPendingNotice() {
   state.pluginRefreshPendingNotice = "";
   if (state.currentThreadId || state.currentThread) renderCurrentThread();
   else if (state.newThreadDraft) renderNewThreadDraft();
+}
+
+function boundedViewportNumber(value, max = 4096) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.max(0, Math.min(Math.round(numeric), Math.max(0, Number(max) || 0)));
+}
+
+function normalizeHermesPluginViewportMessage(data) {
+  if (!data || data.type !== "hermes.plugin.viewport" || data.version !== 1) return null;
+  const pluginId = String(data.pluginId || "").trim();
+  if (pluginId && pluginId !== "codex-mobile") return null;
+  const viewport = data.viewport && typeof data.viewport === "object" ? data.viewport : {};
+  const keyboard = data.keyboard && typeof data.keyboard === "object" ? data.keyboard : {};
+  return {
+    receivedAtMs: Date.now(),
+    reason: String(data.reason || "").trim().slice(0, 60),
+    viewport: {
+      width: boundedViewportNumber(viewport.width),
+      height: boundedViewportNumber(viewport.height),
+      offsetTop: boundedViewportNumber(viewport.offsetTop),
+      offsetLeft: boundedViewportNumber(viewport.offsetLeft),
+      layoutWidth: boundedViewportNumber(viewport.layoutWidth),
+      layoutHeight: boundedViewportNumber(viewport.layoutHeight),
+    },
+    keyboard: {
+      visible: Boolean(keyboard.visible),
+      bottomInset: boundedViewportNumber(keyboard.bottomInset || keyboard.height, 1024),
+      offsetTop: boundedViewportNumber(keyboard.offsetTop),
+      height: boundedViewportNumber(keyboard.height || keyboard.bottomInset, 1024),
+    },
+  };
+}
+
+function handleHermesPluginViewportMessage(data) {
+  const normalized = normalizeHermesPluginViewportMessage(data);
+  if (!normalized) return false;
+  state.pluginHostViewport = normalized;
+  updateViewportVars();
+  updateComposerHeightVar();
+  if (!isHermesKeyboardInputActive()) {
+    scheduleVisualRecovery("hermes-plugin-viewport", 40, { render: false, heavy: false, delays: [40, 180] });
+  }
+  return true;
 }
 
 function renderPluginRefreshPendingNotice(previousKeys = new Set()) {
@@ -9965,7 +10052,7 @@ function scheduleEventFallbackPoll(delayMs = 8000) {
       scheduleEventFallbackPoll();
     } catch (err) {
       showReconnectRefreshPrompt("reconnect");
-      showError(err);
+      if (!isHermesEmbedMode()) showError(err);
     }
   }, delayMs);
 }
@@ -10039,7 +10126,7 @@ function connectEvents() {
         await recoverEventStreamWithApiFallback();
       } catch (err) {
         showReconnectRefreshPrompt("reconnect");
-        showError(err);
+        if (!isHermesEmbedMode()) showError(err);
       }
     }, 8000);
     return;
@@ -12325,6 +12412,7 @@ function wireUi() {
   installPluginWindowingGuards();
   installHermesPluginBackSwipeGuard();
   window.addEventListener("message", (event) => {
+    if (handleHermesPluginViewportMessage(event && event.data)) return;
     if (pluginEmbedApi.isBackMessage && pluginEmbedApi.isBackMessage(event)) handlePluginBack(event);
   });
   if ("serviceWorker" in navigator) {
@@ -12364,7 +12452,9 @@ function wireUi() {
   window.addEventListener("pagehide", saveCurrentDraftNow);
   window.addEventListener("beforeunload", saveCurrentDraftNow);
   document.addEventListener("focusin", () => {
-    scheduleVisualRecovery("focusin", 40, { render: false, heavy: false, delays: [40, 180] });
+    if (!isHermesKeyboardInputActive()) {
+      scheduleVisualRecovery("focusin", 40, { render: false, heavy: false, delays: [40, 180] });
+    }
     scheduleVisibleImageFailureScan([0, 80, 240]);
     cleanupExternalMermaidErrorArtifacts();
   });
@@ -12374,25 +12464,31 @@ function wireUi() {
     scheduleMobileResume("orientation", 250);
   });
   window.addEventListener("resize", () => {
-    followViewportChangeToBottom("resize");
     updateViewportVars();
     updateComposerHeightVar();
-    scheduleViewportBottomFollowScroll();
-    scheduleVisualRecovery("resize", 40, { render: false, heavy: false, delays: [40, 180] });
+    if (!isHermesKeyboardInputActive()) {
+      followViewportChangeToBottom("resize");
+      scheduleViewportBottomFollowScroll();
+      scheduleVisualRecovery("resize", 40, { render: false, heavy: false, delays: [40, 180] });
+    }
   });
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", () => {
-      followViewportChangeToBottom("visual-viewport-resize");
       updateViewportVars();
       updateComposerHeightVar();
-      scheduleViewportBottomFollowScroll();
-      scheduleVisualRecovery("visual-viewport", 40, { render: false, heavy: false, delays: [40, 180, 520] });
+      if (!isHermesKeyboardInputActive()) {
+        followViewportChangeToBottom("visual-viewport-resize");
+        scheduleViewportBottomFollowScroll();
+        scheduleVisualRecovery("visual-viewport", 40, { render: false, heavy: false, delays: [40, 180, 520] });
+      }
     });
     window.visualViewport.addEventListener("scroll", () => {
-      followViewportChangeToBottom("visual-viewport-scroll");
       updateViewportVars();
-      scheduleViewportBottomFollowScroll();
-      scheduleVisualRecovery("visual-viewport-scroll", 40, { render: false, heavy: false, delays: [40, 180] });
+      if (!isHermesKeyboardInputActive()) {
+        followViewportChangeToBottom("visual-viewport-scroll");
+        scheduleViewportBottomFollowScroll();
+        scheduleVisualRecovery("visual-viewport-scroll", 40, { render: false, heavy: false, delays: [40, 180] });
+      }
     });
   }
 }
