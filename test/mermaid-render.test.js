@@ -88,6 +88,23 @@ FA -->|最终归档| TRX[Transcript]`;
   assert.match(normalized, /TRX\[Transcript\]/);
 });
 
+test("mermaid render normalization quotes subgraph titles with chinese punctuation", () => {
+  const source = String.raw`flowchart TD
+UI[用户输入] --> FE[前端界面\nWeb UI / Desktop / CLI]
+subgraph 可见层（不是模型上下文原样）
+  FE --> VIEW[Mobile 展示]
+end
+subgraph RN Run Journal / SessionDB
+  J[持久化中间状态]
+end`;
+
+  const normalized = renderer.normalizeMermaidSourceForRender(source);
+
+  assert.match(normalized, /subgraph codex_mobile_subgraph_3\["可见层（不是模型上下文原样）"\]/);
+  assert.match(normalized, /subgraph RN\["Run Journal \/ SessionDB"\]/);
+  assert.match(normalized, /FE\["前端界面<br\/>Web UI \/ Desktop \/ CLI"\]/);
+});
+
 test("mermaid runtime error SVG is rejected before rendering the bomb icon", () => {
   const isMermaidErrorSvgMarkup = evaluatedMermaidErrorSvgDetector();
   const errorSvg = `<svg viewBox="0 0 2412 512">
