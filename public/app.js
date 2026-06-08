@@ -247,7 +247,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v222";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v223";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -9550,6 +9550,14 @@ function renderUsageMetric(label, value, detail = "") {
   </div>`;
 }
 
+function renderUsageChip(label, value, detail = "") {
+  return `<div class="turn-usage-chip">
+    <span>${escapeHtml(label)}</span>
+    <strong>${escapeHtml(value)}</strong>
+    ${detail ? `<small>${escapeHtml(detail)}</small>` : ""}
+  </div>`;
+}
+
 function renderTurnUsageSummary(item) {
   const summary = item && item.mobileUsageSummary && typeof item.mobileUsageSummary === "object"
     ? item.mobileUsageSummary
@@ -9587,6 +9595,11 @@ function renderTurnUsageSummary(item) {
     ? `<button class="turn-usage-new-thread" type="button" data-new-thread-from-current>压缩续接</button>`
     : "";
   const risk = contextRiskLabel(summary.contextRiskLevel || "unknown");
+  const detailSummary = [
+    Number.isFinite(rolloutSize) ? `rollout ${formatFileSize(rolloutSize)}` : "",
+    Number.isFinite(projectContextSize) && projectContextSize > 0 ? `context ${formatFileSize(projectContextSize)}` : "",
+    Number.isFinite(handoffSize) && handoffSize > 0 ? `handoff ${formatFileSize(handoffSize)}` : "",
+  ].filter(Boolean).join(" | ") || "展开详情";
   return `<div class="turn-usage-summary risk-${escapeHtml(risk)}">
     <div class="turn-usage-summary-head">
       <span>Context and token usage</span>
@@ -9595,14 +9608,22 @@ function renderTurnUsageSummary(item) {
         <strong>${escapeHtml(risk)}</strong>
       </div>
     </div>
-    <div class="turn-usage-grid">
-      ${renderUsageMetric("context window", formatUsagePercent(summary.contextWindowUsedPercent), contextDetail)}
-      ${renderUsageMetric("last turn", lastUsage)}
-      ${renderUsageMetric("thread total", totalUsage)}
-      ${renderUsageMetric("rollout", Number.isFinite(rolloutSize) ? formatFileSize(rolloutSize) : "--", rolloutDetail)}
-      ${renderUsageMetric("context", Number.isFinite(projectContextSize) && projectContextSize > 0 ? formatFileSize(projectContextSize) : "--", contextDetailFiles.join(" | "))}
-      ${renderUsageMetric("handoff", Number.isFinite(handoffSize) && handoffSize > 0 ? formatFileSize(handoffSize) : "--", handoffDetail)}
+    <div class="turn-usage-chips">
+      ${renderUsageChip("window", formatUsagePercent(summary.contextWindowUsedPercent))}
+      ${renderUsageChip("last", formatTokenCount((summary.lastTokenUsage || {}).totalTokens))}
+      ${renderUsageChip("thread", formatTokenCount((summary.totalTokenUsage || {}).totalTokens))}
     </div>
+    <details class="turn-usage-details">
+      <summary><span>${escapeHtml(detailSummary)}</span></summary>
+      <div class="turn-usage-grid">
+        ${renderUsageMetric("context window", formatUsagePercent(summary.contextWindowUsedPercent), contextDetail)}
+        ${renderUsageMetric("last turn", lastUsage)}
+        ${renderUsageMetric("thread total", totalUsage)}
+        ${renderUsageMetric("rollout", Number.isFinite(rolloutSize) ? formatFileSize(rolloutSize) : "--", rolloutDetail)}
+        ${renderUsageMetric("context", Number.isFinite(projectContextSize) && projectContextSize > 0 ? formatFileSize(projectContextSize) : "--", contextDetailFiles.join(" | "))}
+        ${renderUsageMetric("handoff", Number.isFinite(handoffSize) && handoffSize > 0 ? formatFileSize(handoffSize) : "--", handoffDetail)}
+      </div>
+    </details>
   </div>`;
 }
 

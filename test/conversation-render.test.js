@@ -145,6 +145,7 @@ function evaluatedTurnUsageSummaryRenderer() {
     "formatUsagePercent",
     "contextRiskLabel",
     "renderUsageMetric",
+    "renderUsageChip",
     "renderTurnUsageSummary",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`${sources.join("\n")}\nreturn renderTurnUsageSummary;`)();
@@ -511,6 +512,10 @@ test("completed turn usage summary renders workspace context sizes and compact a
 
   assert.match(html, /context/);
   assert.match(html, /handoff/);
+  assert.match(html, /turn-usage-chips/);
+  assert.match(html, /turn-usage-details/);
+  assert.match(html, /window/);
+  assert.match(html, /thread/);
   assert.match(html, /pair 255\.0 KB/);
   assert.match(html, /data-new-thread-from-current/);
 });
