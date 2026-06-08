@@ -666,6 +666,7 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v214 合入 public PR #46 和 PR #47。刷新提示现在只比较真实 app-shell build 信息，不再把普通 `version` 当作客户端 build id；`/api/public-config` 每次请求都会读取当前 shell build，避免磁盘静态资源已更新但旧 listener 仍返回启动快照时造成反复刷新提示。Composer 左侧 Fast 开关从红绿状态点改为闪电图标按钮，开启态用高亮闪电显示，文案统一为 `Fast mode on/off`。PWA shell cache 升级到 `codex-mobile-shell-v214`，更新后需要重启 8787 Node listener，并让已打开的浏览器/PWA 接受刷新提示、硬刷新或关闭重开。
 - 中文说明：v213 server-only 追记修复 Usage 在投影压缩路径中的丢失问题。投影快路径现在会先合并线程摘要中的 rollout path 再进入移动端压缩，确保 target-turn Usage 扫描能找到源 rollout；receipt-only 的旧 turn 压缩也会保留 `turnUsageSummary` 元数据，只去掉旧中间过程。该追记不改变 PWA shell cache，更新后需要重启 8787 Node listener。
 - 中文说明：v213 增加完成态 Usage 自愈刷新。当前线程最新成功完成 turn 如果已经结束但本地状态仍没有 `turnUsageSummary`，前端会进行有限次数的详情 backfill refresh，直到 API 合并出 Usage 或达到次数上限；这用于覆盖 completion 后固定刷新时间点仍早于 Usage/投影稳定的情况。`interrupted`、failed、cancelled、active、in-progress turn 不会触发该自愈路径。PWA shell cache 升级到 `codex-mobile-shell-v213`，更新后需要重启 8787 Node listener 并刷新客户端。
 - 中文说明：v212 修复 v211 后发现的 Usage 刷新兜底问题。服务端 target Usage cache 命中时现在也会检查当前返回的 turn id 是否缺 Usage；缺项时不会直接返回旧缓存，而会继续走 rollout 补扫。前端 `turn/completed` 后会安排两次线程详情刷新，避免第一次刷新早于 Usage/投影稳定时停留在“回执已完成但没有 Usage”的画面。PWA shell cache 升级到 `codex-mobile-shell-v212`，更新后需要重启 8787 Node listener 并刷新客户端。
@@ -1531,6 +1532,12 @@ plugin. The shell cache advances to `codex-mobile-shell-v102`.
 ### 2026-06-03 Public PR 同步说明（归档 fallback 过滤与 Restart 风险提示 v166）
 
 本次 private 同步 public PR #44 和 PR #45 的产品改动，并在当前 private v165 基础上把 PWA shell cache 升到 `codex-mobile-shell-v166`。服务端 session-index fallback 列表现在会再次排除已归档线程，避免 app-server 主列表遗漏线程时把已归档的 projectless session 重新显示出来；更新后需要重启 8787 Node listener 才会加载新的 `server.js`。前端手动 `Restart` 从浏览器原生确认框改为自定义确认面板，点击时会先读取最近线程列表并列出 running session 风险，提示重启可能中断正在通过 Codex Mobile 同步或运行的任务。已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能看到新的保护面板。
+
+### 2026-06-08 Public PR 同步说明（刷新提示与 Fast 开关 v214）
+
+本次 public 合入 PR #46 和 PR #47，并把 PWA shell cache 升到 `codex-mobile-shell-v214`。PR #46 修复刷新提示反复出现的问题：前端不再把普通 `version` 当作 build id，服务端 `/api/public-config` 也改为按请求读取当前 app-shell build 信息。PR #47 把 Composer 左侧 Fast 开关从状态点改成闪电图标按钮，开启态更明确，辅助文案统一为 `Fast mode on/off`。
+
+本次同步只包含 public 产品代码、测试和 README 说明；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。部署后需要重启 8787 Node listener，并让已打开的浏览器/PWA 接受刷新提示、硬刷新或关闭重开，才能加载 v214 静态资源。
 
 ### 2026-06-04 本地更新说明（CLI 目标 `/g` 入口 v180）
 
