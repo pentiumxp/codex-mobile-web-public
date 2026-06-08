@@ -3830,16 +3830,18 @@ html.visual-recovering body::before {
 
 .markdown-mermaid-canvas {
   min-width: 100%;
+  width: max-content;
   min-height: 100%;
   display: flex;
   align-items: flex-start;
-  justify-content: center;
+  justify-content: flex-start;
   padding: 14px;
   box-sizing: border-box;
 }
 
 .markdown-mermaid-artboard {
   flex: 0 0 auto;
+  margin-inline: auto;
   max-width: none;
 }
 

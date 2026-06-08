@@ -212,12 +212,46 @@
     return `<div class="markdown-code-block"><div class="markdown-code-head">${langLabel}${copyButton}</div><pre><code>${escapeHtml(codeText)}</code></pre></div>`;
   }
 
+  function escapeMermaidQuotedLabel(value) {
+    return String(value || "").trim().replace(/"/g, "&quot;");
+  }
+
+  function mermaidGeneratedSubgraphId(index) {
+    return `codex_mobile_subgraph_${index + 1}`;
+  }
+
+  function normalizeMermaidSubgraphLine(line, index) {
+    const match = /^(\s*)subgraph\s+(.+?)\s*$/i.exec(String(line || ""));
+    if (!match) return line;
+    const indent = match[1] || "";
+    const body = String(match[2] || "").trim();
+    if (!body || /^end$/i.test(body)) return line;
+    const bracketMatch = /^([A-Za-z][\w-]*)\s*\[(.*)\]$/.exec(body);
+    if (bracketMatch) {
+      const label = String(bracketMatch[2] || "").trim();
+      if (!label || /^".*"$/.test(label)) return line;
+      return `${indent}subgraph ${bracketMatch[1]}["${escapeMermaidQuotedLabel(label)}"]`;
+    }
+    const idTitleMatch = /^([A-Za-z][\w-]*)\s+(.+)$/.exec(body);
+    if (idTitleMatch) {
+      const title = String(idTitleMatch[2] || "").trim();
+      if (!title || /^".*"$/.test(title)) return line;
+      return `${indent}subgraph ${idTitleMatch[1]}["${escapeMermaidQuotedLabel(title)}"]`;
+    }
+    if (/^[A-Za-z][\w-]*$/.test(body) || /^".*"$/.test(body)) return line;
+    return `${indent}subgraph ${mermaidGeneratedSubgraphId(index)}["${escapeMermaidQuotedLabel(body)}"]`;
+  }
+
   function normalizeMermaidSourceForRender(value) {
     const source = String(value || "");
     const withSoftBreaks = source.replace(/\\n/g, "<br/>");
     const firstLine = withSoftBreaks.split(/\r?\n/, 1)[0].trim();
     if (!/^(?:flowchart|graph)\b/i.test(firstLine)) return withSoftBreaks;
-    return withSoftBreaks
+    const withQuotedSubgraphs = withSoftBreaks
+      .split(/\r?\n/)
+      .map((line, index) => normalizeMermaidSubgraphLine(line, index))
+      .join("\n");
+    return withQuotedSubgraphs
       .replace(/(^|[\s;])([A-Za-z][\w-]*)\[([^\]\n]*)\]/gm, (match, prefix, nodeId, label) => {
         const trimmed = String(label || "").trim();
         if (!trimmed || /^".*"$/.test(trimmed)) return match;
