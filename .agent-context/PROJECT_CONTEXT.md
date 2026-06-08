@@ -1,5 +1,36 @@
 # PROJECT_CONTEXT
 
+Last compacted: 2026-06-08T13:27:43.304Z
+
+This live project context was automatically compacted before a Codex Mobile continuation.
+The full previous context was archived and should be read only when this routing index is insufficient.
+
+## Compaction Summary
+
+- Workspace: `/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web`
+- Original project context bytes: `9409`
+- Archived full project context: `/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web/.agent-context/archive/context-compaction-20260608_132743/PROJECT_CONTEXT.full-before-context-budget.md`
+- Preserved live excerpt chars: `9408`
+
+## Source Of Truth
+
+1. Current repository files and runtime checks.
+2. Latest source-thread handoff under `.agent-context/thread-handoffs/` for explicit continuation threads.
+3. This compact `.agent-context/PROJECT_CONTEXT.md` and `.agent-context/HANDOFF.md`.
+4. Focused docs under `docs/`.
+5. Archived full context only when old provenance is explicitly needed.
+
+## Startup Guidance
+
+- Read `.agent-context/HANDOFF.md` after this file.
+- Read `docs/README.md`, then the smallest relevant focused doc.
+- Keep raw secrets, tokens, one-time approvals, upload contents, full rollout logs, and `.codex` runtime state out of shared context and Git.
+- Do not load the archived full project context by default. Load it only when the user asks about older provenance, a missing rule, or a historical decision not present in live docs.
+
+## Preserved Project Context Excerpt
+
+# PROJECT_CONTEXT
+
 Last compacted: 2026-06-03T07:41:47.778Z
 
 This live project context was automatically compacted before a Codex Mobile continuation.

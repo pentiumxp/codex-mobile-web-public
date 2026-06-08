@@ -1,0 +1,135 @@
+# Home AI Platform Contract Pointer
+
+Last updated: 2026-06-09.
+Home AI platform contract version: `20260606-v1`.
+
+## Scope
+
+Codex Mobile Web is an Owner-critical Home AI embedded-app plugin. It owns the
+Codex Mobile iframe app, Codex CLI bridge, profile mux integration, thread UI,
+and Codex-specific runtime state. This file records only Codex Mobile-local
+facts and points back to the canonical Home AI platform contract.
+
+Codex Mobile remains a special insertion for ownership and permission policy:
+it is not a normal grantable business plugin. It is nevertheless covered by the
+platform contract for deployment, mobile visual evidence, live iOS PWA
+debugging, and production validation.
+
+## Canonical Home AI Docs
+
+Read these Home AI docs before changing deployment, MCP tools, mobile visual
+behavior, or cross-plugin reference behavior:
+
+- `C:\Users\xuxin\Documents\Agent\docs\PLATFORM_CONTRACTS\plugin-workspace-platform-contract.md`
+- `C:\Users\xuxin\Documents\Agent\docs\PLATFORM_CONTRACTS\plugin-mobile-ui-visual-contract.md`
+- `C:\Users\xuxin\Documents\Agent\docs\RUNBOOKS\macos-production-access.md`
+- `C:\Users\xuxin\Documents\Agent\docs\RUNBOOKS\mcp-tool-upgrade-closure.md`
+- `C:\Users\xuxin\Documents\Agent\docs\RUNBOOKS\macos-ios-simulator-appium.md`
+- `C:\Users\xuxin\Documents\Agent\docs\IMPLEMENTATION_NOTES\reference-memory-graph-v1.md`
+- `C:\Users\xuxin\Documents\Agent\docs\IMPLEMENTATION_NOTES\reference-memory-graph-harness-plan.md`
+
+## Plugin-Local Facts
+
+| Field | Value |
+| --- | --- |
+| `plugin_id` | `codex-mobile` |
+| `workspace_path_windows` | `C:\Users\xuxin\Documents\codex-mobile-web` |
+| `current_branch_snapshot` | `main` with local commits through `ab5819c` before this context commit |
+| `production_source_path_macos` | `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web` |
+| `production_data_root_macos` | `/Users/xuxin/.codex-mobile-web` |
+| `windows_dev_base_url` | `http://127.0.0.1:8787` |
+| `macos_production_base_url` | `http://127.0.0.1:8787` |
+| `launchd_label` | `system/com.hermesmobile.plugin.codex-mobile` |
+| `manifest_url` | `http://127.0.0.1:8787/api/v1/hermes/plugin/manifest` |
+| `public_config_endpoint` | `GET /api/public-config` |
+| `mcp_command` | `none`; Codex Mobile Web is an embedded app bridge, not a Gateway MCP plugin |
+| `mcp_schema_endpoint` | `none`; use the plugin manifest and bounded HTTP health/version endpoints |
+| `deploy_command` | Use the central Home AI Mac deploy script: `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --execute --json` |
+| `credential_locations` | Codex Mobile access key file and Codex home/runtime paths by reference only. Do not record raw keys, tokens, cookies, launch tokens, account auth files, uploaded content, or rollout logs here. |
+| `reference_contract_status` | `none`; Codex Mobile is not currently a cross-plugin business object source through the Home AI Reference Graph |
+| `mobile_visual_harness_status` | `appium-simulator`; use Home AI live iOS PWA debugging for embedded UI reproduction and record bounded Appium/Simulator or installed-PWA evidence for final acceptance |
+| `ios_live_debug_available` | `yes`; use Home AI `npm run ios:pwa:debug` for interactive embedded iOS PWA reproduction, with one Simulator/live-debug-port/WDA-port/MJPEG-port lane per concurrent plugin debug session. |
+
+## Required Local Validation
+
+Run the smallest focused set for the changed surface:
+
+```bash
+npm run check
+npm test
+npm run check:macos
+```
+
+For embedded UI, keyboard, gesture, PWA cache, or mobile layout changes, use
+the Home AI live debug server during the reproduce/fix loop:
+
+```bash
+cd /Users/hermes-dev/HermesMobileDev/app
+npm run ios:pwa:debug
+```
+
+Default live debug UI:
+
+```text
+http://127.0.0.1:19073/
+```
+
+For WDA MJPEG stream mode, allocate unique ports per Simulator lane:
+
+```bash
+npm run ios:pwa:debug -- \
+  --stream wda-mjpeg \
+  --wda-local-port 8101 \
+  --mjpeg-server-port 9100
+```
+
+From the Home AI main workspace, run the cross-workspace platform contract
+checker after changing this pointer or any Codex Mobile deployment/mobile
+contract:
+
+```bash
+node scripts/plugin-workspace-platform-contract-check.js --plugin codex-mobile --json
+```
+
+## Required Production Validation
+
+Use the Home AI Mac access and deployment runbooks. Do not print passwords,
+Access Keys, launch tokens, cookies, Codex auth files, full prompts, uploaded
+payloads, rollout contents, or long logs.
+
+Minimum closure for Codex Mobile production changes:
+
+1. verify Mac launchd `system/com.hermesmobile.plugin.codex-mobile` is running;
+2. verify Mac loopback `/api/public-config` reports the expected
+   `clientBuildId` and `shellCacheName`;
+3. verify Mac loopback plugin manifest returns `plugin_id=codex-mobile`;
+4. for embedded UI, keyboard, gesture, or PWA shell changes, reproduce through
+   Home AI `npm run ios:pwa:debug` during iteration and record bounded final
+   Simulator/Appium or installed-PWA evidence;
+5. for account/quota/profile changes, perform bounded authenticated status
+   smokes without printing raw keys or auth material;
+6. for production deploys, record the backup path and health/version result.
+
+## Latest Production Evidence
+
+2026-06-08 Mac production deployment:
+
+- Production source path:
+  `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+- LaunchDaemon: `system/com.hermesmobile.plugin.codex-mobile`.
+- Loopback production URL: `http://127.0.0.1:8787`.
+- Current verified shell after Public baseline plus Mac hotfix deployment:
+  `0.1.11|codex-mobile-shell-v224`.
+- Backup path:
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260608T153157Z-plugin-codex-mobile-web-codex-mobile-public-v222-mac-hotfix-v224`.
+- Production smoke confirmed `/api/public-config`, current account quota
+  projection, Fast lightning icon assets, and Public GitHub link preview
+  service/UI presence.
+
+## Open Gaps
+
+- Add a Codex-specific final acceptance harness that records bounded artifacts
+  from the Home AI live iOS PWA debug server for embedded keyboard, gesture,
+  and cache/PWA regressions.
+- Keep Codex Mobile's Owner-only permission policy separate from normal
+  workspace-grantable business plugin visibility.
