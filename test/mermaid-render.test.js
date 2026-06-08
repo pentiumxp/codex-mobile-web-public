@@ -141,6 +141,8 @@ test("mobile app ships a custom Mermaid preview dialog and lazy runtime loader",
   assert.match(appJs, /function handleMermaidAction\(/);
   assert.match(stylesCss, /\.markdown-mermaid-block/);
   assert.match(stylesCss, /\.markdown-mermaid-viewer/);
+  assert.match(stylesCss, /\.markdown-mermaid-canvas\s*\{[\s\S]*width: max-content;[\s\S]*justify-content: flex-start;/);
+  assert.match(stylesCss, /\.markdown-mermaid-artboard\s*\{[\s\S]*margin-inline: auto;/);
   assert.match(stylesCss, /\.mermaid-preview-dialog/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.mermaid-preview-panel/);
   assert.match(pluginEmbedJs, /modal: "mermaidPreview"/);
