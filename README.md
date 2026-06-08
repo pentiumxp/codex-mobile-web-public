@@ -666,6 +666,8 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v219 合并 public PR #49，修复 Mermaid 预览渲染边界。Mermaid 大图的横向滚动范围现在从正常左边界开始，不再因为 flex 居中产生左侧内容裁切；较小图仍会在预览区域内居中显示。前端 Mermaid 规范化也会把未加引号的中文/括号 `subgraph` 标题转换为稳定 id + quoted title，减少 `subgraph 可见层（不是模型上下文原样）` 这类图表解析失败。PWA shell cache 升级到 `codex-mobile-shell-v219`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新资源。本次 public 发布只包含公开源码、README 和测试；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
+
 - 中文说明：v218 合并 public PR #48，新增移动端 Mermaid 图预览。Markdown 中的 ```mermaid 代码块会渲染为可缩放图表，手机和 iPad 可打开全屏预览、放大/缩小/重置，并保留可展开的 Mermaid 源码；Hermes 嵌入模式也把 Mermaid 预览作为可返回的 modal 状态处理。前端同时增强硬刷新：侧栏提供“硬刷新”按钮，刷新时会清理 `codex-mobile-shell-*` 缓存、重新注册 service worker，并用 cache-bust URL 重新加载页面。PWA shell cache 升级到 `codex-mobile-shell-v218`，Mermaid runtime 以 public-safe 的同源 `public/vendor/mermaid.min.js` lazy-load 方式随仓库发布。本次 public 发布只包含公开源码、文档、测试和 vendored 前端依赖；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
 
 - 中文说明：v216 同步 public PR #46/#47 到 private。刷新提示现在只比较真实 app-shell build 信息，不再把普通 `version` 当作客户端 build id；`/api/public-config` 每次请求都会读取当前 shell build，避免旧启动快照和磁盘静态资源不一致时反复提示刷新。Composer 左侧 Fast 开关从红绿状态点改为闪电图标按钮，开启态用高亮闪电显示，文案统一为 `Fast mode on/off`。PWA shell cache 升级到 `codex-mobile-shell-v216`，更新后需要重启 8787 Node listener 并刷新客户端。
