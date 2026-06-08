@@ -249,7 +249,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v224";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v225";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -3400,6 +3400,10 @@ function isMuxUserMessage(item) {
   return Boolean(item && item.type === "userMessage" && /^mux-user-/.test(String(item.id || "")));
 }
 
+function isOptimisticUserMessage(item) {
+  return Boolean(item && item.type === "userMessage" && (item.mobilePendingSubmission || /^local-user-/.test(String(item.id || "")) || isMuxUserMessage(item)));
+}
+
 function isTurnUsageSummaryItem(item) {
   return Boolean(item && item.type === "turnUsageSummary");
 }
@@ -3423,10 +3427,15 @@ function userMessageComparableParts(item) {
   if (!item || item.type !== "userMessage") return result;
   const textParts = [];
   const paths = [];
-  for (const part of item.content || []) {
+  if (typeof item.text === "string") textParts.push(item.text);
+  if (typeof item.message === "string") textParts.push(item.message);
+  const contentParts = Array.isArray(item.content)
+    ? item.content
+    : (typeof item.content === "string" ? [{ type: "text", text: item.content }] : []);
+  for (const part of contentParts) {
     if (!part || typeof part !== "object") continue;
-    if (part.type === "text") {
-      const split = splitAttachmentSummaryText(part.text || "");
+    if (isInputTextPart(part)) {
+      const split = splitAttachmentSummaryText(inputTextValue(part));
       if (split.text) textParts.push(split.text);
       for (const attachment of split.attachments) {
         if (attachment.path) paths.push(normalizeFsPath(attachment.path));
@@ -3434,6 +3443,10 @@ function userMessageComparableParts(item) {
       continue;
     }
     if (part.path) paths.push(normalizeFsPath(part.path));
+    else if (isInputImagePart(part)) {
+      const url = imageUrlValue(part);
+      if (url && !/^data:image\//i.test(url)) paths.push(normalizeFsPath(url));
+    }
   }
   result.text = normalizeComparableText(textParts.join("\n"));
   result.paths = [...new Set(paths.filter(Boolean))].sort();
@@ -3455,6 +3468,7 @@ function userMessagesLikelySame(left, right) {
   const a = userMessageComparableParts(left);
   const b = userMessageComparableParts(right);
   if (a.text && b.text && a.text === b.text) {
+    if (isOptimisticUserMessage(left) || isOptimisticUserMessage(right)) return true;
     if (!a.paths.length && !b.paths.length) return true;
     return userMessagePathOverlap(a, b);
   }
@@ -10032,6 +10046,16 @@ function scheduleEventReconnectRetry() {
   }, delay);
 }
 
+function shouldRefreshThreadListDuringEventRecovery() {
+  return !isHermesEmbedMode() || !state.threads.length;
+}
+
+async function refreshThreadListDuringEventRecovery() {
+  if (!shouldRefreshThreadListDuringEventRecovery()) return false;
+  await loadThreads({ silent: isHermesEmbedMode() || Boolean(state.threads.length) });
+  return true;
+}
+
 function scheduleEventFallbackPoll(delayMs = 8000) {
   clearTimeout(state.eventFallbackPollTimer);
   if (!isHermesEmbedMode()) return;
@@ -10047,7 +10071,7 @@ function scheduleEventFallbackPoll(delayMs = 8000) {
       clearReconnectRefreshPrompt();
       rememberRateLimitsFromConfig(status);
       if (status.codexProfiles) rememberCodexProfiles(status.codexProfiles);
-      await loadThreads({ silent: true });
+      await refreshThreadListDuringEventRecovery();
       if (state.currentThreadId) await refreshCurrentThread();
       scheduleEventFallbackPoll();
     } catch (err) {
@@ -10063,8 +10087,7 @@ async function recoverEventStreamWithApiFallback() {
   clearReconnectRefreshPrompt();
   rememberRateLimitsFromConfig(status);
   if (status.codexProfiles) rememberCodexProfiles(status.codexProfiles);
-  const silentThreadRefresh = isHermesEmbedMode() || Boolean(state.threads.length);
-  await loadThreads({ silent: silentThreadRefresh });
+  await refreshThreadListDuringEventRecovery();
   if (state.currentThreadId) await refreshCurrentThread();
   if (isHermesEmbedMode()) {
     state.eventFallbackMode = true;

@@ -120,10 +120,15 @@ test("page refresh prompt also handles server restart reconnects", () => {
   assert.match(appJs, /state\.pageRefreshReason === "reconnect" \|\| state\.pageRefreshReason === "restart"[\s\S]*await waitForPageBuildConfig\(\)/);
   assert.match(appJs, /showReconnectRefreshPrompt\("reconnect"\);[\s\S]*if \(!isHermesEmbedMode\(\)\) showError\(err\)/);
   assert.match(appJs, /showReconnectRefreshPrompt\("restart"\)/);
-  assert.match(functionBody(appJs, "scheduleEventFallbackPoll"), /await loadThreads\(\{ silent: true \}\);/);
+  assert.match(appJs, /function shouldRefreshThreadListDuringEventRecovery\(\)/);
+  assert.match(functionBody(appJs, "shouldRefreshThreadListDuringEventRecovery"), /return !isHermesEmbedMode\(\) \|\| !state\.threads\.length;/);
+  assert.match(functionBody(appJs, "refreshThreadListDuringEventRecovery"), /if \(!shouldRefreshThreadListDuringEventRecovery\(\)\) return false;/);
+  assert.match(functionBody(appJs, "refreshThreadListDuringEventRecovery"), /await loadThreads\(\{ silent: isHermesEmbedMode\(\) \|\| Boolean\(state\.threads\.length\) \}\);/);
+  assert.match(functionBody(appJs, "scheduleEventFallbackPoll"), /await refreshThreadListDuringEventRecovery\(\);/);
+  assert.doesNotMatch(functionBody(appJs, "scheduleEventFallbackPoll"), /await loadThreads\(/);
   assert.match(functionBody(appJs, "scheduleEventFallbackPoll"), /if \(state\.currentThreadId\) await refreshCurrentThread\(\);/);
-  assert.match(functionBody(appJs, "recoverEventStreamWithApiFallback"), /const silentThreadRefresh = isHermesEmbedMode\(\) \|\| Boolean\(state\.threads\.length\);/);
-  assert.match(functionBody(appJs, "recoverEventStreamWithApiFallback"), /await loadThreads\(\{ silent: silentThreadRefresh \}\);/);
+  assert.match(functionBody(appJs, "recoverEventStreamWithApiFallback"), /await refreshThreadListDuringEventRecovery\(\);/);
+  assert.doesNotMatch(functionBody(appJs, "recoverEventStreamWithApiFallback"), /await loadThreads\(/);
   assert.match(functionBody(appJs, "recoverEventStreamWithApiFallback"), /if \(isHermesEmbedMode\(\)\) \{[\s\S]*scheduleEventFallbackPoll\(\);[\s\S]*scheduleEventReconnectRetry\(\);/);
   assert.match(functionBody(appJs, "connectEvents"), /if \(!isHermesEmbedMode\(\)\) \{[\s\S]*markActivity\("重连"\);[\s\S]*updateConnectionState\(null, "Reconnecting"\);[\s\S]*\}/);
   assert.doesNotMatch(appJs, /updateConnectionState\(null, "Reconnecting"\);\s*showReconnectRefreshPrompt/);

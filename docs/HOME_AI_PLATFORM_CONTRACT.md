@@ -44,11 +44,13 @@ behavior, or cross-plugin reference behavior:
 | `public_config_endpoint` | `GET /api/public-config` |
 | `mcp_command` | `none`; Codex Mobile Web is an embedded app bridge, not a Gateway MCP plugin |
 | `mcp_schema_endpoint` | `none`; use the plugin manifest and bounded HTTP health/version endpoints |
+| `dev_runtime_prerequisites` | Mac DEV must expose Node, npm, and Codex CLI through `/Users/xuxin/Developer/HomeAIDev/bin`; verify `node --version`, `npm --version`, and `codex --version` before classifying bridge/test failures. |
 | `deploy_command` | Use the central Home AI Mac deploy script: `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --execute --json` |
 | `credential_locations` | Codex Mobile access key file and Codex home/runtime paths by reference only. Do not record raw keys, tokens, cookies, launch tokens, account auth files, uploaded content, or rollout logs here. |
 | `reference_contract_status` | `none`; Codex Mobile is not currently a cross-plugin business object source through the Home AI Reference Graph |
 | `mobile_visual_harness_status` | `appium-simulator`; use Home AI live iOS PWA debugging for embedded UI reproduction and record bounded Appium/Simulator or installed-PWA evidence for final acceptance |
 | `ios_live_debug_available` | `yes`; use Home AI `npm run ios:pwa:debug` for interactive embedded iOS PWA reproduction, with one Simulator/live-debug-port/WDA-port/MJPEG-port lane per concurrent plugin debug session. |
+| `ios_visual_harness_command` | `cd /Users/hermes-dev/HermesMobileDev/app && npm run ios:pwa:visual -- --scenario embedded-plugin-shell --plugin-id codex-mobile --debug-url http://127.0.0.1:19073/` |
 
 ## Required Local Validation
 

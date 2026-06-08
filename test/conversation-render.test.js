@@ -135,6 +135,28 @@ function evaluatedTokenUsageSummaryText() {
   return Function(`${sources.join("\n")}\nreturn tokenUsageSummaryText;`)();
 }
 
+function evaluatedUserMessagesLikelySame() {
+  const sources = [
+    "normalizeFsPath",
+    "imageUrlValue",
+    "isInputTextPart",
+    "inputTextValue",
+    "isTruncatedImagePayloadPart",
+    "isInputImagePart",
+    "attachmentSummaryMarkerMatch",
+    "stripAttachmentSummaryLinePrefix",
+    "parseAttachmentLine",
+    "splitAttachmentSummaryText",
+    "isMuxUserMessage",
+    "isOptimisticUserMessage",
+    "normalizeComparableText",
+    "userMessageComparableParts",
+    "userMessagePathOverlap",
+    "userMessagesLikelySame",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`${sources.join("\n")}\nreturn userMessagesLikelySame;`)();
+}
+
 function evaluatedTurnUsageSummaryRenderer() {
   const sources = [
     "escapeHtml",
@@ -441,6 +463,50 @@ test("matching user messages keep their original turn position after final refre
   assert.match(body, /merged\.push\(mergeItemPreservingVisibleFields\(existingItem, incomingUserMatch\)\)/);
   assert.match(body, /addedIncomingItems\.add\(incomingUserMatch\)/);
   assert.match(body, /const incomingTextMatch = incomingUserMatch[\s\S]*visibleTextItemsLikelySame\(existingItem, incomingItem\)/);
+});
+
+test("optimistic user messages match app-server input_text messages", () => {
+  const userMessagesLikelySame = evaluatedUserMessagesLikelySame();
+  assert.equal(userMessagesLikelySame(
+    {
+      id: "local-user-submit-1",
+      type: "userMessage",
+      content: [{ type: "text", text: "same message" }],
+    },
+    {
+      id: "real-user-1",
+      type: "userMessage",
+      content: [{ type: "input_text", text: "same   message" }],
+    },
+  ), true);
+  assert.equal(userMessagesLikelySame(
+    {
+      id: "mux-user-thread-1-turn-1-submit-2",
+      type: "userMessage",
+      mobilePendingSubmission: true,
+      content: [{ type: "text", text: "describe this" }],
+    },
+    {
+      id: "real-user-2",
+      type: "userMessage",
+      content: [
+        { type: "input_text", input_text: "describe this" },
+        { type: "input_image", image_url: "data:image/png;base64,AAAA" },
+      ],
+    },
+  ), true);
+  assert.equal(userMessagesLikelySame(
+    {
+      id: "real-user-a",
+      type: "userMessage",
+      content: [{ type: "input_text", text: "same message" }, { type: "localImage", path: "/tmp/a.png" }],
+    },
+    {
+      id: "real-user-b",
+      type: "userMessage",
+      content: [{ type: "input_text", text: "same message" }, { type: "localImage", path: "/tmp/b.png" }],
+    },
+  ), false);
 });
 
 test("active turn state follows only the latest durable turn", () => {

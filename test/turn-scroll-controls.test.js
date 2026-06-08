@@ -98,8 +98,9 @@ test("orientation and viewport resize preserve bottom position when already near
   assert.match(appJs, /scheduleBottomFollowScroll\(shouldFollowViewportChangeToBottom\);/);
   assert.match(appJs, /if \(shouldFollow\(\)\) scrollConversationToBottom\(\);/);
   assert.match(appJs, /window\.addEventListener\("orientationchange", \(\) => \{\s*followViewportChangeToBottom\("orientation"\);/);
-  assert.match(appJs, /window\.addEventListener\("resize", \(\) => \{\s*followViewportChangeToBottom\("resize"\);/);
-  assert.match(appJs, /window\.visualViewport\.addEventListener\("resize", \(\) => \{\s*followViewportChangeToBottom\("visual-viewport-resize"\);/);
+  assert.match(appJs, /window\.addEventListener\("resize", \(\) => \{[\s\S]*if \(!isHermesKeyboardInputActive\(\)\) \{[\s\S]*followViewportChangeToBottom\("resize"\);/);
+  assert.match(appJs, /window\.visualViewport\.addEventListener\("resize", \(\) => \{[\s\S]*if \(!isHermesKeyboardInputActive\(\)\) \{[\s\S]*followViewportChangeToBottom\("visual-viewport-resize"\);/);
+  assert.match(appJs, /window\.visualViewport\.addEventListener\("scroll", \(\) => \{[\s\S]*if \(!isHermesKeyboardInputActive\(\)\) \{[\s\S]*followViewportChangeToBottom\("visual-viewport-scroll"\);/);
   assert.match(appJs, /noteConversationBottomState\(\{ userIntent: hasRecentConversationScrollIntent\(\) \}\);/);
 });
 
