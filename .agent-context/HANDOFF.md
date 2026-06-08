@@ -842,3 +842,86 @@ The previous full handoff was archived and should be opened only when old proven
     false`, app hidden). The harness failure was therefore a Home AI PWA
     session/auth precondition issue, not a Codex assertion failure.
   - The temporary live debug server started for this validation was stopped.
+
+## 2026-06-09 Hermes Media Auth And Font Sync v226
+
+- User reported two embedded-only regressions after the v225 deploy:
+  - Codex `view_image` cards appeared but displayed `图片无法加载`.
+  - After refreshing to a new version, the embedded plugin font size fell back
+    from the user's extra-large setting to a smaller host/default value.
+- Diagnosis:
+  - Server projection and cache were already correct. The example generated
+    image file existed under
+    `/Users/xuxin/.codex-mobile-web/generated-images/...`, and authenticated
+    `/api/generated-images/file` returned `200 image/png`; unauthenticated
+    returned `401`.
+  - The remaining failure was embedded media authentication. Normal JSON API
+    calls carry the in-memory `cps_...` plugin session in
+    `X-Codex-Mobile-Key`, but browser `<img>` loads cannot send that header.
+    Old or missing image query tokens could leave the card broken even though
+    the thread projection was correct.
+  - The font reset is also plugin-only: Hermes relaunches the iframe on shell
+    refresh/session recovery. If the host launch carries an older font value
+    and iframe localStorage is unavailable or lost, the plugin can restart at
+    the host value instead of the user's in-plugin choice.
+- Implemented:
+  - Commit: `31a0f13 Stabilize Hermes media auth and font sync`.
+  - Shell advanced to `0.1.11|codex-mobile-shell-v226`.
+  - `server.js` now evaluates all bounded auth token candidates from headers,
+    query params, `codex_mobile_plugin_session`, and `codex_mobile_key` cookies
+    instead of letting one stale query token mask a current cookie/session.
+  - `/api/v1/hermes/plugin/session` now sets a short-lived HttpOnly
+    `codex_mobile_plugin_session` cookie for same-origin media loads.
+  - `public/app.js` always refreshes same-origin API image URLs with the
+    current in-memory key, probes failed generated-image loads for 401/403 once,
+    and requests a bounded Hermes refresh instead of leaving a permanent broken
+    image.
+  - Plugin appearance state now lets local `codexMobileFontSize` override host
+    appearance, updates the scrubbed embed URL after in-plugin font changes,
+    and includes sanitized `appearance` in navigation and refresh-required
+    postMessages.
+  - `public/plugin-embed.js` now includes whitelisted `theme`/`fontSize`
+    appearance metadata in plugin navigation and refresh-required messages.
+- Validation:
+  - `npm run check` passed.
+  - Focused tests passed:
+    `node --test test/plugin-embed.test.js test/hermes-plugin-route.test.js
+    test/conversation-render.test.js test/generated-image-cache-service.test.js
+    test/tool-output-image-projection.test.js test/file-preview-ui.test.js`.
+  - `npm test` passed with 400 tests.
+  - `npm run check:macos` passed.
+  - Home AI platform contract check passed:
+    `node scripts/plugin-workspace-platform-contract-check.js --plugin
+    codex-mobile --json`.
+- Production deployment:
+  - Deployed commit `31a0f13b51fb` through the Home AI central Mac deploy
+    script with reason `codex-mobile-hermes-media-font-v226`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260608T165345Z-plugin-codex-mobile-web-codex-mobile-hermes-media-font-v226`.
+  - LaunchDaemon validation passed and `/api/public-config` reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v226` and
+    `shellCacheName=codex-mobile-shell-v226`.
+  - Production manifest smoke returned `id=codex-mobile`,
+    `kind=embedded_app`, `rawAccessKeyReturned=false`, and font-size values
+    `small/default/large/xlarge/xxlarge`.
+  - Generated-image production smoke:
+    unauthenticated `401`, Access Key `200 image/png`, plugin session cookie
+    with stale query token `200 image/png`; no raw keys or tokens were printed.
+  - Plugin session launch/session smoke returned `appearance.fontSize=xlarge`
+    and set the plugin-session cookie.
+- Visual toolchain:
+  - Standard `ios:pwa:visual --scenario embedded-plugin-shell --plugin-id
+    codex-mobile` initially hit the known Home AI Simulator precondition:
+    the PWA was unauthenticated (`authenticated:false`, app hidden), so it
+    could not open the plugin through `openPluginTopicApp`.
+  - The live debug server was restarted and used directly to open a real Codex
+    plugin launch URL without printing launch tokens.
+  - Direct live-debug DOM evidence passed:
+    build `0.1.11|codex-mobile-shell-v226`, `fontSize=xlarge`,
+    `embed=true`, current thread
+    `019ea77e-4e36-7820-adf4-9bf0272965b8`, one rendered image card,
+    `failedCount=0`, image natural size `942x2048`, caption
+    `view_image output`.
+  - Screenshot artifact:
+    `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v226-media-font-1780937849769.png`.
+  - The temporary live debug server started for direct validation was stopped.
