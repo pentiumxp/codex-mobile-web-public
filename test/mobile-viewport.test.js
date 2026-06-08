@@ -51,6 +51,8 @@ test("mobile viewport and early guards disable page zoom", () => {
 test("public app shell cache advances after receipt-anchor and projection hardening", () => {
   assert.match(swJs, /codex-mobile-shell-v213/);
   assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v213"/);
+  assert.match(appJs, /function serverBuildIdFromConfig\(config\) \{\s*return String\(config && \(config\.clientBuildId \|\| config\.shellCacheName \|\| config\.buildId\) \|\| ""\)\.trim\(\);/);
+  assert.doesNotMatch(appJs, /function serverBuildIdFromConfig\(config\) \{\s*return String\(config && \(config\.clientBuildId \|\| config\.shellCacheName \|\| config\.buildId \|\| config\.version\)/);
   assert.match(appJs, /startupThreadOpenPending: false/);
   assert.match(indexHtml, /id="pluginStartupLoading"/);
   assert.match(indexHtml, /data-plugin-startup-title>正在加载 Codex\.\.\.</);

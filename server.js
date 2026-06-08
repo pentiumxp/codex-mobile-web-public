@@ -509,9 +509,6 @@ function readServiceWorkerCacheName() {
   }
 }
 
-let STARTUP_SHELL_CACHE_NAME = "";
-let STARTUP_APP_SHELL_BUILD_ID = "";
-
 function appShellBuildId(cacheName = readServiceWorkerCacheName()) {
   const parts = [`app=${APP_VERSION}`, `sw=${cacheName}`];
   for (const file of [
@@ -540,13 +537,19 @@ function appShellBuildId(cacheName = readServiceWorkerCacheName()) {
   return crypto.createHash("sha256").update(parts.join("|")).digest("hex").slice(0, 16);
 }
 
-function clientBuildId() {
-  const cacheName = STARTUP_SHELL_CACHE_NAME || readServiceWorkerCacheName();
-  return `${APP_VERSION}|${cacheName || STARTUP_APP_SHELL_BUILD_ID || appShellBuildId(cacheName)}`;
+function clientBuildId(cacheName = readServiceWorkerCacheName(), buildId = appShellBuildId(cacheName)) {
+  return `${APP_VERSION}|${cacheName || buildId}`;
 }
 
-STARTUP_SHELL_CACHE_NAME = readServiceWorkerCacheName();
-STARTUP_APP_SHELL_BUILD_ID = appShellBuildId(STARTUP_SHELL_CACHE_NAME);
+function currentPublicBuildConfig() {
+  const shellCacheName = readServiceWorkerCacheName();
+  const buildId = appShellBuildId(shellCacheName);
+  return {
+    buildId,
+    clientBuildId: clientBuildId(shellCacheName, buildId),
+    shellCacheName,
+  };
+}
 
 function readCodexConfigDefaults() {
   const configPath = path.join(CODEX_HOME, "config.toml");
@@ -7848,15 +7851,16 @@ async function handleApi(req, res) {
   }
   if (url.pathname === "/api/public-config") {
     loadRecentRateLimitsFromRollouts();
+    const buildConfig = currentPublicBuildConfig();
     sendJson(res, 200, {
       authRequired: !DISABLE_AUTH,
       title: "Codex Mobile Web",
       version: APP_VERSION,
       platform: process.platform,
       workspacePath: APP_ROOT,
-      buildId: STARTUP_APP_SHELL_BUILD_ID,
-      clientBuildId: clientBuildId(),
-      shellCacheName: STARTUP_SHELL_CACHE_NAME,
+      buildId: buildConfig.buildId,
+      clientBuildId: buildConfig.clientBuildId,
+      shellCacheName: buildConfig.shellCacheName,
       maxUploadBytes: MAX_UPLOAD_BYTES,
       maxUploadFiles: MAX_UPLOAD_FILES,
       imageContextMode: IMAGE_CONTEXT_POLICY.imageContextMode,
