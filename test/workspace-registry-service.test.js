@@ -8,6 +8,7 @@ const { test } = require("node:test");
 
 const {
   createWorkspaceRegistryService,
+  syncDesktopGlobalWorkspaceRoots,
   workspaceNameFromInput,
 } = require("../adapters/workspace-registry-service");
 
@@ -56,6 +57,47 @@ test("workspace registry is idempotent for an existing directory", () => {
   assert.equal(result.created, false);
   assert.equal(result.workspace.cwd, existing);
   assert.deepEqual(service.list().map((workspace) => workspace.cwd), [existing]);
+});
+
+test("workspace registry syncs mobile-created workspaces into Codex Desktop global state", () => {
+  const root = tempRoot();
+  const globalStateFile = path.join(root, "codex-home", ".codex-global-state.json");
+  fs.mkdirSync(path.dirname(globalStateFile), { recursive: true });
+  fs.writeFileSync(globalStateFile, JSON.stringify({
+    "electron-saved-workspace-roots": [path.join(root, "Existing")],
+    "project-order": [],
+    "active-workspace-roots": [],
+  }, null, 2), "utf8");
+  const service = createWorkspaceRegistryService({
+    storageFile: path.join(root, "workspaces.json"),
+    homeDir: root,
+    createRoots: [root],
+    desktopGlobalStateFiles: [globalStateFile],
+  });
+
+  const result = service.create({ name: "HomeAI" });
+  const globalState = JSON.parse(fs.readFileSync(globalStateFile, "utf8"));
+
+  assert.equal(result.desktopGlobalStateSynced, true);
+  assert.equal(result.desktopGlobalStateSyncCount, 1);
+  for (const key of ["electron-saved-workspace-roots", "project-order", "active-workspace-roots"]) {
+    assert.ok(globalState[key].includes(result.workspace.cwd), `${key} should include workspace cwd`);
+  }
+});
+
+test("desktop global state sync is idempotent across repeated writes", () => {
+  const root = tempRoot();
+  const globalStateFile = path.join(root, ".codex-global-state.json");
+  const workspace = path.join(root, "Workspace");
+  fs.mkdirSync(workspace);
+
+  syncDesktopGlobalWorkspaceRoots([globalStateFile, globalStateFile], workspace);
+  syncDesktopGlobalWorkspaceRoots([globalStateFile], workspace);
+  const globalState = JSON.parse(fs.readFileSync(globalStateFile, "utf8"));
+
+  for (const key of ["electron-saved-workspace-roots", "project-order", "active-workspace-roots"]) {
+    assert.deepEqual(globalState[key], [workspace]);
+  }
 });
 
 test("workspace registry rejects unsafe folder names and disallowed roots", () => {

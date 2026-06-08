@@ -45,7 +45,7 @@ Tracked source files live in the repository. Runtime state stays outside Git:
 | --- | --- |
 | `%USERPROFILE%\.codex` | Codex Desktop/app-server state, session rollout JSONL, `state_5.sqlite`, shared mux endpoint |
 | `%USERPROFILE%\.codex-mobile-web` | Mobile Web access key, uploads, Web Push files, logs, local Codex executable copy, Hermes plugin registration state |
-| `%USERPROFILE%\.codex-mobile-web\workspace-registry.json` | Mobile Web-created workspace folders. This augments Mobile Web visibility without editing `.codex` global state. |
+| `%USERPROFILE%\.codex-mobile-web\workspace-registry.json` | Mobile Web-created workspace folders. This augments Mobile Web visibility and may also sync Desktop global workspace roots when `CODEX_MOBILE_SYNC_DESKTOP_WORKSPACES=1`. |
 | `%USERPROFILE%\.codex-mobile-web\codex-profiles.json` | Active Codex profile selection for the single-profile switcher. Contains profile ids, labels, and `CODEX_HOME` paths only; never auth tokens. |
 | `%USERPROFILE%\.codex\app-server-mux\endpoint.json` | Shared mux JSONL TCP endpoint used by Mobile Web and Desktop bridge. Current mux endpoint metadata includes the real `codexExe` path and capability flags so launchers can reject a reachable but version-stale mux. |
 | `.agent-context/` | Durable local project context, not public release content |
@@ -121,11 +121,23 @@ not copied to public release or `.agent-context`.
 `POST /api/workspaces` creates or registers one local workspace folder under an
 allowed create root, then makes that cwd visible to Mobile Web thread-list and
 new-thread routes. It accepts only a simple folder name, rejects path traversal,
-absolute paths, Windows reserved names, and invalid path characters, and never
-writes `%USERPROFILE%\.codex\.codex-global-state.json` directly. Allowed roots
-default to `%USERPROFILE%\Documents` and `%USERPROFILE%`; deployments can
+absolute paths, Windows reserved names, and invalid path characters. Allowed
+roots default to `%USERPROFILE%\Documents` and `%USERPROFILE%`; deployments can
 override them with `CODEX_MOBILE_WORKSPACE_CREATE_ROOTS`, and the registry file
 can be moved with `CODEX_MOBILE_WORKSPACE_REGISTRY_FILE`.
+
+By default, Mobile-created workspaces stay in the Mobile registry only. Mac
+single-runtime deployments that need Codex Desktop and embedded Codex Mobile to
+show the same newly created workspaces can set
+`CODEX_MOBILE_SYNC_DESKTOP_WORKSPACES=1`. In that mode the workspace registry
+service canonicalizes created workspace roots through `realpath` where
+available, stores the canonical cwd in the Mobile registry, and adds the same
+root to `electron-saved-workspace-roots`, `project-order`, and
+`active-workspace-roots` in the default and active-profile
+`.codex-global-state.json` files. `CODEX_MOBILE_DESKTOP_GLOBAL_STATE_FILE` may
+add one explicit Desktop global-state file. The API response reports only
+whether a sync ran and how many global-state files were processed; it must not
+return local `.codex` file paths to the browser.
 
 The browser exposes creation from the bottom of the Workspace dropdown list,
 not beside the new-thread button. After creation, it selects the new cwd and

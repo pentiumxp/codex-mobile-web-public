@@ -1431,9 +1431,16 @@ newly created workspace is rejected by `/api/threads/new-message`, check:
 - `GET /api/workspaces` should include the created cwd with `source:"mobile"`.
 - `visibleWorkspaceRoots()` should merge the registry service list before the
   new-thread route checks workspace visibility.
+- If Codex Desktop must also show Mobile-created workspaces, confirm the
+  listener was started with `CODEX_MOBILE_SYNC_DESKTOP_WORKSPACES=1`. The
+  created cwd should be stored as a canonical real path, and the same root
+  should be present in `electron-saved-workspace-roots`, `project-order`, and
+  `active-workspace-roots` in the relevant `.codex-global-state.json` files.
 
-Do not fix this by editing `.codex\.codex-global-state.json` manually. Use the
-Mobile Web registry route or Codex/Desktop workspace selection paths.
+Do not fix routine creation failures by editing `.codex\.codex-global-state.json`
+manually. Use the Mobile Web registry route or Codex/Desktop workspace
+selection paths, and back up global-state files before any explicit operational
+repair.
 
 ## Codex Profile Switch Does Not Change Account
 

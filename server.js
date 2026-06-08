@@ -70,6 +70,19 @@ const { createThreadDetailProjectionService } = require("./adapters/thread-detai
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
 const USER_HOME = process.env.USERPROFILE || process.env.HOME || process.cwd();
+
+function uniqueStrings(values) {
+  const seen = new Set();
+  const result = [];
+  for (const value of values || []) {
+    const text = String(value || "").trim();
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    result.push(text);
+  }
+  return result;
+}
+
 const RUNTIME_ROOT = process.env.CODEX_MOBILE_RUNTIME_DIR || path.join(USER_HOME, ".codex-mobile-web");
 const CODEX_PROFILE_BOOTSTRAP = resolveActiveCodexHomeFromStore({
   userHome: USER_HOME,
@@ -153,6 +166,14 @@ const THREAD_DETAIL_PROJECTION_CACHE_DIR = process.env.CODEX_MOBILE_THREAD_DETAI
   || path.join(RUNTIME_ROOT, "thread-detail-projections");
 const THREAD_DETAIL_PROJECTION_POLICY_VERSION = "state-relevant-receipt-v1";
 const WORKSPACE_CREATE_ROOTS = process.env.CODEX_MOBILE_WORKSPACE_CREATE_ROOTS || "";
+const SYNC_DESKTOP_WORKSPACES = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_SYNC_DESKTOP_WORKSPACES || "");
+const DESKTOP_GLOBAL_STATE_FILES = SYNC_DESKTOP_WORKSPACES
+  ? uniqueStrings([
+    process.env.CODEX_MOBILE_DESKTOP_GLOBAL_STATE_FILE || "",
+    path.join(DEFAULT_CODEX_HOME, ".codex-global-state.json"),
+    path.join(CODEX_HOME, ".codex-global-state.json"),
+  ])
+  : [];
 const hermesPluginService = createHermesPluginService({
   registrationFile: HERMES_PLUGIN_REGISTRATION_FILE,
   launchTokenTtlMs: HERMES_PLUGIN_LAUNCH_TOKEN_TTL_MS,
@@ -179,6 +200,7 @@ const workspaceRegistryService = createWorkspaceRegistryService({
   storageFile: WORKSPACE_REGISTRY_FILE,
   homeDir: USER_HOME,
   createRoots: WORKSPACE_CREATE_ROOTS,
+  desktopGlobalStateFiles: DESKTOP_GLOBAL_STATE_FILES,
 });
 const mobileArchiveIndexService = createMobileArchiveIndexService({
   storageFile: MOBILE_ARCHIVED_THREAD_IDS_FILE,
