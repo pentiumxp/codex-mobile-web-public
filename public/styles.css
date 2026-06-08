@@ -3686,6 +3686,150 @@ html.visual-recovering body::before {
   overflow-wrap: anywhere;
 }
 
+.github-link-card-shell {
+  display: grid;
+  gap: 8px;
+}
+
+.github-link-card-group {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.github-link-card-shell.loading {
+  opacity: 0.9;
+}
+
+.github-link-card-fallback {
+  min-width: 0;
+}
+
+.github-link-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  color: var(--text);
+  text-decoration: none;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 92%, white 8%), var(--panel));
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.03);
+}
+
+.github-link-card-head {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.github-link-card-badge,
+.github-link-card-kind,
+.github-link-card-state {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.github-link-card-badge {
+  color: var(--text);
+  background: var(--control-bg);
+  border: 1px solid var(--line-soft);
+}
+
+.github-link-card-kind {
+  color: var(--muted-strong);
+  background: color-mix(in srgb, var(--item-bg) 72%, transparent);
+}
+
+.github-link-card-state {
+  border: 1px solid transparent;
+}
+
+.github-link-card-state.state-open {
+  color: #116329;
+  background: rgba(42, 177, 79, 0.14);
+  border-color: rgba(42, 177, 79, 0.24);
+}
+
+.github-link-card-state.state-closed,
+.github-link-card-state.state-muted {
+  color: var(--muted-strong);
+  background: rgba(120, 130, 145, 0.12);
+  border-color: rgba(120, 130, 145, 0.2);
+}
+
+.github-link-card-state.state-merged {
+  color: #5e2ca5;
+  background: rgba(129, 92, 245, 0.14);
+  border-color: rgba(129, 92, 245, 0.22);
+}
+
+.github-link-card-body {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.github-link-card-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--line-soft);
+  object-fit: cover;
+  background: var(--code);
+}
+
+.github-link-card-avatar-fallback {
+  display: grid;
+  place-items: center;
+  color: var(--muted-strong);
+  font-size: 11px;
+  font-weight: 800;
+  background: var(--control-bg);
+}
+
+.github-link-card-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.github-link-card-title,
+.github-link-card-subtitle,
+.github-link-card-description,
+.github-link-card-meta {
+  overflow-wrap: anywhere;
+}
+
+.github-link-card-title {
+  color: var(--text);
+  font-weight: 760;
+  line-height: 1.3;
+}
+
+.github-link-card-subtitle {
+  color: var(--muted-strong);
+  font-size: var(--content-small-font-size);
+  line-height: 1.35;
+}
+
+.github-link-card-description,
+.github-link-card-meta {
+  color: var(--muted);
+  font-size: var(--content-small-font-size);
+  line-height: 1.4;
+}
+
 .local-file-preview-link {
   display: inline-block;
   max-width: 100%;

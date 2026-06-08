@@ -42,6 +42,11 @@ const {
   publicPullRequestApiUrl,
 } = require("./adapters/public-pull-request-service");
 const {
+  githubPreviewApiUrl,
+  normalizeGitHubPreview,
+  parseGitHubUrl,
+} = require("./adapters/github-link-preview-service");
+const {
   cacheGeneratedImageForItem,
   generatedImagePathForId,
   imageContentTypeForPath,
@@ -109,6 +114,8 @@ const PUBLIC_PR_CHECK_DISABLED = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOB
 const PUBLIC_PR_REPOSITORY = normalizeRepositorySlug(process.env.CODEX_MOBILE_PUBLIC_PR_REPOSITORY || "pentiumxp/codex-mobile-web-public");
 const PUBLIC_PR_CHECK_TIMEOUT_MS = Math.max(1000, Number(process.env.CODEX_MOBILE_PUBLIC_PR_CHECK_TIMEOUT_MS || "12000"));
 const PUBLIC_PR_CHECK_CACHE_MS = Math.max(30_000, Number(process.env.CODEX_MOBILE_PUBLIC_PR_CHECK_CACHE_MS || "900000"));
+const GITHUB_LINK_PREVIEW_TIMEOUT_MS = Math.max(1000, Number(process.env.CODEX_MOBILE_GITHUB_LINK_PREVIEW_TIMEOUT_MS || "12000"));
+const GITHUB_LINK_PREVIEW_CACHE_MS = Math.max(30_000, Number(process.env.CODEX_MOBILE_GITHUB_LINK_PREVIEW_CACHE_MS || "900000"));
 const PUBLIC_RELEASE_CHECK_DISABLED = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_DISABLE_PUBLIC_RELEASE_CHECK || "");
 const PUBLIC_RELEASE_REPOSITORY = normalizeRepositorySlug(process.env.CODEX_MOBILE_PUBLIC_RELEASE_REPOSITORY || PUBLIC_PR_REPOSITORY);
 const PUBLIC_RELEASE_BRANCH = process.env.CODEX_MOBILE_PUBLIC_RELEASE_BRANCH || "main";
@@ -430,6 +437,7 @@ let appUpdateApplying = false;
 let appUpdateRestartScheduled = false;
 let publicPullRequestStatus = null;
 let publicPullRequestCheckInFlight = null;
+const githubLinkPreviewCache = new Map();
 let publicReleaseStatus = null;
 let publicReleaseCheckInFlight = null;
 let clients = new Map();
@@ -1099,6 +1107,7 @@ function publicPullRequestError(err) {
 async function fetchJsonWithTimeout(url, options = {}) {
   if (typeof fetch !== "function") throw new Error("fetch is unavailable in this Node runtime");
   const timeoutMs = Math.max(1000, Number(options.timeoutMs || PUBLIC_PR_CHECK_TIMEOUT_MS));
+  const errorLabel = String(options.errorLabel || "GitHub request");
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   if (typeof timer.unref === "function") timer.unref();
@@ -1111,12 +1120,83 @@ async function fetchJsonWithTimeout(url, options = {}) {
       signal: controller.signal,
     });
     if (!response.ok) {
-      throw new Error(`GitHub PR check failed with HTTP ${response.status}`);
+      throw new Error(`${errorLabel} failed with HTTP ${response.status}`);
     }
     return await response.json();
   } finally {
     clearTimeout(timer);
   }
+}
+
+function githubLinkPreviewError(err) {
+  return String(err && err.message || err || "").replace(/\s+/g, " ").slice(0, 240);
+}
+
+function unsupportedGitHubLinkPreview(url, reason, extra = {}) {
+  return Object.assign({
+    supported: false,
+    provider: "github",
+    url: String(url || ""),
+    checkedAt: new Date().toISOString(),
+    reason: String(reason || "unsupported"),
+    preview: null,
+  }, extra);
+}
+
+function githubLinkPreviewForClient(status) {
+  const value = Object.assign({}, status || unsupportedGitHubLinkPreview("", "not checked"));
+  delete value.checkedAtMs;
+  delete value.promise;
+  return value;
+}
+
+async function readGitHubLinkPreview(url) {
+  const target = parseGitHubUrl(url);
+  if (!target) return unsupportedGitHubLinkPreview(url, "unsupported GitHub URL");
+  try {
+    const payload = await fetchJsonWithTimeout(githubPreviewApiUrl(target), {
+      timeoutMs: GITHUB_LINK_PREVIEW_TIMEOUT_MS,
+      errorLabel: "GitHub link preview",
+    });
+    const preview = normalizeGitHubPreview(target, payload);
+    if (!preview) return unsupportedGitHubLinkPreview(target.canonicalUrl, "unsupported GitHub resource");
+    return {
+      supported: true,
+      provider: "github",
+      url: target.canonicalUrl,
+      checkedAt: new Date().toISOString(),
+      preview,
+    };
+  } catch (err) {
+    return unsupportedGitHubLinkPreview(target.canonicalUrl, githubLinkPreviewError(err), {
+      supported: true,
+      error: githubLinkPreviewError(err),
+    });
+  }
+}
+
+async function refreshGitHubLinkPreview(url, options = {}) {
+  const target = parseGitHubUrl(url);
+  if (!target) return githubLinkPreviewForClient(unsupportedGitHubLinkPreview(url, "unsupported GitHub URL"));
+  const cacheKey = target.canonicalUrl;
+  const now = Date.now();
+  const cached = githubLinkPreviewCache.get(cacheKey);
+  if (!options.force && cached && !cached.promise && cached.checkedAtMs && now - cached.checkedAtMs < GITHUB_LINK_PREVIEW_CACHE_MS) {
+    return githubLinkPreviewForClient(cached);
+  }
+  if (cached && cached.promise) return cached.promise;
+  const promise = readGitHubLinkPreview(cacheKey)
+    .then((status) => {
+      const next = Object.assign({}, status, { checkedAtMs: Date.now() });
+      githubLinkPreviewCache.set(cacheKey, next);
+      return githubLinkPreviewForClient(next);
+    })
+    .finally(() => {
+      const current = githubLinkPreviewCache.get(cacheKey);
+      if (current && current.promise === promise) githubLinkPreviewCache.delete(cacheKey);
+    });
+  githubLinkPreviewCache.set(cacheKey, { promise, checkedAtMs: now });
+  return promise;
 }
 
 function unsupportedPublicPullRequestStatus(reason, extra = {}) {
@@ -8290,6 +8370,16 @@ async function handleApi(req, res) {
   if (url.pathname === "/api/public-pull-requests/status" && req.method === "GET") {
     const force = /^(1|true|yes|on)$/i.test(url.searchParams.get("force") || "");
     sendJson(res, 200, await refreshPublicPullRequestStatus({ force }));
+    return;
+  }
+  if (url.pathname === "/api/link-previews/github" && req.method === "GET") {
+    const force = /^(1|true|yes|on)$/i.test(url.searchParams.get("force") || "");
+    const previewUrl = String(url.searchParams.get("url") || "").trim();
+    if (!previewUrl) {
+      sendJson(res, 400, { supported: false, provider: "github", reason: "url is required", preview: null });
+      return;
+    }
+    sendJson(res, 200, await refreshGitHubLinkPreview(previewUrl, { force }));
     return;
   }
   if (url.pathname === "/api/public-release/status" && req.method === "GET") {
