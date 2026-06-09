@@ -666,6 +666,7 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v246 合并 public PR #53，优化移动端消息定位与 Usage 卡片展示。线程打开、提交新消息、同签名重渲染和 viewport 变化会使用有时限的底部跟随，正在流式输出的最新回复会延长跟随窗口，同时保留用户主动上滑阅读时的暂停逻辑；完成事件不再强制跳到长回执开头，而是保持最新回复可见，并继续提供回到本轮总结的浮动按钮。Usage 卡片改为默认折叠的摘要条，展开后显示 Context Window、thread total、rollout、最近 turn 输入/输出、cached/reasoning 子项以及 workspace context/handoff 文件大小，展开时会自动微调滚动位置避免卡片底部被 composer 遮挡。PWA shell cache 升级到 `codex-mobile-shell-v246`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新资源。本次 public 发布只包含公开源码、README、测试和去除图片元数据后的 PR 展示截图；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
 - 中文说明：v220 收紧 Hermes 插件模式下的 SSE 断线恢复。`/?embed=hermes` 中如果 `/api/events` 短暂断开但 `/api/status` 和普通 JSON API 仍可用，客户端会在后台静默刷新线程列表并按退避节奏重试 EventSource，不再把列表页状态直接打成 `Reconnecting`，也不再用非静默列表加载造成“connected -> reconnecting -> connected”后的可见列表刷新。PWA shell cache 升级到 `codex-mobile-shell-v220`，更新后需要部署静态资源并刷新客户端。
 - 中文说明：v219 同步 public PR #49，修复 Mermaid 预览渲染边界。Mermaid 大图的横向滚动范围现在从正常左边界开始，不再因为 flex 居中产生左侧内容裁切；较小图仍会在预览区域内居中显示。前端 Mermaid 规范化也会把未加引号的中文/括号 `subgraph` 标题转换为稳定 id + quoted title，减少 `subgraph 可见层（不是模型上下文原样）` 这类图表解析失败。本次 private 同步来自 public 发布 `09b1646`，没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
 
