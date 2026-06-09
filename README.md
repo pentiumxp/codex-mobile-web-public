@@ -666,6 +666,8 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v248 合并 public PR #55，优化移动端 Markdown 与 Mermaid 渲染。普通文本/上传摘要里的 fenced Markdown 表格会优先渲染为可横向滚动的表格预览，并保留可展开源码；command output 中检测到的 Markdown 表格也会在原始输出 details 前显示预览，方便在手机上直接阅读结构化结果。Mermaid 规范化会合并 `A[标题]<br/>(补充)` 这类软换行标签，减少移动端图表解析失败；Mermaid 画布、表格和代码块横向滚动区域会阻止误触发子线程侧滑面板。PWA shell cache 保持 `codex-mobile-shell-v247`；已打开的浏览器/PWA 只需普通刷新或等待前端资源刷新后生效。本次 public 发布只包含公开源码、README 和测试；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
+
 - 中文说明：v247 合并 public PR #54，并同步 private 中已验证的完整 Mobile 用户消息去重修复。前端 live `item/completed` 阶段会立即把 `mux-user-*` / local pending echo 和 app-server durable `userMessage` 合并；服务端动态线程详情投影也会按规范化文本、`input_text`、上传路径、图片 URL/path 名称等信息折叠同一条用户消息，并优先保留真实 durable 用户消息。不匹配的 pending echo 会继续保留，防止真实未落库的发送内容被误删。PWA shell cache 升级到 `codex-mobile-shell-v247`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端逻辑；服务端 projection 修复需要重启 8787 Node listener。本次 public 发布只包含公开源码、README 和测试；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
 
 - 中文说明：v246 合并 public PR #53，优化移动端消息定位与 Usage 卡片展示。线程打开、提交新消息、同签名重渲染和 viewport 变化会使用有时限的底部跟随，正在流式输出的最新回复会延长跟随窗口，同时保留用户主动上滑阅读时的暂停逻辑；完成事件不再强制跳到长回执开头，而是保持最新回复可见，并继续提供回到本轮总结的浮动按钮。Usage 卡片改为默认折叠的摘要条，展开后显示 Context Window、thread total、rollout、最近 turn 输入/输出、cached/reasoning 子项以及 workspace context/handoff 文件大小，展开时会自动微调滚动位置避免卡片底部被 composer 遮挡。PWA shell cache 升级到 `codex-mobile-shell-v246`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新资源。本次 public 发布只包含公开源码、README、测试和去除图片元数据后的 PR 展示截图；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。

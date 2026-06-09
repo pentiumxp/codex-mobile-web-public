@@ -5906,10 +5906,17 @@ function openSubagentPanelFromGesture() {
   updateSubagentPanelUi();
 }
 
+function isHorizontalScrollableGestureTarget(target) {
+  return Boolean(target && target.closest && target.closest(
+    ".markdown-mermaid-viewer, .markdown-mermaid-canvas, .markdown-mermaid-artboard, .markdown-table-wrap, .markdown-code-table-preview, .markdown-code-block pre"
+  ));
+}
+
 function beginSubagentSwipe(event) {
   if (!subagentSwipeAvailable()) return;
   if (event.touches && event.touches.length > 1) return;
   if (isInteractiveGestureTarget(event.target)) return;
+  if (isHorizontalScrollableGestureTarget(event.target)) return;
   const touch = primaryTouch(event);
   if (!touch) return;
   state.subagentSwipe = {
@@ -5956,6 +5963,7 @@ function cancelSubagentSwipe() {
 
 function handleSubagentWheelSwipe(event) {
   if (state.subagentPanelOpen || !subagentSwipeAvailable()) return;
+  if (isHorizontalScrollableGestureTarget(event.target)) return;
   const dx = Number(event.deltaX || 0);
   const dy = Number(event.deltaY || 0);
   if (dx >= SUBAGENT_WHEEL_SWIPE_MIN_PX && Math.abs(dx) > Math.abs(dy) * 1.2) openSubagentPanelFromGesture();
@@ -8702,11 +8710,50 @@ function renderMarkdown(value, markdownOptions = {}) {
 
 function renderMarkdownWithAttachmentSummary(value) {
   const split = splitAttachmentSummaryText(value || "");
-  if (!split.attachments.length) return renderMarkdown(value || "");
+  if (!split.attachments.length) return renderMarkdown(value || "", { fencedTableMode: "preview" });
   return [
-    split.text ? renderMarkdown(split.text) : "",
+    split.text ? renderMarkdown(split.text, { fencedTableMode: "preview" }) : "",
     renderAttachmentSummary(split.attachments),
   ].filter(Boolean).join("");
+}
+
+function commandOutputBody(value) {
+  const text = String(value || "").replace(/\r\n?/g, "\n").trim();
+  if (!text) return "";
+  const marker = "\nOutput:\n";
+  const markerIndex = text.indexOf(marker);
+  if (markerIndex < 0) return text;
+  return text.slice(markerIndex + marker.length).trim();
+}
+
+function stripCommandOutputLineNumbers(value) {
+  const text = String(value || "");
+  if (!text) return "";
+  const lines = text.split("\n");
+  const numberedCount = lines.filter((line) => /^\s*\d+\t/.test(line)).length;
+  if (numberedCount < 3 || numberedCount < Math.ceil(lines.length * 0.4)) return text;
+  return lines.map((line) => line.replace(/^\s*\d+\t/, "")).join("\n");
+}
+
+function isMarkdownTableSeparatorLine(line) {
+  const cells = String(line || "").trim().replace(/^\||\|$/g, "").split("|");
+  return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
+}
+
+function containsMarkdownTable(value) {
+  const lines = String(value || "").split("\n");
+  for (let index = 0; index < lines.length - 1; index += 1) {
+    if (!lines[index].includes("|")) continue;
+    if (isMarkdownTableSeparatorLine(lines[index + 1])) return true;
+  }
+  return false;
+}
+
+function commandOutputMarkdownPreview(value, item = {}) {
+  if (!value || item.type !== "commandExecution") return "";
+  const body = stripCommandOutputLineNumbers(commandOutputBody(value));
+  if (!containsMarkdownTable(body)) return "";
+  return body;
 }
 
 function normalizeGitHubLinkPreview(value) {
@@ -9885,12 +9932,13 @@ function renderOutputBlock(output, item = {}) {
   }
   if (!output) return "";
   const outputText = String(output);
+  const markdownPreview = commandOutputMarkdownPreview(outputText, item);
   const total = item.outputTotalChars || String(output).length;
   const truncated = item.outputTruncated || total > outputText.length;
   const summary = truncated
     ? `Output preview: ${total.toLocaleString()} chars total, showing latest ${outputText.length.toLocaleString()}`
     : `Output: ${outputText.length.toLocaleString()} chars`;
-  return `<details class="output-details">
+  return `${markdownPreview ? `<div class="command-output-markdown-preview">${renderMarkdown(markdownPreview, { orderedListMode: "source" })}</div>` : ""}<details class="output-details">
     <summary><span>${escapeHtml(summary)}</span>${copyButtonHtml(rememberCopyText(outputText), "复制", "output-copy-button")}</summary>
     <pre>${escapeHtml(outputText)}</pre>
   </details>`;

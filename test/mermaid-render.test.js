@@ -67,6 +67,17 @@ RC --> M[Model Provider]`;
   assert.match(normalized, /M\[Model Provider\]/);
 });
 
+test("mermaid render normalization merges detached soft-break label suffixes", () => {
+  const source = String.raw`flowchart TD
+  RT6[R6 收口判定]\n(done + terminal state)
+  RT6 --> FIN[Final Answer]`;
+
+  const normalized = renderer.normalizeMermaidSourceForRender(source);
+
+  assert.match(normalized, /RT6\["R6 收口判定<br\/>\(done \+ terminal state\)"\]/);
+  assert.doesNotMatch(normalized, /RT6\[R6 收口判定\]<br\/>\(done \+ terminal state\)/);
+});
+
 test("mermaid render normalization sanitizes edge labels with ascii parentheses on fallback", () => {
   const source = String.raw`flowchart TD
 M -->|tool_call(工具意图)| T1[Runtime Tool Router]`;
@@ -158,6 +169,7 @@ test("mobile app ships a custom Mermaid preview dialog and lazy runtime loader",
   assert.match(appJs, /function handleMermaidAction\(/);
   assert.match(stylesCss, /\.markdown-mermaid-block/);
   assert.match(stylesCss, /\.markdown-mermaid-viewer/);
+  assert.match(stylesCss, /\.markdown-mermaid-viewer\s*\{[\s\S]*touch-action:\s*pan-x pan-y;[\s\S]*overscroll-behavior:\s*contain;/);
   assert.match(stylesCss, /\.markdown-mermaid-canvas\s*\{[\s\S]*width: max-content;[\s\S]*justify-content: flex-start;/);
   assert.match(stylesCss, /\.markdown-mermaid-artboard\s*\{[\s\S]*margin-inline: auto;/);
   assert.match(stylesCss, /\.mermaid-preview-dialog/);
