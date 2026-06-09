@@ -1933,6 +1933,35 @@ The previous full handoff was archived and should be opened only when old proven
     `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-side-chat-composer-keyboard-20260609T134925Z.png`.
   - Aggregate checks passed:
     `npm run check`, `npm run check:macos`, and `npm test` with 437 tests.
+- Commit:
+  - Product/source commit deployed to production:
+    `3cc05a32e47f Refine side chat composer layout`.
+- Production deployment and incident note:
+  - An initial deploy attempt failed because the inherited
+    `HOMEAI_MAC_SUDO_PASSWORD_FILE` pointed at missing `/Users/xuxin/Desktop/sudo`.
+    The valid private password file was `/Users/xuxin/.homeai-qa/sudo-password`.
+  - During the interrupted deployment/retry window, Home AI could not open the
+    Codex plugin because `127.0.0.1:8787` had no listener and
+    `launchctl print system/com.hermesmobile.plugin.codex-mobile` reported the
+    service missing from the system domain.
+  - Recovered by bootstrapping and kickstarting
+    `/Library/LaunchDaemons/com.hermesmobile.plugin.codex-mobile.plist`, then
+    rerunning the central Mac deploy script with explicit `--password-file`.
+  - Successful deploy backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260609T140140Z-plugin-codex-mobile-web-manual`.
+  - Production `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v255`,
+    `shellCacheName=codex-mobile-shell-v255`, build `e14f03015fcbd4a3`.
+  - Production `/api/status?detail=1` reports `ready=true`,
+    `transport=external-jsonl-tcp`, and `lastError=null`.
+  - Home AI side smoke passed:
+    `/api/hermes-plugins/codex-mobile/manifest` returned `id=codex-mobile`;
+    `/api/hermes-plugins/codex-mobile/proxy/api/public-config` returned
+    Codex Mobile v255.
+  - Evidence ledger entries:
+    `evidence-fb396a60-9a89-484c-9e88-5a8ebe5c97a2`,
+    `evidence-b31f0370-e268-4094-8623-955d6268bd37`, and
+    `evidence-0e2a40af-ed11-4765-ab6e-a449d44cd0c0`.
 
 ## 2026-06-09 Public PR #58 Keyboard Focus Sync
 
