@@ -54,7 +54,30 @@ The previous full handoff was archived and should be opened only when old proven
   `keyboard.simulated=true`. The layout gate passed with input bottom at 384,
   keyboard top at 392, and screenshot artifact:
   `/Users/xuxin/.homeai-qa/artifacts/ios-pwa-visual-embedded-plugin-keyboard-composer-codex-mobile-20260609T060315Z.png`.
-- Production deploy is still pending at the time of this handoff section.
+- Commit: `3eb6318 Fix Codex mobile image rendering`.
+- Production deployment:
+  - Deployed source commit `3eb631880e26` through the Home AI central Mac
+    deploy script with reason `codex-mobile-image-rendering-v251`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260609T061100Z-plugin-codex-mobile-web-codex-mobile-image-rendering-v251`.
+  - LaunchDaemon validation passed for
+    `system/com.hermesmobile.plugin.codex-mobile`.
+  - Production `/api/public-config` reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v251`,
+    `shellCacheName=codex-mobile-shell-v251`, `platform=darwin`, and
+    `workspacePath=/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Production manifest smoke returned `id=codex-mobile`, `kind=embedded_app`,
+    `raw_key_returned_by_codex_mobile=false`, and no local runtime/key path.
+  - Production `/api/uploads/file` smoke for current-thread `IMG_5888.jpg`
+    returned `401` without auth and `200 image/jpeg` with the Codex Mobile
+    Access Key.
+  - Production `/api/generated-images/file` smoke returned `401` without auth
+    and `200 image/png` with the Codex Mobile Access Key.
+  - Production thread detail smoke for
+    `019ea76b-d846-7892-bda0-c0fff9cf7581` returned 10 projected turns, 23
+    image-related items, 6 upload-route items, and 6 generated-image-route
+    items, with image items present across several turns rather than only the
+    latest turn.
 
 ## Preserved Recent Handoff Tail
 

@@ -142,15 +142,26 @@ Minimum closure for Codex Mobile production changes:
   `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
 - LaunchDaemon: `system/com.hermesmobile.plugin.codex-mobile`.
 - Loopback production URL: `http://127.0.0.1:8787`.
-- Current verified shell after current-thread side-chat deployment:
-  `0.1.11|codex-mobile-shell-v250`.
+- Current verified shell after image rendering deployment:
+  `0.1.11|codex-mobile-shell-v251`.
 - Backup path:
-  `/Users/hermes-host/HermesMobile/backups/deploy/20260609T040633Z-plugin-codex-mobile-web-codex-mobile-thread-side-chat-v250`.
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260609T061100Z-plugin-codex-mobile-web-codex-mobile-image-rendering-v251`.
 - Production smoke confirmed `/api/public-config` reports
-  `clientBuildId=0.1.11|codex-mobile-shell-v250` and
-  `shellCacheName=codex-mobile-shell-v250`.
+  `clientBuildId=0.1.11|codex-mobile-shell-v251` and
+  `shellCacheName=codex-mobile-shell-v251`.
 - Plugin manifest returns `plugin_id=codex-mobile`, `kind=embedded_app`, and
   does not return the exact raw Codex Mobile Access Key value.
+- Production upload-image route remains protected: no auth returns `401`; with
+  the Codex Mobile Access Key, the current thread upload
+  `IMG_5888.jpg` returns `200 image/jpeg`.
+- Production generated-image route remains protected: no auth returns `401`;
+  with the Codex Mobile Access Key, a cached generated image returns
+  `200 image/png`.
+- Production thread detail smoke for
+  `019ea76b-d846-7892-bda0-c0fff9cf7581` returned 10 projected turns, 23
+  image-related items, 6 authenticated upload-route items, and 6 authenticated
+  generated-image-route items. Image items were present across several turns,
+  not only the latest turn.
 - Side-chat route smoke confirmed unauthenticated
   `/api/threads/<id>/side-chat` returns 401, authenticated read returns 200,
   and `sideChat.persistence=server`.
