@@ -48,6 +48,7 @@
     const visualBottom = visual ? visual + visualOffsetTop : 0;
     const layout = Math.max(positiveNumber(input.innerHeight), positiveNumber(input.clientHeight));
     const hostKeyboardBottomInset = Math.max(0, Number(input.hostKeyboardBottomInset) || 0);
+    const hostBottomSafeArea = Math.max(0, Number(input.hostBottomSafeArea) || 0);
     const hostKeyboardVisible = Boolean(input.hostKeyboardVisible && hostKeyboardBottomInset > threshold);
     const keyboardCandidate = Boolean(visualBottom && layout && visualBottom < layout - threshold);
     const keyboardInputActive = Boolean(input.keyboardInputActive || isKeyboardEditable(input.activeElement));
@@ -69,6 +70,7 @@
       layout: Math.round(layout),
       hostKeyboardVisible,
       hostKeyboardBottomInset: Math.round(hostKeyboardBottomInset),
+      hostBottomSafeArea: Math.round(hostBottomSafeArea),
     };
   }
 

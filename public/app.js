@@ -581,6 +581,9 @@ function viewportState() {
   const hostKeyboard = hostViewport && hostViewport.keyboard && typeof hostViewport.keyboard === "object"
     ? hostViewport.keyboard
     : null;
+  const hostFooter = hostViewport && hostViewport.footer && typeof hostViewport.footer === "object"
+    ? hostViewport.footer
+    : null;
   return viewportMetrics.measureViewport({
     visualHeight: window.visualViewport && window.visualViewport.height,
     visualOffsetTop: window.visualViewport && window.visualViewport.offsetTop,
@@ -595,6 +598,7 @@ function viewportState() {
     activeElement: document.activeElement,
     hostKeyboardVisible: Boolean(isHermesEmbedMode() && hostKeyboard && hostKeyboard.visible),
     hostKeyboardBottomInset: isHermesEmbedMode() && hostKeyboard ? hostKeyboard.bottomInset : 0,
+    hostBottomSafeArea: isHermesEmbedMode() && hostFooter ? hostFooter.safeAreaBottom : 0,
   });
 }
 
@@ -621,6 +625,7 @@ function updateViewportVars() {
     document.documentElement.style.removeProperty("--app-top");
     document.documentElement.style.removeProperty("--app-height");
   }
+  document.documentElement.style.setProperty("--host-bottom-safe-area", `${Math.max(0, Math.round(viewport.hostBottomSafeArea || 0))}px`);
   document.documentElement.classList.toggle("keyboard-open", viewport.keyboardShrunk);
 }
 
@@ -4559,6 +4564,8 @@ function normalizeHermesPluginViewportMessage(data) {
   if (pluginId && pluginId !== "codex-mobile") return null;
   const viewport = data.viewport && typeof data.viewport === "object" ? data.viewport : {};
   const keyboard = data.keyboard && typeof data.keyboard === "object" ? data.keyboard : {};
+  const footer = data.footer && typeof data.footer === "object" ? data.footer : {};
+  const footerSafeArea = footer.safeAreaBottom || footer.bottomSafeArea || footer.hostBottomSafeArea || footer.safeAreaInsetBottom;
   return {
     receivedAtMs: Date.now(),
     reason: String(data.reason || "").trim().slice(0, 60),
@@ -4575,6 +4582,9 @@ function normalizeHermesPluginViewportMessage(data) {
       bottomInset: boundedViewportNumber(keyboard.bottomInset || keyboard.height, 1024),
       offsetTop: boundedViewportNumber(keyboard.offsetTop),
       height: boundedViewportNumber(keyboard.height || keyboard.bottomInset, 1024),
+    },
+    footer: {
+      safeAreaBottom: boundedViewportNumber(footerSafeArea, 512),
     },
   };
 }

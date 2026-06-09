@@ -46,6 +46,7 @@
   --selected-bg: rgba(122, 199, 167, 0.08);
   --shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
   --app-height: 100dvh;
+  --host-bottom-safe-area: 0px;
   --content-font-size: 15px;
   --content-line-height: 1.62;
   --content-small-font-size: 12px;
@@ -479,7 +480,7 @@ html.embed-hermes .conversation {
 }
 
 html.embed-hermes .composer {
-  padding-bottom: clamp(12px, calc(env(safe-area-inset-bottom, 0px) - 82px), 56px);
+  padding-bottom: max(12px, var(--host-bottom-safe-area, 0px));
 }
 
 html.embed-hermes.keyboard-open .composer {

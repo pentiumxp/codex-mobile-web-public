@@ -57,6 +57,21 @@ test("viewport metrics use host keyboard inset as embedded fallback", () => {
   assert.equal(result.height, 422);
 });
 
+test("viewport metrics preserve host bottom safe area without keyboard shrink", () => {
+  const result = viewportMetrics.measureViewport({
+    visualHeight: 714,
+    visualOffsetTop: 0,
+    innerHeight: 714,
+    clientHeight: 714,
+    activeElement: { tagName: "BODY" },
+    hostBottomSafeArea: 18,
+  });
+
+  assert.equal(result.keyboardShrunk, false);
+  assert.equal(result.height, 714);
+  assert.equal(result.hostBottomSafeArea, 18);
+});
+
 test("viewport metrics treat iframe scroll or offset as keyboard shift", () => {
   const scrolled = viewportMetrics.measureViewport({
     visualHeight: 714,
