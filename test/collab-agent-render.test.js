@@ -99,6 +99,12 @@ test("current-turn subagent panel opens from a left swipe without a topbar butto
   assert.match(appJs, /function handleSubagentWheelSwipe\(/);
   assert.match(appJs, /addEventListener\("touchstart", beginSubagentSwipe/);
   assert.match(appJs, /addEventListener\("wheel", handleSubagentWheelSwipe/);
+  assert.match(appJs, /function isHorizontalScrollableGestureTarget\(/);
+  assert.match(functionBody("isHorizontalScrollableGestureTarget"), /markdown-mermaid-viewer/);
+  assert.match(functionBody("isHorizontalScrollableGestureTarget"), /markdown-table-wrap/);
+  assert.match(functionBody("isHorizontalScrollableGestureTarget"), /markdown-code-table-preview/);
+  assert.match(functionBody("beginSubagentSwipe"), /isHorizontalScrollableGestureTarget\(event\.target\)/);
+  assert.match(functionBody("handleSubagentWheelSwipe"), /isHorizontalScrollableGestureTarget\(event\.target\)/);
   assert.match(functionBody("isSubagentItem"), /collabAgentToolCall/);
   assert.match(appJs, /function activeSubagentItems\(/);
   assert.match(appJs, /function isActiveSubagentItem\(/);

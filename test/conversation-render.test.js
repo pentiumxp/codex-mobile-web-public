@@ -216,6 +216,7 @@ test("long agent messages keep a stable render path when a turn completes", () =
 test("agent markdown can render uploaded image summaries as thumbnails", () => {
   assert.match(appJs, /function renderMarkdownWithAttachmentSummary\(value\)/);
   assert.match(functionBody("renderMarkdownWithAttachmentSummary"), /splitAttachmentSummaryText\(value \|\| ""\)/);
+  assert.match(functionBody("renderMarkdownWithAttachmentSummary"), /fencedTableMode: "preview"/);
   assert.match(functionBody("renderMarkdownWithAttachmentSummary"), /renderAttachmentSummary\(split\.attachments\)/);
   assert.match(functionBody("splitAttachmentSummaryText"), /attachmentSummaryMarkerMatch/);
   assert.match(functionBody("splitAttachmentSummaryText"), /stripAttachmentSummaryLinePrefix/);
@@ -223,6 +224,14 @@ test("agent markdown can render uploaded image summaries as thumbnails", () => {
   assert.match(functionBody("renderAttachmentSummary"), /canRenderImageAttachment/);
   assert.match(functionBody("renderAttachmentSummary"), /renderInputImage\(\{ path: attachment\.path \}, attachment, index\)/);
   assert.match(functionBody("renderItemBody"), /item\.type === "plan"[\s\S]*renderMarkdownWithAttachmentSummary\(item\.text \|\| ""\)/);
+});
+
+test("command output can surface markdown table previews without dropping raw output", () => {
+  assert.match(appJs, /function commandOutputMarkdownPreview\(/);
+  assert.match(functionBody("renderOutputBlock"), /commandOutputMarkdownPreview\(outputText, item\)/);
+  assert.match(functionBody("renderOutputBlock"), /class="command-output-markdown-preview"/);
+  assert.match(functionBody("renderOutputBlock"), /<details class="output-details">/);
+  assert.match(stylesCss, /\.command-output-markdown-preview/);
 });
 
 test("uploaded image summaries parse CRLF and markdown blockquote references", () => {
