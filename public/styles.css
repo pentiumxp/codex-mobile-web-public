@@ -3957,6 +3957,35 @@ html.visual-recovering body::before {
   overflow: hidden;
 }
 
+.markdown-code-table-preview {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.markdown-code-table-source-details {
+  min-width: 0;
+  margin-top: 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--operation-bg);
+  overflow: hidden;
+}
+
+.markdown-code-table-source-details summary {
+  padding: 9px 10px;
+  color: var(--muted);
+  font-size: var(--content-small-font-size);
+  cursor: pointer;
+  user-select: none;
+}
+
+.markdown-code-table-source-details .markdown-code-block {
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+  border-radius: 0;
+}
+
 .markdown-code-head {
   min-width: 0;
   display: flex;
@@ -4053,6 +4082,9 @@ html.visual-recovering body::before {
   min-height: 220px;
   max-width: 100%;
   overflow: auto;
+  touch-action: pan-x pan-y;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   border: 1px solid var(--line-soft);
   border-radius: 8px;
   background: var(--code);
@@ -4129,6 +4161,9 @@ html.visual-recovering body::before {
   min-width: 0;
   max-width: 100%;
   overflow-x: auto;
+  touch-action: pan-x pan-y;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   border: 1px solid var(--line-soft);
   border-radius: 8px;
 }
@@ -4350,6 +4385,24 @@ html.visual-recovering body::before {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.command-output-markdown-preview {
+  min-width: 0;
+  max-width: 100%;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.command-output-markdown-preview .markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.command-output-markdown-preview .markdown-body > :last-child {
+  margin-bottom: 0;
 }
 
 .copy-button {

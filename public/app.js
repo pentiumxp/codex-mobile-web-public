@@ -6110,10 +6110,17 @@ function openSubagentPanelFromGesture() {
   updateSubagentPanelUi();
 }
 
+function isHorizontalScrollableGestureTarget(target) {
+  return Boolean(target && target.closest && target.closest(
+    ".markdown-mermaid-viewer, .markdown-mermaid-canvas, .markdown-mermaid-artboard, .markdown-table-wrap, .markdown-code-table-preview, .markdown-code-block pre"
+  ));
+}
+
 function beginSubagentSwipe(event) {
   if (!subagentSwipeAvailable()) return;
   if (event.touches && event.touches.length > 1) return;
   if (isInteractiveGestureTarget(event.target)) return;
+  if (isHorizontalScrollableGestureTarget(event.target)) return;
   const touch = primaryTouch(event);
   if (!touch) return;
   state.subagentSwipe = {
@@ -6160,6 +6167,7 @@ function cancelSubagentSwipe() {
 
 function handleSubagentWheelSwipe(event) {
   if (state.subagentPanelOpen || !subagentSwipeAvailable()) return;
+  if (isHorizontalScrollableGestureTarget(event.target)) return;
   const dx = Number(event.deltaX || 0);
   const dy = Number(event.deltaY || 0);
   if (dx >= SUBAGENT_WHEEL_SWIPE_MIN_PX && Math.abs(dx) > Math.abs(dy) * 1.2) openSubagentPanelFromGesture();
@@ -8912,11 +8920,225 @@ function renderMarkdown(value, markdownOptions = {}) {
 
 function renderMarkdownWithAttachmentSummary(value) {
   const split = splitAttachmentSummaryText(value || "");
-  if (!split.attachments.length) return renderMarkdown(value || "");
+  if (!split.attachments.length) return renderMarkdown(value || "", { fencedTableMode: "preview" });
   return [
-    split.text ? renderMarkdown(split.text) : "",
+    split.text ? renderMarkdown(split.text, { fencedTableMode: "preview" }) : "",
     renderAttachmentSummary(split.attachments),
   ].filter(Boolean).join("");
+}
+
+function commandOutputBody(value) {
+  const text = String(value || "").replace(/\r\n?/g, "\n").trim();
+  if (!text) return "";
+  const marker = "\nOutput:\n";
+  const markerIndex = text.indexOf(marker);
+  if (markerIndex < 0) return text;
+  return text.slice(markerIndex + marker.length).trim();
+}
+
+function stripCommandOutputLineNumbers(value) {
+  const text = String(value || "");
+  if (!text) return "";
+  const lines = text.split("\n");
+  const numberedCount = lines.filter((line) => /^\s*\d+\t/.test(line)).length;
+  if (numberedCount < 3 || numberedCount < Math.ceil(lines.length * 0.4)) return text;
+  return lines.map((line) => line.replace(/^\s*\d+\t/, "")).join("\n");
+}
+
+function isMarkdownTableSeparatorLine(line) {
+  const cells = String(line || "").trim().replace(/^\||\|$/g, "").split("|");
+  return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
+}
+
+function containsMarkdownTable(value) {
+  const lines = String(value || "").split("\n");
+  for (let index = 0; index < lines.length - 1; index += 1) {
+    if (!lines[index].includes("|")) continue;
+    if (isMarkdownTableSeparatorLine(lines[index + 1])) return true;
+  }
+  return false;
+}
+
+function commandOutputMarkdownPreview(value, item = {}) {
+  if (!value || item.type !== "commandExecution") return "";
+  const body = stripCommandOutputLineNumbers(commandOutputBody(value));
+  if (!containsMarkdownTable(body)) return "";
+  return body;
+}
+
+function normalizeGitHubLinkPreview(value) {
+  if (!value || typeof value !== "object") return null;
+  const preview = value.preview && typeof value.preview === "object" ? value.preview : null;
+  if (!preview || !value.supported) return null;
+  const url = String(preview.url || value.url || "").trim();
+  if (!url) return null;
+  return {
+    provider: "github",
+    kind: String(preview.kind || "").trim(),
+    kindLabel: String(preview.kindLabel || "GitHub").trim() || "GitHub",
+    url,
+    title: String(preview.title || "").trim(),
+    subtitle: String(preview.subtitle || "").trim(),
+    description: String(preview.description || "").trim(),
+    meta: String(preview.meta || "").trim(),
+    avatarUrl: String(preview.avatarUrl || "").trim(),
+    accent: String(preview.accent || "").trim(),
+    state: String(preview.state || "").trim(),
+    stateLabel: String(preview.stateLabel || "").trim(),
+  };
+}
+
+function normalizeGithubPreviewUrl(value) {
+  let parsed;
+  try {
+    parsed = new URL(String(value || "").trim());
+  } catch (_) {
+    return "";
+  }
+  const host = String(parsed.hostname || "").toLowerCase();
+  if (host !== "github.com" && host !== "www.github.com") return "";
+  if (parsed.protocol !== "https:") return "";
+  return parsed.toString();
+}
+
+function gitHubLinkPreviewAccentClass(value) {
+  const accent = String(value || "").trim().toLowerCase();
+  if (accent === "open" || accent === "closed" || accent === "merged" || accent === "repo" || accent === "commit" || accent === "muted") {
+    return accent;
+  }
+  return "muted";
+}
+
+function renderGitHubLinkPreviewCard(preview) {
+  const accent = gitHubLinkPreviewAccentClass(preview && preview.accent);
+  const statePill = preview && preview.stateLabel
+    ? `<span class="github-link-card-state state-${escapeHtml(gitHubLinkPreviewAccentClass(preview.state || accent))}">${escapeHtml(preview.stateLabel)}</span>`
+    : "";
+  const avatar = preview && preview.avatarUrl
+    ? `<img class="github-link-card-avatar" src="${escapeHtml(preview.avatarUrl)}" alt="" loading="lazy">`
+    : `<span class="github-link-card-avatar github-link-card-avatar-fallback" aria-hidden="true">GH</span>`;
+  const subtitle = preview && preview.subtitle ? `<div class="github-link-card-subtitle">${escapeHtml(preview.subtitle)}</div>` : "";
+  const description = preview && preview.description ? `<div class="github-link-card-description">${escapeHtml(preview.description)}</div>` : "";
+  const meta = preview && preview.meta ? `<div class="github-link-card-meta">${escapeHtml(preview.meta)}</div>` : "";
+  return `<a class="github-link-card github-link-card-${escapeHtml(accent)}" href="${escapeHtml(preview.url)}" target="_blank" rel="noreferrer">
+    <div class="github-link-card-head">
+      <span class="github-link-card-badge">GitHub</span>
+      <span class="github-link-card-kind">${escapeHtml(preview.kindLabel || "GitHub")}</span>
+      ${statePill}
+    </div>
+    <div class="github-link-card-body">
+      ${avatar}
+      <div class="github-link-card-copy">
+        <div class="github-link-card-title">${escapeHtml(preview.title || preview.url)}</div>
+        ${subtitle}
+        ${description}
+        ${meta}
+      </div>
+    </div>
+  </a>`;
+}
+
+async function fetchGitHubLinkPreview(url) {
+  const cacheKey = String(url || "").trim();
+  if (!cacheKey) return null;
+  const cached = githubLinkPreviewCache.get(cacheKey);
+  if (cached && cached.value) return cached.value;
+  if (cached && cached.promise) return cached.promise;
+  const promise = api(`/api/link-previews/github?url=${encodeURIComponent(cacheKey)}`, {
+    timeoutMs: GITHUB_LINK_PREVIEW_TIMEOUT_MS,
+  })
+    .then((value) => {
+      const preview = normalizeGitHubLinkPreview(value);
+      githubLinkPreviewCache.set(cacheKey, { value: preview });
+      return preview;
+    })
+    .catch((err) => {
+      githubLinkPreviewCache.delete(cacheKey);
+      throw err;
+    });
+  githubLinkPreviewCache.set(cacheKey, { promise });
+  return promise;
+}
+
+function collectGitHubPreviewUrls(root) {
+  if (!root || typeof root.querySelectorAll !== "function") return [];
+  const urls = [];
+  const seen = new Set();
+  root.querySelectorAll("a[href]").forEach((link) => {
+    if (!link || typeof link.closest !== "function") return;
+    if (link.closest(".github-link-card") || link.closest(".github-link-card-shell")) return;
+    if (link.closest("pre") || link.closest("code")) return;
+    const url = normalizeGithubPreviewUrl(link.getAttribute("href") || link.href || "");
+    if (!url || seen.has(url)) return;
+    seen.add(url);
+    urls.push(url);
+  });
+  return urls;
+}
+
+function githubLinkPreviewHosts(root = document) {
+  if (!root || typeof root.querySelectorAll !== "function") return [];
+  const hosts = [];
+  const seen = new Set();
+  const push = (node) => {
+    if (!node || seen.has(node)) return;
+    seen.add(node);
+    hosts.push(node);
+  };
+  if (typeof root.matches === "function" && root.matches(".item-body, #filePreviewBody")) push(root);
+  root.querySelectorAll(".item-body, #filePreviewBody").forEach(push);
+  return hosts;
+}
+
+function ensureGitHubLinkPreviewGroups(root = document) {
+  githubLinkPreviewHosts(root).forEach((host) => {
+    host.querySelectorAll('[data-github-link-preview-group="auto"]').forEach((group) => group.remove());
+    const explicitUrls = new Set(
+      Array.from(host.querySelectorAll(".github-link-card-shell[data-github-link-preview-url]"))
+        .map((slot) => String(slot.dataset.githubLinkPreviewUrl || "").trim())
+        .filter(Boolean),
+    );
+    const urls = collectGitHubPreviewUrls(host)
+      .filter((url) => !explicitUrls.has(url))
+      .slice(0, GITHUB_LINK_PREVIEW_LIMIT);
+    if (!urls.length) return;
+    const cards = urls.map((url) => `<div class="github-link-card-shell" data-github-link-preview-url="${escapeHtml(url)}">
+      <div class="github-link-card-fallback"><a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(url)}</a></div>
+    </div>`).join("");
+    host.insertAdjacentHTML("beforeend", `<div class="github-link-card-group" data-github-link-preview-group="auto">${cards}</div>`);
+  });
+}
+
+async function hydrateGitHubLinkCard(slot) {
+  if (!slot || !slot.dataset) return;
+  const url = String(slot.dataset.githubLinkPreviewUrl || "").trim();
+  if (!url) return;
+  if (slot.dataset.githubLinkPreviewState === "done") return;
+  if (slot.dataset.githubLinkPreviewState === "loading") return;
+  slot.dataset.githubLinkPreviewState = "loading";
+  slot.classList.add("loading");
+  try {
+    const preview = await fetchGitHubLinkPreview(url);
+    if (!preview) {
+      slot.dataset.githubLinkPreviewState = "unsupported";
+      slot.classList.remove("loading");
+      return;
+    }
+    slot.innerHTML = renderGitHubLinkPreviewCard(preview);
+    slot.dataset.githubLinkPreviewState = "done";
+    slot.classList.remove("loading");
+  } catch (_) {
+    slot.dataset.githubLinkPreviewState = "error";
+    slot.classList.remove("loading");
+  }
+}
+
+function hydrateGitHubLinkCards(root = document) {
+  if (!root || typeof root.querySelectorAll !== "function") return;
+  ensureGitHubLinkPreviewGroups(root);
+  root.querySelectorAll("[data-github-link-preview-url]").forEach((slot) => {
+    hydrateGitHubLinkCard(slot).catch(() => {});
+  });
 }
 
 function mermaidEffectiveTheme() {
@@ -9955,12 +10177,13 @@ function renderOutputBlock(output, item = {}) {
   }
   if (!output) return "";
   const outputText = String(output);
+  const markdownPreview = commandOutputMarkdownPreview(outputText, item);
   const total = item.outputTotalChars || String(output).length;
   const truncated = item.outputTruncated || total > outputText.length;
   const summary = truncated
     ? `Output preview: ${total.toLocaleString()} chars total, showing latest ${outputText.length.toLocaleString()}`
     : `Output: ${outputText.length.toLocaleString()} chars`;
-  return `<details class="output-details">
+  return `${markdownPreview ? `<div class="command-output-markdown-preview">${renderMarkdown(markdownPreview, { orderedListMode: "source" })}</div>` : ""}<details class="output-details">
     <summary><span>${escapeHtml(summary)}</span>${copyButtonHtml(rememberCopyText(outputText), "复制", "output-copy-button")}</summary>
     <pre>${escapeHtml(outputText)}</pre>
   </details>`;

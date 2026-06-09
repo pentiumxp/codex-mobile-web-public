@@ -203,11 +203,37 @@
     return `<${tag}${startAttr}>${items.join("")}</${tag}>`;
   }
 
+  function codeBlockTableLines(codeText) {
+    const lines = String(codeText || "").replace(/\r\n?/g, "\n").split("\n");
+    for (let index = 0; index < lines.length - 1; index += 1) {
+      if (!lines[index].includes("|") || !isMarkdownTableSeparator(lines[index + 1])) continue;
+      const tableLines = [lines[index], lines[index + 1]];
+      index += 2;
+      while (index < lines.length && lines[index].trim() && lines[index].includes("|")) {
+        tableLines.push(lines[index]);
+        index += 1;
+      }
+      return tableLines.length >= 3 ? tableLines : [];
+    }
+    return [];
+  }
+
   function renderCodeBlock(codeText, lang, options) {
     const langLabel = `<span class="markdown-code-lang">${escapeHtml(lang || "代码")}</span>`;
     let copyButton = "";
     if (options && typeof options.rememberCopyText === "function" && typeof options.copyButtonHtml === "function") {
       copyButton = options.copyButtonHtml(options.rememberCopyText(codeText), options.copyLabel || "复制", "markdown-copy-button");
+    }
+    const normalizedLang = String(lang || "").trim().toLowerCase();
+    const allowTablePreview = Boolean(options && options.fencedTableMode === "preview")
+      && (!normalizedLang || normalizedLang === "text" || normalizedLang === "txt" || normalizedLang === "plain" || normalizedLang === "plaintext");
+    const tableLines = allowTablePreview ? codeBlockTableLines(codeText) : [];
+    if (tableLines.length) {
+      return `<div class="markdown-code-table-preview">${renderMarkdownTable(tableLines)}</div>
+      <details class="markdown-code-table-source-details">
+        <summary>查看源码表格</summary>
+        <div class="markdown-code-block"><div class="markdown-code-head">${langLabel}${copyButton}</div><pre><code>${escapeHtml(codeText)}</code></pre></div>
+      </details>`;
     }
     return `<div class="markdown-code-block"><div class="markdown-code-head">${langLabel}${copyButton}</div><pre><code>${escapeHtml(codeText)}</code></pre></div>`;
   }
@@ -242,6 +268,16 @@
     return `${indent}subgraph ${mermaidGeneratedSubgraphId(index)}["${escapeMermaidQuotedLabel(body)}"]`;
   }
 
+  function normalizeMermaidDetachedSoftBreakLabels(source) {
+    return String(source || "").replace(
+      /(^|[\s;])([A-Za-z][\w-]*)\[([^\]\n]+)\]<br\/>\(([^()\n]+)\)/gm,
+      (match, prefix, nodeId, label, continuation) => {
+        const body = `${String(label || "").trim()}<br/>(${String(continuation || "").trim()})`;
+        return `${prefix}${nodeId}["${escapeMermaidQuotedLabel(body)}"]`;
+      },
+    );
+  }
+
   function normalizeMermaidSourceForRender(value) {
     const source = String(value || "");
     const withSoftBreaks = source.replace(/\\n/g, "<br/>");
@@ -251,7 +287,8 @@
       .split(/\r?\n/)
       .map((line, index) => normalizeMermaidSubgraphLine(line, index))
       .join("\n");
-    return withQuotedSubgraphs
+    const withMergedSoftBreakLabels = normalizeMermaidDetachedSoftBreakLabels(withQuotedSubgraphs);
+    return withMergedSoftBreakLabels
       .replace(/(^|[\s;])([A-Za-z][\w-]*)\[([^\]\n]*)\]/gm, (match, prefix, nodeId, label) => {
         const trimmed = String(label || "").trim();
         if (!trimmed || /^".*"$/.test(trimmed)) return match;

@@ -1,10 +1,12 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
 
 const renderer = require(path.resolve(__dirname, "..", "public", "markdown-renderer.js"));
+const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
 
 test("ordered markdown lists keep their source numbering across blank-separated items", () => {
   const html = renderer.renderMarkdown("1. first\n\n2. second\n\n3. third");
@@ -127,4 +129,23 @@ test("code blocks can receive app copy button hooks", () => {
 
   assert.match(html, /<span class="markdown-code-lang">js<\/span><button data-copy-key="copy-key" class="markdown-copy-button">复制<\/button>/);
   assert.match(html, /<pre><code>console\.log\(1\)<\/code><\/pre>/);
+});
+
+test("plain fenced markdown tables can render a table preview", () => {
+  const html = renderer.renderMarkdown("```text\n| Step | Owner |\n|---|---|\n| S1 | Runtime |\n```", {
+    fencedTableMode: "preview",
+  });
+
+  assert.match(html, /class="markdown-code-table-preview"/);
+  assert.match(html, /<th>Step<\/th><th>Owner<\/th>/);
+  assert.match(html, /<td>S1<\/td><td>Runtime<\/td>/);
+  assert.match(html, /class="markdown-code-table-source-details"/);
+  assert.match(stylesCss, /\.markdown-table-wrap\s*\{[\s\S]*touch-action:\s*pan-x pan-y;[\s\S]*overscroll-behavior:\s*contain;/);
+});
+
+test("code fenced markdown tables stay as code unless preview mode is enabled", () => {
+  const html = renderer.renderMarkdown("```text\n| Step | Owner |\n|---|---|\n| S1 | Runtime |\n```");
+
+  assert.doesNotMatch(html, /class="markdown-code-table-preview"/);
+  assert.match(html, /class="markdown-code-block"/);
 });
