@@ -66,6 +66,8 @@ const state = {
   connectionStatus: null,
   renderScheduled: false,
   renderFrame: null,
+  bottomScrollFrame: null,
+  bottomFollowTimers: [],
   scrollToBottomFrame: null,
   recentCompletedReplyAnchor: null,
   conversationScrollIntentAtMs: 0,
@@ -247,7 +249,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v222";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v246";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -5087,6 +5089,7 @@ async function loadThread(threadId, options = {}) {
     && state.currentThread
     && !state.currentThread.mobileLoading
     && !state.currentThread.mobileLoadError) {
+    followThreadOpenToBottom(threadId);
     renderThreads();
     renderCurrentThread({ stickToBottom: true });
     if (isMenuOverlayMode()) closeSidebarMenu();
@@ -5120,6 +5123,7 @@ async function loadThread(threadId, options = {}) {
     turns: [],
     mobileLoading: true,
   };
+  followThreadOpenToBottom(threadId);
   restoreDraftForCurrentTarget();
   renderComposerSettings();
   syncActiveTurnFromThread();
@@ -5180,6 +5184,7 @@ async function loadThread(threadId, options = {}) {
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
   localStorage.setItem(STORAGE_THREAD_ID, threadId);
   draftStore.setTargetKey("");
+  followThreadOpenToBottom(threadId);
   if (state.events) connectEvents();
   restoreDraftForCurrentTarget();
   renderComposerSettings();
@@ -5284,8 +5289,7 @@ async function refreshCurrentThread() {
   renderComposerSettings();
   syncActiveTurnFromThread();
   renderThreads();
-  const receiptStartTurnId = pendingCompletedReceiptStartTurnId();
-  renderCurrentThread(receiptStartTurnId ? { scrollToTurnReceiptStart: receiptStartTurnId } : {});
+  renderCurrentThread();
   scheduleUsageBackfillRefresh();
   scheduleLivePollIfNeeded();
 }
@@ -6623,7 +6627,8 @@ function updateConversationHtml(html, signature, options = {}) {
   const conversation = $("conversation");
   if (state.renderedConversationSignature === signature) {
     scheduleFailedAppImageScan(conversation, [0, 180]);
-    scheduleScrollToBottomButtonUpdate();
+    if (options.stickToBottom) scheduleConversationToBottom();
+    else scheduleScrollToBottomButtonUpdate();
     return false;
   }
   try {
@@ -6637,7 +6642,7 @@ function updateConversationHtml(html, signature, options = {}) {
   hydrateMermaidDiagrams(conversation);
   scheduleFailedAppImageScan(conversation);
   state.renderedConversationSignature = signature;
-  if (options.stickToBottom) scrollConversationToBottom();
+  if (options.stickToBottom) scheduleConversationToBottom();
   else scheduleScrollToBottomButtonUpdate();
   return true;
 }
@@ -6836,13 +6841,12 @@ function renderCurrentThread(options = {}) {
   const nearBottom = isConversationNearBottom();
   const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom });
   const explicitNoStickToBottom = options.stickToBottom === false || Boolean(options.scrollToTurnReceiptStart);
-  const shouldFollowBottom = !userReadingCurrentTurn
-    && !explicitNoStickToBottom
+  const shouldFollowBottom = !explicitNoStickToBottom
     && (shouldFollowSubmittedMessageToBottom() || shouldFollowViewportChangeToBottom());
-  const shouldStickToBottom = !userReadingCurrentTurn
-    && !explicitNoStickToBottom
+  const shouldStickToBottom = !explicitNoStickToBottom
     && (shouldFollowBottom
-      || (!shouldHoldAutoScrollForCurrentTurn()
+      || (!userReadingCurrentTurn
+        && !shouldHoldAutoScrollForCurrentTurn()
         && (options.stickToBottom === true || nearBottom)));
   const previousKeys = existingConversationRenderKeys();
   const titleEl = $("threadTitle");
@@ -8291,6 +8295,11 @@ function renderItem(item, turn = null, previousKeys = new Set(), index = 0) {
   if (isLiveReasoning(item, turn)) return "";
   const type = item.type || "item";
   const key = stableItemKey(turn, item, index);
+  if (item.type === "turnUsageSummary") {
+    return `<section class="item${entryAnimationClass(key, previousKeys)} turnUsageSummary" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">
+      <div class="item-body">${renderTurnUsageSummary(item)}</div>
+    </section>`;
+  }
   const itemCopyKey = rememberCopyText(copyTextForItem(item));
   const itemCopyButton = copyButtonHtml(itemCopyKey, "复制全文", "item-copy-button");
   const timestampHtml = renderItemTimestampHtml(item, turn);
@@ -9504,6 +9513,23 @@ function formatTokenCount(value) {
   return Number.isFinite(number) ? number.toLocaleString() : "--";
 }
 
+function formatCompactTokenCount(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "--";
+  const absolute = Math.abs(number);
+  if (absolute >= 1000000) {
+    const value = number / 1000000;
+    const scaledAbsolute = absolute / 1000000;
+    return `${scaledAbsolute >= 10 ? value.toFixed(1) : value.toFixed(2)}M`;
+  }
+  if (absolute >= 1000) {
+    const value = number / 1000;
+    const scaledAbsolute = absolute / 1000;
+    return `${scaledAbsolute >= 100 ? Math.round(value) : value.toFixed(1)}K`;
+  }
+  return `${Math.round(number)}`;
+}
+
 function displayInputTokensExcludingCached(usage) {
   const input = Number(usage && usage.inputTokens);
   if (!Number.isFinite(input)) return usage && usage.inputTokens;
@@ -9522,13 +9548,30 @@ function formatUsagePercent(value) {
 function tokenUsageSummaryText(usage) {
   const value = usage && typeof usage === "object" ? usage : {};
   const parts = [
-    `in ${formatTokenCount(displayInputTokensExcludingCached(value))}`,
-    value.cachedInputTokens !== undefined ? `cached ${formatTokenCount(value.cachedInputTokens)}` : "",
-    `out ${formatTokenCount(value.outputTokens)}`,
-    value.reasoningOutputTokens !== undefined ? `reasoning ${formatTokenCount(value.reasoningOutputTokens)}` : "",
-    `total ${formatTokenCount(value.totalTokens)}`,
+    `in ${formatCompactTokenCount(value.inputTokens)}`,
+    `out ${formatCompactTokenCount(value.outputTokens)}`,
+    `total ${formatCompactTokenCount(value.totalTokens)}`,
+    value.cachedInputTokens !== undefined ? `cached ${formatCompactTokenCount(value.cachedInputTokens)} in input` : "",
+    value.reasoningOutputTokens !== undefined ? `reasoning ${formatCompactTokenCount(value.reasoningOutputTokens)} in output` : "",
   ].filter(Boolean);
   return parts.join(" / ");
+}
+
+function tokenUsageAdditiveDetail(usage) {
+  const value = usage && typeof usage === "object" ? usage : {};
+  const parts = [
+    `input ${formatCompactTokenCount(value.inputTokens)}`,
+    `output ${formatCompactTokenCount(value.outputTokens)}`,
+  ].filter((part) => !part.endsWith(" --"));
+  return parts.join(" + ");
+}
+
+function tokenUsageIncludedDetail(usage) {
+  const value = usage && typeof usage === "object" ? usage : {};
+  return [
+    value.cachedInputTokens !== undefined ? `cached ${formatCompactTokenCount(value.cachedInputTokens)} in input` : "",
+    value.reasoningOutputTokens !== undefined ? `reasoning ${formatCompactTokenCount(value.reasoningOutputTokens)} in output` : "",
+  ].filter(Boolean).join(" / ");
 }
 
 function contextRiskLabel(level) {
@@ -9550,6 +9593,38 @@ function renderUsageMetric(label, value, detail = "") {
   </div>`;
 }
 
+function renderUsageBarPill(kind, label, value) {
+  return `<span class="turn-usage-pill ${escapeHtml(kind)}">
+    <span class="turn-usage-pill-dot"></span>
+    <span>${escapeHtml([value, label].filter(Boolean).join(" "))}</span>
+  </span>`;
+}
+
+function renderUsageTokenCell(kind, label, value, detail = "") {
+  return `<div class="turn-usage-token-cell">
+    <span><span class="turn-usage-token-dot ${escapeHtml(kind)}"></span>${escapeHtml(label)}</span>
+    <strong>${escapeHtml(value)}</strong>
+    ${detail ? `<small>${escapeHtml(detail)}</small>` : ""}
+  </div>`;
+}
+
+function renderUsageProgress(percent, label) {
+  const value = clampPercent(percent);
+  return `<div class="turn-usage-progress" style="--usage-progress:${value.toFixed(2)}%">
+    <div class="turn-usage-progress-track"><span></span></div>
+    <small>${escapeHtml(label)}</small>
+  </div>`;
+}
+
+function renderUsageCompactMetric(label, value, detail = "", extraClass = "") {
+  const className = ["turn-usage-compact-metric", extraClass].filter(Boolean).join(" ");
+  return `<div class="${escapeHtml(className)}">
+    <span>${escapeHtml(label)}</span>
+    <strong>${escapeHtml(value)}</strong>
+    ${detail ? `<small>${escapeHtml(detail)}</small>` : ""}
+  </div>`;
+}
+
 function renderTurnUsageSummary(item) {
   const summary = item && item.mobileUsageSummary && typeof item.mobileUsageSummary === "object"
     ? item.mobileUsageSummary
@@ -9557,15 +9632,15 @@ function renderTurnUsageSummary(item) {
   const contextTokens = Number(summary.contextWindowUsedTokens);
   const contextWindow = Number(summary.modelContextWindow);
   const contextDetail = Number.isFinite(contextTokens) && Number.isFinite(contextWindow) && contextWindow > 0
-    ? `${formatTokenCount(contextTokens)} / ${formatTokenCount(contextWindow)}`
+    ? `${formatCompactTokenCount(contextTokens)} / ${formatCompactTokenCount(contextWindow)}`
     : "";
-  const lastUsage = tokenUsageSummaryText(summary.lastTokenUsage || {});
-  const totalUsage = tokenUsageSummaryText(summary.totalTokenUsage || {});
+  const totalTokenUsage = summary.totalTokenUsage || {};
+  const totalUsageDetail = [
+    tokenUsageAdditiveDetail(totalTokenUsage),
+    tokenUsageIncludedDetail(totalTokenUsage),
+  ].filter(Boolean).join(" / ");
   const rolloutSize = Number(summary.rolloutSizeBytes);
   const rolloutThreshold = Number(summary.rolloutWarningThresholdBytes);
-  const rolloutDetail = Number.isFinite(rolloutThreshold) && rolloutThreshold > 0
-    ? `warn ${formatFileSize(rolloutThreshold)}`
-    : "";
   const projectContextSize = Number(summary.projectContextSizeBytes);
   const handoffSize = Number(summary.handoffSizeBytes);
   const pairSize = Number(summary.workspaceContextPairSizeBytes);
@@ -9587,23 +9662,75 @@ function renderTurnUsageSummary(item) {
     ? `<button class="turn-usage-new-thread" type="button" data-new-thread-from-current>压缩续接</button>`
     : "";
   const risk = contextRiskLabel(summary.contextRiskLevel || "unknown");
-  return `<div class="turn-usage-summary risk-${escapeHtml(risk)}">
-    <div class="turn-usage-summary-head">
-      <span>Context and token usage</span>
-      <div class="turn-usage-summary-head-actions">
-        ${compactButton}
-        <strong>${escapeHtml(risk)}</strong>
+  const contextPercent = clampPercent(summary.contextWindowUsedPercent);
+  const ringOffset = (100 - contextPercent).toFixed(2);
+  const lastTurnUsage = summary.lastTokenUsage || {};
+  const lastInputDetail = lastTurnUsage.cachedInputTokens !== undefined
+    ? `cached ${formatCompactTokenCount(lastTurnUsage.cachedInputTokens)} included`
+    : "";
+  const lastOutputDetail = lastTurnUsage.reasoningOutputTokens !== undefined
+    ? `reasoning ${formatCompactTokenCount(lastTurnUsage.reasoningOutputTokens)} included`
+    : "";
+  const projectContextMetric = renderUsageCompactMetric(
+    "project ctx file",
+    Number.isFinite(projectContextSize) && projectContextSize > 0 ? formatFileSize(projectContextSize) : "--",
+    contextDetailFiles.join(" | "),
+  );
+  const handoffMetric = renderUsageCompactMetric(
+    "handoff file",
+    Number.isFinite(handoffSize) && handoffSize > 0 ? formatFileSize(handoffSize) : "--",
+    handoffDetail,
+  );
+  const rolloutPercent = Number.isFinite(rolloutSize) && Number.isFinite(rolloutThreshold) && rolloutThreshold > 0
+    ? clampPercent((rolloutSize / rolloutThreshold) * 100)
+    : 0;
+  return `<details class="turn-usage-summary risk-${escapeHtml(risk)}">
+    <summary class="turn-usage-bar">
+      <span class="turn-usage-pills">
+        ${renderUsageBarPill(risk === "normal" || risk === "unknown" ? "context" : "warn", "ctx", formatUsagePercent(summary.contextWindowUsedPercent))}
+        ${renderUsageBarPill("thread", "thr", formatCompactTokenCount(totalTokenUsage.totalTokens))}
+        ${renderUsageBarPill("rollout", "", Number.isFinite(rolloutSize) ? formatFileSize(rolloutSize) : "--")}
+        ${renderUsageBarPill(`status status-${risk}`, "", risk)}
+      </span>
+    </summary>
+    <div class="turn-usage-expanded">
+      <div class="turn-usage-top-grid">
+        <div class="turn-usage-context-card">
+          <div class="turn-usage-ring" style="--usage-ring-offset:${ringOffset}">
+            <svg viewBox="0 0 72 72" aria-hidden="true">
+              <circle class="turn-usage-ring-bg" cx="36" cy="36" r="28" pathLength="100"></circle>
+              <circle class="turn-usage-ring-fill" cx="36" cy="36" r="28" pathLength="100"></circle>
+            </svg>
+            <div>
+              <strong>${escapeHtml(formatUsagePercent(summary.contextWindowUsedPercent))}</strong>
+            </div>
+          </div>
+          <div>
+            <span>Context Window</span>
+            <strong>${escapeHtml(formatCompactTokenCount(contextTokens))}</strong>
+            <small>${contextDetail ? escapeHtml(contextDetail) : "window usage unavailable"}</small>
+          </div>
+        </div>
+        <div class="turn-usage-rollout-card">
+          <div>
+            <span>Rollout</span>
+            <strong>${escapeHtml(Number.isFinite(rolloutSize) ? formatFileSize(rolloutSize) : "--")}</strong>
+          </div>
+          ${renderUsageProgress(rolloutPercent, Number.isFinite(rolloutThreshold) && rolloutThreshold > 0 ? `of ${formatFileSize(rolloutThreshold)}` : "threshold unavailable")}
+        </div>
       </div>
+      <div class="turn-usage-token-grid">
+        ${renderUsageTokenCell("input", "Input", formatCompactTokenCount(lastTurnUsage.inputTokens), lastInputDetail)}
+        ${renderUsageTokenCell("output", "Output", formatCompactTokenCount(lastTurnUsage.outputTokens), lastOutputDetail)}
+      </div>
+      <div class="turn-usage-grid">
+        ${renderUsageCompactMetric("thread total", formatCompactTokenCount(totalTokenUsage.totalTokens), totalUsageDetail, "is-thread-total")}
+        ${projectContextMetric}
+        ${handoffMetric}
+      </div>
+      ${compactButton ? `<div class="turn-usage-actions">${compactButton}</div>` : ""}
     </div>
-    <div class="turn-usage-grid">
-      ${renderUsageMetric("context window", formatUsagePercent(summary.contextWindowUsedPercent), contextDetail)}
-      ${renderUsageMetric("last turn", lastUsage)}
-      ${renderUsageMetric("thread total", totalUsage)}
-      ${renderUsageMetric("rollout", Number.isFinite(rolloutSize) ? formatFileSize(rolloutSize) : "--", rolloutDetail)}
-      ${renderUsageMetric("context", Number.isFinite(projectContextSize) && projectContextSize > 0 ? formatFileSize(projectContextSize) : "--", contextDetailFiles.join(" | "))}
-      ${renderUsageMetric("handoff", Number.isFinite(handoffSize) && handoffSize > 0 ? formatFileSize(handoffSize) : "--", handoffDetail)}
-    </div>
-  </div>`;
+  </details>`;
 }
 
 function renderItemBody(item, turn = null) {
@@ -9799,6 +9926,7 @@ function appendToItem(turnId, itemId, itemType, field, delta, index = 0, options
     item[field] = compactLiveText((item[field] || "") + delta);
     nextValue = item[field];
   }
+  sustainSubmittedMessageBottomFollow(turn, itemType, field);
   if (shouldRenderAfterAppend(turn, itemType, field, previousValue, nextValue, options)) scheduleRenderCurrentThread();
 }
 
@@ -10011,7 +10139,7 @@ function applyNotification(method, params) {
     if (completedPendingSteer) setSteerFeedback("completed", { turnId: String(params.turn.id) });
     $("interruptTurn").disabled = true;
     updateComposerControls();
-    renderCurrentThread(shouldScrollToLongReceiptStart(turn) ? { scrollToTurnReceiptStart: params.turn.id } : {});
+    renderCurrentThread({ stickToBottom: true });
     scheduleRenderThreads();
     schedulePostCompletionThreadRefreshes(params.threadId, [700, 2400]);
     scheduleUsageBackfillRefresh(1400);
@@ -10332,6 +10460,24 @@ function scrollConversationToBottom() {
   scheduleScrollToBottomButtonUpdate();
 }
 
+function scheduleConversationToBottom() {
+  if (state.bottomScrollFrame) return;
+  const scroll = () => {
+    state.bottomScrollFrame = null;
+    scrollConversationToBottom();
+  };
+  if (window.requestAnimationFrame) {
+    state.bottomScrollFrame = window.requestAnimationFrame(scroll);
+  } else {
+    state.bottomScrollFrame = setTimeout(scroll, 33);
+  }
+}
+
+function clearBottomFollowTimers() {
+  state.bottomFollowTimers.forEach((timer) => clearTimeout(timer));
+  state.bottomFollowTimers = [];
+}
+
 function clearSubmittedMessageBottomFollow() {
   state.submittedMessageBottomFollow = null;
 }
@@ -10369,10 +10515,13 @@ function shouldFollowViewportChangeToBottom() {
 }
 
 function scheduleBottomFollowScroll(shouldFollow) {
+  clearBottomFollowTimers();
   [0, 80, 240, 600, 1200].forEach((delay) => {
-    window.setTimeout(() => {
-      if (shouldFollow()) scrollConversationToBottom();
+    const timer = window.setTimeout(() => {
+      state.bottomFollowTimers = state.bottomFollowTimers.filter((entry) => entry !== timer);
+      if (shouldFollow()) scheduleConversationToBottom();
     }, delay);
+    state.bottomFollowTimers.push(timer);
   });
 }
 
@@ -10393,6 +10542,32 @@ function followSubmittedMessageToBottom(threadId, clientSubmissionId = "") {
   clearConversationAutoScrollHold();
   clearRecentCompletedReplyAnchor();
   scheduleSubmittedMessageBottomFollowScroll();
+}
+
+function sustainSubmittedMessageBottomFollow(turn, itemType, field) {
+  if (itemType !== "agentMessage" || field !== "text") return;
+  if (!turn || !isLatestTurn(turn) || !isLiveTurn(turn)) return;
+  const follow = state.submittedMessageBottomFollow;
+  const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
+  if (!threadId || !follow || String(follow.threadId || "") !== String(threadId)) return;
+  if (!conversationScroll.shouldFollowSubmittedMessage(follow, { threadId, nowMs: Date.now() })) return;
+  state.submittedMessageBottomFollow = conversationScroll.extendSubmittedMessageFollow(follow, {
+    nowMs: Date.now(),
+  });
+  scheduleSubmittedMessageBottomFollowScroll();
+}
+
+function followThreadOpenToBottom(threadId, ttlMs = 8000) {
+  const id = String(threadId || "").trim();
+  if (!id) return;
+  state.viewportBottomFollow = conversationScroll.createViewportFollow(id, {
+    reason: "thread-open",
+    nowMs: Date.now(),
+    ttlMs,
+  });
+  clearConversationAutoScrollHold();
+  clearRecentCompletedReplyAnchor();
+  scheduleViewportBottomFollowScroll();
 }
 
 function followViewportChangeToBottom(reason = "viewport") {
@@ -10680,6 +10855,42 @@ function scrollNodeIntoConversationView(node, margin = 12) {
   markProgrammaticConversationScroll();
   el.scrollTop = Math.max(0, Math.min(target, Math.max(0, el.scrollHeight - el.clientHeight)));
   syncConversationScrollPosition();
+}
+
+function ensureUsageSummaryExpandedVisible(summary) {
+  const el = $("conversation");
+  if (!el || !summary || !summary.open) return;
+  const adjust = () => {
+    if (!summary.open || !summary.isConnected) return;
+    const viewport = el.getBoundingClientRect();
+    const rect = summary.getBoundingClientRect();
+    const margin = 14;
+    const availableHeight = Math.max(0, viewport.height - margin * 2);
+    const maxScrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+    let nextScrollTop = el.scrollTop;
+    if (rect.height > availableHeight && rect.top < viewport.top + margin) {
+      nextScrollTop += rect.top - viewport.top - margin;
+    } else if (rect.bottom > viewport.bottom - margin) {
+      nextScrollTop += rect.bottom - viewport.bottom + margin;
+    }
+    nextScrollTop = Math.max(0, Math.min(nextScrollTop, maxScrollTop));
+    if (Math.abs(nextScrollTop - el.scrollTop) < 2) return;
+    markProgrammaticConversationScroll();
+    el.scrollTop = nextScrollTop;
+    syncConversationScrollPosition();
+    scheduleScrollToBottomButtonUpdate();
+  };
+  if (window.requestAnimationFrame) window.requestAnimationFrame(adjust);
+  else window.setTimeout(adjust, 0);
+  window.setTimeout(adjust, 160);
+}
+
+function handleUsageSummaryToggle(event) {
+  const summary = event && event.target && event.target.closest
+    ? event.target.closest(".turn-usage-summary")
+    : null;
+  if (!summary || !summary.open) return;
+  ensureUsageSummaryExpandedVisible(summary);
 }
 
 function scrollConversationToTurnReply() {
@@ -12258,6 +12469,7 @@ function wireUi() {
   $("conversation").addEventListener("touchcancel", cancelSubagentSwipe, { passive: true });
   $("conversation").addEventListener("wheel", rememberConversationScrollIntent, { passive: true });
   $("conversation").addEventListener("wheel", handleSubagentWheelSwipe, { passive: true });
+  $("conversation").addEventListener("toggle", handleUsageSummaryToggle, true);
   $("conversation").addEventListener("scroll", () => {
     updateRecentCompletedReplyAnchorFromScroll();
     updateConversationAutoScrollHoldFromScroll();

@@ -46,6 +46,16 @@
     return nowMs <= numberOrZero(follow.untilMs);
   }
 
+  function extendSubmittedMessageFollow(follow, options = {}) {
+    if (!follow || !follow.threadId) return null;
+    const nowMs = numberOrZero(options.nowMs) || Date.now();
+    const ttlMs = Math.max(1000, numberOrZero(options.ttlMs) || DEFAULT_SUBMIT_FOLLOW_MS);
+    return {
+      ...follow,
+      untilMs: nowMs + ttlMs,
+    };
+  }
+
   function shouldStartViewportFollow(options = {}) {
     if (options.nearBottom) return true;
     const nowMs = numberOrZero(options.nowMs) || Date.now();
@@ -80,6 +90,7 @@
     DEFAULT_VIEWPORT_FOLLOW_MS,
     DEFAULT_RECENT_BOTTOM_MS,
     createSubmittedMessageFollow,
+    extendSubmittedMessageFollow,
     createViewportFollow,
     isNearBottom,
     shouldFollowViewport,
