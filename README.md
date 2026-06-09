@@ -666,6 +666,8 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v250 新增当前线程侧边聊天第一版。线程详情左滑面板现在分为上半区 Subagent 状态、下半区侧边聊天；侧聊草稿、消息、候选指令和排队状态全部由服务端按线程保存，不使用浏览器本地存储做持久化。侧聊内容默认不会进入主线程，也不会 steer 正在运行的 turn；用户显式发送候选时才通过新的服务端 apply 路由启动主线程 `turn/start`，选择“完成后发送”时会在当前 turn 完成后幂等地发送一次。PWA shell cache 升级到 `codex-mobile-shell-v250`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新资源。
+
 - 中文说明：v249 修复 Hermes 宿主嵌入模式下移动端 composer 底部安全区在窄屏 media rule 中被覆盖的问题。嵌入态 composer 现在统一使用 `max(12px, var(--host-bottom-safe-area, 0px))`，确保宿主隐藏底部 chrome 时 Codex 仍吃到宿主下发的安全区。PWA shell cache 升级到 `codex-mobile-shell-v249`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新资源。
 
 - 中文说明：v248 合并 public PR #55，优化移动端 Markdown 与 Mermaid 渲染。普通文本/上传摘要里的 fenced Markdown 表格会优先渲染为可横向滚动的表格预览，并保留可展开源码；command output 中检测到的 Markdown 表格也会在原始输出 details 前显示预览，方便在手机上直接阅读结构化结果。Mermaid 规范化会合并 `A[标题]<br/>(补充)` 这类软换行标签，减少移动端图表解析失败；Mermaid 画布、表格和代码块横向滚动区域会阻止误触发子线程侧滑面板。PWA shell cache 保持 `codex-mobile-shell-v247`；已打开的浏览器/PWA 只需普通刷新或等待前端资源刷新后生效。本次 private 反向同步来自 public 发布 `e75ec78`，没有复制 public 以外的 runtime state、本地密钥、上传内容或机器特定诊断。

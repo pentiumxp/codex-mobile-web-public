@@ -23,6 +23,68 @@ The previous full handoff was archived and should be opened only when old proven
 
 ## Preserved Recent Handoff Tail
 
+## 2026-06-09 Thread Side Chat v250 Implementation
+
+- Implemented current-thread side chat first version:
+  - `adapters/thread-side-chat-service.js` persists per-profile/thread messages,
+    draft, candidates, queue, apply metadata, and bounded public state under the
+    Codex Mobile runtime root.
+  - `server.js` exposes authenticated side-chat get/draft/messages/candidates/
+    queue/apply/cancel/clear routes.
+  - Candidate apply uses `thread/resume` plus main-thread `turn/start`, not
+    `turn/steer`; queued `autoSendWhenIdle` candidates are applied from the
+    `turn/completed` notification hook and are idempotent.
+  - `public/app.js` converts the left-swipe Subagent panel into a two-region
+    panel: upper Subagent status, lower side chat with server draft autosave,
+    message save, candidate save, queue, apply, cancel, and clear controls.
+  - `public/styles.css` adds independent scroll regions and a bounded lower
+    side-chat composer.
+  - App shell advanced to `0.1.11|codex-mobile-shell-v250`.
+- This first version does not create a hidden AI sidecar thread. Side-chat
+  entries are server-saved notes/candidates until explicitly applied.
+- Validation passed before production deploy:
+  - focused side-chat/UI/mobile tests: 18 passed;
+  - `npm run check`;
+  - `npm test` with 423 tests;
+  - `npm run check:macos`;
+  - Home AI platform contract check for `codex-mobile`;
+  - `git diff --check`;
+  - Home AI live iOS PWA debug server smoke against dev
+    `http://127.0.0.1:18787/`, screenshot
+    `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v250-dev-side-chat-panel.png`.
+- Dev visual smoke opened thread `019ea76b-d846-7892-bda0-c0fff9cf7581`,
+  verified panel/sidebar bounds, server draft round-trip, and
+  `draftInMainConversation=false`; the temporary draft was cleared afterward.
+
+## 2026-06-09 Thread Side Chat Planning Docs
+
+- User approved the current-thread side-chat direction:
+  - side chat is attached to the current thread but must not pollute the main
+    transcript or steer an active main turn by default;
+  - the existing left-swipe Subagent surface should become a combined side
+    panel, with Subagent status in the upper region and side chat in the lower
+    region;
+  - each thread needs independent saved side-chat state, including in-progress
+    transcript/draft/candidate/queue state across thread switches.
+- Added planning docs:
+  - `docs/THREAD_SIDE_CHAT_REQUIREMENTS.md`
+  - `docs/THREAD_SIDE_CHAT_DESIGN.md`
+  - `docs/THREAD_SIDE_CHAT_IMPLEMENTATION.md`
+- Updated `docs/README.md` reading guide with the side-chat planning docs.
+- User then clarified side-chat state must be server-side only, not browser
+  local storage.
+- Added server-side persistence foundation:
+  - `adapters/thread-side-chat-service.js`
+  - `test/thread-side-chat-service.test.js`
+  - `test/thread-side-chat-route.test.js`
+  - `server.js` routes for side-chat get/draft/messages/candidates/queue/cancel/clear
+  - `package.json` syntax check coverage
+  - `docs/MODULES.md` module/test map entry
+- The persistence foundation intentionally does not expose an apply route yet;
+  apply should be added only with the real main-thread `turn/start`
+  integration so a candidate cannot be marked applied without a main turn.
+- Existing unrelated dirty frontend/public files were left untouched.
+
 ## 2026-06-09 Public PR #55 Markdown Mermaid Polish
 
 - Public PR:

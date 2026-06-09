@@ -58,6 +58,7 @@ const {
 } = require("./adapters/mobile-archive-index-service");
 const { createHermesPluginService } = require("./adapters/hermes-plugin-service");
 const { createThreadTaskCardService } = require("./adapters/thread-task-card-service");
+const { createThreadSideChatService } = require("./adapters/thread-side-chat-service");
 const {
   continuationGoalMigrationPlan,
   createThreadGoalService,
@@ -162,6 +163,10 @@ const HERMES_PLUGIN_NOTIFICATION_KEY_FILE = process.env.CODEX_MOBILE_HERMES_PLUG
   || "";
 const THREAD_TASK_CARD_FILE = process.env.CODEX_MOBILE_THREAD_TASK_CARD_FILE
   || path.join(RUNTIME_ROOT, "thread-task-cards.json");
+const THREAD_SIDE_CHAT_FILE = process.env.CODEX_MOBILE_THREAD_SIDE_CHAT_FILE
+  || path.join(RUNTIME_ROOT, "thread-side-chats.json");
+const THREAD_SIDE_CHAT_SCOPE_ID = CODEX_HOME_RESOLUTION.activeProfileId
+  || `codex-home-${crypto.createHash("sha256").update(CODEX_HOME).digest("hex").slice(0, 16)}`;
 const THREAD_TASK_CARD_DRAFT_TAG = "codex-mobile-thread-task-card-draft";
 const THREAD_TASK_CARD_BODY_MAX_CHARS = 8_000;
 const THREAD_TASK_CARD_DRAFT_TURN_LOOKBACK = 4;
@@ -233,6 +238,35 @@ const tokenUsageStatsService = createTokenUsageStatsService({
 const threadGoalService = createThreadGoalService({
   dbPath: GOALS_DB,
   userHome: USER_HOME,
+});
+const threadSideChatService = createThreadSideChatService({
+  storageFile: THREAD_SIDE_CHAT_FILE,
+  scopeId: THREAD_SIDE_CHAT_SCOPE_ID,
+  executeCandidate: async (candidate) => {
+    const threadId = String(candidate && candidate.threadId || "");
+    const text = String(candidate && candidate.body || "").trim();
+    if (!threadId) throw new Error("side_chat_thread_id_required");
+    if (!text) throw new Error("side_chat_candidate_body_required");
+    const runtimeSettings = await resolveThreadRuntimeSettings(threadId);
+    try {
+      await codex.request("thread/resume", applyResumeRuntimeSettings({
+        threadId,
+        cwd: null,
+        persistExtendedHistory: true,
+      }, runtimeSettings), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+    } catch (err) {
+      if (!/already|loaded|active/i.test(err.message || "")) throw err;
+    }
+    const turnParams = applyTurnRuntimeSettings({
+      threadId,
+      input: [{ type: "text", text }],
+    }, runtimeSettings);
+    const result = await codex.request("turn/start", turnParams, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+    return {
+      threadId,
+      turnId: String((result && result.turnId) || (result && result.turn && result.turn.id) || ""),
+    };
+  },
 });
 let threadDetailProjectionService;
 const threadTaskCardService = createThreadTaskCardService({
@@ -5024,6 +5058,17 @@ function maybeAutoReplyThreadTaskCard(method, params) {
   });
 }
 
+function maybeApplyQueuedThreadSideChat(method, params) {
+  if (method !== "turn/completed") return;
+  const turnId = pushTurnId(params);
+  if (!turnId || isOldPushTurnEvent(params, ["completedAt", "updatedAt"])) return;
+  const threadId = pushThreadId(params);
+  if (!threadId) return;
+  threadSideChatService.maybeApplyQueuedCandidate(threadId).catch((err) => {
+    console.error(`[thread side chat] queued apply failed thread=${shortIdentifier(threadId)} turn=${shortIdentifier(turnId)}: ${err.message || String(err)}`);
+  });
+}
+
 function maybeMaterializeThreadTaskCardDrafts(method, params) {
   if (method !== "turn/completed") return;
   const turnId = pushTurnId(params);
@@ -5959,6 +6004,7 @@ class CodexAppServerClient {
       maybeRecordTurnTokenUsage(msg.method, msg.params || null);
       maybeMaterializeThreadTaskCardDrafts(msg.method, msg.params || null);
       maybeAutoReplyThreadTaskCard(msg.method, msg.params || null);
+      maybeApplyQueuedThreadSideChat(msg.method, msg.params || null);
       maybeSendTurnCompletedPush(msg.method, msg.params || null);
       broadcast({ type: "notification", method: msg.method, params: msg.params || null });
     }
@@ -8836,6 +8882,117 @@ async function handleApi(req, res) {
     const body = await readBody(req);
     const request = codex.answerServerRequest(requestId, body);
     sendJson(res, 200, { ok: true, request });
+    return;
+  }
+  // GET /api/threads/:threadId/side-chat
+  const threadSideChatRoot = url.pathname.match(/^\/api\/threads\/([^/]+)\/side-chat$/);
+  if (threadSideChatRoot && req.method === "GET") {
+    try {
+      const threadSideChatId = decodeURIComponent(threadSideChatRoot[1]);
+      sendJson(res, 200, {
+        ok: true,
+        sideChat: threadSideChatService.get(threadSideChatId),
+      });
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  if (threadSideChatRoot && req.method === "PUT") {
+    try {
+      const threadSideChatId = decodeURIComponent(threadSideChatRoot[1]);
+      const body = await readBody(req);
+      sendJson(res, 200, {
+        ok: true,
+        sideChat: await threadSideChatService.updateDraft(threadSideChatId, body),
+      });
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  const threadSideChatDraft = url.pathname.match(/^\/api\/threads\/([^/]+)\/side-chat\/draft$/);
+  if (threadSideChatDraft && req.method === "PUT") {
+    try {
+      const threadSideChatId = decodeURIComponent(threadSideChatDraft[1]);
+      const body = await readBody(req);
+      sendJson(res, 200, {
+        ok: true,
+        sideChat: await threadSideChatService.updateDraft(threadSideChatId, body),
+      });
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  const threadSideChatMessages = url.pathname.match(/^\/api\/threads\/([^/]+)\/side-chat\/messages$/);
+  if (threadSideChatMessages && req.method === "POST") {
+    try {
+      const threadSideChatId = decodeURIComponent(threadSideChatMessages[1]);
+      const body = await readBody(req);
+      sendJson(res, 200, Object.assign({ ok: true }, await threadSideChatService.addMessage(threadSideChatId, body)));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  const threadSideChatCandidates = url.pathname.match(/^\/api\/threads\/([^/]+)\/side-chat\/candidates$/);
+  if (threadSideChatCandidates && req.method === "POST") {
+    try {
+      const threadSideChatId = decodeURIComponent(threadSideChatCandidates[1]);
+      const body = await readBody(req);
+      sendJson(res, 200, Object.assign({ ok: true }, await threadSideChatService.createCandidate(threadSideChatId, body)));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  const threadSideChatQueue = url.pathname.match(/^\/api\/threads\/([^/]+)\/side-chat\/candidates\/([^/]+)\/queue$/);
+  if (threadSideChatQueue && req.method === "POST") {
+    try {
+      const threadSideChatId = decodeURIComponent(threadSideChatQueue[1]);
+      const candidateId = decodeURIComponent(threadSideChatQueue[2]);
+      const body = await readBody(req);
+      sendJson(res, 200, Object.assign({ ok: true }, await threadSideChatService.queueCandidate(threadSideChatId, candidateId, body)));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  const threadSideChatApply = url.pathname.match(/^\/api\/threads\/([^/]+)\/side-chat\/candidates\/([^/]+)\/apply$/);
+  if (threadSideChatApply && req.method === "POST") {
+    try {
+      const threadSideChatId = decodeURIComponent(threadSideChatApply[1]);
+      const candidateId = decodeURIComponent(threadSideChatApply[2]);
+      const body = await readBody(req);
+      sendJson(res, 200, Object.assign({ ok: true }, await threadSideChatService.applyCandidate(threadSideChatId, candidateId, body)));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  const threadSideChatCancel = url.pathname.match(/^\/api\/threads\/([^/]+)\/side-chat\/candidates\/([^/]+)\/cancel$/);
+  if (threadSideChatCancel && req.method === "POST") {
+    try {
+      const threadSideChatId = decodeURIComponent(threadSideChatCancel[1]);
+      const candidateId = decodeURIComponent(threadSideChatCancel[2]);
+      sendJson(res, 200, Object.assign({ ok: true }, await threadSideChatService.cancelCandidate(threadSideChatId, candidateId)));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  const threadSideChatClear = url.pathname.match(/^\/api\/threads\/([^/]+)\/side-chat\/clear$/);
+  if (threadSideChatClear && req.method === "POST") {
+    try {
+      const threadSideChatId = decodeURIComponent(threadSideChatClear[1]);
+      sendJson(res, 200, {
+        ok: true,
+        sideChat: await threadSideChatService.clear(threadSideChatId),
+      });
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
     return;
   }
   if (url.pathname === "/api/thread-task-cards" && req.method === "POST") {

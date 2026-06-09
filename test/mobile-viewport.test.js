@@ -62,9 +62,14 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*7px;/);
 });
 
-test("public app shell cache advances after Hermes embed safe-area hardening", () => {
-  assert.match(swJs, /codex-mobile-shell-v249/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v249"/);
+test("public app shell cache advances after thread side chat panel", () => {
+  assert.match(swJs, /codex-mobile-shell-v250/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v250"/);
+  assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
+  assert.match(stylesCss, /\.side-chat-scroll\s*{[\s\S]*overflow:\s*auto;/);
+  assert.match(stylesCss, /\.side-chat-form textarea\s*{[\s\S]*max-height:\s*min\(22vh, 156px\);/);
+  assert.match(appJs, /function flushSideChatDraftNow\(/);
+  assert.match(appJs, /loadSideChat\(threadId, \{ silent: true \}\)\.catch\(showError\)/);
   assert.match(appJs, /function serverBuildIdFromConfig\(config\) \{\s*return String\(config && \(config\.clientBuildId \|\| config\.shellCacheName \|\| config\.buildId\) \|\| ""\)\.trim\(\);/);
   assert.doesNotMatch(appJs, /function serverBuildIdFromConfig\(config\) \{\s*return String\(config && \(config\.clientBuildId \|\| config\.shellCacheName \|\| config\.buildId \|\| config\.version\)/);
   assert.match(appJs, /startupThreadOpenPending: false/);
