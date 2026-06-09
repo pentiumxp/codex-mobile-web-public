@@ -1927,7 +1927,7 @@ The previous full handoff was archived and should be opened only when old proven
     side-chat/mux commits were already ahead, while preserving PR #58 keyboard
     focus behavior and tests.
   - Private merge commit:
-    `460106671fedbb1e72ea2bb3b5c3c8652de577d4`.
+    `46010668916db2064119e83de66630a8ef2fbe88`.
 - Private validation:
   - Focused mobile/viewport checks passed with 25 tests.
   - `npm run check`, `npm run check:macos`, `git diff --check --cached`, and
