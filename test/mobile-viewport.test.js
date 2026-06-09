@@ -31,6 +31,10 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(viewportMetricsJs, /hostKeyboardVisible/);
   assert.match(viewportMetricsJs, /offsetKeyboardShifted/);
   assert.match(viewportMetricsJs, /scrollKeyboardShifted/);
+  assert.match(appJs, /scrollTop:\s*embedded \? Math\.max\(/);
+  assert.match(appJs, /function resetMobileKeyboardWindowScroll\(\)/);
+  assert.match(appJs, /if \(isHermesEmbedMode\(\) \|\| !isKeyboardEditableElement\(document\.activeElement\)\) return;/);
+  assert.match(appJs, /if \(typeof window\.scrollTo === "function"\) window\.scrollTo\(0, 0\);/);
   assert.match(appJs, /if \(viewport\.keyboardShrunk\) \{[\s\S]*--app-height/);
   assert.match(appJs, /--app-top/);
   assert.match(appJs, /document\.documentElement\.style\.removeProperty\("--app-height"\)/);
