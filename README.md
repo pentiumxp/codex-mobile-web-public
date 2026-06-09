@@ -668,6 +668,8 @@ Behavior:
 
 - 中文说明：v252 修复左滑侧边聊天在嵌入插件模式下被键盘遮挡的问题。侧聊面板现在高于主 composer，并在 `keyboard-open` 时按宿主下发的 `--app-height` 收缩为键盘紧凑布局，降低 Subagent 上半区和侧聊 textarea 的最小高度，确保正在输入的侧聊内容保持在键盘上方。PWA shell cache 升级到 `codex-mobile-shell-v252`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新资源。
 
+- 中文说明：v252 合并 public PR #57，优化 Codex Mobile 浅色主题。浅色模式和跟随系统浅色模式的背景、面板、边框、代码块、引用、Usage 摘要、更新状态、按钮和当前线程选中态改为更柔和的低阴影配色，减少移动端长时间阅读时的冷灰和高对比噪声；用户消息、Usage 细分卡片、Fast 开关、Public PR/更新提示等控件在浅色主题下也有更一致的边界和状态色。PWA shell cache 升级到 `codex-mobile-shell-v252`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端样式。本次 public 发布只包含公开源码、README 和测试；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
+
 - 中文说明：v251 修复图片投影和用户上传图显示问题。历史/投影线程的 `imageView` / `imageGeneration` 会在 receipt-only 压缩模式下保留，不再只剩最新 turn 的 tool-generated 图片；无 turn_id 的 tool output 图片会优先按时间窗口归属到对应 turn。用户上传图如果被 app-server 回放为 `input_image.image_url` 本地 uploads 绝对路径，前端会改走受认证保护的 `/api/uploads/file`，不会把本地路径直接塞进 `<img>`。图片 URL 还会在插件 session key 变化后重渲染，避免旧 auth key 导致破图。PWA shell cache 升级到 `codex-mobile-shell-v251`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新资源。
 
 - 中文说明：v250 同步 public PR #56，增强 GitHub 链接预览卡片。Markdown 中的 GitHub 链接不再自动追加多张完整预览卡，而是在链接附近显示紧凑的 GitHub 预览按钮；用户展开后才请求 `/api/link-previews/github` 并渲染完整卡片，收起后会隐藏卡片，减少移动端长回复里的视觉噪声和网络请求。预览按钮会显示 repo、Issue/PR/commit 摘要，加载失败或不支持时显示安全 fallback 链接；自动链接识别也覆盖括号、引号、冒号等常见前缀后的 GitHub URL。本次 private 反向同步来自 public 发布 `f994783`，没有复制 public 以外的 runtime state、本地密钥、上传内容或机器特定诊断。
