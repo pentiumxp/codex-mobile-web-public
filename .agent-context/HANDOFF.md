@@ -21,6 +21,99 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-09 v257 Live Operation Rendering
+
+- User clarified the requested fixed-height "command box" was the middle
+  Command/File/Tool live operation card, not the bottom composer.
+- Corrected v257 implementation:
+  - `.live-operation` cards now always reserve an approximately three-line
+    `.operation-detail-line`, even when the operation has no detail text.
+  - `.live-operation.entry-animate` has no entry animation, reducing visible
+    flashes when intermediate Command/File/Tool state cards appear or change.
+  - Running assistant text deltas still prefer local patching of the current
+    text item to avoid full conversation replacement during streaming.
+  - In the latest live turn only, follow-up `userMessage` items that arrive
+    after Codex output are displayed after current output/operation items, so
+    a new user request does not visually interrupt the middle of an active
+    Codex answer.
+  - The bottom composer autosize behavior was restored; it is not fixed to
+    three lines by this change.
+- Commit:
+  - `d278fc9 Stabilize live operation rendering`.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js` passed.
+  - Focused tests passed:
+    `node --test test/collab-agent-render.test.js
+    test/composer-quota.test.js test/conversation-render.test.js
+    test/turn-scroll-controls.test.js test/mobile-viewport.test.js
+    test/thread-goal-service.test.js test/thread-task-card-route.test.js`.
+  - `npm run check` passed.
+  - Home AI central harness tests passed:
+    `node --test tests/ios-pwa-live-debug-server.test.js
+    tests/ios-pwa-visual-harness.test.js`.
+  - `git diff --check` passed.
+  - Live-debug visual measurement on Codex dev verified:
+    empty and long Command card heights both `87.109375px`, detail height
+    `48.109375px`, and operation animation `none`.
+  - Live-debug visual ordering check verified a live turn with source order
+    `Codex -> You -> Command` displayed as `Codex -> Command -> You`.
+  - Screenshot artifact:
+    `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-operation-v257-20260609T151213Z.png`.
+- Production:
+  - User reported the update had already arrived and requested no more server
+    restarts.
+  - Only read-only smoke was run after that request; no further production
+    restart was attempted.
+  - Production `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v257` and
+    `shellCacheName=codex-mobile-shell-v257`, build `110014de40c208a1`.
+- Cleanup:
+  - AI Ops visual lane `ios-pwa-1` was released.
+  - Temporary dev/live-debug ports `18787` and `19073` were confirmed down.
+  - Evidence ledger entries:
+    `evidence-2579455b-e17c-4427-8231-d956b0c56559` and
+    `evidence-5f51e015-8627-45bd-b87b-0af5ee8f974f`.
+
+## 2026-06-09 v258 Live Operation Bottom Dock
+
+- User reported v257 still made the tool/command box too tall and it still
+  moved upward in the message flow, causing reading difficulty.
+- Implemented v258:
+  - Latest live Command/File/Tool operation is no longer rendered inside the
+    turn body by `visibleItemsForTurn()`.
+  - Added `currentLiveOperationEntry()` and `renderLiveOperationDock()` so only
+    the newest live operation renders in a sticky `.live-operation-dock` at
+    the bottom of the conversation.
+  - Reduced operation detail clamp from three lines to two lines.
+  - Bumped app shell/cache to `codex-mobile-shell-v258` and added README
+    release notes.
+- Commit:
+  - `6ab8153 Dock live operation status`.
+  - Pushed private `main` to origin.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js` passed.
+  - Focused tests passed:
+    `node --test test/collab-agent-render.test.js
+    test/conversation-render.test.js test/mobile-viewport.test.js
+    test/thread-goal-service.test.js test/thread-task-card-route.test.js
+    test/turn-scroll-controls.test.js`.
+  - `npm run check` passed.
+  - Home AI central harness tests passed:
+    `node --test tests/ios-pwa-live-debug-server.test.js
+    tests/ios-pwa-visual-harness.test.js`.
+  - `git diff --check` passed.
+  - Live-debug visual measurement on Codex dev verified:
+    `commandInTurnFlow=false`, `commandInDock=true`, detail line clamp `2`,
+    dock position `sticky`, and Command dock screenshot:
+    `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-operation-dock-v258b-20260609T153507Z.png`.
+- Production:
+  - Not deployed in this step because the user explicitly asked not to keep
+    restarting servers. Production remained read-only after the v257 smoke.
+- Cleanup:
+  - Evidence ledger entries:
+    `evidence-4c4470c1-2b4e-4881-8c99-9d9e6652aa26` and
+    `evidence-a4c9c6a6-ab58-4169-af9e-25c888687215`.
+
 ## 2026-06-09 v256 Pending Approval Projection
 
 - User reported that sandbox/permission prompts were visible in Codex Desktop
