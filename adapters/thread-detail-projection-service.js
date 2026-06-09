@@ -122,6 +122,61 @@ function textReceiptsLikelySame(left, right) {
   return leftText === rightText || leftText.startsWith(rightText) || rightText.startsWith(leftText);
 }
 
+function isMuxUserMessage(item) {
+  return Boolean(item && item.type === "userMessage" && /^mux-user-/.test(itemId(item)));
+}
+
+function normalizeFsPath(value) {
+  return String(value || "").replace(/\\/g, "/").replace(/\/+/g, "/").trim().toLowerCase();
+}
+
+function userMessageComparableParts(item) {
+  const result = { text: "", paths: [] };
+  if (!item || item.type !== "userMessage") return result;
+  const textParts = [];
+  const paths = [];
+  const content = Array.isArray(item.content) ? item.content : [];
+  for (const part of content) {
+    if (!part || typeof part !== "object") continue;
+    if (part.type === "text" && part.text) textParts.push(part.text);
+    if (part.path) paths.push(normalizeFsPath(part.path));
+  }
+  if (typeof item.text === "string" && item.text) textParts.push(item.text);
+  result.text = comparableText(textParts.join("\n"));
+  result.paths = [...new Set(paths.filter(Boolean))].sort();
+  return result;
+}
+
+function userMessagePathOverlap(left, right) {
+  return left.paths.length > 0 && right.paths.length > 0
+    && left.paths.some((pathValue) => right.paths.includes(pathValue));
+}
+
+function userMessagesLikelySame(left, right) {
+  if (!left || !right || left.type !== "userMessage" || right.type !== "userMessage") return false;
+  const a = userMessageComparableParts(left);
+  const b = userMessageComparableParts(right);
+  if (a.text && b.text && a.text === b.text) {
+    if (!a.paths.length && !b.paths.length) return true;
+    return userMessagePathOverlap(a, b);
+  }
+  return userMessagePathOverlap(a, b) && (!a.text || !b.text || a.text === b.text);
+}
+
+function hasMatchingRealUserMessage(item, items) {
+  if (!isMuxUserMessage(item)) return false;
+  return (items || []).some((candidate) => candidate
+    && candidate !== item
+    && itemId(candidate) !== itemId(item)
+    && candidate.type === "userMessage"
+    && !isMuxUserMessage(candidate)
+    && userMessagesLikelySame(candidate, item));
+}
+
+function removeShadowedMuxUserMessages(items) {
+  return (items || []).filter((item) => !hasMatchingRealUserMessage(item, items));
+}
+
 function mergeTextField(existing, incoming, field) {
   const left = typeof existing[field] === "string" ? existing[field] : "";
   const right = typeof incoming[field] === "string" ? incoming[field] : "";
@@ -151,11 +206,15 @@ function dedupeProjectionUsageItems(items) {
   return items.filter((item, index) => !(item && item.type === "turnUsageSummary") || index === lastSummaryIndex);
 }
 
+function dedupeProjectionItems(items) {
+  return dedupeProjectionUsageItems(removeShadowedMuxUserMessages(items));
+}
+
 function mergeProjectionItems(existingItems, incomingItems) {
   const existing = Array.isArray(existingItems) ? existingItems : [];
   const incoming = Array.isArray(incomingItems) ? incomingItems : [];
-  if (!existing.length) return dedupeProjectionUsageItems(incoming.map(cloneJson));
-  if (!incoming.length) return dedupeProjectionUsageItems(existing.map(cloneJson));
+  if (!existing.length) return dedupeProjectionItems(incoming.map(cloneJson));
+  if (!incoming.length) return dedupeProjectionItems(existing.map(cloneJson));
 
   const incomingById = new Map(incoming
     .filter((item) => itemId(item))
@@ -182,7 +241,7 @@ function mergeProjectionItems(existingItems, incomingItems) {
   for (const incomingItem of incoming) {
     if (!usedIncoming.has(incomingItem)) merged.push(cloneJson(incomingItem));
   }
-  return dedupeProjectionUsageItems(merged);
+  return dedupeProjectionItems(merged);
 }
 
 function ensureTurn(thread, turnId, turnPatch = {}) {
@@ -207,7 +266,7 @@ function upsertItem(turn, item) {
   const index = id ? turn.items.findIndex((existing) => itemId(existing) === id) : -1;
   if (index >= 0) turn.items[index] = Object.assign({}, turn.items[index], item);
   else turn.items.push(cloneJson(item));
-  turn.items = dedupeProjectionUsageItems(turn.items);
+  turn.items = dedupeProjectionItems(turn.items);
 }
 
 function appendItemText(turn, itemIdValue, itemType, field, delta) {
