@@ -8325,10 +8325,10 @@ function fallbackThreadReadResult(threadId, summary, runtimeSettings, warning, m
     mobileReadMode: mode,
   }, summary || {}, { id: threadId, turns: [], mobileReadMode: mode }));
   if (fallbackThread) fallbackThread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
-  return attachThreadTaskCardsToResult({
+  return attachPendingServerRequestsToResult(attachThreadTaskCardsToResult({
     thread: fallbackThread,
     mobileReadWarning: warning || "",
-  });
+  }));
 }
 
 function attachThreadTaskCardsToThread(thread) {
@@ -8373,6 +8373,29 @@ function attachThreadTaskCardsToResult(result) {
   if (!result || typeof result !== "object" || !result.thread) return result;
   attachThreadGoalToThread(result.thread);
   attachThreadTaskCardsToThread(result.thread);
+  return result;
+}
+
+function pendingServerRequestsForThread(codexClient, threadId) {
+  const id = String(threadId || "").trim();
+  if (!codexClient || typeof codexClient.pendingServerRequests !== "function") return [];
+  return codexClient.pendingServerRequests()
+    .filter((request) => {
+      if (!request || !shouldExposeServerRequestInThread(request)) return false;
+      const params = request.params || {};
+      const requestThreadId = String(params.threadId || params.conversationId || "").trim();
+      return requestThreadId ? requestThreadId === id : Boolean(id);
+    });
+}
+
+function shouldExposeServerRequestInThread(request) {
+  return Boolean(request && SERVER_REQUEST_METHODS.has(request.method));
+}
+
+function attachPendingServerRequestsToResult(result, codexClient = codex) {
+  if (!result || typeof result !== "object" || !result.thread) return result;
+  const pendingServerRequests = pendingServerRequestsForThread(codexClient, result.thread.id || result.thread.threadId || "");
+  result.thread.pendingServerRequests = pendingServerRequests;
   return result;
 }
 
@@ -8534,7 +8557,7 @@ async function materializeThreadTaskCardDraftsForThread(thread) {
 async function prepareThreadTaskCardsToResult(result) {
   if (!result || typeof result !== "object" || !result.thread) return result;
   await materializeThreadTaskCardDraftsForThread(result.thread);
-  return attachThreadTaskCardsToResult(result);
+  return attachPendingServerRequestsToResult(attachThreadTaskCardsToResult(result));
 }
 
 async function turnsListThreadReadResult(threadId, summary, runtimeSettings, warning, mode = "turns-list", threadLog = null) {
@@ -10318,6 +10341,7 @@ module.exports = {
   readRolloutItemTimestampCandidates,
   readRolloutSessionFallbackThreadFromFile,
   resolveFilePreviewPath,
+  attachPendingServerRequestsToResult,
   publicServerRequest,
   serveFilePreviewContent,
   serverRequestResponsePayload,

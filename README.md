@@ -666,6 +666,8 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v256 修复线程详情投影模式下看不到 Codex app-server 权限批准卡的问题。线程详情 API 现在会把当前线程相关的 pending `serverRequest` 以压缩后的 public approval payload 一并返回，前端加载线程时会同步到现有 approval 渲染栈；即使 EventSource 时序错过，也能看到“权限需要批准”等卡片并完成批准。PWA shell cache 升级到 `codex-mobile-shell-v256`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
+
 - 中文说明：v255 调整左滑侧边聊天底部布局。侧聊输入区改为和普通线程 composer 同构的 `+ / 输入框 / Send` 底栏，低频的“存为候选”和“清空”收进 `+` 工具行；最新侧聊回执下方直接附“发送主线程 / 完成后发送 / 存为候选”等动作，避免底部长期显示大块操作按钮。PWA shell cache 升级到 `codex-mobile-shell-v255`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新资源。
 
 - 中文说明：v254 调整左滑侧边聊天布局。侧聊面板改为覆盖当前线程详情的全屏面板；只有当前线程存在 Subagent 状态时才显示上半区，空 Subagent 不再占用空间；侧聊标题、消息、候选、按钮和输入框改为继承当前字体大小设置，特大字体在侧聊里不再退回小字。PWA shell cache 升级到 `codex-mobile-shell-v254`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新资源。

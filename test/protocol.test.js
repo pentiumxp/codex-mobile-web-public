@@ -11,6 +11,7 @@ const { test } = require("node:test");
 process.env.CODEX_MOBILE_DISABLE_AUTH = "1";
 
 const {
+  attachPendingServerRequestsToResult,
   approvalResponsePayload,
   publicServerRequest,
   serverRequestResponsePayload,
@@ -193,6 +194,48 @@ test("mux forwards server requests and returns client responses with the origina
   const resolved = await waitFor(() => messages.find((message) => message.method === "serverRequest/resolved"));
   assert.equal(resolved.params.requestId, 0);
   assert.equal(stderr, "");
+});
+
+test("thread detail result carries public pending server requests for the thread", () => {
+  const result = {
+    thread: {
+      id: "thread-approval",
+      turns: [],
+    },
+  };
+  const fakeCodex = {
+    pendingServerRequests() {
+      return [
+        publicServerRequest({
+          id: "approval-1",
+          method: "item/permissions/requestApproval",
+          status: "waiting",
+          params: {
+            threadId: "thread-approval",
+            turnId: "turn-1",
+            permissions: { network: { host: "api.example.test" } },
+            reason: "Need network",
+          },
+        }),
+        publicServerRequest({
+          id: "approval-other",
+          method: "item/permissions/requestApproval",
+          status: "waiting",
+          params: {
+            threadId: "thread-other",
+            permissions: { fileSystem: { read: ["/tmp"] } },
+          },
+        }),
+      ];
+    },
+  };
+
+  const attached = attachPendingServerRequestsToResult(result, fakeCodex);
+  assert.equal(attached.thread.pendingServerRequests.length, 1);
+  assert.equal(attached.thread.pendingServerRequests[0].id, "approval-1");
+  assert.equal(attached.thread.pendingServerRequests[0].method, "item/permissions/requestApproval");
+  assert.equal(attached.thread.pendingServerRequests[0].params.threadId, "thread-approval");
+  assert.equal(attached.thread.pendingServerRequests[0].params.permissions.network.host, "api.example.test");
 });
 
 test("mux honors mobile replay notification limit", async (t) => {

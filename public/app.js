@@ -270,7 +270,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v255";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v256";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -5560,6 +5560,7 @@ async function loadThread(threadId, options = {}) {
     return;
   }
   const renderStartedAt = nowPerfMs();
+  syncThreadPendingServerRequests(result.thread);
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
   localStorage.setItem(STORAGE_THREAD_ID, threadId);
   draftStore.setTargetKey("");
@@ -11254,6 +11255,17 @@ function resolveServerRequest(payload) {
   if (state.currentThread && next && requestBelongsToThread(next, state.currentThread.id)) scheduleRenderCurrentThread();
   if (next) markActivity(isUserInputRequest(next) ? "输入完成" : "批准完成");
   scheduleApprovalRemoval(requestId);
+}
+
+function syncThreadPendingServerRequests(thread) {
+  const threadId = String(thread && (thread.id || state.currentThreadId) || "").trim();
+  const requests = Array.isArray(thread && thread.pendingServerRequests) ? thread.pendingServerRequests : [];
+  if (!threadId || !requests.length) return;
+  for (const request of requests) {
+    if (!request || request.id === null || request.id === undefined) continue;
+    if (!requestBelongsToThread(request, threadId)) continue;
+    upsertServerRequest(request);
+  }
 }
 
 function updateThreadGoalState(threadId, goal) {
