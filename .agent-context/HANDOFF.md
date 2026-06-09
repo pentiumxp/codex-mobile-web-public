@@ -1891,3 +1891,50 @@ The previous full handoff was archived and should be opened only when old proven
     `evidence-4d3cf85f-de47-40d7-8cbe-85ec85596605`,
     `evidence-8dbe517a-47cc-4e2a-97e0-bb6e463f5499`, and
     `evidence-bcf81af2-1088-480f-82a1-e3e7f54004fc`.
+
+## 2026-06-09 Public PR #58 Keyboard Focus Sync
+
+- Public PR:
+  - Evaluated `pentiumxp/codex-mobile-web-public#58` from GitHub REST/git refs
+    because local `gh` API auth was unavailable.
+  - PR was open, non-draft, mergeable/clean, and its `Node checks` check-run
+    was successful at commit `cf409214a5f1a0176d05fe8d51d985324efa21b6`.
+  - The change fixes standalone mobile editable focus handling so iOS keyboard
+    autoscroll does not leave the Composer visibly shifted upward, while Hermes
+    embed mode still honors host-provided keyboard and scroll offsets.
+- Public merge:
+  - Merged in the clean public mirror
+    `/Users/hermes-dev/HermesMobileDev/public-mirrors/codex-mobile-web-public`.
+  - Added README Chinese release note for v253.
+  - Pushed public `main` at merge commit
+    `c80b70c66c706380ea0d89a14681c442711f855c`.
+  - GitHub reported PR #58 closed and merged at that merge commit.
+- Public validation:
+  - Focused mobile/viewport checks passed with 25 tests:
+    `node --test test/viewport-metrics.test.js test/mobile-viewport.test.js
+    test/turn-scroll-controls.test.js test/composer-quota.test.js`.
+  - `npm run check`, `npm run check:macos`, `git diff --check HEAD`, and
+    `npm test` passed with 436 tests.
+  - Public privacy/file scan found no tracked `.agent-context`, runtime state,
+    local keys, uploads, or raw private material. Fixed-string hits were limited
+    to expected README boundary text, documented placeholder examples, and
+    public docs references.
+  - Evidence ledger entry:
+    `evidence-aedc7991-1433-4904-8094-82ac90d3a3d8`.
+- Private reverse sync:
+  - Merged public `main` back into private `main` after the public push.
+  - Conflict resolution kept private shell/cache v254 because local private
+    side-chat/mux commits were already ahead, while preserving PR #58 keyboard
+    focus behavior and tests.
+  - Private merge commit:
+    `460106671fedbb1e72ea2bb3b5c3c8652de577d4`.
+- Private validation:
+  - Focused mobile/viewport checks passed with 25 tests.
+  - `npm run check`, `npm run check:macos`, `git diff --check --cached`, and
+    the plugin platform contract checker passed.
+  - One full `npm test` run hit a transient `test/protocol.test.js` temporary
+    directory teardown `ENOTEMPTY`; rerunning `node --test
+    test/protocol.test.js` passed with 10 tests, and a full `npm test` rerun
+    passed with 437 tests.
+  - Evidence ledger entry:
+    `evidence-c9f0d073-ee76-41f5-9ae0-a067db5375b2`.
