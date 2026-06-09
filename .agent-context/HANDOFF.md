@@ -23,6 +23,39 @@ The previous full handoff was archived and should be opened only when old proven
 
 ## Preserved Recent Handoff Tail
 
+## 2026-06-09 Public PR #54 Projection User Dedupe
+
+- Public PR:
+  - Inspected `pentiumxp/codex-mobile-web-public` PR #54
+    `修复动态投影重复显示 Mobile 用户消息`.
+  - PR was open, clean/mergeable, non-draft, and CI `Node checks` was
+    successful.
+  - Scope was limited to
+    `adapters/thread-detail-projection-service.js` and
+    `test/thread-detail-projection-service.test.js`.
+- Public publish:
+  - Used isolated public clone under `/tmp/codex-mobile-web-public-pr54`.
+  - Added README Chinese release note for v247.
+  - Public validation passed: `npm install`, `npm run check`,
+    `npm run check:macos`, `npm test` with 399 tests, and `git diff --check`.
+  - Public privacy scan found no credential/local-path hits; expected
+    boundary text mentions were documentation-only.
+  - Pushed public `main`; GitHub reports PR #54 `MERGED` at
+    `2026-06-09T02:04:14Z`.
+- Private sync decision:
+  - A no-commit cherry-pick probe of PR commit `74e8dba` onto private v247
+    produced a content conflict in the projection service.
+  - The conflict is semantic overlap, not behavior disagreement: private commit
+    `43533db` is the broader v247 implementation and already covers PR #54's
+    projection-only scenario plus frontend live upsert/merge dedupe,
+    pending-echo normalization, `local-user-*`, `input_text`, image/url/path
+    matching, and durable-user-message preference.
+  - Per user direction, private keeps the broader v247 implementation and skips
+    cherry-picking PR #54's narrower code subset.
+  - Private should push the existing v247 commits:
+    `43533db` `Fix live mobile user message echo dedupe` and
+    `dfd3b56` `Record v247 duplicate message deployment`.
+
 ## 2026-06-09 Live User Message Echo Dedupe v247
 
 - User reported that sending a message still briefly showed two user-message
