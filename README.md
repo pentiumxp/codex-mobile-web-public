@@ -666,6 +666,8 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v252 合并 public PR #57，优化 Codex Mobile 浅色主题。浅色模式和跟随系统浅色模式的背景、面板、边框、代码块、引用、Usage 摘要、更新状态、按钮和当前线程选中态改为更柔和的低阴影配色，减少移动端长时间阅读时的冷灰和高对比噪声；用户消息、Usage 细分卡片、Fast 开关、Public PR/更新提示等控件在浅色主题下也有更一致的边界和状态色。PWA shell cache 升级到 `codex-mobile-shell-v252`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端样式。本次 public 发布只包含公开源码、README 和测试；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
+
 - 中文说明：v250 合并 public PR #56，增强 GitHub 链接预览卡片。Markdown 中的 GitHub 链接不再自动追加多张完整预览卡，而是在链接附近显示紧凑的 GitHub 预览按钮；用户展开后才请求 `/api/link-previews/github` 并渲染完整卡片，收起后会隐藏卡片，减少移动端长回复里的视觉噪声和网络请求。预览按钮会显示 repo、Issue/PR/commit 摘要，加载失败或不支持时显示安全 fallback 链接；自动链接识别也覆盖括号、引号、冒号等常见前缀后的 GitHub URL。PWA shell cache 升级到 `codex-mobile-shell-v250`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端逻辑。本次 public 发布只包含公开源码、README 和测试；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
 
 - 中文说明：v248 合并 public PR #55，优化移动端 Markdown 与 Mermaid 渲染。普通文本/上传摘要里的 fenced Markdown 表格会优先渲染为可横向滚动的表格预览，并保留可展开源码；command output 中检测到的 Markdown 表格也会在原始输出 details 前显示预览，方便在手机上直接阅读结构化结果。Mermaid 规范化会合并 `A[标题]<br/>(补充)` 这类软换行标签，减少移动端图表解析失败；Mermaid 画布、表格和代码块横向滚动区域会阻止误触发子线程侧滑面板。PWA shell cache 保持 `codex-mobile-shell-v247`；已打开的浏览器/PWA 只需普通刷新或等待前端资源刷新后生效。本次 public 发布只包含公开源码、README 和测试；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
