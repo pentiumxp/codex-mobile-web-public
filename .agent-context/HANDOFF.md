@@ -21,6 +21,79 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-09 v252 Side-Chat Keyboard Work Paused
+
+- User asked to pause after extended debugging. No production deployment was
+  made for the v252 side-chat keyboard work.
+- Intended plugin runtime fix in progress: `public/styles.css` raises the
+  side panel above the main composer and adds `html.keyboard-open` compact
+  layout for the side-chat panel/textarea; app shell ids were bumped toward
+  `0.1.11|codex-mobile-shell-v252`.
+- Central Home AI visual harness work in progress adds a dedicated
+  `embedded-plugin-side-chat-keyboard` scenario so Codex Mobile side-chat
+  textarea obstruction is not validated only through the main composer case.
+- Static validation passed before pause:
+  - plugin `npm run check`;
+  - plugin focused mobile/thread tests;
+  - Home AI `node --test tests/ios-pwa-visual-harness.test.js`;
+  - Home AI focused live-debug/keyboard/bottom/task-list tests;
+  - Home AI `npm run check`;
+  - Home AI platform contract check for `codex-mobile`.
+- Development visual validation did not reach business assertions. The current
+  Appium/WDA lane repeatedly timed out on WebView context discovery/switch
+  (`/contexts` and `/context`) even after restarting the live debug server and
+  Appium/WDA. Debug ports `19073`, `4723`, `8101`, and `9100` were stopped
+  before pausing.
+- Current caution: after the public PR #56 reverse sync, no merge-conflict
+  markers remain, but the v252 side-chat keyboard source files are still dirty
+  and uncommitted. Inspect and commit or discard them intentionally before any
+  v252 deployment.
+
+## 2026-06-09 Public PR #56 GitHub Link Preview Cards
+
+- Public PR:
+  - Inspected `pentiumxp/codex-mobile-web-public` PR #56
+    `增强 GitHub 链接预览卡片`.
+  - PR was open, non-draft, `MERGEABLE`, CI `Node checks` successful, and
+    contained one public commit `aaeae2b`.
+  - Scope was public-safe frontend GitHub preview rendering, Markdown autolink
+    punctuation handling, shell cache bump, and tests.
+- Public publish:
+  - Used clean public mirror
+    `/Users/hermes-dev/HermesMobileDev/public-mirrors/codex-mobile-web-public`.
+  - Merged PR #56 locally on top of public `e75ec78`, added README v250 Chinese
+    release notes, and pushed merge commit `f994783`.
+  - GitHub reports PR #56 `MERGED` at `2026-06-09T06:28:02Z`.
+  - Public changed only README, frontend app/markdown/styles/service-worker,
+    and tests; no `.agent-context`, runtime state, local keys, uploads, or
+    machine-specific diagnostics were copied.
+- Public validation:
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed with 410 tests.
+  - `git diff --check HEAD` passed before commit.
+  - Public privacy scan found only expected README boundary text mentions.
+- Private reverse sync:
+  - The private worktree had uncommitted v252 side-chat keyboard changes.
+    They were temporarily stashed as
+    `pr56-private-dirty-before-public-sync`, public `main` was merged into
+    private as `a8db11a Merge public PR 56`, then the stash was restored
+    without conflict.
+  - Merge resolution kept private `codex-mobile-shell-v251` in the committed
+    merge while adding public #56 GitHub preview cache/constants, hydrate calls,
+    styles, and tests. Restored v252 dirty files then advanced local working
+    tree versions back to `codex-mobile-shell-v252`.
+- Private validation after stash restore:
+  - Focused GitHub/Markdown/scroll/mobile tests passed with 45 tests.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed with 433 tests.
+  - Platform contract check passed via
+    `/Users/hermes-dev/HermesMobileDev/app/scripts/plugin-workspace-platform-contract-check.js
+    --plugin codex-mobile --json`.
+  - Remaining dirty files are the pre-existing v252 side-chat keyboard work and
+    this handoff update; they were not copied to public.
+
 ## 2026-06-09 v251 Image Projection And Upload Rendering
 
 - Implemented Codex Mobile Web v251 image rendering fixes:
