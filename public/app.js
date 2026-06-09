@@ -269,7 +269,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v252";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v253";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -596,6 +596,7 @@ function isMenuOverlayMode() {
 }
 
 function viewportState() {
+  const embedded = isHermesEmbedMode();
   const hostViewport = state.pluginHostViewport && typeof state.pluginHostViewport === "object"
     ? state.pluginHostViewport
     : null;
@@ -608,18 +609,18 @@ function viewportState() {
   return viewportMetrics.measureViewport({
     visualHeight: window.visualViewport && window.visualViewport.height,
     visualOffsetTop: window.visualViewport && window.visualViewport.offsetTop,
-    scrollTop: Math.max(
+    scrollTop: embedded ? Math.max(
       0,
       Number(window.scrollY || 0) || 0,
       Number(document.documentElement && document.documentElement.scrollTop || 0) || 0,
       Number(document.body && document.body.scrollTop || 0) || 0,
-    ),
+    ) : 0,
     innerHeight: window.innerHeight,
     clientHeight: document.documentElement && document.documentElement.clientHeight,
     activeElement: document.activeElement,
-    hostKeyboardVisible: Boolean(isHermesEmbedMode() && hostKeyboard && hostKeyboard.visible),
-    hostKeyboardBottomInset: isHermesEmbedMode() && hostKeyboard ? hostKeyboard.bottomInset : 0,
-    hostBottomSafeArea: isHermesEmbedMode() && hostFooter ? hostFooter.safeAreaBottom : 0,
+    hostKeyboardVisible: Boolean(embedded && hostKeyboard && hostKeyboard.visible),
+    hostKeyboardBottomInset: embedded && hostKeyboard ? hostKeyboard.bottomInset : 0,
+    hostBottomSafeArea: embedded && hostFooter ? hostFooter.safeAreaBottom : 0,
   });
 }
 
@@ -637,7 +638,22 @@ function isHermesKeyboardInputActive() {
   return isHermesEmbedMode() && isKeyboardEditableElement(document.activeElement);
 }
 
+function resetMobileKeyboardWindowScroll() {
+  if (isHermesEmbedMode() || !isKeyboardEditableElement(document.activeElement)) return;
+  const scrollY = Math.max(
+    0,
+    Number(window.scrollY || 0) || 0,
+    Number(document.documentElement && document.documentElement.scrollTop || 0) || 0,
+    Number(document.body && document.body.scrollTop || 0) || 0,
+  );
+  if (scrollY < 1) return;
+  if (typeof window.scrollTo === "function") window.scrollTo(0, 0);
+  if (document.documentElement) document.documentElement.scrollTop = 0;
+  if (document.body) document.body.scrollTop = 0;
+}
+
 function updateViewportVars() {
+  resetMobileKeyboardWindowScroll();
   const viewport = viewportState();
   if (viewport.keyboardShrunk) {
     document.documentElement.style.setProperty("--app-top", `${Math.max(0, Math.round(viewport.top || 0))}px`);

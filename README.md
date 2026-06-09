@@ -666,6 +666,8 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v253 合并 public PR #58，修复移动端键盘聚焦时 Composer 被 iOS 页面滚动顶到可视区域上方的问题。普通 Mobile/PWA 模式不再把 `window.scrollY` / document scroll 当成键盘 viewport offset；输入框聚焦后若 iOS 自动滚动 document，前端会把 window/body scroll 归零，避免和 `--app-height` 收缩叠加。Hermes embed 场景仍保留 host keyboard、safe area 和 iframe scroll offset 逻辑，不改变宿主下发键盘信息的处理。PWA shell cache 升级到 `codex-mobile-shell-v253`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。本次 public 发布只包含公开源码、README 和测试；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
+
 - 中文说明：v252 修复左滑侧边聊天在嵌入插件模式下被键盘遮挡的问题。侧聊面板现在高于主 composer，并在 `keyboard-open` 时按宿主下发的 `--app-height` 收缩为键盘紧凑布局，降低 Subagent 上半区和侧聊 textarea 的最小高度，确保正在输入的侧聊内容保持在键盘上方。PWA shell cache 升级到 `codex-mobile-shell-v252`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新资源。
 
 - 中文说明：v252 合并 public PR #57，优化 Codex Mobile 浅色主题。浅色模式和跟随系统浅色模式的背景、面板、边框、代码块、引用、Usage 摘要、更新状态、按钮和当前线程选中态改为更柔和的低阴影配色，减少移动端长时间阅读时的冷灰和高对比噪声；用户消息、Usage 细分卡片、Fast 开关、Public PR/更新提示等控件在浅色主题下也有更一致的边界和状态色。PWA shell cache 升级到 `codex-mobile-shell-v252`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端样式。本次 public 发布只包含公开源码、README 和测试；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
