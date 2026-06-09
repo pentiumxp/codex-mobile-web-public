@@ -1615,3 +1615,22 @@ The previous full handoff was archived and should be opened only when old proven
     side-chat textarea focused.
   - Development artifact:
     `/Users/xuxin/.homeai-qa/artifacts/ios-pwa-visual-embedded-plugin-side-chat-keyboard-codex-mobile-20260609T071211Z.png`.
+- Production deployment:
+  - Deployed source commit `07c5ad316cad` through the Home AI central Mac
+    deploy script with reason `codex-mobile-side-chat-keyboard-v252`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260609T071617Z-plugin-codex-mobile-web-codex-mobile-side-chat-keyboard-v252`.
+  - LaunchDaemon validation passed and `/api/public-config` reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v252`,
+    `shellCacheName=codex-mobile-shell-v252`, `buildId=c35f887701a41a9f`,
+    and `platform=darwin`.
+  - Production visual validation used the central contract scenario
+    `embedded-plugin-side-chat-keyboard` against
+    `https://wardrobe-xuxin.synology.me:8555/?source=pwa`.
+  - Production visual result passed with plugin build
+    `0.1.11|codex-mobile-shell-v252`, target thread
+    `019ea76b-d846-7892-bda0-c0fff9cf7581`, keyboard top `471`, textarea
+    bottom `334`, composer bottom `374`, input clearance `137`, composer
+    clearance `97`, side-chat panel open, and side-chat textarea focused.
+  - Production artifact:
+    `/Users/xuxin/.homeai-qa/artifacts/ios-pwa-visual-embedded-plugin-side-chat-keyboard-codex-mobile-20260609T071645Z.png`.
