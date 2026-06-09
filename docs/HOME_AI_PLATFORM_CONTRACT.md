@@ -120,13 +120,13 @@ Minimum closure for Codex Mobile production changes:
   `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
 - LaunchDaemon: `system/com.hermesmobile.plugin.codex-mobile`.
 - Loopback production URL: `http://127.0.0.1:8787`.
-- Current verified shell after live user-message echo dedupe deployment:
-  `0.1.11|codex-mobile-shell-v247`.
+- Current verified shell after Hermes embed safe-area deployment:
+  `0.1.11|codex-mobile-shell-v249`.
 - Backup path:
   `/Users/hermes-host/HermesMobile/backups/deploy/20260609T014739Z-plugin-codex-mobile-web-codex-mobile-live-user-message-dedupe-v247`.
 - Production smoke confirmed `/api/public-config` reports
-  `clientBuildId=0.1.11|codex-mobile-shell-v247` and
-  `shellCacheName=codex-mobile-shell-v247`.
+  `clientBuildId=0.1.11|codex-mobile-shell-v249` and
+  `shellCacheName=codex-mobile-shell-v249`.
 - Plugin manifest returns `plugin_id=codex-mobile`, `kind=embedded_app`, and
   does not return raw Codex Mobile Access Keys.
 - Production `workspacePath` is

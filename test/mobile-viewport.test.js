@@ -47,7 +47,7 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(stylesCss, /html\.embed-hermes \.app\s*{[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /html\.embed-hermes \.app\s*{[\s\S]*min-height:\s*0;/);
   assert.match(stylesCss, /html\.embed-hermes \.app\s*{[\s\S]*transform:\s*translateY\(var\(--app-top, 0px\)\);/);
-  assert.match(stylesCss, /html\.embed-hermes \.composer\s*{[\s\S]*padding-bottom:\s*clamp\(12px, calc\(env\(safe-area-inset-bottom, 0px\) - 82px\), 56px\);/);
+  assert.match(stylesCss, /html\.embed-hermes \.composer\s*{[\s\S]*padding-bottom:\s*max\(12px, var\(--host-bottom-safe-area, 0px\)\);/);
   assert.match(stylesCss, /html\.embed-hermes\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*10px;/);
   assert.match(stylesCss, /html\.embed-hermes \.main \.version-actions/);
   assert.match(indexHtml, /id="continuationDialog"/);
@@ -57,14 +57,14 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(stylesCss, /\.continuation-dialog/);
   assert.match(stylesCss, /html\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*12px;/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.composer\s*{[\s\S]*gap:\s*6px;[\s\S]*padding:\s*7px 12px clamp\(8px, calc\(env\(safe-area-inset-bottom, 0px\) - 88px\), 52px\);/);
-  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.embed-hermes \.composer\s*{[\s\S]*padding-bottom:\s*clamp\(8px, calc\(env\(safe-area-inset-bottom, 0px\) - 84px\), 56px\);/);
+  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.embed-hermes \.composer\s*{[\s\S]*padding-bottom:\s*max\(12px, var\(--host-bottom-safe-area, 0px\)\);/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.embed-hermes\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*8px;/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*7px;/);
 });
 
-test("public app shell cache advances after Fast control and refresh prompt hardening", () => {
-  assert.match(swJs, /codex-mobile-shell-v247/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v247"/);
+test("public app shell cache advances after Hermes embed safe-area hardening", () => {
+  assert.match(swJs, /codex-mobile-shell-v249/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v249"/);
   assert.match(appJs, /function serverBuildIdFromConfig\(config\) \{\s*return String\(config && \(config\.clientBuildId \|\| config\.shellCacheName \|\| config\.buildId\) \|\| ""\)\.trim\(\);/);
   assert.doesNotMatch(appJs, /function serverBuildIdFromConfig\(config\) \{\s*return String\(config && \(config\.clientBuildId \|\| config\.shellCacheName \|\| config\.buildId \|\| config\.version\)/);
   assert.match(appJs, /startupThreadOpenPending: false/);

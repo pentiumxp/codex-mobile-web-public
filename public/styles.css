@@ -5559,7 +5559,7 @@ html.keyboard-open .composer {
   }
 
   html.embed-hermes .composer {
-    padding-bottom: clamp(8px, calc(env(safe-area-inset-bottom, 0px) - 84px), 56px);
+    padding-bottom: max(12px, var(--host-bottom-safe-area, 0px));
   }
 
   html.keyboard-open .composer {
