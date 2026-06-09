@@ -33,6 +33,7 @@ const INITIAL_PLUGIN_LAUNCH_KEY = INITIAL_PLUGIN_EMBED.launchKey || initialPlugi
 
 const state = {
   key: INITIAL_PLUGIN_LAUNCH_KEY || (INITIAL_PLUGIN_EMBED.embedded ? "" : localStorage.getItem("codexMobileKey")) || "",
+  imageAuthVersion: 0,
   pluginEmbed: INITIAL_PLUGIN_EMBED,
   pluginLaunchSession: Boolean(INITIAL_PLUGIN_LAUNCH_KEY),
   pluginSessionActive: false,
@@ -254,12 +255,21 @@ const state = {
   threadHistoryError: "",
 };
 
+function setAuthKey(value) {
+  const next = String(value || "");
+  if (state.key !== next) {
+    state.key = next;
+    state.imageAuthVersion = (Number(state.imageAuthVersion) || 0) + 1;
+  }
+  return state.key;
+}
+
 const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v250";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v251";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -3298,7 +3308,15 @@ function isLatestTurn(turn) {
 function stableItemKey(turn, item, index = 0, prefix = "item") {
   const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "thread";
   const turnId = turn && (turn.id || turn.startedAt || "turn");
-  const itemId = item && (item.id || `${item.type || "item"}-${index}`);
+  let itemId = item && (item.id || `${item.type || "item"}-${index}`);
+  if (item && (item.type === "imageView" || item.type === "imageGeneration")) {
+    const imageSource = [
+      imageViewPath(item),
+      imageViewContentUrl(item),
+      imageViewUrl(item),
+    ].filter(Boolean).map(imageSourceSignature).join("|");
+    if (imageSource) itemId = `${itemId}|${stableTextHash(imageSource)}`;
+  }
   return [prefix, threadId, turnId, itemId].map((part) => String(part || "")).join("|");
 }
 
@@ -3946,6 +3964,7 @@ function conversationRenderSignature(thread) {
   const omitted = Number(thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread.turns || []).length - turns.length);
   const payload = {
     threadId: state.currentThreadId || thread.id || "",
+    imageAuthVersion: Number(state.imageAuthVersion || 0),
     pluginRefreshPendingNotice: String(state.pluginRefreshPendingNotice || ""),
     rolloutSizeBytes: rolloutSizeBytes(thread),
     rolloutWarning: isRolloutOverThreshold(thread),
@@ -4762,7 +4781,7 @@ async function login(key) {
   }).then(async (res) => {
     if (!res.ok) throw new Error("Access key is not valid");
   });
-  state.key = key;
+  setAuthKey(key);
   state.pluginLaunchSession = false;
   state.pluginSessionActive = false;
   localStorage.setItem("codexMobileKey", key);
@@ -4778,7 +4797,7 @@ async function exchangePluginLaunchSession() {
     timeoutMs: 12000,
   });
   if (!result || !result.session_key) throw new Error("Plugin session exchange failed");
-  state.key = String(result.session_key || "");
+  setAuthKey(result.session_key);
   const hermesOrigin = normalizePluginParentOrigin(result && result.hermes_origin);
   if (hermesOrigin) state.pluginParentOrigin = hermesOrigin;
   state.pluginLaunchTarget = result && result.target && typeof result.target === "object" ? result.target : null;
@@ -9288,7 +9307,7 @@ function copyTextForItem(item) {
 function imageUrlValue(part) {
   if (!part || typeof part !== "object") return "";
   const raw = part.url || part.image_url || part.imageUrl || "";
-  if (raw && typeof raw === "object") return String(raw.url || raw.uri || "");
+  if (raw && typeof raw === "object") return String(raw.url || raw.uri || raw.href || "");
   return String(raw || "");
 }
 
@@ -9392,6 +9411,7 @@ function imageSourceForPart(part, attachment = null) {
   if (attachment && attachment.path && isLikelyAbsoluteLocalPath(attachment.path)) return imageContentUrlForPath(attachment.path);
   if (part.path) return imageContentUrlForPath(part.path);
   const url = imageUrlValue(part);
+  if (isLikelyAbsoluteLocalPath(url)) return imageContentUrlForPath(url);
   return url || "";
 }
 
@@ -10279,13 +10299,15 @@ function imageViewPath(item) {
 }
 
 function imageViewUrl(item) {
-  return String((item && (
+  const raw = item && (
     item.url
     || item.imageUrl
     || item.image_url
     || item.arguments && (item.arguments.url || item.arguments.imageUrl || item.arguments.image_url)
     || item.result && (item.result.url || item.result.imageUrl || item.result.image_url)
-  )) || "");
+  );
+  const value = raw && typeof raw === "object" ? raw.url || raw.uri || raw.href : raw;
+  return String(value || "");
 }
 
 function imageViewContentUrl(item) {

@@ -51,6 +51,7 @@ behavior, or cross-plugin reference behavior:
 | `mobile_visual_harness_status` | `appium-simulator`; use Home AI live iOS PWA debugging for embedded UI reproduction and record bounded Appium/Simulator or installed-PWA evidence for final acceptance |
 | `ios_live_debug_available` | `yes`; use Home AI `npm run ios:pwa:debug` for interactive embedded iOS PWA reproduction, with one Simulator/live-debug-port/WDA-port/MJPEG-port lane per concurrent plugin debug session. |
 | `ios_visual_harness_command` | `cd /Users/hermes-dev/HermesMobileDev/app && npm run ios:pwa:visual -- --scenario embedded-plugin-shell --plugin-id codex-mobile --debug-url http://127.0.0.1:19073/` |
+| `ios_keyboard_visual_harness_command` | `cd /Users/hermes-dev/HermesMobileDev/app && npm run ios:pwa:visual -- --scenario embedded-plugin-keyboard-composer --plugin-id codex-mobile --plugin-thread-id <thread-id> --debug-url http://127.0.0.1:19073/` |
 
 ## Required Local Validation
 
@@ -75,6 +76,27 @@ Default live debug UI:
 ```text
 http://127.0.0.1:19073/
 ```
+
+For Codex thread-detail composer, input-method, keyboard, or input-obstruction
+changes, the final development visual check must use a real Codex thread id:
+
+```bash
+cd /Users/hermes-dev/HermesMobileDev/app
+npm run ios:pwa:visual -- \
+  --scenario embedded-plugin-keyboard-composer \
+  --plugin-id codex-mobile \
+  --plugin-thread-id <thread-id> \
+  --debug-url http://127.0.0.1:19073/
+```
+
+The keyboard scenario records host keyboard metrics, iframe bounds, plugin
+keyboard viewport receipt, and the composer/input clearance above the keyboard.
+When the local Appium/Safari lane cannot display the iOS software keyboard for
+iframe `contenteditable` controls, the harness injects the canonical
+`hermes.plugin.viewport` keyboard payload and marks `keyboard.simulated=true`;
+that remains a required development layout gate before deploy.
+Do not deploy keyboard or composer layout changes from this workspace until the
+development visual check passes or the blocker is explicitly recorded.
 
 For WDA MJPEG stream mode, allocate unique ports per Simulator lane:
 

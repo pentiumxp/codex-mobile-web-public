@@ -666,6 +666,8 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v251 修复图片投影和用户上传图显示问题。历史/投影线程的 `imageView` / `imageGeneration` 会在 receipt-only 压缩模式下保留，不再只剩最新 turn 的 tool-generated 图片；无 turn_id 的 tool output 图片会优先按时间窗口归属到对应 turn。用户上传图如果被 app-server 回放为 `input_image.image_url` 本地 uploads 绝对路径，前端会改走受认证保护的 `/api/uploads/file`，不会把本地路径直接塞进 `<img>`。图片 URL 还会在插件 session key 变化后重渲染，避免旧 auth key 导致破图。PWA shell cache 升级到 `codex-mobile-shell-v251`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新资源。
+
 - 中文说明：v250 新增当前线程侧边聊天第一版。线程详情左滑面板现在分为上半区 Subagent 状态、下半区侧边聊天；侧聊草稿、消息、候选指令和排队状态全部由服务端按线程保存，不使用浏览器本地存储做持久化。侧聊内容默认不会进入主线程，也不会 steer 正在运行的 turn；用户显式发送候选时才通过新的服务端 apply 路由启动主线程 `turn/start`，选择“完成后发送”时会在当前 turn 完成后幂等地发送一次。PWA shell cache 升级到 `codex-mobile-shell-v250`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新资源。
 
 - 中文说明：v249 修复 Hermes 宿主嵌入模式下移动端 composer 底部安全区在窄屏 media rule 中被覆盖的问题。嵌入态 composer 现在统一使用 `max(12px, var(--host-bottom-safe-area, 0px))`，确保宿主隐藏底部 chrome 时 Codex 仍吃到宿主下发的安全区。PWA shell cache 升级到 `codex-mobile-shell-v249`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新资源。

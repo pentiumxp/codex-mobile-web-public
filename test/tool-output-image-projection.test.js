@@ -65,6 +65,52 @@ test("function_call_output input_image data urls become generated image cards", 
   }
 });
 
+test("unscoped tool output image data urls attach to matching turn time windows", () => {
+  const { dir, rolloutPath } = writeRollout([
+    event("2026-06-08T10:00:02.000Z", "response_item", {
+      type: "function_call_output",
+      call_id: "call-old-image",
+      output: [{ type: "input_image", image_url: "data:image/png;base64,QUJD" }],
+    }),
+    event("2026-06-08T10:05:02.000Z", "response_item", {
+      type: "function_call_output",
+      call_id: "call-new-image",
+      output: [{ type: "input_image", image_url: "data:image/png;base64,REVG" }],
+    }),
+  ]);
+  try {
+    const compacted = compactThread({
+      id: "thread-unscoped-images",
+      path: rolloutPath,
+      turns: [
+        {
+          id: "turn-old",
+          startedAtMs: Date.parse("2026-06-08T10:00:00.000Z"),
+          completedAtMs: Date.parse("2026-06-08T10:00:30.000Z"),
+          status: { type: "completed" },
+          items: [{ id: "agent-old", type: "agentMessage", text: "old turn" }],
+        },
+        {
+          id: "turn-new",
+          startedAtMs: Date.parse("2026-06-08T10:05:00.000Z"),
+          completedAtMs: Date.parse("2026-06-08T10:05:30.000Z"),
+          status: { type: "completed" },
+          items: [{ id: "agent-new", type: "agentMessage", text: "new turn" }],
+        },
+      ],
+    }, { maxTurns: 2 });
+
+    const oldImages = compacted.turns[0].items.filter((item) => item.type === "imageView");
+    const newImages = compacted.turns[1].items.filter((item) => item.type === "imageView");
+    assert.equal(oldImages.length, 1);
+    assert.equal(newImages.length, 1);
+    assert.match(oldImages[0].id, /^tool-output-image-call-old-image-0-/);
+    assert.match(newImages[0].id, /^tool-output-image-call-new-image-0-/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test.after(() => {
   fs.rmSync(generatedImageCacheRoot, { recursive: true, force: true });
 });

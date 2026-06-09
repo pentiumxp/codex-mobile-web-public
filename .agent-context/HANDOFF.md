@@ -21,6 +21,41 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-09 v251 Image Projection And Upload Rendering
+
+- Implemented Codex Mobile Web v251 image rendering fixes:
+  - `server.js` now attaches unscoped `function_call_output` tool-output
+    images to the matching turn by rollout timestamp window instead of always
+    putting them on the latest turn.
+  - Receipt-only compacted turns preserve `imageView` / `imageGeneration`
+    visual receipt items so historical thread detail does not drop image cards.
+  - `public/app.js` routes app-server-replayed absolute upload paths through
+    authenticated `/api/uploads/file`, unwraps object image URLs including
+    `href`, and forces image rerender when the plugin session auth key changes.
+  - Image render keys include the image source signature so one projected image
+    cannot reuse a stale DOM node from another image.
+  - PWA shell advanced to `0.1.11|codex-mobile-shell-v251`.
+- Docs updated:
+  - `README.md`;
+  - `docs/ARCHITECTURE.md`;
+  - `docs/HOME_AI_PLATFORM_CONTRACT.md`;
+  - `docs/TROUBLESHOOTING.md`.
+- Development validation passed:
+  - `npm run check`;
+  - `npm test` with 427 tests;
+  - focused image/mobile tests with 40 tests;
+  - Home AI platform contract check for `codex-mobile`;
+  - `git diff --check`.
+- Development visual validation for the input/keyboard class of bugs used the
+  new central Home AI `embedded-plugin-keyboard-composer` scenario against a
+  real Codex thread. The Appium/Safari lane could not surface the real iOS
+  software keyboard inside the iframe, so the harness injected the canonical
+  `hermes.plugin.viewport` keyboard payload and recorded
+  `keyboard.simulated=true`. The layout gate passed with input bottom at 384,
+  keyboard top at 392, and screenshot artifact:
+  `/Users/xuxin/.homeai-qa/artifacts/ios-pwa-visual-embedded-plugin-keyboard-composer-codex-mobile-20260609T060315Z.png`.
+- Production deploy is still pending at the time of this handoff section.
+
 ## Preserved Recent Handoff Tail
 
 ## 2026-06-09 Thread Side Chat v250 Implementation

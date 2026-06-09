@@ -52,6 +52,10 @@ function evaluatedAttachmentSummaryParser() {
 }
 
 function evaluatedInputContentRenderer() {
+  return evaluatedInputContentRendererWithKey("");
+}
+
+function evaluatedInputContentRendererWithKey(key = "") {
   const sources = [
     "escapeHtml",
     "shortPath",
@@ -85,7 +89,7 @@ function evaluatedInputContentRenderer() {
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(
     "URLSearchParams",
-    `const state = { key: "" };\nconst THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";\n${sources.join("\n")}\nreturn renderInputContent;`,
+    `const state = { key: ${JSON.stringify(String(key || ""))} };\nconst THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";\n${sources.join("\n")}\nreturn renderInputContent;`,
   )(URLSearchParams);
 }
 
@@ -588,6 +592,42 @@ test("raw app-server input image parts use object image urls", () => {
   assert.match(html, /src="data:image\/png;base64,abc123"/);
   assert.doesNotMatch(html, /\/api\/uploads\/file\?path=IMG_5882/);
   assert.doesNotMatch(html, /\[object Object\]/);
+});
+
+test("raw app-server input image url local upload paths use authenticated uploads route", () => {
+  const renderInputContent = evaluatedInputContentRendererWithKey("session-key");
+  const uploadPath = "/Users/xuxin/.codex-mobile-web/uploads/2026-06-08/thread-id/1780936946968-IMG_5882.jpg";
+  const html = renderInputContent([
+    {
+      type: "input_text",
+      text: "see attached image",
+    },
+    {
+      type: "input_image",
+      image_url: { url: uploadPath },
+    },
+  ]);
+
+  assert.match(html, /class="input-image"/);
+  assert.match(html, /\/api\/uploads\/file\?path=/);
+  assert.match(html, /key=session-key/);
+  assert.equal(html.includes(`src="${uploadPath}"`), false);
+});
+
+test("conversation image urls rerender when the auth key version changes", () => {
+  assert.match(appJs, /imageAuthVersion: 0/);
+  assert.match(functionBody("setAuthKey"), /state\.imageAuthVersion = \(Number\(state\.imageAuthVersion\) \|\| 0\) \+ 1/);
+  assert.match(functionBody("conversationRenderSignature"), /imageAuthVersion: Number\(state\.imageAuthVersion \|\| 0\)/);
+  assert.match(functionBody("login"), /setAuthKey\(key\)/);
+  assert.match(functionBody("exchangePluginLaunchSession"), /setAuthKey\(result\.session_key\)/);
+});
+
+test("image view render keys include their image source", () => {
+  const body = functionBody("stableItemKey");
+  assert.match(body, /item\.type === "imageView" \|\| item\.type === "imageGeneration"/);
+  assert.match(body, /imageViewContentUrl\(item\)/);
+  assert.match(body, /imageViewUrl\(item\)/);
+  assert.match(body, /stableTextHash\(imageSource\)/);
 });
 
 test("context compaction merge does not preserve stale mobile notices", () => {

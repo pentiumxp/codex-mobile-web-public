@@ -3112,6 +3112,47 @@ function cloneRolloutToolOutputImagePayload(payload) {
   };
 }
 
+function turnCompletionBoundaryMs(turn) {
+  for (const key of [
+    "completedAtMs",
+    "completedAt",
+    "completed_at_ms",
+    "completed_at",
+    "updatedAtMs",
+    "updatedAt",
+    "updated_at_ms",
+    "updated_at",
+  ]) {
+    const timestamp = timestampToMs(turn && turn[key]);
+    if (timestamp) return timestamp;
+  }
+  return 0;
+}
+
+function rolloutToolOutputImageMatchesTurnByTime(turns, index, item) {
+  const timestamp = itemDisplayTimestampMs(item);
+  if (!timestamp || !Array.isArray(turns) || index < 0 || index >= turns.length) return false;
+  const turn = turns[index];
+  const start = turnSortTimestampMs(turn);
+  const nextStart = index + 1 < turns.length ? turnSortTimestampMs(turns[index + 1]) : 0;
+  const completed = turnCompletionBoundaryMs(turn);
+  if (!start && !nextStart && !completed) return false;
+  const slackMs = 2000;
+  if (start && timestamp < start - slackMs) return false;
+  if (nextStart && timestamp >= nextStart - slackMs) return false;
+  if (!nextStart && completed && timestamp > completed + slackMs) return false;
+  return true;
+}
+
+function unscopedRolloutToolOutputImagesForTurn(turns, index, items) {
+  const unscoped = Array.isArray(items) ? items : [];
+  if (!unscoped.length) return [];
+  const matched = unscoped.filter((item) => rolloutToolOutputImageMatchesTurnByTime(turns, index, item));
+  if (matched.length) return matched;
+  if (turns.length === 1 && unscoped.every((item) => !itemDisplayTimestampMs(item))) return unscoped;
+  return [];
+}
+
 function readRolloutToolOutputImageItems(rolloutPath, options = {}) {
   if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) {
     return { byTurn: new Map(), unscoped: [], scopedCount: 0 };
@@ -3184,17 +3225,15 @@ function appendRolloutToolOutputImagesToThread(thread) {
     threadId: thread.id || thread.threadId || "",
   });
   if (!payload) return thread;
-  const latestIndex = thread.turns.length - 1;
   thread.turns.forEach((turn, index) => {
     if (!turn || !Array.isArray(turn.items)) return;
     const turnId = String(turn.id || turn.turnId || "").trim();
     let imageItems = turnId && payload.byTurn instanceof Map ? payload.byTurn.get(turnId) : null;
     if ((!imageItems || !imageItems.length)
-      && index === latestIndex
       && payload.scopedCount === 0
       && Array.isArray(payload.unscoped)
       && payload.unscoped.length) {
-      imageItems = payload.unscoped;
+      imageItems = unscopedRolloutToolOutputImagesForTurn(thread.turns, index, payload.unscoped);
     }
     if (!Array.isArray(imageItems) || !imageItems.length) return;
     const existingIds = new Set(turn.items.map(visibleItemId).filter(Boolean));
@@ -3948,6 +3987,10 @@ function isTurnUsageSummaryItem(item) {
   return Boolean(item && typeof item === "object" && item.type === "turnUsageSummary");
 }
 
+function isVisualReceiptItem(item) {
+  return Boolean(item && typeof item === "object" && (item.type === "imageView" || item.type === "imageGeneration"));
+}
+
 function receiptOnlyItemIndexes(items) {
   const indexes = new Set();
   if (!Array.isArray(items)) return indexes;
@@ -3956,6 +3999,7 @@ function receiptOnlyItemIndexes(items) {
     const item = items[index];
     if (isUserQuestionItem(item)) indexes.add(index);
     if (isTurnUsageSummaryItem(item)) indexes.add(index);
+    if (isVisualReceiptItem(item)) indexes.add(index);
     if (isAssistantReceiptItem(item)) receiptIndex = index;
   }
   if (receiptIndex >= 0) indexes.add(receiptIndex);

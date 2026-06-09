@@ -10,6 +10,7 @@ const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"),
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
 const swJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "sw.js"), "utf8");
 const viewportMetricsJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "viewport-metrics.js"), "utf8");
+const platformPointer = fs.readFileSync(path.resolve(__dirname, "..", "docs", "HOME_AI_PLATFORM_CONTRACT.md"), "utf8");
 
 test("mobile viewport and early guards disable page zoom", () => {
   assert.match(indexHtml, /name="viewport" content="[^"]*maximum-scale=1/);
@@ -60,11 +61,14 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.embed-hermes \.composer\s*{[\s\S]*padding-bottom:\s*max\(12px, var\(--host-bottom-safe-area, 0px\)\);/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.embed-hermes\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*8px;/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*7px;/);
+  assert.match(platformPointer, /embedded-plugin-keyboard-composer/);
+  assert.match(platformPointer, /--plugin-thread-id <thread-id>/);
+  assert.match(platformPointer, /development visual check passes/);
 });
 
 test("public app shell cache advances after thread side chat panel", () => {
-  assert.match(swJs, /codex-mobile-shell-v250/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v250"/);
+  assert.match(swJs, /codex-mobile-shell-v251/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v251"/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.side-chat-scroll\s*{[\s\S]*overflow:\s*auto;/);
   assert.match(stylesCss, /\.side-chat-form textarea\s*{[\s\S]*max-height:\s*min\(22vh, 156px\);/);
