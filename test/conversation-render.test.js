@@ -212,6 +212,65 @@ return mergeItemsPreservingLocalVisible;
 `)();
 }
 
+function evaluatedLiveUserMessageUpsert() {
+  const sources = [
+    "normalizeFsPath",
+    "imageUrlValue",
+    "isInputTextPart",
+    "inputTextValue",
+    "isTruncatedImagePayloadPart",
+    "isInputImagePart",
+    "attachmentSummaryMarkerMatch",
+    "stripAttachmentSummaryLinePrefix",
+    "parseAttachmentLine",
+    "splitAttachmentSummaryText",
+    "isMuxUserMessage",
+    "isOptimisticUserMessage",
+    "isTurnUsageSummaryItem",
+    "normalizeComparableText",
+    "userMessageComparableParts",
+    "userMessagePathOverlap",
+    "comparablePathName",
+    "userMessagePathNameOverlap",
+    "userMessagesLikelySame",
+    "userMessagesCanShadow",
+    "hasMatchingRealUserMessage",
+    "removeShadowedMuxUserMessages",
+    "userMessageShadowPriority",
+    "mergeLikelySameUserMessage",
+    "dedupeLikelySameUserMessages",
+    "normalizeThreadVisibleUserMessages",
+    "upsertItem",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`
+const state = { currentThread: { id: "thread-1", turns: [{ id: "turn-1", items: [] }] } };
+let renderCount = 0;
+function ensureTurn(turnId) {
+  let turn = state.currentThread.turns.find((candidate) => candidate.id === turnId);
+  if (!turn) {
+    turn = { id: turnId, items: [] };
+    state.currentThread.turns.push(turn);
+  }
+  return turn;
+}
+function markActivity() {}
+function activityLabelForItem() { return ""; }
+function isReasoningItem() { return false; }
+function updateTickTimer() {}
+function isOperationalItem() { return false; }
+function isCompletedStatus() { return false; }
+function shouldRenderAfterUpsert() { return true; }
+function scheduleRenderCurrentThread() { renderCount += 1; }
+function visibleTextItemsLikelySame() { return false; }
+function itemVisibleWeight(item) { return JSON.stringify(item || {}).length; }
+function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
+  return Object.assign({}, existingItem || {}, incomingItem || {});
+}
+${sources.join("\n")}
+return { state, upsertItem, renderCount: () => renderCount };
+`)();
+}
+
 function evaluatedTurnUsageSummaryRenderer() {
   const sources = [
     "escapeHtml",
@@ -656,6 +715,28 @@ test("optimistic user messages are shadowed by mux and durable echoes", () => {
   assert.equal(imageItems.length, 1);
   assert.equal(imageItems[0].id, durableImage.id);
   assert.equal(imageItems[0].mobilePendingSubmission, undefined);
+});
+
+test("live user message upsert collapses mux echoes before refresh", () => {
+  const harness = evaluatedLiveUserMessageUpsert();
+  harness.upsertItem("turn-1", {
+    id: "mux-user-thread-1-turn-1-submission-1",
+    type: "userMessage",
+    mobilePendingSubmission: true,
+    content: [{ type: "text", text: "same live message" }],
+  });
+  harness.upsertItem("turn-1", {
+    id: "real-user-1",
+    type: "userMessage",
+    content: [{ type: "input_text", text: "same   live message" }],
+  });
+
+  const turn = harness.state.currentThread.turns[0];
+  const userMessages = turn.items.filter((item) => item.type === "userMessage");
+  assert.equal(userMessages.length, 1);
+  assert.equal(userMessages[0].id, "real-user-1");
+  assert.equal(userMessages[0].mobilePendingSubmission, undefined);
+  assert.equal(harness.renderCount(), 2);
 });
 
 test("active turn state follows only the latest durable turn", () => {

@@ -252,7 +252,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v246";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v247";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -3629,6 +3629,28 @@ function dedupeLikelySameUserMessages(items) {
   return out;
 }
 
+function normalizeThreadVisibleUserMessages(thread) {
+  if (!thread || !Array.isArray(thread.turns)) return thread;
+  for (const turn of thread.turns) {
+    if (!turn || !Array.isArray(turn.items)) continue;
+    turn.items = removeShadowedMuxUserMessages(dedupeLikelySameUserMessages(turn.items));
+  }
+  const durableUserMessages = [];
+  for (const turn of thread.turns) {
+    const items = Array.isArray(turn && turn.items) ? turn.items : [];
+    for (const item of items) {
+      if (item && item.type === "userMessage" && !isOptimisticUserMessage(item)) durableUserMessages.push(item);
+    }
+  }
+  if (!durableUserMessages.length) return thread;
+  for (const turn of thread.turns) {
+    if (!turn || !Array.isArray(turn.items)) continue;
+    turn.items = turn.items.filter((item) => !(isOptimisticUserMessage(item)
+      && durableUserMessages.some((realItem) => realItem.id !== item.id && userMessagesCanShadow(realItem, item))));
+  }
+  return thread;
+}
+
 function comparableVisibleTextItem(item) {
   return Boolean(item && (item.type === "agentMessage" || item.type === "plan"));
 }
@@ -3763,7 +3785,7 @@ function mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) {
 }
 
 function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
-  if (!existingThread || !incomingThread || existingThread.id !== incomingThread.id) return incomingThread;
+  if (!existingThread || !incomingThread || existingThread.id !== incomingThread.id) return normalizeThreadVisibleUserMessages(incomingThread);
   const existingTurns = Array.isArray(existingThread.turns) ? existingThread.turns : [];
   const incomingTurns = Array.isArray(incomingThread.turns) ? incomingThread.turns : null;
   const existingById = new Map(existingTurns.map((turn) => [turn.id, turn]));
@@ -3777,7 +3799,7 @@ function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
   if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileReadWarning")) {
     delete merged.mobileReadWarning;
   }
-  if (!incomingTurns) return merged;
+  if (!incomingTurns) return normalizeThreadVisibleUserMessages(merged);
   merged.turns = incomingTurns.map((incomingTurn) => {
     const existingTurn = existingById.get(incomingTurn.id);
     return existingTurn ? mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) : incomingTurn;
@@ -3808,7 +3830,7 @@ function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
       merged.mobileOmittedTurnCount = Math.max(0, Number(merged.mobileOmittedTurnCount || 0) - preservedExpandedTurnCount);
     }
   }
-  return merged;
+  return normalizeThreadVisibleUserMessages(merged);
 }
 
 function turnOrderMs(turn) {
@@ -10001,14 +10023,17 @@ function upsertItem(turnId, item) {
   }
   turn.items = turn.items || [];
   if (item.type === "userMessage") {
-    const matchingExisting = turn.items.find((existing) => existing
+    const matchingExistingIndex = turn.items.findIndex((existing) => existing
       && existing.id !== item.id
       && existing.type === "userMessage"
-      && userMessagesLikelySame(existing, item));
-    if (matchingExisting && userMessageSpecificity(matchingExisting) >= userMessageSpecificity(item)) return;
-    turn.items = turn.items.filter((existing) => existing.id === item.id
-      || existing.type !== "userMessage"
-      || !userMessagesLikelySame(existing, item));
+      && userMessagesCanShadow(existing, item));
+    if (matchingExistingIndex >= 0) {
+      const mergedUserMessage = mergeLikelySameUserMessage(turn.items[matchingExistingIndex], item);
+      turn.items[matchingExistingIndex] = mergedUserMessage;
+      normalizeThreadVisibleUserMessages(state.currentThread);
+      if (shouldRenderAfterUpsert(turn, mergedUserMessage)) scheduleRenderCurrentThread();
+      return;
+    }
   }
   if (item.type === "agentMessage" || item.type === "plan") {
     turn.items = turn.items.filter((existing) => existing.id === item.id || !visibleTextItemsLikelySame(existing, item));
@@ -10022,7 +10047,7 @@ function upsertItem(turnId, item) {
   if (isOperationalItem(item) && isCompletedStatus(item.status) && !item.completedAtMs) item.completedAtMs = Date.now();
   if (index >= 0) turn.items[index] = mergeItemPreservingVisibleFields(turn.items[index], item);
   else turn.items.push(item);
-  turn.items = removeShadowedMuxUserMessages(turn.items);
+  normalizeThreadVisibleUserMessages(state.currentThread);
   if (shouldRenderAfterUpsert(turn, item)) scheduleRenderCurrentThread();
 }
 
