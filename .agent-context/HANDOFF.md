@@ -21,6 +21,55 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-09 Public PR #57 Light Theme Sync
+
+- Public PR:
+  - Inspected `pentiumxp/codex-mobile-web-public` PR #57
+    `优化 Codex Mobile 浅色主题`.
+  - PR was open, non-draft, `MERGEABLE`, CI `Node checks` successful, and
+    contained one public commit `843263d`.
+  - Scope was public-safe frontend light-theme CSS polish, shell cache bump to
+    `codex-mobile-shell-v252`, and tests.
+- Public publish:
+  - Used clean public mirror
+    `/Users/hermes-dev/HermesMobileDev/public-mirrors/codex-mobile-web-public`.
+  - Merged PR #57 locally on top of public `f994783`, added README v252
+    Chinese release notes, and pushed merge commit `3705ed8`.
+  - GitHub reports PR #57 `MERGED` at `2026-06-09T09:17:54Z`.
+  - Public changed only README, `public/app.js`, `public/styles.css`,
+    `public/sw.js`, and tests; no `.agent-context`, runtime state, local keys,
+    uploads, or machine-specific diagnostics were copied.
+- Public validation:
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed with 410 tests.
+  - `git diff --check HEAD` passed.
+  - Public privacy scan found only expected README/frontend boundary text and
+    existing token-usage source/test filenames.
+- Private reverse sync:
+  - Stashed the pre-existing dirty `docs/HOME_AI_PLATFORM_CONTRACT.md` pointer
+    update as `pr57-private-dirty-before-public-sync`, merged public `main`
+    into private as `6bbbc39 Merge public PR 57`, then restored the stash.
+  - Resolved conflicts in README and `test/mobile-viewport.test.js` by keeping
+    private v252 side-chat keyboard content and adding public PR #57 light-theme
+    release notes/cache assertions.
+  - `public/styles.css` auto-merged, preserving private side-chat keyboard
+    layout and adding public light-theme token/control overrides.
+- Private validation after sync:
+  - Focused mobile/thread tests passed with 17 tests.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check HEAD` passed.
+  - `npm test` passed with 435 tests.
+  - Home AI platform contract check passed for `codex-mobile`; only warning was
+    `handoff_pointer_missing`.
+- Current state:
+  - Side-chat v252 source is committed and pushed from earlier work; the old
+    "side-chat keyboard files remain dirty" caution below is historical.
+  - Current remaining dirty file is the restored
+    `docs/HOME_AI_PLATFORM_CONTRACT.md` pointer update; it was not copied to
+    public and is not part of PR #57.
+
 ## 2026-06-09 v251 Hotfix Projected Image Ordering
 
 - User reported that entering a thread rendered older image cards at the bottom
