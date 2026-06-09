@@ -115,6 +115,7 @@ const MUX_ENDPOINT_FILE = process.env.CODEX_MOBILE_MUX_ENDPOINT_FILE || path.joi
 const EXTERNAL_APP_SERVER_WS = process.env.CODEX_MOBILE_APP_SERVER_WS || "";
 const EXTERNAL_APP_SERVER_TCP = process.env.CODEX_MOBILE_APP_SERVER_TCP || "";
 const REQUIRE_SHARED_APP_SERVER = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER || "");
+const DISABLE_MOBILE_OWNED_MUX = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_DISABLE_OWNED_MUX || "");
 const HOST = process.env.CODEX_MOBILE_HOST || "0.0.0.0";
 const PORT = Number(process.env.CODEX_MOBILE_PORT || "8787");
 const APP_VERSION = readPackageVersion();
@@ -974,12 +975,13 @@ function assertCommandAvailable(command, label) {
 }
 
 function codexAppServerChildEnv(extra = {}) {
-  const env = Object.assign({}, process.env, extra);
+  const env = Object.assign({}, process.env);
   for (const key of Object.keys(env)) {
     if (key === "CODEX_CLI_PATH" || key.startsWith("CODEX_MUX_")) {
       delete env[key];
     }
   }
+  Object.assign(env, extra);
   if (CODEX_HOME) env.CODEX_HOME = CODEX_HOME;
   return env;
 }
@@ -6062,6 +6064,7 @@ function resolveExternalEndpoint() {
 class CodexAppServerClient {
   constructor() {
     this.child = null;
+    this.muxChild = null;
     this.ws = null;
     this.port = 0;
     this.endpoint = null;
@@ -6102,6 +6105,12 @@ class CodexAppServerClient {
         return;
       } catch (err) {
         this.closeTransportOnly();
+        if (this.canStartOwnedMuxForEndpoint(externalEndpoint)) {
+          console.error(`[codex app-server] profile mux endpoint unavailable; starting Mobile-owned mux (${err.message})`);
+          await this.startOwnedMuxAndConnect();
+          await this.initialize({ allowAlreadyInitialized: true });
+          return;
+        }
         this.lastError = `shared app-server endpoint unavailable (${err.message})`;
         console.error(`[codex app-server] ${this.lastError}`);
         throw new Error(this.lastError);
@@ -6109,6 +6118,12 @@ class CodexAppServerClient {
     }
 
     if (this.requireSharedAppServer) {
+      if (!DISABLE_MOBILE_OWNED_MUX && !EXTERNAL_APP_SERVER_WS && !EXTERNAL_APP_SERVER_TCP) {
+        console.error(`[codex app-server] shared endpoint missing; starting Mobile-owned mux (${MUX_ENDPOINT_FILE})`);
+        await this.startOwnedMuxAndConnect();
+        await this.initialize({ allowAlreadyInitialized: true });
+        return;
+      }
       this.lastError = `shared app-server endpoint unavailable (${MUX_ENDPOINT_FILE} not found)`;
       console.error(`[codex app-server] ${this.lastError}`);
       throw new Error(this.lastError);
@@ -6156,6 +6171,76 @@ class CodexAppServerClient {
       });
       await started;
     }
+  }
+
+  canStartOwnedMuxForEndpoint(endpoint) {
+    if (DISABLE_MOBILE_OWNED_MUX || EXTERNAL_APP_SERVER_WS || EXTERNAL_APP_SERVER_TCP) return false;
+    return Boolean(endpoint && endpoint.source && normalizeFsPath(endpoint.source) === normalizeFsPath(MUX_ENDPOINT_FILE));
+  }
+
+  async startOwnedMuxAndConnect() {
+    assertCommandAvailable(CODEX_EXE, "Codex executable");
+    if (this.muxChild && this.muxChild.exitCode === null && this.muxChild.signalCode === null) {
+      return this.waitForMuxEndpointAndConnect();
+    }
+
+    fs.mkdirSync(path.dirname(MUX_ENDPOINT_FILE), { recursive: true });
+    const muxPath = path.join(APP_ROOT, "codex-app-server-mux.js");
+    const child = spawn(process.execPath, [muxPath, "app-server", "--analytics-default-enabled"], {
+      cwd: APP_ROOT,
+      env: codexAppServerChildEnv({
+        CODEX_HOME,
+        CODEX_MOBILE_RUNTIME_DIR: RUNTIME_ROOT,
+        CODEX_MUX_STANDALONE: "1",
+        CODEX_MUX_KEEP_ALIVE: "1",
+        CODEX_MUX_PUBLISH_ENDPOINT: "1",
+        CODEX_MUX_ENDPOINT_FILE: MUX_ENDPOINT_FILE,
+        CODEX_MUX_CODEX_EXE: CODEX_EXE,
+      }),
+      windowsHide: true,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    this.muxChild = child;
+    child.stderr.on("data", (chunk) => this.handleAppServerLog(chunk));
+    child.on("exit", (code, signal) => {
+      if (this.muxChild !== child) return;
+      this.muxChild = null;
+      this.ready = false;
+      this.lastError = `Mobile-owned mux exited (${code ?? signal ?? "unknown"})`;
+      broadcast({ type: "status", status: this.status() });
+    });
+    await new Promise((resolve, reject) => {
+      const onError = (err) => {
+        child.off("spawn", onSpawn);
+        if (this.muxChild === child) this.muxChild = null;
+        reject(err);
+      };
+      const onSpawn = () => {
+        child.off("error", onError);
+        resolve();
+      };
+      child.once("error", onError);
+      child.once("spawn", onSpawn);
+    });
+    await this.waitForMuxEndpointAndConnect();
+  }
+
+  async waitForMuxEndpointAndConnect() {
+    const deadline = Date.now() + 20000;
+    let lastError = null;
+    while (Date.now() < deadline) {
+      const endpoint = resolveExternalEndpoint();
+      if (endpoint && this.canStartOwnedMuxForEndpoint(endpoint)) {
+        try {
+          await this.connectEndpoint(endpoint);
+          return;
+        } catch (err) {
+          lastError = err;
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+    throw new Error(`Mobile-owned mux endpoint unavailable (${lastError ? lastError.message : `${MUX_ENDPOINT_FILE} not ready`})`);
   }
 
   async initialize(options = {}) {
@@ -6508,6 +6593,10 @@ class CodexAppServerClient {
         capabilities: this.endpoint.capabilities || null,
       } : null,
       muxEndpointFile: MUX_ENDPOINT_FILE,
+      mobileOwnedMux: this.muxChild ? {
+        pid: this.muxChild.pid || null,
+        running: this.muxChild.exitCode === null && this.muxChild.signalCode === null,
+      } : null,
       codexExe: CODEX_EXE,
       codexHome: CODEX_HOME,
       codexHomeSource: CODEX_HOME_RESOLUTION.source,
@@ -10186,6 +10275,9 @@ function shutdown() {
   } catch (_) {}
   try {
     if (codex.child && codex.child.exitCode === null) codex.child.kill();
+  } catch (_) {}
+  try {
+    if (codex.muxChild && codex.muxChild.exitCode === null) codex.muxChild.kill();
   } catch (_) {}
   process.exit(0);
 }

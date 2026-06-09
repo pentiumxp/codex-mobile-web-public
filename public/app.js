@@ -270,7 +270,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v253";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v254";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -6377,6 +6377,7 @@ function sideChatPanelRenderSignature() {
 function renderSubagentStatusWindow() {
   const turn = currentSubagentTurn();
   const items = currentSubagentItems();
+  if (!items.length) return "";
   const rows = items.map((item, index) => {
     const kind = currentSubagentStatusKind(item, turn);
     const label = collabAgentNameText(item)
@@ -6397,7 +6398,6 @@ function renderSubagentStatusWindow() {
       <div class="subagent-status-meta">${escapeHtml(meta)}</div>
     </article>`;
   }).join("");
-  const empty = items.length ? "" : `<div class="subagent-empty">当前线程暂无正在进行的 Subagent。</div>`;
   return `<section class="subagent-status-window" aria-label="Subagent 状态">
     <div class="subagent-status-header">
       <div>
@@ -6406,7 +6406,7 @@ function renderSubagentStatusWindow() {
       </div>
       <button class="subagent-window-close" type="button" data-subagent-panel-close aria-label="关闭 Subagent 状态">×</button>
     </div>
-    <div class="subagent-status-list">${rows}${empty}</div>
+    <div class="subagent-status-list">${rows}</div>
   </section>`;
 }
 
@@ -6484,6 +6484,7 @@ function renderSideChatPanel() {
         <div class="side-chat-summary">服务器保存 · ${sideChat.messages.length.toLocaleString()} 条</div>
       </div>
       ${loadingLabel}
+      <button class="subagent-window-close side-chat-close" type="button" data-subagent-panel-close aria-label="关闭侧边聊天">×</button>
     </div>
     ${queue}
     ${replyStatus}
@@ -6504,8 +6505,9 @@ function renderSideChatPanel() {
 }
 
 function renderSubagentPanel() {
-  return `<div class="thread-side-panel">
-    ${renderSubagentStatusWindow()}
+  const subagentWindow = renderSubagentStatusWindow();
+  return `<div class="thread-side-panel${subagentWindow ? "" : " no-subagents"}">
+    ${subagentWindow}
     ${renderSideChatPanel()}
   </div>`;
 }

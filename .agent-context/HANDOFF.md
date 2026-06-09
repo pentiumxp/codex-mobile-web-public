@@ -1780,3 +1780,85 @@ The previous full handoff was archived and should be opened only when old proven
     `019ea76b-d846-7892-bda0-c0fff9cf7581`: POST side-chat message returned
     sidecar `pending`; polling returned assistant reply text and sidecar
     `idle`; normal `/api/threads?limit=80` returned `sideChatVisibleCount=0`.
+
+## 2026-06-09 Side Chat Fullscreen Layout v254
+
+- User confirmed side-chat replies now work, then asked for the panel to become
+  full-screen, the upper Subagent area to collapse when there are no Subagents,
+  and side-chat typography to inherit the current font-size setting.
+- Implemented:
+  - Shell advanced to `0.1.11|codex-mobile-shell-v254`.
+  - `renderSubagentStatusWindow()` now returns no markup when the current
+    thread has no Subagent items.
+  - `renderSubagentPanel()` adds a `no-subagents` layout class so side chat
+    receives the full panel height.
+  - Side-chat header now always includes a close button, so the panel remains
+    closable when the Subagent window is absent.
+  - `.subagent-panel` is now a fixed full-screen overlay using `--app-height`
+    / `--app-top`; side-chat message text, candidates, buttons, and textarea
+    use the existing content/composer font variables instead of hard-coded
+    small pixel sizes.
+- Validation before commit:
+  - `node --test test/collab-agent-render.test.js
+    test/mobile-viewport.test.js test/thread-task-card-route.test.js
+    test/thread-goal-service.test.js` passed.
+  - `npm run check`, `npm run check:macos`, `npm test` (436 tests), and
+    `git diff --check` passed.
+  - Home AI `node tests/architecture-code-test-harness-map.test.js` passed.
+  - Home AI `node scripts/plugin-workspace-platform-contract-check.js --json`
+    passed; Codex Mobile pointer had no issues or warnings.
+  - Browser layout fixture against development server `127.0.0.1:18787`
+    passed: 390x844 panel height matched viewport, no Subagent fixture used one
+    grid row, message and textarea font size were `22px` under `xxlarge`, and
+    simulated keyboard `--app-height=520px` kept the textarea inside the panel.
+  - Visual artifact:
+    `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-side-chat-fullscreen-v254.png`.
+  - Evidence ledger:
+    `$HOME/.homeai-qa/codex-mobile-evidence-ledger.jsonl`.
+
+## 2026-06-09 Mobile-Owned App-Server Mux Fallback
+
+- User reported that after Codex Desktop exits, Codex Mobile can temporarily
+  fail to send messages with endpoint/JSON-file missing errors. Windows
+  development did not have this dependency, so Mac production must not rely on
+  Desktop to keep the app-server mux alive.
+- Root cause:
+  - Mac production runs Codex Mobile as a launchd plugin service, but the
+    selected Codex profile endpoint can be created by Codex Desktop's stdio mux.
+  - A non-keep-alive Desktop-owned mux can delete the profile endpoint and stop
+    the real app-server when Desktop exits.
+  - Codex Mobile was in required shared-endpoint mode, so a missing/stale
+    endpoint surfaced as shared app-server unavailable instead of starting a
+    Mobile-owned mux.
+- Implemented:
+  - `server.js` can start `codex-app-server-mux.js` itself when the selected
+    profile mux endpoint is missing or stale.
+  - The Mobile-owned mux is started with `CODEX_MUX_STANDALONE=1`,
+    `CODEX_MUX_KEEP_ALIVE=1`, `CODEX_MUX_PUBLISH_ENDPOINT=1`, the resolved
+    active `CODEX_HOME`, and the active profile endpoint file path.
+  - Explicit child env overrides are applied after dropping inherited
+    `CODEX_MUX_*` bridge variables, so Mobile-owned mux settings are preserved
+    while managed real app-server children still avoid Desktop bridge leakage.
+  - `/api/status?detail=1` now includes bounded `mobileOwnedMux` pid/running
+    metadata when Mobile owns the mux.
+  - Server shutdown now explicitly stops `muxChild` as well as the managed
+    direct app-server child.
+- Validation before commit:
+  - AI Ops intake classified the task as H1 Mac production deployment and the
+    required deployment docs were read from the Home AI app workspace.
+  - Focused checks passed:
+    `node --check server.js && git diff --check && node --test
+    test/new-thread-route.test.js test/protocol.test.js
+    test/desktop-profile-launcher.test.js`.
+  - `npm run check`, `npm run check:macos`, and `npm test` passed with 436
+    tests.
+  - Home AI deployment/architecture checks passed:
+    `node --check scripts/deploy-macos-production.js`,
+    `node tests/macos-production-deploy-script.test.js`,
+    `node tests/production-status-smoke-harness.test.js`, and
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - Development smoke with a temporary runtime and missing temporary profile
+    endpoint passed on `127.0.0.1:18787`: `/api/status?detail=1` reported
+    `ready=true`, `transport=external-jsonl-tcp`, endpoint source under the
+    temporary profile path, `mobileOwnedMux.running=true`, and
+    `lastError=null`. The temporary runtime was removed afterward.
