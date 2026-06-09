@@ -404,6 +404,64 @@ test("raw operation fallback can attach a completed operation from the same live
   }
 });
 
+test("projected tool output images are inserted by rollout timestamp inside the turn", () => {
+  const pngDataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
+  const { dir, rolloutPath } = writeRollout([
+    event("2026-05-24T14:25:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-images" }),
+    event("2026-05-24T14:25:01.000Z", "response_item", { type: "message", role: "user" }),
+    event("2026-05-24T14:25:01.001Z", "event_msg", { type: "user_message", turn_id: "turn-images" }),
+    event("2026-05-24T14:26:00.000Z", "response_item", {
+      type: "function_call_output",
+      call_id: "call-view-image",
+      output: [{ type: "input_image", image_url: pngDataUrl }],
+    }),
+    event("2026-05-24T14:27:00.000Z", "event_msg", { type: "agent_message", turn_id: "turn-images" }),
+    event("2026-05-24T14:27:00.001Z", "response_item", {
+      type: "message",
+      role: "assistant",
+      content: [{ type: "output_text", text: "I will fix it." }],
+    }),
+  ]);
+  try {
+    const compacted = compactThread({
+      id: "thread-image-order",
+      path: rolloutPath,
+      turns: [{
+        id: "turn-images",
+        status: { type: "completed" },
+        items: [
+          { id: "user-images", type: "userMessage", text: "show screenshot" },
+          { id: "agent-images", type: "agentMessage", text: "I will fix it." },
+        ],
+      }],
+    });
+
+    assert.deepEqual(compacted.turns[0].items.map((item) => item.type), ["userMessage", "imageView", "agentMessage"]);
+    const image = compacted.turns[0].items[1];
+    assert.equal(image.startedAtMs, Date.parse("2026-05-24T14:26:00.000Z"));
+    assert.ok(String(image.contentUrl || "").startsWith("/api/generated-images/file?id="));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("existing image items are restored to timestamp order inside the turn", () => {
+  const compacted = compactThread({
+    id: "thread-existing-image-order",
+    turns: [{
+      id: "turn-existing-images",
+      status: { type: "completed" },
+      items: [
+        { id: "user-existing", type: "userMessage", text: "show screenshot", startedAt: "2026-05-24T14:25:00.000Z" },
+        { id: "agent-existing", type: "agentMessage", text: "This came later.", startedAt: "2026-05-24T14:27:00.000Z" },
+        { id: "image-existing", type: "imageView", contentUrl: "/api/generated-images/file?id=thread%2Fimage.png", startedAt: "2026-05-24T14:26:00.000Z" },
+      ],
+    }],
+  });
+
+  assert.deepEqual(compacted.turns[0].items.map((item) => item.id), ["user-existing", "image-existing", "agent-existing"]);
+});
+
 test("live latest turn rehydrates several recent raw operations", () => {
   const { dir, rolloutPath } = writeRollout([
     event("2026-05-24T11:05:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-live" }),

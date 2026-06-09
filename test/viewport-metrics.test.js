@@ -36,7 +36,66 @@ test("viewport metrics use visual viewport while an editable input owns the keyb
   });
 
   assert.equal(result.keyboardShrunk, true);
-  assert.equal(result.height, 536);
+  assert.equal(result.height, 520);
+  assert.equal(result.top, 16);
+});
+
+test("viewport metrics use host keyboard inset as embedded fallback", () => {
+  const result = viewportMetrics.measureViewport({
+    visualHeight: 714,
+    visualOffsetTop: 0,
+    innerHeight: 714,
+    clientHeight: 714,
+    activeElement: editableElement(),
+    hostKeyboardVisible: true,
+    hostKeyboardBottomInset: 292,
+  });
+
+  assert.equal(result.keyboardCandidate, false);
+  assert.equal(result.hostKeyboardVisible, true);
+  assert.equal(result.keyboardShrunk, true);
+  assert.equal(result.height, 422);
+});
+
+test("viewport metrics preserve host bottom safe area without keyboard shrink", () => {
+  const result = viewportMetrics.measureViewport({
+    visualHeight: 714,
+    visualOffsetTop: 0,
+    innerHeight: 714,
+    clientHeight: 714,
+    activeElement: { tagName: "BODY" },
+    hostBottomSafeArea: 18,
+  });
+
+  assert.equal(result.keyboardShrunk, false);
+  assert.equal(result.height, 714);
+  assert.equal(result.hostBottomSafeArea, 18);
+});
+
+test("viewport metrics treat iframe scroll or offset as keyboard shift", () => {
+  const scrolled = viewportMetrics.measureViewport({
+    visualHeight: 714,
+    visualOffsetTop: 0,
+    scrollTop: 88,
+    innerHeight: 714,
+    clientHeight: 714,
+    activeElement: editableElement(),
+  });
+  assert.equal(scrolled.keyboardCandidate, false);
+  assert.equal(scrolled.keyboardShrunk, true);
+  assert.equal(scrolled.top, 88);
+  assert.equal(scrolled.height, 714);
+
+  const offset = viewportMetrics.measureViewport({
+    visualHeight: 600,
+    visualOffsetTop: 72,
+    innerHeight: 672,
+    clientHeight: 672,
+    activeElement: editableElement(),
+  });
+  assert.equal(offset.keyboardShrunk, true);
+  assert.equal(offset.top, 72);
+  assert.equal(offset.height, 600);
 });
 
 test("viewport metrics do not treat non-text controls as keyboard owners", () => {

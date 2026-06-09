@@ -102,26 +102,11 @@ test("bare data png base64 lines render as generated images", () => {
 });
 
 test("bare https URLs do not render as generated images", () => {
-  const html = renderer.renderMarkdown("https://example.com/docs/guide");
+  const html = renderer.renderMarkdown("https://github.com/MiniMax-AI/MiniMax-M2.7/issues/52");
 
   assert.doesNotMatch(html, /class="markdown-image"/);
   assert.doesNotMatch(html, /Generated image/);
-  assert.match(html, /<p><a href="https:\/\/example\.com\/docs\/guide" target="_blank" rel="noreferrer">https:\/\/example\.com\/docs\/guide<\/a><\/p>/);
-});
-
-test("standalone GitHub URLs render preview card shells", () => {
-  const html = renderer.renderMarkdown("https://github.com/MiniMax-AI/MiniMax-M2.7/issues/52");
-
-  assert.match(html, /class="github-link-card-shell"/);
-  assert.match(html, /data-github-link-preview-url="https:\/\/github\.com\/MiniMax-AI\/MiniMax-M2\.7\/issues\/52"/);
-  assert.match(html, /class="github-link-card-fallback"/);
-});
-
-test("inline GitHub links inside sentences stay regular links", () => {
-  const html = renderer.renderMarkdown("参考这个链接 https://github.com/MiniMax-AI/MiniMax-M2.7/issues/52 再继续。");
-
-  assert.doesNotMatch(html, /class="github-link-card-shell"/);
-  assert.match(html, /<a href="https:\/\/github\.com\/MiniMax-AI\/MiniMax-M2\.7\/issues\/52" target="_blank" rel="noreferrer">https:\/\/github\.com\/MiniMax-AI\/MiniMax-M2\.7\/issues\/52<\/a>/);
+  assert.match(html, /<p><a href="https:\/\/github\.com\/MiniMax-AI\/MiniMax-M2\.7\/issues\/52" target="_blank" rel="noreferrer">https:\/\/github\.com\/MiniMax-AI\/MiniMax-M2\.7\/issues\/52<\/a><\/p>/);
 });
 
 test("inline GitHub links after punctuation stay regular links", () => {

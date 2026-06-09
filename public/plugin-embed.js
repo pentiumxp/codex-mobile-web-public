@@ -128,13 +128,28 @@
     );
   }
 
+  function appearanceFromState(state = {}) {
+    const source = state.pluginAppearance && typeof state.pluginAppearance === "object"
+      ? state.pluginAppearance
+      : {};
+    const appearance = {};
+    const theme = normalizedEnum(source.theme || state.theme, THEME_VALUES);
+    const fontSize = normalizedEnum(state.fontSize || source.fontSize || source.pluginFontSize, FONT_SIZE_VALUES);
+    if (theme) appearance.theme = theme;
+    if (fontSize) appearance.fontSize = fontSize;
+    return appearance;
+  }
+
   function navigationMessage(state = {}, ui = {}) {
-    return {
+    const message = {
       type: NAVIGATION_TYPE,
       version: 1,
       canGoBack: canGoBack(state, ui),
       route: routeFromState(state, ui),
     };
+    const appearance = appearanceFromState(state);
+    if (Object.keys(appearance).length > 0) message.appearance = appearance;
+    return message;
   }
 
   function postNavigation(parentWindow, state = {}, options = {}) {
@@ -190,6 +205,8 @@
     };
     const route = refreshRequiredRoute(input.route || {});
     if (Object.keys(route).length > 0) message.route = route;
+    const appearance = appearanceFromState(input.appearance || {});
+    if (Object.keys(appearance).length > 0) message.appearance = appearance;
     return message;
   }
 
@@ -222,6 +239,7 @@
     BACK_RESULT_TYPE,
     REFRESH_REQUIRED_TYPE,
     NAVIGATION_TYPE,
+    appearanceFromState,
     backResultMessage,
     canGoBack,
     detect,

@@ -223,6 +223,11 @@ switcher, not concurrent providers:
 - `start-codex-mobile-web-windowless.ps1` reads that active profile before it
   starts the mux or Node listener, so the selected `CODEX_HOME` applies to all
   Mobile Web workspaces after restart.
+- Mobile-owned CLI startup clears Desktop bridge variables such as
+  `CODEX_CLI_PATH` and `CODEX_MUX_*` before starting the real `codex
+  app-server`. Those variables are only for the Desktop shared bridge; if they
+  leak into Mobile's CLI child, CLI tool subprocesses can start the mux shim
+  instead of the real Codex binary and may reopen a console window.
 - For non-default profiles, `start-codex-mobile-web-windowless.ps1` preserves
   profile-local `auth.json` and `config.toml`, then links shared conversation
   state back to default `%USERPROFILE%\.codex`. This is why account switching

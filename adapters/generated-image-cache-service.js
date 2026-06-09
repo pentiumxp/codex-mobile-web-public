@@ -60,6 +60,92 @@ function generatedImageCacheId(sourcePath, options = {}) {
   return `${threadSegment}/${hash}-${safeCacheFileName(resolved)}`;
 }
 
+function normalizeImageContentType(value) {
+  const contentType = String(value || "").trim().toLowerCase();
+  return contentType === "image/jpg" ? "image/jpeg" : contentType;
+}
+
+function contentTypeAllowed(contentType, contentTypes) {
+  const normalized = normalizeImageContentType(contentType);
+  if (!normalized) return false;
+  if (!contentTypes) return /^image\/(?:avif|bmp|gif|heic|heif|jpe?g|png|tiff|webp)$/i.test(normalized);
+  const values = contentTypes && typeof contentTypes.values === "function"
+    ? Array.from(contentTypes.values())
+    : Object.values(contentTypes || {});
+  return values.map(normalizeImageContentType).includes(normalized);
+}
+
+function extensionForImageContentType(contentType, contentTypes) {
+  const normalized = normalizeImageContentType(contentType);
+  const preferred = {
+    "image/avif": ".avif",
+    "image/bmp": ".bmp",
+    "image/gif": ".gif",
+    "image/heic": ".heic",
+    "image/heif": ".heif",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/tiff": ".tiff",
+    "image/webp": ".webp",
+  };
+  const preferredExt = preferred[normalized] || ".png";
+  if (!contentTypes || (typeof contentTypes.has === "function" && contentTypes.has(preferredExt))) return preferredExt;
+  const entries = contentTypes && typeof contentTypes.entries === "function"
+    ? Array.from(contentTypes.entries())
+    : Object.entries(contentTypes || {});
+  const match = entries.find(([, value]) => normalizeImageContentType(value) === normalized);
+  return match ? match[0] : preferredExt;
+}
+
+function parseGeneratedImageDataUrl(value, options = {}) {
+  const text = String(value || "").trim();
+  const match = /^data:(image\/[A-Za-z0-9.+-]+);base64,([A-Za-z0-9+/=\s]+)$/i.exec(text);
+  if (!match) return null;
+  const contentType = normalizeImageContentType(match[1]);
+  if (!contentTypeAllowed(contentType, options.contentTypes)) return null;
+  const base64 = match[2].replace(/\s+/g, "");
+  if (!base64) return null;
+  const bytes = Buffer.from(base64, "base64");
+  if (!bytes.length) return null;
+  if (Number.isFinite(Number(options.maxBytes)) && bytes.length > Number(options.maxBytes)) return null;
+  return {
+    bytes,
+    contentType,
+    extension: extensionForImageContentType(contentType, options.contentTypes),
+    sizeBytes: bytes.length,
+  };
+}
+
+function cacheGeneratedImageDataUrl(dataUrl, options = {}) {
+  const parsed = parseGeneratedImageDataUrl(dataUrl, options);
+  if (!parsed) return null;
+  const threadSegment = safeCacheSegment(options.threadId, "unscoped");
+  const hash = crypto
+    .createHash("sha256")
+    .update(`${threadSegment}\0${parsed.contentType}\0`)
+    .update(parsed.bytes)
+    .digest("hex")
+    .slice(0, 18);
+  const cacheId = `${threadSegment}/${hash}-tool-output${parsed.extension}`;
+  const cachedPath = generatedImagePathForId(options.cacheRoot, cacheId);
+  fs.mkdirSync(path.dirname(cachedPath), { recursive: true });
+  let shouldWrite = true;
+  try {
+    const existing = fs.statSync(cachedPath);
+    shouldWrite = !existing.isFile() || existing.size !== parsed.sizeBytes;
+  } catch (_) {
+    shouldWrite = true;
+  }
+  if (shouldWrite) fs.writeFileSync(cachedPath, parsed.bytes, { mode: 0o600 });
+  return {
+    cacheId,
+    cachedPath,
+    fileName: path.basename(cachedPath),
+    contentType: parsed.contentType,
+    sizeBytes: parsed.sizeBytes,
+  };
+}
+
 function isPathInside(parent, child) {
   const parentPath = path.resolve(parent);
   const childPath = path.resolve(child);
@@ -129,9 +215,11 @@ function cacheGeneratedImageForItem(item, options = {}) {
 }
 
 module.exports = {
+  cacheGeneratedImageDataUrl,
   cacheGeneratedImageForItem,
   generatedImageCacheId,
   generatedImagePathForId,
   imageContentTypeForPath,
   imageViewSourcePath,
+  parseGeneratedImageDataUrl,
 };

@@ -71,6 +71,8 @@ test("quota UI clears stale cache when config has no valid quota snapshot", () =
   const body = functionBody("rememberRateLimitsFromConfig");
 
   assert.match(body, /hasRateLimitSnapshot\(config\.rateLimits \|\| null,\s*config\.rateLimitsByModel \|\| null\)/);
+  assert.match(appJs, /function shouldKeepStoredRateLimitsOnEmptyConfig\(\)[\s\S]*isHermesEmbedMode\(\)[\s\S]*hasRateLimitSnapshot\(state\.rateLimits,\s*state\.rateLimitsByModel\)/);
+  assert.match(body, /else if \(shouldKeepStoredRateLimitsOnEmptyConfig\(\)\)[\s\S]*renderQuotaUsage\(\)/);
   assert.match(body, /clearStoredRateLimits\(\)/);
 });
 

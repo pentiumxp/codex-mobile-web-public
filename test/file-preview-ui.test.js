@@ -40,6 +40,8 @@ test("mobile file preview UI is wired from markdown link to preview API", () => 
   assert.match(appJs, /imageGeneration: "Image"/);
   assert.match(serverJs, /GENERATED_IMAGE_ROOT/);
   assert.match(serverJs, /cacheGeneratedImageForItem/);
+  assert.match(serverJs, /cacheGeneratedImageDataUrl/);
+  assert.match(serverJs, /readRolloutToolOutputImageItems/);
   assert.match(serverJs, /\/api\/generated-images\/file/);
   assert.match(serverJs, /out\.type === "imageView" \|\| out\.type === "imageGeneration"/);
   assert.match(appJs, /function canRenderImageAttachment\(attachment\)/);

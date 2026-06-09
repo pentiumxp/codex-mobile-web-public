@@ -52,6 +52,10 @@ function evaluatedAttachmentSummaryParser() {
 }
 
 function evaluatedInputContentRenderer() {
+  return evaluatedInputContentRendererWithKey("");
+}
+
+function evaluatedInputContentRendererWithKey(key = "") {
   const sources = [
     "escapeHtml",
     "shortPath",
@@ -70,9 +74,11 @@ function evaluatedInputContentRenderer() {
     "isCodexMobileUploadPath",
     "isLikelyAbsoluteLocalPath",
     "canRenderImageAttachment",
+    "authenticatedApiContentUrl",
     "uploadFileUrl",
     "localFilePreviewContentUrl",
     "imageContentUrlForPath",
+    "localAttachmentPreviewUrl",
     "imageSourceForPart",
     "compactStructuredForSignature",
     "renderInputText",
@@ -83,7 +89,7 @@ function evaluatedInputContentRenderer() {
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(
     "URLSearchParams",
-    `const state = { key: "" };\nconst THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";\n${sources.join("\n")}\nreturn renderInputContent;`,
+    `const state = { key: ${JSON.stringify(String(key || ""))} };\nconst THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";\n${sources.join("\n")}\nreturn renderInputContent;`,
   )(URLSearchParams);
 }
 
@@ -453,6 +459,40 @@ test("imageView upload screenshots use the uploads route instead of file preview
   assert.doesNotMatch(html, /\/api\/files\/preview\/content/);
 });
 
+test("protected image auth recovery covers uploaded images", () => {
+  assert.match(functionBody("protectedGeneratedImageSrc"), /"\/api\/generated-images\/file"/);
+  assert.match(functionBody("protectedGeneratedImageSrc"), /"\/api\/uploads\/file"/);
+  assert.match(functionBody("protectedGeneratedImageSrc"), /"\/api\/files\/preview\/content"/);
+  assert.match(functionBody("uploadFileUrl"), /authenticatedApiContentUrl\(`\/api\/uploads\/file\?\$\{params\.toString\(\)\}`\)/);
+});
+
+test("generated image content urls render bounded image cards", () => {
+  const renderImageView = evaluatedImageViewRenderer();
+  const html = renderImageView({
+    type: "imageView",
+    contentUrl: "/api/generated-images/file?id=thread%2Ftool-output.png",
+    fileName: "tool-output.png",
+  });
+
+  assert.match(html, /class="image-view"/);
+  assert.match(html, /<img src="\/api\/generated-images\/file\?id=thread%2Ftool-output\.png&amp;key=test-key"/);
+  assert.match(html, /<figcaption>tool-output\.png<\/figcaption>/);
+  assert.doesNotMatch(html, /\/api\/files\/preview\/content/);
+});
+
+test("generated image content urls replace stale auth keys with the current session key", () => {
+  const renderImageView = evaluatedImageViewRenderer();
+  const html = renderImageView({
+    type: "imageView",
+    contentUrl: "/api/generated-images/file?id=thread%2Ftool-output.png&key=stale-key",
+    fileName: "tool-output.png",
+  });
+
+  assert.match(html, /class="image-view"/);
+  assert.match(html, /key=test-key/);
+  assert.doesNotMatch(html, /stale-key/);
+});
+
 test("failed conversation images collapse into a neutral fallback", () => {
   const handleConversationImageError = evaluatedConversationImageErrorHandler();
   const addedClasses = [];
@@ -539,6 +579,10 @@ test("raw app-server input image parts use object image urls", () => {
   const renderInputContent = evaluatedInputContentRenderer();
   const html = renderInputContent([
     {
+      type: "input_text",
+      text: "Uploaded attachments:\n- IMG_5882.jpg (image, image/jpeg, 101.7 KB): IMG_5882.jpg",
+    },
+    {
       type: "input_image",
       image_url: { url: "data:image/png;base64,abc123" },
     },
@@ -546,7 +590,44 @@ test("raw app-server input image parts use object image urls", () => {
 
   assert.match(html, /class="input-image"/);
   assert.match(html, /src="data:image\/png;base64,abc123"/);
+  assert.doesNotMatch(html, /\/api\/uploads\/file\?path=IMG_5882/);
   assert.doesNotMatch(html, /\[object Object\]/);
+});
+
+test("raw app-server input image url local upload paths use authenticated uploads route", () => {
+  const renderInputContent = evaluatedInputContentRendererWithKey("session-key");
+  const uploadPath = "/Users/xuxin/.codex-mobile-web/uploads/2026-06-08/thread-id/1780936946968-IMG_5882.jpg";
+  const html = renderInputContent([
+    {
+      type: "input_text",
+      text: "see attached image",
+    },
+    {
+      type: "input_image",
+      image_url: { url: uploadPath },
+    },
+  ]);
+
+  assert.match(html, /class="input-image"/);
+  assert.match(html, /\/api\/uploads\/file\?path=/);
+  assert.match(html, /key=session-key/);
+  assert.equal(html.includes(`src="${uploadPath}"`), false);
+});
+
+test("conversation image urls rerender when the auth key version changes", () => {
+  assert.match(appJs, /imageAuthVersion: 0/);
+  assert.match(functionBody("setAuthKey"), /state\.imageAuthVersion = \(Number\(state\.imageAuthVersion\) \|\| 0\) \+ 1/);
+  assert.match(functionBody("conversationRenderSignature"), /imageAuthVersion: Number\(state\.imageAuthVersion \|\| 0\)/);
+  assert.match(functionBody("login"), /setAuthKey\(key\)/);
+  assert.match(functionBody("exchangePluginLaunchSession"), /setAuthKey\(result\.session_key\)/);
+});
+
+test("image view render keys include their image source", () => {
+  const body = functionBody("stableItemKey");
+  assert.match(body, /item\.type === "imageView" \|\| item\.type === "imageGeneration"/);
+  assert.match(body, /imageViewContentUrl\(item\)/);
+  assert.match(body, /imageViewUrl\(item\)/);
+  assert.match(body, /stableTextHash\(imageSource\)/);
 });
 
 test("context compaction merge does not preserve stale mobile notices", () => {
@@ -636,9 +717,9 @@ test("optimistic user messages match app-server input_text messages", () => {
       content: [
         {
           type: "input_text",
-          text: "Uploaded attachments:\n- IMG_5882.jpg (image, image/jpeg, 101.7 KB): /fixtures/uploads/thread/IMG_5882.jpg",
+          text: "Uploaded attachments:\n- IMG_5882.jpg (image, image/jpeg, 101.7 KB): /Users/xuxin/.codex-mobile-web/uploads/thread/IMG_5882.jpg",
         },
-        { type: "localImage", path: "/fixtures/uploads/thread/IMG_5882.jpg" },
+        { type: "localImage", path: "/Users/xuxin/.codex-mobile-web/uploads/thread/IMG_5882.jpg" },
       ],
     },
   ), true);
@@ -674,9 +755,9 @@ test("optimistic user messages are shadowed by mux and durable echoes", () => {
     content: [
       {
         type: "input_text",
-        text: "Uploaded attachments:\n- IMG_5882.jpg (image, image/jpeg, 101.7 KB): /fixtures/uploads/thread/IMG_5882.jpg",
+        text: "Uploaded attachments:\n- IMG_5882.jpg (image, image/jpeg, 101.7 KB): /Users/xuxin/.codex-mobile-web/uploads/thread/IMG_5882.jpg",
       },
-      { type: "localImage", path: "/fixtures/uploads/thread/IMG_5882.jpg" },
+      { type: "localImage", path: "/Users/xuxin/.codex-mobile-web/uploads/thread/IMG_5882.jpg" },
     ],
   };
   const imageItems = mergeItemsPreservingLocalVisible([localImage], [durableImage], true);

@@ -90,7 +90,7 @@ internal static class Program
     {
         if (args.Length == 1 && args[0] == "--mux-shim-version")
         {
-            Console.WriteLine("codex-app-server-mux-shim 1");
+            Console.WriteLine("codex-app-server-mux-shim 2");
             return 0;
         }
 

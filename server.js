@@ -47,6 +47,7 @@ const {
   parseGitHubUrl,
 } = require("./adapters/github-link-preview-service");
 const {
+  cacheGeneratedImageDataUrl,
   cacheGeneratedImageForItem,
   generatedImagePathForId,
   imageContentTypeForPath,
@@ -57,6 +58,7 @@ const {
 } = require("./adapters/mobile-archive-index-service");
 const { createHermesPluginService } = require("./adapters/hermes-plugin-service");
 const { createThreadTaskCardService } = require("./adapters/thread-task-card-service");
+const { createThreadSideChatService } = require("./adapters/thread-side-chat-service");
 const {
   continuationGoalMigrationPlan,
   createThreadGoalService,
@@ -74,6 +76,19 @@ const { createThreadDetailProjectionService } = require("./adapters/thread-detai
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
 const USER_HOME = process.env.USERPROFILE || process.env.HOME || process.cwd();
+
+function uniqueStrings(values) {
+  const seen = new Set();
+  const result = [];
+  for (const value of values || []) {
+    const text = String(value || "").trim();
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    result.push(text);
+  }
+  return result;
+}
+
 const RUNTIME_ROOT = process.env.CODEX_MOBILE_RUNTIME_DIR || path.join(USER_HOME, ".codex-mobile-web");
 const CODEX_PROFILE_BOOTSTRAP = resolveActiveCodexHomeFromStore({
   userHome: USER_HOME,
@@ -148,6 +163,10 @@ const HERMES_PLUGIN_NOTIFICATION_KEY_FILE = process.env.CODEX_MOBILE_HERMES_PLUG
   || "";
 const THREAD_TASK_CARD_FILE = process.env.CODEX_MOBILE_THREAD_TASK_CARD_FILE
   || path.join(RUNTIME_ROOT, "thread-task-cards.json");
+const THREAD_SIDE_CHAT_FILE = process.env.CODEX_MOBILE_THREAD_SIDE_CHAT_FILE
+  || path.join(RUNTIME_ROOT, "thread-side-chats.json");
+const THREAD_SIDE_CHAT_SCOPE_ID = CODEX_HOME_RESOLUTION.activeProfileId
+  || `codex-home-${crypto.createHash("sha256").update(CODEX_HOME).digest("hex").slice(0, 16)}`;
 const THREAD_TASK_CARD_DRAFT_TAG = "codex-mobile-thread-task-card-draft";
 const THREAD_TASK_CARD_BODY_MAX_CHARS = 8_000;
 const THREAD_TASK_CARD_DRAFT_TURN_LOOKBACK = 4;
@@ -159,6 +178,14 @@ const THREAD_DETAIL_PROJECTION_CACHE_DIR = process.env.CODEX_MOBILE_THREAD_DETAI
   || path.join(RUNTIME_ROOT, "thread-detail-projections");
 const THREAD_DETAIL_PROJECTION_POLICY_VERSION = "state-relevant-receipt-v1";
 const WORKSPACE_CREATE_ROOTS = process.env.CODEX_MOBILE_WORKSPACE_CREATE_ROOTS || "";
+const SYNC_DESKTOP_WORKSPACES = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_SYNC_DESKTOP_WORKSPACES || "");
+const DESKTOP_GLOBAL_STATE_FILES = SYNC_DESKTOP_WORKSPACES
+  ? uniqueStrings([
+    process.env.CODEX_MOBILE_DESKTOP_GLOBAL_STATE_FILE || "",
+    path.join(DEFAULT_CODEX_HOME, ".codex-global-state.json"),
+    path.join(CODEX_HOME, ".codex-global-state.json"),
+  ])
+  : [];
 const hermesPluginService = createHermesPluginService({
   registrationFile: HERMES_PLUGIN_REGISTRATION_FILE,
   launchTokenTtlMs: HERMES_PLUGIN_LAUNCH_TOKEN_TTL_MS,
@@ -185,6 +212,7 @@ const workspaceRegistryService = createWorkspaceRegistryService({
   storageFile: WORKSPACE_REGISTRY_FILE,
   homeDir: USER_HOME,
   createRoots: WORKSPACE_CREATE_ROOTS,
+  desktopGlobalStateFiles: DESKTOP_GLOBAL_STATE_FILES,
 });
 const mobileArchiveIndexService = createMobileArchiveIndexService({
   storageFile: MOBILE_ARCHIVED_THREAD_IDS_FILE,
@@ -210,6 +238,35 @@ const tokenUsageStatsService = createTokenUsageStatsService({
 const threadGoalService = createThreadGoalService({
   dbPath: GOALS_DB,
   userHome: USER_HOME,
+});
+const threadSideChatService = createThreadSideChatService({
+  storageFile: THREAD_SIDE_CHAT_FILE,
+  scopeId: THREAD_SIDE_CHAT_SCOPE_ID,
+  executeCandidate: async (candidate) => {
+    const threadId = String(candidate && candidate.threadId || "");
+    const text = String(candidate && candidate.body || "").trim();
+    if (!threadId) throw new Error("side_chat_thread_id_required");
+    if (!text) throw new Error("side_chat_candidate_body_required");
+    const runtimeSettings = await resolveThreadRuntimeSettings(threadId);
+    try {
+      await codex.request("thread/resume", applyResumeRuntimeSettings({
+        threadId,
+        cwd: null,
+        persistExtendedHistory: true,
+      }, runtimeSettings), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+    } catch (err) {
+      if (!/already|loaded|active/i.test(err.message || "")) throw err;
+    }
+    const turnParams = applyTurnRuntimeSettings({
+      threadId,
+      input: [{ type: "text", text }],
+    }, runtimeSettings);
+    const result = await codex.request("turn/start", turnParams, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+    return {
+      threadId,
+      turnId: String((result && result.turnId) || (result && result.turn && result.turn.id) || ""),
+    };
+  },
 });
 let threadDetailProjectionService;
 const threadTaskCardService = createThreadTaskCardService({
@@ -452,6 +509,7 @@ const LIVE_RATE_LIMIT_REFRESH_MIN_INTERVAL_MS = 10000;
 const latestRuntimeContextByPath = new Map();
 const latestItemTimestampsByPath = new Map();
 const latestTurnUsageSummariesByPath = new Map();
+const latestToolOutputImagesByPath = new Map();
 const recentStartedThreads = new Map();
 const threadDisplaySummaryCache = createThreadDisplaySummaryCache({
   ttlMs: THREAD_DISPLAY_SUMMARY_CACHE_TTL_MS,
@@ -665,6 +723,17 @@ function assertCommandAvailable(command, label) {
   }
 }
 
+function codexAppServerChildEnv(extra = {}) {
+  const env = Object.assign({}, process.env, extra);
+  for (const key of Object.keys(env)) {
+    if (key === "CODEX_CLI_PATH" || key.startsWith("CODEX_MUX_")) {
+      delete env[key];
+    }
+  }
+  if (CODEX_HOME) env.CODEX_HOME = CODEX_HOME;
+  return env;
+}
+
 function loadAuthKey() {
   if (process.env.CODEX_MOBILE_KEY && process.env.CODEX_MOBILE_KEY.trim()) {
     return process.env.CODEX_MOBILE_KEY.trim();
@@ -709,33 +778,66 @@ function bearerTokenFromRequest(req) {
 }
 
 function requestAuthToken(req) {
+  return requestAuthTokens(req)[0] || "";
+}
+
+function pushUniqueAuthToken(tokens, value) {
+  const token = String(value || "").trim();
+  if (token && !tokens.includes(token)) tokens.push(token);
+}
+
+function requestAuthTokens(req) {
   const url = getUrl(req);
-  return req.headers["x-codex-mobile-key"]
-    || bearerTokenFromRequest(req)
-    || url.searchParams.get("key")
-    || url.searchParams.get("codexPluginLaunch")
-    || parseCookies(req.headers.cookie).codex_mobile_key;
+  const cookies = parseCookies(req.headers.cookie);
+  const tokens = [];
+  pushUniqueAuthToken(tokens, req.headers["x-codex-mobile-key"]);
+  pushUniqueAuthToken(tokens, bearerTokenFromRequest(req));
+  pushUniqueAuthToken(tokens, url.searchParams.get("key"));
+  pushUniqueAuthToken(tokens, url.searchParams.get("codexPluginLaunch"));
+  pushUniqueAuthToken(tokens, cookies.codex_mobile_plugin_session);
+  pushUniqueAuthToken(tokens, cookies.codex_mobile_key);
+  return tokens;
 }
 
 function isAccessKeyAuthorized(req) {
   if (DISABLE_AUTH) return true;
-  return timingSafeEquals(requestAuthToken(req), AUTH_KEY);
+  return requestAuthTokens(req).some((token) => timingSafeEquals(token, AUTH_KEY));
 }
 
 function isAuthorized(req) {
   if (isAccessKeyAuthorized(req)) return true;
-  if (hermesPluginService.isSessionAuthorized(requestAuthToken(req))) return true;
-  return hermesPluginService.isLaunchTokenAuthorized(requestAuthToken(req));
+  const tokens = requestAuthTokens(req);
+  if (tokens.some((token) => hermesPluginService.isSessionAuthorized(token))) return true;
+  return tokens.some((token) => hermesPluginService.isLaunchTokenAuthorized(token));
 }
 
-function sendJson(res, status, data) {
+function isHttpsRequest(req) {
+  return String(req && (req.headers["x-forwarded-proto"] || req.headers["x-forwarded-protocol"]) || "").split(",")[0].trim().toLowerCase() === "https";
+}
+
+function pluginSessionCookieHeader(req, session) {
+  const sessionKey = String(session && session.session_key || "").trim();
+  if (!sessionKey) return "";
+  const maxAge = Math.max(1, Math.floor(Number(session && session.expires_in || 0) || 0));
+  const parts = [
+    `codex_mobile_plugin_session=${encodeURIComponent(sessionKey)}`,
+    "Path=/",
+    `Max-Age=${maxAge}`,
+    "SameSite=Lax",
+    "HttpOnly",
+  ];
+  if (isHttpsRequest(req)) parts.push("Secure");
+  return parts.join("; ");
+}
+
+function sendJson(res, status, data, headers = {}) {
   if (!res || res.destroyed || res.writableEnded) return;
   const body = JSON.stringify(data);
-  res.writeHead(status, {
+  res.writeHead(status, Object.assign({
     "Content-Type": "application/json; charset=utf-8",
     "Content-Length": Buffer.byteLength(body),
     "Cache-Control": "no-store",
-  });
+  }, headers || {}));
   res.end(body);
 }
 
@@ -1827,9 +1929,58 @@ function generatedImageContentUrl(cacheId) {
   return `/api/generated-images/file?id=${encodeURIComponent(cacheId || "")}`;
 }
 
+function imageViewInlineDataUrl(item) {
+  if (!item || typeof item !== "object") return "";
+  const candidates = [
+    item.url,
+    item.imageUrl,
+    item.image_url,
+    item.arguments && (item.arguments.url || item.arguments.imageUrl || item.arguments.image_url),
+    item.result && (item.result.url || item.result.imageUrl || item.result.image_url),
+  ];
+  for (const candidate of candidates) {
+    const value = candidate && typeof candidate === "object"
+      ? candidate.url || candidate.uri || candidate.href
+      : candidate;
+    if (typeof value === "string" && /^data:image\//i.test(value.trim())) return value.trim();
+  }
+  return "";
+}
+
+function removeInlineDataImageUrls(item) {
+  if (!item || typeof item !== "object") return item;
+  for (const key of ["url", "imageUrl", "image_url"]) {
+    if (typeof item[key] === "string" && /^data:image\//i.test(item[key])) delete item[key];
+  }
+  return item;
+}
+
+function applyGeneratedImageCacheResult(item, cached) {
+  if (!item || !cached) return item;
+  item.contentUrl = generatedImageContentUrl(cached.cacheId);
+  item.generatedImage = {
+    fileName: cached.fileName,
+    contentType: cached.contentType,
+    sizeBytes: cached.sizeBytes,
+  };
+  return item;
+}
+
 function attachGeneratedImageContent(item, options = {}) {
   if (!item || (item.type !== "imageView" && item.type !== "imageGeneration")) return item;
   if (item.contentUrl || item.content_url) return item;
+  const dataUrl = imageViewInlineDataUrl(item);
+  if (dataUrl) {
+    const cachedDataUrl = cacheGeneratedImageDataUrl(dataUrl, {
+      cacheRoot: GENERATED_IMAGE_ROOT,
+      threadId: options.threadId || "",
+      maxBytes: FILE_PREVIEW_MEDIA_MAX_BYTES,
+      contentTypes: FILE_PREVIEW_IMAGE_CONTENT_TYPES,
+    });
+    if (!cachedDataUrl) return item;
+    removeInlineDataImageUrls(item);
+    return applyGeneratedImageCacheResult(item, cachedDataUrl);
+  }
   const cached = cacheGeneratedImageForItem(item, {
     cacheRoot: GENERATED_IMAGE_ROOT,
     threadId: options.threadId || "",
@@ -1838,13 +1989,7 @@ function attachGeneratedImageContent(item, options = {}) {
     isDeniedPath: hasDeniedPreviewPathSegment,
   });
   if (!cached) return item;
-  item.contentUrl = generatedImageContentUrl(cached.cacheId);
-  item.generatedImage = {
-    fileName: cached.fileName,
-    contentType: cached.contentType,
-    sizeBytes: cached.sizeBytes,
-  };
-  return item;
+  return applyGeneratedImageCacheResult(item, cached);
 }
 
 function isBackupRolloutPath(value) {
@@ -2607,6 +2752,17 @@ function rememberTurnUsageSummaries(key, payload) {
   }
 }
 
+function rememberToolOutputImages(key, payload) {
+  latestToolOutputImagesByPath.set(key, {
+    cachedAt: Date.now(),
+    payload: payload || null,
+  });
+  while (latestToolOutputImagesByPath.size > RUNTIME_CONTEXT_CACHE_MAX) {
+    const firstKey = latestToolOutputImagesByPath.keys().next().value;
+    latestToolOutputImagesByPath.delete(firstKey);
+  }
+}
+
 function rolloutEntryTurnId(entry) {
   const payload = entry && entry.payload;
   return String((payload && (
@@ -2680,6 +2836,10 @@ function itemTimestampCandidateId(item) {
   return String((item && (item.id || item.call_id || item.callId || item.item_id || item.itemId)) || "");
 }
 
+function visibleItemId(item) {
+  return String((item && (item.id || item.itemId || item.item_id)) || "").trim();
+}
+
 function itemTimestampMatchText(item) {
   if (!item || typeof item !== "object") return "";
   return normalizeTimestampMatchText(
@@ -2743,8 +2903,8 @@ function readRolloutItemTimestampCandidates(rolloutPath) {
   const unscoped = [];
   let scopedCount = 0;
   let currentTurnId = "";
-  const tail = readRolloutTail(rolloutPath);
-  for (const line of tail.split(/\r?\n/)) {
+  const text = readRolloutRuntimeScanText(rolloutPath) || readRolloutTail(rolloutPath);
+  for (const line of text.split(/\r?\n/)) {
     if (!line || !line.trim()) continue;
     const entry = parseJsonLine(line);
     if (!entry || !entry.type) continue;
@@ -2834,6 +2994,286 @@ function readRolloutTurnUsageSummaries(rolloutPath, options = {}) {
   if (cacheKey) rememberTurnUsageSummaries(cacheKey, payload);
   if (targetKey) rememberTurnUsageSummaries(targetKey, payload);
   return payload;
+}
+
+function toolOutputImageUrlValue(part) {
+  if (!part || typeof part !== "object") return "";
+  const raw = part.url || part.image_url || part.imageUrl || part.uri || part.href || "";
+  const value = raw && typeof raw === "object" ? raw.url || raw.uri || raw.href : raw;
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function toolOutputImagePathValue(part) {
+  if (!part || typeof part !== "object") return "";
+  const candidates = [
+    part.path,
+    part.filePath,
+    part.file_path,
+    part.imagePath,
+    part.image_path,
+    part.savedPath,
+    part.saved_path,
+    part.sourcePath,
+    part.source_path,
+  ];
+  const found = candidates.find((value) => typeof value === "string" && value.trim());
+  return found ? found.trim() : "";
+}
+
+function isToolOutputImagePart(part) {
+  if (!part || typeof part !== "object") return false;
+  const type = String(part.type || "").replace(/[-_]/g, "").toLowerCase();
+  const url = toolOutputImageUrlValue(part);
+  if (/^data:image\//i.test(url)) return true;
+  return type === "image"
+    || type === "inputimage"
+    || type === "imageurl"
+    || type === "localimage"
+    || type === "imageview"
+    || Boolean(url && /image/i.test(type));
+}
+
+function parseToolOutputStructuredValue(value) {
+  if (typeof value !== "string") return value;
+  const text = value.trim();
+  if (!text || !/^[{\[]/.test(text)) return value;
+  try {
+    return JSON.parse(text);
+  } catch (_) {
+    return value;
+  }
+}
+
+function collectToolOutputImageCandidates(value, out = [], seen = new Set(), depth = 0) {
+  if (out.length >= 20 || value == null || depth > 6) return out;
+  const parsed = parseToolOutputStructuredValue(value);
+  if (typeof parsed === "string") {
+    const text = parsed.trim();
+    if (/^data:image\//i.test(text)) out.push({ url: text });
+    return out;
+  }
+  if (Array.isArray(parsed)) {
+    for (const entry of parsed) collectToolOutputImageCandidates(entry, out, seen, depth + 1);
+    return out;
+  }
+  if (typeof parsed !== "object" || seen.has(parsed)) return out;
+  seen.add(parsed);
+  if (isToolOutputImagePart(parsed)) {
+    const url = toolOutputImageUrlValue(parsed);
+    const imagePath = toolOutputImagePathValue(parsed);
+    if (url || imagePath) out.push({ url, path: imagePath });
+  }
+  for (const entry of Object.values(parsed)) collectToolOutputImageCandidates(entry, out, seen, depth + 1);
+  return out;
+}
+
+function toolOutputImageFingerprint(candidate) {
+  return crypto
+    .createHash("sha256")
+    .update(String(candidate && (candidate.url || candidate.path) || ""))
+    .digest("hex")
+    .slice(0, 16);
+}
+
+function toolOutputImageItemFromCandidate(entry, payload, candidate, index, options = {}) {
+  const fingerprint = toolOutputImageFingerprint(candidate);
+  const callId = String(payload && payload.call_id || "");
+  const id = `tool-output-image-${callId || "call"}-${index}-${fingerprint}`;
+  const imageItem = {
+    id,
+    type: "imageView",
+    callId,
+    source: "tool_output",
+    fileName: "view_image output",
+    label: "view_image output",
+    ...rolloutTimestampFields(entry),
+  };
+  if (candidate && candidate.path) imageItem.path = candidate.path;
+  if (candidate && candidate.url) imageItem.url = candidate.url;
+  attachGeneratedImageContent(imageItem, { threadId: options.threadId || "" });
+  const isInlineDataImage = candidate && typeof candidate.url === "string" && /^data:image\//i.test(candidate.url);
+  const isLocalImagePath = candidate && candidate.path;
+  if ((isInlineDataImage || isLocalImagePath) && !imageItem.contentUrl && !imageItem.content_url) return null;
+  return imageItem;
+}
+
+function cloneRolloutToolOutputImagePayload(payload) {
+  const byTurn = new Map();
+  const sourceByTurn = payload && payload.byTurn instanceof Map ? payload.byTurn : new Map();
+  for (const [turnId, items] of sourceByTurn.entries()) {
+    byTurn.set(turnId, Array.isArray(items) ? items.map((item) => Object.assign({}, item)) : []);
+  }
+  return {
+    byTurn,
+    unscoped: Array.isArray(payload && payload.unscoped)
+      ? payload.unscoped.map((item) => Object.assign({}, item))
+      : [],
+    scopedCount: Number(payload && payload.scopedCount) || 0,
+  };
+}
+
+function turnCompletionBoundaryMs(turn) {
+  for (const key of [
+    "completedAtMs",
+    "completedAt",
+    "completed_at_ms",
+    "completed_at",
+    "updatedAtMs",
+    "updatedAt",
+    "updated_at_ms",
+    "updated_at",
+  ]) {
+    const timestamp = timestampToMs(turn && turn[key]);
+    if (timestamp) return timestamp;
+  }
+  return 0;
+}
+
+function rolloutToolOutputImageMatchesTurnByTime(turns, index, item) {
+  const timestamp = itemDisplayTimestampMs(item);
+  if (!timestamp || !Array.isArray(turns) || index < 0 || index >= turns.length) return false;
+  const turn = turns[index];
+  const start = turnSortTimestampMs(turn);
+  const nextStart = index + 1 < turns.length ? turnSortTimestampMs(turns[index + 1]) : 0;
+  const completed = turnCompletionBoundaryMs(turn);
+  if (!start && !nextStart && !completed) return false;
+  const slackMs = 2000;
+  if (start && timestamp < start - slackMs) return false;
+  if (nextStart && timestamp >= nextStart - slackMs) return false;
+  if (!nextStart && completed && timestamp > completed + slackMs) return false;
+  return true;
+}
+
+function unscopedRolloutToolOutputImagesForTurn(turns, index, items) {
+  const unscoped = Array.isArray(items) ? items : [];
+  if (!unscoped.length) return [];
+  const matched = unscoped.filter((item) => rolloutToolOutputImageMatchesTurnByTime(turns, index, item));
+  if (matched.length) return matched;
+  if (turns.length === 1 && unscoped.every((item) => !itemDisplayTimestampMs(item))) return unscoped;
+  return [];
+}
+
+function insertProjectedItemByTimestamp(items, item) {
+  if (!Array.isArray(items)) return;
+  const timestamp = itemDisplayTimestampMs(item);
+  if (!timestamp) {
+    items.push(item);
+    return;
+  }
+  const index = items.findIndex((existing) => {
+    const existingTimestamp = itemDisplayTimestampMs(existing);
+    return existingTimestamp && existingTimestamp > timestamp;
+  });
+  if (index < 0) items.push(item);
+  else items.splice(index, 0, item);
+}
+
+function orderTurnItemsByDisplayTimestamp(turn) {
+  if (!turn || !Array.isArray(turn.items) || turn.items.length < 2) return turn;
+  turn.items = turn.items
+    .map((item, index) => ({ item, index, timestamp: itemDisplayTimestampMs(item) }))
+    .sort((left, right) => {
+      if (left.timestamp && right.timestamp && left.timestamp !== right.timestamp) {
+        return left.timestamp - right.timestamp;
+      }
+      return left.index - right.index;
+    })
+    .map((entry) => entry.item);
+  return turn;
+}
+
+function readRolloutToolOutputImageItems(rolloutPath, options = {}) {
+  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) {
+    return { byTurn: new Map(), unscoped: [], scopedCount: 0 };
+  }
+  let cacheKey = "";
+  try {
+    const stat = fs.statSync(rolloutPath);
+    cacheKey = runtimeContextCacheKey(rolloutPath, stat);
+    const cached = latestToolOutputImagesByPath.get(cacheKey);
+    if (cached && Date.now() - cached.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS) {
+      return cloneRolloutToolOutputImagePayload(cached.payload);
+    }
+  } catch (_) {
+    return { byTurn: new Map(), unscoped: [], scopedCount: 0 };
+  }
+
+  const text = readRolloutRuntimeScanText(rolloutPath) || readRolloutTail(rolloutPath);
+  const byTurn = new Map();
+  const unscoped = [];
+  const seenIds = new Set();
+  const seenImageKeys = new Set();
+  let scopedCount = 0;
+  let currentTurnId = "";
+  for (const line of text.split(/\r?\n/)) {
+    if (!line || !line.trim()) continue;
+    const entry = parseJsonLine(line);
+    if (!entry || !entry.type) continue;
+    const payload = entry.payload || {};
+    const explicitTurnId = rolloutEntryTurnId(entry);
+    if (entry.type === "turn_context" && explicitTurnId) currentTurnId = explicitTurnId;
+    if (entry.type === "event_msg" && payload.type === "task_started" && explicitTurnId) currentTurnId = explicitTurnId;
+    if (entry.type !== "response_item" || !/^(function_call_output|custom_tool_call_output)$/.test(String(payload.type || ""))) continue;
+    const candidates = collectToolOutputImageCandidates(payload.output);
+    if (!candidates.length) continue;
+    const turnId = explicitTurnId || currentTurnId;
+    const items = candidates
+      .filter((candidate) => {
+        const key = `${String(payload.call_id || "")}:${toolOutputImageFingerprint(candidate)}`;
+        if (seenImageKeys.has(key)) return false;
+        seenImageKeys.add(key);
+        return true;
+      })
+      .map((candidate, index) => toolOutputImageItemFromCandidate(entry, payload, candidate, index, options))
+      .filter(Boolean)
+      .filter((item) => {
+        const id = visibleItemId(item);
+        if (!id || seenIds.has(id)) return false;
+        seenIds.add(id);
+        return true;
+      });
+    if (!items.length) continue;
+    if (turnId) {
+      if (!byTurn.has(turnId)) byTurn.set(turnId, []);
+      byTurn.get(turnId).push(...items);
+      scopedCount += items.length;
+    } else {
+      unscoped.push(...items);
+    }
+  }
+  const payload = { byTurn, unscoped, scopedCount };
+  if (cacheKey) rememberToolOutputImages(cacheKey, payload);
+  return cloneRolloutToolOutputImagePayload(payload);
+}
+
+function appendRolloutToolOutputImagesToThread(thread) {
+  if (!thread || typeof thread !== "object" || !Array.isArray(thread.turns) || !thread.turns.length) return thread;
+  const rolloutPath = rolloutPathForThread(thread);
+  if (!rolloutPath) return thread;
+  const payload = readRolloutToolOutputImageItems(rolloutPath, {
+    threadId: thread.id || thread.threadId || "",
+  });
+  if (!payload) return thread;
+  thread.turns.forEach((turn, index) => {
+    if (!turn || !Array.isArray(turn.items)) return;
+    const turnId = String(turn.id || turn.turnId || "").trim();
+    let imageItems = turnId && payload.byTurn instanceof Map ? payload.byTurn.get(turnId) : null;
+    if ((!imageItems || !imageItems.length)
+      && payload.scopedCount === 0
+      && Array.isArray(payload.unscoped)
+      && payload.unscoped.length) {
+      imageItems = unscopedRolloutToolOutputImagesForTurn(thread.turns, index, payload.unscoped);
+    }
+    if (!Array.isArray(imageItems) || !imageItems.length) return;
+    const existingIds = new Set(turn.items.map(visibleItemId).filter(Boolean));
+    for (const item of imageItems) {
+      const id = visibleItemId(item);
+      if (!id || existingIds.has(id)) continue;
+      insertProjectedItemByTimestamp(turn.items, Object.assign({}, item));
+      existingIds.add(id);
+    }
+  });
+  return thread;
 }
 
 function turnCompletionUsageSummary(threadId, turnId) {
@@ -3576,6 +4016,10 @@ function isTurnUsageSummaryItem(item) {
   return Boolean(item && typeof item === "object" && item.type === "turnUsageSummary");
 }
 
+function isVisualReceiptItem(item) {
+  return Boolean(item && typeof item === "object" && (item.type === "imageView" || item.type === "imageGeneration"));
+}
+
 function receiptOnlyItemIndexes(items) {
   const indexes = new Set();
   if (!Array.isArray(items)) return indexes;
@@ -3584,6 +4028,7 @@ function receiptOnlyItemIndexes(items) {
     const item = items[index];
     if (isUserQuestionItem(item)) indexes.add(index);
     if (isTurnUsageSummaryItem(item)) indexes.add(index);
+    if (isVisualReceiptItem(item)) indexes.add(index);
     if (isAssistantReceiptItem(item)) receiptIndex = index;
   }
   if (receiptIndex >= 0) indexes.add(receiptIndex);
@@ -3686,6 +4131,7 @@ function compactThread(thread, options = {}) {
     }
     pendingSteerEchoStore.injectIntoThread(out);
     enrichThreadItemTimestampsFromRollout(out);
+    appendRolloutToolOutputImagesToThread(out);
     attachTurnUsageSummaries(out, readRolloutTurnUsageSummaries(rolloutPath, {
       targetTurnIds: out.turns.map((turn) => turn && turn.id).filter(Boolean),
     }), {
@@ -3703,7 +4149,7 @@ function compactThread(thread, options = {}) {
       maxOperationItems: operationDetailIndexes.has(index) ? "all" : MAX_LIVE_OPERATION_ITEMS,
       receiptOnly: !operationDetailIndexes.has(index),
       threadId: out.id || out.threadId || "",
-    }));
+    })).map(orderTurnItemsByDisplayTimestamp);
     const latest = out.turns[latestIndex];
     if (latest && isLiveTurn(latest) && Array.isArray(latest.items)
       && !latest.items.some((item) => isOperationalItem(item))) {
@@ -4685,6 +5131,17 @@ function maybeAutoReplyThreadTaskCard(method, params) {
   });
 }
 
+function maybeApplyQueuedThreadSideChat(method, params) {
+  if (method !== "turn/completed") return;
+  const turnId = pushTurnId(params);
+  if (!turnId || isOldPushTurnEvent(params, ["completedAt", "updatedAt"])) return;
+  const threadId = pushThreadId(params);
+  if (!threadId) return;
+  threadSideChatService.maybeApplyQueuedCandidate(threadId).catch((err) => {
+    console.error(`[thread side chat] queued apply failed thread=${shortIdentifier(threadId)} turn=${shortIdentifier(turnId)}: ${err.message || String(err)}`);
+  });
+}
+
 function maybeMaterializeThreadTaskCardDrafts(method, params) {
   if (method !== "turn/completed") return;
   const turnId = pushTurnId(params);
@@ -5412,9 +5869,7 @@ class CodexAppServerClient {
       this.port = await getFreePort();
       const child = spawn(CODEX_EXE, ["app-server", "--listen", `ws://127.0.0.1:${this.port}`], {
         cwd: APP_ROOT,
-        env: Object.assign({}, process.env, {
-          CODEX_HOME,
-        }),
+        env: codexAppServerChildEnv({ CODEX_HOME }),
         windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
       });
@@ -5622,6 +6077,7 @@ class CodexAppServerClient {
       maybeRecordTurnTokenUsage(msg.method, msg.params || null);
       maybeMaterializeThreadTaskCardDrafts(msg.method, msg.params || null);
       maybeAutoReplyThreadTaskCard(msg.method, msg.params || null);
+      maybeApplyQueuedThreadSideChat(msg.method, msg.params || null);
       maybeSendTurnCompletedPush(msg.method, msg.params || null);
       broadcast({ type: "notification", method: msg.method, params: msg.params || null });
     }
@@ -8252,7 +8708,8 @@ async function handleApi(req, res) {
       const session = hermesPluginService.createSession(Object.assign({}, body, {
         token: body.codexPluginLaunch || body.pluginLaunch || body.launchToken || body.token || requestAuthToken(req),
       }));
-      sendJson(res, 200, session);
+      const cookie = pluginSessionCookieHeader(req, session);
+      sendJson(res, 200, session, cookie ? { "Set-Cookie": cookie } : {});
     } catch (err) {
       sendJson(res, err.statusCode || 400, { ok: false, error: err.message || String(err) });
     }
@@ -8500,6 +8957,117 @@ async function handleApi(req, res) {
     sendJson(res, 200, { ok: true, request });
     return;
   }
+  // GET /api/threads/:threadId/side-chat
+  const threadSideChatRoot = url.pathname.match(/^\/api\/threads\/([^/]+)\/side-chat$/);
+  if (threadSideChatRoot && req.method === "GET") {
+    try {
+      const threadSideChatId = decodeURIComponent(threadSideChatRoot[1]);
+      sendJson(res, 200, {
+        ok: true,
+        sideChat: threadSideChatService.get(threadSideChatId),
+      });
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  if (threadSideChatRoot && req.method === "PUT") {
+    try {
+      const threadSideChatId = decodeURIComponent(threadSideChatRoot[1]);
+      const body = await readBody(req);
+      sendJson(res, 200, {
+        ok: true,
+        sideChat: await threadSideChatService.updateDraft(threadSideChatId, body),
+      });
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  const threadSideChatDraft = url.pathname.match(/^\/api\/threads\/([^/]+)\/side-chat\/draft$/);
+  if (threadSideChatDraft && req.method === "PUT") {
+    try {
+      const threadSideChatId = decodeURIComponent(threadSideChatDraft[1]);
+      const body = await readBody(req);
+      sendJson(res, 200, {
+        ok: true,
+        sideChat: await threadSideChatService.updateDraft(threadSideChatId, body),
+      });
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  const threadSideChatMessages = url.pathname.match(/^\/api\/threads\/([^/]+)\/side-chat\/messages$/);
+  if (threadSideChatMessages && req.method === "POST") {
+    try {
+      const threadSideChatId = decodeURIComponent(threadSideChatMessages[1]);
+      const body = await readBody(req);
+      sendJson(res, 200, Object.assign({ ok: true }, await threadSideChatService.addMessage(threadSideChatId, body)));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  const threadSideChatCandidates = url.pathname.match(/^\/api\/threads\/([^/]+)\/side-chat\/candidates$/);
+  if (threadSideChatCandidates && req.method === "POST") {
+    try {
+      const threadSideChatId = decodeURIComponent(threadSideChatCandidates[1]);
+      const body = await readBody(req);
+      sendJson(res, 200, Object.assign({ ok: true }, await threadSideChatService.createCandidate(threadSideChatId, body)));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  const threadSideChatQueue = url.pathname.match(/^\/api\/threads\/([^/]+)\/side-chat\/candidates\/([^/]+)\/queue$/);
+  if (threadSideChatQueue && req.method === "POST") {
+    try {
+      const threadSideChatId = decodeURIComponent(threadSideChatQueue[1]);
+      const candidateId = decodeURIComponent(threadSideChatQueue[2]);
+      const body = await readBody(req);
+      sendJson(res, 200, Object.assign({ ok: true }, await threadSideChatService.queueCandidate(threadSideChatId, candidateId, body)));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  const threadSideChatApply = url.pathname.match(/^\/api\/threads\/([^/]+)\/side-chat\/candidates\/([^/]+)\/apply$/);
+  if (threadSideChatApply && req.method === "POST") {
+    try {
+      const threadSideChatId = decodeURIComponent(threadSideChatApply[1]);
+      const candidateId = decodeURIComponent(threadSideChatApply[2]);
+      const body = await readBody(req);
+      sendJson(res, 200, Object.assign({ ok: true }, await threadSideChatService.applyCandidate(threadSideChatId, candidateId, body)));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  const threadSideChatCancel = url.pathname.match(/^\/api\/threads\/([^/]+)\/side-chat\/candidates\/([^/]+)\/cancel$/);
+  if (threadSideChatCancel && req.method === "POST") {
+    try {
+      const threadSideChatId = decodeURIComponent(threadSideChatCancel[1]);
+      const candidateId = decodeURIComponent(threadSideChatCancel[2]);
+      sendJson(res, 200, Object.assign({ ok: true }, await threadSideChatService.cancelCandidate(threadSideChatId, candidateId)));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  const threadSideChatClear = url.pathname.match(/^\/api\/threads\/([^/]+)\/side-chat\/clear$/);
+  if (threadSideChatClear && req.method === "POST") {
+    try {
+      const threadSideChatId = decodeURIComponent(threadSideChatClear[1]);
+      sendJson(res, 200, {
+        ok: true,
+        sideChat: await threadSideChatService.clear(threadSideChatId),
+      });
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
   if (url.pathname === "/api/thread-task-cards" && req.method === "POST") {
     try {
       const body = await readBody(req);
@@ -8647,6 +9215,7 @@ async function handleApi(req, res) {
       ? String(body.effort || "").trim()
       : "";
     const requestedFastMode = requestedCodexFastMode(body.fastMode);
+    const requestedTitle = truncateSingleLine(String(body.title || body.name || "").trim(), 120);
     const input = buildTurnInput(text, uploads);
     const persistExtendedHistory = persistExtendedHistoryForUploads(uploads);
     if (!cwd) {
@@ -8686,6 +9255,17 @@ async function handleApi(req, res) {
         });
         const threadId = threadIdFromStartResult(startResult);
         if (!threadId) throw new Error("New thread creation failed: app-server did not return threadId");
+        let titleUpdated = false;
+        let titleIndexed = false;
+        let titleWarning = "";
+        if (requestedTitle) {
+          titleIndexed = persistThreadTitleToSessionIndex(threadId, requestedTitle);
+          try {
+            titleUpdated = await tryUpdateThreadTitle(threadId, requestedTitle);
+          } catch (err) {
+            titleWarning = `Thread title update failed: ${String(err && err.message || err).slice(0, 240)}`;
+          }
+        }
         const turnParams = applyCodexFastServiceTier(applyTurnRuntimeSettings({
           threadId,
           input,
@@ -8702,7 +9282,8 @@ async function handleApi(req, res) {
           (startResult && startResult.thread) || (startResult && startResult.data && startResult.data.thread) || {},
           {
             id: threadId,
-            preview: text || path.basename(cwd) || "新建对话",
+            name: requestedTitle || undefined,
+            preview: requestedTitle || text || path.basename(cwd) || "新建对话",
             cwd,
             status: { type: "active" },
             turns: [],
@@ -8712,6 +9293,10 @@ async function handleApi(req, res) {
           ok: true,
           threadId,
           thread,
+          title: requestedTitle,
+          titleUpdated,
+          titleIndexed,
+          titleWarning,
           turnId: (turnResult && (turnResult.turnId || turnResult.id || turnResult.turn && turnResult.turn.id)) || "",
           result: turnResult,
           startResult,

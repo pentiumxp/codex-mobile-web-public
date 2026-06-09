@@ -79,6 +79,15 @@ if ($NoAuth) {
     $env:CODEX_MOBILE_DISABLE_AUTH = "1"
 }
 
+function Clear-DesktopBridgeEnvironment {
+    Remove-Item Env:\CODEX_CLI_PATH -ErrorAction SilentlyContinue
+    Get-ChildItem Env:CODEX_MUX_* -ErrorAction SilentlyContinue | ForEach-Object {
+        Remove-Item -LiteralPath ("Env:\{0}" -f $_.Name) -ErrorAction SilentlyContinue
+    }
+}
+
+Clear-DesktopBridgeEnvironment
+
 Write-Host "Starting Codex Mobile Web on http://$HostAddress`:$Port"
 Write-Host "Codex exe: $CodexExe"
 if (-not [string]::IsNullOrWhiteSpace($HermesPluginBaseUrl)) {

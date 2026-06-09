@@ -45,7 +45,7 @@ Tracked source files live in the repository. Runtime state stays outside Git:
 | --- | --- |
 | `%USERPROFILE%\.codex` | Codex Desktop/app-server state, session rollout JSONL, `state_5.sqlite`, shared mux endpoint |
 | `%USERPROFILE%\.codex-mobile-web` | Mobile Web access key, uploads, Web Push files, logs, local Codex executable copy, Hermes plugin registration state |
-| `%USERPROFILE%\.codex-mobile-web\workspace-registry.json` | Mobile Web-created workspace folders. This augments Mobile Web visibility without editing `.codex` global state. |
+| `%USERPROFILE%\.codex-mobile-web\workspace-registry.json` | Mobile Web-created workspace folders. This augments Mobile Web visibility and may also sync Desktop global workspace roots when `CODEX_MOBILE_SYNC_DESKTOP_WORKSPACES=1`. |
 | `%USERPROFILE%\.codex-mobile-web\codex-profiles.json` | Active Codex profile selection for the single-profile switcher. Contains profile ids, labels, and `CODEX_HOME` paths only; never auth tokens. |
 | `%USERPROFILE%\.codex\app-server-mux\endpoint.json` | Shared mux JSONL TCP endpoint used by Mobile Web and Desktop bridge. Current mux endpoint metadata includes the real `codexExe` path and capability flags so launchers can reject a reachable but version-stale mux. |
 | `.agent-context/` | Durable local project context, not public release content |
@@ -121,11 +121,23 @@ not copied to public release or `.agent-context`.
 `POST /api/workspaces` creates or registers one local workspace folder under an
 allowed create root, then makes that cwd visible to Mobile Web thread-list and
 new-thread routes. It accepts only a simple folder name, rejects path traversal,
-absolute paths, Windows reserved names, and invalid path characters, and never
-writes `%USERPROFILE%\.codex\.codex-global-state.json` directly. Allowed roots
-default to `%USERPROFILE%\Documents` and `%USERPROFILE%`; deployments can
+absolute paths, Windows reserved names, and invalid path characters. Allowed
+roots default to `%USERPROFILE%\Documents` and `%USERPROFILE%`; deployments can
 override them with `CODEX_MOBILE_WORKSPACE_CREATE_ROOTS`, and the registry file
 can be moved with `CODEX_MOBILE_WORKSPACE_REGISTRY_FILE`.
+
+By default, Mobile-created workspaces stay in the Mobile registry only. Mac
+single-runtime deployments that need Codex Desktop and embedded Codex Mobile to
+show the same newly created workspaces can set
+`CODEX_MOBILE_SYNC_DESKTOP_WORKSPACES=1`. In that mode the workspace registry
+service canonicalizes created workspace roots through `realpath` where
+available, stores the canonical cwd in the Mobile registry, and adds the same
+root to `electron-saved-workspace-roots`, `project-order`, and
+`active-workspace-roots` in the default and active-profile
+`.codex-global-state.json` files. `CODEX_MOBILE_DESKTOP_GLOBAL_STATE_FILE` may
+add one explicit Desktop global-state file. The API response reports only
+whether a sync ran and how many global-state files were processed; it must not
+return local `.codex` file paths to the browser.
 
 The browser exposes creation from the bottom of the Workspace dropdown list,
 not beside the new-thread button. After creation, it selects the new cwd and
@@ -198,7 +210,11 @@ appearance through the browser session exchange. The iframe head script applies
 both theme and font size before `styles.css` and `public/app.js` initialize, so
 Hermes-hosted plugins do not flash the standalone/default appearance. These
 fields are session appearance metadata only; they must not carry tokens, local
-paths, raw settings dumps, or private content.
+paths, raw settings dumps, or private content. If the user changes Codex
+Mobile's font size inside the embedded iframe, the iframe updates its scrubbed
+URL state and includes the sanitized current appearance in plugin navigation
+and refresh-required messages so Hermes can relaunch the plugin with the same
+font size instead of falling back to an older host value.
 
 ```json
 { "type": "codex-mobile.plugin.navigation", "version": 1, "canGoBack": true, "route": { "kind": "thread", "threadId": "..." } }
@@ -444,7 +460,7 @@ regex parser. The browser provides only the visible thread list and required
 response schema. If the model does not return one valid visible
 `targetThreadId`, Mobile Web does not auto-create a pending card.
 
-The browser connects to `/api/events` with the current thread id. `server.js` filters app-server notifications to the current thread where possible, forwards status and thread-level notifications, and drops large diff notifications that the UI does not render. In Hermes embed mode, EventSource is treated as the preferred live channel, not the only recovery path: if `/api/events` errors but normal API calls still work, the browser refreshes `/api/status`, the thread list, and the current thread through ordinary requests, enters a bounded polling fallback, and retries EventSource with backoff. This avoids repeated visible reconnect/refresh prompts when iOS WebKit or a reverse proxy temporarily interrupts the long SSE stream while the JSON API is healthy. Source-less `account/rateLimits/updated` notifications are recorded server-side but not broadcast to browsers because they can come from another workspace in a shared mux stream. Browser quota display is refreshed from active `/api/public-config` and `/api/status` snapshots; the server reads `account/rateLimits/read` after app-server initialize and then accepts later quota notifications from the same trusted source. Rollout-scanned quota data is kept only as an account-scoped cold-start fallback and does not overwrite live app-server quota. For shared-profile homes, only live quota from this listener's own managed child app-server or from the active profile home's mux endpoint can be exposed, and it is not persisted as reusable profile quota. When the server explicitly reports no valid quota snapshot, the browser clears its local quota cache instead of keeping a stale previous-account value.
+The browser connects to `/api/events` with the current thread id. `server.js` filters app-server notifications to the current thread where possible, forwards status and thread-level notifications, and drops large diff notifications that the UI does not render. In Hermes embed mode, EventSource is treated as the preferred live channel, not the only recovery path: if `/api/events` errors but normal API calls still work, the browser refreshes `/api/status`, the thread list, and the current thread through ordinary requests, enters a bounded polling fallback, and retries EventSource with backoff. The embed fallback keeps thread-list refreshes silent and does not set the visible connection chip to `Reconnecting` while JSON API recovery is healthy. This avoids repeated visible reconnect/refresh prompts when iOS WebKit or a reverse proxy temporarily interrupts the long SSE stream while the JSON API is healthy. Source-less `account/rateLimits/updated` notifications are recorded server-side but not broadcast to browsers because they can come from another workspace in a shared mux stream. Browser quota display is refreshed from active `/api/public-config` and `/api/status` snapshots; the server reads `account/rateLimits/read` after app-server initialize and then accepts later quota notifications from the same trusted source. Rollout-scanned quota data is kept only as an account-scoped cold-start fallback and does not overwrite live app-server quota. For shared-profile homes, only live quota from this listener's own managed child app-server or from the active profile home's mux endpoint can be exposed, and it is not persisted as reusable profile quota. When the server explicitly reports no valid quota snapshot, the browser clears its local quota cache instead of keeping a stale previous-account value.
 
 The mux keeps a replay buffer for recent app-server notifications and unresolved server requests. Mobile Web declares a bounded replay limit to avoid replaying very large historical streams.
 
@@ -489,13 +505,13 @@ Browser-side image compression happens before upload when supported. Uploaded at
 
 Image uploads are reference-only by default: Mobile Web does not send app-server `localImage` input parts unless `CODEX_MOBILE_IMAGE_CONTEXT_MODE` explicitly opts into `latest`/`vision` or legacy `all`. This is separate from extended-history persistence. Reference-only mode prevents new uploads from becoming `input_image` payloads in app-server current history and compacted `replacement_history` snapshots.
 
-The browser display remains visual: conversation messages parse uploaded image summaries and render saved image paths as centered thumbnails through the authenticated upload preview route. That route must return real image MIME types such as `image/jpeg`, `image/webp`, or `image/png` for saved upload paths so browser `<img>` elements render consistently. This applies to the original user upload and to later Codex/plan replies that quote the same `Uploaded attachments:` block, including CRLF line endings, Markdown blockquote-style quoted summaries, and raw app-server `input_text` / `input_image` / `image_url` content parts. Assistant Markdown may also render generated bitmap data URLs such as `data:image/png;base64,...` as bounded images; SVG data images stay blocked. This display path must not be used as a reason to re-enable model `localImage` input by default.
+The browser display remains visual: conversation messages parse uploaded image summaries and render saved image paths as centered thumbnails through the authenticated upload preview route. That route must return real image MIME types such as `image/jpeg`, `image/webp`, or `image/png` for saved upload paths so browser `<img>` elements render consistently. This applies to the original user upload and to later Codex/plan replies that quote the same `Uploaded attachments:` block, including CRLF line endings, Markdown blockquote-style quoted summaries, and raw app-server `input_text` / `input_image` / `image_url` content parts. If an app-server image part puts a local Mobile Web upload path in `image_url` instead of `path`, the browser still treats it as local runtime data and renders it through `/api/uploads/file` rather than using the raw filesystem path as an image URL. Assistant Markdown may also render generated bitmap data URLs such as `data:image/png;base64,...` as bounded images; SVG data images stay blocked. This display path must not be used as a reason to re-enable model `localImage` input by default.
 
 By default, Mobile Web also does not request app-server extended-history persistence for image-upload turns. This reduces repeated historical payload retention for future uploads but cannot remove old images already retained in app-server memory or historical rollout records.
 
 Uploaded files stay under the Mobile Web runtime upload root. Authenticated preview routes must only serve paths under allowed roots. Allowed local-file preview roots include explicit `CODEX_MOBILE_FILE_PREVIEW_ROOTS`, known visible workspace roots, the current thread cwd, and an enclosing Obsidian vault when present. The preview route must not add arbitrary runtime, upload, temp, `.codex`, or machine-diagnostic directories. Local-file preview targets may include Codex-style source locations such as `README.md:12`, `README.md:12:3`, or `README.md#L12`; the server strips those location suffixes before extension and root checks so the actual Markdown/text file is previewed. Local preview links render as the linked path text only and must wrap long paths. Markdown preview uses source ordered-list numbering. The preview panel should avoid horizontal dragging by using viewport-bounded width plus wrapped Markdown code/table content. While a preview dialog is open, right-swipe gestures close the preview and must not propagate to the underlying conversation/sidebar navigation.
 
-App-server `imageView` items and completed `imageGeneration` items with a `savedPath` can point at generated screenshots/images outside the current workspace, such as `%TEMP%` files or `%USERPROFILE%\.codex\generated_images` PNGs. Mobile Web must not add arbitrary temp or `.codex` directories to file-preview roots. Instead, when the server compacts one of these items and the referenced source is an allowed small image, it copies the image into `%USERPROFILE%\.codex-mobile-web\generated-images` (or `CODEX_MOBILE_GENERATED_IMAGE_CACHE_DIR`) and attaches an authenticated `/api/generated-images/file` content URL. The browser prefers that generated-image URL over raw local-file preview paths, so live and reloaded turns can render Codex's own visual-check screenshots and generated effect images without relaxing workspace preview security.
+App-server `imageView` items and completed `imageGeneration` items with a `savedPath` can point at generated screenshots/images outside the current workspace, such as `%TEMP%` files or `%USERPROFILE%\.codex\generated_images` PNGs. Some Codex tool screenshots also appear only in rollout `function_call_output` / `custom_tool_call_output` payloads as image parts, including `input_image` data URLs from `view_image`. Mobile Web must not add arbitrary temp or `.codex` directories to file-preview roots. Instead, when the server compacts one of these items or rollout tool-output image parts and the referenced source is an allowed small image, it copies the image into `%USERPROFILE%\.codex-mobile-web\generated-images` (or `CODEX_MOBILE_GENERATED_IMAGE_CACHE_DIR`) and attaches an authenticated `/api/generated-images/file` content URL. Receipt-only turn compaction keeps these visual items, and unscoped rollout tool-output images use timestamp windows to attach to the matching turn instead of defaulting to the latest turn. The browser prefers that generated-image URL over raw local-file preview paths, so live and reloaded turns can render Codex's own visual-check screenshots and generated effect images without relaxing workspace preview security. Hermes plugin sessions also set a short-lived HttpOnly `codex_mobile_plugin_session` cookie for browser media loads, while the browser continues to refresh same-origin API image URLs with the current in-memory session key as a fallback for iframe cookie restrictions. Server authorization accepts any valid candidate token from headers, query parameters, or bounded Codex Mobile cookies, so a stale image URL query token cannot mask a current plugin session cookie.
 
 ### Rollout Continuation
 
@@ -537,16 +553,19 @@ than the loaded client may prompt/ask the host to refresh, while a loaded client
 newer than `/api/public-config` is treated as a deployment middle state and must
 not create a refresh loop.
 Server-only asset build drift is recorded silently so returning through the host
-bottom tabs does not flash through an old/default iframe page. Server-only fixes
-do not need a shell bump, but open clients may need a normal detail refresh.
+bottom tabs does not flash through an old/default iframe page. Asset-only
+`buildId` changes must not show the visible "New version" prompt; only a newer
+comparable app-shell identity (`clientBuildId` / `shellCacheName`) should ask
+the user or Hermes host to refresh. Server-only fixes do not need a shell bump,
+but open clients may need a normal detail refresh.
 
 ### Public PR Prompt
 
-The public PR check is prompt-only. `server.js` checks the configured public GitHub repository for open pull requests through the unauthenticated public API, caches the result briefly, and exposes it through authenticated `/api/public-pull-requests/status`. The browser can prompt whether to prepare a merge/publish review task, but it must not merge, sync, commit, or push the public repository without an explicit user request.
+The public PR check is prompt-only. `server.js` checks the configured public GitHub repository for open pull requests through the unauthenticated public API, caches the result briefly, and exposes it through authenticated `/api/public-pull-requests/status`. The browser can prompt whether to prepare a merge/publish review task, but it must not merge, sync, commit, or push the public repository without an explicit user request. Accepted prompts target a visible review workspace: use `/api/public-config.workspacePath` when it is visible to Codex Desktop, otherwise use a visible workspace with the same basename so Mac production deployments under `/Users/hermes-host/.../plugins/codex-mobile-web` can route review tasks to the real source checkout under `/Users/hermes-dev/.../plugins/codex-mobile-web`. The browser first reuses a visible same-workspace thread titled `Codex Mobile Public PR`. If no such thread exists, the new-thread draft carries that title and `/api/threads/new-message` persists it through app-server rename plus the Mobile session-index fallback after creation.
 
 ### GitHub Link Previews
 
-Standalone GitHub links in rendered Markdown can hydrate into preview cards through authenticated `GET /api/link-previews/github?url=...`. The browser first renders a normal fallback link, limits automatic previews per message body, skips code/preformatted content, and then asks the server for bounded public metadata. The server accepts only HTTPS `github.com` / `www.github.com` repository, issue, pull request, and commit URLs, canonicalizes them through `adapters/github-link-preview-service.js`, and fetches only the corresponding `api.github.com` REST endpoint. It must not fetch arbitrary user-supplied URLs, read local files, attach the Codex Mobile Access Key to GitHub requests, or persist preview payloads outside the in-memory cache. GitHub API failures degrade to the fallback link rather than blocking conversation rendering.
+GitHub preview metadata is available through authenticated `GET /api/link-previews/github?url=...`. The server accepts only HTTPS `github.com` / `www.github.com` repository, issue, pull request, and commit URLs, canonicalizes them through `adapters/github-link-preview-service.js`, and fetches only the corresponding `api.github.com` REST endpoint. It must not fetch arbitrary user-supplied URLs, read local files, attach the Codex Mobile Access Key to GitHub requests, or persist preview payloads outside the in-memory cache. GitHub API failures return a bounded unsupported/error payload instead of blocking conversation rendering.
 
 ## Invariants
 
@@ -554,9 +573,14 @@ Standalone GitHub links in rendered Markdown can hydrate into preview cards thro
 - Mux endpoint drift must be detected before using a stale live socket.
 - Windows background helpers started by Mobile Web or the Desktop shared bridge
   must be windowless. Use `-WindowStyle Hidden` for PowerShell/Start-Process
-  helpers and `CREATE_NO_WINDOW` / hidden startup flags for shim-spawned
-  Node/mux/app-server children. The Desktop GUI itself is the only normal
-  visible process launched by the Desktop shared shortcut.
+  helpers, wrap user-facing Desktop shortcuts through `wscript.exe`, compile the
+  Desktop `CODEX_CLI_PATH` shim as `/target:winexe`, and use
+  `CREATE_NO_WINDOW` / hidden startup flags for shim-spawned Node/mux/app-server
+  children. Mobile-owned real `codex app-server` children must clear
+  Desktop-bridge-only `CODEX_CLI_PATH` and `CODEX_MUX_*` environment variables
+  before spawning the CLI, otherwise CLI tool subprocesses can loop back through
+  the bridge shim and reopen a console. The Desktop GUI itself is the only
+  normal visible process launched by the Desktop shared shortcut.
 - Mobile UI should compact live latest-turn operations and avoid rendering full command outputs, full diffs, or reasoning rows. The latest live-turn operation card uses a compact four-line visual budget: one metadata row plus up to three clipped detail lines. Completed turns should not keep operation cards below the final reply; the Usage summary is the final diagnostic frame when available.
 - User-visible mobile input should not disappear on refresh while steering is pending.
 - Old operation cards must not be attached to newer live turns.

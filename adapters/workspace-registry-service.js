@@ -40,6 +40,28 @@ function pathKey(value) {
   return path.resolve(String(value || "")).replace(/[\\/]+$/, "").toLowerCase();
 }
 
+function uniqueStrings(values) {
+  const seen = new Set();
+  const result = [];
+  for (const value of values || []) {
+    const text = String(value || "").trim();
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    result.push(text);
+  }
+  return result;
+}
+
+function canonicalDirectoryPath(value, canonicalize) {
+  const resolved = path.resolve(String(value || ""));
+  if (!canonicalize) return resolved;
+  try {
+    return fs.realpathSync(resolved);
+  } catch (_) {
+    return resolved;
+  }
+}
+
 function uniqueExistingDirectories(values) {
   const seen = new Set();
   const result = [];
@@ -90,6 +112,29 @@ function writeJsonFile(filePath, value) {
   const tmp = `${filePath}.tmp-${process.pid}-${Date.now()}`;
   fs.writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, "utf8");
   fs.renameSync(tmp, filePath);
+}
+
+function syncDesktopGlobalWorkspaceRoots(files, cwd) {
+  const rawWorkspaceRoot = String(cwd || "").trim();
+  if (!rawWorkspaceRoot) return [];
+  const workspaceRoot = path.resolve(rawWorkspaceRoot);
+  const synced = [];
+  for (const file of uniqueStrings(files)) {
+    const globalStatePath = path.resolve(file);
+    const state = readJsonFile(globalStatePath, {});
+    let changed = false;
+    for (const key of ["electron-saved-workspace-roots", "project-order", "active-workspace-roots"]) {
+      const roots = Array.isArray(state[key]) ? state[key].slice() : [];
+      if (!roots.some((entry) => pathKey(entry) === pathKey(workspaceRoot))) {
+        roots.push(workspaceRoot);
+        changed = true;
+      }
+      state[key] = roots;
+    }
+    if (changed) writeJsonFile(globalStatePath, state);
+    synced.push(globalStatePath);
+  }
+  return synced;
 }
 
 function normalizeStore(raw) {
@@ -148,6 +193,10 @@ function createWorkspaceRegistryService(options = {}) {
   const fallbackRoots = defaultCreateRoots(options.homeDir);
   const createRoots = parseCreateRoots(options.createRoots, fallbackRoots);
   const maxNameLength = Math.max(1, Number(options.maxNameLength || DEFAULT_MAX_WORKSPACE_NAME_LENGTH));
+  const desktopGlobalStateFiles = uniqueStrings(options.desktopGlobalStateFiles);
+  const canonicalizeWorkspacePaths = options.canonicalizeWorkspacePaths !== undefined
+    ? Boolean(options.canonicalizeWorkspacePaths)
+    : desktopGlobalStateFiles.length > 0;
 
   function loadStore() {
     return normalizeStore(readJsonFile(storageFile, { version: 1, workspaces: [] }));
@@ -169,15 +218,16 @@ function createWorkspaceRegistryService(options = {}) {
     const seen = new Set();
     const result = [];
     for (const entry of loadStore().workspaces) {
-      const key = pathKey(entry.cwd);
+      const cwd = canonicalDirectoryPath(entry.cwd, canonicalizeWorkspacePaths);
+      const key = pathKey(cwd);
       if (seen.has(key)) continue;
       try {
-        if (!fs.statSync(entry.cwd).isDirectory()) continue;
+        if (!fs.statSync(cwd).isDirectory()) continue;
       } catch (_) {
         continue;
       }
       seen.add(key);
-      result.push(publicWorkspace(entry));
+      result.push(publicWorkspace(Object.assign({}, entry, { cwd })));
     }
     return result;
   }
@@ -227,23 +277,27 @@ function createWorkspaceRegistryService(options = {}) {
       throw statusError(500, err.message || String(err));
     }
 
+    const cwd = canonicalDirectoryPath(target, canonicalizeWorkspacePaths);
     const now = new Date().toISOString();
     const store = loadStore();
     const entry = upsertWorkspace(store, {
-      cwd: target,
+      cwd,
       label,
       source: "mobile",
-      parent,
+      parent: canonicalDirectoryPath(parent, canonicalizeWorkspacePaths),
       createdAt: now,
       updatedAt: now,
     });
     saveStore(store);
+    const desktopGlobalStateSyncedFiles = syncDesktopGlobalWorkspaceRoots(desktopGlobalStateFiles, entry.cwd);
     return {
       ok: true,
       created,
       workspace: Object.assign(publicWorkspace(entry), { created }),
       createRoot: parent,
       createRoots: availableCreateRoots(),
+      desktopGlobalStateSynced: desktopGlobalStateSyncedFiles.length > 0,
+      desktopGlobalStateSyncCount: desktopGlobalStateSyncedFiles.length,
     };
   }
 
@@ -257,5 +311,6 @@ function createWorkspaceRegistryService(options = {}) {
 
 module.exports = {
   createWorkspaceRegistryService,
+  syncDesktopGlobalWorkspaceRoots,
   workspaceNameFromInput,
 };

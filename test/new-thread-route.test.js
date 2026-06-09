@@ -51,6 +51,20 @@ test("new-message route forwards new-thread runtime settings", () => {
   assert.match(routeBody, /if \(requestedEffort\) turnParams\.effort = requestedEffort;/, "turn/start should receive requested reasoning effort");
 });
 
+test("new-message route can persist an explicit initial thread title", () => {
+  const routeIndex = serverJs.indexOf("/api/threads/new-message");
+  const fallbackIndex = serverJs.indexOf('sendJson(res, 404, { error: "Not found" })');
+  const routeBody = serverJs.slice(routeIndex, fallbackIndex);
+
+  assert.match(routeBody, /const requestedTitle = truncateSingleLine\(String\(body\.title \|\| body\.name \|\| ""\)\.trim\(\), 120\);/);
+  assert.match(routeBody, /titleIndexed = persistThreadTitleToSessionIndex\(threadId, requestedTitle\);/);
+  assert.match(routeBody, /titleUpdated = await tryUpdateThreadTitle\(threadId, requestedTitle\);/);
+  assert.match(routeBody, /name: requestedTitle \|\| undefined/);
+  assert.match(routeBody, /preview: requestedTitle \|\| text \|\| path\.basename\(cwd\)/);
+  assert.match(routeBody, /titleUpdated,/);
+  assert.match(routeBody, /titleIndexed,/);
+});
+
 test("server default model falls back to GPT-5.5", () => {
   assert.match(serverJs, /const MODEL_OPTIONS = optionListFromEnv\("CODEX_MOBILE_MODEL_OPTIONS", \[\s*"gpt-5\.5"/);
   assert.match(serverJs, /const DEFAULT_MODEL = MODEL_OPTIONS\[0\] \|\| "gpt-5\.5";/);
@@ -92,7 +106,8 @@ test("server hydrates rollout quota snapshots without overwriting live quota", (
   assert.match(serverJs, /this\.sendRpc\("account\/rateLimits\/read"[\s\S]*resetOnTimeout:\s*false/, "quota refresh should call the official app-server read RPC without resetting the transport on timeout");
   assert.match(serverJs, /rateLimitSource\(\)[\s\S]*this\.isMuxEndpoint\(\)[\s\S]*"profile-mux-live"/, "profile mux quota should be marked as owned by the active profile endpoint");
   assert.match(serverJs, /recordRateLimits\(msg\.params\.rateLimits,\s*\{[\s\S]*source:\s*this\.rateLimitSource\(\)/, "quota notifications should use the same trusted source classifier as quota reads");
-  assert.match(serverJs, /spawn\(CODEX_EXE,[\s\S]*\{\s*cwd: APP_ROOT,[\s\S]*env: Object\.assign\(\{\}, process\.env, \{\s*CODEX_HOME,\s*\}\)/, "managed child app-server should inherit the resolved active CODEX_HOME");
+  assert.match(serverJs, /function codexAppServerChildEnv\([\s\S]*CODEX_CLI_PATH[\s\S]*CODEX_MUX_/, "managed child app-server env should drop desktop bridge variables");
+  assert.match(serverJs, /spawn\(CODEX_EXE,[\s\S]*\{\s*cwd: APP_ROOT,[\s\S]*env: codexAppServerChildEnv\(\{ CODEX_HOME \}\)/, "managed child app-server should inherit the resolved active CODEX_HOME without desktop bridge env");
   assert.match(serverJs, /function activeRateLimits\(\)[\s\S]*latestLiveRateLimits \|\| latestSnapshotRateLimits/, "live quota should win over rollout snapshots");
   assert.match(serverJs, /\/api\/public-config"[\s\S]*await codex\.refreshRateLimitsIfMissing\(\);[\s\S]*rateLimits: activeRateLimits\(\)/, "public config should refresh and include active quota");
   assert.match(serverJs, /\/api\/status"[\s\S]*await codex\.refreshRateLimitsIfMissing\(\);[\s\S]*sendJson\(res, 200, codex\.status\(\)\)/, "status should refresh and include hydrated quota snapshots");

@@ -1,211 +1,125 @@
 "use strict";
 
-function safeSegment(value) {
-  const text = String(value || "").trim();
-  return /^[A-Za-z0-9_.-]+$/.test(text) ? text : "";
+function cleanSegment(value) {
+  return String(value || "").trim();
 }
 
-function safePositiveInteger(value) {
-  const number = Number(value);
-  return Number.isInteger(number) && number > 0 ? number : 0;
-}
-
-function safeCommitSha(value) {
-  const text = String(value || "").trim();
-  return /^[a-f0-9]{7,64}$/i.test(text) ? text.toLowerCase() : "";
-}
-
-function compactText(value, maxLength = 240) {
-  return String(value || "").replace(/\s+/g, " ").trim().slice(0, maxLength);
-}
-
-function trimBodyPreview(value, maxLength = 220) {
-  const text = compactText(value, maxLength + 32);
-  if (!text) return "";
-  return text.length > maxLength ? `${text.slice(0, maxLength - 1).trimEnd()}...` : text;
-}
-
-function formatCount(value) {
-  const number = Number(value);
-  return Number.isFinite(number) && number >= 0 ? number.toLocaleString() : "";
-}
-
-function githubKindLabel(kind) {
-  const text = String(kind || "");
-  if (text === "repo") return "Repository";
-  if (text === "issue") return "Issue";
-  if (text === "pull") return "Pull request";
-  if (text === "commit") return "Commit";
-  return "GitHub";
+function boundedText(value, max = 240) {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
 }
 
 function parseGitHubUrl(value) {
   let parsed;
   try {
-    parsed = new URL(String(value || "").trim());
+    parsed = new URL(String(value || ""));
   } catch (_) {
     return null;
   }
-  const host = String(parsed.hostname || "").toLowerCase();
-  if (host !== "github.com" && host !== "www.github.com") return null;
-  const parts = parsed.pathname.split("/").filter(Boolean);
-  if (parts.length < 2) return null;
-  const owner = safeSegment(parts[0]);
-  const repo = safeSegment(parts[1]);
-  if (!owner || !repo) return null;
-  const repository = `${owner}/${repo}`;
-  if (parts.length === 2) {
-    return {
-      provider: "github",
-      kind: "repo",
-      owner,
-      repo,
-      repository,
-      canonicalUrl: `https://github.com/${repository}`,
-    };
+  if (parsed.protocol !== "https:") return null;
+  if (!["github.com", "www.github.com"].includes(parsed.hostname.toLowerCase())) return null;
+  const segments = parsed.pathname.split("/").filter(Boolean).map(cleanSegment);
+  if (segments.length < 2) return null;
+  const [owner, repo] = segments;
+  if (!/^[A-Za-z0-9_.-]+$/.test(owner) || !/^[A-Za-z0-9_.-]+$/.test(repo)) return null;
+  const base = {
+    owner,
+    repo,
+    canonicalUrl: `https://github.com/${owner}/${repo}`,
+    kind: "repository",
+  };
+  const resource = String(segments[2] || "").toLowerCase();
+  if (!resource) return base;
+  if ((resource === "issues" || resource === "pull") && /^\d+$/.test(String(segments[3] || ""))) {
+    const number = Number(segments[3]);
+    return Object.assign({}, base, {
+      kind: resource === "pull" ? "pull" : "issue",
+      number,
+      canonicalUrl: `https://github.com/${owner}/${repo}/${resource}/${number}`,
+    });
   }
-  if (parts[2] === "issues") {
-    const number = safePositiveInteger(parts[3]);
-    if (number) {
-      return {
-        provider: "github",
-        kind: "issue",
-        owner,
-        repo,
-        repository,
-        number,
-        canonicalUrl: `https://github.com/${repository}/issues/${number}`,
-      };
-    }
-  }
-  if (parts[2] === "pull") {
-    const number = safePositiveInteger(parts[3]);
-    if (number) {
-      return {
-        provider: "github",
-        kind: "pull",
-        owner,
-        repo,
-        repository,
-        number,
-        canonicalUrl: `https://github.com/${repository}/pull/${number}`,
-      };
-    }
-  }
-  if (parts[2] === "commit") {
-    const sha = safeCommitSha(parts[3]);
-    if (sha) {
-      return {
-        provider: "github",
-        kind: "commit",
-        owner,
-        repo,
-        repository,
-        sha,
-        canonicalUrl: `https://github.com/${repository}/commit/${sha}`,
-      };
-    }
+  if (resource === "commit" && /^[A-Fa-f0-9]{7,64}$/.test(String(segments[3] || ""))) {
+    const sha = String(segments[3]);
+    return Object.assign({}, base, {
+      kind: "commit",
+      sha,
+      canonicalUrl: `https://github.com/${owner}/${repo}/commit/${sha}`,
+    });
   }
   return null;
 }
 
 function githubPreviewApiUrl(target) {
-  if (!target || typeof target !== "object") throw new Error("GitHub preview target is required");
-  if (target.kind === "repo") return `https://api.github.com/repos/${target.repository}`;
-  if (target.kind === "issue") return `https://api.github.com/repos/${target.repository}/issues/${target.number}`;
-  if (target.kind === "pull") return `https://api.github.com/repos/${target.repository}/pulls/${target.number}`;
-  if (target.kind === "commit") return `https://api.github.com/repos/${target.repository}/commits/${target.sha}`;
-  throw new Error(`Unsupported GitHub preview kind: ${target.kind}`);
+  if (!target || !target.owner || !target.repo) return "";
+  const owner = encodeURIComponent(target.owner);
+  const repo = encodeURIComponent(target.repo);
+  if (target.kind === "issue" && target.number) {
+    return `https://api.github.com/repos/${owner}/${repo}/issues/${encodeURIComponent(target.number)}`;
+  }
+  if (target.kind === "pull" && target.number) {
+    return `https://api.github.com/repos/${owner}/${repo}/pulls/${encodeURIComponent(target.number)}`;
+  }
+  if (target.kind === "commit" && target.sha) {
+    return `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(target.sha)}`;
+  }
+  return `https://api.github.com/repos/${owner}/${repo}`;
+}
+
+function loginFromUser(value) {
+  return value && typeof value === "object" ? boundedText(value.login || value.name, 80) : "";
+}
+
+function normalizeRepositoryPreview(target, payload) {
+  return {
+    kind: "repository",
+    owner: target.owner,
+    repo: target.repo,
+    title: boundedText(payload.full_name || `${target.owner}/${target.repo}`, 160),
+    description: boundedText(payload.description, 300),
+    url: payload.html_url || target.canonicalUrl,
+    language: boundedText(payload.language, 60),
+    stars: Number(payload.stargazers_count) || 0,
+    forks: Number(payload.forks_count) || 0,
+    updatedAt: payload.updated_at || "",
+  };
+}
+
+function normalizeIssuePreview(target, payload) {
+  return {
+    kind: target.kind,
+    owner: target.owner,
+    repo: target.repo,
+    number: Number(target.number) || Number(payload.number) || 0,
+    title: boundedText(payload.title, 200),
+    description: boundedText(payload.body, 300),
+    url: payload.html_url || target.canonicalUrl,
+    state: boundedText(payload.state, 40),
+    author: loginFromUser(payload.user),
+    updatedAt: payload.updated_at || "",
+  };
+}
+
+function normalizeCommitPreview(target, payload) {
+  const commit = payload.commit && typeof payload.commit === "object" ? payload.commit : {};
+  return {
+    kind: "commit",
+    owner: target.owner,
+    repo: target.repo,
+    sha: boundedText(payload.sha || target.sha, 64),
+    title: boundedText(commit.message || payload.message, 200),
+    url: payload.html_url || target.canonicalUrl,
+    author: loginFromUser(payload.author) || boundedText(commit.author && commit.author.name, 80),
+    updatedAt: commit.author && commit.author.date || payload.updated_at || "",
+  };
 }
 
 function normalizeGitHubPreview(target, payload) {
-  if (!target || typeof target !== "object" || !payload || typeof payload !== "object") return null;
-  if (target.kind === "repo") {
-    const fullName = compactText(payload.full_name || target.repository, 120) || target.repository;
-    return {
-      provider: "github",
-      kind: target.kind,
-      kindLabel: githubKindLabel(target.kind),
-      url: target.canonicalUrl,
-      title: fullName,
-      subtitle: compactText(payload.description || "", 220),
-      description: [
-        payload.private ? "Private" : "Public",
-        payload.fork ? "Fork" : "",
-        compactText(payload.language || "", 32),
-      ].filter(Boolean).join(" | "),
-      meta: [
-        formatCount(payload.stargazers_count) ? `${formatCount(payload.stargazers_count)} stars` : "",
-        formatCount(payload.open_issues_count) ? `${formatCount(payload.open_issues_count)} open issues` : "",
-      ].filter(Boolean).join(" | "),
-      avatarUrl: payload.owner && payload.owner.avatar_url ? String(payload.owner.avatar_url) : "",
-      accent: payload.private ? "muted" : "repo",
-      state: payload.archived ? "archived" : "",
-      stateLabel: payload.archived ? "Archived" : "",
-    };
-  }
-  if (target.kind === "issue") {
-    const repoName = compactText(target.repository, 120);
-    const state = payload.state === "closed" ? "closed" : "open";
-    return {
-      provider: "github",
-      kind: target.kind,
-      kindLabel: githubKindLabel(target.kind),
-      url: target.canonicalUrl,
-      title: compactText(payload.title || `${repoName} #${target.number}`, 220),
-      subtitle: `${repoName} #${target.number}`,
-      description: trimBodyPreview(payload.body || ""),
-      meta: compactText(payload.user && payload.user.login ? `by ${payload.user.login}` : "", 80),
-      avatarUrl: payload.user && payload.user.avatar_url ? String(payload.user.avatar_url) : "",
-      accent: state,
-      state,
-      stateLabel: state === "closed" ? "Closed" : "Open",
-    };
-  }
-  if (target.kind === "pull") {
-    const repoName = compactText(target.repository, 120);
-    const state = payload.merged_at ? "merged" : (payload.state === "closed" ? "closed" : "open");
-    return {
-      provider: "github",
-      kind: target.kind,
-      kindLabel: githubKindLabel(target.kind),
-      url: target.canonicalUrl,
-      title: compactText(payload.title || `${repoName} #${target.number}`, 220),
-      subtitle: `${repoName} #${target.number}`,
-      description: trimBodyPreview(payload.body || ""),
-      meta: [
-        payload.user && payload.user.login ? `by ${payload.user.login}` : "",
-        payload.draft ? "Draft" : "",
-      ].filter(Boolean).join(" | "),
-      avatarUrl: payload.user && payload.user.avatar_url ? String(payload.user.avatar_url) : "",
-      accent: state,
-      state,
-      stateLabel: state === "merged" ? "Merged" : (state === "closed" ? "Closed" : "Open"),
-    };
-  }
-  if (target.kind === "commit") {
-    const message = compactText(payload.commit && payload.commit.message ? String(payload.commit.message).split(/\r?\n/, 1)[0] : "", 220);
-    const repoName = compactText(target.repository, 120);
-    return {
-      provider: "github",
-      kind: target.kind,
-      kindLabel: githubKindLabel(target.kind),
-      url: target.canonicalUrl,
-      title: message || `${repoName} @ ${target.sha.slice(0, 7)}`,
-      subtitle: `${repoName} @ ${target.sha.slice(0, 7)}`,
-      description: compactText(payload.commit && payload.commit.author && payload.commit.author.name ? `by ${payload.commit.author.name}` : "", 120),
-      meta: formatCount(payload.stats && payload.stats.total) ? `${formatCount(payload.stats.total)} changes` : "",
-      avatarUrl: payload.author && payload.author.avatar_url ? String(payload.author.avatar_url) : "",
-      accent: "commit",
-      state: "",
-      stateLabel: "",
-    };
-  }
-  return null;
+  if (!target || !payload || typeof payload !== "object") return null;
+  if (target.kind === "issue" || target.kind === "pull") return normalizeIssuePreview(target, payload);
+  if (target.kind === "commit") return normalizeCommitPreview(target, payload);
+  return normalizeRepositoryPreview(target, payload);
 }
 
 module.exports = {
-  githubKindLabel,
   githubPreviewApiUrl,
   normalizeGitHubPreview,
   parseGitHubUrl,

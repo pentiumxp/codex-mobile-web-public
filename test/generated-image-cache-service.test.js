@@ -7,6 +7,7 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const {
+  cacheGeneratedImageDataUrl,
   cacheGeneratedImageForItem,
   generatedImagePathForId,
   imageContentTypeForPath,
@@ -48,7 +49,33 @@ test("generated image cache copies imageView screenshots into a runtime-safe cac
   assert.equal(generatedImagePathForId(cacheRoot, cached.cacheId), cached.cachedPath);
 });
 
+test("generated image cache stores safe bitmap data urls", () => {
+  const cacheRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-generated-cache-"));
+  try {
+    const cached = cacheGeneratedImageDataUrl("data:image/png;base64,iVBORw0KGgo=", {
+      cacheRoot,
+      threadId: "019ea77e-4e36-7820-adf4-9bf0272965b8",
+      maxBytes: 1024,
+      contentTypes: imageTypes,
+    });
+
+    assert.ok(cached.cacheId.includes("019ea77e-4e36-7820-adf4-9bf0272965b8/"));
+    assert.equal(cached.contentType, "image/png");
+    assert.equal(path.extname(cached.cachedPath), ".png");
+    assert.equal(fs.readFileSync(cached.cachedPath).toString("base64"), "iVBORw0KGgo=");
+    assert.equal(generatedImagePathForId(cacheRoot, cached.cacheId), cached.cachedPath);
+  } finally {
+    fs.rmSync(cacheRoot, { recursive: true, force: true });
+  }
+});
+
 test("generated image cache rejects non-image ids and path traversal", () => {
   assert.equal(imageContentTypeForPath("note.txt", imageTypes), "");
+  assert.equal(cacheGeneratedImageDataUrl("data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=", {
+    cacheRoot: os.tmpdir(),
+    threadId: "thread",
+    maxBytes: 1024,
+    contentTypes: imageTypes,
+  }), null);
   assert.throws(() => generatedImagePathForId(os.tmpdir(), "../outside.png"), /Invalid generated image id/);
 });

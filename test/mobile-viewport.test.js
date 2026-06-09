@@ -10,6 +10,7 @@ const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"),
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
 const swJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "sw.js"), "utf8");
 const viewportMetricsJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "viewport-metrics.js"), "utf8");
+const platformPointer = fs.readFileSync(path.resolve(__dirname, "..", "docs", "HOME_AI_PLATFORM_CONTRACT.md"), "utf8");
 
 test("mobile viewport and early guards disable page zoom", () => {
   assert.match(indexHtml, /name="viewport" content="[^"]*maximum-scale=1/);
@@ -25,15 +26,29 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(indexHtml, /<script src="\/plugin-embed\.js"><\/script>/);
   assert.match(appJs, /const viewportMetrics = window\.CodexViewportMetrics/);
   assert.match(appJs, /viewportMetrics\.measureViewport\(\{/);
-  assert.match(viewportMetricsJs, /const keyboardShrunk = keyboardCandidate && keyboardInputActive/);
-  assert.match(viewportMetricsJs, /const height = keyboardShrunk \? visualBottom : Math\.max\(visualBottom \|\| 0, layout \|\| 0\)/);
+  assert.match(viewportMetricsJs, /const keyboardShrunk = Boolean\(keyboardInputActive && \(keyboardCandidate \|\| offsetKeyboardShifted \|\| scrollKeyboardShifted \|\| hostKeyboardVisible\)\)/);
+  assert.match(viewportMetricsJs, /hostKeyboardBottomInset/);
+  assert.match(viewportMetricsJs, /hostKeyboardVisible/);
+  assert.match(viewportMetricsJs, /offsetKeyboardShifted/);
+  assert.match(viewportMetricsJs, /scrollKeyboardShifted/);
   assert.match(appJs, /if \(viewport\.keyboardShrunk\) \{[\s\S]*--app-height/);
+  assert.match(appJs, /--app-top/);
   assert.match(appJs, /document\.documentElement\.style\.removeProperty\("--app-height"\)/);
   assert.match(appJs, /document\.documentElement\.classList\.toggle\("keyboard-open", viewport\.keyboardShrunk\)/);
+  assert.match(appJs, /pluginHostViewport: null/);
+  assert.match(appJs, /function normalizeHermesPluginViewportMessage\(data\)/);
+  assert.match(appJs, /data\.type !== "hermes\.plugin\.viewport"/);
+  assert.match(appJs, /handleHermesPluginViewportMessage\(event && event\.data\)/);
+  assert.match(appJs, /function isHermesKeyboardInputActive\(\) \{[\s\S]*isHermesEmbedMode\(\)[\s\S]*isKeyboardEditableElement\(document\.activeElement\)/);
+  assert.match(appJs, /window\.visualViewport\.addEventListener\("resize", \(\) => \{[\s\S]*if \(!isHermesKeyboardInputActive\(\)\) \{[\s\S]*scheduleVisualRecovery\("visual-viewport"/);
+  assert.match(appJs, /window\.visualViewport\.addEventListener\("scroll", \(\) => \{[\s\S]*if \(!isHermesKeyboardInputActive\(\)\) \{[\s\S]*scheduleVisualRecovery\("visual-viewport-scroll"/);
   assert.match(stylesCss, /html,\s*\nbody\s*{[\s\S]*touch-action:\s*pan-x pan-y;/);
   assert.match(stylesCss, /html\s*{[\s\S]*height:\s*-webkit-fill-available;/);
   assert.match(stylesCss, /body\s*{[\s\S]*min-height:\s*-webkit-fill-available;/);
-  assert.match(stylesCss, /html\.embed-hermes \.composer\s*{[\s\S]*padding-bottom:\s*clamp\(12px, calc\(env\(safe-area-inset-bottom, 0px\) - 82px\), 56px\);/);
+  assert.match(stylesCss, /html\.embed-hermes \.app\s*{[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
+  assert.match(stylesCss, /html\.embed-hermes \.app\s*{[\s\S]*min-height:\s*0;/);
+  assert.match(stylesCss, /html\.embed-hermes \.app\s*{[\s\S]*transform:\s*translateY\(var\(--app-top, 0px\)\);/);
+  assert.match(stylesCss, /html\.embed-hermes \.composer\s*{[\s\S]*padding-bottom:\s*max\(12px, var\(--host-bottom-safe-area, 0px\)\);/);
   assert.match(stylesCss, /html\.embed-hermes\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*10px;/);
   assert.match(stylesCss, /html\.embed-hermes \.main \.version-actions/);
   assert.match(indexHtml, /id="continuationDialog"/);
@@ -43,14 +58,28 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(stylesCss, /\.continuation-dialog/);
   assert.match(stylesCss, /html\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*12px;/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.composer\s*{[\s\S]*gap:\s*6px;[\s\S]*padding:\s*7px 12px clamp\(8px, calc\(env\(safe-area-inset-bottom, 0px\) - 88px\), 52px\);/);
-  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.embed-hermes \.composer\s*{[\s\S]*padding-bottom:\s*clamp\(8px, calc\(env\(safe-area-inset-bottom, 0px\) - 84px\), 56px\);/);
+  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.embed-hermes \.composer\s*{[\s\S]*padding-bottom:\s*max\(12px, var\(--host-bottom-safe-area, 0px\)\);/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.embed-hermes\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*8px;/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*7px;/);
+  assert.match(platformPointer, /embedded-plugin-keyboard-composer/);
+  assert.match(platformPointer, /--plugin-thread-id <thread-id>/);
+  assert.match(platformPointer, /development visual check passes/);
 });
 
-test("public app shell cache advances after Fast control and refresh prompt hardening", () => {
+test("public app shell cache advances after thread side chat panel", () => {
   assert.match(swJs, /codex-mobile-shell-v252/);
   assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v252"/);
+  assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
+  assert.match(stylesCss, /\.side-chat-scroll\s*{[\s\S]*overflow:\s*auto;/);
+  assert.match(stylesCss, /\.side-chat-form textarea\s*{[\s\S]*max-height:\s*min\(22vh, 156px\);/);
+  assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*z-index:\s*12;/);
+  assert.match(stylesCss, /html\.keyboard-open \.subagent-panel\s*{[\s\S]*bottom:\s*max\(8px, var\(--host-bottom-safe-area, 0px\)\);[\s\S]*max-height:\s*none;/);
+  assert.match(stylesCss, /html\.keyboard-open \.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(44px, 0\.18fr\) minmax\(0, 1fr\);/);
+  assert.match(stylesCss, /html\.keyboard-open \.side-chat-form textarea\s*{[\s\S]*min-height:\s*54px;[\s\S]*max-height:\s*min\(14vh, 84px\);/);
+  assert.match(appJs, /function ensureSideChatDraftVisible\(/);
+  assert.match(appJs, /requestAnimationFrame\(ensureSideChatDraftVisible\)/);
+  assert.match(appJs, /function flushSideChatDraftNow\(/);
+  assert.match(appJs, /loadSideChat\(threadId, \{ silent: true \}\)\.catch\(showError\)/);
   assert.match(appJs, /function serverBuildIdFromConfig\(config\) \{\s*return String\(config && \(config\.clientBuildId \|\| config\.shellCacheName \|\| config\.buildId\) \|\| ""\)\.trim\(\);/);
   assert.doesNotMatch(appJs, /function serverBuildIdFromConfig\(config\) \{\s*return String\(config && \(config\.clientBuildId \|\| config\.shellCacheName \|\| config\.buildId \|\| config\.version\)/);
   assert.match(appJs, /startupThreadOpenPending: false/);
@@ -111,7 +140,9 @@ test("public app shell cache advances after Fast control and refresh prompt hard
   assert.match(appJs, /const PLUGIN_EMBED_BACK_EDGE_SWIPE_PX = 44/);
   assert.match(appJs, /function installHermesPluginBackSwipeGuard\(\)/);
   assert.match(appJs, /pluginEmbedApi\.navigationMessage\(state, pluginNavigationUiState\(\)\)/);
+  assert.doesNotMatch(appJs, /function pluginEmbedBackSwipeShouldExitHost\(\)/);
   assert.match(appJs, /document\.addEventListener\("touchstart", startPluginBackSwipe, \{ passive: false, capture: true \}\)/);
+  assert.doesNotMatch(appJs, /plugin_root_unhandled/);
   assert.match(appJs, /handlePluginBack\(\{\s*\n\s*preventDefault\(\) \{\},\s*\n\s*stopPropagation\(\) \{\},\s*\n\s*\}\);/);
   assert.match(appJs, /installPluginWindowingGuards\(\);\s*\n\s*installHermesPluginBackSwipeGuard\(\);/);
   assert.match(appJs, /const MAX_VISIBLE_TURNS = 10/);

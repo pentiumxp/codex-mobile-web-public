@@ -9,73 +9,77 @@ const {
   parseGitHubUrl,
 } = require("../adapters/github-link-preview-service");
 
-test("parses supported GitHub URLs into canonical preview targets", () => {
-  assert.deepEqual(parseGitHubUrl("https://github.com/pentiumxp/codex-mobile-web-public"), {
-    provider: "github",
-    kind: "repo",
-    owner: "pentiumxp",
-    repo: "codex-mobile-web-public",
-    repository: "pentiumxp/codex-mobile-web-public",
-    canonicalUrl: "https://github.com/pentiumxp/codex-mobile-web-public",
+test("parses supported GitHub preview URLs and rejects unsafe targets", () => {
+  assert.deepEqual(parseGitHubUrl("https://github.com/openai/codex"), {
+    owner: "openai",
+    repo: "codex",
+    canonicalUrl: "https://github.com/openai/codex",
+    kind: "repository",
   });
-  assert.equal(parseGitHubUrl("https://github.com/pentiumxp/codex-mobile-web-public/issues/49").kind, "issue");
-  assert.equal(parseGitHubUrl("https://github.com/pentiumxp/codex-mobile-web-public/pull/49/files").kind, "pull");
-  assert.equal(parseGitHubUrl("https://github.com/pentiumxp/codex-mobile-web-public/commit/d6f97258bbb60c391bfa522937fe2b4c07e3a0d8").kind, "commit");
-  assert.equal(parseGitHubUrl("https://example.com/pentiumxp/codex-mobile-web-public"), null);
+  assert.deepEqual(parseGitHubUrl("https://www.github.com/openai/codex/pull/42?diff=split"), {
+    owner: "openai",
+    repo: "codex",
+    canonicalUrl: "https://github.com/openai/codex/pull/42",
+    kind: "pull",
+    number: 42,
+  });
+  assert.deepEqual(parseGitHubUrl("https://github.com/openai/codex/commit/abcdef1"), {
+    owner: "openai",
+    repo: "codex",
+    canonicalUrl: "https://github.com/openai/codex/commit/abcdef1",
+    kind: "commit",
+    sha: "abcdef1",
+  });
+  assert.equal(parseGitHubUrl("http://github.com/openai/codex"), null);
+  assert.equal(parseGitHubUrl("https://example.com/openai/codex"), null);
+  assert.equal(parseGitHubUrl("https://github.com/openai/codex/releases/tag/v1"), null);
 });
 
-test("builds GitHub REST API URLs for preview targets", () => {
+test("builds GitHub API URLs only from parsed preview targets", () => {
   assert.equal(
-    githubPreviewApiUrl(parseGitHubUrl("https://github.com/pentiumxp/codex-mobile-web-public")),
-    "https://api.github.com/repos/pentiumxp/codex-mobile-web-public",
+    githubPreviewApiUrl(parseGitHubUrl("https://github.com/openai/codex")),
+    "https://api.github.com/repos/openai/codex",
   );
   assert.equal(
-    githubPreviewApiUrl(parseGitHubUrl("https://github.com/pentiumxp/codex-mobile-web-public/pull/49")),
-    "https://api.github.com/repos/pentiumxp/codex-mobile-web-public/pulls/49",
+    githubPreviewApiUrl(parseGitHubUrl("https://github.com/openai/codex/issues/7")),
+    "https://api.github.com/repos/openai/codex/issues/7",
+  );
+  assert.equal(
+    githubPreviewApiUrl(parseGitHubUrl("https://github.com/openai/codex/pull/8")),
+    "https://api.github.com/repos/openai/codex/pulls/8",
+  );
+  assert.equal(
+    githubPreviewApiUrl(parseGitHubUrl("https://github.com/openai/codex/commit/abcdef1")),
+    "https://api.github.com/repos/openai/codex/commits/abcdef1",
   );
 });
 
-test("normalizes GitHub repo preview payloads for client cards", () => {
-  const preview = normalizeGitHubPreview(
-    parseGitHubUrl("https://github.com/pentiumxp/codex-mobile-web-public"),
-    {
-      full_name: "pentiumxp/codex-mobile-web-public",
-      description: "Mobile client for Codex app-server",
-      private: false,
-      fork: false,
-      language: "JavaScript",
-      stargazers_count: 42,
-      open_issues_count: 3,
-      owner: { avatar_url: "https://avatars.example/repo.png" },
-    },
-  );
+test("normalizes bounded GitHub preview payloads", () => {
+  const repoTarget = parseGitHubUrl("https://github.com/openai/codex");
+  const repoPreview = normalizeGitHubPreview(repoTarget, {
+    full_name: "openai/codex",
+    description: "A ".repeat(400),
+    html_url: "https://github.com/openai/codex",
+    language: "JavaScript",
+    stargazers_count: 12,
+    forks_count: 3,
+    updated_at: "2026-06-09T00:00:00Z",
+  });
+  assert.equal(repoPreview.kind, "repository");
+  assert.equal(repoPreview.title, "openai/codex");
+  assert.equal(repoPreview.description.length, 300);
+  assert.equal(repoPreview.stars, 12);
 
-  assert.equal(preview.kind, "repo");
-  assert.equal(preview.title, "pentiumxp/codex-mobile-web-public");
-  assert.equal(preview.subtitle, "Mobile client for Codex app-server");
-  assert.equal(preview.description, "Public | JavaScript");
-  assert.equal(preview.meta, "42 stars | 3 open issues");
-});
-
-test("normalizes GitHub pull request previews with merged state", () => {
-  const preview = normalizeGitHubPreview(
-    parseGitHubUrl("https://github.com/pentiumxp/codex-mobile-web-public/pull/49"),
-    {
-      title: "修复 Mermaid 预览渲染边界",
-      body: "Fix Mermaid preview rendering edges.",
-      state: "closed",
-      merged_at: "2026-06-08T09:47:56Z",
-      draft: false,
-      user: {
-        login: "franksong2702",
-        avatar_url: "https://avatars.example/pr.png",
-      },
-    },
-  );
-
-  assert.equal(preview.kind, "pull");
-  assert.equal(preview.state, "merged");
-  assert.equal(preview.stateLabel, "Merged");
-  assert.match(preview.subtitle, /pentiumxp\/codex-mobile-web-public #49/);
-  assert.equal(preview.meta, "by franksong2702");
+  const issuePreview = normalizeGitHubPreview(parseGitHubUrl("https://github.com/openai/codex/issues/5"), {
+    number: 5,
+    title: "Broken rendering",
+    body: "Steps to reproduce",
+    html_url: "https://github.com/openai/codex/issues/5",
+    state: "open",
+    user: { login: "alice" },
+    updated_at: "2026-06-09T01:00:00Z",
+  });
+  assert.equal(issuePreview.kind, "issue");
+  assert.equal(issuePreview.number, 5);
+  assert.equal(issuePreview.author, "alice");
 });

@@ -29,6 +29,17 @@ function functionBody(source, name) {
   throw new Error(`${name} body not closed`);
 }
 
+function evaluatedPublicPrReviewWorkspacePath() {
+  const sources = [
+    "normalizeFsPath",
+    "workspacePathBaseName",
+    "workspacePathIsVisible",
+    "visibleWorkspaceWithBaseName",
+    "publicPrReviewWorkspacePath",
+  ].map((name) => functionBody(appJs, name));
+  return (state) => Function("state", `${sources.join("\n")}\nreturn publicPrReviewWorkspacePath();`)(state);
+}
+
 test("self-update UI explains supervisor-dependent restart", () => {
   assert.match(appJs, /等待重启…/);
   assert.match(appJs, /服务会退出并等待启动任务或守护脚本拉起/);
@@ -80,8 +91,9 @@ test("page prompts for refresh when server client build changes", () => {
   assert.doesNotMatch(functionBody(appJs, "checkPageRefreshAvailability"), /preparePageShellAssets\(config, \{ populateCache: true \}\)/);
   assert.match(functionBody(appJs, "initializePageBuildState"), /shouldPromptForServerBuildChange\(currentServerBuildId, state\.serverBuildId\)/);
   assert.match(functionBody(appJs, "checkPageRefreshAvailability"), /const serverBuildNeedsRefresh = serverBuildChanged && shouldPromptForServerBuildChange\(nextBuildId, state\.serverBuildId\)/);
-  assert.match(functionBody(appJs, "checkPageRefreshAvailability"), /if \(isHermesEmbedMode\(\)\) \{[\s\S]*if \(serverBuildNeedsRefresh\) \{[\s\S]*requestHermesPluginRefresh\("server_build_changed"\);/);
-  assert.match(functionBody(appJs, "checkPageRefreshAvailability"), /if \(!serverBuildNeedsRefresh && assetsChanged\) \{[\s\S]*state\.serverAssetBuildId = nextAssetBuildId;/);
+  assert.match(functionBody(appJs, "checkPageRefreshAvailability"), /if \(serverBuildNeedsRefresh\) \{[\s\S]*if \(isHermesEmbedMode\(\)\) \{[\s\S]*requestHermesPluginRefresh\("server_build_changed"\);/);
+  assert.match(functionBody(appJs, "checkPageRefreshAvailability"), /if \(assetsChanged && !serverBuildNeedsRefresh\) \{[\s\S]*state\.serverAssetBuildId = nextAssetBuildId;[\s\S]*return;/);
+  assert.doesNotMatch(functionBody(appJs, "checkPageRefreshAvailability"), /if \(serverBuildNeedsRefresh \|\| assetsChanged\)/);
   assert.match(functionBody(appJs, "renderPageRefreshPrompt"), /New version available\. Tap to refresh\./);
   assert.match(functionBody(appJs, "renderPageRefreshPrompt"), /Manual refresh only/);
   assert.match(appJs, /cache:\s*"no-store"/);
@@ -93,6 +105,8 @@ test("page prompts for refresh when server client build changes", () => {
   assert.match(appJs, /hardRefreshButton"\)\.addEventListener\("click", \(\) => handleHardRefreshClick\(\)\.catch\(showError\)\)/);
   assert.match(appJs, /addEventListener\("click", refreshPageForNewBuild\)/);
   assert.doesNotMatch(stylesCss, /html\.embed-hermes #pageRefreshPrompt/);
+  assert.match(stylesCss, /html\.embed-hermes #refreshThreads\s*\{[\s\S]*display:\s*none;/);
+  assert.match(stylesCss, /html\.embed-hermes #connectionState\s*\{[\s\S]*display:\s*none;/);
   assert.match(stylesCss, /\.page-refresh-prompt/);
   assert.match(stylesCss, /\.hard-refresh-button/);
 });
@@ -112,12 +126,22 @@ test("page refresh prompt also handles server restart reconnects", () => {
   assert.match(appJs, /Service restarted\. Tap to refresh\./);
   assert.match(appJs, /Connection changed\. Tap to refresh\./);
   assert.match(appJs, /Refreshing and reconnecting\.\.\./);
+  assert.match(functionBody(appJs, "showReconnectRefreshPrompt"), /if \(isHermesEmbedMode\(\) && reason !== "restart"\) return;/);
   assert.match(appJs, /async function waitForPageBuildConfig\(timeoutMs = 18000\)/);
   assert.match(appJs, /state\.pageRefreshReason === "reconnect" \|\| state\.pageRefreshReason === "restart"[\s\S]*await waitForPageBuildConfig\(\)/);
-  assert.match(appJs, /showReconnectRefreshPrompt\("reconnect"\);[\s\S]*showError\(err\)/);
+  assert.match(appJs, /showReconnectRefreshPrompt\("reconnect"\);[\s\S]*if \(!isHermesEmbedMode\(\)\) showError\(err\)/);
   assert.match(appJs, /showReconnectRefreshPrompt\("restart"\)/);
+  assert.match(appJs, /function shouldRefreshThreadListDuringEventRecovery\(\)/);
+  assert.match(functionBody(appJs, "shouldRefreshThreadListDuringEventRecovery"), /return !isHermesEmbedMode\(\) \|\| !state\.threads\.length;/);
+  assert.match(functionBody(appJs, "refreshThreadListDuringEventRecovery"), /if \(!shouldRefreshThreadListDuringEventRecovery\(\)\) return false;/);
+  assert.match(functionBody(appJs, "refreshThreadListDuringEventRecovery"), /await loadThreads\(\{ silent: isHermesEmbedMode\(\) \|\| Boolean\(state\.threads\.length\) \}\);/);
+  assert.match(functionBody(appJs, "scheduleEventFallbackPoll"), /await refreshThreadListDuringEventRecovery\(\);/);
+  assert.doesNotMatch(functionBody(appJs, "scheduleEventFallbackPoll"), /await loadThreads\(/);
+  assert.match(functionBody(appJs, "scheduleEventFallbackPoll"), /if \(state\.currentThreadId\) await refreshCurrentThread\(\);/);
+  assert.match(functionBody(appJs, "recoverEventStreamWithApiFallback"), /await refreshThreadListDuringEventRecovery\(\);/);
+  assert.doesNotMatch(functionBody(appJs, "recoverEventStreamWithApiFallback"), /await loadThreads\(/);
   assert.match(functionBody(appJs, "recoverEventStreamWithApiFallback"), /if \(isHermesEmbedMode\(\)\) \{[\s\S]*scheduleEventFallbackPoll\(\);[\s\S]*scheduleEventReconnectRetry\(\);/);
-  assert.match(functionBody(appJs, "connectEvents"), /if \(!isHermesEmbedMode\(\)\) markActivity\("重连"\)/);
+  assert.match(functionBody(appJs, "connectEvents"), /if \(!isHermesEmbedMode\(\)\) \{[\s\S]*markActivity\("重连"\);[\s\S]*updateConnectionState\(null, "Reconnecting"\);[\s\S]*\}/);
   assert.doesNotMatch(appJs, /updateConnectionState\(null, "Reconnecting"\);\s*showReconnectRefreshPrompt/);
   assert.match(appJs, /pageRefreshPrompt\.addEventListener\("click", refreshPageForNewBuild\)/);
   assert.doesNotMatch(functionBody(appJs, "handleSharedRestartClick"), /refreshPageForNewBuild\(\)\.catch\(showError\)/);
@@ -133,10 +157,48 @@ test("public pull request check prompts before public publishing work", () => {
   assert.match(appJs, /function renderPublicPrStatus\(\)/);
   assert.match(appJs, /function maybePromptPublicPrMerge\(status\)/);
   assert.match(appJs, /function publicPrMergeInstruction\(status\)/);
+  assert.match(appJs, /const PUBLIC_PR_REVIEW_THREAD_TITLE = "Codex Mobile Public PR";/);
+  assert.match(appJs, /function findPublicPrReviewThread\(workspacePath = ""\)/);
+  assert.match(appJs, /function publicPrReviewWorkspacePath\(\)/);
+  assert.match(appJs, /async function openPublicPrReviewThreadIfAvailable\(workspacePath, text\)/);
+  assert.match(appJs, /await loadThread\(target\.id, \{ source: "public-pr" \}\);/);
   assert.match(appJs, /state\.appWorkspacePath = String\(config\.workspacePath \|\| state\.appWorkspacePath \|\| ""\)\.trim\(\);/);
-  assert.match(appJs, /saveCurrentDraftNow\(\);[\s\S]*clearCurrentThreadSelection\(\{ saveDraft: false \}\);[\s\S]*state\.selectedCwd = workspacePath;[\s\S]*state\.newThreadDraft = true;/);
+  assert.match(functionBody(appJs, "preparePublicPrMergePrompt"), /const workspacePath = publicPrReviewWorkspacePath\(\);/);
+  assert.match(functionBody(appJs, "preparePublicPrMergePrompt"), /await loadWorkspaces\(\)\.catch/);
+  assert.match(appJs, /if \(await openPublicPrReviewThreadIfAvailable\(workspacePath, text\)\) \{[\s\S]*return;[\s\S]*\}/);
+  assert.match(appJs, /state\.newThreadTitle = publicPrReviewThreadTitle\(\);[\s\S]*state\.newThreadDraft = true;|state\.newThreadDraft = true;[\s\S]*state\.newThreadTitle = publicPrReviewThreadTitle\(\);/);
+  assert.match(appJs, /body\.append\("title", submittedTitle\);/);
   assert.match(appJs, /scheduleStartupPublicPrCheck\(\)/);
   assert.match(appJs, /handlePublicPrStatusClick\(\)\.catch\(showError\)/);
+});
+
+test("public pull request prompt targets visible source workspace when production path is not visible", () => {
+  const publicPrReviewWorkspacePath = evaluatedPublicPrReviewWorkspacePath();
+  assert.equal(publicPrReviewWorkspacePath({
+    appWorkspacePath: "/Users/hermes-host/HermesMobile/plugins/codex-mobile-web",
+    selectedCwd: "",
+    currentThread: null,
+    workspaces: [
+      { cwd: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web" },
+      { cwd: "/Users/hermes-dev/HermesMobileDev/public-mirrors/codex-mobile-web-public" },
+    ],
+  }), "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web");
+  assert.equal(publicPrReviewWorkspacePath({
+    appWorkspacePath: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web",
+    selectedCwd: "/Users/other/current",
+    currentThread: { cwd: "/Users/other/thread" },
+    workspaces: [
+      { cwd: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web" },
+    ],
+  }), "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web");
+  assert.equal(publicPrReviewWorkspacePath({
+    appWorkspacePath: "/unregistered/deploy/plugin",
+    selectedCwd: "/Users/hermes-dev/HermesMobileDev/app",
+    currentThread: null,
+    workspaces: [
+      { cwd: "/Users/hermes-dev/HermesMobileDev/app" },
+    ],
+  }), "/Users/hermes-dev/HermesMobileDev/app");
 });
 
 test("version button opens an update panel with Public release status", () => {

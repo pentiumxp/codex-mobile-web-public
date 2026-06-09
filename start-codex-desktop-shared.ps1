@@ -242,7 +242,7 @@ function Ensure-MuxShim {
         throw "C# compiler not found. Cannot build mux shim exe for CODEX_CLI_PATH."
     }
 
-    & $compiler /nologo /target:exe /optimize+ "/out:$OutputPath" $SourcePath
+    & $compiler /nologo /target:winexe /optimize+ "/out:$OutputPath" $SourcePath
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to build mux shim exe: $OutputPath"
     }
@@ -257,7 +257,7 @@ if (-not (Test-Path -LiteralPath $MuxScript)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($MuxCommand)) {
-    $MuxCommand = Join-Path $scriptRoot "codex-app-server-mux.exe"
+    $MuxCommand = Join-Path $scriptRoot "codex-app-server-mux-win.exe"
 }
 
 $muxExtension = [System.IO.Path]::GetExtension($MuxCommand).ToLowerInvariant()

@@ -117,7 +117,10 @@ Authenticated SSE probes should receive one `data:` status event and one
 `: keepalive` within about 32 seconds. If the SSE stream fails but ordinary JSON
 routes such as proxied `/api/status` still work, current embed clients fall back
 to bounded polling and retry EventSource with backoff instead of repeatedly
-showing the reconnect/refresh prompt.
+showing the reconnect/refresh prompt. The thread list should keep its current DOM
+while this fallback is healthy; a visible `Connected -> Reconnecting -> Connected`
+cycle on the plugin thread list means the loaded shell is stale or the JSON
+fallback is also failing.
 
 The current restart service removes same-prefix submitted jobs before restarting
 a LaunchAgent/LaunchDaemon-managed listener and no longer creates new
@@ -534,14 +537,14 @@ node --test test\conversation-render.test.js test\mobile-viewport.test.js
 
 ## ImageView Screenshot Shows Broken Image
 
-If a Codex turn displays an `Image` card for a visual verification screenshot but the thumbnail is broken, distinguish it from uploaded attachments first. Tool-generated screenshots often come from `view_image` / `imageView` paths under `%TEMP%`, not `%USERPROFILE%\.codex-mobile-web\uploads`. Codex-generated effect images can also arrive as `imageGeneration` items with `savedPath` under `%USERPROFILE%\.codex\generated_images`.
+If a Codex turn displays an `Image` card for a visual verification screenshot but the thumbnail is broken, distinguish it from uploaded attachments first. Tool-generated screenshots often come from `view_image` / `imageView` paths under `%TEMP%`, not `%USERPROFILE%\.codex-mobile-web\uploads`. Codex-generated effect images can also arrive as `imageGeneration` items with `savedPath` under `%USERPROFILE%\.codex\generated_images`. Some Codex tool screenshots arrive only in rollout `function_call_output` / `custom_tool_call_output` payloads as `input_image` parts with `data:image/...;base64,...`; Mobile Web should project those into `imageView` cards during thread-detail compaction.
 
-Current behavior should cache small `imageView` and `imageGeneration.savedPath` source files into `%USERPROFILE%\.codex-mobile-web\generated-images` and serve them through `/api/generated-images/file`. Do not fix this by adding `%TEMP%` or `%USERPROFILE%\.codex` to `CODEX_MOBILE_FILE_PREVIEW_ROOTS`; that would broaden local file preview access beyond the current thread workspace. If the source temp/generated file was already deleted before Mobile Web saw the item, the historical card cannot be recovered from the path alone.
+Current behavior should cache small `imageView`, `imageGeneration.savedPath`, and safe bitmap tool-output data images into `%USERPROFILE%\.codex-mobile-web\generated-images` and serve them through `/api/generated-images/file`. Receipt-only historical turn compaction must keep these image cards; otherwise only the latest turn's generated image will appear after thread projection/reload. If a rollout tool-output image has no explicit turn id, Mobile Web should attach it by timestamp window rather than appending every unscoped image to the latest turn. Do not fix this by adding `%TEMP%` or `%USERPROFILE%\.codex` to `CODEX_MOBILE_FILE_PREVIEW_ROOTS`; that would broaden local file preview access beyond the current thread workspace. If the source temp/generated file was already deleted before Mobile Web saw the item, the historical card cannot be recovered from the path alone.
 
 Focused checks:
 
 ```powershell
-node --test test\generated-image-cache-service.test.js test\file-preview-ui.test.js test\mobile-viewport.test.js
+node --test test\generated-image-cache-service.test.js test\tool-output-image-projection.test.js test\file-preview-ui.test.js test\mobile-viewport.test.js
 ```
 
 ## Usage Card Shows Zero Tokens
@@ -924,11 +927,92 @@ node --test test\manual-restart-ui.test.js test\mobile-viewport.test.js
 
 ## Public PR Prompt Targets The Wrong Thread
 
-Public-PR review preparation must not reuse an arbitrary currently open thread.
-Current builds should route the generated review text into a new-thread draft for
-the app workspace path reported by `/api/public-config.workspacePath`. If the
-prompt still lands inside an unrelated Agent/Hermes thread, the browser build is
-stale or the client never loaded the workspace-path config.
+Public-PR review preparation must not reuse an arbitrary currently open thread
+or an invisible production deployment directory. Current builds should first
+resolve a visible review workspace: use `/api/public-config.workspacePath` when
+that path is visible to Codex Desktop, otherwise use a visible workspace with
+the same basename, such as resolving
+`/Users/hermes-host/HermesMobile/plugins/codex-mobile-web` to
+`/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web`.
+
+After resolving the workspace, current builds should reuse a same-workspace
+thread titled `Codex Mobile Public PR`; if no matching thread exists, they
+route the generated review text into a new-thread draft for that resolved
+workspace and send that fixed title to `/api/threads/new-message`. If the
+prompt still lands inside an unrelated Agent/Hermes thread or the new-thread
+send returns `Workspace is not visible in Codex Desktop`, the browser build is
+stale or the client never loaded the workspace list needed for resolution.
+
+## Repeated New Version Prompt
+
+The visible "New version" prompt should be driven by comparable app-shell
+identity, not by every static-file hash change. Check:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8787/api/public-config |
+  Select-Object clientBuildId,shellCacheName,buildId
+```
+
+If the open browser has an older `CLIENT_BUILD_ID` than
+`clientBuildId`/`shellCacheName`, one prompt is expected. After the browser loads
+the newer shell, later asset-only `buildId` changes should be silent. If prompts
+continue after the loaded shell and server `clientBuildId` match, inspect
+`public/app.js` `checkPageRefreshAvailability()` and verify asset-only drift
+still returns after updating `state.serverAssetBuildId` without setting
+`state.pageRefreshAvailable`.
+
+## Windows Shows A Codex Console Window
+
+The shared app-server chain has three possible visible-window sources:
+
+- the user-facing launcher host; and
+- the `CODEX_CLI_PATH` shim that Codex Desktop starts when it needs an
+  app-server process; and
+- a Mobile-owned `codex app-server` process that accidentally inherited
+  Desktop bridge environment variables, then starts CLI tool subprocesses
+  through the shim.
+
+Desktop shortcuts should target `wscript.exe` with
+`start-codex-desktop-shared-hidden.vbs`, or another hidden host. Do not point a
+desktop shortcut at `start-codex-desktop-*.cmd`; a `.cmd` wrapper can open a
+command window before it reaches hidden PowerShell.
+
+The mux shim must be compiled as a Windows subsystem executable:
+
+```powershell
+Select-String .\start-codex-desktop-shared.ps1 -Pattern "/target:winexe"
+```
+
+The current launcher builds `codex-app-server-mux-win.exe` by default. This
+avoids rebuild failures when older Desktop-spawned `codex-app-server-mux.exe`
+processes are still running. Rebuild through the shared launcher without
+starting Desktop:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\start-codex-desktop-shared.ps1 -PrintOnly
+```
+
+Existing Desktop-spawned shim processes keep their original executable image.
+Quit/relaunch Codex Desktop through the hidden shortcut after rebuilding so new
+app-server helper processes use the windowless shim. Current harness coverage is
+`node --test test\desktop-profile-launcher.test.js`.
+
+If Codex Desktop is not running but console windows still flash, inspect the
+Mobile app-server process tree before changing Desktop shortcuts:
+
+```powershell
+Get-CimInstance Win32_Process |
+  Where-Object { $_.CommandLine -match 'codex-app-server-mux|codex.exe|node_repl|cmd.exe|powershell.exe' } |
+  Select-Object ProcessId,ParentProcessId,Name,CommandLine
+```
+
+Seeing `node_repl.exe` or other CLI tool children under Mobile's
+`codex.exe app-server`, followed by `codex-app-server-mux.exe app-server
+--listen stdio://`, indicates leaked `CODEX_CLI_PATH` / `CODEX_MUX_*` state.
+Mobile launchers and the mux/server child-spawn paths must clear those variables
+before starting the real CLI child. The fix applies on the next shared-chain
+restart; existing running CLI children keep their original environment.
+
 ## Image Upload Context Growth
 
 Large rollout growth after image upload often comes from repeated `compacted.replacement_history` snapshots with `input_image` payloads.
@@ -1354,9 +1438,16 @@ newly created workspace is rejected by `/api/threads/new-message`, check:
 - `GET /api/workspaces` should include the created cwd with `source:"mobile"`.
 - `visibleWorkspaceRoots()` should merge the registry service list before the
   new-thread route checks workspace visibility.
+- If Codex Desktop must also show Mobile-created workspaces, confirm the
+  listener was started with `CODEX_MOBILE_SYNC_DESKTOP_WORKSPACES=1`. The
+  created cwd should be stored as a canonical real path, and the same root
+  should be present in `electron-saved-workspace-roots`, `project-order`, and
+  `active-workspace-roots` in the relevant `.codex-global-state.json` files.
 
-Do not fix this by editing `.codex\.codex-global-state.json` manually. Use the
-Mobile Web registry route or Codex/Desktop workspace selection paths.
+Do not fix routine creation failures by editing `.codex\.codex-global-state.json`
+manually. Use the Mobile Web registry route or Codex/Desktop workspace
+selection paths, and back up global-state files before any explicit operational
+repair.
 
 ## Codex Profile Switch Does Not Change Account
 

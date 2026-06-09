@@ -57,14 +57,14 @@
         }
       }
       function readFontSize() {
-        var pluginAppearance = readPluginAppearance();
-        if (pluginAppearance.fontSize) return pluginAppearance.fontSize;
         try {
           var value = localStorage.getItem("codexMobileFontSize") || "default";
-          return allowedFontSizes[value] ? value : "default";
+          if (allowedFontSizes[value]) return value;
         } catch (_) {
-          return "default";
         }
+        var pluginAppearance = readPluginAppearance();
+        if (pluginAppearance.fontSize) return pluginAppearance.fontSize;
+        return "default";
       }
       function effectiveTheme(theme) {
         if (theme === "dark" || theme === "light") return theme;
