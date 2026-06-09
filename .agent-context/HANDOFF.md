@@ -1768,3 +1768,15 @@ The previous full handoff was archived and should be opened only when old proven
     normal thread list contained zero visible side-chat/sidecar rows.
   - Evidence ledger:
     `$HOME/.homeai-qa/codex-mobile-evidence-ledger.jsonl`.
+- Production deployment:
+  - Deployed source commit `3f72165500c0` through the Home AI central Mac
+    deploy script with reason `codex-mobile-side-chat-ai-sidecar-v253-text-wait`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260609T122259Z-plugin-codex-mobile-web-codex-mobile-side-chat-ai-sidecar-v253-text-wait`.
+  - LaunchDaemon validation passed and `/api/public-config` reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v253`,
+    `shellCacheName=codex-mobile-shell-v253`, and `platform=darwin`.
+  - Production API smoke against `127.0.0.1:8787` passed with target thread
+    `019ea76b-d846-7892-bda0-c0fff9cf7581`: POST side-chat message returned
+    sidecar `pending`; polling returned assistant reply text and sidecar
+    `idle`; normal `/api/threads?limit=80` returned `sideChatVisibleCount=0`.
