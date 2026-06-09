@@ -120,19 +120,29 @@ Minimum closure for Codex Mobile production changes:
   `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
 - LaunchDaemon: `system/com.hermesmobile.plugin.codex-mobile`.
 - Loopback production URL: `http://127.0.0.1:8787`.
-- Current verified shell after Public PR workspace routing deployment:
-  `0.1.11|codex-mobile-shell-v228`.
+- Current verified shell after live user-message echo dedupe deployment:
+  `0.1.11|codex-mobile-shell-v247`.
 - Backup path:
-  `/Users/hermes-host/HermesMobile/backups/deploy/20260609T011046Z-plugin-codex-mobile-web-codex-mobile-public-pr-workspace-v228`.
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260609T014739Z-plugin-codex-mobile-web-codex-mobile-live-user-message-dedupe-v247`.
 - Production smoke confirmed `/api/public-config` reports
-  `clientBuildId=0.1.11|codex-mobile-shell-v228` and
-  `shellCacheName=codex-mobile-shell-v228`.
+  `clientBuildId=0.1.11|codex-mobile-shell-v247` and
+  `shellCacheName=codex-mobile-shell-v247`.
 - Plugin manifest returns `plugin_id=codex-mobile`, `kind=embedded_app`, and
   does not return raw Codex Mobile Access Keys.
-- Public PR smoke confirmed open PR `#53`, production `workspacePath`
-  `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`, and resolved
-  review workspace `/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web`
-  for new-thread review tasks.
+- Production `workspacePath` is
+  `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`; the visible
+  review/source workspace remains
+  `/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web`.
+- Live iOS PWA debug evidence for v247 opened production `127.0.0.1:8787`,
+  created a smoke thread, waited for the first turn to complete, then sent a
+  follow-up with the real composer. Across 50 DOM samples,
+  `maxCount=1`, `duplicateSamples=0`, and `finalCount=1`; the smoke thread was
+  archived. Screenshot artifact:
+  `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v247-prod-dup-smoke.png`.
+- Development live debug evidence for v247 opened source dev `127.0.0.1:18787`
+  and ran the same real-composer duplicate-message smoke with
+  `maxCount=1`, `duplicateSamples=0`, and `finalCount=1`. Screenshot artifact:
+  `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v247-dev-dup-smoke.png`.
 - Generated-image endpoint remains protected: no auth returns `401`, Access
   Key returns `200 image/png`, and a short-lived plugin session cookie can
   still authorize `/api/generated-images/file` when the query string contains a

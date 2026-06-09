@@ -23,6 +23,67 @@ The previous full handoff was archived and should be opened only when old proven
 
 ## Preserved Recent Handoff Tail
 
+## 2026-06-09 Live User Message Echo Dedupe v247
+
+- User reported that sending a message still briefly showed two user-message
+  cards before one disappeared.
+- Diagnosis:
+  - Existing v227 dedupe covered full thread-detail refresh merges, but the
+    live `item/completed` path still inserted `mux-user-*` / pending echo and
+    durable app-server `userMessage` events separately until a later refresh
+    folded them.
+  - The server-side thread-detail projection cache also merged primarily by
+    item id, so a live projection window could preserve both the synthetic
+    mobile echo and the durable user message.
+- Implemented:
+  - Commit: `43533db Fix live mobile user message echo dedupe`.
+  - Shell advanced to `0.1.11|codex-mobile-shell-v247`.
+  - `public/app.js` now normalizes visible user messages during live upsert and
+    thread merges, collapsing matching local/mux/pending echoes immediately.
+  - `adapters/thread-detail-projection-service.js` now detects and merges
+    synthetic mobile user echoes with durable app-server `userMessage` items in
+    dynamic projection windows.
+  - `adapters/message-pending-echo-service.js` now compares `text` and
+    `input_text` content equivalently so pending steer echoes do not re-inject
+    beside durable app-server input.
+- Validation:
+  - `node --check public/app.js` passed.
+  - `node --check adapters/thread-detail-projection-service.js` and
+    `node --check adapters/message-pending-echo-service.js` passed.
+  - Focused tests passed:
+    `node --test test/conversation-render.test.js`,
+    `node --test test/thread-detail-projection-service.test.js
+    test/message-pending-echo-service.test.js`, and
+    `node --test test/mobile-viewport.test.js test/thread-goal-service.test.js
+    test/thread-task-card-route.test.js`.
+  - `npm run check`, `npm test` with 408 tests, and `npm run check:macos`
+    passed.
+  - Home AI platform contract check passed:
+    `node scripts/plugin-workspace-platform-contract-check.js --plugin
+    codex-mobile --json`.
+  - Development live debug server opened `http://127.0.0.1:18787/` in the
+    Simulator WebView. A real composer duplicate-message smoke created and
+    archived thread `019eaa0f-50b4-7972-bc31-dcd030720717`; after waiting for
+    the first turn to complete, the follow-up send had 50 DOM samples with
+    `maxCount=1`, `duplicateSamples=0`, and `finalCount=1`. Screenshot:
+    `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v247-dev-dup-smoke.png`.
+- Production deployment:
+  - Deployed commit `43533db7d44d` through the Home AI central Mac deploy
+    script with reason `codex-mobile-live-user-message-dedupe-v247`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260609T014739Z-plugin-codex-mobile-web-codex-mobile-live-user-message-dedupe-v247`.
+  - LaunchDaemon validation passed and `/api/public-config` reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v247`,
+    `shellCacheName=codex-mobile-shell-v247`, and `platform=darwin`.
+  - Production manifest smoke returned `id=codex-mobile`,
+    `kind=embedded_app`, and `rawAccessKeyReturned=false`.
+  - Production live debug opened `http://127.0.0.1:8787/` in the Simulator
+    WebView. The same real composer smoke created and archived thread
+    `019eaa11-7240-7272-ae80-f63bb00dc6ba`; after waiting for the first turn to
+    complete, the follow-up send had 50 DOM samples with `maxCount=1`,
+    `duplicateSamples=0`, and `finalCount=1`. Screenshot:
+    `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v247-prod-dup-smoke.png`.
+
 ## 2026-06-09 Public PR #53 Usage Card Scroll Polish
 
 - Public PR:
