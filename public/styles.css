@@ -2787,7 +2787,7 @@ html.visual-recovering body::before {
 .side-chat-scroll {
   min-height: 0;
   display: grid;
-  grid-template-rows: minmax(72px, 1fr) auto;
+  grid-template-rows: minmax(72px, 1fr);
   gap: 8px;
   overflow: auto;
   overscroll-behavior: contain;
@@ -2867,15 +2867,21 @@ html.visual-recovering body::before {
 }
 
 .side-chat-candidate-actions,
-.side-chat-form-actions {
+.side-chat-message-actions,
+.side-chat-tool-row {
   min-width: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
+.side-chat-tool-row[hidden] {
+  display: none;
+}
+
 .side-chat-candidate-actions button,
-.side-chat-form-actions button {
+.side-chat-message-actions button,
+.side-chat-tool-row button {
   min-height: 32px;
   padding: 7px 10px;
   border-radius: 7px;
@@ -2883,18 +2889,50 @@ html.visual-recovering body::before {
   font-weight: 700;
 }
 
+.side-chat-message-actions {
+  padding-top: 2px;
+}
+
 .side-chat-form {
   min-width: 0;
   display: grid;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.side-chat-composer-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) max-content;
   gap: 8px;
+  align-items: end;
+}
+
+.side-chat-tool-button,
+.side-chat-send {
+  min-height: 44px;
+  border-radius: 8px;
+}
+
+.side-chat-tool-button {
+  width: 44px;
+  padding: 0;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.side-chat-send {
+  padding-inline: 13px;
+  font-weight: 750;
 }
 
 .side-chat-form textarea {
   width: 100%;
-  min-height: 78px;
-  max-height: min(22vh, 156px);
-  resize: vertical;
-  padding: 9px 10px;
+  min-height: 44px;
+  max-height: 160px;
+  resize: none;
+  padding: 11px 12px;
   color: var(--text);
   background: var(--input-bg);
   border: 1px solid var(--line);
@@ -2933,7 +2971,7 @@ html.keyboard-open .subagent-status-list {
 }
 
 html.keyboard-open .side-chat-scroll {
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr);
   gap: 6px;
 }
 
@@ -2942,7 +2980,7 @@ html.keyboard-open .side-chat-form {
 }
 
 html.keyboard-open .side-chat-form textarea {
-  min-height: 54px;
+  min-height: 44px;
   max-height: min(14vh, 84px);
   resize: none;
 }

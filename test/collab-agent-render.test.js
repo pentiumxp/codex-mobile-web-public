@@ -132,10 +132,17 @@ test("current-turn subagent panel opens from a left swipe without a topbar butto
   assert.match(functionBody("renderSideChatPanel"), /data-side-chat-draft/);
   assert.match(functionBody("renderSideChatPanel"), /data-subagent-panel-close/);
   assert.match(functionBody("renderSideChatPanel"), /服务器保存/);
+  assert.match(functionBody("renderSideChatPanel"), /side-chat-composer-row/);
+  assert.match(functionBody("renderSideChatPanel"), /data-side-chat-action="tools"/);
+  assert.match(functionBody("renderSideChatPanel"), />Send</);
+  assert.doesNotMatch(functionBody("renderSideChatPanel"), /side-chat-empty compact/);
+  assert.match(functionBody("renderSideChatMessage"), /side-chat-message-actions/);
+  assert.match(functionBody("renderSideChatMessage"), /data-side-chat-action="message-apply"/);
   assert.match(appJs, /function loadSideChat\(/);
   assert.match(appJs, /function saveSideChatDraft\(/);
   assert.match(appJs, /function applySideChatCandidate\(/);
   assert.match(appJs, /function queueSideChatCandidate\(/);
+  assert.match(appJs, /function createSideChatCandidateFromMessage\(/);
   assert.match(functionBody("scheduleSideChatDraftSave"), /saveSideChatDraft/);
   assert.doesNotMatch(functionBody("scheduleSideChatDraftSave"), /localStorage|sessionStorage|indexedDB|draftStore/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;/);
@@ -146,6 +153,8 @@ test("current-turn subagent panel opens from a left swipe without a topbar butto
   assert.match(stylesCss, /\.side-chat-section/);
   assert.match(stylesCss, /\.side-chat-form textarea/);
   assert.match(stylesCss, /\.side-chat-message-text,\s*\n\.side-chat-candidate-body\s*{[\s\S]*font-size:\s*var\(--content-font-size\);/);
+  assert.match(stylesCss, /\.side-chat-composer-row\s*{[\s\S]*grid-template-columns:\s*44px minmax\(0, 1fr\) max-content;/);
+  assert.match(stylesCss, /\.side-chat-tool-button,\s*\n\.side-chat-send\s*{[\s\S]*min-height:\s*44px;/);
   assert.match(stylesCss, /\.side-chat-form textarea\s*{[\s\S]*font-size:\s*var\(--composer-input-font-size\);/);
   assert.match(stylesCss, /\.subagent-status-row/);
 });

@@ -1892,6 +1892,48 @@ The previous full handoff was archived and should be opened only when old proven
     `evidence-8dbe517a-47cc-4e2a-97e0-bb6e463f5499`, and
     `evidence-bcf81af2-1088-480f-82a1-e3e7f54004fc`.
 
+## 2026-06-09 Side Chat Composer Layout v255
+
+- User pointed out that side chat should look like normal thread content: same
+  bottom composer layout with input and Send, while extra side-chat actions can
+  wait until a side-chat receipt exists and attach after that receipt.
+- Implemented:
+  - Shell advanced to `0.1.11|codex-mobile-shell-v255`.
+  - Side-chat bottom form now uses a normal composer-like row:
+    `+ / textarea / Send`.
+  - Low-frequency draft actions moved behind the `+` tool row:
+    `存为候选` and `清空`.
+  - Latest assistant side-chat receipt now renders inline action buttons:
+    `发送主线程`, `完成后发送` or `排队`, and `存为候选`.
+  - Clicking a receipt action first creates a server-side side-chat candidate
+    from that receipt text, then reuses the existing candidate apply/queue
+    lifecycle. Main-thread injection still only happens after explicit user
+    action.
+  - Added `scripts/side-chat-layout-visual-fixture.js`, a bounded Chrome
+    headless fixture that renders the side-chat panel at 390px and writes
+    screenshot plus rect evidence without keys or live thread content.
+- Validation before commit:
+  - AI Ops intake classified this as H3; required Home AI architecture/test
+    docs were read.
+  - Focused checks passed:
+    `node --check public/app.js && node --check public/sw.js && git diff
+    --check`;
+    `node --test test/collab-agent-render.test.js test/mobile-viewport.test.js
+    test/thread-side-chat-service.test.js test/thread-side-chat-route.test.js`;
+    Home AI `node tests/architecture-code-test-harness-map.test.js`.
+  - Visual fixture passed in full and keyboard modes:
+    `node scripts/side-chat-layout-visual-fixture.js --json`;
+    `node scripts/side-chat-layout-visual-fixture.js --keyboard --json`.
+    The 390px rects showed `sendWithinViewport=true`,
+    `bottomWithinViewport=true`, compact 44px tool/send controls, and visible
+    textarea.
+  - Visual artifacts:
+    `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-side-chat-composer-full-20260609T134925Z.png`
+    and
+    `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-side-chat-composer-keyboard-20260609T134925Z.png`.
+  - Aggregate checks passed:
+    `npm run check`, `npm run check:macos`, and `npm test` with 437 tests.
+
 ## 2026-06-09 Public PR #58 Keyboard Focus Sync
 
 - Public PR:

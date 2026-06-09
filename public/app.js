@@ -270,7 +270,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v254";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v255";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -6426,16 +6426,35 @@ function renderSubagentStatusWindow() {
   </section>`;
 }
 
-function renderSideChatMessage(message) {
+function latestAssistantSideChatMessageIndex(sideChat) {
+  const messages = Array.isArray(sideChat && sideChat.messages) ? sideChat.messages : [];
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (String(messages[index] && messages[index].role || "").toLowerCase() === "assistant") return index;
+  }
+  return -1;
+}
+
+function renderSideChatMessage(message, index, sideChat) {
   const role = String(message && message.role || "user").toLowerCase();
   const text = String(message && message.text || "");
   const time = sideChatTimeLabel(message && message.createdAt);
+  const latestAssistant = role === "assistant" && index === latestAssistantSideChatMessageIndex(sideChat);
+  const running = Boolean(state.activeTurnId);
+  const busy = sideChatBusy(`message:${index}`) || sideChatBusy(`message-candidate:${index}`);
+  const actions = latestAssistant && text.trim()
+    ? `<div class="side-chat-message-actions">
+        <button type="button" data-side-chat-action="message-apply" data-message-index="${index}"${busy ? " disabled" : ""}>发送主线程</button>
+        <button type="button" data-side-chat-action="message-queue" data-message-index="${index}"${busy ? " disabled" : ""}>${running ? "完成后发送" : "排队"}</button>
+        <button type="button" data-side-chat-action="message-candidate" data-message-index="${index}"${busy ? " disabled" : ""}>存为候选</button>
+      </div>`
+    : "";
   return `<article class="side-chat-message ${escapeHtml(role)}">
     <div class="side-chat-message-meta">
       <span>${escapeHtml(role === "assistant" ? "侧聊" : "我")}</span>
       ${time ? `<time>${escapeHtml(time)}</time>` : ""}
     </div>
     <div class="side-chat-message-text">${escapeHtml(text)}</div>
+    ${actions}
   </article>`;
 }
 
@@ -6472,7 +6491,7 @@ function renderSideChatPanel() {
   const threadId = sideChatThreadId();
   const sideChat = sideChatStateForThread(threadId);
   const loading = state.sideChatLoadingThreadId === threadId;
-  const messages = sideChat.messages.map(renderSideChatMessage).join("");
+  const messages = sideChat.messages.map((message, index) => renderSideChatMessage(message, index, sideChat)).join("");
   const candidates = sideChat.candidates.slice().reverse().map((candidate) => renderSideChatCandidate(candidate, sideChat)).join("");
   const queue = sideChat.queue && sideChat.queue.status !== "sent" && sideChat.queue.status !== "cancelled"
     ? `<div class="side-chat-queue ${escapeHtml(sideChat.queue.status || "queued")}">${escapeHtml(sideChatQueueSummary(sideChat.queue))}</div>`
@@ -6488,7 +6507,7 @@ function renderSideChatPanel() {
     <div class="side-chat-message-meta"><span>侧聊</span></div>
     <div class="side-chat-message-text">正在整理回复...</div>
   </article>` : ""}` || `<div class="side-chat-empty">暂无侧聊内容。</div>`;
-  const candidateList = candidates || `<div class="side-chat-empty compact">暂无候选指令。</div>`;
+  const candidateList = candidates ? `<div class="side-chat-candidates">${candidates}</div>` : "";
   const draftText = sideChat.draft && sideChat.draft.text || "";
   const draftEmpty = !String(draftText || "").trim();
   const busy = Boolean(state.sideChatBusyKey);
@@ -6507,12 +6526,15 @@ function renderSideChatPanel() {
     ${error}
     <div class="side-chat-scroll">
       <div class="side-chat-transcript">${transcript}</div>
-      <div class="side-chat-candidates">${candidateList}</div>
+      ${candidateList}
     </div>
     <form class="side-chat-form" data-side-chat-form>
-      <textarea data-side-chat-draft data-thread-id="${escapeHtml(threadId)}" rows="3" maxlength="${SIDE_CHAT_DRAFT_MAX_CHARS}" placeholder="整理想法，不进入主线程">${escapeHtml(draftText)}</textarea>
-      <div class="side-chat-form-actions">
-        <button type="submit" data-side-chat-action="message"${busy || draftEmpty ? " disabled" : ""}>发送</button>
+      <div class="side-chat-composer-row">
+        <button class="side-chat-tool-button" type="button" data-side-chat-action="tools" aria-label="侧聊工具">+</button>
+        <textarea data-side-chat-draft data-thread-id="${escapeHtml(threadId)}" rows="1" maxlength="${SIDE_CHAT_DRAFT_MAX_CHARS}" placeholder="整理想法，不进入主线程">${escapeHtml(draftText)}</textarea>
+        <button class="side-chat-send" type="submit" data-side-chat-action="message"${busy || draftEmpty ? " disabled" : ""}>Send</button>
+      </div>
+      <div class="side-chat-tool-row" hidden>
         <button type="button" data-side-chat-action="candidate"${busy || draftEmpty ? " disabled" : ""}>存为候选</button>
         <button type="button" data-side-chat-action="clear"${busy || (!sideChat.messages.length && !sideChat.candidates.length && draftEmpty) ? " disabled" : ""}>清空</button>
       </div>
@@ -6652,32 +6674,61 @@ async function submitSideChatMessage(event) {
   }
 }
 
-async function createSideChatCandidateFromDraft() {
+async function createSideChatCandidateFromText(text, options = {}) {
   const threadId = sideChatThreadId();
-  const text = currentSideChatDraftText(threadId).trim();
-  if (!threadId || !text || state.sideChatBusyKey) return;
-  setSideChatBusy("candidate");
+  const body = String(text || "").trim();
+  if (!threadId || !body || state.sideChatBusyKey) return null;
+  setSideChatBusy(options.busyKey || "candidate");
   try {
     clearTimeout(state.sideChatDraftSaveTimer);
     state.sideChatDraftSaveTimer = null;
     const result = await api(sideChatApiPath(threadId, "/candidates"), {
       method: "POST",
       body: JSON.stringify({
-        body: text,
+        body,
         idempotencyKey: createSubmissionId(),
       }),
       timeoutMs: 20000,
     });
-    applySideChatResult(threadId, result);
-    await saveSideChatDraft(threadId, "", { render: false });
+    const sideChat = applySideChatResult(threadId, result);
+    if (options.clearDraft) await saveSideChatDraft(threadId, "", { render: false });
     state.sideChatError = "";
     markActivity("候选已保存");
+    const candidates = Array.isArray(sideChat && sideChat.candidates) ? sideChat.candidates : [];
+    return candidates[candidates.length - 1] || null;
   } catch (err) {
     state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
     showError(err);
+    return null;
   } finally {
     setSideChatBusy("");
     updateSubagentPanelUi({ force: true });
+  }
+}
+
+async function createSideChatCandidateFromDraft() {
+  const threadId = sideChatThreadId();
+  const text = currentSideChatDraftText(threadId).trim();
+  if (!threadId || !text || state.sideChatBusyKey) return;
+  await createSideChatCandidateFromText(text, { clearDraft: true, busyKey: "candidate" });
+}
+
+function sideChatMessageTextByIndex(index) {
+  const sideChat = sideChatStateForThread(sideChatThreadId());
+  const message = sideChat.messages[Number(index)];
+  return String(message && message.text || "").trim();
+}
+
+async function createSideChatCandidateFromMessage(index, nextAction = "") {
+  const text = sideChatMessageTextByIndex(index);
+  if (!text || state.sideChatBusyKey) return;
+  const candidate = await createSideChatCandidateFromText(text, { busyKey: `message-candidate:${index}` });
+  const id = String(candidate && candidate.id || "");
+  if (!id) return;
+  if (nextAction === "apply") {
+    await applySideChatCandidate(id);
+  } else if (nextAction === "queue") {
+    await queueSideChatCandidate(id, state.activeTurnId ? "autoSendWhenIdle" : "confirmWhenIdle");
   }
 }
 
@@ -6791,8 +6842,18 @@ function handleSideChatActionClick(event) {
   if (!button) return;
   const action = String(button.dataset.sideChatAction || "");
   const candidateId = String(button.dataset.candidateId || "");
+  const messageIndex = String(button.dataset.messageIndex || "");
   if (action === "candidate") {
     createSideChatCandidateFromDraft();
+  } else if (action === "tools") {
+    const row = button.closest("[data-side-chat-form]") && button.closest("[data-side-chat-form]").querySelector(".side-chat-tool-row");
+    if (row) row.hidden = !row.hidden;
+  } else if (action === "message-candidate") {
+    createSideChatCandidateFromMessage(messageIndex);
+  } else if (action === "message-apply") {
+    createSideChatCandidateFromMessage(messageIndex, "apply");
+  } else if (action === "message-queue") {
+    createSideChatCandidateFromMessage(messageIndex, "queue");
   } else if (action === "apply") {
     applySideChatCandidate(candidateId);
   } else if (action === "queue") {
