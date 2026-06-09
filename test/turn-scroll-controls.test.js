@@ -24,6 +24,16 @@ function functionBody(name) {
   throw new Error(`could not parse function ${name}`);
 }
 
+function assertInOrder(text, patterns) {
+  let offset = 0;
+  for (const pattern of patterns) {
+    const slice = text.slice(offset);
+    const match = pattern instanceof RegExp ? pattern.exec(slice) : null;
+    assert.ok(match, `missing ordered pattern ${pattern}`);
+    offset += match.index + match[0].length;
+  }
+}
+
 test("upward user scroll can jump back to the current turn final receipt", () => {
   assert.match(indexHtml, /id="scrollToTurnReply"/);
   assert.match(indexHtml, /title="&#22238;&#21040;&#26412;&#36718;&#24635;&#32467;"/);
@@ -144,6 +154,37 @@ test("successful message submit follows the new turn to the bottom", () => {
   assert.match(functionBody("scheduleConversationToBottom"), /scrollConversationToBottom\(\)/);
   assert.match(functionBody("scheduleBottomFollowScroll"), /clearBottomFollowTimers\(\);/);
   assert.match(functionBody("scheduleBottomFollowScroll"), /state\.bottomFollowTimers\.push\(timer\);/);
+});
+
+test("live and final message renders stay anchored when the user is at bottom", () => {
+  const renderBody = functionBody("renderCurrentThread");
+  assertInOrder(renderBody, [
+    /const nearBottom = isConversationNearBottom\(\);/,
+    /const userReadingCurrentTurn = isUserReadingCurrentTurn\(\{ nearBottom \}\);/,
+    /const shouldFollowBottom = !explicitNoStickToBottom\s*&& \(shouldFollowSubmittedMessageToBottom\(\) \|\| shouldFollowViewportChangeToBottom\(\)\);/,
+    /const shouldStickToBottom = !explicitNoStickToBottom\s*&& \(shouldFollowBottom[\s\S]*\(options\.stickToBottom === true \|\| nearBottom\)\)\);/,
+    /updateConversationHtml\(html, conversationRenderSignature\(thread\), \{ stickToBottom: shouldStickToBottom \}\);/,
+  ]);
+
+  const updateBody = functionBody("updateConversationHtml");
+  assert.match(updateBody, /if \(state\.renderedConversationSignature === signature\) \{[\s\S]*if \(options\.stickToBottom\) scheduleConversationToBottom\(\);/);
+  assert.match(updateBody, /state\.renderedConversationSignature = signature;[\s\S]*if \(options\.stickToBottom\) scheduleConversationToBottom\(\);/);
+
+  const appendBody = functionBody("appendToItem");
+  assertInOrder(appendBody, [
+    /sustainSubmittedMessageBottomFollow\(turn, itemType, field\);/,
+    /if \(shouldRenderAfterAppend\(turn, itemType, field, previousValue, nextValue, options\)\) scheduleRenderCurrentThread\(\);/,
+  ]);
+
+  const sustainBody = functionBody("sustainSubmittedMessageBottomFollow");
+  assert.match(sustainBody, /if \(itemType !== "agentMessage" \|\| field !== "text"\) return;/);
+  assert.match(sustainBody, /if \(!turn \|\| !isLatestTurn\(turn\) \|\| !isLiveTurn\(turn\)\) return;/);
+  assert.match(sustainBody, /state\.submittedMessageBottomFollow = conversationScroll\.extendSubmittedMessageFollow\(follow, \{/);
+  assert.match(sustainBody, /scheduleSubmittedMessageBottomFollowScroll\(\);/);
+
+  const notificationBody = functionBody("applyNotification");
+  assert.match(notificationBody, /method === "item\/agentMessage\/delta"[\s\S]*appendToItem\(params\.turnId, params\.itemId, "agentMessage", "text", params\.delta \|\| "", 0, \{ render: "defer-final-receipt" \}\)/);
+  assert.match(notificationBody, /method === "turn\/completed"[\s\S]*renderCurrentThread\(\{ stickToBottom: true \}\);/);
 });
 
 test("thread opens and same-signature renders still land on the latest message", () => {

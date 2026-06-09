@@ -275,6 +275,7 @@ const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const RUNNING_THREAD_HINT_STALE_MS = 20 * 60 * 1000;
+const GITHUB_LINK_PREVIEW_TIMEOUT_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
   "/",
   "/index.html",
@@ -315,6 +316,7 @@ const MERMAID_SCRIPT_URL = "/vendor/mermaid.min.js";
 const MERMAID_MIN_SCALE = 0.65;
 const MERMAID_MAX_SCALE = 3.2;
 const MERMAID_ZOOM_STEP = 0.2;
+const githubLinkPreviewCache = new Map();
 const SIDE_CHAT_DRAFT_SAVE_DEBOUNCE_MS = 450;
 const SIDE_CHAT_DRAFT_MAX_CHARS = 8000;
 
@@ -7546,6 +7548,7 @@ function updateConversationHtml(html, signature, options = {}) {
     console.warn("Conversation patch failed; falling back to full render.", err);
     conversation.innerHTML = html;
   }
+  hydrateGitHubLinkCards(conversation);
   hydrateMermaidDiagrams(conversation);
   scheduleFailedAppImageScan(conversation);
   state.renderedConversationSignature = signature;
@@ -9644,22 +9647,6 @@ async function fetchGitHubLinkPreview(url) {
   return promise;
 }
 
-function collectGitHubPreviewUrls(root) {
-  if (!root || typeof root.querySelectorAll !== "function") return [];
-  const urls = [];
-  const seen = new Set();
-  root.querySelectorAll("a[href]").forEach((link) => {
-    if (!link || typeof link.closest !== "function") return;
-    if (link.closest(".github-link-card") || link.closest(".github-link-card-shell")) return;
-    if (link.closest("pre") || link.closest("code")) return;
-    const url = normalizeGithubPreviewUrl(link.getAttribute("href") || link.href || "");
-    if (!url || seen.has(url)) return;
-    seen.add(url);
-    urls.push(url);
-  });
-  return urls;
-}
-
 function githubLinkPreviewHosts(root = document) {
   if (!root || typeof root.querySelectorAll !== "function") return [];
   const hosts = [];
@@ -9674,27 +9661,118 @@ function githubLinkPreviewHosts(root = document) {
   return hosts;
 }
 
-function ensureGitHubLinkPreviewGroups(root = document) {
+function gitHubLinkPreviewSummary(url) {
+  let parsed;
+  try {
+    parsed = new URL(String(url || "").trim());
+  } catch (_) {
+    return { repo: "GitHub", detail: "链接" };
+  }
+  const parts = parsed.pathname.split("/").filter(Boolean);
+  const repo = parts.length >= 2 ? `${parts[0]}/${parts[1]}` : "GitHub";
+  let detail = "Repository";
+  if (parts[2] === "issues" && parts[3]) detail = parsed.hash.startsWith("#issuecomment-") ? `#${parts[3]} comment` : `Issue #${parts[3]}`;
+  else if (parts[2] === "pull" && parts[3]) detail = `PR #${parts[3]}`;
+  else if (parts[2] === "commit" && parts[3]) detail = `Commit ${parts[3].slice(0, 7)}`;
+  return { repo, detail };
+}
+
+function gitHubLinkPreviewInlineHost(link) {
+  if (!link || typeof link.closest !== "function") return null;
+  return link.closest("li, td, th, p");
+}
+
+function gitHubLinkPreviewInsertContainer(inlineHost) {
+  if (!inlineHost) return null;
+  if (inlineHost.tagName !== "P") return inlineHost;
+  const next = inlineHost.nextElementSibling;
+  if (next && next.matches && next.matches('[data-github-link-preview-node="true"]')) return next;
+  inlineHost.insertAdjacentHTML("afterend", `<span class="github-link-preview-node" data-github-link-preview-node="true"></span>`);
+  return inlineHost.nextElementSibling;
+}
+
+function renderCollapsedGitHubLinkPreview(url) {
+  const summary = gitHubLinkPreviewSummary(url);
+  return `<span class="github-link-preview-inline" data-github-link-preview-inline="true">
+    <button type="button" class="github-link-card-compact" data-github-link-preview-expand="true" aria-expanded="false" aria-label="预览 GitHub 链接">
+      <span class="github-link-card-compact-badge">GitHub</span>
+      <span class="github-link-card-compact-title">${escapeHtml(summary.detail)} · ${escapeHtml(summary.repo)}</span>
+      <span class="github-link-card-compact-action">预览</span>
+    </button>
+    <span class="github-link-card-shell github-link-card-shell-deferred" hidden data-github-link-preview-url="${escapeHtml(url)}" data-github-link-preview-deferred="true">
+      <span class="github-link-card-placeholder">正在加载 GitHub 预览...</span>
+    </span>
+  </span>`;
+}
+
+function ensureInlineGitHubLinkPreviews(root = document) {
   githubLinkPreviewHosts(root).forEach((host) => {
-    host.querySelectorAll('[data-github-link-preview-group="auto"]').forEach((group) => group.remove());
-    const explicitUrls = new Set(
-      Array.from(host.querySelectorAll(".github-link-card-shell[data-github-link-preview-url]"))
-        .map((slot) => String(slot.dataset.githubLinkPreviewUrl || "").trim())
-        .filter(Boolean),
-    );
-    const urls = collectGitHubPreviewUrls(host)
-      .filter((url) => !explicitUrls.has(url))
-      .slice(0, GITHUB_LINK_PREVIEW_LIMIT);
-    if (!urls.length) return;
-    const cards = urls.map((url) => `<div class="github-link-card-shell" data-github-link-preview-url="${escapeHtml(url)}">
-      <div class="github-link-card-fallback"><a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(url)}</a></div>
-    </div>`).join("");
-    host.insertAdjacentHTML("beforeend", `<div class="github-link-card-group" data-github-link-preview-group="auto">${cards}</div>`);
+    host.querySelectorAll("a[href]").forEach((link) => {
+      if (!link || typeof link.closest !== "function") return;
+      if (link.dataset.githubLinkPreviewAttached === "true") return;
+      if (link.closest(".github-link-card") || link.closest(".github-link-card-shell") || link.closest("[data-github-link-preview-inline]")) return;
+      if (link.closest("pre") || link.closest("code")) return;
+      const url = normalizeGithubPreviewUrl(link.getAttribute("href") || link.href || "");
+      if (!url) return;
+      const inlineHost = gitHubLinkPreviewInlineHost(link);
+      if (!inlineHost) return;
+      const insertContainer = gitHubLinkPreviewInsertContainer(inlineHost);
+      if (!insertContainer) return;
+      link.dataset.githubLinkPreviewAttached = "true";
+      insertContainer.insertAdjacentHTML("beforeend", renderCollapsedGitHubLinkPreview(url));
+    });
   });
+}
+
+function renderGitHubLinkPreviewUnavailable(url, label = "无法加载 GitHub 预览") {
+  const safeUrl = normalizeGithubPreviewUrl(url);
+  const href = safeUrl || String(url || "").trim();
+  const link = href ? `<a href="${escapeHtml(href)}" target="_blank" rel="noreferrer">打开链接</a>` : "";
+  return `<span class="github-link-card-unavailable">${escapeHtml(label)}${link ? ` · ${link}` : ""}</span>`;
+}
+
+function setGitHubPreviewCompactExpanded(button, expanded) {
+  if (!button) return;
+  button.classList.toggle("expanded", Boolean(expanded));
+  button.setAttribute("aria-expanded", expanded ? "true" : "false");
+  const action = button.querySelector(".github-link-card-compact-action");
+  if (action) action.textContent = expanded ? "收起" : "预览";
+}
+
+function updateGitHubPreviewCompactTitle(slot, preview) {
+  if (!slot || !preview || !preview.title) return;
+  const wrapper = slot.closest ? slot.closest("[data-github-link-preview-inline]") : null;
+  const title = wrapper ? wrapper.querySelector(".github-link-card-compact-title") : null;
+  if (!title) return;
+  const kind = preview.kindLabel ? `${preview.kindLabel} · ` : "";
+  title.textContent = `${kind}${preview.title}`;
+}
+
+function toggleGitHubLinkPreview(button) {
+  const wrapper = button && button.closest ? button.closest("[data-github-link-preview-inline]") : null;
+  if (!wrapper) return;
+  const slot = wrapper.querySelector(".github-link-card-shell[data-github-link-preview-url]");
+  if (!slot) return;
+  const expanded = wrapper.dataset.githubLinkPreviewExpanded === "true";
+  if (expanded) {
+    wrapper.dataset.githubLinkPreviewExpanded = "false";
+    setGitHubPreviewCompactExpanded(button, false);
+    slot.hidden = true;
+    slot.classList.add("github-link-card-shell-deferred");
+    slot.dataset.githubLinkPreviewDeferred = "true";
+    return;
+  }
+  wrapper.dataset.githubLinkPreviewExpanded = "true";
+  setGitHubPreviewCompactExpanded(button, true);
+  slot.hidden = false;
+  slot.classList.remove("github-link-card-shell-deferred");
+  delete slot.dataset.githubLinkPreviewDeferred;
+  hydrateGitHubLinkCard(slot).catch(() => {});
 }
 
 async function hydrateGitHubLinkCard(slot) {
   if (!slot || !slot.dataset) return;
+  if (typeof slot.matches === "function" && !slot.matches(".github-link-card-shell[data-github-link-preview-url]")) return;
   const url = String(slot.dataset.githubLinkPreviewUrl || "").trim();
   if (!url) return;
   if (slot.dataset.githubLinkPreviewState === "done") return;
@@ -9704,14 +9782,17 @@ async function hydrateGitHubLinkCard(slot) {
   try {
     const preview = await fetchGitHubLinkPreview(url);
     if (!preview) {
+      slot.innerHTML = renderGitHubLinkPreviewUnavailable(url);
       slot.dataset.githubLinkPreviewState = "unsupported";
       slot.classList.remove("loading");
       return;
     }
     slot.innerHTML = renderGitHubLinkPreviewCard(preview);
+    updateGitHubPreviewCompactTitle(slot, preview);
     slot.dataset.githubLinkPreviewState = "done";
     slot.classList.remove("loading");
   } catch (_) {
+    slot.innerHTML = renderGitHubLinkPreviewUnavailable(url);
     slot.dataset.githubLinkPreviewState = "error";
     slot.classList.remove("loading");
   }
@@ -9719,8 +9800,8 @@ async function hydrateGitHubLinkCard(slot) {
 
 function hydrateGitHubLinkCards(root = document) {
   if (!root || typeof root.querySelectorAll !== "function") return;
-  ensureGitHubLinkPreviewGroups(root);
-  root.querySelectorAll("[data-github-link-preview-url]").forEach((slot) => {
+  ensureInlineGitHubLinkPreviews(root);
+  root.querySelectorAll('[data-github-link-preview-url]:not([data-github-link-preview-deferred="true"])').forEach((slot) => {
     hydrateGitHubLinkCard(slot).catch(() => {});
   });
 }
@@ -10434,6 +10515,7 @@ async function openLocalFilePreview(link) {
     $("filePreviewPath").textContent = file.relativePath || file.path || filePath;
     $("filePreviewMeta").textContent = filePreviewMetaText(file);
     $("filePreviewBody").innerHTML = renderFilePreviewContent(file);
+    hydrateGitHubLinkCards($("filePreviewBody"));
     hydrateMermaidDiagrams($("filePreviewBody"));
     const copyButton = $("filePreviewCopyPath");
     if (copyButton) copyButton.dataset.copyKey = rememberCopyText(file.path || filePath);
@@ -13523,6 +13605,13 @@ function wireUi() {
       handleMermaidAction(mermaidButton);
       return;
     }
+    const githubPreviewExpand = event.target.closest("[data-github-link-preview-expand]");
+    if (githubPreviewExpand) {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleGitHubLinkPreview(githubPreviewExpand);
+      return;
+    }
     const button = event.target.closest("[data-approval-action]");
     if (button) {
       answerApproval(button.dataset.approvalId, button.dataset.approvalAction).catch(showError);
@@ -13633,6 +13722,13 @@ function wireUi() {
       event.preventDefault();
       event.stopPropagation();
       handleMermaidAction(mermaidButton);
+      return;
+    }
+    const githubPreviewExpand = event.target.closest("[data-github-link-preview-expand]");
+    if (githubPreviewExpand) {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleGitHubLinkPreview(githubPreviewExpand);
     }
     });
   }

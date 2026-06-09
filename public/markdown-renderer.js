@@ -158,7 +158,7 @@
       return token;
     });
     text = escapeHtml(text);
-    text = text.replace(/(^|[\s(])((?:https?:\/\/|www\.)[^\s<]+)/gi, (_match, prefix, url) => `${prefix}${renderAutolinkUrl(url)}`);
+    text = text.replace(/(^|[\s([{"'“‘:：])((?:https?:\/\/|www\.)[^\s<]+)/gi, (_match, prefix, url) => `${prefix}${renderAutolinkUrl(url)}`);
     text = text
       .replace(/\*\*([^*\n][^*\n]*?)\*\*/g, "<strong>$1</strong>")
       .replace(/__([^_\n][^_\n]*?)__/g, "<strong>$1</strong>")
