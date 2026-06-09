@@ -44,7 +44,16 @@ test("collab agent tool calls render as compact summary cards", () => {
   assert.match(stylesCss, /\.collab-agent-card/);
 });
 
-test("live operation cards stay compact, four-line, and expose only the newest operation", () => {
+test("live operation cards dock at the bottom and expose only the newest operation", () => {
+  assert.match(appJs, /function currentLiveOperationEntry\(thread\)/);
+  assert.match(functionBody("currentLiveOperationEntry"), /const turn = thread\.turns\[thread\.turns\.length - 1\]/);
+  assert.match(functionBody("currentLiveOperationEntry"), /if \(!turn \|\| !isLatestTurn\(turn\) \|\| !isLiveTurn\(turn\)\) return null;/);
+  assert.match(functionBody("currentLiveOperationEntry"), /if \(isOperationalItem\(item\)\) latest = \{ turn, item, sourceIndex: index \};/);
+  assert.match(appJs, /function renderLiveOperationDock\(thread, previousKeys = new Set\(\)\)/);
+  assert.match(functionBody("renderLiveOperationDock"), /currentLiveOperationEntry\(thread\)/);
+  assert.match(functionBody("renderLiveOperationDock"), /live-operation-dock/);
+  assert.match(functionBody("renderCurrentThread"), /const liveOperationDock = renderLiveOperationDock\(thread, previousKeys\);/);
+  assert.match(functionBody("renderCurrentThread"), /taskCardsHtml\}\$\{liveOperationDock\}/);
   assert.match(functionBody("renderLiveOperation"), /renderOperationCard\(item, key, \{ status \}\)/);
   assert.match(functionBody("renderLiveOperation"), /stableOperationRenderKey\(turn, item, index\)/);
   assert.match(functionBody("renderOperationCard"), /operation-meta-line/);
@@ -59,11 +68,10 @@ test("live operation cards stay compact, four-line, and expose only the newest o
   assert.match(functionBody("operationDurationData"), /operationCompletedAtMs\(item\)/);
   assert.match(functionBody("updateOperationDurationBadges"), /querySelectorAll\("\.operation-duration"\)/);
   assert.match(functionBody("operationDetailText"), /join\(" \\| "\)/);
-  assert.match(functionBody("visibleItemsForTurn"), /const showOperations = isLatestTurn\(turn\) && isLiveTurn\(turn\)/);
-  assert.match(functionBody("visibleItemsForTurn"), /let latestOperationEntry = null/);
-  assert.match(functionBody("visibleItemsForTurn"), /if \(latestOperationEntry\) visible\[latestOperationEntry\.visibleIndex\] = null/);
-  assert.match(functionBody("visibleItemsForTurn"), /latestOperationEntry = \{ visibleIndex: visible\.length, sourceIndex: index \}/);
+  assert.match(functionBody("visibleItemsForTurn"), /if \(isOperationalItem\(item\)\) \{[\s\S]*return;/);
   assert.match(functionBody("visibleItemsForTurn"), /return visible\.filter\(Boolean\)/);
+  assert.doesNotMatch(functionBody("visibleItemsForTurn"), /const showOperations/);
+  assert.doesNotMatch(functionBody("visibleItemsForTurn"), /latestOperationEntry/);
   assert.doesNotMatch(functionBody("visibleItemsForTurn"), /operationEntryByKey = new Map/);
   assert.doesNotMatch(functionBody("visibleItemsForTurn"), /lastOperationEntry/);
   assert.doesNotMatch(appJs, /function trimTrailingOperationCards\(/);
@@ -74,9 +82,11 @@ test("live operation cards stay compact, four-line, and expose only the newest o
   assert.match(functionBody("operationCommandName"), /shortPath\(stripMatchingOuterQuotes\(token\)\)/);
   assert.match(functionBody("operationSummaryLines"), /operationCommandSummary\(item\)/);
   assert.match(functionBody("operationGroupKey"), /operationRawFileNames\(item\)/);
-  assert.match(functionBody("visibleItemsForTurn"), /if \(!showOperations\) return/);
   assert.doesNotMatch(appJs, /function latestVisibleOperationItem\(/);
   assert.doesNotMatch(appJs, /function removeOperationalItemsFromTurn\(/);
+  assert.match(stylesCss, /\.live-operation-dock\s*{[\s\S]*position:\s*sticky;/);
+  assert.match(stylesCss, /\.live-operation-dock\s*{[\s\S]*bottom:\s*10px;/);
+  assert.match(stylesCss, /\.live-operation-dock \.live-operation\s*{[\s\S]*pointer-events:\s*auto;/);
   assert.match(stylesCss, /\.operation-meta-line\s*{[\s\S]*display:\s*flex;/);
   assert.match(stylesCss, /\.operation-meta-line\s*{[\s\S]*justify-content:\s*space-between;/);
   assert.match(stylesCss, /\.operation-meta-main\s*{[\s\S]*flex:\s*1 1 auto;/);
@@ -85,11 +95,11 @@ test("live operation cards stay compact, four-line, and expose only the newest o
   assert.match(stylesCss, /\.operation-duration\s*{[\s\S]*font-variant-numeric:\s*tabular-nums;/);
   assert.match(stylesCss, /\.item\.live-operation\.entry-animate\s*{[\s\S]*animation:\s*none;/);
   const operationDetailLineCss = cssRuleBody(".operation-detail-line");
-  assert.match(operationDetailLineCss, /height:\s*calc\(var\(--content-code-font-size\) \* 4\.01\);/);
+  assert.match(operationDetailLineCss, /height:\s*calc\(var\(--content-code-font-size\) \* 2\.68\);/);
   assert.match(operationDetailLineCss, /overflow:\s*hidden;/);
   const operationDetailCss = cssRuleBody(".operation-detail");
   assert.match(operationDetailCss, /font-size:\s*calc\(var\(--content-code-font-size\) \* 1\.06\);/);
-  assert.match(operationDetailCss, /-webkit-line-clamp:\s*3;/);
+  assert.match(operationDetailCss, /-webkit-line-clamp:\s*2;/);
   assert.match(operationDetailCss, /height:\s*100%;/);
   assert.match(operationDetailCss, /max-height:\s*100%;/);
   assert.match(operationDetailCss, /white-space:\s*normal;/);

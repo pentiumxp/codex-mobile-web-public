@@ -3768,6 +3768,22 @@ html.keyboard-open .side-chat-form textarea {
   animation: none;
 }
 
+.live-operation-dock {
+  position: sticky;
+  bottom: 0;
+  z-index: 6;
+  width: min(980px, 100%);
+  margin: 0 auto;
+  padding: 0;
+  pointer-events: none;
+}
+
+.live-operation-dock .live-operation {
+  margin: 0;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.14);
+  pointer-events: auto;
+}
+
 .operation-meta-line {
   display: flex;
   align-items: center;
@@ -3787,7 +3803,7 @@ html.keyboard-open .side-chat-form textarea {
 .operation-detail-line {
   margin-top: 4px;
   min-width: 0;
-  height: calc(var(--content-code-font-size) * 4.01);
+  height: calc(var(--content-code-font-size) * 2.68);
   overflow: hidden;
 }
 
@@ -3838,7 +3854,7 @@ html.keyboard-open .side-chat-form textarea {
   line-height: 1.26;
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   white-space: normal;
 }
 

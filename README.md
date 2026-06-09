@@ -666,6 +666,8 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v258 调整运行态 Command/File/Tool 工具框为底部固定 dock。最新 live operation 不再插入正文流里随消息往上跑，而是固定在 conversation 底部显示；detail 区域从约三行缩到约两行，减少阅读遮挡和中间状态抖动。PWA shell cache 升级到 `codex-mobile-shell-v258`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
+
 - 中文说明：v257 稳定中间命令/文件/工具状态卡和流式消息渲染。运行中的 `.live-operation` 命令卡始终保留约三行 detail 区域，避免 Command/File/Tool 状态条随内容有无上下跳动，并取消该运行态卡片新增时的入场动画，减少中间状态刷新时整屏闪动；运行中 assistant 文本 delta 会优先局部 patch 当前消息卡。PWA shell cache 升级到 `codex-mobile-shell-v257`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
 
 - 中文说明：v256 修复线程详情投影模式下看不到 Codex app-server 权限批准卡的问题。线程详情 API 现在会把当前线程相关的 pending `serverRequest` 以压缩后的 public approval payload 一并返回，前端加载线程时会同步到现有 approval 渲染栈；即使 EventSource 时序错过，也能看到“权限需要批准”等卡片并完成批准。PWA shell cache 升级到 `codex-mobile-shell-v256`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。

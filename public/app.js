@@ -270,7 +270,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v257";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v258";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -3382,9 +3382,7 @@ function isNodeStartAboveConversationViewport(node) {
 }
 
 function visibleItemsForTurn(turn) {
-  const showOperations = isLatestTurn(turn) && isLiveTurn(turn);
   const visible = [];
-  let latestOperationEntry = null;
   const contextEntryByKey = new Map();
   (turn.items || []).forEach((item, index) => {
     if (!item || isReasoningItem(item)) return;
@@ -3399,15 +3397,22 @@ function visibleItemsForTurn(turn) {
       return;
     }
     if (isOperationalItem(item)) {
-      if (!showOperations) return;
-      if (latestOperationEntry) visible[latestOperationEntry.visibleIndex] = null;
-      latestOperationEntry = { visibleIndex: visible.length, sourceIndex: index };
-      visible.push({ item, sourceIndex: index });
       return;
     }
     visible.push({ item, sourceIndex: index });
   });
   return visible.filter(Boolean);
+}
+
+function currentLiveOperationEntry(thread) {
+  if (!thread || !Array.isArray(thread.turns) || !thread.turns.length) return null;
+  const turn = thread.turns[thread.turns.length - 1];
+  if (!turn || !isLatestTurn(turn) || !isLiveTurn(turn)) return null;
+  let latest = null;
+  (turn.items || []).forEach((item, index) => {
+    if (isOperationalItem(item)) latest = { turn, item, sourceIndex: index };
+  });
+  return latest;
 }
 
 function visibleItemSignature(item, turn = null) {
@@ -8020,6 +8025,7 @@ function renderCurrentThread(options = {}) {
   const visibleTurnIds = new Set(turns.map((turn) => turn && turn.id).filter(Boolean).map(String));
   resetCopyTextStore();
   const turnsHtml = turns.map((turn) => renderTurn(turn, previousKeys)).join("");
+  const liveOperationDock = renderLiveOperationDock(thread, previousKeys);
   const taskCardsHtml = renderThreadTaskCards(thread, previousKeys);
   const approvalsHtml = renderPendingApprovals(thread, previousKeys, (request) => {
     const turnId = approvalTurnId(request);
@@ -8029,7 +8035,7 @@ function renderCurrentThread(options = {}) {
   const emptyMessage = readWarningMessage
     ? "暂时没有可显示的完整消息。共享模式恢复后刷新这个页面即可继续读取。"
     : "No visible turns.";
-    const html = goalCard + rolloutWarning + taskToolbar + omittedBanner + readWarning + (turnsHtml || approvalsHtml || taskCardsHtml ? `${turnsHtml}${approvalsHtml}${taskCardsHtml}${pluginRefreshNotice}` : `${pluginRefreshNotice || ""}<div class="empty-state entry-animate">${escapeHtml(emptyMessage)}</div>`);
+    const html = goalCard + rolloutWarning + taskToolbar + omittedBanner + readWarning + (turnsHtml || approvalsHtml || taskCardsHtml || liveOperationDock ? `${turnsHtml}${approvalsHtml}${taskCardsHtml}${liveOperationDock}${pluginRefreshNotice}` : `${pluginRefreshNotice || ""}<div class="empty-state entry-animate">${escapeHtml(emptyMessage)}</div>`);
   updateConversationHtml(html, conversationRenderSignature(thread), { stickToBottom: shouldStickToBottom });
   bindCurrentThreadActions();
   if (options.scrollToTurnReceiptStart) scrollConversationToTurnReceiptStart(options.scrollToTurnReceiptStart);
@@ -9204,6 +9210,12 @@ function renderPendingApprovals(thread, previousKeys = new Set(), filter = null)
   return `<div class="approval-stack">
     ${requests.map((request) => renderApprovalRequest(request, previousKeys)).join("")}
   </div>`;
+}
+
+function renderLiveOperationDock(thread, previousKeys = new Set()) {
+  const entry = currentLiveOperationEntry(thread);
+  if (!entry) return "";
+  return `<div class="live-operation-dock">${renderLiveOperation(entry.item, entry.turn, previousKeys, entry.sourceIndex)}</div>`;
 }
 
 function renderTurn(turn, previousKeys = new Set()) {
