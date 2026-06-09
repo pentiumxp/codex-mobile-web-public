@@ -52,6 +52,8 @@ behavior, or cross-plugin reference behavior:
 | `ios_live_debug_available` | `yes`; use Home AI `npm run ios:pwa:debug` for interactive embedded iOS PWA reproduction, with one Simulator/live-debug-port/WDA-port/MJPEG-port lane per concurrent plugin debug session. |
 | `ios_visual_harness_command` | `cd /Users/hermes-dev/HermesMobileDev/app && npm run ios:pwa:visual -- --scenario embedded-plugin-shell --plugin-id codex-mobile --debug-url http://127.0.0.1:19073/` |
 | `ios_keyboard_visual_harness_command` | `cd /Users/hermes-dev/HermesMobileDev/app && npm run ios:pwa:visual -- --scenario embedded-plugin-keyboard-composer --plugin-id codex-mobile --plugin-thread-id <thread-id> --debug-url http://127.0.0.1:19073/` |
+| `ios_side_chat_keyboard_visual_harness_command` | `cd /Users/hermes-dev/HermesMobileDev/app && npm run ios:pwa:visual -- --scenario embedded-plugin-side-chat-keyboard --plugin-id codex-mobile --plugin-thread-id <thread-id> --debug-url http://127.0.0.1:19073/` |
+| `ios_image_order_visual_smoke_command` | `node scripts/codex-mobile-image-order-visual-smoke.js --debug-url http://127.0.0.1:19073/ --thread-id <thread-id> --target-turn-id <turn-id> --json` |
 
 ## Required Local Validation
 
@@ -89,14 +91,49 @@ npm run ios:pwa:visual -- \
   --debug-url http://127.0.0.1:19073/
 ```
 
+For Codex left-swipe side-chat textarea keyboard/input-obstruction changes, use
+the side-chat target scenario with a real Codex thread id:
+
+```bash
+cd /Users/hermes-dev/HermesMobileDev/app
+npm run ios:pwa:visual -- \
+  --scenario embedded-plugin-side-chat-keyboard \
+  --plugin-id codex-mobile \
+  --plugin-thread-id <thread-id> \
+  --debug-url http://127.0.0.1:19073/
+```
+
 The keyboard scenario records host keyboard metrics, iframe bounds, plugin
-keyboard viewport receipt, and the composer/input clearance above the keyboard.
+keyboard viewport receipt, and the focused input clearance above the keyboard.
 When the local Appium/Safari lane cannot display the iOS software keyboard for
 iframe `contenteditable` controls, the harness injects the canonical
 `hermes.plugin.viewport` keyboard payload and marks `keyboard.simulated=true`;
 that remains a required development layout gate before deploy.
 Do not deploy keyboard or composer layout changes from this workspace until the
 development visual check passes or the blocker is explicitly recorded.
+
+For Codex thread-detail rendering regressions that are not keyboard-specific,
+first run the central Home AI live debug server and the checked
+`embedded-plugin-shell` harness when the lane is healthy. When the regression is
+inside the Codex iframe's business DOM, such as generated/uploaded image card
+ordering, add the plugin-specific visual smoke on the same live-debug lane with
+a real thread id and bounded screenshot artifact:
+
+```bash
+node scripts/codex-mobile-image-order-visual-smoke.js \
+  --debug-url http://127.0.0.1:19073/ \
+  --thread-id <thread-id> \
+  --target-turn-id <turn-id> \
+  --json
+```
+
+If the checked harness reports `webview_context_missing`, `Unexpected EOF`,
+`socket hang up`, or `appium_timeout`, classify it as visual toolchain
+infrastructure first and follow the central recovery order: verify Appium
+`4723`, WDA `8101`, and live debug `19073`; start Appium with the central
+script if needed; reset the live debug Appium session once with
+`type=connect` and `resetSession=true`; only then restart WDA or the Simulator
+lane if the WebView attach layer is still broken.
 
 For WDA MJPEG stream mode, allocate unique ports per Simulator lane:
 

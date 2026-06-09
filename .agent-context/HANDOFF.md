@@ -21,6 +21,92 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-09 v251 Hotfix Projected Image Ordering
+
+- User reported that entering a thread rendered older image cards at the bottom
+  of the latest turn even when the image timestamp was earlier than surrounding
+  text.
+- Implemented server-side ordering hotfix:
+  - `readRolloutItemTimestampCandidates()` now scans the full bounded rollout
+    text when available, matching the tool-output image scan path, so long
+    turns do not lose early item timestamps outside the short tail.
+  - Newly projected tool-output images are inserted into the turn by timestamp
+    instead of always appended.
+  - Existing image items in `turn.items` are restored to stable timestamp order
+    during `compactThread()`.
+- Added focused regression tests in `test/thread-item-timestamp-enrichment.test.js`
+  for both newly projected image insertion and existing misplaced image items.
+- Validation before deploy:
+  - `node --test test/thread-item-timestamp-enrichment.test.js` passed with 14
+    tests.
+  - `npm run check` passed.
+  - Development API smoke on thread `019ea76b-d846-7892-bda0-c0fff9cf7581`
+    returned `imageOrderingProblems=0`.
+- Commit: `523f5ca Fix projected image item ordering`.
+- Production deployment:
+  - Deployed from clean temporary worktree at commit `523f5ca1faa7`, not from
+    the dirty main workspace, so paused v252 side-chat keyboard changes were
+    not included.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260609T064102Z-plugin-codex-mobile-web-codex-mobile-image-order-523f5ca`.
+  - Production `/api/public-config` reports `clientBuildId` and
+    `shellCacheName` still at `0.1.11|codex-mobile-shell-v251`.
+  - Production authenticated thread smoke returned 10 turns, 7 image items, and
+    `imageOrderingProblems=0`. The target 06:03 image in turn
+    `019eaac3-0282-75d3-83cc-5d78cea5ee7e` is now between the 06:03:21 and
+    06:03:39 text items rather than at the 06:31 end of the turn.
+- After deployment, temporary worktrees were removed and the local 18787
+  development server was stopped.
+- Current caution: unrelated paused v252 side-chat keyboard files remain dirty
+  in the main workspace. Do not deploy from the dirty main workspace until that
+  work is either completed or intentionally separated.
+
+## 2026-06-09 Image Ordering Visual Toolchain Follow-up
+
+- User asked to reread the central Home AI visual toolchain contract and align
+  the just-completed image ordering fix with the new requirements.
+- Re-read:
+  - Home AI `plugin-workspace-platform-contract.md`;
+  - Home AI `plugin-mobile-ui-visual-contract.md`;
+  - Home AI `RUNBOOKS/macos-ios-simulator-appium.md`;
+  - Home AI harness rollout/matrix references around visual recovery.
+- Toolchain recovery performed by contract:
+  - Appium `4723` was down while WDA `8101` was up and live debug `19073` was
+    down.
+  - Restarted Appium with
+    `$HOME/.homeai-qa/scripts/macos-ios-appium-start.sh`.
+  - Started Home AI `npm run ios:pwa:debug` on `19073`.
+  - Checked harness first failed with `webview_context_missing`; reset the live
+    debug Appium session with `type=connect resetSession=true`.
+  - Subsequent `Unexpected EOF` persisted; restarted WDA once and then the
+    Simulator lane before recovering direct live-debug JS access.
+- Added `scripts/codex-mobile-image-order-visual-smoke.js`, a plugin-specific
+  visual smoke that uses the central live debug server lease/action/screenshot
+  endpoints, opens a real Codex thread, reads bounded iframe DOM item order,
+  and saves a screenshot artifact without printing keys, cookies, launch
+  tokens, or raw private logs.
+- Updated `docs/HOME_AI_PLATFORM_CONTRACT.md` with the image-order smoke command
+  and the central toolchain recovery order for `webview_context_missing`,
+  `Unexpected EOF`, `socket hang up`, and `appium_timeout`.
+- Validation:
+  - `node --check scripts/codex-mobile-image-order-visual-smoke.js` passed.
+  - `node --test test/thread-item-timestamp-enrichment.test.js` passed with 14
+    tests.
+  - `npm run check` passed.
+  - Home AI platform contract checker for `codex-mobile` passed.
+  - Home AI visual harness test passed.
+  - `node scripts/codex-mobile-image-order-visual-smoke.js --debug-url
+    http://127.0.0.1:19073/ --thread-id
+    019ea76b-d846-7892-bda0-c0fff9cf7581 --target-turn-id
+    019eaac3-0282-75d3-83cc-5d78cea5ee7e --json` passed with
+    `orderProblems=[]`, 10 loaded turns, 8 image-capable DOM items, and
+    screenshot
+    `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-image-order-20260609T070206Z.png`.
+- The central checked `embedded-plugin-shell` harness still hit Appium/WebKit
+  `webview_context_missing` / `Unexpected EOF` before business assertions, but
+  the direct live-debug lease/action/screenshot path succeeded and is now
+  captured in a reusable plugin smoke script.
+
 ## 2026-06-09 v252 Side-Chat Keyboard Work Paused
 
 - User asked to pause after extended debugging. No production deployment was
