@@ -996,3 +996,61 @@ The previous full handoff was archived and should be opened only when old proven
   - Screenshot artifact:
     `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v227-upload-image-1781040000.png`.
   - The temporary live debug server started for direct validation was stopped.
+
+## 2026-06-09 Public PR Review Workspace Routing v228
+
+- User reported that with one open public PR, tapping the merge/review flow got
+  stuck at the new-thread creation step.
+- Diagnosis:
+  - Production `/api/public-config.workspacePath` is the deployed plugin path:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Codex Desktop visible workspaces contain the source checkout:
+    `/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web`, not the
+    deployed `/Users/hermes-host/...` directory.
+  - Public PR preparation used `workspacePath` directly, so the new-thread draft
+    could be sent with an invisible cwd and fail `/api/threads/new-message`
+    workspace visibility validation.
+- Implemented:
+  - Commit: `e5a80a2 Fix public PR review workspace routing`.
+  - Shell advanced to `0.1.11|codex-mobile-shell-v228`.
+  - `public/app.js` now resolves the Public PR review workspace through
+    `publicPrReviewWorkspacePath()`:
+    - use `/api/public-config.workspacePath` when it is visible;
+    - otherwise use a visible workspace with the same basename;
+    - otherwise fall back to selected/current workspace when visible.
+  - `preparePublicPrMergePrompt()` loads workspaces if needed before choosing
+    the review workspace.
+  - Docs now describe the production deployment path to source-workspace
+    fallback.
+- Validation:
+  - Focused tests passed:
+    `node --test test/app-update.test.js test/new-thread-route.test.js
+    test/mobile-viewport.test.js test/thread-goal-service.test.js
+    test/thread-task-card-route.test.js`.
+  - Development server smoke on `127.0.0.1:18787` passed:
+    open public PR `#53` was visible; both the dev `workspacePath` and simulated
+    production deployment path resolved to
+    `/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web`.
+  - Development `/api/threads/new-message` smoke returned thread id
+    `019ea9ed-6fe9-7052-b7d9-5b32b515fef1`, turn id
+    `019ea9ed-745a-7901-ad2d-b12d7c6fcce8`, title update/index both true, and
+    cwd `/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web`; the smoke
+    thread was archived afterward.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed with 403 tests.
+  - Home AI platform contract check passed:
+    `node scripts/plugin-workspace-platform-contract-check.js --plugin
+    codex-mobile --json`.
+- Production deployment:
+  - Deployed commit `e5a80a2b0afc` through the Home AI central Mac deploy
+    script with reason `codex-mobile-public-pr-workspace-v228`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260609T011046Z-plugin-codex-mobile-web-codex-mobile-public-pr-workspace-v228`.
+  - LaunchDaemon validation passed and `/api/public-config` reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v228`,
+    `shellCacheName=codex-mobile-shell-v228`, and `platform=darwin`.
+  - Production smoke confirmed open public PR `#53` and resolved production
+    `workspacePath` `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`
+    to review workspace
+    `/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web`.

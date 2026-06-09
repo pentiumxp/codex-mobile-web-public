@@ -120,15 +120,19 @@ Minimum closure for Codex Mobile production changes:
   `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
 - LaunchDaemon: `system/com.hermesmobile.plugin.codex-mobile`.
 - Loopback production URL: `http://127.0.0.1:8787`.
-- Current verified shell after upload-image and pending-echo deployment:
-  `0.1.11|codex-mobile-shell-v227`.
+- Current verified shell after Public PR workspace routing deployment:
+  `0.1.11|codex-mobile-shell-v228`.
 - Backup path:
-  `/Users/hermes-host/HermesMobile/backups/deploy/20260609T002806Z-plugin-codex-mobile-web-codex-mobile-upload-image-echo-v227`.
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260609T011046Z-plugin-codex-mobile-web-codex-mobile-public-pr-workspace-v228`.
 - Production smoke confirmed `/api/public-config` reports
-  `clientBuildId=0.1.11|codex-mobile-shell-v227` and
-  `shellCacheName=codex-mobile-shell-v227`.
+  `clientBuildId=0.1.11|codex-mobile-shell-v228` and
+  `shellCacheName=codex-mobile-shell-v228`.
 - Plugin manifest returns `plugin_id=codex-mobile`, `kind=embedded_app`, and
   does not return raw Codex Mobile Access Keys.
+- Public PR smoke confirmed open PR `#53`, production `workspacePath`
+  `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`, and resolved
+  review workspace `/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web`
+  for new-thread review tasks.
 - Generated-image endpoint remains protected: no auth returns `401`, Access
   Key returns `200 image/png`, and a short-lived plugin session cookie can
   still authorize `/api/generated-images/file` when the query string contains a
