@@ -2903,8 +2903,8 @@ function readRolloutItemTimestampCandidates(rolloutPath) {
   const unscoped = [];
   let scopedCount = 0;
   let currentTurnId = "";
-  const tail = readRolloutTail(rolloutPath);
-  for (const line of tail.split(/\r?\n/)) {
+  const text = readRolloutRuntimeScanText(rolloutPath) || readRolloutTail(rolloutPath);
+  for (const line of text.split(/\r?\n/)) {
     if (!line || !line.trim()) continue;
     const entry = parseJsonLine(line);
     if (!entry || !entry.type) continue;
@@ -3153,6 +3153,35 @@ function unscopedRolloutToolOutputImagesForTurn(turns, index, items) {
   return [];
 }
 
+function insertProjectedItemByTimestamp(items, item) {
+  if (!Array.isArray(items)) return;
+  const timestamp = itemDisplayTimestampMs(item);
+  if (!timestamp) {
+    items.push(item);
+    return;
+  }
+  const index = items.findIndex((existing) => {
+    const existingTimestamp = itemDisplayTimestampMs(existing);
+    return existingTimestamp && existingTimestamp > timestamp;
+  });
+  if (index < 0) items.push(item);
+  else items.splice(index, 0, item);
+}
+
+function orderTurnItemsByDisplayTimestamp(turn) {
+  if (!turn || !Array.isArray(turn.items) || turn.items.length < 2) return turn;
+  turn.items = turn.items
+    .map((item, index) => ({ item, index, timestamp: itemDisplayTimestampMs(item) }))
+    .sort((left, right) => {
+      if (left.timestamp && right.timestamp && left.timestamp !== right.timestamp) {
+        return left.timestamp - right.timestamp;
+      }
+      return left.index - right.index;
+    })
+    .map((entry) => entry.item);
+  return turn;
+}
+
 function readRolloutToolOutputImageItems(rolloutPath, options = {}) {
   if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) {
     return { byTurn: new Map(), unscoped: [], scopedCount: 0 };
@@ -3240,7 +3269,7 @@ function appendRolloutToolOutputImagesToThread(thread) {
     for (const item of imageItems) {
       const id = visibleItemId(item);
       if (!id || existingIds.has(id)) continue;
-      turn.items.push(Object.assign({}, item));
+      insertProjectedItemByTimestamp(turn.items, Object.assign({}, item));
       existingIds.add(id);
     }
   });
@@ -4120,7 +4149,7 @@ function compactThread(thread, options = {}) {
       maxOperationItems: operationDetailIndexes.has(index) ? "all" : MAX_LIVE_OPERATION_ITEMS,
       receiptOnly: !operationDetailIndexes.has(index),
       threadId: out.id || out.threadId || "",
-    }));
+    })).map(orderTurnItemsByDisplayTimestamp);
     const latest = out.turns[latestIndex];
     if (latest && isLiveTurn(latest) && Array.isArray(latest.items)
       && !latest.items.some((item) => isOperationalItem(item))) {
