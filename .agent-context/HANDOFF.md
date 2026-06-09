@@ -23,6 +23,45 @@ The previous full handoff was archived and should be opened only when old proven
 
 ## Preserved Recent Handoff Tail
 
+## 2026-06-09 Public v247 Full Sync After PR #54
+
+- User clarified the public workflow:
+  - Use the clean public mirror before pushing public.
+  - Public and private must not diverge on product code; after public is pushed,
+    public history must be reverse-merged into private.
+- Public mirror:
+  - Used `/Users/hermes-dev/HermesMobileDev/public-mirrors/codex-mobile-web-public`.
+  - Started from public `origin/main` after PR #54 merge commit `5e4e2ed`.
+  - Cherry-picked the private v247 product fix onto public and resolved overlaps
+    with PR #54 by keeping the broader live frontend plus projection dedupe.
+  - Pushed public commit `985cf5e` `Fix live mobile user message echo dedupe`.
+  - Public files were limited to README, public source, adapters, service worker,
+    and tests; no `.agent-context`, runtime state, local keys, uploads, or
+    machine diagnostics were copied.
+- Public validation:
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed with 403 tests.
+  - `git diff --check HEAD~1..HEAD` passed.
+  - Privacy scan on the public diff found only expected README boundary text
+    mentions documenting that private/runtime material was not copied.
+- Private reverse sync:
+  - Fetched public `main` and merged public history into private with
+    `git merge -s ours --allow-unrelated-histories public/main` as
+    `d6fab1d Merge public v247 history`.
+  - The `ours` strategy was intentional because public and private are
+    independent repositories with unrelated roots, and private already had the
+    broader v247 tree plus private-only handoff/deployment records.
+  - Public `985cf5e` is now a parent in private history, so future private work
+    includes the public v247 line instead of losing it on a later sync.
+- Private validation after reverse sync:
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed with 408 tests.
+  - Platform contract check passed via
+    `/Users/hermes-dev/HermesMobileDev/app/scripts/plugin-workspace-platform-contract-check.js
+    --plugin codex-mobile --json`.
+
 ## 2026-06-09 Public PR #54 Projection User Dedupe
 
 - Public PR:
