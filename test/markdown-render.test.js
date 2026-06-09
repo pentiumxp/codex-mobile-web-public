@@ -124,6 +124,24 @@ test("inline GitHub links inside sentences stay regular links", () => {
   assert.match(html, /<a href="https:\/\/github\.com\/MiniMax-AI\/MiniMax-M2\.7\/issues\/52" target="_blank" rel="noreferrer">https:\/\/github\.com\/MiniMax-AI\/MiniMax-M2\.7\/issues\/52<\/a>/);
 });
 
+test("inline GitHub links after punctuation stay regular links", () => {
+  const html = renderer.renderMarkdown("- 链接：https://github.com/nesquena/hermes-webui/issues/3400#issuecomment-4633258628");
+
+  assert.doesNotMatch(html, /class="github-link-card-shell"/);
+  assert.match(html, /链接：<a href="https:\/\/github\.com\/nesquena\/hermes-webui\/issues\/3400#issuecomment-4633258628" target="_blank" rel="noreferrer">https:\/\/github\.com\/nesquena\/hermes-webui\/issues\/3400#issuecomment-4633258628<\/a>/);
+});
+
+test("multiple inline GitHub links after punctuation all stay clickable", () => {
+  const html = renderer.renderMarkdown([
+    "- 链接：https://github.com/nesquena/hermes-webui/issues/3400#issuecomment-4633258628",
+    "- 关联：https://github.com/nesquena/hermes-webui/pull/3061",
+  ].join("\n"));
+
+  assert.doesNotMatch(html, /class="github-link-card-shell"/);
+  assert.match(html, /href="https:\/\/github\.com\/nesquena\/hermes-webui\/issues\/3400#issuecomment-4633258628"/);
+  assert.match(html, /href="https:\/\/github\.com\/nesquena\/hermes-webui\/pull\/3061"/);
+});
+
 test("markdown image renderer rejects unsafe data image formats", () => {
   const html = renderer.renderMarkdown("![bad](data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=)");
 

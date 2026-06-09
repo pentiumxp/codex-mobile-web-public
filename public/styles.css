@@ -3913,18 +3913,89 @@ html.visual-recovering body::before {
   gap: 8px;
 }
 
-.github-link-card-group {
-  display: grid;
-  gap: 10px;
-  margin-top: 12px;
-}
-
 .github-link-card-shell.loading {
   opacity: 0.9;
 }
 
+.github-link-card-shell-deferred {
+  display: none;
+}
+
 .github-link-card-fallback {
   min-width: 0;
+}
+
+.github-link-preview-node {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.github-link-preview-inline {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.github-link-card-compact {
+  width: 100%;
+  min-height: 34px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  color: var(--muted-strong);
+  font: inherit;
+  font-size: var(--content-small-font-size);
+  text-align: left;
+  background: var(--control-bg);
+  border: 1px dashed var(--line-soft);
+  border-radius: 8px;
+  appearance: none;
+}
+
+.github-link-card-compact:active {
+  background: var(--item-bg);
+}
+
+.github-link-card-compact.expanded {
+  border-style: solid;
+  background: var(--item-bg);
+}
+
+.github-link-card-compact-badge {
+  color: var(--text);
+  font-weight: 780;
+}
+
+.github-link-card-compact-title {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 680;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.github-link-card-compact-action {
+  color: var(--muted);
+  font-weight: 720;
+}
+
+.github-link-card-placeholder,
+.github-link-card-unavailable {
+  display: block;
+  padding: 10px 11px;
+  color: var(--muted);
+  font-size: var(--content-small-font-size);
+  line-height: 1.4;
+  background: var(--control-bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+}
+
+.github-link-card-unavailable a {
+  color: var(--link);
 }
 
 .github-link-card {
