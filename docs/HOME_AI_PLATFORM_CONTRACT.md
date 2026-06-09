@@ -120,20 +120,29 @@ Minimum closure for Codex Mobile production changes:
   `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
 - LaunchDaemon: `system/com.hermesmobile.plugin.codex-mobile`.
 - Loopback production URL: `http://127.0.0.1:8787`.
-- Current verified shell after Hermes media/font deployment:
-  `0.1.11|codex-mobile-shell-v226`.
+- Current verified shell after upload-image and pending-echo deployment:
+  `0.1.11|codex-mobile-shell-v227`.
 - Backup path:
-  `/Users/hermes-host/HermesMobile/backups/deploy/20260608T165345Z-plugin-codex-mobile-web-codex-mobile-hermes-media-font-v226`.
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260609T002806Z-plugin-codex-mobile-web-codex-mobile-upload-image-echo-v227`.
 - Production smoke confirmed `/api/public-config` reports
-  `clientBuildId=0.1.11|codex-mobile-shell-v226` and
-  `shellCacheName=codex-mobile-shell-v226`.
+  `clientBuildId=0.1.11|codex-mobile-shell-v227` and
+  `shellCacheName=codex-mobile-shell-v227`.
 - Plugin manifest returns `plugin_id=codex-mobile`, `kind=embedded_app`, and
   does not return raw Codex Mobile Access Keys.
 - Generated-image endpoint remains protected: no auth returns `401`, Access
   Key returns `200 image/png`, and a short-lived plugin session cookie can
   still authorize `/api/generated-images/file` when the query string contains a
   stale plugin-session token.
+- Uploaded-image endpoint remains protected: no auth returns `401`, Access Key
+  returns `200 image/jpeg`, and a short-lived plugin session cookie can still
+  authorize `/api/uploads/file` when the query string contains a stale token.
 - Live iOS PWA debug evidence for direct Codex plugin launch confirmed
+  `data-font-size=xlarge`, opened thread
+  `019ea76b-d846-7892-bda0-c0fff9cf7581`, rendered one uploaded image
+  `IMG_5882.jpg` with natural size `591x1280`, and `failedUploadCount=0`.
+  Screenshot artifact:
+  `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v227-upload-image-1781040000.png`.
+- Prior live iOS PWA debug evidence for generated images confirmed
   `CLIENT_BUILD_ID=0.1.11|codex-mobile-shell-v226`,
   `data-font-size=xlarge`, opened thread
   `019ea77e-4e36-7820-adf4-9bf0272965b8`, rendered one `view_image output`

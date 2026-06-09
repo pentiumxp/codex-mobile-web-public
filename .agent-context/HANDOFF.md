@@ -925,3 +925,74 @@ The previous full handoff was archived and should be opened only when old proven
   - Screenshot artifact:
     `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v226-media-font-1780937849769.png`.
   - The temporary live debug server started for direct validation was stopped.
+
+## 2026-06-09 Upload Image Auth And Pending Echo v227
+
+- User reported two remaining embedded Codex Mobile issues after v226:
+  - User-uploaded images still displayed `图片无法加载`, while Codex-generated
+    referenced images rendered correctly.
+  - A just-sent user message briefly appeared twice, then one copy disappeared.
+- Diagnosis:
+  - Uploaded images use `/api/uploads/file`, not `/api/generated-images/file`.
+    The v226 failed-image auth probe only covered generated-image URLs.
+  - `imageSourceForPart` always preferred an attachment-summary path when a
+    matching image part existed. During optimistic/local or mixed app-server
+    input, that path may be only a filename such as `IMG_5882.jpg`; the browser
+    then tried `/api/uploads/file?path=IMG_5882.jpg`, which is outside the safe
+    upload root and cannot load.
+  - Image-only optimistic user messages compared a local filename with the
+    server's absolute upload path, so they were not always treated as the same
+    user message until a later refresh rebuilt the turn.
+- Implemented:
+  - Commit: `e786c9c Fix mobile upload image auth and pending echo dedupe`.
+  - Shell advanced to `0.1.11|codex-mobile-shell-v227`.
+  - `public/app.js` now routes upload-file URLs through the same authenticated
+    same-origin API URL refresh as other media.
+  - Failed-image probing now covers `/api/uploads/file` and
+    `/api/files/preview/content` in addition to `/api/generated-images/file`.
+  - Input-image rendering only uses an attachment-summary path when it is an
+    absolute local path; otherwise it falls back to the image part's own
+    `image_url` / data URL / blob URL instead of fabricating an upload URL from
+    a bare filename.
+  - User-message merge now limits shadowing to optimistic/local/mux messages,
+    compares optimistic attachment basenames for image-only sends, and collapses
+    matching local, mux, and durable app-server echoes to one visible message.
+- Validation:
+  - `node --check public/app.js` passed.
+  - Focused tests passed:
+    `node --test test/conversation-render.test.js` and
+    `node --test test/mobile-viewport.test.js test/thread-goal-service.test.js
+    test/thread-task-card-route.test.js`.
+  - `npm run check` passed.
+  - `npm test` passed with 402 tests.
+  - `npm run check:macos` passed.
+  - Home AI platform contract check passed:
+    `node scripts/plugin-workspace-platform-contract-check.js --plugin
+    codex-mobile --json`.
+- Production deployment:
+  - Deployed commit `e786c9c11ba5` through the Home AI central Mac deploy
+    script with reason `codex-mobile-upload-image-echo-v227`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260609T002806Z-plugin-codex-mobile-web-codex-mobile-upload-image-echo-v227`.
+  - LaunchDaemon validation passed and `/api/public-config` reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v227`,
+    `shellCacheName=codex-mobile-shell-v227`, and `platform=darwin`.
+  - Uploaded-image production smoke:
+    unauthenticated `401`, Access Key `200 image/jpeg`, plugin session cookie
+    with stale query token `200 image/jpeg`; no raw keys or tokens were
+    printed.
+  - Generated-image production smoke remained protected:
+    unauthenticated `401`, Access Key `200 image/png`.
+- Visual toolchain:
+  - Used Home AI `npm run ios:pwa:debug` directly.
+  - Opened a real Codex plugin launch URL with top-level `threadId` target
+    `019ea76b-d846-7892-bda0-c0fff9cf7581` without printing launch tokens.
+  - Direct live-debug DOM evidence passed:
+    `embed=true`, `fontSize=xlarge`, target thread text present, image cards
+    included one uploaded image and one generated image, `failedCount=0`.
+  - After scrolling the uploaded image into view, DOM evidence showed upload
+    image `complete=true`, natural size `591x1280`, caption `IMG_5882.jpg`,
+    and `failedUploadCount=0`.
+  - Screenshot artifact:
+    `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v227-upload-image-1781040000.png`.
+  - The temporary live debug server started for direct validation was stopped.
