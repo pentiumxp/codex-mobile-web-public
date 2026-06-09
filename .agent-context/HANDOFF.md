@@ -1862,3 +1862,32 @@ The previous full handoff was archived and should be opened only when old proven
     `ready=true`, `transport=external-jsonl-tcp`, endpoint source under the
     temporary profile path, `mobileOwnedMux.running=true`, and
     `lastError=null`. The temporary runtime was removed afterward.
+- Commit:
+  - Product/source commit deployed to production:
+    `4086dce2aef2 Fix side chat layout and mobile mux fallback`.
+- Production deployment:
+  - Deployed through the Home AI central Mac deploy script from a clean source
+    tree.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260609T130306Z-plugin-codex-mobile-web-manual`.
+  - Restarted launchd label:
+    `com.hermesmobile.plugin.codex-mobile`.
+  - Production `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v254`,
+    `shellCacheName=codex-mobile-shell-v254`, build
+    `47f2a372421853e5`, and default model `gpt-5.5`.
+  - Production `/api/status?detail=1` reports `ready=true`,
+    `transport=external-jsonl-tcp`, profile endpoint source
+    `/Users/xuxin/.codex-homes/previous/app-server-mux/endpoint.json`,
+    active `codexHome=/Users/xuxin/.codex-homes/previous`,
+    `sharedRequired=true`, and `lastError=null`.
+  - Production thread-list smoke on `/api/threads?limit=3` returned 3 rows and
+    mobile token usage metadata.
+  - Current production status still uses an existing profile mux endpoint, so
+    `mobileOwnedMux=null` is expected until Desktop-owned/non-owned endpoint
+    disappears or becomes stale. The missing-endpoint fallback was verified in
+    development without mutating production endpoint state.
+  - Evidence ledger entries:
+    `evidence-4d3cf85f-de47-40d7-8cbe-85ec85596605`,
+    `evidence-8dbe517a-47cc-4e2a-97e0-bb6e463f5499`, and
+    `evidence-bcf81af2-1088-480f-82a1-e3e7f54004fc`.
