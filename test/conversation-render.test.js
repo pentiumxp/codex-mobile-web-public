@@ -70,9 +70,11 @@ function evaluatedInputContentRenderer() {
     "isCodexMobileUploadPath",
     "isLikelyAbsoluteLocalPath",
     "canRenderImageAttachment",
+    "authenticatedApiContentUrl",
     "uploadFileUrl",
     "localFilePreviewContentUrl",
     "imageContentUrlForPath",
+    "localAttachmentPreviewUrl",
     "imageSourceForPart",
     "compactStructuredForSignature",
     "renderInputText",
@@ -152,9 +154,62 @@ function evaluatedUserMessagesLikelySame() {
     "normalizeComparableText",
     "userMessageComparableParts",
     "userMessagePathOverlap",
+    "comparablePathName",
+    "userMessagePathNameOverlap",
     "userMessagesLikelySame",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`${sources.join("\n")}\nreturn userMessagesLikelySame;`)();
+}
+
+function evaluatedMergeItemsPreservingLocalVisible() {
+  const sources = [
+    "normalizeFsPath",
+    "imageUrlValue",
+    "isInputTextPart",
+    "inputTextValue",
+    "isTruncatedImagePayloadPart",
+    "isInputImagePart",
+    "attachmentSummaryMarkerMatch",
+    "stripAttachmentSummaryLinePrefix",
+    "parseAttachmentLine",
+    "splitAttachmentSummaryText",
+    "isMuxUserMessage",
+    "isOptimisticUserMessage",
+    "normalizeComparableText",
+    "userMessageComparableParts",
+    "userMessagePathOverlap",
+    "comparablePathName",
+    "userMessagePathNameOverlap",
+    "userMessageSpecificity",
+    "userMessagesLikelySame",
+    "userMessagesCanShadow",
+    "hasMatchingIncomingUserMessage",
+    "hasMatchingRealUserMessage",
+    "removeShadowedMuxUserMessages",
+    "userMessageShadowPriority",
+    "mergeLikelySameUserMessage",
+    "dedupeLikelySameUserMessages",
+    "comparableVisibleTextItem",
+    "comparableVisibleText",
+    "visibleTextItemsLikelySame",
+    "hasMatchingIncomingVisibleItem",
+    "mergeVisibleTextItemPreservingRenderIdentity",
+    "mergeItemsPreservingLocalVisible",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`
+function itemVisibleWeight(item) { return JSON.stringify(item || {}).length; }
+function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false) {
+  if (!item || itemVisibleWeight(item) <= 0) return false;
+  if (item.type === "userMessage" && /^mux-user-/.test(String(item.id || ""))) return true;
+  return preserveLocalVisible;
+}
+function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
+  return Object.assign({}, existingItem || {}, incomingItem || {});
+}
+function dedupeTurnUsageSummaryItems(items) { return items || []; }
+${sources.join("\n")}
+return mergeItemsPreservingLocalVisible;
+`)();
 }
 
 function evaluatedTurnUsageSummaryRenderer() {
@@ -323,6 +378,13 @@ test("imageView upload screenshots use the uploads route instead of file preview
   assert.doesNotMatch(html, /\/api\/files\/preview\/content/);
 });
 
+test("protected image auth recovery covers uploaded images", () => {
+  assert.match(functionBody("protectedGeneratedImageSrc"), /"\/api\/generated-images\/file"/);
+  assert.match(functionBody("protectedGeneratedImageSrc"), /"\/api\/uploads\/file"/);
+  assert.match(functionBody("protectedGeneratedImageSrc"), /"\/api\/files\/preview\/content"/);
+  assert.match(functionBody("uploadFileUrl"), /authenticatedApiContentUrl\(`\/api\/uploads\/file\?\$\{params\.toString\(\)\}`\)/);
+});
+
 test("generated image content urls render bounded image cards", () => {
   const renderImageView = evaluatedImageViewRenderer();
   const html = renderImageView({
@@ -436,6 +498,10 @@ test("raw app-server input image parts use object image urls", () => {
   const renderInputContent = evaluatedInputContentRenderer();
   const html = renderInputContent([
     {
+      type: "input_text",
+      text: "Uploaded attachments:\n- IMG_5882.jpg (image, image/jpeg, 101.7 KB): IMG_5882.jpg",
+    },
+    {
       type: "input_image",
       image_url: { url: "data:image/png;base64,abc123" },
     },
@@ -443,6 +509,7 @@ test("raw app-server input image parts use object image urls", () => {
 
   assert.match(html, /class="input-image"/);
   assert.match(html, /src="data:image\/png;base64,abc123"/);
+  assert.doesNotMatch(html, /\/api\/uploads\/file\?path=IMG_5882/);
   assert.doesNotMatch(html, /\[object Object\]/);
 });
 
@@ -472,8 +539,8 @@ test("matching user messages keep their original turn position after final refre
   const body = functionBody("mergeItemsPreservingLocalVisible");
   assert.match(body, /const incomingUserMatch = \(incomingItems \|\| \[\]\)\.find/);
   assert.match(body, /existingItem\.type === "userMessage"/);
-  assert.match(body, /userMessagesLikelySame\(existingItem, incomingItem\)/);
-  assert.match(body, /merged\.push\(mergeItemPreservingVisibleFields\(existingItem, incomingUserMatch\)\)/);
+  assert.match(body, /userMessagesCanShadow\(existingItem, incomingItem\)/);
+  assert.match(body, /merged\.push\(mergeLikelySameUserMessage\(existingItem, incomingUserMatch\)\)/);
   assert.match(body, /addedIncomingItems\.add\(incomingUserMatch\)/);
   assert.match(body, /const incomingTextMatch = incomingUserMatch[\s\S]*visibleTextItemsLikelySame\(existingItem, incomingItem\)/);
 });
@@ -520,6 +587,66 @@ test("optimistic user messages match app-server input_text messages", () => {
       content: [{ type: "input_text", text: "same message" }, { type: "localImage", path: "/tmp/b.png" }],
     },
   ), false);
+  assert.equal(userMessagesLikelySame(
+    {
+      id: "local-user-submit-3",
+      type: "userMessage",
+      mobilePendingSubmission: true,
+      content: [{ type: "text", text: "Uploaded attachments:\n- IMG_5882.jpg (image, image/jpeg, 101.7 KB): IMG_5882.jpg" }],
+    },
+    {
+      id: "real-user-3",
+      type: "userMessage",
+      content: [
+        {
+          type: "input_text",
+          text: "Uploaded attachments:\n- IMG_5882.jpg (image, image/jpeg, 101.7 KB): /Users/xuxin/.codex-mobile-web/uploads/thread/IMG_5882.jpg",
+        },
+        { type: "localImage", path: "/Users/xuxin/.codex-mobile-web/uploads/thread/IMG_5882.jpg" },
+      ],
+    },
+  ), true);
+});
+
+test("optimistic user messages are shadowed by mux and durable echoes", () => {
+  const mergeItemsPreservingLocalVisible = evaluatedMergeItemsPreservingLocalVisible();
+  const localText = {
+    id: "local-user-submit-1",
+    type: "userMessage",
+    mobilePendingSubmission: true,
+    content: [{ type: "text", text: "same message" }],
+  };
+  const muxText = {
+    id: "mux-user-thread-1-turn-1-submit-1",
+    type: "userMessage",
+    mobilePendingSubmission: true,
+    content: [{ type: "input_text", text: "same message" }],
+  };
+  const textItems = mergeItemsPreservingLocalVisible([localText], [muxText], true);
+  assert.equal(textItems.length, 1);
+  assert.equal(textItems[0].id, muxText.id);
+
+  const localImage = {
+    id: "local-user-submit-2",
+    type: "userMessage",
+    mobilePendingSubmission: true,
+    content: [{ type: "text", text: "Uploaded attachments:\n- IMG_5882.jpg (image, image/jpeg, 101.7 KB): IMG_5882.jpg" }],
+  };
+  const durableImage = {
+    id: "real-user-2",
+    type: "userMessage",
+    content: [
+      {
+        type: "input_text",
+        text: "Uploaded attachments:\n- IMG_5882.jpg (image, image/jpeg, 101.7 KB): /Users/xuxin/.codex-mobile-web/uploads/thread/IMG_5882.jpg",
+      },
+      { type: "localImage", path: "/Users/xuxin/.codex-mobile-web/uploads/thread/IMG_5882.jpg" },
+    ],
+  };
+  const imageItems = mergeItemsPreservingLocalVisible([localImage], [durableImage], true);
+  assert.equal(imageItems.length, 1);
+  assert.equal(imageItems[0].id, durableImage.id);
+  assert.equal(imageItems[0].mobilePendingSubmission, undefined);
 });
 
 test("active turn state follows only the latest durable turn", () => {
@@ -576,7 +703,7 @@ test("completed turns can render context and token usage summaries", () => {
   assert.match(functionBody("renderItemBody"), /item\.type === "turnUsageSummary"[\s\S]*renderTurnUsageSummary\(item\)/);
   assert.match(functionBody("visibleItemSignature"), /item\.type === "turnUsageSummary"/);
   assert.match(functionBody("visibleItemSignature"), /mobileUsageSummary: item\.mobileUsageSummary/);
-  assert.match(functionBody("mergeItemsPreservingLocalVisible"), /dedupeTurnUsageSummaryItems\(removeShadowedMuxUserMessages\(merged\)\)/);
+  assert.match(functionBody("mergeItemsPreservingLocalVisible"), /dedupeTurnUsageSummaryItems\(removeShadowedMuxUserMessages\(dedupeLikelySameUserMessages\(merged\)\)\)/);
   assert.match(functionBody("upsertItem"), /isTurnUsageSummaryItem\(item\)[\s\S]*!isTurnUsageSummaryItem\(existing\)/);
   assert.match(functionBody("turnFinalReceiptNode"), /:not\(\.turnUsageSummary\)/);
 });

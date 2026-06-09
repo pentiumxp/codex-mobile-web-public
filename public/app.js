@@ -250,7 +250,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v226";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v227";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -3484,6 +3484,19 @@ function userMessagePathOverlap(left, right) {
     && left.paths.some((pathValue) => right.paths.includes(pathValue));
 }
 
+function comparablePathName(pathValue) {
+  const text = String(pathValue || "").split(/[?#]/)[0];
+  const parts = normalizeFsPath(text).split("\\").filter(Boolean);
+  return parts[parts.length - 1] || "";
+}
+
+function userMessagePathNameOverlap(left, right) {
+  if (!left.paths.length || !right.paths.length) return false;
+  const leftNames = new Set(left.paths.map(comparablePathName).filter(Boolean));
+  if (!leftNames.size) return false;
+  return right.paths.some((pathValue) => leftNames.has(comparablePathName(pathValue)));
+}
+
 function userMessageSpecificity(item) {
   const parts = userMessageComparableParts(item);
   return parts.text.length + (parts.paths.length * 240);
@@ -3498,7 +3511,18 @@ function userMessagesLikelySame(left, right) {
     if (!a.paths.length && !b.paths.length) return true;
     return userMessagePathOverlap(a, b);
   }
+  if ((isOptimisticUserMessage(left) || isOptimisticUserMessage(right))
+    && userMessagePathNameOverlap(a, b)
+    && (!a.text || !b.text || a.text === b.text)) return true;
   return userMessagePathOverlap(a, b) && (!a.text || !b.text || a.text === b.text);
+}
+
+function userMessagesCanShadow(left, right) {
+  return Boolean(left && right
+    && left.type === "userMessage"
+    && right.type === "userMessage"
+    && (isOptimisticUserMessage(left) || isOptimisticUserMessage(right))
+    && userMessagesLikelySame(left, right));
 }
 
 function hasMatchingIncomingUserMessage(existingItem, incomingItems) {
@@ -3506,7 +3530,7 @@ function hasMatchingIncomingUserMessage(existingItem, incomingItems) {
   return (incomingItems || []).some((incomingItem) => incomingItem
     && incomingItem.id !== existingItem.id
     && incomingItem.type === "userMessage"
-    && userMessagesLikelySame(existingItem, incomingItem));
+    && userMessagesCanShadow(existingItem, incomingItem));
 }
 
 function hasMatchingRealUserMessage(item, items) {
@@ -3515,11 +3539,53 @@ function hasMatchingRealUserMessage(item, items) {
     && candidate.id !== item.id
     && candidate.type === "userMessage"
     && !isMuxUserMessage(candidate)
-    && userMessagesLikelySame(candidate, item));
+    && userMessagesCanShadow(candidate, item));
 }
 
 function removeShadowedMuxUserMessages(items) {
   return (items || []).filter((item) => !hasMatchingRealUserMessage(item, items));
+}
+
+function userMessageShadowPriority(item) {
+  if (!item || item.type !== "userMessage") return 0;
+  if (/^local-user-/.test(String(item.id || ""))) return 1;
+  if (isMuxUserMessage(item) || item.mobilePendingSubmission) return 2;
+  return 3;
+}
+
+function mergeLikelySameUserMessage(existingItem, incomingItem) {
+  const existingPriority = userMessageShadowPriority(existingItem);
+  const incomingPriority = userMessageShadowPriority(incomingItem);
+  const merged = mergeItemPreservingVisibleFields(existingItem, incomingItem);
+  const preferred = incomingPriority >= existingPriority ? incomingItem : existingItem;
+  if (preferred && preferred.id) merged.id = preferred.id;
+  if (preferred && preferred.clientSubmissionId) merged.clientSubmissionId = preferred.clientSubmissionId;
+  if (preferred && preferred.startedAtMs && !merged.startedAtMs) merged.startedAtMs = preferred.startedAtMs;
+  if (preferred && !isOptimisticUserMessage(preferred)) {
+    delete merged.mobilePendingSubmission;
+    delete merged.clientSubmissionId;
+  }
+  if (incomingPriority > existingPriority && incomingPriority >= 3) {
+    if (Array.isArray(incomingItem.content)) merged.content = incomingItem.content;
+    if (typeof incomingItem.text === "string") merged.text = incomingItem.text;
+    if (typeof incomingItem.message === "string") merged.message = incomingItem.message;
+  }
+  return merged;
+}
+
+function dedupeLikelySameUserMessages(items) {
+  const out = [];
+  for (const item of items || []) {
+    if (item && item.type === "userMessage") {
+      const existingIndex = out.findIndex((candidate) => userMessagesCanShadow(candidate, item));
+      if (existingIndex >= 0) {
+        out[existingIndex] = mergeLikelySameUserMessage(out[existingIndex], item);
+        continue;
+      }
+    }
+    out.push(item);
+  }
+  return out;
 }
 
 function comparableVisibleTextItem(item) {
@@ -3591,7 +3657,9 @@ function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserve
     const id = existingItem.id;
     if (id && incomingById.has(id)) {
       const incomingMatch = incomingById.get(id);
-      merged.push(mergeItemPreservingVisibleFields(existingItem, incomingMatch));
+      merged.push(userMessagesCanShadow(existingItem, incomingMatch)
+        ? mergeLikelySameUserMessage(existingItem, incomingMatch)
+        : mergeItemPreservingVisibleFields(existingItem, incomingMatch));
       added.add(id);
       addedIncomingItems.add(incomingMatch);
     } else if (hasMatchingIncomingVisibleItem(existingItem, incomingItems)) {
@@ -3599,12 +3667,12 @@ function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserve
         && incomingItem.id !== id
         && incomingItem.type === "userMessage"
         && existingItem.type === "userMessage"
-        && userMessagesLikelySame(existingItem, incomingItem));
+        && userMessagesCanShadow(existingItem, incomingItem));
       const incomingTextMatch = incomingUserMatch
         ? null
         : (incomingItems || []).find((incomingItem) => visibleTextItemsLikelySame(existingItem, incomingItem));
       if (incomingUserMatch) {
-        merged.push(mergeItemPreservingVisibleFields(existingItem, incomingUserMatch));
+        merged.push(mergeLikelySameUserMessage(existingItem, incomingUserMatch));
         if (incomingUserMatch.id) added.add(incomingUserMatch.id);
         addedIncomingItems.add(incomingUserMatch);
       } else if (incomingTextMatch) {
@@ -3623,10 +3691,19 @@ function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserve
     if (addedIncomingItems.has(incomingItem)) continue;
     if (incomingItem.id && added.has(incomingItem.id)) continue;
     if (hasMatchingRealUserMessage(incomingItem, merged) || hasMatchingRealUserMessage(incomingItem, incomingItems)) continue;
+    if (incomingItem.type === "userMessage") {
+      const existingUserIndex = merged.findIndex((existingItem) => userMessagesCanShadow(existingItem, incomingItem));
+      if (existingUserIndex >= 0) {
+        merged[existingUserIndex] = mergeLikelySameUserMessage(merged[existingUserIndex], incomingItem);
+        if (incomingItem.id) added.add(incomingItem.id);
+        addedIncomingItems.add(incomingItem);
+        continue;
+      }
+    }
     merged.push(incomingItem);
     if (incomingItem.id) added.add(incomingItem.id);
   }
-  return dedupeTurnUsageSummaryItems(removeShadowedMuxUserMessages(merged));
+  return dedupeTurnUsageSummaryItems(removeShadowedMuxUserMessages(dedupeLikelySameUserMessages(merged)));
 }
 
 function mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) {
@@ -8649,7 +8726,7 @@ function parseAttachmentLine(line) {
 function uploadFileUrl(filePath) {
   const params = new URLSearchParams({ path: filePath });
   if (state.key) params.set("key", state.key);
-  return `/api/uploads/file?${params.toString()}`;
+  return authenticatedApiContentUrl(`/api/uploads/file?${params.toString()}`);
 }
 
 function isCodexMobileUploadPath(filePath) {
@@ -8662,8 +8739,15 @@ function imageContentUrlForPath(filePath) {
   return isCodexMobileUploadPath(filePath) ? uploadFileUrl(filePath) : localFilePreviewContentUrl(filePath);
 }
 
+function localAttachmentPreviewUrl(attachment) {
+  const value = String((attachment && (attachment.previewUrl || attachment.objectUrl || attachment.localUrl)) || "").trim();
+  return /^(blob:|data:image\/)/i.test(value) ? value : "";
+}
+
 function imageSourceForPart(part, attachment = null) {
-  if (attachment && attachment.path) return uploadFileUrl(attachment.path);
+  const previewUrl = localAttachmentPreviewUrl(attachment);
+  if (previewUrl) return previewUrl;
+  if (attachment && attachment.path && isLikelyAbsoluteLocalPath(attachment.path)) return imageContentUrlForPath(attachment.path);
   if (part.path) return imageContentUrlForPath(part.path);
   const url = imageUrlValue(part);
   return url || "";
@@ -9395,7 +9479,11 @@ function protectedGeneratedImageSrc(value) {
   if (!raw) return "";
   try {
     const parsed = new URL(raw, window.location.origin);
-    if (parsed.origin === window.location.origin && parsed.pathname === "/api/generated-images/file") {
+    if (parsed.origin === window.location.origin && (
+      parsed.pathname === "/api/generated-images/file"
+      || parsed.pathname === "/api/uploads/file"
+      || parsed.pathname === "/api/files/preview/content"
+    )) {
       return `${parsed.pathname}${parsed.search}${parsed.hash}`;
     }
   } catch (_) {}
@@ -10968,6 +11056,8 @@ function localUserMessageItem(text, attachments, clientSubmissionId) {
   return {
     id: `local-user-${clientSubmissionId || Date.now()}`,
     type: "userMessage",
+    mobilePendingSubmission: true,
+    clientSubmissionId: clientSubmissionId || "",
     startedAtMs: Date.now(),
     content: [{
       type: "text",
