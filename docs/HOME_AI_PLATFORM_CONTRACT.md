@@ -15,6 +15,15 @@ it is not a normal grantable business plugin. It is nevertheless covered by the
 platform contract for deployment, mobile visual evidence, live iOS PWA
 debugging, and production validation.
 
+This pointer applies only to the Home AI embedded plugin deployment registered
+as `codex-mobile`. It does not govern independent Codex Mobile Web deployments
+that are not installed through the Home AI plugin manifest/proxy/launch-token
+boundary and do not deploy under the Home AI Mac production plugin root.
+Independent deployments may keep their own deploy/debug/test workflow and are
+not required to use Home AI AI Operations Control Plane, Mac deploy script, or
+iOS visual lane allocator unless they explicitly opt into Home AI embedded
+plugin mode.
+
 ## Canonical Home AI Docs
 
 Read these Home AI docs before changing deployment, MCP tools, mobile visual
