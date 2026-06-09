@@ -49,6 +49,28 @@ test("submitted-message follow ignores empty thread ids", () => {
   assert.equal(conversationScroll.shouldFollowSubmittedMessage(null, { threadId: "thread-a" }), false);
 });
 
+test("submitted-message follow extends while a live reply continues streaming", () => {
+  const follow = conversationScroll.createSubmittedMessageFollow("thread-a", {
+    clientSubmissionId: "submit-1",
+    nowMs: 1000,
+    ttlMs: 5000,
+  });
+  const extended = conversationScroll.extendSubmittedMessageFollow(follow, {
+    nowMs: 4500,
+    ttlMs: 5000,
+  });
+
+  assert.deepEqual(extended, {
+    threadId: "thread-a",
+    clientSubmissionId: "submit-1",
+    untilMs: 9500,
+  });
+  assert.equal(conversationScroll.shouldFollowSubmittedMessage(extended, {
+    threadId: "thread-a",
+    nowMs: 9000,
+  }), true);
+});
+
 test("viewport follow starts only from current or recently bottomed conversations", () => {
   assert.equal(conversationScroll.shouldStartViewportFollow({
     nearBottom: true,
