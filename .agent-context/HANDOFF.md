@@ -1722,3 +1722,49 @@ The previous full handoff was archived and should be opened only when old proven
     clearance `97`, side-chat panel open, and side-chat textarea focused.
   - Production artifact:
     `/Users/xuxin/.homeai-qa/artifacts/ios-pwa-visual-embedded-plugin-side-chat-keyboard-codex-mobile-20260609T071645Z.png`.
+
+## 2026-06-09 Side Chat AI Sidecar Replies v253
+
+- User clarified that side chat should not be a note surface: it should get a
+  current-thread model/subagent-style reply while staying outside the main
+  thread's code-changing flow.
+- Official Codex manual check:
+  - Fresh Codex manual was fetched through the OpenAI docs skill.
+  - Public docs mention side chats for status recaps/explanations without
+    interrupting the main task, but do not expose an app-server side-chat RPC.
+  - Implemented the already documented fallback: hidden sidecar conversation as
+    an implementation detail, with Codex Mobile side-chat store as source of
+    truth.
+- Implemented:
+  - Shell advanced to `0.1.11|codex-mobile-shell-v253`.
+  - `adapters/thread-side-chat-service.js` now stores hidden sidecar metadata,
+    public pending/failed status, and assistant reply lifecycle state. Hidden
+    sidecar thread ids are not returned to the browser.
+  - `server.js` creates/reuses one hidden read-only sidecar Codex thread per
+    main thread, inherits current thread model/reasoning settings and cwd,
+    injects bounded recent parent-thread context plus side-chat transcript, and
+    writes the assistant reply back to the side-chat transcript.
+  - Sidecar threads are filtered from normal Mobile thread lists and web-push
+    completion classification.
+  - `public/app.js` shows pending/failed side-chat reply state, polls the
+    server while a reply is pending, and changes the side-chat submit action to
+    `发送`.
+  - Main thread remains untouched unless the user explicitly applies or queues a
+    side-chat candidate.
+- Validation before deployment:
+  - Focused checks passed:
+    `node --check adapters/thread-side-chat-service.js && node --check
+    server.js && node --check public/app.js && node --test
+    test/thread-side-chat-service.test.js test/thread-side-chat-route.test.js
+    test/mobile-viewport.test.js test/thread-goal-service.test.js
+    test/thread-task-card-route.test.js`.
+  - `npm run check`, `npm test` (436 tests), and `npm run check:macos` passed.
+  - Home AI platform checker passed:
+    `node scripts/plugin-workspace-platform-contract-check.js --plugin
+    codex-mobile --json`.
+  - Development API smoke on `127.0.0.1:18787` passed with target thread
+    `019ea76b-d846-7892-bda0-c0fff9cf7581`: POST side-chat message returned
+    sidecar `pending`, polling returned assistant reply and sidecar `idle`, and
+    normal thread list contained zero visible side-chat/sidecar rows.
+  - Evidence ledger:
+    `$HOME/.homeai-qa/codex-mobile-evidence-ledger.jsonl`.

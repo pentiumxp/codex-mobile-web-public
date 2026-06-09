@@ -67,8 +67,8 @@ test("mobile viewport and early guards disable page zoom", () => {
 });
 
 test("public app shell cache advances after thread side chat panel", () => {
-  assert.match(swJs, /codex-mobile-shell-v252/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v252"/);
+  assert.match(swJs, /codex-mobile-shell-v253/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v253"/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.side-chat-scroll\s*{[\s\S]*overflow:\s*auto;/);
   assert.match(stylesCss, /\.side-chat-form textarea\s*{[\s\S]*max-height:\s*min\(22vh, 156px\);/);
@@ -78,6 +78,8 @@ test("public app shell cache advances after thread side chat panel", () => {
   assert.match(stylesCss, /html\.keyboard-open \.side-chat-form textarea\s*{[\s\S]*min-height:\s*54px;[\s\S]*max-height:\s*min\(14vh, 84px\);/);
   assert.match(appJs, /function ensureSideChatDraftVisible\(/);
   assert.match(appJs, /requestAnimationFrame\(ensureSideChatDraftVisible\)/);
+  assert.match(appJs, /function scheduleSideChatPoll\(/);
+  assert.match(appJs, /侧聊正在回复/);
   assert.match(appJs, /function flushSideChatDraftNow\(/);
   assert.match(appJs, /loadSideChat\(threadId, \{ silent: true \}\)\.catch\(showError\)/);
   assert.match(appJs, /function serverBuildIdFromConfig\(config\) \{\s*return String\(config && \(config\.clientBuildId \|\| config\.shellCacheName \|\| config\.buildId\) \|\| ""\)\.trim\(\);/);

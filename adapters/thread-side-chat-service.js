@@ -10,6 +10,8 @@ const MAX_DRAFT_CHARS = 8_000;
 const MAX_MESSAGE_CHARS = 8_000;
 const MAX_CANDIDATE_TITLE_CHARS = 120;
 const MAX_CANDIDATE_BODY_CHARS = 8_000;
+const MAX_SIDECAR_THREAD_ID_CHARS = 220;
+const MAX_SIDECAR_ERROR_CHARS = 500;
 const MAX_MESSAGES = 100;
 const MAX_TRANSCRIPT_CHARS = 128_000;
 const MAX_IDEMPOTENCY_KEY_CHARS = 240;
@@ -123,6 +125,7 @@ function baseState(scopeId, threadId, timestamp) {
     draft: { text: "", updatedAt: "" },
     candidates: [],
     queue: null,
+    sidecar: { threadId: "", status: "idle", pendingUserMessageId: "", updatedAt: "", error: "" },
     audit: {
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -170,6 +173,24 @@ function publicQueue(queue) {
   };
 }
 
+function publicSidecar(sidecar) {
+  const value = sidecar && typeof sidecar === "object" ? sidecar : {};
+  const status = stringValue(value.status || "idle").toLowerCase();
+  return {
+    status: ["idle", "pending", "failed"].includes(status) ? status : "idle",
+    pendingUserMessageId: stringValue(value.pendingUserMessageId),
+    updatedAt: stringValue(value.updatedAt),
+    error: boundedOptionalText(value.error, MAX_SIDECAR_ERROR_CHARS),
+  };
+}
+
+function privateSidecar(sidecar) {
+  const value = sidecar && typeof sidecar === "object" ? sidecar : {};
+  return Object.assign(publicSidecar(value), {
+    threadId: boundedOptionalText(value.threadId, MAX_SIDECAR_THREAD_ID_CHARS),
+  });
+}
+
 function normalizeCandidateStatus(value) {
   const status = stringValue(value || "draft").toLowerCase();
   if (["draft", "queued", "applied", "cancelled"].includes(status)) return status;
@@ -194,6 +215,7 @@ function publicState(state) {
     },
     candidates: normalized.candidates.map(publicCandidate),
     queue: publicQueue(normalized.queue),
+    sidecar: publicSidecar(normalized.sidecar),
     audit: {
       createdAt: stringValue(normalized.audit && normalized.audit.createdAt),
       updatedAt: stringValue(normalized.audit && normalized.audit.updatedAt),
@@ -224,6 +246,7 @@ function normalizeState(state) {
       .map(publicCandidate)
       .filter((candidate) => candidate.id && candidate.body),
     queue: publicQueue(state && state.queue),
+    sidecar: privateSidecar(state && state.sidecar),
     audit: {
       createdAt: stringValue(state && state.audit && state.audit.createdAt) || timestamp,
       updatedAt: stringValue(state && state.audit && state.audit.updatedAt) || timestamp,
@@ -338,7 +361,7 @@ function createThreadSideChatService(options = {}) {
       const state = findState(store, threadId, true);
       if (idempotencyKey) {
         const existing = state.messages.find((message) => message.idempotencyKey === idempotencyKey);
-        if (existing) return { state: publicState(state), message: publicMessage(existing) };
+        if (existing) return { state: publicState(state), message: publicMessage(existing), duplicate: true };
       }
       const timestamp = touch(state);
       const message = {
@@ -351,7 +374,101 @@ function createThreadSideChatService(options = {}) {
       state.messages.push(message);
       state.messages = trimMessages(state.messages);
       state.draft = { text: "", updatedAt: timestamp };
-      return { state: publicState(state), message: publicMessage(message) };
+      return { state: publicState(state), message: publicMessage(message), duplicate: false };
+    });
+  }
+
+  async function setSidecarThreadId(threadId, sidecarThreadId) {
+    const sidecarId = boundedOptionalText(sidecarThreadId, MAX_SIDECAR_THREAD_ID_CHARS);
+    return withStore(async (store) => {
+      const state = findState(store, threadId, true);
+      const timestamp = touch(state);
+      state.sidecar = Object.assign({}, privateSidecar(state.sidecar), {
+        threadId: sidecarId,
+        updatedAt: timestamp,
+      });
+      return publicState(state);
+    });
+  }
+
+  function sidecarThreadIdForThread(threadId) {
+    const store = loadStore(storageFile);
+    const state = findState(store, threadId, false);
+    return stringValue(privateSidecar(state.sidecar).threadId);
+  }
+
+  function isSidecarThreadId(threadId) {
+    const id = stringValue(threadId);
+    if (!id) return false;
+    const store = loadStore(storageFile);
+    return safeArray(store.sideChats).some((entry) => stringValue(entry && entry.sidecar && entry.sidecar.threadId) === id);
+  }
+
+  async function markAssistantPending(threadId, userMessageId, input = {}) {
+    const messageId = boundedString(userMessageId, "user_message_id", 220);
+    const sidecarThreadId = boundedOptionalText(input.sidecarThreadId, MAX_SIDECAR_THREAD_ID_CHARS);
+    return withStore(async (store) => {
+      const state = findState(store, threadId, true);
+      const current = privateSidecar(state.sidecar);
+      const timestamp = touch(state);
+      state.sidecar = Object.assign({}, current, {
+        threadId: sidecarThreadId || current.threadId,
+        status: "pending",
+        pendingUserMessageId: messageId,
+        updatedAt: timestamp,
+        error: "",
+      });
+      return publicState(state);
+    });
+  }
+
+  async function markAssistantCompleted(threadId, userMessageId, input = {}) {
+    const messageId = boundedString(userMessageId, "user_message_id", 220);
+    const text = boundedOptionalText(input.text || input.message || input.body, MAX_MESSAGE_CHARS);
+    if (!text) throw errorWithStatus("side_chat_assistant_text_required");
+    const idempotencyKey = normalizeIdempotencyKey(input.idempotencyKey)
+      || `sidechat-reply:${normalizeThreadId(threadId)}:${messageId}`;
+    return withStore(async (store) => {
+      const state = findState(store, threadId, true);
+      const existing = state.messages.find((message) => message.idempotencyKey === idempotencyKey);
+      const timestamp = touch(state);
+      if (!existing) {
+        state.messages.push({
+          id: stringValue(input.id) || idGenerator("sca"),
+          role: "assistant",
+          text,
+          idempotencyKey,
+          createdAt: timestamp,
+        });
+        state.messages = trimMessages(state.messages);
+      }
+      state.sidecar = Object.assign({}, privateSidecar(state.sidecar), {
+        status: "idle",
+        pendingUserMessageId: "",
+        updatedAt: timestamp,
+        error: "",
+      });
+      return {
+        state: publicState(state),
+        message: publicMessage(existing || state.messages[state.messages.length - 1]),
+      };
+    });
+  }
+
+  async function markAssistantFailed(threadId, userMessageId, err) {
+    const messageId = boundedString(userMessageId, "user_message_id", 220, false);
+    const error = boundedOptionalText(err && err.message || String(err || "side_chat_reply_failed"), MAX_SIDECAR_ERROR_CHARS)
+      || "side_chat_reply_failed";
+    return withStore(async (store) => {
+      const state = findState(store, threadId, true);
+      const timestamp = touch(state);
+      state.sidecar = Object.assign({}, privateSidecar(state.sidecar), {
+        status: "failed",
+        pendingUserMessageId: messageId,
+        updatedAt: timestamp,
+        error,
+      });
+      return publicState(state);
     });
   }
 
@@ -592,6 +709,12 @@ function createThreadSideChatService(options = {}) {
       state.draft = { text: "", updatedAt: timestamp };
       state.candidates = [];
       state.queue = null;
+      state.sidecar = Object.assign({}, privateSidecar(state.sidecar), {
+        status: "idle",
+        pendingUserMessageId: "",
+        updatedAt: timestamp,
+        error: "",
+      });
       return publicState(state);
     });
   }
@@ -600,6 +723,12 @@ function createThreadSideChatService(options = {}) {
     get,
     updateDraft,
     addMessage,
+    setSidecarThreadId,
+    sidecarThreadIdForThread,
+    isSidecarThreadId,
+    markAssistantPending,
+    markAssistantCompleted,
+    markAssistantFailed,
     createCandidate,
     queueCandidate,
     cancelCandidate,

@@ -137,6 +137,7 @@ const state = {
   sideChatBusyKey: "",
   sideChatDraftSaveTimer: null,
   sideChatDraftSaveSeq: 0,
+  sideChatPollTimer: null,
   sideChatRenderSignature: "",
   suppressThreadClickUntil: 0,
   suppressThreadClickThreadId: "",
@@ -269,7 +270,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v252";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v253";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -6106,8 +6107,20 @@ function defaultSideChatState(threadId) {
     draft: { text: "", updatedAt: "" },
     candidates: [],
     queue: null,
+    sidecar: { status: "idle", pendingUserMessageId: "", updatedAt: "", error: "" },
     audit: { createdAt: "", updatedAt: "" },
     persistence: "server",
+  };
+}
+
+function normalizeSideChatSidecar(input) {
+  const source = input && typeof input === "object" ? input : {};
+  const status = String(source.status || "idle").toLowerCase();
+  return {
+    status: ["idle", "pending", "failed"].includes(status) ? status : "idle",
+    pendingUserMessageId: String(source.pendingUserMessageId || ""),
+    updatedAt: String(source.updatedAt || ""),
+    error: String(source.error || ""),
   };
 }
 
@@ -6124,6 +6137,7 @@ function normalizeSideChatState(input, threadId = "") {
     },
     candidates: Array.isArray(source.candidates) ? source.candidates.filter(Boolean) : [],
     queue: source.queue && typeof source.queue === "object" ? source.queue : null,
+    sidecar: normalizeSideChatSidecar(source.sidecar),
     audit: {
       createdAt: String(source.audit && source.audit.createdAt || ""),
       updatedAt: String(source.audit && source.audit.updatedAt || ""),
@@ -6200,6 +6214,7 @@ async function loadSideChat(threadId = sideChatThreadId(), options = {}) {
     if (state.sideChatLoadingThreadId === id) state.sideChatLoadingThreadId = "";
     if (state.sideChatError && sideChatThreadId() === id) state.sideChatError = "";
     if (state.subagentPanelOpen && sideChatThreadId() === id) updateSubagentPanelUi({ force: true });
+    if (sideChatReplyPending(id)) scheduleSideChatPoll(id);
     return sideChat;
   } catch (err) {
     if (state.sideChatLoadingThreadId === id) state.sideChatLoadingThreadId = "";
@@ -6207,6 +6222,26 @@ async function loadSideChat(threadId = sideChatThreadId(), options = {}) {
     if (state.subagentPanelOpen && sideChatThreadId() === id) updateSubagentPanelUi({ force: true });
     throw err;
   }
+}
+
+function sideChatReplyPending(threadId = sideChatThreadId()) {
+  const sideChat = sideChatStateForThread(threadId);
+  return String(sideChat.sidecar && sideChat.sidecar.status || "") === "pending";
+}
+
+function scheduleSideChatPoll(threadId = sideChatThreadId(), delayMs = 1600) {
+  const id = String(threadId || "");
+  clearTimeout(state.sideChatPollTimer);
+  state.sideChatPollTimer = null;
+  if (!id || !state.subagentPanelOpen || sideChatThreadId() !== id || !sideChatReplyPending(id)) return;
+  state.sideChatPollTimer = setTimeout(() => {
+    state.sideChatPollTimer = null;
+    loadSideChat(id, { silent: true }).then(() => {
+      if (sideChatReplyPending(id)) scheduleSideChatPoll(id, 1800);
+    }).catch(() => {
+      if (sideChatThreadId() === id) scheduleSideChatPoll(id, 2600);
+    });
+  }, Math.max(500, Number(delayMs) || 1600));
 }
 
 async function saveSideChatDraft(threadId, text, options = {}) {
@@ -6310,6 +6345,12 @@ function sideChatPanelRenderSignature() {
     sideChat.queue.updatedAt,
     String(sideChat.queue.error || "").length,
   ].join(":") : "";
+  const sidecar = sideChat.sidecar ? [
+    sideChat.sidecar.status,
+    sideChat.sidecar.pendingUserMessageId,
+    sideChat.sidecar.updatedAt,
+    String(sideChat.sidecar.error || "").length,
+  ].join(":") : "";
   const turn = currentSubagentTurn();
   const subagents = currentSubagentItems().map((item) => [
     item.id || item.itemId || "",
@@ -6327,6 +6368,7 @@ function sideChatPanelRenderSignature() {
     messages,
     candidates,
     queue,
+    sidecar,
     turn && turn.id || "",
     subagents,
   ].join("|");
@@ -6419,8 +6461,17 @@ function renderSideChatPanel() {
   const queue = sideChat.queue && sideChat.queue.status !== "sent" && sideChat.queue.status !== "cancelled"
     ? `<div class="side-chat-queue ${escapeHtml(sideChat.queue.status || "queued")}">${escapeHtml(sideChatQueueSummary(sideChat.queue))}</div>`
     : "";
+  const sidecar = normalizeSideChatSidecar(sideChat.sidecar);
+  const replyStatus = sidecar.status === "pending"
+    ? `<div class="side-chat-queue pending">侧聊正在回复...</div>`
+    : sidecar.status === "failed" && sidecar.error
+      ? `<div class="side-chat-error">侧聊回复失败：${escapeHtml(sidecar.error)}</div>`
+      : "";
   const error = state.sideChatError ? `<div class="side-chat-error">${escapeHtml(state.sideChatError)}</div>` : "";
-  const transcript = messages || `<div class="side-chat-empty">暂无侧聊内容。</div>`;
+  const transcript = `${messages}${sidecar.status === "pending" ? `<article class="side-chat-message assistant pending">
+    <div class="side-chat-message-meta"><span>侧聊</span></div>
+    <div class="side-chat-message-text">正在整理回复...</div>
+  </article>` : ""}` || `<div class="side-chat-empty">暂无侧聊内容。</div>`;
   const candidateList = candidates || `<div class="side-chat-empty compact">暂无候选指令。</div>`;
   const draftText = sideChat.draft && sideChat.draft.text || "";
   const draftEmpty = !String(draftText || "").trim();
@@ -6435,6 +6486,7 @@ function renderSideChatPanel() {
       ${loadingLabel}
     </div>
     ${queue}
+    ${replyStatus}
     ${error}
     <div class="side-chat-scroll">
       <div class="side-chat-transcript">${transcript}</div>
@@ -6443,7 +6495,7 @@ function renderSideChatPanel() {
     <form class="side-chat-form" data-side-chat-form>
       <textarea data-side-chat-draft data-thread-id="${escapeHtml(threadId)}" rows="3" maxlength="${SIDE_CHAT_DRAFT_MAX_CHARS}" placeholder="整理想法，不进入主线程">${escapeHtml(draftText)}</textarea>
       <div class="side-chat-form-actions">
-        <button type="submit" data-side-chat-action="message"${busy || draftEmpty ? " disabled" : ""}>保存想法</button>
+        <button type="submit" data-side-chat-action="message"${busy || draftEmpty ? " disabled" : ""}>发送</button>
         <button type="button" data-side-chat-action="candidate"${busy || draftEmpty ? " disabled" : ""}>存为候选</button>
         <button type="button" data-side-chat-action="clear"${busy || (!sideChat.messages.length && !sideChat.candidates.length && draftEmpty) ? " disabled" : ""}>清空</button>
       </div>
@@ -6467,6 +6519,8 @@ function updateSubagentPanelUi(options = {}) {
     panel.innerHTML = "";
     panel.dataset.renderSignature = "";
     state.sideChatRenderSignature = "";
+    clearTimeout(state.sideChatPollTimer);
+    state.sideChatPollTimer = null;
     return;
   }
   const signature = sideChatPanelRenderSignature();
@@ -6569,7 +6623,8 @@ async function submitSideChatMessage(event) {
     });
     applySideChatResult(threadId, result);
     state.sideChatError = "";
-    markActivity("侧聊已保存");
+    if (sideChatReplyPending(threadId)) scheduleSideChatPoll(threadId, 900);
+    markActivity("侧聊已发送");
   } catch (err) {
     state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
     showError(err);

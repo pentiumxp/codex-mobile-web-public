@@ -74,6 +74,42 @@ test("side chat messages persist and do not require browser storage", async () =
   assert.equal(JSON.parse(fs.readFileSync(storageFile, "utf8")).sideChats.length, 1);
 });
 
+test("side chat assistant reply lifecycle keeps hidden sidecar id private", async () => {
+  const storageFile = tempFile("side-chats.json");
+  const service = createThreadSideChatService({
+    storageFile,
+    scopeId: "profile-a",
+    idGenerator: deterministicIds(),
+    now: () => 2500,
+  });
+
+  const user = await service.addMessage("thread-a", {
+    role: "user",
+    text: "Explain the current implementation plan.",
+    idempotencyKey: "message-1",
+  });
+  await service.setSidecarThreadId("thread-a", "hidden-sidecar-thread");
+  const pending = await service.markAssistantPending("thread-a", user.message.id, {
+    sidecarThreadId: "hidden-sidecar-thread",
+  });
+  const completed = await service.markAssistantCompleted("thread-a", user.message.id, {
+    text: "Use a hidden read-only sidecar and keep the main thread untouched.",
+  });
+  const replay = await service.markAssistantCompleted("thread-a", user.message.id, {
+    text: "Do not duplicate this response.",
+  });
+
+  assert.equal(user.duplicate, false);
+  assert.equal(pending.sidecar.status, "pending");
+  assert.equal(pending.sidecar.threadId, undefined);
+  assert.equal(service.sidecarThreadIdForThread("thread-a"), "hidden-sidecar-thread");
+  assert.equal(service.isSidecarThreadId("hidden-sidecar-thread"), true);
+  assert.equal(completed.state.sidecar.status, "idle");
+  assert.equal(completed.state.messages.length, 2);
+  assert.equal(completed.state.messages[1].role, "assistant");
+  assert.equal(replay.state.messages.length, 2);
+});
+
 test("side chat candidates queue idempotently without applying to the main thread", async () => {
   const service = createThreadSideChatService({
     storageFile: tempFile("side-chats.json"),

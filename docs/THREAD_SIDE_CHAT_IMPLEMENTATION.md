@@ -5,13 +5,18 @@ Web code layout and test strategy.
 
 ## Implementation Status
 
-The v250 implementation includes the server-owned persistence store, authenticated
-routes, combined left-swipe panel UI, draft autosave, candidate queue/cancel, and
-main-thread apply through `turn/start`.
+The v253 implementation includes the server-owned persistence store,
+authenticated routes, combined left-swipe panel UI, draft autosave, candidate
+queue/cancel, main-thread apply through `turn/start`, and hidden AI sidecar
+replies.
 
-This version does not create a hidden AI sidecar thread. Side-chat entries are
-server-saved notes and candidates until the user explicitly applies a candidate
-to the main thread.
+Side-chat messages are private planning messages. Sending one creates or reuses
+one hidden read-only sidecar Codex thread for the current main thread, starts a
+sidecar turn with bounded parent-thread context, and writes the assistant reply
+back to the Codex Mobile side-chat transcript. The sidecar thread is filtered
+from normal Mobile thread lists and completion notifications. The sidecar
+transcript remains an implementation detail; the Codex Mobile side-chat store is
+the source of truth shown in the panel.
 
 ## Module Ownership
 
@@ -23,12 +28,14 @@ to the main thread.
   - optimistic version checks;
   - storage and compaction;
   - queued apply idempotency;
+  - hidden sidecar metadata and assistant reply lifecycle state;
   - safe public shape generation for the browser.
 
 - `server.js`
   - route wiring;
   - authenticated side-chat state reads and updates;
   - side-chat send endpoint orchestration;
+  - hidden sidecar thread creation/reuse and read-only reply execution;
   - queued apply hook on `turn/completed`;
   - SSE or thread-detail refresh integration.
 
