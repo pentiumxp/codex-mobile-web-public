@@ -21,6 +21,33 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-09 Public Main Parity Push
+
+- User asked to push public after private had advanced beyond public PR #57.
+- Used clean public mirror
+  `/Users/hermes-dev/HermesMobileDev/public-mirrors/codex-mobile-web-public`.
+- Synced public-safe files from private `main` / `private/main`, explicitly
+  excluding `.agent-context`.
+- Public commit pushed:
+  - `b9ecbd6 Sync public with private main`
+- Public content now includes current product/source/docs through side-chat,
+  image-ordering, GitHub preview, platform pointer, and related tests, but no
+  tracked `.agent-context`, runtime state, uploaded content, local keys, or
+  private handoff files.
+- Public validation before push:
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+  - `npm test` passed with 435 tests.
+  - Privacy/file scan found no tracked `.agent-context` files and no runtime or
+    upload directories; text matches were expected public boundary docs,
+    placeholder key examples, and code paths that mention local context files.
+- Private reverse sync:
+  - Merged `public/main` back into private with `Merge public sync`.
+  - Private validation after merge passed: `npm run check`,
+    `npm run check:macos`, `git diff --check HEAD`, Home AI platform contract
+    check for `codex-mobile`, and `npm test` with 435 tests.
+
 ## 2026-06-09 Platform Contract Pointer v2
 
 - Updated `docs/HOME_AI_PLATFORM_CONTRACT.md` from Home AI platform contract
