@@ -98,6 +98,22 @@ test("viewport metrics treat iframe scroll or offset as keyboard shift", () => {
   assert.equal(offset.height, 600);
 });
 
+test("regular mobile viewport callers can ignore document scroll while the keyboard is open", () => {
+  const result = viewportMetrics.measureViewport({
+    visualHeight: 520,
+    visualOffsetTop: 0,
+    scrollTop: 0,
+    innerHeight: 1024,
+    clientHeight: 1024,
+    activeElement: editableElement(),
+  });
+
+  assert.equal(result.keyboardCandidate, true);
+  assert.equal(result.keyboardShrunk, true);
+  assert.equal(result.top, 0);
+  assert.equal(result.height, 520);
+});
+
 test("viewport metrics do not treat non-text controls as keyboard owners", () => {
   const result = viewportMetrics.measureViewport({
     visualHeight: 520,

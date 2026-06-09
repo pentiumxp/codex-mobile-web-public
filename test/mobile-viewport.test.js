@@ -31,6 +31,10 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(viewportMetricsJs, /hostKeyboardVisible/);
   assert.match(viewportMetricsJs, /offsetKeyboardShifted/);
   assert.match(viewportMetricsJs, /scrollKeyboardShifted/);
+  assert.match(appJs, /scrollTop:\s*embedded \? Math\.max\(/);
+  assert.match(appJs, /function resetMobileKeyboardWindowScroll\(\)/);
+  assert.match(appJs, /if \(isHermesEmbedMode\(\) \|\| !isKeyboardEditableElement\(document\.activeElement\)\) return;/);
+  assert.match(appJs, /if \(typeof window\.scrollTo === "function"\) window\.scrollTo\(0, 0\);/);
   assert.match(appJs, /if \(viewport\.keyboardShrunk\) \{[\s\S]*--app-height/);
   assert.match(appJs, /--app-top/);
   assert.match(appJs, /document\.documentElement\.style\.removeProperty\("--app-height"\)/);
@@ -67,8 +71,8 @@ test("mobile viewport and early guards disable page zoom", () => {
 });
 
 test("public app shell cache advances after thread side chat panel", () => {
-  assert.match(swJs, /codex-mobile-shell-v252/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v252"/);
+  assert.match(swJs, /codex-mobile-shell-v253/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v253"/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.side-chat-scroll\s*{[\s\S]*overflow:\s*auto;/);
   assert.match(stylesCss, /\.side-chat-form textarea\s*{[\s\S]*max-height:\s*min\(22vh, 156px\);/);
