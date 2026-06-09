@@ -21,6 +21,47 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-09 v256 Pending Approval Projection
+
+- User reported that sandbox/permission prompts were visible in Codex Desktop
+  but not in Codex Mobile thread detail after projection changes, leaving
+  commands stuck without a mobile `Approve` card.
+- Fixed thread-detail projection/read/fallback responses to attach current
+  thread pending Codex app-server `serverRequest` objects as compressed public
+  approval payloads in `thread.pendingServerRequests`.
+- Fixed `public/app.js` so `loadThread()` syncs projected
+  `pendingServerRequests` into the existing in-memory approval map before the
+  first detail render, so approval cards no longer depend on EventSource timing.
+- Kept one-time approval state out of persistence/shared context; no raw
+  request payloads, keys, cookies, or hidden state are written.
+- Bumped app shell to `codex-mobile-shell-v256` and documented the release in
+  README.
+- Commit: `0b9c793 Project pending approval requests into thread detail`.
+- Pushed private `main` to origin.
+- Validation:
+  - `node --check server.js`, `node --check public/app.js`, and
+    `node --check public/sw.js` passed.
+  - Focused tests passed:
+    `node --test test/protocol.test.js test/conversation-render.test.js
+    test/mobile-viewport.test.js test/app-update.test.js
+    test/thread-goal-service.test.js test/thread-task-card-route.test.js`.
+  - `npm run check` passed.
+  - `git diff --check` passed.
+  - Home AI `architecture-code-test-harness-map.test.js` passed.
+  - `npm test` passed with 439 tests.
+- Deployment:
+  - Mac production reports `/api/public-config`
+    `clientBuildId=0.1.11|codex-mobile-shell-v256` and
+    `shellCacheName=codex-mobile-shell-v256`.
+  - Authenticated plugin smoke:
+    `/api/status?detail=1` returned `ready=true`, transport
+    `managed-ws-child`, `lastError=null`; `/api/approvals` returned 200.
+  - Home AI authenticated manifest/proxy smoke returned `codex-mobile` and
+    proxied `public-config` v256.
+  - Evidence ledger entries:
+    `evidence-5e70fcce-5fed-44eb-b775-d4b13f638058` and
+    `evidence-af90c5ae-66f8-4836-b7b1-5d9c2cce4d21`.
+
 ## 2026-06-09 Public Main Parity Push
 
 - User asked to push public after private had advanced beyond public PR #57.
