@@ -123,7 +123,7 @@ Minimum closure for Codex Mobile production changes:
 - Current verified shell after Hermes embed safe-area deployment:
   `0.1.11|codex-mobile-shell-v249`.
 - Backup path:
-  `/Users/hermes-host/HermesMobile/backups/deploy/20260609T014739Z-plugin-codex-mobile-web-codex-mobile-live-user-message-dedupe-v247`.
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260609T034947Z-plugin-codex-mobile-web-codex-mobile-host-safe-area-v249`.
 - Production smoke confirmed `/api/public-config` reports
   `clientBuildId=0.1.11|codex-mobile-shell-v249` and
   `shellCacheName=codex-mobile-shell-v249`.
