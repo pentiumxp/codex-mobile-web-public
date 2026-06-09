@@ -1576,3 +1576,42 @@ The previous full handoff was archived and should be opened only when old proven
     `workspacePath` `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`
     to review workspace
     `/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web`.
+
+## 2026-06-09 Side Chat Keyboard Clearance v252
+
+- User reported the newly added side chat input was hidden by the iOS keyboard
+  in embedded plugin production mode.
+- Implemented:
+  - Shell advanced to `0.1.11|codex-mobile-shell-v252`.
+  - `public/styles.css` now gives the left side panel higher stacking than the
+    main composer and, while `keyboard-open`, binds the side panel to the
+    host-provided visible app height with compact Subagent and side-chat rows.
+  - `public/app.js` now keeps the focused side-chat draft textarea/form visible
+    after host viewport updates, focus, and input events.
+  - Added a minimal embedded-only `window.__codexMobileVisualHarness` facade for
+    the central visual toolchain. It exposes only safe layout/control methods
+    and build/thread identifiers; it does not expose raw state, cookies, keys,
+    tokens, or logs.
+  - Home AI central visual harness was patched to use this facade for Codex
+    Mobile side-chat scenarios because Codex Mobile keeps its runtime state in
+    module scope, not on `window.state`.
+- Validation before production:
+  - Focused tests passed:
+    `node --test test/mobile-viewport.test.js test/thread-goal-service.test.js
+    test/thread-task-card-route.test.js`.
+  - `npm run check`, `npm test`, and `npm run check:macos` passed in this
+    plugin workspace.
+  - Home AI checks passed:
+    `node --check scripts/ios-pwa-visual-harness.js`,
+    `node --test tests/ios-pwa-visual-harness.test.js`,
+    `node scripts/plugin-workspace-platform-contract-check.js --plugin
+    codex-mobile --json`, and `npm run check`.
+  - Development visual validation used the central contract scenario
+    `embedded-plugin-side-chat-keyboard` with target thread
+    `019ea76b-d846-7892-bda0-c0fff9cf7581`.
+  - Development visual result passed with simulated canonical host keyboard
+    viewport: keyboard top `392`, textarea bottom `322`, composer bottom `362`,
+    input clearance `70`, composer clearance `30`, side-chat panel open, and
+    side-chat textarea focused.
+  - Development artifact:
+    `/Users/xuxin/.homeai-qa/artifacts/ios-pwa-visual-embedded-plugin-side-chat-keyboard-codex-mobile-20260609T071211Z.png`.

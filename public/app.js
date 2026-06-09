@@ -269,7 +269,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v251";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v252";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -4625,6 +4625,7 @@ function handleHermesPluginViewportMessage(data) {
   state.pluginHostViewport = normalized;
   updateViewportVars();
   updateComposerHeightVar();
+  requestAnimationFrame(ensureSideChatDraftVisible);
   if (!isHermesKeyboardInputActive()) {
     scheduleVisualRecovery("hermes-plugin-viewport", 40, { render: false, heavy: false, delays: [40, 180] });
   }
@@ -6156,6 +6157,24 @@ function sideChatDraftTextarea() {
   return textarea && textarea.tagName === "TEXTAREA" ? textarea : null;
 }
 
+function ensureSideChatDraftVisible() {
+  const textarea = sideChatDraftTextarea();
+  if (!textarea || document.activeElement !== textarea) return;
+  const form = textarea.closest("[data-side-chat-form]");
+  const panel = $("subagentPanel");
+  try {
+    if (form) form.scrollIntoView({ block: "nearest", inline: "nearest" });
+    else textarea.scrollIntoView({ block: "nearest", inline: "nearest" });
+  } catch (_) {
+    // Older WebKit builds can throw for detached nodes during iframe relayout.
+  }
+  if (!panel || !form) return;
+  const panelRect = panel.getBoundingClientRect();
+  const formRect = form.getBoundingClientRect();
+  const overflow = Math.ceil(formRect.bottom - panelRect.bottom + 8);
+  if (overflow > 0) panel.scrollTop = Math.max(0, Number(panel.scrollTop || 0) + overflow);
+}
+
 function currentSideChatDraftText(threadId = sideChatThreadId()) {
   const textarea = sideChatDraftTextarea();
   if (textarea && String(textarea.dataset.threadId || "") === String(threadId || "")) return textarea.value;
@@ -6465,7 +6484,10 @@ function updateSubagentPanelUi(options = {}) {
   const form = panel.querySelector("[data-side-chat-form]");
   if (form) form.addEventListener("submit", submitSideChatMessage);
   const textarea = sideChatDraftTextarea();
-  if (textarea) textarea.addEventListener("input", handleSideChatDraftInput);
+  if (textarea) {
+    textarea.addEventListener("input", handleSideChatDraftInput);
+    textarea.addEventListener("focus", () => requestAnimationFrame(ensureSideChatDraftVisible));
+  }
   panel.querySelectorAll("[data-side-chat-action]").forEach((button) => {
     if (button.closest("[data-side-chat-form]") && button.type === "submit") return;
     button.addEventListener("click", handleSideChatActionClick);
@@ -6502,6 +6524,29 @@ function handleSideChatDraftInput(event) {
   if (text !== textarea.value) textarea.value = text;
   scheduleSideChatDraftSave(threadId, text);
   refreshSideChatFormButtons();
+  ensureSideChatDraftVisible();
+}
+
+function installCodexMobileVisualHarnessFacade() {
+  if (!isHermesEmbedMode() || window.__codexMobileVisualHarness) return;
+  Object.defineProperty(window, "__codexMobileVisualHarness", {
+    configurable: false,
+    enumerable: false,
+    value: Object.freeze({
+      clientBuildId: () => CLIENT_BUILD_ID,
+      currentThreadId: () => String(state.currentThreadId || ""),
+      hostViewport: () => state.pluginHostViewport || null,
+      sideChatPanelOpen: () => Boolean(state.subagentPanelOpen),
+      setSideChatPanelOpen: (open) => {
+        state.subagentPanelOpen = Boolean(open);
+        updateSubagentPanelUi({ force: true });
+        return Boolean(state.subagentPanelOpen);
+      },
+      openThread: (threadId) => loadThread(String(threadId || ""), { source: "visual-harness" }),
+      loadSideChat: (threadId) => loadSideChat(String(threadId || sideChatThreadId()), { silent: true }),
+      ensureSideChatDraftVisible,
+    }),
+  });
 }
 
 async function submitSideChatMessage(event) {
@@ -13854,6 +13899,7 @@ async function start() {
   const startStartedAt = nowPerfMs();
   state.startupInProgress = true;
   wireUi();
+  installCodexMobileVisualHarnessFacade();
   if (isHermesEmbedMode()) showPluginStartupLoading();
   startRelativeTimeTimer();
   startUiWatchdog();

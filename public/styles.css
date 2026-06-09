@@ -2466,7 +2466,7 @@ html.visual-recovering body::before {
   top: calc(44px + env(safe-area-inset-top, 0px));
   left: 0;
   right: 0;
-  z-index: 8;
+  z-index: 12;
   max-height: min(74vh, calc(100dvh - 108px), 680px);
   overflow: hidden;
   padding: 10px 12px;
@@ -2476,6 +2476,7 @@ html.visual-recovering body::before {
 }
 
 .thread-side-panel {
+  height: 100%;
   min-height: 0;
   max-height: inherit;
   display: grid;
@@ -2750,6 +2751,45 @@ html.visual-recovering body::before {
   font: inherit;
   font-size: 13px;
   line-height: 1.38;
+}
+
+html.keyboard-open .subagent-panel {
+  bottom: max(8px, var(--host-bottom-safe-area, 0px));
+  max-height: none;
+  overflow: auto;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  overscroll-behavior: contain;
+}
+
+html.keyboard-open .thread-side-panel {
+  min-height: 0;
+  grid-template-rows: minmax(44px, 0.18fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+html.keyboard-open .subagent-status-window,
+html.keyboard-open .side-chat-section {
+  gap: 6px;
+}
+
+html.keyboard-open .subagent-status-list {
+  max-height: 56px;
+}
+
+html.keyboard-open .side-chat-scroll {
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+html.keyboard-open .side-chat-form {
+  gap: 6px;
+}
+
+html.keyboard-open .side-chat-form textarea {
+  min-height: 54px;
+  max-height: min(14vh, 84px);
+  resize: none;
 }
 
 .side-chat-queue,
