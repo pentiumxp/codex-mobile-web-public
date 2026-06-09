@@ -373,6 +373,18 @@ test("context compaction notices require explicit state and do not infer pending
   assert.match(functionBody("renderContextCompaction"), /if \(!notice\) return ""/);
 });
 
+test("live follow-up user messages render after current output items", () => {
+  const body = functionBody("renderTurn");
+  assert.match(body, /const visibleEntries = visibleItemsForTurn\(turn\);/);
+  assert.match(body, /const liveLatestTurn = isLatestTurn\(turn\) && isLiveTurn\(turn\);/);
+  assert.match(body, /const deferLiveFollowupUser = Boolean\(liveLatestTurn/);
+  assert.match(body, /item\.type === "userMessage"/);
+  assert.match(body, /candidate\.sourceIndex < sourceIndex/);
+  assert.match(body, /candidate\.item\.type !== "userMessage"/);
+  assert.match(body, /order: deferLiveFollowupUser \? 2 : 1/);
+  assert.match(body, /\.sort\(\(a, b\) => \(a\.order - b\.order\) \|\| \(a\.sourceIndex - b\.sourceIndex\)\)/);
+});
+
 test("long agent messages keep a stable render path when a turn completes", () => {
   assert.match(functionBody("renderItemBody"), /if \(item\.type === "agentMessage"\) \{[\s\S]*renderThreadTaskCardDraftMessage\(item\.text \|\| "", item, turn\) \|\| renderMarkdownWithAttachmentSummary\(item\.text \|\| ""\);/);
   assert.doesNotMatch(functionBody("renderItemBody"), /isLiveTurn\(turn\) \? escapeHtml/);

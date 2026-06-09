@@ -49,6 +49,8 @@ test("live operation cards stay compact, four-line, and expose only the newest o
   assert.match(functionBody("renderLiveOperation"), /stableOperationRenderKey\(turn, item, index\)/);
   assert.match(functionBody("renderOperationCard"), /operation-meta-line/);
   assert.match(functionBody("renderOperationCard"), /operation-detail-line/);
+  assert.match(functionBody("renderOperationCard"), /operation-detail-line\$\{detail \? "" : " empty"\}/);
+  assert.match(functionBody("renderOperationCard"), /detail \? escapeHtml\(detail\) : "&nbsp;"/);
   assert.match(functionBody("renderOperationCard"), /operation-title[\s\S]*operation-status/);
   assert.match(functionBody("renderOperationCard"), /operation-duration/);
   assert.match(functionBody("renderOperationCard"), /operationDurationData\(item, status\)/);
@@ -81,10 +83,15 @@ test("live operation cards stay compact, four-line, and expose only the newest o
   assert.match(stylesCss, /\.operation-title\s*{[\s\S]*font-size:\s*calc\(var\(--content-small-font-size\) \* 0\.92\);/);
   assert.match(stylesCss, /\.operation-status\s*{[\s\S]*font-size:\s*calc\(var\(--content-small-font-size\) \* 0\.92\);/);
   assert.match(stylesCss, /\.operation-duration\s*{[\s\S]*font-variant-numeric:\s*tabular-nums;/);
+  assert.match(stylesCss, /\.item\.live-operation\.entry-animate\s*{[\s\S]*animation:\s*none;/);
+  const operationDetailLineCss = cssRuleBody(".operation-detail-line");
+  assert.match(operationDetailLineCss, /height:\s*calc\(var\(--content-code-font-size\) \* 4\.01\);/);
+  assert.match(operationDetailLineCss, /overflow:\s*hidden;/);
   const operationDetailCss = cssRuleBody(".operation-detail");
   assert.match(operationDetailCss, /font-size:\s*calc\(var\(--content-code-font-size\) \* 1\.06\);/);
   assert.match(operationDetailCss, /-webkit-line-clamp:\s*3;/);
-  assert.match(operationDetailCss, /max-height:\s*calc\(1\.26em \* 3\);/);
+  assert.match(operationDetailCss, /height:\s*100%;/);
+  assert.match(operationDetailCss, /max-height:\s*100%;/);
   assert.match(operationDetailCss, /white-space:\s*normal;/);
   assert.doesNotMatch(operationDetailCss, /white-space:\s*nowrap;/);
 });
