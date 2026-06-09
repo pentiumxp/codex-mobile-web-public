@@ -250,7 +250,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v227";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v228";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -2012,6 +2012,40 @@ function findPublicPrReviewThread(workspacePath = "") {
   }) || null;
 }
 
+function workspacePathBaseName(value) {
+  const text = String(value || "").trim().replace(/[\\/]+$/, "");
+  if (!text) return "";
+  const parts = text.split(/[\\/]+/).filter(Boolean);
+  return parts[parts.length - 1] || "";
+}
+
+function workspacePathIsVisible(value) {
+  const key = normalizeFsPath(value);
+  if (!key) return false;
+  return (state.workspaces || []).some((workspace) => normalizeFsPath(workspace && workspace.cwd) === key);
+}
+
+function visibleWorkspaceWithBaseName(value) {
+  const baseName = workspacePathBaseName(value).toLowerCase();
+  if (!baseName) return "";
+  const match = (state.workspaces || []).find((workspace) => workspace
+    && workspace.cwd
+    && workspacePathBaseName(workspace.cwd).toLowerCase() === baseName);
+  return match ? String(match.cwd || "").trim() : "";
+}
+
+function publicPrReviewWorkspacePath() {
+  const appWorkspace = String(state.appWorkspacePath || "").trim();
+  if (workspacePathIsVisible(appWorkspace)) return appWorkspace;
+  const sameNameWorkspace = visibleWorkspaceWithBaseName(appWorkspace);
+  if (sameNameWorkspace) return sameNameWorkspace;
+  const selectedWorkspace = String(state.selectedCwd || "").trim();
+  if (workspacePathIsVisible(selectedWorkspace)) return selectedWorkspace;
+  const currentWorkspace = String((state.currentThread && state.currentThread.cwd) || "").trim();
+  if (workspacePathIsVisible(currentWorkspace)) return currentWorkspace;
+  return appWorkspace || selectedWorkspace || currentWorkspace;
+}
+
 async function openPublicPrReviewThreadIfAvailable(workspacePath, text) {
   let target = findPublicPrReviewThread(workspacePath);
   if (!target) {
@@ -2115,7 +2149,12 @@ async function preparePublicPrMergePrompt(status) {
     window.alert("检测到 public 开放 PR，但输入框已有内容。请处理当前草稿后点击 Public PR 按钮。");
     return;
   }
-  const workspacePath = String(state.appWorkspacePath || state.selectedCwd || (state.currentThread && state.currentThread.cwd) || "").trim();
+  if (!state.workspaces.length) {
+    await loadWorkspaces().catch((err) => {
+      postClientEvent("public_pr_workspace_lookup_failed", { message: err.message || String(err) });
+    });
+  }
+  const workspacePath = publicPrReviewWorkspacePath();
   if (!workspacePath) {
     setComposerText(text);
     scheduleCurrentDraftSave();

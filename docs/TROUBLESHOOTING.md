@@ -927,14 +927,21 @@ node --test test\manual-restart-ui.test.js test\mobile-viewport.test.js
 
 ## Public PR Prompt Targets The Wrong Thread
 
-Public-PR review preparation must not reuse an arbitrary currently open thread.
-Current builds should first reuse a same-workspace thread titled
-`Codex Mobile Public PR`; if no matching thread exists, they route the generated
-review text into a new-thread draft for the app workspace path reported by
-`/api/public-config.workspacePath` and send that fixed title to
-`/api/threads/new-message`. If the prompt still lands inside an unrelated
-Agent/Hermes thread, the browser build is stale or the client never loaded the
-workspace-path config.
+Public-PR review preparation must not reuse an arbitrary currently open thread
+or an invisible production deployment directory. Current builds should first
+resolve a visible review workspace: use `/api/public-config.workspacePath` when
+that path is visible to Codex Desktop, otherwise use a visible workspace with
+the same basename, such as resolving
+`/Users/hermes-host/HermesMobile/plugins/codex-mobile-web` to
+`/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web`.
+
+After resolving the workspace, current builds should reuse a same-workspace
+thread titled `Codex Mobile Public PR`; if no matching thread exists, they
+route the generated review text into a new-thread draft for that resolved
+workspace and send that fixed title to `/api/threads/new-message`. If the
+prompt still lands inside an unrelated Agent/Hermes thread or the new-thread
+send returns `Workspace is not visible in Codex Desktop`, the browser build is
+stale or the client never loaded the workspace list needed for resolution.
 
 ## Repeated New Version Prompt
 

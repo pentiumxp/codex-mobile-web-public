@@ -29,6 +29,17 @@ function functionBody(source, name) {
   throw new Error(`${name} body not closed`);
 }
 
+function evaluatedPublicPrReviewWorkspacePath() {
+  const sources = [
+    "normalizeFsPath",
+    "workspacePathBaseName",
+    "workspacePathIsVisible",
+    "visibleWorkspaceWithBaseName",
+    "publicPrReviewWorkspacePath",
+  ].map((name) => functionBody(appJs, name));
+  return (state) => Function("state", `${sources.join("\n")}\nreturn publicPrReviewWorkspacePath();`)(state);
+}
+
 test("self-update UI explains supervisor-dependent restart", () => {
   assert.match(appJs, /等待重启…/);
   assert.match(appJs, /服务会退出并等待启动任务或守护脚本拉起/);
@@ -148,14 +159,46 @@ test("public pull request check prompts before public publishing work", () => {
   assert.match(appJs, /function publicPrMergeInstruction\(status\)/);
   assert.match(appJs, /const PUBLIC_PR_REVIEW_THREAD_TITLE = "Codex Mobile Public PR";/);
   assert.match(appJs, /function findPublicPrReviewThread\(workspacePath = ""\)/);
+  assert.match(appJs, /function publicPrReviewWorkspacePath\(\)/);
   assert.match(appJs, /async function openPublicPrReviewThreadIfAvailable\(workspacePath, text\)/);
   assert.match(appJs, /await loadThread\(target\.id, \{ source: "public-pr" \}\);/);
   assert.match(appJs, /state\.appWorkspacePath = String\(config\.workspacePath \|\| state\.appWorkspacePath \|\| ""\)\.trim\(\);/);
+  assert.match(functionBody(appJs, "preparePublicPrMergePrompt"), /const workspacePath = publicPrReviewWorkspacePath\(\);/);
+  assert.match(functionBody(appJs, "preparePublicPrMergePrompt"), /await loadWorkspaces\(\)\.catch/);
   assert.match(appJs, /if \(await openPublicPrReviewThreadIfAvailable\(workspacePath, text\)\) \{[\s\S]*return;[\s\S]*\}/);
   assert.match(appJs, /state\.newThreadTitle = publicPrReviewThreadTitle\(\);[\s\S]*state\.newThreadDraft = true;|state\.newThreadDraft = true;[\s\S]*state\.newThreadTitle = publicPrReviewThreadTitle\(\);/);
   assert.match(appJs, /body\.append\("title", submittedTitle\);/);
   assert.match(appJs, /scheduleStartupPublicPrCheck\(\)/);
   assert.match(appJs, /handlePublicPrStatusClick\(\)\.catch\(showError\)/);
+});
+
+test("public pull request prompt targets visible source workspace when production path is not visible", () => {
+  const publicPrReviewWorkspacePath = evaluatedPublicPrReviewWorkspacePath();
+  assert.equal(publicPrReviewWorkspacePath({
+    appWorkspacePath: "/Users/hermes-host/HermesMobile/plugins/codex-mobile-web",
+    selectedCwd: "",
+    currentThread: null,
+    workspaces: [
+      { cwd: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web" },
+      { cwd: "/Users/hermes-dev/HermesMobileDev/public-mirrors/codex-mobile-web-public" },
+    ],
+  }), "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web");
+  assert.equal(publicPrReviewWorkspacePath({
+    appWorkspacePath: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web",
+    selectedCwd: "/Users/other/current",
+    currentThread: { cwd: "/Users/other/thread" },
+    workspaces: [
+      { cwd: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web" },
+    ],
+  }), "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web");
+  assert.equal(publicPrReviewWorkspacePath({
+    appWorkspacePath: "/unregistered/deploy/plugin",
+    selectedCwd: "/Users/hermes-dev/HermesMobileDev/app",
+    currentThread: null,
+    workspaces: [
+      { cwd: "/Users/hermes-dev/HermesMobileDev/app" },
+    ],
+  }), "/Users/hermes-dev/HermesMobileDev/app");
 });
 
 test("version button opens an update panel with Public release status", () => {
