@@ -21,6 +21,18 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-09 Platform Contract Pointer v2
+
+- Updated `docs/HOME_AI_PLATFORM_CONTRACT.md` from Home AI platform contract
+  `20260606-v1` to `20260609-v2`.
+- Added canonical AI Ops control-plane docs to the local pointer and recorded
+  the required intake/checks/evidence/production-smoke flow plus the local
+  evidence ledger path by reference only.
+- No public sync is required for this private platform pointer update.
+- Validation before commit:
+  - Home AI platform contract check for `codex-mobile` passed; only warning
+    remained `handoff_pointer_missing`.
+
 ## 2026-06-09 Public PR #57 Light Theme Sync
 
 - Public PR:
