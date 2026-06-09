@@ -93,4 +93,8 @@ test("input normalization preserves text and local images for pending echoes", (
     { type: "userMessage", content: [{ type: "text", text: "hello world" }] },
     { type: "userMessage", content: [{ type: "text", text: "hello   world" }] },
   ), true);
+  assert.equal(sameUserMessageContent(
+    { type: "userMessage", content: [{ type: "text", text: "hello world" }] },
+    { type: "userMessage", content: [{ type: "input_text", text: "hello   world" }] },
+  ), true);
 });

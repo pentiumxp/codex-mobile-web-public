@@ -249,7 +249,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v246";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v247";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -3311,6 +3311,10 @@ function isMuxUserMessage(item) {
   return Boolean(item && item.type === "userMessage" && /^mux-user-/.test(String(item.id || "")));
 }
 
+function isOptimisticUserMessage(item) {
+  return Boolean(item && item.type === "userMessage" && (item.mobilePendingSubmission || /^local-user-/.test(String(item.id || "")) || isMuxUserMessage(item)));
+}
+
 function isTurnUsageSummaryItem(item) {
   return Boolean(item && item.type === "turnUsageSummary");
 }
@@ -3334,10 +3338,15 @@ function userMessageComparableParts(item) {
   if (!item || item.type !== "userMessage") return result;
   const textParts = [];
   const paths = [];
-  for (const part of item.content || []) {
+  if (typeof item.text === "string") textParts.push(item.text);
+  if (typeof item.message === "string") textParts.push(item.message);
+  const contentParts = Array.isArray(item.content)
+    ? item.content
+    : (typeof item.content === "string" ? [{ type: "text", text: item.content }] : []);
+  for (const part of contentParts) {
     if (!part || typeof part !== "object") continue;
-    if (part.type === "text") {
-      const split = splitAttachmentSummaryText(part.text || "");
+    if (isInputTextPart(part)) {
+      const split = splitAttachmentSummaryText(inputTextValue(part));
       if (split.text) textParts.push(split.text);
       for (const attachment of split.attachments) {
         if (attachment.path) paths.push(normalizeFsPath(attachment.path));
@@ -3345,6 +3354,10 @@ function userMessageComparableParts(item) {
       continue;
     }
     if (part.path) paths.push(normalizeFsPath(part.path));
+    else if (isInputImagePart(part)) {
+      const url = imageUrlValue(part);
+      if (url && !/^data:image\//i.test(url)) paths.push(normalizeFsPath(url));
+    }
   }
   result.text = normalizeComparableText(textParts.join("\n"));
   result.paths = [...new Set(paths.filter(Boolean))].sort();
@@ -3354,6 +3367,19 @@ function userMessageComparableParts(item) {
 function userMessagePathOverlap(left, right) {
   return left.paths.length > 0 && right.paths.length > 0
     && left.paths.some((pathValue) => right.paths.includes(pathValue));
+}
+
+function comparablePathName(pathValue) {
+  const text = String(pathValue || "").split(/[?#]/)[0];
+  const parts = normalizeFsPath(text).split("\\").filter(Boolean);
+  return parts[parts.length - 1] || "";
+}
+
+function userMessagePathNameOverlap(left, right) {
+  if (!left.paths.length || !right.paths.length) return false;
+  const leftNames = new Set(left.paths.map(comparablePathName).filter(Boolean));
+  if (!leftNames.size) return false;
+  return right.paths.some((pathValue) => leftNames.has(comparablePathName(pathValue)));
 }
 
 function userMessageSpecificity(item) {
@@ -3366,10 +3392,22 @@ function userMessagesLikelySame(left, right) {
   const a = userMessageComparableParts(left);
   const b = userMessageComparableParts(right);
   if (a.text && b.text && a.text === b.text) {
+    if (isOptimisticUserMessage(left) || isOptimisticUserMessage(right)) return true;
     if (!a.paths.length && !b.paths.length) return true;
     return userMessagePathOverlap(a, b);
   }
+  if ((isOptimisticUserMessage(left) || isOptimisticUserMessage(right))
+    && userMessagePathNameOverlap(a, b)
+    && (!a.text || !b.text || a.text === b.text)) return true;
   return userMessagePathOverlap(a, b) && (!a.text || !b.text || a.text === b.text);
+}
+
+function userMessagesCanShadow(left, right) {
+  return Boolean(left && right
+    && left.type === "userMessage"
+    && right.type === "userMessage"
+    && (isOptimisticUserMessage(left) || isOptimisticUserMessage(right))
+    && userMessagesLikelySame(left, right));
 }
 
 function hasMatchingIncomingUserMessage(existingItem, incomingItems) {
@@ -3391,6 +3429,70 @@ function hasMatchingRealUserMessage(item, items) {
 
 function removeShadowedMuxUserMessages(items) {
   return (items || []).filter((item) => !hasMatchingRealUserMessage(item, items));
+}
+
+function userMessageShadowPriority(item) {
+  if (!item || item.type !== "userMessage") return 0;
+  if (/^local-user-/.test(String(item.id || ""))) return 1;
+  if (isMuxUserMessage(item) || item.mobilePendingSubmission) return 2;
+  return 3;
+}
+
+function mergeLikelySameUserMessage(existingItem, incomingItem) {
+  const existingPriority = userMessageShadowPriority(existingItem);
+  const incomingPriority = userMessageShadowPriority(incomingItem);
+  const merged = mergeItemPreservingVisibleFields(existingItem, incomingItem);
+  const preferred = incomingPriority >= existingPriority ? incomingItem : existingItem;
+  if (preferred && preferred.id) merged.id = preferred.id;
+  if (preferred && preferred.clientSubmissionId) merged.clientSubmissionId = preferred.clientSubmissionId;
+  if (preferred && preferred.startedAtMs && !merged.startedAtMs) merged.startedAtMs = preferred.startedAtMs;
+  if (preferred && !isOptimisticUserMessage(preferred)) {
+    delete merged.mobilePendingSubmission;
+    delete merged.clientSubmissionId;
+  }
+  if (incomingPriority > existingPriority && incomingPriority >= 3) {
+    if (Array.isArray(incomingItem.content)) merged.content = incomingItem.content;
+    if (typeof incomingItem.text === "string") merged.text = incomingItem.text;
+    if (typeof incomingItem.message === "string") merged.message = incomingItem.message;
+  }
+  return merged;
+}
+
+function dedupeLikelySameUserMessages(items) {
+  const out = [];
+  for (const item of items || []) {
+    if (item && item.type === "userMessage") {
+      const existingIndex = out.findIndex((candidate) => userMessagesCanShadow(candidate, item));
+      if (existingIndex >= 0) {
+        out[existingIndex] = mergeLikelySameUserMessage(out[existingIndex], item);
+        continue;
+      }
+    }
+    out.push(item);
+  }
+  return out;
+}
+
+function normalizeThreadVisibleUserMessages(thread) {
+  if (!thread || !Array.isArray(thread.turns)) return thread;
+  for (const turn of thread.turns) {
+    if (!turn || !Array.isArray(turn.items)) continue;
+    turn.items = removeShadowedMuxUserMessages(dedupeLikelySameUserMessages(turn.items));
+  }
+  const durableUserMessages = [];
+  for (const turn of thread.turns) {
+    const items = Array.isArray(turn && turn.items) ? turn.items : [];
+    for (const item of items) {
+      if (item && item.type === "userMessage" && !isOptimisticUserMessage(item)) durableUserMessages.push(item);
+    }
+  }
+  if (!durableUserMessages.length) return thread;
+  for (const turn of thread.turns) {
+    if (!turn || !Array.isArray(turn.items)) continue;
+    turn.items = turn.items.filter((item) => !(isOptimisticUserMessage(item)
+      && durableUserMessages.some((realItem) => realItem.id !== item.id && userMessagesCanShadow(realItem, item))));
+  }
+  return thread;
 }
 
 function comparableVisibleTextItem(item) {
@@ -3462,7 +3564,9 @@ function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserve
     const id = existingItem.id;
     if (id && incomingById.has(id)) {
       const incomingMatch = incomingById.get(id);
-      merged.push(mergeItemPreservingVisibleFields(existingItem, incomingMatch));
+      merged.push(userMessagesCanShadow(existingItem, incomingMatch)
+        ? mergeLikelySameUserMessage(existingItem, incomingMatch)
+        : mergeItemPreservingVisibleFields(existingItem, incomingMatch));
       added.add(id);
       addedIncomingItems.add(incomingMatch);
     } else if (hasMatchingIncomingVisibleItem(existingItem, incomingItems)) {
@@ -3470,12 +3574,12 @@ function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserve
         && incomingItem.id !== id
         && incomingItem.type === "userMessage"
         && existingItem.type === "userMessage"
-        && userMessagesLikelySame(existingItem, incomingItem));
+        && userMessagesCanShadow(existingItem, incomingItem));
       const incomingTextMatch = incomingUserMatch
         ? null
         : (incomingItems || []).find((incomingItem) => visibleTextItemsLikelySame(existingItem, incomingItem));
       if (incomingUserMatch) {
-        merged.push(mergeItemPreservingVisibleFields(existingItem, incomingUserMatch));
+        merged.push(mergeLikelySameUserMessage(existingItem, incomingUserMatch));
         if (incomingUserMatch.id) added.add(incomingUserMatch.id);
         addedIncomingItems.add(incomingUserMatch);
       } else if (incomingTextMatch) {
@@ -3494,10 +3598,19 @@ function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserve
     if (addedIncomingItems.has(incomingItem)) continue;
     if (incomingItem.id && added.has(incomingItem.id)) continue;
     if (hasMatchingRealUserMessage(incomingItem, merged) || hasMatchingRealUserMessage(incomingItem, incomingItems)) continue;
+    if (incomingItem.type === "userMessage") {
+      const existingUserIndex = merged.findIndex((existingItem) => userMessagesCanShadow(existingItem, incomingItem));
+      if (existingUserIndex >= 0) {
+        merged[existingUserIndex] = mergeLikelySameUserMessage(merged[existingUserIndex], incomingItem);
+        if (incomingItem.id) added.add(incomingItem.id);
+        addedIncomingItems.add(incomingItem);
+        continue;
+      }
+    }
     merged.push(incomingItem);
     if (incomingItem.id) added.add(incomingItem.id);
   }
-  return dedupeTurnUsageSummaryItems(removeShadowedMuxUserMessages(merged));
+  return dedupeTurnUsageSummaryItems(removeShadowedMuxUserMessages(dedupeLikelySameUserMessages(merged)));
 }
 
 function mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) {
@@ -3516,7 +3629,7 @@ function mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) {
 }
 
 function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
-  if (!existingThread || !incomingThread || existingThread.id !== incomingThread.id) return incomingThread;
+  if (!existingThread || !incomingThread || existingThread.id !== incomingThread.id) return normalizeThreadVisibleUserMessages(incomingThread);
   const existingTurns = Array.isArray(existingThread.turns) ? existingThread.turns : [];
   const incomingTurns = Array.isArray(incomingThread.turns) ? incomingThread.turns : null;
   const existingById = new Map(existingTurns.map((turn) => [turn.id, turn]));
@@ -3530,7 +3643,7 @@ function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
   if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileReadWarning")) {
     delete merged.mobileReadWarning;
   }
-  if (!incomingTurns) return merged;
+  if (!incomingTurns) return normalizeThreadVisibleUserMessages(merged);
   merged.turns = incomingTurns.map((incomingTurn) => {
     const existingTurn = existingById.get(incomingTurn.id);
     return existingTurn ? mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) : incomingTurn;
@@ -3561,7 +3674,7 @@ function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
       merged.mobileOmittedTurnCount = Math.max(0, Number(merged.mobileOmittedTurnCount || 0) - preservedExpandedTurnCount);
     }
   }
-  return merged;
+  return normalizeThreadVisibleUserMessages(merged);
 }
 
 function turnOrderMs(turn) {
@@ -9840,14 +9953,17 @@ function upsertItem(turnId, item) {
   }
   turn.items = turn.items || [];
   if (item.type === "userMessage") {
-    const matchingExisting = turn.items.find((existing) => existing
+    const matchingExistingIndex = turn.items.findIndex((existing) => existing
       && existing.id !== item.id
       && existing.type === "userMessage"
-      && userMessagesLikelySame(existing, item));
-    if (matchingExisting && userMessageSpecificity(matchingExisting) >= userMessageSpecificity(item)) return;
-    turn.items = turn.items.filter((existing) => existing.id === item.id
-      || existing.type !== "userMessage"
-      || !userMessagesLikelySame(existing, item));
+      && userMessagesCanShadow(existing, item));
+    if (matchingExistingIndex >= 0) {
+      const mergedUserMessage = mergeLikelySameUserMessage(turn.items[matchingExistingIndex], item);
+      turn.items[matchingExistingIndex] = mergedUserMessage;
+      normalizeThreadVisibleUserMessages(state.currentThread);
+      if (shouldRenderAfterUpsert(turn, mergedUserMessage)) scheduleRenderCurrentThread();
+      return;
+    }
   }
   if (item.type === "agentMessage" || item.type === "plan") {
     turn.items = turn.items.filter((existing) => existing.id === item.id || !visibleTextItemsLikelySame(existing, item));
@@ -9861,7 +9977,7 @@ function upsertItem(turnId, item) {
   if (isOperationalItem(item) && isCompletedStatus(item.status) && !item.completedAtMs) item.completedAtMs = Date.now();
   if (index >= 0) turn.items[index] = mergeItemPreservingVisibleFields(turn.items[index], item);
   else turn.items.push(item);
-  turn.items = removeShadowedMuxUserMessages(turn.items);
+  normalizeThreadVisibleUserMessages(state.currentThread);
   if (shouldRenderAfterUpsert(turn, item)) scheduleRenderCurrentThread();
 }
 

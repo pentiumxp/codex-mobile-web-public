@@ -27,9 +27,19 @@ function normalizeUserInputPart(part) {
   return part;
 }
 
+function normalizedTextValue(part) {
+  if (!part || typeof part !== "object") return "";
+  if (typeof part.text === "string") return part.text;
+  if (typeof part.input_text === "string") return part.input_text;
+  if (part.type === "input_text" && typeof part.content === "string") return part.content;
+  return "";
+}
+
 function comparablePart(part) {
   if (!part || typeof part !== "object") return "";
-  if (part.type === "text") return `text:${String(part.text || "").replace(/\s+/g, " ").trim()}`;
+  if (part.type === "text" || part.type === "input_text") {
+    return `text:${normalizedTextValue(part).replace(/\s+/g, " ").trim()}`;
+  }
   if (part.path) return `path:${String(part.path).toLowerCase()}`;
   return JSON.stringify(part);
 }

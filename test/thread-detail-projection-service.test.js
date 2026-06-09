@@ -153,6 +153,63 @@ test("thread detail projection updates live intermediate items from notification
   assert.equal(agent.text, "partial reply");
 });
 
+test("thread detail projection collapses synthetic mobile user echoes", () => {
+  const service = createThreadDetailProjectionService({
+    cacheDir: "",
+    policyVersion: "test-v1",
+    maxTurns: 2,
+    now: (() => {
+      let current = 5400;
+      return () => {
+        current += 100;
+        return current;
+      };
+    })(),
+  });
+  service.seed(signatureInput({ summaryStatus: "active" }), {
+    thread: {
+      id: "thread-1",
+      turns: [],
+    },
+  });
+
+  service.applyNotification("turn/started", {
+    threadId: "thread-1",
+    turn: { id: "turn-1", status: { type: "active" }, items: [] },
+  });
+  service.applyNotification("item/completed", {
+    threadId: "thread-1",
+    turnId: "turn-1",
+    item: {
+      id: "mux-user-thread-1-turn-1-submission-1",
+      type: "userMessage",
+      mobilePendingSubmission: true,
+      content: [{ type: "text", text: "same message" }],
+    },
+  });
+  service.applyNotification("item/completed", {
+    threadId: "thread-1",
+    turnId: "turn-1",
+    item: {
+      id: "real-user-1",
+      type: "userMessage",
+      content: [{ type: "input_text", text: "same   message" }],
+    },
+  });
+
+  const cached = service.get(signatureInput({
+    summaryStatus: "active",
+    rolloutStats: { sizeBytes: 4096, mtimeMs: 9000 },
+    summaryUpdatedAtMs: 5700,
+  }));
+  assert.ok(cached);
+  const turn = cached.result.thread.turns.find((item) => item.id === "turn-1");
+  const userMessages = turn.items.filter((item) => item.type === "userMessage");
+  assert.equal(userMessages.length, 1);
+  assert.equal(userMessages[0].id, "real-user-1");
+  assert.equal(userMessages[0].mobilePendingSubmission, undefined);
+});
+
 test("thread detail projection keeps streamed receipt when completed turn patch is shorter", () => {
   const service = createThreadDetailProjectionService({
     cacheDir: "",

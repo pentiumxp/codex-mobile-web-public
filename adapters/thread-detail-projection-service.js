@@ -122,59 +122,150 @@ function textReceiptsLikelySame(left, right) {
   return leftText === rightText || leftText.startsWith(rightText) || rightText.startsWith(leftText);
 }
 
-function isMuxUserMessage(item) {
-  return Boolean(item && item.type === "userMessage" && /^mux-user-/.test(itemId(item)));
-}
-
 function normalizeFsPath(value) {
-  return String(value || "").replace(/\\/g, "/").replace(/\/+/g, "/").trim().toLowerCase();
+  return String(value || "").replace(/\\/g, "/").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
-function userMessageComparableParts(item) {
+function projectionImageUrlValue(part) {
+  if (!part || typeof part !== "object") return "";
+  const raw = part.url || part.image_url || part.imageUrl || "";
+  if (raw && typeof raw === "object") return String(raw.url || raw.uri || "");
+  return String(raw || "");
+}
+
+function projectionInputTextValue(part) {
+  if (!part || typeof part !== "object") return "";
+  if (typeof part.text === "string") return part.text;
+  if (typeof part.input_text === "string") return part.input_text;
+  if (part.type === "input_text" && typeof part.content === "string") return part.content;
+  return "";
+}
+
+function isProjectionInputTextPart(part) {
+  if (!part || typeof part !== "object") return false;
+  const type = String(part.type || "");
+  return type === "text" || type === "input_text";
+}
+
+function isProjectionUserMessage(item) {
+  return Boolean(item && item.type === "userMessage");
+}
+
+function isSyntheticProjectionUserMessage(item) {
+  const id = String(item && item.id || "");
+  return Boolean(isProjectionUserMessage(item)
+    && (item.mobilePendingSubmission || /^mux-user-/.test(id) || /^local-user-/.test(id)));
+}
+
+function projectionUserMessageComparableParts(item) {
   const result = { text: "", paths: [] };
-  if (!item || item.type !== "userMessage") return result;
+  if (!isProjectionUserMessage(item)) return result;
   const textParts = [];
   const paths = [];
+  if (typeof item.text === "string") textParts.push(item.text);
+  if (typeof item.message === "string") textParts.push(item.message);
   const content = Array.isArray(item.content) ? item.content : [];
   for (const part of content) {
     if (!part || typeof part !== "object") continue;
-    if (part.type === "text" && part.text) textParts.push(part.text);
-    if (part.path) paths.push(normalizeFsPath(part.path));
+    if (isProjectionInputTextPart(part)) {
+      const text = projectionInputTextValue(part);
+      if (text) textParts.push(text);
+      continue;
+    }
+    if (part.path) {
+      paths.push(normalizeFsPath(part.path));
+      continue;
+    }
+    const url = projectionImageUrlValue(part);
+    if (url && !/^data:image\//i.test(url)) paths.push(normalizeFsPath(url));
   }
-  if (typeof item.text === "string" && item.text) textParts.push(item.text);
   result.text = comparableText(textParts.join("\n"));
   result.paths = [...new Set(paths.filter(Boolean))].sort();
   return result;
 }
 
-function userMessagePathOverlap(left, right) {
+function projectionUserMessagePathOverlap(left, right) {
   return left.paths.length > 0 && right.paths.length > 0
     && left.paths.some((pathValue) => right.paths.includes(pathValue));
 }
 
-function userMessagesLikelySame(left, right) {
-  if (!left || !right || left.type !== "userMessage" || right.type !== "userMessage") return false;
-  const a = userMessageComparableParts(left);
-  const b = userMessageComparableParts(right);
+function projectionComparablePathName(pathValue) {
+  const text = String(pathValue || "").split(/[?#]/)[0];
+  const parts = normalizeFsPath(text).split("/").filter(Boolean);
+  return parts[parts.length - 1] || "";
+}
+
+function projectionUserMessagePathNameOverlap(left, right) {
+  if (!left.paths.length || !right.paths.length) return false;
+  const leftNames = new Set(left.paths.map(projectionComparablePathName).filter(Boolean));
+  if (!leftNames.size) return false;
+  return right.paths.some((pathValue) => leftNames.has(projectionComparablePathName(pathValue)));
+}
+
+function projectionUserMessagesLikelySame(left, right) {
+  if (!isProjectionUserMessage(left) || !isProjectionUserMessage(right)) return false;
+  const a = projectionUserMessageComparableParts(left);
+  const b = projectionUserMessageComparableParts(right);
+  const hasSynthetic = isSyntheticProjectionUserMessage(left) || isSyntheticProjectionUserMessage(right);
   if (a.text && b.text && a.text === b.text) {
+    if (hasSynthetic) return true;
     if (!a.paths.length && !b.paths.length) return true;
-    return userMessagePathOverlap(a, b);
+    return projectionUserMessagePathOverlap(a, b);
   }
-  return userMessagePathOverlap(a, b) && (!a.text || !b.text || a.text === b.text);
+  if (hasSynthetic
+    && projectionUserMessagePathNameOverlap(a, b)
+    && (!a.text || !b.text || a.text === b.text)) return true;
+  return projectionUserMessagePathOverlap(a, b) && (!a.text || !b.text || a.text === b.text);
 }
 
-function hasMatchingRealUserMessage(item, items) {
-  if (!isMuxUserMessage(item)) return false;
-  return (items || []).some((candidate) => candidate
-    && candidate !== item
-    && itemId(candidate) !== itemId(item)
-    && candidate.type === "userMessage"
-    && !isMuxUserMessage(candidate)
-    && userMessagesLikelySame(candidate, item));
+function projectionUserMessagesCanShadow(left, right) {
+  return Boolean(isProjectionUserMessage(left)
+    && isProjectionUserMessage(right)
+    && (isSyntheticProjectionUserMessage(left) || isSyntheticProjectionUserMessage(right))
+    && projectionUserMessagesLikelySame(left, right));
 }
 
-function removeShadowedMuxUserMessages(items) {
-  return (items || []).filter((item) => !hasMatchingRealUserMessage(item, items));
+function projectionUserMessagePriority(item) {
+  if (!isProjectionUserMessage(item)) return 0;
+  const id = String(item.id || "");
+  if (/^local-user-/.test(id)) return 1;
+  if (/^mux-user-/.test(id) || item.mobilePendingSubmission) return 2;
+  return 3;
+}
+
+function mergeProjectionUserMessage(existing, incoming) {
+  const existingPriority = projectionUserMessagePriority(existing);
+  const incomingPriority = projectionUserMessagePriority(incoming);
+  const preferred = incomingPriority >= existingPriority ? incoming : existing;
+  const merged = mergeProjectionItem(existing, incoming);
+  if (preferred && preferred.id) merged.id = preferred.id;
+  if (preferred && preferred.clientSubmissionId) merged.clientSubmissionId = preferred.clientSubmissionId;
+  if (preferred && preferred.startedAtMs && !merged.startedAtMs) merged.startedAtMs = preferred.startedAtMs;
+  if (preferred && !isSyntheticProjectionUserMessage(preferred)) {
+    delete merged.mobilePendingSubmission;
+    delete merged.clientSubmissionId;
+  }
+  if (incomingPriority > existingPriority && incomingPriority >= 3) {
+    if (Array.isArray(incoming.content)) merged.content = cloneJson(incoming.content);
+    if (typeof incoming.text === "string") merged.text = incoming.text;
+    if (typeof incoming.message === "string") merged.message = incoming.message;
+  }
+  return merged;
+}
+
+function dedupeProjectionUserMessages(items) {
+  const out = [];
+  for (const item of items || []) {
+    if (isProjectionUserMessage(item)) {
+      const existingIndex = out.findIndex((candidate) => projectionUserMessagesCanShadow(candidate, item));
+      if (existingIndex >= 0) {
+        out[existingIndex] = mergeProjectionUserMessage(out[existingIndex], item);
+        continue;
+      }
+    }
+    out.push(item);
+  }
+  return out;
 }
 
 function mergeTextField(existing, incoming, field) {
@@ -207,7 +298,7 @@ function dedupeProjectionUsageItems(items) {
 }
 
 function dedupeProjectionItems(items) {
-  return dedupeProjectionUsageItems(removeShadowedMuxUserMessages(items));
+  return dedupeProjectionUsageItems(dedupeProjectionUserMessages(items));
 }
 
 function mergeProjectionItems(existingItems, incomingItems) {
@@ -263,6 +354,15 @@ function upsertItem(turn, item) {
   if (!turn || !item || typeof item !== "object") return;
   if (!Array.isArray(turn.items)) turn.items = [];
   const id = itemId(item);
+  if (isProjectionUserMessage(item)) {
+    const userIndex = turn.items.findIndex((existing) => itemId(existing) !== id
+      && projectionUserMessagesCanShadow(existing, item));
+    if (userIndex >= 0) {
+      turn.items[userIndex] = mergeProjectionUserMessage(turn.items[userIndex], item);
+      turn.items = dedupeProjectionItems(turn.items);
+      return;
+    }
+  }
   const index = id ? turn.items.findIndex((existing) => itemId(existing) === id) : -1;
   if (index >= 0) turn.items[index] = Object.assign({}, turn.items[index], item);
   else turn.items.push(cloneJson(item));
