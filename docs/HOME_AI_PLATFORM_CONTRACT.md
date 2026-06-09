@@ -120,15 +120,22 @@ Minimum closure for Codex Mobile production changes:
   `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
 - LaunchDaemon: `system/com.hermesmobile.plugin.codex-mobile`.
 - Loopback production URL: `http://127.0.0.1:8787`.
-- Current verified shell after Hermes embed safe-area deployment:
-  `0.1.11|codex-mobile-shell-v249`.
+- Current verified shell after current-thread side-chat deployment:
+  `0.1.11|codex-mobile-shell-v250`.
 - Backup path:
-  `/Users/hermes-host/HermesMobile/backups/deploy/20260609T034947Z-plugin-codex-mobile-web-codex-mobile-host-safe-area-v249`.
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260609T040633Z-plugin-codex-mobile-web-codex-mobile-thread-side-chat-v250`.
 - Production smoke confirmed `/api/public-config` reports
-  `clientBuildId=0.1.11|codex-mobile-shell-v249` and
-  `shellCacheName=codex-mobile-shell-v249`.
+  `clientBuildId=0.1.11|codex-mobile-shell-v250` and
+  `shellCacheName=codex-mobile-shell-v250`.
 - Plugin manifest returns `plugin_id=codex-mobile`, `kind=embedded_app`, and
-  does not return raw Codex Mobile Access Keys.
+  does not return the exact raw Codex Mobile Access Key value.
+- Side-chat route smoke confirmed unauthenticated
+  `/api/threads/<id>/side-chat` returns 401, authenticated read returns 200,
+  and `sideChat.persistence=server`.
+- Production iOS live debug smoke against `http://127.0.0.1:8787/` verified
+  the combined left-swipe panel, server draft round-trip, and
+  `draftInMainConversation=false`; screenshot:
+  `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v250-prod-side-chat-panel.png`.
 - Production `workspacePath` is
   `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`; the visible
   review/source workspace remains

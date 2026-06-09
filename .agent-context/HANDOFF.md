@@ -55,6 +55,31 @@ The previous full handoff was archived and should be opened only when old proven
 - Dev visual smoke opened thread `019ea76b-d846-7892-bda0-c0fff9cf7581`,
   verified panel/sidebar bounds, server draft round-trip, and
   `draftInMainConversation=false`; the temporary draft was cleared afterward.
+- Commit: `6f26cfb Add current-thread side chat panel`.
+- Production deployment:
+  - Deployed source commit `6f26cfb49995` through the Home AI central Mac
+    deploy script with reason `codex-mobile-thread-side-chat-v250`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260609T040633Z-plugin-codex-mobile-web-codex-mobile-thread-side-chat-v250`.
+  - LaunchDaemon validation passed for
+    `system/com.hermesmobile.plugin.codex-mobile`.
+  - Production `/api/public-config` reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v250`,
+    `shellCacheName=codex-mobile-shell-v250`, `platform=darwin`, and
+    `workspacePath=/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Production manifest smoke returned `id=codex-mobile`,
+    `kind=embedded_app`, and exact raw access-key value not returned.
+  - Side-chat auth smoke returned 401 without key and 200 with key, with
+    `persistence=server`.
+  - Production iOS live debug smoke against `http://127.0.0.1:8787/` verified
+    combined panel bounds, server draft round-trip, and
+    `draftInMainConversation=false`; screenshot
+    `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v250-prod-side-chat-panel.png`.
+  - The checked `ios:pwa:visual --scenario embedded-plugin-shell` harness was
+    attempted against both external HTTPS and local `127.0.0.1:8797` Home AI
+    entries, but Appium returned `execute/sync 500: Unexpected EOF` before
+    business assertions. Live debug DOM/screenshot evidence above is the final
+    visual proof for this deployment.
 
 ## 2026-06-09 Thread Side Chat Planning Docs
 
