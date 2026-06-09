@@ -131,7 +131,7 @@ function evaluatedFailedImageScanner() {
 function evaluatedTokenUsageSummaryText() {
   const sources = [
     "formatTokenCount",
-    "displayInputTokensExcludingCached",
+    "formatCompactTokenCount",
     "tokenUsageSummaryText",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`${sources.join("\n")}\nreturn tokenUsageSummaryText;`)();
@@ -217,11 +217,19 @@ function evaluatedTurnUsageSummaryRenderer() {
     "escapeHtml",
     "formatFileSize",
     "formatTokenCount",
+    "formatCompactTokenCount",
     "displayInputTokensExcludingCached",
     "tokenUsageSummaryText",
+    "tokenUsageAdditiveDetail",
+    "tokenUsageIncludedDetail",
     "formatUsagePercent",
+    "clampPercent",
     "contextRiskLabel",
     "renderUsageMetric",
+    "renderUsageBarPill",
+    "renderUsageTokenCell",
+    "renderUsageProgress",
+    "renderUsageCompactMetric",
     "renderTurnUsageSummary",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`${sources.join("\n")}\nreturn renderTurnUsageSummary;`)();
@@ -273,7 +281,8 @@ test("long agent messages keep a stable render path when a turn completes", () =
   assert.match(functionBody("applyNotification"), /appendToItem\(params\.turnId, params\.itemId, "agentMessage", "text", params\.delta \|\| "", 0, \{ render: "defer-final-receipt" \}\)/);
   assert.match(appJs, /function shouldScrollToLongReceiptStart\(turn\)/);
   assert.match(functionBody("shouldScrollToLongReceiptStart"), /finalReceiptTextForTurn\(turn\)\.length >= LONG_RECEIPT_SCROLL_CHARS/);
-  assert.match(functionBody("applyNotification"), /renderCurrentThread\(shouldScrollToLongReceiptStart\(turn\) \? \{ scrollToTurnReceiptStart: params\.turn\.id \} : \{\}\)/);
+  assert.doesNotMatch(functionBody("applyNotification"), /renderCurrentThread\(shouldScrollToLongReceiptStart\(turn\) \? \{ scrollToTurnReceiptStart: params\.turn\.id \} : \{\}\)/);
+  assert.match(functionBody("applyNotification"), /renderCurrentThread\(\{ stickToBottom: true \}\)/);
   assert.match(appJs, /function mergeVisibleTextItemPreservingRenderIdentity\(/);
   assert.match(functionBody("mergeVisibleTextItemPreservingRenderIdentity"), /merged\.id = existingItem\.id/);
   assert.match(functionBody("mergeItemsPreservingLocalVisible"), /mergeVisibleTextItemPreservingRenderIdentity\(existingItem, incomingTextMatch\)/);
@@ -700,6 +709,7 @@ test("completed turns can render context and token usage summaries", () => {
   assert.match(appJs, /function isTurnUsageSummaryItem\(item\)/);
   assert.match(appJs, /function dedupeTurnUsageSummaryItems\(items\)/);
   assert.match(functionBody("labelForItem"), /turnUsageSummary:\s*"Usage"/);
+  assert.match(functionBody("renderItem"), /item\.type === "turnUsageSummary"[\s\S]*renderTurnUsageSummary\(item\)/);
   assert.match(functionBody("renderItemBody"), /item\.type === "turnUsageSummary"[\s\S]*renderTurnUsageSummary\(item\)/);
   assert.match(functionBody("visibleItemSignature"), /item\.type === "turnUsageSummary"/);
   assert.match(functionBody("visibleItemSignature"), /mobileUsageSummary: item\.mobileUsageSummary/);
@@ -716,8 +726,20 @@ test("completed turn usage summary renders workspace context sizes and compact a
       contextWindowUsedPercent: 25,
       contextWindowUsedTokens: 25000,
       modelContextWindow: 100000,
-      lastTokenUsage: { inputTokens: 1000, totalTokens: 1000 },
-      totalTokenUsage: { inputTokens: 2000, totalTokens: 2000 },
+      lastTokenUsage: {
+        inputTokens: 1000,
+        cachedInputTokens: 400,
+        outputTokens: 200,
+        reasoningOutputTokens: 75,
+        totalTokens: 1200,
+      },
+      totalTokenUsage: {
+        inputTokens: 2000,
+        cachedInputTokens: 600,
+        outputTokens: 500,
+        reasoningOutputTokens: 125,
+        totalTokens: 2500,
+      },
       rolloutSizeBytes: 1024,
       rolloutWarningThresholdBytes: 2048,
       projectContextSizeBytes: 75 * 1024,
@@ -729,10 +751,63 @@ test("completed turn usage summary renders workspace context sizes and compact a
     },
   });
 
-  assert.match(html, /context/);
-  assert.match(html, /handoff/);
+  assert.match(html, /turn-usage-bar/);
+  assert.doesNotMatch(html, /turn-usage-chevron/);
+  assert.match(html, /turn-usage-top-grid/);
+  assert.match(html, /turn-usage-ring/);
+  assert.match(html, /turn-usage-token-grid/);
+  assert.match(html, /turn-usage-rollout-card/);
+  assert.match(html, /Context Window/);
+  assert.match(html, /thread/);
+  assert.match(html, /2\.5K thr/);
+  assert.match(html, /1\.0 KB/);
+  assert.doesNotMatch(html, /rollout 1\.0 KB/);
+  assert.match(html, /status status-normal/);
+  assert.match(html, />normal</);
+  assert.doesNotMatch(html, /1\.2K last/);
+  assert.match(html, /cached 400 included/);
+  assert.match(html, /reasoning 75 included/);
+  assert.match(html, /thread total/);
+  assert.match(html, /turn-usage-compact-metric is-thread-total/);
+  assert.match(html, /2\.5K/);
+  assert.match(html, /input 2\.0K \+ output 500/);
+  assert.match(html, /cached 600 in input/);
+  assert.match(html, /reasoning 125 in output/);
+  assert.match(html, /project ctx file/);
+  assert.match(html, /handoff file/);
+  assert.doesNotMatch(html, /last turn/);
+  assert.doesNotMatch(html, /context window/);
   assert.match(html, /pair 255\.0 KB/);
   assert.match(html, /data-new-thread-from-current/);
+});
+
+test("turn usage summary keeps missing workspace context file metrics visible", () => {
+  const renderTurnUsageSummary = evaluatedTurnUsageSummaryRenderer();
+  const html = renderTurnUsageSummary({
+    mobileUsageSummary: {
+      contextRiskLevel: "normal",
+      contextWindowUsedPercent: 12,
+      contextWindowUsedTokens: 12000,
+      modelContextWindow: 100000,
+      lastTokenUsage: { inputTokens: 1000, outputTokens: 200, totalTokens: 1200 },
+      totalTokenUsage: { inputTokens: 2000, outputTokens: 500, totalTokens: 2500 },
+      rolloutSizeBytes: 1024,
+      rolloutWarningThresholdBytes: 2048,
+      projectContextSizeBytes: 0,
+      handoffSizeBytes: 0,
+      workspaceContextPairSizeBytes: 0,
+      workspaceContextFileThresholdBytes: 100 * 1024,
+      workspaceHandoffPromptThresholdBytes: 200 * 1024,
+      workspaceContextPairThresholdBytes: 200 * 1024,
+    },
+  });
+
+  assert.match(html, /thread total/);
+  assert.match(html, /project ctx file/);
+  assert.match(html, /handoff file/);
+  assert.match(html, /<strong>--<\/strong>/);
+  assert.doesNotMatch(html, /pair /);
+  assert.doesNotMatch(html, /data-new-thread-from-current/);
 });
 
 test("handoff usage prompt waits for the 200KB handoff threshold", () => {
@@ -763,7 +838,7 @@ test("handoff usage prompt waits for the 200KB handoff threshold", () => {
   assert.match(above, /data-new-thread-from-current/);
 });
 
-test("turn usage input display excludes cached input tokens", () => {
+test("turn usage text keeps cached and reasoning as included subcomponents", () => {
   const tokenUsageSummaryText = evaluatedTokenUsageSummaryText();
   const text = tokenUsageSummaryText({
     inputTokens: 159639,
@@ -773,8 +848,9 @@ test("turn usage input display excludes cached input tokens", () => {
     totalTokens: 160444,
   });
 
-  assert.match(text, /in 1,559/);
-  assert.match(text, /cached 158,080/);
+  assert.match(text, /in 160K/);
   assert.match(text, /out 805/);
+  assert.match(text, /cached 158K in input/);
+  assert.match(text, /reasoning 395 in output/);
   assert.doesNotMatch(text, /in 159,639/);
 });
