@@ -23,6 +23,48 @@ The previous full handoff was archived and should be opened only when old proven
 
 ## Preserved Recent Handoff Tail
 
+## 2026-06-09 Public PR #53 Usage Card Scroll Polish
+
+- Public PR:
+  - Inspected `pentiumxp/codex-mobile-web-public` PR #53
+    `优化移动端消息定位与 Usage 卡片展示`.
+  - PR was open, clean/mergeable, non-draft, and CI `Node checks` was already
+    successful before local validation.
+  - Public changes were evaluated as mergeable after review: scoped to
+    frontend scroll/Usage-card rendering, service worker shell cache, tests,
+    and PR screenshots.
+- Public publish:
+  - Used isolated public clone under `/tmp/codex-mobile-web-public-pr53`.
+  - Added README Chinese release note for v246.
+  - Stripped metadata segments from the two PR JPG screenshots before
+    publishing.
+  - Pushed public `main` to merge commit `f7df92e`; GitHub now reports PR #53
+    `MERGED` at `2026-06-09T01:17:14Z`.
+  - Did not copy `.agent-context`, runtime state, local keys, uploads, or
+    machine-specific diagnostics into public.
+- Private sync:
+  - Synced PR #53 back to private by cherry-picking public commits onto current
+    private `main` rather than merging public `main`, because private had newer
+    v228 work.
+  - Private commits: `9d14b52` `优化移动端消息定位与 Usage 卡片展示`,
+    `33db564` `补充 Usage 卡片发布说明`.
+  - Conflict resolution kept private README context and advanced shell cache /
+    tests to `codex-mobile-shell-v246`.
+- Validation:
+  - Public isolated clone: `npm run check`, `npm run check:macos`,
+    `npm test` passed with 397 tests, `git diff --check` passed.
+  - Public privacy scan: added diff had no credential/local-path hits; expected
+    boundary text mentions were documentation-only; screenshot strings had no
+    sensitive hits.
+  - Private workspace: `npm run check`, `npm run check:macos`, `npm test`
+    passed with 406 tests, `git diff --check HEAD~2..HEAD` passed.
+  - Private privacy scan: added diff had no credential/local-path hits; expected
+    boundary text mentions were documentation-only; screenshot strings had no
+    sensitive hits.
+- Current state:
+  - Public merge was reverse-synced into private and private `main` should be
+    pushed after this handoff record is committed.
+
 ## 2026-06-07 Completion Refresh Backfill v211
 
 - Follow-up issue:
