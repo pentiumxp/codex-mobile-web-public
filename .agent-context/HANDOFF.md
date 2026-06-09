@@ -23,6 +23,49 @@ The previous full handoff was archived and should be opened only when old proven
 
 ## Preserved Recent Handoff Tail
 
+## 2026-06-09 Public PR #55 Markdown Mermaid Polish
+
+- Public PR:
+  - Inspected `pentiumxp/codex-mobile-web-public` PR #55
+    `优化移动端 Markdown 与 Mermaid 渲染`.
+  - PR was open, non-draft, CI `Node checks` successful, and contained one
+    public commit `e4ad714`.
+  - The PR branch was based on public commit `5e4e2ed`, before the later
+    public v247 full sync `985cf5e`. Direct tree comparison against current
+    public `main` showed apparent v247 regressions, so the merge was evaluated
+    as safe only as a real three-way merge on current public `main`, not as a
+    branch-tree overwrite.
+- Public publish:
+  - Used clean public mirror
+    `/Users/hermes-dev/HermesMobileDev/public-mirrors/codex-mobile-web-public`.
+  - Merged PR #55 locally on top of public `985cf5e`, added README v248 Chinese
+    release notes, and pushed merge commit `e75ec78`.
+  - GitHub reports PR #55 `MERGED` at `2026-06-09T02:26:01Z`.
+  - Public changed only README, frontend app/markdown/styles, and tests; no
+    `.agent-context`, runtime state, local keys, uploads, or machine-specific
+    diagnostics were copied.
+- Public validation:
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed with 407 tests.
+  - `git diff --check HEAD` passed before commit.
+  - Public privacy scan found only expected README boundary text mentions.
+- Private reverse sync:
+  - Fetched public `main` and merged it into private as `ec4303b Merge public
+    PR 55`.
+  - Resolved conflicts by keeping private README context plus v248 sync note,
+    and keeping the public `commandOutputMarkdownPreview` / GitHub link preview
+    function block in `public/app.js` so private does not drop public frontend
+    behavior.
+- Private validation after reverse sync:
+  - Focused Markdown/Mermaid/conversation/collab tests passed with 59 tests.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed with 412 tests.
+  - Platform contract check passed via
+    `/Users/hermes-dev/HermesMobileDev/app/scripts/plugin-workspace-platform-contract-check.js
+    --plugin codex-mobile --json`.
+
 ## 2026-06-09 Public v247 Full Sync After PR #54
 
 - User clarified the public workflow:
