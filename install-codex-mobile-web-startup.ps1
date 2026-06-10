@@ -101,6 +101,9 @@ if (-not $AllowManagedFallback) {
 if ($NoAuth) {
     $arguments += "-NoAuth"
 }
+if ($RunAsSystem) {
+    $arguments += "-RunAsSystemTask"
+}
 
 $currentIdentityName = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 if ([string]::IsNullOrWhiteSpace($UserId) -and -not $RunAsSystem) {
