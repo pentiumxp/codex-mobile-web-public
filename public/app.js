@@ -7566,6 +7566,14 @@ async function submitRename(event) {
   }
 }
 
+async function copyThreadIdFromActionSheet(threadId) {
+  const id = String(threadId || "").trim();
+  if (!id) return;
+  closeThreadActionSheet();
+  await copyTextToClipboard(id);
+  restoreConnectionState("已复制 Session ID");
+}
+
 function handleThreadAction(event) {
   const target = event.target.closest("[data-thread-action]");
   if (!target) return;
@@ -7579,6 +7587,10 @@ function handleThreadAction(event) {
   if (action === "rename") {
     closeThreadActionSheet();
     openRenameDialog(threadId);
+    return;
+  }
+  if (action === "copy-id") {
+    copyThreadIdFromActionSheet(threadId).catch(showError);
     return;
   }
   if (action === "continue") {
