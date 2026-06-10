@@ -2143,3 +2143,41 @@ The previous full handoff was archived and should be opened only when old proven
     passed with 437 tests.
   - Evidence ledger entry:
     `evidence-c9f0d073-ee76-41f5-9ae0-a067db5375b2`.
+
+## 2026-06-10 Codex Mobile v259 Side Chat and Command Dock
+
+- Product changes:
+  - Side chat now scrolls to the bottom when opened or refreshed.
+  - The side-chat clear action is available in the lower composer row.
+  - Save-as-candidate and queue actions show a success notice with an
+    action button that opens the related candidate/queue position.
+  - Thread live Command/File/Tool output remains a single latest dock fixed
+    above the composer, with the detail area clamped to two lines.
+  - Live turn rendering no longer moves follow-up user messages below later
+    assistant output after operational items are docked; visible non-operation
+    items keep source order.
+  - PWA shell cache advanced to `codex-mobile-shell-v259`.
+- Visual validation:
+  - Used the Home AI AI Ops lane and `npm run ios:pwa:debug` against the
+    Codex dev server on port 18787.
+  - Verified side chat bottom-open behavior, lower-row clear button,
+    queue/save notice open action, single fixed two-line command dock, and
+    user-message-before-assistant source order.
+  - Visual artifact:
+    `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-side-chat-dock-v259-20260610T000312Z.png`.
+- Checks passed:
+  - `npm run check`.
+  - `node --test test/thread-side-chat-service.test.js test/thread-side-chat-route.test.js`.
+  - `node --test test/collab-agent-render.test.js test/mobile-viewport.test.js
+    test/thread-goal-service.test.js test/thread-task-card-route.test.js
+    test/turn-scroll-controls.test.js test/conversation-render.test.js`.
+  - Home AI: `node tests/ios-pwa-live-debug-server.test.js
+    tests/ios-pwa-visual-harness.test.js`.
+  - `git diff --check`.
+- Evidence ledger entries:
+  - `evidence-744d30bd-cfa8-49bf-9106-5d5ae3a7a32b`.
+  - `evidence-e499524e-6716-4119-a46a-a0a2ed3c7650`.
+- Deployment boundary:
+  - This entry records development validation only. Production was not
+    restarted or redeployed during this change because the user requested
+    avoiding repeated service restarts.

@@ -2756,7 +2756,7 @@ html.visual-recovering body::before {
 .side-chat-section {
   min-height: 0;
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
   gap: 8px;
   overflow: hidden;
 }
@@ -2842,6 +2842,11 @@ html.visual-recovering body::before {
   border-color: rgba(232, 184, 109, 0.38);
 }
 
+.side-chat-candidate.side-chat-focus {
+  border-color: rgba(122, 199, 167, 0.72);
+  box-shadow: 0 0 0 2px rgba(122, 199, 167, 0.16);
+}
+
 .side-chat-candidate.applied {
   border-color: rgba(122, 199, 167, 0.32);
 }
@@ -2904,13 +2909,14 @@ html.visual-recovering body::before {
 .side-chat-composer-row {
   min-width: 0;
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) max-content;
+  grid-template-columns: 44px minmax(0, 1fr) max-content max-content;
   gap: 8px;
   align-items: end;
 }
 
 .side-chat-tool-button,
-.side-chat-send {
+.side-chat-send,
+.side-chat-clear {
   min-height: 44px;
   border-radius: 8px;
 }
@@ -2925,6 +2931,12 @@ html.visual-recovering body::before {
 .side-chat-send {
   padding-inline: 13px;
   font-weight: 750;
+}
+
+.side-chat-clear {
+  padding-inline: 10px;
+  color: var(--muted);
+  background: var(--control-bg);
 }
 
 .side-chat-form textarea {
@@ -2986,6 +2998,7 @@ html.keyboard-open .side-chat-form textarea {
 }
 
 .side-chat-queue,
+.side-chat-notice,
 .side-chat-error,
 .side-chat-candidate-error {
   padding: 8px 10px;
@@ -2998,6 +3011,30 @@ html.keyboard-open .side-chat-form textarea {
 .side-chat-queue {
   color: var(--warning-text);
   background: rgba(232, 184, 109, 0.08);
+}
+
+.side-chat-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--success-text);
+  background: rgba(122, 199, 167, 0.08);
+}
+
+.side-chat-notice-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.side-chat-notice-actions button {
+  min-height: 28px;
+  padding: 4px 8px;
+  border-radius: 7px;
+  font-size: var(--content-small-font-size);
+  font-weight: 740;
 }
 
 .side-chat-error,
@@ -3068,7 +3105,7 @@ html.keyboard-open .side-chat-form textarea {
   min-height: 0;
   min-width: 0;
   overflow: auto;
-  padding: 20px 20px 28px;
+  padding: 20px 20px calc(28px + var(--live-operation-dock-reserve, 0px));
   scroll-behavior: auto;
 }
 
@@ -3769,8 +3806,11 @@ html.keyboard-open .side-chat-form textarea {
 }
 
 .live-operation-dock {
-  position: sticky;
-  bottom: 0;
+  --live-operation-dock-inline: 20px;
+  position: fixed;
+  left: var(--live-operation-dock-inline);
+  right: var(--live-operation-dock-inline);
+  bottom: var(--composer-height, 92px);
   z-index: 6;
   width: min(980px, 100%);
   margin: 0 auto;

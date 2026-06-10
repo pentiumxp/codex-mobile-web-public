@@ -139,6 +139,7 @@ const state = {
   sideChatDraftSaveSeq: 0,
   sideChatPollTimer: null,
   sideChatRenderSignature: "",
+  sideChatNotice: null,
   suppressThreadClickUntil: 0,
   suppressThreadClickThreadId: "",
   continuationSourceThreadId: "",
@@ -270,7 +271,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v258";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v259";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -6211,6 +6212,42 @@ function ensureSideChatDraftVisible() {
   if (overflow > 0) panel.scrollTop = Math.max(0, Number(panel.scrollTop || 0) + overflow);
 }
 
+function sideChatScrollContainer() {
+  const panel = $("subagentPanel");
+  return panel ? panel.querySelector(".side-chat-scroll") : null;
+}
+
+function scrollSideChatToBottom() {
+  const scroller = sideChatScrollContainer();
+  if (!scroller) return false;
+  scroller.scrollTop = scroller.scrollHeight;
+  return true;
+}
+
+function scheduleSideChatToBottom() {
+  requestAnimationFrame(() => {
+    scrollSideChatToBottom();
+    requestAnimationFrame(scrollSideChatToBottom);
+  });
+}
+
+function openSideChatCandidate(candidateId = "") {
+  const scroller = sideChatScrollContainer();
+  if (!scroller) return false;
+  const id = String(candidateId || "");
+  const target = id
+    ? scroller.querySelector(`[data-side-chat-candidate="${escapeSelectorAttr(id)}"]`)
+    : scroller.querySelector(".side-chat-candidate");
+  if (!target) {
+    scrollSideChatToBottom();
+    return false;
+  }
+  target.scrollIntoView({ block: "center", inline: "nearest" });
+  target.classList.add("side-chat-focus");
+  setTimeout(() => target.classList.remove("side-chat-focus"), 1200);
+  return true;
+}
+
 function currentSideChatDraftText(threadId = sideChatThreadId()) {
   const textarea = sideChatDraftTextarea();
   if (textarea && String(textarea.dataset.threadId || "") === String(threadId || "")) return textarea.value;
@@ -6235,13 +6272,13 @@ async function loadSideChat(threadId = sideChatThreadId(), options = {}) {
     const sideChat = setSideChatState(id, result && result.sideChat || null);
     if (state.sideChatLoadingThreadId === id) state.sideChatLoadingThreadId = "";
     if (state.sideChatError && sideChatThreadId() === id) state.sideChatError = "";
-    if (state.subagentPanelOpen && sideChatThreadId() === id) updateSubagentPanelUi({ force: true });
+    if (state.subagentPanelOpen && sideChatThreadId() === id) updateSubagentPanelUi({ force: true, scrollSideChatToBottom: true });
     if (sideChatReplyPending(id)) scheduleSideChatPoll(id);
     return sideChat;
   } catch (err) {
     if (state.sideChatLoadingThreadId === id) state.sideChatLoadingThreadId = "";
     if (sideChatThreadId() === id) state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
-    if (state.subagentPanelOpen && sideChatThreadId() === id) updateSubagentPanelUi({ force: true });
+    if (state.subagentPanelOpen && sideChatThreadId() === id) updateSubagentPanelUi({ force: true, scrollSideChatToBottom: true });
     throw err;
   }
 }
@@ -6344,9 +6381,32 @@ function sideChatBusy(key) {
   return Boolean(key && state.sideChatBusyKey === key);
 }
 
+function setSideChatNotice(kind, message, options = {}) {
+  const threadId = sideChatThreadId();
+  state.sideChatNotice = {
+    threadId,
+    kind: String(kind || "info"),
+    message: String(message || ""),
+    actionLabel: String(options.actionLabel || ""),
+    candidateId: String(options.candidateId || ""),
+    createdAtMs: Date.now(),
+  };
+}
+
+function clearSideChatNotice() {
+  state.sideChatNotice = null;
+}
+
+function sideChatNoticeForThread(threadId = sideChatThreadId()) {
+  const notice = state.sideChatNotice;
+  if (!notice || String(notice.threadId || "") !== String(threadId || "")) return null;
+  return notice;
+}
+
 function sideChatPanelRenderSignature() {
   const threadId = sideChatThreadId();
   const sideChat = sideChatStateForThread(threadId);
+  const notice = sideChatNoticeForThread(threadId);
   const messages = sideChat.messages.map((message) => [
     message.id,
     message.role,
@@ -6387,6 +6447,7 @@ function sideChatPanelRenderSignature() {
     state.sideChatLoadingThreadId === threadId ? "loading" : "",
     state.sideChatError || "",
     state.sideChatBusyKey || "",
+    notice ? [notice.kind, notice.message, notice.actionLabel, notice.candidateId].join(":") : "",
     messages,
     candidates,
     queue,
@@ -6394,6 +6455,18 @@ function sideChatPanelRenderSignature() {
     turn && turn.id || "",
     subagents,
   ].join("|");
+}
+
+function renderSideChatNotice(threadId = sideChatThreadId()) {
+  const notice = sideChatNoticeForThread(threadId);
+  if (!notice || !notice.message) return "";
+  const action = notice.actionLabel
+    ? `<button type="button" data-side-chat-action="open-notice" data-candidate-id="${escapeHtml(notice.candidateId || "")}">${escapeHtml(notice.actionLabel)}</button>`
+    : "";
+  return `<div class="side-chat-notice ${escapeHtml(notice.kind || "info")}">
+    <span>${escapeHtml(notice.message)}</span>
+    <span class="side-chat-notice-actions">${action}<button type="button" data-side-chat-action="dismiss-notice" aria-label="关闭提示">×</button></span>
+  </div>`;
 }
 
 function renderSubagentStatusWindow() {
@@ -6477,7 +6550,7 @@ function renderSideChatCandidate(candidate, sideChat) {
   const appliedTurn = String(candidate && candidate.appliedTurnId || "");
   const queueSummary = queue ? sideChatQueueSummary(queue) : sideChatStatusLabel(status);
   const error = queue && queue.status === "failed" && queue.error ? `<div class="side-chat-candidate-error">${escapeHtml(queue.error)}</div>` : "";
-  return `<article class="side-chat-candidate ${escapeHtml(status)}">
+  return `<article class="side-chat-candidate ${escapeHtml(status)}" data-side-chat-candidate="${escapeHtml(id)}">
     <div class="side-chat-candidate-main">
       <div class="side-chat-candidate-title">${escapeHtml(candidate && candidate.title || "候选指令")}</div>
       <div class="side-chat-candidate-status">${escapeHtml(queueSummary)}${appliedTurn ? ` · ${escapeHtml(truncateMiddle(appliedTurn, 24, "turn"))}` : ""}</div>
@@ -6509,6 +6582,7 @@ function renderSideChatPanel() {
       ? `<div class="side-chat-error">侧聊回复失败：${escapeHtml(sidecar.error)}</div>`
       : "";
   const error = state.sideChatError ? `<div class="side-chat-error">${escapeHtml(state.sideChatError)}</div>` : "";
+  const notice = renderSideChatNotice(threadId);
   const transcript = `${messages}${sidecar.status === "pending" ? `<article class="side-chat-message assistant pending">
     <div class="side-chat-message-meta"><span>侧聊</span></div>
     <div class="side-chat-message-text">正在整理回复...</div>
@@ -6530,6 +6604,7 @@ function renderSideChatPanel() {
     ${queue}
     ${replyStatus}
     ${error}
+    ${notice}
     <div class="side-chat-scroll">
       <div class="side-chat-transcript">${transcript}</div>
       ${candidateList}
@@ -6539,10 +6614,10 @@ function renderSideChatPanel() {
         <button class="side-chat-tool-button" type="button" data-side-chat-action="tools" aria-label="侧聊工具">+</button>
         <textarea data-side-chat-draft data-thread-id="${escapeHtml(threadId)}" rows="1" maxlength="${SIDE_CHAT_DRAFT_MAX_CHARS}" placeholder="整理想法，不进入主线程">${escapeHtml(draftText)}</textarea>
         <button class="side-chat-send" type="submit" data-side-chat-action="message"${busy || draftEmpty ? " disabled" : ""}>Send</button>
+        <button class="side-chat-clear" type="button" data-side-chat-action="clear" aria-label="清空侧聊"${busy || (!sideChat.messages.length && !sideChat.candidates.length && draftEmpty) ? " disabled" : ""}>清空</button>
       </div>
       <div class="side-chat-tool-row" hidden>
         <button type="button" data-side-chat-action="candidate"${busy || draftEmpty ? " disabled" : ""}>存为候选</button>
-        <button type="button" data-side-chat-action="clear"${busy || (!sideChat.messages.length && !sideChat.candidates.length && draftEmpty) ? " disabled" : ""}>清空</button>
       </div>
     </form>
   </section>`;
@@ -6592,6 +6667,7 @@ function updateSubagentPanelUi(options = {}) {
     if (button.closest("[data-side-chat-form]") && button.type === "submit") return;
     button.addEventListener("click", handleSideChatActionClick);
   });
+  if (options.scrollSideChatToBottom) scheduleSideChatToBottom();
 }
 
 function refreshSideChatFormButtons() {
@@ -6602,6 +6678,9 @@ function refreshSideChatFormButtons() {
   const draftEmpty = !textarea.value.trim();
   form.querySelectorAll("[data-side-chat-action='message'], [data-side-chat-action='candidate']").forEach((button) => {
     button.disabled = Boolean(state.sideChatBusyKey) || draftEmpty;
+  });
+  form.querySelectorAll("[data-side-chat-action='clear']").forEach((button) => {
+    button.disabled = Boolean(state.sideChatBusyKey);
   });
 }
 
@@ -6639,7 +6718,7 @@ function installCodexMobileVisualHarnessFacade() {
       sideChatPanelOpen: () => Boolean(state.subagentPanelOpen),
       setSideChatPanelOpen: (open) => {
         state.subagentPanelOpen = Boolean(open);
-        updateSubagentPanelUi({ force: true });
+        updateSubagentPanelUi({ force: true, scrollSideChatToBottom: Boolean(open) });
         return Boolean(state.subagentPanelOpen);
       },
       openThread: (threadId) => loadThread(String(threadId || ""), { source: "visual-harness" }),
@@ -6676,7 +6755,7 @@ async function submitSideChatMessage(event) {
     showError(err);
   } finally {
     setSideChatBusy("");
-    updateSubagentPanelUi({ force: true });
+    updateSubagentPanelUi({ force: true, scrollSideChatToBottom: true });
   }
 }
 
@@ -6701,14 +6780,21 @@ async function createSideChatCandidateFromText(text, options = {}) {
     state.sideChatError = "";
     markActivity("候选已保存");
     const candidates = Array.isArray(sideChat && sideChat.candidates) ? sideChat.candidates : [];
-    return candidates[candidates.length - 1] || null;
+    const candidate = candidates[candidates.length - 1] || null;
+    if (candidate && candidate.id) {
+      setSideChatNotice("success", "候选已保存，可以稍后发送到主线程。", {
+        actionLabel: "打开候选",
+        candidateId: candidate.id,
+      });
+    }
+    return candidate;
   } catch (err) {
     state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
     showError(err);
     return null;
   } finally {
     setSideChatBusy("");
-    updateSubagentPanelUi({ force: true });
+    updateSubagentPanelUi({ force: true, scrollSideChatToBottom: true });
   }
 }
 
@@ -6754,13 +6840,17 @@ async function queueSideChatCandidate(candidateId, mode = "autoSendWhenIdle") {
     });
     applySideChatResult(threadId, result);
     state.sideChatError = "";
+    setSideChatNotice("success", mode === "autoSendWhenIdle" ? "已排队，当前任务完成后会发送到主线程。" : "候选已排队，空闲后可从队列继续。", {
+      actionLabel: "打开队列",
+      candidateId: id,
+    });
     markActivity(mode === "autoSendWhenIdle" ? "侧聊已排队" : "候选已排队");
   } catch (err) {
     state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
     showError(err);
   } finally {
     setSideChatBusy("");
-    updateSubagentPanelUi({ force: true });
+    updateSubagentPanelUi({ force: true, scrollSideChatToBottom: true });
   }
 }
 
@@ -6784,6 +6874,7 @@ async function applySideChatCandidate(candidateId) {
     });
     applySideChatResult(threadId, result);
     state.sideChatError = "";
+    clearSideChatNotice();
     markActivity("侧聊已发送");
     scheduleCurrentThreadRefresh(600);
     scheduleLivePollIfNeeded(1200);
@@ -6810,6 +6901,7 @@ async function cancelSideChatCandidate(candidateId) {
     });
     applySideChatResult(threadId, result);
     state.sideChatError = "";
+    clearSideChatNotice();
   } catch (err) {
     state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
     showError(err);
@@ -6834,6 +6926,7 @@ async function clearSideChat() {
     });
     applySideChatResult(threadId, result);
     state.sideChatError = "";
+    clearSideChatNotice();
   } catch (err) {
     state.sideChatError = normalizeClientErrorMessage(err && err.message || String(err));
     showError(err);
@@ -6868,13 +6961,18 @@ function handleSideChatActionClick(event) {
     cancelSideChatCandidate(candidateId);
   } else if (action === "clear") {
     clearSideChat();
+  } else if (action === "open-notice") {
+    openSideChatCandidate(candidateId);
+  } else if (action === "dismiss-notice") {
+    clearSideChatNotice();
+    updateSubagentPanelUi({ force: true });
   }
 }
 
 function openSubagentPanelFromGesture() {
   if (!state.currentThread) return;
   state.subagentPanelOpen = true;
-  updateSubagentPanelUi();
+  updateSubagentPanelUi({ force: true, scrollSideChatToBottom: true });
   if (!state.threadSideChats.has(sideChatThreadId())) {
     loadSideChat(sideChatThreadId(), { silent: true }).catch(showError);
   }
@@ -7721,6 +7819,7 @@ function patchHtml(target, html) {
 function updateConversationHtml(html, signature, options = {}) {
   const conversation = $("conversation");
   if (state.renderedConversationSignature === signature) {
+    updateLiveOperationDockMetrics();
     scheduleFailedAppImageScan(conversation, [0, 180]);
     if (options.stickToBottom) scheduleConversationToBottom();
     else scheduleScrollToBottomButtonUpdate();
@@ -7736,10 +7835,17 @@ function updateConversationHtml(html, signature, options = {}) {
   hydrateGitHubLinkCards(conversation);
   hydrateMermaidDiagrams(conversation);
   scheduleFailedAppImageScan(conversation);
+  updateLiveOperationDockMetrics();
   state.renderedConversationSignature = signature;
   if (options.stickToBottom) scheduleConversationToBottom();
   else scheduleScrollToBottomButtonUpdate();
   return true;
+}
+
+function updateLiveOperationDockMetrics() {
+  const dock = document.querySelector(".live-operation-dock");
+  const height = dock ? Math.ceil(dock.getBoundingClientRect().height) : 0;
+  document.documentElement.style.setProperty("--live-operation-dock-reserve", height ? `${height + 8}px` : "0px");
 }
 
 function sourceIndexForVisibleItem(turn, item) {
@@ -9220,26 +9326,18 @@ function renderLiveOperationDock(thread, previousKeys = new Set()) {
 
 function renderTurn(turn, previousKeys = new Set()) {
   const visibleEntries = visibleItemsForTurn(turn);
-  const liveLatestTurn = isLatestTurn(turn) && isLiveTurn(turn);
   const renderedItems = visibleEntries.map((entry, index) => {
     const item = entry.item;
     const sourceIndex = Number.isInteger(entry.sourceIndex) && entry.sourceIndex >= 0 ? entry.sourceIndex : index;
-    const deferLiveFollowupUser = Boolean(liveLatestTurn
-      && item.type === "userMessage"
-      && visibleEntries.some((candidate) => candidate
-        && Number.isInteger(candidate.sourceIndex)
-        && candidate.sourceIndex < sourceIndex
-        && candidate.item
-        && candidate.item.type !== "userMessage"));
     let html = "";
     if (isContextCompactionItem(item)) html = renderContextCompaction(item, turn, previousKeys, sourceIndex);
     else if (isOperationalItem(item)) html = renderLiveOperation(item, turn, previousKeys, sourceIndex);
     else if (item.type === "reasoning" && isLiveTurn(turn)) html = "";
     else html = renderItem(item, turn, previousKeys, sourceIndex);
-    return { html, sourceIndex, order: deferLiveFollowupUser ? 2 : 1 };
+    return { html, sourceIndex, order: 1 };
   }).filter((entry) => entry && entry.html);
   const items = renderedItems
-    .sort((a, b) => (a.order - b.order) || (a.sourceIndex - b.sourceIndex))
+    .sort((a, b) => (a.sourceIndex - b.sourceIndex) || (a.order - b.order))
     .map((entry) => entry.html)
     .join("");
   const threadId = state.currentThreadId || (state.currentThread && state.currentThread.id) || "";
@@ -12304,6 +12402,7 @@ function updateComposerHeightVar() {
   const composer = $("composer");
   if (!composer) return;
   document.documentElement.style.setProperty("--composer-height", `${Math.ceil(composer.getBoundingClientRect().height)}px`);
+  updateLiveOperationDockMetrics();
   scheduleScrollToBottomButtonUpdate();
 }
 

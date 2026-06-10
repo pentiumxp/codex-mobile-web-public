@@ -373,16 +373,14 @@ test("context compaction notices require explicit state and do not infer pending
   assert.match(functionBody("renderContextCompaction"), /if \(!notice\) return ""/);
 });
 
-test("live follow-up user messages render after current output items", () => {
+test("visible turn items keep source order after live operations move to the dock", () => {
   const body = functionBody("renderTurn");
   assert.match(body, /const visibleEntries = visibleItemsForTurn\(turn\);/);
-  assert.match(body, /const liveLatestTurn = isLatestTurn\(turn\) && isLiveTurn\(turn\);/);
-  assert.match(body, /const deferLiveFollowupUser = Boolean\(liveLatestTurn/);
-  assert.match(body, /item\.type === "userMessage"/);
-  assert.match(body, /candidate\.sourceIndex < sourceIndex/);
-  assert.match(body, /candidate\.item\.type !== "userMessage"/);
-  assert.match(body, /order: deferLiveFollowupUser \? 2 : 1/);
-  assert.match(body, /\.sort\(\(a, b\) => \(a\.order - b\.order\) \|\| \(a\.sourceIndex - b\.sourceIndex\)\)/);
+  assert.doesNotMatch(body, /deferLiveFollowupUser/);
+  assert.doesNotMatch(body, /candidate\.sourceIndex < sourceIndex/);
+  assert.match(body, /return \{ html, sourceIndex, order: 1 \};/);
+  assert.match(body, /\.sort\(\(a, b\) => \(a\.sourceIndex - b\.sourceIndex\) \|\| \(a\.order - b\.order\)\)/);
+  assert.match(functionBody("visibleItemsForTurn"), /if \(isOperationalItem\(item\)\) \{[\s\S]*return;/);
 });
 
 test("long agent messages keep a stable render path when a turn completes", () => {

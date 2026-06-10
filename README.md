@@ -666,6 +666,8 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v259 完善侧边聊天和线程命令框。侧聊面板打开和刷新后默认贴到底部；清空按钮固定放在下方输入行；存为候选和排队成功后会显示可操作提示，并提供“打开候选/打开队列”入口定位到对应候选。线程页 live Command/File/Tool 命令框继续保持全屏唯一、只显示最新一个，并固定在 composer 上方，两行截断显示。PWA shell cache 升级到 `codex-mobile-shell-v259`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
+
 - 中文说明：v258 调整运行态 Command/File/Tool 工具框为底部固定 dock。最新 live operation 不再插入正文流里随消息往上跑，而是固定在 conversation 底部显示；detail 区域从约三行缩到约两行，减少阅读遮挡和中间状态抖动。PWA shell cache 升级到 `codex-mobile-shell-v258`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
 
 - 中文说明：v257 稳定中间命令/文件/工具状态卡和流式消息渲染。运行中的 `.live-operation` 命令卡始终保留约三行 detail 区域，避免 Command/File/Tool 状态条随内容有无上下跳动，并取消该运行态卡片新增时的入场动画，减少中间状态刷新时整屏闪动；运行中 assistant 文本 delta 会优先局部 patch 当前消息卡。PWA shell cache 升级到 `codex-mobile-shell-v257`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
