@@ -21,6 +21,94 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-10 CodeGraph Install For Codex Mobile Web
+
+- User requested CodeGraph installation in
+  `/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web`.
+- Initial state:
+  - No `.codegraph/` directory existed in this repository.
+  - `codegraph` was not on the non-interactive shell PATH.
+- Installed `@colbymchenry/codegraph-darwin-arm64@0.9.9` under the Hermes
+  Node runtime:
+  `/Users/hermes-dev/HermesMobileDev/runtime/node-v24.14.1-darwin-arm64`.
+- Added a `codegraph` symlink in that runtime's `bin/`, but non-interactive
+  shells may still need the absolute path because the runtime `bin` is not
+  always on PATH.
+- Initialized the repository index with CodeGraph:
+  - Files: 102.
+  - Nodes: 3,129.
+  - Edges: 10,669.
+  - Status: index up to date.
+- Configured Codex MCP in `/Users/xuxin/.codex/config.toml`:
+  - `mcp_servers.codegraph.command` points to the absolute runtime path
+    `/Users/hermes-dev/HermesMobileDev/runtime/node-v24.14.1-darwin-arm64/bin/codegraph`.
+  - Args are `["serve", "--mcp"]`.
+- Verification:
+  - `codegraph status` passed.
+  - `codegraph query renderLiveOperationDock` returned
+    `public/app.js:9525`.
+- Operational note:
+  - Restart Codex to load the new CodeGraph MCP tools in future sessions.
+- Evidence ledger:
+  - `evidence-eddd05b5-96f9-4b84-878d-8fe8119891fe`.
+
+## 2026-06-10 macOS Service And Login Boundary Check
+
+- User asked whether Codex Mobile service depends on a logged-in user and
+  whether Codex Mobile can log in after a reboot with no desktop login.
+- Runtime/service evidence:
+  - `/Library/LaunchDaemons/com.hermesmobile.plugin.codex-mobile.plist` is a
+    system `LaunchDaemon`.
+  - It has `RunAtLoad=true`, `KeepAlive=true`, and `UserName=xuxin`.
+  - `launchctl print system/com.hermesmobile.plugin.codex-mobile` reported
+    `state = running`, `spawn type = daemon`, `username = xuxin`.
+  - Current PID `44054` listens on `127.0.0.1:8787`, has PPID `1`, and runs
+    `/Users/hermes-host/HermesMobile/runtime/node-current/bin/node server.js`.
+- Dependency boundary:
+  - The service does not depend on a terminal session or Codex Desktop being
+    open.
+  - It still depends on the `xuxin` Unix account identity and readable files
+    under `/Users/xuxin`, including `/Users/xuxin/.codex`,
+    `/Users/xuxin/.codex-mobile-web`, and the active profile `auth.json`.
+  - After reboot, it should start once macOS reaches the daemon phase and
+    `/Users/xuxin` is accessible. If FileVault or other pre-boot unlock keeps
+    the home volume unavailable, no user-space daemon can read those files
+    before unlock.
+- Login distinction:
+  - `/api/login` is only Codex Mobile access-key login; it sets the
+    `codex_mobile_key` cookie and does not perform ChatGPT/Codex account auth.
+  - Codex/ChatGPT account login remains owned by the Codex CLI
+    `CODEX_HOME/auth.json` flow. If that token is absent/expired, Mobile can
+    show the access-key login page but sends will fail until the selected
+    `CODEX_HOME` is re-authenticated through Codex login/device auth.
+
+## 2026-06-10 LKF Codex Profile Auth Diagnostic
+
+- User reported that switching Codex Mobile to the LKF account made message
+  sending fail, while the other two accounts worked.
+- Current production status at the time of diagnosis:
+  - `/api/status?detail=1` returned `ready=true`,
+    `transport=managed-ws-child`, `lastError=null`.
+  - Active profile was `default`, not LKF/current.
+  - The LKF profile was listed as `current`, home
+    `/Users/xuxin/.codex-homes/current`, auth label
+    `lkf12101975@icloud.com`, auth status `loggedIn`.
+- Isolated LKF CLI checks:
+  - `CODEX_HOME=/Users/xuxin/.codex-homes/current codex login status`
+    returned `Logged in using ChatGPT`.
+  - A minimal `codex exec --ephemeral --sandbox read-only` request under the
+    LKF home failed before model response with 401 auth errors.
+  - Error text, with secrets redacted, said the access token could not be
+    refreshed because the refresh token had already been used, and instructed
+    to log out and sign in again.
+- Conclusion:
+  - This is a stale/invalid ChatGPT auth token for the LKF `CODEX_HOME`, not a
+    Codex Mobile projection or UI send bug.
+  - The settings/profile list can still show `loggedIn` from `auth.json`, but
+    real sends fail when Codex attempts token refresh.
+- Evidence ledger:
+  - `evidence-4d91b712-0fa2-4378-b7eb-c523ce1ee55e`.
+
 ## 2026-06-10 Server-Only Stale Steering Fallback
 
 - User reported Home AI thread steering message showed `引导失败，请重试`,
@@ -2454,3 +2542,59 @@ The previous full handoff was archived and should be opened only when old proven
   - Full `npm test` passed with 443 tests.
   - Evidence ledger entry:
     `evidence-56e2dc52-2075-4e13-86ef-9926af545f0e`.
+
+## 2026-06-10 Public PR #60 Copy Session ID Sync
+
+- Public PR:
+  - Evaluated `pentiumxp/codex-mobile-web-public#60`.
+  - PR was open, non-draft, mergeable/clean, and `Node checks` passed at head
+    commit `df8c75940bfa1797e25a926b886441610e306754`.
+  - The PR adds a `复制 Session ID` action to the mobile thread long-press
+    menu. The action closes the menu, writes the thread id to the clipboard,
+    and shows `已复制 Session ID`.
+- Public sync before merge:
+  - User directed syncing our private work to public first so public/private do
+    not diverge and later public merges do not drop local work.
+  - Synced private v267 public-safe files into the clean public mirror
+    `/Users/hermes-dev/HermesMobileDev/public-mirrors/codex-mobile-web-public`
+    and pushed public commit `33f26c7`.
+  - Excluded `.agent-context`, runtime state, local keys, uploads, and
+    machine-specific diagnostics.
+  - Author metadata note: the already-pushed public sync and merge commits were
+    mistakenly authored as `Frank Song <franksong2702@gmail.com>` because that
+    environment was still active from PR handling. Do not rewrite public
+    history without explicit user approval; future own public/private commits
+    should use `PentiumXP <xuxinxp@gmail.com>`.
+- Public merge:
+  - Merged PR #60, bumped the PWA shell to `codex-mobile-shell-v268`, and added
+    the public README Chinese release note.
+  - Pushed public `main` at merge commit
+    `9a0d0a4b2d762873eb92dbd3641a4a5fa627059e`.
+  - GitHub reported PR #60 closed and merged at that commit.
+- Public validation:
+  - `node --check public/app.js && node --check public/sw.js &&
+    node --check test/thread-archive.test.js` passed.
+  - Focused checks passed with 47 tests before the v268 assertion fix, then 23
+    focused tests after the fix.
+  - Home AI architecture map guard, `npm run check`, `npm run check:macos`,
+    `git diff --check`, and full `npm test` passed with 445 tests.
+  - Privacy/file scans found no tracked `.agent-context`, runtime state,
+    uploads, local keys, private key blocks, or raw private material. Diff hits
+    were limited to the public README boundary note.
+  - Evidence ledger entry:
+    `evidence-62c203c0-5e6c-422f-9931-1242fd961b8a`.
+- Private reverse sync:
+  - Merged public `main` back into private `main`.
+  - Resolved v267/v268 conflicts in `public/app.js`, `public/sw.js`, and cache
+    assertion tests by keeping v268 plus the PR #60 action.
+  - Private merge commit:
+    `7b35c7f`.
+- Private validation:
+  - Syntax checks passed for `public/app.js`, `public/sw.js`, and
+    `test/thread-archive.test.js`.
+  - Focused private checks passed with 59 tests.
+  - `npm run check`, `npm run check:macos`, staged diff hygiene, and the Home
+    AI plugin platform contract checker passed.
+  - Full `npm test` passed with 445 tests.
+  - Evidence ledger entry:
+    `evidence-e697c37e-9966-466f-a7c0-98c0373cd4f3`.
