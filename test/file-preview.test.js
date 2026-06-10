@@ -9,7 +9,10 @@ const { test } = require("node:test");
 const {
   filePreviewContentDisposition,
   filePreviewContentType,
+  filePreviewAuthoritiesForThread,
+  filePreviewSkillRoots,
   mimeFor,
+  previewFileReferencesFromText,
   previewRootsForThread,
   readFilePreview,
   resolveFilePreviewPath,
@@ -64,6 +67,94 @@ test("file preview allows the current thread cwd even when workspace roots are v
   assert.equal(preview.fileName, "index.html");
   assert.equal(preview.relativePath, path.join("artifacts", "daily-oblique-full", "index.html"));
   assert.equal(preview.kind, "text");
+});
+
+test("file preview allows configured Codex skill roots without allowing all Codex state", () => {
+  const userHome = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-preview-home-"));
+  const codexHome = path.join(userHome, ".codex");
+  const skillRoot = path.join(codexHome, "skills");
+  const skillFile = path.join(skillRoot, "hermes-webui-live-to-final-governance", "SKILL.md");
+  const sessionFile = path.join(codexHome, "sessions", "2026", "rollout.md");
+  const visibleRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-preview-visible-"));
+  fs.mkdirSync(path.dirname(skillFile), { recursive: true });
+  fs.mkdirSync(path.dirname(sessionFile), { recursive: true });
+  fs.writeFileSync(skillFile, "# Skill\n\nUse this workflow.\n", "utf8");
+  fs.writeFileSync(sessionFile, "# Session\n\nDo not expose this as a skill preview.\n", "utf8");
+
+  const roots = previewRootsForThread("", {
+    "electron-saved-workspace-roots": [visibleRoot],
+  }, {
+    userHome,
+    codexHome,
+    defaultCodexHome: codexHome,
+  });
+  const preview = readFilePreview(skillFile, roots);
+
+  assert.deepEqual(filePreviewSkillRoots({ userHome, codexHome, defaultCodexHome: codexHome }), [
+    skillRoot,
+    path.join(userHome, ".agents", "skills"),
+  ]);
+  assert.equal(preview.fileName, "SKILL.md");
+  assert.equal(preview.relativePath, path.join("hermes-webui-live-to-final-governance", "SKILL.md"));
+  assert.equal(preview.kind, "markdown");
+  assert.match(preview.content, /Use this workflow/);
+  assert.throws(() => readFilePreview(sessionFile, roots), /outside the allowed preview roots/);
+});
+
+test("file preview allows exact local files referenced by the current thread", () => {
+  const visibleRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-preview-visible-"));
+  const outsideRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-preview-referenced-"));
+  const referencedFile = path.join(outsideRoot, "Hermes Live to Final", "lesson notes.md");
+  const siblingFile = path.join(outsideRoot, "Hermes Live to Final", "private sibling.md");
+  const imageFile = path.join(outsideRoot, "Hermes Live to Final", "diagram.png");
+  fs.mkdirSync(path.dirname(referencedFile), { recursive: true });
+  fs.writeFileSync(referencedFile, "# Lesson\n\nReferenced by this thread.\n", "utf8");
+  fs.writeFileSync(siblingFile, "# Sibling\n\nNot referenced.\n", "utf8");
+  fs.writeFileSync(imageFile, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+
+  const rolloutText = [
+    `Opened local note: ${referencedFile}:12`,
+    `Rendered local image: file://${imageFile}`,
+  ].join("\n");
+  const authorities = filePreviewAuthoritiesForThread("thread-1", {
+    "electron-saved-workspace-roots": [visibleRoot],
+  }, {
+    threadSummary: { cwd: visibleRoot },
+    rolloutText,
+  });
+
+  const preview = readFilePreview(referencedFile, authorities);
+  const imagePreview = readFilePreview(imageFile, authorities);
+
+  assert.equal(preview.fileName, "lesson notes.md");
+  assert.equal(preview.relativePath, "lesson notes.md");
+  assert.equal(preview.kind, "markdown");
+  assert.match(preview.content, /Referenced by this thread/);
+  assert.equal(imagePreview.kind, "image");
+  assert.throws(() => readFilePreview(siblingFile, authorities), /outside the allowed preview roots/);
+});
+
+test("file preview extracts local previewable files from thread text", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-preview-extract-"));
+  const markdown = path.join(root, "05_AI_lessons", "Hermes Live to Final.md");
+  const png = path.join(root, "diagrams", "flow chart.png");
+  const secret = path.join(root, ".env");
+  fs.mkdirSync(path.dirname(markdown), { recursive: true });
+  fs.mkdirSync(path.dirname(png), { recursive: true });
+  fs.writeFileSync(markdown, "# Lesson\n", "utf8");
+  fs.writeFileSync(png, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  fs.writeFileSync(secret, "TOKEN=secret\n", "utf8");
+
+  const references = previewFileReferencesFromText([
+    `See [lesson](${markdown}:42)`,
+    `![diagram](file://${png})`,
+    `Do not allow ${secret}`,
+  ].join("\n"));
+
+  assert.deepEqual(references.sort(), [
+    fs.realpathSync.native ? fs.realpathSync.native(markdown) : fs.realpathSync(markdown),
+    fs.realpathSync.native ? fs.realpathSync.native(png) : fs.realpathSync(png),
+  ].sort());
 });
 
 test("file preview rejects files outside allowed roots", () => {
