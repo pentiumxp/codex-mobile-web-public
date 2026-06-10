@@ -21,6 +21,53 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-10 v267 Startup/Resume Loading Guard
+
+- User reported occasional `Loading thread` stalls and occasional white screen
+  when entering Codex.
+- Log findings:
+  - Production Codex plugin process was PID `80096`, listening on
+    `127.0.0.1:8787`, logging to
+    `/Users/hermes-host/HermesMobile/logs/plugin-codex-mobile.out.log` and
+    `.err.log`.
+  - Authenticated probes succeeded: `/api/status?detail=1` around 140 ms,
+    `/api/threads` around 1.07 s, large Home AI thread detail around 650 ms,
+    current Codex Mobile thread detail around 260 ms.
+  - Recent thread-detail server logs showed 200 completions, not hanging start
+    records or 5xx failures.
+  - Client event logs did show `mobile_resume_error` / `client_error` with
+    `Load failed` on iPhone Chrome/Safari under the Home AI proxy path
+    `/api/hermes-plugins/codex-mobile/proxy/`.
+- Root cause/risk:
+  - Startup used a raw `fetch("/api/public-config")` without timeout, retry, or
+    catch. A transient iOS/proxy `Load failed` could abort `start()` before the
+    app rendered, matching the white-screen symptom.
+  - Mobile resume rethrew transient fetch errors into `showError()`, which could
+    leave the embedded page in a degraded state even after the next request would
+    succeed.
+- Implemented v267:
+  - Added bounded timeout/retry helper for `/api/public-config`.
+  - Added final startup fallback: embedded mode requests a plugin refresh and
+    shows a recovery message instead of staying blank.
+  - Treats transient resume errors such as `Load failed`, `Failed to fetch`, and
+    timeout/cancel as recoverable: logs bounded event, forces visual recovery,
+    and schedules a delayed retry instead of throwing to global error UI.
+  - Added `thread_switch_stall` watchdog after 12 s of thread Loading to record
+    future stalls with thread id/source/event state and attempt a refresh.
+  - Bumped shell/cache to `codex-mobile-shell-v267`.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js` passed.
+  - `git diff --check` passed.
+  - Focused tests passed:
+    `node --test test/mobile-viewport.test.js test/thread-goal-service.test.js
+    test/thread-task-card-route.test.js`.
+  - `npm run check` passed.
+- Remaining risk:
+  - The issue is intermittent and came from production client logs; no live iOS
+    reproduction was captured in this step. Future occurrences should now leave
+    `thread_switch_stall` or `public_config_retry/public_config_failed` events
+    in `plugin-codex-mobile.out.log`.
+
 ## 2026-06-10 v266 Turn Timer Activity Priority
 
 - User reported the top-right run box now almost always showed `思考` and hid

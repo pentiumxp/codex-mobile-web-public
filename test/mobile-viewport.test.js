@@ -71,8 +71,8 @@ test("mobile viewport and early guards disable page zoom", () => {
 });
 
 test("public app shell cache advances after thread side chat panel", () => {
-  assert.match(swJs, /codex-mobile-shell-v266/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v266"/);
+  assert.match(swJs, /codex-mobile-shell-v267/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v267"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);
@@ -109,7 +109,12 @@ test("public app shell cache advances after thread side chat panel", () => {
   assert.match(appJs, /function hasStartupThreadOpenIntent\(\)/);
   assert.match(appJs, /postClientEvent\("startup_stage"/);
   assert.match(appJs, /state\.startupThreadOpenPending = hasStartupThreadOpenIntent\(\);[\s\S]*early_opening_rendered/);
+  assert.match(appJs, /async function fetchPublicConfigWithRetry\(startedAt\)/);
+  assert.match(appJs, /PUBLIC_CONFIG_RETRY_DELAYS_MS = \[0, 300, 1200\]/);
+  assert.match(appJs, /fetchJsonWithTimeout\("\/api\/public-config"/);
   assert.match(appJs, /postStartupStage\("public_config_done"/);
+  assert.match(appJs, /postStartupStage\("public_config_failed"/);
+  assert.match(appJs, /requestHermesPluginRefresh\("public_config_failed", \{ force: true \}\)/);
   assert.match(appJs, /state\.startupThreadOpenPending = Boolean\(startupThreadId \|\| savedThreadId \|\| \(startupPluginRouteHint && startupPluginRouteHint\.threadId\)\);/);
   assert.match(appJs, /const earlyRestorePromise = savedThreadId && !startupThreadId[\s\S]*loadThread\(savedThreadId, \{ source: "restore-startup" \}\)/);
   assert.match(appJs, /postStartupStage\("status_done"/);
@@ -136,6 +141,10 @@ test("public app shell cache advances after thread side chat panel", () => {
   assert.match(appJs, /function currentThreadListRowChanged\(\)/);
   assert.match(appJs, /threadUpdatedAtMs\(row\)/);
   assert.match(appJs, /mobile_resume_thread_refresh_skipped/);
+  assert.match(appJs, /function isTransientResumeError\(err\)/);
+  assert.match(appJs, /function scheduleTransientResumeRetry\(reason, delay = 1200\)/);
+  assert.match(appJs, /async function resumeMobileSession\(reason = "resume"\)[\s\S]*transient: isTransientResumeError\(err\)/);
+  assert.match(appJs, /async function resumeMobileSession\(reason = "resume"\)[\s\S]*if \(isTransientResumeError\(err\)\) \{[\s\S]*scheduleTransientResumeRetry\(reason\);[\s\S]*return;/);
   assert.match(appJs, /if \(state\.currentThreadId && state\.currentThread && !state\.currentThread\.mobileLoading && !state\.currentThread\.mobileLoadError\) \{/);
   assert.match(appJs, /return shouldPollCurrentThread\(\) \|\| currentThreadListRowChanged\(\);/);
   assert.match(appJs, /if \(currentThreadNeedsForegroundRefresh\(\)\) \{[\s\S]*scheduleCurrentThreadRefresh\(250\);[\s\S]*mobile_resume_thread_refresh_skipped[\s\S]*else if \(state\.currentThreadId\) \{[\s\S]*await refreshCurrentThread\(\);[\s\S]*else \{[\s\S]*await restoreThreadSelection\(\);/);
