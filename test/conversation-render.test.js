@@ -275,6 +275,53 @@ return { state, upsertItem, renderCount: () => renderCount };
 `)();
 }
 
+function evaluatedThreadPendingApprovalProjection() {
+  const sources = [
+    "approvalThreadId",
+    "approvalTurnId",
+    "isApprovalActive",
+    "isApprovalSettled",
+    "shouldShowApprovalRequest",
+    "requestBelongsToThread",
+    "pendingApprovalsForThread",
+    "permissionSummary",
+    "approvalDetailLines",
+    "isUserInputRequest",
+    "renderUserInputOptions",
+    "renderUserInputActions",
+    "renderApprovalActions",
+    "approvalTitle",
+    "approvalStatusLabel",
+    "renderApprovalRequest",
+    "renderPendingApprovals",
+    "upsertServerRequest",
+    "syncThreadPendingServerRequests",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`
+const HIDDEN_SERVER_REQUEST_METHODS = new Set();
+const USER_INPUT_REQUEST_METHODS = new Set(["item/tool/requestUserInput", "mcpServer/elicitation/request"]);
+const state = {
+  pendingApprovals: new Map(),
+  currentThreadId: "thread-approval",
+  currentThread: { id: "thread-approval" },
+};
+let activity = "";
+let renderCount = 0;
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+function entryAnimationClass() { return ""; }
+function markActivity(value) { activity = value; }
+function scheduleRenderCurrentThread() { renderCount += 1; }
+${sources.join("\n")}
+return { state, syncThreadPendingServerRequests, renderPendingApprovals, activity: () => activity, renderCount: () => renderCount };
+`)();
+}
+
 function evaluatedTurnUsageSummaryRenderer() {
   const sources = [
     "escapeHtml",
@@ -324,6 +371,16 @@ test("context compaction notices require explicit state and do not infer pending
   assert.doesNotMatch(functionBody("contextCompactionState"), /isContextCompactionType\(item\.type\)/);
   assert.match(functionBody("renderContextCompaction"), /const notice = contextCompactionNotice\(item, turn\)/);
   assert.match(functionBody("renderContextCompaction"), /if \(!notice\) return ""/);
+});
+
+test("visible turn items keep source order after live operations move to the dock", () => {
+  const body = functionBody("renderTurn");
+  assert.match(body, /const visibleEntries = visibleItemsForTurn\(turn\);/);
+  assert.doesNotMatch(body, /deferLiveFollowupUser/);
+  assert.doesNotMatch(body, /candidate\.sourceIndex < sourceIndex/);
+  assert.match(body, /return \{ html, sourceIndex, order: 1 \};/);
+  assert.match(body, /\.sort\(\(a, b\) => \(a\.sourceIndex - b\.sourceIndex\) \|\| \(a\.order - b\.order\)\)/);
+  assert.match(functionBody("visibleItemsForTurn"), /if \(isOperationalItem\(item\)\) \{[\s\S]*return;/);
 });
 
 test("long agent messages keep a stable render path when a turn completes", () => {
@@ -786,6 +843,36 @@ test("live user message upsert collapses mux echoes before refresh", () => {
   assert.equal(userMessages[0].id, "real-user-1");
   assert.equal(userMessages[0].mobilePendingSubmission, undefined);
   assert.equal(harness.renderCount(), 2);
+});
+
+test("thread detail pending server requests render approval cards without SSE timing", () => {
+  const harness = evaluatedThreadPendingApprovalProjection();
+  harness.syncThreadPendingServerRequests({
+    id: "thread-approval",
+    pendingServerRequests: [
+      {
+        id: "approval-1",
+        method: "item/permissions/requestApproval",
+        status: "waiting",
+        actionable: true,
+        params: {
+          threadId: "thread-approval",
+          turnId: "turn-1",
+          permissions: { network: { host: "api.example.test" } },
+          reason: "Need network access",
+        },
+      },
+    ],
+  });
+
+  const html = harness.renderPendingApprovals({ id: "thread-approval" });
+  assert.equal(harness.state.pendingApprovals.size, 1);
+  assert.equal(harness.activity(), "等待批准");
+  assert.equal(harness.renderCount(), 1);
+  assert.match(html, /class="approval-card/);
+  assert.match(html, /权限需要批准/);
+  assert.match(html, /api\.example\.test/);
+  assert.match(html, /data-approval-id="approval-1"/);
 });
 
 test("active turn state follows only the latest durable turn", () => {

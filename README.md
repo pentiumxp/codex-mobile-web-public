@@ -666,6 +666,24 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v262 简化线程页 live Command/File/Tool 命令框的高度控制。命令框默认保持一行折叠态，只显示向上箭头用于展开；展开后按钮变为向下箭头，用于收回一行。移除“1行 / 3行 / 展开”的文字按钮和默认三行状态。PWA shell cache 升级到 `codex-mobile-shell-v262`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
+
+- 中文说明：v261 修正线程页 live Command/File/Tool 命令框的固定区域和高度控制。命令框作为 conversation 和 composer 之间的不透明独立布局区域，不覆盖消息正文；默认显示三行（状态行 + 两行 detail），可切到一行 compact 状态，也可展开查看更多 detail，支持按钮切换和上下滑手势。PWA shell cache 升级到 `codex-mobile-shell-v261`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
+
+- 中文说明：v259 完善侧边聊天和线程命令框。侧聊面板打开和刷新后默认贴到底部；清空按钮固定放在下方输入行；存为候选和排队成功后会显示可操作提示，并提供“打开候选/打开队列”入口定位到对应候选。线程页 live Command/File/Tool 命令框继续保持全屏唯一、只显示最新一个，并固定在 composer 上方，两行截断显示。PWA shell cache 升级到 `codex-mobile-shell-v259`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
+
+- 中文说明：v258 调整运行态 Command/File/Tool 工具框为底部固定 dock。最新 live operation 不再插入正文流里随消息往上跑，而是固定在 conversation 底部显示；detail 区域从约三行缩到约两行，减少阅读遮挡和中间状态抖动。PWA shell cache 升级到 `codex-mobile-shell-v258`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
+
+- 中文说明：v257 稳定中间命令/文件/工具状态卡和流式消息渲染。运行中的 `.live-operation` 命令卡始终保留约三行 detail 区域，避免 Command/File/Tool 状态条随内容有无上下跳动，并取消该运行态卡片新增时的入场动画，减少中间状态刷新时整屏闪动；运行中 assistant 文本 delta 会优先局部 patch 当前消息卡。PWA shell cache 升级到 `codex-mobile-shell-v257`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
+
+- 中文说明：v256 修复线程详情投影模式下看不到 Codex app-server 权限批准卡的问题。线程详情 API 现在会把当前线程相关的 pending `serverRequest` 以压缩后的 public approval payload 一并返回，前端加载线程时会同步到现有 approval 渲染栈；即使 EventSource 时序错过，也能看到“权限需要批准”等卡片并完成批准。PWA shell cache 升级到 `codex-mobile-shell-v256`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
+
+- 中文说明：v255 调整左滑侧边聊天底部布局。侧聊输入区改为和普通线程 composer 同构的 `+ / 输入框 / Send` 底栏，低频的“存为候选”和“清空”收进 `+` 工具行；最新侧聊回执下方直接附“发送主线程 / 完成后发送 / 存为候选”等动作，避免底部长期显示大块操作按钮。PWA shell cache 升级到 `codex-mobile-shell-v255`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新资源。
+
+- 中文说明：v254 调整左滑侧边聊天布局。侧聊面板改为覆盖当前线程详情的全屏面板；只有当前线程存在 Subagent 状态时才显示上半区，空 Subagent 不再占用空间；侧聊标题、消息、候选、按钮和输入框改为继承当前字体大小设置，特大字体在侧聊里不再退回小字。PWA shell cache 升级到 `codex-mobile-shell-v254`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新资源。
+
+- 中文说明：v253 让左滑侧边聊天从“便签/候选保存”升级为当前线程的私有方案聊天。发送侧聊消息后，服务端会为当前主线程创建或复用一个隐藏 sidecar Codex thread，以当前线程的模型/推理设置和工作目录上下文启动只读回复；回复只写回侧聊 transcript，不会自动进入主线程、不会 `turn/steer` 当前 turn，也不会直接改代码。用户仍需显式点“发送主线程”或“完成后发送”才会把候选指令注入主线程。隐藏 sidecar 线程会从普通线程列表和完成通知中过滤。PWA shell cache 升级到 `codex-mobile-shell-v253`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新资源。
+
 - 中文说明：v253 合并 public PR #58，修复移动端键盘聚焦时 Composer 被 iOS 页面滚动顶到可视区域上方的问题。普通 Mobile/PWA 模式不再把 `window.scrollY` / document scroll 当成键盘 viewport offset；输入框聚焦后若 iOS 自动滚动 document，前端会把 window/body scroll 归零，避免和 `--app-height` 收缩叠加。Hermes embed 场景仍保留 host keyboard、safe area 和 iframe scroll offset 逻辑，不改变宿主下发键盘信息的处理。PWA shell cache 升级到 `codex-mobile-shell-v253`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。本次 public 发布只包含公开源码、README 和测试；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
 
 - 中文说明：v252 修复左滑侧边聊天在嵌入插件模式下被键盘遮挡的问题。侧聊面板现在高于主 composer，并在 `keyboard-open` 时按宿主下发的 `--app-height` 收缩为键盘紧凑布局，降低 Subagent 上半区和侧聊 textarea 的最小高度，确保正在输入的侧聊内容保持在键盘上方。PWA shell cache 升级到 `codex-mobile-shell-v252`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新资源。

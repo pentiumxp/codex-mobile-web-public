@@ -19,6 +19,13 @@ test("server wires side chat routes to the server-side persistence service", () 
   assert.match(serverJs, /threadSideChatService\.get\(threadSideChatId\)/);
   assert.match(serverJs, /threadSideChatService\.updateDraft/);
   assert.match(serverJs, /threadSideChatService\.addMessage/);
+  assert.match(serverJs, /startSideChatAssistantReply\(threadSideChatId, result\.message\)/);
+  assert.match(serverJs, /ensureSideChatSidecarThread/);
+  assert.match(serverJs, /parentThreadSideChatContext/);
+  assert.match(serverJs, /sideChatReadOnlyRuntimeSettings/);
+  assert.match(serverJs, /readOnlySandboxPolicy/);
+  assert.match(serverJs, /threadSideChatService\.markAssistantCompleted/);
+  assert.match(serverJs, /threadSideChatService\.isSidecarThreadId/);
   assert.match(serverJs, /threadSideChatService\.createCandidate/);
   assert.match(serverJs, /threadSideChatService\.queueCandidate/);
   assert.match(serverJs, /threadSideChatService\.applyCandidate/);

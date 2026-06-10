@@ -107,7 +107,14 @@ test("server hydrates rollout quota snapshots without overwriting live quota", (
   assert.match(serverJs, /rateLimitSource\(\)[\s\S]*this\.isMuxEndpoint\(\)[\s\S]*"profile-mux-live"/, "profile mux quota should be marked as owned by the active profile endpoint");
   assert.match(serverJs, /recordRateLimits\(msg\.params\.rateLimits,\s*\{[\s\S]*source:\s*this\.rateLimitSource\(\)/, "quota notifications should use the same trusted source classifier as quota reads");
   assert.match(serverJs, /function codexAppServerChildEnv\([\s\S]*CODEX_CLI_PATH[\s\S]*CODEX_MUX_/, "managed child app-server env should drop desktop bridge variables");
+  assert.match(serverJs, /Object\.assign\(env, extra\);[\s\S]*if \(CODEX_HOME\) env\.CODEX_HOME = CODEX_HOME/, "explicit child env should be applied after desktop bridge cleanup");
   assert.match(serverJs, /spawn\(CODEX_EXE,[\s\S]*\{\s*cwd: APP_ROOT,[\s\S]*env: codexAppServerChildEnv\(\{ CODEX_HOME \}\)/, "managed child app-server should inherit the resolved active CODEX_HOME without desktop bridge env");
+  assert.match(serverJs, /async startOwnedMuxAndConnect\(\)/, "Mobile Web should be able to own a shared mux instead of depending on Desktop");
+  assert.match(serverJs, /CODEX_MUX_STANDALONE:\s*"1"[\s\S]*CODEX_MUX_KEEP_ALIVE:\s*"1"[\s\S]*CODEX_MUX_PUBLISH_ENDPOINT:\s*"1"/, "Mobile-owned mux should stay alive after Desktop exits and publish the active profile endpoint");
+  assert.match(serverJs, /shared endpoint missing; starting Mobile-owned mux/, "required shared mode should start a Mobile-owned mux when the profile endpoint is absent");
+  assert.match(serverJs, /profile mux endpoint unavailable; starting Mobile-owned mux/, "stale profile endpoints should be replaced by a Mobile-owned mux");
+  assert.match(serverJs, /mobileOwnedMux:\s*this\.muxChild \? \{[\s\S]*pid:[\s\S]*running:/, "status should expose bounded Mobile-owned mux runtime evidence");
+  assert.match(serverJs, /if \(codex\.muxChild && codex\.muxChild\.exitCode === null\) codex\.muxChild\.kill\(\)/, "server shutdown should stop the Mobile-owned mux child");
   assert.match(serverJs, /function activeRateLimits\(\)[\s\S]*latestLiveRateLimits \|\| latestSnapshotRateLimits/, "live quota should win over rollout snapshots");
   assert.match(serverJs, /\/api\/public-config"[\s\S]*await codex\.refreshRateLimitsIfMissing\(\);[\s\S]*rateLimits: activeRateLimits\(\)/, "public config should refresh and include active quota");
   assert.match(serverJs, /\/api\/status"[\s\S]*await codex\.refreshRateLimitsIfMissing\(\);[\s\S]*sendJson\(res, 200, codex\.status\(\)\)/, "status should refresh and include hydrated quota snapshots");

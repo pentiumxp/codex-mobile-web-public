@@ -173,8 +173,13 @@ test("live and final message renders stay anchored when the user is at bottom", 
   const appendBody = functionBody("appendToItem");
   assertInOrder(appendBody, [
     /sustainSubmittedMessageBottomFollow\(turn, itemType, field\);/,
-    /if \(shouldRenderAfterAppend\(turn, itemType, field, previousValue, nextValue, options\)\) scheduleRenderCurrentThread\(\);/,
+    /if \(shouldRenderAfterAppend\(turn, itemType, field, previousValue, nextValue, options\)\) \{/,
+    /if \(!patchLiveTextItemDom\(turn, item\)\) scheduleRenderCurrentThread\(\);/,
   ]);
+  assert.match(appJs, /function patchLiveTextItemDom\(turn, item\)/);
+  assert.match(functionBody("patchLiveTextItemDom"), /conversation\.querySelector\(`\[data-render-key="\$\{escapeSelectorAttr\(key\)\}"\]`\)/);
+  assert.match(functionBody("patchLiveTextItemDom"), /patchNode\(target, source\);/);
+  assert.match(functionBody("patchLiveTextItemDom"), /state\.renderedConversationSignature = conversationRenderSignature\(state\.currentThread\);/);
 
   const sustainBody = functionBody("sustainSubmittedMessageBottomFollow");
   assert.match(sustainBody, /if \(itemType !== "agentMessage" \|\| field !== "text"\) return;/);

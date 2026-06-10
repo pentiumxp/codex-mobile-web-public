@@ -115,6 +115,7 @@ const MUX_ENDPOINT_FILE = process.env.CODEX_MOBILE_MUX_ENDPOINT_FILE || path.joi
 const EXTERNAL_APP_SERVER_WS = process.env.CODEX_MOBILE_APP_SERVER_WS || "";
 const EXTERNAL_APP_SERVER_TCP = process.env.CODEX_MOBILE_APP_SERVER_TCP || "";
 const REQUIRE_SHARED_APP_SERVER = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER || "");
+const DISABLE_MOBILE_OWNED_MUX = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_DISABLE_OWNED_MUX || "");
 const HOST = process.env.CODEX_MOBILE_HOST || "0.0.0.0";
 const PORT = Number(process.env.CODEX_MOBILE_PORT || "8787");
 const APP_VERSION = readPackageVersion();
@@ -167,6 +168,10 @@ const THREAD_SIDE_CHAT_FILE = process.env.CODEX_MOBILE_THREAD_SIDE_CHAT_FILE
   || path.join(RUNTIME_ROOT, "thread-side-chats.json");
 const THREAD_SIDE_CHAT_SCOPE_ID = CODEX_HOME_RESOLUTION.activeProfileId
   || `codex-home-${crypto.createHash("sha256").update(CODEX_HOME).digest("hex").slice(0, 16)}`;
+const THREAD_SIDE_CHAT_REPLY_TIMEOUT_MS = Math.max(
+  15_000,
+  Number(process.env.CODEX_MOBILE_THREAD_SIDE_CHAT_REPLY_TIMEOUT_MS || String(3 * 60 * 1000)),
+);
 const THREAD_TASK_CARD_DRAFT_TAG = "codex-mobile-thread-task-card-draft";
 const THREAD_TASK_CARD_BODY_MAX_CHARS = 8_000;
 const THREAD_TASK_CARD_DRAFT_TURN_LOOKBACK = 4;
@@ -239,6 +244,7 @@ const threadGoalService = createThreadGoalService({
   dbPath: GOALS_DB,
   userHome: USER_HOME,
 });
+const sideChatReplyInflight = new Map();
 const threadSideChatService = createThreadSideChatService({
   storageFile: THREAD_SIDE_CHAT_FILE,
   scopeId: THREAD_SIDE_CHAT_SCOPE_ID,
@@ -268,6 +274,251 @@ const threadSideChatService = createThreadSideChatService({
     };
   },
 });
+
+function sideChatReadOnlyRuntimeSettings(runtimeSettings) {
+  const next = Object.assign({}, runtimeSettings || {});
+  next.approvalPolicy = "on-request";
+  next.permissionProfile = null;
+  next.sandboxPolicy = readOnlySandboxPolicy(next.sandboxPolicy);
+  next.sandboxMode = "read-only";
+  return next;
+}
+
+function sideChatParentSummary(threadId) {
+  return readStateDbThread(threadId) || readStartedThread(threadId) || readRolloutSessionFallbackThread(threadId) || { id: threadId };
+}
+
+function boundedSideChatTranscript(sideChat, maxChars = 12_000) {
+  const messages = Array.isArray(sideChat && sideChat.messages) ? sideChat.messages.slice(-24) : [];
+  const lines = messages.map((message) => {
+    const role = String(message && message.role || "user") === "assistant" ? "Assistant" : "User";
+    return `${role}: ${String(message && message.text || "").trim()}`;
+  }).filter((line) => line.trim());
+  return truncateTail(lines.join("\n\n"), maxChars, "side-chat transcript");
+}
+
+function parentTurnVisibleText(turn) {
+  const items = Array.isArray(turn && turn.items) ? turn.items : [];
+  return items.map((item) => {
+    if (!item || typeof item !== "object") return "";
+    const type = String(item.type || "").toLowerCase();
+    const role = type === "usermessage" || (type === "message" && String(item.role || "").toLowerCase() === "user")
+      ? "User"
+      : isAssistantReceiptItem(item)
+        ? "Assistant"
+        : "";
+    if (!role) return "";
+    const text = itemTimestampMatchText(item);
+    return text ? `${role}: ${text}` : "";
+  }).filter(Boolean).join("\n");
+}
+
+async function parentThreadSideChatContext(parentThreadId) {
+  try {
+    const turnsResult = await codex.request("thread/turns/list", {
+      threadId: parentThreadId,
+      limit: 6,
+      sortDirection: "desc",
+    }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS, retry: false, resetOnTimeout: false });
+    const turns = Array.isArray(turnsResult && turnsResult.data)
+      ? turnsResult.data
+      : Array.isArray(turnsResult && turnsResult.turns)
+        ? turnsResult.turns
+        : [];
+    const lines = turns.slice().reverse().map(parentTurnVisibleText).filter(Boolean);
+    return truncateTail(lines.join("\n\n"), 16_000, "parent thread context");
+  } catch (err) {
+    return `Parent thread context unavailable: ${String(err && err.message || err).slice(0, 300)}`;
+  }
+}
+
+function sideChatDeveloperInstructions(parentThreadId) {
+  return [
+    "You are the private side chat for a Codex Mobile thread.",
+    "Answer the user's planning, status, explanation, and option-comparison questions using the current repository context and tools when useful.",
+    "Do not edit files, apply patches, commit, deploy, restart services, or mutate external state from this side chat.",
+    "If the user asks for an implementation instruction, produce a concise candidate instruction they can explicitly send to the main thread.",
+    "Do not claim that your answer has been injected into the main thread.",
+    `Parent thread id: ${parentThreadId}`,
+  ].join("\n");
+}
+
+function sideChatPrompt({ parentThreadId, parentSummary, parentContext, sideChat, userMessage }) {
+  const title = String(parentSummary && (parentSummary.name || parentSummary.title || parentSummary.preview) || parentThreadId || "").trim();
+  const cwd = String(parentSummary && parentSummary.cwd || "").trim();
+  const model = String(parentSummary && (parentSummary.model || parentSummary.modelName) || "").trim();
+  const transcript = boundedSideChatTranscript(sideChat);
+  return [
+    "Side chat request.",
+    "",
+    "Parent thread context:",
+    `- thread_id: ${parentThreadId}`,
+    title ? `- title: ${title}` : "",
+    cwd ? `- cwd: ${cwd}` : "",
+    model ? `- model: ${model}` : "",
+    "",
+    parentContext ? `Recent parent-thread context:\n${parentContext}` : "Recent parent-thread context: (empty or unavailable)",
+    "",
+    transcript ? `Recent side-chat transcript:\n${transcript}` : "Recent side-chat transcript: (empty)",
+    "",
+    "Current user side-chat message:",
+    String(userMessage && userMessage.text || "").trim(),
+    "",
+    "Reply only in the side chat. Keep code-changing actions as recommendations unless the user later applies a candidate to the main thread.",
+  ].filter((line) => line !== "").join("\n");
+}
+
+async function ensureSideChatSidecarThread(parentThreadId, runtimeSettings, parentSummary) {
+  const existing = threadSideChatService.sidecarThreadIdForThread(parentThreadId);
+  if (existing) return existing;
+  const cwd = String(parentSummary && parentSummary.cwd || "").trim();
+  if (!cwd) throw new Error("side_chat_parent_workspace_missing");
+  const settings = sideChatReadOnlyRuntimeSettings(runtimeSettings);
+  const startParams = applyStartThreadRuntimeSettings({
+    cwd,
+    modelProvider: null,
+    config: {},
+    developerInstructions: [
+      readStartThreadDeveloperInstructions(cwd) || "",
+      sideChatDeveloperInstructions(parentThreadId),
+    ].filter(Boolean).join("\n\n"),
+    personality: null,
+    ephemeral: null,
+    dynamicTools: null,
+    mockExperimentalField: null,
+    experimentalRawEvents: false,
+    persistExtendedHistory: false,
+  }, settings);
+  startParams.sandbox = "read-only";
+  delete startParams.permissionProfile;
+  const startResult = await codex.request("thread/start", startParams, {
+    timeoutMs: MUTATION_RPC_TIMEOUT_MS,
+    retry: false,
+  });
+  const sidecarThreadId = threadIdFromStartResult(startResult);
+  if (!sidecarThreadId) throw new Error("side_chat_sidecar_thread_start_failed");
+  await threadSideChatService.setSidecarThreadId(parentThreadId, sidecarThreadId);
+  rememberStartedThread({
+    id: sidecarThreadId,
+    name: `Side chat for ${shortIdentifier(parentThreadId)}`,
+    preview: "Codex Mobile side chat",
+    cwd,
+    status: { type: "notLoaded" },
+    agentRole: "side_chat",
+    agentNickname: "Side chat",
+  });
+  return sidecarThreadId;
+}
+
+function textFromAssistantItem(item) {
+  if (!isAssistantReceiptItem(item)) return "";
+  const value = item.text || item.message || item.content || item.summary || item.output || "";
+  if (Array.isArray(value)) return value.map((entry) => {
+    if (typeof entry === "string") return entry;
+    if (entry && typeof entry === "object") return String(entry.text || entry.content || entry.value || "");
+    return "";
+  }).filter(Boolean).join("\n").trim();
+  return String(value || "").trim();
+}
+
+async function assistantTextForTurn(threadId, turnId) {
+  const result = await codex.request("thread/turns/list", {
+    threadId,
+    limit: 6,
+    sortDirection: "desc",
+  }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS, retry: false, resetOnTimeout: false });
+  const turns = Array.isArray(result && result.data)
+    ? result.data
+    : Array.isArray(result && result.turns)
+      ? result.turns
+      : [];
+  const turn = turns.find((entry) => entry && String(entry.id || "") === String(turnId || "")) || turns[0];
+  const items = Array.isArray(turn && turn.items) ? turn.items : [];
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const text = textFromAssistantItem(items[index]);
+    if (text) return text;
+  }
+  return "";
+}
+
+async function waitForSideChatReply(threadId, turnId) {
+  const deadline = Date.now() + THREAD_SIDE_CHAT_REPLY_TIMEOUT_MS;
+  const id = String(turnId || "").trim();
+  let lastError = "";
+  while (Date.now() < deadline) {
+    try {
+      const result = await codex.request("thread/turns/list", {
+        threadId,
+        limit: 6,
+        sortDirection: "desc",
+      }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS, retry: false, resetOnTimeout: false });
+      const turns = Array.isArray(result && result.data)
+        ? result.data
+        : Array.isArray(result && result.turns)
+          ? result.turns
+          : [];
+      const turn = turns.find((entry) => entry && String(entry.id || "") === id);
+      if (turn && isCompletedStatus(turn.status)) {
+        const text = await assistantTextForTurn(threadId, turnId);
+        if (text) return text;
+      }
+    } catch (err) {
+      lastError = err.message || String(err);
+      if (/no rollout found|not found|not materialized|unmaterialized/i.test(lastError)) {
+        await sleep(1000);
+        continue;
+      }
+    }
+    await sleep(1000);
+  }
+  throw new Error(lastError || "side_chat_reply_timeout");
+}
+
+function startSideChatAssistantReply(parentThreadId, userMessage) {
+  const userMessageId = String(userMessage && userMessage.id || "");
+  if (!parentThreadId || !userMessageId) return;
+  const key = `${parentThreadId}:${userMessageId}`;
+  if (sideChatReplyInflight.has(key)) return;
+  const promise = (async () => {
+    try {
+      const parentSummary = sideChatParentSummary(parentThreadId);
+      const runtimeSettings = await resolveThreadRuntimeSettings(parentThreadId);
+      const sidecarThreadId = await ensureSideChatSidecarThread(parentThreadId, runtimeSettings, parentSummary);
+      await threadSideChatService.markAssistantPending(parentThreadId, userMessageId, { sidecarThreadId });
+      const settings = sideChatReadOnlyRuntimeSettings(runtimeSettings);
+      try {
+        await codex.request("thread/resume", applyResumeRuntimeSettings({
+          threadId: sidecarThreadId,
+          cwd: parentSummary && parentSummary.cwd || null,
+          persistExtendedHistory: false,
+        }, settings), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+      } catch (err) {
+        if (!/already|loaded|active|no rollout found|not found|not materialized|unmaterialized/i.test(err.message || "")) throw err;
+      }
+      const sideChat = threadSideChatService.get(parentThreadId);
+      const parentContext = await parentThreadSideChatContext(parentThreadId);
+      const turnParams = applyTurnRuntimeSettings({
+        threadId: sidecarThreadId,
+        input: [{ type: "text", text: sideChatPrompt({ parentThreadId, parentSummary, parentContext, sideChat, userMessage }) }],
+        cwd: parentSummary && parentSummary.cwd || undefined,
+      }, settings);
+      turnParams.sandboxPolicy = readOnlySandboxPolicy(settings.sandboxPolicy);
+      const turnResult = await codex.request("turn/start", turnParams, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+      const turnId = String((turnResult && turnResult.turnId) || (turnResult && turnResult.turn && turnResult.turn.id) || "");
+      const replyText = await waitForSideChatReply(sidecarThreadId, turnId);
+      await threadSideChatService.markAssistantCompleted(parentThreadId, userMessageId, {
+        text: replyText || "我没有拿到完整回复，请重试。",
+      });
+    } catch (err) {
+      await threadSideChatService.markAssistantFailed(parentThreadId, userMessageId, err).catch(() => {});
+      console.error(`[thread side chat] reply failed thread=${shortIdentifier(parentThreadId)} message=${shortIdentifier(userMessageId)}: ${err.message || String(err)}`);
+    } finally {
+      sideChatReplyInflight.delete(key);
+    }
+  })();
+  sideChatReplyInflight.set(key, promise);
+}
+
 let threadDetailProjectionService;
 const threadTaskCardService = createThreadTaskCardService({
   storageFile: THREAD_TASK_CARD_FILE,
@@ -724,12 +975,13 @@ function assertCommandAvailable(command, label) {
 }
 
 function codexAppServerChildEnv(extra = {}) {
-  const env = Object.assign({}, process.env, extra);
+  const env = Object.assign({}, process.env);
   for (const key of Object.keys(env)) {
     if (key === "CODEX_CLI_PATH" || key.startsWith("CODEX_MUX_")) {
       delete env[key];
     }
   }
+  Object.assign(env, extra);
   if (CODEX_HOME) env.CODEX_HOME = CODEX_HOME;
   return env;
 }
@@ -2004,6 +2256,10 @@ function isSubagentThreadSummary(thread) {
   ));
 }
 
+function isSideChatSidecarThreadSummary(thread) {
+  return Boolean(thread && threadSideChatService.isSidecarThreadId(thread.id || thread.threadId));
+}
+
 function threadSummaryHasDisplayText(thread) {
   if (!thread || typeof thread !== "object") return false;
   const id = String(thread.id || "").trim();
@@ -2024,6 +2280,7 @@ function isResidualFallbackThreadSummary(thread) {
 function shouldHideThreadListSummary(thread) {
   if (threadHasArchiveSignal(thread)) return true;
   if (isSubagentThreadSummary(thread)) return true;
+  if (isSideChatSidecarThreadSummary(thread)) return true;
   return isResidualFallbackThreadSummary(thread);
 }
 
@@ -4883,6 +5140,7 @@ function prunePushThreadClassCache(now = Date.now()) {
 
 function classifyWebPushThreadId(threadId) {
   const id = String(threadId || "").trim();
+  if (threadSideChatService.isSidecarThreadId(id)) return "subagent";
   if (!id || !fs.existsSync(STATE_DB)) return "unknown";
   const now = Date.now();
   const cached = pushThreadClassCache.get(id);
@@ -5806,6 +6064,7 @@ function resolveExternalEndpoint() {
 class CodexAppServerClient {
   constructor() {
     this.child = null;
+    this.muxChild = null;
     this.ws = null;
     this.port = 0;
     this.endpoint = null;
@@ -5846,6 +6105,12 @@ class CodexAppServerClient {
         return;
       } catch (err) {
         this.closeTransportOnly();
+        if (this.canStartOwnedMuxForEndpoint(externalEndpoint)) {
+          console.error(`[codex app-server] profile mux endpoint unavailable; starting Mobile-owned mux (${err.message})`);
+          await this.startOwnedMuxAndConnect();
+          await this.initialize({ allowAlreadyInitialized: true });
+          return;
+        }
         this.lastError = `shared app-server endpoint unavailable (${err.message})`;
         console.error(`[codex app-server] ${this.lastError}`);
         throw new Error(this.lastError);
@@ -5853,6 +6118,12 @@ class CodexAppServerClient {
     }
 
     if (this.requireSharedAppServer) {
+      if (!DISABLE_MOBILE_OWNED_MUX && !EXTERNAL_APP_SERVER_WS && !EXTERNAL_APP_SERVER_TCP) {
+        console.error(`[codex app-server] shared endpoint missing; starting Mobile-owned mux (${MUX_ENDPOINT_FILE})`);
+        await this.startOwnedMuxAndConnect();
+        await this.initialize({ allowAlreadyInitialized: true });
+        return;
+      }
       this.lastError = `shared app-server endpoint unavailable (${MUX_ENDPOINT_FILE} not found)`;
       console.error(`[codex app-server] ${this.lastError}`);
       throw new Error(this.lastError);
@@ -5900,6 +6171,76 @@ class CodexAppServerClient {
       });
       await started;
     }
+  }
+
+  canStartOwnedMuxForEndpoint(endpoint) {
+    if (DISABLE_MOBILE_OWNED_MUX || EXTERNAL_APP_SERVER_WS || EXTERNAL_APP_SERVER_TCP) return false;
+    return Boolean(endpoint && endpoint.source && normalizeFsPath(endpoint.source) === normalizeFsPath(MUX_ENDPOINT_FILE));
+  }
+
+  async startOwnedMuxAndConnect() {
+    assertCommandAvailable(CODEX_EXE, "Codex executable");
+    if (this.muxChild && this.muxChild.exitCode === null && this.muxChild.signalCode === null) {
+      return this.waitForMuxEndpointAndConnect();
+    }
+
+    fs.mkdirSync(path.dirname(MUX_ENDPOINT_FILE), { recursive: true });
+    const muxPath = path.join(APP_ROOT, "codex-app-server-mux.js");
+    const child = spawn(process.execPath, [muxPath, "app-server", "--analytics-default-enabled"], {
+      cwd: APP_ROOT,
+      env: codexAppServerChildEnv({
+        CODEX_HOME,
+        CODEX_MOBILE_RUNTIME_DIR: RUNTIME_ROOT,
+        CODEX_MUX_STANDALONE: "1",
+        CODEX_MUX_KEEP_ALIVE: "1",
+        CODEX_MUX_PUBLISH_ENDPOINT: "1",
+        CODEX_MUX_ENDPOINT_FILE: MUX_ENDPOINT_FILE,
+        CODEX_MUX_CODEX_EXE: CODEX_EXE,
+      }),
+      windowsHide: true,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    this.muxChild = child;
+    child.stderr.on("data", (chunk) => this.handleAppServerLog(chunk));
+    child.on("exit", (code, signal) => {
+      if (this.muxChild !== child) return;
+      this.muxChild = null;
+      this.ready = false;
+      this.lastError = `Mobile-owned mux exited (${code ?? signal ?? "unknown"})`;
+      broadcast({ type: "status", status: this.status() });
+    });
+    await new Promise((resolve, reject) => {
+      const onError = (err) => {
+        child.off("spawn", onSpawn);
+        if (this.muxChild === child) this.muxChild = null;
+        reject(err);
+      };
+      const onSpawn = () => {
+        child.off("error", onError);
+        resolve();
+      };
+      child.once("error", onError);
+      child.once("spawn", onSpawn);
+    });
+    await this.waitForMuxEndpointAndConnect();
+  }
+
+  async waitForMuxEndpointAndConnect() {
+    const deadline = Date.now() + 20000;
+    let lastError = null;
+    while (Date.now() < deadline) {
+      const endpoint = resolveExternalEndpoint();
+      if (endpoint && this.canStartOwnedMuxForEndpoint(endpoint)) {
+        try {
+          await this.connectEndpoint(endpoint);
+          return;
+        } catch (err) {
+          lastError = err;
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+    throw new Error(`Mobile-owned mux endpoint unavailable (${lastError ? lastError.message : `${MUX_ENDPOINT_FILE} not ready`})`);
   }
 
   async initialize(options = {}) {
@@ -6252,6 +6593,10 @@ class CodexAppServerClient {
         capabilities: this.endpoint.capabilities || null,
       } : null,
       muxEndpointFile: MUX_ENDPOINT_FILE,
+      mobileOwnedMux: this.muxChild ? {
+        pid: this.muxChild.pid || null,
+        running: this.muxChild.exitCode === null && this.muxChild.signalCode === null,
+      } : null,
       codexExe: CODEX_EXE,
       codexHome: CODEX_HOME,
       codexHomeSource: CODEX_HOME_RESOLUTION.source,
@@ -7980,10 +8325,10 @@ function fallbackThreadReadResult(threadId, summary, runtimeSettings, warning, m
     mobileReadMode: mode,
   }, summary || {}, { id: threadId, turns: [], mobileReadMode: mode }));
   if (fallbackThread) fallbackThread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
-  return attachThreadTaskCardsToResult({
+  return attachPendingServerRequestsToResult(attachThreadTaskCardsToResult({
     thread: fallbackThread,
     mobileReadWarning: warning || "",
-  });
+  }));
 }
 
 function attachThreadTaskCardsToThread(thread) {
@@ -8028,6 +8373,29 @@ function attachThreadTaskCardsToResult(result) {
   if (!result || typeof result !== "object" || !result.thread) return result;
   attachThreadGoalToThread(result.thread);
   attachThreadTaskCardsToThread(result.thread);
+  return result;
+}
+
+function pendingServerRequestsForThread(codexClient, threadId) {
+  const id = String(threadId || "").trim();
+  if (!codexClient || typeof codexClient.pendingServerRequests !== "function") return [];
+  return codexClient.pendingServerRequests()
+    .filter((request) => {
+      if (!request || !shouldExposeServerRequestInThread(request)) return false;
+      const params = request.params || {};
+      const requestThreadId = String(params.threadId || params.conversationId || "").trim();
+      return requestThreadId ? requestThreadId === id : Boolean(id);
+    });
+}
+
+function shouldExposeServerRequestInThread(request) {
+  return Boolean(request && SERVER_REQUEST_METHODS.has(request.method));
+}
+
+function attachPendingServerRequestsToResult(result, codexClient = codex) {
+  if (!result || typeof result !== "object" || !result.thread) return result;
+  const pendingServerRequests = pendingServerRequestsForThread(codexClient, result.thread.id || result.thread.threadId || "");
+  result.thread.pendingServerRequests = pendingServerRequests;
   return result;
 }
 
@@ -8189,7 +8557,7 @@ async function materializeThreadTaskCardDraftsForThread(thread) {
 async function prepareThreadTaskCardsToResult(result) {
   if (!result || typeof result !== "object" || !result.thread) return result;
   await materializeThreadTaskCardDraftsForThread(result.thread);
-  return attachThreadTaskCardsToResult(result);
+  return attachPendingServerRequestsToResult(attachThreadTaskCardsToResult(result));
 }
 
 async function turnsListThreadReadResult(threadId, summary, runtimeSettings, warning, mode = "turns-list", threadLog = null) {
@@ -9003,7 +9371,14 @@ async function handleApi(req, res) {
     try {
       const threadSideChatId = decodeURIComponent(threadSideChatMessages[1]);
       const body = await readBody(req);
-      sendJson(res, 200, Object.assign({ ok: true }, await threadSideChatService.addMessage(threadSideChatId, body)));
+      const result = await threadSideChatService.addMessage(threadSideChatId, body);
+      if (result && result.message && result.message.role === "user" && !result.duplicate) {
+        await threadSideChatService.markAssistantPending(threadSideChatId, result.message.id);
+        startSideChatAssistantReply(threadSideChatId, result.message);
+        sendJson(res, 200, Object.assign({ ok: true }, { state: threadSideChatService.get(threadSideChatId), message: result.message }));
+      } else {
+        sendJson(res, 200, Object.assign({ ok: true }, result));
+      }
     } catch (err) {
       sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
     }
@@ -9924,6 +10299,9 @@ function shutdown() {
   try {
     if (codex.child && codex.child.exitCode === null) codex.child.kill();
   } catch (_) {}
+  try {
+    if (codex.muxChild && codex.muxChild.exitCode === null) codex.muxChild.kill();
+  } catch (_) {}
   process.exit(0);
 }
 
@@ -9963,6 +10341,7 @@ module.exports = {
   readRolloutItemTimestampCandidates,
   readRolloutSessionFallbackThreadFromFile,
   resolveFilePreviewPath,
+  attachPendingServerRequestsToResult,
   publicServerRequest,
   serveFilePreviewContent,
   serverRequestResponsePayload,

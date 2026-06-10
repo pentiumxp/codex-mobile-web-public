@@ -92,7 +92,8 @@ test("server materializes structured task-card drafts from thread detail", () =>
   assert.match(functionBody(serverJs, "materializeThreadTaskCardDraftsForThread"), /threadTaskCardDraftIdempotencyKey\(sourceThreadId, turnId, draft\)/);
   assert.doesNotMatch(functionBody(serverJs, "materializeThreadTaskCardDraftsForThread"), /body: draft\.body/);
   assert.match(functionBody(serverJs, "prepareThreadTaskCardsToResult"), /await materializeThreadTaskCardDraftsForThread\(result\.thread\)/);
-  assert.match(functionBody(serverJs, "prepareThreadTaskCardsToResult"), /return attachThreadTaskCardsToResult\(result\)/);
+  assert.match(functionBody(serverJs, "prepareThreadTaskCardsToResult"), /attachThreadTaskCardsToResult\(result\)/);
+  assert.match(functionBody(serverJs, "prepareThreadTaskCardsToResult"), /attachPendingServerRequestsToResult/);
   assert.doesNotMatch(functionBody(serverJs, "prepareThreadTaskCardsToResult"), /prepareThreadTaskCardsToResult\(result\)/);
   assert.match(functionBody(serverJs, "turnsListThreadReadResult"), /return prepareThreadTaskCardsToResult\(result\)/);
   assert.match(serverJs, /maybeMaterializeThreadTaskCardDrafts\(msg\.method, msg\.params \|\| null\)/);
@@ -100,7 +101,7 @@ test("server materializes structured task-card drafts from thread detail", () =>
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v253"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v262"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.threadRole \|\| ""\) === "target"\)/);
