@@ -71,12 +71,13 @@ test("mobile viewport and early guards disable page zoom", () => {
 });
 
 test("public app shell cache advances after thread side chat panel", () => {
-  assert.match(swJs, /codex-mobile-shell-v263/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v263"/);
+  assert.match(swJs, /codex-mobile-shell-v265/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v265"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);
   assert.match(stylesCss, /\.side-chat-scroll\s*{[\s\S]*overflow:\s*auto;/);
+  assert.match(stylesCss, /\.side-chat-section\s*{[\s\S]*height:\s*100%;/);
   assert.match(stylesCss, /\.side-chat-composer-row\s*{[\s\S]*grid-template-columns:\s*44px minmax\(0, 1fr\) max-content max-content;/);
   assert.match(stylesCss, /\.side-chat-form textarea\s*{[\s\S]*min-height:\s*44px;[\s\S]*max-height:\s*160px;/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*z-index:\s*40;/);

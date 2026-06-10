@@ -194,6 +194,9 @@ test("current-turn subagent panel opens from a left swipe without a topbar butto
   assert.match(stylesCss, /\.thread-side-panel/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);
   assert.match(stylesCss, /\.side-chat-section/);
+  assert.match(stylesCss, /\.side-chat-section\s*{[\s\S]*display:\s*flex;[\s\S]*flex-direction:\s*column;/);
+  assert.match(stylesCss, /\.side-chat-scroll\s*{[\s\S]*flex:\s*1 1 auto;/);
+  assert.match(stylesCss, /\.side-chat-form\s*{[\s\S]*flex:\s*0 0 auto;/);
   assert.match(stylesCss, /\.side-chat-form textarea/);
   assert.match(stylesCss, /\.side-chat-message-text,\s*\n\.side-chat-candidate-body\s*{[\s\S]*font-size:\s*var\(--content-font-size\);/);
   assert.match(stylesCss, /\.side-chat-composer-row\s*{[\s\S]*grid-template-columns:\s*44px minmax\(0, 1fr\) max-content max-content;/);

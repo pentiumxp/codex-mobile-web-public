@@ -273,7 +273,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v263";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v265";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -3321,7 +3321,7 @@ function currentThreadNeedsForegroundRefresh() {
 
 function isLiveTurn(turn) {
   if (!turn || isTurnComplete(turn)) return false;
-  return isRunningStatus(turn && turn.status) || isIncompleteInterruptedTurn(turn);
+  return isRunningStatus(turn && turn.status) || isIncompleteInterruptedTurn(turn) || turnHasActiveLiveItems(turn);
 }
 
 function isLatestTurn(turn) {
@@ -4088,9 +4088,7 @@ function currentLiveTurn() {
 
 function turnElapsedSeconds(turn) {
   if (!turn) return 0;
-  const startedMs = turn.startedAtMs
-    || (turn.startedAt ? turn.startedAt * 1000 : 0)
-    || state.nowMs;
+  const startedMs = liveTurnStartedAtMs(turn) || state.nowMs;
   return Math.max(0, Math.floor((state.nowMs - startedMs) / 1000));
 }
 
@@ -4117,6 +4115,31 @@ function liveActivityLabelForTurn(turn) {
     if (item.type === "plan") return "计划";
   }
   return "";
+}
+
+function turnHasActiveLiveItems(turn) {
+  const items = Array.isArray(turn && turn.items) ? turn.items : [];
+  return items.some((item) => item && !isCompletedStatus(item.status) && (item.type === "reasoning" || isOperationalItem(item)));
+}
+
+function liveTurnStartedAtMs(turn) {
+  if (!turn) return 0;
+  const explicit = numericTimestampMs(turn.startedAtMs)
+    || numericTimestampMs(turn.startedAt)
+    || numericTimestampMs(turn.createdAtMs)
+    || numericTimestampMs(turn.createdAt);
+  if (explicit) return explicit;
+  const items = Array.isArray(turn.items) ? turn.items : [];
+  for (const item of items) {
+    if (!item || isCompletedStatus(item.status)) continue;
+    if (item.type !== "reasoning" && !isOperationalItem(item)) continue;
+    const itemStarted = numericTimestampMs(item.startedAtMs)
+      || numericTimestampMs(item.startedAt)
+      || numericTimestampMs(item.createdAtMs)
+      || numericTimestampMs(item.createdAt);
+    if (itemStarted) return itemStarted;
+  }
+  return 0;
 }
 
 function setTurnTimerContent(el, seconds, detail = "") {

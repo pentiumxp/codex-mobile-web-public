@@ -2265,6 +2265,34 @@ The previous full handoff was archived and should be opened only when old proven
     test/thread-goal-service.test.js test/thread-task-card-route.test.js`.
   - `npm run check` passed.
 
+## 2026-06-10 Codex Mobile v265 Side Chat Bottom Composer
+
+- User reported side chat composer stayed near the top when there was no side
+  chat content; it should remain at the bottom of the side-chat panel.
+- Root cause:
+  - `.side-chat-section` used fixed grid rows for optional queue/error/notice
+    blocks. When those optional elements were absent, the scroll/form elements
+    occupied earlier auto rows and the flexible row stayed empty below them.
+- Product fix:
+  - Converted `.side-chat-section` to a column flex layout.
+  - `.side-chat-scroll` now flexes to fill the available middle area.
+  - `.side-chat-form` is fixed at the bottom of the side-chat section.
+  - PWA shell cache advanced to `codex-mobile-shell-v265`.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js` passed.
+  - Focused tests passed:
+    `node --test test/conversation-render.test.js test/mobile-viewport.test.js
+    test/thread-goal-service.test.js test/thread-task-card-route.test.js
+    test/collab-agent-render.test.js`.
+  - `npm run check` passed.
+  - Home AI live-debug visual measurement verified empty side-chat composer
+    bottom alignment and the right-top timer showing nonzero `思考`.
+  - Screenshot:
+    `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-side-chat-v265-20260610T011529Z.png`.
+- Evidence ledger:
+  - `evidence-adf51d2f-b060-4e5b-94a4-7b296176cbcb`.
+  - `evidence-ff4dc770-8be1-45d9-8c9d-d98d284f8ac3`.
+
 ## 2026-06-10 Public PR #59 Local File Preview Sync
 
 - Public PR:
