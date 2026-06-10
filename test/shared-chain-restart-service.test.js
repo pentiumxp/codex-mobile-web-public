@@ -6,9 +6,15 @@ const { test } = require("node:test");
 
 const {
   buildRestartMacShellCommand,
+  buildRestartPowerShellBootstrapCommand,
   buildRestartPowerShellCommand,
+  buildRestartPowerShellHelperTaskCommand,
+  buildRestartPowerShellProcessCommandLine,
+  buildRestartPowerShellScheduledTaskBootstrapCommand,
   createSharedChainRestartService,
   psQuote,
+  quoteWindowsCommandArg,
+  spawnSyncFailureMessage,
 } = require("../adapters/shared-chain-restart-service");
 
 test("restart command targets the existing shared-chain restart script", () => {
@@ -45,7 +51,7 @@ test("restart command can target an explicit Codex profile home", () => {
   assert.match(command, /-CodexHome 'C:\\Users\\xuxin\\\.codex-homes\\previous'/);
 });
 
-test("restart service spawns a detached hidden PowerShell process", () => {
+test("restart service spawns a detached hidden PowerShell process for ordinary Windows startup", () => {
   const root = path.resolve(__dirname, "..");
   let spawnCall = null;
   let unrefCalled = false;
@@ -68,6 +74,9 @@ test("restart service spawns a detached hidden PowerShell process", () => {
         },
       };
     },
+    spawnSync: () => {
+      throw new Error("ordinary Windows restart must not register a SYSTEM helper task");
+    },
     workspacePath: root,
     taskName: "Codex Mobile Web",
     port: 8787,
@@ -79,6 +88,7 @@ test("restart service spawns a detached hidden PowerShell process", () => {
   assert.equal(result.restarting, true);
   assert.equal(result.restartInMs, 900);
   assert.equal(result.pid, 12345);
+  assert.equal(result.mode, "windows-shared-chain");
   assert.ok(unrefCalled);
   assert.match(spawnCall.exe, /powershell\.exe$/i);
   assert.deepEqual(spawnCall.args.slice(0, 5), ["-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden"]);
@@ -91,7 +101,126 @@ test("restart service spawns a detached hidden PowerShell process", () => {
   const decoded = Buffer.from(encoded, "base64").toString("utf16le");
   assert.match(decoded, /restart-codex-mobile-shared-chain\.ps1/);
   assert.match(decoded, /-TaskName 'Codex Mobile Web'/);
-  assert.doesNotMatch(decoded, /-CodexHome/);
+  assert.doesNotMatch(decoded, /Register-ScheduledTask/);
+  assert.doesNotMatch(decoded, /New-ScheduledTaskPrincipal -UserId 'SYSTEM'/);
+});
+
+test("restart service synchronously runs a hidden PowerShell bootstrap that starts a SYSTEM helper task", () => {
+  const root = path.resolve(__dirname, "..");
+  let spawnCall = null;
+  const service = createSharedChainRestartService({
+    allowNonWindows: true,
+    platform: "win32",
+    env: {
+      SystemRoot: "C:\\Windows",
+      USERPROFILE: path.join(root, ".tmp-user"),
+      CODEX_MOBILE_WINDOWS_SYSTEM_TASK: "1",
+    },
+    fs: {
+      existsSync: () => true,
+    },
+    spawnSync: (exe, args, options) => {
+      spawnCall = { exe, args, options };
+      return { status: 0, stdout: "", stderr: "" };
+    },
+    workspacePath: root,
+    taskName: "Codex Mobile Web",
+    port: 8787,
+  });
+
+  const result = service.restart({ delayMs: 900 });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.restarting, true);
+  assert.equal(result.restartInMs, 900);
+  assert.equal(result.pid, 0);
+  assert.equal(result.mode, "windows-scheduled-task-bootstrap");
+  assert.equal(result.bootstrapExitCode, 0);
+  assert.match(spawnCall.exe, /powershell\.exe$/i);
+  assert.deepEqual(spawnCall.args.slice(0, 5), ["-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden"]);
+  assert.ok(spawnCall.args.includes("-EncodedCommand"));
+  assert.equal(spawnCall.options.stdio, "pipe");
+  assert.equal(spawnCall.options.windowsHide, true);
+
+  const encoded = spawnCall.args[spawnCall.args.indexOf("-EncodedCommand") + 1];
+  const decoded = Buffer.from(encoded, "base64").toString("utf16le");
+  assert.match(decoded, /Register-ScheduledTask/);
+  assert.match(decoded, /Start-ScheduledTask/);
+  assert.match(decoded, /New-ScheduledTaskPrincipal -UserId 'SYSTEM'/);
+  assert.match(decoded, /Codex Mobile Web Restart Helper/);
+  const nested = decoded.match(/-EncodedCommand ([A-Za-z0-9+/=]+)/);
+  assert.ok(nested, "missing nested restart helper encoded command");
+  const nestedDecoded = Buffer.from(nested[1], "base64").toString("utf16le");
+  assert.match(nestedDecoded, /restart-codex-mobile-shared-chain\.ps1/);
+  assert.match(nestedDecoded, /-TaskName 'Codex Mobile Web'/);
+  assert.match(nestedDecoded, /Unregister-ScheduledTask -TaskName 'Codex Mobile Web Restart Helper'/);
+  assert.doesNotMatch(nestedDecoded, /-CodexHome/);
+});
+
+test("restart service reports synchronous Windows bootstrap failures", () => {
+  const root = path.resolve(__dirname, "..");
+  const service = createSharedChainRestartService({
+    allowNonWindows: true,
+    platform: "win32",
+    env: {
+      SystemRoot: "C:\\Windows",
+      USERPROFILE: path.join(root, ".tmp-user"),
+      CODEX_MOBILE_WINDOWS_SYSTEM_TASK: "1",
+    },
+    fs: {
+      existsSync: () => true,
+    },
+    spawnSync: () => ({ status: 1, stdout: "", stderr: "Access is denied." }),
+    workspacePath: root,
+    taskName: "Codex Mobile Web",
+    port: 8787,
+  });
+
+  assert.throws(
+    () => service.restart({ delayMs: 900 }),
+    /PowerShell restart bootstrap exited with code 1: Access is denied\./,
+  );
+  assert.match(
+    spawnSyncFailureMessage({ status: 2, stdout: "fallback", stderr: "" }),
+    /fallback/,
+  );
+});
+
+test("restart PowerShell scheduled task bootstrap preserves paths with spaces", () => {
+  const command = buildRestartPowerShellCommand({
+    scriptPath: "C:\\repo path\\restart-codex-mobile-shared-chain.ps1",
+    taskName: "Codex Mobile Web",
+    workspacePath: "C:\\repo path",
+    userProfilePath: "C:\\Users\\xuxin",
+    port: 8787,
+  });
+  const commandLine = buildRestartPowerShellProcessCommandLine({
+    powerShellPath: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    command,
+  });
+  const bootstrap = buildRestartPowerShellScheduledTaskBootstrapCommand({
+    powerShellPath: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    command,
+    workspacePath: "C:\\repo path",
+    helperTaskName: "Codex Mobile Web Restart Helper",
+    bootstrapLogPath: "C:\\Users\\xuxin\\.codex-mobile-web\\shared-chain-restart-bootstrap.log",
+  });
+  const helperCommand = buildRestartPowerShellHelperTaskCommand({
+    command,
+    helperTaskName: "Codex Mobile Web Restart Helper",
+  });
+  const wmiBootstrap = buildRestartPowerShellBootstrapCommand({
+    powerShellPath: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    command,
+    workspacePath: "C:\\repo path",
+  });
+
+  assert.match(commandLine, /-EncodedCommand [A-Za-z0-9+/=]+/);
+  assert.match(wmiBootstrap, /Win32_Process/);
+  assert.match(bootstrap, /Register-ScheduledTask/);
+  assert.match(bootstrap, /\$workingDirectory = 'C:\\repo path'/);
+  assert.match(helperCommand, /Unregister-ScheduledTask -TaskName 'Codex Mobile Web Restart Helper'/);
+  assert.equal(quoteWindowsCommandArg("C:\\Program Files\\PowerShell\\pwsh.exe"), "\"C:\\Program Files\\PowerShell\\pwsh.exe\"");
 });
 
 test("macOS restart command restarts the existing LaunchAgent when available", () => {
