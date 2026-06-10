@@ -2181,3 +2181,43 @@ The previous full handoff was archived and should be opened only when old proven
   - This entry records development validation only. Production was not
     restarted or redeployed during this change because the user requested
     avoiding repeated service restarts.
+
+## 2026-06-10 Codex Mobile v261 Command Dock Layout
+
+- User reported the live Command/File/Tool box still overlapped message text
+  and looked transparent in production.
+- Confirmed production had briefly served v259, but v259's fixed overlay dock
+  still covered conversation content. Reworked the command dock into a real
+  layout row between `#conversation` and `#composer`.
+- Product changes:
+  - Added `#liveOperationDock` as the dedicated dock container.
+  - Removed command dock rendering from the conversation HTML stream.
+  - Dock background is opaque and participates in the main grid layout, so it
+    does not cover messages or composer controls.
+  - Default dock mode is three rows: metadata/status row plus two detail rows.
+  - Added compact one-row mode and expanded mode, with small controls and
+    vertical swipe handling.
+  - PWA shell cache advanced to `codex-mobile-shell-v261`.
+- Validation:
+  - `npm run check` passed.
+  - Focused tests passed:
+    `node --test test/collab-agent-render.test.js
+    test/conversation-render.test.js test/mobile-viewport.test.js
+    test/thread-goal-service.test.js test/thread-task-card-route.test.js`.
+  - Home AI harness tests passed:
+    `node tests/ios-pwa-live-debug-server.test.js
+    tests/ios-pwa-visual-harness.test.js`.
+  - Deployment harness checks passed:
+    `node --check scripts/deploy-macos-production.js`,
+    `node tests/macos-production-deploy-script.test.js`, and
+    `node tests/production-status-smoke-harness.test.js`.
+  - `git diff --check` passed.
+- Visual evidence:
+  - Used Home AI live debug against Codex dev port `18787`.
+  - Verified normal dock height about `87.5px`, compact about `46px`, expanded
+    about `218px`, with no conversation/dock or dock/composer overlap.
+  - Screenshot:
+    `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-command-dock-v261-20260610T003354Z.png`.
+- Evidence ledger:
+  - `evidence-d77d3813-dc1e-4cdc-acc7-0207ff0cce5a`.
+  - `evidence-17336ea2-6e87-4443-8e6a-0649e4511bef`.

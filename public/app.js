@@ -131,6 +131,8 @@ const state = {
   androidBackSidebarSentinelReady: false,
   subagentSwipe: null,
   subagentPanelOpen: false,
+  liveOperationDockMode: "normal",
+  liveOperationDockGesture: null,
   threadSideChats: new Map(),
   sideChatLoadingThreadId: "",
   sideChatError: "",
@@ -271,7 +273,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v259";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v261";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -7819,7 +7821,6 @@ function patchHtml(target, html) {
 function updateConversationHtml(html, signature, options = {}) {
   const conversation = $("conversation");
   if (state.renderedConversationSignature === signature) {
-    updateLiveOperationDockMetrics();
     scheduleFailedAppImageScan(conversation, [0, 180]);
     if (options.stickToBottom) scheduleConversationToBottom();
     else scheduleScrollToBottomButtonUpdate();
@@ -7835,17 +7836,73 @@ function updateConversationHtml(html, signature, options = {}) {
   hydrateGitHubLinkCards(conversation);
   hydrateMermaidDiagrams(conversation);
   scheduleFailedAppImageScan(conversation);
-  updateLiveOperationDockMetrics();
   state.renderedConversationSignature = signature;
   if (options.stickToBottom) scheduleConversationToBottom();
   else scheduleScrollToBottomButtonUpdate();
   return true;
 }
 
-function updateLiveOperationDockMetrics() {
-  const dock = document.querySelector(".live-operation-dock");
-  const height = dock ? Math.ceil(dock.getBoundingClientRect().height) : 0;
-  document.documentElement.style.setProperty("--live-operation-dock-reserve", height ? `${height + 8}px` : "0px");
+function updateLiveOperationDockHtml(html = "") {
+  const dock = $("liveOperationDock");
+  if (!dock) return false;
+  const next = String(html || "");
+  if (!next) {
+    if (dock.innerHTML) dock.innerHTML = "";
+    dock.hidden = true;
+    return true;
+  }
+  dock.hidden = false;
+  dock.dataset.mode = normalizeLiveOperationDockMode(state.liveOperationDockMode);
+  if (dock.innerHTML !== next) patchHtml(dock, next);
+  return true;
+}
+
+function normalizeLiveOperationDockMode(mode) {
+  const value = String(mode || "");
+  if (value === "compact" || value === "expanded") return value;
+  return "normal";
+}
+
+function setLiveOperationDockMode(mode) {
+  const next = normalizeLiveOperationDockMode(mode);
+  state.liveOperationDockMode = next;
+  const dock = $("liveOperationDock");
+  if (!dock) return;
+  dock.dataset.mode = next;
+  dock.querySelectorAll("[data-live-operation-dock-mode]").forEach((button) => {
+    button.setAttribute("aria-pressed", String(String(button.dataset.liveOperationDockMode || "") === next));
+  });
+}
+
+function beginLiveOperationDockGesture(event) {
+  const touch = event.touches && event.touches[0];
+  if (!touch) return;
+  state.liveOperationDockGesture = {
+    y: Number(touch.clientY || 0),
+    at: Date.now(),
+  };
+}
+
+function finishLiveOperationDockGesture(event) {
+  const start = state.liveOperationDockGesture;
+  state.liveOperationDockGesture = null;
+  const touch = event.changedTouches && event.changedTouches[0];
+  if (!start || !touch) return;
+  const deltaY = Number(touch.clientY || 0) - Number(start.y || 0);
+  if (Math.abs(deltaY) < 24 || Date.now() - Number(start.at || 0) > 900) return;
+  if (deltaY > 0) setLiveOperationDockMode("compact");
+  else setLiveOperationDockMode("expanded");
+}
+
+function cancelLiveOperationDockGesture() {
+  state.liveOperationDockGesture = null;
+}
+
+function handleLiveOperationDockClick(event) {
+  const button = event.target.closest("[data-live-operation-dock-mode]");
+  if (!button) return;
+  event.preventDefault();
+  setLiveOperationDockMode(button.dataset.liveOperationDockMode || "normal");
 }
 
 function sourceIndexForVisibleItem(turn, item) {
@@ -8092,6 +8149,7 @@ function renderCurrentThread(options = {}) {
   if (titleEl) titleEl.textContent = thread.name || thread.preview || thread.id;
   if (metaEl) metaEl.textContent = "";
   if (thread.mobileLoading) {
+    updateLiveOperationDockHtml("");
     updateConversationHtml(
       `<div class="empty-state entry-animate">Loading thread...</div>`,
       conversationRenderSignature(thread),
@@ -8102,6 +8160,7 @@ function renderCurrentThread(options = {}) {
     return;
   }
   if (thread.mobileLoadError) {
+    updateLiveOperationDockHtml("");
     updateConversationHtml(
       `<div class="empty-state entry-animate">
         <div>Thread failed: ${escapeHtml(thread.mobileLoadError)}</div>
@@ -8141,7 +8200,8 @@ function renderCurrentThread(options = {}) {
   const emptyMessage = readWarningMessage
     ? "暂时没有可显示的完整消息。共享模式恢复后刷新这个页面即可继续读取。"
     : "No visible turns.";
-    const html = goalCard + rolloutWarning + taskToolbar + omittedBanner + readWarning + (turnsHtml || approvalsHtml || taskCardsHtml || liveOperationDock ? `${turnsHtml}${approvalsHtml}${taskCardsHtml}${liveOperationDock}${pluginRefreshNotice}` : `${pluginRefreshNotice || ""}<div class="empty-state entry-animate">${escapeHtml(emptyMessage)}</div>`);
+    const html = goalCard + rolloutWarning + taskToolbar + omittedBanner + readWarning + (turnsHtml || approvalsHtml || taskCardsHtml ? `${turnsHtml}${approvalsHtml}${taskCardsHtml}${pluginRefreshNotice}` : `${pluginRefreshNotice || ""}<div class="empty-state entry-animate">${escapeHtml(emptyMessage)}</div>`);
+  updateLiveOperationDockHtml(liveOperationDock);
   updateConversationHtml(html, conversationRenderSignature(thread), { stickToBottom: shouldStickToBottom });
   bindCurrentThreadActions();
   if (options.scrollToTurnReceiptStart) scrollConversationToTurnReceiptStart(options.scrollToTurnReceiptStart);
@@ -8155,6 +8215,7 @@ function renderNewThreadDraft() {
   state.tickTimer = null;
   state.subagentPanelOpen = false;
   updateSubagentPanelUi();
+  updateLiveOperationDockHtml("");
   const titleEl = $("threadTitle");
   const metaEl = $("threadMeta");
   const workspaceLabel = selectedWorkspaceLabel();
@@ -9321,7 +9382,16 @@ function renderPendingApprovals(thread, previousKeys = new Set(), filter = null)
 function renderLiveOperationDock(thread, previousKeys = new Set()) {
   const entry = currentLiveOperationEntry(thread);
   if (!entry) return "";
-  return `<div class="live-operation-dock">${renderLiveOperation(entry.item, entry.turn, previousKeys, entry.sourceIndex)}</div>`;
+  const mode = normalizeLiveOperationDockMode(state.liveOperationDockMode);
+  const modeButton = (value, label, title) => `<button type="button" data-live-operation-dock-mode="${escapeHtml(value)}" aria-pressed="${String(mode === value)}" title="${escapeHtml(title)}">${escapeHtml(label)}</button>`;
+  return `<div class="live-operation-dock-inner">
+    <div class="live-operation-dock-controls" aria-label="Command 显示高度">
+      ${modeButton("compact", "1行", "收缩 Command 框")}
+      ${modeButton("normal", "3行", "显示三行 Command 框")}
+      ${modeButton("expanded", "展开", "展开 Command 框")}
+    </div>
+    ${renderLiveOperation(entry.item, entry.turn, previousKeys, entry.sourceIndex)}
+  </div>`;
 }
 
 function renderTurn(turn, previousKeys = new Set()) {
@@ -12402,7 +12472,6 @@ function updateComposerHeightVar() {
   const composer = $("composer");
   if (!composer) return;
   document.documentElement.style.setProperty("--composer-height", `${Math.ceil(composer.getBoundingClientRect().height)}px`);
-  updateLiveOperationDockMetrics();
   scheduleScrollToBottomButtonUpdate();
 }
 
@@ -13911,6 +13980,12 @@ function wireUi() {
     scrollConversationToBottom();
   });
   if ($("scrollToTurnReply")) $("scrollToTurnReply").addEventListener("click", scrollConversationToTurnReply);
+  if ($("liveOperationDock")) {
+    $("liveOperationDock").addEventListener("click", handleLiveOperationDockClick);
+    $("liveOperationDock").addEventListener("touchstart", beginLiveOperationDockGesture, { passive: true });
+    $("liveOperationDock").addEventListener("touchend", finishLiveOperationDockGesture, { passive: true });
+    $("liveOperationDock").addEventListener("touchcancel", cancelLiveOperationDockGesture, { passive: true });
+  }
   $("conversation").addEventListener("pointerdown", rememberConversationScrollIntent, { passive: true });
   $("conversation").addEventListener("touchstart", rememberConversationScrollIntent, { passive: true });
   $("conversation").addEventListener("touchstart", beginSubagentSwipe, { passive: true });
