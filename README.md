@@ -668,6 +668,8 @@ Behavior:
 
 - 中文说明：server-only 合并 public PR #59，允许预览当前会话明确引用过的本地文件。文件预览仍要求认证、绝对路径、受支持扩展、敏感文件/目录 denylist 和大小限制；不在当前 workspace/Obsidian vault/显式 roots/Codex skills roots 下的文件，只有当它的精确路径出现在当前 thread rollout 文本中时才会被授权预览，且不会因此开放同目录 sibling 文件、整个 `.codex` 状态目录、runtime state、上传目录、本地密钥或机器诊断目录。本次不改变 PWA shell cache。
 
+- 中文说明：v263 修正右上角本轮运行框的活动状态优先级。线程刷新/轮询产生的“同步”不再覆盖当前 live turn 中真实的“思考 / 命令 / 文件 / 工具 / 输出”状态；运行框会优先从当前未完成 reasoning 或 operational item 推导显示内容。PWA shell cache 升级到 `codex-mobile-shell-v263`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
+
 - 中文说明：v262 简化线程页 live Command/File/Tool 命令框的高度控制。命令框默认保持一行折叠态，只显示向上箭头用于展开；展开后按钮变为向下箭头，用于收回一行。移除“1行 / 3行 / 展开”的文字按钮和默认三行状态。PWA shell cache 升级到 `codex-mobile-shell-v262`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
 
 - 中文说明：v261 修正线程页 live Command/File/Tool 命令框的固定区域和高度控制。命令框作为 conversation 和 composer 之间的不透明独立布局区域，不覆盖消息正文；默认显示三行（状态行 + 两行 detail），可切到一行 compact 状态，也可展开查看更多 detail，支持按钮切换和上下滑手势。PWA shell cache 升级到 `codex-mobile-shell-v261`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。

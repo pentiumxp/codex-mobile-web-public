@@ -383,6 +383,14 @@ test("visible turn items keep source order after live operations move to the doc
   assert.match(functionBody("visibleItemsForTurn"), /if \(isOperationalItem\(item\)\) \{[\s\S]*return;/);
 });
 
+test("turn timer prefers live item activity over idle sync labels", () => {
+  assert.match(appJs, /function liveActivityLabelForTurn\(/);
+  assert.match(functionBody("liveActivityLabelForTurn"), /item\.type === "reasoning"[\s\S]*return "思考"/);
+  assert.match(functionBody("liveActivityLabelForTurn"), /isOperationalItem\(item\)[\s\S]*activityLabelForItem\(item\)/);
+  assert.match(functionBody("markIdleActivity"), /if \(liveActivityLabelForTurn\(currentLiveTurn\(\)\)\) return;/);
+  assert.match(functionBody("updateTurnTimer"), /liveActivityLabelForTurn\(turn\) \|\| state\.activityLabel/);
+});
+
 test("long agent messages keep a stable render path when a turn completes", () => {
   assert.match(functionBody("renderItemBody"), /if \(item\.type === "agentMessage"\) \{[\s\S]*renderThreadTaskCardDraftMessage\(item\.text \|\| "", item, turn\) \|\| renderMarkdownWithAttachmentSummary\(item\.text \|\| ""\);/);
   assert.doesNotMatch(functionBody("renderItemBody"), /isLiveTurn\(turn\) \? escapeHtml/);

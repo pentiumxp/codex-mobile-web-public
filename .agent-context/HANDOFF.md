@@ -2244,6 +2244,27 @@ The previous full handoff was archived and should be opened only when old proven
   - Public sync must exclude `.agent-context` and include only public-safe
     source, README, and tests.
 
+## 2026-06-10 Codex Mobile v263 Turn Timer Activity Priority
+
+- User reported the top-right run box mostly showed `同步` / thread-loading
+  status and no longer showed `思考`, file, or command activity.
+- Root cause:
+  - `refreshCurrentThread()` periodically called `markIdleActivity("同步")`.
+  - The existing 3-second guard still allowed low-priority sync labels to
+    overwrite longer-running live reasoning/operation labels.
+- Product fix:
+  - Added `liveActivityLabelForTurn()` and made `updateTurnTimer()` prefer the
+    current live turn's actual reasoning/operation/output activity over the
+    global idle activity label.
+  - `markIdleActivity()` now no-ops while a live turn has inferable activity.
+  - PWA shell cache advanced to `codex-mobile-shell-v263`.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js` passed.
+  - Focused tests passed:
+    `node --test test/conversation-render.test.js test/mobile-viewport.test.js
+    test/thread-goal-service.test.js test/thread-task-card-route.test.js`.
+  - `npm run check` passed.
+
 ## 2026-06-10 Public PR #59 Local File Preview Sync
 
 - Public PR:

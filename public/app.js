@@ -273,7 +273,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v262";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v263";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -2892,6 +2892,7 @@ function markSteerAppliedIfNeeded(turnId, item = null) {
 
 function markIdleActivity(label) {
   if (!state.activeTurnId && !currentLiveTurn()) return;
+  if (liveActivityLabelForTurn(currentLiveTurn())) return;
   if (state.activityAtMs && Date.now() - state.activityAtMs < 3000) return;
   markActivity(label);
 }
@@ -4100,6 +4101,24 @@ function turnFinalSeconds(turn) {
   return null;
 }
 
+function liveActivityLabelForTurn(turn) {
+  if (!turn || !isLiveTurn(turn)) return "";
+  const items = Array.isArray(turn.items) ? turn.items : [];
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (!item) continue;
+    if (item.type === "reasoning" && !isCompletedStatus(item.status)) return "思考";
+    if (isOperationalItem(item) && !isCompletedStatus(item.status)) return activityLabelForItem(item);
+  }
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (!item) continue;
+    if (item.type === "agentMessage") return "输出";
+    if (item.type === "plan") return "计划";
+  }
+  return "";
+}
+
 function setTurnTimerContent(el, seconds, detail = "") {
   let timeEl = el.querySelector(".turn-timer-time");
   let detailEl = el.querySelector(".turn-timer-detail");
@@ -4139,7 +4158,7 @@ function updateTurnTimer() {
     }
     return;
   }
-  setTurnTimerContent(el, turnElapsedSeconds(turn), state.activityLabel);
+  setTurnTimerContent(el, turnElapsedSeconds(turn), liveActivityLabelForTurn(turn) || state.activityLabel);
   el.classList.add("visible", "active");
   el.classList.remove("settled");
   el.setAttribute("aria-hidden", "false");
