@@ -474,7 +474,7 @@ verify `codex-mobile-shell-v175` or newer is loaded and run
 
 If an agent reply shows a local Markdown/text file preview action but clicking it says the type is unsupported, inspect the exact `data-local-file-path` / `/api/files/preview?path=...` target. Codex source links often include location suffixes such as `README.md:12`, `README.md:12:3`, or `README.md#L12`.
 
-Current server behavior strips those location suffixes before extension detection and root validation. The remaining path must still be an absolute local path, stay under an explicit `CODEX_MOBILE_FILE_PREVIEW_ROOTS` root, a known visible workspace root, the current thread cwd, or an enclosing Obsidian vault, and pass the sensitive-path denylist.
+Current server behavior strips those location suffixes before extension detection and root validation. The remaining path must still be an absolute local path, stay under an explicit `CODEX_MOBILE_FILE_PREVIEW_ROOTS` root, a known visible workspace root, the current thread cwd, a Codex skill directory such as `$CODEX_HOME/skills`, `$HOME/.codex/skills`, or `$HOME/.agents/skills`, or an enclosing Obsidian vault, and pass the sensitive-path denylist.
 
 Focused checks:
 
@@ -482,7 +482,7 @@ Focused checks:
 node --test test\file-preview.test.js test\file-preview-ui.test.js test\markdown-render.test.js
 ```
 
-Do not fix file-preview misses by adding broad roots such as `%USERPROFILE%`, `%TEMP%`, `.codex`, the upload directory, or machine diagnostic folders. The intended fix for normal repository files is that visible workspace roots and the current thread cwd are already accepted.
+Do not fix file-preview misses by adding broad roots such as `%USERPROFILE%`, `%TEMP%`, the whole `.codex` directory, the upload directory, or machine diagnostic folders. The intended fix for normal repository files is that visible workspace roots and the current thread cwd are already accepted; skill docs are limited to the explicit `skills` subdirectories.
 
 ## Worktree Thread Missing From The Thread List
 

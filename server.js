@@ -1932,6 +1932,17 @@ function filePreviewEnvRoots() {
     .filter(Boolean);
 }
 
+function filePreviewSkillRoots(options = {}) {
+  const userHome = String(options.userHome || USER_HOME || "").trim();
+  const codexHome = String(options.codexHome || CODEX_HOME || "").trim();
+  const defaultCodexHome = String(options.defaultCodexHome || DEFAULT_CODEX_HOME || "").trim();
+  return uniqueStrings([
+    codexHome ? path.join(codexHome, "skills") : "",
+    defaultCodexHome ? path.join(defaultCodexHome, "skills") : "",
+    userHome ? path.join(userHome, ".agents", "skills") : "",
+  ]);
+}
+
 function nearestAncestorWithChild(startPath, childName) {
   let current = path.resolve(String(startPath || ""));
   for (let depth = 0; depth < 12; depth += 1) {
@@ -1962,6 +1973,7 @@ function isPathInsideRoot(targetPath, rootPath) {
 
 function previewRootsForThread(threadId, globalState = readGlobalState(), options = {}) {
   const roots = new Map(filePreviewEnvRoots().map((root) => [root, "env"]));
+  for (const root of filePreviewSkillRoots(options)) roots.set(root, "skill");
   const visibleRoots = visibleWorkspaceRoots(globalState);
   for (const root of visibleRoots) roots.set(root, "workspace");
   const summary = options.threadSummary || readStateDbThread(threadId) || readStartedThread(threadId);
@@ -1976,6 +1988,7 @@ function previewRootsForThread(threadId, globalState = readGlobalState(), option
     .map(([root, source]) => ({ root: path.resolve(root), source }))
     .filter((entry) => entry.root && fs.existsSync(entry.root))
     .filter((entry) => entry.source === "env"
+      || entry.source === "skill"
       || entry.source === "workspace"
       || entry.source === "thread"
       || !visible.size
@@ -2034,6 +2047,54 @@ function filePreviewContentType(filePath) {
   return FILE_PREVIEW_TEXT_CONTENT_TYPES.get(ext) || "text/plain; charset=utf-8";
 }
 
+function filePreviewExtensionPattern() {
+  const extensions = [
+    ...FILE_PREVIEW_TEXT_EXTENSIONS,
+    ...IMAGE_EXTENSIONS,
+    ...FILE_PREVIEW_DOCUMENT_EXTENSIONS,
+  ]
+    .map((ext) => ext.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .sort((a, b) => b.length - a.length);
+  return extensions.join("|");
+}
+
+function previewFileReferencesFromText(text) {
+  const source = String(text || "");
+  if (!source) return [];
+  const extPattern = filePreviewExtensionPattern();
+  const fileUrlPattern = new RegExp(`file://[^\\s\\])}>"'\`]+(?:${extPattern})(?::\\d+(?::\\d+)?)?`, "gi");
+  const absolutePathPattern = new RegExp(`/(?:[^\\0\\r\\n<>"'\`|])*?(?:${extPattern})(?::\\d+(?::\\d+)?)?`, "gi");
+  const out = [];
+  for (const pattern of [fileUrlPattern, absolutePathPattern]) {
+    for (const match of source.matchAll(pattern)) {
+      const target = stripMarkdownFileTarget(match[0]);
+      if (!target || !path.isAbsolute(target)) continue;
+      if (hasDeniedPreviewPathSegment(target) || !allowedFilePreviewExtension(target)) continue;
+      try {
+        const stat = fs.statSync(target);
+        if (stat.isFile()) out.push(safeRealpath(target) || path.resolve(target));
+      } catch (_) {}
+    }
+  }
+  return uniqueStrings(out);
+}
+
+function referencedPreviewFilesForThread(threadId, options = {}) {
+  const summary = options.threadSummary || readStateDbThread(threadId) || readStartedThread(threadId);
+  const rolloutPath = options.rolloutPath || rolloutPathForThread(summary);
+  const rolloutText = typeof options.rolloutText === "string"
+    ? options.rolloutText
+    : (readRolloutRuntimeScanText(rolloutPath) || readRolloutTail(rolloutPath));
+  return previewFileReferencesFromText(rolloutText);
+}
+
+function filePreviewAuthoritiesForThread(threadId, globalState = readGlobalState(), options = {}) {
+  return [
+    ...previewRootsForThread(threadId, globalState, options).map((root) => ({ root, source: "root" })),
+    ...referencedPreviewFilesForThread(threadId, options).map((file) => ({ file, source: "thread-reference" })),
+  ];
+}
+
 function isTextFilePreview(filePath) {
   return FILE_PREVIEW_TEXT_EXTENSIONS.has(filePreviewExtension(filePath));
 }
@@ -2043,7 +2104,19 @@ function isMediaFilePreview(filePath) {
   return IMAGE_EXTENSIONS.has(ext) || FILE_PREVIEW_DOCUMENT_EXTENSIONS.has(ext);
 }
 
-function resolveFilePreviewPath(requestedPath, allowedRoots) {
+function normalizeFilePreviewAuthorities(allowedAuthorities) {
+  return (allowedAuthorities || [])
+    .map((entry) => {
+      if (typeof entry === "string") return { root: path.resolve(entry), source: "root" };
+      if (!entry || typeof entry !== "object") return null;
+      if (entry.file) return { file: path.resolve(String(entry.file)), source: entry.source || "file" };
+      if (entry.root) return { root: path.resolve(String(entry.root)), source: entry.source || "root" };
+      return null;
+    })
+    .filter(Boolean);
+}
+
+function resolveFilePreviewPath(requestedPath, allowedAuthorities) {
   const target = stripMarkdownFileTarget(requestedPath);
   if (!target || !path.isAbsolute(target)) {
     const err = new Error("Only absolute local file paths can be previewed");
@@ -2074,19 +2147,26 @@ function resolveFilePreviewPath(requestedPath, allowedRoots) {
     err.statusCode = 400;
     throw err;
   }
-  const matchingRoots = (allowedRoots || [])
-    .map((root) => path.resolve(String(root || "")))
-    .filter(Boolean)
-    .filter((root) => isPathInsideRoot(resolved, root))
+  const resolvedReal = safeRealpath(resolved) || resolved;
+  const authorities = normalizeFilePreviewAuthorities(allowedAuthorities);
+  const matchingRoots = authorities
+    .filter((entry) => entry.root)
+    .map((entry) => entry.root)
+    .filter((root) => isPathInsideRoot(resolvedReal, root))
     .sort((a, b) => b.length - a.length);
-  if (!matchingRoots.length) {
+  const matchingFiles = authorities
+    .filter((entry) => entry.file)
+    .map((entry) => safeRealpath(entry.file) || entry.file)
+    .filter((file) => file === resolvedReal);
+  if (!matchingRoots.length && !matchingFiles.length) {
     const err = new Error("File is outside the allowed preview roots");
     err.statusCode = 403;
     throw err;
   }
+  const matchedRoot = matchingRoots[0] || path.dirname(matchingFiles[0]);
   return {
-    path: safeRealpath(resolved) || resolved,
-    root: safeRealpath(matchingRoots[0]) || matchingRoots[0],
+    path: resolvedReal,
+    root: safeRealpath(matchedRoot) || matchedRoot,
     stat,
   };
 }
@@ -9286,8 +9366,8 @@ async function handleApi(req, res) {
     const requestedPath = url.searchParams.get("path") || "";
     const threadId = url.searchParams.get("threadId") || "";
     try {
-      const allowedRoots = previewRootsForThread(threadId);
-      sendJson(res, 200, readFilePreview(requestedPath, allowedRoots, { threadId }));
+      const authorities = filePreviewAuthoritiesForThread(threadId);
+      sendJson(res, 200, readFilePreview(requestedPath, authorities, { threadId }));
     } catch (err) {
       sendJson(res, err.statusCode || 500, { error: err.message || String(err) });
     }
@@ -9297,8 +9377,8 @@ async function handleApi(req, res) {
     const requestedPath = url.searchParams.get("path") || "";
     const threadId = url.searchParams.get("threadId") || "";
     try {
-      const allowedRoots = previewRootsForThread(threadId);
-      serveFilePreviewContent(req, res, requestedPath, allowedRoots);
+      const authorities = filePreviewAuthoritiesForThread(threadId);
+      serveFilePreviewContent(req, res, requestedPath, authorities);
     } catch (err) {
       sendJson(res, err.statusCode || 500, { error: err.message || String(err) });
     }
@@ -10330,12 +10410,15 @@ module.exports = {
   filterFallbackThreads,
   filePreviewContentDisposition,
   filePreviewContentType,
+  filePreviewAuthoritiesForThread,
+  filePreviewSkillRoots,
   generatedImageContentUrl,
   hydrateThreadListTitlesFromSessionIndex,
   isHiddenThread,
   mergeThreadListFallback,
   mimeFor,
   previewRootsForThread,
+  previewFileReferencesFromText,
   parseThreadTurnsCursor,
   readFilePreview,
   readRolloutItemTimestampCandidates,
