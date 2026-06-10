@@ -666,6 +666,8 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v268 合并 public PR #60，在线程长按菜单中新增“复制 Session ID”。点击后会关闭菜单、把当前线程 Session ID 写入剪贴板，并显示“已复制 Session ID”状态提示，方便排障、跨设备定位或向其他线程引用当前会话。PWA shell cache 升级到 `codex-mobile-shell-v268`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。本次 public 发布只包含公开源码、README 和测试；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
+
 - 中文说明：server-only 合并 public PR #59，允许预览当前会话明确引用过的本地文件。文件预览仍要求认证、绝对路径、受支持扩展、敏感文件/目录 denylist 和大小限制；不在当前 workspace/Obsidian vault/显式 roots/Codex skills roots 下的文件，只有当它的精确路径出现在当前 thread rollout 文本中时才会被授权预览，且不会因此开放同目录 sibling 文件、整个 `.codex` 状态目录、runtime state、上传目录、本地密钥或机器诊断目录。本次不改变 PWA shell cache。
 
 - 中文说明：v267 修正移动端偶发进入 Codex 白屏或恢复时卡在 Loading 的防护缺口。启动阶段 `/api/public-config` 增加 timeout、重试和最终恢复提示；移动端 `pageshow/focus` 恢复时遇到 iOS/Chrome 常见 transient `Load failed` 不再打断整个页面，而是记录 bounded client event 并延迟重试；线程切换 Loading 超过阈值会记录 `thread_switch_stall` 便于后续定位。PWA shell cache 升级到 `codex-mobile-shell-v267`。
