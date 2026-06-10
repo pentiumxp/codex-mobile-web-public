@@ -21,6 +21,31 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-10 Server-Only Stale Steering Fallback
+
+- User reported Home AI thread steering message showed `引导失败，请重试`,
+  while steering in this Codex Mobile thread worked.
+- Production logs showed repeated Home AI message submissions failing with:
+  `expected active turn id <old> but found <current>`.
+- Root cause:
+  - Existing stale active-turn fallback already skipped `turn/steer` and fell
+    through to `thread/resume` / `turn/start` for many stale-turn errors.
+  - The app-server's exact `expected active turn id ... but found ...` text was
+    not included in `isStaleActiveTurnError()`, so the error surfaced to the
+    mobile UI as a failed steer.
+- Fix:
+  - Extended `isStaleActiveTurnError()` to recognize
+    `expected active turn id`.
+  - Updated `test/new-thread-route.test.js` to keep this error text covered.
+  - This is server-only; no PWA shell cache bump is required.
+- Validation:
+  - `node --check server.js && git diff --check` passed.
+  - Focused tests passed:
+    `node --test test/new-thread-route.test.js test/conversation-render.test.js`.
+  - `npm run check` passed.
+  - Home AI architecture harness check passed:
+    `node tests/architecture-code-test-harness-map.test.js`.
+
 ## 2026-06-10 v267 Startup/Resume Loading Guard
 
 - User reported occasional `Loading thread` stalls and occasional white screen
