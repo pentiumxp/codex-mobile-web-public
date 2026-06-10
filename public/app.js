@@ -101,6 +101,7 @@ const state = {
   eventFallbackMode: false,
   resumeTimer: null,
   resumeVisualTimers: [],
+  resumeRetryTimer: null,
   resumeSeq: 0,
   startupInProgress: false,
   draftSaveTimer: null,
@@ -118,6 +119,7 @@ const state = {
   nowMs: Date.now(),
   threadLoadSeq: 0,
   threadLoadController: null,
+  threadLoadWatchdogTimer: null,
   refreshThreadController: null,
   threadListLoadSeq: 0,
   threadListLoadController: null,
@@ -273,11 +275,14 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v262";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v267";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
+const PUBLIC_CONFIG_TIMEOUT_MS = 8000;
+const PUBLIC_CONFIG_RETRY_DELAYS_MS = [0, 300, 1200];
+const THREAD_LOAD_STALL_MS = 12000;
 const RUNNING_THREAD_HINT_STALE_MS = 20 * 60 * 1000;
 const GITHUB_LINK_PREVIEW_TIMEOUT_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -341,6 +346,55 @@ function postStartupStage(stage, startedAt, details = {}) {
     currentThreadId: state.currentThreadId || "",
     threadListCount: Array.isArray(state.threads) ? state.threads.length : 0,
   }, details || {}));
+}
+
+async function fetchJsonWithTimeout(path, options = {}) {
+  const timeoutMs = Math.max(1, Number(options.timeoutMs || 30000));
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  try {
+    const response = await fetch(path, { signal: controller.signal, cache: options.cache || "no-store" });
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+    return await response.json();
+  } catch (err) {
+    if (err && err.name === "AbortError" && timedOut) throw new Error(`Request timed out: ${path}`);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchPublicConfigWithRetry(startedAt) {
+  let lastError = null;
+  for (let index = 0; index < PUBLIC_CONFIG_RETRY_DELAYS_MS.length; index += 1) {
+    const delay = PUBLIC_CONFIG_RETRY_DELAYS_MS[index];
+    if (delay > 0) await sleep(delay);
+    try {
+      const configStartedAt = nowPerfMs();
+      const config = await fetchJsonWithTimeout("/api/public-config", {
+        timeoutMs: PUBLIC_CONFIG_TIMEOUT_MS,
+      });
+      postStartupStage("public_config_done", startedAt, {
+        durationMs: roundedDurationMs(configStartedAt),
+        attempts: index + 1,
+      });
+      return config;
+    } catch (err) {
+      lastError = err;
+      postStartupStage("public_config_retry", startedAt, {
+        attempt: index + 1,
+        remainingAttempts: Math.max(0, PUBLIC_CONFIG_RETRY_DELAYS_MS.length - index - 1),
+        error: err && err.message ? err.message : String(err),
+      });
+      if (isHermesEmbedMode()) showPluginEmbedRecovering("Loading Codex Mobile...");
+      else if (state.key) showApp();
+    }
+  }
+  throw lastError || new Error("Failed to load public config");
 }
 
 const DRAFT_SAVE_DEBOUNCE_MS = 250;
@@ -2892,6 +2946,7 @@ function markSteerAppliedIfNeeded(turnId, item = null) {
 
 function markIdleActivity(label) {
   if (!state.activeTurnId && !currentLiveTurn()) return;
+  if (liveActivityLabelForTurn(currentLiveTurn())) return;
   if (state.activityAtMs && Date.now() - state.activityAtMs < 3000) return;
   markActivity(label);
 }
@@ -3320,7 +3375,7 @@ function currentThreadNeedsForegroundRefresh() {
 
 function isLiveTurn(turn) {
   if (!turn || isTurnComplete(turn)) return false;
-  return isRunningStatus(turn && turn.status) || isIncompleteInterruptedTurn(turn);
+  return isRunningStatus(turn && turn.status) || isIncompleteInterruptedTurn(turn) || turnHasActiveLiveItems(turn);
 }
 
 function isLatestTurn(turn) {
@@ -4087,9 +4142,7 @@ function currentLiveTurn() {
 
 function turnElapsedSeconds(turn) {
   if (!turn) return 0;
-  const startedMs = turn.startedAtMs
-    || (turn.startedAt ? turn.startedAt * 1000 : 0)
-    || state.nowMs;
+  const startedMs = liveTurnStartedAtMs(turn) || state.nowMs;
   return Math.max(0, Math.floor((state.nowMs - startedMs) / 1000));
 }
 
@@ -4098,6 +4151,59 @@ function turnFinalSeconds(turn) {
   if (turn.durationMs) return Math.max(0, Math.round(turn.durationMs / 1000));
   if (turn.completedAt && turn.startedAt) return Math.max(0, Math.round(turn.completedAt - turn.startedAt));
   return null;
+}
+
+function liveActivityLabelForTurn(turn) {
+  if (!turn || !isLiveTurn(turn)) return "";
+  const operation = activeLiveOperationItemForTurn(turn);
+  if (operation) return activityLabelForItem(operation);
+  const items = Array.isArray(turn.items) ? turn.items : [];
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (!item) continue;
+    if (item.type === "reasoning" && !isCompletedStatus(item.status)) return "思考";
+  }
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (!item) continue;
+    if (item.type === "agentMessage") return "输出";
+    if (item.type === "plan") return "计划";
+  }
+  return "";
+}
+
+function activeLiveOperationItemForTurn(turn) {
+  const items = Array.isArray(turn && turn.items) ? turn.items : [];
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item && isOperationalItem(item) && !isCompletedStatus(item.status)) return item;
+  }
+  return null;
+}
+
+function turnHasActiveLiveItems(turn) {
+  const items = Array.isArray(turn && turn.items) ? turn.items : [];
+  return items.some((item) => item && !isCompletedStatus(item.status) && (item.type === "reasoning" || isOperationalItem(item)));
+}
+
+function liveTurnStartedAtMs(turn) {
+  if (!turn) return 0;
+  const explicit = numericTimestampMs(turn.startedAtMs)
+    || numericTimestampMs(turn.startedAt)
+    || numericTimestampMs(turn.createdAtMs)
+    || numericTimestampMs(turn.createdAt);
+  if (explicit) return explicit;
+  const items = Array.isArray(turn.items) ? turn.items : [];
+  for (const item of items) {
+    if (!item || isCompletedStatus(item.status)) continue;
+    if (item.type !== "reasoning" && !isOperationalItem(item)) continue;
+    const itemStarted = numericTimestampMs(item.startedAtMs)
+      || numericTimestampMs(item.startedAt)
+      || numericTimestampMs(item.createdAtMs)
+      || numericTimestampMs(item.createdAt);
+    if (itemStarted) return itemStarted;
+  }
+  return 0;
 }
 
 function setTurnTimerContent(el, seconds, detail = "") {
@@ -4139,7 +4245,7 @@ function updateTurnTimer() {
     }
     return;
   }
-  setTurnTimerContent(el, turnElapsedSeconds(turn), state.activityLabel);
+  setTurnTimerContent(el, turnElapsedSeconds(turn), liveActivityLabelForTurn(turn) || state.activityLabel);
   el.classList.add("visible", "active");
   el.classList.remove("settled");
   el.setAttribute("aria-hidden", "false");
@@ -5444,6 +5550,36 @@ async function loadThreads(options = {}) {
   }
 }
 
+function clearThreadLoadWatchdog() {
+  if (!state.threadLoadWatchdogTimer) return;
+  clearTimeout(state.threadLoadWatchdogTimer);
+  state.threadLoadWatchdogTimer = null;
+}
+
+function startThreadLoadWatchdog(threadId, details = {}) {
+  clearThreadLoadWatchdog();
+  const seq = state.threadLoadSeq;
+  const startedAt = nowPerfMs();
+  state.threadLoadWatchdogTimer = setTimeout(() => {
+    state.threadLoadWatchdogTimer = null;
+    if (seq !== state.threadLoadSeq || state.currentThreadId !== threadId) return;
+    if (!state.currentThread || !state.currentThread.mobileLoading) return;
+    postClientEvent("thread_switch_stall", Object.assign({
+      threadId,
+      elapsedMs: roundedDurationMs(startedAt),
+      connectionText: $("connectionState") ? $("connectionState").textContent : "",
+      eventOpen: Boolean(state.events && state.events.readyState === EventSource.OPEN),
+    }, details || {}));
+    $("connectionState").textContent = "Loading thread is slow, retrying...";
+    refreshCurrentThread().catch((err) => {
+      postClientEvent("thread_switch_stall_retry_failed", {
+        threadId,
+        error: err && err.message ? err.message : String(err),
+      });
+    });
+  }, THREAD_LOAD_STALL_MS);
+}
+
 async function loadThread(threadId, options = {}) {
   saveCurrentDraftNow();
   flushSideChatDraftNow().catch(() => {});
@@ -5521,6 +5657,7 @@ async function loadThread(threadId, options = {}) {
   $("connectionState").classList.remove("error");
   $("connectionState").textContent = "Loading thread";
   markActivity("加载线程");
+  startThreadLoadWatchdog(threadId, { source });
   let result;
   const apiStartedAt = nowPerfMs();
   try {
@@ -5555,6 +5692,7 @@ async function loadThread(threadId, options = {}) {
     });
     throw err;
   } finally {
+    clearThreadLoadWatchdog();
     if (state.threadLoadController === controller) state.threadLoadController = null;
   }
   const apiElapsedMs = roundedDurationMs(apiStartedAt);
@@ -11884,6 +12022,8 @@ function scheduleVisualRecovery(reason = "visual", delay = 0, options = {}) {
 
 function scheduleMobileResume(reason = "resume", delay = 80) {
   if (document.visibilityState === "hidden") return;
+  clearTimeout(state.resumeRetryTimer);
+  state.resumeRetryTimer = null;
   if (state.startupInProgress) {
     forceVisualRecovery(reason);
     postClientEvent("mobile_resume_skipped_startup", {
@@ -11903,6 +12043,20 @@ function scheduleMobileResume(reason = "resume", delay = 80) {
   }
   state.resumeTimer = setTimeout(() => {
     if (seq === state.resumeSeq) resumeMobileSession(reason).catch(showError);
+  }, delay);
+}
+
+function isTransientResumeError(err) {
+  const message = String(err && err.message || err || "");
+  return /load failed|failed to fetch|networkerror|network request failed|request timed out|cancelled/i.test(message);
+}
+
+function scheduleTransientResumeRetry(reason, delay = 1200) {
+  clearTimeout(state.resumeRetryTimer);
+  state.resumeRetryTimer = setTimeout(() => {
+    state.resumeRetryTimer = null;
+    if (document.visibilityState === "hidden" || state.startupInProgress || !state.key) return;
+    scheduleMobileResume(`${reason}-retry`, 120);
   }, delay);
 }
 
@@ -11953,8 +12107,14 @@ async function resumeMobileSession(reason = "resume") {
       reason,
       elapsedMs: roundedDurationMs(startedAt),
       error: err.message || String(err),
+      transient: isTransientResumeError(err),
     });
-    throw err;
+    forceVisualRecovery(reason);
+    if (isTransientResumeError(err)) {
+      scheduleTransientResumeRetry(reason);
+      return;
+    }
+    showError(err);
   }
 }
 
@@ -14290,9 +14450,23 @@ async function start() {
     renderCurrentThread();
     postStartupStage("early_opening_rendered", startStartedAt);
   }
-  const configStartedAt = nowPerfMs();
-  const config = await fetch("/api/public-config").then((res) => res.json());
-  postStartupStage("public_config_done", startStartedAt, { durationMs: roundedDurationMs(configStartedAt) });
+  let config;
+  try {
+    config = await fetchPublicConfigWithRetry(startStartedAt);
+  } catch (err) {
+    postStartupStage("public_config_failed", startStartedAt, {
+      error: err && err.message ? err.message : String(err),
+    });
+    if (isHermesEmbedMode()) {
+      requestHermesPluginRefresh("public_config_failed", { force: true });
+      showPluginEmbedRecovering("Codex Mobile is reloading...");
+    } else {
+      showApp();
+      showError(err);
+    }
+    state.startupInProgress = false;
+    return;
+  }
   initializePageBuildState(config);
   startPageRefreshChecks();
   state.appVersion = String(config.version || "");

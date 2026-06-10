@@ -1755,7 +1755,7 @@ function isTurnSteerUnsupportedError(err) {
 
 function isStaleActiveTurnError(err) {
   const message = String((err && err.message) || err || "").toLowerCase();
-  return /not found|not active|inactive|completed|interrupted|expected turn|turn.*not.*running|turn.*not.*active/.test(message);
+  return /not found|not active|inactive|completed|interrupted|expected turn|expected active turn id|turn.*not.*running|turn.*not.*active/.test(message);
 }
 
 async function staleActiveTurnPreflight(codexClient, threadId, activeTurnId) {
