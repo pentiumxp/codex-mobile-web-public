@@ -21,6 +21,43 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-10 v266 Turn Timer Activity Priority
+
+- User reported the top-right run box now almost always showed `思考` and hid
+  other live states.
+- Root cause:
+  - v264/v265 made the timer infer live turns from unfinished reasoning or
+    operational items, but `liveActivityLabelForTurn()` still scanned from the
+    newest item and returned active reasoning before checking live operations.
+  - A long-running unfinished reasoning item could therefore mask newer live
+    Command/File/Tool/WebSearch activity.
+- Implemented v266:
+  - Added `activeLiveOperationItemForTurn()` and changed
+    `liveActivityLabelForTurn()` to prioritize the latest unfinished
+    operational item before falling back to `思考`.
+  - Bumped frontend shell/cache to `codex-mobile-shell-v266`.
+  - Added README release note and focused render/version assertions.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js` passed.
+  - `git diff --check` passed.
+  - Focused tests passed:
+    `node --test test/conversation-render.test.js
+    test/mobile-viewport.test.js test/thread-goal-service.test.js
+    test/thread-task-card-route.test.js` with 53 tests.
+  - `npm run check` passed.
+  - Home AI architecture harness check passed:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - Live-debug visual/DOM check on Codex dev `18787` verified:
+    reasoning+command shows `命令`, reasoning+file shows `文件`, and
+    reasoning-only shows `思考`; elapsed timer values were nonzero.
+  - Screenshot artifact:
+    `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-turn-timer-v266-20260610T015758Z.png`.
+- Operational note:
+  - The central allocator had given `ios-pwa-2`, but its Appium lane was not
+    usable. The final visual measurement used the already-running live-debug
+    server on `19073` with a short debug lease and non-destructive DOM actions.
+  - Release any stale `ios-pwa-2` lane lease if still present after this work.
+
 ## 2026-06-09 v257 Live Operation Rendering
 
 - User clarified the requested fixed-height "command box" was the middle

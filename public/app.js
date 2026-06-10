@@ -273,7 +273,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v265";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v266";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -4101,12 +4101,13 @@ function turnFinalSeconds(turn) {
 
 function liveActivityLabelForTurn(turn) {
   if (!turn || !isLiveTurn(turn)) return "";
+  const operation = activeLiveOperationItemForTurn(turn);
+  if (operation) return activityLabelForItem(operation);
   const items = Array.isArray(turn.items) ? turn.items : [];
   for (let index = items.length - 1; index >= 0; index -= 1) {
     const item = items[index];
     if (!item) continue;
     if (item.type === "reasoning" && !isCompletedStatus(item.status)) return "思考";
-    if (isOperationalItem(item) && !isCompletedStatus(item.status)) return activityLabelForItem(item);
   }
   for (let index = items.length - 1; index >= 0; index -= 1) {
     const item = items[index];
@@ -4115,6 +4116,15 @@ function liveActivityLabelForTurn(turn) {
     if (item.type === "plan") return "计划";
   }
   return "";
+}
+
+function activeLiveOperationItemForTurn(turn) {
+  const items = Array.isArray(turn && turn.items) ? turn.items : [];
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item && isOperationalItem(item) && !isCompletedStatus(item.status)) return item;
+  }
+  return null;
 }
 
 function turnHasActiveLiveItems(turn) {

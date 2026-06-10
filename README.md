@@ -668,6 +668,8 @@ Behavior:
 
 - 中文说明：server-only 合并 public PR #59，允许预览当前会话明确引用过的本地文件。文件预览仍要求认证、绝对路径、受支持扩展、敏感文件/目录 denylist 和大小限制；不在当前 workspace/Obsidian vault/显式 roots/Codex skills roots 下的文件，只有当它的精确路径出现在当前 thread rollout 文本中时才会被授权预览，且不会因此开放同目录 sibling 文件、整个 `.codex` 状态目录、runtime state、上传目录、本地密钥或机器诊断目录。本次不改变 PWA shell cache。
 
+- 中文说明：v266 修正右上角本轮运行框过度显示“思考”的问题。当当前 live turn 中同时存在未完成 reasoning 和未完成 Command/File/Tool/WebSearch 时，运行框优先显示最新未完成操作状态；只有没有未完成操作时才显示“思考”。PWA shell cache 升级到 `codex-mobile-shell-v266`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
+
 - 中文说明：v265 修正侧边聊天空内容时 composer 顶在上方的问题。侧聊 section 明确占满侧边面板高度，空 transcript/candidate 区域保留可伸展 scroll 区，composer 固定落在面板底部。PWA shell cache 升级到 `codex-mobile-shell-v265`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
 
 - 中文说明：v264 修正部分线程右上角本轮运行框仍停在“同步 0”的问题。live turn 判定不再只依赖 turn.status；当最新 turn 内存在未完成 reasoning 或 Command/File/Tool item 时，也按 live turn 处理，并从 turn 或 active item 的 startedAt 时间回退计算计时。PWA shell cache 升级到 `codex-mobile-shell-v264`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
