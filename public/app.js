@@ -84,6 +84,7 @@ const state = {
   threadListRenderScheduled: false,
   threadListRenderFrame: null,
   threadNotificationThrottle: new Map(),
+  recentSubmittedUserMessages: new Map(),
   sendProgressWatchdog: null,
   sendProgressStartAt: 0,
   sendProgressWarned: false,
@@ -275,7 +276,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v268";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v271";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -727,6 +728,39 @@ function updateViewportVars() {
 function createSubmissionId() {
   if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+const RECENT_SUBMITTED_USER_MESSAGE_TTL_MS = 6 * 60 * 60 * 1000;
+
+function pruneRecentSubmittedUserMessages(now = Date.now()) {
+  const records = state.recentSubmittedUserMessages;
+  if (!records || typeof records.entries !== "function") return;
+  for (const [key, record] of records.entries()) {
+    if (!record || now - Number(record.createdAtMs || 0) > RECENT_SUBMITTED_USER_MESSAGE_TTL_MS) records.delete(key);
+  }
+}
+
+function registerSubmittedUserMessage(threadId, text, attachments, clientSubmissionId) {
+  const id = String(clientSubmissionId || "").trim();
+  if (!id) return;
+  pruneRecentSubmittedUserMessages();
+  state.recentSubmittedUserMessages.set(id, {
+    threadId: String(threadId || ""),
+    item: localUserMessageItem(text, attachments || [], id),
+    createdAtMs: Date.now(),
+  });
+}
+
+function isRecentlySubmittedUserMessage(item) {
+  if (!item || item.type !== "userMessage") return false;
+  const id = String(item.clientSubmissionId || "").trim();
+  if (!id) return false;
+  pruneRecentSubmittedUserMessages();
+  const record = state.recentSubmittedUserMessages.get(id);
+  if (!record) return false;
+  const threadId = String(state.currentThreadId || (state.currentThread && state.currentThread.id) || "");
+  if (record.threadId && threadId && record.threadId !== threadId) return false;
+  return true;
 }
 
 function base64UrlToUint8Array(value) {
@@ -3439,11 +3473,32 @@ function isNodeStartAboveConversationViewport(node) {
   return rect.top < viewport.top + 24;
 }
 
+function liveTurnHasNonUserProgress(turn) {
+  if (!turn || !isLiveTurn(turn)) return false;
+  return (turn.items || []).some((item) => item
+    && item.type !== "userMessage"
+    && (isReasoningItem(item)
+      || isOperationalItem(item)
+      || isContextCompactionItem(item)
+      || item.type === "agentMessage"
+      || item.type === "plan"
+      || item.type === "turnUsageSummary"));
+}
+
+function shouldHideDurableLiveUserMessage(turn, item) {
+  return Boolean(item
+    && item.type === "userMessage"
+    && liveTurnHasNonUserProgress(turn)
+    && !isRecentlySubmittedUserMessage(item)
+    && !isOptimisticUserMessage(item));
+}
+
 function visibleItemsForTurn(turn) {
   const visible = [];
   const contextEntryByKey = new Map();
   (turn.items || []).forEach((item, index) => {
     if (!item || isReasoningItem(item)) return;
+    if (shouldHideDurableLiveUserMessage(turn, item)) return;
     if (isContextCompactionItem(item)) {
       const notice = contextCompactionNotice(item, turn);
       if (!notice) return;
@@ -3715,10 +3770,11 @@ function mergeLikelySameUserMessage(existingItem, incomingItem) {
   const preferred = incomingPriority >= existingPriority ? incomingItem : existingItem;
   if (preferred && preferred.id) merged.id = preferred.id;
   if (preferred && preferred.clientSubmissionId) merged.clientSubmissionId = preferred.clientSubmissionId;
+  else if (existingItem && existingItem.clientSubmissionId) merged.clientSubmissionId = existingItem.clientSubmissionId;
+  else if (incomingItem && incomingItem.clientSubmissionId) merged.clientSubmissionId = incomingItem.clientSubmissionId;
   if (preferred && preferred.startedAtMs && !merged.startedAtMs) merged.startedAtMs = preferred.startedAtMs;
   if (preferred && !isOptimisticUserMessage(preferred)) {
     delete merged.mobilePendingSubmission;
-    delete merged.clientSubmissionId;
   }
   if (incomingPriority > existingPriority && incomingPriority >= 3) {
     if (Array.isArray(incomingItem.content)) merged.content = incomingItem.content;
@@ -6352,6 +6408,19 @@ function ensureSideChatDraftVisible() {
   if (overflow > 0) panel.scrollTop = Math.max(0, Number(panel.scrollTop || 0) + overflow);
 }
 
+function autoSizeSideChatDraftTextarea(textarea = sideChatDraftTextarea()) {
+  if (!textarea) return;
+  textarea.style.height = "auto";
+  const style = window.getComputedStyle ? window.getComputedStyle(textarea) : null;
+  const maxHeight = style ? Number.parseFloat(style.maxHeight) : 160;
+  const minHeight = style ? Number.parseFloat(style.minHeight) : 44;
+  const boundedMax = Number.isFinite(maxHeight) && maxHeight > 0 ? maxHeight : 160;
+  const boundedMin = Number.isFinite(minHeight) && minHeight > 0 ? minHeight : 44;
+  const nextHeight = Math.min(boundedMax, Math.max(boundedMin, textarea.scrollHeight));
+  textarea.style.height = `${nextHeight}px`;
+  textarea.style.overflowY = textarea.scrollHeight > nextHeight + 1 ? "auto" : "hidden";
+}
+
 function sideChatScrollContainer() {
   const panel = $("subagentPanel");
   return panel ? panel.querySelector(".side-chat-scroll") : null;
@@ -6732,6 +6801,7 @@ function renderSideChatPanel() {
   const draftEmpty = !String(draftText || "").trim();
   const busy = Boolean(state.sideChatBusyKey);
   const loadingLabel = loading ? `<span class="side-chat-saving">同步中</span>` : "";
+  const clearDisabled = busy || (!sideChat.messages.length && !sideChat.candidates.length && draftEmpty);
   return `<section class="side-chat-section" aria-label="侧边聊天">
     <div class="side-chat-header">
       <div>
@@ -6739,6 +6809,7 @@ function renderSideChatPanel() {
         <div class="side-chat-summary">服务器保存 · ${sideChat.messages.length.toLocaleString()} 条</div>
       </div>
       ${loadingLabel}
+      <button class="side-chat-clear side-chat-header-clear" type="button" data-side-chat-action="clear" aria-label="清空侧聊"${clearDisabled ? " disabled" : ""}>清空</button>
       <button class="subagent-window-close side-chat-close" type="button" data-subagent-panel-close aria-label="关闭侧边聊天">×</button>
     </div>
     ${queue}
@@ -6754,7 +6825,6 @@ function renderSideChatPanel() {
         <button class="side-chat-tool-button" type="button" data-side-chat-action="tools" aria-label="侧聊工具">+</button>
         <textarea data-side-chat-draft data-thread-id="${escapeHtml(threadId)}" rows="1" maxlength="${SIDE_CHAT_DRAFT_MAX_CHARS}" placeholder="整理想法，不进入主线程">${escapeHtml(draftText)}</textarea>
         <button class="side-chat-send" type="submit" data-side-chat-action="message"${busy || draftEmpty ? " disabled" : ""}>Send</button>
-        <button class="side-chat-clear" type="button" data-side-chat-action="clear" aria-label="清空侧聊"${busy || (!sideChat.messages.length && !sideChat.candidates.length && draftEmpty) ? " disabled" : ""}>清空</button>
       </div>
       <div class="side-chat-tool-row" hidden>
         <button type="button" data-side-chat-action="candidate"${busy || draftEmpty ? " disabled" : ""}>存为候选</button>
@@ -6802,6 +6872,8 @@ function updateSubagentPanelUi(options = {}) {
   if (textarea) {
     textarea.addEventListener("input", handleSideChatDraftInput);
     textarea.addEventListener("focus", () => requestAnimationFrame(ensureSideChatDraftVisible));
+    autoSizeSideChatDraftTextarea(textarea);
+    requestAnimationFrame(() => autoSizeSideChatDraftTextarea(textarea));
   }
   panel.querySelectorAll("[data-side-chat-action]").forEach((button) => {
     if (button.closest("[data-side-chat-form]") && button.type === "submit") return;
@@ -6815,12 +6887,19 @@ function refreshSideChatFormButtons() {
   if (!textarea) return;
   const form = textarea.closest("[data-side-chat-form]");
   if (!form) return;
+  const panel = $("subagentPanel");
+  const threadId = String(textarea.dataset.threadId || sideChatThreadId());
+  const sideChat = sideChatStateForThread(threadId);
   const draftEmpty = !textarea.value.trim();
   form.querySelectorAll("[data-side-chat-action='message'], [data-side-chat-action='candidate']").forEach((button) => {
     button.disabled = Boolean(state.sideChatBusyKey) || draftEmpty;
   });
-  form.querySelectorAll("[data-side-chat-action='clear']").forEach((button) => {
-    button.disabled = Boolean(state.sideChatBusyKey);
+  if (panel) panel.querySelectorAll("[data-side-chat-action='clear']").forEach((button) => {
+    button.disabled = Boolean(state.sideChatBusyKey) || (
+      draftEmpty
+      && !sideChat.messages.length
+      && !sideChat.candidates.length
+    );
   });
 }
 
@@ -6841,6 +6920,7 @@ function handleSideChatDraftInput(event) {
   const threadId = String(textarea.dataset.threadId || sideChatThreadId());
   const text = truncateSideChatText(textarea.value);
   if (text !== textarea.value) textarea.value = text;
+  autoSizeSideChatDraftTextarea(textarea);
   scheduleSideChatDraftSave(threadId, text);
   refreshSideChatFormButtons();
   ensureSideChatDraftVisible();
@@ -6864,6 +6944,7 @@ function installCodexMobileVisualHarnessFacade() {
       openThread: (threadId) => loadThread(String(threadId || ""), { source: "visual-harness" }),
       loadSideChat: (threadId) => loadSideChat(String(threadId || sideChatThreadId()), { silent: true }),
       ensureSideChatDraftVisible,
+      autoSizeSideChatDraftTextarea,
     }),
   });
 }
@@ -13473,6 +13554,7 @@ async function sendMessage(event) {
   const steerTurnId = steering ? String(state.activeTurnId) : "";
   const submittedDraftKey = currentDraftKey();
   const clientSubmissionId = createSubmissionId();
+  const submittedAttachments = state.pendingAttachments.slice();
   state.composerBusy = true;
   state.sendButtonHint = "";
   startSendProgressWatchdog(state.currentThreadId);
@@ -13496,6 +13578,7 @@ async function sendMessage(event) {
     for (const item of state.pendingAttachments) {
       body.append("attachments", item.file, item.file.name || "upload");
     }
+    registerSubmittedUserMessage(state.currentThreadId, outboundText, submittedAttachments, clientSubmissionId);
     followSubmittedMessageToBottom(state.currentThreadId, clientSubmissionId);
     await api(`/api/threads/${encodeURIComponent(state.currentThreadId)}/messages`, {
       method: "POST",
@@ -13575,6 +13658,7 @@ async function sendNewThreadMessage(text, hasContent, input) {
     });
     const threadId = String((result && result.threadId) || (result && result.thread && result.thread.id) || "");
     if (!threadId) throw new Error("新对话创建失败：未返回 threadId");
+    registerSubmittedUserMessage(threadId, text, submittedAttachments, clientSubmissionId);
     const turnId = startedTurnId(result);
     const userItem = localUserMessageItem(text, submittedAttachments, clientSubmissionId);
     const thread = Object.assign({

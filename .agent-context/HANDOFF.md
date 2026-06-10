@@ -2655,3 +2655,83 @@ The previous full handoff was archived and should be opened only when old proven
   - Full `npm test` passed with 450 tests.
   - Evidence ledger entry:
     `evidence-6a960b94-2b46-481c-9694-dc75f65d2b02`.
+
+## 2026-06-10 v270 Side Chat Composer Autosize
+
+- User requested the side-chat composer behave like the main thread composer:
+  textarea grows with additional lines, and the clear action must not occupy
+  the bottom composer row.
+- Implemented in the private workspace, not yet deployed to production:
+  - `public/app.js` adds side-chat textarea autosizing using the same
+    scroll-height clamp pattern as the main composer, refreshes sizing after
+    side-chat panel renders, and exposes it through the visual harness facade.
+  - `public/app.js` moves side-chat clear from the bottom composer row to the
+    side-chat header and keeps its disabled state synced while typing.
+  - `public/styles.css` changes the side-chat composer row back to
+    `+ / textarea / Send`, styles the header clear button, and keeps keyboard
+    compact max-height behavior.
+  - `scripts/side-chat-layout-visual-fixture.js` now verifies the new header
+    clear location and autosized textarea in full and keyboard fixture modes.
+  - PWA shell/cache advanced to `codex-mobile-shell-v270`.
+- This working tree also still contains the earlier v269 fix for hiding
+  durable historical user bubbles in an active live turn after non-user
+  progress has started.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js &&
+    node --check test/mobile-viewport.test.js` passed.
+  - Focused tests passed with 48 tests:
+    `node --test test/mobile-viewport.test.js test/conversation-render.test.js
+    test/turn-scroll-controls.test.js`.
+  - `npm run check`, `git diff --check`, and Home AI
+    `node tests/architecture-code-test-harness-map.test.js` passed.
+  - Side-chat visual fixture passed in both full and keyboard modes:
+    `node scripts/side-chat-layout-visual-fixture.js --json` and
+    `node scripts/side-chat-layout-visual-fixture.js --keyboard --json`.
+  - Evidence ledger entry:
+    `evidence-d2fffdb4-7fb6-4add-bf41-f6672dc92e3a`.
+
+## 2026-06-11 v271 Current Submitted User Message Visibility
+
+- User reported that after sending a long message, the message initially
+  appeared, then disappeared once model intermediate progress started, and did
+  not return.
+- Root cause:
+  - The v269 live-turn old-user-message filter hid any non-optimistic durable
+    `userMessage` after assistant/reasoning/Command progress appeared.
+  - When the app-server durable echo replaced the local pending echo, it was no
+    longer optimistic, so the filter incorrectly hid the current submission.
+- Implemented:
+  - Frontend keeps a short-lived in-memory map of this browser session's recent
+    submitted `clientSubmissionId`s.
+  - Durable user messages that preserve one of those `clientSubmissionId`s are
+    not filtered by the old-history hiding rule.
+  - User-message merge keeps `clientSubmissionId` metadata when collapsing a
+    local/mux echo into a durable app-server echo.
+  - Existing v269 behavior remains for already-existing historical durable
+    user messages in long-running live turns.
+  - PWA shell/cache advanced to `codex-mobile-shell-v271`.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js &&
+    node --check test/conversation-render.test.js` passed.
+  - `node --test test/conversation-render.test.js` passed with 38 tests,
+    including the regression that keeps this-session durable user messages
+    visible after live progress starts.
+  - Focused combined tests passed with 49 tests:
+    `node --test test/mobile-viewport.test.js test/conversation-render.test.js
+    test/turn-scroll-controls.test.js`.
+  - `npm run check`, `git diff --check`, and Home AI
+    `node tests/architecture-code-test-harness-map.test.js` passed.
+- Production:
+  - Initial deploy failed because production contained
+    `.codegraph/daemon.sock`; rsync cannot back up that socket.
+  - Removed only that production diagnostic socket file and reran deploy. The
+    deploy command output was interrupted, but production files and service
+    state confirm the update landed.
+  - Production `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v271` and
+    `shellCacheName=codex-mobile-shell-v271`.
+  - Authenticated `/api/status?detail=1` returned ready with
+    `transport=managed-ws-child` and no last error; launchd showed
+    `com.hermesmobile.plugin.codex-mobile` running with PID `92093`.
+  - Evidence ledger entry:
+    `evidence-a1dfca7b-9175-4240-abcb-7b595fa418ef`.

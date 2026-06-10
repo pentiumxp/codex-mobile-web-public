@@ -670,6 +670,12 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v271 修正发送大段内容后，消息先显示、随后在 live turn 出现模型中间信息时消失的问题。前端现在会记录本机会话刚提交的 `clientSubmissionId`，durable userMessage 回放匹配到当前提交时不会被“隐藏历史用户气泡”的规则过滤；该规则仍会隐藏进入长时间运行线程时已经存在的旧用户提问。PWA shell cache 升级到 `codex-mobile-shell-v271`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
+
+- 中文说明：v270 调整左滑侧边聊天 composer。底部输入行回到和普通线程 composer 一致的 `+ / 输入框 / Send` 结构，清空按钮移到侧聊标题栏右侧；侧聊 textarea 会像主线程输入框一样随换行自动增高，并在键盘紧凑态遵守最大高度，避免清空按钮挤占输入空间。PWA shell cache 升级到 `codex-mobile-shell-v270`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
+
+- 中文说明：v269 修正进入长时间运行线程时重复看到旧用户提问气泡的问题。当前 live turn 已经有 assistant/reasoning/Command 等执行进展后，前端不再把 rollout 中早已存在的 durable userMessage 重新渲染成主消息卡；只有刚刚本地提交、尚未确认的 pending/optimistic 输入会短暂显示。完成后的历史 turn 仍保留真实用户输入。PWA shell cache 升级到 `codex-mobile-shell-v269`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
+
 - 中文说明：server-only 合并 public PR #61，增加 Windows 系统启动支持。`install-codex-mobile-web-startup.ps1 -RunAsSystem -UserProfilePath <profile>` 可把 `Codex Mobile Web` 注册为 `SYSTEM` 启动任务，在用户未登录时也能启动 8787 listener；windowless launcher 会把 `USERPROFILE`、`HOME`、`APPDATA`、`LOCALAPPDATA`、`TEMP` 和 `TMP` 映射回目标用户 profile，避免 Codex home、runtime、mux 和 Codex CLI 路径漂到 `systemprofile`。系统任务下的 `/api/restart/shared-chain` 会先同步创建并启动短生命周期 `SYSTEM` helper task，再由 helper 执行真实 shared-chain 重启，避免主任务停止时杀掉自己的重启 helper；普通 user-logon/手动 Windows 启动仍使用原有 hidden PowerShell restart 路径，不要求注册 `SYSTEM` helper。该修复不复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断，本次不改变 PWA shell cache。
 
 - 中文说明：server-only 合并 public PR #59，允许预览当前会话明确引用过的本地文件。文件预览仍要求认证、绝对路径、受支持扩展、敏感文件/目录 denylist 和大小限制；不在当前 workspace/Obsidian vault/显式 roots/Codex skills roots 下的文件，只有当它的精确路径出现在当前 thread rollout 文本中时才会被授权预览，且不会因此开放同目录 sibling 文件、整个 `.codex` 状态目录、runtime state、上传目录、本地密钥或机器诊断目录。本次不改变 PWA shell cache。
