@@ -2004,6 +2004,14 @@ function stripMarkdownFileTarget(value) {
     .replace(/#L\d+(?:-L?\d+)?$/i, "")
     .replace(/#line-\d+$/i, "")
     .replace(/^(.+\.[^\\/:]+):\d+(?::\d+)?$/i, "$1");
+  const windowsFileUrl = target.match(/^file:\/\/([A-Za-z]:[\\/].*)$/i);
+  if (windowsFileUrl) {
+    try {
+      return stripLocationSuffix(decodeURIComponent(windowsFileUrl[1]));
+    } catch (_) {
+      return stripLocationSuffix(windowsFileUrl[1]);
+    }
+  }
   if (/^file:\/\//i.test(target)) {
     try {
       return stripLocationSuffix(decodeURIComponent(new URL(target).pathname));
@@ -2062,10 +2070,12 @@ function previewFileReferencesFromText(text) {
   const source = String(text || "");
   if (!source) return [];
   const extPattern = filePreviewExtensionPattern();
+  const windowsFileUrlPattern = new RegExp(`file://[A-Za-z]:[\\\\/](?:[^\\0\\r\\n<>"'\`|])*?(?:${extPattern})(?::\\d+(?::\\d+)?)?`, "gi");
   const fileUrlPattern = new RegExp(`file://[^\\s\\])}>"'\`]+(?:${extPattern})(?::\\d+(?::\\d+)?)?`, "gi");
   const absolutePathPattern = new RegExp(`/(?:[^\\0\\r\\n<>"'\`|])*?(?:${extPattern})(?::\\d+(?::\\d+)?)?`, "gi");
+  const windowsAbsolutePathPattern = new RegExp(`[A-Za-z]:[\\\\/](?:[^\\0\\r\\n<>"'\`|])*?(?:${extPattern})(?::\\d+(?::\\d+)?)?`, "gi");
   const out = [];
-  for (const pattern of [fileUrlPattern, absolutePathPattern]) {
+  for (const pattern of [windowsFileUrlPattern, fileUrlPattern, absolutePathPattern, windowsAbsolutePathPattern]) {
     for (const match of source.matchAll(pattern)) {
       const target = stripMarkdownFileTarget(match[0]);
       if (!target || !path.isAbsolute(target)) continue;

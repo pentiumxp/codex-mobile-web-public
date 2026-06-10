@@ -915,6 +915,24 @@ proof that Mobile Web is healthy again. The success condition is stricter:
 If either check is missing, Mobile Web should be treated as down even if a
 restart script or detached PowerShell command was already launched.
 
+On Windows system-task deployments, a restart response with
+`mode=windows-scheduled-task-bootstrap` means the short PowerShell bootstrap
+created and started the separate helper task; it does not mean the main listener
+has already restarted. Confirm that
+`%USERPROFILE%\.codex-mobile-web\shared-chain-restart-bootstrap.log` records
+helper task creation, that
+`%USERPROFILE%\.codex-mobile-web\shared-chain-restart.log` receives a new
+timestamp, and that `Get-ScheduledTaskInfo -TaskName "Codex Mobile Web"` shows a
+new `LastRunTime`. Current builds register a short-lived `SYSTEM` helper task
+named `Codex Mobile Web Restart Helper` so the real restart helper is not killed
+when it stops the `Codex Mobile Web` scheduled task. If the API returns
+`ok=true` but the logs and task time do not move, inspect
+`adapters/shared-chain-restart-service.js` and run:
+
+```powershell
+node --test test\shared-chain-restart-service.test.js test\shared-chain-restart-script.test.js
+```
+
 Before the restart request is sent, current browser builds should show an
 in-app confirmation panel instead of a native `window.confirm()`. The panel
 checks `/api/threads?limit=200&archived=false` and lists running sessions that
@@ -924,6 +942,33 @@ risk, verify that the open client loaded the current `clientBuildId` and run:
 ```powershell
 node --test test\manual-restart-ui.test.js test\mobile-viewport.test.js
 ```
+
+## Windows Startup Before User Login
+
+The normal Windows startup task uses `AtLogOn` with `LogonType=Interactive`, so
+it starts only after the target user logs in and may stop on sign-out. For
+startup before login or survival after sign-out, install the same task name with
+`-RunAsSystem` from an elevated PowerShell session. It should show
+`AtStartup`, `UserId=SYSTEM`, and `LogonType=ServiceAccount`:
+
+```powershell
+Get-ScheduledTask -TaskName "Codex Mobile Web" |
+  Select-Object TaskName,State,@{n="UserId";e={$_.Principal.UserId}},@{n="LogonType";e={$_.Principal.LogonType}}
+```
+
+Even in LocalSystem mode, the task must pass `-UserProfilePath` for the target
+Windows user. The windowless launcher maps `USERPROFILE`, `HOME`, `APPDATA`,
+`LOCALAPPDATA`, `TEMP`, and `TMP` back to that profile before reading
+`.codex-mobile-web`, `codex-profiles.json`, profile Codex homes, or the
+installed Codex binary under `AppData\Local\OpenAI\Codex\bin`. If diagnostics
+show paths under `C:\Windows\System32\config\systemprofile`, treat that as a
+startup-wrapper regression.
+
+Self-update is not a separate service path. After a fast-forward update, the
+Node listener exits and the same hidden windowless supervisor restarts it. A
+LocalSystem deployment therefore requires both the system scheduled task and the
+target-user environment mapping; otherwise the restart may come back with the
+wrong Codex binary, empty runtime state, or Git safe-directory errors.
 
 ## Public PR Prompt Targets The Wrong Thread
 

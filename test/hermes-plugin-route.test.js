@@ -162,3 +162,15 @@ test("Windows startup scripts can persist HTTPS Hermes plugin deployment setting
   assert.match(startupInstallScript, /"-HermesPluginNotificationBaseUrl", \(Quote-TaskArgument \$HermesPluginNotificationBaseUrl\)/);
   assert.match(startupInstallScript, /"-HermesPluginNotificationKeyFile", \(Quote-TaskArgument \$HermesPluginNotificationKeyFile\)/);
 });
+
+test("Windows startup installer supports system boot without losing target user profile", () => {
+  assert.match(startupInstallScript, /\[switch\]\$RunAsSystem/);
+  assert.match(startupInstallScript, /Installing with -RunAsSystem requires an elevated PowerShell session/);
+  assert.match(startupInstallScript, /New-ScheduledTaskTrigger -AtStartup/);
+  assert.match(startupInstallScript, /New-ScheduledTaskTrigger -AtLogOn -User \$UserId/);
+  assert.match(startupInstallScript, /-UserId "SYSTEM"/);
+  assert.match(startupInstallScript, /-LogonType ServiceAccount/);
+  assert.match(startupInstallScript, /-RunLevel Highest/);
+  assert.match(startupInstallScript, /"-UserProfilePath", \(Quote-TaskArgument \$installingUserProfile\)/);
+  assert.match(startupInstallScript, /at Windows startup as LocalSystem/);
+});

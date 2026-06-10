@@ -45,6 +45,18 @@ test("windowless launcher reads active profile store before starting mux", () =>
   assert.match(launcher, /if \(-not \$endpoint\.codexExe\) \{/);
 });
 
+test("windowless launcher maps system-task runs back to the target user profile", () => {
+  assert.match(launcher, /function Set-TargetUserProfileEnvironment/);
+  assert.match(launcher, /\$env:USERPROFILE = \$ProfilePath/);
+  assert.match(launcher, /\$env:HOME = \$ProfilePath/);
+  assert.match(launcher, /\$env:APPDATA = \$appData/);
+  assert.match(launcher, /\$env:LOCALAPPDATA = \$localAppData/);
+  assert.match(launcher, /\$env:TEMP = \$tempDir/);
+  assert.match(launcher, /\$env:TMP = \$tempDir/);
+  assert.match(launcher, /Set-TargetUserProfileEnvironment -ProfilePath \$UserProfilePath/);
+  assert.match(launcher, /\$localBin = Join-Path \$env:LOCALAPPDATA "OpenAI\\Codex\\bin"/);
+});
+
 test("windowless launcher shares thread state without replacing profile auth", () => {
   assert.match(launcher, /function Backup-ProfileAuthFiles/);
   assert.match(launcher, /profile-auth-backups/);

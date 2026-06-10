@@ -2,7 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { spawn } = require("node:child_process");
+const { spawn, spawnSync } = require("node:child_process");
 
 function shQuote(value) {
   return `'${String(value || "").replace(/'/g, "'\\''")}'`;
@@ -22,6 +22,108 @@ function defaultPowerShellPath(env = process.env) {
 
 function encodePowerShellCommand(command) {
   return Buffer.from(String(command || ""), "utf16le").toString("base64");
+}
+
+function quoteWindowsCommandArg(value) {
+  const text = String(value || "");
+  if (!text) return "\"\"";
+  if (!/[ \t"]/.test(text)) return text;
+  let out = "\"";
+  let slashCount = 0;
+  for (const ch of text) {
+    if (ch === "\\") {
+      slashCount += 1;
+      continue;
+    }
+    if (ch === "\"") {
+      out += "\\".repeat(slashCount * 2 + 1);
+      out += "\"";
+      slashCount = 0;
+      continue;
+    }
+    out += "\\".repeat(slashCount);
+    slashCount = 0;
+    out += ch;
+  }
+  out += "\\".repeat(slashCount * 2);
+  out += "\"";
+  return out;
+}
+
+function buildRestartPowerShellProcessCommandLine(options = {}) {
+  return [
+    quoteWindowsCommandArg(options.powerShellPath || "powershell.exe"),
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-WindowStyle",
+    "Hidden",
+    "-EncodedCommand",
+    encodePowerShellCommand(options.command || ""),
+  ].join(" ");
+}
+
+function buildRestartPowerShellBootstrapCommand(options = {}) {
+  const commandLine = buildRestartPowerShellProcessCommandLine(options);
+  const workingDirectory = options.workspacePath || process.cwd();
+  return [
+    "$ErrorActionPreference = 'Stop'",
+    `$commandLine = ${psQuote(commandLine)}`,
+    `$workingDirectory = ${psQuote(workingDirectory)}`,
+    "$startup = ([WMIClass]'Win32_ProcessStartup').CreateInstance()",
+    "$startup.ShowWindow = 0",
+    "$result = ([WMIClass]'Win32_Process').Create($commandLine, $workingDirectory, $startup)",
+    "if ($result.ReturnValue -ne 0) { throw \"Failed to launch Codex Mobile Web restart helper via WMI: $($result.ReturnValue)\" }",
+  ].join("; ");
+}
+
+function buildRestartPowerShellHelperTaskCommand(options = {}) {
+  const helperTaskName = options.helperTaskName || "Codex Mobile Web Restart Helper";
+  const command = String(options.command || "");
+  return [
+    "$ErrorActionPreference = 'Stop'",
+    `try { ${command} } finally { Unregister-ScheduledTask -TaskName ${psQuote(helperTaskName)} -Confirm:$false -ErrorAction SilentlyContinue }`,
+  ].join("; ");
+}
+
+function buildRestartPowerShellScheduledTaskBootstrapCommand(options = {}) {
+  const helperTaskName = options.helperTaskName || "Codex Mobile Web Restart Helper";
+  const workingDirectory = options.workspacePath || process.cwd();
+  const helperCommand = buildRestartPowerShellHelperTaskCommand({
+    command: options.command || "",
+    helperTaskName,
+  });
+  const helperArguments = [
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-WindowStyle",
+    "Hidden",
+    "-EncodedCommand",
+    encodePowerShellCommand(helperCommand),
+  ].join(" ");
+  return [
+    "$ErrorActionPreference = 'Stop'",
+    `$taskName = ${psQuote(helperTaskName)}`,
+    `$powerShellPath = ${psQuote(options.powerShellPath || "powershell.exe")}`,
+    `$arguments = ${psQuote(helperArguments)}`,
+    `$workingDirectory = ${psQuote(workingDirectory)}`,
+    `$logPath = ${psQuote(options.bootstrapLogPath || "")}`,
+    "$utf8NoBom = [System.Text.UTF8Encoding]::new($false)",
+    "function Write-BootstrapLog { param([string]$Message) try { if ([string]::IsNullOrWhiteSpace($logPath)) { return }; $dir = Split-Path -Parent $logPath; if ($dir) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }; [System.IO.File]::AppendAllText($logPath, ((Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff') + ' ' + $Message + [Environment]::NewLine), $utf8NoBom) } catch {} }",
+    "try {",
+    "Write-BootstrapLog 'Registering restart helper task.'",
+    "Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue",
+    "Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue",
+    "$action = New-ScheduledTaskAction -Execute $powerShellPath -Argument $arguments -WorkingDirectory $workingDirectory",
+    "$trigger = New-ScheduledTaskTrigger -Once -At ((Get-Date).AddMinutes(5))",
+    "$principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest",
+    "$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -Hidden",
+    "Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null",
+    "Start-ScheduledTask -TaskName $taskName",
+    "Write-BootstrapLog 'Started restart helper task.'",
+    "} catch { Write-BootstrapLog ('ERROR ' + $_.Exception.Message); throw }",
+  ].join("; ");
 }
 
 function buildRestartPowerShellCommand(options = {}) {
@@ -163,10 +265,23 @@ function buildRestartMacShellCommand(options = {}) {
   ]).join("\n");
 }
 
+function spawnSyncFailureMessage(result) {
+  if (!result) return "PowerShell restart bootstrap failed without a result.";
+  if (result.error) return result.error.message || String(result.error);
+  const status = result.status === null || result.status === undefined ? "unknown" : result.status;
+  const stderr = result.stderr ? String(result.stderr).trim() : "";
+  const stdout = result.stdout ? String(result.stdout).trim() : "";
+  const detail = stderr || stdout;
+  return detail
+    ? `PowerShell restart bootstrap exited with code ${status}: ${detail}`
+    : `PowerShell restart bootstrap exited with code ${status}.`;
+}
+
 function createSharedChainRestartService(deps = {}) {
   const env = deps.env || process.env;
   const fsApi = deps.fs || fs;
   const spawnFn = deps.spawn || spawn;
+  const spawnSyncFn = deps.spawnSync || spawnSync;
   const platform = deps.platform || process.platform;
   const workspacePath = path.resolve(deps.workspacePath || process.cwd());
   const userProfilePath = path.resolve(deps.userProfilePath || env.USERPROFILE || env.HOME || process.cwd());
@@ -175,6 +290,7 @@ function createSharedChainRestartService(deps = {}) {
   const port = Math.max(1, Number(deps.port || env.CODEX_MOBILE_PORT || 8787));
   const maxWaitSeconds = Math.max(1, Number(deps.maxWaitSeconds || env.CODEX_MOBILE_RESTART_WAIT_SECONDS || 45));
   const powerShellPath = deps.powerShellPath || defaultPowerShellPath(env);
+  const runtimeDir = path.resolve(deps.runtimeDir || env.CODEX_MOBILE_RUNTIME_DIR || path.join(userProfilePath, ".codex-mobile-web"));
 
   function restart(options = {}) {
     if (env.CODEX_MOBILE_DISABLE_SHARED_CHAIN_RESTART && /^(1|true|yes|on)$/i.test(env.CODEX_MOBILE_DISABLE_SHARED_CHAIN_RESTART)) {
@@ -239,30 +355,44 @@ function createSharedChainRestartService(deps = {}) {
       port,
       maxWaitSeconds,
     });
-    const child = spawnFn(powerShellPath, [
+    const bootstrapCommand = buildRestartPowerShellScheduledTaskBootstrapCommand({
+      powerShellPath,
+      command,
+      workspacePath,
+      helperTaskName: deps.helperTaskName || `${taskName} Restart Helper`,
+      bootstrapLogPath: deps.bootstrapLogPath || path.join(runtimeDir, "shared-chain-restart-bootstrap.log"),
+    });
+    const bootstrapArgs = [
       "-NoProfile",
       "-ExecutionPolicy",
       "Bypass",
       "-WindowStyle",
       "Hidden",
       "-EncodedCommand",
-      encodePowerShellCommand(command),
-    ], {
+      encodePowerShellCommand(bootstrapCommand),
+    ];
+    const result = spawnSyncFn(powerShellPath, bootstrapArgs, {
       cwd: workspacePath,
-      detached: true,
-      stdio: "ignore",
+      encoding: "utf8",
+      stdio: "pipe",
+      timeout: Math.max(5000, Number(deps.bootstrapTimeoutMs || 15000)),
       windowsHide: true,
     });
-    if (child && typeof child.unref === "function") child.unref();
+    if (result.error || result.status !== 0) {
+      const err = new Error(spawnSyncFailureMessage(result));
+      err.statusCode = 500;
+      throw err;
+    }
 
     return {
       ok: true,
       restarting: true,
       restartInMs: delayMs,
-      pid: child && child.pid || 0,
+      pid: 0,
       taskName,
       port,
-      mode: "windows-shared-chain",
+      mode: "windows-scheduled-task-bootstrap",
+      bootstrapExitCode: result.status,
     };
   }
 
@@ -271,10 +401,16 @@ function createSharedChainRestartService(deps = {}) {
 
 module.exports = {
   buildRestartMacShellCommand,
+  buildRestartPowerShellBootstrapCommand,
   buildRestartPowerShellCommand,
+  buildRestartPowerShellHelperTaskCommand,
+  buildRestartPowerShellProcessCommandLine,
+  buildRestartPowerShellScheduledTaskBootstrapCommand,
   createSharedChainRestartService,
   defaultPowerShellPath,
   encodePowerShellCommand,
   psQuote,
+  quoteWindowsCommandArg,
+  spawnSyncFailureMessage,
   shQuote,
 };

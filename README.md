@@ -392,13 +392,15 @@ If you intentionally need startup before any user logs in or survival after sign
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-codex-mobile-web-startup.ps1 -RunAsSystem -RunNow
 ```
 
-`LocalSystem` does not store your Windows password and also uses the hidden launcher, but it cannot start WSL distributions. Use the default user-logon mode when Codex tool calls need WSL access.
+`LocalSystem` does not store your Windows password and also uses the hidden launcher, but it cannot start WSL distributions. Use the default user-logon mode when Codex tool calls need WSL access. The system task still receives `-UserProfilePath <target-user-profile>` and the windowless launcher maps `USERPROFILE`, `HOME`, `APPDATA`, `LOCALAPPDATA`, `TEMP`, and `TMP` back to that target profile before resolving Codex state or the installed `%LOCALAPPDATA%\OpenAI\Codex\bin\*\codex.exe`. This keeps multi-account Codex homes, access-key storage, runtime logs, and self-update Git safe-directory settings anchored to the intended Windows user even though the process identity is LocalSystem.
+
+When migrating an already-running login task to `-RunAsSystem`, install from an elevated PowerShell session and restart the shared chain so the old user-logon process exits and the replacement instance starts from the new system task. Avoid running a second listener on the same port.
 
 ### Manual Mobile Web Shared-Chain Restart
 
 The daily `Codex Mobile Web Shared Chain Restart` scheduled task is no longer installed by default. The same scoped restart is now exposed as a manual control in the mobile sidebar: the header shows a small `Restart` button next to the version/update pill, and tapping it asks for confirmation before restarting.
 
-The manual restart calls the authenticated `POST /api/restart/shared-chain` endpoint. On Windows, the endpoint launches `restart-codex-mobile-shared-chain.ps1` after the HTTP response has been sent, so the page can show the confirmation result before the current Node listener exits. The script stops only the Codex Mobile Web shared chain: the `Codex Mobile Web` startup task, this workspace's hidden/windowless launchers, this workspace's `server.js`, and the selected profile mux/child process recorded in that profile's endpoint file. It removes the stale mux endpoint file, starts `Codex Mobile Web` again, and waits for HTTP plus mux readiness.
+The manual restart calls the authenticated `POST /api/restart/shared-chain` endpoint. On Windows system-task deployments, the endpoint launches a short hidden PowerShell bootstrap that registers and starts a separate `SYSTEM` helper task (`Codex Mobile Web Restart Helper`). The helper task runs the real `restart-codex-mobile-shared-chain.ps1` outside the current scheduled-task process tree, so a LocalSystem `AtStartup` task does not kill its own restart helper when the helper stops the task. The page can show the confirmation result before the current Node listener exits. The script stops only the Codex Mobile Web shared chain: the `Codex Mobile Web` startup task, this workspace's hidden/windowless launchers, this workspace's `server.js`, and the selected profile mux/child process recorded in that profile's endpoint file. It removes the stale mux endpoint file, starts `Codex Mobile Web` again, and waits for HTTP plus mux readiness.
 
 Operational rule: do not treat the restart as successful merely because the old
 listener exited or the restart command was dispatched. Success means a new
@@ -423,6 +425,8 @@ The task still uses your normal Codex data paths by passing the installing user'
 
 ```text
 USERPROFILE=<your Windows user profile>
+APPDATA=<your Windows user profile>\AppData\Roaming
+LOCALAPPDATA=<your Windows user profile>\AppData\Local
 CODEX_HOME=<active profile home, defaulting to <your Windows user profile>\.codex>
 CODEX_MOBILE_RUNTIME_DIR=<your Windows user profile>\.codex-mobile-web
 ```
@@ -666,7 +670,7 @@ Behavior:
 
 ## Interface Notes
 
-- 中文说明：v268 合并 public PR #60，在线程长按菜单中新增“复制 Session ID”。点击后会关闭菜单、把当前线程 Session ID 写入剪贴板，并显示“已复制 Session ID”状态提示，方便排障、跨设备定位或向其他线程引用当前会话。PWA shell cache 升级到 `codex-mobile-shell-v268`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。本次 public 发布只包含公开源码、README 和测试；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
+- 中文说明：server-only 增加 Windows 系统启动支持。`install-codex-mobile-web-startup.ps1 -RunAsSystem -UserProfilePath <profile>` 可把 `Codex Mobile Web` 注册为 `SYSTEM` 启动任务，在用户未登录时也能启动 8787 listener；windowless launcher 会把 `USERPROFILE`、`HOME`、`APPDATA`、`LOCALAPPDATA`、`TEMP` 和 `TMP` 映射回目标用户 profile，避免 Codex home、runtime、mux 和 Codex CLI 路径漂到 `systemprofile`。系统任务下的 `/api/restart/shared-chain` 会先同步创建并启动短生命周期 `SYSTEM` helper task，再由 helper 执行真实 shared-chain 重启，避免主任务停止时杀掉自己的重启 helper。该修复不复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断，本次不改变 PWA shell cache。
 
 - 中文说明：server-only 合并 public PR #59，允许预览当前会话明确引用过的本地文件。文件预览仍要求认证、绝对路径、受支持扩展、敏感文件/目录 denylist 和大小限制；不在当前 workspace/Obsidian vault/显式 roots/Codex skills roots 下的文件，只有当它的精确路径出现在当前 thread rollout 文本中时才会被授权预览，且不会因此开放同目录 sibling 文件、整个 `.codex` 状态目录、runtime state、上传目录、本地密钥或机器诊断目录。本次不改变 PWA shell cache。
 
@@ -1334,6 +1338,7 @@ This section summarizes the current integration behavior for someone cloning or 
 - The browser also checks update status after login and displays it in the sidebar version pill. The pill stays passive when the checkout is current or when Git metadata is unavailable.
 - Clicking an available update asks for confirmation and then runs a fast-forward-only update. It refuses to run when the current branch is not the configured branch, the working tree is dirty, or the local branch is ahead/diverged.
 - After a successful fast-forward, the server sends the HTTP response and exits after a short delay. The normal Windows hidden startup wrapper supervises the listener and starts it again from the updated files.
+- For a Windows `-RunAsSystem` startup task, the same update flow applies: Git runs in the listener process, then the LocalSystem windowless supervisor restarts the listener. The launcher must keep the target user's `APPDATA` / `LOCALAPPDATA` / `USERPROFILE` mapping so the update does not switch to `C:\Windows\System32\config\systemprofile` for Codex binaries, runtime files, or Git safe-directory state.
 - Manual starts such as `node server.js`, `npm start`, or a one-shot shell command do not include a supervisor. Those deployments apply the update, exit the old Node process, and then require the operator to manually restart the same service command.
 - The update action only changes tracked repository files. Runtime state such as `%USERPROFILE%\.codex-mobile-web\access_key`, uploads, VAPID keys, and subscriptions remain outside the repository and are not overwritten.
 

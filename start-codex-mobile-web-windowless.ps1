@@ -158,11 +158,35 @@ function Ensure-SharedProfileState {
     }
 }
 
+function Set-TargetUserProfileEnvironment {
+    param([string]$ProfilePath)
+
+    $env:USERPROFILE = $ProfilePath
+    $env:HOME = $ProfilePath
+    $homeDrive = Split-Path -Qualifier $ProfilePath
+    if (-not [string]::IsNullOrWhiteSpace($homeDrive)) {
+        $env:HOMEDRIVE = $homeDrive
+        $env:HOMEPATH = $ProfilePath.Substring($homeDrive.Length)
+    }
+
+    $appData = Join-Path (Join-Path $ProfilePath "AppData") "Roaming"
+    $localAppData = Join-Path (Join-Path $ProfilePath "AppData") "Local"
+    $env:APPDATA = $appData
+    $env:LOCALAPPDATA = $localAppData
+    if ([string]::IsNullOrWhiteSpace($env:CODEX_MOBILE_TEMP_DIR)) {
+        $tempDir = Join-Path $localAppData "Temp"
+        New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
+        $env:TEMP = $tempDir
+        $env:TMP = $tempDir
+    } else {
+        New-Item -ItemType Directory -Force -Path $env:CODEX_MOBILE_TEMP_DIR | Out-Null
+        $env:TEMP = $env:CODEX_MOBILE_TEMP_DIR
+        $env:TMP = $env:CODEX_MOBILE_TEMP_DIR
+    }
+}
+
 if (-not [string]::IsNullOrWhiteSpace($UserProfilePath)) {
-    $env:USERPROFILE = $UserProfilePath
-    $env:HOME = $UserProfilePath
-    $env:HOMEDRIVE = Split-Path -Qualifier $UserProfilePath
-    $env:HOMEPATH = $UserProfilePath.Substring($env:HOMEDRIVE.Length)
+    Set-TargetUserProfileEnvironment -ProfilePath $UserProfilePath
     if ([string]::IsNullOrWhiteSpace($env:CODEX_MOBILE_RUNTIME_DIR)) {
         $env:CODEX_MOBILE_RUNTIME_DIR = Join-Path $UserProfilePath ".codex-mobile-web"
     }
