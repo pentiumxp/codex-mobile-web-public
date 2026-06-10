@@ -20,6 +20,14 @@ test("thread long-press action sheet archives instead of using left swipe", () =
   assert.doesNotMatch(appJs, /data-new-thread-from-thread/);
 });
 
+test("thread long-press action sheet can copy session id", () => {
+  assert.match(indexHtml, /data-thread-action="copy-id"/);
+  assert.match(indexHtml, /复制 Session ID/);
+  assert.match(appJs, /async function copyThreadIdFromActionSheet\(threadId\)/);
+  assert.match(appJs, /action === "copy-id"/);
+  assert.match(appJs, /copyTextToClipboard\(id\)/);
+});
+
 test("archive state merge keeps backup and archived-session filters active", () => {
   const matches = serverJs.match(/function mergeThreadStateFromStateDb\(/g) || [];
   assert.equal(matches.length, 1);

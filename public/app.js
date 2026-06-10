@@ -275,7 +275,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v267";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v268";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -7704,6 +7704,14 @@ async function submitRename(event) {
   }
 }
 
+async function copyThreadIdFromActionSheet(threadId) {
+  const id = String(threadId || "").trim();
+  if (!id) return;
+  closeThreadActionSheet();
+  await copyTextToClipboard(id);
+  restoreConnectionState("已复制 Session ID");
+}
+
 function handleThreadAction(event) {
   const target = event.target.closest("[data-thread-action]");
   if (!target) return;
@@ -7717,6 +7725,10 @@ function handleThreadAction(event) {
   if (action === "rename") {
     closeThreadActionSheet();
     openRenameDialog(threadId);
+    return;
+  }
+  if (action === "copy-id") {
+    copyThreadIdFromActionSheet(threadId).catch(showError);
     return;
   }
   if (action === "continue") {
