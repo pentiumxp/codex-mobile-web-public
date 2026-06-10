@@ -2598,3 +2598,60 @@ The previous full handoff was archived and should be opened only when old proven
   - Full `npm test` passed with 445 tests.
   - Evidence ledger entry:
     `evidence-e697c37e-9966-466f-a7c0-98c0373cd4f3`.
+
+## 2026-06-10 Public PR #61 Windows System Startup Sync
+
+- Public PR:
+  - Evaluated `pentiumxp/codex-mobile-web-public#61`.
+  - PR was open, non-draft, mergeable/clean, and `Node checks` passed at head
+    commit `74c3e35ea9c579a878c02a8f98f7b9101b72e6ae`.
+  - The PR adds Windows `LocalSystem`/system-startup support: the startup task
+    can run before user login, while the windowless launcher maps
+    `USERPROFILE`, `HOME`, `APPDATA`, `LOCALAPPDATA`, `TEMP`, and `TMP` back to
+    the target user's profile before resolving Codex state, runtime files, and
+    installed Codex binaries.
+- Merge review finding:
+  - The PR's restart service initially routed all Windows `/api/restart` calls
+    through a `SYSTEM` helper scheduled task.
+  - That is correct for `-RunAsSystem`, but would regress ordinary user-logon
+    or manual Windows startup because those processes may not be allowed to
+    register a `SYSTEM` task.
+  - The public merge was amended before push so ordinary Windows restarts keep
+    the previous detached hidden PowerShell path, and only explicit
+    `CODEX_MOBILE_WINDOWS_SYSTEM_TASK=1` / `-RunAsSystemTask` deployments use
+    the `SYSTEM` helper task.
+- Public merge:
+  - Used clean public mirror
+    `/Users/hermes-dev/HermesMobileDev/public-mirrors/codex-mobile-web-public`.
+  - Merged PR #61, added the conditional restart fix above, updated the public
+    README Chinese release note, and did not change PWA shell cache because the
+    change is server/startup-script only.
+  - Pushed public `main` at merge commit
+    `3e474435f9ce8d3dd5303942b47239f3443e5858`.
+  - GitHub reported PR #61 closed and merged at that commit.
+- Public validation:
+  - Syntax checks passed for `adapters/shared-chain-restart-service.js`,
+    `server.js`, and focused tests.
+  - Focused checks passed with 22 tests:
+    `node --test test/shared-chain-restart-service.test.js
+    test/codex-profile-ui.test.js test/hermes-plugin-route.test.js`.
+  - Home AI architecture map guard, `npm run check`, `npm run check:macos`,
+    `git diff --check`, and full `npm test` passed with 450 tests.
+  - Privacy/file scans found no tracked `.agent-context`, runtime state,
+    uploads, local keys, private key blocks, or raw private material. Diff hits
+    were limited to the public README boundary note and test-only safe sample
+    paths such as `.codex-homes`.
+  - Evidence ledger entry:
+    `evidence-5edfd633-f0f5-4581-8051-b1d4ba2b2f94`.
+- Private reverse sync:
+  - Merged public `main` back into private `main`.
+  - Private merge commit:
+    `4ed8d1b`.
+- Private validation:
+  - Syntax checks and focused restart/profile/plugin route checks passed with
+    22 tests.
+  - `npm run check`, `npm run check:macos`, diff hygiene, and the Home AI
+    plugin platform contract checker passed.
+  - Full `npm test` passed with 450 tests.
+  - Evidence ledger entry:
+    `evidence-6a960b94-2b46-481c-9694-dc75f65d2b02`.
