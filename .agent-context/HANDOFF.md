@@ -2243,3 +2243,56 @@ The previous full handoff was archived and should be opened only when old proven
   - Private source commit should include this handoff entry.
   - Public sync must exclude `.agent-context` and include only public-safe
     source, README, and tests.
+
+## 2026-06-10 Public PR #59 Local File Preview Sync
+
+- Public PR:
+  - Evaluated `pentiumxp/codex-mobile-web-public#59`.
+  - PR was open, non-draft, mergeable/clean, and `Node checks` passed at head
+    commit `f0c0618461774355d85907836ff5bbf5754e9c99`.
+  - The PR allows authenticated file preview for exact local files referenced
+    by the current thread rollout, while preserving absolute-path, extension,
+    denylist, size, and exact-file authorization boundaries.
+  - Codex skill directories are allowed as explicit preview roots, but the
+    whole `.codex` state tree, runtime state, upload roots, local keys, and
+    machine diagnostics remain outside preview roots.
+- Public merge:
+  - Used clean public mirror
+    `/Users/hermes-dev/HermesMobileDev/public-mirrors/codex-mobile-web-public`.
+  - Public was already pure-synced with current private source except for
+    private-only `.agent-context`.
+  - Merged PR #59, resolved README by keeping v253-v262 release notes and
+    adding a server-only Chinese #59 release note.
+  - Pushed public `main` at merge commit
+    `69006ff4bcdab207aa8eb6ffea488bd6530f5328`.
+  - GitHub reported PR #59 closed and merged at that commit.
+- Public validation:
+  - `node --check server.js && node --check test/file-preview.test.js`
+    passed.
+  - Focused checks passed with 34 tests:
+    `node --test test/file-preview.test.js test/file-preview-ui.test.js
+    test/markdown-render.test.js`.
+  - Home AI architecture map guard passed:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - `npm run check`, `npm run check:macos`, `git diff --check --cached`, and
+    `npm test` passed with 443 tests.
+  - Privacy/file scans found no tracked `.agent-context`, runtime state,
+    uploads, local keys, private key blocks, or raw private material. Staged
+    hits were limited to the new public boundary note, existing public docs
+    wording, and test-only fake `.env` / `TOKEN=secret` denylist samples.
+  - Evidence ledger entry:
+    `evidence-f5b3b725-ce7a-49c3-99b1-127579836f2a`.
+- Private reverse sync:
+  - Merged public `main` back into private `main` after the public push.
+  - README conflict was resolved by preserving private v262/v261 notes and the
+    new #59 server-only note.
+  - Private merge commit:
+    `45f6821c17908881e9a1e4498f7dd07c68865e89`.
+- Private validation:
+  - Syntax checks and focused file-preview/Markdown checks passed with 34
+    tests.
+  - `npm run check`, `npm run check:macos`, staged diff hygiene, and the Home
+    AI plugin platform contract checker passed.
+  - Full `npm test` passed with 443 tests.
+  - Evidence ledger entry:
+    `evidence-56e2dc52-2075-4e13-86ef-9926af545f0e`.
