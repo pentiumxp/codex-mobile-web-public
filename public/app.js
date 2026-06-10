@@ -131,7 +131,7 @@ const state = {
   androidBackSidebarSentinelReady: false,
   subagentSwipe: null,
   subagentPanelOpen: false,
-  liveOperationDockMode: "normal",
+  liveOperationDockMode: "compact",
   liveOperationDockGesture: null,
   threadSideChats: new Map(),
   sideChatLoadingThreadId: "",
@@ -273,7 +273,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v261";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v262";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -7859,8 +7859,8 @@ function updateLiveOperationDockHtml(html = "") {
 
 function normalizeLiveOperationDockMode(mode) {
   const value = String(mode || "");
-  if (value === "compact" || value === "expanded") return value;
-  return "normal";
+  if (value === "expanded") return value;
+  return "compact";
 }
 
 function setLiveOperationDockMode(mode) {
@@ -7869,9 +7869,13 @@ function setLiveOperationDockMode(mode) {
   const dock = $("liveOperationDock");
   if (!dock) return;
   dock.dataset.mode = next;
-  dock.querySelectorAll("[data-live-operation-dock-mode]").forEach((button) => {
-    button.setAttribute("aria-pressed", String(String(button.dataset.liveOperationDockMode || "") === next));
-  });
+  const button = dock.querySelector("[data-live-operation-dock-toggle]");
+  if (button) {
+    button.setAttribute("aria-expanded", String(next === "expanded"));
+    button.setAttribute("aria-label", next === "expanded" ? "收起 Command 框" : "展开 Command 框");
+    button.setAttribute("title", next === "expanded" ? "收起 Command 框" : "展开 Command 框");
+    button.textContent = next === "expanded" ? "↓" : "↑";
+  }
 }
 
 function beginLiveOperationDockGesture(event) {
@@ -7899,10 +7903,11 @@ function cancelLiveOperationDockGesture() {
 }
 
 function handleLiveOperationDockClick(event) {
-  const button = event.target.closest("[data-live-operation-dock-mode]");
+  const button = event.target.closest("[data-live-operation-dock-toggle]");
   if (!button) return;
   event.preventDefault();
-  setLiveOperationDockMode(button.dataset.liveOperationDockMode || "normal");
+  const current = normalizeLiveOperationDockMode(state.liveOperationDockMode);
+  setLiveOperationDockMode(current === "expanded" ? "compact" : "expanded");
 }
 
 function sourceIndexForVisibleItem(turn, item) {
@@ -9383,12 +9388,10 @@ function renderLiveOperationDock(thread, previousKeys = new Set()) {
   const entry = currentLiveOperationEntry(thread);
   if (!entry) return "";
   const mode = normalizeLiveOperationDockMode(state.liveOperationDockMode);
-  const modeButton = (value, label, title) => `<button type="button" data-live-operation-dock-mode="${escapeHtml(value)}" aria-pressed="${String(mode === value)}" title="${escapeHtml(title)}">${escapeHtml(label)}</button>`;
+  const expanded = mode === "expanded";
   return `<div class="live-operation-dock-inner">
-    <div class="live-operation-dock-controls" aria-label="Command 显示高度">
-      ${modeButton("compact", "1行", "收缩 Command 框")}
-      ${modeButton("normal", "3行", "显示三行 Command 框")}
-      ${modeButton("expanded", "展开", "展开 Command 框")}
+    <div class="live-operation-dock-controls">
+      <button type="button" data-live-operation-dock-toggle aria-expanded="${String(expanded)}" title="${expanded ? "收起 Command 框" : "展开 Command 框"}" aria-label="${expanded ? "收起 Command 框" : "展开 Command 框"}">${expanded ? "↓" : "↑"}</button>
     </div>
     ${renderLiveOperation(entry.item, entry.turn, previousKeys, entry.sourceIndex)}
   </div>`;

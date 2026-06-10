@@ -666,6 +666,8 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v262 简化线程页 live Command/File/Tool 命令框的高度控制。命令框默认保持一行折叠态，只显示向上箭头用于展开；展开后按钮变为向下箭头，用于收回一行。移除“1行 / 3行 / 展开”的文字按钮和默认三行状态。PWA shell cache 升级到 `codex-mobile-shell-v262`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
+
 - 中文说明：v261 修正线程页 live Command/File/Tool 命令框的固定区域和高度控制。命令框作为 conversation 和 composer 之间的不透明独立布局区域，不覆盖消息正文；默认显示三行（状态行 + 两行 detail），可切到一行 compact 状态，也可展开查看更多 detail，支持按钮切换和上下滑手势。PWA shell cache 升级到 `codex-mobile-shell-v261`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
 
 - 中文说明：v259 完善侧边聊天和线程命令框。侧聊面板打开和刷新后默认贴到底部；清空按钮固定放在下方输入行；存为候选和排队成功后会显示可操作提示，并提供“打开候选/打开队列”入口定位到对应候选。线程页 live Command/File/Tool 命令框继续保持全屏唯一、只显示最新一个，并固定在 composer 上方，两行截断显示。PWA shell cache 升级到 `codex-mobile-shell-v259`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。

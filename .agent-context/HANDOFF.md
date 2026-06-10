@@ -2221,3 +2221,25 @@ The previous full handoff was archived and should be opened only when old proven
 - Evidence ledger:
   - `evidence-d77d3813-dc1e-4cdc-acc7-0207ff0cce5a`.
   - `evidence-17336ea2-6e87-4443-8e6a-0649e4511bef`.
+
+## 2026-06-10 Codex Mobile v262 Command Dock Toggle
+
+- User simplified the command dock control before public push.
+- Product changes:
+  - Removed the three text controls `1行 / 3行 / 展开`.
+  - Dock now defaults to compact one-line mode.
+  - Compact mode shows only an upward arrow button to expand.
+  - Expanded mode shows a downward arrow button to collapse back to one line.
+  - Vertical swipe handling remains: swipe up expands, swipe down collapses.
+  - PWA shell cache advanced to `codex-mobile-shell-v262`.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js` passed.
+  - Focused tests passed:
+    `node --test test/collab-agent-render.test.js
+    test/conversation-render.test.js test/mobile-viewport.test.js
+    test/thread-goal-service.test.js test/thread-task-card-route.test.js`.
+  - `npm run check` passed.
+- Deployment/public boundary:
+  - Private source commit should include this handoff entry.
+  - Public sync must exclude `.agent-context` and include only public-safe
+    source, README, and tests.
