@@ -2735,3 +2735,48 @@ The previous full handoff was archived and should be opened only when old proven
     `com.hermesmobile.plugin.codex-mobile` running with PID `92093`.
   - Evidence ledger entry:
     `evidence-a1dfca7b-9175-4240-abcb-7b595fa418ef`.
+
+## 2026-06-11 v272 Current Submitted User Message Fallback Match
+
+- User reported the v271 fix still had the opposite failure mode: after
+  sending a message, the current user bubble could disappear once model
+  progress started.
+- Root cause:
+  - v271 only exempted durable current-user echoes when the projected
+    `userMessage` still carried `clientSubmissionId`.
+  - Some durable projection paths can drop that frontend-only id, so the v269
+    historical-user-message filter still treated the current submission as an
+    old user bubble and hid it.
+- Implemented:
+  - `isRecentlySubmittedUserMessage` still prefers exact
+    `clientSubmissionId` matches.
+  - If the id is absent, it now checks same-thread recent submitted records and
+    uses the existing `userMessagesLikelySame` content/signature matcher against
+    the locally registered submitted item.
+  - Existing behavior remains: old durable user messages in already-running
+    live turns are still hidden after assistant/reasoning/Command progress
+    appears.
+  - PWA shell/cache advanced to `codex-mobile-shell-v272`.
+  - README Chinese interface note documents the v272 behavior.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js &&
+    node --check test/conversation-render.test.js` passed.
+  - `node --test test/conversation-render.test.js` passed with 39 tests,
+    including the new no-`clientSubmissionId` durable echo regression.
+  - Focused combined tests passed with 23 tests:
+    `node --test test/mobile-viewport.test.js test/thread-goal-service.test.js
+    test/thread-task-card-route.test.js test/turn-scroll-controls.test.js`.
+  - `npm run check`, `git diff --check`, and Home AI
+    `node tests/architecture-code-test-harness-map.test.js` passed.
+  - Evidence ledger entry:
+    `evidence-09653502-cc1a-4b5c-b7a3-7bfc53571321`.
+- Git:
+  - Private local commit: `13fea3a fix: keep current submitted user message
+    visible`.
+  - Public mirror pushed: `549541c fix: keep current submitted user message
+    visible`.
+- Production:
+  - User observed the fix as already effective.
+  - A follow-up deploy command was started by mistake and interrupted after the
+    user clarified not to redeploy; no further restart/deploy action was taken
+    after that clarification.
