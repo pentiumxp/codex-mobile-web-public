@@ -199,8 +199,8 @@ test("current-turn subagent panel opens from a left swipe without a topbar butto
   assert.match(stylesCss, /\.side-chat-form\s*{[\s\S]*flex:\s*0 0 auto;/);
   assert.match(stylesCss, /\.side-chat-form textarea/);
   assert.match(stylesCss, /\.side-chat-message-text,\s*\n\.side-chat-candidate-body\s*{[\s\S]*font-size:\s*var\(--content-font-size\);/);
-  assert.match(stylesCss, /\.side-chat-composer-row\s*{[\s\S]*grid-template-columns:\s*44px minmax\(0, 1fr\) max-content max-content;/);
-  assert.match(stylesCss, /\.side-chat-tool-button,\s*\n\.side-chat-send,\s*\n\.side-chat-clear\s*{[\s\S]*min-height:\s*44px;/);
+  assert.match(stylesCss, /\.side-chat-composer-row\s*{[\s\S]*grid-template-columns:\s*44px minmax\(0, 1fr\) max-content;/);
+  assert.match(stylesCss, /\.side-chat-tool-button,\s*\n\.side-chat-send\s*{[\s\S]*min-height:\s*44px;/);
   assert.match(stylesCss, /\.side-chat-notice\s*{[\s\S]*display:\s*flex;/);
   assert.match(stylesCss, /\.side-chat-form textarea\s*{[\s\S]*font-size:\s*var\(--composer-input-font-size\);/);
   assert.match(stylesCss, /\.subagent-status-row/);
