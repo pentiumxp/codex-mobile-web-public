@@ -1,7 +1,7 @@
 # Home AI Platform Contract Pointer
 
-Last updated: 2026-06-09.
-Home AI platform contract version: `20260609-v2`.
+Last updated: 2026-06-11.
+Home AI platform contract version: `20260611-v3`.
 
 ## Scope
 
@@ -65,6 +65,7 @@ behavior, or cross-plugin reference behavior:
 | `ai_ops_evidence_ledger` | `$HOME/.homeai-qa/codex-mobile-evidence-ledger.jsonl` |
 | `ios_live_debug_available` | `yes`; use Home AI `npm run ios:pwa:debug` for interactive embedded iOS PWA reproduction, with one Simulator/live-debug-port/WDA-port/MJPEG-port lane per concurrent plugin debug session. |
 | `ios_visual_harness_command` | `cd /Users/hermes-dev/HermesMobileDev/app && npm run ios:pwa:visual -- --scenario embedded-plugin-shell --plugin-id codex-mobile --debug-url http://127.0.0.1:19073/` |
+| `plugin_manifest_actions_status` | `not_applicable_special_plugin`; Codex plugin edition must not declare ordinary user quick actions. |
 | `ios_keyboard_visual_harness_command` | `cd /Users/hermes-dev/HermesMobileDev/app && npm run ios:pwa:visual -- --scenario embedded-plugin-keyboard-composer --plugin-id codex-mobile --plugin-thread-id <thread-id> --debug-url http://127.0.0.1:19073/` |
 | `ios_side_chat_keyboard_visual_harness_command` | `cd /Users/hermes-dev/HermesMobileDev/app && npm run ios:pwa:visual -- --scenario embedded-plugin-side-chat-keyboard --plugin-id codex-mobile --plugin-thread-id <thread-id> --debug-url http://127.0.0.1:19073/` |
 | `ios_image_order_visual_smoke_command` | `node scripts/codex-mobile-image-order-visual-smoke.js --debug-url http://127.0.0.1:19073/ --thread-id <thread-id> --target-turn-id <turn-id> --json` |
