@@ -2837,3 +2837,67 @@ The previous full handoff was archived and should be opened only when old proven
     `shellCacheName=codex-mobile-shell-v273`.
   - After user explicitly said not to update production again, no further
     production deploy/restart was performed.
+
+## 2026-06-12 Default Profile No-Response Diagnosis
+
+- User reported that switching Codex Mobile to the `Default` account/profile,
+  restarting, and sending a message produced no response. They then switched
+  back to `Previous`, which restored operation.
+- Current production state after the user switched back:
+  - Active profile is `previous`.
+  - Mobile Web is running as LaunchDaemon
+    `system/com.hermesmobile.plugin.codex-mobile` on port `8787`.
+  - The managed app-server child is running with
+    `CODEX_HOME=/Users/xuxin/.codex-homes/previous`.
+- Diagnosis performed without switching production back to `Default`:
+  - Started a separate local app-server on an ephemeral localhost port with
+    `CODEX_HOME=/Users/xuxin/.codex` and the same Mobile-owned app-server style
+    environment.
+  - `initialize` succeeded and `thread/list` returned normally, so the Default
+    profile can start the app-server and read local thread state.
+  - `account/rateLimits/read` failed with 401 from ChatGPT usage API, reporting
+    `token_expired` and `refresh_token_reused`; the app-server log said the
+    access token could not be refreshed and the user must sign in again.
+- Conclusion:
+  - The Default profile auth file exists, so the profile list can still appear
+    logged-in from local file presence, but the live auth token chain is invalid.
+  - The required recovery is re-login for `CODEX_HOME=/Users/xuxin/.codex`.
+  - Do not copy tokens between profiles; use the normal Codex login flow for
+    Default.
+- No production restart, deploy, or profile switch was performed during this
+  diagnosis.
+
+## 2026-06-12 Profile Switch Preflight Guard
+
+- User asked to change account switching so Codex Mobile tests the target
+  account login before switching, instead of blindly activating a broken
+  profile and then failing after restart.
+- Implemented in `server.js`:
+  - `/api/codex-profiles/active` now resolves the target profile without
+    writing state.
+  - It starts a temporary localhost app-server for the target `CODEX_HOME`,
+    sends `initialize`, then sends `account/rateLimits/read`.
+  - Only after preflight succeeds does it call `setActiveProfile()` and trigger
+    shared-chain restart.
+  - Preflight failure returns `409` with a stable code such as
+    `target_profile_auth_invalid`, and does not write `activeProfileId` or
+    restart Mobile Web.
+  - Error messages are bounded and do not include auth file contents or tokens.
+- Tests:
+  - Added `test/codex-profile-preflight.test.js` for expired-token and
+    app-server-startup error classification.
+  - Strengthened `test/manual-restart-ui.test.js` so profile switch preflight
+    must happen before `setActiveProfile()` and restart.
+- Validation:
+  - `node --check server.js`
+  - `node --check adapters/codex-profile-service.js`
+  - `node --test test/codex-profile-preflight.test.js
+    test/manual-restart-ui.test.js test/codex-profile-service.test.js`
+  - `npm run check`
+  - `git diff --check`
+  - AI Ops required gateway/runtime checks:
+    `node tests/gateway-run-lifecycle-service.test.js`,
+    `node tests/gateway-run-start-service.test.js`,
+    `node tests/gateway-run-stream-service.test.js`,
+    `node tests/runtime-config-provider.test.js`
+- No production restart, deploy, or profile switch was performed.
