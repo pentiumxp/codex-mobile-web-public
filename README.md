@@ -670,6 +670,8 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v272 修正 v271 后续场景：当服务端 durable userMessage 回投影没有保留 `clientSubmissionId` 时，本机会话刚发送的消息会在模型开始回复后被误判成历史用户消息并隐藏。前端现在会在同线程内按最近提交的消息内容签名兜底匹配，继续隐藏进入长时间运行线程时已有的旧用户提问，同时保留当前刚提交的用户气泡。PWA shell cache 升级到 `codex-mobile-shell-v272`。
+
 - 中文说明：v271 修正发送大段内容后，消息先显示、随后在 live turn 出现模型中间信息时消失的问题。前端现在会记录本机会话刚提交的 `clientSubmissionId`，durable userMessage 回放匹配到当前提交时不会被“隐藏历史用户气泡”的规则过滤；该规则仍会隐藏进入长时间运行线程时已经存在的旧用户提问。PWA shell cache 升级到 `codex-mobile-shell-v271`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
 
 - 中文说明：v270 调整左滑侧边聊天 composer。底部输入行回到和普通线程 composer 一致的 `+ / 输入框 / Send` 结构，清空按钮移到侧聊标题栏右侧；侧聊 textarea 会像主线程输入框一样随换行自动增高，并在键盘紧凑态遵守最大高度，避免清空按钮挤占输入空间。PWA shell cache 升级到 `codex-mobile-shell-v270`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。

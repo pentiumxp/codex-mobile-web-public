@@ -277,7 +277,26 @@ return { state, upsertItem, renderCount: () => renderCount };
 
 function evaluatedVisibleItemsForTurn() {
   const sources = [
+    "normalizeFsPath",
+    "imageUrlValue",
+    "isInputTextPart",
+    "inputTextValue",
+    "isTruncatedImagePayloadPart",
+    "isInputImagePart",
+    "attachmentSummaryMarkerMatch",
+    "stripAttachmentSummaryLinePrefix",
+    "parseAttachmentLine",
+    "splitAttachmentSummaryText",
+    "isMuxUserMessage",
+    "isOptimisticUserMessage",
+    "normalizeComparableText",
+    "userMessageComparableParts",
+    "userMessagePathOverlap",
+    "comparablePathName",
+    "userMessagePathNameOverlap",
+    "userMessagesLikelySame",
     "pruneRecentSubmittedUserMessages",
+    "recentSubmittedUserRecordBelongsToThread",
     "isRecentlySubmittedUserMessage",
     "liveTurnHasNonUserProgress",
     "shouldHideDurableLiveUserMessage",
@@ -295,9 +314,6 @@ function isReasoningItem(item) { return Boolean(item && item.type === "reasoning
 function isOperationalItem(item) { return Boolean(item && item.type === "commandExecution"); }
 function isContextCompactionItem(item) { return Boolean(item && item.type === "contextCompaction"); }
 function contextCompactionNotice() { return "context notice"; }
-function isOptimisticUserMessage(item) {
-  return Boolean(item && item.type === "userMessage" && (item.mobilePendingSubmission || /^local-user-/.test(String(item.id || "")) || /^mux-user-/.test(String(item.id || ""))));
-}
 ${sources.join("\n")}
 return { state, visibleItemsForTurn };
 `)();
@@ -451,6 +467,38 @@ test("live turn keeps this session submitted durable user message after progress
         type: "userMessage",
         clientSubmissionId: "submit-current",
         content: [{ type: "input_text", text: "current long user message" }],
+      },
+      { id: "cmd-1", type: "commandExecution", status: "running" },
+    ],
+  };
+  assert.deepEqual(
+    harness.visibleItemsForTurn(liveTurn).map((entry) => entry.item.id),
+    ["assistant-progress", "real-user-current"],
+  );
+});
+
+test("live turn keeps current submitted durable user message when projection drops client submission id", () => {
+  const harness = evaluatedVisibleItemsForTurn();
+  harness.state.recentSubmittedUserMessages.set("submit-current", {
+    threadId: "thread-live",
+    createdAtMs: Date.now(),
+    item: {
+      id: "local-user-submit-current",
+      type: "userMessage",
+      mobilePendingSubmission: true,
+      clientSubmissionId: "submit-current",
+      content: [{ type: "text", text: "current long user message" }],
+    },
+  });
+  const liveTurn = {
+    live: true,
+    items: [
+      { id: "real-user-old", type: "userMessage", content: [{ type: "text", text: "old steer" }] },
+      { id: "assistant-progress", type: "agentMessage", text: "working" },
+      {
+        id: "real-user-current",
+        type: "userMessage",
+        content: [{ type: "input_text", text: "current   long user message" }],
       },
       { id: "cmd-1", type: "commandExecution", status: "running" },
     ],

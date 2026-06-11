@@ -276,7 +276,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v271";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v272";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -751,16 +751,27 @@ function registerSubmittedUserMessage(threadId, text, attachments, clientSubmiss
   });
 }
 
+function recentSubmittedUserRecordBelongsToThread(record, threadId) {
+  if (!record) return false;
+  return !(record.threadId && threadId && record.threadId !== threadId);
+}
+
 function isRecentlySubmittedUserMessage(item) {
   if (!item || item.type !== "userMessage") return false;
-  const id = String(item.clientSubmissionId || "").trim();
-  if (!id) return false;
   pruneRecentSubmittedUserMessages();
-  const record = state.recentSubmittedUserMessages.get(id);
-  if (!record) return false;
   const threadId = String(state.currentThreadId || (state.currentThread && state.currentThread.id) || "");
-  if (record.threadId && threadId && record.threadId !== threadId) return false;
-  return true;
+  const id = String(item.clientSubmissionId || "").trim();
+  if (id) {
+    const record = state.recentSubmittedUserMessages.get(id);
+    if (recentSubmittedUserRecordBelongsToThread(record, threadId)) return true;
+  }
+  const records = state.recentSubmittedUserMessages;
+  if (!records || typeof records.values !== "function") return false;
+  for (const record of records.values()) {
+    if (!recentSubmittedUserRecordBelongsToThread(record, threadId)) continue;
+    if (record && record.item && userMessagesLikelySame(record.item, item)) return true;
+  }
+  return false;
 }
 
 function base64UrlToUint8Array(value) {
