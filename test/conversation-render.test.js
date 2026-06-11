@@ -299,6 +299,11 @@ function evaluatedVisibleItemsForTurn() {
     "recentSubmittedUserRecordBelongsToThread",
     "isRecentlySubmittedUserMessage",
     "liveTurnHasNonUserProgress",
+    "isVisibleNonUserProgressItem",
+    "liveTurnHasNonUserProgressBefore",
+    "liveTurnHasNonUserProgressAfter",
+    "isUserVisibleTextReplyItem",
+    "liveTurnHasUserVisibleTextReplyAfter",
     "shouldHideDurableLiveUserMessage",
     "visibleItemsForTurn",
   ].map((name) => functionSourceFrom(appJs, name));
@@ -316,6 +321,44 @@ function isContextCompactionItem(item) { return Boolean(item && item.type === "c
 function contextCompactionNotice() { return "context notice"; }
 ${sources.join("\n")}
 return { state, visibleItemsForTurn };
+`)();
+}
+
+function evaluatedLatestTurnHelpers() {
+  const sources = [
+    "turnHasDisplayItems",
+    "latestTurn",
+    "syncActiveTurnFromThread",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`
+let interruptDisabled = null;
+const state = {
+  currentThread: { turns: [] },
+  activeTurnId: "",
+};
+function statusText(status) {
+  if (!status) return "";
+  if (typeof status === "string") return status;
+  return status.type || JSON.stringify(status);
+}
+function isCompletedStatus(status) {
+  return /completed|failed|cancel|error|interrupted/i.test(statusText(status));
+}
+function isTurnComplete(turn) {
+  return Boolean(turn && (turn.completedAt || turn.durationMs || isCompletedStatus(turn.status)));
+}
+function isRunningStatus(status) {
+  const text = statusText(status).toLowerCase();
+  return /(running|active|queued|processing|inprogress|in_progress|in-progress)/.test(text)
+    && !/(completed|failed|cancel|error|interrupted)/.test(text);
+}
+function $(id) {
+  if (id !== "interruptTurn") return null;
+  return { set disabled(value) { interruptDisabled = value; } };
+}
+function updateComposerControls() {}
+${sources.join("\n")}
+return { state, latestTurn, syncActiveTurnFromThread, interruptDisabled: () => interruptDisabled };
 `)();
 }
 
@@ -427,28 +470,43 @@ test("visible turn items keep source order after live operations move to the doc
   assert.match(functionBody("visibleItemsForTurn"), /if \(isOperationalItem\(item\)\) \{[\s\S]*return;/);
 });
 
-test("live turn hides durable historical user messages after progress starts", () => {
+test("live turn keeps prompt and responded steering messages while hiding only unanswered trailing durable user bubbles", () => {
   const { visibleItemsForTurn } = evaluatedVisibleItemsForTurn();
   const liveTurn = {
     live: true,
     items: [
-      { id: "real-user-old", type: "userMessage", content: [{ type: "text", text: "old steer" }] },
+      { id: "real-user-prompt", type: "userMessage", content: [{ type: "text", text: "initial prompt" }] },
       { id: "assistant-progress", type: "agentMessage", text: "working" },
-      { id: "real-user-later", type: "userMessage", content: [{ type: "text", text: "another old steer" }] },
+      { id: "real-user-responded-steer", type: "userMessage", content: [{ type: "text", text: "follow-up steer with response" }] },
+      { id: "assistant-after-steer", type: "agentMessage", text: "acknowledged steer" },
+      { id: "real-user-trailing", type: "userMessage", content: [{ type: "text", text: "stale trailing steer" }] },
       { id: "local-user-new", type: "userMessage", mobilePendingSubmission: true, content: [{ type: "text", text: "new local message" }] },
       { id: "cmd-1", type: "commandExecution", status: "running" },
     ],
   };
   assert.deepEqual(
     visibleItemsForTurn(liveTurn).map((entry) => entry.item.id),
-    ["assistant-progress", "local-user-new"],
+    ["real-user-prompt", "assistant-progress", "real-user-responded-steer", "assistant-after-steer", "local-user-new"],
   );
 
   const completedTurn = Object.assign({}, liveTurn, { live: false });
   assert.deepEqual(
     visibleItemsForTurn(completedTurn).map((entry) => entry.item.id),
-    ["real-user-old", "assistant-progress", "real-user-later", "local-user-new"],
+    ["real-user-prompt", "assistant-progress", "real-user-responded-steer", "assistant-after-steer", "real-user-trailing", "local-user-new"],
   );
+});
+
+test("latest turn ignores empty active projection tails", () => {
+  const harness = evaluatedLatestTurnHelpers();
+  harness.state.currentThread.turns = [
+    { id: "completed", status: "completed", completedAt: 1781141506, items: [{ id: "final", type: "agentMessage", text: "done" }] },
+    { id: "active-with-items", status: "inProgress", items: [{ id: "prompt", type: "userMessage", content: [{ type: "text", text: "next prompt" }] }] },
+    { id: "empty-active-tail", status: "inProgress", items: [] },
+  ];
+  assert.equal(harness.latestTurn().id, "active-with-items");
+  harness.syncActiveTurnFromThread();
+  assert.equal(harness.state.activeTurnId, "active-with-items");
+  assert.equal(harness.interruptDisabled(), false);
 });
 
 test("live turn keeps this session submitted durable user message after progress starts", () => {
@@ -473,7 +531,7 @@ test("live turn keeps this session submitted durable user message after progress
   };
   assert.deepEqual(
     harness.visibleItemsForTurn(liveTurn).map((entry) => entry.item.id),
-    ["assistant-progress", "real-user-current"],
+    ["real-user-old", "assistant-progress", "real-user-current"],
   );
 });
 
@@ -505,7 +563,7 @@ test("live turn keeps current submitted durable user message when projection dro
   };
   assert.deepEqual(
     harness.visibleItemsForTurn(liveTurn).map((entry) => entry.item.id),
-    ["assistant-progress", "real-user-current"],
+    ["real-user-old", "assistant-progress", "real-user-current"],
   );
 });
 
@@ -1024,12 +1082,12 @@ test("thread detail pending server requests render approval cards without SSE ti
 
 test("active turn state follows only the latest durable turn", () => {
   const syncBody = functionBody("syncActiveTurnFromThread");
-  assert.match(syncBody, /const latest = turns\.length \? turns\[turns\.length - 1\] : null/);
+  assert.match(syncBody, /const latest = latestTurn\(\);/);
   assert.match(syncBody, /const running = latest && !isTurnComplete\(latest\) && isRunningStatus\(latest\.status\) \? latest : null/);
   assert.doesNotMatch(syncBody, /reverse\(\)\.find/);
 
   const liveBody = functionBody("currentLiveTurn");
-  assert.match(liveBody, /const latest = turns\.length \? turns\[turns\.length - 1\] : null/);
+  assert.match(liveBody, /const latest = latestTurn\(\);/);
   assert.match(liveBody, /const active = latest && latest\.id === state\.activeTurnId \? latest : null/);
   assert.match(liveBody, /return latest && isLiveTurn\(latest\) \? latest : null/);
   assert.doesNotMatch(liveBody, /reverse\(\)\.find/);

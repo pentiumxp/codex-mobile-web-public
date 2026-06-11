@@ -2780,3 +2780,60 @@ The previous full handoff was archived and should be opened only when old proven
   - A follow-up deploy command was started by mistake and interrupted after the
     user clarified not to redeploy; no further restart/deploy action was taken
     after that clarification.
+
+## 2026-06-11 v273 Empty Active Turn / Stop State Repair
+
+- User reported Home AI thread display was still wrong:
+  - A completed thread showed a false `Stop` state.
+  - Clicking Stop could not stop anything, making the thread look stuck.
+  - Recent user guidance inside the same Home AI turn could disappear, while
+    Codex replies remained visible.
+  - An older-looking message could remain near the bottom even after many newer
+    items had arrived.
+- Root cause confirmed from real Home AI thread
+  `019ea77e-4e36-7820-adf4-9bf0272965b8`:
+  - API/projection returned a trailing `inProgress` turn with zero items after
+    the real latest completed turn.
+  - v272 frontend treated the raw last turn as latest/active, so Composer and
+    side-chat state showed Stop/steer mode even though the thread status was
+    `idle`.
+  - The live-turn user-message hiding rule was still too broad for real Home AI
+    shape: it could hide a mid-turn user steer that later had a Codex text
+    response.
+- Implemented:
+  - `latestTurn()` skips empty projection tails and returns the latest turn that
+    has display items.
+  - `syncActiveTurnFromThread()` and `currentLiveTurn()` now use that same
+    latest-turn helper, so empty active tails do not drive Stop, running state,
+    side-chat queue labels, or live docks.
+  - Durable live user-message filtering now keeps:
+    - initial prompt user messages,
+    - mid-turn user steer messages that have a later visible Codex text reply,
+    - recent/optimistic locally submitted messages.
+  - It still hides unanswered trailing durable user bubbles after non-user
+    progress unless they are recent/optimistic, preventing stale old inputs from
+    sitting at the bottom.
+  - PWA shell/cache advanced to `codex-mobile-shell-v273`.
+  - README Chinese interface note documents the v273 behavior.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js &&
+    node --check test/conversation-render.test.js` passed.
+  - `node --test test/conversation-render.test.js test/new-thread-route.test.js
+    test/turn-scroll-controls.test.js` passed with 62 tests.
+  - `node --test test/mobile-viewport.test.js test/thread-goal-service.test.js
+    test/thread-task-card-route.test.js` passed with 17 tests.
+  - `npm run check`, `git diff --check`, and Home AI
+    `node tests/architecture-code-test-harness-map.test.js` passed.
+  - Real Home AI thread data-level helper smoke passed:
+    raw last turn had zero items, latest display turn became the completed turn,
+    `activeTurnId` cleared, interrupt disabled, and both the 09:35 prompt and
+    09:37 responded steer were visible.
+  - Evidence ledger entry:
+    `evidence-50e53bc7-ac2b-41d1-94bf-add2376dd68f`.
+- Production:
+  - User confirmed the behavior was OK.
+  - Production `/api/public-config` showed
+    `clientBuildId=0.1.11|codex-mobile-shell-v273` and
+    `shellCacheName=codex-mobile-shell-v273`.
+  - After user explicitly said not to update production again, no further
+    production deploy/restart was performed.

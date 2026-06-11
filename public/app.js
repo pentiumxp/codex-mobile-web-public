@@ -276,7 +276,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v272";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v273";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -3290,10 +3290,7 @@ function isReasoningItem(item) {
 }
 
 function syncActiveTurnFromThread() {
-  const turns = state.currentThread && Array.isArray(state.currentThread.turns)
-    ? state.currentThread.turns
-    : [];
-  const latest = turns.length ? turns[turns.length - 1] : null;
+  const latest = latestTurn();
   const running = latest && !isTurnComplete(latest) && isRunningStatus(latest.status) ? latest : null;
   state.activeTurnId = running ? running.id : "";
   const interrupt = $("interruptTurn");
@@ -3372,10 +3369,17 @@ function contextCompactionNotice(item, turn = null) {
   return "";
 }
 
+function turnHasDisplayItems(turn) {
+  return Boolean(turn && Array.isArray(turn.items) && turn.items.some(Boolean));
+}
+
 function latestTurn() {
   const turns = state.currentThread && Array.isArray(state.currentThread.turns)
     ? state.currentThread.turns
     : [];
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    if (turnHasDisplayItems(turns[index])) return turns[index];
+  }
   return turns.length ? turns[turns.length - 1] : null;
 }
 
@@ -3496,10 +3500,57 @@ function liveTurnHasNonUserProgress(turn) {
       || item.type === "turnUsageSummary"));
 }
 
-function shouldHideDurableLiveUserMessage(turn, item) {
+function isVisibleNonUserProgressItem(item) {
+  return Boolean(item
+    && item.type !== "userMessage"
+    && (isReasoningItem(item)
+      || isOperationalItem(item)
+      || isContextCompactionItem(item)
+      || item.type === "agentMessage"
+      || item.type === "plan"
+      || item.type === "turnUsageSummary"));
+}
+
+function liveTurnHasNonUserProgressBefore(turn, index) {
+  if (!turn || !isLiveTurn(turn)) return false;
+  const items = Array.isArray(turn.items) ? turn.items : [];
+  for (let pos = 0; pos < Math.min(index, items.length); pos += 1) {
+    if (isVisibleNonUserProgressItem(items[pos])) return true;
+  }
+  return false;
+}
+
+function liveTurnHasNonUserProgressAfter(turn, index) {
+  if (!turn || !isLiveTurn(turn)) return false;
+  const items = Array.isArray(turn.items) ? turn.items : [];
+  for (let pos = Math.max(0, index + 1); pos < items.length; pos += 1) {
+    if (isVisibleNonUserProgressItem(items[pos])) return true;
+  }
+  return false;
+}
+
+function isUserVisibleTextReplyItem(item) {
+  return Boolean(item
+    && item.type !== "userMessage"
+    && (item.type === "agentMessage"
+      || item.type === "plan"
+      || item.type === "turnUsageSummary"));
+}
+
+function liveTurnHasUserVisibleTextReplyAfter(turn, index) {
+  if (!turn || !isLiveTurn(turn)) return false;
+  const items = Array.isArray(turn.items) ? turn.items : [];
+  for (let pos = Math.max(0, index + 1); pos < items.length; pos += 1) {
+    if (isUserVisibleTextReplyItem(items[pos])) return true;
+  }
+  return false;
+}
+
+function shouldHideDurableLiveUserMessage(turn, item, index = 0) {
   return Boolean(item
     && item.type === "userMessage"
-    && liveTurnHasNonUserProgress(turn)
+    && liveTurnHasNonUserProgressBefore(turn, index)
+    && !liveTurnHasUserVisibleTextReplyAfter(turn, index)
     && !isRecentlySubmittedUserMessage(item)
     && !isOptimisticUserMessage(item));
 }
@@ -3509,7 +3560,7 @@ function visibleItemsForTurn(turn) {
   const contextEntryByKey = new Map();
   (turn.items || []).forEach((item, index) => {
     if (!item || isReasoningItem(item)) return;
-    if (shouldHideDurableLiveUserMessage(turn, item)) return;
+    if (shouldHideDurableLiveUserMessage(turn, item, index)) return;
     if (isContextCompactionItem(item)) {
       const notice = contextCompactionNotice(item, turn);
       if (!notice) return;
@@ -4196,10 +4247,7 @@ function liveReasoningElapsed(item, turn) {
 }
 
 function currentLiveTurn() {
-  const turns = state.currentThread && Array.isArray(state.currentThread.turns)
-    ? state.currentThread.turns
-    : [];
-  const latest = turns.length ? turns[turns.length - 1] : null;
+  const latest = latestTurn();
   if (state.activeTurnId) {
     const active = latest && latest.id === state.activeTurnId ? latest : null;
     if (active && isLiveTurn(active)) return active;
