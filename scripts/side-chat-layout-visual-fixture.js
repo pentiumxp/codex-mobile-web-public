@@ -60,6 +60,7 @@ function fixtureHtml(css, options) {
             <div class="side-chat-heading">侧边聊天</div>
             <div class="side-chat-summary">服务器保存 · 2 条</div>
           </div>
+          <button class="side-chat-clear side-chat-header-clear" type="button" aria-label="清空侧聊">清空</button>
           <button class="subagent-window-close side-chat-close" type="button" aria-label="关闭侧边聊天">×</button>
         </div>
         <div class="side-chat-scroll">
@@ -82,12 +83,13 @@ function fixtureHtml(css, options) {
         <form class="side-chat-form" data-side-chat-form>
           <div class="side-chat-composer-row">
             <button class="side-chat-tool-button" type="button" aria-label="侧聊工具">+</button>
-            <textarea rows="1" placeholder="整理想法，不进入主线程">继续讨论方案。</textarea>
+            <textarea rows="1" placeholder="整理想法，不进入主线程">继续讨论方案。
+补充第二行。
+补充第三行。</textarea>
             <button class="side-chat-send" type="submit">Send</button>
           </div>
           <div class="side-chat-tool-row" hidden>
             <button type="button">存为候选</button>
-            <button type="button">清空</button>
           </div>
         </form>
       </section>
@@ -96,27 +98,40 @@ function fixtureHtml(css, options) {
   <pre id="fixtureResult" class="fixture-result"></pre>
   <script>
     requestAnimationFrame(() => {
+      const textarea = document.querySelector(".side-chat-form textarea");
+      textarea.style.height = "auto";
+      const style = window.getComputedStyle(textarea);
+      const maxHeight = Number.parseFloat(style.maxHeight) || 160;
+      const minHeight = Number.parseFloat(style.minHeight) || 44;
+      const nextHeight = Math.min(maxHeight, Math.max(minHeight, textarea.scrollHeight));
+      textarea.style.height = nextHeight + "px";
+      textarea.style.overflowY = textarea.scrollHeight > nextHeight + 1 ? "auto" : "hidden";
       const rect = (selector) => {
         const el = document.querySelector(selector);
         if (!el) return null;
         const r = el.getBoundingClientRect();
         return { left: Math.round(r.left), top: Math.round(r.top), right: Math.round(r.right), bottom: Math.round(r.bottom), width: Math.round(r.width), height: Math.round(r.height) };
       };
+      const appSurfaceHeight = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--app-height")) || window.innerHeight;
       const result = {
-        viewport: { width: 390, height: window.innerHeight },
+        viewport: { width: 390, height: window.innerHeight, appSurfaceHeight },
         panel: rect(".subagent-panel"),
         composer: rect(".side-chat-form"),
         composerRow: rect(".side-chat-composer-row"),
         toolButton: rect(".side-chat-tool-button"),
         textarea: rect(".side-chat-form textarea"),
         send: rect(".side-chat-send"),
+        clear: rect(".side-chat-header-clear"),
         replyActions: rect(".side-chat-message-actions"),
         panelWithinViewport: rect(".subagent-panel").right <= 390,
         sendWithinViewport: rect(".side-chat-send").right <= 390,
-        bottomWithinViewport: rect(".side-chat-form").bottom <= window.innerHeight,
+        clearWithinHeader: rect(".side-chat-header-clear").bottom <= rect(".side-chat-header").bottom + 1,
+        clearOutsideComposer: rect(".side-chat-header-clear").top < rect(".side-chat-form").top,
+        bottomWithinViewport: rect(".side-chat-form").bottom <= appSurfaceHeight,
         sendCompact: rect(".side-chat-send").height <= 48 && rect(".side-chat-send").width <= 88,
         toolCompact: rect(".side-chat-tool-button").height <= 48 && rect(".side-chat-tool-button").width <= 48,
-        inputVisible: rect(".side-chat-form textarea").height >= 40 && rect(".side-chat-form textarea").bottom <= window.innerHeight,
+        inputVisible: rect(".side-chat-form textarea").height >= 40 && rect(".side-chat-form textarea").bottom <= appSurfaceHeight,
+        inputAutosized: rect(".side-chat-form textarea").height > 58 && rect(".side-chat-form textarea").height <= maxHeight + 1,
       };
       document.getElementById("fixtureResult").textContent = JSON.stringify(result);
     });
@@ -171,7 +186,7 @@ function main() {
     screenshotPath,
     htmlPath,
   });
-  if (!result.panelWithinViewport || !result.sendWithinViewport || !result.bottomWithinViewport || !result.sendCompact || !result.toolCompact || !result.inputVisible) {
+  if (!result.panelWithinViewport || !result.sendWithinViewport || !result.clearWithinHeader || !result.clearOutsideComposer || !result.bottomWithinViewport || !result.sendCompact || !result.toolCompact || !result.inputVisible || !result.inputAutosized) {
     const err = new Error("side chat composer layout fixture failed");
     err.result = result;
     throw err;

@@ -71,21 +71,25 @@ test("mobile viewport and early guards disable page zoom", () => {
 });
 
 test("public app shell cache advances after thread side chat panel", () => {
-  assert.match(swJs, /codex-mobile-shell-v268/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v268"/);
+  assert.match(swJs, /codex-mobile-shell-v271/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v271"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);
   assert.match(stylesCss, /\.side-chat-scroll\s*{[\s\S]*overflow:\s*auto;/);
   assert.match(stylesCss, /\.side-chat-section\s*{[\s\S]*height:\s*100%;/);
-  assert.match(stylesCss, /\.side-chat-composer-row\s*{[\s\S]*grid-template-columns:\s*44px minmax\(0, 1fr\) max-content max-content;/);
-  assert.match(stylesCss, /\.side-chat-form textarea\s*{[\s\S]*min-height:\s*44px;[\s\S]*max-height:\s*160px;/);
+  assert.match(stylesCss, /\.side-chat-header\s*{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) auto auto auto;/);
+  assert.match(stylesCss, /\.side-chat-composer-row\s*{[\s\S]*grid-template-columns:\s*44px minmax\(0, 1fr\) max-content;/);
+  assert.match(stylesCss, /\.side-chat-header-clear\s*{[\s\S]*justify-self:\s*end;/);
+  assert.match(stylesCss, /\.side-chat-form textarea\s*{[\s\S]*min-height:\s*44px;[\s\S]*max-height:\s*160px;[\s\S]*overflow-y:\s*hidden;/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*z-index:\s*40;/);
   assert.match(stylesCss, /html\.keyboard-open \.subagent-panel\s*{[\s\S]*height:\s*var\(--app-height, 100dvh\);[\s\S]*max-height:\s*none;/);
   assert.match(stylesCss, /html\.keyboard-open \.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(44px, 0\.18fr\) minmax\(0, 1fr\);/);
   assert.match(stylesCss, /html\.keyboard-open \.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);
   assert.match(stylesCss, /html\.keyboard-open \.side-chat-form textarea\s*{[\s\S]*min-height:\s*44px;[\s\S]*max-height:\s*min\(14vh, 84px\);/);
   assert.match(appJs, /function ensureSideChatDraftVisible\(/);
+  assert.match(appJs, /function autoSizeSideChatDraftTextarea\(/);
+  assert.match(appJs, /autoSizeSideChatDraftTextarea\(textarea\)/);
   assert.match(appJs, /requestAnimationFrame\(ensureSideChatDraftVisible\)/);
   assert.match(appJs, /function scheduleSideChatPoll\(/);
   assert.match(appJs, /侧聊正在回复/);

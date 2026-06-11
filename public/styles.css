@@ -2770,8 +2770,8 @@ html.visual-recovering body::before {
 .side-chat-header {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: 8px;
   align-items: center;
 }
 
@@ -2918,14 +2918,13 @@ html.visual-recovering body::before {
 .side-chat-composer-row {
   min-width: 0;
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) max-content max-content;
+  grid-template-columns: 44px minmax(0, 1fr) max-content;
   gap: 8px;
   align-items: end;
 }
 
 .side-chat-tool-button,
-.side-chat-send,
-.side-chat-clear {
+.side-chat-send {
   min-height: 44px;
   border-radius: 8px;
 }
@@ -2943,15 +2942,25 @@ html.visual-recovering body::before {
 }
 
 .side-chat-clear {
-  padding-inline: 10px;
+  min-height: 32px;
+  padding: 7px 10px;
+  border-radius: 7px;
   color: var(--muted);
   background: var(--control-bg);
+  font-size: var(--content-small-font-size);
+  font-weight: 700;
+}
+
+.side-chat-header-clear {
+  justify-self: end;
+  white-space: nowrap;
 }
 
 .side-chat-form textarea {
   width: 100%;
   min-height: 44px;
   max-height: 160px;
+  overflow-y: hidden;
   resize: none;
   padding: 11px 12px;
   color: var(--text);

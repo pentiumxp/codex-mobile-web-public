@@ -275,6 +275,34 @@ return { state, upsertItem, renderCount: () => renderCount };
 `)();
 }
 
+function evaluatedVisibleItemsForTurn() {
+  const sources = [
+    "pruneRecentSubmittedUserMessages",
+    "isRecentlySubmittedUserMessage",
+    "liveTurnHasNonUserProgress",
+    "shouldHideDurableLiveUserMessage",
+    "visibleItemsForTurn",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`
+const RECENT_SUBMITTED_USER_MESSAGE_TTL_MS = 6 * 60 * 60 * 1000;
+const state = {
+  currentThreadId: "thread-live",
+  currentThread: { id: "thread-live" },
+  recentSubmittedUserMessages: new Map(),
+};
+function isLiveTurn(turn) { return Boolean(turn && turn.live); }
+function isReasoningItem(item) { return Boolean(item && item.type === "reasoning"); }
+function isOperationalItem(item) { return Boolean(item && item.type === "commandExecution"); }
+function isContextCompactionItem(item) { return Boolean(item && item.type === "contextCompaction"); }
+function contextCompactionNotice() { return "context notice"; }
+function isOptimisticUserMessage(item) {
+  return Boolean(item && item.type === "userMessage" && (item.mobilePendingSubmission || /^local-user-/.test(String(item.id || "")) || /^mux-user-/.test(String(item.id || ""))));
+}
+${sources.join("\n")}
+return { state, visibleItemsForTurn };
+`)();
+}
+
 function evaluatedThreadPendingApprovalProjection() {
   const sources = [
     "approvalThreadId",
@@ -381,6 +409,56 @@ test("visible turn items keep source order after live operations move to the doc
   assert.match(body, /return \{ html, sourceIndex, order: 1 \};/);
   assert.match(body, /\.sort\(\(a, b\) => \(a\.sourceIndex - b\.sourceIndex\) \|\| \(a\.order - b\.order\)\)/);
   assert.match(functionBody("visibleItemsForTurn"), /if \(isOperationalItem\(item\)\) \{[\s\S]*return;/);
+});
+
+test("live turn hides durable historical user messages after progress starts", () => {
+  const { visibleItemsForTurn } = evaluatedVisibleItemsForTurn();
+  const liveTurn = {
+    live: true,
+    items: [
+      { id: "real-user-old", type: "userMessage", content: [{ type: "text", text: "old steer" }] },
+      { id: "assistant-progress", type: "agentMessage", text: "working" },
+      { id: "real-user-later", type: "userMessage", content: [{ type: "text", text: "another old steer" }] },
+      { id: "local-user-new", type: "userMessage", mobilePendingSubmission: true, content: [{ type: "text", text: "new local message" }] },
+      { id: "cmd-1", type: "commandExecution", status: "running" },
+    ],
+  };
+  assert.deepEqual(
+    visibleItemsForTurn(liveTurn).map((entry) => entry.item.id),
+    ["assistant-progress", "local-user-new"],
+  );
+
+  const completedTurn = Object.assign({}, liveTurn, { live: false });
+  assert.deepEqual(
+    visibleItemsForTurn(completedTurn).map((entry) => entry.item.id),
+    ["real-user-old", "assistant-progress", "real-user-later", "local-user-new"],
+  );
+});
+
+test("live turn keeps this session submitted durable user message after progress starts", () => {
+  const harness = evaluatedVisibleItemsForTurn();
+  harness.state.recentSubmittedUserMessages.set("submit-current", {
+    threadId: "thread-live",
+    createdAtMs: Date.now(),
+  });
+  const liveTurn = {
+    live: true,
+    items: [
+      { id: "real-user-old", type: "userMessage", content: [{ type: "text", text: "old steer" }] },
+      { id: "assistant-progress", type: "agentMessage", text: "working" },
+      {
+        id: "real-user-current",
+        type: "userMessage",
+        clientSubmissionId: "submit-current",
+        content: [{ type: "input_text", text: "current long user message" }],
+      },
+      { id: "cmd-1", type: "commandExecution", status: "running" },
+    ],
+  };
+  assert.deepEqual(
+    harness.visibleItemsForTurn(liveTurn).map((entry) => entry.item.id),
+    ["assistant-progress", "real-user-current"],
+  );
 });
 
 test("turn timer prefers live item activity over idle sync labels", () => {
@@ -821,6 +899,7 @@ test("optimistic user messages are shadowed by mux and durable echoes", () => {
     id: "local-user-submit-2",
     type: "userMessage",
     mobilePendingSubmission: true,
+    clientSubmissionId: "submit-2",
     content: [{ type: "text", text: "Uploaded attachments:\n- IMG_5882.jpg (image, image/jpeg, 101.7 KB): IMG_5882.jpg" }],
   };
   const durableImage = {
@@ -838,6 +917,7 @@ test("optimistic user messages are shadowed by mux and durable echoes", () => {
   assert.equal(imageItems.length, 1);
   assert.equal(imageItems[0].id, durableImage.id);
   assert.equal(imageItems[0].mobilePendingSubmission, undefined);
+  assert.equal(imageItems[0].clientSubmissionId, "submit-2");
 });
 
 test("live user message upsert collapses mux echoes before refresh", () => {
@@ -846,6 +926,7 @@ test("live user message upsert collapses mux echoes before refresh", () => {
     id: "mux-user-thread-1-turn-1-submission-1",
     type: "userMessage",
     mobilePendingSubmission: true,
+    clientSubmissionId: "submission-1",
     content: [{ type: "text", text: "same live message" }],
   });
   harness.upsertItem("turn-1", {
@@ -859,6 +940,7 @@ test("live user message upsert collapses mux echoes before refresh", () => {
   assert.equal(userMessages.length, 1);
   assert.equal(userMessages[0].id, "real-user-1");
   assert.equal(userMessages[0].mobilePendingSubmission, undefined);
+  assert.equal(userMessages[0].clientSubmissionId, "submission-1");
   assert.equal(harness.renderCount(), 2);
 });
 
