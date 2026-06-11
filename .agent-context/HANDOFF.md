@@ -2901,3 +2901,35 @@ The previous full handoff was archived and should be opened only when old proven
     `node tests/gateway-run-stream-service.test.js`,
     `node tests/runtime-config-provider.test.js`
 - No production restart, deploy, or profile switch was performed.
+
+## 2026-06-12 Profile Switch Preflight Deploy And Moria Recovery
+
+- Committed profile-switch preflight guard as:
+  `f38285d fix: preflight codex profile switches`.
+- Production deploy command was interrupted from the tool side, but production
+  state showed the sync and restart had already taken effect:
+  - Production `server.js` contains `preflightCodexProfileSwitch` and
+    `target_profile_auth_invalid`.
+  - Source and production `server.js` SHA-256 prefixes matched:
+    `9e29f32a348b76a0`.
+  - `/api/public-config` returned 200 from production path
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - `/api/status?detail=1` returned `ready=true`,
+    `transport=managed-ws-child`, `lastError=null`, active profile `previous`.
+- User then reported the `moria` thread could not be accessed.
+- Diagnosis:
+  - Thread id: `019eb533-09ae-72b3-a54a-1a797fa208e1`.
+  - Workspace: `/Users/xuxin/Documents/moria`.
+  - Thread detail API returned 200, but the thread was stuck active because an
+    automatic goal continuation loop had produced multiple failed empty turns
+    and a final empty `inProgress` turn.
+  - Goal remained active, causing new continuation turns to be created after
+    repeated stream-disconnect failures.
+- Recovery performed:
+  - Paused the thread goal through `/api/threads/<id>/goal/actions` with
+    action `pause`; goal became `blocked`.
+  - Interrupted the latest active empty turn
+    `7f1d5a88-75ea-4e53-88f3-851e495b9b8f`.
+  - Final verification: thread detail returned 200, thread status `idle`, goal
+    status `blocked`, final empty turn status `interrupted`.
+- No additional production restart was performed after the moria recovery.
