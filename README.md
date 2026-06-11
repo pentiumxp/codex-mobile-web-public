@@ -670,6 +670,8 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v273 修正长时间 Home AI 线程里空 `inProgress` turn 导致的假运行状态。前端现在会跳过没有任何 item 的 active tail，把 Stop/引导/侧聊排队/运行框状态绑定到最新有内容的 turn；线程已 idle 时 Composer 不再误显示 Stop。live turn 的用户消息过滤也改为按时间语义处理：turn 开头的正式输入保留显示，中途引导只在后续已有 Codex 文本回应时保留，未回应的尾部历史 durable userMessage 继续隐藏，避免进入线程时看到旧输入卡在底部。PWA shell cache 升级到 `codex-mobile-shell-v273`。
+
 - 中文说明：v272 修正 v271 后续场景：当服务端 durable userMessage 回投影没有保留 `clientSubmissionId` 时，本机会话刚发送的消息会在模型开始回复后被误判成历史用户消息并隐藏。前端现在会在同线程内按最近提交的消息内容签名兜底匹配，继续隐藏进入长时间运行线程时已有的旧用户提问，同时保留当前刚提交的用户气泡。PWA shell cache 升级到 `codex-mobile-shell-v272`。
 
 - 中文说明：v271 修正发送大段内容后，消息先显示、随后在 live turn 出现模型中间信息时消失的问题。前端现在会记录本机会话刚提交的 `clientSubmissionId`，durable userMessage 回放匹配到当前提交时不会被“隐藏历史用户气泡”的规则过滤；该规则仍会隐藏进入长时间运行线程时已经存在的旧用户提问。PWA shell cache 升级到 `codex-mobile-shell-v271`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
