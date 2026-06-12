@@ -670,6 +670,8 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：server-only 合并 public PR #64 并收窄本地文件预览授权。文件预览现在在处理当前请求的 `path` 时优先做定向匹配，避免为大型 rollout 全量枚举所有本地路径导致卡死；只会授权 Workspace/root 内文件，或确实出现在当前线程文本中的单个本地文件，不会因为 URL 参数携带绝对路径就读取任意本机文件。未引用文件、敏感路径段、非支持扩展名和上传/runtime/private 文件仍按原规则拒绝。本次不改变 PWA shell cache，public 发布只包含公开源码、README 和测试；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
+
 - 中文说明：v275 增加 PWA 白屏自恢复页。`index.html` 内联一个不依赖 `app.js`、外部 CSS 或 service worker 的启动兜底面板；如果页面脚本启动失败或 4.5 秒后仍没有显示主界面，用户会看到“清理缓存并重载”按钮。该按钮会删除 `codex-mobile-shell-*` cache、注销当前 service worker，并带 cache-bust 参数重新加载，覆盖 PWA shell 资源错配和 iOS 重开后仍复用坏缓存的场景。正常启动后 `app.js` 会关闭该恢复页。PWA shell cache 升级到 `codex-mobile-shell-v275`。本次 public 发布只包含公开源码、README 和测试；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
 
 - 中文说明：server-only 合并 public PR #62，允许被记录为 `projectless-thread-ids` 的项目外线程在 app-server 后续报告临时工作区 cwd 时继续显示。这样通过临时插件工作区或项目外上下文产生的线程，不会因为携带临时 cwd 而被当前 Workspace 过滤隐藏；未登记的临时 cwd 线程、归档线程和子 agent 线程仍按原规则隐藏。本次不改变 PWA shell cache，public 发布只包含公开源码、README 和测试；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
