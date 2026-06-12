@@ -134,6 +134,60 @@ test("file preview allows exact local files referenced by the current thread", (
   assert.throws(() => readFilePreview(siblingFile, authorities), /outside the allowed preview roots/);
 });
 
+test("file preview authorizes the requested local file directly without scanning thread text", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-preview-root-fast-"));
+  const outsideRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-preview-root-fast-outside-"));
+  const requestedFile = path.join(outsideRoot, "notes", "current.md");
+  const outsideFile = path.join(outsideRoot, "other.md");
+  fs.mkdirSync(path.dirname(requestedFile), { recursive: true });
+  fs.writeFileSync(requestedFile, "# Current\n", "utf8");
+  fs.writeFileSync(outsideFile, "# Outside\n", "utf8");
+
+  const authorities = filePreviewAuthoritiesForThread("thread-1", {
+    "electron-saved-workspace-roots": [root],
+  }, {
+    threadSummary: { cwd: root },
+    requestedPath: requestedFile,
+    rolloutText: `Mentioned elsewhere: ${outsideFile}`,
+  });
+
+  assert.equal(authorities.some((entry) => entry.file === outsideFile), false);
+  assert.equal(readFilePreview(requestedFile, authorities).fileName, "current.md");
+});
+
+test("file preview opens a requested artifact path even when it appeared before the scan tail", () => {
+  const visibleRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-preview-bounded-visible-"));
+  const outsideRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-preview-bounded-outside-"));
+  const oldFile = path.join(outsideRoot, "old.md");
+  const recentFile = path.join(outsideRoot, "recent.md");
+  fs.mkdirSync(outsideRoot, { recursive: true });
+  fs.writeFileSync(oldFile, "# Old\n", "utf8");
+  fs.writeFileSync(recentFile, "# Recent\n", "utf8");
+
+  const rolloutText = [
+    `Old reference: ${oldFile}`,
+    "x".repeat(3 * 1024 * 1024),
+    `Recent reference: ${recentFile}`,
+  ].join("\n");
+  const recentAuthorities = filePreviewAuthoritiesForThread("thread-1", {
+    "electron-saved-workspace-roots": [visibleRoot],
+  }, {
+    threadSummary: { cwd: visibleRoot },
+    requestedPath: recentFile,
+    rolloutText,
+  });
+  const oldAuthorities = filePreviewAuthoritiesForThread("thread-1", {
+    "electron-saved-workspace-roots": [visibleRoot],
+  }, {
+    threadSummary: { cwd: visibleRoot },
+    requestedPath: oldFile,
+    rolloutText,
+  });
+
+  assert.equal(readFilePreview(recentFile, recentAuthorities).fileName, "recent.md");
+  assert.equal(readFilePreview(oldFile, oldAuthorities).fileName, "old.md");
+});
+
 test("file preview extracts local previewable files from thread text", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-preview-extract-"));
   const markdown = path.join(root, "05_AI_lessons", "Hermes Live to Final.md");

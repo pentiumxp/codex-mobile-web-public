@@ -573,6 +573,8 @@ const IMAGE_CONTEXT_POLICY = parseImageContextPolicyEnv(process.env);
 const PERSIST_EXTENDED_HISTORY_POLICY = parsePersistExtendedHistoryEnv(process.env);
 const FILE_PREVIEW_MAX_BYTES = Math.max(1024, Number(process.env.CODEX_MOBILE_FILE_PREVIEW_MAX_BYTES || String(512 * 1024)));
 const FILE_PREVIEW_MEDIA_MAX_BYTES = Math.max(1024 * 1024, Number(process.env.CODEX_MOBILE_FILE_PREVIEW_MEDIA_MAX_BYTES || String(24 * 1024 * 1024)));
+const FILE_PREVIEW_REFERENCE_SCAN_MAX_CHARS = Math.max(64 * 1024, Number(process.env.CODEX_MOBILE_FILE_PREVIEW_REFERENCE_SCAN_MAX_CHARS || String(2 * 1024 * 1024)));
+const FILE_PREVIEW_REFERENCE_SCAN_MAX_MATCHES = Math.max(1, Number(process.env.CODEX_MOBILE_FILE_PREVIEW_REFERENCE_SCAN_MAX_MATCHES || "80"));
 const MAX_COMMAND_OUTPUT_CHARS = 8000;
 const MAX_COMMAND_OUTPUT_CHARS_PER_TURN = 48000;
 const MAX_STRUCTURED_CHARS = 24000;
@@ -2087,8 +2089,14 @@ function filePreviewExtensionPattern() {
   return extensions.join("|");
 }
 
-function previewFileReferencesFromText(text) {
+function previewReferenceScanTail(text) {
   const source = String(text || "");
+  if (source.length <= FILE_PREVIEW_REFERENCE_SCAN_MAX_CHARS) return source;
+  return source.slice(source.length - FILE_PREVIEW_REFERENCE_SCAN_MAX_CHARS);
+}
+
+function previewFileReferencesFromText(text) {
+  const source = previewReferenceScanTail(text);
   if (!source) return [];
   const extPattern = filePreviewExtensionPattern();
   const windowsFileUrlPattern = new RegExp(`file://[A-Za-z]:[\\\\/](?:[^\\0\\r\\n<>"'\`|])*?(?:${extPattern})(?::\\d+(?::\\d+)?)?`, "gi");
@@ -2105,23 +2113,105 @@ function previewFileReferencesFromText(text) {
         const stat = fs.statSync(target);
         if (stat.isFile()) out.push(safeRealpath(target) || path.resolve(target));
       } catch (_) {}
+      if (out.length >= FILE_PREVIEW_REFERENCE_SCAN_MAX_MATCHES) return uniqueStrings(out);
     }
   }
   return uniqueStrings(out);
+}
+
+function readRolloutPreviewReferenceScanText(rolloutPath) {
+  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) return "";
+  let fd = null;
+  try {
+    const stat = fs.statSync(rolloutPath);
+    if (!stat.isFile() || stat.size <= 0) return "";
+    const maxBytes = Math.min(stat.size, FILE_PREVIEW_REFERENCE_SCAN_MAX_CHARS);
+    const start = Math.max(0, stat.size - maxBytes);
+    const buffer = Buffer.alloc(maxBytes);
+    fd = fs.openSync(rolloutPath, "r");
+    fs.readSync(fd, buffer, 0, maxBytes, start);
+    return buffer.toString("utf8");
+  } catch (_) {
+    return "";
+  } finally {
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd);
+      } catch (_) {}
+    }
+  }
+}
+
+function previewReferenceCandidatesForRequestedPath(requestedPath) {
+  const target = stripMarkdownFileTarget(requestedPath);
+  if (!target || !path.isAbsolute(target)) return [];
+  if (hasDeniedPreviewPathSegment(target) || !allowedFilePreviewExtension(target)) return [];
+  const candidates = new Set([target]);
+  try {
+    candidates.add(decodeURIComponent(target));
+  } catch (_) {}
+  try {
+    candidates.add(encodeURI(target));
+  } catch (_) {}
+  try {
+    candidates.add(`file://${target}`);
+    candidates.add(`file://${encodeURI(target)}`);
+  } catch (_) {}
+  return [...candidates].filter(Boolean);
+}
+
+function previewRequestedPathReferencedInText(requestedPath, text) {
+  const source = String(text || "");
+  if (!source) return false;
+  return previewReferenceCandidatesForRequestedPath(requestedPath).some((candidate) => source.includes(candidate));
+}
+
+function previewReferenceForRequestedPath(requestedPath, text) {
+  const target = stripMarkdownFileTarget(requestedPath);
+  if (!target || !path.isAbsolute(target)) return [];
+  if (!previewRequestedPathReferencedInText(target, text)) return [];
+  if (hasDeniedPreviewPathSegment(target) || !allowedFilePreviewExtension(target)) return [];
+  try {
+    const stat = fs.statSync(target);
+    if (stat.isFile()) return [safeRealpath(target) || path.resolve(target)];
+  } catch (_) {}
+  return [];
 }
 
 function referencedPreviewFilesForThread(threadId, options = {}) {
   const summary = options.threadSummary || readStateDbThread(threadId) || readStartedThread(threadId);
   const rolloutPath = options.rolloutPath || rolloutPathForThread(summary);
   const rolloutText = typeof options.rolloutText === "string"
-    ? options.rolloutText
-    : (readRolloutRuntimeScanText(rolloutPath) || readRolloutTail(rolloutPath));
+    ? previewReferenceScanTail(options.rolloutText)
+    : readRolloutPreviewReferenceScanText(rolloutPath);
+  if (options.requestedPath) {
+    const requestedReference = previewReferenceForRequestedPath(options.requestedPath, rolloutText);
+    if (requestedReference.length) return requestedReference;
+  }
   return previewFileReferencesFromText(rolloutText);
 }
 
 function filePreviewAuthoritiesForThread(threadId, globalState = readGlobalState(), options = {}) {
+  const rootAuthorities = previewRootsForThread(threadId, globalState, options).map((root) => ({ root, source: "root" }));
+  if (options.requestedPath) {
+    try {
+      const resolved = stripMarkdownFileTarget(options.requestedPath);
+      const resolvedReal = resolved && path.isAbsolute(resolved) ? (safeRealpath(path.resolve(resolved)) || path.resolve(resolved)) : "";
+      if (
+        resolvedReal
+        && !hasDeniedPreviewPathSegment(resolvedReal)
+        && allowedFilePreviewExtension(resolvedReal)
+        && fs.statSync(resolvedReal).isFile()
+      ) {
+        return [
+          ...rootAuthorities,
+          { file: resolvedReal, source: "requested-file" },
+        ];
+      }
+    } catch (_) {}
+  }
   return [
-    ...previewRootsForThread(threadId, globalState, options).map((root) => ({ root, source: "root" })),
+    ...rootAuthorities,
     ...referencedPreviewFilesForThread(threadId, options).map((file) => ({ file, source: "thread-reference" })),
   ];
 }
@@ -9600,7 +9690,7 @@ async function handleApi(req, res) {
     const requestedPath = url.searchParams.get("path") || "";
     const threadId = url.searchParams.get("threadId") || "";
     try {
-      const authorities = filePreviewAuthoritiesForThread(threadId);
+      const authorities = filePreviewAuthoritiesForThread(threadId, readGlobalState(), { requestedPath });
       sendJson(res, 200, readFilePreview(requestedPath, authorities, { threadId }));
     } catch (err) {
       sendJson(res, err.statusCode || 500, { error: err.message || String(err) });
@@ -9611,7 +9701,7 @@ async function handleApi(req, res) {
     const requestedPath = url.searchParams.get("path") || "";
     const threadId = url.searchParams.get("threadId") || "";
     try {
-      const authorities = filePreviewAuthoritiesForThread(threadId);
+      const authorities = filePreviewAuthoritiesForThread(threadId, readGlobalState(), { requestedPath });
       serveFilePreviewContent(req, res, requestedPath, authorities);
     } catch (err) {
       sendJson(res, err.statusCode || 500, { error: err.message || String(err) });
