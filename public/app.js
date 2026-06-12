@@ -278,7 +278,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v274";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v275";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -2536,6 +2536,11 @@ function renderHardRefreshButton() {
     : "Fetch current page assets, update the service worker, and reload this PWA page";
   el.disabled = reloading;
   el.classList.toggle("checking", reloading);
+}
+
+function markBootReady() {
+  const boot = window.codexMobileBoot;
+  if (boot && typeof boot.ready === "function") boot.ready();
 }
 
 function sharedRestartScopeLines() {
@@ -14705,9 +14710,11 @@ async function start() {
     if (isHermesEmbedMode()) {
       requestHermesPluginRefresh("public_config_failed", { force: true });
       showPluginEmbedRecovering("Codex Mobile is reloading...");
+      markBootReady();
     } else {
       showApp();
       showError(err);
+      markBootReady();
     }
     state.startupInProgress = false;
     return;
@@ -14773,6 +14780,7 @@ async function start() {
         path: "/api/v1/hermes/plugin/session",
       }) || "plugin_launch_invalid", { force: true });
       showPluginEmbedRecovering("Refreshing Codex Mobile plugin launch...");
+      markBootReady();
       state.startupInProgress = false;
       return;
     }
@@ -14783,10 +14791,12 @@ async function start() {
       showPluginEmbedRecovering("Refreshing Codex Mobile plugin session...");
     }
     else showLogin();
+    markBootReady();
     state.startupInProgress = false;
     return;
   }
   showApp();
+  markBootReady();
   if (state.startupThreadOpenPending) renderCurrentThread();
   postStartupStage("app_shown", startStartedAt);
   await bootstrap().catch((err) => {
@@ -14809,4 +14819,13 @@ async function start() {
   resumeRememberedContinuationJob().catch(showError);
 }
 
-start();
+start().catch((err) => {
+  const boot = window.codexMobileBoot;
+  if (boot && typeof boot.fail === "function") boot.fail("script-error");
+  try {
+    showApp();
+    showError(err);
+  } catch (_) {
+    // The inline boot recovery panel is the last-resort UI if app startup failed before wiring.
+  }
+});
