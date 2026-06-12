@@ -24,14 +24,21 @@ Last compacted: 2026-06-08T13:27:43.304Z
 - Fix:
   - Updated the affected tests to assert `codex-mobile-shell-v274` and the new
     row-level profile switch stages (`预检中...`, `重启中...`, `失败`).
+  - Added a README Chinese follow-up note for the v274 Public CI repair.
 - Validation:
   - `npm test` passed locally: 458/458.
   - `npm run check` passed.
   - `npm run check:macos` passed.
   - `git diff --check` passed.
-- Next:
-  - Commit the test-only CI follow-up and push Public again, then verify the new
-    Actions run.
+- Publish:
+  - Private commits pushed:
+    `c17aaee test: repair v274 public ci harness`,
+    `d86b923 docs: note v274 public ci follow-up`.
+  - Public commit pushed:
+    `b8e8a56 test: repair v274 public ci harness`.
+  - Public CI run `27391720176` passed. It still shows the unrelated GitHub
+    Actions Node.js 20 deprecation warning from `actions/checkout@v4` /
+    `actions/setup-node@v4`.
 
 This active handoff was automatically compacted before a Codex Mobile continuation.
 The previous full handoff was archived and should be opened only when old provenance is explicitly needed.
