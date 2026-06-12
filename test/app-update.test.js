@@ -147,6 +147,27 @@ test("page refresh prompt also handles server restart reconnects", () => {
   assert.doesNotMatch(functionBody(appJs, "handleSharedRestartClick"), /refreshPageForNewBuild\(\)\.catch\(showError\)/);
 });
 
+test("boot recovery UI can clear PWA shell state before app.js starts", () => {
+  assert.match(indexHtml, /id="bootRecovery"/);
+  assert.match(indexHtml, /id="bootRecoveryRecover"/);
+  assert.match(indexHtml, /id="bootRecoveryReload"/);
+  assert.ok(indexHtml.indexOf('id="bootRecovery"') < indexHtml.indexOf('id="app"'), "boot recovery should render before the hidden app shell");
+  assert.ok(indexHtml.indexOf("window.codexMobileBoot") < indexHtml.indexOf('<script src="/app.js"></script>'), "boot recovery must not depend on app.js");
+  assert.match(indexHtml, /codex-mobile-shell-/);
+  assert.match(indexHtml, /window\.caches\.keys\(\)/);
+  assert.match(indexHtml, /navigator\.serviceWorker\.getRegistrations\(\)/);
+  assert.match(indexHtml, /registration\.unregister\(\)/);
+  assert.match(indexHtml, /shellReload/);
+  assert.match(indexHtml, /window\.addEventListener\("error"/);
+  assert.match(indexHtml, /window\.addEventListener\("unhandledrejection"/);
+  assert.match(indexHtml, /setTimeout\(function \(\) \{ showRecovery\("startup-timeout"\); \}, 4500\)/);
+  assert.match(appJs, /function markBootReady\(\)/);
+  assert.match(appJs, /window\.codexMobileBoot/);
+  assert.match(appJs, /markBootReady\(\);[\s\S]*if \(state\.startupThreadOpenPending\) renderCurrentThread\(\);/);
+  assert.match(appJs, /start\(\)\.catch\(\(err\) => \{/);
+  assert.match(functionBody(appJs, "refreshPageForNewBuild"), /await clearAllShellCaches\(\);[\s\S]*await resetPageShellServiceWorker\(\);/);
+});
+
 test("public pull request check prompts before public publishing work", () => {
   assert.match(indexHtml, /id="publicPrStatus"/);
   assert.match(stylesCss, /\.public-pr-status/);

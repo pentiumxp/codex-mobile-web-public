@@ -113,9 +113,212 @@
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <style>
+    #bootRecovery[hidden] { display: none !important; }
+    #bootRecovery {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      box-sizing: border-box;
+      display: grid;
+      place-items: center;
+      padding: max(20px, env(safe-area-inset-top, 0px)) 20px max(24px, env(safe-area-inset-bottom, 0px));
+      color: #e8ecef;
+      background: #111315;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    }
+    #bootRecoveryPanel {
+      width: min(420px, 100%);
+      box-sizing: border-box;
+      padding: 18px;
+      border: 1px solid rgba(232, 236, 239, 0.18);
+      border-radius: 12px;
+      background: #181b1f;
+      box-shadow: 0 18px 52px rgba(0, 0, 0, 0.36);
+    }
+    #bootRecoveryTitle {
+      margin: 0 0 8px;
+      font-size: 18px;
+      line-height: 1.25;
+      font-weight: 650;
+      letter-spacing: 0;
+    }
+    #bootRecoveryText {
+      margin: 0 0 14px;
+      color: rgba(232, 236, 239, 0.76);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    #bootRecoveryActions {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+    #bootRecoveryActions button {
+      min-height: 44px;
+      border: 1px solid rgba(232, 236, 239, 0.18);
+      border-radius: 9px;
+      padding: 0 14px;
+      color: #f7f8f8;
+      background: #2a2f35;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 650;
+    }
+    #bootRecoveryActions button.primary {
+      color: #101316;
+      border-color: transparent;
+      background: #f3f5f6;
+    }
+    #bootRecoveryStatus {
+      min-height: 18px;
+      margin-top: 12px;
+      color: rgba(232, 236, 239, 0.62);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    @media (prefers-color-scheme: light) {
+      #bootRecovery {
+        color: #1d2329;
+        background: #f8f6ee;
+      }
+      #bootRecoveryPanel {
+        border-color: rgba(29, 35, 41, 0.12);
+        background: #fffdf6;
+        box-shadow: 0 18px 48px rgba(29, 35, 41, 0.12);
+      }
+      #bootRecoveryText {
+        color: rgba(29, 35, 41, 0.68);
+      }
+      #bootRecoveryActions button {
+        color: #20262c;
+        border-color: rgba(29, 35, 41, 0.13);
+        background: #f1eee4;
+      }
+      #bootRecoveryActions button.primary {
+        color: #f7f8f8;
+        background: #20262c;
+      }
+      #bootRecoveryStatus {
+        color: rgba(29, 35, 41, 0.56);
+      }
+    }
+  </style>
   <link rel="stylesheet" href="/styles.css">
+  <script>
+    (function () {
+      var bootReady = false;
+      var showTimer = 0;
+      var recoveryReason = "";
+      function $(id) { return document.getElementById(id); }
+      function setStatus(text) {
+        var el = $("bootRecoveryStatus");
+        if (el) el.textContent = text || "";
+      }
+      function cacheBustUrl() {
+        var url = new URL(window.location.href, window.location.origin);
+        url.searchParams.set("shellReload", String(Date.now()));
+        return url.href;
+      }
+      function anyMainSurfaceVisible() {
+        return ["app", "login", "pluginStartupLoading"].some(function (id) {
+          var el = $(id);
+          return el && !el.classList.contains("hidden") && !el.hidden;
+        });
+      }
+      function showRecovery(reason) {
+        if (bootReady || anyMainSurfaceVisible()) return;
+        recoveryReason = reason || recoveryReason || "startup-timeout";
+        var recovery = $("bootRecovery");
+        if (!recovery) return;
+        recovery.hidden = false;
+        recovery.setAttribute("data-reason", recoveryReason);
+        setStatus(recoveryReason === "script-error"
+          ? "页面脚本启动失败。可以先清理 PWA 缓存并重新加载。"
+          : "页面启动时间过长。可以先清理 PWA 缓存并重新加载。");
+      }
+      function hideRecovery() {
+        var recovery = $("bootRecovery");
+        if (recovery) recovery.hidden = true;
+      }
+      async function clearShellState() {
+        if ("caches" in window) {
+          var keys = await window.caches.keys();
+          await Promise.all(keys
+            .filter(function (key) { return String(key || "").indexOf("codex-mobile-shell-") === 0; })
+            .map(function (key) { return window.caches.delete(key); }));
+        }
+        if ("serviceWorker" in navigator) {
+          var registrations = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(registrations.map(function (registration) {
+            return registration.unregister().catch(function () { return false; });
+          }));
+        }
+      }
+      async function recover() {
+        setStatus("正在清理 PWA 缓存并重新加载...");
+        try {
+          await clearShellState();
+        } catch (err) {
+          setStatus("缓存清理未完全成功，仍会尝试重新加载。");
+        }
+        window.location.replace(cacheBustUrl());
+      }
+      function reloadOnly() {
+        setStatus("正在重新加载...");
+        window.location.replace(cacheBustUrl());
+      }
+      function installRecoveryButtons() {
+        var recoverButton = $("bootRecoveryRecover");
+        var reloadButton = $("bootRecoveryReload");
+        if (recoverButton) recoverButton.addEventListener("click", function () {
+          recoverButton.disabled = true;
+          if (reloadButton) reloadButton.disabled = true;
+          recover();
+        });
+        if (reloadButton) reloadButton.addEventListener("click", function () {
+          reloadButton.disabled = true;
+          reloadOnly();
+        });
+      }
+      window.codexMobileBoot = {
+        ready: function () {
+          bootReady = true;
+          if (showTimer) clearTimeout(showTimer);
+          hideRecovery();
+        },
+        fail: function (reason) {
+          showRecovery(reason || "script-error");
+        },
+        recover: recover,
+        reloadOnly: reloadOnly
+      };
+      window.addEventListener("error", function () {
+        window.setTimeout(function () { showRecovery("script-error"); }, 0);
+      }, true);
+      window.addEventListener("unhandledrejection", function () {
+        window.setTimeout(function () { showRecovery("script-error"); }, 0);
+      });
+      document.addEventListener("DOMContentLoaded", function () {
+        installRecoveryButtons();
+        showTimer = window.setTimeout(function () { showRecovery("startup-timeout"); }, 4500);
+      });
+    }());
+  </script>
 </head>
 <body>
+  <div id="bootRecovery" hidden role="alert" aria-live="assertive">
+    <div id="bootRecoveryPanel">
+      <h1 id="bootRecoveryTitle">Codex Mobile 没有正常启动</h1>
+      <p id="bootRecoveryText">这通常是 PWA 缓存或页面脚本启动失败。可以清理本页缓存并重新加载，不会删除 Codex 会话或本地文件。</p>
+      <div id="bootRecoveryActions">
+        <button id="bootRecoveryRecover" class="primary" type="button">清理缓存并重载</button>
+        <button id="bootRecoveryReload" type="button">只重新加载</button>
+      </div>
+      <div id="bootRecoveryStatus"></div>
+    </div>
+  </div>
+
   <div id="login" class="login hidden">
     <form id="loginForm" class="login-panel">
       <div class="brand">Codex</div>
