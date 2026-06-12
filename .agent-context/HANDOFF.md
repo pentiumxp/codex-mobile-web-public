@@ -2,6 +2,55 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-12 Public PR #63 PWA Boot Recovery Sync
+
+- Public PR:
+  - Evaluated `pentiumxp/codex-mobile-web-public` PR #63,
+    `增加 PWA 白屏恢复页`.
+  - GitHub reported `mergeable=MERGEABLE`; PR base matched current public
+    `main` at `e402712`.
+  - Change adds an inline `index.html` boot recovery panel that does not depend
+    on `app.js`, external CSS, or service-worker startup. It appears after a
+    startup script failure or a 4.5 second no-surface timeout, can delete
+    `codex-mobile-shell-*` caches, unregister the current origin's service
+    workers, and reload with a cache-bust parameter.
+  - Static shell version advanced from `codex-mobile-shell-v274` to
+    `codex-mobile-shell-v275` in both `public/app.js` and `public/sw.js`.
+- Public merge:
+  - Used the clean public mirror
+    `/Users/hermes-dev/HermesMobileDev/public-mirrors/codex-mobile-web-public`.
+  - README Chinese release note was included with the PR and preserved.
+  - Public merge commit pushed:
+    `bb21d05130c71d7160928a921cf8a1858fd614ab`.
+- Public validation:
+  - `node --check public/app.js && node --check public/sw.js &&
+    node --check test/app-update.test.js` passed.
+  - Focused PWA/update tests passed: 25/25.
+  - Home AI required harness tests passed:
+    `node tests/ios-pwa-live-debug-server.test.js`,
+    `node tests/ios-pwa-visual-harness.test.js`, and
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed: 460/460.
+  - `git diff --check` and public privacy/path scans passed; matches were
+    limited to README boundary notes and the public `codexMobileBoot` symbol.
+  - Evidence ledger: `evidence-67edd6c9-b3c6-4ef3-8cc3-154f19179922`.
+- Private reverse sync:
+  - Merged public `main` back into private with no conflicts.
+  - Private merge commit: `b340af4`.
+- Private validation:
+  - `node --check public/app.js && node --check public/sw.js &&
+    node --check test/app-update.test.js` passed.
+  - Focused PWA/update tests passed: 25/25.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `node scripts/plugin-workspace-platform-contract-check.js --plugin codex-mobile --json`
+    passed with the existing non-blocking `handoff_pointer_missing` warning.
+  - `npm test` passed: 460/460.
+  - `git diff --check` passed.
+  - Evidence ledger: `evidence-f042c5db-b2a3-4b36-bdf1-2a67312e83f5`.
+
 ## 2026-06-12 Public PR #62 Projectless Temporary Workspace Sync
 
 - Public PR:
