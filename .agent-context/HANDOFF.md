@@ -2,6 +2,37 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-12 Public CI Follow-Up For v274
+
+- User asked why the Public v274 publish had a CI error and reiterated that
+  Public releases require Chinese notes.
+- Verification:
+  - Public README already contains the v274 Chinese note explaining profile
+    switch feedback and auth send failure receipts.
+  - Public GitHub Actions run `27391466010` failed in `npm test`, before
+    `npm run check` and `npm run check:macos`.
+  - The failure was 4 stale full-suite harness assertions:
+    `test/codex-profile-ui.test.js`,
+    `test/mobile-viewport.test.js`,
+    `test/thread-goal-service.test.js`,
+    `test/thread-task-card-route.test.js`.
+- Root cause:
+  - Pre-public validation ran focused tests plus `npm run check`, but not the
+    same full `npm test` that Public CI runs.
+  - The missed assertions still expected shell cache `v273` or the old profile
+    switch status text.
+- Fix:
+  - Updated the affected tests to assert `codex-mobile-shell-v274` and the new
+    row-level profile switch stages (`预检中...`, `重启中...`, `失败`).
+- Validation:
+  - `npm test` passed locally: 458/458.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `git diff --check` passed.
+- Next:
+  - Commit the test-only CI follow-up and push Public again, then verify the new
+    Actions run.
+
 This active handoff was automatically compacted before a Codex Mobile continuation.
 The previous full handoff was archived and should be opened only when old provenance is explicitly needed.
 

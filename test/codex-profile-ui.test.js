@@ -19,7 +19,11 @@ test("settings panel exposes Codex profile account and switch UI", () => {
   assert.match(appJs, /codexProfileAccountLabel/);
   assert.match(appJs, /\/api\/codex-profiles\/active/);
   assert.match(appJs, /function clearStoredRateLimits\(\)/);
-  assert.match(appJs, /clearStoredRateLimits\(\);\s*\$\("connectionState"\)\.textContent = "Switching Codex profile\.\.\."/);
+  assert.match(appJs, /codexProfileSwitchStage/);
+  assert.match(appJs, /state\.codexProfileSwitchStage = "预检中\.\.\."/);
+  assert.match(appJs, /state\.codexProfileSwitchStage = "重启中\.\.\."/);
+  assert.match(appJs, /state\.codexProfileSwitchStage = "失败"/);
+  assert.match(appJs, /codex-profile-progress/);
   assert.match(stylesCss, /\.codex-profile-row/);
 });
 
