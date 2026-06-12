@@ -70,6 +70,28 @@ test("archived Codex worktree threads stay hidden", () => {
   assert.equal(isHiddenThread({ id: "thread-1", cwd: worktreeRoot, archived: true }, visibility), true);
 });
 
+test("projectless visible thread ids stay open even when app-server reports a temporary cwd", () => {
+  const visibleRoot = path.join(os.homedir(), "hermes-webui");
+  const temporaryCwd = path.join(os.homedir(), "Documents", "Codex", "2099-01-01", "temporary-plugin-workspace");
+  const visibility = visibilityFor(visibleRoot);
+  visibility.projectlessThreadIds.add("thread-projectless");
+
+  assert.equal(isHiddenThread({ id: "thread-projectless", cwd: temporaryCwd }, visibility), false);
+  assert.equal(isHiddenThread({ id: "thread-other", cwd: temporaryCwd }, visibility), true);
+  assert.equal(isHiddenThread({ id: "thread-projectless", cwd: temporaryCwd, archived: true }, visibility), true);
+
+  const filtered = filterFallbackThreads([
+    { id: "thread-projectless", cwd: temporaryCwd, name: "Projectless temporary cwd", updatedAt: 300 },
+    { id: "thread-other", cwd: temporaryCwd, name: "Hidden temporary cwd", updatedAt: 400 },
+  ], {
+    globalState: Object.assign(globalStateForRoots([visibleRoot]), {
+      "projectless-thread-ids": ["thread-projectless"],
+    }),
+  });
+
+  assert.deepEqual(filtered.map((thread) => thread.id), ["thread-projectless"]);
+});
+
 test("thread turns cursor accepts app-server JSON cursor objects from query strings", () => {
   assert.equal(parseThreadTurnsCursor('{"turnId":"turn-1","includeAnchor":false}'), '{"turnId":"turn-1","includeAnchor":false}');
   assert.equal(parseThreadTurnsCursor('"{\\"turnId\\":\\"turn-2\\",\\"includeAnchor\\":false}"'), '{"turnId":"turn-2","includeAnchor":false}');

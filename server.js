@@ -1905,6 +1905,12 @@ function threadWorkspaceVisible(cwd, visibility = null) {
   return Boolean(worktreeRepo && view.workspaceNames && view.workspaceNames.has(worktreeRepo));
 }
 
+function threadProjectlessVisible(thread, visibility = null) {
+  const view = visibility || visibilityFromGlobalState();
+  const id = String(thread && thread.id || "").trim();
+  return Boolean(id && view.projectlessThreadIds && view.projectlessThreadIds.has(id));
+}
+
 function anyThreadMatchesVisibleWorkspace(threads, visibility = null) {
   const view = visibility || visibilityFromGlobalState();
   if (!view.workspaceKeys || view.workspaceKeys.size <= 0) return false;
@@ -1912,7 +1918,7 @@ function anyThreadMatchesVisibleWorkspace(threads, visibility = null) {
     if (!thread || typeof thread !== "object" || shouldHideThreadListSummary(thread)) continue;
     const cwd = String(thread.cwd || "").trim();
     if (cwd && threadWorkspaceVisible(cwd, view)) return true;
-    if (!cwd && view.projectlessThreadIds && view.projectlessThreadIds.has(thread.id)) return true;
+    if (threadProjectlessVisible(thread, view)) return true;
   }
   return false;
 }
@@ -2456,10 +2462,11 @@ function isHiddenThread(thread, visibility = null) {
   if (!thread || typeof thread !== "object") return true;
   const view = visibility || visibilityFromGlobalState();
   if (shouldHideThreadListSummary(thread)) return true;
+  if (threadProjectlessVisible(thread, view)) return false;
   if (view.workspaceKeys && view.workspaceKeys.size > 0) {
     const cwd = String(thread.cwd || "").trim();
     if (cwd) return !threadWorkspaceVisible(cwd, view);
-    return !view.projectlessThreadIds.has(thread.id);
+    return true;
   }
   return false;
 }
@@ -8693,9 +8700,10 @@ function filterFallbackThreads(threads, filters = {}) {
     .filter((thread) => {
       if (threadHasArchiveSignal(thread) || isSubagentThreadSummary(thread)) return false;
       if (!shouldFilterByWorkspace) return true;
+      if (threadProjectlessVisible(thread, visibility)) return true;
       const cwd = String(thread && thread.cwd || "").trim();
       if (cwd) return threadWorkspaceVisible(cwd, visibility);
-      return Boolean(visibility.projectlessThreadIds && visibility.projectlessThreadIds.has(thread && thread.id));
+      return false;
     })
     .filter((thread) => threadMatchesWorkspaceCwd(thread && thread.cwd, cwdFilter))
     .filter((thread) => {
