@@ -1865,6 +1865,11 @@ html.visual-recovering body::before {
   color: var(--muted);
 }
 
+.codex-profile-main .codex-profile-progress {
+  color: var(--accent);
+  font-weight: 680;
+}
+
 .codex-profile-side {
   display: grid;
   justify-items: end;
@@ -3773,6 +3778,18 @@ html.keyboard-open .side-chat-form textarea {
 .item.userMessage {
   background: var(--selected-bg);
   border-color: rgba(122, 199, 167, 0.35);
+}
+
+.send-error-receipt {
+  margin-top: 8px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+  background: color-mix(in srgb, var(--danger) 12%, var(--panel));
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 680;
+  line-height: 1.35;
 }
 
 .item.agentMessage {

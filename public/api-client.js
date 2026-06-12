@@ -48,19 +48,29 @@
         const res = await fetchRef(path, fetchOptions);
         if (!res.ok) {
           let message = `${res.status} ${res.statusText}`;
+          let code = "";
+          let detail = "";
           try {
             const body = await res.json();
             if (body.error) message = body.error;
+            if (body.code) code = String(body.code);
+            if (body.detail) detail = String(body.detail);
           } catch (_) {}
           onResponseError({
             status: res.status,
             message,
+            code,
+            detail,
             path,
           });
           if (res.status === 401) {
             onUnauthorized();
           }
-          throw new Error(message);
+          const err = new Error(message);
+          err.status = res.status;
+          err.code = code;
+          err.detail = detail;
+          throw err;
         }
         if (res.status === 204) return null;
         return res.json();

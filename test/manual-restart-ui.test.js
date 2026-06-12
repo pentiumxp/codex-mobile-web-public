@@ -58,6 +58,17 @@ test("profile switch restart passes the selected profile to the shared-chain scr
   assert.match(serverJs, /activeProfileRestartOptions\(profile\)/);
   assert.match(serverJs, /sendJson\(res,\s*err\.statusCode \|\| 500,[\s\S]*code:\s*err\.code \|\| undefined/);
   assert.match(serverJs, /target_profile_auth_invalid/);
+  const connectBody = serverJs.slice(
+    serverJs.indexOf("function connectPreflightWebSocket"),
+    serverJs.indexOf("function preflightRpc"),
+  );
+  assert.match(connectBody, /setTimeout\(attempt,\s*200\)/);
+  assert.match(connectBody, /profile switch preflight websocket timeout/);
+  assert.match(appJs, /codexProfileSwitchTargetId/);
+  assert.match(appJs, /codex-profile-progress/);
+  assert.match(appJs, /正在预检目标 Codex 账号/);
+  assert.match(appJs, /timeoutMs:\s*90000/);
+  assert.match(stylesCss, /\.codex-profile-main \.codex-profile-progress/);
 });
 
 test("shared-chain restart cleans stale bare node server listener on the selected port", () => {

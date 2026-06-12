@@ -21,6 +21,79 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-12 Codex Profile Switch Feedback And Auth Failure Receipts
+
+- User reported switching to `Default` appeared to do nothing after Desktop
+  re-login under `/Users/xuxin/.codex`.
+- Diagnosis:
+  - Default auth itself was valid: `CODEX_HOME=/Users/xuxin/.codex codex exec`
+    returned `OK`.
+  - `/api/codex-profiles/active` returned
+    `409 target_profile_preflight_failed` because the new profile-switch
+    preflight attempted the temporary app-server WebSocket only once before the
+    app-server had finished listening.
+  - Production deploy initially failed because `.codegraph/daemon.sock` existed
+    in both source and production plugin trees and rsync tried to copy/backup
+    the socket.
+- Implemented in Codex Mobile:
+  - `server.js`: profile-switch preflight WebSocket connection now retries
+    until the preflight timeout instead of failing on the first connection
+    error.
+  - `public/app.js` / `public/styles.css`: profile switching now shows row-level
+    status (`预检中...`, `重启中...`, `失败`) and the frontend wait timeout is
+    widened to 90 seconds.
+  - `public/api-client.js`, `server.js`, `public/app.js`: Codex account
+    auth/token failures during message send now return/preserve stable
+    `codex_account_auth_invalid` errors and render an inline
+    `.send-error-receipt` under the submitted user message instead of only using
+    the top-right connection/status area.
+  - Shell cache bumped to `codex-mobile-shell-v274`.
+- Implemented in Home AI deploy tooling:
+  - `/Users/hermes-dev/HermesMobileDev/app/scripts/deploy-macos-production.js`
+    now excludes `.codegraph/` and applies rsync excludes during production
+    backup as well as source sync.
+- Validation:
+  - `node --test test/api-client.test.js test/new-thread-route.test.js
+    test/conversation-render.test.js test/codex-profile-preflight.test.js
+    test/manual-restart-ui.test.js test/codex-profile-service.test.js`
+    passed.
+  - `npm run check` passed.
+  - Home AI required checks passed:
+    `node tests/gateway-run-lifecycle-service.test.js`,
+    `node tests/gateway-run-start-service.test.js`,
+    `node tests/gateway-run-stream-service.test.js`,
+    `node tests/runtime-config-provider.test.js`.
+  - Deploy script harness passed:
+    `node tests/macos-production-deploy-script.test.js`.
+  - `git diff --check` passed in both plugin and app repos.
+  - Production files under
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web` match source
+    SHA-256 for changed Codex Mobile files.
+  - Production `/api/public-config` returned `200`, workspace path
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`, build id
+    `d5a4759f39714221`, cache `0.1.11|codex-mobile-shell-v274`.
+- Evidence ledger:
+  - `evidence-8dd15183-c36a-4d03-bf44-6da1473ab053`.
+- Commit / publish:
+  - Private local commit message:
+    `fix: surface profile and auth send failures`.
+  - Public release commit:
+    `758a651 fix: surface profile and auth send failures` pushed to
+    `git@github.com:pentiumxp/codex-mobile-web-public.git` `main`.
+  - README Chinese release note added for v274.
+- Remaining state:
+  - Codex Mobile plugin source working tree was clean immediately after the
+    private commit and public push, except this handoff status update before it
+    was amended into the private commit.
+  - Plugin dirty files:
+    `server.js`, `public/api-client.js`, `public/app.js`,
+    `public/styles.css`, `public/sw.js`, `test/api-client.test.js`,
+    `test/conversation-render.test.js`, `test/manual-restart-ui.test.js`,
+    `test/new-thread-route.test.js`.
+  - App dirty files:
+    `scripts/deploy-macos-production.js`,
+    `tests/macos-production-deploy-script.test.js`.
+
 ## 2026-06-10 CodeGraph Install For Codex Mobile Web
 
 - User requested CodeGraph installation in

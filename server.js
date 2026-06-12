@@ -1759,6 +1759,20 @@ function isStaleActiveTurnError(err) {
   return /not found|not active|inactive|completed|interrupted|expected turn|expected active turn id|turn.*not.*running|turn.*not.*active/.test(message);
 }
 
+function isCodexAccountAuthError(err) {
+  const message = String((err && err.message) || err || "").toLowerCase();
+  return /token_expired|refresh_token_reused|refresh token|access token|unauthorized|401/.test(message);
+}
+
+function codexAccountAuthErrorPayload(err) {
+  return {
+    ok: false,
+    error: "Codex 账号登录已失效，请重新登录该账号，或切换到可用账号后重试。",
+    code: "codex_account_auth_invalid",
+    detail: boundedProfilePreflightDetail(err),
+  };
+}
+
 async function staleActiveTurnPreflight(codexClient, threadId, activeTurnId) {
   if (!activeTurnId) return { stale: false, reason: "no-active-turn" };
   const summary = readStateDbThread(threadId) || readStartedThread(threadId);
@@ -6102,28 +6116,56 @@ function boundedProfilePreflightDetail(err) {
 
 function connectPreflightWebSocket(url, timeoutMs) {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(url);
+    const deadline = Date.now() + Math.max(500, Number(timeoutMs || 0));
+    let ws = null;
     let settled = false;
+    let retryTimer = null;
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
       try {
-        ws.close();
+        if (ws) ws.close();
       } catch (_) {}
       reject(new Error("profile switch preflight websocket timeout"));
     }, timeoutMs);
-    ws.onopen = () => {
+
+    const attempt = () => {
       if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve(ws);
+      try {
+        ws = new WebSocket(url);
+      } catch (err) {
+        if (Date.now() >= deadline) {
+          settled = true;
+          clearTimeout(timer);
+          reject(err);
+          return;
+        }
+        retryTimer = setTimeout(attempt, 200);
+        return;
+      }
+      ws.onopen = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (retryTimer) clearTimeout(retryTimer);
+        resolve(ws);
+      };
+      ws.onerror = () => {
+        if (settled) return;
+        try {
+          ws.close();
+        } catch (_) {}
+        if (Date.now() >= deadline) {
+          settled = true;
+          clearTimeout(timer);
+          reject(new Error("profile switch preflight websocket connection failed"));
+          return;
+        }
+        retryTimer = setTimeout(attempt, 200);
+      };
     };
-    ws.onerror = () => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      reject(new Error("profile switch preflight websocket connection failed"));
-    };
+
+    attempt();
   });
 }
 
@@ -9943,6 +9985,10 @@ async function handleApi(req, res) {
       });
       sendJson(res, 200, result);
     } catch (err) {
+      if (isCodexAccountAuthError(err)) {
+        sendJson(res, 409, codexAccountAuthErrorPayload(err));
+        return;
+      }
       sendJson(res, err.statusCode || 500, { error: err.message || String(err) });
     }
     return;
@@ -10465,6 +10511,10 @@ async function handleApi(req, res) {
         clientSubmissionId: body.clientSubmissionId,
         error: err.message || String(err),
       });
+      if (isCodexAccountAuthError(err)) {
+        sendJson(res, 409, codexAccountAuthErrorPayload(err));
+        return;
+      }
       throw err;
     }
     sendJson(res, 200, result);

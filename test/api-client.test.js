@@ -90,6 +90,29 @@ test("api client reports unauthorized responses and server error payloads", asyn
     }),
   });
   await assert.rejects(() => errorClient.request("/api/fail"), /backend failed/);
+
+  const codedClient = apiClientModule.createApiClient({
+    AbortControllerCtor: TestAbortController,
+    fetch: async () => ({
+      status: 409,
+      statusText: "Conflict",
+      ok: false,
+      json: async () => ({
+        error: "auth failed",
+        code: "codex_account_auth_invalid",
+        detail: "token_expired",
+      }),
+    }),
+  });
+  await assert.rejects(async () => {
+    await codedClient.request("/api/fail-coded");
+  }, (err) => {
+    assert.equal(err.message, "auth failed");
+    assert.equal(err.status, 409);
+    assert.equal(err.code, "codex_account_auth_invalid");
+    assert.equal(err.detail, "token_expired");
+    return true;
+  });
 });
 
 test("api client distinguishes timeout aborts from external cancellations", async () => {

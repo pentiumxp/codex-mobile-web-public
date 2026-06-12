@@ -218,6 +218,20 @@ test("existing-thread message send refreshes the sidebar thread list", () => {
   assert.match(body, /scheduleCurrentThreadRefresh\(600\);[\s\S]*scheduleLivePollIfNeeded\(1200\);[\s\S]*loadThreads\(\{ silent: true \}\)\.catch\(showError\);/);
 });
 
+test("send auth failures return stable codes and render message receipts", () => {
+  assert.match(serverJs, /function isCodexAccountAuthError\(/);
+  assert.match(serverJs, /code:\s*"codex_account_auth_invalid"/);
+  assert.match(serverJs, /sendJson\(res,\s*409,\s*codexAccountAuthErrorPayload\(err\)\)/);
+
+  const sendStart = appJs.indexOf("async function sendMessage(");
+  const sendEnd = appJs.indexOf("async function sendNewThreadMessage(", sendStart);
+  const sendBody = appJs.slice(sendStart, sendEnd);
+  assert.match(sendBody, /markSubmittedUserMessageFailed\(state\.currentThreadId,\s*outboundText,\s*submittedAttachments,\s*clientSubmissionId,\s*message\)/);
+  assert.match(sendBody, /发送失败，详情见消息回执/);
+  assert.match(appJs, /function renderUserMessageBody\(/);
+  assert.match(appJs, /send-error-receipt/);
+});
+
 test("workspace creation route stores mobile-visible workspaces outside Codex global state", () => {
   const routeIndex = serverJs.indexOf('url.pathname === "/api/workspaces" && req.method === "POST"');
   const newMessageIndex = serverJs.indexOf("/api/threads/new-message");
