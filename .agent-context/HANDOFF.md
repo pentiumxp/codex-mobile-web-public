@@ -2,6 +2,52 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-12 Public PR #64 File Preview Recovery Sync
+
+- Public PR:
+  - Evaluated `pentiumxp/codex-mobile-web-public` PR #64,
+    `修复本地文件预览卡死与误拦截`.
+  - GitHub reported `mergeable=MERGEABLE`; PR base matched current public
+    `main` at `bb21d05`.
+  - The raw PR added bounded rollout-tail scanning and requested-path handling
+    for local file preview, but its initial requested-path authority would have
+    allowed any absolute supported file path that was not under a denied
+    segment. The final merge commit keeps the performance fix while narrowing
+    requested-path authority to Workspace/root files or a single requested file
+    that is actually referenced by the current thread text.
+- Public merge:
+  - Used the clean public mirror
+    `/Users/hermes-dev/HermesMobileDev/public-mirrors/codex-mobile-web-public`.
+  - Added the required Chinese README release note.
+  - Server-only change; no PWA shell cache bump.
+  - Public merge commit pushed:
+    `c689ad15d93d3797ff73b99ac25463bd45b94784`.
+- Public validation:
+  - `node --check server.js && node --check test/file-preview.test.js &&
+    node --check test/file-preview-ui.test.js` passed.
+  - Focused file preview/upload tests passed: 30/30.
+  - `node tests/architecture-code-test-harness-map.test.js` passed in Home AI.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed: 462/462.
+  - `git diff --check` and public privacy/path scans passed; matches were
+    limited to README boundary notes.
+  - Evidence ledger: `evidence-bcc6b9f9-6511-4d1d-85ce-a8cd17e9d44e`.
+- Private reverse sync:
+  - Merged public `main` back into private with no conflicts.
+  - Private merge commit: `d64bdbc`.
+- Private validation:
+  - `node --check server.js && node --check test/file-preview.test.js &&
+    node --check test/file-preview-ui.test.js` passed.
+  - Focused file preview/upload tests passed: 30/30.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `node scripts/plugin-workspace-platform-contract-check.js --plugin codex-mobile --json`
+    passed with the existing non-blocking `handoff_pointer_missing` warning.
+  - `npm test` passed: 462/462.
+  - `git diff --check` passed.
+  - Evidence ledger: `evidence-de43fb20-f7c5-4e73-b0e0-0edbbad0c955`.
+
 ## 2026-06-12 Public PR #63 PWA Boot Recovery Sync
 
 - Public PR:
