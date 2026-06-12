@@ -218,6 +218,8 @@ const state = {
   codexProfileSwitchSupported: false,
   codexProfileSwitchBusy: false,
   codexProfileRestarting: false,
+  codexProfileSwitchTargetId: "",
+  codexProfileSwitchStage: "",
   pushServerSupported: false,
   pushSubscribed: false,
   pushBusy: false,
@@ -276,7 +278,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v273";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v274";
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -749,6 +751,57 @@ function registerSubmittedUserMessage(threadId, text, attachments, clientSubmiss
     item: localUserMessageItem(text, attachments || [], id),
     createdAtMs: Date.now(),
   });
+}
+
+function markSubmittedUserMessageFailed(threadId, text, attachments, clientSubmissionId, message) {
+  const id = String(clientSubmissionId || "").trim();
+  if (!id) return;
+  pruneRecentSubmittedUserMessages();
+  const record = state.recentSubmittedUserMessages.get(id) || {
+    threadId: String(threadId || ""),
+    item: localUserMessageItem(text, attachments || [], id),
+    createdAtMs: Date.now(),
+  };
+  record.threadId = String(threadId || record.threadId || "");
+  record.item = Object.assign({}, record.item || localUserMessageItem(text, attachments || [], id), {
+    mobilePendingSubmission: true,
+    mobileSendError: {
+      message: String(message || "发送失败，请重试"),
+    },
+  });
+  state.recentSubmittedUserMessages.set(id, record);
+
+  const thread = state.currentThread;
+  if (!thread || (threadId && thread.id !== threadId)) return;
+  thread.turns = Array.isArray(thread.turns) ? thread.turns : [];
+  let found = false;
+  for (const turn of thread.turns) {
+    if (!turn || !Array.isArray(turn.items)) continue;
+    const item = turn.items.find((entry) => entry && entry.clientSubmissionId === id);
+    if (!item) continue;
+    Object.assign(item, {
+      mobilePendingSubmission: true,
+      mobileSendError: record.item.mobileSendError,
+    });
+    found = true;
+  }
+  if (!found) {
+    const localTurnId = state.activeTurnId || `local-turn-${id}`;
+    let turn = thread.turns.find((entry) => entry && entry.id === localTurnId);
+    if (!turn) {
+      turn = {
+        id: localTurnId,
+        status: { type: "failed" },
+        startedAt: Math.floor(Date.now() / 1000),
+        completedAt: Math.floor(Date.now() / 1000),
+        durationMs: 0,
+        items: [],
+      };
+      thread.turns.push(turn);
+    }
+    turn.items = mergeItemsPreservingLocalVisible([record.item], turn.items || [], true);
+  }
+  scheduleRenderCurrentThread();
 }
 
 function recentSubmittedUserRecordBelongsToThread(record, threadId) {
@@ -1844,21 +1897,32 @@ function renderCodexProfileSettings() {
   el.innerHTML = profiles.map((profile) => {
     const id = String(profile.id || "");
     const active = Boolean(profile.active) || id === state.activeCodexProfileId;
+    const switchingThisProfile = state.codexProfileSwitchBusy && state.codexProfileSwitchTargetId === id;
     const loggedIn = profile.auth && profile.auth.status === "loggedIn";
     const disabled = active || state.codexProfileSwitchBusy || state.codexProfileRestarting || !state.codexProfileSwitchSupported || !loggedIn;
-    const action = active ? "Active" : "Switch";
+    const action = switchingThisProfile
+      ? (state.codexProfileSwitchStage || "预检中...")
+      : active
+        ? "Active"
+        : "Switch";
     const title = !state.codexProfileSwitchSupported
       ? "Profile switching is disabled for this app-server configuration"
       : !loggedIn
         ? "Login to this Codex home before switching"
+        : switchingThisProfile
+          ? "Checking target account before switching"
         : active
           ? "Current active profile"
           : "Switch all workspaces to this profile";
+    const status = switchingThisProfile
+      ? `<small class="codex-profile-progress">${escapeHtml(state.codexProfileSwitchStage || "正在预检目标账号...")}</small>`
+      : "";
     return `<div class="codex-profile-row${active ? " active" : ""}">`
       + `<div class="codex-profile-main">`
       + `<strong>${escapeHtml(profile.label || id)}</strong>`
       + `<span>${escapeHtml(codexProfileAccountLabel(profile))}</span>`
       + `<small>${escapeHtml(profile.codexHome || "")}</small>`
+      + status
       + `</div>`
       + `<div class="codex-profile-side">`
       + `<span class="codex-profile-quota">${escapeHtml(quotaShortTextFromSnapshot(profile.quota))}</span>`
@@ -1883,21 +1947,32 @@ async function handleCodexProfileSettingsClick(event) {
   const label = profile ? `${profile.label || profileId} (${codexProfileAccountLabel(profile)})` : profileId;
   if (!window.confirm(`Switch all Codex Mobile workspaces to ${label}?`)) return;
   state.codexProfileSwitchBusy = true;
+  state.codexProfileSwitchTargetId = profileId;
+  state.codexProfileSwitchStage = "预检中...";
   clearStoredRateLimits();
-  $("connectionState").textContent = "Switching Codex profile...";
+  $("connectionState").textContent = "正在预检目标 Codex 账号...";
   renderCodexProfileSettings();
   try {
     await api("/api/codex-profiles/active", {
       method: "POST",
       body: JSON.stringify({ profileId }),
-      timeoutMs: 12000,
+      timeoutMs: 90000,
     });
+    state.codexProfileSwitchStage = "重启中...";
     state.codexProfileRestarting = true;
     $("connectionState").textContent = "Codex profile switched. Restarting...";
     renderCodexProfileSettings();
     showReconnectRefreshPrompt("restart");
+  } catch (err) {
+    state.codexProfileSwitchStage = "失败";
+    $("connectionState").textContent = err.message || "Codex profile switch failed";
+    showError(err);
   } finally {
     state.codexProfileSwitchBusy = false;
+    if (!state.codexProfileRestarting) {
+      state.codexProfileSwitchTargetId = "";
+      state.codexProfileSwitchStage = "";
+    }
     renderCodexProfileSettings();
   }
 }
@@ -11506,7 +11581,7 @@ function renderTurnUsageSummary(item) {
 function renderItemBody(item, turn = null) {
   if (isContextCompactionItem(item)) return escapeHtml(contextCompactionNotice(item, turn));
   if (item.type === "turnUsageSummary") return renderTurnUsageSummary(item);
-  if (item.type === "userMessage") return renderInputContent(item.content);
+  if (item.type === "userMessage") return renderUserMessageBody(item);
   if (item.type === "agentMessage") {
     return renderThreadTaskCardDraftMessage(item.text || "", item, turn) || renderMarkdownWithAttachmentSummary(item.text || "");
   }
@@ -11529,6 +11604,13 @@ function renderItemBody(item, turn = null) {
     return `<div class="mono">${escapeHtml(JSON.stringify(item.arguments || {}, null, 2))}</div>${renderStructuredBlock(item.result || item.contentItems, "Tool result")}`;
   }
   return escapeHtml(JSON.stringify(item, null, 2));
+}
+
+function renderUserMessageBody(item) {
+  const body = renderInputContent(item && item.content);
+  const errorMessage = String(item && item.mobileSendError && item.mobileSendError.message || "").trim();
+  if (!errorMessage) return body;
+  return `${body}<div class="send-error-receipt" role="status">${escapeHtml(`发送失败：${errorMessage}`)}</div>`;
 }
 
 function renderOutputBlock(output, item = {}) {
@@ -12792,7 +12874,7 @@ function updateComposerHeightVar() {
 
 function showError(err) {
   const raw = err instanceof Error ? err.message : String(err || "");
-  const message = normalizeClientErrorMessage(raw) || (err && err.message) || String(err);
+  const message = normalizeClientErrorMessage(raw, err) || (err && err.message) || String(err);
   $("connectionState").textContent = message;
   $("connectionState").classList.add("error");
   postClientEvent("client_error", {
@@ -12874,8 +12956,15 @@ function shouldThrottleThreadNotification(method, params) {
   return false;
 }
 
-function normalizeClientErrorMessage(message) {
+function normalizeClientErrorMessage(message, err = null) {
+  const code = String(err && err.code || "").trim();
+  if (code === "codex_account_auth_invalid") {
+    return "Codex 账号登录已失效，请重新登录该账号，或切换到可用账号后重试。";
+  }
   const text = String(message || "").toLowerCase();
+  if (/token_expired|refresh_token_reused|refresh token|access token/.test(text)) {
+    return "Codex 账号登录已失效，请重新登录该账号，或切换到可用账号后重试。";
+  }
   if (text.includes("failed to fetch")) {
     return "网络异常，发送失败：请求未发出，请检查网络后重试";
   }
@@ -13662,13 +13751,14 @@ async function sendMessage(event) {
     loadThreads({ silent: true }).catch(showError);
   } catch (err) {
     clearSubmittedMessageBottomFollow();
-    const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err))
+    const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err), err)
       || "发送失败，请重试";
     state.sendButtonHint = "重试";
+    markSubmittedUserMessageFailed(state.currentThreadId, outboundText, submittedAttachments, clientSubmissionId, message);
     if (steering) setSteerFeedback("failed", { threadId: state.currentThreadId, turnId: steerTurnId, clientSubmissionId });
     else {
-      $("connectionState").classList.add("error");
-      $("connectionState").textContent = message.includes("发送") ? message : "发送失败，请重试";
+      $("connectionState").classList.remove("error");
+      $("connectionState").textContent = "发送失败，详情见消息回执";
     }
     postClientEvent("send_failure", {
       threadId: state.currentThreadId || "",
@@ -13782,7 +13872,7 @@ async function sendNewThreadMessage(text, hasContent, input) {
     scheduleLivePollIfNeeded(1200);
     loadThreads({ silent: true }).catch(showError);
   } catch (err) {
-    const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err))
+    const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err), err)
       || "新对话创建失败，请重试";
     state.sendButtonHint = "重试";
     $("connectionState").classList.add("error");

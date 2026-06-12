@@ -920,6 +920,13 @@ test("matching user messages keep their original turn position after final refre
   assert.match(body, /const incomingTextMatch = incomingUserMatch[\s\S]*visibleTextItemsLikelySame\(existingItem, incomingItem\)/);
 });
 
+test("failed submitted messages render an inline receipt", () => {
+  assert.match(functionBody("renderItemBody"), /item\.type === "userMessage"\) return renderUserMessageBody\(item\)/);
+  assert.match(functionBody("renderUserMessageBody"), /mobileSendError/);
+  assert.match(functionBody("renderUserMessageBody"), /send-error-receipt/);
+  assert.match(stylesCss, /\.send-error-receipt/);
+});
+
 test("optimistic user messages match app-server input_text messages", () => {
   const userMessagesLikelySame = evaluatedUserMessagesLikelySame();
   assert.equal(userMessagesLikelySame(

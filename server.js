@@ -610,6 +610,7 @@ const PERMISSION_MODE_OPTIONS = optionListFromEnv("CODEX_MOBILE_PERMISSION_MODE_
 const DEFAULT_RPC_TIMEOUT_MS = 30000;
 const READ_RPC_TIMEOUT_MS = 12000;
 const THREAD_DETAIL_RPC_TIMEOUT_MS = Math.min(6000, READ_RPC_TIMEOUT_MS);
+const PROFILE_SWITCH_PREFLIGHT_TIMEOUT_MS = Math.max(4000, Number(process.env.CODEX_MOBILE_PROFILE_SWITCH_PREFLIGHT_TIMEOUT_MS || "12000"));
 const MUTATION_RPC_TIMEOUT_MS = 120000;
 const MESSAGE_DEDUPE_WINDOW_MS = Math.max(5_000, Number(process.env.CODEX_MOBILE_MESSAGE_DEDUPE_WINDOW_MS || "90000"));
 const MESSAGE_DEDUPE_MAX = Math.max(20, Number(process.env.CODEX_MOBILE_MESSAGE_DEDUPE_MAX || "300"));
@@ -1756,6 +1757,20 @@ function isTurnSteerUnsupportedError(err) {
 function isStaleActiveTurnError(err) {
   const message = String((err && err.message) || err || "").toLowerCase();
   return /not found|not active|inactive|completed|interrupted|expected turn|expected active turn id|turn.*not.*running|turn.*not.*active/.test(message);
+}
+
+function isCodexAccountAuthError(err) {
+  const message = String((err && err.message) || err || "").toLowerCase();
+  return /token_expired|refresh_token_reused|refresh token|access token|unauthorized|401/.test(message);
+}
+
+function codexAccountAuthErrorPayload(err) {
+  return {
+    ok: false,
+    error: "Codex 账号登录已失效，请重新登录该账号，或切换到可用账号后重试。",
+    code: "codex_account_auth_invalid",
+    detail: boundedProfilePreflightDetail(err),
+  };
 }
 
 async function staleActiveTurnPreflight(codexClient, threadId, activeTurnId) {
@@ -6066,6 +6081,190 @@ function getFreePort() {
   });
 }
 
+function profileSwitchPreflightError(err) {
+  const raw = String(err && (err.message || err) || "");
+  const lower = raw.toLowerCase();
+  if (/token_expired|refresh_token_reused|refresh token|access token|unauthorized|401/.test(lower)) {
+    return {
+      code: "target_profile_auth_invalid",
+      message: "目标 Codex 账号登录已失效，请先重新登录该账号，再切换。",
+    };
+  }
+  if (/not found|enoent|eacces|permission denied|spawn/.test(lower)) {
+    return {
+      code: "target_profile_app_server_unavailable",
+      message: "目标 Codex 账号的 app-server 无法启动，请检查该账号配置后再切换。",
+    };
+  }
+  if (/timed out|timeout/.test(lower)) {
+    return {
+      code: "target_profile_preflight_timeout",
+      message: "目标 Codex 账号登录检测超时，请稍后重试或重新登录该账号。",
+    };
+  }
+  return {
+    code: "target_profile_preflight_failed",
+    message: "目标 Codex 账号登录检测失败，请先修复该账号后再切换。",
+  };
+}
+
+function boundedProfilePreflightDetail(err) {
+  const raw = String(err && (err.message || err) || "").replace(/\s+/g, " ").trim();
+  if (!raw) return "";
+  return raw.slice(0, 260);
+}
+
+function connectPreflightWebSocket(url, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const deadline = Date.now() + Math.max(500, Number(timeoutMs || 0));
+    let ws = null;
+    let settled = false;
+    let retryTimer = null;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try {
+        if (ws) ws.close();
+      } catch (_) {}
+      reject(new Error("profile switch preflight websocket timeout"));
+    }, timeoutMs);
+
+    const attempt = () => {
+      if (settled) return;
+      try {
+        ws = new WebSocket(url);
+      } catch (err) {
+        if (Date.now() >= deadline) {
+          settled = true;
+          clearTimeout(timer);
+          reject(err);
+          return;
+        }
+        retryTimer = setTimeout(attempt, 200);
+        return;
+      }
+      ws.onopen = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (retryTimer) clearTimeout(retryTimer);
+        resolve(ws);
+      };
+      ws.onerror = () => {
+        if (settled) return;
+        try {
+          ws.close();
+        } catch (_) {}
+        if (Date.now() >= deadline) {
+          settled = true;
+          clearTimeout(timer);
+          reject(new Error("profile switch preflight websocket connection failed"));
+          return;
+        }
+        retryTimer = setTimeout(attempt, 200);
+      };
+    };
+
+    attempt();
+  });
+}
+
+function preflightRpc(ws, id, method, params, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      ws.onmessage = null;
+      reject(new Error(`profile switch preflight timed out: ${method}`));
+    }, timeoutMs);
+    ws.onmessage = (event) => {
+      let msg = null;
+      try {
+        msg = JSON.parse(String(event.data || ""));
+      } catch (_) {
+        return;
+      }
+      if (!msg || msg.id !== id) return;
+      clearTimeout(timer);
+      ws.onmessage = null;
+      if (msg.error) reject(new Error(msg.error.message || JSON.stringify(msg.error)));
+      else resolve(msg.result);
+    };
+    ws.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }));
+  });
+}
+
+async function preflightCodexProfileSwitch(profile, options = {}) {
+  const codexHome = String(profile && profile.codexHome || "").trim();
+  if (!codexHome) {
+    const err = new Error("Target Codex profile home is missing.");
+    err.statusCode = 409;
+    throw err;
+  }
+  const timeoutMs = Math.max(3000, Number(options.timeoutMs || PROFILE_SWITCH_PREFLIGHT_TIMEOUT_MS));
+  const startedAt = Date.now();
+  const port = await getFreePort();
+  const childEnv = codexAppServerChildEnv({ CODEX_HOME: codexHome });
+  const child = spawn(CODEX_EXE, ["app-server", "--listen", `ws://127.0.0.1:${port}`], {
+    cwd: APP_ROOT,
+    env: childEnv,
+    windowsHide: true,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let logTail = "";
+  const appendLog = (chunk) => {
+    logTail = `${logTail}${String(chunk || "")}`.slice(-2000);
+  };
+  child.stdout.on("data", appendLog);
+  child.stderr.on("data", appendLog);
+
+  const closeChild = () => {
+    try {
+      if (child.exitCode === null && child.signalCode === null) child.kill();
+    } catch (_) {}
+  };
+
+  try {
+    await new Promise((resolve, reject) => {
+      child.once("spawn", resolve);
+      child.once("error", reject);
+      child.once("exit", (code, signal) => {
+        reject(new Error(`profile switch preflight app-server exited (${code ?? signal ?? "unknown"})`));
+      });
+    });
+    const ws = await connectPreflightWebSocket(`ws://127.0.0.1:${port}`, timeoutMs);
+    try {
+      const remaining = Math.max(2000, timeoutMs - (Date.now() - startedAt));
+      await preflightRpc(ws, 1, "initialize", {
+        clientInfo: {
+          name: "codex-mobile-web",
+          title: "Codex Mobile Web Profile Switch Preflight",
+          version: "0.1.0",
+          replayNotificationLimit: 0,
+        },
+        capabilities: { experimentalApi: true },
+      }, remaining);
+      await preflightRpc(ws, 2, "account/rateLimits/read", {}, Math.max(2000, timeoutMs - (Date.now() - startedAt)));
+    } finally {
+      try {
+        ws.close();
+      } catch (_) {}
+    }
+    return {
+      ok: true,
+      profileId: profile.id,
+      checked: ["initialize", "account/rateLimits/read"],
+    };
+  } catch (err) {
+    const classified = profileSwitchPreflightError(err);
+    const out = new Error(classified.message);
+    out.statusCode = 409;
+    out.code = classified.code;
+    out.detail = boundedProfilePreflightDetail(err) || boundedProfilePreflightDetail(logTail);
+    throw out;
+  } finally {
+    closeChild();
+  }
+}
+
 class JsonLineConnection {
   constructor(socket) {
     this.socket = socket;
@@ -9133,13 +9332,30 @@ async function handleApi(req, res) {
   if (url.pathname === "/api/codex-profiles/active" && req.method === "POST") {
     try {
       const body = await readBody(req);
-      const profile = codexProfileService.setActiveProfile(body.profileId || body.id || "");
+      const targetProfileId = String(body.profileId || body.id || "").trim().toLowerCase();
+      const availableProfiles = codexProfileService.profiles({
+        activeQuota: liveQuotaSnapshotForProfiles(),
+      });
+      if (!availableProfiles.switchSupported) {
+        throw httpStatusError(409, "Codex profile switching requires the default per-profile mux endpoint configuration.");
+      }
+      const targetProfile = availableProfiles.profiles.find((item) => item.id === targetProfileId);
+      if (!targetProfile) {
+        throw httpStatusError(404, "Unknown Codex profile");
+      }
+      const preflight = await preflightCodexProfileSwitch(targetProfile);
+      const profile = codexProfileService.setActiveProfile(targetProfile.id);
       const restart = sharedChainRestartService.restart(Object.assign({
         delayMs: SHARED_CHAIN_RESTART_DELAY_MS,
       }, activeProfileRestartOptions(profile)));
-      sendJson(res, 202, Object.assign({ ok: true, activeProfileId: profile.id, profile }, restart));
+      sendJson(res, 202, Object.assign({ ok: true, activeProfileId: profile.id, profile, preflight }, restart));
     } catch (err) {
-      sendJson(res, err.statusCode || 500, { error: err.message || String(err) });
+      sendJson(res, err.statusCode || 500, {
+        ok: false,
+        error: err.message || String(err),
+        code: err.code || undefined,
+        detail: err.detail || undefined,
+      });
     }
     return;
   }
@@ -9769,6 +9985,10 @@ async function handleApi(req, res) {
       });
       sendJson(res, 200, result);
     } catch (err) {
+      if (isCodexAccountAuthError(err)) {
+        sendJson(res, 409, codexAccountAuthErrorPayload(err));
+        return;
+      }
       sendJson(res, err.statusCode || 500, { error: err.message || String(err) });
     }
     return;
@@ -10291,6 +10511,10 @@ async function handleApi(req, res) {
         clientSubmissionId: body.clientSubmissionId,
         error: err.message || String(err),
       });
+      if (isCodexAccountAuthError(err)) {
+        sendJson(res, 409, codexAccountAuthErrorPayload(err));
+        return;
+      }
       throw err;
     }
     sendJson(res, 200, result);
@@ -10430,6 +10654,7 @@ module.exports = {
   previewRootsForThread,
   previewFileReferencesFromText,
   parseThreadTurnsCursor,
+  profileSwitchPreflightError,
   readFilePreview,
   readRolloutItemTimestampCandidates,
   readRolloutSessionFallbackThreadFromFile,

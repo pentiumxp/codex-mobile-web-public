@@ -45,8 +45,30 @@ test("profile switch restart passes the selected profile to the shared-chain scr
   assert.match(serverJs, /function activeProfileRestartOptions\(profile = null\)/);
   assert.match(serverJs, /profileId:\s*selected\.id/);
   assert.match(serverJs, /codexHome:\s*selected\.codexHome/);
+  assert.match(serverJs, /const preflight = await preflightCodexProfileSwitch\(targetProfile\)/);
   assert.match(serverJs, /codexProfileService\.setActiveProfile/);
+  assert.ok(
+    serverJs.indexOf("const preflight = await preflightCodexProfileSwitch(targetProfile)") < serverJs.indexOf("const profile = codexProfileService.setActiveProfile(targetProfile.id)"),
+    "profile switch must preflight the target account before writing active profile state",
+  );
+  assert.ok(
+    serverJs.indexOf("const profile = codexProfileService.setActiveProfile(targetProfile.id)") < serverJs.indexOf("sharedChainRestartService.restart(Object.assign({"),
+    "profile switch must not restart before the active profile is written",
+  );
   assert.match(serverJs, /activeProfileRestartOptions\(profile\)/);
+  assert.match(serverJs, /sendJson\(res,\s*err\.statusCode \|\| 500,[\s\S]*code:\s*err\.code \|\| undefined/);
+  assert.match(serverJs, /target_profile_auth_invalid/);
+  const connectBody = serverJs.slice(
+    serverJs.indexOf("function connectPreflightWebSocket"),
+    serverJs.indexOf("function preflightRpc"),
+  );
+  assert.match(connectBody, /setTimeout\(attempt,\s*200\)/);
+  assert.match(connectBody, /profile switch preflight websocket timeout/);
+  assert.match(appJs, /codexProfileSwitchTargetId/);
+  assert.match(appJs, /codex-profile-progress/);
+  assert.match(appJs, /正在预检目标 Codex 账号/);
+  assert.match(appJs, /timeoutMs:\s*90000/);
+  assert.match(stylesCss, /\.codex-profile-main \.codex-profile-progress/);
 });
 
 test("shared-chain restart cleans stale bare node server listener on the selected port", () => {
