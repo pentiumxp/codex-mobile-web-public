@@ -2,6 +2,51 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-12 Public PR #62 Projectless Temporary Workspace Sync
+
+- Public PR:
+  - Evaluated `pentiumxp/codex-mobile-web-public` PR #62,
+    `允许项目外线程携带临时工作区`.
+  - PR base was older than current public `main`, but local merge onto
+    `b8e8a56` was clean.
+  - Change keeps registered `projectless-thread-ids` visible when app-server
+    later reports a temporary `cwd`; unregistered temporary-cwd threads,
+    archived threads, and child-agent threads continue to follow the existing
+    hidden-thread rules.
+- Public merge:
+  - Used the clean public mirror
+    `/Users/hermes-dev/HermesMobileDev/public-mirrors/codex-mobile-web-public`.
+  - Added the required Chinese README release note.
+  - Server-only change; no PWA shell cache bump.
+  - Public merge commit pushed:
+    `e402712241c3cad224d3ad23bdc734f6db861a9c`.
+- Public validation:
+  - `node --check server.js && node --check test/thread-visibility.test.js`
+    passed.
+  - `node --test test/thread-visibility.test.js` passed: 23/23.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `node tests/architecture-code-test-harness-map.test.js` passed.
+  - `npm test` passed: 459/459.
+  - `git diff --check` and public privacy/path scans passed; matches were
+    limited to README boundary notes, not copied private/runtime files.
+  - Evidence ledger: `evidence-13d2fca7-26b4-418f-8b34-b5e0d49bbc4a`.
+- Private reverse sync:
+  - Merged public `main` back into private.
+  - README conflict resolved by preserving the PR #62 Chinese note and existing
+    v274 public notes.
+  - Private merge commit: `bdaf7e5`.
+- Private validation:
+  - `node --check server.js && node --check test/thread-visibility.test.js`
+    passed.
+  - `node --test test/thread-visibility.test.js` passed: 23/23.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `node scripts/plugin-workspace-platform-contract-check.js --plugin codex-mobile --json`
+    passed with the existing non-blocking `handoff_pointer_missing` warning.
+  - `npm test` passed: 459/459.
+  - Evidence ledger: `evidence-d5c6d49a-2537-4bd4-b8ae-11ab90c34b0e`.
+
 ## 2026-06-12 Public CI Follow-Up For v274
 
 - User asked why the Public v274 publish had a CI error and reiterated that
