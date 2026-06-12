@@ -142,6 +142,14 @@ primary page reports `canGoBack: false`, so Hermes Mobile can show its own
 bottom navigation tabs. `hermes.plugin.back` closes modal/edit transient layers
 such as file previews, dialogs, and subagent panels before page-level back is
 applied.
+In Hermes embedded mode only, Codex Mobile can participate in Home AI host
+voice input. The iframe declares whether its composer is writable, accepts
+bounded `voice_input.append_text` / `voice_input.replace_draft` messages from
+the Home AI parent, and reports `voice_input.commit_result` after a voice
+inserted draft is successfully sent. Long-pressing the embedded send button
+delegates recording to the Home AI host; a normal short tap still sends through
+the existing Codex Mobile path. Standalone Codex Mobile Web is not changed by
+this integration.
 Hermes notification opens may also include bounded iframe query hints such as
 `pluginRoute`, `pluginThreadId`, `pluginTaskId`, and `pluginItemId` with
 `pluginId=codex-mobile`. In embedded mode, Codex consumes those hints, opens

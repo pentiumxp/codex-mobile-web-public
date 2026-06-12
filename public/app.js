@@ -17,6 +17,39 @@ const pluginEmbedApi = window.CodexPluginEmbed || {
   postBackResult: () => null,
   postNavigation: () => null,
 };
+const pluginVoiceInputApi = window.CodexPluginVoiceInput || {
+  MAX_TEXT_CHARS: 12000,
+  TYPES: {
+    CAPABILITY_QUERY: "voice_input.capability_query",
+    APPEND_TEXT: "voice_input.append_text",
+    INSERT_TEXT: "voice_input.insert_text",
+    REPLACE_DRAFT: "voice_input.replace_draft",
+    SUBMIT: "voice_input.submit",
+  },
+  actionFromMessageType(type) {
+    if (type === "voice_input.append_text") return "append_text";
+    if (type === "voice_input.insert_text") return "insert_text";
+    if (type === "voice_input.replace_draft") return "replace_draft";
+    if (type === "voice_input.submit") return "submit";
+    return "";
+  },
+  capabilityStateMessage: (input = {}) => Object.assign({ type: "voice_input.capability_state", version: 1, pluginId: "codex-mobile" }, input),
+  commitResultMessage: (input = {}) => Object.assign({ type: "voice_input.commit_result", version: 1, pluginId: "codex-mobile" }, input),
+  errorMessage: (input = {}) => Object.assign({ type: "voice_input.error", version: 1, pluginId: "codex-mobile" }, input),
+  insertResultMessage: (input = {}) => Object.assign({ type: "voice_input.insert_result", version: 1, pluginId: "codex-mobile" }, input),
+  isVoiceInputMessage: (value) => Boolean(value && typeof value === "object" && String(value.type || "").startsWith("voice_input.")),
+  postToParent(parentWindow, message, targetOrigin) {
+    if (!parentWindow || parentWindow === window) return false;
+    parentWindow.postMessage(message, targetOrigin || "*");
+    return true;
+  },
+  requestIdFrom: (input = {}) => String(input.requestId || input.request_id || "").trim(),
+  startRequestMessage: (input = {}) => Object.assign({ type: "voice_input.start_request", version: 1, pluginId: "codex-mobile" }, input),
+  stopRequestMessage: (input = {}) => Object.assign({ type: "voice_input.stop_request", version: 1, pluginId: "codex-mobile" }, input),
+  cancelRequestMessage: (input = {}) => Object.assign({ type: "voice_input.cancel_request", version: 1, pluginId: "codex-mobile" }, input),
+  textFromMessage: (input = {}) => String(input.text || "").trim().slice(0, 12000),
+  voiceSessionIdFrom: (input = {}) => String(input.voiceSessionId || input.voice_session_id || "").trim(),
+};
 const buildRefreshPolicy = window.CodexBuildRefreshPolicy || {
   shouldPromptForServerBuildChange(serverBuildId, clientBuildId) {
     const server = String(serverBuildId || "").trim();
@@ -44,6 +77,9 @@ const state = {
   pluginParentOrigin: pluginEmbedApi.parentOriginFromReferrer(document.referrer) || "*",
   pluginHostViewport: null,
   pluginNavigationSignature: "",
+  pluginVoiceInputCapabilitySignature: "",
+  pluginVoiceInputPress: null,
+  pluginVoiceInputSessionsByDraftKey: {},
   pluginRefreshRequestSignature: "",
   pluginRefreshPendingNotice: "",
   pluginRefreshPendingTimer: null,
@@ -278,7 +314,8 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v275";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v276";
+const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -300,6 +337,7 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/conversation-scroll.js",
   "/image-compressor.js",
   "/plugin-embed.js",
+  "/plugin-voice-input.js",
   "/build-refresh-policy.js",
   "/app.js",
   "/manifest.json",
@@ -4769,6 +4807,313 @@ function normalizePluginParentOrigin(value) {
     ? pluginEmbedApi.parentOriginFromReferrer(document.referrer)
     : "";
   return String(referrerOrigin || "").trim();
+}
+
+function pluginVoiceInputParentOriginAllowed(event) {
+  if (!isHermesEmbedMode()) return false;
+  if (event && event.source && event.source !== window.parent) return false;
+  const origin = String(event && event.origin || "").trim();
+  const expected = normalizePluginParentOrigin(state.pluginParentOrigin);
+  if (expected && origin && origin !== expected) return false;
+  if (!expected && origin && origin !== "null" && (!state.pluginParentOrigin || state.pluginParentOrigin === "*")) {
+    state.pluginParentOrigin = origin;
+  }
+  return true;
+}
+
+function pluginVoiceInputSafeDraftId() {
+  if (state.newThreadDraft) return "new-thread";
+  return state.currentThreadId ? `thread:${String(state.currentThreadId).slice(0, 160)}` : "";
+}
+
+function pluginVoiceInputComposerId() {
+  return state.newThreadDraft ? "new-thread-composer" : "thread-composer";
+}
+
+function pluginVoiceInputComposerWritable() {
+  if (!isHermesEmbedMode()) return false;
+  if (state.composerBusy || state.attachmentProcessingCount > 0) return false;
+  const input = $("messageInput");
+  if (!input || input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true") return false;
+  if (state.newThreadDraft) return Boolean(state.selectedCwd);
+  return Boolean(
+    state.currentThreadId
+    && state.currentThread
+    && !state.currentThread.mobileLoading
+    && !state.currentThread.mobileLoadError
+  );
+}
+
+function pluginVoiceInputCapabilityPayload(extra = {}) {
+  return Object.assign({
+    pluginId: "codex-mobile",
+    writable: pluginVoiceInputComposerWritable(),
+    composerId: pluginVoiceInputComposerId(),
+    threadId: String(state.currentThreadId || "").slice(0, 160),
+    draftId: pluginVoiceInputSafeDraftId(),
+    maxChars: Math.max(1, Number(pluginVoiceInputApi.MAX_TEXT_CHARS || 12000) || 12000),
+    actions: ["append_text", "replace_draft", "insert_text"],
+  }, extra || {});
+}
+
+function pluginVoiceInputGestureAvailable() {
+  if (!isHermesEmbedMode()) return false;
+  if (state.activeTurnId && !composerHasContent()) return false;
+  return pluginVoiceInputComposerWritable();
+}
+
+function postPluginVoiceInputMessage(message) {
+  if (!isHermesEmbedMode() || !message) return false;
+  const targetOrigin = normalizePluginParentOrigin(state.pluginParentOrigin);
+  if (targetOrigin) state.pluginParentOrigin = targetOrigin;
+  return pluginVoiceInputApi.postToParent
+    ? pluginVoiceInputApi.postToParent(window.parent, message, targetOrigin || "*")
+    : false;
+}
+
+function publishPluginVoiceInputCapability(options = {}) {
+  if (!isHermesEmbedMode()) return false;
+  const payload = pluginVoiceInputCapabilityPayload({
+    requestId: options.requestId || "",
+  });
+  const signature = JSON.stringify({
+    writable: payload.writable,
+    composerId: payload.composerId,
+    threadId: payload.threadId,
+    draftId: payload.draftId,
+    maxChars: payload.maxChars,
+    actions: payload.actions,
+  });
+  if (!options.force && !options.requestId && state.pluginVoiceInputCapabilitySignature === signature) return false;
+  state.pluginVoiceInputCapabilitySignature = signature;
+  return postPluginVoiceInputMessage(pluginVoiceInputApi.capabilityStateMessage(payload));
+}
+
+function currentPluginVoiceInputDraftKey() {
+  return currentDraftKey() || "";
+}
+
+function rememberPluginVoiceInputSession(payload = {}, insertedText = "") {
+  const voiceSessionId = pluginVoiceInputApi.voiceSessionIdFrom
+    ? pluginVoiceInputApi.voiceSessionIdFrom(payload)
+    : String(payload.voiceSessionId || payload.voice_session_id || "").trim();
+  if (!voiceSessionId) return;
+  const draftKey = currentPluginVoiceInputDraftKey();
+  if (!draftKey) return;
+  const sessions = state.pluginVoiceInputSessionsByDraftKey[draftKey] || [];
+  const existing = sessions.find((entry) => entry.voiceSessionId === voiceSessionId);
+  const next = {
+    voiceSessionId,
+    composerId: pluginVoiceInputComposerId(),
+    threadId: String(state.currentThreadId || "").slice(0, 160),
+    insertedText: String(insertedText || "").slice(0, Number(pluginVoiceInputApi.MAX_TEXT_CHARS || 12000) || 12000),
+    insertedAtMs: Date.now(),
+  };
+  if (existing) Object.assign(existing, next);
+  else sessions.push(next);
+  state.pluginVoiceInputSessionsByDraftKey[draftKey] = sessions.slice(-8);
+}
+
+function takePluginVoiceInputSessionsForDraft(draftKey) {
+  const key = String(draftKey || "");
+  if (!key) return [];
+  const sessions = Array.isArray(state.pluginVoiceInputSessionsByDraftKey[key])
+    ? state.pluginVoiceInputSessionsByDraftKey[key].slice()
+    : [];
+  delete state.pluginVoiceInputSessionsByDraftKey[key];
+  return sessions;
+}
+
+function commitPluginVoiceInputSessionsAfterSend(draftKey, finalText, options = {}) {
+  if (!isHermesEmbedMode()) return;
+  const sessions = takePluginVoiceInputSessionsForDraft(draftKey);
+  const submittedText = String(finalText || "").trim();
+  if (!sessions.length || !submittedText) return;
+  for (const session of sessions) {
+    postPluginVoiceInputMessage(pluginVoiceInputApi.commitResultMessage({
+      voiceSessionId: session.voiceSessionId,
+      composerId: options.composerId || session.composerId || pluginVoiceInputComposerId(),
+      threadId: options.threadId || state.currentThreadId || session.threadId || "",
+      messageId: options.messageId || "",
+      finalText: submittedText,
+      action: "submitted",
+    }));
+  }
+}
+
+function pluginVoiceInputAppendText(currentText, insertedText) {
+  const current = String(currentText || "").trim();
+  const next = String(insertedText || "").trim();
+  if (!current) return next;
+  if (!next) return current;
+  return `${current}\n${next}`;
+}
+
+function rejectPluginVoiceInputInsert(payload, code, message) {
+  postPluginVoiceInputMessage(pluginVoiceInputApi.insertResultMessage({
+    requestId: pluginVoiceInputApi.requestIdFrom ? pluginVoiceInputApi.requestIdFrom(payload) : payload.requestId,
+    voiceSessionId: pluginVoiceInputApi.voiceSessionIdFrom ? pluginVoiceInputApi.voiceSessionIdFrom(payload) : payload.voiceSessionId,
+    composerId: payload.composerId || payload.composer_id || pluginVoiceInputComposerId(),
+    draftId: pluginVoiceInputSafeDraftId(),
+    ok: false,
+    error: message || code || "composer_not_writable",
+  }));
+  postClientEvent("plugin_voice_input_insert_rejected", {
+    code: String(code || "insert_rejected").slice(0, 80),
+    writable: pluginVoiceInputComposerWritable(),
+    threadId: state.currentThreadId || "",
+  });
+}
+
+function applyPluginVoiceInputTextMessage(payload = {}) {
+  const action = pluginVoiceInputApi.actionFromMessageType
+    ? pluginVoiceInputApi.actionFromMessageType(payload.type)
+    : "";
+  if (!action || action === "submit") {
+    postPluginVoiceInputMessage(pluginVoiceInputApi.errorMessage({
+      requestId: payload.requestId,
+      voiceSessionId: payload.voiceSessionId,
+      composerId: payload.composerId || pluginVoiceInputComposerId(),
+      code: "unsupported_voice_input_action",
+      error: "Unsupported voice input action.",
+    }));
+    return true;
+  }
+  const capability = pluginVoiceInputCapabilityPayload();
+  if (!capability.writable) {
+    rejectPluginVoiceInputInsert(payload, "composer_not_writable", "Composer is not writable.");
+    return true;
+  }
+  const text = pluginVoiceInputApi.textFromMessage
+    ? pluginVoiceInputApi.textFromMessage(payload, capability.maxChars)
+    : String(payload.text || "").trim().slice(0, capability.maxChars);
+  if (!text) {
+    rejectPluginVoiceInputInsert(payload, "empty_voice_input_text", "Voice input text is empty.");
+    return true;
+  }
+  const nextText = action === "replace_draft"
+    ? text
+    : pluginVoiceInputAppendText(composerText(), text);
+  setComposerText(nextText);
+  scheduleCurrentDraftSave();
+  updateComposerControls();
+  const input = $("messageInput");
+  if (input) input.focus();
+  rememberPluginVoiceInputSession(payload, text);
+  postPluginVoiceInputMessage(pluginVoiceInputApi.insertResultMessage({
+    requestId: pluginVoiceInputApi.requestIdFrom ? pluginVoiceInputApi.requestIdFrom(payload) : payload.requestId,
+    voiceSessionId: pluginVoiceInputApi.voiceSessionIdFrom ? pluginVoiceInputApi.voiceSessionIdFrom(payload) : payload.voiceSessionId,
+    composerId: capability.composerId,
+    draftId: capability.draftId,
+    ok: true,
+  }));
+  publishPluginVoiceInputCapability({ force: true });
+  return true;
+}
+
+function handlePluginVoiceInputMessage(event) {
+  const payload = event && event.data;
+  if (!pluginVoiceInputApi.isVoiceInputMessage || !pluginVoiceInputApi.isVoiceInputMessage(payload)) return false;
+  if (!pluginVoiceInputParentOriginAllowed(event)) return true;
+  if (payload.pluginId && String(payload.pluginId) !== "codex-mobile") return true;
+  if (payload.version && Number(payload.version) !== 1) return true;
+  if (payload.type === pluginVoiceInputApi.TYPES.CAPABILITY_QUERY || payload.type === "voice_input.capability_query") {
+    publishPluginVoiceInputCapability({
+      force: true,
+      requestId: pluginVoiceInputApi.requestIdFrom ? pluginVoiceInputApi.requestIdFrom(payload) : payload.requestId,
+    });
+    return true;
+  }
+  if (
+    payload.type === pluginVoiceInputApi.TYPES.APPEND_TEXT
+    || payload.type === pluginVoiceInputApi.TYPES.INSERT_TEXT
+    || payload.type === pluginVoiceInputApi.TYPES.REPLACE_DRAFT
+    || payload.type === pluginVoiceInputApi.TYPES.SUBMIT
+  ) {
+    return applyPluginVoiceInputTextMessage(payload);
+  }
+  return false;
+}
+
+function clearPluginVoiceInputPress(options = {}) {
+  const press = state.pluginVoiceInputPress;
+  if (press && press.timer) clearTimeout(press.timer);
+  const button = $("sendMessage");
+  if (button) button.classList.remove("plugin-voice-input-recording");
+  state.pluginVoiceInputPress = options.keepSuppress && press
+    ? Object.assign({}, press, { timer: 0, started: false })
+    : null;
+}
+
+function handlePluginVoiceInputSendPointerDown(event) {
+  if (!pluginVoiceInputGestureAvailable()) return;
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+  const button = event.currentTarget;
+  clearPluginVoiceInputPress();
+  const press = {
+    pointerId: event.pointerId,
+    started: false,
+    suppressClick: false,
+    timer: 0,
+  };
+  state.pluginVoiceInputPress = press;
+  try {
+    button.setPointerCapture?.(event.pointerId);
+  } catch (_) {}
+  press.timer = setTimeout(() => {
+    press.timer = 0;
+    press.started = true;
+    press.suppressClick = true;
+    clearTextSelection();
+    if (button) button.classList.add("plugin-voice-input-recording");
+    const capability = pluginVoiceInputCapabilityPayload({ writable: true });
+    const ok = postPluginVoiceInputMessage(pluginVoiceInputApi.startRequestMessage(capability));
+    if (!ok) {
+      postClientEvent("plugin_voice_input_start_failed", { reason: "post_to_parent_failed" });
+    }
+  }, PLUGIN_VOICE_INPUT_LONG_PRESS_MS);
+}
+
+function handlePluginVoiceInputSendPointerUp(event) {
+  const press = state.pluginVoiceInputPress;
+  if (!press) return;
+  if (press.pointerId && event.pointerId !== press.pointerId) return;
+  if (press.timer) {
+    clearPluginVoiceInputPress();
+    return;
+  }
+  try {
+    event.currentTarget?.releasePointerCapture?.(event.pointerId);
+  } catch (_) {}
+  if (!press.started) {
+    clearPluginVoiceInputPress();
+    return;
+  }
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  postPluginVoiceInputMessage(pluginVoiceInputApi.stopRequestMessage(pluginVoiceInputCapabilityPayload()));
+  clearPluginVoiceInputPress({ keepSuppress: true });
+  window.setTimeout(() => {
+    if (state.pluginVoiceInputPress && state.pluginVoiceInputPress.suppressClick) state.pluginVoiceInputPress = null;
+  }, 1200);
+}
+
+function handlePluginVoiceInputSendPointerCancel(event) {
+  const press = state.pluginVoiceInputPress;
+  if (!press) return;
+  if (press.started) {
+    postPluginVoiceInputMessage(pluginVoiceInputApi.cancelRequestMessage(pluginVoiceInputCapabilityPayload()));
+  }
+  if (event && typeof event.preventDefault === "function") event.preventDefault();
+  clearPluginVoiceInputPress();
+}
+
+function handlePluginVoiceInputSendClick(event) {
+  const press = state.pluginVoiceInputPress;
+  if (!press || !press.suppressClick) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  state.pluginVoiceInputPress = null;
 }
 
 function boundedPluginRefreshValue(value, maxLength) {
@@ -13465,7 +13810,16 @@ function updateComposerControls() {
     sendButton.title = hasNewThreadDraft ? "Create new chat" : "Send message";
     sendButton.classList.remove("sending", "send-failed", "interrupt-mode", "steer-mode");
   }
-  sendButton.disabled = disabled || (!interruptMode && !hasContent);
+  const voiceGestureAvailable = pluginVoiceInputGestureAvailable();
+  sendButton.classList.toggle("plugin-voice-input-gesture", voiceGestureAvailable);
+  if (voiceGestureAvailable && !state.composerBusy && !interruptMode) {
+    sendButton.title = `${sendButton.title || "Send"}；按住录音，松开转写`;
+    sendButton.setAttribute("aria-label", `${sendButton.textContent || "Send"}。按住可语音输入`);
+  } else {
+    sendButton.removeAttribute("aria-label");
+  }
+  sendButton.disabled = disabled || (!interruptMode && !hasContent && !voiceGestureAvailable);
+  publishPluginVoiceInputCapability();
 }
 
 function hasTransferFiles(event) {
@@ -13738,6 +14092,11 @@ async function sendMessage(event) {
       body,
       timeoutMs: 180000,
     });
+    commitPluginVoiceInputSessionsAfterSend(submittedDraftKey, text, {
+      threadId: state.currentThreadId,
+      messageId: clientSubmissionId,
+      composerId: "thread-composer",
+    });
     setComposerText("");
     clearPendingAttachments();
     writeCurrentDraftToKey(submittedDraftKey);
@@ -13812,6 +14171,11 @@ async function sendNewThreadMessage(text, hasContent, input) {
     });
     const threadId = String((result && result.threadId) || (result && result.thread && result.thread.id) || "");
     if (!threadId) throw new Error("新对话创建失败：未返回 threadId");
+    commitPluginVoiceInputSessionsAfterSend(submittedDraftKey, text, {
+      threadId,
+      messageId: clientSubmissionId,
+      composerId: "new-thread-composer",
+    });
     registerSubmittedUserMessage(threadId, text, submittedAttachments, clientSubmissionId);
     const turnId = startedTurnId(result);
     const userItem = localUserMessageItem(text, submittedAttachments, clientSubmissionId);
@@ -14383,8 +14747,17 @@ function wireUi() {
   const pageRefreshPrompt = $("pageRefreshPrompt");
   if (pageRefreshPrompt) pageRefreshPrompt.addEventListener("click", refreshPageForNewBuild);
   $("composer").addEventListener("submit", sendMessage);
-  $("sendMessage").addEventListener("pointerup", requestComposerSubmitFromButton);
-  $("sendMessage").addEventListener("click", requestComposerSubmitFromButton);
+  const sendButton = $("sendMessage");
+  sendButton.addEventListener("pointerdown", handlePluginVoiceInputSendPointerDown);
+  sendButton.addEventListener("pointerup", handlePluginVoiceInputSendPointerUp);
+  sendButton.addEventListener("pointercancel", handlePluginVoiceInputSendPointerCancel);
+  sendButton.addEventListener("contextmenu", (event) => {
+    if (!state.pluginVoiceInputPress) return;
+    event.preventDefault();
+  });
+  sendButton.addEventListener("click", handlePluginVoiceInputSendClick);
+  sendButton.addEventListener("pointerup", requestComposerSubmitFromButton);
+  sendButton.addEventListener("click", requestComposerSubmitFromButton);
   $("interruptTurn").addEventListener("click", interruptActiveTurn);
   if ($("scrollToBottom")) $("scrollToBottom").addEventListener("click", () => {
     clearConversationAutoScrollHold();
@@ -14605,6 +14978,7 @@ function wireUi() {
   installPluginWindowingGuards();
   installHermesPluginBackSwipeGuard();
   window.addEventListener("message", (event) => {
+    if (handlePluginVoiceInputMessage(event)) return;
     if (handleHermesPluginViewportMessage(event && event.data)) return;
     if (pluginEmbedApi.isBackMessage && pluginEmbedApi.isBackMessage(event)) handlePluginBack(event);
   });

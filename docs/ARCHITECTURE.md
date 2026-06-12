@@ -226,6 +226,22 @@ font size instead of falling back to an older host value.
 { "type": "codex-mobile.plugin.navigation", "version": 1, "canGoBack": true, "route": { "kind": "thread", "threadId": "..." } }
 ```
 
+Home AI voice input is also iframe-contract-only. In `/?embed=hermes`, Codex
+Mobile loads `public/plugin-voice-input.js`, answers
+`voice_input.capability_query` with the current composer write state, accepts
+bounded `voice_input.append_text`, `voice_input.insert_text`, and
+`voice_input.replace_draft` messages from the verified parent frame, and
+acknowledges with `voice_input.insert_result`. The embedded send button also
+supports a Home-AI-only long-press gesture: after the long-press threshold it
+posts `voice_input.start_request` to the host, and release posts
+`voice_input.stop_request`. A normal short tap still uses the existing Codex
+send path. After a draft containing an inserted voice session is successfully
+sent, Codex posts `voice_input.commit_result` with the final submitted text so
+Home AI can learn correction pairs. The bridge never sends raw audio, Codex
+Access Keys, launch tokens, cookies, local paths, prompts, or app-server
+runtime state to the iframe parent. Standalone Codex Mobile Web does not enable
+this bridge or change its default send-button semantics.
+
 The embedded thread switcher/settings surface is a plugin primary page, not an
 overlay drawer. That primary page reports `canGoBack: false`, so Hermes Mobile
 can show its own bottom navigation tabs. Thread detail and new-thread composer

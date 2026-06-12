@@ -6095,6 +6095,18 @@ html.keyboard-open .composer {
   gap: 6px;
 }
 
+#sendMessage.plugin-voice-input-gesture {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+#sendMessage.plugin-voice-input-recording {
+  color: var(--sending-text);
+  background: rgba(158, 231, 196, 0.3);
+}
+
 #sendMessage.sending {
   color: var(--sending-text);
   background: rgba(158, 231, 196, 0.25);
