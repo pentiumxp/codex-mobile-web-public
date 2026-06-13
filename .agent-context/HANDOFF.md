@@ -2,6 +2,44 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-13 Production Restart Recovery After Deploy
+
+- User reported Codex Mobile could not be opened after a deploy and requested a
+  restart.
+- Initial production state:
+  - `launchctl print system/com.hermesmobile.plugin.codex-mobile` showed
+    `state = spawn scheduled`.
+  - No listener existed on `127.0.0.1:8787`.
+  - Last launchd exit code was `78: EX_CONFIG`.
+  - Production `server.js`, `public/app.js`, and `public/sw.js` passed
+    `node --check`.
+- Diagnosis:
+  - Manual startup from
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web` with the
+    launchd-equivalent environment succeeded and served `/api/public-config`.
+  - The LaunchDaemon runs as `xuxin`, but
+    `/Users/hermes-host/HermesMobile/logs` was `700 hermes-host`, and
+    `plugin-codex-mobile.out.log` / `.err.log` were `600 hermes-host`.
+  - This prevented the `xuxin` LaunchDaemon job from opening stdout/stderr
+    paths, causing `EX_CONFIG` before the Node app could start.
+- Recovery performed:
+  - Changed `/Users/hermes-host/HermesMobile/logs` to `711`.
+  - Changed the two Codex Mobile log files to owner `xuxin:staff`, mode `600`.
+  - Stopped the temporary manual 8787 listener.
+  - Ran `launchctl kickstart -k system/com.hermesmobile.plugin.codex-mobile`.
+- Verification:
+  - LaunchDaemon state became `running`, PID `54713`, last exit code `0`.
+  - `lsof` showed `node` user `xuxin` listening on `127.0.0.1:8787`.
+  - `/api/public-config` returned `200`, workspace path
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`, shell cache
+    `codex-mobile-shell-v277`.
+  - Authenticated `/api/status?detail=1` returned `200`, `ready=true`,
+    transport `external-jsonl-tcp`, active profile `default`,
+    `lastError=null`.
+- Follow-up:
+  - Ensure future deploy scripts preserve or repair Codex Mobile log directory
+    traversal and log file ownership for the service user `xuxin`.
+
 ## 2026-06-12 Public PR #64 File Preview Recovery Sync
 
 - Public PR:
@@ -3184,3 +3222,44 @@ The previous full handoff was archived and should be opened only when old proven
   - Final verification: thread detail returned 200, thread status `idle`, goal
     status `blocked`, final empty turn status `interrupted`.
 - No additional production restart was performed after the moria recovery.
+
+## 2026-06-12 Embedded Voice Input Bridge
+
+- Status: completed for the Codex Mobile Web embedded-plugin side; committed
+  and deployed to Mac production. Standalone Codex Mobile behavior remains out
+  of scope and is gated off by embedded-mode checks.
+- Commit:
+  - `7300c29 feat: add embedded voice input bridge`.
+  - Local `main` is ahead of `origin/main` by 1 commit after this work; no push
+    was performed in this closure step.
+- Scope:
+  - Added `public/plugin-voice-input.js` as the Home AI voice input bridge
+    helper.
+  - Embedded Codex responds to `voice_input.capability_query` and handles
+    bounded draft insertion/replacement/append messages from Home AI.
+  - Embedded send-button long press posts `voice_input.start_request` to the
+    Home AI host; release posts `voice_input.stop_request`.
+  - Successful sends post `voice_input.commit_result` so Home AI can learn
+    bounded correction pairs.
+  - Empty send buttons are enabled only for embedded voice availability; normal
+    empty click still no-ops.
+- Validation:
+  - `node --check public/plugin-voice-input.js public/app.js public/sw.js`.
+  - Focused `node --test` set covering plugin voice input, embedded mode,
+    composer draft, viewport, goal, and task-card routes passed.
+  - `npm run check`, `npm test`, and `npm run check:macos` passed.
+  - Home AI platform contract checker passed for `codex-mobile`, with only the
+    existing `handoff_pointer_missing` warning.
+  - Local temp-port smoke confirmed shell/cache `codex-mobile-shell-v276`,
+    script order, and voice bridge assets.
+- Production deployment:
+  - Deployed from `/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web`
+    to `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web` using the
+    central Mac deploy script with reason `codex-voice-input-v276`.
+  - Production smoke confirmed `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v276` and
+    `shellCacheName=codex-mobile-shell-v276`.
+  - Production manifest still reports `plugin_id=codex-mobile`,
+    `kind=embedded_app`, and entry URL `http://127.0.0.1:8787/?embed=hermes`.
+  - Production `/?embed=hermes` includes `plugin-voice-input.js` before
+    `app.js`, and `/plugin-voice-input.js` is served.
