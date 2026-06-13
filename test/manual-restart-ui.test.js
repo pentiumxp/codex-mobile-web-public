@@ -27,6 +27,8 @@ test("sidebar exposes a confirmed manual restart action beside the version pill"
   assert.doesNotMatch(restartBody, /window\.confirm\(/);
   assert.match(restartBody, /fetchRestartRiskThreads\(\)/);
   assert.match(restartBody, /requestSharedRestartConfirmation/);
+  assert.match(restartBody, /saveRestartAutoRecoverThreads\(riskThreads\)/);
+  assert.match(restartBody, /state\.appServerWasUnavailable = true/);
   assert.match(appJs, /\/api\/restart\/shared-chain/);
   assert.match(appJs, /sharedRestartButton"\)\)\s*\$\("sharedRestartButton"\)\.addEventListener\("click"/);
   assert.match(appJs, /restartConfirmProceed"\)\)\s*\$\("restartConfirmProceed"\)\.addEventListener\("click"/);

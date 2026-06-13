@@ -3445,3 +3445,37 @@ The previous full handoff was archived and should be opened only when old proven
     `runs=113`, last exit code `0`.
   - AI Ops evidence:
     `evidence-bfec11c1-e986-4c30-b882-71e2501b935c`.
+
+## 2026-06-13 Restart Risk Thread Auto Recovery v281
+
+- Status: implemented and locally validated after production v280 showed that
+  Restart recovery only covered the current thread.
+- Production observation before fix:
+  - `/api/threads?limit=20&archived=false` showed `Home AI 06-12` and `星盘`
+    still `status={ type: "active" }`.
+  - No `auto_turn_recovery` client events were found in bounded log search.
+  - Manual `/auto-recover` call for `Home AI 06-12` succeeded with
+    `{ recovered: true, action: "steered" }`.
+  - Manual `/auto-recover` call for `星盘` returned
+    `no active turn to steer`, revealing a stale-turn error text not covered by
+    the v280 fallback matcher.
+- Fix:
+  - `public/app.js` now stores the Restart confirmation risk thread list as a
+    one-shot local recovery queue before calling `/api/restart/shared-chain`.
+  - When app-server status recovers to ready, the client calls
+    `/api/threads/:id/auto-recover` for every queued risk thread, plus the
+    current thread if applicable.
+  - The queue stores bounded metadata only: thread id, active turn id, cwd,
+    name, and status.
+  - `server.js` treats `no active turn` as a stale active-turn error so
+    auto-recovery can fall back to `thread/resume` plus `turn/start`.
+  - PWA shell cache advanced to `codex-mobile-shell-v281`.
+- Validation:
+  - `node --check server.js && node --check public/app.js`
+  - `node --test test/new-thread-route.test.js test/mobile-viewport.test.js test/manual-restart-ui.test.js`
+  - `npm run check`
+  - Dev runtime smoke with fake JSONL TCP app-server verified:
+    `thread-steer` uses `thread/turns/list -> turn/steer`, and
+    `thread-fallback` handles `no active turn to steer` with
+    `thread/turns/list -> turn/steer -> thread/resume -> turn/start`.
+  - `npm test` passed: 468/468.

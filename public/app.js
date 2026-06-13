@@ -227,6 +227,7 @@ const state = {
   sharedRestartRiskThreads: [],
   sharedRestartScopeLines: [],
   sharedRestartConfirmResolve: null,
+  restartAutoRecoverThreads: [],
   serverBuildId: "",
   serverAssetBuildId: "",
   pageRefreshAvailable: false,
@@ -317,7 +318,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v280";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v281";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -365,6 +366,7 @@ const STORAGE_RATE_LIMITS = "codexMobileRateLimits";
 const STORAGE_RATE_LIMITS_BY_MODEL = "codexMobileRateLimitsByModel";
 const STORAGE_PUBLIC_PR_PROMPT = "codexMobilePublicPrPromptKey";
 const STORAGE_TASK_CARD_DRAFT_STATES = "codexMobileThreadTaskCardDraftStates";
+const STORAGE_RESTART_AUTO_RECOVER_THREADS = "codexMobileRestartAutoRecoverThreads";
 const PUBLIC_PR_REVIEW_THREAD_TITLE = "Codex Mobile Public PR";
 const MERMAID_SCRIPT_URL = "/vendor/mermaid.min.js";
 const MERMAID_MIN_SCALE = 0.65;
@@ -564,6 +566,49 @@ function saveStringSetStorage(key, value) {
     // Status hints are best-effort UI state.
   }
 }
+
+function normalizeRestartAutoRecoverThread(thread) {
+  const id = String(thread && thread.id || thread && thread.threadId || "").trim();
+  if (!id) return null;
+  return {
+    id,
+    activeTurnId: String(thread && thread.activeTurnId || ""),
+    cwd: String(thread && thread.cwd || ""),
+    name: String(thread && (thread.name || thread.preview) || ""),
+    status: thread && thread.status ? thread.status : { type: "active" },
+  };
+}
+
+function loadRestartAutoRecoverThreads() {
+  try {
+    const value = JSON.parse(localStorage.getItem(STORAGE_RESTART_AUTO_RECOVER_THREADS) || "[]");
+    if (!Array.isArray(value)) return [];
+    return value.map(normalizeRestartAutoRecoverThread).filter(Boolean).slice(0, 12);
+  } catch (_) {
+    return [];
+  }
+}
+
+function saveRestartAutoRecoverThreads(threads) {
+  const normalized = (threads || []).map(normalizeRestartAutoRecoverThread).filter(Boolean).slice(0, 12);
+  state.restartAutoRecoverThreads = normalized;
+  try {
+    if (normalized.length) localStorage.setItem(STORAGE_RESTART_AUTO_RECOVER_THREADS, JSON.stringify(normalized));
+    else localStorage.removeItem(STORAGE_RESTART_AUTO_RECOVER_THREADS);
+  } catch (_) {
+    // Restart recovery hints are best-effort UI state.
+  }
+  return normalized;
+}
+
+function clearRestartAutoRecoverThreads() {
+  state.restartAutoRecoverThreads = [];
+  try {
+    localStorage.removeItem(STORAGE_RESTART_AUTO_RECOVER_THREADS);
+  } catch (_) {}
+}
+
+state.restartAutoRecoverThreads = loadRestartAutoRecoverThreads();
 
 function saveThreadTaskCardDraftStates() {
   try {
@@ -2710,6 +2755,8 @@ async function handleSharedRestartClick() {
     const riskThreads = await fetchRestartRiskThreads();
     const confirmed = await requestSharedRestartConfirmation(riskThreads, sharedRestartScopeLines());
     if (!confirmed) return;
+    saveRestartAutoRecoverThreads(riskThreads);
+    state.appServerWasUnavailable = true;
     const result = await api("/api/restart/shared-chain", {
       method: "POST",
       body: "{}",
@@ -3045,22 +3092,34 @@ function autoTurnRecoveryCandidate() {
   };
 }
 
+function autoTurnRecoveryCandidates() {
+  const byId = new Map();
+  for (const thread of state.restartAutoRecoverThreads || []) {
+    const normalized = normalizeRestartAutoRecoverThread(thread);
+    if (normalized) byId.set(normalized.id, {
+      threadId: normalized.id,
+      activeTurnId: normalized.activeTurnId,
+      cwd: normalized.cwd,
+      wasRunning: true,
+    });
+  }
+  const current = autoTurnRecoveryCandidate();
+  if (current) byId.set(current.threadId, current);
+  return Array.from(byId.values());
+}
+
 function autoTurnRecoveryRecentKey(candidate) {
   return `${candidate.threadId}|${candidate.activeTurnId || "latest"}`;
 }
 
-async function maybeAutoRecoverTurnAfterReconnect(status, reason = "reconnect") {
-  if (!status || !status.ready || document.visibilityState === "hidden" || !state.key) return;
-  const candidate = autoTurnRecoveryCandidate();
-  if (!candidate) return;
+async function recoverTurnCandidateAfterReconnect(candidate, reason) {
   const key = autoTurnRecoveryRecentKey(candidate);
   const now = Date.now();
   const recentAt = Number(state.autoTurnRecoveryRecent[key] || 0);
-  if (recentAt && now - recentAt < AUTO_TURN_RECOVERY_COOLDOWN_MS) return;
-  if (state.autoTurnRecoveryInFlight.has(key)) return;
+  if (recentAt && now - recentAt < AUTO_TURN_RECOVERY_COOLDOWN_MS) return null;
+  if (state.autoTurnRecoveryInFlight.has(key)) return null;
   state.autoTurnRecoveryInFlight.add(key);
   state.autoTurnRecoveryRecent[key] = now;
-  markActivity("自动续接中");
   try {
     const result = await api(`/api/threads/${encodeURIComponent(candidate.threadId)}/auto-recover`, {
       method: "POST",
@@ -3083,13 +3142,12 @@ async function maybeAutoRecoverTurnAfterReconnect(status, reason = "reconnect") 
       resultReason: String(result && result.reason || ""),
       turnId: String(result && result.turnId || ""),
     });
-    if (result && result.recovered) {
+    if (result && result.recovered && candidate.threadId === state.currentThreadId) {
       if (result.turnId) state.activeTurnId = String(result.turnId);
-      markActivity(result.action === "steered" ? "已续接当前轮" : "已自动继续");
       scheduleCurrentThreadRefresh(500);
       scheduleLivePollIfNeeded(1000);
-      loadThreads({ silent: true }).catch(showError);
     }
+    return result;
   } catch (err) {
     delete state.autoTurnRecoveryRecent[key];
     postClientEvent("auto_turn_recovery_failed", {
@@ -3098,8 +3156,26 @@ async function maybeAutoRecoverTurnAfterReconnect(status, reason = "reconnect") 
       activeTurnId: candidate.activeTurnId,
       error: err.message || String(err),
     });
+    return null;
   } finally {
     state.autoTurnRecoveryInFlight.delete(key);
+  }
+}
+
+async function maybeAutoRecoverTurnAfterReconnect(status, reason = "reconnect") {
+  if (!status || !status.ready || document.visibilityState === "hidden" || !state.key) return;
+  const candidates = autoTurnRecoveryCandidates();
+  if (!candidates.length) return;
+  markActivity("自动续接中");
+  let recoveredCount = 0;
+  for (const candidate of candidates) {
+    const result = await recoverTurnCandidateAfterReconnect(candidate, reason);
+    if (result && result.recovered) recoveredCount += 1;
+  }
+  if (state.restartAutoRecoverThreads.length) clearRestartAutoRecoverThreads();
+  if (recoveredCount > 0) {
+    markActivity(recoveredCount === 1 ? "已自动续接" : `已自动续接 ${recoveredCount} 个线程`);
+    loadThreads({ silent: true }).catch(showError);
   }
 }
 

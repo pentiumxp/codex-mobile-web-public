@@ -255,7 +255,7 @@ test("existing-message route falls back when active turn steering is stale", () 
   const helperBody = serverJs.slice(helperIndex, serverJs.indexOf("function logClientEvent", helperIndex));
   assert.match(helperBody, /method not found\|unknown method/, "unsupported helper should only match method support errors");
   assert.doesNotMatch(helperBody, /method not found\|unknown method\|not found/, "generic not found must not be treated as unsupported turn/steer");
-  assert.match(helperBody, /not found\|not active\|inactive\|completed\|interrupted\|expected turn\|expected active turn id/, "stale helper should catch stale active-turn errors");
+  assert.match(helperBody, /not found\|not active\|inactive\|completed\|interrupted\|expected turn\|expected active turn id\|no active turn/, "stale helper should catch stale active-turn errors");
   assert.match(helperBody, /detectStaleActiveTurnForSubmission/, "preflight should use service-owned stale-turn detection");
   assert.match(helperBody, /thread\/turns\/list/, "preflight should inspect latest durable turn state");
   assert.match(helperBody, /limit:\s*20/, "preflight should inspect enough recent turns to detect superseded active turns");
