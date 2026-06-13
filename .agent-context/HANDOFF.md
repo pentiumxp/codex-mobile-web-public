@@ -2,6 +2,53 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-13 Recurring macOS LaunchDaemon EX_CONFIG During Normal Use
+
+- User reported Codex Mobile disconnected during normal use, without pressing
+  Restart or deploying, and then could not recover. This was the third
+  occurrence in the same day.
+- Production diagnosis:
+  - `127.0.0.1:8787` was unavailable during the failure.
+  - `launchctl print system/com.hermesmobile.plugin.codex-mobile` showed a
+    scheduled respawn with prior `78: EX_CONFIG`.
+  - The job runs as `xuxin`, but its loaded `StandardOutPath` and
+    `StandardErrorPath` pointed at shared files under
+    `/Users/hermes-host/HermesMobile/logs`.
+  - When those shared files drift back to `hermes-host:staff` mode `600`,
+    launchd can fail before Node starts. This affects any relaunch, including
+    system/KeepAlive relaunches after an unrelated runtime exit, not only
+    explicit Restart or deploy.
+- Immediate production repair:
+  - Moved the loaded LaunchDaemon stdout/stderr paths to
+    `/Users/xuxin/.codex-mobile-web/logs/codex-mobile-web.out.log` and
+    `/Users/xuxin/.codex-mobile-web/logs/codex-mobile-web.err.log`.
+  - Set the runtime log directory to `xuxin:staff` mode `700` and the two log
+    files to `xuxin:staff` mode `600`.
+  - Reloaded only `system/com.hermesmobile.plugin.codex-mobile`; Home AI
+    listener was not restarted.
+- Verification after repair:
+  - `plutil -p /Library/LaunchDaemons/com.hermesmobile.plugin.codex-mobile.plist`
+    shows both standard log paths under `/Users/xuxin/.codex-mobile-web/logs`.
+  - `launchctl print system/com.hermesmobile.plugin.codex-mobile` shows
+    `state = running`, `username = xuxin`, runtime stdout/stderr paths, and
+    `last exit code = (never exited)`.
+  - Authenticated `/api/status?detail=1` returned `ready=true`,
+    `transport=managed-ws-child`, and `lastError=null`.
+- Durable code fix in Home AI app repo:
+  - `/Users/hermes-dev/HermesMobileDev/app/scripts/deploy-macos-production.js`
+    now makes Codex Mobile post-sync repair create runtime-owned log files,
+    update the LaunchDaemon `StandardOutPath` / `StandardErrorPath`, and
+    reload the Codex Mobile LaunchDaemon during deploy.
+  - Updated Home AI deployment docs and deploy-script harness expectations to
+    treat runtime-owned Codex Mobile logs as the contract.
+- Validation:
+  - `node --check scripts/deploy-macos-production.js`
+  - `node tests/macos-production-deploy-script.test.js`
+  - `node tests/production-status-smoke-harness.test.js`
+  - `npm run --silent deploy:macos -- --target home-ai --json`
+  - `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --reason codex-mobile-runtime-log-plist --json`
+  - `git diff --check`
+
 ## 2026-06-13 macOS Restart LaunchDaemon Log Pre-Repair
 
 - User reported that after deployment, tapping Mobile Web `Restart` left
