@@ -82,12 +82,16 @@ test("voice input bridge is limited to Hermes embed mode and uses plugin scripts
   assert.match(appJs, /"\/plugin-voice-input\.js"/);
   assert.match(functionBody("pluginVoiceInputComposerWritable"), /if \(!isHermesEmbedMode\(\)\) return false;/);
   assert.match(functionBody("pluginVoiceInputActiveTurnHoldAvailable"), /if \(!isHermesEmbedMode\(\)\) return false;/);
+  assert.match(functionBody("pluginVoiceInputCanReceiveText"), /if \(pluginVoiceInputComposerWritable\(\)\) return true;/);
+  assert.match(functionBody("pluginVoiceInputCanReceiveText"), /return pluginVoiceInputActiveTurnHoldAvailable\(\);/);
   assert.match(functionBody("pluginVoiceInputGestureAvailable"), /if \(!isHermesEmbedMode\(\)\) return false;/);
   assert.match(functionBody("pluginVoiceInputGestureAvailable"), /if \(pluginVoiceInputActiveTurnHoldAvailable\(\)\) return true;/);
   assert.match(functionBody("handlePluginVoiceInputMessage"), /pluginVoiceInputParentOriginAllowed\(event\)/);
   assert.match(functionBody("handlePluginVoiceInputMessage"), /payload\.pluginId && String\(payload\.pluginId\) !== "codex-mobile"/);
   assert.match(functionBody("updateComposerControls"), /const voiceGestureAvailable = pluginVoiceInputGestureAvailable\(\)/);
   assert.match(functionBody("updateComposerControls"), /!hasContent && !voiceGestureAvailable/);
+  assert.match(functionBody("pluginVoiceInputCapabilityPayload"), /writable: pluginVoiceInputCanReceiveText\(\)/);
+  assert.match(functionBody("applyPluginVoiceInputTextMessage"), /const capability = pluginVoiceInputCapabilityPayload\(\)/);
   assert.match(functionBody("sendMessage"), /commitPluginVoiceInputSessionsAfterSend\(submittedDraftKey, text/);
   assert.match(functionBody("sendNewThreadMessage"), /commitPluginVoiceInputSessionsAfterSend\(submittedDraftKey, text/);
 });

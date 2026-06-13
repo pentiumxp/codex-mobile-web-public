@@ -678,6 +678,8 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v279 修正 v278 后 active turn Stop 长按语音可以录音但转写回写被判定为“当前输入框不可写”的问题。Codex 嵌入态现在把“普通 composer 可写”和“当前 active turn 可接收引导文本”拆成独立判断；即使输入框在 Stop 状态下被临时标记为不可编辑，Home AI 语音转写结果仍可写入 composer，并切换为“引导”发送。PWA shell cache 升级到 `codex-mobile-shell-v279`，该修复是静态前端资源变更，不要求重启 Codex listener。
+
 - 中文说明：v278 修正 Home AI 嵌入态 Codex active turn 的 Stop 长按语音入口。嵌入态正在运行时，Stop 按钮不再把可见文字直接放进按钮 DOM，而是使用不可选中的视觉代理；长按会先阻止 iOS 文本选择和后续 click，再交给 Home AI 语音录入，轻点仍可中断当前 turn。Standalone Codex Mobile 行为保持不变。PWA shell cache 升级到 `codex-mobile-shell-v278`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
 
 - 中文说明：server-only 合并 public PR #64 并收窄本地文件预览授权。文件预览现在在处理当前请求的 `path` 时优先做定向匹配，避免为大型 rollout 全量枚举所有本地路径导致卡死；只会授权 Workspace/root 内文件，或确实出现在当前线程文本中的单个本地文件，不会因为 URL 参数携带绝对路径就读取任意本机文件。未引用文件、敏感路径段、非支持扩展名和上传/runtime/private 文件仍按原规则拒绝。本次不改变 PWA shell cache，public 发布只包含公开源码、README 和测试；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
