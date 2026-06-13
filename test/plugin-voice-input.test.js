@@ -10,6 +10,7 @@ const voiceInput = require("../public/plugin-voice-input");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const swJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "sw.js"), "utf8");
+const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
 
 function functionBody(name) {
   let start = appJs.indexOf(`function ${name}(`);
@@ -80,7 +81,9 @@ test("voice input bridge is limited to Hermes embed mode and uses plugin scripts
   assert.match(swJs, /"\/plugin-voice-input\.js"/);
   assert.match(appJs, /"\/plugin-voice-input\.js"/);
   assert.match(functionBody("pluginVoiceInputComposerWritable"), /if \(!isHermesEmbedMode\(\)\) return false;/);
+  assert.match(functionBody("pluginVoiceInputActiveTurnHoldAvailable"), /if \(!isHermesEmbedMode\(\)\) return false;/);
   assert.match(functionBody("pluginVoiceInputGestureAvailable"), /if \(!isHermesEmbedMode\(\)\) return false;/);
+  assert.match(functionBody("pluginVoiceInputGestureAvailable"), /if \(pluginVoiceInputActiveTurnHoldAvailable\(\)\) return true;/);
   assert.match(functionBody("handlePluginVoiceInputMessage"), /pluginVoiceInputParentOriginAllowed\(event\)/);
   assert.match(functionBody("handlePluginVoiceInputMessage"), /payload\.pluginId && String\(payload\.pluginId\) !== "codex-mobile"/);
   assert.match(functionBody("updateComposerControls"), /const voiceGestureAvailable = pluginVoiceInputGestureAvailable\(\)/);
@@ -90,6 +93,8 @@ test("voice input bridge is limited to Hermes embed mode and uses plugin scripts
 });
 
 test("send button long press delegates recording to Home AI only after threshold", () => {
+  assert.match(functionBody("handlePluginVoiceInputSendPointerDown"), /event\.preventDefault\(\)/);
+  assert.match(functionBody("handlePluginVoiceInputSendPointerDown"), /event\.stopPropagation\(\)/);
   assert.match(functionBody("handlePluginVoiceInputSendPointerDown"), /setTimeout\(\(\) => \{/);
   assert.match(functionBody("handlePluginVoiceInputSendPointerDown"), /PLUGIN_VOICE_INPUT_LONG_PRESS_MS/);
   assert.match(functionBody("handlePluginVoiceInputSendPointerDown"), /pluginVoiceInputApi\.startRequestMessage/);
@@ -98,4 +103,14 @@ test("send button long press delegates recording to Home AI only after threshold
   assert.match(functionBody("handlePluginVoiceInputSendClick"), /event\.stopImmediatePropagation\(\)/);
   assert.match(appJs, /sendButton\.addEventListener\("pointerdown", handlePluginVoiceInputSendPointerDown\)/);
   assert.match(appJs, /sendButton\.addEventListener\("pointerup", handlePluginVoiceInputSendPointerUp\);[\s\S]*sendButton\.addEventListener\("pointerup", requestComposerSubmitFromButton\)/);
+});
+
+test("embedded active-turn stop button is not rendered as selectable text", () => {
+  assert.match(functionBody("updateComposerControls"), /setComposerActionButtonLabel\(sendButton, "Stop", \{ proxy: isHermesEmbedMode\(\) \}\)/);
+  assert.match(functionBody("setComposerActionButtonLabel"), /button\.textContent = "";/);
+  assert.match(functionBody("setComposerActionButtonLabel"), /button\.dataset\.visualLabel = text;/);
+  assert.match(functionBody("setComposerActionButtonLabel"), /button\.classList\.toggle\("plugin-voice-input-label-proxy", useProxy\)/);
+  assert.match(stylesCss, /#sendMessage\.plugin-voice-input-gesture,\s*#sendMessage\.plugin-voice-input-gesture::before,\s*#sendMessage\.plugin-voice-input-gesture::after/);
+  assert.match(stylesCss, /#sendMessage\.interrupt-mode\.plugin-voice-input-label-proxy::before/);
+  assert.match(stylesCss, /-webkit-touch-callout: none !important;/);
 });

@@ -314,7 +314,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v277";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v278";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -4845,6 +4845,12 @@ function pluginVoiceInputComposerWritable() {
   );
 }
 
+function pluginVoiceInputActiveTurnHoldAvailable() {
+  if (!isHermesEmbedMode()) return false;
+  if (!state.activeTurnId || state.attachmentProcessingCount > 0) return false;
+  return Boolean(state.currentThreadId && state.currentThread && !state.currentThread.mobileLoading && !state.currentThread.mobileLoadError);
+}
+
 function pluginVoiceInputCapabilityPayload(extra = {}) {
   return Object.assign({
     pluginId: "codex-mobile",
@@ -4859,6 +4865,7 @@ function pluginVoiceInputCapabilityPayload(extra = {}) {
 
 function pluginVoiceInputGestureAvailable() {
   if (!isHermesEmbedMode()) return false;
+  if (pluginVoiceInputActiveTurnHoldAvailable()) return true;
   if (state.activeTurnId && !composerHasContent()) return false;
   return pluginVoiceInputComposerWritable();
 }
@@ -5049,6 +5056,8 @@ function clearPluginVoiceInputPress(options = {}) {
 function handlePluginVoiceInputSendPointerDown(event) {
   if (!pluginVoiceInputGestureAvailable()) return;
   if (event.pointerType === "mouse" && event.button !== 0) return;
+  event.preventDefault();
+  event.stopPropagation();
   const button = event.currentTarget;
   clearPluginVoiceInputPress();
   const press = {
@@ -5115,6 +5124,21 @@ function handlePluginVoiceInputSendClick(event) {
   event.preventDefault();
   event.stopImmediatePropagation();
   state.pluginVoiceInputPress = null;
+}
+
+function setComposerActionButtonLabel(button, label, options = {}) {
+  if (!button) return;
+  const text = String(label || "");
+  const useProxy = Boolean(options.proxy);
+  button.classList.toggle("plugin-voice-input-label-proxy", useProxy);
+  if (useProxy) {
+    button.textContent = "";
+    button.dataset.visualLabel = text;
+    button.setAttribute("aria-label", text);
+  } else {
+    button.textContent = text;
+    delete button.dataset.visualLabel;
+  }
 }
 
 function boundedPluginRefreshValue(value, maxLength) {
@@ -13777,37 +13801,37 @@ function updateComposerControls() {
   }
   const showRetryHint = Boolean(state.sendButtonHint);
   if (interruptMode) {
-    sendButton.textContent = "Stop";
+    setComposerActionButtonLabel(sendButton, "Stop", { proxy: isHermesEmbedMode() });
     sendButton.title = "Interrupt current turn";
     sendButton.classList.add("interrupt-mode");
     sendButton.classList.remove("sending", "send-failed", "steer-mode");
   } else if (state.composerBusy) {
     const steering = state.steerFeedback && state.steerFeedback.status === "sending";
-    sendButton.textContent = steering ? "引导中…" : "发送中…";
+    setComposerActionButtonLabel(sendButton, steering ? "引导中…" : "发送中…");
     sendButton.title = steering ? "Steering current turn" : "Message is sending";
     sendButton.classList.add("sending");
     sendButton.classList.toggle("steer-mode", Boolean(steering));
     sendButton.classList.remove("send-failed", "interrupt-mode");
   } else if (showRetryHint) {
-    sendButton.textContent = "重试";
+    setComposerActionButtonLabel(sendButton, "重试");
     sendButton.title = "Retry sending message";
     sendButton.classList.add("send-failed");
     sendButton.classList.remove("sending", "interrupt-mode", "steer-mode");
   } else if (goalCommandMode) {
-    sendButton.textContent = "Goal";
+    setComposerActionButtonLabel(sendButton, "Goal");
     sendButton.title = "Open goal dialog";
     sendButton.classList.remove("sending", "send-failed", "interrupt-mode", "steer-mode");
   } else if (commandMode) {
-    sendButton.textContent = "Task card";
+    setComposerActionButtonLabel(sendButton, "Task card");
     sendButton.title = "Ask Codex to draft a cross-thread task card";
     sendButton.classList.remove("sending", "send-failed", "interrupt-mode", "steer-mode");
   } else if (steerMode) {
-    sendButton.textContent = "引导";
+    setComposerActionButtonLabel(sendButton, "引导");
     sendButton.title = "Guide the current running turn";
     sendButton.classList.add("steer-mode");
     sendButton.classList.remove("sending", "send-failed", "interrupt-mode");
   } else {
-    sendButton.textContent = "Send";
+    setComposerActionButtonLabel(sendButton, "Send");
     sendButton.title = hasNewThreadDraft ? "Create new chat" : "Send message";
     sendButton.classList.remove("sending", "send-failed", "interrupt-mode", "steer-mode");
   }
@@ -13816,6 +13840,8 @@ function updateComposerControls() {
   if (voiceGestureAvailable && !state.composerBusy && !interruptMode) {
     sendButton.title = `${sendButton.title || "Send"}；按住录音，松开转写`;
     sendButton.setAttribute("aria-label", `${sendButton.textContent || "Send"}。按住可语音输入`);
+  } else if (interruptMode && isHermesEmbedMode()) {
+    sendButton.setAttribute("aria-label", "Stop。按住可语音输入，轻点可中断当前任务");
   } else {
     sendButton.removeAttribute("aria-label");
   }

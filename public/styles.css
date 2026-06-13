@@ -6098,8 +6098,18 @@ html.keyboard-open .composer {
 #sendMessage.plugin-voice-input-gesture {
   -webkit-touch-callout: none;
   -webkit-user-select: none;
+  -webkit-user-drag: none;
   touch-action: manipulation;
   user-select: none;
+}
+
+#sendMessage.plugin-voice-input-gesture,
+#sendMessage.plugin-voice-input-gesture::before,
+#sendMessage.plugin-voice-input-gesture::after {
+  -webkit-touch-callout: none !important;
+  -webkit-user-select: none !important;
+  -webkit-user-drag: none !important;
+  user-select: none !important;
 }
 
 #sendMessage.plugin-voice-input-recording {
@@ -6130,6 +6140,15 @@ html.keyboard-open .composer {
 #sendMessage.interrupt-mode {
   color: var(--danger-text);
   background: var(--danger);
+}
+
+#sendMessage.interrupt-mode.plugin-voice-input-label-proxy::before {
+  content: "";
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  background: currentColor;
+  display: inline-block;
 }
 
 #sendMessage.steer-mode {

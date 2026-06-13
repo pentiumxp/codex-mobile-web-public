@@ -202,7 +202,7 @@ test("server enriches thread list and detail responses with thread goals", () =>
 });
 
 test("mobile client renders and updates thread goals from app-server notifications", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v277"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v278"/);
   assert.match(appJs, /function normalizeThreadGoal\(/);
   assert.match(appJs, /function submittedThreadGoal\(/);
   assert.match(appJs, /function renderThreadGoal\(/);
@@ -242,7 +242,7 @@ test("mobile client opens goal dialog from /g and sets goal through app-server r
   assert.doesNotMatch(appJs, /Please set the current goal for this Codex thread/);
   assert.doesNotMatch(appJs, /Use the CLI goal feature if it is available/);
   assert.match(functionBody(appJs, "updateComposerControls"), /isThreadGoalCommandText\(composerText\(\)\)/);
-  assert.match(functionBody(appJs, "updateComposerControls"), /sendButton\.textContent = "Goal"/);
+  assert.match(functionBody(appJs, "updateComposerControls"), /setComposerActionButtonLabel\(sendButton, "Goal"\)/);
   assert.match(functionBody(appJs, "sendMessage"), /const threadGoalCommand = isThreadGoalCommandText\(text\)/);
   assert.match(functionBody(appJs, "sendMessage"), /openThreadGoalDialog\(state\.currentThreadId\)/);
   assert.match(functionBody(appJs, "sendMessage"), /setComposerText\(""\)/);
