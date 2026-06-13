@@ -12700,12 +12700,12 @@ function scheduleEventReconnectRetry() {
   }, delay);
 }
 
-function shouldRefreshThreadListDuringEventRecovery() {
-  return !isHermesEmbedMode() || !state.threads.length;
+function shouldRefreshThreadListDuringEventRecovery(options = {}) {
+  return Boolean(options.force) || !isHermesEmbedMode() || !state.threads.length;
 }
 
-async function refreshThreadListDuringEventRecovery() {
-  if (!shouldRefreshThreadListDuringEventRecovery()) return false;
+async function refreshThreadListDuringEventRecovery(options = {}) {
+  if (!shouldRefreshThreadListDuringEventRecovery(options)) return false;
   await loadThreads({ silent: isHermesEmbedMode() || Boolean(state.threads.length) });
   return true;
 }
@@ -12735,16 +12735,16 @@ function scheduleEventFallbackPoll(delayMs = 8000) {
   }, delayMs);
 }
 
-async function recoverEventStreamWithApiFallback() {
+async function recoverEventStreamWithApiFallback(options = {}) {
   const wasUnavailable = state.appServerWasUnavailable || Boolean(state.connectionStatus && !state.connectionStatus.ready);
   const status = await api("/api/status");
   updateConnectionState(status);
-  const recovered = wasUnavailable && status && status.ready;
+  const recovered = (wasUnavailable || Boolean(options.afterEventReconnect)) && status && status.ready;
   state.appServerWasUnavailable = Boolean(status && !status.ready);
   clearReconnectRefreshPrompt();
   rememberRateLimitsFromConfig(status);
   if (status.codexProfiles) rememberCodexProfiles(status.codexProfiles);
-  await refreshThreadListDuringEventRecovery();
+  await refreshThreadListDuringEventRecovery({ force: Boolean(options.afterEventReconnect) });
   if (state.currentThreadId) await refreshCurrentThread();
   if (recovered) await maybeAutoRecoverTurnAfterReconnect(status, "event-fallback-reconnect");
   if (isHermesEmbedMode()) {
@@ -12768,11 +12768,19 @@ function connectEvents() {
   if (state.currentThreadId) params.set("threadId", state.currentThreadId);
   state.events = new EventSource(`/api/events?${params.toString()}`);
   state.events.onopen = () => {
+    const hadReconnectFailure = state.eventReconnectFailures > 0 || state.eventFallbackMode;
     clearReconnectTimers();
     resetEventFallbackState();
     clearReconnectRefreshPrompt();
     if (state.connectionStatus) restoreConnectionState();
     scheduleVisiblePageRefreshCheck(200, { force: true });
+    if (hadReconnectFailure) {
+      recoverEventStreamWithApiFallback({ afterEventReconnect: true }).catch((err) => {
+        state.appServerWasUnavailable = true;
+        showReconnectRefreshPrompt("reconnect");
+        if (!isHermesEmbedMode()) showError(err);
+      });
+    }
   };
   state.events.onmessage = (event) => {
     const payload = JSON.parse(event.data);
