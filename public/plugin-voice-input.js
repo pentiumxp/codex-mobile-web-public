@@ -17,6 +17,7 @@
     INSERT_TEXT: "voice_input.insert_text",
     APPEND_TEXT: "voice_input.append_text",
     REPLACE_DRAFT: "voice_input.replace_draft",
+    PROVISIONAL_TEXT: "voice_input.provisional_text",
     SUBMIT: "voice_input.submit",
     START_REQUEST: "voice_input.start_request",
     STOP_REQUEST: "voice_input.stop_request",
@@ -29,6 +30,7 @@
     insert_text: TYPES.INSERT_TEXT,
     append_text: TYPES.APPEND_TEXT,
     replace_draft: TYPES.REPLACE_DRAFT,
+    provisional_text: TYPES.PROVISIONAL_TEXT,
     submit: TYPES.SUBMIT,
   });
   const ACTIONS_BY_TYPE = Object.freeze(Object.fromEntries(
@@ -56,6 +58,7 @@
     if (value === "append") return "append_text";
     if (value === "insert") return "insert_text";
     if (value === "replace") return "replace_draft";
+    if (value === "provisional") return "provisional_text";
     return ACTION_TYPES[value] ? value : "";
   }
 
@@ -148,6 +151,7 @@
   function insertResultMessage(input = {}) {
     return Object.assign(baseMessage(TYPES.INSERT_RESULT, input), {
       ok: input.ok !== false,
+      code: input.ok === false ? boundedString(input.code || input.errorCode || input.error_code, 80) : "",
       composerId: boundedString(input.composerId || input.composer_id || "thread-composer", 120) || "thread-composer",
       draftId: boundedString(input.draftId || input.draft_id, 220),
       error: input.ok === false ? boundedString(input.error || input.message, 240) : "",

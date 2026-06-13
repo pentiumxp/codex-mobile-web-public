@@ -681,6 +681,8 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v282 修正 Home AI 嵌入态 Codex 语音输入不实时跳字的问题。Codex 插件协议新增 `voice_input.provisional_text`，录音过程中按同一个 `voiceSessionId` 替换上一段临时草稿，松手后再恢复 base draft 并插入最终转写文本，避免重复追加。Host/插件侧也把 composer 暂不可写降级为静默忽略，不再频繁弹出“当前输入框不可写”。PWA shell cache 升级到 `codex-mobile-shell-v282`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端逻辑。
+
 - 中文说明：v281 修正 v280 自动续接只覆盖当前打开线程的问题。导航栏 Restart 确认前列出的 running session 会保存为一次性恢复队列；Listener/app-server 恢复 ready 后，前端会逐个调用 `/api/threads/:id/auto-recover`，让 Home AI、星盘等后台运行线程也能自动续接。普通 SSE 抖动仍不会触发自动续接，恢复队列只保存线程 id/cwd/status 等元数据，不保存消息内容。PWA shell cache 升级到 `codex-mobile-shell-v281`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端逻辑。
 
 - 中文说明：v280 增加 Listener/app-server 断线后的当前线程自动续接。移动端在 EventSource 或恢复流程检测到 app-server 从不可用回到 ready 后，如果当前线程仍有 active turn 或运行提示，会调用服务端 `/auto-recover`：优先对仍 live 的 turn 发送一次短“继续当前任务”引导；如果原 turn 已不可续接，则 `thread/resume` 后开一个新的继续 turn。该路径带线程级冷却，避免重连抖动重复开 turn；普通 `turn/start` / `turn/steer` 仍不做通用 RPC 自动重试，防止重复提交。PWA shell cache 升级到 `codex-mobile-shell-v280`，更新后需要重启 8787 Node listener，并让已打开的浏览器/PWA 接受刷新提示、硬刷新或关闭重开。

@@ -24,19 +24,26 @@ const pluginVoiceInputApi = window.CodexPluginVoiceInput || {
     APPEND_TEXT: "voice_input.append_text",
     INSERT_TEXT: "voice_input.insert_text",
     REPLACE_DRAFT: "voice_input.replace_draft",
+    PROVISIONAL_TEXT: "voice_input.provisional_text",
     SUBMIT: "voice_input.submit",
   },
   actionFromMessageType(type) {
     if (type === "voice_input.append_text") return "append_text";
     if (type === "voice_input.insert_text") return "insert_text";
     if (type === "voice_input.replace_draft") return "replace_draft";
+    if (type === "voice_input.provisional_text") return "provisional_text";
     if (type === "voice_input.submit") return "submit";
     return "";
   },
   capabilityStateMessage: (input = {}) => Object.assign({ type: "voice_input.capability_state", version: 1, pluginId: "codex-mobile" }, input),
   commitResultMessage: (input = {}) => Object.assign({ type: "voice_input.commit_result", version: 1, pluginId: "codex-mobile" }, input),
   errorMessage: (input = {}) => Object.assign({ type: "voice_input.error", version: 1, pluginId: "codex-mobile" }, input),
-  insertResultMessage: (input = {}) => Object.assign({ type: "voice_input.insert_result", version: 1, pluginId: "codex-mobile" }, input),
+  insertResultMessage: (input = {}) => Object.assign({
+    type: "voice_input.insert_result",
+    version: 1,
+    pluginId: "codex-mobile",
+    code: input.ok === false ? String(input.code || input.errorCode || input.error_code || "").trim().slice(0, 80) : "",
+  }, input),
   isVoiceInputMessage: (value) => Boolean(value && typeof value === "object" && String(value.type || "").startsWith("voice_input.")),
   postToParent(parentWindow, message, targetOrigin) {
     if (!parentWindow || parentWindow === window) return false;
@@ -79,6 +86,7 @@ const state = {
   pluginNavigationSignature: "",
   pluginVoiceInputCapabilitySignature: "",
   pluginVoiceInputPress: null,
+  pluginVoiceInputProvisional: null,
   pluginVoiceInputSessionsByDraftKey: {},
   pluginRefreshRequestSignature: "",
   pluginRefreshPendingNotice: "",
@@ -318,7 +326,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v281";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v282";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -3103,6 +3111,17 @@ function autoTurnRecoveryCandidates() {
       wasRunning: true,
     });
   }
+  for (const thread of state.threads || []) {
+    const id = String(thread && thread.id || "").trim();
+    if (!id || !isRunningStatus(thread && thread.status)) continue;
+    if (byId.has(id)) continue;
+    byId.set(id, {
+      threadId: id,
+      activeTurnId: String((thread.status && (thread.status.activeTurnId || thread.status.turnId || thread.status.id)) || ""),
+      cwd: String(thread.cwd || ""),
+      wasRunning: true,
+    });
+  }
   const current = autoTurnRecoveryCandidate();
   if (current) byId.set(current.threadId, current);
   return Array.from(byId.values());
@@ -5016,7 +5035,7 @@ function pluginVoiceInputCapabilityPayload(extra = {}) {
     threadId: String(state.currentThreadId || "").slice(0, 160),
     draftId: pluginVoiceInputSafeDraftId(),
     maxChars: Math.max(1, Number(pluginVoiceInputApi.MAX_TEXT_CHARS || 12000) || 12000),
-    actions: ["append_text", "replace_draft", "insert_text"],
+    actions: ["append_text", "replace_draft", "insert_text", "provisional_text"],
   }, extra || {});
 }
 
@@ -5114,6 +5133,66 @@ function pluginVoiceInputAppendText(currentText, insertedText) {
   return `${current}\n${next}`;
 }
 
+function pluginVoiceInputSessionIdFromPayload(payload = {}) {
+  return pluginVoiceInputApi.voiceSessionIdFrom
+    ? pluginVoiceInputApi.voiceSessionIdFrom(payload)
+    : String(payload.voiceSessionId || payload.voice_session_id || "").trim();
+}
+
+function clearPluginVoiceInputProvisionalSession() {
+  state.pluginVoiceInputProvisional = null;
+}
+
+function restorePluginVoiceInputProvisionalBase(payload = {}) {
+  const session = state.pluginVoiceInputProvisional;
+  const voiceSessionId = pluginVoiceInputSessionIdFromPayload(payload);
+  if (!session || !voiceSessionId || session.voiceSessionId !== voiceSessionId) return false;
+  if (session.draftKey && session.draftKey !== currentPluginVoiceInputDraftKey()) return false;
+  if (composerText() !== session.currentText) {
+    clearPluginVoiceInputProvisionalSession();
+    return false;
+  }
+  setComposerText(session.baseText || "");
+  clearPluginVoiceInputProvisionalSession();
+  return true;
+}
+
+function applyPluginVoiceInputProvisionalText(payload = {}, text = "") {
+  const voiceSessionId = pluginVoiceInputSessionIdFromPayload(payload);
+  if (!voiceSessionId) return false;
+  const draftKey = currentPluginVoiceInputDraftKey();
+  if (!draftKey) return false;
+  const currentText = composerText();
+  let session = state.pluginVoiceInputProvisional;
+  if (
+    !session
+    || session.voiceSessionId !== voiceSessionId
+    || session.draftKey !== draftKey
+  ) {
+    session = {
+      voiceSessionId,
+      draftKey,
+      baseText: currentText,
+      currentText,
+    };
+  } else if (currentText !== session.currentText) {
+    clearPluginVoiceInputProvisionalSession();
+    return false;
+  }
+  const nextText = pluginVoiceInputAppendText(session.baseText, text);
+  setComposerText(nextText);
+  scheduleCurrentDraftSave();
+  updateComposerControls();
+  const input = $("messageInput");
+  if (input) input.focus();
+  state.pluginVoiceInputProvisional = Object.assign({}, session, {
+    currentText: nextText,
+    text: String(text || "").slice(0, Number(pluginVoiceInputApi.MAX_TEXT_CHARS || 12000) || 12000),
+    updatedAtMs: Date.now(),
+  });
+  return true;
+}
+
 function rejectPluginVoiceInputInsert(payload, code, message) {
   postPluginVoiceInputMessage(pluginVoiceInputApi.insertResultMessage({
     requestId: pluginVoiceInputApi.requestIdFrom ? pluginVoiceInputApi.requestIdFrom(payload) : payload.requestId,
@@ -5156,6 +5235,22 @@ function applyPluginVoiceInputTextMessage(payload = {}) {
     rejectPluginVoiceInputInsert(payload, "empty_voice_input_text", "Voice input text is empty.");
     return true;
   }
+  if (action === "provisional_text") {
+    if (!applyPluginVoiceInputProvisionalText(payload, text)) {
+      rejectPluginVoiceInputInsert(payload, "provisional_voice_input_rejected", "Voice input draft changed.");
+      return true;
+    }
+    postPluginVoiceInputMessage(pluginVoiceInputApi.insertResultMessage({
+      requestId: pluginVoiceInputApi.requestIdFrom ? pluginVoiceInputApi.requestIdFrom(payload) : payload.requestId,
+      voiceSessionId: pluginVoiceInputSessionIdFromPayload(payload),
+      composerId: capability.composerId,
+      draftId: capability.draftId,
+      ok: true,
+    }));
+    publishPluginVoiceInputCapability({ force: true });
+    return true;
+  }
+  restorePluginVoiceInputProvisionalBase(payload);
   const nextText = action === "replace_draft"
     ? text
     : pluginVoiceInputAppendText(composerText(), text);
@@ -5193,6 +5288,7 @@ function handlePluginVoiceInputMessage(event) {
     payload.type === pluginVoiceInputApi.TYPES.APPEND_TEXT
     || payload.type === pluginVoiceInputApi.TYPES.INSERT_TEXT
     || payload.type === pluginVoiceInputApi.TYPES.REPLACE_DRAFT
+    || payload.type === pluginVoiceInputApi.TYPES.PROVISIONAL_TEXT
     || payload.type === pluginVoiceInputApi.TYPES.SUBMIT
   ) {
     return applyPluginVoiceInputTextMessage(payload);

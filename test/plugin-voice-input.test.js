@@ -35,7 +35,7 @@ test("voice input helper builds Home AI embedded-plugin protocol messages", () =
     composerId: "thread-composer",
     threadId: "thread-123",
     draftId: "thread:thread-123",
-    actions: { append_text: true, replace_draft: true, submit: true },
+    actions: { append_text: true, replace_draft: true, provisional_text: true, submit: true },
     maxChars: 9000,
   });
   assert.equal(capability.type, "voice_input.capability_state");
@@ -43,7 +43,7 @@ test("voice input helper builds Home AI embedded-plugin protocol messages", () =
   assert.equal(capability.pluginId, "codex-mobile");
   assert.equal(capability.requestId, "req-1");
   assert.equal(capability.writable, true);
-  assert.deepEqual(capability.actions, ["append_text", "replace_draft"]);
+  assert.deepEqual(capability.actions, ["append_text", "replace_draft", "provisional_text"]);
   assert.deepEqual(capability.composer, {
     writable: true,
     composerId: "thread-composer",
@@ -66,6 +66,9 @@ test("voice input helper builds Home AI embedded-plugin protocol messages", () =
   assert.equal(insert.type, "voice_input.insert_result");
   assert.equal(insert.voiceSessionId, "voice-1");
   assert.equal(insert.ok, true);
+
+  assert.equal(voiceInput.TYPES.PROVISIONAL_TEXT, "voice_input.provisional_text");
+  assert.equal(voiceInput.actionFromMessageType("voice_input.provisional_text"), "provisional_text");
 
   const commit = voiceInput.commitResultMessage({
     voiceSessionId: "voice-1",
@@ -91,7 +94,11 @@ test("voice input bridge is limited to Hermes embed mode and uses plugin scripts
   assert.match(functionBody("updateComposerControls"), /const voiceGestureAvailable = pluginVoiceInputGestureAvailable\(\)/);
   assert.match(functionBody("updateComposerControls"), /!hasContent && !voiceGestureAvailable/);
   assert.match(functionBody("pluginVoiceInputCapabilityPayload"), /writable: pluginVoiceInputCanReceiveText\(\)/);
+  assert.match(functionBody("pluginVoiceInputCapabilityPayload"), /"provisional_text"/);
   assert.match(functionBody("applyPluginVoiceInputTextMessage"), /const capability = pluginVoiceInputCapabilityPayload\(\)/);
+  assert.match(functionBody("applyPluginVoiceInputTextMessage"), /action === "provisional_text"/);
+  assert.match(functionBody("applyPluginVoiceInputProvisionalText"), /state\.pluginVoiceInputProvisional/);
+  assert.match(functionBody("restorePluginVoiceInputProvisionalBase"), /session\.voiceSessionId !== voiceSessionId/);
   assert.match(functionBody("sendMessage"), /commitPluginVoiceInputSessionsAfterSend\(submittedDraftKey, text/);
   assert.match(functionBody("sendNewThreadMessage"), /commitPluginVoiceInputSessionsAfterSend\(submittedDraftKey, text/);
 });
