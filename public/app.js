@@ -314,7 +314,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v276";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v277";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -717,6 +717,7 @@ function viewportState() {
     innerHeight: window.innerHeight,
     clientHeight: document.documentElement && document.documentElement.clientHeight,
     activeElement: document.activeElement,
+    hostViewportHeight: embedded && hostViewport && hostViewport.viewport ? hostViewport.viewport.height : 0,
     hostKeyboardVisible: Boolean(embedded && hostKeyboard && hostKeyboard.visible),
     hostKeyboardBottomInset: embedded && hostKeyboard ? hostKeyboard.bottomInset : 0,
     hostBottomSafeArea: embedded && hostFooter ? hostFooter.safeAreaBottom : 0,
