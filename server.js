@@ -132,6 +132,8 @@ const PUBLIC_PR_CHECK_TIMEOUT_MS = Math.max(1000, Number(process.env.CODEX_MOBIL
 const PUBLIC_PR_CHECK_CACHE_MS = Math.max(30_000, Number(process.env.CODEX_MOBILE_PUBLIC_PR_CHECK_CACHE_MS || "900000"));
 const GITHUB_LINK_PREVIEW_TIMEOUT_MS = Math.max(1000, Number(process.env.CODEX_MOBILE_GITHUB_LINK_PREVIEW_TIMEOUT_MS || "12000"));
 const GITHUB_LINK_PREVIEW_CACHE_MS = Math.max(30_000, Number(process.env.CODEX_MOBILE_GITHUB_LINK_PREVIEW_CACHE_MS || "900000"));
+const AUTO_TURN_RECOVERY_COOLDOWN_MS = Math.max(30_000, Number(process.env.CODEX_MOBILE_AUTO_TURN_RECOVERY_COOLDOWN_MS || "120000"));
+const AUTO_TURN_RECOVERY_PROMPT = String(process.env.CODEX_MOBILE_AUTO_TURN_RECOVERY_PROMPT || "继续当前任务。上一轮可能因为 Codex Mobile Listener 或 app-server 重启而断开；请基于当前线程上下文继续未完成的工作，不要重复已经完成的内容。").trim();
 const PUBLIC_RELEASE_CHECK_DISABLED = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_DISABLE_PUBLIC_RELEASE_CHECK || "");
 const PUBLIC_RELEASE_REPOSITORY = normalizeRepositorySlug(process.env.CODEX_MOBILE_PUBLIC_RELEASE_REPOSITORY || PUBLIC_PR_REPOSITORY);
 const PUBLIC_RELEASE_BRANCH = process.env.CODEX_MOBILE_PUBLIC_RELEASE_BRANCH || "main";
@@ -244,6 +246,8 @@ const threadGoalService = createThreadGoalService({
   dbPath: GOALS_DB,
   userHome: USER_HOME,
 });
+const autoTurnRecoveryRecent = new Map();
+const autoTurnRecoveryInflight = new Map();
 const sideChatReplyInflight = new Map();
 const threadSideChatService = createThreadSideChatService({
   storageFile: THREAD_SIDE_CHAT_FILE,
@@ -517,6 +521,118 @@ function startSideChatAssistantReply(parentThreadId, userMessage) {
     }
   })();
   sideChatReplyInflight.set(key, promise);
+}
+
+function autoTurnRecoveryKey(threadId) {
+  return String(threadId || "");
+}
+
+function pruneAutoTurnRecoveryRecent(nowMs = Date.now()) {
+  for (const [key, entry] of autoTurnRecoveryRecent.entries()) {
+    if (!entry || Number(entry.expiresAt || 0) <= nowMs) autoTurnRecoveryRecent.delete(key);
+  }
+}
+
+function turnStartResultTurnId(result) {
+  return String((result && result.turnId) || (result && result.id) || (result && result.turn && result.turn.id) || "");
+}
+
+async function autoRecoverThreadTurn(threadId, options = {}) {
+  const id = String(threadId || "").trim();
+  if (!id) throw httpStatusError(400, "Thread id is required");
+  if (!AUTO_TURN_RECOVERY_PROMPT) throw httpStatusError(409, "Automatic turn recovery is disabled");
+  const activeTurnId = String(options.activeTurnId || "").trim();
+  const wasRunning = Boolean(options.wasRunning || activeTurnId);
+  if (!wasRunning) {
+    return { skipped: true, reason: "not_marked_running", threadId: id };
+  }
+
+  pruneAutoTurnRecoveryRecent();
+  const key = autoTurnRecoveryKey(id);
+  if (autoTurnRecoveryInflight.has(key)) {
+    return autoTurnRecoveryInflight.get(key);
+  }
+  const recent = autoTurnRecoveryRecent.get(key);
+  if (recent && Number(recent.expiresAt || 0) > Date.now()) {
+    return {
+      skipped: true,
+      reason: "cooldown",
+      threadId: id,
+      action: recent.action || "",
+      turnId: recent.turnId || "",
+    };
+  }
+
+  const promise = (async () => {
+    const runtimeSettings = applyPermissionModeOverride(await resolveThreadRuntimeSettings(id), options.permissionMode, options.cwd || null);
+    const input = [{ type: "text", text: AUTO_TURN_RECOVERY_PROMPT }];
+    const turnsResult = await codex.request("thread/turns/list", {
+      threadId: id,
+      limit: 5,
+      sortDirection: "desc",
+    }, { timeoutMs: READ_RPC_TIMEOUT_MS, retry: true, resetOnTimeout: false });
+    const turns = turnListFromResult(turnsResult);
+    const liveTurn = turns.find((turn) => activeTurnId && turnIdentifier(turn) === activeTurnId && isLiveTurn(turn))
+      || turns.find((turn) => isLiveTurn(turn));
+    if (liveTurn) {
+      const liveTurnId = turnIdentifier(liveTurn);
+      try {
+        await codex.request("turn/steer", {
+          threadId: id,
+          input,
+          expectedTurnId: liveTurnId,
+        }, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+        codex.notifyMuxUserMessage({
+          threadId: id,
+          turnId: liveTurnId,
+          input,
+          clientSubmissionId: `auto-recover-${Date.now()}`,
+        });
+        return { recovered: true, action: "steered", threadId: id, turnId: liveTurnId };
+      } catch (err) {
+        if (!isTurnSteerUnsupportedError(err) && !isStaleActiveTurnError(err)) throw err;
+      }
+    }
+
+    try {
+      await codex.request("thread/resume", applyResumeRuntimeSettings({
+        threadId: id,
+        cwd: options.cwd || null,
+        persistExtendedHistory: true,
+      }, runtimeSettings), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+    } catch (err) {
+      if (!/already|loaded|active/i.test(err.message || "")) throw err;
+    }
+    const params = applyTurnRuntimeSettings({
+      threadId: id,
+      input,
+    }, runtimeSettings);
+    if (options.cwd) params.cwd = options.cwd;
+    const result = await codex.request("turn/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+    const turnId = turnStartResultTurnId(result);
+    if (turnId && threadDetailProjectionService) {
+      threadDetailProjectionService.applyNotification("turn/started", {
+        threadId: id,
+        turn: Object.assign({ id: turnId, status: { type: "active" } }, result && result.turn && typeof result.turn === "object" ? result.turn : {}),
+      });
+    }
+    return { recovered: true, action: "started", threadId: id, turnId };
+  })();
+
+  autoTurnRecoveryInflight.set(key, promise);
+  try {
+    const result = await promise;
+    if (result && result.recovered) {
+      autoTurnRecoveryRecent.set(key, {
+        expiresAt: Date.now() + AUTO_TURN_RECOVERY_COOLDOWN_MS,
+        action: result.action || "",
+        turnId: result.turnId || "",
+      });
+    }
+    return result;
+  } finally {
+    autoTurnRecoveryInflight.delete(key);
+  }
 }
 
 let threadDetailProjectionService;
@@ -2752,6 +2868,17 @@ function isLiveTurn(turn) {
   const text = statusText(turn && turn.status).toLowerCase();
   return /(running|active|queued|processing|inprogress|in_progress|in-progress)/.test(text)
     || (text === "interrupted" && turn && !turn.completedAt && !turn.durationMs);
+}
+
+function turnIdentifier(turn) {
+  return String(turn && (turn.id || turn.turnId) || "");
+}
+
+function turnListFromResult(result) {
+  if (Array.isArray(result)) return result;
+  if (Array.isArray(result && result.data)) return result.data;
+  if (Array.isArray(result && result.turns)) return result.turns;
+  return [];
 }
 
 function isContextCompactionType(type) {
@@ -10455,6 +10582,20 @@ async function handleApi(req, res) {
       cwd: body.cwd || null,
       persistExtendedHistory: true,
     }, runtimeSettings), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false }));
+    return;
+  }
+  const autoRecover = url.pathname.match(/^\/api\/threads\/([^/]+)\/auto-recover$/);
+  if (autoRecover && req.method === "POST") {
+    const threadId = decodeURIComponent(autoRecover[1]);
+    const body = await readBody(req);
+    const result = await autoRecoverThreadTurn(threadId, {
+      activeTurnId: body.activeTurnId || "",
+      wasRunning: body.wasRunning,
+      cwd: body.cwd || null,
+      permissionMode: body.permissionMode || "",
+      reason: body.reason || "",
+    });
+    sendJson(res, 200, result);
     return;
   }
   const messages = url.pathname.match(/^\/api\/threads\/([^/]+)\/messages$/);

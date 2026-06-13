@@ -419,6 +419,16 @@ New-thread and explicit-resume sends use `thread/start` after applying runtime s
 3. If the latest durable turn is live, steer with `turn/steer`.
 4. Preserve visible user input through deterministic `mux-user-*` echoes and pending steer echo injection until app-server durable history catches up.
 
+Mutation RPCs are not retried generically. If the app-server stream drops during
+a Listener or mux restart, Mobile Web treats recovery as a separate user-visible
+continuation path: once the browser observes app-server status move from
+unavailable to ready, it may call `POST /api/threads/:id/auto-recover` for the
+current known running thread. The server first inspects `thread/turns/list` and
+tries `turn/steer` against a still-live turn; if the original turn is no longer
+steerable, it resumes the thread and starts a new turn with a bounded
+continuation prompt. A thread-level cooldown prevents reconnect flapping from
+creating repeated continuation turns.
+
 Browser-selected model, reasoning effort, and permission mode are persisted in
 the browser draft store by thread/workspace key even when the composer text is
 empty. Reopening the app or switching away and back should restore that runtime

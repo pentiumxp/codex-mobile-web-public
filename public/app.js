@@ -103,6 +103,9 @@ const state = {
   activeTurnId: "",
   events: null,
   connectionStatus: null,
+  appServerWasUnavailable: false,
+  autoTurnRecoveryInFlight: new Set(),
+  autoTurnRecoveryRecent: {},
   renderScheduled: false,
   renderFrame: null,
   bottomScrollFrame: null,
@@ -314,7 +317,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v279";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v280";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -324,6 +327,7 @@ const PUBLIC_CONFIG_TIMEOUT_MS = 8000;
 const PUBLIC_CONFIG_RETRY_DELAYS_MS = [0, 300, 1200];
 const THREAD_LOAD_STALL_MS = 12000;
 const RUNNING_THREAD_HINT_STALE_MS = 20 * 60 * 1000;
+const AUTO_TURN_RECOVERY_COOLDOWN_MS = 120000;
 const GITHUB_LINK_PREVIEW_TIMEOUT_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
   "/",
@@ -3025,6 +3029,78 @@ function restoreConnectionState(fallbackText = "Connected") {
   el.textContent = fallbackText;
   el.classList.remove("error");
   el.title = "";
+}
+
+function autoTurnRecoveryCandidate() {
+  if (!state.currentThreadId) return null;
+  const thread = state.currentThread || threadById(state.currentThreadId);
+  const live = currentLiveTurn();
+  const wasRunning = Boolean(state.activeTurnId || live || state.runningThreadIds.has(String(state.currentThreadId)) || isRunningStatus(thread && thread.status));
+  if (!wasRunning) return null;
+  return {
+    threadId: String(state.currentThreadId),
+    activeTurnId: String(state.activeTurnId || (live && live.id) || ""),
+    cwd: String((thread && thread.cwd) || ""),
+    wasRunning,
+  };
+}
+
+function autoTurnRecoveryRecentKey(candidate) {
+  return `${candidate.threadId}|${candidate.activeTurnId || "latest"}`;
+}
+
+async function maybeAutoRecoverTurnAfterReconnect(status, reason = "reconnect") {
+  if (!status || !status.ready || document.visibilityState === "hidden" || !state.key) return;
+  const candidate = autoTurnRecoveryCandidate();
+  if (!candidate) return;
+  const key = autoTurnRecoveryRecentKey(candidate);
+  const now = Date.now();
+  const recentAt = Number(state.autoTurnRecoveryRecent[key] || 0);
+  if (recentAt && now - recentAt < AUTO_TURN_RECOVERY_COOLDOWN_MS) return;
+  if (state.autoTurnRecoveryInFlight.has(key)) return;
+  state.autoTurnRecoveryInFlight.add(key);
+  state.autoTurnRecoveryRecent[key] = now;
+  markActivity("自动续接中");
+  try {
+    const result = await api(`/api/threads/${encodeURIComponent(candidate.threadId)}/auto-recover`, {
+      method: "POST",
+      body: JSON.stringify({
+        activeTurnId: candidate.activeTurnId,
+        wasRunning: candidate.wasRunning,
+        cwd: candidate.cwd,
+        permissionMode: selectedComposerPermissionMode(),
+        reason,
+      }),
+      timeoutMs: 180000,
+    });
+    postClientEvent("auto_turn_recovery_result", {
+      reason,
+      threadId: candidate.threadId,
+      activeTurnId: candidate.activeTurnId,
+      recovered: Boolean(result && result.recovered),
+      skipped: Boolean(result && result.skipped),
+      action: String(result && result.action || ""),
+      resultReason: String(result && result.reason || ""),
+      turnId: String(result && result.turnId || ""),
+    });
+    if (result && result.recovered) {
+      if (result.turnId) state.activeTurnId = String(result.turnId);
+      markActivity(result.action === "steered" ? "已续接当前轮" : "已自动继续");
+      scheduleCurrentThreadRefresh(500);
+      scheduleLivePollIfNeeded(1000);
+      loadThreads({ silent: true }).catch(showError);
+    }
+  } catch (err) {
+    delete state.autoTurnRecoveryRecent[key];
+    postClientEvent("auto_turn_recovery_failed", {
+      reason,
+      threadId: candidate.threadId,
+      activeTurnId: candidate.activeTurnId,
+      error: err.message || String(err),
+    });
+  } finally {
+    state.autoTurnRecoveryInFlight.delete(key);
+  }
 }
 
 function showComposerFastHint(enabled) {
@@ -12488,13 +12564,17 @@ function scheduleEventFallbackPoll(delayMs = 8000) {
 }
 
 async function recoverEventStreamWithApiFallback() {
+  const wasUnavailable = state.appServerWasUnavailable || Boolean(state.connectionStatus && !state.connectionStatus.ready);
   const status = await api("/api/status");
   updateConnectionState(status);
+  const recovered = wasUnavailable && status && status.ready;
+  state.appServerWasUnavailable = Boolean(status && !status.ready);
   clearReconnectRefreshPrompt();
   rememberRateLimitsFromConfig(status);
   if (status.codexProfiles) rememberCodexProfiles(status.codexProfiles);
   await refreshThreadListDuringEventRecovery();
   if (state.currentThreadId) await refreshCurrentThread();
+  if (recovered) await maybeAutoRecoverTurnAfterReconnect(status, "event-fallback-reconnect");
   if (isHermesEmbedMode()) {
     state.eventFallbackMode = true;
     scheduleEventFallbackPoll();
@@ -12526,10 +12606,14 @@ function connectEvents() {
     const payload = JSON.parse(event.data);
     if (payload.type === "status") {
       clearReconnectTimers();
+      const wasUnavailable = state.appServerWasUnavailable || Boolean(state.connectionStatus && !state.connectionStatus.ready);
       updateConnectionState(payload.status);
+      const recovered = wasUnavailable && payload.status && payload.status.ready;
+      state.appServerWasUnavailable = Boolean(payload.status && !payload.status.ready);
       rememberRateLimitsFromConfig(payload.status);
       if (payload.status.codexProfiles) rememberCodexProfiles(payload.status.codexProfiles);
       scheduleVisiblePageRefreshCheck(1200);
+      if (recovered) maybeAutoRecoverTurnAfterReconnect(payload.status, "app-server-reconnect").catch(() => {});
       return;
     }
     if (payload.type === "notification") applyNotification(payload.method, payload.params);
@@ -12554,6 +12638,7 @@ function connectEvents() {
       try {
         await recoverEventStreamWithApiFallback();
       } catch (err) {
+        state.appServerWasUnavailable = true;
         showReconnectRefreshPrompt("reconnect");
         if (!isHermesEmbedMode()) showError(err);
       }
@@ -12685,8 +12770,11 @@ async function resumeMobileSession(reason = "resume") {
     if (state.currentThread || state.threads.length) renderCurrentThread();
     ensureEventConnection();
     state.pollStableCount = 0;
+    const wasUnavailable = state.appServerWasUnavailable || Boolean(state.connectionStatus && !state.connectionStatus.ready);
     const status = await api("/api/status");
     updateConnectionState(status);
+    const recovered = wasUnavailable && status && status.ready;
+    state.appServerWasUnavailable = Boolean(status && !status.ready);
     rememberRateLimitsFromConfig(status);
     if (status.codexProfiles) rememberCodexProfiles(status.codexProfiles);
     await loadThreads({ silent: Boolean(state.threads.length) });
@@ -12706,6 +12794,7 @@ async function resumeMobileSession(reason = "resume") {
     } else {
       await restoreThreadSelection();
     }
+    if (recovered) await maybeAutoRecoverTurnAfterReconnect(status, reason);
     scheduleLivePollIfNeeded(1200);
     const elapsedMs = roundedDurationMs(startedAt);
     if (elapsedMs > 1200) {
@@ -12717,6 +12806,7 @@ async function resumeMobileSession(reason = "resume") {
       });
     }
   } catch (err) {
+    if (isTransientResumeError(err)) state.appServerWasUnavailable = true;
     postClientEvent("mobile_resume_error", {
       reason,
       elapsedMs: roundedDurationMs(startedAt),

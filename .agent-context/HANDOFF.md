@@ -3263,3 +3263,163 @@ The previous full handoff was archived and should be opened only when old proven
     `kind=embedded_app`, and entry URL `http://127.0.0.1:8787/?embed=hermes`.
   - Production `/?embed=hermes` includes `plugin-voice-input.js` before
     `app.js`, and `/plugin-voice-input.js` is served.
+
+## 2026-06-13 Embedded Stop Voice Hold v278
+
+- Status: fixed, committed, deployed, and production-smoked for the Codex Mobile
+  Web embedded Home AI plugin. This was a Codex plugin-side issue, not the Home
+  AI host composer: Codex renders its own active-turn Stop button inside the
+  iframe.
+- Commit:
+  - `663fb75 fix: harden embedded stop voice hold`.
+- Behavior change:
+  - In Hermes embedded mode, an active Codex turn with an empty composer now
+    still exposes the send/Stop button as a voice long-press gesture target.
+  - Pointer down prevents default selection immediately, so iOS should not show
+    a text selection/copy callout before the long-press threshold.
+  - Embedded active-turn Stop no longer renders visible selectable `Stop` text in
+    the button DOM; it uses a CSS visual proxy while preserving aria/title text.
+  - Short tap on the active-turn button remains the interrupt path; long press
+    is consumed by the Home AI voice bridge.
+  - Standalone Codex Mobile remains gated by `isHermesEmbedMode()` for the voice
+    bridge/proxy behavior.
+- Files changed:
+  - `public/app.js`
+  - `public/styles.css`
+  - `public/sw.js`
+  - `test/plugin-voice-input.test.js`
+  - `test/mobile-viewport.test.js`
+  - `test/thread-goal-service.test.js`
+  - `test/thread-task-card-route.test.js`
+  - `README.md`
+- Validation:
+  - `npm run check` passed.
+  - Focused `npm test -- --test-reporter=spec test/plugin-voice-input.test.js
+    test/mobile-viewport.test.js test/thread-goal-service.test.js
+    test/thread-task-card-route.test.js` passed.
+  - Full `npm test` passed before the README-only release note was added: 467
+    tests passed.
+  - Local Chrome headless smoke against a temp 18878 listener loaded
+    `0.1.11|codex-mobile-shell-v278` and verified embedded active-turn Stop had
+    `text=""`, `data-visual-label="Stop"`, empty selection, and prevented
+    pointerdown/pointerup/click defaults.
+- Production deployment:
+  - Deployed to `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web` via
+    Home AI central Mac deploy script for plugin `codex-mobile-web`, reason
+    `codex-stop-voice-hold-v278`.
+  - Production `/api/public-config` readback reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v278` and
+    `shellCacheName=codex-mobile-shell-v278`.
+  - Production `launchctl print system/com.hermesmobile.plugin.codex-mobile`
+    showed state `running`, working directory
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`, pid `21256`, and
+    last exit code `0`.
+  - Production manifest returned `id=codex-mobile`, `kind=embedded_app`, entry
+    `http://127.0.0.1:8787/?embed=hermes`.
+  - Production static reads confirmed v278 app/sw and the new Stop proxy CSS.
+  - Production Chrome headless smoke verified the same Stop long-press DOM/event
+    behavior against `http://127.0.0.1:8787/?embed=hermes`.
+
+## 2026-06-13 Embedded Voice Steering Insert v279
+
+- Status: fixed, committed, pushed, deployed without restarting the Codex
+  listener, and production-smoked.
+- Commit:
+  - `de86135 fix: allow embedded voice steering insert`.
+- User-visible issue:
+  - After v278, active-turn Stop long press could start voice recording, but the
+    transcribed text was rejected as `composer_not_writable` and the user could
+    only cancel.
+- Root cause:
+  - v278 relaxed the long-press start path for embedded active turns, but the
+    return `voice_input.insert_text` / `replace_draft` path still used the
+    ordinary `pluginVoiceInputComposerWritable()` gate. In active-turn Stop
+    state, the DOM composer can be temporarily marked non-editable even though
+    Codex can still accept steering text.
+- Fix:
+  - Added `pluginVoiceInputCanReceiveText()`.
+  - `pluginVoiceInputCapabilityPayload().writable` and insert rejection
+    telemetry now use the new receive-text gate.
+  - The gate returns true when the ordinary composer is writable, or when this
+    is a Hermes embedded active turn that can receive steering text.
+  - Bumped shell cache to `codex-mobile-shell-v279`.
+- Validation:
+  - `npm run check` passed.
+  - Focused `npm test -- --test-reporter=spec test/plugin-voice-input.test.js
+    test/mobile-viewport.test.js test/thread-goal-service.test.js
+    test/thread-task-card-route.test.js` passed.
+  - Dev Chrome headless smoke against `127.0.0.1:18879` forced
+    `messageInput.contentEditable=false` and `aria-disabled=true`, then called
+    `applyPluginVoiceInputTextMessage(...)`; before insert
+    `normalWritable=false`, `canReceive=true`, `capabilityWritable=true`; after
+    insert composer text was `吴萍是我老婆` and the button became `引导`.
+- Production deployment:
+  - Pushed `main` to `origin`.
+  - Deployed through the Home AI central Mac deploy script with
+    `--restart none` and explicit health URL, so `com.hermesmobile.plugin.codex-mobile`
+    was not restarted.
+  - Production readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v279`,
+    `shellCacheName=codex-mobile-shell-v279`.
+  - Launchd readback after deploy: state `running`, `runs=112`, pid `21256`,
+    last exit code `0`; same pid as v278 smoke, confirming no listener restart.
+  - Production static readback confirmed `pluginVoiceInputCanReceiveText()` and
+    v279 app/sw.
+  - Production Chrome headless smoke against `127.0.0.1:8787` reproduced the
+    forced-non-writable active-turn insert case and confirmed text was inserted
+    and the button switched to `引导`.
+
+## 2026-06-13 Listener/App-Server Reconnect Auto Turn Recovery v280
+
+- Status: implemented and locally validated; not deployed in this turn.
+- User-visible goal:
+  - If a Listener/app-server update disconnects an in-progress Codex Mobile
+    turn, the mobile page should automatically continue the current thread after
+    the app-server becomes ready again. It should prefer continuing the existing
+    live turn when possible, but may start a new turn if the old turn is no
+    longer steerable.
+- Implementation:
+  - `server.js` adds `POST /api/threads/:id/auto-recover`.
+  - The server first reads recent `thread/turns/list`, tries `turn/steer` with a
+    bounded continuation prompt for a still-live turn, then falls back to
+    `thread/resume` plus `turn/start` when steering is unavailable/stale.
+  - The route has a thread-level in-memory cooldown controlled by
+    `CODEX_MOBILE_AUTO_TURN_RECOVERY_COOLDOWN_MS` and prompt override
+    `CODEX_MOBILE_AUTO_TURN_RECOVERY_PROMPT`.
+  - `public/app.js` triggers recovery only when `/api/status` or an app-server
+    status notification shows a transition from unavailable/not-ready to ready;
+    plain EventSource errors are not enough, to avoid injecting `继续` during
+    ordinary SSE jitter.
+  - PWA shell cache advanced to `codex-mobile-shell-v280`.
+- Files changed:
+  - `server.js`
+  - `public/app.js`
+  - `public/sw.js`
+  - `README.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/COMPLEX_FEATURE_PATHS.md`
+  - `docs/TROUBLESHOOTING.md`
+  - `test/new-thread-route.test.js`
+  - `test/mobile-viewport.test.js`
+  - `test/thread-goal-service.test.js`
+  - `test/thread-task-card-route.test.js`
+- Validation:
+  - `node --check server.js`
+  - `node --check public/app.js`
+  - `node --check test/new-thread-route.test.js`
+  - `node --check test/mobile-viewport.test.js`
+  - `node --test test/new-thread-route.test.js`
+  - `node --test test/mobile-viewport.test.js`
+  - `node --test test/active-turn-staleness-service.test.js`
+  - `npm run check`
+  - `npm test` passed: 468/468.
+  - `git diff --check`
+  - Dev runtime smoke with a fake JSONL TCP app-server and temporary Mobile Web
+    listener passed without touching real Codex threads:
+    - still-live thread result:
+      `{ recovered: true, action: "steered", turnId: "turn-live" }`
+    - fallback thread result:
+      `{ recovered: true, action: "started", turnId: "turn-new" }`
+    - observed fake app-server calls:
+      `thread-steer`: `thread/turns/list -> turn/steer`;
+      `thread-fallback`: `thread/turns/list -> turn/steer -> thread/resume -> turn/start`.
