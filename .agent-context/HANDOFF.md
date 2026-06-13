@@ -3479,3 +3479,25 @@ The previous full handoff was archived and should be opened only when old proven
     `thread-fallback` handles `no active turn to steer` with
     `thread/turns/list -> turn/steer -> thread/resume -> turn/start`.
   - `npm test` passed: 468/468.
+- Commit:
+  - `2684137 fix: 恢复重启风险线程`
+- Production deployment:
+  - Deployed through Home AI central Mac deploy script for plugin
+    `codex-mobile-web`, timestamp `20260613T133500Z`, reason
+    `codex-restart-risk-auto-recovery-v281`.
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v281`,
+    `shellCacheName=codex-mobile-shell-v281`.
+  - Production authenticated `/api/status?detail=1` readback:
+    `ready=true`, `transport=managed-ws-child`, `lastError=null`,
+    active profile `default`.
+  - Production launchd readback:
+    `com.hermesmobile.plugin.codex-mobile` state `running`, pid `69827`,
+    `runs=115`, last exit code `0`.
+  - Manual production recovery after v281 deploy:
+    `星盘` `/auto-recover` returned
+    `{ recovered: true, action: "started", turnId: "019ec12c-ee77-7593-b1a9-f04ac1512822" }`.
+    The earlier Home AI manual recovery on v280 had already returned
+    `{ recovered: true, action: "steered" }`.
+  - AI Ops evidence:
+    `evidence-9268c3ff-1773-4f85-88d0-1f8a8fc8ea7f`.
