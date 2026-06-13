@@ -422,7 +422,10 @@ same-prefix submitted jobs and calls `launchctl kickstart -k` for that existing
 service label, preserving the plist-managed environment. If the listener is
 running under a system LaunchDaemon, the restart helper does not attempt
 user-level `launchctl kickstart system/...`; it kills only the current listener
-and lets LaunchDaemon KeepAlive start the replacement. If no service label is
+and lets LaunchDaemon KeepAlive start the replacement. Before doing that, it
+best-effort repairs the LaunchDaemon stdout/stderr files reported by
+`launchctl print system/<label>` so missing or wrong-owned log files do not
+make launchd fail with `EX_CONFIG` before Node starts. If no service label is
 available, it falls back to a one-shot detached `nohup` listener rather than
 creating a persistent `launchctl submit` job. It keeps Codex Desktop and the shared mux running, so
 the user can restart the `8789` browser server from the PWA without triggering the macOS `Quit Codex?` confirmation.

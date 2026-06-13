@@ -2,6 +2,40 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-13 macOS Restart LaunchDaemon Log Pre-Repair
+
+- User reported that after deployment, tapping Mobile Web `Restart` left
+  Codex Mobile unavailable on `8787`; Desktop had to be used to recover.
+- Production diagnosis:
+  - `launchctl print system/com.hermesmobile.plugin.codex-mobile` showed
+    `spawn scheduled` and last exit `78: EX_CONFIG`.
+  - No listener was present on `127.0.0.1:8787`.
+  - The Node app itself passed syntax checks and could start manually.
+  - The failing condition was launchd opening missing or inaccessible
+    `plugin-codex-mobile.out.log` / `plugin-codex-mobile.err.log` before Node
+    started.
+- Immediate production recovery was performed by creating/fixing the two log
+  files under `/Users/hermes-host/HermesMobile/logs`, setting them to
+  `xuxin:staff` mode `600`, and kickstarting
+  `system/com.hermesmobile.plugin.codex-mobile`.
+- Code fix:
+  - `adapters/shared-chain-restart-service.js` now makes the macOS restart
+    helper detect system LaunchDaemon labels through
+    `launchctl print system/<label>`.
+  - Before killing the current listener for KeepAlive restart, it best-effort
+    repairs stdout/stderr directories and files from the LaunchDaemon record
+    using the existing `HOMEAI_MAC_SUDO_PASSWORD_FILE` path when available.
+  - This complements the Home AI deploy script's Codex post-sync log repair;
+    it covers user-initiated `Restart`, not only deploy-time restarts.
+- Validation:
+  - `node --check adapters/shared-chain-restart-service.js`;
+  - `node --test test/shared-chain-restart-service.test.js`;
+  - `node --test test/manual-restart-ui.test.js`;
+  - generated macOS restart shell passed `/bin/bash -n`;
+  - `npm run check`;
+  - `npm test` passed: 468/468;
+  - `git diff --check`.
+
 ## 2026-06-13 Production Restart Recovery After Deploy
 
 - User reported Codex Mobile could not be opened after a deploy and requested a
