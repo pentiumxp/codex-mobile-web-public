@@ -3372,6 +3372,13 @@ The previous full handoff was archived and should be opened only when old proven
 ## 2026-06-13 Listener/App-Server Reconnect Auto Turn Recovery v280
 
 - Status: implemented and locally validated; not deployed in this turn.
+- Deployment update: committed and deployed after user requested submit/deploy.
+  First upgrade cannot auto-recover turns that were already running in pages
+  loaded with v279, because the browser-side trigger only exists after the
+  client loads v280. Future listener/app-server reconnects after the page has
+  loaded v280 should use the auto-recover route.
+- Commit:
+  - `c8e7e90 fix: 自动续接断线后的 Codex turn`
 - User-visible goal:
   - If a Listener/app-server update disconnects an in-progress Codex Mobile
     turn, the mobile page should automatically continue the current thread after
@@ -3423,3 +3430,18 @@ The previous full handoff was archived and should be opened only when old proven
     - observed fake app-server calls:
       `thread-steer`: `thread/turns/list -> turn/steer`;
       `thread-fallback`: `thread/turns/list -> turn/steer -> thread/resume -> turn/start`.
+- Production deployment:
+  - Deployed through Home AI central Mac deploy script for plugin
+    `codex-mobile-web`, timestamp `20260613T132000Z`, reason
+    `codex-auto-turn-recovery-v280`.
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v280`,
+    `shellCacheName=codex-mobile-shell-v280`.
+  - Production authenticated `/api/status?detail=1` readback:
+    `ready=true`, `transport=managed-ws-child`, `lastError=null`,
+    active profile `default`.
+  - Production launchd readback:
+    `com.hermesmobile.plugin.codex-mobile` state `running`, pid `55684`,
+    `runs=113`, last exit code `0`.
+  - AI Ops evidence:
+    `evidence-bfec11c1-e986-4c30-b882-71e2501b935c`.
