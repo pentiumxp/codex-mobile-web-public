@@ -5027,6 +5027,23 @@ function pluginVoiceInputCanReceiveText() {
   return pluginVoiceInputActiveTurnHoldAvailable();
 }
 
+function pluginVoiceInputEnsureComposerWritableForDraft() {
+  if (!isHermesEmbedMode()) return false;
+  const input = $("messageInput");
+  if (!input) return false;
+  if (input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true") {
+    setMessageInputDisabled(false);
+  }
+  return true;
+}
+
+function persistPluginVoiceInputDraft(draftKey = currentPluginVoiceInputDraftKey()) {
+  const key = String(draftKey || "");
+  if (!key) return false;
+  writeCurrentDraftToKey(key);
+  return true;
+}
+
 function pluginVoiceInputCapabilityPayload(extra = {}) {
   return Object.assign({
     pluginId: "codex-mobile",
@@ -5162,6 +5179,7 @@ function applyPluginVoiceInputProvisionalText(payload = {}, text = "") {
   if (!voiceSessionId) return false;
   const draftKey = currentPluginVoiceInputDraftKey();
   if (!draftKey) return false;
+  if (!pluginVoiceInputEnsureComposerWritableForDraft()) return false;
   const currentText = composerText();
   let session = state.pluginVoiceInputProvisional;
   if (
@@ -5181,7 +5199,7 @@ function applyPluginVoiceInputProvisionalText(payload = {}, text = "") {
   }
   const nextText = pluginVoiceInputAppendText(session.baseText, text);
   setComposerText(nextText);
-  scheduleCurrentDraftSave();
+  persistPluginVoiceInputDraft(draftKey);
   updateComposerControls();
   const input = $("messageInput");
   if (input) input.focus();
@@ -5194,11 +5212,15 @@ function applyPluginVoiceInputProvisionalText(payload = {}, text = "") {
 }
 
 function rejectPluginVoiceInputInsert(payload, code, message) {
+  const action = pluginVoiceInputApi.actionFromMessageType
+    ? pluginVoiceInputApi.actionFromMessageType(payload.type)
+    : "";
   postPluginVoiceInputMessage(pluginVoiceInputApi.insertResultMessage({
     requestId: pluginVoiceInputApi.requestIdFrom ? pluginVoiceInputApi.requestIdFrom(payload) : payload.requestId,
     voiceSessionId: pluginVoiceInputApi.voiceSessionIdFrom ? pluginVoiceInputApi.voiceSessionIdFrom(payload) : payload.voiceSessionId,
     composerId: payload.composerId || payload.composer_id || pluginVoiceInputComposerId(),
     draftId: pluginVoiceInputSafeDraftId(),
+    action,
     ok: false,
     error: message || code || "composer_not_writable",
   }));
@@ -5228,6 +5250,10 @@ function applyPluginVoiceInputTextMessage(payload = {}) {
     rejectPluginVoiceInputInsert(payload, "composer_not_writable", "Composer is not writable.");
     return true;
   }
+  if (!pluginVoiceInputEnsureComposerWritableForDraft()) {
+    rejectPluginVoiceInputInsert(payload, "composer_dom_unavailable", "Composer is not available.");
+    return true;
+  }
   const text = pluginVoiceInputApi.textFromMessage
     ? pluginVoiceInputApi.textFromMessage(payload, capability.maxChars)
     : String(payload.text || "").trim().slice(0, capability.maxChars);
@@ -5245,6 +5271,7 @@ function applyPluginVoiceInputTextMessage(payload = {}) {
       voiceSessionId: pluginVoiceInputSessionIdFromPayload(payload),
       composerId: capability.composerId,
       draftId: capability.draftId,
+      action,
       ok: true,
     }));
     publishPluginVoiceInputCapability({ force: true });
@@ -5255,7 +5282,7 @@ function applyPluginVoiceInputTextMessage(payload = {}) {
     ? text
     : pluginVoiceInputAppendText(composerText(), text);
   setComposerText(nextText);
-  scheduleCurrentDraftSave();
+  persistPluginVoiceInputDraft();
   updateComposerControls();
   const input = $("messageInput");
   if (input) input.focus();
@@ -5265,6 +5292,7 @@ function applyPluginVoiceInputTextMessage(payload = {}) {
     voiceSessionId: pluginVoiceInputApi.voiceSessionIdFrom ? pluginVoiceInputApi.voiceSessionIdFrom(payload) : payload.voiceSessionId,
     composerId: capability.composerId,
     draftId: capability.draftId,
+    action,
     ok: true,
   }));
   publishPluginVoiceInputCapability({ force: true });

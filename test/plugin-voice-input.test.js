@@ -96,8 +96,14 @@ test("voice input bridge is limited to Hermes embed mode and uses plugin scripts
   assert.match(functionBody("pluginVoiceInputCapabilityPayload"), /writable: pluginVoiceInputCanReceiveText\(\)/);
   assert.match(functionBody("pluginVoiceInputCapabilityPayload"), /"provisional_text"/);
   assert.match(functionBody("applyPluginVoiceInputTextMessage"), /const capability = pluginVoiceInputCapabilityPayload\(\)/);
+  assert.match(functionBody("applyPluginVoiceInputTextMessage"), /pluginVoiceInputEnsureComposerWritableForDraft\(\)/);
   assert.match(functionBody("applyPluginVoiceInputTextMessage"), /action === "provisional_text"/);
+  assert.match(functionBody("applyPluginVoiceInputTextMessage"), /persistPluginVoiceInputDraft\(\)/);
   assert.match(functionBody("applyPluginVoiceInputProvisionalText"), /state\.pluginVoiceInputProvisional/);
+  assert.match(functionBody("applyPluginVoiceInputProvisionalText"), /persistPluginVoiceInputDraft\(draftKey\)/);
+  assert.match(functionBody("pluginVoiceInputEnsureComposerWritableForDraft"), /setMessageInputDisabled\(false\)/);
+  assert.match(functionBody("persistPluginVoiceInputDraft"), /writeCurrentDraftToKey\(key\)/);
+  assert.match(functionBody("rejectPluginVoiceInputInsert"), /actionFromMessageType\(payload\.type\)/);
   assert.match(functionBody("restorePluginVoiceInputProvisionalBase"), /session\.voiceSessionId !== voiceSessionId/);
   assert.match(functionBody("sendMessage"), /commitPluginVoiceInputSessionsAfterSend\(submittedDraftKey, text/);
   assert.match(functionBody("sendNewThreadMessage"), /commitPluginVoiceInputSessionsAfterSend\(submittedDraftKey, text/);

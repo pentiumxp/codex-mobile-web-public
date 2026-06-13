@@ -151,6 +151,7 @@
   function insertResultMessage(input = {}) {
     return Object.assign(baseMessage(TYPES.INSERT_RESULT, input), {
       ok: input.ok !== false,
+      action: boundedString(input.action || input.insertAction || input.insert_action, 40),
       code: input.ok === false ? boundedString(input.code || input.errorCode || input.error_code, 80) : "",
       composerId: boundedString(input.composerId || input.composer_id || "thread-composer", 120) || "thread-composer",
       draftId: boundedString(input.draftId || input.draft_id, 220),
