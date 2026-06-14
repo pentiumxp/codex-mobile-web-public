@@ -17,6 +17,46 @@ const pluginEmbedApi = window.CodexPluginEmbed || {
   postBackResult: () => null,
   postNavigation: () => null,
 };
+const pluginVoiceInputApi = window.CodexPluginVoiceInput || {
+  MAX_TEXT_CHARS: 12000,
+  TYPES: {
+    CAPABILITY_QUERY: "voice_input.capability_query",
+    APPEND_TEXT: "voice_input.append_text",
+    INSERT_TEXT: "voice_input.insert_text",
+    REPLACE_DRAFT: "voice_input.replace_draft",
+    PROVISIONAL_TEXT: "voice_input.provisional_text",
+    SUBMIT: "voice_input.submit",
+  },
+  actionFromMessageType(type) {
+    if (type === "voice_input.append_text") return "append_text";
+    if (type === "voice_input.insert_text") return "insert_text";
+    if (type === "voice_input.replace_draft") return "replace_draft";
+    if (type === "voice_input.provisional_text") return "provisional_text";
+    if (type === "voice_input.submit") return "submit";
+    return "";
+  },
+  capabilityStateMessage: (input = {}) => Object.assign({ type: "voice_input.capability_state", version: 1, pluginId: "codex-mobile" }, input),
+  commitResultMessage: (input = {}) => Object.assign({ type: "voice_input.commit_result", version: 1, pluginId: "codex-mobile" }, input),
+  errorMessage: (input = {}) => Object.assign({ type: "voice_input.error", version: 1, pluginId: "codex-mobile" }, input),
+  insertResultMessage: (input = {}) => Object.assign({
+    type: "voice_input.insert_result",
+    version: 1,
+    pluginId: "codex-mobile",
+    code: input.ok === false ? String(input.code || input.errorCode || input.error_code || "").trim().slice(0, 80) : "",
+  }, input),
+  isVoiceInputMessage: (value) => Boolean(value && typeof value === "object" && String(value.type || "").startsWith("voice_input.")),
+  postToParent(parentWindow, message, targetOrigin) {
+    if (!parentWindow || parentWindow === window) return false;
+    parentWindow.postMessage(message, targetOrigin || "*");
+    return true;
+  },
+  requestIdFrom: (input = {}) => String(input.requestId || input.request_id || "").trim(),
+  startRequestMessage: (input = {}) => Object.assign({ type: "voice_input.start_request", version: 1, pluginId: "codex-mobile" }, input),
+  stopRequestMessage: (input = {}) => Object.assign({ type: "voice_input.stop_request", version: 1, pluginId: "codex-mobile" }, input),
+  cancelRequestMessage: (input = {}) => Object.assign({ type: "voice_input.cancel_request", version: 1, pluginId: "codex-mobile" }, input),
+  textFromMessage: (input = {}) => String(input.text || "").trim().slice(0, 12000),
+  voiceSessionIdFrom: (input = {}) => String(input.voiceSessionId || input.voice_session_id || "").trim(),
+};
 const buildRefreshPolicy = window.CodexBuildRefreshPolicy || {
   shouldPromptForServerBuildChange(serverBuildId, clientBuildId) {
     const server = String(serverBuildId || "").trim();
@@ -44,6 +84,10 @@ const state = {
   pluginParentOrigin: pluginEmbedApi.parentOriginFromReferrer(document.referrer) || "*",
   pluginHostViewport: null,
   pluginNavigationSignature: "",
+  pluginVoiceInputCapabilitySignature: "",
+  pluginVoiceInputPress: null,
+  pluginVoiceInputProvisional: null,
+  pluginVoiceInputSessionsByDraftKey: {},
   pluginRefreshRequestSignature: "",
   pluginRefreshPendingNotice: "",
   pluginRefreshPendingTimer: null,
@@ -67,6 +111,9 @@ const state = {
   activeTurnId: "",
   events: null,
   connectionStatus: null,
+  appServerWasUnavailable: false,
+  autoTurnRecoveryInFlight: new Set(),
+  autoTurnRecoveryRecent: {},
   renderScheduled: false,
   renderFrame: null,
   bottomScrollFrame: null,
@@ -188,6 +235,7 @@ const state = {
   sharedRestartRiskThreads: [],
   sharedRestartScopeLines: [],
   sharedRestartConfirmResolve: null,
+  restartAutoRecoverThreads: [],
   serverBuildId: "",
   serverAssetBuildId: "",
   pageRefreshAvailable: false,
@@ -278,7 +326,8 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v275";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v283";
+const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
@@ -287,6 +336,7 @@ const PUBLIC_CONFIG_TIMEOUT_MS = 8000;
 const PUBLIC_CONFIG_RETRY_DELAYS_MS = [0, 300, 1200];
 const THREAD_LOAD_STALL_MS = 12000;
 const RUNNING_THREAD_HINT_STALE_MS = 20 * 60 * 1000;
+const AUTO_TURN_RECOVERY_COOLDOWN_MS = 120000;
 const GITHUB_LINK_PREVIEW_TIMEOUT_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
   "/",
@@ -300,6 +350,7 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/conversation-scroll.js",
   "/image-compressor.js",
   "/plugin-embed.js",
+  "/plugin-voice-input.js",
   "/build-refresh-policy.js",
   "/app.js",
   "/manifest.json",
@@ -323,6 +374,7 @@ const STORAGE_RATE_LIMITS = "codexMobileRateLimits";
 const STORAGE_RATE_LIMITS_BY_MODEL = "codexMobileRateLimitsByModel";
 const STORAGE_PUBLIC_PR_PROMPT = "codexMobilePublicPrPromptKey";
 const STORAGE_TASK_CARD_DRAFT_STATES = "codexMobileThreadTaskCardDraftStates";
+const STORAGE_RESTART_AUTO_RECOVER_THREADS = "codexMobileRestartAutoRecoverThreads";
 const PUBLIC_PR_REVIEW_THREAD_TITLE = "Codex Mobile Public PR";
 const MERMAID_SCRIPT_URL = "/vendor/mermaid.min.js";
 const MERMAID_MIN_SCALE = 0.65;
@@ -523,6 +575,49 @@ function saveStringSetStorage(key, value) {
   }
 }
 
+function normalizeRestartAutoRecoverThread(thread) {
+  const id = String(thread && thread.id || thread && thread.threadId || "").trim();
+  if (!id) return null;
+  return {
+    id,
+    activeTurnId: String(thread && thread.activeTurnId || ""),
+    cwd: String(thread && thread.cwd || ""),
+    name: String(thread && (thread.name || thread.preview) || ""),
+    status: thread && thread.status ? thread.status : { type: "active" },
+  };
+}
+
+function loadRestartAutoRecoverThreads() {
+  try {
+    const value = JSON.parse(localStorage.getItem(STORAGE_RESTART_AUTO_RECOVER_THREADS) || "[]");
+    if (!Array.isArray(value)) return [];
+    return value.map(normalizeRestartAutoRecoverThread).filter(Boolean).slice(0, 12);
+  } catch (_) {
+    return [];
+  }
+}
+
+function saveRestartAutoRecoverThreads(threads) {
+  const normalized = (threads || []).map(normalizeRestartAutoRecoverThread).filter(Boolean).slice(0, 12);
+  state.restartAutoRecoverThreads = normalized;
+  try {
+    if (normalized.length) localStorage.setItem(STORAGE_RESTART_AUTO_RECOVER_THREADS, JSON.stringify(normalized));
+    else localStorage.removeItem(STORAGE_RESTART_AUTO_RECOVER_THREADS);
+  } catch (_) {
+    // Restart recovery hints are best-effort UI state.
+  }
+  return normalized;
+}
+
+function clearRestartAutoRecoverThreads() {
+  state.restartAutoRecoverThreads = [];
+  try {
+    localStorage.removeItem(STORAGE_RESTART_AUTO_RECOVER_THREADS);
+  } catch (_) {}
+}
+
+state.restartAutoRecoverThreads = loadRestartAutoRecoverThreads();
+
 function saveThreadTaskCardDraftStates() {
   try {
     const entries = {};
@@ -679,6 +774,7 @@ function viewportState() {
     innerHeight: window.innerHeight,
     clientHeight: document.documentElement && document.documentElement.clientHeight,
     activeElement: document.activeElement,
+    hostViewportHeight: embedded && hostViewport && hostViewport.viewport ? hostViewport.viewport.height : 0,
     hostKeyboardVisible: Boolean(embedded && hostKeyboard && hostKeyboard.visible),
     hostKeyboardBottomInset: embedded && hostKeyboard ? hostKeyboard.bottomInset : 0,
     hostBottomSafeArea: embedded && hostFooter ? hostFooter.safeAreaBottom : 0,
@@ -2667,6 +2763,8 @@ async function handleSharedRestartClick() {
     const riskThreads = await fetchRestartRiskThreads();
     const confirmed = await requestSharedRestartConfirmation(riskThreads, sharedRestartScopeLines());
     if (!confirmed) return;
+    saveRestartAutoRecoverThreads(riskThreads);
+    state.appServerWasUnavailable = true;
     const result = await api("/api/restart/shared-chain", {
       method: "POST",
       body: "{}",
@@ -2986,6 +3084,118 @@ function restoreConnectionState(fallbackText = "Connected") {
   el.textContent = fallbackText;
   el.classList.remove("error");
   el.title = "";
+}
+
+function autoTurnRecoveryCandidate() {
+  if (!state.currentThreadId) return null;
+  const thread = state.currentThread || threadById(state.currentThreadId);
+  const live = currentLiveTurn();
+  const wasRunning = Boolean(state.activeTurnId || live || state.runningThreadIds.has(String(state.currentThreadId)) || isRunningStatus(thread && thread.status));
+  if (!wasRunning) return null;
+  return {
+    threadId: String(state.currentThreadId),
+    activeTurnId: String(state.activeTurnId || (live && live.id) || ""),
+    cwd: String((thread && thread.cwd) || ""),
+    wasRunning,
+  };
+}
+
+function autoTurnRecoveryCandidates() {
+  const byId = new Map();
+  for (const thread of state.restartAutoRecoverThreads || []) {
+    const normalized = normalizeRestartAutoRecoverThread(thread);
+    if (normalized) byId.set(normalized.id, {
+      threadId: normalized.id,
+      activeTurnId: normalized.activeTurnId,
+      cwd: normalized.cwd,
+      wasRunning: true,
+    });
+  }
+  for (const thread of state.threads || []) {
+    const id = String(thread && thread.id || "").trim();
+    if (!id || !isRunningStatus(thread && thread.status)) continue;
+    if (byId.has(id)) continue;
+    byId.set(id, {
+      threadId: id,
+      activeTurnId: String((thread.status && (thread.status.activeTurnId || thread.status.turnId || thread.status.id)) || ""),
+      cwd: String(thread.cwd || ""),
+      wasRunning: true,
+    });
+  }
+  const current = autoTurnRecoveryCandidate();
+  if (current) byId.set(current.threadId, current);
+  return Array.from(byId.values());
+}
+
+function autoTurnRecoveryRecentKey(candidate) {
+  return `${candidate.threadId}|${candidate.activeTurnId || "latest"}`;
+}
+
+async function recoverTurnCandidateAfterReconnect(candidate, reason) {
+  const key = autoTurnRecoveryRecentKey(candidate);
+  const now = Date.now();
+  const recentAt = Number(state.autoTurnRecoveryRecent[key] || 0);
+  if (recentAt && now - recentAt < AUTO_TURN_RECOVERY_COOLDOWN_MS) return null;
+  if (state.autoTurnRecoveryInFlight.has(key)) return null;
+  state.autoTurnRecoveryInFlight.add(key);
+  state.autoTurnRecoveryRecent[key] = now;
+  try {
+    const result = await api(`/api/threads/${encodeURIComponent(candidate.threadId)}/auto-recover`, {
+      method: "POST",
+      body: JSON.stringify({
+        activeTurnId: candidate.activeTurnId,
+        wasRunning: candidate.wasRunning,
+        cwd: candidate.cwd,
+        permissionMode: selectedComposerPermissionMode(),
+        reason,
+      }),
+      timeoutMs: 180000,
+    });
+    postClientEvent("auto_turn_recovery_result", {
+      reason,
+      threadId: candidate.threadId,
+      activeTurnId: candidate.activeTurnId,
+      recovered: Boolean(result && result.recovered),
+      skipped: Boolean(result && result.skipped),
+      action: String(result && result.action || ""),
+      resultReason: String(result && result.reason || ""),
+      turnId: String(result && result.turnId || ""),
+    });
+    if (result && result.recovered && candidate.threadId === state.currentThreadId) {
+      if (result.turnId) state.activeTurnId = String(result.turnId);
+      scheduleCurrentThreadRefresh(500);
+      scheduleLivePollIfNeeded(1000);
+    }
+    return result;
+  } catch (err) {
+    delete state.autoTurnRecoveryRecent[key];
+    postClientEvent("auto_turn_recovery_failed", {
+      reason,
+      threadId: candidate.threadId,
+      activeTurnId: candidate.activeTurnId,
+      error: err.message || String(err),
+    });
+    return null;
+  } finally {
+    state.autoTurnRecoveryInFlight.delete(key);
+  }
+}
+
+async function maybeAutoRecoverTurnAfterReconnect(status, reason = "reconnect") {
+  if (!status || !status.ready || document.visibilityState === "hidden" || !state.key) return;
+  const candidates = autoTurnRecoveryCandidates();
+  if (!candidates.length) return;
+  markActivity("自动续接中");
+  let recoveredCount = 0;
+  for (const candidate of candidates) {
+    const result = await recoverTurnCandidateAfterReconnect(candidate, reason);
+    if (result && result.recovered) recoveredCount += 1;
+  }
+  if (state.restartAutoRecoverThreads.length) clearRestartAutoRecoverThreads();
+  if (recoveredCount > 0) {
+    markActivity(recoveredCount === 1 ? "已自动续接" : `已自动续接 ${recoveredCount} 个线程`);
+    loadThreads({ silent: true }).catch(showError);
+  }
 }
 
 function showComposerFastHint(enabled) {
@@ -4769,6 +4979,447 @@ function normalizePluginParentOrigin(value) {
     ? pluginEmbedApi.parentOriginFromReferrer(document.referrer)
     : "";
   return String(referrerOrigin || "").trim();
+}
+
+function pluginVoiceInputParentOriginAllowed(event) {
+  if (!isHermesEmbedMode()) return false;
+  if (event && event.source && event.source !== window.parent) return false;
+  const origin = String(event && event.origin || "").trim();
+  const expected = normalizePluginParentOrigin(state.pluginParentOrigin);
+  if (expected && origin && origin !== expected) return false;
+  if (!expected && origin && origin !== "null" && (!state.pluginParentOrigin || state.pluginParentOrigin === "*")) {
+    state.pluginParentOrigin = origin;
+  }
+  return true;
+}
+
+function pluginVoiceInputSafeDraftId() {
+  if (state.newThreadDraft) return "new-thread";
+  return state.currentThreadId ? `thread:${String(state.currentThreadId).slice(0, 160)}` : "";
+}
+
+function pluginVoiceInputComposerId() {
+  return state.newThreadDraft ? "new-thread-composer" : "thread-composer";
+}
+
+function pluginVoiceInputComposerWritable() {
+  if (!isHermesEmbedMode()) return false;
+  if (state.composerBusy || state.attachmentProcessingCount > 0) return false;
+  const input = $("messageInput");
+  if (!input || input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true") return false;
+  if (state.newThreadDraft) return Boolean(state.selectedCwd);
+  return Boolean(
+    state.currentThreadId
+    && state.currentThread
+    && !state.currentThread.mobileLoading
+    && !state.currentThread.mobileLoadError
+  );
+}
+
+function pluginVoiceInputActiveTurnHoldAvailable() {
+  if (!isHermesEmbedMode()) return false;
+  if (!state.activeTurnId || state.attachmentProcessingCount > 0) return false;
+  return Boolean(state.currentThreadId && state.currentThread && !state.currentThread.mobileLoading && !state.currentThread.mobileLoadError);
+}
+
+function pluginVoiceInputCanReceiveText() {
+  if (pluginVoiceInputComposerWritable()) return true;
+  return pluginVoiceInputActiveTurnHoldAvailable();
+}
+
+function pluginVoiceInputEnsureComposerWritableForDraft() {
+  if (!isHermesEmbedMode()) return false;
+  const input = $("messageInput");
+  if (!input) return false;
+  if (input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true") {
+    setMessageInputDisabled(false);
+  }
+  return true;
+}
+
+function persistPluginVoiceInputDraft(draftKey = currentPluginVoiceInputDraftKey()) {
+  const key = String(draftKey || "");
+  if (!key) return false;
+  writeCurrentDraftToKey(key);
+  return true;
+}
+
+function pluginVoiceInputCapabilityPayload(extra = {}) {
+  return Object.assign({
+    pluginId: "codex-mobile",
+    writable: pluginVoiceInputCanReceiveText(),
+    composerId: pluginVoiceInputComposerId(),
+    threadId: String(state.currentThreadId || "").slice(0, 160),
+    draftId: pluginVoiceInputSafeDraftId(),
+    maxChars: Math.max(1, Number(pluginVoiceInputApi.MAX_TEXT_CHARS || 12000) || 12000),
+    actions: ["append_text", "replace_draft", "insert_text", "provisional_text"],
+  }, extra || {});
+}
+
+function pluginVoiceInputGestureAvailable() {
+  if (!isHermesEmbedMode()) return false;
+  if (pluginVoiceInputActiveTurnHoldAvailable()) return true;
+  if (state.activeTurnId && !composerHasContent()) return false;
+  return pluginVoiceInputComposerWritable();
+}
+
+function postPluginVoiceInputMessage(message) {
+  if (!isHermesEmbedMode() || !message) return false;
+  const targetOrigin = normalizePluginParentOrigin(state.pluginParentOrigin);
+  if (targetOrigin) state.pluginParentOrigin = targetOrigin;
+  return pluginVoiceInputApi.postToParent
+    ? pluginVoiceInputApi.postToParent(window.parent, message, targetOrigin || "*")
+    : false;
+}
+
+function publishPluginVoiceInputCapability(options = {}) {
+  if (!isHermesEmbedMode()) return false;
+  const payload = pluginVoiceInputCapabilityPayload({
+    requestId: options.requestId || "",
+  });
+  const signature = JSON.stringify({
+    writable: payload.writable,
+    composerId: payload.composerId,
+    threadId: payload.threadId,
+    draftId: payload.draftId,
+    maxChars: payload.maxChars,
+    actions: payload.actions,
+  });
+  if (!options.force && !options.requestId && state.pluginVoiceInputCapabilitySignature === signature) return false;
+  state.pluginVoiceInputCapabilitySignature = signature;
+  return postPluginVoiceInputMessage(pluginVoiceInputApi.capabilityStateMessage(payload));
+}
+
+function currentPluginVoiceInputDraftKey() {
+  return currentDraftKey() || "";
+}
+
+function rememberPluginVoiceInputSession(payload = {}, insertedText = "") {
+  const voiceSessionId = pluginVoiceInputApi.voiceSessionIdFrom
+    ? pluginVoiceInputApi.voiceSessionIdFrom(payload)
+    : String(payload.voiceSessionId || payload.voice_session_id || "").trim();
+  if (!voiceSessionId) return;
+  const draftKey = currentPluginVoiceInputDraftKey();
+  if (!draftKey) return;
+  const sessions = state.pluginVoiceInputSessionsByDraftKey[draftKey] || [];
+  const existing = sessions.find((entry) => entry.voiceSessionId === voiceSessionId);
+  const next = {
+    voiceSessionId,
+    composerId: pluginVoiceInputComposerId(),
+    threadId: String(state.currentThreadId || "").slice(0, 160),
+    insertedText: String(insertedText || "").slice(0, Number(pluginVoiceInputApi.MAX_TEXT_CHARS || 12000) || 12000),
+    insertedAtMs: Date.now(),
+  };
+  if (existing) Object.assign(existing, next);
+  else sessions.push(next);
+  state.pluginVoiceInputSessionsByDraftKey[draftKey] = sessions.slice(-8);
+}
+
+function takePluginVoiceInputSessionsForDraft(draftKey) {
+  const key = String(draftKey || "");
+  if (!key) return [];
+  const sessions = Array.isArray(state.pluginVoiceInputSessionsByDraftKey[key])
+    ? state.pluginVoiceInputSessionsByDraftKey[key].slice()
+    : [];
+  delete state.pluginVoiceInputSessionsByDraftKey[key];
+  return sessions;
+}
+
+function commitPluginVoiceInputSessionsAfterSend(draftKey, finalText, options = {}) {
+  if (!isHermesEmbedMode()) return;
+  const sessions = takePluginVoiceInputSessionsForDraft(draftKey);
+  const submittedText = String(finalText || "").trim();
+  if (!sessions.length || !submittedText) return;
+  for (const session of sessions) {
+    postPluginVoiceInputMessage(pluginVoiceInputApi.commitResultMessage({
+      voiceSessionId: session.voiceSessionId,
+      composerId: options.composerId || session.composerId || pluginVoiceInputComposerId(),
+      threadId: options.threadId || state.currentThreadId || session.threadId || "",
+      messageId: options.messageId || "",
+      finalText: submittedText,
+      action: "submitted",
+    }));
+  }
+}
+
+function pluginVoiceInputAppendText(currentText, insertedText) {
+  const current = String(currentText || "").trim();
+  const next = String(insertedText || "").trim();
+  if (!current) return next;
+  if (!next) return current;
+  return `${current}\n${next}`;
+}
+
+function pluginVoiceInputSessionIdFromPayload(payload = {}) {
+  return pluginVoiceInputApi.voiceSessionIdFrom
+    ? pluginVoiceInputApi.voiceSessionIdFrom(payload)
+    : String(payload.voiceSessionId || payload.voice_session_id || "").trim();
+}
+
+function clearPluginVoiceInputProvisionalSession() {
+  state.pluginVoiceInputProvisional = null;
+}
+
+function restorePluginVoiceInputProvisionalBase(payload = {}) {
+  const session = state.pluginVoiceInputProvisional;
+  const voiceSessionId = pluginVoiceInputSessionIdFromPayload(payload);
+  if (!session || !voiceSessionId || session.voiceSessionId !== voiceSessionId) return false;
+  if (session.draftKey && session.draftKey !== currentPluginVoiceInputDraftKey()) return false;
+  if (composerText() !== session.currentText) {
+    clearPluginVoiceInputProvisionalSession();
+    return false;
+  }
+  setComposerText(session.baseText || "");
+  clearPluginVoiceInputProvisionalSession();
+  return true;
+}
+
+function applyPluginVoiceInputProvisionalText(payload = {}, text = "") {
+  const voiceSessionId = pluginVoiceInputSessionIdFromPayload(payload);
+  if (!voiceSessionId) return false;
+  const draftKey = currentPluginVoiceInputDraftKey();
+  if (!draftKey) return false;
+  if (!pluginVoiceInputEnsureComposerWritableForDraft()) return false;
+  const currentText = composerText();
+  let session = state.pluginVoiceInputProvisional;
+  if (
+    !session
+    || session.voiceSessionId !== voiceSessionId
+    || session.draftKey !== draftKey
+  ) {
+    session = {
+      voiceSessionId,
+      draftKey,
+      baseText: currentText,
+      currentText,
+    };
+  } else if (currentText !== session.currentText) {
+    clearPluginVoiceInputProvisionalSession();
+    return false;
+  }
+  const nextText = pluginVoiceInputAppendText(session.baseText, text);
+  setComposerText(nextText);
+  persistPluginVoiceInputDraft(draftKey);
+  updateComposerControls();
+  const input = $("messageInput");
+  if (input) input.focus();
+  state.pluginVoiceInputProvisional = Object.assign({}, session, {
+    currentText: nextText,
+    text: String(text || "").slice(0, Number(pluginVoiceInputApi.MAX_TEXT_CHARS || 12000) || 12000),
+    updatedAtMs: Date.now(),
+  });
+  return true;
+}
+
+function rejectPluginVoiceInputInsert(payload, code, message) {
+  const action = pluginVoiceInputApi.actionFromMessageType
+    ? pluginVoiceInputApi.actionFromMessageType(payload.type)
+    : "";
+  postPluginVoiceInputMessage(pluginVoiceInputApi.insertResultMessage({
+    requestId: pluginVoiceInputApi.requestIdFrom ? pluginVoiceInputApi.requestIdFrom(payload) : payload.requestId,
+    voiceSessionId: pluginVoiceInputApi.voiceSessionIdFrom ? pluginVoiceInputApi.voiceSessionIdFrom(payload) : payload.voiceSessionId,
+    composerId: payload.composerId || payload.composer_id || pluginVoiceInputComposerId(),
+    draftId: pluginVoiceInputSafeDraftId(),
+    action,
+    ok: false,
+    error: message || code || "composer_not_writable",
+  }));
+  postClientEvent("plugin_voice_input_insert_rejected", {
+    code: String(code || "insert_rejected").slice(0, 80),
+    writable: pluginVoiceInputCanReceiveText(),
+    threadId: state.currentThreadId || "",
+  });
+}
+
+function applyPluginVoiceInputTextMessage(payload = {}) {
+  const action = pluginVoiceInputApi.actionFromMessageType
+    ? pluginVoiceInputApi.actionFromMessageType(payload.type)
+    : "";
+  if (!action || action === "submit") {
+    postPluginVoiceInputMessage(pluginVoiceInputApi.errorMessage({
+      requestId: payload.requestId,
+      voiceSessionId: payload.voiceSessionId,
+      composerId: payload.composerId || pluginVoiceInputComposerId(),
+      code: "unsupported_voice_input_action",
+      error: "Unsupported voice input action.",
+    }));
+    return true;
+  }
+  const capability = pluginVoiceInputCapabilityPayload();
+  if (!capability.writable) {
+    rejectPluginVoiceInputInsert(payload, "composer_not_writable", "Composer is not writable.");
+    return true;
+  }
+  if (!pluginVoiceInputEnsureComposerWritableForDraft()) {
+    rejectPluginVoiceInputInsert(payload, "composer_dom_unavailable", "Composer is not available.");
+    return true;
+  }
+  const text = pluginVoiceInputApi.textFromMessage
+    ? pluginVoiceInputApi.textFromMessage(payload, capability.maxChars)
+    : String(payload.text || "").trim().slice(0, capability.maxChars);
+  if (!text) {
+    rejectPluginVoiceInputInsert(payload, "empty_voice_input_text", "Voice input text is empty.");
+    return true;
+  }
+  if (action === "provisional_text") {
+    if (!applyPluginVoiceInputProvisionalText(payload, text)) {
+      rejectPluginVoiceInputInsert(payload, "provisional_voice_input_rejected", "Voice input draft changed.");
+      return true;
+    }
+    postPluginVoiceInputMessage(pluginVoiceInputApi.insertResultMessage({
+      requestId: pluginVoiceInputApi.requestIdFrom ? pluginVoiceInputApi.requestIdFrom(payload) : payload.requestId,
+      voiceSessionId: pluginVoiceInputSessionIdFromPayload(payload),
+      composerId: capability.composerId,
+      draftId: capability.draftId,
+      action,
+      ok: true,
+    }));
+    publishPluginVoiceInputCapability({ force: true });
+    return true;
+  }
+  restorePluginVoiceInputProvisionalBase(payload);
+  const nextText = action === "replace_draft"
+    ? text
+    : pluginVoiceInputAppendText(composerText(), text);
+  setComposerText(nextText);
+  persistPluginVoiceInputDraft();
+  updateComposerControls();
+  const input = $("messageInput");
+  if (input) input.focus();
+  rememberPluginVoiceInputSession(payload, text);
+  postPluginVoiceInputMessage(pluginVoiceInputApi.insertResultMessage({
+    requestId: pluginVoiceInputApi.requestIdFrom ? pluginVoiceInputApi.requestIdFrom(payload) : payload.requestId,
+    voiceSessionId: pluginVoiceInputApi.voiceSessionIdFrom ? pluginVoiceInputApi.voiceSessionIdFrom(payload) : payload.voiceSessionId,
+    composerId: capability.composerId,
+    draftId: capability.draftId,
+    action,
+    ok: true,
+  }));
+  publishPluginVoiceInputCapability({ force: true });
+  return true;
+}
+
+function handlePluginVoiceInputMessage(event) {
+  const payload = event && event.data;
+  if (!pluginVoiceInputApi.isVoiceInputMessage || !pluginVoiceInputApi.isVoiceInputMessage(payload)) return false;
+  if (!pluginVoiceInputParentOriginAllowed(event)) return true;
+  if (payload.pluginId && String(payload.pluginId) !== "codex-mobile") return true;
+  if (payload.version && Number(payload.version) !== 1) return true;
+  if (payload.type === pluginVoiceInputApi.TYPES.CAPABILITY_QUERY || payload.type === "voice_input.capability_query") {
+    publishPluginVoiceInputCapability({
+      force: true,
+      requestId: pluginVoiceInputApi.requestIdFrom ? pluginVoiceInputApi.requestIdFrom(payload) : payload.requestId,
+    });
+    return true;
+  }
+  if (
+    payload.type === pluginVoiceInputApi.TYPES.APPEND_TEXT
+    || payload.type === pluginVoiceInputApi.TYPES.INSERT_TEXT
+    || payload.type === pluginVoiceInputApi.TYPES.REPLACE_DRAFT
+    || payload.type === pluginVoiceInputApi.TYPES.PROVISIONAL_TEXT
+    || payload.type === pluginVoiceInputApi.TYPES.SUBMIT
+  ) {
+    return applyPluginVoiceInputTextMessage(payload);
+  }
+  return false;
+}
+
+function clearPluginVoiceInputPress(options = {}) {
+  const press = state.pluginVoiceInputPress;
+  if (press && press.timer) clearTimeout(press.timer);
+  const button = $("sendMessage");
+  if (button) button.classList.remove("plugin-voice-input-recording");
+  state.pluginVoiceInputPress = options.keepSuppress && press
+    ? Object.assign({}, press, { timer: 0, started: false })
+    : null;
+}
+
+function handlePluginVoiceInputSendPointerDown(event) {
+  if (!pluginVoiceInputGestureAvailable()) return;
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const button = event.currentTarget;
+  clearPluginVoiceInputPress();
+  const press = {
+    pointerId: event.pointerId,
+    started: false,
+    suppressClick: false,
+    timer: 0,
+  };
+  state.pluginVoiceInputPress = press;
+  try {
+    button.setPointerCapture?.(event.pointerId);
+  } catch (_) {}
+  press.timer = setTimeout(() => {
+    press.timer = 0;
+    press.started = true;
+    press.suppressClick = true;
+    clearTextSelection();
+    if (button) button.classList.add("plugin-voice-input-recording");
+    const capability = pluginVoiceInputCapabilityPayload({ writable: true });
+    const ok = postPluginVoiceInputMessage(pluginVoiceInputApi.startRequestMessage(capability));
+    if (!ok) {
+      postClientEvent("plugin_voice_input_start_failed", { reason: "post_to_parent_failed" });
+    }
+  }, PLUGIN_VOICE_INPUT_LONG_PRESS_MS);
+}
+
+function handlePluginVoiceInputSendPointerUp(event) {
+  const press = state.pluginVoiceInputPress;
+  if (!press) return;
+  if (press.pointerId && event.pointerId !== press.pointerId) return;
+  if (press.timer) {
+    clearPluginVoiceInputPress();
+    return;
+  }
+  try {
+    event.currentTarget?.releasePointerCapture?.(event.pointerId);
+  } catch (_) {}
+  if (!press.started) {
+    clearPluginVoiceInputPress();
+    return;
+  }
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  postPluginVoiceInputMessage(pluginVoiceInputApi.stopRequestMessage(pluginVoiceInputCapabilityPayload()));
+  clearPluginVoiceInputPress({ keepSuppress: true });
+  window.setTimeout(() => {
+    if (state.pluginVoiceInputPress && state.pluginVoiceInputPress.suppressClick) state.pluginVoiceInputPress = null;
+  }, 1200);
+}
+
+function handlePluginVoiceInputSendPointerCancel(event) {
+  const press = state.pluginVoiceInputPress;
+  if (!press) return;
+  if (press.started) {
+    postPluginVoiceInputMessage(pluginVoiceInputApi.cancelRequestMessage(pluginVoiceInputCapabilityPayload()));
+  }
+  if (event && typeof event.preventDefault === "function") event.preventDefault();
+  clearPluginVoiceInputPress();
+}
+
+function handlePluginVoiceInputSendClick(event) {
+  const press = state.pluginVoiceInputPress;
+  if (!press || !press.suppressClick) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  state.pluginVoiceInputPress = null;
+}
+
+function setComposerActionButtonLabel(button, label, options = {}) {
+  if (!button) return;
+  const text = String(label || "");
+  const useProxy = Boolean(options.proxy);
+  button.classList.toggle("plugin-voice-input-label-proxy", useProxy);
+  if (useProxy) {
+    button.textContent = "";
+    button.dataset.visualLabel = text;
+    button.setAttribute("aria-label", text);
+  } else {
+    button.textContent = text;
+    delete button.dataset.visualLabel;
+  }
 }
 
 function boundedPluginRefreshValue(value, maxLength) {
@@ -7663,7 +8314,7 @@ function openContinuationDialog(sourceThread) {
   const dialog = $("continuationDialog");
   if (!dialog) return false;
   state.continuationDialogThreadId = threadId || "__current__";
-  const title = thread.name || thread.preview || thread.id || "current thread";
+  const title = threadTitleForDisplay(thread) || "current thread";
   const titleNode = $("continuationTitle");
   const summaryNode = $("continuationSummary");
   if (titleNode) titleNode.textContent = `压缩续接“${title}”`;
@@ -9239,7 +9890,7 @@ function startThreadRequestBody(sourceThread = null, options = {}) {
   return {
     cwd: thread.cwd || state.selectedCwd || "",
     sourceThreadId: thread.id || "",
-    sourceThreadTitle: thread.name || thread.preview || thread.id || "",
+    sourceThreadTitle: threadTitleForDisplay(thread) || thread.id || "",
     archiveSourceThread: Boolean(options.archiveSourceThread && thread.id),
   };
 }
@@ -9383,7 +10034,7 @@ async function startNewThreadFromThread(sourceThread, event) {
   const body = {
     cwd,
     sourceThreadId: thread.id || "",
-    sourceThreadTitle: thread.name || thread.preview || thread.id || "",
+    sourceThreadTitle: threadTitleForDisplay(thread) || thread.id || "",
     archiveSourceThread: Boolean(thread.id),
   };
   if (!body.cwd) {
@@ -12077,12 +12728,12 @@ function scheduleEventReconnectRetry() {
   }, delay);
 }
 
-function shouldRefreshThreadListDuringEventRecovery() {
-  return !isHermesEmbedMode() || !state.threads.length;
+function shouldRefreshThreadListDuringEventRecovery(options = {}) {
+  return Boolean(options.force) || !isHermesEmbedMode() || !state.threads.length;
 }
 
-async function refreshThreadListDuringEventRecovery() {
-  if (!shouldRefreshThreadListDuringEventRecovery()) return false;
+async function refreshThreadListDuringEventRecovery(options = {}) {
+  if (!shouldRefreshThreadListDuringEventRecovery(options)) return false;
   await loadThreads({ silent: isHermesEmbedMode() || Boolean(state.threads.length) });
   return true;
 }
@@ -12112,14 +12763,18 @@ function scheduleEventFallbackPoll(delayMs = 8000) {
   }, delayMs);
 }
 
-async function recoverEventStreamWithApiFallback() {
+async function recoverEventStreamWithApiFallback(options = {}) {
+  const wasUnavailable = state.appServerWasUnavailable || Boolean(state.connectionStatus && !state.connectionStatus.ready);
   const status = await api("/api/status");
   updateConnectionState(status);
+  const recovered = (wasUnavailable || Boolean(options.afterEventReconnect)) && status && status.ready;
+  state.appServerWasUnavailable = Boolean(status && !status.ready);
   clearReconnectRefreshPrompt();
   rememberRateLimitsFromConfig(status);
   if (status.codexProfiles) rememberCodexProfiles(status.codexProfiles);
-  await refreshThreadListDuringEventRecovery();
+  await refreshThreadListDuringEventRecovery({ force: Boolean(options.afterEventReconnect) });
   if (state.currentThreadId) await refreshCurrentThread();
+  if (recovered) await maybeAutoRecoverTurnAfterReconnect(status, "event-fallback-reconnect");
   if (isHermesEmbedMode()) {
     state.eventFallbackMode = true;
     scheduleEventFallbackPoll();
@@ -12141,20 +12796,32 @@ function connectEvents() {
   if (state.currentThreadId) params.set("threadId", state.currentThreadId);
   state.events = new EventSource(`/api/events?${params.toString()}`);
   state.events.onopen = () => {
+    const hadReconnectFailure = state.eventReconnectFailures > 0 || state.eventFallbackMode;
     clearReconnectTimers();
     resetEventFallbackState();
     clearReconnectRefreshPrompt();
     if (state.connectionStatus) restoreConnectionState();
     scheduleVisiblePageRefreshCheck(200, { force: true });
+    if (hadReconnectFailure) {
+      recoverEventStreamWithApiFallback({ afterEventReconnect: true }).catch((err) => {
+        state.appServerWasUnavailable = true;
+        showReconnectRefreshPrompt("reconnect");
+        if (!isHermesEmbedMode()) showError(err);
+      });
+    }
   };
   state.events.onmessage = (event) => {
     const payload = JSON.parse(event.data);
     if (payload.type === "status") {
       clearReconnectTimers();
+      const wasUnavailable = state.appServerWasUnavailable || Boolean(state.connectionStatus && !state.connectionStatus.ready);
       updateConnectionState(payload.status);
+      const recovered = wasUnavailable && payload.status && payload.status.ready;
+      state.appServerWasUnavailable = Boolean(payload.status && !payload.status.ready);
       rememberRateLimitsFromConfig(payload.status);
       if (payload.status.codexProfiles) rememberCodexProfiles(payload.status.codexProfiles);
       scheduleVisiblePageRefreshCheck(1200);
+      if (recovered) maybeAutoRecoverTurnAfterReconnect(payload.status, "app-server-reconnect").catch(() => {});
       return;
     }
     if (payload.type === "notification") applyNotification(payload.method, payload.params);
@@ -12179,6 +12846,7 @@ function connectEvents() {
       try {
         await recoverEventStreamWithApiFallback();
       } catch (err) {
+        state.appServerWasUnavailable = true;
         showReconnectRefreshPrompt("reconnect");
         if (!isHermesEmbedMode()) showError(err);
       }
@@ -12310,8 +12978,11 @@ async function resumeMobileSession(reason = "resume") {
     if (state.currentThread || state.threads.length) renderCurrentThread();
     ensureEventConnection();
     state.pollStableCount = 0;
+    const wasUnavailable = state.appServerWasUnavailable || Boolean(state.connectionStatus && !state.connectionStatus.ready);
     const status = await api("/api/status");
     updateConnectionState(status);
+    const recovered = wasUnavailable && status && status.ready;
+    state.appServerWasUnavailable = Boolean(status && !status.ready);
     rememberRateLimitsFromConfig(status);
     if (status.codexProfiles) rememberCodexProfiles(status.codexProfiles);
     await loadThreads({ silent: Boolean(state.threads.length) });
@@ -12331,6 +13002,7 @@ async function resumeMobileSession(reason = "resume") {
     } else {
       await restoreThreadSelection();
     }
+    if (recovered) await maybeAutoRecoverTurnAfterReconnect(status, reason);
     scheduleLivePollIfNeeded(1200);
     const elapsedMs = roundedDurationMs(startedAt);
     if (elapsedMs > 1200) {
@@ -12342,6 +13014,7 @@ async function resumeMobileSession(reason = "resume") {
       });
     }
   } catch (err) {
+    if (isTransientResumeError(err)) state.appServerWasUnavailable = true;
     postClientEvent("mobile_resume_error", {
       reason,
       elapsedMs: roundedDurationMs(startedAt),
@@ -13431,41 +14104,52 @@ function updateComposerControls() {
   }
   const showRetryHint = Boolean(state.sendButtonHint);
   if (interruptMode) {
-    sendButton.textContent = "Stop";
+    setComposerActionButtonLabel(sendButton, "Stop", { proxy: isHermesEmbedMode() });
     sendButton.title = "Interrupt current turn";
     sendButton.classList.add("interrupt-mode");
     sendButton.classList.remove("sending", "send-failed", "steer-mode");
   } else if (state.composerBusy) {
     const steering = state.steerFeedback && state.steerFeedback.status === "sending";
-    sendButton.textContent = steering ? "引导中…" : "发送中…";
+    setComposerActionButtonLabel(sendButton, steering ? "引导中…" : "发送中…");
     sendButton.title = steering ? "Steering current turn" : "Message is sending";
     sendButton.classList.add("sending");
     sendButton.classList.toggle("steer-mode", Boolean(steering));
     sendButton.classList.remove("send-failed", "interrupt-mode");
   } else if (showRetryHint) {
-    sendButton.textContent = "重试";
+    setComposerActionButtonLabel(sendButton, "重试");
     sendButton.title = "Retry sending message";
     sendButton.classList.add("send-failed");
     sendButton.classList.remove("sending", "interrupt-mode", "steer-mode");
   } else if (goalCommandMode) {
-    sendButton.textContent = "Goal";
+    setComposerActionButtonLabel(sendButton, "Goal");
     sendButton.title = "Open goal dialog";
     sendButton.classList.remove("sending", "send-failed", "interrupt-mode", "steer-mode");
   } else if (commandMode) {
-    sendButton.textContent = "Task card";
+    setComposerActionButtonLabel(sendButton, "Task card");
     sendButton.title = "Ask Codex to draft a cross-thread task card";
     sendButton.classList.remove("sending", "send-failed", "interrupt-mode", "steer-mode");
   } else if (steerMode) {
-    sendButton.textContent = "引导";
+    setComposerActionButtonLabel(sendButton, "引导");
     sendButton.title = "Guide the current running turn";
     sendButton.classList.add("steer-mode");
     sendButton.classList.remove("sending", "send-failed", "interrupt-mode");
   } else {
-    sendButton.textContent = "Send";
+    setComposerActionButtonLabel(sendButton, "Send");
     sendButton.title = hasNewThreadDraft ? "Create new chat" : "Send message";
     sendButton.classList.remove("sending", "send-failed", "interrupt-mode", "steer-mode");
   }
-  sendButton.disabled = disabled || (!interruptMode && !hasContent);
+  const voiceGestureAvailable = pluginVoiceInputGestureAvailable();
+  sendButton.classList.toggle("plugin-voice-input-gesture", voiceGestureAvailable);
+  if (voiceGestureAvailable && !state.composerBusy && !interruptMode) {
+    sendButton.title = `${sendButton.title || "Send"}；按住录音，松开转写`;
+    sendButton.setAttribute("aria-label", `${sendButton.textContent || "Send"}。按住可语音输入`);
+  } else if (interruptMode && isHermesEmbedMode()) {
+    sendButton.setAttribute("aria-label", "Stop。按住可语音输入，轻点可中断当前任务");
+  } else {
+    sendButton.removeAttribute("aria-label");
+  }
+  sendButton.disabled = disabled || (!interruptMode && !hasContent && !voiceGestureAvailable);
+  publishPluginVoiceInputCapability();
 }
 
 function hasTransferFiles(event) {
@@ -13738,6 +14422,11 @@ async function sendMessage(event) {
       body,
       timeoutMs: 180000,
     });
+    commitPluginVoiceInputSessionsAfterSend(submittedDraftKey, text, {
+      threadId: state.currentThreadId,
+      messageId: clientSubmissionId,
+      composerId: "thread-composer",
+    });
     setComposerText("");
     clearPendingAttachments();
     writeCurrentDraftToKey(submittedDraftKey);
@@ -13812,6 +14501,11 @@ async function sendNewThreadMessage(text, hasContent, input) {
     });
     const threadId = String((result && result.threadId) || (result && result.thread && result.thread.id) || "");
     if (!threadId) throw new Error("新对话创建失败：未返回 threadId");
+    commitPluginVoiceInputSessionsAfterSend(submittedDraftKey, text, {
+      threadId,
+      messageId: clientSubmissionId,
+      composerId: "new-thread-composer",
+    });
     registerSubmittedUserMessage(threadId, text, submittedAttachments, clientSubmissionId);
     const turnId = startedTurnId(result);
     const userItem = localUserMessageItem(text, submittedAttachments, clientSubmissionId);
@@ -14383,8 +15077,17 @@ function wireUi() {
   const pageRefreshPrompt = $("pageRefreshPrompt");
   if (pageRefreshPrompt) pageRefreshPrompt.addEventListener("click", refreshPageForNewBuild);
   $("composer").addEventListener("submit", sendMessage);
-  $("sendMessage").addEventListener("pointerup", requestComposerSubmitFromButton);
-  $("sendMessage").addEventListener("click", requestComposerSubmitFromButton);
+  const sendButton = $("sendMessage");
+  sendButton.addEventListener("pointerdown", handlePluginVoiceInputSendPointerDown);
+  sendButton.addEventListener("pointerup", handlePluginVoiceInputSendPointerUp);
+  sendButton.addEventListener("pointercancel", handlePluginVoiceInputSendPointerCancel);
+  sendButton.addEventListener("contextmenu", (event) => {
+    if (!state.pluginVoiceInputPress) return;
+    event.preventDefault();
+  });
+  sendButton.addEventListener("click", handlePluginVoiceInputSendClick);
+  sendButton.addEventListener("pointerup", requestComposerSubmitFromButton);
+  sendButton.addEventListener("click", requestComposerSubmitFromButton);
   $("interruptTurn").addEventListener("click", interruptActiveTurn);
   if ($("scrollToBottom")) $("scrollToBottom").addEventListener("click", () => {
     clearConversationAutoScrollHold();
@@ -14605,6 +15308,7 @@ function wireUi() {
   installPluginWindowingGuards();
   installHermesPluginBackSwipeGuard();
   window.addEventListener("message", (event) => {
+    if (handlePluginVoiceInputMessage(event)) return;
     if (handleHermesPluginViewportMessage(event && event.data)) return;
     if (pluginEmbedApi.isBackMessage && pluginEmbedApi.isBackMessage(event)) handlePluginBack(event);
   });

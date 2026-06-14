@@ -32,6 +32,7 @@ Interpretation:
 | After profile switch only a few workspaces or no threads appear | `/api/public-config.codexProfiles.activeCodexHome`, profile state links, and `state_5.sqlite` / `sessions` under the active home |
 | Threads are visible but names/times stay stale | `/api/threads` row `name`/`updatedAt`, state DB `title`/`updated_at`, rollout file mtime, fallback merge tests |
 | Running-thread indicator disappears | `/api/threads` row `status` and `rolloutSizeUpdatedAtMs`, rollout tail `task_started` / `task_complete`, `runningThreadIds`, stale browser shell |
+| Listener/app-server update interrupts a running turn | Browser shell `codex-mobile-shell-v280+`, `/api/status.ready` recovery, bounded `auto_turn_recovery_result` client event, `/api/threads/:id/auto-recover` route |
 | macOS shows frequent `重连` or refresh prompts | 8787 listener PID, loopback and LAN `/api/public-config`, `/api/events` keepalive, `mobile-web.log` `EADDRINUSE`, stale `launchctl submit` labels |
 | Hermes host says plugin workspace access key file is missing | Host `com.hermesmobile.listener` env `HERMES_MOBILE_CODEX_PLUGIN_ACCESS_KEY_PATH`, readable key file under Hermes secrets, plugin manifest `tokenStatus` |
 | macOS shows `spawn codex ENOENT` | LaunchAgent/wrapper `PATH`, absolute `CODEX_MOBILE_CODEX_EXE`, `command -v codex` in login vs non-login shell |

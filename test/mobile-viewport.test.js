@@ -29,8 +29,10 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(viewportMetricsJs, /const keyboardShrunk = Boolean\(keyboardInputActive && \(keyboardCandidate \|\| offsetKeyboardShifted \|\| scrollKeyboardShifted \|\| hostKeyboardVisible\)\)/);
   assert.match(viewportMetricsJs, /hostKeyboardBottomInset/);
   assert.match(viewportMetricsJs, /hostKeyboardVisible/);
+  assert.match(viewportMetricsJs, /hostViewportHeight/);
   assert.match(viewportMetricsJs, /offsetKeyboardShifted/);
   assert.match(viewportMetricsJs, /scrollKeyboardShifted/);
+  assert.match(appJs, /hostViewportHeight:\s*embedded && hostViewport && hostViewport\.viewport \? hostViewport\.viewport\.height : 0/);
   assert.match(appJs, /scrollTop:\s*embedded \? Math\.max\(/);
   assert.match(appJs, /function resetMobileKeyboardWindowScroll\(\)/);
   assert.match(appJs, /if \(isHermesEmbedMode\(\) \|\| !isKeyboardEditableElement\(document\.activeElement\)\) return;/);
@@ -71,8 +73,8 @@ test("mobile viewport and early guards disable page zoom", () => {
 });
 
 test("public app shell cache advances after thread side chat panel", () => {
-  assert.match(swJs, /codex-mobile-shell-v275/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v275"/);
+  assert.match(swJs, /codex-mobile-shell-v283/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v283"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);
@@ -149,6 +151,16 @@ test("public app shell cache advances after thread side chat panel", () => {
   assert.match(appJs, /function scheduleTransientResumeRetry\(reason, delay = 1200\)/);
   assert.match(appJs, /async function resumeMobileSession\(reason = "resume"\)[\s\S]*transient: isTransientResumeError\(err\)/);
   assert.match(appJs, /async function resumeMobileSession\(reason = "resume"\)[\s\S]*if \(isTransientResumeError\(err\)\) \{[\s\S]*scheduleTransientResumeRetry\(reason\);[\s\S]*return;/);
+  assert.match(appJs, /function autoTurnRecoveryCandidate\(\)/);
+  assert.match(appJs, /function autoTurnRecoveryCandidates\(\)/);
+  assert.match(appJs, /function autoTurnRecoveryCandidates\(\)[\s\S]*for \(const thread of state\.threads \|\| \[\]\)/);
+  assert.match(appJs, /function autoTurnRecoveryCandidates\(\)[\s\S]*isRunningStatus\(thread && thread\.status\)/);
+  assert.match(appJs, /function autoTurnRecoveryCandidates\(\)[\s\S]*activeTurnId: String\(\(thread\.status && \(thread\.status\.activeTurnId \|\| thread\.status\.turnId \|\| thread\.status\.id\)\) \|\| ""\)/);
+  assert.match(appJs, /STORAGE_RESTART_AUTO_RECOVER_THREADS/);
+  assert.match(appJs, /async function maybeAutoRecoverTurnAfterReconnect\(status, reason = "reconnect"\)/);
+  assert.match(appJs, /\/auto-recover/);
+  assert.match(appJs, /const recovered = wasUnavailable && status && status\.ready;/);
+  assert.match(appJs, /maybeAutoRecoverTurnAfterReconnect\(payload\.status, "app-server-reconnect"\)/);
   assert.match(appJs, /if \(state\.currentThreadId && state\.currentThread && !state\.currentThread\.mobileLoading && !state\.currentThread\.mobileLoadError\) \{/);
   assert.match(appJs, /return shouldPollCurrentThread\(\) \|\| currentThreadListRowChanged\(\);/);
   assert.match(appJs, /if \(currentThreadNeedsForegroundRefresh\(\)\) \{[\s\S]*scheduleCurrentThreadRefresh\(250\);[\s\S]*mobile_resume_thread_refresh_skipped[\s\S]*else if \(state\.currentThreadId\) \{[\s\S]*await refreshCurrentThread\(\);[\s\S]*else \{[\s\S]*await restoreThreadSelection\(\);/);

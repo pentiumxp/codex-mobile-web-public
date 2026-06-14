@@ -183,11 +183,17 @@ test("thread list sorts fallback threads before older app-server rows before app
   assert.deepEqual(result.data.map((thread) => thread.id), ["thread-3", "thread-1"]);
 });
 
-test("thread list hydrates id-like titles from the Mobile session index", () => {
+test("thread list hydrates display titles from the Mobile session index", () => {
   const threadId = "019e936c-d163-75b3-adf4-d5ae69e46936";
   const hydrated = hydrateThreadListTitlesFromSessionIndex([
     { id: threadId, name: threadId, preview: threadId, updatedAt: 100 },
     { id: "thread-2", name: "Existing title", preview: "Existing title", updatedAt: 200 },
+    {
+      id: "thread-3",
+      name: "帮我看一下这个软件，它是一个已经停更的软件。只有支持 Java 的 PC 版...",
+      preview: "帮我看一下这个软件，它是一个已经停更的软件。只有支持 Java 的 PC 版...",
+      updatedAt: 1780600000,
+    },
   ], new Map([
     [threadId, {
       id: threadId,
@@ -196,15 +202,23 @@ test("thread list hydrates id-like titles from the Mobile session index", () => 
     }],
     ["thread-2", {
       id: "thread-2",
-      thread_name: "Should Not Override",
+      thread_name: "Session Indexed Title",
       updated_at: "2026-06-05T00:00:00.000Z",
+    }],
+    ["thread-3", {
+      id: "thread-3",
+      thread_name: "星盘",
+      updated_at: "2026-06-04T16:51:13.524Z",
     }],
   ]));
 
   assert.equal(hydrated[0].name, "记账 06-05");
   assert.equal(hydrated[0].preview, "记账 06-05");
   assert.equal(hydrated[0].updatedAt, 1780591873);
-  assert.equal(hydrated[1].name, "Existing title");
+  assert.equal(hydrated[1].name, "Session Indexed Title");
+  assert.equal(hydrated[2].name, "星盘");
+  assert.equal(hydrated[2].preview, "星盘");
+  assert.equal(hydrated[2].updatedAt, 1780600000);
 });
 
 test("thread list hydrates continuation bootstrap titles from the Mobile session index", () => {

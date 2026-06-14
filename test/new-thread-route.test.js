@@ -147,7 +147,7 @@ test("continuation paths apply inherited model and effort", () => {
 
 test("continuation titles survive app-server rename gaps", () => {
   const titleBody = functionBody(serverJs, "sourceTitleForContinuation");
-  assert.match(titleBody, /summary\.name, requestedTitle, summary\.title, summary\.preview/, "source title should prefer app-server display name before fallbacks");
+  assert.match(titleBody, /requestedTitle, summary\.name, summary\.title, summary\.preview/, "source title should prefer the current visible title before app-server fallbacks");
 
   const indexBody = functionBody(serverJs, "persistThreadTitleToSessionIndex");
   assert.match(indexBody, /session_index\.jsonl/, "fallback title persistence should use Codex session index");
@@ -158,6 +158,7 @@ test("continuation titles survive app-server rename gaps", () => {
   assert.match(startContinuationBody, /sourceTitleForContinuation\(sourceSnapshot, requestedSourceThreadTitle, cwd\)/, "continuation should reselect source title after reading source snapshot");
   assert.match(startContinuationBody, /persistThreadTitleToSessionIndex\(threadId, desiredTitle\)/, "continuation should persist desired title before bootstrap can fail or restart");
   assert.match(startContinuationBody, /titleIndexed,/, "continuation response should expose title index persistence");
+  assert.match(startContinuationBody, /sourceThreadTitle: sourceThreadTitle \|\| \(sourceSummary && \(sourceSummary\.name \|\| sourceSummary\.preview\)\) \|\| ""/, "lineage should keep the selected continuation source title");
 });
 
 test("manual rename falls back to Mobile title index when app-server metadata is unavailable", () => {
@@ -255,7 +256,7 @@ test("existing-message route falls back when active turn steering is stale", () 
   const helperBody = serverJs.slice(helperIndex, serverJs.indexOf("function logClientEvent", helperIndex));
   assert.match(helperBody, /method not found\|unknown method/, "unsupported helper should only match method support errors");
   assert.doesNotMatch(helperBody, /method not found\|unknown method\|not found/, "generic not found must not be treated as unsupported turn/steer");
-  assert.match(helperBody, /not found\|not active\|inactive\|completed\|interrupted\|expected turn\|expected active turn id/, "stale helper should catch stale active-turn errors");
+  assert.match(helperBody, /not found\|not active\|inactive\|completed\|interrupted\|expected turn\|expected active turn id\|no active turn/, "stale helper should catch stale active-turn errors");
   assert.match(helperBody, /detectStaleActiveTurnForSubmission/, "preflight should use service-owned stale-turn detection");
   assert.match(helperBody, /thread\/turns\/list/, "preflight should inspect latest durable turn state");
   assert.match(helperBody, /limit:\s*20/, "preflight should inspect enough recent turns to detect superseded active turns");
@@ -282,4 +283,23 @@ test("existing-message route falls back when active turn steering is stale", () 
   assert.ok(staleLogIndex > 0, "message route should log stale active turn steering");
   assert.ok(resumeIndex > staleLogIndex, "stale active turn should fall through to thread/resume");
   assert.ok(turnStartIndex > resumeIndex, "stale active turn should fall through to turn/start");
+});
+
+test("auto-recover route steers live turns before starting a replacement turn", () => {
+  const helperIndex = serverJs.indexOf("async function autoRecoverThreadTurn(");
+  assert.ok(helperIndex > 0, "missing automatic turn recovery helper");
+  const helperEnd = serverJs.indexOf("let threadDetailProjectionService", helperIndex);
+  const helperBody = serverJs.slice(helperIndex, helperEnd);
+  assert.match(helperBody, /thread\/turns\/list/, "auto recovery should inspect latest turn state first");
+  assert.match(helperBody, /turn\/steer/, "auto recovery should try to steer a still-live turn");
+  assert.match(helperBody, /thread\/resume/, "auto recovery should resume the thread before fallback start");
+  assert.match(helperBody, /turn\/start/, "auto recovery should start a replacement turn when steering is unavailable");
+  assert.match(helperBody, /AUTO_TURN_RECOVERY_COOLDOWN_MS/, "auto recovery should be cooldown guarded");
+
+  const routeIndex = serverJs.indexOf('const autoRecover = url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/auto-recover$/);');
+  const messagesIndex = serverJs.indexOf('const messages = url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/messages$/);');
+  assert.ok(routeIndex > 0, "missing /api/threads/:id/auto-recover route");
+  assert.ok(routeIndex < messagesIndex, "auto-recover route should be registered before message submit route");
+  const routeBody = serverJs.slice(routeIndex, messagesIndex);
+  assert.match(routeBody, /autoRecoverThreadTurn/, "route should delegate recovery policy to helper");
 });

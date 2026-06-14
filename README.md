@@ -142,6 +142,14 @@ primary page reports `canGoBack: false`, so Hermes Mobile can show its own
 bottom navigation tabs. `hermes.plugin.back` closes modal/edit transient layers
 such as file previews, dialogs, and subagent panels before page-level back is
 applied.
+In Hermes embedded mode only, Codex Mobile can participate in Home AI host
+voice input. The iframe declares whether its composer is writable, accepts
+bounded `voice_input.append_text` / `voice_input.replace_draft` messages from
+the Home AI parent, and reports `voice_input.commit_result` after a voice
+inserted draft is successfully sent. Long-pressing the embedded send button
+delegates recording to the Home AI host; a normal short tap still sends through
+the existing Codex Mobile path. Standalone Codex Mobile Web is not changed by
+this integration.
 Hermes notification opens may also include bounded iframe query hints such as
 `pluginRoute`, `pluginThreadId`, `pluginTaskId`, and `pluginItemId` with
 `pluginId=codex-mobile`. In embedded mode, Codex consumes those hints, opens
@@ -414,7 +422,10 @@ same-prefix submitted jobs and calls `launchctl kickstart -k` for that existing
 service label, preserving the plist-managed environment. If the listener is
 running under a system LaunchDaemon, the restart helper does not attempt
 user-level `launchctl kickstart system/...`; it kills only the current listener
-and lets LaunchDaemon KeepAlive start the replacement. If no service label is
+and lets LaunchDaemon KeepAlive start the replacement. Before doing that, it
+best-effort repairs the LaunchDaemon stdout/stderr files reported by
+`launchctl print system/<label>` so missing or wrong-owned log files do not
+make launchd fail with `EX_CONFIG` before Node starts. If no service label is
 available, it falls back to a one-shot detached `nohup` listener rather than
 creating a persistent `launchctl submit` job. It keeps Codex Desktop and the shared mux running, so
 the user can restart the `8789` browser server from the PWA without triggering the macOS `Quit Codex?` confirmation.
@@ -669,6 +680,18 @@ Behavior:
 - Uploaded file contents are local runtime state and must not be committed.
 
 ## Interface Notes
+
+- 中文说明：v283 修正压缩续接线程名回退到旧首条消息的问题。Mobile Web 现在把 `session_index.jsonl` 中已有的显示标题作为线程列表、线程详情和下一次压缩续接 source title 的恢复来源，避免手动命名过的线程在进入详情或再次续接时被 app-server 返回的旧第一条用户消息覆盖；索引时间只在比线程行更新时用于推进列表排序。压缩续接确认框和请求体也统一使用当前显示标题。PWA shell cache 升级到 `codex-mobile-shell-v283`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端逻辑。
+
+- 中文说明：v282 修正 Home AI 嵌入态 Codex 语音输入不实时跳字的问题。Codex 插件协议新增 `voice_input.provisional_text`，录音过程中按同一个 `voiceSessionId` 替换上一段临时草稿，松手后再恢复 base draft 并插入最终转写文本，避免重复追加。Host/插件侧也把 composer 暂不可写降级为静默忽略，不再频繁弹出“当前输入框不可写”。PWA shell cache 升级到 `codex-mobile-shell-v282`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端逻辑。
+
+- 中文说明：v281 修正 v280 自动续接只覆盖当前打开线程的问题。导航栏 Restart 确认前列出的 running session 会保存为一次性恢复队列；Listener/app-server 恢复 ready 后，前端会逐个调用 `/api/threads/:id/auto-recover`，让 Home AI、星盘等后台运行线程也能自动续接。普通 SSE 抖动仍不会触发自动续接，恢复队列只保存线程 id/cwd/status 等元数据，不保存消息内容。PWA shell cache 升级到 `codex-mobile-shell-v281`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端逻辑。
+
+- 中文说明：v280 增加 Listener/app-server 断线后的当前线程自动续接。移动端在 EventSource 或恢复流程检测到 app-server 从不可用回到 ready 后，如果当前线程仍有 active turn 或运行提示，会调用服务端 `/auto-recover`：优先对仍 live 的 turn 发送一次短“继续当前任务”引导；如果原 turn 已不可续接，则 `thread/resume` 后开一个新的继续 turn。该路径带线程级冷却，避免重连抖动重复开 turn；普通 `turn/start` / `turn/steer` 仍不做通用 RPC 自动重试，防止重复提交。PWA shell cache 升级到 `codex-mobile-shell-v280`，更新后需要重启 8787 Node listener，并让已打开的浏览器/PWA 接受刷新提示、硬刷新或关闭重开。
+
+- 中文说明：v279 修正 v278 后 active turn Stop 长按语音可以录音但转写回写被判定为“当前输入框不可写”的问题。Codex 嵌入态现在把“普通 composer 可写”和“当前 active turn 可接收引导文本”拆成独立判断；即使输入框在 Stop 状态下被临时标记为不可编辑，Home AI 语音转写结果仍可写入 composer，并切换为“引导”发送。PWA shell cache 升级到 `codex-mobile-shell-v279`，该修复是静态前端资源变更，不要求重启 Codex listener。
+
+- 中文说明：v278 修正 Home AI 嵌入态 Codex active turn 的 Stop 长按语音入口。嵌入态正在运行时，Stop 按钮不再把可见文字直接放进按钮 DOM，而是使用不可选中的视觉代理；长按会先阻止 iOS 文本选择和后续 click，再交给 Home AI 语音录入，轻点仍可中断当前 turn。Standalone Codex Mobile 行为保持不变。PWA shell cache 升级到 `codex-mobile-shell-v278`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
 
 - 中文说明：server-only 合并 public PR #64 并收窄本地文件预览授权。文件预览现在在处理当前请求的 `path` 时优先做定向匹配，避免为大型 rollout 全量枚举所有本地路径导致卡死；只会授权 Workspace/root 内文件，或确实出现在当前线程文本中的单个本地文件，不会因为 URL 参数携带绝对路径就读取任意本机文件。未引用文件、敏感路径段、非支持扩展名和上传/runtime/private 文件仍按原规则拒绝。本次不改变 PWA shell cache，public 发布只包含公开源码、README 和测试；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
 

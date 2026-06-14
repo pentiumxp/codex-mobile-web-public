@@ -248,6 +248,11 @@ test("macOS restart command restarts the existing LaunchAgent when available", (
 
   assert.match(command, /sleep 1\.200/);
   assert.match(command, /service_label='com\.homeai\.plugin\.codex-mobile'/);
+  assert.match(command, /launchctl_path print "system\/\$service_label"/);
+  assert.match(command, /repair_system_launchdaemon_stdio >/);
+  assert.match(command, /std\(out\|err\) path = /);
+  assert.match(command, /\/usr\/bin\/touch "\$log_path"/);
+  assert.match(command, /\/usr\/sbin\/chown "\$service_user:staff" "\$log_path"/);
   assert.match(command, /bootout "\$launchd_domain\/\$old_label"/);
   assert.match(command, /kickstart -k "\$launchd_domain\/\$service_label"/);
   assert.match(command, /\/bin\/kill 4321/);

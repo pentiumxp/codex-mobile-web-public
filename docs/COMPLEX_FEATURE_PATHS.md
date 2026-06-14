@@ -23,7 +23,8 @@ Implementation path:
 3. Keep pending-visible-message behavior in `adapters/message-pending-echo-service.js` or browser merge logic.
 4. Preserve the rule: latest durable live turn should be steered, not auto-interrupted only because it is quiet.
 5. Preserve the rule: superseded or missing stale active ids should not receive new guidance.
-6. Test with `test/active-turn-staleness-service.test.js`, `test/new-thread-route.test.js`, `test/message-pending-echo-service.test.js`, and `test/conversation-render.test.js`.
+6. Listener/app-server reconnect recovery is a dedicated path, not generic mutation RPC retry: after the browser observes app-server status recovering to ready, it may call `/api/threads/:id/auto-recover` for the current known running thread. The server should first try `turn/steer` on a still-live turn, then fall back to `thread/resume` plus a new `turn/start` with the bounded continuation prompt. Keep a thread-level cooldown so reconnect flapping cannot create repeated turns.
+7. Test with `test/active-turn-staleness-service.test.js`, `test/new-thread-route.test.js`, `test/message-pending-echo-service.test.js`, `test/conversation-render.test.js`, and `test/mobile-viewport.test.js`.
 
 Runtime activation is server-side unless browser active-state rendering changes; browser changes require shell cache/build bump.
 
@@ -145,7 +146,11 @@ Implementation path:
 12. Persist the computed continuation title to `session_index.jsonl` after
     `thread/start`. App-server rename RPCs are best-effort; fallback list
     refreshes must still recover the intended title instead of showing the new
-    thread id or bootstrap prompt.
+    thread id, bootstrap prompt, or source thread's stale first-message title.
+    When `session_index.jsonl` has a display title for a thread, Mobile Web
+    treats that title as the known UI title for list/detail display and for the
+    next continuation's source-title request; the index timestamp should affect
+    sort recency only when it is newer than the thread row.
 13. After the new thread bootstrap is started, migrate any unfinished source CLI
     goal through app-server goal RPCs. Copy only objective, status, and
     remaining token budget; do not copy spent token/time counters and do not

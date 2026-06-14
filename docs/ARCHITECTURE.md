@@ -226,6 +226,22 @@ font size instead of falling back to an older host value.
 { "type": "codex-mobile.plugin.navigation", "version": 1, "canGoBack": true, "route": { "kind": "thread", "threadId": "..." } }
 ```
 
+Home AI voice input is also iframe-contract-only. In `/?embed=hermes`, Codex
+Mobile loads `public/plugin-voice-input.js`, answers
+`voice_input.capability_query` with the current composer write state, accepts
+bounded `voice_input.append_text`, `voice_input.insert_text`, and
+`voice_input.replace_draft` messages from the verified parent frame, and
+acknowledges with `voice_input.insert_result`. The embedded send button also
+supports a Home-AI-only long-press gesture: after the long-press threshold it
+posts `voice_input.start_request` to the host, and release posts
+`voice_input.stop_request`. A normal short tap still uses the existing Codex
+send path. After a draft containing an inserted voice session is successfully
+sent, Codex posts `voice_input.commit_result` with the final submitted text so
+Home AI can learn correction pairs. The bridge never sends raw audio, Codex
+Access Keys, launch tokens, cookies, local paths, prompts, or app-server
+runtime state to the iframe parent. Standalone Codex Mobile Web does not enable
+this bridge or change its default send-button semantics.
+
 The embedded thread switcher/settings surface is a plugin primary page, not an
 overlay drawer. That primary page reports `canGoBack: false`, so Hermes Mobile
 can show its own bottom navigation tabs. Thread detail and new-thread composer
@@ -328,7 +344,7 @@ Workspace-level token accounting is a separate persistent ledger. On `turn/compl
 
 The sidebar version pill is the entry point for update checks. It opens an Updates panel rather than immediately applying an update. The current-checkout section uses the existing `/api/app-update/status` and `/api/app-update/apply` path, which only fast-forwards the configured `CODEX_MOBILE_UPDATE_REMOTE` / `CODEX_MOBILE_UPDATE_BRANCH` when the checkout is clean, on the expected branch, and not ahead or diverged. The Public release section calls `/api/public-release/status` to read the latest commit from the configured public repository. It is informational for private checkouts; a public-installed checkout can use the same current-checkout fast-forward path when its update remote already points at the public repository. After a successful Windows self-update, the Node listener exits and the hidden windowless supervisor restarts it from the updated files; this remains true for a LocalSystem startup task, provided the launcher keeps the target user profile environment described above instead of falling back to the system profile.
 
-The sidebar `Restart` action is separate from self-update. Before calling `/api/restart/shared-chain`, the browser opens an in-app confirmation dialog, reads a bounded recent `/api/threads?limit=200&archived=false` list, and lists running sessions that may be interrupted. This is advisory only: the user can still proceed, and the actual restart scope remains enforced by `adapters/shared-chain-restart-service.js` plus the platform restart scripts. On Windows system-task deployments, the API restart path starts a short hidden PowerShell bootstrap which registers and starts a separate `SYSTEM` helper task (`Codex Mobile Web Restart Helper`). That helper runs the real restart script outside the current scheduled-task process tree; otherwise a LocalSystem `AtStartup` task can kill its own helper when `Stop-ScheduledTask` runs. On macOS, LaunchAgent-managed listeners are restarted through `launchctl kickstart -k` against the existing GUI service label after same-prefix submitted jobs are cleaned. System LaunchDaemon deployments are not restarted with user-level `launchctl kickstart system/...`; the helper kills only the current listener and relies on LaunchDaemon KeepAlive to start the replacement. The fallback non-service path uses a one-shot detached `nohup` server process and must not create persistent `launchctl submit` jobs.
+The sidebar `Restart` action is separate from self-update. Before calling `/api/restart/shared-chain`, the browser opens an in-app confirmation dialog, reads a bounded recent `/api/threads?limit=200&archived=false` list, and lists running sessions that may be interrupted. This is advisory only: the user can still proceed, and the actual restart scope remains enforced by `adapters/shared-chain-restart-service.js` plus the platform restart scripts. On Windows system-task deployments, the API restart path starts a short hidden PowerShell bootstrap which registers and starts a separate `SYSTEM` helper task (`Codex Mobile Web Restart Helper`). That helper runs the real restart script outside the current scheduled-task process tree; otherwise a LocalSystem `AtStartup` task can kill its own helper when `Stop-ScheduledTask` runs. On macOS, LaunchAgent-managed listeners are restarted through `launchctl kickstart -k` against the existing GUI service label after same-prefix submitted jobs are cleaned. System LaunchDaemon deployments are not restarted with user-level `launchctl kickstart system/...`; the helper first best-effort repairs the LaunchDaemon stdout/stderr files reported by `launchctl print system/<label>`, then kills only the current listener and relies on LaunchDaemon KeepAlive to start the replacement. The fallback non-service path uses a one-shot detached `nohup` server process and must not create persistent `launchctl submit` jobs.
 
 Thread detail responses may also include `thread.threadTaskCards`. These are
 cross-thread collaboration cards that stay outside normal `thread.turns[*].items`
@@ -402,6 +418,16 @@ New-thread and explicit-resume sends use `thread/start` after applying runtime s
 2. If the active id is stale or superseded, interrupt that stale marker and fall through to `thread/resume` + `turn/start`.
 3. If the latest durable turn is live, steer with `turn/steer`.
 4. Preserve visible user input through deterministic `mux-user-*` echoes and pending steer echo injection until app-server durable history catches up.
+
+Mutation RPCs are not retried generically. If the app-server stream drops during
+a Listener or mux restart, Mobile Web treats recovery as a separate user-visible
+continuation path: once the browser observes app-server status move from
+unavailable to ready, it may call `POST /api/threads/:id/auto-recover` for the
+current known running thread. The server first inspects `thread/turns/list` and
+tries `turn/steer` against a still-live turn; if the original turn is no longer
+steerable, it resumes the thread and starts a new turn with a bounded
+continuation prompt. A thread-level cooldown prevents reconnect flapping from
+creating repeated continuation turns.
 
 Browser-selected model, reasoning effort, and permission mode are persisted in
 the browser draft store by thread/workspace key even when the composer text is

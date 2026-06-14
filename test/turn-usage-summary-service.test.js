@@ -302,6 +302,25 @@ test("thread detail usage read targets returned turns beyond the rollout tail", 
   assert.match(serverJs, /compactThreadReadResult\(mergedResult, \{ maxTurns: MAX_FULL_THREAD_TURNS \}\)/);
 });
 
+test("thread detail rollout scans stay bounded for very large sessions", () => {
+  assert.match(
+    serverJs,
+    /const MAX_RUNTIME_CONTEXT_SCAN_BYTES = Math\.max\(MAX_ROLLOUT_CONTEXT_BYTES, Number\(process\.env\.CODEX_MOBILE_RUNTIME_CONTEXT_SCAN_BYTES \|\| String\(32 \* 1024 \* 1024\)\)\);/,
+  );
+  assert.match(
+    serverJs,
+    /if \(!stat\.isFile\(\) \|\| stat\.size <= 0 \|\| stat\.size > MAX_RUNTIME_CONTEXT_SCAN_BYTES\) return "";/,
+  );
+  assert.doesNotMatch(
+    serverJs,
+    /const lines = fs\.readFileSync\(rolloutPath, "utf8"\)\.split\(\/\\r\?\\n\/\)\.filter\(Boolean\)\.slice\(-800\);/,
+  );
+  assert.match(
+    serverJs,
+    /const lines = readRolloutTail\(rolloutPath\)\.split\(\/\\r\?\\n\/\)\.filter\(Boolean\)\.slice\(-800\);/,
+  );
+});
+
 test("attaches summaries only to completed turns and includes rollout stats", () => {
   const summaries = collectTurnUsageSummariesFromEntries([
     { type: "turn_context", payload: { turn_id: "done" } },
