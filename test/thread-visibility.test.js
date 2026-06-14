@@ -437,7 +437,24 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
 
   assert.match(serverJs, /function readRolloutSessionFallback\(/);
   assert.match(serverJs, /function readThreadListFallback\(/);
-  assert.match(routeBody, /const fallback = readThreadListFallback\(limit, \{ cwd, searchTerm, globalState \}\);/);
+  assert.match(serverJs, /function logThreadList\(event, details = \{\}\)/);
+  assert.match(serverJs, /const THREAD_LIST_FALLBACK_CACHE_TTL_MS/);
+  assert.match(serverJs, /const threadListFallbackCache = new Map\(\);/);
+  assert.match(serverJs, /function clearThreadListFallbackCache\(\)/);
+  assert.match(serverJs, /function threadListFallbackCacheKey\(limit, filters = \{\}\)/);
+  assert.match(serverJs, /function readThreadListFallbackCache\(key\)/);
+  assert.match(serverJs, /diagnostics\.cacheHit = true/);
+  assert.match(routeBody, /mobileDiagnostics[\s\S]*threadListTimings/);
+  assert.match(routeBody, /fallbackCacheHit: Boolean\(fallbackDiagnostics\.cacheHit\)/);
+  assert.match(routeBody, /appServerMs/);
+  assert.match(routeBody, /fallbackMs/);
+  assert.match(routeBody, /mergeMs/);
+  assert.match(routeBody, /decorateMs/);
+  assert.match(routeBody, /fallbackStateDbMs/);
+  assert.match(routeBody, /fallbackRolloutMs/);
+  assert.match(routeBody, /fallbackSessionIndexMs/);
+  assert.match(routeBody, /logThreadList\("complete"/);
+  assert.match(routeBody, /const fallback = readThreadListFallback\(limit, \{ cwd, searchTerm, globalState, diagnostics: fallbackDiagnostics \}\);/);
 });
 
 test("thread list merge keeps app-server idle over stale rollout active", () => {

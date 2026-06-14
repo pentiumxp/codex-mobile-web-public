@@ -699,6 +699,7 @@ const MAX_THREAD_TURNS = Math.max(1, Math.min(100, Number(process.env.CODEX_MOBI
 const MAX_FULL_THREAD_TURNS = Math.max(MAX_THREAD_TURNS, Math.min(200, Number(process.env.CODEX_MOBILE_FULL_THREAD_TURNS || "10")));
 const MAX_LIVE_OPERATION_ITEMS = Math.max(1, Math.min(30, Number(process.env.CODEX_MOBILE_LIVE_OPERATION_ITEMS || "12")));
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
+const THREAD_LIST_FALLBACK_CACHE_TTL_MS = Math.max(0, Number(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS || "5000"));
 threadDetailProjectionService = createThreadDetailProjectionService({
   cacheDir: THREAD_DETAIL_PROJECTION_CACHE_DIR,
   policyVersion: THREAD_DETAIL_PROJECTION_POLICY_VERSION,
@@ -1842,6 +1843,22 @@ function logThreadDetail(event, details = {}) {
   console.log(`[thread-detail] ${event} ${JSON.stringify(safeDetails)}`);
 }
 
+function logThreadList(event, details = {}) {
+  trimRuntimeLogs();
+  const safeDetails = {};
+  for (const [key, value] of Object.entries(details || {})) {
+    if (value === undefined) continue;
+    if (value instanceof Error) {
+      safeDetails[key] = value.message || String(value);
+    } else if (typeof value === "string") {
+      safeDetails[key] = value.length > 600 ? `${value.slice(0, 600)}...` : value;
+    } else {
+      safeDetails[key] = value;
+    }
+  }
+  console.log(`[thread-list] ${event} ${JSON.stringify(safeDetails)}`);
+}
+
 function safeLogDetails(details = {}) {
   const safeDetails = {};
   for (const [key, value] of Object.entries(details || {})) {
@@ -2639,7 +2656,9 @@ function threadHasArchiveSignal(thread) {
 
 function rememberMobileArchivedThreadId(threadId) {
   try {
-    return mobileArchiveIndexService.remember(threadId);
+    const remembered = mobileArchiveIndexService.remember(threadId);
+    if (remembered) clearThreadListFallbackCache();
+    return remembered;
   } catch (err) {
     console.warn(`Failed to update Mobile archived thread index: ${err.message || String(err)}`);
     return false;
@@ -4018,6 +4037,16 @@ function fileSizeBytes(filePath) {
     return stat.isFile() ? stat.size : 0;
   } catch (_) {
     return 0;
+  }
+}
+
+function fileFingerprint(filePath) {
+  if (!filePath || typeof filePath !== "string") return "missing";
+  try {
+    const stat = fs.statSync(filePath);
+    return `${stat.isDirectory() ? "d" : "f"}:${Number(stat.size || 0)}:${Math.trunc(Number(stat.mtimeMs || 0))}`;
+  } catch (_) {
+    return "missing";
   }
 }
 
@@ -8642,6 +8671,7 @@ function rememberStartedThread(thread) {
     cachedAt: Date.now(),
     thread: summary,
   });
+  clearThreadListFallbackCache();
   return summary;
 }
 
@@ -9205,6 +9235,7 @@ function persistThreadTitleToSessionIndex(threadId, threadName, updatedAt = new 
   try {
     fs.mkdirSync(path.dirname(p), { recursive: true });
     fs.appendFileSync(p, `${JSON.stringify({ id, thread_name: name, updated_at: timestamp })}\n`, "utf8");
+    clearThreadListFallbackCache();
     return true;
   } catch (_) {
     return false;
@@ -9434,14 +9465,95 @@ function readSessionIndexFallback(limit = 80, filters = {}) {
   }
 }
 
+const threadListFallbackCache = new Map();
+
+function clearThreadListFallbackCache() {
+  threadListFallbackCache.clear();
+}
+
+function clonePlainJson(value) {
+  if (value === undefined) return undefined;
+  return JSON.parse(JSON.stringify(value));
+}
+
+function threadListFallbackCacheKey(limit, filters = {}) {
+  const globalState = filters.globalState || readGlobalState();
+  const roots = [...visibleWorkspaceRoots(globalState)].map(normalizeFsPath).filter(Boolean).sort();
+  const projectlessIds = [...visibleProjectlessThreadIds(globalState)].map(normalizeThreadId).filter(Boolean).sort();
+  return JSON.stringify({
+    limit: Math.max(1, Math.min(200, Number(limit || 80))),
+    cwd: normalizeFsPath(filters.cwd || ""),
+    search: String(filters.searchTerm || "").trim().toLowerCase(),
+    roots,
+    projectlessIds,
+    stateDb: fileFingerprint(STATE_DB),
+    sessionIndex: fileFingerprint(path.join(CODEX_HOME, "session_index.jsonl")),
+    archiveIndex: fileFingerprint(MOBILE_ARCHIVED_THREAD_IDS_FILE),
+    sessionsDir: fileFingerprint(SESSIONS_DIR),
+  });
+}
+
+function rememberThreadListFallbackCache(key, threads, timings = {}) {
+  if (!THREAD_LIST_FALLBACK_CACHE_TTL_MS || !key) return;
+  threadListFallbackCache.set(key, {
+    expiresAt: Date.now() + THREAD_LIST_FALLBACK_CACHE_TTL_MS,
+    threads: clonePlainJson(Array.isArray(threads) ? threads : []),
+    timings: Object.assign({}, timings || {}),
+  });
+  if (threadListFallbackCache.size > 12) {
+    const oldestKey = threadListFallbackCache.keys().next().value;
+    if (oldestKey) threadListFallbackCache.delete(oldestKey);
+  }
+}
+
+function readThreadListFallbackCache(key) {
+  if (!THREAD_LIST_FALLBACK_CACHE_TTL_MS || !key) return null;
+  const cached = threadListFallbackCache.get(key);
+  if (!cached || cached.expiresAt <= Date.now()) {
+    if (cached) threadListFallbackCache.delete(key);
+    return null;
+  }
+  return {
+    threads: clonePlainJson(cached.threads || []),
+    timings: Object.assign({}, cached.timings || {}),
+  };
+}
+
 function readThreadListFallback(limit = 80, filters = {}) {
+  const diagnostics = filters.diagnostics && typeof filters.diagnostics === "object" ? filters.diagnostics : null;
+  const cacheKey = threadListFallbackCacheKey(limit, filters);
+  const cached = readThreadListFallbackCache(cacheKey);
+  if (cached) {
+    if (diagnostics) {
+      diagnostics.cacheHit = true;
+      diagnostics.stateDbMs = 0;
+      diagnostics.rolloutMs = 0;
+      diagnostics.sessionIndexMs = 0;
+      diagnostics.cachedSourceTimings = cached.timings;
+    }
+    return cached.threads;
+  }
+  if (diagnostics) diagnostics.cacheHit = false;
+  const stateDbStartedAtMs = Date.now();
   const stateDbFallback = readStateDbFallback(limit, filters);
+  if (diagnostics) diagnostics.stateDbMs = Math.max(0, Date.now() - stateDbStartedAtMs);
+  const rolloutStartedAtMs = Date.now();
   const rolloutFallback = readRolloutSessionFallback(limit, filters);
-  return mergeThreadSummaryList([
+  if (diagnostics) diagnostics.rolloutMs = Math.max(0, Date.now() - rolloutStartedAtMs);
+  const sessionIndexStartedAtMs = Date.now();
+  const sessionIndexFallback = readSessionIndexFallback(limit, filters);
+  if (diagnostics) diagnostics.sessionIndexMs = Math.max(0, Date.now() - sessionIndexStartedAtMs);
+  const threads = mergeThreadSummaryList([
     ...stateDbFallback,
     ...rolloutFallback,
-    ...readSessionIndexFallback(limit, filters),
+    ...sessionIndexFallback,
   ]).slice(0, limit);
+  rememberThreadListFallbackCache(cacheKey, threads, {
+    stateDbMs: diagnostics && diagnostics.stateDbMs || 0,
+    rolloutMs: diagnostics && diagnostics.rolloutMs || 0,
+    sessionIndexMs: diagnostics && diagnostics.sessionIndexMs || 0,
+  });
+  return threads;
 }
 
 async function listWorkspaces() {
@@ -10264,6 +10376,28 @@ async function handleApi(req, res) {
     return;
   }
   if (url.pathname === "/api/threads" && req.method === "GET") {
+    const routeStartedAtMs = Date.now();
+    const timings = {};
+    const markTiming = (name, startedAtMs) => {
+      timings[name] = Math.max(0, Date.now() - Number(startedAtMs || Date.now()));
+      return timings[name];
+    };
+    const attachDiagnostics = (result, details = {}) => {
+      if (!result || typeof result !== "object") return result;
+      const totalMs = Math.max(0, Date.now() - routeStartedAtMs);
+      result.mobileDiagnostics = Object.assign({}, result.mobileDiagnostics || {}, {
+        threadListTimings: Object.assign({
+          totalMs,
+          limit,
+          cursor: Boolean(cursor),
+          archived,
+          hasWorkspace: Boolean(cwd),
+          hasSearch: Boolean(searchTerm),
+          resultCount: Array.isArray(result.data) ? result.data.length : Array.isArray(result.threads) ? result.threads.length : 0,
+        }, timings, details || {}),
+      });
+      return result;
+    };
     const globalState = readGlobalState();
     const visibility = visibilityFromGlobalState(globalState);
     const cwd = url.searchParams.get("cwd") || null;
@@ -10287,31 +10421,67 @@ async function handleApi(req, res) {
     };
     if (searchTerm) params.searchTerm = searchTerm;
     try {
+      const appServerStartedAtMs = Date.now();
       const appServerResult = filterThreadListByCwd(
         filterVisibleThreads(await codex.request("thread/list", params, { timeoutMs: READ_RPC_TIMEOUT_MS }), globalState),
         cwd,
       );
-      const fallback = readThreadListFallback(limit, { cwd, searchTerm, globalState });
+      markTiming("appServerMs", appServerStartedAtMs);
+      const fallbackStartedAtMs = Date.now();
+      const fallbackDiagnostics = {};
+      const fallback = readThreadListFallback(limit, { cwd, searchTerm, globalState, diagnostics: fallbackDiagnostics });
+      markTiming("fallbackMs", fallbackStartedAtMs);
+      Object.assign(timings, {
+        fallbackCacheHit: Boolean(fallbackDiagnostics.cacheHit),
+        fallbackStateDbMs: Number(fallbackDiagnostics.stateDbMs || 0),
+        fallbackRolloutMs: Number(fallbackDiagnostics.rolloutMs || 0),
+        fallbackSessionIndexMs: Number(fallbackDiagnostics.sessionIndexMs || 0),
+      });
+      const mergeStartedAtMs = Date.now();
       const result = mergeThreadListFallback(appServerResult, fallback, limit);
       threadDisplaySummaryCache.rememberList(result);
       if (Array.isArray(result.data)) result.data = result.data.slice(0, limit);
       if (Array.isArray(result.threads)) result.threads = result.threads.slice(0, limit);
-      sendJson(res, 200, tokenUsageStatsService.decorateThreadListResult(
+      markTiming("mergeMs", mergeStartedAtMs);
+      const decorateStartedAtMs = Date.now();
+      const decorated = tokenUsageStatsService.decorateThreadListResult(
         attachThreadListStateToResult(result),
         { cwd, days: 31, workspaceCwds: tokenUsageWorkspaceCwds(globalState) },
-      ));
+      );
+      markTiming("decorateMs", decorateStartedAtMs);
+      attachDiagnostics(decorated);
+      logThreadList("complete", decorated.mobileDiagnostics.threadListTimings);
+      sendJson(res, 200, decorated);
     } catch (err) {
-      const fallback = readThreadListFallback(limit, { cwd, searchTerm, globalState });
+      const fallbackStartedAtMs = Date.now();
+      const fallbackDiagnostics = {};
+      const fallback = readThreadListFallback(limit, { cwd, searchTerm, globalState, diagnostics: fallbackDiagnostics });
+      markTiming("fallbackMs", fallbackStartedAtMs);
+      Object.assign(timings, {
+        fallbackCacheHit: Boolean(fallbackDiagnostics.cacheHit),
+        fallbackStateDbMs: Number(fallbackDiagnostics.stateDbMs || 0),
+        fallbackRolloutMs: Number(fallbackDiagnostics.rolloutMs || 0),
+        fallbackSessionIndexMs: Number(fallbackDiagnostics.sessionIndexMs || 0),
+      });
       if (fallback.length) {
-        sendJson(res, 200, tokenUsageStatsService.decorateThreadListResult({
+        const decorateStartedAtMs = Date.now();
+        const decorated = tokenUsageStatsService.decorateThreadListResult({
           data: attachThreadGoalsToThreadListResult({
             data: fallback.map(attachThreadTaskCardCountsToSummary),
           }).data,
           mobileFallback: true,
           warning: err.message || String(err),
-        }, { cwd, days: 31, workspaceCwds: tokenUsageWorkspaceCwds(globalState) }));
+        }, { cwd, days: 31, workspaceCwds: tokenUsageWorkspaceCwds(globalState) });
+        markTiming("decorateMs", decorateStartedAtMs);
+        attachDiagnostics(decorated, { appServerError: err.message || String(err) });
+        logThreadList("fallback_complete", decorated.mobileDiagnostics.threadListTimings);
+        sendJson(res, 200, decorated);
         return;
       }
+      logThreadList("error", Object.assign({
+        totalMs: Math.max(0, Date.now() - routeStartedAtMs),
+        error: err.message || String(err),
+      }, timings));
       throw err;
     }
     return;
