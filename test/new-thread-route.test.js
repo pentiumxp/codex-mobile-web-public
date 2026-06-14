@@ -37,6 +37,20 @@ test("new-message route creates a thread before starting the first turn", () => 
   assert.ok(turnStartIndex > threadStartIndex, "new-message route must start the first turn after thread/start");
 });
 
+test("new-message route allows Codex App style projectless threads", () => {
+  const routeIndex = serverJs.indexOf("/api/threads/new-message");
+  const fallbackIndex = serverJs.indexOf('sendJson(res, 404, { error: "Not found" })');
+  const routeBody = serverJs.slice(routeIndex, fallbackIndex);
+
+  assert.doesNotMatch(routeBody, /Workspace is required to start a new thread/);
+  assert.match(routeBody, /if \(cwd\) startParamsBase\.cwd = cwd;/);
+  assert.match(routeBody, /\.\.\.\(cwd \? \{ cwd \} : \{\}\)/);
+  assert.match(routeBody, /const projectlessThreadRegistered = cwd \? false : rememberProjectlessThreadId\(threadId\);/);
+  assert.match(routeBody, /projectlessThreadRegistered,/);
+  assert.match(serverJs, /function rememberProjectlessThreadId\(threadId\)/);
+  assert.match(serverJs, /state\["projectless-thread-ids"\] = existing\.concat\(\[id\]\);/);
+});
+
 test("new-message route forwards new-thread runtime settings", () => {
   const routeIndex = serverJs.indexOf("/api/threads/new-message");
   const fallbackIndex = serverJs.indexOf('sendJson(res, 404, { error: "Not found" })');
@@ -60,7 +74,7 @@ test("new-message route can persist an explicit initial thread title", () => {
   assert.match(routeBody, /titleIndexed = persistThreadTitleToSessionIndex\(threadId, requestedTitle\);/);
   assert.match(routeBody, /titleUpdated = await tryUpdateThreadTitle\(threadId, requestedTitle\);/);
   assert.match(routeBody, /name: requestedTitle \|\| undefined/);
-  assert.match(routeBody, /preview: requestedTitle \|\| text \|\| path\.basename\(cwd\)/);
+  assert.match(routeBody, /preview: requestedTitle \|\| text \|\| \(cwd \? path\.basename\(cwd\) : ""\) \|\| "新建对话"/);
   assert.match(routeBody, /titleUpdated,/);
   assert.match(routeBody, /titleIndexed,/);
 });

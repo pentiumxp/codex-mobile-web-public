@@ -326,7 +326,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v283";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v284";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -6184,7 +6184,9 @@ function workspaceOptionsHtml() {
 }
 
 function newThreadWorkspaceOptionsHtml() {
-  return state.workspaces.map((ws) => {
+  const projectlessSelected = !state.selectedCwd ? " is-selected" : "";
+  const projectlessOption = `<button type="button" class="new-thread-workspace-option${projectlessSelected}" data-new-thread-workspace=""><span>不指定 Workspace</span><span class="new-thread-workspace-option-meta">对齐 Codex App 的项目外聊天</span></button>`;
+  return projectlessOption + state.workspaces.map((ws) => {
     const count = ws.recentThreadCount ? ` (${ws.recentThreadCount})` : "";
     const label = `${ws.label}${count} - ${ws.cwd}`;
     const selected = normalizeFsPath(ws.cwd) === normalizeFsPath(state.selectedCwd) ? " is-selected" : "";
@@ -9246,12 +9248,12 @@ function renderNewThreadDraft() {
   const metaEl = $("threadMeta");
   const workspaceLabel = selectedWorkspaceLabel();
   if (titleEl) titleEl.textContent = "新建对话";
-  if (metaEl) metaEl.textContent = state.selectedCwd ? workspaceLabel : "请先选择 Workspace";
+  if (metaEl) metaEl.textContent = state.selectedCwd ? workspaceLabel : "不指定 Workspace";
   const workspaceOptions = newThreadWorkspaceOptionsHtml();
-  const hasWorkspaceOptions = state.workspaces.length > 0;
+  const hasWorkspaceOptions = true;
   const workspaceStatus = state.selectedCwd
     ? `<div class="new-thread-path">${escapeHtml(state.selectedCwd)}</div>`
-    : `<div class="new-thread-path">请先在侧边栏或下方选择 workspace</div>`;
+    : `<div class="new-thread-path">将按 Codex App 的项目外聊天方式创建</div>`;
   const selectedModel = newThreadSelectedModel();
   const selectedEffort = newThreadSelectedEffort();
   const selectedPermission = newThreadSelectedPermissionMode();
@@ -14078,7 +14080,7 @@ function updateComposerControls() {
     && !state.currentThread.mobileLoading
     && !state.currentThread.mobileLoadError);
   const hasNewThreadDraft = Boolean(state.newThreadDraft);
-  const canComposeNewThread = Boolean(hasNewThreadDraft && state.selectedCwd);
+  const canComposeNewThread = Boolean(hasNewThreadDraft);
   const disabled = !(hasThread || canComposeNewThread) || state.composerBusy || state.attachmentProcessingCount > 0;
   const hasContent = composerHasContent();
   const goalCommandMode = Boolean(!hasNewThreadDraft && isThreadGoalCommandText(composerText()));

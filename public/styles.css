@@ -5364,6 +5364,8 @@ html.keyboard-open .side-chat-form textarea {
 .new-thread-workspace-option {
   width: 100%;
   min-height: 52px;
+  display: grid;
+  gap: 3px;
   text-align: left;
   padding: 14px 14px 12px;
   color: var(--text);
@@ -5375,6 +5377,14 @@ html.keyboard-open .side-chat-form textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.new-thread-workspace-option-meta {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .new-thread-workspace-option.is-selected,
