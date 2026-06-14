@@ -2,6 +2,61 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-14 Public PR #66/#67 Markdown And Preview Zoom Sync
+
+- Public PRs:
+  - Evaluated `pentiumxp/codex-mobile-web-public` PR #67,
+    `修复 Markdown angle autolink 渲染`, and PR #66,
+    `增加图片和 Mermaid 预览缩放`.
+  - Both PRs were open, non-draft, and based on public `main` at `b39aeab`.
+  - #67 adds Markdown angle autolink handling before HTML escaping, with tests
+    for `<https://...>` and angle-target Markdown links.
+  - #66 adds image preview open/zoom controls, mobile pinch zoom support for
+    image and Mermaid preview surfaces, embed back-state handling for image
+    preview, and related UI/test coverage.
+  - Sequential merge was functionally compatible but required manual conflict
+    resolution for README release notes and static shell version assertions.
+    Final public shell cache is `codex-mobile-shell-v286`.
+- Public merge:
+  - Used the clean public mirror
+    `/Users/hermes-dev/HermesMobileDev/public-mirrors/codex-mobile-web-public`.
+  - Public merge commits pushed:
+    - #67: `11b822df0af08aa51a8b0ee58f23f45e9bc58852`
+    - #66: `6b3c261ee92cc57ad408536b85b5aff8b04f9a32`
+  - GitHub marked both PRs `MERGED`.
+- Public validation:
+  - Syntax checks for touched public/test JS passed.
+  - Focused Markdown/Mermaid/file-preview/plugin/mobile tests passed: 96/96.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - Home AI `node tests/architecture-code-test-harness-map.test.js` passed.
+  - Home AI `node tests/static-cache-version-harness.test.js` passed.
+  - `npm test` passed: 473/473.
+  - `git diff --check` passed.
+  - Privacy scans over `origin/main..HEAD` found no tracked `.agent-context`,
+    runtime state, local keys, upload roots, or machine diagnostics. Matches
+    were limited to code placeholder token variables and a test fixture path.
+  - AI Ops lane `ios-pwa-1` was allocated for the H2 visual/static plan and
+    released after source harness checks. Home AI
+    `node tests/task-list-ui.test.js` failed on an unrelated existing
+    `20260612-email-content-mcp-v1` assertion outside the public diff.
+  - Evidence ledger: `evidence-78671da7-058b-4b96-86b8-2d581b3d650e`.
+- Private reverse sync:
+  - Merged public `main` back into private with no conflicts.
+  - Private merge commit: `5035555`.
+  - Excluding `.agent-context`, private and `public/main` had no diff after the
+    merge.
+- Private validation:
+  - Syntax checks for touched public/test JS passed.
+  - Focused Markdown/Mermaid/file-preview/plugin/mobile tests passed: 96/96.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `node scripts/plugin-workspace-platform-contract-check.js --plugin codex-mobile --json`
+    passed with the existing non-blocking `handoff_pointer_missing` warning.
+  - `npm test` passed: 473/473.
+  - `git diff --check` passed.
+  - Evidence ledger: `evidence-6b25e175-0eda-4b0b-bb56-840d6d1f921e`.
+
 ## 2026-06-14 Public PR #65 Projectless New Thread Sync
 
 - Public PR:
