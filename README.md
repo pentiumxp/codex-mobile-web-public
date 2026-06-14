@@ -681,7 +681,9 @@ Behavior:
 
 ## Interface Notes
 
-- 中文说明：v285 修复 Markdown angle autolink 不能点击的问题。Markdown 渲染器现在会在 HTML 转义前识别 `<https://...>` 和 `<mailto:...>` 这种标准 autolink 语法，避免它们被显示成纯文本 `&lt;https://...&gt;`；网页链接仍按普通链接渲染，不会被误当成图片。PWA shell cache 升级到 `codex-mobile-shell-v285`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端逻辑。
+- 中文说明：v286 修复 Markdown angle autolink 渲染，并增加图片与 Mermaid 预览缩放。Markdown 渲染器现在会在 HTML 转义前识别 `<https://...>` 和 `<mailto:...>` 这种标准 autolink 语法，避免它们被显示成纯文本；聊天内上传图片、Markdown 图片、生成图片、文件预览图片以及 Mermaid 图可以打开预览层，通过按钮或手机/iPad 双指捏合放大缩小，缩放时尽量保持手指中心位置。PWA shell cache 升级到 `codex-mobile-shell-v286`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端逻辑。
+
+- 中文说明：v285 增加会话图片全屏预览和手动缩放。聊天内上传图片、Markdown 图片、生成图片以及文件预览里的图片现在可以点击打开独立预览层；预览层提供放大、缩小、重置按钮，并支持手机/iPad 双指捏合缩放，放大后可横向/纵向拖动查看细节。PWA shell cache 升级到 `codex-mobile-shell-v285`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端逻辑。
 
 - 中文说明：v284 允许新建对话时不指定 Workspace。Mobile 新建页现在提供“不指定 Workspace”选项，发送首条消息时按 Codex App 的项目外聊天语义调用 `thread/start`，不向 app-server 传空 cwd；创建成功后会把新 thread id 登记到现有 `projectless-thread-ids`，让后续列表/详情复用已有项目外线程可见性逻辑。有 Workspace 的新建对话仍保留原有可见 workspace 校验。PWA shell cache 升级到 `codex-mobile-shell-v284`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端逻辑。
 
