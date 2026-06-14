@@ -54,10 +54,25 @@ test("bare URLs render as safe clickable links", () => {
   assert.match(html, /<a href="https:\/\/www\.example\.org" target="_blank" rel="noreferrer">www\.example\.org<\/a>\./);
 });
 
+test("angle autolink URLs render as safe clickable links", () => {
+  const url = "https://posteritati.com/poster/41701/the–shawshank–redemption–r2004–us–one–sheet–poster";
+  const html = renderer.renderMarkdown(`链接：\n<${url}>`);
+
+  assert.match(html, /<a href="https:\/\/posteritati\.com\/poster\/41701\/the–shawshank–redemption–r2004–us–one–sheet–poster" target="_blank" rel="noreferrer">https:\/\/posteritati\.com\/poster\/41701\/the–shawshank–redemption–r2004–us–one–sheet–poster<\/a>/);
+  assert.doesNotMatch(html, /&lt;https:\/\/posteritati/);
+  assert.doesNotMatch(html, /&gt;/);
+});
+
 test("existing markdown links are not broken by bare URL linkification", () => {
   const html = renderer.renderInlineMarkdown("[Open](https://example.com/path) and https://other.example");
 
   assert.match(html, /^<a href="https:\/\/example\.com\/path" target="_blank" rel="noreferrer">Open<\/a> and <a href="https:\/\/other\.example" target="_blank" rel="noreferrer">https:\/\/other\.example<\/a>$/);
+});
+
+test("existing markdown links with angle targets are not broken by angle autolinks", () => {
+  const html = renderer.renderInlineMarkdown("[Open](<https://example.com/path?a=1&b=2>) and <https://other.example>");
+
+  assert.match(html, /^<a href="https:\/\/example\.com\/path\?a=1&amp;b=2" target="_blank" rel="noreferrer">Open<\/a> and <a href="https:\/\/other\.example" target="_blank" rel="noreferrer">https:\/\/other\.example<\/a>$/);
 });
 
 test("local file markdown links render as explicit preview actions", () => {
