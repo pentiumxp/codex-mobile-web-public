@@ -133,6 +133,12 @@
     return `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noreferrer">${parts.href}</a>${parts.suffix}`;
   }
 
+  function renderAngleAutolink(rawUrl) {
+    const safeUrl = safeMarkdownUrl(String(rawUrl || "").replaceAll("&amp;", "&"));
+    if (!safeUrl) return null;
+    return `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noreferrer">${escapeHtml(rawUrl)}</a>`;
+  }
+
   function renderInlineMarkdown(value) {
     const placeholders = [];
     const tokenPrefix = "MDTOKEN";
@@ -152,6 +158,13 @@
 
     text = text.replace(/\[([^\]\n]+)\]\((<[^>\n]+>|[^)\s]+)\)/g, (match, label, url) => {
       const rendered = renderMarkdownLink(label, url);
+      if (!rendered) return match;
+      const token = `${tokenPrefix}${placeholders.length}END`;
+      placeholders.push(rendered);
+      return token;
+    });
+    text = text.replace(/<((?:https?:\/\/|mailto:)[^<>\s]+)>/gi, (match, url) => {
+      const rendered = renderAngleAutolink(url);
       if (!rendered) return match;
       const token = `${tokenPrefix}${placeholders.length}END`;
       placeholders.push(rendered);

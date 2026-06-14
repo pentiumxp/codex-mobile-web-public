@@ -307,6 +307,9 @@ const state = {
   composerFastHintTimer: null,
   attachmentProcessingCount: 0,
   filePreviewSwipe: null,
+  mermaidPinch: null,
+  imagePreviewPinch: null,
+  imagePreviewScale: 1,
   imageAuthRefreshRequested: false,
   threadHistoryBusy: false,
   threadHistoryError: "",
@@ -326,7 +329,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v284";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v286";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -477,6 +480,9 @@ const SIDEBAR_EDGE_OPEN_RATIO = 0.22;
 const SUBAGENT_SWIPE_MIN_PX = 70;
 const SUBAGENT_WHEEL_SWIPE_MIN_PX = 48;
 const FILE_PREVIEW_SWIPE_CLOSE_MIN_PX = 62;
+const IMAGE_PREVIEW_ZOOM_STEP = 0.25;
+const IMAGE_PREVIEW_MIN_SCALE = 0.5;
+const IMAGE_PREVIEW_MAX_SCALE = 4;
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
 const HIDDEN_SERVER_REQUEST_METHODS = new Set(["item/tool/call"]);
 const USER_INPUT_REQUEST_METHODS = new Set(["item/tool/requestUserInput", "mcpServer/elicitation/request"]);
@@ -8343,6 +8349,7 @@ function closeContinuationDialog() {
 
 function pluginNavigationUiState() {
   return {
+    imagePreviewOpen: imagePreviewOpen(),
     filePreviewOpen: filePreviewOpen(),
     mermaidPreviewOpen: mermaidPreviewOpen(),
     createWorkspaceOpen: createWorkspaceDialogOpen(),
@@ -8475,7 +8482,10 @@ function handlePluginBack(event) {
   if (event && typeof event.preventDefault === "function") event.preventDefault();
   if (event && typeof event.stopPropagation === "function") event.stopPropagation();
   let handled = false;
-  if (mermaidPreviewOpen()) {
+  if (imagePreviewOpen()) {
+    closeImagePreview();
+    handled = true;
+  } else if (mermaidPreviewOpen()) {
     closeMermaidPreview();
     handled = true;
   } else if (filePreviewOpen()) {
@@ -11361,10 +11371,11 @@ function mermaidInitialScale(container, baseWidth) {
   return clampMermaidScale(fitWidth / baseWidth);
 }
 
-function applyMermaidScale(container, scale) {
+function applyMermaidScale(container, scale, options = {}) {
   const canvas = mermaidCanvas(container);
   const artboard = canvas && canvas.querySelector(".markdown-mermaid-artboard");
   if (!canvas || !artboard) return;
+  const previousScale = mermaidCurrentScale(container);
   const nextScale = clampMermaidScale(scale);
   const baseWidth = Number(artboard.dataset.baseWidth || 0) || 640;
   const baseHeight = Number(artboard.dataset.baseHeight || 0) || 360;
@@ -11372,6 +11383,17 @@ function applyMermaidScale(container, scale) {
   artboard.style.height = `${Math.max(120, Math.round(baseHeight * nextScale))}px`;
   container.dataset.mermaidScale = String(nextScale);
   updateMermaidResetLabel(container, nextScale);
+  const hasAnchor = options.viewer
+    && Number.isFinite(options.anchorX)
+    && Number.isFinite(options.anchorY)
+    && Number.isFinite(options.contentX)
+    && Number.isFinite(options.contentY);
+  if (hasAnchor && previousScale > 0 && nextScale > 0) {
+    requestAnimationFrame(() => {
+      options.viewer.scrollLeft = Math.max(0, options.contentX * nextScale - options.anchorX);
+      options.viewer.scrollTop = Math.max(0, options.contentY * nextScale - options.anchorY);
+    });
+  }
 }
 
 function showMermaidLoading(container, message = "正在渲染 Mermaid 图...") {
@@ -11551,6 +11573,10 @@ function mermaidActionContainer(button) {
   return button.closest("[data-mermaid-block='true']") || button.closest("#mermaidPreviewDialog");
 }
 
+function mermaidContainerFromViewer(viewer) {
+  return viewer ? viewer.closest("[data-mermaid-block='true']") || viewer.closest("#mermaidPreviewDialog") : null;
+}
+
 function resetMermaidScale(container) {
   const canvas = mermaidCanvas(container);
   const artboard = canvas && canvas.querySelector(".markdown-mermaid-artboard");
@@ -11606,6 +11632,226 @@ function handleMermaidAction(button) {
     return true;
   }
   return false;
+}
+
+function imagePreviewOpen() {
+  const dialog = $("imagePreviewDialog");
+  return Boolean(dialog && !dialog.classList.contains("hidden"));
+}
+
+function imagePreviewScaleLabel(scale = state.imagePreviewScale) {
+  return `${Math.round(Number(scale || 1) * 100)}%`;
+}
+
+function applyImagePreviewScale(scale, options = {}) {
+  const dialog = $("imagePreviewDialog");
+  const stage = $("imagePreviewStage");
+  if (!dialog || !stage) return;
+  const previousScale = Number(state.imagePreviewScale || 1);
+  const nextScale = Math.max(IMAGE_PREVIEW_MIN_SCALE, Math.min(IMAGE_PREVIEW_MAX_SCALE, Number(scale) || 1));
+  const hasAnchor = Number.isFinite(options.anchorX) && Number.isFinite(options.anchorY)
+    && Number.isFinite(options.contentX) && Number.isFinite(options.contentY);
+  const keepCenter = !hasAnchor && options.keepCenter !== false && previousScale > 0 && nextScale > 0;
+  const centerX = keepCenter ? (stage.scrollLeft + stage.clientWidth / 2) / previousScale : 0;
+  const centerY = keepCenter ? (stage.scrollTop + stage.clientHeight / 2) / previousScale : 0;
+  state.imagePreviewScale = nextScale;
+  dialog.style.setProperty("--image-preview-scale", String(nextScale));
+  const reset = $("imagePreviewZoomReset");
+  if (reset) reset.textContent = imagePreviewScaleLabel(nextScale);
+  if (hasAnchor && previousScale > 0 && nextScale > 0) {
+    requestAnimationFrame(() => {
+      stage.scrollLeft = Math.max(0, options.contentX * nextScale - options.anchorX);
+      stage.scrollTop = Math.max(0, options.contentY * nextScale - options.anchorY);
+    });
+  } else if (keepCenter) {
+    requestAnimationFrame(() => {
+      stage.scrollLeft = Math.max(0, centerX * nextScale - stage.clientWidth / 2);
+      stage.scrollTop = Math.max(0, centerY * nextScale - stage.clientHeight / 2);
+    });
+  }
+}
+
+function imagePreviewTitleForImage(image) {
+  if (!image) return "图片预览";
+  const figure = image.closest ? image.closest("figure, .file-preview-media, .attachment-chip") : null;
+  const caption = figure && figure.querySelector ? figure.querySelector("figcaption") : null;
+  const text = [
+    caption && caption.textContent,
+    image.getAttribute && image.getAttribute("alt"),
+    image.getAttribute && image.getAttribute("title"),
+  ].map((value) => String(value || "").trim()).find(Boolean);
+  return text || "图片预览";
+}
+
+function openImagePreviewFromImage(image) {
+  if (!image || image.closest && image.closest(".image-load-failed")) return false;
+  const src = image.currentSrc || image.src || image.getAttribute("src") || "";
+  if (!src) return false;
+  const dialog = $("imagePreviewDialog");
+  const previewImage = $("imagePreviewImage");
+  if (!dialog || !previewImage) return false;
+  const title = imagePreviewTitleForImage(image);
+  $("imagePreviewTitle").textContent = title;
+  const natural = image.naturalWidth && image.naturalHeight ? `${image.naturalWidth} x ${image.naturalHeight}` : "";
+  $("imagePreviewMeta").textContent = natural;
+  previewImage.src = src;
+  previewImage.alt = title;
+  dialog.classList.remove("hidden");
+  applyImagePreviewScale(1, { keepCenter: false });
+  const stage = $("imagePreviewStage");
+  if (stage) {
+    stage.scrollLeft = 0;
+    stage.scrollTop = 0;
+  }
+  publishPluginNavigationState({ force: true });
+  return true;
+}
+
+function closeImagePreview() {
+  const dialog = $("imagePreviewDialog");
+  if (!dialog) return;
+  dialog.classList.add("hidden");
+  const previewImage = $("imagePreviewImage");
+  if (previewImage) {
+    previewImage.removeAttribute("src");
+    previewImage.alt = "";
+  }
+  $("imagePreviewTitle").textContent = "图片预览";
+  $("imagePreviewMeta").textContent = "";
+  state.imagePreviewScale = 1;
+  dialog.style.removeProperty("--image-preview-scale");
+  publishPluginNavigationState();
+}
+
+function handleImagePreviewAction(button) {
+  const action = String(button && button.dataset ? button.dataset.imagePreviewAction || "" : "");
+  if (!action) return false;
+  if (action === "zoom-in") {
+    applyImagePreviewScale(state.imagePreviewScale + IMAGE_PREVIEW_ZOOM_STEP);
+    return true;
+  }
+  if (action === "zoom-out") {
+    applyImagePreviewScale(state.imagePreviewScale - IMAGE_PREVIEW_ZOOM_STEP);
+    return true;
+  }
+  if (action === "reset") {
+    applyImagePreviewScale(1);
+    return true;
+  }
+  return false;
+}
+
+function previewableImageFromEvent(event) {
+  const image = event && event.target && event.target.closest
+    ? event.target.closest(".input-image img, .image-view img, .markdown-image img, .file-preview-image, .attachment-thumb")
+    : null;
+  if (!image) return null;
+  if (image.closest && image.closest(".github-link-card")) return null;
+  return image;
+}
+
+function touchDistance(touchA, touchB) {
+  if (!touchA || !touchB) return 0;
+  return Math.hypot(Number(touchA.clientX || 0) - Number(touchB.clientX || 0), Number(touchA.clientY || 0) - Number(touchB.clientY || 0));
+}
+
+function touchCenter(touchA, touchB) {
+  return {
+    x: (Number(touchA && touchA.clientX || 0) + Number(touchB && touchB.clientX || 0)) / 2,
+    y: (Number(touchA && touchA.clientY || 0) + Number(touchB && touchB.clientY || 0)) / 2,
+  };
+}
+
+function pinchStateFromTouches(event, scroller, scale) {
+  if (!event || !event.touches || event.touches.length < 2 || !scroller) return null;
+  const touchA = event.touches[0];
+  const touchB = event.touches[1];
+  const distance = touchDistance(touchA, touchB);
+  if (!distance) return null;
+  const center = touchCenter(touchA, touchB);
+  const rect = scroller.getBoundingClientRect();
+  const startScale = Math.max(0.01, Number(scale) || 1);
+  const anchorX = center.x - rect.left;
+  const anchorY = center.y - rect.top;
+  return {
+    distance,
+    scale: startScale,
+    scroller,
+    contentX: (scroller.scrollLeft + anchorX) / startScale,
+    contentY: (scroller.scrollTop + anchorY) / startScale,
+  };
+}
+
+function anchorOptionsFromTouches(event, pinch) {
+  if (!event || !event.touches || event.touches.length < 2 || !pinch || !pinch.scroller) return null;
+  const center = touchCenter(event.touches[0], event.touches[1]);
+  const rect = pinch.scroller.getBoundingClientRect();
+  return {
+    anchorX: center.x - rect.left,
+    anchorY: center.y - rect.top,
+    contentX: pinch.contentX,
+    contentY: pinch.contentY,
+  };
+}
+
+function beginImagePreviewPinch(event) {
+  const stage = event && event.target && event.target.closest ? event.target.closest("#imagePreviewStage") : null;
+  if (!stage || !imagePreviewOpen() || !event.touches || event.touches.length < 2) return;
+  const pinch = pinchStateFromTouches(event, stage, state.imagePreviewScale);
+  if (!pinch) return;
+  state.imagePreviewPinch = pinch;
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function moveImagePreviewPinch(event) {
+  const pinch = state.imagePreviewPinch;
+  if (!pinch) return;
+  if (!event.touches || event.touches.length < 2) {
+    state.imagePreviewPinch = null;
+    return;
+  }
+  const distance = touchDistance(event.touches[0], event.touches[1]);
+  const anchorOptions = anchorOptionsFromTouches(event, pinch);
+  if (!distance || !anchorOptions) return;
+  event.preventDefault();
+  event.stopPropagation();
+  applyImagePreviewScale(pinch.scale * (distance / pinch.distance), anchorOptions);
+}
+
+function finishImagePreviewPinch() {
+  state.imagePreviewPinch = null;
+}
+
+function beginMermaidPinch(event) {
+  const viewer = event && event.target && event.target.closest ? event.target.closest(".markdown-mermaid-viewer") : null;
+  const container = mermaidContainerFromViewer(viewer);
+  if (!viewer || !container || !event.touches || event.touches.length < 2) return;
+  const pinch = pinchStateFromTouches(event, viewer, mermaidCurrentScale(container));
+  if (!pinch) return;
+  pinch.container = container;
+  state.mermaidPinch = pinch;
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function moveMermaidPinch(event) {
+  const pinch = state.mermaidPinch;
+  if (!pinch || !pinch.container) return;
+  if (!event.touches || event.touches.length < 2) {
+    state.mermaidPinch = null;
+    return;
+  }
+  const distance = touchDistance(event.touches[0], event.touches[1]);
+  const anchorOptions = anchorOptionsFromTouches(event, pinch);
+  if (!distance || !anchorOptions) return;
+  event.preventDefault();
+  event.stopPropagation();
+  applyMermaidScale(pinch.container, pinch.scale * (distance / pinch.distance), Object.assign({ viewer: pinch.scroller }, anchorOptions));
+}
+
+function finishMermaidPinch() {
+  state.mermaidPinch = null;
 }
 
 function renderThreadTaskCardDraftMessage(value, item, turn) {
@@ -15120,6 +15366,12 @@ function wireUi() {
     maybeLoadOlderThreadTurnsFromScroll();
   }, { passive: true });
   $("conversation").addEventListener("click", (event) => {
+    const previewImage = previewableImageFromEvent(event);
+    if (previewImage && openImagePreviewFromImage(previewImage)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     const copyButton = event.target.closest("[data-copy-key]");
     if (copyButton) {
       event.preventDefault();
@@ -15240,37 +15492,66 @@ function wireUi() {
     filePreviewDialog.addEventListener("touchend", finishFilePreviewSwipe, { passive: false });
     filePreviewDialog.addEventListener("touchcancel", cancelFilePreviewSwipe, { passive: true });
     filePreviewDialog.addEventListener("click", (event) => {
-    if (event.target === $("filePreviewDialog")) {
-      closeFilePreview();
-      return;
+      if (event.target === $("filePreviewDialog")) {
+        closeFilePreview();
+        return;
+      }
+      const previewImage = previewableImageFromEvent(event);
+      if (previewImage && openImagePreviewFromImage(previewImage)) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      const copyButton = event.target.closest("[data-copy-key]");
+      if (copyButton) {
+        event.preventDefault();
+        handleCopyButtonClick(copyButton).catch(() => {
+          copyButton.textContent = "复制失败";
+        });
+        return;
+      }
+      const localFileLink = event.target.closest("[data-local-file-path]");
+      if (localFileLink) {
+        event.preventDefault();
+        openLocalFilePreview(localFileLink).catch(showError);
+        return;
+      }
+      const mermaidButton = event.target.closest("[data-mermaid-action]");
+      if (mermaidButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleMermaidAction(mermaidButton);
+        return;
+      }
+      const githubPreviewExpand = event.target.closest("[data-github-link-preview-expand]");
+      if (githubPreviewExpand) {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleGitHubLinkPreview(githubPreviewExpand);
+      }
+    });
+  }
+  if ($("imagePreviewClose")) $("imagePreviewClose").addEventListener("click", closeImagePreview);
+  if ($("imagePreviewDialog")) {
+    const imageDialog = $("imagePreviewDialog");
+    const imageStage = $("imagePreviewStage");
+    if (imageStage) {
+      imageStage.addEventListener("touchstart", beginImagePreviewPinch, { passive: false });
+      imageStage.addEventListener("touchmove", moveImagePreviewPinch, { passive: false });
+      imageStage.addEventListener("touchend", finishImagePreviewPinch, { passive: true });
+      imageStage.addEventListener("touchcancel", finishImagePreviewPinch, { passive: true });
     }
-    const copyButton = event.target.closest("[data-copy-key]");
-    if (copyButton) {
-      event.preventDefault();
-      handleCopyButtonClick(copyButton).catch(() => {
-        copyButton.textContent = "复制失败";
-      });
-      return;
-    }
-    const localFileLink = event.target.closest("[data-local-file-path]");
-    if (localFileLink) {
-      event.preventDefault();
-      openLocalFilePreview(localFileLink).catch(showError);
-      return;
-    }
-    const mermaidButton = event.target.closest("[data-mermaid-action]");
-    if (mermaidButton) {
-      event.preventDefault();
-      event.stopPropagation();
-      handleMermaidAction(mermaidButton);
-      return;
-    }
-    const githubPreviewExpand = event.target.closest("[data-github-link-preview-expand]");
-    if (githubPreviewExpand) {
-      event.preventDefault();
-      event.stopPropagation();
-      toggleGitHubLinkPreview(githubPreviewExpand);
-    }
+    imageDialog.addEventListener("click", (event) => {
+      if (event.target === imageDialog) {
+        closeImagePreview();
+        return;
+      }
+      const actionButton = event.target.closest("[data-image-preview-action]");
+      if (actionButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleImagePreviewAction(actionButton);
+      }
     });
   }
   if ($("mermaidPreviewClose")) $("mermaidPreviewClose").addEventListener("click", closeMermaidPreview);
@@ -15289,6 +15570,10 @@ function wireUi() {
       }
     });
   }
+  document.addEventListener("touchstart", beginMermaidPinch, { passive: false, capture: true });
+  document.addEventListener("touchmove", moveMermaidPinch, { passive: false, capture: true });
+  document.addEventListener("touchend", finishMermaidPinch, { passive: true, capture: true });
+  document.addEventListener("touchcancel", finishMermaidPinch, { passive: true, capture: true });
   installMermaidThemeObserver();
   $("composer").addEventListener("dragover", (event) => {
     if (!(state.currentThreadId || state.newThreadDraft) || !hasTransferFiles(event)) return;

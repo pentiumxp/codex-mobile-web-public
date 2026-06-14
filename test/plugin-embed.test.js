@@ -48,16 +48,25 @@ test("builds Codex plugin navigation messages without exposing DOM internals", (
 test("builds Codex plugin back-result messages for iframe-handled returns", () => {
   const message = pluginEmbed.backResultMessage(
     { currentThreadId: "thread-1" },
-    { handled: true, reason: "handled_in_iframe", ui: { filePreviewOpen: true } },
+    { handled: true, reason: "handled_in_iframe", ui: { imagePreviewOpen: true } },
   );
   assert.equal(message.type, "codex-mobile.plugin.back_result");
   assert.equal(message.version, 1);
   assert.equal(message.handled, true);
   assert.equal(message.reason, "handled_in_iframe");
-  assert.deepEqual(message.route, { kind: "modal", modal: "filePreview", threadId: "thread-1" });
+  assert.deepEqual(message.route, { kind: "modal", modal: "imagePreview", threadId: "thread-1" });
 });
 
 test("prioritizes modal and drawer back states before thread navigation", () => {
+  assert.deepEqual(
+    pluginEmbed.navigationMessage({ currentThreadId: "thread-1" }, { imagePreviewOpen: true }).route,
+    { kind: "modal", modal: "imagePreview", threadId: "thread-1" },
+  );
+  assert.equal(pluginEmbed.navigationMessage({ currentThreadId: "thread-1" }, { imagePreviewOpen: true }).canGoBack, true);
+  assert.deepEqual(
+    pluginEmbed.navigationMessage({ currentThreadId: "thread-1" }, { imagePreviewOpen: true, mermaidPreviewOpen: true }).route,
+    { kind: "modal", modal: "imagePreview", threadId: "thread-1" },
+  );
   assert.deepEqual(
     pluginEmbed.navigationMessage({ currentThreadId: "thread-1" }, { filePreviewOpen: true }).route,
     { kind: "modal", modal: "filePreview", threadId: "thread-1" },
