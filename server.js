@@ -7232,7 +7232,7 @@ function sourceTitleForContinuation(sourceSnapshot, requestedTitle, cwd) {
     ? sourceSnapshot.summary
     : {};
   const fallback = path.basename(String(cwd || "").replace(/^\\\\\?\\/, "")) || "Codex Mobile";
-  for (const value of [summary.name, requestedTitle, summary.title, summary.preview]) {
+  for (const value of [requestedTitle, summary.name, summary.title, summary.preview]) {
     const candidate = continuationTitleCandidate(value);
     if (candidate) return candidate;
   }
@@ -8466,7 +8466,7 @@ async function startThreadFromRequestBody(body, options = {}) {
     newThreadId: threadId,
     newThreadTitle: desiredTitle,
     sourceThreadId,
-    sourceThreadTitle: (sourceSummary && (sourceSummary.name || sourceSummary.preview)) || sourceThreadTitle,
+    sourceThreadTitle: sourceThreadTitle || (sourceSummary && (sourceSummary.name || sourceSummary.preview)) || "",
     sourceRolloutPath,
     sourceRolloutSizeBytes: sourceStats ? sourceStats.sizeBytes : 0,
     handoffFile: sourceHandoff && sourceHandoff.path,

@@ -147,7 +147,7 @@ test("continuation paths apply inherited model and effort", () => {
 
 test("continuation titles survive app-server rename gaps", () => {
   const titleBody = functionBody(serverJs, "sourceTitleForContinuation");
-  assert.match(titleBody, /summary\.name, requestedTitle, summary\.title, summary\.preview/, "source title should prefer app-server display name before fallbacks");
+  assert.match(titleBody, /requestedTitle, summary\.name, summary\.title, summary\.preview/, "source title should prefer the current visible title before app-server fallbacks");
 
   const indexBody = functionBody(serverJs, "persistThreadTitleToSessionIndex");
   assert.match(indexBody, /session_index\.jsonl/, "fallback title persistence should use Codex session index");
@@ -158,6 +158,7 @@ test("continuation titles survive app-server rename gaps", () => {
   assert.match(startContinuationBody, /sourceTitleForContinuation\(sourceSnapshot, requestedSourceThreadTitle, cwd\)/, "continuation should reselect source title after reading source snapshot");
   assert.match(startContinuationBody, /persistThreadTitleToSessionIndex\(threadId, desiredTitle\)/, "continuation should persist desired title before bootstrap can fail or restart");
   assert.match(startContinuationBody, /titleIndexed,/, "continuation response should expose title index persistence");
+  assert.match(startContinuationBody, /sourceThreadTitle: sourceThreadTitle \|\| \(sourceSummary && \(sourceSummary\.name \|\| sourceSummary\.preview\)\) \|\| ""/, "lineage should keep the selected continuation source title");
 });
 
 test("manual rename falls back to Mobile title index when app-server metadata is unavailable", () => {

@@ -2,6 +2,36 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-14 Continuation Title Source Priority Fix
+
+- User reported that a compressed continuation of the `星盘` thread opened with
+  a long first-message title instead of the expected rule-based title.
+- Production observation:
+  - Continuation job `b20ba874-5f22-47e9-8c0e-d51dab9e86b7` created new
+    thread `019ec3c0-86d2-7852-a9ea-e4c703262cdc`.
+  - The generated title was
+    `帮我看一下这个软件，它是一个已经停更的软件。只有支持 Java 的 PC 版... 06-14`
+    rather than `星盘 06-14`.
+- Root cause:
+  - `sourceTitleForContinuation()` preferred `sourceSnapshot.summary.name`
+    before the UI-provided `requestedSourceThreadTitle`.
+  - In this live case app-server summary `name` was the source thread's first
+    user message, while the visible current title passed by the browser was
+    `星盘`.
+- Fix:
+  - `sourceTitleForContinuation()` now prefers `requestedTitle` before
+    app-server summary fields.
+  - Continuation lineage now stores the selected source title first, falling
+    back to summary only when the selected title is empty.
+  - Existing generated thread `019ec3c0-86d2-7852-a9ea-e4c703262cdc` was
+    repaired through `/api/threads/:id/name` to `星盘 06-14`; production detail
+    readback confirmed the title.
+- Validation:
+  - `node --check server.js`
+  - `node --test test/new-thread-route.test.js test/continuation-lineage.test.js test/continuation-handoff-compaction-service.test.js test/thread-goal-service.test.js`
+  - `npm run check`
+  - `git diff --check`
+
 ## 2026-06-13 Recurring macOS LaunchDaemon EX_CONFIG During Normal Use
 
 - User reported Codex Mobile disconnected during normal use, without pressing
