@@ -4,6 +4,8 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：v287 修正移动端用户消息去重边界。服务端 pending steer echo、线程详情 projection cache 和前端可见线程归一化现在只会在同 turn 或更晚 turn 出现匹配的真实 durable 用户消息时移除 synthetic/mux/local echo，避免用户后续重复发送同一句话时被旧历史消息提前压掉。PWA shell cache 升级到 `codex-mobile-shell-v287`，更新后需要重启 Node listener；已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新的前端归一化逻辑。
+
 ## Project Documentation
 
 Engineering docs are split under [`docs/`](docs/README.md):

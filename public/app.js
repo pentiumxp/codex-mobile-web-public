@@ -329,7 +329,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v286";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v287";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -4164,17 +4164,21 @@ function normalizeThreadVisibleUserMessages(thread) {
     turn.items = removeShadowedMuxUserMessages(dedupeLikelySameUserMessages(turn.items));
   }
   const durableUserMessages = [];
-  for (const turn of thread.turns) {
+  for (let turnIndex = 0; turnIndex < thread.turns.length; turnIndex += 1) {
+    const turn = thread.turns[turnIndex];
     const items = Array.isArray(turn && turn.items) ? turn.items : [];
     for (const item of items) {
-      if (item && item.type === "userMessage" && !isOptimisticUserMessage(item)) durableUserMessages.push(item);
+      if (item && item.type === "userMessage" && !isOptimisticUserMessage(item)) durableUserMessages.push({ item, turnIndex });
     }
   }
   if (!durableUserMessages.length) return thread;
-  for (const turn of thread.turns) {
+  for (let turnIndex = 0; turnIndex < thread.turns.length; turnIndex += 1) {
+    const turn = thread.turns[turnIndex];
     if (!turn || !Array.isArray(turn.items)) continue;
     turn.items = turn.items.filter((item) => !(isOptimisticUserMessage(item)
-      && durableUserMessages.some((realItem) => realItem.id !== item.id && userMessagesCanShadow(realItem, item))));
+      && durableUserMessages.some((real) => real.turnIndex >= turnIndex
+        && real.item.id !== item.id
+        && userMessagesCanShadow(real.item, item))));
   }
   return thread;
 }
