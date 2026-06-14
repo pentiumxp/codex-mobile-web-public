@@ -313,6 +313,8 @@ const state = {
   imageAuthRefreshRequested: false,
   threadHistoryBusy: false,
   threadHistoryError: "",
+  perfEventLastReportedAt: {},
+  shellLoadedReported: false,
 };
 
 function setAuthKey(value) {
@@ -329,7 +331,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v287";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v288";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -338,6 +340,9 @@ const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const PUBLIC_CONFIG_TIMEOUT_MS = 8000;
 const PUBLIC_CONFIG_RETRY_DELAYS_MS = [0, 300, 1200];
 const THREAD_LOAD_STALL_MS = 12000;
+const PERF_EVENT_THROTTLE_MS = 2000;
+const PERF_RENDER_REPORT_MIN_MS = 16;
+const PERF_SLOW_RENDER_REPORT_MS = 50;
 const RUNNING_THREAD_HINT_STALE_MS = 20 * 60 * 1000;
 const AUTO_TURN_RECOVERY_COOLDOWN_MS = 120000;
 const GITHUB_LINK_PREVIEW_TIMEOUT_MS = 12000;
@@ -2645,6 +2650,16 @@ function markBootReady() {
   if (boot && typeof boot.ready === "function") boot.ready();
 }
 
+function reportShellLoaded(startedAt, details = {}) {
+  if (state.shellLoadedReported) return;
+  state.shellLoadedReported = true;
+  postPerformanceEvent("shell_loaded", Object.assign({
+    elapsedMs: roundedDurationMs(startedAt),
+    buildId: CLIENT_BUILD_ID,
+    hasThreadOpenIntent: Boolean(state.startupThreadOpenPending),
+  }, details || {}), { force: true });
+}
+
 function sharedRestartScopeLines() {
   const isMac = state.serverPlatform === "darwin";
   return isMac
@@ -4807,6 +4822,23 @@ function roundedDurationMs(startedAt) {
   return Math.max(0, Math.round(nowPerfMs() - Number(startedAt || 0)));
 }
 
+function postPerformanceEvent(event, details = {}, options = {}) {
+  const now = Date.now();
+  const key = String(options.key || event || "");
+  const minIntervalMs = Math.max(0, Number(options.minIntervalMs || 0));
+  if (key && minIntervalMs > 0) {
+    const last = Number(state.perfEventLastReportedAt[key] || 0);
+    if (!options.force && last && now - last < minIntervalMs) return false;
+    state.perfEventLastReportedAt[key] = now;
+  }
+  postClientEvent(event, Object.assign({
+    pwa: isPwaMode(),
+    embedded: isHermesEmbedMode(),
+    visibility: document.visibilityState || "",
+  }, details || {}));
+  return true;
+}
+
 function startUiWatchdog() {
   if (state.uiWatchdogTimer) return;
   state.lastUiWatchdogTickAt = Date.now();
@@ -6376,6 +6408,7 @@ function renderThreadListLoading() {
 async function loadThreads(options = {}) {
   const silent = options.silent === true;
   if (silent && state.threadListLoadController) return null;
+  const loadStartedAt = nowPerfMs();
   const seq = state.threadListLoadSeq + 1;
   state.threadListLoadSeq = seq;
   if (state.threadListLoadController) state.threadListLoadController.abort();
@@ -6387,8 +6420,11 @@ async function loadThreads(options = {}) {
   if (search) params.set("search", search);
   if (!silent) renderThreadListLoading();
   try {
+    const apiStartedAt = nowPerfMs();
     const result = await api(`/api/threads?${params}`, { timeoutMs: 45000, signal: controller.signal });
+    const apiElapsedMs = roundedDurationMs(apiStartedAt);
     if (seq !== state.threadListLoadSeq) return null;
+    const renderStartedAt = nowPerfMs();
     state.threads = visibleThreads(result.data || []);
     state.workspaceTokenUsage = result.mobileTokenUsage || null;
     state.threadListLoadedAtMs = Date.now();
@@ -6398,6 +6434,17 @@ async function loadThreads(options = {}) {
     restoreConnectionState(result.mobileFallback ? "Recovered from session index" : "Connected");
     scheduleVisiblePageRefreshCheck(500);
     if (!state.currentThread) renderCurrentThread();
+    postPerformanceEvent("thread_list_rendered", {
+      elapsedMs: roundedDurationMs(loadStartedAt),
+      apiElapsedMs,
+      renderElapsedMs: roundedDurationMs(renderStartedAt),
+      serverTimings: result && result.mobileDiagnostics && result.mobileDiagnostics.threadListTimings || null,
+      count: state.threads.length,
+      silent,
+      hasSearch: Boolean(search),
+      hasWorkspace: Boolean(state.selectedCwd),
+      mobileFallback: Boolean(result.mobileFallback),
+    });
     return result;
   } catch (err) {
     if (seq !== state.threadListLoadSeq || controller.signal.aborted) return null;
@@ -6473,6 +6520,17 @@ async function loadThread(threadId, options = {}) {
     renderCurrentThread({ stickToBottom: true });
     if (isMenuOverlayMode()) closeSidebarMenu();
     if (!state.threadSideChats.has(threadId)) loadSideChat(threadId, { silent: true }).catch(showError);
+    postPerformanceEvent("thread_detail_first_paint", {
+      source,
+      threadId,
+      elapsedMs: roundedDurationMs(switchStartedAt),
+      apiElapsedMs: 0,
+      renderElapsedMs: 0,
+      cached: true,
+      readMode: state.currentThread && state.currentThread.mobileReadMode || "",
+      turns: Array.isArray(state.currentThread && state.currentThread.turns) ? state.currentThread.turns.length : 0,
+      rolloutSizeBytes: rolloutSizeBytes(state.currentThread),
+    });
     postClientEvent("thread_switch_cached", {
       source,
       threadId,
@@ -6519,7 +6577,7 @@ async function loadThread(threadId, options = {}) {
   let result;
   const apiStartedAt = nowPerfMs();
   try {
-    result = await api(`/api/threads/${encodeURIComponent(threadId)}`, {
+    result = await api(threadDetailApiPath(threadId, { mode: "recent" }), {
       timeoutMs: 20000,
       signal: controller.signal,
     });
@@ -6580,12 +6638,29 @@ async function loadThread(threadId, options = {}) {
   scheduleLivePollIfNeeded(1200);
   updateComposerControls();
   if (isMenuOverlayMode()) closeSidebarMenu();
+  if (shouldBackfillFullThreadDetail(result.thread)) {
+    backfillFullThreadDetail(threadId, { seq, source }).catch(() => {});
+  }
+  const renderElapsedMs = roundedDurationMs(renderStartedAt);
+  postPerformanceEvent("thread_detail_first_paint", {
+    source,
+    threadId,
+    elapsedMs: roundedDurationMs(switchStartedAt),
+    apiElapsedMs,
+    renderElapsedMs,
+    cached: false,
+    readMode: result.thread && result.thread.mobileReadMode || "",
+    status: statusText(result.thread && result.thread.status),
+    turns: Array.isArray(result.thread && result.thread.turns) ? result.thread.turns.length : 0,
+    omittedTurns: Number(result.thread && result.thread.mobileOmittedTurnCount || 0),
+    rolloutSizeBytes: rolloutSizeBytes(result.thread),
+  });
   postClientEvent("thread_switch_complete", {
     source,
     threadId,
     elapsedMs: roundedDurationMs(switchStartedAt),
     apiElapsedMs,
-    renderElapsedMs: roundedDurationMs(renderStartedAt),
+    renderElapsedMs,
     readMode: result.thread && result.thread.mobileReadMode || "",
     status: statusText(result.thread && result.thread.status),
     turns: Array.isArray(result.thread && result.thread.turns) ? result.thread.turns.length : 0,
@@ -6658,7 +6733,7 @@ async function refreshCurrentThread() {
   state.refreshThreadController = controller;
   let result;
   try {
-    result = await api(`/api/threads/${encodeURIComponent(threadId)}`, {
+    result = await api(threadDetailApiPath(threadId), {
       timeoutMs: 20000,
       signal: controller.signal,
     });
@@ -6687,6 +6762,69 @@ function turnsArrayFromListResult(result) {
   if (Array.isArray(result && result.data)) return result.data;
   if (Array.isArray(result && result.turns)) return result.turns;
   return [];
+}
+
+function shouldBackfillFullThreadDetail(thread) {
+  return /turns-list-initial/i.test(String(thread && thread.mobileReadMode || ""));
+}
+
+function threadDetailApiPath(threadId, params = {}) {
+  const suffix = new URLSearchParams(params);
+  const query = suffix.toString();
+  return `/api/threads/${encodeURIComponent(threadId)}${query ? `?${query}` : ""}`;
+}
+
+async function backfillFullThreadDetail(threadId, options = {}) {
+  const id = String(threadId || "");
+  const seq = Number(options.seq || 0);
+  if (!id || state.currentThreadId !== id || seq !== state.threadLoadSeq) return;
+  if (state.refreshThreadController) state.refreshThreadController.abort();
+  const controller = new AbortController();
+  state.refreshThreadController = controller;
+  const apiStartedAt = nowPerfMs();
+  let result;
+  try {
+    result = await api(threadDetailApiPath(id), {
+      timeoutMs: 20000,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (!controller.signal.aborted && err.name !== "AbortError") {
+      postClientEvent("thread_detail_full_backfill_error", {
+        source: String(options.source || "unknown").slice(0, 40),
+        threadId: id,
+        elapsedMs: roundedDurationMs(apiStartedAt),
+        error: err.message || String(err),
+      });
+    }
+    return;
+  } finally {
+    if (state.refreshThreadController === controller) state.refreshThreadController = null;
+  }
+  if (state.currentThreadId !== id || seq !== state.threadLoadSeq || !result || !result.thread) return;
+  const apiElapsedMs = roundedDurationMs(apiStartedAt);
+  const renderStartedAt = nowPerfMs();
+  const wasNearBottom = isConversationNearBottom();
+  syncThreadPendingServerRequests(result.thread);
+  state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
+  renderComposerSettings();
+  syncActiveTurnFromThread();
+  renderThreads();
+  renderCurrentThread({ stickToBottom: wasNearBottom });
+  scheduleUsageBackfillRefresh();
+  scheduleLivePollIfNeeded();
+  updateComposerControls();
+  postPerformanceEvent("thread_detail_full_ready", {
+    source: String(options.source || "unknown").slice(0, 40),
+    threadId: id,
+    elapsedMs: roundedDurationMs(apiStartedAt),
+    apiElapsedMs,
+    renderElapsedMs: roundedDurationMs(renderStartedAt),
+    readMode: result.thread && result.thread.mobileReadMode || "",
+    turns: Array.isArray(result.thread && result.thread.turns) ? result.thread.turns.length : 0,
+    omittedTurns: Number(result.thread && result.thread.mobileOmittedTurnCount || 0),
+    rolloutSizeBytes: rolloutSizeBytes(result.thread),
+  }, { force: true });
 }
 
 function preserveConversationScrollAfterPrepend(previousScrollTop, previousScrollHeight) {
@@ -8863,6 +9001,8 @@ function updateConversationHtml(html, signature, options = {}) {
     else scheduleScrollToBottomButtonUpdate();
     return false;
   }
+  const startedAt = nowPerfMs();
+  const previousChildCount = conversation ? conversation.childNodes.length : 0;
   try {
     if (conversation.childNodes.length) patchHtml(conversation, html);
     else conversation.innerHTML = html;
@@ -8876,6 +9016,21 @@ function updateConversationHtml(html, signature, options = {}) {
   state.renderedConversationSignature = signature;
   if (options.stickToBottom) scheduleConversationToBottom();
   else scheduleScrollToBottomButtonUpdate();
+  const renderElapsedMs = roundedDurationMs(startedAt);
+  const forceReport = renderElapsedMs >= PERF_SLOW_RENDER_REPORT_MS;
+  postPerformanceEvent("conversation_render_ms", {
+    renderElapsedMs,
+    htmlChars: String(html || "").length,
+    previousChildCount,
+    childCount: conversation ? conversation.childNodes.length : 0,
+    stickToBottom: Boolean(options.stickToBottom),
+    threadId: state.currentThreadId || "",
+    currentThreadStatus: statusText(state.currentThread && state.currentThread.status),
+  }, {
+    key: "conversation_render_ms",
+    minIntervalMs: forceReport ? 0 : PERF_EVENT_THROTTLE_MS,
+    force: forceReport,
+  });
   return true;
 }
 
@@ -11244,10 +11399,25 @@ async function hydrateGitHubLinkCard(slot) {
 
 function hydrateGitHubLinkCards(root = document) {
   if (!root || typeof root.querySelectorAll !== "function") return;
+  const startedAt = nowPerfMs();
   ensureInlineGitHubLinkPreviews(root);
-  root.querySelectorAll('[data-github-link-preview-url]:not([data-github-link-preview-deferred="true"])').forEach((slot) => {
+  const slots = Array.from(root.querySelectorAll('[data-github-link-preview-url]:not([data-github-link-preview-deferred="true"])'));
+  slots.forEach((slot) => {
     hydrateGitHubLinkCard(slot).catch(() => {});
   });
+  const inlineCount = root.querySelectorAll("[data-github-link-preview-inline='true']").length;
+  if (slots.length || inlineCount) {
+    postPerformanceEvent("github_cards_hydrate_ms", {
+      hydrateElapsedMs: roundedDurationMs(startedAt),
+      queuedCards: slots.length,
+      inlineCards: inlineCount,
+      rootId: root && root.id || "",
+      threadId: state.currentThreadId || "",
+    }, {
+      key: `github_cards_hydrate_ms|${root && root.id || "root"}`,
+      minIntervalMs: PERF_EVENT_THROTTLE_MS,
+    });
+  }
 }
 
 function mermaidEffectiveTheme() {
@@ -11533,15 +11703,38 @@ function hydrateMermaidBlock(block) {
   if (!block || !sourceText) return;
   const currentTheme = mermaidThemeName();
   if (block.dataset.mermaidRendered === "1" && block.dataset.mermaidTheme === currentTheme) return;
+  const startedAt = nowPerfMs();
   renderMermaidIntoContainer(block, sourceText)
     .then(() => {
       if (!block.isConnected) return;
       block.dataset.mermaidRendered = "1";
       block.dataset.mermaidTheme = currentTheme;
+      postPerformanceEvent("mermaid_hydrate_ms", {
+        hydrateElapsedMs: roundedDurationMs(startedAt),
+        sourceChars: sourceText.length,
+        theme: currentTheme,
+        status: "ok",
+        threadId: state.currentThreadId || "",
+      }, {
+        key: "mermaid_hydrate_ms",
+        minIntervalMs: PERF_EVENT_THROTTLE_MS,
+      });
     })
     .catch((err) => {
       block.dataset.mermaidRendered = "error";
       showMermaidError(block, sourceText, err);
+      postPerformanceEvent("mermaid_hydrate_ms", {
+        hydrateElapsedMs: roundedDurationMs(startedAt),
+        sourceChars: sourceText.length,
+        theme: currentTheme,
+        status: "error",
+        error: err && err.message ? String(err.message).slice(0, 240) : String(err || "").slice(0, 240),
+        threadId: state.currentThreadId || "",
+      }, {
+        key: "mermaid_hydrate_ms",
+        minIntervalMs: PERF_EVENT_THROTTLE_MS,
+        force: true,
+      });
     });
 }
 
@@ -15792,6 +15985,10 @@ async function start() {
   }
   showApp();
   markBootReady();
+  reportShellLoaded(startStartedAt, {
+    authRequired: Boolean(config.authRequired),
+    hasConfig: true,
+  });
   if (state.startupThreadOpenPending) renderCurrentThread();
   postStartupStage("app_shown", startStartedAt);
   await bootstrap().catch((err) => {
