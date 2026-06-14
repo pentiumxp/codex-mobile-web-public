@@ -2,6 +2,54 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-14 Public PR #65 Projectless New Thread Sync
+
+- Public PR:
+  - Evaluated `pentiumxp/codex-mobile-web-public` PR #65,
+    `允许新建项目外对话`.
+  - GitHub reported `mergeable=MERGEABLE`; PR base matched current public
+    `main` at `1ceca48`.
+  - Change lets the Mobile new-thread page send the first message without a
+    selected Workspace, omits `cwd` from `thread/start` / `turn/start` in that
+    mode, and registers the returned thread id in `projectless-thread-ids` so
+    existing projectless-thread visibility rules keep it open in list/detail.
+  - Static shell version advanced from `codex-mobile-shell-v283` to
+    `codex-mobile-shell-v284` in both `public/app.js` and `public/sw.js`.
+- Public merge:
+  - Used the clean public mirror
+    `/Users/hermes-dev/HermesMobileDev/public-mirrors/codex-mobile-web-public`.
+  - README Chinese release note was included with the PR and preserved.
+  - Public merge commit pushed:
+    `b39aeab92a10a5b559a4b3bb7ca5e466ed58c57b`.
+- Public validation:
+  - `node --check server.js && node --check public/app.js &&
+    node --check public/sw.js && node --check test/new-thread-route.test.js &&
+    node --check test/new-thread-ui.test.js` passed.
+  - Focused projectless new-thread/visibility tests passed: 67/67.
+  - `node tests/architecture-code-test-harness-map.test.js` passed in Home AI.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed: 471/471.
+  - `git diff --check` and public privacy/path scans passed; matches were code
+    references to runtime state paths and upload variables, not copied files or
+    payloads.
+  - Evidence ledger: `evidence-80f52398-eece-47ec-9fc6-7cb12ad50846`.
+- Private reverse sync:
+  - Merged public `main` back into private with no conflicts.
+  - Private merge commit: `323c60e`.
+- Private validation:
+  - `node --check server.js && node --check public/app.js &&
+    node --check public/sw.js && node --check test/new-thread-route.test.js &&
+    node --check test/new-thread-ui.test.js` passed.
+  - Focused projectless new-thread/visibility tests passed: 67/67.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `node scripts/plugin-workspace-platform-contract-check.js --plugin codex-mobile --json`
+    passed with the existing non-blocking `handoff_pointer_missing` warning.
+  - `npm test` passed: 471/471.
+  - `git diff --check` passed.
+  - Evidence ledger: `evidence-fe543d43-76c0-4b45-aaf4-8486eae06657`.
+
 ## 2026-06-14 Continuation Session Index Title Recovery
 
 - Status: implemented locally, not deployed in this step.
