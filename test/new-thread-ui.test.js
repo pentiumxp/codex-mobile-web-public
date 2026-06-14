@@ -30,6 +30,17 @@ test("new-thread draft renders model, reasoning, and permission controls", () =>
 
   const body = functionBody("renderNewThreadDraft");
   assert.doesNotMatch(body, /new-thread-settings/, "new-thread page should not duplicate runtime settings in the page body");
+  assert.match(body, /不指定 Workspace/);
+  assert.match(body, /将按 Codex App 的项目外聊天方式创建/);
+  assert.match(functionBody("newThreadWorkspaceOptionsHtml"), /data-new-thread-workspace=""/);
+  assert.match(functionBody("newThreadWorkspaceOptionsHtml"), /projectless-thread|项目外聊天/);
+});
+
+test("new-thread draft can send without selecting a workspace", () => {
+  const body = functionBody("updateComposerControls");
+
+  assert.match(body, /const canComposeNewThread = Boolean\(hasNewThreadDraft\);/);
+  assert.doesNotMatch(body, /hasNewThreadDraft && state\.selectedCwd/);
 });
 
 test("new-thread message submission includes selected runtime settings", () => {
