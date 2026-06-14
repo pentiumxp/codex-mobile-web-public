@@ -2,6 +2,66 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-14 Public PR #70 Thread List Fallback Cache Sync
+
+- Public PR:
+  - Evaluated `pentiumxp/codex-mobile-web-public` PR #70,
+    `缓存线程列表 fallback 结果`.
+  - PR was open, non-draft, and GitHub-reported mergeable. Its base was older
+    public `main` at `6b3c261`, so it was test-merged onto current public
+    `f6b35f0`.
+  - Local merge onto current public `main` had no conflicts and did not remove
+    #68/#69 thread-detail projection, echo dedupe, or static compression code.
+  - Change is server-only: `/api/threads` now records bounded thread-list
+    timing diagnostics and caches fallback aggregation from state DB, rollout
+    sessions, and `session_index.jsonl` using visible workspace/projectless
+    scope, search term, and source-file fingerprints. Starting a thread,
+    renaming, and Mobile local archive updates clear the cache.
+  - No PWA shell cache bump was needed.
+- Public merge:
+  - Used the clean public mirror
+    `/Users/hermes-dev/HermesMobileDev/public-mirrors/codex-mobile-web-public`.
+  - Public merge commit pushed:
+    `e77ffc441a683c6332d73ace1c9016f6aa24e4e4`.
+  - README release note commit pushed:
+    `3370b9aa9e38be1279b686c4ff9f4bfd6b6fb77b`.
+  - GitHub marked PR #70 `MERGED`.
+- Public validation:
+  - `node --check server.js && node --check test/thread-visibility.test.js`
+    passed.
+  - `node --test test/thread-visibility.test.js` passed: 23/23.
+  - `node --test test/static-compression.test.js` passed: 4/4.
+  - `node --test test/thread-detail-projection-service.test.js` passed: 9/9.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed: 483/483.
+  - `git diff --check` passed.
+  - Public privacy scans found no tracked `.agent-context`, runtime state,
+    local keys, upload roots, or machine diagnostics. Sensitive-word matches
+    were limited to `tokenUsageStatsService` code identifiers.
+  - Home AI AI Ops requested `tests/task-list-ui.test.js` and
+    `tests/static-cache-version-harness.test.js`; those paths do not exist in
+    the public mirror layout, so public validation used the available
+    `test/` harnesses above.
+  - Evidence ledger: `evidence-a56d2aa8-ea38-4d57-9152-7845bf74fe6f`.
+- Private reverse sync:
+  - Merged public `main` back into private with no conflicts.
+  - Private merge commit: `6374327`.
+  - Excluding `.agent-context`, private and `public/main` had no diff after the
+    merge.
+- Private validation:
+  - Same focused syntax/thread/static/projection checks passed.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `node scripts/plugin-workspace-platform-contract-check.js --plugin codex-mobile --json`
+    passed with the existing non-blocking `handoff_pointer_missing` warning.
+  - `npm test` passed: 483/483.
+  - `git diff --check` passed.
+  - Privacy diff scan over `public/main..HEAD`, excluding `.agent-context`,
+    had no matches. `git ls-files` showed only the private workspace's existing
+    tracked `.agent-context/HANDOFF.md` and `.agent-context/PROJECT_CONTEXT.md`.
+  - Evidence ledger: `evidence-a0f68cc6-fd18-459d-9a2c-257fcdc8970b`.
+
 ## 2026-06-14 Public PR #68/#69 Echo Dedupe And Load Performance Sync
 
 - Public PRs:
