@@ -213,6 +213,45 @@ function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
 function dedupeTurnUsageSummaryItems(items) { return items || []; }
 ${sources.join("\n")}
 return mergeItemsPreservingLocalVisible;
+	`)();
+}
+
+function evaluatedNormalizeThreadVisibleUserMessages() {
+  const sources = [
+    "normalizeFsPath",
+    "imageUrlValue",
+    "isInputTextPart",
+    "inputTextValue",
+    "isTruncatedImagePayloadPart",
+    "isInputImagePart",
+    "attachmentSummaryMarkerMatch",
+    "stripAttachmentSummaryLinePrefix",
+    "parseAttachmentLine",
+    "splitAttachmentSummaryText",
+    "isMuxUserMessage",
+    "isOptimisticUserMessage",
+    "normalizeComparableText",
+    "userMessageComparableParts",
+    "userMessagePathOverlap",
+    "comparablePathName",
+    "userMessagePathNameOverlap",
+    "userMessageSpecificity",
+    "userMessagesLikelySame",
+    "userMessagesCanShadow",
+    "hasMatchingRealUserMessage",
+    "removeShadowedMuxUserMessages",
+    "userMessageShadowPriority",
+    "mergeLikelySameUserMessage",
+    "dedupeLikelySameUserMessages",
+    "normalizeThreadVisibleUserMessages",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`
+function itemVisibleWeight(item) { return JSON.stringify(item || {}).length; }
+function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
+  return Object.assign({}, existingItem || {}, incomingItem || {});
+}
+${sources.join("\n")}
+return normalizeThreadVisibleUserMessages;
 `)();
 }
 
@@ -1031,6 +1070,79 @@ test("optimistic user messages are shadowed by mux and durable echoes", () => {
   assert.equal(imageItems[0].id, durableImage.id);
   assert.equal(imageItems[0].mobilePendingSubmission, undefined);
   assert.equal(imageItems[0].clientSubmissionId, "submit-2");
+});
+
+test("cross-turn durable user messages remove only synthetic echoes", () => {
+  const normalizeThreadVisibleUserMessages = evaluatedNormalizeThreadVisibleUserMessages();
+  const thread = {
+    turns: [
+      {
+        id: "turn-1",
+        items: [{
+          id: "mux-user-thread-1-turn-1-submit-1",
+          type: "userMessage",
+          mobilePendingSubmission: true,
+          content: [{ type: "text", text: "same message" }],
+        }],
+      },
+      {
+        id: "turn-2",
+        items: [{
+          id: "real-user-2",
+          type: "userMessage",
+          content: [{ type: "input_text", text: "same   message" }],
+        }],
+      },
+      {
+        id: "turn-3",
+        items: [{
+          id: "real-user-3",
+          type: "userMessage",
+          content: [{ type: "input_text", text: "same message" }],
+        }],
+      },
+    ],
+  };
+
+  normalizeThreadVisibleUserMessages(thread);
+
+  assert.deepEqual(thread.turns[0].items, []);
+  assert.equal(thread.turns[1].items.length, 1);
+  assert.equal(thread.turns[1].items[0].id, "real-user-2");
+  assert.equal(thread.turns[2].items.length, 1);
+  assert.equal(thread.turns[2].items[0].id, "real-user-3");
+});
+
+test("cross-turn normalization keeps synthetic repeat when matching durable message is earlier", () => {
+  const normalizeThreadVisibleUserMessages = evaluatedNormalizeThreadVisibleUserMessages();
+  const thread = {
+    turns: [
+      {
+        id: "turn-1",
+        items: [{
+          id: "real-user-1",
+          type: "userMessage",
+          content: [{ type: "input_text", text: "repeat   message" }],
+        }],
+      },
+      {
+        id: "turn-2",
+        items: [{
+          id: "mux-user-thread-1-turn-2-submit-2",
+          type: "userMessage",
+          mobilePendingSubmission: true,
+          content: [{ type: "text", text: "repeat message" }],
+        }],
+      },
+    ],
+  };
+
+  normalizeThreadVisibleUserMessages(thread);
+
+  assert.equal(thread.turns[0].items.length, 1);
+  assert.equal(thread.turns[0].items[0].id, "real-user-1");
+  assert.equal(thread.turns[1].items.length, 1);
+  assert.equal(thread.turns[1].items[0].id, "mux-user-thread-1-turn-2-submit-2");
 });
 
 test("live user message upsert collapses mux echoes before refresh", () => {

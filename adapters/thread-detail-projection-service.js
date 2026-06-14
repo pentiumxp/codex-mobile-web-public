@@ -301,6 +301,34 @@ function dedupeProjectionItems(items) {
   return dedupeProjectionUsageItems(dedupeProjectionUserMessages(items));
 }
 
+function normalizeProjectionThreadUserMessages(thread) {
+  if (!thread || !Array.isArray(thread.turns)) return thread;
+  for (const turn of thread.turns) {
+    if (!turn || !Array.isArray(turn.items)) continue;
+    turn.items = dedupeProjectionItems(turn.items);
+  }
+  const durableUserMessages = [];
+  for (let turnIndex = 0; turnIndex < thread.turns.length; turnIndex += 1) {
+    const turn = thread.turns[turnIndex];
+    const items = Array.isArray(turn && turn.items) ? turn.items : [];
+    for (const item of items) {
+      if (isProjectionUserMessage(item) && !isSyntheticProjectionUserMessage(item)) {
+        durableUserMessages.push({ item, turnIndex });
+      }
+    }
+  }
+  if (!durableUserMessages.length) return thread;
+  for (let turnIndex = 0; turnIndex < thread.turns.length; turnIndex += 1) {
+    const turn = thread.turns[turnIndex];
+    if (!turn || !Array.isArray(turn.items)) continue;
+    turn.items = turn.items.filter((item) => !(isSyntheticProjectionUserMessage(item)
+      && durableUserMessages.some((real) => real.turnIndex >= turnIndex
+        && real.item.id !== item.id
+        && projectionUserMessagesCanShadow(real.item, item))));
+  }
+  return thread;
+}
+
 function mergeProjectionItems(existingItems, incomingItems) {
   const existing = Array.isArray(existingItems) ? existingItems : [];
   const incoming = Array.isArray(incomingItems) ? incomingItems : [];
@@ -427,6 +455,7 @@ function createThreadDetailProjectionService(options = {}) {
       partial: false,
       result: cloneJson(result),
     };
+    normalizeProjectionThreadUserMessages(entry.result.thread);
     trimTurns(entry.result.thread, maxTurns);
     memory.set(threadId, entry);
     persistEntry(entry);
@@ -472,11 +501,13 @@ function createThreadDetailProjectionService(options = {}) {
       return null;
     }
 
+    const result = cloneJson(entry.result);
+    normalizeProjectionThreadUserMessages(result.thread);
     return {
       cachedAtMs: entry.cachedAtMs,
       updatedAtMs: entry.updatedAtMs,
       dynamic: entry.dynamic,
-      result: cloneJson(entry.result),
+      result,
     };
   }
 
@@ -538,6 +569,7 @@ function createThreadDetailProjectionService(options = {}) {
       const turnId = turnIdFromParams(params);
       if (turnId) appendItemText(ensureTurn(thread, turnId), String(params.itemId || ""), "fileChange", "aggregatedOutput", params.delta || "");
     }
+    normalizeProjectionThreadUserMessages(thread);
     trimTurns(thread, maxTurns);
     entry.updatedAtMs = now();
     entry.dynamic = true;
