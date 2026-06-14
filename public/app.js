@@ -331,7 +331,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v288";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v289";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -6476,7 +6476,7 @@ function startThreadLoadWatchdog(threadId, details = {}) {
       eventOpen: Boolean(state.events && state.events.readyState === EventSource.OPEN),
     }, details || {}));
     $("connectionState").textContent = "Loading thread is slow, retrying...";
-    refreshCurrentThread().catch((err) => {
+    refreshCurrentThread({ source: "thread-switch-stall" }).catch((err) => {
       postClientEvent("thread_switch_stall_retry_failed", {
         threadId,
         error: err && err.message ? err.message : String(err),
@@ -6719,21 +6719,27 @@ function scheduleUsageBackfillRefresh(delay = 1200) {
     state.usageBackfillTimer = null;
     if (document.visibilityState === "hidden") return;
     if (!state.currentThreadId || `${state.currentThreadId}|${turn.id}` !== state.usageBackfillKey) return;
-    refreshCurrentThread().catch(showError);
+    refreshCurrentThread({ source: "usage-backfill" }).catch(showError);
   }, delay);
 }
 
-async function refreshCurrentThread() {
+async function refreshCurrentThread(options = {}) {
   if (!state.currentThreadId) return;
   markIdleActivity("同步");
   const threadId = state.currentThreadId;
   const seq = state.threadLoadSeq;
+  const source = String(options.source || "refresh").slice(0, 40);
+  const requestedMode = options.full === true || String(options.mode || "").toLowerCase() === "full"
+    ? "full"
+    : "recent";
   if (state.refreshThreadController) state.refreshThreadController.abort();
   const controller = new AbortController();
   state.refreshThreadController = controller;
   let result;
+  const refreshStartedAt = nowPerfMs();
+  const apiStartedAt = nowPerfMs();
   try {
-    result = await api(threadDetailApiPath(threadId), {
+    result = await api(threadDetailApiPath(threadId, requestedMode === "recent" ? { mode: "recent" } : {}), {
       timeoutMs: 20000,
       signal: controller.signal,
     });
@@ -6743,12 +6749,30 @@ async function refreshCurrentThread() {
   } finally {
     if (state.refreshThreadController === controller) state.refreshThreadController = null;
   }
+  const apiElapsedMs = roundedDurationMs(apiStartedAt);
   if (state.currentThreadId !== threadId || seq !== state.threadLoadSeq) return;
+  const renderStartedAt = nowPerfMs();
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
   renderComposerSettings();
   syncActiveTurnFromThread();
   renderThreads();
   renderCurrentThread();
+  postPerformanceEvent("thread_refresh_ms", {
+    source,
+    threadId,
+    requestedMode,
+    readMode: result.thread && result.thread.mobileReadMode || "",
+    elapsedMs: roundedDurationMs(refreshStartedAt),
+    apiElapsedMs,
+    renderElapsedMs: roundedDurationMs(renderStartedAt),
+    status: statusText(result.thread && result.thread.status),
+    turns: Array.isArray(result.thread && result.thread.turns) ? result.thread.turns.length : 0,
+    omittedTurns: Number(result.thread && result.thread.mobileOmittedTurnCount || 0),
+    rolloutSizeBytes: rolloutSizeBytes(result.thread),
+  }, {
+    key: "thread_refresh_ms",
+    minIntervalMs: PERF_EVENT_THROTTLE_MS,
+  });
   scheduleUsageBackfillRefresh();
   scheduleLivePollIfNeeded();
 }
@@ -6905,10 +6929,10 @@ function maybeLoadOlderThreadTurnsFromScroll() {
   loadOlderThreadTurns({ preserveScroll: true, source: "scroll-top" }).catch(showError);
 }
 
-function scheduleCurrentThreadRefresh(delay = 600) {
+function scheduleCurrentThreadRefresh(delay = 600, source = "scheduled") {
   clearTimeout(state.refreshTimer);
   state.refreshTimer = setTimeout(() => {
-    refreshCurrentThread().catch(showError);
+    refreshCurrentThread({ source }).catch(showError);
   }, delay);
 }
 
@@ -6916,12 +6940,15 @@ function schedulePostCompletionThreadRefreshes(threadId, delays = [700, 2400]) {
   const id = String(threadId || "");
   if (!id) return;
   state.postCompletionRefreshTimers.forEach((timer) => clearTimeout(timer));
-  state.postCompletionRefreshTimers = delays.map((delay) => {
+  state.postCompletionRefreshTimers = delays.map((delay, index) => {
     const timer = setTimeout(() => {
       state.postCompletionRefreshTimers = state.postCompletionRefreshTimers.filter((entry) => entry !== timer);
     if (document.visibilityState === "hidden") return;
     if (state.currentThreadId !== id) return;
-    refreshCurrentThread().catch(showError);
+    refreshCurrentThread({
+      source: "post-completion",
+      full: index === delays.length - 1,
+    }).catch(showError);
     }, delay);
     return timer;
   });
@@ -6952,7 +6979,7 @@ function scheduleLivePollIfNeeded(delay = 2600) {
   if (state.pollStableCount > 12) nextDelay = Math.max(delay, 12000);
   else if (state.pollStableCount > 3) nextDelay = Math.max(delay, 5000);
   state.pollTimer = setTimeout(() => {
-    refreshCurrentThread().catch(showError);
+    refreshCurrentThread({ source: "live-poll" }).catch(showError);
   }, nextDelay);
 }
 
@@ -9972,7 +9999,7 @@ function resolveTargetThreadReferences(input) {
 
 async function refreshCurrentThreadAfterTaskCard() {
   if (!state.currentThreadId) return;
-  await refreshCurrentThread();
+  await refreshCurrentThread({ source: "task-card" });
   loadThreads({ silent: true }).catch(showError);
 }
 
@@ -9990,7 +10017,7 @@ async function waitForCurrentThreadTurn(turnId, options = {}) {
   const intervalMs = Math.max(150, Number(options.intervalMs) || 500);
   const deadline = Date.now() + timeoutMs;
   while (state.currentThreadId && Date.now() <= deadline) {
-    await refreshCurrentThread();
+    await refreshCurrentThread({ source: "wait-turn" });
     if (!state.currentThreadId) return false;
     if (currentThreadHasTurn(targetTurnId)) {
       state.pendingPluginRouteHint = normalizePluginRouteHint({
@@ -13199,7 +13226,7 @@ function scheduleEventFallbackPoll(delayMs = 8000) {
       rememberRateLimitsFromConfig(status);
       if (status.codexProfiles) rememberCodexProfiles(status.codexProfiles);
       await refreshThreadListDuringEventRecovery();
-      if (state.currentThreadId) await refreshCurrentThread();
+      if (state.currentThreadId) await refreshCurrentThread({ source: "event-fallback-poll" });
       scheduleEventFallbackPoll();
     } catch (err) {
       showReconnectRefreshPrompt("reconnect");
@@ -13218,7 +13245,7 @@ async function recoverEventStreamWithApiFallback(options = {}) {
   rememberRateLimitsFromConfig(status);
   if (status.codexProfiles) rememberCodexProfiles(status.codexProfiles);
   await refreshThreadListDuringEventRecovery({ force: Boolean(options.afterEventReconnect) });
-  if (state.currentThreadId) await refreshCurrentThread();
+  if (state.currentThreadId) await refreshCurrentThread({ source: "event-recovery" });
   if (recovered) await maybeAutoRecoverTurnAfterReconnect(status, "event-fallback-reconnect");
   if (isHermesEmbedMode()) {
     state.eventFallbackMode = true;
@@ -13443,7 +13470,7 @@ async function resumeMobileSession(reason = "resume") {
         });
       }
     } else if (state.currentThreadId) {
-      await refreshCurrentThread();
+      await refreshCurrentThread({ source: "resume" });
     } else {
       await restoreThreadSelection();
     }
