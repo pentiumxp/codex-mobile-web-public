@@ -4,6 +4,10 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：v288 增加移动端加载与渲染性能诊断事件，并为静态文本资源开启带缓存的 `br` / `gzip` 压缩。前端会通过现有 `/api/client-events` 上报 `shell_loaded`、`thread_list_rendered`、`thread_detail_first_paint`、`thread_detail_full_ready`、`conversation_render_ms`、`mermaid_hydrate_ms` 和 `github_cards_hydrate_ms`，用于后续量化首屏、线程列表、线程详情、Markdown/Mermaid/GitHub 卡片渲染耗时。线程详情首屏先读取最近 turns，再后台补完整 `thread/read`。服务端会按浏览器 `Accept-Encoding` 压缩 JS/CSS/HTML/JSON/SVG 等文本资源，压缩结果按文件路径、大小、mtime 和编码缓存；图片仍原样返回。PWA shell cache 升级到 `codex-mobile-shell-v288`，更新后需要重启 Node listener；已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端诊断逻辑。
+
+- 中文说明：v287 修正移动端用户消息去重边界。服务端 pending steer echo、线程详情 projection cache 和前端可见线程归一化现在只会在同 turn 或更晚 turn 出现匹配的真实 durable 用户消息时移除 synthetic/mux/local echo，避免用户后续重复发送同一句话时被旧历史消息提前压掉。PWA shell cache 升级到 `codex-mobile-shell-v287`，更新后需要重启 Node listener；已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新的前端归一化逻辑。
+
 ## Project Documentation
 
 Engineering docs are split under [`docs/`](docs/README.md):

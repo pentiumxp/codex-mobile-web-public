@@ -4,6 +4,7 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const zlib = require("node:zlib");
 const { spawn } = require("node:child_process");
 const net = require("node:net");
 const webPush = require("web-push");
@@ -6143,6 +6144,7 @@ function mimeFor(file) {
     ".css": "text/css; charset=utf-8",
     ".js": "text/javascript; charset=utf-8",
     ".json": "application/json; charset=utf-8",
+    ".svg": "image/svg+xml; charset=utf-8",
     ".ico": "image/x-icon",
   }[ext] || "application/octet-stream";
 }
@@ -6213,6 +6215,108 @@ function serveGeneratedImageFile(req, res) {
   });
 }
 
+const STATIC_COMPRESSION_MIN_BYTES = 1024;
+const STATIC_COMPRESSION_CACHE_MAX_BYTES = 16 * 1024 * 1024;
+const STATIC_COMPRESSIBLE_EXTENSIONS = new Set([
+  ".css",
+  ".html",
+  ".js",
+  ".json",
+  ".svg",
+  ".txt",
+  ".webmanifest",
+]);
+const staticCompressionCache = new Map();
+let staticCompressionCacheBytes = 0;
+
+function acceptsEncoding(req, encoding) {
+  const header = String(req && req.headers && req.headers["accept-encoding"] || "").toLowerCase();
+  if (!header) return false;
+  const needle = String(encoding || "").toLowerCase();
+  return header.split(",").some((part) => {
+    const [name, ...params] = part.trim().split(";").map((value) => value.trim());
+    if (name !== needle) return false;
+    return !params.some((param) => /^q=0(?:\.0*)?$/.test(param));
+  });
+}
+
+function staticCompressionEncoding(req, target, byteLength) {
+  if (Number(byteLength || 0) < STATIC_COMPRESSION_MIN_BYTES) return "";
+  if (!STATIC_COMPRESSIBLE_EXTENSIONS.has(path.extname(target).toLowerCase())) return "";
+  if (acceptsEncoding(req, "br")) return "br";
+  if (acceptsEncoding(req, "gzip")) return "gzip";
+  return "";
+}
+
+function compressStaticBody(data, encoding, callback) {
+  if (encoding === "br") {
+    zlib.brotliCompress(data, {
+      params: {
+        [zlib.constants.BROTLI_PARAM_QUALITY]: 5,
+      },
+    }, callback);
+    return;
+  }
+  if (encoding === "gzip") {
+    zlib.gzip(data, { level: 6 }, callback);
+    return;
+  }
+  callback(null, data);
+}
+
+function staticCompressionCacheKey(target, stat, encoding) {
+  return [
+    path.resolve(target),
+    encoding,
+    stat.size,
+    Math.round(Number(stat.mtimeMs || 0)),
+  ].join("|");
+}
+
+function getStaticCompressionCache(key) {
+  const entry = staticCompressionCache.get(key);
+  if (!entry) return null;
+  staticCompressionCache.delete(key);
+  staticCompressionCache.set(key, entry);
+  return entry;
+}
+
+function rememberStaticCompressionCache(key, body) {
+  if (!key || !Buffer.isBuffer(body) || !body.length) return;
+  if (body.length > STATIC_COMPRESSION_CACHE_MAX_BYTES) return;
+  const previous = staticCompressionCache.get(key);
+  if (previous) {
+    staticCompressionCacheBytes -= previous.body.length;
+    staticCompressionCache.delete(key);
+  }
+  staticCompressionCache.set(key, { body });
+  staticCompressionCacheBytes += body.length;
+  while (staticCompressionCacheBytes > STATIC_COMPRESSION_CACHE_MAX_BYTES && staticCompressionCache.size) {
+    const oldestKey = staticCompressionCache.keys().next().value;
+    const oldest = staticCompressionCache.get(oldestKey);
+    staticCompressionCache.delete(oldestKey);
+    if (oldest && oldest.body) staticCompressionCacheBytes -= oldest.body.length;
+  }
+}
+
+function clearStaticCompressionCache() {
+  staticCompressionCache.clear();
+  staticCompressionCacheBytes = 0;
+}
+
+function staticCompressionCacheStats() {
+  return {
+    entries: staticCompressionCache.size,
+    bytes: staticCompressionCacheBytes,
+  };
+}
+
+function writeStaticResponse(res, headers, body) {
+  headers["Content-Length"] = body.length;
+  res.writeHead(200, headers);
+  res.end(body);
+}
+
 function serveStatic(req, res) {
   const url = getUrl(req);
   const rel = decodeURIComponent(url.pathname === "/" ? "/index.html" : url.pathname);
@@ -6222,8 +6326,8 @@ function serveStatic(req, res) {
     res.end("Forbidden");
     return;
   }
-  fs.readFile(target, (err, data) => {
-    if (err) {
+  fs.stat(target, (statErr, stat) => {
+    if (statErr || !stat.isFile()) {
       res.writeHead(404);
       res.end("Not found");
       return;
@@ -6235,8 +6339,36 @@ function serveStatic(req, res) {
     if (target.endsWith(".html")) {
       headers["Content-Security-Policy"] = `frame-ancestors ${hermesPluginService.frameAncestorsHeader()}`;
     }
-    res.writeHead(200, headers);
-    res.end(data);
+    const encoding = staticCompressionEncoding(req, target, stat.size);
+    const cacheKey = encoding ? staticCompressionCacheKey(target, stat, encoding) : "";
+    const cached = cacheKey ? getStaticCompressionCache(cacheKey) : null;
+    if (cached) {
+      headers["Content-Encoding"] = encoding;
+      headers.Vary = "Accept-Encoding";
+      writeStaticResponse(res, headers, cached.body);
+      return;
+    }
+    fs.readFile(target, (err, data) => {
+      if (err) {
+        res.writeHead(404);
+        res.end("Not found");
+        return;
+      }
+      if (!encoding) {
+        writeStaticResponse(res, headers, data);
+        return;
+      }
+      compressStaticBody(data, encoding, (compressErr, compressed) => {
+        if (compressErr) {
+          writeStaticResponse(res, headers, data);
+          return;
+        }
+        headers["Content-Encoding"] = encoding;
+        headers.Vary = "Accept-Encoding";
+        rememberStaticCompressionCache(cacheKey, compressed);
+        writeStaticResponse(res, headers, compressed);
+      });
+    });
   });
 }
 
@@ -10382,6 +10514,8 @@ async function handleApi(req, res) {
   const threadRead = url.pathname.match(/^\/api\/threads\/([^/]+)$/);
   if (threadRead && req.method === "GET") {
     const threadId = decodeURIComponent(threadRead[1]);
+    const detailMode = String(url.searchParams.get("mode") || "").trim().toLowerCase();
+    const preferRecentTurns = detailMode === "recent";
     const requestStartedAtMs = Date.now();
     const threadLog = (event, details = {}) => logThreadDetail(event, Object.assign({
       threadId,
@@ -10478,6 +10612,36 @@ async function handleApi(req, res) {
       sendJson(res, 200, await prepareThreadTaskCardsToResult(projected));
       threadLog("complete", { status: 200, mode: projected.thread.mobileReadMode });
       return;
+    }
+    if (preferRecentTurns) {
+      const turnsStartedAtMs = Date.now();
+      try {
+        const result = await turnsListThreadReadResult(
+          threadId,
+          summary,
+          runtimeSettings,
+          "",
+          "turns-list-initial",
+          threadLog,
+        );
+        if (isHiddenThread(result.thread, visibility)) {
+          threadLog("turns_list_initial_hidden", {
+            durationMs: Date.now() - turnsStartedAtMs,
+            status: 404,
+          });
+          sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
+          return;
+        }
+        threadLog("complete", { status: 200, mode: "turns-list-initial" });
+        sendJson(res, 200, result);
+        return;
+      } catch (turnsErr) {
+        threadLog("turns_list_initial_error", {
+          durationMs: Date.now() - turnsStartedAtMs,
+          timeout: isReadTimeoutError(turnsErr),
+          error: turnsErr.message || String(turnsErr),
+        });
+      }
     }
     const readStartedAtMs = Date.now();
     threadLog("thread_read_start", {
@@ -10915,10 +11079,14 @@ module.exports = {
   readRolloutSessionFallbackThreadFromFile,
   resolveFilePreviewPath,
   attachPendingServerRequestsToResult,
+  clearStaticCompressionCache,
   publicServerRequest,
   serveFilePreviewContent,
+  serveStatic,
   serverRequestResponsePayload,
   sortTurnsChronologically,
+  staticCompressionCacheStats,
+  staticCompressionEncoding,
   stripMarkdownFileTarget,
   threadMatchesWorkspaceCwd,
 };

@@ -35,17 +35,28 @@ function normalizedTextValue(part) {
   return "";
 }
 
+function normalizeFsPath(value) {
+  return String(value || "").replace(/\\/g, "/").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
 function comparablePart(part) {
   if (!part || typeof part !== "object") return "";
   if (part.type === "text" || part.type === "input_text") {
     return `text:${normalizedTextValue(part).replace(/\s+/g, " ").trim()}`;
   }
-  if (part.path) return `path:${String(part.path).toLowerCase()}`;
+  if (part.path) return `path:${normalizeFsPath(part.path)}`;
   return JSON.stringify(part);
 }
 
-function comparableContent(content) {
-  return (Array.isArray(content) ? content : [])
+function userMessageParts(message) {
+  const parts = Array.isArray(message && message.content) ? message.content.slice() : [];
+  if (typeof (message && message.text) === "string") parts.push({ type: "text", text: message.text });
+  if (typeof (message && message.message) === "string") parts.push({ type: "text", text: message.message });
+  return parts;
+}
+
+function comparableContent(message) {
+  return userMessageParts(message)
     .map(comparablePart)
     .filter(Boolean)
     .join("|");
@@ -53,9 +64,20 @@ function comparableContent(content) {
 
 function sameUserMessageContent(left, right) {
   if (!left || !right || left.type !== "userMessage" || right.type !== "userMessage") return false;
-  const leftContent = comparableContent(left.content);
-  const rightContent = comparableContent(right.content);
+  const leftContent = comparableContent(left);
+  const rightContent = comparableContent(right);
   return Boolean(leftContent && rightContent && leftContent === rightContent);
+}
+
+function isSyntheticUserMessage(item) {
+  const id = String(item && item.id || "");
+  return Boolean(item
+    && item.type === "userMessage"
+    && (item.mobilePendingSubmission || /^mux-user-/.test(id) || /^local-user-/.test(id)));
+}
+
+function isDurableUserMessage(item) {
+  return Boolean(item && item.type === "userMessage" && !isSyntheticUserMessage(item));
 }
 
 function pendingItemId(threadId, turnId, clientSubmissionId, startedAtMs) {
@@ -126,6 +148,34 @@ function createPendingSteerEchoStore(options = {}) {
       && (item.id === pendingItem.id || sameUserMessageContent(item, pendingItem)));
   }
 
+  function turnIndexForId(thread, turnId) {
+    const id = String(turnId || "");
+    if (!id) return -1;
+    return (thread.turns || []).findIndex((turn) => String(turn && turn.id || "") === id);
+  }
+
+  function matchingDurableUserMessageTurnIndex(thread, pendingItem, pendingTurnId) {
+    const pendingTurnIndex = turnIndexForId(thread, pendingTurnId);
+    if (pendingTurnIndex < 0) return -1;
+    for (let index = pendingTurnIndex; index < (thread.turns || []).length; index += 1) {
+      const turn = thread.turns[index];
+      const items = Array.isArray(turn && turn.items) ? turn.items : [];
+      if (items.some((item) => isDurableUserMessage(item) && sameUserMessageContent(item, pendingItem))) return index;
+    }
+    return -1;
+  }
+
+  function removePendingEchoFromThread(thread, pendingItem, pendingTurnId, durableTurnIndex) {
+    const pendingTurnIndex = turnIndexForId(thread, pendingTurnId);
+    if (pendingTurnIndex < 0 || durableTurnIndex < pendingTurnIndex) return;
+    for (let index = pendingTurnIndex; index <= durableTurnIndex; index += 1) {
+      const turn = thread.turns[index];
+      if (!turn || !Array.isArray(turn.items)) continue;
+      turn.items = turn.items.filter((item) => !(isSyntheticUserMessage(item)
+        && (item.id === pendingItem.id || sameUserMessageContent(item, pendingItem))));
+    }
+  }
+
   function injectIntoThread(thread) {
     prune();
     if (!thread || typeof thread !== "object" || !Array.isArray(thread.turns)) return thread;
@@ -133,6 +183,12 @@ function createPendingSteerEchoStore(options = {}) {
     if (!threadId) return thread;
     for (const entry of entries.values()) {
       if (entry.threadId !== threadId) continue;
+      const durableTurnIndex = matchingDurableUserMessageTurnIndex(thread, entry.item, entry.turnId);
+      if (durableTurnIndex >= 0) {
+        removePendingEchoFromThread(thread, entry.item, entry.turnId, durableTurnIndex);
+        entries.delete(entry.key);
+        continue;
+      }
       const turn = thread.turns.find((candidate) => String(candidate && candidate.id || "") === entry.turnId);
       if (!turn) continue;
       turn.items = Array.isArray(turn.items) ? turn.items : [];

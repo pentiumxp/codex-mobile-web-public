@@ -210,6 +210,124 @@ test("thread detail projection collapses synthetic mobile user echoes", () => {
   assert.equal(userMessages[0].mobilePendingSubmission, undefined);
 });
 
+test("thread detail projection removes synthetic user echoes shadowed in another turn", () => {
+  const service = createThreadDetailProjectionService({
+    cacheDir: "",
+    policyVersion: "test-v1",
+    maxTurns: 3,
+    now: (() => {
+      let current = 5800;
+      return () => {
+        current += 100;
+        return current;
+      };
+    })(),
+  });
+  service.seed(signatureInput({ summaryStatus: "active", maxTurns: 3 }), {
+    thread: {
+      id: "thread-1",
+      turns: [],
+    },
+  });
+
+  service.applyNotification("turn/started", {
+    threadId: "thread-1",
+    turn: { id: "turn-1", status: { type: "active" }, items: [] },
+  });
+  service.applyNotification("item/completed", {
+    threadId: "thread-1",
+    turnId: "turn-1",
+    item: {
+      id: "mux-user-thread-1-turn-1-submission-1",
+      type: "userMessage",
+      mobilePendingSubmission: true,
+      content: [{ type: "text", text: "same message" }],
+    },
+  });
+  service.applyNotification("turn/started", {
+    threadId: "thread-1",
+    turn: {
+      id: "turn-2",
+      status: { type: "active" },
+      items: [{
+        id: "real-user-2",
+        type: "userMessage",
+        content: [{ type: "input_text", text: "same   message" }],
+      }],
+    },
+  });
+
+  const cached = service.get(signatureInput({
+    summaryStatus: "active",
+    maxTurns: 3,
+    rolloutStats: { sizeBytes: 4096, mtimeMs: 9000 },
+    summaryUpdatedAtMs: 6100,
+  }));
+  assert.ok(cached);
+  const turn1 = cached.result.thread.turns.find((item) => item.id === "turn-1");
+  const turn2 = cached.result.thread.turns.find((item) => item.id === "turn-2");
+  assert.deepEqual(turn1.items.filter((item) => item.type === "userMessage"), []);
+  assert.equal(turn2.items.filter((item) => item.type === "userMessage").length, 1);
+  assert.equal(turn2.items.find((item) => item.type === "userMessage").id, "real-user-2");
+});
+
+test("thread detail projection keeps synthetic repeat when matching durable message is earlier", () => {
+  const service = createThreadDetailProjectionService({
+    cacheDir: "",
+    policyVersion: "test-v1",
+    maxTurns: 3,
+    now: (() => {
+      let current = 6800;
+      return () => {
+        current += 100;
+        return current;
+      };
+    })(),
+  });
+  service.seed(signatureInput({ summaryStatus: "active", maxTurns: 3 }), {
+    thread: {
+      id: "thread-1",
+      turns: [{
+        id: "turn-1",
+        status: { type: "completed" },
+        items: [{
+          id: "real-user-1",
+          type: "userMessage",
+          content: [{ type: "input_text", text: "repeat   message" }],
+        }],
+      }],
+    },
+  });
+
+  service.applyNotification("turn/started", {
+    threadId: "thread-1",
+    turn: { id: "turn-2", status: { type: "active" }, items: [] },
+  });
+  service.applyNotification("item/completed", {
+    threadId: "thread-1",
+    turnId: "turn-2",
+    item: {
+      id: "mux-user-thread-1-turn-2-submission-2",
+      type: "userMessage",
+      mobilePendingSubmission: true,
+      content: [{ type: "text", text: "repeat message" }],
+    },
+  });
+
+  const cached = service.get(signatureInput({
+    summaryStatus: "active",
+    maxTurns: 3,
+    rolloutStats: { sizeBytes: 4096, mtimeMs: 9000 },
+    summaryUpdatedAtMs: 7100,
+  }));
+  assert.ok(cached);
+  const turn1 = cached.result.thread.turns.find((item) => item.id === "turn-1");
+  const turn2 = cached.result.thread.turns.find((item) => item.id === "turn-2");
+  assert.equal(turn1.items.filter((item) => item.type === "userMessage").length, 1);
+  assert.equal(turn2.items.filter((item) => item.type === "userMessage").length, 1);
+  assert.equal(turn2.items.find((item) => item.type === "userMessage").id, "mux-user-thread-1-turn-2-submission-2");
+});
+
 test("thread detail projection keeps streamed receipt when completed turn patch is shorter", () => {
   const service = createThreadDetailProjectionService({
     cacheDir: "",
