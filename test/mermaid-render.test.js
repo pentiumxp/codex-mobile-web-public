@@ -167,6 +167,13 @@ test("mobile app ships a custom Mermaid preview dialog and lazy runtime loader",
   assert.match(appJs, /function openMermaidPreview\(/);
   assert.match(appJs, /function closeMermaidPreview\(/);
   assert.match(appJs, /function handleMermaidAction\(/);
+  assert.match(appJs, /mermaidPinch: null/);
+  assert.match(appJs, /function mermaidContainerFromViewer\(viewer\)/);
+  assert.match(appJs, /function beginMermaidPinch\(event\)/);
+  assert.match(appJs, /function moveMermaidPinch\(event\)/);
+  assert.match(appJs, /applyMermaidScale\(pinch\.container, pinch\.scale \* \(distance \/ pinch\.distance\), Object\.assign\(\{ viewer: pinch\.scroller \}, anchorOptions\)\)/);
+  assert.match(appJs, /document\.addEventListener\("touchstart", beginMermaidPinch, \{ passive: false, capture: true \}\)/);
+  assert.match(appJs, /document\.addEventListener\("touchmove", moveMermaidPinch, \{ passive: false, capture: true \}\)/);
   assert.match(stylesCss, /\.markdown-mermaid-block/);
   assert.match(stylesCss, /\.markdown-mermaid-viewer/);
   assert.match(stylesCss, /\.markdown-mermaid-viewer\s*\{[\s\S]*touch-action:\s*pan-x pan-y;[\s\S]*overscroll-behavior:\s*contain;/);

@@ -307,6 +307,7 @@ const state = {
   composerFastHintTimer: null,
   attachmentProcessingCount: 0,
   filePreviewSwipe: null,
+  mermaidPinch: null,
   imagePreviewPinch: null,
   imagePreviewScale: 1,
   imageAuthRefreshRequested: false,
@@ -328,7 +329,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v285";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v286";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -11370,10 +11371,11 @@ function mermaidInitialScale(container, baseWidth) {
   return clampMermaidScale(fitWidth / baseWidth);
 }
 
-function applyMermaidScale(container, scale) {
+function applyMermaidScale(container, scale, options = {}) {
   const canvas = mermaidCanvas(container);
   const artboard = canvas && canvas.querySelector(".markdown-mermaid-artboard");
   if (!canvas || !artboard) return;
+  const previousScale = mermaidCurrentScale(container);
   const nextScale = clampMermaidScale(scale);
   const baseWidth = Number(artboard.dataset.baseWidth || 0) || 640;
   const baseHeight = Number(artboard.dataset.baseHeight || 0) || 360;
@@ -11381,6 +11383,17 @@ function applyMermaidScale(container, scale) {
   artboard.style.height = `${Math.max(120, Math.round(baseHeight * nextScale))}px`;
   container.dataset.mermaidScale = String(nextScale);
   updateMermaidResetLabel(container, nextScale);
+  const hasAnchor = options.viewer
+    && Number.isFinite(options.anchorX)
+    && Number.isFinite(options.anchorY)
+    && Number.isFinite(options.contentX)
+    && Number.isFinite(options.contentY);
+  if (hasAnchor && previousScale > 0 && nextScale > 0) {
+    requestAnimationFrame(() => {
+      options.viewer.scrollLeft = Math.max(0, options.contentX * nextScale - options.anchorX);
+      options.viewer.scrollTop = Math.max(0, options.contentY * nextScale - options.anchorY);
+    });
+  }
 }
 
 function showMermaidLoading(container, message = "正在渲染 Mermaid 图...") {
@@ -11558,6 +11571,10 @@ function installMermaidThemeObserver() {
 
 function mermaidActionContainer(button) {
   return button.closest("[data-mermaid-block='true']") || button.closest("#mermaidPreviewDialog");
+}
+
+function mermaidContainerFromViewer(viewer) {
+  return viewer ? viewer.closest("[data-mermaid-block='true']") || viewer.closest("#mermaidPreviewDialog") : null;
 }
 
 function resetMermaidScale(container) {
@@ -11804,6 +11821,37 @@ function moveImagePreviewPinch(event) {
 
 function finishImagePreviewPinch() {
   state.imagePreviewPinch = null;
+}
+
+function beginMermaidPinch(event) {
+  const viewer = event && event.target && event.target.closest ? event.target.closest(".markdown-mermaid-viewer") : null;
+  const container = mermaidContainerFromViewer(viewer);
+  if (!viewer || !container || !event.touches || event.touches.length < 2) return;
+  const pinch = pinchStateFromTouches(event, viewer, mermaidCurrentScale(container));
+  if (!pinch) return;
+  pinch.container = container;
+  state.mermaidPinch = pinch;
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function moveMermaidPinch(event) {
+  const pinch = state.mermaidPinch;
+  if (!pinch || !pinch.container) return;
+  if (!event.touches || event.touches.length < 2) {
+    state.mermaidPinch = null;
+    return;
+  }
+  const distance = touchDistance(event.touches[0], event.touches[1]);
+  const anchorOptions = anchorOptionsFromTouches(event, pinch);
+  if (!distance || !anchorOptions) return;
+  event.preventDefault();
+  event.stopPropagation();
+  applyMermaidScale(pinch.container, pinch.scale * (distance / pinch.distance), Object.assign({ viewer: pinch.scroller }, anchorOptions));
+}
+
+function finishMermaidPinch() {
+  state.mermaidPinch = null;
 }
 
 function renderThreadTaskCardDraftMessage(value, item, turn) {
@@ -15522,6 +15570,10 @@ function wireUi() {
       }
     });
   }
+  document.addEventListener("touchstart", beginMermaidPinch, { passive: false, capture: true });
+  document.addEventListener("touchmove", moveMermaidPinch, { passive: false, capture: true });
+  document.addEventListener("touchend", finishMermaidPinch, { passive: true, capture: true });
+  document.addEventListener("touchcancel", finishMermaidPinch, { passive: true, capture: true });
   installMermaidThemeObserver();
   $("composer").addEventListener("dragover", (event) => {
     if (!(state.currentThreadId || state.newThreadDraft) || !hasTransferFiles(event)) return;
