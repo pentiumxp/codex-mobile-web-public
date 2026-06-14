@@ -3231,6 +3231,7 @@ function applyPermissionModeOverride(settings, mode, cwd) {
   if (!normalized) return settings;
   const next = Object.assign({}, settings || {});
   if (normalized === "default") {
+    if (!cwd) return next;
     next.approvalPolicy = "on-request";
     next.sandboxPolicy = workspaceWriteSandboxPolicy(cwd, next.sandboxPolicy);
     next.sandboxMode = "workspace-write";
@@ -3238,6 +3239,7 @@ function applyPermissionModeOverride(settings, mode, cwd) {
     return next;
   }
   if (normalized === "auto") {
+    if (!cwd) return next;
     next.approvalPolicy = "on-request";
     next.sandboxPolicy = workspaceWriteSandboxPolicy(cwd, next.sandboxPolicy);
     next.sandboxMode = "workspace-write";
@@ -7135,6 +7137,23 @@ function readGlobalState() {
   }
 }
 
+function rememberProjectlessThreadId(threadId) {
+  const id = String(threadId || "").trim();
+  if (!id) return false;
+  const file = path.join(CODEX_HOME, ".codex-global-state.json");
+  try {
+    const state = readJsonFile(file, {});
+    const existing = Array.isArray(state["projectless-thread-ids"]) ? state["projectless-thread-ids"] : [];
+    if (existing.includes(id)) return false;
+    state["projectless-thread-ids"] = existing.concat([id]);
+    writeRuntimeJson(file, state);
+    return true;
+  } catch (err) {
+    console.warn(`Failed to update projectless thread ids: ${err.message || String(err)}`);
+    return false;
+  }
+}
+
 function rowToFallbackThread(row) {
   const updatedAt = Number(row.updated_at || row.updatedAt || 0);
   const name = row.title || row.thread_name || null;
@@ -10120,17 +10139,13 @@ async function handleApi(req, res) {
     const requestedTitle = truncateSingleLine(String(body.title || body.name || "").trim(), 120);
     const input = buildTurnInput(text, uploads);
     const persistExtendedHistory = persistExtendedHistoryForUploads(uploads);
-    if (!cwd) {
-      sendJson(res, 400, { error: "Workspace is required to start a new thread" });
-      return;
-    }
     if (!input.length) {
       sendJson(res, 400, { error: "Message text or attachment is required" });
       return;
     }
     const globalState = readGlobalState();
     const visibility = visibilityFromGlobalState(globalState);
-    if (visibility.workspaceKeys.size > 0 && !visibility.workspaceKeys.has(normalizeFsPath(cwd))) {
+    if (cwd && visibility.workspaceKeys.size > 0 && !visibility.workspaceKeys.has(normalizeFsPath(cwd))) {
       sendJson(res, 403, { error: "Workspace is not visible in Codex Desktop" });
       return;
     }
@@ -10138,8 +10153,7 @@ async function handleApi(req, res) {
     try {
       const result = await runMessageSubmissionOnce(submissionKeys, uploads, async () => {
         const runtimeSettings = applyPermissionModeOverride({}, body.permissionMode, cwd);
-        const startParams = applyStartThreadRuntimeSettings({
-          cwd,
+        const startParamsBase = {
           modelProvider: null,
           config: {},
           developerInstructions: readStartThreadDeveloperInstructions(cwd) || "",
@@ -10149,7 +10163,9 @@ async function handleApi(req, res) {
           mockExperimentalField: null,
           experimentalRawEvents: false,
           persistExtendedHistory,
-        }, runtimeSettings);
+        };
+        if (cwd) startParamsBase.cwd = cwd;
+        const startParams = applyStartThreadRuntimeSettings(startParamsBase, runtimeSettings);
         if (requestedModel) startParams.model = requestedModel;
         const startResult = await codex.request("thread/start", startParams, {
           timeoutMs: MUTATION_RPC_TIMEOUT_MS,
@@ -10157,6 +10173,7 @@ async function handleApi(req, res) {
         });
         const threadId = threadIdFromStartResult(startResult);
         if (!threadId) throw new Error("New thread creation failed: app-server did not return threadId");
+        const projectlessThreadRegistered = cwd ? false : rememberProjectlessThreadId(threadId);
         let titleUpdated = false;
         let titleIndexed = false;
         let titleWarning = "";
@@ -10171,7 +10188,7 @@ async function handleApi(req, res) {
         const turnParams = applyCodexFastServiceTier(applyTurnRuntimeSettings({
           threadId,
           input,
-          cwd,
+          ...(cwd ? { cwd } : {}),
         }, runtimeSettings), requestedFastMode);
         if (requestedModel) turnParams.model = requestedModel;
         if (requestedEffort) turnParams.effort = requestedEffort;
@@ -10179,14 +10196,15 @@ async function handleApi(req, res) {
           timeoutMs: MUTATION_RPC_TIMEOUT_MS,
           retry: false,
         });
+        const startedThread = (startResult && startResult.thread) || (startResult && startResult.data && startResult.data.thread) || {};
         const thread = rememberStartedThread(Object.assign(
           {},
-          (startResult && startResult.thread) || (startResult && startResult.data && startResult.data.thread) || {},
+          startedThread,
           {
             id: threadId,
             name: requestedTitle || undefined,
-            preview: requestedTitle || text || path.basename(cwd) || "新建对话",
-            cwd,
+            preview: requestedTitle || text || (cwd ? path.basename(cwd) : "") || "新建对话",
+            cwd: cwd || startedThread.cwd || "",
             status: { type: "active" },
             turns: [],
           },
@@ -10199,6 +10217,7 @@ async function handleApi(req, res) {
           titleUpdated,
           titleIndexed,
           titleWarning,
+          projectlessThreadRegistered,
           turnId: (turnResult && (turnResult.turnId || turnResult.id || turnResult.turn && turnResult.turn.id)) || "",
           result: turnResult,
           startResult,

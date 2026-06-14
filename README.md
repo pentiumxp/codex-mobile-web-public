@@ -681,6 +681,8 @@ Behavior:
 
 ## Interface Notes
 
+- 中文说明：v284 允许新建对话时不指定 Workspace。Mobile 新建页现在提供“不指定 Workspace”选项，发送首条消息时按 Codex App 的项目外聊天语义调用 `thread/start`，不向 app-server 传空 cwd；创建成功后会把新 thread id 登记到现有 `projectless-thread-ids`，让后续列表/详情复用已有项目外线程可见性逻辑。有 Workspace 的新建对话仍保留原有可见 workspace 校验。PWA shell cache 升级到 `codex-mobile-shell-v284`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端逻辑。
+
 - 中文说明：v283 修正压缩续接线程名回退到旧首条消息的问题。Mobile Web 现在把 `session_index.jsonl` 中已有的显示标题作为线程列表、线程详情和下一次压缩续接 source title 的恢复来源，避免手动命名过的线程在进入详情或再次续接时被 app-server 返回的旧第一条用户消息覆盖；索引时间只在比线程行更新时用于推进列表排序。压缩续接确认框和请求体也统一使用当前显示标题。PWA shell cache 升级到 `codex-mobile-shell-v283`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端逻辑。
 
 - 中文说明：v282 修正 Home AI 嵌入态 Codex 语音输入不实时跳字的问题。Codex 插件协议新增 `voice_input.provisional_text`，录音过程中按同一个 `voiceSessionId` 替换上一段临时草稿，松手后再恢复 base draft 并插入最终转写文本，避免重复追加。Host/插件侧也把 composer 暂不可写降级为静默忽略，不再频繁弹出“当前输入框不可写”。PWA shell cache 升级到 `codex-mobile-shell-v282`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端逻辑。
