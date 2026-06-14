@@ -2,6 +2,64 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-14 Public PR #68/#69 Echo Dedupe And Load Performance Sync
+
+- Public PRs:
+  - Evaluated `pentiumxp/codex-mobile-web-public` PR #68,
+    `修复移动端用户消息 echo 去重`, and PR #69,
+    `优化移动端加载性能基础路径`.
+  - Both PRs were open, non-draft, and based on public `main` at `6b3c261`.
+  - #68 narrows pending/mux/local user-message echo removal so only same-turn
+    or later-turn durable user messages can shadow synthetic echoes.
+  - #69 adds cached `br` / `gzip` compression for static text assets, recent
+    first thread-detail loading with full-detail backfill, and bounded frontend
+    performance events for shell/list/detail/render/Mermaid/GitHub-card timing.
+  - Sequential merge was functionally compatible but required manual conflict
+    resolution for README release notes and static shell version assertions.
+    Final public shell cache is `codex-mobile-shell-v288`.
+- Public merge:
+  - Used the clean public mirror
+    `/Users/hermes-dev/HermesMobileDev/public-mirrors/codex-mobile-web-public`.
+  - Public merge commits pushed:
+    - #68: `112873cb3a48238883a6355b3f55fedca7207340`
+    - #69: `f6b35f032a342557becd15fe7bd730967448dbcc`
+  - GitHub marked both PRs `MERGED`.
+- Public validation:
+  - Home AI `node tests/ios-pwa-live-debug-server.test.js` passed.
+  - Home AI `node tests/ios-pwa-visual-harness.test.js` passed.
+  - Home AI `node tests/static-cache-version-harness.test.js` passed.
+  - Home AI `node tests/architecture-code-test-harness-map.test.js` passed.
+  - AI Ops lane `ios-pwa-1` was allocated for the H2 static/visual plan and
+    released after source harness checks.
+  - Syntax checks for touched server/public/adapter/test JS passed.
+  - Focused static-compression, echo, projection, render, viewport, visibility,
+    goal, and task-card tests passed: 102/102.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed: 483/483.
+  - `git diff --check` passed.
+  - Privacy scans over `origin/main..HEAD` found no tracked `.agent-context`,
+    runtime state, local keys, upload roots, or machine diagnostics. The only
+    sensitive-word match was the README policy sentence saying credentials and
+    uploads are not included in the repository.
+  - Evidence ledger: `evidence-9b1fafd8-0618-42d8-a1fc-1430b0d66f74`.
+- Private reverse sync:
+  - Merged public `main` back into private with no conflicts.
+  - Private merge commit: `1785d3f`.
+  - Excluding `.agent-context`, private and `public/main` had no diff after the
+    merge.
+- Private validation:
+  - Syntax checks for touched server/public/adapter/test JS passed.
+  - Focused static-compression, echo, projection, render, viewport, visibility,
+    goal, and task-card tests passed: 102/102.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `node scripts/plugin-workspace-platform-contract-check.js --plugin codex-mobile --json`
+    passed with the existing non-blocking `handoff_pointer_missing` warning.
+  - `npm test` passed: 483/483.
+  - `git diff --check` passed.
+  - Evidence ledger: `evidence-ccf7d319-592c-4182-84f3-30ddb62039c7`.
+
 ## 2026-06-14 Public PR #66/#67 Markdown And Preview Zoom Sync
 
 - Public PRs:
