@@ -602,6 +602,26 @@
     </div>
   </div>
 
+  <div id="imagePreviewDialog" class="image-preview-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="imagePreviewTitle">
+    <div class="image-preview-panel">
+      <div class="image-preview-head">
+        <div class="image-preview-title-wrap">
+          <div id="imagePreviewTitle" class="image-preview-title">图片预览</div>
+          <div id="imagePreviewMeta" class="image-preview-meta"></div>
+        </div>
+        <div class="image-preview-actions">
+          <button class="image-preview-tool" id="imagePreviewZoomOut" type="button" data-image-preview-action="zoom-out" aria-label="缩小图片" title="缩小">-</button>
+          <button class="image-preview-tool image-preview-tool-reset" id="imagePreviewZoomReset" type="button" data-image-preview-action="reset" aria-label="重置图片缩放" title="重置">100%</button>
+          <button class="image-preview-tool" id="imagePreviewZoomIn" type="button" data-image-preview-action="zoom-in" aria-label="放大图片" title="放大">+</button>
+          <button id="imagePreviewClose" class="icon-button" type="button" aria-label="关闭图片预览" title="关闭">×</button>
+        </div>
+      </div>
+      <div id="imagePreviewStage" class="image-preview-stage">
+        <img id="imagePreviewImage" class="image-preview-image" alt="" draggable="false">
+      </div>
+    </div>
+  </div>
+
   <div id="mermaidPreviewDialog" class="mermaid-preview-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="mermaidPreviewTitle">
     <div class="mermaid-preview-panel">
       <div class="mermaid-preview-head">
