@@ -2707,6 +2707,22 @@ function sessionIndexDisplayName(entry) {
   return fallbackDisplayText(entry && (entry.thread_name || entry.name || entry.title), 120);
 }
 
+function applySessionIndexTitleToThread(thread, entry) {
+  if (!thread || typeof thread !== "object") return thread;
+  const id = String(thread.id || "").trim();
+  const name = sessionIndexDisplayName(entry);
+  if (!id || !name) return thread;
+  const next = Object.assign({}, thread, {
+    name,
+    preview: name,
+  });
+  const updatedAt = entry && (entry.updated_at || entry.updatedAt);
+  if (updatedAt && timestampToMs(updatedAt) >= timestampToMs(next.updatedAt || next.updated_at)) {
+    next.updatedAt = Math.floor(timestampToMs(updatedAt) / 1000);
+  }
+  return next;
+}
+
 function hydrateThreadListTitlesFromSessionIndex(threads, indexEntries = readSessionIndexEntries()) {
   if (!Array.isArray(threads) || !threads.length || !indexEntries || typeof indexEntries.get !== "function") {
     return threads;
@@ -2716,16 +2732,7 @@ function hydrateThreadListTitlesFromSessionIndex(threads, indexEntries = readSes
     const id = String(thread.id || "").trim();
     if (!id) return thread;
     const entry = indexEntries.get(id);
-    const name = sessionIndexDisplayName(entry);
-    if (!name) return thread;
-    const next = Object.assign({}, thread);
-    if (isRecoverableThreadListTitle(next.name || next.title, id)) next.name = name;
-    if (isRecoverableThreadListTitle(next.preview, id)) next.preview = name;
-    const updatedAt = entry && (entry.updated_at || entry.updatedAt);
-    if (updatedAt && timestampToMs(updatedAt) >= timestampToMs(next.updatedAt || next.updated_at)) {
-      next.updatedAt = Math.floor(timestampToMs(updatedAt) / 1000);
-    }
-    return next;
+    return applySessionIndexTitleToThread(thread, entry);
   });
 }
 
@@ -4071,6 +4078,7 @@ function prepareProjectedThreadReadResult(cached, summary, runtimeSettings) {
   });
   const result = compactThreadReadResult(mergedResult, { maxTurns: MAX_FULL_THREAD_TURNS });
   if (!result.thread) return null;
+  result.thread = applySessionIndexTitleToThread(result.thread, readSessionIndexEntries().get(result.thread.id));
   result.thread = mergeThreadRuntimeFromStateDb(result.thread, summary);
   result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
   result.thread.mobileReadMode = cached.dynamic ? "projection-dynamic" : "projection-cache";
@@ -10464,6 +10472,7 @@ async function handleApi(req, res) {
         resetOnTimeout: false,
       }), { maxTurns: MAX_FULL_THREAD_TURNS });
       if (result.thread) {
+        result.thread = applySessionIndexTitleToThread(result.thread, readSessionIndexEntries().get(threadId));
         threadDisplaySummaryCache.remember(result.thread);
         result.thread = mergeThreadRuntimeFromStateDb(result.thread, summary);
         result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);

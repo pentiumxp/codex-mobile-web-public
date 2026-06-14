@@ -2,6 +2,35 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-14 Continuation Session Index Title Recovery
+
+- Status: implemented locally, not deployed in this step.
+- Follow-up to the compressed continuation naming issue where the `星盘`
+  source thread could fall back to an old first-message title.
+- Root cause:
+  - The previous fix made continuation creation prefer the browser-provided
+    `sourceThreadTitle`, but thread list/detail hydration still treated
+    `session_index.jsonl` titles as a fallback only for UUID/bootstrap-looking
+    rows.
+  - If app-server returned a plausible but stale first-message title, Mobile Web
+    could keep that stale `name` in `state.currentThread`, then pass it back as
+    the next continuation source title.
+- Fix:
+  - `server.js` now applies a `session_index.jsonl` display title to thread
+    list/detail/projection results whenever the index has a title for the
+    thread; the index timestamp only advances sort recency when it is newer.
+  - `public/app.js` continuation dialog/request paths now use
+    `threadTitleForDisplay(thread)` consistently.
+  - PWA shell cache advanced to `codex-mobile-shell-v283`.
+  - `docs/COMPLEX_FEATURE_PATHS.md` documents the session-index title recovery
+    rule for rollout continuation.
+- Validation:
+  - `node --check server.js`
+  - `node --check public/app.js && node --check public/sw.js`
+  - `node --test test/thread-visibility.test.js test/new-thread-route.test.js test/continuation-lineage.test.js`
+  - `npm run check`
+  - `git diff --check`
+
 ## 2026-06-14 Continuation Title Source Priority Fix
 
 - User reported that a compressed continuation of the `星盘` thread opened with

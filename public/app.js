@@ -326,7 +326,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v282";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v283";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -8314,7 +8314,7 @@ function openContinuationDialog(sourceThread) {
   const dialog = $("continuationDialog");
   if (!dialog) return false;
   state.continuationDialogThreadId = threadId || "__current__";
-  const title = thread.name || thread.preview || thread.id || "current thread";
+  const title = threadTitleForDisplay(thread) || "current thread";
   const titleNode = $("continuationTitle");
   const summaryNode = $("continuationSummary");
   if (titleNode) titleNode.textContent = `压缩续接“${title}”`;
@@ -9890,7 +9890,7 @@ function startThreadRequestBody(sourceThread = null, options = {}) {
   return {
     cwd: thread.cwd || state.selectedCwd || "",
     sourceThreadId: thread.id || "",
-    sourceThreadTitle: thread.name || thread.preview || thread.id || "",
+    sourceThreadTitle: threadTitleForDisplay(thread) || thread.id || "",
     archiveSourceThread: Boolean(options.archiveSourceThread && thread.id),
   };
 }
@@ -10034,7 +10034,7 @@ async function startNewThreadFromThread(sourceThread, event) {
   const body = {
     cwd,
     sourceThreadId: thread.id || "",
-    sourceThreadTitle: thread.name || thread.preview || thread.id || "",
+    sourceThreadTitle: threadTitleForDisplay(thread) || thread.id || "",
     archiveSourceThread: Boolean(thread.id),
   };
   if (!body.cwd) {
