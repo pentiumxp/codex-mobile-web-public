@@ -4,6 +4,8 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：v289 修正 Public PR 提示的陈旧状态。点击 PR 入口前会强制刷新 GitHub 开放 PR 状态，避免 15 分钟缓存导致“已合并 PR”仍继续生成合并任务；刷新失败时不再保留旧的可执行 PR 列表；没有开放 PR 时顶部 PR 提示会隐藏，更新面板里的按钮只作为重新检查入口显示为 `Check PR`，检测到开放 PR 后才显示 `Review Public PR`。PWA shell cache 升级到 `codex-mobile-shell-v289`，更新后需要重启 Node listener；已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端逻辑。
+
 - 中文说明：server-only 合并 public PR #70，缓存线程列表 fallback 聚合结果。`/api/threads` 在 app-server 列表可用或失败回退时都会记录 bounded 耗时诊断，并把 state DB、rollout sessions 与 `session_index.jsonl` 合并出的 fallback 列表按可见 workspace/projectless 范围、搜索词和源文件 fingerprint 短暂缓存，减少移动端频繁刷新线程列表时重复扫描本地状态文件。启动新线程、改名和本地归档会清空该缓存；本次不改变 PWA shell cache，更新后需要重启 Node listener 才会生效。本次 public 发布只包含公开源码、README 和测试；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
 
 - 中文说明：v288 增加移动端加载与渲染性能诊断事件，并为静态文本资源开启带缓存的 `br` / `gzip` 压缩。前端会通过现有 `/api/client-events` 上报 `shell_loaded`、`thread_list_rendered`、`thread_detail_first_paint`、`thread_detail_full_ready`、`conversation_render_ms`、`mermaid_hydrate_ms` 和 `github_cards_hydrate_ms`，用于后续量化首屏、线程列表、线程详情、Markdown/Mermaid/GitHub 卡片渲染耗时。线程详情首屏先读取最近 turns，再后台补完整 `thread/read`。服务端会按浏览器 `Accept-Encoding` 压缩 JS/CSS/HTML/JSON/SVG 等文本资源，压缩结果按文件路径、大小、mtime 和编码缓存；图片仍原样返回。PWA shell cache 升级到 `codex-mobile-shell-v288`，更新后需要重启 Node listener；已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端诊断逻辑。

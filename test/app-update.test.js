@@ -196,6 +196,18 @@ test("public pull request check prompts before public publishing work", () => {
   assert.match(appJs, /handlePublicPrStatusClick\(\)\.catch\(showError\)/);
 });
 
+test("public pull request prompt clears stale merged PR state", () => {
+  assert.match(appJs, /function publicPrHasOpenPullRequests\(status\)/);
+  assert.match(functionBody(appJs, "handlePublicPrStatusClick"), /refreshPublicPrStatus\(\{ force: true, skipPrompt: true \}\)/);
+  assert.match(functionBody(appJs, "handlePublicPrStatusClick"), /!publicPrHasOpenPullRequests\(status\)/);
+  assert.match(functionBody(appJs, "renderPublicPrStatus"), /el\.classList\.toggle\("hidden", !checking && !hasPrs && !blocked\)/);
+  assert.match(functionBody(appJs, "refreshPublicPrStatus"), /hasOpenPullRequests: false/);
+  assert.match(functionBody(appJs, "refreshPublicPrStatus"), /openPullRequestCount: 0/);
+  assert.match(functionBody(appJs, "refreshPublicPrStatus"), /pullRequests: \[\]/);
+  assert.match(functionBody(appJs, "renderUpdatePanel"), /hasPublicPrs\s*\?\s*"Review Public PR"\s*:\s*"Check PR"/);
+  assert.match(functionBody(appJs, "renderUpdatePanel"), /primary: hasPublicPrs/);
+});
+
 test("public pull request prompt targets visible source workspace when production path is not visible", () => {
   const publicPrReviewWorkspacePath = evaluatedPublicPrReviewWorkspacePath();
   assert.equal(publicPrReviewWorkspacePath({
