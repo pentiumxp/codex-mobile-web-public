@@ -2,6 +2,43 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-15 Public PR Stale Prompt Fix
+
+- Status: implemented locally, not committed, not deployed.
+- User-visible issue:
+  - After a public PR was merged and the checkout was already current, the
+    Mobile update/PR menu could still show an old pending PR state and allow
+    preparing another merge task.
+- Root cause:
+  - The frontend reused a cached `state.publicPrStatus` when the PR chip/button
+    was clicked, and the server-side PR check cache can last 15 minutes.
+  - On PR refresh failure, the frontend merged the error onto the previous PR
+    status, so old `hasOpenPullRequests=true` / `pullRequests` could remain
+    actionable.
+- Fix:
+  - `handlePublicPrStatusClick()` now always calls
+    `refreshPublicPrStatus({ force: true, skipPrompt: true })` before deciding
+    whether to prepare a public merge task.
+  - PR refresh errors clear stale actionable PR fields:
+    `hasOpenPullRequests=false`, `openPullRequestCount=0`, and
+    `pullRequests=[]`.
+  - The top PR chip hides when not checking, not blocked, and no open PRs are
+    present.
+  - The update panel labels the PR action as `Check PR` when no open PRs are
+    known, and `Review Public PR` only when a fresh/open PR state exists.
+  - PWA shell cache advanced to `codex-mobile-shell-v289`.
+  - `README.md` includes a Chinese release note for v289.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js && node --check test/app-update.test.js`
+    passed.
+  - `node --test test/app-update.test.js test/public-pull-request-service.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    passed: 30/30.
+  - `npm run check` passed.
+  - `npm test` passed: 484/484.
+  - `node --test test/app-update.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    passed: 26/26 after README update.
+  - `git diff --check` passed.
+
 ## 2026-06-14 Public PR #70 Thread List Fallback Cache Sync
 
 - Public PR:

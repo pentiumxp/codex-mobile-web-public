@@ -331,7 +331,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v288";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v289";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -2195,6 +2195,10 @@ function updateActionButton(action, label, options = {}) {
   return `<button type="button" class="${escapeHtml(classes.join(" "))}" data-update-action="${escapeHtml(action)}" ${options.disabled ? "disabled" : ""}>${escapeHtml(label)}</button>`;
 }
 
+function publicPrHasOpenPullRequests(status) {
+  return Boolean(status && status.hasOpenPullRequests);
+}
+
 function renderUpdatePanel() {
   const dialog = $("updateDialog");
   const content = $("updatePanelContent");
@@ -2205,6 +2209,12 @@ function renderUpdatePanel() {
   const release = state.publicReleaseStatus || {};
   const publicCheckout = currentUpdateUsesPublicRelease(current) || Boolean(release.currentCheckoutUsesPublicRelease);
   const canApplyCurrent = Boolean(current.updateAvailable && current.canFastForward && !state.appUpdateBusy && !state.appUpdateRestarting);
+  const hasPublicPrs = publicPrHasOpenPullRequests(state.publicPrStatus);
+  const publicPrActionLabel = state.publicPrBusy
+    ? "Checking PR..."
+    : hasPublicPrs
+      ? "Review Public PR"
+      : "Check PR";
   const currentButtons = [
     updateActionButton("refresh-current", state.appUpdateBusy ? "Checking..." : "Check current", { disabled: state.appUpdateBusy }),
     updateActionButton("apply-current", publicCheckout ? "Update from Public" : "Apply current update", {
@@ -2216,8 +2226,9 @@ function renderUpdatePanel() {
     updateActionButton("refresh-public", state.publicReleaseBusy ? "Checking..." : "Check Public", {
       disabled: state.publicReleaseBusy || !state.publicReleaseEnabled,
     }),
-    updateActionButton("public-pr", state.publicPrBusy ? "Checking PR..." : "Public PR", {
+    updateActionButton("public-pr", publicPrActionLabel, {
       disabled: state.publicPrBusy || !state.publicPrEnabled,
+      primary: hasPublicPrs,
     }),
   ].join("");
   content.innerHTML = `
@@ -2305,7 +2316,7 @@ function scheduleStartupUpdateCheck() {
 }
 
 function publicPrPromptKey(status) {
-  if (!status || !status.hasOpenPullRequests) return "";
+  if (!publicPrHasOpenPullRequests(status)) return "";
   const pullRequests = Array.isArray(status.pullRequests) ? status.pullRequests : [];
   const marker = pullRequests
     .map((pr) => `#${pr.number || ""}:${pr.updatedAt || ""}`)
@@ -2399,7 +2410,7 @@ function renderPublicPrStatus() {
   const status = state.publicPrStatus || {};
   const enabled = state.publicPrEnabled && status.enabled !== false;
   const checking = state.publicPrBusy || Boolean(status.checking);
-  const hasPrs = Boolean(status.hasOpenPullRequests);
+  const hasPrs = publicPrHasOpenPullRequests(status);
   const blocked = Boolean(status.error || status.supported === false);
   let label = "Public PR";
   let title = state.publicPrRepository ? `Check ${state.publicPrRepository} pull requests` : "Check public pull requests";
@@ -2418,7 +2429,7 @@ function renderPublicPrStatus() {
   }
   el.textContent = label;
   el.title = title;
-  el.classList.toggle("hidden", !enabled && !status.error);
+  el.classList.toggle("hidden", !checking && !hasPrs && !blocked);
   el.classList.toggle("available", hasPrs);
   el.classList.toggle("blocked", blocked);
   el.classList.toggle("checking", checking);
@@ -2445,6 +2456,9 @@ async function refreshPublicPrStatus(options = {}) {
     state.publicPrStatus = Object.assign({}, state.publicPrStatus || {}, {
       enabled: state.publicPrEnabled,
       repository: state.publicPrRepository,
+      hasOpenPullRequests: false,
+      openPullRequestCount: 0,
+      pullRequests: [],
       error: state.publicPrError,
     });
     return state.publicPrStatus;
@@ -2525,7 +2539,7 @@ function rememberPublicPrPrompt(status) {
 }
 
 function maybePromptPublicPrMerge(status) {
-  if (!status || !status.hasOpenPullRequests) return;
+  if (!publicPrHasOpenPullRequests(status)) return;
   const key = publicPrPromptKey(status);
   if (!key || key === state.publicPrPromptedKey) return;
   const confirmed = window.confirm([
@@ -2540,16 +2554,13 @@ function maybePromptPublicPrMerge(status) {
 
 async function handlePublicPrStatusClick() {
   if (state.publicPrBusy) return;
-  let status = state.publicPrStatus;
-  if (!status || !status.checkedAt || status.error) {
-    status = await refreshPublicPrStatus({ force: true, skipPrompt: true });
-  }
+  const status = await refreshPublicPrStatus({ force: true, skipPrompt: true });
   if (!status) return;
-  if (status.error && !status.hasOpenPullRequests) {
+  if (status.error && !publicPrHasOpenPullRequests(status)) {
     window.alert(`public PR 检查失败：${status.error}`);
     return;
   }
-  if (!status.hasOpenPullRequests) {
+  if (!publicPrHasOpenPullRequests(status)) {
     window.alert("当前未检测到 public 开放 PR。");
     return;
   }
