@@ -73,8 +73,8 @@ test("mobile viewport and early guards disable page zoom", () => {
 });
 
 test("public app shell cache advances after thread side chat panel", () => {
-  assert.match(swJs, /codex-mobile-shell-v290/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v290"/);
+  assert.match(swJs, /codex-mobile-shell-v291/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v291"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);
@@ -121,6 +121,7 @@ test("public app shell cache advances after thread side chat panel", () => {
   assert.match(appJs, /postPerformanceEvent\("conversation_render_ms"/);
   assert.match(appJs, /postPerformanceEvent\("github_cards_hydrate_ms"/);
   assert.match(appJs, /postPerformanceEvent\("mermaid_hydrate_ms"/);
+  assert.match(appJs, /postPerformanceEvent\("thread_refresh_ms"/);
   assert.match(appJs, /state\.startupThreadOpenPending = hasStartupThreadOpenIntent\(\);[\s\S]*early_opening_rendered/);
   assert.match(appJs, /async function fetchPublicConfigWithRetry\(startedAt\)/);
   assert.match(appJs, /PUBLIC_CONFIG_RETRY_DELAYS_MS = \[0, 300, 1200\]/);
@@ -173,7 +174,7 @@ test("public app shell cache advances after thread side chat panel", () => {
   assert.match(appJs, /maybeAutoRecoverTurnAfterReconnect\(payload\.status, "app-server-reconnect"\)/);
   assert.match(appJs, /if \(state\.currentThreadId && state\.currentThread && !state\.currentThread\.mobileLoading && !state\.currentThread\.mobileLoadError\) \{/);
   assert.match(appJs, /return shouldPollCurrentThread\(\) \|\| currentThreadListRowChanged\(\);/);
-  assert.match(appJs, /if \(currentThreadNeedsForegroundRefresh\(\)\) \{[\s\S]*scheduleCurrentThreadRefresh\(250\);[\s\S]*mobile_resume_thread_refresh_skipped[\s\S]*else if \(state\.currentThreadId\) \{[\s\S]*await refreshCurrentThread\(\);[\s\S]*else \{[\s\S]*await restoreThreadSelection\(\);/);
+  assert.match(appJs, /if \(currentThreadNeedsForegroundRefresh\(\)\) \{[\s\S]*scheduleCurrentThreadRefresh\(250\);[\s\S]*mobile_resume_thread_refresh_skipped[\s\S]*else if \(state\.currentThreadId\) \{[\s\S]*await refreshCurrentThread\(\{ source: "resume" \}\);[\s\S]*else \{[\s\S]*await restoreThreadSelection\(\);/);
   assert.match(appJs, /async function restoreThreadSelection\(\) \{[\s\S]*if \(isHermesEmbedMode\(\)\) \{[\s\S]*showHermesPluginPrimaryPage\(\);[\s\S]*return;/);
   assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*publishPluginNavigationState\(\{ force: true \}\);\s*\n\s*updateComposerControls\(\);/);
   assert.doesNotMatch(appJs, /function shouldOpenLargeThreadHistoryAtTop/);
@@ -217,6 +218,9 @@ test("public app shell cache advances after thread side chat panel", () => {
   assert.match(appJs, /turns-list-initial/);
   assert.match(appJs, /function threadDetailApiPath\(threadId, params = \{\}\)/);
   assert.match(appJs, /api\(threadDetailApiPath\(threadId, \{ mode: "recent" \}\)/);
+  assert.match(appJs, /async function refreshCurrentThread\(options = \{\}\)/);
+  assert.match(appJs, /const requestedMode = options\.full === true \|\| String\(options\.mode \|\| ""\)\.toLowerCase\(\) === "full"[\s\S]*\? "full"[\s\S]*: "recent";/);
+  assert.match(appJs, /api\(threadDetailApiPath\(threadId, requestedMode === "recent" \? \{ mode: "recent" \} : \{\}\)/);
   assert.match(appJs, /if \(shouldBackfillFullThreadDetail\(result\.thread\)\) \{/);
   assert.match(appJs, /backfillFullThreadDetail\(threadId, \{ seq, source \}\)\.catch\(\(\) => \{\}\)/);
   assert.match(appJs, /postPerformanceEvent\("thread_detail_full_ready"/);
