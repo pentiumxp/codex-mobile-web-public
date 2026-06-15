@@ -4,7 +4,11 @@ Last compacted: 2026-06-08T13:27:43.304Z
 
 ## 2026-06-15 Windows Desktop Hidden Launcher Fix
 
-- Status: implemented locally, ready to commit and push public.
+- Status: committed, pushed private, pushed public, and public merged back into
+  private.
+  - Private implementation commit: `6cbd1f4`.
+  - Public commit: `6a2d121`.
+  - Private public-sync merge commit: `81f8f6a`.
 - User-visible issue:
   - On Windows, several PowerShell console windows could appear and remain in
     front when using Codex Desktop profile launch shortcuts.
@@ -33,6 +37,12 @@ Last compacted: 2026-06-08T13:27:43.304Z
   - `npm run check` passed.
   - `npm test` passed: 486/486.
   - `git diff --check` passed.
+  - In the public mirror, the same focused 22/22 test set, `npm run check`,
+    and `git diff --check` passed before pushing `6a2d121`.
+  - Public diff/path privacy scan covered only `README.md`,
+    `start-codex-desktop-*.cmd`, and `test/desktop-profile-launcher.test.js`;
+    no `.agent-context`, runtime state, local keys, uploads, or private paths
+    were included.
 
 ## 2026-06-15 Public PR #72/#71 New Thread Echo And Refresh Path Sync
 
