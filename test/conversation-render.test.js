@@ -216,6 +216,75 @@ return mergeItemsPreservingLocalVisible;
 	`)();
 }
 
+function evaluatedMergeThreadPreservingVisibleItems() {
+  const sources = [
+    "normalizeFsPath",
+    "imageUrlValue",
+    "isInputTextPart",
+    "inputTextValue",
+    "isTruncatedImagePayloadPart",
+    "isInputImagePart",
+    "attachmentSummaryMarkerMatch",
+    "stripAttachmentSummaryLinePrefix",
+    "parseAttachmentLine",
+    "splitAttachmentSummaryText",
+    "isMuxUserMessage",
+    "isOptimisticUserMessage",
+    "isTurnUsageSummaryItem",
+    "normalizeComparableText",
+    "userMessageComparableParts",
+    "userMessagePathOverlap",
+    "comparablePathName",
+    "userMessagePathNameOverlap",
+    "userMessageSpecificity",
+    "userMessagesLikelySame",
+    "userMessagesCanShadow",
+    "hasMatchingIncomingUserMessage",
+    "hasMatchingRealUserMessage",
+    "removeShadowedMuxUserMessages",
+    "userMessageShadowPriority",
+    "mergeLikelySameUserMessage",
+    "dedupeLikelySameUserMessages",
+    "normalizeThreadVisibleUserMessages",
+    "threadDurableUserMessages",
+    "shouldDropInitialSubmissionEchoTurn",
+    "threadHasInitialSubmissionEcho",
+    "comparableVisibleTextItem",
+    "comparableVisibleText",
+    "visibleTextItemsLikelySame",
+    "hasMatchingIncomingVisibleItem",
+    "mergeVisibleTextItemPreservingRenderIdentity",
+    "mergeItemsPreservingLocalVisible",
+    "mergeTurnPreservingVisibleItems",
+    "mergeThreadPreservingVisibleItems",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`
+const MAX_EXPANDED_VISIBLE_TURNS = 40;
+const state = { activeTurnId: "local-start-turn" };
+function isReasoningItem(item) { return Boolean(item && item.type === "reasoning"); }
+function itemVisibleWeight(item) { return item ? JSON.stringify(item).length : 0; }
+function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false) {
+  if (!item || itemVisibleWeight(item) <= 0) return false;
+  if (item.type === "userMessage" && /^mux-user-/.test(String(item.id || ""))) return true;
+  return preserveLocalVisible && !isReasoningItem(item);
+}
+function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
+  return Object.assign({}, existingItem || {}, incomingItem || {});
+}
+function turnVisibleWeight(turn) {
+  return (turn && Array.isArray(turn.items) ? turn.items : []).reduce((total, item) => total + itemVisibleWeight(item), 0);
+}
+function isTurnComplete(turn) {
+  const text = String(turn && (turn.status && turn.status.type || turn.status) || "").toLowerCase();
+  return /completed|failed|canceled|cancelled/.test(text);
+}
+function turnIsSupersededBy() { return false; }
+function sortTurnsForDisplay(turns) { return turns || []; }
+${sources.join("\n")}
+return mergeThreadPreservingVisibleItems;
+`)();
+}
+
 function evaluatedNormalizeThreadVisibleUserMessages() {
   const sources = [
     "normalizeFsPath",
@@ -1143,6 +1212,84 @@ test("cross-turn normalization keeps synthetic repeat when matching durable mess
   assert.equal(thread.turns[0].items[0].id, "real-user-1");
   assert.equal(thread.turns[1].items.length, 1);
   assert.equal(thread.turns[1].items[0].id, "mux-user-thread-1-turn-2-submit-2");
+});
+
+test("new-thread initial optimistic echo is dropped when durable first turn arrives with a different id", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const existingThread = {
+    id: "thread-new",
+    mobileInitialSubmissionId: "submit-first",
+    turns: [{
+      id: "local-start-turn",
+      status: { type: "active" },
+      items: [{
+        id: "local-user-submit-first",
+        type: "userMessage",
+        mobilePendingSubmission: true,
+        clientSubmissionId: "submit-first",
+        content: [{ type: "text", text: "first prompt" }],
+      }],
+    }],
+  };
+  const incomingThread = {
+    id: "thread-new",
+    turns: [{
+      id: "real-start-turn",
+      status: { type: "active" },
+      items: [{
+        id: "item-1",
+        type: "userMessage",
+        content: [{ type: "text", text: "first   prompt" }],
+      }],
+    }],
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, incomingThread);
+
+  assert.equal(merged.turns.length, 1);
+  assert.equal(merged.turns[0].id, "real-start-turn");
+  assert.deepEqual(merged.turns[0].items.map((item) => item.id), ["item-1"]);
+  assert.equal(merged.mobileInitialSubmissionId, undefined);
+});
+
+test("new-thread initial echo cleanup does not remove a later repeated prompt with another submission id", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const existingThread = {
+    id: "thread-new",
+    mobileInitialSubmissionId: "submit-first",
+    turns: [{
+      id: "local-start-turn",
+      status: { type: "active" },
+      items: [{
+        id: "local-user-submit-second",
+        type: "userMessage",
+        mobilePendingSubmission: true,
+        clientSubmissionId: "submit-second",
+        content: [{ type: "text", text: "repeat prompt" }],
+      }],
+    }],
+  };
+  const incomingThread = {
+    id: "thread-new",
+    turns: [{
+      id: "real-start-turn",
+      status: { type: "completed" },
+      items: [{
+        id: "item-1",
+        type: "userMessage",
+        content: [{ type: "text", text: "repeat prompt" }],
+      }],
+    }],
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, incomingThread);
+
+  assert.equal(merged.turns.length, 2);
+  assert.deepEqual(merged.turns.flatMap((turn) => turn.items.map((item) => item.id)), [
+    "item-1",
+    "local-user-submit-second",
+  ]);
+  assert.equal(merged.mobileInitialSubmissionId, undefined);
 });
 
 test("live user message upsert collapses mux echoes before refresh", () => {

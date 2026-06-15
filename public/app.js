@@ -331,7 +331,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v289";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v290";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -4209,6 +4209,42 @@ function normalizeThreadVisibleUserMessages(thread) {
   return thread;
 }
 
+function threadDurableUserMessages(turns) {
+  const messages = [];
+  for (const turn of turns || []) {
+    const items = Array.isArray(turn && turn.items) ? turn.items : [];
+    for (const item of items) {
+      if (item && item.type === "userMessage" && !isOptimisticUserMessage(item)) messages.push(item);
+    }
+  }
+  return messages;
+}
+
+function shouldDropInitialSubmissionEchoTurn(existingTurn, incomingTurns, initialSubmissionId) {
+  const submissionId = String(initialSubmissionId || "").trim();
+  if (!submissionId || !existingTurn || !Array.isArray(existingTurn.items)) return false;
+  const visibleItems = existingTurn.items.filter((item) => item && itemVisibleWeight(item) > 0 && !isReasoningItem(item));
+  const submittedEchoes = visibleItems.filter((item) => item
+    && item.type === "userMessage"
+    && isOptimisticUserMessage(item)
+    && String(item.clientSubmissionId || "") === submissionId);
+  if (!submittedEchoes.length || submittedEchoes.length !== visibleItems.length) return false;
+  const durableMessages = threadDurableUserMessages(incomingTurns);
+  return submittedEchoes.every((echo) => durableMessages.some((real) => userMessagesCanShadow(real, echo)));
+}
+
+function threadHasInitialSubmissionEcho(thread, initialSubmissionId) {
+  const submissionId = String(initialSubmissionId || "").trim();
+  if (!submissionId || !thread || !Array.isArray(thread.turns)) return false;
+  return thread.turns.some((turn) => {
+    const items = Array.isArray(turn && turn.items) ? turn.items : [];
+    return items.some((item) => item
+      && item.type === "userMessage"
+      && isOptimisticUserMessage(item)
+      && String(item.clientSubmissionId || "") === submissionId);
+  });
+}
+
 function comparableVisibleTextItem(item) {
   return Boolean(item && (item.type === "agentMessage" || item.type === "plan"));
 }
@@ -4347,6 +4383,7 @@ function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
   const existingTurns = Array.isArray(existingThread.turns) ? existingThread.turns : [];
   const incomingTurns = Array.isArray(incomingThread.turns) ? incomingThread.turns : null;
   const existingById = new Map(existingTurns.map((turn) => [turn.id, turn]));
+  const initialSubmissionId = String(existingThread.mobileInitialSubmissionId || "");
   const merged = Object.assign({}, existingThread, incomingThread);
   if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoading")) {
     delete merged.mobileLoading;
@@ -4371,6 +4408,7 @@ function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
   let preservedExpandedTurnCount = 0;
   for (const existingTurn of existingTurns) {
     if (!existingTurn || incomingIds.has(existingTurn.id)) continue;
+    if (shouldDropInitialSubmissionEchoTurn(existingTurn, merged.turns, initialSubmissionId)) continue;
     if (preserveExpandedHistory) {
       merged.turns.push(existingTurn);
       preservedExpandedTurnCount += 1;
@@ -4388,7 +4426,9 @@ function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
       merged.mobileOmittedTurnCount = Math.max(0, Number(merged.mobileOmittedTurnCount || 0) - preservedExpandedTurnCount);
     }
   }
-  return normalizeThreadVisibleUserMessages(merged);
+  const normalized = normalizeThreadVisibleUserMessages(merged);
+  if (!threadHasInitialSubmissionEcho(normalized, initialSubmissionId)) delete normalized.mobileInitialSubmissionId;
+  return normalized;
 }
 
 function turnOrderMs(turn) {
@@ -14972,6 +15012,7 @@ async function sendNewThreadMessage(text, hasContent, input) {
       cwd: (result && result.thread && result.thread.cwd) || state.selectedCwd || "",
       status: { type: "active" },
       turns: [],
+      mobileInitialSubmissionId: clientSubmissionId,
     }, result.thread || {});
     if (submittedTitle) {
       thread.name = submittedTitle;
