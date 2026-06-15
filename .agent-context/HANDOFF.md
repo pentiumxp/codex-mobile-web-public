@@ -2,9 +2,82 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-15 Public PR #72/#71 New Thread Echo And Refresh Path Sync
+
+- Public/private baseline:
+  - Private already had local public-safe commit
+    `5fc4bfb fix: 清理已合并 Public PR 提示`, which updated public source to
+    shell cache `codex-mobile-shell-v289` and added the README v289 note.
+  - To keep public/private from diverging, first applied that public-safe diff
+    to the clean public mirror excluding `.agent-context`, committed it as
+    public `36a7b6b fix: clear merged public PR prompt`, and pushed public.
+- Public PRs:
+  - Evaluated `pentiumxp/codex-mobile-web-public` PR #72,
+    `修复新线程首条用户消息重复显示`, and PR #71,
+    `优化当前线程后台刷新路径`.
+  - Both were open, non-draft, and GitHub-reported mergeable, with old base
+    `3370b9a`.
+  - #72 adds `mobileInitialSubmissionId` handling so a new thread's local
+    optimistic first user message is dropped once the durable first turn arrives
+    with matching content but a different turn id.
+  - #71 makes background current-thread refreshes request recent detail by
+    default, keeps the last post-completion refresh as full detail, and emits
+    bounded `thread_refresh_ms` performance events.
+  - Because v289 was already used by the local public PR prompt fix, #72 was
+    merged as shell cache `codex-mobile-shell-v290` and #71 as
+    `codex-mobile-shell-v291`.
+- Public merge:
+  - Used the clean public mirror
+    `/Users/hermes-dev/HermesMobileDev/public-mirrors/codex-mobile-web-public`.
+  - Public commits pushed:
+    - local public-safe v289 sync: `36a7b6b`
+    - #72 merge: `29af25f4b04349b6ed8da771848fccc4ac667b3a`
+    - #71 merge: `f33e829066ca8dcc65733b3a258075799bebc102`
+  - GitHub marked PR #72 and PR #71 `MERGED`.
+- Public validation:
+  - Focused syntax checks for `public/app.js`, `public/sw.js`, and touched
+    tests passed.
+  - Focused UI/projection tests passed: `node --test
+    test/conversation-render.test.js test/mobile-viewport.test.js
+    test/app-update.test.js test/turn-scroll-controls.test.js
+    test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    passed 77/77.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - Home AI `node tests/architecture-code-test-harness-map.test.js` passed.
+  - `npm test` passed: 486/486.
+  - `git diff --check` passed.
+  - Public privacy/path scans found no tracked `.agent-context`, runtime state,
+    local keys, upload roots, or machine diagnostics. The only sensitive-word
+    match was the README policy sentence saying runtime state and private
+    files are not copied.
+  - Evidence ledger: `evidence-ba53c4ef-84bb-49b9-904c-b7153efa82ef`.
+- Private reverse sync:
+  - Merged public `main` back into private with expected conflicts against the
+    earlier private v289 commit.
+  - Resolved conflicted public source files by taking `public/main` content
+    while preserving private `.agent-context`.
+  - Private merge commit: `cada455`.
+  - Excluding `.agent-context`, private and `public/main` had no diff after the
+    merge.
+- Private validation:
+  - Same focused syntax/UI/projection tests passed: 77/77.
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `node scripts/plugin-workspace-platform-contract-check.js --plugin codex-mobile --json`
+    passed with the existing non-blocking `handoff_pointer_missing` warning.
+  - Home AI `node tests/architecture-code-test-harness-map.test.js` passed.
+  - `npm test` passed: 486/486.
+  - `git diff --check` passed.
+  - Privacy diff scan over `public/main..HEAD`, excluding `.agent-context`,
+    had no matches. `git ls-files` showed only the private workspace's existing
+    tracked `.agent-context/HANDOFF.md` and `.agent-context/PROJECT_CONTEXT.md`.
+  - Evidence ledger: `evidence-65b2bb58-3405-4413-a745-46b60db3c7d0`.
+
 ## 2026-06-15 Public PR Stale Prompt Fix
 
-- Status: implemented locally, not committed, not deployed.
+- Status: committed locally as `5fc4bfb`, synced to public as clean public
+  commit `36a7b6b`, and included in the 2026-06-15 public/private sync above.
 - User-visible issue:
   - After a public PR was merged and the checkout was already current, the
     Mobile update/PR menu could still show an old pending PR state and allow
