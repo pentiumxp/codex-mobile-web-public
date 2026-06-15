@@ -2,6 +2,38 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-15 Windows Desktop Hidden Launcher Fix
+
+- Status: implemented locally, ready to commit and push public.
+- User-visible issue:
+  - On Windows, several PowerShell console windows could appear and remain in
+    front when using Codex Desktop profile launch shortcuts.
+- Root cause:
+  - `start-codex-desktop-default.cmd`,
+    `start-codex-desktop-current.cmd`, and
+    `start-codex-desktop-previous.cmd` directly invoked
+    `powershell.exe -File start-codex-desktop-shared.ps1`, so any shortcut or
+    double-click path through those wrappers created a visible console. The
+    shared PS1 also prints launch environment diagnostics, which can make the
+    window persist while Desktop remains open.
+- Fix:
+  - The three Desktop profile `.cmd` wrappers now launch
+    `start-codex-desktop-shared-hidden.vbs` through `wscript.exe` with the same
+    `-ProfileId <profile> -ForceRestartMux` arguments, then exit immediately.
+  - Existing Mobile Web scheduled-task/windowless path remains unchanged:
+    scheduled startup still uses `wscript.exe` plus
+    `start-codex-mobile-web-hidden.vbs`; the plain
+    `start-codex-mobile-web.ps1` remains a foreground/manual diagnostic entry.
+  - No PWA shell cache bump was needed.
+  - `README.md` includes a Chinese release note for the Windows hidden launcher
+    change.
+- Validation:
+  - `node --test test/desktop-profile-launcher.test.js test/shared-chain-restart-service.test.js test/manual-restart-ui.test.js`
+    passed: 22/22.
+  - `npm run check` passed.
+  - `npm test` passed: 486/486.
+  - `git diff --check` passed.
+
 ## 2026-06-15 Public PR #72/#71 New Thread Echo And Refresh Path Sync
 
 - Public/private baseline:

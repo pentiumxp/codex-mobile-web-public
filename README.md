@@ -4,6 +4,8 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：Windows Desktop profile 快捷入口改为通过 `start-codex-desktop-shared-hidden.vbs` 和 `wscript.exe` 启动共享 mux，不再直接从 `.cmd` 常驻前台运行 `powershell.exe`。这会减少 Windows 上切换 default/current/previous Desktop profile 时出现的 PowerShell 控制台窗口；Mobile Web 计划任务入口仍继续使用隐藏 VBS/windowless launcher，普通 `start-codex-mobile-web.ps1` 保留为手工前台诊断入口。本次不改变 PWA shell cache。
+
 - 中文说明：v289 修正 Public PR 提示的陈旧状态。点击 PR 入口前会强制刷新 GitHub 开放 PR 状态，避免 15 分钟缓存导致“已合并 PR”仍继续生成合并任务；刷新失败时不再保留旧的可执行 PR 列表；没有开放 PR 时顶部 PR 提示会隐藏，更新面板里的按钮只作为重新检查入口显示为 `Check PR`，检测到开放 PR 后才显示 `Review Public PR`。PWA shell cache 升级到 `codex-mobile-shell-v289`，更新后需要重启 Node listener；已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端逻辑。
 
 - 中文说明：v290 修正新建对话第一条用户消息短暂重复显示的问题。Mobile Web 在新线程首轮会先保留本地 optimistic 用户消息；如果随后线程详情或事件流带回同一条 durable 用户消息但 turn id 不一致，前端现在会识别这是新线程首条提交的 echo，并丢弃本地重复 turn，避免“还没开始处理就出现两条 You”。PWA shell cache 升级到 `codex-mobile-shell-v290`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新的前端合并逻辑。

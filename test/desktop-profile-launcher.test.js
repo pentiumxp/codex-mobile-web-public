@@ -57,12 +57,15 @@ test("desktop shared launcher prepares non-auth shared profile state", () => {
   assert.doesNotMatch(sharedStateList[1], /config\.toml/);
 });
 
-test("desktop profile cmd wrappers call the shared launcher with forced mux restart", () => {
+test("desktop profile cmd wrappers use the hidden shared launcher", () => {
   for (const profile of ["default", "current", "previous"]) {
     const wrapper = fs.readFileSync(path.join(root, `start-codex-desktop-${profile}.cmd`), "utf8");
-    assert.match(wrapper, /start-codex-desktop-shared\.ps1/);
+    assert.match(wrapper, /start "" wscript\.exe "%~dp0start-codex-desktop-shared-hidden\.vbs"/);
     assert.match(wrapper, new RegExp(`-ProfileId ${profile}`));
     assert.match(wrapper, /-ForceRestartMux/);
+    assert.match(wrapper, /exit \/b 0/);
+    assert.doesNotMatch(wrapper, /powershell\.exe/i);
+    assert.doesNotMatch(wrapper, /start-codex-desktop-shared\.ps1/);
   }
 });
 
