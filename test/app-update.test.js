@@ -137,7 +137,7 @@ test("page refresh prompt also handles server restart reconnects", () => {
   assert.match(functionBody(appJs, "refreshThreadListDuringEventRecovery"), /await loadThreads\(\{ silent: isHermesEmbedMode\(\) \|\| Boolean\(state\.threads\.length\) \}\);/);
   assert.match(functionBody(appJs, "scheduleEventFallbackPoll"), /await refreshThreadListDuringEventRecovery\(\);/);
   assert.doesNotMatch(functionBody(appJs, "scheduleEventFallbackPoll"), /await loadThreads\(/);
-  assert.match(functionBody(appJs, "scheduleEventFallbackPoll"), /if \(state\.currentThreadId\) await refreshCurrentThread\(\);/);
+  assert.match(functionBody(appJs, "scheduleEventFallbackPoll"), /if \(state\.currentThreadId\) await refreshCurrentThread\(\{ source: "event-fallback-poll" \}\);/);
   assert.match(functionBody(appJs, "recoverEventStreamWithApiFallback"), /Boolean\(options\.afterEventReconnect\)/);
   assert.match(functionBody(appJs, "recoverEventStreamWithApiFallback"), /await refreshThreadListDuringEventRecovery\(\{ force: Boolean\(options\.afterEventReconnect\) \}\);/);
   assert.doesNotMatch(functionBody(appJs, "recoverEventStreamWithApiFallback"), /await loadThreads\(/);
