@@ -635,7 +635,7 @@ html.embed-hermes .composer {
 }
 
 html.embed-hermes.keyboard-open .composer {
-  padding-bottom: max(10px, var(--host-bottom-safe-area, 0px));
+  padding-bottom: 10px;
 }
 
 html.embed-hermes .login {
@@ -6533,7 +6533,7 @@ html.keyboard-open .composer {
   }
 
   html.embed-hermes.keyboard-open .composer {
-    padding-bottom: max(8px, var(--host-bottom-safe-area, 0px));
+    padding-bottom: 8px;
   }
 
   .composer-body {

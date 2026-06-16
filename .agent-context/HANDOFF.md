@@ -2,49 +2,6 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
-## 2026-06-16 Hermes Embedded WebView Viewport Draft Fix
-
-- Status: local edits only; not committed, not pushed, not deployed.
-- User-visible issue:
-  - In Home AI native APP WebView plugin mode, Codex Mobile could show a top
-    blank band and the bottom composer could be partly covered by native
-    keyboard/input chrome. The user explicitly requested that this fix not
-    affect the standalone PWA version.
-- Scope decision:
-  - The change is limited to Hermes embedded-plugin mode. `CLIENT_BUILD_ID` and
-    `public/sw.js` shell cache remain at `codex-mobile-shell-v291`; no PWA
-    shell version bump was made.
-- Changed files:
-  - `public/viewport-metrics.js`: returns `usesHostViewport` and uses the host
-    iframe viewport height when present, even without keyboard shrink.
-  - `public/app.js`: only in embedded mode, clears stale WebKit window scroll
-    after the host keyboard is no longer visible; sets `--app-height` when the
-    host viewport exists.
-  - `public/styles.css`: embedded keyboard-open composer padding now preserves
-    `--host-bottom-safe-area` instead of forcing fixed 8/10px padding.
-  - `test/viewport-metrics.test.js` and `test/mobile-viewport.test.js` cover
-    the embedded host viewport branch and the plugin-only CSS/scroll boundary.
-- Validation:
-  - `node --check public/app.js` passed.
-  - `node --check public/viewport-metrics.js` passed.
-  - `node --test test/viewport-metrics.test.js test/mobile-viewport.test.js`
-    passed: 15/15.
-  - `npm run check` passed.
-  - `npm test` passed: 487/487.
-  - Home AI `node tests/architecture-code-test-harness-map.test.js` passed.
-  - Home AI `node tests/ios-pwa-live-debug-server.test.js` passed.
-  - Home AI `node tests/ios-pwa-visual-harness.test.js` passed.
-  - `git diff --check` passed.
-- Visual lane:
-  - AI Ops lane `ios-pwa-1` was allocated and released.
-  - Temporary live debug server on `127.0.0.1:19073` was started and stopped.
-  - Real `embedded-plugin-keyboard-composer` visual run did not produce valid
-    layout evidence because the Simulator Safari/PWA surface stayed on an
-    unreachable external `home-xuxin.synology.me` page and never reached the
-    Codex plugin iframe. Do not treat that failed run as a plugin-layout
-    failure or a pass.
-  - Evidence ledger: `evidence-5411d8c9-5ee9-4199-b757-eefe6eabd875`.
-
 ## 2026-06-15 Windows Desktop Hidden Launcher Fix
 
 - Status: committed, pushed private, pushed public, and public merged back into
