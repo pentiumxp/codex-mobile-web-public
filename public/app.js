@@ -331,7 +331,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v292";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v295";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -773,7 +773,7 @@ function viewportState() {
   const hostFooter = hostViewport && hostViewport.footer && typeof hostViewport.footer === "object"
     ? hostViewport.footer
     : null;
-  return viewportMetrics.measureViewport({
+  const measured = viewportMetrics.measureViewport({
     visualHeight: window.visualViewport && window.visualViewport.height,
     visualOffsetTop: window.visualViewport && window.visualViewport.offsetTop,
     scrollTop: embedded ? Math.max(
@@ -790,6 +790,8 @@ function viewportState() {
     hostKeyboardBottomInset: embedded && hostKeyboard ? hostKeyboard.bottomInset : 0,
     hostBottomSafeArea: embedded && hostFooter ? hostFooter.safeAreaBottom : 0,
   });
+  measured.hostTopSafeArea = embedded && hostViewport ? boundedViewportNumber(hostViewport.hostTopSafeArea, 512) : 0;
+  return measured;
 }
 
 function viewportHeight() {
@@ -830,6 +832,7 @@ function updateViewportVars() {
     document.documentElement.style.removeProperty("--app-top");
     document.documentElement.style.removeProperty("--app-height");
   }
+  document.documentElement.style.setProperty("--host-top-safe-area", `${Math.max(0, Math.round(viewport.hostTopSafeArea || 0))}px`);
   document.documentElement.style.setProperty("--host-bottom-safe-area", `${Math.max(0, Math.round(viewport.hostBottomSafeArea || 0))}px`);
   document.documentElement.classList.toggle("keyboard-open", viewport.keyboardShrunk);
 }
@@ -5664,11 +5667,16 @@ function normalizeHermesPluginViewportMessage(data) {
   if (pluginId && pluginId !== "codex-mobile") return null;
   const viewport = data.viewport && typeof data.viewport === "object" ? data.viewport : {};
   const keyboard = data.keyboard && typeof data.keyboard === "object" ? data.keyboard : {};
+  const host = data.host && typeof data.host === "object" ? data.host : {};
   const footer = data.footer && typeof data.footer === "object" ? data.footer : {};
+  const topSafeArea = viewport.safeAreaTop || viewport.hostTopSafeArea
+    || host.safeAreaTop || host.topSafeArea || host.hostTopSafeArea
+    || footer.safeAreaTop || footer.topSafeArea || footer.hostTopSafeArea;
   const footerSafeArea = footer.safeAreaBottom || footer.bottomSafeArea || footer.hostBottomSafeArea || footer.safeAreaInsetBottom;
   return {
     receivedAtMs: Date.now(),
     reason: String(data.reason || "").trim().slice(0, 60),
+    hostTopSafeArea: boundedViewportNumber(topSafeArea, 512),
     viewport: {
       width: boundedViewportNumber(viewport.width),
       height: boundedViewportNumber(viewport.height),

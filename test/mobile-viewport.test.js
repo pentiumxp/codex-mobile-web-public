@@ -54,8 +54,12 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(stylesCss, /html\.embed-hermes \.app\s*{[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /html\.embed-hermes \.app\s*{[\s\S]*min-height:\s*0;/);
   assert.match(stylesCss, /html\.embed-hermes \.app\s*{[\s\S]*transform:\s*translateY\(var\(--app-top, 0px\)\);/);
+  assert.match(stylesCss, /--host-top-safe-area:\s*0px;/);
+  assert.match(stylesCss, /html\.embed-hermes \.topbar\s*{[\s\S]*padding-top:\s*calc\(6px \+ max\(env\(safe-area-inset-top, 0px\), var\(--host-top-safe-area, 0px\)\)\);[\s\S]*padding-bottom:\s*6px;/);
+  assert.match(appJs, /hostTopSafeArea:\s*boundedViewportNumber\(topSafeArea, 512\)/);
+  assert.match(appJs, /--host-top-safe-area/);
   assert.match(stylesCss, /html\.embed-hermes \.composer\s*{[\s\S]*padding-bottom:\s*max\(12px, var\(--host-bottom-safe-area, 0px\)\);/);
-  assert.match(stylesCss, /html\.embed-hermes\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*10px;/);
+  assert.match(stylesCss, /html\.embed-hermes\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*max\(10px, var\(--host-bottom-safe-area, 0px\)\);/);
   assert.match(stylesCss, /html\.embed-hermes \.main \.version-actions/);
   assert.match(indexHtml, /id="continuationDialog"/);
   assert.match(appJs, /function openContinuationDialog\(/);
@@ -65,7 +69,7 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(stylesCss, /html\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*12px;/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.composer\s*{[\s\S]*gap:\s*6px;[\s\S]*padding:\s*7px 12px clamp\(8px, calc\(env\(safe-area-inset-bottom, 0px\) - 88px\), 52px\);/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.embed-hermes \.composer\s*{[\s\S]*padding-bottom:\s*max\(12px, var\(--host-bottom-safe-area, 0px\)\);/);
-  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.embed-hermes\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*8px;/);
+  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.embed-hermes\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*max\(8px, var\(--host-bottom-safe-area, 0px\)\);/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*7px;/);
   assert.match(platformPointer, /embedded-plugin-keyboard-composer/);
   assert.match(platformPointer, /--plugin-thread-id <thread-id>/);
@@ -73,8 +77,8 @@ test("mobile viewport and early guards disable page zoom", () => {
 });
 
 test("public app shell cache advances after thread side chat panel", () => {
-  assert.match(swJs, /codex-mobile-shell-v292/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v292"/);
+  assert.match(swJs, /codex-mobile-shell-v295/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v295"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);
