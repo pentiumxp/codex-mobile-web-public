@@ -806,8 +806,23 @@ function isHermesKeyboardInputActive() {
   return isHermesEmbedMode() && isKeyboardEditableElement(document.activeElement);
 }
 
+function pluginHostKeyboardVisible() {
+  const hostViewport = state.pluginHostViewport && typeof state.pluginHostViewport === "object"
+    ? state.pluginHostViewport
+    : null;
+  const keyboard = hostViewport && hostViewport.keyboard && typeof hostViewport.keyboard === "object"
+    ? hostViewport.keyboard
+    : null;
+  return Boolean(keyboard && keyboard.visible);
+}
+
 function resetMobileKeyboardWindowScroll() {
-  if (isHermesEmbedMode() || !isKeyboardEditableElement(document.activeElement)) return;
+  const editableActive = isKeyboardEditableElement(document.activeElement);
+  if (isHermesEmbedMode()) {
+    if (editableActive || pluginHostKeyboardVisible()) return;
+  } else if (!editableActive) {
+    return;
+  }
   const scrollY = Math.max(
     0,
     Number(window.scrollY || 0) || 0,
@@ -823,7 +838,7 @@ function resetMobileKeyboardWindowScroll() {
 function updateViewportVars() {
   resetMobileKeyboardWindowScroll();
   const viewport = viewportState();
-  if (viewport.keyboardShrunk) {
+  if (viewport.keyboardShrunk || viewport.usesHostViewport) {
     document.documentElement.style.setProperty("--app-top", `${Math.max(0, Math.round(viewport.top || 0))}px`);
     document.documentElement.style.setProperty("--app-height", `${viewport.height}px`);
   } else {

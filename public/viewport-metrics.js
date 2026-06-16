@@ -48,6 +48,7 @@
     const visualBottom = visual ? visual + visualOffsetTop : 0;
     const layout = Math.max(positiveNumber(input.innerHeight), positiveNumber(input.clientHeight));
     const hostViewportHeight = positiveNumber(input.hostViewportHeight);
+    const usesHostViewport = Boolean(hostViewportHeight);
     const hostKeyboardBottomInset = Math.max(0, Number(input.hostKeyboardBottomInset) || 0);
     const hostBottomSafeArea = Math.max(0, Number(input.hostBottomSafeArea) || 0);
     const hostKeyboardVisible = Boolean(input.hostKeyboardVisible && hostKeyboardBottomInset > threshold);
@@ -60,7 +61,7 @@
     const localVisualHeight = visual || (visualBottom ? Math.max(0, visualBottom - visualOffsetTop) : 0);
     const height = keyboardShrunk
       ? (hostKeyboardHeight || localVisualHeight || visualBottom || layout || 0)
-      : Math.max(visualBottom || 0, layout || 0);
+      : (hostViewportHeight || Math.max(visualBottom || 0, layout || 0));
     const top = keyboardShrunk ? localVisibleTop : 0;
     return {
       height: Math.max(minHeight, Math.round(height)),
@@ -69,6 +70,7 @@
       keyboardCandidate,
       visualBottom: Math.round(visualBottom),
       layout: Math.round(layout),
+      usesHostViewport,
       hostKeyboardVisible,
       hostKeyboardBottomInset: Math.round(hostKeyboardBottomInset),
       hostBottomSafeArea: Math.round(hostBottomSafeArea),
