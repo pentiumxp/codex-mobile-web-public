@@ -4,6 +4,8 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：v292 是 v291 之后的恢复版 shell。此前一次嵌入态 WebView viewport 热修复曾以相同 v291 shell 发布，可能导致部分 standalone/PWA 或 APP 壳客户端缓存到异常前端，表现为底部 composer 输入区不可达。v292 保持回滚后的正常 composer 布局，不重新引入该 viewport 改动，只推进 PWA shell cache 到 `codex-mobile-shell-v292`，用于让已打开或已缓存的浏览器/PWA 明确刷新到恢复版。
+
 - 中文说明：Windows Desktop profile 快捷入口改为通过 `start-codex-desktop-shared-hidden.vbs` 和 `wscript.exe` 启动共享 mux，不再直接从 `.cmd` 常驻前台运行 `powershell.exe`。这会减少 Windows 上切换 default/current/previous Desktop profile 时出现的 PowerShell 控制台窗口；Mobile Web 计划任务入口仍继续使用隐藏 VBS/windowless launcher，普通 `start-codex-mobile-web.ps1` 保留为手工前台诊断入口。本次不改变 PWA shell cache。
 
 - 中文说明：v289 修正 Public PR 提示的陈旧状态。点击 PR 入口前会强制刷新 GitHub 开放 PR 状态，避免 15 分钟缓存导致“已合并 PR”仍继续生成合并任务；刷新失败时不再保留旧的可执行 PR 列表；没有开放 PR 时顶部 PR 提示会隐藏，更新面板里的按钮只作为重新检查入口显示为 `Check PR`，检测到开放 PR 后才显示 `Review Public PR`。PWA shell cache 升级到 `codex-mobile-shell-v289`，更新后需要重启 Node listener；已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端逻辑。
