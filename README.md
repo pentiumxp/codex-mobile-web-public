@@ -4,6 +4,10 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：v297 优化 Codex Mobile 冷启动线程列表首屏速度。启动阶段首个线程列表请求会带 `fallback=defer`，服务端先返回 app-server 的快速列表并标记 `mobileDeferredFallback`，避免同步扫描 rollout/state DB fallback 把首屏拖到 1-2 秒；前端随后静默补拉一次完整列表，继续保留历史线程/fallback 合并能力。PWA shell cache 升级到 `codex-mobile-shell-v297`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
+
+- 中文说明：v296 降低独立 Codex Mobile 和嵌入态页面恢复时的视觉抖动风险。移动端 resume/focus/pageshow 不再连续多次触发 heavy repaint，普通 focus/resize/visualViewport 只做轻量视口更新；必要的 heavy repaint 会节流，并保留 `--app-top`，避免恢复刷新覆盖键盘/嵌入态位移。PWA shell cache 升级到 `codex-mobile-shell-v296`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
+
 - 中文说明：v295 修正 Home AI 原生壳内 Codex 线程详情顶部页眉不可见的问题。Home AI 宿主仍保持 iframe 顶部为 0，Codex 只消费宿主 `hermes.plugin.viewport` 下发的 `hostTopSafeArea` / `safeAreaTop`，把它用于嵌入态线程详情 `topbar` 的内部 padding；线程列表页不额外下移，keyboard/composer 底部避让沿用 v294。PWA shell cache 升级到 `codex-mobile-shell-v295`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
 
 - 中文说明：v294 修正 Home AI 原生壳内键盘弹出后 composer 底部避让失效的问题。嵌入态键盘打开时不再把 composer padding 固定压成 8px/10px，而是继续使用宿主通过 `hermes.plugin.viewport` 下发的 `--host-bottom-safe-area`，避免 WKWebView 键盘覆盖输入框；standalone/PWA 的非嵌入态键盘规则不变。PWA shell cache 升级到 `codex-mobile-shell-v294`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。

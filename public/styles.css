@@ -658,8 +658,8 @@ html.embed-hermes .plugin-embed-login-panel button {
 }
 
 .app.resume-repaint {
-  transform: translateZ(0);
-  -webkit-transform: translateZ(0);
+  transform: translateY(var(--app-top, 0px)) translateZ(0);
+  -webkit-transform: translateY(var(--app-top, 0px)) translateZ(0);
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
   contain: layout paint;

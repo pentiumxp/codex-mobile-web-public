@@ -456,6 +456,11 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /fallbackStateDbMs/);
   assert.match(routeBody, /fallbackRolloutMs/);
   assert.match(routeBody, /fallbackSessionIndexMs/);
+  assert.match(routeBody, /const fallbackMode = String\(url\.searchParams\.get\("fallback"\) \|\| ""\)/);
+  assert.match(routeBody, /const deferFallback = fallbackMode === "defer" && !cursor && !archived && !searchTerm/);
+  assert.match(routeBody, /fallbackDeferred: true/);
+  assert.match(routeBody, /decorated\.mobileDeferredFallback = true/);
+  assert.match(routeBody, /logThreadList\("deferred_complete"/);
   assert.match(routeBody, /logThreadList\("complete"/);
   assert.match(routeBody, /const fallback = readThreadListFallback\(limit, \{ cwd, searchTerm, globalState, diagnostics: fallbackDiagnostics \}\);/);
 });

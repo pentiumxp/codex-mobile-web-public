@@ -10538,6 +10538,8 @@ async function handleApi(req, res) {
     const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit") || "80")));
     const cursor = url.searchParams.get("cursor") || null;
     const searchTerm = url.searchParams.get("search") || null;
+    const fallbackMode = String(url.searchParams.get("fallback") || "").trim().toLowerCase();
+    const deferFallback = fallbackMode === "defer" && !cursor && !archived && !searchTerm;
     if (cwd && !visibility.workspaceKeys.has(normalizeFsPath(cwd))) {
       sendJson(res, 200, { data: [] });
       return;
@@ -10559,6 +10561,31 @@ async function handleApi(req, res) {
         cwd,
       );
       markTiming("appServerMs", appServerStartedAtMs);
+      if (deferFallback) {
+        Object.assign(timings, {
+          fallbackMs: 0,
+          fallbackCacheHit: false,
+          fallbackDeferred: true,
+          fallbackStateDbMs: 0,
+          fallbackRolloutMs: 0,
+          fallbackSessionIndexMs: 0,
+          mergeMs: 0,
+        });
+        threadDisplaySummaryCache.rememberList(appServerResult);
+        if (Array.isArray(appServerResult.data)) appServerResult.data = appServerResult.data.slice(0, limit);
+        if (Array.isArray(appServerResult.threads)) appServerResult.threads = appServerResult.threads.slice(0, limit);
+        const decorateStartedAtMs = Date.now();
+        const decorated = tokenUsageStatsService.decorateThreadListResult(
+          attachThreadListStateToResult(appServerResult),
+          { cwd, days: 31, workspaceCwds: tokenUsageWorkspaceCwds(globalState) },
+        );
+        markTiming("decorateMs", decorateStartedAtMs);
+        decorated.mobileDeferredFallback = true;
+        attachDiagnostics(decorated);
+        logThreadList("deferred_complete", decorated.mobileDiagnostics.threadListTimings);
+        sendJson(res, 200, decorated);
+        return;
+      }
       const fallbackStartedAtMs = Date.now();
       const fallbackDiagnostics = {};
       const fallback = readThreadListFallback(limit, { cwd, searchTerm, globalState, diagnostics: fallbackDiagnostics });

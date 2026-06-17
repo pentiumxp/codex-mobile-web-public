@@ -2,6 +2,239 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-17 Cold Thread List Startup v297
+
+- Status: implemented, validated, and deployed to Mac production.
+- User-visible issue:
+  - Codex Mobile cold load still took roughly 2-3 seconds before the thread
+    list became visible.
+- Runtime finding:
+  - Authenticated production `/api/threads?limit=40&archived=false` can be
+    fast after cache warmup, but a cold fallback miss showed
+    `totalMs=1602`, with `fallbackMs=1290`, `fallbackStateDbMs=291`, and
+    `fallbackRolloutMs=929`.
+  - A temporary development listener on `CODEX_MOBILE_PORT=18787` confirmed
+    the new `fallback=defer` path returns with `fallbackMs=0` and
+    `totalMs=124` after app-server connection is warm. The normal full
+    fallback path in the same listener showed a cold `totalMs=1351` with
+    `fallbackMs=1179`.
+- Fix:
+  - `GET /api/threads` accepts `fallback=defer` for non-archived,
+    non-cursor, non-search first-page reads.
+  - The deferred path returns the app-server list immediately, decorates goals,
+    task-card counts, token stats, and marks `mobileDeferredFallback=true`.
+  - Browser cold bootstrap calls `loadThreads({ deferFallback: true })` and,
+    when it sees `mobileDeferredFallback`, schedules a delayed silent normal
+    `loadThreads()` so state DB / rollout / session-index fallback rows are
+    still merged after first paint.
+  - PWA shell cache advanced to `codex-mobile-shell-v297`.
+- Files changed for this fix:
+  - `server.js`
+  - `public/app.js`
+  - `public/sw.js`
+  - `test/mobile-viewport.test.js`
+  - `test/thread-visibility.test.js`
+  - `docs/ARCHITECTURE.md`
+  - `README.md`
+- Validation:
+  - `node --test test/mobile-viewport.test.js test/thread-visibility.test.js`
+  - `node --test test/thread-goal-service.test.js test/thread-task-card-route.test.js test/mobile-viewport.test.js test/thread-visibility.test.js`
+  - `npm run check`
+  - `npm test` passed: 486/486.
+  - Home AI `node tests/architecture-code-test-harness-map.test.js`.
+  - `git diff --check`.
+  - AI Ops evidence: `evidence-ac6c13a1-94b5-48ec-b45b-51573796231b`.
+- Production deployment:
+  - Deployed after explicit user request on 2026-06-17.
+  - Production `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v297` and
+    `shellCacheName=codex-mobile-shell-v297`.
+  - Production file readback confirmed `server.js`, `public/app.js`,
+    `public/sw.js`, and `README.md` contain the v297 deferred fallback code.
+  - Production authenticated smoke:
+    `/api/threads?limit=40&archived=false&fallback=defer` returned
+    `mobileDeferredFallback=true`, `totalMs=190`, and `fallbackMs=0`.
+  - Production full fallback smoke still works and measured `totalMs=1490`,
+    `fallbackMs=1298`, `fallbackStateDbMs=332`, and `fallbackRolloutMs=883`.
+  - Deploy evidence: `evidence-ed129399-6e5a-4b37-be36-209b798ac347`.
+
+## 2026-06-16 Native Shell Thread Detail Header v295
+
+- Status: fixed, committed, pushed to private `origin/main`, and deployed to
+  Mac production.
+- Commit:
+  - `fb10f70 fix: 修复原生壳 Codex 详情页页眉`.
+- User-visible issue:
+  - After Home AI v787 restored the host iframe top and keyboard geometry,
+    the Codex embedded thread list and composer were correct again, but the
+    thread detail page's top thread title and running-turn status/timer area
+    were still hidden under the native iOS shell status region.
+- Boundary decision:
+  - Do not move the host iframe down again. Home AI keeps embedded plugin
+    iframe placement at top `0`.
+  - Codex consumes the host-provided `hermes.plugin.viewport`
+    `safeAreaTop` / `hostTopSafeArea` metadata and applies it only inside the
+    iframe-owned thread detail `topbar`.
+  - The embedded primary thread-list page is not moved down, and the v294
+    composer/keyboard bottom avoidance remains unchanged.
+- Files changed:
+  - `public/app.js`
+  - `public/styles.css`
+  - `public/sw.js`
+  - `test/mobile-viewport.test.js`
+  - `test/thread-goal-service.test.js`
+  - `test/thread-task-card-route.test.js`
+  - `README.md`
+- Validation:
+  - `node --check public/app.js`
+  - `node --check public/sw.js`
+  - `node --check test/mobile-viewport.test.js`
+  - `node --test test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+  - `npm run check`
+  - Home AI required harness unit tests:
+    `node tests/ios-pwa-live-debug-server.test.js`,
+    `node tests/ios-pwa-visual-harness.test.js`.
+  - Local Playwright static detail-state smoke used a simulated
+    `--host-top-safe-area: 47px` and confirmed the app itself was not
+    translated while thread title and turn timer top bounds were below the
+    safe-area line.
+  - `git diff --check`
+- Production deployment:
+  - Deployed from clean worktree
+    `/Users/hermes-dev/HermesMobileDev/.deploy-staging/codex-mobile-web-v295`
+    with Home AI central Mac deploy script:
+    `--plugin codex-mobile-web --restart none --reason codex-native-topbar-v295`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260616T153435Z-plugin-codex-mobile-web-codex-native-topbar-v295`.
+  - Production `/api/public-config` readback reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v295` and
+    `shellCacheName=codex-mobile-shell-v295`.
+  - Production static reads confirmed v295 `app.js`, `styles.css`, and
+    `sw.js` include `hostTopSafeArea`, `--host-top-safe-area`, and
+    `codex-mobile-shell-v295`.
+- AI Ops evidence:
+  - Test: `evidence-a3d92db5-fc20-4e7e-9542-7b6cdcb0e3f0`.
+  - Deploy: `evidence-ee0d1e8a-d107-4e3a-9f51-ae8da9fe60c1`.
+
+## 2026-06-16 Native Shell Layout Regression Stop Point
+
+- Status: production rolled back; no further Codex-side production changes.
+- Production readback after rollback:
+  - Home AI host: `20260616-voice-provisional-smooth-v784`.
+  - Codex Mobile plugin: `0.1.11|codex-mobile-shell-v294`.
+- Failed direction:
+  - A combined host/Codex layout attempt for native shell top inset and
+    keyboard/composer inset was deployed as Home AI v785 and Codex v295.
+  - Visual/user evidence showed it did not solve the top black gap or keyboard
+    overlap, and it risked hiding/offsetting embedded headers.
+- Current decision:
+  - Do not continue patching this from Codex plugin CSS alone.
+  - Treat the native WebView header/safe-area/keyboard behavior as a Home
+    AI/native-shell host contract issue first, then adapt Codex only to the
+    explicit host-provided contract.
+  - Host-side work has started; Codex should not redeploy or restart production
+    for this issue until the host contract is stable.
+- Operations:
+  - Rolled production back to pre-v785/pre-v295 artifacts.
+  - Released AI Ops visual lanes `ios-pwa-1` and `ios-pwa-2`.
+  - Evidence ledger: `evidence-a787b0c8-7fa8-4c52-8dd6-1f0c0ba89931`.
+
+## 2026-06-16 Composer Regression Recovery v292
+
+- Status: committed and deployed to Mac production.
+- Commits:
+  - Bad draft hotfix: `ef8c7e8 fix: 调整嵌入态 WebView 视口`
+  - Rollback: `74ff011 Revert "fix: 调整嵌入态 WebView 视口"`
+  - Recovery shell: `237b2bf fix: 发布 composer 恢复版 shell`
+- Incident:
+  - User reported that after the embedded WebView viewport hotfix deploy,
+    standalone/PWA and native APP shell could lose access to the bottom
+    composer/input area.
+  - The bad hotfix had shipped under unchanged
+    `codex-mobile-shell-v291`, so client caches could keep inconsistent
+    frontend assets even after a source rollback.
+- Recovery:
+  - Reverted the viewport code changes.
+  - Advanced only `CLIENT_BUILD_ID` / `public/sw.js` shell identity to
+    `codex-mobile-shell-v292`.
+  - Added a Chinese README note documenting v292 as a composer recovery shell.
+  - Deployed with reason `codex-mobile-composer-recovery-v292`.
+  - Production `/api/public-config` readback after deploy:
+    `clientBuildId=0.1.11|codex-mobile-shell-v292`,
+    `shellCacheName=codex-mobile-shell-v292`, production path
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+- Validation:
+  - Before rollback deploy:
+    `node --check public/app.js && node --check public/viewport-metrics.js &&
+    node --test test/viewport-metrics.test.js test/mobile-viewport.test.js &&
+    git diff --check` passed.
+  - For v292:
+    `node --check public/app.js && node --check public/sw.js &&
+    node --test test/mobile-viewport.test.js test/thread-goal-service.test.js
+    test/thread-task-card-route.test.js && git diff --check` passed: 17/17.
+  - Mac deploy script completed successfully; launchd was running and plugin
+    manifest health check passed. Codex auth profile audit reported
+    `codexIssueCount=0`.
+  - Evidence ledger: `evidence-bd352f1e-4728-4e26-81c0-8f892d90696a`.
+- Native-shell visual note:
+  - Simulator contains Home AI native shell bundle
+    `com.xuxin.homeai.native`.
+  - The production Home AI key was written into the Simulator native shell
+    defaults without printing the key. The stored key hash matched the
+    production `owner-web-key.secret` hash, and the same key returned HTTP 200
+    from production `/api/status?detail=1`.
+  - The public HTTPS origin `https://hermes-xuxin.synology.me:8445` timed out
+    in the local Mac/simulator environment, leaving the native shell WebView
+    black. Switching the native shell to LAN
+    `http://192.168.10.110:8797` loaded the Home AI Web login page, but the
+    WebView still showed `Access Key 已失效`.
+  - Clearing the Simulator native shell WebKit cache did not fix the login
+    state. A live-debug/Appium attempt to set `localStorage.hermesWebKey` in
+    the current native WebView hung during WebView/Appium action execution, so
+    it was stopped. Visual lane was released and temporary debug ports
+    `19073` / `4723` were cleared.
+  - Conclusion: native shell is now configured at the native defaults layer,
+    but WebView login injection/loading still needs a separate native-shell
+    fix before it can be used as reliable Codex composer evidence. Future
+    embedded WebKit verification should use this native shell once that login
+    bridge is fixed, not Safari/PWA evidence.
+
+## 2026-06-16 Native Shell Auth Bridge Follow-Up
+
+- Status: fixed and verified in the native Xcode workspace.
+- Native workspace: `/Users/xuxin/Xcode/Home AI`.
+- Fix:
+  - `HomeAIWebView` now injects the Home AI Access Key into
+    `localStorage.hermesWebKey` and `hermes_web_key` through a
+    `.atDocumentStart` `WKUserScript` before Home AI PWA initializes.
+  - The WebView replaces user scripts before reload when the stored key changes.
+  - The cookie bridge keeps `Secure` only for HTTPS targets; bounded LAN HTTP
+    simulator validation no longer fails because of an HTTPS-only cookie flag.
+- Validation:
+  - The simulator key was checked only by presence/hash prefix and returned
+    `HTTP 200` from Home AI `/api/status?detail=1` with `X-Hermes-Web-Key`.
+  - `xcodebuild -project 'Home AI.xcodeproj' -scheme 'Home AI' -destination
+    'platform=iOS Simulator,id=C2EB6D31-F485-4DAE-BFB4-25E27FC65389' build`
+    passed.
+  - Installed/launched `com.xuxin.homeai.native` on the HomeAI iPhone 17 Pro
+    simulator. Screenshot `/tmp/homeai-native-auth-bridge-after-fix.png`
+    showed Home AI PWA, not the Access Key error page.
+  - Appium tapped the bottom `Codex` tab in the native shell. Screenshot
+    `/tmp/homeai-native-codex-tab-after-fix.png` showed the Codex plugin list;
+    source did not contain `Access Key` or `失效`.
+  - Home AI central checks passed:
+    `node tests/ios-pwa-live-debug-server.test.js`,
+    `node tests/ios-pwa-visual-harness.test.js`,
+    `node tests/architecture-code-test-harness-map.test.js`, and
+    `node scripts/plugin-workspace-platform-contract-check.js --target
+    home-ai-native-ios --json`.
+  - AI Ops evidence ledger:
+    `evidence-150790ae-42a2-4aa9-ae93-e2c71a5f779c`.
+- Notes:
+  - The native code was included in local Xcode commit
+    `be34c35 feat: add native voice input bridge`.
+  - No Codex Mobile PWA/standalone code was changed for this follow-up.
+
 ## 2026-06-15 Windows Desktop Hidden Launcher Fix
 
 - Status: committed, pushed private, pushed public, and public merged back into
