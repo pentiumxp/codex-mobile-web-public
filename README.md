@@ -4,6 +4,18 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：v297 优化 Codex Mobile 冷启动线程列表首屏速度。启动阶段首个线程列表请求会带 `fallback=defer`，服务端先返回 app-server 的快速列表并标记 `mobileDeferredFallback`，避免同步扫描 rollout/state DB fallback 把首屏拖到 1-2 秒；前端随后静默补拉一次完整列表，继续保留历史线程/fallback 合并能力。PWA shell cache 升级到 `codex-mobile-shell-v297`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
+
+- 中文说明：v296 降低独立 Codex Mobile 和嵌入态页面恢复时的视觉抖动风险。移动端 resume/focus/pageshow 不再连续多次触发 heavy repaint，普通 focus/resize/visualViewport 只做轻量视口更新；必要的 heavy repaint 会节流，并保留 `--app-top`，避免恢复刷新覆盖键盘/嵌入态位移。PWA shell cache 升级到 `codex-mobile-shell-v296`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
+
+- 中文说明：v295 修正 Home AI 原生壳内 Codex 线程详情顶部页眉不可见的问题。Home AI 宿主仍保持 iframe 顶部为 0，Codex 只消费宿主 `hermes.plugin.viewport` 下发的 `hostTopSafeArea` / `safeAreaTop`，把它用于嵌入态线程详情 `topbar` 的内部 padding；线程列表页不额外下移，keyboard/composer 底部避让沿用 v294。PWA shell cache 升级到 `codex-mobile-shell-v295`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
+
+- 中文说明：v294 修正 Home AI 原生壳内键盘弹出后 composer 底部避让失效的问题。嵌入态键盘打开时不再把 composer padding 固定压成 8px/10px，而是继续使用宿主通过 `hermes.plugin.viewport` 下发的 `--host-bottom-safe-area`，避免 WKWebView 键盘覆盖输入框；standalone/PWA 的非嵌入态键盘规则不变。PWA shell cache 升级到 `codex-mobile-shell-v294`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
+
+- 中文说明：v293 修正 Home AI 原生壳内 Codex 插件页眉重复 safe-area 的问题。嵌入态 `topbar` 不再在 iframe 内部二次叠加系统顶部安全区，避免原生 WKWebView 壳里线程标题下移并留下过大的顶部空白；standalone/PWA 的普通 composer 和全局键盘布局规则保持不变。PWA shell cache 升级到 `codex-mobile-shell-v293`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
+
+- 中文说明：v292 是 v291 之后的恢复版 shell。此前一次嵌入态 WebView viewport 热修复曾以相同 v291 shell 发布，可能导致部分 standalone/PWA 或 APP 壳客户端缓存到异常前端，表现为底部 composer 输入区不可达。v292 保持回滚后的正常 composer 布局，不重新引入该 viewport 改动，只推进 PWA shell cache 到 `codex-mobile-shell-v292`，用于让已打开或已缓存的浏览器/PWA 明确刷新到恢复版。
+
 - 中文说明：Windows Desktop profile 快捷入口改为通过 `start-codex-desktop-shared-hidden.vbs` 和 `wscript.exe` 启动共享 mux，不再直接从 `.cmd` 常驻前台运行 `powershell.exe`。这会减少 Windows 上切换 default/current/previous Desktop profile 时出现的 PowerShell 控制台窗口；Mobile Web 计划任务入口仍继续使用隐藏 VBS/windowless launcher，普通 `start-codex-mobile-web.ps1` 保留为手工前台诊断入口。本次不改变 PWA shell cache。
 
 - 中文说明：v289 修正 Public PR 提示的陈旧状态。点击 PR 入口前会强制刷新 GitHub 开放 PR 状态，避免 15 分钟缓存导致“已合并 PR”仍继续生成合并任务；刷新失败时不再保留旧的可执行 PR 列表；没有开放 PR 时顶部 PR 提示会隐藏，更新面板里的按钮只作为重新检查入口显示为 `Check PR`，检测到开放 PR 后才显示 `Review Public PR`。PWA shell cache 升级到 `codex-mobile-shell-v289`，更新后需要重启 Node listener；已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端逻辑。

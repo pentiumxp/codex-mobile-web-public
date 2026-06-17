@@ -48,14 +48,27 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(appJs, /function isHermesKeyboardInputActive\(\) \{[\s\S]*isHermesEmbedMode\(\)[\s\S]*isKeyboardEditableElement\(document\.activeElement\)/);
   assert.match(appJs, /window\.visualViewport\.addEventListener\("resize", \(\) => \{[\s\S]*if \(!isHermesKeyboardInputActive\(\)\) \{[\s\S]*scheduleVisualRecovery\("visual-viewport"/);
   assert.match(appJs, /window\.visualViewport\.addEventListener\("scroll", \(\) => \{[\s\S]*if \(!isHermesKeyboardInputActive\(\)\) \{[\s\S]*scheduleVisualRecovery\("visual-viewport-scroll"/);
+  assert.match(appJs, /HEAVY_VISUAL_RECOVERY_MIN_INTERVAL_MS = 4000/);
+  assert.match(appJs, /function visualRecoveryReasonAllowsHeavy\(reason = ""\)/);
+  assert.match(appJs, /\^\(focus\|focusin\|focusout\|resize\|visual-viewport\|visual-viewport-scroll\|window-blur\)\$/);
+  assert.match(appJs, /function shouldRunHeavyVisualRecovery\(reason = "resume"\)/);
+  assert.match(appJs, /now - state\.lastHeavyVisualRecoveryAt < HEAVY_VISUAL_RECOVERY_MIN_INTERVAL_MS/);
+  assert.match(appJs, /forceVisualRecovery\(reason, \{ heavy: index === 0 && allowHeavyRecovery \}\)/);
+  assert.match(appJs, /forceVisualRecovery\(reason, \{ heavy: false \}\);[\s\S]*updateComposerHeightVar\(\);/);
+  assert.doesNotMatch(appJs, /0\.01px/);
   assert.match(stylesCss, /html,\s*\nbody\s*{[\s\S]*touch-action:\s*pan-x pan-y;/);
   assert.match(stylesCss, /html\s*{[\s\S]*height:\s*-webkit-fill-available;/);
   assert.match(stylesCss, /body\s*{[\s\S]*min-height:\s*-webkit-fill-available;/);
   assert.match(stylesCss, /html\.embed-hermes \.app\s*{[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /html\.embed-hermes \.app\s*{[\s\S]*min-height:\s*0;/);
   assert.match(stylesCss, /html\.embed-hermes \.app\s*{[\s\S]*transform:\s*translateY\(var\(--app-top, 0px\)\);/);
+  assert.match(stylesCss, /\.app\.resume-repaint\s*{[\s\S]*transform:\s*translateY\(var\(--app-top, 0px\)\) translateZ\(0\);/);
+  assert.match(stylesCss, /--host-top-safe-area:\s*0px;/);
+  assert.match(stylesCss, /html\.embed-hermes \.topbar\s*{[\s\S]*padding-top:\s*calc\(6px \+ max\(env\(safe-area-inset-top, 0px\), var\(--host-top-safe-area, 0px\)\)\);[\s\S]*padding-bottom:\s*6px;/);
+  assert.match(appJs, /hostTopSafeArea:\s*boundedViewportNumber\(topSafeArea, 512\)/);
+  assert.match(appJs, /--host-top-safe-area/);
   assert.match(stylesCss, /html\.embed-hermes \.composer\s*{[\s\S]*padding-bottom:\s*max\(12px, var\(--host-bottom-safe-area, 0px\)\);/);
-  assert.match(stylesCss, /html\.embed-hermes\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*10px;/);
+  assert.match(stylesCss, /html\.embed-hermes\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*max\(10px, var\(--host-bottom-safe-area, 0px\)\);/);
   assert.match(stylesCss, /html\.embed-hermes \.main \.version-actions/);
   assert.match(indexHtml, /id="continuationDialog"/);
   assert.match(appJs, /function openContinuationDialog\(/);
@@ -65,7 +78,7 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(stylesCss, /html\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*12px;/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.composer\s*{[\s\S]*gap:\s*6px;[\s\S]*padding:\s*7px 12px clamp\(8px, calc\(env\(safe-area-inset-bottom, 0px\) - 88px\), 52px\);/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.embed-hermes \.composer\s*{[\s\S]*padding-bottom:\s*max\(12px, var\(--host-bottom-safe-area, 0px\)\);/);
-  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.embed-hermes\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*8px;/);
+  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.embed-hermes\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*max\(8px, var\(--host-bottom-safe-area, 0px\)\);/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*html\.keyboard-open \.composer\s*{[\s\S]*padding-bottom:\s*7px;/);
   assert.match(platformPointer, /embedded-plugin-keyboard-composer/);
   assert.match(platformPointer, /--plugin-thread-id <thread-id>/);
@@ -73,8 +86,8 @@ test("mobile viewport and early guards disable page zoom", () => {
 });
 
 test("public app shell cache advances after thread side chat panel", () => {
-  assert.match(swJs, /codex-mobile-shell-v291/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v291"/);
+  assert.match(swJs, /codex-mobile-shell-v297/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v297"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);
@@ -133,12 +146,12 @@ test("public app shell cache advances after thread side chat panel", () => {
   assert.match(appJs, /const earlyRestorePromise = savedThreadId && !startupThreadId[\s\S]*loadThread\(savedThreadId, \{ source: "restore-startup" \}\)/);
   assert.match(appJs, /const status = await api\("\/api\/status"\)\.catch/);
   assert.match(appJs, /const workspacesStartedAt = nowPerfMs\(\);\s*\n\s*await loadWorkspaces\(\);/);
-  assert.match(appJs, /await loadWorkspaces\(\);[\s\S]*await loadThreads\(\{ silent: startupThreadOpenPending \}\);/);
+  assert.match(appJs, /await loadWorkspaces\(\);[\s\S]*await loadThreads\(\{ silent: startupThreadOpenPending, deferFallback: true \}\);/);
   assert.match(appJs, /postStartupStage\("status_done"/);
   assert.match(appJs, /postStartupStage\("threads_done"/);
   assert.match(appJs, /startupInProgress: false/);
   assert.match(appJs, /mobile_resume_skipped_startup/);
-  assert.match(appJs, /await loadThreads\(\{ silent: startupThreadOpenPending \}\);/);
+  assert.match(appJs, /await loadThreads\(\{ silent: startupThreadOpenPending, deferFallback: true \}\);/);
   assert.match(appJs, /function renderStartupThreadOpening\(\)/);
   assert.match(appJs, /Opening thread\.\.\./);
   assert.match(appJs, /if \(state\.startupThreadOpenPending\) \{[\s\S]*renderStartupThreadOpening\(\);[\s\S]*return;/);
@@ -255,6 +268,8 @@ test("public app shell cache advances after thread side chat panel", () => {
   assert.match(appJs, /function formatTokenMillion\(value\)/);
   assert.match(appJs, /const THREAD_LIST_PAGE_LIMIT = 40;/);
   assert.match(appJs, /new URLSearchParams\(\{ limit: String\(THREAD_LIST_PAGE_LIMIT\), archived: "false" \}\)/);
+  assert.match(appJs, /if \(options\.deferFallback === true && !search\) params\.set\("fallback", "defer"\)/);
+  assert.match(appJs, /if \(result && result\.mobileDeferredFallback\) \{[\s\S]*loadThreads\(\{ silent: true \}\)\.catch\(showError\);[\s\S]*\}, 800\);/);
   assert.match(appJs, /Uncached \$\{escapeHtml\(formatTokenMillion\(displayInputTokensExcludingCached\(entry\)\)\)\}/);
   assert.match(appJs, /Cached \$\{escapeHtml\(formatTokenMillion\(entry && entry\.cachedInputTokens\)\)\}/);
   assert.match(appJs, /Out \$\{escapeHtml\(formatTokenMillion\(entry && entry\.outputTokens\)\)\}/);

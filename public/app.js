@@ -157,6 +157,7 @@ const state = {
   draftAttachmentWarningShown: false,
   visualRecoveryTimers: [],
   visualRecoverySeq: 0,
+  lastHeavyVisualRecoveryAt: 0,
   pollTimer: null,
   pollStableCount: 0,
   lastThreadSignature: "",
@@ -331,12 +332,13 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v291";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v297";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
+const HEAVY_VISUAL_RECOVERY_MIN_INTERVAL_MS = 4000;
 const PUBLIC_CONFIG_TIMEOUT_MS = 8000;
 const PUBLIC_CONFIG_RETRY_DELAYS_MS = [0, 300, 1200];
 const THREAD_LOAD_STALL_MS = 12000;
@@ -773,7 +775,7 @@ function viewportState() {
   const hostFooter = hostViewport && hostViewport.footer && typeof hostViewport.footer === "object"
     ? hostViewport.footer
     : null;
-  return viewportMetrics.measureViewport({
+  const measured = viewportMetrics.measureViewport({
     visualHeight: window.visualViewport && window.visualViewport.height,
     visualOffsetTop: window.visualViewport && window.visualViewport.offsetTop,
     scrollTop: embedded ? Math.max(
@@ -790,6 +792,8 @@ function viewportState() {
     hostKeyboardBottomInset: embedded && hostKeyboard ? hostKeyboard.bottomInset : 0,
     hostBottomSafeArea: embedded && hostFooter ? hostFooter.safeAreaBottom : 0,
   });
+  measured.hostTopSafeArea = embedded && hostViewport ? boundedViewportNumber(hostViewport.hostTopSafeArea, 512) : 0;
+  return measured;
 }
 
 function viewportHeight() {
@@ -830,6 +834,7 @@ function updateViewportVars() {
     document.documentElement.style.removeProperty("--app-top");
     document.documentElement.style.removeProperty("--app-height");
   }
+  document.documentElement.style.setProperty("--host-top-safe-area", `${Math.max(0, Math.round(viewport.hostTopSafeArea || 0))}px`);
   document.documentElement.style.setProperty("--host-bottom-safe-area", `${Math.max(0, Math.round(viewport.hostBottomSafeArea || 0))}px`);
   document.documentElement.classList.toggle("keyboard-open", viewport.keyboardShrunk);
 }
@@ -5664,11 +5669,16 @@ function normalizeHermesPluginViewportMessage(data) {
   if (pluginId && pluginId !== "codex-mobile") return null;
   const viewport = data.viewport && typeof data.viewport === "object" ? data.viewport : {};
   const keyboard = data.keyboard && typeof data.keyboard === "object" ? data.keyboard : {};
+  const host = data.host && typeof data.host === "object" ? data.host : {};
   const footer = data.footer && typeof data.footer === "object" ? data.footer : {};
+  const topSafeArea = viewport.safeAreaTop || viewport.hostTopSafeArea
+    || host.safeAreaTop || host.topSafeArea || host.hostTopSafeArea
+    || footer.safeAreaTop || footer.topSafeArea || footer.hostTopSafeArea;
   const footerSafeArea = footer.safeAreaBottom || footer.bottomSafeArea || footer.hostBottomSafeArea || footer.safeAreaInsetBottom;
   return {
     receivedAtMs: Date.now(),
     reason: String(data.reason || "").trim().slice(0, 60),
+    hostTopSafeArea: boundedViewportNumber(topSafeArea, 512),
     viewport: {
       width: boundedViewportNumber(viewport.width),
       height: boundedViewportNumber(viewport.height),
@@ -5953,7 +5963,7 @@ async function bootstrap() {
     workspaceCount: Array.isArray(state.workspaces) ? state.workspaces.length : 0,
   });
   const threadsStartedAt = nowPerfMs();
-  await loadThreads({ silent: startupThreadOpenPending });
+  await loadThreads({ silent: startupThreadOpenPending, deferFallback: true });
   postStartupStage("threads_done", bootstrapStartedAt, {
     durationMs: roundedDurationMs(threadsStartedAt),
     threadCount: Array.isArray(state.threads) ? state.threads.length : 0,
@@ -6469,6 +6479,7 @@ async function loadThreads(options = {}) {
   if (state.selectedCwd) params.set("cwd", state.selectedCwd);
   const search = $("threadSearch").value.trim();
   if (search) params.set("search", search);
+  if (options.deferFallback === true && !search) params.set("fallback", "defer");
   if (!silent) renderThreadListLoading();
   try {
     const apiStartedAt = nowPerfMs();
@@ -6484,6 +6495,11 @@ async function loadThreads(options = {}) {
     renderThreads(result);
     restoreConnectionState(result.mobileFallback ? "Recovered from session index" : "Connected");
     scheduleVisiblePageRefreshCheck(500);
+    if (result && result.mobileDeferredFallback) {
+      setTimeout(() => {
+        loadThreads({ silent: true }).catch(showError);
+      }, 800);
+    }
     if (!state.currentThread) renderCurrentThread();
     postPerformanceEvent("thread_list_rendered", {
       elapsedMs: roundedDurationMs(loadStartedAt),
@@ -13393,6 +13409,18 @@ function clearVisualRecoveryTimers() {
   state.visualRecoveryTimers = [];
 }
 
+function visualRecoveryReasonAllowsHeavy(reason = "") {
+  return !/^(focus|focusin|focusout|resize|visual-viewport|visual-viewport-scroll|window-blur)$/.test(String(reason || ""));
+}
+
+function shouldRunHeavyVisualRecovery(reason = "resume") {
+  if (!visualRecoveryReasonAllowsHeavy(reason)) return false;
+  const now = Date.now();
+  if (now - state.lastHeavyVisualRecoveryAt < HEAVY_VISUAL_RECOVERY_MIN_INTERVAL_MS) return false;
+  state.lastHeavyVisualRecoveryAt = now;
+  return true;
+}
+
 function forceVisualRecovery(reason = "resume", options = {}) {
   updateViewportVars();
   if (!state.key) return;
@@ -13401,7 +13429,7 @@ function forceVisualRecovery(reason = "resume", options = {}) {
   if (!app || !login) return;
   const root = document.documentElement;
   const body = document.body;
-  const heavy = options.heavy !== false;
+  const heavy = options.heavy !== false && shouldRunHeavyVisualRecovery(reason);
   login.classList.add("hidden");
   app.classList.remove("hidden");
   if (heavy) {
@@ -13410,10 +13438,9 @@ function forceVisualRecovery(reason = "resume", options = {}) {
     app.classList.add("resume-repaint");
   }
   app.dataset.resumeReason = reason;
-  const z = state.visualRecoverySeq % 2 ? "0.01px" : "0px";
   if (heavy) {
-    app.style.transform = `translate3d(0, 0, ${z})`;
-    app.style.webkitTransform = `translate3d(0, 0, ${z})`;
+    app.style.transform = "translateY(var(--app-top, 0px)) translateZ(0)";
+    app.style.webkitTransform = "translateY(var(--app-top, 0px)) translateZ(0)";
   }
   app.getBoundingClientRect();
   if (options.render !== false && (state.currentThread || state.threads.length)) renderCurrentThread();
@@ -13466,9 +13493,12 @@ function scheduleMobileResume(reason = "resume", delay = 80) {
   const seq = ++state.resumeSeq;
   clearTimeout(state.resumeTimer);
   clearResumeVisualTimers();
-  for (const visualDelay of [0, delay, delay + 220, delay + 900]) {
+  const allowHeavyRecovery = visualRecoveryReasonAllowsHeavy(reason);
+  for (const [index, visualDelay] of [0, delay, delay + 220, delay + 900].entries()) {
     state.resumeVisualTimers.push(setTimeout(() => {
-      if (seq === state.resumeSeq && document.visibilityState !== "hidden") forceVisualRecovery(reason);
+      if (seq === state.resumeSeq && document.visibilityState !== "hidden") {
+        forceVisualRecovery(reason, { heavy: index === 0 && allowHeavyRecovery });
+      }
     }, visualDelay));
   }
   state.resumeTimer = setTimeout(() => {
@@ -13494,7 +13524,7 @@ async function resumeMobileSession(reason = "resume") {
   if (document.visibilityState === "hidden" || !state.key) return;
   const startedAt = nowPerfMs();
   try {
-    forceVisualRecovery(reason);
+    forceVisualRecovery(reason, { heavy: false });
     updateComposerHeightVar();
     renderComposerSettings();
     updateComposerControls();
@@ -13544,7 +13574,7 @@ async function resumeMobileSession(reason = "resume") {
       error: err.message || String(err),
       transient: isTransientResumeError(err),
     });
-    forceVisualRecovery(reason);
+    forceVisualRecovery(reason, { heavy: false });
     if (isTransientResumeError(err)) {
       scheduleTransientResumeRetry(reason);
       return;
