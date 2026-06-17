@@ -4247,3 +4247,39 @@ The previous full handoff was archived and should be opened only when old proven
     `{ recovered: true, action: "steered" }`.
   - AI Ops evidence:
     `evidence-9268c3ff-1773-4f85-88d0-1f8a8fc8ea7f`.
+
+## 2026-06-17 iOS WebView Profile Switch Confirmation
+
+- Status: implemented locally; not deployed in this turn.
+- Symptom:
+  - In the iOS native shell WebView, Codex Profile switching was unreliable when
+    tapping the target account. PWA behavior was reported as working.
+  - Authenticated `/api/status` still showed profile discovery and switch
+    support as healthy, so the failure boundary was the client-side confirmation
+    path rather than profile store discovery.
+- Fix:
+  - `public/app.js` splits Profile switching into confirmation and execution
+    phases.
+  - PWA/standalone keeps the existing `window.confirm` flow.
+  - Hermes embedded mode uses a DOM confirmation dialog
+    `profileSwitchConfirmDialog`, avoiding native WebView `window.confirm`
+    focus/callback behavior.
+  - The existing `/api/codex-profiles/active` preflight, POST, restart prompt,
+    and status text are unchanged.
+- Changed files:
+  - `public/app.js`
+  - `public/index.html`
+  - `public/styles.css`
+  - `test/codex-profile-ui.test.js`
+- Validation:
+  - `node --check public/app.js`
+  - `node --check server.js`
+  - `node --test test/codex-profile-ui.test.js test/codex-profile-service.test.js test/codex-profile-preflight.test.js`
+  - `git diff --check`
+  - `npm run check`
+  - `npm test` passed: 486/486.
+  - Lightweight runtime assertion verified embedded-mode confirmation opens the
+    DOM dialog path while PWA remains isolated on `window.confirm`.
+- Note:
+  - `docs/HOME_AI_PLATFORM_CONTRACT.md` was already dirty before this fix and
+    was not touched for this task.

@@ -236,6 +236,10 @@ const state = {
   sharedRestartRiskThreads: [],
   sharedRestartScopeLines: [],
   sharedRestartConfirmResolve: null,
+  profileSwitchConfirmOpen: false,
+  profileSwitchConfirmTargetId: "",
+  profileSwitchConfirmLabel: "",
+  profileSwitchConfirmResolve: null,
   restartAutoRecoverThreads: [],
   serverBuildId: "",
   serverAssetBuildId: "",
@@ -2050,14 +2054,41 @@ async function loadCodexProfiles() {
   return profiles;
 }
 
-async function handleCodexProfileSettingsClick(event) {
-  const button = event.target.closest("[data-codex-profile-id]");
-  if (!button || button.disabled) return;
-  const profileId = button.getAttribute("data-codex-profile-id") || "";
-  if (!profileId || state.codexProfileSwitchBusy || state.codexProfileRestarting) return;
-  const profile = state.codexProfiles.find((item) => String(item.id || "") === profileId);
-  const label = profile ? `${profile.label || profileId} (${codexProfileAccountLabel(profile)})` : profileId;
-  if (!window.confirm(`Switch all Codex Mobile workspaces to ${label}?`)) return;
+function renderCodexProfileSwitchDialog() {
+  const dialog = $("profileSwitchConfirmDialog");
+  const subtitle = $("profileSwitchConfirmSubtitle");
+  if (!dialog || !subtitle) return;
+  dialog.classList.toggle("hidden", !state.profileSwitchConfirmOpen);
+  subtitle.textContent = state.profileSwitchConfirmOpen
+    ? `目标账号：${state.profileSwitchConfirmLabel || state.profileSwitchConfirmTargetId || "--"}`
+    : "";
+}
+
+function closeCodexProfileSwitchDialog(confirmed = false) {
+  const resolve = state.profileSwitchConfirmResolve;
+  state.profileSwitchConfirmOpen = false;
+  state.profileSwitchConfirmTargetId = "";
+  state.profileSwitchConfirmLabel = "";
+  state.profileSwitchConfirmResolve = null;
+  renderCodexProfileSwitchDialog();
+  if (resolve) resolve(Boolean(confirmed));
+}
+
+function requestCodexProfileSwitchConfirmation(profileId, label) {
+  if (!isHermesEmbedMode()) {
+    return Promise.resolve(window.confirm(`Switch all Codex Mobile workspaces to ${label}?`));
+  }
+  if (state.profileSwitchConfirmResolve) closeCodexProfileSwitchDialog(false);
+  state.profileSwitchConfirmOpen = true;
+  state.profileSwitchConfirmTargetId = String(profileId || "");
+  state.profileSwitchConfirmLabel = String(label || profileId || "");
+  renderCodexProfileSwitchDialog();
+  return new Promise((resolve) => {
+    state.profileSwitchConfirmResolve = resolve;
+  });
+}
+
+async function performCodexProfileSwitch(profileId) {
   state.codexProfileSwitchBusy = true;
   state.codexProfileSwitchTargetId = profileId;
   state.codexProfileSwitchStage = "预检中...";
@@ -2087,6 +2118,18 @@ async function handleCodexProfileSettingsClick(event) {
     }
     renderCodexProfileSettings();
   }
+}
+
+async function handleCodexProfileSettingsClick(event) {
+  const button = event.target.closest("[data-codex-profile-id]");
+  if (!button || button.disabled) return;
+  const profileId = button.getAttribute("data-codex-profile-id") || "";
+  if (!profileId || state.codexProfileSwitchBusy || state.codexProfileRestarting) return;
+  const profile = state.codexProfiles.find((item) => String(item.id || "") === profileId);
+  const label = profile ? `${profile.label || profileId} (${codexProfileAccountLabel(profile)})` : profileId;
+  const confirmed = await requestCodexProfileSwitchConfirmation(profileId, label);
+  if (!confirmed) return;
+  await performCodexProfileSwitch(profileId);
 }
 
 function appVersionText(status = state.appUpdateStatus) {
@@ -15514,6 +15557,11 @@ function wireUi() {
   if ($("restartConfirmProceed")) $("restartConfirmProceed").addEventListener("click", () => closeSharedRestartDialog(true));
   if ($("restartConfirmDialog")) $("restartConfirmDialog").addEventListener("click", (event) => {
     if (event.target === $("restartConfirmDialog")) closeSharedRestartDialog(false);
+  });
+  if ($("profileSwitchConfirmCancel")) $("profileSwitchConfirmCancel").addEventListener("click", () => closeCodexProfileSwitchDialog(false));
+  if ($("profileSwitchConfirmProceed")) $("profileSwitchConfirmProceed").addEventListener("click", () => closeCodexProfileSwitchDialog(true));
+  if ($("profileSwitchConfirmDialog")) $("profileSwitchConfirmDialog").addEventListener("click", (event) => {
+    if (event.target === $("profileSwitchConfirmDialog")) closeCodexProfileSwitchDialog(false);
   });
   if ($("goalForm")) $("goalForm").addEventListener("submit", (event) => submitThreadGoalMessage(event).catch(showError));
   if ($("goalObjectiveInput")) $("goalObjectiveInput").addEventListener("keydown", requestGoalDialogSubmitFromEnter);

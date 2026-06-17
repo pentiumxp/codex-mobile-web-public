@@ -1276,6 +1276,84 @@ html.visual-recovering body::before {
   border-color: rgba(241, 135, 125, 0.5);
 }
 
+.profile-switch-confirm-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+  display: grid;
+  align-items: end;
+  justify-items: center;
+  padding: 16px 14px calc(16px + env(safe-area-inset-bottom, 0px));
+  background: rgba(10, 14, 18, 0.52);
+}
+
+.profile-switch-confirm-dialog.hidden {
+  display: none;
+}
+
+.profile-switch-confirm-panel {
+  width: min(440px, 100%);
+  overflow: hidden;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.profile-switch-confirm-head {
+  padding: 14px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.profile-switch-confirm-title {
+  font-size: 17px;
+  font-weight: 760;
+}
+
+.profile-switch-confirm-subtitle {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.profile-switch-confirm-content {
+  padding: 14px;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.profile-switch-confirm-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.profile-switch-confirm-cancel,
+.profile-switch-confirm-proceed {
+  min-height: 42px;
+  border-radius: 8px;
+  border: 1px solid var(--line-soft);
+  font-size: 14px;
+  font-weight: 740;
+}
+
+.profile-switch-confirm-cancel {
+  color: var(--muted);
+  background: transparent;
+}
+
+.profile-switch-confirm-proceed {
+  color: var(--text-on-accent);
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
 .field-label {
   text-transform: uppercase;
   letter-spacing: 0.08em;
