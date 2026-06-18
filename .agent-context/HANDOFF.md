@@ -4286,7 +4286,9 @@ The previous full handoff was archived and should be opened only when old proven
 
 ## 2026-06-18 iOS WebView Archive And Continuation Source Hide v298
 
-- Status: implemented locally; not deployed in this turn.
+- Status: committed and deployed to Mac production.
+- Commit:
+  - `21f8bd1 fix: 修复续接归档与 WebView 归档确认`
 - User-visible issue:
   - After `压缩续接`, the old source thread could remain visible in Codex
     Mobile, as observed with `Home AI 06-12`.
@@ -4325,6 +4327,14 @@ The previous full handoff was archived and should be opened only when old proven
   - Home AI center harness:
     `node tests/architecture-code-test-harness-map.test.js`.
   - `git diff --check`
+- Production deployment:
+  - Deployed through Home AI central Mac deploy script for plugin
+    `codex-mobile-web`.
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v298`,
+    `shellCacheName=codex-mobile-shell-v298`.
+  - Deploy evidence:
+    `evidence-28ce981d-8e50-4a15-a39f-1a8aa63c606a`.
 - Note:
   - `docs/HOME_AI_PLATFORM_CONTRACT.md` was already dirty before this fix and
     remains unrelated.
