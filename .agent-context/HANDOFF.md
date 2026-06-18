@@ -4338,3 +4338,38 @@ The previous full handoff was archived and should be opened only when old proven
 - Note:
   - `docs/HOME_AI_PLATFORM_CONTRACT.md` was already dirty before this fix and
     remains unrelated.
+
+## 2026-06-18 Deferred Thread List Title Hydration v299
+
+- Status: implemented locally; not deployed in this turn.
+- User-visible issue:
+  - After the v297 cold-start `fallback=defer` optimization, some renamed or
+    continuation threads briefly displayed their initial app-server title before
+    the delayed full fallback refresh restored the official display name.
+- Fix:
+  - The deferred `/api/threads?fallback=defer` path still skips expensive state
+    DB and rollout fallback scans for first paint.
+  - It now applies the lightweight `session_index.jsonl` title hydration to the
+    app-server result before decoration and response, so renamed/continuation
+    thread titles are correct on the first visible list render.
+  - PWA shell cache advanced to `codex-mobile-shell-v299`.
+- Changed files:
+  - `server.js`
+  - `public/app.js`
+  - `public/sw.js`
+  - `test/thread-visibility.test.js`
+  - `test/mobile-viewport.test.js`
+  - `test/thread-goal-service.test.js`
+  - `test/thread-task-card-route.test.js`
+  - `docs/ARCHITECTURE.md`
+  - `README.md`
+- Validation:
+  - `node --check server.js && node --check public/app.js && node --check public/sw.js`
+  - `node --test test/thread-visibility.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js`
+  - `npm run check`
+  - `npm test` passed: 489/489.
+  - `git diff --check`
+  - AI Ops evidence: `evidence-4fdaf8a8-df75-43cb-ac0c-36610e9f2eac`.
+- Note:
+  - `docs/HOME_AI_PLATFORM_CONTRACT.md` remains an unrelated pre-existing dirty
+    file and was not touched for this fix.

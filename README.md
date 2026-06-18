@@ -4,6 +4,8 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：v299 修正 v297 冷启动快速列表带来的线程名短暂回退问题。`fallback=defer` 首屏仍跳过昂贵的 state DB / rollout fallback 扫描，但会先用 `session_index.jsonl` 做轻量标题水合，让压缩续接线程和手动改名线程在首屏直接显示正式名称，不再先闪最初标题再过一两秒刷新回来。PWA shell cache 升级到 `codex-mobile-shell-v299`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
+
 - 中文说明：v298 修正 Home AI/iOS 原生壳内 Codex 归档确认和压缩续接后的旧线程隐藏。手动归档在 Hermes embedded WebView 中改用 iframe 内确认框，不再依赖不稳定的原生 `window.confirm()`；压缩续接成功后如果底层 app-server `thread/archive` RPC 失败，服务端会把源线程写入 Mobile 本地归档索引，让旧线程仍从 Codex Mobile 列表隐藏。PWA shell cache 升级到 `codex-mobile-shell-v298`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
 
 - 中文说明：v297 优化 Codex Mobile 冷启动线程列表首屏速度。启动阶段首个线程列表请求会带 `fallback=defer`，服务端先返回 app-server 的快速列表并标记 `mobileDeferredFallback`，避免同步扫描 rollout/state DB fallback 把首屏拖到 1-2 秒；前端随后静默补拉一次完整列表，继续保留历史线程/fallback 合并能力。PWA shell cache 升级到 `codex-mobile-shell-v297`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。

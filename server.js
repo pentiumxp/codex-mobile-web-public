@@ -2766,6 +2766,14 @@ function hydrateThreadListTitlesFromSessionIndex(threads, indexEntries = readSes
   });
 }
 
+function hydrateThreadListResultTitlesFromSessionIndex(result, indexEntries = readSessionIndexEntries()) {
+  if (!result || typeof result !== "object") return result;
+  const out = Object.assign({}, result);
+  if (Array.isArray(out.data)) out.data = hydrateThreadListTitlesFromSessionIndex(out.data, indexEntries);
+  if (Array.isArray(out.threads)) out.threads = hydrateThreadListTitlesFromSessionIndex(out.threads, indexEntries);
+  return out;
+}
+
 function mergeThreadSummaryList(threads) {
   const archivedIds = archivedSessionThreadIds();
   const byId = new Map();
@@ -10586,12 +10594,15 @@ async function handleApi(req, res) {
           fallbackSessionIndexMs: 0,
           mergeMs: 0,
         });
-        threadDisplaySummaryCache.rememberList(appServerResult);
-        if (Array.isArray(appServerResult.data)) appServerResult.data = appServerResult.data.slice(0, limit);
-        if (Array.isArray(appServerResult.threads)) appServerResult.threads = appServerResult.threads.slice(0, limit);
+        const sessionIndexStartedAtMs = Date.now();
+        const indexedResult = hydrateThreadListResultTitlesFromSessionIndex(appServerResult);
+        timings.fallbackSessionIndexMs = Math.max(0, Date.now() - sessionIndexStartedAtMs);
+        threadDisplaySummaryCache.rememberList(indexedResult);
+        if (Array.isArray(indexedResult.data)) indexedResult.data = indexedResult.data.slice(0, limit);
+        if (Array.isArray(indexedResult.threads)) indexedResult.threads = indexedResult.threads.slice(0, limit);
         const decorateStartedAtMs = Date.now();
         const decorated = tokenUsageStatsService.decorateThreadListResult(
-          attachThreadListStateToResult(appServerResult),
+          attachThreadListStateToResult(indexedResult),
           { cwd, days: 31, workspaceCwds: tokenUsageWorkspaceCwds(globalState) },
         );
         markTiming("decorateMs", decorateStartedAtMs);
@@ -11278,6 +11289,7 @@ module.exports = {
   filePreviewAuthoritiesForThread,
   filePreviewSkillRoots,
   generatedImageContentUrl,
+  hydrateThreadListResultTitlesFromSessionIndex,
   hydrateThreadListTitlesFromSessionIndex,
   isHiddenThread,
   mergeThreadListFallback,
