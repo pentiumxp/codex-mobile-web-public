@@ -520,6 +520,14 @@ Run:
 node --test test\thread-archive.test.js test\mobile-archive-index-service.test.js test\thread-visibility.test.js
 ```
 
+If a source thread still appears after `压缩续接` succeeds, inspect the
+continuation result's `sourceArchive`. Current builds should first try the
+app-server `thread/archive` RPC and, if that RPC fails after the new
+continuation thread is created, write the source id into the Mobile local
+archive index so the old thread is still hidden from Codex Mobile. Manual
+archive in Hermes/iOS embed mode should use the in-app archive confirmation
+dialog; native `window.confirm()` is not reliable in that WebView path.
+
 ## Quoted Uploaded Images Stay As Text
 
 If the original user upload renders as a thumbnail but a later Codex/plan reply shows raw `Uploaded attachments:` text, inspect `public/app.js` attachment-summary parsing first.

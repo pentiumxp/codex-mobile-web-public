@@ -1276,7 +1276,8 @@ html.visual-recovering body::before {
   border-color: rgba(241, 135, 125, 0.5);
 }
 
-.profile-switch-confirm-dialog {
+.profile-switch-confirm-dialog,
+.thread-archive-confirm-dialog {
   position: fixed;
   inset: 0;
   z-index: 99;
@@ -1287,11 +1288,13 @@ html.visual-recovering body::before {
   background: rgba(10, 14, 18, 0.52);
 }
 
-.profile-switch-confirm-dialog.hidden {
+.profile-switch-confirm-dialog.hidden,
+.thread-archive-confirm-dialog.hidden {
   display: none;
 }
 
-.profile-switch-confirm-panel {
+.profile-switch-confirm-panel,
+.thread-archive-confirm-panel {
   width: min(440px, 100%);
   overflow: hidden;
   color: var(--text);
@@ -1301,17 +1304,20 @@ html.visual-recovering body::before {
   box-shadow: var(--shadow);
 }
 
-.profile-switch-confirm-head {
+.profile-switch-confirm-head,
+.thread-archive-confirm-head {
   padding: 14px;
   border-bottom: 1px solid var(--line-soft);
 }
 
-.profile-switch-confirm-title {
+.profile-switch-confirm-title,
+.thread-archive-confirm-title {
   font-size: 17px;
   font-weight: 760;
 }
 
-.profile-switch-confirm-subtitle {
+.profile-switch-confirm-subtitle,
+.thread-archive-confirm-subtitle {
   margin-top: 4px;
   color: var(--muted);
   font-size: 13px;
@@ -1319,14 +1325,16 @@ html.visual-recovering body::before {
   overflow-wrap: anywhere;
 }
 
-.profile-switch-confirm-content {
+.profile-switch-confirm-content,
+.thread-archive-confirm-content {
   padding: 14px;
   color: var(--text);
   font-size: 14px;
   line-height: 1.45;
 }
 
-.profile-switch-confirm-actions {
+.profile-switch-confirm-actions,
+.thread-archive-confirm-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
@@ -1335,7 +1343,9 @@ html.visual-recovering body::before {
 }
 
 .profile-switch-confirm-cancel,
-.profile-switch-confirm-proceed {
+.profile-switch-confirm-proceed,
+.thread-archive-confirm-cancel,
+.thread-archive-confirm-proceed {
   min-height: 42px;
   border-radius: 8px;
   border: 1px solid var(--line-soft);
@@ -1343,12 +1353,14 @@ html.visual-recovering body::before {
   font-weight: 740;
 }
 
-.profile-switch-confirm-cancel {
+.profile-switch-confirm-cancel,
+.thread-archive-confirm-cancel {
   color: var(--muted);
   background: transparent;
 }
 
-.profile-switch-confirm-proceed {
+.profile-switch-confirm-proceed,
+.thread-archive-confirm-proceed {
   color: var(--text-on-accent);
   background: var(--accent-strong);
   border-color: var(--accent-strong);

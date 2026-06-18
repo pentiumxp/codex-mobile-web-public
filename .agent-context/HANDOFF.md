@@ -4283,3 +4283,48 @@ The previous full handoff was archived and should be opened only when old proven
 - Note:
   - `docs/HOME_AI_PLATFORM_CONTRACT.md` was already dirty before this fix and
     was not touched for this task.
+
+## 2026-06-18 iOS WebView Archive And Continuation Source Hide v298
+
+- Status: implemented locally; not deployed in this turn.
+- User-visible issue:
+  - After `压缩续接`, the old source thread could remain visible in Codex
+    Mobile, as observed with `Home AI 06-12`.
+  - In the iOS native shell WebView, manual archive could appear to do nothing
+    because the confirmation path still used native `window.confirm()`.
+- Fix:
+  - Manual archive now uses an in-app `threadArchiveConfirmDialog` in Hermes
+    embedded mode; PWA/standalone keeps the native confirm path.
+  - After archive POST succeeds, the thread row is removed from the current
+    client list immediately before the silent list refresh.
+  - Continuation source archiving still tries app-server `thread/archive` first.
+    If that RPC fails after the new continuation thread is already created, the
+    server writes the source thread id to the Mobile local archive index and
+    returns `sourceArchive.archived=true` with bounded `archiveError` metadata.
+  - PWA shell cache advanced to `codex-mobile-shell-v298`.
+- Changed files:
+  - `server.js`
+  - `public/app.js`
+  - `public/index.html`
+  - `public/styles.css`
+  - `public/sw.js`
+  - `test/thread-archive.test.js`
+  - `test/continuation-lineage.test.js`
+  - `test/mobile-viewport.test.js`
+  - `test/thread-goal-service.test.js`
+  - `test/thread-task-card-route.test.js`
+  - `docs/TROUBLESHOOTING.md`
+  - `README.md`
+- Validation:
+  - `node --check public/app.js`
+  - `node --check server.js`
+  - `node --test test/thread-archive.test.js test/mobile-archive-index-service.test.js test/thread-visibility.test.js test/continuation-lineage.test.js`
+  - `node --test test/thread-archive.test.js test/mobile-archive-index-service.test.js test/thread-visibility.test.js test/continuation-lineage.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js`
+  - `npm run check`
+  - `npm test` passed: 488/488.
+  - Home AI center harness:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - `git diff --check`
+- Note:
+  - `docs/HOME_AI_PLATFORM_CONTRACT.md` was already dirty before this fix and
+    remains unrelated.

@@ -240,6 +240,10 @@ const state = {
   profileSwitchConfirmTargetId: "",
   profileSwitchConfirmLabel: "",
   profileSwitchConfirmResolve: null,
+  threadArchiveConfirmOpen: false,
+  threadArchiveConfirmTargetId: "",
+  threadArchiveConfirmTitle: "",
+  threadArchiveConfirmResolve: null,
   restartAutoRecoverThreads: [],
   serverBuildId: "",
   serverAssetBuildId: "",
@@ -336,7 +340,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v297";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v298";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -10272,9 +10276,11 @@ async function openContinuationResult(result) {
     renderThreads();
   }
   $("connectionState").classList.remove("error");
-  if (result.sourceArchive && result.sourceArchive.error) {
+  if (result.sourceArchive && result.sourceArchive.error && !result.sourceArchive.archived) {
     $("connectionState").classList.add("error");
     $("connectionState").textContent = `续接线程已就绪；归档失败：${result.sourceArchive.error}`;
+  } else if (result.sourceArchive && result.sourceArchive.error) {
+    $("connectionState").textContent = "交接已生成；旧线程已在 Mobile 隐藏";
   } else {
     $("connectionState").textContent = "交接已生成；正在打开续接线程";
   }
@@ -10381,6 +10387,41 @@ async function startNewThreadFromCurrent(event) {
   await startNewThreadFromThread(state.currentThread, event);
 }
 
+function renderThreadArchiveDialog() {
+  const dialog = $("threadArchiveConfirmDialog");
+  const subtitle = $("threadArchiveConfirmSubtitle");
+  if (!dialog || !subtitle) return;
+  dialog.classList.toggle("hidden", !state.threadArchiveConfirmOpen);
+  subtitle.textContent = state.threadArchiveConfirmOpen
+    ? `目标会话：${state.threadArchiveConfirmTitle || state.threadArchiveConfirmTargetId || "--"}`
+    : "";
+}
+
+function closeThreadArchiveDialog(confirmed = false) {
+  const resolve = state.threadArchiveConfirmResolve;
+  state.threadArchiveConfirmOpen = false;
+  state.threadArchiveConfirmTargetId = "";
+  state.threadArchiveConfirmTitle = "";
+  state.threadArchiveConfirmResolve = null;
+  renderThreadArchiveDialog();
+  if (resolve) resolve(Boolean(confirmed));
+}
+
+function requestThreadArchiveConfirmation(threadId, title) {
+  const label = String(title || "会话");
+  if (!isHermesEmbedMode()) {
+    return Promise.resolve(window.confirm(`归档“${label}”？`));
+  }
+  if (state.threadArchiveConfirmResolve) closeThreadArchiveDialog(false);
+  state.threadArchiveConfirmOpen = true;
+  state.threadArchiveConfirmTargetId = String(threadId || "");
+  state.threadArchiveConfirmTitle = label;
+  renderThreadArchiveDialog();
+  return new Promise((resolve) => {
+    state.threadArchiveConfirmResolve = resolve;
+  });
+}
+
 async function archiveThread(threadId, button = null) {
   const id = String(threadId || "");
   const thread = state.threads.find((entry) => entry.id === id);
@@ -10389,7 +10430,7 @@ async function archiveThread(threadId, button = null) {
     return;
   }
   const title = threadTitleForDisplay(thread) || "会话";
-  const archiveConfirmed = window.confirm(`归档“${title}”？`);
+  const archiveConfirmed = await requestThreadArchiveConfirmation(thread.id, title);
   if (!archiveConfirmed) return;
   if (button) button.disabled = true;
   $("connectionState").classList.remove("error");
@@ -10397,10 +10438,12 @@ async function archiveThread(threadId, button = null) {
   markActivity("归档会话");
   try {
     await api(`/api/threads/${encodeURIComponent(thread.id)}/archive`, { method: "POST", timeoutMs: 30000 });
+    state.threads = state.threads.filter((entry) => entry.id !== thread.id);
     if (state.currentThreadId === thread.id) {
       clearCurrentThreadSelection();
       renderCurrentThread();
     }
+    renderThreads();
     loadThreads().catch(showError);
   } catch (err) {
     showError(err);
@@ -15562,6 +15605,11 @@ function wireUi() {
   if ($("profileSwitchConfirmProceed")) $("profileSwitchConfirmProceed").addEventListener("click", () => closeCodexProfileSwitchDialog(true));
   if ($("profileSwitchConfirmDialog")) $("profileSwitchConfirmDialog").addEventListener("click", (event) => {
     if (event.target === $("profileSwitchConfirmDialog")) closeCodexProfileSwitchDialog(false);
+  });
+  if ($("threadArchiveConfirmCancel")) $("threadArchiveConfirmCancel").addEventListener("click", () => closeThreadArchiveDialog(false));
+  if ($("threadArchiveConfirmProceed")) $("threadArchiveConfirmProceed").addEventListener("click", () => closeThreadArchiveDialog(true));
+  if ($("threadArchiveConfirmDialog")) $("threadArchiveConfirmDialog").addEventListener("click", (event) => {
+    if (event.target === $("threadArchiveConfirmDialog")) closeThreadArchiveDialog(false);
   });
   if ($("goalForm")) $("goalForm").addEventListener("submit", (event) => submitThreadGoalMessage(event).catch(showError));
   if ($("goalObjectiveInput")) $("goalObjectiveInput").addEventListener("keydown", requestGoalDialogSubmitFromEnter);

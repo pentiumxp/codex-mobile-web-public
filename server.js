@@ -2682,6 +2682,16 @@ function alreadyArchivedResult(source, threadId, shouldRemember = true) {
   return out;
 }
 
+function mobileArchivedFallbackResult(source, threadId, err) {
+  const mobileArchived = rememberMobileArchivedThreadId(threadId);
+  return {
+    archived: Boolean(mobileArchived),
+    source: source || "mobile-index-fallback",
+    mobileArchived,
+    archiveError: err ? String(err.message || err) : "",
+  };
+}
+
 function isThreadIdArchivedLocally(threadId) {
   const id = normalizeThreadId(threadId);
   return Boolean(id && archivedSessionThreadIds().has(id));
@@ -8633,15 +8643,18 @@ async function startThreadFromRequestBody(body, options = {}) {
   if (archiveSourceThread && sourceThreadId !== threadId) {
     progress("archive-source", "正在归档旧线程", { threadId, sourceThreadId });
     try {
+      const archiveResult = await archiveVisibleThread(sourceThreadId, visibility);
       sourceArchive = {
-        archived: true,
+        archived: !(archiveResult && archiveResult.archived === false),
         threadId: sourceThreadId,
-        result: await archiveVisibleThread(sourceThreadId, visibility),
+        result: archiveResult,
       };
     } catch (err) {
+      const fallbackResult = mobileArchivedFallbackResult("continuation-fallback", sourceThreadId, err);
       sourceArchive = {
-        archived: false,
+        archived: Boolean(fallbackResult.archived),
         threadId: sourceThreadId,
+        result: fallbackResult,
         error: err.message || String(err),
       };
     }
@@ -8751,7 +8764,9 @@ async function runContinuationJob(job) {
       status: "done",
       step: "done",
       message: result.sourceArchive && result.sourceArchive.error
-        ? `续接线程已就绪；归档失败：${result.sourceArchive.error}`
+        ? (result.sourceArchive.archived
+          ? "续接线程已就绪；旧线程已在 Mobile 隐藏"
+          : `续接线程已就绪；归档失败：${result.sourceArchive.error}`)
         : "续接线程已就绪",
       threadId: result.threadId || job.threadId,
       sourceArchive: result.sourceArchive || job.sourceArchive,
