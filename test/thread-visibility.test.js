@@ -11,6 +11,7 @@ const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "ut
 const {
   anyThreadMatchesVisibleWorkspace,
   filterFallbackThreads,
+  hydrateThreadListResultTitlesFromSessionIndex,
   hydrateThreadListTitlesFromSessionIndex,
   isHiddenThread,
   mergeThreadListFallback,
@@ -245,6 +246,29 @@ test("thread list hydrates continuation bootstrap titles from the Mobile session
   assert.equal(hydrated[0].preview, "Hermes 06-05");
 });
 
+test("deferred thread list result hydrates display titles before first paint", () => {
+  const threadId = "019e9566-c222-7560-af45-2b3665862188";
+  const result = hydrateThreadListResultTitlesFromSessionIndex({
+    data: [
+      {
+        id: threadId,
+        name: "# Continuation Bootstrap Index\n\nThis thread is a same-workspace continuation created by Codex Mobile Web.",
+        preview: "# Continuation Bootstrap Index",
+        updatedAt: 100,
+      },
+    ],
+  }, new Map([
+    [threadId, {
+      id: threadId,
+      thread_name: "Home AI 06-18",
+      updated_at: "2026-06-18T01:30:00.113Z",
+    }],
+  ]));
+
+  assert.equal(result.data[0].name, "Home AI 06-18");
+  assert.equal(result.data[0].preview, "Home AI 06-18");
+});
+
 test("rollout session fallback recovers thread summary without state db text columns", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-rollout-fallback-"));
   const threadId = "019e9000-0000-7000-8000-000000000001";
@@ -459,6 +483,8 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /const fallbackMode = String\(url\.searchParams\.get\("fallback"\) \|\| ""\)/);
   assert.match(routeBody, /const deferFallback = fallbackMode === "defer" && !cursor && !archived && !searchTerm/);
   assert.match(routeBody, /fallbackDeferred: true/);
+  assert.match(routeBody, /const indexedResult = hydrateThreadListResultTitlesFromSessionIndex\(appServerResult\)/);
+  assert.match(routeBody, /attachThreadListStateToResult\(indexedResult\)/);
   assert.match(routeBody, /decorated\.mobileDeferredFallback = true/);
   assert.match(routeBody, /logThreadList\("deferred_complete"/);
   assert.match(routeBody, /logThreadList\("complete"/);

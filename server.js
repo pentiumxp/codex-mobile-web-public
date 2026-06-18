@@ -2682,6 +2682,16 @@ function alreadyArchivedResult(source, threadId, shouldRemember = true) {
   return out;
 }
 
+function mobileArchivedFallbackResult(source, threadId, err) {
+  const mobileArchived = rememberMobileArchivedThreadId(threadId);
+  return {
+    archived: Boolean(mobileArchived),
+    source: source || "mobile-index-fallback",
+    mobileArchived,
+    archiveError: err ? String(err.message || err) : "",
+  };
+}
+
 function isThreadIdArchivedLocally(threadId) {
   const id = normalizeThreadId(threadId);
   return Boolean(id && archivedSessionThreadIds().has(id));
@@ -2754,6 +2764,14 @@ function hydrateThreadListTitlesFromSessionIndex(threads, indexEntries = readSes
     const entry = indexEntries.get(id);
     return applySessionIndexTitleToThread(thread, entry);
   });
+}
+
+function hydrateThreadListResultTitlesFromSessionIndex(result, indexEntries = readSessionIndexEntries()) {
+  if (!result || typeof result !== "object") return result;
+  const out = Object.assign({}, result);
+  if (Array.isArray(out.data)) out.data = hydrateThreadListTitlesFromSessionIndex(out.data, indexEntries);
+  if (Array.isArray(out.threads)) out.threads = hydrateThreadListTitlesFromSessionIndex(out.threads, indexEntries);
+  return out;
 }
 
 function mergeThreadSummaryList(threads) {
@@ -8633,15 +8651,18 @@ async function startThreadFromRequestBody(body, options = {}) {
   if (archiveSourceThread && sourceThreadId !== threadId) {
     progress("archive-source", "正在归档旧线程", { threadId, sourceThreadId });
     try {
+      const archiveResult = await archiveVisibleThread(sourceThreadId, visibility);
       sourceArchive = {
-        archived: true,
+        archived: !(archiveResult && archiveResult.archived === false),
         threadId: sourceThreadId,
-        result: await archiveVisibleThread(sourceThreadId, visibility),
+        result: archiveResult,
       };
     } catch (err) {
+      const fallbackResult = mobileArchivedFallbackResult("continuation-fallback", sourceThreadId, err);
       sourceArchive = {
-        archived: false,
+        archived: Boolean(fallbackResult.archived),
         threadId: sourceThreadId,
+        result: fallbackResult,
         error: err.message || String(err),
       };
     }
@@ -8751,7 +8772,9 @@ async function runContinuationJob(job) {
       status: "done",
       step: "done",
       message: result.sourceArchive && result.sourceArchive.error
-        ? `续接线程已就绪；归档失败：${result.sourceArchive.error}`
+        ? (result.sourceArchive.archived
+          ? "续接线程已就绪；旧线程已在 Mobile 隐藏"
+          : `续接线程已就绪；归档失败：${result.sourceArchive.error}`)
         : "续接线程已就绪",
       threadId: result.threadId || job.threadId,
       sourceArchive: result.sourceArchive || job.sourceArchive,
@@ -10571,12 +10594,15 @@ async function handleApi(req, res) {
           fallbackSessionIndexMs: 0,
           mergeMs: 0,
         });
-        threadDisplaySummaryCache.rememberList(appServerResult);
-        if (Array.isArray(appServerResult.data)) appServerResult.data = appServerResult.data.slice(0, limit);
-        if (Array.isArray(appServerResult.threads)) appServerResult.threads = appServerResult.threads.slice(0, limit);
+        const sessionIndexStartedAtMs = Date.now();
+        const indexedResult = hydrateThreadListResultTitlesFromSessionIndex(appServerResult);
+        timings.fallbackSessionIndexMs = Math.max(0, Date.now() - sessionIndexStartedAtMs);
+        threadDisplaySummaryCache.rememberList(indexedResult);
+        if (Array.isArray(indexedResult.data)) indexedResult.data = indexedResult.data.slice(0, limit);
+        if (Array.isArray(indexedResult.threads)) indexedResult.threads = indexedResult.threads.slice(0, limit);
         const decorateStartedAtMs = Date.now();
         const decorated = tokenUsageStatsService.decorateThreadListResult(
-          attachThreadListStateToResult(appServerResult),
+          attachThreadListStateToResult(indexedResult),
           { cwd, days: 31, workspaceCwds: tokenUsageWorkspaceCwds(globalState) },
         );
         markTiming("decorateMs", decorateStartedAtMs);
@@ -11263,6 +11289,7 @@ module.exports = {
   filePreviewAuthoritiesForThread,
   filePreviewSkillRoots,
   generatedImageContentUrl,
+  hydrateThreadListResultTitlesFromSessionIndex,
   hydrateThreadListTitlesFromSessionIndex,
   isHiddenThread,
   mergeThreadListFallback,
