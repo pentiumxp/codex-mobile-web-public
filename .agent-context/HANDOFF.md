@@ -4341,7 +4341,9 @@ The previous full handoff was archived and should be opened only when old proven
 
 ## 2026-06-18 Deferred Thread List Title Hydration v299
 
-- Status: implemented locally; not deployed in this turn.
+- Status: committed and deployed to Mac production.
+- Commit:
+  - `5382d2c fix: 首屏水合线程正式标题`
 - User-visible issue:
   - After the v297 cold-start `fallback=defer` optimization, some renamed or
     continuation threads briefly displayed their initial app-server title before
@@ -4370,6 +4372,14 @@ The previous full handoff was archived and should be opened only when old proven
   - `npm test` passed: 489/489.
   - `git diff --check`
   - AI Ops evidence: `evidence-4fdaf8a8-df75-43cb-ac0c-36610e9f2eac`.
+- Production deployment:
+  - Deployed through Home AI central Mac deploy script for plugin
+    `codex-mobile-web`.
+  - Production `/api/public-config` readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v299`,
+    `shellCacheName=codex-mobile-shell-v299`.
+  - Deploy evidence:
+    `evidence-970e6dab-df49-45cf-9021-966c6e2902e6`.
 - Note:
   - `docs/HOME_AI_PLATFORM_CONTRACT.md` remains an unrelated pre-existing dirty
     file and was not touched for this fix.
