@@ -4,6 +4,7 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：v314 修复打开已在运行的会话详情后，线程列表行可能继续显示旧状态、需要等下一次列表刷新才出现 running spinner 的问题。详情读取、cached open、live poll 和 full backfill 现在会立即把当前会话摘要同步回列表行。PWA shell cache 升级到 `codex-mobile-shell-v314`。
 - 中文说明：v313 修复进入长线程时历史 `mobileSupersededLive` 壳 turn 里的旧用户消息反复出现在底部、并挤掉最近回执的问题。前端不再渲染 superseded live turn 中的旧 `userMessage`；服务端投影和 thread compact 会在截断前剪掉纯旧用户消息/Reasoning/Usage/命令壳，只保留带助手回执、图片或上下文提示的 superseded turn，并移除其中旧用户提问。PWA shell cache 升级到 `codex-mobile-shell-v313`。
 - 中文说明：v312 修复 iOS 原生壳/PWA 下 Public PR、自动 PR 提示、更新检查、侧聊清空、任务卡片创建/回复等对话框可能不弹出的问题。前端剩余用户可触发的 `alert` / `confirm` / `prompt` 原生弹窗统一替换为页面内底部弹框，Profile 切换和归档确认也不再按模式回退到浏览器原生确认框。PWA shell cache 升级到 `codex-mobile-shell-v312`。
 - 中文说明：server-only 合并 public PR #73，防止线程列表 stale 状态覆盖已知状态。线程列表合并和显示摘要缓存现在会保留已知 `completed` / `idle` / `live` 等有效状态，不会被较新的 `notLoaded` / unknown 行覆盖；当基础行仍是 unknown 时，仍可用 fallback 或缓存中的已知状态补齐。这样 app-server/thread-list、rollout fallback 与缓存摘要交错刷新时，不会把已结束或已知运行状态误退回 stale。本次不改变 PWA shell cache，更新后需要重启 Node listener 才会生效。本次 public 发布只包含公开源码、README 和测试；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
