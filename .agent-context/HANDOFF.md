@@ -2,6 +2,62 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-19 Public PR #73 Thread List Stale Status Fix
+
+- Status: public PR evaluated, merged, pushed to public, then reverse-synced to
+  private and revalidated.
+- Public PR:
+  - `pentiumxp/codex-mobile-web-public#73`
+  - Title: `fix: 防止线程列表 stale 状态覆盖已知状态`
+  - Base was current public main `f82a02b`; PR head `2118828`.
+  - Merge commit in public mirror: `9b3bce3`.
+  - Public README release-note commit: `b04a62d`.
+  - GitHub PR state read back as `MERGED`.
+- Scope:
+  - Server-only thread-list/display-summary cache merge fix.
+  - No PWA shell cache bump.
+  - Public README Chinese release note added.
+  - No `.agent-context`, runtime state, local secrets, uploads, or
+    machine-specific diagnostics were copied into public.
+- Public validation:
+  - `node --check server.js adapters/push-notification-service.js
+    test/push-notification-service.test.js test/thread-visibility.test.js`
+    passed.
+  - `node --test test/push-notification-service.test.js
+    test/thread-visibility.test.js` passed: 44 tests.
+  - `npm run check`, `npm run check:macos`, and `npm test` passed:
+    514 tests.
+  - Center `node tests/architecture-code-test-harness-map.test.js` passed.
+  - `git diff --check origin/main..HEAD` and final privacy scan passed; privacy
+    scan only matched README policy text.
+  - Evidence ledger record:
+    `evidence-44343e0f-6a98-42c7-bd34-908bedb8cb97`.
+- Private sync:
+  - Reverse-merged public main into private with merge commit `253d505`.
+  - README conflict resolved by keeping the public #73 release note before
+    v311.
+  - Committed private/public source diff is empty excluding `.agent-context`.
+  - Existing uncommitted private working-tree changes remain in
+    `public/app.js`, `public/index.html`, and `public/styles.css`; they were
+    not included in public PR #73 sync commits.
+- Private validation:
+  - `node --check server.js adapters/push-notification-service.js
+    test/push-notification-service.test.js test/thread-visibility.test.js
+    public/app.js` passed.
+  - `node --test test/push-notification-service.test.js
+    test/thread-visibility.test.js` passed: 44 tests.
+  - `npm run check`, `npm run check:macos`, and `npm test` passed:
+    514 tests.
+  - Center `node scripts/plugin-workspace-platform-contract-check.js --plugin
+    codex-mobile --json` passed with only existing
+    `handoff_pointer_missing` warning.
+  - Center `node tests/architecture-code-test-harness-map.test.js` passed.
+  - `git diff --check HEAD^..HEAD` and working-tree `git diff --check` passed.
+  - Privacy diff scan excluding `.agent-context` found no committed
+    public/private source leak.
+  - Evidence ledger record:
+    `evidence-b35267b2-42f4-4bb1-be6a-4e1ce27bc9eb`.
+
 ## 2026-06-19 v311 Runtime Picker Overlay Fix
 
 - Status: implemented, validated, and deployed to Mac production with
