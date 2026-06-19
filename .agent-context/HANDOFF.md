@@ -2,10 +2,62 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-19 v307 ChatGPT Pro MCP / UI Stabilization / Status Hint Deployment
+
+- Status: committed locally and deployed to Mac production; not pushed.
+- Commits:
+  - `7e33c0c` `feat: add ChatGPT Pro MCP connector and v307 status fixes`
+- Deployment:
+  - Target: `plugin:codex-mobile-web`
+  - Production path:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`
+  - Production owner: `xuxin:staff`
+  - Restart label: `com.hermesmobile.plugin.codex-mobile`
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260619T100253Z-plugin-codex-mobile-web-manual`
+  - The first `--execute` command was interrupted from the Codex tool view, but
+    production readback showed the deploy had already completed. To avoid a
+    second restart, the deploy was not rerun.
+- Production readback:
+  - `/api/public-config` reports
+    `clientBuildId=0.1.11|codex-mobile-shell-v307`,
+    `shellCacheName=codex-mobile-shell-v307`, and production workspace path.
+  - Plugin manifest returns `plugin_id=codex-mobile`, `kind=embedded_app`,
+    `entry.url` present, `program_api` present, and no raw access key marker in
+    the bounded manifest projection.
+  - `launchctl print system/com.hermesmobile.plugin.codex-mobile` reports
+    `state=running`; stdout/stderr are under
+    `/Users/xuxin/.codex-mobile-web/logs`.
+  - Source and production hashes matched for `public/app.js`, `server.js`, and
+    `adapters/chatgpt-pro-mcp-service.js`.
+  - Authenticated bounded smoke returned HTTP 200 for
+    `/api/status?detail=1` and `/api/chatgpt-pro/planner/status` without
+    printing keys.
+- Validation before deploy:
+  - `node --check public/app.js && node --check public/sw.js`
+  - Focused thread/list/UI tests: 87 tests passed.
+  - Center `node tests/architecture-code-test-harness-map.test.js` passed.
+  - `git diff --check` passed.
+  - `npm run check` passed.
+  - `npm test` passed: 505 tests.
+  - `npm run check:macos` passed.
+  - Center deployment checks passed:
+    `node --check scripts/deploy-macos-production.js`,
+    `node tests/macos-production-deploy-script.test.js`,
+    `node tests/production-status-smoke-harness.test.js`.
+  - Center deploy plans were generated for Home AI and Codex plugin target.
+- Evidence ledger records:
+  - `evidence-20d05c12-201a-4840-9976-0b7938528253` for v307 local/focused
+    status-hint tests.
+  - `evidence-f6d6e673-e874-4eea-a6aa-37b47535122a` for production deploy
+    readback.
+  - `evidence-23a324ba-2c80-46f8-b453-1bf4efbe76d1` for authenticated
+    production smoke.
+
 ## 2026-06-19 Thread List Running Status Hint v307
 
-- Status: implemented and validated locally; not committed, pushed, deployed,
-  or restarted.
+- Status: implemented, validated locally, and included in production deployment
+  above.
 - User-visible issue:
   - Thread list rows could continue to show a working/running status after the
     underlying thread had already stopped.
