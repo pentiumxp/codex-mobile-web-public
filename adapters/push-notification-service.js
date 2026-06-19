@@ -133,6 +133,9 @@ function createThreadDisplaySummaryCache(options = {}) {
   const decorateSummary = typeof options.decorateSummary === "function"
     ? options.decorateSummary
     : (summary) => summary;
+  const mergeSummary = typeof options.mergeSummary === "function"
+    ? options.mergeSummary
+    : null;
   const entries = new Map();
 
   function prune(now = Date.now()) {
@@ -178,11 +181,16 @@ function createThreadDisplaySummaryCache(options = {}) {
     const summary = summaryFromThread(thread);
     if (!summary) return null;
     prune();
-    entries.set(String(summary.id), {
+    const threadId = String(summary.id);
+    const previous = entries.get(threadId);
+    const merged = previous && previous.thread && mergeSummary
+      ? (mergeSummary(previous.thread, summary) || summary)
+      : summary;
+    entries.set(threadId, {
       cachedAt: Date.now(),
-      thread: summary,
+      thread: merged,
     });
-    return summary;
+    return merged;
   }
 
   function rememberList(result) {
