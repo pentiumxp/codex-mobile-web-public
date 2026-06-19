@@ -95,7 +95,9 @@
   function selectedNewThreadPermission(settings) {
     const normalized = normalizePermissionModeValue(settings && settings.selected);
     if (normalized) return normalized;
-    return normalizePermissionModeValue(((settings && settings.options) || [])[0]) || "full";
+    return normalizePermissionModeValue(settings && settings.defaultValue)
+      || normalizePermissionModeValue(((settings && settings.options) || [])[0])
+      || "full";
   }
 
   return {

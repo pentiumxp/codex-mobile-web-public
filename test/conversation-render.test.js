@@ -155,6 +155,7 @@ function evaluatedUserMessagesLikelySame() {
     "splitAttachmentSummaryText",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
+    "isTurnUsageSummaryItem",
     "normalizeComparableText",
     "userMessageComparableParts",
     "userMessagePathOverlap",
@@ -179,6 +180,7 @@ function evaluatedMergeItemsPreservingLocalVisible() {
     "splitAttachmentSummaryText",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
+    "isTurnUsageSummaryItem",
     "normalizeComparableText",
     "userMessageComparableParts",
     "userMessagePathOverlap",
@@ -397,6 +399,7 @@ function evaluatedVisibleItemsForTurn() {
     "splitAttachmentSummaryText",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
+    "isTurnUsageSummaryItem",
     "normalizeComparableText",
     "userMessageComparableParts",
     "userMessagePathOverlap",
@@ -546,7 +549,10 @@ test("context compaction notices update status and collapse repeated turn notice
   assert.match(functionBody("visibleItemsForTurn"), /const notice = contextCompactionNotice\(item, turn\)/);
   assert.match(functionBody("visibleItemsForTurn"), /if \(!notice\) return/);
   assert.match(functionBody("visibleItemsForTurn"), /visible\[existing\.visibleIndex\] = null/);
-  assert.match(functionBody("visibleItemsForTurn"), /return visible\.filter\(Boolean\)/);
+  assert.match(functionBody("visibleItemsForTurn"), /const filtered = visible\.filter\(Boolean\)/);
+  assert.match(functionBody("visibleItemsForTurn"), /mobileSupersededLive/);
+  assert.match(functionBody("visibleItemsForTurn"), /filtered\.every\(\(entry\) => isTurnUsageSummaryItem\(entry\.item\)\)/);
+  assert.match(functionBody("visibleItemsForTurn"), /return filtered/);
   assert.match(functionBody("visibleItemSignature"), /isContextCompactionItem\(item\)/);
   assert.match(functionBody("visibleItemSignature"), /const notice = contextCompactionNotice\(item, turn\)/);
   assert.match(functionBody("visibleItemSignature"), /if \(!notice\) return null/);
@@ -576,6 +582,41 @@ test("visible turn items keep source order after live operations move to the doc
   assert.match(body, /return \{ html, sourceIndex, order: 1 \};/);
   assert.match(body, /\.sort\(\(a, b\) => \(a\.sourceIndex - b\.sourceIndex\) \|\| \(a\.order - b\.order\)\)/);
   assert.match(functionBody("visibleItemsForTurn"), /if \(isOperationalItem\(item\)\) \{[\s\S]*return;/);
+});
+
+test("superseded live usage-only shells do not render as blank completed receipts", () => {
+  const { visibleItemsForTurn } = evaluatedVisibleItemsForTurn();
+  assert.deepEqual(
+    visibleItemsForTurn({
+      status: { type: "completed", mobileSupersededLive: true, previousType: "inProgress" },
+      items: [{ id: "usage-only", type: "turnUsageSummary", mobileUsageSummary: { totalTokenUsage: { totalTokens: 12 } } }],
+    }),
+    [],
+  );
+  assert.deepEqual(
+    visibleItemsForTurn({
+      mobileSupersededLive: true,
+      items: [{ id: "usage-top-level", type: "turnUsageSummary", mobileUsageSummary: { totalTokenUsage: { totalTokens: 12 } } }],
+    }),
+    [],
+  );
+  assert.deepEqual(
+    visibleItemsForTurn({
+      status: { type: "completed", mobileSupersededLive: true, previousType: "inProgress" },
+      items: [
+        { id: "receipt", type: "agentMessage", text: "done" },
+        { id: "usage-with-receipt", type: "turnUsageSummary", mobileUsageSummary: { totalTokenUsage: { totalTokens: 12 } } },
+      ],
+    }).map((entry) => entry.item.id),
+    ["receipt", "usage-with-receipt"],
+  );
+  assert.deepEqual(
+    visibleItemsForTurn({
+      status: "completed",
+      items: [{ id: "normal-usage", type: "turnUsageSummary", mobileUsageSummary: { totalTokenUsage: { totalTokens: 12 } } }],
+    }).map((entry) => entry.item.id),
+    ["normal-usage"],
+  );
 });
 
 test("live turn keeps prompt and responded steering messages while hiding only unanswered trailing durable user bubbles", () => {
@@ -1364,8 +1405,10 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(appJs, /const RUNNING_THREAD_HINT_STALE_MS = 20 \* 60 \* 1000;/);
   assert.match(appJs, /runningThreadHintedAtById: loadNumberMapStorage\("codexMobileRunningThreadHintedAtById", \{\}\)/);
   assert.match(functionBody("saveThreadStatusHints"), /saveNumberMapStorage\(STORAGE_RUNNING_THREAD_HINTED_AT, state\.runningThreadHintedAtById\)/);
-  assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(String\(threadId\)\)/);
-  assert.match(functionBody("reconcileThreadStatusHints"), /else if \(wasRunning && isCompletedStatus\(thread\.status\)\)/);
+  assert.match(appJs, /function isThreadListSettledStatus\(status\)/);
+  assert.match(functionBody("isThreadListSettledStatus"), /idle\|completed\|complete\|done\|failed/);
+  assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(String\(threadId\)\) && !isThreadListSettledStatus\(status\)/);
+  assert.match(functionBody("reconcileThreadStatusHints"), /else if \(wasRunning && isThreadListSettledStatus\(thread\.status\)\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /shouldExpireRunningThreadHint\(id, thread, nowMs\)/);
   assert.doesNotMatch(functionBody("reconcileThreadStatusHints"), /else if \(!isRunning && wasRunning\)/);
 

@@ -258,6 +258,42 @@ Implementation path:
 8. If the set response succeeds but lacks a public goal object, keep the user-visible target explicit by rendering a submitted-goal card from the dialog objective/token budget until `thread/goal/updated` or sqlite fallback data replaces it.
 9. When `/g` is reopened on a thread with an unfinished goal, keep the same dialog as the action surface: Continue should clear and re-set blocked goals to active, Pause should map to app-server `blocked`, Cancel goal should call `thread/goal/clear`, and Save should keep using `thread/goal/set` for objective/token-budget edits.
 10. During continuation, treat `active`, `blocked`, and legacy `paused` goals as task-level state to copy to the new thread through app-server `thread/goal/set`. Use `adapters/thread-goal-service.js` for the pure migration plan. Completed, budget-limited, usage-limited, missing, or unsupported goals should not be copied. Lineage should record only migrated/error booleans, not the goal objective.
+
+## ChatGPT Pro Planner Connector
+
+Use when extending `@ChatGPT Pro`, adding ChatGPT MCP connector tools, saving
+ChatGPT Pro planner artifacts, or applying Pro output as a goal/task-card/review.
+
+Implementation path:
+
+1. Read `docs/CHATGPT_PRO_PLANNER_CONNECTOR_DESIGN.md` first.
+2. Preserve the existing direct `@ChatGPT Pro ...` compatibility path.
+3. Keep ChatGPT Pro as planner/reviewer and Codex as executor. The default
+   connector profile must not edit source files, run shell commands, answer
+   approvals, or start Codex turns.
+4. Put planner request/artifact policy in a service module such as
+   `adapters/chatgpt-pro-planner-service.js`; keep `server.js` route handlers
+   thin.
+5. Keep MCP protocol/auth/tool projection in
+   `adapters/chatgpt-pro-mcp-service.js`. The first connector endpoint is
+   `POST /api/chatgpt-pro/mcp` with separate bearer-token auth from
+   `CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN` or
+   `CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN_FILE`.
+6. Store planner requests and generated artifacts under the Codex Mobile runtime
+   root by default. Do not write PRD/Sprint/Review files into the source repo
+   without a separate explicit apply action.
+7. Treat all ChatGPT-generated markdown as untrusted content and render it
+   through the existing safe markdown path.
+8. Browser UI changes should extend the existing unified `@` intent menu/dialog
+   and require the normal `CLIENT_BUILD_ID` / service-worker cache bump.
+9. For MCP connector setup, keep connector auth material runtime-only and out of
+   `.agent-context`, Git, public release, logs, screenshots, and handoff.
+10. Test with focused planner/MCP service tests,
+    `test/chatgpt-pro-planner-service.test.js`,
+    `test/chatgpt-pro-mcp-service.test.js`, existing
+    `test/chatgpt-pro-bridge-service.test.js`, composer intent tests,
+    goal/task-card apply tests when actions are added, `npm test`,
+    `npm run check`, and `git diff --check`.
 11. If the frontend shell changes, bump `CLIENT_BUILD_ID`, `public/sw.js` cache name, and the matching tests.
 
 ## Hermes Mobile Plugin Deployment

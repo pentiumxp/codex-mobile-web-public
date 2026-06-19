@@ -56,6 +56,14 @@ test("new-thread message submission includes selected runtime settings", () => {
   assert.match(body, /writeCurrentDraftToKey\(draftKeyForThread\(threadId\)\)/);
 });
 
+test("new-thread permission defaults come from config-derived full mode, not option order", () => {
+  assert.match(functionBody("newThreadSelectedPermissionMode"), /defaultValue:\s*defaultNewThreadPermissionMode\(\)/);
+  assert.match(functionBody("defaultNewThreadPermissionMode"), /state\.defaultPermissionMode/);
+  assert.match(appJs, /state\.defaultPermissionMode = effectiveComposerPermissionMode\(config\.defaultPermissionMode\) \|\| "full";/);
+  assert.match(appJs, /state\.newThreadPermissionMode = effectiveComposerPermissionMode\(state\.newThreadPermissionMode\)\s*\|\|\s*defaultNewThreadPermissionMode\(\);/);
+  assert.doesNotMatch(appJs, /state\.newThreadPermissionMode = normalizePermissionModeValue\(state\.newThreadPermissionMode\)\s*\|\|\s*normalizePermissionModeValue\(state\.permissionModeOptions\[0\]\)/);
+});
+
 test("existing-thread message submission includes selected runtime settings", () => {
   const body = functionBody("sendMessage");
 

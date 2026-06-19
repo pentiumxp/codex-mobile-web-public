@@ -83,6 +83,10 @@ const state = {
   pendingPluginRouteHint: null,
   pluginParentOrigin: pluginEmbedApi.parentOriginFromReferrer(document.referrer) || "*",
   pluginHostViewport: null,
+  viewportAppHeightPx: 0,
+  viewportAppTopPx: 0,
+  hostTopSafeAreaPx: 0,
+  hostBottomSafeAreaPx: 0,
   pluginNavigationSignature: "",
   pluginVoiceInputCapabilitySignature: "",
   pluginVoiceInputPress: null,
@@ -205,6 +209,9 @@ const state = {
   lastGoalButtonSubmitAt: 0,
   pendingAttachments: [],
   composerBusy: false,
+  composerHeightPx: 0,
+  messageInputHeightPx: 0,
+  messageInputTextLength: 0,
   sendButtonHint: "",
   completionSoundEnabled: true,
   continuationBusy: false,
@@ -260,10 +267,14 @@ const state = {
   permissionModeOptions: ["default", "auto", "full", "custom"],
   defaultModel: "",
   defaultReasoningEffort: "",
+  defaultPermissionMode: "full",
   composerModel: "",
   composerEffort: "",
   composerPermissionMode: "",
   composerMenuKind: "",
+  lastComposerRuntimePointerAt: 0,
+  lastComposerRuntimePointerKind: "",
+  lastComposerRuntimePointerTarget: null,
   composerIntentMenuOpen: false,
   composerIntentDialogKind: "",
   composerIntentDialogBusy: false,
@@ -343,7 +354,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v305";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v311";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -718,7 +729,7 @@ function applyPluginAppearancePreference(value) {
     applyFontSizePreference();
     renderFontSizeControl();
     const input = $("messageInput");
-    if (input) autoSizeMessageInput(input);
+    if (input) autoSizeMessageInput(input, { force: true });
   }
 }
 
@@ -760,7 +771,7 @@ function setFontSizePreference(value) {
   applyFontSizePreference();
   renderFontSizeControl();
   const input = $("messageInput");
-  if (input) autoSizeMessageInput(input);
+  if (input) autoSizeMessageInput(input, { force: true });
   if (isHermesEmbedMode()) {
     syncPluginAppearanceStateFromPreferences();
     scrubPluginLaunchUrl();
@@ -816,6 +827,15 @@ function viewportHeight() {
   return viewportState().height;
 }
 
+function setStableRootPixelVar(name, nextValue, stateKey, options = {}) {
+  const nextPx = viewportMetrics.cssPixel(nextValue);
+  const previousPx = viewportMetrics.cssPixel(state[stateKey]);
+  if (!options.force && !viewportMetrics.stablePixelChanged(previousPx, nextPx, options)) return false;
+  state[stateKey] = nextPx;
+  document.documentElement.style.setProperty(name, `${nextPx}px`);
+  return true;
+}
+
 function isKeyboardEditableElement(element) {
   return Boolean(viewportMetrics
     && typeof viewportMetrics.isKeyboardEditable === "function"
@@ -844,14 +864,16 @@ function updateViewportVars() {
   resetMobileKeyboardWindowScroll();
   const viewport = viewportState();
   if (viewport.keyboardShrunk) {
-    document.documentElement.style.setProperty("--app-top", `${Math.max(0, Math.round(viewport.top || 0))}px`);
-    document.documentElement.style.setProperty("--app-height", `${viewport.height}px`);
+    setStableRootPixelVar("--app-top", viewport.top, "viewportAppTopPx");
+    setStableRootPixelVar("--app-height", viewport.height, "viewportAppHeightPx");
   } else {
     document.documentElement.style.removeProperty("--app-top");
     document.documentElement.style.removeProperty("--app-height");
+    state.viewportAppTopPx = 0;
+    state.viewportAppHeightPx = 0;
   }
-  document.documentElement.style.setProperty("--host-top-safe-area", `${Math.max(0, Math.round(viewport.hostTopSafeArea || 0))}px`);
-  document.documentElement.style.setProperty("--host-bottom-safe-area", `${Math.max(0, Math.round(viewport.hostBottomSafeArea || 0))}px`);
+  setStableRootPixelVar("--host-top-safe-area", viewport.hostTopSafeArea, "hostTopSafeAreaPx", { epsilonPx: 0 });
+  setStableRootPixelVar("--host-bottom-safe-area", viewport.hostBottomSafeArea, "hostBottomSafeAreaPx", { epsilonPx: 0 });
   document.documentElement.classList.toggle("keyboard-open", viewport.keyboardShrunk);
 }
 
@@ -1348,6 +1370,11 @@ function updateThreadStatusHints(threadId, previousStatus, nextStatus, options =
   }
 }
 
+function isThreadListSettledStatus(status) {
+  const text = statusText(status).toLowerCase();
+  return /^(idle|completed|complete|done|failed|failure|cancelled|canceled|cancel|error|interrupted|stopped|stop)$/.test(text);
+}
+
 function reconcileThreadStatusHints(threads) {
   const nowMs = Date.now();
   let changed = false;
@@ -1361,7 +1388,7 @@ function reconcileThreadStatusHints(threads) {
       state.unreadThreadIds.delete(id);
     } else if (isRunning) {
       if (noteRunningThreadHint(id, nowMs)) changed = true;
-    } else if (wasRunning && isCompletedStatus(thread.status)) {
+    } else if (wasRunning && isThreadListSettledStatus(thread.status)) {
       if (clearRunningThreadHint(id)) changed = true;
       if (id !== state.currentThreadId) state.unreadThreadIds.add(id);
     } else if (shouldExpireRunningThreadHint(id, thread, nowMs)) {
@@ -1377,7 +1404,7 @@ function statusIconInfo(status, threadId = "") {
   if (/active|running|queued|processing|inprogress|in_progress|in-progress|pending|started/.test(normalized)) {
     return { kind: "running", label: text || "running", symbol: "" };
   }
-  if (threadId && state.runningThreadIds.has(String(threadId))) {
+  if (threadId && state.runningThreadIds.has(String(threadId)) && !isThreadListSettledStatus(status)) {
     return { kind: "running", label: text && text !== "notLoaded" ? text : "running", symbol: "" };
   }
   if (threadId && state.unreadThreadIds.has(String(threadId))) {
@@ -1701,14 +1728,21 @@ function newThreadSelectedEffort() {
 }
 
 function newThreadSelectedPermissionMode() {
-  return runtimeSettings.selectedNewThreadPermission({
+  return effectiveComposerPermissionMode(runtimeSettings.selectedNewThreadPermission({
     selected: state.newThreadPermissionMode,
+    defaultValue: defaultNewThreadPermissionMode(),
     options: state.permissionModeOptions,
-  });
+  }));
 }
 
 function normalizePermissionModeValue(value) {
   return runtimeSettings.normalizePermissionModeValue(value);
+}
+
+function effectiveComposerPermissionMode(value) {
+  const normalized = normalizePermissionModeValue(value);
+  if (normalized === "custom" && defaultNewThreadPermissionMode() === "full") return "full";
+  return normalized;
 }
 
 function normalizeModelKey(value) {
@@ -2147,7 +2181,15 @@ async function handleCodexProfileSettingsClick(event) {
 
 function appVersionText(status = state.appUpdateStatus) {
   const version = String((status && status.version) || state.appVersion || "").trim();
-  return version ? `v${version}` : "Version";
+  const client = clientBuildVersionText();
+  return version ? `v${version} · ${client}` : client;
+}
+
+function clientBuildVersionText(buildId = CLIENT_BUILD_ID) {
+  const text = String(buildId || "").trim();
+  const match = text.match(/\bcodex-mobile-shell-v([0-9]+)\b/);
+  if (match) return `客户端 v${match[1]}`;
+  return text ? `客户端 ${text}` : "客户端未知";
 }
 
 function renderAppUpdateStatus() {
@@ -2159,7 +2201,7 @@ function renderAppUpdateStatus() {
   const applying = Boolean(status.applying) || state.appUpdateRestarting;
   const blocked = Boolean(status.updateAvailable && !status.canFastForward);
   let label = appVersionText(status);
-  let title = "Check for GitHub updates";
+  let title = `Check for GitHub updates；当前客户端 ${CLIENT_BUILD_ID}`;
   if (state.appUpdateRestarting) {
     label = "等待重启…";
     title = "更新已应用。服务会退出并等待启动任务或守护脚本拉起；手动启动的部署需要在服务停止后手动重启。";
@@ -2181,7 +2223,7 @@ function renderAppUpdateStatus() {
   } else if (!supported) {
     title = status.reason || "当前安装方式不支持 Git 自动更新";
   } else if (status.localShort) {
-    title = `${appVersionText(status)} (${status.localShort})，点击重新检查更新`;
+    title = `${appVersionText(status)} (${status.localShort})，点击重新检查更新；当前客户端 ${CLIENT_BUILD_ID}`;
   }
   el.textContent = label;
   el.title = title;
@@ -3559,13 +3601,13 @@ function defaultNewThreadEffort() {
 }
 
 function defaultNewThreadPermissionMode() {
-  return "full";
+  return normalizePermissionModeValue(state.defaultPermissionMode) || "full";
 }
 
 function applyDraftRuntimeSelection(draft) {
   const model = String(draft && draft.model || "");
   const effort = String(draft && draft.effort || "");
-  const permission = normalizePermissionModeValue(draft && draft.permissionMode);
+  const permission = effectiveComposerPermissionMode(draft && draft.permissionMode);
   if (state.newThreadDraft) {
     state.newThreadTitle = String(draft && draft.threadTitle || "").trim();
     state.newThreadModel = model && state.modelOptions.includes(model) ? model : defaultNewThreadModel();
@@ -3995,7 +4037,10 @@ function visibleItemsForTurn(turn) {
     }
     visible.push({ item, sourceIndex: index });
   });
-  return visible.filter(Boolean);
+  const filtered = visible.filter(Boolean);
+  const supersededLive = Boolean(turn && (turn.mobileSupersededLive || (turn.status && turn.status.mobileSupersededLive)));
+  if (supersededLive && filtered.length && filtered.every((entry) => isTurnUsageSummaryItem(entry.item))) return [];
+  return filtered;
 }
 
 function currentLiveOperationEntry(thread) {
@@ -14298,11 +14343,17 @@ function scheduleScrollToBottomButtonUpdate() {
   }
 }
 
-function updateComposerHeightVar() {
+function updateComposerHeightVar(options = {}) {
   const composer = $("composer");
-  if (!composer) return;
-  document.documentElement.style.setProperty("--composer-height", `${Math.ceil(composer.getBoundingClientRect().height)}px`);
+  if (!composer) return false;
+  const nextPx = viewportMetrics.cssPixel(composer.getBoundingClientRect().height);
+  if (!nextPx) return false;
+  const previousPx = viewportMetrics.cssPixel(state.composerHeightPx);
+  if (!options.force && !viewportMetrics.stablePixelChanged(previousPx, nextPx)) return false;
+  state.composerHeightPx = nextPx;
+  document.documentElement.style.setProperty("--composer-height", `${nextPx}px`);
   scheduleScrollToBottomButtonUpdate();
+  return true;
 }
 
 function showError(err) {
@@ -14440,7 +14491,7 @@ function setComposerText(value) {
   if (!el) return;
   el.textContent = String(value || "");
   if (!value) el.innerHTML = "";
-  autoSizeMessageInput(el);
+  autoSizeMessageInput(el, { force: true });
 }
 
 function normalizedComposerIntentText(value) {
@@ -14722,10 +14773,56 @@ function setMessageInputDisabled(disabled) {
   el.classList.toggle("disabled", disabled);
 }
 
-function autoSizeMessageInput(el) {
-  el.style.height = "auto";
-  el.style.height = `${Math.min(160, Math.max(44, el.scrollHeight))}px`;
+const MESSAGE_INPUT_MIN_HEIGHT_PX = 44;
+const MESSAGE_INPUT_MAX_HEIGHT_PX = 160;
+
+function messageInputTextLength(el) {
+  return String(el && (el.textContent || el.innerText) || "").length;
+}
+
+function messageInputTargetHeight(el) {
+  const scrollHeight = viewportMetrics.cssPixel(el && el.scrollHeight);
+  return Math.min(MESSAGE_INPUT_MAX_HEIGHT_PX, Math.max(MESSAGE_INPUT_MIN_HEIGHT_PX, scrollHeight));
+}
+
+function currentMessageInputHeight(el) {
+  const inlineHeight = Number.parseFloat(el && el.style && el.style.height || "");
+  return viewportMetrics.cssPixel(inlineHeight || (el && el.getBoundingClientRect && el.getBoundingClientRect().height) || 0);
+}
+
+function updateMessageInputOverflow(el, heightPx) {
+  if (!el || !el.style) return;
+  el.style.overflowY = el.scrollHeight > heightPx + 1 ? "auto" : "hidden";
+}
+
+function autoSizeMessageInput(el, options = {}) {
+  if (!el) return false;
+  const force = options.force === true;
+  const previousTextLength = Number(state.messageInputTextLength || 0);
+  const nextTextLength = messageInputTextLength(el);
+  const currentHeight = currentMessageInputHeight(el);
+  let nextHeight = messageInputTargetHeight(el);
+  if (force || nextTextLength < previousTextLength) {
+    const previousInlineHeight = el.style.height;
+    el.style.height = "auto";
+    nextHeight = messageInputTargetHeight(el);
+    if (!force && currentHeight && !viewportMetrics.stablePixelChanged(currentHeight, nextHeight)) {
+      el.style.height = previousInlineHeight;
+      state.messageInputTextLength = nextTextLength;
+      updateMessageInputOverflow(el, currentHeight);
+      return false;
+    }
+  }
+  state.messageInputTextLength = nextTextLength;
+  if (!force && currentHeight && !viewportMetrics.stablePixelChanged(currentHeight, nextHeight)) {
+    updateMessageInputOverflow(el, currentHeight);
+    return false;
+  }
+  state.messageInputHeightPx = nextHeight;
+  el.style.height = `${nextHeight}px`;
+  updateMessageInputOverflow(el, nextHeight);
   updateComposerHeightVar();
+  return true;
 }
 
 function formatFileSize(bytes) {
@@ -14896,7 +14993,9 @@ function effectiveDefaultEffort() {
 
 function effectiveDefaultPermissionMode() {
   const settings = state.currentThread && state.currentThread.runtimeSettings;
-  return normalizePermissionModeValue((settings && settings.permissionMode) || "");
+  const sandboxType = String((settings && settings.sandboxPolicyType) || "").replace(/[-_]/g, "").toLowerCase();
+  if (sandboxType === "dangerfullaccess") return "full";
+  return effectiveComposerPermissionMode((settings && settings.permissionMode) || "");
 }
 
 function selectedComposerModel() {
@@ -14911,7 +15010,8 @@ function selectedComposerEffort() {
 
 function selectedComposerPermissionMode() {
   if (state.newThreadDraft) return newThreadSelectedPermissionMode();
-  return normalizePermissionModeValue(state.composerPermissionMode || effectiveDefaultPermissionMode()) || "default";
+  return effectiveComposerPermissionMode(state.composerPermissionMode || effectiveDefaultPermissionMode())
+    || defaultNewThreadPermissionMode();
 }
 
 function resetComposerRuntimeSelection() {
@@ -14926,7 +15026,7 @@ function resetComposerRuntimeSelection() {
 function runtimeOptionValues(kind) {
   if (kind === "model") return normalizeOptionList([selectedComposerModel(), state.defaultModel, ...state.modelOptions]);
   if (kind === "effort") return normalizeOptionList([selectedComposerEffort(), state.defaultReasoningEffort, ...state.reasoningEffortOptions]);
-  if (kind === "permission") return normalizeOptionList([selectedComposerPermissionMode(), ...state.permissionModeOptions]);
+  if (kind === "permission") return normalizeOptionList([selectedComposerPermissionMode(), defaultNewThreadPermissionMode(), ...state.permissionModeOptions]);
   return [];
 }
 
@@ -14964,11 +15064,11 @@ function applyRuntimeSelection(kind, value) {
   if (state.newThreadDraft) {
     if (kind === "model") state.newThreadModel = selected;
     if (kind === "effort") state.newThreadEffort = selected;
-    if (kind === "permission") state.newThreadPermissionMode = normalizePermissionModeValue(selected) || "full";
+    if (kind === "permission") state.newThreadPermissionMode = effectiveComposerPermissionMode(selected) || defaultNewThreadPermissionMode();
   } else {
     if (kind === "model") state.composerModel = selected;
     if (kind === "effort") state.composerEffort = selected;
-    if (kind === "permission") state.composerPermissionMode = normalizePermissionModeValue(selected) || "default";
+    if (kind === "permission") state.composerPermissionMode = effectiveComposerPermissionMode(selected) || defaultNewThreadPermissionMode();
   }
   closeComposerRuntimeMenu();
   renderComposerSettings();
@@ -15020,19 +15120,68 @@ function openComposerRuntimeMenu(kind, anchor) {
   document.addEventListener("pointerdown", onComposerRuntimeOutsidePointer);
 }
 
+function composerRuntimeMenuDiagnostics(kind, triggerType) {
+  const menu = $("composerRuntimeMenu");
+  const rect = menu && !menu.hidden ? menu.getBoundingClientRect() : null;
+  const visualViewport = window.visualViewport;
+  const viewportWidth = Math.round((visualViewport && visualViewport.width) || window.innerWidth || 0);
+  const viewportHeight = Math.round((visualViewport && visualViewport.height) || window.innerHeight || 0);
+  return {
+    kind,
+    triggerType,
+    menuHidden: !menu || menu.hidden,
+    optionCount: menu ? menu.querySelectorAll("[data-runtime-kind][data-runtime-value]").length : 0,
+    top: rect ? Math.round(rect.top) : null,
+    bottom: rect ? Math.round(rect.bottom) : null,
+    left: rect ? Math.round(rect.left) : null,
+    right: rect ? Math.round(rect.right) : null,
+    viewportWidth,
+    viewportHeight,
+    visible: Boolean(rect && rect.bottom > 0 && rect.top < viewportHeight && rect.right > 0 && rect.left < viewportWidth),
+  };
+}
+
+function reportComposerRuntimeMenu(kind, triggerType) {
+  const schedule = typeof window.requestAnimationFrame === "function"
+    ? window.requestAnimationFrame.bind(window)
+    : (callback) => window.setTimeout(callback, 0);
+  schedule(() => postClientEvent("composer_runtime_menu_opened", composerRuntimeMenuDiagnostics(kind, triggerType)));
+}
+
+function handleComposerRuntimeControl(event, kind, button) {
+  event.preventDefault();
+  event.stopPropagation();
+  if (button.disabled) {
+    postClientEvent("composer_runtime_control_ignored", { kind, triggerType: event.type, reason: "disabled" });
+    return;
+  }
+  if (state.composerMenuKind === kind) {
+    closeComposerRuntimeMenu();
+    postClientEvent("composer_runtime_menu_closed", { kind, triggerType: event.type });
+  } else {
+    openComposerRuntimeMenu(kind, button);
+    reportComposerRuntimeMenu(kind, event.type);
+  }
+}
+
 function fitComposerPopupToAnchor(panel, anchor, options = {}) {
   const rect = anchor.getBoundingClientRect();
-  const composer = $("composer");
-  const composerRect = composer ? composer.getBoundingClientRect() : { left: 0, right: window.innerWidth, top: window.innerHeight };
   const minWidth = Number(options.minWidth || 180);
   const maxWidth = Number(options.maxWidth || 280);
-  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || maxWidth;
+  const visualViewport = window.visualViewport;
+  const viewportLeft = visualViewport ? Number(visualViewport.offsetLeft || 0) : 0;
+  const viewportTop = visualViewport ? Number(visualViewport.offsetTop || 0) : 0;
+  const viewportWidth = Math.max(1, Math.floor((visualViewport && visualViewport.width) || window.innerWidth || document.documentElement.clientWidth || maxWidth));
+  const viewportHeight = Math.max(1, Math.floor((visualViewport && visualViewport.height) || window.innerHeight || document.documentElement.clientHeight || 360));
   const width = Math.max(minWidth, Math.min(maxWidth, viewportWidth - 16, Math.max(rect.width, minWidth)));
-  const left = Math.max(8, Math.min(window.innerWidth - width - 8, rect.left));
-  const bottom = Math.max(8, window.innerHeight - composerRect.top + 6);
+  const left = Math.max(viewportLeft + 8, Math.min(viewportLeft + viewportWidth - width - 8, rect.left));
+  const anchorTop = Math.max(viewportTop + 8, Math.min(viewportTop + viewportHeight - 8, rect.top));
+  const availableAbove = Math.max(96, anchorTop - viewportTop - 12);
+  const bottom = Math.max(8, viewportTop + viewportHeight - anchorTop + 6);
   panel.style.setProperty("--composer-popup-left", `${Math.round(left)}px`);
   panel.style.setProperty("--composer-popup-bottom", `${Math.round(bottom)}px`);
   panel.style.setProperty("--composer-popup-width", `${Math.round(width)}px`);
+  panel.style.setProperty("--composer-popup-max-height", `${Math.round(Math.min(360, availableAbove))}px`);
 }
 
 function closeQuotaDetails() {
@@ -16145,11 +16294,24 @@ function wireUi() {
     if (!button) continue;
     button.dataset.composerRuntime = kind;
     button.addEventListener("pointerdown", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (button.disabled) return;
-      if (state.composerMenuKind === kind) closeComposerRuntimeMenu();
-      else openComposerRuntimeMenu(kind, button);
+      state.lastComposerRuntimePointerAt = Date.now();
+      state.lastComposerRuntimePointerKind = kind;
+      state.lastComposerRuntimePointerTarget = button;
+      handleComposerRuntimeControl(event, kind, button);
+    });
+    button.addEventListener("click", (event) => {
+      const pointerAlreadyHandled = state.lastComposerRuntimePointerTarget === button
+        && state.lastComposerRuntimePointerKind === kind
+        && Date.now() - state.lastComposerRuntimePointerAt < 1500;
+      if (pointerAlreadyHandled) {
+        state.lastComposerRuntimePointerAt = 0;
+        state.lastComposerRuntimePointerKind = "";
+        state.lastComposerRuntimePointerTarget = null;
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      handleComposerRuntimeControl(event, kind, button);
     });
   }
   const runtimeMenu = $("composerRuntimeMenu");
@@ -16644,11 +16806,11 @@ async function start() {
     .map(normalizePermissionModeValue));
   state.defaultModel = String(config.defaultModel || "");
   state.defaultReasoningEffort = String(config.defaultReasoningEffort || "");
+  state.defaultPermissionMode = effectiveComposerPermissionMode(config.defaultPermissionMode) || "full";
   state.newThreadModel = state.newThreadModel || state.defaultModel || state.modelOptions[0] || "";
   state.newThreadEffort = state.newThreadEffort || state.defaultReasoningEffort || state.reasoningEffortOptions[0] || "";
-  state.newThreadPermissionMode = normalizePermissionModeValue(state.newThreadPermissionMode)
-    || normalizePermissionModeValue(state.permissionModeOptions[0])
-    || "full";
+  state.newThreadPermissionMode = effectiveComposerPermissionMode(state.newThreadPermissionMode)
+    || defaultNewThreadPermissionMode();
   state.pushServerSupported = Boolean(config.push && config.push.supported);
   state.appUpdateStatus = {
     supported: Boolean(config.update && config.update.enabled),

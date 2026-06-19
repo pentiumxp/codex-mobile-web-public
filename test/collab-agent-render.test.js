@@ -80,7 +80,10 @@ test("live operation cards dock at the bottom and expose only the newest operati
   assert.match(functionBody("updateOperationDurationBadges"), /querySelectorAll\("\.operation-duration"\)/);
   assert.match(functionBody("operationDetailText"), /join\(" \\| "\)/);
   assert.match(functionBody("visibleItemsForTurn"), /if \(isOperationalItem\(item\)\) \{[\s\S]*return;/);
-  assert.match(functionBody("visibleItemsForTurn"), /return visible\.filter\(Boolean\)/);
+  assert.match(functionBody("visibleItemsForTurn"), /const filtered = visible\.filter\(Boolean\)/);
+  assert.match(functionBody("visibleItemsForTurn"), /mobileSupersededLive/);
+  assert.match(functionBody("visibleItemsForTurn"), /filtered\.every\(\(entry\) => isTurnUsageSummaryItem\(entry\.item\)\)/);
+  assert.match(functionBody("visibleItemsForTurn"), /return filtered/);
   assert.doesNotMatch(functionBody("visibleItemsForTurn"), /const showOperations/);
   assert.doesNotMatch(functionBody("visibleItemsForTurn"), /latestOperationEntry/);
   assert.doesNotMatch(functionBody("visibleItemsForTurn"), /operationEntryByKey = new Map/);

@@ -232,6 +232,19 @@ function createWorkspaceRegistryService(options = {}) {
     return result;
   }
 
+  function registeredPaths() {
+    const seen = new Set();
+    const result = [];
+    for (const entry of loadStore().workspaces) {
+      const cwd = canonicalDirectoryPath(entry.cwd, canonicalizeWorkspacePaths);
+      const key = pathKey(cwd);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      result.push(cwd);
+    }
+    return result;
+  }
+
   function resolveCreateRoot(value) {
     const roots = availableCreateRoots();
     if (!roots.length) throw statusError(500, "Workspace create root is unavailable");
@@ -304,6 +317,7 @@ function createWorkspaceRegistryService(options = {}) {
   return {
     create,
     list,
+    registeredPaths,
     createRoots: availableCreateRoots,
     defaultCreateRoot,
   };

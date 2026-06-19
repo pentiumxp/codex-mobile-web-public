@@ -4,6 +4,14 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：v311 修复模型、推理强度和权限运行时菜单在 iOS PWA/WebView 下可能点不开的问题。运行时菜单和额度详情浮层现在与 `@` 意图菜单一样位于页面级 DOM，不再作为 Composer 表单控制行的子元素；触摸 `pointerdown` 后的合成 `click` 只会按同一按钮吞掉一次，避免同一次点击先打开又关闭菜单。PWA shell cache 升级到 `codex-mobile-shell-v311`。
+- 中文说明：v310 在导航菜单现有版本按钮里直接显示当前客户端壳版本，例如 `v0.1.11 · 客户端 v310`。这个值来自浏览器实际加载的 `CLIENT_BUILD_ID`，用于区分服务端已更新但 PWA/WebView 仍停留在旧前端壳的情况；按钮仍保留原来的更新检查入口。PWA shell cache 升级到 `codex-mobile-shell-v310`。
+- 中文说明：v309 修复 Reset 后 Composer 运行设置控件回退的问题。新线程和旧草稿的权限默认值现在优先使用服务端按 `config.toml` 推导的 `defaultPermissionMode`，当前 full-access 配置会显示并提交“完全访问权限”；在默认 full 的环境里，旧草稿里的 `custom` 会折算为 `full`。模型、推理和权限控件增加 click 兜底和受限菜单诊断事件，弹层按按钮与 `visualViewport` 定位，避免 iOS WebView/键盘状态下菜单不可见。PWA shell cache 升级到 `codex-mobile-shell-v309`。
+- 中文说明：server-only 修复 Mobile 创建的 workspace 在切换 Codex Profile 后可能丢失 trusted project 的问题。服务启动、创建 workspace、切换目标 profile 前都会把 Mobile registry 里的工作区同步到目标 `config.toml` 的 `[projects."<cwd>"] trust_level = "trusted"`；同时修正 profile switch preflight 的 `CODEX_HOME` 覆盖顺序，确保预检真正使用目标 profile。本次不改变 PWA shell cache。
+- 中文说明：v308 修复 completed 回执底部出现空白状态块的问题。当前端收到 `mobileSupersededLive` 的历史 live 空壳 turn 且其中只剩 `turnUsageSummary` 时，不再渲染 usage-only 的空回执区块；正常包含用户/助手正文的 completed turn 仍保留 usage summary。PWA shell cache 升级到 `codex-mobile-shell-v308`。
+- 中文说明：v307 修正线程列表“正在工作/已停止”状态不同步。本地 running hint 现在会在列表拿到 `idle`、`completed`、`failed`、`cancelled`、`interrupted`、`stopped` 等已停止状态时立即清理，状态图标也不会再让旧 running hint 覆盖已停止行。PWA shell cache 升级到 `codex-mobile-shell-v307`。
+- 中文说明：v306 缓解线程信息流和 Composer 输入时的细微抖动。视口、宿主安全区和 Composer 高度 CSS 变量现在会忽略 1px 级别的测量噪声，Composer 输入框自动增高不再在每次输入时先重置为 `auto` 再回写高度，从而减少 live 状态刷新和打字时的页面几像素跳动。PWA shell cache 升级到 `codex-mobile-shell-v306`。
+- 中文说明：server-only 增加 ChatGPT Pro MCP Connector 首版。`POST /api/chatgpt-pro/mcp` 使用独立 bearer token，token 只从 `CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN` 或 `CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN_FILE` 读取；工具只允许读取 bounded 线程/工作区/文档上下文，并把 PRD、review、goal、task-card draft 等产物写入 runtime root 的 `chatgpt-pro-planner`，不写源码、不执行 shell、不启动 Codex turn。本次不改变 PWA shell cache。
 - 中文说明：v305 继续修复 `@` 意图菜单在 iOS/WebView 内不可见的问题。菜单 DOM 移到页面级 overlay，不再作为 Composer 子元素参与输入区布局；定位锚点改为 `#messageInput`，用 fixed 浮层贴在输入框上方并按输入框宽度限制，避免被 `.main` / Composer 容器的 overflow 或键盘候选栏裁剪。Send 分支也改用归一化后的裸 `@` 判断。PWA shell cache 升级到 `codex-mobile-shell-v305`。
 - 中文说明：v304 修复 iOS/WebView 键盘下裸 `@` 不弹意图菜单的问题。`@` 触发现在会忽略输入法可能插入的零宽字符，并在 input/keyup/focus/compositionend 后异步复查；意图菜单也改为贴在 Composer 上方的绝对定位，不再依赖 visualViewport/fixed bottom 计算，避免被系统键盘或候选栏压到不可见区域。PWA shell cache 升级到 `codex-mobile-shell-v304`。
 - 中文说明：v303 统一 Composer 的 `@` 意图入口。输入裸 `@` 会弹出可选菜单，选择 `@目标任务`、`@任务卡片`、`@自由协作` 或 `@ChatGPT Pro` 后只把标签放入 Composer；用户再按 Send/回车时，目标任务打开原 Goal 对话框，任务卡片/自由协作/ChatGPT Pro 打开带大 textarea 和保存草稿按钮的专用输入框。旧路径 `/g`、`#`、`#自由协作`、以及 `@ChatGPT Pro ...` 直接带正文发送仍保持兼容。PWA shell cache 升级到 `codex-mobile-shell-v303`。
@@ -77,6 +85,51 @@ codex --version
 ```
 
 If Codex CLI is not authenticated, authenticate it first using the normal Codex CLI/Desktop flow for that machine.
+
+## ChatGPT Pro MCP Connector
+
+Codex Mobile Web exposes a restricted ChatGPT Pro MCP Connector for planner and
+review workflows:
+
+```text
+POST /api/chatgpt-pro/mcp
+```
+
+This connector uses a separate runtime-only bearer token. It does not reuse the
+normal Codex Mobile Access Key.
+
+```bash
+export CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN_FILE="$HOME/.codex-mobile-web/chatgpt-pro-mcp-token.txt"
+```
+
+The token file should be readable only by the local service user and must not be
+committed, printed in logs, copied into `.agent-context`, or shared through a
+thread.
+
+The connector supports planner/reviewer tools only:
+
+- `codex_mobile_status`
+- `list_visible_workspaces`
+- `read_thread_context`
+- `read_allowed_repo_file`
+- `create_planner_artifact`
+- `prepare_codex_goal`
+- `create_task_card_draft`
+- `list_planner_artifacts`
+- `read_planner_artifact`
+
+Allowed file reads are bounded to visible workspace documentation such as
+`README.md`, `AGENTS.md`, `docs/**`, and the two shared context pointers
+`.agent-context/PROJECT_CONTEXT.md` / `.agent-context/HANDOFF.md`. Planner
+artifacts are written only under the runtime root, normally:
+
+```text
+$HOME/.codex-mobile-web/chatgpt-pro-planner/
+```
+
+The planner connector cannot write source files, run shell commands, answer
+approvals, start Codex turns, read arbitrary local paths, or expose raw rollout
+logs, uploads, browser cookies, access keys, or token files.
 
 ## Hermes Mobile Plugin Mode
 

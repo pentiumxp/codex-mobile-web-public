@@ -48,10 +48,15 @@ test("profile switch restart passes the selected profile to the shared-chain scr
   assert.match(serverJs, /profileId:\s*selected\.id/);
   assert.match(serverJs, /codexHome:\s*selected\.codexHome/);
   assert.match(serverJs, /const preflight = await preflightCodexProfileSwitch\(targetProfile\)/);
+  assert.match(serverJs, /syncRegisteredWorkspaceTrust\(targetProfile\.codexHome\)/);
   assert.match(serverJs, /codexProfileService\.setActiveProfile/);
   assert.ok(
     serverJs.indexOf("const preflight = await preflightCodexProfileSwitch(targetProfile)") < serverJs.indexOf("const profile = codexProfileService.setActiveProfile(targetProfile.id)"),
     "profile switch must preflight the target account before writing active profile state",
+  );
+  assert.ok(
+    serverJs.indexOf("syncRegisteredWorkspaceTrust(targetProfile.codexHome)") < serverJs.indexOf("const profile = codexProfileService.setActiveProfile(targetProfile.id)"),
+    "profile switch should trust registered workspaces in the target profile before restart",
   );
   assert.ok(
     serverJs.indexOf("const profile = codexProfileService.setActiveProfile(targetProfile.id)") < serverJs.indexOf("sharedChainRestartService.restart(Object.assign({"),

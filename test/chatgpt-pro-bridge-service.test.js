@@ -74,9 +74,21 @@ test("ChatGPT Pro bridge creates a dedicated thread and starts one turn", async 
 
 test("server and client wire @ChatGPT Pro without normal message submission", () => {
   assert.match(packageJson, /adapters\/chatgpt-pro-bridge-service\.js/);
+  assert.match(packageJson, /adapters\/chatgpt-pro-planner-service\.js/);
+  assert.match(packageJson, /adapters\/chatgpt-pro-mcp-service\.js/);
   assert.match(serverJs, /createChatGptProBridgeService/);
+  assert.match(serverJs, /createChatGptProPlannerService/);
+  assert.match(serverJs, /createChatGptProMcpService/);
   assert.match(serverJs, /\/api\/chatgpt-pro\/status/);
   assert.match(serverJs, /\/api\/chatgpt-pro\/generate/);
+  assert.match(serverJs, /\/api\/chatgpt-pro\/planner\/status/);
+  assert.match(serverJs, /\/api\/chatgpt-pro\/planner\/artifacts/);
+  assert.match(serverJs, /\/api\/chatgpt-pro\/mcp/);
+  assert.match(serverJs, /CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN_FILE/);
+  assert.ok(
+    serverJs.indexOf('url.pathname === "/api/chatgpt-pro/mcp"') < serverJs.indexOf("if (!isAuthorized(req))"),
+    "MCP connector route should use its own token before normal browser auth",
+  );
   assert.match(serverJs, /chatGptProSourceSummary/);
   assert.match(appJs, /function isChatGptProCommandText\(/);
   assert.match(appJs, /async function submitChatGptProRequest\(text, options = \{\}\)/);
@@ -94,7 +106,9 @@ test("server and client wire @ChatGPT Pro without normal message submission", ()
 
 test("README documents standalone ChatGPT Pro bridge boundary in Chinese", () => {
   assert.match(readme, /v302/);
+  assert.match(readme, /ChatGPT Pro MCP Connector/);
   assert.match(readme, /@ChatGPT Pro/);
   assert.match(readme, /不把这条内容发进当前工作线程/);
   assert.match(readme, /outputs\/chatgpt-pro/);
+  assert.match(readme, /CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN_FILE/);
 });

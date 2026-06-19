@@ -242,6 +242,7 @@ test("public pull request prompt targets visible source workspace when productio
 
 test("version button opens an update panel with Public release status", () => {
   assert.match(indexHtml, /id="updateDialog"/);
+  assert.match(indexHtml, /id="appUpdateStatus"/);
   assert.match(stylesCss, /\.update-dialog/);
   assert.match(serverJs, /publicRelease:/);
   assert.match(serverJs, /\/api\/public-release\/status/);
@@ -250,6 +251,9 @@ test("version button opens an update panel with Public release status", () => {
   assert.match(appJs, /function renderUpdatePanel\(\)/);
   assert.match(appJs, /function refreshPublicReleaseStatus\(options = \{\}\)/);
   assert.match(appJs, /function currentUpdateUsesPublicRelease\(/);
+  assert.match(appJs, /function clientBuildVersionText\(buildId = CLIENT_BUILD_ID\)/);
+  assert.match(appJs, /v\$\{version\} · \$\{client\}/);
+  assert.match(appJs, /当前客户端 \$\{CLIENT_BUILD_ID\}/);
   assert.match(appJs, /appUpdateStatus"\)\.addEventListener\("click", openUpdatePanel\)/);
   assert.match(appJs, /updateActionButton\("apply-current"/);
 });
