@@ -6075,13 +6075,14 @@ html.keyboard-open .composer {
 }
 
 .composer-intent-menu {
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: calc(100% + 8px);
-  width: auto;
+  position: fixed;
+  left: var(--composer-intent-left, 12px);
+  bottom: var(--composer-intent-bottom, calc(var(--composer-height, 92px) + 10px));
+  z-index: 130;
+  width: var(--composer-intent-width, min(420px, calc(100vw - 24px)));
   max-height: min(42vh, 340px);
   overscroll-behavior: contain;
+  backdrop-filter: blur(16px);
 }
 
 .composer-runtime-option,

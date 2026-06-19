@@ -103,7 +103,7 @@ test("server materializes structured task-card drafts from thread detail", () =>
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v304"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v305"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.threadRole \|\| ""\) === "target"\)/);
@@ -166,10 +166,16 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /addEventListener\("keyup", queueComposerIntentMenuUpdate\)/);
   assert.match(appJs, /addEventListener\("focus", queueComposerIntentMenuUpdate\)/);
   assert.match(appJs, /addEventListener\("compositionend", queueComposerIntentMenuUpdate\)/);
+  assert.match(functionBody(appJs, "positionComposerIntentMenu"), /const anchor = \$\("messageInput"\) \|\| \$\("composer"\)/);
+  assert.match(functionBody(appJs, "positionComposerIntentMenu"), /--composer-intent-width/);
+  assert.match(functionBody(appJs, "sendMessage"), /const normalizedIntentText = normalizedComposerIntentText\(text\)/);
+  assert.match(functionBody(appJs, "sendMessage"), /if \(normalizedIntentText === "@"\)/);
   assert.match(appJs, /function openComposerIntentDialog\(/);
   assert.match(appJs, /function saveComposerIntentDialogDraft\(/);
+  assert.ok(indexHtml.indexOf('id="composerIntentMenu"') > indexHtml.indexOf('</form>\n    </main>'), "intent menu should be a page-level overlay, not a composer child");
   assert.match(stylesCss, /\.composer-intent-menu/);
-  assert.match(stylesCss, /\.composer-intent-menu\s*{[\s\S]*position:\s*absolute;[\s\S]*bottom:\s*calc\(100% \+ 8px\);/);
+  assert.match(stylesCss, /\.composer-intent-menu\s*{[\s\S]*position:\s*fixed;[\s\S]*left:\s*var\(--composer-intent-left/);
+  assert.match(stylesCss, /\.composer-intent-menu\s*{[\s\S]*width:\s*var\(--composer-intent-width/);
   assert.match(stylesCss, /\.composer-intent-option/);
   assert.match(appJs, /function parseThreadTaskCardDraftText\(/);
   assert.match(appJs, /const THREAD_TASK_CARD_BODY_MAX_CHARS = 8000/);

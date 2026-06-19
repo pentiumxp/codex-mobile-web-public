@@ -4,6 +4,7 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：v305 继续修复 `@` 意图菜单在 iOS/WebView 内不可见的问题。菜单 DOM 移到页面级 overlay，不再作为 Composer 子元素参与输入区布局；定位锚点改为 `#messageInput`，用 fixed 浮层贴在输入框上方并按输入框宽度限制，避免被 `.main` / Composer 容器的 overflow 或键盘候选栏裁剪。Send 分支也改用归一化后的裸 `@` 判断。PWA shell cache 升级到 `codex-mobile-shell-v305`。
 - 中文说明：v304 修复 iOS/WebView 键盘下裸 `@` 不弹意图菜单的问题。`@` 触发现在会忽略输入法可能插入的零宽字符，并在 input/keyup/focus/compositionend 后异步复查；意图菜单也改为贴在 Composer 上方的绝对定位，不再依赖 visualViewport/fixed bottom 计算，避免被系统键盘或候选栏压到不可见区域。PWA shell cache 升级到 `codex-mobile-shell-v304`。
 - 中文说明：v303 统一 Composer 的 `@` 意图入口。输入裸 `@` 会弹出可选菜单，选择 `@目标任务`、`@任务卡片`、`@自由协作` 或 `@ChatGPT Pro` 后只把标签放入 Composer；用户再按 Send/回车时，目标任务打开原 Goal 对话框，任务卡片/自由协作/ChatGPT Pro 打开带大 textarea 和保存草稿按钮的专用输入框。旧路径 `/g`、`#`、`#自由协作`、以及 `@ChatGPT Pro ...` 直接带正文发送仍保持兼容。PWA shell cache 升级到 `codex-mobile-shell-v303`。
 - 中文说明：v302 增加独立版 `@ChatGPT Pro` 分析入口。Composer 文本包含 `@ChatGPT Pro` 时，Codex Mobile 不把这条内容发进当前工作线程，而是创建或复用专用 `ChatGPT Pro` 线程，并注入要求使用 Chrome/ChatGPT Pro 网页生成分析的 bounded prompt；输出目录固定在 runtime root 的 `outputs/chatgpt-pro`，不写入源码仓库。附件不会通过该入口转发，避免无意上传文件。PWA shell cache 升级到 `codex-mobile-shell-v302`。

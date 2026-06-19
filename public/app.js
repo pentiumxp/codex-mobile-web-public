@@ -343,7 +343,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v304";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v305";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -14559,8 +14559,7 @@ function onComposerIntentOutsidePointer(event) {
 
 function openComposerIntentMenu() {
   const menu = $("composerIntentMenu");
-  const anchor = $("messageInput");
-  if (!menu || !anchor) return;
+  if (!menu) return;
   closeComposerRuntimeMenu();
   closeQuotaDetails();
   menu.innerHTML = composerIntentOptions().map((item) => `
@@ -14572,12 +14571,29 @@ function openComposerIntentMenu() {
   `).join("");
   menu.hidden = false;
   state.composerIntentMenuOpen = true;
+  positionComposerIntentMenu();
   document.addEventListener("pointerdown", onComposerIntentOutsidePointer);
+}
+
+function positionComposerIntentMenu() {
+  const menu = $("composerIntentMenu");
+  const anchor = $("messageInput") || $("composer");
+  if (!menu || menu.hidden || !anchor) return;
+  const rect = anchor.getBoundingClientRect();
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 390;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 844;
+  const left = Math.max(8, Math.round(rect.left));
+  const width = Math.max(280, Math.min(420, viewportWidth - left - 8, Math.round(rect.width || 320)));
+  const bottom = Math.max(8, Math.round(viewportHeight - rect.top + 8));
+  menu.style.setProperty("--composer-intent-left", `${left}px`);
+  menu.style.setProperty("--composer-intent-width", `${width}px`);
+  menu.style.setProperty("--composer-intent-bottom", `${bottom}px`);
 }
 
 function updateComposerIntentMenu() {
   if (shouldShowComposerIntentMenu()) {
     if (!state.composerIntentMenuOpen) openComposerIntentMenu();
+    else positionComposerIntentMenu();
   } else {
     closeComposerIntentMenu();
   }
@@ -15450,8 +15466,9 @@ async function sendMessage(event) {
   state.lastSendSubmitStartedAt = Date.now();
   const input = $("messageInput");
   const text = composerText();
+  const normalizedIntentText = normalizedComposerIntentText(text);
   const hasContent = Boolean(text || state.pendingAttachments.length);
-  if (text === "@") {
+  if (normalizedIntentText === "@") {
     openComposerIntentMenu();
     return;
   }
@@ -16551,6 +16568,7 @@ function wireUi() {
   window.addEventListener("resize", () => {
     updateViewportVars();
     updateComposerHeightVar();
+    positionComposerIntentMenu();
     if (!isHermesKeyboardInputActive()) {
       followViewportChangeToBottom("resize");
       scheduleViewportBottomFollowScroll();
@@ -16561,6 +16579,7 @@ function wireUi() {
     window.visualViewport.addEventListener("resize", () => {
       updateViewportVars();
       updateComposerHeightVar();
+      positionComposerIntentMenu();
       if (!isHermesKeyboardInputActive()) {
         followViewportChangeToBottom("visual-viewport-resize");
         scheduleViewportBottomFollowScroll();
@@ -16569,6 +16588,7 @@ function wireUi() {
     });
     window.visualViewport.addEventListener("scroll", () => {
       updateViewportVars();
+      positionComposerIntentMenu();
       if (!isHermesKeyboardInputActive()) {
         followViewportChangeToBottom("visual-viewport-scroll");
         scheduleViewportBottomFollowScroll();

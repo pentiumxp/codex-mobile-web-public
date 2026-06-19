@@ -4668,3 +4668,41 @@ The previous full handoff was archived and should be opened only when old proven
   - The production backup directory under
     `/Users/hermes-host/HermesMobile/backups/deploy` was not listed in this
     shell because the directory is not readable by the current user.
+
+## 2026-06-19 Composer @ Intent Menu Page-Level Overlay v305
+
+- Status: implemented and locally validated; deployment is the next step.
+- User-visible issue:
+  - After v304, the iOS/Home AI WebView still did not show the bare `@` intent
+    chooser, while the Home AI host chat showed a page-level chooser above its
+    input.
+- Root cause addressed:
+  - v304 still kept the intent menu in the Composer/layout positioning context,
+    so it could be clipped or stacked behind the `.main` / Composer / WebView
+    keyboard layout path.
+  - `sendMessage()` still used a strict raw-text `text === "@"` branch, which
+    could miss the normalized bare-`@` path used by the popup trigger.
+- Fix:
+  - Moved `#composerIntentMenu` out of the Composer form and into a page-level
+    overlay DOM position.
+  - Positioned the menu with `position: fixed` and CSS variables derived from
+    `#messageInput.getBoundingClientRect()`, keeping it aligned to the input
+    width and above the Composer.
+  - Repositioned the menu on window and visualViewport resize/scroll.
+  - Changed Send handling to use `normalizedComposerIntentText(text)` for the
+    bare-`@` branch.
+  - Advanced the shell cache/build id to `codex-mobile-shell-v305`.
+- Changed files:
+  - `public/app.js`
+  - `public/index.html`
+  - `public/styles.css`
+  - `public/sw.js`
+  - `README.md`
+  - shell/version and task-card route tests.
+- Validation:
+  - `git diff --check`
+  - `node --check public/app.js && node --check public/sw.js`
+  - Home AI center harness:
+    `node tests/architecture-code-test-harness-map.test.js`
+  - `npm run check`
+  - `npm test`
