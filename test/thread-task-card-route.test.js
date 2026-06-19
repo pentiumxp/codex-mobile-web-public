@@ -9,6 +9,7 @@ const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "ut
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
+const createThreadTaskCardScript = fs.readFileSync(path.resolve(__dirname, "..", "scripts", "create-thread-task-card.js"), "utf8");
 
 function functionBody(source, name) {
   const start = source.indexOf(`function ${name}(`);
@@ -42,6 +43,19 @@ test("server exposes thread task card routes and enriches thread detail response
   assert.match(serverJs, /attachThreadTaskCardsToResult\(result\)/);
   assert.match(serverJs, /await threadTaskCardService\.approve/);
   assert.match(serverJs, /await threadTaskCardService\.reply/);
+});
+
+test("server exposes a thread-callable direct task-card interface", () => {
+  assert.ok(serverJs.includes('const sourceThreadTaskCardCreate = url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/task-cards$/);'));
+  assert.match(serverJs, /function buildThreadTaskCardCreatePayload\(/);
+  assert.match(serverJs, /function threadTaskCardThreadCallIdempotencyKey\(/);
+  assert.match(serverJs, /function resolvedThreadTaskCardTargetIds\(/);
+  assert.match(serverJs, /threadTaskCardService\.approveFromSource\(card\.id, payload\.sourceThreadId\)/);
+  assert.match(serverJs, /body\.autoApprove !== false && body\.direct !== false && body\.pending !== true/);
+  assert.match(serverJs, /direct: autoApprove/);
+  assert.match(createThreadTaskCardScript, /\/api\/threads\/\$\{encodeURIComponent\(sourceThreadId\)\}\/task-cards/);
+  assert.match(createThreadTaskCardScript, /CODEX_MOBILE_KEY_FILE/);
+  assert.match(createThreadTaskCardScript, /--pending/);
 });
 
 test("thread task card routes preserve service status codes", () => {

@@ -406,6 +406,14 @@ through `POST /api/thread-task-cards`. That route accepts either a single
 `targetThreadId` or multiple `targetThreadIds`, creates one stored card per
 target, and returns both the compatibility `card` field and the full `cards`
 array.
+For Codex-thread/tool initiated delegation, Mobile Web also exposes
+`POST /api/threads/:sourceThreadId/task-cards`. This route is not used by the
+browser composer. It infers the source thread from the URL, stores the same
+auditable task-card object, and defaults to source-thread direct approval:
+after storage it injects the target turn immediately through
+`approveFromSource()` and marks the card as target-approval-bypassed. Use
+`pending:true` or `autoApprove:false` only when a thread-callable client
+intentionally wants the original pending target approval chain.
 Server-side draft materialization backs up the browser path. On fresh
 `turn/completed`, `server.js` fetches a bounded recent-turn window, scans
 assistant/plan items for the same structured draft XML, resolves source/target

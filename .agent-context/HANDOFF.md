@@ -2,6 +2,57 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-19 Thread-Callable Direct Task-Card Interface
+
+- Status: implemented and validated locally; not committed, pushed, or deployed
+  in this turn.
+- User-visible/API change:
+  - Existing browser/user task-card flow remains unchanged:
+    `POST /api/thread-task-cards` still creates pending cards that require
+    target-thread approval before injection.
+  - New thread-callable route:
+    `POST /api/threads/:sourceThreadId/task-cards`.
+    It infers the source thread from the URL, accepts target thread ids or
+    exact target titles, stores normal task-card audit state, and defaults to
+    source-thread direct approval.
+  - Direct cards call `threadTaskCardService.approveFromSource()`, bypass the
+    target pending approval UI, and inject a real target-thread turn. Stored
+    card metadata records `delivery.approvalMode="source_thread_direct"` and
+    `audit.targetApprovalBypassed=true`.
+  - Passing `pending:true` or `autoApprove:false` to the new route keeps the
+    card in the original manual pending flow.
+- CLI:
+  - Added `scripts/create-thread-task-card.js` as the supported local wrapper
+    for Codex-thread/tool initiated delegation.
+  - It reads the Codex Mobile access key from env or
+    `$HOME/.codex-mobile-web/access_key`, sends it as an Authorization header,
+    and does not print key material.
+  - Prefer `--body-file` or `--json-file` for long or Chinese task bodies.
+- Files changed:
+  - `server.js`
+  - `adapters/thread-task-card-service.js`
+  - `scripts/create-thread-task-card.js`
+  - `package.json`
+  - `test/thread-task-card-service.test.js`
+  - `test/thread-task-card-route.test.js`
+  - `README.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/COMPLEX_FEATURE_PATHS.md`
+  - `docs/CROSS_THREAD_TASK_CARDS_DESIGN.md`
+  - `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md`
+  - `docs/MODULES.md`
+- Validation:
+  - `node --test test/thread-task-card-harness.test.js test/thread-task-card-service.test.js test/thread-task-card-route.test.js test/conversation-render.test.js`
+    passed: 77 tests.
+  - `npm run check` passed.
+  - Center required checks passed:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - `git diff --check` passed.
+  - `npm test` passed: 520 tests.
+  - `npm run check:macos` passed.
+  - `node scripts/create-thread-task-card.js --help` printed the expected
+    bounded usage text.
+
 ## 2026-06-19 v313 Superseded Live User-Message Projection Fix
 
 - Status: implemented, validated, committed, and pushed to private and public.

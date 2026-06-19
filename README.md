@@ -282,6 +282,7 @@ Codex Mobile Web now has a first implementation of controlled cross-thread task
 cards:
 
 - `POST /api/thread-task-cards`
+- `POST /api/threads/:sourceThreadId/task-cards`
 - `GET /api/thread-task-cards/:id`
 - `POST /api/thread-task-cards/:id/approve`
 - `POST /api/thread-task-cards/:id/delete`
@@ -297,6 +298,28 @@ Behavior:
 - `Approve` injects the request as a real new target-thread turn, not as a fake
   static message row.
 - `Reply` creates a reverse-direction pending card.
+
+`POST /api/threads/:sourceThreadId/task-cards` is the thread-callable
+delegation path. It is intended for a Codex thread/tool to hand scoped work to
+another thread without cross-workspace editing. It stores the same task-card
+object for audit, but defaults to source-thread direct approval: the target
+thread does not show an `Approve` card and receives a real injected turn
+immediately. The card records `source_thread_direct` delivery metadata and
+`targetApprovalBypassed` audit metadata. Use `pending:true` or
+`autoApprove:false` when this route should create a normal pending card.
+
+Local thread-callable wrapper:
+
+```bash
+node scripts/create-thread-task-card.js \
+  --source-thread <source-thread-id> \
+  --target-thread <target-thread-id-or-exact-title> \
+  --title "<title>" \
+  --body-file <markdown-file>
+```
+
+The script reads the Codex Mobile access key from env or
+`$HOME/.codex-mobile-web/access_key` and does not print key material.
 
 The browser currently exposes a minimal `Send task card` entry inside the thread
 detail view. It resolves the target by exact visible thread title or explicit

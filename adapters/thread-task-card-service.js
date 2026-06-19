@@ -353,12 +353,15 @@ function injectedMessageText(card) {
   const autoReturnOnCompletion = autonomous
     && card.delivery
     && card.delivery.autoReturnOnCompletion === true;
+  const sourceDirect = card.delivery
+    && card.delivery.approvalMode === "source_thread_direct";
   const lines = [
-    "[Cross-thread task card approved]",
+    sourceDirect ? "[Cross-thread task card sent by source thread]" : "[Cross-thread task card approved]",
     "",
     `Source workspace: ${card.source.workspaceId}`,
     `Source thread: ${card.source.title || card.source.threadId}`,
     card.message && card.message.title ? `Title: ${card.message.title}` : "",
+    sourceDirect ? "Approval: target approval bypassed by the thread-callable interface." : "",
     autonomous ? `Workflow mode: ${card.workflow.mode}` : "",
     autonomous ? `Workflow id: ${card.workflow.id}` : "",
     autoReturnOnCompletion ? "Auto-return: when this injected turn completes, Codex Mobile Web will send a return task card back to the source thread in this workflow." : "",
@@ -485,6 +488,7 @@ function createThreadTaskCardService(options = {}) {
   async function executeCardApproval(cardId, actorThreadId, approvalOptions = {}) {
     const id = stringValue(cardId);
     const automatic = approvalOptions.automatic === true;
+    const sourceDirect = approvalOptions.sourceDirect === true;
     const actorThread = stringValue(actorThreadId);
     const publicThreadId = stringValue(approvalOptions.publicThreadId || actorThread);
     const prepared = await withStore(async (store) => {
@@ -496,27 +500,53 @@ function createThreadTaskCardService(options = {}) {
         workflow = activeWorkflowForCard(store, card);
         if (!workflow) return null;
         markCardWorkflowAuthorized(card, workflow);
+      } else if (sourceDirect) {
+        if (!actorThread) throw errorWithStatus("actor_thread_id_required");
+        if (!card) throw errorWithStatus("task_card_not_found", 404);
+        if (card.status === "approved") return { alreadyApproved: true, card: clone(card) };
+        if (card.status !== "pending") throw errorWithStatus(`task_card_not_pending:${card.status}`, 409);
+        if (stringValue(card.source && card.source.threadId) !== actorThread) {
+          throw errorWithStatus("direct_approval_requires_source_thread", 403);
+        }
       } else {
         transitionAllowed(card, "approve", actorThreadId);
       }
       const timestamp = nowIso(options.now);
       card.status = "approving";
       card.updatedAt = timestamp;
+      if (sourceDirect) {
+        card.delivery = Object.assign({}, card.delivery || {}, {
+          approvalMode: "source_thread_direct",
+          targetApprovalBypassed: true,
+        });
+      }
       card.audit = Object.assign({}, card.audit || {}, automatic ? {
         autoApprovingAt: timestamp,
         autoApprovedByWorkflowId: card.workflow.id,
+      } : sourceDirect ? {
+        directApprovingAt: timestamp,
+        directApprovedByThreadId: actorThread,
+        targetApprovalBypassed: true,
       } : {
         approvingAt: timestamp,
         approvingByThreadId: actorThread,
       });
-      return clone(card);
+      return { card: clone(card) };
     });
     if (!prepared) return null;
+    if (prepared.alreadyApproved) {
+      return {
+        card: publicCard(prepared.card, publicThreadId || actorThread || prepared.card.target.threadId),
+        execution: null,
+        alreadyApproved: true,
+      };
+    }
+    const preparedCard = prepared.card;
 
     let execution;
     try {
-      execution = await executeApprovedCard(clone(prepared), {
-        text: injectedMessageText(prepared),
+      execution = await executeApprovedCard(clone(preparedCard), {
+        text: injectedMessageText(preparedCard),
       });
     } catch (err) {
       await withStore(async (store) => {
@@ -528,9 +558,12 @@ function createThreadTaskCardService(options = {}) {
           card.audit = Object.assign({}, card.audit || {}, {
             approvalFailedAt: timestamp,
             approvalError: boundedErrorMessage(err),
-          }, automatic && prepared.workflow ? {
+          }, automatic && preparedCard.workflow ? {
             autoApprovalFailedAt: timestamp,
-            autoApprovedByWorkflowId: prepared.workflow.id,
+            autoApprovedByWorkflowId: preparedCard.workflow.id,
+          } : sourceDirect ? {
+            directApprovalFailedAt: timestamp,
+            directApprovedByThreadId: actorThread,
           } : {});
         }
         return null;
@@ -546,6 +579,8 @@ function createThreadTaskCardService(options = {}) {
       card.updatedAt = timestamp;
       const workflow = automatic
         ? activeWorkflowForCard(store, card)
+        : sourceDirect
+          ? null
         : activateWorkflowForCard(store, card, actorThread, timestamp);
       if (workflow) markCardWorkflowAuthorized(card, workflow);
       card.audit = Object.assign({}, card.audit || {}, automatic && card.workflow ? {
@@ -553,6 +588,12 @@ function createThreadTaskCardService(options = {}) {
         approvedByThreadId: card.target && card.target.threadId || "",
         autoApprovedAt: timestamp,
         autoApprovedByWorkflowId: card.workflow.id,
+      } : sourceDirect ? {
+        approvedAt: timestamp,
+        approvedByThreadId: actorThread,
+        directApprovedAt: timestamp,
+        directApprovedByThreadId: actorThread,
+        targetApprovalBypassed: true,
       } : {
         approvedAt: timestamp,
         approvedByThreadId: actorThread,
@@ -621,6 +662,13 @@ function createThreadTaskCardService(options = {}) {
 
   async function approve(cardId, actorThreadId) {
     return executeCardApproval(cardId, actorThreadId);
+  }
+
+  async function approveFromSource(cardId, actorThreadId) {
+    return executeCardApproval(cardId, actorThreadId, {
+      sourceDirect: true,
+      publicThreadId: actorThreadId,
+    });
   }
 
   async function deleteCard(cardId, actorThreadId) {
@@ -823,6 +871,7 @@ function createThreadTaskCardService(options = {}) {
 
   return {
     approve,
+    approveFromSource,
     create,
     createMany,
     deleteCard,

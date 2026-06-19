@@ -61,11 +61,38 @@ layout and test strategy.
 ## Proposed Routes
 
 - `POST /api/thread-task-cards`
+- `POST /api/threads/:sourceThreadId/task-cards`
 - `GET /api/thread-task-cards/:id`
 - `POST /api/thread-task-cards/:id/approve`
 - `POST /api/thread-task-cards/:id/delete`
 - `POST /api/thread-task-cards/:id/revoke`
 - `POST /api/thread-task-cards/:id/reply`
+
+`POST /api/threads/:sourceThreadId/task-cards` is the thread-callable
+delegation route. It uses `buildThreadTaskCardCreatePayload()` to infer source
+metadata, resolve target ids or exact target titles, truncate overlong bodies to
+the 8k card limit, and derive a stable `thread-call:*` idempotency key when the
+caller does not provide one. By default it calls
+`threadTaskCardService.approveFromSource()` after storing each card, so the
+target thread receives a real injected turn without showing a target-side
+pending approval card. Passing `pending:true` or `autoApprove:false` keeps the
+card in the original manual-pending flow.
+
+The supported local CLI wrapper is:
+
+```bash
+node scripts/create-thread-task-card.js \
+  --source-thread <source-thread-id> \
+  --target-thread <target-thread-id-or-exact-title> \
+  --title "<title>" \
+  --body-file <markdown-file>
+```
+
+The script reads the access key from `CODEX_MOBILE_KEY`,
+`CODEX_MOBILE_ACCESS_KEY`, `CODEX_MOBILE_KEY_FILE`, or
+`$HOME/.codex-mobile-web/access_key`, sends it as an Authorization header, and
+prints only the bounded JSON response. Prefer `--body-file` or `--json-file`
+for Chinese or long Markdown payloads.
 
 ## Proposed Read Integration
 
@@ -214,3 +241,8 @@ or another UTF-8-safe JSON client. Do not hand-compose Chinese card JSON through
 PowerShell command strings. The service now rejects likely damaged text, but the
 canonical sending path should still use stable idempotency keys and a
 UTF-8-safe request builder.
+
+The Node script and the thread-callable route are intentionally direct-send
+surfaces. They are suitable when the current Codex thread is explicitly asked to
+delegate scoped work to another thread. They must not replace the ordinary
+target approval chain for user-composer task cards.
