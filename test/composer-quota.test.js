@@ -22,6 +22,7 @@ test("composer exposes Fast bolt, model, reasoning, permission, and quota as com
   assert.match(indexHtml, /class="composer-chip-label">推理强度/);
   assert.match(indexHtml, /class="composer-chip-label">权限/);
   assert.match(appJs, /function openComposerRuntimeMenu\(/);
+  assert.match(appJs, /function handleComposerRuntimeControl\(/);
   assert.match(appJs, /function applyRuntimeSelection\(/);
   assert.match(appJs, /setCodexFastCommandEnabled\(!codexFastCommandEnabled\(\)\)/);
   assert.match(appJs, /showComposerFastHint\(state\.codexFastMode\)/);
@@ -35,9 +36,30 @@ test("composer exposes Fast bolt, model, reasoning, permission, and quota as com
 
 test("permission uses the custom runtime picker instead of native select", () => {
   assert.match(indexHtml, /id="composerRuntimeMenu"/);
+  assert.ok(
+    indexHtml.indexOf('id="composerRuntimeMenu"') > indexHtml.indexOf("</form>"),
+    "runtime menu should be a page-level overlay, not a composer-form child",
+  );
+  assert.ok(
+    indexHtml.indexOf('id="quotaDetailPanel"') > indexHtml.indexOf("</form>"),
+    "quota detail panel should be a page-level overlay, not a composer-form child",
+  );
   assert.match(appJs, /body\.append\("permissionMode", selectedComposerPermissionMode\(\)\)/);
+  assert.match(appJs, /defaultPermissionMode/);
+  assert.match(appJs, /if \(sandboxType === "dangerfullaccess"\) return "full"/);
   assert.doesNotMatch(indexHtml, /id="permissionSelect"/);
   assert.doesNotMatch(stylesCss, /\.permission-select-wrap/);
+});
+
+test("runtime picker has iOS WebView click fallback and bounded diagnostics", () => {
+  assert.match(appJs, /button\.addEventListener\("pointerdown"/);
+  assert.match(appJs, /button\.addEventListener\("click"/);
+  assert.match(appJs, /state\.lastComposerRuntimePointerTarget === button/);
+  assert.match(appJs, /Date\.now\(\) - state\.lastComposerRuntimePointerAt < 1500/);
+  assert.match(appJs, /state\.lastComposerRuntimePointerTarget = null/);
+  assert.match(appJs, /postClientEvent\("composer_runtime_menu_opened"/);
+  assert.match(appJs, /postClientEvent\("composer_runtime_control_ignored"/);
+  assert.match(appJs, /querySelectorAll\("\[data-runtime-kind\]\[data-runtime-value\]"\)\.length/);
 });
 
 test("quota card separates inline summary from detail panel", () => {
@@ -84,4 +106,8 @@ test("composer control row uses fixed heights", () => {
   assert.match(stylesCss, /\.composer-control-card\s*{[\s\S]*height:\s*var\(--composer-control-height\);/);
   assert.match(stylesCss, /\.composer-runtime-menu/);
   assert.match(stylesCss, /\.quota-detail-panel/);
+  assert.match(stylesCss, /\.composer-runtime-menu,[\s\S]*\.quota-detail-panel\s*\{[\s\S]*z-index:\s*130;/);
+  assert.match(stylesCss, /max-height:\s*min\(var\(--composer-popup-max-height,\s*45vh\),\s*360px\);/);
+  assert.match(appJs, /window\.visualViewport/);
+  assert.match(appJs, /--composer-popup-max-height/);
 });

@@ -40,6 +40,7 @@ test("workspace registry creates and persists a workspace under an allowed root"
     createRoots: [root],
   });
   assert.deepEqual(reloaded.list().map((workspace) => workspace.cwd), [result.workspace.cwd]);
+  assert.deepEqual(reloaded.registeredPaths(), [result.workspace.cwd]);
 });
 
 test("workspace registry is idempotent for an existing directory", () => {
@@ -98,6 +99,21 @@ test("desktop global state sync is idempotent across repeated writes", () => {
   for (const key of ["electron-saved-workspace-roots", "project-order", "active-workspace-roots"]) {
     assert.deepEqual(globalState[key], [workspace]);
   }
+});
+
+test("registered paths keep persisted mobile workspaces even when list filters missing directories", () => {
+  const root = tempRoot();
+  const storageFile = path.join(root, "workspaces.json");
+  const service = createWorkspaceRegistryService({
+    storageFile,
+    homeDir: root,
+    createRoots: [root],
+  });
+  const result = service.create({ name: "Music" });
+  fs.rmSync(result.workspace.cwd, { recursive: true, force: true });
+
+  assert.deepEqual(service.list(), []);
+  assert.deepEqual(service.registeredPaths(), [result.workspace.cwd]);
 });
 
 test("workspace registry rejects unsafe folder names and disallowed roots", () => {

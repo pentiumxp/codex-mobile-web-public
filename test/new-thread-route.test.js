@@ -83,6 +83,8 @@ test("server default model falls back to GPT-5.5", () => {
   assert.match(serverJs, /const MODEL_OPTIONS = optionListFromEnv\("CODEX_MOBILE_MODEL_OPTIONS", \[\s*"gpt-5\.5"/);
   assert.match(serverJs, /const DEFAULT_MODEL = MODEL_OPTIONS\[0\] \|\| "gpt-5\.5";/);
   assert.match(serverJs, /defaultModel: CODEX_CONFIG_DEFAULTS\.model \|\| DEFAULT_MODEL/);
+  assert.match(serverJs, /defaultPermissionMode: defaultPermissionModeFromConfigDefaults\(\)/);
+  assert.match(serverJs, /function defaultPermissionModeFromConfigDefaults\(\)[\s\S]*dangerFullAccess[\s\S]*return "full"/);
 });
 
 test("server resolves the default Codex executable from macOS install paths", () => {
@@ -121,7 +123,7 @@ test("server hydrates rollout quota snapshots without overwriting live quota", (
   assert.match(serverJs, /rateLimitSource\(\)[\s\S]*this\.isMuxEndpoint\(\)[\s\S]*"profile-mux-live"/, "profile mux quota should be marked as owned by the active profile endpoint");
   assert.match(serverJs, /recordRateLimits\(msg\.params\.rateLimits,\s*\{[\s\S]*source:\s*this\.rateLimitSource\(\)/, "quota notifications should use the same trusted source classifier as quota reads");
   assert.match(serverJs, /function codexAppServerChildEnv\([\s\S]*CODEX_CLI_PATH[\s\S]*CODEX_MUX_/, "managed child app-server env should drop desktop bridge variables");
-  assert.match(serverJs, /Object\.assign\(env, extra\);[\s\S]*if \(CODEX_HOME\) env\.CODEX_HOME = CODEX_HOME/, "explicit child env should be applied after desktop bridge cleanup");
+  assert.match(serverJs, /if \(CODEX_HOME\) env\.CODEX_HOME = CODEX_HOME;[\s\S]*Object\.assign\(env, extra\);/, "explicit child env should be able to override the active CODEX_HOME for profile preflight");
   assert.match(serverJs, /spawn\(CODEX_EXE,[\s\S]*\{\s*cwd: APP_ROOT,[\s\S]*env: codexAppServerChildEnv\(\{ CODEX_HOME \}\)/, "managed child app-server should inherit the resolved active CODEX_HOME without desktop bridge env");
   assert.match(serverJs, /async startOwnedMuxAndConnect\(\)/, "Mobile Web should be able to own a shared mux instead of depending on Desktop");
   assert.match(serverJs, /CODEX_MUX_STANDALONE:\s*"1"[\s\S]*CODEX_MUX_KEEP_ALIVE:\s*"1"[\s\S]*CODEX_MUX_PUBLISH_ENDPOINT:\s*"1"/, "Mobile-owned mux should stay alive after Desktop exits and publish the active profile endpoint");
@@ -256,6 +258,7 @@ test("workspace creation route stores mobile-visible workspaces outside Codex gl
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_REGISTRY_FILE/, "workspace registry storage should be configurable");
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_CREATE_ROOTS/, "workspace creation roots should be configurable");
   assert.match(serverJs, /workspaceRegistryService\.create\(body\)/, "POST route should delegate creation to the registry service");
+  assert.match(serverJs, /syncRegisteredWorkspaceTrust\(CODEX_HOME\)/, "workspace creation should trust the new workspace for the active Codex profile");
   assert.match(serverJs, /workspaceRegistryService\.list\(\)[\s\S]*roots\.add\(workspace\.cwd\)/, "registered workspaces should become visible to thread routes");
 });
 

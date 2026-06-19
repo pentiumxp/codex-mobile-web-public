@@ -40,6 +40,11 @@ test("runtime settings pick new-thread selections from pending value, default, t
   }), "high");
   assert.equal(runtimeSettings.selectedNewThreadPermission({
     selected: "",
+    defaultValue: "full",
+    options: ["auto"],
+  }), "full");
+  assert.equal(runtimeSettings.selectedNewThreadPermission({
+    selected: "",
     options: ["auto"],
   }), "auto");
   assert.equal(runtimeSettings.selectedNewThreadPermission({

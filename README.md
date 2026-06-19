@@ -4,6 +4,11 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：v311 修复模型、推理强度和权限运行时菜单在 iOS PWA/WebView 下可能点不开的问题。运行时菜单和额度详情浮层现在与 `@` 意图菜单一样位于页面级 DOM，不再作为 Composer 表单控制行的子元素；触摸 `pointerdown` 后的合成 `click` 只会按同一按钮吞掉一次，避免同一次点击先打开又关闭菜单。PWA shell cache 升级到 `codex-mobile-shell-v311`。
+- 中文说明：v310 在导航菜单现有版本按钮里直接显示当前客户端壳版本，例如 `v0.1.11 · 客户端 v310`。这个值来自浏览器实际加载的 `CLIENT_BUILD_ID`，用于区分服务端已更新但 PWA/WebView 仍停留在旧前端壳的情况；按钮仍保留原来的更新检查入口。PWA shell cache 升级到 `codex-mobile-shell-v310`。
+- 中文说明：v309 修复 Reset 后 Composer 运行设置控件回退的问题。新线程和旧草稿的权限默认值现在优先使用服务端按 `config.toml` 推导的 `defaultPermissionMode`，当前 full-access 配置会显示并提交“完全访问权限”；在默认 full 的环境里，旧草稿里的 `custom` 会折算为 `full`。模型、推理和权限控件增加 click 兜底和受限菜单诊断事件，弹层按按钮与 `visualViewport` 定位，避免 iOS WebView/键盘状态下菜单不可见。PWA shell cache 升级到 `codex-mobile-shell-v309`。
+- 中文说明：server-only 修复 Mobile 创建的 workspace 在切换 Codex Profile 后可能丢失 trusted project 的问题。服务启动、创建 workspace、切换目标 profile 前都会把 Mobile registry 里的工作区同步到目标 `config.toml` 的 `[projects."<cwd>"] trust_level = "trusted"`；同时修正 profile switch preflight 的 `CODEX_HOME` 覆盖顺序，确保预检真正使用目标 profile。本次不改变 PWA shell cache。
+- 中文说明：v308 修复 completed 回执底部出现空白状态块的问题。当前端收到 `mobileSupersededLive` 的历史 live 空壳 turn 且其中只剩 `turnUsageSummary` 时，不再渲染 usage-only 的空回执区块；正常包含用户/助手正文的 completed turn 仍保留 usage summary。PWA shell cache 升级到 `codex-mobile-shell-v308`。
 - 中文说明：v307 修正线程列表“正在工作/已停止”状态不同步。本地 running hint 现在会在列表拿到 `idle`、`completed`、`failed`、`cancelled`、`interrupted`、`stopped` 等已停止状态时立即清理，状态图标也不会再让旧 running hint 覆盖已停止行。PWA shell cache 升级到 `codex-mobile-shell-v307`。
 - 中文说明：v306 缓解线程信息流和 Composer 输入时的细微抖动。视口、宿主安全区和 Composer 高度 CSS 变量现在会忽略 1px 级别的测量噪声，Composer 输入框自动增高不再在每次输入时先重置为 `auto` 再回写高度，从而减少 live 状态刷新和打字时的页面几像素跳动。PWA shell cache 升级到 `codex-mobile-shell-v306`。
 - 中文说明：server-only 增加 ChatGPT Pro MCP Connector 首版。`POST /api/chatgpt-pro/mcp` 使用独立 bearer token，token 只从 `CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN` 或 `CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN_FILE` 读取；工具只允许读取 bounded 线程/工作区/文档上下文，并把 PRD、review、goal、task-card draft 等产物写入 runtime root 的 `chatgpt-pro-planner`，不写源码、不执行 shell、不启动 Codex turn。本次不改变 PWA shell cache。

@@ -2,6 +2,258 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-19 v311 Runtime Picker Overlay Fix
+
+- Status: implemented, validated, and deployed to Mac production with
+  `--restart none`; not committed or pushed.
+- User-visible issue:
+  - The navigation version button proved the PWA/WebView was already running
+    v310, but Composer model, reasoning-effort, and permission controls still
+    could not open their option menus.
+- Fix:
+  - Moved `#composerRuntimeMenu` and `#quotaDetailPanel` out of the Composer
+    form/control row into page-level overlay DOM, matching the existing
+    `#composerIntentMenu` placement.
+  - Raised runtime/quota overlay z-index to `130`.
+  - Changed the runtime control touch/click fallback so the synthetic click
+    after a handled `pointerdown` is swallowed only once for the same button,
+    avoiding same-tap open/close races.
+  - PWA shell cache advanced to `codex-mobile-shell-v311`.
+- Validation:
+  - `node --test test/composer-quota.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js test/app-update.test.js`
+    passed: 34 tests.
+  - `node --check public/app.js && node --check public/sw.js` passed.
+  - `npm run check` passed.
+  - `git diff --check` passed.
+  - Center deploy checks passed:
+    `node --check scripts/deploy-macos-production.js`,
+    `node tests/macos-production-deploy-script.test.js`,
+    `node tests/production-status-smoke-harness.test.js`,
+    `node tests/architecture-code-test-harness-map.test.js`.
+- Deployment:
+  - Command:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart none --health-url http://127.0.0.1:8787/api/public-config --allow-dirty --execute --json`
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260619T114709Z-plugin-codex-mobile-web-manual`
+  - Production readback confirmed:
+    `/api/public-config.clientBuildId=0.1.11|codex-mobile-shell-v311`,
+    `/api/public-config.shellCacheName=codex-mobile-shell-v311`, served
+    `/index.html` has runtime/quota overlays after `</form>`, served
+    `/app.js` contains the same-button pointer/click guard, and served
+    `/sw.js` contains `codex-mobile-shell-v311`.
+  - `launchctl` still showed the same running listener PID `10805`.
+  - Evidence ledger record:
+    `evidence-2babb030-5c02-4f35-9635-78543d7f7246`.
+
+## 2026-06-19 v310 Navigation Client Build Display
+
+- Status: implemented, validated, and deployed to Mac production with
+  `--restart none`; not committed or pushed.
+- User-visible change:
+  - The existing navigation-menu version button now shows both the app version
+    and the currently loaded client shell, for example
+    `v0.1.11 · 客户端 v310`.
+  - The client value comes from the browser-loaded `CLIENT_BUILD_ID`, so it can
+    reveal when a PWA/WebView is still running an old shell after the server has
+    updated.
+- Files changed for this fix:
+  - `public/app.js`
+  - `public/sw.js`
+  - `README.md`
+  - `test/app-update.test.js`
+  - shell-cache assertion tests
+- Validation:
+  - `node --test test/app-update.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js test/composer-quota.test.js`
+    passed: 34 tests.
+  - `node --check public/app.js && node --check public/sw.js` passed.
+  - Center deployment checks passed:
+    `node --check scripts/deploy-macos-production.js`,
+    `node tests/macos-production-deploy-script.test.js`,
+    `node tests/production-status-smoke-harness.test.js`,
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - `npm run check` passed.
+  - `git diff --check` passed.
+- Deployment:
+  - Command:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart none --health-url http://127.0.0.1:8787/api/public-config --allow-dirty --execute --json`
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260619T113646Z-plugin-codex-mobile-web-manual`
+  - `restartLabels` was empty, and `launchctl` still showed the same running
+    listener PID `10805`.
+  - Production readback confirmed:
+    `/api/public-config.clientBuildId=0.1.11|codex-mobile-shell-v310`,
+    `/api/public-config.shellCacheName=codex-mobile-shell-v310`, served
+    `/app.js` contains `clientBuildVersionText`, and served `/sw.js` contains
+    `codex-mobile-shell-v310`.
+
+## 2026-06-19 v309 Runtime Picker Reset Hotfix
+
+- Status: implemented, validated, and present in the production source sync;
+  not committed or pushed. The active production listener already reports
+  `defaultPermissionMode=full` and `clientBuildId=0.1.11|codex-mobile-shell-v310`.
+- User-visible issue:
+  - After a local Reset used to recover Music workspace access, the Composer
+    model, reasoning-effort, and permission controls no longer opened their
+    option lists in the mobile shell.
+  - The permission chip could show/use custom config instead of the expected
+    full-access mode.
+- Runtime evidence:
+  - Active `/Users/xuxin/.codex/config.toml` currently has
+    `sandbox_mode = "danger-full-access"`.
+  - Authenticated current-thread detail for this Codex Mobile thread returned
+    `runtimeSettings.permissionMode = "full"` and
+    `sandboxPolicyType = "dangerFullAccess"`.
+  - Production still reported `clientBuildId=0.1.11|codex-mobile-shell-v307`
+    before this local fix.
+- Fix:
+  - `server.js` now exposes a bounded `defaultPermissionMode` in
+    `/api/public-config`, derived from `config.toml` sandbox defaults.
+  - `public/runtime-settings.js` and `public/app.js` now prefer that default
+    permission mode before falling back to option order.
+  - Existing `custom` draft values are normalized to `full` when the active
+    default permission mode is full, so stale local state does not visually or
+    behaviorally override full access after Reset.
+  - Runtime picker buttons now have a click fallback in addition to pointerdown,
+    plus bounded client events for ignored/open/closed runtime menus.
+  - Runtime and quota popups now position from the clicked button and
+    `visualViewport`, and set a bounded popup max height.
+  - PWA shell cache advanced to `codex-mobile-shell-v309`.
+- Files changed for this fix:
+  - `server.js`
+  - `public/app.js`
+  - `public/runtime-settings.js`
+  - `public/styles.css`
+  - `public/sw.js`
+  - `README.md`
+  - `test/runtime-settings.test.js`
+  - `test/composer-quota.test.js`
+  - `test/new-thread-ui.test.js`
+  - `test/new-thread-route.test.js`
+  - shell-cache assertion tests
+- Validation:
+  - `node --check public/app.js && node --check public/runtime-settings.js && node --check server.js`
+  - `node --test test/runtime-settings.test.js test/composer-quota.test.js test/new-thread-ui.test.js test/new-thread-route.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    passed: 57 tests.
+  - `npm run check` passed.
+  - `git diff --check` passed.
+  - `npm test` passed: 511 tests.
+- Operational note:
+  - This includes a server public-config shape change, so production needs a
+    controlled listener reload before iOS clients can receive
+    `defaultPermissionMode`. Do not restart automatically while user has active
+    turns.
+
+## 2026-06-19 Music Workspace Trust Sync Fix
+
+- Status: implemented and validated locally; not committed, pushed, deployed,
+  or production-restarted.
+- Immediate local repair:
+  - Added `[projects."/Users/xuxin/Documents/Music"] trust_level = "trusted"`
+    to the active profile config `/Users/xuxin/.codex/config.toml`.
+  - Backup before the edit:
+    `/Users/xuxin/.codex/config.toml.bak-20260619-music-trust`.
+- Root cause update:
+  - Music was a Mobile-created workspace under `/Users/xuxin/Documents/Music`.
+  - The active `default` profile config did not include Music as a trusted
+    project, while `/Users/xuxin/.codex-homes/previous/config.toml` did.
+  - The profile switch itself happened earlier, but the failure appeared after
+    app-server/daemon restart because the fresh active-profile app-server no
+    longer had the prior in-memory/profile context for that workspace.
+  - Home AI and the current Codex Mobile plugin workspace still worked because
+    they are trusted in the active profile and are not the same protected
+    `~/Documents/Music` workspace boundary.
+- Code fix:
+  - Added `adapters/codex-project-trust-service.js` to append missing
+    `[projects."<cwd>"] trust_level = "trusted"` entries idempotently.
+  - `workspace-registry-service` now exposes raw `registeredPaths()` so Mobile
+    registry workspaces can be trusted even if `list()` filters unavailable
+    directories.
+  - `server.js` syncs registered workspace trust for:
+    - active profile on real server startup;
+    - newly created Mobile workspaces;
+    - target profile before profile-switch restart.
+  - Fixed `codexAppServerChildEnv(extra)` ordering so profile-switch preflight
+    can pass the target `CODEX_HOME` without being overwritten by the currently
+    active profile home.
+- Files changed for this fix:
+  - `adapters/codex-project-trust-service.js`
+  - `adapters/workspace-registry-service.js`
+  - `server.js`
+  - `test/codex-project-trust-service.test.js`
+  - `test/workspace-registry-service.test.js`
+  - `test/new-thread-route.test.js`
+  - `test/manual-restart-ui.test.js`
+- Validation:
+  - `node --check adapters/codex-project-trust-service.js && node --check adapters/workspace-registry-service.js && node --check server.js`
+  - `node --test test/codex-project-trust-service.test.js test/workspace-registry-service.test.js test/new-thread-route.test.js test/manual-restart-ui.test.js`
+  - `npm run check`
+  - `npm test` passed: 509 tests.
+  - `git diff --check`
+- Operational note:
+  - Existing running app-server may still need a controlled restart to reload
+    `config.toml`; do not restart automatically while user has active turns.
+
+## 2026-06-19 v308 Blank Completed Receipt Fix / Music Permission Diagnosis
+
+- Status: implemented and validated locally; not committed, pushed, deployed,
+  or production-restarted.
+- User-visible issue:
+  - In the Home AI thread detail, recent assistant receipts could appear as
+    blank completed blocks with only usage chips at the bottom.
+- Root cause:
+  - Server projection can expose superseded live-turn shells marked
+    `mobileSupersededLive`.
+  - Some shells contain only `turnUsageSummary`; the browser treated that as a
+    visible item and rendered an empty completed receipt area.
+- Fix:
+  - `visibleItemsForTurn()` now hides superseded live shells only when every
+    visible item is a usage summary.
+  - Completed turns with real user/assistant content still keep usage summary
+    rendering.
+  - PWA shell cache advanced to `codex-mobile-shell-v308`.
+- Files changed:
+  - `public/app.js`
+  - `public/sw.js`
+  - `README.md`
+  - `test/conversation-render.test.js`
+  - `test/collab-agent-render.test.js`
+  - `test/mobile-viewport.test.js`
+  - `test/thread-goal-service.test.js`
+  - `test/thread-task-card-route.test.js`
+- Validation:
+  - Home AI AI Ops intake and required-checks were run; classified H3.
+  - `node --test test/collab-agent-render.test.js test/conversation-render.test.js`
+  - `npm test` passed: 506 tests.
+  - `npm run check` passed.
+  - `git diff --check`
+  - Center `node tests/architecture-code-test-harness-map.test.js` passed.
+  - Evidence ledger record:
+    `evidence-eec041bf-98b5-4a91-a359-f96474cd5966`.
+- Deployment note:
+  - No normal deploy/restart was performed because the user reported that
+    recent restarts disrupted other active Codex Mobile turns.
+  - If deploying this frontend-only fix, prefer the central Mac deploy path
+    with `--restart none` and static/readback verification when feasible.
+- Music permission diagnosis performed during the same investigation:
+  - Production listener is still a system LaunchDaemon
+    `system/com.hermesmobile.plugin.codex-mobile`, running as `xuxin`.
+  - The managed app-server child is `/Users/xuxin/.local/bin/codex app-server`;
+    that binary reports `codex-cli 0.137.0`, while
+    `/Applications/Codex.app/Contents/Resources/codex` reports
+    `codex-cli 0.140.0-alpha.2`.
+  - The Music thread rollout was created by `codex-mobile-web` with
+    `cli_version=0.137.0` and `cwd=/Users/xuxin/Documents/Music`, so it was not
+    a Desktop-origin thread.
+  - The failing Music turns had `sandbox_policy.type=danger-full-access` and
+    `permission_profile.type=disabled`, but tool outputs still showed
+    `ls: .: Operation not permitted`, `ls: /Users/xuxin/Documents: Operation not
+    permitted`, and sqlite `authorization denied`.
+  - Current direct shell checks as `xuxin` can stat/read the Music workspace
+    paths and show normal ownership, so this is not ordinary chmod/owner drift.
+    Treat it as a per-process macOS privacy/TCC or tool-execution entitlement
+    issue in the running app-server chain, not as a user workspace permission
+    mistake.
+
 ## 2026-06-19 v307 ChatGPT Pro MCP / UI Stabilization / Status Hint Deployment
 
 - Status: committed locally and deployed to Mac production; not pushed.

@@ -72,6 +72,7 @@ const {
   resolveActiveCodexHomeFromStore,
   resolveEffectiveCodexHome,
 } = require("./adapters/codex-profile-service");
+const { ensureCodexProjectsTrusted } = require("./adapters/codex-project-trust-service");
 const { createThreadDetailProjectionService } = require("./adapters/thread-detail-projection-service");
 const { createChatGptProBridgeService } = require("./adapters/chatgpt-pro-bridge-service");
 const { createChatGptProPlannerService } = require("./adapters/chatgpt-pro-planner-service");
@@ -242,6 +243,22 @@ const codexProfileService = createCodexProfileService({
   runtimeRoot: RUNTIME_ROOT,
   activeCodexHome: CODEX_HOME,
 });
+
+function syncRegisteredWorkspaceTrust(codexHome = CODEX_HOME) {
+  try {
+    const result = ensureCodexProjectsTrusted({
+      codexHome,
+      projectPaths: workspaceRegistryService.registeredPaths(),
+    });
+    if (result.changed) {
+      console.log(`[workspace-trust] added ${result.added.length} registered workspace(s) to ${result.configPath}`);
+    }
+    return result;
+  } catch (err) {
+    console.error(`[workspace-trust] failed to sync registered workspaces: ${err.message || err}`);
+    return { changed: false, added: [], error: err.message || String(err) };
+  }
+}
 
 function activeProfileRestartOptions(profile = null) {
   const selected = profile || codexProfileService.profiles().profiles.find((item) => item.active) || null;
@@ -1114,8 +1131,8 @@ function codexAppServerChildEnv(extra = {}) {
       delete env[key];
     }
   }
-  Object.assign(env, extra);
   if (CODEX_HOME) env.CODEX_HOME = CODEX_HOME;
+  Object.assign(env, extra);
   return env;
 }
 
@@ -3254,6 +3271,13 @@ function permissionModeFromRuntimeSettings(settings) {
   const sandboxType = normalizeSandboxPolicyType(settings.sandboxPolicy && settings.sandboxPolicy.type);
   if (sandboxType === "dangerFullAccess" || isRootWritePermissionProfile(settings.permissionProfile)) return "full";
   if (sandboxType === "externalSandbox" || settings.permissionProfile) return "custom";
+  if (sandboxType === "workspaceWrite" || sandboxType === "readOnly") return "auto";
+  return "default";
+}
+
+function defaultPermissionModeFromConfigDefaults() {
+  const sandboxType = normalizeSandboxPolicyType(CODEX_CONFIG_DEFAULTS.sandboxMode);
+  if (sandboxType === "dangerFullAccess") return "full";
   if (sandboxType === "workspaceWrite" || sandboxType === "readOnly") return "auto";
   return "default";
 }
@@ -9945,6 +9969,7 @@ async function handleApi(req, res) {
       permissionModeOptions: PERMISSION_MODE_OPTIONS,
       defaultModel: CODEX_CONFIG_DEFAULTS.model || DEFAULT_MODEL,
       defaultReasoningEffort: CODEX_CONFIG_DEFAULTS.reasoningEffort,
+      defaultPermissionMode: defaultPermissionModeFromConfigDefaults(),
       rateLimits: activeRateLimits(),
       rateLimitsByModel: rateLimitsByModelObject(),
       codexProfiles: codexProfileService.profiles({
@@ -10032,6 +10057,7 @@ async function handleApi(req, res) {
         throw httpStatusError(404, "Unknown Codex profile");
       }
       const preflight = await preflightCodexProfileSwitch(targetProfile);
+      syncRegisteredWorkspaceTrust(targetProfile.codexHome);
       const profile = codexProfileService.setActiveProfile(targetProfile.id);
       const restart = sharedChainRestartService.restart(Object.assign({
         delayMs: SHARED_CHAIN_RESTART_DELAY_MS,
@@ -10540,7 +10566,9 @@ async function handleApi(req, res) {
   if (url.pathname === "/api/workspaces" && req.method === "POST") {
     try {
       const body = await readBody(req);
-      sendJson(res, 200, workspaceRegistryService.create(body));
+      const created = workspaceRegistryService.create(body);
+      syncRegisteredWorkspaceTrust(CODEX_HOME);
+      sendJson(res, 200, created);
     } catch (err) {
       sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
     }
@@ -11506,6 +11534,7 @@ function shutdown() {
 }
 
 function startServer() {
+  syncRegisteredWorkspaceTrust(CODEX_HOME);
   server.listen(PORT, HOST, () => {
     console.log(`Codex Mobile Web listening on http://${HOST}:${PORT}`);
     if (REQUIRE_SHARED_APP_SERVER) {

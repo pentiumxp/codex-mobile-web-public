@@ -6056,9 +6056,9 @@ html.keyboard-open .composer {
   position: fixed;
   left: var(--composer-popup-left, 12px);
   bottom: var(--composer-popup-bottom, 76px);
-  z-index: 90;
+  z-index: 130;
   width: var(--composer-popup-width, 220px);
-  max-height: min(45vh, 360px);
+  max-height: min(var(--composer-popup-max-height, 45vh), 360px);
   padding: 6px;
   overflow: auto;
   color: var(--text);
