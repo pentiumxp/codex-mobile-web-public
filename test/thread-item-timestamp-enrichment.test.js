@@ -177,7 +177,9 @@ test("raw operation fallback does not attach a completed older turn operation to
       ],
     });
 
-    assert.equal(compacted.turns[1].items.some((item) => item.type === "commandExecution"), false);
+    const latest = compacted.turns.find((turn) => turn.id === "turn-new");
+    assert.ok(latest);
+    assert.equal(latest.items.some((item) => item.type === "commandExecution"), false);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -494,6 +496,55 @@ test("superseded live turns with images are rendered as historical turns", () =>
   assert.equal(compacted.turns[0].items.some((item) => item.id === "image-old"), true);
   assert.equal(compacted.turns[1].status, "inProgress");
   assert.deepEqual(compacted.turns.map((turn) => turn.id), ["turn-old-live", "turn-new-live"]);
+});
+
+test("superseded live user-only shells are pruned before compact turn trimming", () => {
+  const compacted = compactThread({
+    id: "thread-superseded-prune-window",
+    turns: [
+      {
+        id: "useful-completed",
+        status: { type: "completed" },
+        items: [{ id: "agent-useful", type: "agentMessage", text: "older useful receipt" }],
+      },
+      {
+        id: "stale-live-user-1",
+        status: "inProgress",
+        items: [{ id: "old-user-1", type: "userMessage", text: "old prompt 1" }],
+      },
+      {
+        id: "stale-live-user-2",
+        status: "inProgress",
+        items: [
+          { id: "old-user-2", type: "userMessage", text: "old prompt 2" },
+          { id: "reason-old", type: "reasoning", text: "hidden" },
+        ],
+      },
+      {
+        id: "superseded-with-receipt",
+        status: "inProgress",
+        items: [
+          { id: "old-user-3", type: "userMessage", text: "old prompt 3" },
+          { id: "agent-receipt", type: "agentMessage", text: "recent receipt" },
+        ],
+      },
+      {
+        id: "latest-live",
+        status: "inProgress",
+        items: [{ id: "latest-user", type: "userMessage", text: "latest prompt" }],
+      },
+    ],
+  }, { maxTurns: 3 });
+
+  assert.deepEqual(compacted.turns.map((turn) => turn.id), [
+    "useful-completed",
+    "superseded-with-receipt",
+    "latest-live",
+  ]);
+  const superseded = compacted.turns.find((turn) => turn.id === "superseded-with-receipt");
+  assert.equal(superseded.mobileSupersededLive, true);
+  assert.equal(superseded.items.some((item) => item.id === "old-user-3"), false);
+  assert.equal(superseded.items.some((item) => item.id === "agent-receipt"), true);
 });
 
 test("live latest turn rehydrates several recent raw operations", () => {

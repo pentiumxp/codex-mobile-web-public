@@ -641,6 +641,22 @@
     </div>
   </div>
 
+  <div id="appNativeDialog" class="app-native-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="appNativeDialogTitle" aria-describedby="appNativeDialogMessage">
+    <div class="app-native-dialog-panel">
+      <div class="app-native-dialog-head">
+        <div id="appNativeDialogTitle" class="app-native-dialog-title">提示</div>
+      </div>
+      <div class="app-native-dialog-content">
+        <div id="appNativeDialogMessage" class="app-native-dialog-message"></div>
+        <textarea id="appNativeDialogInput" class="app-native-dialog-input hidden" rows="4"></textarea>
+      </div>
+      <div id="appNativeDialogActions" class="app-native-dialog-actions">
+        <button id="appNativeDialogCancel" class="app-native-dialog-cancel" type="button">取消</button>
+        <button id="appNativeDialogProceed" class="app-native-dialog-proceed" type="button">确定</button>
+      </div>
+    </div>
+  </div>
+
   <div id="filePreviewDialog" class="file-preview-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="filePreviewTitle">
     <div class="file-preview-panel">
       <div class="file-preview-head">

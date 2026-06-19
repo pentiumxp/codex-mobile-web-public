@@ -251,6 +251,16 @@ const state = {
   threadArchiveConfirmTargetId: "",
   threadArchiveConfirmTitle: "",
   threadArchiveConfirmResolve: null,
+  appNativeDialogOpen: false,
+  appNativeDialogMode: "alert",
+  appNativeDialogTitle: "提示",
+  appNativeDialogMessage: "",
+  appNativeDialogValue: "",
+  appNativeDialogPlaceholder: "",
+  appNativeDialogConfirmLabel: "确定",
+  appNativeDialogCancelLabel: "取消",
+  appNativeDialogRows: 4,
+  appNativeDialogResolve: null,
   restartAutoRecoverThreads: [],
   serverBuildId: "",
   serverAssetBuildId: "",
@@ -354,7 +364,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v311";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v313";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -2101,6 +2111,128 @@ async function loadCodexProfiles() {
   return profiles;
 }
 
+function renderAppNativeDialog() {
+  const dialog = $("appNativeDialog");
+  const title = $("appNativeDialogTitle");
+  const message = $("appNativeDialogMessage");
+  const input = $("appNativeDialogInput");
+  const actions = $("appNativeDialogActions");
+  const cancel = $("appNativeDialogCancel");
+  const proceed = $("appNativeDialogProceed");
+  if (!dialog || !title || !message || !input || !actions || !cancel || !proceed) return;
+  const open = Boolean(state.appNativeDialogOpen);
+  const promptMode = state.appNativeDialogMode === "prompt";
+  const alertMode = state.appNativeDialogMode === "alert";
+  dialog.classList.toggle("hidden", !open);
+  title.textContent = state.appNativeDialogTitle || "提示";
+  message.textContent = state.appNativeDialogMessage || "";
+  input.classList.toggle("hidden", !open || !promptMode);
+  input.value = promptMode ? state.appNativeDialogValue || "" : "";
+  input.placeholder = promptMode ? state.appNativeDialogPlaceholder || "" : "";
+  input.rows = Math.max(2, Math.min(10, Number(state.appNativeDialogRows) || 4));
+  cancel.hidden = alertMode;
+  actions.classList.toggle("single", alertMode);
+  cancel.textContent = state.appNativeDialogCancelLabel || "取消";
+  proceed.textContent = state.appNativeDialogConfirmLabel || (alertMode ? "知道了" : "确定");
+  if (open) {
+    window.setTimeout(() => {
+      const focusTarget = promptMode ? input : proceed;
+      if (focusTarget && typeof focusTarget.focus === "function") {
+        try {
+          focusTarget.focus({ preventScroll: true });
+        } catch (_) {
+          focusTarget.focus();
+        }
+      }
+    }, 0);
+  }
+}
+
+function closeAppNativeDialog(confirmed = false) {
+  const resolve = state.appNativeDialogResolve;
+  const mode = state.appNativeDialogMode;
+  const input = $("appNativeDialogInput");
+  const value = input ? input.value : state.appNativeDialogValue;
+  state.appNativeDialogOpen = false;
+  state.appNativeDialogMode = "alert";
+  state.appNativeDialogTitle = "提示";
+  state.appNativeDialogMessage = "";
+  state.appNativeDialogValue = "";
+  state.appNativeDialogPlaceholder = "";
+  state.appNativeDialogConfirmLabel = "确定";
+  state.appNativeDialogCancelLabel = "取消";
+  state.appNativeDialogRows = 4;
+  state.appNativeDialogResolve = null;
+  renderAppNativeDialog();
+  if (!resolve) return;
+  if (mode === "prompt") {
+    resolve(confirmed ? value : null);
+    return;
+  }
+  if (mode === "confirm") {
+    resolve(Boolean(confirmed));
+    return;
+  }
+  resolve(undefined);
+}
+
+function requestAppNativeDialog(options = {}) {
+  if (state.appNativeDialogResolve) closeAppNativeDialog(false);
+  const mode = ["alert", "confirm", "prompt"].includes(options.mode) ? options.mode : "alert";
+  state.appNativeDialogOpen = true;
+  state.appNativeDialogMode = mode;
+  state.appNativeDialogTitle = String(options.title || "提示");
+  state.appNativeDialogMessage = String(options.message || "");
+  state.appNativeDialogValue = String(options.value || "");
+  state.appNativeDialogPlaceholder = String(options.placeholder || "");
+  state.appNativeDialogConfirmLabel = String(options.confirmLabel || (mode === "alert" ? "知道了" : "确定"));
+  state.appNativeDialogCancelLabel = String(options.cancelLabel || "取消");
+  state.appNativeDialogRows = Math.max(2, Math.min(10, Number(options.rows) || 4));
+  renderAppNativeDialog();
+  return new Promise((resolve) => {
+    state.appNativeDialogResolve = resolve;
+  });
+}
+
+function requestAppAlert(message, options = {}) {
+  return requestAppNativeDialog(Object.assign({}, options, {
+    mode: "alert",
+    message,
+    title: options.title || "提示",
+    confirmLabel: options.confirmLabel || "知道了",
+  }));
+}
+
+function requestAppConfirmation(message, options = {}) {
+  return requestAppNativeDialog(Object.assign({}, options, {
+    mode: "confirm",
+    message,
+    title: options.title || "确认操作",
+  }));
+}
+
+function requestAppTextInput(message, value = "", options = {}) {
+  return requestAppNativeDialog(Object.assign({}, options, {
+    mode: "prompt",
+    message,
+    value,
+    title: options.title || "输入内容",
+  }));
+}
+
+function handleAppNativeDialogKeydown(event) {
+  if (!state.appNativeDialogOpen) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeAppNativeDialog(false);
+    return;
+  }
+  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+    event.preventDefault();
+    closeAppNativeDialog(true);
+  }
+}
+
 function renderCodexProfileSwitchDialog() {
   const dialog = $("profileSwitchConfirmDialog");
   const subtitle = $("profileSwitchConfirmSubtitle");
@@ -2122,9 +2254,6 @@ function closeCodexProfileSwitchDialog(confirmed = false) {
 }
 
 function requestCodexProfileSwitchConfirmation(profileId, label) {
-  if (!isHermesEmbedMode()) {
-    return Promise.resolve(window.confirm(`Switch all Codex Mobile workspaces to ${label}?`));
-  }
   if (state.profileSwitchConfirmResolve) closeCodexProfileSwitchDialog(false);
   state.profileSwitchConfirmOpen = true;
   state.profileSwitchConfirmTargetId = String(profileId || "");
@@ -2589,10 +2718,21 @@ function publicPrMergeInstruction(status) {
   ].join("\n");
 }
 
+function publicPrMergeConfirmationMessage(status) {
+  return [
+    `检测到 public 仓库有 ${status.openPullRequestCount || (status.pullRequests || []).length} 个开放 PR。`,
+    publicPrSummaryText(status),
+    "",
+    "是否准备一条合并/发布检查任务？",
+  ].filter(Boolean).join("\n");
+}
+
 async function preparePublicPrMergePrompt(status) {
   const text = publicPrMergeInstruction(status);
   if (composerHasContent()) {
-    window.alert("检测到 public 开放 PR，但输入框已有内容。请处理当前草稿后点击 Public PR 按钮。");
+    await requestAppAlert("检测到 public 开放 PR，但输入框已有内容。请处理当前草稿后点击 Public PR 按钮。", {
+      title: "Public PR",
+    });
     return;
   }
   if (!state.workspaces.length) {
@@ -2645,14 +2785,14 @@ function maybePromptPublicPrMerge(status) {
   if (!publicPrHasOpenPullRequests(status)) return;
   const key = publicPrPromptKey(status);
   if (!key || key === state.publicPrPromptedKey) return;
-  const confirmed = window.confirm([
-    `检测到 public 仓库有 ${status.openPullRequestCount || (status.pullRequests || []).length} 个开放 PR。`,
-    publicPrSummaryText(status),
-    "",
-    "是否准备一条合并/发布检查任务？",
-  ].filter(Boolean).join("\n"));
   rememberPublicPrPrompt(status);
-  if (confirmed) preparePublicPrMergePrompt(status).catch(showError);
+  requestAppConfirmation(publicPrMergeConfirmationMessage(status), {
+    title: "Public PR",
+    confirmLabel: "准备任务",
+    cancelLabel: "稍后",
+  }).then((confirmed) => {
+    if (confirmed) preparePublicPrMergePrompt(status).catch(showError);
+  }).catch(showError);
 }
 
 async function handlePublicPrStatusClick() {
@@ -2660,19 +2800,18 @@ async function handlePublicPrStatusClick() {
   const status = await refreshPublicPrStatus({ force: true, skipPrompt: true });
   if (!status) return;
   if (status.error && !publicPrHasOpenPullRequests(status)) {
-    window.alert(`public PR 检查失败：${status.error}`);
+    await requestAppAlert(`public PR 检查失败：${status.error}`, { title: "Public PR" });
     return;
   }
   if (!publicPrHasOpenPullRequests(status)) {
-    window.alert("当前未检测到 public 开放 PR。");
+    await requestAppAlert("当前未检测到 public 开放 PR。", { title: "Public PR" });
     return;
   }
-  const confirmed = window.confirm([
-    `检测到 public 仓库有 ${status.openPullRequestCount || (status.pullRequests || []).length} 个开放 PR。`,
-    publicPrSummaryText(status),
-    "",
-    "是否准备一条合并/发布检查任务？",
-  ].filter(Boolean).join("\n"));
+  const confirmed = await requestAppConfirmation(publicPrMergeConfirmationMessage(status), {
+    title: "Public PR",
+    confirmLabel: "准备任务",
+    cancelLabel: "稍后",
+  });
   rememberPublicPrPrompt(status);
   if (confirmed) await preparePublicPrMergePrompt(status);
 }
@@ -2685,27 +2824,31 @@ async function handleAppUpdateClick() {
   }
   if (!status) return;
   if (status.supported === false) {
-    window.alert(`当前安装方式不支持自动更新：${status.reason || "没有可用的 Git 远程分支"}`);
+    await requestAppAlert(`当前安装方式不支持自动更新：${status.reason || "没有可用的 Git 远程分支"}`, { title: "更新检查" });
     return;
   }
   if (status.error && !status.updateAvailable) {
-    window.alert(`更新检查失败：${status.error}`);
+    await requestAppAlert(`更新检查失败：${status.error}`, { title: "更新检查" });
     return;
   }
   if (!status.updateAvailable) {
-    window.alert("当前已经是最新版本。");
+    await requestAppAlert("当前已经是最新版本。", { title: "更新检查" });
     return;
   }
   if (!status.canFastForward) {
-    window.alert(`检测到更新，但不能自动应用：${status.reason || status.error || "当前工作区不是干净的 fast-forward 状态"}`);
+    await requestAppAlert(`检测到更新，但不能自动应用：${status.reason || status.error || "当前工作区不是干净的 fast-forward 状态"}`, { title: "更新检查" });
     return;
   }
-  const confirmed = window.confirm([
+  const confirmed = await requestAppConfirmation([
     "发现 GitHub 更新。是否拉取并重启 Mobile Web？",
     "",
     "仅在当前仓库干净、可 fast-forward 时执行；运行时数据和 Access Key 不会被覆盖。",
     "更新完成后当前 Node 服务会退出。只有通过 Windows 启动任务、windowless supervisor 或 macOS shared launcher 运行时才会自动拉起；手动运行 node/npm start 的部署需要手动重启。",
-  ].join("\n"));
+  ].join("\n"), {
+    title: "应用更新",
+    confirmLabel: "更新并重启",
+    cancelLabel: "取消",
+  });
   if (!confirmed) return;
   state.appUpdateBusy = true;
   renderAppUpdateStatus();
@@ -2722,7 +2865,7 @@ async function handleAppUpdateClick() {
       renderAppUpdateStatus();
       window.setTimeout(() => window.location.reload(), Math.max(1800, Number(result.restartInMs || 1200) + 900));
     } else {
-      window.alert("当前已经是最新版本。");
+      await requestAppAlert("当前已经是最新版本。", { title: "更新检查" });
     }
   } catch (err) {
     state.appUpdateError = err.message || String(err);
@@ -4016,11 +4159,20 @@ function shouldHideDurableLiveUserMessage(turn, item, index = 0) {
     && !isOptimisticUserMessage(item));
 }
 
+function isSupersededLiveTurn(turn) {
+  return Boolean(turn && (turn.mobileSupersededLive || (turn.status && turn.status.mobileSupersededLive)));
+}
+
+function shouldHideSupersededLiveUserMessage(turn, item) {
+  return Boolean(isSupersededLiveTurn(turn) && item && item.type === "userMessage");
+}
+
 function visibleItemsForTurn(turn) {
   const visible = [];
   const contextEntryByKey = new Map();
   (turn.items || []).forEach((item, index) => {
     if (!item || isReasoningItem(item)) return;
+    if (shouldHideSupersededLiveUserMessage(turn, item)) return;
     if (shouldHideDurableLiveUserMessage(turn, item, index)) return;
     if (isContextCompactionItem(item)) {
       const notice = contextCompactionNotice(item, turn);
@@ -4038,7 +4190,7 @@ function visibleItemsForTurn(turn) {
     visible.push({ item, sourceIndex: index });
   });
   const filtered = visible.filter(Boolean);
-  const supersededLive = Boolean(turn && (turn.mobileSupersededLive || (turn.status && turn.status.mobileSupersededLive)));
+  const supersededLive = isSupersededLiveTurn(turn);
   if (supersededLive && filtered.length && filtered.every((entry) => isTurnUsageSummaryItem(entry.item))) return [];
   return filtered;
 }
@@ -7360,7 +7512,7 @@ function isSidebarOpen() {
 
 function isInteractiveGestureTarget(target) {
   return Boolean(target && target.closest && target.closest(
-    "a, button, input, textarea, select, label, [contenteditable='true'], .rename-input, .composer, .thread-action-sheet, .continuation-dialog, .update-dialog"
+    "a, button, input, textarea, select, label, [contenteditable='true'], .rename-input, .composer, .thread-action-sheet, .continuation-dialog, .update-dialog, .app-native-dialog"
   ));
 }
 
@@ -8306,7 +8458,12 @@ async function cancelSideChatCandidate(candidateId) {
 async function clearSideChat() {
   const threadId = sideChatThreadId();
   if (!threadId || state.sideChatBusyKey) return;
-  if (typeof window.confirm === "function" && !window.confirm("清空这个线程的侧聊内容？")) return;
+  const confirmed = await requestAppConfirmation("清空这个线程的侧聊内容？", {
+    title: "清空侧聊",
+    confirmLabel: "清空",
+    cancelLabel: "取消",
+  });
+  if (!confirmed) return;
   setSideChatBusy("clear");
   try {
     clearTimeout(state.sideChatDraftSaveTimer);
@@ -8771,7 +8928,7 @@ function pluginEmbedBackSwipeCanHandle() {
 
 function pluginEmbedBackSwipeInteractiveTarget(target) {
   return Boolean(target?.closest?.(
-    "input, select, textarea, button, a, [role='button'], [contenteditable='true'], .composer, .dialog, .modal, .file-preview-dialog"
+    "input, select, textarea, button, a, [role='button'], [contenteditable='true'], .composer, .dialog, .modal, .app-native-dialog, .file-preview-dialog"
   ));
 }
 
@@ -10316,16 +10473,29 @@ async function createThreadTaskCardFromCurrent(event) {
   }
   const thread = state.currentThread;
   if (!thread || !thread.id) return;
-  const targetInput = window.prompt("Target thread id or exact title; separate multiple targets with commas", "");
+  const targetInput = await requestAppTextInput("输入目标 thread id 或精确标题；多个目标用英文逗号分隔。", "", {
+    title: "任务卡片目标",
+    confirmLabel: "下一步",
+    placeholder: "thread id 或标题",
+    rows: 3,
+  });
   if (targetInput == null) return;
   const targets = resolveTargetThreadReferences(targetInput);
   if (!targets.length) {
     showError(new Error("At least one different target thread is required"));
     return;
   }
-  const title = window.prompt("Task card title", `Need response from ${threadTitleForDisplay(thread) || thread.id}`) || "";
+  const title = await requestAppTextInput("输入任务卡片标题。", `Need response from ${threadTitleForDisplay(thread) || thread.id}`, {
+    title: "任务卡片标题",
+    confirmLabel: "下一步",
+    rows: 2,
+  }) || "";
   if (!String(title).trim()) return;
-  const body = window.prompt("Task card body", "") || "";
+  const body = await requestAppTextInput("输入任务卡片正文。", "", {
+    title: "任务卡片正文",
+    confirmLabel: "创建",
+    rows: 7,
+  }) || "";
   if (!String(body).trim()) return;
   $("connectionState").classList.remove("error");
   $("connectionState").textContent = "Creating task card";
@@ -10570,9 +10740,6 @@ function closeThreadArchiveDialog(confirmed = false) {
 
 function requestThreadArchiveConfirmation(threadId, title) {
   const label = String(title || "会话");
-  if (!isHermesEmbedMode()) {
-    return Promise.resolve(window.confirm(`归档“${label}”？`));
-  }
   if (state.threadArchiveConfirmResolve) closeThreadArchiveDialog(false);
   state.threadArchiveConfirmOpen = true;
   state.threadArchiveConfirmTargetId = String(threadId || "");
@@ -15993,11 +16160,15 @@ async function mutateThreadTaskCard(cardId, action, body = {}) {
   }
 }
 
-function replyTaskCard(cardId) {
+async function replyTaskCard(cardId) {
   const card = findThreadTaskCard(cardId);
-  if (!card) return Promise.resolve();
-  const body = window.prompt("Reply body", "") || "";
-  if (!String(body).trim()) return Promise.resolve();
+  if (!card) return;
+  const body = await requestAppTextInput("输入回复内容。", "", {
+    title: "回复任务卡片",
+    confirmLabel: "发送回复",
+    rows: 6,
+  }) || "";
+  if (!String(body).trim()) return;
   const title = `Reply: ${card.message && card.message.title ? card.message.title : "Task card"}`;
   return mutateThreadTaskCard(card.id, "reply", {
     format: "markdown",
@@ -16250,6 +16421,14 @@ function wireUi() {
   if ($("threadArchiveConfirmDialog")) $("threadArchiveConfirmDialog").addEventListener("click", (event) => {
     if (event.target === $("threadArchiveConfirmDialog")) closeThreadArchiveDialog(false);
   });
+  if ($("appNativeDialogCancel")) $("appNativeDialogCancel").addEventListener("click", () => closeAppNativeDialog(false));
+  if ($("appNativeDialogProceed")) $("appNativeDialogProceed").addEventListener("click", () => closeAppNativeDialog(true));
+  if ($("appNativeDialog")) {
+    $("appNativeDialog").addEventListener("click", (event) => {
+      if (event.target === $("appNativeDialog")) closeAppNativeDialog(false);
+    });
+    $("appNativeDialog").addEventListener("keydown", handleAppNativeDialogKeydown);
+  }
   if ($("goalForm")) $("goalForm").addEventListener("submit", (event) => submitThreadGoalMessage(event).catch(showError));
   if ($("goalObjectiveInput")) $("goalObjectiveInput").addEventListener("keydown", requestGoalDialogSubmitFromEnter);
   if ($("goalTokenBudgetInput")) $("goalTokenBudgetInput").addEventListener("keydown", requestGoalDialogSubmitFromEnter);

@@ -2966,6 +2966,35 @@ function normalizeSupersededLiveTurns(thread) {
   return thread;
 }
 
+function isSupersededLiveTurn(turn) {
+  return Boolean(turn && (turn.mobileSupersededLive || (turn.status && turn.status.mobileSupersededLive)));
+}
+
+function isReasoningOnlyItem(item) {
+  return Boolean(item && item.type === "reasoning");
+}
+
+function isMeaningfulSupersededLiveItem(item) {
+  if (!item || typeof item !== "object") return false;
+  if (isUserQuestionItem(item)) return false;
+  if (isReasoningOnlyItem(item)) return false;
+  if (isTurnUsageSummaryItem(item)) return false;
+  if (isOperationalItem(item)) return false;
+  return isAssistantReceiptItem(item) || isVisualReceiptItem(item) || isContextCompactionType(item.type);
+}
+
+function pruneSupersededLiveShellTurns(thread) {
+  if (!thread || !Array.isArray(thread.turns)) return thread;
+  thread.turns = thread.turns.filter((turn) => {
+    if (!isSupersededLiveTurn(turn)) return true;
+    const items = Array.isArray(turn.items) ? turn.items : [];
+    if (!items.some(isMeaningfulSupersededLiveItem)) return false;
+    turn.items = items.filter((item) => !isUserQuestionItem(item) && !isReasoningOnlyItem(item));
+    return true;
+  });
+  return thread;
+}
+
 function turnIdentifier(turn) {
   return String(turn && (turn.id || turn.turnId) || "");
 }
@@ -4847,14 +4876,15 @@ function compactThread(thread, options = {}) {
   const rolloutStats = rolloutStatsForPath(rolloutPath);
   const maxTurns = Math.max(1, Math.min(200, Number(options.maxTurns || MAX_THREAD_TURNS)));
   if (Array.isArray(out.turns)) {
+    pendingSteerEchoStore.injectIntoThread(out);
+    normalizeSupersededLiveTurns(out);
+    pruneSupersededLiveShellTurns(out);
     const omitted = Math.max(0, out.turns.length - maxTurns);
     if (omitted > 0) {
       out.mobileOmittedTurnCount = omitted;
       out.turns = out.turns.slice(-maxTurns);
       out.mobileOlderTurnsCursor = olderTurnsCursorBeforeTurn(out.turns[0]);
     }
-    pendingSteerEchoStore.injectIntoThread(out);
-    normalizeSupersededLiveTurns(out);
     enrichThreadItemTimestampsFromRollout(out);
     appendRolloutToolOutputImagesToThread(out);
     attachTurnUsageSummaries(out, readRolloutTurnUsageSummaries(rolloutPath, {

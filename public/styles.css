@@ -1288,7 +1288,8 @@ html.visual-recovering body::before {
 }
 
 .profile-switch-confirm-dialog,
-.thread-archive-confirm-dialog {
+.thread-archive-confirm-dialog,
+.app-native-dialog {
   position: fixed;
   inset: 0;
   z-index: 99;
@@ -1300,12 +1301,14 @@ html.visual-recovering body::before {
 }
 
 .profile-switch-confirm-dialog.hidden,
-.thread-archive-confirm-dialog.hidden {
+.thread-archive-confirm-dialog.hidden,
+.app-native-dialog.hidden {
   display: none;
 }
 
 .profile-switch-confirm-panel,
-.thread-archive-confirm-panel {
+.thread-archive-confirm-panel,
+.app-native-dialog-panel {
   width: min(440px, 100%);
   overflow: hidden;
   color: var(--text);
@@ -1316,13 +1319,15 @@ html.visual-recovering body::before {
 }
 
 .profile-switch-confirm-head,
-.thread-archive-confirm-head {
+.thread-archive-confirm-head,
+.app-native-dialog-head {
   padding: 14px;
   border-bottom: 1px solid var(--line-soft);
 }
 
 .profile-switch-confirm-title,
-.thread-archive-confirm-title {
+.thread-archive-confirm-title,
+.app-native-dialog-title {
   font-size: 17px;
   font-weight: 760;
 }
@@ -1337,15 +1342,42 @@ html.visual-recovering body::before {
 }
 
 .profile-switch-confirm-content,
-.thread-archive-confirm-content {
+.thread-archive-confirm-content,
+.app-native-dialog-content {
   padding: 14px;
   color: var(--text);
   font-size: 14px;
   line-height: 1.45;
 }
 
+.app-native-dialog-message {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.app-native-dialog-input {
+  width: 100%;
+  min-height: 96px;
+  max-height: min(42vh, 260px);
+  margin-top: 12px;
+  resize: vertical;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--control-bg);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.45;
+  padding: 10px 12px;
+}
+
+.app-native-dialog-input.hidden {
+  display: none;
+}
+
 .profile-switch-confirm-actions,
-.thread-archive-confirm-actions {
+.thread-archive-confirm-actions,
+.app-native-dialog-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
@@ -1353,10 +1385,16 @@ html.visual-recovering body::before {
   border-top: 1px solid var(--line-soft);
 }
 
+.app-native-dialog-actions.single {
+  grid-template-columns: 1fr;
+}
+
 .profile-switch-confirm-cancel,
 .profile-switch-confirm-proceed,
 .thread-archive-confirm-cancel,
-.thread-archive-confirm-proceed {
+.thread-archive-confirm-proceed,
+.app-native-dialog-cancel,
+.app-native-dialog-proceed {
   min-height: 42px;
   border-radius: 8px;
   border: 1px solid var(--line-soft);
@@ -1365,13 +1403,15 @@ html.visual-recovering body::before {
 }
 
 .profile-switch-confirm-cancel,
-.thread-archive-confirm-cancel {
+.thread-archive-confirm-cancel,
+.app-native-dialog-cancel {
   color: var(--muted);
   background: transparent;
 }
 
 .profile-switch-confirm-proceed,
-.thread-archive-confirm-proceed {
+.thread-archive-confirm-proceed,
+.app-native-dialog-proceed {
   color: var(--text-on-accent);
   background: var(--accent-strong);
   border-color: var(--accent-strong);

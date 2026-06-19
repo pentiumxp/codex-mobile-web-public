@@ -424,6 +424,71 @@ test("thread detail projection merges replacement receipts and keeps one usage s
   assert.equal(turn.items.find((item) => item.type === "turnUsageSummary").id, "usage-new");
 });
 
+test("thread detail projection prunes user-only superseded live shells before trimming", () => {
+  const service = createThreadDetailProjectionService({
+    cacheDir: "",
+    policyVersion: "test-v1",
+    maxTurns: 3,
+    now: () => 7200,
+  });
+  service.seed(signatureInput({ summaryStatus: "active", maxTurns: 3 }), {
+    thread: {
+      id: "thread-1",
+      turns: [
+        {
+          id: "useful-old",
+          status: { type: "completed" },
+          items: [{ id: "agent-old", type: "agentMessage", text: "older useful receipt" }],
+        },
+        {
+          id: "stale-user-shell-1",
+          mobileSupersededLive: true,
+          status: { type: "completed", mobileSupersededLive: true, previousType: "inProgress" },
+          items: [{ id: "old-user-1", type: "userMessage", text: "old prompt 1" }],
+        },
+        {
+          id: "stale-user-shell-2",
+          mobileSupersededLive: true,
+          status: { type: "completed", mobileSupersededLive: true, previousType: "inProgress" },
+          items: [
+            { id: "old-user-2", type: "userMessage", text: "old prompt 2" },
+            { id: "reason-old", type: "reasoning", text: "hidden" },
+            { id: "usage-old", type: "turnUsageSummary", mobileUsageSummary: { totalTokenUsage: { totalTokens: 1 } } },
+          ],
+        },
+        {
+          id: "receipt-superseded",
+          mobileSupersededLive: true,
+          status: { type: "completed", mobileSupersededLive: true, previousType: "inProgress" },
+          items: [
+            { id: "old-user-3", type: "userMessage", text: "old prompt 3" },
+            { id: "agent-receipt", type: "agentMessage", text: "latest useful receipt" },
+            { id: "usage-receipt", type: "turnUsageSummary", mobileUsageSummary: { totalTokenUsage: { totalTokens: 2 } } },
+          ],
+        },
+        {
+          id: "latest-live",
+          status: { type: "active" },
+          items: [{ id: "cmd-live", type: "commandExecution", command: "npm test" }],
+        },
+      ],
+    },
+  });
+
+  const cached = service.get(signatureInput({
+    summaryStatus: "active",
+    maxTurns: 3,
+  }));
+  assert.ok(cached);
+  assert.deepEqual(cached.result.thread.turns.map((turn) => turn.id), [
+    "useful-old",
+    "receipt-superseded",
+    "latest-live",
+  ]);
+  const superseded = cached.result.thread.turns.find((turn) => turn.id === "receipt-superseded");
+  assert.deepEqual(superseded.items.map((item) => item.id), ["agent-receipt", "usage-receipt"]);
+});
+
 test("thread detail projection does not return unseeded partial notification windows", () => {
   const service = createThreadDetailProjectionService({
     cacheDir: "",
