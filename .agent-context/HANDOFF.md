@@ -2,6 +2,119 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-19 Thread List Running Status Hint v307
+
+- Status: implemented and validated locally; not committed, pushed, deployed,
+  or restarted.
+- User-visible issue:
+  - Thread list rows could continue to show a working/running status after the
+    underlying thread had already stopped.
+- Root cause:
+  - The mobile client intentionally keeps a local `runningThreadIds` hint so a
+    temporary `notLoaded` list refresh does not erase a live thread state.
+  - That hint was only cleared for completed/failed-style terminal statuses.
+    App-server list rows can report stopped threads as `idle`, which was not
+    treated as a settled thread-list status.
+  - `statusIconInfo()` could also let the stale local running hint override an
+    `idle` row before reconciliation expired it.
+- Fix:
+  - Added `isThreadListSettledStatus()` for list-row settled states including
+    `idle`, completed, failed, cancelled, interrupted, and stopped variants.
+  - `reconcileThreadStatusHints()` now clears local running hints immediately
+    when a settled status arrives, while still preserving hints across
+    `notLoaded` refreshes.
+  - `statusIconInfo()` no longer renders a local running hint over a settled
+    row status.
+  - PWA shell cache advanced to `codex-mobile-shell-v307`.
+- Files changed:
+  - `public/app.js`
+  - `public/sw.js`
+  - `README.md`
+  - `test/conversation-render.test.js`
+  - `test/mobile-viewport.test.js`
+  - `test/thread-goal-service.test.js`
+  - `test/thread-task-card-route.test.js`
+- Validation:
+  - Home AI AI Ops intake and required-checks were run; classified H3 and no
+    visual lane/deployment was required.
+  - `node --check public/app.js && node --check public/sw.js`
+  - `node --test test/conversation-render.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js test/thread-visibility.test.js` (87 tests)
+  - `cd /Users/hermes-dev/HermesMobileDev/app && node tests/architecture-code-test-harness-map.test.js`
+  - `git diff --check`
+  - `npm run check`
+  - `npm test` (505 tests)
+  - Evidence ledger record:
+    `evidence-20d05c12-201a-4840-9976-0b7938528253`.
+
+## 2026-06-19 ChatGPT Pro MCP Connector Server Implementation
+
+- Status: implemented and validated locally; not committed, pushed, deployed,
+  restarted, or production-smoked.
+- Scope:
+  - Implemented the server-side ChatGPT Pro MCP Connector core for planner and
+    reviewer workflows.
+  - This does not yet add a full Mobile artifact inbox/apply UI. Artifacts can
+    be written through MCP and read through authenticated planner artifact
+    routes.
+- New runtime/auth boundary:
+  - MCP endpoint: `POST /api/chatgpt-pro/mcp`.
+  - Status/debug endpoint with the same MCP auth: `GET /api/chatgpt-pro/mcp`.
+  - Browser-authenticated app routes:
+    - `GET /api/chatgpt-pro/planner/status`
+    - `GET /api/chatgpt-pro/planner/artifacts`
+    - `POST /api/chatgpt-pro/planner/artifacts`
+    - `GET /api/chatgpt-pro/planner/artifacts/:id`
+  - MCP auth is separate from the normal Codex Mobile Access Key and is read
+    only from `CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN` or
+    `CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN_FILE`.
+  - Runtime artifacts are stored under `chatgpt-pro-planner` inside the Codex
+    Mobile runtime root.
+- Implemented tool boundary:
+  - `codex_mobile_status`
+  - `list_visible_workspaces`
+  - `read_thread_context`
+  - `read_allowed_repo_file`
+  - `create_planner_artifact`
+  - `prepare_codex_goal`
+  - `create_task_card_draft`
+  - `list_planner_artifacts`
+  - `read_planner_artifact`
+  - No source writes, shell execution, approvals, arbitrary file reads, raw
+    rollout reads, upload reads, or Codex turn starts are exposed.
+- Files added:
+  - `adapters/chatgpt-pro-planner-service.js`
+  - `adapters/chatgpt-pro-mcp-service.js`
+  - `test/chatgpt-pro-planner-service.test.js`
+  - `test/chatgpt-pro-mcp-service.test.js`
+- Files updated:
+  - `server.js`
+  - `package.json`
+  - `README.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/MODULES.md`
+  - `docs/COMPLEX_FEATURE_PATHS.md`
+  - `docs/CHATGPT_PRO_PLANNER_CONNECTOR_DESIGN.md`
+  - `test/chatgpt-pro-bridge-service.test.js`
+- Validation:
+  - `node --check adapters/chatgpt-pro-planner-service.js && node --check adapters/chatgpt-pro-mcp-service.js && node --check server.js`
+  - `node --test test/chatgpt-pro-planner-service.test.js test/chatgpt-pro-mcp-service.test.js test/chatgpt-pro-bridge-service.test.js` (13 tests)
+  - `npm run check`
+  - `npm test` (505 tests)
+  - `git diff --check`
+  - Home AI AI Ops intake and required-checks were run.
+  - Center checks passed:
+    `node tests/architecture-code-test-harness-map.test.js`,
+    `node tests/hermes-plugin-service.test.js`,
+    `node tests/hermes-plugin-authorization-service.test.js`,
+    `node tests/plugin-capability-activation-service.test.js`,
+    `node tests/plugin-workspace-platform-contract-check.test.js`.
+  - Evidence ledger record:
+    `evidence-7fd8abd3-8bcb-4f5f-8e81-1f1f7ddfbca3`.
+- Notes:
+  - The current worktree also still includes the previous uncommitted v306
+    frontend jitter stabilization changes and the planner design document from
+    the prior step. Keep those scopes visible before committing.
+
 ## 2026-06-19 Profile Switch Restart Prompt v301
 
 - Status: implemented and validated locally; deployment requested next.
@@ -4760,3 +4873,82 @@ The previous full handoff was archived and should be opened only when old proven
     public/sw.js && node --check adapters/chatgpt-pro-bridge-service.js`
   - `npm test` passed: 495 tests.
   - `npm run check` passed.
+
+## 2026-06-19 ChatGPT Pro Planner Connector Design
+
+- Status: design documentation drafted; no implementation code changed yet.
+- User intent:
+  - Borrow the useful parts of `Ancienttwo/repo-harness` for Codex Mobile's
+    `@ChatGPT Pro` workflow.
+  - Treat existing `@ChatGPT Pro` as the outbound bridge, then add a ChatGPT
+    MCP Connector as the inbound planner/reviewer writeback path.
+- New documentation:
+  - `docs/CHATGPT_PRO_PLANNER_CONNECTOR_DESIGN.md`
+  - Linked from `docs/README.md`
+  - Added implementation-path summary in `docs/COMPLEX_FEATURE_PATHS.md`
+- Design boundary:
+  - ChatGPT Pro is planner/reviewer; Codex remains executor.
+  - Default MCP planner tools may read bounded context and write runtime planner
+    artifacts only.
+  - No source-code writes, package/lockfile/CI writes, shell execution,
+    approval responses, or Codex turn starts through the default connector
+    profile.
+  - Planner artifacts default to the Codex Mobile runtime root, with explicit
+    user apply actions for goal/task-card/side-chat integration.
+- Validation:
+  - `git diff --check`
+- Parallel follow-up:
+  - Started subagent `frontend-jitter-stabilization` for the separate thread
+    detail / Composer few-pixel jitter issue. The subagent is scoped to
+    frontend layout/scroll files and tests only, with no deploy, restart,
+    commit, push, runtime secret/state, or production access.
+
+## 2026-06-19 Frontend Jitter Stabilization v306
+
+- Status: implemented locally by subagent `frontend-jitter-stabilization` and
+  integrated into the main worktree; not committed, pushed, deployed, or
+  production-smoked yet.
+- User-visible issue:
+  - Thread detail information flow and Composer input can shift by a few pixels
+    during live updates or typing, making reading uncomfortable.
+- Root cause hypothesis from subagent:
+  - The thread stream was not broadly re-rendering on unchanged signatures.
+  - Jitter was more likely caused by layout metric churn:
+    live timer/update paths repeatedly wrote `--composer-height`, viewport CSS
+    variables accepted 1px visualViewport noise, and Composer autosize reset
+    height to `auto` on every keystroke before restoring a measured height.
+- Fix:
+  - Added stable CSS pixel helpers in `public/viewport-metrics.js`.
+  - Guarded root viewport/safe-area and Composer height CSS variable writes so
+    no-op or 1px measurement noise does not trigger layout updates.
+  - Changed Composer autosize to avoid per-keystroke `height = auto` unless
+    shrinking or forced.
+  - Fixed `.message-input` baseline height and default overflow behavior.
+  - Advanced shell cache/build id to `codex-mobile-shell-v306`.
+- Changed files:
+  - `public/app.js`
+  - `public/styles.css`
+  - `public/viewport-metrics.js`
+  - `public/sw.js`
+  - `README.md`
+  - `test/mobile-viewport.test.js`
+  - `test/viewport-metrics.test.js`
+  - version expectation tests for shell cache.
+- Validation so far:
+  - Subagent reported `node --check public/app.js`,
+    `node --check public/viewport-metrics.js`, focused viewport/composer tests,
+    `npm run check`, and targeted `git diff --check` passed before integration.
+  - Main-thread validation after v306 version bump passed:
+    - `git diff --check`
+    - `node --check public/app.js && node --check public/viewport-metrics.js && node --check public/sw.js`
+    - `node --test test/viewport-metrics.test.js test/mobile-viewport.test.js test/conversation-scroll.test.js test/conversation-render.test.js test/chatgpt-pro-bridge-service.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js` (84 tests)
+    - `npm run check`
+    - `npm test` (497 tests)
+  - No live browser, production smoke, deploy, restart, commit, or push has
+    been performed for this v306 work.
+  - Home AI AI Ops control-plane intake and required-checks were run from the
+    center workspace for this plugin change. The required center docs entry
+    sections were checked, `node tests/architecture-code-test-harness-map.test.js`
+    passed, and evidence ledger record
+    `evidence-f3196dd8-0e1c-4b4a-8fba-2b2692a6a325` was appended to
+    `$HOME/.homeai-qa/codex-mobile-web-evidence-ledger.jsonl`.

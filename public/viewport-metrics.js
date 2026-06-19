@@ -10,6 +10,7 @@
 }(typeof globalThis !== "undefined" ? globalThis : null, function () {
   const DEFAULT_KEYBOARD_SHRINK_PX = 120;
   const DEFAULT_MIN_HEIGHT = 320;
+  const DEFAULT_STABLE_PIXEL_EPSILON_PX = 1;
   const NON_TEXT_INPUT_TYPES = new Set([
     "button",
     "checkbox",
@@ -26,6 +27,24 @@
   function positiveNumber(value) {
     const numeric = Number(value);
     return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
+  }
+
+  function cssPixel(value) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) && numeric > 0 ? Math.round(numeric) : 0;
+  }
+
+  function stablePixelChanged(previous, next, options = {}) {
+    const previousPx = cssPixel(previous);
+    const nextPx = cssPixel(next);
+    const configuredEpsilon = Number(options.epsilonPx);
+    const epsilonPx = Math.max(
+      0,
+      Number.isFinite(configuredEpsilon) ? configuredEpsilon : DEFAULT_STABLE_PIXEL_EPSILON_PX,
+    );
+    if (!previousPx) return Boolean(nextPx);
+    if (!nextPx) return Boolean(previousPx);
+    return Math.abs(nextPx - previousPx) > epsilonPx;
   }
 
   function isKeyboardEditable(element) {
@@ -76,7 +95,9 @@
   }
 
   return {
+    cssPixel,
     isKeyboardEditable,
     measureViewport,
+    stablePixelChanged,
   };
 }));

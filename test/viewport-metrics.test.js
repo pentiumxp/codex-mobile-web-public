@@ -152,3 +152,11 @@ test("viewport metrics accept text inputs and textareas as keyboard owners", () 
   assert.equal(viewportMetrics.isKeyboardEditable({ tagName: "INPUT", type: "text", readOnly: true }), false);
   assert.equal(viewportMetrics.isKeyboardEditable({ tagName: "TEXTAREA", disabled: true }), false);
 });
+
+test("stable CSS pixel metrics ignore one-pixel viewport noise", () => {
+  assert.equal(viewportMetrics.cssPixel(92.4), 92);
+  assert.equal(viewportMetrics.cssPixel(92.6), 93);
+  assert.equal(viewportMetrics.stablePixelChanged(92, 93), false);
+  assert.equal(viewportMetrics.stablePixelChanged(92, 94), true);
+  assert.equal(viewportMetrics.stablePixelChanged(18, 19, { epsilonPx: 0 }), true);
+});

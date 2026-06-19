@@ -6339,9 +6339,10 @@ html.keyboard-open .composer {
 }
 
 .message-input {
+  height: 44px;
   min-height: 44px;
   max-height: 160px;
-  overflow-y: auto;
+  overflow-y: hidden;
   resize: none;
   padding: 11px 12px;
   font-size: var(--composer-input-font-size);

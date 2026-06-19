@@ -83,6 +83,10 @@ const state = {
   pendingPluginRouteHint: null,
   pluginParentOrigin: pluginEmbedApi.parentOriginFromReferrer(document.referrer) || "*",
   pluginHostViewport: null,
+  viewportAppHeightPx: 0,
+  viewportAppTopPx: 0,
+  hostTopSafeAreaPx: 0,
+  hostBottomSafeAreaPx: 0,
   pluginNavigationSignature: "",
   pluginVoiceInputCapabilitySignature: "",
   pluginVoiceInputPress: null,
@@ -205,6 +209,9 @@ const state = {
   lastGoalButtonSubmitAt: 0,
   pendingAttachments: [],
   composerBusy: false,
+  composerHeightPx: 0,
+  messageInputHeightPx: 0,
+  messageInputTextLength: 0,
   sendButtonHint: "",
   completionSoundEnabled: true,
   continuationBusy: false,
@@ -343,7 +350,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v305";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v307";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -718,7 +725,7 @@ function applyPluginAppearancePreference(value) {
     applyFontSizePreference();
     renderFontSizeControl();
     const input = $("messageInput");
-    if (input) autoSizeMessageInput(input);
+    if (input) autoSizeMessageInput(input, { force: true });
   }
 }
 
@@ -760,7 +767,7 @@ function setFontSizePreference(value) {
   applyFontSizePreference();
   renderFontSizeControl();
   const input = $("messageInput");
-  if (input) autoSizeMessageInput(input);
+  if (input) autoSizeMessageInput(input, { force: true });
   if (isHermesEmbedMode()) {
     syncPluginAppearanceStateFromPreferences();
     scrubPluginLaunchUrl();
@@ -816,6 +823,15 @@ function viewportHeight() {
   return viewportState().height;
 }
 
+function setStableRootPixelVar(name, nextValue, stateKey, options = {}) {
+  const nextPx = viewportMetrics.cssPixel(nextValue);
+  const previousPx = viewportMetrics.cssPixel(state[stateKey]);
+  if (!options.force && !viewportMetrics.stablePixelChanged(previousPx, nextPx, options)) return false;
+  state[stateKey] = nextPx;
+  document.documentElement.style.setProperty(name, `${nextPx}px`);
+  return true;
+}
+
 function isKeyboardEditableElement(element) {
   return Boolean(viewportMetrics
     && typeof viewportMetrics.isKeyboardEditable === "function"
@@ -844,14 +860,16 @@ function updateViewportVars() {
   resetMobileKeyboardWindowScroll();
   const viewport = viewportState();
   if (viewport.keyboardShrunk) {
-    document.documentElement.style.setProperty("--app-top", `${Math.max(0, Math.round(viewport.top || 0))}px`);
-    document.documentElement.style.setProperty("--app-height", `${viewport.height}px`);
+    setStableRootPixelVar("--app-top", viewport.top, "viewportAppTopPx");
+    setStableRootPixelVar("--app-height", viewport.height, "viewportAppHeightPx");
   } else {
     document.documentElement.style.removeProperty("--app-top");
     document.documentElement.style.removeProperty("--app-height");
+    state.viewportAppTopPx = 0;
+    state.viewportAppHeightPx = 0;
   }
-  document.documentElement.style.setProperty("--host-top-safe-area", `${Math.max(0, Math.round(viewport.hostTopSafeArea || 0))}px`);
-  document.documentElement.style.setProperty("--host-bottom-safe-area", `${Math.max(0, Math.round(viewport.hostBottomSafeArea || 0))}px`);
+  setStableRootPixelVar("--host-top-safe-area", viewport.hostTopSafeArea, "hostTopSafeAreaPx", { epsilonPx: 0 });
+  setStableRootPixelVar("--host-bottom-safe-area", viewport.hostBottomSafeArea, "hostBottomSafeAreaPx", { epsilonPx: 0 });
   document.documentElement.classList.toggle("keyboard-open", viewport.keyboardShrunk);
 }
 
@@ -1348,6 +1366,11 @@ function updateThreadStatusHints(threadId, previousStatus, nextStatus, options =
   }
 }
 
+function isThreadListSettledStatus(status) {
+  const text = statusText(status).toLowerCase();
+  return /^(idle|completed|complete|done|failed|failure|cancelled|canceled|cancel|error|interrupted|stopped|stop)$/.test(text);
+}
+
 function reconcileThreadStatusHints(threads) {
   const nowMs = Date.now();
   let changed = false;
@@ -1361,7 +1384,7 @@ function reconcileThreadStatusHints(threads) {
       state.unreadThreadIds.delete(id);
     } else if (isRunning) {
       if (noteRunningThreadHint(id, nowMs)) changed = true;
-    } else if (wasRunning && isCompletedStatus(thread.status)) {
+    } else if (wasRunning && isThreadListSettledStatus(thread.status)) {
       if (clearRunningThreadHint(id)) changed = true;
       if (id !== state.currentThreadId) state.unreadThreadIds.add(id);
     } else if (shouldExpireRunningThreadHint(id, thread, nowMs)) {
@@ -1377,7 +1400,7 @@ function statusIconInfo(status, threadId = "") {
   if (/active|running|queued|processing|inprogress|in_progress|in-progress|pending|started/.test(normalized)) {
     return { kind: "running", label: text || "running", symbol: "" };
   }
-  if (threadId && state.runningThreadIds.has(String(threadId))) {
+  if (threadId && state.runningThreadIds.has(String(threadId)) && !isThreadListSettledStatus(status)) {
     return { kind: "running", label: text && text !== "notLoaded" ? text : "running", symbol: "" };
   }
   if (threadId && state.unreadThreadIds.has(String(threadId))) {
@@ -14298,11 +14321,17 @@ function scheduleScrollToBottomButtonUpdate() {
   }
 }
 
-function updateComposerHeightVar() {
+function updateComposerHeightVar(options = {}) {
   const composer = $("composer");
-  if (!composer) return;
-  document.documentElement.style.setProperty("--composer-height", `${Math.ceil(composer.getBoundingClientRect().height)}px`);
+  if (!composer) return false;
+  const nextPx = viewportMetrics.cssPixel(composer.getBoundingClientRect().height);
+  if (!nextPx) return false;
+  const previousPx = viewportMetrics.cssPixel(state.composerHeightPx);
+  if (!options.force && !viewportMetrics.stablePixelChanged(previousPx, nextPx)) return false;
+  state.composerHeightPx = nextPx;
+  document.documentElement.style.setProperty("--composer-height", `${nextPx}px`);
   scheduleScrollToBottomButtonUpdate();
+  return true;
 }
 
 function showError(err) {
@@ -14440,7 +14469,7 @@ function setComposerText(value) {
   if (!el) return;
   el.textContent = String(value || "");
   if (!value) el.innerHTML = "";
-  autoSizeMessageInput(el);
+  autoSizeMessageInput(el, { force: true });
 }
 
 function normalizedComposerIntentText(value) {
@@ -14722,10 +14751,56 @@ function setMessageInputDisabled(disabled) {
   el.classList.toggle("disabled", disabled);
 }
 
-function autoSizeMessageInput(el) {
-  el.style.height = "auto";
-  el.style.height = `${Math.min(160, Math.max(44, el.scrollHeight))}px`;
+const MESSAGE_INPUT_MIN_HEIGHT_PX = 44;
+const MESSAGE_INPUT_MAX_HEIGHT_PX = 160;
+
+function messageInputTextLength(el) {
+  return String(el && (el.textContent || el.innerText) || "").length;
+}
+
+function messageInputTargetHeight(el) {
+  const scrollHeight = viewportMetrics.cssPixel(el && el.scrollHeight);
+  return Math.min(MESSAGE_INPUT_MAX_HEIGHT_PX, Math.max(MESSAGE_INPUT_MIN_HEIGHT_PX, scrollHeight));
+}
+
+function currentMessageInputHeight(el) {
+  const inlineHeight = Number.parseFloat(el && el.style && el.style.height || "");
+  return viewportMetrics.cssPixel(inlineHeight || (el && el.getBoundingClientRect && el.getBoundingClientRect().height) || 0);
+}
+
+function updateMessageInputOverflow(el, heightPx) {
+  if (!el || !el.style) return;
+  el.style.overflowY = el.scrollHeight > heightPx + 1 ? "auto" : "hidden";
+}
+
+function autoSizeMessageInput(el, options = {}) {
+  if (!el) return false;
+  const force = options.force === true;
+  const previousTextLength = Number(state.messageInputTextLength || 0);
+  const nextTextLength = messageInputTextLength(el);
+  const currentHeight = currentMessageInputHeight(el);
+  let nextHeight = messageInputTargetHeight(el);
+  if (force || nextTextLength < previousTextLength) {
+    const previousInlineHeight = el.style.height;
+    el.style.height = "auto";
+    nextHeight = messageInputTargetHeight(el);
+    if (!force && currentHeight && !viewportMetrics.stablePixelChanged(currentHeight, nextHeight)) {
+      el.style.height = previousInlineHeight;
+      state.messageInputTextLength = nextTextLength;
+      updateMessageInputOverflow(el, currentHeight);
+      return false;
+    }
+  }
+  state.messageInputTextLength = nextTextLength;
+  if (!force && currentHeight && !viewportMetrics.stablePixelChanged(currentHeight, nextHeight)) {
+    updateMessageInputOverflow(el, currentHeight);
+    return false;
+  }
+  state.messageInputHeightPx = nextHeight;
+  el.style.height = `${nextHeight}px`;
+  updateMessageInputOverflow(el, nextHeight);
   updateComposerHeightVar();
+  return true;
 }
 
 function formatFileSize(bytes) {

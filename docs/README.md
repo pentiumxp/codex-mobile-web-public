@@ -19,6 +19,7 @@ Always start substantial work by reading:
 | Non-trivial feature or cross-cutting fix | `docs/COMPLEX_FEATURE_PATHS.md` |
 | Cross-thread task-card collaboration planning | `docs/CROSS_THREAD_TASK_CARDS_DESIGN.md` |
 | Current-thread side chat planning | `docs/THREAD_SIDE_CHAT_REQUIREMENTS.md`, `docs/THREAD_SIDE_CHAT_DESIGN.md`, `docs/THREAD_SIDE_CHAT_IMPLEMENTATION.md` |
+| ChatGPT Pro planner / MCP connector planning | `docs/CHATGPT_PRO_PLANNER_CONNECTOR_DESIGN.md` |
 | Multi-account Codex CLI on this Windows machine | `docs/MULTI_ACCOUNT_CODEX_CLI.md` |
 | Public/private release decision | `.agent-context/PROJECT_CONTEXT.md` plus current git state |
 

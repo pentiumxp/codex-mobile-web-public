@@ -45,6 +45,7 @@ Tracked source files live in the repository. Runtime state stays outside Git:
 | --- | --- |
 | `%USERPROFILE%\.codex` | Codex Desktop/app-server state, session rollout JSONL, `state_5.sqlite`, shared mux endpoint |
 | `%USERPROFILE%\.codex-mobile-web` | Mobile Web access key, uploads, Web Push files, logs, local Codex executable copy, Hermes plugin registration state |
+| `%USERPROFILE%\.codex-mobile-web\chatgpt-pro-planner` | Runtime-only ChatGPT Pro planner artifact store. Contains `artifacts.jsonl` and bounded Markdown/JSON artifacts created by the restricted MCP connector; it is not copied to source, public release, `.agent-context`, or Git. |
 | `%USERPROFILE%\.codex-mobile-web\workspace-registry.json` | Mobile Web-created workspace folders. This augments Mobile Web visibility and may also sync Desktop global workspace roots when `CODEX_MOBILE_SYNC_DESKTOP_WORKSPACES=1`. |
 | `%USERPROFILE%\.codex-mobile-web\codex-profiles.json` | Active Codex profile selection for the single-profile switcher. Contains profile ids, labels, and `CODEX_HOME` paths only; never auth tokens. |
 | `%USERPROFILE%\.codex\app-server-mux\endpoint.json` | Shared mux JSONL TCP endpoint used by Mobile Web and Desktop bridge. Current mux endpoint metadata includes the real `codexExe` path and capability flags so launchers can reject a reachable but version-stale mux. |
@@ -148,6 +149,43 @@ return local `.codex` file paths to the browser.
 The browser exposes creation from the bottom of the Workspace dropdown list,
 not beside the new-thread button. After creation, it selects the new cwd and
 opens a new-thread draft for that workspace.
+
+### ChatGPT Pro Planner Connector
+
+The existing `@ChatGPT Pro` bridge remains an outbound Mobile-initiated flow:
+Mobile sends a bounded prompt to a dedicated Codex thread that must use Chrome
+/ ChatGPT Pro and write generated files only under runtime
+`outputs/chatgpt-pro`.
+
+The planner connector is the inbound companion:
+
+```text
+ChatGPT Web / MCP client
+        |
+        | POST /api/chatgpt-pro/mcp
+        v
+adapters/chatgpt-pro-mcp-service.js
+        |
+        v
+adapters/chatgpt-pro-planner-service.js
+        |
+        +-- bounded thread/workspace/doc reads
+        +-- runtime planner artifacts under chatgpt-pro-planner
+```
+
+`/api/chatgpt-pro/mcp` is not authenticated by the normal Codex Mobile Access
+Key. It requires a separate bearer token from
+`CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN` or
+`CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN_FILE`. The route is intentionally outside
+the ordinary browser session because ChatGPT MCP clients are not logged-in
+Mobile Web browsers.
+
+The connector exposes planner/reviewer tools only. It can list visible
+workspaces, read bounded thread metadata, read allowlisted documentation files
+from visible workspaces, and create runtime artifacts such as PRDs, reviews,
+Codex goals, or task-card drafts. It cannot write source files, run shell
+commands, answer approvals, start Codex turns, read arbitrary local paths, or
+serve raw rollout logs, uploads, cookies, access keys, or token files.
 
 ### Hermes Mobile Plugin Mode
 

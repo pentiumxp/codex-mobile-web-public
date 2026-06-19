@@ -85,9 +85,21 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(platformPointer, /development visual check passes/);
 });
 
-test("public app shell cache advances after thread side chat panel", () => {
-  assert.match(swJs, /codex-mobile-shell-v305/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v305"/);
+test("composer sizing avoids one-pixel layout churn while typing and streaming", () => {
+  assert.match(appJs, /composerHeightPx:\s*0/);
+  assert.match(appJs, /function updateComposerHeightVar\(options = \{\}\)/);
+  assert.match(appJs, /stablePixelChanged\(previousPx, nextPx\)/);
+  assert.match(appJs, /document\.documentElement\.style\.setProperty\("--composer-height", `\$\{nextPx\}px`\)/);
+  assert.match(appJs, /function autoSizeMessageInput\(el, options = \{\}\)/);
+  assert.match(appJs, /nextTextLength < previousTextLength/);
+  assert.match(appJs, /autoSizeMessageInput\(event\.target\);/);
+  assert.match(appJs, /updateMessageInputOverflow\(el, nextHeight\)/);
+  assert.match(stylesCss, /\.message-input\s*{[\s\S]*height:\s*44px;[\s\S]*overflow-y:\s*hidden;/);
+});
+
+test("public app shell cache advances after thread list status hint sync", () => {
+  assert.match(swJs, /codex-mobile-shell-v307/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v307"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);

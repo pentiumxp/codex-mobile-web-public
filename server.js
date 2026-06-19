@@ -74,6 +74,8 @@ const {
 } = require("./adapters/codex-profile-service");
 const { createThreadDetailProjectionService } = require("./adapters/thread-detail-projection-service");
 const { createChatGptProBridgeService } = require("./adapters/chatgpt-pro-bridge-service");
+const { createChatGptProPlannerService } = require("./adapters/chatgpt-pro-planner-service");
+const { createChatGptProMcpService } = require("./adapters/chatgpt-pro-mcp-service");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -175,6 +177,10 @@ const CHATGPT_PRO_BRIDGE_FILE = process.env.CODEX_MOBILE_CHATGPT_PRO_BRIDGE_FILE
 const CHATGPT_PRO_OUTPUT_DIR = process.env.CODEX_MOBILE_CHATGPT_PRO_OUTPUT_DIR
   || path.join(RUNTIME_ROOT, "outputs", "chatgpt-pro");
 const CHATGPT_PRO_BRIDGE_ENABLED = !/^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_DISABLE_CHATGPT_PRO_BRIDGE || "");
+const CHATGPT_PRO_PLANNER_DIR = process.env.CODEX_MOBILE_CHATGPT_PRO_PLANNER_DIR
+  || path.join(RUNTIME_ROOT, "chatgpt-pro-planner");
+const CHATGPT_PRO_MCP_TOKEN = process.env.CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN || "";
+const CHATGPT_PRO_MCP_TOKEN_FILE = process.env.CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN_FILE || "";
 const THREAD_SIDE_CHAT_SCOPE_ID = CODEX_HOME_RESOLUTION.activeProfileId
   || `codex-home-${crypto.createHash("sha256").update(CODEX_HOME).digest("hex").slice(0, 16)}`;
 const THREAD_SIDE_CHAT_REPLY_TIMEOUT_MS = Math.max(
@@ -7415,6 +7421,45 @@ const chatGptProBridgeService = createChatGptProBridgeService({
   persistThreadTitle: persistThreadTitleToSessionIndex,
   rememberThread: rememberStartedThread,
 });
+const chatGptProPlannerService = createChatGptProPlannerService({
+  runtimeRoot: RUNTIME_ROOT,
+  storeRoot: CHATGPT_PRO_PLANNER_DIR,
+  version: APP_VERSION,
+  listWorkspaces,
+  workspaceRoots: () => {
+    const roots = visibleWorkspaceRoots(readGlobalState());
+    roots.add(APP_ROOT);
+    for (const workspace of workspaceRegistryService.list()) {
+      if (workspace && workspace.cwd) roots.add(workspace.cwd);
+    }
+    return Array.from(roots);
+  },
+  readThreadContext: async ({ threadId }) => {
+    let summary = readStateDbThread(threadId)
+      || readStartedThread(threadId)
+      || readRolloutSessionFallbackThread(threadId);
+    if (!summary) {
+      summary = await readThreadSummaryFromAppServer(codex, threadId).catch(() => null);
+    }
+    if (!summary) return null;
+    return {
+      id: summary.id || threadId,
+      title: summary.name || summary.title || summary.preview || "",
+      status: statusText(summary.status) || "",
+      cwd: summary.cwd || "",
+      model: summary.model || "",
+      reasoningEffort: summary.effort || summary.reasoningEffort || "",
+      updatedAt: summary.updatedAt || summary.updated_at || summary.updatedAtMs || summary.updated_at_ms || 0,
+      summary: summary.preview || summary.firstUserMessage || "",
+    };
+  },
+});
+const chatGptProMcpService = createChatGptProMcpService({
+  plannerService: chatGptProPlannerService,
+  token: CHATGPT_PRO_MCP_TOKEN,
+  tokenFile: CHATGPT_PRO_MCP_TOKEN_FILE,
+  version: APP_VERSION,
+});
 
 function readGlobalState() {
   const p = path.join(CODEX_HOME, ".codex-global-state.json");
@@ -9939,6 +9984,33 @@ async function handleApi(req, res) {
     });
     return;
   }
+  if (url.pathname === "/api/chatgpt-pro/mcp" && (req.method === "POST" || req.method === "GET")) {
+    if (!chatGptProMcpService.isConfigured()) {
+      sendJson(res, 503, { ok: false, error: "ChatGPT Pro MCP connector is not configured" });
+      return;
+    }
+    if (!chatGptProMcpService.isAuthorized(req)) {
+      sendJson(res, 401, { ok: false, error: "Unauthorized ChatGPT Pro MCP connector request" });
+      return;
+    }
+    if (req.method === "GET") {
+      sendJson(res, 200, chatGptProMcpService.status());
+      return;
+    }
+    try {
+      const body = await readBody(req);
+      const reply = await chatGptProMcpService.handleJsonRpc(body);
+      if (reply === null) {
+        res.writeHead(204, { "Cache-Control": "no-store" });
+        res.end();
+        return;
+      }
+      sendJson(res, 200, reply);
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
   if (url.pathname === "/api/codex-profiles" && req.method === "GET") {
     sendJson(res, 200, codexProfileService.profiles({
       activeQuota: liveQuotaSnapshotForProfiles(),
@@ -10482,6 +10554,47 @@ async function handleApi(req, res) {
   }
   if (url.pathname === "/api/chatgpt-pro/status" && req.method === "GET") {
     sendJson(res, 200, chatGptProBridgeService.status());
+    return;
+  }
+  if (url.pathname === "/api/chatgpt-pro/planner/status" && req.method === "GET") {
+    sendJson(res, 200, {
+      ok: true,
+      planner: chatGptProPlannerService.status(),
+      mcp: chatGptProMcpService.status(),
+    });
+    return;
+  }
+  if (url.pathname === "/api/chatgpt-pro/planner/artifacts" && req.method === "GET") {
+    try {
+      sendJson(res, 200, chatGptProPlannerService.listPlannerArtifacts({
+        limit: url.searchParams.get("limit") || 20,
+        type: url.searchParams.get("type") || "",
+        threadId: url.searchParams.get("threadId") || url.searchParams.get("thread_id") || "",
+        cwd: url.searchParams.get("cwd") || "",
+      }));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  if (url.pathname === "/api/chatgpt-pro/planner/artifacts" && req.method === "POST") {
+    try {
+      const body = await readBody(req);
+      sendJson(res, 201, { ok: true, artifact: chatGptProPlannerService.createPlannerArtifact(body) });
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  const chatGptPlannerArtifactMatch = url.pathname.match(/^\/api\/chatgpt-pro\/planner\/artifacts\/([^/]+)$/);
+  if (chatGptPlannerArtifactMatch && req.method === "GET") {
+    try {
+      sendJson(res, 200, chatGptProPlannerService.readPlannerArtifact({
+        id: decodeURIComponent(chatGptPlannerArtifactMatch[1]),
+      }));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
     return;
   }
   if (url.pathname === "/api/chatgpt-pro/generate" && req.method === "POST") {
