@@ -4671,7 +4671,10 @@ The previous full handoff was archived and should be opened only when old proven
 
 ## 2026-06-19 Composer @ Intent Menu Page-Level Overlay v305
 
-- Status: implemented and locally validated; deployment is the next step.
+- Status: implemented, locally validated, committed, deployed to Mac production,
+  and production-smoked.
+- Commit:
+  - `cafbd5a fix: 将 @ 意图菜单改为页面级浮层`.
 - User-visible issue:
   - After v304, the iOS/Home AI WebView still did not show the bare `@` intent
     chooser, while the Home AI host chat showed a page-level chooser above its
@@ -4706,3 +4709,23 @@ The previous full handoff was archived and should be opened only when old proven
     `node tests/architecture-code-test-harness-map.test.js`
   - `npm run check`
   - `npm test`
+- Production deployment:
+  - The Mac deploy command output was interrupted by the active Codex turn, but
+    production readback confirmed the deployment completed.
+  - Production `/api/public-config` reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v305` and
+    `shellCacheName=codex-mobile-shell-v305`.
+  - Production static readback confirmed `public/app.js`,
+    `public/styles.css`, and `public/sw.js` include the v305 menu overlay and
+    shell cache changes.
+  - Plugin manifest smoke at
+    `http://127.0.0.1:8787/api/v1/hermes/plugin/manifest` returned
+    `id=codex-mobile`, `title=Codex Mobile`, `version=0.1.11`.
+  - `launchctl print system/com.hermesmobile.plugin.codex-mobile` showed the
+    service running with last exit code 0.
+  - Browser smoke using system Chrome against production 8787 focused
+    `#messageInput`, inserted a bare `@`, and observed:
+    `#composerIntentMenu.hidden=false`, 4 intent options, fixed positioning,
+    and a menu rectangle above the Composer input rectangle.
+  - Evidence ledger:
+    `evidence-636cacd3-d467-4c7e-8e7d-a899ef7a24d4`.
