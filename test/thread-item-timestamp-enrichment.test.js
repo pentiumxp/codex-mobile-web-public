@@ -462,6 +462,40 @@ test("existing image items are restored to timestamp order inside the turn", () 
   assert.deepEqual(compacted.turns[0].items.map((item) => item.id), ["user-existing", "image-existing", "agent-existing"]);
 });
 
+test("superseded live turns with images are rendered as historical turns", () => {
+  const compacted = compactThread({
+    id: "thread-superseded-live-image",
+    turns: [
+      {
+        id: "turn-old-live",
+        startedAtMs: Date.parse("2026-06-18T12:00:00.000Z"),
+        status: "inProgress",
+        items: [
+          { id: "user-old", type: "userMessage", text: "old upload" },
+          {
+            id: "image-old",
+            type: "imageView",
+            contentUrl: "/api/generated-images/file?id=thread%2Fold.png",
+            startedAt: "2026-06-18T12:01:00.000Z",
+          },
+        ],
+      },
+      {
+        id: "turn-new-live",
+        startedAtMs: Date.parse("2026-06-18T23:00:00.000Z"),
+        status: "inProgress",
+        items: [{ id: "user-new", type: "userMessage", text: "new question" }],
+      },
+    ],
+  }, { maxTurns: 2 });
+
+  assert.equal(compacted.turns[0].status.type, "completed");
+  assert.equal(compacted.turns[0].mobileSupersededLive, true);
+  assert.equal(compacted.turns[0].items.some((item) => item.id === "image-old"), true);
+  assert.equal(compacted.turns[1].status, "inProgress");
+  assert.deepEqual(compacted.turns.map((turn) => turn.id), ["turn-old-live", "turn-new-live"]);
+});
+
 test("live latest turn rehydrates several recent raw operations", () => {
   const { dir, rolloutPath } = writeRollout([
     event("2026-05-24T11:05:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-live" }),

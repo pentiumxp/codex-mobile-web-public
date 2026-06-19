@@ -13,6 +13,23 @@ const startScript = fs.readFileSync(path.resolve(__dirname, "..", "start-codex-m
 const windowlessStartScript = fs.readFileSync(path.resolve(__dirname, "..", "start-codex-mobile-web-windowless.ps1"), "utf8");
 const startupInstallScript = fs.readFileSync(path.resolve(__dirname, "..", "install-codex-mobile-web-startup.ps1"), "utf8");
 
+function functionBody(source, name) {
+  let start = source.indexOf(`function ${name}(`);
+  if (start === -1) start = source.indexOf(`async function ${name}(`);
+  assert.notEqual(start, -1, `${name} not found`);
+  const signatureEnd = source.indexOf(") {", start);
+  const brace = source.indexOf("{", signatureEnd === -1 ? start : signatureEnd);
+  let depth = 0;
+  for (let index = brace; index < source.length; index += 1) {
+    if (source[index] === "{") depth += 1;
+    if (source[index] === "}") {
+      depth -= 1;
+      if (depth === 0) return source.slice(start, index + 1);
+    }
+  }
+  throw new Error(`${name} body not closed`);
+}
+
 test("server exposes Hermes plugin manifest, registration, origin, launch, session, and notification routes", () => {
   assert.match(serverJs, /"\/api\/v1\/hermes\/plugin\/manifest"/);
   assert.match(serverJs, /"\/api\/v1\/hermes\/plugin\/workspaces"/);
@@ -135,7 +152,7 @@ test("embedded plugin mode hides standalone chrome and installs navigation/windo
   assert.match(appJs, /state\.pluginParentOrigin = hermesOrigin/);
   assert.match(appJs, /if \(assetsChanged && !serverBuildNeedsRefresh\) \{[\s\S]*state\.serverAssetBuildId = nextAssetBuildId;[\s\S]*return;/);
   assert.match(appJs, /if \(serverBuildNeedsRefresh\) \{\s*if \(isHermesEmbedMode\(\)\) \{[\s\S]*requestHermesPluginRefresh\("server_build_changed"\);[\s\S]*return;/);
-  assert.doesNotMatch(appJs, /if \(isHermesEmbedMode\(\)\) \{\s*state\.pageRefreshBuildId = nextBuildId;[\s\S]*requestHermesPluginRefresh\("server_build_changed", \{ force: true \}\);[\s\S]*return;/);
+  assert.match(functionBody(appJs, "initializePageBuildState"), /state\.pageRefreshPreparedConfig = config \|\| null;[\s\S]*if \(isHermesEmbedMode\(\)\) \{[\s\S]*requestHermesPluginRefresh\("server_build_changed", \{ force: true \}\);[\s\S]*return;/);
 });
 
 test("Windows startup scripts can persist HTTPS Hermes plugin deployment settings", () => {

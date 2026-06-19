@@ -4,6 +4,7 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：v300 修复 Home AI/iOS 嵌入态可能长期停留在旧 Codex Mobile shell 的问题。启动时如果 iframe 内旧客户端发现服务端 `clientBuildId` 已更新，会立即向宿主发送 `refresh_required`，请求宿主刷新插件页，而不是只在 iframe 内显示刷新提示或等待后续周期检查。PWA shell cache 升级到 `codex-mobile-shell-v300`。
 - 中文说明：v299 修正 v297 冷启动快速列表带来的线程名短暂回退问题。`fallback=defer` 首屏仍跳过昂贵的 state DB / rollout fallback 扫描，但会先用 `session_index.jsonl` 做轻量标题水合，让压缩续接线程和手动改名线程在首屏直接显示正式名称，不再先闪最初标题再过一两秒刷新回来。PWA shell cache 升级到 `codex-mobile-shell-v299`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
 
 - 中文说明：v298 修正 Home AI/iOS 原生壳内 Codex 归档确认和压缩续接后的旧线程隐藏。手动归档在 Hermes embedded WebView 中改用 iframe 内确认框，不再依赖不稳定的原生 `window.confirm()`；压缩续接成功后如果底层 app-server `thread/archive` RPC 失败，服务端会把源线程写入 Mobile 本地归档索引，让旧线程仍从 Codex Mobile 列表隐藏。PWA shell cache 升级到 `codex-mobile-shell-v298`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。

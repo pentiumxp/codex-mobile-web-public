@@ -4383,3 +4383,89 @@ The previous full handoff was archived and should be opened only when old proven
 - Note:
   - `docs/HOME_AI_PLATFORM_CONTRACT.md` remains an unrelated pre-existing dirty
     file and was not touched for this fix.
+
+## 2026-06-19 Superseded Live Turn Image Projection Fix
+
+- Status: implemented and validated locally; not committed or deployed yet.
+- User-visible issue:
+  - Historical uploaded/tool-viewed images could reappear near the bottom of a
+    thread, and in one observed thread an old image card stayed under an
+    `inProgress` separator.
+- Finding:
+  - The current thread-detail API output contained multiple older turns whose
+    durable status was still `inProgress`, even though newer turns existed.
+    This allowed old image cards and old live-turn state to be treated as a
+    current running area by the mobile projection/UI.
+- Fix:
+  - `compactThread()` now normalizes any non-latest live turn to a completed
+    historical status with `mobileSupersededLive=true`.
+  - Existing image cards remain in their original historical turn; only the
+    latest turn can remain live.
+  - Thread-detail projection cache policy advanced from
+    `state-relevant-receipt-v1` to `state-relevant-receipt-v2`, so stale cached
+    projections with old live markers are bypassed.
+- Changed files:
+  - `server.js`
+  - `test/thread-item-timestamp-enrichment.test.js`
+- Validation:
+  - `node --check server.js`
+  - `node --test test/thread-item-timestamp-enrichment.test.js test/tool-output-image-projection.test.js test/conversation-render.test.js`
+  - `npm run check`
+  - Home AI center harness:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - `git diff --check`
+  - Current-thread local readback through the existing API output plus the new
+    `compactThread()` logic showed `oldLive: 0`; only the latest turn remained
+    live, while historical image turns stayed historical.
+  - AI Ops evidence: `evidence-e6eb0cb9-4d79-4db7-a556-5a9d444a71d0`.
+- Note:
+  - `docs/HOME_AI_PLATFORM_CONTRACT.md` remains an unrelated pre-existing dirty
+    file and was not touched for this fix.
+
+## 2026-06-19 Embedded Shell Stale v295 Slow Startup Finding
+
+- Status: root-caused and local v300 fix implemented; not committed or
+  deployed yet.
+- User-visible issue:
+  - Entering/opening Codex Mobile felt slower even though recent thread detail
+    reads were expected to be small.
+- Findings:
+  - Current production server and files report
+    `clientBuildId=0.1.11|codex-mobile-shell-v299`.
+  - iOS/Home AI embedded client logs showed the loaded iframe client was still
+    `0.1.11|codex-mobile-shell-v295`.
+  - v295 startup used the full `/api/threads` fallback path instead of the
+    v297+ `fallback=defer` fast path. Recent iPhone logs showed cold thread
+    list loads around 1.38-1.40s, with most time in fallback rollout/state DB
+    scans. After fallback cache warmed, the same list load dropped to about
+    189ms.
+  - The active Codex Mobile thread detail endpoint itself was not the bottleneck:
+    repeated local reads returned roughly 86-88KB, 10 turns, about 120 items,
+    and completed in about 41-79ms.
+- Fix:
+  - `initializePageBuildState()` now immediately calls
+    `requestHermesPluginRefresh("server_build_changed", { force: true })` in
+    Hermes embedded mode when the startup public config reports a newer server
+    client build.
+  - PWA shell cache advanced to `codex-mobile-shell-v300`.
+  - README Chinese release note added for v300.
+- Changed files:
+  - `public/app.js`
+  - `public/sw.js`
+  - `README.md`
+  - `test/hermes-plugin-route.test.js`
+  - `test/mobile-viewport.test.js`
+  - `test/thread-goal-service.test.js`
+  - `test/thread-task-card-route.test.js`
+- Validation:
+  - `node --test test/hermes-plugin-route.test.js test/app-update.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js test/thread-item-timestamp-enrichment.test.js test/tool-output-image-projection.test.js test/conversation-render.test.js`
+  - `node --test test/mobile-viewport.test.js test/app-update.test.js`
+  - `npm run check`
+  - Home AI center harness:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - `git diff --check`
+- Note:
+  - A client already stuck on v295 still needs one host refresh / hard refresh
+    to load the newer shell. The v300 change prevents future embedded sessions
+    from silently staying on an outdated shell after detecting a server build
+    mismatch.
