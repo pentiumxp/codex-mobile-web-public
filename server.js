@@ -916,6 +916,7 @@ const threadDisplaySummaryCache = createThreadDisplaySummaryCache({
   ttlMs: THREAD_DISPLAY_SUMMARY_CACHE_TTL_MS,
   maxEntries: THREAD_DISPLAY_SUMMARY_CACHE_MAX,
   decorateSummary: annotateThreadRolloutStats,
+  mergeSummary: mergeThreadDisplaySummary,
 });
 const continuationJobs = new Map();
 const activeContinuationJobsBySource = new Map();
@@ -2810,7 +2811,8 @@ function mergeThreadSummaryList(threads) {
     if (!thread || !thread.id) continue;
     const id = String(thread.id);
     if (archivedIds.has(id)) continue;
-    const merged = byId.has(id) ? mergeThreadDisplaySummary(byId.get(id), thread) : thread;
+    const displayThread = mergeThreadWithCachedDisplaySummary(thread);
+    const merged = byId.has(id) ? mergeThreadDisplaySummary(byId.get(id), displayThread) : displayThread;
     if (threadHasArchiveSignal(merged) || isSubagentThreadSummary(merged)) {
       byId.delete(id);
       continue;
@@ -9051,15 +9053,24 @@ function isThreadListUnknownStatus(status) {
 function shouldReplaceThreadDisplayStatus(baseStatus, displayStatus, baseUpdatedAtMs, displayUpdatedAtMs) {
   if (!displayStatus) return false;
   if (!baseStatus) return true;
+  const baseUnknown = isThreadListUnknownStatus(baseStatus);
+  const displayUnknown = isThreadListUnknownStatus(displayStatus);
+  if (displayUnknown && !baseUnknown) return false;
+  if (!displayUnknown && baseUnknown) return true;
   const baseLive = isThreadListLiveStatus(baseStatus);
   const displayLive = isThreadListLiveStatus(displayStatus);
   if (baseLive && !displayLive) return isThreadListRestStatus(displayStatus);
   if (!baseLive && displayLive) {
-    if (isThreadListUnknownStatus(baseStatus)) return true;
     return Boolean(displayUpdatedAtMs && baseUpdatedAtMs && displayUpdatedAtMs > baseUpdatedAtMs + 1000);
   }
   if (displayUpdatedAtMs && baseUpdatedAtMs && displayUpdatedAtMs < baseUpdatedAtMs) return false;
   return true;
+}
+
+function mergeThreadWithCachedDisplaySummary(thread) {
+  if (!thread || typeof thread !== "object" || !thread.id) return thread;
+  const cached = threadDisplaySummaryCache.read(thread.id);
+  return cached ? (mergeThreadDisplaySummary(thread, cached) || thread) : thread;
 }
 
 function mergeThreadDisplaySummary(base, display) {
