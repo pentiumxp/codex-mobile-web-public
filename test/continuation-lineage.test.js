@@ -112,6 +112,7 @@ test("continuation result persists lineage after bootstrap and archive attempt",
   assert.match(startBody, /input: newThreadBootstrapInput\(\{ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff \}\)/);
   assert.match(startBody, /await migrateContinuationThreadGoal\(sourceThreadId, threadId\)/);
   assert.match(startBody, /if \(job\) job\.sourceGoalMigration = sourceGoalMigration/);
+  assert.match(startBody, /mobileArchivedFallbackResult\("continuation-fallback", sourceThreadId, err\)/);
   assert.match(startBody, /const lineage = appendContinuationLineageEntry\(cwd, \{/);
   assert.match(startBody, /sourceGoalMigrated: Boolean\(sourceGoalMigration && sourceGoalMigration\.migrated\)/);
   assert.match(startBody, /sourceGoalMigrationError: sourceGoalMigration && \(sourceGoalMigration\.error \|\| sourceGoalMigration\.sourceFreezeError\)/);
@@ -121,4 +122,15 @@ test("continuation result persists lineage after bootstrap and archive attempt",
   const publicJobBody = functionBody("publicContinuationJob");
   assert.match(publicJobBody, /sourceGoalMigration: job\.sourceGoalMigration \|\| null/);
   assert.match(publicJobBody, /lineage: job\.lineage \|\| null/);
+});
+
+test("continuation archive fallback writes the Mobile archive index", () => {
+  const fallbackBody = functionBody("mobileArchivedFallbackResult");
+  assert.match(fallbackBody, /rememberMobileArchivedThreadId\(threadId\)/);
+  assert.match(fallbackBody, /archived: Boolean\(mobileArchived\)/);
+  assert.match(fallbackBody, /archiveError: err \? String\(err\.message \|\| err\) : ""/);
+
+  const jobBody = functionBody("runContinuationJob");
+  assert.match(jobBody, /result\.sourceArchive\.archived/);
+  assert.match(jobBody, /旧线程已在 Mobile 隐藏/);
 });

@@ -1,7 +1,7 @@
 # Home AI Platform Contract Pointer
 
 Last updated: 2026-06-11.
-Home AI platform contract version: `20260611-v3`.
+Home AI platform contract version: `20260618-v4`.
 
 ## Scope
 

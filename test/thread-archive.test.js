@@ -7,7 +7,31 @@ const { test } = require("node:test");
 
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
+const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+
+function appFunctionBody(name) {
+  const patterns = [
+    `function ${name}(`,
+    `async function ${name}(`,
+  ];
+  let start = -1;
+  for (const pattern of patterns) {
+    start = appJs.indexOf(pattern);
+    if (start >= 0) break;
+  }
+  assert.notEqual(start, -1, `missing function ${name}`);
+  const bodyStart = appJs.indexOf(") {", start) + 2;
+  assert.notEqual(bodyStart, 1, `missing function body ${name}`);
+  let depth = 0;
+  for (let index = bodyStart; index < appJs.length; index += 1) {
+    const char = appJs[index];
+    if (char === "{") depth += 1;
+    if (char === "}") depth -= 1;
+    if (depth === 0) return appJs.slice(bodyStart + 1, index);
+  }
+  throw new Error(`could not parse function ${name}`);
+}
 
 test("thread long-press action sheet archives instead of using left swipe", () => {
   assert.match(indexHtml, /data-thread-action="archive"/);
@@ -18,6 +42,18 @@ test("thread long-press action sheet archives instead of using left swipe", () =
   assert.doesNotMatch(appJs, /thread-row-actions/);
   assert.doesNotMatch(appJs, /function startNewThreadFromList\(/);
   assert.doesNotMatch(appJs, /data-new-thread-from-thread/);
+});
+
+test("thread archive uses in-app confirmation in Hermes embed mode", () => {
+  assert.match(indexHtml, /id="threadArchiveConfirmDialog"/);
+  assert.match(stylesCss, /\.thread-archive-confirm-dialog/);
+  assert.match(appJs, /function requestThreadArchiveConfirmation\(threadId, title\)/);
+  assert.match(appJs, /threadArchiveConfirmProceed/);
+  assert.match(appJs, /isHermesEmbedMode\(\)/);
+  assert.match(appJs, /state\.threads = state\.threads\.filter\(\(entry\) => entry\.id !== thread\.id\)/);
+  const archiveBody = appFunctionBody("archiveThread");
+  assert.match(archiveBody, /await requestThreadArchiveConfirmation\(thread\.id, title\)/);
+  assert.doesNotMatch(archiveBody, /window\.confirm/);
 });
 
 test("thread long-press action sheet can copy session id", () => {

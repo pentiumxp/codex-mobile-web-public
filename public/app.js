@@ -340,7 +340,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v299";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v301";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -1994,6 +1994,7 @@ function rememberCodexProfiles(value) {
   state.codexProfiles = profiles;
   state.activeCodexProfileId = String(value && value.activeProfileId || "");
   state.codexProfileSwitchSupported = value ? value.switchSupported !== false : false;
+  finishRestartingUiIfReady();
   renderCodexProfileSettings();
 }
 
@@ -2985,6 +2986,11 @@ function initializePageBuildState(config) {
     state.pageRefreshBuildId = currentServerBuildId;
     state.pageRefreshReason = "build";
     state.pageRefreshAvailable = true;
+    state.pageRefreshPreparedConfig = config || null;
+    if (isHermesEmbedMode()) {
+      requestHermesPluginRefresh("server_build_changed", { force: true });
+      return;
+    }
   }
   renderPageRefreshPrompt();
 }
@@ -3026,11 +3032,28 @@ function showReconnectRefreshPrompt(reason = "reconnect") {
   renderPageRefreshPrompt();
 }
 
+function finishRestartingUiIfReady() {
+  const targetId = String(state.codexProfileSwitchTargetId || "");
+  if (state.codexProfileRestarting && targetId && state.activeCodexProfileId && targetId !== state.activeCodexProfileId) return false;
+  const changed = Boolean(state.codexProfileRestarting || state.sharedRestarting || state.codexProfileSwitchTargetId || state.codexProfileSwitchStage);
+  state.codexProfileRestarting = false;
+  state.codexProfileSwitchTargetId = "";
+  state.codexProfileSwitchStage = "";
+  state.sharedRestarting = false;
+  state.sharedRestartBusy = false;
+  if (changed) {
+    renderCodexProfileSettings();
+    renderSharedRestartButton();
+  }
+  return changed;
+}
+
 function clearReconnectRefreshPrompt() {
-  if (state.pageRefreshReason !== "reconnect" || state.pageRefreshReloading) return;
+  if (!(state.pageRefreshReason === "reconnect" || state.pageRefreshReason === "restart") || state.pageRefreshReloading) return;
   state.pageRefreshAvailable = false;
   state.pageRefreshReason = "";
   state.pageRefreshPreparedConfig = null;
+  finishRestartingUiIfReady();
   renderPageRefreshPrompt();
 }
 
@@ -3125,6 +3148,20 @@ async function refreshPageForNewBuild() {
       : await fetchPageBuildConfig();
     if (latestConfig) config = latestConfig;
     if (!config) throw new Error("page refresh build config unavailable");
+    const nextBuildId = serverBuildIdFromConfig(config);
+    const currentBuildId = state.serverBuildId || CLIENT_BUILD_ID || nextBuildId;
+    if (reconnectRefresh && !shouldPromptForServerBuildChange(nextBuildId, currentBuildId)) {
+      state.serverBuildId = currentBuildId || nextBuildId;
+      state.serverAssetBuildId = String(config && config.buildId || state.serverAssetBuildId || "").trim();
+      rememberRateLimitsFromConfig(config);
+      state.pageRefreshReloading = false;
+      state.pageRefreshAvailable = false;
+      state.pageRefreshReason = "";
+      state.pageRefreshPreparedConfig = null;
+      finishRestartingUiIfReady();
+      renderPageRefreshPrompt();
+      return;
+    }
     rememberRateLimitsFromConfig(config);
     await clearAllShellCaches();
     if (config) await preparePageShellAssets(config, { populateCache: true });

@@ -184,7 +184,7 @@ const TOKEN_USAGE_STATS_DB = process.env.CODEX_MOBILE_TOKEN_USAGE_DB
   || path.join(RUNTIME_ROOT, "token-usage-stats.sqlite");
 const THREAD_DETAIL_PROJECTION_CACHE_DIR = process.env.CODEX_MOBILE_THREAD_DETAIL_PROJECTION_CACHE_DIR
   || path.join(RUNTIME_ROOT, "thread-detail-projections");
-const THREAD_DETAIL_PROJECTION_POLICY_VERSION = "state-relevant-receipt-v1";
+const THREAD_DETAIL_PROJECTION_POLICY_VERSION = "state-relevant-receipt-v2";
 const WORKSPACE_CREATE_ROOTS = process.env.CODEX_MOBILE_WORKSPACE_CREATE_ROOTS || "";
 const SYNC_DESKTOP_WORKSPACES = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_SYNC_DESKTOP_WORKSPACES || "");
 const DESKTOP_GLOBAL_STATE_FILES = SYNC_DESKTOP_WORKSPACES
@@ -2915,6 +2915,26 @@ function isLiveTurn(turn) {
     || (text === "interrupted" && turn && !turn.completedAt && !turn.durationMs);
 }
 
+function completedSupersededStatus(status) {
+  const previous = statusText(status);
+  const out = status && typeof status === "object" ? Object.assign({}, status) : {};
+  out.type = "completed";
+  out.mobileSupersededLive = true;
+  if (previous && !out.previousType) out.previousType = previous;
+  return out;
+}
+
+function normalizeSupersededLiveTurns(thread) {
+  if (!thread || !Array.isArray(thread.turns) || thread.turns.length < 2) return thread;
+  for (let index = 0; index < thread.turns.length - 1; index += 1) {
+    const turn = thread.turns[index];
+    if (!turn || !isLiveTurn(turn)) continue;
+    turn.status = completedSupersededStatus(turn.status);
+    turn.mobileSupersededLive = true;
+  }
+  return thread;
+}
+
 function turnIdentifier(turn) {
   return String(turn && (turn.id || turn.turnId) || "");
 }
@@ -4762,6 +4782,7 @@ function compactThread(thread, options = {}) {
       out.mobileOlderTurnsCursor = olderTurnsCursorBeforeTurn(out.turns[0]);
     }
     pendingSteerEchoStore.injectIntoThread(out);
+    normalizeSupersededLiveTurns(out);
     enrichThreadItemTimestampsFromRollout(out);
     appendRolloutToolOutputImagesToThread(out);
     attachTurnUsageSummaries(out, readRolloutTurnUsageSummaries(rolloutPath, {

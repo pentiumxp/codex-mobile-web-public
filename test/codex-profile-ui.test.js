@@ -15,7 +15,11 @@ const multiAccountDoc = fs.readFileSync(path.join(root, "docs", "MULTI_ACCOUNT_C
 
 test("settings panel exposes Codex profile account and switch UI", () => {
   assert.match(indexHtml, /id="codexProfileSettings"/);
+  assert.match(indexHtml, /id="profileSwitchConfirmDialog"/);
   assert.match(appJs, /function renderCodexProfileSettings\(\)/);
+  assert.match(appJs, /function requestCodexProfileSwitchConfirmation\(profileId, label\)/);
+  assert.match(appJs, /isHermesEmbedMode\(\)/);
+  assert.match(appJs, /profileSwitchConfirmProceed/);
   assert.match(appJs, /codexProfileAccountLabel/);
   assert.match(appJs, /\/api\/codex-profiles\/active/);
   assert.match(appJs, /function clearStoredRateLimits\(\)/);
@@ -23,8 +27,12 @@ test("settings panel exposes Codex profile account and switch UI", () => {
   assert.match(appJs, /state\.codexProfileSwitchStage = "预检中\.\.\."/);
   assert.match(appJs, /state\.codexProfileSwitchStage = "重启中\.\.\."/);
   assert.match(appJs, /state\.codexProfileSwitchStage = "失败"/);
+  assert.match(appJs, /function finishRestartingUiIfReady\(\)/);
+  assert.match(appJs, /state\.codexProfileRestarting = false/);
+  assert.match(appJs, /state\.codexProfileSwitchTargetId = ""/);
   assert.match(appJs, /codex-profile-progress/);
   assert.match(stylesCss, /\.codex-profile-row/);
+  assert.match(stylesCss, /\.profile-switch-confirm-dialog/);
 });
 
 test("server exposes profile list and active profile switch endpoints", () => {
