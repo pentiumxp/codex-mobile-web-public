@@ -4729,3 +4729,34 @@ The previous full handoff was archived and should be opened only when old proven
     and a menu rectangle above the Composer input rectangle.
   - Evidence ledger:
     `evidence-636cacd3-d467-4c7e-8e7d-a899ef7a24d4`.
+
+## 2026-06-19 Public/Private Sync for v302-v305
+
+- Status: public-safe sync committed and pushed; private reverse-merged public
+  main and is ready to push.
+- Public mirror:
+  - `/Users/hermes-dev/HermesMobileDev/public-mirrors/codex-mobile-web-public`.
+- Public commit:
+  - `c7696e1 feat: 发布 v302-v305 移动端更新`.
+- Private reverse-sync merge:
+  - `d6425bf Merge public v302-v305 sync`.
+- Scope:
+  - Synced the public-safe tracked file tree from private HEAD into the clean
+    public mirror using a git archive export and excluding `.agent-context`.
+  - Published the v302 standalone `@ChatGPT Pro` bridge, v303 unified `@`
+    intent entry, v304 iOS/WebView bare-`@` trigger fix, and v305 page-level
+    `@` intent overlay.
+  - README public-facing notes remain Chinese.
+- Public privacy checks:
+  - `git ls-files .agent-context` returned no files.
+  - Diff-name scan found no `.agent-context`, `node_modules`, `.pem`,
+    `access_key`, secret/token paths, uploads, logs, or runtime state paths.
+- Public validation:
+  - Initial `npm test` failed only because the local public mirror had no
+    installed `web-push` dependency; after `npm ci`, the same test suite passed.
+  - `npm ci`
+  - `git diff --check`
+  - `node --check server.js && node --check public/app.js && node --check
+    public/sw.js && node --check adapters/chatgpt-pro-bridge-service.js`
+  - `npm test` passed: 495 tests.
+  - `npm run check` passed.
