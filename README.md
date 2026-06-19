@@ -4,6 +4,7 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：v301 修复 Profile 切换成功后顶部 `Service restarted. Tap to refresh.` 提示不消失的问题。重启/重连提示现在会在事件流或 `/api/status` 确认服务恢复后清理；如果用户手动点击提示且服务端 shell build 没有变化，会直接关闭提示和 Profile 的“重启中”状态，只有检测到真实新 build 时才继续执行 shell 刷新。PWA shell cache 升级到 `codex-mobile-shell-v301`。
 - 中文说明：v300 修复 Home AI/iOS 嵌入态可能长期停留在旧 Codex Mobile shell 的问题。启动时如果 iframe 内旧客户端发现服务端 `clientBuildId` 已更新，会立即向宿主发送 `refresh_required`，请求宿主刷新插件页，而不是只在 iframe 内显示刷新提示或等待后续周期检查。PWA shell cache 升级到 `codex-mobile-shell-v300`。
 - 中文说明：v299 修正 v297 冷启动快速列表带来的线程名短暂回退问题。`fallback=defer` 首屏仍跳过昂贵的 state DB / rollout fallback 扫描，但会先用 `session_index.jsonl` 做轻量标题水合，让压缩续接线程和手动改名线程在首屏直接显示正式名称，不再先闪最初标题再过一两秒刷新回来。PWA shell cache 升级到 `codex-mobile-shell-v299`，已打开的浏览器/PWA 需要接受刷新提示、硬刷新或关闭重开后才能拿到新前端资源。
 

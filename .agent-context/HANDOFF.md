@@ -2,6 +2,53 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-19 Profile Switch Restart Prompt v301
+
+- Status: implemented and validated locally; deployment requested next.
+- User-visible issue:
+  - After a successful Codex Profile switch, the top
+    `Service restarted. Tap to refresh.` prompt stayed visible indefinitely.
+  - Tapping the prompt could refresh/recover the page but the prompt still came
+    back, so the UI looked permanently stale even when the service was already
+    usable.
+- Root cause:
+  - `showReconnectRefreshPrompt("restart")` was used for Profile switch
+    restarts, but `clearReconnectRefreshPrompt()` only cleared
+    `pageRefreshReason === "reconnect"`.
+  - `codexProfileRestarting`, `codexProfileSwitchTargetId`, and
+    `codexProfileSwitchStage` had no success cleanup after `/api/status` or
+    event-stream recovery confirmed that the service was ready again.
+  - `refreshPageForNewBuild()` treated restart/reconnect prompt clicks as a
+    shell refresh path even when the service build had not changed.
+- Fix:
+  - Added `finishRestartingUiIfReady()` to clear Profile switching and manual
+    restart UI state after the active profile is visible again.
+  - `clearReconnectRefreshPrompt()` now clears both `reconnect` and `restart`
+    prompts and invokes the restarting UI cleanup.
+  - Manual restart/reconnect prompt clicks now check the latest public config;
+    if the server build matches the current shell, the prompt closes without
+    rebuilding shell caches or reloading.
+  - PWA shell cache advanced to `codex-mobile-shell-v301`.
+- Files changed:
+  - `public/app.js`
+  - `public/sw.js`
+  - `README.md`
+  - `test/app-update.test.js`
+  - `test/codex-profile-ui.test.js`
+  - `test/mobile-viewport.test.js`
+  - `test/thread-goal-service.test.js`
+  - `test/thread-task-card-route.test.js`
+- Validation:
+  - `node --check public/app.js`
+  - `node --test test/app-update.test.js test/codex-profile-ui.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+  - `npm run check`
+  - Home AI AI Ops required checks:
+    `node tests/gateway-run-lifecycle-service.test.js`,
+    `node tests/gateway-run-start-service.test.js`,
+    `node tests/gateway-run-stream-service.test.js`,
+    `node tests/runtime-config-provider.test.js`
+  - `git diff --check`
+
 ## 2026-06-17 Cold Thread List Startup v297
 
 - Status: implemented, validated, and deployed to Mac production.

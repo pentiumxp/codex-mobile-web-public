@@ -116,6 +116,8 @@ test("page refresh prompt also handles server restart reconnects", () => {
   assert.match(appJs, /function showReconnectRefreshPrompt\(reason = "reconnect"\)/);
   assert.match(appJs, /state\.pageRefreshReason = reason === "restart" \? "restart" : "reconnect"/);
   assert.match(appJs, /function clearReconnectRefreshPrompt\(\)/);
+  assert.match(functionBody(appJs, "clearReconnectRefreshPrompt"), /state\.pageRefreshReason === "reconnect" \|\| state\.pageRefreshReason === "restart"/);
+  assert.match(functionBody(appJs, "clearReconnectRefreshPrompt"), /finishRestartingUiIfReady\(\)/);
   assert.match(appJs, /function recoverEventStreamWithApiFallback\(options = \{\}\)/);
   assert.match(appJs, /function scheduleEventFallbackPoll\(delayMs = 8000\)/);
   assert.match(appJs, /function scheduleEventReconnectRetry\(\)/);
@@ -129,6 +131,7 @@ test("page refresh prompt also handles server restart reconnects", () => {
   assert.match(functionBody(appJs, "showReconnectRefreshPrompt"), /if \(isHermesEmbedMode\(\) && reason !== "restart"\) return;/);
   assert.match(appJs, /async function waitForPageBuildConfig\(timeoutMs = 18000\)/);
   assert.match(appJs, /state\.pageRefreshReason === "reconnect" \|\| state\.pageRefreshReason === "restart"[\s\S]*await waitForPageBuildConfig\(\)/);
+  assert.match(functionBody(appJs, "refreshPageForNewBuild"), /if \(reconnectRefresh && !shouldPromptForServerBuildChange\(nextBuildId, currentBuildId\)\) \{[\s\S]*state\.pageRefreshAvailable = false;[\s\S]*finishRestartingUiIfReady\(\);[\s\S]*return;/);
   assert.match(appJs, /showReconnectRefreshPrompt\("reconnect"\);[\s\S]*if \(!isHermesEmbedMode\(\)\) showError\(err\)/);
   assert.match(appJs, /showReconnectRefreshPrompt\("restart"\)/);
   assert.match(appJs, /function shouldRefreshThreadListDuringEventRecovery\(options = \{\}\)/);

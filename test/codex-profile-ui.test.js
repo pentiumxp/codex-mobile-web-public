@@ -27,6 +27,9 @@ test("settings panel exposes Codex profile account and switch UI", () => {
   assert.match(appJs, /state\.codexProfileSwitchStage = "预检中\.\.\."/);
   assert.match(appJs, /state\.codexProfileSwitchStage = "重启中\.\.\."/);
   assert.match(appJs, /state\.codexProfileSwitchStage = "失败"/);
+  assert.match(appJs, /function finishRestartingUiIfReady\(\)/);
+  assert.match(appJs, /state\.codexProfileRestarting = false/);
+  assert.match(appJs, /state\.codexProfileSwitchTargetId = ""/);
   assert.match(appJs, /codex-profile-progress/);
   assert.match(stylesCss, /\.codex-profile-row/);
   assert.match(stylesCss, /\.profile-switch-confirm-dialog/);
