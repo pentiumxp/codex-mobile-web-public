@@ -4,12 +4,12 @@ Last compacted: 2026-06-08T13:27:43.304Z
 
 ## 2026-06-19 v313 Superseded Live User-Message Projection Fix
 
-- Status: implemented and validated locally; deployment was started with
-  `--restart auto` but was interrupted before completion, so production v313 is
-  not confirmed from this thread. Do not assume the server-side prune is active
-  in production until `/api/public-config` reports
-  `0.1.11|codex-mobile-shell-v313` and the listener has been read back after a
-  controlled restart.
+- Status: implemented, validated, committed, and pushed to private and public.
+  Deployment was started with `--restart auto` but was interrupted before
+  completion, so production v313 is not confirmed from this thread. Do not
+  assume the server-side prune is active in production until
+  `/api/public-config` reports `0.1.11|codex-mobile-shell-v313` and the
+  listener has been read back after a controlled restart.
 - User-visible issue:
   - Opening the Music thread could show a stack of old user-message bubbles from
     historical `mobileSupersededLive` shells.
@@ -36,6 +36,14 @@ Last compacted: 2026-06-08T13:27:43.304Z
     `npm test` passed; full test count: 517.
   - Center AI Ops required-checks classified the touched files as H3 and
     `node tests/architecture-code-test-harness-map.test.js` passed.
+- Source commits:
+  - Private `origin/main`: `2567431 fix: 修复 superseded live 旧消息投影`.
+  - Public `public/main`: `3d967a4 fix: 修复 superseded live 旧消息投影`.
+  - Public commit excludes `.agent-context`; it includes README Chinese release
+    notes, source, and tests only.
+  - Public worktree validation passed `npm run check`, `npm run check:macos`,
+    `git diff --check`, and `npm test` after using a temporary untracked
+    `node_modules` symlink for the disposable worktree; full test count: 517.
 - Deployment note:
   - Pre-deploy production readback showed
     `/api/public-config.clientBuildId=0.1.11|codex-mobile-shell-v312`,
@@ -47,8 +55,9 @@ Last compacted: 2026-06-08T13:27:43.304Z
 
 ## 2026-06-19 v312 In-App Dialog Replacement
 
-- Status: implemented, validated, and deployed to Mac production with
-  `--restart none`; not committed or pushed.
+- Status: implemented, validated, deployed to Mac production with
+  `--restart none`, and later included in the private/public v313 source
+  commits listed above.
 - User-visible issue:
   - In the iOS shell, tapping the `PR` button after a Public PR was detected
     did not show the confirmation dialog.
