@@ -343,7 +343,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v303";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v304";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -14443,6 +14443,13 @@ function setComposerText(value) {
   autoSizeMessageInput(el);
 }
 
+function normalizedComposerIntentText(value) {
+  return String(value || "")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/\u00a0/g, " ")
+    .trim();
+}
+
 function composerIntentOptions() {
   return [
     {
@@ -14518,7 +14525,7 @@ function saveComposerIntentDraft(kind, value) {
 }
 
 function composerIntentBareTagKind(value) {
-  const text = String(value || "").trim();
+  const text = normalizedComposerIntentText(value);
   if (!text || text === "@") return "";
   if (THREAD_GOAL_MENTION_PATTERN.test(text)) return "goal";
   if (/^@(?:ChatGPT\s+Pro|ChatGPTPro|GPT\s+Pro)$/i.test(text)) return "chatgpt-pro";
@@ -14528,7 +14535,7 @@ function composerIntentBareTagKind(value) {
 }
 
 function shouldShowComposerIntentMenu() {
-  return composerText() === "@";
+  return normalizedComposerIntentText(composerText()) === "@";
 }
 
 function closeComposerIntentMenu() {
@@ -14565,7 +14572,6 @@ function openComposerIntentMenu() {
   `).join("");
   menu.hidden = false;
   state.composerIntentMenuOpen = true;
-  fitComposerPopupToAnchor(menu, anchor, { minWidth: 280, maxWidth: 420 });
   document.addEventListener("pointerdown", onComposerIntentOutsidePointer);
 }
 
@@ -14575,6 +14581,10 @@ function updateComposerIntentMenu() {
   } else {
     closeComposerIntentMenu();
   }
+}
+
+function queueComposerIntentMenuUpdate() {
+  window.setTimeout(updateComposerIntentMenu, 0);
 }
 
 function selectComposerIntent(kind) {
@@ -16335,10 +16345,13 @@ function wireUi() {
   $("messageInput").addEventListener("input", (event) => {
     autoSizeMessageInput(event.target);
     if (state.sendButtonHint && !state.composerBusy) state.sendButtonHint = "";
-    updateComposerIntentMenu();
+    queueComposerIntentMenuUpdate();
     updateComposerControls();
     scheduleCurrentDraftSave();
   });
+  $("messageInput").addEventListener("keyup", queueComposerIntentMenuUpdate);
+  $("messageInput").addEventListener("focus", queueComposerIntentMenuUpdate);
+  $("messageInput").addEventListener("compositionend", queueComposerIntentMenuUpdate);
   $("messageInput").addEventListener("keydown", (event) => {
     if (event.key === "Escape" && state.composerIntentMenuOpen) {
       event.preventDefault();

@@ -103,7 +103,7 @@ test("server materializes structured task-card drafts from thread detail", () =>
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v303"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v304"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.threadRole \|\| ""\) === "target"\)/);
@@ -159,9 +159,17 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /function composerIntentOptions\(/);
   assert.match(appJs, /@任务卡片/);
   assert.match(appJs, /@自由协作/);
+  assert.match(appJs, /function normalizedComposerIntentText\(/);
+  assert.match(functionBody(appJs, "normalizedComposerIntentText"), /\\u200B-\\u200D\\uFEFF/);
+  assert.match(functionBody(appJs, "shouldShowComposerIntentMenu"), /normalizedComposerIntentText\(composerText\(\)\) === "@"/);
+  assert.match(appJs, /function queueComposerIntentMenuUpdate\(/);
+  assert.match(appJs, /addEventListener\("keyup", queueComposerIntentMenuUpdate\)/);
+  assert.match(appJs, /addEventListener\("focus", queueComposerIntentMenuUpdate\)/);
+  assert.match(appJs, /addEventListener\("compositionend", queueComposerIntentMenuUpdate\)/);
   assert.match(appJs, /function openComposerIntentDialog\(/);
   assert.match(appJs, /function saveComposerIntentDialogDraft\(/);
   assert.match(stylesCss, /\.composer-intent-menu/);
+  assert.match(stylesCss, /\.composer-intent-menu\s*{[\s\S]*position:\s*absolute;[\s\S]*bottom:\s*calc\(100% \+ 8px\);/);
   assert.match(stylesCss, /\.composer-intent-option/);
   assert.match(appJs, /function parseThreadTaskCardDraftText\(/);
   assert.match(appJs, /const THREAD_TASK_CARD_BODY_MAX_CHARS = 8000/);

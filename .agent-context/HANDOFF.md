@@ -4611,3 +4611,39 @@ The previous full handoff was archived and should be opened only when old proven
   - Home AI center harness:
     `node tests/architecture-code-test-harness-map.test.js`
   - `git diff --check`
+
+## 2026-06-19 Composer @ Intent Menu iOS/WebView Fix v304
+
+- Status: local fix implemented and validated; production deployment requested
+  next in this turn.
+- User-visible issue:
+  - In the iOS/Home AI WebView keyboard flow, typing a bare `@` in Composer did
+    not show the v303 intent menu.
+- Likely causes fixed:
+  - iOS/IME input may leave zero-width characters in the contenteditable text,
+    so strict `composerText() === "@"` can miss.
+  - The v303 menu used the generic fixed-position composer popup calculation;
+    with the native keyboard/candidate bar open, visual viewport geometry can
+    place the menu outside the visible area.
+- Fix:
+  - Added `normalizedComposerIntentText()` to strip zero-width characters before
+    matching the bare `@` and intent tags.
+  - Added async menu rechecks after `input`, `keyup`, `focus`, and
+    `compositionend`.
+  - Anchored `.composer-intent-menu` absolutely above the Composer instead of
+    relying on fixed bottom/visualViewport placement.
+  - PWA shell cache advanced to `codex-mobile-shell-v304`.
+- Changed files:
+  - `public/app.js`
+  - `public/styles.css`
+  - `public/sw.js`
+  - `README.md`
+  - shell/version and focused interaction tests.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js`
+  - `node --test test/thread-task-card-route.test.js test/thread-goal-service.test.js test/chatgpt-pro-bridge-service.test.js test/mobile-viewport.test.js test/composer-draft.test.js`
+  - `npm run check`
+  - `npm test`
+  - Home AI center harness:
+    `node tests/architecture-code-test-harness-map.test.js`
+  - `git diff --check`

@@ -4,6 +4,7 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：v304 修复 iOS/WebView 键盘下裸 `@` 不弹意图菜单的问题。`@` 触发现在会忽略输入法可能插入的零宽字符，并在 input/keyup/focus/compositionend 后异步复查；意图菜单也改为贴在 Composer 上方的绝对定位，不再依赖 visualViewport/fixed bottom 计算，避免被系统键盘或候选栏压到不可见区域。PWA shell cache 升级到 `codex-mobile-shell-v304`。
 - 中文说明：v303 统一 Composer 的 `@` 意图入口。输入裸 `@` 会弹出可选菜单，选择 `@目标任务`、`@任务卡片`、`@自由协作` 或 `@ChatGPT Pro` 后只把标签放入 Composer；用户再按 Send/回车时，目标任务打开原 Goal 对话框，任务卡片/自由协作/ChatGPT Pro 打开带大 textarea 和保存草稿按钮的专用输入框。旧路径 `/g`、`#`、`#自由协作`、以及 `@ChatGPT Pro ...` 直接带正文发送仍保持兼容。PWA shell cache 升级到 `codex-mobile-shell-v303`。
 - 中文说明：v302 增加独立版 `@ChatGPT Pro` 分析入口。Composer 文本包含 `@ChatGPT Pro` 时，Codex Mobile 不把这条内容发进当前工作线程，而是创建或复用专用 `ChatGPT Pro` 线程，并注入要求使用 Chrome/ChatGPT Pro 网页生成分析的 bounded prompt；输出目录固定在 runtime root 的 `outputs/chatgpt-pro`，不写入源码仓库。附件不会通过该入口转发，避免无意上传文件。PWA shell cache 升级到 `codex-mobile-shell-v302`。
 - 中文说明：v301 修复 Profile 切换成功后顶部 `Service restarted. Tap to refresh.` 提示不消失的问题。重启/重连提示现在会在事件流或 `/api/status` 确认服务恢复后清理；如果用户手动点击提示且服务端 shell build 没有变化，会直接关闭提示和 Profile 的“重启中”状态，只有检测到真实新 build 时才继续执行 shell 刷新。PWA shell cache 升级到 `codex-mobile-shell-v301`。

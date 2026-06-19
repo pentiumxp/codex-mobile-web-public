@@ -5699,6 +5699,7 @@ html.keyboard-open .side-chat-form textarea {
 }
 
 .composer {
+  position: relative;
   min-width: 0;
   max-width: 100%;
   gap: 10px;
@@ -6071,6 +6072,16 @@ html.keyboard-open .composer {
 .composer-intent-menu[hidden],
 .quota-detail-panel[hidden] {
   display: none !important;
+}
+
+.composer-intent-menu {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(100% + 8px);
+  width: auto;
+  max-height: min(42vh, 340px);
+  overscroll-behavior: contain;
 }
 
 .composer-runtime-option,
