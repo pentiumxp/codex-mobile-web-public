@@ -202,7 +202,7 @@ test("server enriches thread list and detail responses with thread goals", () =>
 });
 
 test("mobile client renders and updates thread goals from app-server notifications", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v301"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v305"/);
   assert.match(appJs, /function normalizeThreadGoal\(/);
   assert.match(appJs, /function submittedThreadGoal\(/);
   assert.match(appJs, /function renderThreadGoal\(/);
@@ -289,4 +289,8 @@ test("mobile client opens goal dialog from /g and sets goal through app-server r
   assert.match(stylesCss, /\.goal-panel/);
   assert.match(stylesCss, /\.goal-state-actions/);
   assert.match(stylesCss, /\.goal-action-danger/);
+  assert.match(appJs, /const THREAD_GOAL_MENTION_PATTERN = \/\^@\(目标任务\|目标\|Goal\|Thread\\s\*Goal\|g\)\$/);
+  assert.match(functionBody(appJs, "isThreadGoalCommandText"), /THREAD_GOAL_MENTION_PATTERN\.test\(text\)/);
+  assert.match(appJs, /@目标任务/);
+  assert.match(functionBody(appJs, "sendMessage"), /composerIntentBareTagKind\(text\)/);
 });

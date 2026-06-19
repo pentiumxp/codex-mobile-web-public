@@ -7,6 +7,8 @@ const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
+const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
 
 function functionBody(source, name) {
   const start = source.indexOf(`function ${name}(`);
@@ -101,7 +103,7 @@ test("server materializes structured task-card drafts from thread detail", () =>
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v301"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v305"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.threadRole \|\| ""\) === "target"\)/);
@@ -127,21 +129,54 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /function mutateThreadTaskCard\(/);
   assert.match(appJs, /function replyTaskCard\(/);
   assert.match(appJs, /function isThreadTaskCardCommandText\(/);
-  assert.match(functionBody(appJs, "sendMessage"), /const steering = Boolean\(!threadTaskCardCommand && state\.activeTurnId && hasContent\);/);
+  assert.match(appJs, /function sendThreadTaskCardCommand\(/);
+  assert.match(functionBody(appJs, "sendMessage"), /await sendThreadTaskCardCommand\(text\)/);
   assert.match(appJs, /const THREAD_TASK_CARD_COMMAND_PREFIX = "#"/);
   assert.match(appJs, /const THREAD_TASK_CARD_LEGACY_COMMAND_PREFIX = "#自由协作"/);
+  assert.match(appJs, /const THREAD_TASK_CARD_MENTION_PATTERN = \/\^@\(任务卡片\|Task\\s\*Card\|TaskCard\)/);
+  assert.match(appJs, /const THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN = \/\^@\(自由协作\|Autonomous\|Auto\\s\*Task\\s\*Card\|AutoTaskCard\)/);
   assert.match(functionBody(appJs, "isThreadTaskCardCommandText"), /startsWith\(THREAD_TASK_CARD_COMMAND_PREFIX\)/);
+  assert.match(functionBody(appJs, "isThreadTaskCardCommandText"), /THREAD_TASK_CARD_MENTION_PATTERN\.test\(text\)/);
+  assert.match(functionBody(appJs, "isThreadTaskCardCommandText"), /THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN\.test\(text\)/);
   assert.match(functionBody(appJs, "isThreadTaskCardCommandText"), /threadTaskCardCommandText\(text\)\.length > 0/);
   assert.match(functionBody(appJs, "threadTaskCardCommandText"), /text\.startsWith\(THREAD_TASK_CARD_LEGACY_COMMAND_PREFIX\)/);
   assert.match(functionBody(appJs, "threadTaskCardCommandText"), /text\.slice\(THREAD_TASK_CARD_LEGACY_COMMAND_PREFIX\.length\)/);
+  assert.match(functionBody(appJs, "threadTaskCardCommandText"), /THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN\.test\(text\)/);
+  assert.match(functionBody(appJs, "threadTaskCardCommandText"), /THREAD_TASK_CARD_MENTION_PATTERN\.test\(text\)/);
   assert.match(functionBody(appJs, "threadTaskCardCommandText"), /text\.slice\(THREAD_TASK_CARD_COMMAND_PREFIX\.length\)/);
   assert.match(appJs, /function buildThreadTaskCardDraftRequestText\(/);
   assert.match(appJs, /targetThreadIds/);
   assert.match(appJs, /workflowMode/);
   assert.match(appJs, /Approve workflow/);
-  assert.match(functionBody(appJs, "buildThreadTaskCardDraftRequestText"), /# command/);
-  assert.match(functionBody(appJs, "buildThreadTaskCardDraftRequestText"), /Default workflowMode to manual for plain # single-card commands/);
-  assert.match(functionBody(appJs, "buildThreadTaskCardDraftRequestText"), /Use autonomous only when the command uses #自由协作/);
+  assert.match(functionBody(appJs, "buildThreadTaskCardDraftRequestText"), /Interpret the command above/);
+  assert.match(functionBody(appJs, "buildThreadTaskCardDraftRequestText"), /@任务卡片/);
+  assert.match(functionBody(appJs, "buildThreadTaskCardDraftRequestText"), /@自由协作/);
+  assert.match(functionBody(appJs, "buildThreadTaskCardDraftRequestText"), /Default workflowMode to manual for plain # or @任务卡片 single-card commands/);
+  assert.match(functionBody(appJs, "buildThreadTaskCardDraftRequestText"), /Use autonomous only when the command uses #自由协作, @自由协作/);
+  assert.match(indexHtml, /id="composerIntentMenu"/);
+  assert.match(indexHtml, /id="composerIntentDialog"/);
+  assert.match(indexHtml, /id="composerIntentBodyInput"[\s\S]*maxlength="12000"/);
+  assert.match(appJs, /function composerIntentOptions\(/);
+  assert.match(appJs, /@任务卡片/);
+  assert.match(appJs, /@自由协作/);
+  assert.match(appJs, /function normalizedComposerIntentText\(/);
+  assert.match(functionBody(appJs, "normalizedComposerIntentText"), /\\u200B-\\u200D\\uFEFF/);
+  assert.match(functionBody(appJs, "shouldShowComposerIntentMenu"), /normalizedComposerIntentText\(composerText\(\)\) === "@"/);
+  assert.match(appJs, /function queueComposerIntentMenuUpdate\(/);
+  assert.match(appJs, /addEventListener\("keyup", queueComposerIntentMenuUpdate\)/);
+  assert.match(appJs, /addEventListener\("focus", queueComposerIntentMenuUpdate\)/);
+  assert.match(appJs, /addEventListener\("compositionend", queueComposerIntentMenuUpdate\)/);
+  assert.match(functionBody(appJs, "positionComposerIntentMenu"), /const anchor = \$\("messageInput"\) \|\| \$\("composer"\)/);
+  assert.match(functionBody(appJs, "positionComposerIntentMenu"), /--composer-intent-width/);
+  assert.match(functionBody(appJs, "sendMessage"), /const normalizedIntentText = normalizedComposerIntentText\(text\)/);
+  assert.match(functionBody(appJs, "sendMessage"), /if \(normalizedIntentText === "@"\)/);
+  assert.match(appJs, /function openComposerIntentDialog\(/);
+  assert.match(appJs, /function saveComposerIntentDialogDraft\(/);
+  assert.ok(indexHtml.indexOf('id="composerIntentMenu"') > indexHtml.indexOf('</form>\n    </main>'), "intent menu should be a page-level overlay, not a composer child");
+  assert.match(stylesCss, /\.composer-intent-menu/);
+  assert.match(stylesCss, /\.composer-intent-menu\s*{[\s\S]*position:\s*fixed;[\s\S]*left:\s*var\(--composer-intent-left/);
+  assert.match(stylesCss, /\.composer-intent-menu\s*{[\s\S]*width:\s*var\(--composer-intent-width/);
+  assert.match(stylesCss, /\.composer-intent-option/);
   assert.match(appJs, /function parseThreadTaskCardDraftText\(/);
   assert.match(appJs, /const THREAD_TASK_CARD_BODY_MAX_CHARS = 8000/);
   assert.match(appJs, /function truncateThreadTaskCardBody\(/);

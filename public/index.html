@@ -467,6 +467,8 @@
     </main>
   </div>
 
+  <div id="composerIntentMenu" class="composer-intent-menu" role="listbox" aria-label="Composer @ actions" hidden></div>
+
   <div id="threadActionSheet" class="thread-action-sheet hidden" role="dialog" aria-labelledby="threadActionTitle">
     <div class="thread-action-panel">
       <div id="threadActionTitle" class="thread-action-title">Session</div>
@@ -565,6 +567,28 @@
       <div class="goal-actions">
         <button id="goalCancelButton" class="goal-cancel" type="button">Cancel</button>
         <button id="goalSubmitButton" class="goal-submit" type="submit">Send</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="composerIntentDialog" class="goal-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="composerIntentDialogTitle">
+    <form id="composerIntentForm" class="goal-panel composer-intent-panel">
+      <div class="goal-panel-head">
+        <div>
+          <div id="composerIntentDialogTitle" class="goal-panel-title">Composer action</div>
+          <div id="composerIntentDialogSubtitle" class="goal-panel-subtitle"></div>
+        </div>
+        <button id="composerIntentDialogClose" class="goal-panel-close" type="button" aria-label="Close action dialog">x</button>
+      </div>
+      <label class="goal-field">
+        <span id="composerIntentBodyLabel">Content</span>
+        <textarea id="composerIntentBodyInput" rows="8" maxlength="12000" autocomplete="off"></textarea>
+      </label>
+      <div id="composerIntentDialogStatus" class="goal-panel-status hidden"></div>
+      <div class="goal-actions">
+        <button id="composerIntentCancelButton" class="goal-cancel" type="button">Cancel</button>
+        <button id="composerIntentSaveButton" class="goal-cancel" type="button">Save draft</button>
+        <button id="composerIntentSubmitButton" class="goal-submit" type="submit">Send</button>
       </div>
     </form>
   </div>

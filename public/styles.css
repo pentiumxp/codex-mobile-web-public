@@ -936,9 +936,20 @@ html.visual-recovering body::before {
   font-weight: 720;
 }
 
+.goal-panel-status.error {
+  color: #fca5a5;
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(127, 29, 29, 0.18);
+}
+
 .goal-panel-status.hidden,
 .goal-state-actions.hidden {
   display: none;
+}
+
+.composer-intent-panel .goal-field textarea {
+  min-height: min(34vh, 260px);
+  max-height: min(52vh, 420px);
 }
 
 .goal-state-actions {
@@ -5688,6 +5699,7 @@ html.keyboard-open .side-chat-form textarea {
 }
 
 .composer {
+  position: relative;
   min-width: 0;
   max-width: 100%;
   gap: 10px;
@@ -6039,6 +6051,7 @@ html.keyboard-open .composer {
 }
 
 .composer-runtime-menu,
+.composer-intent-menu,
 .quota-detail-panel {
   position: fixed;
   left: var(--composer-popup-left, 12px);
@@ -6056,11 +6069,24 @@ html.keyboard-open .composer {
 }
 
 .composer-runtime-menu[hidden],
+.composer-intent-menu[hidden],
 .quota-detail-panel[hidden] {
   display: none !important;
 }
 
-.composer-runtime-option {
+.composer-intent-menu {
+  position: fixed;
+  left: var(--composer-intent-left, 12px);
+  bottom: var(--composer-intent-bottom, calc(var(--composer-height, 92px) + 10px));
+  z-index: 130;
+  width: var(--composer-intent-width, min(420px, calc(100vw - 24px)));
+  max-height: min(42vh, 340px);
+  overscroll-behavior: contain;
+  backdrop-filter: blur(16px);
+}
+
+.composer-runtime-option,
+.composer-intent-option {
   width: 100%;
   min-height: 42px;
   padding: 9px 10px;
@@ -6082,9 +6108,42 @@ html.keyboard-open .composer {
 }
 
 .composer-runtime-option:hover,
-.composer-runtime-option:focus-visible {
+.composer-runtime-option:focus-visible,
+.composer-intent-option:hover,
+.composer-intent-option:focus-visible {
   border-color: var(--accent-strong);
   outline: none;
+}
+
+.composer-intent-option {
+  display: grid;
+  grid-template-columns: minmax(72px, max-content) minmax(0, 1fr);
+  gap: 4px 10px;
+  align-items: baseline;
+}
+
+.composer-intent-label {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 760;
+}
+
+.composer-intent-tag {
+  min-width: 0;
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 720;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-intent-detail {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 560;
+  line-height: 1.35;
 }
 
 .quota-detail-panel {
