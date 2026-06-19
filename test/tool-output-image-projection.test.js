@@ -7,7 +7,9 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const generatedImageCacheRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-tool-output-images-"));
+const uploadRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-tool-output-uploads-"));
 process.env.CODEX_MOBILE_GENERATED_IMAGE_CACHE_DIR = generatedImageCacheRoot;
+process.env.CODEX_MOBILE_UPLOAD_DIR = uploadRoot;
 
 const {
   compactThread,
@@ -65,6 +67,103 @@ test("function_call_output input_image data urls become generated image cards", 
   }
 });
 
+test("view_image outputs for uploaded user images are not repeated as agent image cards", () => {
+  const uploadPath = path.join(uploadRoot, "2026-06-19", "thread-upload", "IMG_1635.png");
+  fs.mkdirSync(path.dirname(uploadPath), { recursive: true });
+  fs.writeFileSync(uploadPath, Buffer.from("iVBORw0KGgo=", "base64"));
+  const { dir, rolloutPath } = writeRollout([
+    event("2026-06-19T08:00:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-upload" }),
+    event("2026-06-19T08:00:01.000Z", "response_item", {
+      type: "message",
+      role: "user",
+      content: [{
+        type: "input_text",
+        text: `PWA?\n\nUploaded attachments:\n- IMG_1635.png (image, image/png, 218.0 KB): ${uploadPath}`,
+      }],
+    }),
+    event("2026-06-19T08:00:02.000Z", "response_item", {
+      type: "function_call",
+      name: "view_image",
+      call_id: "call-view-upload",
+      arguments: JSON.stringify({ path: uploadPath, detail: "high" }),
+    }),
+    event("2026-06-19T08:00:03.000Z", "response_item", {
+      type: "function_call_output",
+      call_id: "call-view-upload",
+      output: [{ type: "input_image", image_url: "data:image/png;base64,iVBORw0KGgo=" }],
+    }),
+  ]);
+  try {
+    const compacted = compactThread({
+      id: "thread-upload-image",
+      path: rolloutPath,
+      turns: [{
+        id: "turn-upload",
+        status: { type: "completed" },
+        items: [{ id: "agent-1", type: "agentMessage", text: "checked screenshot" }],
+      }],
+    });
+
+    assert.equal(compacted.turns[0].items.some((item) => item.type === "imageView"), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("view_image outputs outside the upload directory still become image cards", () => {
+  const outsidePath = path.join(os.tmpdir(), "codex-mobile-outside-view-image.png");
+  const { dir, rolloutPath } = writeRollout([
+    event("2026-06-19T08:05:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-outside" }),
+    event("2026-06-19T08:05:02.000Z", "response_item", {
+      type: "function_call",
+      name: "view_image",
+      call_id: "call-view-outside",
+      arguments: JSON.stringify({ path: outsidePath, detail: "high" }),
+    }),
+    event("2026-06-19T08:05:03.000Z", "response_item", {
+      type: "function_call_output",
+      call_id: "call-view-outside",
+      output: [{ type: "input_image", image_url: "data:image/png;base64,QUJD" }],
+    }),
+  ]);
+  try {
+    const compacted = compactThread({
+      id: "thread-outside-image",
+      path: rolloutPath,
+      turns: [{
+        id: "turn-outside",
+        status: { type: "completed" },
+        items: [{ id: "agent-1", type: "agentMessage", text: "checked screenshot" }],
+      }],
+    });
+
+    const image = compacted.turns[0].items.find((item) => item.type === "imageView");
+    assert.ok(image);
+    assert.match(image.id, /^tool-output-image-call-view-outside-0-/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("inline image data urls in compacted string payloads are redacted", () => {
+  const compacted = compactThread({
+    id: "thread-inline-image-redaction",
+    turns: [{
+      id: "turn-inline",
+      status: { type: "completed" },
+      items: [{
+        id: "agent-1",
+        type: "agentMessage",
+        content: ["before data:image/png;base64,iVBORw0KGgo= after"],
+      }],
+    }],
+  });
+
+  const [content] = compacted.turns[0].items[0].content;
+  assert.doesNotMatch(content, /data:image\//);
+  assert.match(content, /\[inline image data omitted: \d+ chars\]/);
+});
+
 test("unscoped tool output image data urls attach to matching turn time windows", () => {
   const { dir, rolloutPath } = writeRollout([
     event("2026-06-08T10:00:02.000Z", "response_item", {
@@ -113,4 +212,5 @@ test("unscoped tool output image data urls attach to matching turn time windows"
 
 test.after(() => {
   fs.rmSync(generatedImageCacheRoot, { recursive: true, force: true });
+  fs.rmSync(uploadRoot, { recursive: true, force: true });
 });
