@@ -511,6 +511,46 @@ test("thread list merge keeps app-server idle over stale rollout active", () => 
   assert.equal(result.data[0].status.type, "idle");
 });
 
+test("thread list merge does not let notLoaded rows erase settled status", () => {
+  const threadId = "019e9000-0000-7000-8000-000000000011";
+  const result = mergeThreadListFallback({
+    data: [{
+      id: threadId,
+      name: "Live 2 final",
+      updatedAt: 1780722169,
+      status: { type: "completed" },
+    }],
+  }, [{
+    id: threadId,
+    name: "Live 2 final",
+    updatedAt: 1780722170,
+    status: { type: "notLoaded" },
+    mobileFallback: true,
+  }], 10);
+
+  assert.equal(result.data[0].status.type, "completed");
+});
+
+test("thread list merge upgrades notLoaded rows from fallback settled status", () => {
+  const threadId = "019e9000-0000-7000-8000-000000000012";
+  const result = mergeThreadListFallback({
+    data: [{
+      id: threadId,
+      name: "Live 2 final",
+      updatedAt: 1780722169,
+      status: { type: "notLoaded" },
+    }],
+  }, [{
+    id: threadId,
+    name: "Live 2 final",
+    updatedAt: 1780722160,
+    status: { type: "completed" },
+    mobileFallback: true,
+  }], 10);
+
+  assert.equal(result.data[0].status.type, "completed");
+});
+
 test("thread list merge still accepts newer rollout active over old completed summary", () => {
   const threadId = "019e9000-0000-7000-8000-000000000007";
   const result = mergeThreadListFallback({

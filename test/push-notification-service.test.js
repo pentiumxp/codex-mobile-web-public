@@ -111,6 +111,37 @@ test("thread display summary cache remembers thread/list result arrays", () => {
   assert.equal(cache.read("thread-two").name, "Two");
 });
 
+test("thread display summary cache can merge stale list rows with existing detail", () => {
+  const cache = createThreadDisplaySummaryCache({
+    ttlMs: 60_000,
+    maxEntries: 10,
+    mergeSummary(previous, incoming) {
+      return Object.assign({}, incoming, {
+        status: incoming.status && incoming.status.type === "notLoaded" ? previous.status : incoming.status,
+        preview: incoming.preview || previous.preview,
+      });
+    },
+  });
+
+  cache.remember({
+    id: "thread-main",
+    name: "Live 2 final",
+    preview: "real detail",
+    status: { type: "completed" },
+  });
+  cache.rememberList({
+    data: [{
+      id: "thread-main",
+      name: "Live 2 final",
+      preview: "",
+      status: { type: "notLoaded" },
+    }],
+  });
+
+  assert.equal(cache.read("thread-main").status.type, "completed");
+  assert.equal(cache.read("thread-main").preview, "real detail");
+});
+
 test("web push skips spawned subagent child threads", () => {
   const decision = shouldTrackTurnForWebPush({
     turnId: "turn-child",
