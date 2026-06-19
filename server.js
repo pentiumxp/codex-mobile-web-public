@@ -73,6 +73,7 @@ const {
   resolveEffectiveCodexHome,
 } = require("./adapters/codex-profile-service");
 const { createThreadDetailProjectionService } = require("./adapters/thread-detail-projection-service");
+const { createChatGptProBridgeService } = require("./adapters/chatgpt-pro-bridge-service");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -169,6 +170,11 @@ const THREAD_TASK_CARD_FILE = process.env.CODEX_MOBILE_THREAD_TASK_CARD_FILE
   || path.join(RUNTIME_ROOT, "thread-task-cards.json");
 const THREAD_SIDE_CHAT_FILE = process.env.CODEX_MOBILE_THREAD_SIDE_CHAT_FILE
   || path.join(RUNTIME_ROOT, "thread-side-chats.json");
+const CHATGPT_PRO_BRIDGE_FILE = process.env.CODEX_MOBILE_CHATGPT_PRO_BRIDGE_FILE
+  || path.join(RUNTIME_ROOT, "chatgpt-pro-bridge-state.json");
+const CHATGPT_PRO_OUTPUT_DIR = process.env.CODEX_MOBILE_CHATGPT_PRO_OUTPUT_DIR
+  || path.join(RUNTIME_ROOT, "outputs", "chatgpt-pro");
+const CHATGPT_PRO_BRIDGE_ENABLED = !/^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_DISABLE_CHATGPT_PRO_BRIDGE || "");
 const THREAD_SIDE_CHAT_SCOPE_ID = CODEX_HOME_RESOLUTION.activeProfileId
   || `codex-home-${crypto.createHash("sha256").update(CODEX_HOME).digest("hex").slice(0, 16)}`;
 const THREAD_SIDE_CHAT_REPLY_TIMEOUT_MS = Math.max(
@@ -4274,6 +4280,40 @@ function threadRuntimeSettings(threadId, fallbackThread = null) {
   };
 }
 
+async function chatGptProSourceSummary(body = {}) {
+  const sourceThreadId = String(body.sourceThreadId || body.threadId || "").trim();
+  const cwd = String(body.cwd || "").trim();
+  const prompt = String(body.prompt || body.text || "").trim();
+  const lines = [
+    "Codex Mobile bounded source context for ChatGPT Pro analysis.",
+    "",
+    `Source thread id: ${sourceThreadId || "(none)"}`,
+    `Workspace: ${cwd || "(projectless)"}`,
+  ];
+  let summary = null;
+  if (sourceThreadId) {
+    summary = readStateDbThread(sourceThreadId) || readStartedThread(sourceThreadId) || readRolloutSessionFallbackThread(sourceThreadId);
+    if (!summary) {
+      summary = await readThreadSummaryFromAppServer(codex, sourceThreadId).catch(() => null);
+    }
+  }
+  if (summary) {
+    lines.push(`Thread title: ${truncateSingleLine(summary.name || summary.title || summary.preview || "", 180) || "(untitled)"}`);
+    lines.push(`Thread status: ${statusText(summary.status) || "unknown"}`);
+    if (summary.model) lines.push(`Model: ${truncateSingleLine(summary.model, 80)}`);
+    if (summary.effort) lines.push(`Reasoning effort: ${truncateSingleLine(summary.effort, 80)}`);
+  }
+  lines.push("");
+  lines.push("Current user request:");
+  lines.push(compactApprovalText(prompt, 4000));
+  lines.push("");
+  lines.push("Safety boundary:");
+  lines.push("- This context is intentionally bounded.");
+  lines.push("- Do not request or expose access keys, browser cookies, raw credentials, or full private logs.");
+  lines.push("- Use repository files only when the downstream ChatGPT Pro prompt explicitly needs them and they are not secrets.");
+  return lines.join("\n");
+}
+
 async function resolveThreadRuntimeSettings(threadId) {
   if (readStateDbThread(threadId)) return threadRuntimeSettings(threadId);
   let fallbackThread = null;
@@ -7327,6 +7367,54 @@ class CodexAppServerClient {
 }
 
 const codex = new CodexAppServerClient();
+const chatGptProBridgeService = createChatGptProBridgeService({
+  runtimeRoot: RUNTIME_ROOT,
+  stateFile: CHATGPT_PRO_BRIDGE_FILE,
+  outputDir: CHATGPT_PRO_OUTPUT_DIR,
+  enabled: CHATGPT_PRO_BRIDGE_ENABLED,
+  createThread: async ({ cwd }) => {
+    const runtimeSettings = applyPermissionModeOverride({}, "auto", cwd || APP_ROOT);
+    const params = applyStartThreadRuntimeSettings({
+      cwd: cwd || APP_ROOT,
+      modelProvider: null,
+      config: {},
+      developerInstructions: [
+        "This is the dedicated Codex Mobile ChatGPT Pro bridge thread.",
+        "Use Chrome only when the user request explicitly asks for ChatGPT Pro generation.",
+        "Do not modify source files unless a later explicit user request asks for code changes.",
+      ].join("\n"),
+      personality: null,
+      ephemeral: null,
+      dynamicTools: null,
+      mockExperimentalField: null,
+      experimentalRawEvents: false,
+      persistExtendedHistory: false,
+    }, runtimeSettings);
+    const result = await codex.request("thread/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+    const threadId = threadIdFromStartResult(result);
+    return { threadId, thread: result && (result.thread || result.data && result.data.thread) || {} };
+  },
+  startTurn: async ({ threadId, cwd, input }) => {
+    const runtimeSettings = applyPermissionModeOverride(await resolveThreadRuntimeSettings(threadId), "auto", cwd || APP_ROOT);
+    try {
+      await codex.request("thread/resume", applyResumeRuntimeSettings({
+        threadId,
+        cwd: cwd || APP_ROOT,
+        persistExtendedHistory: false,
+      }, runtimeSettings), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+    } catch (err) {
+      if (!/already|loaded|active/i.test(err.message || "")) throw err;
+    }
+    return codex.request("turn/start", applyTurnRuntimeSettings({
+      threadId,
+      input,
+      cwd: cwd || APP_ROOT,
+    }, runtimeSettings), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+  },
+  updateThreadTitle: tryUpdateThreadTitle,
+  persistThreadTitle: persistThreadTitleToSessionIndex,
+  rememberThread: rememberStartedThread,
+});
 
 function readGlobalState() {
   const p = path.join(CODEX_HOME, ".codex-global-state.json");
@@ -10390,6 +10478,28 @@ async function handleApi(req, res) {
     const body = await readBody(req);
     const job = createContinuationJob(body);
     sendJson(res, 202, publicContinuationJob(job));
+    return;
+  }
+  if (url.pathname === "/api/chatgpt-pro/status" && req.method === "GET") {
+    sendJson(res, 200, chatGptProBridgeService.status());
+    return;
+  }
+  if (url.pathname === "/api/chatgpt-pro/generate" && req.method === "POST") {
+    try {
+      const body = await readBody(req);
+      const prompt = String(body.prompt || body.text || "").trim();
+      if (!chatGptProBridgeService.isRequestText(prompt)) {
+        sendJson(res, 400, { ok: false, error: "Use @ChatGPT Pro to start a ChatGPT Pro bridge request." });
+        return;
+      }
+      const sourceSummary = await chatGptProSourceSummary(body);
+      sendJson(res, 202, await chatGptProBridgeService.start(Object.assign({}, body, {
+        prompt,
+        sourceSummary,
+      })));
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
     return;
   }
   const continuationJobMatch = url.pathname.match(/^\/api\/thread-continuations\/([^/]+)$/);

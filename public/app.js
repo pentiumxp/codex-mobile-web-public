@@ -340,7 +340,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v301";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v302";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -9750,6 +9750,66 @@ function isThreadGoalCommandText(value) {
   return String(value || "").trim().toLowerCase() === THREAD_GOAL_COMMAND_PREFIX;
 }
 
+function isChatGptProCommandText(value) {
+  return /(?:^|\s)@(?:ChatGPT\s+Pro|ChatGPTPro|GPT\s+Pro)\b/i.test(String(value || ""));
+}
+
+async function submitChatGptProRequest(text) {
+  if (!String(text || "").trim()) return false;
+  if (state.pendingAttachments.length) {
+    showError(new Error("@ChatGPT Pro does not support attachments in this entry point"));
+    return true;
+  }
+  const sourceThreadId = state.currentThreadId || "";
+  const cwd = state.newThreadDraft
+    ? state.selectedCwd || ""
+    : (state.currentThread && state.currentThread.cwd) || "";
+  state.composerBusy = true;
+  state.sendButtonHint = "";
+  $("connectionState").classList.remove("error");
+  $("connectionState").textContent = "正在提交 ChatGPT Pro 分析";
+  markActivity("Pro 分析");
+  updateComposerControls();
+  try {
+    const result = await api("/api/chatgpt-pro/generate", {
+      method: "POST",
+      body: JSON.stringify({
+        prompt: text,
+        sourceThreadId,
+        sourceThreadTitle: state.currentThread ? threadDisplayName(state.currentThread) : "",
+        cwd,
+        language: "zh-CN",
+        outputFormat: "markdown",
+        bridgeMode: isHermesEmbedMode() ? "embedded" : "standalone",
+      }),
+      timeoutMs: 180000,
+    });
+    setComposerText("");
+    clearPendingAttachments();
+    scheduleCurrentDraftSave();
+    const proThreadId = String(result && result.proThreadId || "");
+    $("connectionState").textContent = proThreadId
+      ? `ChatGPT Pro 分析已提交：${proThreadId.slice(0, 8)}`
+      : "ChatGPT Pro 分析已提交";
+    markActivity("Pro 已提交");
+    await loadThreads({ silent: true }).catch(showError);
+    if (state.newThreadDraft && proThreadId) {
+      state.newThreadDraft = false;
+      await loadThread(proThreadId, { source: "chatgpt-pro" }).catch(showError);
+    }
+    return true;
+  } catch (err) {
+    $("connectionState").classList.add("error");
+    $("connectionState").textContent = normalizeClientErrorMessage(err && err.message ? err.message : String(err), err)
+      || "ChatGPT Pro 提交失败";
+    showError(err);
+    return true;
+  } finally {
+    state.composerBusy = false;
+    updateComposerControls();
+  }
+}
+
 function threadTaskCardCommandText(value) {
   const text = String(value || "").trim();
   if (text.startsWith(THREAD_TASK_CARD_LEGACY_COMMAND_PREFIX)) {
@@ -15046,6 +15106,10 @@ async function sendMessage(event) {
     setComposerText("");
     scheduleCurrentDraftSave();
     openThreadGoalDialog(state.currentThreadId);
+    return;
+  }
+  if (isChatGptProCommandText(text)) {
+    await submitChatGptProRequest(text);
     return;
   }
   if (state.newThreadDraft) {

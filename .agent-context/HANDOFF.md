@@ -4516,3 +4516,54 @@ The previous full handoff was archived and should be opened only when old proven
     to load the newer shell. The v300 change prevents future embedded sessions
     from silently staying on an outdated shell after detecting a server build
     mismatch.
+
+## 2026-06-19 Standalone ChatGPT Pro Analysis Entry v302
+
+- Status: local implementation complete and validated; not deployed in this
+  handoff entry.
+- User-visible behavior:
+  - Composer text containing an explicit `@ChatGPT Pro`, `@ChatGPTPro`, or
+    `@GPT Pro` mention is intercepted before normal message submission.
+  - The request is not injected into the current work thread. Codex Mobile
+    creates or reuses a dedicated `ChatGPT Pro` thread and starts one turn
+    there with a bounded analysis prompt.
+  - Attachments are rejected for this first version; the user should put the
+    analysis target in text.
+- Implementation boundary:
+  - `adapters/chatgpt-pro-bridge-service.js` owns mention detection, prompt
+    construction, dedicated-thread state, and runtime output directory
+    selection.
+  - `server.js` exposes `/api/chatgpt-pro/status` and
+    `/api/chatgpt-pro/generate`.
+  - `public/app.js` intercepts the explicit mention and posts to the bridge
+    route instead of sending a normal current-thread message.
+  - README documents the Chinese public-facing v302 behavior.
+- Security and correctness constraints:
+  - The generated prompt explicitly requires the target thread to use Chrome /
+    ChatGPT Pro when available, and to report failure instead of impersonating
+    ChatGPT Pro output.
+  - The prompt forbids reading or exposing cookies, tokens, passwords, SSH
+    keys, or raw profile files.
+  - Output is constrained to the runtime output directory under
+    `.codex-mobile-web/outputs/chatgpt-pro`, not repository source folders.
+- Changed files:
+  - `adapters/chatgpt-pro-bridge-service.js`
+  - `server.js`
+  - `public/app.js`
+  - `public/sw.js`
+  - `package.json`
+  - `README.md`
+  - `test/chatgpt-pro-bridge-service.test.js`
+  - shell version expectations in existing tests.
+- Validation:
+  - `node --check adapters/chatgpt-pro-bridge-service.js && node --check server.js && node --check public/app.js && node --check public/sw.js`
+  - `node --test test/chatgpt-pro-bridge-service.test.js test/mobile-viewport.test.js test/new-thread-ui.test.js test/new-thread-route.test.js`
+  - `npm run check`
+  - `npm test`
+  - Home AI center harness:
+    `node tests/architecture-code-test-harness-map.test.js`
+  - `git diff --check`
+- Note:
+  - No live ChatGPT Pro / Chrome smoke was run, to avoid starting a long
+    external browser generation turn without an explicit deployment or live-test
+    request.
