@@ -264,6 +264,9 @@ const state = {
   composerEffort: "",
   composerPermissionMode: "",
   composerMenuKind: "",
+  composerIntentMenuOpen: false,
+  composerIntentDialogKind: "",
+  composerIntentDialogBusy: false,
   quotaDetailsOpen: false,
   newThreadModel: "",
   newThreadEffort: "",
@@ -340,7 +343,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v302";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v303";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -393,6 +396,7 @@ const STORAGE_RATE_LIMITS_BY_MODEL = "codexMobileRateLimitsByModel";
 const STORAGE_PUBLIC_PR_PROMPT = "codexMobilePublicPrPromptKey";
 const STORAGE_TASK_CARD_DRAFT_STATES = "codexMobileThreadTaskCardDraftStates";
 const STORAGE_RESTART_AUTO_RECOVER_THREADS = "codexMobileRestartAutoRecoverThreads";
+const STORAGE_COMPOSER_INTENT_DRAFTS = "codexMobileComposerIntentDrafts";
 const PUBLIC_PR_REVIEW_THREAD_TITLE = "Codex Mobile Public PR";
 const MERMAID_SCRIPT_URL = "/vendor/mermaid.min.js";
 const MERMAID_MIN_SCALE = 0.65;
@@ -401,6 +405,7 @@ const MERMAID_ZOOM_STEP = 0.2;
 const githubLinkPreviewCache = new Map();
 const SIDE_CHAT_DRAFT_SAVE_DEBOUNCE_MS = 450;
 const SIDE_CHAT_DRAFT_MAX_CHARS = 8000;
+const COMPOSER_INTENT_BODY_MAX_CHARS = 12000;
 
 function hasStartupThreadOpenIntent() {
   if (threadIdFromUrlValue(window.location.href)) return true;
@@ -477,6 +482,9 @@ const THREAD_TASK_CARD_BODY_MAX_CHARS = 8000;
 const THREAD_TASK_CARD_COMMAND_PREFIX = "#";
 const THREAD_TASK_CARD_LEGACY_COMMAND_PREFIX = "#自由协作";
 const THREAD_GOAL_COMMAND_PREFIX = "/g";
+const THREAD_GOAL_MENTION_PATTERN = /^@(目标任务|目标|Goal|Thread\s*Goal|g)$/i;
+const THREAD_TASK_CARD_MENTION_PATTERN = /^@(任务卡片|Task\s*Card|TaskCard)(?:\s|$)/i;
+const THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN = /^@(自由协作|Autonomous|Auto\s*Task\s*Card|AutoTaskCard)(?:\s|$)/i;
 const THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";
 const THREAD_TASK_CARD_DRAFT_TAG = "codex-mobile-thread-task-card-draft";
 const THEME_VALUES = new Set(["system", "dark", "light"]);
@@ -9742,19 +9750,22 @@ function truncateThreadTaskCardBody(value, maxChars = THREAD_TASK_CARD_BODY_MAX_
 
 function isThreadTaskCardCommandText(value) {
   const text = String(value || "").trim();
-  return text.startsWith(THREAD_TASK_CARD_COMMAND_PREFIX)
+  return (text.startsWith(THREAD_TASK_CARD_COMMAND_PREFIX)
+      || THREAD_TASK_CARD_MENTION_PATTERN.test(text)
+      || THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN.test(text))
     && threadTaskCardCommandText(text).length > 0;
 }
 
 function isThreadGoalCommandText(value) {
-  return String(value || "").trim().toLowerCase() === THREAD_GOAL_COMMAND_PREFIX;
+  const text = String(value || "").trim();
+  return text.toLowerCase() === THREAD_GOAL_COMMAND_PREFIX || THREAD_GOAL_MENTION_PATTERN.test(text);
 }
 
 function isChatGptProCommandText(value) {
   return /(?:^|\s)@(?:ChatGPT\s+Pro|ChatGPTPro|GPT\s+Pro)\b/i.test(String(value || ""));
 }
 
-async function submitChatGptProRequest(text) {
+async function submitChatGptProRequest(text, options = {}) {
   if (!String(text || "").trim()) return false;
   if (state.pendingAttachments.length) {
     showError(new Error("@ChatGPT Pro does not support attachments in this entry point"));
@@ -9803,6 +9814,7 @@ async function submitChatGptProRequest(text) {
     $("connectionState").textContent = normalizeClientErrorMessage(err && err.message ? err.message : String(err), err)
       || "ChatGPT Pro 提交失败";
     showError(err);
+    if (options.rethrow) throw err;
     return true;
   } finally {
     state.composerBusy = false;
@@ -9814,6 +9826,12 @@ function threadTaskCardCommandText(value) {
   const text = String(value || "").trim();
   if (text.startsWith(THREAD_TASK_CARD_LEGACY_COMMAND_PREFIX)) {
     return text.slice(THREAD_TASK_CARD_LEGACY_COMMAND_PREFIX.length).trim();
+  }
+  if (THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN.test(text)) {
+    return text.replace(THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN, "").trim();
+  }
+  if (THREAD_TASK_CARD_MENTION_PATTERN.test(text)) {
+    return text.replace(THREAD_TASK_CARD_MENTION_PATTERN, "").trim();
   }
   return text.startsWith(THREAD_TASK_CARD_COMMAND_PREFIX)
     ? text.slice(THREAD_TASK_CARD_COMMAND_PREFIX.length).trim()
@@ -9835,7 +9853,8 @@ function buildThreadTaskCardDraftRequestText(commandText) {
   const original = String(commandText || "").trim();
   const compactCommand = threadTaskCardCommandText(original);
   if (!compactCommand) throw new Error("Task-card command is empty");
-  const legacyAutonomousCommand = original.startsWith(THREAD_TASK_CARD_LEGACY_COMMAND_PREFIX);
+  const legacyAutonomousCommand = original.startsWith(THREAD_TASK_CARD_LEGACY_COMMAND_PREFIX)
+    || THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN.test(original);
   const sourceThread = state.currentThread || {};
   const envelope = {
     version: 1,
@@ -9850,7 +9869,7 @@ function buildThreadTaskCardDraftRequestText(commandText) {
     JSON.stringify(envelope, null, 2),
     `</${THREAD_TASK_CARD_REQUEST_TAG}>`,
     "",
-    "Interpret the # command above as a cross-thread pending task card request.",
+    "Interpret the command above as a cross-thread pending task card request.",
     "Return only one XML block in exactly this format:",
     `<${THREAD_TASK_CARD_DRAFT_TAG}>`,
     "{\"targetThreadIds\":[\"one or more exact threadId values from availableTargets\"],\"workflowMode\":\"manual|autonomous\",\"workflowId\":\"optional existing workflow id\",\"title\":\"short title\",\"summary\":\"one-line summary\",\"body\":\"full markdown body\",\"error\":\"\"}",
@@ -9858,11 +9877,11 @@ function buildThreadTaskCardDraftRequestText(commandText) {
     "Rules:",
     "- Choose one or more targetThreadIds only from availableTargets.threadId.",
     "- Do not invent a thread id; when the request names multiple clear targets, include all of them.",
-    "- Default workflowMode to manual for plain # single-card commands.",
-    "- Use autonomous only when the command uses #自由协作 or explicitly asks for autonomous/free collaboration/auto-return workflow.",
+    "- Default workflowMode to manual for plain # or @任务卡片 single-card commands.",
+    "- Use autonomous only when the command uses #自由协作, @自由协作, or explicitly asks for autonomous/free collaboration/auto-return workflow.",
     legacyAutonomousCommand
-      ? "- This command used #自由协作, so default workflowMode to autonomous unless it explicitly asks for manual."
-      : "- This command used plain #, so default workflowMode to manual unless it explicitly asks for autonomous/free collaboration.",
+      ? "- This command used #自由协作 or @自由协作, so default workflowMode to autonomous unless it explicitly asks for manual."
+      : "- This command used a manual task-card entry, so default workflowMode to manual unless it explicitly asks for autonomous/free collaboration.",
     "- Autonomous workflow means the target approves the first card once; after the target turn completes, Mobile Web sends the return card back automatically without another approval.",
     "- For a new autonomous workflow, leave workflowId empty. Reuse workflowId only when the command or visible context provides an existing id.",
     "- If the command is unclear or no target fits, set targetThreadIds to an empty array and explain the problem in error.",
@@ -14424,6 +14443,250 @@ function setComposerText(value) {
   autoSizeMessageInput(el);
 }
 
+function composerIntentOptions() {
+  return [
+    {
+      kind: "goal",
+      tag: "@目标任务",
+      label: "目标任务",
+      detail: "设置当前线程目标、预算和状态",
+      title: "目标任务",
+      subtitle: "打开目标设置框，内容不会作为普通消息发送。",
+      placeholder: "",
+      submitLabel: "打开目标",
+    },
+    {
+      kind: "task-card",
+      tag: "@任务卡片",
+      label: "任务卡片",
+      detail: "发给其他线程，目标侧审批后执行",
+      title: "任务卡片",
+      subtitle: "输入要交给其他线程处理的完整需求；提交后会先生成待审批任务卡片。",
+      placeholder: "写清目标线程、任务背景、期望输出和约束。",
+      submitLabel: "创建任务卡片",
+    },
+    {
+      kind: "task-card-auto",
+      tag: "@自由协作",
+      label: "自由协作",
+      detail: "任务卡片自动回传后续结果",
+      title: "自由协作",
+      subtitle: "输入跨线程协作需求；目标线程首次审批后，后续同源回传可自动继续。",
+      placeholder: "写清协作对象、需要对方完成的步骤，以及完成后回传什么。",
+      submitLabel: "创建协作卡片",
+    },
+    {
+      kind: "chatgpt-pro",
+      tag: "@ChatGPT Pro",
+      label: "ChatGPT Pro",
+      detail: "用专用 Pro 线程生成分析文档",
+      title: "ChatGPT Pro 分析",
+      subtitle: "输入要交给 ChatGPT Pro 分析的问题；内容不会进入当前工作线程。",
+      placeholder: "写清要分析的代码、方案、风险或决策问题。",
+      submitLabel: "提交 Pro 分析",
+    },
+  ];
+}
+
+function composerIntentOption(kind) {
+  return composerIntentOptions().find((item) => item.kind === kind) || null;
+}
+
+function composerIntentDraftKey(kind) {
+  const scope = currentDraftKey() || (state.currentThreadId ? `thread:${state.currentThreadId}` : "new-thread");
+  return `${scope}::${String(kind || "").trim()}`;
+}
+
+function loadComposerIntentDraft(kind) {
+  const drafts = loadJsonStorage(STORAGE_COMPOSER_INTENT_DRAFTS, {});
+  const key = composerIntentDraftKey(kind);
+  return String(drafts && drafts[key] || "");
+}
+
+function saveComposerIntentDraft(kind, value) {
+  const key = composerIntentDraftKey(kind);
+  if (!key) return;
+  const drafts = loadJsonStorage(STORAGE_COMPOSER_INTENT_DRAFTS, {});
+  const text = String(value || "").slice(0, COMPOSER_INTENT_BODY_MAX_CHARS);
+  if (text.trim()) drafts[key] = text;
+  else delete drafts[key];
+  try {
+    localStorage.setItem(STORAGE_COMPOSER_INTENT_DRAFTS, JSON.stringify(drafts));
+  } catch (err) {
+    showError(err);
+  }
+}
+
+function composerIntentBareTagKind(value) {
+  const text = String(value || "").trim();
+  if (!text || text === "@") return "";
+  if (THREAD_GOAL_MENTION_PATTERN.test(text)) return "goal";
+  if (/^@(?:ChatGPT\s+Pro|ChatGPTPro|GPT\s+Pro)$/i.test(text)) return "chatgpt-pro";
+  if (THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN.test(text) && !threadTaskCardCommandText(text)) return "task-card-auto";
+  if (THREAD_TASK_CARD_MENTION_PATTERN.test(text) && !threadTaskCardCommandText(text)) return "task-card";
+  return "";
+}
+
+function shouldShowComposerIntentMenu() {
+  return composerText() === "@";
+}
+
+function closeComposerIntentMenu() {
+  const menu = $("composerIntentMenu");
+  if (menu) {
+    menu.hidden = true;
+    menu.innerHTML = "";
+  }
+  state.composerIntentMenuOpen = false;
+  document.removeEventListener("pointerdown", onComposerIntentOutsidePointer);
+}
+
+function onComposerIntentOutsidePointer(event) {
+  const menu = $("composerIntentMenu");
+  const target = event.target;
+  if (!state.composerIntentMenuOpen || !menu || menu.hidden) return;
+  if (menu.contains(target)) return;
+  if (target && target.closest && target.closest("#messageInput")) return;
+  closeComposerIntentMenu();
+}
+
+function openComposerIntentMenu() {
+  const menu = $("composerIntentMenu");
+  const anchor = $("messageInput");
+  if (!menu || !anchor) return;
+  closeComposerRuntimeMenu();
+  closeQuotaDetails();
+  menu.innerHTML = composerIntentOptions().map((item) => `
+    <button type="button" class="composer-intent-option" role="option" data-composer-intent="${escapeHtml(item.kind)}">
+      <span class="composer-intent-label">${escapeHtml(item.label)}</span>
+      <span class="composer-intent-tag">${escapeHtml(item.tag)}</span>
+      <span class="composer-intent-detail">${escapeHtml(item.detail)}</span>
+    </button>
+  `).join("");
+  menu.hidden = false;
+  state.composerIntentMenuOpen = true;
+  fitComposerPopupToAnchor(menu, anchor, { minWidth: 280, maxWidth: 420 });
+  document.addEventListener("pointerdown", onComposerIntentOutsidePointer);
+}
+
+function updateComposerIntentMenu() {
+  if (shouldShowComposerIntentMenu()) {
+    if (!state.composerIntentMenuOpen) openComposerIntentMenu();
+  } else {
+    closeComposerIntentMenu();
+  }
+}
+
+function selectComposerIntent(kind) {
+  const option = composerIntentOption(kind);
+  if (!option) return;
+  setComposerText(option.tag);
+  closeComposerIntentMenu();
+  updateComposerControls();
+  scheduleCurrentDraftSave();
+  const input = $("messageInput");
+  if (input) input.focus();
+}
+
+function setComposerIntentDialogStatus(message, isError = false) {
+  const status = $("composerIntentDialogStatus");
+  if (!status) return;
+  const text = String(message || "").trim();
+  status.textContent = text;
+  status.classList.toggle("hidden", !text);
+  status.classList.toggle("error", Boolean(isError));
+}
+
+function closeComposerIntentDialog(clearState = true) {
+  const dialog = $("composerIntentDialog");
+  if (dialog) dialog.classList.add("hidden");
+  if (clearState) {
+    state.composerIntentDialogKind = "";
+    state.composerIntentDialogBusy = false;
+  }
+  setComposerIntentDialogStatus("");
+  updateComposerControls();
+}
+
+function openComposerIntentDialog(kind, options = {}) {
+  const option = composerIntentOption(kind);
+  if (!option) return false;
+  if (kind !== "chatgpt-pro" && state.newThreadDraft) {
+    showError(new Error(`${option.label} is only available in an existing thread`));
+    return false;
+  }
+  if (state.pendingAttachments.length) {
+    showError(new Error(`${option.tag} does not support attachments in this entry point`));
+    return false;
+  }
+  state.composerIntentDialogKind = kind;
+  state.composerIntentDialogBusy = false;
+  const title = $("composerIntentDialogTitle");
+  const subtitle = $("composerIntentDialogSubtitle");
+  const label = $("composerIntentBodyLabel");
+  const input = $("composerIntentBodyInput");
+  const submit = $("composerIntentSubmitButton");
+  if (title) title.textContent = option.title;
+  if (subtitle) subtitle.textContent = option.subtitle;
+  if (label) label.textContent = option.label;
+  if (submit) submit.textContent = option.submitLabel;
+  if (input) {
+    input.placeholder = option.placeholder;
+    input.maxLength = COMPOSER_INTENT_BODY_MAX_CHARS;
+    input.value = String(options.initialBody || loadComposerIntentDraft(kind) || "").slice(0, COMPOSER_INTENT_BODY_MAX_CHARS);
+  }
+  setComposerIntentDialogStatus("");
+  const dialog = $("composerIntentDialog");
+  if (dialog) dialog.classList.remove("hidden");
+  window.setTimeout(() => {
+    if (input) input.focus();
+  }, 30);
+  return true;
+}
+
+async function submitComposerIntentDialog(event) {
+  if (event && typeof event.preventDefault === "function") event.preventDefault();
+  if (state.composerIntentDialogBusy || state.composerBusy) return;
+  const kind = state.composerIntentDialogKind;
+  const option = composerIntentOption(kind);
+  if (!option) return;
+  const input = $("composerIntentBodyInput");
+  const body = String(input && input.value || "").trim();
+  if (!body) {
+    setComposerIntentDialogStatus("请输入内容。", true);
+    return;
+  }
+  state.composerIntentDialogBusy = true;
+  setComposerIntentDialogStatus("提交中…");
+  updateComposerControls();
+  try {
+    if (kind === "chatgpt-pro") {
+      await submitChatGptProRequest(`${option.tag} ${body}`, { rethrow: true });
+    } else if (kind === "task-card" || kind === "task-card-auto") {
+      await sendThreadTaskCardCommand(`${option.tag} ${body}`, { rethrow: true });
+    }
+    saveComposerIntentDraft(kind, "");
+    setComposerText("");
+    scheduleCurrentDraftSave();
+    closeComposerIntentDialog();
+  } catch (err) {
+    setComposerIntentDialogStatus(normalizeClientErrorMessage(err && err.message ? err.message : String(err), err), true);
+    showError(err);
+  } finally {
+    state.composerIntentDialogBusy = false;
+    updateComposerControls();
+  }
+}
+
+function saveComposerIntentDialogDraft() {
+  const kind = state.composerIntentDialogKind;
+  const option = composerIntentOption(kind);
+  if (!option) return;
+  const input = $("composerIntentBodyInput");
+  saveComposerIntentDraft(kind, input ? input.value : "");
+  setComposerIntentDialogStatus("草稿已保存。");
+}
+
 function setMessageInputDisabled(disabled) {
   const el = $("messageInput");
   if (!el) return;
@@ -14630,6 +14893,7 @@ function resetComposerRuntimeSelection() {
   state.composerEffort = "";
   state.composerPermissionMode = "";
   closeComposerRuntimeMenu();
+  closeComposerIntentMenu();
   state.quotaDetailsOpen = false;
 }
 
@@ -14712,6 +14976,7 @@ function onComposerRuntimeOutsidePointer(event) {
 function openComposerRuntimeMenu(kind, anchor) {
   const menu = $("composerRuntimeMenu");
   if (!menu || !anchor) return;
+  closeComposerIntentMenu();
   state.quotaDetailsOpen = false;
   const selected = runtimeSelectedValue(kind);
   const options = runtimeOptionValues(kind);
@@ -14817,6 +15082,7 @@ function updateComposerControls() {
   const canComposeNewThread = Boolean(hasNewThreadDraft);
   const disabled = !(hasThread || canComposeNewThread) || state.composerBusy || state.attachmentProcessingCount > 0;
   const hasContent = composerHasContent();
+  const bareIntentKind = composerIntentBareTagKind(composerText());
   const goalCommandMode = Boolean(!hasNewThreadDraft && isThreadGoalCommandText(composerText()));
   const commandMode = Boolean(!hasNewThreadDraft && isThreadTaskCardCommandText(composerText()));
   const interruptMode = Boolean(!hasNewThreadDraft && state.activeTurnId) && !hasContent;
@@ -14824,6 +15090,10 @@ function updateComposerControls() {
   const sendButton = $("sendMessage");
   const attachButton = $("attachFiles");
   const messageInput = $("messageInput");
+  for (const id of ["composerIntentBodyInput", "composerIntentSubmitButton", "composerIntentSaveButton"]) {
+    const el = $(id);
+    if (el) el.disabled = state.composerIntentDialogBusy || state.composerBusy;
+  }
   if (messageInput) {
     messageInput.dataset.placeholder = hasNewThreadDraft
       ? "输入第一条消息"
@@ -14859,6 +15129,11 @@ function updateComposerControls() {
   } else if (goalCommandMode) {
     setComposerActionButtonLabel(sendButton, "Goal");
     sendButton.title = "Open goal dialog";
+    sendButton.classList.remove("sending", "send-failed", "interrupt-mode", "steer-mode");
+  } else if (bareIntentKind) {
+    const option = composerIntentOption(bareIntentKind);
+    setComposerActionButtonLabel(sendButton, "Open");
+    sendButton.title = option ? `Open ${option.label}` : "Open composer action";
     sendButton.classList.remove("sending", "send-failed", "interrupt-mode", "steer-mode");
   } else if (commandMode) {
     setComposerActionButtonLabel(sendButton, "Task card");
@@ -15085,6 +15360,80 @@ function requestGoalDialogSubmit() {
   }
 }
 
+async function sendThreadTaskCardCommand(commandText, options = {}) {
+  const text = String(commandText || "").trim();
+  if (!text || !state.currentThreadId) return false;
+  if (state.pendingAttachments.length) {
+    const err = new Error("Task-card commands do not support attachments yet");
+    showError(err);
+    if (options.rethrow) throw err;
+    return false;
+  }
+  const submittedDraftKey = currentDraftKey();
+  const clientSubmissionId = createSubmissionId();
+  const outboundText = buildThreadTaskCardDraftRequestText(text);
+  state.composerBusy = true;
+  state.sendButtonHint = "";
+  startSendProgressWatchdog(state.currentThreadId);
+  markActivity("任务卡片");
+  updateComposerControls();
+  if (state.sendProgressWarned) {
+    $("connectionState").textContent = "Task card draft request";
+    $("connectionState").classList.remove("error");
+  }
+  try {
+    const body = new FormData();
+    body.append("clientSubmissionId", clientSubmissionId);
+    body.append("text", outboundText);
+    if (state.currentThread && state.currentThread.cwd) body.append("cwd", state.currentThread.cwd);
+    body.append("model", selectedComposerModel());
+    body.append("effort", selectedComposerEffort());
+    body.append("permissionMode", selectedComposerPermissionMode());
+    if (codexFastCommandEnabled()) body.append("fastMode", "1");
+    registerSubmittedUserMessage(state.currentThreadId, outboundText, [], clientSubmissionId);
+    followSubmittedMessageToBottom(state.currentThreadId, clientSubmissionId);
+    await api(`/api/threads/${encodeURIComponent(state.currentThreadId)}/messages`, {
+      method: "POST",
+      body,
+      timeoutMs: 180000,
+    });
+    commitPluginVoiceInputSessionsAfterSend(submittedDraftKey, text, {
+      threadId: state.currentThreadId,
+      messageId: clientSubmissionId,
+      composerId: "thread-composer",
+    });
+    setComposerText("");
+    writeCurrentDraftToKey(submittedDraftKey);
+    $("connectionState").classList.remove("error");
+    $("connectionState").textContent = "Task card draft requested";
+    markActivity("草案已请求");
+    scheduleCurrentThreadRefresh(600);
+    scheduleLivePollIfNeeded(1200);
+    loadThreads({ silent: true }).catch(showError);
+    return true;
+  } catch (err) {
+    clearSubmittedMessageBottomFollow();
+    const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err), err)
+      || "任务卡片提交失败，请重试";
+    state.sendButtonHint = "重试";
+    markSubmittedUserMessageFailed(state.currentThreadId, outboundText, [], clientSubmissionId, message);
+    $("connectionState").classList.remove("error");
+    $("connectionState").textContent = "发送失败，详情见消息回执";
+    postClientEvent("send_failure", {
+      threadId: state.currentThreadId || "",
+      message,
+      steering: false,
+      taskCardCommand: true,
+    });
+    if (options.rethrow) throw new Error(message);
+    return false;
+  } finally {
+    finishSendProgressWatchdog();
+    state.composerBusy = false;
+    updateComposerControls();
+  }
+}
+
 async function sendMessage(event) {
   if (event && typeof event.preventDefault === "function") event.preventDefault();
   if (state.composerBusy) return;
@@ -15092,14 +15441,23 @@ async function sendMessage(event) {
   const input = $("messageInput");
   const text = composerText();
   const hasContent = Boolean(text || state.pendingAttachments.length);
+  if (text === "@") {
+    openComposerIntentMenu();
+    return;
+  }
+  const bareIntentKind = composerIntentBareTagKind(text);
+  if (bareIntentKind && bareIntentKind !== "goal") {
+    openComposerIntentDialog(bareIntentKind);
+    return;
+  }
   const threadGoalCommand = isThreadGoalCommandText(text);
   if (threadGoalCommand) {
     if (state.newThreadDraft) {
-      showError(new Error("/g is only available in an existing thread"));
+      showError(new Error("Goal is only available in an existing thread"));
       return;
     }
     if (state.pendingAttachments.length) {
-      showError(new Error("/g does not support attachments"));
+      showError(new Error("Goal commands do not support attachments"));
       return;
     }
     if (!state.currentThreadId) return;
@@ -15126,8 +15484,12 @@ async function sendMessage(event) {
     showError(new Error("# task-card commands do not support attachments yet"));
     return;
   }
-  const outboundText = threadTaskCardCommand ? buildThreadTaskCardDraftRequestText(text) : text;
-  const steering = Boolean(!threadTaskCardCommand && state.activeTurnId && hasContent);
+  if (threadTaskCardCommand) {
+    await sendThreadTaskCardCommand(text);
+    return;
+  }
+  const outboundText = text;
+  const steering = Boolean(state.activeTurnId && hasContent);
   const steerTurnId = steering ? String(state.activeTurnId) : "";
   const submittedDraftKey = currentDraftKey();
   const clientSubmissionId = createSubmissionId();
@@ -15136,10 +15498,10 @@ async function sendMessage(event) {
   state.sendButtonHint = "";
   startSendProgressWatchdog(state.currentThreadId);
   if (steering) setSteerFeedback("sending", { threadId: state.currentThreadId, turnId: steerTurnId, clientSubmissionId });
-  else markActivity(threadTaskCardCommand ? "任务卡片" : "发送");
+  else markActivity("发送");
   updateComposerControls();
   if (state.sendProgressWarned) {
-    $("connectionState").textContent = steering ? "引导中…" : (threadTaskCardCommand ? "Task card draft request" : "发送中…");
+    $("connectionState").textContent = steering ? "引导中…" : "发送中…";
     $("connectionState").classList.remove("error");
   }
   try {
@@ -15177,8 +15539,8 @@ async function sendMessage(event) {
     $("connectionState").classList.remove("error");
     if (steering) setSteerFeedback("delivered", { threadId: state.currentThreadId, turnId: steerTurnId, clientSubmissionId });
     else {
-      $("connectionState").textContent = threadTaskCardCommand ? "Task card draft requested" : "Sent";
-      markActivity(threadTaskCardCommand ? "草案已请求" : "已发送");
+      $("connectionState").textContent = "Sent";
+      markActivity("已发送");
     }
     scheduleCurrentThreadRefresh(600);
     scheduleLivePollIfNeeded(1200);
@@ -15773,6 +16135,23 @@ function wireUi() {
       applyRuntimeSelection(option.dataset.runtimeKind, option.dataset.runtimeValue);
     });
   }
+  const intentMenu = $("composerIntentMenu");
+  if (intentMenu) {
+    intentMenu.addEventListener("click", (event) => {
+      const option = event.target.closest("[data-composer-intent]");
+      if (!option) return;
+      event.preventDefault();
+      event.stopPropagation();
+      selectComposerIntent(option.dataset.composerIntent || "");
+    });
+  }
+  if ($("composerIntentForm")) $("composerIntentForm").addEventListener("submit", (event) => submitComposerIntentDialog(event).catch(showError));
+  if ($("composerIntentSaveButton")) $("composerIntentSaveButton").addEventListener("click", saveComposerIntentDialogDraft);
+  if ($("composerIntentCancelButton")) $("composerIntentCancelButton").addEventListener("click", () => closeComposerIntentDialog(false));
+  if ($("composerIntentDialogClose")) $("composerIntentDialogClose").addEventListener("click", () => closeComposerIntentDialog(false));
+  if ($("composerIntentDialog")) $("composerIntentDialog").addEventListener("click", (event) => {
+    if (event.target === $("composerIntentDialog")) closeComposerIntentDialog(false);
+  });
   const quotaUsage = $("quotaUsage");
   if (quotaUsage) {
     quotaUsage.addEventListener("pointerdown", (event) => {
@@ -15956,10 +16335,16 @@ function wireUi() {
   $("messageInput").addEventListener("input", (event) => {
     autoSizeMessageInput(event.target);
     if (state.sendButtonHint && !state.composerBusy) state.sendButtonHint = "";
+    updateComposerIntentMenu();
     updateComposerControls();
     scheduleCurrentDraftSave();
   });
   $("messageInput").addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && state.composerIntentMenuOpen) {
+      event.preventDefault();
+      closeComposerIntentMenu();
+      return;
+    }
     if (event.key !== "Enter" || event.shiftKey) return;
     if (!composerHasContent() || state.composerBusy) return;
     event.preventDefault();

@@ -100,7 +100,8 @@ test("draft attachments use IndexedDB and are cleared only after a successful se
   const sendBody = functionBody("sendMessage");
   assert.match(sendBody, /const submittedDraftKey = currentDraftKey\(\)/);
   assert.match(sendBody, /const threadTaskCardCommand = isThreadTaskCardCommandText\(text\)/);
-  assert.match(sendBody, /const outboundText = threadTaskCardCommand \? buildThreadTaskCardDraftRequestText\(text\) : text/);
+  assert.match(sendBody, /await sendThreadTaskCardCommand\(text\)/);
+  assert.match(functionBody("sendThreadTaskCardCommand"), /const outboundText = buildThreadTaskCardDraftRequestText\(text\)/);
   assert.match(sendBody, /writeCurrentDraftToKey\(submittedDraftKey\)/);
   assert.doesNotMatch(sendBody, /clearDraftForKey\(submittedDraftKey\)/);
 

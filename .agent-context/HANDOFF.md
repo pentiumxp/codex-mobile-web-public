@@ -4567,3 +4567,47 @@ The previous full handoff was archived and should be opened only when old proven
   - No live ChatGPT Pro / Chrome smoke was run, to avoid starting a long
     external browser generation turn without an explicit deployment or live-test
     request.
+
+## 2026-06-19 Unified Composer @ Intent Entry v303
+
+- Status: local implementation complete and validated; not deployed in this
+  handoff entry.
+- User-visible behavior:
+  - Typing a bare `@` in the main Composer opens a bounded intent menu.
+  - Selecting `@目标任务`, `@任务卡片`, `@自由协作`, or `@ChatGPT Pro` writes only
+    that tag into Composer. The user then presses Send / Enter to open the
+    appropriate input dialog.
+  - `@目标任务` opens the existing Goal dialog.
+  - `@任务卡片`, `@自由协作`, and `@ChatGPT Pro` open a shared action dialog with
+    a large textarea, Save draft, Cancel, and Send.
+  - Direct old paths remain compatible: `/g`, `#`, `#自由协作`, and direct
+    `@ChatGPT Pro ...` with body still work.
+- Implementation boundary:
+  - `public/app.js` owns the intent menu/dialog, local intent-draft storage,
+    exact-tag routing, and the shared task-card send helper.
+  - `public/index.html` adds the menu and dialog DOM.
+  - `public/styles.css` adds the bounded menu/dialog styling.
+  - `docs/MODULES.md` documents the frontend ownership.
+  - README documents the Chinese v303 user-facing behavior.
+- State and privacy notes:
+  - Intent dialog drafts are browser-local and scoped by current draft/thread
+    key plus intent kind.
+  - Draft saving does not write to a thread, start a model turn, or store
+    secrets outside the existing browser-local draft surface.
+- Changed files:
+  - `public/app.js`
+  - `public/index.html`
+  - `public/styles.css`
+  - `public/sw.js`
+  - `README.md`
+  - `docs/MODULES.md`
+  - focused tests for task cards, goals, ChatGPT Pro, composer drafts, and
+    shell version expectations.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js`
+  - `node --test test/thread-task-card-route.test.js test/thread-goal-service.test.js test/chatgpt-pro-bridge-service.test.js test/mobile-viewport.test.js`
+  - `npm run check`
+  - `npm test`
+  - Home AI center harness:
+    `node tests/architecture-code-test-harness-map.test.js`
+  - `git diff --check`

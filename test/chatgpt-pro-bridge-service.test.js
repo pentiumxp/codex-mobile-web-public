@@ -79,8 +79,12 @@ test("server and client wire @ChatGPT Pro without normal message submission", ()
   assert.match(serverJs, /\/api\/chatgpt-pro\/generate/);
   assert.match(serverJs, /chatGptProSourceSummary/);
   assert.match(appJs, /function isChatGptProCommandText\(/);
-  assert.match(appJs, /async function submitChatGptProRequest\(text\)/);
+  assert.match(appJs, /async function submitChatGptProRequest\(text, options = \{\}\)/);
   assert.match(appJs, /api\("\/api\/chatgpt-pro\/generate"/);
+  assert.match(appJs, /function composerIntentBareTagKind\(/);
+  assert.match(appJs, /function openComposerIntentDialog\(/);
+  assert.match(appJs, /submitChatGptProRequest\(`\$\{option\.tag\} \$\{body\}`, \{ rethrow: true \}\)/);
+  assert.match(appJs, /@ChatGPT Pro/);
   const sendStart = appJs.indexOf("async function sendMessage");
   const sendEnd = appJs.indexOf("async function sendNewThreadMessage", sendStart);
   const sendBody = appJs.slice(sendStart, sendEnd);
