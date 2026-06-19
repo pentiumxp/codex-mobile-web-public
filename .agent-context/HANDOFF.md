@@ -2,6 +2,95 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-19 v313 Superseded Live User-Message Projection Fix
+
+- Status: implemented and validated locally; deployment was started with
+  `--restart auto` but was interrupted before completion, so production v313 is
+  not confirmed from this thread. Do not assume the server-side prune is active
+  in production until `/api/public-config` reports
+  `0.1.11|codex-mobile-shell-v313` and the listener has been read back after a
+  controlled restart.
+- User-visible issue:
+  - Opening the Music thread could show a stack of old user-message bubbles from
+    historical `mobileSupersededLive` shells.
+  - Those shells could occupy the recent projected turn window, making the
+    latest assistant receipt hard or impossible to see.
+- Fix:
+  - `public/app.js` hides `userMessage` items inside superseded live turns and
+    continues to suppress usage-only superseded shells.
+  - `adapters/thread-detail-projection-service.js` prunes user-only superseded
+    live shells before `trimTurns`, removes stale user/reasoning items from
+    retained superseded turns, and keeps only meaningful assistant/plan, image,
+    or context-compaction content.
+  - `server.js` now normalizes and prunes superseded live shells before compact
+    turn trimming, so stale shells no longer push recent receipts out of the
+    bounded response.
+  - PWA shell cache advanced to `codex-mobile-shell-v313`.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js && node --check adapters/thread-detail-projection-service.js && node --check server.js` passed.
+  - Focused tests passed:
+    `node --test test/conversation-render.test.js test/thread-detail-projection-service.test.js test/thread-item-timestamp-enrichment.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js test/app-update.test.js`.
+  - Additional focused tests passed:
+    `node --test test/collab-agent-render.test.js test/tool-output-image-projection.test.js`.
+  - `npm run check`, `npm run check:macos`, `git diff --check`, and
+    `npm test` passed; full test count: 517.
+  - Center AI Ops required-checks classified the touched files as H3 and
+    `node tests/architecture-code-test-harness-map.test.js` passed.
+- Deployment note:
+  - Pre-deploy production readback showed
+    `/api/public-config.clientBuildId=0.1.11|codex-mobile-shell-v312`,
+    listener PID `10805`, and active profile `default`.
+  - The attempted command was:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart auto --health-url http://127.0.0.1:8787/api/public-config --allow-dirty --execute --json`.
+  - The command was aborted/interrupted; no production backup/readback/evidence
+    was captured after it.
+
+## 2026-06-19 v312 In-App Dialog Replacement
+
+- Status: implemented, validated, and deployed to Mac production with
+  `--restart none`; not committed or pushed.
+- User-visible issue:
+  - In the iOS shell, tapping the `PR` button after a Public PR was detected
+    did not show the confirmation dialog.
+  - The automatic Public PR prompt had the same invisible-dialog risk.
+- Fix:
+  - Added a generic page-level in-app dialog (`#appNativeDialog`) supporting
+    alert, confirmation, and multiline text input modes.
+  - Replaced every remaining user-triggered `window.alert`,
+    `window.confirm`, and `window.prompt` path in `public/app.js` with the
+    in-app dialog helpers.
+  - Covered Public PR auto/manual prompts, app update notices/confirmation,
+    side-chat clear confirmation, thread task-card create/reply inputs, and
+    removed the non-embedded native-confirm fallbacks for Profile switch and
+    thread archive.
+  - Advanced the static shell to `codex-mobile-shell-v312`.
+- Validation:
+  - `rg -n "window\\.(alert|confirm|prompt)|\\balert\\(|\\bconfirm\\(|\\bprompt\\(" public/app.js`
+    found no matches.
+  - `node --check public/app.js && node --check public/sw.js` passed.
+  - Focused tests passed:
+    `node --test test/app-update.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js test/codex-profile-ui.test.js test/thread-archive.test.js`
+    passed: 42 tests.
+  - `npm run check` passed.
+  - `git diff --check` passed.
+  - Center required-checks classified the change as H3, and
+    `node tests/architecture-code-test-harness-map.test.js` passed.
+  - `npm test` passed: 515 tests.
+- Deployment:
+  - Command:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart none --health-url http://127.0.0.1:8787/api/public-config --allow-dirty --execute --json`
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260619T125046Z-plugin-codex-mobile-web-manual`
+  - Production readback confirmed:
+    `/api/public-config.clientBuildId=0.1.11|codex-mobile-shell-v312`,
+    `/api/public-config.shellCacheName=codex-mobile-shell-v312`, served
+    `/index.html` has `#appNativeDialog`, served `/app.js` reports v312 and
+    has no native dialog API matches, and served `/sw.js` contains
+    `codex-mobile-shell-v312`.
+  - `restartLabels` was empty; `launchctl` still showed listener PID `10805`.
+  - Evidence ledger record:
+    `evidence-4180c0cd-08e4-4571-93c8-58bfa74ecc4b`.
+
 ## 2026-06-19 Public PR #73 Thread List Stale Status Fix
 
 - Status: public PR evaluated, merged, pushed to public, then reverse-synced to

@@ -176,13 +176,16 @@ test("boot recovery UI can clear PWA shell state before app.js starts", () => {
 
 test("public pull request check prompts before public publishing work", () => {
   assert.match(indexHtml, /id="publicPrStatus"/);
+  assert.match(indexHtml, /id="appNativeDialog"/);
   assert.match(stylesCss, /\.public-pr-status/);
+  assert.match(stylesCss, /\.app-native-dialog/);
   assert.match(serverJs, /workspacePath:\s*APP_ROOT/);
   assert.match(serverJs, /publicPullRequests:/);
   assert.match(serverJs, /\/api\/public-pull-requests\/status/);
   assert.match(serverJs, /publicPullRequestApiUrl\(PUBLIC_PR_REPOSITORY\)/);
   assert.match(appJs, /function renderPublicPrStatus\(\)/);
   assert.match(appJs, /function maybePromptPublicPrMerge\(status\)/);
+  assert.match(appJs, /function publicPrMergeConfirmationMessage\(status\)/);
   assert.match(appJs, /function publicPrMergeInstruction\(status\)/);
   assert.match(appJs, /const PUBLIC_PR_REVIEW_THREAD_TITLE = "Codex Mobile Public PR";/);
   assert.match(appJs, /function findPublicPrReviewThread\(workspacePath = ""\)/);
@@ -197,6 +200,27 @@ test("public pull request check prompts before public publishing work", () => {
   assert.match(appJs, /body\.append\("title", submittedTitle\);/);
   assert.match(appJs, /scheduleStartupPublicPrCheck\(\)/);
   assert.match(appJs, /handlePublicPrStatusClick\(\)\.catch\(showError\)/);
+  assert.match(functionBody(appJs, "maybePromptPublicPrMerge"), /requestAppConfirmation\(publicPrMergeConfirmationMessage\(status\)/);
+  assert.match(functionBody(appJs, "handlePublicPrStatusClick"), /await requestAppConfirmation\(publicPrMergeConfirmationMessage\(status\)/);
+});
+
+test("mobile shell action dialogs do not depend on native browser modals", () => {
+  assert.match(indexHtml, /id="appNativeDialog"/);
+  assert.match(indexHtml, /id="appNativeDialogInput"/);
+  assert.match(stylesCss, /\.app-native-dialog/);
+  assert.match(appJs, /function requestAppAlert\(message, options = \{\}\)/);
+  assert.match(appJs, /function requestAppConfirmation\(message, options = \{\}\)/);
+  assert.match(appJs, /function requestAppTextInput\(message, value = "", options = \{\}\)/);
+  assert.doesNotMatch(appJs, /window\.(alert|confirm|prompt)\(/);
+  assert.doesNotMatch(appJs, /\balert\(/);
+  assert.doesNotMatch(appJs, /\bconfirm\(/);
+  assert.doesNotMatch(appJs, /\bprompt\(/);
+  assert.match(functionBody(appJs, "handleAppUpdateClick"), /await requestAppConfirmation\(/);
+  assert.match(functionBody(appJs, "clearSideChat"), /await requestAppConfirmation\(/);
+  assert.match(functionBody(appJs, "createThreadTaskCardFromCurrent"), /await requestAppTextInput\(/);
+  assert.match(functionBody(appJs, "replyTaskCard"), /await requestAppTextInput\(/);
+  assert.doesNotMatch(functionBody(appJs, "requestCodexProfileSwitchConfirmation"), /window\.confirm/);
+  assert.doesNotMatch(functionBody(appJs, "requestThreadArchiveConfirmation"), /window\.confirm/);
 });
 
 test("public pull request prompt clears stale merged PR state", () => {

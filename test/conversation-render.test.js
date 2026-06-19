@@ -416,6 +416,8 @@ function evaluatedVisibleItemsForTurn() {
     "isUserVisibleTextReplyItem",
     "liveTurnHasUserVisibleTextReplyAfter",
     "shouldHideDurableLiveUserMessage",
+    "isSupersededLiveTurn",
+    "shouldHideSupersededLiveUserMessage",
     "visibleItemsForTurn",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
@@ -550,7 +552,8 @@ test("context compaction notices update status and collapse repeated turn notice
   assert.match(functionBody("visibleItemsForTurn"), /if \(!notice\) return/);
   assert.match(functionBody("visibleItemsForTurn"), /visible\[existing\.visibleIndex\] = null/);
   assert.match(functionBody("visibleItemsForTurn"), /const filtered = visible\.filter\(Boolean\)/);
-  assert.match(functionBody("visibleItemsForTurn"), /mobileSupersededLive/);
+  assert.match(functionBody("isSupersededLiveTurn"), /mobileSupersededLive/);
+  assert.match(functionBody("visibleItemsForTurn"), /shouldHideSupersededLiveUserMessage\(turn, item\)/);
   assert.match(functionBody("visibleItemsForTurn"), /filtered\.every\(\(entry\) => isTurnUsageSummaryItem\(entry\.item\)\)/);
   assert.match(functionBody("visibleItemsForTurn"), /return filtered/);
   assert.match(functionBody("visibleItemSignature"), /isContextCompactionItem\(item\)/);
@@ -604,11 +607,22 @@ test("superseded live usage-only shells do not render as blank completed receipt
     visibleItemsForTurn({
       status: { type: "completed", mobileSupersededLive: true, previousType: "inProgress" },
       items: [
+        { id: "old-user", type: "userMessage", text: "old steering prompt" },
         { id: "receipt", type: "agentMessage", text: "done" },
         { id: "usage-with-receipt", type: "turnUsageSummary", mobileUsageSummary: { totalTokenUsage: { totalTokens: 12 } } },
       ],
     }).map((entry) => entry.item.id),
     ["receipt", "usage-with-receipt"],
+  );
+  assert.deepEqual(
+    visibleItemsForTurn({
+      status: { type: "completed", mobileSupersededLive: true, previousType: "inProgress" },
+      items: [
+        { id: "old-user-only", type: "userMessage", text: "old prompt" },
+        { id: "usage-after-user", type: "turnUsageSummary", mobileUsageSummary: { totalTokenUsage: { totalTokens: 12 } } },
+      ],
+    }),
+    [],
   );
   assert.deepEqual(
     visibleItemsForTurn({

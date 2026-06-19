@@ -4,6 +4,8 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：v313 修复进入长线程时历史 `mobileSupersededLive` 壳 turn 里的旧用户消息反复出现在底部、并挤掉最近回执的问题。前端不再渲染 superseded live turn 中的旧 `userMessage`；服务端投影和 thread compact 会在截断前剪掉纯旧用户消息/Reasoning/Usage/命令壳，只保留带助手回执、图片或上下文提示的 superseded turn，并移除其中旧用户提问。PWA shell cache 升级到 `codex-mobile-shell-v313`。
+- 中文说明：v312 修复 iOS 原生壳/PWA 下 Public PR、自动 PR 提示、更新检查、侧聊清空、任务卡片创建/回复等对话框可能不弹出的问题。前端剩余用户可触发的 `alert` / `confirm` / `prompt` 原生弹窗统一替换为页面内底部弹框，Profile 切换和归档确认也不再按模式回退到浏览器原生确认框。PWA shell cache 升级到 `codex-mobile-shell-v312`。
 - 中文说明：server-only 合并 public PR #73，防止线程列表 stale 状态覆盖已知状态。线程列表合并和显示摘要缓存现在会保留已知 `completed` / `idle` / `live` 等有效状态，不会被较新的 `notLoaded` / unknown 行覆盖；当基础行仍是 unknown 时，仍可用 fallback 或缓存中的已知状态补齐。这样 app-server/thread-list、rollout fallback 与缓存摘要交错刷新时，不会把已结束或已知运行状态误退回 stale。本次不改变 PWA shell cache，更新后需要重启 Node listener 才会生效。本次 public 发布只包含公开源码、README 和测试；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
 - 中文说明：v311 修复模型、推理强度和权限运行时菜单在 iOS PWA/WebView 下可能点不开的问题。运行时菜单和额度详情浮层现在与 `@` 意图菜单一样位于页面级 DOM，不再作为 Composer 表单控制行的子元素；触摸 `pointerdown` 后的合成 `click` 只会按同一按钮吞掉一次，避免同一次点击先打开又关闭菜单。PWA shell cache 升级到 `codex-mobile-shell-v311`。
 - 中文说明：v310 在导航菜单现有版本按钮里直接显示当前客户端壳版本，例如 `v0.1.11 · 客户端 v310`。这个值来自浏览器实际加载的 `CLIENT_BUILD_ID`，用于区分服务端已更新但 PWA/WebView 仍停留在旧前端壳的情况；按钮仍保留原来的更新检查入口。PWA shell cache 升级到 `codex-mobile-shell-v310`。

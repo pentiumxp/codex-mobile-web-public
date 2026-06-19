@@ -301,6 +301,71 @@ function dedupeProjectionItems(items) {
   return dedupeProjectionUsageItems(dedupeProjectionUserMessages(items));
 }
 
+function isProjectionSupersededLiveTurn(turn) {
+  return Boolean(turn && (turn.mobileSupersededLive || (turn.status && turn.status.mobileSupersededLive)));
+}
+
+function isProjectionReasoningItem(item) {
+  return Boolean(item && item.type === "reasoning");
+}
+
+function isProjectionTurnUsageSummaryItem(item) {
+  return Boolean(item && item.type === "turnUsageSummary");
+}
+
+function isProjectionOperationalItem(item) {
+  return Boolean(item && [
+    "commandExecution",
+    "fileChange",
+    "dynamicToolCall",
+    "mcpToolCall",
+  ].includes(String(item.type || "")));
+}
+
+function isProjectionAssistantReceiptItem(item) {
+  if (!item || typeof item !== "object") return false;
+  const type = String(item.type || "").toLowerCase();
+  if (type === "agentmessage" || type === "plan") return true;
+  if (type === "message") {
+    const role = String(item.role || item.author || "").toLowerCase();
+    return role === "assistant";
+  }
+  return false;
+}
+
+function isProjectionVisualReceiptItem(item) {
+  return Boolean(item && (item.type === "imageView" || item.type === "imageGeneration"));
+}
+
+function isProjectionContextNoticeItem(item) {
+  const type = String(item && item.type || "").toLowerCase();
+  return Boolean(type && /context.*compaction|context.*compression|context_compaction|context_compression/.test(type));
+}
+
+function isMeaningfulProjectionSupersededItem(item) {
+  if (!item || typeof item !== "object") return false;
+  if (isProjectionUserMessage(item)) return false;
+  if (isProjectionReasoningItem(item)) return false;
+  if (isProjectionTurnUsageSummaryItem(item)) return false;
+  if (isProjectionOperationalItem(item)) return false;
+  return isProjectionAssistantReceiptItem(item)
+    || isProjectionVisualReceiptItem(item)
+    || isProjectionContextNoticeItem(item);
+}
+
+function normalizeProjectionSupersededLiveTurns(thread) {
+  if (!thread || !Array.isArray(thread.turns)) return thread;
+  thread.turns = thread.turns.filter((turn) => {
+    if (!isProjectionSupersededLiveTurn(turn)) return true;
+    const items = Array.isArray(turn.items) ? turn.items : [];
+    const meaningful = items.filter(isMeaningfulProjectionSupersededItem);
+    if (!meaningful.length) return false;
+    turn.items = items.filter((item) => !isProjectionUserMessage(item) && !isProjectionReasoningItem(item));
+    return true;
+  });
+  return thread;
+}
+
 function normalizeProjectionThreadUserMessages(thread) {
   if (!thread || !Array.isArray(thread.turns)) return thread;
   for (const turn of thread.turns) {
@@ -456,6 +521,7 @@ function createThreadDetailProjectionService(options = {}) {
       result: cloneJson(result),
     };
     normalizeProjectionThreadUserMessages(entry.result.thread);
+    normalizeProjectionSupersededLiveTurns(entry.result.thread);
     trimTurns(entry.result.thread, maxTurns);
     memory.set(threadId, entry);
     persistEntry(entry);
@@ -503,6 +569,8 @@ function createThreadDetailProjectionService(options = {}) {
 
     const result = cloneJson(entry.result);
     normalizeProjectionThreadUserMessages(result.thread);
+    normalizeProjectionSupersededLiveTurns(result.thread);
+    trimTurns(result.thread, maxTurns);
     return {
       cachedAtMs: entry.cachedAtMs,
       updatedAtMs: entry.updatedAtMs,
@@ -570,6 +638,7 @@ function createThreadDetailProjectionService(options = {}) {
       if (turnId) appendItemText(ensureTurn(thread, turnId), String(params.itemId || ""), "fileChange", "aggregatedOutput", params.delta || "");
     }
     normalizeProjectionThreadUserMessages(thread);
+    normalizeProjectionSupersededLiveTurns(thread);
     trimTurns(thread, maxTurns);
     entry.updatedAtMs = now();
     entry.dynamic = true;
