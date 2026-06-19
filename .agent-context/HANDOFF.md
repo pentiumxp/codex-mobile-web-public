@@ -4614,8 +4614,9 @@ The previous full handoff was archived and should be opened only when old proven
 
 ## 2026-06-19 Composer @ Intent Menu iOS/WebView Fix v304
 
-- Status: local fix implemented and validated; production deployment requested
-  next in this turn.
+- Status: implemented, validated, committed, and deployed to Mac production.
+- Commit:
+  - `6f27ed8 fix: 修复 iOS 下 @ 意图菜单弹出`.
 - User-visible issue:
   - In the iOS/Home AI WebView keyboard flow, typing a bare `@` in Composer did
     not show the v303 intent menu.
@@ -4647,3 +4648,23 @@ The previous full handoff was archived and should be opened only when old proven
   - Home AI center harness:
     `node tests/architecture-code-test-harness-map.test.js`
   - `git diff --check`
+- Production deployment:
+  - Deployed with Home AI central Mac deploy script for plugin
+    `codex-mobile-web`, restart label
+    `com.hermesmobile.plugin.codex-mobile`, and health URL
+    `http://127.0.0.1:8787/api/public-config`.
+  - Production `/api/public-config` reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v304` and
+    `shellCacheName=codex-mobile-shell-v304`.
+  - Production static readback confirmed `public/app.js`, `public/styles.css`,
+    `public/sw.js`, and README include the v304 intent-menu fix.
+  - Plugin manifest smoke at
+    `http://127.0.0.1:8787/api/v1/hermes/plugin/manifest` returned
+    `id=codex-mobile`, `name=Codex Mobile`, `version=0.1.11`.
+  - `launchctl print system/com.hermesmobile.plugin.codex-mobile` showed the
+    service active.
+  - Evidence ledger:
+    `evidence-f80cb2e9-a855-4ecd-bcd0-5af468c2ef7e`.
+  - The production backup directory under
+    `/Users/hermes-host/HermesMobile/backups/deploy` was not listed in this
+    shell because the directory is not readable by the current user.
