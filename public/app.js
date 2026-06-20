@@ -368,7 +368,7 @@ const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v342";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v343";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -517,7 +517,7 @@ const FONT_SIZE_VALUES = new Set(["small", "default", "large", "xlarge", "xxlarg
 const MENU_OVERLAY_MEDIA = "(max-width: 1180px), (pointer: coarse) and (max-width: 1400px)";
 const TABLET_SPLIT_MEDIA = "(pointer: coarse) and (orientation: landscape) and (min-width: 900px) and (min-height: 600px)";
 const SIDEBAR_EDGE_SWIPE_PX = 34;
-const ANDROID_SIDEBAR_EDGE_SWIPE_PX = 84;
+const ANDROID_SIDEBAR_EDGE_SWIPE_PX = 44;
 const PLUGIN_EMBED_BACK_EDGE_SWIPE_PX = 44;
 const PLUGIN_EMBED_BACK_SWIPE_MIN_PX = 58;
 const ANDROID_BACK_SIDEBAR_STATE = "codexMobileAndroidBackSidebar";
@@ -7782,6 +7782,15 @@ function sidebarEdgeSwipeStartLimitPx() {
   return isAndroidBrowser() ? ANDROID_SIDEBAR_EDGE_SWIPE_PX : SIDEBAR_EDGE_SWIPE_PX;
 }
 
+function pointInComposerGestureZone(point) {
+  if (!point) return false;
+  const composer = $("composer");
+  if (!composer) return false;
+  const rect = composer.getBoundingClientRect();
+  if (!rect || rect.height <= 0) return false;
+  return point.clientY >= Math.max(0, rect.top - 10);
+}
+
 function closeSidebarMenu() {
   const sidebar = $("sidebar");
   if (!sidebar) return;
@@ -7937,6 +7946,7 @@ function beginSidebarEdgeSwipe(event) {
   if (event.touches && event.touches.length > 1) return;
   if (isInteractiveGestureTarget(event.target)) return;
   const touch = primaryTouch(event);
+  if (pointInComposerGestureZone(touch)) return;
   if (!touch || touch.clientX > sidebarEdgeSwipeStartLimitPx()) return;
   ensureAndroidBackToSidebarSentinel();
   if (event.cancelable !== false) event.preventDefault();

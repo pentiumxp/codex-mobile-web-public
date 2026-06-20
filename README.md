@@ -4,6 +4,7 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：v343 修正移动端左下角 Fast 按钮难点中的问题。左侧边栏边缘滑动在 Composer 底部区域不再启动，Android 侧边栏手势起点也从 84px 收窄到 44px，避免 Fast 按钮和 Composer 控件被侧栏手势抢占；正文和列表左缘仍可用手势打开侧栏。PWA shell cache 升级到 `codex-mobile-shell-v343`。
 - 中文说明：v342 修正 Mobile 新建 Workspace 的默认父目录。未显式配置时，Mac 开发/生产仓库会优先使用当前仓库所在的 `HermesMobileDev` 开发根，不再默认落到用户 `Documents`；也可以用 `CODEX_MOBILE_WORKSPACE_DEFAULT_CREATE_ROOT` 指定默认父目录，用 `CODEX_MOBILE_WORKSPACE_CREATE_ROOTS` 限定可选父目录。创建对话框会在有多个允许父目录时显示选择框。PWA shell cache 升级到 `codex-mobile-shell-v342`。
 - 中文说明：v341 收窄自动续接，避免普通 reconnect/resume、前后台切换或短暂 app-server 状态抖动时自动向 running 线程注入“继续当前任务”用户消息。现在自动续接只使用手动 Restart 前保存的 running sessions 风险列表；未经过 Restart 保护流程的普通连接恢复只刷新页面状态，不再主动发继续提示。PWA shell cache 升级到 `codex-mobile-shell-v341`。
 - 中文说明：v337 修复 Home AI 嵌入态 Codex 用户上传图片在白占位图和真实图之间反复闪烁的问题。嵌入 Home AI 时，上传图片通过已鉴权的同源代理 URL 直接渲染，不再先输出透明占位图再异步 hydration；独立 iOS/WebKit 访问仍保留原来的受保护图片 hydration 兜底。PWA shell cache 升级到 `codex-mobile-shell-v337`。
