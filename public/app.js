@@ -364,7 +364,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v316";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v317";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -4908,20 +4908,61 @@ function threadTaskCardsSignature(thread) {
   }));
 }
 
+function rolloutWarningSignature(thread) {
+  const overThreshold = isRolloutOverThreshold(thread);
+  const dismissed = isRolloutWarningDismissed(thread);
+  const visible = Boolean(overThreshold && !dismissed);
+  return {
+    visible,
+    overThreshold,
+    dismissed,
+    thresholdBytes: visible ? rolloutThresholdBytes(thread) : "",
+  };
+}
+
+function visibleTurnsForConversation(thread) {
+  return ((thread && thread.turns) || []).slice(-maxVisibleTurnsForThread(thread));
+}
+
+function conversationRootSignature(thread) {
+  if (!thread) return "home";
+  if (thread.mobileLoadError) return `load-error|${state.currentThreadId || thread.id || ""}|${thread.mobileLoadError}`;
+  if (thread.mobileLoading) return `loading|${state.currentThreadId || thread.id || ""}`;
+  const turns = visibleTurnsForConversation(thread);
+  const omitted = Number(thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread.turns || []).length - turns.length);
+  const readWarningMessage = threadReadWarningMessage(thread);
+  const payload = {
+    threadId: state.currentThreadId || thread.id || "",
+    imageAuthVersion: Number(state.imageAuthVersion || 0),
+    pluginRefreshPendingNotice: String(state.pluginRefreshPendingNotice || ""),
+    rolloutWarning: rolloutWarningSignature(thread),
+    omitted,
+    olderTurnsCursor: threadTurnsCursorSignature(thread.mobileOlderTurnsCursor),
+    historyExpanded: Boolean(thread.mobileHistoryExpanded),
+    historyBusy: Boolean(state.threadHistoryBusy),
+    historyError: String(state.threadHistoryError || ""),
+    goal: threadGoalSignature(thread),
+    approvals: approvalRequestsSignature(state.currentThreadId || thread.id || ""),
+    taskCards: threadTaskCardsSignature(thread),
+    readMode: String(thread.mobileReadMode || ""),
+    readWarning: String(thread.mobileReadWarning || ""),
+    readWarningMessage,
+    visibleTurns: turns.map((turn) => turn && (turn.id || turn.startedAt || "")),
+  };
+  return JSON.stringify(payload);
+}
+
 function conversationRenderSignature(thread) {
   if (!thread) return "home";
   if (thread.mobileLoadError) return `load-error|${state.currentThreadId || thread.id || ""}|${thread.mobileLoadError}`;
   if (thread.mobileLoading) return `loading|${state.currentThreadId || thread.id || ""}`;
-  const turns = (thread.turns || []).slice(-maxVisibleTurnsForThread(thread));
+  const turns = visibleTurnsForConversation(thread);
   const omitted = Number(thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread.turns || []).length - turns.length);
   const payload = {
     threadId: state.currentThreadId || thread.id || "",
     imageAuthVersion: Number(state.imageAuthVersion || 0),
     pluginRefreshPendingNotice: String(state.pluginRefreshPendingNotice || ""),
-    rolloutSizeBytes: rolloutSizeBytes(thread),
-    rolloutWarning: isRolloutOverThreshold(thread),
-    rolloutWarningDismissed: isRolloutWarningDismissed(thread),
-    rolloutWarningThresholdBytes: rolloutThresholdBytes(thread),
+    rolloutWarning: rolloutWarningSignature(thread),
     omitted,
     olderTurnsCursor: threadTurnsCursorSignature(thread.mobileOlderTurnsCursor),
     historyExpanded: Boolean(thread.mobileHistoryExpanded),
@@ -7202,12 +7243,32 @@ async function refreshCurrentThread(options = {}) {
   const apiElapsedMs = roundedDurationMs(apiStartedAt);
   if (state.currentThreadId !== threadId || seq !== state.threadLoadSeq) return;
   const renderStartedAt = nowPerfMs();
+  const previousThread = state.currentThread;
+  const previousConversationSignature = conversationRenderSignature(state.currentThread);
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
+  const nextConversationSignature = conversationRenderSignature(state.currentThread);
+  const shouldRenderDetail = previousConversationSignature !== nextConversationSignature
+    || state.renderedConversationSignature !== nextConversationSignature;
   mergeThreadIntoThreadList(state.currentThread);
   renderComposerSettings();
   syncActiveTurnFromThread();
   renderThreads();
-  renderCurrentThread();
+  let locallyPatchedDetail = false;
+  if (shouldRenderDetail) {
+    locallyPatchedDetail = patchCurrentThreadDetailFromRefresh(previousThread, state.currentThread, previousConversationSignature);
+    if (locallyPatchedDetail) {
+      updateCurrentThreadHeader(state.currentThread);
+      updateTickTimer();
+      publishPluginNavigationState();
+    } else {
+      renderCurrentThread();
+    }
+  } else {
+    updateCurrentThreadHeader(state.currentThread);
+    updateLiveOperationDockHtml(renderLiveOperationDock(state.currentThread, existingConversationRenderKeys()));
+    updateTickTimer();
+    scheduleScrollToBottomButtonUpdate();
+  }
   postPerformanceEvent("thread_refresh_ms", {
     source,
     threadId,
@@ -7220,6 +7281,8 @@ async function refreshCurrentThread(options = {}) {
     turns: Array.isArray(result.thread && result.thread.turns) ? result.thread.turns.length : 0,
     omittedTurns: Number(result.thread && result.thread.mobileOmittedTurnCount || 0),
     rolloutSizeBytes: rolloutSizeBytes(result.thread),
+    skippedDetailRender: !shouldRenderDetail,
+    locallyPatchedDetail,
   }, {
     key: "thread_refresh_ms",
     minIntervalMs: PERF_EVENT_THROTTLE_MS,
@@ -9518,6 +9581,13 @@ function updateConversationHtml(html, signature, options = {}) {
   return true;
 }
 
+function updateCurrentThreadHeader(thread = state.currentThread) {
+  const titleEl = $("threadTitle");
+  const metaEl = $("threadMeta");
+  if (titleEl) titleEl.textContent = thread ? (thread.name || thread.preview || thread.id) : "Select a thread";
+  if (metaEl) metaEl.textContent = "";
+}
+
 function updateLiveOperationDockHtml(html = "") {
   const dock = $("liveOperationDock");
   if (!dock) return false;
@@ -9594,6 +9664,129 @@ function sourceIndexForVisibleItem(turn, item) {
   return index >= 0 ? index : 0;
 }
 
+function renderVisibleItemPatchHtml(turn, item, previousKeys = new Set(), index = 0) {
+  if (!item) return "";
+  if (isContextCompactionItem(item)) return renderContextCompaction(item, turn, previousKeys, index);
+  if (isOperationalItem(item)) return renderLiveOperation(item, turn, previousKeys, index);
+  if (item.type === "reasoning" && isLiveTurn(turn)) return "";
+  return renderItem(item, turn, previousKeys, index);
+}
+
+function firstElementFromHtml(html) {
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  return template.content.firstElementChild || null;
+}
+
+function completeLocalConversationDomUpdate(root, wasNearBottom, userReadingCurrentTurn) {
+  if (root) {
+    hydrateGitHubLinkCards(root);
+    hydrateMermaidDiagrams(root);
+    scheduleFailedAppImageScan(root);
+  }
+  state.renderedConversationSignature = conversationRenderSignature(state.currentThread);
+  if (!userReadingCurrentTurn && !shouldHoldAutoScrollForCurrentTurn() && (wasNearBottom || shouldFollowSubmittedMessageToBottom() || shouldFollowViewportChangeToBottom())) {
+    scheduleConversationToBottom();
+  } else {
+    scheduleScrollToBottomButtonUpdate();
+  }
+  return true;
+}
+
+function updateLiveOperationDockForLocalPatch(previousKeys = existingConversationRenderKeys()) {
+  const wasNearBottom = isConversationNearBottom();
+  const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom: wasNearBottom });
+  updateLiveOperationDockHtml(renderLiveOperationDock(state.currentThread, previousKeys));
+  return completeLocalConversationDomUpdate($("liveOperationDock"), wasNearBottom, userReadingCurrentTurn);
+}
+
+function turnArticleNode(turn) {
+  const conversation = $("conversation");
+  if (!conversation || !turn) return null;
+  const key = stableTurnKey(turn);
+  return conversation.querySelector(`[data-render-key="${escapeSelectorAttr(key)}"]`);
+}
+
+function insertTurnArticleDom(turn, previousKeys = existingConversationRenderKeys()) {
+  const conversation = $("conversation");
+  if (!conversation || !turn) return null;
+  const html = renderTurn(turn, previousKeys);
+  const source = firstElementFromHtml(html);
+  if (!source) return null;
+  const turns = visibleTurnsForConversation(state.currentThread);
+  const turnIndex = turns.indexOf(turn);
+  let anchor = null;
+  for (let index = turnIndex - 1; index >= 0; index -= 1) {
+    const previous = turnArticleNode(turns[index]);
+    if (previous) {
+      anchor = previous.nextSibling;
+      break;
+    }
+  }
+  if (!anchor) {
+    const firstTurn = conversation.querySelector(".turn");
+    if (firstTurn) anchor = firstTurn;
+  }
+  conversation.insertBefore(source, anchor);
+  return source;
+}
+
+function insertVisibleItemDom(turn, item) {
+  if (!turn || !item || !item.id || isReasoningItem(item)) return false;
+  if (isOperationalItem(item)) return updateLiveOperationDockForLocalPatch();
+  const conversation = $("conversation");
+  if (!conversation) return false;
+  const wasNearBottom = isConversationNearBottom();
+  const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom: wasNearBottom });
+  const previousKeys = existingConversationRenderKeys();
+  let article = turnArticleNode(turn);
+  if (!article) {
+    article = insertTurnArticleDom(turn, previousKeys);
+    if (!article) return false;
+    bindCurrentThreadActions();
+    return completeLocalConversationDomUpdate(article, wasNearBottom, userReadingCurrentTurn);
+  }
+  const entries = visibleItemsForTurn(turn);
+  const visibleIndex = entries.findIndex((entry) => entry && entry.item === item);
+  if (visibleIndex < 0) return false;
+  const sourceIndex = Number.isInteger(entries[visibleIndex].sourceIndex) ? entries[visibleIndex].sourceIndex : sourceIndexForVisibleItem(turn, item);
+  const html = renderVisibleItemPatchHtml(turn, item, previousKeys, sourceIndex);
+  const source = firstElementFromHtml(html);
+  if (!source) return false;
+  let anchor = null;
+  for (let index = visibleIndex - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    const previousKey = stableItemKey(turn, entry.item, entry.sourceIndex);
+    const previousNode = article.querySelector(`[data-render-key="${escapeSelectorAttr(previousKey)}"]`);
+    if (previousNode) {
+      anchor = previousNode.nextSibling;
+      break;
+    }
+  }
+  if (!anchor) anchor = article.firstChild;
+  article.insertBefore(source, anchor);
+  return completeLocalConversationDomUpdate(source, wasNearBottom, userReadingCurrentTurn);
+}
+
+function patchVisibleItemDom(turn, item) {
+  if (!turn || !item || !item.id || isReasoningItem(item)) return false;
+  if (isOperationalItem(item)) return updateLiveOperationDockForLocalPatch();
+  const conversation = $("conversation");
+  if (!conversation) return false;
+  const index = sourceIndexForVisibleItem(turn, item);
+  const key = stableItemKey(turn, item, index);
+  const target = conversation.querySelector(`[data-render-key="${escapeSelectorAttr(key)}"]`);
+  if (!target) return false;
+  const wasNearBottom = isConversationNearBottom();
+  const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom: wasNearBottom });
+  const previousKeys = existingConversationRenderKeys();
+  const html = renderVisibleItemPatchHtml(turn, item, previousKeys, index);
+  const source = firstElementFromHtml(html);
+  if (!source) return false;
+  patchNode(target, source);
+  return completeLocalConversationDomUpdate(target, wasNearBottom, userReadingCurrentTurn);
+}
+
 function patchLiveTextItemDom(turn, item) {
   if (!turn || !item || !item.id) return false;
   if (item.type !== "agentMessage" && item.type !== "plan") return false;
@@ -9606,21 +9799,38 @@ function patchLiveTextItemDom(turn, item) {
   const wasNearBottom = isConversationNearBottom();
   const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom: wasNearBottom });
   const html = renderItem(item, turn, existingConversationRenderKeys(), index);
-  const template = document.createElement("template");
-  template.innerHTML = html;
-  const source = template.content.firstElementChild;
+  const source = firstElementFromHtml(html);
   if (!source) return false;
   patchNode(target, source);
-  hydrateGitHubLinkCards(target);
-  hydrateMermaidDiagrams(target);
-  scheduleFailedAppImageScan(target);
-  state.renderedConversationSignature = conversationRenderSignature(state.currentThread);
-  if (!userReadingCurrentTurn && !shouldHoldAutoScrollForCurrentTurn() && (wasNearBottom || shouldFollowSubmittedMessageToBottom() || shouldFollowViewportChangeToBottom())) {
-    scheduleConversationToBottom();
-  } else {
-    scheduleScrollToBottomButtonUpdate();
+  return completeLocalConversationDomUpdate(target, wasNearBottom, userReadingCurrentTurn);
+}
+
+function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previousConversationSignature) {
+  const conversation = $("conversation");
+  if (!conversation || !previousThread || !nextThread) return false;
+  if (previousThread.mobileLoading || previousThread.mobileLoadError || nextThread.mobileLoading || nextThread.mobileLoadError) return false;
+  if (state.renderedConversationSignature !== previousConversationSignature) return false;
+  if (conversationRootSignature(previousThread) !== conversationRootSignature(nextThread)) return false;
+  const wasNearBottom = isConversationNearBottom();
+  const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom: wasNearBottom });
+  const previousKeys = existingConversationRenderKeys();
+  updateLiveOperationDockHtml(renderLiveOperationDock(nextThread, previousKeys));
+  for (const turn of visibleTurnsForConversation(nextThread)) {
+    const html = renderTurn(turn, previousKeys);
+    const source = firstElementFromHtml(html);
+    const article = turnArticleNode(turn);
+    if (!source) {
+      if (article) article.remove();
+      continue;
+    }
+    if (!article) {
+      if (!insertTurnArticleDom(turn, previousKeys)) return false;
+      continue;
+    }
+    patchNode(article, source);
   }
-  return true;
+  bindCurrentThreadActions();
+  return completeLocalConversationDomUpdate(conversation, wasNearBottom, userReadingCurrentTurn);
 }
 
 function renderHome() {
@@ -9736,7 +9946,7 @@ function renderRolloutWarning(thread, previousKeys = new Set()) {
   if (isRolloutWarningDismissed(thread)) return "";
   const size = rolloutSizeText(thread);
   const threshold = formatFileSize(rolloutThresholdBytes(thread));
-  const key = `rollout-warning|${thread.id || state.currentThreadId}|${rolloutSizeBytes(thread)}`;
+  const key = `rollout-warning|${thread.id || state.currentThreadId}`;
   return `<div class="rollout-warning${entryAnimationClass(key, previousKeys)}" data-render-key="${escapeHtml(key)}">
     <div class="rollout-warning-text">
       <strong>上下文文件 ${escapeHtml(size)}</strong>
@@ -9825,10 +10035,7 @@ function renderCurrentThread(options = {}) {
         && !shouldHoldAutoScrollForCurrentTurn()
         && (options.stickToBottom === true || nearBottom)));
   const previousKeys = existingConversationRenderKeys();
-  const titleEl = $("threadTitle");
-  const metaEl = $("threadMeta");
-  if (titleEl) titleEl.textContent = thread.name || thread.preview || thread.id;
-  if (metaEl) metaEl.textContent = "";
+  updateCurrentThreadHeader(thread);
   if (thread.mobileLoading) {
     updateLiveOperationDockHtml("");
     updateConversationHtml(
@@ -9856,7 +10063,7 @@ function renderCurrentThread(options = {}) {
     publishPluginNavigationState();
     return;
   }
-  const turns = (thread.turns || []).slice(-maxVisibleTurnsForThread(thread));
+  const turns = visibleTurnsForConversation(thread);
   const omitted = Number(thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread.turns || []).length - turns.length);
   const omittedBanner = renderThreadHistoryNote(thread, omitted, previousKeys);
   const readWarningKey = `read-warning|${state.currentThreadId}|${thread.mobileReadMode || ""}|${thread.mobileReadWarning || ""}`;
@@ -11199,10 +11406,7 @@ function renderTurn(turn, previousKeys = new Set()) {
     const item = entry.item;
     const sourceIndex = Number.isInteger(entry.sourceIndex) && entry.sourceIndex >= 0 ? entry.sourceIndex : index;
     let html = "";
-    if (isContextCompactionItem(item)) html = renderContextCompaction(item, turn, previousKeys, sourceIndex);
-    else if (isOperationalItem(item)) html = renderLiveOperation(item, turn, previousKeys, sourceIndex);
-    else if (item.type === "reasoning" && isLiveTurn(turn)) html = "";
-    else html = renderItem(item, turn, previousKeys, sourceIndex);
+    html = renderVisibleItemPatchHtml(turn, item, previousKeys, sourceIndex);
     return { html, sourceIndex, order: 1 };
   }).filter((entry) => entry && entry.html);
   const items = renderedItems
@@ -13397,6 +13601,7 @@ function upsertItem(turnId, item) {
     return;
   }
   turn.items = turn.items || [];
+  let structureChanged = false;
   if (item.type === "userMessage") {
     const matchingExistingIndex = turn.items.findIndex((existing) => existing
       && existing.id !== item.id
@@ -13411,19 +13616,36 @@ function upsertItem(turnId, item) {
     }
   }
   if (item.type === "agentMessage" || item.type === "plan") {
+    const beforeLength = turn.items.length;
     turn.items = turn.items.filter((existing) => existing.id === item.id || !visibleTextItemsLikelySame(existing, item));
+    structureChanged = structureChanged || turn.items.length !== beforeLength;
   }
   if (isTurnUsageSummaryItem(item)) {
+    const beforeLength = turn.items.length;
     turn.items = turn.items.filter((existing) => existing.id === item.id || !isTurnUsageSummaryItem(existing));
+    structureChanged = structureChanged || turn.items.length !== beforeLength;
   }
   const index = turn.items.findIndex((x) => x.id === item.id);
+  const canPatchExistingItem = index >= 0;
+  let nextItem = item;
   if (index >= 0 && !item.startedAtMs && turn.items[index].startedAtMs) item.startedAtMs = turn.items[index].startedAtMs;
   if (item.type === "reasoning" && !item.startedAtMs) item.startedAtMs = Date.now();
   if (isOperationalItem(item) && isCompletedStatus(item.status) && !item.completedAtMs) item.completedAtMs = Date.now();
-  if (index >= 0) turn.items[index] = mergeItemPreservingVisibleFields(turn.items[index], item);
-  else turn.items.push(item);
+  if (index >= 0) {
+    turn.items[index] = mergeItemPreservingVisibleFields(turn.items[index], item);
+    nextItem = turn.items[index];
+  } else {
+    turn.items.push(item);
+  }
   normalizeThreadVisibleUserMessages(state.currentThread);
-  if (shouldRenderAfterUpsert(turn, item)) scheduleRenderCurrentThread();
+  if (shouldRenderAfterUpsert(turn, nextItem)) {
+    if (structureChanged) scheduleRenderCurrentThread();
+    else if (canPatchExistingItem) {
+      if (!patchVisibleItemDom(turn, nextItem)) scheduleRenderCurrentThread();
+    } else if (!insertVisibleItemDom(turn, nextItem)) {
+      scheduleRenderCurrentThread();
+    }
+  }
 }
 
 function removeItem(turnId, itemId) {
@@ -13443,12 +13665,18 @@ function ensureTimerItem(turnId, itemId, itemType) {
   }
   turn.items = turn.items || [];
   let item = turn.items.find((x) => x.id === itemId);
+  let createdItem = false;
   if (!item) {
     item = { id: itemId, type: itemType, startedAtMs: Date.now() };
     turn.items.push(item);
+    createdItem = true;
   }
   if (!item.startedAtMs) item.startedAtMs = Date.now();
-  scheduleRenderCurrentThread();
+  if (createdItem) {
+    if (!insertVisibleItemDom(turn, item)) scheduleRenderCurrentThread();
+  } else if (!patchVisibleItemDom(turn, item)) {
+    scheduleRenderCurrentThread();
+  }
 }
 
 function shouldRenderAfterAppend(turn, itemType, field, previousValue, nextValue, options = {}) {
@@ -13470,9 +13698,11 @@ function appendToItem(turnId, itemId, itemType, field, delta, index = 0, options
   }
   markActivity(activityLabelForItem({ type: itemType }));
   let item = (turn.items || []).find((x) => x.id === itemId);
+  let createdItem = false;
   if (!item) {
     item = { id: itemId, type: itemType, startedAtMs: Date.now() };
     turn.items.push(item);
+    createdItem = true;
   }
   if (!item.startedAtMs) item.startedAtMs = Date.now();
   const previousValue = Array.isArray(item[field]) ? item[field][index] : item[field];
@@ -13489,7 +13719,10 @@ function appendToItem(turnId, itemId, itemType, field, delta, index = 0, options
   }
   sustainSubmittedMessageBottomFollow(turn, itemType, field);
   if (shouldRenderAfterAppend(turn, itemType, field, previousValue, nextValue, options)) {
-    if (!patchLiveTextItemDom(turn, item)) scheduleRenderCurrentThread();
+    if (isOperationalItem(item)) updateLiveOperationDockForLocalPatch();
+    else if (createdItem) {
+      if (!insertVisibleItemDom(turn, item)) scheduleRenderCurrentThread();
+    } else if (!patchLiveTextItemDom(turn, item)) scheduleRenderCurrentThread();
   }
 }
 

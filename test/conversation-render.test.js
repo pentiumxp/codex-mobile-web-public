@@ -374,6 +374,8 @@ function updateTickTimer() {}
 function isOperationalItem() { return false; }
 function isCompletedStatus() { return false; }
 function shouldRenderAfterUpsert() { return true; }
+function patchVisibleItemDom() { return false; }
+function insertVisibleItemDom() { return false; }
 function scheduleRenderCurrentThread() { renderCount += 1; }
 function visibleTextItemsLikelySame() { return false; }
 function itemVisibleWeight(item) { return JSON.stringify(item || {}).length; }
@@ -758,7 +760,9 @@ test("long agent messages keep a stable render path when a turn completes", () =
   assert.match(functionBody("shouldDeferLiveFinalReceipt"), /turnHasOperationalItems\(turn\)/);
   assert.match(appJs, /function shouldRenderAfterUpsert\(turn, item\)/);
   assert.match(functionBody("shouldRenderAfterUpsert"), /shouldDeferLiveFinalReceipt\(turn, item && item\.type\)/);
-  assert.match(functionBody("upsertItem"), /if \(shouldRenderAfterUpsert\(turn, item\)\) scheduleRenderCurrentThread\(\);/);
+  assert.match(functionBody("upsertItem"), /const canPatchExistingItem = index >= 0;/);
+  assert.match(functionBody("upsertItem"), /let structureChanged = false;/);
+  assert.match(functionBody("upsertItem"), /if \(structureChanged\) scheduleRenderCurrentThread\(\);[\s\S]*else if \(canPatchExistingItem\) \{[\s\S]*patchVisibleItemDom\(turn, nextItem\)[\s\S]*\} else if \(!insertVisibleItemDom\(turn, nextItem\)\)/);
   assert.match(functionBody("shouldRenderAfterAppend"), /options\.render === "defer-final-receipt" && shouldDeferLiveFinalReceipt\(turn, itemType\)/);
   assert.doesNotMatch(functionBody("shouldRenderAfterAppend"), /previousLength < LONG_RECEIPT_SCROLL_CHARS && nextLength <= LONG_RECEIPT_SCROLL_CHARS/);
   assert.match(functionBody("appendToItem"), /shouldRenderAfterAppend\(turn, itemType, field, previousValue, nextValue, options\)/);
@@ -1451,7 +1455,7 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(restoreBody, /updateThreadStatusHints\(id, \{ type: "active" \}, restoredStatus/);
   assert.match(restoreBody, /state\.currentThread\.status = snapshot\.currentStatus/);
   assert.match(functionBody("loadThread"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);\s*mergeThreadIntoThreadList\(state\.currentThread\);/);
-  assert.match(functionBody("refreshCurrentThread"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);\s*mergeThreadIntoThreadList\(state\.currentThread\);/);
+  assert.match(functionBody("refreshCurrentThread"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);[\s\S]*mergeThreadIntoThreadList\(state\.currentThread\);/);
   assert.match(functionBody("backfillFullThreadDetail"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);\s*mergeThreadIntoThreadList\(state\.currentThread\);/);
   const sendBody = functionBody("sendMessage");
   assert.match(sendBody, /const previousThreadStatus = snapshotThreadStatus\(state\.currentThreadId\);/);
