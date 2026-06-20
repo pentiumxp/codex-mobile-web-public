@@ -4,6 +4,7 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：v317 继续修复线程中间输出像整屏刷新。SSE 事件和轮询刷新都会先尝试局部更新：新增可见 item 优先在当前 turn 内插入，已有 item 继续局部 patch；command、file、tool 等 operational item 不再触发 conversation 重绘，只更新底部 Command dock。运行中 rollout 文件大小增长也不再单独触发 conversation 重绘。只有去重、顺序变化、item 删除、历史窗口或审批/任务卡等结构性变化才回退到整段详情渲染。PWA shell cache 升级到 `codex-mobile-shell-v317`。
 - 中文说明：v316 缓解线程中间输出时的页面颤动。已有可见 item 的状态更新优先局部 patch 单个卡片，live-poll 如果合并后对话可见签名没有变化就跳过详情区重绘，只更新时间器/头部/滚动按钮；compact Command dock 固定为稳定高度，避免命令状态更新反复挤压 conversation 区域。PWA shell cache 升级到 `codex-mobile-shell-v316`。
 - 中文说明：v315 修复已有会话发送新消息后线程列表 running spinner 仍需等待 `turn/started` 事件、detail refresh 或下一次列表刷新才出现的问题。普通发送路径现在会在本地提交后立即把当前会话和列表行标记为 active；如果发送失败，再恢复发送前状态。PWA shell cache 升级到 `codex-mobile-shell-v315`。
 - 中文说明：server-only 修复 Home AI 审计卡/跨线程任务卡启动后台线程后，线程列表运行标志可能滞后的问题。任务卡批准并注入目标 turn 后，服务端会立即广播轻量 `thread/status/changed` active 摘要；收到后台 `turn/started` / `turn/completed` 时也会派生线程级状态摘要并清理线程列表 fallback cache。后台 turn 的正文、工具输出和 diff 仍只发给当前订阅线程。本次不改变 PWA shell cache，更新后需要重启 Node listener 才会生效。

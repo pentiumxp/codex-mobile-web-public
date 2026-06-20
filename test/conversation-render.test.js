@@ -374,6 +374,8 @@ function updateTickTimer() {}
 function isOperationalItem() { return false; }
 function isCompletedStatus() { return false; }
 function shouldRenderAfterUpsert() { return true; }
+function patchVisibleItemDom() { return false; }
+function insertVisibleItemDom() { return false; }
 function scheduleRenderCurrentThread() { renderCount += 1; }
 function visibleTextItemsLikelySame() { return false; }
 function itemVisibleWeight(item) { return JSON.stringify(item || {}).length; }
@@ -759,7 +761,8 @@ test("long agent messages keep a stable render path when a turn completes", () =
   assert.match(appJs, /function shouldRenderAfterUpsert\(turn, item\)/);
   assert.match(functionBody("shouldRenderAfterUpsert"), /shouldDeferLiveFinalReceipt\(turn, item && item\.type\)/);
   assert.match(functionBody("upsertItem"), /const canPatchExistingItem = index >= 0;/);
-  assert.match(functionBody("upsertItem"), /if \(shouldRenderAfterUpsert\(turn, nextItem\)\) \{[\s\S]*if \(!canPatchExistingItem \|\| !patchVisibleItemDom\(turn, nextItem\)\) scheduleRenderCurrentThread\(\);[\s\S]*\}/);
+  assert.match(functionBody("upsertItem"), /let structureChanged = false;/);
+  assert.match(functionBody("upsertItem"), /if \(structureChanged\) scheduleRenderCurrentThread\(\);[\s\S]*else if \(canPatchExistingItem\) \{[\s\S]*patchVisibleItemDom\(turn, nextItem\)[\s\S]*\} else if \(!insertVisibleItemDom\(turn, nextItem\)\)/);
   assert.match(functionBody("shouldRenderAfterAppend"), /options\.render === "defer-final-receipt" && shouldDeferLiveFinalReceipt\(turn, itemType\)/);
   assert.doesNotMatch(functionBody("shouldRenderAfterAppend"), /previousLength < LONG_RECEIPT_SCROLL_CHARS && nextLength <= LONG_RECEIPT_SCROLL_CHARS/);
   assert.match(functionBody("appendToItem"), /shouldRenderAfterAppend\(turn, itemType, field, previousValue, nextValue, options\)/);

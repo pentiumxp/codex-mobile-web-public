@@ -12,6 +12,21 @@ const swJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "sw.js"), "
 const viewportMetricsJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "viewport-metrics.js"), "utf8");
 const platformPointer = fs.readFileSync(path.resolve(__dirname, "..", "docs", "HOME_AI_PLATFORM_CONTRACT.md"), "utf8");
 
+function functionBody(name) {
+  const start = appJs.indexOf(`function ${name}(`);
+  assert.notEqual(start, -1, `missing function ${name}`);
+  const bodyStart = appJs.indexOf(") {", start) + 2;
+  assert.notEqual(bodyStart, 1, `missing function body ${name}`);
+  let depth = 0;
+  for (let index = bodyStart; index < appJs.length; index += 1) {
+    const char = appJs[index];
+    if (char === "{") depth += 1;
+    if (char === "}") depth -= 1;
+    if (depth === 0) return appJs.slice(bodyStart + 1, index);
+  }
+  throw new Error(`could not parse function ${name}`);
+}
+
 test("mobile viewport and early guards disable page zoom", () => {
   assert.match(indexHtml, /name="viewport" content="[^"]*maximum-scale=1/);
   assert.match(indexHtml, /name="viewport" content="[^"]*minimum-scale=1/);
@@ -97,9 +112,9 @@ test("composer sizing avoids one-pixel layout churn while typing and streaming",
   assert.match(stylesCss, /\.message-input\s*{[\s\S]*height:\s*44px;[\s\S]*overflow-y:\s*hidden;/);
 });
 
-test("public app shell cache advances after incremental stream rendering stabilization", () => {
-  assert.match(swJs, /codex-mobile-shell-v316/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v316"/);
+test("public app shell cache advances after local stream item insertion", () => {
+  assert.match(swJs, /codex-mobile-shell-v317/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v317"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);
@@ -248,10 +263,29 @@ test("public app shell cache advances after incremental stream rendering stabili
   assert.match(appJs, /api\(threadDetailApiPath\(threadId, requestedMode === "recent" \? \{ mode: "recent" \} : \{\}\)/);
   assert.match(appJs, /const previousConversationSignature = conversationRenderSignature\(state\.currentThread\);/);
   assert.match(appJs, /const shouldRenderDetail = previousConversationSignature !== nextConversationSignature[\s\S]*state\.renderedConversationSignature !== nextConversationSignature;/);
-  assert.match(appJs, /if \(shouldRenderDetail\) \{[\s\S]*renderCurrentThread\(\);[\s\S]*\} else \{[\s\S]*updateCurrentThreadHeader\(state\.currentThread\);[\s\S]*updateTickTimer\(\);[\s\S]*scheduleScrollToBottomButtonUpdate\(\);/);
+  assert.match(functionBody("refreshCurrentThread"), /locallyPatchedDetail = patchCurrentThreadDetailFromRefresh\(previousThread, state\.currentThread, previousConversationSignature\);[\s\S]*if \(locallyPatchedDetail\) \{[\s\S]*updateCurrentThreadHeader\(state\.currentThread\);[\s\S]*updateTickTimer\(\);[\s\S]*publishPluginNavigationState\(\);[\s\S]*\} else \{[\s\S]*renderCurrentThread\(\);/);
+  assert.match(functionBody("refreshCurrentThread"), /\} else \{[\s\S]*updateCurrentThreadHeader\(state\.currentThread\);[\s\S]*updateLiveOperationDockHtml\(renderLiveOperationDock\(state\.currentThread, existingConversationRenderKeys\(\)\)\);[\s\S]*updateTickTimer\(\);[\s\S]*scheduleScrollToBottomButtonUpdate\(\);/);
   assert.match(appJs, /skippedDetailRender: !shouldRenderDetail/);
+  assert.match(appJs, /locallyPatchedDetail,/);
+  assert.match(appJs, /function conversationRootSignature\(thread\)/);
+  assert.match(appJs, /function rolloutWarningSignature\(thread\)/);
+  assert.doesNotMatch(functionBody("conversationRootSignature"), /rolloutSizeBytes: rolloutSizeBytes\(thread\)/);
+  assert.doesNotMatch(functionBody("conversationRenderSignature"), /rolloutSizeBytes: rolloutSizeBytes\(thread\)/);
+  assert.match(functionBody("conversationRootSignature"), /rolloutWarning: rolloutWarningSignature\(thread\)/);
+  assert.match(functionBody("conversationRenderSignature"), /rolloutWarning: rolloutWarningSignature\(thread\)/);
+  assert.match(functionBody("conversationRootSignature"), /visibleTurns: turns\.map\(\(turn\) => turn && \(turn\.id \|\| turn\.startedAt \|\| ""\)\)/);
   assert.match(appJs, /function patchVisibleItemDom\(turn, item\)/);
-  assert.match(appJs, /if \(!canPatchExistingItem \|\| !patchVisibleItemDom\(turn, nextItem\)\) scheduleRenderCurrentThread\(\);/);
+  assert.match(appJs, /function insertVisibleItemDom\(turn, item\)/);
+  assert.match(appJs, /function insertTurnArticleDom\(turn, previousKeys = existingConversationRenderKeys\(\)\)/);
+  assert.match(appJs, /function patchCurrentThreadDetailFromRefresh\(previousThread, nextThread, previousConversationSignature\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /conversationRootSignature\(previousThread\) !== conversationRootSignature\(nextThread\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /updateLiveOperationDockHtml\(renderLiveOperationDock\(nextThread, previousKeys\)\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /patchNode\(article, source\);/);
+  assert.match(functionBody("insertVisibleItemDom"), /if \(isOperationalItem\(item\)\) return updateLiveOperationDockForLocalPatch\(\);/);
+  assert.match(functionBody("insertVisibleItemDom"), /article = insertTurnArticleDom\(turn, previousKeys\);/);
+  assert.match(functionBody("insertVisibleItemDom"), /article\.insertBefore\(source, anchor\);/);
+  assert.match(functionBody("upsertItem"), /if \(structureChanged\) scheduleRenderCurrentThread\(\);[\s\S]*else if \(canPatchExistingItem\)[\s\S]*else if \(!insertVisibleItemDom\(turn, nextItem\)\)/);
+  assert.match(functionBody("appendToItem"), /if \(isOperationalItem\(item\)\) updateLiveOperationDockForLocalPatch\(\);[\s\S]*else if \(createdItem\) \{/);
   assert.match(stylesCss, /\.live-operation-dock\s*{[\s\S]*min-height:\s*var\(--live-operation-dock-compact-height, 54px\);[\s\S]*contain:\s*layout paint;/);
   assert.match(stylesCss, /\.live-operation-dock:not\(\[data-mode="expanded"\]\)\s*{[\s\S]*height:\s*var\(--live-operation-dock-compact-height, 54px\);/);
   assert.match(stylesCss, /\.live-operation-dock:not\(\[data-mode="expanded"\]\) \.live-operation\s*{[\s\S]*height:\s*44px;[\s\S]*max-height:\s*44px;/);

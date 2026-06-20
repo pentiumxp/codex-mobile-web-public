@@ -2,6 +2,63 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-20 v317 Poll/SSE Local Stream Rendering Fix
+
+- Status: implemented and validated locally; commit/deploy status to be updated
+  before ending the turn.
+- User-visible issue:
+  - After v316, streaming/intermediate output could still feel like each new
+    item caused a full-screen refresh rather than a local upward text movement.
+- Root cause:
+  - v316 made SSE `upsertItem()` / `appendToItem()` prefer per-item DOM patching
+    for existing visible items, but newly inserted visible items still fell back
+    to `scheduleRenderCurrentThread()`.
+  - `refreshCurrentThread()` still called `renderCurrentThread()` whenever the
+    conversation signature changed. If an intermediate item arrived through
+    polling rather than SSE, the whole thread detail was patched through the
+    broad render path.
+  - When only operational items changed through polling, the conversation
+    signature could stay unchanged and the compact Command dock could lag.
+  - Conversation signatures also included exact `rolloutSizeBytes`, so active
+    rollout file growth could force broad refresh even when visible message
+    structure was otherwise patchable.
+- Fix:
+  - Frontend shell advanced to `codex-mobile-shell-v317`.
+  - Added local DOM insertion for newly visible items and missing turn
+    articles.
+  - Operational command/file/tool items now update only the bottom Command dock
+    for both SSE and polling paths.
+  - Added `patchCurrentThreadDetailFromRefresh()` so poll refreshes with stable
+    root structure patch visible turn articles locally and only fall back to
+    `renderCurrentThread()` for structural changes such as history-window,
+    ordering, removals, approvals, task cards, or warning/banner changes.
+  - `thread_refresh_ms` telemetry now includes `locallyPatchedDetail`.
+  - Rollout warning signatures now track warning visibility/threshold state
+    instead of exact byte growth; exact rollout size still appears in the
+    warning when a full render is otherwise needed.
+- Files changed:
+  - `public/app.js`
+  - `public/sw.js`
+  - `test/conversation-render.test.js`
+  - `test/mobile-viewport.test.js`
+  - `test/thread-goal-service.test.js`
+  - `test/thread-task-card-route.test.js`
+  - `test/turn-scroll-controls.test.js`
+  - `README.md`
+  - `docs/TROUBLESHOOTING.md`
+- Validation:
+  - `node --check public/app.js` passed.
+  - Focused tests passed:
+    `node --test test/conversation-render.test.js test/turn-scroll-controls.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (72 tests).
+  - `npm run check` passed.
+  - Center required check passed:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - `git diff --check` passed.
+  - `npm test` passed: 527 tests.
+  - AI Ops evidence ledger:
+    `evidence-7b2c50aa-1c5b-4408-9218-606e72335950`.
+
 ## 2026-06-20 v316 Incremental Thread Rendering Stabilization
 
 - Status: implemented, validated, committed, and deployed to Mac production;
