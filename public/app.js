@@ -364,7 +364,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v321";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v322";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -13234,6 +13234,11 @@ function handleConversationImageError(event) {
   if (typeof probeFailedAuthenticatedImage === "function") probeFailedAuthenticatedImage(image);
 }
 
+function handleConversationImageLoad(event) {
+  const image = event && event.target && event.target.closest ? event.target.closest("img") : null;
+  clearFailedAppImage(image);
+}
+
 function failedAppImageContainer(image) {
   return image && image.closest
     ? image.closest(".input-image, .image-view, .markdown-image, .attachment-chip, .file-preview-media, figure")
@@ -13246,6 +13251,17 @@ function markFailedAppImage(image) {
   if (container) container.classList.add("image-load-failed");
   else if (image.classList) image.classList.add("image-load-failed");
   image.setAttribute("aria-hidden", "true");
+  return true;
+}
+
+function clearFailedAppImage(image) {
+  if (!image) return false;
+  const container = failedAppImageContainer(image);
+  if (container && container.classList) container.classList.remove("image-load-failed");
+  if (image.classList) image.classList.remove("image-load-failed");
+  if (image.getAttribute && image.getAttribute("aria-hidden") === "true") {
+    image.removeAttribute("aria-hidden");
+  }
   return true;
 }
 
@@ -13285,6 +13301,10 @@ function scanFailedAppImages(root) {
   if (!root || !root.querySelectorAll) return 0;
   let marked = 0;
   root.querySelectorAll("img").forEach((image) => {
+    if (image.complete && image.naturalWidth > 0) {
+      clearFailedAppImage(image);
+      return;
+    }
     if (image.complete && image.naturalWidth === 0 && markFailedAppImage(image)) marked += 1;
   });
   return marked;
@@ -17208,6 +17228,7 @@ function wireUi() {
     answerServerRequest(requestId, serverRequestPayload(request, String(responseText), form.dataset.serverQuestionId || "answer")).catch(showError);
   });
   $("conversation").addEventListener("error", handleConversationImageError, true);
+  $("conversation").addEventListener("load", handleConversationImageLoad, true);
   $("messageInput").addEventListener("input", (event) => {
     autoSizeMessageInput(event.target);
     if (state.sendButtonHint && !state.composerBusy) state.sendButtonHint = "";

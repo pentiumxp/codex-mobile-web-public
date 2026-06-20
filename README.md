@@ -4,6 +4,7 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：v322 增加上传图片显示失败后的前端自恢复。线程图片如果曾被浏览器 error 事件标记为“图片无法加载”，后续真实上传地址或新鉴权地址加载成功时会在 `load` 事件和失败扫描中移除失败状态，避免局部 patch 复用 DOM 后继续显示旧的失败占位。PWA shell cache 升级到 `codex-mobile-shell-v322`。
 - 中文说明：v321 修复 v320 发送图片后本地预览仍可能在 5-6 秒后变成“图片无法加载”的问题。发送成功清空 Composer 附件时不再立即 revoke 仍被本地 pending 消息气泡引用的 `blob:` 预览，而是延迟释放；删除/替换未发送附件仍立即释放。这样在服务端 durable 投影接管前，本地图片预览不会被提前破坏。PWA shell cache 升级到 `codex-mobile-shell-v321`。
 - 中文说明：v320 修复 v319 发送图片后“瞬间能看到预览，几秒后又变成图片无法加载”的问题。前端本地 pending 消息中的 `blob:` 预览现在会在服务端 durable 用户消息回来时被真实上传路径内容替换，避免发送成功后继续渲染已撤销的本地 object URL；上传图片仍通过受保护的 `/api/uploads/file` 鉴权地址显示。PWA shell cache 升级到 `codex-mobile-shell-v320`。
 - 中文说明：v319 修复 v318 现有线程发送图片后本地 pending 气泡只显示文件名、不能立即预览的问题。本地 pending 用户消息现在会把浏览器 `blob:` 图片预览作为临时 `input_image` 一起渲染，服务端 durable 消息回来后再切换为受保护的 `/api/uploads/file` 地址。同时 live-poll/detail refresh 对最新 live turn 的已有回执优先只 patch 变化的 item，避免每隔几秒 patch 整个 turn article 导致回执区和 Composer 出现可见颤抖。PWA shell cache 升级到 `codex-mobile-shell-v319`。

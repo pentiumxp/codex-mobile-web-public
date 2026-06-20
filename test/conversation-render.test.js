@@ -168,10 +168,20 @@ function evaluatedConversationImageErrorHandler() {
   return Function(`${sources.join("\n")}\nreturn handleConversationImageError;`)();
 }
 
+function evaluatedConversationImageLoadHandler() {
+  const sources = [
+    "failedAppImageContainer",
+    "clearFailedAppImage",
+    "handleConversationImageLoad",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`${sources.join("\n")}\nreturn handleConversationImageLoad;`)();
+}
+
 function evaluatedFailedImageScanner() {
   const sources = [
     "failedAppImageContainer",
     "markFailedAppImage",
+    "clearFailedAppImage",
     "scanFailedAppImages",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`${sources.join("\n")}\nreturn scanFailedAppImages;`)();
@@ -1195,6 +1205,7 @@ test("failed conversation images collapse into a neutral fallback", () => {
   assert.deepEqual(addedClasses, ["image-load-failed"]);
   assert.equal(attributes["aria-hidden"], "true");
   assert.match(appJs, /\$\("conversation"\)\.addEventListener\("error", handleConversationImageError, true\)/);
+  assert.match(appJs, /\$\("conversation"\)\.addEventListener\("load", handleConversationImageLoad, true\)/);
   assert.match(functionBody("updateConversationHtml"), /scheduleFailedAppImageScan\(conversation/);
   assert.match(appJs, /document\.addEventListener\("focusin", \(\) => \{[\s\S]*scheduleVisibleImageFailureScan\(\[0, 80, 240\]\);/);
   assert.match(stylesCss, /\.input-image\.image-load-failed,[\s\S]*\.markdown-image\.image-load-failed,[\s\S]*\.image-view\.image-load-failed/);
@@ -1204,14 +1215,62 @@ test("failed conversation images collapse into a neutral fallback", () => {
   assert.match(stylesCss, /content: "图片无法加载";/);
 });
 
+test("loaded conversation images clear stale failed-image state", () => {
+  const handleConversationImageLoad = evaluatedConversationImageLoadHandler();
+  const removedContainerClasses = [];
+  const removedImageClasses = [];
+  const removedAttributes = [];
+  const figure = {
+    classList: {
+      remove(value) {
+        removedContainerClasses.push(value);
+      },
+    },
+  };
+  const image = {
+    classList: {
+      remove(value) {
+        removedImageClasses.push(value);
+      },
+    },
+    closest(selector) {
+      if (String(selector).includes(".input-image")) return figure;
+      return null;
+    },
+    getAttribute(name) {
+      return name === "aria-hidden" ? "true" : "";
+    },
+    removeAttribute(name) {
+      removedAttributes.push(name);
+    },
+  };
+  const target = {
+    closest(selector) {
+      if (selector === "img") return image;
+      return null;
+    },
+  };
+
+  handleConversationImageLoad({ target });
+
+  assert.deepEqual(removedContainerClasses, ["image-load-failed"]);
+  assert.deepEqual(removedImageClasses, ["image-load-failed"]);
+  assert.deepEqual(removedAttributes, ["aria-hidden"]);
+});
+
 test("already-broken rendered images are proactively marked without a new error event", () => {
   const scanFailedAppImages = evaluatedFailedImageScanner();
   const addedClasses = [];
+  const removedClasses = [];
+  const removedAttributes = [];
   const attributes = {};
   const container = {
     classList: {
       add(value) {
         addedClasses.push(value);
+      },
+      remove(value) {
+        removedClasses.push(value);
       },
     },
   };
@@ -1233,16 +1292,37 @@ test("already-broken rendered images are proactively marked without a new error 
       throw new Error("loading images should not be marked");
     },
   };
+  const recoveredImage = {
+    complete: true,
+    naturalWidth: 120,
+    closest(selector) {
+      if (selector === ".input-image, .image-view, .markdown-image, .attachment-chip, .file-preview-media, figure") return container;
+      return null;
+    },
+    classList: {
+      remove(value) {
+        removedClasses.push(value);
+      },
+    },
+    getAttribute(name) {
+      return name === "aria-hidden" ? "true" : "";
+    },
+    removeAttribute(name) {
+      removedAttributes.push(name);
+    },
+  };
   const rootNode = {
     querySelectorAll(selector) {
       assert.equal(selector, "img");
-      return [brokenImage, loadingImage];
+      return [brokenImage, loadingImage, recoveredImage];
     },
   };
 
   assert.equal(scanFailedAppImages(rootNode), 1);
   assert.deepEqual(addedClasses, ["image-load-failed"]);
   assert.equal(attributes["aria-hidden"], "true");
+  assert.deepEqual(removedClasses, ["image-load-failed", "image-load-failed"]);
+  assert.deepEqual(removedAttributes, ["aria-hidden"]);
 });
 
 test("raw app-server input image parts use object image urls", () => {
