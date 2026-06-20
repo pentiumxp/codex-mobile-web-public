@@ -4,6 +4,7 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：v320 修复 v319 发送图片后“瞬间能看到预览，几秒后又变成图片无法加载”的问题。前端本地 pending 消息中的 `blob:` 预览现在会在服务端 durable 用户消息回来时被真实上传路径内容替换，避免发送成功后继续渲染已撤销的本地 object URL；上传图片仍通过受保护的 `/api/uploads/file` 鉴权地址显示。PWA shell cache 升级到 `codex-mobile-shell-v320`。
 - 中文说明：v319 修复 v318 现有线程发送图片后本地 pending 气泡只显示文件名、不能立即预览的问题。本地 pending 用户消息现在会把浏览器 `blob:` 图片预览作为临时 `input_image` 一起渲染，服务端 durable 消息回来后再切换为受保护的 `/api/uploads/file` 地址。同时 live-poll/detail refresh 对最新 live turn 的已有回执优先只 patch 变化的 item，避免每隔几秒 patch 整个 turn article 导致回执区和 Composer 出现可见颤抖。PWA shell cache 升级到 `codex-mobile-shell-v319`。
 - 中文说明：v318 修复已有线程发送新消息后出现长时间空窗的问题。提交后前端会立即插入本地 pending 用户消息和本地 active turn；如果线程详情仍在加载，页面会保留已可见内容并显示“正在加载最新线程状态...”，不会空白停在 Loading；右上角运行状态也会在缺少具体操作名时显示“运行”。PWA shell cache 升级到 `codex-mobile-shell-v318`，已打开的客户端需要接受刷新提示、硬刷新或关闭重开后才能拿到这次前端修复。
 - 中文说明：v317 继续修复线程中间输出像整屏刷新。SSE 事件和轮询刷新都会先尝试局部更新：新增可见 item 优先在当前 turn 内插入，已有 item 继续局部 patch；command、file、tool 等 operational item 不再触发 conversation 重绘，只更新底部 Command dock。运行中 rollout 文件大小增长也不再单独触发 conversation 重绘。只有去重、顺序变化、item 删除、历史窗口或审批/任务卡等结构性变化才回退到整段详情渲染。PWA shell cache 升级到 `codex-mobile-shell-v317`。

@@ -229,6 +229,70 @@ return mergeItemsPreservingLocalVisible;
 	`)();
 }
 
+function evaluatedMergeItemsPreservingLocalVisibleWithRealVisibleWeight() {
+  const sources = [
+    "statusText",
+    "normalizeFsPath",
+    "imageUrlValue",
+    "isInputTextPart",
+    "inputTextValue",
+    "isTruncatedImagePayloadPart",
+    "isInputImagePart",
+    "attachmentSummaryMarkerMatch",
+    "stripAttachmentSummaryLinePrefix",
+    "parseAttachmentLine",
+    "splitAttachmentSummaryText",
+    "isMuxUserMessage",
+    "isOptimisticUserMessage",
+    "isTurnUsageSummaryItem",
+    "normalizeComparableText",
+    "userMessageComparableParts",
+    "userMessagePathOverlap",
+    "comparablePathName",
+    "userMessagePathNameOverlap",
+    "userMessageSpecificity",
+    "userMessagesLikelySame",
+    "userMessagesCanShadow",
+    "hasMatchingIncomingUserMessage",
+    "hasMatchingRealUserMessage",
+    "removeShadowedMuxUserMessages",
+    "imageSourceSignature",
+    "compactStructuredForSignature",
+    "inputContentSignature",
+    "visibleItemSignature",
+    "itemVisibleWeight",
+    "userMessageShadowPriority",
+    "mergeItemPreservingVisibleFields",
+    "mergeLikelySameUserMessage",
+    "dedupeLikelySameUserMessages",
+    "comparableVisibleTextItem",
+    "comparableVisibleText",
+    "visibleTextItemsLikelySame",
+    "hasMatchingIncomingVisibleItem",
+    "mergeVisibleTextItemPreservingRenderIdentity",
+    "mergeItemsPreservingLocalVisible",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`
+function truncateMiddle(value) { return String(value || ""); }
+function isReasoningItem(item) { return Boolean(item && item.type === "reasoning"); }
+function isContextCompactionItem() { return false; }
+function contextCompactionNotice() { return null; }
+function isOperationalItem() { return false; }
+function operationDetailText() { return ""; }
+function imageViewPath(item) { return item && item.path || ""; }
+function imageViewContentUrl(item) { return item && item.contentUrl || ""; }
+function imageViewUrl(item) { return item && item.url || ""; }
+function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false) {
+  if (!item || itemVisibleWeight(item) <= 0) return false;
+  if (item.type === "userMessage" && /^mux-user-/.test(String(item.id || ""))) return true;
+  return preserveLocalVisible && !isReasoningItem(item);
+}
+function dedupeTurnUsageSummaryItems(items) { return items || []; }
+${sources.join("\n")}
+return mergeItemsPreservingLocalVisible;
+	`)();
+}
+
 function evaluatedMergeThreadPreservingVisibleItems() {
   const sources = [
     "normalizeFsPath",
@@ -1314,6 +1378,54 @@ test("optimistic user messages are shadowed by mux and durable echoes", () => {
   assert.equal(imageItems[0].id, durableImage.id);
   assert.equal(imageItems[0].mobilePendingSubmission, undefined);
   assert.equal(imageItems[0].clientSubmissionId, "submit-2");
+});
+
+test("durable uploaded image messages replace revoked optimistic blob previews", () => {
+  const mergeItemsPreservingLocalVisible = evaluatedMergeItemsPreservingLocalVisibleWithRealVisibleWeight();
+  const renderInputContent = evaluatedInputContentRendererWithKey("test-key");
+  const uploadPath = "/Users/xuxin/.codex-mobile-web/uploads/2026-06-20/thread/homeai-upload-54FE12C6.jpg";
+  const localImage = {
+    id: "local-user-submit-image",
+    type: "userMessage",
+    mobilePendingSubmission: true,
+    clientSubmissionId: "submit-image",
+    content: [
+      {
+        type: "text",
+        text: "Uploaded attachments:\n- homeai-upload-54FE12C6.jpg (image, image/jpeg, 128.4 KB): homeai-upload-54FE12C6.jpg",
+      },
+      {
+        type: "input_image",
+        image_url: { url: "blob:http://127.0.0.1:8787/local-preview" },
+        fileName: "homeai-upload-54FE12C6.jpg",
+      },
+    ],
+  };
+  const durableImage = {
+    id: "real-user-submit-image",
+    type: "userMessage",
+    content: [
+      {
+        type: "input_text",
+        text: `Uploaded attachments:\n- homeai-upload-54FE12C6.jpg (image, image/jpeg, 128.4 KB): ${uploadPath}`,
+      },
+      { type: "localImage", path: uploadPath },
+    ],
+  };
+
+  const imageItems = mergeItemsPreservingLocalVisible([localImage], [durableImage], true);
+  assert.equal(imageItems.length, 1);
+  assert.equal(imageItems[0].id, durableImage.id);
+  assert.equal(imageItems[0].mobilePendingSubmission, undefined);
+  assert.equal(imageItems[0].clientSubmissionId, "submit-image");
+  assert.deepEqual(imageItems[0].content, durableImage.content);
+  assert.doesNotMatch(JSON.stringify(imageItems[0].content), /blob:/);
+
+  const html = renderInputContent(imageItems[0].content);
+  assert.match(html, /\/api\/uploads\/file\?path=/);
+  assert.match(html, /key=test-key/);
+  assert.match(html, /homeai-upload-54FE12C6\.jpg/);
+  assert.doesNotMatch(html, /blob:/);
 });
 
 test("cross-turn durable user messages remove only synthetic echoes", () => {
