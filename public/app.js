@@ -368,7 +368,7 @@ const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v343";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v344";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -7937,7 +7937,7 @@ function isSidebarOpen() {
 
 function isInteractiveGestureTarget(target) {
   return Boolean(target && target.closest && target.closest(
-    "a, button, input, textarea, select, label, [contenteditable='true'], .rename-input, .composer, .thread-action-sheet, .continuation-dialog, .update-dialog, .app-native-dialog"
+    "a, button, input, textarea, select, label, [contenteditable='true'], .rename-input, .composer, .composer-controls, .thread-action-sheet, .continuation-dialog, .update-dialog, .app-native-dialog"
   ));
 }
 
@@ -17581,13 +17581,20 @@ function wireUi() {
   }
   const commandControl = $("composerCommandControl");
   if (commandControl) {
-    commandControl.addEventListener("pointerdown", (event) => {
+    let lastFastToggleAt = 0;
+    const handleFastToggle = (event) => {
       event.preventDefault();
       event.stopPropagation();
+      const now = Date.now();
+      if (now - lastFastToggleAt < 650) return;
+      lastFastToggleAt = now;
       if (commandControl.disabled) return;
       closeComposerRuntimeMenu();
       setCodexFastCommandEnabled(!codexFastCommandEnabled());
-    });
+    };
+    commandControl.addEventListener("pointerdown", handleFastToggle);
+    commandControl.addEventListener("click", handleFastToggle);
+    commandControl.addEventListener("touchend", handleFastToggle, { passive: false });
   }
   const runtimeControls = [
     ["composerModelControl", "model"],

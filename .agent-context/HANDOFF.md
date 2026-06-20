@@ -2,6 +2,33 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-20 Fast Button Tap Target v344
+
+- Status: implemented, focused-tested, committed locally, and ready for
+  static-only production sync. No listener restart is required.
+- Trigger:
+  - After v343, Android still could not toggle the lower-left Fast button, and
+    iPhone could only hit it near the icon's upper-right corner.
+- Change:
+  - `public/app.js`: advanced client build id to
+    `codex-mobile-shell-v344`.
+  - `public/app.js`: Fast control now has pointer, click, and touchend handlers
+    with a short dedupe window, matching the WebView fallback pattern used by
+    runtime picker controls.
+  - `public/app.js`: composer controls are explicitly treated as interactive
+    gesture targets, so the sidebar edge gesture cannot capture touches that
+    begin on the control row.
+  - `public/styles.css`: Fast control hit area widened from the old 28px slot to
+    a 40px/42px tap target, while preserving the compact bolt visual.
+  - `public/sw.js` and README advanced to `codex-mobile-shell-v344`.
+- Validation:
+  - Passed:
+    `node --test test/composer-quota.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js`.
+  - Passed: `npm run check`.
+  - Passed: `git diff --check`.
+  - Passed center check from Home AI workspace:
+    `node tests/architecture-code-test-harness-map.test.js`.
+
 ## 2026-06-20 Workspace Create Default Dev Root v342
 
 - Status: implemented and locally validated. Not deployed in this entry.

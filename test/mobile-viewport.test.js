@@ -113,8 +113,8 @@ test("composer sizing avoids one-pixel layout churn while typing and streaming",
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v343/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v343"/);
+  assert.match(swJs, /codex-mobile-shell-v344/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v344"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);
@@ -342,6 +342,7 @@ test("Android back and edge swipe open the mobile navigation menu", () => {
   assert.match(appJs, /function isAndroidBrowser\(\)/);
   assert.match(appJs, /function sidebarEdgeSwipeStartLimitPx\(\)/);
   assert.match(appJs, /function pointInComposerGestureZone\(point\)/);
+  assert.match(appJs, /\.composer-controls/);
   assert.match(appJs, /point\.clientY >= Math\.max\(0, rect\.top - 10\)/);
   assert.match(appJs, /if \(pointInComposerGestureZone\(touch\)\) return;/);
   assert.match(appJs, /touch\.clientX > sidebarEdgeSwipeStartLimitPx\(\)/);
