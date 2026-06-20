@@ -5875,7 +5875,9 @@ The previous full handoff was archived and should be opened only when old proven
 
 ## 2026-06-20 Live Turn Startup Visibility
 
-- Status: implemented locally; not committed, pushed, deployed, or restarted.
+- Status: implemented, validated, committed as the base fix, then advanced to
+  v318 locally for deployment visibility; v318 is not pushed to public unless
+  explicitly requested.
 - User-visible issue:
   - A running `Codex Mobile Public PR` turn spent roughly 90 seconds in a bad
     startup window: the top-right state stayed around "同步", the just-sent user
@@ -5909,3 +5911,37 @@ The previous full handoff was archived and should be opened only when old proven
   - `npm run check`
   - `npm test` (532 tests)
   - `git diff --check`
+
+## 2026-06-20 Live Turn Startup Visibility v318
+
+- Status: implemented locally and validated; production static sync pending at
+  the time of this handoff entry.
+- Runtime evidence before v318:
+  - Production 8787 `/api/public-config` reported
+    `clientBuildId=0.1.11|codex-mobile-shell-v317` and
+    `shellCacheName=codex-mobile-shell-v317`.
+  - Production `/app.js` did not contain `insertLocalSubmittedUserMessage` or
+    the `loading-visible` rendering path, so an open V317 client could still
+    show the old send-startup blank window even after the private base commit.
+- Fix:
+  - Advanced `public/app.js` `CLIENT_BUILD_ID` and `public/sw.js` shell cache
+    from `codex-mobile-shell-v317` to `codex-mobile-shell-v318`.
+  - Added a Chinese README release note describing that existing-thread sends
+    now show a local pending user message/active turn immediately while thread
+    detail projection catches up.
+  - Updated shell-version assertions in `test/mobile-viewport.test.js`,
+    `test/thread-goal-service.test.js`, and
+    `test/thread-task-card-route.test.js`.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js`
+  - `node --test test/conversation-render.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js test/app-update.test.js test/build-refresh-policy.test.js`
+  - `npm run check`
+  - `npm test` (532 tests)
+  - `git diff --check`
+- Deployment note:
+  - This is a static browser-shell behavior change. Production should sync
+    `public/app.js`, `public/sw.js`, and README/static release metadata to the
+    running production worktree, then verify `/api/public-config` and served
+    `/app.js` report/contain v318. A Node listener restart is not required for
+    this static-only sync because `/api/public-config` reads shell metadata from
+    disk on each request.

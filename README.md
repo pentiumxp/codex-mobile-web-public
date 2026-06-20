@@ -4,6 +4,7 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：v318 修复已有线程发送新消息后出现长时间空窗的问题。提交后前端会立即插入本地 pending 用户消息和本地 active turn；如果线程详情仍在加载，页面会保留已可见内容并显示“正在加载最新线程状态...”，不会空白停在 Loading；右上角运行状态也会在缺少具体操作名时显示“运行”。PWA shell cache 升级到 `codex-mobile-shell-v318`，已打开的客户端需要接受刷新提示、硬刷新或关闭重开后才能拿到这次前端修复。
 - 中文说明：v317 继续修复线程中间输出像整屏刷新。SSE 事件和轮询刷新都会先尝试局部更新：新增可见 item 优先在当前 turn 内插入，已有 item 继续局部 patch；command、file、tool 等 operational item 不再触发 conversation 重绘，只更新底部 Command dock。运行中 rollout 文件大小增长也不再单独触发 conversation 重绘。只有去重、顺序变化、item 删除、历史窗口或审批/任务卡等结构性变化才回退到整段详情渲染。PWA shell cache 升级到 `codex-mobile-shell-v317`。
 - 中文说明：v316 修正 context-only stale active turn 对会话列表状态的污染。若 rollout 最新 turn 只有 `<environment_context>` / `turn_context` 且没有真实用户消息、助手输出或工具活动，超过短暂静默阈值后后端会把它降级为 idle 并标记 `mobileStaleActiveTurn`；前端清除 running spinner 时不会产生 unread dot。该修复已随 v317 public shell 一并发布。
 - 中文说明：v316 缓解线程中间输出时的页面颤动。已有可见 item 的状态更新优先局部 patch 单个卡片，live-poll 如果合并后对话可见签名没有变化就跳过详情区重绘，只更新时间器/头部/滚动按钮；compact Command dock 固定为稳定高度，避免命令状态更新反复挤压 conversation 区域。PWA shell cache 升级到 `codex-mobile-shell-v316`。
