@@ -39,13 +39,58 @@ function normalizeFsPath(value) {
   return String(value || "").replace(/\\/g, "/").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
-function comparablePart(part) {
-  if (!part || typeof part !== "object") return "";
-  if (part.type === "text" || part.type === "input_text") {
-    return `text:${normalizedTextValue(part).replace(/\s+/g, " ").trim()}`;
+function normalizeComparableText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function attachmentSummaryMarkerMatch(source) {
+  return /(^|\r?\n)[ \t]*(?:>[ \t]*)?Uploaded attachments:[ \t]*(?:\r?\n|$)/.exec(source);
+}
+
+function stripAttachmentSummaryLinePrefix(line) {
+  return String(line || "").replace(/^[ \t]*(?:>[ \t]*)?/, "").trim();
+}
+
+function parseAttachmentLine(line) {
+  const match = /^-\s*(.*?)\s*\((.*?)\):\s*(.+)$/.exec(String(line || ""));
+  if (!match) return null;
+  return {
+    name: match[1] || "attachment",
+    path: (match[3] || "").trim(),
+  };
+}
+
+function splitAttachmentSummaryText(text) {
+  const source = String(text || "");
+  const markerMatch = attachmentSummaryMarkerMatch(source);
+  if (!markerMatch) return { text: source, attachments: [] };
+  const markerStart = markerMatch.index + (markerMatch[1] || "").length;
+  const before = source.slice(0, markerStart).trimEnd();
+  const attachments = [];
+  const remainder = [];
+  let parsingAttachments = true;
+  for (const line of source.slice(markerMatch.index + markerMatch[0].length).split(/\r?\n/)) {
+    const trimmed = stripAttachmentSummaryLinePrefix(line);
+    if (parsingAttachments && !trimmed) continue;
+    const attachment = parsingAttachments ? parseAttachmentLine(trimmed) : null;
+    if (attachment) {
+      attachments.push(attachment);
+      continue;
+    }
+    parsingAttachments = false;
+    remainder.push(line);
   }
-  if (part.path) return `path:${normalizeFsPath(part.path)}`;
-  return JSON.stringify(part);
+  const after = remainder.join("\n").trimStart();
+  const visibleText = [before, after].filter(Boolean).join(before && after ? "\n\n" : "");
+  return { text: visibleText, attachments };
+}
+
+function imageUrlValue(part) {
+  if (!part || typeof part !== "object") return "";
+  const imageUrl = part.image_url || part.imageUrl || part.url || "";
+  if (typeof imageUrl === "string") return imageUrl;
+  if (imageUrl && typeof imageUrl.url === "string") return imageUrl.url;
+  return "";
 }
 
 function userMessageParts(message) {
@@ -55,18 +100,68 @@ function userMessageParts(message) {
   return parts;
 }
 
-function comparableContent(message) {
-  return userMessageParts(message)
-    .map(comparablePart)
-    .filter(Boolean)
-    .join("|");
+function comparablePathName(value) {
+  const normalized = normalizeFsPath(value);
+  const name = normalized.split("/").filter(Boolean).pop() || normalized;
+  return name.replace(/[?#].*$/, "");
+}
+
+function comparablePathNamesLikelySame(leftName, rightName) {
+  const left = String(leftName || "");
+  const right = String(rightName || "");
+  if (!left || !right) return false;
+  if (left === right) return true;
+  return left.endsWith(`-${right}`) || right.endsWith(`-${left}`);
+}
+
+function pathOverlap(left, right) {
+  if (!left.paths.length || !right.paths.length) return false;
+  const leftPaths = new Set(left.paths);
+  return right.paths.some((value) => leftPaths.has(value));
+}
+
+function pathNameOverlap(left, right) {
+  if (!left.paths.length || !right.paths.length) return false;
+  const leftNames = new Set(left.paths.map(comparablePathName).filter(Boolean));
+  if (!leftNames.size) return false;
+  return right.paths.some((value) => {
+    const rightName = comparablePathName(value);
+    return rightName && Array.from(leftNames).some((leftName) => comparablePathNamesLikelySame(leftName, rightName));
+  });
+}
+
+function comparableUserMessageParts(message) {
+  const result = { text: "", paths: [] };
+  if (!message || message.type !== "userMessage") return result;
+  const textParts = [];
+  const paths = [];
+  for (const part of userMessageParts(message)) {
+    if (!part || typeof part !== "object") continue;
+    if (part.type === "text" || part.type === "input_text" || typeof part.text === "string" || typeof part.input_text === "string") {
+      const split = splitAttachmentSummaryText(normalizedTextValue(part));
+      if (split.text) textParts.push(split.text);
+      for (const attachment of split.attachments) {
+        if (attachment.path) paths.push(normalizeFsPath(attachment.path));
+      }
+      continue;
+    }
+    if (part.path) paths.push(normalizeFsPath(part.path));
+    const url = imageUrlValue(part);
+    if (url && !/^data:image\//i.test(url)) paths.push(normalizeFsPath(url));
+  }
+  result.text = normalizeComparableText(textParts.join("\n"));
+  result.paths = [...new Set(paths.filter(Boolean))].sort();
+  return result;
 }
 
 function sameUserMessageContent(left, right) {
   if (!left || !right || left.type !== "userMessage" || right.type !== "userMessage") return false;
-  const leftContent = comparableContent(left);
-  const rightContent = comparableContent(right);
-  return Boolean(leftContent && rightContent && leftContent === rightContent);
+  const a = comparableUserMessageParts(left);
+  const b = comparableUserMessageParts(right);
+  if (a.text && b.text && a.text !== b.text) return false;
+  if (a.text && b.text && !a.paths.length && !b.paths.length) return true;
+  if (pathOverlap(a, b) || pathNameOverlap(a, b)) return true;
+  return Boolean(a.text && b.text && a.text === b.text && !a.paths.length && !b.paths.length);
 }
 
 function isSyntheticUserMessage(item) {

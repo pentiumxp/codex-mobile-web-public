@@ -1604,6 +1604,28 @@ test("raw app-server input image url local upload paths use authenticated upload
   assert.equal(html.includes(`src="${uploadPath}"`), false);
 });
 
+test("durable upload summaries take precedence over stale blob image parts", () => {
+  const renderInputContent = evaluatedInputContentRendererWithKey("session-key");
+  const uploadPath = "/Users/xuxin/.codex-mobile-web/uploads/2026-06-20/thread-id/1781947353793-homeai-upload-2B62320E.jpg";
+  const html = renderInputContent([
+    {
+      type: "input_text",
+      text: `Uploaded attachments:\n- homeai-upload-2B62320E.jpg (image, image/jpeg, 116.9 KB): ${uploadPath}`,
+    },
+    {
+      type: "input_image",
+      image_url: { url: "blob:http://127.0.0.1:8787/local-preview" },
+      fileName: "homeai-upload-2B62320E.jpg",
+    },
+  ]);
+
+  assert.match(html, /class="input-image"/);
+  assert.match(html, /\/api\/uploads\/file\?path=/);
+  assert.match(html, /key=session-key/);
+  assert.match(html, /homeai-upload-2B62320E\.jpg/);
+  assert.doesNotMatch(html, /blob:http:\/\/127\.0\.0\.1:8787\/local-preview/);
+});
+
 test("conversation image urls rerender when the auth key version changes", () => {
   assert.match(appJs, /imageAuthVersion: 0/);
   assert.match(functionBody("setAuthKey"), /state\.imageAuthVersion = \(Number\(state\.imageAuthVersion\) \|\| 0\) \+ 1/);
