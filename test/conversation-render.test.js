@@ -1416,6 +1416,7 @@ test("active turn state follows only the latest durable turn", () => {
 
 test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(appJs, /function updateThreadListStatus\(/);
+  assert.match(appJs, /function mergeThreadIntoThreadList\(/);
   assert.match(appJs, /const RUNNING_THREAD_HINT_STALE_MS = 20 \* 60 \* 1000;/);
   assert.match(appJs, /runningThreadHintedAtById: loadNumberMapStorage\("codexMobileRunningThreadHintedAtById", \{\}\)/);
   assert.match(functionBody("saveThreadStatusHints"), /saveNumberMapStorage\(STORAGE_RUNNING_THREAD_HINTED_AT, state\.runningThreadHintedAtById\)/);
@@ -1425,6 +1426,13 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(functionBody("reconcileThreadStatusHints"), /else if \(wasRunning && isThreadListSettledStatus\(thread\.status\)\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /shouldExpireRunningThreadHint\(id, thread, nowMs\)/);
   assert.doesNotMatch(functionBody("reconcileThreadStatusHints"), /else if \(!isRunning && wasRunning\)/);
+
+  const listMergeBody = functionBody("mergeThreadIntoThreadList");
+  assert.match(listMergeBody, /threadListSummaryFromDetailThread\(thread\)/);
+  assert.match(listMergeBody, /Object\.assign\(\{\}, entry, summary\)/);
+  assert.match(functionBody("loadThread"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);\s*mergeThreadIntoThreadList\(state\.currentThread\);/);
+  assert.match(functionBody("refreshCurrentThread"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);\s*mergeThreadIntoThreadList\(state\.currentThread\);/);
+  assert.match(functionBody("backfillFullThreadDetail"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);\s*mergeThreadIntoThreadList\(state\.currentThread\);/);
 
   const expireBody = functionBody("shouldExpireRunningThreadHint");
   assert.match(expireBody, /id === state\.currentThreadId && state\.activeTurnId/);
