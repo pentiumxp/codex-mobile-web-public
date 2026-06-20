@@ -364,7 +364,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v314";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v315";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -3873,6 +3873,59 @@ function updateThreadListStatus(threadId, status) {
   const thread = state.threads.find((entry) => String(entry && entry.id || "") === id);
   if (thread) thread.status = status;
   if (state.currentThread && String(state.currentThread.id || "") === id) state.currentThread.status = status;
+}
+
+function snapshotThreadStatus(threadId) {
+  const id = String(threadId || "");
+  if (!id) return null;
+  const listThread = state.threads.find((entry) => String(entry && entry.id || "") === id) || null;
+  const currentMatches = Boolean(state.currentThread && String(state.currentThread.id || "") === id);
+  return {
+    id,
+    hadListThread: Boolean(listThread),
+    listStatus: listThread ? listThread.status : undefined,
+    hadCurrentThread: currentMatches,
+    currentStatus: currentMatches ? state.currentThread.status : undefined,
+  };
+}
+
+function restoreThreadStatusSnapshot(snapshot) {
+  if (!snapshot || !snapshot.id) return;
+  const id = String(snapshot.id);
+  const restoredStatus = snapshot.hadCurrentThread ? snapshot.currentStatus : snapshot.listStatus;
+  updateThreadStatusHints(id, { type: "active" }, restoredStatus, {
+    thread: state.currentThread || state.threads.find((entry) => String(entry && entry.id || "") === id),
+    notify: false,
+  });
+  const listIndex = state.threads.findIndex((entry) => String(entry && entry.id || "") === id);
+  if (snapshot.hadListThread && listIndex >= 0) {
+    state.threads[listIndex] = Object.assign({}, state.threads[listIndex], { status: snapshot.listStatus });
+  } else if (!snapshot.hadListThread && listIndex >= 0) {
+    state.threads = state.threads.filter((entry) => String(entry && entry.id || "") !== id);
+  }
+  if (snapshot.hadCurrentThread && state.currentThread && String(state.currentThread.id || "") === id) {
+    state.currentThread.status = snapshot.currentStatus;
+  }
+  pruneHiddenThreads();
+}
+
+function markThreadOptimisticallyActive(threadId) {
+  const id = String(threadId || "");
+  if (!id) return;
+  const runningStatus = { type: "active" };
+  const listThread = state.threads.find((entry) => String(entry && entry.id || "") === id) || null;
+  const currentMatches = Boolean(state.currentThread && String(state.currentThread.id || "") === id);
+  const previousStatus = currentMatches ? state.currentThread.status : listThread && listThread.status;
+  updateThreadStatusHints(id, previousStatus, runningStatus, {
+    thread: state.currentThread || listThread,
+    threadName: threadDisplayName(state.currentThread || listThread),
+    notify: false,
+  });
+  updateThreadListStatus(id, runningStatus);
+  if (currentMatches) {
+    state.currentThread = Object.assign({}, state.currentThread, { status: runningStatus });
+    mergeThreadIntoThreadList(state.currentThread);
+  }
 }
 
 function threadListSummaryFromDetailThread(thread) {
@@ -15869,6 +15922,7 @@ async function sendMessage(event) {
   const submittedDraftKey = currentDraftKey();
   const clientSubmissionId = createSubmissionId();
   const submittedAttachments = state.pendingAttachments.slice();
+  const previousThreadStatus = snapshotThreadStatus(state.currentThreadId);
   state.composerBusy = true;
   state.sendButtonHint = "";
   startSendProgressWatchdog(state.currentThreadId);
@@ -15893,6 +15947,10 @@ async function sendMessage(event) {
       body.append("attachments", item.file, item.file.name || "upload");
     }
     registerSubmittedUserMessage(state.currentThreadId, outboundText, submittedAttachments, clientSubmissionId);
+    if (!steering) {
+      markThreadOptimisticallyActive(state.currentThreadId);
+      renderThreads();
+    }
     followSubmittedMessageToBottom(state.currentThreadId, clientSubmissionId);
     await api(`/api/threads/${encodeURIComponent(state.currentThreadId)}/messages`, {
       method: "POST",
@@ -15922,6 +15980,10 @@ async function sendMessage(event) {
     loadThreads({ silent: true }).catch(showError);
   } catch (err) {
     clearSubmittedMessageBottomFollow();
+    if (!steering) {
+      restoreThreadStatusSnapshot(previousThreadStatus);
+      renderThreads();
+    }
     const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err), err)
       || "发送失败，请重试";
     state.sendButtonHint = "重试";
