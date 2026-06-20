@@ -364,7 +364,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v329";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v330";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -12028,7 +12028,7 @@ function renderInputImage(part, attachment = null, index = 0) {
   const label = (attachment && attachment.name) || shortPath(part.path || imageUrlValue(part) || "") || `Image ${index + 1}`;
   if (!src) return `<div class="input-attachment">${escapeHtml(label)}</div>`;
   return `<figure class="input-image">
-    <img src="${escapeHtml(src)}" alt="${escapeHtml(label)}" loading="${imageLoadingModeForSource(src)}">
+    <img src="${escapeHtml(src)}" alt="${escapeHtml(label)}" loading="${imageLoadingModeForSource(src)}"${protectedImageSourceAttribute(src)}>
     <figcaption>${escapeHtml(label)}</figcaption>
   </figure>`;
 }
@@ -13272,7 +13272,7 @@ function renderImageView(item) {
   const label = shortPath(filePath || item.label || item.fileName || item.file_name || item.caption || url || item.id || "image");
   if (!src) return renderStructuredBlock(item, "Image");
   return `<figure class="image-view">
-    <img src="${escapeHtml(src)}" alt="${escapeHtml(label)}" loading="${imageLoadingModeForSource(src)}">
+    <img src="${escapeHtml(src)}" alt="${escapeHtml(label)}" loading="${imageLoadingModeForSource(src)}"${protectedImageSourceAttribute(src)}>
     ${label ? `<figcaption>${escapeHtml(label)}</figcaption>` : ""}
   </figure>`;
 }
@@ -13369,7 +13369,14 @@ function imageLoadingModeForSource(src) {
   return protectedGeneratedImageSrc(src) ? "eager" : "lazy";
 }
 
+function protectedImageSourceAttribute(src) {
+  const protectedSrc = protectedGeneratedImageSrc(src);
+  return protectedSrc ? ` data-protected-image-src="${escapeHtml(protectedSrc)}"` : "";
+}
+
 function protectedAppImageElementSrc(image) {
+  const stored = image && image.dataset && image.dataset.protectedImageSrc;
+  if (stored) return protectedGeneratedImageSrc(stored);
   return protectedGeneratedImageSrc(image && (
     image.currentSrc
     || image.src
@@ -13419,23 +13426,46 @@ function retryProtectedAppImageSource(image, src) {
   }
 }
 
-function protectedAppImageBlobUrl(response) {
-  if (!response || typeof response.blob !== "function") return Promise.resolve("");
-  const urlApi = protectedAppImageUrlApi();
-  if (!urlApi || typeof urlApi.createObjectURL !== "function") return Promise.resolve("");
-  return response.blob().then((blob) => {
-    if (!blob) return "";
-    const type = String(blob.type || "").trim();
-    if (type && !/^image\//i.test(type)) return "";
-    return urlApi.createObjectURL(blob);
-  }).catch(() => "");
+function blobToDataUrl(blob) {
+  if (!blob || typeof FileReader === "undefined") return Promise.resolve("");
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(/^data:image\//i.test(String(reader.result || "")) ? String(reader.result) : "");
+    reader.onerror = () => resolve("");
+    try {
+      reader.readAsDataURL(blob);
+    } catch (_) {
+      resolve("");
+    }
+  });
 }
 
-function applyProtectedAppImageBlobUrl(image, objectUrl) {
-  if (!image || !objectUrl) return false;
+async function protectedAppImageRecoveredUrl(response) {
+  if (!response || typeof response.blob !== "function") return { url: "", objectUrl: false };
+  const blob = await response.blob().catch(() => null);
+  if (!blob) return { url: "", objectUrl: false };
+  const type = String(blob.type || "").trim();
+  if (type && !/^image\//i.test(type)) return { url: "", objectUrl: false };
+  const size = Number(blob.size || 0);
+  if (!size || size <= 8 * 1024 * 1024) {
+    const dataUrl = await blobToDataUrl(blob);
+    if (dataUrl) return { url: dataUrl, objectUrl: false };
+  }
+  const urlApi = protectedAppImageUrlApi();
+  if (urlApi && typeof urlApi.createObjectURL === "function") {
+    const type = String(blob.type || "").trim();
+    if (type && !/^image\//i.test(type)) return { url: "", objectUrl: false };
+    return { url: urlApi.createObjectURL(blob), objectUrl: true };
+  }
+  return { url: "", objectUrl: false };
+}
+
+function applyProtectedAppImageRecoveredUrl(image, recovered) {
+  const url = String((recovered && recovered.url) || "");
+  if (!image || !url) return false;
   revokeProtectedAppImageObjectUrl(image);
-  if (image.dataset) image.dataset.protectedImageObjectUrl = objectUrl;
-  image.src = objectUrl;
+  if (image.dataset && recovered && recovered.objectUrl) image.dataset.protectedImageObjectUrl = url;
+  image.src = url;
   return true;
 }
 
@@ -13443,6 +13473,12 @@ function handleProtectedAppImageError(image) {
   const src = protectedAppImageElementSrc(image);
   if (!src || !image || !image.dataset) return false;
   if (image.dataset.imageLoadProbe === "1") return true;
+  const recoveryCount = Number(image.dataset.protectedImageRecoveryCount || 0);
+  if (recoveryCount >= 2) {
+    markFailedAppImage(image, { explicit: true });
+    return true;
+  }
+  image.dataset.protectedImageRecoveryCount = String(recoveryCount + 1);
   image.dataset.imageLoadProbe = "1";
   setRetryingAppImage(image, true);
   const headers = state.key ? { "X-Codex-Mobile-Key": state.key } : {};
@@ -13464,19 +13500,19 @@ function handleProtectedAppImageError(image) {
     }
     if (response && response.ok) {
       clearFailedAppImage(image);
-      const objectUrl = await protectedAppImageBlobUrl(response);
+      const recovered = await protectedAppImageRecoveredUrl(response);
       if (!imageStillConnected(image)) {
-        if (objectUrl) {
+        if (recovered && recovered.objectUrl && recovered.url) {
           const urlApi = protectedAppImageUrlApi();
           if (urlApi && typeof urlApi.revokeObjectURL === "function") {
             try {
-              urlApi.revokeObjectURL(objectUrl);
+              urlApi.revokeObjectURL(recovered.url);
             } catch (_) {}
           }
         }
         return;
       }
-      if (applyProtectedAppImageBlobUrl(image, objectUrl)) return;
+      if (applyProtectedAppImageRecoveredUrl(image, recovered)) return;
       retryProtectedAppImageSource(image, src);
       return;
     }

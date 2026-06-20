@@ -26,8 +26,9 @@ function functionBodyFrom(source, name) {
 }
 
 function functionSourceFrom(source, name) {
-  const start = source.indexOf(`function ${name}(`);
+  let start = source.indexOf(`function ${name}(`);
   assert.notEqual(start, -1, `missing function ${name}`);
+  if (source.slice(Math.max(0, start - 6), start) === "async ") start -= 6;
   const body = functionBodyFrom(source, name);
   const open = source.indexOf(") {", start) + 2;
   assert.notEqual(open, 1, `missing function body ${name}`);
@@ -103,6 +104,7 @@ function evaluatedInputContentRendererWithKey(key = "") {
     "authenticatedApiContentUrl",
     "protectedGeneratedImageSrc",
     "imageLoadingModeForSource",
+    "protectedImageSourceAttribute",
     "uploadFileUrl",
     "localFilePreviewContentUrl",
     "imageContentUrlForPath",
@@ -173,6 +175,7 @@ function evaluatedImageViewRenderer() {
     "isCodexMobileUploadPath",
     "protectedGeneratedImageSrc",
     "imageLoadingModeForSource",
+    "protectedImageSourceAttribute",
     "uploadFileUrl",
     "authenticatedApiContentUrl",
     "localFilePreviewContentUrl",
@@ -200,8 +203,9 @@ function evaluatedConversationImageErrorHandler(options = {}) {
     "protectedAppImageUrlApi",
     "revokeProtectedAppImageObjectUrl",
     "retryProtectedAppImageSource",
-    "protectedAppImageBlobUrl",
-    "applyProtectedAppImageBlobUrl",
+    "blobToDataUrl",
+    "protectedAppImageRecoveredUrl",
+    "applyProtectedAppImageRecoveredUrl",
     "handleProtectedAppImageError",
     "probeFailedAuthenticatedImage",
     "handleConversationImageError",
@@ -211,6 +215,7 @@ function evaluatedConversationImageErrorHandler(options = {}) {
     `const window = deps.window;
 const state = deps.state;
 const fetch = deps.fetch;
+const FileReader = deps.FileReader;
 const isHermesEmbedMode = deps.isHermesEmbedMode;
 const requestHermesPluginRefresh = deps.requestHermesPluginRefresh;
 ${sources.join("\n")}
@@ -219,6 +224,7 @@ return handleConversationImageError;`,
     window: { location: { origin: "http://127.0.0.1:8787" } },
     state: { key: "session-key", imageAuthRefreshRequested: false },
     fetch: () => Promise.reject(new Error("unexpected fetch")),
+    FileReader: undefined,
     isHermesEmbedMode: () => false,
     requestHermesPluginRefresh: () => {},
   }, options));
@@ -249,8 +255,9 @@ function evaluatedFailedImageScanner(options = {}) {
     "protectedAppImageUrlApi",
     "revokeProtectedAppImageObjectUrl",
     "retryProtectedAppImageSource",
-    "protectedAppImageBlobUrl",
-    "applyProtectedAppImageBlobUrl",
+    "blobToDataUrl",
+    "protectedAppImageRecoveredUrl",
+    "applyProtectedAppImageRecoveredUrl",
     "handleProtectedAppImageError",
     "scanFailedAppImages",
   ].map((name) => functionSourceFrom(appJs, name));
@@ -259,6 +266,7 @@ function evaluatedFailedImageScanner(options = {}) {
     `const window = deps.window;
 const state = deps.state;
 const fetch = deps.fetch;
+const FileReader = deps.FileReader;
 const isHermesEmbedMode = deps.isHermesEmbedMode;
 const requestHermesPluginRefresh = deps.requestHermesPluginRefresh;
 ${sources.join("\n")}
@@ -267,6 +275,7 @@ return scanFailedAppImages;`,
     window: { location: { origin: "http://127.0.0.1:8787" } },
     state: { key: "session-key", imageAuthRefreshRequested: false },
     fetch: () => Promise.reject(new Error("unexpected fetch")),
+    FileReader: undefined,
     isHermesEmbedMode: () => false,
     requestHermesPluginRefresh: () => {},
   }, options));
@@ -1457,24 +1466,22 @@ test("failed conversation images collapse into a neutral fallback", () => {
 
 test("protected upload image errors are probed before showing failed fallback", async () => {
   const fetchCalls = [];
-  const objectUrls = [];
   const handleConversationImageError = evaluatedConversationImageErrorHandler({
     window: {
       location: { origin: "http://127.0.0.1:8787" },
-      URL: {
-        createObjectURL(blob) {
-          objectUrls.push(blob);
-          return "blob:http://127.0.0.1:8787/protected-image";
-        },
-        revokeObjectURL() {},
-      },
+    },
+    FileReader: class {
+      readAsDataURL(blob) {
+        this.result = `data:${blob.type};base64,ZmFrZS1qcGVn`;
+        setTimeout(() => this.onload && this.onload(), 0);
+      }
     },
     fetch: (src, options) => {
       fetchCalls.push({ src, options });
       return Promise.resolve({
         ok: true,
         status: 200,
-        blob: () => Promise.resolve({ type: "image/jpeg" }),
+        blob: () => Promise.resolve({ type: "image/jpeg", size: 128000 }),
       });
     },
   });
@@ -1536,14 +1543,13 @@ test("protected upload image errors are probed before showing failed fallback", 
   assert.deepEqual(toggledClasses, [["image-load-retrying", true]]);
   assert.equal(fetchCalls.length, 1);
 
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 10));
 
   assert.deepEqual(addedClasses, []);
   assert.deepEqual(removedClasses, ["image-load-failed"]);
   assert.equal(image.dataset.imageLoadProbe, undefined);
-  assert.equal(imageSrc, "blob:http://127.0.0.1:8787/protected-image");
-  assert.equal(image.dataset.protectedImageObjectUrl, "blob:http://127.0.0.1:8787/protected-image");
-  assert.equal(objectUrls.length, 1);
+  assert.equal(imageSrc, "data:image/jpeg;base64,ZmFrZS1qcGVn");
+  assert.equal(image.dataset.protectedImageObjectUrl, undefined);
   assert.deepEqual(toggledClasses, [
     ["image-load-retrying", true],
     ["image-load-retrying", false],
@@ -1585,7 +1591,7 @@ test("protected upload image errors fall back to cache-busted src retry without 
   };
 
   handleConversationImageError({ target: { closest: () => image } });
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 10));
 
   assert.match(imageSrc, /_imgRetry=/);
 });
@@ -1769,19 +1775,19 @@ test("protected zero-size upload images are probed by scanner instead of marked 
   const scanFailedAppImages = evaluatedFailedImageScanner({
     window: {
       location: { origin: "http://127.0.0.1:8787" },
-      URL: {
-        createObjectURL() {
-          return "blob:http://127.0.0.1:8787/scanned-protected-image";
-        },
-        revokeObjectURL() {},
-      },
+    },
+    FileReader: class {
+      readAsDataURL(blob) {
+        this.result = `data:${blob.type};base64,c2Nhbm5lZC1qcGVn`;
+        setTimeout(() => this.onload && this.onload(), 0);
+      }
     },
     fetch: (src, options) => {
       fetchCalls.push({ src, options });
       return Promise.resolve({
         ok: true,
         status: 200,
-        blob: () => Promise.resolve({ type: "image/jpeg" }),
+        blob: () => Promise.resolve({ type: "image/jpeg", size: 128000 }),
       });
     },
   });
@@ -1834,10 +1840,10 @@ test("protected zero-size upload images are probed by scanner instead of marked 
   assert.deepEqual(addedClasses, []);
   assert.deepEqual(toggledClasses, [["image-load-retrying", true]]);
 
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 10));
 
-  assert.equal(imageSrc, "blob:http://127.0.0.1:8787/scanned-protected-image");
-  assert.equal(protectedImage.dataset.protectedImageObjectUrl, "blob:http://127.0.0.1:8787/scanned-protected-image");
+  assert.equal(imageSrc, "data:image/jpeg;base64,c2Nhbm5lZC1qcGVn");
+  assert.equal(protectedImage.dataset.protectedImageObjectUrl, undefined);
 });
 
 test("raw app-server input image parts use object image urls", () => {
