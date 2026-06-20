@@ -154,6 +154,22 @@ the batch field `targetThreadIds`. Batch creation returns one stored card per
 target in `cards` while keeping `card` as the first created card for older
 callers.
 
+### Thread-callable direct create
+
+`POST /api/threads/:sourceThreadId/task-cards`
+
+This route is for Codex-thread/tool initiated delegation, not for the normal
+browser task-card composer. It infers the source thread from the URL, accepts
+the same `targetThreadId` / `targetThreadIds` shape plus exact target-thread
+titles, creates cards in the same task-card store, and defaults to direct
+source-thread approval. Direct approval immediately injects a real target
+thread turn and marks the stored card with `delivery.approvalMode:
+"source_thread_direct"` and `audit.targetApprovalBypassed=true`.
+
+The normal create route above remains pending by default. The thread-callable
+route can still be forced back to pending behavior with `pending:true` or
+`autoApprove:false`.
+
 ### Read one
 
 `GET /api/thread-task-cards/:id`
@@ -218,6 +234,12 @@ Autonomous workflow grants add a fourth check: the grant must be active, have
 the same workflow id, and match the unordered pair of source/target thread ids.
 The same workflow id with any other thread pair is not authorized and remains a
 normal pending card until that pair receives its own first approval.
+
+Thread-callable direct create is a separate explicit route. It still requires
+the authenticated Codex Mobile API key, requires the URL source thread to match
+the card source, and records that target approval was bypassed. It must not be
+silently enabled for the browser composer, plain `#` draft materialization, or
+ordinary `POST /api/thread-task-cards` callers.
 
 ## UI Model
 

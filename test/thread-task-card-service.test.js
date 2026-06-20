@@ -201,6 +201,64 @@ test("approve runs injected execution and marks the card approved", async () => 
   assert.match(executions[0].message.text, /\[Cross-thread task card approved\]/);
 });
 
+test("source-thread direct approval bypasses target pending approval with audit markers", async () => {
+  const executions = [];
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card, message) => {
+      executions.push({ card, message });
+      return { threadId: card.target.threadId, turnId: "turn-direct" };
+    },
+  });
+  const created = await service.create({
+    sourceWorkspaceId: "codex",
+    sourceThreadId: "thread-src",
+    sourceTurnId: "turn-src",
+    sourceThreadTitle: "Codex Mobile",
+    targetWorkspaceId: "ops",
+    targetThreadId: "thread-dst",
+    idempotencyKey: "direct:1",
+    format: "markdown",
+    title: "Direct optimization request",
+    summary: "Run without a target-side approval card.",
+    body: "Please inspect the scoped issue and report back.",
+  });
+
+  const result = await service.approveFromSource(created.id, "thread-src");
+  assert.equal(result.card.status, "approved");
+  assert.equal(result.card.injectedTurnId, "turn-direct");
+  assert.equal(result.card.delivery.approvalMode, "source_thread_direct");
+  assert.equal(result.card.delivery.targetApprovalBypassed, true);
+  assert.equal(result.card.audit.targetApprovalBypassed, true);
+  assert.equal(result.card.audit.directApprovedByThreadId, "thread-src");
+  assert.equal(executions.length, 1);
+  assert.match(executions[0].message.text, /\[Cross-thread task card sent by source thread\]/);
+  assert.match(executions[0].message.text, /target approval bypassed/);
+
+  const retry = await service.approveFromSource(created.id, "thread-src");
+  assert.equal(retry.alreadyApproved, true);
+  assert.equal(executions.length, 1);
+});
+
+test("source-thread direct approval rejects non-source actors", async () => {
+  const service = createThreadTaskCardService({ storageFile: tempFile("cards.json") });
+  const created = await service.create({
+    sourceWorkspaceId: "codex",
+    sourceThreadId: "thread-src",
+    targetWorkspaceId: "ops",
+    targetThreadId: "thread-dst",
+    idempotencyKey: "direct:reject",
+    format: "markdown",
+    title: "Direct request",
+    summary: "Only the source thread can use direct approval.",
+    body: "Body.",
+  });
+  await assert.rejects(
+    () => service.approveFromSource(created.id, "thread-dst"),
+    /direct_approval_requires_source_thread/,
+  );
+});
+
 test("autonomous workflow requires first target approval, then auto-approves follow-up cards for the same thread pair", async () => {
   const executions = [];
   const service = createThreadTaskCardService({

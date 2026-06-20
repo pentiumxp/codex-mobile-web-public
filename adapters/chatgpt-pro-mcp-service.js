@@ -76,6 +76,93 @@ function tool(name, description, inputSchema) {
   return { name, description, inputSchema };
 }
 
+function boundedString(value, fieldName, maxLength, required = true) {
+  const text = String(value || "").trim();
+  if (required && !text) {
+    const err = new Error(`${fieldName}_required`);
+    err.statusCode = 400;
+    throw err;
+  }
+  if (text.length > maxLength) {
+    const err = new Error(`${fieldName}_too_long`);
+    err.statusCode = 400;
+    throw err;
+  }
+  return text;
+}
+
+function normalizeDelegationMode(value) {
+  const mode = String(value || "pending").trim().toLowerCase();
+  if (!mode || mode === "pending" || mode === "approval" || mode === "approve") return "pending";
+  if (mode === "draft") return "draft";
+  if (mode === "direct" || mode === "auto" || mode === "auto_approve") return "direct";
+  const err = new Error("delegation_mode_invalid");
+  err.statusCode = 400;
+  throw err;
+}
+
+function normalizeTargetThreadIds(value) {
+  const raw = Array.isArray(value) ? value : [];
+  const seen = new Set();
+  const out = [];
+  for (const item of raw) {
+    const text = String(item || "").trim();
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    out.push(text);
+  }
+  if (!out.length) {
+    const err = new Error("target_thread_ids_required");
+    err.statusCode = 400;
+    throw err;
+  }
+  return out;
+}
+
+function publicDelegatedCard(card = {}) {
+  return {
+    id: String(card.id || ""),
+    status: String(card.status || ""),
+    createdAt: card.createdAt || "",
+    updatedAt: card.updatedAt || "",
+    source: {
+      threadId: String(card.source && card.source.threadId || ""),
+      title: String(card.source && card.source.title || ""),
+    },
+    target: {
+      threadId: String(card.target && card.target.threadId || ""),
+    },
+    message: {
+      title: String(card.message && card.message.title || ""),
+      summary: String(card.message && card.message.summary || ""),
+    },
+    delivery: {
+      approvalMode: String(card.delivery && card.delivery.approvalMode || ""),
+      targetApprovalBypassed: Boolean(card.delivery && card.delivery.targetApprovalBypassed),
+    },
+    workflow: card.workflow ? {
+      mode: String(card.workflow.mode || ""),
+      id: String(card.workflow.id || ""),
+      authorized: Boolean(card.workflow.authorized),
+    } : null,
+    injectedTurnId: String(card.injectedTurnId || ""),
+    injectedThreadId: String(card.injectedThreadId || ""),
+  };
+}
+
+function publicDelegationResult(result = {}, mode) {
+  const cards = Array.isArray(result.cards) ? result.cards.map(publicDelegatedCard) : [];
+  return {
+    ok: result.ok !== false,
+    mode,
+    direct: Boolean(result.direct || result.autoApprove),
+    sourceThreadId: String(result.sourceThreadId || ""),
+    cardCount: cards.length,
+    card: cards[0] || null,
+    cards,
+  };
+}
+
 function plannerToolDefinitions() {
   return [
     tool("codex_mobile_status", "Return safe Codex Mobile planner connector status.", {
@@ -151,6 +238,30 @@ function plannerToolDefinitions() {
         requestId: { type: "string" },
       },
     }),
+    tool("delegate_to_codex_thread", "Create a cross-thread task card for Codex execution. The default mode is pending, so the target Codex thread must approve before execution.", {
+      type: "object",
+      additionalProperties: false,
+      required: ["sourceThreadId", "targetThreadIds", "title", "bodyMarkdown"],
+      properties: {
+        sourceThreadId: { type: "string", minLength: 1, maxLength: 120 },
+        targetThreadIds: {
+          type: "array",
+          minItems: 1,
+          maxItems: 12,
+          items: { type: "string", minLength: 1, maxLength: 220 },
+        },
+        title: { type: "string", minLength: 1, maxLength: 120 },
+        summary: { type: "string", maxLength: 300 },
+        bodyMarkdown: { type: "string", minLength: 1 },
+        mode: { type: "string", enum: ["draft", "pending", "direct"] },
+        requestId: { type: "string", maxLength: 180 },
+        idempotencyKey: { type: "string", maxLength: 180 },
+        workflowMode: { type: "string", enum: ["manual", "autonomous"] },
+        workflowId: { type: "string", maxLength: 180 },
+        cwd: { type: "string" },
+        conversationUrl: { type: "string" },
+      },
+    }),
     tool("list_planner_artifacts", "List recent ChatGPT Pro planner artifacts.", {
       type: "object",
       additionalProperties: false,
@@ -178,6 +289,8 @@ function createChatGptProMcpService(options = {}) {
   const staticToken = normalizeToken(options.token);
   const tokenFile = String(options.tokenFile || "").trim();
   const protocolVersion = String(options.protocolVersion || DEFAULT_PROTOCOL_VERSION);
+  const delegateTaskCard = typeof options.delegateTaskCard === "function" ? options.delegateTaskCard : null;
+  const allowDirectTaskCards = options.allowDirectTaskCards === true;
 
   function configuredToken() {
     return staticToken || normalizeToken(readSecretFile(tokenFile));
@@ -202,8 +315,58 @@ function createChatGptProMcpService(options = {}) {
       serverName: SERVER_NAME,
       protocolVersion,
       tools: plannerToolDefinitions().map((entry) => entry.name),
+      taskCardDelegation: {
+        enabled: Boolean(delegateTaskCard),
+        defaultMode: "pending",
+        directEnabled: allowDirectTaskCards,
+      },
       planner: plannerService.status(),
     };
+  }
+
+  async function delegateToCodexThread(args = {}) {
+    const mode = normalizeDelegationMode(args.mode);
+    const sourceThreadId = boundedString(args.sourceThreadId, "source_thread_id", 120);
+    const targetThreadIds = normalizeTargetThreadIds(args.targetThreadIds);
+    const title = boundedString(args.title, "title", 120);
+    const bodyMarkdown = boundedString(args.bodyMarkdown, "body_markdown", 50_000);
+    const common = {
+      sourceThreadId,
+      targetThreadIds,
+      title,
+      summary: boundedString(args.summary, "summary", 300, false),
+      bodyMarkdown,
+      requestId: boundedString(args.requestId, "request_id", 180, false),
+      idempotencyKey: boundedString(args.idempotencyKey, "idempotency_key", 180, false),
+      workflowMode: boundedString(args.workflowMode || "manual", "workflow_mode", 40, false) || "manual",
+      workflowId: boundedString(args.workflowId, "workflow_id", 180, false),
+      cwd: boundedString(args.cwd, "cwd", 1000, false),
+      conversationUrl: boundedString(args.conversationUrl, "conversation_url", 1000, false),
+    };
+    if (mode === "draft") {
+      return {
+        ok: true,
+        mode,
+        artifact: plannerService.createTaskCardDraft(common),
+      };
+    }
+    if (!delegateTaskCard) {
+      const err = new Error("task_card_delegation_unavailable");
+      err.statusCode = 503;
+      throw err;
+    }
+    if (mode === "direct" && !allowDirectTaskCards) {
+      const err = new Error("direct_task_card_delegation_disabled");
+      err.statusCode = 403;
+      throw err;
+    }
+    const result = await delegateTaskCard(Object.assign({}, common, {
+      mode,
+      pending: mode !== "direct",
+      autoApprove: mode === "direct",
+      direct: mode === "direct",
+    }));
+    return publicDelegationResult(result, mode);
   }
 
   async function callTool(name, args = {}) {
@@ -215,6 +378,7 @@ function createChatGptProMcpService(options = {}) {
     if (name === "create_planner_artifact") return { ok: true, artifact: plannerService.createPlannerArtifact(args) };
     if (name === "prepare_codex_goal") return { ok: true, artifact: plannerService.prepareCodexGoal(args) };
     if (name === "create_task_card_draft") return { ok: true, artifact: plannerService.createTaskCardDraft(args) };
+    if (name === "delegate_to_codex_thread") return delegateToCodexThread(args);
     if (name === "list_planner_artifacts") return plannerService.listPlannerArtifacts(args);
     if (name === "read_planner_artifact") return plannerService.readPlannerArtifact(args);
     const err = new Error("unknown_tool");
@@ -241,8 +405,9 @@ function createChatGptProMcpService(options = {}) {
         },
         instructions: [
           "Use this connector only for planning and review artifacts.",
-          "Do not ask it to write source code, run shell commands, or start Codex turns.",
-          "Create planner artifacts for explicit user application inside Codex Mobile.",
+          "Do not ask it to write source code or run shell commands.",
+          "Use delegate_to_codex_thread when ChatGPT Pro should hand work to Codex; the default pending mode requires target-thread approval.",
+          "Direct task-card delegation is disabled unless the Codex Mobile server explicitly enables it.",
         ].join("\n"),
       });
     }

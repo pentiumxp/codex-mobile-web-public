@@ -26,6 +26,7 @@ The missing half is the inbound planner connector:
 ChatGPT Pro MCP Connector
   -> reads only bounded Codex Mobile / repo context
   -> writes planner artifacts
+  -> can create pending cross-thread task cards
   -> Codex Mobile renders and applies those artifacts deliberately
 ```
 
@@ -34,7 +35,7 @@ The target product shape is:
 ```text
 Idea or bug
   -> ChatGPT Pro analysis
-  -> PRD / checklist sprint / review / Codex goal / task-card draft
+  -> PRD / checklist sprint / review / Codex goal / task-card draft or pending card
   -> explicit user action in Codex Mobile
   -> normal Codex execution
 ```
@@ -319,6 +320,7 @@ Proposed planner tools:
 | `create_planner_artifact` | Save analysis/PRD/sprint/review markdown | runtime artifact store |
 | `prepare_codex_goal` | Save `codex_goal` artifact from PRD/Sprint | runtime artifact store |
 | `create_task_card_draft` | Save task-card draft without sending | runtime artifact store |
+| `delegate_to_codex_thread` | Create a cross-thread task card for Codex execution; defaults to pending target approval | task-card store |
 | `list_planner_artifacts` | List recent artifacts for current workspace/thread | none |
 | `read_planner_artifact` | Read one saved artifact | none |
 
@@ -330,6 +332,8 @@ Explicitly excluded from planner profile:
 - shell execution
 - app-server `turn/start`
 - approval responses
+- direct task-card execution unless explicitly enabled by
+  `CODEX_MOBILE_CHATGPT_PRO_MCP_ALLOW_DIRECT_TASK_CARDS=1`
 - raw rollout or full log reads
 - arbitrary local file reads
 
@@ -362,7 +366,9 @@ Default denied reads:
 
 Default write targets:
 
-- runtime planner artifact store only
+- runtime planner artifact store
+- task-card store only through `delegate_to_codex_thread`, defaulting to pending
+  target approval
 
 Future explicit apply targets:
 
@@ -456,6 +462,8 @@ Responsibilities:
 - JSON-RPC `initialize`, `tools/list`, and `tools/call`
 - separate bearer token authorization
 - MCP tool schema projection
+- pending-default task-card delegation through the existing task-card service
+- explicit direct-delegation gate for `mode:"direct"`
 - JSON result wrapping without raw secrets or logs
 
 ### Routes
@@ -505,10 +513,13 @@ Apply action behavior:
 | `set_goal` | Existing thread goal route |
 | `start_thread_with_goal` | Existing new-thread route plus goal set |
 | `create_task_card` | Existing task-card draft/create route |
+| `delegate_to_codex_thread` | Existing task-card service; MCP default is pending target approval |
 | `create_side_chat_candidate` | Existing side-chat candidate store |
 | `save_runtime_artifact` | Already persisted by planner service |
 
-Do not add `execute_now` in the first implementation.
+Do not add `execute_now` in the planner profile. Direct task-card delegation is
+not the default and remains behind
+`CODEX_MOBILE_CHATGPT_PRO_MCP_ALLOW_DIRECT_TASK_CARDS=1`.
 
 ## ChatGPT Prompt Contract
 
@@ -627,17 +638,18 @@ Validation:
 - side-chat service/route tests
 - conversation render tests
 
-### Phase 4: Optional Orchestrator Profile
+### Phase 4: Optional Direct Delegation Profile
 
-Goal: support controlled execution only after the planner workflow is stable.
+Goal: support controlled direct task-card execution only after the planner
+workflow is stable.
 
-This is not part of the first implementation.
+This is not enabled by default.
 
 If added later:
 
 - separate `orchestrator` auth/profile
 - fixed `codex_goal` input only
-- explicit user confirmation
+- explicit user or deployment confirmation
 - timeout-bounded
 - full audit trail
 - no arbitrary shell
@@ -659,7 +671,7 @@ Minimum focused tests:
 | Area | Tests |
 | --- | --- |
 | planner artifact service | new `test/chatgpt-pro-planner-service.test.js` |
-| MCP planner policy | new `test/chatgpt-pro-mcp-service.test.js` |
+| MCP planner policy | new `test/chatgpt-pro-mcp-service.test.js`; include pending-default delegation and direct-gate coverage |
 | existing bridge compatibility | `test/chatgpt-pro-bridge-service.test.js` |
 | composer `@` UI | `test/thread-task-card-route.test.js`, `test/composer-draft.test.js` |
 | artifact rendering | `test/conversation-render.test.js`, `test/mobile-viewport.test.js` |

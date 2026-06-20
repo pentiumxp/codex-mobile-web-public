@@ -182,6 +182,7 @@ const CHATGPT_PRO_PLANNER_DIR = process.env.CODEX_MOBILE_CHATGPT_PRO_PLANNER_DIR
   || path.join(RUNTIME_ROOT, "chatgpt-pro-planner");
 const CHATGPT_PRO_MCP_TOKEN = process.env.CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN || "";
 const CHATGPT_PRO_MCP_TOKEN_FILE = process.env.CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN_FILE || "";
+const CHATGPT_PRO_MCP_ALLOW_DIRECT_TASK_CARDS = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_CHATGPT_PRO_MCP_ALLOW_DIRECT_TASK_CARDS || "");
 const THREAD_SIDE_CHAT_SCOPE_ID = CODEX_HOME_RESOLUTION.activeProfileId
   || `codex-home-${crypto.createHash("sha256").update(CODEX_HOME).digest("hex").slice(0, 16)}`;
 const THREAD_SIDE_CHAT_REPLY_TIMEOUT_MS = Math.max(
@@ -7512,6 +7513,8 @@ const chatGptProPlannerService = createChatGptProPlannerService({
 });
 const chatGptProMcpService = createChatGptProMcpService({
   plannerService: chatGptProPlannerService,
+  delegateTaskCard: async (input = {}) => createThreadTaskCardsFromSourceThread(input.sourceThreadId, input),
+  allowDirectTaskCards: CHATGPT_PRO_MCP_ALLOW_DIRECT_TASK_CARDS,
   token: CHATGPT_PRO_MCP_TOKEN,
   tokenFile: CHATGPT_PRO_MCP_TOKEN_FILE,
   version: APP_VERSION,
@@ -9366,6 +9369,123 @@ function uniqueThreadTaskCardTargetIds(values, fallback = "") {
   return out;
 }
 
+function threadTaskCardTargetReferenceText(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return String(value.threadId || value.id || value.title || value.name || value.label || "").trim();
+  }
+  return String(value || "").trim();
+}
+
+function threadTaskCardTargetReferences(body = {}) {
+  const values = [];
+  if (Array.isArray(body.targetThreadIds)) values.push(...body.targetThreadIds);
+  if (body.targetThreadId) values.push(body.targetThreadId);
+  if (Array.isArray(body.targetThreads)) values.push(...body.targetThreads);
+  if (Array.isArray(body.targetThreadRefs)) values.push(...body.targetThreadRefs);
+  if (Array.isArray(body.targetThreadTitles)) values.push(...body.targetThreadTitles);
+  if (body.targetThreadTitle) values.push(body.targetThreadTitle);
+  return values.map(threadTaskCardTargetReferenceText).filter(Boolean);
+}
+
+function resolveThreadTaskCardTargetReference(value, sourceThreadId = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (raw === String(sourceThreadId || "")) return "";
+  const direct = readStateDbThread(raw) || readStartedThread(raw) || readRolloutSessionFallbackThread(raw);
+  if (direct && String(direct.id || "") === raw) return raw;
+  const lowered = raw.toLowerCase();
+  const candidates = readThreadListFallback(500, { archived: false });
+  for (const thread of candidates) {
+    if (!thread || String(thread.id || "") === String(sourceThreadId || "")) continue;
+    const id = String(thread.id || "").trim();
+    const title = threadDisplayTitle(thread);
+    if (id.toLowerCase() === lowered || String(title || "").trim().toLowerCase() === lowered) return id;
+  }
+  return raw;
+}
+
+function resolvedThreadTaskCardTargetIds(body = {}, sourceThreadId = "") {
+  const seen = new Set();
+  const out = [];
+  for (const reference of threadTaskCardTargetReferences(body)) {
+    const id = resolveThreadTaskCardTargetReference(reference, sourceThreadId);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+    if (out.length >= 12) break;
+  }
+  return out;
+}
+
+function threadTaskCardThreadCallIdempotencyKey(sourceThreadId, body = {}, targetThreadIds = []) {
+  const explicit = String(body.idempotencyKey || "").trim();
+  if (explicit) return explicit;
+  const requestId = String(body.requestId || body.request_id || body.sourceTurnId || body.turnId || "").trim();
+  const seed = requestId || JSON.stringify({
+    targetThreadIds,
+    title: String(body.title || "").trim(),
+    summary: String(body.summary || "").trim(),
+    body: String(body.body || body.bodyMarkdown || body.message || "").trim(),
+    workflowMode: normalizeThreadTaskCardWorkflowMode(body.workflowMode),
+    workflowId: String(body.workflowId || "").trim(),
+  });
+  return `thread-call:${stableTextHash(sourceThreadId)}:${stableTextHash(seed)}`;
+}
+
+function buildThreadTaskCardCreatePayload(body = {}, sourceThreadId = "") {
+  const sourceId = String(sourceThreadId || body.sourceThreadId || "").trim();
+  if (body.sourceThreadId && String(body.sourceThreadId || "").trim() !== sourceId) {
+    throw httpStatusError(400, "source_thread_id_mismatch");
+  }
+  const sourceSummary = readStateDbThread(sourceId) || readStartedThread(sourceId) || readRolloutSessionFallbackThread(sourceId);
+  const targetThreadIds = resolvedThreadTaskCardTargetIds(body, sourceId);
+  const targetWorkspaceIds = Object.assign({}, body.targetWorkspaceIds && typeof body.targetWorkspaceIds === "object" ? body.targetWorkspaceIds : {});
+  for (const targetThreadId of targetThreadIds) {
+    if (!targetThreadId || targetWorkspaceIds[targetThreadId]) continue;
+    const targetSummary = readStateDbThread(targetThreadId) || readStartedThread(targetThreadId) || readRolloutSessionFallbackThread(targetThreadId);
+    targetWorkspaceIds[targetThreadId] = body.targetWorkspaceId || body.targetWorkspace || (targetSummary && targetSummary.cwd) || "";
+  }
+  const rawBody = String(body.body || body.bodyMarkdown || body.message || "").trim();
+  const cardBody = truncateThreadTaskCardBody(rawBody);
+  return Object.assign({}, body, {
+    sourceThreadId: sourceId,
+    sourceTurnId: body.sourceTurnId || body.turnId || "",
+    sourceWorkspaceId: body.sourceWorkspaceId || body.sourceWorkspace || (sourceSummary && sourceSummary.cwd) || "",
+    sourceThreadTitle: body.sourceThreadTitle || (sourceSummary && threadDisplayTitle(sourceSummary)) || sourceId,
+    targetThreadIds,
+    targetWorkspaceIds,
+    idempotencyKey: threadTaskCardThreadCallIdempotencyKey(sourceId, body, targetThreadIds),
+    format: body.format || "markdown",
+    title: body.title,
+    summary: body.summary || summarizeTaskCardText(cardBody),
+    body: cardBody,
+  });
+}
+
+async function createThreadTaskCardsFromSourceThread(sourceThreadId, body = {}) {
+  const payload = buildThreadTaskCardCreatePayload(body, sourceThreadId);
+  const cards = await threadTaskCardService.createMany(payload);
+  const autoApprove = body.autoApprove !== false && body.direct !== false && body.pending !== true;
+  const approvals = [];
+  if (autoApprove) {
+    for (const card of cards) {
+      approvals.push(await threadTaskCardService.approveFromSource(card.id, payload.sourceThreadId));
+    }
+  }
+  const publicCards = autoApprove
+    ? approvals.map((entry) => entry && entry.card).filter(Boolean)
+    : cards;
+  return {
+    ok: true,
+    sourceThreadId: payload.sourceThreadId,
+    direct: autoApprove,
+    autoApprove,
+    card: publicCards[0] || null,
+    cards: publicCards,
+    approvals,
+  };
+}
+
 function parseThreadTaskCardDraftText(value) {
   const text = String(value || "");
   const match = new RegExp(`<${THREAD_TASK_CARD_DRAFT_TAG}>\\s*([\\s\\S]*?)\\s*<\\/${THREAD_TASK_CARD_DRAFT_TAG}>`, "i").exec(text);
@@ -10499,6 +10619,17 @@ async function handleApi(req, res) {
         ok: true,
         sideChat: await threadSideChatService.clear(threadSideChatId),
       });
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  const sourceThreadTaskCardCreate = url.pathname.match(/^\/api\/threads\/([^/]+)\/task-cards$/);
+  if (sourceThreadTaskCardCreate && req.method === "POST") {
+    try {
+      const sourceThreadId = decodeURIComponent(sourceThreadTaskCardCreate[1]);
+      const body = await readBody(req);
+      sendJson(res, 200, await createThreadTaskCardsFromSourceThread(sourceThreadId, body));
     } catch (err) {
       sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
     }

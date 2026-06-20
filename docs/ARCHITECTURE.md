@@ -171,6 +171,7 @@ adapters/chatgpt-pro-planner-service.js
         |
         +-- bounded thread/workspace/doc reads
         +-- runtime planner artifacts under chatgpt-pro-planner
+        +-- pending cross-thread task cards through task-card service
 ```
 
 `/api/chatgpt-pro/mcp` is not authenticated by the normal Codex Mobile Access
@@ -182,10 +183,14 @@ Mobile Web browsers.
 
 The connector exposes planner/reviewer tools only. It can list visible
 workspaces, read bounded thread metadata, read allowlisted documentation files
-from visible workspaces, and create runtime artifacts such as PRDs, reviews,
-Codex goals, or task-card drafts. It cannot write source files, run shell
-commands, answer approvals, start Codex turns, read arbitrary local paths, or
-serve raw rollout logs, uploads, cookies, access keys, or token files.
+from visible workspaces, create runtime artifacts such as PRDs, reviews, Codex
+goals, or task-card drafts, and delegate scoped work through
+`delegate_to_codex_thread`. Task-card delegation defaults to `pending`, so the
+target Codex thread must approve before any injected turn starts. Direct
+delegation is rejected unless the server explicitly enables
+`CODEX_MOBILE_CHATGPT_PRO_MCP_ALLOW_DIRECT_TASK_CARDS=1`. It cannot write
+source files, run shell commands, answer approvals, read arbitrary local paths,
+or serve raw rollout logs, uploads, cookies, access keys, or token files.
 
 ### Hermes Mobile Plugin Mode
 
@@ -406,6 +411,18 @@ through `POST /api/thread-task-cards`. That route accepts either a single
 `targetThreadId` or multiple `targetThreadIds`, creates one stored card per
 target, and returns both the compatibility `card` field and the full `cards`
 array.
+For Codex-thread/tool initiated delegation, Mobile Web also exposes
+`POST /api/threads/:sourceThreadId/task-cards`. This route is not used by the
+browser composer. It infers the source thread from the URL, stores the same
+auditable task-card object, and defaults to source-thread direct approval:
+after storage it injects the target turn immediately through
+`approveFromSource()` and marks the card as target-approval-bypassed. Use
+`pending:true` or `autoApprove:false` only when a thread-callable client
+intentionally wants the original pending target approval chain.
+The ChatGPT Pro MCP `delegate_to_codex_thread` tool uses the same server helper
+but passes `pending:true` by default, because ChatGPT-originated cards must keep
+target-thread approval unless `mode:"direct"` is requested and the dedicated MCP
+direct-delegation environment gate is enabled.
 Server-side draft materialization backs up the browser path. On fresh
 `turn/completed`, `server.js` fetches a bounded recent-turn window, scans
 assistant/plan items for the same structured draft XML, resolves source/target
