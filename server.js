@@ -1993,6 +1993,14 @@ function truncateTail(value, maxChars, label) {
   return `[${label} truncated: ${text.length} chars total, showing last ${maxChars}]\n\n${text.slice(-maxChars)}`;
 }
 
+function redactInlineImageDataUrls(value) {
+  const text = String(value ?? "");
+  if (!/data:image\//i.test(text)) return text;
+  return text.replace(/data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=_-]+/gi, (match) => (
+    `[inline image data omitted: ${match.length} chars]`
+  ));
+}
+
 function compactStructured(value) {
   if (value == null) return value;
   let raw;
@@ -2001,17 +2009,31 @@ function compactStructured(value) {
   } catch (_) {
     raw = String(value);
   }
+  const redacted = redactInlineImageDataUrls(raw);
+  if (redacted.length <= MAX_STRUCTURED_CHARS) {
+    if (redacted === raw) return value;
+    try {
+      return JSON.parse(redacted);
+    } catch (_) {
+      return redacted;
+    }
+  }
   if (raw.length <= MAX_STRUCTURED_CHARS) return value;
   return {
     truncated: true,
     totalChars: raw.length,
-    preview: truncateMiddle(raw, MAX_STRUCTURED_CHARS, "structured payload"),
+    inlineImagesRedacted: redacted !== raw || undefined,
+    preview: truncateMiddle(redacted, MAX_STRUCTURED_CHARS, "structured payload"),
   };
 }
 
 function compactStringArray(values, maxChars, label) {
   if (!Array.isArray(values)) return values;
-  return values.map((value) => typeof value === "string" ? truncateMiddle(value, maxChars, label) : compactStructured(value));
+  return values.map((value) => (
+    typeof value === "string"
+      ? truncateMiddle(redactInlineImageDataUrls(value), maxChars, label)
+      : compactStructured(value)
+  ));
 }
 
 function statusText(status) {
@@ -3776,6 +3798,43 @@ function collectToolOutputImageCandidates(value, out = [], seen = new Set(), dep
   return out;
 }
 
+function parseToolCallArguments(value) {
+  if (!value) return {};
+  if (typeof value === "object") return value;
+  if (typeof value !== "string") return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function viewImageToolPath(payload) {
+  if (!payload || typeof payload !== "object") return "";
+  if (String(payload.name || "") !== "view_image") return "";
+  const args = parseToolCallArguments(payload.arguments || payload.input || payload.params);
+  const candidates = [
+    args.path,
+    args.imagePath,
+    args.image_path,
+    args.filePath,
+    args.file_path,
+  ];
+  const found = candidates.find((value) => typeof value === "string" && value.trim());
+  return found ? found.trim() : "";
+}
+
+function isCodexMobileUploadFilePath(filePath) {
+  const text = String(filePath || "").trim();
+  if (!text) return false;
+  return isPathInside(UPLOAD_ROOT, path.resolve(text));
+}
+
+function shouldSuppressToolOutputImageCandidates(callInfo) {
+  return Boolean(callInfo && callInfo.tool === "view_image" && isCodexMobileUploadFilePath(callInfo.viewImagePath));
+}
+
 function toolOutputImageFingerprint(candidate) {
   return crypto
     .createHash("sha256")
@@ -3908,21 +3967,36 @@ function readRolloutToolOutputImageItems(rolloutPath, options = {}) {
   }
 
   const text = readRolloutRuntimeScanText(rolloutPath) || readRolloutTail(rolloutPath);
+  const entries = [];
+  const toolCallInfoById = new Map();
+  for (const line of text.split(/\r?\n/)) {
+    if (!line || !line.trim()) continue;
+    const entry = parseJsonLine(line);
+    if (!entry || !entry.type) continue;
+    entries.push(entry);
+    const payload = entry.payload || {};
+    if (entry.type !== "response_item" || !/^(function_call|custom_tool_call)$/.test(String(payload.type || ""))) continue;
+    const callId = String(payload.call_id || "");
+    if (!callId) continue;
+    toolCallInfoById.set(callId, {
+      tool: String(payload.name || ""),
+      viewImagePath: viewImageToolPath(payload),
+    });
+  }
   const byTurn = new Map();
   const unscoped = [];
   const seenIds = new Set();
   const seenImageKeys = new Set();
   let scopedCount = 0;
   let currentTurnId = "";
-  for (const line of text.split(/\r?\n/)) {
-    if (!line || !line.trim()) continue;
-    const entry = parseJsonLine(line);
-    if (!entry || !entry.type) continue;
+  for (const entry of entries) {
     const payload = entry.payload || {};
     const explicitTurnId = rolloutEntryTurnId(entry);
     if (entry.type === "turn_context" && explicitTurnId) currentTurnId = explicitTurnId;
     if (entry.type === "event_msg" && payload.type === "task_started" && explicitTurnId) currentTurnId = explicitTurnId;
     if (entry.type !== "response_item" || !/^(function_call_output|custom_tool_call_output)$/.test(String(payload.type || ""))) continue;
+    const callInfo = toolCallInfoById.get(String(payload.call_id || ""));
+    if (shouldSuppressToolOutputImageCandidates(callInfo)) continue;
     const candidates = collectToolOutputImageCandidates(payload.output);
     if (!candidates.length) continue;
     const turnId = explicitTurnId || currentTurnId;
