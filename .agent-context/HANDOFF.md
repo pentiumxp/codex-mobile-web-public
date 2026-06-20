@@ -4,8 +4,11 @@ Last compacted: 2026-06-08T13:27:43.304Z
 
 ## 2026-06-19 ChatGPT Pro MCP Pending Task-Card Delegation
 
-- Status: implemented and validated locally; not committed, pushed, or
-  deployed in this turn.
+- Status: implemented, validated, committed, and pushed to private and public;
+  not deployed in this turn.
+- Source commits:
+  - Private: `0294bc0` `feat: 添加 ChatGPT Pro MCP 任务卡委派`
+  - Public: `777da93` `feat: 发布 ChatGPT Pro MCP 任务卡委派`
 - User-visible/API change:
   - `POST /api/chatgpt-pro/mcp` now exposes `delegate_to_codex_thread`.
   - The tool lets ChatGPT Pro create cross-thread task cards for Codex threads.
@@ -43,13 +46,20 @@ Last compacted: 2026-06-08T13:27:43.304Z
   - Center required check passed:
     `node tests/architecture-code-test-harness-map.test.js`.
   - `npm test` passed: 523 tests.
+  - Public worktree validation passed:
+    `npm run check`,
+    `node --test test/chatgpt-pro-mcp-service.test.js test/chatgpt-pro-bridge-service.test.js test/thread-task-card-service.test.js test/thread-task-card-route.test.js`,
+    and `git diff --cached --check`.
   - AI Ops evidence ledger:
     `evidence-32aae9fa-3eae-4758-bb8f-fff60dc3c1b0`.
 
 ## 2026-06-19 Thread-Callable Direct Task-Card Interface
 
-- Status: implemented and validated locally; not committed, pushed, or deployed
-  in this turn.
+- Status: implemented, validated, committed, and pushed to private; public
+  files were included in public commit `777da93`; not deployed in this turn.
+- Source commits:
+  - Private: `5409e1f` `feat: 添加线程直发任务卡接口`
+  - Public: `777da93` `feat: 发布 ChatGPT Pro MCP 任务卡委派`
 - User-visible/API change:
   - Existing browser/user task-card flow remains unchanged:
     `POST /api/thread-task-cards` still creates pending cards that require
