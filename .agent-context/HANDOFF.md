@@ -2,6 +2,52 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-20 Public PR #77 Context-Only Stale Active Turn Sync
+
+- Status: public PR evaluated as mergeable, merged into the clean public mirror,
+  reconciled with already-published v317 source, validated, pushed to public,
+  then reverse-synced into private and revalidated.
+- Public PR:
+  - `pentiumxp/codex-mobile-web-public#77`
+    `fix: 清理 context-only stale active turn 状态`
+  - GitHub merge commit: `eb8db17` `Merge PR #77: 清理 context-only stale active turn 状态`
+  - Final public head after v317 reconciliation:
+    `227a557` `Merge public v317 source after PR 77`
+- Private sync:
+  - Private merge commit: `8e9d315` `Merge public PR 77 source`
+  - `public/main` is an ancestor of private `main`.
+  - `git diff --stat public/main..HEAD -- . ':(exclude).agent-context'`
+    is empty; private has no public-source divergence outside `.agent-context`.
+- Release notes:
+  - Public `README.md` now records the #77 Chinese release note and clarifies
+    that the context-only stale active-turn fix shipped with the v317 public
+    shell alignment.
+- Validation:
+  - Public mirror:
+    - `node --check server.js public/app.js public/sw.js ...` passed.
+    - Focused `node --test` set passed: 119 tests.
+    - `npm run check` passed.
+    - `npm run check:macos` passed.
+    - `npm test` passed: 530 tests.
+    - `git diff --check` passed.
+    - Home AI required check passed:
+      `node tests/architecture-code-test-harness-map.test.js`.
+  - Private workspace after reverse sync:
+    - `node --check server.js public/app.js public/sw.js` and focused
+      `node --test` set passed: 119 tests.
+    - `npm run check` passed.
+    - `npm run check:macos` passed.
+    - `npm test` passed: 530 tests.
+    - `git diff --check` passed.
+- Privacy/public hygiene:
+  - Public file-name scan found no `.agent-context`, runtime, upload, key,
+    diagnostic, artifact, or backup paths.
+  - Content scan hits were bounded false positives: README public policy text
+    and a test/service identifier containing `token`; no raw secret, runtime
+    state, upload content, local key, or machine-specific diagnostic was copied.
+  - AI Ops evidence ledger:
+    `evidence-7fc9d1fe-8b3c-4122-bbe7-27483aade470`.
+
 ## 2026-06-20 v317 Poll/SSE Local Stream Rendering Fix
 
 - Status: implemented, validated, committed, deployed to Mac production with no
