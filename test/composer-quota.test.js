@@ -25,6 +25,9 @@ test("composer exposes Fast bolt, model, reasoning, permission, and quota as com
   assert.match(appJs, /function handleComposerRuntimeControl\(/);
   assert.match(appJs, /function applyRuntimeSelection\(/);
   assert.match(appJs, /setCodexFastCommandEnabled\(!codexFastCommandEnabled\(\)\)/);
+  assert.match(appJs, /commandControl\.addEventListener\("click", handleFastToggle\)/);
+  assert.match(appJs, /commandControl\.addEventListener\("touchend", handleFastToggle, \{ passive: false \}\)/);
+  assert.match(appJs, /now - lastFastToggleAt < 650/);
   assert.match(appJs, /showComposerFastHint\(state\.codexFastMode\)/);
   assert.match(stylesCss, /\.composer-fast-toggle/);
   assert.match(stylesCss, /\.composer-fast-icon/);
@@ -85,7 +88,8 @@ test("phone composer controls stay in one compact status row", () => {
   assert.match(mobileBody, /\.composer\s*{[\s\S]*position:\s*relative;[\s\S]*width:\s*100%;/);
   assert.match(mobileBody, /\.composer\s*{[\s\S]*padding:\s*7px 12px clamp\(8px,\s*calc\(env\(safe-area-inset-bottom,\s*0px\) - 88px\),\s*52px\);/);
   assert.doesNotMatch(mobileBody, /\.composer\s*{[\s\S]*position:\s*fixed;[\s\S]*bottom:\s*0;/);
-  assert.match(mobileBody, /\.composer-controls\s*{[\s\S]*grid-template-columns:\s*28px minmax\(0,\s*0\.96fr\) minmax\(0,\s*0\.78fr\) minmax\(0,\s*0\.84fr\) minmax\(0,\s*1\.06fr\);/);
+  assert.match(mobileBody, /\.composer-controls\s*{[\s\S]*grid-template-columns:\s*42px minmax\(0,\s*0\.96fr\) minmax\(0,\s*0\.78fr\) minmax\(0,\s*0\.84fr\) minmax\(0,\s*1\.06fr\);/);
+  assert.match(mobileBody, /\.composer-fast-toggle\s*{[\s\S]*width:\s*42px;[\s\S]*height:\s*var\(--composer-control-height\);/);
   assert.match(mobileBody, /\.composer-control-card\s*{[\s\S]*padding:\s*4px 5px;/);
   assert.match(mobileBody, /\.quota-usage\s*{[\s\S]*padding-inline:\s*4px;/);
   assert.match(mobileBody, /\.quota-inline-sep\s*{[\s\S]*display:\s*inline-block;/);
@@ -98,7 +102,7 @@ test("tablet landscape composer controls stay compact with Fast bolt", () => {
 
   const tabletBody = stylesCss.slice(tabletIndex, stylesCss.indexOf("@media (max-width: 760px)"));
   assert.match(tabletBody, /grid-template-columns:\s*clamp\(340px,\s*36vw,\s*400px\) minmax\(0,\s*1fr\);/);
-  assert.match(tabletBody, /\.composer-controls\s*{[\s\S]*grid-template-columns:\s*28px minmax\(0,\s*0\.96fr\) minmax\(0,\s*0\.78fr\) minmax\(0,\s*0\.84fr\) minmax\(0,\s*1\.06fr\);/);
+  assert.match(tabletBody, /\.composer-controls\s*{[\s\S]*grid-template-columns:\s*42px minmax\(0,\s*0\.96fr\) minmax\(0,\s*0\.78fr\) minmax\(0,\s*0\.84fr\) minmax\(0,\s*1\.06fr\);/);
 });
 
 test("composer control row uses fixed heights", () => {
