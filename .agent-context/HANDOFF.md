@@ -29,6 +29,23 @@ Last compacted: 2026-06-08T13:27:43.304Z
   - Passed center check from Home AI workspace:
     `node tests/architecture-code-test-harness-map.test.js`.
 
+## 2026-06-20 Fast Button Tap Target Public Release
+
+- Status: pushed to public and merged back into private history.
+- Public commit:
+  - `0e15e15 fix: 扩大 Fast 按钮触控区域`
+- Private follow-up:
+  - Added the missed `test/tablet-layout.test.js` assertion update so full
+    public CI expects the new 42px Fast slot.
+  - Merged `public/main` back into private `main` to keep public as an
+    ancestor and avoid a long-running branch split.
+- Public validation in a clean temporary public worktree:
+  - `npm ci`
+  - `npm test` (564/564 passed)
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+
 ## 2026-06-20 Workspace Create Default Dev Root v342
 
 - Status: implemented and locally validated. Not deployed in this entry.
