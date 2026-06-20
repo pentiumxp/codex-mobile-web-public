@@ -2,6 +2,71 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-20 Upload Image Echo Cleanup And Stable Image Cards v325
+
+- Status: implemented, validated, committed, and deployed to Mac production.
+  Not pushed to public in this turn.
+- Source commits:
+  - `0499292` `fix: 清理上传图片回显并恢复空运行状态`
+  - `1f12cb0` `fix: 稳定会话图片卡加载高度`
+- User-visible issues:
+  - In a still-open browser session, a newly uploaded image could first render
+    correctly, then the durable image could be replaced or accompanied by a
+    later optimistic/pending echo at the bottom.
+  - The Music thread list row was active, but the thread detail header could
+    miss the top-right running status box when the newest active tail was
+    empty or not display-selected.
+  - Historical lazy-loaded upload image cards had no stable height before image
+    load; when an old image above the viewport loaded later, it could change
+    scroll height and contribute to visible message-feed jitter.
+- Fix:
+  - Frontend shell advanced to `codex-mobile-shell-v325`.
+  - v324 added cross-turn optimistic upload echo cleanup. Durable upload paths
+    with runtime timestamp/random prefixes now match the original browser
+    filename suffix, and later optimistic visual echoes are removed even when
+    the durable user image lives in an earlier turn. Text-only repeat messages
+    keep the previous protection.
+  - v324 also made `syncActiveTurnFromThread()` and `currentLiveTurn()` use a
+    `latestLiveTurnCandidate()` that can follow the raw latest active tail while
+    message rendering still uses `latestTurn()` to skip empty display tails.
+  - v325 adds stable CSS aspect ratios for upload/Markdown image cards and
+    generated image cards. Images still use `object-fit: contain`.
+- Validation:
+  - Focused tests passed:
+    `node --test test/conversation-render.test.js test/file-preview-ui.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (80 tests).
+  - `npm run check` passed.
+  - `npm test` passed: 543 tests.
+  - `git diff --check` passed.
+  - Center required check passed:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - Production readback after deploy showed:
+    `clientBuildId=0.1.11|codex-mobile-shell-v325` and
+    `shellCacheName=codex-mobile-shell-v325`.
+  - Upload route smoke for `E477F4C0`: authenticated
+    `/api/uploads/file` returned `200 image/jpeg`, 128600 bytes; unauthenticated
+    returned `401`.
+  - Playwright mobile visual smoke with central Playwright dependency and
+    viewport `390x844` passed after clearing static caches:
+    Home AI `E477F4C0` had one user image card, loaded at natural size
+    `591x1280`, no failed image figures, and historical image cards reserved
+    stable height; Music showed the top-right `turnTimer` as visible with
+    `aria-hidden=false`.
+  - Visual screenshots:
+    `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v325-home-upload-1781941140396.png`
+    and
+    `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v325-music-status-1781941140396.png`.
+  - AI Ops evidence ledger:
+    `evidence-813c34f0-8df8-4e71-a3ba-ca43c634893f`,
+    `evidence-6e73dffb-25e7-4241-8f9b-59be63c4c3ac`, and
+    `evidence-d5d96713-d7e6-4781-96a7-26dc37d0228e`.
+- Deployment:
+  - Executed central Mac plugin deploy with no listener restart:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart none --health-url http://127.0.0.1:8787/api/public-config --execute --json`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260620T073824Z-plugin-codex-mobile-web-manual`.
+  - This release is static frontend-only; no 8787 listener restart is required.
+
 ## 2026-06-20 Superseded Live Upload Image Preservation v323
 
 - Status: implemented, validated, committed, and deployed to Mac production.
