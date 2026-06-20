@@ -2,6 +2,81 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-20 Superseded Live Upload Image Preservation v323
+
+- Status: implemented, validated, committed, and deployed to Mac production.
+  Not pushed to public in this turn.
+- Source commit:
+  - `f893ba0` `fix: 保留被替换运行轮次的上传图片消息`
+- User-visible issue:
+  - In v320-v322, a newly sent image could appear briefly, then disappear or
+    become "图片无法加载" after thread projection refreshed. The latest sample was
+    `homeai-upload-080D5F0E-88DE-42C2-82E2-83C8FE80480F.jpg`.
+- Root cause:
+  - The upload file and `/api/uploads/file` route were valid. The failure was in
+    projection visibility: `pruneSupersededLiveShellTurns()` and
+    `visibleItemsForTurn()` hid older `userMessage` items in superseded/live
+    turns to prevent stale steering bubbles from reappearing at the bottom.
+    Image-only upload user messages were wrongly treated the same as stale text
+    steering.
+  - The thread-detail projection cache used policy version
+    `state-relevant-receipt-v2`, so historical cached projections could keep
+    using the old cut even after a code sync unless the policy changed.
+- Fix:
+  - Frontend shell advanced to `codex-mobile-shell-v323`.
+  - Server projection now detects visual user messages through `input_image`,
+    image URL/path parts, or `Uploaded attachments` image summaries under
+    `.codex-mobile-web/uploads`, and preserves them in superseded live turns.
+  - Frontend visibility rules now keep the same visual user messages while
+    still hiding stale text steering bubbles.
+  - Thread-detail projection policy advanced to `state-relevant-receipt-v3` to
+    invalidate stale projection cache entries.
+  - README now records the v323 Chinese release note.
+- Validation:
+  - `node --check server.js public/app.js public/sw.js test/conversation-render.test.js`
+    passed.
+  - Focused tests passed:
+    `node --test test/conversation-render.test.js` (57 tests) and
+    `node --test test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (20 tests).
+  - `npm run check` passed.
+  - `npm test` passed: 541 tests.
+  - `git diff --check` passed.
+  - Center AI Ops checks passed:
+    `node tests/ios-pwa-live-debug-server.test.js`,
+    `node tests/ios-pwa-visual-harness.test.js`, and
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - Production readback showed:
+    `clientBuildId=0.1.11|codex-mobile-shell-v323`,
+    `shellCacheName=codex-mobile-shell-v323`, served `/app.js` contains
+    `userMessageHasVisualAttachment`, served `/sw.js` contains
+    `codex-mobile-shell-v323`, and production `server.js` contains
+    `state-relevant-receipt-v3`.
+  - Upload route smoke for `080D5F0E`: unauthenticated returned `401`;
+    authenticated returned `200 image/jpeg`, 128600 bytes, JPEG 591x1280.
+  - Thread detail smoke for
+    `019ea76b-d846-7892-bda0-c0fff9cf7581` returned `080D5F0E` as a
+    `userMessage` with `.codex-mobile-web/uploads` path in turn
+    `019ee3c9-4304-75b1-95e5-7a7685b4e488`.
+  - Center Playwright visual smoke used the central Playwright dependency,
+    mobile viewport `390x844`, and `codexMobileKey`; it found the
+    `080D5F0E` `figure.input-image` card, loaded it from `/api/uploads/file`,
+    measured `naturalWidth=591`, `naturalHeight=1280`, and found no
+    `.image-load-failed` state. Screenshot:
+    `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v323-upload-image-1781940017096.png`.
+  - AI Ops evidence ledger:
+    `evidence-92140351-7944-439c-96e0-fe5079ec0a56`,
+    `evidence-8caf8deb-7416-4dfc-be49-4aa96618c1e3`, and
+    `evidence-4bf1a599-4435-4465-8cfc-33c435c89505`.
+- Deployment:
+  - Started central Mac plugin deploy with listener restart label
+    `com.hermesmobile.plugin.codex-mobile`. The command was interrupted in the
+    Codex UI after execution, but production readback confirmed v323 source and
+    runtime were active.
+  - Because the change includes server projection logic and cache policy, this
+    release requires the 8787 listener to be running the new server process;
+    `--restart none` is not sufficient for future equivalent changes.
+
 ## 2026-06-20 Upload Image Failed-State Recovery v322
 
 - Status: implemented, validated, committed, and deployed to Mac production with
