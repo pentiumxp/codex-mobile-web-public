@@ -2562,6 +2562,17 @@ html.visual-recovering body::before {
   overflow-wrap: anywhere;
 }
 
+.create-workspace-root-select {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--field-bg);
+  color: var(--text);
+  font-size: 13px;
+  padding: 8px 10px;
+}
+
 .create-workspace-error {
   color: var(--danger-text);
   font-size: 13px;

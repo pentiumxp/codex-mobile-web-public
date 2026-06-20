@@ -82,9 +82,10 @@ function uniqueExistingDirectories(values) {
   return result;
 }
 
-function defaultCreateRoots(homeDir) {
+function defaultCreateRoots(homeDir, defaultCreateRoot) {
   const home = path.resolve(homeDir || process.cwd());
   return uniqueExistingDirectories([
+    defaultCreateRoot,
     path.join(home, "Documents"),
     home,
   ]);
@@ -190,8 +191,9 @@ function publicWorkspace(entry) {
 
 function createWorkspaceRegistryService(options = {}) {
   const storageFile = path.resolve(String(options.storageFile || path.join(process.cwd(), "workspace-registry.json")));
-  const fallbackRoots = defaultCreateRoots(options.homeDir);
+  const fallbackRoots = defaultCreateRoots(options.homeDir, options.defaultCreateRoot);
   const createRoots = parseCreateRoots(options.createRoots, fallbackRoots);
+  const configuredDefaultCreateRoot = String(options.defaultCreateRoot || "").trim();
   const maxNameLength = Math.max(1, Number(options.maxNameLength || DEFAULT_MAX_WORKSPACE_NAME_LENGTH));
   const desktopGlobalStateFiles = uniqueStrings(options.desktopGlobalStateFiles);
   const canonicalizeWorkspacePaths = options.canonicalizeWorkspacePaths !== undefined
@@ -211,7 +213,13 @@ function createWorkspaceRegistryService(options = {}) {
   }
 
   function defaultCreateRoot() {
-    return availableCreateRoots()[0] || "";
+    const roots = availableCreateRoots();
+    if (configuredDefaultCreateRoot) {
+      const configuredKey = pathKey(configuredDefaultCreateRoot);
+      const matched = roots.find((candidate) => pathKey(candidate) === configuredKey);
+      if (matched) return matched;
+    }
+    return roots[0] || "";
   }
 
   function list() {
@@ -248,7 +256,7 @@ function createWorkspaceRegistryService(options = {}) {
   function resolveCreateRoot(value) {
     const roots = availableCreateRoots();
     if (!roots.length) throw statusError(500, "Workspace create root is unavailable");
-    if (!value) return roots[0];
+    if (!value) return defaultCreateRoot() || roots[0];
     const requestedKey = pathKey(value);
     const root = roots.find((candidate) => pathKey(candidate) === requestedKey);
     if (!root) throw statusError(403, "Workspace create root is not allowed");

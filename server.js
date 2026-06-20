@@ -96,6 +96,15 @@ function uniqueStrings(values) {
   return result;
 }
 
+function detectDevelopmentWorkspaceRoot(appRoot) {
+  let current = path.resolve(String(appRoot || process.cwd()));
+  while (current && current !== path.dirname(current)) {
+    if (path.basename(current) === "HermesMobileDev") return current;
+    current = path.dirname(current);
+  }
+  return "";
+}
+
 const RUNTIME_ROOT = process.env.CODEX_MOBILE_RUNTIME_DIR || path.join(USER_HOME, ".codex-mobile-web");
 const CODEX_PROFILE_BOOTSTRAP = resolveActiveCodexHomeFromStore({
   userHome: USER_HOME,
@@ -204,6 +213,8 @@ const THREAD_DETAIL_PROJECTION_POLICY_VERSION = "state-relevant-receipt-v3";
 const THREAD_DETAIL_PROJECTION_V4_ENABLED = !/^(0|false|no|off)$/i.test(process.env.CODEX_MOBILE_THREAD_DETAIL_PROJECTION_V4 || "1");
 const THREAD_DETAIL_RAW_ALL_ENABLED = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_THREAD_DETAIL_RAW_ALL || "");
 const WORKSPACE_CREATE_ROOTS = process.env.CODEX_MOBILE_WORKSPACE_CREATE_ROOTS || "";
+const WORKSPACE_DEFAULT_CREATE_ROOT = process.env.CODEX_MOBILE_WORKSPACE_DEFAULT_CREATE_ROOT
+  || detectDevelopmentWorkspaceRoot(APP_ROOT);
 const SYNC_DESKTOP_WORKSPACES = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_SYNC_DESKTOP_WORKSPACES || "");
 const DESKTOP_GLOBAL_STATE_FILES = SYNC_DESKTOP_WORKSPACES
   ? uniqueStrings([
@@ -237,6 +248,7 @@ const pendingSteerEchoStore = createPendingSteerEchoStore();
 const workspaceRegistryService = createWorkspaceRegistryService({
   storageFile: WORKSPACE_REGISTRY_FILE,
   homeDir: USER_HOME,
+  defaultCreateRoot: WORKSPACE_DEFAULT_CREATE_ROOT,
   createRoots: WORKSPACE_CREATE_ROOTS,
   desktopGlobalStateFiles: DESKTOP_GLOBAL_STATE_FILES,
 });
