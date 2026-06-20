@@ -5337,8 +5337,8 @@ html.keyboard-open .side-chat-form textarea {
 .input-image img,
 .markdown-image img {
   display: block;
-  width: auto;
-  height: auto;
+  width: min(72vw, 320px);
+  aspect-ratio: 9 / 16;
   max-width: min(72vw, 320px);
   max-height: 240px;
   object-fit: contain;
@@ -5371,6 +5371,7 @@ html.keyboard-open .side-chat-form textarea {
 .image-view img {
   display: block;
   width: 100%;
+  aspect-ratio: 16 / 10;
   max-width: 100%;
   max-height: min(62vh, 720px);
   object-fit: contain;
