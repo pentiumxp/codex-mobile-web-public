@@ -5914,8 +5914,11 @@ The previous full handoff was archived and should be opened only when old proven
 
 ## 2026-06-20 Live Turn Startup Visibility v318
 
-- Status: implemented locally and validated; production static sync pending at
-  the time of this handoff entry.
+- Status: implemented, validated, committed, pushed to private `origin/main`,
+  and static-synced to the Mac production plugin worktree. Public was not
+  pushed.
+- Commit:
+  - `69589b7 fix: bump mobile shell for live turn visibility`
 - Runtime evidence before v318:
   - Production 8787 `/api/public-config` reported
     `clientBuildId=0.1.11|codex-mobile-shell-v317` and
@@ -5938,10 +5941,23 @@ The previous full handoff was archived and should be opened only when old proven
   - `npm run check`
   - `npm test` (532 tests)
   - `git diff --check`
+  - Home AI center: `node tests/architecture-code-test-harness-map.test.js`
 - Deployment note:
-  - This is a static browser-shell behavior change. Production should sync
-    `public/app.js`, `public/sw.js`, and README/static release metadata to the
-    running production worktree, then verify `/api/public-config` and served
-    `/app.js` report/contain v318. A Node listener restart is not required for
-    this static-only sync because `/api/public-config` reads shell metadata from
-    disk on each request.
+  - This is a static browser-shell behavior change. `public/app.js`,
+    `public/sw.js`, README, and matching tests were synced into
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Production readback after sync:
+    `/api/public-config.clientBuildId=0.1.11|codex-mobile-shell-v318`,
+    `shellCacheName=codex-mobile-shell-v318`, served `/app.js` contains
+    `insertLocalSubmittedUserMessage` and `loading-visible`, and served
+    `/sw.js` contains `codex-mobile-shell-v318`.
+  - The 8787 Node listener was not restarted; PID `7220` remained the listener
+    before and after static sync.
+  - Contract caveat: the formal Mac deploy harness has `-SkipRestart`, but it
+    deploys from the public mirror. Because this v318 hotfix was private-only at
+    the time, the production static sync was done as a bounded hotfix rather
+    than through the public-mirror deploy harness. Future public-safe production
+    deploys should prefer the harness.
+  - Evidence ledger records:
+    `evidence-e6f4d29a-a592-4dc1-98e8-0edac79df5f8`,
+    `evidence-927f877b-bd5c-483b-b4e2-55e7fcf0eb28`.
