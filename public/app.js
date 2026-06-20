@@ -1184,6 +1184,11 @@ function statusText(status) {
   return status.type || JSON.stringify(status);
 }
 
+function isStaleActiveStatus(status) {
+  if (!status || typeof status !== "object") return false;
+  return Boolean(status.mobileStaleActiveTurn || status.staleActiveTurn || status.reason === "context-only-active-turn");
+}
+
 function saveThreadStatusHints() {
   saveStringSetStorage(STORAGE_RUNNING_THREAD_IDS, state.runningThreadIds);
   saveNumberMapStorage(STORAGE_RUNNING_THREAD_HINTED_AT, state.runningThreadHintedAtById);
@@ -1351,6 +1356,7 @@ function runningThreadHintAgeMs(threadId, thread, nowMs = Date.now()) {
 function shouldExpireRunningThreadHint(threadId, thread, nowMs = Date.now()) {
   const id = String(threadId || "");
   if (!id || !state.runningThreadIds.has(id)) return false;
+  if (isStaleActiveStatus(thread && thread.status) || (thread && thread.mobileStaleActiveTurn)) return true;
   if (isRunningStatus(thread && thread.status) || isCompletedStatus(thread && thread.status)) return false;
   if (id === state.currentThreadId && state.activeTurnId) return false;
   return runningThreadHintAgeMs(id, thread, nowMs) > RUNNING_THREAD_HINT_STALE_MS;
@@ -1361,6 +1367,7 @@ function updateThreadStatusHints(threadId, previousStatus, nextStatus, options =
   if (!id) return;
   const wasRunning = state.runningThreadIds.has(id) || isRunningStatus(previousStatus);
   const isRunning = isRunningStatus(nextStatus);
+  const staleActive = isStaleActiveStatus(nextStatus);
   let changed = false;
   let shouldAlert = false;
   if (isRunning) {
@@ -1368,7 +1375,7 @@ function updateThreadStatusHints(threadId, previousStatus, nextStatus, options =
     if (state.unreadThreadIds.delete(id)) changed = true;
   } else if (wasRunning) {
     if (clearRunningThreadHint(id)) changed = true;
-    if (id !== state.currentThreadId && !state.unreadThreadIds.has(id)) {
+    if (!staleActive && id !== state.currentThreadId && !state.unreadThreadIds.has(id)) {
       state.unreadThreadIds.add(id);
       changed = true;
       shouldAlert = true;
@@ -1392,12 +1399,15 @@ function reconcileThreadStatusHints(threads) {
     const id = String(thread && thread.id || "");
     if (!id) continue;
     const wasRunning = state.runningThreadIds.has(id);
-    const isRunning = isRunningStatus(thread.status);
+    const staleActive = isStaleActiveStatus(thread.status) || Boolean(thread.mobileStaleActiveTurn);
+    const isRunning = !staleActive && isRunningStatus(thread.status);
     if (isRunning && !wasRunning) {
       if (noteRunningThreadHint(id, nowMs)) changed = true;
       state.unreadThreadIds.delete(id);
     } else if (isRunning) {
       if (noteRunningThreadHint(id, nowMs)) changed = true;
+    } else if (wasRunning && staleActive) {
+      if (clearRunningThreadHint(id)) changed = true;
     } else if (wasRunning && isThreadListSettledStatus(thread.status)) {
       if (clearRunningThreadHint(id)) changed = true;
       if (id !== state.currentThreadId) state.unreadThreadIds.add(id);
@@ -1409,6 +1419,7 @@ function reconcileThreadStatusHints(threads) {
 }
 
 function statusIconInfo(status, threadId = "") {
+  if (isStaleActiveStatus(status)) return null;
   const text = statusText(status);
   const normalized = text.toLowerCase();
   if (/active|running|queued|processing|inprogress|in_progress|in-progress|pending|started/.test(normalized)) {

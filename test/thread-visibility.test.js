@@ -15,6 +15,7 @@ const {
   hydrateThreadListTitlesFromSessionIndex,
   isHiddenThread,
   mergeThreadListFallback,
+  normalizeStaleContextOnlyActiveThread,
   parseThreadTurnsCursor,
   readRolloutSessionFallbackThreadFromFile,
   sortTurnsChronologically,
@@ -423,6 +424,180 @@ test("rollout session fallback infers active and completed status from rollout t
   assert.equal(touched.status.type, "notLoaded");
 });
 
+test("context-only stale active rollout turn is normalized to idle", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-context-only-stale-"));
+  const threadId = "019e9000-0000-7000-8000-000000000013";
+  const turnId = "019e9000-0000-7000-8000-00000000turn";
+  const rolloutPath = path.join(dir, `rollout-2026-06-04T10-00-00-${threadId}.jsonl`);
+  const old = new Date("2026-06-04T10:00:00.000Z");
+  const nowMs = Date.parse("2026-06-04T10:10:00.000Z");
+  fs.writeFileSync(rolloutPath, [
+    JSON.stringify({
+      type: "session_meta",
+      payload: {
+        id: threadId,
+        timestamp: old.toISOString(),
+        cwd: "/tmp/project",
+      },
+    }),
+    JSON.stringify({
+      timestamp: old.toISOString(),
+      type: "event_msg",
+      payload: {
+        type: "task_started",
+        turn_id: turnId,
+      },
+    }),
+    JSON.stringify({
+      timestamp: old.toISOString(),
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "user",
+        content: [{
+          type: "input_text",
+          text: "<environment_context>\n  <current_date>2026-06-20</current_date>\n</environment_context>",
+        }],
+      },
+    }),
+    JSON.stringify({
+      timestamp: old.toISOString(),
+      type: "turn_context",
+      payload: {
+        turn_id: turnId,
+      },
+    }),
+  ].join("\n"), "utf8");
+  fs.utimesSync(rolloutPath, old, old);
+
+  const normalized = normalizeStaleContextOnlyActiveThread({
+    id: threadId,
+    path: rolloutPath,
+    status: { type: "active" },
+    turns: [{
+      id: turnId,
+      status: { type: "inProgress" },
+      items: [],
+    }],
+  }, { nowMs });
+
+  assert.equal(normalized.status.type, "idle");
+  assert.equal(normalized.status.mobileStaleActiveTurn, true);
+  assert.equal(normalized.status.reason, "context-only-active-turn");
+  assert.equal(normalized.mobileStaleActiveTurn.turnId, turnId);
+  assert.deepEqual(normalized.turns, []);
+});
+
+test("stale active rollout turn with real user text stays active", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-real-user-active-"));
+  const threadId = "019e9000-0000-7000-8000-000000000014";
+  const turnId = "019e9000-0000-7000-8000-00000000real";
+  const rolloutPath = path.join(dir, `rollout-2026-06-04T10-00-00-${threadId}.jsonl`);
+  const old = new Date("2026-06-04T10:00:00.000Z");
+  const nowMs = Date.parse("2026-06-04T10:10:00.000Z");
+  fs.writeFileSync(rolloutPath, [
+    JSON.stringify({
+      type: "session_meta",
+      payload: {
+        id: threadId,
+        timestamp: old.toISOString(),
+        cwd: "/tmp/project",
+      },
+    }),
+    JSON.stringify({
+      timestamp: old.toISOString(),
+      type: "event_msg",
+      payload: {
+        type: "task_started",
+        turn_id: turnId,
+      },
+    }),
+    JSON.stringify({
+      timestamp: old.toISOString(),
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "user",
+        content: [{
+          type: "input_text",
+          text: "真实用户问题",
+        }],
+      },
+    }),
+  ].join("\n"), "utf8");
+  fs.utimesSync(rolloutPath, old, old);
+
+  const normalized = normalizeStaleContextOnlyActiveThread({
+    id: threadId,
+    path: rolloutPath,
+    status: { type: "active" },
+    turns: [{
+      id: turnId,
+      status: { type: "inProgress" },
+      items: [],
+    }],
+  }, { nowMs });
+
+  assert.equal(normalized.status.type, "active");
+  assert.equal(normalized.mobileStaleActiveTurn, undefined);
+  assert.equal(normalized.turns.length, 1);
+});
+
+test("stale active rollout turn with image-only user input stays active", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-image-user-active-"));
+  const threadId = "019e9000-0000-7000-8000-000000000015";
+  const turnId = "019e9000-0000-7000-8000-0000000image";
+  const rolloutPath = path.join(dir, `rollout-2026-06-04T10-00-00-${threadId}.jsonl`);
+  const old = new Date("2026-06-04T10:00:00.000Z");
+  const nowMs = Date.parse("2026-06-04T10:10:00.000Z");
+  fs.writeFileSync(rolloutPath, [
+    JSON.stringify({
+      type: "session_meta",
+      payload: {
+        id: threadId,
+        timestamp: old.toISOString(),
+        cwd: "/tmp/project",
+      },
+    }),
+    JSON.stringify({
+      timestamp: old.toISOString(),
+      type: "event_msg",
+      payload: {
+        type: "task_started",
+        turn_id: turnId,
+      },
+    }),
+    JSON.stringify({
+      timestamp: old.toISOString(),
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "user",
+        content: [{
+          type: "input_image",
+          image_url: { url: "file:///tmp/upload.png" },
+        }],
+      },
+    }),
+  ].join("\n"), "utf8");
+  fs.utimesSync(rolloutPath, old, old);
+
+  const normalized = normalizeStaleContextOnlyActiveThread({
+    id: threadId,
+    path: rolloutPath,
+    status: { type: "active" },
+    turns: [{
+      id: turnId,
+      status: { type: "inProgress" },
+      items: [],
+    }],
+  }, { nowMs });
+
+  assert.equal(normalized.status.type, "active");
+  assert.equal(normalized.mobileStaleActiveTurn, undefined);
+  assert.equal(normalized.turns.length, 1);
+});
+
 test("rollout session fallback carries agent metadata so subagent rows stay hidden", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-rollout-agent-"));
   const threadId = "019e9000-0000-7000-8000-000000000008";
@@ -483,12 +658,14 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /const fallbackMode = String\(url\.searchParams\.get\("fallback"\) \|\| ""\)/);
   assert.match(routeBody, /const deferFallback = fallbackMode === "defer" && !cursor && !archived && !searchTerm/);
   assert.match(routeBody, /fallbackDeferred: true/);
-  assert.match(routeBody, /const indexedResult = hydrateThreadListResultTitlesFromSessionIndex\(appServerResult\)/);
+  assert.match(routeBody, /const indexedResult = normalizeThreadListResultStatuses\(hydrateThreadListResultTitlesFromSessionIndex\(appServerResult\)\)/);
   assert.match(routeBody, /attachThreadListStateToResult\(indexedResult\)/);
   assert.match(routeBody, /decorated\.mobileDeferredFallback = true/);
   assert.match(routeBody, /logThreadList\("deferred_complete"/);
   assert.match(routeBody, /logThreadList\("complete"/);
   assert.match(routeBody, /const fallback = readThreadListFallback\(limit, \{ cwd, searchTerm, globalState, diagnostics: fallbackDiagnostics \}\);/);
+  assert.match(routeBody, /normalizeThreadListResultStatuses\(mergeThreadListFallback\(appServerResult, fallback, limit\)\)/);
+  assert.match(routeBody, /normalizeStaleContextOnlyActiveThread\(attachThreadTaskCardCountsToSummary\(thread\)\)/);
 });
 
 test("thread list merge keeps app-server idle over stale rollout active", () => {

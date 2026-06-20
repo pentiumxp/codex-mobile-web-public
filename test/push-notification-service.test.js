@@ -264,7 +264,7 @@ test("server caches app-server thread display summaries before sqlite push title
   assert.match(serverJs, /async function resolveCompletedPushThreadTitle\(meta, params\)/);
   assert.match(serverJs, /threadDisplaySummaryCache\.read\(id\)\s*\|\|\s*readStateDbThread\(id\)\s*\|\|\s*readStartedThread\(id\)/);
   assert.match(serverJs, /await readThreadSummaryFromAppServer\(codex, threadId\)/);
-  assert.match(serverJs, /return threadDisplaySummaryCache\.remember\(thread\)\s*\|\|\s*annotateThreadRolloutStats\(thread\)/);
+  assert.match(serverJs, /return normalizeStaleContextOnlyActiveThread\(threadDisplaySummaryCache\.remember\(thread\)\s*\|\|\s*annotateThreadRolloutStats\(thread\)\)/);
   assert.match(serverJs, /threadDisplaySummaryCache\.rememberList\(result\)/);
   assert.match(serverJs, /threadDisplaySummaryCache\.remember\(result\.thread\)/);
   assert.match(serverJs, /sendTurnCompletedPush\(meta, turnId, completedAt, params\)/);

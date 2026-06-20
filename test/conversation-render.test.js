@@ -1429,7 +1429,16 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(functionBody("saveThreadStatusHints"), /saveNumberMapStorage\(STORAGE_RUNNING_THREAD_HINTED_AT, state\.runningThreadHintedAtById\)/);
   assert.match(appJs, /function isThreadListSettledStatus\(status\)/);
   assert.match(functionBody("isThreadListSettledStatus"), /idle\|completed\|complete\|done\|failed/);
+  assert.match(appJs, /function isStaleActiveStatus\(status\)/);
+  assert.match(functionBody("isStaleActiveStatus"), /mobileStaleActiveTurn/);
+  assert.match(functionBody("shouldExpireRunningThreadHint"), /isStaleActiveStatus\(thread && thread\.status\)/);
+  assert.match(functionBody("updateThreadStatusHints"), /const staleActive = isStaleActiveStatus\(nextStatus\)/);
+  assert.match(functionBody("updateThreadStatusHints"), /if \(!staleActive && id !== state\.currentThreadId/);
+  assert.match(functionBody("statusIconInfo"), /if \(isStaleActiveStatus\(status\)\) return null;/);
   assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(String\(threadId\)\) && !isThreadListSettledStatus\(status\)/);
+  assert.match(functionBody("reconcileThreadStatusHints"), /const staleActive = isStaleActiveStatus\(thread\.status\) \|\| Boolean\(thread\.mobileStaleActiveTurn\)/);
+  assert.match(functionBody("reconcileThreadStatusHints"), /const isRunning = !staleActive && isRunningStatus\(thread\.status\)/);
+  assert.match(functionBody("reconcileThreadStatusHints"), /else if \(wasRunning && staleActive\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /else if \(wasRunning && isThreadListSettledStatus\(thread\.status\)\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /shouldExpireRunningThreadHint\(id, thread, nowMs\)/);
   assert.doesNotMatch(functionBody("reconcileThreadStatusHints"), /else if \(!isRunning && wasRunning\)/);
