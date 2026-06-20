@@ -4,8 +4,8 @@ Last compacted: 2026-06-08T13:27:43.304Z
 
 ## 2026-06-20 v317 Poll/SSE Local Stream Rendering Fix
 
-- Status: implemented, validated, committed, and deployed to Mac production
-  with no listener restart. Not pushed in this turn.
+- Status: implemented, validated, committed, deployed to Mac production with no
+  listener restart, published to public, then reverse-synced into private.
 - Source commit:
   - `87bade5` `fix: 减少流式输出整屏刷新`
 - User-visible issue:
@@ -72,6 +72,15 @@ Last compacted: 2026-06-08T13:27:43.304Z
     `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
   - Deploy evidence ledger:
     `evidence-65121a84-4c47-4811-b511-300b6b4ab362`.
+- Public/private publishing:
+  - Public-safe v316/v317 source changes were published to
+    `pentiumxp/codex-mobile-web-public` as:
+    `c0310f6` `fix: 发布流式输出局部渲染修复`.
+  - The public commit includes README Chinese release notes and excludes
+    `.agent-context`, runtime state, uploads, generated images, access keys, and
+    local secret material.
+  - Private `main` merged `public/main` afterward, so `public/main` is an
+    ancestor of private `main`; source diff excluding `.agent-context` is empty.
 
 ## 2026-06-20 v316 Incremental Thread Rendering Stabilization
 
