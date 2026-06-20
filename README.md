@@ -4,6 +4,7 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：server-only 合并 public PR #75，避免用户上传图片被 agent 图卡重复展示。服务端读取 rollout tool output 图片时，会识别 `view_image` 调用指向 Codex Mobile 上传目录的文件，并跳过这类输出生成的 agent `imageView` 卡片；上传图片仍保留在用户消息的附件缩略图里，非上传目录的工具输出图片仍可生成 agent 图卡。同时 compacted 结构化文本中的内联 `data:image/...` 会被 bounded 占位符替换，避免把大段图片 data URL 写入线程响应。本次不改变 PWA shell cache，更新后需要重启 Node listener 才会生效。本次 public 发布只包含公开源码、README 和测试；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。
 - 中文说明：v314 修复打开已在运行的会话详情后，线程列表行可能继续显示旧状态、需要等下一次列表刷新才出现 running spinner 的问题。详情读取、cached open、live poll 和 full backfill 现在会立即把当前会话摘要同步回列表行。PWA shell cache 升级到 `codex-mobile-shell-v314`。
 - 中文说明：v313 修复进入长线程时历史 `mobileSupersededLive` 壳 turn 里的旧用户消息反复出现在底部、并挤掉最近回执的问题。前端不再渲染 superseded live turn 中的旧 `userMessage`；服务端投影和 thread compact 会在截断前剪掉纯旧用户消息/Reasoning/Usage/命令壳，只保留带助手回执、图片或上下文提示的 superseded turn，并移除其中旧用户提问。PWA shell cache 升级到 `codex-mobile-shell-v313`。
 - 中文说明：server-only 扩展 ChatGPT Pro MCP Connector，新增 `delegate_to_codex_thread` 工具，让 ChatGPT Pro 可以通过跨线程任务卡把工作交给 Codex 线程。默认模式是 `pending`，目标线程仍需要审批；`direct` 直发只在服务端显式设置 `CODEX_MOBILE_CHATGPT_PRO_MCP_ALLOW_DIRECT_TASK_CARDS=1` 后可用。本次不改变 PWA shell cache。
