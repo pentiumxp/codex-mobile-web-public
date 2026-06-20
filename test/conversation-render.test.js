@@ -1416,6 +1416,9 @@ test("active turn state follows only the latest durable turn", () => {
 
 test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(appJs, /function updateThreadListStatus\(/);
+  assert.match(appJs, /function snapshotThreadStatus\(/);
+  assert.match(appJs, /function restoreThreadStatusSnapshot\(/);
+  assert.match(appJs, /function markThreadOptimisticallyActive\(/);
   assert.match(appJs, /function mergeThreadIntoThreadList\(/);
   assert.match(appJs, /const RUNNING_THREAD_HINT_STALE_MS = 20 \* 60 \* 1000;/);
   assert.match(appJs, /runningThreadHintedAtById: loadNumberMapStorage\("codexMobileRunningThreadHintedAtById", \{\}\)/);
@@ -1430,9 +1433,21 @@ test("thread running hints survive notLoaded list refreshes", () => {
   const listMergeBody = functionBody("mergeThreadIntoThreadList");
   assert.match(listMergeBody, /threadListSummaryFromDetailThread\(thread\)/);
   assert.match(listMergeBody, /Object\.assign\(\{\}, entry, summary\)/);
+  const optimisticBody = functionBody("markThreadOptimisticallyActive");
+  assert.match(optimisticBody, /const runningStatus = \{ type: "active" \};/);
+  assert.match(optimisticBody, /updateThreadStatusHints\(id, previousStatus, runningStatus/);
+  assert.match(optimisticBody, /updateThreadListStatus\(id, runningStatus\)/);
+  assert.match(optimisticBody, /mergeThreadIntoThreadList\(state\.currentThread\)/);
+  const restoreBody = functionBody("restoreThreadStatusSnapshot");
+  assert.match(restoreBody, /updateThreadStatusHints\(id, \{ type: "active" \}, restoredStatus/);
+  assert.match(restoreBody, /state\.currentThread\.status = snapshot\.currentStatus/);
   assert.match(functionBody("loadThread"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);\s*mergeThreadIntoThreadList\(state\.currentThread\);/);
   assert.match(functionBody("refreshCurrentThread"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);\s*mergeThreadIntoThreadList\(state\.currentThread\);/);
   assert.match(functionBody("backfillFullThreadDetail"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);\s*mergeThreadIntoThreadList\(state\.currentThread\);/);
+  const sendBody = functionBody("sendMessage");
+  assert.match(sendBody, /const previousThreadStatus = snapshotThreadStatus\(state\.currentThreadId\);/);
+  assert.match(sendBody, /registerSubmittedUserMessage\(state\.currentThreadId, outboundText, submittedAttachments, clientSubmissionId\);\s*if \(!steering\) \{[\s\S]*markThreadOptimisticallyActive\(state\.currentThreadId\);[\s\S]*renderThreads\(\);[\s\S]*\}/);
+  assert.match(sendBody, /if \(!steering\) \{[\s\S]*restoreThreadStatusSnapshot\(previousThreadStatus\);[\s\S]*renderThreads\(\);[\s\S]*\}/);
 
   const expireBody = functionBody("shouldExpireRunningThreadHint");
   assert.match(expireBody, /id === state\.currentThreadId && state\.activeTurnId/);
