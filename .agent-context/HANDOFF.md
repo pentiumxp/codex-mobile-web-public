@@ -5964,8 +5964,11 @@ The previous full handoff was archived and should be opened only when old proven
 
 ## 2026-06-20 Pending Upload Preview And Live Refresh Jitter v319
 
-- Status: implemented and validated locally; static production sync pending at
-  the time of this handoff entry.
+- Status: implemented, validated, committed, pushed to private `origin/main`,
+  and static-synced to the Mac production plugin worktree. Public was not
+  pushed.
+- Commit:
+  - `9ccdce9 fix: stabilize pending uploads and live refresh`
 - User-visible issues:
   - After v318, an existing-thread send with an image attachment could show the
     local pending user bubble as a bare file name/path and mark it as unable to
@@ -6000,6 +6003,18 @@ The previous full handoff was archived and should be opened only when old proven
   - `npm test` (534 tests)
   - `git diff --check`
 - Deployment note:
-  - This is a static browser-shell behavior change. If deployed before public
-    sync, use the same bounded static-only sync/readback pattern as v318 and do
-    not restart 8787 unless server files are changed.
+  - This is a static browser-shell behavior change. `public/app.js`,
+    `public/sw.js`, README, and matching tests were synced into
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Production readback after sync:
+    `/api/public-config.clientBuildId=0.1.11|codex-mobile-shell-v319`,
+    `shellCacheName=codex-mobile-shell-v319`, served `/app.js` contains
+    `localImageInputPartsForAttachments` and
+    `patchVisibleItemsOnlyFromRefresh`, served `/sw.js` contains
+    `codex-mobile-shell-v319`.
+  - The sample upload route still returned authenticated `200 image/jpeg` with
+    the expected content length. This confirms the upload failure was the
+    optimistic frontend preview path, not upload-file authorization or local
+    filesystem permission.
+  - The 8787 Node listener was not restarted; PID `7220` remained the listener
+    before and after static sync.
