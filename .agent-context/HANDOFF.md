@@ -2,6 +2,66 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-20 Public PR #74/#75 Thread List And Image Card Fixes
+
+- Status: public PRs evaluated, merged, pushed to public, then reverse-synced
+  from `public/main` into private and revalidated.
+- Public PRs:
+  - `pentiumxp/codex-mobile-web-public#74`
+    `fix: 立即同步运行中会话到线程列表`
+  - `pentiumxp/codex-mobile-web-public#75`
+    `fix: 避免上传图片被 agent 图卡重复展示`
+  - Both PRs branched from `3d967a4`; current public main was `777da93`
+    before merging.
+  - `#75` contains `#74`'s commit, but both PRs were cleanly mergeable.
+- Public commits:
+  - `29204a4` `Merge PR #74: 立即同步运行中会话到线程列表`
+  - `b3320c8` `Merge PR #75: 避免上传图片被 agent 图卡重复展示`
+  - `93c88d8` `docs: 发布 PR 75 图片去重说明`
+  - GitHub readback marked both PRs `MERGED`.
+- Scope:
+  - `#74` bumps PWA shell cache to `codex-mobile-shell-v314` and immediately
+    syncs active thread-detail status back into the thread list.
+  - `#75` is server-only on top of `#74`; it suppresses agent `imageView` cards
+    for `view_image` outputs that point at Codex Mobile upload files, keeps
+    non-upload tool output images renderable, and redacts inline image data URLs
+    in compacted structured payload text.
+  - Public README Chinese notes were updated.
+  - No `.agent-context`, runtime state, local secrets, upload contents, or
+    machine-specific diagnostics were copied into public.
+- Public validation:
+  - Syntax checks for touched `public/app.js`, `public/sw.js`, `server.js`, and
+    focused tests passed.
+  - Focused tests passed:
+    `node --test test/conversation-render.test.js
+    test/tool-output-image-projection.test.js test/mobile-viewport.test.js
+    test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (70 tests).
+  - `npm run check`, `npm run check:macos`, and `npm test` passed
+    (526 tests).
+  - Center `node tests/architecture-code-test-harness-map.test.js` passed.
+  - `git diff --check origin/main..HEAD` and final privacy scan passed; privacy
+    scan only matched README policy text.
+  - Evidence ledger record:
+    `evidence-ffff810b-14fb-47ff-ad81-2fe19baf186d`.
+- Private sync:
+  - Reverse-merged `public/main` into private from the public-derived branch
+    shape with merge commit `16e6ae9`.
+  - Committed private/public source diff is empty excluding `.agent-context`.
+- Private validation:
+  - Same syntax and focused tests passed (70 tests).
+  - `npm run check`, `npm run check:macos`, and `npm test` passed
+    (526 tests).
+  - Center `node scripts/plugin-workspace-platform-contract-check.js --plugin
+    codex-mobile --json` passed with only existing
+    `handoff_pointer_missing` warning.
+  - Center `node tests/architecture-code-test-harness-map.test.js` passed.
+  - `git diff --check HEAD^..HEAD` and working-tree `git diff --check` passed.
+  - Privacy diff scan excluding `.agent-context` found no committed
+    public/private source leak.
+  - Evidence ledger record:
+    `evidence-495553f9-dcb1-4536-8304-05c58629200e`.
+
 ## 2026-06-20 Public-Derived Private Branch Correction
 
 - Status: corrected locally and pushed to private origin; public branch was not
