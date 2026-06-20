@@ -27,6 +27,17 @@ The full previous context was archived and should be read only when this routing
 - Keep raw secrets, tokens, one-time approvals, upload contents, full rollout logs, and `.codex` runtime state out of shared context and Git.
 - Do not load the archived full project context by default. Load it only when the user asks about older provenance, a missing rule, or a historical decision not present in live docs.
 
+## Public / Private Repository Rule
+
+- `public/main` is the canonical public source history for publishable files.
+- The local/private `main` branch should be derived back from `public/main`,
+  then add private-only tracked context such as `.agent-context/*`.
+- Do not publish by creating a separate equivalent public commit from private
+  and leaving local/private `main` diverged from `public/main`.
+- After public publishing, verify `git merge-base --is-ancestor public/main main`
+  succeeds and `git diff --stat public/main..main -- ':!.agent-context'` is
+  empty unless there is intentional private-only non-context material.
+
 ## Preserved Project Context Excerpt
 
 # PROJECT_CONTEXT

@@ -2,6 +2,28 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-20 Public-Derived Private Branch Correction
+
+- Status: corrected locally; pending private push at the time this section was
+  written.
+- User clarified the repository rule:
+  - `public/main` is the public canonical branch for publishable files.
+  - local/private `main` should be derived from `public/main`, with private-only
+    context layered on top, so the histories do not fork into equivalent but
+    separate public/private release commits.
+- Fix applied:
+  - Created `private-from-public-sync-20260620` from `public/main`.
+  - Merged the previous private `main` into it. The merge introduced only
+    tracked `.agent-context/HANDOFF.md` and `.agent-context/PROJECT_CONTEXT.md`.
+  - Fast-forwarded local `main` to the resulting merge commit.
+  - Added this durable rule to `.agent-context/PROJECT_CONTEXT.md`.
+- Verification:
+  - `git log --first-parent` now shows private `main` descending from
+    `777da93` (`public/main`) through merge commit `0ed0d86`.
+  - Required final checks before ending: `git merge-base --is-ancestor
+    public/main main` should exit 0, and `git diff --stat public/main..main --
+    ':!.agent-context'` should be empty.
+
 ## 2026-06-19 ChatGPT Pro MCP Pending Task-Card Delegation
 
 - Status: implemented, validated, committed, and pushed to private and public;
