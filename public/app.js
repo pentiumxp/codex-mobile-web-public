@@ -364,7 +364,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v325";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v326";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -13279,7 +13279,7 @@ function renderImageView(item) {
 
 function handleConversationImageError(event) {
   const image = event && event.target && event.target.closest ? event.target.closest("img") : null;
-  markFailedAppImage(image);
+  markFailedAppImage(image, { explicit: true });
   if (typeof probeFailedAuthenticatedImage === "function") probeFailedAuthenticatedImage(image);
 }
 
@@ -13294,8 +13294,9 @@ function failedAppImageContainer(image) {
     : null;
 }
 
-function markFailedAppImage(image) {
+function markFailedAppImage(image, options = {}) {
   if (!image) return false;
+  if (options.explicit && image.dataset) image.dataset.imageLoadError = "1";
   const container = failedAppImageContainer(image);
   if (container) container.classList.add("image-load-failed");
   else if (image.classList) image.classList.add("image-load-failed");
@@ -13305,6 +13306,7 @@ function markFailedAppImage(image) {
 
 function clearFailedAppImage(image) {
   if (!image) return false;
+  if (image.dataset && image.dataset.imageLoadError) delete image.dataset.imageLoadError;
   const container = failedAppImageContainer(image);
   if (container && container.classList) container.classList.remove("image-load-failed");
   if (image.classList) image.classList.remove("image-load-failed");
@@ -13312,6 +13314,22 @@ function clearFailedAppImage(image) {
     image.removeAttribute("aria-hidden");
   }
   return true;
+}
+
+function imageHadExplicitLoadError(image) {
+  return Boolean(image && image.dataset && image.dataset.imageLoadError === "1");
+}
+
+function isLazyAppImage(image) {
+  if (!image) return false;
+  const value = String((image.getAttribute && image.getAttribute("loading")) || image.loading || "").trim().toLowerCase();
+  return value === "lazy";
+}
+
+function shouldProactivelyMarkFailedImage(image) {
+  if (!image) return false;
+  if (imageHadExplicitLoadError(image)) return true;
+  return !isLazyAppImage(image);
 }
 
 function protectedGeneratedImageSrc(value) {
@@ -13354,7 +13372,13 @@ function scanFailedAppImages(root) {
       clearFailedAppImage(image);
       return;
     }
-    if (image.complete && image.naturalWidth === 0 && markFailedAppImage(image)) marked += 1;
+    if (image.complete && image.naturalWidth === 0) {
+      if (shouldProactivelyMarkFailedImage(image)) {
+        if (markFailedAppImage(image)) marked += 1;
+      } else {
+        clearFailedAppImage(image);
+      }
+    }
   });
   return marked;
 }

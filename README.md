@@ -4,6 +4,7 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：v326 修复平板/移动浏览器上历史上传图片被误判为“图片无法加载”的问题。此前前端失败扫描会把 `complete=true` 且 `naturalWidth=0` 的图片主动标记为失败；部分 Android 平板或移动浏览器会对还没进入视口的 `loading="lazy"` 图片呈现这个状态，导致实际可访问的上传图在滚动回来前已经被隐藏。现在只有真实 `error` 事件或非 lazy 破图才会标失败，lazy 图片未加载时会清理旧误判失败态。PWA shell cache 升级到 `codex-mobile-shell-v326`。
 - 中文说明：v325 在 v324 的上传图片回显和 Music 状态框修复基础上，给会话里的上传图片、Markdown 图片和工具生成图片卡增加稳定的默认显示比例。历史图片在 lazy-load 前不再只占一行 caption 高度，加载完成后仍用 `object-fit: contain` 等比显示，减少滚动到底部时因上方旧图补加载造成的页面抖动。PWA shell cache 升级到 `codex-mobile-shell-v325`。
 - 中文说明：v324 修复两个前端投影问题。第一，上传图片在运行中页面里可能被重复显示：v323 已经让 superseded live turn 中的图片用户消息保留下来，但当前浏览器会话里较晚的 optimistic/pending 图片 echo 仍可能被局部刷新保留，导致同一张图一会消失、一会又以用户消息出现在底部；现在当前端发现 durable 用户图片消息和较晚 optimistic 图片 echo 指向同一张上传图时，会清掉该 echo，普通文字重复消息仍保持原保护规则。第二，像 Music 这种最新 active turn 为空 `itemsView=notLoaded` 的线程，正文仍不渲染空 turn，但右上角运行状态框和 Stop 会把这个空 active tail 当作运行候选显示。PWA shell cache 升级到 `codex-mobile-shell-v324`。
 - 中文说明：v323 修复 superseded live turn 中纯图片用户消息被投影剪裁的问题。此前为避免旧 steering 用户气泡反复出现在底部，服务端和前端都会隐藏 superseded/live 里的部分 `userMessage`；现在带 `Uploaded attachments` 图片摘要、上传路径或 `input_image` 的用户消息会保留并渲染成上传图片缩略图，普通旧文字 steering 仍继续隐藏。PWA shell cache 升级到 `codex-mobile-shell-v323`，该服务端投影修复需要重启 8787 listener 后生效。

@@ -207,6 +207,9 @@ function evaluatedFailedImageScanner() {
     "failedAppImageContainer",
     "markFailedAppImage",
     "clearFailedAppImage",
+    "imageHadExplicitLoadError",
+    "isLazyAppImage",
+    "shouldProactivelyMarkFailedImage",
     "scanFailedAppImages",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`${sources.join("\n")}\nreturn scanFailedAppImages;`)();
@@ -1356,6 +1359,7 @@ test("failed conversation images collapse into a neutral fallback", () => {
     },
   };
   const image = {
+    dataset: {},
     closest(selector) {
       if (String(selector).includes(".input-image")) return figure;
       return null;
@@ -1375,6 +1379,7 @@ test("failed conversation images collapse into a neutral fallback", () => {
 
   assert.deepEqual(addedClasses, ["image-load-failed"]);
   assert.equal(attributes["aria-hidden"], "true");
+  assert.equal(image.dataset.imageLoadError, "1");
   assert.match(appJs, /\$\("conversation"\)\.addEventListener\("error", handleConversationImageError, true\)/);
   assert.match(appJs, /\$\("conversation"\)\.addEventListener\("load", handleConversationImageLoad, true\)/);
   assert.match(functionBody("updateConversationHtml"), /scheduleFailedAppImageScan\(conversation/);
@@ -1399,6 +1404,7 @@ test("loaded conversation images clear stale failed-image state", () => {
     },
   };
   const image = {
+    dataset: { imageLoadError: "1" },
     classList: {
       remove(value) {
         removedImageClasses.push(value);
@@ -1427,6 +1433,7 @@ test("loaded conversation images clear stale failed-image state", () => {
   assert.deepEqual(removedContainerClasses, ["image-load-failed"]);
   assert.deepEqual(removedImageClasses, ["image-load-failed"]);
   assert.deepEqual(removedAttributes, ["aria-hidden"]);
+  assert.equal(image.dataset.imageLoadError, undefined);
 });
 
 test("already-broken rendered images are proactively marked without a new error event", () => {
@@ -1448,6 +1455,7 @@ test("already-broken rendered images are proactively marked without a new error 
   const brokenImage = {
     complete: true,
     naturalWidth: 0,
+    loading: "eager",
     closest(selector) {
       if (selector === ".input-image, .image-view, .markdown-image, .attachment-chip, .file-preview-media, figure") return container;
       return null;
@@ -1466,6 +1474,7 @@ test("already-broken rendered images are proactively marked without a new error 
   const recoveredImage = {
     complete: true,
     naturalWidth: 120,
+    dataset: { imageLoadError: "1" },
     closest(selector) {
       if (selector === ".input-image, .image-view, .markdown-image, .attachment-chip, .file-preview-media, figure") return container;
       return null;
@@ -1493,6 +1502,66 @@ test("already-broken rendered images are proactively marked without a new error 
   assert.deepEqual(addedClasses, ["image-load-failed"]);
   assert.equal(attributes["aria-hidden"], "true");
   assert.deepEqual(removedClasses, ["image-load-failed", "image-load-failed"]);
+  assert.deepEqual(removedAttributes, ["aria-hidden"]);
+});
+
+test("lazy images are not marked failed before the browser attempts loading them", () => {
+  const scanFailedAppImages = evaluatedFailedImageScanner();
+  const addedClasses = [];
+  const removedClasses = [];
+  const removedAttributes = [];
+  const container = {
+    classList: {
+      add(value) {
+        addedClasses.push(value);
+      },
+      remove(value) {
+        removedClasses.push(value);
+      },
+    },
+  };
+  const lazyPendingImage = {
+    complete: true,
+    naturalWidth: 0,
+    loading: "lazy",
+    dataset: {},
+    closest(selector) {
+      if (selector === ".input-image, .image-view, .markdown-image, .attachment-chip, .file-preview-media, figure") return container;
+      return null;
+    },
+    getAttribute(name) {
+      if (name === "loading") return "lazy";
+      if (name === "aria-hidden") return "true";
+      return "";
+    },
+    removeAttribute(name) {
+      removedAttributes.push(name);
+    },
+  };
+  const explicitLazyErrorImage = {
+    complete: true,
+    naturalWidth: 0,
+    loading: "lazy",
+    dataset: { imageLoadError: "1" },
+    closest(selector) {
+      if (selector === ".input-image, .image-view, .markdown-image, .attachment-chip, .file-preview-media, figure") return container;
+      return null;
+    },
+    getAttribute(name) {
+      return name === "loading" ? "lazy" : "";
+    },
+    setAttribute() {},
+  };
+  const rootNode = {
+    querySelectorAll(selector) {
+      assert.equal(selector, "img");
+      return [lazyPendingImage, explicitLazyErrorImage];
+    },
+  };
+
+  assert.equal(scanFailedAppImages(rootNode), 1);
+  assert.deepEqual(addedClasses, ["image-load-failed"]);
+  assert.deepEqual(removedClasses, ["image-load-failed"]);
   assert.deepEqual(removedAttributes, ["aria-hidden"]);
 });
 
