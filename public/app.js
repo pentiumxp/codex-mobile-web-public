@@ -368,7 +368,7 @@ const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v337";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v338";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -4355,8 +4355,32 @@ function isSupersededLiveTurn(turn) {
   return Boolean(turn && (turn.mobileSupersededLive || (turn.status && turn.status.mobileSupersededLive)));
 }
 
-function shouldHideSupersededLiveUserMessage(turn, item) {
-  return Boolean(isSupersededLiveTurn(turn) && item && item.type === "userMessage" && !userMessageHasVisualAttachment(item));
+function lastRespondedUserMessageIndexInSupersededLiveTurn(turn) {
+  if (!isSupersededLiveTurn(turn)) return -1;
+  const items = Array.isArray(turn && turn.items) ? turn.items : [];
+  let lastUserIndex = -1;
+  let lastRespondedUserIndex = -1;
+  let hasPriorTextReply = false;
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    if (item && item.type === "userMessage" && !userMessageHasVisualAttachment(item)) {
+      lastUserIndex = hasPriorTextReply ? index : -1;
+      continue;
+    }
+    if (lastUserIndex >= 0 && isUserVisibleTextReplyItem(item)) {
+      lastRespondedUserIndex = lastUserIndex;
+    }
+    if (isUserVisibleTextReplyItem(item)) hasPriorTextReply = true;
+  }
+  return lastRespondedUserIndex;
+}
+
+function shouldHideSupersededLiveUserMessage(turn, item, index = 0) {
+  return Boolean(isSupersededLiveTurn(turn)
+    && item
+    && item.type === "userMessage"
+    && !userMessageHasVisualAttachment(item)
+    && index !== lastRespondedUserMessageIndexInSupersededLiveTurn(turn));
 }
 
 function isRawThreadReadMode(thread) {
@@ -4391,7 +4415,7 @@ function visibleItemsForTurn(turn) {
   const contextEntryByKey = new Map();
   (turn.items || []).forEach((item, index) => {
     if (!item || isReasoningItem(item)) return;
-    if (shouldHideSupersededLiveUserMessage(turn, item)) return;
+    if (shouldHideSupersededLiveUserMessage(turn, item, index)) return;
     if (shouldHideDurableLiveUserMessage(turn, item, index)) return;
     if (isContextCompactionItem(item)) {
       const notice = contextCompactionNotice(item, turn);

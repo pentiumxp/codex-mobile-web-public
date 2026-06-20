@@ -342,8 +342,26 @@ function isProjectionContextNoticeItem(item) {
   return Boolean(type && /context.*compaction|context.*compression|context_compaction|context_compression/.test(type));
 }
 
+function isProjectionImageUserMessagePart(part) {
+  if (!part || typeof part !== "object") return false;
+  const type = String(part.type || "");
+  const url = projectionImageUrlValue(part);
+  return type === "image"
+    || type === "localImage"
+    || type === "input_image"
+    || type === "image_url"
+    || /^data:image\//i.test(url)
+    || /\.(?:png|jpe?g|webp|gif)(?:[?#].*)?$/i.test(String(part.path || url || ""));
+}
+
+function projectionUserMessageHasVisualAttachment(item) {
+  if (!isProjectionUserMessage(item)) return false;
+  return (Array.isArray(item.content) ? item.content : []).some(isProjectionImageUserMessagePart);
+}
+
 function isMeaningfulProjectionSupersededItem(item) {
   if (!item || typeof item !== "object") return false;
+  if (projectionUserMessageHasVisualAttachment(item)) return true;
   if (isProjectionUserMessage(item)) return false;
   if (isProjectionReasoningItem(item)) return false;
   if (isProjectionTurnUsageSummaryItem(item)) return false;
@@ -353,6 +371,25 @@ function isMeaningfulProjectionSupersededItem(item) {
     || isProjectionContextNoticeItem(item);
 }
 
+function lastRespondedProjectionUserMessageIndexInSupersededLiveTurn(items) {
+  if (!Array.isArray(items)) return -1;
+  let lastUserIndex = -1;
+  let lastRespondedUserIndex = -1;
+  let hasPriorAssistantReceipt = false;
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    if (isProjectionUserMessage(item) && !projectionUserMessageHasVisualAttachment(item)) {
+      lastUserIndex = hasPriorAssistantReceipt ? index : -1;
+      continue;
+    }
+    if (lastUserIndex >= 0 && isProjectionAssistantReceiptItem(item)) {
+      lastRespondedUserIndex = lastUserIndex;
+    }
+    if (isProjectionAssistantReceiptItem(item)) hasPriorAssistantReceipt = true;
+  }
+  return lastRespondedUserIndex;
+}
+
 function normalizeProjectionSupersededLiveTurns(thread) {
   if (!thread || !Array.isArray(thread.turns)) return thread;
   thread.turns = thread.turns.filter((turn) => {
@@ -360,7 +397,11 @@ function normalizeProjectionSupersededLiveTurns(thread) {
     const items = Array.isArray(turn.items) ? turn.items : [];
     const meaningful = items.filter(isMeaningfulProjectionSupersededItem);
     if (!meaningful.length) return false;
-    turn.items = items.filter((item) => !isProjectionUserMessage(item) && !isProjectionReasoningItem(item));
+    const respondedUserIndex = lastRespondedProjectionUserMessageIndexInSupersededLiveTurn(items);
+    turn.items = items.filter((item, index) => (!isProjectionUserMessage(item)
+      || projectionUserMessageHasVisualAttachment(item)
+      || index === respondedUserIndex)
+      && !isProjectionReasoningItem(item));
     return true;
   });
   return thread;

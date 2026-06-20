@@ -2,6 +2,48 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-20 V4 Responded User Message Visibility v338
+
+- Status: implemented, validated, and deployed to Mac production. Not pushed to
+  public.
+- Trigger:
+  - In the Music thread, a user continuation message was hidden in Codex Mobile
+    V4 projection while the Music assistant reply was visible.
+  - The same client could show new user messages in this Codex Mobile thread,
+    so the issue was narrowed to long-thread / continuation-thread projection
+    filtering rather than a global send echo problem.
+- Change:
+  - `server.js`, `public/app.js`, and
+    `adapters/thread-detail-projection-service.js` now keep the latest
+    mid-turn text user message in a superseded live turn when it has both a
+    prior text receipt and a later text receipt.
+  - Turn-start stale text steering still stays hidden, preserving the v313/v323
+    protection against old user bubbles reappearing at the bottom.
+  - Image user messages in superseded live turns remain preserved.
+  - V4 projection policy changed to
+    `state-relevant-receipt-v4-responded-user` so old projection cache entries
+    do not reuse the previous pruning rule.
+  - Frontend/service-worker shell advanced to `codex-mobile-shell-v338`.
+  - README includes the v338 Chinese release note.
+- Validation:
+  - Passed:
+    `node --test test/conversation-render.test.js test/thread-detail-projection-service.test.js test/thread-detail-projection-v4-service.test.js test/thread-visible-item-normalizer.test.js`
+    (87 tests).
+  - Passed: `npm run check`.
+  - Passed: `git diff --check`.
+  - Passed center required check:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - Production readback returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v338`,
+    `shellCacheName=codex-mobile-shell-v338`, and production source contains
+    `state-relevant-receipt-v4-responded-user`.
+  - Authenticated Music thread readback returned V4 projection with the latest
+    active turn user message present as `userMessage` with a stable
+    `mobileVisibleKey`; recent superseded live turns did not bulk-restore stale
+    old user messages.
+  - AI Ops evidence ledger record:
+    `evidence-08ce3f39-5461-4340-895e-e29ba025d848`.
+
 ## 2026-06-20 Protected Upload Image Hydration v334
 
 - Status: implemented, validated, and deployed to Mac production. Not committed
@@ -7158,6 +7200,26 @@ The previous full handoff was archived and should be opened only when old proven
 - NAS reverse proxy should target `http://192.168.10.110:8788`, not `8787`,
   for ChatGPT MCP/OAuth. Keep `8787` private unless ordinary Codex Mobile UI
   access is intentionally being proxied.
+
+## 2026-06-20 ChatGPT Custom App Retry On Mac Tailscale URL
+
+- Status: retried; still blocked for ChatGPT cloud access.
+- Local checks for `https://mac-studio.tail62e8ce.ts.net` on port 443 passed:
+  - `/.well-known/oauth-protected-resource` returned HTTP 200 with resource
+    `https://mac-studio.tail62e8ce.ts.net/api/chatgpt-pro/mcp`.
+  - `/api/chatgpt-pro/mcp` returned HTTP 401 with the expected OAuth
+    `WWW-Authenticate` challenge.
+- ChatGPT custom app form was submitted again through the logged-in Chrome
+  page. It returned:
+  `获取 OAuth 配置时出错` and
+  `502, message='Bad gateway', url='http://127.0.0.1:4750'`.
+- Public DNS checks through `1.1.1.1` and `8.8.8.8` still returned no A/AAAA
+  records for `mac-studio.tail62e8ce.ts.net`.
+- Conclusion:
+  - The Mac Tailscale URL is reachable from this Mac/tailnet, but not from
+    ChatGPT cloud. Use a genuinely public HTTPS reverse proxy, or a Tailscale
+    Funnel endpoint with public DNS, forwarding to this Mac's
+    `http://192.168.10.110:8788`.
   - Contract caveat: the formal Mac deploy harness has `-SkipRestart`, but it
     deploys from the public mirror. Because this v318 hotfix was private-only at
     the time, the production static sync was done as a bounded hotfix rather
