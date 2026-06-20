@@ -2,6 +2,69 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-20 Lazy Upload Image False-Failure Fix v326
+
+- Status: implemented, validated, committed, and deployed to Mac production with
+  no listener restart. Not pushed to public in this turn.
+- Source commit:
+  - `09a94ba` `fix: 避免误判懒加载图片失败`
+- User-visible issue:
+  - On mobile/tablet browsers, including a Samsung 14.6-inch Android tablet in
+    standalone/PWA use, historical user-uploaded images could show as
+    "图片无法加载" when scrolling older thread content.
+  - Fresh desktop Chromium visual checks could pass because its lazy image
+    completion timing differs from some mobile/tablet browsers.
+- Root cause:
+  - v322 added a proactive failed-image scanner that treated any
+    `img.complete && naturalWidth === 0` as broken. Some mobile/tablet browsers
+    can report that state for offscreen `loading="lazy"` images before the
+    browser has actually attempted to load them.
+  - The scanner could therefore add `.image-load-failed` to a valid lazy upload
+    image. Once the failure class was applied, the image card rendered as the
+    failed placeholder even though `/api/uploads/file` remained valid.
+- Fix:
+  - Frontend shell advanced to `codex-mobile-shell-v326`.
+  - Explicit browser `error` events now mark images with
+    `data-image-load-error="1"` before applying failed state.
+  - Successful load recovery clears both the failed class and the explicit error
+    marker.
+  - The proactive scanner still marks real non-lazy broken images, but no
+    longer marks lazy images as failed merely because they are complete with
+    zero natural size before load. It also clears stale false-failed state on
+    lazy images until an explicit error event occurs.
+  - README now records the v326 Chinese release note.
+- Validation:
+  - Syntax checks passed:
+    `node --check public/app.js && node --check public/sw.js && node --check test/conversation-render.test.js`.
+  - Focused tests passed:
+    `node --test test/conversation-render.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (80 tests).
+  - `git diff --check` passed.
+  - Center required check passed:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - `npm run check` passed.
+  - `npm test` passed: 544 tests.
+  - Production readback after deploy showed:
+    `clientBuildId=0.1.11|codex-mobile-shell-v326` and
+    `shellCacheName=codex-mobile-shell-v326`.
+  - Playwright production visual smoke with central Playwright dependency,
+    viewport `390x844`, and a fresh browser context passed on the current Home
+    AI thread. The latest `C6BAA366` upload had exactly one figure, loaded at
+    natural size `591x1280`, had no failed image figures, kept stable reserved
+    height, and produced no failed image requests.
+  - Visual screenshot:
+    `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v326-c6-upload-1781947137135.png`.
+  - AI Ops evidence ledger:
+    `evidence-adcac379-52df-4839-8673-544f432aef27`,
+    `evidence-7bd0d613-6aa9-4b2b-8013-c376ae56882f`, and
+    `evidence-82f52466-04d5-4316-b73f-6956a97f7767`.
+- Deployment:
+  - Executed central Mac plugin deploy with no listener restart:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart none --health-url http://127.0.0.1:8787/api/public-config --execute --json`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260620T091827Z-plugin-codex-mobile-web-manual`.
+  - This release is static frontend-only; no 8787 listener restart is required.
+
 ## 2026-06-20 Upload Image Echo Cleanup And Stable Image Cards v325
 
 - Status: implemented, validated, committed, and deployed to Mac production.
