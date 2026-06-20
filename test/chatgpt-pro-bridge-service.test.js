@@ -85,6 +85,9 @@ test("server and client wire @ChatGPT Pro without normal message submission", ()
   assert.match(serverJs, /\/api\/chatgpt-pro\/planner\/artifacts/);
   assert.match(serverJs, /\/api\/chatgpt-pro\/mcp/);
   assert.match(serverJs, /CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN_FILE/);
+  assert.match(serverJs, /CODEX_MOBILE_CHATGPT_PRO_MCP_ALLOW_DIRECT_TASK_CARDS/);
+  assert.match(serverJs, /delegateTaskCard: async \(input = \{\}\) => createThreadTaskCardsFromSourceThread\(input\.sourceThreadId, input\)/);
+  assert.match(serverJs, /allowDirectTaskCards: CHATGPT_PRO_MCP_ALLOW_DIRECT_TASK_CARDS/);
   assert.ok(
     serverJs.indexOf('url.pathname === "/api/chatgpt-pro/mcp"') < serverJs.indexOf("if (!isAuthorized(req))"),
     "MCP connector route should use its own token before normal browser auth",

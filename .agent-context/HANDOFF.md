@@ -2,6 +2,50 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-19 ChatGPT Pro MCP Pending Task-Card Delegation
+
+- Status: implemented and validated locally; not committed, pushed, or
+  deployed in this turn.
+- User-visible/API change:
+  - `POST /api/chatgpt-pro/mcp` now exposes `delegate_to_codex_thread`.
+  - The tool lets ChatGPT Pro create cross-thread task cards for Codex threads.
+  - Default mode is `pending`; target threads must still approve before any
+    injected Codex turn starts.
+  - `mode:"draft"` stores only a runtime planner/task-card draft artifact.
+  - `mode:"direct"` is rejected unless the server is explicitly started with
+    `CODEX_MOBILE_CHATGPT_PRO_MCP_ALLOW_DIRECT_TASK_CARDS=1`.
+  - MCP responses return bounded card metadata only; task body and raw approval
+    execution payloads are not echoed back to ChatGPT.
+  - No PWA shell cache change.
+- Implementation notes:
+  - `server.js` now reuses a shared
+    `createThreadTaskCardsFromSourceThread()` helper for both the thread-callable
+    task-card route and MCP delegation.
+  - The existing `/api/threads/:sourceThreadId/task-cards` route still defaults
+    to source-thread direct approval for trusted Codex-thread/tool calls unless
+    `pending:true` or `autoApprove:false` is passed.
+  - The MCP adapter passes `pending:true` by default, preserving target approval
+    for ChatGPT-originated cards.
+- Files changed:
+  - `adapters/chatgpt-pro-mcp-service.js`
+  - `server.js`
+  - `test/chatgpt-pro-mcp-service.test.js`
+  - `test/chatgpt-pro-bridge-service.test.js`
+  - `README.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/CHATGPT_PRO_PLANNER_CONNECTOR_DESIGN.md`
+  - `docs/MODULES.md`
+- Validation:
+  - `node --test test/chatgpt-pro-mcp-service.test.js test/chatgpt-pro-bridge-service.test.js test/thread-task-card-service.test.js test/thread-task-card-route.test.js`
+    passed: 35 tests.
+  - `npm run check` passed.
+  - `git diff --check` passed.
+  - Center required check passed:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - `npm test` passed: 523 tests.
+  - AI Ops evidence ledger:
+    `evidence-32aae9fa-3eae-4758-bb8f-fff60dc3c1b0`.
+
 ## 2026-06-19 Thread-Callable Direct Task-Card Interface
 
 - Status: implemented and validated locally; not committed, pushed, or deployed

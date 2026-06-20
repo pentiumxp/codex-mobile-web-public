@@ -182,6 +182,7 @@ const CHATGPT_PRO_PLANNER_DIR = process.env.CODEX_MOBILE_CHATGPT_PRO_PLANNER_DIR
   || path.join(RUNTIME_ROOT, "chatgpt-pro-planner");
 const CHATGPT_PRO_MCP_TOKEN = process.env.CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN || "";
 const CHATGPT_PRO_MCP_TOKEN_FILE = process.env.CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN_FILE || "";
+const CHATGPT_PRO_MCP_ALLOW_DIRECT_TASK_CARDS = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_CHATGPT_PRO_MCP_ALLOW_DIRECT_TASK_CARDS || "");
 const THREAD_SIDE_CHAT_SCOPE_ID = CODEX_HOME_RESOLUTION.activeProfileId
   || `codex-home-${crypto.createHash("sha256").update(CODEX_HOME).digest("hex").slice(0, 16)}`;
 const THREAD_SIDE_CHAT_REPLY_TIMEOUT_MS = Math.max(
@@ -7512,6 +7513,8 @@ const chatGptProPlannerService = createChatGptProPlannerService({
 });
 const chatGptProMcpService = createChatGptProMcpService({
   plannerService: chatGptProPlannerService,
+  delegateTaskCard: async (input = {}) => createThreadTaskCardsFromSourceThread(input.sourceThreadId, input),
+  allowDirectTaskCards: CHATGPT_PRO_MCP_ALLOW_DIRECT_TASK_CARDS,
   token: CHATGPT_PRO_MCP_TOKEN,
   tokenFile: CHATGPT_PRO_MCP_TOKEN_FILE,
   version: APP_VERSION,
@@ -9459,6 +9462,30 @@ function buildThreadTaskCardCreatePayload(body = {}, sourceThreadId = "") {
   });
 }
 
+async function createThreadTaskCardsFromSourceThread(sourceThreadId, body = {}) {
+  const payload = buildThreadTaskCardCreatePayload(body, sourceThreadId);
+  const cards = await threadTaskCardService.createMany(payload);
+  const autoApprove = body.autoApprove !== false && body.direct !== false && body.pending !== true;
+  const approvals = [];
+  if (autoApprove) {
+    for (const card of cards) {
+      approvals.push(await threadTaskCardService.approveFromSource(card.id, payload.sourceThreadId));
+    }
+  }
+  const publicCards = autoApprove
+    ? approvals.map((entry) => entry && entry.card).filter(Boolean)
+    : cards;
+  return {
+    ok: true,
+    sourceThreadId: payload.sourceThreadId,
+    direct: autoApprove,
+    autoApprove,
+    card: publicCards[0] || null,
+    cards: publicCards,
+    approvals,
+  };
+}
+
 function parseThreadTaskCardDraftText(value) {
   const text = String(value || "");
   const match = new RegExp(`<${THREAD_TASK_CARD_DRAFT_TAG}>\\s*([\\s\\S]*?)\\s*<\\/${THREAD_TASK_CARD_DRAFT_TAG}>`, "i").exec(text);
@@ -10602,27 +10629,7 @@ async function handleApi(req, res) {
     try {
       const sourceThreadId = decodeURIComponent(sourceThreadTaskCardCreate[1]);
       const body = await readBody(req);
-      const payload = buildThreadTaskCardCreatePayload(body, sourceThreadId);
-      const cards = await threadTaskCardService.createMany(payload);
-      const autoApprove = body.autoApprove !== false && body.direct !== false && body.pending !== true;
-      const approvals = [];
-      if (autoApprove) {
-        for (const card of cards) {
-          approvals.push(await threadTaskCardService.approveFromSource(card.id, payload.sourceThreadId));
-        }
-      }
-      const publicCards = autoApprove
-        ? approvals.map((entry) => entry && entry.card).filter(Boolean)
-        : cards;
-      sendJson(res, 200, {
-        ok: true,
-        sourceThreadId: payload.sourceThreadId,
-        direct: autoApprove,
-        autoApprove,
-        card: publicCards[0] || null,
-        cards: publicCards,
-        approvals,
-      });
+      sendJson(res, 200, await createThreadTaskCardsFromSourceThread(sourceThreadId, body));
     } catch (err) {
       sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
     }
