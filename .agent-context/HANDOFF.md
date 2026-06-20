@@ -2,6 +2,69 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-20 Pending Upload Durable Image Replacement v320
+
+- Status: implemented, validated, committed, and deployed to Mac production with
+  no listener restart. Not pushed to public in this turn.
+- Source commit:
+  - `679446d` `fix: 修复上传图片预览持久化替换`
+- User-visible issue:
+  - In v319, selecting an image immediately showed the local pending preview,
+    but after send succeeded the image card could become "图片无法加载".
+- Root cause:
+  - The local pending user message stored a temporary browser `blob:` image part.
+  - After successful send, `clearPendingAttachments()` revoked that object URL.
+  - The detail merge path could preserve the optimistic local `content` when its
+    visible signature was longer than the durable app-server message, so the UI
+    kept rendering the revoked `blob:` instead of replacing it with the durable
+    uploaded-file path.
+- Fix:
+  - Frontend shell advanced to `codex-mobile-shell-v320`.
+  - `mergeLikelySameUserMessage()` now forces a non-optimistic incoming user
+    message to replace the visible `content` / `text` / `message` fields of a
+    matching optimistic local message.
+  - Added a regression test where a local `blob:` image preview is merged with
+    a durable `.codex-mobile-web/uploads` user message and must render through
+    `/api/uploads/file` instead of `blob:`.
+- Files changed:
+  - `public/app.js`
+  - `public/sw.js`
+  - `test/conversation-render.test.js`
+  - `test/mobile-viewport.test.js`
+  - `test/thread-goal-service.test.js`
+  - `test/thread-task-card-route.test.js`
+  - `README.md`
+- Validation:
+  - `node --check public/app.js public/sw.js test/conversation-render.test.js`
+    passed.
+  - Focused tests passed:
+    `node --test test/conversation-render.test.js` (51 tests) and
+    `node --test test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js test/message-timestamp.test.js`
+    (25 tests).
+  - `npm run check` passed.
+  - `npm test` passed: 535 tests.
+  - `git diff --check` passed.
+  - Center required check passed:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - AI Ops evidence ledger:
+    `evidence-0f43a9da-bab7-45ff-9170-ee959fc4738e`.
+- Deployment:
+  - Executed central Mac plugin deploy with no listener restart:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart none --health-url http://127.0.0.1:8787/api/public-config --execute --json`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260620T061531Z-plugin-codex-mobile-web-manual`.
+  - Production readback showed:
+    `clientBuildId=0.1.11|codex-mobile-shell-v320`,
+    `shellCacheName=codex-mobile-shell-v320`, platform `darwin`, and production
+    workspace path `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Served `/app.js` contains `durableIncomingReplacesOptimistic` and served
+    `/sw.js` contains `codex-mobile-shell-v320`.
+  - Latest sample upload route smoke: authenticated
+    `/api/uploads/file?path=<upload>` returned `200 image/jpeg` with the
+    expected byte count; unauthenticated returned `401`.
+  - AI Ops deploy evidence ledger:
+    `evidence-e4624240-8a57-4eaa-8dea-f10377df70c9`.
+
 ## 2026-06-20 Public PR #77 Context-Only Stale Active Turn Sync
 
 - Status: public PR evaluated as mergeable, merged into the clean public mirror,
