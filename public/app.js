@@ -364,7 +364,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v328";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v329";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -12028,7 +12028,7 @@ function renderInputImage(part, attachment = null, index = 0) {
   const label = (attachment && attachment.name) || shortPath(part.path || imageUrlValue(part) || "") || `Image ${index + 1}`;
   if (!src) return `<div class="input-attachment">${escapeHtml(label)}</div>`;
   return `<figure class="input-image">
-    <img src="${escapeHtml(src)}" alt="${escapeHtml(label)}" loading="lazy">
+    <img src="${escapeHtml(src)}" alt="${escapeHtml(label)}" loading="${imageLoadingModeForSource(src)}">
     <figcaption>${escapeHtml(label)}</figcaption>
   </figure>`;
 }
@@ -13272,7 +13272,7 @@ function renderImageView(item) {
   const label = shortPath(filePath || item.label || item.fileName || item.file_name || item.caption || url || item.id || "image");
   if (!src) return renderStructuredBlock(item, "Image");
   return `<figure class="image-view">
-    <img src="${escapeHtml(src)}" alt="${escapeHtml(label)}" loading="lazy">
+    <img src="${escapeHtml(src)}" alt="${escapeHtml(label)}" loading="${imageLoadingModeForSource(src)}">
     ${label ? `<figcaption>${escapeHtml(label)}</figcaption>` : ""}
   </figure>`;
 }
@@ -13344,6 +13344,7 @@ function isLazyAppImage(image) {
 
 function shouldProactivelyMarkFailedImage(image) {
   if (!image) return false;
+  if (protectedAppImageElementSrc(image)) return false;
   if (imageHadExplicitLoadError(image)) return true;
   return !isLazyAppImage(image);
 }
@@ -13364,8 +13365,40 @@ function protectedGeneratedImageSrc(value) {
   return "";
 }
 
+function imageLoadingModeForSource(src) {
+  return protectedGeneratedImageSrc(src) ? "eager" : "lazy";
+}
+
+function protectedAppImageElementSrc(image) {
+  return protectedGeneratedImageSrc(image && (
+    image.currentSrc
+    || image.src
+    || (image.getAttribute && image.getAttribute("src"))
+  ));
+}
+
 function imageStillConnected(image) {
   return Boolean(image && (!("isConnected" in image) || image.isConnected));
+}
+
+function protectedAppImageUrlApi() {
+  if (typeof window !== "undefined" && window.URL) return window.URL;
+  if (typeof URL !== "undefined") return URL;
+  return null;
+}
+
+function revokeProtectedAppImageObjectUrl(image) {
+  if (!image || !image.dataset) return false;
+  const objectUrl = String(image.dataset.protectedImageObjectUrl || "");
+  if (!objectUrl) return false;
+  const urlApi = protectedAppImageUrlApi();
+  if (urlApi && typeof urlApi.revokeObjectURL === "function" && /^blob:/i.test(objectUrl)) {
+    try {
+      urlApi.revokeObjectURL(objectUrl);
+    } catch (_) {}
+  }
+  delete image.dataset.protectedImageObjectUrl;
+  return true;
 }
 
 function retryProtectedAppImageSource(image, src) {
@@ -13374,6 +13407,7 @@ function retryProtectedAppImageSource(image, src) {
   const retryCount = Number(image.dataset.imageLoadRetryCount || 0);
   if (retryCount >= 2) return false;
   image.dataset.imageLoadRetryCount = String(retryCount + 1);
+  revokeProtectedAppImageObjectUrl(image);
   try {
     const parsed = new URL(src, window.location.origin);
     parsed.searchParams.set("_imgRetry", `${Date.now()}-${retryCount + 1}`);
@@ -13385,12 +13419,28 @@ function retryProtectedAppImageSource(image, src) {
   }
 }
 
+function protectedAppImageBlobUrl(response) {
+  if (!response || typeof response.blob !== "function") return Promise.resolve("");
+  const urlApi = protectedAppImageUrlApi();
+  if (!urlApi || typeof urlApi.createObjectURL !== "function") return Promise.resolve("");
+  return response.blob().then((blob) => {
+    if (!blob) return "";
+    const type = String(blob.type || "").trim();
+    if (type && !/^image\//i.test(type)) return "";
+    return urlApi.createObjectURL(blob);
+  }).catch(() => "");
+}
+
+function applyProtectedAppImageBlobUrl(image, objectUrl) {
+  if (!image || !objectUrl) return false;
+  revokeProtectedAppImageObjectUrl(image);
+  if (image.dataset) image.dataset.protectedImageObjectUrl = objectUrl;
+  image.src = objectUrl;
+  return true;
+}
+
 function handleProtectedAppImageError(image) {
-  const src = protectedGeneratedImageSrc(image && (
-    image.currentSrc
-    || image.src
-    || (image.getAttribute && image.getAttribute("src"))
-  ));
+  const src = protectedAppImageElementSrc(image);
   if (!src || !image || !image.dataset) return false;
   if (image.dataset.imageLoadProbe === "1") return true;
   image.dataset.imageLoadProbe = "1";
@@ -13401,7 +13451,7 @@ function handleProtectedAppImageError(image) {
     headers,
     credentials: "same-origin",
     cache: "no-store",
-  }).then((response) => {
+  }).then(async (response) => {
     if (!imageStillConnected(image)) return;
     if (image.dataset) delete image.dataset.imageLoadProbe;
     if (response && (response.status === 401 || response.status === 403)) {
@@ -13414,6 +13464,19 @@ function handleProtectedAppImageError(image) {
     }
     if (response && response.ok) {
       clearFailedAppImage(image);
+      const objectUrl = await protectedAppImageBlobUrl(response);
+      if (!imageStillConnected(image)) {
+        if (objectUrl) {
+          const urlApi = protectedAppImageUrlApi();
+          if (urlApi && typeof urlApi.revokeObjectURL === "function") {
+            try {
+              urlApi.revokeObjectURL(objectUrl);
+            } catch (_) {}
+          }
+        }
+        return;
+      }
+      if (applyProtectedAppImageBlobUrl(image, objectUrl)) return;
       retryProtectedAppImageSource(image, src);
       return;
     }
@@ -13427,11 +13490,7 @@ function handleProtectedAppImageError(image) {
 }
 
 function probeFailedAuthenticatedImage(image) {
-  const src = protectedGeneratedImageSrc(image && (
-    image.currentSrc
-    || image.src
-    || (image.getAttribute && image.getAttribute("src"))
-  ));
+  const src = protectedAppImageElementSrc(image);
   if (!src || !isHermesEmbedMode() || state.imageAuthRefreshRequested) return;
   const headers = state.key ? { "X-Codex-Mobile-Key": state.key } : {};
   fetch(src, {
@@ -13455,6 +13514,7 @@ function scanFailedAppImages(root) {
       return;
     }
     if (image.complete && image.naturalWidth === 0) {
+      if (handleProtectedAppImageError(image)) return;
       if (shouldProactivelyMarkFailedImage(image)) {
         if (markFailedAppImage(image)) marked += 1;
       } else {

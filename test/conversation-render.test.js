@@ -101,6 +101,8 @@ function evaluatedInputContentRendererWithKey(key = "") {
     "isLikelyAbsoluteLocalPath",
     "canRenderImageAttachment",
     "authenticatedApiContentUrl",
+    "protectedGeneratedImageSrc",
+    "imageLoadingModeForSource",
     "uploadFileUrl",
     "localFilePreviewContentUrl",
     "imageContentUrlForPath",
@@ -169,6 +171,8 @@ function evaluatedImageViewRenderer() {
     "shortPath",
     "normalizeFsPath",
     "isCodexMobileUploadPath",
+    "protectedGeneratedImageSrc",
+    "imageLoadingModeForSource",
     "uploadFileUrl",
     "authenticatedApiContentUrl",
     "localFilePreviewContentUrl",
@@ -190,9 +194,14 @@ function evaluatedConversationImageErrorHandler(options = {}) {
     "setRetryingAppImage",
     "markFailedAppImage",
     "clearFailedAppImage",
+    "protectedAppImageElementSrc",
     "protectedGeneratedImageSrc",
     "imageStillConnected",
+    "protectedAppImageUrlApi",
+    "revokeProtectedAppImageObjectUrl",
     "retryProtectedAppImageSource",
+    "protectedAppImageBlobUrl",
+    "applyProtectedAppImageBlobUrl",
     "handleProtectedAppImageError",
     "probeFailedAuthenticatedImage",
     "handleConversationImageError",
@@ -225,7 +234,7 @@ function evaluatedConversationImageLoadHandler() {
   return Function(`${sources.join("\n")}\nreturn handleConversationImageLoad;`)();
 }
 
-function evaluatedFailedImageScanner() {
+function evaluatedFailedImageScanner(options = {}) {
   const sources = [
     "failedAppImageContainer",
     "setRetryingAppImage",
@@ -233,10 +242,34 @@ function evaluatedFailedImageScanner() {
     "clearFailedAppImage",
     "imageHadExplicitLoadError",
     "isLazyAppImage",
+    "protectedGeneratedImageSrc",
+    "protectedAppImageElementSrc",
     "shouldProactivelyMarkFailedImage",
+    "imageStillConnected",
+    "protectedAppImageUrlApi",
+    "revokeProtectedAppImageObjectUrl",
+    "retryProtectedAppImageSource",
+    "protectedAppImageBlobUrl",
+    "applyProtectedAppImageBlobUrl",
+    "handleProtectedAppImageError",
     "scanFailedAppImages",
   ].map((name) => functionSourceFrom(appJs, name));
-  return Function(`${sources.join("\n")}\nreturn scanFailedAppImages;`)();
+  return Function(
+    "deps",
+    `const window = deps.window;
+const state = deps.state;
+const fetch = deps.fetch;
+const isHermesEmbedMode = deps.isHermesEmbedMode;
+const requestHermesPluginRefresh = deps.requestHermesPluginRefresh;
+${sources.join("\n")}
+return scanFailedAppImages;`,
+  )(Object.assign({
+    window: { location: { origin: "http://127.0.0.1:8787" } },
+    state: { key: "session-key", imageAuthRefreshRequested: false },
+    fetch: () => Promise.reject(new Error("unexpected fetch")),
+    isHermesEmbedMode: () => false,
+    requestHermesPluginRefresh: () => {},
+  }, options));
 }
 
 function evaluatedTokenUsageSummaryText() {
@@ -1424,10 +1457,25 @@ test("failed conversation images collapse into a neutral fallback", () => {
 
 test("protected upload image errors are probed before showing failed fallback", async () => {
   const fetchCalls = [];
+  const objectUrls = [];
   const handleConversationImageError = evaluatedConversationImageErrorHandler({
+    window: {
+      location: { origin: "http://127.0.0.1:8787" },
+      URL: {
+        createObjectURL(blob) {
+          objectUrls.push(blob);
+          return "blob:http://127.0.0.1:8787/protected-image";
+        },
+        revokeObjectURL() {},
+      },
+    },
     fetch: (src, options) => {
       fetchCalls.push({ src, options });
-      return Promise.resolve({ ok: true, status: 200 });
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        blob: () => Promise.resolve({ type: "image/jpeg" }),
+      });
     },
   });
   const addedClasses = [];
@@ -1493,11 +1541,53 @@ test("protected upload image errors are probed before showing failed fallback", 
   assert.deepEqual(addedClasses, []);
   assert.deepEqual(removedClasses, ["image-load-failed"]);
   assert.equal(image.dataset.imageLoadProbe, undefined);
-  assert.match(imageSrc, /_imgRetry=/);
+  assert.equal(imageSrc, "blob:http://127.0.0.1:8787/protected-image");
+  assert.equal(image.dataset.protectedImageObjectUrl, "blob:http://127.0.0.1:8787/protected-image");
+  assert.equal(objectUrls.length, 1);
   assert.deepEqual(toggledClasses, [
     ["image-load-retrying", true],
     ["image-load-retrying", false],
   ]);
+});
+
+test("protected upload image errors fall back to cache-busted src retry without blob support", async () => {
+  const handleConversationImageError = evaluatedConversationImageErrorHandler({
+    fetch: () => Promise.resolve({ ok: true, status: 200 }),
+  });
+  let imageSrc = "/api/uploads/file?path=%2FUsers%2Fxuxin%2F.codex-mobile-web%2Fuploads%2Fthread%2Fhomeai-upload.jpg&key=stale";
+  const figure = {
+    classList: {
+      remove() {},
+      toggle() {},
+    },
+  };
+  const image = {
+    dataset: {},
+    currentSrc: imageSrc,
+    naturalWidth: 0,
+    isConnected: true,
+    get src() {
+      return imageSrc;
+    },
+    set src(value) {
+      imageSrc = value;
+      this.currentSrc = value;
+    },
+    closest(selector) {
+      if (String(selector).includes(".input-image")) return figure;
+      return null;
+    },
+    getAttribute(name) {
+      if (name === "src") return imageSrc;
+      return "";
+    },
+    removeAttribute() {},
+  };
+
+  handleConversationImageError({ target: { closest: () => image } });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.match(imageSrc, /_imgRetry=/);
 });
 
 test("loaded conversation images clear stale failed-image state", () => {
@@ -1672,6 +1762,82 @@ test("lazy images are not marked failed before the browser attempts loading them
   assert.deepEqual(addedClasses, ["image-load-failed"]);
   assert.deepEqual(removedClasses, ["image-load-failed"]);
   assert.deepEqual(removedAttributes, ["aria-hidden"]);
+});
+
+test("protected zero-size upload images are probed by scanner instead of marked failed", async () => {
+  const fetchCalls = [];
+  const scanFailedAppImages = evaluatedFailedImageScanner({
+    window: {
+      location: { origin: "http://127.0.0.1:8787" },
+      URL: {
+        createObjectURL() {
+          return "blob:http://127.0.0.1:8787/scanned-protected-image";
+        },
+        revokeObjectURL() {},
+      },
+    },
+    fetch: (src, options) => {
+      fetchCalls.push({ src, options });
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        blob: () => Promise.resolve({ type: "image/jpeg" }),
+      });
+    },
+  });
+  const addedClasses = [];
+  const toggledClasses = [];
+  let imageSrc = "/api/uploads/file?path=%2FUsers%2Fxuxin%2F.codex-mobile-web%2Fuploads%2Fthread%2Fhomeai-upload.jpg&key=stale";
+  const container = {
+    classList: {
+      add(value) {
+        addedClasses.push(value);
+      },
+      remove() {},
+      toggle(value, active) {
+        toggledClasses.push([value, active]);
+      },
+    },
+  };
+  const protectedImage = {
+    complete: true,
+    naturalWidth: 0,
+    dataset: {},
+    currentSrc: imageSrc,
+    isConnected: true,
+    get src() {
+      return imageSrc;
+    },
+    set src(value) {
+      imageSrc = value;
+      this.currentSrc = value;
+    },
+    closest(selector) {
+      if (selector === ".input-image, .image-view, .markdown-image, .attachment-chip, .file-preview-media, figure") return container;
+      return null;
+    },
+    getAttribute(name) {
+      if (name === "src") return imageSrc;
+      return "";
+    },
+    removeAttribute() {},
+  };
+  const rootNode = {
+    querySelectorAll(selector) {
+      assert.equal(selector, "img");
+      return [protectedImage];
+    },
+  };
+
+  assert.equal(scanFailedAppImages(rootNode), 0);
+  assert.equal(fetchCalls.length, 1);
+  assert.deepEqual(addedClasses, []);
+  assert.deepEqual(toggledClasses, [["image-load-retrying", true]]);
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(imageSrc, "blob:http://127.0.0.1:8787/scanned-protected-image");
+  assert.equal(protectedImage.dataset.protectedImageObjectUrl, "blob:http://127.0.0.1:8787/scanned-protected-image");
 });
 
 test("raw app-server input image parts use object image urls", () => {
