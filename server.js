@@ -198,7 +198,7 @@ const TOKEN_USAGE_STATS_DB = process.env.CODEX_MOBILE_TOKEN_USAGE_DB
   || path.join(RUNTIME_ROOT, "token-usage-stats.sqlite");
 const THREAD_DETAIL_PROJECTION_CACHE_DIR = process.env.CODEX_MOBILE_THREAD_DETAIL_PROJECTION_CACHE_DIR
   || path.join(RUNTIME_ROOT, "thread-detail-projections");
-const THREAD_DETAIL_PROJECTION_POLICY_VERSION = "state-relevant-receipt-v2";
+const THREAD_DETAIL_PROJECTION_POLICY_VERSION = "state-relevant-receipt-v3";
 const WORKSPACE_CREATE_ROOTS = process.env.CODEX_MOBILE_WORKSPACE_CREATE_ROOTS || "";
 const SYNC_DESKTOP_WORKSPACES = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_SYNC_DESKTOP_WORKSPACES || "");
 const DESKTOP_GLOBAL_STATE_FILES = SYNC_DESKTOP_WORKSPACES
@@ -3013,6 +3013,7 @@ function isReasoningOnlyItem(item) {
 
 function isMeaningfulSupersededLiveItem(item) {
   if (!item || typeof item !== "object") return false;
+  if (userMessageHasVisualAttachment(item)) return true;
   if (isUserQuestionItem(item)) return false;
   if (isReasoningOnlyItem(item)) return false;
   if (isTurnUsageSummaryItem(item)) return false;
@@ -3026,7 +3027,7 @@ function pruneSupersededLiveShellTurns(thread) {
     if (!isSupersededLiveTurn(turn)) return true;
     const items = Array.isArray(turn.items) ? turn.items : [];
     if (!items.some(isMeaningfulSupersededLiveItem)) return false;
-    turn.items = items.filter((item) => !isUserQuestionItem(item) && !isReasoningOnlyItem(item));
+    turn.items = items.filter((item) => (!isUserQuestionItem(item) || userMessageHasVisualAttachment(item)) && !isReasoningOnlyItem(item));
     return true;
   });
   return thread;
@@ -4842,6 +4843,51 @@ function isUserQuestionItem(item) {
     return role === "user";
   }
   return false;
+}
+
+function userMessageContentParts(item) {
+  return Array.isArray(item && item.content) ? item.content : [];
+}
+
+function imageUrlValueForUserMessagePart(part) {
+  if (!part || typeof part !== "object") return "";
+  const raw = part.url || part.image_url || part.imageUrl || "";
+  if (raw && typeof raw === "object") return String(raw.url || raw.uri || raw.href || "");
+  return String(raw || "");
+}
+
+function textValueForUserMessagePart(part) {
+  if (!part || typeof part !== "object") return "";
+  if (typeof part.text === "string") return part.text;
+  if (typeof part.input_text === "string") return part.input_text;
+  if (part.type === "input_text" && typeof part.content === "string") return part.content;
+  return "";
+}
+
+function isImageUserMessagePart(part) {
+  if (!part || typeof part !== "object") return false;
+  const type = String(part.type || "");
+  const url = imageUrlValueForUserMessagePart(part);
+  return type === "image"
+    || type === "localImage"
+    || type === "input_image"
+    || type === "image_url"
+    || /^data:image\//i.test(url)
+    || /\.(?:png|jpe?g|webp|gif)(?:[?#].*)?$/i.test(String(part.path || url || ""));
+}
+
+function textContainsRenderableUploadSummary(text) {
+  const value = String(text || "");
+  return /(^|\n)[ \t]*(?:>[ \t]*)?Uploaded attachments:[\s\S]*-\s+.+\(\s*image\b[\s\S]*\.codex-mobile-web[\\/]+uploads[\\/][\s\S]*\.(?:png|jpe?g|webp|gif)\b/i.test(value);
+}
+
+function userMessageHasVisualAttachment(item) {
+  if (!isUserQuestionItem(item)) return false;
+  if (textContainsRenderableUploadSummary(item.text) || textContainsRenderableUploadSummary(item.message)) return true;
+  return userMessageContentParts(item).some((part) => {
+    if (isImageUserMessagePart(part)) return true;
+    return textContainsRenderableUploadSummary(textValueForUserMessagePart(part));
+  });
 }
 
 function isAssistantReceiptItem(item) {

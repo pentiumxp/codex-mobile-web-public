@@ -42,6 +42,31 @@ function serverFunctionBody(name) {
   return functionBodyFrom(serverJs, name);
 }
 
+function evaluatedServerSupersededLivePruner() {
+  const sources = [
+    "isSupersededLiveTurn",
+    "isUserQuestionItem",
+    "userMessageContentParts",
+    "imageUrlValueForUserMessagePart",
+    "textValueForUserMessagePart",
+    "isImageUserMessagePart",
+    "textContainsRenderableUploadSummary",
+    "userMessageHasVisualAttachment",
+    "isMeaningfulSupersededLiveItem",
+    "pruneSupersededLiveShellTurns",
+  ].map((name) => functionSourceFrom(serverJs, name));
+  return Function(`
+function isReasoningOnlyItem(item) { return Boolean(item && item.type === "reasoning"); }
+function isTurnUsageSummaryItem(item) { return Boolean(item && item.type === "turnUsageSummary"); }
+function isOperationalItem(item) { return Boolean(item && item.type === "commandExecution"); }
+function isAssistantReceiptItem(item) { return Boolean(item && item.type === "agentMessage"); }
+function isVisualReceiptItem(item) { return Boolean(item && (item.type === "imageView" || item.type === "imageGeneration")); }
+function isContextCompactionType(type) { return /context/i.test(String(type || "")); }
+${sources.join("\n")}
+return pruneSupersededLiveShellTurns;
+`)();
+}
+
 function evaluatedAttachmentSummaryParser() {
   const sources = [
     "attachmentSummaryMarkerMatch",
@@ -208,6 +233,8 @@ function evaluatedUserMessagesLikelySame() {
     "stripAttachmentSummaryLinePrefix",
     "parseAttachmentLine",
     "splitAttachmentSummaryText",
+    "isLikelyAbsoluteLocalPath",
+    "canRenderImageAttachment",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
     "isTurnUsageSummaryItem",
@@ -233,6 +260,8 @@ function evaluatedMergeItemsPreservingLocalVisible() {
     "stripAttachmentSummaryLinePrefix",
     "parseAttachmentLine",
     "splitAttachmentSummaryText",
+    "isLikelyAbsoluteLocalPath",
+    "canRenderImageAttachment",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
     "isTurnUsageSummaryItem",
@@ -286,6 +315,8 @@ function evaluatedMergeItemsPreservingLocalVisibleWithRealVisibleWeight() {
     "stripAttachmentSummaryLinePrefix",
     "parseAttachmentLine",
     "splitAttachmentSummaryText",
+    "isLikelyAbsoluteLocalPath",
+    "canRenderImageAttachment",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
     "isTurnUsageSummaryItem",
@@ -518,6 +549,8 @@ function evaluatedVisibleItemsForTurn() {
     "stripAttachmentSummaryLinePrefix",
     "parseAttachmentLine",
     "splitAttachmentSummaryText",
+    "isLikelyAbsoluteLocalPath",
+    "canRenderImageAttachment",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
     "isTurnUsageSummaryItem",
@@ -536,6 +569,7 @@ function evaluatedVisibleItemsForTurn() {
     "liveTurnHasNonUserProgressAfter",
     "isUserVisibleTextReplyItem",
     "liveTurnHasUserVisibleTextReplyAfter",
+    "userMessageHasVisualAttachment",
     "shouldHideDurableLiveUserMessage",
     "isSupersededLiveTurn",
     "shouldHideSupersededLiveUserMessage",
@@ -796,6 +830,83 @@ test("superseded live usage-only shells do not render as blank completed receipt
   );
 });
 
+test("superseded live turns keep uploaded image user messages while hiding stale text steering", () => {
+  const { visibleItemsForTurn } = evaluatedVisibleItemsForTurn();
+  const uploadPath = "/Users/xuxin/.codex-mobile-web/uploads/2026-06-20/thread-id/1781938485528-homeai-upload-080D5F0E.jpg";
+  const turn = {
+    status: { type: "completed", mobileSupersededLive: true, previousType: "inProgress" },
+    items: [
+      { id: "old-user-text", type: "userMessage", content: [{ type: "input_text", text: "old steering prompt" }] },
+      {
+        id: "old-user-image",
+        type: "userMessage",
+        content: [{
+          type: "input_text",
+          text: `Uploaded attachments:\n- homeai-upload-080D5F0E.jpg (image, image/jpeg, 125.6 KB): ${uploadPath}`,
+        }],
+      },
+      { id: "receipt", type: "agentMessage", text: "done" },
+    ],
+  };
+
+  assert.deepEqual(
+    visibleItemsForTurn(turn).map((entry) => entry.item.id),
+    ["old-user-image", "receipt"],
+  );
+});
+
+test("server projection pruning keeps uploaded image user messages in superseded live turns", () => {
+  const pruneSupersededLiveShellTurns = evaluatedServerSupersededLivePruner();
+  const uploadPath = "/Users/xuxin/.codex-mobile-web/uploads/2026-06-20/thread-id/1781938485528-homeai-upload-080D5F0E.jpg";
+  const thread = {
+    turns: [
+      {
+        id: "superseded-with-image",
+        status: { type: "completed", mobileSupersededLive: true, previousType: "inProgress" },
+        items: [
+          { id: "plain-user", type: "userMessage", content: [{ type: "input_text", text: "old prompt" }] },
+          {
+            id: "image-user",
+            type: "userMessage",
+            content: [{
+              type: "input_text",
+              text: `Uploaded attachments:\n- homeai-upload-080D5F0E.jpg (image, image/jpeg, 125.6 KB): ${uploadPath}`,
+            }],
+          },
+          { id: "reasoning", type: "reasoning", text: "hidden" },
+          { id: "receipt", type: "agentMessage", text: "done" },
+        ],
+      },
+      {
+        id: "superseded-user-only",
+        mobileSupersededLive: true,
+        items: [
+          {
+            id: "image-user-only",
+            type: "userMessage",
+            content: [{ type: "input_image", image_url: { url: "data:image/png;base64,AAAA" } }],
+          },
+        ],
+      },
+      {
+        id: "superseded-text-only",
+        mobileSupersededLive: true,
+        items: [{ id: "plain-only", type: "userMessage", text: "old prompt" }],
+      },
+    ],
+  };
+
+  pruneSupersededLiveShellTurns(thread);
+
+  assert.deepEqual(
+    thread.turns.map((turn) => [turn.id, turn.items.map((item) => item.id)]),
+    [
+      ["superseded-with-image", ["image-user", "receipt"]],
+      ["superseded-user-only", ["image-user-only"]],
+    ],
+  );
+});
+
 test("live turn keeps prompt and responded steering messages while hiding only unanswered trailing durable user bubbles", () => {
   const { visibleItemsForTurn } = evaluatedVisibleItemsForTurn();
   const liveTurn = {
@@ -819,6 +930,33 @@ test("live turn keeps prompt and responded steering messages while hiding only u
   assert.deepEqual(
     visibleItemsForTurn(completedTurn).map((entry) => entry.item.id),
     ["real-user-prompt", "assistant-progress", "real-user-responded-steer", "assistant-after-steer", "real-user-trailing", "local-user-new"],
+  );
+});
+
+test("live turn keeps uploaded image user messages after progress starts", () => {
+  const harness = evaluatedVisibleItemsForTurn();
+  const uploadPath = "/Users/xuxin/.codex-mobile-web/uploads/2026-06-20/thread-id/1781938485528-homeai-upload-080D5F0E.jpg";
+  const liveTurn = {
+    live: true,
+    items: [
+      { id: "real-user-old", type: "userMessage", content: [{ type: "text", text: "old steer" }] },
+      { id: "assistant-progress", type: "agentMessage", text: "working" },
+      {
+        id: "real-user-image",
+        type: "userMessage",
+        content: [{
+          type: "input_text",
+          text: `Uploaded attachments:\n- homeai-upload-080D5F0E.jpg (image, image/jpeg, 125.6 KB): ${uploadPath}`,
+        }],
+      },
+      { id: "real-user-trailing", type: "userMessage", content: [{ type: "input_text", text: "stale trailing steer" }] },
+      { id: "cmd-1", type: "commandExecution", status: "running" },
+    ],
+  };
+
+  assert.deepEqual(
+    harness.visibleItemsForTurn(liveTurn).map((entry) => entry.item.id),
+    ["real-user-old", "assistant-progress", "real-user-image"],
   );
 });
 

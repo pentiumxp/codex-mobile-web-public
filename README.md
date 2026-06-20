@@ -4,6 +4,7 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：v323 修复 superseded live turn 中纯图片用户消息被投影剪裁的问题。此前为避免旧 steering 用户气泡反复出现在底部，服务端和前端都会隐藏 superseded/live 里的部分 `userMessage`；现在带 `Uploaded attachments` 图片摘要、上传路径或 `input_image` 的用户消息会保留并渲染成上传图片缩略图，普通旧文字 steering 仍继续隐藏。PWA shell cache 升级到 `codex-mobile-shell-v323`，该服务端投影修复需要重启 8787 listener 后生效。
 - 中文说明：v322 增加上传图片显示失败后的前端自恢复。线程图片如果曾被浏览器 error 事件标记为“图片无法加载”，后续真实上传地址或新鉴权地址加载成功时会在 `load` 事件和失败扫描中移除失败状态，避免局部 patch 复用 DOM 后继续显示旧的失败占位。PWA shell cache 升级到 `codex-mobile-shell-v322`。
 - 中文说明：v321 修复 v320 发送图片后本地预览仍可能在 5-6 秒后变成“图片无法加载”的问题。发送成功清空 Composer 附件时不再立即 revoke 仍被本地 pending 消息气泡引用的 `blob:` 预览，而是延迟释放；删除/替换未发送附件仍立即释放。这样在服务端 durable 投影接管前，本地图片预览不会被提前破坏。PWA shell cache 升级到 `codex-mobile-shell-v321`。
 - 中文说明：v320 修复 v319 发送图片后“瞬间能看到预览，几秒后又变成图片无法加载”的问题。前端本地 pending 消息中的 `blob:` 预览现在会在服务端 durable 用户消息回来时被真实上传路径内容替换，避免发送成功后继续渲染已撤销的本地 object URL；上传图片仍通过受保护的 `/api/uploads/file` 鉴权地址显示。PWA shell cache 升级到 `codex-mobile-shell-v320`。

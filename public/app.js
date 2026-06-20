@@ -364,7 +364,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v322";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v323";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -4307,9 +4307,27 @@ function liveTurnHasUserVisibleTextReplyAfter(turn, index) {
   return false;
 }
 
+function userMessageHasVisualAttachment(item) {
+  if (!item || item.type !== "userMessage") return false;
+  const textValues = [];
+  if (typeof item.text === "string") textValues.push(item.text);
+  if (typeof item.message === "string") textValues.push(item.message);
+  const content = Array.isArray(item.content) ? item.content : [];
+  for (const part of content) {
+    if (!part || typeof part !== "object") continue;
+    if (isInputImagePart(part)) return true;
+    if (isInputTextPart(part)) textValues.push(inputTextValue(part));
+    if (part.path && /\.(?:png|jpe?g|webp|gif)(?:[?#].*)?$/i.test(String(part.path))) return true;
+    const url = imageUrlValue(part);
+    if (url && /\.(?:png|jpe?g|webp|gif)(?:[?#].*)?$/i.test(String(url))) return true;
+  }
+  return textValues.some((text) => splitAttachmentSummaryText(text).attachments.some((attachment) => attachment.isImage && canRenderImageAttachment(attachment)));
+}
+
 function shouldHideDurableLiveUserMessage(turn, item, index = 0) {
   return Boolean(item
     && item.type === "userMessage"
+    && !userMessageHasVisualAttachment(item)
     && liveTurnHasNonUserProgressBefore(turn, index)
     && !liveTurnHasUserVisibleTextReplyAfter(turn, index)
     && !isRecentlySubmittedUserMessage(item)
@@ -4321,7 +4339,7 @@ function isSupersededLiveTurn(turn) {
 }
 
 function shouldHideSupersededLiveUserMessage(turn, item) {
-  return Boolean(isSupersededLiveTurn(turn) && item && item.type === "userMessage");
+  return Boolean(isSupersededLiveTurn(turn) && item && item.type === "userMessage" && !userMessageHasVisualAttachment(item));
 }
 
 function visibleItemsForTurn(turn) {
