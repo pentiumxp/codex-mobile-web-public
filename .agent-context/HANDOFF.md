@@ -4,8 +4,8 @@ Last compacted: 2026-06-08T13:27:43.304Z
 
 ## 2026-06-20 Public-Derived Private Branch Correction
 
-- Status: corrected locally; pending private push at the time this section was
-  written.
+- Status: corrected locally and pushed to private origin; public branch was not
+  changed by this correction.
 - User clarified the repository rule:
   - `public/main` is the public canonical branch for publishable files.
   - local/private `main` should be derived from `public/main`, with private-only
