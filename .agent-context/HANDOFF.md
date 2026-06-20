@@ -2,6 +2,92 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-20 Upload Image Failed-State Recovery v322
+
+- Status: implemented, validated, committed, and deployed to Mac production with
+  no listener restart. Not pushed to public in this turn.
+- Source commit:
+  - `5c7f3ff` `fix: 恢复已加载图片的失败状态`
+- User-visible issue:
+  - After v320/v321, a sent upload could still show briefly, then remain as
+    "图片无法加载" even though the durable upload route returned `200 image/jpeg`.
+- Root cause:
+  - The route and durable projection were valid, but a reused conversation DOM
+    node could keep `.image-load-failed` / `aria-hidden` from an earlier
+    browser `error` event. There was an error handler and proactive failure
+    scanner, but no matching load recovery path.
+- Fix:
+  - Frontend shell advanced to `codex-mobile-shell-v322`.
+  - Added `handleConversationImageLoad()` and `clearFailedAppImage()` so a
+    successful image load removes stale failed state from the image/container.
+  - `scanFailedAppImages()` now also clears failed state for already-complete
+    images with `naturalWidth > 0`.
+  - README now records the v322 Chinese release note.
+- Validation:
+  - `npm run check` passed.
+  - `npm test` passed: 538 tests.
+  - `git diff --check` passed.
+  - Center `node tests/architecture-code-test-harness-map.test.js` passed.
+  - Production-served `/app.js` function smoke passed: simulated `error` then
+    `load` clears failed state, and scan clears already-loaded images.
+  - AI Ops evidence ledger:
+    `evidence-1c1cc0ce-7815-466d-9a88-56b95d69a176`.
+- Deployment:
+  - Executed central Mac plugin deploy with no listener restart:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart none --health-url http://127.0.0.1:8787/api/public-config --execute --json`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260620T070012Z-plugin-codex-mobile-web-manual`.
+  - Production readback showed:
+    `clientBuildId=0.1.11|codex-mobile-shell-v322`,
+    `shellCacheName=codex-mobile-shell-v322`, platform `darwin`, and production
+    workspace path `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Served `/app.js` contains `handleConversationImageLoad`,
+    `clearFailedAppImage`, and the conversation load listener; served `/sw.js`
+    contains `codex-mobile-shell-v322`.
+  - Latest sample upload route smoke: authenticated
+    `/api/uploads/file?path=<upload>` returned `200 image/jpeg` with the
+    expected byte count; unauthenticated returned `401`.
+  - Thread detail smoke for the latest `080D5F0E` upload showed a durable
+    `.codex-mobile-web/uploads` user message; `blob:` hits in the response were
+    historical explanatory text, not image source fields.
+  - AI Ops deploy evidence ledger:
+    `evidence-1b758311-6426-4d24-8c24-c36a62660aac`.
+
+## 2026-06-20 Delayed Pending Upload Preview Revoke v321
+
+- Status: implemented, validated, committed, and deployed to Mac production with
+  no listener restart. Not pushed to public in this turn.
+- Source commit:
+  - `13017e2` `fix: 延迟释放已发送图片预览`
+- User-visible issue:
+  - After v320, the local pending image preview could still become "图片无法加载"
+    before the durable upload projection visibly replaced it.
+- Root cause:
+  - Successful sends called `clearPendingAttachments()` immediately, which
+    revoked local `blob:` preview URLs even while a local pending message could
+    still reference them during the projection gap.
+- Fix:
+  - Frontend shell advanced to `codex-mobile-shell-v321`.
+  - Successful `sendMessage()` / `sendNewThreadMessage()` now clear submitted
+    attachments without immediately revoking preview URLs.
+  - Replacing or deleting unsent attachments still revokes stale preview URLs
+    immediately.
+- Validation:
+  - Focused conversation/version tests passed.
+  - `npm run check` passed.
+  - `npm test` passed: 537 tests.
+  - `git diff --check` passed.
+  - Center `node tests/architecture-code-test-harness-map.test.js` passed.
+  - AI Ops evidence ledger:
+    `evidence-c516b9d5-aa3b-4a0e-a7a3-af693f456c14`.
+- Deployment:
+  - Executed central Mac plugin deploy with no listener restart.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260620T065419Z-plugin-codex-mobile-web-manual`.
+  - Production readback showed `codex-mobile-shell-v321`.
+  - AI Ops deploy evidence ledger:
+    `evidence-5bf232d7-696e-41de-bd11-4365f02207d9`.
+
 ## 2026-06-20 Pending Upload Durable Image Replacement v320
 
 - Status: implemented, validated, committed, and deployed to Mac production with
