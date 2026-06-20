@@ -4,6 +4,7 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：v316 修正 context-only stale active turn 对会话列表状态的污染。若 rollout 最新 turn 只有 `<environment_context>` / `turn_context` 且没有真实用户消息、助手输出或工具活动，超过短暂静默阈值后后端会把它降级为 idle 并标记 `mobileStaleActiveTurn`；前端清除 running spinner 时不会产生 unread dot。PWA shell cache 升级到 `codex-mobile-shell-v316`。
 - 中文说明：v315 修复已有会话发送新消息后线程列表 running spinner 仍需等待 `turn/started` 事件、detail refresh 或下一次列表刷新才出现的问题。普通发送路径现在会在本地提交后立即把当前会话和列表行标记为 active；如果发送失败，再恢复发送前状态。PWA shell cache 升级到 `codex-mobile-shell-v315`。
 - 中文说明：server-only 修复 Home AI 审计卡/跨线程任务卡启动后台线程后，线程列表运行标志可能滞后的问题。任务卡批准并注入目标 turn 后，服务端会立即广播轻量 `thread/status/changed` active 摘要；收到后台 `turn/started` / `turn/completed` 时也会派生线程级状态摘要并清理线程列表 fallback cache。后台 turn 的正文、工具输出和 diff 仍只发给当前订阅线程。本次不改变 PWA shell cache，更新后需要重启 Node listener 才会生效。
 - 中文说明：server-only 合并 public PR #75，避免用户上传图片被 agent 图卡重复展示。服务端读取 rollout tool output 图片时，会识别 `view_image` 调用指向 Codex Mobile 上传目录的文件，并跳过这类输出生成的 agent `imageView` 卡片；上传图片仍保留在用户消息的附件缩略图里，非上传目录的工具输出图片仍可生成 agent 图卡。同时 compacted 结构化文本中的内联 `data:image/...` 会被 bounded 占位符替换，避免把大段图片 data URL 写入线程响应。本次不改变 PWA shell cache，更新后需要重启 Node listener 才会生效。本次 public 发布只包含公开源码、README 和测试；没有复制 `.agent-context`、runtime state、本地密钥、上传内容或机器特定诊断。

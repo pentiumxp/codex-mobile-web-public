@@ -779,6 +779,7 @@ const MAX_ROLLOUT_CONTEXT_BYTES = Math.max(256 * 1024, Number(process.env.CODEX_
 const MAX_RUNTIME_CONTEXT_SCAN_BYTES = Math.max(MAX_ROLLOUT_CONTEXT_BYTES, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_SCAN_BYTES || String(32 * 1024 * 1024)));
 const ROLLOUT_WARNING_BYTES = Math.max(1 * 1024 * 1024, Number(process.env.CODEX_MOBILE_ROLLOUT_WARNING_BYTES || String(200 * 1024 * 1024)));
 const ROLLOUT_ACTIVE_STATUS_WINDOW_MS = Math.max(60_000, Number(process.env.CODEX_MOBILE_ROLLOUT_ACTIVE_STATUS_WINDOW_MS || String(30 * 60 * 1000)));
+const STALE_CONTEXT_ONLY_ACTIVE_TURN_MS = Math.max(30_000, Number(process.env.CODEX_MOBILE_CONTEXT_ONLY_ACTIVE_STALE_MS || "90000"));
 const MAX_CONTINUATION_BOOTSTRAP_CHARS = Math.max(4_000, Number(process.env.CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS || "12000"));
 const CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS = Math.max(2_000, Number(process.env.CODEX_MOBILE_CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS || "12000"));
 const CONTINUATION_SOURCE_HANDOFF_STORED_CHARS = Math.max(CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS, Number(process.env.CODEX_MOBILE_CONTINUATION_SOURCE_HANDOFF_STORED_CHARS || "18000"));
@@ -2839,8 +2840,8 @@ function mergeThreadSummaryList(threads) {
     if (!thread || !thread.id) continue;
     const id = String(thread.id);
     if (archivedIds.has(id)) continue;
-    const displayThread = mergeThreadWithCachedDisplaySummary(thread);
-    const merged = byId.has(id) ? mergeThreadDisplaySummary(byId.get(id), displayThread) : displayThread;
+    const displayThread = normalizeStaleContextOnlyActiveThread(mergeThreadWithCachedDisplaySummary(thread));
+    const merged = normalizeStaleContextOnlyActiveThread(byId.has(id) ? mergeThreadDisplaySummary(byId.get(id), displayThread) : displayThread);
     if (threadHasArchiveSignal(merged) || isSubagentThreadSummary(merged)) {
       byId.delete(id);
       continue;
@@ -2861,6 +2862,14 @@ function mergeThreadListFallback(result, fallbackThreads = [], limit = 80) {
   const capped = mergeThreadSummaryList([...existing, ...fallbackThreads]).slice(0, Math.max(1, limit));
   if (Array.isArray(out.data) || !Array.isArray(out.threads)) out.data = capped;
   if (Array.isArray(out.threads)) out.threads = capped;
+  return out;
+}
+
+function normalizeThreadListResultStatuses(result) {
+  if (!result || typeof result !== "object") return result;
+  const out = Object.assign({}, result);
+  if (Array.isArray(out.data)) out.data = out.data.map((thread) => normalizeStaleContextOnlyActiveThread(thread));
+  if (Array.isArray(out.threads)) out.threads = out.threads.map((thread) => normalizeStaleContextOnlyActiveThread(thread));
   return out;
 }
 
@@ -4297,6 +4306,7 @@ function prepareProjectedThreadReadResult(cached, summary, runtimeSettings) {
   if (!result.thread) return null;
   result.thread = applySessionIndexTitleToThread(result.thread, readSessionIndexEntries().get(result.thread.id));
   result.thread = mergeThreadRuntimeFromStateDb(result.thread, summary);
+  result.thread = normalizeStaleContextOnlyActiveThread(result.thread);
   result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
   result.thread.mobileReadMode = cached.dynamic ? "projection-dynamic" : "projection-cache";
   result.thread.mobileProjection = {
@@ -4992,7 +5002,7 @@ function compactThread(thread, options = {}) {
       if (rawOperation) latest.items.push(rawOperation);
     }
   }
-  return annotateThreadRolloutStats(out);
+  return normalizeStaleContextOnlyActiveThread(annotateThreadRolloutStats(out), options);
 }
 
 function compactThreadReadResult(result, options = {}) {
@@ -9230,12 +9240,12 @@ function shouldReplaceThreadDisplayStatus(baseStatus, displayStatus, baseUpdated
 function mergeThreadWithCachedDisplaySummary(thread) {
   if (!thread || typeof thread !== "object" || !thread.id) return thread;
   const cached = threadDisplaySummaryCache.read(thread.id);
-  return cached ? (mergeThreadDisplaySummary(thread, cached) || thread) : thread;
+  return normalizeStaleContextOnlyActiveThread(cached ? (mergeThreadDisplaySummary(thread, cached) || thread) : thread);
 }
 
 function mergeThreadDisplaySummary(base, display) {
-  if (!base) return display ? annotateThreadRolloutStats(display) : null;
-  if (!display) return base;
+  if (!base) return display ? normalizeStaleContextOnlyActiveThread(annotateThreadRolloutStats(display)) : null;
+  if (!display) return normalizeStaleContextOnlyActiveThread(base);
   const next = Object.assign({}, base);
   for (const key of ["name", "preview", "cwd"]) {
     const value = display[key];
@@ -9255,7 +9265,7 @@ function mergeThreadDisplaySummary(base, display) {
   }
   if (display.isSpawnedChildThread || display.is_spawned_child) next.isSpawnedChildThread = true;
   if (display.mobileFallback && !next.mobileFallback) next.mobileFallback = true;
-  return annotateThreadRolloutStats(next);
+  return normalizeStaleContextOnlyActiveThread(annotateThreadRolloutStats(next));
 }
 
 function mergeThreadRuntimeFromStateDb(thread, summary = null) {
@@ -9284,7 +9294,7 @@ async function readThreadSummaryFromAppServer(codex, threadId) {
       ? result.threads
       : [];
   const thread = threads.find((thread) => String(thread && thread.id) === String(threadId)) || null;
-  return threadDisplaySummaryCache.remember(thread) || annotateThreadRolloutStats(thread);
+  return normalizeStaleContextOnlyActiveThread(threadDisplaySummaryCache.remember(thread) || annotateThreadRolloutStats(thread));
 }
 
 function sortTurnsChronologically(turns) {
@@ -9334,7 +9344,7 @@ function threadFromTurnsList(threadId, summary, turnsResult) {
   const turns = sortTurnsChronologically(enriched.turns).slice(-MAX_THREAD_TURNS);
   const latest = turns[turns.length - 1];
   const status = latest && isLiveTurn(latest) ? { type: "active" } : (summary && summary.status) || { type: "notLoaded" };
-  return annotateThreadRolloutStats(Object.assign({
+  return normalizeStaleContextOnlyActiveThread(annotateThreadRolloutStats(Object.assign({
     id: threadId,
     name: null,
     preview: threadId,
@@ -9344,7 +9354,7 @@ function threadFromTurnsList(threadId, summary, turnsResult) {
     status,
     turns,
     mobileReadMode: "turns-list",
-  }, summary || {}, { id: threadId, status, turns, mobileReadMode: "turns-list" }));
+  }, summary || {}, { id: threadId, status, turns, mobileReadMode: "turns-list" })));
 }
 
 function parseThreadTurnsCursor(value) {
@@ -9928,11 +9938,227 @@ function isRolloutActivityEntry(entry) {
   return entry.type === "event_msg" && ROLLOUT_ACTIVITY_EVENT_TYPES.has(rolloutEntryPayloadType(entry));
 }
 
+function rolloutContentText(value) {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(rolloutContentText).filter(Boolean).join("\n");
+  if (typeof value !== "object") return "";
+  const parts = [];
+  for (const key of ["text", "input_text", "message", "summary"]) {
+    if (typeof value[key] === "string") parts.push(value[key]);
+  }
+  if (typeof value.content === "string") {
+    parts.push(value.content);
+  } else if (value.content && typeof value.content === "object") {
+    parts.push(rolloutContentText(value.content));
+  }
+  return parts.filter(Boolean).join("\n");
+}
+
+function rolloutMessageText(payload) {
+  if (!payload || typeof payload !== "object") return "";
+  return rolloutContentText(payload.content || payload.message || payload.text || payload.input || payload.input_text);
+}
+
+function rolloutContentHasNonTextInput(value) {
+  if (value == null) return false;
+  if (Array.isArray(value)) return value.some(rolloutContentHasNonTextInput);
+  if (typeof value !== "object") return false;
+  const type = String(value.type || "").toLowerCase();
+  if (/^(input_)?(image|file|audio|video)|localimage|localfile|image_url|input_image$/.test(type)) return true;
+  if (value.image_url || value.imageUrl || value.file_id || value.fileId || value.path || value.url) return true;
+  return rolloutContentHasNonTextInput(value.content || value.message || value.input || null);
+}
+
+function rolloutMessageHasNonTextInput(payload) {
+  if (!payload || typeof payload !== "object") return false;
+  return rolloutContentHasNonTextInput(payload.content || payload.message || payload.input || payload.attachments || payload.files || payload.images);
+}
+
+function isEnvironmentContextOnlyText(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (!/^<environment_context\b[\s\S]*<\/environment_context>$/.test(text)) return false;
+  return text.replace(/<environment_context\b[\s\S]*<\/environment_context>/g, "").trim() === "";
+}
+
+function createRolloutTurnEvidence(turnId, timestampMs = 0) {
+  return {
+    turnId: String(turnId || ""),
+    startedAtMs: timestampMs || 0,
+    lastActivityMs: timestampMs || 0,
+    hasContext: false,
+    hasVisibleUser: false,
+    hasAssistant: false,
+    hasOperation: false,
+    hasTerminal: false,
+  };
+}
+
+function rolloutLatestTurnEvidence(rolloutPath, stat = null) {
+  const tail = readRolloutTail(rolloutPath);
+  if (!tail) return null;
+  const byTurn = new Map();
+  let currentTurnId = "";
+  let latest = null;
+  const ensureTurn = (turnId, timestampMs = 0) => {
+    const id = String(turnId || "").trim();
+    if (!id) return null;
+    if (!byTurn.has(id)) byTurn.set(id, createRolloutTurnEvidence(id, timestampMs));
+    const evidence = byTurn.get(id);
+    if (timestampMs) {
+      evidence.lastActivityMs = Math.max(evidence.lastActivityMs || 0, timestampMs);
+      if (!evidence.startedAtMs) evidence.startedAtMs = timestampMs;
+    }
+    if (!latest
+      || (evidence.startedAtMs || 0) > (latest.startedAtMs || 0)
+      || (evidence.lastActivityMs || 0) > (latest.lastActivityMs || 0)) {
+      latest = evidence;
+    }
+    return evidence;
+  };
+
+  for (const line of tail.split(/\r?\n/)) {
+    if (!line || !line.trim()) continue;
+    const entry = parseJsonLine(line);
+    if (!entry || !entry.type) continue;
+    const payload = entry.payload && typeof entry.payload === "object" ? entry.payload : {};
+    const timestampMs = rolloutEntryTimestampMs(entry);
+    const eventType = entry.type === "event_msg" ? String(payload.type || "") : "";
+    const explicitTurnId = rolloutEntryTurnId(entry);
+    if (entry.type === "event_msg" && eventType === "task_started" && explicitTurnId) {
+      currentTurnId = explicitTurnId;
+      ensureTurn(explicitTurnId, timestampMs);
+      continue;
+    }
+    const turnId = explicitTurnId || currentTurnId;
+    const evidence = ensureTurn(turnId, timestampMs);
+    if (!evidence) continue;
+    if (isRolloutTerminalEntry(entry)) {
+      evidence.hasTerminal = true;
+      continue;
+    }
+    if (entry.type === "turn_context") {
+      evidence.hasContext = true;
+      continue;
+    }
+    if (entry.type === "response_item") {
+      const type = String(payload.type || "");
+      if (type === "message") {
+        const role = String(payload.role || payload.author || "").toLowerCase();
+        if (role === "user") {
+          const text = rolloutMessageText(payload);
+          if (isEnvironmentContextOnlyText(text)) evidence.hasContext = true;
+          else if (String(text || "").trim()) evidence.hasVisibleUser = true;
+          else if (rolloutMessageHasNonTextInput(payload)) evidence.hasVisibleUser = true;
+        } else if (role === "assistant") {
+          evidence.hasAssistant = true;
+        } else {
+          evidence.hasOperation = true;
+        }
+      } else if (type === "reasoning") {
+        evidence.hasAssistant = true;
+      } else if (/^(function_call|custom_tool_call|web_search_call|function_call_output|custom_tool_call_output)$/.test(type)) {
+        evidence.hasOperation = true;
+      }
+      continue;
+    }
+    if (entry.type === "event_msg") {
+      if (eventType === "user_message") {
+        const text = rolloutMessageText(payload);
+        if (isEnvironmentContextOnlyText(text)) evidence.hasContext = true;
+        else if (String(text || "").trim()) evidence.hasVisibleUser = true;
+        else if (rolloutMessageHasNonTextInput(payload)) evidence.hasVisibleUser = true;
+      } else if (eventType === "agent_message" || eventType === "agent_reasoning") {
+        evidence.hasAssistant = true;
+      } else if (/^(exec_command|patch_apply|web_search)_/.test(eventType)) {
+        evidence.hasOperation = true;
+      }
+    }
+  }
+
+  if (!latest) return null;
+  const mtimeMs = Number(stat && stat.mtimeMs || 0);
+  latest.lastActivityMs = Math.max(latest.lastActivityMs || 0, mtimeMs || 0);
+  return latest;
+}
+
+function staleContextOnlyActiveEvidenceForRollout(rolloutPath, options = {}) {
+  if (!rolloutPath) return null;
+  let stat = options.stat || null;
+  if (!stat) {
+    try {
+      stat = fs.statSync(rolloutPath);
+    } catch (_) {
+      return null;
+    }
+  }
+  const evidence = rolloutLatestTurnEvidence(rolloutPath, stat);
+  if (!evidence || evidence.hasTerminal || evidence.hasVisibleUser || evidence.hasAssistant || evidence.hasOperation) {
+    return null;
+  }
+  const nowMs = Number(options.nowMs || Date.now());
+  const quietMs = nowMs - Number(evidence.lastActivityMs || 0);
+  if (!Number.isFinite(quietMs) || quietMs < STALE_CONTEXT_ONLY_ACTIVE_TURN_MS) return null;
+  return Object.assign({}, evidence, {
+    quietMs,
+    thresholdMs: STALE_CONTEXT_ONLY_ACTIVE_TURN_MS,
+  });
+}
+
+function staleContextOnlyActiveStatus(previousStatus, evidence) {
+  const previousType = statusText(previousStatus);
+  return {
+    type: "idle",
+    mobileStaleActiveTurn: true,
+    previousType: previousType || "active",
+    reason: "context-only-active-turn",
+    turnId: evidence && evidence.turnId || "",
+    quietMs: Math.max(0, Math.trunc(Number(evidence && evidence.quietMs) || 0)),
+    thresholdMs: STALE_CONTEXT_ONLY_ACTIVE_TURN_MS,
+  };
+}
+
+function normalizeStaleContextOnlyActiveThread(thread, options = {}) {
+  if (!thread || typeof thread !== "object") return thread;
+  const turns = Array.isArray(thread.turns) ? thread.turns : [];
+  const latest = turns.length ? turns[turns.length - 1] : null;
+  if (!isThreadListLiveStatus(thread.status) && !isLiveTurn(latest)) return thread;
+  let rolloutPath = rolloutPathForThread(thread);
+  if (!rolloutPath && thread.id) {
+    const stateThread = readStateDbThread(thread.id);
+    rolloutPath = rolloutPathForThread(stateThread);
+  }
+  const evidence = staleContextOnlyActiveEvidenceForRollout(rolloutPath, options);
+  if (!evidence) return thread;
+  const latestTurnId = String(latest && (latest.id || latest.turnId) || "").trim();
+  if (latestTurnId && evidence.turnId && latestTurnId !== evidence.turnId) return thread;
+  const out = Object.assign({}, thread, {
+    status: staleContextOnlyActiveStatus(thread.status, evidence),
+    mobileStaleActiveTurn: {
+      turnId: evidence.turnId || "",
+      reason: "context-only-active-turn",
+      quietMs: Math.max(0, Math.trunc(Number(evidence.quietMs) || 0)),
+      thresholdMs: STALE_CONTEXT_ONLY_ACTIVE_TURN_MS,
+    },
+  });
+  if (turns.length && latest && isLiveTurn(latest)) {
+    const itemCount = Array.isArray(latest.items) ? latest.items.length : 0;
+    if (itemCount === 0) {
+      out.turns = turns.slice(0, -1);
+      out.mobileDroppedStaleActiveTurn = evidence.turnId || latestTurnId || true;
+    }
+  }
+  return out;
+}
+
 function inferRolloutFallbackStatus(rolloutPath, stat = null, nowMs = Date.now()) {
   if (!rolloutPath) return null;
   const mtimeMs = Number(stat && stat.mtimeMs || 0);
   const tail = readRolloutTail(rolloutPath);
   if (!tail) return null;
+  const staleContextOnlyActive = staleContextOnlyActiveEvidenceForRollout(rolloutPath, { stat, nowMs });
+  if (staleContextOnlyActive) return staleContextOnlyActiveStatus({ type: "active" }, staleContextOnlyActive);
   let lastActivityMs = 0;
   let lastTerminalMs = 0;
   for (const line of tail.split(/\r?\n/)) {
@@ -11166,7 +11392,7 @@ async function handleApi(req, res) {
           mergeMs: 0,
         });
         const sessionIndexStartedAtMs = Date.now();
-        const indexedResult = hydrateThreadListResultTitlesFromSessionIndex(appServerResult);
+        const indexedResult = normalizeThreadListResultStatuses(hydrateThreadListResultTitlesFromSessionIndex(appServerResult));
         timings.fallbackSessionIndexMs = Math.max(0, Date.now() - sessionIndexStartedAtMs);
         threadDisplaySummaryCache.rememberList(indexedResult);
         if (Array.isArray(indexedResult.data)) indexedResult.data = indexedResult.data.slice(0, limit);
@@ -11194,7 +11420,7 @@ async function handleApi(req, res) {
         fallbackSessionIndexMs: Number(fallbackDiagnostics.sessionIndexMs || 0),
       });
       const mergeStartedAtMs = Date.now();
-      const result = mergeThreadListFallback(appServerResult, fallback, limit);
+      const result = normalizeThreadListResultStatuses(mergeThreadListFallback(appServerResult, fallback, limit));
       threadDisplaySummaryCache.rememberList(result);
       if (Array.isArray(result.data)) result.data = result.data.slice(0, limit);
       if (Array.isArray(result.threads)) result.threads = result.threads.slice(0, limit);
@@ -11221,9 +11447,10 @@ async function handleApi(req, res) {
       });
       if (fallback.length) {
         const decorateStartedAtMs = Date.now();
+        const normalizedFallback = fallback.map((thread) => normalizeStaleContextOnlyActiveThread(attachThreadTaskCardCountsToSummary(thread)));
         const decorated = tokenUsageStatsService.decorateThreadListResult({
           data: attachThreadGoalsToThreadListResult({
-            data: fallback.map(attachThreadTaskCardCountsToSummary),
+            data: normalizedFallback,
           }).data,
           mobileFallback: true,
           warning: err.message || String(err),
@@ -11866,6 +12093,8 @@ module.exports = {
   isHiddenThread,
   mergeThreadListFallback,
   mimeFor,
+  normalizeStaleContextOnlyActiveThread,
+  normalizeThreadListResultStatuses,
   previewRootsForThread,
   previewFileReferencesFromText,
   parseThreadTurnsCursor,
