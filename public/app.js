@@ -364,7 +364,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v320";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v321";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -3826,10 +3826,24 @@ function applyDraftRuntimeSelection(draft) {
   state.composerPermissionMode = permission && state.permissionModeOptions.includes(permission) ? permission : "";
 }
 
-function replacePendingAttachments(items, options = {}) {
-  for (const item of state.pendingAttachments) {
-    if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+function revokeAttachmentPreviewUrls(attachments) {
+  for (const item of attachments || []) {
+    if (item && item.previewUrl) URL.revokeObjectURL(item.previewUrl);
   }
+}
+
+function scheduleAttachmentPreviewUrlRevoke(attachments, delayMs = 180000) {
+  const urls = (attachments || [])
+    .map((item) => item && item.previewUrl)
+    .filter(Boolean);
+  if (!urls.length) return;
+  setTimeout(() => {
+    revokeAttachmentPreviewUrls(urls.map((previewUrl) => ({ previewUrl })));
+  }, Math.max(1000, Number(delayMs) || 180000));
+}
+
+function replacePendingAttachments(items, options = {}) {
+  if (options.revokePreviewUrls !== false) revokeAttachmentPreviewUrls(state.pendingAttachments);
   state.pendingAttachments = Array.isArray(items) ? items : [];
   renderAttachmentList();
   if (options.saveDraft !== false) scheduleCurrentDraftSave();
@@ -15582,7 +15596,12 @@ function removeAttachment(id) {
 
 function clearPendingAttachments(options = {}) {
   const draftKey = currentDraftKey();
-  replacePendingAttachments([], { saveDraft: false });
+  const attachmentsToReleaseLater = options.revokePreviewUrls === false ? state.pendingAttachments.slice() : [];
+  replacePendingAttachments([], {
+    saveDraft: false,
+    revokePreviewUrls: options.revokePreviewUrls,
+  });
+  if (attachmentsToReleaseLater.length) scheduleAttachmentPreviewUrlRevoke(attachmentsToReleaseLater);
   if (options.deleteDraft !== false && draftKey) {
     deleteDraftAttachments(draftKey).catch((err) => {
       postClientEvent("draft_attachment_clear_failed", { message: err.message || String(err) });
@@ -16358,7 +16377,7 @@ async function sendMessage(event) {
       composerId: "thread-composer",
     });
     setComposerText("");
-    clearPendingAttachments();
+    clearPendingAttachments({ revokePreviewUrls: false });
     writeCurrentDraftToKey(submittedDraftKey);
     if (!steering) {
       renderComposerSettings();
@@ -16484,7 +16503,7 @@ async function sendNewThreadMessage(text, hasContent, input) {
     state.composerPermissionMode = submittedPermissionMode || "";
     if (state.events) connectEvents();
     setComposerText("");
-    clearPendingAttachments();
+    clearPendingAttachments({ revokePreviewUrls: false });
     clearDraftForKey(submittedDraftKey);
     writeCurrentDraftToKey(draftKeyForThread(threadId));
     if (input) input.blur();

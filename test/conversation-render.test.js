@@ -29,7 +29,8 @@ function functionSourceFrom(source, name) {
   const start = source.indexOf(`function ${name}(`);
   assert.notEqual(start, -1, `missing function ${name}`);
   const body = functionBodyFrom(source, name);
-  const open = source.indexOf("{", start);
+  const open = source.indexOf(") {", start) + 2;
+  assert.notEqual(open, 1, `missing function body ${name}`);
   return `${source.slice(start, open + 1)}${body}}`;
 }
 
@@ -102,6 +103,39 @@ function evaluatedLocalUserMessageItem() {
     "localUserMessageItem",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`${sources.join("\n")}\nreturn localUserMessageItem;`)();
+}
+
+function evaluatedPendingAttachmentClearHarness() {
+  const sources = [
+    "revokeAttachmentPreviewUrls",
+    "scheduleAttachmentPreviewUrlRevoke",
+    "replacePendingAttachments",
+    "clearPendingAttachments",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const harness = Function(`
+const revoked = [];
+const timers = [];
+const URL = { revokeObjectURL(value) { revoked.push(value); } };
+const state = { pendingAttachments: [] };
+function renderAttachmentList() {}
+function scheduleCurrentDraftSave() {}
+function currentDraftKey() { return "thread-draft"; }
+function deleteDraftAttachments() { return Promise.resolve(); }
+function postClientEvent() {}
+function setTimeout(fn, delayMs) {
+  timers.push({ fn, delayMs });
+  return timers.length;
+}
+${sources.join("\n")}
+return {
+  state,
+  revoked,
+  timers,
+  replacePendingAttachments,
+  clearPendingAttachments,
+};
+  `)();
+  return harness;
 }
 
 function evaluatedImageViewRenderer() {
@@ -886,6 +920,37 @@ test("local pending image attachments render browser previews before upload proj
   assert.match(html, /src="blob:http:\/\/127\.0\.0\.1:8787\/local-preview"/);
   assert.doesNotMatch(html, /class="input-attachment"[\s\S]*homeai-upload-AFF20AEE/);
   assert.doesNotMatch(html, /\/api\/uploads\/file\?path=homeai-upload-AFF20AEE/);
+});
+
+test("successful sends keep local pending image blob previews alive until durable projection can replace them", () => {
+  const harness = evaluatedPendingAttachmentClearHarness();
+  harness.state.pendingAttachments = [
+    { previewUrl: "blob:http://127.0.0.1:8787/pending-image" },
+  ];
+
+  harness.clearPendingAttachments({ revokePreviewUrls: false });
+
+  assert.equal(harness.state.pendingAttachments.length, 0);
+  assert.deepEqual(harness.revoked, []);
+  assert.equal(harness.timers.length, 1);
+  assert.ok(harness.timers[0].delayMs >= 1000);
+  harness.timers[0].fn();
+  assert.deepEqual(harness.revoked, ["blob:http://127.0.0.1:8787/pending-image"]);
+});
+
+test("replacing unsent attachments still revokes stale local image blobs immediately", () => {
+  const harness = evaluatedPendingAttachmentClearHarness();
+  harness.state.pendingAttachments = [
+    { previewUrl: "blob:http://127.0.0.1:8787/old-image" },
+  ];
+
+  harness.replacePendingAttachments([
+    { previewUrl: "blob:http://127.0.0.1:8787/new-image" },
+  ]);
+
+  assert.deepEqual(harness.revoked, ["blob:http://127.0.0.1:8787/old-image"]);
+  assert.equal(harness.state.pendingAttachments.length, 1);
+  assert.equal(harness.state.pendingAttachments[0].previewUrl, "blob:http://127.0.0.1:8787/new-image");
 });
 
 test("live detail refresh can patch changed visible items without replacing the whole turn", () => {
