@@ -4,8 +4,10 @@ Last compacted: 2026-06-08T13:27:43.304Z
 
 ## 2026-06-20 v316 Incremental Thread Rendering Stabilization
 
-- Status: implemented and validated locally; not committed, not deployed, and
+- Status: implemented, validated, committed, and deployed to Mac production;
   not pushed in this turn.
+- Source commit:
+  - `ee0efc0` `fix: 稳定流式输出渲染`
 - User-visible issue:
   - During live intermediate output, thread detail still had visible vertical
     jitter and occasional whole-page shaking. User specifically requested
@@ -44,6 +46,18 @@ Last compacted: 2026-06-08T13:27:43.304Z
   - `npm test` passed: 527 tests.
   - AI Ops evidence ledger:
     `evidence-9ad54973-705a-4a35-9d29-d28d2e7b4e2d`.
+- Deployment:
+  - Executed central Mac plugin deploy with no listener restart:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart none --health-url http://127.0.0.1:8787/api/public-config --execute --json`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260620T021044Z-plugin-codex-mobile-web-manual`.
+  - Production readback showed:
+    `clientBuildId=0.1.11|codex-mobile-shell-v316`,
+    `shellCacheName=codex-mobile-shell-v316`,
+    `ready=true`, platform `darwin`, and production workspace path
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Deploy evidence ledger:
+    `evidence-9b0d54ae-7a5e-41c8-a3d2-84b18db971c6`.
 
 ## 2026-06-20 Public PR #76 Existing-Thread Spinner Fix
 
