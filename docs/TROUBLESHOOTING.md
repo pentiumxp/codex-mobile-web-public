@@ -1489,8 +1489,11 @@ newly created workspace is rejected by `/api/threads/new-message`, check:
 
 - `/api/public-config.workspaceCreate.enabled` should be true.
 - `CODEX_MOBILE_WORKSPACE_CREATE_ROOTS` should point only at existing parent
-  directories. If unset, Mobile Web uses the user's Documents folder, then the
-  user profile folder.
+  directories. `CODEX_MOBILE_WORKSPACE_DEFAULT_CREATE_ROOT` can select the
+  default parent among those allowed roots. If both are unset and Mobile Web is
+  running from a `HermesMobileDev` development checkout, it uses that
+  development root before falling back to the user's Documents folder and then
+  the user profile folder.
 - `%USERPROFILE%\.codex-mobile-web\workspace-registry.json` should contain only
   bounded metadata for Mobile Web-created workspaces: cwd, label, parent,
   source, and timestamps.

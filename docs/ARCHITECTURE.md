@@ -129,9 +129,14 @@ not copied to public release or `.agent-context`.
 allowed create root, then makes that cwd visible to Mobile Web thread-list and
 new-thread routes. It accepts only a simple folder name, rejects path traversal,
 absolute paths, Windows reserved names, and invalid path characters. Allowed
-roots default to `%USERPROFILE%\Documents` and `%USERPROFILE%`; deployments can
-override them with `CODEX_MOBILE_WORKSPACE_CREATE_ROOTS`, and the registry file
-can be moved with `CODEX_MOBILE_WORKSPACE_REGISTRY_FILE`.
+roots default to the configured default create root, then fallback user roots.
+When `CODEX_MOBILE_WORKSPACE_DEFAULT_CREATE_ROOT` is unset and the app is
+running from a `HermesMobileDev` development checkout, that development root is
+used before `%USERPROFILE%\Documents` and `%USERPROFILE%`. Deployments can
+override the selectable parent roots with `CODEX_MOBILE_WORKSPACE_CREATE_ROOTS`,
+choose which allowed root is selected by default with
+`CODEX_MOBILE_WORKSPACE_DEFAULT_CREATE_ROOT`, and move the registry file with
+`CODEX_MOBILE_WORKSPACE_REGISTRY_FILE`.
 
 By default, Mobile-created workspaces stay in the Mobile registry only. Mac
 single-runtime deployments that need Codex Desktop and embedded Codex Mobile to

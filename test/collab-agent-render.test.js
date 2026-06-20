@@ -83,7 +83,7 @@ test("live operation cards dock at the bottom and expose only the newest operati
   assert.match(functionBody("visibleItemsForTurn"), /const filtered = visible\.filter\(Boolean\)/);
   assert.match(functionBody("isSupersededLiveTurn"), /mobileSupersededLive/);
   assert.match(functionBody("visibleItemsForTurn"), /filtered\.every\(\(entry\) => isTurnUsageSummaryItem\(entry\.item\)\)/);
-  assert.match(functionBody("visibleItemsForTurn"), /return filtered/);
+  assert.match(functionBody("visibleItemsForTurn"), /return limitRawThreadVisibleEntries\(filtered\)/);
   assert.doesNotMatch(functionBody("visibleItemsForTurn"), /const showOperations/);
   assert.doesNotMatch(functionBody("visibleItemsForTurn"), /latestOperationEntry/);
   assert.doesNotMatch(functionBody("visibleItemsForTurn"), /operationEntryByKey = new Map/);

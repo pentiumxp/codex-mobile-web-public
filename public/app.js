@@ -368,7 +368,7 @@ const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v341";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v342";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -9157,6 +9157,28 @@ function workspaceCreateRootLabel() {
   return state.workspaceCreateRoot || state.workspaceCreateRoots[0] || "";
 }
 
+function workspaceCreateSelectedRoot() {
+  const select = $("createWorkspaceRootSelect");
+  return String(select && select.value || workspaceCreateRootLabel() || "").trim();
+}
+
+function populateCreateWorkspaceRootSelect() {
+  const select = $("createWorkspaceRootSelect");
+  if (!select) return;
+  const roots = normalizeOptionList(state.workspaceCreateRoots);
+  const preferred = workspaceCreateRootLabel();
+  select.textContent = "";
+  for (const root of roots) {
+    const option = document.createElement("option");
+    option.value = root;
+    option.textContent = root;
+    if (normalizeFsPath(root) === normalizeFsPath(preferred)) option.selected = true;
+    select.appendChild(option);
+  }
+  select.hidden = roots.length <= 1;
+  if (roots.length <= 1) select.value = roots[0] || "";
+}
+
 function setCreateWorkspaceError(message) {
   const errorNode = $("createWorkspaceError");
   if (errorNode) {
@@ -9168,9 +9190,11 @@ function setCreateWorkspaceError(message) {
 function setCreateWorkspaceBusy(busy) {
   state.workspaceCreateBusy = Boolean(busy);
   const input = $("createWorkspaceInput");
+  const rootSelect = $("createWorkspaceRootSelect");
   const submit = $("createWorkspaceSubmit");
   const cancel = $("createWorkspaceCancel");
   if (input) input.disabled = state.workspaceCreateBusy;
+  if (rootSelect) rootSelect.disabled = state.workspaceCreateBusy;
   if (submit) submit.disabled = state.workspaceCreateBusy;
   if (cancel) cancel.disabled = state.workspaceCreateBusy;
 }
@@ -9186,8 +9210,15 @@ function openCreateWorkspaceDialog() {
   if (!dialog || !input) return;
   input.value = "";
   setCreateWorkspaceError("");
+  populateCreateWorkspaceRootSelect();
   setCreateWorkspaceBusy(false);
-  if (root) root.textContent = workspaceCreateRootLabel() ? `Create under ${workspaceCreateRootLabel()}` : "Create a local workspace folder";
+  if (root) {
+    const roots = normalizeOptionList(state.workspaceCreateRoots);
+    const label = workspaceCreateRootLabel();
+    root.textContent = label
+      ? (roots.length > 1 ? "Create under" : `Create under ${label}`)
+      : "Create a local workspace folder";
+  }
   dialog.classList.remove("hidden");
   setTimeout(() => input.focus(), 30);
   publishPluginNavigationState({ force: true });
@@ -9242,7 +9273,7 @@ async function submitCreateWorkspace(event) {
     const result = await api("/api/workspaces", {
       method: "POST",
       timeoutMs: 30000,
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, parent: workspaceCreateSelectedRoot() }),
     });
     closeCreateWorkspaceDialog({ force: true });
     await selectCreatedWorkspace(result && result.workspace);

@@ -60,6 +60,44 @@ test("workspace registry is idempotent for an existing directory", () => {
   assert.deepEqual(service.list().map((workspace) => workspace.cwd), [existing]);
 });
 
+test("workspace registry prefers configured default root before Documents fallback", () => {
+  const home = tempRoot();
+  const devRoot = tempRoot();
+  fs.mkdirSync(path.join(home, "Documents"));
+  const service = createWorkspaceRegistryService({
+    storageFile: path.join(home, "workspaces.json"),
+    homeDir: home,
+    defaultCreateRoot: devRoot,
+  });
+
+  const result = service.create({ name: "Growth" });
+
+  assert.equal(service.defaultCreateRoot(), devRoot);
+  assert.equal(result.createRoot, devRoot);
+  assert.equal(result.workspace.cwd, path.join(devRoot, "Growth"));
+});
+
+test("workspace registry honors a configured default root inside explicit allowed roots", () => {
+  const root = tempRoot();
+  const firstRoot = path.join(root, "Documents");
+  const devRoot = path.join(root, "HermesMobileDev");
+  fs.mkdirSync(firstRoot);
+  fs.mkdirSync(devRoot);
+  const service = createWorkspaceRegistryService({
+    storageFile: path.join(root, "workspaces.json"),
+    homeDir: root,
+    createRoots: [firstRoot, devRoot],
+    defaultCreateRoot: devRoot,
+  });
+
+  const result = service.create({ name: "Note" });
+
+  assert.equal(service.defaultCreateRoot(), devRoot);
+  assert.equal(result.createRoot, devRoot);
+  assert.equal(result.workspace.cwd, path.join(devRoot, "Note"));
+  assert.deepEqual(service.createRoots(), [firstRoot, devRoot]);
+});
+
 test("workspace registry syncs mobile-created workspaces into Codex Desktop global state", () => {
   const root = tempRoot();
   const globalStateFile = path.join(root, "codex-home", ".codex-global-state.json");

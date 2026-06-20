@@ -2,6 +2,39 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-20 Workspace Create Default Dev Root v342
+
+- Status: implemented and locally validated. Not deployed in this entry.
+- Trigger:
+  - Mobile-created Workspace folders should not default to the user's
+    `Documents` directory. The default parent should be the development root,
+    and users should be able to configure/select the create parent.
+  - The previous public push failed CI because full public `npm test` still had
+    stale shell-version and live-operation-dock assertions.
+- Change:
+  - Added `CODEX_MOBILE_WORKSPACE_DEFAULT_CREATE_ROOT`.
+  - When the env var is unset and the server is running from a
+    `HermesMobileDev` checkout, Workspace creation now defaults to that
+    development root before falling back to user `Documents` / home.
+  - `CODEX_MOBILE_WORKSPACE_CREATE_ROOTS` remains the allowed-parent allowlist.
+    The create dialog now shows a parent selector when multiple allowed roots
+    are available and submits the selected `parent`.
+  - Frontend/service-worker shell advanced to `codex-mobile-shell-v342`.
+  - README and docs describe the new default/config behavior.
+- Validation:
+  - Passed:
+    `node --test test/workspace-registry-service.test.js test/new-thread-route.test.js test/mobile-viewport.test.js`.
+  - Passed: `npm test` (564 tests).
+  - Passed: `npm run check`.
+  - Passed: `npm run check:macos`.
+  - Passed: `git diff --check`.
+  - Passed center required check:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - AI Ops evidence ledger record:
+    `evidence-089314b1-2f3c-44f6-8567-ec56798408dc`.
+  - Pending before publish: private/public push verification and GitHub public
+    CI rerun.
+
 ## 2026-06-20 V4 Responded User Message Visibility v338
 
 - Status: implemented, validated, and deployed to Mac production. Not pushed to
@@ -7220,6 +7253,52 @@ The previous full handoff was archived and should be opened only when old proven
     ChatGPT cloud. Use a genuinely public HTTPS reverse proxy, or a Tailscale
     Funnel endpoint with public DNS, forwarding to this Mac's
     `http://192.168.10.110:8788`.
+
+## 2026-06-20 NAS Public HTTPS Entry Check
+
+- User provided `https://hermes-xuxin.synology.me:8788/` as the intended NAS
+  public HTTPS entry for ChatGPT MCP.
+- Validation:
+  - DNS resolves `hermes-xuxin.synology.me` to `218.79.97.194`.
+  - `https://hermes-xuxin.synology.me:8788/...` fails with TCP connection
+    refused, including with TLS verification disabled. The public `8788` port
+    is not accepting connections.
+  - `https://hermes-xuxin.synology.me/...` on 443 is reachable, but TLS
+    verification fails because the presented certificate is self-signed.
+  - With TLS verification disabled, 443 returns NAS-level HTTP 404 for both
+    `/.well-known/oauth-protected-resource` and `/api/chatgpt-pro/mcp`, so it
+    is not currently reverse-proxying those paths to the Mac MCP sidecar.
+  - The Mac sidecar itself remains healthy and reachable on LAN at
+    `http://192.168.10.110:8788`.
+- Required NAS/router fix:
+  - Either expose public HTTPS `8788` on the NAS and reverse proxy it to
+    `http://192.168.10.110:8788`, or use public HTTPS 443 with path/host rules
+    forwarding the MCP/OAuth paths to the same LAN target.
+  - Use a publicly trusted certificate for `hermes-xuxin.synology.me`; ChatGPT
+    will not accept the current self-signed certificate.
+
+## 2026-06-20 NAS Public HTTPS Entry Retest
+
+- Status: network path improved; TLS trust still blocks ChatGPT custom app.
+- Retest of `https://hermes-xuxin.synology.me:8788`:
+  - TCP connection to public port `8788` now succeeds.
+  - With normal TLS verification, `curl` fails:
+    `SSL certificate problem: unable to get local issuer certificate`.
+  - With `curl -k`, NAS reverse proxy reaches the Mac MCP/OAuth sidecar:
+    `/.well-known/oauth-protected-resource` returns HTTP 200 and
+    `/api/chatgpt-pro/mcp` returns HTTP 401 with the expected OAuth challenge.
+  - Presented certificate is still Synology self-signed:
+    subject `/C=TW/L=Taipel/O=Synology Inc./CN=synology`,
+    issuer `/C=TW/L=Taipel/O=Synology Inc./CN=Synology Inc. CA`.
+- ChatGPT custom app form was updated to
+  `https://hermes-xuxin.synology.me:8788/api/chatgpt-pro/mcp` and submitted.
+  The create button temporarily disabled and then re-enabled, but ChatGPT did
+  not enter OAuth authorization or create the app. No visible final error was
+  left in the dialog on this retry.
+- Required remaining fix:
+  - Install/select a publicly trusted certificate for
+    `hermes-xuxin.synology.me` on the NAS reverse proxy serving port `8788`,
+    then retry ChatGPT app creation with the same MCP URL.
   - Contract caveat: the formal Mac deploy harness has `-SkipRestart`, but it
     deploys from the public mirror. Because this v318 hotfix was private-only at
     the time, the production static sync was done as a bounded hotfix rather
