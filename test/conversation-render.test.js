@@ -26,10 +26,12 @@ function functionBodyFrom(source, name) {
 }
 
 function functionSourceFrom(source, name) {
-  const start = source.indexOf(`function ${name}(`);
+  let start = source.indexOf(`function ${name}(`);
   assert.notEqual(start, -1, `missing function ${name}`);
+  if (source.slice(Math.max(0, start - 6), start) === "async ") start -= 6;
   const body = functionBodyFrom(source, name);
-  const open = source.indexOf("{", start);
+  const open = source.indexOf(") {", start) + 2;
+  assert.notEqual(open, 1, `missing function body ${name}`);
   return `${source.slice(start, open + 1)}${body}}`;
 }
 
@@ -39,6 +41,31 @@ function functionBody(name) {
 
 function serverFunctionBody(name) {
   return functionBodyFrom(serverJs, name);
+}
+
+function evaluatedServerSupersededLivePruner() {
+  const sources = [
+    "isSupersededLiveTurn",
+    "isUserQuestionItem",
+    "userMessageContentParts",
+    "imageUrlValueForUserMessagePart",
+    "textValueForUserMessagePart",
+    "isImageUserMessagePart",
+    "textContainsRenderableUploadSummary",
+    "userMessageHasVisualAttachment",
+    "isMeaningfulSupersededLiveItem",
+    "pruneSupersededLiveShellTurns",
+  ].map((name) => functionSourceFrom(serverJs, name));
+  return Function(`
+function isReasoningOnlyItem(item) { return Boolean(item && item.type === "reasoning"); }
+function isTurnUsageSummaryItem(item) { return Boolean(item && item.type === "turnUsageSummary"); }
+function isOperationalItem(item) { return Boolean(item && item.type === "commandExecution"); }
+function isAssistantReceiptItem(item) { return Boolean(item && item.type === "agentMessage"); }
+function isVisualReceiptItem(item) { return Boolean(item && (item.type === "imageView" || item.type === "imageGeneration")); }
+function isContextCompactionType(type) { return /context/i.test(String(type || "")); }
+${sources.join("\n")}
+return pruneSupersededLiveShellTurns;
+`)();
 }
 
 function evaluatedAttachmentSummaryParser() {
@@ -55,7 +82,7 @@ function evaluatedInputContentRenderer() {
   return evaluatedInputContentRendererWithKey("");
 }
 
-function evaluatedInputContentRendererWithKey(key = "") {
+function evaluatedInputContentRendererWithKey(key = "", options = {}) {
   const sources = [
     "escapeHtml",
     "shortPath",
@@ -75,6 +102,13 @@ function evaluatedInputContentRendererWithKey(key = "") {
     "isLikelyAbsoluteLocalPath",
     "canRenderImageAttachment",
     "authenticatedApiContentUrl",
+    "protectedGeneratedImageSrc",
+    "isHermesEmbedMode",
+    "imageDiagnosticSourceKind",
+    "shouldRenderProtectedImageDirectly",
+    "protectedImageDisplaySrc",
+    "imageLoadingModeForSource",
+    "protectedImageSourceAttribute",
     "uploadFileUrl",
     "localFilePreviewContentUrl",
     "imageContentUrlForPath",
@@ -87,10 +121,55 @@ function evaluatedInputContentRendererWithKey(key = "") {
     "renderAttachmentSummary",
     "renderInputContent",
   ].map((name) => functionSourceFrom(appJs, name));
+  const pluginEmbed = options.embedded ? { embedded: true } : null;
   return Function(
     "URLSearchParams",
-    `const state = { key: ${JSON.stringify(String(key || ""))} };\nconst THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";\n${sources.join("\n")}\nreturn renderInputContent;`,
+    `const state = { key: ${JSON.stringify(String(key || ""))}, pluginEmbed: ${JSON.stringify(pluginEmbed)} };\nconst window = { location: { origin: "http://127.0.0.1:8787" } };\nconst THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";\nconst PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";\n${sources.join("\n")}\nreturn renderInputContent;`,
   )(URLSearchParams);
+}
+
+function evaluatedLocalUserMessageItem() {
+  const sources = [
+    "formatFileSize",
+    "localAttachmentPreviewUrl",
+    "appendLocalAttachmentSummary",
+    "localImageInputPartsForAttachments",
+    "localUserMessageItem",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`${sources.join("\n")}\nreturn localUserMessageItem;`)();
+}
+
+function evaluatedPendingAttachmentClearHarness() {
+  const sources = [
+    "revokeAttachmentPreviewUrls",
+    "scheduleAttachmentPreviewUrlRevoke",
+    "replacePendingAttachments",
+    "clearPendingAttachments",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const harness = Function(`
+const revoked = [];
+const timers = [];
+const URL = { revokeObjectURL(value) { revoked.push(value); } };
+const state = { pendingAttachments: [] };
+function renderAttachmentList() {}
+function scheduleCurrentDraftSave() {}
+function currentDraftKey() { return "thread-draft"; }
+function deleteDraftAttachments() { return Promise.resolve(); }
+function postClientEvent() {}
+function setTimeout(fn, delayMs) {
+  timers.push({ fn, delayMs });
+  return timers.length;
+}
+${sources.join("\n")}
+return {
+  state,
+  revoked,
+  timers,
+  replacePendingAttachments,
+  clearPendingAttachments,
+};
+  `)();
+  return harness;
 }
 
 function evaluatedImageViewRenderer() {
@@ -99,6 +178,13 @@ function evaluatedImageViewRenderer() {
     "shortPath",
     "normalizeFsPath",
     "isCodexMobileUploadPath",
+    "protectedGeneratedImageSrc",
+    "isHermesEmbedMode",
+    "imageDiagnosticSourceKind",
+    "shouldRenderProtectedImageDirectly",
+    "protectedImageDisplaySrc",
+    "imageLoadingModeForSource",
+    "protectedImageSourceAttribute",
     "uploadFileUrl",
     "authenticatedApiContentUrl",
     "localFilePreviewContentUrl",
@@ -110,26 +196,100 @@ function evaluatedImageViewRenderer() {
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(
     "URLSearchParams",
-    `const state = { key: "test-key", currentThreadId: "thread-id" };\n${sources.join("\n")}\nreturn renderImageView;`,
+    `const state = { key: "test-key", currentThreadId: "thread-id", pluginEmbed: null };\nconst window = { location: { origin: "http://127.0.0.1:8787" } };\nconst PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";\n${sources.join("\n")}\nreturn renderImageView;`,
   )(URLSearchParams);
 }
 
-function evaluatedConversationImageErrorHandler() {
+function evaluatedConversationImageErrorHandler(options = {}) {
   const sources = [
     "failedAppImageContainer",
+    "setRetryingAppImage",
     "markFailedAppImage",
+    "clearFailedAppImage",
+    "protectedAppImageElementSrc",
+    "protectedGeneratedImageSrc",
+    "imageStillConnected",
+    "protectedAppImageUrlApi",
+    "revokeProtectedAppImageObjectUrl",
+    "retryProtectedAppImageSource",
+    "blobToDataUrl",
+    "protectedAppImageRecoveredUrl",
+    "applyProtectedAppImageRecoveredUrl",
+    "handleProtectedAppImageError",
+    "probeFailedAuthenticatedImage",
     "handleConversationImageError",
   ].map((name) => functionSourceFrom(appJs, name));
-  return Function(`${sources.join("\n")}\nreturn handleConversationImageError;`)();
+  return Function(
+    "deps",
+    `const window = deps.window;
+const state = deps.state;
+const fetch = deps.fetch;
+const FileReader = deps.FileReader;
+const isHermesEmbedMode = deps.isHermesEmbedMode;
+const requestHermesPluginRefresh = deps.requestHermesPluginRefresh;
+${sources.join("\n")}
+return handleConversationImageError;`,
+  )(Object.assign({
+    window: { location: { origin: "http://127.0.0.1:8787" } },
+    state: { key: "session-key", imageAuthRefreshRequested: false },
+    fetch: () => Promise.reject(new Error("unexpected fetch")),
+    FileReader: undefined,
+    isHermesEmbedMode: () => false,
+    requestHermesPluginRefresh: () => {},
+  }, options));
 }
 
-function evaluatedFailedImageScanner() {
+function evaluatedConversationImageLoadHandler() {
   const sources = [
     "failedAppImageContainer",
+    "setRetryingAppImage",
+    "clearFailedAppImage",
+    "handleConversationImageLoad",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`${sources.join("\n")}\nreturn handleConversationImageLoad;`)();
+}
+
+function evaluatedFailedImageScanner(options = {}) {
+  const sources = [
+    "failedAppImageContainer",
+    "setRetryingAppImage",
     "markFailedAppImage",
+    "clearFailedAppImage",
+    "imageHadExplicitLoadError",
+    "isLazyAppImage",
+    "protectedGeneratedImageSrc",
+    "imageDiagnosticSourceKind",
+    "protectedAppImageElementSrc",
+    "shouldRenderProtectedImageDirectly",
+    "shouldProactivelyMarkFailedImage",
+    "imageStillConnected",
+    "protectedAppImageUrlApi",
+    "revokeProtectedAppImageObjectUrl",
+    "retryProtectedAppImageSource",
+    "blobToDataUrl",
+    "protectedAppImageRecoveredUrl",
+    "applyProtectedAppImageRecoveredUrl",
+    "handleProtectedAppImageError",
     "scanFailedAppImages",
   ].map((name) => functionSourceFrom(appJs, name));
-  return Function(`${sources.join("\n")}\nreturn scanFailedAppImages;`)();
+  return Function(
+    "deps",
+    `const window = deps.window;
+const state = deps.state;
+const fetch = deps.fetch;
+const FileReader = deps.FileReader;
+const isHermesEmbedMode = deps.isHermesEmbedMode;
+const requestHermesPluginRefresh = deps.requestHermesPluginRefresh;
+${sources.join("\n")}
+return scanFailedAppImages;`,
+  )(Object.assign({
+    window: { location: { origin: "http://127.0.0.1:8787" } },
+    state: { key: "session-key", imageAuthRefreshRequested: false },
+    fetch: () => Promise.reject(new Error("unexpected fetch")),
+    FileReader: undefined,
+    isHermesEmbedMode: () => false,
+    requestHermesPluginRefresh: () => {},
+  }, options));
 }
 
 function evaluatedTokenUsageSummaryText() {
@@ -153,6 +313,8 @@ function evaluatedUserMessagesLikelySame() {
     "stripAttachmentSummaryLinePrefix",
     "parseAttachmentLine",
     "splitAttachmentSummaryText",
+    "isLikelyAbsoluteLocalPath",
+    "canRenderImageAttachment",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
     "isTurnUsageSummaryItem",
@@ -160,6 +322,7 @@ function evaluatedUserMessagesLikelySame() {
     "userMessageComparableParts",
     "userMessagePathOverlap",
     "comparablePathName",
+    "comparablePathNamesLikelySame",
     "userMessagePathNameOverlap",
     "userMessagesLikelySame",
   ].map((name) => functionSourceFrom(appJs, name));
@@ -178,6 +341,8 @@ function evaluatedMergeItemsPreservingLocalVisible() {
     "stripAttachmentSummaryLinePrefix",
     "parseAttachmentLine",
     "splitAttachmentSummaryText",
+    "isLikelyAbsoluteLocalPath",
+    "canRenderImageAttachment",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
     "isTurnUsageSummaryItem",
@@ -185,6 +350,7 @@ function evaluatedMergeItemsPreservingLocalVisible() {
     "userMessageComparableParts",
     "userMessagePathOverlap",
     "comparablePathName",
+    "comparablePathNamesLikelySame",
     "userMessagePathNameOverlap",
     "userMessageSpecificity",
     "userMessagesLikelySame",
@@ -218,6 +384,73 @@ return mergeItemsPreservingLocalVisible;
 	`)();
 }
 
+function evaluatedMergeItemsPreservingLocalVisibleWithRealVisibleWeight() {
+  const sources = [
+    "statusText",
+    "normalizeFsPath",
+    "imageUrlValue",
+    "isInputTextPart",
+    "inputTextValue",
+    "isTruncatedImagePayloadPart",
+    "isInputImagePart",
+    "attachmentSummaryMarkerMatch",
+    "stripAttachmentSummaryLinePrefix",
+    "parseAttachmentLine",
+    "splitAttachmentSummaryText",
+    "isLikelyAbsoluteLocalPath",
+    "canRenderImageAttachment",
+    "isMuxUserMessage",
+    "isOptimisticUserMessage",
+    "isTurnUsageSummaryItem",
+    "normalizeComparableText",
+    "userMessageComparableParts",
+    "userMessagePathOverlap",
+    "comparablePathName",
+    "comparablePathNamesLikelySame",
+    "userMessagePathNameOverlap",
+    "userMessageSpecificity",
+    "userMessagesLikelySame",
+    "userMessagesCanShadow",
+    "hasMatchingIncomingUserMessage",
+    "hasMatchingRealUserMessage",
+    "removeShadowedMuxUserMessages",
+    "imageSourceSignature",
+    "compactStructuredForSignature",
+    "inputContentSignature",
+    "visibleItemSignature",
+    "itemVisibleWeight",
+    "userMessageShadowPriority",
+    "mergeItemPreservingVisibleFields",
+    "mergeLikelySameUserMessage",
+    "dedupeLikelySameUserMessages",
+    "comparableVisibleTextItem",
+    "comparableVisibleText",
+    "visibleTextItemsLikelySame",
+    "hasMatchingIncomingVisibleItem",
+    "mergeVisibleTextItemPreservingRenderIdentity",
+    "mergeItemsPreservingLocalVisible",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`
+function truncateMiddle(value) { return String(value || ""); }
+function isReasoningItem(item) { return Boolean(item && item.type === "reasoning"); }
+function isContextCompactionItem() { return false; }
+function contextCompactionNotice() { return null; }
+function isOperationalItem() { return false; }
+function operationDetailText() { return ""; }
+function imageViewPath(item) { return item && item.path || ""; }
+function imageViewContentUrl(item) { return item && item.contentUrl || ""; }
+function imageViewUrl(item) { return item && item.url || ""; }
+function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false) {
+  if (!item || itemVisibleWeight(item) <= 0) return false;
+  if (item.type === "userMessage" && /^mux-user-/.test(String(item.id || ""))) return true;
+  return preserveLocalVisible && !isReasoningItem(item);
+}
+function dedupeTurnUsageSummaryItems(items) { return items || []; }
+${sources.join("\n")}
+return mergeItemsPreservingLocalVisible;
+	`)();
+}
+
 function evaluatedMergeThreadPreservingVisibleItems() {
   const sources = [
     "normalizeFsPath",
@@ -230,6 +463,8 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "stripAttachmentSummaryLinePrefix",
     "parseAttachmentLine",
     "splitAttachmentSummaryText",
+    "isLikelyAbsoluteLocalPath",
+    "canRenderImageAttachment",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
     "isTurnUsageSummaryItem",
@@ -237,6 +472,7 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "userMessageComparableParts",
     "userMessagePathOverlap",
     "comparablePathName",
+    "comparablePathNamesLikelySame",
     "userMessagePathNameOverlap",
     "userMessageSpecificity",
     "userMessagesLikelySame",
@@ -247,10 +483,19 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "userMessageShadowPriority",
     "mergeLikelySameUserMessage",
     "dedupeLikelySameUserMessages",
+    "userMessageHasVisualAttachment",
     "normalizeThreadVisibleUserMessages",
+    "shouldDropOptimisticUserMessageForDurable",
     "threadDurableUserMessages",
     "shouldDropInitialSubmissionEchoTurn",
     "threadHasInitialSubmissionEcho",
+    "isV4ProjectionThread",
+    "shouldPreserveV4PendingOverlayItem",
+    "v4ThreadHasPendingMatch",
+    "appendV4PendingOverlayItem",
+    "copyTurnWithOnlyItems",
+    "applyV4PendingOverlay",
+    "mergeV4ProjectionThread",
     "comparableVisibleTextItem",
     "comparableVisibleText",
     "visibleTextItemsLikelySame",
@@ -262,8 +507,9 @@ function evaluatedMergeThreadPreservingVisibleItems() {
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
 const MAX_EXPANDED_VISIBLE_TURNS = 40;
-const state = { activeTurnId: "local-start-turn" };
+const state = { activeTurnId: "local-start-turn", currentThreadId: "thread-new" };
 function isReasoningItem(item) { return Boolean(item && item.type === "reasoning"); }
+function isRecentlySubmittedUserMessage(item) { return Boolean(item && item.mobilePendingSubmission); }
 function itemVisibleWeight(item) { return item ? JSON.stringify(item).length : 0; }
 function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false) {
   if (!item || itemVisibleWeight(item) <= 0) return false;
@@ -299,12 +545,15 @@ function evaluatedNormalizeThreadVisibleUserMessages() {
     "stripAttachmentSummaryLinePrefix",
     "parseAttachmentLine",
     "splitAttachmentSummaryText",
+    "isLikelyAbsoluteLocalPath",
+    "canRenderImageAttachment",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
     "normalizeComparableText",
     "userMessageComparableParts",
     "userMessagePathOverlap",
     "comparablePathName",
+    "comparablePathNamesLikelySame",
     "userMessagePathNameOverlap",
     "userMessageSpecificity",
     "userMessagesLikelySame",
@@ -314,7 +563,9 @@ function evaluatedNormalizeThreadVisibleUserMessages() {
     "userMessageShadowPriority",
     "mergeLikelySameUserMessage",
     "dedupeLikelySameUserMessages",
+    "userMessageHasVisualAttachment",
     "normalizeThreadVisibleUserMessages",
+    "shouldDropOptimisticUserMessageForDurable",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
 function itemVisibleWeight(item) { return JSON.stringify(item || {}).length; }
@@ -338,6 +589,8 @@ function evaluatedLiveUserMessageUpsert() {
     "stripAttachmentSummaryLinePrefix",
     "parseAttachmentLine",
     "splitAttachmentSummaryText",
+    "isLikelyAbsoluteLocalPath",
+    "canRenderImageAttachment",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
     "isTurnUsageSummaryItem",
@@ -345,6 +598,7 @@ function evaluatedLiveUserMessageUpsert() {
     "userMessageComparableParts",
     "userMessagePathOverlap",
     "comparablePathName",
+    "comparablePathNamesLikelySame",
     "userMessagePathNameOverlap",
     "userMessagesLikelySame",
     "userMessagesCanShadow",
@@ -353,7 +607,9 @@ function evaluatedLiveUserMessageUpsert() {
     "userMessageShadowPriority",
     "mergeLikelySameUserMessage",
     "dedupeLikelySameUserMessages",
+    "userMessageHasVisualAttachment",
     "normalizeThreadVisibleUserMessages",
+    "shouldDropOptimisticUserMessageForDurable",
     "upsertItem",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
@@ -399,6 +655,8 @@ function evaluatedVisibleItemsForTurn() {
     "stripAttachmentSummaryLinePrefix",
     "parseAttachmentLine",
     "splitAttachmentSummaryText",
+    "isLikelyAbsoluteLocalPath",
+    "canRenderImageAttachment",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
     "isTurnUsageSummaryItem",
@@ -406,6 +664,7 @@ function evaluatedVisibleItemsForTurn() {
     "userMessageComparableParts",
     "userMessagePathOverlap",
     "comparablePathName",
+    "comparablePathNamesLikelySame",
     "userMessagePathNameOverlap",
     "userMessagesLikelySame",
     "pruneRecentSubmittedUserMessages",
@@ -417,13 +676,18 @@ function evaluatedVisibleItemsForTurn() {
     "liveTurnHasNonUserProgressAfter",
     "isUserVisibleTextReplyItem",
     "liveTurnHasUserVisibleTextReplyAfter",
+    "userMessageHasVisualAttachment",
     "shouldHideDurableLiveUserMessage",
     "isSupersededLiveTurn",
     "shouldHideSupersededLiveUserMessage",
+    "isRawThreadReadMode",
+    "shouldPreserveRawThreadVisibleEntry",
+    "limitRawThreadVisibleEntries",
     "visibleItemsForTurn",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
 const RECENT_SUBMITTED_USER_MESSAGE_TTL_MS = 6 * 60 * 60 * 1000;
+const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const state = {
   currentThreadId: "thread-live",
   currentThread: { id: "thread-live" },
@@ -443,6 +707,8 @@ function evaluatedLatestTurnHelpers() {
   const sources = [
     "turnHasDisplayItems",
     "latestTurn",
+    "latestRawTurn",
+    "latestLiveTurnCandidate",
     "syncActiveTurnFromThread",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
@@ -475,6 +741,48 @@ function updateComposerControls() {}
 ${sources.join("\n")}
 return { state, latestTurn, syncActiveTurnFromThread, interruptDisabled: () => interruptDisabled };
 `)();
+}
+
+function evaluatedLocalSubmissionInserter() {
+  const sources = [
+    "localSubmittedTurnId",
+    "currentThreadHasClientSubmission",
+    "insertLocalSubmittedUserMessage",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function([
+    `
+let mergeCount = 0;
+let syncCount = 0;
+const state = {
+  currentThreadId: "thread-live",
+  currentThread: { id: "thread-live", status: { type: "idle" }, turns: [], mobileLoading: true },
+  threads: [],
+};
+function localUserMessageItem(text, attachments, clientSubmissionId) {
+  return {
+    id: "local-user-" + clientSubmissionId,
+    type: "userMessage",
+    mobilePendingSubmission: true,
+    clientSubmissionId,
+    content: [{ type: "text", text }],
+    attachments,
+  };
+}
+function isCompletedStatus(status) {
+  return status && /completed|failed|cancel|error|interrupted/i.test(status.type || status);
+}
+function mergeThreadIntoThreadList() { mergeCount += 1; }
+function syncActiveTurnFromThread() { syncCount += 1; }
+`,
+    sources.join("\n"),
+    `
+return {
+  state,
+  insertLocalSubmittedUserMessage,
+  counters: () => ({ mergeCount, syncCount }),
+};
+`,
+  ].join("\n"))();
 }
 
 function evaluatedThreadPendingApprovalProjection() {
@@ -557,13 +865,32 @@ test("context compaction notices update status and collapse repeated turn notice
   assert.match(functionBody("isSupersededLiveTurn"), /mobileSupersededLive/);
   assert.match(functionBody("visibleItemsForTurn"), /shouldHideSupersededLiveUserMessage\(turn, item\)/);
   assert.match(functionBody("visibleItemsForTurn"), /filtered\.every\(\(entry\) => isTurnUsageSummaryItem\(entry\.item\)\)/);
-  assert.match(functionBody("visibleItemsForTurn"), /return filtered/);
+  assert.match(functionBody("visibleItemsForTurn"), /return limitRawThreadVisibleEntries\(filtered\)/);
   assert.match(functionBody("visibleItemSignature"), /isContextCompactionItem\(item\)/);
   assert.match(functionBody("visibleItemSignature"), /const notice = contextCompactionNotice\(item, turn\)/);
   assert.match(functionBody("visibleItemSignature"), /if \(!notice\) return null/);
   assert.match(functionBody("visibleItemSignature"), /mobileCompactionStatus: item\.mobileCompactionStatus/);
   assert.match(functionBody("visibleItemSignature"), /notice,/);
   assert.match(functionBody("conversationRenderSignature"), /visibleItemSignature\(entry\.item, turn\)/);
+});
+
+test("raw thread read mode limits visible items per turn while preserving user images", () => {
+  const helpers = evaluatedVisibleItemsForTurn();
+  helpers.state.currentThread.mobileRawThreadRead = true;
+  const turn = {
+    id: "raw-turn",
+    status: "completed",
+    items: [
+      { type: "agentMessage", id: "old-1", text: "old" },
+      { type: "userMessage", id: "user-image", content: [{ type: "input_image", image_url: "/api/uploads/file?path=/tmp/a.jpg" }] },
+      ...Array.from({ length: 40 }, (_, index) => ({ type: "agentMessage", id: `agent-${index}`, text: `message ${index}` })),
+    ],
+  };
+  const visible = helpers.visibleItemsForTurn(turn).map((entry) => entry.item.id);
+  assert.ok(visible.length < turn.items.length);
+  assert.ok(visible.includes("user-image"));
+  assert.ok(visible.includes("agent-39"));
+  assert.equal(visible.includes("old-1"), false);
 });
 
 test("context compaction notices require explicit state and do not infer pending from live turns", () => {
@@ -635,6 +962,83 @@ test("superseded live usage-only shells do not render as blank completed receipt
   );
 });
 
+test("superseded live turns keep uploaded image user messages while hiding stale text steering", () => {
+  const { visibleItemsForTurn } = evaluatedVisibleItemsForTurn();
+  const uploadPath = "/Users/xuxin/.codex-mobile-web/uploads/2026-06-20/thread-id/1781938485528-homeai-upload-080D5F0E.jpg";
+  const turn = {
+    status: { type: "completed", mobileSupersededLive: true, previousType: "inProgress" },
+    items: [
+      { id: "old-user-text", type: "userMessage", content: [{ type: "input_text", text: "old steering prompt" }] },
+      {
+        id: "old-user-image",
+        type: "userMessage",
+        content: [{
+          type: "input_text",
+          text: `Uploaded attachments:\n- homeai-upload-080D5F0E.jpg (image, image/jpeg, 125.6 KB): ${uploadPath}`,
+        }],
+      },
+      { id: "receipt", type: "agentMessage", text: "done" },
+    ],
+  };
+
+  assert.deepEqual(
+    visibleItemsForTurn(turn).map((entry) => entry.item.id),
+    ["old-user-image", "receipt"],
+  );
+});
+
+test("server projection pruning keeps uploaded image user messages in superseded live turns", () => {
+  const pruneSupersededLiveShellTurns = evaluatedServerSupersededLivePruner();
+  const uploadPath = "/Users/xuxin/.codex-mobile-web/uploads/2026-06-20/thread-id/1781938485528-homeai-upload-080D5F0E.jpg";
+  const thread = {
+    turns: [
+      {
+        id: "superseded-with-image",
+        status: { type: "completed", mobileSupersededLive: true, previousType: "inProgress" },
+        items: [
+          { id: "plain-user", type: "userMessage", content: [{ type: "input_text", text: "old prompt" }] },
+          {
+            id: "image-user",
+            type: "userMessage",
+            content: [{
+              type: "input_text",
+              text: `Uploaded attachments:\n- homeai-upload-080D5F0E.jpg (image, image/jpeg, 125.6 KB): ${uploadPath}`,
+            }],
+          },
+          { id: "reasoning", type: "reasoning", text: "hidden" },
+          { id: "receipt", type: "agentMessage", text: "done" },
+        ],
+      },
+      {
+        id: "superseded-user-only",
+        mobileSupersededLive: true,
+        items: [
+          {
+            id: "image-user-only",
+            type: "userMessage",
+            content: [{ type: "input_image", image_url: { url: "data:image/png;base64,AAAA" } }],
+          },
+        ],
+      },
+      {
+        id: "superseded-text-only",
+        mobileSupersededLive: true,
+        items: [{ id: "plain-only", type: "userMessage", text: "old prompt" }],
+      },
+    ],
+  };
+
+  pruneSupersededLiveShellTurns(thread);
+
+  assert.deepEqual(
+    thread.turns.map((turn) => [turn.id, turn.items.map((item) => item.id)]),
+    [
+      ["superseded-with-image", ["image-user", "receipt"]],
+      ["superseded-user-only", ["image-user-only"]],
+    ],
+  );
+});
+
 test("live turn keeps prompt and responded steering messages while hiding only unanswered trailing durable user bubbles", () => {
   const { visibleItemsForTurn } = evaluatedVisibleItemsForTurn();
   const liveTurn = {
@@ -661,6 +1065,33 @@ test("live turn keeps prompt and responded steering messages while hiding only u
   );
 });
 
+test("live turn keeps uploaded image user messages after progress starts", () => {
+  const harness = evaluatedVisibleItemsForTurn();
+  const uploadPath = "/Users/xuxin/.codex-mobile-web/uploads/2026-06-20/thread-id/1781938485528-homeai-upload-080D5F0E.jpg";
+  const liveTurn = {
+    live: true,
+    items: [
+      { id: "real-user-old", type: "userMessage", content: [{ type: "text", text: "old steer" }] },
+      { id: "assistant-progress", type: "agentMessage", text: "working" },
+      {
+        id: "real-user-image",
+        type: "userMessage",
+        content: [{
+          type: "input_text",
+          text: `Uploaded attachments:\n- homeai-upload-080D5F0E.jpg (image, image/jpeg, 125.6 KB): ${uploadPath}`,
+        }],
+      },
+      { id: "real-user-trailing", type: "userMessage", content: [{ type: "input_text", text: "stale trailing steer" }] },
+      { id: "cmd-1", type: "commandExecution", status: "running" },
+    ],
+  };
+
+  assert.deepEqual(
+    harness.visibleItemsForTurn(liveTurn).map((entry) => entry.item.id),
+    ["real-user-old", "assistant-progress", "real-user-image"],
+  );
+});
+
 test("latest turn ignores empty active projection tails", () => {
   const harness = evaluatedLatestTurnHelpers();
   harness.state.currentThread.turns = [
@@ -671,6 +1102,18 @@ test("latest turn ignores empty active projection tails", () => {
   assert.equal(harness.latestTurn().id, "active-with-items");
   harness.syncActiveTurnFromThread();
   assert.equal(harness.state.activeTurnId, "active-with-items");
+  assert.equal(harness.interruptDisabled(), false);
+});
+
+test("active timer can follow an empty active tail when no display live turn exists", () => {
+  const harness = evaluatedLatestTurnHelpers();
+  harness.state.currentThread.turns = [
+    { id: "completed", status: "completed", completedAt: 1781141506, items: [{ id: "final", type: "agentMessage", text: "done" }] },
+    { id: "empty-active-tail", status: "inProgress", itemsView: "notLoaded", items: [] },
+  ];
+  assert.equal(harness.latestTurn().id, "completed");
+  assert.equal(harness.syncActiveTurnFromThread(), undefined);
+  assert.equal(harness.state.activeTurnId, "empty-active-tail");
   assert.equal(harness.interruptDisabled(), false);
 });
 
@@ -732,6 +1175,87 @@ test("live turn keeps current submitted durable user message when projection dro
   );
 });
 
+test("existing thread send inserts a local pending user turn before server projection catches up", () => {
+  const harness = evaluatedLocalSubmissionInserter();
+  const inserted = harness.insertLocalSubmittedUserMessage("thread-live", "continue work", [], "submit-123");
+  assert.equal(inserted, true);
+  assert.equal(harness.state.currentThread.status.type, "active");
+  assert.equal(harness.state.currentThread.turns.length, 1);
+  assert.equal(harness.state.currentThread.turns[0].id, "local-turn-submit-123");
+  assert.equal(harness.state.currentThread.turns[0].status.type, "active");
+  assert.equal(harness.state.currentThread.turns[0].items.length, 1);
+  assert.equal(harness.state.currentThread.turns[0].items[0].clientSubmissionId, "submit-123");
+  assert.equal(harness.state.currentThread.turns[0].items[0].mobilePendingSubmission, true);
+  assert.deepEqual(harness.counters(), { mergeCount: 1, syncCount: 1 });
+  assert.equal(harness.insertLocalSubmittedUserMessage("thread-live", "continue work", [], "submit-123"), false);
+  assert.equal(harness.state.currentThread.turns[0].items.length, 1);
+});
+
+test("local pending image attachments render browser previews before upload projection catches up", () => {
+  const localUserMessageItem = evaluatedLocalUserMessageItem();
+  const renderInputContent = evaluatedInputContentRenderer();
+  const item = localUserMessageItem("看一下", [{
+    previewUrl: "blob:http://127.0.0.1:8787/local-preview",
+    file: {
+      name: "homeai-upload-AFF20AEE-D062-4735-9F77-8ABB86CC9277.jpg",
+      type: "image/jpeg",
+      size: 121010,
+    },
+  }], "submit-image");
+
+  assert.equal(item.content.length, 2);
+  assert.equal(item.content[1].type, "input_image");
+  assert.equal(item.content[1].image_url.url, "blob:http://127.0.0.1:8787/local-preview");
+
+  const html = renderInputContent(item.content);
+  assert.match(html, /class="input-image"/);
+  assert.match(html, /src="blob:http:\/\/127\.0\.0\.1:8787\/local-preview"/);
+  assert.doesNotMatch(html, /class="input-attachment"[\s\S]*homeai-upload-AFF20AEE/);
+  assert.doesNotMatch(html, /\/api\/uploads\/file\?path=homeai-upload-AFF20AEE/);
+});
+
+test("successful sends keep local pending image blob previews alive until durable projection can replace them", () => {
+  const harness = evaluatedPendingAttachmentClearHarness();
+  harness.state.pendingAttachments = [
+    { previewUrl: "blob:http://127.0.0.1:8787/pending-image" },
+  ];
+
+  harness.clearPendingAttachments({ revokePreviewUrls: false });
+
+  assert.equal(harness.state.pendingAttachments.length, 0);
+  assert.deepEqual(harness.revoked, []);
+  assert.equal(harness.timers.length, 1);
+  assert.ok(harness.timers[0].delayMs >= 1000);
+  harness.timers[0].fn();
+  assert.deepEqual(harness.revoked, ["blob:http://127.0.0.1:8787/pending-image"]);
+});
+
+test("replacing unsent attachments still revokes stale local image blobs immediately", () => {
+  const harness = evaluatedPendingAttachmentClearHarness();
+  harness.state.pendingAttachments = [
+    { previewUrl: "blob:http://127.0.0.1:8787/old-image" },
+  ];
+
+  harness.replacePendingAttachments([
+    { previewUrl: "blob:http://127.0.0.1:8787/new-image" },
+  ]);
+
+  assert.deepEqual(harness.revoked, ["blob:http://127.0.0.1:8787/old-image"]);
+  assert.equal(harness.state.pendingAttachments.length, 1);
+  assert.equal(harness.state.pendingAttachments[0].previewUrl, "blob:http://127.0.0.1:8787/new-image");
+});
+
+test("live detail refresh can patch changed visible items without replacing the whole turn", () => {
+  assert.match(appJs, /function patchVisibleItemDomNode\(/);
+  assert.match(appJs, /function visibleItemPatchEntries\(/);
+  assert.match(appJs, /function sameVisibleItemPatchShape\(/);
+  assert.match(appJs, /function patchVisibleItemsOnlyFromRefresh\(/);
+  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /isLatestTurn\(nextTurn\) \|\| !isLiveTurn\(nextTurn\)/);
+  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /sameVisibleItemPatchShape\(previousTurn, nextTurn\)/);
+  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /patchVisibleItemDomNode\(nextTurn, nextEntries\[index\]\.item, previousKeys, nextEntries\[index\]\.sourceIndex\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /patchVisibleItemsOnlyFromRefresh\(previousTurn, turn, previousKeys\)/);
+});
+
 test("turn timer prefers live item activity over idle sync labels", () => {
   assert.match(appJs, /function liveActivityLabelForTurn\(/);
   assert.match(appJs, /function activeLiveOperationItemForTurn\(/);
@@ -745,8 +1269,21 @@ test("turn timer prefers live item activity over idle sync labels", () => {
   assert.match(functionBody("liveTurnStartedAtMs"), /numericTimestampMs\(item\.startedAtMs\)/);
   assert.match(functionBody("liveActivityLabelForTurn"), /item\.type === "reasoning"[\s\S]*return "思考"/);
   assert.match(functionBody("activeLiveOperationItemForTurn"), /isOperationalItem\(item\)[\s\S]*return item/);
-  assert.match(functionBody("markIdleActivity"), /if \(liveActivityLabelForTurn\(currentLiveTurn\(\)\)\) return;/);
-  assert.match(functionBody("updateTurnTimer"), /liveActivityLabelForTurn\(turn\) \|\| state\.activityLabel/);
+  assert.match(functionBody("markIdleActivity"), /const liveTurn = currentLiveTurn\(\);/);
+  assert.match(functionBody("markIdleActivity"), /if \(liveActivityLabelForTurn\(liveTurn\)\) return;/);
+  assert.match(functionBody("markIdleActivity"), /if \(isIdleSyncActivityLabel\(label\) && liveTurn\) return;/);
+  assert.match(functionBody("updateTurnTimer"), /liveActivityLabelForTurn\(turn\) \|\| liveTurnFallbackActivityLabel\(turn\)/);
+  assert.match(functionBody("liveTurnFallbackActivityLabel"), /return "运行";/);
+});
+
+test("loading and thread-list state preserve locally visible live turns", () => {
+  assert.match(appJs, /function threadIsLoadingWithoutVisibleTurns\(/);
+  assert.match(functionBody("conversationRenderSignature"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) return `loading\\|/);
+  assert.match(functionBody("conversationRootSignature"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) return `loading\\|/);
+  assert.match(functionBody("renderCurrentThread"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) \{/);
+  assert.match(functionBody("renderCurrentThread"), /const loadingNote = thread\.mobileLoading/);
+  assert.match(functionBody("reconcileThreadStatusHints"), /id === state\.currentThreadId && currentLiveTurn\(\)/);
+  assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(String\(threadId\)\)[\s\S]*currentLiveTurn\(\)/);
 });
 
 test("long agent messages keep a stable render path when a turn completes", () => {
@@ -828,7 +1365,8 @@ test("raw app-server input text upload summaries render as thumbnails", () => {
   ]);
 
   assert.match(html, /class="input-image"/);
-  assert.match(html, /\/api\/uploads\/file\?path=/);
+  assert.match(html, /src="data:image\/gif;base64,R0lGODlhAQABAIAAAAAAAP\/\/\/ywAAAAAAQABAAACAUwAOw=="/);
+  assert.match(html, /data-protected-image-src="\/api\/uploads\/file\?path=/);
   assert.match(html, /IMG_5433\.jpg/);
   assert.doesNotMatch(html, /<code>C:\\Users\\example/);
 });
@@ -867,9 +1405,26 @@ test("user message text before upload summaries still renders jpg thumbnails", (
 
   assert.match(html, /class="input-text"/);
   assert.match(html, /class="input-image"/);
-  assert.match(html, /\/api\/uploads\/file\?path=/);
+  assert.match(html, /src="data:image\/gif;base64,R0lGODlhAQABAIAAAAAAAP\/\/\/ywAAAAAAQABAAACAUwAOw=="/);
+  assert.match(html, /data-protected-image-src="\/api\/uploads\/file\?path=/);
   assert.match(html, /IMG_5435\.jpg/);
   assert.doesNotMatch(html, /Uploaded attachments:/);
+});
+
+test("Hermes embedded upload summaries render direct image sources without hydrate placeholders", () => {
+  const renderInputContent = evaluatedInputContentRendererWithKey("test-key", { embedded: true });
+  const uploadPath = "/Users/example/.codex-mobile-web/uploads/2026-06-20/thread/1781956411989-photo.jpg";
+  const html = renderInputContent([
+    {
+      type: "input_text",
+      text: `Uploaded attachments:\n- IMG_6086.jpg (image, image/jpeg, 110.6 KB): ${uploadPath}`,
+    },
+  ]);
+
+  assert.match(html, /class="input-image"/);
+  assert.match(html, /<img src="\/api\/uploads\/file\?path=/);
+  assert.doesNotMatch(html, /src="data:image\/gif;base64/);
+  assert.doesNotMatch(html, /data-protected-image-src=/);
 });
 
 test("imageView upload screenshots use the uploads route instead of file preview", () => {
@@ -880,7 +1435,8 @@ test("imageView upload screenshots use the uploads route instead of file preview
   });
 
   assert.match(html, /class="image-view"/);
-  assert.match(html, /\/api\/uploads\/file\?path=/);
+  assert.match(html, /src="data:image\/gif;base64,R0lGODlhAQABAIAAAAAAAP\/\/\/ywAAAAAAQABAAACAUwAOw=="/);
+  assert.match(html, /data-protected-image-src="\/api\/uploads\/file\?path=/);
   assert.doesNotMatch(html, /\/api\/files\/preview\/content/);
 });
 
@@ -900,7 +1456,8 @@ test("generated image content urls render bounded image cards", () => {
   });
 
   assert.match(html, /class="image-view"/);
-  assert.match(html, /<img src="\/api\/generated-images\/file\?id=thread%2Ftool-output\.png&amp;key=test-key"/);
+  assert.match(html, /<img src="data:image\/gif;base64,R0lGODlhAQABAIAAAAAAAP\/\/\/ywAAAAAAQABAAACAUwAOw=="/);
+  assert.match(html, /data-protected-image-src="\/api\/generated-images\/file\?id=thread%2Ftool-output\.png&amp;key=test-key"/);
   assert.match(html, /<figcaption>tool-output\.png<\/figcaption>/);
   assert.doesNotMatch(html, /\/api\/files\/preview\/content/);
 });
@@ -921,15 +1478,20 @@ test("generated image content urls replace stale auth keys with the current sess
 test("failed conversation images collapse into a neutral fallback", () => {
   const handleConversationImageError = evaluatedConversationImageErrorHandler();
   const addedClasses = [];
+  const toggledClasses = [];
   const attributes = {};
   const figure = {
     classList: {
       add(value) {
         addedClasses.push(value);
       },
+      toggle(value, active) {
+        toggledClasses.push([value, active]);
+      },
     },
   };
   const image = {
+    dataset: {},
     closest(selector) {
       if (String(selector).includes(".input-image")) return figure;
       return null;
@@ -948,31 +1510,226 @@ test("failed conversation images collapse into a neutral fallback", () => {
   handleConversationImageError({ target });
 
   assert.deepEqual(addedClasses, ["image-load-failed"]);
+  assert.deepEqual(toggledClasses, [["image-load-retrying", false]]);
   assert.equal(attributes["aria-hidden"], "true");
+  assert.equal(image.dataset.imageLoadError, "1");
   assert.match(appJs, /\$\("conversation"\)\.addEventListener\("error", handleConversationImageError, true\)/);
+  assert.match(appJs, /\$\("conversation"\)\.addEventListener\("load", handleConversationImageLoad, true\)/);
   assert.match(functionBody("updateConversationHtml"), /scheduleFailedAppImageScan\(conversation/);
+  assert.match(functionBody("scheduleFailedAppImageScan"), /hydrateProtectedAppImages\(root, "scheduled-scan"\)/);
+  assert.match(functionBody("handleConversationImageError"), /handleProtectedAppImageError\(image\)/);
+  assert.match(functionBody("shouldHydrateProtectedAppImage"), /isIosWebKitBrowser\(\) \|\| imageDiagnosticSourceKind\(src\) === "upload"/);
+  assert.match(functionBody("hydrateProtectedAppImage"), /protectedAppImageRecoveredUrl\(response\)/);
+  assert.match(functionBody("hydrateProtectedAppImage"), /applyProtectedAppImageRecoveredUrl\(image, recovered\)/);
+  assert.match(functionBody("hydrateProtectedAppImage"), /protectedImageHydrated = "1"/);
+  assert.match(appJs, /const IMAGE_DIAGNOSTICS_ENABLED = false;/);
+  assert.match(functionBody("postImageDiagnosticEvent"), /if \(!IMAGE_DIAGNOSTICS_ENABLED\) return false;/);
   assert.match(appJs, /document\.addEventListener\("focusin", \(\) => \{[\s\S]*scheduleVisibleImageFailureScan\(\[0, 80, 240\]\);/);
   assert.match(stylesCss, /\.input-image\.image-load-failed,[\s\S]*\.markdown-image\.image-load-failed,[\s\S]*\.image-view\.image-load-failed/);
+  assert.match(stylesCss, /\.input-image\.image-load-retrying img,[\s\S]*visibility: hidden;/);
   assert.match(stylesCss, /\.input-image\.image-load-failed img,[\s\S]*display: none;/);
   assert.match(stylesCss, /\.conversation img\.image-load-failed/);
   assert.match(stylesCss, /\.attachment-chip\.image-load-failed \.attachment-thumb/);
   assert.match(stylesCss, /content: "图片无法加载";/);
 });
 
+test("protected upload image errors are probed before showing failed fallback", async () => {
+  const fetchCalls = [];
+  const handleConversationImageError = evaluatedConversationImageErrorHandler({
+    window: {
+      location: { origin: "http://127.0.0.1:8787" },
+    },
+    FileReader: class {
+      readAsDataURL(blob) {
+        this.result = `data:${blob.type};base64,ZmFrZS1qcGVn`;
+        setTimeout(() => this.onload && this.onload(), 0);
+      }
+    },
+    fetch: (src, options) => {
+      fetchCalls.push({ src, options });
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        blob: () => Promise.resolve({ type: "image/jpeg", size: 128000 }),
+      });
+    },
+  });
+  const addedClasses = [];
+  const removedClasses = [];
+  const toggledClasses = [];
+  const attributes = {};
+  let imageSrc = "/api/uploads/file?path=%2FUsers%2Fxuxin%2F.codex-mobile-web%2Fuploads%2Fthread%2Fhomeai-upload.jpg&key=stale";
+  const figure = {
+    classList: {
+      add(value) {
+        addedClasses.push(value);
+      },
+      remove(value) {
+        removedClasses.push(value);
+      },
+      toggle(value, active) {
+        toggledClasses.push([value, active]);
+      },
+    },
+  };
+  const image = {
+    dataset: {},
+    currentSrc: imageSrc,
+    naturalWidth: 0,
+    isConnected: true,
+    get src() {
+      return imageSrc;
+    },
+    set src(value) {
+      imageSrc = value;
+      this.currentSrc = value;
+    },
+    closest(selector) {
+      if (String(selector).includes(".input-image")) return figure;
+      return null;
+    },
+    getAttribute(name) {
+      if (name === "src") return imageSrc;
+      if (name === "aria-hidden") return "";
+      return "";
+    },
+    setAttribute(name, value) {
+      attributes[name] = value;
+    },
+    removeAttribute() {},
+  };
+  const target = {
+    closest(selector) {
+      if (selector === "img") return image;
+      return null;
+    },
+  };
+
+  handleConversationImageError({ target });
+  assert.deepEqual(addedClasses, []);
+  assert.equal(attributes["aria-hidden"], undefined);
+  assert.equal(image.dataset.imageLoadProbe, "1");
+  assert.deepEqual(toggledClasses, [["image-load-retrying", true]]);
+  assert.equal(fetchCalls.length, 1);
+
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  assert.deepEqual(addedClasses, []);
+  assert.deepEqual(removedClasses, ["image-load-failed"]);
+  assert.equal(image.dataset.imageLoadProbe, undefined);
+  assert.equal(imageSrc, "data:image/jpeg;base64,ZmFrZS1qcGVn");
+  assert.equal(image.dataset.protectedImageObjectUrl, undefined);
+  assert.deepEqual(toggledClasses, [
+    ["image-load-retrying", true],
+    ["image-load-retrying", false],
+  ]);
+});
+
+test("protected upload image errors fall back to cache-busted src retry without blob support", async () => {
+  const handleConversationImageError = evaluatedConversationImageErrorHandler({
+    fetch: () => Promise.resolve({ ok: true, status: 200 }),
+  });
+  let imageSrc = "/api/uploads/file?path=%2FUsers%2Fxuxin%2F.codex-mobile-web%2Fuploads%2Fthread%2Fhomeai-upload.jpg&key=stale";
+  const figure = {
+    classList: {
+      remove() {},
+      toggle() {},
+    },
+  };
+  const image = {
+    dataset: {},
+    currentSrc: imageSrc,
+    naturalWidth: 0,
+    isConnected: true,
+    get src() {
+      return imageSrc;
+    },
+    set src(value) {
+      imageSrc = value;
+      this.currentSrc = value;
+    },
+    closest(selector) {
+      if (String(selector).includes(".input-image")) return figure;
+      return null;
+    },
+    getAttribute(name) {
+      if (name === "src") return imageSrc;
+      return "";
+    },
+    removeAttribute() {},
+  };
+
+  handleConversationImageError({ target: { closest: () => image } });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  assert.match(imageSrc, /_imgRetry=/);
+});
+
+test("loaded conversation images clear stale failed-image state", () => {
+  const handleConversationImageLoad = evaluatedConversationImageLoadHandler();
+  const removedContainerClasses = [];
+  const removedImageClasses = [];
+  const removedAttributes = [];
+  const figure = {
+    classList: {
+      remove(value) {
+        removedContainerClasses.push(value);
+      },
+    },
+  };
+  const image = {
+    dataset: { imageLoadError: "1" },
+    classList: {
+      remove(value) {
+        removedImageClasses.push(value);
+      },
+    },
+    closest(selector) {
+      if (String(selector).includes(".input-image")) return figure;
+      return null;
+    },
+    getAttribute(name) {
+      return name === "aria-hidden" ? "true" : "";
+    },
+    removeAttribute(name) {
+      removedAttributes.push(name);
+    },
+  };
+  const target = {
+    closest(selector) {
+      if (selector === "img") return image;
+      return null;
+    },
+  };
+
+  handleConversationImageLoad({ target });
+
+  assert.deepEqual(removedContainerClasses, ["image-load-failed"]);
+  assert.deepEqual(removedImageClasses, ["image-load-failed"]);
+  assert.deepEqual(removedAttributes, ["aria-hidden"]);
+  assert.equal(image.dataset.imageLoadError, undefined);
+});
+
 test("already-broken rendered images are proactively marked without a new error event", () => {
   const scanFailedAppImages = evaluatedFailedImageScanner();
   const addedClasses = [];
+  const removedClasses = [];
+  const removedAttributes = [];
   const attributes = {};
   const container = {
     classList: {
       add(value) {
         addedClasses.push(value);
       },
+      remove(value) {
+        removedClasses.push(value);
+      },
     },
   };
   const brokenImage = {
     complete: true,
     naturalWidth: 0,
+    loading: "eager",
     closest(selector) {
       if (selector === ".input-image, .image-view, .markdown-image, .attachment-chip, .file-preview-media, figure") return container;
       return null;
@@ -988,16 +1745,174 @@ test("already-broken rendered images are proactively marked without a new error 
       throw new Error("loading images should not be marked");
     },
   };
+  const recoveredImage = {
+    complete: true,
+    naturalWidth: 120,
+    dataset: { imageLoadError: "1" },
+    closest(selector) {
+      if (selector === ".input-image, .image-view, .markdown-image, .attachment-chip, .file-preview-media, figure") return container;
+      return null;
+    },
+    classList: {
+      remove(value) {
+        removedClasses.push(value);
+      },
+    },
+    getAttribute(name) {
+      return name === "aria-hidden" ? "true" : "";
+    },
+    removeAttribute(name) {
+      removedAttributes.push(name);
+    },
+  };
   const rootNode = {
     querySelectorAll(selector) {
       assert.equal(selector, "img");
-      return [brokenImage, loadingImage];
+      return [brokenImage, loadingImage, recoveredImage];
     },
   };
 
   assert.equal(scanFailedAppImages(rootNode), 1);
   assert.deepEqual(addedClasses, ["image-load-failed"]);
   assert.equal(attributes["aria-hidden"], "true");
+  assert.deepEqual(removedClasses, ["image-load-failed", "image-load-failed"]);
+  assert.deepEqual(removedAttributes, ["aria-hidden"]);
+});
+
+test("lazy images are not marked failed before the browser attempts loading them", () => {
+  const scanFailedAppImages = evaluatedFailedImageScanner();
+  const addedClasses = [];
+  const removedClasses = [];
+  const removedAttributes = [];
+  const container = {
+    classList: {
+      add(value) {
+        addedClasses.push(value);
+      },
+      remove(value) {
+        removedClasses.push(value);
+      },
+    },
+  };
+  const lazyPendingImage = {
+    complete: true,
+    naturalWidth: 0,
+    loading: "lazy",
+    dataset: {},
+    closest(selector) {
+      if (selector === ".input-image, .image-view, .markdown-image, .attachment-chip, .file-preview-media, figure") return container;
+      return null;
+    },
+    getAttribute(name) {
+      if (name === "loading") return "lazy";
+      if (name === "aria-hidden") return "true";
+      return "";
+    },
+    removeAttribute(name) {
+      removedAttributes.push(name);
+    },
+  };
+  const explicitLazyErrorImage = {
+    complete: true,
+    naturalWidth: 0,
+    loading: "lazy",
+    dataset: { imageLoadError: "1" },
+    closest(selector) {
+      if (selector === ".input-image, .image-view, .markdown-image, .attachment-chip, .file-preview-media, figure") return container;
+      return null;
+    },
+    getAttribute(name) {
+      return name === "loading" ? "lazy" : "";
+    },
+    setAttribute() {},
+  };
+  const rootNode = {
+    querySelectorAll(selector) {
+      assert.equal(selector, "img");
+      return [lazyPendingImage, explicitLazyErrorImage];
+    },
+  };
+
+  assert.equal(scanFailedAppImages(rootNode), 1);
+  assert.deepEqual(addedClasses, ["image-load-failed"]);
+  assert.deepEqual(removedClasses, ["image-load-failed"]);
+  assert.deepEqual(removedAttributes, ["aria-hidden"]);
+});
+
+test("protected zero-size upload images are probed by scanner instead of marked failed", async () => {
+  const fetchCalls = [];
+  const scanFailedAppImages = evaluatedFailedImageScanner({
+    window: {
+      location: { origin: "http://127.0.0.1:8787" },
+    },
+    FileReader: class {
+      readAsDataURL(blob) {
+        this.result = `data:${blob.type};base64,c2Nhbm5lZC1qcGVn`;
+        setTimeout(() => this.onload && this.onload(), 0);
+      }
+    },
+    fetch: (src, options) => {
+      fetchCalls.push({ src, options });
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        blob: () => Promise.resolve({ type: "image/jpeg", size: 128000 }),
+      });
+    },
+  });
+  const addedClasses = [];
+  const toggledClasses = [];
+  let imageSrc = "/api/uploads/file?path=%2FUsers%2Fxuxin%2F.codex-mobile-web%2Fuploads%2Fthread%2Fhomeai-upload.jpg&key=stale";
+  const container = {
+    classList: {
+      add(value) {
+        addedClasses.push(value);
+      },
+      remove() {},
+      toggle(value, active) {
+        toggledClasses.push([value, active]);
+      },
+    },
+  };
+  const protectedImage = {
+    complete: true,
+    naturalWidth: 0,
+    dataset: {},
+    currentSrc: imageSrc,
+    isConnected: true,
+    get src() {
+      return imageSrc;
+    },
+    set src(value) {
+      imageSrc = value;
+      this.currentSrc = value;
+    },
+    closest(selector) {
+      if (selector === ".input-image, .image-view, .markdown-image, .attachment-chip, .file-preview-media, figure") return container;
+      return null;
+    },
+    getAttribute(name) {
+      if (name === "src") return imageSrc;
+      return "";
+    },
+    removeAttribute() {},
+  };
+  const rootNode = {
+    querySelectorAll(selector) {
+      assert.equal(selector, "img");
+      return [protectedImage];
+    },
+  };
+
+  assert.equal(scanFailedAppImages(rootNode), 0);
+  assert.equal(fetchCalls.length, 1);
+  assert.deepEqual(addedClasses, []);
+  assert.deepEqual(toggledClasses, [["image-load-retrying", true]]);
+
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  assert.equal(imageSrc, "data:image/jpeg;base64,c2Nhbm5lZC1qcGVn");
+  assert.equal(protectedImage.dataset.protectedImageObjectUrl, undefined);
 });
 
 test("raw app-server input image parts use object image urls", () => {
@@ -1039,6 +1954,28 @@ test("raw app-server input image url local upload paths use authenticated upload
   assert.equal(html.includes(`src="${uploadPath}"`), false);
 });
 
+test("durable upload summaries take precedence over stale blob image parts", () => {
+  const renderInputContent = evaluatedInputContentRendererWithKey("session-key");
+  const uploadPath = "/Users/xuxin/.codex-mobile-web/uploads/2026-06-20/thread-id/1781947353793-homeai-upload-2B62320E.jpg";
+  const html = renderInputContent([
+    {
+      type: "input_text",
+      text: `Uploaded attachments:\n- homeai-upload-2B62320E.jpg (image, image/jpeg, 116.9 KB): ${uploadPath}`,
+    },
+    {
+      type: "input_image",
+      image_url: { url: "blob:http://127.0.0.1:8787/local-preview" },
+      fileName: "homeai-upload-2B62320E.jpg",
+    },
+  ]);
+
+  assert.match(html, /class="input-image"/);
+  assert.match(html, /\/api\/uploads\/file\?path=/);
+  assert.match(html, /key=session-key/);
+  assert.match(html, /homeai-upload-2B62320E\.jpg/);
+  assert.doesNotMatch(html, /blob:http:\/\/127\.0\.0\.1:8787\/local-preview/);
+});
+
 test("conversation image urls rerender when the auth key version changes", () => {
   assert.match(appJs, /imageAuthVersion: 0/);
   assert.match(functionBody("setAuthKey"), /state\.imageAuthVersion = \(Number\(state\.imageAuthVersion\) \|\| 0\) \+ 1/);
@@ -1074,7 +2011,8 @@ test("server only emits context compaction notices from explicit item state", ()
   assert.match(itemBody, /if \(!compactionState\) return compacted/);
   assert.doesNotMatch(itemBody, /options\.contextCompactionPending !== false/);
   assert.doesNotMatch(turnBody, /contextCompactionPending = isLiveTurn\(out\)/);
-  assert.match(turnBody, /out\.items = out\.items\.map\(\(item\) => compactItem\(item, options\)\)/);
+  assert.match(turnBody, /const sourceItems = filterDuplicateUploadImageViewsInTurnItems\(out\.items\)/);
+  assert.match(turnBody, /out\.items = sourceItems\.map\(\(item\) => compactItem\(item, options\)\)/);
 });
 
 test("matching user messages keep their original turn position after final refresh", () => {
@@ -1200,6 +2138,54 @@ test("optimistic user messages are shadowed by mux and durable echoes", () => {
   assert.equal(imageItems[0].clientSubmissionId, "submit-2");
 });
 
+test("durable uploaded image messages replace revoked optimistic blob previews", () => {
+  const mergeItemsPreservingLocalVisible = evaluatedMergeItemsPreservingLocalVisibleWithRealVisibleWeight();
+  const renderInputContent = evaluatedInputContentRendererWithKey("test-key");
+  const uploadPath = "/Users/xuxin/.codex-mobile-web/uploads/2026-06-20/thread/homeai-upload-54FE12C6.jpg";
+  const localImage = {
+    id: "local-user-submit-image",
+    type: "userMessage",
+    mobilePendingSubmission: true,
+    clientSubmissionId: "submit-image",
+    content: [
+      {
+        type: "text",
+        text: "Uploaded attachments:\n- homeai-upload-54FE12C6.jpg (image, image/jpeg, 128.4 KB): homeai-upload-54FE12C6.jpg",
+      },
+      {
+        type: "input_image",
+        image_url: { url: "blob:http://127.0.0.1:8787/local-preview" },
+        fileName: "homeai-upload-54FE12C6.jpg",
+      },
+    ],
+  };
+  const durableImage = {
+    id: "real-user-submit-image",
+    type: "userMessage",
+    content: [
+      {
+        type: "input_text",
+        text: `Uploaded attachments:\n- homeai-upload-54FE12C6.jpg (image, image/jpeg, 128.4 KB): ${uploadPath}`,
+      },
+      { type: "localImage", path: uploadPath },
+    ],
+  };
+
+  const imageItems = mergeItemsPreservingLocalVisible([localImage], [durableImage], true);
+  assert.equal(imageItems.length, 1);
+  assert.equal(imageItems[0].id, durableImage.id);
+  assert.equal(imageItems[0].mobilePendingSubmission, undefined);
+  assert.equal(imageItems[0].clientSubmissionId, "submit-image");
+  assert.deepEqual(imageItems[0].content, durableImage.content);
+  assert.doesNotMatch(JSON.stringify(imageItems[0].content), /blob:/);
+
+  const html = renderInputContent(imageItems[0].content);
+  assert.match(html, /\/api\/uploads\/file\?path=/);
+  assert.match(html, /key=test-key/);
+  assert.match(html, /homeai-upload-54FE12C6\.jpg/);
+  assert.doesNotMatch(html, /blob:/);
+});
+
 test("cross-turn durable user messages remove only synthetic echoes", () => {
   const normalizeThreadVisibleUserMessages = evaluatedNormalizeThreadVisibleUserMessages();
   const thread = {
@@ -1271,6 +2257,54 @@ test("cross-turn normalization keeps synthetic repeat when matching durable mess
   assert.equal(thread.turns[0].items[0].id, "real-user-1");
   assert.equal(thread.turns[1].items.length, 1);
   assert.equal(thread.turns[1].items[0].id, "mux-user-thread-1-turn-2-submit-2");
+});
+
+test("cross-turn normalization drops later optimistic upload image echoes after durable image appears", () => {
+  const normalizeThreadVisibleUserMessages = evaluatedNormalizeThreadVisibleUserMessages();
+  const uploadPath = "/Users/xuxin/.codex-mobile-web/uploads/2026-06-20/thread/1781940095858-homeai-upload-49DBCECD.jpg";
+  const thread = {
+    turns: [
+      {
+        id: "durable-turn",
+        status: { type: "completed", mobileSupersededLive: true },
+        items: [{
+          id: "real-user-image",
+          type: "userMessage",
+          content: [{
+            type: "input_text",
+            text: `Uploaded attachments:\n- homeai-upload-49DBCECD.jpg (image, image/jpeg, 125.6 KB): ${uploadPath}`,
+          }],
+        }],
+      },
+      {
+        id: "local-live-turn",
+        status: "inProgress",
+        items: [{
+          id: "local-user-submit-image",
+          type: "userMessage",
+          mobilePendingSubmission: true,
+          clientSubmissionId: "submit-image",
+          content: [
+            {
+              type: "text",
+              text: "Uploaded attachments:\n- homeai-upload-49DBCECD.jpg (image, image/jpeg, 125.6 KB): homeai-upload-49DBCECD.jpg",
+            },
+            {
+              type: "input_image",
+              image_url: { url: "blob:http://127.0.0.1:8787/local-preview" },
+              fileName: "homeai-upload-49DBCECD.jpg",
+            },
+          ],
+        }],
+      },
+    ],
+  };
+
+  normalizeThreadVisibleUserMessages(thread);
+
+  assert.equal(thread.turns[0].items.length, 1);
+  assert.equal(thread.turns[0].items[0].id, "real-user-image");
+  assert.equal(thread.turns[1].items.length, 0);
 });
 
 test("new-thread initial optimistic echo is dropped when durable first turn arrives with a different id", () => {
@@ -1351,6 +2385,89 @@ test("new-thread initial echo cleanup does not remove a later repeated prompt wi
   assert.equal(merged.mobileInitialSubmissionId, undefined);
 });
 
+test("v4 projection merge preserves local pending message when server refresh has no durable match yet", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const existingThread = {
+    id: "thread-new",
+    turns: [{
+      id: "local-turn-submit-current",
+      status: { type: "active" },
+      items: [{
+        id: "local-user-submit-current",
+        type: "userMessage",
+        mobilePendingSubmission: true,
+        clientSubmissionId: "submit-current",
+        content: [{ type: "text", text: "current guidance" }],
+      }],
+    }],
+  };
+  const incomingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 2,
+    turns: [{
+      id: "real-active-turn",
+      status: { type: "active" },
+      items: [
+        { id: "agent-progress", type: "agentMessage", text: "working" },
+      ],
+    }],
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, incomingThread);
+
+  assert.deepEqual(merged.turns.map((turn) => turn.id), ["real-active-turn", "local-turn-submit-current"]);
+  assert.deepEqual(merged.turns.flatMap((turn) => turn.items.map((item) => item.id)), [
+    "agent-progress",
+    "local-user-submit-current",
+  ]);
+  assert.equal(merged.mobileProjectionVersion, "v4");
+});
+
+test("v4 projection merge removes local pending message after durable user match arrives", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const existingThread = {
+    id: "thread-new",
+    turns: [{
+      id: "local-turn-submit-current",
+      status: { type: "active" },
+      items: [{
+        id: "local-user-submit-current",
+        type: "userMessage",
+        mobilePendingSubmission: true,
+        clientSubmissionId: "submit-current",
+        content: [{ type: "text", text: "current guidance" }],
+      }],
+    }],
+  };
+  const incomingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 3,
+    turns: [{
+      id: "real-active-turn",
+      status: { type: "active" },
+      items: [
+        {
+          id: "durable-user-current",
+          type: "userMessage",
+          clientSubmissionId: "submit-current",
+          content: [{ type: "input_text", text: "current guidance" }],
+        },
+        { id: "agent-progress", type: "agentMessage", text: "working" },
+      ],
+    }],
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, incomingThread);
+
+  assert.deepEqual(merged.turns.map((turn) => turn.id), ["real-active-turn"]);
+  assert.deepEqual(merged.turns[0].items.map((item) => item.id), [
+    "durable-user-current",
+    "agent-progress",
+  ]);
+});
+
 test("live user message upsert collapses mux echoes before refresh", () => {
   const harness = evaluatedLiveUserMessageUpsert();
   harness.upsertItem("turn-1", {
@@ -1407,12 +2524,18 @@ test("thread detail pending server requests render approval cards without SSE ti
 
 test("active turn state follows only the latest durable turn", () => {
   const syncBody = functionBody("syncActiveTurnFromThread");
-  assert.match(syncBody, /const latest = latestTurn\(\);/);
-  assert.match(syncBody, /const running = latest && !isTurnComplete\(latest\) && isRunningStatus\(latest\.status\) \? latest : null/);
+  assert.match(syncBody, /const running = latestLiveTurnCandidate\(\);/);
   assert.doesNotMatch(syncBody, /reverse\(\)\.find/);
 
+  const candidateBody = functionBody("latestLiveTurnCandidate");
+  assert.match(candidateBody, /const displayLatest = latestTurn\(\);/);
+  assert.match(candidateBody, /const rawLatest = latestRawTurn\(\);/);
+  assert.match(candidateBody, /isRunningStatus\(displayLatest\.status\)/);
+  assert.match(candidateBody, /isRunningStatus\(rawLatest\.status\)/);
+  assert.doesNotMatch(candidateBody, /reverse\(\)\.find/);
+
   const liveBody = functionBody("currentLiveTurn");
-  assert.match(liveBody, /const latest = latestTurn\(\);/);
+  assert.match(liveBody, /const latest = latestLiveTurnCandidate\(\) \|\| latestTurn\(\);/);
   assert.match(liveBody, /const active = latest && latest\.id === state\.activeTurnId \? latest : null/);
   assert.match(liveBody, /return latest && isLiveTurn\(latest\) \? latest : null/);
   assert.doesNotMatch(liveBody, /reverse\(\)\.find/);
@@ -1435,7 +2558,7 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(functionBody("updateThreadStatusHints"), /const staleActive = isStaleActiveStatus\(nextStatus\)/);
   assert.match(functionBody("updateThreadStatusHints"), /if \(!staleActive && id !== state\.currentThreadId/);
   assert.match(functionBody("statusIconInfo"), /if \(isStaleActiveStatus\(status\)\) return null;/);
-  assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(String\(threadId\)\) && !isThreadListSettledStatus\(status\)/);
+  assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(String\(threadId\)\)[\s\S]*currentLiveTurn\(\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /const staleActive = isStaleActiveStatus\(thread\.status\) \|\| Boolean\(thread\.mobileStaleActiveTurn\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /const isRunning = !staleActive && isRunningStatus\(thread\.status\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /else if \(wasRunning && staleActive\)/);
@@ -1459,7 +2582,8 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(functionBody("backfillFullThreadDetail"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);\s*mergeThreadIntoThreadList\(state\.currentThread\);/);
   const sendBody = functionBody("sendMessage");
   assert.match(sendBody, /const previousThreadStatus = snapshotThreadStatus\(state\.currentThreadId\);/);
-  assert.match(sendBody, /registerSubmittedUserMessage\(state\.currentThreadId, outboundText, submittedAttachments, clientSubmissionId\);\s*if \(!steering\) \{[\s\S]*markThreadOptimisticallyActive\(state\.currentThreadId\);[\s\S]*renderThreads\(\);[\s\S]*\}/);
+  assert.match(sendBody, /registerSubmittedUserMessage\(state\.currentThreadId, outboundText, submittedAttachments, clientSubmissionId\);\s*const insertedLocalMessage = insertLocalSubmittedUserMessage/);
+  assert.match(sendBody, /if \(insertedLocalMessage\) renderCurrentThread\(\{ stickToBottom: true \}\);/);
   assert.match(sendBody, /if \(!steering\) \{[\s\S]*restoreThreadStatusSnapshot\(previousThreadStatus\);[\s\S]*renderThreads\(\);[\s\S]*\}/);
 
   const expireBody = functionBody("shouldExpireRunningThreadHint");

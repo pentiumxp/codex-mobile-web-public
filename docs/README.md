@@ -17,6 +17,7 @@ Always start substantial work by reading:
 | Live production issue, stuck turn, missing message, PWA cache, Push, mux drift | `docs/TROUBLESHOOTING.md` |
 | Model context size, image upload context, continuation bootstrap strategy, workspace context compaction | `docs/CONTEXT_STRATEGY.md` |
 | Non-trivial feature or cross-cutting fix | `docs/COMPLEX_FEATURE_PATHS.md` |
+| Thread detail projection redesign, visible-item contract, v3/v4 migration | `docs/THREAD_DETAIL_PROJECTION_V4_DESIGN.md` |
 | Cross-thread task-card collaboration planning | `docs/CROSS_THREAD_TASK_CARDS_DESIGN.md` |
 | Current-thread side chat planning | `docs/THREAD_SIDE_CHAT_REQUIREMENTS.md`, `docs/THREAD_SIDE_CHAT_DESIGN.md`, `docs/THREAD_SIDE_CHAT_IMPLEMENTATION.md` |
 | ChatGPT Pro planner / MCP connector planning | `docs/CHATGPT_PRO_PLANNER_CONNECTOR_DESIGN.md` |

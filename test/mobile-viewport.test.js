@@ -113,8 +113,8 @@ test("composer sizing avoids one-pixel layout churn while typing and streaming",
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v317/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v317"/);
+  assert.match(swJs, /codex-mobile-shell-v341/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v341"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);
@@ -204,9 +204,9 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /async function resumeMobileSession\(reason = "resume"\)[\s\S]*if \(isTransientResumeError\(err\)\) \{[\s\S]*scheduleTransientResumeRetry\(reason\);[\s\S]*return;/);
   assert.match(appJs, /function autoTurnRecoveryCandidate\(\)/);
   assert.match(appJs, /function autoTurnRecoveryCandidates\(\)/);
-  assert.match(appJs, /function autoTurnRecoveryCandidates\(\)[\s\S]*for \(const thread of state\.threads \|\| \[\]\)/);
-  assert.match(appJs, /function autoTurnRecoveryCandidates\(\)[\s\S]*isRunningStatus\(thread && thread\.status\)/);
-  assert.match(appJs, /function autoTurnRecoveryCandidates\(\)[\s\S]*activeTurnId: String\(\(thread\.status && \(thread\.status\.activeTurnId \|\| thread\.status\.turnId \|\| thread\.status\.id\)\) \|\| ""\)/);
+  assert.match(appJs, /function autoTurnRecoveryCandidates\(\)[\s\S]*for \(const thread of state\.restartAutoRecoverThreads \|\| \[\]\)/);
+  assert.doesNotMatch(appJs, /function autoTurnRecoveryCandidates\(\)[\s\S]*for \(const thread of state\.threads \|\| \[\]\)[\s\S]*return Array\.from\(byId\.values\(\)\);/);
+  assert.doesNotMatch(appJs, /function autoTurnRecoveryCandidates\(\)[\s\S]*const current = autoTurnRecoveryCandidate\(\)[\s\S]*return Array\.from\(byId\.values\(\)\);/);
   assert.match(appJs, /STORAGE_RESTART_AUTO_RECOVER_THREADS/);
   assert.match(appJs, /async function maybeAutoRecoverTurnAfterReconnect\(status, reason = "reconnect"\)/);
   assert.match(appJs, /\/auto-recover/);

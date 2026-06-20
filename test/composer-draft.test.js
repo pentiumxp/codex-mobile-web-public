@@ -75,7 +75,7 @@ test("composer runtime selections persist without typed text", () => {
   assert.match(functionBody("writeCurrentDraftToKey"), /if \(draftHasContent\(draft\)\)/);
 
   const sendBody = functionBody("sendMessage");
-  assert.match(sendBody, /setComposerText\(""\);[\s\S]*clearPendingAttachments\(\);[\s\S]*writeCurrentDraftToKey\(submittedDraftKey\)/, "send success should preserve runtime-only draft while clearing text and attachments");
+  assert.match(sendBody, /setComposerText\(""\);[\s\S]*clearPendingAttachments\(\{ revokePreviewUrls: false \}\);[\s\S]*writeCurrentDraftToKey\(submittedDraftKey\)/, "send success should preserve runtime-only draft while clearing text and attachments");
   assert.doesNotMatch(sendBody, /state\.composerEffort = "";/, "send success should not immediately revert selected effort to the previous thread default");
 
   const fastBody = functionBody("setCodexFastCommandEnabled");

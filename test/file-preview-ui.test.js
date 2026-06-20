@@ -27,8 +27,8 @@ test("mobile file preview UI is wired from markdown link to preview API", () => 
   assert.match(stylesCss, /\.image-preview-dialog/);
   assert.match(stylesCss, /\.image-preview-stage \{[\s\S]*overflow: auto;[\s\S]*touch-action: pan-x pan-y;/);
   assert.match(stylesCss, /\.image-preview-image \{[\s\S]*width: calc\(100% \* var\(--image-preview-scale, 1\)\);[\s\S]*max-width: none;/);
-  assert.match(stylesCss, /\.input-image img,[\s\S]*\.markdown-image img \{[\s\S]*cursor: zoom-in;/);
-  assert.match(stylesCss, /\.image-view img \{[\s\S]*cursor: zoom-in;/);
+  assert.match(stylesCss, /\.input-image img,[\s\S]*\.markdown-image img \{[\s\S]*aspect-ratio: 9 \/ 16;[\s\S]*object-fit: contain;[\s\S]*cursor: zoom-in;/);
+  assert.match(stylesCss, /\.image-view img \{[\s\S]*aspect-ratio: 16 \/ 10;[\s\S]*object-fit: contain;[\s\S]*cursor: zoom-in;/);
   assert.match(stylesCss, /\.attachment-thumb \{[\s\S]*cursor: zoom-in;/);
   assert.match(stylesCss, /\.image-view/);
   assert.match(stylesCss, /\.file-preview-table/);

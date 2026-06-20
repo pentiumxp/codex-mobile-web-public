@@ -39,5 +39,5 @@ test("live agent message timestamps do not pretend turn start is item time", () 
 
 test("locally created visible messages receive a timestamp immediately", () => {
   assert.match(appJs, /item = \{ id: itemId,\s*type: itemType,\s*startedAtMs: Date\.now\(\) \}/);
-  assert.match(appJs, /startedAtMs: Date\.now\(\),\r?\n\s*content:/);
+  assert.match(appJs, /startedAtMs: Date\.now\(\),\r?\n\s*content,\r?\n/);
 });
