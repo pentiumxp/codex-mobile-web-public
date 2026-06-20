@@ -2,6 +2,50 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-20 Background Task-Card Running Status Sync Fix
+
+- Status: implemented and validated locally; not committed, pushed, or deployed
+  in this turn.
+- User-visible issue:
+  - Home AI audit cards / cross-thread task cards can successfully start work in
+    a background target thread such as Finance, but Codex Mobile's thread-list
+    running indicator may lag until a later list refresh.
+- Root cause:
+  - `/api/events` subscriptions are scoped to the current thread for turn-level
+    notifications.
+  - `turn/started` / `turn/completed` for a background target thread were not
+    delivered to unrelated clients, and fallback thread-list cache could keep an
+    older non-running row briefly.
+- Fix:
+  - `threadTaskCardService` approval injection now broadcasts an immediate
+    lightweight `thread/status/changed` active summary after `turn/start`
+    returns.
+  - Generic server `broadcast()` now derives lightweight
+    `thread/status/changed` summaries from `turn/started` / `turn/completed`
+    notifications.
+  - These derived summaries clear the thread-list fallback cache.
+  - Background turn bodies, tool output, diffs, and raw turn content remain
+    scoped to the subscribed/current thread; only the status summary is
+    broadcast to all clients.
+- Files changed:
+  - `server.js`
+  - `test/thread-task-card-route.test.js`
+  - `README.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/TROUBLESHOOTING.md`
+- Validation:
+  - `node --check server.js && node --test test/thread-task-card-route.test.js test/conversation-render.test.js test/mobile-viewport.test.js`
+    passed: 59 tests.
+  - `npm run check` passed.
+  - `git diff --check` passed.
+  - Center required check passed:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - `npm test` passed: 527 tests.
+  - Bounded runtime probe of `/api/threads?limit=120` found Finance/记账 row
+    currently `idle`, indicating the observed run had already ended.
+  - AI Ops evidence ledger:
+    `evidence-c644bd2c-3282-4100-99d8-97f56e8381fc`.
+
 ## 2026-06-20 Public PR #74/#75 Thread List And Image Card Fixes
 
 - Status: public PRs evaluated, merged, pushed to public, then reverse-synced

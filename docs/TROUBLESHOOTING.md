@@ -276,11 +276,15 @@ rollout file mtime as a fallback `updatedAt` source. This lets a Hermes/remote
 client show or clear the spinner even when app-server only returns `notLoaded`.
 The browser still keeps `runningThreadIds` across thread-list refreshes where
 the row only says `notLoaded`, and current-thread `turn/started` /
-`turn/completed` notifications write back to the matching sidebar row. Those
-hints also carry `codexMobileRunningThreadHintedAtById` timestamps; if a row
-stays `notLoaded` without a terminal status and the current thread has no
-active turn, the hint expires after the stale window so completed work does not
-keep a permanent spinner.
+`turn/completed` notifications write back to the matching sidebar row. For
+background work started by cross-thread task cards, the server derives a
+lightweight `thread/status/changed` event from `turn/started` / `turn/completed`
+and clears the thread-list fallback cache; if that derived event is missing, the
+running spinner may appear only after a later full list refresh. Those hints also
+carry `codexMobileRunningThreadHintedAtById` timestamps; if a row stays
+`notLoaded` without a terminal status and the current thread has no active turn,
+the hint expires after the stale window so completed work does not keep a
+permanent spinner.
 
 If thread detail shows `idle` or latest turn `interrupted`, but the thread list
 still reports the same row as `active`, compare app-server list rows with

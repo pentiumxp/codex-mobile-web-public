@@ -85,8 +85,25 @@ test("approved task cards inherit target thread model and effort", () => {
   assert.match(setupBlock, /thread\/resume", applyResumeRuntimeSettings\(/);
   assert.match(setupBlock, /const turnParams = applyTurnRuntimeSettings\(/);
   assert.match(setupBlock, /codex\.request\("turn\/start", turnParams/);
+  assert.match(setupBlock, /broadcastThreadStatusChanged\(card\.target\.threadId, \{ type: "active" \}/);
+  assert.match(setupBlock, /source: "thread-task-card-approval"/);
   assert.match(functionBody(serverJs, "applyTurnRuntimeSettings"), /if \(settings\.reasoningEffort\) params\.effort = settings\.reasoningEffort;/);
   assert.match(functionBody(serverJs, "applyTurnRuntimeSettings"), /if \(settings\.model\) params\.model = settings\.model;/);
+});
+
+test("server broadcasts lightweight thread status for background turn notifications", () => {
+  const broadcastBody = functionBody(serverJs, "broadcast");
+  assert.match(broadcastBody, /threadStatusChangedPayloadFromTurnNotification\(payload\)/);
+  assert.match(broadcastBody, /clearThreadListFallbackCache\(\);\s*broadcast\(statusPayload\);/);
+
+  const statusPayloadBody = functionBody(serverJs, "threadStatusChangedPayloadFromTurnNotification");
+  assert.match(statusPayloadBody, /method !== "turn\/started" && method !== "turn\/completed"/);
+  assert.match(statusPayloadBody, /method === "turn\/started"[\s\S]*\{ type: "active" \}/);
+  assert.match(statusPayloadBody, /turn\.status \|\| payload\.params\.status \|\| \{ type: "completed" \}/);
+
+  const eventFilterBody = functionBody(serverJs, "shouldSendEventToClient");
+  assert.match(eventFilterBody, /payload\.method === "thread\/status\/changed"[\s\S]*return true;/);
+  assert.match(functionBody(serverJs, "broadcastThreadStatusChanged"), /clearThreadListFallbackCache\(\);\s*broadcast\(payload\);/);
 });
 
 test("server materializes structured task-card drafts from thread detail", () => {

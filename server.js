@@ -685,9 +685,14 @@ const threadTaskCardService = createThreadTaskCardService({
       input: [{ type: "text", text: message.text }],
     }, runtimeSettings);
     const result = await codex.request("turn/start", turnParams, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+    const turnId = String((result && result.turnId) || (result && result.turn && result.turn.id) || "");
+    broadcastThreadStatusChanged(card.target.threadId, { type: "active" }, {
+      source: "thread-task-card-approval",
+      turnId,
+    });
     return {
       threadId: String(card.target.threadId || ""),
-      turnId: String((result && result.turnId) || (result && result.turn && result.turn.id) || ""),
+      turnId,
       result,
     };
   },
@@ -6619,6 +6624,11 @@ function serveStatic(req, res) {
 
 function broadcast(payload) {
   if (payload && payload.type === "notification") {
+    const statusPayload = threadStatusChangedPayloadFromTurnNotification(payload);
+    if (statusPayload) {
+      clearThreadListFallbackCache();
+      broadcast(statusPayload);
+    }
     try {
       threadDetailProjectionService.applyNotification(payload.method, payload.params || {});
     } catch (err) {
@@ -6643,6 +6653,49 @@ function broadcast(payload) {
 function notificationThreadId(payload) {
   if (!payload || payload.type !== "notification" || !payload.params) return "";
   return String(payload.params.threadId || payload.params.conversationId || "");
+}
+
+function threadStatusChangedPayload(threadId, status, meta = {}) {
+  const id = String(threadId || "").trim();
+  if (!id) return null;
+  const params = {
+    threadId: id,
+    status: status || { type: "notLoaded" },
+  };
+  const source = String(meta.source || "").trim();
+  const turnId = String(meta.turnId || "").trim();
+  if (source) params.source = source;
+  if (turnId) params.turnId = turnId;
+  return {
+    type: "notification",
+    method: "thread/status/changed",
+    params,
+  };
+}
+
+function broadcastThreadStatusChanged(threadId, status, meta = {}) {
+  const payload = threadStatusChangedPayload(threadId, status, meta);
+  if (!payload) return false;
+  clearThreadListFallbackCache();
+  broadcast(payload);
+  return true;
+}
+
+function threadStatusChangedPayloadFromTurnNotification(payload) {
+  if (!payload || payload.type !== "notification" || !payload.params) return null;
+  const method = String(payload.method || "");
+  if (method !== "turn/started" && method !== "turn/completed") return null;
+  const threadId = notificationThreadId(payload);
+  if (!threadId) return null;
+  const turn = payload.params.turn && typeof payload.params.turn === "object" ? payload.params.turn : {};
+  const turnId = String(turn.id || payload.params.turnId || "");
+  const status = method === "turn/started"
+    ? { type: "active" }
+    : (turn.status || payload.params.status || { type: "completed" });
+  return threadStatusChangedPayload(threadId, status, {
+    source: method,
+    turnId,
+  });
 }
 
 function shouldSendEventToClient(payload, client = {}) {
