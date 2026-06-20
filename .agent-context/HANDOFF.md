@@ -5961,3 +5961,45 @@ The previous full handoff was archived and should be opened only when old proven
   - Evidence ledger records:
     `evidence-e6f4d29a-a592-4dc1-98e8-0edac79df5f8`,
     `evidence-927f877b-bd5c-483b-b4e2-55e7fcf0eb28`.
+
+## 2026-06-20 Pending Upload Preview And Live Refresh Jitter v319
+
+- Status: implemented and validated locally; static production sync pending at
+  the time of this handoff entry.
+- User-visible issues:
+  - After v318, an existing-thread send with an image attachment could show the
+    local pending user bubble as a bare file name/path and mark it as unable to
+    load before the server durable projection returned.
+  - In v318, receipt text and Composer layout could visibly tremble every few
+    seconds while live-poll/detail refresh patched the current turn.
+- Evidence:
+  - The sample upload existed at
+    `/Users/xuxin/.codex-mobile-web/uploads/2026-06-20/019ea76b-d846-7892-bda0-c0fff9cf7581/...jpg`,
+    mode `600`, same service user, and authenticated
+    `/api/uploads/file?path=<absolute-upload-path>` returned `200 image/jpeg`;
+    unauthenticated returned `401`. This was not a filesystem permission issue.
+  - Thread detail preserved the absolute upload path in the durable
+    `Uploaded attachments` summary.
+  - The bug was the v318 local pending item path: `localUserMessageItem()` used
+    `appendLocalAttachmentSummary()` with only `file.name`, so the immediate
+    optimistic bubble lacked an image URL until server projection caught up.
+- Fix:
+  - `public/app.js`: local pending image attachments now add temporary
+    `input_image` parts using the browser `blob:` preview URL, while keeping the
+    attachment summary text for later durable echo matching.
+  - `public/app.js`: live detail refresh now tries
+    `patchVisibleItemsOnlyFromRefresh()` for the latest live turn when visible
+    item keys are stable, patching only changed item DOM instead of patching the
+    whole turn article.
+  - Advanced shell cache/build id to `codex-mobile-shell-v319`.
+  - Added Chinese README release notes and focused regression tests.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js`
+  - `node --test test/conversation-render.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js test/app-update.test.js test/build-refresh-policy.test.js test/file-preview-ui.test.js`
+  - `npm run check`
+  - `npm test` (534 tests)
+  - `git diff --check`
+- Deployment note:
+  - This is a static browser-shell behavior change. If deployed before public
+    sync, use the same bounded static-only sync/readback pattern as v318 and do
+    not restart 8787 unless server files are changed.

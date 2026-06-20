@@ -364,7 +364,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v318";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v319";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -9836,22 +9836,65 @@ function insertVisibleItemDom(turn, item) {
 }
 
 function patchVisibleItemDom(turn, item) {
-  if (!turn || !item || !item.id || isReasoningItem(item)) return false;
   if (isOperationalItem(item)) return updateLiveOperationDockForLocalPatch();
-  const conversation = $("conversation");
-  if (!conversation) return false;
-  const index = sourceIndexForVisibleItem(turn, item);
-  const key = stableItemKey(turn, item, index);
-  const target = conversation.querySelector(`[data-render-key="${escapeSelectorAttr(key)}"]`);
+  const target = patchVisibleItemDomNode(turn, item, existingConversationRenderKeys());
   if (!target) return false;
   const wasNearBottom = isConversationNearBottom();
   const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom: wasNearBottom });
-  const previousKeys = existingConversationRenderKeys();
+  return completeLocalConversationDomUpdate(target, wasNearBottom, userReadingCurrentTurn);
+}
+
+function patchVisibleItemDomNode(turn, item, previousKeys, sourceIndex = null) {
+  if (!turn || !item || !item.id || isReasoningItem(item)) return null;
+  const conversation = $("conversation");
+  if (!conversation) return null;
+  const index = Number.isInteger(sourceIndex) && sourceIndex >= 0
+    ? sourceIndex
+    : sourceIndexForVisibleItem(turn, item);
+  const key = stableItemKey(turn, item, index);
+  const target = conversation.querySelector(`[data-render-key="${escapeSelectorAttr(key)}"]`);
+  if (!target) return null;
   const html = renderVisibleItemPatchHtml(turn, item, previousKeys, index);
   const source = firstElementFromHtml(html);
-  if (!source) return false;
+  if (!source) return null;
   patchNode(target, source);
-  return completeLocalConversationDomUpdate(target, wasNearBottom, userReadingCurrentTurn);
+  return target;
+}
+
+function visibleItemPatchEntries(turn) {
+  return visibleItemsForTurn(turn).map((entry, index) => {
+    const item = entry && entry.item;
+    const sourceIndex = Number.isInteger(entry && entry.sourceIndex) && entry.sourceIndex >= 0
+      ? entry.sourceIndex
+      : index;
+    return {
+      item,
+      sourceIndex,
+      key: stableItemKey(turn, item, sourceIndex),
+      signature: visibleItemSignature(item, turn),
+    };
+  }).filter((entry) => entry.item && entry.key && entry.signature);
+}
+
+function sameVisibleItemPatchShape(previousTurn, nextTurn) {
+  const previous = visibleItemPatchEntries(previousTurn);
+  const next = visibleItemPatchEntries(nextTurn);
+  if (previous.length !== next.length) return false;
+  return previous.every((entry, index) => entry.key === next[index].key);
+}
+
+function patchVisibleItemsOnlyFromRefresh(previousTurn, nextTurn, previousKeys) {
+  if (!previousTurn || !nextTurn || !isLatestTurn(nextTurn) || !isLiveTurn(nextTurn)) return false;
+  if (!sameVisibleItemPatchShape(previousTurn, nextTurn)) return false;
+  const previousEntries = visibleItemPatchEntries(previousTurn);
+  const nextEntries = visibleItemPatchEntries(nextTurn);
+  for (let index = 0; index < nextEntries.length; index += 1) {
+    const previousSignature = JSON.stringify(previousEntries[index].signature);
+    const nextSignature = JSON.stringify(nextEntries[index].signature);
+    if (previousSignature === nextSignature) continue;
+    if (!patchVisibleItemDomNode(nextTurn, nextEntries[index].item, previousKeys, nextEntries[index].sourceIndex)) return false;
+  }
+  return true;
 }
 
 function patchLiveTextItemDom(turn, item) {
@@ -9881,8 +9924,13 @@ function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previou
   const wasNearBottom = isConversationNearBottom();
   const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom: wasNearBottom });
   const previousKeys = existingConversationRenderKeys();
+  const previousTurnById = new Map(visibleTurnsForConversation(previousThread)
+    .map((turn) => [String(turn && turn.id || ""), turn])
+    .filter(([id]) => id));
   updateLiveOperationDockHtml(renderLiveOperationDock(nextThread, previousKeys));
   for (const turn of visibleTurnsForConversation(nextThread)) {
+    const previousTurn = previousTurnById.get(String(turn && turn.id || ""));
+    if (previousTurn && patchVisibleItemsOnlyFromRefresh(previousTurn, turn, previousKeys)) continue;
     const html = renderTurn(turn, previousKeys);
     const source = firstElementFromHtml(html);
     const article = turnArticleNode(turn);
@@ -15408,18 +15456,40 @@ function appendLocalAttachmentSummary(text, attachments) {
   return `${text ? `${text}\n\n` : ""}Uploaded attachments:\n${lines.join("\n")}`;
 }
 
+function localImageInputPartsForAttachments(attachments) {
+  return (attachments || [])
+    .map((item) => {
+      const file = item && item.file;
+      if (!file) return null;
+      const previewUrl = localAttachmentPreviewUrl(item);
+      if (!previewUrl) return null;
+      const name = String(file.name || "upload");
+      const mimeType = String(file.type || "").toLowerCase();
+      const imageLike = mimeType.startsWith("image/") || /\.(?:avif|bmp|gif|heic|heif|jpe?g|png|tiff?|webp)$/i.test(name);
+      if (!imageLike) return null;
+      return {
+        type: "input_image",
+        image_url: { url: previewUrl },
+        fileName: name,
+      };
+    })
+    .filter(Boolean);
+}
+
 function localUserMessageItem(text, attachments, clientSubmissionId) {
+  const content = [{
+    type: "text",
+    text: appendLocalAttachmentSummary(text, attachments),
+    text_elements: [],
+  }];
+  content.push(...localImageInputPartsForAttachments(attachments));
   return {
     id: `local-user-${clientSubmissionId || Date.now()}`,
     type: "userMessage",
     mobilePendingSubmission: true,
     clientSubmissionId: clientSubmissionId || "",
     startedAtMs: Date.now(),
-    content: [{
-      type: "text",
-      text: appendLocalAttachmentSummary(text, attachments),
-      text_elements: [],
-    }],
+    content,
   };
 }
 

@@ -93,6 +93,17 @@ function evaluatedInputContentRendererWithKey(key = "") {
   )(URLSearchParams);
 }
 
+function evaluatedLocalUserMessageItem() {
+  const sources = [
+    "formatFileSize",
+    "localAttachmentPreviewUrl",
+    "appendLocalAttachmentSummary",
+    "localImageInputPartsForAttachments",
+    "localUserMessageItem",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`${sources.join("\n")}\nreturn localUserMessageItem;`)();
+}
+
 function evaluatedImageViewRenderer() {
   const sources = [
     "escapeHtml",
@@ -788,6 +799,40 @@ test("existing thread send inserts a local pending user turn before server proje
   assert.deepEqual(harness.counters(), { mergeCount: 1, syncCount: 1 });
   assert.equal(harness.insertLocalSubmittedUserMessage("thread-live", "continue work", [], "submit-123"), false);
   assert.equal(harness.state.currentThread.turns[0].items.length, 1);
+});
+
+test("local pending image attachments render browser previews before upload projection catches up", () => {
+  const localUserMessageItem = evaluatedLocalUserMessageItem();
+  const renderInputContent = evaluatedInputContentRenderer();
+  const item = localUserMessageItem("看一下", [{
+    previewUrl: "blob:http://127.0.0.1:8787/local-preview",
+    file: {
+      name: "homeai-upload-AFF20AEE-D062-4735-9F77-8ABB86CC9277.jpg",
+      type: "image/jpeg",
+      size: 121010,
+    },
+  }], "submit-image");
+
+  assert.equal(item.content.length, 2);
+  assert.equal(item.content[1].type, "input_image");
+  assert.equal(item.content[1].image_url.url, "blob:http://127.0.0.1:8787/local-preview");
+
+  const html = renderInputContent(item.content);
+  assert.match(html, /class="input-image"/);
+  assert.match(html, /src="blob:http:\/\/127\.0\.0\.1:8787\/local-preview"/);
+  assert.doesNotMatch(html, /class="input-attachment"[\s\S]*homeai-upload-AFF20AEE/);
+  assert.doesNotMatch(html, /\/api\/uploads\/file\?path=homeai-upload-AFF20AEE/);
+});
+
+test("live detail refresh can patch changed visible items without replacing the whole turn", () => {
+  assert.match(appJs, /function patchVisibleItemDomNode\(/);
+  assert.match(appJs, /function visibleItemPatchEntries\(/);
+  assert.match(appJs, /function sameVisibleItemPatchShape\(/);
+  assert.match(appJs, /function patchVisibleItemsOnlyFromRefresh\(/);
+  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /isLatestTurn\(nextTurn\) \|\| !isLiveTurn\(nextTurn\)/);
+  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /sameVisibleItemPatchShape\(previousTurn, nextTurn\)/);
+  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /patchVisibleItemDomNode\(nextTurn, nextEntries\[index\]\.item, previousKeys, nextEntries\[index\]\.sourceIndex\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /patchVisibleItemsOnlyFromRefresh\(previousTurn, turn, previousKeys\)/);
 });
 
 test("turn timer prefers live item activity over idle sync labels", () => {
