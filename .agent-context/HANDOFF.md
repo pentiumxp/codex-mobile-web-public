@@ -2,6 +2,239 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-20 iOS Upload Image Data-URL Recovery v330
+
+- Status: implemented, validated, committed, and deployed to Mac production with
+  no listener restart. Not pushed to public in this turn.
+- Source commit:
+  - `0d1deb4` `fix: 修复 iOS 图片黑框恢复`
+- User-visible issue:
+  - v329 moved protected image recovery to local `blob:` URLs, but the user's
+    iPhone still showed a black image box with the native broken-image icon.
+    This meant the upload route and authenticated probe were good, but iOS
+    WebKit could still fail to paint the recovered blob JPEG.
+- Root cause:
+  - After v329 changed the image source to a `blob:` URL, any later iOS WebKit
+    image failure no longer carried the original `/api/uploads/file` URL in the
+    `<img>` source. The client therefore could lose the protected upload route
+    needed for a second recovery attempt.
+  - Some iOS WebKit cases appear to render a failed blob image as a black frame
+    with the native broken icon instead of reliably firing the same error path
+    used by desktop Chromium.
+- Fix:
+  - Frontend shell advanced to `codex-mobile-shell-v330`.
+  - Protected local API image tags now keep the original source in
+    `data-protected-image-src`, so a data/blob recovery failure can still return
+    to the authenticated upload/generated/file-preview route.
+  - Successful authenticated probes now prefer converting the image blob to a
+    `data:image/...` URL with `FileReader`. This avoids the iPhone blob JPEG
+    paint path that produced a black box.
+  - If `FileReader` is unavailable, or the image is larger than the bounded
+    inline threshold, the previous blob/cache-buster fallback remains.
+  - README now records the v330 Chinese release note.
+- Validation:
+  - Syntax checks passed:
+    `node --check public/app.js && node --check public/sw.js && node --check test/conversation-render.test.js`.
+  - Focused tests passed:
+    `node --test test/conversation-render.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (84 tests).
+  - `npm run check` passed.
+  - `npm test` passed: 549 tests.
+  - `git diff --check` passed.
+  - Center required check passed:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - Production readback after deploy showed:
+    `clientBuildId=0.1.11|codex-mobile-shell-v330` and
+    `shellCacheName=codex-mobile-shell-v330`.
+  - Production Playwright visual smoke opened the current thread, found the
+    `46073243` uploaded image, verified it initially loaded as eager at
+    `591x1280` with `data-protected-image-src`, simulated an image `error`,
+    then verified the same card recovered to a `data:image` URL, retained the
+    original protected source, had no failed or retrying state, and kept
+    `591x1280` natural size.
+  - Visual screenshot:
+    `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v330-46073243-data-url-recovery-1781949737466.png`.
+  - AI Ops evidence ledger:
+    `evidence-e99b7694-d9a5-4add-944a-334771ef9edd`,
+    `evidence-8aef9821-8e45-4e51-92ba-c62983ce54f8`, and
+    `evidence-a498308e-7da2-48fb-9e6c-bd7c66cf7336`.
+- Deployment:
+  - Executed central Mac plugin deploy with no listener restart:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart none --health-url http://127.0.0.1:8787/api/public-config --execute --json`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260620T100133Z-plugin-codex-mobile-web-manual`.
+  - This release is static frontend-only; no 8787 listener restart is required.
+- Current outcome:
+  - After v330 deploy, production/Playwright still passed for the `C619D7E0`
+    sample: the card loaded as `url`, simulated `error` recovered to
+    `data:image`, and no failed/retrying state was observed.
+  - The user's real iPhone still showed no visible improvement and continued
+    to display the broken/black-frame behavior. This is not considered solved
+    on real iPhone hardware.
+  - Per user direction, stop further debugging for now.
+  - Incident cassette:
+    `/Users/xuxin/.homeai-qa/incidents/incident-20260620T100402Z-codex-mobile-ios-upload-image-unresolved.json`.
+
+## 2026-06-20 iOS Upload Image Blob Recovery v329
+
+- Status: implemented, validated, committed, and deployed to Mac production with
+  no listener restart. Superseded by v330 for iPhone black-box image rendering.
+- Source commit:
+  - `34e12f7` `fix: 修复 iOS 上传图片失败恢复`
+- User-visible issue:
+  - v328 fixed the desktop/Chromium and Android/Pad recovery path, but the
+    user's iPhone could still keep a user-uploaded image in the
+    "图片无法加载" state after an assistant reply appended to the thread.
+  - The same upload was valid on the server and could render on non-iPhone
+    clients, so the remaining failure was isolated to iOS WebKit image reload
+    behavior rather than upload authorization or durable projection.
+- Root cause:
+  - v328 only retried the protected `/api/uploads/file` URL with a cache-buster
+    after an authenticated probe returned 200. iOS WebKit can remain stuck on
+    a failed `<img>` load for protected same-origin URLs after live DOM updates,
+    even when a separate `fetch` proves the bytes are available.
+  - The proactive failed-image scanner also needed to avoid marking protected
+    images failed before their authenticated recovery path ran.
+- Fix:
+  - Frontend shell advanced to `codex-mobile-shell-v329`.
+  - Protected upload/generated/file-preview images now share a guarded recovery
+    path. On `error`, or when the scanner sees a protected image at
+    `complete=true` and `naturalWidth=0`, the client probes with the current
+    Mobile key.
+  - If the probe returns an image response, the client converts it to a local
+    page `blob:` URL and assigns that to the `<img>`. This bypasses iOS WebKit
+    protected-URL reload instability while keeping the bytes inside the
+    authenticated page.
+  - If blob creation is unavailable, the v328 cache-buster URL retry remains as
+    a fallback.
+  - Upload and generated-image cards now render with `loading="eager"` for
+    protected local API image sources, and the failed-image scanner no longer
+    directly marks protected images as failed before recovery runs.
+  - README now records the v329 Chinese release note.
+- Validation:
+  - Syntax checks passed:
+    `node --check public/app.js && node --check public/sw.js && node --check test/conversation-render.test.js`.
+  - Focused tests passed:
+    `node --test test/conversation-render.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (84 tests).
+  - `npm run check` passed.
+  - `npm test` passed: 549 tests.
+  - `git diff --check` passed.
+  - Center required check passed:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - Production readback after deploy showed:
+    `clientBuildId=0.1.11|codex-mobile-shell-v329` and
+    `shellCacheName=codex-mobile-shell-v329`.
+  - Production Playwright visual smoke opened the current thread, found the
+    `27E20890` uploaded image, verified it initially loaded as eager at
+    `591x1280`, simulated an image `error`, then verified the same card
+    recovered to a `blob:` URL with no failed or retrying state and retained
+    `591x1280` natural size.
+  - Visual screenshot:
+    `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v329-27E20890-blob-recovery-1781949205196.png`.
+  - AI Ops evidence ledger:
+    `evidence-2d9225d0-2d3c-43d4-b4bc-ebd0ccf3d9ce`,
+    `evidence-fe3f2b61-3bde-4471-9f7d-6159adbe1e6b`, and
+    `evidence-49bc5a6f-40a6-4217-aa24-144725c517b9`.
+- Deployment:
+  - Executed central Mac plugin deploy with no listener restart:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart none --health-url http://127.0.0.1:8787/api/public-config --execute --json`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260620T095237Z-plugin-codex-mobile-web-manual`.
+  - This release is static frontend-only; no 8787 listener restart is required.
+
+## 2026-06-20 Protected Upload Image Retry v328
+
+- Status: implemented, validated, committed, and deployed to Mac production with
+  no listener restart. Superseded by v329 for iPhone/iOS WebKit.
+- Source commit:
+  - `a8235cc` `fix: 延迟上传图片失败占位`
+- User-visible issue:
+  - After v327, a newly uploaded user image could render correctly until an
+    assistant reply appended to the same thread. At that moment the user image
+    could temporarily switch to "图片无法加载"; later image-card activity could
+    make it recover.
+- Root cause:
+  - `handleConversationImageError()` immediately marked protected local API
+    images failed before checking whether the authenticated `/api/uploads/file`,
+    `/api/generated-images/file`, or `/api/files/preview/content` URL was still
+    valid. Live reply appends and DOM patching can trigger transient browser
+    `error` events for protected images even when the backing route returns 200.
+- Fix:
+  - Frontend shell advanced to `codex-mobile-shell-v328`.
+  - Protected local API images now first enter a retrying state, probe the
+    authenticated URL with the current Mobile key, and only show failed fallback
+    if the probe fails or returns 401/403.
+  - A successful probe clears failed state and retries the image URL with a
+    cache-buster. The retrying state hides the native broken-image icon without
+    showing the "图片无法加载" fallback.
+  - README records the v328 Chinese release note.
+- Validation:
+  - Focused tests passed:
+    `node --test test/conversation-render.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (82 tests).
+  - `npm run check` passed.
+  - `npm test` passed: 547 tests.
+  - `git diff --check` passed.
+  - Center visual harness tests passed:
+    `node tests/ios-pwa-live-debug-server.test.js`,
+    `node tests/ios-pwa-visual-harness.test.js`, and
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - Production readback showed:
+    `clientBuildId=0.1.11|codex-mobile-shell-v328` and
+    `shellCacheName=codex-mobile-shell-v328`.
+  - Production Playwright visual smoke found the latest `861FEC6A` user upload
+    as one `figure.input-image`, not failed/retrying, natural size `591x1280`,
+    and `/api/uploads/file` returned `200 image/jpeg`.
+  - Visual screenshot:
+    `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v328-861-upload-1781948515519.png`.
+  - AI Ops evidence ledger:
+    `evidence-982dda01-10e8-4884-a6b1-7bb3a6449f6c`,
+    `evidence-9989c6c4-ef2e-41ab-a809-d00503f988c4`, and
+    `evidence-c85eb908-14e0-49a8-a6f9-b8eab9267013`.
+
+## 2026-06-20 Pending Upload Echo Match v327
+
+- Status: implemented, validated, committed, and deployed to Mac production.
+  Superseded by v328/v329 for browser image error recovery.
+- Source commit:
+  - `1828c8b` `fix: 修复图片 pending 回显破图`
+- User-visible issue:
+  - During live image sends, the local pending echo could remain as a broken
+    preview even after the durable uploaded image message existed.
+- Root cause:
+  - The server-side pending echo store compared full user-message content. The
+    optimistic local image message only had the original filename and
+    `blob:`/`input_image` preview, while the durable message used a
+    `.codex-mobile-web/uploads/...-originalName` path. These were the same user
+    image but did not match exactly.
+- Fix:
+  - `adapters/message-pending-echo-service.js` now compares upload attachment
+    summaries, path names, and likely-same image parts so a durable upload path
+    shadows the synthetic pending echo.
+  - README records the v327 Chinese release note.
+- Validation:
+  - Focused tests passed:
+    `node --test test/message-pending-echo-service.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (88 tests).
+  - `npm run check` passed.
+  - `npm test` passed: 546 tests.
+  - `git diff --check` passed.
+  - Center visual harness tests passed:
+    `node tests/ios-pwa-live-debug-server.test.js`,
+    `node tests/ios-pwa-visual-harness.test.js`, and
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - Production readback showed:
+    `clientBuildId=0.1.11|codex-mobile-shell-v327` and
+    `shellCacheName=codex-mobile-shell-v327`.
+  - Production Playwright visual smoke found the latest `861FEC6A` user upload
+    as one `figure.input-image`, loaded from `/api/uploads/file` with natural
+    size `591x1280`, and no failed image state.
+  - Visual screenshot:
+    `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v327-861-upload-1781948102978.png`.
+  - AI Ops evidence ledger:
+    `evidence-edaac872-aa49-40a1-a2c8-08d0d68e63e7`.
+
 ## 2026-06-20 Lazy Upload Image False-Failure Fix v326
 
 - Status: implemented, validated, committed, and deployed to Mac production with
