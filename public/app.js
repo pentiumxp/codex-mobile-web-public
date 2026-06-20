@@ -364,7 +364,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v323";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v324";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -4051,8 +4051,7 @@ function isReasoningItem(item) {
 }
 
 function syncActiveTurnFromThread() {
-  const latest = latestTurn();
-  const running = latest && !isTurnComplete(latest) && isRunningStatus(latest.status) ? latest : null;
+  const running = latestLiveTurnCandidate();
   state.activeTurnId = running ? running.id : "";
   const interrupt = $("interruptTurn");
   if (interrupt) interrupt.disabled = !state.activeTurnId;
@@ -4142,6 +4141,20 @@ function latestTurn() {
     if (turnHasDisplayItems(turns[index])) return turns[index];
   }
   return turns.length ? turns[turns.length - 1] : null;
+}
+
+function latestRawTurn() {
+  const turns = state.currentThread && Array.isArray(state.currentThread.turns)
+    ? state.currentThread.turns
+    : [];
+  return turns.length ? turns[turns.length - 1] : null;
+}
+
+function latestLiveTurnCandidate() {
+  const displayLatest = latestTurn();
+  if (displayLatest && !isTurnComplete(displayLatest) && isRunningStatus(displayLatest.status)) return displayLatest;
+  const rawLatest = latestRawTurn();
+  return rawLatest && !isTurnComplete(rawLatest) && isRunningStatus(rawLatest.status) ? rawLatest : null;
 }
 
 function turnById(turnId) {
@@ -4557,7 +4570,18 @@ function userMessagePathNameOverlap(left, right) {
   if (!left.paths.length || !right.paths.length) return false;
   const leftNames = new Set(left.paths.map(comparablePathName).filter(Boolean));
   if (!leftNames.size) return false;
-  return right.paths.some((pathValue) => leftNames.has(comparablePathName(pathValue)));
+  return right.paths.some((pathValue) => {
+    const rightName = comparablePathName(pathValue);
+    return rightName && Array.from(leftNames).some((leftName) => comparablePathNamesLikelySame(leftName, rightName));
+  });
+}
+
+function comparablePathNamesLikelySame(leftName, rightName) {
+  const left = String(leftName || "");
+  const right = String(rightName || "");
+  if (!left || !right) return false;
+  if (left === right) return true;
+  return left.endsWith(`-${right}`) || right.endsWith(`-${left}`);
 }
 
 function userMessageSpecificity(item) {
@@ -4673,12 +4697,19 @@ function normalizeThreadVisibleUserMessages(thread) {
   for (let turnIndex = 0; turnIndex < thread.turns.length; turnIndex += 1) {
     const turn = thread.turns[turnIndex];
     if (!turn || !Array.isArray(turn.items)) continue;
-    turn.items = turn.items.filter((item) => !(isOptimisticUserMessage(item)
-      && durableUserMessages.some((real) => real.turnIndex >= turnIndex
-        && real.item.id !== item.id
-        && userMessagesCanShadow(real.item, item))));
+    turn.items = turn.items.filter((item) => !shouldDropOptimisticUserMessageForDurable(item, turnIndex, durableUserMessages));
   }
   return thread;
+}
+
+function shouldDropOptimisticUserMessageForDurable(item, turnIndex, durableUserMessages) {
+  if (!isOptimisticUserMessage(item) || !Array.isArray(durableUserMessages)) return false;
+  return durableUserMessages.some((real) => {
+    if (!real || !real.item || real.item.id === item.id) return false;
+    if (!userMessagesCanShadow(real.item, item)) return false;
+    if (real.turnIndex >= turnIndex) return true;
+    return userMessageHasVisualAttachment(real.item) && userMessageHasVisualAttachment(item);
+  });
 }
 
 function threadDurableUserMessages(turns) {
@@ -5134,7 +5165,7 @@ function liveReasoningElapsed(item, turn) {
 }
 
 function currentLiveTurn() {
-  const latest = latestTurn();
+  const latest = latestLiveTurnCandidate() || latestTurn();
   if (state.activeTurnId) {
     const active = latest && latest.id === state.activeTurnId ? latest : null;
     if (active && isLiveTurn(active)) return active;

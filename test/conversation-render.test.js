@@ -242,6 +242,7 @@ function evaluatedUserMessagesLikelySame() {
     "userMessageComparableParts",
     "userMessagePathOverlap",
     "comparablePathName",
+    "comparablePathNamesLikelySame",
     "userMessagePathNameOverlap",
     "userMessagesLikelySame",
   ].map((name) => functionSourceFrom(appJs, name));
@@ -269,6 +270,7 @@ function evaluatedMergeItemsPreservingLocalVisible() {
     "userMessageComparableParts",
     "userMessagePathOverlap",
     "comparablePathName",
+    "comparablePathNamesLikelySame",
     "userMessagePathNameOverlap",
     "userMessageSpecificity",
     "userMessagesLikelySame",
@@ -324,6 +326,7 @@ function evaluatedMergeItemsPreservingLocalVisibleWithRealVisibleWeight() {
     "userMessageComparableParts",
     "userMessagePathOverlap",
     "comparablePathName",
+    "comparablePathNamesLikelySame",
     "userMessagePathNameOverlap",
     "userMessageSpecificity",
     "userMessagesLikelySame",
@@ -380,6 +383,8 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "stripAttachmentSummaryLinePrefix",
     "parseAttachmentLine",
     "splitAttachmentSummaryText",
+    "isLikelyAbsoluteLocalPath",
+    "canRenderImageAttachment",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
     "isTurnUsageSummaryItem",
@@ -387,6 +392,7 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "userMessageComparableParts",
     "userMessagePathOverlap",
     "comparablePathName",
+    "comparablePathNamesLikelySame",
     "userMessagePathNameOverlap",
     "userMessageSpecificity",
     "userMessagesLikelySame",
@@ -397,7 +403,9 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "userMessageShadowPriority",
     "mergeLikelySameUserMessage",
     "dedupeLikelySameUserMessages",
+    "userMessageHasVisualAttachment",
     "normalizeThreadVisibleUserMessages",
+    "shouldDropOptimisticUserMessageForDurable",
     "threadDurableUserMessages",
     "shouldDropInitialSubmissionEchoTurn",
     "threadHasInitialSubmissionEcho",
@@ -449,12 +457,15 @@ function evaluatedNormalizeThreadVisibleUserMessages() {
     "stripAttachmentSummaryLinePrefix",
     "parseAttachmentLine",
     "splitAttachmentSummaryText",
+    "isLikelyAbsoluteLocalPath",
+    "canRenderImageAttachment",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
     "normalizeComparableText",
     "userMessageComparableParts",
     "userMessagePathOverlap",
     "comparablePathName",
+    "comparablePathNamesLikelySame",
     "userMessagePathNameOverlap",
     "userMessageSpecificity",
     "userMessagesLikelySame",
@@ -464,7 +475,9 @@ function evaluatedNormalizeThreadVisibleUserMessages() {
     "userMessageShadowPriority",
     "mergeLikelySameUserMessage",
     "dedupeLikelySameUserMessages",
+    "userMessageHasVisualAttachment",
     "normalizeThreadVisibleUserMessages",
+    "shouldDropOptimisticUserMessageForDurable",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
 function itemVisibleWeight(item) { return JSON.stringify(item || {}).length; }
@@ -488,6 +501,8 @@ function evaluatedLiveUserMessageUpsert() {
     "stripAttachmentSummaryLinePrefix",
     "parseAttachmentLine",
     "splitAttachmentSummaryText",
+    "isLikelyAbsoluteLocalPath",
+    "canRenderImageAttachment",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
     "isTurnUsageSummaryItem",
@@ -495,6 +510,7 @@ function evaluatedLiveUserMessageUpsert() {
     "userMessageComparableParts",
     "userMessagePathOverlap",
     "comparablePathName",
+    "comparablePathNamesLikelySame",
     "userMessagePathNameOverlap",
     "userMessagesLikelySame",
     "userMessagesCanShadow",
@@ -503,7 +519,9 @@ function evaluatedLiveUserMessageUpsert() {
     "userMessageShadowPriority",
     "mergeLikelySameUserMessage",
     "dedupeLikelySameUserMessages",
+    "userMessageHasVisualAttachment",
     "normalizeThreadVisibleUserMessages",
+    "shouldDropOptimisticUserMessageForDurable",
     "upsertItem",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
@@ -558,6 +576,7 @@ function evaluatedVisibleItemsForTurn() {
     "userMessageComparableParts",
     "userMessagePathOverlap",
     "comparablePathName",
+    "comparablePathNamesLikelySame",
     "userMessagePathNameOverlap",
     "userMessagesLikelySame",
     "pruneRecentSubmittedUserMessages",
@@ -596,6 +615,8 @@ function evaluatedLatestTurnHelpers() {
   const sources = [
     "turnHasDisplayItems",
     "latestTurn",
+    "latestRawTurn",
+    "latestLiveTurnCandidate",
     "syncActiveTurnFromThread",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
@@ -970,6 +991,18 @@ test("latest turn ignores empty active projection tails", () => {
   assert.equal(harness.latestTurn().id, "active-with-items");
   harness.syncActiveTurnFromThread();
   assert.equal(harness.state.activeTurnId, "active-with-items");
+  assert.equal(harness.interruptDisabled(), false);
+});
+
+test("active timer can follow an empty active tail when no display live turn exists", () => {
+  const harness = evaluatedLatestTurnHelpers();
+  harness.state.currentThread.turns = [
+    { id: "completed", status: "completed", completedAt: 1781141506, items: [{ id: "final", type: "agentMessage", text: "done" }] },
+    { id: "empty-active-tail", status: "inProgress", itemsView: "notLoaded", items: [] },
+  ];
+  assert.equal(harness.latestTurn().id, "completed");
+  assert.equal(harness.syncActiveTurnFromThread(), undefined);
+  assert.equal(harness.state.activeTurnId, "empty-active-tail");
   assert.equal(harness.interruptDisabled(), false);
 });
 
@@ -1784,6 +1817,54 @@ test("cross-turn normalization keeps synthetic repeat when matching durable mess
   assert.equal(thread.turns[1].items[0].id, "mux-user-thread-1-turn-2-submit-2");
 });
 
+test("cross-turn normalization drops later optimistic upload image echoes after durable image appears", () => {
+  const normalizeThreadVisibleUserMessages = evaluatedNormalizeThreadVisibleUserMessages();
+  const uploadPath = "/Users/xuxin/.codex-mobile-web/uploads/2026-06-20/thread/1781940095858-homeai-upload-49DBCECD.jpg";
+  const thread = {
+    turns: [
+      {
+        id: "durable-turn",
+        status: { type: "completed", mobileSupersededLive: true },
+        items: [{
+          id: "real-user-image",
+          type: "userMessage",
+          content: [{
+            type: "input_text",
+            text: `Uploaded attachments:\n- homeai-upload-49DBCECD.jpg (image, image/jpeg, 125.6 KB): ${uploadPath}`,
+          }],
+        }],
+      },
+      {
+        id: "local-live-turn",
+        status: "inProgress",
+        items: [{
+          id: "local-user-submit-image",
+          type: "userMessage",
+          mobilePendingSubmission: true,
+          clientSubmissionId: "submit-image",
+          content: [
+            {
+              type: "text",
+              text: "Uploaded attachments:\n- homeai-upload-49DBCECD.jpg (image, image/jpeg, 125.6 KB): homeai-upload-49DBCECD.jpg",
+            },
+            {
+              type: "input_image",
+              image_url: { url: "blob:http://127.0.0.1:8787/local-preview" },
+              fileName: "homeai-upload-49DBCECD.jpg",
+            },
+          ],
+        }],
+      },
+    ],
+  };
+
+  normalizeThreadVisibleUserMessages(thread);
+
+  assert.equal(thread.turns[0].items.length, 1);
+  assert.equal(thread.turns[0].items[0].id, "real-user-image");
+  assert.equal(thread.turns[1].items.length, 0);
+});
+
 test("new-thread initial optimistic echo is dropped when durable first turn arrives with a different id", () => {
   const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
   const existingThread = {
@@ -1918,12 +1999,18 @@ test("thread detail pending server requests render approval cards without SSE ti
 
 test("active turn state follows only the latest durable turn", () => {
   const syncBody = functionBody("syncActiveTurnFromThread");
-  assert.match(syncBody, /const latest = latestTurn\(\);/);
-  assert.match(syncBody, /const running = latest && !isTurnComplete\(latest\) && isRunningStatus\(latest\.status\) \? latest : null/);
+  assert.match(syncBody, /const running = latestLiveTurnCandidate\(\);/);
   assert.doesNotMatch(syncBody, /reverse\(\)\.find/);
 
+  const candidateBody = functionBody("latestLiveTurnCandidate");
+  assert.match(candidateBody, /const displayLatest = latestTurn\(\);/);
+  assert.match(candidateBody, /const rawLatest = latestRawTurn\(\);/);
+  assert.match(candidateBody, /isRunningStatus\(displayLatest\.status\)/);
+  assert.match(candidateBody, /isRunningStatus\(rawLatest\.status\)/);
+  assert.doesNotMatch(candidateBody, /reverse\(\)\.find/);
+
   const liveBody = functionBody("currentLiveTurn");
-  assert.match(liveBody, /const latest = latestTurn\(\);/);
+  assert.match(liveBody, /const latest = latestLiveTurnCandidate\(\) \|\| latestTurn\(\);/);
   assert.match(liveBody, /const active = latest && latest\.id === state\.activeTurnId \? latest : null/);
   assert.match(liveBody, /return latest && isLiveTurn\(latest\) \? latest : null/);
   assert.doesNotMatch(liveBody, /reverse\(\)\.find/);
