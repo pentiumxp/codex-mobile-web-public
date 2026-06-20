@@ -4099,16 +4099,28 @@ html.keyboard-open .side-chat-form textarea {
   flex: 0 0 auto;
   min-width: 0;
   width: 100%;
+  min-height: var(--live-operation-dock-compact-height, 54px);
   padding: 0 20px 8px;
   background: var(--bg);
   border-top: 1px solid var(--line-soft);
   overflow: hidden;
+  contain: layout paint;
 }
 
 .live-operation-dock .live-operation {
   margin: 0;
   box-shadow: none;
   pointer-events: auto;
+}
+
+.live-operation-dock:not([data-mode="expanded"]) {
+  height: var(--live-operation-dock-compact-height, 54px);
+}
+
+.live-operation-dock:not([data-mode="expanded"]) .live-operation {
+  height: 44px;
+  min-height: 44px;
+  max-height: 44px;
 }
 
 .live-operation-dock-inner {
@@ -4151,7 +4163,12 @@ html.keyboard-open .side-chat-form textarea {
 }
 
 .live-operation-dock .operation-meta-line {
+  min-height: 28px;
   padding-right: 118px;
+}
+
+.live-operation-dock .operation-meta-main {
+  overflow: hidden;
 }
 
 .live-operation-dock .operation-detail-line {

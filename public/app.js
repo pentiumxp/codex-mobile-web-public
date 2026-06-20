@@ -364,7 +364,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v315";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v316";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -7191,12 +7191,22 @@ async function refreshCurrentThread(options = {}) {
   const apiElapsedMs = roundedDurationMs(apiStartedAt);
   if (state.currentThreadId !== threadId || seq !== state.threadLoadSeq) return;
   const renderStartedAt = nowPerfMs();
+  const previousConversationSignature = conversationRenderSignature(state.currentThread);
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
+  const nextConversationSignature = conversationRenderSignature(state.currentThread);
+  const shouldRenderDetail = previousConversationSignature !== nextConversationSignature
+    || state.renderedConversationSignature !== nextConversationSignature;
   mergeThreadIntoThreadList(state.currentThread);
   renderComposerSettings();
   syncActiveTurnFromThread();
   renderThreads();
-  renderCurrentThread();
+  if (shouldRenderDetail) {
+    renderCurrentThread();
+  } else {
+    updateCurrentThreadHeader(state.currentThread);
+    updateTickTimer();
+    scheduleScrollToBottomButtonUpdate();
+  }
   postPerformanceEvent("thread_refresh_ms", {
     source,
     threadId,
@@ -7209,6 +7219,7 @@ async function refreshCurrentThread(options = {}) {
     turns: Array.isArray(result.thread && result.thread.turns) ? result.thread.turns.length : 0,
     omittedTurns: Number(result.thread && result.thread.mobileOmittedTurnCount || 0),
     rolloutSizeBytes: rolloutSizeBytes(result.thread),
+    skippedDetailRender: !shouldRenderDetail,
   }, {
     key: "thread_refresh_ms",
     minIntervalMs: PERF_EVENT_THROTTLE_MS,
@@ -9507,6 +9518,13 @@ function updateConversationHtml(html, signature, options = {}) {
   return true;
 }
 
+function updateCurrentThreadHeader(thread = state.currentThread) {
+  const titleEl = $("threadTitle");
+  const metaEl = $("threadMeta");
+  if (titleEl) titleEl.textContent = thread ? (thread.name || thread.preview || thread.id) : "Select a thread";
+  if (metaEl) metaEl.textContent = "";
+}
+
 function updateLiveOperationDockHtml(html = "") {
   const dock = $("liveOperationDock");
   if (!dock) return false;
@@ -9581,6 +9599,44 @@ function sourceIndexForVisibleItem(turn, item) {
   if (entry && Number.isInteger(entry.sourceIndex) && entry.sourceIndex >= 0) return entry.sourceIndex;
   const index = Array.isArray(turn.items) ? turn.items.indexOf(item) : -1;
   return index >= 0 ? index : 0;
+}
+
+function renderVisibleItemPatchHtml(turn, item, previousKeys = new Set(), index = 0) {
+  if (!item) return "";
+  if (isContextCompactionItem(item)) return renderContextCompaction(item, turn, previousKeys, index);
+  if (isOperationalItem(item)) return renderLiveOperation(item, turn, previousKeys, index);
+  if (item.type === "reasoning" && isLiveTurn(turn)) return "";
+  return renderItem(item, turn, previousKeys, index);
+}
+
+function patchVisibleItemDom(turn, item) {
+  if (!turn || !item || !item.id || isReasoningItem(item)) return false;
+  const conversation = $("conversation");
+  if (!conversation) return false;
+  const index = sourceIndexForVisibleItem(turn, item);
+  const key = stableItemKey(turn, item, index);
+  const target = conversation.querySelector(`[data-render-key="${escapeSelectorAttr(key)}"]`);
+  if (!target) return false;
+  const wasNearBottom = isConversationNearBottom();
+  const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom: wasNearBottom });
+  const previousKeys = existingConversationRenderKeys();
+  const html = renderVisibleItemPatchHtml(turn, item, previousKeys, index);
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  const source = template.content.firstElementChild;
+  if (!source) return false;
+  patchNode(target, source);
+  if (isOperationalItem(item)) updateLiveOperationDockHtml(renderLiveOperationDock(state.currentThread, previousKeys));
+  hydrateGitHubLinkCards(target);
+  hydrateMermaidDiagrams(target);
+  scheduleFailedAppImageScan(target);
+  state.renderedConversationSignature = conversationRenderSignature(state.currentThread);
+  if (!userReadingCurrentTurn && !shouldHoldAutoScrollForCurrentTurn() && (wasNearBottom || shouldFollowSubmittedMessageToBottom() || shouldFollowViewportChangeToBottom())) {
+    scheduleConversationToBottom();
+  } else {
+    scheduleScrollToBottomButtonUpdate();
+  }
+  return true;
 }
 
 function patchLiveTextItemDom(turn, item) {
@@ -9814,10 +9870,7 @@ function renderCurrentThread(options = {}) {
         && !shouldHoldAutoScrollForCurrentTurn()
         && (options.stickToBottom === true || nearBottom)));
   const previousKeys = existingConversationRenderKeys();
-  const titleEl = $("threadTitle");
-  const metaEl = $("threadMeta");
-  if (titleEl) titleEl.textContent = thread.name || thread.preview || thread.id;
-  if (metaEl) metaEl.textContent = "";
+  updateCurrentThreadHeader(thread);
   if (thread.mobileLoading) {
     updateLiveOperationDockHtml("");
     updateConversationHtml(
@@ -11188,10 +11241,7 @@ function renderTurn(turn, previousKeys = new Set()) {
     const item = entry.item;
     const sourceIndex = Number.isInteger(entry.sourceIndex) && entry.sourceIndex >= 0 ? entry.sourceIndex : index;
     let html = "";
-    if (isContextCompactionItem(item)) html = renderContextCompaction(item, turn, previousKeys, sourceIndex);
-    else if (isOperationalItem(item)) html = renderLiveOperation(item, turn, previousKeys, sourceIndex);
-    else if (item.type === "reasoning" && isLiveTurn(turn)) html = "";
-    else html = renderItem(item, turn, previousKeys, sourceIndex);
+    html = renderVisibleItemPatchHtml(turn, item, previousKeys, sourceIndex);
     return { html, sourceIndex, order: 1 };
   }).filter((entry) => entry && entry.html);
   const items = renderedItems
@@ -13406,13 +13456,21 @@ function upsertItem(turnId, item) {
     turn.items = turn.items.filter((existing) => existing.id === item.id || !isTurnUsageSummaryItem(existing));
   }
   const index = turn.items.findIndex((x) => x.id === item.id);
+  const canPatchExistingItem = index >= 0;
+  let nextItem = item;
   if (index >= 0 && !item.startedAtMs && turn.items[index].startedAtMs) item.startedAtMs = turn.items[index].startedAtMs;
   if (item.type === "reasoning" && !item.startedAtMs) item.startedAtMs = Date.now();
   if (isOperationalItem(item) && isCompletedStatus(item.status) && !item.completedAtMs) item.completedAtMs = Date.now();
-  if (index >= 0) turn.items[index] = mergeItemPreservingVisibleFields(turn.items[index], item);
-  else turn.items.push(item);
+  if (index >= 0) {
+    turn.items[index] = mergeItemPreservingVisibleFields(turn.items[index], item);
+    nextItem = turn.items[index];
+  } else {
+    turn.items.push(item);
+  }
   normalizeThreadVisibleUserMessages(state.currentThread);
-  if (shouldRenderAfterUpsert(turn, item)) scheduleRenderCurrentThread();
+  if (shouldRenderAfterUpsert(turn, nextItem)) {
+    if (!canPatchExistingItem || !patchVisibleItemDom(turn, nextItem)) scheduleRenderCurrentThread();
+  }
 }
 
 function removeItem(turnId, itemId) {

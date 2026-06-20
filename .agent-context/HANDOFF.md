@@ -2,6 +2,49 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-20 v316 Incremental Thread Rendering Stabilization
+
+- Status: implemented and validated locally; not committed, not deployed, and
+  not pushed in this turn.
+- User-visible issue:
+  - During live intermediate output, thread detail still had visible vertical
+    jitter and occasional whole-page shaking. User specifically requested
+    incremental/local updates instead of broad refresh.
+- Fix:
+  - Frontend shell advanced to `codex-mobile-shell-v316`.
+  - Existing visible item updates now prefer `patchVisibleItemDom()` to patch a
+    single rendered item card. Only new items, reordered/removed items, or
+    failed local patch fall back to `scheduleRenderCurrentThread()`.
+  - `refreshCurrentThread()` now compares the conversation render signature
+    before and after live-poll merge. If the visible conversation signature is
+    unchanged and the DOM is already current, it skips detail re-render and only
+    updates the header, timer, and scroll buttons.
+  - Compact Command dock now has a fixed 54px reserved height with contained
+    layout/paint, so command status/detail updates do not repeatedly squeeze the
+    conversation row. Expanded dock remains user-controlled.
+- Files changed:
+  - `public/app.js`
+  - `public/styles.css`
+  - `public/sw.js`
+  - `test/conversation-render.test.js`
+  - `test/mobile-viewport.test.js`
+  - `test/thread-goal-service.test.js`
+  - `test/thread-task-card-route.test.js`
+  - `README.md`
+  - `docs/TROUBLESHOOTING.md`
+- Validation:
+  - `node --check public/app.js` passed.
+  - Focused tests passed:
+    `node --test test/mobile-viewport.test.js test/turn-scroll-controls.test.js test/conversation-render.test.js`
+    (58 tests).
+  - `npm run check` passed.
+  - Center required check passed:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - `git diff --check` passed.
+  - `npm test` passed: 527 tests.
+  - AI Ops evidence ledger:
+    `evidence-9ad54973-705a-4a35-9d29-d28d2e7b4e2d`.
+
 ## 2026-06-20 Public PR #76 Existing-Thread Spinner Fix
 
 - Status: public PR evaluated, merged, pushed to public, then reverse-synced

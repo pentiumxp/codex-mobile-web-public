@@ -97,9 +97,9 @@ test("composer sizing avoids one-pixel layout churn while typing and streaming",
   assert.match(stylesCss, /\.message-input\s*{[\s\S]*height:\s*44px;[\s\S]*overflow-y:\s*hidden;/);
 });
 
-test("public app shell cache advances after thread list status hint sync", () => {
-  assert.match(swJs, /codex-mobile-shell-v315/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v315"/);
+test("public app shell cache advances after incremental stream rendering stabilization", () => {
+  assert.match(swJs, /codex-mobile-shell-v316/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v316"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);
@@ -246,6 +246,15 @@ test("public app shell cache advances after thread list status hint sync", () =>
   assert.match(appJs, /async function refreshCurrentThread\(options = \{\}\)/);
   assert.match(appJs, /const requestedMode = options\.full === true \|\| String\(options\.mode \|\| ""\)\.toLowerCase\(\) === "full"[\s\S]*\? "full"[\s\S]*: "recent";/);
   assert.match(appJs, /api\(threadDetailApiPath\(threadId, requestedMode === "recent" \? \{ mode: "recent" \} : \{\}\)/);
+  assert.match(appJs, /const previousConversationSignature = conversationRenderSignature\(state\.currentThread\);/);
+  assert.match(appJs, /const shouldRenderDetail = previousConversationSignature !== nextConversationSignature[\s\S]*state\.renderedConversationSignature !== nextConversationSignature;/);
+  assert.match(appJs, /if \(shouldRenderDetail\) \{[\s\S]*renderCurrentThread\(\);[\s\S]*\} else \{[\s\S]*updateCurrentThreadHeader\(state\.currentThread\);[\s\S]*updateTickTimer\(\);[\s\S]*scheduleScrollToBottomButtonUpdate\(\);/);
+  assert.match(appJs, /skippedDetailRender: !shouldRenderDetail/);
+  assert.match(appJs, /function patchVisibleItemDom\(turn, item\)/);
+  assert.match(appJs, /if \(!canPatchExistingItem \|\| !patchVisibleItemDom\(turn, nextItem\)\) scheduleRenderCurrentThread\(\);/);
+  assert.match(stylesCss, /\.live-operation-dock\s*{[\s\S]*min-height:\s*var\(--live-operation-dock-compact-height, 54px\);[\s\S]*contain:\s*layout paint;/);
+  assert.match(stylesCss, /\.live-operation-dock:not\(\[data-mode="expanded"\]\)\s*{[\s\S]*height:\s*var\(--live-operation-dock-compact-height, 54px\);/);
+  assert.match(stylesCss, /\.live-operation-dock:not\(\[data-mode="expanded"\]\) \.live-operation\s*{[\s\S]*height:\s*44px;[\s\S]*max-height:\s*44px;/);
   assert.match(appJs, /if \(shouldBackfillFullThreadDetail\(result\.thread\)\) \{/);
   assert.match(appJs, /backfillFullThreadDetail\(threadId, \{ seq, source \}\)\.catch\(\(\) => \{\}\)/);
   assert.match(appJs, /postPerformanceEvent\("thread_detail_full_ready"/);
