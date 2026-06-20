@@ -4,8 +4,10 @@ Last compacted: 2026-06-08T13:27:43.304Z
 
 ## 2026-06-20 v317 Poll/SSE Local Stream Rendering Fix
 
-- Status: implemented and validated locally; commit/deploy status to be updated
-  before ending the turn.
+- Status: implemented, validated, committed, and deployed to Mac production
+  with no listener restart. Not pushed in this turn.
+- Source commit:
+  - `87bade5` `fix: 减少流式输出整屏刷新`
 - User-visible issue:
   - After v316, streaming/intermediate output could still feel like each new
     item caused a full-screen refresh rather than a local upward text movement.
@@ -58,6 +60,18 @@ Last compacted: 2026-06-08T13:27:43.304Z
   - `npm test` passed: 527 tests.
   - AI Ops evidence ledger:
     `evidence-7b2c50aa-1c5b-4408-9218-606e72335950`.
+- Deployment:
+  - Executed central Mac plugin deploy with no listener restart:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart none --health-url http://127.0.0.1:8787/api/public-config --execute --json`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260620T022902Z-plugin-codex-mobile-web-manual`.
+  - Production readback showed:
+    `clientBuildId=0.1.11|codex-mobile-shell-v317`,
+    `shellCacheName=codex-mobile-shell-v317`,
+    `ready=true`, platform `darwin`, and production workspace path
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Deploy evidence ledger:
+    `evidence-65121a84-4c47-4811-b511-300b6b4ab362`.
 
 ## 2026-06-20 v316 Incremental Thread Rendering Stabilization
 
