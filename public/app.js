@@ -913,6 +913,46 @@ function registerSubmittedUserMessage(threadId, text, attachments, clientSubmiss
   });
 }
 
+function localSubmittedTurnId(clientSubmissionId) {
+  const id = String(clientSubmissionId || "").trim();
+  return id ? `local-turn-${id}` : `local-turn-${Date.now()}`;
+}
+
+function currentThreadHasClientSubmission(clientSubmissionId) {
+  const id = String(clientSubmissionId || "").trim();
+  if (!id || !state.currentThread || !Array.isArray(state.currentThread.turns)) return false;
+  return state.currentThread.turns.some((turn) => Array.isArray(turn && turn.items)
+    && turn.items.some((item) => item && String(item.clientSubmissionId || "") === id));
+}
+
+function insertLocalSubmittedUserMessage(threadId, text, attachments, clientSubmissionId, options = null) {
+  const id = String(threadId || "").trim();
+  if (!id || !state.currentThread || String(state.currentThread.id || "") !== id) return false;
+  const submissionId = String(clientSubmissionId || "").trim();
+  if (submissionId && currentThreadHasClientSubmission(submissionId)) return false;
+  const opts = options || {};
+  const turnId = String(opts.turnId || "").trim() || localSubmittedTurnId(submissionId);
+  state.currentThread.turns = Array.isArray(state.currentThread.turns) ? state.currentThread.turns : [];
+  let turn = state.currentThread.turns.find((entry) => entry && String(entry.id || "") === turnId);
+  if (!turn) {
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    turn = {
+      id: turnId,
+      status: { type: "active" },
+      startedAt: nowSeconds,
+      items: [],
+    };
+    state.currentThread.turns.push(turn);
+  }
+  turn.items = Array.isArray(turn.items) ? turn.items : [];
+  turn.status = isCompletedStatus(turn.status) ? { type: "active" } : (turn.status || { type: "active" });
+  turn.items.push(localUserMessageItem(text, attachments || [], submissionId));
+  state.currentThread.status = { type: "active" };
+  mergeThreadIntoThreadList(state.currentThread);
+  syncActiveTurnFromThread();
+  return true;
+}
+
 function markSubmittedUserMessageFailed(threadId, text, attachments, clientSubmissionId, message) {
   const id = String(clientSubmissionId || "").trim();
   if (!id) return;
@@ -1409,6 +1449,10 @@ function reconcileThreadStatusHints(threads) {
     } else if (wasRunning && staleActive) {
       if (clearRunningThreadHint(id)) changed = true;
     } else if (wasRunning && isThreadListSettledStatus(thread.status)) {
+      if (id === state.currentThreadId && currentLiveTurn()) {
+        if (noteRunningThreadHint(id, nowMs)) changed = true;
+        continue;
+      }
       if (clearRunningThreadHint(id)) changed = true;
       if (id !== state.currentThreadId) state.unreadThreadIds.add(id);
     } else if (shouldExpireRunningThreadHint(id, thread, nowMs)) {
@@ -1425,7 +1469,8 @@ function statusIconInfo(status, threadId = "") {
   if (/active|running|queued|processing|inprogress|in_progress|in-progress|pending|started/.test(normalized)) {
     return { kind: "running", label: text || "running", symbol: "" };
   }
-  if (threadId && state.runningThreadIds.has(String(threadId)) && !isThreadListSettledStatus(status)) {
+  if (threadId && state.runningThreadIds.has(String(threadId))
+    && (!isThreadListSettledStatus(status) || (String(threadId) === state.currentThreadId && currentLiveTurn()))) {
     return { kind: "running", label: text && text !== "notLoaded" ? text : "running", symbol: "" };
   }
   if (threadId && state.unreadThreadIds.has(String(threadId))) {
@@ -3604,9 +3649,15 @@ function markSteerAppliedIfNeeded(turnId, item = null) {
   setSteerFeedback("applied", { turnId: String(turnId) });
 }
 
+function isIdleSyncActivityLabel(label) {
+  return String(label || "").trim() === "同步";
+}
+
 function markIdleActivity(label) {
-  if (!state.activeTurnId && !currentLiveTurn()) return;
-  if (liveActivityLabelForTurn(currentLiveTurn())) return;
+  const liveTurn = currentLiveTurn();
+  if (!state.activeTurnId && !liveTurn) return;
+  if (liveActivityLabelForTurn(liveTurn)) return;
+  if (isIdleSyncActivityLabel(label) && liveTurn) return;
   if (state.activityAtMs && Date.now() - state.activityAtMs < 3000) return;
   markActivity(label);
 }
@@ -4924,10 +4975,18 @@ function visibleTurnsForConversation(thread) {
   return ((thread && thread.turns) || []).slice(-maxVisibleTurnsForThread(thread));
 }
 
+function threadHasVisibleConversationTurns(thread) {
+  return visibleTurnsForConversation(thread).some((turn) => visibleItemsForTurn(turn).length > 0);
+}
+
+function threadIsLoadingWithoutVisibleTurns(thread) {
+  return Boolean(thread && thread.mobileLoading && !threadHasVisibleConversationTurns(thread));
+}
+
 function conversationRootSignature(thread) {
   if (!thread) return "home";
   if (thread.mobileLoadError) return `load-error|${state.currentThreadId || thread.id || ""}|${thread.mobileLoadError}`;
-  if (thread.mobileLoading) return `loading|${state.currentThreadId || thread.id || ""}`;
+  if (threadIsLoadingWithoutVisibleTurns(thread)) return `loading|${state.currentThreadId || thread.id || ""}`;
   const turns = visibleTurnsForConversation(thread);
   const omitted = Number(thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread.turns || []).length - turns.length);
   const readWarningMessage = threadReadWarningMessage(thread);
@@ -4955,7 +5014,7 @@ function conversationRootSignature(thread) {
 function conversationRenderSignature(thread) {
   if (!thread) return "home";
   if (thread.mobileLoadError) return `load-error|${state.currentThreadId || thread.id || ""}|${thread.mobileLoadError}`;
-  if (thread.mobileLoading) return `loading|${state.currentThreadId || thread.id || ""}`;
+  if (threadIsLoadingWithoutVisibleTurns(thread)) return `loading|${state.currentThreadId || thread.id || ""}`;
   const turns = visibleTurnsForConversation(thread);
   const omitted = Number(thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread.turns || []).length - turns.length);
   const payload = {
@@ -5080,6 +5139,14 @@ function liveActivityLabelForTurn(turn) {
   return "";
 }
 
+function liveTurnFallbackActivityLabel(turn) {
+  if (!turn || !isLiveTurn(turn)) return "";
+  const label = String(state.activityLabel || "").trim();
+  if (label && !isIdleSyncActivityLabel(label) && label !== "加载线程") return label;
+  if (isIncompleteInterruptedTurn(turn)) return "同步";
+  return "运行";
+}
+
 function activeLiveOperationItemForTurn(turn) {
   const items = Array.isArray(turn && turn.items) ? turn.items : [];
   for (let index = items.length - 1; index >= 0; index -= 1) {
@@ -5153,7 +5220,7 @@ function updateTurnTimer() {
     }
     return;
   }
-  setTurnTimerContent(el, turnElapsedSeconds(turn), liveActivityLabelForTurn(turn) || state.activityLabel);
+  setTurnTimerContent(el, turnElapsedSeconds(turn), liveActivityLabelForTurn(turn) || liveTurnFallbackActivityLabel(turn));
   el.classList.add("visible", "active");
   el.classList.remove("settled");
   el.setAttribute("aria-hidden", "false");
@@ -10036,7 +10103,7 @@ function renderCurrentThread(options = {}) {
         && (options.stickToBottom === true || nearBottom)));
   const previousKeys = existingConversationRenderKeys();
   updateCurrentThreadHeader(thread);
-  if (thread.mobileLoading) {
+  if (threadIsLoadingWithoutVisibleTurns(thread)) {
     updateLiveOperationDockHtml("");
     updateConversationHtml(
       `<div class="empty-state entry-animate">Loading thread...</div>`,
@@ -10073,6 +10140,9 @@ function renderCurrentThread(options = {}) {
     : "";
   const goalCard = renderThreadGoal(thread, previousKeys);
   const rolloutWarning = renderRolloutWarning(thread, previousKeys);
+  const loadingNote = thread.mobileLoading
+    ? `<div class="history-note entry-animate" data-render-key="loading-visible|${escapeHtml(state.currentThreadId || thread.id || "")}">正在加载最新线程状态...</div>`
+    : "";
   const taskToolbar = renderThreadTaskToolbar(thread);
   const pluginRefreshNotice = renderPluginRefreshPendingNotice(previousKeys);
   const visibleTurnIds = new Set(turns.map((turn) => turn && turn.id).filter(Boolean).map(String));
@@ -10088,7 +10158,7 @@ function renderCurrentThread(options = {}) {
   const emptyMessage = readWarningMessage
     ? "暂时没有可显示的完整消息。共享模式恢复后刷新这个页面即可继续读取。"
     : "No visible turns.";
-    const html = goalCard + rolloutWarning + taskToolbar + omittedBanner + readWarning + (turnsHtml || approvalsHtml || taskCardsHtml ? `${turnsHtml}${approvalsHtml}${taskCardsHtml}${pluginRefreshNotice}` : `${pluginRefreshNotice || ""}<div class="empty-state entry-animate">${escapeHtml(emptyMessage)}</div>`);
+    const html = goalCard + rolloutWarning + loadingNote + taskToolbar + omittedBanner + readWarning + (turnsHtml || approvalsHtml || taskCardsHtml ? `${turnsHtml}${approvalsHtml}${taskCardsHtml}${pluginRefreshNotice}` : `${pluginRefreshNotice || ""}<div class="empty-state entry-animate">${escapeHtml(emptyMessage)}</div>`);
   updateLiveOperationDockHtml(liveOperationDock);
   updateConversationHtml(html, conversationRenderSignature(thread), { stickToBottom: shouldStickToBottom });
   bindCurrentThreadActions();
@@ -16062,6 +16132,10 @@ async function sendThreadTaskCardCommand(commandText, options = {}) {
     body.append("permissionMode", selectedComposerPermissionMode());
     if (codexFastCommandEnabled()) body.append("fastMode", "1");
     registerSubmittedUserMessage(state.currentThreadId, outboundText, [], clientSubmissionId);
+    const insertedLocalMessage = insertLocalSubmittedUserMessage(state.currentThreadId, outboundText, [], clientSubmissionId);
+    markThreadOptimisticallyActive(state.currentThreadId);
+    renderThreads();
+    if (insertedLocalMessage) renderCurrentThread({ stickToBottom: true });
     followSubmittedMessageToBottom(state.currentThreadId, clientSubmissionId);
     await api(`/api/threads/${encodeURIComponent(state.currentThreadId)}/messages`, {
       method: "POST",
@@ -16191,10 +16265,14 @@ async function sendMessage(event) {
       body.append("attachments", item.file, item.file.name || "upload");
     }
     registerSubmittedUserMessage(state.currentThreadId, outboundText, submittedAttachments, clientSubmissionId);
+    const insertedLocalMessage = insertLocalSubmittedUserMessage(state.currentThreadId, outboundText, submittedAttachments, clientSubmissionId, {
+      turnId: steering ? steerTurnId : "",
+    });
     if (!steering) {
       markThreadOptimisticallyActive(state.currentThreadId);
       renderThreads();
     }
+    if (insertedLocalMessage) renderCurrentThread({ stickToBottom: true });
     followSubmittedMessageToBottom(state.currentThreadId, clientSubmissionId);
     await api(`/api/threads/${encodeURIComponent(state.currentThreadId)}/messages`, {
       method: "POST",

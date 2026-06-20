@@ -477,6 +477,48 @@ return { state, latestTurn, syncActiveTurnFromThread, interruptDisabled: () => i
 `)();
 }
 
+function evaluatedLocalSubmissionInserter() {
+  const sources = [
+    "localSubmittedTurnId",
+    "currentThreadHasClientSubmission",
+    "insertLocalSubmittedUserMessage",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function([
+    `
+let mergeCount = 0;
+let syncCount = 0;
+const state = {
+  currentThreadId: "thread-live",
+  currentThread: { id: "thread-live", status: { type: "idle" }, turns: [], mobileLoading: true },
+  threads: [],
+};
+function localUserMessageItem(text, attachments, clientSubmissionId) {
+  return {
+    id: "local-user-" + clientSubmissionId,
+    type: "userMessage",
+    mobilePendingSubmission: true,
+    clientSubmissionId,
+    content: [{ type: "text", text }],
+    attachments,
+  };
+}
+function isCompletedStatus(status) {
+  return status && /completed|failed|cancel|error|interrupted/i.test(status.type || status);
+}
+function mergeThreadIntoThreadList() { mergeCount += 1; }
+function syncActiveTurnFromThread() { syncCount += 1; }
+`,
+    sources.join("\n"),
+    `
+return {
+  state,
+  insertLocalSubmittedUserMessage,
+  counters: () => ({ mergeCount, syncCount }),
+};
+`,
+  ].join("\n"))();
+}
+
 function evaluatedThreadPendingApprovalProjection() {
   const sources = [
     "approvalThreadId",
@@ -732,6 +774,22 @@ test("live turn keeps current submitted durable user message when projection dro
   );
 });
 
+test("existing thread send inserts a local pending user turn before server projection catches up", () => {
+  const harness = evaluatedLocalSubmissionInserter();
+  const inserted = harness.insertLocalSubmittedUserMessage("thread-live", "continue work", [], "submit-123");
+  assert.equal(inserted, true);
+  assert.equal(harness.state.currentThread.status.type, "active");
+  assert.equal(harness.state.currentThread.turns.length, 1);
+  assert.equal(harness.state.currentThread.turns[0].id, "local-turn-submit-123");
+  assert.equal(harness.state.currentThread.turns[0].status.type, "active");
+  assert.equal(harness.state.currentThread.turns[0].items.length, 1);
+  assert.equal(harness.state.currentThread.turns[0].items[0].clientSubmissionId, "submit-123");
+  assert.equal(harness.state.currentThread.turns[0].items[0].mobilePendingSubmission, true);
+  assert.deepEqual(harness.counters(), { mergeCount: 1, syncCount: 1 });
+  assert.equal(harness.insertLocalSubmittedUserMessage("thread-live", "continue work", [], "submit-123"), false);
+  assert.equal(harness.state.currentThread.turns[0].items.length, 1);
+});
+
 test("turn timer prefers live item activity over idle sync labels", () => {
   assert.match(appJs, /function liveActivityLabelForTurn\(/);
   assert.match(appJs, /function activeLiveOperationItemForTurn\(/);
@@ -745,8 +803,21 @@ test("turn timer prefers live item activity over idle sync labels", () => {
   assert.match(functionBody("liveTurnStartedAtMs"), /numericTimestampMs\(item\.startedAtMs\)/);
   assert.match(functionBody("liveActivityLabelForTurn"), /item\.type === "reasoning"[\s\S]*return "思考"/);
   assert.match(functionBody("activeLiveOperationItemForTurn"), /isOperationalItem\(item\)[\s\S]*return item/);
-  assert.match(functionBody("markIdleActivity"), /if \(liveActivityLabelForTurn\(currentLiveTurn\(\)\)\) return;/);
-  assert.match(functionBody("updateTurnTimer"), /liveActivityLabelForTurn\(turn\) \|\| state\.activityLabel/);
+  assert.match(functionBody("markIdleActivity"), /const liveTurn = currentLiveTurn\(\);/);
+  assert.match(functionBody("markIdleActivity"), /if \(liveActivityLabelForTurn\(liveTurn\)\) return;/);
+  assert.match(functionBody("markIdleActivity"), /if \(isIdleSyncActivityLabel\(label\) && liveTurn\) return;/);
+  assert.match(functionBody("updateTurnTimer"), /liveActivityLabelForTurn\(turn\) \|\| liveTurnFallbackActivityLabel\(turn\)/);
+  assert.match(functionBody("liveTurnFallbackActivityLabel"), /return "运行";/);
+});
+
+test("loading and thread-list state preserve locally visible live turns", () => {
+  assert.match(appJs, /function threadIsLoadingWithoutVisibleTurns\(/);
+  assert.match(functionBody("conversationRenderSignature"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) return `loading\\|/);
+  assert.match(functionBody("conversationRootSignature"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) return `loading\\|/);
+  assert.match(functionBody("renderCurrentThread"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) \{/);
+  assert.match(functionBody("renderCurrentThread"), /const loadingNote = thread\.mobileLoading/);
+  assert.match(functionBody("reconcileThreadStatusHints"), /id === state\.currentThreadId && currentLiveTurn\(\)/);
+  assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(String\(threadId\)\)[\s\S]*currentLiveTurn\(\)/);
 });
 
 test("long agent messages keep a stable render path when a turn completes", () => {
@@ -1435,7 +1506,7 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(functionBody("updateThreadStatusHints"), /const staleActive = isStaleActiveStatus\(nextStatus\)/);
   assert.match(functionBody("updateThreadStatusHints"), /if \(!staleActive && id !== state\.currentThreadId/);
   assert.match(functionBody("statusIconInfo"), /if \(isStaleActiveStatus\(status\)\) return null;/);
-  assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(String\(threadId\)\) && !isThreadListSettledStatus\(status\)/);
+  assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(String\(threadId\)\)[\s\S]*currentLiveTurn\(\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /const staleActive = isStaleActiveStatus\(thread\.status\) \|\| Boolean\(thread\.mobileStaleActiveTurn\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /const isRunning = !staleActive && isRunningStatus\(thread\.status\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /else if \(wasRunning && staleActive\)/);
@@ -1459,7 +1530,8 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(functionBody("backfillFullThreadDetail"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);\s*mergeThreadIntoThreadList\(state\.currentThread\);/);
   const sendBody = functionBody("sendMessage");
   assert.match(sendBody, /const previousThreadStatus = snapshotThreadStatus\(state\.currentThreadId\);/);
-  assert.match(sendBody, /registerSubmittedUserMessage\(state\.currentThreadId, outboundText, submittedAttachments, clientSubmissionId\);\s*if \(!steering\) \{[\s\S]*markThreadOptimisticallyActive\(state\.currentThreadId\);[\s\S]*renderThreads\(\);[\s\S]*\}/);
+  assert.match(sendBody, /registerSubmittedUserMessage\(state\.currentThreadId, outboundText, submittedAttachments, clientSubmissionId\);\s*const insertedLocalMessage = insertLocalSubmittedUserMessage/);
+  assert.match(sendBody, /if \(insertedLocalMessage\) renderCurrentThread\(\{ stickToBottom: true \}\);/);
   assert.match(sendBody, /if \(!steering\) \{[\s\S]*restoreThreadStatusSnapshot\(previousThreadStatus\);[\s\S]*renderThreads\(\);[\s\S]*\}/);
 
   const expireBody = functionBody("shouldExpireRunningThreadHint");

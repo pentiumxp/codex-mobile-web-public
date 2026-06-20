@@ -5872,3 +5872,40 @@ The previous full handoff was archived and should be opened only when old proven
     passed, and evidence ledger record
     `evidence-f3196dd8-0e1c-4b4a-8fba-2b2692a6a325` was appended to
     `$HOME/.homeai-qa/codex-mobile-web-evidence-ledger.jsonl`.
+
+## 2026-06-20 Live Turn Startup Visibility
+
+- Status: implemented locally; not committed, pushed, deployed, or restarted.
+- User-visible issue:
+  - A running `Codex Mobile Public PR` turn spent roughly 90 seconds in a bad
+    startup window: the top-right state stayed around "同步", the just-sent user
+    message was not visible, the thread detail appeared empty/loading, and the
+    thread list did not reliably show a running state.
+- Evidence:
+  - Thread `019ea9ee-f4a8-7711-a79c-357e89003c70` completed normally.
+  - Rollout growth and tail events showed final git verification and test
+    commands running, not a stale active turn or pending approval.
+  - Server detail reads in logs were fast and reported `status:"active"`; the
+    issue was client-side visibility during the startup/projection gap.
+- Fix:
+  - `public/app.js`: existing-thread sends now insert a local pending user
+    message into a local active turn before waiting for `/messages` to return.
+    This covers normal sends and task-card commands.
+  - `public/app.js`: a thread with `mobileLoading` but visible local turns no
+    longer renders as a blank `Loading thread...` page; it renders the local
+    turn with a bounded loading note until projection catches up.
+  - `public/app.js`: current-thread local live turns keep list running hints
+    visible even if a stale list refresh still says `idle`.
+  - `public/app.js`: prevent idle sync activity from overwriting an active live
+    turn when no operation label is currently projected.
+  - `public/app.js`: add a live-turn fallback label so such turns show "运行"
+    instead of inheriting stale "同步" / "加载线程" activity labels.
+  - `test/conversation-render.test.js`: add regression coverage for local
+    pending turn insertion, loading-with-visible-turn rendering, running hint
+    preservation, and the live timer fallback.
+- Validation:
+  - `node --check public/app.js`
+  - `node --test test/conversation-render.test.js`
+  - `npm run check`
+  - `npm test` (532 tests)
+  - `git diff --check`
