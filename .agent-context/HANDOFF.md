@@ -2,10 +2,58 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-20 Public PR #76 Existing-Thread Spinner Fix
+
+- Status: public PR evaluated, merged, pushed to public, then reverse-synced
+  into private and revalidated. Final public/private source diff is empty
+  excluding `.agent-context`.
+- Public PR:
+  - `pentiumxp/codex-mobile-web-public#76`
+    `fix: 发送后立即显示已有会话 running spinner`
+  - Base was current public main `93c88d8`; PR head `071cc44`.
+  - Merge commit: `89424c9`
+    `Merge PR #76: 发送后立即显示已有会话 running spinner`.
+  - GitHub readback marked the PR `MERGED`.
+- Scope:
+  - PWA shell cache advanced to `codex-mobile-shell-v315`.
+  - Existing-thread sends immediately mark the current thread and matching
+    list row active after local submit; failed sends restore the previous
+    status.
+  - Public README Chinese note was included by the PR.
+- Source alignment:
+  - Existing private public-safe server fix
+    `8e2727a fix: 同步后台任务卡线程运行状态` was also published to public as
+    `c952522 fix: 发布后台任务卡运行状态同步`, excluding `.agent-context`.
+  - Private then reverse-merged `public/main` again, so `public/main` is an
+    ancestor of private `main` and source diff is empty excluding
+    `.agent-context`.
+- Public validation:
+  - Syntax checks, focused existing-thread/thread-task-card tests, `npm run
+    check`, `npm run check:macos`, center architecture map, and `npm test`
+    passed.
+  - Final public full test count: 527 tests.
+  - `git diff --check` passed.
+  - Privacy scan found no `.agent-context`, runtime state, local secrets,
+    upload contents, or machine-specific diagnostics; matches were only README
+    policy text and documented `%USERPROFILE%` placeholders.
+  - Evidence ledger records:
+    `evidence-6afe8bd4-cc3a-47a8-b996-f63548746da2` and final
+    `evidence-9c60720a-b593-41c3-bcc4-13dfe29ca1cc`.
+- Private validation:
+  - Syntax checks, focused tests, `npm run check`, `npm run check:macos`,
+    platform checker, center architecture map, and `npm test` passed.
+  - Final private full test count: 527 tests.
+  - `git diff --check` passed.
+  - Privacy diff scan excluding `.agent-context` found no committed
+    public/private source leak.
+  - Evidence ledger record:
+    `evidence-76f78d3b-4e7a-4e77-b464-709db1e63a53`.
+
 ## 2026-06-20 Background Task-Card Running Status Sync Fix
 
-- Status: implemented and validated locally; not committed, pushed, or deployed
-  in this turn.
+- Status: implemented, validated, committed to private, published to public as
+  public-safe source commit `c952522`, reverse-synced back to private, and not
+  deployed in this turn.
 - User-visible issue:
   - Home AI audit cards / cross-thread task cards can successfully start work in
     a background target thread such as Finance, but Codex Mobile's thread-list
