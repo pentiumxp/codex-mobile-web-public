@@ -54,7 +54,6 @@ function evaluatedServerSupersededLivePruner() {
     "textContainsRenderableUploadSummary",
     "userMessageHasVisualAttachment",
     "isMeaningfulSupersededLiveItem",
-    "lastRespondedUserMessageIndexInSupersededLiveTurn",
     "pruneSupersededLiveShellTurns",
   ].map((name) => functionSourceFrom(serverJs, name));
   return Function(`
@@ -680,7 +679,6 @@ function evaluatedVisibleItemsForTurn() {
     "userMessageHasVisualAttachment",
     "shouldHideDurableLiveUserMessage",
     "isSupersededLiveTurn",
-    "lastRespondedUserMessageIndexInSupersededLiveTurn",
     "shouldHideSupersededLiveUserMessage",
     "isRawThreadReadMode",
     "shouldPreserveRawThreadVisibleEntry",
@@ -865,7 +863,7 @@ test("context compaction notices update status and collapse repeated turn notice
   assert.match(functionBody("visibleItemsForTurn"), /visible\[existing\.visibleIndex\] = null/);
   assert.match(functionBody("visibleItemsForTurn"), /const filtered = visible\.filter\(Boolean\)/);
   assert.match(functionBody("isSupersededLiveTurn"), /mobileSupersededLive/);
-  assert.match(functionBody("visibleItemsForTurn"), /shouldHideSupersededLiveUserMessage\(turn, item, index\)/);
+  assert.match(functionBody("visibleItemsForTurn"), /shouldHideSupersededLiveUserMessage\(turn, item\)/);
   assert.match(functionBody("visibleItemsForTurn"), /filtered\.every\(\(entry\) => isTurnUsageSummaryItem\(entry\.item\)\)/);
   assert.match(functionBody("visibleItemsForTurn"), /return limitRawThreadVisibleEntries\(filtered\)/);
   assert.match(functionBody("visibleItemSignature"), /isContextCompactionItem\(item\)/);
@@ -989,26 +987,6 @@ test("superseded live turns keep uploaded image user messages while hiding stale
   );
 });
 
-test("superseded live turns keep the latest responded text user message", () => {
-  const { visibleItemsForTurn } = evaluatedVisibleItemsForTurn();
-  const turn = {
-    status: { type: "completed", mobileSupersededLive: true, previousType: "inProgress" },
-    items: [
-      { id: "old-user-text", type: "userMessage", content: [{ type: "input_text", text: "old steering prompt" }] },
-      { id: "old-receipt", type: "agentMessage", text: "old acknowledgement" },
-      { id: "music-continue", type: "userMessage", content: [{ type: "input_text", text: "继续当前任务，不重复前面的部署。" }] },
-      { id: "music-receipt", type: "agentMessage", text: "继续当前 Artists 这块。" },
-      { id: "trailing-user", type: "userMessage", content: [{ type: "input_text", text: "stale trailing steer" }] },
-      { id: "cmd-1", type: "commandExecution", status: "running" },
-    ],
-  };
-
-  assert.deepEqual(
-    visibleItemsForTurn(turn).map((entry) => entry.item.id),
-    ["old-receipt", "music-continue", "music-receipt"],
-  );
-});
-
 test("server projection pruning keeps uploaded image user messages in superseded live turns", () => {
   const pruneSupersededLiveShellTurns = evaluatedServerSupersededLivePruner();
   const uploadPath = "/Users/xuxin/.codex-mobile-web/uploads/2026-06-20/thread-id/1781938485528-homeai-upload-080D5F0E.jpg";
@@ -1047,17 +1025,6 @@ test("server projection pruning keeps uploaded image user messages in superseded
         mobileSupersededLive: true,
         items: [{ id: "plain-only", type: "userMessage", text: "old prompt" }],
       },
-      {
-        id: "superseded-with-responded-text",
-        mobileSupersededLive: true,
-        items: [
-          { id: "old-user", type: "userMessage", content: [{ type: "input_text", text: "old prompt" }] },
-          { id: "old-receipt", type: "agentMessage", text: "old ack" },
-          { id: "latest-user", type: "userMessage", content: [{ type: "input_text", text: "continue current task" }] },
-          { id: "latest-receipt", type: "agentMessage", text: "continuing" },
-          { id: "trailing-user", type: "userMessage", content: [{ type: "input_text", text: "stale trailing prompt" }] },
-        ],
-      },
     ],
   };
 
@@ -1068,7 +1035,6 @@ test("server projection pruning keeps uploaded image user messages in superseded
     [
       ["superseded-with-image", ["image-user", "receipt"]],
       ["superseded-user-only", ["image-user-only"]],
-      ["superseded-with-responded-text", ["old-receipt", "latest-user", "latest-receipt"]],
     ],
   );
 });

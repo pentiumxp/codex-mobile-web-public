@@ -4,7 +4,6 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
-- 中文说明：v338 修复 V4 投影下长线程/续接线程中“用户引导消息被隐藏，但模型回执可见”的问题。superseded live turn 仍然会隐藏 turn 开头的旧文本引导，避免历史用户气泡重复出现在底部；但会保留中途插入、且前后都有文字回执的最后一条用户消息，让 Music 这类续接引导和对应回复一起可见。V4 投影缓存策略版本同步提升，PWA shell cache 升级到 `codex-mobile-shell-v338`。
 - 中文说明：v337 修复 Home AI 嵌入态 Codex 用户上传图片在白占位图和真实图之间反复闪烁的问题。嵌入 Home AI 时，上传图片通过已鉴权的同源代理 URL 直接渲染，不再先输出透明占位图再异步 hydration；独立 iOS/WebKit 访问仍保留原来的受保护图片 hydration 兜底。PWA shell cache 升级到 `codex-mobile-shell-v337`。
 - 中文说明：v336 恢复线程详情默认 V4 投影，并关闭 v333-v335 临时图片诊断客户端日志。受保护图片的占位图加 hydration 显示机制保留，但不再向 `/api/client-events` 上报 `image_*` / `image_hydrate_*` 事件。PWA shell cache 升级到 `codex-mobile-shell-v336`。
 - 中文说明：v335 继续修复 iOS/WebKit 上传图片发送后无反应、重进后只看到“图片无法加载”的问题。上传/生成/文件预览这类受保护图片不再把 `/api/uploads/file?...key=...` 直接放进 `<img src>`；前端先渲染本页透明占位图，把真实地址放在 `data-protected-image-src`，随后用当前会话鉴权 fetch 转成 `data:image/...` 或 `blob:` 再显示，避免 Safari 直接处理带鉴权 query 的图片 URL。客户端诊断事件也改为优先 `fetch keepalive` 上报，减少 iOS 上 `sendBeacon` 丢 JSON 日志的问题。PWA shell cache 升级到 `codex-mobile-shell-v335`。

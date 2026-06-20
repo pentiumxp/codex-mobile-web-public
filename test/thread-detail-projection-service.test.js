@@ -210,44 +210,6 @@ test("thread detail projection collapses synthetic mobile user echoes", () => {
   assert.equal(userMessages[0].mobilePendingSubmission, undefined);
 });
 
-test("thread detail projection keeps latest responded text user message in superseded live turn", () => {
-  const service = createThreadDetailProjectionService({
-    cacheDir: "",
-    policyVersion: "test-v1",
-    maxTurns: 3,
-    now: () => 6200,
-  });
-  service.seed(signatureInput({ summaryStatus: "active", maxTurns: 3 }), {
-    thread: {
-      id: "thread-1",
-      turns: [
-        {
-          id: "superseded-live",
-          status: { type: "completed", mobileSupersededLive: true, previousType: "inProgress" },
-          items: [
-            { id: "old-user", type: "userMessage", content: [{ type: "input_text", text: "old prompt" }] },
-            { id: "old-receipt", type: "agentMessage", text: "old ack" },
-            { id: "latest-user", type: "userMessage", content: [{ type: "input_text", text: "continue current task" }] },
-            { id: "latest-receipt", type: "agentMessage", text: "continuing" },
-            { id: "trailing-user", type: "userMessage", content: [{ type: "input_text", text: "stale trailing prompt" }] },
-          ],
-        },
-        { id: "active-tail", status: { type: "active" }, items: [] },
-      ],
-    },
-  });
-
-  const cached = service.get(signatureInput({
-    summaryStatus: "active",
-    maxTurns: 3,
-    summaryUpdatedAtMs: 1000,
-  }));
-  assert.ok(cached);
-  const turn = cached.result.thread.turns.find((item) => item.id === "superseded-live");
-  assert.ok(turn);
-  assert.deepEqual(turn.items.map((item) => item.id), ["old-receipt", "latest-user", "latest-receipt"]);
-});
-
 test("thread detail projection removes synthetic user echoes shadowed in another turn", () => {
   const service = createThreadDetailProjectionService({
     cacheDir: "",

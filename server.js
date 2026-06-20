@@ -743,7 +743,7 @@ const THREAD_LIST_FALLBACK_CACHE_TTL_MS = Math.max(0, Number(process.env.CODEX_M
 threadDetailProjectionService = THREAD_DETAIL_PROJECTION_V4_ENABLED
   ? createThreadDetailProjectionV4Service({
     cacheDir: THREAD_DETAIL_PROJECTION_CACHE_DIR,
-    policyVersion: "state-relevant-receipt-v4-responded-user",
+    policyVersion: "state-relevant-receipt-v4",
     maxTurns: MAX_FULL_THREAD_TURNS,
   })
   : createThreadDetailProjectionService({
@@ -3031,33 +3031,13 @@ function isMeaningfulSupersededLiveItem(item) {
   return isAssistantReceiptItem(item) || isVisualReceiptItem(item) || isContextCompactionType(item.type);
 }
 
-function lastRespondedUserMessageIndexInSupersededLiveTurn(items) {
-  if (!Array.isArray(items)) return -1;
-  let lastUserIndex = -1;
-  let lastRespondedUserIndex = -1;
-  let hasPriorAssistantReceipt = false;
-  for (let index = 0; index < items.length; index += 1) {
-    const item = items[index];
-    if (isUserQuestionItem(item) && !userMessageHasVisualAttachment(item)) {
-      lastUserIndex = hasPriorAssistantReceipt ? index : -1;
-      continue;
-    }
-    if (lastUserIndex >= 0 && isAssistantReceiptItem(item)) {
-      lastRespondedUserIndex = lastUserIndex;
-    }
-    if (isAssistantReceiptItem(item)) hasPriorAssistantReceipt = true;
-  }
-  return lastRespondedUserIndex;
-}
-
 function pruneSupersededLiveShellTurns(thread) {
   if (!thread || !Array.isArray(thread.turns)) return thread;
   thread.turns = thread.turns.filter((turn) => {
     if (!isSupersededLiveTurn(turn)) return true;
     const items = Array.isArray(turn.items) ? turn.items : [];
     if (!items.some(isMeaningfulSupersededLiveItem)) return false;
-    const respondedUserIndex = lastRespondedUserMessageIndexInSupersededLiveTurn(items);
-    turn.items = items.filter((item, index) => (!isUserQuestionItem(item) || userMessageHasVisualAttachment(item) || index === respondedUserIndex) && !isReasoningOnlyItem(item));
+    turn.items = items.filter((item) => (!isUserQuestionItem(item) || userMessageHasVisualAttachment(item)) && !isReasoningOnlyItem(item));
     return true;
   });
   return thread;

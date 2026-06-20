@@ -29,7 +29,7 @@ function resultThreadId(result) {
 }
 
 function createThreadDetailProjectionV4Service(options = {}) {
-  const policyVersion = String(options.policyVersion || "state-relevant-receipt-v4-responded-user");
+  const policyVersion = String(options.policyVersion || "state-relevant-receipt-v4");
   const base = createThreadDetailProjectionService(Object.assign({}, options, {
     policyVersion,
   }));
