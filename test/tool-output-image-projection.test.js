@@ -110,6 +110,74 @@ test("view_image outputs for uploaded user images are not repeated as agent imag
   }
 });
 
+test("direct imageView items for uploaded user images are not repeated beside upload summaries", () => {
+  const uploadPath = path.join(uploadRoot, "2026-06-20", "thread-upload", "homeai-upload-76E2D26C.jpg");
+  fs.mkdirSync(path.dirname(uploadPath), { recursive: true });
+  fs.writeFileSync(uploadPath, Buffer.from("iVBORw0KGgo=", "base64"));
+
+  const compacted = compactThread({
+    id: "thread-direct-upload-image-view",
+    turns: [{
+      id: "turn-upload",
+      status: { type: "completed" },
+      items: [
+        {
+          id: "user-upload",
+          type: "userMessage",
+          content: [{
+            type: "input_text",
+            text: `Uploaded attachments:\n- homeai-upload-76E2D26C.jpg (image, image/jpeg, 123.3 KB): ${uploadPath}`,
+          }],
+        },
+        {
+          id: "call-view-upload",
+          type: "imageView",
+          path: uploadPath,
+        },
+        {
+          id: "agent-1",
+          type: "agentMessage",
+          text: "checked screenshot",
+        },
+      ],
+    }],
+  });
+
+  assert.deepEqual(compacted.turns[0].items.map((item) => item.id), ["user-upload", "agent-1"]);
+  assert.equal(compacted.turns[0].items.some((item) => item.type === "imageView"), false);
+});
+
+test("direct imageView upload paths remain visible without a matching user upload summary", () => {
+  const uploadPath = path.join(uploadRoot, "2026-06-20", "thread-upload", "standalone-image-view.jpg");
+  fs.mkdirSync(path.dirname(uploadPath), { recursive: true });
+  fs.writeFileSync(uploadPath, Buffer.from("iVBORw0KGgo=", "base64"));
+
+  const compacted = compactThread({
+    id: "thread-standalone-upload-image-view",
+    turns: [{
+      id: "turn-upload",
+      status: { type: "completed" },
+      items: [
+        {
+          id: "call-view-upload",
+          type: "imageView",
+          path: uploadPath,
+        },
+        {
+          id: "agent-1",
+          type: "agentMessage",
+          text: "checked screenshot",
+        },
+      ],
+    }],
+  });
+
+  const image = compacted.turns[0].items.find((item) => item.type === "imageView");
+  assert.ok(image);
+  assert.equal(image.id, "call-view-upload");
+  assert.match(image.contentUrl, /^\/api\/generated-images\/file\?id=/);
+});
+
 test("view_image outputs outside the upload directory still become image cards", () => {
   const outsidePath = path.join(os.tmpdir(), "codex-mobile-outside-view-image.png");
   const { dir, rolloutPath } = writeRollout([

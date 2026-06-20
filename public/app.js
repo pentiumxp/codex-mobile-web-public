@@ -363,8 +363,12 @@ const MAX_COMMAND_OUTPUT_CHARS = 16000;
 const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
+const MAX_RAW_THREAD_VISIBLE_TURNS = 4;
+const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
+const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v330";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v337";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -4355,6 +4359,33 @@ function shouldHideSupersededLiveUserMessage(turn, item) {
   return Boolean(isSupersededLiveTurn(turn) && item && item.type === "userMessage" && !userMessageHasVisualAttachment(item));
 }
 
+function isRawThreadReadMode(thread) {
+  return Boolean(thread && (thread.mobileRawThreadRead || String(thread.mobileReadMode || "") === "thread-read-raw"));
+}
+
+function shouldPreserveRawThreadVisibleEntry(entry) {
+  const item = entry && entry.item;
+  if (!item) return false;
+  return item.type === "userMessage"
+    || item.type === "imageView"
+    || item.type === "imageGeneration"
+    || item.type === "turnUsageSummary"
+    || isContextCompactionItem(item);
+}
+
+function limitRawThreadVisibleEntries(entries) {
+  if (!isRawThreadReadMode(state.currentThread)) return entries;
+  if (!Array.isArray(entries) || entries.length <= MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN) return entries;
+  const keep = new Set();
+  entries.forEach((entry, index) => {
+    if (shouldPreserveRawThreadVisibleEntry(entry)) keep.add(index);
+  });
+  for (let index = Math.max(0, entries.length - MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN); index < entries.length; index += 1) {
+    keep.add(index);
+  }
+  return entries.filter((_, index) => keep.has(index));
+}
+
 function visibleItemsForTurn(turn) {
   const visible = [];
   const contextEntryByKey = new Map();
@@ -4380,7 +4411,7 @@ function visibleItemsForTurn(turn) {
   const filtered = visible.filter(Boolean);
   const supersededLive = isSupersededLiveTurn(turn);
   if (supersededLive && filtered.length && filtered.every((entry) => isTurnUsageSummaryItem(entry.item))) return [];
-  return filtered;
+  return limitRawThreadVisibleEntries(filtered);
 }
 
 function currentLiveOperationEntry(thread) {
@@ -4396,10 +4427,15 @@ function currentLiveOperationEntry(thread) {
 
 function visibleItemSignature(item, turn = null) {
   if (!item || isReasoningItem(item)) return null;
+  const projection = {
+    mobileVisibleKey: item.mobileVisibleKey || "",
+    mobileVisibleKind: item.mobileVisibleKind || "",
+  };
   if (isContextCompactionItem(item)) {
     const notice = contextCompactionNotice(item, turn);
     if (!notice) return null;
     return {
+      ...projection,
       id: item.id || "",
       type: item.type || "",
       status: statusText(item.status),
@@ -4410,6 +4446,7 @@ function visibleItemSignature(item, turn = null) {
   }
   if (isOperationalItem(item)) {
     return {
+      ...projection,
       id: item.id || "",
       type: item.type || "",
       status: statusText(item.status),
@@ -4426,6 +4463,7 @@ function visibleItemSignature(item, turn = null) {
   }
   if (item.type === "turnUsageSummary") {
     return {
+      ...projection,
       id: item.id || "",
       type: item.type || "",
       status: statusText(item.status),
@@ -4434,6 +4472,7 @@ function visibleItemSignature(item, turn = null) {
   }
   if (item.type === "imageView") {
     return {
+      ...projection,
       id: item.id || "",
       type: item.type || "",
       status: statusText(item.status),
@@ -4443,6 +4482,7 @@ function visibleItemSignature(item, turn = null) {
     };
   }
   return {
+    ...projection,
     id: item.id || "",
     type: item.type || "",
     status: statusText(item.status),
@@ -4748,6 +4788,86 @@ function threadHasInitialSubmissionEcho(thread, initialSubmissionId) {
   });
 }
 
+function isV4ProjectionThread(thread) {
+  return Boolean(thread && (thread.mobileProjectionVersion === "v4"
+    || (thread.mobileProjection && thread.mobileProjection.version === "v4")));
+}
+
+function shouldPreserveV4PendingOverlayItem(item) {
+  return Boolean(item
+    && item.type === "userMessage"
+    && isOptimisticUserMessage(item)
+    && (isRecentlySubmittedUserMessage(item) || item.mobileSendError));
+}
+
+function v4ThreadHasPendingMatch(thread, pendingItem) {
+  if (!pendingItem || pendingItem.type !== "userMessage") return false;
+  const submissionId = String(pendingItem.clientSubmissionId || "").trim();
+  for (const turn of Array.isArray(thread && thread.turns) ? thread.turns : []) {
+    for (const item of Array.isArray(turn && turn.items) ? turn.items : []) {
+      if (!item || item.type !== "userMessage") continue;
+      if (submissionId && String(item.clientSubmissionId || "").trim() === submissionId) return true;
+      if (!isOptimisticUserMessage(item) && userMessagesCanShadow(item, pendingItem)) return true;
+    }
+  }
+  return false;
+}
+
+function appendV4PendingOverlayItem(turn, item) {
+  if (!turn || !item) return;
+  turn.items = Array.isArray(turn.items) ? turn.items : [];
+  const submissionId = String(item.clientSubmissionId || "").trim();
+  const alreadyPresent = turn.items.some((existing) => existing && (
+    (submissionId && String(existing.clientSubmissionId || "").trim() === submissionId)
+    || existing.id === item.id
+    || userMessagesCanShadow(existing, item)
+  ));
+  if (!alreadyPresent) turn.items.push(item);
+}
+
+function copyTurnWithOnlyItems(turn, items) {
+  return Object.assign({}, turn || {}, {
+    items: (items || []).slice(),
+  });
+}
+
+function applyV4PendingOverlay(existingThread, mergedThread) {
+  if (!existingThread || !mergedThread || !Array.isArray(existingThread.turns)) return mergedThread;
+  mergedThread.turns = Array.isArray(mergedThread.turns) ? mergedThread.turns : [];
+  const turnsById = new Map(mergedThread.turns.map((turn) => [String(turn && turn.id || ""), turn]));
+  for (const existingTurn of existingThread.turns) {
+    const pendingItems = (Array.isArray(existingTurn && existingTurn.items) ? existingTurn.items : [])
+      .filter((item) => shouldPreserveV4PendingOverlayItem(item)
+        && !v4ThreadHasPendingMatch(mergedThread, item));
+    if (!pendingItems.length) continue;
+    const targetTurn = turnsById.get(String(existingTurn.id || ""));
+    if (targetTurn) {
+      pendingItems.forEach((item) => appendV4PendingOverlayItem(targetTurn, item));
+      continue;
+    }
+    const overlayTurn = copyTurnWithOnlyItems(existingTurn, pendingItems);
+    overlayTurn.mobilePendingOverlay = true;
+    mergedThread.turns.push(overlayTurn);
+    if (overlayTurn.id) turnsById.set(String(overlayTurn.id), overlayTurn);
+  }
+  return mergedThread;
+}
+
+function mergeV4ProjectionThread(existingThread, incomingThread) {
+  if (!existingThread || !incomingThread || existingThread.id !== incomingThread.id) {
+    return normalizeThreadVisibleUserMessages(incomingThread);
+  }
+  const merged = Object.assign({}, existingThread, incomingThread);
+  if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoading")) delete merged.mobileLoading;
+  if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoadError")) delete merged.mobileLoadError;
+  if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileReadWarning")) delete merged.mobileReadWarning;
+  if (Array.isArray(incomingThread.turns)) {
+    merged.turns = incomingThread.turns.slice();
+    applyV4PendingOverlay(existingThread, merged);
+  }
+  return normalizeThreadVisibleUserMessages(merged);
+}
+
 function comparableVisibleTextItem(item) {
   return Boolean(item && (item.type === "agentMessage" || item.type === "plan"));
 }
@@ -4882,6 +5002,7 @@ function mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) {
 }
 
 function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
+  if (isV4ProjectionThread(incomingThread)) return mergeV4ProjectionThread(existingThread, incomingThread);
   if (!existingThread || !incomingThread || existingThread.id !== incomingThread.id) return normalizeThreadVisibleUserMessages(incomingThread);
   const existingTurns = Array.isArray(existingThread.turns) ? existingThread.turns : [];
   const incomingTurns = Array.isArray(incomingThread.turns) ? incomingThread.turns : null;
@@ -5070,8 +5191,11 @@ function conversationRootSignature(thread) {
     approvals: approvalRequestsSignature(state.currentThreadId || thread.id || ""),
     taskCards: threadTaskCardsSignature(thread),
     readMode: String(thread.mobileReadMode || ""),
+    projectionVersion: String(thread.mobileProjectionVersion || ""),
+    projectionRevision: String(thread.mobileProjectionRevision || ""),
     readWarning: String(thread.mobileReadWarning || ""),
     readWarningMessage,
+    visibleItemKeys: Array.isArray(thread.mobileVisibleItemKeys) ? thread.mobileVisibleItemKeys : [],
     visibleTurns: turns.map((turn) => turn && (turn.id || turn.startedAt || "")),
   };
   return JSON.stringify(payload);
@@ -5096,6 +5220,9 @@ function conversationRenderSignature(thread) {
     goal: threadGoalSignature(thread),
     approvals: approvalRequestsSignature(state.currentThreadId || thread.id || ""),
     taskCards: threadTaskCardsSignature(thread),
+    projectionVersion: String(thread.mobileProjectionVersion || ""),
+    projectionRevision: String(thread.mobileProjectionRevision || ""),
+    visibleItemKeys: Array.isArray(thread.mobileVisibleItemKeys) ? thread.mobileVisibleItemKeys : [],
     turns: turns.map((turn) => {
       const timerShowsStatus = isLatestTurn(turn) && (isLiveTurn(turn) || turnFinalSeconds(turn) != null);
       return {
@@ -5409,18 +5536,19 @@ function postClientEvent(event, details = {}) {
     details,
   });
   const url = `/api/client-events?key=${encodeURIComponent(state.key)}`;
-  try {
-    if (navigator.sendBeacon) {
-      const blob = new Blob([payload], { type: "application/json" });
-      if (navigator.sendBeacon(url, blob)) return;
-    }
-  } catch (_) {}
   fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: payload,
     keepalive: true,
-  }).catch(() => {});
+  }).catch(() => {
+    try {
+      if (navigator.sendBeacon) {
+        const blob = new Blob([payload], { type: "application/json" });
+        navigator.sendBeacon(url, blob);
+      }
+    } catch (_) {}
+  });
 }
 
 function nowPerfMs() {
@@ -6359,6 +6487,7 @@ function sortTurnsForDisplay(turns) {
 }
 
 function maxVisibleTurnsForThread(thread) {
+  if (isRawThreadReadMode(thread) && !thread.mobileHistoryExpanded) return MAX_RAW_THREAD_VISIBLE_TURNS;
   return thread && thread.mobileHistoryExpanded ? MAX_EXPANDED_VISIBLE_TURNS : MAX_VISIBLE_TURNS;
 }
 
@@ -7652,6 +7781,14 @@ function isMobileViewport() {
 function isAndroidBrowser() {
   const ua = String(navigator.userAgent || navigator.vendor || "").toLowerCase();
   return ua.includes("android");
+}
+
+function isIosWebKitBrowser() {
+  const ua = String(navigator.userAgent || navigator.vendor || "").toLowerCase();
+  const platform = String(navigator.platform || "").toLowerCase();
+  const iosLike = /iphone|ipad|ipod/.test(ua)
+    || (/mac/.test(platform) && Number(navigator.maxTouchPoints || 0) > 1);
+  return iosLike && /applewebkit/.test(ua) && !/crios|fxios|edgios/.test(ua);
 }
 
 function sidebarEdgeSwipeStartLimitPx() {
@@ -12027,8 +12164,9 @@ function renderInputImage(part, attachment = null, index = 0) {
   const src = imageSourceForPart(part, attachment);
   const label = (attachment && attachment.name) || shortPath(part.path || imageUrlValue(part) || "") || `Image ${index + 1}`;
   if (!src) return `<div class="input-attachment">${escapeHtml(label)}</div>`;
+  const displaySrc = protectedImageDisplaySrc(src);
   return `<figure class="input-image">
-    <img src="${escapeHtml(src)}" alt="${escapeHtml(label)}" loading="${imageLoadingModeForSource(src)}"${protectedImageSourceAttribute(src)}>
+    <img src="${escapeHtml(displaySrc)}" alt="${escapeHtml(label)}" loading="${imageLoadingModeForSource(src)}"${protectedImageSourceAttribute(src)}>
     <figcaption>${escapeHtml(label)}</figcaption>
   </figure>`;
 }
@@ -13271,14 +13409,16 @@ function renderImageView(item) {
   const src = contentUrl ? authenticatedApiContentUrl(contentUrl) : (filePath ? imageContentUrlForPath(filePath) : url);
   const label = shortPath(filePath || item.label || item.fileName || item.file_name || item.caption || url || item.id || "image");
   if (!src) return renderStructuredBlock(item, "Image");
+  const displaySrc = protectedImageDisplaySrc(src);
   return `<figure class="image-view">
-    <img src="${escapeHtml(src)}" alt="${escapeHtml(label)}" loading="${imageLoadingModeForSource(src)}"${protectedImageSourceAttribute(src)}>
+    <img src="${escapeHtml(displaySrc)}" alt="${escapeHtml(label)}" loading="${imageLoadingModeForSource(src)}"${protectedImageSourceAttribute(src)}>
     ${label ? `<figcaption>${escapeHtml(label)}</figcaption>` : ""}
   </figure>`;
 }
 
 function handleConversationImageError(event) {
   const image = event && event.target && event.target.closest ? event.target.closest("img") : null;
+  if (typeof postImageDiagnosticEvent === "function") postImageDiagnosticEvent("error", image, {}, { force: true });
   if (handleProtectedAppImageError(image)) return;
   markFailedAppImage(image, { explicit: true });
   if (typeof probeFailedAuthenticatedImage === "function") probeFailedAuthenticatedImage(image);
@@ -13286,6 +13426,7 @@ function handleConversationImageError(event) {
 
 function handleConversationImageLoad(event) {
   const image = event && event.target && event.target.closest ? event.target.closest("img") : null;
+  if (typeof postImageDiagnosticEvent === "function") postImageDiagnosticEvent("load", image);
   clearFailedAppImage(image);
 }
 
@@ -13369,8 +13510,22 @@ function imageLoadingModeForSource(src) {
   return protectedGeneratedImageSrc(src) ? "eager" : "lazy";
 }
 
+function shouldRenderProtectedImageDirectly(src) {
+  const protectedSrc = protectedGeneratedImageSrc(src);
+  if (!protectedSrc) return false;
+  if (!isHermesEmbedMode()) return false;
+  return imageDiagnosticSourceKind(protectedSrc) === "upload";
+}
+
+function protectedImageDisplaySrc(src) {
+  const protectedSrc = protectedGeneratedImageSrc(src);
+  if (!protectedSrc) return src;
+  return shouldRenderProtectedImageDirectly(protectedSrc) ? protectedSrc : PROTECTED_IMAGE_PLACEHOLDER_SRC;
+}
+
 function protectedImageSourceAttribute(src) {
   const protectedSrc = protectedGeneratedImageSrc(src);
+  if (shouldRenderProtectedImageDirectly(protectedSrc)) return "";
   return protectedSrc ? ` data-protected-image-src="${escapeHtml(protectedSrc)}"` : "";
 }
 
@@ -13382,6 +13537,83 @@ function protectedAppImageElementSrc(image) {
     || image.src
     || (image.getAttribute && image.getAttribute("src"))
   ));
+}
+
+function imageDiagnosticSourceKind(src) {
+  const raw = String(src || "");
+  if (!raw) return "empty";
+  if (/^data:image\//i.test(raw)) return "data-image";
+  if (/^blob:/i.test(raw)) return "blob";
+  try {
+    const parsed = new URL(raw, window.location.origin);
+    if (parsed.origin !== window.location.origin) return "remote";
+    if (parsed.pathname === "/api/uploads/file") return "upload";
+    if (parsed.pathname === "/api/generated-images/file") return "generated-image";
+    if (parsed.pathname === "/api/files/preview/content") return "file-preview";
+    if (parsed.pathname.startsWith("/api/")) return "api";
+    return "same-origin";
+  } catch (_) {
+    return "unknown";
+  }
+}
+
+function imageDiagnosticSourceHash(src) {
+  const raw = String(src || "");
+  if (!raw) return "";
+  if (/^data:image\//i.test(raw)) return stableTextHash(`data:${raw.length}`);
+  if (/^blob:/i.test(raw)) return stableTextHash("blob");
+  try {
+    const parsed = new URL(raw, window.location.origin);
+    for (const key of Array.from(parsed.searchParams.keys())) {
+      if (/key|token|secret|password|cookie/i.test(key)) parsed.searchParams.set(key, "REDACTED");
+    }
+    return stableTextHash(`${parsed.origin}${parsed.pathname}?${parsed.searchParams.toString()}`);
+  } catch (_) {
+    return stableTextHash(raw.slice(0, 200));
+  }
+}
+
+function imageDiagnosticDetails(image, phase, extra = {}) {
+  const src = image && (
+    (image.currentSrc || "")
+    || (image.src || "")
+    || (image.getAttribute && image.getAttribute("src"))
+    || ""
+  );
+  const protectedSrc = protectedAppImageElementSrc(image);
+  const container = failedAppImageContainer(image);
+  return Object.assign({
+    phase,
+    clientBuildId: CLIENT_BUILD_ID,
+    readMode: String(state.currentThread && state.currentThread.mobileReadMode || ""),
+    threadIdSuffix: String(state.currentThreadId || "").slice(-8),
+    sourceKind: imageDiagnosticSourceKind(src || protectedSrc),
+    protectedSourceKind: imageDiagnosticSourceKind(protectedSrc),
+    sourceHash: imageDiagnosticSourceHash(src || protectedSrc),
+    alt: shortPath(String((image && image.alt) || "").trim()).slice(0, 96),
+    complete: Boolean(image && image.complete),
+    naturalWidth: Number(image && image.naturalWidth || 0),
+    naturalHeight: Number(image && image.naturalHeight || 0),
+    failedClass: Boolean(container && container.classList && container.classList.contains("image-load-failed")),
+    recoveryCount: Number(image && image.dataset && image.dataset.protectedImageRecoveryCount || 0),
+  }, extra || {});
+}
+
+function postImageDiagnosticEvent(phase, image, extra = {}, options = {}) {
+  if (!IMAGE_DIAGNOSTICS_ENABLED) return false;
+  const details = imageDiagnosticDetails(image, phase, extra);
+  const key = [
+    "image",
+    phase,
+    state.currentThreadId || "",
+    details.sourceHash || "",
+    details.alt || "",
+  ].join("|");
+  postPerformanceEvent(`image_${phase}`, details, {
+    key,
+    minIntervalMs: Number(options.minIntervalMs || 8000),
+    force: Boolean(options.force),
+  });
 }
 
 function imageStillConnected(image) {
@@ -13469,18 +13701,89 @@ function applyProtectedAppImageRecoveredUrl(image, recovered) {
   return true;
 }
 
+function shouldHydrateProtectedAppImage(image) {
+  if (!image || !image.dataset) return false;
+  const src = protectedAppImageElementSrc(image);
+  if (!src) return false;
+  if (shouldRenderProtectedImageDirectly(src)) return false;
+  if (image.dataset.protectedImageHydrated === "1" || image.dataset.protectedImageHydrating === "1") return false;
+  const current = String(image.currentSrc || image.src || "");
+  if (/^(data:image|blob:)/i.test(current) && current !== PROTECTED_IMAGE_PLACEHOLDER_SRC) return false;
+  return isIosWebKitBrowser() || imageDiagnosticSourceKind(src) === "upload";
+}
+
+function hydrateProtectedAppImage(image, reason = "scan") {
+  const src = protectedAppImageElementSrc(image);
+  if (!src || !shouldHydrateProtectedAppImage(image)) return false;
+  image.dataset.protectedImageHydrating = "1";
+  if (typeof postImageDiagnosticEvent === "function") postImageDiagnosticEvent("hydrate_start", image, { reason }, { force: true });
+  const headers = state.key ? { "X-Codex-Mobile-Key": state.key } : {};
+  fetch(src, {
+    method: "GET",
+    headers,
+    credentials: "same-origin",
+    cache: "no-store",
+  }).then(async (response) => {
+    if (!imageStillConnected(image)) return;
+    if (image.dataset) delete image.dataset.protectedImageHydrating;
+    if (!response || !response.ok) {
+      if (typeof postImageDiagnosticEvent === "function") postImageDiagnosticEvent("hydrate_response", image, {
+        status: response && response.status || 0,
+        ok: false,
+      }, { force: true });
+      return;
+    }
+    const recovered = await protectedAppImageRecoveredUrl(response);
+    if (!imageStillConnected(image)) {
+      if (recovered && recovered.objectUrl && recovered.url) {
+        const urlApi = protectedAppImageUrlApi();
+        if (urlApi && typeof urlApi.revokeObjectURL === "function") {
+          try {
+            urlApi.revokeObjectURL(recovered.url);
+          } catch (_) {}
+        }
+      }
+      return;
+    }
+    if (applyProtectedAppImageRecoveredUrl(image, recovered)) {
+      image.dataset.protectedImageHydrated = "1";
+      clearFailedAppImage(image);
+      if (typeof postImageDiagnosticEvent === "function") postImageDiagnosticEvent("hydrate_apply", image, {
+        recoveredKind: imageDiagnosticSourceKind(recovered && recovered.url),
+        objectUrl: Boolean(recovered && recovered.objectUrl),
+      }, { force: true });
+    }
+  }).catch(() => {
+    if (!imageStillConnected(image)) return;
+    if (image.dataset) delete image.dataset.protectedImageHydrating;
+    if (typeof postImageDiagnosticEvent === "function") postImageDiagnosticEvent("hydrate_fetch_error", image, { reason }, { force: true });
+  });
+  return true;
+}
+
+function hydrateProtectedAppImages(root, reason = "scan") {
+  if (!root || !root.querySelectorAll) return 0;
+  let count = 0;
+  root.querySelectorAll("img").forEach((image) => {
+    if (hydrateProtectedAppImage(image, reason)) count += 1;
+  });
+  return count;
+}
+
 function handleProtectedAppImageError(image) {
   const src = protectedAppImageElementSrc(image);
   if (!src || !image || !image.dataset) return false;
   if (image.dataset.imageLoadProbe === "1") return true;
   const recoveryCount = Number(image.dataset.protectedImageRecoveryCount || 0);
   if (recoveryCount >= 2) {
+    if (typeof postImageDiagnosticEvent === "function") postImageDiagnosticEvent("recovery_limit", image, { recoveryCount }, { force: true });
     markFailedAppImage(image, { explicit: true });
     return true;
   }
   image.dataset.protectedImageRecoveryCount = String(recoveryCount + 1);
   image.dataset.imageLoadProbe = "1";
   setRetryingAppImage(image, true);
+  if (typeof postImageDiagnosticEvent === "function") postImageDiagnosticEvent("recovery_start", image, { recoveryCount: recoveryCount + 1 }, { force: true });
   const headers = state.key ? { "X-Codex-Mobile-Key": state.key } : {};
   fetch(src, {
     method: "GET",
@@ -13490,6 +13793,11 @@ function handleProtectedAppImageError(image) {
   }).then(async (response) => {
     if (!imageStillConnected(image)) return;
     if (image.dataset) delete image.dataset.imageLoadProbe;
+    if (typeof postImageDiagnosticEvent === "function") postImageDiagnosticEvent("recovery_response", image, {
+      status: response && response.status || 0,
+      ok: Boolean(response && response.ok),
+      contentType: response && response.headers && response.headers.get ? String(response.headers.get("content-type") || "").slice(0, 80) : "",
+    }, { force: true });
     if (response && (response.status === 401 || response.status === 403)) {
       if (isHermesEmbedMode() && !state.imageAuthRefreshRequested) {
         state.imageAuthRefreshRequested = true;
@@ -13512,7 +13820,14 @@ function handleProtectedAppImageError(image) {
         }
         return;
       }
-      if (applyProtectedAppImageRecoveredUrl(image, recovered)) return;
+      if (applyProtectedAppImageRecoveredUrl(image, recovered)) {
+        if (typeof postImageDiagnosticEvent === "function") postImageDiagnosticEvent("recovery_apply", image, {
+          recoveredKind: imageDiagnosticSourceKind(recovered && recovered.url),
+          objectUrl: Boolean(recovered && recovered.objectUrl),
+        }, { force: true });
+        return;
+      }
+      if (typeof postImageDiagnosticEvent === "function") postImageDiagnosticEvent("recovery_retry_src", image, {}, { force: true });
       retryProtectedAppImageSource(image, src);
       return;
     }
@@ -13520,6 +13835,7 @@ function handleProtectedAppImageError(image) {
   }).catch(() => {
     if (!imageStillConnected(image)) return;
     if (image.dataset) delete image.dataset.imageLoadProbe;
+    if (typeof postImageDiagnosticEvent === "function") postImageDiagnosticEvent("recovery_fetch_error", image, {}, { force: true });
     markFailedAppImage(image, { explicit: true });
   });
   return true;
@@ -13564,7 +13880,10 @@ function scanFailedAppImages(root) {
 function scheduleFailedAppImageScan(root, delays = [0, 180, 700]) {
   if (!root) return;
   delays.forEach((delay) => {
-    window.setTimeout(() => scanFailedAppImages(root), delay);
+    window.setTimeout(() => {
+      hydrateProtectedAppImages(root, "scheduled-scan");
+      scanFailedAppImages(root);
+    }, delay);
   });
 }
 

@@ -82,7 +82,7 @@ function evaluatedInputContentRenderer() {
   return evaluatedInputContentRendererWithKey("");
 }
 
-function evaluatedInputContentRendererWithKey(key = "") {
+function evaluatedInputContentRendererWithKey(key = "", options = {}) {
   const sources = [
     "escapeHtml",
     "shortPath",
@@ -103,6 +103,10 @@ function evaluatedInputContentRendererWithKey(key = "") {
     "canRenderImageAttachment",
     "authenticatedApiContentUrl",
     "protectedGeneratedImageSrc",
+    "isHermesEmbedMode",
+    "imageDiagnosticSourceKind",
+    "shouldRenderProtectedImageDirectly",
+    "protectedImageDisplaySrc",
     "imageLoadingModeForSource",
     "protectedImageSourceAttribute",
     "uploadFileUrl",
@@ -117,9 +121,10 @@ function evaluatedInputContentRendererWithKey(key = "") {
     "renderAttachmentSummary",
     "renderInputContent",
   ].map((name) => functionSourceFrom(appJs, name));
+  const pluginEmbed = options.embedded ? { embedded: true } : null;
   return Function(
     "URLSearchParams",
-    `const state = { key: ${JSON.stringify(String(key || ""))} };\nconst THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";\n${sources.join("\n")}\nreturn renderInputContent;`,
+    `const state = { key: ${JSON.stringify(String(key || ""))}, pluginEmbed: ${JSON.stringify(pluginEmbed)} };\nconst window = { location: { origin: "http://127.0.0.1:8787" } };\nconst THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";\nconst PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";\n${sources.join("\n")}\nreturn renderInputContent;`,
   )(URLSearchParams);
 }
 
@@ -174,6 +179,10 @@ function evaluatedImageViewRenderer() {
     "normalizeFsPath",
     "isCodexMobileUploadPath",
     "protectedGeneratedImageSrc",
+    "isHermesEmbedMode",
+    "imageDiagnosticSourceKind",
+    "shouldRenderProtectedImageDirectly",
+    "protectedImageDisplaySrc",
     "imageLoadingModeForSource",
     "protectedImageSourceAttribute",
     "uploadFileUrl",
@@ -187,7 +196,7 @@ function evaluatedImageViewRenderer() {
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(
     "URLSearchParams",
-    `const state = { key: "test-key", currentThreadId: "thread-id" };\n${sources.join("\n")}\nreturn renderImageView;`,
+    `const state = { key: "test-key", currentThreadId: "thread-id", pluginEmbed: null };\nconst window = { location: { origin: "http://127.0.0.1:8787" } };\nconst PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";\n${sources.join("\n")}\nreturn renderImageView;`,
   )(URLSearchParams);
 }
 
@@ -249,7 +258,9 @@ function evaluatedFailedImageScanner(options = {}) {
     "imageHadExplicitLoadError",
     "isLazyAppImage",
     "protectedGeneratedImageSrc",
+    "imageDiagnosticSourceKind",
     "protectedAppImageElementSrc",
+    "shouldRenderProtectedImageDirectly",
     "shouldProactivelyMarkFailedImage",
     "imageStillConnected",
     "protectedAppImageUrlApi",
@@ -478,6 +489,13 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "threadDurableUserMessages",
     "shouldDropInitialSubmissionEchoTurn",
     "threadHasInitialSubmissionEcho",
+    "isV4ProjectionThread",
+    "shouldPreserveV4PendingOverlayItem",
+    "v4ThreadHasPendingMatch",
+    "appendV4PendingOverlayItem",
+    "copyTurnWithOnlyItems",
+    "applyV4PendingOverlay",
+    "mergeV4ProjectionThread",
     "comparableVisibleTextItem",
     "comparableVisibleText",
     "visibleTextItemsLikelySame",
@@ -489,8 +507,9 @@ function evaluatedMergeThreadPreservingVisibleItems() {
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
 const MAX_EXPANDED_VISIBLE_TURNS = 40;
-const state = { activeTurnId: "local-start-turn" };
+const state = { activeTurnId: "local-start-turn", currentThreadId: "thread-new" };
 function isReasoningItem(item) { return Boolean(item && item.type === "reasoning"); }
+function isRecentlySubmittedUserMessage(item) { return Boolean(item && item.mobilePendingSubmission); }
 function itemVisibleWeight(item) { return item ? JSON.stringify(item).length : 0; }
 function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false) {
   if (!item || itemVisibleWeight(item) <= 0) return false;
@@ -661,10 +680,14 @@ function evaluatedVisibleItemsForTurn() {
     "shouldHideDurableLiveUserMessage",
     "isSupersededLiveTurn",
     "shouldHideSupersededLiveUserMessage",
+    "isRawThreadReadMode",
+    "shouldPreserveRawThreadVisibleEntry",
+    "limitRawThreadVisibleEntries",
     "visibleItemsForTurn",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
 const RECENT_SUBMITTED_USER_MESSAGE_TTL_MS = 6 * 60 * 60 * 1000;
+const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const state = {
   currentThreadId: "thread-live",
   currentThread: { id: "thread-live" },
@@ -842,13 +865,32 @@ test("context compaction notices update status and collapse repeated turn notice
   assert.match(functionBody("isSupersededLiveTurn"), /mobileSupersededLive/);
   assert.match(functionBody("visibleItemsForTurn"), /shouldHideSupersededLiveUserMessage\(turn, item\)/);
   assert.match(functionBody("visibleItemsForTurn"), /filtered\.every\(\(entry\) => isTurnUsageSummaryItem\(entry\.item\)\)/);
-  assert.match(functionBody("visibleItemsForTurn"), /return filtered/);
+  assert.match(functionBody("visibleItemsForTurn"), /return limitRawThreadVisibleEntries\(filtered\)/);
   assert.match(functionBody("visibleItemSignature"), /isContextCompactionItem\(item\)/);
   assert.match(functionBody("visibleItemSignature"), /const notice = contextCompactionNotice\(item, turn\)/);
   assert.match(functionBody("visibleItemSignature"), /if \(!notice\) return null/);
   assert.match(functionBody("visibleItemSignature"), /mobileCompactionStatus: item\.mobileCompactionStatus/);
   assert.match(functionBody("visibleItemSignature"), /notice,/);
   assert.match(functionBody("conversationRenderSignature"), /visibleItemSignature\(entry\.item, turn\)/);
+});
+
+test("raw thread read mode limits visible items per turn while preserving user images", () => {
+  const helpers = evaluatedVisibleItemsForTurn();
+  helpers.state.currentThread.mobileRawThreadRead = true;
+  const turn = {
+    id: "raw-turn",
+    status: "completed",
+    items: [
+      { type: "agentMessage", id: "old-1", text: "old" },
+      { type: "userMessage", id: "user-image", content: [{ type: "input_image", image_url: "/api/uploads/file?path=/tmp/a.jpg" }] },
+      ...Array.from({ length: 40 }, (_, index) => ({ type: "agentMessage", id: `agent-${index}`, text: `message ${index}` })),
+    ],
+  };
+  const visible = helpers.visibleItemsForTurn(turn).map((entry) => entry.item.id);
+  assert.ok(visible.length < turn.items.length);
+  assert.ok(visible.includes("user-image"));
+  assert.ok(visible.includes("agent-39"));
+  assert.equal(visible.includes("old-1"), false);
 });
 
 test("context compaction notices require explicit state and do not infer pending from live turns", () => {
@@ -1323,7 +1365,8 @@ test("raw app-server input text upload summaries render as thumbnails", () => {
   ]);
 
   assert.match(html, /class="input-image"/);
-  assert.match(html, /\/api\/uploads\/file\?path=/);
+  assert.match(html, /src="data:image\/gif;base64,R0lGODlhAQABAIAAAAAAAP\/\/\/ywAAAAAAQABAAACAUwAOw=="/);
+  assert.match(html, /data-protected-image-src="\/api\/uploads\/file\?path=/);
   assert.match(html, /IMG_5433\.jpg/);
   assert.doesNotMatch(html, /<code>C:\\Users\\example/);
 });
@@ -1362,9 +1405,26 @@ test("user message text before upload summaries still renders jpg thumbnails", (
 
   assert.match(html, /class="input-text"/);
   assert.match(html, /class="input-image"/);
-  assert.match(html, /\/api\/uploads\/file\?path=/);
+  assert.match(html, /src="data:image\/gif;base64,R0lGODlhAQABAIAAAAAAAP\/\/\/ywAAAAAAQABAAACAUwAOw=="/);
+  assert.match(html, /data-protected-image-src="\/api\/uploads\/file\?path=/);
   assert.match(html, /IMG_5435\.jpg/);
   assert.doesNotMatch(html, /Uploaded attachments:/);
+});
+
+test("Hermes embedded upload summaries render direct image sources without hydrate placeholders", () => {
+  const renderInputContent = evaluatedInputContentRendererWithKey("test-key", { embedded: true });
+  const uploadPath = "/Users/example/.codex-mobile-web/uploads/2026-06-20/thread/1781956411989-photo.jpg";
+  const html = renderInputContent([
+    {
+      type: "input_text",
+      text: `Uploaded attachments:\n- IMG_6086.jpg (image, image/jpeg, 110.6 KB): ${uploadPath}`,
+    },
+  ]);
+
+  assert.match(html, /class="input-image"/);
+  assert.match(html, /<img src="\/api\/uploads\/file\?path=/);
+  assert.doesNotMatch(html, /src="data:image\/gif;base64/);
+  assert.doesNotMatch(html, /data-protected-image-src=/);
 });
 
 test("imageView upload screenshots use the uploads route instead of file preview", () => {
@@ -1375,7 +1435,8 @@ test("imageView upload screenshots use the uploads route instead of file preview
   });
 
   assert.match(html, /class="image-view"/);
-  assert.match(html, /\/api\/uploads\/file\?path=/);
+  assert.match(html, /src="data:image\/gif;base64,R0lGODlhAQABAIAAAAAAAP\/\/\/ywAAAAAAQABAAACAUwAOw=="/);
+  assert.match(html, /data-protected-image-src="\/api\/uploads\/file\?path=/);
   assert.doesNotMatch(html, /\/api\/files\/preview\/content/);
 });
 
@@ -1395,7 +1456,8 @@ test("generated image content urls render bounded image cards", () => {
   });
 
   assert.match(html, /class="image-view"/);
-  assert.match(html, /<img src="\/api\/generated-images\/file\?id=thread%2Ftool-output\.png&amp;key=test-key"/);
+  assert.match(html, /<img src="data:image\/gif;base64,R0lGODlhAQABAIAAAAAAAP\/\/\/ywAAAAAAQABAAACAUwAOw=="/);
+  assert.match(html, /data-protected-image-src="\/api\/generated-images\/file\?id=thread%2Ftool-output\.png&amp;key=test-key"/);
   assert.match(html, /<figcaption>tool-output\.png<\/figcaption>/);
   assert.doesNotMatch(html, /\/api\/files\/preview\/content/);
 });
@@ -1454,7 +1516,14 @@ test("failed conversation images collapse into a neutral fallback", () => {
   assert.match(appJs, /\$\("conversation"\)\.addEventListener\("error", handleConversationImageError, true\)/);
   assert.match(appJs, /\$\("conversation"\)\.addEventListener\("load", handleConversationImageLoad, true\)/);
   assert.match(functionBody("updateConversationHtml"), /scheduleFailedAppImageScan\(conversation/);
+  assert.match(functionBody("scheduleFailedAppImageScan"), /hydrateProtectedAppImages\(root, "scheduled-scan"\)/);
   assert.match(functionBody("handleConversationImageError"), /handleProtectedAppImageError\(image\)/);
+  assert.match(functionBody("shouldHydrateProtectedAppImage"), /isIosWebKitBrowser\(\) \|\| imageDiagnosticSourceKind\(src\) === "upload"/);
+  assert.match(functionBody("hydrateProtectedAppImage"), /protectedAppImageRecoveredUrl\(response\)/);
+  assert.match(functionBody("hydrateProtectedAppImage"), /applyProtectedAppImageRecoveredUrl\(image, recovered\)/);
+  assert.match(functionBody("hydrateProtectedAppImage"), /protectedImageHydrated = "1"/);
+  assert.match(appJs, /const IMAGE_DIAGNOSTICS_ENABLED = false;/);
+  assert.match(functionBody("postImageDiagnosticEvent"), /if \(!IMAGE_DIAGNOSTICS_ENABLED\) return false;/);
   assert.match(appJs, /document\.addEventListener\("focusin", \(\) => \{[\s\S]*scheduleVisibleImageFailureScan\(\[0, 80, 240\]\);/);
   assert.match(stylesCss, /\.input-image\.image-load-failed,[\s\S]*\.markdown-image\.image-load-failed,[\s\S]*\.image-view\.image-load-failed/);
   assert.match(stylesCss, /\.input-image\.image-load-retrying img,[\s\S]*visibility: hidden;/);
@@ -1942,7 +2011,8 @@ test("server only emits context compaction notices from explicit item state", ()
   assert.match(itemBody, /if \(!compactionState\) return compacted/);
   assert.doesNotMatch(itemBody, /options\.contextCompactionPending !== false/);
   assert.doesNotMatch(turnBody, /contextCompactionPending = isLiveTurn\(out\)/);
-  assert.match(turnBody, /out\.items = out\.items\.map\(\(item\) => compactItem\(item, options\)\)/);
+  assert.match(turnBody, /const sourceItems = filterDuplicateUploadImageViewsInTurnItems\(out\.items\)/);
+  assert.match(turnBody, /out\.items = sourceItems\.map\(\(item\) => compactItem\(item, options\)\)/);
 });
 
 test("matching user messages keep their original turn position after final refresh", () => {
@@ -2313,6 +2383,89 @@ test("new-thread initial echo cleanup does not remove a later repeated prompt wi
     "local-user-submit-second",
   ]);
   assert.equal(merged.mobileInitialSubmissionId, undefined);
+});
+
+test("v4 projection merge preserves local pending message when server refresh has no durable match yet", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const existingThread = {
+    id: "thread-new",
+    turns: [{
+      id: "local-turn-submit-current",
+      status: { type: "active" },
+      items: [{
+        id: "local-user-submit-current",
+        type: "userMessage",
+        mobilePendingSubmission: true,
+        clientSubmissionId: "submit-current",
+        content: [{ type: "text", text: "current guidance" }],
+      }],
+    }],
+  };
+  const incomingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 2,
+    turns: [{
+      id: "real-active-turn",
+      status: { type: "active" },
+      items: [
+        { id: "agent-progress", type: "agentMessage", text: "working" },
+      ],
+    }],
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, incomingThread);
+
+  assert.deepEqual(merged.turns.map((turn) => turn.id), ["real-active-turn", "local-turn-submit-current"]);
+  assert.deepEqual(merged.turns.flatMap((turn) => turn.items.map((item) => item.id)), [
+    "agent-progress",
+    "local-user-submit-current",
+  ]);
+  assert.equal(merged.mobileProjectionVersion, "v4");
+});
+
+test("v4 projection merge removes local pending message after durable user match arrives", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const existingThread = {
+    id: "thread-new",
+    turns: [{
+      id: "local-turn-submit-current",
+      status: { type: "active" },
+      items: [{
+        id: "local-user-submit-current",
+        type: "userMessage",
+        mobilePendingSubmission: true,
+        clientSubmissionId: "submit-current",
+        content: [{ type: "text", text: "current guidance" }],
+      }],
+    }],
+  };
+  const incomingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 3,
+    turns: [{
+      id: "real-active-turn",
+      status: { type: "active" },
+      items: [
+        {
+          id: "durable-user-current",
+          type: "userMessage",
+          clientSubmissionId: "submit-current",
+          content: [{ type: "input_text", text: "current guidance" }],
+        },
+        { id: "agent-progress", type: "agentMessage", text: "working" },
+      ],
+    }],
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, incomingThread);
+
+  assert.deepEqual(merged.turns.map((turn) => turn.id), ["real-active-turn"]);
+  assert.deepEqual(merged.turns[0].items.map((item) => item.id), [
+    "durable-user-current",
+    "agent-progress",
+  ]);
 });
 
 test("live user message upsert collapses mux echoes before refresh", () => {

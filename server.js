@@ -52,6 +52,7 @@ const {
   cacheGeneratedImageForItem,
   generatedImagePathForId,
   imageContentTypeForPath,
+  imageViewSourcePath,
 } = require("./adapters/generated-image-cache-service");
 const {
   createMobileArchiveIndexService,
@@ -74,6 +75,7 @@ const {
 } = require("./adapters/codex-profile-service");
 const { ensureCodexProjectsTrusted } = require("./adapters/codex-project-trust-service");
 const { createThreadDetailProjectionService } = require("./adapters/thread-detail-projection-service");
+const { createThreadDetailProjectionV4Service } = require("./adapters/thread-detail-projection-v4-service");
 const { createChatGptProBridgeService } = require("./adapters/chatgpt-pro-bridge-service");
 const { createChatGptProPlannerService } = require("./adapters/chatgpt-pro-planner-service");
 const { createChatGptProMcpService } = require("./adapters/chatgpt-pro-mcp-service");
@@ -199,6 +201,8 @@ const TOKEN_USAGE_STATS_DB = process.env.CODEX_MOBILE_TOKEN_USAGE_DB
 const THREAD_DETAIL_PROJECTION_CACHE_DIR = process.env.CODEX_MOBILE_THREAD_DETAIL_PROJECTION_CACHE_DIR
   || path.join(RUNTIME_ROOT, "thread-detail-projections");
 const THREAD_DETAIL_PROJECTION_POLICY_VERSION = "state-relevant-receipt-v3";
+const THREAD_DETAIL_PROJECTION_V4_ENABLED = !/^(0|false|no|off)$/i.test(process.env.CODEX_MOBILE_THREAD_DETAIL_PROJECTION_V4 || "1");
+const THREAD_DETAIL_RAW_ALL_ENABLED = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_THREAD_DETAIL_RAW_ALL || "");
 const WORKSPACE_CREATE_ROOTS = process.env.CODEX_MOBILE_WORKSPACE_CREATE_ROOTS || "";
 const SYNC_DESKTOP_WORKSPACES = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_SYNC_DESKTOP_WORKSPACES || "");
 const DESKTOP_GLOBAL_STATE_FILES = SYNC_DESKTOP_WORKSPACES
@@ -736,11 +740,17 @@ const MAX_FULL_THREAD_TURNS = Math.max(MAX_THREAD_TURNS, Math.min(200, Number(pr
 const MAX_LIVE_OPERATION_ITEMS = Math.max(1, Math.min(30, Number(process.env.CODEX_MOBILE_LIVE_OPERATION_ITEMS || "12")));
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
 const THREAD_LIST_FALLBACK_CACHE_TTL_MS = Math.max(0, Number(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS || "5000"));
-threadDetailProjectionService = createThreadDetailProjectionService({
-  cacheDir: THREAD_DETAIL_PROJECTION_CACHE_DIR,
-  policyVersion: THREAD_DETAIL_PROJECTION_POLICY_VERSION,
-  maxTurns: MAX_FULL_THREAD_TURNS,
-});
+threadDetailProjectionService = THREAD_DETAIL_PROJECTION_V4_ENABLED
+  ? createThreadDetailProjectionV4Service({
+    cacheDir: THREAD_DETAIL_PROJECTION_CACHE_DIR,
+    policyVersion: "state-relevant-receipt-v4",
+    maxTurns: MAX_FULL_THREAD_TURNS,
+  })
+  : createThreadDetailProjectionService({
+    cacheDir: THREAD_DETAIL_PROJECTION_CACHE_DIR,
+    policyVersion: THREAD_DETAIL_PROJECTION_POLICY_VERSION,
+    maxTurns: MAX_FULL_THREAD_TURNS,
+  });
 const MODEL_OPTIONS = optionListFromEnv("CODEX_MOBILE_MODEL_OPTIONS", [
   "gpt-5.5",
   "gpt-5.4",
@@ -4309,14 +4319,30 @@ function prepareProjectedThreadReadResult(cached, summary, runtimeSettings) {
   result.thread = mergeThreadRuntimeFromStateDb(result.thread, summary);
   result.thread = normalizeStaleContextOnlyActiveThread(result.thread);
   result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
-  result.thread.mobileReadMode = cached.dynamic ? "projection-dynamic" : "projection-cache";
+  const projectionVersion = String(cached.version || result.thread.mobileProjectionVersion || "");
+  const v4 = projectionVersion === "v4";
+  result.thread.mobileReadMode = cached.dynamic
+    ? (v4 ? "projection-v4-dynamic" : "projection-dynamic")
+    : (v4 ? "projection-v4-cache" : "projection-cache");
   result.thread.mobileProjection = {
+    ...(result.thread.mobileProjection || {}),
     source: cached.dynamic ? "dynamic" : "cache",
+    version: projectionVersion || result.thread.mobileProjectionVersion || "",
     cachedAtMs: cached.cachedAtMs || null,
     updatedAtMs: cached.updatedAtMs || cached.cachedAtMs || null,
     ageMs: cached.updatedAtMs ? Math.max(0, Date.now() - cached.updatedAtMs) : null,
   };
   return result;
+}
+
+function finalizeThreadDetailProjectionResult(result, details = {}) {
+  if (THREAD_DETAIL_RAW_ALL_ENABLED) return result;
+  if (!result || !result.thread || !threadDetailProjectionService
+    || typeof threadDetailProjectionService.normalizeResult !== "function") return result;
+  return threadDetailProjectionService.normalizeResult(result, {
+    threadId: result.thread.id || details.threadId || "",
+    source: details.source || result.thread.mobileReadMode || "thread-detail",
+  });
 }
 
 function runtimeContextCacheKey(rolloutPath, stat) {
@@ -4881,6 +4907,42 @@ function textContainsRenderableUploadSummary(text) {
   return /(^|\n)[ \t]*(?:>[ \t]*)?Uploaded attachments:[\s\S]*-\s+.+\(\s*image\b[\s\S]*\.codex-mobile-web[\\/]+uploads[\\/][\s\S]*\.(?:png|jpe?g|webp|gif)\b/i.test(value);
 }
 
+function normalizedCodexMobileUploadPath(filePath) {
+  const text = String(filePath || "").trim();
+  if (!text) return "";
+  try {
+    const resolved = path.resolve(text);
+    return isCodexMobileUploadFilePath(resolved) ? normalizeFsPath(resolved) : "";
+  } catch (_) {
+    return "";
+  }
+}
+
+function uploadedImagePathsFromText(text) {
+  const paths = [];
+  for (const line of String(text || "").split(/\r?\n/)) {
+    if (!/\bimage\b/i.test(line)) continue;
+    const match = /:\s*(.+?)\s*$/.exec(line);
+    const normalized = normalizedCodexMobileUploadPath(match && match[1]);
+    if (normalized) paths.push(normalized);
+  }
+  return paths;
+}
+
+function userMessageUploadedImagePaths(item) {
+  const paths = [
+    ...uploadedImagePathsFromText(item && item.text),
+    ...uploadedImagePathsFromText(item && item.message),
+  ];
+  for (const part of userMessageContentParts(item)) {
+    paths.push(...uploadedImagePathsFromText(textValueForUserMessagePart(part)));
+    const imagePath = part && (part.path || imageUrlValueForUserMessagePart(part));
+    const normalized = normalizedCodexMobileUploadPath(imagePath);
+    if (normalized) paths.push(normalized);
+  }
+  return paths;
+}
+
 function userMessageHasVisualAttachment(item) {
   if (!isUserQuestionItem(item)) return false;
   if (textContainsRenderableUploadSummary(item.text) || textContainsRenderableUploadSummary(item.message)) return true;
@@ -4907,6 +4969,25 @@ function isTurnUsageSummaryItem(item) {
 
 function isVisualReceiptItem(item) {
   return Boolean(item && typeof item === "object" && (item.type === "imageView" || item.type === "imageGeneration"));
+}
+
+function imageViewUploadSourcePath(item) {
+  if (!isVisualReceiptItem(item)) return "";
+  return normalizedCodexMobileUploadPath(imageViewSourcePath(item));
+}
+
+function filterDuplicateUploadImageViewsInTurnItems(items) {
+  if (!Array.isArray(items) || items.length < 2) return items;
+  const userUploadPaths = new Set();
+  for (const item of items) {
+    if (!isUserQuestionItem(item)) continue;
+    for (const uploadPath of userMessageUploadedImagePaths(item)) userUploadPaths.add(uploadPath);
+  }
+  if (!userUploadPaths.size) return items;
+  return items.filter((item) => {
+    const imagePath = imageViewUploadSourcePath(item);
+    return !imagePath || !userUploadPaths.has(imagePath);
+  });
 }
 
 function receiptOnlyItemIndexes(items) {
@@ -4967,15 +5048,16 @@ function compactTurn(turn, options = {}) {
   if (!turn || typeof turn !== "object") return turn;
   const out = Object.assign({}, turn);
   if (Array.isArray(out.items)) {
+    const sourceItems = filterDuplicateUploadImageViewsInTurnItems(out.items);
     const allowOperation = Boolean(options.allowOperations)
       || (Boolean(options.allowLiveOperation) && isLiveTurn(out));
     const operationIndexes = trailingOperationIndexes(
-      out.items,
+      sourceItems,
       allowOperation,
       options.maxOperationItems || MAX_LIVE_OPERATION_ITEMS,
     );
-    const receiptIndexes = options.receiptOnly ? receiptOnlyItemIndexes(out.items) : null;
-    out.items = out.items.map((item) => compactItem(item, options)).filter((item, index) => {
+    const receiptIndexes = options.receiptOnly ? receiptOnlyItemIndexes(sourceItems) : null;
+    out.items = sourceItems.map((item) => compactItem(item, options)).filter((item, index) => {
       if (receiptIndexes) return receiptIndexes.has(index);
       if (!isOperationalItem(item)) return true;
       return operationIndexes.has(index);
@@ -9795,6 +9877,10 @@ async function prepareThreadTaskCardsToResult(result) {
   return attachPendingServerRequestsToResult(attachThreadTaskCardsToResult(result));
 }
 
+async function prepareThreadDetailResponseResult(result, details = {}) {
+  return finalizeThreadDetailProjectionResult(await prepareThreadTaskCardsToResult(result), details);
+}
+
 async function turnsListThreadReadResult(threadId, summary, runtimeSettings, warning, mode = "turns-list", threadLog = null) {
   const startedAtMs = Date.now();
   if (threadLog) {
@@ -9825,7 +9911,7 @@ async function turnsListThreadReadResult(threadId, summary, runtimeSettings, war
       mode,
     });
   }
-  return prepareThreadTaskCardsToResult(result);
+  return prepareThreadDetailResponseResult(result, { threadId, source: mode });
 }
 
 function filterFallbackThreads(threads, filters = {}) {
@@ -11653,6 +11739,53 @@ async function handleApi(req, res) {
       threadLog("complete", { status: 404, mode: "hidden" });
       return;
     }
+    if (THREAD_DETAIL_RAW_ALL_ENABLED) {
+      const readStartedAtMs = Date.now();
+      threadLog("thread_read_raw_start", { timeoutMs: READ_RPC_TIMEOUT_MS });
+      try {
+        const result = await codex.request("thread/read", { threadId, includeTurns: true }, {
+          timeoutMs: READ_RPC_TIMEOUT_MS,
+          retry: false,
+          resetOnTimeout: false,
+        });
+        if (result && result.thread) {
+          result.thread = applySessionIndexTitleToThread(result.thread, readSessionIndexEntries().get(threadId));
+          threadDisplaySummaryCache.remember(result.thread);
+          result.thread = mergeThreadRuntimeFromStateDb(result.thread, summary);
+          result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
+          result.thread.mobileReadMode = "thread-read-raw";
+          result.thread.mobileProjectionVersion = "raw";
+          result.thread.mobileProjection = {
+            source: "thread-read",
+            version: "raw",
+            projectionDisabled: true,
+          };
+          result.thread.mobileRawThreadRead = true;
+        }
+        if (isHiddenThread(result && result.thread, visibility)) {
+          threadLog("thread_read_raw_hidden", {
+            durationMs: Date.now() - readStartedAtMs,
+            status: 404,
+          });
+          sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
+          return;
+        }
+        threadLog("thread_read_raw_ok", {
+          durationMs: Date.now() - readStartedAtMs,
+          returnedTurns: result && result.thread && Array.isArray(result.thread.turns) ? result.thread.turns.length : null,
+        });
+        sendJson(res, 200, await prepareThreadTaskCardsToResult(result));
+        threadLog("complete", { status: 200, mode: "thread-read-raw" });
+      } catch (err) {
+        threadLog("thread_read_raw_error", {
+          durationMs: Date.now() - readStartedAtMs,
+          timeout: isReadTimeoutError(err),
+          error: err.message || String(err),
+        });
+        sendJson(res, err.statusCode || 500, { error: err.message || String(err) });
+      }
+      return;
+    }
     const projectionInput = threadDetailProjectionInput(threadId, summary);
     const projectionStartedAtMs = Date.now();
     const projected = projectionInput ? prepareProjectedThreadReadResult(
@@ -11676,7 +11809,10 @@ async function handleApi(req, res) {
         returnedTurns: Array.isArray(projected.thread.turns) ? projected.thread.turns.length : null,
         omittedTurns: projected.thread.mobileOmittedTurnCount || 0,
       });
-      sendJson(res, 200, await prepareThreadTaskCardsToResult(projected));
+      sendJson(res, 200, await prepareThreadDetailResponseResult(projected, {
+        threadId,
+        source: projected.thread.mobileReadMode || "projection",
+      }));
       threadLog("complete", { status: 200, mode: projected.thread.mobileReadMode });
       return;
     }
@@ -11716,7 +11852,7 @@ async function handleApi(req, res) {
       maxTurns: MAX_FULL_THREAD_TURNS,
     });
     try {
-      const result = compactThreadReadResult(await codex.request("thread/read", { threadId, includeTurns: true }, {
+      let result = compactThreadReadResult(await codex.request("thread/read", { threadId, includeTurns: true }, {
         timeoutMs: READ_RPC_TIMEOUT_MS,
         retry: false,
         resetOnTimeout: false,
@@ -11744,12 +11880,15 @@ async function handleApi(req, res) {
       if (projectionInput && result.thread) {
         try {
           threadDetailProjectionService.seed(projectionInput, result);
-          result.thread.mobileProjection = { source: "seeded" };
+          result.thread.mobileProjection = Object.assign({}, result.thread.mobileProjection || {}, { source: "seeded" });
         } catch (err) {
           threadLog("projection_seed_error", { error: err.message || String(err) });
         }
       }
-      sendJson(res, 200, await prepareThreadTaskCardsToResult(result));
+      sendJson(res, 200, await prepareThreadDetailResponseResult(result, {
+        threadId,
+        source: "thread-read",
+      }));
       threadLog("complete", { status: 200, mode: "thread-read" });
     } catch (readErr) {
       threadLog("thread_read_error", {
@@ -11794,25 +11933,31 @@ async function handleApi(req, res) {
           error: turnsErr.message || String(turnsErr),
         });
         if (isUnmaterializedThreadError(turnsErr)) {
-          sendJson(res, 200, fallbackThreadReadResult(threadId, summary, runtimeSettings, turnsErr.message || String(turnsErr), "unmaterialized"));
+          sendJson(res, 200, finalizeThreadDetailProjectionResult(
+            fallbackThreadReadResult(threadId, summary, runtimeSettings, turnsErr.message || String(turnsErr), "unmaterialized"),
+            { threadId, source: "unmaterialized" },
+          ));
           threadLog("complete", { status: 200, mode: "unmaterialized" });
           return;
         }
 
         if (isReadTimeoutError(turnsErr)) {
-          sendJson(res, 200, fallbackThreadReadResult(threadId, summary, runtimeSettings, turnsErr.message || String(turnsErr), "summary-timeout-fallback"));
+          sendJson(res, 200, finalizeThreadDetailProjectionResult(
+            fallbackThreadReadResult(threadId, summary, runtimeSettings, turnsErr.message || String(turnsErr), "summary-timeout-fallback"),
+            { threadId, source: "summary-timeout-fallback" },
+          ));
           threadLog("complete", { status: 200, mode: "summary-timeout-fallback" });
           return;
         }
 
         const mode = isReadTimeoutError(turnsErr) ? "summary-timeout-fallback" : "summary-error-fallback";
-        sendJson(res, 200, fallbackThreadReadResult(
+        sendJson(res, 200, finalizeThreadDetailProjectionResult(fallbackThreadReadResult(
           threadId,
           summary,
           runtimeSettings,
           `thread/read failed: ${readErr.message || String(readErr)}; thread/turns/list failed: ${turnsErr.message || String(turnsErr)}`,
           mode,
-        ));
+        ), { threadId, source: mode }));
         threadLog("complete", { status: 200, mode });
       }
     }

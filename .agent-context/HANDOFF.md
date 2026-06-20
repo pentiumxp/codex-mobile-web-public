@@ -2,6 +2,555 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-20 Protected Upload Image Hydration v334
+
+- Status: implemented, validated, and deployed to Mac production. Not committed
+  or pushed.
+- Trigger:
+  - User-uploaded images on iPhone/iOS continued to show a failed placeholder or
+    black frame after raw thread read mode and server projection bypass proved
+    the raw thread contained a single user upload item.
+  - Production Chromium could load the same `/api/uploads/file` image URLs, but
+    iPhone logs did not produce client image lifecycle events after v333.
+- Change:
+  - Advanced frontend/service-worker shell to `codex-mobile-shell-v334`.
+  - Added proactive protected-image hydration in `public/app.js`: after
+    conversation render, protected upload/generated/file-preview images are
+    fetched with the current session auth header and converted to a same-page
+    `data:image/...` URL or `blob:` URL before Safari/WebKit has to re-use the
+    authenticated `/api/uploads/file?...key=...` URL.
+  - Hydration is scheduled through the existing failed-image scan path and emits
+    bounded `hydrate_start`, `hydrate_response`, `hydrate_apply`, and
+    `hydrate_fetch_error` image diagnostics. It does not log access keys, full
+    local paths, image bytes, or raw query strings.
+  - README includes a Chinese v334 release note.
+- Validation:
+  - Passed:
+    `node --test test/conversation-render.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js test/tool-output-image-projection.test.js`
+    (94 tests).
+  - Passed: `npm run check`.
+  - Passed: `node --check public/app.js && git diff --check`.
+  - Passed center required check:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - Production readback returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v334` and
+    `shellCacheName=codex-mobile-shell-v334`; served `app.js` includes
+    `hydrateProtectedAppImage`, scheduled hydration, and hydrate diagnostics.
+  - Production Playwright smoke opened the live thread on `127.0.0.1:8787` and
+    found recent uploads `3AA8DD3E...jpg` and `2D1B7E83...jpg` rendered as
+    hydrated `data:image/jpeg` images with `naturalWidth=591`,
+    `naturalHeight=1280`, and no failed-image fallback text.
+  - AI Ops evidence ledger record:
+    `evidence-482a8f67-80e4-4a61-a435-4315f9c2b0ab`.
+- Remaining risk:
+  - The Mac production/Chromium path is now proven, but this does not prove the
+    user's iPhone WebKit instance has evicted its old shell/service worker. If
+    iPhone still fails while showing v334, inspect `/api/client-events` for
+    `hydrate_*` events from that device and consider a more direct inline
+    upload thumbnail source for iOS.
+
+## 2026-06-20 Protected Image Placeholder Hydration v335
+
+- Status: implemented, validated, and deployed to Mac production. Not committed
+  or pushed.
+- Trigger:
+  - User confirmed the iPhone client was already on the latest shown version,
+    yet uploaded images still had a delayed/no-reaction path and then showed
+    "图片无法加载" after reopening.
+  - v334 still allowed protected `/api/uploads/file?...key=...` URLs to be put
+    directly into `<img src>` before hydration ran, so iOS WebKit could still
+    handle the protected URL itself.
+  - `/api/client-events` diagnostics were also weak because the client used
+    `sendBeacon` first, while the server expects a JSON body; Safari could drop
+    or mis-send diagnostics before fetch fallback ran.
+- Change:
+  - Advanced frontend/service-worker shell to `codex-mobile-shell-v335`.
+  - Added `PROTECTED_IMAGE_PLACEHOLDER_SRC` and `protectedImageDisplaySrc`.
+    Protected upload/generated/file-preview images now render with a local
+    transparent data-gif placeholder in `<img src>` and keep the real protected
+    URL in `data-protected-image-src`.
+  - Hydration fetches the protected URL with current session auth, converts it
+    to `data:image/...` or `blob:`, then replaces the placeholder. This means
+    iOS no longer directly loads the authenticated `/api/uploads/file` URL as
+    the image source.
+  - Client event reporting now tries `fetch(..., keepalive: true)` first and
+    only falls back to `navigator.sendBeacon`, so diagnostics are more likely
+    to reach the server as JSON.
+  - README includes a Chinese v335 release note.
+- Validation:
+  - Passed:
+    `node --test test/conversation-render.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js test/tool-output-image-projection.test.js`
+    (94 tests).
+  - Passed: `npm run check`.
+  - Passed: `git diff --check`.
+  - Passed center required check:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - Production readback returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v335` and
+    `shellCacheName=codex-mobile-shell-v335`; served `app.js` contains the
+    placeholder hydration code and fetch-first client event reporting.
+  - Production Playwright smoke found latest upload
+    `26A22C7F...jpg` rendered as hydrated `data:image` with
+    `naturalWidth=591`, `naturalHeight=1280`, and no failed class.
+  - Production log now contains v335 `image_hydrate_start`,
+    `image_hydrate_apply`, and `image_load` events for `26A22C7F...jpg`,
+    proving client events are reaching the server in the desktop smoke path.
+  - AI Ops evidence ledger record:
+    `evidence-ae880908-c663-4438-a86f-5e4134427585`.
+- Remaining risk:
+  - This still needs real iPhone confirmation. If iPhone remains broken while
+    showing v335, search production logs for v335 Safari user-agent
+    `image_hydrate_*` events for the affected upload. Absence of those events
+    means the iPhone route is not executing the hydration scanner; presence
+    with failed dimensions/status means the fetch/convert path is failing on
+    device.
+
+## 2026-06-20 Restore V4 Projection And Disable Image Diagnostics v336
+
+- Status: implemented, validated, and deployed to Mac production. Not committed
+  or pushed.
+- Trigger:
+  - User decided to stop pursuing the iPhone uploaded-image issue and asked to
+    restore V4.
+  - User then asked to remove the temporary client image logs.
+- Change:
+  - `CODEX_MOBILE_THREAD_DETAIL_RAW_ALL` is now an explicit diagnostic opt-in
+    only. The default is V4 projection; raw mode requires setting the env var
+    to `1`, `true`, `yes`, or `on`.
+  - Advanced frontend/service-worker shell to `codex-mobile-shell-v336`.
+  - Added `IMAGE_DIAGNOSTICS_ENABLED = false`; `postImageDiagnosticEvent`
+    returns without sending, so `image_*` / `image_hydrate_*` client events are
+    no longer logged. Protected image placeholder hydration remains in place.
+  - README includes Chinese v336 and raw-mode notes.
+- Validation:
+  - Passed:
+    `node --test test/conversation-render.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js test/tool-output-image-projection.test.js test/thread-detail-projection-v4-service.test.js test/thread-visible-item-normalizer.test.js`
+    (101 tests).
+  - Passed: `npm run check`.
+  - Passed: `git diff --check`.
+  - Passed center required check:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - Production readback returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v336`,
+    `shellCacheName=codex-mobile-shell-v336`,
+    `mobileReadMode=projection-v4-dynamic`,
+    `mobileProjectionVersion=v4`, and `mobileRawThreadRead=false`.
+  - Production served `app.js` contains image diagnostics disabled.
+  - AI Ops evidence ledger record:
+    `evidence-2d1fc3e5-3a58-4852-90ff-e667890b74e7`.
+
+## 2026-06-20 ChatGPT Pro MCP Connector Setup
+
+- Status: local MCP/OAuth sidecar deployed and validated; ChatGPT app creation
+  is blocked on a ChatGPT-cloud-reachable HTTPS endpoint for the sidecar.
+- Direction correction:
+  - User clarified after the Mac Funnel attempt that the intended Tailscale
+    HTTPS route is the older Windows Codex/Tailscale route, not
+    `mac-studio.tail62e8ce.ts.net`.
+  - Do not continue treating the Mac Tailscale hostname as the target unless
+    the user explicitly switches back to it. Next work should start from the
+    Windows Tailscale HTTPS URL once the user provides it, then verify whether
+    it reaches the OAuth sidecar/MCP endpoint or only the older Codex app.
+- Local Codex MCP:
+  - Runtime token file exists at
+    `/Users/xuxin/.codex-mobile-web/chatgpt-pro-mcp-token.txt` with local-only
+    permissions. Do not print or copy its contents.
+  - Production launchd label `com.hermesmobile.plugin.codex-mobile` has
+    `CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN_FILE` pointing to that file.
+  - Local unauthenticated MCP requests return HTTP 401, and authenticated local
+    requests return the `codex-mobile-chatgpt-pro-planner` tool list.
+- Tailscale/OAuth sidecar:
+  - Runtime sidecar:
+    `/Users/xuxin/.codex-mobile-web/chatgpt-pro-mcp-funnel-proxy.js`.
+  - LaunchAgent:
+    `/Users/xuxin/Library/LaunchAgents/com.codexmobile.chatgpt-pro-mcp-funnel-proxy.plist`.
+  - It listens on `127.0.0.1:8788`, implements minimal OAuth/DCR endpoints for
+    ChatGPT custom apps, and proxies `/api/chatgpt-pro/mcp` to local
+    `127.0.0.1:8787` while injecting the local bearer token from the token file.
+  - `launchctl print gui/501/com.codexmobile.chatgpt-pro-mcp-funnel-proxy`
+    showed the sidecar running.
+- Tailscale Serve/Funnel config:
+  - Existing Home AI `443` mapping to `http://127.0.0.1:8797` was preserved.
+  - Added `8443` HTTPS mapping for
+    `mac-studio.tail62e8ce.ts.net:8443` to `http://127.0.0.1:8788`.
+  - `AllowFunnel` is set for `mac-studio.tail62e8ce.ts.net:8443`.
+  - Backups/desired config are under `/Users/xuxin/.codex-mobile-web/`.
+- Evidence:
+  - From inside the tailnet,
+    `https://mac-studio.tail62e8ce.ts.net:8443/api/chatgpt-pro/mcp` reaches the
+    MCP sidecar.
+  - Public DNS checks through `1.1.1.1` and `8.8.8.8` did not return a public
+    Funnel record, and ChatGPT custom app OAuth discovery showed `502 Bad
+    gateway`.
+  - Tailscale docs indicate Funnel requires MagicDNS, HTTPS certs, and a
+    `funnel` node attribute in the tailnet policy; DNS propagation can take up
+    to about 10 minutes after enablement.
+- Chrome/ChatGPT state:
+  - Dedicated Chrome DevTools endpoint is on `127.0.0.1:9222`.
+  - ChatGPT settings custom app form is open and filled with:
+    `Codex Mobile Planner`,
+    `https://mac-studio.tail62e8ce.ts.net:8443/api/chatgpt-pro/mcp`.
+  - ChatGPT developer mode is enabled.
+  - Tailscale admin tab is open at Google login for Tailscale; user must
+    complete login interactively before policy changes can continue.
+- Next steps:
+  1. Get the older Windows Tailscale HTTPS URL from the user.
+  2. Verify `/.well-known/oauth-protected-resource` and
+     `/api/chatgpt-pro/mcp` on that URL from this Mac.
+  3. If the Windows route reaches the OAuth sidecar/MCP endpoint, replace the
+     Mac URL in the ChatGPT custom app form with the Windows URL and complete
+     OAuth authorization.
+  4. If the Windows route only reaches the old Codex app or returns 404/502,
+     add a Windows-side reverse proxy or Tailscale Serve mapping to forward the
+     ChatGPT MCP/OAuth paths to this Mac sidecar on `127.0.0.1:8788` or deploy
+     the same OAuth wrapper beside the Windows Codex instance.
+
+## 2026-06-20 Raw Thread Read Diagnostic Mode
+
+- Status: implemented, validated, and deployed to Mac production for diagnosis.
+  Not committed or pushed.
+- Trigger:
+  - User asked to disable V4 and V3 projection entirely and load the original
+    raw thread to inspect whether image/message ordering problems come from
+    projection or from raw thread rendering/client behavior.
+- Change:
+  - Added `CODEX_MOBILE_THREAD_DETAIL_RAW_ALL`. It currently defaults on via
+    `process.env.CODEX_MOBILE_THREAD_DETAIL_RAW_ALL || "1"`. Set it to
+    `0`, `false`, `no`, or `off` to restore normal projection flow.
+  - When enabled, `GET /api/threads/:id` bypasses v4/v3 projection cache and
+    compaction, calls app-server `thread/read` with `includeTurns: true`,
+    and annotates the response with
+    `mobileReadMode=thread-read-raw`, `mobileProjectionVersion=raw`, and
+    `mobileRawThreadRead=true`.
+  - Thread task cards are still attached, but projection finalization is skipped
+    in raw mode.
+  - v332 adds a client-side raw diagnostic window so mobile browsers do not try
+    to render every raw app-server item at once. In `thread-read-raw` mode, the
+    first render shows a small recent-turn window and limits each turn's visible
+    raw items while preserving user messages, image cards, Usage summaries,
+    context-compaction notices, and the tail of text output.
+- Validation:
+  - Passed: `npm run check`.
+  - Passed: `git diff --check`.
+  - Passed center check: `node tests/architecture-code-test-harness-map.test.js`.
+  - Passed focused tests:
+    `node --check server.js && node --test test/thread-visibility.test.js test/conversation-render.test.js test/tool-output-image-projection.test.js`
+    (102 tests).
+  - Passed v332 focused tests:
+    `node --test test/conversation-render.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js test/tool-output-image-projection.test.js`
+    (94 tests).
+- Production readback:
+  - Production server file contains the raw-mode branch and launchd reports
+    `com.hermesmobile.plugin.codex-mobile` running from
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Production `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v332` and
+    `shellCacheName=codex-mobile-shell-v332`; served `/app.js` contains the raw
+    item limiter and `/sw.js` contains `codex-mobile-shell-v332`.
+  - Authenticated production `/api/threads/019ea76b-d846-7892-bda0-c0fff9cf7581`
+    returned HTTP 200, `mobileReadMode=thread-read-raw`,
+    `mobileProjectionVersion=raw`, `mobileRawThreadRead=true`, and 243 turns.
+  - The new upload `E5A39D16` appears only once as a raw `userMessage` item
+    in turn `019ee4b0-fa24-7241-a894-5cc04683b7f0`; there is no extra raw
+    `imageView` / `imageGeneration` hit for that upload.
+  - After another user message, production raw readback returned 244 total turns.
+    Applying the v332 raw render window to the production payload yields 4
+    rendered turns and about 69 visible items on first render, instead of
+    attempting to render all 8944 raw app-server items.
+  - AI Ops evidence ledger record:
+    `evidence-1654e4bd-1488-46bb-b6da-478022936196`.
+- Caveat:
+  - This is intentionally heavier and diagnostic. It disables Mobile-specific
+    projection benefits such as bounded dynamic projection and v4 visible-item
+    normalization until the flag/default is restored.
+
+## 2026-06-20 Raw Thread Client Window And Image Diagnostics v333
+
+- Status: implemented, validated, and deployed to Mac production. Not committed
+  or pushed.
+- Trigger:
+  - Raw `thread/read` mode proved the server can return the full thread, but
+    the user's iPhone still showed upload image failures/black frames.
+  - Production Playwright on the Mac could load recent upload images normally,
+    so the remaining failure needs device-side evidence.
+- Changes:
+  - `public/app.js` now limits first-render raw diagnostics:
+    `thread-read-raw` shows only 4 recent turns by default and limits each raw
+    turn's visible entries to a bounded window while preserving user messages,
+    image cards, Usage summaries, context-compaction notices, and recent text.
+  - Advanced shell cache/build id to `codex-mobile-shell-v333`.
+  - Added bounded client image diagnostics over existing `/api/client-events`:
+    `image_load`, `image_error`, `image_recovery_start`,
+    `image_recovery_response`, `image_recovery_apply`,
+    `image_recovery_retry_src`, `image_recovery_limit`, and
+    `image_recovery_fetch_error`.
+  - Diagnostics record client build id, read mode, source kind, source hash,
+    short alt filename, natural size, recovery count, HTTP status/content type,
+    and PWA/embed visibility metadata. They do not record Access Keys, full
+    local paths, raw query strings, or image bytes.
+- Validation:
+  - Passed:
+    `node --test test/conversation-render.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js test/tool-output-image-projection.test.js`
+    (94 tests).
+  - Passed: `npm run check`.
+  - Passed: `git diff --check`.
+  - Production health after deploy returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v333` and
+    `shellCacheName=codex-mobile-shell-v333`.
+  - Production `/api/threads/019ea76b-d846-7892-bda0-c0fff9cf7581` remained in
+    `thread-read-raw` mode.
+  - Mac Playwright production page check found recent upload images loadable on
+    desktop Chromium. This does not close the iPhone issue; it narrows the
+    needed evidence to device-side image lifecycle logs.
+
+## 2026-06-20 Suppress Duplicate User Upload imageView Cards
+
+- Status: implemented, validated, and deployed to Mac production. Not committed
+  or pushed in this turn.
+- Trigger:
+  - After v331 projection v4, the user still saw an uploaded image first render
+    as a failed box and then later as a large black image frame.
+- Root cause:
+  - v4 ordering/visibility was active, but the same user-uploaded file could be
+    represented twice in one turn:
+    1. a `userMessage` upload summary rendered through `/api/uploads/file`;
+    2. a direct app-server `imageView` item with `path` pointing to the same
+       file under the Codex Mobile upload root, often caused by using
+       `view_image` on the user-uploaded screenshot.
+  - Existing regression coverage only suppressed data-url `view_image`
+    function-call outputs for uploaded files. It did not cover direct
+    `imageView.path` items already present in app-server turn items.
+- Fix:
+  - `server.js` now collects image upload paths from user messages in the same
+    turn and filters matching `imageView` / `imageGeneration` items before
+    compaction.
+  - The filter is scoped to paths inside the configured
+    `CODEX_MOBILE_UPLOAD_DIR` / upload root and only removes matching duplicates
+    beside a user upload summary. Standalone imageView upload paths without a
+    matching user upload summary remain visible.
+  - Added tests in `test/tool-output-image-projection.test.js` for both the
+    duplicate direct `imageView.path` case and the standalone keep case.
+  - Updated a structural assertion in `test/conversation-render.test.js` to
+    reflect the new `sourceItems` compaction step.
+- Validation:
+  - Passed:
+    `node --test test/tool-output-image-projection.test.js test/conversation-render.test.js`.
+  - Passed:
+    `node --test test/tool-output-image-projection.test.js test/conversation-render.test.js test/thread-detail-projection-v4-service.test.js test/thread-visible-item-normalizer.test.js`
+    (80 tests).
+  - Passed: `npm run check`.
+  - Passed: `git diff --check`.
+  - Passed center required check:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - AI Ops evidence ledger record:
+    `evidence-5c2d3107-4ab9-4aff-a576-083d38606341`.
+- Production:
+  - Deploy plan target was
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`, restart label
+    `com.hermesmobile.plugin.codex-mobile`, health URL
+    `http://127.0.0.1:8787/api/public-config`, and backup path
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260620T105540Z-plugin-codex-mobile-web-suppress-upload-imageview-duplicates`.
+  - The deploy execute command was interrupted from the tool side, but
+    production readback proved the new server code is active.
+  - Production `/api/threads/019ea76b-d846-7892-bda0-c0fff9cf7581` after deploy
+    returned `projection-v4-dynamic`; searching for `76E2D26C` no longer found
+    an `imageView` item, only the original user message plus assistant text
+    receipts that mention the filename.
+
+## 2026-06-20 Thread Detail Projection v4 Implementation v331
+
+- Status: implemented, validated, and deployed to Mac production. Not pushed to
+  public in this turn.
+- Source state:
+  - Frontend shell advanced to `codex-mobile-shell-v331`.
+  - v4 is the default thread-detail projection path.
+  - v3 remains available through
+    `CODEX_MOBILE_THREAD_DETAIL_PROJECTION_V4=0`.
+- Service First boundary:
+  - Added `adapters/thread-visible-item-normalizer.js` as the pure visible-item
+    normalizer.
+  - Added `adapters/thread-detail-projection-v4-service.js` as the v4
+    projection service wrapper over the existing projection cache/patch
+    substrate.
+  - `server.js` only selects v4/v3, finalizes thread-detail responses through
+    the service, and keeps route handlers thin.
+- Product behavior:
+  - Server output now carries `mobileProjectionVersion="v4"`,
+    `mobileProjectionRevision`, `mobileVisibleItemKeys`,
+    `mobileVisibleKind`, and stable `mobileVisibleKey` values.
+  - Context compaction notices are synthesized only from explicit
+    `item/started` / `item/completed` notification state. Type-only historical
+    context markers do not invent pending/complete status.
+  - `turn/completed` remains an item-preserving patch, so streamed receipts,
+    operations, images, and Usage summaries are not deleted by a short
+    completion payload.
+  - Frontend v4 merging applies only a transient pending user-message overlay,
+    keyed by current local submission state, until the durable user message
+    appears or the send is marked failed.
+  - Conversation render signatures include projection version/revision and
+    visible item keys so real item-order/key changes cannot be hidden by stale
+    DOM patching.
+- Files changed:
+  - Added `adapters/thread-visible-item-normalizer.js`.
+  - Added `adapters/thread-detail-projection-v4-service.js`.
+  - Added `test/thread-visible-item-normalizer.test.js`.
+  - Added `test/thread-detail-projection-v4-service.test.js`.
+  - Updated `server.js`, `public/app.js`, `public/sw.js`, `package.json`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`,
+    `README.md`, `docs/THREAD_DETAIL_PROJECTION_V4_DESIGN.md`,
+    `docs/MODULES.md`, `docs/ARCHITECTURE.md`,
+    `docs/COMPLEX_FEATURE_PATHS.md`, and `docs/README.md`.
+- Validation:
+  - Passed:
+    `node --test test/thread-visible-item-normalizer.test.js test/thread-detail-projection-v4-service.test.js test/conversation-render.test.js test/mobile-viewport.test.js`
+    (79 tests).
+  - Passed: `npm run check`.
+  - Passed: `git diff --check`.
+  - Passed center required check:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - Passed center deployment harness checks:
+    `node --check scripts/deploy-macos-production.js`,
+    `node tests/macos-production-deploy-script.test.js`, and
+    `node tests/production-status-smoke-harness.test.js`.
+  - Passed full suite after updating stale v330 version assertions:
+    `npm test` (558 tests).
+  - Passed final post-suite checks:
+    `npm run check` and `git diff --check`.
+  - Dev smoke on `127.0.0.1:8877` with temporary runtime confirmed
+    `/api/public-config.clientBuildId=0.1.11|codex-mobile-shell-v331`,
+    `/api/public-config.shellCacheName=codex-mobile-shell-v331`, served
+    `/app.js` contains `mergeV4ProjectionThread`, and served `/sw.js` contains
+    `codex-mobile-shell-v331`.
+  - Production readback after deploy showed:
+    `clientBuildId=0.1.11|codex-mobile-shell-v331`,
+    `shellCacheName=codex-mobile-shell-v331`, manifest HTTP 200, served
+    `/app.js` contains v331 and `mergeV4ProjectionThread`, served `/sw.js`
+    contains v331, platform `darwin`, and production workspace path
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Production thread-detail smoke for
+    `019ea76b-d846-7892-bda0-c0fff9cf7581` returned HTTP 200,
+    `mobileReadMode=projection-v4-dynamic`,
+    `mobileProjectionVersion=v4`, `mobileProjection.version=v4`,
+    revision `241`, 10 returned turns, and 35 visible item keys.
+  - AI Ops evidence ledger record:
+    `evidence-f37c6648-71b9-471f-9b66-f6771f3af07e`.
+  - Full-suite evidence ledger record:
+    `evidence-721ad6fc-d5c3-4414-be02-0a27ca932667`.
+- Deployment:
+  - Plan-only command confirmed target
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`, restart label
+    `com.hermesmobile.plugin.codex-mobile`, health URL
+    `http://127.0.0.1:8787/api/public-config`, and `.agent-context/HANDOFF.md`
+    excluded from deploy.
+  - The execute command was interrupted from the tool side, but production
+    readback proves the v331 files and v4 server code are active, and
+    `launchctl print system/com.hermesmobile.plugin.codex-mobile` reports the
+    service running from the production plugin directory as user `xuxin`.
+
+## 2026-06-20 Thread Detail Projection v4 Design
+
+- Status: superseded by the v331 implementation section above.
+- Trigger:
+  - User asked to redesign the thread-detail projection function in parallel
+    with the existing implementation, because repeated point fixes still left
+    disappearing user messages, missing receipts, misplaced uploaded images,
+    and invisible context-compaction notices.
+- Files changed:
+  - Added `docs/THREAD_DETAIL_PROJECTION_V4_DESIGN.md`.
+  - Updated `docs/README.md` reading guide with the v4 design entry.
+  - Updated `docs/ARCHITECTURE.md` to mark current detail projection as v3 and
+    point to the v4 replacement contract.
+  - Updated `docs/COMPLEX_FEATURE_PATHS.md` so future thread-detail projection
+    changes target v4 tests and the visible-item contract.
+  - Updated `docs/MODULES.md` with planned v4 module/test ownership:
+    `adapters/thread-visible-item-normalizer.js`,
+    `adapters/thread-detail-projection-v4-service.js`,
+    `test/thread-visible-item-normalizer.test.js`, and
+    `test/thread-detail-projection-v4-service.test.js`.
+- Design decisions recorded:
+  - Keep v3 and v4 side by side initially; do not delete
+    `adapters/thread-detail-projection-service.js` during introduction.
+  - Make server v4 projection canonical for durable visible content.
+  - Add stable visible item keys and monotonic revisions so the browser can
+    distinguish real no-op updates from item/order changes.
+  - Move local submitted user content into a pending overlay keyed by
+    `clientSubmissionId`; the overlay is applied after canonical projection and
+    is removed only on durable match or failure.
+  - Treat DOM patching as a performance optimization only. If visible item keys,
+    types, or order change, render from canonical state.
+  - Production path may switch to v4 after focused service/UI tests and visual
+    verification. Public push remains stricter and needs the public-safe release
+    gate before publishing.
+- Validation:
+  - Center AI Ops intake classified this as H3 docs/architecture-map work.
+  - Passed: `node tests/architecture-code-test-harness-map.test.js` from the
+    Home AI app workspace.
+  - Passed: `git diff --check` in the Codex Mobile workspace.
+
+## 2026-06-20 Thread Detail Projection Architecture Review
+
+- Status: investigation only; no product code changed.
+- Trigger:
+  - User reported a broader projection problem cluster: context/history
+    compaction notices do not display; when a thread is already open, newly sent
+    user messages and later receipts can be invisible until leaving and
+    re-entering the thread; recent image fixes have repeatedly shifted the
+    symptom instead of closing the projection gap.
+- Evidence gathered:
+  - Recent production logs for the current Codex Mobile thread repeatedly return
+    `mobileReadMode=projection-dynamic`, usually in about 90-170 ms, with only
+    the latest 10 turns and `omittedTurns` around 221. The fast path is active;
+    the issue is not a slow full read.
+  - The current projection cache for
+    `019ea76b-d846-7892-bda0-c0fff9cf7581` contains a
+    `contextCompaction` item with no `status`, `mobileCompactionStatus`, or
+    `mobileNotice`, so the browser's `contextCompactionNotice()` returns empty
+    and the item is filtered out. Several other projection cache files show the
+    same type-only context item shape.
+  - The browser SSE path compacts `item/started` and `item/completed` context
+    items with pending/complete notice state, but
+    `adapters/thread-detail-projection-service.js` updates from raw
+    notifications and does not currently add that method-derived mobile
+    compaction state. A later detail refresh can therefore overwrite a visible
+    live compaction notice with an invisible projection item.
+  - Minimal reproduction of the current frontend merge logic: existing state
+    with a `local-turn-*` containing `local-user-submit1`, then incoming refresh
+    with a newer real active turn that has assistant progress but no durable
+    `userMessage`, produces a merged thread containing only the real turn and
+    drops the local user message. This matches the observed "send appears, then
+    disappears until durable history/re-entry catches up" failure mode.
+- Architecture finding:
+  - There are three independent visibility-preservation layers: server
+    `compactThread` / projection cache, browser
+    `mergeThreadPreservingVisibleItems` / pending local state, and DOM-level
+    partial patching. User-message dedupe and shadowing logic is duplicated in
+    `adapters/message-pending-echo-service.js`,
+    `adapters/thread-detail-projection-service.js`, and `public/app.js`.
+    Repeated point fixes are likely to regress another path until a single
+    canonical visible-message contract is introduced.
+- Recommended next implementation path:
+  1. Add failing behavior tests before changing code:
+     - projection service: `item/started` / `item/completed`
+       `contextCompaction` notifications survive dynamic projection with visible
+       pending/complete notices;
+     - frontend merge: a local pending submitted user message is not dropped
+       when the first real refresh has a newer turn but no matching durable
+       user message yet;
+     - live refresh: visible item ids/order changes force a render and cannot be
+       hidden by `projection-dynamic` refresh or DOM patch signature shortcuts.
+  2. Make the server projection cache authoritative for durable visible items:
+     method-derived context compaction state should be applied inside
+     `thread-detail-projection-service`, not only in SSE compaction.
+  3. Move local submitted user messages into a small pending overlay keyed by
+     `clientSubmissionId`; apply it after canonical server projection and remove
+     it only when a matching durable user message appears or when send failure
+     is recorded.
+  4. Reduce frontend merge authority after the overlay exists. The browser
+     should not decide that a pending user message can be dropped merely because
+     a newer real turn exists.
+  5. Keep DOM patching as a rendering optimization only. If visible item
+     ids/order/type changed, prefer full conversation render over local patch.
+
 ## 2026-06-20 iOS Upload Image Data-URL Recovery v330
 
 - Status: implemented, validated, committed, and deployed to Mac production with
@@ -6538,6 +7087,77 @@ The previous full handoff was archived and should be opened only when old proven
     `/sw.js` contains `codex-mobile-shell-v318`.
   - The 8787 Node listener was not restarted; PID `7220` remained the listener
     before and after static sync.
+
+## 2026-06-20 ChatGPT Pro MCP Devtools Bridge Attempt
+
+- Status: partially deployed, blocked at ChatGPT custom app creation because
+  the Tailscale account/device currently exposes HTTPS but does not advertise
+  Funnel capability for public OpenAI access.
+- Runtime work completed outside the source checkout:
+  - Dedicated Chrome DevTools profile started at
+    `/Users/xuxin/.codex-mobile-web/chrome-pro-bridge`; ChatGPT page is logged
+    in and developer mode was enabled in Settings > Apps > Advanced Settings.
+  - Codex Mobile MCP bearer token file created under
+    `/Users/xuxin/.codex-mobile-web/chatgpt-pro-mcp-token.txt` with mode 600,
+    and the production LaunchDaemon was configured to read it via
+    `CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN_FILE`.
+  - MCP route `/api/chatgpt-pro/mcp` is configured and locally returns the
+    planner tool list when authorized.
+  - A runtime-only sidecar was deployed at
+    `/Users/xuxin/.codex-mobile-web/chatgpt-pro-mcp-funnel-proxy.js` under
+    LaunchAgent
+    `/Users/xuxin/Library/LaunchAgents/com.codexmobile.chatgpt-pro-mcp-funnel-proxy.plist`.
+    It implements OAuth discovery, DCR-style registration, authorization-code
+    + PKCE, short-lived sidecar access tokens, and upstream bearer-token
+    forwarding to the local Codex MCP route.
+- Validation completed:
+  - Local OAuth simulation passed: registration, authorize, approve, token
+    exchange, then MCP call returned `ok: true` and 10 tools.
+  - Tailscale HTTPS 443 currently routes to the sidecar; root `/` returns 404,
+    `/.well-known/oauth-protected-resource` returns MCP resource metadata, and
+    `/api/chatgpt-pro/mcp` returns 401 with a `WWW-Authenticate` metadata
+    challenge when unauthenticated.
+  - Tailscale HTTPS 8443 currently routes to the existing Home AI target
+    `http://127.0.0.1:8797`.
+- Blocker evidence:
+  - ChatGPT custom app form accepted the app metadata and URL
+    `https://mac-studio.tail62e8ce.ts.net/api/chatgpt-pro/mcp`, but submitting
+    did not complete app creation.
+  - Earlier 8443 attempt showed ChatGPT UI error:
+    `获取 OAuth 配置时出错 502`.
+  - Public DNS checks against `@1.1.1.1` and `@8.8.8.8` returned no public A
+    record for `mac-studio.tail62e8ce.ts.net`.
+  - Tailscale LocalAPI status for the device showed capability `https` but no
+    `funnel` capability. Local tailnet HTTPS works; public Funnel reachability
+    for ChatGPT does not.
+- Next step:
+  - Enable Tailscale Funnel for the tailnet/device from Tailscale admin/UI or a
+    working Tailscale CLI, then retry ChatGPT custom app creation with
+    `https://mac-studio.tail62e8ce.ts.net/api/chatgpt-pro/mcp`.
+  - Do not expose or record the MCP token or LocalAPI sameuserproof in shared
+    docs.
+
+## 2026-06-20 ChatGPT Pro MCP Sidecar LAN Listener
+
+- Status: changed and validated.
+- User wanted to reverse proxy from NAS back to this Mac, so the ChatGPT MCP
+  OAuth sidecar must listen on all interfaces rather than loopback only.
+- Changed LaunchAgent
+  `/Users/xuxin/Library/LaunchAgents/com.codexmobile.chatgpt-pro-mcp-funnel-proxy.plist`:
+  `CODEX_MOBILE_CHATGPT_PRO_FUNNEL_HOST=0.0.0.0`.
+- Reloaded the LaunchAgent with `launchctl bootout/bootstrap` and restarted it.
+- Validation:
+  - `launchctl print` shows environment
+    `CODEX_MOBILE_CHATGPT_PRO_FUNNEL_HOST => 0.0.0.0`.
+  - `netstat` and `lsof` show `*:8788` listening under node PID `48852`.
+  - `http://127.0.0.1:8788/api/chatgpt-pro/mcp` returns HTTP 401 with OAuth
+    `WWW-Authenticate` challenge, as expected.
+  - `http://192.168.10.110:8788/api/chatgpt-pro/mcp` also returns the same
+    HTTP 401 OAuth challenge, confirming LAN reachability from this host's
+    primary address.
+- NAS reverse proxy should target `http://192.168.10.110:8788`, not `8787`,
+  for ChatGPT MCP/OAuth. Keep `8787` private unless ordinary Codex Mobile UI
+  access is intentionally being proxied.
   - Contract caveat: the formal Mac deploy harness has `-SkipRestart`, but it
     deploys from the public mirror. Because this v318 hotfix was private-only at
     the time, the production static sync was done as a bounded hotfix rather
@@ -6603,3 +7223,44 @@ The previous full handoff was archived and should be opened only when old proven
     filesystem permission.
   - The 8787 Node listener was not restarted; PID `7220` remained the listener
     before and after static sync.
+
+## 2026-06-20 Home AI Embedded Upload Image Direct Render v337
+
+- Status: implemented, focused-tested, and static-synced to the Mac production
+  plugin worktree. Not committed in this cleanup pass because the local Codex
+  Mobile Web checkout already contains broad uncommitted v331-v336 work in the
+  same files; avoid mixing unrelated hunks into a single commit.
+- User-visible issue:
+  - After the Home AI proxy auth fix, embedded Codex user upload images could
+    render successfully but repeatedly flash between the transparent placeholder
+    and the real image while thread refreshes rebuilt DOM nodes.
+- Fix:
+  - `public/app.js` now renders protected uploaded images directly when running
+    in `/?embed=hermes` and the source kind is `upload`.
+  - The direct embedded upload path omits `data-protected-image-src`, so
+    scheduled protected-image hydration does not replace the image with a
+    placeholder on each refresh.
+  - Standalone/iOS WebKit protected image hydration remains in place for
+    generated images, file previews, and non-embedded uploads.
+  - Advanced browser shell cache/build id to `codex-mobile-shell-v337`.
+- Validation:
+  - `node --check public/app.js`
+  - `node --check public/sw.js`
+  - `node --test test/conversation-render.test.js`
+  - `node --test test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js test/app-update.test.js test/build-refresh-policy.test.js`
+  - `git diff --check`
+- Deployment:
+  - Backed up production static files under
+    `/Users/xuxin/.codex-mobile-web/deploy-backups/codex-mobile-web-static/20260620T200018Z-v337-embedded-upload-direct`.
+  - Synced `public/app.js` and `public/sw.js` to
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web/public/`.
+  - 8787 production readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v337`,
+    `shellCacheName=codex-mobile-shell-v337`.
+  - Home AI proxy readback for Codex public-config returned HTTP 200 with the
+    same v337 build/cache ids.
+  - Home AI proxied `app.js` contains `shouldRenderProtectedImageDirectly`, the
+    hydration direct-render guard, rewritten proxy upload route constants, and
+    no bad `/api/?workspaceId=owner` JavaScript literal.
+- Runtime note:
+  - User confirmed the visible issue was resolved after v337 reached the client.

@@ -100,11 +100,17 @@ Implementation path:
 
 ## Thread Detail And Conversation Rendering
 
-Use when changing visible items, operation cards, timestamps, compaction notices, image views, or merge behavior.
+Use when changing visible items, operation cards, timestamps, compaction notices, image views, projection, or merge behavior.
+
+Read `docs/THREAD_DETAIL_PROJECTION_V4_DESIGN.md` before changing the thread
+detail projection architecture. New projection behavior should target the v4
+visible-item contract and tests, while v3 remains available until the v4 path is
+validated and explicitly switched.
 
 Implementation path:
 
-1. Decide whether the behavior belongs in server compaction or browser rendering.
+1. Decide whether the behavior belongs in canonical server projection,
+   transient browser pending overlay, or rendering only.
 2. Server should compact, enrich, and bound data volume; browser should render stable visible items without broad DOM churn.
 3. Operation cards in the latest live turn should globally show only the newest operation card, with a compact four-line visual budget: one metadata row plus up to three clipped detail lines. Completed turns should not keep operation cards below the final reply; when Usage data exists, the final frame should be `turnUsageSummary`.
 4. Raw operation fallback must respect latest live turn id and completion outputs. Completed fallback is allowed only while the latest turn is still live and the completed operation is tied to that same turn, so older completed operations cannot attach to a newer live turn.
@@ -114,7 +120,16 @@ Implementation path:
 8. Live/final receipt rendering must not force-scroll while the user is reading. Recent manual scroll away from bottom should create a current-turn hold even during programmatic bottom-scroll; render stick-to-bottom and bottom-follow timers must respect that hold. The latest live `agentMessage` should be deferred until completion; a long final receipt should render once and position the viewport at the receipt start, not at the bottom.
 9. Thread detail compaction should keep a small recent-turn window by default and expose `mobileOlderTurnsCursor` when older turns exist. Browser top-of-window pagination should request the next bounded page and preserve scroll position after prepending turns.
 10. Completed-turn context/token usage summaries should be synthetic diagnostic items from rollout `token_count` events. They must be omitted when no scoped token event exists and must not become the upward final-receipt jump target. Turn-level token usage should be derived from cumulative `total_token_usage` deltas across all valid scoped events in that turn, not only the final event's `last_token_usage`; context-window percent/risk stays based on the raw input tokens from the final valid event. If cached input is present, the displayed `in` value should exclude cached input.
-11. Test with `test/thread-item-timestamp-enrichment.test.js`, `test/conversation-render.test.js`, `test/collab-agent-render.test.js`, `test/message-timestamp.test.js`, `test/turn-scroll-controls.test.js`, `test/turn-usage-summary-service.test.js`, and `test/mobile-viewport.test.js`.
+11. For v4 work, add or update `test/thread-visible-item-normalizer.test.js`,
+    `test/thread-detail-projection-v4-service.test.js`, and a focused UI test
+    such as `test/thread-detail-projection-v4-ui.test.js` or equivalent
+    assertions in `test/conversation-render.test.js`.
+12. Existing v3 behavior still uses
+    `test/thread-item-timestamp-enrichment.test.js`,
+    `test/conversation-render.test.js`, `test/collab-agent-render.test.js`,
+    `test/message-timestamp.test.js`, `test/turn-scroll-controls.test.js`,
+    `test/turn-usage-summary-service.test.js`, and
+    `test/mobile-viewport.test.js`.
 
 ## Rollout Continuation
 
