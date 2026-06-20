@@ -32,8 +32,8 @@ Last compacted: 2026-06-08T13:27:43.304Z
     `node tests/architecture-code-test-harness-map.test.js`.
   - AI Ops evidence ledger record:
     `evidence-089314b1-2f3c-44f6-8567-ec56798408dc`.
-  - Pending before publish: private/public push verification and GitHub public
-    CI rerun.
+  - Public CI rerun passed:
+    `https://github.com/pentiumxp/codex-mobile-web-public/actions/runs/27873709004`.
 
 ## 2026-06-20 V4 Responded User Message Visibility v338
 
