@@ -4,6 +4,7 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：v328 修复 live 回复追加时上传图片被临时 `error` 事件误切到“图片无法加载”的问题。受保护的 `/api/uploads/file`、`/api/generated-images/file` 和 `/api/files/preview/content` 图片现在收到浏览器 `error` 后会先用当前会话 key 探测真实地址；探测 200 时清除失败态并带 cache-buster 重试图片 src，只有探测失败或 401/403 才显示失败占位或请求宿主刷新。探测期间只隐藏浏览器破图 icon，不显示“图片无法加载”。PWA shell cache 升级到 `codex-mobile-shell-v328`。
 - 中文说明：v327 修复运行中发送图片时本地 pending echo 可能残留破图的问题。发送图片时本地乐观消息只知道原始文件名和 `blob:` 预览，服务端持久消息会保存为 `.codex-mobile-web/uploads/...-原始文件名`；此前服务器 pending echo 比较要求完整内容一致，可能无法识别“文件名”和“持久上传路径”属于同一张图，导致 live 会话里继续显示本地破图框，刷新重进后才正常。现在 pending echo 会按附件摘要、上传路径和文件名后缀匹配，同名持久上传消息出现后会移除本地 echo，并保留受保护的 `/api/uploads/file` 图片显示。PWA shell cache 升级到 `codex-mobile-shell-v327`；该修复包含服务器逻辑，更新后需要重启 8787 listener。
 - 中文说明：v326 修复平板/移动浏览器上历史上传图片被误判为“图片无法加载”的问题。此前前端失败扫描会把 `complete=true` 且 `naturalWidth=0` 的图片主动标记为失败；部分 Android 平板或移动浏览器会对还没进入视口的 `loading="lazy"` 图片呈现这个状态，导致实际可访问的上传图在滚动回来前已经被隐藏。现在只有真实 `error` 事件或非 lazy 破图才会标失败，lazy 图片未加载时会清理旧误判失败态。PWA shell cache 升级到 `codex-mobile-shell-v326`。
 - 中文说明：v325 在 v324 的上传图片回显和 Music 状态框修复基础上，给会话里的上传图片、Markdown 图片和工具生成图片卡增加稳定的默认显示比例。历史图片在 lazy-load 前不再只占一行 caption 高度，加载完成后仍用 `object-fit: contain` 等比显示，减少滚动到底部时因上方旧图补加载造成的页面抖动。PWA shell cache 升级到 `codex-mobile-shell-v325`。

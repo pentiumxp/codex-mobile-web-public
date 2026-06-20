@@ -364,7 +364,7 @@ const MAX_LIVE_TEXT_CHARS = 60000;
 const MAX_VISIBLE_TURNS = 10;
 const MAX_EXPANDED_VISIBLE_TURNS = 200;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v327";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v328";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -13279,6 +13279,7 @@ function renderImageView(item) {
 
 function handleConversationImageError(event) {
   const image = event && event.target && event.target.closest ? event.target.closest("img") : null;
+  if (handleProtectedAppImageError(image)) return;
   markFailedAppImage(image, { explicit: true });
   if (typeof probeFailedAuthenticatedImage === "function") probeFailedAuthenticatedImage(image);
 }
@@ -13294,9 +13295,22 @@ function failedAppImageContainer(image) {
     : null;
 }
 
+function setRetryingAppImage(image, active) {
+  if (!image) return false;
+  const container = failedAppImageContainer(image);
+  if (container && container.classList && typeof container.classList.toggle === "function") {
+    container.classList.toggle("image-load-retrying", Boolean(active));
+  }
+  if (image.classList && typeof image.classList.toggle === "function") {
+    image.classList.toggle("image-load-retrying", Boolean(active));
+  }
+  return true;
+}
+
 function markFailedAppImage(image, options = {}) {
   if (!image) return false;
   if (options.explicit && image.dataset) image.dataset.imageLoadError = "1";
+  setRetryingAppImage(image, false);
   const container = failedAppImageContainer(image);
   if (container) container.classList.add("image-load-failed");
   else if (image.classList) image.classList.add("image-load-failed");
@@ -13307,6 +13321,8 @@ function markFailedAppImage(image, options = {}) {
 function clearFailedAppImage(image) {
   if (!image) return false;
   if (image.dataset && image.dataset.imageLoadError) delete image.dataset.imageLoadError;
+  if (image.dataset && image.dataset.imageLoadProbe) delete image.dataset.imageLoadProbe;
+  setRetryingAppImage(image, false);
   const container = failedAppImageContainer(image);
   if (container && container.classList) container.classList.remove("image-load-failed");
   if (image.classList) image.classList.remove("image-load-failed");
@@ -13348,8 +13364,74 @@ function protectedGeneratedImageSrc(value) {
   return "";
 }
 
+function imageStillConnected(image) {
+  return Boolean(image && (!("isConnected" in image) || image.isConnected));
+}
+
+function retryProtectedAppImageSource(image, src) {
+  if (!image || !src || Number(image.naturalWidth || 0) > 0) return false;
+  if (!image.dataset) return false;
+  const retryCount = Number(image.dataset.imageLoadRetryCount || 0);
+  if (retryCount >= 2) return false;
+  image.dataset.imageLoadRetryCount = String(retryCount + 1);
+  try {
+    const parsed = new URL(src, window.location.origin);
+    parsed.searchParams.set("_imgRetry", `${Date.now()}-${retryCount + 1}`);
+    image.src = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    return true;
+  } catch (_) {
+    image.src = src;
+    return true;
+  }
+}
+
+function handleProtectedAppImageError(image) {
+  const src = protectedGeneratedImageSrc(image && (
+    image.currentSrc
+    || image.src
+    || (image.getAttribute && image.getAttribute("src"))
+  ));
+  if (!src || !image || !image.dataset) return false;
+  if (image.dataset.imageLoadProbe === "1") return true;
+  image.dataset.imageLoadProbe = "1";
+  setRetryingAppImage(image, true);
+  const headers = state.key ? { "X-Codex-Mobile-Key": state.key } : {};
+  fetch(src, {
+    method: "GET",
+    headers,
+    credentials: "same-origin",
+    cache: "no-store",
+  }).then((response) => {
+    if (!imageStillConnected(image)) return;
+    if (image.dataset) delete image.dataset.imageLoadProbe;
+    if (response && (response.status === 401 || response.status === 403)) {
+      if (isHermesEmbedMode() && !state.imageAuthRefreshRequested) {
+        state.imageAuthRefreshRequested = true;
+        requestHermesPluginRefresh("auth_state_changed", { force: true });
+      }
+      markFailedAppImage(image, { explicit: true });
+      return;
+    }
+    if (response && response.ok) {
+      clearFailedAppImage(image);
+      retryProtectedAppImageSource(image, src);
+      return;
+    }
+    markFailedAppImage(image, { explicit: true });
+  }).catch(() => {
+    if (!imageStillConnected(image)) return;
+    if (image.dataset) delete image.dataset.imageLoadProbe;
+    markFailedAppImage(image, { explicit: true });
+  });
+  return true;
+}
+
 function probeFailedAuthenticatedImage(image) {
-  const src = protectedGeneratedImageSrc(image && (image.currentSrc || image.src || image.getAttribute("src")));
+  const src = protectedGeneratedImageSrc(image && (
+    image.currentSrc
+    || image.src
+    || (image.getAttribute && image.getAttribute("src"))
+  ));
   if (!src || !isHermesEmbedMode() || state.imageAuthRefreshRequested) return;
   const headers = state.key ? { "X-Codex-Mobile-Key": state.key } : {};
   fetch(src, {

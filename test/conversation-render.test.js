@@ -184,18 +184,41 @@ function evaluatedImageViewRenderer() {
   )(URLSearchParams);
 }
 
-function evaluatedConversationImageErrorHandler() {
+function evaluatedConversationImageErrorHandler(options = {}) {
   const sources = [
     "failedAppImageContainer",
+    "setRetryingAppImage",
     "markFailedAppImage",
+    "clearFailedAppImage",
+    "protectedGeneratedImageSrc",
+    "imageStillConnected",
+    "retryProtectedAppImageSource",
+    "handleProtectedAppImageError",
+    "probeFailedAuthenticatedImage",
     "handleConversationImageError",
   ].map((name) => functionSourceFrom(appJs, name));
-  return Function(`${sources.join("\n")}\nreturn handleConversationImageError;`)();
+  return Function(
+    "deps",
+    `const window = deps.window;
+const state = deps.state;
+const fetch = deps.fetch;
+const isHermesEmbedMode = deps.isHermesEmbedMode;
+const requestHermesPluginRefresh = deps.requestHermesPluginRefresh;
+${sources.join("\n")}
+return handleConversationImageError;`,
+  )(Object.assign({
+    window: { location: { origin: "http://127.0.0.1:8787" } },
+    state: { key: "session-key", imageAuthRefreshRequested: false },
+    fetch: () => Promise.reject(new Error("unexpected fetch")),
+    isHermesEmbedMode: () => false,
+    requestHermesPluginRefresh: () => {},
+  }, options));
 }
 
 function evaluatedConversationImageLoadHandler() {
   const sources = [
     "failedAppImageContainer",
+    "setRetryingAppImage",
     "clearFailedAppImage",
     "handleConversationImageLoad",
   ].map((name) => functionSourceFrom(appJs, name));
@@ -205,6 +228,7 @@ function evaluatedConversationImageLoadHandler() {
 function evaluatedFailedImageScanner() {
   const sources = [
     "failedAppImageContainer",
+    "setRetryingAppImage",
     "markFailedAppImage",
     "clearFailedAppImage",
     "imageHadExplicitLoadError",
@@ -1350,11 +1374,15 @@ test("generated image content urls replace stale auth keys with the current sess
 test("failed conversation images collapse into a neutral fallback", () => {
   const handleConversationImageError = evaluatedConversationImageErrorHandler();
   const addedClasses = [];
+  const toggledClasses = [];
   const attributes = {};
   const figure = {
     classList: {
       add(value) {
         addedClasses.push(value);
+      },
+      toggle(value, active) {
+        toggledClasses.push([value, active]);
       },
     },
   };
@@ -1378,17 +1406,98 @@ test("failed conversation images collapse into a neutral fallback", () => {
   handleConversationImageError({ target });
 
   assert.deepEqual(addedClasses, ["image-load-failed"]);
+  assert.deepEqual(toggledClasses, [["image-load-retrying", false]]);
   assert.equal(attributes["aria-hidden"], "true");
   assert.equal(image.dataset.imageLoadError, "1");
   assert.match(appJs, /\$\("conversation"\)\.addEventListener\("error", handleConversationImageError, true\)/);
   assert.match(appJs, /\$\("conversation"\)\.addEventListener\("load", handleConversationImageLoad, true\)/);
   assert.match(functionBody("updateConversationHtml"), /scheduleFailedAppImageScan\(conversation/);
+  assert.match(functionBody("handleConversationImageError"), /handleProtectedAppImageError\(image\)/);
   assert.match(appJs, /document\.addEventListener\("focusin", \(\) => \{[\s\S]*scheduleVisibleImageFailureScan\(\[0, 80, 240\]\);/);
   assert.match(stylesCss, /\.input-image\.image-load-failed,[\s\S]*\.markdown-image\.image-load-failed,[\s\S]*\.image-view\.image-load-failed/);
+  assert.match(stylesCss, /\.input-image\.image-load-retrying img,[\s\S]*visibility: hidden;/);
   assert.match(stylesCss, /\.input-image\.image-load-failed img,[\s\S]*display: none;/);
   assert.match(stylesCss, /\.conversation img\.image-load-failed/);
   assert.match(stylesCss, /\.attachment-chip\.image-load-failed \.attachment-thumb/);
   assert.match(stylesCss, /content: "图片无法加载";/);
+});
+
+test("protected upload image errors are probed before showing failed fallback", async () => {
+  const fetchCalls = [];
+  const handleConversationImageError = evaluatedConversationImageErrorHandler({
+    fetch: (src, options) => {
+      fetchCalls.push({ src, options });
+      return Promise.resolve({ ok: true, status: 200 });
+    },
+  });
+  const addedClasses = [];
+  const removedClasses = [];
+  const toggledClasses = [];
+  const attributes = {};
+  let imageSrc = "/api/uploads/file?path=%2FUsers%2Fxuxin%2F.codex-mobile-web%2Fuploads%2Fthread%2Fhomeai-upload.jpg&key=stale";
+  const figure = {
+    classList: {
+      add(value) {
+        addedClasses.push(value);
+      },
+      remove(value) {
+        removedClasses.push(value);
+      },
+      toggle(value, active) {
+        toggledClasses.push([value, active]);
+      },
+    },
+  };
+  const image = {
+    dataset: {},
+    currentSrc: imageSrc,
+    naturalWidth: 0,
+    isConnected: true,
+    get src() {
+      return imageSrc;
+    },
+    set src(value) {
+      imageSrc = value;
+      this.currentSrc = value;
+    },
+    closest(selector) {
+      if (String(selector).includes(".input-image")) return figure;
+      return null;
+    },
+    getAttribute(name) {
+      if (name === "src") return imageSrc;
+      if (name === "aria-hidden") return "";
+      return "";
+    },
+    setAttribute(name, value) {
+      attributes[name] = value;
+    },
+    removeAttribute() {},
+  };
+  const target = {
+    closest(selector) {
+      if (selector === "img") return image;
+      return null;
+    },
+  };
+
+  handleConversationImageError({ target });
+  assert.deepEqual(addedClasses, []);
+  assert.equal(attributes["aria-hidden"], undefined);
+  assert.equal(image.dataset.imageLoadProbe, "1");
+  assert.deepEqual(toggledClasses, [["image-load-retrying", true]]);
+  assert.equal(fetchCalls.length, 1);
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.deepEqual(addedClasses, []);
+  assert.deepEqual(removedClasses, ["image-load-failed"]);
+  assert.equal(image.dataset.imageLoadProbe, undefined);
+  assert.match(imageSrc, /_imgRetry=/);
+  assert.deepEqual(toggledClasses, [
+    ["image-load-retrying", true],
+    ["image-load-retrying", false],
+  ]);
 });
 
 test("loaded conversation images clear stale failed-image state", () => {

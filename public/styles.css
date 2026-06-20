@@ -5381,6 +5381,14 @@ html.keyboard-open .side-chat-form textarea {
   cursor: zoom-in;
 }
 
+.input-image.image-load-retrying img,
+.markdown-image.image-load-retrying img,
+.image-view.image-load-retrying img,
+.conversation figure.image-load-retrying img,
+.conversation img.image-load-retrying {
+  visibility: hidden;
+}
+
 .input-image.image-load-failed,
 .markdown-image.image-load-failed,
 .image-view.image-load-failed,
