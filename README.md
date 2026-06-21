@@ -1,5 +1,6 @@
 # Codex Mobile Web
 
+- 中文说明：v358 修复已有会话发送消息后切回列表 spinner 可能不出现的问题。前端在本地发送已提交、等待 assistant 接管时保留一个 submitted-processing hint；如果随后列表刷新只看到由这条用户消息带来的新鲜 `idle` 行，不再清掉 running spinner；真正 completed/failed/cancelled 仍会清掉 spinner 并按 unread dot 规则处理。PWA shell cache 升级到 `codex-mobile-shell-v358`。
 - 中文说明：v357 修复当前会话状态损坏后列表 spinner 误保活的问题。当前线程顶层状态已经是 idle/completed/stale 时，前端不再让详情里残留的 `inProgress` turn 或旧 `activeTurnId` 继续保留 `runningThreadIds`，避免已停 session 在列表里持续显示 running spinner；真实 running/active 状态仍按线程顶层状态和本地发送状态即时显示。PWA shell cache 升级到 `codex-mobile-shell-v357`。
 - 中文说明：v356 修复已完成会话重新进入后 Final Answer 可能消失的问题。前端和服务端现在只在明确 running/active 的会话上使用 `mode=recent` 快速详情；completed/idle/unknown 会话打开或刷新时走 full/projection 详情，避免 `thread/turns/list` 的瘦投影先渲染并临时丢掉 assistant final receipt。PWA shell cache 升级到 `codex-mobile-shell-v356`。
 - 中文说明：v355 合并线程状态 freshness 修复。前端用本机查看时间和真实事件时间判断 spinner/unread dot，不再让 stale completed/idle 列表行或 replay 旧完成通知覆盖本机 running 状态；server 派生的 `thread/status/changed` 带 `eventAtMs`，mux replay 给 Mobile Web 时保留原始缓存时间；V4 projection 刷新同一个 turn 时会保留已经显示的 Final Answer。PWA shell cache 升级到 `codex-mobile-shell-v355`。

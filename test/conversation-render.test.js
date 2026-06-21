@@ -146,6 +146,9 @@ function evaluatedThreadStatusHintHarness() {
     "threadViewedAtMs",
     "markThreadViewed",
     "noteRunningThreadHint",
+    "noteSubmittedProcessingThreadHint",
+    "clearSubmittedProcessingThreadHint",
+    "hasFreshSubmittedProcessingThreadHint",
     "clearRunningThreadHint",
     "threadUpdatedAtMs",
     "threadStatusNotificationDurableEventAtMs",
@@ -154,6 +157,7 @@ function evaluatedThreadStatusHintHarness() {
     "settledStatusFreshEnoughForRunningHint",
     "currentThreadAllowsLiveTurn",
     "currentLiveTurnSupportsThreadStatusHint",
+    "isThreadListIdleStatus",
     "shouldKeepRunningHintForSettledStatus",
     "shouldMarkThreadUnread",
     "runningThreadHintAgeMs",
@@ -176,6 +180,7 @@ const state = {
   activeTurnId: "",
   runningThreadIds: new Set(),
   runningThreadHintedAtById: {},
+  submittedProcessingThreadHintedAtById: {},
   unreadThreadIds: new Set(),
   threadViewedAtById: {},
 };
@@ -2663,8 +2668,14 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(appJs, /const RUNNING_THREAD_HINT_STALE_MS = 20 \* 60 \* 1000;/);
   assert.match(appJs, /runningThreadHintedAtById: loadNumberMapStorage\("codexMobileRunningThreadHintedAtById", \{\}\)/);
   assert.match(appJs, /threadViewedAtById: loadNumberMapStorage\("codexMobileThreadViewedAtById", \{\}\)/);
+  assert.match(appJs, /submittedProcessingThreadHintedAtById: \{\}/);
   assert.match(functionBody("saveThreadStatusHints"), /saveNumberMapStorage\(STORAGE_RUNNING_THREAD_HINTED_AT, state\.runningThreadHintedAtById\)/);
   assert.match(functionBody("saveThreadStatusHints"), /saveNumberMapStorage\(STORAGE_THREAD_VIEWED_AT, state\.threadViewedAtById\)/);
+  assert.match(appJs, /function noteSubmittedProcessingThreadHint\(threadId, nowMs = Date\.now\(\)\)/);
+  assert.match(appJs, /function clearSubmittedProcessingThreadHint\(threadId\)/);
+  assert.match(appJs, /function hasFreshSubmittedProcessingThreadHint\(threadId, nowMs = Date\.now\(\)\)/);
+  assert.match(appJs, /function isThreadListIdleStatus\(status\)/);
+  assert.match(functionBody("clearRunningThreadHint"), /clearSubmittedProcessingThreadHint\(id\)/);
   assert.match(appJs, /function isThreadListSettledStatus\(status\)/);
   assert.match(functionBody("isThreadListSettledStatus"), /idle\|completed\|complete\|done\|failed/);
   assert.match(appJs, /function isStaleActiveStatus\(status\)/);
@@ -2676,6 +2687,8 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(appJs, /function shouldKeepRunningHintForSettledStatus\(threadId, thread = null, status = null, options = \{\}\)/);
   assert.match(appJs, /function currentThreadAllowsLiveTurn\(\)/);
   assert.match(appJs, /function currentLiveTurnSupportsThreadStatusHint\(threadId = ""\)/);
+  assert.match(functionBody("shouldKeepRunningHintForSettledStatus"), /isThreadListIdleStatus\(nextStatus\)/);
+  assert.match(functionBody("shouldKeepRunningHintForSettledStatus"), /hasFreshSubmittedProcessingThreadHint\(id\)/);
   assert.match(functionBody("shouldMarkThreadUnread"), /const updateAt = threadStatusFreshnessAtMs\(thread, options\.eventAtMs\)/);
   assert.match(functionBody("shouldMarkThreadUnread"), /if \(viewedAt > 0\) return updateAt > viewedAt/);
   assert.match(functionBody("shouldMarkThreadUnread"), /options\.hintedAtMs \|\| state\.runningThreadHintedAtById\[id\]/);
@@ -2687,6 +2700,7 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(functionBody("shouldExpireRunningThreadHint"), /currentLiveTurnSupportsThreadStatusHint\(id\)/);
   assert.match(functionBody("updateThreadStatusHints"), /const staleActive = isStaleActiveStatus\(nextStatus\)/);
   assert.match(functionBody("updateThreadStatusHints"), /const hintedAtMs = Number\(state\.runningThreadHintedAtById\[id\] \|\| 0\)/);
+  assert.match(functionBody("updateThreadStatusHints"), /allowLocalProcessing: Boolean\(options\.allowLocalProcessing\)/);
   assert.match(functionBody("updateThreadStatusHints"), /shouldMarkThreadUnread\(id, nextThread, nextStatus/);
   assert.match(functionBody("statusIconInfo"), /if \(isStaleActiveStatus\(status\)\) return null;/);
   assert.match(functionBody("statusIconInfo"), /shouldKeepRunningHintForSettledStatus\(id, hintThread, status\)/);
@@ -2705,6 +2719,7 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(listMergeBody, /Object\.assign\(\{\}, entry, summary\)/);
   const optimisticBody = functionBody("markThreadOptimisticallyActive");
   assert.match(optimisticBody, /const runningStatus = \{ type: "active" \};/);
+  assert.match(optimisticBody, /noteSubmittedProcessingThreadHint\(id\)/);
   assert.match(optimisticBody, /updateThreadStatusHints\(id, previousStatus, runningStatus/);
   assert.match(optimisticBody, /updateThreadListStatus\(id, runningStatus\)/);
   assert.match(optimisticBody, /mergeThreadIntoThreadList\(state\.currentThread\)/);
@@ -2734,6 +2749,49 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(notificationBody, /updateThreadListStatus\(params\.threadId, completedStatus\)/);
   assert.match(notificationBody, /scheduleRenderThreads\(\);[\s\S]*scheduleCurrentThreadRefresh\(500\)/);
   assert.match(notificationBody, /scheduleRenderThreads\(\);[\s\S]*schedulePostCompletionThreadRefreshes\(params\.threadId, \[700, 2400\]\)/);
+});
+
+test("submitted processing hint keeps spinner through fresh idle list refresh", () => {
+  const harness = evaluatedThreadStatusHintHarness();
+  const now = 1_700_000_000_000;
+  harness.setNow(now);
+  harness.state.runningThreadIds.add("thread-submitted");
+  harness.state.runningThreadHintedAtById["thread-submitted"] = now;
+  harness.state.submittedProcessingThreadHintedAtById["thread-submitted"] = now;
+  const freshIdleThread = {
+    id: "thread-submitted",
+    status: { type: "idle" },
+    updatedAtMs: now + 500,
+  };
+  harness.state.threads = [freshIdleThread];
+
+  harness.reconcileThreadStatusHints(harness.state.threads);
+
+  assert.equal(harness.state.runningThreadIds.has("thread-submitted"), true);
+  assert.equal(harness.state.unreadThreadIds.has("thread-submitted"), false);
+  assert.equal(harness.statusIconInfo(freshIdleThread.status, "thread-submitted").kind, "running");
+});
+
+test("submitted processing hint does not preserve completed list rows", () => {
+  const harness = evaluatedThreadStatusHintHarness();
+  const now = 1_700_000_000_000;
+  harness.setNow(now);
+  harness.state.runningThreadIds.add("thread-submitted-done");
+  harness.state.runningThreadHintedAtById["thread-submitted-done"] = now;
+  harness.state.submittedProcessingThreadHintedAtById["thread-submitted-done"] = now;
+  const completedThread = {
+    id: "thread-submitted-done",
+    status: { type: "completed" },
+    updatedAtMs: now + 500,
+  };
+  harness.state.threads = [completedThread];
+
+  harness.reconcileThreadStatusHints(harness.state.threads);
+
+  assert.equal(harness.state.runningThreadIds.has("thread-submitted-done"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(harness.state.submittedProcessingThreadHintedAtById, "thread-submitted-done"), false);
+  assert.equal(harness.state.unreadThreadIds.has("thread-submitted-done"), true);
+  assert.equal(harness.statusIconInfo(completedThread.status, "thread-submitted-done").kind, "unread");
 });
 
 test("stale settled list rows do not clear fresh running hints", () => {

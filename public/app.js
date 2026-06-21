@@ -136,6 +136,7 @@ const state = {
   threadListRenderFrame: null,
   threadNotificationThrottle: new Map(),
   recentSubmittedUserMessages: new Map(),
+  submittedProcessingThreadHintedAtById: {},
   sendProgressWatchdog: null,
   sendProgressStartAt: 0,
   sendProgressWarned: false,
@@ -372,7 +373,7 @@ const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v357";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v358";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -1409,6 +1410,29 @@ function noteRunningThreadHint(threadId, nowMs = Date.now()) {
   return changed;
 }
 
+function noteSubmittedProcessingThreadHint(threadId, nowMs = Date.now()) {
+  const id = String(threadId || "");
+  if (!id) return false;
+  const previous = Number(state.submittedProcessingThreadHintedAtById[id] || 0);
+  if (previous && Math.abs(nowMs - previous) <= 1000) return false;
+  state.submittedProcessingThreadHintedAtById[id] = nowMs;
+  return true;
+}
+
+function clearSubmittedProcessingThreadHint(threadId) {
+  const id = String(threadId || "");
+  if (!id) return false;
+  if (!Object.prototype.hasOwnProperty.call(state.submittedProcessingThreadHintedAtById, id)) return false;
+  delete state.submittedProcessingThreadHintedAtById[id];
+  return true;
+}
+
+function hasFreshSubmittedProcessingThreadHint(threadId, nowMs = Date.now()) {
+  const id = String(threadId || "");
+  const hintedAt = Number(state.submittedProcessingThreadHintedAtById[id] || 0);
+  return Boolean(id && hintedAt > 0 && nowMs - hintedAt <= RUNNING_THREAD_HINT_STALE_MS);
+}
+
 function clearRunningThreadHint(threadId) {
   const id = String(threadId || "");
   if (!id) return false;
@@ -1418,6 +1442,7 @@ function clearRunningThreadHint(threadId) {
     delete state.runningThreadHintedAtById[id];
     changed = true;
   }
+  if (clearSubmittedProcessingThreadHint(id)) changed = true;
   return changed;
 }
 
@@ -1494,12 +1519,19 @@ function currentLiveTurnSupportsThreadStatusHint(threadId = "") {
   return Boolean(id && id === state.currentThreadId && currentThreadAllowsLiveTurn() && currentLiveTurn());
 }
 
+function isThreadListIdleStatus(status) {
+  return /^(idle|notloaded|not_loaded|not-loaded)$/.test(statusText(status).toLowerCase());
+}
+
 function shouldKeepRunningHintForSettledStatus(threadId, thread = null, status = null, options = {}) {
   const id = String(threadId || "");
   if (!id || !state.runningThreadIds.has(id)) return false;
   const nextStatus = status || (thread && thread.status);
   if (isStaleActiveStatus(nextStatus) || (thread && thread.mobileStaleActiveTurn)) return false;
   if (!isThreadListSettledStatus(nextStatus)) return false;
+  if (options.allowLocalProcessing !== false
+    && isThreadListIdleStatus(nextStatus)
+    && hasFreshSubmittedProcessingThreadHint(id)) return true;
   if (id === state.currentThreadId && !currentThreadAllowsLiveTurn()) return false;
   if (currentLiveTurnSupportsThreadStatusHint(id)) return true;
   return !settledStatusFreshEnoughForRunningHint(id, thread, options.eventAtMs, {
@@ -1563,6 +1595,7 @@ function updateThreadStatusHints(threadId, previousStatus, nextStatus, options =
     const keepRunningHint = shouldKeepRunningHintForSettledStatus(id, nextThread, nextStatus, {
       eventAtMs: options.eventAtMs,
       mobileReplay: Boolean(options.mobileReplay),
+      allowLocalProcessing: Boolean(options.allowLocalProcessing),
     });
     const shouldUnread = !keepRunningHint
       && !staleActive
@@ -4173,6 +4206,7 @@ function markThreadOptimisticallyActive(threadId) {
   const id = String(threadId || "");
   if (!id) return;
   const runningStatus = { type: "active" };
+  noteSubmittedProcessingThreadHint(id);
   const listThread = state.threads.find((entry) => String(entry && entry.id || "") === id) || null;
   const currentMatches = Boolean(state.currentThread && String(state.currentThread.id || "") === id);
   const previousStatus = currentMatches ? state.currentThread.status : listThread && listThread.status;
