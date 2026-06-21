@@ -161,14 +161,13 @@ callers.
 This route is for Codex-thread/tool initiated delegation, not for the normal
 browser task-card composer. It infers the source thread from the URL, accepts
 the same `targetThreadId` / `targetThreadIds` shape plus exact target-thread
-titles, creates cards in the same task-card store, and defaults to direct
-source-thread approval. Direct approval immediately injects a real target
-thread turn and marks the stored card with `delivery.approvalMode:
-"source_thread_direct"` and `audit.targetApprovalBypassed=true`.
+titles, and creates cards in the same task-card store. Direct source-thread
+approval is behind the runtime Settings switch `跨工作区委派` and is off by
+default. When the switch is off, the route creates pending target cards.
 
 The normal create route above remains pending by default. The thread-callable
-route can still be forced back to pending behavior with `pending:true` or
-`autoApprove:false`.
+route can also be forced back to pending behavior with `pending:true`,
+`autoApprove:false`, or `direct:false`.
 
 ### Read one
 

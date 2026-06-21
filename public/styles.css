@@ -2042,6 +2042,69 @@ html.visual-recovering body::before {
   opacity: 0.55;
 }
 
+.workspace-delegation-settings {
+  display: grid;
+  gap: 6px;
+}
+
+.workspace-delegation-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  background: var(--code);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+}
+
+.workspace-delegation-row.enabled {
+  border-color: var(--accent);
+}
+
+.workspace-delegation-main {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.workspace-delegation-main strong,
+.workspace-delegation-main span,
+.workspace-delegation-main small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.workspace-delegation-main strong {
+  font-size: 13px;
+}
+
+.workspace-delegation-main span {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.workspace-delegation-main small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.workspace-delegation-side button {
+  min-width: 58px;
+  min-height: 28px;
+  padding: 4px 8px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.workspace-delegation-side button:disabled {
+  opacity: 0.55;
+}
+
 .push-button {
   min-height: 36px;
   width: 100%;
@@ -5795,11 +5858,22 @@ html.keyboard-open .composer {
   background: var(--composer-drag-bg);
 }
 
-.composer-icon {
+.attachment-picker-cell {
   flex: 0 0 44px;
   width: 44px;
   height: 44px;
   align-self: flex-end;
+  position: relative;
+  display: grid;
+  place-items: stretch;
+}
+
+.composer-icon {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 0;
   font-size: 24px;
   line-height: 1;
 }
@@ -5807,9 +5881,16 @@ html.keyboard-open .composer {
 .file-picker {
   position: relative;
   cursor: pointer;
-  overflow: hidden;
+  overflow: visible;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
+.file-picker > * {
+  pointer-events: none;
+}
+
+.file-picker:disabled,
 .file-picker.disabled {
   cursor: default;
   pointer-events: none;
@@ -5818,13 +5899,17 @@ html.keyboard-open .composer {
 .file-input {
   position: absolute;
   inset: 0;
+  z-index: 2;
   width: 100%;
   height: 100%;
   opacity: 0;
+  pointer-events: auto;
   cursor: pointer;
+  overflow: hidden;
 }
 
 .file-input:disabled {
+  pointer-events: none;
   cursor: default;
 }
 
@@ -6618,7 +6703,7 @@ html.embed-hermes #openMenu.split-return-visible {
 
   .composer {
     display: grid;
-    grid-template-columns: 44px minmax(0, 1fr) max-content;
+    grid-template-columns: 52px minmax(0, 1fr) max-content;
     grid-template-areas:
       "controls controls controls"
       "attachments attachments attachments"
@@ -6636,8 +6721,10 @@ html.embed-hermes #openMenu.split-return-visible {
     justify-content: stretch;
   }
 
-  .composer-icon {
+  .attachment-picker-cell {
     grid-area: attach;
+    width: 52px;
+    height: 44px;
   }
 
   .attachment-list {
@@ -6757,7 +6844,7 @@ html.embed-hermes #openMenu.split-return-visible {
     z-index: 9;
     width: 100%;
     display: grid;
-    grid-template-columns: 42px minmax(0, 1fr) max-content;
+    grid-template-columns: 52px minmax(0, 1fr) max-content;
     grid-template-areas:
       "controls controls controls"
       "attachments attachments attachments"
@@ -6876,11 +6963,11 @@ html.embed-hermes #openMenu.split-return-visible {
     display: none;
   }
 
-  .composer-icon {
+  .attachment-picker-cell {
     grid-area: attach;
-    flex-basis: 42px;
-    width: 42px;
-    height: 42px;
+    flex-basis: 52px;
+    width: 52px;
+    height: 44px;
   }
 
   .attachment-list {

@@ -378,6 +378,10 @@
           <div class="theme-settings-title">Codex Profile</div>
           <div id="codexProfileSettings" class="codex-profile-settings" aria-live="polite"></div>
         </div>
+        <div class="settings-section">
+          <div class="theme-settings-title">跨工作区委派</div>
+          <div id="workspaceDelegationSettings" class="workspace-delegation-settings" aria-live="polite"></div>
+        </div>
         <div class="theme-settings-note">iOS PWA 顶部栏需重开后生效</div>
       </div>
 
@@ -432,10 +436,12 @@
       <button id="scrollToTurnReply" class="scroll-bottom-button scroll-turn-reply-button hidden" type="button" title="&#22238;&#21040;&#26412;&#36718;&#24635;&#32467;" aria-label="&#22238;&#21040;&#26412;&#36718;&#24635;&#32467;" aria-hidden="true">&#8593;</button>
 
       <form id="composer" class="composer">
-        <label id="attachFiles" class="icon-button composer-icon file-picker" title="Attach files" aria-label="Attach files" aria-disabled="true" tabindex="-1">
-          <span aria-hidden="true">+</span>
-          <input id="fileInput" class="file-input" type="file" multiple disabled>
-        </label>
+        <div class="attachment-picker-cell">
+          <button id="attachFiles" class="icon-button composer-icon file-picker" type="button" title="Attach files" aria-label="Attach files" aria-disabled="true" disabled>
+            <span aria-hidden="true">+</span>
+          </button>
+          <input id="fileInput" class="file-input" type="file" multiple disabled aria-label="Attach files" tabindex="-1">
+        </div>
         <div class="composer-body">
           <div class="composer-controls">
             <button id="composerCommandControl" class="composer-fast-toggle" type="button" aria-pressed="false" title="Fast mode off" aria-label="Fast mode off">
@@ -458,7 +464,7 @@
             <button id="quotaUsage" class="composer-control-card quota-usage unknown" type="button" title="Quota remaining" aria-live="polite">-- | --</button>
           </div>
           <div id="attachmentList" class="attachment-list hidden"></div>
-          <div id="messageInput" class="message-input" contenteditable="false" role="textbox" aria-multiline="true" data-placeholder="Message Codex"></div>
+          <div id="messageInput" class="message-input" contenteditable="false" role="textbox" aria-multiline="true" inputmode="text" enterkeyhint="send" data-placeholder="Message Codex"></div>
         </div>
         <button id="sendMessage" type="submit" disabled>Send</button>
       </form>

@@ -430,11 +430,19 @@ array.
 For Codex-thread/tool initiated delegation, Mobile Web also exposes
 `POST /api/threads/:sourceThreadId/task-cards`. This route is not used by the
 browser composer. It infers the source thread from the URL, stores the same
-auditable task-card object, and defaults to source-thread direct approval:
-after storage it injects the target turn immediately through
-`approveFromSource()` and marks the card as target-approval-bypassed. Use
-`pending:true` or `autoApprove:false` only when a thread-callable client
-intentionally wants the original pending target approval chain.
+auditable task-card object, and only performs source-thread direct approval
+when the runtime Settings switch `跨工作区委派` is enabled. With the default
+configuration the route creates pending target cards. Passing
+`pending:true`, `autoApprove:false`, or `direct:false` keeps pending behavior
+even when the switch is enabled.
+When that same runtime switch is enabled, Mobile Web injects the Codex
+app-server dynamic tool `codex_mobile.delegate_to_thread` into `thread/start`
+and `turn/start`. The model can call this tool after it determines that the
+current request belongs in another thread/workspace. Server-side handling of
+`item/tool/call` resolves the source thread from app-server metadata or the
+recent turn/thread map, resolves the target by exact thread id/title/cwd, and
+then calls the same source-thread task-card helper. This path is not MCP; it is
+only for Codex app-server turns.
 The ChatGPT Pro MCP `delegate_to_codex_thread` tool uses the same server helper
 but passes `pending:true` by default, because ChatGPT-originated cards must keep
 target-thread approval unless `mode:"direct"` is requested and the dedicated MCP

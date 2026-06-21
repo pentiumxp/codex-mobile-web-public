@@ -104,6 +104,19 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(platformPointer, /development visual check passes/);
 });
 
+test("Android composer stale focus recovery runs after the native tap", () => {
+  const prepareBody = functionBody("prepareMessageInputForNativeGesture");
+  const recoverBody = functionBody("recoverMessageInputKeyboardFromGesture");
+  const shouldRecoverBody = functionBody("shouldRecoverMessageInputKeyboard");
+  assert.match(prepareBody, /if \(!input \|\| !isAndroidBrowser\(\)\) return;/);
+  assert.match(prepareBody, /setMessageInputDisabled\(false\)/);
+  assert.doesNotMatch(prepareBody, /focusMessageInput|preventDefault|blur\(/);
+  assert.match(shouldRecoverBody, /if \(!isAndroidBrowser\(\) && !isHermesEmbedMode\(\)\) return false;/);
+  assert.doesNotMatch(shouldRecoverBody, /if \(isAndroidBrowser\(\)\) return false;/);
+  assert.match(recoverBody, /resetActiveFocus: true/);
+  assert.match(recoverBody, /allowAndroidActiveFocusReset: true/);
+});
+
 test("composer sizing avoids one-pixel layout churn while typing and streaming", () => {
   assert.match(appJs, /composerHeightPx:\s*0/);
   assert.match(appJs, /function updateComposerHeightVar\(options = \{\}\)/);
@@ -117,8 +130,8 @@ test("composer sizing avoids one-pixel layout churn while typing and streaming",
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v359/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v359"/);
+  assert.match(swJs, /codex-mobile-shell-v368/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v368"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);
@@ -126,6 +139,8 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(stylesCss, /\.side-chat-section\s*{[\s\S]*height:\s*100%;/);
   assert.match(stylesCss, /\.side-chat-header\s*{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) auto auto auto;/);
   assert.match(stylesCss, /\.side-chat-composer-row\s*{[\s\S]*grid-template-columns:\s*44px minmax\(0, 1fr\) max-content;/);
+  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.composer\s*{[\s\S]*grid-template-columns:\s*52px minmax\(0, 1fr\) max-content;/);
+  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.attachment-picker-cell\s*{[\s\S]*width:\s*52px;[\s\S]*height:\s*44px;/);
   assert.match(stylesCss, /\.side-chat-header-clear\s*{[\s\S]*justify-self:\s*end;/);
   assert.match(stylesCss, /\.side-chat-form textarea\s*{[\s\S]*min-height:\s*44px;[\s\S]*max-height:\s*160px;[\s\S]*overflow-y:\s*hidden;/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*z-index:\s*40;/);
@@ -327,8 +342,10 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /function formatTokenMillion\(value\)/);
   assert.match(appJs, /const THREAD_LIST_PAGE_LIMIT = 40;/);
   assert.match(appJs, /new URLSearchParams\(\{ limit: String\(THREAD_LIST_PAGE_LIMIT\), archived: "false" \}\)/);
-  assert.match(appJs, /if \(options\.deferFallback === true && !search\) params\.set\("fallback", "defer"\)/);
-  assert.match(appJs, /if \(result && result\.mobileDeferredFallback\) \{[\s\S]*loadThreads\(\{ silent: true \}\)\.catch\(showError\);[\s\S]*\}, 800\);/);
+  assert.match(appJs, /const threadDetailOpening = Boolean\(state\.currentThread && state\.currentThread\.mobileLoading\);/);
+  assert.match(appJs, /silent && options\.deferFallback !== false && threadDetailOpening && !state\.selectedCwd && !search/);
+  assert.match(appJs, /if \(shouldDeferFallback && !search\) params\.set\("fallback", "defer"\)/);
+  assert.match(appJs, /if \(result && result\.mobileDeferredFallback && options\.deferFallback === true\) \{[\s\S]*loadThreads\(\{ silent: true, deferFallback: false \}\)\.catch\(showError\);[\s\S]*\}, 800\);/);
   assert.match(appJs, /Uncached \$\{escapeHtml\(formatTokenMillion\(displayInputTokensExcludingCached\(entry\)\)\)\}/);
   assert.match(appJs, /Cached \$\{escapeHtml\(formatTokenMillion\(entry && entry\.cachedInputTokens\)\)\}/);
   assert.match(appJs, /Out \$\{escapeHtml\(formatTokenMillion\(entry && entry\.outputTokens\)\)\}/);
