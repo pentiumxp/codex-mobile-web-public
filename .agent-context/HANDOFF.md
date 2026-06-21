@@ -8669,10 +8669,10 @@ The previous full handoff was archived and should be opened only when old proven
     `authRequired=true`; target file
     `adapters/rollout-enrichment-index-service.js` exists.
 
-## 2026-06-21 Thread Open Latency Diagnosis
+## 2026-06-21 Thread Open Latency Diagnosis And v367 Deploy
 
-- Status: diagnosed and locally patched; not committed or deployed in this
-  entry.
+- Status: diagnosed, patched, committed, and deployed to Mac production as
+  `codex-mobile-shell-v367`.
 - User report:
   - Opening a thread felt slower after the per-thread rollout enrichment index
     deployment. The user also noted the current device might be on 5G, not home
@@ -8701,7 +8701,7 @@ The previous full handoff was archived and should be opened only when old proven
     also loading.
   - `THREAD_LIST_FALLBACK_CACHE_TTL_MS` was only `5000`, so active use could
     miss cache frequently.
-- Local patch:
+- Patch:
   - `server.js`: default `CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS`
     changed from `5000` to `30000`.
   - `public/app.js`: silent thread-list refreshes that happen while a thread
@@ -8714,13 +8714,32 @@ The previous full handoff was archived and should be opened only when old proven
     defer behavior.
   - `test/mobile-viewport.test.js`: updated static assertions for the new
     defer behavior.
+  - `public/app.js` and `public/sw.js`: client shell cache advanced to
+    `codex-mobile-shell-v367`.
 - Validation:
   - `node --test test/mobile-viewport.test.js test/thread-visibility.test.js`
   - `node --check server.js && node --check public/app.js`
   - `git diff --check`
   - `npm run check`
-- Next deployment note:
-  - This patch changes both server behavior and `public/app.js`. Deploying it
-    should be treated as a plugin service/static update and requires production
-    sync plus a `com.hermesmobile.plugin.codex-mobile` restart for the server
-    default to take effect and a client refresh for the frontend behavior.
+  - `node --test test/mobile-viewport.test.js test/thread-visibility.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    in both source/public mirror and production target.
+- Commit/deploy:
+  - Private source commit:
+    `f345e5a fix: defer list fallback during thread open`.
+  - Local public-safe deployment source commit:
+    `079e51f release: publish v367 thread load fix`.
+  - Private main merged the local public-safe deployment source with
+    `merge: sync public v367 deployment source`.
+  - Production target:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260621T111936Z-plugin-codex-mobile-web-v367-thread-load-079e51f.tar.gz`.
+  - Production smoke after one
+    `launchctl kickstart -k system/com.hermesmobile.plugin.codex-mobile`:
+    `/api/public-config` returned `clientBuildId=0.1.11|codex-mobile-shell-v367`
+    and `shellCacheName=codex-mobile-shell-v367`.
+  - Post-deploy loopback timing:
+    `fallback=defer` list calls were about `0.206s`, `0.213s`, `0.360s`;
+    full list remained `2.399s` cold and `0.445s` / `0.421s` hot. This confirms
+    the fix reduces contention during thread first paint; it does not remove
+    the full fallback scan path.
