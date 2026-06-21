@@ -8668,3 +8668,59 @@ The previous full handoff was archived and should be opened only when old proven
     `shellCacheName=codex-mobile-shell-v366`, `platform=darwin`,
     `authRequired=true`; target file
     `adapters/rollout-enrichment-index-service.js` exists.
+
+## 2026-06-21 Thread Open Latency Diagnosis
+
+- Status: diagnosed and locally patched; not committed or deployed in this
+  entry.
+- User report:
+  - Opening a thread felt slower after the per-thread rollout enrichment index
+    deployment. The user also noted the current device might be on 5G, not home
+    Wi-Fi.
+- Production evidence:
+  - Local loopback `/api/threads/<threadId>` timing after restart showed cold
+    calls can be slower, then hot calls become fast:
+    - `codex mobile`: `2.635s`, then `0.499s`, `0.503s`.
+    - `Music`: `0.359s`, then `0.096s`, `0.093s`.
+    - `Home AI 06-18`: `1.031s`, then `0.187s`, `0.111s`.
+  - Local loopback thread list timings showed the bigger contention source:
+    `/api/threads?limit=40&archived=false` was `2.458s` cold and
+    `0.602s` / `0.494s` hot, while
+    `/api/threads?limit=40&archived=false&fallback=defer` was
+    `0.226s`, `0.187s`, `0.169s`.
+  - Runtime logs showed full thread-list fallback repeatedly taking around
+    `2.2s-2.6s`, with `fallbackRolloutMs` around `1.2s-1.4s`, while thread
+    detail projection hits were usually `80ms-260ms`. Client first-paint events
+    on iPhone still reported `2s-3.4s` when these operations overlapped.
+- Root cause assessment:
+  - Network/5G latency can amplify the visible delay, but origin-side work is
+    also significant.
+  - The per-thread enrichment index is not the only cost. The slower visible
+    path is often an overlapping silent thread-list full fallback refresh that
+    scans state DB / recent rollout files while the thread detail first paint is
+    also loading.
+  - `THREAD_LIST_FALLBACK_CACHE_TTL_MS` was only `5000`, so active use could
+    miss cache frequently.
+- Local patch:
+  - `server.js`: default `CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS`
+    changed from `5000` to `30000`.
+  - `public/app.js`: silent thread-list refreshes that happen while a thread
+    detail is still opening now request `fallback=defer`, avoiding the expensive
+    fallback scan on the critical first-paint path. The startup deferred-list
+    follow-up still explicitly runs a full fallback refresh with
+    `deferFallback:false`.
+  - `README.md`: documented
+    `CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS` and the silent refresh
+    defer behavior.
+  - `test/mobile-viewport.test.js`: updated static assertions for the new
+    defer behavior.
+- Validation:
+  - `node --test test/mobile-viewport.test.js test/thread-visibility.test.js`
+  - `node --check server.js && node --check public/app.js`
+  - `git diff --check`
+  - `npm run check`
+- Next deployment note:
+  - This patch changes both server behavior and `public/app.js`. Deploying it
+    should be treated as a plugin service/static update and requires production
+    sync plus a `com.hermesmobile.plugin.codex-mobile` restart for the server
+    default to take effect and a client refresh for the frontend behavior.

@@ -1,5 +1,6 @@
 # Codex Mobile Web
 
+- 中文说明：v367 缓解进入线程时首屏加载变慢的问题。线程详情正在打开时，后台静默线程列表刷新会临时使用 `fallback=defer`，不再和详情首屏同时抢 state DB / rollout fallback 扫描；线程列表 fallback cache 默认从 5 秒延长到 30 秒，减少活跃使用中反复冷扫 rollout 的概率。启动后的完整列表补拉仍保留，历史/fallback 线程不会因此丢失。PWA shell cache 升级到 `codex-mobile-shell-v367`。
 - 中文说明：server-only 给已开启 `跨工作区委派` 的 Codex 线程注入 app-server dynamic tool `codex_mobile.delegate_to_thread`。模型在判断当前请求需要另一个工作区/线程处理时，可以显式调用这个工具，服务端复用 `/api/threads/:sourceThreadId/task-cards` 创建任务卡；开关关闭时完全不注入。这个能力不是 MCP，MCP 仍只用于 ChatGPT Pro 等外部客户端。本次不改变 PWA shell cache。
 - 中文说明：v366 把跨工作区模型/工具委派开关补到设置面板里。入口是左侧菜单齿轮 -> `跨工作区委派`，默认关闭；切换会写入运行时 `settings.json` 并立即生效，无需修改环境变量或重启。关闭时 `/api/threads/:sourceThreadId/task-cards` 只创建 pending 任务卡；开启后模型/工具显式发卡才允许源线程直批并启动目标线程。普通发送前本地关键词/目录名预检仍保持关闭。PWA shell cache 升级到 `codex-mobile-shell-v366`。
 - 中文说明：v365 为跨工作区模型/工具委派增加服务端开关，默认关闭。只有设置 `CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1`（或兼容别名 `CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED=1`）后，`/api/threads/:sourceThreadId/task-cards` 才会执行源线程直批并启动目标线程；默认关闭时同一路径只创建 pending 任务卡，需要目标线程审批。普通发送前本地关键词/目录名预检仍保持关闭。PWA shell cache 升级到 `codex-mobile-shell-v365`。
@@ -2253,6 +2254,7 @@ VAPID details:
 | `CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES` | Tail bytes read from a thread rollout to recover inherited turn runtime settings, default `4194304`. |
 | `CODEX_MOBILE_ROLLOUT_ENRICHMENT_CONTEXT_BYTES` | Legacy fallback tail bytes for server-side thread-detail enrichment if the incremental rollout index cannot read the file, default `33554432`. Normal enrichment uses the per-thread incremental JSONL index and does not increase the client turn payload. |
 | `CODEX_MOBILE_ROLLOUT_ACTIVE_STATUS_WINDOW_MS` | Recent-activity window used when rollout-session fallback infers an `active` thread-list status from bounded rollout-tail events, default `1800000` (`30 minutes`). |
+| `CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS` | Milliseconds to reuse the expensive state DB / rollout / session-index fallback merge for thread lists, default `30000`. Silent list refreshes that run while a thread detail is opening use `fallback=defer` so they do not contend with first paint. |
 | `CODEX_MOBILE_ROLLOUT_WARNING_BYTES` | Rollout JSONL size threshold for UI warnings and the continuation action, default `209715200` (`200MB`). |
 | `CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS` | Max characters in the rollout continuation bootstrap message, default `52000`. |
 | `CODEX_MOBILE_CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS` | Max source handoff excerpt characters included inline in a continuation bootstrap, default `12000`. |

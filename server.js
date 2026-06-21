@@ -775,7 +775,7 @@ const MAX_THREAD_TURNS = Math.max(1, Math.min(100, Number(process.env.CODEX_MOBI
 const MAX_FULL_THREAD_TURNS = Math.max(MAX_THREAD_TURNS, Math.min(200, Number(process.env.CODEX_MOBILE_FULL_THREAD_TURNS || "10")));
 const MAX_LIVE_OPERATION_ITEMS = Math.max(1, Math.min(30, Number(process.env.CODEX_MOBILE_LIVE_OPERATION_ITEMS || "12")));
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
-const THREAD_LIST_FALLBACK_CACHE_TTL_MS = Math.max(0, Number(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS || "5000"));
+const THREAD_LIST_FALLBACK_CACHE_TTL_MS = Math.max(0, Number(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS || "30000"));
 threadDetailProjectionService = THREAD_DETAIL_PROJECTION_V4_ENABLED
   ? createThreadDetailProjectionV4Service({
     cacheDir: THREAD_DETAIL_PROJECTION_CACHE_DIR,

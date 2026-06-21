@@ -130,8 +130,8 @@ test("composer sizing avoids one-pixel layout churn while typing and streaming",
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v366/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v366"/);
+  assert.match(swJs, /codex-mobile-shell-v367/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v367"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);
@@ -342,8 +342,10 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /function formatTokenMillion\(value\)/);
   assert.match(appJs, /const THREAD_LIST_PAGE_LIMIT = 40;/);
   assert.match(appJs, /new URLSearchParams\(\{ limit: String\(THREAD_LIST_PAGE_LIMIT\), archived: "false" \}\)/);
-  assert.match(appJs, /if \(options\.deferFallback === true && !search\) params\.set\("fallback", "defer"\)/);
-  assert.match(appJs, /if \(result && result\.mobileDeferredFallback\) \{[\s\S]*loadThreads\(\{ silent: true \}\)\.catch\(showError\);[\s\S]*\}, 800\);/);
+  assert.match(appJs, /const threadDetailOpening = Boolean\(state\.currentThread && state\.currentThread\.mobileLoading\);/);
+  assert.match(appJs, /silent && options\.deferFallback !== false && threadDetailOpening && !state\.selectedCwd && !search/);
+  assert.match(appJs, /if \(shouldDeferFallback && !search\) params\.set\("fallback", "defer"\)/);
+  assert.match(appJs, /if \(result && result\.mobileDeferredFallback && options\.deferFallback === true\) \{[\s\S]*loadThreads\(\{ silent: true, deferFallback: false \}\)\.catch\(showError\);[\s\S]*\}, 800\);/);
   assert.match(appJs, /Uncached \$\{escapeHtml\(formatTokenMillion\(displayInputTokensExcludingCached\(entry\)\)\)\}/);
   assert.match(appJs, /Cached \$\{escapeHtml\(formatTokenMillion\(entry && entry\.cachedInputTokens\)\)\}/);
   assert.match(appJs, /Out \$\{escapeHtml\(formatTokenMillion\(entry && entry\.outputTokens\)\)\}/);
