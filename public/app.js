@@ -382,7 +382,7 @@ const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v366";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v367";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -7262,7 +7262,10 @@ async function loadThreads(options = {}) {
   if (state.selectedCwd) params.set("cwd", state.selectedCwd);
   const search = $("threadSearch").value.trim();
   if (search) params.set("search", search);
-  if (options.deferFallback === true && !search) params.set("fallback", "defer");
+  const threadDetailOpening = Boolean(state.currentThread && state.currentThread.mobileLoading);
+  const shouldDeferFallback = options.deferFallback === true
+    || (silent && options.deferFallback !== false && threadDetailOpening && !state.selectedCwd && !search);
+  if (shouldDeferFallback && !search) params.set("fallback", "defer");
   if (!silent) renderThreadListLoading();
   try {
     const apiStartedAt = nowPerfMs();
@@ -7278,9 +7281,9 @@ async function loadThreads(options = {}) {
     renderThreads(result);
     restoreConnectionState(result.mobileFallback ? "Recovered from session index" : "Connected");
     scheduleVisiblePageRefreshCheck(500);
-    if (result && result.mobileDeferredFallback) {
+    if (result && result.mobileDeferredFallback && options.deferFallback === true) {
       setTimeout(() => {
-        loadThreads({ silent: true }).catch(showError);
+        loadThreads({ silent: true, deferFallback: false }).catch(showError);
       }, 800);
     }
     if (!state.currentThread) renderCurrentThread();
