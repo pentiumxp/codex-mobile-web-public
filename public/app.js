@@ -384,7 +384,7 @@ const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v368";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v369";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -1666,9 +1666,10 @@ function reconcileThreadStatusHints(threads) {
     const isRunning = !staleActive && isRunningStatus(thread.status);
     if (isRunning && !wasRunning) {
       if (noteRunningThreadHint(id, nowMs)) changed = true;
-      state.unreadThreadIds.delete(id);
+      if (state.unreadThreadIds.delete(id)) changed = true;
     } else if (isRunning) {
       if (noteRunningThreadHint(id, nowMs)) changed = true;
+      if (state.unreadThreadIds.delete(id)) changed = true;
     } else if (wasRunning && staleActive) {
       if (clearRunningThreadHint(id)) changed = true;
     } else if (wasRunning && isThreadListSettledStatus(thread.status)) {
@@ -4330,6 +4331,9 @@ function mergeThreadIntoThreadList(thread) {
   const summary = threadListSummaryFromDetailThread(thread);
   if (!summary) return false;
   const id = String(summary.id);
+  if (isRunningStatus(summary.status) && state.unreadThreadIds.delete(id)) {
+    saveThreadStatusHints();
+  }
   if (isThreadListSettledStatus(summary.status) && threadHasTerminalLatestTurn(thread)) {
     if (clearRunningThreadHint(id)) saveThreadStatusHints();
   }

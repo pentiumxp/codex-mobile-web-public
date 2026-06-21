@@ -2712,6 +2712,7 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(functionBody("reconcileThreadStatusHints"), /const staleActive = isStaleActiveStatus\(thread\.status\) \|\| Boolean\(thread\.mobileStaleActiveTurn\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /const isRunning = !staleActive && isRunningStatus\(thread\.status\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /else if \(wasRunning && staleActive\)/);
+  assert.match(functionBody("reconcileThreadStatusHints"), /if \(state\.unreadThreadIds\.delete\(id\)\) changed = true;/);
   assert.match(functionBody("reconcileThreadStatusHints"), /else if \(wasRunning && isThreadListSettledStatus\(thread\.status\)\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /currentLiveTurnSupportsThreadStatusHint\(id\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /shouldKeepRunningHintForSettledStatus\(id, thread, thread\.status/);
@@ -2721,6 +2722,7 @@ test("thread running hints survive notLoaded list refreshes", () => {
 
   const listMergeBody = functionBody("mergeThreadIntoThreadList");
   assert.match(listMergeBody, /threadListSummaryFromDetailThread\(thread\)/);
+  assert.match(listMergeBody, /isRunningStatus\(summary\.status\)[\s\S]*state\.unreadThreadIds\.delete\(id\)/);
   assert.match(listMergeBody, /threadHasTerminalLatestTurn\(thread\)/);
   assert.match(listMergeBody, /clearRunningThreadHint\(id\)/);
   assert.match(listMergeBody, /Object\.assign\(\{\}, entry, summary\)/);
@@ -2777,6 +2779,28 @@ test("submitted processing hint keeps spinner through fresh idle list refresh", 
   assert.equal(harness.state.runningThreadIds.has("thread-submitted"), true);
   assert.equal(harness.state.unreadThreadIds.has("thread-submitted"), false);
   assert.equal(harness.statusIconInfo(freshIdleThread.status, "thread-submitted").kind, "running");
+});
+
+test("active list rows clear stale unread dots even when already running", () => {
+  const harness = evaluatedThreadStatusHintHarness();
+  const now = 1_700_000_000_000;
+  harness.setNow(now);
+  harness.state.runningThreadIds.add("thread-active-unread");
+  harness.state.runningThreadHintedAtById["thread-active-unread"] = now - 5000;
+  harness.state.unreadThreadIds.add("thread-active-unread");
+  const activeThread = {
+    id: "thread-active-unread",
+    status: { type: "active" },
+    updatedAtMs: now,
+  };
+  harness.state.threads = [activeThread];
+
+  harness.reconcileThreadStatusHints(harness.state.threads);
+
+  assert.equal(harness.state.runningThreadIds.has("thread-active-unread"), true);
+  assert.equal(harness.state.unreadThreadIds.has("thread-active-unread"), false);
+  assert.equal(harness.statusIconInfo(activeThread.status, "thread-active-unread").kind, "running");
+  assert.equal(harness.saveCount(), 1);
 });
 
 test("submitted processing hint does not preserve completed list rows", () => {
