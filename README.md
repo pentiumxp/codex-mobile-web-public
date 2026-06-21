@@ -1,7 +1,8 @@
 # Codex Mobile Web
 
-- 中文说明：v369 修复 active/running 会话仍残留旧 unread dot 的问题。线程列表 reconcile 或详情 merge 一旦看到真实 running/active 状态，会清掉对应 unread hint 并持久化，避免已进入新一轮处理的 session 仍显示“已完成未读”。PWA shell cache 升级到 `codex-mobile-shell-v369`。
-- 中文说明：v368 修复 submitted-processing hint 在会话完成后仍可能保活列表 spinner 的问题。这个 hint 现在只作为发送后到 assistant 接管前的短桥接窗口；如果详情已经显示最新 turn 终态，或桥接窗口过期，即使线程顶层状态仍是 `idle` 也会清掉 running spinner 并按 unread dot 规则处理。PWA shell cache 升级到 `codex-mobile-shell-v368`。
+- 中文说明：v370 修复移动端线程状态残留问题。线程列表 reconcile 或详情 merge 一旦看到真实 running/active 状态，会清掉对应 unread hint 并持久化，避免已进入新一轮处理的 session 仍显示“已完成未读”；submitted-processing hint 也只作为发送后到 assistant 接管前的短桥接窗口，详情已显示最新 turn 终态或桥接窗口过期时会清掉 running spinner。PWA shell cache 升级到 `codex-mobile-shell-v370`。
+- 中文说明：v369 修正 Android 折叠屏/嵌入态线程详情右上角运行状态框计时被裁剪的问题。`turn-timer` 不再用固定宽度压缩内部内容，计时段 `本轮 00:00:00` 改为不可收缩并保留完整显示，活动状态文字（思考/命令/输入等）在剩余空间内省略，避免秒个位被遮挡。PWA shell cache 升级到 `codex-mobile-shell-v369`。
+- 中文说明：v368 修正 Android APK/WebView 下 Composer 首次点击偶发不弹系统输入法、第二次点击后键盘虽出现但文字不上屏的问题。Codex Composer 仍使用 `contenteditable`，但 Android 上不再在 `pointerup/click` 后程序化 blur/refocus 抢 IME；如果发现输入框已假聚焦但键盘未打开，会在下一次 `pointerdown` 用户手势开始时先释放旧焦点，再交给 WebView 原生 tap 建立 editor connection。同时收窄 disabled 状态下保留 `contenteditable=true` 的条件，避免留下可编辑但 `aria-disabled/tabIndex` 冲突的混合状态。PWA shell cache 升级到 `codex-mobile-shell-v368`。
 - 中文说明：server-only 修复运行中线程投影回执被裁剪的问题。当最后一个 live turn 只是空壳，而前一个正在产出内容的 turn 尚未标记 completed 时，服务端会把这个有可见内容的 turn 也作为详细 turn 保留，避免只显示最后一条 assistant 回执、前面的中间回执被刷新掉。本次不改变 PWA shell cache。
 - 中文说明：v367 缓解进入线程时首屏加载变慢的问题。线程详情正在打开时，后台静默线程列表刷新会临时使用 `fallback=defer`，不再和详情首屏同时抢 state DB / rollout fallback 扫描；线程列表 fallback cache 默认从 5 秒延长到 30 秒，减少活跃使用中反复冷扫 rollout 的概率。启动后的完整列表补拉仍保留，历史/fallback 线程不会因此丢失。PWA shell cache 升级到 `codex-mobile-shell-v367`。
 - 中文说明：server-only 给已开启 `跨工作区委派` 的 Codex 线程注入 app-server dynamic tool `codex_mobile.delegate_to_thread`。模型在判断当前请求需要另一个工作区/线程处理时，可以显式调用这个工具，服务端复用 `/api/threads/:sourceThreadId/task-cards` 创建任务卡；开关关闭时完全不注入。这个能力不是 MCP，MCP 仍只用于 ChatGPT Pro 等外部客户端。本次不改变 PWA shell cache。

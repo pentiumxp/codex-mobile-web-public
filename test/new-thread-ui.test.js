@@ -82,7 +82,8 @@ test("composer input preserves Android IME composition connection", () => {
   assert.match(appJs, /messageInputKeyboardRecoveryAt: 0/);
   assert.match(appJs, /function shouldKeepAndroidMessageInputEditable\(disabled, el\)/);
   assert.match(functionBody("shouldKeepAndroidMessageInputEditable"), /!disabled \|\| !isAndroidBrowser\(\)/);
-  assert.match(functionBody("shouldKeepAndroidMessageInputEditable"), /state\.newThreadDraft \|\| state\.currentThreadId \|\| document\.activeElement === el/);
+  assert.match(functionBody("shouldKeepAndroidMessageInputEditable"), /messageInputCanEnableForNativeGesture\(\)/);
+  assert.match(functionBody("shouldKeepAndroidMessageInputEditable"), /state\.composerComposing \|\| document\.activeElement === el/);
   assert.match(setter, /const alreadyApplied = currentContentEditable === nextContentEditable/);
   assert.match(setter, /if \(alreadyApplied\) return;/);
   assert.match(setter, /const keepAndroidEditorConnection = shouldKeepAndroidMessageInputEditable\(disabled, el\);/);
@@ -99,6 +100,10 @@ test("composer input preserves Android IME composition connection", () => {
   assert.match(functionBody("shouldRecoverMessageInputKeyboard"), /if \(!isAndroidBrowser\(\) && !isHermesEmbedMode\(\)\) return false;/);
   assert.doesNotMatch(functionBody("shouldRecoverMessageInputKeyboard"), /if \(isAndroidBrowser\(\)\) return false;/);
   assert.match(appJs, /function recoverMessageInputKeyboardFromGesture\(\)/);
+  assert.match(functionBody("recoverMessageInputKeyboardFromGesture"), /state\.messageInputPointerWasFocused = false/);
+  assert.match(functionBody("recoverMessageInputKeyboardFromGesture"), /if \(isAndroidBrowser\(\)\) return false;/);
+  assert.match(appJs, /function releaseStaleAndroidMessageInputFocusBeforeNativeTap\(input\)/);
+  assert.match(functionBody("releaseStaleAndroidMessageInputFocusBeforeNativeTap"), /input\.blur\(\)/);
   assert.match(appJs, /function messageInputCanEnableForNativeGesture\(\)/);
   assert.match(functionBody("messageInputCanEnableForNativeGesture"), /state\.composerBusy \|\| state\.attachmentProcessingCount > 0/);
   assert.match(functionBody("messageInputCanEnableForNativeGesture"), /state\.newThreadDraft/);
@@ -106,7 +111,8 @@ test("composer input preserves Android IME composition connection", () => {
   assert.match(functionBody("prepareMessageInputForNativeGesture"), /if \(!input \|\| !isAndroidBrowser\(\)\) return;/);
   assert.match(functionBody("prepareMessageInputForNativeGesture"), /messageInputCanEnableForNativeGesture\(\)/);
   assert.match(functionBody("prepareMessageInputForNativeGesture"), /setMessageInputDisabled\(false\)/);
-  assert.doesNotMatch(functionBody("prepareMessageInputForNativeGesture"), /focusMessageInput|preventDefault|blur\(/);
+  assert.match(functionBody("prepareMessageInputForNativeGesture"), /releaseStaleAndroidMessageInputFocusBeforeNativeTap\(input\)/);
+  assert.doesNotMatch(functionBody("prepareMessageInputForNativeGesture"), /focusMessageInput|preventDefault/);
   assert.match(appJs, /addEventListener\("pointerdown", prepareMessageInputForNativeGesture\)/);
   assert.match(appJs, /addEventListener\("pointerup", recoverMessageInputKeyboardFromGesture\)/);
   assert.match(appJs, /addEventListener\("click", recoverMessageInputKeyboardFromGesture\)/);
