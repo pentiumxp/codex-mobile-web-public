@@ -8593,8 +8593,7 @@ The previous full handoff was archived and should be opened only when old proven
 
 ## 2026-06-21 Per-thread Incremental Rollout Enrichment Index
 
-- Status: implemented and validated locally, not committed or deployed in this
-  entry.
+- Status: implemented, validated, committed, and deployed to Mac production.
 - Trigger:
   - Large rollout threads still showed projection/enrichment instability. A
     simple server-side tail increase from 32 MiB to 100 MiB was considered, but
@@ -8646,3 +8645,26 @@ The previous full handoff was archived and should be opened only when old proven
   - The index is in-memory. After a listener/server restart, the first access to
     a large rollout still parses the full file once; subsequent reads only parse
     appended bytes.
+- Commit/deploy:
+  - Private source commit: `0f99474 feat: add rollout enrichment index`.
+  - Local public-safe deployment source commit:
+    `38ee0a7 feat: sync rollout enrichment deployment`.
+  - Private main merged the local public-safe deployment source with
+    `e3a64f8 merge: sync public deployment source` so the private branch keeps
+    the public-source commit in its ancestry.
+  - Production target:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260621T110719Z-plugin-codex-mobile-web-rollout-index-38ee0a7.tar.gz`.
+  - Deploy path used a direct local equivalent of `scripts/deploy-macos-plugin.ps1`
+    because no PowerShell runtime was available in the current Mac process:
+    public-safe git archive, blocked-path check, staging checks, target backup,
+    target sync preserving runtime directories, target checks, one
+    `launchctl kickstart -k system/com.hermesmobile.plugin.codex-mobile`, then
+    loopback smoke.
+  - Post-restart smoke:
+    `/api/public-config` returned `version=0.1.11`,
+    `clientBuildId=0.1.11|codex-mobile-shell-v366`,
+    `shellCacheName=codex-mobile-shell-v366`, `platform=darwin`,
+    `authRequired=true`; target file
+    `adapters/rollout-enrichment-index-service.js` exists.
