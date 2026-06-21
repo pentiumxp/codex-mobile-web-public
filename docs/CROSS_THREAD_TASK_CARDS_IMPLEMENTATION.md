@@ -28,17 +28,10 @@ layout and test strategy.
     task-card drafts through the same idempotent create service path
   - fallback `thread/turns/list` detail mode must still run task-card draft
     materialization before attaching visible cards
-  - high-confidence cross-workspace delegation preflight for ordinary messages,
-    backed by the workspace-delegation adapter and the same source-thread direct
-    task-card route
+  - source-thread direct task-card route for model/tool initiated delegation
+  - disabled compatibility route for the removed local cross-workspace
+    delegation preflight
   - SSE/broadcast integration only
-
-- `adapters/workspace-delegation-service.js`
-  - pure text/current-thread/thread-list analysis for cross-workspace
-    delegation candidates
-  - conservative mutation/delegation cues, negative override cues, attachment
-    and active-turn skip rules
-  - target payload construction for source-direct task cards
 
 ### Browser-side
 
@@ -63,10 +56,9 @@ layout and test strategy.
   - target-thread detail rendering only for `pending` cards whose
     `threadRole` is `target`; source outgoing pending cards should not render
     as local work items
-  - ordinary send preflight for cross-workspace delegation. It should only call
-    the server route after a cheap local cue check, should not insert a source
-    user bubble when delegation succeeds, and should open the target thread
-    after source-direct card creation.
+  - no ordinary-send local cross-workspace preflight. Cross-workspace work must
+    come from an explicit model-produced task-card draft or a model/tool call to
+    the thread-callable route, not from browser-side keyword/path matching.
 
 - future optional helper:
   - `public/thread-task-cards.js`
@@ -109,15 +101,16 @@ The script reads the access key from `CODEX_MOBILE_KEY`,
 prints only the bounded JSON response. Prefer `--body-file` or `--json-file`
 for Chinese or long Markdown payloads.
 
-`POST /api/threads/:sourceThreadId/workspace-delegation` is a conservative
-preflight/create route for ordinary Composer sends. It analyzes the submitted
-text against the source thread and recent thread/workspace list. It skips
-attachments, active-turn steering, explicit task-card commands, negative
-override wording, and read-only references. When a single high-confidence
-target is found, it builds a bounded task-card payload and calls the
-source-thread direct route behavior so the target thread starts without a
-target-side approval prompt. It is not a general cross-workspace execution
-permission.
+`POST /api/threads/:sourceThreadId/workspace-delegation` is retained only as a
+compatibility endpoint for clients that shipped during the v363 experiment. It
+returns `delegated:false`, `disabled:true`, and
+`analysis.reason:"model_driven_delegation_required"` and must not create cards.
+The v363 local heuristic was removed because directory names and thread titles
+are not reliable enough to decide target workspaces. New cross-workspace
+delegation must be model/tool explicit through `POST
+/api/threads/:sourceThreadId/task-cards`, `scripts/create-thread-task-card.js`,
+or structured model output that is materialized by the existing task-card
+draft flow.
 
 ## Proposed Read Integration
 
@@ -230,6 +223,9 @@ After implementation begins, expand coverage with:
 - frontend/static harness checks that source draft keys are content-stable, that
   existing matching cards mark a draft created, and that only target-side
   pending cards render in thread detail.
+- regression checks that ordinary Composer sends do not call a local
+  `workspace-delegation` preflight and that the compatibility route remains
+  disabled.
 
 ## Activation Expectations
 

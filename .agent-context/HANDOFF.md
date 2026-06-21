@@ -2,6 +2,58 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-21 Cross-Workspace Delegation v364 Hotfix
+
+- Status: implemented and locally validated; deploy after commit is expected
+  because v363 is already present in production and can misroute ordinary user
+  messages.
+- Trigger:
+  - v363 local preflight incorrectly created task card
+    `ttc_25b800eef78c6846f2` from the Codex Mobile thread to the thread whose
+    cwd basename was `/Users/xuxin/Documents/工作`.
+  - The source message discussed cross-workspace card behavior in general; it
+    was not a request to operate in that `工作` workspace.
+  - User rejected local keyword/path/title matching and required delegation to
+    be model/tool explicit: the model must decide and then emit/call a task-card
+    path.
+- Change:
+  - Removed `adapters/workspace-delegation-service.js` and its test.
+  - Removed browser ordinary-send preflight from `public/app.js`, including
+    `shouldPreflightWorkspaceDelegation()` and
+    `maybeDelegateCrossWorkspaceMessage()`.
+  - Kept `/api/threads/:sourceThreadId/workspace-delegation` only as a
+    compatibility endpoint. It returns `delegated:false`, `disabled:true`, and
+    `analysis.reason:"model_driven_delegation_required"` and does not read the
+    request body or create cards.
+  - Preserved explicit/model-driven task-card paths:
+    `/api/threads/:sourceThreadId/task-cards`,
+    `scripts/create-thread-task-card.js`, structured model task-card drafts,
+    and the existing ChatGPT Pro MCP task-card delegation.
+  - Bumped `public/app.js` and `public/sw.js` to
+    `codex-mobile-shell-v364`.
+  - Updated README Chinese release note, cross-thread task-card implementation
+    docs, module map, package check script, and static tests so v363 local
+    heuristics cannot silently return.
+- Validation:
+  - Passed:
+    `node --test test/thread-task-card-route.test.js test/thread-task-card-service.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js`
+    (38/38).
+  - Passed: `npm run check`.
+  - Passed: `node tests/architecture-code-test-harness-map.test.js` from the
+    Home AI center workspace.
+  - Passed:
+    `node --check server.js`, `node --check public/app.js`,
+    `node --check public/sw.js`, and
+    `node --check test/thread-task-card-route.test.js`.
+  - Passed: `node --test test/thread-task-card-route.test.js` (7/7).
+  - Passed: `npm test` (573/573).
+  - Passed: `git diff --check`.
+- Notes:
+  - Do not reintroduce local alias/path/title heuristics for ordinary Composer
+    sends. Future "model automatically delegates" work needs a model-visible
+    tool/prompt contract that calls the explicit task-card route after the model
+    has identified the target thread.
+
 ## 2026-06-21 Cross-Workspace Delegation Preflight v363
 
 - Status: committed, deployed to Mac production, and smoke-tested.

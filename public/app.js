@@ -372,7 +372,7 @@ const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v363";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v364";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -17141,139 +17141,6 @@ async function sendThreadTaskCardCommand(commandText, options = {}) {
   }
 }
 
-function workspaceDelegationTextHasNegativeCue(value) {
-  return /不要(?:发卡|委派|跨线程|跨工作区)|别(?:发卡|委派)|直接(?:在)?当前线程|当前线程(?:处理|做)|不用(?:发卡|委派)|do\s+not\s+delegate|no\s+task\s+card|do\s+not\s+send\s+(?:a\s+)?card/i
-    .test(String(value || ""));
-}
-
-function workspaceDelegationTextHasExplicitCue(value) {
-  return /发卡|任务卡|委派|交给|转给|发给|handoff|delegate|task\s*card|send\s+(?:a\s+)?card/i
-    .test(String(value || ""));
-}
-
-function workspaceDelegationTextHasMutationCue(value) {
-  return /修复|修改|改掉|实现|优化|部署|提交|推送|更新|创建|新增|删除|移除|合并|跑测试|测试|处理|解决|接入|补上|调整|生成|执行|fix|implement|update|deploy|commit|push|merge|change|edit|add|remove|delete|test|run|execute|resolve|handle|wire|build|create/i
-    .test(String(value || ""));
-}
-
-function workspaceDelegationNormalizeComparable(value) {
-  return String(value || "")
-    .replace(/[\u200B-\u200D\uFEFF]/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-}
-
-function workspaceDelegationContainsAlias(text, alias) {
-  const normalizedText = workspaceDelegationNormalizeComparable(text);
-  const normalizedAlias = workspaceDelegationNormalizeComparable(alias);
-  if (!normalizedAlias || normalizedAlias.length < 2) return false;
-  if (/[\u3400-\u9FFF]/.test(normalizedAlias)) return normalizedText.includes(normalizedAlias);
-  const escaped = normalizedAlias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(^|[^a-z0-9_-])${escaped}([^a-z0-9_-]|$)`, "i").test(normalizedText);
-}
-
-function workspaceDelegationThreadAliases(thread) {
-  const displayTitle = threadTitleForDisplay(thread);
-  const baseTitle = String(displayTitle || "").replace(/\s+\d{2,4}[-/.]\d{1,2}(?:[-/.]\d{1,2})?$/g, "").trim();
-  const aliases = [
-    displayTitle,
-    baseTitle,
-    thread && thread.title,
-    String(thread && thread.title || "").replace(/\s+\d{2,4}[-/.]\d{1,2}(?:[-/.]\d{1,2})?$/g, "").trim(),
-    thread && thread.label,
-    workspacePathBaseName(thread && thread.cwd),
-  ].map((value) => String(value || "").trim()).filter(Boolean);
-  const generic = new Set(["app", "main", "web", "mobile", "codex", "default", "thread"]);
-  const seen = new Set();
-  return aliases.filter((alias) => {
-    const key = workspaceDelegationNormalizeComparable(alias);
-    if (!key || generic.has(key) || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function shouldPreflightWorkspaceDelegation(text, options = {}) {
-  const value = String(text || "").trim();
-  if (!value || !state.currentThreadId || !state.currentThread) return false;
-  if (options.steering || Number(options.attachmentsCount || 0) > 0) return false;
-  if (isThreadTaskCardCommandText(value) || isChatGptProCommandText(value)) return false;
-  if (workspaceDelegationTextHasNegativeCue(value)) return false;
-  const explicit = workspaceDelegationTextHasExplicitCue(value);
-  const mutating = workspaceDelegationTextHasMutationCue(value);
-  if (!explicit && !mutating) return false;
-  if (/(?:\/Users\/|\/Volumes\/|[A-Za-z]:[\\/]|\\\\)/.test(value)) return true;
-  return state.threads.some((thread) => {
-    if (!thread || String(thread.id || "") === String(state.currentThreadId || "")) return false;
-    return workspaceDelegationThreadAliases(thread).some((alias) => workspaceDelegationContainsAlias(value, alias));
-  });
-}
-
-async function maybeDelegateCrossWorkspaceMessage(text, options = {}) {
-  if (!shouldPreflightWorkspaceDelegation(text, options)) return false;
-  const sourceThreadId = String(state.currentThreadId || "");
-  const result = await api(`/api/threads/${encodeURIComponent(sourceThreadId)}/workspace-delegation`, {
-    method: "POST",
-    body: JSON.stringify({
-      text,
-      cwd: state.currentThread && state.currentThread.cwd || "",
-      currentThread: {
-        id: sourceThreadId,
-        cwd: state.currentThread && state.currentThread.cwd || "",
-        name: threadTitleForDisplay(state.currentThread),
-        preview: state.currentThread && state.currentThread.preview || "",
-      },
-      attachmentsCount: Number(options.attachmentsCount || 0),
-      activeTurnId: options.steering ? String(state.activeTurnId || "") : "",
-    }),
-    timeoutMs: 45000,
-  });
-  if (!result || result.delegated !== true) return false;
-  const cards = Array.isArray(result.cards)
-    ? result.cards.filter(Boolean)
-    : (result.card ? [result.card] : []);
-  const card = cards[0] || null;
-  const targetThreadId = String(card && card.target && card.target.threadId
-    || result.targetThread && result.targetThread.id
-    || result.analysis && result.analysis.targetThreadId
-    || "");
-  const targetTitle = String(result.targetThread && result.targetThread.title
-    || result.analysis && result.analysis.targetThreadTitle
-    || targetThreadId
-    || "目标线程");
-  commitPluginVoiceInputSessionsAfterSend(options.submittedDraftKey || currentDraftKey(), text, {
-    threadId: sourceThreadId,
-    messageId: card && card.id || `workspace-delegation:${Date.now()}`,
-    composerId: "thread-composer",
-  });
-  setComposerText("");
-  writeCurrentDraftToKey(options.submittedDraftKey || currentDraftKey());
-  $("connectionState").classList.remove("error");
-  $("connectionState").textContent = `已委派到 ${targetTitle}`;
-  markActivity("已委派");
-  state.pendingPluginRouteHint = card && targetThreadId ? normalizePluginRouteHint({
-    pluginId: "codex-mobile",
-    route: "thread-task-card",
-    threadId: targetThreadId,
-    taskId: card.id,
-  }) : null;
-  postClientEvent("workspace_delegation_created", {
-    sourceThreadId,
-    targetThreadId,
-    cardId: card && card.id || "",
-    reason: result.analysis && result.analysis.reason || "",
-  });
-  renderThreads();
-  loadThreads({ silent: true }).catch(showError);
-  if (targetThreadId) {
-    await loadThread(targetThreadId, { source: "workspace-delegation" });
-  } else {
-    renderCurrentThread();
-  }
-  return true;
-}
-
 async function sendMessage(event) {
   if (event && typeof event.preventDefault === "function") event.preventDefault();
   if (state.composerBusy) return;
@@ -17333,35 +17200,6 @@ async function sendMessage(event) {
   const steering = Boolean(state.activeTurnId && hasContent);
   const steerTurnId = steering ? String(state.activeTurnId) : "";
   const submittedDraftKey = currentDraftKey();
-  const preflightWorkspaceDelegation = shouldPreflightWorkspaceDelegation(outboundText, {
-    attachmentsCount: state.pendingAttachments.length,
-    steering,
-  });
-  if (preflightWorkspaceDelegation) {
-    let delegated = false;
-    state.composerBusy = true;
-    state.sendButtonHint = "";
-    $("connectionState").classList.remove("error");
-    $("connectionState").textContent = "检查跨工作区委派";
-    markActivity("检查委派");
-    updateComposerControls();
-    try {
-      delegated = await maybeDelegateCrossWorkspaceMessage(outboundText, {
-        submittedDraftKey,
-        attachmentsCount: state.pendingAttachments.length,
-        steering,
-      });
-    } catch (err) {
-      postClientEvent("workspace_delegation_preflight_failed", {
-        threadId: state.currentThreadId || "",
-        message: err && err.message || String(err),
-      });
-    } finally {
-      state.composerBusy = false;
-      updateComposerControls();
-    }
-    if (delegated) return;
-  }
   const clientSubmissionId = createSubmissionId();
   const submittedAttachments = state.pendingAttachments.slice();
   const previousThreadStatus = snapshotThreadStatus(state.currentThreadId);

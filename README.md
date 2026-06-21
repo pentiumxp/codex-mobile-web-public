@@ -1,6 +1,7 @@
 # Codex Mobile Web
 
-- 中文说明：v363 新增跨工作区自动委派策略。普通发送前如果高置信度识别到“要修改、部署或执行另一个已知线程工作区”的请求，Codex Mobile 会通过源线程直发任务卡到目标线程并打开目标线程，避免当前线程直接跨目录操作；附件、active-turn 引导、只读引用和已有 `#` / `@任务卡片` 手动路径不受影响。PWA shell cache 升级到 `codex-mobile-shell-v363`。
+- 中文说明：v364 禁用 v363 普通发送前的本地跨工作区启发式委派。`/api/threads/:sourceThreadId/workspace-delegation` 保留为兼容接口但只返回 `disabled:true` / `model_driven_delegation_required`，不会再根据目录名、线程标题或关键词自动发卡；跨工作区任务必须由模型输出结构化任务卡，或由线程/工具显式调用 `/api/threads/:sourceThreadId/task-cards` / `scripts/create-thread-task-card.js`。PWA shell cache 升级到 `codex-mobile-shell-v364`。
+- 中文说明：v363 曾新增跨工作区自动委派策略，普通发送前会用本地规则判断目标线程并自动发卡；该行为已被 v364 禁用，保留为历史说明。
 - 中文说明：server-only 增加 macOS 宿主恢复脚本 `restart-codex-mobile-host-macos.sh`。宿主在检测到 Codex Mobile Web 8787 Listener 未启动时，可以先用 `--list-homes --json` 读取已配置 Codex Home，再用 `--profile-id <id>` 或 `--codex-home <path>` 选择目标 Home，脚本会同步 `codex-profiles.json` 与 LaunchDaemon plist 的 `CODEX_HOME`，重新 bootstrap `com.hermesmobile.plugin.codex-mobile`，并等待 `/api/public-config` 恢复。同时修正 Web 内手动 Restart 在 macOS system LaunchDaemon 下错误使用 GUI launchctl 域的问题。本次不改变 PWA shell cache。
 - 中文说明：v362 修正 Android APK/WebView 壳里 Composer 首次点按偶发不弹系统输入法、再次点按后键盘出现但文本不上屏的问题。Composer 现在不再在 `pointerdown` 阶段提前 blur 打断原生输入激活；只在后续 `pointerup/click` 用户手势里检测到“已聚焦但键盘未打开”的 stale focus 时，才允许 Android 做一次受控 blur/refocus 恢复。PWA shell cache 升级到 `codex-mobile-shell-v362`。
 - 中文说明：v361 修正 v360 在 Android APK/WebView 壳里仍可能点加号无反应的问题。附件入口改为视觉按钮和原生 `input[type=file]` 覆盖在同一个 52px 触控单元内，触屏直接命中浏览器原生文件输入控件；按钮保留键盘 fallback。PWA shell cache 升级到 `codex-mobile-shell-v361`。
