@@ -112,7 +112,7 @@ test("view_image outputs for uploaded user images are not repeated as agent imag
   }
 });
 
-test("uploaded view_image suppression uses the larger server enrichment window", () => {
+test("uploaded view_image suppression uses the incremental rollout index beyond the ordinary tail", () => {
   const uploadPath = path.join(uploadRoot, "2026-06-21", "thread-upload", "large-tail-upload.png");
   fs.mkdirSync(path.dirname(uploadPath), { recursive: true });
   fs.writeFileSync(uploadPath, Buffer.from("iVBORw0KGgo=", "base64"));

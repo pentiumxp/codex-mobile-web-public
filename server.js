@@ -30,8 +30,10 @@ const {
 } = require("./adapters/active-turn-staleness-service");
 const {
   attachTurnUsageSummaries,
+  collectTurnUsageSummariesFromEntries,
   collectTurnUsageSummariesFromRolloutText,
 } = require("./adapters/turn-usage-summary-service");
+const { createRolloutEnrichmentIndexService } = require("./adapters/rollout-enrichment-index-service");
 const { createTokenUsageStatsService } = require("./adapters/token-usage-stats-service");
 const {
   buildTurnCompletionDetailMessage,
@@ -967,6 +969,9 @@ const latestRuntimeContextByPath = new Map();
 const latestItemTimestampsByPath = new Map();
 const latestTurnUsageSummariesByPath = new Map();
 const latestToolOutputImagesByPath = new Map();
+const rolloutEnrichmentIndexService = createRolloutEnrichmentIndexService({
+  maxIndexes: RUNTIME_CONTEXT_CACHE_MAX,
+});
 const latestThreadIdByTurnId = new Map();
 const recentStartedThreads = new Map();
 const threadDisplaySummaryCache = createThreadDisplaySummaryCache({
@@ -3536,6 +3541,18 @@ function readRolloutEnrichmentText(rolloutPath) {
   return readRolloutTail(rolloutPath, MAX_ROLLOUT_ENRICHMENT_CONTEXT_BYTES);
 }
 
+function readRolloutEnrichmentEntries(rolloutPath) {
+  const indexed = rolloutEnrichmentIndexService.read(rolloutPath);
+  if (indexed && !indexed.readError) {
+    return Array.isArray(indexed.entries) ? indexed.entries : [];
+  }
+  return readRolloutEnrichmentText(rolloutPath)
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map(parseJsonLine)
+    .filter(Boolean);
+}
+
 function rememberItemTimestampCandidates(key, payload) {
   latestItemTimestampsByPath.set(key, {
     cachedAt: Date.now(),
@@ -3709,10 +3726,8 @@ function readRolloutItemTimestampCandidates(rolloutPath) {
   const unscoped = [];
   let scopedCount = 0;
   let currentTurnId = "";
-  const text = readRolloutEnrichmentText(rolloutPath);
-  for (const line of text.split(/\r?\n/)) {
-    if (!line || !line.trim()) continue;
-    const entry = parseJsonLine(line);
+  const entries = readRolloutEnrichmentEntries(rolloutPath);
+  for (const entry of entries) {
     if (!entry || !entry.type) continue;
     const payload = entry.payload || {};
     const explicitTurnId = rolloutEntryTurnId(entry);
@@ -3794,8 +3809,7 @@ function readRolloutTurnUsageSummaries(rolloutPath, options = {}) {
   }
   let payload = collectTurnUsageSummariesFromRolloutText(readRolloutTail(rolloutPath));
   if (missingUsageTurnIds(payload, targetTurnIds).length > 0) {
-    const scanText = readRolloutEnrichmentText(rolloutPath);
-    if (scanText) payload = collectTurnUsageSummariesFromRolloutText(scanText);
+    payload = collectTurnUsageSummariesFromEntries(readRolloutEnrichmentEntries(rolloutPath));
   }
   if (cacheKey) rememberTurnUsageSummaries(cacheKey, payload);
   if (targetKey) rememberTurnUsageSummaries(targetKey, payload);
@@ -4041,14 +4055,10 @@ function readRolloutToolOutputImageItems(rolloutPath, options = {}) {
     return { byTurn: new Map(), unscoped: [], scopedCount: 0 };
   }
 
-  const text = readRolloutEnrichmentText(rolloutPath);
-  const entries = [];
+  const entries = readRolloutEnrichmentEntries(rolloutPath);
   const toolCallInfoById = new Map();
-  for (const line of text.split(/\r?\n/)) {
-    if (!line || !line.trim()) continue;
-    const entry = parseJsonLine(line);
+  for (const entry of entries) {
     if (!entry || !entry.type) continue;
-    entries.push(entry);
     const payload = entry.payload || {};
     if (entry.type !== "response_item" || !/^(function_call|custom_tool_call)$/.test(String(payload.type || ""))) continue;
     const callId = String(payload.call_id || "");

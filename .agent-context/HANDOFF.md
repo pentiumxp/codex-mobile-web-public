@@ -8590,3 +8590,59 @@ The previous full handoff was archived and should be opened only when old proven
     stored `ValueCallback<Uri[]>`. The Codex plugin can make the web-side
     request valid, but cannot open Android's system picker without the native
     callback.
+
+## 2026-06-21 Per-thread Incremental Rollout Enrichment Index
+
+- Status: implemented and validated locally, not committed or deployed in this
+  entry.
+- Trigger:
+  - Large rollout threads still showed projection/enrichment instability. A
+    simple server-side tail increase from 32 MiB to 100 MiB was considered, but
+    the chosen implementation is a per-thread incremental rollout index so the
+    server does not repeatedly rescan a large suffix just to recover historical
+    enrichment.
+- Server change:
+  - Added `adapters/rollout-enrichment-index-service.js`.
+  - `server.js` now creates `rolloutEnrichmentIndexService` and uses
+    `readRolloutEnrichmentEntries()` for historical item timestamp candidates,
+    tool output image projection, and missing turn usage summaries.
+  - The index is keyed by normalized rollout real path. It tracks file offset,
+    carry text for incomplete JSONL lines, parsed entries, mtime/size, parse
+    error counts, reset count, and last update time.
+  - If a rollout grows, the service reads only appended bytes. If the file is
+    truncated or rotated, the index resets. Old indexes are pruned by
+    `RUNTIME_CONTEXT_CACHE_MAX`.
+  - `CODEX_MOBILE_ROLLOUT_ENRICHMENT_CONTEXT_BYTES` remains as a legacy fallback
+    only if the incremental index read fails. Normal enrichment is no longer
+    bounded by the 32/100 MiB tail window.
+- Client behavior:
+  - No broader client payload is introduced. Thread detail still projects the
+    latest client window; server enrichment can now recover older metadata from
+    the per-thread index without sending a huge rollout to the browser.
+- Tests and docs:
+  - `package.json` `npm run check` now syntax-checks the new adapter.
+  - `README.md` documents the legacy role of
+    `CODEX_MOBILE_ROLLOUT_ENRICHMENT_CONTEXT_BYTES`.
+  - Added `test/rollout-enrichment-index-service.test.js`.
+  - Updated `test/tool-output-image-projection.test.js` to prove uploaded
+    `view_image` suppression works when the source call is outside the ordinary
+    rollout tail but available through the index.
+  - Updated `test/turn-usage-summary-service.test.js` to assert the server uses
+    the incremental enrichment entry path.
+- Validation:
+  - `node --check server.js && node --check adapters/rollout-enrichment-index-service.js`
+  - `node --test test/rollout-enrichment-index-service.test.js test/tool-output-image-projection.test.js test/turn-usage-summary-service.test.js`
+  - `git diff --check`
+  - `npm run check`
+  - `npm test`
+  - Home AI required guard:
+    `cd /Users/hermes-dev/HermesMobileDev/app && node tests/architecture-code-test-harness-map.test.js`
+  - Real rollout smoke on
+    `/Users/xuxin/.codex/sessions/2026/06/08/rollout-2026-06-08T21-28-43-019ea76b-d846-7892-bda0-c0fff9cf7581.jsonl`
+    at 140,953,084 bytes:
+    first read parsed 59,283 entries in 267 ms; second read was a cache hit in
+    0 ms with `bytesRead=0` and `parsedLines=0`.
+- Known boundary:
+  - The index is in-memory. After a listener/server restart, the first access to
+    a large rollout still parses the full file once; subsequent reads only parse
+    appended bytes.
