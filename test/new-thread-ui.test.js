@@ -74,12 +74,26 @@ test("existing-thread message submission includes selected runtime settings", ()
 
 test("composer input preserves Android IME composition connection", () => {
   const setter = functionBody("setMessageInputDisabled");
+  const focusHelper = functionBody("focusMessageInput");
 
   assert.match(appJs, /composerComposing: false/);
+  assert.match(appJs, /messageInputPointerWasFocused: false/);
+  assert.match(appJs, /messageInputKeyboardRecoveryAt: 0/);
   assert.match(setter, /const alreadyApplied = currentContentEditable === nextContentEditable/);
   assert.match(setter, /if \(alreadyApplied\) return;/);
   assert.match(setter, /const preserveImeConnection = state\.composerComposing && !disabled && currentContentEditable === "true";/);
   assert.match(setter, /if \(!preserveImeConnection && currentContentEditable !== nextContentEditable\)/);
+  assert.match(appJs, /function placeMessageInputCaretAtEnd\(input\)/);
+  assert.match(focusHelper, /setMessageInputDisabled\(false\)/);
+  assert.match(focusHelper, /options\.resetActiveFocus && document\.activeElement === input/);
+  assert.match(focusHelper, /input\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(focusHelper, /if \(options\.moveCaretToEnd\) placeMessageInputCaretAtEnd\(input\)/);
+  assert.match(appJs, /function messageInputKeyboardVisible\(\)/);
+  assert.match(appJs, /function recoverMessageInputKeyboardFromGesture\(\)/);
+  assert.match(appJs, /addEventListener\("pointerdown", \(\) => \{[\s\S]*state\.messageInputPointerWasFocused = document\.activeElement === \$\("messageInput"\);/);
+  assert.match(appJs, /addEventListener\("pointerup", recoverMessageInputKeyboardFromGesture\)/);
+  assert.match(appJs, /addEventListener\("click", recoverMessageInputKeyboardFromGesture\)/);
+  assert.match(functionBody("recoverMessageInputKeyboardFromGesture"), /focusMessageInput\(\{[\s\S]*resetActiveFocus: true/);
   assert.match(appJs, /addEventListener\("compositionstart", \(\) => \{[\s\S]*state\.composerComposing = true;/);
   assert.match(appJs, /addEventListener\("compositionend", \(event\) => \{[\s\S]*state\.composerComposing = false;/);
   assert.match(appJs, /if \(state\.composerComposing \|\| event\.isComposing\) return;/);
