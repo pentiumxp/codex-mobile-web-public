@@ -4,7 +4,7 @@ Last compacted: 2026-06-08T13:27:43.304Z
 
 ## 2026-06-21 Active Turn Receipt Projection Fix
 
-- Status: committed and deployed to Mac production.
+- Status: committed, deployed to Mac production, and pushed to public.
 - Trigger:
   - User reported that in the Music thread, the latest active work area after a
     user message only kept one assistant receipt; when a second receipt appeared
@@ -53,6 +53,16 @@ Last compacted: 2026-06-08T13:27:43.304Z
     `019ed959-27ce-7312-ba77-226ef9c526c7` returned `thread-read`, 10 turns,
     and the target turn `019ee9e7-3d7e-78c2-b6de-6888001e41c2` with 84
     assistant receipts and 144 items total.
+- Public release:
+  - Public commit pushed: `1a0576c release: publish projection receipt fix`.
+  - Public-safe files: `README.md`, `server.js`,
+    `test/thread-item-timestamp-enrichment.test.js`.
+  - Public worktree checks passed: `npm ci`, `npm run check`,
+    `node --test test/thread-item-timestamp-enrichment.test.js test/thread-detail-projection-service.test.js`,
+    full `npm test` (577/577), and `git diff --check`.
+  - Public-private sync check passed after merging `public/main` back into the
+    private checkout: `public/main` is an ancestor of local `main`, and
+    `git diff --name-only public/main..main -- ':!.agent-context'` is empty.
 
 ## 2026-06-21 Thread Projection Boundary Investigation
 
