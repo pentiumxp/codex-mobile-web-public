@@ -438,11 +438,18 @@ even when the switch is enabled.
 When that same runtime switch is enabled, Mobile Web injects the Codex
 app-server dynamic tool `codex_mobile.delegate_to_thread` into `thread/start`
 and `turn/start`. The model can call this tool after it determines that the
-current request belongs in another thread/workspace. Server-side handling of
-`item/tool/call` resolves the source thread from app-server metadata or the
-recent turn/thread map, resolves the target by exact thread id/title/cwd, and
-then calls the same source-thread task-card helper. This path is not MCP; it is
-only for Codex app-server turns.
+current request belongs in another thread/workspace. When the tool is injected,
+its description is a mandatory model-visible boundary: cross-workspace
+implementation, file edits, command execution, tests, deployments, and other
+mutations should create a task card before target-workspace work, not directly
+`cd`, inspect, edit, patch, test, deploy, or mutate the target workspace from
+the current thread. This dynamic-tool path is fixed to source-thread direct
+approval while the switch is enabled; a model-supplied `pending:true` is ignored
+for this path so free delegation cannot create target-side Pending cards.
+Server-side handling of `item/tool/call` resolves the source thread from
+app-server metadata or the recent turn/thread map, resolves the target by exact
+thread id/title/cwd, and then calls the same source-thread task-card helper.
+This path is not MCP; it is only for Codex app-server turns.
 The ChatGPT Pro MCP `delegate_to_codex_thread` tool uses the same server helper
 but passes `pending:true` by default, because ChatGPT-originated cards must keep
 target-thread approval unless `mode:"direct"` is requested and the dedicated MCP

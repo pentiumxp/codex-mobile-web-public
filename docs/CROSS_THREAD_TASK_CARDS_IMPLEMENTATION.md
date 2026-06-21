@@ -126,6 +126,20 @@ was used. If the switch is off, the tool is not injected. If the tool is called
 without a target or source thread id cannot be inferred, the server returns a
 bounded error to the model instead of hanging the turn.
 
+When injected, the tool's model-visible description is a mandatory boundary,
+not just an optional shortcut. If the requested implementation, file edit,
+command, test, deployment, or other mutation belongs to another workspace or
+thread, the model should call `codex_mobile.delegate_to_thread` before doing
+target-workspace work. It should not `cd` into, inspect, edit, patch, test,
+deploy, or otherwise mutate the other workspace from the current thread.
+Mobile Web still does not restore local keyword/path heuristics; the model is
+responsible for deciding whether the user's request crosses a workspace/thread
+boundary. Because this is the free delegation path for an already trusted Codex
+thread, the dynamic tool always forces `direct:true`, `autoApprove:true`, and
+`pending:false` before calling the shared task-card helper. Manual/API callers
+can still request Pending cards through the explicit task-card route; the model
+dynamic-tool schema does not expose that override.
+
 `POST /api/threads/:sourceThreadId/workspace-delegation` is retained only as a
 compatibility endpoint for clients that shipped during the v363 experiment. It
 returns `delegated:false`, `disabled:true`, and

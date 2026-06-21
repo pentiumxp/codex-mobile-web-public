@@ -2,6 +2,67 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-21 Workspace Delegation Tool Boundary Tightening
+
+- Status: patched and tested; deployment/commit may follow in the same turn.
+- Trigger:
+  - User reported that the `跨工作区委派` switch was enabled, but a thread still
+    directly edited another workspace instead of creating a cross-thread task
+    card.
+  - After prompting, an Android thread did create a card for Home AI, but the
+    created card was Pending. User clarified that when free delegation is
+    enabled, the thread-initiated card must not be Pending.
+- Finding:
+  - Current implementation intentionally does not run local keyword/path
+    preflight. The switch injects app-server dynamic tool
+    `codex_mobile.delegate_to_thread` into `thread/start` and `turn/start`, and
+    allows source-thread direct approval when the model/tool explicitly creates
+    a card.
+  - The model-visible tool description said to use the tool instead of directly
+    editing outside the current workspace, but it was still phrased like a
+    general tool description rather than a strict boundary for commands, tests,
+    deploys, and file mutations in another workspace.
+  - The dynamic tool schema also exposed `pending`, and
+    `workspaceDelegationDynamicToolBody()` previously passed model-supplied
+    args through unchanged. The shared helper correctly respects
+    `pending:true`, so a model/tool call could create a Pending card even while
+    the free delegation switch was enabled.
+- Change:
+  - `workspaceDelegationDynamicToolSpec()` now describes the tool as a
+    mandatory boundary when it is available.
+  - The description explicitly says cross-workspace implementation, file edit,
+    command execution, test, deployment, or other mutation must call
+    `codex_mobile.delegate_to_thread` before doing target-workspace work.
+  - It explicitly forbids inspecting, `cd`-ing into, editing, patching, running
+    commands in, testing, deploying, or otherwise operating on the other
+    workspace from the current thread.
+  - The description still says the model must decide from the user request and
+    must not rely on local keyword/path heuristics.
+  - The dynamic tool schema no longer exposes `pending`.
+  - `workspaceDelegationDynamicToolBody()` now forces `direct:true`,
+    `autoApprove:true`, and `pending:false` before calling the shared helper,
+    so app-server dynamic-tool delegation always creates source-direct cards
+    when the switch is enabled.
+  - Manual/API/MCP paths still keep their explicit Pending behavior; this
+    forced-direct rule applies to the Codex app-server dynamic tool only.
+  - Updated README, `docs/ARCHITECTURE.md`, and
+    `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md`.
+- Validation:
+  - Passed:
+    `node --test test/thread-task-card-route.test.js test/new-thread-route.test.js`
+    (26/26).
+  - Passed: `node --check server.js && node --check test/thread-task-card-route.test.js`.
+  - Passed: `npm run check`.
+  - Passed: `git diff --check`.
+  - Passed center guard:
+    `node tests/architecture-code-test-harness-map.test.js`.
+- Boundary note:
+  - This is still model-driven; it does not reintroduce the removed v363 local
+    workspace/title/keyword heuristic.
+  - Already-running turns that received the older dynamic-tool description
+    cannot be retroactively changed. New turns after deploy/restart receive the
+    tightened tool description.
+
 ## 2026-06-21 Android Fold Turn Timer Layout v369
 
 - Status: patched, tested, deployed to Mac production, and pending source

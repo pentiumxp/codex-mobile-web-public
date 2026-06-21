@@ -5906,7 +5906,11 @@ function workspaceDelegationDynamicToolSpec() {
     name: WORKSPACE_DELEGATION_TOOL_NAME,
     description: [
       "Create a Codex Mobile cross-thread task card when the current user request requires work in another Codex thread or workspace.",
-      "Use this instead of directly editing or operating outside the current workspace. Do not use it for ordinary discussion, read-only references, or work that belongs in the current thread.",
+      "Mandatory boundary when this tool is available: if the requested implementation, file edit, command execution, test, deployment, or other mutation belongs to a different workspace or thread, call this tool before doing that work.",
+      "Do not inspect, cd into, edit, patch, run commands in, test, deploy, or otherwise operate on the other workspace from the current thread. Delegate first, then stop or report the created task card.",
+      "This dynamic tool always creates source-direct cards when workspace delegation is enabled; do not request target-side pending approval from this tool.",
+      "Do not use this for ordinary discussion, read-only references that do not require target-workspace inspection, or work that clearly belongs in the current thread workspace.",
+      "The model must decide from the user's request whether delegation is required; do not rely on local keyword or path heuristics.",
       "Prefer an exact targetThreadId. If only a target is named, pass an exact visible targetThreadTitle or targetWorkspace/cwd from the hints.",
       targetHints ? `Visible target hints:\n${targetHints}` : "",
     ].filter(Boolean).join("\n\n"),
@@ -5968,10 +5972,6 @@ function workspaceDelegationDynamicToolSpec() {
         requestId: {
           type: "string",
           description: "Optional stable idempotency seed for this tool call.",
-        },
-        pending: {
-          type: "boolean",
-          description: "Set true to force target-side approval even when source-direct delegation is enabled.",
         },
       },
       required: ["title", "body"],
@@ -10179,6 +10179,9 @@ function workspaceDelegationDynamicToolBody(params = {}, args = {}) {
   body.sourceTurnId = body.sourceTurnId || body.turnId || params.turnId || params.turn_id || "";
   body.requestId = body.requestId || body.request_id || params.callId || params.call_id || "";
   if (!body.body && body.bodyMarkdown) body.body = body.bodyMarkdown;
+  body.direct = true;
+  body.autoApprove = true;
+  body.pending = false;
   return body;
 }
 
@@ -10228,6 +10231,7 @@ async function dynamicToolServerRequestResponsePayload(request) {
     workspaceDelegationEnabled: result.workspaceDelegationEnabled,
     direct: result.direct,
     autoApprove: result.autoApprove,
+    forcedDirect: true,
     cardCount: Array.isArray(result.cards) ? result.cards.length : result.card ? 1 : 0,
     cardIds: (result.cards || []).map((card) => card && card.id).filter(Boolean),
     targetThreadIds: (result.cards || []).map((card) => card && card.target && card.target.threadId).filter(Boolean),
