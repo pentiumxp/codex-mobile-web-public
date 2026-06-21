@@ -4,7 +4,7 @@ Last compacted: 2026-06-08T13:27:43.304Z
 
 ## 2026-06-21 Cross-Workspace Delegation Preflight v363
 
-- Status: implemented locally, focused-tested, not committed, not deployed.
+- Status: committed, deployed to Mac production, and smoke-tested.
 - Trigger:
   - User asked to implement a Codex Mobile policy where a thread that needs to
     operate in another workspace should preferably send a cross-thread task
@@ -36,6 +36,7 @@ Last compacted: 2026-06-08T13:27:43.304Z
   - Updated README Chinese release note, cross-thread task-card implementation
     docs, module map, `package.json` check script, and static tests.
 - Validation:
+  - Committed as `64fc906 feat: delegate cross-workspace sends`.
   - Passed:
     `node --test test/workspace-delegation-service.test.js test/thread-task-card-service.test.js test/thread-task-card-route.test.js`
     (31/31).
@@ -45,6 +46,19 @@ Last compacted: 2026-06-08T13:27:43.304Z
     `node tests/architecture-code-test-harness-map.test.js`.
   - AI Ops evidence ledger:
     `evidence-eb6da04a-90d5-4d2e-b711-898c24e4bbb9`.
+- Production deploy:
+  - Deployed through the Home AI central Mac deploy script:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --execute --json`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260621T091138Z-plugin-codex-mobile-web-manual`.
+  - Production health readback returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v363` and
+    `shellCacheName=codex-mobile-shell-v363`.
+  - Authenticated production smoke for
+    `POST /api/threads/:id/workspace-delegation` returned `ok:true` with
+    `delegated:false` for a no-target probe.
+  - AI Ops deploy evidence ledger:
+    `evidence-7b1fa468-e349-4f58-9868-832ff459f296`.
 - Notes:
   - This is not a general automatic cross-workspace execution permission.
     Read-only references such as "看一下 Finance 状态" remain in the current
