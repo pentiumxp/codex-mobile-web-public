@@ -54,19 +54,28 @@ test("server exposes a thread-callable direct task-card interface", () => {
   );
   assert.match(workspaceDelegationRoute, /disabled: true/);
   assert.match(workspaceDelegationRoute, /delegated: false/);
-  assert.match(workspaceDelegationRoute, /reason: "model_driven_delegation_required"/);
+  assert.match(workspaceDelegationRoute, /enabled: WORKSPACE_DELEGATION_ENABLED/);
+  assert.match(workspaceDelegationRoute, /reason: WORKSPACE_DELEGATION_ENABLED/);
+  assert.match(workspaceDelegationRoute, /workspace_delegation_disabled/);
+  assert.match(workspaceDelegationRoute, /model_driven_delegation_requires_explicit_task_card/);
   assert.doesNotMatch(serverJs, /function runWorkspaceDelegationFromSourceThread\(/);
   assert.doesNotMatch(serverJs, /analyzeWorkspaceDelegation\(/);
   assert.doesNotMatch(serverJs, /buildWorkspaceDelegationTaskCardPayload\(/);
+  assert.match(serverJs, /const WORKSPACE_DELEGATION_ENABLED =/);
+  assert.match(serverJs, /CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION/);
+  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED/);
   assert.match(serverJs, /function buildThreadTaskCardCreatePayload\(/);
   assert.match(serverJs, /function threadTaskCardThreadCallIdempotencyKey\(/);
   assert.match(serverJs, /function resolvedThreadTaskCardTargetIds\(/);
+  assert.match(functionBody(serverJs, "createThreadTaskCardsFromSourceThread"), /WORKSPACE_DELEGATION_ENABLED[\s\S]*body\.autoApprove !== false[\s\S]*body\.direct !== false[\s\S]*body\.pending !== true/);
   assert.match(serverJs, /threadTaskCardService\.approveFromSource\(card\.id, payload\.sourceThreadId\)/);
-  assert.match(serverJs, /body\.autoApprove !== false && body\.direct !== false && body\.pending !== true/);
   assert.match(serverJs, /direct: autoApprove/);
+  assert.match(serverJs, /workspaceDelegationEnabled: WORKSPACE_DELEGATION_ENABLED/);
+  assert.match(serverJs, /workspaceDelegation: \{[\s\S]*enabled: WORKSPACE_DELEGATION_ENABLED[\s\S]*directTaskCardAutoApproval: WORKSPACE_DELEGATION_ENABLED[\s\S]*ordinarySendPreflight: false[\s\S]*localHeuristics: false/);
   assert.match(createThreadTaskCardScript, /\/api\/threads\/\$\{encodeURIComponent\(sourceThreadId\)\}\/task-cards/);
   assert.match(createThreadTaskCardScript, /CODEX_MOBILE_KEY_FILE/);
   assert.match(createThreadTaskCardScript, /--pending/);
+  assert.match(createThreadTaskCardScript, /CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1/);
 });
 
 test("thread task card routes preserve service status codes", () => {
@@ -147,7 +156,7 @@ test("server materializes structured task-card drafts from thread detail", () =>
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v364"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v365"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.threadRole \|\| ""\) === "target"\)/);

@@ -79,11 +79,12 @@ layout and test strategy.
 delegation route. It uses `buildThreadTaskCardCreatePayload()` to infer source
 metadata, resolve target ids or exact target titles, truncate overlong bodies to
 the 8k card limit, and derive a stable `thread-call:*` idempotency key when the
-caller does not provide one. By default it calls
-`threadTaskCardService.approveFromSource()` after storing each card, so the
-target thread receives a real injected turn without showing a target-side
-pending approval card. Passing `pending:true` or `autoApprove:false` keeps the
-card in the original manual-pending flow.
+caller does not provide one. Source-thread direct auto-approval is gated by the
+server config switch `CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1` (or compatible
+alias `CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED=1`) and is off by default.
+When the switch is off, the route stores pending cards only. Passing
+`pending:true`, `autoApprove:false`, or `direct:false` also keeps the card in
+the manual-pending flow even when the switch is enabled.
 
 The supported local CLI wrapper is:
 
@@ -99,12 +100,17 @@ The script reads the access key from `CODEX_MOBILE_KEY`,
 `CODEX_MOBILE_ACCESS_KEY`, `CODEX_MOBILE_KEY_FILE`, or
 `$HOME/.codex-mobile-web/access_key`, sends it as an Authorization header, and
 prints only the bounded JSON response. Prefer `--body-file` or `--json-file`
-for Chinese or long Markdown payloads.
+for Chinese or long Markdown payloads. The script can request direct
+auto-approval, but the server only honors that request when
+`CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1` is configured.
 
 `POST /api/threads/:sourceThreadId/workspace-delegation` is retained only as a
 compatibility endpoint for clients that shipped during the v363 experiment. It
 returns `delegated:false`, `disabled:true`, and
-`analysis.reason:"model_driven_delegation_required"` and must not create cards.
+`analysis.reason:"workspace_delegation_disabled"` by default. If
+`CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1` is configured, it still must not
+create cards and instead reports
+`analysis.reason:"model_driven_delegation_requires_explicit_task_card"`.
 The v363 local heuristic was removed because directory names and thread titles
 are not reliable enough to decide target workspaces. New cross-workspace
 delegation must be model/tool explicit through `POST

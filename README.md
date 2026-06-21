@@ -1,6 +1,7 @@
 # Codex Mobile Web
 
-- 中文说明：v364 禁用 v363 普通发送前的本地跨工作区启发式委派。`/api/threads/:sourceThreadId/workspace-delegation` 保留为兼容接口但只返回 `disabled:true` / `model_driven_delegation_required`，不会再根据目录名、线程标题或关键词自动发卡；跨工作区任务必须由模型输出结构化任务卡，或由线程/工具显式调用 `/api/threads/:sourceThreadId/task-cards` / `scripts/create-thread-task-card.js`。PWA shell cache 升级到 `codex-mobile-shell-v364`。
+- 中文说明：v365 为跨工作区模型/工具委派增加服务端开关，默认关闭。只有设置 `CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1`（或兼容别名 `CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED=1`）后，`/api/threads/:sourceThreadId/task-cards` 才会执行源线程直批并启动目标线程；默认关闭时同一路径只创建 pending 任务卡，需要目标线程审批。普通发送前本地关键词/目录名预检仍保持关闭。PWA shell cache 升级到 `codex-mobile-shell-v365`。
+- 中文说明：v364 禁用 v363 普通发送前的本地跨工作区启发式委派。`/api/threads/:sourceThreadId/workspace-delegation` 保留为兼容接口但只返回禁用/未委派状态，不会再根据目录名、线程标题或关键词自动发卡；跨工作区任务必须由模型输出结构化任务卡，或由线程/工具显式调用 `/api/threads/:sourceThreadId/task-cards` / `scripts/create-thread-task-card.js`。PWA shell cache 升级到 `codex-mobile-shell-v364`。
 - 中文说明：v363 曾新增跨工作区自动委派策略，普通发送前会用本地规则判断目标线程并自动发卡；该行为已被 v364 禁用，保留为历史说明。
 - 中文说明：server-only 增加 macOS 宿主恢复脚本 `restart-codex-mobile-host-macos.sh`。宿主在检测到 Codex Mobile Web 8787 Listener 未启动时，可以先用 `--list-homes --json` 读取已配置 Codex Home，再用 `--profile-id <id>` 或 `--codex-home <path>` 选择目标 Home，脚本会同步 `codex-profiles.json` 与 LaunchDaemon plist 的 `CODEX_HOME`，重新 bootstrap `com.hermesmobile.plugin.codex-mobile`，并等待 `/api/public-config` 恢复。同时修正 Web 内手动 Restart 在 macOS system LaunchDaemon 下错误使用 GUI launchctl 域的问题。本次不改变 PWA shell cache。
 - 中文说明：v362 修正 Android APK/WebView 壳里 Composer 首次点按偶发不弹系统输入法、再次点按后键盘出现但文本不上屏的问题。Composer 现在不再在 `pointerdown` 阶段提前 blur 打断原生输入激活；只在后续 `pointerup/click` 用户手势里检测到“已聚焦但键盘未打开”的 stale focus 时，才允许 Android 做一次受控 blur/refocus 恢复。PWA shell cache 升级到 `codex-mobile-shell-v362`。
@@ -368,11 +369,11 @@ Behavior:
 `POST /api/threads/:sourceThreadId/task-cards` is the thread-callable
 delegation path. It is intended for a Codex thread/tool to hand scoped work to
 another thread without cross-workspace editing. It stores the same task-card
-object for audit, but defaults to source-thread direct approval: the target
-thread does not show an `Approve` card and receives a real injected turn
-immediately. The card records `source_thread_direct` delivery metadata and
-`targetApprovalBypassed` audit metadata. Use `pending:true` or
-`autoApprove:false` when this route should create a normal pending card.
+object for audit. Source-thread direct approval is disabled by default and only
+runs when the server is configured with
+`CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1`. With the default configuration it
+creates a normal pending target card. Passing `pending:true` or
+`autoApprove:false` also forces pending behavior even when the switch is on.
 
 Local thread-callable wrapper:
 

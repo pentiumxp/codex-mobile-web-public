@@ -2,6 +2,40 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-21 Workspace Delegation Config Switch v365
+
+- Status: implemented and locally validated; deploy after commit expected.
+- Trigger:
+  - User requested the cross-workspace auto-delegation feature be configurable
+    with a manual on/off switch, defaulting off.
+- Change:
+  - Added server config switch `CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1`.
+    Compatible alias: `CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED=1`.
+  - Default is off.
+  - `POST /api/threads/:sourceThreadId/task-cards` now creates pending cards by
+    default. It only performs source-thread direct auto-approval and target-turn
+    injection when the switch is enabled and the request did not set
+    `pending:true`, `autoApprove:false`, or `direct:false`.
+  - `/api/public-config` exposes `workspaceDelegation.enabled`,
+    `workspaceDelegation.mode`, `directTaskCardAutoApproval`,
+    `ordinarySendPreflight:false`, and `localHeuristics:false`.
+  - The removed v363 ordinary-send keyword/path/title heuristic remains off.
+    `/api/threads/:sourceThreadId/workspace-delegation` stays a no-create
+    compatibility endpoint and reports whether the feature switch is enabled.
+  - Updated `scripts/create-thread-task-card.js` help text and task-card docs
+    so thread/tool callers know direct auto-approval requires the server switch.
+  - Bumped `public/app.js` and `public/sw.js` to
+    `codex-mobile-shell-v365`.
+- Validation:
+  - Passed focused:
+    `node --test test/thread-task-card-route.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/chatgpt-pro-mcp-service.test.js`
+    (28/28).
+  - Passed: `npm run check`.
+  - Passed: `node tests/architecture-code-test-harness-map.test.js` from the
+    Home AI center workspace.
+  - Passed: `npm test` (573/573).
+  - Passed: `git diff --check`.
+
 ## 2026-06-21 Cross-Workspace Delegation v364 Hotfix
 
 - Status: implemented and locally validated; deploy after commit is expected

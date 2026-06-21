@@ -206,6 +206,11 @@ const CHATGPT_PRO_PLANNER_DIR = process.env.CODEX_MOBILE_CHATGPT_PRO_PLANNER_DIR
 const CHATGPT_PRO_MCP_TOKEN = process.env.CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN || "";
 const CHATGPT_PRO_MCP_TOKEN_FILE = process.env.CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN_FILE || "";
 const CHATGPT_PRO_MCP_ALLOW_DIRECT_TASK_CARDS = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_CHATGPT_PRO_MCP_ALLOW_DIRECT_TASK_CARDS || "");
+const WORKSPACE_DELEGATION_ENABLED = /^(1|true|yes|on)$/i.test(
+  process.env.CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION
+    || process.env.CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED
+    || "",
+);
 const THREAD_SIDE_CHAT_SCOPE_ID = CODEX_HOME_RESOLUTION.activeProfileId
   || `codex-home-${crypto.createHash("sha256").update(CODEX_HOME).digest("hex").slice(0, 16)}`;
 const THREAD_SIDE_CHAT_REPLY_TIMEOUT_MS = Math.max(
@@ -9756,7 +9761,10 @@ function buildThreadTaskCardCreatePayload(body = {}, sourceThreadId = "") {
 async function createThreadTaskCardsFromSourceThread(sourceThreadId, body = {}) {
   const payload = buildThreadTaskCardCreatePayload(body, sourceThreadId);
   const cards = await threadTaskCardService.createMany(payload);
-  const autoApprove = body.autoApprove !== false && body.direct !== false && body.pending !== true;
+  const autoApprove = WORKSPACE_DELEGATION_ENABLED
+    && body.autoApprove !== false
+    && body.direct !== false
+    && body.pending !== true;
   const approvals = [];
   if (autoApprove) {
     for (const card of cards) {
@@ -9771,6 +9779,7 @@ async function createThreadTaskCardsFromSourceThread(sourceThreadId, body = {}) 
     sourceThreadId: payload.sourceThreadId,
     direct: autoApprove,
     autoApprove,
+    workspaceDelegationEnabled: WORKSPACE_DELEGATION_ENABLED,
     card: publicCards[0] || null,
     cards: publicCards,
     approvals,
@@ -10667,6 +10676,13 @@ async function handleApi(req, res) {
         defaultRoot: workspaceRegistryService.defaultCreateRoot(),
         roots: workspaceRegistryService.createRoots(),
       },
+      workspaceDelegation: {
+        enabled: WORKSPACE_DELEGATION_ENABLED,
+        mode: WORKSPACE_DELEGATION_ENABLED ? "model_driven_explicit_task_card" : "off",
+        directTaskCardAutoApproval: WORKSPACE_DELEGATION_ENABLED,
+        ordinarySendPreflight: false,
+        localHeuristics: false,
+      },
       hermesPlugin: {
         id: "codex-mobile",
         manifestPath: "/api/v1/hermes/plugin/manifest",
@@ -11140,11 +11156,14 @@ async function handleApi(req, res) {
     try {
       sendJson(res, 200, {
         ok: true,
+        enabled: WORKSPACE_DELEGATION_ENABLED,
         delegated: false,
         disabled: true,
         analysis: {
           shouldDelegate: false,
-          reason: "model_driven_delegation_required",
+          reason: WORKSPACE_DELEGATION_ENABLED
+            ? "model_driven_delegation_requires_explicit_task_card"
+            : "workspace_delegation_disabled",
         },
       });
     } catch (err) {

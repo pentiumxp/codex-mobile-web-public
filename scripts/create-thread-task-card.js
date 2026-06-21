@@ -25,8 +25,8 @@ function usage() {
     "  --idempotency-key <key>    Explicit task-card idempotency key.",
     "  --workflow-mode <mode>     manual or autonomous.",
     "  --workflow-id <id>         Optional workflow id.",
-    "  --pending                  Create a normal pending card instead of direct source-thread approval.",
-    "  --auto-approve <bool>      Override direct auto-approval. Defaults to true for this interface.",
+    "  --pending                  Create a normal pending card instead of requesting source-thread direct approval.",
+    "  --auto-approve <bool>      Request direct auto-approval; the server only honors it when CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1.",
     "  --json-file <path>         Read request JSON from file. Use '-' for stdin.",
     "  --help                     Show this help.",
   ].join("\n");
