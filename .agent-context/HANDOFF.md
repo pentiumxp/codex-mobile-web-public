@@ -50,6 +50,26 @@ Last compacted: 2026-06-08T13:27:43.304Z
 - Production backup:
   - `/Users/xuxin/.codex-mobile-web/deploy-backups/codex-mobile-web-static/20260621T030600Z-embed-split-back-v351`.
 
+## 2026-06-21 Public v351 Release
+
+- Status: pushed to public and merged back into private history.
+- Public commit:
+  - `359cc61 release: 发布 v351 Codex Mobile 修复`
+- Private synchronization:
+  - Merged `public/main` back into private `main` with
+    `51468ec merge: 同步 public v351 发布`.
+  - Verified `public/main` is an ancestor of private `main`.
+  - Verified `git diff --stat public/main..main -- ':!.agent-context'` is
+    empty after the merge.
+- Public validation in a clean temporary public worktree:
+  - `npm ci`
+  - `npm test` (566/566 passed)
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+- Public CI:
+  - GitHub Actions run `27891969035` completed successfully.
+
 ## 2026-06-21 Split-Pane Back Button v349
 
 - Status: implemented, focused-tested, production DOM-smoked, and static-only
