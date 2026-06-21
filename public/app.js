@@ -210,6 +210,8 @@ const state = {
   pendingAttachments: [],
   composerBusy: false,
   composerComposing: false,
+  messageInputPointerWasFocused: false,
+  messageInputKeyboardRecoveryAt: 0,
   composerHeightPx: 0,
   messageInputHeightPx: 0,
   messageInputTextLength: 0,
@@ -369,7 +371,7 @@ const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v352";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v353";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -15872,6 +15874,11 @@ function focusMessageInput(options = {}) {
     setMessageInputDisabled(false);
   }
   if (input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true") return false;
+  if (options.resetActiveFocus && document.activeElement === input) {
+    try {
+      input.blur();
+    } catch (_) {}
+  }
   try {
     input.focus({ preventScroll: true });
   } catch (_) {
@@ -15886,6 +15893,33 @@ function focusMessageInput(options = {}) {
     window.setTimeout(() => focusMessageInput(Object.assign({}, options, { retry: false })), 30);
   }
   return true;
+}
+
+function messageInputKeyboardVisible() {
+  if (!isKeyboardEditableElement(document.activeElement)) return false;
+  const viewport = viewportState();
+  return Boolean(viewport && (viewport.keyboardShrunk || viewport.hostKeyboardVisible));
+}
+
+function shouldRecoverMessageInputKeyboard() {
+  const input = $("messageInput");
+  if (!input || document.activeElement !== input) return false;
+  if (!isAndroidBrowser() && !isHermesEmbedMode()) return false;
+  if (state.composerBusy || state.composerComposing) return false;
+  if (messageInputKeyboardVisible()) return false;
+  const now = Date.now();
+  return now - Number(state.messageInputKeyboardRecoveryAt || 0) > 450;
+}
+
+function recoverMessageInputKeyboardFromGesture() {
+  if (!state.messageInputPointerWasFocused) return false;
+  if (!shouldRecoverMessageInputKeyboard()) return false;
+  state.messageInputKeyboardRecoveryAt = Date.now();
+  return focusMessageInput({
+    moveCaretToEnd: false,
+    resetActiveFocus: true,
+    retry: true,
+  });
 }
 
 function normalizedComposerIntentText(value) {
@@ -18006,10 +18040,10 @@ function wireUi() {
   $("messageInput").addEventListener("keyup", queueComposerIntentMenuUpdate);
   $("messageInput").addEventListener("focus", queueComposerIntentMenuUpdate);
   $("messageInput").addEventListener("pointerdown", () => {
-    if (document.activeElement !== $("messageInput")) {
-      focusMessageInput({ moveCaretToEnd: false, retry: false });
-    }
+    state.messageInputPointerWasFocused = document.activeElement === $("messageInput");
   });
+  $("messageInput").addEventListener("pointerup", recoverMessageInputKeyboardFromGesture);
+  $("messageInput").addEventListener("click", recoverMessageInputKeyboardFromGesture);
   $("messageInput").addEventListener("compositionstart", () => {
     state.composerComposing = true;
   });

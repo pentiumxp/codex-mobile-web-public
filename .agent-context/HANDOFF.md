@@ -2,6 +2,44 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-21 Android Composer Focus Lock v353
+
+- Status: implemented, focused-tested, and static-only deployed to Mac
+  production. The 8787 Listener was not restarted.
+- Trigger:
+  - On Android/WebView, the first Composer tap could focus the DOM editor
+    without opening the system keyboard. A second tap then stayed stuck until
+    the thread was reopened.
+  - The likely regression source was v352's `pointerdown` handler calling
+    `focusMessageInput` before the browser's native editable-click activation.
+- Change:
+  - `public/app.js`: advanced client build id to
+    `codex-mobile-shell-v353`.
+  - `public/app.js`: the Composer `pointerdown` handler now only records
+    whether the editor was already focused. It no longer calls `focus()`.
+  - `public/app.js`: added a mobile/embedded recovery path on
+    `pointerup`/`click`. If the gesture started while Composer was already
+    focused but `viewportState()` still says no keyboard is open, Codex briefly
+    blurs and refocuses the Composer inside that user gesture.
+  - `public/sw.js`, README, and shell-version tests advanced to v353.
+- Validation:
+  - Passed:
+    `node --check public/app.js && node --check public/sw.js`.
+  - Passed:
+    `node --test test/new-thread-ui.test.js test/plugin-voice-input.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`.
+  - Passed: `npm run check`.
+  - Passed: `git diff --check`.
+  - Passed center required check:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - Production readback returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v353` and
+    `shellCacheName=codex-mobile-shell-v353`; served `app.js` contains
+    `recoverMessageInputKeyboardFromGesture`.
+  - AI Ops evidence ledger record:
+    `evidence-aaced441-7f57-4883-a9d8-26db68621c11`.
+- Production backup:
+  - `/Users/xuxin/.codex-mobile-web/deploy-backups/codex-mobile-web-static/20260621T033602Z-android-composer-focus-v353`.
+
 ## 2026-06-21 PR Draft Filter, Workspace Root, Composer Focus v352
 
 - Status: implemented and focused-tested locally. Not deployed in this entry.
