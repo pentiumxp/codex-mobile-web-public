@@ -20,6 +20,7 @@ const {
 const repoRoot = path.resolve(__dirname, "..");
 const muxPath = path.join(repoRoot, "codex-app-server-mux.js");
 const mockCodexPath = path.join(repoRoot, "test-fixtures", "mock-codex-app-server.js");
+const muxJs = fs.readFileSync(muxPath, "utf8");
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -534,6 +535,13 @@ test("mux replays missed turn notifications to desktop clients after reconnect",
       && /^mux-user-/.test(String(message.params.item.id || ""))),
     false,
   );
+});
+
+test("mux annotates replayed mobile notifications with original receive time", () => {
+  assert.match(muxJs, /function replayNotificationMessageForClient\(entry, client\)/);
+  assert.match(muxJs, /isMobileWebClient\(client\)/);
+  assert.match(muxJs, /message\.params\.mobileReplayReceivedAtMs = entry\.receivedAt/);
+  assert.match(muxJs, /sendToClient\(client, replayNotificationMessageForClient\(entry, client\)\)/);
 });
 
 test("approval response payloads match current and legacy app-server methods", () => {

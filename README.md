@@ -4,6 +4,8 @@ Codex Mobile Web is a local web client for reading and controlling Codex session
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：v346 继续修正线程列表 spinner/unread dot 的 freshness 问题。前端不再让旧的 completed/idle 列表行清掉本机刚记录的 running hint，也不会把 replay 的旧完成通知按接收时间当成新 unread；server 派生的 `thread/status/changed` 会带真实 `eventAtMs`，mux replay 给 Mobile Web 时保留原始缓存时间。PWA shell cache 升级到 `codex-mobile-shell-v346`。
+- 中文说明：v345 修复线程列表 unread dot 和 V4 详情刷新不稳定。前端现在记录每个 thread 的本机最后查看时间，只有后台完成事件或列表更新时间晚于该时间时才显示 unread dot；打开已停止线程会同时清掉旧 running hint，避免 stale hint 误触发 unread。V4 projection 刷新也会合并同 turn 里已显示的 final answer，避免瘦 projection/recent refresh 把刚出现的最终回复覆盖掉。PWA shell cache 升级到 `codex-mobile-shell-v345`。
 - 中文说明：v344 继续修正移动端左下角 Fast 按钮难点中的问题。Fast 按钮真实触控区从 28px 扩到 40px/42px，并补齐 pointer、click、touchend 三路去重兜底；Composer 控件区域继续优先于侧栏边缘手势，避免 Android WebView 和 iPhone 只能点到角落的问题。PWA shell cache 升级到 `codex-mobile-shell-v344`。
 - 中文说明：v343 修正移动端左下角 Fast 按钮难点中的问题。左侧边栏边缘滑动在 Composer 底部区域不再启动，Android 侧边栏手势起点也从 84px 收窄到 44px，避免 Fast 按钮和 Composer 控件被侧栏手势抢占；正文和列表左缘仍可用手势打开侧栏。PWA shell cache 升级到 `codex-mobile-shell-v343`。
 - 中文说明：v342 修正 Mobile 新建 Workspace 的默认父目录。未显式配置时，Mac 开发/生产仓库会优先使用当前仓库所在的 `HermesMobileDev` 开发根，不再默认落到用户 `Documents`；也可以用 `CODEX_MOBILE_WORKSPACE_DEFAULT_CREATE_ROOT` 指定默认父目录，用 `CODEX_MOBILE_WORKSPACE_CREATE_ROOTS` 限定可选父目录。创建对话框会在有多个允许父目录时显示选择框。PWA shell cache 升级到 `codex-mobile-shell-v342`。

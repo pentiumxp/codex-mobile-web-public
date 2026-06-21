@@ -100,6 +100,9 @@ test("server broadcasts lightweight thread status for background turn notificati
   assert.match(statusPayloadBody, /method !== "turn\/started" && method !== "turn\/completed"/);
   assert.match(statusPayloadBody, /method === "turn\/started"[\s\S]*\{ type: "active" \}/);
   assert.match(statusPayloadBody, /turn\.status \|\| payload\.params\.status \|\| \{ type: "completed" \}/);
+  assert.match(statusPayloadBody, /eventAtMs: threadStatusNotificationEventAtMs\(payload, method\)/);
+  assert.match(functionBody(serverJs, "threadStatusChangedPayload"), /params\.eventAtMs = eventAtMs/);
+  assert.match(functionBody(serverJs, "threadStatusNotificationEventAtMs"), /mobileReplayReceivedAtMs/);
 
   const eventFilterBody = functionBody(serverJs, "shouldSendEventToClient");
   assert.match(eventFilterBody, /payload\.method === "thread\/status\/changed"[\s\S]*return true;/);
@@ -136,7 +139,7 @@ test("server materializes structured task-card drafts from thread detail", () =>
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v344"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v346"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.threadRole \|\| ""\) === "target"\)/);

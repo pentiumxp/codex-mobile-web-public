@@ -6814,8 +6814,13 @@ function threadStatusChangedPayload(threadId, status, meta = {}) {
   };
   const source = String(meta.source || "").trim();
   const turnId = String(meta.turnId || "").trim();
+  const eventAtMs = timestampToMs(meta.eventAtMs || meta.eventAt || meta.timestampMs || meta.timestamp);
   if (source) params.source = source;
   if (turnId) params.turnId = turnId;
+  if (eventAtMs) {
+    params.eventAtMs = eventAtMs;
+    params.eventAt = new Date(eventAtMs).toISOString();
+  }
   return {
     type: "notification",
     method: "thread/status/changed",
@@ -6845,7 +6850,59 @@ function threadStatusChangedPayloadFromTurnNotification(payload) {
   return threadStatusChangedPayload(threadId, status, {
     source: method,
     turnId,
+    eventAtMs: threadStatusNotificationEventAtMs(payload, method),
   });
+}
+
+function threadStatusNotificationEventAtMs(payload, method) {
+  const params = payload && payload.params && typeof payload.params === "object" ? payload.params : {};
+  const turn = params.turn && typeof params.turn === "object" ? params.turn : {};
+  const keys = method === "turn/completed"
+    ? [
+      "completedAtMs",
+      "completedAt",
+      "completed_at_ms",
+      "completed_at",
+      "finishedAt",
+      "finished_at",
+      "updatedAtMs",
+      "updatedAt",
+      "updated_at_ms",
+      "updated_at",
+      "startedAtMs",
+      "startedAt",
+      "started_at_ms",
+      "started_at",
+      "createdAtMs",
+      "createdAt",
+      "created_at_ms",
+      "created_at",
+    ]
+    : [
+      "startedAtMs",
+      "startedAt",
+      "started_at_ms",
+      "started_at",
+      "createdAtMs",
+      "createdAt",
+      "created_at_ms",
+      "created_at",
+      "updatedAtMs",
+      "updatedAt",
+      "updated_at_ms",
+      "updated_at",
+    ];
+  for (const key of keys) {
+    const value = timestampToMs(turn[key]) || timestampToMs(params[key]);
+    if (value) return value;
+  }
+  return timestampToMs(params.eventAtMs)
+    || timestampToMs(params.eventAt)
+    || timestampToMs(params.mobileReplayReceivedAtMs)
+    || timestampToMs(params.receivedAtMs)
+    || timestampToMs(params.timestampMs)
+    || timestampToMs(params.timestamp)
+    || Date.now();
 }
 
 function shouldSendEventToClient(payload, client = {}) {
