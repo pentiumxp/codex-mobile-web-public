@@ -150,6 +150,18 @@ The guard resolves cwd from request params when available and otherwise from
 the thread id. Existing active turns are not retroactively sandboxed; the guard
 applies when the next start/resume request is sent.
 
+The write guard is intentionally scoped to ordinary workspace execution. It
+does not reduce read access. It also preserves the original runtime permission
+profile for trusted maintenance paths: the Codex Mobile source workspace itself,
+the Home AI central control-plane workspace that owns deployment scripts, and
+any cwd explicitly listed in
+`CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS`. Operators can disable
+the write guard in an emergency with
+`CODEX_MOBILE_WORKSPACE_DELEGATION_WRITE_GUARD=0` or
+`CODEX_MOBILE_WORKSPACE_DELEGATION_DISABLE_WRITE_GUARD=1`. These exceptions are
+for self-maintenance and bounded central deployment; ordinary plugin
+workspaces remain constrained and should delegate cross-workspace writes.
+
 `POST /api/threads/:sourceThreadId/workspace-delegation` is retained only as a
 compatibility endpoint for clients that shipped during the v363 experiment. It
 returns `delegated:false`, `disabled:true`, and

@@ -1,5 +1,6 @@
 # Codex Mobile Web
 
+- 中文说明：server-only 给 `跨工作区委派` 的运行时写入守卫增加受控维护豁免。普通插件线程仍会被收敛到当前 cwd 的 `workspace-write`，避免跨工作区直接改文件；但 Codex Mobile 自维护工作区、Home AI 中央控制面工作区、`CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS` 显式 allowlist，以及紧急 `CODEX_MOBILE_WORKSPACE_DELEGATION_WRITE_GUARD=0` / `CODEX_MOBILE_WORKSPACE_DELEGATION_DISABLE_WRITE_GUARD=1` 会保留线程原本权限，保证中心部署脚本和维护线程不会被自己卡住。该守卫只收窄写权限，不负责 MCP/CodeGraph 读审批配置。本次不改变 PWA shell cache。
 - 中文说明：server-only 给 `跨工作区委派` 增加运行时写入守卫。开关开启后，`thread/start`、`thread/resume`、`turn/start` 会把文件写入权限收敛到当前线程 cwd 的 `workspace-write`，并设置 `approvalPolicy=never`，避免模型先跨工作区直接改文件、再补发任务卡。模型仍可读取上下文并调用 `codex_mobile.delegate_to_thread` 发 source-direct 卡；已经在运行的旧 turn 不能 retroactive 改 sandbox，下一次启动/续跑/恢复才生效。本次不改变 PWA shell cache。
 - 中文说明：server-only 收紧 `跨工作区委派` 的模型可见工具说明和审批语义。开关开启后，`codex_mobile.delegate_to_thread` 的描述明确要求：如果用户请求的实现、文件修改、命令、测试、部署或其他状态变更属于另一个工作区/线程，模型必须先调用该工具创建任务卡，不得在当前线程里直接 `cd`、读写、打补丁、运行命令或部署目标工作区。该动态工具路径固定创建 source-direct 卡，不允许模型把自由委派卡发成 Pending；Pending 仍保留给手动/API/MCP 等显式审批路径。仍保持“由模型判断是否跨工作区”，不恢复本地关键词/路径启发式预检。本次不改变 PWA shell cache。
 - 中文说明：v369 修正 Android 折叠屏/嵌入态线程详情右上角运行状态框计时被裁剪的问题。`turn-timer` 不再用固定宽度压缩内部内容，计时段 `本轮 00:00:00` 改为不可收缩并保留完整显示，活动状态文字（思考/命令/输入等）在剩余空间内省略，避免秒个位被遮挡。PWA shell cache 升级到 `codex-mobile-shell-v369`。

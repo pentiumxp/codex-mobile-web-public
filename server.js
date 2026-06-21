@@ -215,6 +215,18 @@ const WORKSPACE_DELEGATION_ENV_DEFAULT = /^(1|true|yes|on)$/i.test(
     || process.env.CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED
     || "",
 );
+const WORKSPACE_DELEGATION_WRITE_GUARD_DISABLED = /^(0|false|no|off)$/i.test(
+  process.env.CODEX_MOBILE_WORKSPACE_DELEGATION_WRITE_GUARD || "",
+) || /^(1|true|yes|on)$/i.test(
+  process.env.CODEX_MOBILE_WORKSPACE_DELEGATION_DISABLE_WRITE_GUARD || "",
+);
+const WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS = process.env.CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS || "";
+const WORKSPACE_DELEGATION_GUARD_SELF_EXEMPTION_DISABLED = /^(1|true|yes|on)$/i.test(
+  process.env.CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_DISABLE_SELF_EXEMPTION || "",
+);
+const WORKSPACE_DELEGATION_GUARD_PLATFORM_EXEMPTION_DISABLED = /^(1|true|yes|on)$/i.test(
+  process.env.CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_DISABLE_PLATFORM_EXEMPTION || "",
+);
 const WORKSPACE_DELEGATION_TOOL_NAMESPACE = "codex_mobile";
 const WORKSPACE_DELEGATION_TOOL_NAME = "delegate_to_thread";
 const WORKSPACE_DELEGATION_TOOL_FULL_NAME = `${WORKSPACE_DELEGATION_TOOL_NAMESPACE}.${WORKSPACE_DELEGATION_TOOL_NAME}`;
@@ -4572,6 +4584,72 @@ function workspaceDelegationWriteGuardSandboxPolicy(cwd, inheritedPolicy) {
   return policy;
 }
 
+function workspaceDelegationGuardPathCandidates(cwd) {
+  const raw = String(cwd || "").trim();
+  if (!raw) return [];
+  const candidates = [raw];
+  try {
+    const real = fs.realpathSync.native ? fs.realpathSync.native(raw) : fs.realpathSync(raw);
+    if (real && real !== raw) candidates.push(real);
+  } catch (_) {
+    // Keep the raw cwd candidate when the path is not currently readable.
+  }
+  return candidates;
+}
+
+function workspaceDelegationGuardNormalizedPathSet(cwd) {
+  return new Set(workspaceDelegationGuardPathCandidates(cwd).map((entry) => normalizeFsPath(entry)).filter(Boolean));
+}
+
+function workspaceDelegationGuardExemptCwds() {
+  const separator = process.platform === "win32" ? /[;\n\r]+/ : /[:;\n\r]+/;
+  return new Set(String(WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS || "")
+    .split(separator)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .flatMap((entry) => Array.from(workspaceDelegationGuardNormalizedPathSet(entry))));
+}
+
+function workspaceDelegationGuardHasFile(cwd, ...parts) {
+  try {
+    return fs.existsSync(path.join(cwd, ...parts));
+  } catch (_) {
+    return false;
+  }
+}
+
+function workspaceDelegationGuardPackageName(cwd) {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(cwd, "package.json"), "utf8"));
+    return String(pkg && pkg.name || "").trim();
+  } catch (_) {
+    return "";
+  }
+}
+
+function isCodexMobileMaintenanceCwd(cwd) {
+  if (WORKSPACE_DELEGATION_GUARD_SELF_EXEMPTION_DISABLED) return false;
+  return workspaceDelegationGuardPackageName(cwd) === "codex-mobile-web"
+    && workspaceDelegationGuardHasFile(cwd, "server.js");
+}
+
+function isHomeAiControlPlaneCwd(cwd) {
+  if (WORKSPACE_DELEGATION_GUARD_PLATFORM_EXEMPTION_DISABLED) return false;
+  return workspaceDelegationGuardHasFile(cwd, "scripts", "ai-ops-control-plane.js")
+    && workspaceDelegationGuardHasFile(cwd, "scripts", "deploy-macos-production.js")
+    && workspaceDelegationGuardHasFile(cwd, "docs", "PLATFORM_CONTRACTS", "plugin-workspace-platform-contract.md");
+}
+
+function workspaceDelegationGuardExemptCwd(cwd) {
+  const normalizedCandidates = workspaceDelegationGuardNormalizedPathSet(cwd);
+  if (!normalizedCandidates.size) return false;
+  const explicitExemptCwds = workspaceDelegationGuardExemptCwds();
+  for (const candidate of normalizedCandidates) {
+    if (explicitExemptCwds.has(candidate)) return true;
+  }
+  return isCodexMobileMaintenanceCwd(cwd) || isHomeAiControlPlaneCwd(cwd);
+}
+
 function runtimeCwdForParams(params) {
   const explicitCwd = String(params && params.cwd || "").trim();
   if (explicitCwd) return explicitCwd;
@@ -4584,9 +4662,11 @@ function runtimeCwdForParams(params) {
 function applyWorkspaceDelegationRuntimeGuard(params, settings, options = {}) {
   if (!params || typeof params !== "object") return params;
   if (!workspaceDelegationPublicSettings().enabled) return params;
+  if (WORKSPACE_DELEGATION_WRITE_GUARD_DISABLED) return params;
   const cwd = runtimeCwdForParams(params);
   if (!cwd) return params;
   params.cwd = cwd;
+  if (workspaceDelegationGuardExemptCwd(cwd)) return params;
   const policy = workspaceDelegationWriteGuardSandboxPolicy(cwd, settings && settings.sandboxPolicy);
   params.approvalPolicy = "never";
   delete params.permissionProfile;

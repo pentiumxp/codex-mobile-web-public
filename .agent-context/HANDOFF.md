@@ -2,6 +2,55 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-21 Workspace Delegation Write Guard Maintenance Exemption
+
+- Status: patched and locally validated; not deployed in this restricted
+  session.
+- Trigger:
+  - User confirmed the hard write guard correctly blocked an Android workspace
+    thread from writing Home AI app files, but this also risked constraining
+    trusted maintenance/deployment threads.
+  - User asked to quickly open a controlled backdoor for Codex Mobile itself
+    and to fix CodeGraph MCP approval prompts.
+- Change:
+  - `applyWorkspaceDelegationRuntimeGuard()` now preserves the original runtime
+    permission profile before narrowing permissions when any of these conditions
+    match:
+    - emergency env disables the guard:
+      `CODEX_MOBILE_WORKSPACE_DELEGATION_WRITE_GUARD=0` or
+      `CODEX_MOBILE_WORKSPACE_DELEGATION_DISABLE_WRITE_GUARD=1`;
+    - cwd is listed in
+      `CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS`;
+    - cwd is the Codex Mobile source workspace (`package.json` name
+      `codex-mobile-web` plus `server.js`);
+    - cwd is the Home AI central control-plane workspace with
+      `scripts/ai-ops-control-plane.js`,
+      `scripts/deploy-macos-production.js`, and the central platform contract.
+  - The ordinary plugin-workspace path remains guarded: with workspace
+    delegation enabled, non-exempt threads still get current-cwd
+    `workspace-write` and `approvalPolicy:"never"`.
+  - Docs were updated to clarify that this guard narrows write permissions only
+    and is not responsible for MCP/CodeGraph read approval settings.
+- Validation:
+  - Passed: `node --check server.js`.
+  - Passed: `node --check test/new-thread-route.test.js`.
+  - Passed:
+    `node --test test/new-thread-route.test.js test/thread-task-card-route.test.js`
+    (26/26).
+  - Passed: `npm run check`.
+  - Passed: `git diff --check`.
+  - Passed center guard:
+    `node tests/architecture-code-test-harness-map.test.js`.
+- MCP/CodeGraph note:
+  - Current CodeGraph approval prompt is caused by user-level Codex config:
+    `/Users/xuxin/.codex-homes/previous/config.toml` contains
+    `[mcp_servers.codegraph.tools.codegraph_explore] approval_mode = "approve"`.
+  - This session could read that file but could not edit it because the active
+    filesystem sandbox only allows writes under the Codex Mobile workspace and
+    `/tmp`; an attempted in-place edit failed with `Operation not permitted`.
+  - Change that value to `"never"` from a full-access session to stop the
+    CodeGraph approval prompt.
+
 ## 2026-06-21 Workspace Delegation Tool Boundary Tightening
 
 - Status: follow-up patched and tested; deployment/commit may follow in the

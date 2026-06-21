@@ -160,11 +160,37 @@ test("server runtime inheritance includes model and reasoning effort", () => {
 
   const guardBody = functionBody(serverJs, "applyWorkspaceDelegationRuntimeGuard");
   assert.match(guardBody, /workspaceDelegationPublicSettings\(\)\.enabled/, "write guard should only run when workspace delegation is enabled");
+  assert.match(guardBody, /WORKSPACE_DELEGATION_WRITE_GUARD_DISABLED/, "write guard should have an emergency server-side disable gate");
   assert.match(guardBody, /runtimeCwdForParams\(params\)/, "write guard should resolve cwd from params or thread id");
+  assert.match(guardBody, /workspaceDelegationGuardExemptCwd\(cwd\)/, "write guard should preserve trusted maintenance/deploy permissions");
+  assert.ok(
+    guardBody.indexOf("workspaceDelegationGuardExemptCwd(cwd)") < guardBody.indexOf('params.approvalPolicy = "never";'),
+    "maintenance/deploy exemptions must run before permission narrowing",
+  );
   assert.match(guardBody, /params\.approvalPolicy = "never"/, "write guard should prevent approval bypass for cross-workspace writes");
   assert.match(guardBody, /delete params\.permissionProfile/, "write guard should remove full-access permission profiles");
   assert.match(guardBody, /params\.sandboxPolicy = policy/, "turn/start should receive structured workspace-write sandbox policy");
   assert.match(guardBody, /params\.sandbox = "workspace-write"/, "thread/start and thread/resume should receive workspace-write sandbox mode");
+
+  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_WRITE_GUARD/, "server should expose an emergency write-guard disable env");
+  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_DISABLE_WRITE_GUARD/, "server should expose a positive emergency write-guard disable env");
+  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS/, "server should expose explicit cwd allowlist env");
+  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_DISABLE_SELF_EXEMPTION/, "self-maintenance exemption should be explicitly disableable");
+  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_DISABLE_PLATFORM_EXEMPTION/, "platform-control exemption should be explicitly disableable");
+
+  const exemptBody = functionBody(serverJs, "workspaceDelegationGuardExemptCwd");
+  assert.match(exemptBody, /workspaceDelegationGuardExemptCwds\(\)/, "exemption should honor explicit cwd allowlist");
+  assert.match(exemptBody, /isCodexMobileMaintenanceCwd\(cwd\)/, "exemption should preserve Codex Mobile self-maintenance permissions");
+  assert.match(exemptBody, /isHomeAiControlPlaneCwd\(cwd\)/, "exemption should preserve Home AI central deploy/control-plane permissions");
+
+  const selfBody = functionBody(serverJs, "isCodexMobileMaintenanceCwd");
+  assert.match(selfBody, /workspaceDelegationGuardPackageName\(cwd\) === "codex-mobile-web"/, "self-maintenance should be limited to the Codex Mobile package");
+  assert.match(selfBody, /workspaceDelegationGuardHasFile\(cwd, "server\.js"\)/, "self-maintenance should require the server entrypoint");
+
+  const platformBody = functionBody(serverJs, "isHomeAiControlPlaneCwd");
+  assert.match(platformBody, /scripts", "ai-ops-control-plane\.js"/, "platform exemption should require the central intake script");
+  assert.match(platformBody, /scripts", "deploy-macos-production\.js"/, "platform exemption should require the central deploy script");
+  assert.match(platformBody, /docs", "PLATFORM_CONTRACTS", "plugin-workspace-platform-contract\.md"/, "platform exemption should require central platform contracts");
 
   const cwdBody = functionBody(serverJs, "runtimeCwdForParams");
   assert.match(cwdBody, /params && params\.cwd/, "cwd resolver should prefer explicit cwd");
