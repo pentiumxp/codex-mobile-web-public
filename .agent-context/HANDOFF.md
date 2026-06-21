@@ -2,6 +2,58 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-21 Android Fold Turn Timer Layout v369
+
+- Status: patched, tested, deployed to Mac production, and pending source
+  commit at time of writing.
+- Trigger:
+  - User reported that on an Android Fold 7, the thread-detail top-right status
+    pill clipped the elapsed timer: around `00:00:20` only `00:00:2` was
+    visible.
+  - User clarified that status labels such as `思考` / `命令` / `输入` were not
+    right-aligned; they sat closer to the middle, while the timer digits were
+    the content being hidden.
+- Finding:
+  - The root cause was CSS-local: `.turn-timer-time` used a fixed
+    `flex: 0 0 104px` and `overflow: hidden`.
+  - On Android Fold / embedded viewport with larger rendered glyph metrics,
+    `本轮 00:00:20` can exceed 104px, so the final second digit is clipped
+    even though the app's timer text is correct.
+- Change:
+  - Advanced `CLIENT_BUILD_ID` and service worker cache to
+    `codex-mobile-shell-v369`.
+  - `.turn-timer` now uses `width: auto` with a bounded `max-width`.
+  - `.turn-timer.visible` uses `inline-flex`.
+  - `.turn-timer-time` is `flex: 0 0 auto`, has `min-width: 12.75em`, and
+    uses `overflow: visible`.
+  - `.turn-timer-detail` is the shrinkable/ellipsis segment, so activity text
+    can shorten before elapsed digits are lost.
+  - README includes a Chinese v369 release note.
+- Validation:
+  - Passed:
+    `node --test test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (22/22).
+  - Passed:
+    `node --check public/app.js && node --check public/sw.js && node --check test/mobile-viewport.test.js`.
+  - Passed: `npm run check`.
+  - Passed: `git diff --check`.
+  - Passed center guard:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - Browser plugin `iab` was unavailable and local Playwright was not installed,
+    so no browser screenshot artifact was produced in this turn. The regression
+    is covered by CSS assertions in `test/mobile-viewport.test.js`.
+- Production deploy:
+  - Deployed with central Mac deploy script using `--restart none`; no Listener
+    restart labels were returned.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260621T144649Z-plugin-codex-mobile-web-codex-mobile-v369-fold-timer-layout`.
+  - `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v369` and
+    `shellCacheName=codex-mobile-shell-v369`.
+  - Production readback confirmed v369 in `public/app.js` / `public/sw.js` and
+    the updated `.turn-timer` / `.turn-timer-time` rules in
+    `public/styles.css`.
+
 ## 2026-06-21 Android Composer IME Focus Stabilization v368
 
 - Status: patched, tested, and deployed to Mac production with no Listener
