@@ -2,6 +2,93 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-21 Home AI Embedded Split Back Button v351
+
+- Status: implemented, focused-tested, production DOM-smoked, and static-only
+  deployed to Mac production. The 8787 Listener was not restarted.
+- Trigger:
+  - The previous v349 fix targeted Codex Mobile's own wide sidebar. The user
+    clarified that the missing return arrow was actually in Home AI host
+    embedded split-pane mode, where the plugin iframe is placed to the right of
+    a Home AI split area.
+- Change:
+  - `public/app.js`: advanced client build id to
+    `codex-mobile-shell-v351`.
+  - `public/app.js`: `hermes.plugin.viewport` now preserves bounded iframe and
+    host rects and resyncs thread-detail layout when host viewport messages
+    arrive.
+  - `public/app.js`: embedded mode uses Home AI iframe/host geometry to decide
+    whether a split-pane return arrow should show; standalone/PWA mode still
+    uses Codex Mobile's own sidebar geometry.
+  - `public/app.js` and `public/styles.css`: the same
+    `split-return-visible` button state remains the only display override, so
+    embedded non-split detail pages keep the standalone menu button hidden.
+  - `public/sw.js`, README, and shell-version tests advanced to v351. The
+    already-present v350 Android IME composer stability change is included in
+    the current working tree and production static sync.
+- Validation:
+  - Passed:
+    `node --check public/app.js`, `node --check public/sw.js`, and
+    `git diff --check`.
+  - Passed:
+    `node --test test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js test/app-update.test.js test/build-refresh-policy.test.js test/new-thread-ui.test.js`.
+  - Passed: `npm run check`.
+  - Passed center required check:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - Development DOM smoke on `http://127.0.0.1:8792` showed embedded split
+    viewport with button text `←`, `split-return-visible`, and `display=grid`;
+    clicking it cleared the current thread without opening the sidebar. The
+    embedded non-split viewport kept the button hidden.
+  - Production readback returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v351` and
+    `shellCacheName=codex-mobile-shell-v351`.
+  - Production DOM smoke on `http://127.0.0.1:8787` showed the same embedded
+    split/non-split behavior with build id
+    `0.1.11|codex-mobile-shell-v351`.
+  - AI Ops evidence ledger record:
+    `evidence-f16b8a5a-88c1-488f-9a60-fa83989435c9`.
+- Production backup:
+  - `/Users/xuxin/.codex-mobile-web/deploy-backups/codex-mobile-web-static/20260621T030600Z-embed-split-back-v351`.
+
+## 2026-06-21 Split-Pane Back Button v349
+
+- Status: implemented, focused-tested, production DOM-smoked, and static-only
+  deployed to Mac production. The 8787 Listener was not restarted.
+- Trigger:
+  - v348 was intended to hide the thread-detail back arrow unless the Codex
+    Mobile left thread-list pane was actually visible, but the real
+    browser/WebView path could still miss the return button when the left pane
+    was present.
+- Change:
+  - `public/app.js`: advanced client build id to
+    `codex-mobile-shell-v349`.
+  - `public/app.js`: split-pane detection now checks the sidebar's actual
+    rect, display/visibility, non-fixed position, and both `none` and identity
+    matrix transforms.
+  - `public/app.js` and `public/styles.css`: the open-menu button now receives
+    an explicit `split-return-visible` class only when a real split return
+    exists. The old thread-detail-wide global display rule was removed.
+  - `public/sw.js`, README, and shell-version tests advanced to v349.
+- Validation:
+  - Passed:
+    `node --check public/app.js && node --check public/sw.js && node --test test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js test/app-update.test.js test/build-refresh-policy.test.js`.
+  - Passed: `npm run check`.
+  - Passed: `git diff --check`.
+  - Passed center required check:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - Production readback returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v349` and
+    `shellCacheName=codex-mobile-shell-v349`.
+  - Production DOM smoke on `http://127.0.0.1:8787` showed width 1366 split
+    pane with sidebar width 520, `position=relative`, button text `←`,
+    `split-return-visible`, and `display=grid`; at width 700 the button
+    reverted to `☰`, had no `split-return-visible`, and the sidebar was fixed
+    off-canvas.
+  - AI Ops evidence ledger record:
+    `evidence-1dd0e598-17aa-4def-b1b1-47a5b90a103c`.
+- Production backup:
+  - `/Users/xuxin/.codex-mobile-web/deploy-backups/codex-mobile-web-static/20260621T024059Z-split-back-button-v349`.
+
 ## 2026-06-20 Fast Button Tap Target v344
 
 - Status: implemented, focused-tested, committed locally, and ready for
@@ -7553,3 +7640,46 @@ The previous full handoff was archived and should be opened only when old proven
   - `node --check public/sw.js`
   - `node --test test/conversation-render.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js test/app-update.test.js test/build-refresh-policy.test.js`
   - `git diff --check`
+- Follow-up correction:
+  - v347 briefly forced the return arrow visible in Home AI embedded detail
+    pages through `html.embed-hermes.thread-detail-active #openMenu`.
+  - This was wrong when the plugin has no visible left split pane. v348 removes
+    that embedded override and uses only the real split-pane sidebar visibility
+    test for the arrow state; Home AI embedded detail without a plugin left
+    pane keeps `#openMenu` hidden.
+
+## 2026-06-21 Android IME Composer Connection v350
+
+- Status: implemented, focused-tested, and already visible in Mac production
+  readback. Do not redeploy/restart Codex Mobile just to recollect deployment
+  output, because restarting the plugin disconnects active users.
+- User-visible issue:
+  - In Android WebView/Chrome with Doubao or similar Chinese IMEs, the Codex
+    composer could appear focused but stop accepting input until the user
+    switched away and back.
+- Root cause:
+  - The composer uses a `contenteditable` div. The previous input path called
+    `updateComposerControls()` on every `input`, which called
+    `setMessageInputDisabled(false)` and unconditionally rewrote
+    `contentEditable="true"`. Android third-party IMEs can lose their editor
+    connection when a focused contenteditable is rewritten during composition.
+- Fix:
+  - `public/app.js` tracks `state.composerComposing`.
+  - `setMessageInputDisabled()` is now idempotent and avoids rewriting
+    `contentEditable` while IME composition is active and the input is already
+    writable.
+  - `compositionstart` / `compositionend` maintain composing state; Enter does
+    not submit while `state.composerComposing` or `event.isComposing` is true.
+  - Advanced client build/cache to `codex-mobile-shell-v350`.
+  - README documents the v350 behavior.
+- Validation:
+  - `node --check public/app.js`
+  - `node --check public/sw.js`
+  - `node --test test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js test/new-thread-ui.test.js test/plugin-voice-input.test.js`
+  - `npm run check`
+  - `git diff --check`
+- Production readback:
+  - `GET http://127.0.0.1:8787/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v350` and
+    `shellCacheName=codex-mobile-shell-v350`.
+  - User confirmed the Android input issue was resolved.

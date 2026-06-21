@@ -1,5 +1,8 @@
 # Codex Mobile Web
 
+- 中文说明：v351 修正 Home AI 嵌入态左右分屏下线程详情返回箭头的判定来源。嵌入态不再用 Codex Mobile 自己的线程列表 sidebar 判断，而是使用 Home AI 发送的 `hermes.plugin.viewport` 里的 iframe/host rect：只有 iframe 明确处在宿主右侧分屏区域时才显示返回箭头；独立版和 Codex 自身分屏行为保持原规则。PWA shell cache 升级到 `codex-mobile-shell-v351`。
+- 中文说明：v350 缓解 Android WebView/Chrome 使用豆包等中文输入法时 Composer 看似有焦点但不上字的问题。主输入框仍保持 `contenteditable`，但 disabled 状态更新改为幂等，输入法组词期间不再反复重写 `contentEditable`，并且 composing 状态下 Enter 不触发发送，避免第三方 IME 的 editor connection 被打断。PWA shell cache 升级到 `codex-mobile-shell-v350`。
+- 中文说明：v349 修复 v348 在真实浏览器/WebView 中宽屏线程详情返回箭头仍可能不显示的问题。分屏判定现在使用左侧线程列表的实际尺寸、position、visibility 和 identity transform 共同判断，并给返回按钮添加显式 `split-return-visible` 状态；只有实际存在 Codex Mobile 左侧分屏时才显示返回箭头，没有左分屏时仍保持隐藏。PWA shell cache 升级到 `codex-mobile-shell-v349`。
 - 中文说明：v348 修正 v347 在无插件左分屏时也显示返回箭头的问题。返回箭头只在实际检测到 Codex Mobile 自己的左侧线程列表为分屏可见时显示；Home AI 嵌入态没有插件左分屏时继续隐藏左上角按钮。PWA shell cache 升级到 `codex-mobile-shell-v348`。
 - 中文说明：v347 修复 Home AI 嵌入态线程详情左上角返回箭头被旧 `embed-hermes #openMenu` 隐藏规则压掉的问题。线程详情态会覆盖该隐藏规则并显示返回箭头；主页面仍隐藏该按钮。PWA shell cache 升级到 `codex-mobile-shell-v347`。
 - 中文说明：v346 修复宽屏或横屏分屏下线程详情无法回到线程列表的问题。当左侧线程列表和右侧线程详情同时显示时，左上角会恢复返回箭头，点击后回到线程列表视图；手机窄屏仍保持原来的菜单按钮行为。PWA shell cache 升级到 `codex-mobile-shell-v346`。

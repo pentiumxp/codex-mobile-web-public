@@ -6526,8 +6526,12 @@ html.keyboard-open .composer {
   display: none;
 }
 
-html.thread-detail-active #openMenu.mobile-only {
+#openMenu.split-return-visible {
   display: grid;
+}
+
+html.embed-hermes #openMenu.split-return-visible {
+  display: grid !important;
 }
 
 @media (max-width: 1180px), (pointer: coarse) and (max-width: 1400px) {

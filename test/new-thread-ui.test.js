@@ -72,6 +72,19 @@ test("existing-thread message submission includes selected runtime settings", ()
   assert.match(body, /body\.append\("permissionMode",\s*selectedComposerPermissionMode\(\)\)/);
 });
 
+test("composer input preserves Android IME composition connection", () => {
+  const setter = functionBody("setMessageInputDisabled");
+
+  assert.match(appJs, /composerComposing: false/);
+  assert.match(setter, /const alreadyApplied = currentContentEditable === nextContentEditable/);
+  assert.match(setter, /if \(alreadyApplied\) return;/);
+  assert.match(setter, /const preserveImeConnection = state\.composerComposing && !disabled && currentContentEditable === "true";/);
+  assert.match(setter, /if \(!preserveImeConnection && currentContentEditable !== nextContentEditable\)/);
+  assert.match(appJs, /addEventListener\("compositionstart", \(\) => \{[\s\S]*state\.composerComposing = true;/);
+  assert.match(appJs, /addEventListener\("compositionend", \(event\) => \{[\s\S]*state\.composerComposing = false;/);
+  assert.match(appJs, /if \(state\.composerComposing \|\| event\.isComposing\) return;/);
+});
+
 test("quota display falls back only to a compatible account quota group", () => {
   const body = functionBody("rateLimitsForQuota");
 
