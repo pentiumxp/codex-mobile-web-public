@@ -88,6 +88,26 @@ Last compacted: 2026-06-08T13:27:43.304Z
   - AI Ops evidence ledger record:
     `evidence-ff201934-844d-41e4-b2eb-77b79b0fd8a3`.
 
+## 2026-06-21 Public v354 Release
+
+- Status: pushed to public and merged back into private history.
+- Public commit:
+  - `e72e771 release: 发布 v354 Codex Mobile 修复`
+- Private synchronization:
+  - Merged `public/main` back into private `main` with
+    `d9179f1 merge: 同步 public v354 发布`.
+  - Verified `public/main` is an ancestor of private `main`.
+  - Verified `git diff --stat public/main..main -- ':!.agent-context'` is
+    empty before the private handoff-only follow-up commit.
+- Public validation in a clean temporary public worktree:
+  - `npm ci`
+  - `npm test` (567/567 passed)
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --cached --check`
+- Public CI:
+  - GitHub Actions run `27892879113` completed successfully.
+
 ## 2026-06-21 Public v353 Release
 
 - Status: pushed to public and merged back into private history.
