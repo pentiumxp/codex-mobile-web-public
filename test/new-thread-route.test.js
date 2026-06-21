@@ -145,9 +145,11 @@ test("server runtime inheritance includes model and reasoning effort", () => {
   assert.match(settingsBody, /model,\s*reasoningEffort,/, "runtime settings response should expose inherited model and effort");
 
   const startBody = functionBody(serverJs, "applyStartThreadRuntimeSettings");
+  assert.match(startBody, /attachWorkspaceDelegationDynamicTools\(params\)/, "thread/start should receive workspace delegation dynamic tools when enabled");
   assert.match(startBody, /if \(settings\.model\) params\.model = settings\.model;/, "thread/start should inherit model");
 
   const turnBody = functionBody(serverJs, "applyTurnRuntimeSettings");
+  assert.match(turnBody, /attachWorkspaceDelegationDynamicTools\(params\)/, "turn/start should receive workspace delegation dynamic tools when enabled");
   assert.match(turnBody, /if \(settings\.model\) params\.model = settings\.model;/, "turn/start should inherit model");
   assert.match(turnBody, /if \(settings\.reasoningEffort\) params\.effort = settings\.reasoningEffort;/, "turn/start should inherit reasoning effort");
 });

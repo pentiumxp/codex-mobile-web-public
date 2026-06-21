@@ -29,6 +29,7 @@ layout and test strategy.
   - fallback `thread/turns/list` detail mode must still run task-card draft
     materialization before attaching visible cards
   - source-thread direct task-card route for model/tool initiated delegation
+  - app-server dynamic tool injection for Codex-thread initiated delegation
   - disabled compatibility route for the removed local cross-workspace
     delegation preflight
   - SSE/broadcast integration only
@@ -107,6 +108,24 @@ for Chinese or long Markdown payloads. The script can request direct
 auto-approval, but the server only honors that request when the runtime
 `跨工作区委派` switch is enabled.
 
+When the runtime `跨工作区委派` switch is enabled, server-side `thread/start` and
+`turn/start` requests also receive a Codex app-server dynamic tool:
+
+```text
+codex_mobile.delegate_to_thread
+```
+
+This is the model-visible path for running Codex turns. It is not MCP. The
+model decides from the current request whether cross-workspace delegation is
+needed, calls the tool with an exact target thread id/title or exact target
+workspace cwd, and the server converts the tool call into the same
+`createThreadTaskCardsFromSourceThread()` path used by
+`POST /api/threads/:sourceThreadId/task-cards`. The tool returns bounded JSON
+text containing card ids, target thread ids, and whether source-direct approval
+was used. If the switch is off, the tool is not injected. If the tool is called
+without a target or source thread id cannot be inferred, the server returns a
+bounded error to the model instead of hanging the turn.
+
 `POST /api/threads/:sourceThreadId/workspace-delegation` is retained only as a
 compatibility endpoint for clients that shipped during the v363 experiment. It
 returns `delegated:false`, `disabled:true`, and
@@ -117,6 +136,7 @@ The v363 local heuristic was removed because directory names and thread titles
 are not reliable enough to decide target workspaces. New cross-workspace
 delegation must be model/tool explicit through `POST
 /api/threads/:sourceThreadId/task-cards`, `scripts/create-thread-task-card.js`,
+the `codex_mobile.delegate_to_thread` app-server dynamic tool,
 or structured model output that is materialized by the existing task-card
 draft flow.
 

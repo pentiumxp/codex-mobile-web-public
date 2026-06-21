@@ -12,7 +12,10 @@ const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "style
 const createThreadTaskCardScript = fs.readFileSync(path.resolve(__dirname, "..", "scripts", "create-thread-task-card.js"), "utf8");
 
 function functionBody(source, name) {
-  const start = source.indexOf(`function ${name}(`);
+  let start = source.indexOf(`function ${name}(`);
+  if (start < 0) start = source.indexOf(`async function ${name}(`);
+  if (start < 0) start = source.indexOf(`\n  ${name}(`);
+  if (start < 0) start = source.indexOf(`\n  async ${name}(`);
   assert.notEqual(start, -1, `missing function ${name}`);
   const bodyStart = source.indexOf(") {", start) + 2;
   assert.notEqual(bodyStart, 1, `missing function body ${name}`);
@@ -64,9 +67,14 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.doesNotMatch(serverJs, /buildWorkspaceDelegationTaskCardPayload\(/);
   assert.match(serverJs, /const RUNTIME_SETTINGS_FILE =/);
   assert.match(serverJs, /const WORKSPACE_DELEGATION_ENV_DEFAULT =/);
+  assert.match(serverJs, /const WORKSPACE_DELEGATION_TOOL_NAMESPACE = "codex_mobile"/);
+  assert.match(serverJs, /const WORKSPACE_DELEGATION_TOOL_NAME = "delegate_to_thread"/);
   assert.match(serverJs, /CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION/);
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED/);
   assert.match(serverJs, /function workspaceDelegationPublicSettings\(/);
+  assert.match(serverJs, /function workspaceDelegationDynamicToolSpec\(/);
+  assert.match(serverJs, /function attachWorkspaceDelegationDynamicTools\(/);
+  assert.match(serverJs, /function dynamicToolServerRequestResponsePayload\(/);
   assert.match(serverJs, /function setWorkspaceDelegationEnabled\(/);
   assert.match(serverJs, /url\.pathname === "\/api\/settings\/workspace-delegation"/);
   assert.match(serverJs, /function buildThreadTaskCardCreatePayload\(/);
@@ -74,6 +82,14 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(serverJs, /function resolvedThreadTaskCardTargetIds\(/);
   assert.match(functionBody(serverJs, "createThreadTaskCardsFromSourceThread"), /workspaceDelegationPublicSettings\(\)/);
   assert.match(functionBody(serverJs, "createThreadTaskCardsFromSourceThread"), /workspaceDelegation\.enabled[\s\S]*body\.autoApprove !== false[\s\S]*body\.direct !== false[\s\S]*body\.pending !== true/);
+  assert.match(functionBody(serverJs, "applyStartThreadRuntimeSettings"), /attachWorkspaceDelegationDynamicTools\(params\)/);
+  assert.match(functionBody(serverJs, "applyTurnRuntimeSettings"), /attachWorkspaceDelegationDynamicTools\(params\)/);
+  assert.match(functionBody(serverJs, "handleServerRequest"), /msg\.method === "item\/tool\/call"[\s\S]*answerDynamicToolServerRequest\(request\)/);
+  assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /createThreadTaskCardsFromSourceThread\(body\.sourceThreadId, body\)/);
+  assert.match(functionBody(serverJs, "threadTaskCardTargetReferences"), /targetWorkspace/);
+  assert.match(functionBody(serverJs, "threadTaskCardTargetReferences"), /targetCwd/);
+  assert.match(functionBody(serverJs, "resolveThreadTaskCardTargetReference"), /normalizeFsPath\(thread\.cwd \|\| ""\)/);
+  assert.match(serverJs, /"item\/tool\/call"/);
   assert.match(serverJs, /threadTaskCardService\.approveFromSource\(card\.id, payload\.sourceThreadId\)/);
   assert.match(serverJs, /direct: autoApprove/);
   assert.match(serverJs, /workspaceDelegationEnabled: workspaceDelegation\.enabled/);
@@ -81,7 +97,7 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(createThreadTaskCardScript, /\/api\/threads\/\$\{encodeURIComponent\(sourceThreadId\)\}\/task-cards/);
   assert.match(createThreadTaskCardScript, /CODEX_MOBILE_KEY_FILE/);
   assert.match(createThreadTaskCardScript, /--pending/);
-  assert.match(createThreadTaskCardScript, /CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1/);
+  assert.match(createThreadTaskCardScript, /Settings -> 跨工作区委派/);
 });
 
 test("thread task card routes preserve service status codes", () => {

@@ -1,5 +1,6 @@
 # Codex Mobile Web
 
+- 中文说明：server-only 给已开启 `跨工作区委派` 的 Codex 线程注入 app-server dynamic tool `codex_mobile.delegate_to_thread`。模型在判断当前请求需要另一个工作区/线程处理时，可以显式调用这个工具，服务端复用 `/api/threads/:sourceThreadId/task-cards` 创建任务卡；开关关闭时完全不注入。这个能力不是 MCP，MCP 仍只用于 ChatGPT Pro 等外部客户端。本次不改变 PWA shell cache。
 - 中文说明：v366 把跨工作区模型/工具委派开关补到设置面板里。入口是左侧菜单齿轮 -> `跨工作区委派`，默认关闭；切换会写入运行时 `settings.json` 并立即生效，无需修改环境变量或重启。关闭时 `/api/threads/:sourceThreadId/task-cards` 只创建 pending 任务卡；开启后模型/工具显式发卡才允许源线程直批并启动目标线程。普通发送前本地关键词/目录名预检仍保持关闭。PWA shell cache 升级到 `codex-mobile-shell-v366`。
 - 中文说明：v365 为跨工作区模型/工具委派增加服务端开关，默认关闭。只有设置 `CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1`（或兼容别名 `CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED=1`）后，`/api/threads/:sourceThreadId/task-cards` 才会执行源线程直批并启动目标线程；默认关闭时同一路径只创建 pending 任务卡，需要目标线程审批。普通发送前本地关键词/目录名预检仍保持关闭。PWA shell cache 升级到 `codex-mobile-shell-v365`。
 - 中文说明：v364 禁用 v363 普通发送前的本地跨工作区启发式委派。`/api/threads/:sourceThreadId/workspace-delegation` 保留为兼容接口但只返回禁用/未委派状态，不会再根据目录名、线程标题或关键词自动发卡；跨工作区任务必须由模型输出结构化任务卡，或由线程/工具显式调用 `/api/threads/:sourceThreadId/task-cards` / `scripts/create-thread-task-card.js`。PWA shell cache 升级到 `codex-mobile-shell-v364`。
@@ -376,6 +377,14 @@ stored in `settings.json`; `CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1` remains
 only a startup/default fallback. With the default configuration it creates a
 normal pending target card. Passing `pending:true` or `autoApprove:false` also
 forces pending behavior even when the switch is on.
+
+When the same runtime switch is enabled, Codex Mobile also injects the
+app-server dynamic tool `codex_mobile.delegate_to_thread` into `thread/start`
+and `turn/start`. This is the model-visible path for ordinary Codex turns: the
+model decides whether a request needs another workspace/thread, calls the tool
+with an exact target thread id/title or exact target cwd, and the server creates
+the task card through the same source-thread route. This path is not MCP; the
+ChatGPT Pro MCP connector remains the external-client integration.
 
 Local thread-callable wrapper:
 

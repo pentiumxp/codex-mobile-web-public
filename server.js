@@ -213,6 +213,9 @@ const WORKSPACE_DELEGATION_ENV_DEFAULT = /^(1|true|yes|on)$/i.test(
     || process.env.CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED
     || "",
 );
+const WORKSPACE_DELEGATION_TOOL_NAMESPACE = "codex_mobile";
+const WORKSPACE_DELEGATION_TOOL_NAME = "delegate_to_thread";
+const WORKSPACE_DELEGATION_TOOL_FULL_NAME = `${WORKSPACE_DELEGATION_TOOL_NAMESPACE}.${WORKSPACE_DELEGATION_TOOL_NAME}`;
 const THREAD_SIDE_CHAT_SCOPE_ID = CODEX_HOME_RESOLUTION.activeProfileId
   || `codex-home-${crypto.createHash("sha256").update(CODEX_HOME).digest("hex").slice(0, 16)}`;
 const THREAD_SIDE_CHAT_REPLY_TIMEOUT_MS = Math.max(
@@ -951,6 +954,7 @@ let clientHeartbeats = new WeakMap();
 let latestLiveRateLimits = null;
 let latestLiveRateLimitsSource = null;
 let latestSnapshotRateLimits = null;
+let workspaceDelegationTargetHintsCache = { text: "", cachedAt: 0 };
 const latestLiveRateLimitsByModel = new Map();
 const latestSnapshotRateLimitsByModel = new Map();
 let lastRolloutRateLimitScanAt = 0;
@@ -959,6 +963,7 @@ const latestRuntimeContextByPath = new Map();
 const latestItemTimestampsByPath = new Map();
 const latestTurnUsageSummariesByPath = new Map();
 const latestToolOutputImagesByPath = new Map();
+const latestThreadIdByTurnId = new Map();
 const recentStartedThreads = new Map();
 const threadDisplaySummaryCache = createThreadDisplaySummaryCache({
   ttlMs: THREAD_DISPLAY_SUMMARY_CACHE_TTL_MS,
@@ -979,6 +984,7 @@ const SERVER_REQUEST_METHODS = new Set([
   "item/fileChange/requestApproval",
   "item/permissions/requestApproval",
   "item/tool/requestUserInput",
+  "item/tool/call",
   "mcpServer/elicitation/request",
   "account/chatgptAuthTokens/refresh",
   "execCommandApproval",
@@ -4550,6 +4556,7 @@ function applyResumeRuntimeSettings(params, settings) {
 }
 
 function applyStartThreadRuntimeSettings(params, settings) {
+  attachWorkspaceDelegationDynamicTools(params);
   if (!settings) return params;
   if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
   if (settings.permissionProfile) params.permissionProfile = settings.permissionProfile;
@@ -4563,6 +4570,7 @@ function applyStartThreadRuntimeSettings(params, settings) {
 }
 
 function applyTurnRuntimeSettings(params, settings) {
+  attachWorkspaceDelegationDynamicTools(params);
   if (!settings) return params;
   if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
   if (settings.sandboxPolicy) params.sandboxPolicy = settings.sandboxPolicy;
@@ -5803,11 +5811,160 @@ function workspaceDelegationPublicSettings(settings = readRuntimeSettings()) {
     enabled,
     mode: enabled ? "model_driven_explicit_task_card" : "off",
     directTaskCardAutoApproval: enabled,
+    dynamicTool: enabled ? WORKSPACE_DELEGATION_TOOL_FULL_NAME : "",
+    dynamicToolEnabled: enabled,
     ordinarySendPreflight: false,
     localHeuristics: false,
     source: hasRuntimeValue ? "runtime" : WORKSPACE_DELEGATION_ENV_DEFAULT ? "environment" : "default",
     updatedAt: String(raw.updatedAt || ""),
   };
+}
+
+function truncateToolDescriptionText(value, maxChars = 220) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text || text.length <= maxChars) return text;
+  return `${text.slice(0, Math.max(1, maxChars - 3)).trimEnd()}...`;
+}
+
+function workspaceDelegationTargetHints() {
+  const now = Date.now();
+  if (workspaceDelegationTargetHintsCache && now - Number(workspaceDelegationTargetHintsCache.cachedAt || 0) < 15_000) {
+    return workspaceDelegationTargetHintsCache.text || "";
+  }
+  try {
+    const threads = readThreadListFallback(80, { archived: false });
+    const lines = [];
+    for (const thread of threads) {
+      if (!thread || lines.length >= 24) break;
+      const id = truncateToolDescriptionText(thread.id || "", 80);
+      const title = truncateToolDescriptionText(threadDisplayTitle(thread), 80);
+      const cwd = truncateToolDescriptionText(thread.cwd || "", 160);
+      if (!id) continue;
+      lines.push(`- ${title || id} | id: ${id}${cwd ? ` | cwd: ${cwd}` : ""}`);
+    }
+    const text = lines.join("\n");
+    workspaceDelegationTargetHintsCache = { text, cachedAt: now };
+    return text;
+  } catch (_) {
+    workspaceDelegationTargetHintsCache = { text: "", cachedAt: now };
+    return "";
+  }
+}
+
+function workspaceDelegationDynamicToolSpec() {
+  const targetHints = workspaceDelegationTargetHints();
+  return {
+    namespace: WORKSPACE_DELEGATION_TOOL_NAMESPACE,
+    name: WORKSPACE_DELEGATION_TOOL_NAME,
+    description: [
+      "Create a Codex Mobile cross-thread task card when the current user request requires work in another Codex thread or workspace.",
+      "Use this instead of directly editing or operating outside the current workspace. Do not use it for ordinary discussion, read-only references, or work that belongs in the current thread.",
+      "Prefer an exact targetThreadId. If only a target is named, pass an exact visible targetThreadTitle or targetWorkspace/cwd from the hints.",
+      targetHints ? `Visible target hints:\n${targetHints}` : "",
+    ].filter(Boolean).join("\n\n"),
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        sourceThreadId: {
+          type: "string",
+          description: "Current source thread id when known. Usually the server can infer this from turnId.",
+        },
+        targetThreadId: {
+          type: "string",
+          description: "Exact target Codex thread id. Preferred when known.",
+        },
+        targetThreadIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "One or more exact target Codex thread ids.",
+        },
+        targetThreadTitle: {
+          type: "string",
+          description: "Exact visible target thread title when id is not known.",
+        },
+        targetThreadTitles: {
+          type: "array",
+          items: { type: "string" },
+          description: "Exact visible target thread titles.",
+        },
+        targetWorkspace: {
+          type: "string",
+          description: "Exact target workspace cwd/path when title/id is not known.",
+        },
+        targetCwd: {
+          type: "string",
+          description: "Exact target workspace cwd/path.",
+        },
+        title: {
+          type: "string",
+          description: "Short task-card title.",
+        },
+        summary: {
+          type: "string",
+          description: "One-line bounded task summary.",
+        },
+        body: {
+          type: "string",
+          description: "Full Markdown task body for the target thread.",
+        },
+        bodyMarkdown: {
+          type: "string",
+          description: "Alias for body.",
+        },
+        workflowMode: {
+          type: "string",
+          enum: ["manual", "autonomous"],
+          description: "Task-card workflow mode. Default is manual.",
+        },
+        requestId: {
+          type: "string",
+          description: "Optional stable idempotency seed for this tool call.",
+        },
+        pending: {
+          type: "boolean",
+          description: "Set true to force target-side approval even when source-direct delegation is enabled.",
+        },
+      },
+      required: ["title", "body"],
+    },
+    outputSchema: {
+      type: "object",
+      additionalProperties: true,
+      properties: {
+        ok: { type: "boolean" },
+        cardCount: { type: "integer" },
+        direct: { type: "boolean" },
+      },
+    },
+    exposeToContext: true,
+    deferLoading: false,
+  };
+}
+
+function workspaceDelegationDynamicTools(settings = readRuntimeSettings()) {
+  return workspaceDelegationPublicSettings(settings).enabled
+    ? [workspaceDelegationDynamicToolSpec()]
+    : [];
+}
+
+function attachWorkspaceDelegationDynamicTools(params, settings = readRuntimeSettings()) {
+  if (!params || typeof params !== "object") return params;
+  const tools = workspaceDelegationDynamicTools(settings);
+  if (!tools.length) return params;
+  const existing = Array.isArray(params.dynamicTools)
+    ? params.dynamicTools.filter(Boolean)
+    : params.dynamicTools ? [params.dynamicTools] : [];
+  const seen = new Set(existing.map((tool) => `${tool && tool.namespace || ""}.${tool && tool.name || ""}`));
+  for (const tool of tools) {
+    const key = `${tool.namespace}.${tool.name}`;
+    if (!seen.has(key)) {
+      existing.push(tool);
+      seen.add(key);
+    }
+  }
+  params.dynamicTools = existing;
+  return params;
 }
 
 function setWorkspaceDelegationEnabled(enabled) {
@@ -6076,6 +6233,27 @@ function pushThreadId(params) {
     || threadIdFromRolloutPath(params && params.turn && params.turn.rolloutPath)
     || threadIdFromRolloutPath(params && params.turn && params.turn.rollout_path)
     || "");
+}
+
+function rememberThreadIdForTurnId(threadId, turnId) {
+  const tid = String(turnId || "").trim();
+  const sid = String(threadId || "").trim();
+  if (!tid || !sid) return;
+  latestThreadIdByTurnId.set(tid, sid);
+  while (latestThreadIdByTurnId.size > RUNTIME_CONTEXT_CACHE_MAX) {
+    const firstKey = latestThreadIdByTurnId.keys().next().value;
+    latestThreadIdByTurnId.delete(firstKey);
+  }
+}
+
+function rememberThreadIdForTurnParams(method, params) {
+  if (!params || typeof params !== "object") return;
+  if (method !== "turn/started" && method !== "turn/completed" && method !== "item/started" && method !== "item/completed") return;
+  const turnId = pushTurnId(params)
+    || String(params.turn_id || params.itemTurnId || params.item_turn_id || params.item && (params.item.turnId || params.item.turn_id) || "").trim();
+  const threadId = pushThreadId(params)
+    || String(params.itemThreadId || params.item_thread_id || params.item && (params.item.threadId || params.item.thread_id) || "").trim();
+  rememberThreadIdForTurnId(threadId, turnId);
 }
 
 function pushThreadSummary(threadId) {
@@ -7570,6 +7748,7 @@ class CodexAppServerClient {
       if (msg.method === "serverRequest/resolved" && msg.params && msg.params.requestId != null) {
         this.markServerRequestResolved(msg.params.requestId, "resolved");
       }
+      rememberThreadIdForTurnParams(msg.method, msg.params || null);
       maybeRecordTurnTokenUsage(msg.method, msg.params || null);
       maybeMaterializeThreadTaskCardDrafts(msg.method, msg.params || null);
       maybeAutoReplyThreadTaskCard(msg.method, msg.params || null);
@@ -7596,6 +7775,16 @@ class CodexAppServerClient {
     };
     this.serverRequests.set(key, request);
     broadcast({ type: "serverRequest", request: publicServerRequest(request) });
+    if (msg.method === "item/tool/call") {
+      this.answerDynamicToolServerRequest(request).catch((err) => {
+        request.status = "failed";
+        request.decision = "failed";
+        request.respondedAt = Date.now();
+        console.error(`[dynamic tool] failed request=${shortIdentifier(key)}: ${err.message || String(err)}`);
+        broadcast({ type: "serverRequestResolved", requestId: key, request: publicServerRequest(request) });
+        setTimeout(() => this.serverRequests.delete(key), 15000).unref();
+      });
+    }
   }
 
   markServerRequestResolved(requestId, status = "resolved") {
@@ -7635,6 +7824,30 @@ class CodexAppServerClient {
     this.sendServerRequestResponse(request, payload);
     request.status = "responded";
     request.decision = body.decision || body.action || "submitted";
+    request.respondedAt = Date.now();
+    broadcast({ type: "serverRequestResolved", requestId: key, request: publicServerRequest(request) });
+    setTimeout(() => this.serverRequests.delete(key), 15000).unref();
+    return publicServerRequest(request);
+  }
+
+  async answerDynamicToolServerRequest(request) {
+    const key = String(request && request.id);
+    if (!request) throw new Error("Dynamic tool request is missing");
+    if (request.status !== "waiting") return publicServerRequest(request);
+    let payload;
+    let decision = "submitted";
+    try {
+      payload = await dynamicToolServerRequestResponsePayload(request);
+    } catch (err) {
+      decision = "failed";
+      payload = dynamicToolErrorPayload(
+        "dynamic_tool_failed",
+        err.message || String(err),
+      );
+    }
+    this.sendServerRequestResponse(request, payload);
+    request.status = "responded";
+    request.decision = decision;
     request.respondedAt = Date.now();
     broadcast({ type: "serverRequestResolved", requestId: key, request: publicServerRequest(request) });
     setTimeout(() => this.serverRequests.delete(key), 15000).unref();
@@ -9725,6 +9938,11 @@ function threadTaskCardTargetReferences(body = {}) {
   if (Array.isArray(body.targetThreadRefs)) values.push(...body.targetThreadRefs);
   if (Array.isArray(body.targetThreadTitles)) values.push(...body.targetThreadTitles);
   if (body.targetThreadTitle) values.push(body.targetThreadTitle);
+  if (Array.isArray(body.targetWorkspaces)) values.push(...body.targetWorkspaces);
+  if (body.targetWorkspace) values.push(body.targetWorkspace);
+  if (body.targetWorkspaceId) values.push(body.targetWorkspaceId);
+  if (Array.isArray(body.targetCwds)) values.push(...body.targetCwds);
+  if (body.targetCwd) values.push(body.targetCwd);
   return values.map(threadTaskCardTargetReferenceText).filter(Boolean);
 }
 
@@ -9735,12 +9953,15 @@ function resolveThreadTaskCardTargetReference(value, sourceThreadId = "") {
   const direct = readStateDbThread(raw) || readStartedThread(raw) || readRolloutSessionFallbackThread(raw);
   if (direct && String(direct.id || "") === raw) return raw;
   const lowered = raw.toLowerCase();
+  const rawPath = normalizeFsPath(raw);
   const candidates = readThreadListFallback(500, { archived: false });
   for (const thread of candidates) {
     if (!thread || String(thread.id || "") === String(sourceThreadId || "")) continue;
     const id = String(thread.id || "").trim();
     const title = threadDisplayTitle(thread);
     if (id.toLowerCase() === lowered || String(title || "").trim().toLowerCase() === lowered) return id;
+    const cwd = normalizeFsPath(thread.cwd || "");
+    if (cwd && cwd === rawPath) return id;
   }
   return raw;
 }
@@ -9830,6 +10051,139 @@ async function createThreadTaskCardsFromSourceThread(sourceThreadId, body = {}) 
     cards: publicCards,
     approvals,
   };
+}
+
+function parseDynamicToolArguments(value) {
+  if (!value) return {};
+  if (typeof value === "object" && !Array.isArray(value)) return value;
+  if (typeof value !== "string") return {};
+  const text = value.trim();
+  if (!text) return {};
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function dynamicToolCallIdentity(params = {}) {
+  const namespace = String(params.namespace || params.toolNamespace || params.dynamicToolNamespace || "").trim();
+  const name = String(params.name || params.toolName || params.tool || params.action || "").trim();
+  const fullName = String(params.fullName || params.toolFullName || params.dynamicTool || "").trim();
+  return {
+    namespace,
+    name,
+    fullName: fullName || (namespace && name ? `${namespace}.${name}` : name),
+  };
+}
+
+function isWorkspaceDelegationDynamicToolCall(params = {}, args = {}) {
+  const identity = dynamicToolCallIdentity(params);
+  if (identity.fullName) return identity.fullName === WORKSPACE_DELEGATION_TOOL_FULL_NAME;
+  if (identity.namespace || identity.name) {
+    return identity.namespace === WORKSPACE_DELEGATION_TOOL_NAMESPACE && identity.name === WORKSPACE_DELEGATION_TOOL_NAME;
+  }
+  const references = threadTaskCardTargetReferences(args);
+  return Boolean(references.length && (args.title || args.body || args.bodyMarkdown || args.message));
+}
+
+function dynamicToolTextResponse(text) {
+  return {
+    result: {
+      contentItems: [
+        {
+          type: "inputText",
+          text: String(text || ""),
+        },
+      ],
+    },
+  };
+}
+
+function dynamicToolJsonResponse(payload) {
+  return dynamicToolTextResponse(JSON.stringify(payload, null, 2));
+}
+
+function sourceThreadIdFromDynamicToolCall(params = {}, args = {}) {
+  const fromParams = pushThreadId(params);
+  if (fromParams) return fromParams;
+  const turnId = String((params && (params.turnId || params.turn_id))
+    || (params && params.turn && (params.turn.id || params.turn.turnId || params.turn.turn_id))
+    || "").trim();
+  const inferred = turnId ? String(latestThreadIdByTurnId.get(turnId) || "") : "";
+  if (inferred) return inferred;
+  return String(args.sourceThreadId || args.source_thread_id || "").trim();
+}
+
+function dynamicToolErrorPayload(code, message, extra = {}) {
+  return dynamicToolJsonResponse(Object.assign({
+    ok: false,
+    error: code,
+    message: String(message || code || "dynamic_tool_error"),
+  }, extra));
+}
+
+function workspaceDelegationDynamicToolBody(params = {}, args = {}) {
+  const sourceThreadId = sourceThreadIdFromDynamicToolCall(params, args);
+  const body = Object.assign({}, args);
+  body.sourceThreadId = sourceThreadId;
+  body.sourceTurnId = body.sourceTurnId || body.turnId || params.turnId || params.turn_id || "";
+  body.requestId = body.requestId || body.request_id || params.callId || params.call_id || "";
+  if (!body.body && body.bodyMarkdown) body.body = body.bodyMarkdown;
+  return body;
+}
+
+async function dynamicToolServerRequestResponsePayload(request) {
+  const params = request && request.params && typeof request.params === "object" ? request.params : {};
+  const args = parseDynamicToolArguments(params.arguments || params.input || params.args);
+  if (!isWorkspaceDelegationDynamicToolCall(params, args)) {
+    const identity = dynamicToolCallIdentity(params);
+    return dynamicToolErrorPayload(
+      "unsupported_dynamic_tool",
+      `Unsupported Codex Mobile dynamic tool: ${identity.fullName || identity.name || "unknown"}`,
+    );
+  }
+  const workspaceDelegation = workspaceDelegationPublicSettings();
+  if (!workspaceDelegation.enabled) {
+    return dynamicToolErrorPayload(
+      "workspace_delegation_tool_disabled",
+      "Codex Mobile workspace delegation is disabled in Settings.",
+      { tool: WORKSPACE_DELEGATION_TOOL_FULL_NAME },
+    );
+  }
+  const body = workspaceDelegationDynamicToolBody(params, args);
+  if (!body.sourceThreadId) {
+    return dynamicToolErrorPayload(
+      "source_thread_id_required",
+      "Codex Mobile could not infer the source thread id for this tool call.",
+      { turnId: params.turnId || params.turn_id || "" },
+    );
+  }
+  if (!threadTaskCardTargetReferences(body).length) {
+    return dynamicToolErrorPayload(
+      "target_thread_required",
+      "A target thread id, exact thread title, or exact target workspace cwd is required.",
+    );
+  }
+  if (!String(body.title || "").trim()) {
+    return dynamicToolErrorPayload("task_card_title_required", "Task-card title is required.");
+  }
+  if (!String(body.body || body.bodyMarkdown || body.message || "").trim()) {
+    return dynamicToolErrorPayload("task_card_body_required", "Task-card body is required.");
+  }
+  const result = await createThreadTaskCardsFromSourceThread(body.sourceThreadId, body);
+  return dynamicToolJsonResponse({
+    ok: true,
+    tool: WORKSPACE_DELEGATION_TOOL_FULL_NAME,
+    sourceThreadId: result.sourceThreadId,
+    workspaceDelegationEnabled: result.workspaceDelegationEnabled,
+    direct: result.direct,
+    autoApprove: result.autoApprove,
+    cardCount: Array.isArray(result.cards) ? result.cards.length : result.card ? 1 : 0,
+    cardIds: (result.cards || []).map((card) => card && card.id).filter(Boolean),
+    targetThreadIds: (result.cards || []).map((card) => card && card.target && card.target.threadId).filter(Boolean),
+  });
 }
 
 function parseThreadTaskCardDraftText(value) {
@@ -11513,6 +11867,7 @@ async function handleApi(req, res) {
           timeoutMs: MUTATION_RPC_TIMEOUT_MS,
           retry: false,
         });
+        rememberThreadIdForTurnId(threadId, turnStartResultTurnId(turnResult));
         const startedThread = (startResult && startResult.thread) || (startResult && startResult.data && startResult.data.thread) || {};
         const thread = rememberStartedThread(Object.assign(
           {},
@@ -12243,7 +12598,9 @@ async function handleApi(req, res) {
         if (body.cwd) params.cwd = body.cwd;
         if (requestedModel) params.model = requestedModel;
         if (requestedEffort) params.effort = requestedEffort;
-        return await codex.request("turn/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+        const turnResult = await codex.request("turn/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+        rememberThreadIdForTurnId(threadId, turnStartResultTurnId(turnResult));
+        return turnResult;
       });
       logMessageSubmit("done", {
         threadId,
@@ -12426,4 +12783,7 @@ module.exports = {
   staticCompressionEncoding,
   stripMarkdownFileTarget,
   threadMatchesWorkspaceCwd,
+  workspaceDelegationDynamicToolSpec,
+  attachWorkspaceDelegationDynamicTools,
+  dynamicToolTextResponse,
 };

@@ -2,6 +2,75 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-21 Workspace Delegation Dynamic Tool
+
+- Status: committed, deployed to Mac production, and smoke-tested.
+- Trigger:
+  - User enabled `跨工作区委派` and asked when a running Codex thread would call
+    the task-card tool. The previous v366 switch exposed routes/settings but
+    ordinary Codex turns still had no model-visible callable tool.
+- Decision:
+  - Use Codex app-server dynamic tools for Codex-thread delegation, not MCP.
+    MCP remains the external-client boundary for ChatGPT Pro.
+- Change:
+  - Added dynamic tool constants:
+    `codex_mobile.delegate_to_thread`.
+  - When runtime `workspaceDelegation.enabled` is true, `thread/start` and
+    `turn/start` receive a dynamic tool spec. When the switch is off, no tool is
+    injected.
+  - Added server-side handling for `item/tool/call`. The handler parses tool
+    arguments, infers source thread id from app-server params or a recent
+    turnId-to-threadId map, resolves targets by exact thread id/title/cwd, and
+    calls `createThreadTaskCardsFromSourceThread()`.
+  - Dynamic tool responses return bounded JSON text to the model with `ok`,
+    `cardIds`, `targetThreadIds`, and direct/source-approval status. Errors are
+    returned as bounded tool text so turns do not hang on failed tool calls.
+  - Source thread id inference is server-first; model-provided `sourceThreadId`
+    is only a fallback when app-server metadata cannot identify the source.
+  - Added short TTL caching for target hint text used in the tool description.
+  - Updated README, architecture docs, cross-thread task-card implementation
+    docs, module map, and CLI help to distinguish Codex dynamic tools from MCP.
+- Validation:
+  - Passed: `npm run check`.
+  - Passed: `npm test` (573/573).
+  - Passed focused:
+    `node --test test/thread-task-card-route.test.js test/new-thread-route.test.js`
+    (26/26).
+  - Passed focused:
+    `node --test test/thread-task-card-route.test.js test/new-thread-route.test.js test/chatgpt-pro-mcp-service.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js`
+    (47/47).
+  - Passed: `git diff --check`.
+  - Passed Home AI central checks:
+    `node tests/hermes-plugin-service.test.js`,
+    `node tests/hermes-plugin-authorization-service.test.js`,
+    `node tests/plugin-capability-activation-service.test.js`,
+    `node tests/plugin-workspace-platform-contract-check.test.js`,
+    `node scripts/plugin-workspace-platform-contract-check.js --json`,
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - Passed app-server acceptance smoke: direct mux `thread/start` with
+    `dynamicTools:[codex_mobile.delegate_to_thread]` returned success for an
+    ephemeral smoke thread.
+  - AI Ops evidence ledger:
+    `evidence-c0ff36b3-b9a9-4b09-af1a-667804383d64`.
+- Notes:
+  - Existing already-running turns cannot receive a newly injected tool. New
+    threads and the next `turn/start` after this deploy can see it.
+  - Ordinary browser-send local workspace heuristics remain disabled.
+- Production deploy:
+  - Deployed through Home AI central Mac deploy script with restart label
+    `com.hermesmobile.plugin.codex-mobile`.
+  - Commit deployed: `f770530012b4`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260621T102355Z-plugin-codex-mobile-web-manual`.
+  - Production readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v366`,
+    `shellCacheName=codex-mobile-shell-v366`,
+    `workspaceDelegation.enabled=true`,
+    `workspaceDelegation.dynamicTool=codex_mobile.delegate_to_thread`,
+    `workspaceDelegation.dynamicToolEnabled=true`.
+  - AI Ops deploy evidence ledger:
+    `evidence-d68171fe-65d7-429f-b239-f240059bc2d8`.
+
 ## 2026-06-21 Workspace Delegation Visible Settings Toggle v366
 
 - Status: committed, deployed to Mac production, and smoke-tested.
