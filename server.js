@@ -821,6 +821,10 @@ const THREAD_DISPLAY_SUMMARY_CACHE_TTL_MS = Math.max(60_000, Number(process.env.
 const THREAD_DISPLAY_SUMMARY_CACHE_MAX = Math.max(20, Number(process.env.CODEX_MOBILE_THREAD_DISPLAY_SUMMARY_CACHE_MAX || "500"));
 const MAX_ROLLOUT_CONTEXT_BYTES = Math.max(256 * 1024, Number(process.env.CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES || String(4 * 1024 * 1024)));
 const MAX_RUNTIME_CONTEXT_SCAN_BYTES = Math.max(MAX_ROLLOUT_CONTEXT_BYTES, Number(process.env.CODEX_MOBILE_RUNTIME_CONTEXT_SCAN_BYTES || String(32 * 1024 * 1024)));
+const MAX_ROLLOUT_ENRICHMENT_CONTEXT_BYTES = Math.max(
+  MAX_ROLLOUT_CONTEXT_BYTES,
+  Number(process.env.CODEX_MOBILE_ROLLOUT_ENRICHMENT_CONTEXT_BYTES || String(32 * 1024 * 1024)),
+);
 const ROLLOUT_WARNING_BYTES = Math.max(1 * 1024 * 1024, Number(process.env.CODEX_MOBILE_ROLLOUT_WARNING_BYTES || String(200 * 1024 * 1024)));
 const ROLLOUT_ACTIVE_STATUS_WINDOW_MS = Math.max(60_000, Number(process.env.CODEX_MOBILE_ROLLOUT_ACTIVE_STATUS_WINDOW_MS || String(30 * 60 * 1000)));
 const STALE_CONTEXT_ONLY_ACTIVE_TURN_MS = Math.max(30_000, Number(process.env.CODEX_MOBILE_CONTEXT_ONLY_ACTIVE_STALE_MS || "90000"));
@@ -3492,12 +3496,13 @@ function applyPermissionModeOverride(settings, mode, cwd) {
   return settings;
 }
 
-function readRolloutTail(rolloutPath) {
+function readRolloutTail(rolloutPath, maxBytes = MAX_ROLLOUT_CONTEXT_BYTES) {
   if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) return "";
   let fd = null;
   try {
     const stat = fs.statSync(rolloutPath);
-    const start = Math.max(0, stat.size - MAX_ROLLOUT_CONTEXT_BYTES);
+    const limit = Math.max(1, Number(maxBytes) || MAX_ROLLOUT_CONTEXT_BYTES);
+    const start = Math.max(0, stat.size - limit);
     const length = stat.size - start;
     const buffer = Buffer.alloc(length);
     fd = fs.openSync(rolloutPath, "r");
@@ -3523,6 +3528,12 @@ function readRolloutRuntimeScanText(rolloutPath) {
   } catch (_) {
     return "";
   }
+}
+
+function readRolloutEnrichmentText(rolloutPath) {
+  const full = readRolloutRuntimeScanText(rolloutPath);
+  if (full) return full;
+  return readRolloutTail(rolloutPath, MAX_ROLLOUT_ENRICHMENT_CONTEXT_BYTES);
 }
 
 function rememberItemTimestampCandidates(key, payload) {
@@ -3698,7 +3709,7 @@ function readRolloutItemTimestampCandidates(rolloutPath) {
   const unscoped = [];
   let scopedCount = 0;
   let currentTurnId = "";
-  const text = readRolloutRuntimeScanText(rolloutPath) || readRolloutTail(rolloutPath);
+  const text = readRolloutEnrichmentText(rolloutPath);
   for (const line of text.split(/\r?\n/)) {
     if (!line || !line.trim()) continue;
     const entry = parseJsonLine(line);
@@ -3783,7 +3794,7 @@ function readRolloutTurnUsageSummaries(rolloutPath, options = {}) {
   }
   let payload = collectTurnUsageSummariesFromRolloutText(readRolloutTail(rolloutPath));
   if (missingUsageTurnIds(payload, targetTurnIds).length > 0) {
-    const scanText = readRolloutRuntimeScanText(rolloutPath);
+    const scanText = readRolloutEnrichmentText(rolloutPath);
     if (scanText) payload = collectTurnUsageSummariesFromRolloutText(scanText);
   }
   if (cacheKey) rememberTurnUsageSummaries(cacheKey, payload);
@@ -4030,7 +4041,7 @@ function readRolloutToolOutputImageItems(rolloutPath, options = {}) {
     return { byTurn: new Map(), unscoped: [], scopedCount: 0 };
   }
 
-  const text = readRolloutRuntimeScanText(rolloutPath) || readRolloutTail(rolloutPath);
+  const text = readRolloutEnrichmentText(rolloutPath);
   const entries = [];
   const toolCallInfoById = new Map();
   for (const line of text.split(/\r?\n/)) {

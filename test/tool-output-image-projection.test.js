@@ -10,6 +10,8 @@ const generatedImageCacheRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mob
 const uploadRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-tool-output-uploads-"));
 process.env.CODEX_MOBILE_GENERATED_IMAGE_CACHE_DIR = generatedImageCacheRoot;
 process.env.CODEX_MOBILE_UPLOAD_DIR = uploadRoot;
+process.env.CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES = String(256 * 1024);
+process.env.CODEX_MOBILE_ROLLOUT_ENRICHMENT_CONTEXT_BYTES = String(512 * 1024);
 
 const {
   compactThread,
@@ -99,6 +101,53 @@ test("view_image outputs for uploaded user images are not repeated as agent imag
       path: rolloutPath,
       turns: [{
         id: "turn-upload",
+        status: { type: "completed" },
+        items: [{ id: "agent-1", type: "agentMessage", text: "checked screenshot" }],
+      }],
+    });
+
+    assert.equal(compacted.turns[0].items.some((item) => item.type === "imageView"), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("uploaded view_image suppression uses the larger server enrichment window", () => {
+  const uploadPath = path.join(uploadRoot, "2026-06-21", "thread-upload", "large-tail-upload.png");
+  fs.mkdirSync(path.dirname(uploadPath), { recursive: true });
+  fs.writeFileSync(uploadPath, Buffer.from("iVBORw0KGgo=", "base64"));
+  const { dir, rolloutPath } = writeRollout([
+    event("2026-06-21T08:00:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-large-tail" }),
+    event("2026-06-21T08:00:01.000Z", "response_item", {
+      type: "message",
+      role: "user",
+      content: [{
+        type: "input_text",
+        text: `Uploaded attachments:\n- large-tail-upload.png (image, image/png, 10.0 KB): ${uploadPath}`,
+      }],
+    }),
+    event("2026-06-21T08:00:02.000Z", "response_item", {
+      type: "function_call",
+      name: "view_image",
+      call_id: "call-view-large-tail-upload",
+      arguments: JSON.stringify({ path: uploadPath, detail: "high" }),
+    }),
+    event("2026-06-21T08:00:03.000Z", "event_msg", {
+      type: "agent_reasoning",
+      message: "x".repeat(300 * 1024),
+    }),
+    event("2026-06-21T08:00:04.000Z", "response_item", {
+      type: "function_call_output",
+      call_id: "call-view-large-tail-upload",
+      output: [{ type: "input_image", image_url: "data:image/png;base64,iVBORw0KGgo=" }],
+    }),
+  ]);
+  try {
+    const compacted = compactThread({
+      id: "thread-large-tail-upload",
+      path: rolloutPath,
+      turns: [{
+        id: "turn-large-tail",
         status: { type: "completed" },
         items: [{ id: "agent-1", type: "agentMessage", text: "checked screenshot" }],
       }],

@@ -2,6 +2,63 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-21 Thread Projection Boundary Investigation
+
+- Status: short-term server-side enrichment-window fix implemented and
+  validated; not deployed in this entry.
+- Trigger:
+  - User suspected Codex Mobile projection starts failing after rollout reaches
+    a size or window boundary.
+- Findings:
+  - Confirmed current detail projection has hard windows:
+    `CODEX_MOBILE_FULL_THREAD_TURNS` defaults to `10`, so thread detail only
+    returns the latest 10 turns unless raw-all mode is enabled.
+  - Runtime rollout enrichment has a separate boundary:
+    `CODEX_MOBILE_RUNTIME_CONTEXT_SCAN_BYTES` defaults to 32 MiB; above that,
+    timestamp/image/usage enrichment falls back to the tail window from
+    `CODEX_MOBILE_ROLLOUT_CONTEXT_BYTES`, default 4 MiB.
+  - Current Codex Mobile source thread rollout
+    `019ea76b-d846-7892-bda0-c0fff9cf7581` measured about 134 MiB and API
+    detail read returned `projection-v4-dynamic`, 10 turns, and 308 omitted
+    turns.
+  - Other active large threads showed the same pattern in production logs:
+    Music around 181 MiB returned 10 turns with 178 omitted; Home AI 06-18
+    around 96 MiB returned 10 turns with 161 omitted.
+- Implication:
+  - V4 improves visible item normalization and dynamic notification merging,
+    but it still wraps the existing projection service and inherits the 10-turn
+    trimming behavior. It does not solve long-rollout completeness by itself.
+  - Long threads above 32 MiB rely on partial rollout enrichment. Tool-output
+    images, timestamps, usage summaries, and user-message replacement are at
+    higher risk when their source entries fall outside the last 4 MiB.
+- Suggested next design direction:
+  - Replace tail-window projection with an incremental materialized per-thread
+    projection index keyed by rollout byte offset and event id. Keep the latest
+    window for fast first paint, but hydrate historical turns and enrichment
+    from the index instead of rescanning/trimming raw rollout text.
+- Short-term fix:
+  - Added `CODEX_MOBILE_ROLLOUT_ENRICHMENT_CONTEXT_BYTES`, default 32 MiB, for
+    server-only thread-detail enrichment.
+  - Client detail payload still keeps the configured turn window; the larger
+    enrichment window is used only for timestamps, tool-output image
+    attribution, and usage summary recovery when full runtime scan is blocked by
+    `CODEX_MOBILE_RUNTIME_CONTEXT_SCAN_BYTES`.
+  - Added regression coverage for uploaded `view_image` outputs where the tool
+    call falls outside the ordinary rollout tail but inside the enrichment
+    window; those must still be recognized as user-upload previews and must not
+    be repeated as agent image cards.
+- Validation:
+  - Passed: `node --check server.js`.
+  - Passed:
+    `node --test test/tool-output-image-projection.test.js test/turn-usage-summary-service.test.js`
+    (18/18).
+  - Passed: `npm run check`.
+  - Passed: `git diff --check`.
+  - Passed center guard:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - AI Ops evidence ledger:
+    `evidence-ecf5945e-acab-4a58-9b3a-8b62b2d65393`.
+
 ## 2026-06-21 Workspace Delegation Dynamic Tool
 
 - Status: committed, deployed to Mac production, and smoke-tested.
