@@ -139,7 +139,7 @@ test("server materializes structured task-card drafts from thread detail", () =>
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v346"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v355"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.threadRole \|\| ""\) === "target"\)/);
@@ -201,7 +201,9 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /function queueComposerIntentMenuUpdate\(/);
   assert.match(appJs, /addEventListener\("keyup", queueComposerIntentMenuUpdate\)/);
   assert.match(appJs, /addEventListener\("focus", queueComposerIntentMenuUpdate\)/);
-  assert.match(appJs, /addEventListener\("compositionend", queueComposerIntentMenuUpdate\)/);
+  assert.match(appJs, /addEventListener\("compositionstart", \(\) => \{[\s\S]*state\.composerComposing = true;/);
+  assert.match(appJs, /addEventListener\("compositionend", \(event\) => \{[\s\S]*state\.composerComposing = false;/);
+  assert.match(appJs, /addEventListener\("compositionend", \(event\) => \{[\s\S]*queueComposerIntentMenuUpdate\(\);/);
   assert.match(functionBody(appJs, "positionComposerIntentMenu"), /const anchor = \$\("messageInput"\) \|\| \$\("composer"\)/);
   assert.match(functionBody(appJs, "positionComposerIntentMenu"), /--composer-intent-width/);
   assert.match(functionBody(appJs, "sendMessage"), /const normalizedIntentText = normalizedComposerIntentText\(text\)/);

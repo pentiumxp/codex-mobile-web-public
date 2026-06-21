@@ -6526,6 +6526,14 @@ html.keyboard-open .composer {
   display: none;
 }
 
+#openMenu.split-return-visible {
+  display: grid;
+}
+
+html.embed-hermes #openMenu.split-return-visible {
+  display: grid !important;
+}
+
 @media (max-width: 1180px), (pointer: coarse) and (max-width: 1400px) {
   .app {
     width: 100vw;

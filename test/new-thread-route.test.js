@@ -85,6 +85,8 @@ test("server default model falls back to GPT-5.5", () => {
   assert.match(serverJs, /defaultModel: CODEX_CONFIG_DEFAULTS\.model \|\| DEFAULT_MODEL/);
   assert.match(serverJs, /defaultPermissionMode: defaultPermissionModeFromConfigDefaults\(\)/);
   assert.match(serverJs, /function defaultPermissionModeFromConfigDefaults\(\)[\s\S]*dangerFullAccess[\s\S]*return "full"/);
+  assert.match(serverJs, /disabled:\s*"dangerFullAccess"/);
+  assert.match(serverJs, /"no-sandbox":\s*"dangerFullAccess"/);
 });
 
 test("server resolves the default Codex executable from macOS install paths", () => {
@@ -259,6 +261,9 @@ test("workspace creation route stores mobile-visible workspaces outside Codex gl
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_CREATE_ROOTS/, "workspace creation roots should be configurable");
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DEFAULT_CREATE_ROOT/, "workspace default creation root should be configurable");
   assert.match(serverJs, /detectDevelopmentWorkspaceRoot\(APP_ROOT\)/, "workspace creation should default to the development root when available");
+  assert.match(serverJs, /process\.env\.HERMES_MOBILE_DEV_ROOT/, "workspace default should allow a central Hermes dev root override");
+  assert.match(serverJs, /"\/Users\/hermes-dev\/HermesMobileDev"/, "Mac production should fall back to the shared Hermes development root when it exists");
+  assert.match(serverJs, /fs\.statSync\(resolved\)\.isDirectory\(\)/, "development root fallback should be existence-checked");
   assert.match(serverJs, /defaultCreateRoot:\s*WORKSPACE_DEFAULT_CREATE_ROOT/, "server should pass the default root to the registry service");
   assert.match(serverJs, /workspaceRegistryService\.create\(body\)/, "POST route should delegate creation to the registry service");
   assert.match(serverJs, /syncRegisteredWorkspaceTrust\(CODEX_HOME\)/, "workspace creation should trust the new workspace for the active Codex profile");

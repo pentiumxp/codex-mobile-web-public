@@ -5,6 +5,7 @@ const { test } = require("node:test");
 
 const {
   buildPublicPullRequestStatus,
+  isDraftPullRequest,
   normalizePullRequest,
   normalizeRepositorySlug,
   publicPullRequestApiUrl,
@@ -40,6 +41,26 @@ test("normalizes GitHub pull request response objects", () => {
     updatedAt: "2026-05-27T00:00:00Z",
   });
   assert.equal(normalizePullRequest({ number: 0 }), null);
+});
+
+test("ignores draft public pull requests", () => {
+  assert.equal(isDraftPullRequest({ draft: true }), true);
+  assert.equal(isDraftPullRequest({ isDraft: true }), true);
+  assert.equal(normalizePullRequest({ number: 11, title: "Draft", draft: true }), null);
+
+  const status = buildPublicPullRequestStatus({
+    repository: "pentiumxp/codex-mobile-web-public",
+    openPullRequestCount: 2,
+    pullRequests: [
+      { number: 3, title: "Draft release", draft: true },
+      { number: 4, title: "Ready release", draft: false },
+    ],
+    checkedAt: "2026-05-27T01:00:00Z",
+  });
+
+  assert.equal(status.hasOpenPullRequests, true);
+  assert.equal(status.openPullRequestCount, 1);
+  assert.deepEqual(status.pullRequests.map((pr) => pr.number), [4]);
 });
 
 test("builds client-safe public pull request status", () => {

@@ -13,8 +13,14 @@ function publicPullRequestApiUrl(repository) {
   return `https://api.github.com/repos/${slug}/pulls?state=open&per_page=5`;
 }
 
+function isDraftPullRequest(value) {
+  if (!value || typeof value !== "object") return false;
+  return value.draft === true || value.isDraft === true;
+}
+
 function normalizePullRequest(value) {
   if (!value || typeof value !== "object") return null;
+  if (isDraftPullRequest(value)) return null;
   const number = Number(value.number);
   if (!Number.isFinite(number) || number <= 0) return null;
   return {
@@ -36,9 +42,7 @@ function buildPublicPullRequestStatus(options = {}) {
     enabled: options.enabled !== false,
     repository,
     checkedAt: options.checkedAt || new Date().toISOString(),
-    openPullRequestCount: Number.isFinite(Number(options.openPullRequestCount))
-      ? Number(options.openPullRequestCount)
-      : pullRequests.length,
+    openPullRequestCount: pullRequests.length,
     hasOpenPullRequests: pullRequests.length > 0,
     pullRequests,
     error: options.error ? String(options.error) : "",
@@ -47,6 +51,7 @@ function buildPublicPullRequestStatus(options = {}) {
 
 module.exports = {
   buildPublicPullRequestStatus,
+  isDraftPullRequest,
   normalizePullRequest,
   normalizeRepositorySlug,
   publicPullRequestApiUrl,

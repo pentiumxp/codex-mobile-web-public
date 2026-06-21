@@ -248,7 +248,7 @@ return {
   return harness;
 }
 
-function evaluatedImageViewRenderer() {
+function evaluatedImageViewRenderer(options = {}) {
   const sources = [
     "escapeHtml",
     "shortPath",
@@ -270,9 +270,10 @@ function evaluatedImageViewRenderer() {
     "imageViewContentUrl",
     "renderImageView",
   ].map((name) => functionSourceFrom(appJs, name));
+  const pluginEmbed = options.embedded ? { embedded: true } : null;
   return Function(
     "URLSearchParams",
-    `const state = { key: "test-key", currentThreadId: "thread-id", pluginEmbed: null };\nconst window = { location: { origin: "http://127.0.0.1:8787" } };\nconst PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";\n${sources.join("\n")}\nreturn renderImageView;`,
+    `const state = { key: "test-key", currentThreadId: "thread-id", pluginEmbed: ${JSON.stringify(pluginEmbed)} };\nconst window = { location: { origin: "http://127.0.0.1:8787" } };\nconst PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";\n${sources.join("\n")}\nreturn renderImageView;`,
   )(URLSearchParams);
 }
 
@@ -1537,6 +1538,20 @@ test("generated image content urls render bounded image cards", () => {
   assert.match(html, /data-protected-image-src="\/api\/generated-images\/file\?id=thread%2Ftool-output\.png&amp;key=test-key"/);
   assert.match(html, /<figcaption>tool-output\.png<\/figcaption>/);
   assert.doesNotMatch(html, /\/api\/files\/preview\/content/);
+});
+
+test("Hermes embedded generated image content urls render directly without hydrate placeholders", () => {
+  const renderImageView = evaluatedImageViewRenderer({ embedded: true });
+  const html = renderImageView({
+    type: "imageView",
+    contentUrl: "/api/generated-images/file?id=thread%2Fview-image-output.png",
+    fileName: "view_image_output",
+  });
+
+  assert.match(html, /class="image-view"/);
+  assert.match(html, /<img src="\/api\/generated-images\/file\?id=thread%2Fview-image-output\.png&amp;key=test-key"/);
+  assert.doesNotMatch(html, /src="data:image\/gif;base64/);
+  assert.doesNotMatch(html, /data-protected-image-src=/);
 });
 
 test("generated image content urls replace stale auth keys with the current session key", () => {

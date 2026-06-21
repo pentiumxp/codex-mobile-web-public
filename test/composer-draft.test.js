@@ -39,6 +39,7 @@ test("composer drafts are browser-local and keyed by thread or new-thread worksp
   assert.match(buildBody, /draft\.model = state\.newThreadModel/);
   assert.match(buildBody, /draft\.effort = state\.newThreadEffort/);
   assert.match(buildBody, /draft\.permissionMode = permission/);
+  assert.match(buildBody, /if \(codexFastCommandEnabled\(\)\) draft\.fastMode = true;/);
 });
 
 test("switching targets saves the previous draft and restores the next draft", () => {
@@ -64,6 +65,7 @@ test("composer runtime selections persist without typed text", () => {
   assert.match(draftStoreBody, /draft\.model/);
   assert.match(draftStoreBody, /draft\.effort/);
   assert.match(draftStoreBody, /draft\.permissionMode/);
+  assert.match(draftStoreBody, /draft\.fastMode === true/);
 
   const selectionBody = functionBody("applyRuntimeSelection");
   assert.match(selectionBody, /if \(kind === "effort"\) state\.composerEffort = selected;/);
@@ -81,6 +83,12 @@ test("composer runtime selections persist without typed text", () => {
   const fastBody = functionBody("setCodexFastCommandEnabled");
   assert.match(fastBody, /saveCurrentDraftNow\(\)/, "Fast toggle should use the existing draft save path");
   assert.doesNotMatch(appJs, /saveDraftForCurrentTarget/, "runtime controls must not call a missing draft-save helper");
+
+  const restoreBody = functionBody("applyDraftRuntimeSelection");
+  assert.match(restoreBody, /const hasDraft = Boolean\(draft && typeof draft === "object"\)/);
+  assert.match(restoreBody, /if \(draft && draft\.fastMode === true\)/);
+  assert.match(restoreBody, /localStorage\.setItem\(STORAGE_CODEX_FAST_MODE, "on"\)/);
+  assert.match(restoreBody, /if \(!hasDraft\) return;/, "same-thread refresh without a draft must not clear pending runtime selections");
 
   const loadThreadBody = functionBody("loadThread");
   assert.match(loadThreadBody, /state\.currentThread = mergeThreadPreservingVisibleItems/);
