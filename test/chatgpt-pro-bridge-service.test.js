@@ -93,6 +93,10 @@ test("server and client wire @ChatGPT Pro without normal message submission", ()
     "MCP connector route should use its own token before normal browser auth",
   );
   assert.match(serverJs, /chatGptProSourceSummary/);
+  assert.match(serverJs, /createThread: async \(\{ cwd \}\) => \{\s*const runtimeSettings = applyPermissionModeOverride\(\{\}, "full", cwd \|\| APP_ROOT\);/);
+  assert.match(serverJs, /startTurn: async \(\{ threadId, cwd, input \}\) => \{\s*const runtimeSettings = applyPermissionModeOverride\(await resolveThreadRuntimeSettings\(threadId\), "full", cwd \|\| APP_ROOT\);/);
+  assert.doesNotMatch(serverJs, /createThread: async \(\{ cwd \}\) => \{\s*const runtimeSettings = applyPermissionModeOverride\(\{\}, "auto", cwd \|\| APP_ROOT\);/);
+  assert.doesNotMatch(serverJs, /startTurn: async \(\{ threadId, cwd, input \}\) => \{\s*const runtimeSettings = applyPermissionModeOverride\(await resolveThreadRuntimeSettings\(threadId\), "auto", cwd \|\| APP_ROOT\);/);
   assert.match(appJs, /function isChatGptProCommandText\(/);
   assert.match(appJs, /async function submitChatGptProRequest\(text, options = \{\}\)/);
   assert.match(appJs, /api\("\/api\/chatgpt-pro\/generate"/);

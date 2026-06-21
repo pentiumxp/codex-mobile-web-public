@@ -85,6 +85,8 @@ test("server default model falls back to GPT-5.5", () => {
   assert.match(serverJs, /defaultModel: CODEX_CONFIG_DEFAULTS\.model \|\| DEFAULT_MODEL/);
   assert.match(serverJs, /defaultPermissionMode: defaultPermissionModeFromConfigDefaults\(\)/);
   assert.match(serverJs, /function defaultPermissionModeFromConfigDefaults\(\)[\s\S]*dangerFullAccess[\s\S]*return "full"/);
+  assert.match(serverJs, /disabled:\s*"dangerFullAccess"/);
+  assert.match(serverJs, /"no-sandbox":\s*"dangerFullAccess"/);
 });
 
 test("server resolves the default Codex executable from macOS install paths", () => {
