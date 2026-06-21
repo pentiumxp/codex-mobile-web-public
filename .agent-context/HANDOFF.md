@@ -4,7 +4,7 @@ Last compacted: 2026-06-08T13:27:43.304Z
 
 ## 2026-06-21 Active Turn Receipt Projection Fix
 
-- Status: implemented locally, not deployed.
+- Status: committed and deployed to Mac production.
 - Trigger:
   - User reported that in the Music thread, the latest active work area after a
     user message only kept one assistant receipt; when a second receipt appeared
@@ -36,6 +36,23 @@ Last compacted: 2026-06-08T13:27:43.304Z
     `node tests/architecture-code-test-harness-map.test.js`.
   - Music-shape local smoke parsed the live rollout turn and confirmed compact
     retained 79/79 assistant receipts for the visible unended turn.
+- Production deploy:
+  - Commit deployed: `15d3148c7635`.
+  - Deployed with Home AI central Mac deploy script for plugin
+    `codex-mobile-web`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260621T113832Z-plugin-codex-mobile-web-projection-receipt-fix`.
+  - Restart label validated running:
+    `com.hermesmobile.plugin.codex-mobile`.
+  - `/api/public-config` smoke passed with production workspace path
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web` and
+    `codex-mobile-shell-v367`.
+  - Production source readback confirmed `turnHasVisibleDetailItems` and
+    `findPreviousVisibleNonLiveTurnIndex` are present in `server.js`.
+  - Authenticated Music thread smoke for
+    `019ed959-27ce-7312-ba77-226ef9c526c7` returned `thread-read`, 10 turns,
+    and the target turn `019ee9e7-3d7e-78c2-b6de-6888001e41c2` with 84
+    assistant receipts and 144 items total.
 
 ## 2026-06-21 Thread Projection Boundary Investigation
 
