@@ -432,10 +432,12 @@
       <button id="scrollToTurnReply" class="scroll-bottom-button scroll-turn-reply-button hidden" type="button" title="&#22238;&#21040;&#26412;&#36718;&#24635;&#32467;" aria-label="&#22238;&#21040;&#26412;&#36718;&#24635;&#32467;" aria-hidden="true">&#8593;</button>
 
       <form id="composer" class="composer">
-        <label id="attachFiles" class="icon-button composer-icon file-picker" title="Attach files" aria-label="Attach files" aria-disabled="true" tabindex="-1">
-          <span aria-hidden="true">+</span>
-          <input id="fileInput" class="file-input" type="file" multiple disabled>
-        </label>
+        <div class="attachment-picker-cell">
+          <button id="attachFiles" class="icon-button composer-icon file-picker" type="button" title="Attach files" aria-label="Attach files" aria-disabled="true" disabled>
+            <span aria-hidden="true">+</span>
+          </button>
+          <input id="fileInput" class="file-input" type="file" multiple disabled aria-label="Attach files" tabindex="-1">
+        </div>
         <div class="composer-body">
           <div class="composer-controls">
             <button id="composerCommandControl" class="composer-fast-toggle" type="button" aria-pressed="false" title="Fast mode off" aria-label="Fast mode off">

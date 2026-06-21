@@ -128,6 +128,9 @@ test("current-turn subagent panel opens from a left swipe without a topbar butto
   assert.match(indexHtml, /id="subagentPanel"/);
   assert.doesNotMatch(indexHtml, /id="subagentStatusButton"/);
   assert.match(appJs, /subagentSwipe:\s*null/);
+  assert.match(appJs, /const SUBAGENT_EDGE_SWIPE_PX = 56/);
+  assert.match(appJs, /const SUBAGENT_EDGE_SWIPE_MAX_PX = 88/);
+  assert.match(appJs, /function subagentSwipeStartsNearEdge\(/);
   assert.match(appJs, /function currentSubagentItems\(/);
   assert.match(appJs, /function turnSubagentItems\(/);
   assert.match(appJs, /function beginSubagentSwipe\(/);
@@ -139,7 +142,9 @@ test("current-turn subagent panel opens from a left swipe without a topbar butto
   assert.match(functionBody("isHorizontalScrollableGestureTarget"), /markdown-table-wrap/);
   assert.match(functionBody("isHorizontalScrollableGestureTarget"), /markdown-code-table-preview/);
   assert.match(functionBody("beginSubagentSwipe"), /isHorizontalScrollableGestureTarget\(event\.target\)/);
+  assert.match(functionBody("beginSubagentSwipe"), /subagentSwipeStartsNearEdge\(touch\.clientX\)/);
   assert.match(functionBody("handleSubagentWheelSwipe"), /isHorizontalScrollableGestureTarget\(event\.target\)/);
+  assert.match(functionBody("handleSubagentWheelSwipe"), /subagentSwipeStartsNearEdge\(event\.clientX\)/);
   assert.match(functionBody("isSubagentItem"), /collabAgentToolCall/);
   assert.match(appJs, /function activeSubagentItems\(/);
   assert.match(appJs, /function isActiveSubagentItem\(/);

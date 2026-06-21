@@ -1,5 +1,12 @@
 # Codex Mobile Web
 
+- 中文说明：server-only 增加 macOS 宿主恢复脚本 `restart-codex-mobile-host-macos.sh`。宿主在检测到 Codex Mobile Web 8787 Listener 未启动时，可以先用 `--list-homes --json` 读取已配置 Codex Home，再用 `--profile-id <id>` 或 `--codex-home <path>` 选择目标 Home，脚本会同步 `codex-profiles.json` 与 LaunchDaemon plist 的 `CODEX_HOME`，重新 bootstrap `com.hermesmobile.plugin.codex-mobile`，并等待 `/api/public-config` 恢复。同时修正 Web 内手动 Restart 在 macOS system LaunchDaemon 下错误使用 GUI launchctl 域的问题。本次不改变 PWA shell cache。
+- 中文说明：v362 修正 Android APK/WebView 壳里 Composer 首次点按偶发不弹系统输入法、再次点按后键盘出现但文本不上屏的问题。Composer 现在不再在 `pointerdown` 阶段提前 blur 打断原生输入激活；只在后续 `pointerup/click` 用户手势里检测到“已聚焦但键盘未打开”的 stale focus 时，才允许 Android 做一次受控 blur/refocus 恢复。PWA shell cache 升级到 `codex-mobile-shell-v362`。
+- 中文说明：v361 修正 v360 在 Android APK/WebView 壳里仍可能点加号无反应的问题。附件入口改为视觉按钮和原生 `input[type=file]` 覆盖在同一个 52px 触控单元内，触屏直接命中浏览器原生文件输入控件；按钮保留键盘 fallback。PWA shell cache 升级到 `codex-mobile-shell-v361`。
+- 中文说明：v360 修正 Android APK/WebView Composer 左侧加号附件按钮命中不稳定的问题。加号现在是明确的 52px 按钮单元，图标子元素不再接管事件；文件选择器只从浏览器认可的 `click` / 键盘确认事件打开，不再在 `pointerdown` 里抢先触发后节流掉后续点击。PWA shell cache 升级到 `codex-mobile-shell-v360`。
+- 中文说明：v359 修正 Android WebView Composer 首次点击未弹键盘后的恢复路径。如果输入框已经假聚焦但键盘仍未出现，下一次真实点击会先释放旧焦点，再交给浏览器原生点击重新建立 IME editor connection；不会再程序化 blur/refocus 抢焦点。PWA shell cache 升级到 `codex-mobile-shell-v359`。
+- 中文说明：v358 收窄侧边聊天/Subagent 面板的左滑呼出手势。现在只有从对话区域右侧边缘附近开始左滑才会打开侧边面板，页面中部横向滑动或触控板横滑不会误触；关闭按钮、侧聊加载和服务器保存逻辑保持不变。PWA shell cache 升级到 `codex-mobile-shell-v358`。
+- 中文说明：v357 修复 Android APK/WebView 壳里 Composer 左侧加号无法选中的问题。附件入口从 `label + input[type=file]` 改为真实 `button` 显式触发隐藏文件输入，并补齐 `pointerup` / `click` / `touchend` 去重路径，避免 Android WebView 对 label 激活文件选择器兼容不稳定。PWA shell cache 升级到 `codex-mobile-shell-v357`。
 - 中文说明：v356 修复 Android Composer 进入线程后首次点击偶发不弹输入法、第二次点击键盘弹出但中文无法上屏的问题。Android 上不再用 blur/refocus 恢复键盘；已进入线程或新线程草稿时，即使线程仍在加载或发送中，也保持底层 contenteditable editor 不被拆掉，只用 aria/class/tabIndex 和发送状态表达禁用，避免破坏 WebView/Chrome 的 IME editor connection。PWA shell cache 升级到 `codex-mobile-shell-v356`。
 - 中文说明：v355 修复 Android Composer 第二次点击后键盘弹出但中文输入无法上屏的问题。Android 上不再用 blur/refocus 恢复键盘，避免破坏 WebView/Chrome 的 IME editor connection；点击开始前只确保 Composer 已经是可编辑状态，并让浏览器原生点击流程自己打开键盘。PWA shell cache 升级到 `codex-mobile-shell-v355`。
 - 中文说明：v354 修复 Composer 运行时选择被线程刷新打回默认的问题。当前线程没有文字草稿时，详情重载不再清空已经选择的 Model / 推理等级 / 权限；Fast 开关也会进入 Composer draft 内容判定，避免仅打开 Fast 但未输入文字时被当作空草稿丢弃。PWA shell cache 升级到 `codex-mobile-shell-v354`。

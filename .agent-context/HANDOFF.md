@@ -2,6 +2,272 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-21 macOS Host Recovery Script for Missing 8787 Listener
+
+- Status: production service restored; implementation and focused tests
+  completed locally. Static/script sync to production should not require a
+  Listener restart.
+- Trigger:
+  - User reported Codex Mobile could not log in. Local probes showed
+    `127.0.0.1:8787` had no listener, so this was not an access-key/login
+    rejection.
+  - `/Library/LaunchDaemons/com.hermesmobile.plugin.codex-mobile.plist` existed
+    and was valid, but `launchctl print system/com.hermesmobile.plugin.codex-mobile`
+    reported the service was not loaded. A visible `node server.js` process was
+    Finance on `127.0.0.1:8791`, not Codex Mobile.
+- Recovery performed:
+  - Bootstrapped the existing system LaunchDaemon with
+    `/Library/LaunchDaemons/com.hermesmobile.plugin.codex-mobile.plist`.
+  - Readback confirmed `system/com.hermesmobile.plugin.codex-mobile` running as
+    user `xuxin`, PID `8312`, listening on `127.0.0.1:8787`.
+  - `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v362` and active profile
+    `previous` / `/Users/xuxin/.codex-homes/previous`.
+- Implementation:
+  - Added host-callable macOS recovery entry:
+    `restart-codex-mobile-host-macos.sh`.
+  - Added offline profile helper:
+    `scripts/codex-mobile-macos-profile-helper.js`.
+  - The host script can list configured homes with `--list-homes --json`, select
+    a configured profile with `--profile-id <id>`, or select an explicit
+    `--codex-home <path>`. It reads `UserName`, runtime paths, Node path, and
+    port from the LaunchDaemon plist, updates `codex-profiles.json` and plist
+    `CODEX_HOME`, bootstraps `system/com.hermesmobile.plugin.codex-mobile`, and
+    waits for `/api/public-config`.
+  - Fixed `adapters/shared-chain-restart-service.js` so the existing Web UI
+    manual restart detects system LaunchDaemon services and uses
+    `system/<label>` via sudo instead of trying a GUI launchctl domain.
+  - Updated `package.json` checks, README Chinese release note, and
+    `docs/TROUBLESHOOTING.md`.
+- Validation:
+  - Passed:
+    `node --test test/macos-host-restart-script.test.js test/shared-chain-restart-service.test.js test/manual-restart-ui.test.js test/codex-profile-service.test.js`
+    (32/32).
+  - Passed: `npm run check:macos`.
+  - Passed: `node --check scripts/codex-mobile-macos-profile-helper.js`.
+  - Production dry-run checks:
+    `./restart-codex-mobile-host-macos.sh --list-homes --json` returned three
+    profiles with active `previous`; `--profile-id previous --dry-run --json`
+    resolved the correct service/profile/port without restart.
+
+## 2026-06-21 Android Composer Keyboard Focus v362
+
+- Status: implemented, focused-tested, ADB fixture-verified, and static-only
+  deployed to Mac production. The 8787 Listener was not restarted.
+- Trigger:
+  - After v361 fixed the Android APK/WebView Composer plus button by making
+    the native `input[type=file]` receive touch directly, the Composer text
+    input still occasionally failed to open the Android system keyboard on the
+    first tap. A second tap could show the keyboard but leave text unable to
+    enter the Composer.
+- Root cause / correction:
+  - The v359 Android stale-focus path had drifted into doing `input.blur()` in
+    `pointerdown`. That can interrupt the same native tap that Android WebView
+    needs to establish its editor/IME connection.
+  - `public/app.js` now keeps `prepareMessageInputForNativeGesture()` as a
+    preparation-only hook: it records whether the Composer was already focused
+    and enables the editor if needed, but it does not call `blur()`,
+    `focusMessageInput()`, or `preventDefault()` before the native tap.
+  - Android is no longer excluded from `shouldRecoverMessageInputKeyboard()`.
+    Recovery runs only after the native tap (`pointerup` / `click`) and only
+    when the Composer was already focused but no keyboard is visible.
+  - `focusMessageInput()` still avoids Android active-focus reset by default;
+    the stale-focus recovery path must opt in with
+    `allowAndroidActiveFocusReset: true`.
+  - `public/app.js` and `public/sw.js` advanced to
+    `codex-mobile-shell-v362`; README and focused tests were updated.
+- Validation:
+  - Passed:
+    `node --test test/new-thread-ui.test.js test/mobile-viewport.test.js test/composer-quota.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`.
+  - Passed: `npm run check`.
+  - Passed: `git diff --check`.
+  - Passed center visual-toolchain checks:
+    `node tests/ios-pwa-live-debug-server.test.js` and
+    `node tests/ios-pwa-visual-harness.test.js`.
+  - Android ADB device `e0cd9d2b` fixture proof:
+    - Chrome opened local Composer fixture through `adb reverse tcp:19182`;
+    - `adb shell input tap` on the visible contenteditable Composer opened the
+      system IME;
+    - `dumpsys input_method` showed Chrome/WebView as the IME target with
+      `mInputShown=true` and editable `inputType=0x2c0a1`;
+    - `adb shell input text v362probe` inserted text into the visible
+      Composer; screenshot artifact:
+      `/tmp/codex-mobile-qa/android-composer-after-tap.png`;
+    - Temporary reverse/fixture listener was cleaned up after validation.
+- Static deployment:
+  - Backed up production `public/` to
+    `/Users/xuxin/.codex-mobile-web/deploy-backups/codex-mobile-web-static/20260621T065953Z-v362-android-composer-keyboard/public`.
+  - Synced development `public/` into
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web/public`.
+  - Production readback:
+    `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v362` and
+    `shellCacheName=codex-mobile-shell-v362`.
+  - `public/app.js`, `public/styles.css`, `public/sw.js`, and
+    `public/index.html` matched the development tree by `cmp`.
+  - 8787 listener PID stayed `2067` before and after sync.
+  - AI Ops evidence ledger record:
+    `evidence-a032c347-0f21-48b6-9592-a6a604ae1ba5`.
+
+## 2026-06-21 Android Composer Native Attachment Input Overlay v361
+
+- Status: implemented, Android fixture-tested, and static-only deployed to Mac
+  production. The 8787 Listener was not restarted.
+- Trigger:
+  - v360 production still left the Android APK/WebView plus button with no
+    user-visible reaction. The click-only `button -> input.click()` chain can
+    pass Chrome/CDP fixture validation but still fail in the embedded Android
+    shell.
+- Change:
+  - `public/app.js`: advanced client build id to
+    `codex-mobile-shell-v361`.
+  - `public/index.html`: wraps the visual plus button and file input in
+    `.attachment-picker-cell`.
+  - `public/styles.css`: `input#fileInput` now covers the same 52px x 44px
+    cell as the visual plus button and receives touch directly. The button
+    remains as visual/keyboard fallback, but the touch path is native
+    `input[type=file]`, not JS-mediated `input.click()`.
+  - `public/sw.js`, README release notes, and focused tests advanced to v361.
+- Validation:
+  - Passed:
+    `node --check public/app.js && node --check public/sw.js`.
+  - Passed:
+    `node --test test/composer-quota.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`.
+  - Passed: `npm run check`.
+  - Passed: `git diff --check`.
+  - Passed center/deploy checks:
+    `node tests/architecture-code-test-harness-map.test.js`,
+    `node --check scripts/deploy-macos-production.js`,
+    `node tests/macos-production-deploy-script.test.js`,
+    `node tests/production-status-smoke-harness.test.js`.
+  - Android ADB device `e0cd9d2b` verified through Chrome CDP fixture:
+    - mobile emulation viewport `390x844`, DPR `3`;
+    - `.attachment-picker-cell` rect was `left=12 top=792 width=52 height=44`;
+    - `input#fileInput` rect exactly matched the cell;
+    - center and four inner edge sample points all resolved to
+      `INPUT#fileInput`;
+    - CDP click at `(38, 814)` produced `fileInputClicks=1`,
+      `buttonClicks=0`, and `Page.fileChooserOpened` with
+      `mode=selectMultiple`.
+- Static deployment:
+  - Backed up production `public/` to
+    `/Users/xuxin/.codex-mobile-web/deploy-backups/codex-mobile-web-static/20260621T062955Z-v361-attachment-native-input-overlay/public`.
+  - Synced development `public/` into
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web/public`.
+  - Production readback:
+    `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v361` and
+    `shellCacheName=codex-mobile-shell-v361`.
+  - `public/app.js`, `public/styles.css`, `public/sw.js`, and
+    `public/index.html` matched the development tree by `cmp`.
+  - 8787 listener PID stayed `52749` before and after sync.
+  - AI Ops deploy evidence ledger record:
+    `evidence-6f996161-dcc8-4810-a634-08048a585896`.
+
+## 2026-06-21 Android Composer Attachment Hit Target v360
+
+- Status: implemented, focused-tested locally, and static-only deployed to Mac
+  production. The 8787 Listener was not restarted.
+- Trigger:
+  - On Android APK/WebView, the Composer left-side plus attachment button could
+    miss taps: the first tap often did nothing and the second tap sometimes
+    worked, with the perceived hit area not matching the visible icon.
+  - The root difference from the Fast button is that Fast is a pure state
+    toggle, while the plus button must cross into the browser/system file
+    picker user-activation path. Opening the file picker from `pointerdown`
+    could fail in Android WebView and then throttle the subsequent `click`.
+- Change:
+  - `public/app.js`: advanced client build id to
+    `codex-mobile-shell-v360`.
+  - `public/app.js`: removed `pointerdown` and `touchend` file-picker open
+    bindings for `#attachFiles`. The picker now opens from `click` and
+    keyboard Enter/Space only.
+  - `public/app.js`: Android uses standard hidden input `click()` rather than
+    `showPicker()`.
+  - `public/styles.css`: the Composer attachment button is now a stable
+    52px-wide, 44px-high grid button in mobile/tablet Composer rows; child icon
+    elements have `pointer-events: none` so the real event target stays the
+    button.
+  - `public/sw.js`, README release notes, and focused tests advanced to v360.
+- Validation:
+  - Passed:
+    `node --check public/app.js && node --check public/sw.js`.
+  - Passed:
+    `node --test test/composer-quota.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`.
+  - Passed: `npm run check`.
+  - Passed: `git diff --check`.
+  - Passed center required check:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - Android ADB device `e0cd9d2b` verified through Chrome CDP fixture using
+    the live `public/styles.css`:
+    - mobile emulation viewport `390x844`, DPR `3`;
+    - `#attachFiles` rect was `left=12 top=792 width=52 height=44`;
+    - center and four inner edge sample points all resolved to
+      `BUTTON#attachFiles`;
+    - CDP click at `(38, 814)` produced one `click` event with target
+      `attachFiles` and `Page.fileChooserOpened` with `mode=selectMultiple`.
+  - AI Ops evidence ledger record:
+    `evidence-0fd2d16a-a331-4f84-a729-39a2cdc58f99`.
+  - Static deployment:
+    - Backed up production `public/` to
+      `/Users/xuxin/.codex-mobile-web/deploy-backups/codex-mobile-web-static/20260621T062226Z-v360-attachment-hit-target/public`.
+    - Synced development `public/` into
+      `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web/public`.
+    - Production readback:
+      `/api/public-config` returned
+      `clientBuildId=0.1.11|codex-mobile-shell-v360` and
+      `shellCacheName=codex-mobile-shell-v360`.
+    - `public/app.js`, `public/styles.css`, `public/sw.js`, and
+      `public/index.html` matched the development tree by `cmp`.
+    - 8787 listener PID stayed `52749` before and after sync.
+    - AI Ops deploy evidence ledger record:
+      `evidence-9742f1ab-4a9f-40a8-8dc1-b150e6acc6a6`.
+- Notes:
+  - During ADB setup, the connected device initially showed a system crash
+    dialog for `app.homeai.android`; it was closed to run Chrome fixture
+    validation. That fixture test itself did not deploy Codex Mobile or restart
+    the Listener.
+
+## 2026-06-21 Side Chat Edge Gesture and Android Composer Stale Focus v359
+
+- Status: implemented and focused-tested locally. Not deployed. No production
+  static sync was performed. No Listener restart was performed.
+- Trigger:
+  - The side chat/Subagent panel could be opened by a left swipe starting from
+    almost anywhere in the thread detail page, causing accidental activation
+    while reading.
+  - The Android APK/WebView Composer issue remained: after a first tap failed
+    to open the keyboard, a second tap could produce a keyboard that did not
+    send text into the Composer.
+  - The Mac deploy harness has `-SkipRestart`, but its default full deployment
+    path still restarts the LaunchDaemon. Static-only frontend updates should
+    use `-SkipRestart` or bounded static sync, not a default service restart.
+- Change:
+  - `public/app.js`: advanced client build id to
+    `codex-mobile-shell-v359`.
+  - `public/app.js`: side chat/Subagent open gestures now require the touch or
+    trackpad gesture to start within the right-edge band. The edge band uses
+    56px minimum, 8% viewport responsive width, and 88px maximum.
+  - `public/app.js`: Android Composer pointerdown handling now detects a stale
+    focused editor with no visible keyboard and releases the old focus before
+    the native tap proceeds. It does not programmatically refocus on Android.
+  - `public/sw.js`, README release notes, and focused tests advanced to v359.
+- Validation:
+  - Passed:
+    `node --check public/app.js && node --check public/sw.js`.
+  - Passed:
+    `node --test test/collab-agent-render.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js test/composer-quota.test.js`.
+  - Passed: `npm run check`.
+  - Passed: `git diff --check`.
+  - Passed center required check:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - AI Ops evidence ledger record:
+    `evidence-c388b4ae-afba-4001-a7ce-ffc4eccf1ce5`.
+- Limits:
+  - Android real-device/emulator validation was not run because `adb` is not
+    installed in this Mac environment (`zsh: command not found: adb`). Do not
+    treat the static tests as Android visual proof.
+
 ## 2026-06-21 Android Composer Focus Lock v353
 
 - Status: implemented, focused-tested, and static-only deployed to Mac
@@ -7932,3 +8198,53 @@ The previous full handoff was archived and should be opened only when old proven
       thread returned `contentEditable="true"`, `ariaDisabled="true"`,
       `tabIndex=-1`; restoring disabled false kept `contentEditable="true"`
       and text unchanged.
+
+## 2026-06-21 Android APK/WebView Composer Attachment v357
+
+- Status: plugin-side compatibility fix implemented and validated by static
+  checks. Production static files were temporarily synced to the active
+  `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web/public` runtime
+  copy for Android shell diagnosis without restarting the 8787 listener.
+- User-visible issue:
+  - In the Android APK/WebView shell, the Composer `+` attachment entry could
+    not open the file picker. The nearby Fast button remained tappable.
+- Evidence and root cause split:
+  - The Fast button is ordinary DOM interaction; it does not require native
+    Android file chooser support.
+  - The pre-v357 Codex plugin markup used `label#attachFiles` with a full-size
+    transparent `input[type=file]`. Android WebView was unreliable on that
+    path, so the plugin-side fix changed it to an explicit button trigger.
+  - After syncing v357 static files, `GET http://127.0.0.1:8787/api/public-config`
+    reported `clientBuildId=0.1.11|codex-mobile-shell-v357` and
+    `shellCacheName=codex-mobile-shell-v357`; served `index.html` now contains
+    `<button id="attachFiles">`, and served `app.js` contains the
+    `showPicker()` / `click()` trigger path.
+  - Android native shell code still has
+    `view.setWebChromeClient(new WebChromeClient())` in
+    `/Users/hermes-dev/HermesMobileDev/Android/app/src/main/java/app/homeai/android/MainActivity.java`.
+    It does not implement `WebChromeClient.onShowFileChooser`; Android WebView
+    requires that host callback before `input[type=file]` can open a system
+    picker.
+- Plugin-side fix:
+  - `public/index.html`: `attachFiles` is now a real disabled/enabled
+    `<button>`; `fileInput` is a separate hidden input.
+  - `public/app.js`: `requestAttachmentPickerFromButton()` handles
+    `pointerdown`, `click`, `touchend`, and keyboard activation with a 650 ms
+    dedupe window; it tries `input.showPicker()` before `input.click()`.
+  - `public/styles.css`: hidden `fileInput` no longer overlays the button or
+    consumes pointer events.
+  - Client build/cache advanced to `codex-mobile-shell-v357`; README includes
+    Chinese release notes.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js`
+  - `node --test test/composer-quota.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+  - `npm run check`
+  - Home AI AI Ops required checks:
+    `node tests/architecture-code-test-harness-map.test.js`,
+    `git diff --check`
+- Remaining owner:
+  - The Android APK/WebView shell should implement
+    `WebChromeClient.onShowFileChooser` and route returned `Uri[]` back to the
+    stored `ValueCallback<Uri[]>`. The Codex plugin can make the web-side
+    request valid, but cannot open Android's system picker without the native
+    callback.

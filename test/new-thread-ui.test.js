@@ -91,12 +91,13 @@ test("composer input preserves Android IME composition connection", () => {
   assert.match(setter, /if \(!preserveImeConnection && currentContentEditable !== nextContentEditable\)/);
   assert.match(appJs, /function placeMessageInputCaretAtEnd\(input\)/);
   assert.match(focusHelper, /setMessageInputDisabled\(false\)/);
-  assert.match(focusHelper, /options\.resetActiveFocus && document\.activeElement === input && !isAndroidBrowser\(\)/);
+  assert.match(focusHelper, /options\.resetActiveFocus[\s\S]*document\.activeElement === input[\s\S]*\(!isAndroidBrowser\(\) \|\| options\.allowAndroidActiveFocusReset\)/);
   assert.match(focusHelper, /input\.focus\(\{ preventScroll: true \}\)/);
   assert.match(focusHelper, /if \(options\.moveCaretToEnd\) placeMessageInputCaretAtEnd\(input\)/);
   assert.match(indexHtml, /id="messageInput"[^>]*inputmode="text"[^>]*enterkeyhint="send"/);
   assert.match(appJs, /function messageInputKeyboardVisible\(\)/);
-  assert.match(functionBody("shouldRecoverMessageInputKeyboard"), /if \(isAndroidBrowser\(\)\) return false;/);
+  assert.match(functionBody("shouldRecoverMessageInputKeyboard"), /if \(!isAndroidBrowser\(\) && !isHermesEmbedMode\(\)\) return false;/);
+  assert.doesNotMatch(functionBody("shouldRecoverMessageInputKeyboard"), /if \(isAndroidBrowser\(\)\) return false;/);
   assert.match(appJs, /function recoverMessageInputKeyboardFromGesture\(\)/);
   assert.match(appJs, /function messageInputCanEnableForNativeGesture\(\)/);
   assert.match(functionBody("messageInputCanEnableForNativeGesture"), /state\.composerBusy \|\| state\.attachmentProcessingCount > 0/);
@@ -109,7 +110,7 @@ test("composer input preserves Android IME composition connection", () => {
   assert.match(appJs, /addEventListener\("pointerdown", prepareMessageInputForNativeGesture\)/);
   assert.match(appJs, /addEventListener\("pointerup", recoverMessageInputKeyboardFromGesture\)/);
   assert.match(appJs, /addEventListener\("click", recoverMessageInputKeyboardFromGesture\)/);
-  assert.match(functionBody("recoverMessageInputKeyboardFromGesture"), /focusMessageInput\(\{[\s\S]*resetActiveFocus: true/);
+  assert.match(functionBody("recoverMessageInputKeyboardFromGesture"), /focusMessageInput\(\{[\s\S]*resetActiveFocus: true[\s\S]*allowAndroidActiveFocusReset: true/);
   assert.match(appJs, /addEventListener\("compositionstart", \(\) => \{[\s\S]*state\.composerComposing = true;/);
   assert.match(appJs, /addEventListener\("compositionend", \(event\) => \{[\s\S]*state\.composerComposing = false;/);
   assert.match(appJs, /if \(state\.composerComposing \|\| event\.isComposing\) return;/);
