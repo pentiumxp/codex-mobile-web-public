@@ -371,7 +371,7 @@ const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v354";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v356";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -15881,7 +15881,7 @@ function focusMessageInput(options = {}) {
     setMessageInputDisabled(false);
   }
   if (input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true") return false;
-  if (options.resetActiveFocus && document.activeElement === input) {
+  if (options.resetActiveFocus && document.activeElement === input && !isAndroidBrowser()) {
     try {
       input.blur();
     } catch (_) {}
@@ -15911,6 +15911,7 @@ function messageInputKeyboardVisible() {
 function shouldRecoverMessageInputKeyboard() {
   const input = $("messageInput");
   if (!input || document.activeElement !== input) return false;
+  if (isAndroidBrowser()) return false;
   if (!isAndroidBrowser() && !isHermesEmbedMode()) return false;
   if (state.composerBusy || state.composerComposing) return false;
   if (messageInputKeyboardVisible()) return false;
@@ -15927,6 +15928,25 @@ function recoverMessageInputKeyboardFromGesture() {
     resetActiveFocus: true,
     retry: true,
   });
+}
+
+function messageInputCanEnableForNativeGesture() {
+  if (state.composerBusy || state.attachmentProcessingCount > 0) return false;
+  if (state.newThreadDraft) return true;
+  return Boolean(state.currentThreadId
+    && state.currentThread
+    && !state.currentThread.mobileLoading
+    && !state.currentThread.mobileLoadError);
+}
+
+function prepareMessageInputForNativeGesture() {
+  const input = $("messageInput");
+  state.messageInputPointerWasFocused = document.activeElement === input;
+  if (!input || !isAndroidBrowser()) return;
+  if (!messageInputCanEnableForNativeGesture()) return;
+  if (input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true") {
+    setMessageInputDisabled(false);
+  }
 }
 
 function normalizedComposerIntentText(value) {
@@ -16199,10 +16219,17 @@ function saveComposerIntentDialogDraft() {
   setComposerIntentDialogStatus("草稿已保存。");
 }
 
+function shouldKeepAndroidMessageInputEditable(disabled, el) {
+  if (!disabled || !isAndroidBrowser()) return false;
+  if (!el) return false;
+  return Boolean(state.newThreadDraft || state.currentThreadId || document.activeElement === el);
+}
+
 function setMessageInputDisabled(disabled) {
   const el = $("messageInput");
   if (!el) return;
-  const nextContentEditable = disabled ? "false" : "true";
+  const keepAndroidEditorConnection = shouldKeepAndroidMessageInputEditable(disabled, el);
+  const nextContentEditable = disabled && !keepAndroidEditorConnection ? "false" : "true";
   const nextAriaDisabled = disabled ? "true" : "false";
   const nextTabIndex = disabled ? -1 : 0;
   const currentContentEditable = String(el.getAttribute("contenteditable") || el.contentEditable || "").toLowerCase();
@@ -16214,7 +16241,8 @@ function setMessageInputDisabled(disabled) {
     && currentClassDisabled === disabled;
   if (alreadyApplied) return;
 
-  const preserveImeConnection = state.composerComposing && !disabled && currentContentEditable === "true";
+  const preserveImeConnection = (state.composerComposing || keepAndroidEditorConnection)
+    && currentContentEditable === "true";
   if (!preserveImeConnection && currentContentEditable !== nextContentEditable) {
     el.contentEditable = nextContentEditable;
   }
@@ -18046,9 +18074,7 @@ function wireUi() {
   });
   $("messageInput").addEventListener("keyup", queueComposerIntentMenuUpdate);
   $("messageInput").addEventListener("focus", queueComposerIntentMenuUpdate);
-  $("messageInput").addEventListener("pointerdown", () => {
-    state.messageInputPointerWasFocused = document.activeElement === $("messageInput");
-  });
+  $("messageInput").addEventListener("pointerdown", prepareMessageInputForNativeGesture);
   $("messageInput").addEventListener("pointerup", recoverMessageInputKeyboardFromGesture);
   $("messageInput").addEventListener("click", recoverMessageInputKeyboardFromGesture);
   $("messageInput").addEventListener("compositionstart", () => {

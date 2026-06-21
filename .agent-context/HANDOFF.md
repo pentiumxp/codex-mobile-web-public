@@ -7874,3 +7874,61 @@ The previous full handoff was archived and should be opened only when old proven
     `clientBuildId=0.1.11|codex-mobile-shell-v350` and
     `shellCacheName=codex-mobile-shell-v350`.
   - User confirmed the Android input issue was resolved.
+
+## 2026-06-21 Android Thread-Entry Composer IME v356
+
+- Status: implemented and validated locally with an attached Android device.
+  Not deployed or pushed from this handoff entry.
+- User-visible issue:
+  - Android-only. After entering a thread, the first composer tap could
+    occasionally fail to open the system IME. A second tap could open the IME
+    but input would not commit into the composer until leaving and reopening
+    the thread.
+- Root cause:
+  - The v353 recovery path still allowed Android to hit a blur/refocus branch
+    after a failed first tap. More importantly, thread switching renders an
+    intermediate `mobileLoading` state and `updateComposerControls()` can mark
+    the composer disabled. Rewriting `contentEditable=false/true` during this
+    window can break Android Chrome/WebView's contenteditable editor
+    connection.
+- Fix:
+  - `focusMessageInput()` no longer blurs/refocuses an already-active composer
+    on Android when `resetActiveFocus` is requested.
+  - `shouldRecoverMessageInputKeyboard()` fails closed on Android; the old
+    gesture recovery remains only for non-Android embedded recovery.
+  - `prepareMessageInputForNativeGesture()` runs on `pointerdown` and, for
+    Android, enables the composer before the native click focus path when the
+    current thread/new-thread context can compose.
+  - `setMessageInputDisabled()` keeps Android's underlying contenteditable
+    editor alive for an existing thread, loading thread, active thread, focused
+    input, or new-thread draft. Disabled state is still expressed through
+    `aria-disabled`, tab index, CSS class, and send/attachment control state.
+  - `public/index.html` adds `inputmode="text"` and `enterkeyhint="send"` to
+    the composer.
+  - Client build/cache advanced to `codex-mobile-shell-v356`; README includes
+    Chinese release notes for v355/v356.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js`
+  - `node --test test/new-thread-ui.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js test/plugin-voice-input.test.js`
+  - `npm run check`
+  - `node --test`
+  - Home AI required visual-tooling harnesses:
+    `node tests/ios-pwa-live-debug-server.test.js && node tests/ios-pwa-visual-harness.test.js`
+  - `git diff --check`
+  - Android device validation using
+    `/Users/xuxin/Library/Android/sdk/platform-tools/adb` against device
+    `e0cd9d2b`:
+    - ran a temporary dev server on `127.0.0.1:8795` with auth/update checks
+      disabled and `adb reverse tcp:8795 tcp:8795`;
+    - opened `http://127.0.0.1:8795/?v=356` in `org.chromium.chrome`;
+    - from the thread list, tapped the `codex mobile` thread, quickly tapped
+      the composer, then sent `adb shell input text androidv356`;
+    - screenshot `/tmp/codex-mobile-v356-android-thread-first-tap.png` shows
+      keyboard open and `androidv356` committed into the composer;
+    - Chrome DevTools Runtime readback from forwarded port `9223` returned
+      `messageInput.innerText="androidv356"`, `contentEditable="true"`,
+      `ariaDisabled="false"`, `active=true`;
+    - direct Runtime call to `setMessageInputDisabled(true)` while in the
+      thread returned `contentEditable="true"`, `ariaDisabled="true"`,
+      `tabIndex=-1`; restoring disabled false kept `contentEditable="true"`
+      and text unchanged.

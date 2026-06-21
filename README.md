@@ -1,5 +1,7 @@
 # Codex Mobile Web
 
+- 中文说明：v356 修复 Android Composer 进入线程后首次点击偶发不弹输入法、第二次点击键盘弹出但中文无法上屏的问题。Android 上不再用 blur/refocus 恢复键盘；已进入线程或新线程草稿时，即使线程仍在加载或发送中，也保持底层 contenteditable editor 不被拆掉，只用 aria/class/tabIndex 和发送状态表达禁用，避免破坏 WebView/Chrome 的 IME editor connection。PWA shell cache 升级到 `codex-mobile-shell-v356`。
+- 中文说明：v355 修复 Android Composer 第二次点击后键盘弹出但中文输入无法上屏的问题。Android 上不再用 blur/refocus 恢复键盘，避免破坏 WebView/Chrome 的 IME editor connection；点击开始前只确保 Composer 已经是可编辑状态，并让浏览器原生点击流程自己打开键盘。PWA shell cache 升级到 `codex-mobile-shell-v355`。
 - 中文说明：v354 修复 Composer 运行时选择被线程刷新打回默认的问题。当前线程没有文字草稿时，详情重载不再清空已经选择的 Model / 推理等级 / 权限；Fast 开关也会进入 Composer draft 内容判定，避免仅打开 Fast 但未输入文字时被当作空草稿丢弃。PWA shell cache 升级到 `codex-mobile-shell-v354`。
 - 中文说明：v353 修复 Android/WebView Composer 首次点击未弹出系统输入法后焦点锁死的问题。输入框点击开始时不再程序化抢焦点，而是先让浏览器原生点击流程打开键盘；如果第二次点击发现 Composer 已聚焦但键盘仍未打开，才在该用户手势内 blur/refocus 恢复输入法。PWA shell cache 升级到 `codex-mobile-shell-v353`。
 - 中文说明：v352 修复三处移动端工作流问题：Public PR 检查会忽略 GitHub draft PR，只有 ready/open PR 才提示合并；Mac 生产运行路径不在开发 checkout 时，新建 Workspace 仍会优先使用存在的 `/Users/hermes-dev/HermesMobileDev` 开发根；Android/嵌入态 Composer 点击和 Home AI 语音输入插入会先恢复可编辑状态并稳定聚焦到 Composer。PWA shell cache 升级到 `codex-mobile-shell-v352`。
