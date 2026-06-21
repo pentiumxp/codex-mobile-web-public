@@ -3497,7 +3497,8 @@ html.keyboard-open .side-chat-form textarea {
 .turn-timer {
   display: none;
   flex: 0 0 auto;
-  width: min(48vw, 230px);
+  width: auto;
+  max-width: min(58vw, 320px);
   margin-left: auto;
   padding: 6px 9px;
   color: var(--muted-code-text);
@@ -3517,19 +3518,21 @@ html.keyboard-open .side-chat-form textarea {
 }
 
 .turn-timer.visible {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   opacity: 1;
   transform: translateY(0);
 }
 
 .turn-timer-time {
-  flex: 0 0 104px;
+  flex: 0 0 auto;
+  min-width: 12.75em;
   font-variant-numeric: tabular-nums;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .turn-timer-detail {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -6835,7 +6838,7 @@ html.embed-hermes #openMenu.split-return-visible {
   }
 
   .turn-timer {
-    width: min(50vw, 230px);
+    max-width: min(64vw, 320px);
     padding-inline: 7px;
   }
 
