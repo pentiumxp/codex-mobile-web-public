@@ -371,7 +371,7 @@ const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v353";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v354";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -3711,6 +3711,7 @@ function buildCurrentDraft() {
     const permission = normalizePermissionModeValue(state.composerPermissionMode);
     if (permission) draft.permissionMode = permission;
   }
+  if (codexFastCommandEnabled()) draft.fastMode = true;
   return draft;
 }
 
@@ -3807,9 +3808,14 @@ function defaultNewThreadPermissionMode() {
 }
 
 function applyDraftRuntimeSelection(draft) {
+  const hasDraft = Boolean(draft && typeof draft === "object");
   const model = String(draft && draft.model || "");
   const effort = String(draft && draft.effort || "");
   const permission = effectiveComposerPermissionMode(draft && draft.permissionMode);
+  if (draft && draft.fastMode === true) {
+    state.codexFastMode = true;
+    localStorage.setItem(STORAGE_CODEX_FAST_MODE, "on");
+  }
   if (state.newThreadDraft) {
     state.newThreadTitle = String(draft && draft.threadTitle || "").trim();
     state.newThreadModel = model && state.modelOptions.includes(model) ? model : defaultNewThreadModel();
@@ -3818,6 +3824,7 @@ function applyDraftRuntimeSelection(draft) {
     return;
   }
   state.newThreadTitle = "";
+  if (!hasDraft) return;
   state.composerModel = model && state.modelOptions.includes(model) ? model : "";
   state.composerEffort = effort && state.reasoningEffortOptions.includes(effort) ? effort : "";
   state.composerPermissionMode = permission && state.permissionModeOptions.includes(permission) ? permission : "";

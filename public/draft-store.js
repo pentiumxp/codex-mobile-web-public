@@ -59,7 +59,8 @@
         || (Array.isArray(draft.attachments) && draft.attachments.length)
         || draft.model
         || draft.effort
-        || draft.permissionMode));
+        || draft.permissionMode
+        || draft.fastMode === true));
   }
 
   function attachmentStorageKey(draftKey, attachmentIdValue) {
