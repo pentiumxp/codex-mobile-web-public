@@ -40,6 +40,54 @@ Last compacted: 2026-06-08T13:27:43.304Z
 - Production backup:
   - `/Users/xuxin/.codex-mobile-web/deploy-backups/codex-mobile-web-static/20260621T033602Z-android-composer-focus-v353`.
 
+## 2026-06-21 Composer Runtime Selection v354
+
+- Status: implemented, focused-tested, committed locally, and production
+  readback passed after the user confirmed the upgrade was complete.
+- Trigger:
+  - Fast could appear enabled briefly and then disappear.
+  - Current-thread reasoning effort such as `xhigh` could revert to the
+    thread/default `medium` after background thread refresh.
+  - v353 had also pushed the draft-PR service fix to public, but production
+    still had old `server.js` / `adapters/public-pull-request-service.js`
+    until the plugin service was fully synced and restarted.
+- Change:
+  - `public/app.js`: advanced client build id to
+    `codex-mobile-shell-v354`.
+  - `public/app.js`: Composer draft snapshots now include `fastMode: true`
+    when Fast is enabled.
+  - `public/draft-store.js`: runtime-only Fast state now counts as draft
+    content, so toggling Fast without typed text is not discarded as an empty
+    draft.
+  - `public/app.js`: same-thread detail reloads without a draft no longer clear
+    already selected Composer runtime overrides. Thread switches still clear
+    overrides through `resetComposerRuntimeSelection`.
+  - The production full plugin sync also brought the existing v352 server-side
+    draft-PR filtering into the live 8787 service.
+- Validation:
+  - Passed:
+    `node --check public/app.js && node --check public/draft-store.js && node --check public/sw.js && node --check adapters/public-pull-request-service.js && node --check server.js`.
+  - Passed:
+    `node --test test/composer-draft.test.js test/composer-quota.test.js test/public-pull-request-service.test.js test/new-thread-route.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`.
+  - Passed: `npm run check`.
+  - Passed center checks:
+    `node tests/architecture-code-test-harness-map.test.js`,
+    `node --check scripts/deploy-macos-production.js`,
+    `node tests/macos-production-deploy-script.test.js`, and
+    `node tests/production-status-smoke-harness.test.js`.
+  - Production readback returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v354` and
+    `shellCacheName=codex-mobile-shell-v354`.
+  - Production hash comparison showed live `server.js`,
+    `adapters/public-pull-request-service.js`, `public/app.js`,
+    `public/draft-store.js`, and `public/sw.js` match the development tree.
+  - Authenticated production
+    `/api/public-pull-requests/status?force=1` returned
+    `openPullRequestCount=0`, `hasOpenPullRequests=false`, and an empty
+    `pullRequests` array for the current draft-only public PR state.
+  - AI Ops evidence ledger record:
+    `evidence-ff201934-844d-41e4-b2eb-77b79b0fd8a3`.
+
 ## 2026-06-21 Public v353 Release
 
 - Status: pushed to public and merged back into private history.
