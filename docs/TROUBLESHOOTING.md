@@ -94,6 +94,23 @@ lsof -nP -iTCP:8787 -sTCP:LISTEN
 grep -c EADDRINUSE "$HOME/.codex-mobile-web/logs/mobile-web.log"
 ```
 
+If the 8787 listener is absent because the system LaunchDaemon is not loaded,
+the host can recover without depending on the Web UI:
+
+```bash
+cd /Users/hermes-host/HermesMobile/plugins/codex-mobile-web
+./restart-codex-mobile-host-macos.sh --list-homes --json
+./restart-codex-mobile-host-macos.sh --profile-id previous --json
+```
+
+The script reads the target user and runtime paths from
+`/Library/LaunchDaemons/com.hermesmobile.plugin.codex-mobile.plist`, updates the
+active Codex profile store plus the plist `CODEX_HOME`, bootstraps
+`system/com.hermesmobile.plugin.codex-mobile`, and waits for
+`/api/public-config`. It must not print access keys or raw auth tokens. Use
+`--codex-home <path>` only when the host has selected an explicit configured
+home path outside the normal profile ids.
+
 Also compare the listener bind address with the plugin base URL advertised to
 Hermes. If `CODEX_MOBILE_HERMES_PLUGIN_BASE_URL` is a LAN URL such as
 `http://192.168.x.x:8787`, the listener must bind to `0.0.0.0` or that LAN

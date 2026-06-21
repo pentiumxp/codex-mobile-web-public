@@ -103,6 +103,16 @@ const state = {
   workspaceCreateRoot: "",
   workspaceCreateRoots: [],
   workspaceCreateBusy: false,
+  workspaceDelegation: {
+    enabled: false,
+    mode: "off",
+    directTaskCardAutoApproval: false,
+    ordinarySendPreflight: false,
+    localHeuristics: false,
+    source: "default",
+    updatedAt: "",
+  },
+  workspaceDelegationBusy: false,
   selectedCwd: "",
   workspaceTokenUsage: null,
   workspaceTokenUsageDetailsOpen: false,
@@ -212,6 +222,7 @@ const state = {
   composerComposing: false,
   messageInputPointerWasFocused: false,
   messageInputKeyboardRecoveryAt: 0,
+  lastAttachmentPickerAt: 0,
   composerHeightPx: 0,
   messageInputHeightPx: 0,
   messageInputTextLength: 0,
@@ -371,7 +382,7 @@ const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v354";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v366";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -531,6 +542,9 @@ const ANDROID_BACK_SIDEBAR_BASE = "base";
 const ANDROID_BACK_SIDEBAR_TOP = "top";
 const SIDEBAR_EDGE_OPEN_MIN_PX = 76;
 const SIDEBAR_EDGE_OPEN_RATIO = 0.22;
+const SUBAGENT_EDGE_SWIPE_PX = 56;
+const SUBAGENT_EDGE_SWIPE_MAX_PX = 88;
+const SUBAGENT_EDGE_SWIPE_RATIO = 0.08;
 const SUBAGENT_SWIPE_MIN_PX = 70;
 const SUBAGENT_WHEEL_SWIPE_MIN_PX = 48;
 const FILE_PREVIEW_SWIPE_CLOSE_MIN_PX = 62;
@@ -2175,6 +2189,76 @@ async function loadCodexProfiles() {
   const profiles = await api("/api/codex-profiles", { timeoutMs: 12000 });
   rememberCodexProfiles(profiles);
   return profiles;
+}
+
+function normalizeWorkspaceDelegationConfig(value) {
+  const input = value && typeof value === "object" ? value : {};
+  return {
+    enabled: Boolean(input.enabled),
+    mode: String(input.mode || (input.enabled ? "model_driven_explicit_task_card" : "off")),
+    directTaskCardAutoApproval: Boolean(input.directTaskCardAutoApproval),
+    ordinarySendPreflight: Boolean(input.ordinarySendPreflight),
+    localHeuristics: Boolean(input.localHeuristics),
+    source: String(input.source || "default"),
+    updatedAt: String(input.updatedAt || ""),
+  };
+}
+
+function rememberWorkspaceDelegationConfig(value) {
+  state.workspaceDelegation = normalizeWorkspaceDelegationConfig(value);
+  renderWorkspaceDelegationSettings();
+}
+
+function workspaceDelegationSourceLabel(source) {
+  if (source === "runtime") return "手动设置";
+  if (source === "environment") return "环境变量默认";
+  return "默认关闭";
+}
+
+function renderWorkspaceDelegationSettings() {
+  const el = $("workspaceDelegationSettings");
+  if (!el) return;
+  const config = normalizeWorkspaceDelegationConfig(state.workspaceDelegation);
+  const enabled = Boolean(config.enabled);
+  const busy = Boolean(state.workspaceDelegationBusy);
+  const title = enabled
+    ? "模型/工具显式发卡可直批到目标线程"
+    : "模型/工具显式发卡会保留为 pending，目标线程需要审批";
+  el.innerHTML = `<div class="workspace-delegation-row${enabled ? " enabled" : ""}">`
+    + `<div class="workspace-delegation-main">`
+    + `<strong>${enabled ? "已开启" : "已关闭"}</strong>`
+    + `<span>${escapeHtml(title)}</span>`
+    + `<small>${escapeHtml(workspaceDelegationSourceLabel(config.source))} · 本地预检关闭</small>`
+    + `</div>`
+    + `<div class="workspace-delegation-side">`
+    + `<button type="button" data-workspace-delegation-toggle ${busy ? "disabled" : ""}>${busy ? "保存中" : enabled ? "关闭" : "开启"}</button>`
+    + `</div>`
+    + `</div>`;
+}
+
+async function handleWorkspaceDelegationSettingsClick(event) {
+  const button = event.target.closest("[data-workspace-delegation-toggle]");
+  if (!button || button.disabled || state.workspaceDelegationBusy) return;
+  const nextEnabled = !Boolean(state.workspaceDelegation && state.workspaceDelegation.enabled);
+  state.workspaceDelegationBusy = true;
+  $("connectionState").textContent = nextEnabled ? "正在开启跨工作区委派..." : "正在关闭跨工作区委派...";
+  renderWorkspaceDelegationSettings();
+  try {
+    const result = await api("/api/settings/workspace-delegation", {
+      method: "POST",
+      body: JSON.stringify({ enabled: nextEnabled }),
+      timeoutMs: 12000,
+    });
+    rememberWorkspaceDelegationConfig(result && result.workspaceDelegation || null);
+    $("connectionState").textContent = nextEnabled ? "跨工作区委派已开启" : "跨工作区委派已关闭";
+  } catch (err) {
+    showError(err);
+    $("connectionState").textContent = err.message || "跨工作区委派设置失败";
+    renderWorkspaceDelegationSettings();
+  } finally {
+    state.workspaceDelegationBusy = false;
+    renderWorkspaceDelegationSettings();
+  }
 }
 
 function renderAppNativeDialog() {
@@ -9072,6 +9156,20 @@ function isHorizontalScrollableGestureTarget(target) {
   ));
 }
 
+function subagentSwipeEdgeLimitPx() {
+  const viewportWidth = Math.max(0, window.innerWidth || document.documentElement.clientWidth || 0);
+  if (!viewportWidth) return SUBAGENT_EDGE_SWIPE_PX;
+  const responsiveLimit = Math.round(viewportWidth * SUBAGENT_EDGE_SWIPE_RATIO);
+  return Math.min(SUBAGENT_EDGE_SWIPE_MAX_PX, Math.max(SUBAGENT_EDGE_SWIPE_PX, responsiveLimit));
+}
+
+function subagentSwipeStartsNearEdge(clientX) {
+  const x = Number(clientX);
+  const viewportWidth = Math.max(0, window.innerWidth || document.documentElement.clientWidth || 0);
+  if (!Number.isFinite(x) || !viewportWidth) return false;
+  return viewportWidth - x <= subagentSwipeEdgeLimitPx();
+}
+
 function beginSubagentSwipe(event) {
   if (!subagentSwipeAvailable()) return;
   if (event.touches && event.touches.length > 1) return;
@@ -9079,6 +9177,7 @@ function beginSubagentSwipe(event) {
   if (isHorizontalScrollableGestureTarget(event.target)) return;
   const touch = primaryTouch(event);
   if (!touch) return;
+  if (!subagentSwipeStartsNearEdge(touch.clientX)) return;
   state.subagentSwipe = {
     startX: touch.clientX,
     startY: touch.clientY,
@@ -9124,6 +9223,7 @@ function cancelSubagentSwipe() {
 function handleSubagentWheelSwipe(event) {
   if (state.subagentPanelOpen || !subagentSwipeAvailable()) return;
   if (isHorizontalScrollableGestureTarget(event.target)) return;
+  if (!subagentSwipeStartsNearEdge(event.clientX)) return;
   const dx = Number(event.deltaX || 0);
   const dy = Number(event.deltaY || 0);
   if (dx >= SUBAGENT_WHEEL_SWIPE_MIN_PX && Math.abs(dx) > Math.abs(dy) * 1.2) openSubagentPanelFromGesture();
@@ -15881,7 +15981,9 @@ function focusMessageInput(options = {}) {
     setMessageInputDisabled(false);
   }
   if (input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true") return false;
-  if (options.resetActiveFocus && document.activeElement === input) {
+  if (options.resetActiveFocus
+    && document.activeElement === input
+    && (!isAndroidBrowser() || options.allowAndroidActiveFocusReset)) {
     try {
       input.blur();
     } catch (_) {}
@@ -15925,8 +16027,28 @@ function recoverMessageInputKeyboardFromGesture() {
   return focusMessageInput({
     moveCaretToEnd: false,
     resetActiveFocus: true,
+    allowAndroidActiveFocusReset: true,
     retry: true,
   });
+}
+
+function messageInputCanEnableForNativeGesture() {
+  if (state.composerBusy || state.attachmentProcessingCount > 0) return false;
+  if (state.newThreadDraft) return true;
+  return Boolean(state.currentThreadId
+    && state.currentThread
+    && !state.currentThread.mobileLoading
+    && !state.currentThread.mobileLoadError);
+}
+
+function prepareMessageInputForNativeGesture() {
+  const input = $("messageInput");
+  state.messageInputPointerWasFocused = document.activeElement === input;
+  if (!input || !isAndroidBrowser()) return;
+  if (!messageInputCanEnableForNativeGesture()) return;
+  if (input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true") {
+    setMessageInputDisabled(false);
+  }
 }
 
 function normalizedComposerIntentText(value) {
@@ -16199,10 +16321,17 @@ function saveComposerIntentDialogDraft() {
   setComposerIntentDialogStatus("草稿已保存。");
 }
 
+function shouldKeepAndroidMessageInputEditable(disabled, el) {
+  if (!disabled || !isAndroidBrowser()) return false;
+  if (!el) return false;
+  return Boolean(state.newThreadDraft || state.currentThreadId || document.activeElement === el);
+}
+
 function setMessageInputDisabled(disabled) {
   const el = $("messageInput");
   if (!el) return;
-  const nextContentEditable = disabled ? "false" : "true";
+  const keepAndroidEditorConnection = shouldKeepAndroidMessageInputEditable(disabled, el);
+  const nextContentEditable = disabled && !keepAndroidEditorConnection ? "false" : "true";
   const nextAriaDisabled = disabled ? "true" : "false";
   const nextTabIndex = disabled ? -1 : 0;
   const currentContentEditable = String(el.getAttribute("contenteditable") || el.contentEditable || "").toLowerCase();
@@ -16214,7 +16343,8 @@ function setMessageInputDisabled(disabled) {
     && currentClassDisabled === disabled;
   if (alreadyApplied) return;
 
-  const preserveImeConnection = state.composerComposing && !disabled && currentContentEditable === "true";
+  const preserveImeConnection = (state.composerComposing || keepAndroidEditorConnection)
+    && currentContentEditable === "true";
   if (!preserveImeConnection && currentContentEditable !== nextContentEditable) {
     el.contentEditable = nextContentEditable;
   }
@@ -16753,6 +16883,7 @@ function updateComposerControls() {
   }
   setMessageInputDisabled(disabled);
   $("fileInput").disabled = disabled;
+  attachButton.disabled = disabled;
   attachButton.classList.toggle("disabled", disabled);
   attachButton.setAttribute("aria-disabled", disabled ? "true" : "false");
   attachButton.tabIndex = disabled ? -1 : 0;
@@ -17397,6 +17528,29 @@ function requestComposerSubmitFromButton(event) {
   }, 1200);
 }
 
+function requestAttachmentPickerFromButton(event) {
+  if (event && typeof event.preventDefault === "function") event.preventDefault();
+  if (event && typeof event.stopPropagation === "function") event.stopPropagation();
+  const now = Date.now();
+  if (now - Number(state.lastAttachmentPickerAt || 0) < 650) return;
+  const button = $("attachFiles");
+  const input = $("fileInput");
+  if (!button || !input || button.disabled || input.disabled || state.composerBusy) return;
+  state.lastAttachmentPickerAt = now;
+  try {
+    if (!isAndroidBrowser() && typeof input.showPicker === "function") input.showPicker();
+    else input.click();
+  } catch (err) {
+    postClientEvent("attachment_picker_click_exception", {
+      activeElement: document.activeElement ? document.activeElement.id || document.activeElement.tagName || "" : "",
+      buttonDisabled: Boolean(button.disabled),
+      inputDisabled: Boolean(input.disabled),
+      error: String(err && err.message || ""),
+    });
+    showError(new Error("附件选择器打开失败，请重试"));
+  }
+}
+
 async function interruptActiveTurn() {
   if (!state.currentThreadId || !state.activeTurnId) return;
   $("connectionState").classList.remove("error");
@@ -17779,6 +17933,7 @@ function wireUi() {
   if (settingsPanel) {
     settingsPanel.addEventListener("click", handleFontSizeChoice);
     settingsPanel.addEventListener("click", (event) => handleCodexProfileSettingsClick(event).catch(showError));
+    settingsPanel.addEventListener("click", (event) => handleWorkspaceDelegationSettingsClick(event).catch(showError));
   }
   const commandControl = $("composerCommandControl");
   if (commandControl) {
@@ -18046,9 +18201,7 @@ function wireUi() {
   });
   $("messageInput").addEventListener("keyup", queueComposerIntentMenuUpdate);
   $("messageInput").addEventListener("focus", queueComposerIntentMenuUpdate);
-  $("messageInput").addEventListener("pointerdown", () => {
-    state.messageInputPointerWasFocused = document.activeElement === $("messageInput");
-  });
+  $("messageInput").addEventListener("pointerdown", prepareMessageInputForNativeGesture);
   $("messageInput").addEventListener("pointerup", recoverMessageInputKeyboardFromGesture);
   $("messageInput").addEventListener("click", recoverMessageInputKeyboardFromGesture);
   $("messageInput").addEventListener("compositionstart", () => {
@@ -18082,10 +18235,10 @@ function wireUi() {
       document.execCommand("insertText", false, text);
     }
   });
+  $("attachFiles").addEventListener("click", requestAttachmentPickerFromButton);
   $("attachFiles").addEventListener("keydown", (event) => {
-    if ($("fileInput").disabled || !["Enter", " "].includes(event.key)) return;
-    event.preventDefault();
-    $("fileInput").click();
+    if (!["Enter", " "].includes(event.key)) return;
+    requestAttachmentPickerFromButton(event);
   });
   $("fileInput").addEventListener("change", (event) => {
     addAttachmentFiles(event.target.files).catch(showError);
@@ -18358,6 +18511,7 @@ async function start() {
   state.workspaceCreateEnabled = config.workspaceCreate ? config.workspaceCreate.enabled !== false : true;
   state.workspaceCreateRoot = String(config.workspaceCreate && config.workspaceCreate.defaultRoot || "").trim();
   state.workspaceCreateRoots = normalizeOptionList(config.workspaceCreate && config.workspaceCreate.roots || []);
+  rememberWorkspaceDelegationConfig(config.workspaceDelegation || null);
   state.publicPrStatus = {
     enabled: state.publicPrEnabled,
     repository: state.publicPrRepository,

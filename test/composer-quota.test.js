@@ -78,6 +78,27 @@ test("quota card separates inline summary from detail panel", () => {
   assert.match(stylesCss, /\.quota-danger \.quota-detail-value/);
 });
 
+test("composer attachment button uses explicit WebView-safe file picker trigger", () => {
+  assert.match(indexHtml, /<button id="attachFiles"[^>]*class="icon-button composer-icon file-picker"[^>]*type="button"/);
+  assert.match(indexHtml, /class="attachment-picker-cell"/);
+  assert.match(indexHtml, /<input id="fileInput" class="file-input" type="file" multiple disabled aria-label="Attach files" tabindex="-1">/);
+  assert.doesNotMatch(indexHtml, /<label id="attachFiles"/);
+  assert.match(stylesCss, /\.attachment-picker-cell\s*{[\s\S]*position:\s*relative;/);
+  assert.match(stylesCss, /\.file-picker\s*{[\s\S]*touch-action:\s*manipulation;/);
+  assert.match(stylesCss, /\.file-picker > \*\s*{[\s\S]*pointer-events:\s*none;/);
+  assert.match(stylesCss, /\.file-input\s*{[\s\S]*inset:\s*0;[\s\S]*pointer-events:\s*auto;/);
+  assert.match(stylesCss, /\.file-input:disabled\s*{[\s\S]*pointer-events:\s*none;/);
+  assert.match(appJs, /lastAttachmentPickerAt:\s*0/);
+  assert.match(appJs, /function requestAttachmentPickerFromButton\(event\)/);
+  assert.match(appJs, /now - Number\(state\.lastAttachmentPickerAt \|\| 0\) < 650/);
+  assert.match(appJs, /!isAndroidBrowser\(\) && typeof input\.showPicker === "function"/);
+  assert.match(appJs, /input\.click\(\)/);
+  assert.match(appJs, /attachButton\.disabled = disabled/);
+  assert.match(appJs, /\$\("attachFiles"\)\.addEventListener\("click", requestAttachmentPickerFromButton\)/);
+  assert.doesNotMatch(appJs, /\$\("attachFiles"\)\.addEventListener\("pointerdown", requestAttachmentPickerFromButton\)/);
+  assert.doesNotMatch(appJs, /\$\("attachFiles"\)\.addEventListener\("touchend", requestAttachmentPickerFromButton/);
+});
+
 test("phone composer controls stay in one compact status row", () => {
   const mobileIndex = stylesCss.indexOf("@media (max-width: 760px)");
   assert.ok(mobileIndex > 0, "missing mobile media query");

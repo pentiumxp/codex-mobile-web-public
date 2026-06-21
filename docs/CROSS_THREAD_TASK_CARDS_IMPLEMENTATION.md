@@ -28,6 +28,10 @@ layout and test strategy.
     task-card drafts through the same idempotent create service path
   - fallback `thread/turns/list` detail mode must still run task-card draft
     materialization before attaching visible cards
+  - source-thread direct task-card route for model/tool initiated delegation
+  - app-server dynamic tool injection for Codex-thread initiated delegation
+  - disabled compatibility route for the removed local cross-workspace
+    delegation preflight
   - SSE/broadcast integration only
 
 ### Browser-side
@@ -53,6 +57,9 @@ layout and test strategy.
   - target-thread detail rendering only for `pending` cards whose
     `threadRole` is `target`; source outgoing pending cards should not render
     as local work items
+  - no ordinary-send local cross-workspace preflight. Cross-workspace work must
+    come from an explicit model-produced task-card draft or a model/tool call to
+    the thread-callable route, not from browser-side keyword/path matching.
 
 - future optional helper:
   - `public/thread-task-cards.js`
@@ -62,6 +69,8 @@ layout and test strategy.
 
 - `POST /api/thread-task-cards`
 - `POST /api/threads/:sourceThreadId/task-cards`
+- `POST /api/threads/:sourceThreadId/workspace-delegation`
+- `GET|POST /api/settings/workspace-delegation`
 - `GET /api/thread-task-cards/:id`
 - `POST /api/thread-task-cards/:id/approve`
 - `POST /api/thread-task-cards/:id/delete`
@@ -72,11 +81,14 @@ layout and test strategy.
 delegation route. It uses `buildThreadTaskCardCreatePayload()` to infer source
 metadata, resolve target ids or exact target titles, truncate overlong bodies to
 the 8k card limit, and derive a stable `thread-call:*` idempotency key when the
-caller does not provide one. By default it calls
-`threadTaskCardService.approveFromSource()` after storing each card, so the
-target thread receives a real injected turn without showing a target-side
-pending approval card. Passing `pending:true` or `autoApprove:false` keeps the
-card in the original manual-pending flow.
+caller does not provide one. Source-thread direct auto-approval is gated by the
+runtime Settings switch `跨工作区委派`, and is off by default. The runtime value is
+stored in `settings.json`; `CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1` (or
+compatible alias `CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED=1`) only supplies
+the default when no runtime value exists. When the switch is off, the route
+stores pending cards only. Passing `pending:true`, `autoApprove:false`, or
+`direct:false` also keeps the card in the manual-pending flow even when the
+switch is enabled.
 
 The supported local CLI wrapper is:
 
@@ -92,7 +104,41 @@ The script reads the access key from `CODEX_MOBILE_KEY`,
 `CODEX_MOBILE_ACCESS_KEY`, `CODEX_MOBILE_KEY_FILE`, or
 `$HOME/.codex-mobile-web/access_key`, sends it as an Authorization header, and
 prints only the bounded JSON response. Prefer `--body-file` or `--json-file`
-for Chinese or long Markdown payloads.
+for Chinese or long Markdown payloads. The script can request direct
+auto-approval, but the server only honors that request when the runtime
+`跨工作区委派` switch is enabled.
+
+When the runtime `跨工作区委派` switch is enabled, server-side `thread/start` and
+`turn/start` requests also receive a Codex app-server dynamic tool:
+
+```text
+codex_mobile.delegate_to_thread
+```
+
+This is the model-visible path for running Codex turns. It is not MCP. The
+model decides from the current request whether cross-workspace delegation is
+needed, calls the tool with an exact target thread id/title or exact target
+workspace cwd, and the server converts the tool call into the same
+`createThreadTaskCardsFromSourceThread()` path used by
+`POST /api/threads/:sourceThreadId/task-cards`. The tool returns bounded JSON
+text containing card ids, target thread ids, and whether source-direct approval
+was used. If the switch is off, the tool is not injected. If the tool is called
+without a target or source thread id cannot be inferred, the server returns a
+bounded error to the model instead of hanging the turn.
+
+`POST /api/threads/:sourceThreadId/workspace-delegation` is retained only as a
+compatibility endpoint for clients that shipped during the v363 experiment. It
+returns `delegated:false`, `disabled:true`, and
+`analysis.reason:"workspace_delegation_disabled"` by default. If the runtime
+`跨工作区委派` switch is enabled, it still must not create cards and instead reports
+`analysis.reason:"model_driven_delegation_requires_explicit_task_card"`.
+The v363 local heuristic was removed because directory names and thread titles
+are not reliable enough to decide target workspaces. New cross-workspace
+delegation must be model/tool explicit through `POST
+/api/threads/:sourceThreadId/task-cards`, `scripts/create-thread-task-card.js`,
+the `codex_mobile.delegate_to_thread` app-server dynamic tool,
+or structured model output that is materialized by the existing task-card
+draft flow.
 
 ## Proposed Read Integration
 
@@ -205,6 +251,9 @@ After implementation begins, expand coverage with:
 - frontend/static harness checks that source draft keys are content-stable, that
   existing matching cards mark a draft created, and that only target-side
   pending cards render in thread detail.
+- regression checks that ordinary Composer sends do not call a local
+  `workspace-delegation` preflight and that the compatibility route remains
+  disabled.
 
 ## Activation Expectations
 

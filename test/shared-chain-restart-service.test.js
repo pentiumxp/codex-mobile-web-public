@@ -223,7 +223,7 @@ test("restart PowerShell scheduled task bootstrap preserves paths with spaces", 
   assert.equal(quoteWindowsCommandArg("C:\\Program Files\\PowerShell\\pwsh.exe"), "\"C:\\Program Files\\PowerShell\\pwsh.exe\"");
 });
 
-test("macOS restart command restarts the existing LaunchAgent when available", () => {
+test("macOS restart command restarts the existing LaunchDaemon when available", () => {
   const root = path.resolve(__dirname, "..");
   const command = buildRestartMacShellCommand({
     delayMs: 1200,
@@ -248,15 +248,16 @@ test("macOS restart command restarts the existing LaunchAgent when available", (
 
   assert.match(command, /sleep 1\.200/);
   assert.match(command, /service_label='com\.homeai\.plugin\.codex-mobile'/);
-  assert.match(command, /launchctl_path print "system\/\$service_label"/);
+  assert.match(command, /run_restart_sudo "\$launchctl_path" print "system\/\$service_label"/);
+  assert.match(command, /service_domain="system\/\$service_label"/);
   assert.match(command, /repair_system_launchdaemon_stdio >/);
   assert.match(command, /std\(out\|err\) path = /);
   assert.match(command, /\/usr\/bin\/touch "\$log_path"/);
   assert.match(command, /\/usr\/sbin\/chown "\$service_user:staff" "\$log_path"/);
   assert.match(command, /bootout "\$launchd_domain\/\$old_label"/);
-  assert.match(command, /kickstart -k "\$launchd_domain\/\$service_label"/);
+  assert.match(command, /restart_launchd_service/);
+  assert.match(command, /run_restart_sudo "\$launchctl_path" kickstart -k "\$service_domain"/);
   assert.match(command, /\/bin\/kill 4321/);
-  assert.doesNotMatch(command, /kickstart -k "system\/\$service_label"/);
   assert.doesNotMatch(command, /CODEX_HOME='/);
   assert.doesNotMatch(command, /CODEX_MOBILE_RUNTIME_DIR='/);
   assert.doesNotMatch(command, /CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER='/);
@@ -340,9 +341,9 @@ test("restart service spawns a detached macOS launchctl restart command", () => 
   assert.ok(unrefCalled);
   assert.equal(spawnCall.exe, "/bin/bash");
   assert.deepEqual(spawnCall.args.slice(0, 1), ["-lc"]);
-  assert.match(spawnCall.args[1], /kickstart -k "\$launchd_domain\/\$service_label"/);
+  assert.match(spawnCall.args[1], /restart_launchd_service/);
+  assert.match(spawnCall.args[1], /run_restart_sudo "\$launchctl_path" kickstart -k "\$service_domain"/);
   assert.match(spawnCall.args[1], /\/bin\/kill 4321/);
-  assert.doesNotMatch(spawnCall.args[1], /kickstart -k "system\/\$service_label"/);
   assert.doesNotMatch(spawnCall.args[1], /launchctl' submit/);
   assert.doesNotMatch(spawnCall.args[1], /CODEX_MOBILE_PORT='8789'/);
   assert.equal(spawnCall.options.detached, true);
