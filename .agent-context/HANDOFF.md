@@ -40,6 +40,26 @@ Last compacted: 2026-06-08T13:27:43.304Z
 - Production backup:
   - `/Users/xuxin/.codex-mobile-web/deploy-backups/codex-mobile-web-static/20260621T033602Z-android-composer-focus-v353`.
 
+## 2026-06-21 Public v353 Release
+
+- Status: pushed to public and merged back into private history.
+- Public commit:
+  - `dd32eec release: 发布 v353 Codex Mobile 修复`
+- Private synchronization:
+  - Merged `public/main` back into private `main` with
+    `33a0439 merge: 同步 public v353 发布`.
+  - Verified `public/main` is an ancestor of private `main`.
+  - Verified `git diff --stat public/main..main -- ':!.agent-context'` is
+    empty after the merge.
+- Public validation in a clean temporary public worktree:
+  - `npm ci`
+  - `npm test` (567/567 passed)
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --cached --check`
+- Public CI:
+  - GitHub Actions run `27892496393` completed successfully.
+
 ## 2026-06-21 PR Draft Filter, Workspace Root, Composer Focus v352
 
 - Status: implemented and focused-tested locally. Not deployed in this entry.
