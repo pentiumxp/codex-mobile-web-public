@@ -4,8 +4,7 @@ Last compacted: 2026-06-08T13:27:43.304Z
 
 ## 2026-06-21 Thread Projection Boundary Investigation
 
-- Status: short-term server-side enrichment-window fix implemented and
-  validated; not deployed in this entry.
+- Status: committed, deployed to Mac production, and smoke-tested.
 - Trigger:
   - User suspected Codex Mobile projection starts failing after rollout reaches
     a size or window boundary.
@@ -58,6 +57,21 @@ Last compacted: 2026-06-08T13:27:43.304Z
     `node tests/architecture-code-test-harness-map.test.js`.
   - AI Ops evidence ledger:
     `evidence-ecf5945e-acab-4a58-9b3a-8b62b2d65393`.
+- Production deploy:
+  - Deployed through Home AI central Mac deploy script with restart label
+    `com.hermesmobile.plugin.codex-mobile`.
+  - Commit deployed: `4e6fc41857b1`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260621T104209Z-plugin-codex-mobile-web-manual`.
+  - Health URL `/api/public-config` passed.
+  - Production source readback confirmed
+    `CODEX_MOBILE_ROLLOUT_ENRICHMENT_CONTEXT_BYTES` and
+    `readRolloutEnrichmentText`.
+  - Authenticated thread detail smoke for
+    `019ea76b-d846-7892-bda0-c0fff9cf7581` returned 200, `thread-read`, v4,
+    10 turns, and 312 omitted turns.
+  - AI Ops deploy evidence ledger:
+    `evidence-4b7fe05e-0b20-4eab-91d2-0ef6a6b768a3`.
 
 ## 2026-06-21 Workspace Delegation Dynamic Tool
 
