@@ -3273,6 +3273,8 @@ function normalizeSandboxPolicyType(type) {
   return {
     "danger-full-access": "dangerFullAccess",
     dangerFullAccess: "dangerFullAccess",
+    disabled: "dangerFullAccess",
+    "no-sandbox": "dangerFullAccess",
     "read-only": "readOnly",
     readOnly: "readOnly",
     "workspace-write": "workspaceWrite",
@@ -7713,7 +7715,7 @@ const chatGptProBridgeService = createChatGptProBridgeService({
   outputDir: CHATGPT_PRO_OUTPUT_DIR,
   enabled: CHATGPT_PRO_BRIDGE_ENABLED,
   createThread: async ({ cwd }) => {
-    const runtimeSettings = applyPermissionModeOverride({}, "auto", cwd || APP_ROOT);
+    const runtimeSettings = applyPermissionModeOverride({}, "full", cwd || APP_ROOT);
     const params = applyStartThreadRuntimeSettings({
       cwd: cwd || APP_ROOT,
       modelProvider: null,
@@ -7735,7 +7737,7 @@ const chatGptProBridgeService = createChatGptProBridgeService({
     return { threadId, thread: result && (result.thread || result.data && result.data.thread) || {} };
   },
   startTurn: async ({ threadId, cwd, input }) => {
-    const runtimeSettings = applyPermissionModeOverride(await resolveThreadRuntimeSettings(threadId), "auto", cwd || APP_ROOT);
+    const runtimeSettings = applyPermissionModeOverride(await resolveThreadRuntimeSettings(threadId), "full", cwd || APP_ROOT);
     try {
       await codex.request("thread/resume", applyResumeRuntimeSettings({
         threadId,

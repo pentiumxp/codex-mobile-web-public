@@ -209,6 +209,7 @@ const state = {
   lastGoalButtonSubmitAt: 0,
   pendingAttachments: [],
   composerBusy: false,
+  composerComposing: false,
   composerHeightPx: 0,
   messageInputHeightPx: 0,
   messageInputTextLength: 0,
@@ -368,10 +369,13 @@ const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v344";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v351";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
+const HOST_EMBED_SPLIT_LEFT_MIN_PX = 160;
+const HOST_EMBED_SPLIT_VIEWPORT_MIN_PX = 900;
+const HOST_EMBED_SPLIT_FRAME_MIN_PX = 320;
 const PAGE_REFRESH_CHECK_INTERVAL_MS = 60000;
 const PAGE_REFRESH_MIN_CHECK_INTERVAL_MS = 12000;
 const HEAVY_VISUAL_RECOVERY_MIN_INTERVAL_MS = 4000;
@@ -6333,6 +6337,18 @@ function boundedViewportNumber(value, max = 4096) {
   return Math.max(0, Math.min(Math.round(numeric), Math.max(0, Number(max) || 0)));
 }
 
+function normalizeHermesPluginViewportRect(rect) {
+  if (!rect || typeof rect !== "object") return null;
+  return {
+    top: boundedViewportNumber(rect.top),
+    right: boundedViewportNumber(rect.right),
+    bottom: boundedViewportNumber(rect.bottom),
+    left: boundedViewportNumber(rect.left),
+    width: boundedViewportNumber(rect.width),
+    height: boundedViewportNumber(rect.height),
+  };
+}
+
 function normalizeHermesPluginViewportMessage(data) {
   if (!data || data.type !== "hermes.plugin.viewport" || data.version !== 1) return null;
   const pluginId = String(data.pluginId || "").trim();
@@ -6366,6 +6382,8 @@ function normalizeHermesPluginViewportMessage(data) {
     footer: {
       safeAreaBottom: boundedViewportNumber(footerSafeArea, 512),
     },
+    iframe: normalizeHermesPluginViewportRect(data.iframe),
+    host: normalizeHermesPluginViewportRect(data.host),
   };
 }
 
@@ -6373,6 +6391,7 @@ function handleHermesPluginViewportMessage(data) {
   const normalized = normalizeHermesPluginViewportMessage(data);
   if (!normalized) return false;
   state.pluginHostViewport = normalized;
+  syncThreadDetailLayoutState();
   updateViewportVars();
   updateComposerHeightVar();
   requestAnimationFrame(ensureSideChatDraftVisible);
@@ -7933,6 +7952,91 @@ function handleAndroidBackToSidebarPopState(event) {
 function isSidebarOpen() {
   const sidebar = $("sidebar");
   return Boolean(sidebar && sidebar.classList.contains("open"));
+}
+
+function sidebarTransformIsNone(transform) {
+  const value = String(transform || "").replace(/\s+/g, "").toLowerCase();
+  return !value
+    || value === "none"
+    || value === "matrix(1,0,0,1,0,0)"
+    || value === "matrix3d(1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1)";
+}
+
+function splitPaneSidebarVisible() {
+  const sidebar = $("sidebar");
+  if (!sidebar || typeof window.getComputedStyle !== "function") return false;
+  const style = window.getComputedStyle(sidebar);
+  const rect = typeof sidebar.getBoundingClientRect === "function"
+    ? sidebar.getBoundingClientRect()
+    : { width: sidebar.offsetWidth || 0, height: sidebar.offsetHeight || 0 };
+  if (Number(rect.width || 0) < 80 || Number(rect.height || 0) < 80) return false;
+  if (style.display === "none" || style.visibility === "hidden") return false;
+  if (style.position === "fixed") return false;
+  return sidebarTransformIsNone(style.transform);
+}
+
+function hostEmbeddedSplitPaneVisible() {
+  if (!isHermesEmbedMode()) return false;
+  const hostViewport = state.pluginHostViewport && typeof state.pluginHostViewport === "object"
+    ? state.pluginHostViewport
+    : null;
+  const iframe = hostViewport && hostViewport.iframe && typeof hostViewport.iframe === "object"
+    ? hostViewport.iframe
+    : null;
+  const viewport = hostViewport && hostViewport.viewport && typeof hostViewport.viewport === "object"
+    ? hostViewport.viewport
+    : null;
+  const host = hostViewport && hostViewport.host && typeof hostViewport.host === "object"
+    ? hostViewport.host
+    : null;
+  const frameLeft = Number(iframe && iframe.left || 0);
+  const frameWidth = Number(iframe && iframe.width || 0);
+  const hostWidth = Number(
+    (viewport && (viewport.layoutWidth || viewport.width))
+    || (host && host.width)
+    || 0,
+  );
+  return frameLeft >= HOST_EMBED_SPLIT_LEFT_MIN_PX
+    && frameWidth >= HOST_EMBED_SPLIT_FRAME_MIN_PX
+    && hostWidth >= HOST_EMBED_SPLIT_VIEWPORT_MIN_PX
+    && frameWidth < hostWidth - 24;
+}
+
+function threadDetailReturnButtonVisible() {
+  const detailActive = Boolean(state.currentThreadId || state.currentThread);
+  if (!detailActive) return false;
+  if (isHermesEmbedMode()) return hostEmbeddedSplitPaneVisible();
+  return splitPaneSidebarVisible();
+}
+
+function syncThreadDetailLayoutState() {
+  const detailActive = Boolean(state.currentThreadId || state.currentThread);
+  document.documentElement.classList.toggle("thread-detail-active", detailActive);
+  const openMenuButton = $("openMenu");
+  if (!openMenuButton) return;
+  const splitReturn = threadDetailReturnButtonVisible();
+  openMenuButton.classList.toggle("split-return-visible", splitReturn);
+  openMenuButton.textContent = splitReturn ? "←" : "☰";
+  openMenuButton.title = splitReturn ? "返回线程列表" : "Menu";
+  openMenuButton.setAttribute("aria-label", splitReturn ? "返回线程列表" : "Menu");
+}
+
+function returnToThreadListFromDetail() {
+  if (!state.currentThreadId && !state.currentThread) return false;
+  clearCurrentThreadSelection();
+  renderThreads();
+  renderCurrentThread();
+  updateComposerControls();
+  restoreConnectionState();
+  syncHermesPluginPageLevel();
+  publishPluginNavigationState({ force: true });
+  refreshSidebarListAfterOpen();
+  return true;
+}
+
+function handleOpenMenuClick() {
+  if (threadDetailReturnButtonVisible() && returnToThreadListFromDetail()) return;
+  openSidebarMenu();
 }
 
 function isInteractiveGestureTarget(target) {
@@ -10264,6 +10368,7 @@ function renderHome() {
 }
 
 function renderStartupThreadOpening() {
+  syncThreadDetailLayoutState();
   clearInterval(state.tickTimer);
   state.tickTimer = null;
   state.subagentPanelOpen = false;
@@ -10355,6 +10460,7 @@ function renderThreadHistoryNote(thread, omitted, previousKeys = new Set()) {
 }
 
 function renderCurrentThread(options = {}) {
+  syncThreadDetailLayoutState();
   state.nowMs = Date.now();
   if (state.newThreadDraft) {
     renderNewThreadDraft();
@@ -13541,8 +13647,7 @@ function imageLoadingModeForSource(src) {
 function shouldRenderProtectedImageDirectly(src) {
   const protectedSrc = protectedGeneratedImageSrc(src);
   if (!protectedSrc) return false;
-  if (!isHermesEmbedMode()) return false;
-  return imageDiagnosticSourceKind(protectedSrc) === "upload";
+  return isHermesEmbedMode();
 }
 
 function protectedImageDisplaySrc(src) {
@@ -16016,10 +16121,25 @@ function saveComposerIntentDialogDraft() {
 function setMessageInputDisabled(disabled) {
   const el = $("messageInput");
   if (!el) return;
-  el.contentEditable = disabled ? "false" : "true";
-  el.setAttribute("aria-disabled", disabled ? "true" : "false");
-  el.tabIndex = disabled ? -1 : 0;
-  el.classList.toggle("disabled", disabled);
+  const nextContentEditable = disabled ? "false" : "true";
+  const nextAriaDisabled = disabled ? "true" : "false";
+  const nextTabIndex = disabled ? -1 : 0;
+  const currentContentEditable = String(el.getAttribute("contenteditable") || el.contentEditable || "").toLowerCase();
+  const currentAriaDisabled = String(el.getAttribute("aria-disabled") || "").toLowerCase();
+  const currentClassDisabled = el.classList.contains("disabled");
+  const alreadyApplied = currentContentEditable === nextContentEditable
+    && currentAriaDisabled === nextAriaDisabled
+    && el.tabIndex === nextTabIndex
+    && currentClassDisabled === disabled;
+  if (alreadyApplied) return;
+
+  const preserveImeConnection = state.composerComposing && !disabled && currentContentEditable === "true";
+  if (!preserveImeConnection && currentContentEditable !== nextContentEditable) {
+    el.contentEditable = nextContentEditable;
+  }
+  if (currentAriaDisabled !== nextAriaDisabled) el.setAttribute("aria-disabled", nextAriaDisabled);
+  if (el.tabIndex !== nextTabIndex) el.tabIndex = nextTabIndex;
+  if (currentClassDisabled !== disabled) el.classList.toggle("disabled", disabled);
 }
 
 const MESSAGE_INPUT_MIN_HEIGHT_PX = 44;
@@ -17703,7 +17823,9 @@ function wireUi() {
   document.addEventListener("touchcancel", cancelSidebarEdgeSwipe, { passive: true });
   window.addEventListener("popstate", handleAndroidBackToSidebarPopState);
   ensureAndroidBackToSidebarSentinel();
-  $("openMenu").addEventListener("click", openSidebarMenu);
+  $("openMenu").addEventListener("click", handleOpenMenuClick);
+  window.addEventListener("resize", syncThreadDetailLayoutState);
+  window.addEventListener("orientationchange", syncThreadDetailLayoutState);
   $("closeMenu").addEventListener("click", closeSidebarMenu);
   const pageRefreshPrompt = $("pageRefreshPrompt");
   if (pageRefreshPrompt) pageRefreshPrompt.addEventListener("click", refreshPageForNewBuild);
@@ -17843,13 +17965,23 @@ function wireUi() {
   });
   $("messageInput").addEventListener("keyup", queueComposerIntentMenuUpdate);
   $("messageInput").addEventListener("focus", queueComposerIntentMenuUpdate);
-  $("messageInput").addEventListener("compositionend", queueComposerIntentMenuUpdate);
+  $("messageInput").addEventListener("compositionstart", () => {
+    state.composerComposing = true;
+  });
+  $("messageInput").addEventListener("compositionend", (event) => {
+    state.composerComposing = false;
+    autoSizeMessageInput(event.target);
+    queueComposerIntentMenuUpdate();
+    updateComposerControls();
+    scheduleCurrentDraftSave();
+  });
   $("messageInput").addEventListener("keydown", (event) => {
     if (event.key === "Escape" && state.composerIntentMenuOpen) {
       event.preventDefault();
       closeComposerIntentMenu();
       return;
     }
+    if (state.composerComposing || event.isComposing) return;
     if (event.key !== "Enter" || event.shiftKey) return;
     if (!composerHasContent() || state.composerBusy) return;
     event.preventDefault();
