@@ -47,6 +47,10 @@ test("server exposes thread task card routes and enriches thread detail response
 
 test("server exposes a thread-callable direct task-card interface", () => {
   assert.ok(serverJs.includes('const sourceThreadTaskCardCreate = url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/task-cards$/);'));
+  assert.ok(serverJs.includes('const sourceThreadWorkspaceDelegation = url.pathname.match(/^\\/api\\/threads\\/([^/]+)\\/workspace-delegation$/);'));
+  assert.match(serverJs, /function runWorkspaceDelegationFromSourceThread\(/);
+  assert.match(serverJs, /analyzeWorkspaceDelegation\(/);
+  assert.match(serverJs, /buildWorkspaceDelegationTaskCardPayload\(/);
   assert.match(serverJs, /function buildThreadTaskCardCreatePayload\(/);
   assert.match(serverJs, /function threadTaskCardThreadCallIdempotencyKey\(/);
   assert.match(serverJs, /function resolvedThreadTaskCardTargetIds\(/);
@@ -136,7 +140,7 @@ test("server materializes structured task-card drafts from thread detail", () =>
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v362"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v363"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.threadRole \|\| ""\) === "target"\)/);
@@ -266,4 +270,8 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /\$\{items\}\$\{approvalsHtml\}[\s\S]*\$\{showStatusLine \? [\s\S]*: ""\}[\s\S]*\$\{draftHtml\}\$\{pendingDraftHtml\}/);
   assert.match(appJs, /\$\{turnsHtml\}\$\{approvalsHtml\}\$\{taskCardsHtml\}/);
   assert.match(appJs, /Task card draft request/);
+  assert.match(appJs, /function shouldPreflightWorkspaceDelegation\(/);
+  assert.match(appJs, /function maybeDelegateCrossWorkspaceMessage\(/);
+  assert.match(functionBody(appJs, "sendMessage"), /await maybeDelegateCrossWorkspaceMessage\(outboundText/);
+  assert.match(functionBody(appJs, "sendMessage"), /if \(delegated\) return;/);
 });

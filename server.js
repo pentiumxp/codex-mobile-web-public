@@ -79,6 +79,10 @@ const { createThreadDetailProjectionV4Service } = require("./adapters/thread-det
 const { createChatGptProBridgeService } = require("./adapters/chatgpt-pro-bridge-service");
 const { createChatGptProPlannerService } = require("./adapters/chatgpt-pro-planner-service");
 const { createChatGptProMcpService } = require("./adapters/chatgpt-pro-mcp-service");
+const {
+  analyzeWorkspaceDelegation,
+  buildWorkspaceDelegationTaskCardPayload,
+} = require("./adapters/workspace-delegation-service");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -9777,6 +9781,67 @@ async function createThreadTaskCardsFromSourceThread(sourceThreadId, body = {}) 
   };
 }
 
+function workspaceDelegationSourceThread(sourceThreadId, body = {}) {
+  const sourceId = String(sourceThreadId || "").trim();
+  const currentThread = body.currentThread && typeof body.currentThread === "object" && !Array.isArray(body.currentThread)
+    ? body.currentThread
+    : {};
+  const summary = readStateDbThread(sourceId) || readStartedThread(sourceId) || readRolloutSessionFallbackThread(sourceId) || {};
+  return Object.assign({}, summary, currentThread, {
+    id: sourceId || currentThread.id || summary.id || "",
+    cwd: body.cwd || currentThread.cwd || summary.cwd || "",
+    name: currentThread.name || currentThread.title || summary.name || summary.title || summary.preview || "",
+    preview: currentThread.preview || summary.preview || currentThread.name || currentThread.title || "",
+  });
+}
+
+function workspaceDelegationCandidateThreads(sourceThread) {
+  const threads = readThreadListFallback(500, { archived: false });
+  const sourceId = String(sourceThread && sourceThread.id || "").trim();
+  if (sourceId && !threads.some((thread) => thread && String(thread.id || "") === sourceId)) {
+    threads.push(sourceThread);
+  }
+  return threads;
+}
+
+async function runWorkspaceDelegationFromSourceThread(sourceThreadId, body = {}) {
+  const sourceThread = workspaceDelegationSourceThread(sourceThreadId, body);
+  const analysis = analyzeWorkspaceDelegation({
+    text: body.text || body.message || "",
+    attachmentsCount: body.attachmentsCount || body.uploads || 0,
+    activeTurnId: body.activeTurnId || "",
+    currentThread: sourceThread,
+    threads: workspaceDelegationCandidateThreads(sourceThread),
+  });
+  if (!analysis.shouldDelegate) {
+    return { ok: true, delegated: false, analysis };
+  }
+  const payload = buildWorkspaceDelegationTaskCardPayload({
+    text: body.text || body.message || "",
+    currentThread: sourceThread,
+    analysis,
+  });
+  if (!payload) return { ok: true, delegated: false, analysis: Object.assign({}, analysis, { reason: "payload_not_created" }) };
+  if (body.dryRun === true) {
+    return { ok: true, delegated: false, suggested: true, analysis, payload };
+  }
+  const result = await createThreadTaskCardsFromSourceThread(sourceThread.id || sourceThreadId, Object.assign({}, payload, {
+    autoApprove: body.autoApprove !== false,
+    direct: body.direct !== false,
+    pending: body.pending === true,
+  }));
+  return Object.assign({
+    ok: true,
+    delegated: true,
+    analysis,
+    targetThread: {
+      id: analysis.targetThreadId,
+      title: analysis.targetThreadTitle,
+      cwd: analysis.targetWorkspaceId,
+    },
+  }, result);
+}
+
 function parseThreadTaskCardDraftText(value) {
   const text = String(value || "");
   const match = new RegExp(`<${THREAD_TASK_CARD_DRAFT_TAG}>\\s*([\\s\\S]*?)\\s*<\\/${THREAD_TASK_CARD_DRAFT_TAG}>`, "i").exec(text);
@@ -11130,6 +11195,17 @@ async function handleApi(req, res) {
         ok: true,
         sideChat: await threadSideChatService.clear(threadSideChatId),
       });
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
+  const sourceThreadWorkspaceDelegation = url.pathname.match(/^\/api\/threads\/([^/]+)\/workspace-delegation$/);
+  if (sourceThreadWorkspaceDelegation && req.method === "POST") {
+    try {
+      const sourceThreadId = decodeURIComponent(sourceThreadWorkspaceDelegation[1]);
+      const body = await readBody(req);
+      sendJson(res, 200, await runWorkspaceDelegationFromSourceThread(sourceThreadId, body));
     } catch (err) {
       sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
     }

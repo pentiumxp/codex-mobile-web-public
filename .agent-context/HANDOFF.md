@@ -2,6 +2,56 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-21 Cross-Workspace Delegation Preflight v363
+
+- Status: implemented locally, focused-tested, not committed, not deployed.
+- Trigger:
+  - User asked to implement a Codex Mobile policy where a thread that needs to
+    operate in another workspace should preferably send a cross-thread task
+    card to that workspace/thread instead of directly crossing workspace
+    boundaries.
+- Change:
+  - Added `adapters/workspace-delegation-service.js`.
+    - Pure service analyzes ordinary Composer text against current thread and
+      recent thread/workspace summaries.
+    - It only delegates on high-confidence path/title matches with mutation or
+      explicit delegation cues.
+    - It skips attachments, active-turn steering, explicit `#` /
+      `@任务卡片` task-card commands, negative override wording, and read-only
+      references.
+    - It builds bounded source-direct task-card payloads with stable
+      `workspace-delegation:*` idempotency keys.
+  - Added `POST /api/threads/:sourceThreadId/workspace-delegation` in
+    `server.js`. The route reuses `createThreadTaskCardsFromSourceThread()` so
+    source-thread direct approval starts the target thread without target-side
+    approval.
+  - Updated `public/app.js` ordinary send path:
+    - cheap local cue check first, so normal messages do not call the route;
+    - on delegation success, the source thread does not insert a local user
+      bubble;
+    - the Composer clears, a bounded status is shown, and Mobile opens the
+      target thread/task-card route.
+  - Bumped `public/app.js` and `public/sw.js` to
+    `codex-mobile-shell-v363`.
+  - Updated README Chinese release note, cross-thread task-card implementation
+    docs, module map, `package.json` check script, and static tests.
+- Validation:
+  - Passed:
+    `node --test test/workspace-delegation-service.test.js test/thread-task-card-service.test.js test/thread-task-card-route.test.js`
+    (31/31).
+  - Passed: `npm run check`.
+  - Passed: `git diff --check`.
+  - Passed center required check:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - AI Ops evidence ledger:
+    `evidence-eb6da04a-90d5-4d2e-b711-898c24e4bbb9`.
+- Notes:
+  - This is not a general automatic cross-workspace execution permission.
+    Read-only references such as "看一下 Finance 状态" remain in the current
+    thread unless the user explicitly asks to delegate/send a task card.
+  - Existing manual `#`, `#自由协作`, `@任务卡片`, and `@自由协作` paths remain
+    compatible.
+
 ## 2026-06-21 macOS Host Recovery Script for Missing 8787 Listener
 
 - Status: production service restored; implementation and focused tests

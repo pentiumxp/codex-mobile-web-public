@@ -28,7 +28,17 @@ layout and test strategy.
     task-card drafts through the same idempotent create service path
   - fallback `thread/turns/list` detail mode must still run task-card draft
     materialization before attaching visible cards
+  - high-confidence cross-workspace delegation preflight for ordinary messages,
+    backed by the workspace-delegation adapter and the same source-thread direct
+    task-card route
   - SSE/broadcast integration only
+
+- `adapters/workspace-delegation-service.js`
+  - pure text/current-thread/thread-list analysis for cross-workspace
+    delegation candidates
+  - conservative mutation/delegation cues, negative override cues, attachment
+    and active-turn skip rules
+  - target payload construction for source-direct task cards
 
 ### Browser-side
 
@@ -53,6 +63,10 @@ layout and test strategy.
   - target-thread detail rendering only for `pending` cards whose
     `threadRole` is `target`; source outgoing pending cards should not render
     as local work items
+  - ordinary send preflight for cross-workspace delegation. It should only call
+    the server route after a cheap local cue check, should not insert a source
+    user bubble when delegation succeeds, and should open the target thread
+    after source-direct card creation.
 
 - future optional helper:
   - `public/thread-task-cards.js`
@@ -62,6 +76,7 @@ layout and test strategy.
 
 - `POST /api/thread-task-cards`
 - `POST /api/threads/:sourceThreadId/task-cards`
+- `POST /api/threads/:sourceThreadId/workspace-delegation`
 - `GET /api/thread-task-cards/:id`
 - `POST /api/thread-task-cards/:id/approve`
 - `POST /api/thread-task-cards/:id/delete`
@@ -93,6 +108,16 @@ The script reads the access key from `CODEX_MOBILE_KEY`,
 `$HOME/.codex-mobile-web/access_key`, sends it as an Authorization header, and
 prints only the bounded JSON response. Prefer `--body-file` or `--json-file`
 for Chinese or long Markdown payloads.
+
+`POST /api/threads/:sourceThreadId/workspace-delegation` is a conservative
+preflight/create route for ordinary Composer sends. It analyzes the submitted
+text against the source thread and recent thread/workspace list. It skips
+attachments, active-turn steering, explicit task-card commands, negative
+override wording, and read-only references. When a single high-confidence
+target is found, it builds a bounded task-card payload and calls the
+source-thread direct route behavior so the target thread starts without a
+target-side approval prompt. It is not a general cross-workspace execution
+permission.
 
 ## Proposed Read Integration
 
