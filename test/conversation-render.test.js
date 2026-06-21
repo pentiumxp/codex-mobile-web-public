@@ -2892,6 +2892,13 @@ test("v4 projection refresh preserves an already rendered final answer", () => {
   assert.match(functionBody("mergeV4ProjectionThread"), /mergeTurnPreservingVisibleItems\(existingTurn, incomingTurn\)/);
 });
 
+test("settled thread detail loads avoid recent projections that can omit final receipts", () => {
+  assert.match(appJs, /function shouldUseRecentThreadDetail\(thread\)/);
+  assert.match(functionBody("shouldUseRecentThreadDetail"), /return isRunningStatus\(thread && thread\.status\);/);
+  assert.match(functionBody("loadThread"), /threadDetailApiPath\(threadId, shouldUseRecentThreadDetail\(summary\) \? \{ mode: "recent" \} : \{\}\)/);
+  assert.match(functionBody("refreshCurrentThread"), /\|\| !shouldUseRecentThreadDetail\(state\.currentThread\)\s*\?\s*"full"\s*:\s*"recent"/);
+});
+
 test("completed turns can render context and token usage summaries", () => {
   assert.match(serverJs, /workspaceContextStats:\s*workspaceContextStatsForCwd\(out\.cwd\)/);
   assert.match(appJs, /function renderTurnUsageSummary\(item\)/);

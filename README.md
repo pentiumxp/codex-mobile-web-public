@@ -1,5 +1,6 @@
 # Codex Mobile Web
 
+- 中文说明：v356 修复已完成会话重新进入后 Final Answer 可能消失的问题。前端和服务端现在只在明确 running/active 的会话上使用 `mode=recent` 快速详情；completed/idle/unknown 会话打开或刷新时走 full/projection 详情，避免 `thread/turns/list` 的瘦投影先渲染并临时丢掉 assistant final receipt。PWA shell cache 升级到 `codex-mobile-shell-v356`。
 - 中文说明：v355 合并线程状态 freshness 修复。前端用本机查看时间和真实事件时间判断 spinner/unread dot，不再让 stale completed/idle 列表行或 replay 旧完成通知覆盖本机 running 状态；server 派生的 `thread/status/changed` 带 `eventAtMs`，mux replay 给 Mobile Web 时保留原始缓存时间；V4 projection 刷新同一个 turn 时会保留已经显示的 Final Answer。PWA shell cache 升级到 `codex-mobile-shell-v355`。
 - 中文说明：v354 修复 Composer 运行时选择被线程刷新打回默认的问题。当前线程没有文字草稿时，详情重载不再清空已经选择的 Model / 推理等级 / 权限；Fast 开关也会进入 Composer draft 内容判定，避免仅打开 Fast 但未输入文字时被当作空草稿丢弃。PWA shell cache 升级到 `codex-mobile-shell-v354`。
 - 中文说明：v353 修复 Android/WebView Composer 首次点击未弹出系统输入法后焦点锁死的问题。输入框点击开始时不再程序化抢焦点，而是先让浏览器原生点击流程打开键盘；如果第二次点击发现 Composer 已聚焦但键盘仍未打开，才在该用户手势内 blur/refocus 恢复输入法。PWA shell cache 升级到 `codex-mobile-shell-v353`。

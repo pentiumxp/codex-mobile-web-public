@@ -117,8 +117,8 @@ test("composer sizing avoids one-pixel layout churn while typing and streaming",
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v355/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v355"/);
+  assert.match(swJs, /codex-mobile-shell-v356/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v356"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);
@@ -261,9 +261,9 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /function shouldBackfillFullThreadDetail\(thread\)/);
   assert.match(appJs, /turns-list-initial/);
   assert.match(appJs, /function threadDetailApiPath\(threadId, params = \{\}\)/);
-  assert.match(appJs, /api\(threadDetailApiPath\(threadId, \{ mode: "recent" \}\)/);
+  assert.match(appJs, /api\(threadDetailApiPath\(threadId, shouldUseRecentThreadDetail\(summary\) \? \{ mode: "recent" \} : \{\}\)/);
   assert.match(appJs, /async function refreshCurrentThread\(options = \{\}\)/);
-  assert.match(appJs, /const requestedMode = options\.full === true \|\| String\(options\.mode \|\| ""\)\.toLowerCase\(\) === "full"[\s\S]*\? "full"[\s\S]*: "recent";/);
+  assert.match(appJs, /const requestedMode = options\.full === true \|\| String\(options\.mode \|\| ""\)\.toLowerCase\(\) === "full"[\s\S]*\|\| !shouldUseRecentThreadDetail\(state\.currentThread\)[\s\S]*\? "full"[\s\S]*: "recent";/);
   assert.match(appJs, /api\(threadDetailApiPath\(threadId, requestedMode === "recent" \? \{ mode: "recent" \} : \{\}\)/);
   assert.match(appJs, /const previousConversationSignature = conversationRenderSignature\(state\.currentThread\);/);
   assert.match(appJs, /const shouldRenderDetail = previousConversationSignature !== nextConversationSignature[\s\S]*state\.renderedConversationSignature !== nextConversationSignature;/);

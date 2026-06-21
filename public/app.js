@@ -372,7 +372,7 @@ const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v355";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v356";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -4211,6 +4211,10 @@ function isCompletedStatus(status) {
   return /completed|failed|cancel|error|interrupted/i.test(statusText(status));
 }
 
+function shouldUseRecentThreadDetail(thread) {
+  return isRunningStatus(thread && thread.status);
+}
+
 function isTurnComplete(turn) {
   return Boolean(turn && (turn.completedAt || turn.durationMs || isCompletedStatus(turn.status)));
 }
@@ -7515,7 +7519,7 @@ async function loadThread(threadId, options = {}) {
   let result;
   const apiStartedAt = nowPerfMs();
   try {
-    result = await api(threadDetailApiPath(threadId, { mode: "recent" }), {
+    result = await api(threadDetailApiPath(threadId, shouldUseRecentThreadDetail(summary) ? { mode: "recent" } : {}), {
       timeoutMs: 20000,
       signal: controller.signal,
     });
@@ -7669,6 +7673,7 @@ async function refreshCurrentThread(options = {}) {
   const seq = state.threadLoadSeq;
   const source = String(options.source || "refresh").slice(0, 40);
   const requestedMode = options.full === true || String(options.mode || "").toLowerCase() === "full"
+    || !shouldUseRecentThreadDetail(state.currentThread)
     ? "full"
     : "recent";
   if (state.refreshThreadController) state.refreshThreadController.abort();

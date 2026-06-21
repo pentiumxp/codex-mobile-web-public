@@ -122,7 +122,10 @@ test("thread detail defaults to ten turns and exposes an older cursor when compa
   assert.match(serverJs, /function olderTurnsCursorBeforeTurn\(turn\)/);
   assert.match(serverJs, /return JSON\.stringify\(\{ turnId, includeAnchor: false \}\);/);
   assert.match(serverJs, /out\.mobileOlderTurnsCursor = olderTurnsCursorBeforeTurn\(out\.turns\[0\]\);/);
-  assert.match(serverJs, /const preferRecentTurns = detailMode === "recent";/);
+  assert.match(serverJs, /function shouldPreferRecentThreadDetail\(detailMode, summary\)/);
+  assert.match(serverJs, /String\(detailMode \|\| ""\)\.trim\(\)\.toLowerCase\(\) !== "recent"/);
+  assert.match(serverJs, /return isThreadListLiveStatus\(summary && summary\.status\);/);
+  assert.match(serverJs, /const preferRecentTurns = shouldPreferRecentThreadDetail\(detailMode, summary\);/);
   assert.match(serverJs, /if \(preferRecentTurns\) \{/);
   assert.match(serverJs, /"turns-list-initial"/);
   assert.match(serverJs, /limit: Math\.max\(1, Math\.min\(100, Number\(url\.searchParams\.get\("limit"\) \|\| String\(MAX_THREAD_TURNS\)\)\)\)/);

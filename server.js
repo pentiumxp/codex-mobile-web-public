@@ -9568,6 +9568,11 @@ function threadFromTurnsList(threadId, summary, turnsResult) {
   }, summary || {}, { id: threadId, status, turns, mobileReadMode: "turns-list" })));
 }
 
+function shouldPreferRecentThreadDetail(detailMode, summary) {
+  if (String(detailMode || "").trim().toLowerCase() !== "recent") return false;
+  return isThreadListLiveStatus(summary && summary.status);
+}
+
 function parseThreadTurnsCursor(value) {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value === "object") return JSON.stringify(value);
@@ -11751,7 +11756,6 @@ async function handleApi(req, res) {
   if (threadRead && req.method === "GET") {
     const threadId = decodeURIComponent(threadRead[1]);
     const detailMode = String(url.searchParams.get("mode") || "").trim().toLowerCase();
-    const preferRecentTurns = detailMode === "recent";
     const requestStartedAtMs = Date.now();
     const threadLog = (event, details = {}) => logThreadDetail(event, Object.assign({
       threadId,
@@ -11815,6 +11819,7 @@ async function handleApi(req, res) {
       rolloutSizeBytes: summary ? threadRolloutSizeBytes(summary) : null,
       status: summary && summary.status ? summary.status.type || summary.status : null,
     });
+    const preferRecentTurns = shouldPreferRecentThreadDetail(detailMode, summary);
     const runtimeSettings = threadRuntimeSettings(threadId, summary);
     if (summary && isHiddenThread(summary, visibility)) {
       threadLog("hidden", { status: 404 });
