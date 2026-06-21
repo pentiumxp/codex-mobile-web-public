@@ -5085,6 +5085,24 @@ function findPreviousEndedTurnIndex(turns, startIndex) {
   return -1;
 }
 
+function turnHasVisibleDetailItems(turn) {
+  if (!turn || !Array.isArray(turn.items)) return false;
+  return turn.items.some((item) => isUserQuestionItem(item)
+    || isAssistantReceiptItem(item)
+    || isVisualReceiptItem(item)
+    || isOperationalItem(item)
+    || isTurnUsageSummaryItem(item));
+}
+
+function findPreviousVisibleNonLiveTurnIndex(turns, startIndex) {
+  for (let index = Math.min(startIndex, turns.length - 1); index >= 0; index -= 1) {
+    const turn = turns[index];
+    if (!turn || isLiveTurn(turn)) continue;
+    if (turnHasVisibleDetailItems(turn)) return index;
+  }
+  return -1;
+}
+
 function operationDetailTurnIndexes(turns) {
   const indexes = new Set();
   if (!Array.isArray(turns) || turns.length === 0) return indexes;
@@ -5097,8 +5115,17 @@ function operationDetailTurnIndexes(turns) {
   }
   if (latestLiveIndex >= 0) {
     indexes.add(latestLiveIndex);
+    const previousVisibleIndex = findPreviousVisibleNonLiveTurnIndex(turns, latestLiveIndex - 1);
+    if (previousVisibleIndex >= 0) indexes.add(previousVisibleIndex);
     const previousEndedIndex = findPreviousEndedTurnIndex(turns, latestLiveIndex - 1);
     if (previousEndedIndex >= 0) indexes.add(previousEndedIndex);
+    return indexes;
+  }
+  const latestVisibleIndex = findPreviousVisibleNonLiveTurnIndex(turns, turns.length - 1);
+  if (latestVisibleIndex >= 0) {
+    indexes.add(latestVisibleIndex);
+    const latestEndedIndex = findPreviousEndedTurnIndex(turns, turns.length - 1);
+    if (latestEndedIndex >= 0) indexes.add(latestEndedIndex);
     return indexes;
   }
   const latestEndedIndex = findPreviousEndedTurnIndex(turns, turns.length - 1);

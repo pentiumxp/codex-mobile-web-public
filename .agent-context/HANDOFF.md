@@ -2,6 +2,41 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-21 Active Turn Receipt Projection Fix
+
+- Status: implemented locally, not deployed.
+- Trigger:
+  - User reported that in the Music thread, the latest active work area after a
+    user message only kept one assistant receipt; when a second receipt appeared
+    the previous receipt disappeared.
+- Finding:
+  - The Music raw rollout still contained the assistant receipts. The loss was
+    caused by Codex Mobile server compaction, not by image rendering or client
+    DOM state.
+  - Current data shape had an empty trailing `inProgress` live turn after a
+    previous turn with visible content but no completed status. The old
+    `operationDetailTurnIndexes()` chose the earlier completed turn as the only
+    previous detailed turn, so the visible-but-unended turn fell into
+    `receiptOnly` compaction and kept only its final assistant receipt.
+- Change:
+  - Added a visible non-live turn selector in `server.js` so the closest
+    non-live turn with visible items before a live shell is also kept detailed.
+  - Added a regression test covering a visible unended turn followed by an
+    empty live shell; both assistant receipts and the command item must survive
+    compaction.
+- Validation:
+  - Passed: `node --check server.js`.
+  - Passed: `node --check test/thread-item-timestamp-enrichment.test.js`.
+  - Passed:
+    `node --test test/thread-item-timestamp-enrichment.test.js test/thread-detail-projection-service.test.js`
+    (27/27).
+  - Passed: `npm run check`.
+  - Passed: `git diff --check`.
+  - Passed center guard:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - Music-shape local smoke parsed the live rollout turn and confirmed compact
+    retained 79/79 assistant receipts for the visible unended turn.
+
 ## 2026-06-21 Thread Projection Boundary Investigation
 
 - Status: committed, deployed to Mac production, and smoke-tested.

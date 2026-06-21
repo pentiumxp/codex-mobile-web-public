@@ -85,6 +85,41 @@ test("compacted live operation items keep rollout-derived timestamps", () => {
   }
 });
 
+test("compact thread keeps recent unended visible turn before an empty live shell detailed", () => {
+  const compacted = compactThread({
+    id: "thread-live-shell",
+    turns: [
+      {
+        id: "previous-completed",
+        status: "completed",
+        items: [{ id: "old-receipt", type: "agentMessage", text: "older completed receipt" }],
+      },
+      {
+        id: "active-content-without-status",
+        items: [
+          { id: "current-user", type: "userMessage", text: "current request" },
+          { id: "first-receipt", type: "agentMessage", text: "first current receipt" },
+          { id: "current-command", type: "commandExecution", command: "npm test", status: "completed" },
+          { id: "second-receipt", type: "agentMessage", text: "second current receipt" },
+        ],
+      },
+      {
+        id: "empty-live-shell",
+        status: "inProgress",
+        items: [],
+      },
+    ],
+  });
+
+  const activeContent = compacted.turns.find((turn) => turn.id === "active-content-without-status");
+  assert.ok(activeContent);
+  assert.deepEqual(
+    activeContent.items.filter((item) => item.type === "agentMessage").map((item) => item.text),
+    ["first current receipt", "second current receipt"],
+  );
+  assert.ok(activeContent.items.some((item) => item.type === "commandExecution"));
+});
+
 test("agent message timestamps are matched by text instead of only sequence", () => {
   const { dir, rolloutPath } = writeRollout([
     event("2026-05-24T10:20:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-3" }),
