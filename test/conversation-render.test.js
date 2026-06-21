@@ -152,6 +152,8 @@ function evaluatedThreadStatusHintHarness() {
     "threadStatusNotificationEventAtMs",
     "threadStatusFreshnessAtMs",
     "settledStatusFreshEnoughForRunningHint",
+    "currentThreadAllowsLiveTurn",
+    "currentLiveTurnSupportsThreadStatusHint",
     "shouldKeepRunningHintForSettledStatus",
     "shouldMarkThreadUnread",
     "runningThreadHintAgeMs",
@@ -783,6 +785,9 @@ return { state, visibleItemsForTurn };
 
 function evaluatedLatestTurnHelpers() {
   const sources = [
+    "isStaleActiveStatus",
+    "isThreadListSettledStatus",
+    "currentThreadAllowsLiveTurn",
     "turnHasDisplayItems",
     "latestTurn",
     "latestRawTurn",
@@ -1195,6 +1200,20 @@ test("active timer can follow an empty active tail when no display live turn exi
   assert.equal(harness.interruptDisabled(), false);
 });
 
+test("active turn sync ignores damaged live tails after thread status settles", () => {
+  const harness = evaluatedLatestTurnHelpers();
+  harness.state.currentThread.status = { type: "idle" };
+  harness.state.currentThread.turns = [
+    { id: "completed", status: "completed", completedAt: 1781141506, items: [{ id: "final", type: "agentMessage", text: "done" }] },
+    { id: "empty-active-tail", status: "inProgress", itemsView: "notLoaded", items: [] },
+  ];
+
+  harness.syncActiveTurnFromThread();
+
+  assert.equal(harness.state.activeTurnId, "");
+  assert.equal(harness.interruptDisabled(), true);
+});
+
 test("live turn keeps this session submitted durable user message after progress starts", () => {
   const harness = evaluatedVisibleItemsForTurn();
   harness.state.recentSubmittedUserMessages.set("submit-current", {
@@ -1360,8 +1379,9 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.match(functionBody("conversationRootSignature"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) return `loading\\|/);
   assert.match(functionBody("renderCurrentThread"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) \{/);
   assert.match(functionBody("renderCurrentThread"), /const loadingNote = thread\.mobileLoading/);
-  assert.match(functionBody("reconcileThreadStatusHints"), /id === state\.currentThreadId && currentLiveTurn\(\)/);
-  assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(id\)[\s\S]*currentLiveTurn\(\)/);
+  assert.match(appJs, /function currentLiveTurnSupportsThreadStatusHint\(threadId = ""\)/);
+  assert.match(functionBody("reconcileThreadStatusHints"), /currentLiveTurnSupportsThreadStatusHint\(id\)/);
+  assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(id\)[\s\S]*currentLiveTurnSupportsThreadStatusHint\(id\)/);
 });
 
 test("long agent messages keep a stable render path when a turn completes", () => {
@@ -2616,7 +2636,7 @@ test("thread detail pending server requests render approval cards without SSE ti
 
 test("active turn state follows only the latest durable turn", () => {
   const syncBody = functionBody("syncActiveTurnFromThread");
-  assert.match(syncBody, /const running = latestLiveTurnCandidate\(\);/);
+  assert.match(syncBody, /const running = currentThreadAllowsLiveTurn\(\) \? latestLiveTurnCandidate\(\) : null;/);
   assert.doesNotMatch(syncBody, /reverse\(\)\.find/);
 
   const candidateBody = functionBody("latestLiveTurnCandidate");
@@ -2628,6 +2648,7 @@ test("active turn state follows only the latest durable turn", () => {
 
   const liveBody = functionBody("currentLiveTurn");
   assert.match(liveBody, /const latest = latestLiveTurnCandidate\(\) \|\| latestTurn\(\);/);
+  assert.match(liveBody, /if \(!currentThreadAllowsLiveTurn\(\)\) return null;/);
   assert.match(liveBody, /const active = latest && latest\.id === state\.activeTurnId \? latest : null/);
   assert.match(liveBody, /return latest && isLiveTurn\(latest\) \? latest : null/);
   assert.doesNotMatch(liveBody, /reverse\(\)\.find/);
@@ -2653,6 +2674,8 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(appJs, /const STATUS_EVENT_FRESHNESS_TOLERANCE_MS = 1000;/);
   assert.match(appJs, /function threadStatusNotificationEventAtMs\(params = \{\}, fallbackMs = 0, options = \{\}\)/);
   assert.match(appJs, /function shouldKeepRunningHintForSettledStatus\(threadId, thread = null, status = null, options = \{\}\)/);
+  assert.match(appJs, /function currentThreadAllowsLiveTurn\(\)/);
+  assert.match(appJs, /function currentLiveTurnSupportsThreadStatusHint\(threadId = ""\)/);
   assert.match(functionBody("shouldMarkThreadUnread"), /const updateAt = threadStatusFreshnessAtMs\(thread, options\.eventAtMs\)/);
   assert.match(functionBody("shouldMarkThreadUnread"), /if \(viewedAt > 0\) return updateAt > viewedAt/);
   assert.match(functionBody("shouldMarkThreadUnread"), /options\.hintedAtMs \|\| state\.runningThreadHintedAtById\[id\]/);
@@ -2661,6 +2684,7 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(functionBody("markThreadViewed"), /clearRunningThreadHint\(id\)/);
   assert.match(functionBody("shouldExpireRunningThreadHint"), /isStaleActiveStatus\(thread && thread\.status\)/);
   assert.match(functionBody("shouldExpireRunningThreadHint"), /shouldKeepRunningHintForSettledStatus\(id, thread, thread && thread\.status\)/);
+  assert.match(functionBody("shouldExpireRunningThreadHint"), /currentLiveTurnSupportsThreadStatusHint\(id\)/);
   assert.match(functionBody("updateThreadStatusHints"), /const staleActive = isStaleActiveStatus\(nextStatus\)/);
   assert.match(functionBody("updateThreadStatusHints"), /const hintedAtMs = Number\(state\.runningThreadHintedAtById\[id\] \|\| 0\)/);
   assert.match(functionBody("updateThreadStatusHints"), /shouldMarkThreadUnread\(id, nextThread, nextStatus/);
@@ -2670,6 +2694,7 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(functionBody("reconcileThreadStatusHints"), /const isRunning = !staleActive && isRunningStatus\(thread\.status\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /else if \(wasRunning && staleActive\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /else if \(wasRunning && isThreadListSettledStatus\(thread\.status\)\)/);
+  assert.match(functionBody("reconcileThreadStatusHints"), /currentLiveTurnSupportsThreadStatusHint\(id\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /shouldKeepRunningHintForSettledStatus\(id, thread, thread\.status/);
   assert.match(functionBody("reconcileThreadStatusHints"), /shouldMarkThreadUnread\(id, thread, thread\.status/);
   assert.match(functionBody("reconcileThreadStatusHints"), /shouldExpireRunningThreadHint\(id, thread, nowMs\)/);
@@ -2696,7 +2721,7 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(sendBody, /if \(!steering\) \{[\s\S]*restoreThreadStatusSnapshot\(previousThreadStatus\);[\s\S]*renderThreads\(\);[\s\S]*\}/);
 
   const expireBody = functionBody("shouldExpireRunningThreadHint");
-  assert.match(expireBody, /id === state\.currentThreadId && state\.activeTurnId/);
+  assert.match(expireBody, /id === state\.currentThreadId && state\.activeTurnId && currentLiveTurnSupportsThreadStatusHint\(id\)/);
   assert.match(expireBody, /runningThreadHintAgeMs\(id, thread, nowMs\) > RUNNING_THREAD_HINT_STALE_MS/);
 
   const notificationBody = functionBody("applyNotification");
@@ -2731,6 +2756,33 @@ test("stale settled list rows do not clear fresh running hints", () => {
 
   harness.markThreadViewed("thread-active", staleSettledThread, now + 1000);
   assert.equal(harness.state.runningThreadIds.has("thread-active"), true);
+});
+
+test("settled current thread detail clears damaged running hints", () => {
+  const harness = evaluatedThreadStatusHintHarness();
+  const now = 1_700_000_000_000;
+  harness.setNow(now);
+  harness.state.currentThreadId = "thread-current";
+  harness.state.currentThread = {
+    id: "thread-current",
+    status: { type: "idle" },
+  };
+  harness.state.liveTurn = { id: "turn-damaged", status: { type: "inProgress" } };
+  harness.state.activeTurnId = "turn-damaged";
+  harness.state.runningThreadIds.add("thread-current");
+  harness.state.runningThreadHintedAtById["thread-current"] = now;
+  const settledThread = {
+    id: "thread-current",
+    status: { type: "idle" },
+    updatedAtMs: now - 10_000,
+  };
+  harness.state.threads = [settledThread];
+
+  harness.reconcileThreadStatusHints(harness.state.threads);
+
+  assert.equal(harness.state.runningThreadIds.has("thread-current"), false);
+  assert.equal(harness.state.unreadThreadIds.has("thread-current"), false);
+  assert.equal(harness.statusIconInfo(settledThread.status, "thread-current"), null);
 });
 
 test("old stale settled list rows expire running hints", () => {

@@ -372,7 +372,7 @@ const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v356";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v357";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -1480,13 +1480,28 @@ function settledStatusFreshEnoughForRunningHint(threadId, thread = null, eventAt
   return statusAt + STATUS_EVENT_FRESHNESS_TOLERANCE_MS >= hintedAt;
 }
 
+function currentThreadAllowsLiveTurn() {
+  const thread = state.currentThread;
+  if (!thread) return true;
+  const status = thread.status;
+  if (isStaleActiveStatus(status) || thread.mobileStaleActiveTurn) return false;
+  if (isThreadListSettledStatus(status)) return false;
+  return true;
+}
+
+function currentLiveTurnSupportsThreadStatusHint(threadId = "") {
+  const id = String(threadId || "");
+  return Boolean(id && id === state.currentThreadId && currentThreadAllowsLiveTurn() && currentLiveTurn());
+}
+
 function shouldKeepRunningHintForSettledStatus(threadId, thread = null, status = null, options = {}) {
   const id = String(threadId || "");
   if (!id || !state.runningThreadIds.has(id)) return false;
   const nextStatus = status || (thread && thread.status);
   if (isStaleActiveStatus(nextStatus) || (thread && thread.mobileStaleActiveTurn)) return false;
   if (!isThreadListSettledStatus(nextStatus)) return false;
-  if (id === state.currentThreadId && currentLiveTurn()) return true;
+  if (id === state.currentThreadId && !currentThreadAllowsLiveTurn()) return false;
+  if (currentLiveTurnSupportsThreadStatusHint(id)) return true;
   return !settledStatusFreshEnoughForRunningHint(id, thread, options.eventAtMs, {
     mobileReplay: Boolean(options.mobileReplay),
   });
@@ -1526,7 +1541,7 @@ function shouldExpireRunningThreadHint(threadId, thread, nowMs = Date.now()) {
     const staleSettledStatus = shouldKeepRunningHintForSettledStatus(id, thread, thread && thread.status);
     if (!staleSettledStatus) return false;
   }
-  if (id === state.currentThreadId && state.activeTurnId) return false;
+  if (id === state.currentThreadId && state.activeTurnId && currentLiveTurnSupportsThreadStatusHint(id)) return false;
   return runningThreadHintAgeMs(id, thread, nowMs) > RUNNING_THREAD_HINT_STALE_MS;
 }
 
@@ -1602,7 +1617,7 @@ function reconcileThreadStatusHints(threads) {
     } else if (wasRunning && staleActive) {
       if (clearRunningThreadHint(id)) changed = true;
     } else if (wasRunning && isThreadListSettledStatus(thread.status)) {
-      if (id === state.currentThreadId && currentLiveTurn()) {
+      if (currentLiveTurnSupportsThreadStatusHint(id)) {
         if (noteRunningThreadHint(id, nowMs)) changed = true;
         continue;
       }
@@ -1644,7 +1659,7 @@ function statusIconInfo(status, threadId = "") {
   const hintThread = id ? threadForStatusHint(id) : null;
   if (id && state.runningThreadIds.has(id)
     && (!isThreadListSettledStatus(status)
-      || (id === state.currentThreadId && currentLiveTurn())
+      || currentLiveTurnSupportsThreadStatusHint(id)
       || shouldKeepRunningHintForSettledStatus(id, hintThread, status))) {
     return { kind: "running", label: text && text !== "notLoaded" ? text : "running", symbol: "" };
   }
@@ -4224,7 +4239,7 @@ function isReasoningItem(item) {
 }
 
 function syncActiveTurnFromThread() {
-  const running = latestLiveTurnCandidate();
+  const running = currentThreadAllowsLiveTurn() ? latestLiveTurnCandidate() : null;
   state.activeTurnId = running ? running.id : "";
   const interrupt = $("interruptTurn");
   if (interrupt) interrupt.disabled = !state.activeTurnId;
@@ -5466,6 +5481,7 @@ function liveReasoningElapsed(item, turn) {
 }
 
 function currentLiveTurn() {
+  if (!currentThreadAllowsLiveTurn()) return null;
   const latest = latestLiveTurnCandidate() || latestTurn();
   if (state.activeTurnId) {
     const active = latest && latest.id === state.activeTurnId ? latest : null;
