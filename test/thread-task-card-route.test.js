@@ -85,6 +85,8 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /Mandatory boundary when this tool is available/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /call this tool before doing that work/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /Do not inspect, cd into, edit, patch, run commands in, test, deploy/);
+  assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /failed with sandbox, filesystem, permission denied, operation not permitted, cwd, or approval-policy errors/);
+  assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /do not retry the local operation/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /The model must decide from the user's request whether delegation is required/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /always creates source-direct cards/);
   assert.doesNotMatch(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /pending:\s*\{/);

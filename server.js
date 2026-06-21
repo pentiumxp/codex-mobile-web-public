@@ -6028,6 +6028,7 @@ function workspaceDelegationDynamicToolSpec() {
       "Create a Codex Mobile cross-thread task card when the current user request requires work in another Codex thread or workspace.",
       "Mandatory boundary when this tool is available: if the requested implementation, file edit, command execution, test, deployment, or other mutation belongs to a different workspace or thread, call this tool before doing that work.",
       "Do not inspect, cd into, edit, patch, run commands in, test, deploy, or otherwise operate on the other workspace from the current thread. Delegate first, then stop or report the created task card.",
+      "If you already attempted target-workspace work and it failed with sandbox, filesystem, permission denied, operation not permitted, cwd, or approval-policy errors, do not retry the local operation. Treat that as the delegation boundary and call this tool with the failed intent and exact target.",
       "This dynamic tool always creates source-direct cards when workspace delegation is enabled; do not request target-side pending approval from this tool.",
       "Do not use this for ordinary discussion, read-only references that do not require target-workspace inspection, or work that clearly belongs in the current thread workspace.",
       "The model must decide from the user's request whether delegation is required; do not rely on local keyword or path heuristics.",
