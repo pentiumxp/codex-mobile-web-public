@@ -54,24 +54,30 @@ test("server exposes a thread-callable direct task-card interface", () => {
   );
   assert.match(workspaceDelegationRoute, /disabled: true/);
   assert.match(workspaceDelegationRoute, /delegated: false/);
-  assert.match(workspaceDelegationRoute, /enabled: WORKSPACE_DELEGATION_ENABLED/);
-  assert.match(workspaceDelegationRoute, /reason: WORKSPACE_DELEGATION_ENABLED/);
+  assert.match(workspaceDelegationRoute, /const workspaceDelegation = workspaceDelegationPublicSettings\(\)/);
+  assert.match(workspaceDelegationRoute, /enabled: workspaceDelegation\.enabled/);
+  assert.match(workspaceDelegationRoute, /reason: workspaceDelegation\.enabled/);
   assert.match(workspaceDelegationRoute, /workspace_delegation_disabled/);
   assert.match(workspaceDelegationRoute, /model_driven_delegation_requires_explicit_task_card/);
   assert.doesNotMatch(serverJs, /function runWorkspaceDelegationFromSourceThread\(/);
   assert.doesNotMatch(serverJs, /analyzeWorkspaceDelegation\(/);
   assert.doesNotMatch(serverJs, /buildWorkspaceDelegationTaskCardPayload\(/);
-  assert.match(serverJs, /const WORKSPACE_DELEGATION_ENABLED =/);
+  assert.match(serverJs, /const RUNTIME_SETTINGS_FILE =/);
+  assert.match(serverJs, /const WORKSPACE_DELEGATION_ENV_DEFAULT =/);
   assert.match(serverJs, /CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION/);
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED/);
+  assert.match(serverJs, /function workspaceDelegationPublicSettings\(/);
+  assert.match(serverJs, /function setWorkspaceDelegationEnabled\(/);
+  assert.match(serverJs, /url\.pathname === "\/api\/settings\/workspace-delegation"/);
   assert.match(serverJs, /function buildThreadTaskCardCreatePayload\(/);
   assert.match(serverJs, /function threadTaskCardThreadCallIdempotencyKey\(/);
   assert.match(serverJs, /function resolvedThreadTaskCardTargetIds\(/);
-  assert.match(functionBody(serverJs, "createThreadTaskCardsFromSourceThread"), /WORKSPACE_DELEGATION_ENABLED[\s\S]*body\.autoApprove !== false[\s\S]*body\.direct !== false[\s\S]*body\.pending !== true/);
+  assert.match(functionBody(serverJs, "createThreadTaskCardsFromSourceThread"), /workspaceDelegationPublicSettings\(\)/);
+  assert.match(functionBody(serverJs, "createThreadTaskCardsFromSourceThread"), /workspaceDelegation\.enabled[\s\S]*body\.autoApprove !== false[\s\S]*body\.direct !== false[\s\S]*body\.pending !== true/);
   assert.match(serverJs, /threadTaskCardService\.approveFromSource\(card\.id, payload\.sourceThreadId\)/);
   assert.match(serverJs, /direct: autoApprove/);
-  assert.match(serverJs, /workspaceDelegationEnabled: WORKSPACE_DELEGATION_ENABLED/);
-  assert.match(serverJs, /workspaceDelegation: \{[\s\S]*enabled: WORKSPACE_DELEGATION_ENABLED[\s\S]*directTaskCardAutoApproval: WORKSPACE_DELEGATION_ENABLED[\s\S]*ordinarySendPreflight: false[\s\S]*localHeuristics: false/);
+  assert.match(serverJs, /workspaceDelegationEnabled: workspaceDelegation\.enabled/);
+  assert.match(serverJs, /workspaceDelegation,\s+hermesPlugin:/);
   assert.match(createThreadTaskCardScript, /\/api\/threads\/\$\{encodeURIComponent\(sourceThreadId\)\}\/task-cards/);
   assert.match(createThreadTaskCardScript, /CODEX_MOBILE_KEY_FILE/);
   assert.match(createThreadTaskCardScript, /--pending/);
@@ -156,7 +162,7 @@ test("server materializes structured task-card drafts from thread detail", () =>
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v365"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v366"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.threadRole \|\| ""\) === "target"\)/);
@@ -286,6 +292,12 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.match(appJs, /\$\{items\}\$\{approvalsHtml\}[\s\S]*\$\{showStatusLine \? [\s\S]*: ""\}[\s\S]*\$\{draftHtml\}\$\{pendingDraftHtml\}/);
   assert.match(appJs, /\$\{turnsHtml\}\$\{approvalsHtml\}\$\{taskCardsHtml\}/);
   assert.match(appJs, /Task card draft request/);
+  assert.match(indexHtml, /id="workspaceDelegationSettings"/);
+  assert.match(stylesCss, /\.workspace-delegation-row/);
+  assert.match(appJs, /function renderWorkspaceDelegationSettings\(/);
+  assert.match(appJs, /function handleWorkspaceDelegationSettingsClick\(/);
+  assert.match(appJs, /\/api\/settings\/workspace-delegation/);
+  assert.match(appJs, /data-workspace-delegation-toggle/);
   assert.doesNotMatch(appJs, /function shouldPreflightWorkspaceDelegation\(/);
   assert.doesNotMatch(appJs, /function maybeDelegateCrossWorkspaceMessage\(/);
   assert.doesNotMatch(functionBody(appJs, "sendMessage"), /maybeDelegateCrossWorkspaceMessage/);

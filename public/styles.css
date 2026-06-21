@@ -2042,6 +2042,69 @@ html.visual-recovering body::before {
   opacity: 0.55;
 }
 
+.workspace-delegation-settings {
+  display: grid;
+  gap: 6px;
+}
+
+.workspace-delegation-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  background: var(--code);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+}
+
+.workspace-delegation-row.enabled {
+  border-color: var(--accent);
+}
+
+.workspace-delegation-main {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.workspace-delegation-main strong,
+.workspace-delegation-main span,
+.workspace-delegation-main small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.workspace-delegation-main strong {
+  font-size: 13px;
+}
+
+.workspace-delegation-main span {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.workspace-delegation-main small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.workspace-delegation-side button {
+  min-width: 58px;
+  min-height: 28px;
+  padding: 4px 8px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.workspace-delegation-side button:disabled {
+  opacity: 0.55;
+}
+
 .push-button {
   min-height: 36px;
   width: 100%;

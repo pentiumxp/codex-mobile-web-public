@@ -2,6 +2,58 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-21 Workspace Delegation Visible Settings Toggle v366
+
+- Status: committed, deployed to Mac production, and smoke-tested.
+- Trigger:
+  - User could not find the requested manual switch because v365 only exposed a
+    server/env config surface.
+- Change:
+  - Added runtime settings storage at `settings.json`, overrideable with
+    `CODEX_MOBILE_SETTINGS_FILE`.
+  - Added authenticated `GET|POST /api/settings/workspace-delegation`.
+    Runtime `workspaceDelegation.enabled` wins over env defaults; env variables
+    `CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1` and
+    `CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED=1` now only seed the default
+    when no runtime value exists.
+  - Added a visible Settings panel section:
+    `跨工作区委派`.
+    - Off by default.
+    - Off: `/api/threads/:sourceThreadId/task-cards` creates pending target
+      cards.
+    - On: model/tool explicit task-card calls may source-direct approve unless
+      the request sets `pending:true`, `autoApprove:false`, or `direct:false`.
+    - Ordinary browser-send local heuristics remain disabled.
+  - `/api/public-config` exposes the runtime switch state and source
+    (`runtime`, `environment`, or `default`).
+  - Bumped `public/app.js` and `public/sw.js` to
+    `codex-mobile-shell-v366`.
+- Validation:
+  - Passed focused:
+    `node --test test/thread-task-card-route.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/chatgpt-pro-mcp-service.test.js`
+    (28/28).
+  - Passed: `npm run check`.
+  - Passed: `npm test` (573/573).
+  - Passed: `git diff --check`.
+  - Passed center required check:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - AI Ops evidence ledger:
+    `evidence-71917aa5-5e2e-49d2-b13b-f6a84028b54f`.
+- Production deploy:
+  - Deployed through Home AI central Mac deploy script with restart label
+    `com.hermesmobile.plugin.codex-mobile`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260621T100019Z-plugin-codex-mobile-web-manual`.
+  - Production readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v366`,
+    `shellCacheName=codex-mobile-shell-v366`,
+    latest `workspaceDelegation.enabled=true`,
+    latest `workspaceDelegation.source=runtime`.
+  - Production HTML contains `workspaceDelegationSettings` and
+    `跨工作区委派`.
+  - AI Ops deploy evidence ledger:
+    `evidence-45edd2c0-e4a3-43d2-aade-991098104636`.
+
 ## 2026-06-21 Workspace Delegation Config Switch v365
 
 - Status: implemented and locally validated; deploy after commit expected.

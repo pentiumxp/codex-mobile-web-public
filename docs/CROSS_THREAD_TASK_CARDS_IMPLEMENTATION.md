@@ -69,6 +69,7 @@ layout and test strategy.
 - `POST /api/thread-task-cards`
 - `POST /api/threads/:sourceThreadId/task-cards`
 - `POST /api/threads/:sourceThreadId/workspace-delegation`
+- `GET|POST /api/settings/workspace-delegation`
 - `GET /api/thread-task-cards/:id`
 - `POST /api/thread-task-cards/:id/approve`
 - `POST /api/thread-task-cards/:id/delete`
@@ -80,11 +81,13 @@ delegation route. It uses `buildThreadTaskCardCreatePayload()` to infer source
 metadata, resolve target ids or exact target titles, truncate overlong bodies to
 the 8k card limit, and derive a stable `thread-call:*` idempotency key when the
 caller does not provide one. Source-thread direct auto-approval is gated by the
-server config switch `CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1` (or compatible
-alias `CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED=1`) and is off by default.
-When the switch is off, the route stores pending cards only. Passing
-`pending:true`, `autoApprove:false`, or `direct:false` also keeps the card in
-the manual-pending flow even when the switch is enabled.
+runtime Settings switch `跨工作区委派`, and is off by default. The runtime value is
+stored in `settings.json`; `CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1` (or
+compatible alias `CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED=1`) only supplies
+the default when no runtime value exists. When the switch is off, the route
+stores pending cards only. Passing `pending:true`, `autoApprove:false`, or
+`direct:false` also keeps the card in the manual-pending flow even when the
+switch is enabled.
 
 The supported local CLI wrapper is:
 
@@ -101,15 +104,14 @@ The script reads the access key from `CODEX_MOBILE_KEY`,
 `$HOME/.codex-mobile-web/access_key`, sends it as an Authorization header, and
 prints only the bounded JSON response. Prefer `--body-file` or `--json-file`
 for Chinese or long Markdown payloads. The script can request direct
-auto-approval, but the server only honors that request when
-`CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1` is configured.
+auto-approval, but the server only honors that request when the runtime
+`跨工作区委派` switch is enabled.
 
 `POST /api/threads/:sourceThreadId/workspace-delegation` is retained only as a
 compatibility endpoint for clients that shipped during the v363 experiment. It
 returns `delegated:false`, `disabled:true`, and
-`analysis.reason:"workspace_delegation_disabled"` by default. If
-`CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1` is configured, it still must not
-create cards and instead reports
+`analysis.reason:"workspace_delegation_disabled"` by default. If the runtime
+`跨工作区委派` switch is enabled, it still must not create cards and instead reports
 `analysis.reason:"model_driven_delegation_requires_explicit_task_card"`.
 The v363 local heuristic was removed because directory names and thread titles
 are not reliable enough to decide target workspaces. New cross-workspace

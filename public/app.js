@@ -103,6 +103,16 @@ const state = {
   workspaceCreateRoot: "",
   workspaceCreateRoots: [],
   workspaceCreateBusy: false,
+  workspaceDelegation: {
+    enabled: false,
+    mode: "off",
+    directTaskCardAutoApproval: false,
+    ordinarySendPreflight: false,
+    localHeuristics: false,
+    source: "default",
+    updatedAt: "",
+  },
+  workspaceDelegationBusy: false,
   selectedCwd: "",
   workspaceTokenUsage: null,
   workspaceTokenUsageDetailsOpen: false,
@@ -372,7 +382,7 @@ const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v365";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v366";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -2179,6 +2189,76 @@ async function loadCodexProfiles() {
   const profiles = await api("/api/codex-profiles", { timeoutMs: 12000 });
   rememberCodexProfiles(profiles);
   return profiles;
+}
+
+function normalizeWorkspaceDelegationConfig(value) {
+  const input = value && typeof value === "object" ? value : {};
+  return {
+    enabled: Boolean(input.enabled),
+    mode: String(input.mode || (input.enabled ? "model_driven_explicit_task_card" : "off")),
+    directTaskCardAutoApproval: Boolean(input.directTaskCardAutoApproval),
+    ordinarySendPreflight: Boolean(input.ordinarySendPreflight),
+    localHeuristics: Boolean(input.localHeuristics),
+    source: String(input.source || "default"),
+    updatedAt: String(input.updatedAt || ""),
+  };
+}
+
+function rememberWorkspaceDelegationConfig(value) {
+  state.workspaceDelegation = normalizeWorkspaceDelegationConfig(value);
+  renderWorkspaceDelegationSettings();
+}
+
+function workspaceDelegationSourceLabel(source) {
+  if (source === "runtime") return "手动设置";
+  if (source === "environment") return "环境变量默认";
+  return "默认关闭";
+}
+
+function renderWorkspaceDelegationSettings() {
+  const el = $("workspaceDelegationSettings");
+  if (!el) return;
+  const config = normalizeWorkspaceDelegationConfig(state.workspaceDelegation);
+  const enabled = Boolean(config.enabled);
+  const busy = Boolean(state.workspaceDelegationBusy);
+  const title = enabled
+    ? "模型/工具显式发卡可直批到目标线程"
+    : "模型/工具显式发卡会保留为 pending，目标线程需要审批";
+  el.innerHTML = `<div class="workspace-delegation-row${enabled ? " enabled" : ""}">`
+    + `<div class="workspace-delegation-main">`
+    + `<strong>${enabled ? "已开启" : "已关闭"}</strong>`
+    + `<span>${escapeHtml(title)}</span>`
+    + `<small>${escapeHtml(workspaceDelegationSourceLabel(config.source))} · 本地预检关闭</small>`
+    + `</div>`
+    + `<div class="workspace-delegation-side">`
+    + `<button type="button" data-workspace-delegation-toggle ${busy ? "disabled" : ""}>${busy ? "保存中" : enabled ? "关闭" : "开启"}</button>`
+    + `</div>`
+    + `</div>`;
+}
+
+async function handleWorkspaceDelegationSettingsClick(event) {
+  const button = event.target.closest("[data-workspace-delegation-toggle]");
+  if (!button || button.disabled || state.workspaceDelegationBusy) return;
+  const nextEnabled = !Boolean(state.workspaceDelegation && state.workspaceDelegation.enabled);
+  state.workspaceDelegationBusy = true;
+  $("connectionState").textContent = nextEnabled ? "正在开启跨工作区委派..." : "正在关闭跨工作区委派...";
+  renderWorkspaceDelegationSettings();
+  try {
+    const result = await api("/api/settings/workspace-delegation", {
+      method: "POST",
+      body: JSON.stringify({ enabled: nextEnabled }),
+      timeoutMs: 12000,
+    });
+    rememberWorkspaceDelegationConfig(result && result.workspaceDelegation || null);
+    $("connectionState").textContent = nextEnabled ? "跨工作区委派已开启" : "跨工作区委派已关闭";
+  } catch (err) {
+    showError(err);
+    $("connectionState").textContent = err.message || "跨工作区委派设置失败";
+    renderWorkspaceDelegationSettings();
+  } finally {
+    state.workspaceDelegationBusy = false;
+    renderWorkspaceDelegationSettings();
+  }
 }
 
 function renderAppNativeDialog() {
@@ -17853,6 +17933,7 @@ function wireUi() {
   if (settingsPanel) {
     settingsPanel.addEventListener("click", handleFontSizeChoice);
     settingsPanel.addEventListener("click", (event) => handleCodexProfileSettingsClick(event).catch(showError));
+    settingsPanel.addEventListener("click", (event) => handleWorkspaceDelegationSettingsClick(event).catch(showError));
   }
   const commandControl = $("composerCommandControl");
   if (commandControl) {
@@ -18430,6 +18511,7 @@ async function start() {
   state.workspaceCreateEnabled = config.workspaceCreate ? config.workspaceCreate.enabled !== false : true;
   state.workspaceCreateRoot = String(config.workspaceCreate && config.workspaceCreate.defaultRoot || "").trim();
   state.workspaceCreateRoots = normalizeOptionList(config.workspaceCreate && config.workspaceCreate.roots || []);
+  rememberWorkspaceDelegationConfig(config.workspaceDelegation || null);
   state.publicPrStatus = {
     enabled: state.publicPrEnabled,
     repository: state.publicPrRepository,

@@ -442,9 +442,9 @@ Implementation path:
    `turn/start` input, not as a fake static `userMessage`.
     The thread-callable route is a separate model/tool surface. By default it
     stores pending target cards; it only calls `approveFromSource()` and
-    bypasses the target pending approval UI when
-    `CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1` is configured. Do not enable
-    that bypass for ordinary browser composer or `#` draft-created cards.
+    bypasses the target pending approval UI when the runtime Settings switch
+    `跨工作区委派` is enabled. Do not enable that bypass for ordinary browser
+    composer or `#` draft-created cards.
 13. Keep `test/thread-task-card-harness.test.js` green, and cover real behavior
    with `test/thread-task-card-service.test.js` and
    `test/thread-task-card-route.test.js`.

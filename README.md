@@ -1,5 +1,6 @@
 # Codex Mobile Web
 
+- 中文说明：v366 把跨工作区模型/工具委派开关补到设置面板里。入口是左侧菜单齿轮 -> `跨工作区委派`，默认关闭；切换会写入运行时 `settings.json` 并立即生效，无需修改环境变量或重启。关闭时 `/api/threads/:sourceThreadId/task-cards` 只创建 pending 任务卡；开启后模型/工具显式发卡才允许源线程直批并启动目标线程。普通发送前本地关键词/目录名预检仍保持关闭。PWA shell cache 升级到 `codex-mobile-shell-v366`。
 - 中文说明：v365 为跨工作区模型/工具委派增加服务端开关，默认关闭。只有设置 `CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1`（或兼容别名 `CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED=1`）后，`/api/threads/:sourceThreadId/task-cards` 才会执行源线程直批并启动目标线程；默认关闭时同一路径只创建 pending 任务卡，需要目标线程审批。普通发送前本地关键词/目录名预检仍保持关闭。PWA shell cache 升级到 `codex-mobile-shell-v365`。
 - 中文说明：v364 禁用 v363 普通发送前的本地跨工作区启发式委派。`/api/threads/:sourceThreadId/workspace-delegation` 保留为兼容接口但只返回禁用/未委派状态，不会再根据目录名、线程标题或关键词自动发卡；跨工作区任务必须由模型输出结构化任务卡，或由线程/工具显式调用 `/api/threads/:sourceThreadId/task-cards` / `scripts/create-thread-task-card.js`。PWA shell cache 升级到 `codex-mobile-shell-v364`。
 - 中文说明：v363 曾新增跨工作区自动委派策略，普通发送前会用本地规则判断目标线程并自动发卡；该行为已被 v364 禁用，保留为历史说明。
@@ -369,11 +370,12 @@ Behavior:
 `POST /api/threads/:sourceThreadId/task-cards` is the thread-callable
 delegation path. It is intended for a Codex thread/tool to hand scoped work to
 another thread without cross-workspace editing. It stores the same task-card
-object for audit. Source-thread direct approval is disabled by default and only
-runs when the server is configured with
-`CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1`. With the default configuration it
-creates a normal pending target card. Passing `pending:true` or
-`autoApprove:false` also forces pending behavior even when the switch is on.
+object for audit. Source-thread direct approval is disabled by default and is
+controlled from the Settings panel under `跨工作区委派`. The runtime setting is
+stored in `settings.json`; `CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1` remains
+only a startup/default fallback. With the default configuration it creates a
+normal pending target card. Passing `pending:true` or `autoApprove:false` also
+forces pending behavior even when the switch is on.
 
 Local thread-callable wrapper:
 

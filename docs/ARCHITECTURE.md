@@ -431,8 +431,8 @@ For Codex-thread/tool initiated delegation, Mobile Web also exposes
 `POST /api/threads/:sourceThreadId/task-cards`. This route is not used by the
 browser composer. It infers the source thread from the URL, stores the same
 auditable task-card object, and only performs source-thread direct approval
-when the server is configured with `CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1`.
-With the default configuration the route creates pending target cards. Passing
+when the runtime Settings switch `跨工作区委派` is enabled. With the default
+configuration the route creates pending target cards. Passing
 `pending:true`, `autoApprove:false`, or `direct:false` keeps pending behavior
 even when the switch is enabled.
 The ChatGPT Pro MCP `delegate_to_codex_thread` tool uses the same server helper

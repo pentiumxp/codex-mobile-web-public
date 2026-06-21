@@ -194,6 +194,8 @@ const HERMES_PLUGIN_NOTIFICATION_KEY_FILE = process.env.CODEX_MOBILE_HERMES_PLUG
   || "";
 const THREAD_TASK_CARD_FILE = process.env.CODEX_MOBILE_THREAD_TASK_CARD_FILE
   || path.join(RUNTIME_ROOT, "thread-task-cards.json");
+const RUNTIME_SETTINGS_FILE = process.env.CODEX_MOBILE_SETTINGS_FILE
+  || path.join(RUNTIME_ROOT, "settings.json");
 const THREAD_SIDE_CHAT_FILE = process.env.CODEX_MOBILE_THREAD_SIDE_CHAT_FILE
   || path.join(RUNTIME_ROOT, "thread-side-chats.json");
 const CHATGPT_PRO_BRIDGE_FILE = process.env.CODEX_MOBILE_CHATGPT_PRO_BRIDGE_FILE
@@ -206,7 +208,7 @@ const CHATGPT_PRO_PLANNER_DIR = process.env.CODEX_MOBILE_CHATGPT_PRO_PLANNER_DIR
 const CHATGPT_PRO_MCP_TOKEN = process.env.CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN || "";
 const CHATGPT_PRO_MCP_TOKEN_FILE = process.env.CODEX_MOBILE_CHATGPT_PRO_MCP_TOKEN_FILE || "";
 const CHATGPT_PRO_MCP_ALLOW_DIRECT_TASK_CARDS = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_CHATGPT_PRO_MCP_ALLOW_DIRECT_TASK_CARDS || "");
-const WORKSPACE_DELEGATION_ENABLED = /^(1|true|yes|on)$/i.test(
+const WORKSPACE_DELEGATION_ENV_DEFAULT = /^(1|true|yes|on)$/i.test(
   process.env.CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION
     || process.env.CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED
     || "",
@@ -5776,6 +5778,49 @@ function writeRuntimeJson(file, value) {
   fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
 }
 
+function readRuntimeSettings() {
+  const value = readJsonFile(RUNTIME_SETTINGS_FILE, {});
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function writeRuntimeSettings(patch = {}) {
+  const current = readRuntimeSettings();
+  const next = Object.assign({}, current, patch, {
+    version: 1,
+    updatedAt: new Date().toISOString(),
+  });
+  writeRuntimeJson(RUNTIME_SETTINGS_FILE, next);
+  return next;
+}
+
+function workspaceDelegationPublicSettings(settings = readRuntimeSettings()) {
+  const raw = settings && settings.workspaceDelegation && typeof settings.workspaceDelegation === "object"
+    ? settings.workspaceDelegation
+    : {};
+  const hasRuntimeValue = typeof raw.enabled === "boolean";
+  const enabled = hasRuntimeValue ? raw.enabled : WORKSPACE_DELEGATION_ENV_DEFAULT;
+  return {
+    enabled,
+    mode: enabled ? "model_driven_explicit_task_card" : "off",
+    directTaskCardAutoApproval: enabled,
+    ordinarySendPreflight: false,
+    localHeuristics: false,
+    source: hasRuntimeValue ? "runtime" : WORKSPACE_DELEGATION_ENV_DEFAULT ? "environment" : "default",
+    updatedAt: String(raw.updatedAt || ""),
+  };
+}
+
+function setWorkspaceDelegationEnabled(enabled) {
+  const nextEnabled = Boolean(enabled);
+  const current = readRuntimeSettings();
+  const workspaceDelegation = Object.assign({}, current.workspaceDelegation || {}, {
+    enabled: nextEnabled,
+    updatedAt: new Date().toISOString(),
+  });
+  writeRuntimeSettings({ workspaceDelegation });
+  return workspaceDelegationPublicSettings(readRuntimeSettings());
+}
+
 function normalizePushSubject(value) {
   const subject = String(value || "").trim();
   return subject || DEFAULT_PUSH_SUBJECT;
@@ -9761,7 +9806,8 @@ function buildThreadTaskCardCreatePayload(body = {}, sourceThreadId = "") {
 async function createThreadTaskCardsFromSourceThread(sourceThreadId, body = {}) {
   const payload = buildThreadTaskCardCreatePayload(body, sourceThreadId);
   const cards = await threadTaskCardService.createMany(payload);
-  const autoApprove = WORKSPACE_DELEGATION_ENABLED
+  const workspaceDelegation = workspaceDelegationPublicSettings();
+  const autoApprove = workspaceDelegation.enabled
     && body.autoApprove !== false
     && body.direct !== false
     && body.pending !== true;
@@ -9779,7 +9825,7 @@ async function createThreadTaskCardsFromSourceThread(sourceThreadId, body = {}) 
     sourceThreadId: payload.sourceThreadId,
     direct: autoApprove,
     autoApprove,
-    workspaceDelegationEnabled: WORKSPACE_DELEGATION_ENABLED,
+    workspaceDelegationEnabled: workspaceDelegation.enabled,
     card: publicCards[0] || null,
     cards: publicCards,
     approvals,
@@ -10632,6 +10678,7 @@ async function handleApi(req, res) {
     await codex.refreshRateLimitsIfMissing();
     loadRecentRateLimitsFromRollouts();
     const buildConfig = currentPublicBuildConfig();
+    const workspaceDelegation = workspaceDelegationPublicSettings();
     sendJson(res, 200, {
       authRequired: !DISABLE_AUTH,
       title: "Codex Mobile Web",
@@ -10676,13 +10723,7 @@ async function handleApi(req, res) {
         defaultRoot: workspaceRegistryService.defaultCreateRoot(),
         roots: workspaceRegistryService.createRoots(),
       },
-      workspaceDelegation: {
-        enabled: WORKSPACE_DELEGATION_ENABLED,
-        mode: WORKSPACE_DELEGATION_ENABLED ? "model_driven_explicit_task_card" : "off",
-        directTaskCardAutoApproval: WORKSPACE_DELEGATION_ENABLED,
-        ordinarySendPreflight: false,
-        localHeuristics: false,
-      },
+      workspaceDelegation,
       hermesPlugin: {
         id: "codex-mobile",
         manifestPath: "/api/v1/hermes/plugin/manifest",
@@ -10776,6 +10817,23 @@ async function handleApi(req, res) {
   }
   if (!isAuthorized(req)) {
     sendJson(res, 401, { error: "Unauthorized" });
+    return;
+  }
+  if (url.pathname === "/api/settings/workspace-delegation" && (req.method === "GET" || req.method === "POST")) {
+    try {
+      if (req.method === "GET") {
+        sendJson(res, 200, { ok: true, workspaceDelegation: workspaceDelegationPublicSettings() });
+        return;
+      }
+      const body = await readBody(req);
+      if (typeof body.enabled !== "boolean") throw httpStatusError(400, "enabled_boolean_required");
+      sendJson(res, 200, {
+        ok: true,
+        workspaceDelegation: setWorkspaceDelegationEnabled(body.enabled),
+      });
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
     return;
   }
   if (url.pathname === "/api/v1/hermes/plugin/session" && req.method === "POST") {
@@ -11154,14 +11212,15 @@ async function handleApi(req, res) {
   const sourceThreadWorkspaceDelegation = url.pathname.match(/^\/api\/threads\/([^/]+)\/workspace-delegation$/);
   if (sourceThreadWorkspaceDelegation && req.method === "POST") {
     try {
+      const workspaceDelegation = workspaceDelegationPublicSettings();
       sendJson(res, 200, {
         ok: true,
-        enabled: WORKSPACE_DELEGATION_ENABLED,
+        enabled: workspaceDelegation.enabled,
         delegated: false,
         disabled: true,
         analysis: {
           shouldDelegate: false,
-          reason: WORKSPACE_DELEGATION_ENABLED
+          reason: workspaceDelegation.enabled
             ? "model_driven_delegation_requires_explicit_task_card"
             : "workspace_delegation_disabled",
         },
