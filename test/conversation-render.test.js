@@ -158,6 +158,7 @@ function evaluatedThreadStatusHintHarness() {
     "currentThreadAllowsLiveTurn",
     "currentLiveTurnSupportsThreadStatusHint",
     "isThreadListIdleStatus",
+    "threadHasTerminalLatestTurn",
     "shouldKeepRunningHintForSettledStatus",
     "shouldMarkThreadUnread",
     "runningThreadHintAgeMs",
@@ -173,6 +174,7 @@ let nowMs = RealDate.now();
 const Date = { now: () => nowMs, parse: RealDate.parse };
 const STATUS_EVENT_FRESHNESS_TOLERANCE_MS = 1000;
 const RUNNING_THREAD_HINT_STALE_MS = 20 * 60 * 1000;
+const SUBMITTED_PROCESSING_HINT_STALE_MS = 60 * 1000;
 const state = {
   threads: [],
   currentThread: null,
@@ -2666,6 +2668,7 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(appJs, /function markThreadOptimisticallyActive\(/);
   assert.match(appJs, /function mergeThreadIntoThreadList\(/);
   assert.match(appJs, /const RUNNING_THREAD_HINT_STALE_MS = 20 \* 60 \* 1000;/);
+  assert.match(appJs, /const SUBMITTED_PROCESSING_HINT_STALE_MS = 60 \* 1000;/);
   assert.match(appJs, /runningThreadHintedAtById: loadNumberMapStorage\("codexMobileRunningThreadHintedAtById", \{\}\)/);
   assert.match(appJs, /threadViewedAtById: loadNumberMapStorage\("codexMobileThreadViewedAtById", \{\}\)/);
   assert.match(appJs, /submittedProcessingThreadHintedAtById: \{\}/);
@@ -2675,6 +2678,7 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(appJs, /function clearSubmittedProcessingThreadHint\(threadId\)/);
   assert.match(appJs, /function hasFreshSubmittedProcessingThreadHint\(threadId, nowMs = Date\.now\(\)\)/);
   assert.match(appJs, /function isThreadListIdleStatus\(status\)/);
+  assert.match(appJs, /function threadHasTerminalLatestTurn\(thread\)/);
   assert.match(functionBody("clearRunningThreadHint"), /clearSubmittedProcessingThreadHint\(id\)/);
   assert.match(appJs, /function isThreadListSettledStatus\(status\)/);
   assert.match(functionBody("isThreadListSettledStatus"), /idle\|completed\|complete\|done\|failed/);
@@ -2688,6 +2692,7 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(appJs, /function currentThreadAllowsLiveTurn\(\)/);
   assert.match(appJs, /function currentLiveTurnSupportsThreadStatusHint\(threadId = ""\)/);
   assert.match(functionBody("shouldKeepRunningHintForSettledStatus"), /isThreadListIdleStatus\(nextStatus\)/);
+  assert.match(functionBody("shouldKeepRunningHintForSettledStatus"), /!threadHasTerminalLatestTurn\(thread\)/);
   assert.match(functionBody("shouldKeepRunningHintForSettledStatus"), /hasFreshSubmittedProcessingThreadHint\(id\)/);
   assert.match(functionBody("shouldMarkThreadUnread"), /const updateAt = threadStatusFreshnessAtMs\(thread, options\.eventAtMs\)/);
   assert.match(functionBody("shouldMarkThreadUnread"), /if \(viewedAt > 0\) return updateAt > viewedAt/);
@@ -2716,6 +2721,8 @@ test("thread running hints survive notLoaded list refreshes", () => {
 
   const listMergeBody = functionBody("mergeThreadIntoThreadList");
   assert.match(listMergeBody, /threadListSummaryFromDetailThread\(thread\)/);
+  assert.match(listMergeBody, /threadHasTerminalLatestTurn\(thread\)/);
+  assert.match(listMergeBody, /clearRunningThreadHint\(id\)/);
   assert.match(listMergeBody, /Object\.assign\(\{\}, entry, summary\)/);
   const optimisticBody = functionBody("markThreadOptimisticallyActive");
   assert.match(optimisticBody, /const runningStatus = \{ type: "active" \};/);
@@ -2792,6 +2799,51 @@ test("submitted processing hint does not preserve completed list rows", () => {
   assert.equal(Object.prototype.hasOwnProperty.call(harness.state.submittedProcessingThreadHintedAtById, "thread-submitted-done"), false);
   assert.equal(harness.state.unreadThreadIds.has("thread-submitted-done"), true);
   assert.equal(harness.statusIconInfo(completedThread.status, "thread-submitted-done").kind, "unread");
+});
+
+test("submitted processing hint does not preserve terminal detail with idle top-level status", () => {
+  const harness = evaluatedThreadStatusHintHarness();
+  const now = 1_700_000_000_000;
+  harness.setNow(now);
+  harness.state.runningThreadIds.add("thread-submitted-idle-done");
+  harness.state.runningThreadHintedAtById["thread-submitted-idle-done"] = now;
+  harness.state.submittedProcessingThreadHintedAtById["thread-submitted-idle-done"] = now;
+  const completedIdleThread = {
+    id: "thread-submitted-idle-done",
+    status: { type: "idle" },
+    updatedAtMs: now + 500,
+    turns: [{ id: "turn-done", status: "completed" }],
+  };
+  harness.state.threads = [completedIdleThread];
+
+  harness.reconcileThreadStatusHints(harness.state.threads);
+
+  assert.equal(harness.state.runningThreadIds.has("thread-submitted-idle-done"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(harness.state.submittedProcessingThreadHintedAtById, "thread-submitted-idle-done"), false);
+  assert.equal(harness.state.unreadThreadIds.has("thread-submitted-idle-done"), true);
+  assert.equal(harness.statusIconInfo(completedIdleThread.status, "thread-submitted-idle-done").kind, "unread");
+});
+
+test("submitted processing hint expires before the normal running hint window", () => {
+  const harness = evaluatedThreadStatusHintHarness();
+  const submittedAt = 1_700_000_000_000;
+  harness.setNow(submittedAt + 61_000);
+  harness.state.runningThreadIds.add("thread-submitted-expired");
+  harness.state.runningThreadHintedAtById["thread-submitted-expired"] = submittedAt;
+  harness.state.submittedProcessingThreadHintedAtById["thread-submitted-expired"] = submittedAt;
+  const idleThread = {
+    id: "thread-submitted-expired",
+    status: { type: "idle" },
+    updatedAtMs: submittedAt + 61_000,
+  };
+  harness.state.threads = [idleThread];
+
+  harness.reconcileThreadStatusHints(harness.state.threads);
+
+  assert.equal(harness.state.runningThreadIds.has("thread-submitted-expired"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(harness.state.submittedProcessingThreadHintedAtById, "thread-submitted-expired"), false);
+  assert.equal(harness.state.unreadThreadIds.has("thread-submitted-expired"), true);
+  assert.equal(harness.statusIconInfo(idleThread.status, "thread-submitted-expired").kind, "unread");
 });
 
 test("stale settled list rows do not clear fresh running hints", () => {

@@ -373,7 +373,7 @@ const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v358";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v359";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -390,6 +390,7 @@ const PERF_EVENT_THROTTLE_MS = 2000;
 const PERF_RENDER_REPORT_MIN_MS = 16;
 const PERF_SLOW_RENDER_REPORT_MS = 50;
 const RUNNING_THREAD_HINT_STALE_MS = 20 * 60 * 1000;
+const SUBMITTED_PROCESSING_HINT_STALE_MS = 60 * 1000;
 const STATUS_EVENT_FRESHNESS_TOLERANCE_MS = 1000;
 const AUTO_TURN_RECOVERY_COOLDOWN_MS = 120000;
 const GITHUB_LINK_PREVIEW_TIMEOUT_MS = 12000;
@@ -1430,7 +1431,7 @@ function clearSubmittedProcessingThreadHint(threadId) {
 function hasFreshSubmittedProcessingThreadHint(threadId, nowMs = Date.now()) {
   const id = String(threadId || "");
   const hintedAt = Number(state.submittedProcessingThreadHintedAtById[id] || 0);
-  return Boolean(id && hintedAt > 0 && nowMs - hintedAt <= RUNNING_THREAD_HINT_STALE_MS);
+  return Boolean(id && hintedAt > 0 && nowMs - hintedAt <= SUBMITTED_PROCESSING_HINT_STALE_MS);
 }
 
 function clearRunningThreadHint(threadId) {
@@ -1523,6 +1524,12 @@ function isThreadListIdleStatus(status) {
   return /^(idle|notloaded|not_loaded|not-loaded)$/.test(statusText(status).toLowerCase());
 }
 
+function threadHasTerminalLatestTurn(thread) {
+  const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+  const latest = turns.length ? turns[turns.length - 1] : null;
+  return Boolean(latest && isCompletedStatus(latest.status));
+}
+
 function shouldKeepRunningHintForSettledStatus(threadId, thread = null, status = null, options = {}) {
   const id = String(threadId || "");
   if (!id || !state.runningThreadIds.has(id)) return false;
@@ -1531,6 +1538,7 @@ function shouldKeepRunningHintForSettledStatus(threadId, thread = null, status =
   if (!isThreadListSettledStatus(nextStatus)) return false;
   if (options.allowLocalProcessing !== false
     && isThreadListIdleStatus(nextStatus)
+    && !threadHasTerminalLatestTurn(thread)
     && hasFreshSubmittedProcessingThreadHint(id)) return true;
   if (id === state.currentThreadId && !currentThreadAllowsLiveTurn()) return false;
   if (currentLiveTurnSupportsThreadStatusHint(id)) return true;
@@ -4238,6 +4246,9 @@ function mergeThreadIntoThreadList(thread) {
   const summary = threadListSummaryFromDetailThread(thread);
   if (!summary) return false;
   const id = String(summary.id);
+  if (isThreadListSettledStatus(summary.status) && threadHasTerminalLatestTurn(thread)) {
+    if (clearRunningThreadHint(id)) saveThreadStatusHints();
+  }
   const index = state.threads.findIndex((entry) => String(entry && entry.id || "") === id);
   if (index >= 0) {
     state.threads = state.threads.map((entry, entryIndex) => (
