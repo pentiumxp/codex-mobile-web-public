@@ -104,15 +104,20 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(platformPointer, /development visual check passes/);
 });
 
-test("Android composer stale focus recovery runs after the native tap", () => {
+test("Android composer stale focus is released before the native tap", () => {
   const prepareBody = functionBody("prepareMessageInputForNativeGesture");
   const recoverBody = functionBody("recoverMessageInputKeyboardFromGesture");
   const shouldRecoverBody = functionBody("shouldRecoverMessageInputKeyboard");
+  const releaseBody = functionBody("releaseStaleAndroidMessageInputFocusBeforeNativeTap");
   assert.match(prepareBody, /if \(!input \|\| !isAndroidBrowser\(\)\) return;/);
   assert.match(prepareBody, /setMessageInputDisabled\(false\)/);
-  assert.doesNotMatch(prepareBody, /focusMessageInput|preventDefault|blur\(/);
+  assert.match(prepareBody, /releaseStaleAndroidMessageInputFocusBeforeNativeTap\(input\)/);
+  assert.doesNotMatch(prepareBody, /focusMessageInput|preventDefault/);
+  assert.match(releaseBody, /messageInputKeyboardVisible\(\)/);
+  assert.match(releaseBody, /input\.blur\(\)/);
   assert.match(shouldRecoverBody, /if \(!isAndroidBrowser\(\) && !isHermesEmbedMode\(\)\) return false;/);
   assert.doesNotMatch(shouldRecoverBody, /if \(isAndroidBrowser\(\)\) return false;/);
+  assert.match(recoverBody, /if \(isAndroidBrowser\(\)\) return false;/);
   assert.match(recoverBody, /resetActiveFocus: true/);
   assert.match(recoverBody, /allowAndroidActiveFocusReset: true/);
 });
@@ -130,8 +135,8 @@ test("composer sizing avoids one-pixel layout churn while typing and streaming",
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v367/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v367"/);
+  assert.match(swJs, /codex-mobile-shell-v368/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v368"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);

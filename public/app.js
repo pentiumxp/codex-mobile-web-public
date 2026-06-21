@@ -382,7 +382,7 @@ const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v367";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v368";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -16024,7 +16024,10 @@ function shouldRecoverMessageInputKeyboard() {
 }
 
 function recoverMessageInputKeyboardFromGesture() {
-  if (!state.messageInputPointerWasFocused) return false;
+  const wasFocused = Boolean(state.messageInputPointerWasFocused);
+  state.messageInputPointerWasFocused = false;
+  if (!wasFocused) return false;
+  if (isAndroidBrowser()) return false;
   if (!shouldRecoverMessageInputKeyboard()) return false;
   state.messageInputKeyboardRecoveryAt = Date.now();
   return focusMessageInput({
@@ -16044,6 +16047,22 @@ function messageInputCanEnableForNativeGesture() {
     && !state.currentThread.mobileLoadError);
 }
 
+function releaseStaleAndroidMessageInputFocusBeforeNativeTap(input) {
+  if (!input || !isAndroidBrowser()) return false;
+  if (!state.messageInputPointerWasFocused) return false;
+  if (!messageInputCanEnableForNativeGesture()) return false;
+  if (state.composerComposing || messageInputKeyboardVisible()) return false;
+  const now = Date.now();
+  if (now - Number(state.messageInputKeyboardRecoveryAt || 0) <= 450) return false;
+  state.messageInputKeyboardRecoveryAt = now;
+  try {
+    input.blur();
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 function prepareMessageInputForNativeGesture() {
   const input = $("messageInput");
   state.messageInputPointerWasFocused = document.activeElement === input;
@@ -16052,6 +16071,7 @@ function prepareMessageInputForNativeGesture() {
   if (input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true") {
     setMessageInputDisabled(false);
   }
+  releaseStaleAndroidMessageInputFocusBeforeNativeTap(input);
 }
 
 function normalizedComposerIntentText(value) {
@@ -16327,7 +16347,8 @@ function saveComposerIntentDialogDraft() {
 function shouldKeepAndroidMessageInputEditable(disabled, el) {
   if (!disabled || !isAndroidBrowser()) return false;
   if (!el) return false;
-  return Boolean(state.newThreadDraft || state.currentThreadId || document.activeElement === el);
+  if (!messageInputCanEnableForNativeGesture()) return false;
+  return Boolean(state.composerComposing || document.activeElement === el);
 }
 
 function setMessageInputDisabled(disabled) {

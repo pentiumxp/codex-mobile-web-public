@@ -2,6 +2,81 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-21 Android Composer IME Focus Stabilization v368
+
+- Status: patched, tested, and deployed to Mac production with no Listener
+  restart. Source commit is pending at time of writing.
+- Trigger:
+  - User reported that in the Android APK/WebView shell, the Codex Composer
+    sometimes does not open the native keyboard on first tap; after that
+    failure, a second tap may show the keyboard but text no longer enters the
+    Composer until leaving and re-entering the thread.
+  - User asked to compare other Home AI plugins because their Composer/input
+    fields behave normally.
+- Finding:
+  - Other inspected plugins such as Finance primarily use native
+    `textarea`/`input` controls for message or note entry. Codex Mobile is the
+    outlier: its main Composer is `contenteditable` plus an Android-specific
+    enable/recovery state machine.
+  - The old Codex Android path could keep the editor in a mixed disabled state
+    (`contenteditable=true` while `aria-disabled=true` / `tabIndex=-1`) because
+    it preserved editable mode whenever a thread or draft existed.
+  - The old recovery also ran a programmatic blur/refocus after
+    `pointerup`/`click`. On Android WebView this can steal the native tap's
+    editor connection, which matches the reported "keyboard appears but text
+    does not enter" failure mode.
+- Change:
+  - `public/app.js` advanced to `codex-mobile-shell-v368`.
+  - Android no longer performs the post-native-tap blur/refocus recovery in
+    `recoverMessageInputKeyboardFromGesture()`.
+  - Added `releaseStaleAndroidMessageInputFocusBeforeNativeTap(input)`: when a
+    user starts a new tap on an already-focused Composer while the keyboard is
+    not visible, Codex releases stale focus during `pointerdown` and lets the
+    native WebView tap establish the editor connection.
+  - Narrowed `shouldKeepAndroidMessageInputEditable()` so disabled-state
+    editable preservation only applies when the Composer can be enabled by the
+    gesture and is actively composing or focused; it no longer applies merely
+    because a thread or new-thread draft exists.
+  - `public/sw.js` cache advanced to `codex-mobile-shell-v368`.
+  - README has a Chinese v368 release note for the Android Composer IME fix.
+- Validation:
+  - Passed:
+    `node --test test/new-thread-ui.test.js test/mobile-viewport.test.js test/plugin-voice-input.test.js`
+    (21/21).
+  - Passed:
+    `node --test test/new-thread-ui.test.js test/mobile-viewport.test.js test/plugin-voice-input.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (35/35).
+  - Passed: `node --check public/app.js`.
+  - Passed:
+    `node --check test/new-thread-ui.test.js && node --check test/mobile-viewport.test.js`.
+  - Passed: `npm run check`.
+  - Passed: `npm test` (577/577).
+  - Passed: `git diff --check`.
+  - Passed center guard:
+    `node tests/architecture-code-test-harness-map.test.js`.
+- Production deploy:
+  - Deployed with central Mac deploy script using `--restart none` and health
+    URL `http://127.0.0.1:8787/api/v1/hermes/plugin/manifest`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260621T134107Z-plugin-codex-mobile-web-codex-mobile-v368-android-composer-ime`.
+  - Production readback confirmed `public/app.js` and `public/sw.js` contain
+    `codex-mobile-shell-v368` and the new Android stale-focus helper.
+  - `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v368` and
+    `shellCacheName=codex-mobile-shell-v368`.
+- Android device validation note:
+  - ADB device `e0cd9d2b` was reachable.
+  - Direct Chrome production page could be logged in without printing the
+    access key. Runtime DOM state showed `#messageInput` with
+    `contenteditable=true`, `aria-disabled=false`, and `tabIndex=0`, confirming
+    the mixed disabled/editable state was gone in that environment.
+  - Full APK shell visual/keyboard validation was not completed in this turn:
+    the installed `app.homeai.android` package reported launcher activity
+    `app.homeai.android/.MainActivity`, but `am start` failed with
+    `Activity class ... does not exist`; `com.hermesmobile.localpwa` reported
+    launch success but foreground focus remained in Chrome. Treat this as a
+    device/shell validation limitation, not as APK-shell pass evidence.
+
 ## 2026-06-21 Active Turn Receipt Projection Fix
 
 - Status: committed, deployed to Mac production, and pushed to public.
