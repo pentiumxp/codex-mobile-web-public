@@ -1,5 +1,6 @@
 # Codex Mobile Web
 
+- 中文说明：v352 修复三处移动端工作流问题：Public PR 检查会忽略 GitHub draft PR，只有 ready/open PR 才提示合并；Mac 生产运行路径不在开发 checkout 时，新建 Workspace 仍会优先使用存在的 `/Users/hermes-dev/HermesMobileDev` 开发根；Android/嵌入态 Composer 点击和 Home AI 语音输入插入会先恢复可编辑状态并稳定聚焦到 Composer。PWA shell cache 升级到 `codex-mobile-shell-v352`。
 - 中文说明：v351 修正 Home AI 嵌入态左右分屏下线程详情返回箭头的判定来源。嵌入态不再用 Codex Mobile 自己的线程列表 sidebar 判断，而是使用 Home AI 发送的 `hermes.plugin.viewport` 里的 iframe/host rect：只有 iframe 明确处在宿主右侧分屏区域时才显示返回箭头；独立版和 Codex 自身分屏行为保持原规则。PWA shell cache 升级到 `codex-mobile-shell-v351`。
 - 中文说明：v350 缓解 Android WebView/Chrome 使用豆包等中文输入法时 Composer 看似有焦点但不上字的问题。主输入框仍保持 `contenteditable`，但 disabled 状态更新改为幂等，输入法组词期间不再反复重写 `contentEditable`，并且 composing 状态下 Enter 不触发发送，避免第三方 IME 的 editor connection 被打断。PWA shell cache 升级到 `codex-mobile-shell-v350`。
 - 中文说明：v349 修复 v348 在真实浏览器/WebView 中宽屏线程详情返回箭头仍可能不显示的问题。分屏判定现在使用左侧线程列表的实际尺寸、position、visibility 和 identity transform 共同判断，并给返回按钮添加显式 `split-return-visible` 状态；只有实际存在 Codex Mobile 左侧分屏时才显示返回箭头，没有左分屏时仍保持隐藏。PWA shell cache 升级到 `codex-mobile-shell-v349`。

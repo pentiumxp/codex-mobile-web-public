@@ -2,6 +2,51 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-21 PR Draft Filter, Workspace Root, Composer Focus v352
+
+- Status: implemented and focused-tested locally. Not deployed in this entry.
+- Trigger:
+  - Public PR detection should ignore GitHub draft PRs and only prompt when a
+    ready/open PR exists.
+  - Mac production still reported Workspace creation default root as
+    `/Users/xuxin/Documents` because the production plugin path is not inside
+    the development checkout.
+  - Android/WebView Composer could require a second tap to show the keyboard,
+    and Home AI embedded voice input could fail to focus/insert into the
+    Composer until the thread was reopened.
+- Change:
+  - `adapters/public-pull-request-service.js`: draft PRs are filtered out
+    before public status is built; `openPullRequestCount` now counts only
+    normalized ready PRs.
+  - `server.js`: `detectDevelopmentWorkspaceRoot` still honors an app-root
+    ancestor named `HermesMobileDev`, then checks `HERMES_MOBILE_DEV_ROOT` and
+    the existing Mac shared dev root `/Users/hermes-dev/HermesMobileDev`.
+    Explicit `CODEX_MOBILE_WORKSPACE_DEFAULT_CREATE_ROOT` still wins.
+  - `public/app.js`: advanced client build id to
+    `codex-mobile-shell-v352`.
+  - `public/app.js`: added `focusMessageInput` and
+    `placeMessageInputCaretAtEnd`; Android pointer-down on an inactive
+    Composer restores focus without moving the caret, while embedded voice
+    input restores editability, focuses, and moves the caret to the end after
+    insert/provisional insert.
+  - `public/sw.js`, README, and shell-version tests advanced to v352.
+- Validation:
+  - Passed:
+    `node --check adapters/public-pull-request-service.js && node --check adapters/workspace-registry-service.js && node --check public/app.js && node --check public/sw.js && node --check server.js`.
+  - Passed:
+    `node --test test/public-pull-request-service.test.js test/app-update.test.js test/workspace-registry-service.test.js test/new-thread-route.test.js test/new-thread-ui.test.js test/plugin-voice-input.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`.
+  - Passed: `npm run check`.
+  - Passed: `git diff --check`.
+  - Passed center required check:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - Live GitHub probe showed the public repo currently has one open PR,
+    `#78`, and it is draft; applying the new adapter maps that to
+    `readyCount=0` and `hasOpenPullRequests=false`.
+- Deployment note:
+  - Static v352 files can be synced without listener restart, but the Workspace
+    default-root server change requires a Listener restart to affect
+    `/api/public-config` and new Workspace creation.
+
 ## 2026-06-21 Home AI Embedded Split Back Button v351
 
 - Status: implemented, focused-tested, production DOM-smoked, and static-only

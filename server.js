@@ -102,6 +102,18 @@ function detectDevelopmentWorkspaceRoot(appRoot) {
     if (path.basename(current) === "HermesMobileDev") return current;
     current = path.dirname(current);
   }
+  const fallbackRoots = uniqueStrings([
+    process.env.HERMES_MOBILE_DEV_ROOT || "",
+    "/Users/hermes-dev/HermesMobileDev",
+  ]);
+  for (const candidate of fallbackRoots) {
+    const resolved = path.resolve(candidate);
+    try {
+      if (path.basename(resolved) === "HermesMobileDev" && fs.statSync(resolved).isDirectory()) {
+        return resolved;
+      }
+    } catch (_) {}
+  }
   return "";
 }
 

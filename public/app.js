@@ -369,7 +369,7 @@ const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v351";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v352";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -5806,6 +5806,8 @@ function pluginVoiceInputEnsureComposerWritableForDraft() {
   if (input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true") {
     setMessageInputDisabled(false);
   }
+  if (input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true") return false;
+  focusMessageInput({ moveCaretToEnd: true, retry: true });
   return true;
 }
 
@@ -5973,8 +5975,7 @@ function applyPluginVoiceInputProvisionalText(payload = {}, text = "") {
   setComposerText(nextText);
   persistPluginVoiceInputDraft(draftKey);
   updateComposerControls();
-  const input = $("messageInput");
-  if (input) input.focus();
+  focusMessageInput({ moveCaretToEnd: true, retry: true });
   state.pluginVoiceInputProvisional = Object.assign({}, session, {
     currentText: nextText,
     text: String(text || "").slice(0, Number(pluginVoiceInputApi.MAX_TEXT_CHARS || 12000) || 12000),
@@ -6056,8 +6057,7 @@ function applyPluginVoiceInputTextMessage(payload = {}) {
   setComposerText(nextText);
   persistPluginVoiceInputDraft();
   updateComposerControls();
-  const input = $("messageInput");
-  if (input) input.focus();
+  focusMessageInput({ moveCaretToEnd: true, retry: true });
   rememberPluginVoiceInputSession(payload, text);
   postPluginVoiceInputMessage(pluginVoiceInputApi.insertResultMessage({
     requestId: pluginVoiceInputApi.requestIdFrom ? pluginVoiceInputApi.requestIdFrom(payload) : payload.requestId,
@@ -15848,6 +15848,46 @@ function setComposerText(value) {
   autoSizeMessageInput(el, { force: true });
 }
 
+function placeMessageInputCaretAtEnd(input) {
+  if (!input || !window.getSelection || !document.createRange) return false;
+  try {
+    const range = document.createRange();
+    range.selectNodeContents(input);
+    range.collapse(false);
+    const selection = window.getSelection();
+    if (!selection) return false;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function focusMessageInput(options = {}) {
+  const input = $("messageInput");
+  if (!input) return false;
+  if (options.ensureEnabled !== false
+    && (input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true")) {
+    setMessageInputDisabled(false);
+  }
+  if (input.contentEditable === "false" || input.getAttribute("aria-disabled") === "true") return false;
+  try {
+    input.focus({ preventScroll: true });
+  } catch (_) {
+    try {
+      input.focus();
+    } catch (err) {
+      return false;
+    }
+  }
+  if (options.moveCaretToEnd) placeMessageInputCaretAtEnd(input);
+  if (options.retry && document.activeElement !== input) {
+    window.setTimeout(() => focusMessageInput(Object.assign({}, options, { retry: false })), 30);
+  }
+  return true;
+}
+
 function normalizedComposerIntentText(value) {
   return String(value || "")
     .replace(/[\u200B-\u200D\uFEFF]/g, "")
@@ -17965,6 +18005,11 @@ function wireUi() {
   });
   $("messageInput").addEventListener("keyup", queueComposerIntentMenuUpdate);
   $("messageInput").addEventListener("focus", queueComposerIntentMenuUpdate);
+  $("messageInput").addEventListener("pointerdown", () => {
+    if (document.activeElement !== $("messageInput")) {
+      focusMessageInput({ moveCaretToEnd: false, retry: false });
+    }
+  });
   $("messageInput").addEventListener("compositionstart", () => {
     state.composerComposing = true;
   });
