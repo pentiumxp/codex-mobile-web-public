@@ -6526,6 +6526,10 @@ html.keyboard-open .composer {
   display: none;
 }
 
+html.thread-detail-active #openMenu.mobile-only {
+  display: grid;
+}
+
 @media (max-width: 1180px), (pointer: coarse) and (max-width: 1400px) {
   .app {
     width: 100vw;

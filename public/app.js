@@ -368,7 +368,7 @@ const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v344";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v348";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -7935,6 +7935,42 @@ function isSidebarOpen() {
   return Boolean(sidebar && sidebar.classList.contains("open"));
 }
 
+function splitPaneSidebarVisible() {
+  const sidebar = $("sidebar");
+  if (!sidebar || typeof window.getComputedStyle !== "function") return false;
+  const style = window.getComputedStyle(sidebar);
+  return style.position !== "fixed" && style.transform === "none";
+}
+
+function syncThreadDetailLayoutState() {
+  const detailActive = Boolean(state.currentThreadId || state.currentThread);
+  document.documentElement.classList.toggle("thread-detail-active", detailActive);
+  const openMenuButton = $("openMenu");
+  if (!openMenuButton) return;
+  const splitReturn = detailActive && splitPaneSidebarVisible();
+  openMenuButton.textContent = splitReturn ? "←" : "☰";
+  openMenuButton.title = splitReturn ? "返回线程列表" : "Menu";
+  openMenuButton.setAttribute("aria-label", splitReturn ? "返回线程列表" : "Menu");
+}
+
+function returnToThreadListFromDetail() {
+  if (!state.currentThreadId && !state.currentThread) return false;
+  clearCurrentThreadSelection();
+  renderThreads();
+  renderCurrentThread();
+  updateComposerControls();
+  restoreConnectionState();
+  syncHermesPluginPageLevel();
+  publishPluginNavigationState({ force: true });
+  refreshSidebarListAfterOpen();
+  return true;
+}
+
+function handleOpenMenuClick() {
+  if (splitPaneSidebarVisible() && returnToThreadListFromDetail()) return;
+  openSidebarMenu();
+}
+
 function isInteractiveGestureTarget(target) {
   return Boolean(target && target.closest && target.closest(
     "a, button, input, textarea, select, label, [contenteditable='true'], .rename-input, .composer, .composer-controls, .thread-action-sheet, .continuation-dialog, .update-dialog, .app-native-dialog"
@@ -10264,6 +10300,7 @@ function renderHome() {
 }
 
 function renderStartupThreadOpening() {
+  syncThreadDetailLayoutState();
   clearInterval(state.tickTimer);
   state.tickTimer = null;
   state.subagentPanelOpen = false;
@@ -10355,6 +10392,7 @@ function renderThreadHistoryNote(thread, omitted, previousKeys = new Set()) {
 }
 
 function renderCurrentThread(options = {}) {
+  syncThreadDetailLayoutState();
   state.nowMs = Date.now();
   if (state.newThreadDraft) {
     renderNewThreadDraft();
@@ -13541,8 +13579,7 @@ function imageLoadingModeForSource(src) {
 function shouldRenderProtectedImageDirectly(src) {
   const protectedSrc = protectedGeneratedImageSrc(src);
   if (!protectedSrc) return false;
-  if (!isHermesEmbedMode()) return false;
-  return imageDiagnosticSourceKind(protectedSrc) === "upload";
+  return isHermesEmbedMode();
 }
 
 function protectedImageDisplaySrc(src) {
@@ -17703,7 +17740,9 @@ function wireUi() {
   document.addEventListener("touchcancel", cancelSidebarEdgeSwipe, { passive: true });
   window.addEventListener("popstate", handleAndroidBackToSidebarPopState);
   ensureAndroidBackToSidebarSentinel();
-  $("openMenu").addEventListener("click", openSidebarMenu);
+  $("openMenu").addEventListener("click", handleOpenMenuClick);
+  window.addEventListener("resize", syncThreadDetailLayoutState);
+  window.addEventListener("orientationchange", syncThreadDetailLayoutState);
   $("closeMenu").addEventListener("click", closeSidebarMenu);
   const pageRefreshPrompt = $("pageRefreshPrompt");
   if (pageRefreshPrompt) pageRefreshPrompt.addEventListener("click", refreshPageForNewBuild);

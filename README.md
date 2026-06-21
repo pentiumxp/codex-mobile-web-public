@@ -1,9 +1,13 @@
 # Codex Mobile Web
 
+- 中文说明：v348 修正 v347 在无插件左分屏时也显示返回箭头的问题。返回箭头只在实际检测到 Codex Mobile 自己的左侧线程列表为分屏可见时显示；Home AI 嵌入态没有插件左分屏时继续隐藏左上角按钮。PWA shell cache 升级到 `codex-mobile-shell-v348`。
+- 中文说明：v347 修复 Home AI 嵌入态线程详情左上角返回箭头被旧 `embed-hermes #openMenu` 隐藏规则压掉的问题。线程详情态会覆盖该隐藏规则并显示返回箭头；主页面仍隐藏该按钮。PWA shell cache 升级到 `codex-mobile-shell-v347`。
+- 中文说明：v346 修复宽屏或横屏分屏下线程详情无法回到线程列表的问题。当左侧线程列表和右侧线程详情同时显示时，左上角会恢复返回箭头，点击后回到线程列表视图；手机窄屏仍保持原来的菜单按钮行为。PWA shell cache 升级到 `codex-mobile-shell-v346`。
 Codex Mobile Web is a local web client for reading and controlling Codex sessions from a phone or another browser on the same network. It talks to `codex app-server`, reads local Codex state, and exposes a compact mobile UI with message sending, image/file uploads, model/effort read-only display, quota display, live operation cards, and turn timing.
 
 This repository does not contain Codex credentials, uploaded files, or a bundled Codex binary. Those are local runtime state on each machine.
 
+- 中文说明：v345 修复 Home AI 嵌入态 Codex 系统/助手图片输出仍停留白占位图的问题。嵌入 Home AI 时，上传图、生成图和文件预览图都通过已鉴权的同源代理 URL 直接渲染，不再只对用户上传图绕过透明占位图 hydration；独立访问仍保留受保护图片 hydration 兜底。PWA shell cache 升级到 `codex-mobile-shell-v345`。
 - 中文说明：v344 继续修正移动端左下角 Fast 按钮难点中的问题。Fast 按钮真实触控区从 28px 扩到 40px/42px，并补齐 pointer、click、touchend 三路去重兜底；Composer 控件区域继续优先于侧栏边缘手势，避免 Android WebView 和 iPhone 只能点到角落的问题。PWA shell cache 升级到 `codex-mobile-shell-v344`。
 - 中文说明：v343 修正移动端左下角 Fast 按钮难点中的问题。左侧边栏边缘滑动在 Composer 底部区域不再启动，Android 侧边栏手势起点也从 84px 收窄到 44px，避免 Fast 按钮和 Composer 控件被侧栏手势抢占；正文和列表左缘仍可用手势打开侧栏。PWA shell cache 升级到 `codex-mobile-shell-v343`。
 - 中文说明：v342 修正 Mobile 新建 Workspace 的默认父目录。未显式配置时，Mac 开发/生产仓库会优先使用当前仓库所在的 `HermesMobileDev` 开发根，不再默认落到用户 `Documents`；也可以用 `CODEX_MOBILE_WORKSPACE_DEFAULT_CREATE_ROOT` 指定默认父目录，用 `CODEX_MOBILE_WORKSPACE_CREATE_ROOTS` 限定可选父目录。创建对话框会在有多个允许父目录时显示选择框。PWA shell cache 升级到 `codex-mobile-shell-v342`。

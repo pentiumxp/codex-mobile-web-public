@@ -113,8 +113,8 @@ test("composer sizing avoids one-pixel layout churn while typing and streaming",
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v344/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v344"/);
+  assert.match(swJs, /codex-mobile-shell-v348/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v348"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);
@@ -339,6 +339,20 @@ test("Android back and edge swipe open the mobile navigation menu", () => {
   assert.match(appJs, /const ANDROID_SIDEBAR_EDGE_SWIPE_PX = 44/);
   assert.match(appJs, /const ANDROID_BACK_SIDEBAR_BASE = "base"/);
   assert.match(appJs, /const ANDROID_BACK_SIDEBAR_TOP = "top"/);
+  assert.match(appJs, /function splitPaneSidebarVisible\(\)/);
+  assert.match(appJs, /style\.position !== "fixed" && style\.transform === "none"/);
+  assert.match(appJs, /function syncThreadDetailLayoutState\(\)/);
+  assert.match(appJs, /document\.documentElement\.classList\.toggle\("thread-detail-active", detailActive\)/);
+  assert.match(appJs, /const splitReturn = detailActive && splitPaneSidebarVisible\(\)/);
+  assert.match(appJs, /openMenuButton\.textContent = splitReturn \? "←" : "☰"/);
+  assert.match(appJs, /function returnToThreadListFromDetail\(\)/);
+  assert.match(appJs, /clearCurrentThreadSelection\(\);[\s\S]*renderThreads\(\);[\s\S]*renderCurrentThread\(\);/);
+  assert.match(appJs, /function handleOpenMenuClick\(\)/);
+  assert.match(appJs, /if \(splitPaneSidebarVisible\(\) && returnToThreadListFromDetail\(\)\) return;/);
+  assert.match(appJs, /\$\("openMenu"\)\.addEventListener\("click", handleOpenMenuClick\)/);
+  assert.match(stylesCss, /html\.thread-detail-active #openMenu\.mobile-only\s*{[\s\S]*display:\s*grid;/);
+  assert.match(stylesCss, /html\.embed-hermes #openMenu,[\s\S]*html\.embed-hermes \.main \.version-actions\s*{[\s\S]*display:\s*none !important;/);
+  assert.doesNotMatch(stylesCss, /html\.embed-hermes\.thread-detail-active #openMenu\.mobile-only/);
   assert.match(appJs, /function isAndroidBrowser\(\)/);
   assert.match(appJs, /function sidebarEdgeSwipeStartLimitPx\(\)/);
   assert.match(appJs, /function pointInComposerGestureZone\(point\)/);

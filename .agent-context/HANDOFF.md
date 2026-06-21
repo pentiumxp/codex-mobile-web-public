@@ -7449,3 +7449,107 @@ The previous full handoff was archived and should be opened only when old proven
     no bad `/api/?workspaceId=owner` JavaScript literal.
 - Runtime note:
   - User confirmed the visible issue was resolved after v337 reached the client.
+
+## 2026-06-20 Home AI Embedded Protected Image Direct Render v345
+
+- Status: implemented, focused-tested, and static-synced to the Mac production
+  plugin worktree. Not committed in this pass because the local checkout still
+  contains broad unrelated/uncommitted work in the same files.
+- User-visible issue:
+  - v337 fixed embedded user uploaded images, but system/assistant `imageView`
+    outputs such as `view_image_output` still rendered as a large white
+    placeholder in Home AI embedded Codex.
+- Fix:
+  - `public/app.js` now direct-renders every Codex protected image source while
+    in `/?embed=hermes`, not only `upload`.
+  - This includes `upload`, `generated-image`, and `file-preview` sources after
+    Home AI same-origin proxy auth/rewrite has made those URLs loadable.
+  - Standalone Codex still keeps the protected-image placeholder/hydration path.
+  - Advanced browser shell cache/build id to `codex-mobile-shell-v345`.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js`
+  - `node --test test/conversation-render.test.js`
+  - `node --test test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js test/app-update.test.js test/build-refresh-policy.test.js`
+- Deployment:
+  - Backed up production static files under
+    `/Users/xuxin/.codex-mobile-web/deploy-backups/codex-mobile-web-static/20260620T225626Z-v345-embedded-all-protected-images-direct`.
+  - Synced `public/app.js` and `public/sw.js` to
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web/public/`.
+  - 8787 production readback:
+    `clientBuildId=0.1.11|codex-mobile-shell-v345`,
+    `shellCacheName=codex-mobile-shell-v345`.
+  - Home AI proxy readback for Codex public-config returned HTTP 200 with the
+    same v345 build/cache ids.
+  - Home AI proxied `app.js` contains the direct-all-embedded guard, rewritten
+    proxy generated-image and file-preview route constants, and no bad
+    `/api/?workspaceId=owner` JavaScript literal.
+
+## 2026-06-21 Production Crash From Wrong Deploy Source
+
+- Status: production restored and root-cause guard implemented in the Home AI
+  Mac deploy script. The guard is not part of the Codex Mobile plugin commit.
+- User-visible issue:
+  - Home AI could no longer open the Codex Mobile plugin after a deploy.
+- Root cause:
+  - A deploy worktree under
+    `/Users/hermes-dev/HermesMobileDev/.deploy-worktrees/codex-mobile-web-5416c3c`
+    had been created from the Home AI app repository rather than the Codex
+    Mobile Web repository.
+  - The Mac deploy harness accepted it for target `plugin:codex-mobile-web`
+    because the Codex plugin proof list only required `public/index.html`,
+    which the Home AI app also has.
+  - Production
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web/server.js` was
+    therefore overwritten with the Home AI thin entrypoint that loads
+    `mobile-server-runtime.js`. It tried to listen on Home AI port `8797`,
+    failed with `EADDRINUSE`, and launchd repeatedly restarted it.
+- Recovery:
+  - Created a clean Codex Mobile Web worktree from commit `5416c3c` at
+    `/Users/hermes-dev/HermesMobileDev/.deploy-worktrees/codex-mobile-web-plugin-5416c3c`.
+  - Deployed that source through the central Mac deploy harness to
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260621T001933Z-plugin-codex-mobile-web-manual`.
+  - Readback confirmed `127.0.0.1:8787` is listening, `/api/public-config`
+    returns `Codex Mobile Web`, and `/api/v1/hermes/plugin/manifest` returns
+    plugin id `codex-mobile`.
+- Guard fix:
+  - Home AI app `scripts/deploy-macos-production.js` now requires Codex-specific
+    proof files for the `codex-mobile-web` plugin target:
+    `public/index.html`, `codex-app-server-mux.js`, and
+    `scripts/create-thread-task-card.js`.
+  - Home AI app `tests/macos-production-deploy-script.test.js` covers the
+    stronger proof list and rejects a wrong Codex source containing only
+    Home-AI-like `public/index.html` / `server.js`.
+- Validation:
+  - `node --check scripts/deploy-macos-production.js`
+  - `node --test tests/macos-production-deploy-script.test.js`
+  - `node tests/production-status-smoke-harness.test.js`
+  - `npm run --silent deploy:macos -- --target home-ai --json`
+  - `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/.deploy-worktrees/codex-mobile-web-plugin-5416c3c --json`
+  - `git diff --check`
+  - AI Ops evidence: `evidence-dcaebb67-174e-467b-bd16-503ce6affaee`.
+
+## 2026-06-21 Wide Split Pane Thread Back Button
+
+- Status: implemented and focused-tested. Ready for static-only production sync.
+- User-visible issue:
+  - When a wide screen or landscape tablet shows the thread list and thread
+    detail as a split pane, the top-left menu/back button was hidden by the
+    `.mobile-only` rule. Once inside a thread detail, there was no visible way
+    to return focus to the thread list.
+- Fix:
+  - `public/app.js` now tracks `thread-detail-active` on the root element and
+    detects whether the sidebar is physically visible as a split pane.
+  - In split-pane thread detail, the top-left button changes from `☰` to `←`
+    and clears the current thread selection, returning to the thread-list/home
+    view without opening an overlay drawer.
+  - In normal phone/overlay sidebar mode, the same button still opens the menu.
+  - `public/styles.css` shows `#openMenu.mobile-only` while
+    `thread-detail-active`, so desktop-wide and coarse-pointer split panes both
+    retain a return affordance.
+- Validation:
+  - `node --check public/app.js`
+  - `node --check public/sw.js`
+  - `node --test test/conversation-render.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js test/app-update.test.js test/build-refresh-policy.test.js`
+  - `git diff --check`
