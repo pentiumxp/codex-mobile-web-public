@@ -1,5 +1,6 @@
 # Codex Mobile Web
 
+- 中文说明：server-only 修复运行中线程投影回执被裁剪的问题。当最后一个 live turn 只是空壳，而前一个正在产出内容的 turn 尚未标记 completed 时，服务端会把这个有可见内容的 turn 也作为详细 turn 保留，避免只显示最后一条 assistant 回执、前面的中间回执被刷新掉。本次不改变 PWA shell cache。
 - 中文说明：v367 缓解进入线程时首屏加载变慢的问题。线程详情正在打开时，后台静默线程列表刷新会临时使用 `fallback=defer`，不再和详情首屏同时抢 state DB / rollout fallback 扫描；线程列表 fallback cache 默认从 5 秒延长到 30 秒，减少活跃使用中反复冷扫 rollout 的概率。启动后的完整列表补拉仍保留，历史/fallback 线程不会因此丢失。PWA shell cache 升级到 `codex-mobile-shell-v367`。
 - 中文说明：server-only 给已开启 `跨工作区委派` 的 Codex 线程注入 app-server dynamic tool `codex_mobile.delegate_to_thread`。模型在判断当前请求需要另一个工作区/线程处理时，可以显式调用这个工具，服务端复用 `/api/threads/:sourceThreadId/task-cards` 创建任务卡；开关关闭时完全不注入。这个能力不是 MCP，MCP 仍只用于 ChatGPT Pro 等外部客户端。本次不改变 PWA shell cache。
 - 中文说明：v366 把跨工作区模型/工具委派开关补到设置面板里。入口是左侧菜单齿轮 -> `跨工作区委派`，默认关闭；切换会写入运行时 `settings.json` 并立即生效，无需修改环境变量或重启。关闭时 `/api/threads/:sourceThreadId/task-cards` 只创建 pending 任务卡；开启后模型/工具显式发卡才允许源线程直批并启动目标线程。普通发送前本地关键词/目录名预检仍保持关闭。PWA shell cache 升级到 `codex-mobile-shell-v366`。
