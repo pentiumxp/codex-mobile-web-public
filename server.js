@@ -4563,43 +4563,83 @@ async function resolveThreadRuntimeSettings(threadId) {
   return threadRuntimeSettings(threadId, fallbackThread);
 }
 
-function applyResumeRuntimeSettings(params, settings) {
-  if (!settings) return params;
-  if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
-  if (settings.permissionProfile) params.permissionProfile = settings.permissionProfile;
-  else if (settings.sandboxMode) params.sandbox = settings.sandboxMode;
-  if (settings.model) params.model = settings.model;
-  const config = {};
-  if (settings.reasoningSummary) config.model_reasoning_summary = settings.reasoningSummary;
-  if (settings.modelVerbosity) config.model_verbosity = settings.modelVerbosity;
-  if (Object.keys(config).length) params.config = Object.assign({}, params.config || {}, config);
+function workspaceDelegationWriteGuardSandboxPolicy(cwd, inheritedPolicy) {
+  const policy = workspaceWriteSandboxPolicy(cwd, inheritedPolicy);
+  const inheritedType = normalizeSandboxPolicyType(inheritedPolicy && inheritedPolicy.type);
+  if (inheritedType === "dangerFullAccess") {
+    policy.networkAccess = true;
+  }
+  return policy;
+}
+
+function runtimeCwdForParams(params) {
+  const explicitCwd = String(params && params.cwd || "").trim();
+  if (explicitCwd) return explicitCwd;
+  const threadId = String(params && params.threadId || "").trim();
+  if (!threadId) return "";
+  const thread = readStateDbThread(threadId) || readStartedThread(threadId) || readRolloutSessionFallbackThread(threadId) || null;
+  return String(thread && thread.cwd || "").trim();
+}
+
+function applyWorkspaceDelegationRuntimeGuard(params, settings, options = {}) {
+  if (!params || typeof params !== "object") return params;
+  if (!workspaceDelegationPublicSettings().enabled) return params;
+  const cwd = runtimeCwdForParams(params);
+  if (!cwd) return params;
+  params.cwd = cwd;
+  const policy = workspaceDelegationWriteGuardSandboxPolicy(cwd, settings && settings.sandboxPolicy);
+  params.approvalPolicy = "never";
+  delete params.permissionProfile;
+  if (options.useSandboxPolicy) {
+    params.sandboxPolicy = policy;
+    delete params.sandbox;
+  } else {
+    params.sandbox = "workspace-write";
+    delete params.sandboxPolicy;
+  }
   return params;
+}
+
+function applyResumeRuntimeSettings(params, settings) {
+  if (settings) {
+    if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
+    if (settings.permissionProfile) params.permissionProfile = settings.permissionProfile;
+    else if (settings.sandboxMode) params.sandbox = settings.sandboxMode;
+    if (settings.model) params.model = settings.model;
+    const config = {};
+    if (settings.reasoningSummary) config.model_reasoning_summary = settings.reasoningSummary;
+    if (settings.modelVerbosity) config.model_verbosity = settings.modelVerbosity;
+    if (Object.keys(config).length) params.config = Object.assign({}, params.config || {}, config);
+  }
+  return applyWorkspaceDelegationRuntimeGuard(params, settings, { useSandboxPolicy: false });
 }
 
 function applyStartThreadRuntimeSettings(params, settings) {
   attachWorkspaceDelegationDynamicTools(params);
-  if (!settings) return params;
-  if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
-  if (settings.permissionProfile) params.permissionProfile = settings.permissionProfile;
-  else if (settings.sandboxMode) params.sandbox = settings.sandboxMode;
-  if (settings.model) params.model = settings.model;
-  const config = {};
-  if (settings.reasoningSummary) config.model_reasoning_summary = settings.reasoningSummary;
-  if (settings.modelVerbosity) config.model_verbosity = settings.modelVerbosity;
-  if (Object.keys(config).length) params.config = Object.assign({}, params.config || {}, config);
-  return params;
+  if (settings) {
+    if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
+    if (settings.permissionProfile) params.permissionProfile = settings.permissionProfile;
+    else if (settings.sandboxMode) params.sandbox = settings.sandboxMode;
+    if (settings.model) params.model = settings.model;
+    const config = {};
+    if (settings.reasoningSummary) config.model_reasoning_summary = settings.reasoningSummary;
+    if (settings.modelVerbosity) config.model_verbosity = settings.modelVerbosity;
+    if (Object.keys(config).length) params.config = Object.assign({}, params.config || {}, config);
+  }
+  return applyWorkspaceDelegationRuntimeGuard(params, settings, { useSandboxPolicy: false });
 }
 
 function applyTurnRuntimeSettings(params, settings) {
   attachWorkspaceDelegationDynamicTools(params);
-  if (!settings) return params;
-  if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
-  if (settings.sandboxPolicy) params.sandboxPolicy = settings.sandboxPolicy;
-  else if (settings.permissionProfile) params.permissionProfile = settings.permissionProfile;
-  if (settings.model) params.model = settings.model;
-  if (settings.reasoningEffort) params.effort = settings.reasoningEffort;
-  if (settings.reasoningSummary) params.summary = settings.reasoningSummary;
-  return params;
+  if (settings) {
+    if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
+    if (settings.sandboxPolicy) params.sandboxPolicy = settings.sandboxPolicy;
+    else if (settings.permissionProfile) params.permissionProfile = settings.permissionProfile;
+    if (settings.model) params.model = settings.model;
+    if (settings.reasoningEffort) params.effort = settings.reasoningEffort;
+    if (settings.reasoningSummary) params.summary = settings.reasoningSummary;
+  }
+  return applyWorkspaceDelegationRuntimeGuard(params, settings, { useSandboxPolicy: true });
 }
 
 function requestedCodexFastMode(value) {

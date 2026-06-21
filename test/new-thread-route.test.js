@@ -147,11 +147,28 @@ test("server runtime inheritance includes model and reasoning effort", () => {
   const startBody = functionBody(serverJs, "applyStartThreadRuntimeSettings");
   assert.match(startBody, /attachWorkspaceDelegationDynamicTools\(params\)/, "thread/start should receive workspace delegation dynamic tools when enabled");
   assert.match(startBody, /if \(settings\.model\) params\.model = settings\.model;/, "thread/start should inherit model");
+  assert.match(startBody, /applyWorkspaceDelegationRuntimeGuard\(params, settings, \{ useSandboxPolicy: false \}\)/, "thread/start should enforce workspace delegation write guard");
 
   const turnBody = functionBody(serverJs, "applyTurnRuntimeSettings");
   assert.match(turnBody, /attachWorkspaceDelegationDynamicTools\(params\)/, "turn/start should receive workspace delegation dynamic tools when enabled");
   assert.match(turnBody, /if \(settings\.model\) params\.model = settings\.model;/, "turn/start should inherit model");
   assert.match(turnBody, /if \(settings\.reasoningEffort\) params\.effort = settings\.reasoningEffort;/, "turn/start should inherit reasoning effort");
+  assert.match(turnBody, /applyWorkspaceDelegationRuntimeGuard\(params, settings, \{ useSandboxPolicy: true \}\)/, "turn/start should enforce workspace delegation write guard");
+
+  const resumeBody = functionBody(serverJs, "applyResumeRuntimeSettings");
+  assert.match(resumeBody, /applyWorkspaceDelegationRuntimeGuard\(params, settings, \{ useSandboxPolicy: false \}\)/, "thread/resume should enforce workspace delegation write guard");
+
+  const guardBody = functionBody(serverJs, "applyWorkspaceDelegationRuntimeGuard");
+  assert.match(guardBody, /workspaceDelegationPublicSettings\(\)\.enabled/, "write guard should only run when workspace delegation is enabled");
+  assert.match(guardBody, /runtimeCwdForParams\(params\)/, "write guard should resolve cwd from params or thread id");
+  assert.match(guardBody, /params\.approvalPolicy = "never"/, "write guard should prevent approval bypass for cross-workspace writes");
+  assert.match(guardBody, /delete params\.permissionProfile/, "write guard should remove full-access permission profiles");
+  assert.match(guardBody, /params\.sandboxPolicy = policy/, "turn/start should receive structured workspace-write sandbox policy");
+  assert.match(guardBody, /params\.sandbox = "workspace-write"/, "thread/start and thread/resume should receive workspace-write sandbox mode");
+
+  const cwdBody = functionBody(serverJs, "runtimeCwdForParams");
+  assert.match(cwdBody, /params && params\.cwd/, "cwd resolver should prefer explicit cwd");
+  assert.match(cwdBody, /readStateDbThread\(threadId\)[\s\S]*readStartedThread\(threadId\)[\s\S]*readRolloutSessionFallbackThread\(threadId\)/, "cwd resolver should fall back through thread summaries");
 });
 
 test("continuation paths apply inherited model and effort", () => {

@@ -450,6 +450,13 @@ Server-side handling of `item/tool/call` resolves the source thread from
 app-server metadata or the recent turn/thread map, resolves the target by exact
 thread id/title/cwd, and then calls the same source-thread task-card helper.
 This path is not MCP; it is only for Codex app-server turns.
+To keep this from being only a model prompt, the same runtime switch also
+applies a server-side write guard to `thread/start`, `thread/resume`, and
+`turn/start`: if the request has a cwd, or the thread id can be resolved to a
+cwd, Mobile Web forces a `workspace-write` sandbox rooted at that cwd and sets
+`approvalPolicy:"never"`. That preserves normal current-workspace command
+execution while making direct cross-workspace writes fail instead of asking for
+approval. Already-running turns keep the sandbox they were started with.
 The ChatGPT Pro MCP `delegate_to_codex_thread` tool uses the same server helper
 but passes `pending:true` by default, because ChatGPT-originated cards must keep
 target-thread approval unless `mode:"direct"` is requested and the dedicated MCP

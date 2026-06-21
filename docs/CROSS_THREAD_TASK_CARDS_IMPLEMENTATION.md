@@ -140,6 +140,16 @@ thread, the dynamic tool always forces `direct:true`, `autoApprove:true`, and
 can still request Pending cards through the explicit task-card route; the model
 dynamic-tool schema does not expose that override.
 
+The switch also changes runtime write permissions for new or resumed work. The
+server applies `applyWorkspaceDelegationRuntimeGuard()` from the shared runtime
+settings helpers so `thread/start`, `thread/resume`, and `turn/start` are forced
+to the current thread cwd's `workspace-write` sandbox with
+`approvalPolicy:"never"`. This is the hard boundary that prevents the model from
+directly modifying a different workspace first and sending a card afterward.
+The guard resolves cwd from request params when available and otherwise from
+the thread id. Existing active turns are not retroactively sandboxed; the guard
+applies when the next start/resume request is sent.
+
 `POST /api/threads/:sourceThreadId/workspace-delegation` is retained only as a
 compatibility endpoint for clients that shipped during the v363 experiment. It
 returns `delegated:false`, `disabled:true`, and

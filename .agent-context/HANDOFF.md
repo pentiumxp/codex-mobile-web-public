@@ -4,7 +4,8 @@ Last compacted: 2026-06-08T13:27:43.304Z
 
 ## 2026-06-21 Workspace Delegation Tool Boundary Tightening
 
-- Status: patched and tested; deployment/commit may follow in the same turn.
+- Status: follow-up patched and tested; deployment/commit may follow in the
+  same turn.
 - Trigger:
   - User reported that the `跨工作区委派` switch was enabled, but a thread still
     directly edited another workspace instead of creating a cross-thread task
@@ -12,6 +13,8 @@ Last compacted: 2026-06-08T13:27:43.304Z
   - After prompting, an Android thread did create a card for Home AI, but the
     created card was Pending. User clarified that when free delegation is
     enabled, the thread-initiated card must not be Pending.
+  - Follow-up production test still failed: the Android workspace thread
+    directly operated on Home AI first, then sent a task card afterward.
 - Finding:
   - Current implementation intentionally does not run local keyword/path
     preflight. The switch injects app-server dynamic tool
@@ -27,6 +30,9 @@ Last compacted: 2026-06-08T13:27:43.304Z
     args through unchanged. The shared helper correctly respects
     `pending:true`, so a model/tool call could create a Pending card even while
     the free delegation switch was enabled.
+  - The previous fix was still only a model/tool-contract fix. It did not
+    change the ordinary filesystem/tool runtime, so a model could still call
+    shell/edit tools against another workspace before using the dynamic tool.
 - Change:
   - `workspaceDelegationDynamicToolSpec()` now describes the tool as a
     mandatory boundary when it is available.
@@ -45,6 +51,16 @@ Last compacted: 2026-06-08T13:27:43.304Z
     when the switch is enabled.
   - Manual/API/MCP paths still keep their explicit Pending behavior; this
     forced-direct rule applies to the Codex app-server dynamic tool only.
+  - Follow-up hard guard:
+    `applyWorkspaceDelegationRuntimeGuard()` now runs from
+    `applyStartThreadRuntimeSettings()`, `applyResumeRuntimeSettings()`, and
+    `applyTurnRuntimeSettings()`.
+  - When `跨工作区委派` is enabled and a cwd can be found from params or thread id,
+    the guard forces writes to the current cwd via `workspace-write`, deletes
+    any full-access permission profile, and sets `approvalPolicy:"never"` so
+    cross-workspace writes fail instead of asking for approval.
+  - The guard can resolve cwd from explicit params, state DB thread summaries,
+    in-memory started threads, or rollout fallback thread summaries.
   - Updated README, `docs/ARCHITECTURE.md`, and
     `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md`.
 - Validation:
@@ -52,6 +68,11 @@ Last compacted: 2026-06-08T13:27:43.304Z
     `node --test test/thread-task-card-route.test.js test/new-thread-route.test.js`
     (26/26).
   - Passed: `node --check server.js && node --check test/thread-task-card-route.test.js`.
+  - Follow-up passed:
+    `node --test test/new-thread-route.test.js test/thread-task-card-route.test.js`
+    (26/26).
+  - Follow-up passed:
+    `node --check server.js && node --check test/new-thread-route.test.js`.
   - Passed: `npm run check`.
   - Passed: `git diff --check`.
   - Passed center guard:
@@ -60,8 +81,8 @@ Last compacted: 2026-06-08T13:27:43.304Z
   - This is still model-driven; it does not reintroduce the removed v363 local
     workspace/title/keyword heuristic.
   - Already-running turns that received the older dynamic-tool description
-    cannot be retroactively changed. New turns after deploy/restart receive the
-    tightened tool description.
+    or older/full sandbox cannot be retroactively changed. New starts/resumes
+    after deploy/restart receive the tightened tool description and write guard.
 
 ## 2026-06-21 Android Fold Turn Timer Layout v369
 
