@@ -790,3 +790,108 @@ The previous full handoff was archived and should be opened only when old proven
     cancellable so it does not normally compete with thread first paint.
   - Existing open clients may need to accept the refresh prompt or reopen the
     WebView/PWA to run v375 client code.
+
+### Local turn-start active status broadcast
+
+- Status: diagnosed, public-synced before the new release-order rule was
+  recorded, merged back into private main, deployed to Mac production, and
+  smoke verified.
+- User report:
+  - A turn could already be started, but the thread list was not notified and
+    did not show the thread as started.
+  - The same symptom applied to automatic/source-direct task cards sent from
+    other threads.
+- Root cause:
+  - The server already derived `thread/status/changed` from raw app-server
+    `turn/started` notifications.
+  - Several Mobile Web-owned local `turn/start` success paths did not
+    immediately broadcast the active summary. They relied on later raw
+    notifications or full list refreshes, which could leave background or
+    target threads appearing idle for too long.
+- Patch:
+  - `server.js`
+    - Added `notifyLocalTurnStarted(threadId, result, meta)` to update thread
+      detail projection and broadcast `thread/status/changed` with
+      `status.type=active` immediately after local `turn/start` success.
+    - Wired the helper into message submit, new-thread first turn,
+      continuation handoff/bootstrap, source-direct and automatic task-card
+      execution, task-card approval execution, auto-turn recovery,
+      ChatGPT Pro bridge starts, and main-thread side-chat candidate apply.
+    - Kept raw app-server notification handling unchanged; duplicate active
+      summaries are idempotent.
+  - `test/thread-task-card-route.test.js`
+    - Updated the task-card path assertion to use the unified helper.
+    - Added coverage that verifies local turn-start success updates projection
+      and broadcasts active status for all wired sources.
+  - Docs:
+    - `README.md`
+    - `docs/ARCHITECTURE.md`
+    - `docs/TROUBLESHOOTING.md`
+- Validation:
+  - Private workspace:
+    - Focused 153-test suite passed:
+      `test/thread-task-card-route.test.js`,
+      `test/thread-task-card-service.test.js`,
+      `test/new-thread-route.test.js`, `test/thread-visibility.test.js`,
+      `test/conversation-render.test.js`, and
+      `test/mobile-viewport.test.js`.
+    - `npm run check`
+    - `npm run check:macos`
+    - `npm test` passed (`603` tests).
+    - `git diff --check`
+    - `codegraph status` was up to date; it warned the index was built by an
+      earlier engine version, but no stale edited files were reported.
+  - Public mirror:
+    - `npm run check`
+    - `npm run check:macos`
+    - Same focused 153-test suite passed.
+    - `npm test` passed (`603` tests).
+    - `git diff --check`
+  - Staging archive from public commit:
+    - Blocked-path scan was clean for `.agent-context`, runtime data/logs,
+      uploads, env files, access-key, private-key, and secret patterns.
+    - `npm run check`
+    - `npm run check:macos`
+    - Same focused 153-test suite passed.
+  - Production target after sync:
+    - `npm run check`
+    - `npm run check:macos`
+    - Same focused 153-test suite passed.
+- Public/private sync:
+  - Public commit:
+    `55f5d30998ec1d1a7886cf293e78804e28dedaa8 fix: broadcast local turn starts`.
+  - Public main was pushed to
+    `git@github.com:pentiumxp/codex-mobile-web-public.git` before the user
+    recorded the new rule that future work must deploy and test before pushing
+    public.
+  - Private main merged `public/main` with:
+    `39a34266990e93c4dd11376186c1c18f2e772aad Merge remote-tracking branch 'public/main'`.
+- Production deploy:
+  - Source archive: public mirror commit `55f5d30`.
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup retained at:
+    `/tmp/codex-mobile-web-deploy-55f5d30-20260622T132508Z.backup.tar.gz`.
+  - Sync used sudo `rsync` and preserved `data/`, `logs/`, `node_modules/`,
+    `uploads/`, `.git/`, `.agent-context/`, and `AGENTS.md`; target ownership
+    was restored to `hermes-host:staff`.
+  - Restart:
+    `launchctl kickstart -k system/com.hermesmobile.plugin.codex-mobile`.
+  - Post-restart smoke:
+    - `/api/public-config` returned
+      `clientBuildId=0.1.11|codex-mobile-shell-v375`,
+      `shellCacheName=codex-mobile-shell-v375`, and `authRequired=true`.
+    - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` is running
+      with PID `60923`, `runs=12`, and last exit code `0`.
+    - Authenticated `/api/status` returned HTTP `200`, `ready=true`, and
+      `lastError=null`.
+    - Production `server.js` contains `notifyLocalTurnStarted` and the expected
+      source wiring for task cards, message submit, auto-recovery, and active
+      status broadcast.
+- Operational notes:
+  - This is a server-only fix; there is no PWA cache bump and existing clients
+    do not need a shell refresh for the broadcast behavior.
+  - No real production test turn was started during smoke verification, to
+    avoid mutating a live thread.
+  - Future release order is now: local/private implementation and validation,
+    deploy to Mac production, user/production test confirmation, then public
+    push. Before that confirmation, at most create a local/private commit.

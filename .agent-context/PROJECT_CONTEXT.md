@@ -27,6 +27,12 @@ The full previous context was archived and should be read only when this routing
 - Keep raw secrets, tokens, one-time approvals, upload contents, full rollout logs, and `.codex` runtime state out of shared context and Git.
 - Do not load the archived full project context by default. Load it only when the user asks about older provenance, a missing rule, or a historical decision not present in live docs.
 
+## Release Order Rule
+
+- Future release flow: implement and validate in the local/private workspace, then deploy to Mac production first. Push or sync the public repository only after production/user testing is confirmed.
+- Before production/user validation, at most create a local/private commit. Do not push public preemptively.
+- If a public push already happened before this rule was recorded, document that fact in `.agent-context/HANDOFF.md` and follow this rule going forward.
+
 ## Preserved Project Context Excerpt
 
 # PROJECT_CONTEXT
