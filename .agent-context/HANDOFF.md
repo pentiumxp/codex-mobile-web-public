@@ -2,6 +2,31 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-22 Public Sync For Dynamic Source Write Guard
+
+- Status: public-safe release pushed and merged back into private history.
+- Public release:
+  - Pushed `public/main` from `85992bf` to `11f9953`
+    (`fix: publish dynamic workspace delegation guard`).
+  - Public sync included only publishable source/docs/tests and excluded
+    `.agent-context`, runtime state, uploads, logs, local keys, and auth state.
+  - The only open public PR observed before sync was draft PR `#78`, so it was
+    not merged or treated as a ready public update.
+- Validation in the public worktree:
+  - Privacy scan over staged paths and tracked files found no
+    `.agent-context`, runtime/upload/log/data directories, `.env`, auth, access
+    key, token, or secret paths.
+  - `git diff --cached --check`
+  - `npm run check`
+  - `node --test test/workspace-source-write-guard-service.test.js test/new-thread-route.test.js test/thread-task-card-route.test.js test/protocol.test.js test/codex-profile-service.test.js`
+  - `npm test` passed with `599` tests.
+- Private/public relationship:
+  - Merged `public/main` back into private `main` with `-s ours` because source
+    trees were already identical except private `.agent-context`.
+  - Verified `git merge-base --is-ancestor public/main HEAD` succeeds and
+    `git diff --stat public/main..HEAD -- ':!.agent-context'` is empty after
+    the merge.
+
 ## 2026-06-22 Workspace Delegation Dynamic Source Write Guard
 
 - Status: committed, deployed to Mac production, and smoke verified.
