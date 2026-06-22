@@ -4,8 +4,7 @@ Last compacted: 2026-06-08T13:27:43.304Z
 
 ## 2026-06-22 Profile Switch Failure Visibility And Rate Limit Warning
 
-- Status: implemented and validated locally; commit/deploy pending at this
-  handoff update point.
+- Status: committed and deployed to Mac production.
 - Trigger:
   - After v372 deploy, user switched Profile to `default`.
   - UI showed more progress steps such as reading account/quota, then the
@@ -48,6 +47,29 @@ Last compacted: 2026-06-08T13:27:43.304Z
     `node tests/gateway-run-stream-service.test.js`,
     `node tests/runtime-config-provider.test.js`
   - `git diff --check`
+- Commit:
+  - Source commit deployed: `3206f58` (`Stabilize profile switch failure
+    handling`).
+- Deployment:
+  - Ran Mac production deploy:
+    `npm run --silent deploy:macos -- --target plugin:codex-mobile-web --execute --reason codex-profile-switch-failure-handling --json`.
+  - Deploy validation passed: log permission repair, shared auth repair,
+    production file hash proof, LaunchDaemon print, manifest health URL, and
+    codex auth profile audit.
+  - Production readback after deploy:
+    - Served `/app.js` contains
+      `CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v373"`.
+    - Served `/sw.js` contains `codex-mobile-shell-v373`.
+    - `/api/public-config` reports `activeProfileId:"previous"`,
+      `switchSupported:true`, `clientBuildId:"0.1.11|codex-mobile-shell-v373"`,
+      and `shellCacheName:"codex-mobile-shell-v373"`.
+    - Authenticated `/api/status` reports `ready:true`,
+      `transport:"external-jsonl-tcp"`, `persistentOwnedMux:true`,
+      `sharedRequired:true`, `lastError:null`, and active profile `previous`.
+- Evidence ledger:
+  - `/Users/xuxin/.homeai-qa/codex-mobile-web-evidence-ledger.jsonl`
+    ids `evidence-fdd2cd75-c6f7-4868-a75d-1442dc8c8e53` and
+    `evidence-3c9b43c9-ef9e-49c2-a8fc-e6aa143a05e4`.
 
 ## 2026-06-22 Profile Switch Progress And macOS Host Restart Safety
 
