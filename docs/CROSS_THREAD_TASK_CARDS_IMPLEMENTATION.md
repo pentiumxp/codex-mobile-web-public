@@ -122,10 +122,12 @@ server converts the tool call into the same
 `createThreadTaskCardsFromSourceThread()` path used by
 `POST /api/threads/:sourceThreadId/task-cards`. The tool returns bounded JSON
 text containing card ids, target thread ids, and whether source-direct approval
-was used, wrapped as app-server text content. Direct dynamic-tool task cards are
-idempotent by explicit request id when one is supplied; otherwise the server
-uses the source thread plus target/title/body/workflow semantics so retry calls
-with a new tool call id do not create duplicate cards. If the switch is off, the
+was used, wrapped as app-server dynamic-tool output:
+`result.content_items[{ type:"input_text" }]`. This schema is intentionally not
+the MCP `content[{ type:"text" }]` response shape. Direct dynamic-tool task
+cards are idempotent by explicit request id when one is supplied; otherwise the
+server uses the source thread plus target/title/body/workflow semantics so retry
+calls with a new tool call id do not create duplicate cards. If the switch is off, the
 tool is not injected. If the tool is called without a target or source thread id
 cannot be inferred, the server returns a bounded error to the model instead of
 hanging the turn.

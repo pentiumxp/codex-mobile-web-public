@@ -10986,9 +10986,9 @@ function logWorkspaceDelegationDynamicToolCall(request, params = {}, args = {}, 
 function dynamicToolTextResponse(text) {
   return {
     result: {
-      content: [
+      content_items: [
         {
-          type: "text",
+          type: "input_text",
           text: String(text || ""),
         },
       ],

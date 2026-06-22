@@ -92,9 +92,9 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(serverJs, "createThreadTaskCardsFromSourceThread"), /workspaceDelegation\.enabled[\s\S]*body\.autoApprove !== false[\s\S]*body\.direct !== false[\s\S]*body\.pending !== true/);
   assert.match(functionBody(serverJs, "threadTaskCardThreadCallIdempotencyKey"), /body\.requestId \|\| body\.request_id/);
   assert.doesNotMatch(functionBody(serverJs, "threadTaskCardThreadCallIdempotencyKey"), /body\.sourceTurnId \|\| body\.turnId/);
-  assert.match(functionBody(serverJs, "dynamicToolTextResponse"), /content:\s*\[/);
-  assert.match(functionBody(serverJs, "dynamicToolTextResponse"), /type: "text"/);
-  assert.doesNotMatch(functionBody(serverJs, "dynamicToolTextResponse"), /contentItems|inputText/);
+  assert.match(functionBody(serverJs, "dynamicToolTextResponse"), /content_items:\s*\[/);
+  assert.match(functionBody(serverJs, "dynamicToolTextResponse"), /type: "input_text"/);
+  assert.doesNotMatch(functionBody(serverJs, "dynamicToolTextResponse"), /contentItems|inputText|\bcontent:\s*\[|type: "text"/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /Mandatory boundary when this tool is available/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /call this tool before doing that work/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /Do not inspect, cd into, edit, patch, run commands in, test, deploy/);
