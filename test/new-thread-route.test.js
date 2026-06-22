@@ -185,6 +185,10 @@ test("server runtime inheritance includes model and reasoning effort", () => {
   assert.match(compatBody, /params\.sandbox = "danger-full-access"/, "thread/start and thread/resume compatibility should restore full access sandbox mode");
   assert.match(compatBody, /delete params\.permissionProfile/, "compat runtime should clear stale managed profiles that made .git read-only");
 
+  const guardSandboxPolicyBody = functionBody(serverJs, "workspaceDelegationWriteGuardSandboxPolicy");
+  assert.match(guardSandboxPolicyBody, /path\.join\(root, "\.git"\)/, "guard sandbox policy should include current .git as an explicit writable root");
+  assert.match(guardSandboxPolicyBody, /policy\.writableRoots = writableRoots/, "guard sandbox policy should publish expanded writable roots to app-server");
+
   assert.match(serverJs, /handleServerRequest\(msg\)[\s\S]*answerWorkspaceSourceWriteGuardRequest\(request\)/, "app-server approval requests should pass through the dynamic source-write guard");
   const approvalGuardBody = functionBody(serverJs, "workspaceSourceWriteGuardDecisionForRequest");
   assert.match(approvalGuardBody, /ACTIONABLE_APPROVAL_METHODS\.has\(request\.method\)/, "dynamic guard should only auto-answer app-server approval requests");

@@ -205,7 +205,10 @@ runtime settings helpers so ordinary plugin `thread/start`, `thread/resume`,
 and `turn/start` use a real `workspace-write` / managed profile and
 `approvalPolicy:"on-request"`. The profile keeps root read-only, allows writes
 to the current cwd, temporary directories, and the current cwd's `.git`
-metadata, and keeps `.codex` / `.agents` under the cwd read-only. If the Codex
+metadata, and keeps `.codex` / `.agents` under the cwd read-only. The
+workspace-write sandbox policy also adds the current `.git` as an explicit
+writable root; otherwise current app-server builds can still reject git metadata
+writes before the managed permission profile is consulted. If the Codex
 app-server still asks for current-workspace `.git` or ordinary write
 permissions, Mobile Web auto-allows them through
 `adapters/workspace-source-write-guard-service.js`; explicit writes into another

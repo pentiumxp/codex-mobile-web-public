@@ -4711,6 +4711,13 @@ async function resolveThreadRuntimeSettings(threadId) {
 
 function workspaceDelegationWriteGuardSandboxPolicy(cwd, inheritedPolicy) {
   const policy = workspaceWriteSandboxPolicy(cwd, inheritedPolicy);
+  const writableRoots = Array.isArray(policy.writableRoots) ? policy.writableRoots.slice() : [];
+  for (const root of Array.isArray(policy.writableRoots) ? policy.writableRoots : []) {
+    if (path.basename(root) === ".git") continue;
+    const gitRoot = path.join(root, ".git");
+    if (!writableRoots.includes(gitRoot)) writableRoots.push(gitRoot);
+  }
+  policy.writableRoots = writableRoots;
   const inheritedType = normalizeSandboxPolicyType(inheritedPolicy && inheritedPolicy.type);
   if (inheritedType === "dangerFullAccess") {
     policy.networkAccess = true;
