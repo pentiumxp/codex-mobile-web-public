@@ -1005,3 +1005,176 @@ The previous full handoff was archived and should be opened only when old proven
   - This is server-only; no PWA cache bump.
   - This has not been pushed to public. Follow the release-order rule: wait for
     production/user confirmation before any public sync/push.
+
+## 2026-06-22 - Final receipt fallback v2 deployed
+
+- User-observed correction:
+  - The first response could briefly show the final receipt, then a follow-up
+    detail refresh/projection result removed it. Re-entering the same thread
+    made it stable.
+- Root cause:
+  - The first fallback only checked whether the completed turn had any
+    assistant/plan item.
+  - Stale projection results can contain intermediate `agentMessage` progress
+    items while still lacking the real rollout
+    `task_complete.last_agent_message`; that made the server skip the fallback.
+- Change:
+  - `server.js` now treats rollout `last_agent_message` as the text identity of
+    the final receipt.
+  - Completed/successful turns receive a synthetic final `agentMessage` when
+    they do not already contain an assistant/plan item with matching final
+    text, even if they contain intermediate `agentMessage` items.
+  - Matching existing receipts are not duplicated or replaced.
+  - Failed, cancelled, interrupted, running, active, progress, pending, and
+    unknown turns still do not receive this fallback.
+  - The raw thread-read branch now also runs the same final-receipt enrichment
+    before returning.
+  - `/api/threads/:id/turns` compacted turns-list responses now receive the
+    same enrichment when a rollout-backed summary is available.
+- Tests:
+  - Added coverage in `test/thread-item-timestamp-enrichment.test.js` for a
+    completed turn that has only an intermediate `agentMessage`; the rollout
+    final receipt must still be appended.
+  - Updated existing-receipt coverage to assert that matching final text is not
+    duplicated, while failed turns are still skipped.
+- Docs:
+  - `README.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/TROUBLESHOOTING.md`
+- Validation:
+  - Private workspace:
+    - `npm run check`
+    - `npm run check:macos`
+    - Focused 114-test suite passed:
+      `test/thread-item-timestamp-enrichment.test.js`,
+      `test/thread-detail-projection-service.test.js`,
+      `test/thread-detail-projection-v4-service.test.js`,
+      `test/conversation-render.test.js`, and
+      `test/turn-usage-summary-service.test.js`.
+    - `npm test` passed (`608` tests).
+    - `git diff --check`
+  - Staging:
+    - Source staged from the private working tree:
+      `/tmp/codex-mobile-web-stage-final-receipt-v2.hrgPqq`.
+    - Blocked-path scan was clean for runtime/private paths including `.git`,
+      `.agent-context`, `.codegraph`, `node_modules`, `data`, `logs`,
+      `uploads`, env files, access-key, private-key, and secret patterns.
+    - `npm run check`
+    - `npm run check:macos`
+    - Same focused 114-test suite passed with `NODE_PATH` pointed at the
+      private workspace `node_modules`.
+  - Production target after sync:
+    - `npm run check`
+    - `npm run check:macos`
+    - Same focused 114-test suite passed with `NODE_PATH` pointed at the
+      production dependency tree.
+- Production deploy:
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup retained at:
+    `/tmp/codex-mobile-web-deploy-final-receipt-v2-20260622T143732Z.backup.tar.gz`.
+  - Restart:
+    `launchctl kickstart -k system/com.hermesmobile.plugin.codex-mobile`.
+  - Post-restart smoke:
+    - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` is running
+      with PID `63072`, `runs=16`, and last exit code `0`.
+    - `/api/public-config` returned HTTP `200`,
+      `clientBuildId=0.1.11|codex-mobile-shell-v375`,
+      `shellCacheName=codex-mobile-shell-v375`, and `authRequired=true`.
+    - Authenticated `/api/status` returned HTTP `200` and `ready=true`.
+    - Home AI thread `019eed86-2002-7cc2-b0b7-937eb5355f36` recent detail
+      returned `projection-v4-cache`, 10 turns, latest completed turn with
+      agent receipt count `19`, last agent text length `479`, usage count `1`,
+      and synthetic final receipt count `0` because the stable projection
+      already contains the normal final receipt.
+    - Production `server.js` contains `normalizeFinalReceiptText`,
+      `turnHasMatchingAssistantReceipt`, raw-read enrichment, and turns-list
+      enrichment hooks.
+- Operational notes:
+  - This is server-only; no PWA cache bump.
+  - This has not been pushed to public. Follow the release-order rule: wait for
+    production/user confirmation before any public sync/push.
+
+## 2026-06-22 - First-open final receipt fallback deployed
+
+- User clarification:
+  - The observed first-open problem is missing the final agent receipt, not
+    primarily missing Usage. Usage was a symptom in earlier descriptions.
+- Change:
+  - `server.js` now reads bounded rollout completion events
+    `task_complete` / `task_completed` and caches their
+    `last_agent_message` payloads by rollout fingerprint.
+  - During compact thread detail projection, completed/successful turns that
+    have no existing assistant/plan receipt get a synthetic `agentMessage`
+    from that rollout final receipt before `turnUsageSummary` is attached.
+  - Existing app-server receipts are not overwritten.
+  - Failed, cancelled, interrupted, running, active, progress, pending, and
+    unknown turns do not get synthetic final receipts.
+  - The synthetic receipt intentionally has no timestamp fields so ordering
+    remains user message, final receipt, then Usage.
+- Tests:
+  - Added coverage in `test/thread-item-timestamp-enrichment.test.js` for:
+    - completed turn missing app-server receipt is backfilled from rollout
+      `task_complete`;
+    - existing receipts are preserved and failed turns are not backfilled.
+- Docs:
+  - `README.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/TROUBLESHOOTING.md`
+- Validation:
+  - Private workspace:
+    - Focused 113-test suite passed:
+      `test/thread-item-timestamp-enrichment.test.js`,
+      `test/thread-detail-projection-service.test.js`,
+      `test/thread-detail-projection-v4-service.test.js`,
+      `test/conversation-render.test.js`, and
+      `test/turn-usage-summary-service.test.js`.
+    - `node --check server.js`
+    - `git diff --check`
+    - `codegraph sync`
+    - `codegraph status` was up to date; it warned the index was built by an
+      earlier engine version.
+    - `npm run check`
+    - `npm run check:macos`
+    - `npm test` passed (`607` tests).
+  - Staging:
+    - Source staged from the private working tree, not the public mirror:
+      `/tmp/codex-mobile-web-stage-final-receipt.Gq2ba3`.
+    - Blocked-path scan was clean for exact runtime/private paths including
+      `.git`, `.agent-context`, `.codegraph`, `node_modules`, `data`, `logs`,
+      `uploads`, env files, access-key, private-key, and secret path patterns.
+    - `npm run check`
+    - `npm run check:macos`
+    - Focused 113-test suite passed with `NODE_PATH` pointed at the private
+      workspace `node_modules`; staging intentionally omits `node_modules`.
+  - Production target after sync:
+    - `npm run check`
+    - `npm run check:macos`
+    - Same focused 113-test suite passed with `NODE_PATH` pointed at the
+      production dependency tree.
+- Production deploy:
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup retained at:
+    `/tmp/codex-mobile-web-deploy-final-receipt-20260622T142901Z.backup.tar.gz`.
+  - Sync used sudo `rsync` from private staging and preserved `data/`, `logs/`,
+    `node_modules/`, `uploads/`, `.git/`, `.agent-context`, env files, and
+    machine-specific runtime state.
+  - Restart:
+    `launchctl kickstart -k system/com.hermesmobile.plugin.codex-mobile`.
+  - Post-restart smoke:
+    - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` is running
+      with PID `43931`, `runs=15`, and last exit code `0`.
+    - `/api/public-config` returned HTTP `200`,
+      `clientBuildId=0.1.11|codex-mobile-shell-v375`,
+      `shellCacheName=codex-mobile-shell-v375`, and `authRequired=true`.
+    - Authenticated `/api/status` returned HTTP `200` and `ready=true`.
+    - Production `server.js` contains the rollout final-receipt cache,
+      scanner, compact-thread attachment hook, and synthetic receipt marker.
+    - Home AI thread `019eed86-2002-7cc2-b0b7-937eb5355f36` recent detail
+      returned 10 turns; the latest completed turn had item types
+      `userMessage`, `agentMessage`, and `turnUsageSummary`. It did not need a
+      synthetic final receipt because the normal app-server receipt was already
+      present.
+- Operational notes:
+  - This is server-only; no PWA cache bump.
+  - This has not been pushed to public. Follow the release-order rule: wait for
+    production/user confirmation before any public sync/push.

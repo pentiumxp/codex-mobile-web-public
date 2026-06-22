@@ -303,6 +303,141 @@ test("latest completed turn keeps all operation cards and ends with usage summar
   }
 });
 
+test("completed turn missing app-server receipt is backfilled from rollout task_complete", () => {
+  const { dir, rolloutPath } = writeRollout([
+    event("2026-05-24T11:20:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-rollout-receipt" }),
+    event("2026-05-24T11:20:05.000Z", "event_msg", {
+      type: "token_count",
+      turn_id: "turn-rollout-receipt",
+      info: {
+        last_token_usage: {
+          input_tokens: 900,
+          cached_input_tokens: 400,
+          output_tokens: 80,
+          reasoning_output_tokens: 10,
+          total_tokens: 980,
+        },
+        total_token_usage: {
+          input_tokens: 1900,
+          output_tokens: 180,
+          total_tokens: 2080,
+        },
+        model_context_window: 100000,
+      },
+    }),
+    event("2026-05-24T11:20:08.000Z", "event_msg", {
+      type: "task_complete",
+      turn_id: "turn-rollout-receipt",
+      last_agent_message: "Final receipt from rollout.",
+    }),
+  ]);
+  try {
+    const compacted = compactThread({
+      id: "thread-rollout-receipt",
+      path: rolloutPath,
+      turns: [{
+        id: "turn-rollout-receipt",
+        status: { type: "completed" },
+        items: [
+          { id: "user-1", type: "userMessage", content: [{ type: "text", text: "summarize" }] },
+        ],
+      }],
+    });
+
+    const items = compacted.turns[0].items;
+    assert.deepEqual(items.map((item) => item.type), ["userMessage", "agentMessage", "turnUsageSummary"]);
+    assert.equal(items[1].id, "mobile-final-receipt-turn-rollout-receipt");
+    assert.equal(items[1].text, "Final receipt from rollout.");
+    assert.equal(items[1].mobileSyntheticFinalReceipt, true);
+    assert.equal(items[items.length - 1].type, "turnUsageSummary");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("completed turn with only intermediate agent messages is backfilled from rollout final receipt", () => {
+  const { dir, rolloutPath } = writeRollout([
+    event("2026-05-24T11:22:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-progress-only" }),
+    event("2026-05-24T11:22:08.000Z", "event_msg", {
+      type: "task_complete",
+      turn_id: "turn-progress-only",
+      last_agent_message: "Final receipt from rollout after progress.",
+    }),
+  ]);
+  try {
+    const compacted = compactThread({
+      id: "thread-progress-only",
+      path: rolloutPath,
+      turns: [{
+        id: "turn-progress-only",
+        status: { type: "completed" },
+        items: [
+          { id: "user-1", type: "userMessage", content: [{ type: "text", text: "fix it" }] },
+          { id: "agent-progress", type: "agentMessage", text: "I am checking the files." },
+        ],
+      }],
+    });
+
+    const items = compacted.turns[0].items;
+    assert.deepEqual(items.map((item) => item.type), ["userMessage", "agentMessage", "agentMessage"]);
+    assert.equal(items[1].id, "agent-progress");
+    assert.equal(items[2].id, "mobile-final-receipt-turn-progress-only");
+    assert.equal(items[2].text, "Final receipt from rollout after progress.");
+    assert.equal(items[2].mobileSyntheticFinalReceipt, true);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("rollout final receipt fallback does not replace existing receipts or failed turns", () => {
+  const { dir, rolloutPath } = writeRollout([
+    event("2026-05-24T11:25:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-existing" }),
+    event("2026-05-24T11:25:05.000Z", "event_msg", {
+      type: "task_complete",
+      turn_id: "turn-existing",
+      last_agent_message: "Existing receipt.",
+    }),
+    event("2026-05-24T11:26:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-failed" }),
+    event("2026-05-24T11:26:05.000Z", "event_msg", {
+      type: "task_complete",
+      turn_id: "turn-failed",
+      last_agent_message: "Fallback should not attach to failed turn.",
+    }),
+  ]);
+  try {
+    const compacted = compactThread({
+      id: "thread-rollout-receipt-negative",
+      path: rolloutPath,
+      turns: [
+        {
+          id: "turn-existing",
+          status: { type: "completed" },
+          items: [
+            { id: "user-existing", type: "userMessage", text: "question" },
+            { id: "agent-existing", type: "agentMessage", text: "Existing receipt." },
+          ],
+        },
+        {
+          id: "turn-failed",
+          status: { type: "failed" },
+          items: [
+            { id: "user-failed", type: "userMessage", text: "question" },
+          ],
+        },
+      ],
+    }, { maxTurns: 2 });
+
+    const existingItems = compacted.turns[0].items;
+    const failedItems = compacted.turns[1].items;
+    assert.deepEqual(existingItems.filter((item) => item.type === "agentMessage").map((item) => item.id), ["agent-existing"]);
+    assert.equal(existingItems.some((item) => item.mobileSyntheticFinalReceipt), false);
+    assert.equal(failedItems.some((item) => item.type === "agentMessage"), false);
+    assert.equal(failedItems.some((item) => item.mobileSyntheticFinalReceipt), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("older compacted turns keep only question and receipt items", () => {
   const turns = [];
   const rolloutEvents = [];

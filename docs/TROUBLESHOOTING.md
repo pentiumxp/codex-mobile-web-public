@@ -399,6 +399,15 @@ Cause to check:
   projection-rendering loss: the source turn is incomplete or interrupted.
   Mobile Web should remove any stale Usage card from that turn instead of
   rendering Usage as if the final receipt had completed.
+- If rollout has `task_complete.last_agent_message` for a completed turn but
+  first-open thread detail loses the final assistant/plan receipt, check the
+  rollout final-receipt enrichment path in `server.js`. The compact/projection,
+  raw, and turns-list detail paths should insert one synthetic `agentMessage`
+  before `turnUsageSummary` when the completed turn has no assistant/plan item
+  whose text matches the rollout final message. Intermediate `agentMessage`
+  items are not enough to suppress this fallback. Existing matching receipts
+  must not be replaced, and failed, cancelled, interrupted, active, or
+  in-progress turns must not receive this fallback.
 - If raw rollout has valid scoped `token_count` for a recently completed turn
   but the detail response has no `turnUsageSummary`, check whether the fixed
   rollout tail no longer contains that turn's token events. Thread detail should
