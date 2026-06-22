@@ -64,6 +64,36 @@ Last compacted: 2026-06-08T13:27:43.304Z
   - `/Users/xuxin/.homeai-qa/codex-mobile-web-evidence-ledger.jsonl`
     id `evidence-513db925-b035-4f08-b83a-67e3d876f3e6`.
 
+## 2026-06-22 Home AI UsageLimited Goal Recovery
+
+- Status: production runtime repaired through app-server API; no product code
+  change in this step.
+- Trigger:
+  - After a manual switch to `default`, the Home AI thread still displayed
+    `Limited` and new messages completed without assistant output.
+- Findings:
+  - Active profile and quota were healthy: `/api/status` reported
+    `codexHome=/Users/xuxin/.codex`, `lastError=null`, and
+    `rateLimitReachedType=null`.
+  - Home AI thread `019ed8d8-e328-7301-9c1e-33fe1dbaf480` still had
+    `goal.status=usageLimited` and `status.type=systemError`.
+  - Recent turns, including `019eed79-3041-7cd1-a19a-232014eb8943`, were
+    accepted by app-server but completed in a few seconds with
+    `last_agent_message=null` and a `total_tokens=258400,last=0` sentinel.
+- Recovery:
+  - Called the existing app-server-backed route:
+    `POST /api/threads/019ed8d8-e328-7301-9c1e-33fe1dbaf480/goal/actions`
+    with `{"action":"clear"}`.
+  - The route returned `{ ok: true, action: "cancel", goal: null }`.
+  - Readback from `/api/threads?limit=80` showed the Home AI row no longer
+    contains a `goal` object. The row still had `status.type=systemError`
+    because the latest completed turn was still the prior empty system-error
+    turn; a new user turn is needed to prove the app-server status fully
+    recovers.
+- Evidence ledger:
+  - `/Users/xuxin/.homeai-qa/codex-mobile-web-evidence-ledger.jsonl`
+    id `evidence-80a8ce72-ff32-407d-a760-63bb943143cd`.
+
 ## 2026-06-22 Profile Switch Failure Visibility And Rate Limit Warning
 
 - Status: committed and deployed to Mac production.
