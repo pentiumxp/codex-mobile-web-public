@@ -2,6 +2,50 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-22 Continuation Fallback Handoff For Broken Source Threads
+
+- Status: source fixed and validated; deployment pending at the time of this
+  handoff entry.
+- Trigger:
+  - Home AI thread `019ed8d8-e328-7301-9c1e-33fe1dbaf480` remained
+    `status.type=systemError` after clearing stale `usageLimited` goal state.
+  - Recent user turns completed without assistant output, so the existing
+    continuation path could not rely on the source thread writing its own
+    handoff file.
+- Runtime evidence:
+  - Authenticated `/api/status` was healthy for active profile `default`:
+    `ready=true`, `transport=external-jsonl-tcp`, `lastError=null`,
+    `codexHome=/Users/xuxin/.codex`, and global quota was not limited.
+  - `/api/threads?limit=120` showed Home AI `status.type=systemError`,
+    rollout path under `/Users/xuxin/.codex-homes/previous/sessions/...`,
+    and rollout size about `124875867` bytes.
+  - Recent source rollout turns had `last_agent_message=null`, so Mobile Web was
+    not hiding a successful reply.
+- Change:
+  - `server.js` now writes a bounded server fallback handoff when the source
+    thread cannot resume, cannot start the handoff turn, completes without
+    writing the handoff file, or times out.
+  - The fallback handoff is explicitly marked as not source-thread authored. It
+    includes source metadata, recent visible turn summaries, workspace context
+    references, and a bounded fallback reason, but no raw rollout body, secrets,
+    prompts, upload contents, or long logs.
+  - Continuation waits a short initial handoff window; if the source handoff
+    turn has already completed without a file, it falls back immediately instead
+    of waiting the long late-handoff timeout.
+  - Bootstrap now reports whether the handoff mode is `source thread generated`
+    or `server fallback`.
+  - `docs/TROUBLESHOOTING.md` documents this recovery path.
+- Validation:
+  - `node --check server.js`
+  - `node --test test/new-thread-route.test.js test/continuation-lineage.test.js test/thread-goal-service.test.js`
+  - `npm run check`
+  - `git diff --check`
+  - Central AI Ops required checks:
+    `node tests/gateway-run-lifecycle-service.test.js`,
+    `node tests/gateway-run-start-service.test.js`,
+    `node tests/gateway-run-stream-service.test.js`,
+    `node tests/runtime-config-provider.test.js`.
+
 ## 2026-06-22 macOS Profile Restart Env Sync
 
 - Status: source fixed and validated; not deployed in this turn.

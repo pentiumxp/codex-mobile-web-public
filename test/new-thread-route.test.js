@@ -223,6 +223,29 @@ test("continuation paths apply inherited model and effort", () => {
   assert.match(startContinuationBody, /const bootstrapParams = applyTurnRuntimeSettings\(/, "continuation bootstrap turn should inherit model and effort");
 });
 
+test("continuation can fall back when source thread cannot write a handoff", () => {
+  const sourceHandoffBody = functionBody(serverJs, "createSourceContinuationHandoff");
+  assert.match(sourceHandoffBody, /sourceSnapshot/, "source handoff generation should receive the source snapshot for fallback");
+  assert.match(sourceHandoffBody, /writeFallbackSourceContinuationHandoff\(/, "source handoff generation should have a server fallback path");
+  assert.match(sourceHandoffBody, /handoff-fallback/, "continuation progress should expose fallback handoff generation");
+  assert.match(sourceHandoffBody, /readContinuationTurnStatus\(threadId, turnId\)/, "completed source turns without a file should not wait for the long timeout");
+
+  const fallbackBody = functionBody(serverJs, "writeFallbackSourceContinuationHandoff");
+  assert.match(fallbackBody, /Fallback Continuation Handoff/, "fallback handoff should identify itself");
+  assert.match(fallbackBody, /not a source-thread model summary/, "fallback handoff should not pretend the source thread summarized itself");
+  assert.match(fallbackBody, /continuationSourceThreadSection\(snapshot\)/, "fallback handoff should include bounded source metadata");
+  assert.match(fallbackBody, /continuationTurnSummaries\(snapshot\.turns \|\| \[\]\)/, "fallback handoff should include bounded recent visible turns");
+  assert.match(fallbackBody, /workspaceContextReference\(cwd\)/, "fallback handoff should point the new thread to durable context files");
+  assert.match(fallbackBody, /fallback:\s*true/, "fallback handoff result should be marked for bootstrap display");
+
+  const startContinuationBody = functionBody(serverJs, "startThreadFromRequestBody");
+  assert.match(startContinuationBody, /sourceSnapshot,\s*\n\s*onProgress: progress/, "continuation start should pass the source snapshot into handoff generation");
+
+  const handoffSectionBody = functionBody(serverJs, "sourceHandoffSection");
+  assert.match(handoffSectionBody, /sourceHandoff\.fallback/, "bootstrap should disclose fallback handoff mode");
+  assert.match(handoffSectionBody, /fallbackReason/, "bootstrap should include a bounded fallback reason");
+});
+
 test("continuation titles survive app-server rename gaps", () => {
   const titleBody = functionBody(serverJs, "sourceTitleForContinuation");
   assert.match(titleBody, /requestedTitle, summary\.name, summary\.title, summary\.preview/, "source title should prefer the current visible title before app-server fallbacks");
