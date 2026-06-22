@@ -677,3 +677,116 @@ The previous full handoff was archived and should be opened only when old proven
   - In-app Browser verification was attempted but the Browser MCP/Node REPL
     channel returned `sandboxCwd` metadata errors before page navigation; HTTP
     smoke and production target tests are the current verification evidence.
+
+### v375 large-thread cold-cache fallback delay
+
+- Status: diagnosed, public-synced, merged back into private main, deployed to
+  Mac production, and smoke verified.
+- User report:
+  - Music is about 200 MiB and still felt slow even though thread detail should
+    read only the latest 10 turns. The user suspected the immediately preceding
+    update/restart might have made the issue visible.
+- Production evidence:
+  - Music thread id: `019ed959-27ce-7312-ba77-226ef9c526c7`.
+  - Music rollout path:
+    `/Users/xuxin/.codex/sessions/2026/06/18/rollout-2026-06-18T14-09-19-019ed959-27ce-7312-ba77-226ef9c526c7.jsonl`.
+  - Pre-patch production detail API returned only 10 turns and about 111 KiB,
+    with `mobileReadMode=projection-v4-dynamic`; repeated loopback calls were
+    around `309ms`, then `33ms` and `34ms`.
+  - Phone logs showed Music first paint after a cold/restart window at about
+    `656ms`, later `490ms`, then `143ms`; it still returned 10 turns and
+    omitted older turns.
+  - The slower overlapping path was thread-list fallback, not Music detail:
+    production logs showed `[thread-list] complete` around `2019ms-2341ms`,
+    with `fallbackRolloutMs` around `1274ms-1400ms`, and client
+    `thread_list_rendered` around `2160ms-3943ms`.
+  - The update likely contributed by restarting the listener and clearing
+    in-memory projection/fallback caches. The server is in-memory while
+    running, but full thread-list fallback still reads disk rollout/session
+    metadata after restart.
+- Patch:
+  - `public/app.js`
+    - Added a cancellable `threadListDeferredFallbackTimer`.
+    - Replaced the previous unconditional `800ms` full list fallback follow-up
+      with `THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS=8000`.
+    - If a thread detail or another list request is active, the fallback now
+      retries after `2500ms` instead of competing with first paint.
+    - Any non-deferred list load clears the queued fallback timer.
+    - `CLIENT_BUILD_ID` bumped to
+      `0.1.11|codex-mobile-shell-v375`.
+  - `public/sw.js`
+    - PWA shell cache bumped to `codex-mobile-shell-v375`.
+  - Tests:
+    - `test/mobile-viewport.test.js`
+    - `test/thread-goal-service.test.js`
+    - `test/thread-task-card-route.test.js`
+  - Docs:
+    - `README.md`
+    - `docs/ARCHITECTURE.md`
+    - `docs/TROUBLESHOOTING.md`
+- Validation:
+  - Private workspace:
+    - Focused 138-test suite passed:
+      `test/mobile-viewport.test.js`, `test/app-update.test.js`,
+      `test/thread-visibility.test.js`, `test/thread-goal-service.test.js`,
+      `test/thread-task-card-route.test.js`, `test/conversation-render.test.js`,
+      `test/turn-scroll-controls.test.js`.
+    - `npm run check`
+    - `npm run check:macos`
+    - `npm test` passed (`602` tests).
+    - `git diff --check`
+    - `codegraph status` was up to date; it warned the index was built by an
+      earlier engine version, but no stale edited files were reported.
+  - Public mirror:
+    - `npm run check`
+    - `npm run check:macos`
+    - Same focused 138-test suite passed.
+    - `npm test` passed (`602` tests).
+    - `git diff --check`
+  - Staging archive from public commit:
+    - Blocked-path scan was clean for `.agent-context`, runtime data/logs,
+      uploads, env files, access-key, private-key, and secret patterns. The
+      scan intentionally did not block legitimate token-usage source filenames.
+    - `npm run check`
+    - `npm run check:macos`
+    - Same focused 138-test suite passed.
+  - Production target after sync:
+    - `npm run check`
+    - `npm run check:macos`
+    - Same focused 138-test suite passed.
+- Public/private sync:
+  - Public commit:
+    `e53036c fix: delay full thread-list fallback`.
+  - Public main was pushed to
+    `git@github.com:pentiumxp/codex-mobile-web-public.git`.
+  - Private main merged `public/main` with:
+    `c32db44 Merge remote-tracking branch 'public/main'`.
+- Production deploy:
+  - Source archive: public mirror commit `e53036c`.
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup retained at:
+    `/tmp/codex-mobile-web-deploy-e53036c-20260622T114509Z.backup.tar.gz`.
+  - Sync used sudo `rsync` and preserved `data/`, `logs/`, `node_modules/`,
+    `uploads/`, `.git/`, `.agent-context/`, and `AGENTS.md`; target ownership
+    was restored to `hermes-host:staff`.
+  - Restart:
+    `launchctl kickstart -k system/com.hermesmobile.plugin.codex-mobile`.
+  - Post-restart smoke:
+    - `/api/public-config` returned
+      `clientBuildId=0.1.11|codex-mobile-shell-v375` and
+      `shellCacheName=codex-mobile-shell-v375`.
+    - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` is running
+      with PID `25816`, `runs=11`, and last exit code `0`.
+    - Authenticated `/api/status` returned HTTP `200`, `ready=true`.
+    - Authenticated Music recent detail calls returned HTTP `200`, about
+      `83275` bytes, `10` turns, `mobileReadMode=projection-v4-cache`,
+      `status=idle`, `mobileOmittedTurnCount=234`,
+      `rolloutSizeBytes=218711473`, and an older cursor. Timings were
+      `297ms`, `30ms`, and `28ms`.
+    - Served `app.js` contains shell v375, `8000ms` fallback delay,
+      `2500ms` retry, mobile-loading retry guard, and non-defer timer clearing.
+- Operational note:
+  - This does not remove the full fallback scan. It makes the scan delayed and
+    cancellable so it does not normally compete with thread first paint.
+  - Existing open clients may need to accept the refresh prompt or reopen the
+    WebView/PWA to run v375 client code.
