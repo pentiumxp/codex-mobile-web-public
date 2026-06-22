@@ -4,7 +4,7 @@ Last compacted: 2026-06-08T13:27:43.304Z
 
 ## 2026-06-22 Profile Switch Progress And macOS Host Restart Safety
 
-- Status: implemented and validated locally; not deployed and not committed.
+- Status: committed and deployed to Mac production.
 - Trigger:
   - User reported that switching Profile to Default stayed after preflight with
     no visible progress.
@@ -42,7 +42,7 @@ Last compacted: 2026-06-08T13:27:43.304Z
 - Validation:
   - `bash -n restart-codex-mobile-host-macos.sh`
   - `node --check server.js && node --check public/app.js && node --check public/sw.js`
-  - `node --test test/macos-host-restart-script.test.js test/codex-profile-ui.test.js test/manual-restart-ui.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+  - `node --test test/codex-mobile-mcp-server.test.js test/new-thread-route.test.js test/thread-task-card-route.test.js test/codex-profile-service.test.js test/codex-profile-ui.test.js test/manual-restart-ui.test.js test/macos-host-restart-script.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js`
   - `./restart-codex-mobile-host-macos.sh --profile-id previous --dry-run --json`
   - `npm run check`
   - `git diff --check`
@@ -53,11 +53,26 @@ Last compacted: 2026-06-08T13:27:43.304Z
     `node tests/runtime-config-provider.test.js`.
 - Evidence ledger:
   - `/Users/xuxin/.homeai-qa/codex-mobile-web-evidence-ledger.jsonl`
-    id `evidence-f48ea06d-8958-4c58-947b-751480706334`.
-- Deployment boundary:
-  - Not deployed, because the task card explicitly said production had already
-    been manually restored and did not need immediate recovery. Deploying this
-    change would restart 8787 and should be done only when the user asks.
+    ids `evidence-f48ea06d-8958-4c58-947b-751480706334` and
+    `evidence-212dd48c-51da-4b65-9859-1cef6b74ca99`.
+- Commit:
+  - Source commit deployed: `d228d6a` (`Stabilize profile switching and host
+    recovery`).
+- Deployment:
+  - Ran Mac production deploy:
+    `npm run --silent deploy:macos -- --target plugin:codex-mobile-web --execute --reason codex-profile-switch-progress-host-recovery --json`.
+  - Deploy validation passed: log permission repair, shared auth repair,
+    production file hash proof, LaunchDaemon print, manifest health URL, and
+    codex auth profile audit.
+  - Production readback after deploy:
+    `/api/public-config` reports `clientBuildId:"0.1.11|codex-mobile-shell-v372"`,
+    `shellCacheName:"codex-mobile-shell-v372"`,
+    `activeProfileId:"previous"`, and `switchSupported:true`.
+  - Authenticated `/api/status` reports `ready:true`,
+    `transport:"external-jsonl-tcp"`, `persistentOwnedMux:true`,
+    `sharedRequired:true`, `lastError:null`, `codexHome` under
+    `/Users/xuxin/.codex-homes/previous`, and mux endpoint under the same
+    profile.
 
 ## 2026-06-22 V4 Thread Detail Live Refresh Monotonic Merge
 
