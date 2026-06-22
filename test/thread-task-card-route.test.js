@@ -90,6 +90,11 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(serverJs, /function resolvedThreadTaskCardTargetIds\(/);
   assert.match(functionBody(serverJs, "createThreadTaskCardsFromSourceThread"), /workspaceDelegationPublicSettings\(\)/);
   assert.match(functionBody(serverJs, "createThreadTaskCardsFromSourceThread"), /workspaceDelegation\.enabled[\s\S]*body\.autoApprove !== false[\s\S]*body\.direct !== false[\s\S]*body\.pending !== true/);
+  assert.match(functionBody(serverJs, "threadTaskCardThreadCallIdempotencyKey"), /body\.requestId \|\| body\.request_id/);
+  assert.doesNotMatch(functionBody(serverJs, "threadTaskCardThreadCallIdempotencyKey"), /body\.sourceTurnId \|\| body\.turnId/);
+  assert.match(functionBody(serverJs, "dynamicToolTextResponse"), /content:\s*\[/);
+  assert.match(functionBody(serverJs, "dynamicToolTextResponse"), /type: "text"/);
+  assert.doesNotMatch(functionBody(serverJs, "dynamicToolTextResponse"), /contentItems|inputText/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /Mandatory boundary when this tool is available/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /call this tool before doing that work/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /Do not inspect, cd into, edit, patch, run commands in, test, deploy/);
@@ -102,6 +107,7 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolBody"), /body\.direct = true/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolBody"), /body\.autoApprove = true/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolBody"), /body\.pending = false/);
+  assert.doesNotMatch(functionBody(serverJs, "workspaceDelegationDynamicToolBody"), /params\.callId \|\| params\.call_id/);
   assert.match(functionBody(serverJs, "attachWorkspaceDelegationRuntimeGuidance"), /attachWorkspaceDelegationDynamicTools\(params, settings\)/);
   assert.match(functionBody(serverJs, "attachWorkspaceDelegationRuntimeGuidance"), /workspaceDelegationScriptFallbackInstruction\(params\)/);
   assert.match(functionBody(serverJs, "workspaceDelegationScriptFallbackInstruction"), /create-thread-task-card\.js/);
