@@ -434,11 +434,17 @@ Cause to check:
   `turnUsageSummary` but the just-completed browser view does not, inspect the
   post-completion refresh queue; completion should schedule both an immediate
   and a delayed detail refresh.
+- If a thread finished while the browser was away and Usage appears only after
+  leaving and reopening the thread, inspect the initial `loadThread()` path in
+  `public/app.js`. The first successful detail render must schedule the same
+  bounded Usage backfill used by post-completion refreshes, because the first
+  open can otherwise render an older projection cache that has the final
+  receipt but not yet the `turnUsageSummary`.
 
 Useful verification:
 
 ```powershell
-node --test test\thread-item-timestamp-enrichment.test.js test\mobile-viewport.test.js
+node --test test\thread-item-timestamp-enrichment.test.js test\turn-scroll-controls.test.js test\mobile-viewport.test.js
 ```
 
 ## Thread Stuck Or Very Slow
