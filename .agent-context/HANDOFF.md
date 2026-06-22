@@ -2,6 +2,71 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-22 Workspace Delegation Full-Access Compatibility Recovery
+
+- Status: committed, deployed to Mac production, and verified through a
+  source-direct task card to Music.
+- Trigger:
+  - The prior managed permission-profile fix still failed in the Music thread:
+    app-server accepted the turn but the latest `turn_context` was still
+    `sandbox_policy.type=workspace-write` with `.git` metadata effectively
+    read-only, so `git add/commit` could not create `.git/index.lock`.
+  - Production logs showed Mobile Web sent `permissionProfileType=managed`, but
+    the resulting rollout still contained app-server-generated
+    `workspace-write`; therefore passing a custom profile is not reliable on
+    this app-server path.
+- Change:
+  - `server.js` now defaults the workspace-delegation runtime guard to a
+    compatibility mode: for guarded non-exempt workspaces it forces
+    `approvalPolicy:"never"`, restores `danger-full-access`, and clears stale
+    managed profiles on the next `thread/start`, `thread/resume`, or
+    `turn/start`.
+  - The old hard current-cwd sandbox/profile narrowing is retained only behind
+    explicit opt-in env
+    `CODEX_MOBILE_WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD=1`.
+  - Runtime model-visible cross-workspace discipline still comes from
+    `codex_mobile.delegate_to_thread`, the automatically registered
+    `codex_mobile` MCP toolset, and `scripts/create-thread-task-card.js`.
+  - Updated `README.md`, `docs/ARCHITECTURE.md`, and
+    `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md`.
+- Validation:
+  - `node --check server.js`
+  - `node --check test/new-thread-route.test.js`
+  - `node --test test/new-thread-route.test.js test/thread-task-card-route.test.js`
+  - `node --test test/codex-profile-service.test.js`
+  - `npm run check`
+  - Center checks:
+    `node tests/gateway-run-lifecycle-service.test.js`,
+    `node tests/gateway-run-start-service.test.js`,
+    `node tests/gateway-run-stream-service.test.js`,
+    `node tests/runtime-config-provider.test.js`,
+    `node tests/architecture-code-test-harness-map.test.js`
+  - `git diff --check`
+- Commit/deploy:
+  - Source commit deployed: `a6a6663` (`修复委派写保护继承导致 Git 不可写`).
+  - Mac production deploy:
+    `npm run --silent deploy:macos -- --target plugin:codex-mobile-web --execute --reason codex-workspace-delegation-full-access-compat --json`.
+  - Production `/api/status` after deploy reported `ready=true`,
+    `lastError=null`, `transport=external-jsonl-tcp`,
+    `codexHome=/Users/xuxin/.codex`, active profile `default`,
+    `persistentOwnedMux=true`, `sharedRequired=true`, and no active rate limit.
+  - Production `server.js` readback contains
+    `CODEX_MOBILE_WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD` and
+    `applyWorkspaceDelegationFullAccessCompatRuntime()`.
+- Music verification:
+  - Sent source-direct task card `ttc_8b81f3c675ffb893a3` from Codex Mobile
+    source thread to Music thread `019ed959-27ce-7312-ba77-226ef9c526c7`.
+  - Injected Music turn `019eed97-e6b2-7af2-ab6a-b0b0903728b6` had
+    `cwd=/Users/xuxin/Documents/Music`, `approval_policy=never`,
+    `sandbox_policy.type=danger-full-access`, and
+    `permission_profile.type=disabled`.
+  - Music reported `git_lock_probe=0`, no `Operation not permitted`, committed
+    `2e9638f Use thumbnails for list cover images`, and `git status --short`
+    was clean.
+- Evidence ledger:
+  - `/Users/xuxin/.homeai-qa/codex-mobile-web-evidence-ledger.jsonl`
+    id `evidence-2b5b9b27-225a-44da-99e9-30a75d568315`.
+
 ## 2026-06-22 Workspace Delegation Guard Git Metadata Write Fix
 
 - Status: committed and deployed to Mac production.
