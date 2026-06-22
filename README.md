@@ -1,5 +1,6 @@
 # Codex Mobile Web
 
+- 中文说明：v373 优化大 session 详情首屏加载。对于已经命中 thread-detail projection 的大 rollout，首屏请求先保留 projection 中的真实消息和 Final Answer，延后 Usage、工具图片、时间戳等 rollout enrichment；浏览器首屏渲染后再用 `enrich=1` 后台补齐，避免 20MB+ session 每次点击都把可选 enrichment 压在首屏路径上。PWA shell cache 升级到 `codex-mobile-shell-v373`。
 - 中文说明：v372 修正发送后短暂出现重复用户消息的问题。同一个 `clientSubmissionId` 的本地 optimistic 用户消息如果已经被 durable/mux 用户消息承接，会在跨 turn normalize 时被清掉，避免刷新前临时显示两条相同的 “You” 气泡；仍保留用户真实重复发送同一句话的情况。PWA shell cache 升级到 `codex-mobile-shell-v372`。
 - 中文说明：v371 修正 rename/title-only 更新误触发 unread dot 的问题。Unread dot 现在优先使用真实终态 turn 时间或 terminal status event 时间；用户已经看过的 session 不会再因为改名、preview 或 projection 刷新导致的通用 `updatedAt` 变新而被重新标未读。PWA shell cache 升级到 `codex-mobile-shell-v371`。
 - 中文说明：v370 修复移动端线程状态残留问题。线程列表 reconcile 或详情 merge 一旦看到真实 running/active 状态，会清掉对应 unread hint 并持久化，避免已进入新一轮处理的 session 仍显示“已完成未读”；submitted-processing hint 也只作为发送后到 assistant 接管前的短桥接窗口，详情已显示最新 turn 终态或桥接窗口过期时会清掉 running spinner。PWA shell cache 升级到 `codex-mobile-shell-v370`。

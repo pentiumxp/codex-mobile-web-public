@@ -301,7 +301,20 @@ test("thread detail usage read targets returned turns beyond the rollout tail", 
   assert.match(serverJs, /if \(missingUsageTurnIds\(payload, targetTurnIds\)\.length > 0\) \{\s*payload = collectTurnUsageSummariesFromEntries\(readRolloutEnrichmentEntries\(rolloutPath\)\);/);
   assert.match(serverJs, /readRolloutTurnUsageSummaries\(rolloutPath, \{\s*targetTurnIds: out\.turns\.map\(\(turn\) => turn && turn\.id\)\.filter\(Boolean\),\s*\}\)/);
   assert.match(serverJs, /const mergedResult = Object\.assign\(\{\}, cached\.result, \{\s*thread: mergeThreadDisplaySummary\(cached\.result\.thread, summary\) \|\| cached\.result\.thread,/);
-  assert.match(serverJs, /compactThreadReadResult\(mergedResult, \{ maxTurns: MAX_FULL_THREAD_TURNS \}\)/);
+  assert.match(serverJs, /compactThreadReadResult\(mergedResult, \{\s*maxTurns: MAX_FULL_THREAD_TURNS,\s*deferRolloutEnrichment: Boolean\(options\.deferRolloutEnrichment\),\s*\}\)/);
+});
+
+test("large projection detail can defer optional rollout enrichment without changing full reads", () => {
+  assert.match(serverJs, /const THREAD_DETAIL_DEFER_ENRICHMENT_BYTES = Math\.max\(\s*0,\s*Number\(process\.env\.CODEX_MOBILE_THREAD_DETAIL_DEFER_ENRICHMENT_BYTES \|\| String\(16 \* 1024 \* 1024\)\),\s*\);/);
+  assert.match(serverJs, /function shouldDeferThreadDetailEnrichment\(summary, forceEnrichment\)/);
+  assert.match(serverJs, /if \(forceEnrichment \|\| THREAD_DETAIL_DEFER_ENRICHMENT_BYTES <= 0\) return false;/);
+  assert.match(serverJs, /return Boolean\(stats && Number\(stats\.sizeBytes \|\| 0\) >= THREAD_DETAIL_DEFER_ENRICHMENT_BYTES\);/);
+  assert.match(serverJs, /const deferProjectionEnrichment = shouldDeferThreadDetailEnrichment\(summary, forceEnrichment\);/);
+  assert.match(serverJs, /deferRolloutEnrichment: deferProjectionEnrichment/);
+  assert.match(serverJs, /if \(!deferRolloutEnrichment\) \{[\s\S]*readRolloutTurnUsageSummaries\(rolloutPath/);
+  assert.match(serverJs, /else \{[\s\S]*out\.mobileDeferredEnrichment = true;[\s\S]*out\.mobileDeferredEnrichmentReason = out\.mobileDeferredEnrichmentReason \|\| "large-rollout-first-paint";[\s\S]*\}/);
+  assert.match(serverJs, /if \(!deferRolloutEnrichment && latest && isLiveTurn\(latest\)/);
+  assert.match(serverJs, /deferredEnrichment: Boolean\(projected\.thread\.mobileDeferredEnrichment\)/);
 });
 
 test("thread detail rollout scans stay bounded for very large sessions", () => {

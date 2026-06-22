@@ -3234,11 +3234,54 @@ test("v4 projection refresh preserves an already rendered final answer", () => {
   assert.match(functionBody("mergeV4ProjectionThread"), /mergeTurnPreservingVisibleItems\(existingTurn, incomingTurn\)/);
 });
 
+test("enriched projection refresh clears deferred enrichment without dropping final answer", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const existingThread = {
+    id: "thread-v4",
+    mobileDeferredEnrichment: true,
+    mobileDeferredEnrichmentReason: "large-rollout-first-paint",
+    turns: [{
+      id: "turn-1",
+      status: { type: "completed" },
+      items: [
+        { id: "user-1", type: "userMessage", content: [{ type: "text", text: "question" }] },
+        { id: "agent-final", type: "agentMessage", text: "Final Answer" },
+      ],
+    }],
+  };
+  const enrichedProjection = {
+    id: "thread-v4",
+    mobileProjectionVersion: "v4",
+    turns: [{
+      id: "turn-1",
+      status: { type: "completed" },
+      items: [
+        { id: "user-1", type: "userMessage", content: [{ type: "text", text: "question" }] },
+        { id: "usage-1", type: "turnUsageSummary", text: "Usage" },
+      ],
+    }],
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, enrichedProjection);
+
+  assert.equal(merged.mobileDeferredEnrichment, undefined);
+  assert.equal(merged.mobileDeferredEnrichmentReason, undefined);
+  assert.ok(merged.turns[0].items.some((item) => item.type === "agentMessage" && item.text === "Final Answer"));
+  assert.ok(merged.turns[0].items.some((item) => item.type === "turnUsageSummary"));
+  assert.match(functionBody("mergeV4ProjectionThread"), /delete merged\.mobileDeferredEnrichment;/);
+  assert.match(functionBody("mergeThreadPreservingVisibleItems"), /delete merged\.mobileDeferredEnrichment;/);
+});
+
 test("settled thread detail loads avoid recent projections that can omit final receipts", () => {
   assert.match(appJs, /function shouldUseRecentThreadDetail\(thread\)/);
   assert.match(functionBody("shouldUseRecentThreadDetail"), /return isRunningStatus\(thread && thread\.status\);/);
   assert.match(functionBody("loadThread"), /threadDetailApiPath\(threadId, shouldUseRecentThreadDetail\(summary\) \? \{ mode: "recent" \} : \{\}\)/);
   assert.match(functionBody("refreshCurrentThread"), /\|\| !shouldUseRecentThreadDetail\(state\.currentThread\)\s*\?\s*"full"\s*:\s*"recent"/);
+  assert.match(appJs, /function scheduleDeferredEnrichmentRefresh\(thread, delay = 350\)/);
+  assert.match(functionBody("scheduleDeferredEnrichmentRefresh"), /refreshCurrentThread\(\{ source: "deferred-enrichment", full: true, enrich: true \}\)\.catch\(showError\);/);
+  assert.match(functionBody("refreshCurrentThread"), /if \(options\.enrich === true\) detailParams\.enrich = "1";/);
+  assert.match(functionBody("refreshCurrentThread"), /if \(options\.enrich !== true\) scheduleDeferredEnrichmentRefresh\(state\.currentThread\);/);
+  assert.match(functionBody("backfillFullThreadDetail"), /threadDetailApiPath\(id, \{ enrich: "1" \}\)/);
 });
 
 test("completed turns can render context and token usage summaries", () => {

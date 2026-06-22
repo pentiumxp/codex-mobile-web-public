@@ -147,8 +147,8 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v372/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v372"/);
+  assert.match(swJs, /codex-mobile-shell-v373/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v373"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);
@@ -259,7 +259,7 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.doesNotMatch(appJs, /scrollToTop/);
   assert.match(appJs, /const explicitNoStickToBottom = options\.stickToBottom === false \|\| Boolean\(options\.scrollToTurnReceiptStart\);/);
   assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*if \(isMenuOverlayMode\(\)\) closeSidebarMenu\(\);/);
-  assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*publishPluginNavigationState\(\{ force: true \}\);\s*\n\s*restoreConnectionState\(\);/);
+  assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*if \(options\.enrich !== true\) scheduleDeferredEnrichmentRefresh\(state\.currentThread\);\s*\n\s*publishPluginNavigationState\(\{ force: true \}\);\s*\n\s*restoreConnectionState\(\);/);
   assert.match(appJs, /const PLUGIN_EMBED_BACK_EDGE_SWIPE_PX = 44/);
   assert.match(appJs, /function installHermesPluginBackSwipeGuard\(\)/);
   assert.match(appJs, /pluginEmbedApi\.navigationMessage\(state, pluginNavigationUiState\(\)\)/);
@@ -296,7 +296,9 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /api\(threadDetailApiPath\(threadId, shouldUseRecentThreadDetail\(summary\) \? \{ mode: "recent" \} : \{\}\)/);
   assert.match(appJs, /async function refreshCurrentThread\(options = \{\}\)/);
   assert.match(appJs, /const requestedMode = options\.full === true \|\| String\(options\.mode \|\| ""\)\.toLowerCase\(\) === "full"[\s\S]*\|\| !shouldUseRecentThreadDetail\(state\.currentThread\)[\s\S]*\? "full"[\s\S]*: "recent";/);
-  assert.match(appJs, /api\(threadDetailApiPath\(threadId, requestedMode === "recent" \? \{ mode: "recent" \} : \{\}\)/);
+  assert.match(appJs, /const detailParams = requestedMode === "recent" \? \{ mode: "recent" \} : \{\};/);
+  assert.match(appJs, /if \(options\.enrich === true\) detailParams\.enrich = "1";/);
+  assert.match(appJs, /api\(threadDetailApiPath\(threadId, detailParams\)/);
   assert.match(appJs, /const previousConversationSignature = conversationRenderSignature\(state\.currentThread\);/);
   assert.match(appJs, /const shouldRenderDetail = previousConversationSignature !== nextConversationSignature[\s\S]*state\.renderedConversationSignature !== nextConversationSignature;/);
   assert.match(functionBody("refreshCurrentThread"), /locallyPatchedDetail = patchCurrentThreadDetailFromRefresh\(previousThread, state\.currentThread, previousConversationSignature\);[\s\S]*if \(locallyPatchedDetail\) \{[\s\S]*updateCurrentThreadHeader\(state\.currentThread\);[\s\S]*updateTickTimer\(\);[\s\S]*publishPluginNavigationState\(\);[\s\S]*\} else \{[\s\S]*renderCurrentThread\(\);/);
@@ -327,6 +329,7 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(stylesCss, /\.live-operation-dock:not\(\[data-mode="expanded"\]\) \.live-operation\s*{[\s\S]*height:\s*44px;[\s\S]*max-height:\s*44px;/);
   assert.match(appJs, /if \(shouldBackfillFullThreadDetail\(result\.thread\)\) \{/);
   assert.match(appJs, /backfillFullThreadDetail\(threadId, \{ seq, source \}\)\.catch\(\(\) => \{\}\)/);
+  assert.match(functionBody("backfillFullThreadDetail"), /threadDetailApiPath\(id, \{ enrich: "1" \}\)/);
   assert.match(appJs, /postPerformanceEvent\("thread_detail_full_ready"/);
   assert.match(stylesCss, /\.history-loader\s*{[\s\S]*justify-content:\s*space-between;/);
   assert.match(stylesCss, /\.history-load-button/);

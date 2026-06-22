@@ -827,6 +827,10 @@ const MAX_ROLLOUT_ENRICHMENT_CONTEXT_BYTES = Math.max(
   MAX_ROLLOUT_CONTEXT_BYTES,
   Number(process.env.CODEX_MOBILE_ROLLOUT_ENRICHMENT_CONTEXT_BYTES || String(32 * 1024 * 1024)),
 );
+const THREAD_DETAIL_DEFER_ENRICHMENT_BYTES = Math.max(
+  0,
+  Number(process.env.CODEX_MOBILE_THREAD_DETAIL_DEFER_ENRICHMENT_BYTES || String(16 * 1024 * 1024)),
+);
 const ROLLOUT_WARNING_BYTES = Math.max(1 * 1024 * 1024, Number(process.env.CODEX_MOBILE_ROLLOUT_WARNING_BYTES || String(200 * 1024 * 1024)));
 const ROLLOUT_ACTIVE_STATUS_WINDOW_MS = Math.max(60_000, Number(process.env.CODEX_MOBILE_ROLLOUT_ACTIVE_STATUS_WINDOW_MS || String(30 * 60 * 1000)));
 const STALE_CONTEXT_ONLY_ACTIVE_TURN_MS = Math.max(30_000, Number(process.env.CODEX_MOBILE_CONTEXT_ONLY_ACTIVE_STALE_MS || "90000"));
@@ -4368,17 +4372,24 @@ function threadDetailProjectionInput(threadId, summary) {
   };
 }
 
-function prepareProjectedThreadReadResult(cached, summary, runtimeSettings) {
+function prepareProjectedThreadReadResult(cached, summary, runtimeSettings, options = {}) {
   if (!cached || !cached.result || !cached.result.thread) return null;
   const mergedResult = Object.assign({}, cached.result, {
     thread: mergeThreadDisplaySummary(cached.result.thread, summary) || cached.result.thread,
   });
-  const result = compactThreadReadResult(mergedResult, { maxTurns: MAX_FULL_THREAD_TURNS });
+  const result = compactThreadReadResult(mergedResult, {
+    maxTurns: MAX_FULL_THREAD_TURNS,
+    deferRolloutEnrichment: Boolean(options.deferRolloutEnrichment),
+  });
   if (!result.thread) return null;
   result.thread = applySessionIndexTitleToThread(result.thread, readSessionIndexEntries().get(result.thread.id));
   result.thread = mergeThreadRuntimeFromStateDb(result.thread, summary);
   result.thread = normalizeStaleContextOnlyActiveThread(result.thread);
   result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
+  if (options.deferRolloutEnrichment) {
+    result.thread.mobileDeferredEnrichment = true;
+    result.thread.mobileDeferredEnrichmentReason = String(options.deferRolloutEnrichmentReason || "large-rollout-first-paint");
+  }
   const projectionVersion = String(cached.version || result.thread.mobileProjectionVersion || "");
   const v4 = projectionVersion === "v4";
   result.thread.mobileReadMode = cached.dynamic
@@ -5182,6 +5193,7 @@ function compactThread(thread, options = {}) {
   const rolloutPath = rolloutPathForThread(out);
   const rolloutStats = rolloutStatsForPath(rolloutPath);
   const maxTurns = Math.max(1, Math.min(200, Number(options.maxTurns || MAX_THREAD_TURNS)));
+  const deferRolloutEnrichment = Boolean(options.deferRolloutEnrichment);
   if (Array.isArray(out.turns)) {
     pendingSteerEchoStore.injectIntoThread(out);
     normalizeSupersededLiveTurns(out);
@@ -5192,14 +5204,19 @@ function compactThread(thread, options = {}) {
       out.turns = out.turns.slice(-maxTurns);
       out.mobileOlderTurnsCursor = olderTurnsCursorBeforeTurn(out.turns[0]);
     }
-    enrichThreadItemTimestampsFromRollout(out);
-    appendRolloutToolOutputImagesToThread(out);
-    attachTurnUsageSummaries(out, readRolloutTurnUsageSummaries(rolloutPath, {
-      targetTurnIds: out.turns.map((turn) => turn && turn.id).filter(Boolean),
-    }), {
-      rolloutStats,
-      workspaceContextStats: workspaceContextStatsForCwd(out.cwd),
-    });
+    if (!deferRolloutEnrichment) {
+      enrichThreadItemTimestampsFromRollout(out);
+      appendRolloutToolOutputImagesToThread(out);
+      attachTurnUsageSummaries(out, readRolloutTurnUsageSummaries(rolloutPath, {
+        targetTurnIds: out.turns.map((turn) => turn && turn.id).filter(Boolean),
+      }), {
+        rolloutStats,
+        workspaceContextStats: workspaceContextStatsForCwd(out.cwd),
+      });
+    } else {
+      out.mobileDeferredEnrichment = true;
+      out.mobileDeferredEnrichmentReason = out.mobileDeferredEnrichmentReason || "large-rollout-first-paint";
+    }
     const latestIndex = out.turns.length - 1;
     const liveLatest = out.turns[latestIndex];
     if (liveLatest && isLiveTurn(liveLatest)) {
@@ -5213,7 +5230,7 @@ function compactThread(thread, options = {}) {
       threadId: out.id || out.threadId || "",
     })).map(orderTurnItemsByDisplayTimestamp);
     const latest = out.turns[latestIndex];
-    if (latest && isLiveTurn(latest) && Array.isArray(latest.items)
+    if (!deferRolloutEnrichment && latest && isLiveTurn(latest) && Array.isArray(latest.items)
       && !latest.items.some((item) => isOperationalItem(item))) {
       const rawOperation = readLatestRawOperation(out, latest.id, { includeCompleted: true });
       if (rawOperation) latest.items.push(rawOperation);
@@ -9884,6 +9901,13 @@ function shouldPreferRecentThreadDetail(detailMode, summary) {
   return isThreadListLiveStatus(summary && summary.status);
 }
 
+function shouldDeferThreadDetailEnrichment(summary, forceEnrichment) {
+  if (forceEnrichment || THREAD_DETAIL_DEFER_ENRICHMENT_BYTES <= 0) return false;
+  const rolloutPath = rolloutPathForThread(summary);
+  const stats = rolloutStatsForPath(rolloutPath);
+  return Boolean(stats && Number(stats.sizeBytes || 0) >= THREAD_DETAIL_DEFER_ENRICHMENT_BYTES);
+}
+
 function parseThreadTurnsCursor(value) {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value === "object") return JSON.stringify(value);
@@ -12254,6 +12278,7 @@ async function handleApi(req, res) {
   if (threadRead && req.method === "GET") {
     const threadId = decodeURIComponent(threadRead[1]);
     const detailMode = String(url.searchParams.get("mode") || "").trim().toLowerCase();
+    const forceEnrichment = /^(1|true|yes|on)$/i.test(String(url.searchParams.get("enrich") || "").trim());
     const requestStartedAtMs = Date.now();
     const threadLog = (event, details = {}) => logThreadDetail(event, Object.assign({
       threadId,
@@ -12318,6 +12343,7 @@ async function handleApi(req, res) {
       status: summary && summary.status ? summary.status.type || summary.status : null,
     });
     const preferRecentTurns = shouldPreferRecentThreadDetail(detailMode, summary);
+    const deferProjectionEnrichment = shouldDeferThreadDetailEnrichment(summary, forceEnrichment);
     const runtimeSettings = threadRuntimeSettings(threadId, summary);
     if (summary && isHiddenThread(summary, visibility)) {
       threadLog("hidden", { status: 404 });
@@ -12378,6 +12404,10 @@ async function handleApi(req, res) {
       threadDetailProjectionService.get(projectionInput),
       summary,
       runtimeSettings,
+      {
+        deferRolloutEnrichment: deferProjectionEnrichment,
+        deferRolloutEnrichmentReason: "large-rollout-first-paint",
+      },
     ) : null;
     if (projected && projected.thread) {
       if (isHiddenThread(projected.thread, visibility)) {
@@ -12394,6 +12424,7 @@ async function handleApi(req, res) {
         mode: projected.thread.mobileReadMode,
         returnedTurns: Array.isArray(projected.thread.turns) ? projected.thread.turns.length : null,
         omittedTurns: projected.thread.mobileOmittedTurnCount || 0,
+        deferredEnrichment: Boolean(projected.thread.mobileDeferredEnrichment),
       });
       sendJson(res, 200, await prepareThreadDetailResponseResult(projected, {
         threadId,

@@ -155,6 +155,8 @@ const state = {
   usageBackfillTimer: null,
   usageBackfillKey: "",
   usageBackfillAttempts: 0,
+  deferredEnrichmentTimer: null,
+  deferredEnrichmentKey: "",
   recoveryTimer: null,
   reconnectNoticeTimer: null,
   eventRetryTimer: null,
@@ -384,7 +386,7 @@ const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v372";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v373";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -5229,6 +5231,10 @@ function mergeV4ProjectionThread(existingThread, incomingThread) {
   if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoading")) delete merged.mobileLoading;
   if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileLoadError")) delete merged.mobileLoadError;
   if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileReadWarning")) delete merged.mobileReadWarning;
+  if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileDeferredEnrichment")) {
+    delete merged.mobileDeferredEnrichment;
+    delete merged.mobileDeferredEnrichmentReason;
+  }
   if (Array.isArray(incomingThread.turns)) {
     const existingById = new Map((Array.isArray(existingThread.turns) ? existingThread.turns : [])
       .map((turn) => [String(turn && turn.id || ""), turn]));
@@ -5390,6 +5396,10 @@ function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
   }
   if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileReadWarning")) {
     delete merged.mobileReadWarning;
+  }
+  if (!Object.prototype.hasOwnProperty.call(incomingThread, "mobileDeferredEnrichment")) {
+    delete merged.mobileDeferredEnrichment;
+    delete merged.mobileDeferredEnrichmentReason;
   }
   if (!incomingTurns) return normalizeThreadVisibleUserMessages(merged);
   merged.turns = incomingTurns.map((incomingTurn) => {
@@ -7690,6 +7700,7 @@ async function loadThread(threadId, options = {}) {
   state.threadHistoryError = "";
   clearRecentCompletedReplyAnchor();
   clearConversationAutoScrollHold();
+  clearDeferredEnrichmentRefresh();
   abortCurrentThreadRefresh();
   if (state.threadLoadController) state.threadLoadController.abort();
   const controller = new AbortController();
@@ -7779,6 +7790,7 @@ async function loadThread(threadId, options = {}) {
   syncActiveTurnFromThread();
   renderThreads();
   renderCurrentThread({ stickToBottom: true });
+  if (options.enrich !== true) scheduleDeferredEnrichmentRefresh(state.currentThread);
   publishPluginNavigationState({ force: true });
   restoreConnectionState();
   scheduleLivePollIfNeeded(1200);
@@ -7845,6 +7857,36 @@ function clearUsageBackfillRefresh() {
   state.usageBackfillAttempts = 0;
 }
 
+function clearDeferredEnrichmentRefresh() {
+  clearTimeout(state.deferredEnrichmentTimer);
+  state.deferredEnrichmentTimer = null;
+  state.deferredEnrichmentKey = "";
+}
+
+function deferredEnrichmentKeyForThread(thread) {
+  if (!thread || !thread.mobileDeferredEnrichment) return "";
+  const id = String(thread.id || thread.threadId || state.currentThreadId || "").trim();
+  if (!id) return "";
+  const rolloutSize = Number(thread.rolloutSizeBytes || 0);
+  const projection = thread.mobileProjection && typeof thread.mobileProjection === "object" ? thread.mobileProjection : {};
+  const projectionAt = Number(projection.updatedAtMs || projection.cachedAtMs || 0);
+  return `${id}|${rolloutSize || ""}|${projectionAt || ""}`;
+}
+
+function scheduleDeferredEnrichmentRefresh(thread, delay = 350) {
+  const key = deferredEnrichmentKeyForThread(thread);
+  if (!key || document.visibilityState === "hidden") return;
+  if (state.deferredEnrichmentKey === key && state.deferredEnrichmentTimer) return;
+  clearTimeout(state.deferredEnrichmentTimer);
+  state.deferredEnrichmentKey = key;
+  state.deferredEnrichmentTimer = setTimeout(() => {
+    state.deferredEnrichmentTimer = null;
+    const activeKey = deferredEnrichmentKeyForThread(state.currentThread);
+    if (!activeKey || activeKey !== key || document.visibilityState === "hidden") return;
+    refreshCurrentThread({ source: "deferred-enrichment", full: true, enrich: true }).catch(showError);
+  }, delay);
+}
+
 function scheduleUsageBackfillRefresh(delay = 1200) {
   if (!state.currentThreadId || document.visibilityState === "hidden") return;
   const turn = latestSuccessfulCompletedTurnMissingUsage();
@@ -7885,8 +7927,10 @@ async function refreshCurrentThread(options = {}) {
   let result;
   const refreshStartedAt = nowPerfMs();
   const apiStartedAt = nowPerfMs();
+  const detailParams = requestedMode === "recent" ? { mode: "recent" } : {};
+  if (options.enrich === true) detailParams.enrich = "1";
   try {
-    result = await api(threadDetailApiPath(threadId, requestedMode === "recent" ? { mode: "recent" } : {}), {
+    result = await api(threadDetailApiPath(threadId, detailParams), {
       timeoutMs: 20000,
       signal: controller.signal,
     });
@@ -7925,6 +7969,7 @@ async function refreshCurrentThread(options = {}) {
     updateTickTimer();
     scheduleScrollToBottomButtonUpdate();
   }
+  if (options.enrich !== true) scheduleDeferredEnrichmentRefresh(state.currentThread);
   postPerformanceEvent("thread_refresh_ms", {
     source,
     threadId,
@@ -7978,7 +8023,7 @@ async function backfillFullThreadDetail(threadId, options = {}) {
   const apiStartedAt = nowPerfMs();
   let result;
   try {
-    result = await api(threadDetailApiPath(id), {
+    result = await api(threadDetailApiPath(id, { enrich: "1" }), {
       timeoutMs: 20000,
       signal: controller.signal,
     });
