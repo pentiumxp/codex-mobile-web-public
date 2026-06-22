@@ -158,7 +158,10 @@ function evaluatedThreadStatusHintHarness() {
     "currentThreadAllowsLiveTurn",
     "currentLiveTurnSupportsThreadStatusHint",
     "isThreadListIdleStatus",
+    "threadLatestTerminalTurn",
     "threadHasTerminalLatestTurn",
+    "threadLatestTerminalTurnAtMs",
+    "threadUnreadTerminalAtMs",
     "shouldKeepRunningHintForSettledStatus",
     "shouldMarkThreadUnread",
     "runningThreadHintAgeMs",
@@ -2694,8 +2697,11 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(functionBody("shouldKeepRunningHintForSettledStatus"), /isThreadListIdleStatus\(nextStatus\)/);
   assert.match(functionBody("shouldKeepRunningHintForSettledStatus"), /!threadHasTerminalLatestTurn\(thread\)/);
   assert.match(functionBody("shouldKeepRunningHintForSettledStatus"), /hasFreshSubmittedProcessingThreadHint\(id\)/);
-  assert.match(functionBody("shouldMarkThreadUnread"), /const updateAt = threadStatusFreshnessAtMs\(thread, options\.eventAtMs\)/);
-  assert.match(functionBody("shouldMarkThreadUnread"), /if \(viewedAt > 0\) return updateAt > viewedAt/);
+  assert.match(functionBody("threadLatestTerminalTurnAtMs"), /threadStatusNotificationDurableEventAtMs\(\{ turn: latest \}\)/);
+  assert.match(functionBody("threadUnreadTerminalAtMs"), /options\.eventIsTerminal \? numericTimestampMs\(eventAtMs\) : 0/);
+  assert.match(functionBody("shouldMarkThreadUnread"), /const terminalAt = threadUnreadTerminalAtMs\(thread, options\.eventAtMs/);
+  assert.match(functionBody("shouldMarkThreadUnread"), /if \(viewedAt > 0\) return terminalAt > viewedAt/);
+  assert.match(functionBody("shouldMarkThreadUnread"), /options\.wasRunning \? threadStatusFreshnessAtMs\(thread, options\.eventAtMs\) : 0/);
   assert.match(functionBody("shouldMarkThreadUnread"), /options\.hintedAtMs \|\| state\.runningThreadHintedAtById\[id\]/);
   assert.match(functionBody("shouldMarkThreadUnread"), /if \(!options\.wasRunning \|\| hintedAt <= 0\) return false/);
   assert.match(functionBody("markThreadViewed"), /state\.threadViewedAtById\[id\] = viewedAt/);
@@ -2960,6 +2966,77 @@ test("fresh terminal status marks background running threads unread", () => {
   assert.equal(harness.state.runningThreadIds.has("thread-background"), false);
   assert.equal(harness.state.unreadThreadIds.has("thread-background"), true);
   assert.equal(harness.alertCount(), 1);
+});
+
+test("terminal status events mark viewed background threads unread", () => {
+  const harness = evaluatedThreadStatusHintHarness();
+  harness.state.threadViewedAtById["thread-terminal-event"] = 10_000;
+  harness.state.threads = [{
+    id: "thread-terminal-event",
+    status: { type: "idle" },
+    updatedAtMs: 10_000,
+  }];
+
+  harness.updateThreadStatusHints("thread-terminal-event", { type: "idle" }, { type: "completed" }, {
+    thread: { id: "thread-terminal-event", status: { type: "idle" }, updatedAtMs: 10_000 },
+    eventAtMs: 12_000,
+    notify: true,
+  });
+
+  assert.equal(harness.state.unreadThreadIds.has("thread-terminal-event"), true);
+  assert.equal(harness.alertCount(), 1);
+});
+
+test("rename-only settled list timestamps do not create unread after a thread was viewed", () => {
+  const harness = evaluatedThreadStatusHintHarness();
+  harness.state.threadViewedAtById["thread-renamed"] = 10_000;
+  harness.state.threads = [{
+    id: "thread-renamed",
+    name: "Renamed",
+    status: { type: "idle" },
+    updatedAtMs: 12_000,
+  }];
+
+  harness.reconcileThreadStatusHints(harness.state.threads);
+
+  assert.equal(harness.state.unreadThreadIds.has("thread-renamed"), false);
+});
+
+test("rename-only settled list timestamps do not convert stale running hints into unread after viewed", () => {
+  const harness = evaluatedThreadStatusHintHarness();
+  harness.state.threadViewedAtById["thread-renamed-running"] = 10_000;
+  harness.state.runningThreadIds.add("thread-renamed-running");
+  harness.state.runningThreadHintedAtById["thread-renamed-running"] = 8000;
+  harness.state.threads = [{
+    id: "thread-renamed-running",
+    name: "Renamed",
+    status: { type: "idle" },
+    updatedAtMs: 12_000,
+  }];
+
+  harness.reconcileThreadStatusHints(harness.state.threads);
+
+  assert.equal(harness.state.runningThreadIds.has("thread-renamed-running"), false);
+  assert.equal(harness.state.unreadThreadIds.has("thread-renamed-running"), false);
+});
+
+test("terminal latest turns still create unread after a thread was viewed", () => {
+  const harness = evaluatedThreadStatusHintHarness();
+  harness.state.threadViewedAtById["thread-terminal-turn"] = 10_000;
+  harness.state.threads = [{
+    id: "thread-terminal-turn",
+    status: { type: "idle" },
+    updatedAtMs: 12_000,
+    turns: [{
+      id: "turn-terminal",
+      status: { type: "completed" },
+      completedAt: 12_000,
+    }],
+  }];
+
+  harness.reconcileThreadStatusHints(harness.state.threads);
+
+  assert.equal(harness.state.unreadThreadIds.has("thread-terminal-turn"), true);
 });
 
 test("replayed old terminal status does not recreate unread after a thread was viewed", () => {

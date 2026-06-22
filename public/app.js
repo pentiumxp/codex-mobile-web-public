@@ -384,7 +384,7 @@ const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v370";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v371";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -1538,10 +1538,25 @@ function isThreadListIdleStatus(status) {
   return /^(idle|notloaded|not_loaded|not-loaded)$/.test(statusText(status).toLowerCase());
 }
 
-function threadHasTerminalLatestTurn(thread) {
+function threadLatestTerminalTurn(thread) {
   const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
   const latest = turns.length ? turns[turns.length - 1] : null;
-  return Boolean(latest && isCompletedStatus(latest.status));
+  return latest && isCompletedStatus(latest.status) ? latest : null;
+}
+
+function threadHasTerminalLatestTurn(thread) {
+  return Boolean(threadLatestTerminalTurn(thread));
+}
+
+function threadLatestTerminalTurnAtMs(thread) {
+  const latest = threadLatestTerminalTurn(thread);
+  if (!latest) return 0;
+  return threadStatusNotificationDurableEventAtMs({ turn: latest });
+}
+
+function threadUnreadTerminalAtMs(thread = null, eventAtMs = 0, options = {}) {
+  const eventAt = options.eventIsTerminal ? numericTimestampMs(eventAtMs) : 0;
+  return Math.max(threadLatestTerminalTurnAtMs(thread) || 0, eventAt || 0);
 }
 
 function shouldKeepRunningHintForSettledStatus(threadId, thread = null, status = null, options = {}) {
@@ -1567,10 +1582,13 @@ function shouldMarkThreadUnread(threadId, thread = null, status = null, options 
   const nextStatus = status || (thread && thread.status);
   if (isStaleActiveStatus(nextStatus) || (thread && thread.mobileStaleActiveTurn)) return false;
   if (!isThreadListSettledStatus(nextStatus)) return false;
-  const updateAt = threadStatusFreshnessAtMs(thread, options.eventAtMs);
+  const terminalAt = threadUnreadTerminalAtMs(thread, options.eventAtMs, {
+    eventIsTerminal: Boolean(options.eventIsTerminal),
+  });
   const viewedAt = threadViewedAtMs(id);
+  if (viewedAt > 0) return terminalAt > viewedAt;
+  const updateAt = terminalAt || (options.wasRunning ? threadStatusFreshnessAtMs(thread, options.eventAtMs) : 0);
   if (options.mobileReplay && !updateAt) return false;
-  if (viewedAt > 0) return updateAt > viewedAt;
   const hintedAt = Number(options.hintedAtMs || state.runningThreadHintedAtById[id] || 0);
   if (!options.wasRunning || hintedAt <= 0) return false;
   if (!updateAt) return !options.mobileReplay;
@@ -1607,6 +1625,7 @@ function updateThreadStatusHints(threadId, previousStatus, nextStatus, options =
   const wasRunning = state.runningThreadIds.has(id) || isRunningStatus(previousStatus);
   const isRunning = isRunningStatus(nextStatus);
   const staleActive = isStaleActiveStatus(nextStatus);
+  const eventIsTerminal = isThreadListSettledStatus(nextStatus);
   let changed = false;
   let shouldAlert = false;
   if (isRunning) {
@@ -1625,6 +1644,7 @@ function updateThreadStatusHints(threadId, previousStatus, nextStatus, options =
       && shouldMarkThreadUnread(id, nextThread, nextStatus, {
         wasRunning,
         eventAtMs: options.eventAtMs,
+        eventIsTerminal,
         hintedAtMs,
         mobileReplay: Boolean(options.mobileReplay),
       });
@@ -1638,6 +1658,7 @@ function updateThreadStatusHints(threadId, previousStatus, nextStatus, options =
     && shouldMarkThreadUnread(id, nextThread, nextStatus, {
       wasRunning,
       eventAtMs: options.eventAtMs,
+      eventIsTerminal,
       mobileReplay: Boolean(options.mobileReplay),
     })) {
     state.unreadThreadIds.add(id);
@@ -1673,6 +1694,7 @@ function reconcileThreadStatusHints(threads) {
     } else if (wasRunning && staleActive) {
       if (clearRunningThreadHint(id)) changed = true;
     } else if (wasRunning && isThreadListSettledStatus(thread.status)) {
+      const terminalAtMs = threadLatestTerminalTurnAtMs(thread);
       if (currentLiveTurnSupportsThreadStatusHint(id)) {
         if (noteRunningThreadHint(id, nowMs)) changed = true;
         continue;
@@ -1686,17 +1708,23 @@ function reconcileThreadStatusHints(threads) {
       if (!state.unreadThreadIds.has(id)
         && shouldMarkThreadUnread(id, thread, thread.status, {
           wasRunning,
-          eventAtMs: threadUpdatedAtMs(thread),
+          eventAtMs: terminalAtMs,
+          eventIsTerminal: Boolean(terminalAtMs),
           hintedAtMs,
         })) {
         state.unreadThreadIds.add(id);
         changed = true;
       }
-    } else if (!wasRunning
-      && !state.unreadThreadIds.has(id)
-      && shouldMarkThreadUnread(id, thread, thread.status, { wasRunning, eventAtMs: threadUpdatedAtMs(thread) })) {
-      state.unreadThreadIds.add(id);
-      changed = true;
+    } else if (!wasRunning && !state.unreadThreadIds.has(id)) {
+      const terminalAtMs = threadLatestTerminalTurnAtMs(thread);
+      if (shouldMarkThreadUnread(id, thread, thread.status, {
+        wasRunning,
+        eventAtMs: terminalAtMs,
+        eventIsTerminal: Boolean(terminalAtMs),
+      })) {
+        state.unreadThreadIds.add(id);
+        changed = true;
+      }
     } else if (shouldExpireRunningThreadHint(id, thread, nowMs)) {
       if (clearRunningThreadHint(id)) changed = true;
     }

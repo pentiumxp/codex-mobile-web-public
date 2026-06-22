@@ -1,5 +1,6 @@
 # Codex Mobile Web
 
+- 中文说明：v371 修正 rename/title-only 更新误触发 unread dot 的问题。Unread dot 现在优先使用真实终态 turn 时间或 terminal status event 时间；用户已经看过的 session 不会再因为改名、preview 或 projection 刷新导致的通用 `updatedAt` 变新而被重新标未读。PWA shell cache 升级到 `codex-mobile-shell-v371`。
 - 中文说明：v370 修复移动端线程状态残留问题。线程列表 reconcile 或详情 merge 一旦看到真实 running/active 状态，会清掉对应 unread hint 并持久化，避免已进入新一轮处理的 session 仍显示“已完成未读”；submitted-processing hint 也只作为发送后到 assistant 接管前的短桥接窗口，详情已显示最新 turn 终态或桥接窗口过期时会清掉 running spinner。PWA shell cache 升级到 `codex-mobile-shell-v370`。
 - 中文说明：v369 修正 Android 折叠屏/嵌入态线程详情右上角运行状态框计时被裁剪的问题。`turn-timer` 不再用固定宽度压缩内部内容，计时段 `本轮 00:00:00` 改为不可收缩并保留完整显示，活动状态文字（思考/命令/输入等）在剩余空间内省略，避免秒个位被遮挡。PWA shell cache 升级到 `codex-mobile-shell-v369`。
 - 中文说明：v368 修正 Android APK/WebView 下 Composer 首次点击偶发不弹系统输入法、第二次点击后键盘虽出现但文字不上屏的问题。Codex Composer 仍使用 `contenteditable`，但 Android 上不再在 `pointerup/click` 后程序化 blur/refocus 抢 IME；如果发现输入框已假聚焦但键盘未打开，会在下一次 `pointerdown` 用户手势开始时先释放旧焦点，再交给 WebView 原生 tap 建立 editor connection。同时收窄 disabled 状态下保留 `contenteditable=true` 的条件，避免留下可编辑但 `aria-disabled/tabIndex` 冲突的混合状态。PWA shell cache 升级到 `codex-mobile-shell-v368`。
