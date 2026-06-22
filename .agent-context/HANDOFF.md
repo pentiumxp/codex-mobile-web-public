@@ -895,3 +895,113 @@ The previous full handoff was archived and should be opened only when old proven
   - Future release order is now: local/private implementation and validation,
     deploy to Mac production, user/production test confirmation, then public
     push. Before that confirmation, at most create a local/private commit.
+
+### Local active-status overlay for turn-start regression
+
+- Status: implemented in private workspace, deployed to Mac production, smoke
+  verified, not pushed to public.
+- User report:
+  - After the prior local turn-start broadcast fix, Home AI became worse:
+    exiting to the thread list did not show the started/running marker, and
+    entering the thread then returning no longer refreshed the marker.
+- Production evidence before fix:
+  - Home AI thread id:
+    `019eed86-2002-7cc2-b0b7-937eb5355f36`.
+  - A user send created turn
+    `019eef85-b5b3-7741-81c0-ce061bc324af`.
+  - Rollout showed `task_started` at `2026-06-22T13:29:37.972Z` and
+    `task_complete` at `2026-06-22T13:29:57.183Z`.
+  - During that active window, `/api/threads/:id` and thread-list refreshes
+    could still log/return `status=idle` from `state-db+app-server`, so the
+    broadcast-only fix was being overwritten by later summary synthesis.
+- Root cause:
+  - `notifyLocalTurnStarted()` broadcast `thread/status/changed active` and
+    updated detail projection, but `/api/threads` and `/api/threads/:id`
+    had no server-side queryable active state to merge after state-db/app-server
+    summaries.
+  - A list/detail refresh could immediately recompute and cache an idle row,
+    erasing the browser's running marker.
+- Patch:
+  - `server.js`
+    - Added bounded in-memory `localActiveThreadStatuses`.
+    - `notifyLocalTurnStarted()` records an active overlay after local
+      `turn/start` success.
+    - Raw `turn/started` notifications also record the overlay; raw
+      `turn/completed` clears it.
+    - List/detail summary synthesis applies the overlay after stale-active
+      normalization through `normalizeThreadSummaryLiveStatus()` and
+      `applyLocalActiveThreadStatusToSummary()`.
+    - The overlay clears when a later rollout-tail terminal event such as
+      `task_complete` is seen, or when its TTL expires.
+  - Tests:
+    - `test/thread-visibility.test.js`
+      - Added behavior coverage that local active overlay keeps rows active
+        over immediate app-server idle summaries.
+      - Added behavior coverage that a later rollout terminal event clears the
+        overlay.
+    - `test/thread-task-card-route.test.js`
+      - Added structural coverage for active overlay wiring.
+  - Docs:
+    - `README.md`
+    - `docs/ARCHITECTURE.md`
+    - `docs/TROUBLESHOOTING.md`
+- Validation:
+  - Private workspace:
+    - Focused 155-test suite passed:
+      `test/thread-visibility.test.js`,
+      `test/thread-task-card-route.test.js`,
+      `test/thread-task-card-service.test.js`, `test/new-thread-route.test.js`,
+      `test/conversation-render.test.js`, and
+      `test/mobile-viewport.test.js`.
+    - `npm run check`
+    - `npm run check:macos`
+    - `npm test` passed (`605` tests).
+    - `git diff --check`
+    - `codegraph status` was up to date; it warned the index was built by an
+      earlier engine version.
+  - Staging:
+    - Source staged from the private working tree, not the public mirror:
+      `/tmp/codex-mobile-web-stage-local-active.mgSn4Q`.
+    - Blocked-path scan was clean for `.agent-context`, runtime data/logs,
+      uploads, env files, access-key, private-key, and secret path patterns.
+    - `npm run check`
+    - `npm run check:macos`
+    - Focused 155-test suite passed with `NODE_PATH` pointed at the local
+      workspace `node_modules`; the clean staging source intentionally omits
+      `node_modules`, while production preserves the target dependency tree.
+  - Production target after sync:
+    - `npm run check`
+    - `npm run check:macos`
+    - Same focused 155-test suite passed.
+- Production deploy:
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup retained at:
+    `/tmp/codex-mobile-web-deploy-local-active-20260622T134437Z.backup.tar.gz`.
+  - Sync used sudo `rsync` from private staging and preserved `data/`, `logs/`,
+    `node_modules/`, `uploads/`, `.git/`, `.agent-context/`, and `AGENTS.md`;
+    target ownership was restored to `hermes-host:staff`.
+  - Restart:
+    `launchctl kickstart -k system/com.hermesmobile.plugin.codex-mobile`.
+  - Post-restart smoke:
+    - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` is running
+      with PID `87711`, `runs=13`, and last exit code `0`.
+    - `/api/public-config` returned HTTP `200`,
+      `clientBuildId=0.1.11|codex-mobile-shell-v375`,
+      `shellCacheName=codex-mobile-shell-v375`, and `authRequired=true`.
+    - Authenticated `/api/status` returned HTTP `200`, `ready=true`,
+      `lastError=null`, `transport=external-jsonl-tcp`,
+      `codexProfileActiveId=default`, and `codexHomeSource=profile-store`.
+    - Production `server.js` contains the active overlay map, remember/apply
+      helpers, notification update hook, list/detail overlay hooks, and
+      rollout-terminal clearing logic.
+    - A later user Home AI send created turn
+      `019eef94-4e55-7e11-877e-e8eb1f1c2288`; production logs showed
+      `summary_ready status=active` during the active window after local
+      `turn/start`. The rollout then showed `task_complete` at
+      `2026-06-22T13:45:44.957Z`, after which `/api/threads` and
+      `/api/threads/:id` correctly returned `idle` with no
+      `mobileLocalActiveStatus`.
+- Operational notes:
+  - This is server-only; no PWA cache bump.
+  - This has not been pushed to public. Follow the release-order rule: wait for
+    production/user confirmation before any public sync/push.

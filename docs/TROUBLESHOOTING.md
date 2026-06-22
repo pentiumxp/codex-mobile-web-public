@@ -316,12 +316,16 @@ the row only says `notLoaded`, and current-thread `turn/started` /
 background work started by normal sends, source-direct or automatic task cards,
 auto-recover, side-chat apply, continuation handoff/bootstrap, or ChatGPT Pro
 bridge starts, the server must broadcast `thread/status/changed active`
-immediately after its local `turn/start` call succeeds; it should not wait for a
-later raw app-server `turn/started` notification. The server also derives the
-same lightweight event from raw `turn/started` / `turn/completed` notifications
-and clears the thread-list fallback cache. If both the local-start summary and
-the derived event are missing, the running spinner may appear only after a later
-full list refresh. Those hints also carry
+immediately after its local `turn/start` call succeeds and record the bounded
+server-side active overlay used by `/api/threads` and `/api/threads/:id`.
+Otherwise an immediate state-db/app-server summary refresh can report `idle` and
+erase the running marker even though the turn already started. The overlay
+clears when `turn/completed` arrives, when the rollout tail has a later
+terminal event such as `task_complete`, or when its TTL expires. The server also
+derives the same lightweight event from raw `turn/started` / `turn/completed`
+notifications and clears the thread-list fallback cache. If both the local
+overlay and the derived event are missing, the running spinner may appear only
+after a later full list refresh. Those hints also carry
 `codexMobileRunningThreadHintedAtById` timestamps; if a row stays
 `notLoaded` without a terminal status and the current thread has no active turn,
 the hint expires after the stale window so completed work does not keep a

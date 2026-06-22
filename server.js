@@ -916,6 +916,7 @@ const MAX_ROLLOUT_ENRICHMENT_CONTEXT_BYTES = Math.max(
 );
 const ROLLOUT_WARNING_BYTES = Math.max(1 * 1024 * 1024, Number(process.env.CODEX_MOBILE_ROLLOUT_WARNING_BYTES || String(200 * 1024 * 1024)));
 const ROLLOUT_ACTIVE_STATUS_WINDOW_MS = Math.max(60_000, Number(process.env.CODEX_MOBILE_ROLLOUT_ACTIVE_STATUS_WINDOW_MS || String(30 * 60 * 1000)));
+const LOCAL_ACTIVE_THREAD_STATUS_TTL_MS = Math.max(60_000, Number(process.env.CODEX_MOBILE_LOCAL_ACTIVE_THREAD_STATUS_TTL_MS || String(30 * 60 * 1000)));
 const STALE_CONTEXT_ONLY_ACTIVE_TURN_MS = Math.max(30_000, Number(process.env.CODEX_MOBILE_CONTEXT_ONLY_ACTIVE_STALE_MS || "90000"));
 const MAX_CONTINUATION_BOOTSTRAP_CHARS = Math.max(4_000, Number(process.env.CODEX_MOBILE_CONTINUATION_BOOTSTRAP_CHARS || "12000"));
 const CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS = Math.max(2_000, Number(process.env.CODEX_MOBILE_CONTINUATION_SOURCE_HANDOFF_EXCERPT_CHARS || "12000"));
@@ -1061,6 +1062,7 @@ const rolloutEnrichmentIndexService = createRolloutEnrichmentIndexService({
 });
 const latestThreadIdByTurnId = new Map();
 const recentStartedThreads = new Map();
+const localActiveThreadStatuses = new Map();
 const threadDisplaySummaryCache = createThreadDisplaySummaryCache({
   ttlMs: THREAD_DISPLAY_SUMMARY_CACHE_TTL_MS,
   maxEntries: THREAD_DISPLAY_SUMMARY_CACHE_MAX,
@@ -2983,8 +2985,8 @@ function mergeThreadSummaryList(threads) {
     if (!thread || !thread.id) continue;
     const id = String(thread.id);
     if (archivedIds.has(id)) continue;
-    const displayThread = normalizeStaleContextOnlyActiveThread(mergeThreadWithCachedDisplaySummary(thread));
-    const merged = normalizeStaleContextOnlyActiveThread(byId.has(id) ? mergeThreadDisplaySummary(byId.get(id), displayThread) : displayThread);
+    const displayThread = normalizeThreadSummaryLiveStatus(mergeThreadWithCachedDisplaySummary(thread));
+    const merged = normalizeThreadSummaryLiveStatus(byId.has(id) ? mergeThreadDisplaySummary(byId.get(id), displayThread) : displayThread);
     if (threadHasArchiveSignal(merged) || isSubagentThreadSummary(merged)) {
       byId.delete(id);
       continue;
@@ -3011,8 +3013,8 @@ function mergeThreadListFallback(result, fallbackThreads = [], limit = 80) {
 function normalizeThreadListResultStatuses(result) {
   if (!result || typeof result !== "object") return result;
   const out = Object.assign({}, result);
-  if (Array.isArray(out.data)) out.data = out.data.map((thread) => normalizeStaleContextOnlyActiveThread(thread));
-  if (Array.isArray(out.threads)) out.threads = out.threads.map((thread) => normalizeStaleContextOnlyActiveThread(thread));
+  if (Array.isArray(out.data)) out.data = out.data.map((thread) => normalizeThreadSummaryLiveStatus(thread));
+  if (Array.isArray(out.threads)) out.threads = out.threads.map((thread) => normalizeThreadSummaryLiveStatus(thread));
   return out;
 }
 
@@ -4516,7 +4518,7 @@ function prepareProjectedThreadReadResult(cached, summary, runtimeSettings) {
   if (!result.thread) return null;
   result.thread = applySessionIndexTitleToThread(result.thread, readSessionIndexEntries().get(result.thread.id));
   result.thread = mergeThreadRuntimeFromStateDb(result.thread, summary);
-  result.thread = normalizeStaleContextOnlyActiveThread(result.thread);
+  result.thread = normalizeThreadSummaryLiveStatus(result.thread);
   result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
   const projectionVersion = String(cached.version || result.thread.mobileProjectionVersion || "");
   const v4 = projectionVersion === "v4";
@@ -7531,6 +7533,7 @@ function serveStatic(req, res) {
 
 function broadcast(payload) {
   if (payload && payload.type === "notification") {
+    updateLocalActiveThreadStatusFromNotification(payload);
     const statusPayload = threadStatusChangedPayloadFromTurnNotification(payload);
     if (statusPayload) {
       clearThreadListFallbackCache();
@@ -7592,6 +7595,7 @@ function notifyLocalTurnStarted(threadId, result, meta = {}) {
   const id = String(threadId || "").trim();
   const turnId = turnStartResultTurnId(result);
   if (!id) return turnId;
+  rememberLocalActiveThreadStatus(id, turnId, { source: String(meta.source || "local-turn-start") });
   if (turnId && threadDetailProjectionService) {
     threadDetailProjectionService.applyNotification("turn/started", {
       threadId: id,
@@ -7620,6 +7624,21 @@ function threadStatusChangedPayloadFromTurnNotification(payload) {
     source: method,
     turnId,
   });
+}
+
+function updateLocalActiveThreadStatusFromNotification(payload) {
+  if (!payload || payload.type !== "notification" || !payload.params) return;
+  const method = String(payload.method || "");
+  if (method !== "turn/started" && method !== "turn/completed") return;
+  const threadId = notificationThreadId(payload);
+  if (!threadId) return;
+  const turn = payload.params.turn && typeof payload.params.turn === "object" ? payload.params.turn : {};
+  const turnId = String(turn.id || payload.params.turnId || "");
+  if (method === "turn/started") {
+    rememberLocalActiveThreadStatus(threadId, turnId, { source: method });
+  } else {
+    clearLocalActiveThreadStatus(threadId);
+  }
 }
 
 function shouldSendEventToClient(payload, client = {}) {
@@ -10492,6 +10511,115 @@ function readStartedThread(threadId) {
   return entry && entry.thread ? annotateThreadRolloutStats(entry.thread) : null;
 }
 
+function pruneLocalActiveThreadStatuses(now = Date.now()) {
+  for (const [threadId, entry] of localActiveThreadStatuses) {
+    if (!entry || Number(entry.expiresAtMs || 0) <= now) localActiveThreadStatuses.delete(threadId);
+  }
+}
+
+function rolloutHasTerminalEntryAtOrAfter(rolloutPath, timestampMs = 0) {
+  if (!rolloutPath) return false;
+  const tail = readRolloutTail(rolloutPath);
+  if (!tail) return false;
+  const thresholdMs = Math.max(0, Number(timestampMs || 0) - 1000);
+  for (const line of tail.split(/\r?\n/)) {
+    if (!line || !line.trim()) continue;
+    const entry = parseJsonLine(line);
+    if (!isRolloutTerminalEntry(entry)) continue;
+    const entryTimestampMs = timestampToMs(entry.timestamp || (entry.payload && entry.payload.timestamp));
+    if (entryTimestampMs && entryTimestampMs >= thresholdMs) return true;
+  }
+  return false;
+}
+
+function localActiveSummaryRolloutPath(threadId, summary = null) {
+  const direct = rolloutPathForThread(summary);
+  if (direct) return direct;
+  const stateThread = threadId ? readStateDbThread(threadId) : null;
+  const statePath = rolloutPathForThread(stateThread);
+  if (statePath) return statePath;
+  const startedThread = threadId ? readStartedThread(threadId) : null;
+  return rolloutPathForThread(startedThread);
+}
+
+function readLocalActiveThreadStatus(threadId, summary = null, nowMs = Date.now()) {
+  const id = String(threadId || "").trim();
+  if (!id) return null;
+  pruneLocalActiveThreadStatuses(nowMs);
+  const entry = localActiveThreadStatuses.get(id);
+  if (!entry) return null;
+  if (Number(entry.expiresAtMs || 0) <= nowMs) {
+    localActiveThreadStatuses.delete(id);
+    clearThreadListFallbackCache();
+    return null;
+  }
+  if (rolloutHasTerminalEntryAtOrAfter(localActiveSummaryRolloutPath(id, summary), entry.startedAtMs)) {
+    localActiveThreadStatuses.delete(id);
+    clearThreadListFallbackCache();
+    return null;
+  }
+  return entry;
+}
+
+function rememberLocalActiveThreadStatus(threadId, turnId = "", meta = {}) {
+  const id = String(threadId || "").trim();
+  if (!id) return null;
+  const nowMs = Date.now();
+  const entry = {
+    threadId: id,
+    turnId: String(turnId || "").trim(),
+    source: String(meta.source || "local-turn-start"),
+    startedAtMs: nowMs,
+    expiresAtMs: nowMs + LOCAL_ACTIVE_THREAD_STATUS_TTL_MS,
+  };
+  localActiveThreadStatuses.set(id, entry);
+  clearThreadListFallbackCache();
+  return entry;
+}
+
+function clearLocalActiveThreadStatus(threadId) {
+  const id = String(threadId || "").trim();
+  if (!id) return false;
+  const deleted = localActiveThreadStatuses.delete(id);
+  if (deleted) clearThreadListFallbackCache();
+  return deleted;
+}
+
+function applyLocalActiveThreadStatusToSummary(thread, options = {}) {
+  if (!thread || typeof thread !== "object") return thread;
+  const threadId = String(thread.id || options.threadId || "").trim();
+  if (!threadId) return thread;
+  const entry = readLocalActiveThreadStatus(threadId, thread, options.nowMs || Date.now());
+  if (!entry) return thread;
+  const startedAtSeconds = Math.floor(Number(entry.startedAtMs || Date.now()) / 1000);
+  const updatedAt = Math.max(Number(thread.updatedAt || thread.updated_at || 0), startedAtSeconds);
+  const out = Object.assign({}, thread, {
+    id: threadId,
+    updatedAt,
+    status: { type: "active" },
+    activeTurnId: entry.turnId || thread.activeTurnId || "",
+    mobileLocalActiveStatus: {
+      turnId: entry.turnId || "",
+      source: entry.source || "",
+      startedAtMs: entry.startedAtMs || 0,
+      expiresAtMs: entry.expiresAtMs || 0,
+    },
+  });
+  if (thread.updated_at && !thread.updatedAt) out.updated_at = updatedAt;
+  return out;
+}
+
+function applyLocalActiveThreadStatusToResult(result, options = {}) {
+  if (!result || typeof result !== "object" || !result.thread) return result;
+  const thread = applyLocalActiveThreadStatusToSummary(result.thread, options);
+  if (thread === result.thread) return result;
+  return Object.assign({}, result, { thread });
+}
+
+function normalizeThreadSummaryLiveStatus(thread, options = {}) {
+  return applyLocalActiveThreadStatusToSummary(normalizeStaleContextOnlyActiveThread(thread), options);
+}
+
 function readStateDbThread(threadId) {
   if (!fs.existsSync(STATE_DB) || !threadId) return null;
   const query = [
@@ -10650,7 +10778,7 @@ function threadFromTurnsList(threadId, summary, turnsResult) {
   const turns = sortTurnsChronologically(enriched.turns).slice(-MAX_THREAD_TURNS);
   const latest = turns[turns.length - 1];
   const status = latest && isLiveTurn(latest) ? { type: "active" } : (summary && summary.status) || { type: "notLoaded" };
-  return normalizeStaleContextOnlyActiveThread(annotateThreadRolloutStats(Object.assign({
+  return normalizeThreadSummaryLiveStatus(annotateThreadRolloutStats(Object.assign({
     id: threadId,
     name: null,
     preview: threadId,
@@ -11398,7 +11526,14 @@ async function prepareThreadTaskCardsToResult(result) {
 }
 
 async function prepareThreadDetailResponseResult(result, details = {}) {
-  return finalizeThreadDetailProjectionResult(await prepareThreadTaskCardsToResult(result), details);
+  const prepared = applyLocalActiveThreadStatusToResult(
+    await prepareThreadTaskCardsToResult(applyLocalActiveThreadStatusToResult(result, details)),
+    details,
+  );
+  return applyLocalActiveThreadStatusToResult(
+    finalizeThreadDetailProjectionResult(prepared, details),
+    details,
+  );
 }
 
 async function turnsListThreadReadResult(threadId, summary, runtimeSettings, warning, mode = "turns-list", threadLog = null) {
@@ -13238,7 +13373,7 @@ async function handleApi(req, res) {
       });
       if (fallback.length) {
         const decorateStartedAtMs = Date.now();
-        const normalizedFallback = fallback.map((thread) => normalizeStaleContextOnlyActiveThread(attachThreadTaskCardCountsToSummary(thread)));
+        const normalizedFallback = fallback.map((thread) => normalizeThreadSummaryLiveStatus(attachThreadTaskCardCountsToSummary(thread)));
         const decorated = tokenUsageStatsService.decorateThreadListResult({
           data: attachThreadGoalsToThreadListResult({
             data: normalizedFallback,
@@ -13385,6 +13520,7 @@ async function handleApi(req, res) {
         });
       }
     }
+    summary = applyLocalActiveThreadStatusToSummary(summary, { threadId });
     threadLog("summary_ready", {
       source: summarySource,
       title: summary && (summary.name || summary.preview || ""),
@@ -13433,7 +13569,9 @@ async function handleApi(req, res) {
           durationMs: Date.now() - readStartedAtMs,
           returnedTurns: result && result.thread && Array.isArray(result.thread.turns) ? result.thread.turns.length : null,
         });
-        sendJson(res, 200, await prepareThreadTaskCardsToResult(result));
+        sendJson(res, 200, await prepareThreadTaskCardsToResult(
+          applyLocalActiveThreadStatusToResult(result, { threadId, source: "thread-read-raw" }),
+        ));
         threadLog("complete", { status: 200, mode: "thread-read-raw" });
       } catch (err) {
         threadLog("thread_read_raw_error", {
@@ -13926,6 +14064,8 @@ if (require.main === module) {
 module.exports = {
   approvalResponsePayload,
   anyThreadMatchesVisibleWorkspace,
+  applyLocalActiveThreadStatusToSummary,
+  clearLocalActiveThreadStatus,
   compactThread,
   enrichThreadItemTimestampsFromRollout,
   filterFallbackThreads,
@@ -13949,6 +14089,7 @@ module.exports = {
   readFilePreview,
   readRolloutItemTimestampCandidates,
   readRolloutSessionFallbackThreadFromFile,
+  rememberLocalActiveThreadStatus,
   resolveThreadTaskCardTargetReference,
   resolvedThreadTaskCardTargetIds,
   resolveFilePreviewPath,

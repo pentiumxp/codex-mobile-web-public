@@ -10,6 +10,8 @@ const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "ut
 
 const {
   anyThreadMatchesVisibleWorkspace,
+  applyLocalActiveThreadStatusToSummary,
+  clearLocalActiveThreadStatus,
   filterFallbackThreads,
   hydrateThreadListResultTitlesFromSessionIndex,
   hydrateThreadListTitlesFromSessionIndex,
@@ -18,6 +20,7 @@ const {
   normalizeStaleContextOnlyActiveThread,
   parseThreadTurnsCursor,
   readRolloutSessionFallbackThreadFromFile,
+  rememberLocalActiveThreadStatus,
   sortTurnsChronologically,
   threadMatchesWorkspaceCwd,
 } = require("../server");
@@ -665,7 +668,7 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /logThreadList\("complete"/);
   assert.match(routeBody, /const fallback = readThreadListFallback\(limit, \{ cwd, searchTerm, globalState, diagnostics: fallbackDiagnostics \}\);/);
   assert.match(routeBody, /normalizeThreadListResultStatuses\(mergeThreadListFallback\(appServerResult, fallback, limit\)\)/);
-  assert.match(routeBody, /normalizeStaleContextOnlyActiveThread\(attachThreadTaskCardCountsToSummary\(thread\)\)/);
+  assert.match(routeBody, /normalizeThreadSummaryLiveStatus\(attachThreadTaskCardCountsToSummary\(thread\)\)/);
 });
 
 test("thread list merge keeps app-server idle over stale rollout active", () => {
@@ -686,6 +689,58 @@ test("thread list merge keeps app-server idle over stale rollout active", () => 
   }], 10);
 
   assert.equal(result.data[0].status.type, "idle");
+});
+
+test("local turn-start overlay keeps summaries active over immediate idle rows", () => {
+  const threadId = "019e9000-0000-7000-8000-localactive1";
+  rememberLocalActiveThreadStatus(threadId, "turn-local-active", { source: "test" });
+  try {
+    const result = mergeThreadListFallback({
+      data: [{
+        id: threadId,
+        name: "Home AI",
+        updatedAt: 1780722169,
+        status: { type: "idle" },
+      }],
+    }, [], 10);
+
+    assert.equal(result.data[0].status.type, "active");
+    assert.equal(result.data[0].activeTurnId, "turn-local-active");
+    assert.equal(result.data[0].mobileLocalActiveStatus.source, "test");
+  } finally {
+    clearLocalActiveThreadStatus(threadId);
+  }
+});
+
+test("local turn-start overlay clears when rollout tail has a later terminal event", () => {
+  const threadId = "019e9000-0000-7000-8000-localactive2";
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-local-active-"));
+  const rolloutPath = path.join(tempDir, `rollout-2099-01-01T00-00-00-${threadId}.jsonl`);
+  rememberLocalActiveThreadStatus(threadId, "turn-local-active", { source: "test" });
+  try {
+    fs.writeFileSync(rolloutPath, JSON.stringify({
+      type: "event_msg",
+      timestamp: new Date(Date.now() + 1000).toISOString(),
+      payload: {
+        type: "task_complete",
+        turn_id: "turn-local-active",
+      },
+    }), "utf8");
+
+    const summary = applyLocalActiveThreadStatusToSummary({
+      id: threadId,
+      name: "Home AI",
+      path: rolloutPath,
+      updatedAt: 1780722169,
+      status: { type: "idle" },
+    });
+
+    assert.equal(summary.status.type, "idle");
+    assert.equal(summary.activeTurnId, undefined);
+  } finally {
+    clearLocalActiveThreadStatus(threadId);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 });
 
 test("thread list merge does not let notLoaded rows erase settled status", () => {

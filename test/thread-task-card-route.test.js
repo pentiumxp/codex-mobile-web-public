@@ -210,9 +210,17 @@ test("server broadcasts lightweight thread status for background turn notificati
 test("server broadcasts active status immediately for local turn starts", () => {
   const helperBody = functionBody(serverJs, "notifyLocalTurnStarted");
   assert.match(helperBody, /const turnId = turnStartResultTurnId\(result\)/);
+  assert.match(helperBody, /rememberLocalActiveThreadStatus\(id, turnId/);
   assert.match(helperBody, /threadDetailProjectionService\.applyNotification\("turn\/started"/);
   assert.match(helperBody, /broadcastThreadStatusChanged\(id, \{ type: "active" \}/);
   assert.match(helperBody, /source: String\(meta\.source \|\| "local-turn-start"\)/);
+
+  assert.match(serverJs, /const localActiveThreadStatuses = new Map\(\);/);
+  assert.match(serverJs, /function applyLocalActiveThreadStatusToSummary\(/);
+  assert.match(serverJs, /function updateLocalActiveThreadStatusFromNotification\(/);
+  assert.match(functionBody(serverJs, "broadcast"), /updateLocalActiveThreadStatusFromNotification\(payload\)/);
+  assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /applyLocalActiveThreadStatusToResult/);
+  assert.match(functionBody(serverJs, "normalizeThreadListResultStatuses"), /normalizeThreadSummaryLiveStatus/);
 
   assert.match(serverJs, /notifyLocalTurnStarted\(card\.target\.threadId, result, \{[\s\S]*source: "thread-task-card-approval"/);
   assert.match(serverJs, /notifyLocalTurnStarted\(threadId, turnResult, \{ source: "message-submit" \}\)/);
@@ -245,7 +253,7 @@ test("server materializes structured task-card drafts from thread detail", () =>
   assert.match(functionBody(serverJs, "prepareThreadTaskCardsToResult"), /attachThreadTaskCardsToResult\(result\)/);
   assert.match(functionBody(serverJs, "prepareThreadTaskCardsToResult"), /attachPendingServerRequestsToResult/);
   assert.doesNotMatch(functionBody(serverJs, "prepareThreadTaskCardsToResult"), /prepareThreadTaskCardsToResult\(result\)/);
-  assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /await prepareThreadTaskCardsToResult\(result\)/);
+  assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /await prepareThreadTaskCardsToResult\(applyLocalActiveThreadStatusToResult\(result, details\)\)/);
   assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /finalizeThreadDetailProjectionResult/);
   assert.match(functionBody(serverJs, "turnsListThreadReadResult"), /return prepareThreadDetailResponseResult\(result/);
   assert.match(serverJs, /maybeMaterializeThreadTaskCardDrafts\(msg\.method, msg\.params \|\| null\)/);
