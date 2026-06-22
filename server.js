@@ -249,6 +249,9 @@ const WORKSPACE_DELEGATION_WRITE_GUARD_DISABLED = /^(0|false|no|off)$/i.test(
 ) || /^(1|true|yes|on)$/i.test(
   process.env.CODEX_MOBILE_WORKSPACE_DELEGATION_DISABLE_WRITE_GUARD || "",
 );
+const WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD = /^(1|true|yes|on)$/i.test(
+  process.env.CODEX_MOBILE_WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD || "",
+);
 const WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS = process.env.CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS || "";
 const WORKSPACE_DELEGATION_GUARD_SELF_EXEMPTION_DISABLED = /^(1|true|yes|on)$/i.test(
   process.env.CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_DISABLE_SELF_EXEMPTION || "",
@@ -4786,6 +4789,21 @@ function runtimeCwdForParams(params) {
   return String(thread && thread.cwd || "").trim();
 }
 
+function applyWorkspaceDelegationFullAccessCompatRuntime(params, options = {}) {
+  if (!params || typeof params !== "object") return params;
+  params.approvalPolicy = "never";
+  if (options.useSandboxPolicy) {
+    params.sandboxPolicy = { type: "dangerFullAccess" };
+    delete params.permissionProfile;
+    delete params.sandbox;
+  } else {
+    params.sandbox = "danger-full-access";
+    delete params.permissionProfile;
+    delete params.sandboxPolicy;
+  }
+  return params;
+}
+
 function applyWorkspaceDelegationRuntimeGuard(params, settings, options = {}) {
   if (!params || typeof params !== "object") return params;
   if (!workspaceDelegationPublicSettings().enabled) return params;
@@ -4794,7 +4812,9 @@ function applyWorkspaceDelegationRuntimeGuard(params, settings, options = {}) {
   if (!cwd) return params;
   params.cwd = cwd;
   if (workspaceDelegationGuardExemptCwd(cwd)) return params;
-  const policy = workspaceDelegationWriteGuardSandboxPolicy(cwd, settings && settings.sandboxPolicy);
+  if (!WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD) {
+    return applyWorkspaceDelegationFullAccessCompatRuntime(params, options);
+  }
   params.approvalPolicy = "never";
   if (options.useSandboxPolicy) {
     params.permissionProfile = workspaceDelegationWriteGuardPermissionProfile(cwd, settings && settings.sandboxPolicy);

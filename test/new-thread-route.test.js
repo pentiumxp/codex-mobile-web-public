@@ -168,13 +168,21 @@ test("server runtime inheritance includes model and reasoning effort", () => {
   assert.match(guardBody, /runtimeCwdForParams\(params\)/, "write guard should resolve cwd from params or thread id");
   assert.match(guardBody, /workspaceDelegationGuardExemptCwd\(cwd\)/, "write guard should preserve trusted maintenance/deploy permissions");
   assert.ok(
-    guardBody.indexOf("workspaceDelegationGuardExemptCwd(cwd)") < guardBody.indexOf('params.approvalPolicy = "never";'),
-    "maintenance/deploy exemptions must run before permission narrowing",
+    guardBody.indexOf("workspaceDelegationGuardExemptCwd(cwd)") < guardBody.indexOf("applyWorkspaceDelegationFullAccessCompatRuntime(params, options)"),
+    "maintenance/deploy exemptions must run before runtime compatibility overrides",
   );
   assert.match(guardBody, /params\.approvalPolicy = "never"/, "write guard should prevent approval bypass for cross-workspace writes");
-  assert.match(guardBody, /workspaceDelegationWriteGuardPermissionProfile\(cwd, settings && settings\.sandboxPolicy\)/, "write guard should use a bounded managed permission profile");
-  assert.match(guardBody, /delete params\.sandboxPolicy/, "turn/start should not let workspace-write sandbox policy re-add read-only .git rules");
-  assert.match(guardBody, /params\.sandbox = "workspace-write"/, "thread/start and thread/resume should receive workspace-write sandbox mode");
+  assert.match(guardBody, /WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD/, "hard sandbox narrowing should require an explicit opt-in");
+  assert.match(guardBody, /applyWorkspaceDelegationFullAccessCompatRuntime\(params, options\)/, "default guard should heal app-server workspace-write inheritance that makes .git read-only");
+  assert.match(guardBody, /workspaceDelegationWriteGuardPermissionProfile\(cwd, settings && settings\.sandboxPolicy\)/, "opt-in hard guard should still use a bounded managed permission profile");
+  assert.match(guardBody, /delete params\.sandboxPolicy/, "guard should be able to clear stale workspace-write sandbox policy");
+  assert.match(guardBody, /params\.sandbox = "workspace-write"/, "explicit hard guard should still support workspace-write sandbox mode");
+
+  const compatBody = functionBody(serverJs, "applyWorkspaceDelegationFullAccessCompatRuntime");
+  assert.match(compatBody, /params\.approvalPolicy = "never"/, "compat runtime should avoid approval prompts while restoring full workspace function");
+  assert.match(compatBody, /params\.sandboxPolicy = \{ type: "dangerFullAccess" \}/, "turn/start compatibility should override inherited workspace-write sandbox policy");
+  assert.match(compatBody, /params\.sandbox = "danger-full-access"/, "thread/start and thread/resume compatibility should restore full access sandbox mode");
+  assert.match(compatBody, /delete params\.permissionProfile/, "compat runtime should clear stale managed profiles that made .git read-only");
 
   const guardProfileBody = functionBody(serverJs, "workspaceDelegationWriteGuardPermissionProfile");
   assert.match(guardProfileBody, /kind: "root"[\s\S]*access: "read"/, "guard profile should keep root read-only");
@@ -188,6 +196,7 @@ test("server runtime inheritance includes model and reasoning effort", () => {
 
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_WRITE_GUARD/, "server should expose an emergency write-guard disable env");
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_DISABLE_WRITE_GUARD/, "server should expose a positive emergency write-guard disable env");
+  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD/, "server should expose an explicit hard-sandbox opt-in env");
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS/, "server should expose explicit cwd allowlist env");
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_DISABLE_SELF_EXEMPTION/, "self-maintenance exemption should be explicitly disableable");
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_DISABLE_PLATFORM_EXEMPTION/, "platform-control exemption should be explicitly disableable");
