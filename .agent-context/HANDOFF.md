@@ -510,3 +510,87 @@ The previous full handoff was archived and should be opened only when old proven
     current visible `星盘 06-22` thread did not receive those Home AI cards.
   - New dynamic delegation calls should no longer report invalid solely because
     of the response schema.
+
+### Strict task-card target resolver
+
+- Status: public-synced, merged back into private main, deployed to Mac
+  production, and smoke verified.
+- Problem addressed:
+  - Source-thread direct task-card creation accepted stale target thread ids
+    from older rollout state or fallback scripts.
+  - If a source model had an old visible-hints snapshot, it could send cards to
+    an old hidden/not-current thread for the same cwd.
+- Patch:
+  - `server.js`
+    - Source-thread task-card target resolution now uses the current visible
+      non-archived, non-subagent thread list.
+    - For a cwd with multiple visible/history candidates, only the latest
+      visible canonical thread for that cwd is accepted.
+    - Exact ids from stale state, old rollout fallback, hidden threads, archived
+      threads, or non-detail-readable threads are rejected instead of falling
+      through as raw target ids.
+    - Rejections return structured codes:
+      `stale_target_thread` (`409`) or `target_thread_not_visible` (`404`),
+      with bounded `details.currentTarget` when available.
+    - Dynamic tool hints now list only canonical visible targets per cwd.
+    - Dynamic-tool and fallback-script error paths preserve `code` and
+      `details`, so fallback callers can switch to the current target instead
+      of blindly retrying the stale id.
+  - `scripts/create-thread-task-card.js`
+    - Usage now documents that target ids/titles must be current visible
+      targets.
+  - Tests:
+    - `test/protocol.test.js`
+    - `test/thread-task-card-route.test.js`
+  - Docs:
+    - `README.md`
+    - `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md`
+    - `docs/TROUBLESHOOTING.md`
+- Validation:
+  - Private workspace:
+    - `npm run check`
+    - `node --test test/protocol.test.js test/thread-task-card-route.test.js test/thread-task-card-service.test.js test/new-thread-route.test.js test/codex-mobile-mcp-server.test.js`
+    - `git diff --check`
+  - Public mirror:
+    - `npm run check`
+    - Same 61-test focused suite passed.
+    - `npm test` passed (`602` tests).
+    - `git diff --check`
+    - New-change scan confirmed the regression test uses synthetic paths and
+      synthetic UUID-like thread ids, not the incident's real local ids/paths.
+- Public/private sync:
+  - Public commit:
+    `19963af fix: reject stale task card targets`.
+  - Private main merged `public/main` with:
+    `53c003c Merge remote-tracking branch 'public/main'`.
+  - Public and private main were pushed.
+  - Excluding `.agent-context`, `public/main..main` has no source diff.
+- Production deploy:
+  - Source archive: public mirror commit `19963af`.
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup retained at:
+    `/tmp/codex-mobile-web-deploy-19963af-20260622_190326.backup.tar.gz`.
+  - Staging checks passed:
+    `npm run check`, `npm run check:macos`, and blocked-path scan.
+  - Target checks passed after sync:
+    `npm run check`, `npm run check:macos`, and the same 61-test focused
+    suite.
+  - Restart:
+    `launchctl kickstart -k system/com.hermesmobile.plugin.codex-mobile`.
+  - Post-restart smoke:
+    `/api/public-config` returned HTTP `200`, `version=0.1.11`,
+    `clientBuildId=0.1.11|codex-mobile-shell-v373`, and
+    `authRequired=true`.
+  - Authenticated `/api/status` returned HTTP `200`.
+  - A no-side-effect production POST to the source-thread task-card route with
+    a synthetic invisible target returned `404 target_thread_not_visible` with
+    details, confirming the deployed guard is active before card persistence.
+  - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` is running after
+    restart.
+- Operational note:
+  - This prevents new wrong-card sends through the source-thread direct path
+    used by the dynamic tool and fallback script.
+  - It does not delete the three duplicate cards that already existed before
+    this deploy.
+  - Manual pending-card APIs remain unchanged; the strict resolver applies to
+    source-thread direct task-card creation.
