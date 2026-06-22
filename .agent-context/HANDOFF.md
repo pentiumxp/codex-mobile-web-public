@@ -4,7 +4,7 @@ Last compacted: 2026-06-08T13:27:43.304Z
 
 ## 2026-06-22 Workspace Delegation Dynamic Source Write Guard
 
-- Status: source fixed and validated; deployment in progress from this turn.
+- Status: committed, deployed to Mac production, and smoke verified.
 - Trigger:
   - Restoring `danger-full-access` fixed current-workspace Git metadata writes,
     but also removed the default hard barrier against direct cross-workspace
@@ -42,6 +42,22 @@ Last compacted: 2026-06-08T13:27:43.304Z
   - `npm run check`
   - Center check: `node tests/architecture-code-test-harness-map.test.js`
   - `git diff --check`
+- Commit/deploy:
+  - Source commit deployed: `e3384ca` (`实现委派动态源码写保护`).
+  - Mac production deploy:
+    `npm run --silent deploy:macos -- --target plugin:codex-mobile-web --execute --reason codex-dynamic-source-write-guard --json`.
+  - Deploy validation passed: production file hashes, LaunchDaemon print,
+    manifest health URL, and codex auth profile audit.
+  - Production smoke after deploy:
+    `/api/status` reported `ready=true`, `lastError=null`,
+    active profile `default`, `codexHome=/Users/xuxin/.codex`,
+    `transport=external-jsonl-tcp`, `persistentOwnedMux=true`,
+    and `sharedRequired=true`.
+  - Runtime workspace delegation readback:
+    `enabled=true`,
+    `mode=model_driven_explicit_task_card_with_source_write_guard`,
+    `failureRecovery=source_model_tool_call_with_dynamic_source_write_guard`,
+    and dynamic tool `codex_mobile.delegate_to_thread`.
 
 ## 2026-06-22 Workspace Delegation Full-Access Compatibility Recovery
 
