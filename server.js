@@ -7598,6 +7598,16 @@ function profileSwitchLogDetail(value) {
   return raw.slice(0, 220);
 }
 
+function profileSwitchRateLimitsWarningForError(err) {
+  const classified = profileSwitchPreflightError(err);
+  if (classified.code === "target_profile_auth_invalid") return null;
+  return {
+    code: "target_profile_rate_limits_unavailable",
+    message: "目标账号额度暂时读取失败，已继续切换预检。",
+    detail: boundedProfilePreflightDetail(err),
+  };
+}
+
 function profileSwitchStage(id, label, status = "completed", detail = "") {
   const cleanStatus = ["pending", "running", "completed", "warning", "failed"].includes(status)
     ? status
@@ -7772,26 +7782,21 @@ async function preflightCodexProfileSwitch(profile, options = {}) {
         await preflightRpc(ws, 2, "account/rateLimits/read", {}, Math.max(2000, timeoutMs - (Date.now() - startedAt)));
         rateLimitsChecked = true;
       } catch (rateLimitErr) {
-        const classified = profileSwitchPreflightError(rateLimitErr);
-        if (classified.code === "target_profile_auth_invalid") throw rateLimitErr;
-        const warningDetail = boundedProfilePreflightDetail(rateLimitErr);
-        warnings.push({
-          code: "target_profile_rate_limits_unavailable",
-          message: "目标账号额度暂时读取失败，已继续切换预检。",
-          detail: warningDetail,
-        });
+        const warning = profileSwitchRateLimitsWarningForError(rateLimitErr);
+        if (!warning) throw rateLimitErr;
+        warnings.push(warning);
         console.error(`[codex-profile-switch] rate_limits_warning ${JSON.stringify({
           targetProfileId: String(profile.id || ""),
-          code: "target_profile_rate_limits_unavailable",
-          detail: profileSwitchLogDetail(warningDetail),
+          code: warning.code,
+          detail: profileSwitchLogDetail(warning.detail),
         })}`);
         emitProgress({
           stage: "preflight_rate_limits",
           status: "warning",
           message: "目标账号额度暂时读取失败，继续确认切换...",
           stepIndex: 7,
-          code: "target_profile_rate_limits_unavailable",
-          detail: warningDetail,
+          code: warning.code,
+          detail: warning.detail,
         });
       }
       emitProgress({
@@ -13428,6 +13433,7 @@ module.exports = {
   previewFileReferencesFromText,
   parseThreadTurnsCursor,
   profileSwitchPreflightError,
+  profileSwitchRateLimitsWarningForError,
   readFilePreview,
   readRolloutItemTimestampCandidates,
   readRolloutSessionFallbackThreadFromFile,
