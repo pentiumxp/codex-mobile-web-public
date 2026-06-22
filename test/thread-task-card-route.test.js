@@ -88,6 +88,15 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(serverJs, /function buildThreadTaskCardCreatePayload\(/);
   assert.match(serverJs, /function threadTaskCardThreadCallIdempotencyKey\(/);
   assert.match(serverJs, /function resolvedThreadTaskCardTargetIds\(/);
+  assert.match(serverJs, /function threadTaskCardVisibleTargetThreads\(/);
+  assert.match(serverJs, /function threadTaskCardCanonicalVisibleTargets\(/);
+  assert.match(serverJs, /function threadTaskCardCanonicalTargetForCwd\(/);
+  assert.match(functionBody(serverJs, "resolveThreadTaskCardTargetReference"), /threadTaskCardVisibleTargetThreads\(options\)/);
+  assert.match(functionBody(serverJs, "resolveThreadTaskCardTargetReference"), /stale_target_thread/);
+  assert.match(functionBody(serverJs, "resolveThreadTaskCardTargetReference"), /target_thread_not_visible/);
+  assert.doesNotMatch(functionBody(serverJs, "resolveThreadTaskCardTargetReference"), /return raw;/);
+  assert.match(functionBody(serverJs, "buildThreadTaskCardCreatePayload"), /if \(!targetThreadIds\.length\)/);
+  assert.match(functionBody(serverJs, "buildThreadTaskCardCreatePayload"), /target_thread_required/);
   assert.match(functionBody(serverJs, "createThreadTaskCardsFromSourceThread"), /workspaceDelegationPublicSettings\(\)/);
   assert.match(functionBody(serverJs, "createThreadTaskCardsFromSourceThread"), /workspaceDelegation\.enabled[\s\S]*body\.autoApprove !== false[\s\S]*body\.direct !== false[\s\S]*body\.pending !== true/);
   assert.match(functionBody(serverJs, "threadTaskCardThreadCallIdempotencyKey"), /body\.requestId \|\| body\.request_id/);
@@ -103,6 +112,8 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /source model must call this tool/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /The model must decide from the user's request whether delegation is required/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /always creates source-direct cards/);
+  assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /Stale, hidden, archived, old-rollout, or non-detail-readable targetThreadId values are rejected/);
+  assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /latest visible canonical thread/);
   assert.doesNotMatch(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /pending:\s*\{/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolBody"), /body\.direct = true/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolBody"), /body\.autoApprove = true/);
@@ -133,9 +144,10 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolCallDiagnostics"), /targetRefCount: threadTaskCardTargetReferences\(args\)\.length/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolCallDiagnostics"), /hasBody: Boolean/);
   assert.doesNotMatch(functionBody(serverJs, "workspaceDelegationDynamicToolCallDiagnostics"), /bodyMarkdown:[\s\S]*args\.bodyMarkdown/);
-  assert.match(functionBody(serverJs, "threadTaskCardTargetReferences"), /targetWorkspace/);
-  assert.match(functionBody(serverJs, "threadTaskCardTargetReferences"), /targetCwd/);
-  assert.match(functionBody(serverJs, "resolveThreadTaskCardTargetReference"), /normalizeFsPath\(thread\.cwd \|\| ""\)/);
+  assert.match(functionBody(serverJs, "threadTaskCardTargetReferenceEntries"), /targetWorkspace/);
+  assert.match(functionBody(serverJs, "threadTaskCardTargetReferenceEntries"), /targetCwd/);
+  assert.match(functionBody(serverJs, "resolveThreadTaskCardTargetReference"), /threadTaskCardCanonicalTargetForCwd\(rawPath, visibleThreads\)/);
+  assert.match(workspaceDelegationRoute, /details: err\.details/);
   assert.match(serverJs, /"item\/tool\/call"/);
   assert.match(serverJs, /threadTaskCardService\.approveFromSource\(card\.id, payload\.sourceThreadId\)/);
   assert.match(serverJs, /direct: autoApprove/);

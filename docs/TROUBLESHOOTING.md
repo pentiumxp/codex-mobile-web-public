@@ -847,6 +847,16 @@ read should return `404 task_card_not_found`; wrong-thread actions should return
 500, the route error wrapper has regressed and the browser may show an
 ambiguous failure instead of a bounded task-card diagnostic.
 
+For source-thread direct task-card creation through
+`/api/threads/:sourceThreadId/task-cards`, target resolution is intentionally
+stricter than the manual pending-card API. `409 stale_target_thread` means the
+requested thread exists or was found in fallback state, but it is not the latest
+visible canonical thread for that cwd/workspace; use `details.currentTarget`.
+`404 target_thread_not_visible` means the id/title/cwd is not currently
+deliverable from the non-archived visible thread list. Dynamic tool calls and
+`scripts/create-thread-task-card.js` share this same guard, so fallback cannot
+bypass stale-target rejection.
+
 ## `#` Task-card Command Does Not Parse
 
 Leading non-empty `#` commands are reserved for cross-thread task-card
