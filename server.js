@@ -10847,7 +10847,7 @@ function resolvedThreadTaskCardTargetIds(body = {}, sourceThreadId = "") {
 function threadTaskCardThreadCallIdempotencyKey(sourceThreadId, body = {}, targetThreadIds = []) {
   const explicit = String(body.idempotencyKey || "").trim();
   if (explicit) return explicit;
-  const requestId = String(body.requestId || body.request_id || body.sourceTurnId || body.turnId || "").trim();
+  const requestId = String(body.requestId || body.request_id || "").trim();
   const seed = requestId || JSON.stringify({
     targetThreadIds,
     title: String(body.title || "").trim(),
@@ -10986,9 +10986,9 @@ function logWorkspaceDelegationDynamicToolCall(request, params = {}, args = {}, 
 function dynamicToolTextResponse(text) {
   return {
     result: {
-      contentItems: [
+      content: [
         {
-          type: "inputText",
+          type: "text",
           text: String(text || ""),
         },
       ],
@@ -11024,7 +11024,7 @@ function workspaceDelegationDynamicToolBody(params = {}, args = {}) {
   const body = Object.assign({}, args);
   body.sourceThreadId = sourceThreadId;
   body.sourceTurnId = body.sourceTurnId || body.turnId || params.turnId || params.turn_id || "";
-  body.requestId = body.requestId || body.request_id || params.callId || params.call_id || "";
+  body.requestId = body.requestId || body.request_id || "";
   if (!body.body && body.bodyMarkdown) body.body = body.bodyMarkdown;
   body.direct = true;
   body.autoApprove = true;

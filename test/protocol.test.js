@@ -13,6 +13,7 @@ process.env.CODEX_MOBILE_DISABLE_AUTH = "1";
 const {
   attachPendingServerRequestsToResult,
   approvalResponsePayload,
+  dynamicToolTextResponse,
   publicServerRequest,
   serverRequestResponsePayload,
 } = require("../server");
@@ -70,6 +71,21 @@ function collectJsonLines(socket) {
 function writeJsonLine(socket, message) {
   socket.write(`${JSON.stringify(message)}\n`);
 }
+
+test("dynamic tool responses use app-server text content schema", () => {
+  const payload = dynamicToolTextResponse("ok");
+  assert.deepEqual(payload, {
+    result: {
+      content: [
+        {
+          type: "text",
+          text: "ok",
+        },
+      ],
+    },
+  });
+  assert.doesNotMatch(JSON.stringify(payload), /contentItems|inputText/);
+});
 
 test("stdio app-server mux does not overwrite an available shared endpoint", async (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-protocol-"));
