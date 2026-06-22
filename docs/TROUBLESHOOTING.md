@@ -454,6 +454,12 @@ Do not infer from rollout file size alone. Separate:
 - Is rollout still growing?
 - Is a local command/tool still running?
 - Is approval pending?
+- Is the slow request actually thread detail, or a background thread-list
+  refresh? Check `thread_detail_first_paint` / `thread_refresh_ms` against
+  `thread_list_rendered.serverTimings`. Large threads may return 10-turn detail
+  quickly while a cold full list fallback spends time in `fallbackRolloutMs`.
+  The deferred full-list fallback should be delayed and cancellable, not run
+  immediately while a thread detail is still loading.
 - Is app-server/mux CPU active?
 - Is the latest turn `inProgress` but no event has been written for minutes?
 
