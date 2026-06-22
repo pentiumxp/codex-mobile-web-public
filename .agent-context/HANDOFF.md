@@ -2,6 +2,339 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-22 Profile Switch Progress And macOS Host Restart Safety
+
+- Status: implemented and validated locally; not deployed and not committed.
+- Trigger:
+  - User reported that switching Profile to Default stayed after preflight with
+    no visible progress.
+  - Home AI task card reported a production recovery incident where
+    `restart-codex-mobile-host-macos.sh --profile-id previous --json` booted out
+    the LaunchDaemon, then `launchctl bootstrap` failed with code 5, leaving
+    8787 unavailable until manual `sudo launchctl bootstrap system ...`.
+- Current production read-only check:
+  - `/api/public-config` active profile is `previous`.
+  - `launchctl print system/com.hermesmobile.plugin.codex-mobile` is running
+    with `CODEX_HOME=/Users/xuxin/.codex-homes/previous` and
+    `CODEX_MOBILE_MUX_ENDPOINT_FILE=/Users/xuxin/.codex-homes/previous/app-server-mux/endpoint.json`.
+  - Profile store active profile is `previous`.
+- Changes:
+  - `server.js` now tracks bounded Profile switch progress by request id and
+    exposes `/api/codex-profiles/switch-progress`.
+  - The active-profile POST route records real stages: profile lookup,
+    workspace trust sync, Codex Mobile MCP registration, target app-server
+    spawn/connect/initialize/rate-limit preflight, active profile write,
+    restart scheduling, and waiting for restart.
+  - `public/app.js` now sends a request id for Profile switches, polls the
+    progress endpoint, and displays step-by-step status in the Profile row and
+    connection state. Client shell cache is advanced to
+    `codex-mobile-shell-v372`.
+  - `restart-codex-mobile-host-macos.sh` now writes
+    `CODEX_MOBILE_MUX_ENDPOINT_FILE` to the selected profile's
+    `<CODEX_HOME>/app-server-mux/endpoint.json`.
+  - The host restart script now performs preflight consistency checks before
+    bootout, retries `launchctl bootstrap` once on code 5 after confirming the
+    service is not loaded, performs postflight checks against public-config,
+    running launchd `CODEX_HOME`, and running launchd mux endpoint, and reports
+    stale non-selected profile mux endpoints without killing them.
+  - JSON errors include bounded stage/detail/profile/plist information and do
+    not print raw keys, tokens, passwords, or auth content.
+- Validation:
+  - `bash -n restart-codex-mobile-host-macos.sh`
+  - `node --check server.js && node --check public/app.js && node --check public/sw.js`
+  - `node --test test/macos-host-restart-script.test.js test/codex-profile-ui.test.js test/manual-restart-ui.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+  - `./restart-codex-mobile-host-macos.sh --profile-id previous --dry-run --json`
+  - `npm run check`
+  - `git diff --check`
+  - Central AI Ops required checks:
+    `node tests/gateway-run-lifecycle-service.test.js`,
+    `node tests/gateway-run-start-service.test.js`,
+    `node tests/gateway-run-stream-service.test.js`,
+    `node tests/runtime-config-provider.test.js`.
+- Evidence ledger:
+  - `/Users/xuxin/.homeai-qa/codex-mobile-web-evidence-ledger.jsonl`
+    id `evidence-f48ea06d-8958-4c58-947b-751480706334`.
+- Deployment boundary:
+  - Not deployed, because the task card explicitly said production had already
+    been manually restored and did not need immediate recovery. Deploying this
+    change would restart 8787 and should be done only when the user asks.
+
+## 2026-06-22 V4 Thread Detail Live Refresh Monotonic Merge
+
+- Status: fixed, validated, and deployed to Mac production; not yet committed.
+- Trigger:
+  - User reported that an open thread detail page often drifted back to older
+    receipts: previous content suddenly appeared, new content disappeared for a
+    while, and leaving/re-entering the thread restored the latest view.
+- Finding:
+  - Re-entering the thread restored the correct content, so the current server
+    snapshot was generally recoverable.
+  - The client-side V4 merge path was still replacing `turns` wholesale with
+    each incoming refresh projection, only preserving pending local user echoes.
+  - A delayed or older V4 projection refresh could therefore overwrite current
+    live EventSource content or a more complete same-turn receipt until a later
+    refresh corrected it.
+- Change:
+  - `public/app.js` now treats V4 projection refreshes as monotonic visible
+    merges instead of whole-turn replacement.
+  - Same-turn refreshes merge items with the existing visible-field preserving
+    path, so shorter older assistant receipts do not replace longer current
+    receipts.
+  - Existing current live turns are preserved when an older/regressive V4
+    refresh omits them, unless incoming turns clearly supersede them by
+    timestamp.
+  - Local pending user echo cleanup is still preserved: a pending echo turn is
+    not kept if the incoming projection contains the durable matching user
+    message.
+  - PWA shell cache moved to `codex-mobile-shell-v370`; README includes the
+    required Chinese release note.
+- Validation:
+  - `npm run check`
+  - `node --test test/conversation-render.test.js test/mobile-viewport.test.js test/thread-detail-projection-v4-service.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js test/app-update.test.js`
+  - `cd /Users/hermes-dev/HermesMobileDev/app && node tests/architecture-code-test-harness-map.test.js`
+  - `git diff --check`
+- Deployment:
+  - Ran Mac production deploy:
+    `npm run --silent deploy:macos -- --target plugin:codex-mobile-web --execute --allow-dirty --reason codex-mobile-v4-live-thread-monotonic-merge --json`.
+  - Deploy health, LaunchDaemon print, file hash proof, log permission repair,
+    and auth-profile audit passed.
+  - Production readback:
+    - `/api/status` returned `ready:true`, transport `external-jsonl-tcp`,
+      `persistentOwnedMux:true`, and `lastError:null`.
+    - Served `sw.js` contains `codex-mobile-shell-v370`.
+    - Served `app.js` contains `CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v370"`.
+    - Authenticated `/api/public-config` reports
+      `clientBuildId:"0.1.11|codex-mobile-shell-v370"` and
+      `shellCacheName:"codex-mobile-shell-v370"`.
+- Evidence ledger:
+  - `/Users/xuxin/.homeai-qa/codex-mobile-web-evidence-ledger.jsonl`
+    ids `evidence-8b5007f7-a389-4f2c-b081-01b6080987a2` and
+    `evidence-dc616e33-dfa7-48a4-b721-ebeee72d7fba`.
+
+## 2026-06-22 Profile Switch Disabled By Per-Profile Mux Endpoint
+
+- Status: fixed, validated, and deployed to Mac production; not yet committed.
+- Trigger:
+  - User reported that Settings/Profile switching could not be used because all
+    `Switch` buttons were grey.
+- Finding:
+  - Production `/api/public-config` projected
+    `codexProfiles.switchSupported:false` while the active profile was
+    `previous`.
+  - The Listener environment now correctly includes
+    `CODEX_MOBILE_MUX_ENDPOINT_FILE=/Users/xuxin/.codex-homes/previous/app-server-mux/endpoint.json`
+    for the persistent per-profile shared mux.
+  - `adapters/codex-profile-service.js` still treated any
+    `CODEX_MOBILE_MUX_ENDPOINT_FILE` as a fixed external app-server endpoint,
+    so it disabled switching even for the active profile's default mux file.
+  - `server.js` also needed to avoid reusing a stale environment endpoint file
+    from an old profile when the active profile store resolves to a different
+    `CODEX_HOME`.
+- Change:
+  - `adapters/codex-profile-service.js` now allows profile switching when the
+    configured mux endpoint is the default
+    `<CODEX_HOME>/app-server-mux/endpoint.json` for either the active profile or
+    the stale environment profile.
+  - External WS/TCP endpoints and arbitrary fixed mux endpoint files still
+    disable profile switching.
+  - `server.js` now resolves the mux endpoint through the effective profile
+    resolution and falls back to the active profile default when the env endpoint
+    is only the ignored stale profile default.
+  - Added regression tests proving active/stale per-profile default mux endpoints
+    keep switching enabled, while a fixed endpoint keeps it disabled.
+- Validation:
+  - `node --check adapters/codex-profile-service.js && node --check server.js`
+  - `node --test test/codex-profile-service.test.js`
+  - `node --test test/codex-profile-ui.test.js test/manual-restart-ui.test.js`
+  - `npm run check`
+  - `git diff --check`
+  - Central AI Ops required checks:
+    `node tests/gateway-run-lifecycle-service.test.js`,
+    `node tests/gateway-run-start-service.test.js`,
+    `node tests/gateway-run-stream-service.test.js`,
+    `node tests/runtime-config-provider.test.js`.
+- Deployment:
+  - Ran Mac production deploy:
+    `npm run --silent deploy:macos -- --target plugin:codex-mobile-web --execute --allow-dirty --reason codex-profile-per-profile-mux-switch --json`.
+  - Deploy health, LaunchDaemon print, file hash proof, log permission repair,
+    and auth-profile audit passed.
+  - Production readback after deploy:
+    `/api/public-config` returned `switchSupported:true`; profiles
+    `default`, `current`, and `previous` all existed and were logged in, with
+    `previous` active.
+- Evidence ledger:
+  - `/Users/xuxin/.homeai-qa/codex-mobile-web-evidence-ledger.jsonl`
+    ids `evidence-85dc0fc6-1a3e-49f2-979f-2ece696c1280` and
+    `evidence-90e5ed09-ae82-46b0-87df-8b2755ee7afc`.
+
+## 2026-06-22 Persistent Shared Mux And Delegation Diagnostics Deployed
+
+- Status: implemented, validated, and deployed to Mac production; not yet
+  committed.
+- Trigger:
+  - User asked to make Listener/server redeploys avoid disconnecting active
+    Codex turns.
+  - User also asked why the Android thread could not see/use the
+    `codex_mobile.delegate_to_thread` dynamic tool and requested server-side
+    diagnostics to distinguish injection failure from model non-compliance.
+- Product decision:
+  - One Codex Home owns one shared mux endpoint. Codex Desktop, Codex Mobile
+    Web, and any Home-specific shortcut using the same `CODEX_HOME` should
+    attach to the same `app-server-mux/endpoint.json` information stream.
+  - Reliability fixes should make the mux lifetime independent from Desktop or
+    the 8787 Listener, not split mux ownership by client surface.
+- Change:
+  - `server.js` now honors `CODEX_MOBILE_PERSIST_OWNED_MUX=1`.
+  - When the shared endpoint is missing or stale and Mobile starts its own mux,
+    the mux is spawned detached/unref'd with `CODEX_MUX_STANDALONE=1`,
+    `CODEX_MUX_KEEP_ALIVE=1`, and `CODEX_MUX_PUBLISH_ENDPOINT=1`.
+  - Listener shutdown no longer kills `codex.muxChild` when persistent owned mux
+    mode is enabled.
+  - `/api/status` exposes `persistentOwnedMux`.
+  - Workspace delegation now logs bounded diagnostics:
+    `[workspace-delegation-rpc]` for `thread/start` / `turn/start` /
+    `thread/resume`, and `[workspace-delegation-tool-call]` for
+    `item/tool/call` callbacks.
+  - Logs include tool names/count, `hasWorkspaceDelegationTool`,
+    `hasFallbackGuidance`, sandbox/approval summary, target ref count,
+    body-present boolean, and outcome. They intentionally exclude user bodies,
+    full developer instructions, access keys, cookies, and full task-card
+    Markdown.
+- Validation:
+  - Passed `npm run check`.
+  - Passed
+    `node --test test/new-thread-route.test.js test/thread-task-card-route.test.js`
+    (26/26).
+  - Passed `node --check server.js`, `node --check codex-app-server-mux.js`,
+    and touched test syntax checks.
+  - Passed `git diff --check`.
+  - Passed central architecture guard:
+    `cd /Users/hermes-dev/HermesMobileDev/app && node tests/architecture-code-test-harness-map.test.js`.
+  - Deployed with:
+    `npm run --silent deploy:macos -- --target plugin:codex-mobile-web --execute --allow-dirty --reason codex-mobile-persistent-mux-and-workspace-delegation-diagnostics --json`.
+  - Production readback:
+    authenticated `/api/status` returned `ready:true`,
+    `transport:"external-jsonl-tcp"`, `sharedRequired:true`,
+    `persistentOwnedMux:true`, `lastError:null`, and
+    endpoint `/Users/xuxin/.codex-homes/previous/app-server-mux/endpoint.json`.
+  - During this deploy the Listener PID changed to `68047`, while the shared
+    mux PID stayed `49171`, confirming the Listener restart did not interrupt
+    the currently shared mux.
+  - Evidence ledger:
+    `/Users/xuxin/.homeai-qa/codex-mobile-web-evidence-ledger.jsonl`
+    ids `evidence-eb91581a-8b42-4800-a038-a7d9e2926760` and
+    `evidence-ef8a0a37-0e21-468a-b86b-fc188b333e87`.
+- Caveat:
+  - Current mux PID `49171` is still Desktop-parented because Desktop was
+    already running and had already published the shared endpoint. After this
+    deployment, if Desktop is closed and the endpoint later becomes missing or
+    stale, Mobile's next recovery/start path will create a persistent
+    Mobile-owned shared mux instead of a Listener-owned transient mux.
+
+## 2026-06-22 Production Recovery And Cross-Workspace Boundary
+
+- Status: production 8787 was restored manually; Home AI follow-up was delegated
+  by task card; current Codex Mobile source changes are still unvalidated and
+  not committed.
+- Incident evidence:
+  - `curl http://127.0.0.1:8787/api/public-config` initially failed with
+    connection refused.
+  - `launchctl print system/com.hermesmobile.plugin.codex-mobile` initially
+    returned service not found.
+  - `/Library/LaunchDaemons/com.hermesmobile.plugin.codex-mobile.plist` still
+    existed and contained the expected active `CODEX_HOME`, port `8787`, and
+    shared mux environment.
+- Recovery performed:
+  - Ran
+    `./restart-codex-mobile-host-macos.sh --profile-id previous --json`
+    from this plugin workspace.
+  - Readback passed:
+    `/api/public-config` reachable, launchd state `running`, port `8787`
+    listening, authenticated `/api/status` returned `ready:true`,
+    `transport:"external-jsonl-tcp"`, `sharedRequired:true`, and
+    `codexHome:"/Users/xuxin/.codex-homes/previous"`.
+- Finding:
+  - The dedicated script works when run directly.
+  - Home AI's generic embedded-plugin recovery path appears to use only
+    `launchctl kickstart -k system/<label>` when no generic recovery command is
+    configured. That cannot recover the observed state where the LaunchDaemon
+    plist exists but the service is not bootstrapped into launchd.
+  - User clarified that this Home AI fix is cross-workspace work and should be
+    delegated by task card, not edited directly from this Codex Mobile thread.
+- Boundary action:
+  - Reverted the direct Home AI app edit made during investigation; app
+    worktree was clean afterward.
+  - Sent a source-direct task card to Home AI thread
+    `019ed8d8-e328-7301-9c1e-33fe1dbaf480`.
+  - Card id: `ttc_08367ccfb87bf3af4a`.
+  - Injected target turn id: `019eecec-1865-75b3-b735-49c6203f8360`.
+  - Card asks Home AI to make Codex Mobile launch recovery call the dedicated
+    host script for recoverable Codex Mobile manifest/proxy failures, while
+    preserving generic plugin behavior.
+
+## 2026-06-22 Workspace Delegation Script Fallback
+
+- Status: validated and deployed as part of the persistent shared mux /
+  delegation diagnostics rollout above; not yet committed.
+- Trigger:
+  - Android thread could not discover `codex_mobile.delegate_to_thread`; it
+    only saw `multi_agent_v1` resume/send/close style tools and then failed to
+    use the intended Codex Mobile task-card path.
+- Local change:
+  - Added model-visible script fallback guidance to `thread/start` and
+    `turn/start` runtime settings.
+  - Guidance says to prefer `codex_mobile.delegate_to_thread`, but if it is not
+    visible, run `scripts/create-thread-task-card.js` with the current source
+    thread id, target thread/title, title, and `--body-file`.
+  - Guidance explicitly says `multi_agent_v1.*` is not a Codex Mobile task-card
+    API and must not substitute for cross-workspace file-change delegation.
+  - Tests/docs/README were updated locally for this behavior.
+- Required before closure:
+  - Run focused plugin checks:
+    `node --check server.js test/new-thread-route.test.js test/thread-task-card-route.test.js`,
+    `node --test test/new-thread-route.test.js test/thread-task-card-route.test.js`,
+    `npm run check`, and `git diff --check`.
+  - If deploying, use central Mac deploy flow and record evidence.
+
+## 2026-06-22 Workspace Delegation Failure Recovery Boundary
+
+- Status: patched locally and validated; not committed/deployed at time of
+  writing.
+- Trigger:
+  - User objected to a possible server-side fallback that would scan sandbox
+    failure logs and auto-generate cross-thread task cards.
+  - Concern: server-created cards would bypass the original source thread's
+    model judgment and lose context/intent ownership.
+- Decision:
+  - Do not implement background task-card creation from EPERM/sandbox/failure
+    logs.
+  - Failure recovery remains source-thread model driven: the write guard blocks
+    direct cross-workspace writes, then the source model must decide from its
+    own context whether to call `codex_mobile.delegate_to_thread`.
+- Change:
+  - `workspaceDelegationPublicSettings()` now exposes
+    `failureRecovery:"source_model_tool_call_only"` when enabled and
+    `serverAutoTaskCardFromFailures:false`.
+  - `workspaceDelegationDynamicToolSpec()` now states that local guarded
+    failures should not be retried or merely reported blocked when the user
+    requested target-workspace mutation; the source model must call the dynamic
+    tool itself if delegation is the right outcome.
+  - README, architecture docs, implementation docs, and route tests were
+    updated to preserve this boundary.
+- Validation:
+  - Passed:
+    `node --check server.js && node --check test/thread-task-card-route.test.js`.
+  - Passed:
+    `node --test test/thread-task-card-route.test.js test/new-thread-route.test.js`
+    (26/26).
+  - Passed: `npm run check`.
+  - Passed: `git diff --check`.
+  - Passed center architecture guard:
+    `node tests/architecture-code-test-harness-map.test.js`.
+  - Evidence ledger:
+    `/Users/xuxin/.homeai-qa/codex-mobile-web-evidence-ledger.jsonl`
+    id `evidence-80e5b5ff-b96f-4c3e-9511-9765ac8bb022`.
+
 ## 2026-06-21 Workspace Delegation Write Guard Maintenance Exemption
 
 - Status: patched and locally validated; not deployed in this restricted
@@ -9063,3 +9396,85 @@ The previous full handoff was archived and should be opened only when old proven
     full list remained `2.399s` cold and `0.445s` / `0.421s` hot. This confirms
     the fix reduces contention during thread first paint; it does not remove
     the full fallback scan path.
+
+## 2026-06-22 Codex Mobile MCP Toolset Registration
+
+- Status: implemented, deployed to Mac production, and smoke-tested through the
+  Android thread.
+- User requirement:
+  - Codex Mobile cross-workspace delegation must be available as a real Codex
+    toolset, not only a model-instruction fallback.
+  - Registration must be dynamic and per Profile/Codex Home. If a new Profile
+    or Codex Home lacks the toolset, Mobile Web should register it as part of a
+    fixed flow.
+- Patch:
+  - Added `adapters/codex-mobile-mcp-config-service.js`.
+    - Registers or repairs `[mcp_servers.codex_mobile]` in each target
+      `CODEX_HOME/config.toml`.
+    - Stores only command, script path, server URL, and key-file path. It does
+      not store raw keys.
+    - Writes tool-level `approval_mode = "approve"` for both tools so Codex's
+      MCP elicitation layer does not add an extra approval dialog.
+  - Added `scripts/codex-mobile-mcp-server.js`.
+    - Stdio MCP server named `codex_mobile`.
+    - Exposes `list_threads` and `delegate_to_thread`.
+    - Calls the authenticated local Codex Mobile HTTP APIs and reads the access
+      key from env or the configured key file.
+    - Tool list includes MCP annotations: `list_threads` is read-only;
+      `delegate_to_thread` is non-destructive but state-changing, with final
+      source-direct approval still gated by Mobile Web runtime settings.
+  - Updated `server.js`.
+    - `syncCodexMobileMcpToolset()` registers a single Codex Home.
+    - `syncKnownCodexMobileMcpToolsets()` enumerates all known Profiles and
+      registers every existing Codex Home.
+    - Registration now runs on startup, `/api/public-config`, `/api/codex-profiles`,
+      workspace creation, and target Profile switch before preflight.
+  - Updated docs: `README.md`,
+    `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md`, `docs/ARCHITECTURE.md`,
+    and `docs/MODULES.md`.
+- Validation:
+  - `node --check scripts/codex-mobile-mcp-server.js`
+  - `node --check adapters/codex-mobile-mcp-config-service.js`
+  - `node --test test/codex-mobile-mcp-server.test.js test/manual-restart-ui.test.js`
+  - `npm run check`
+  - `git diff --check`
+  - Central checks:
+    `node tests/plugin-workspace-platform-contract-check.test.js`,
+    `node tests/plugin-capability-activation-service.test.js`,
+    `node tests/hermes-plugin-service.test.js`,
+    `node tests/hermes-plugin-authorization-service.test.js`.
+- Production deploys:
+  - `codex-mobile-mcp-known-profile-registration`
+  - `codex-mobile-mcp-auto-approval-registration`
+  - `codex-mobile-mcp-approve-tool-registration`
+  - All deploys used the Mac production plugin deploy harness and passed
+    health, LaunchDaemon, and auth-profile audit validation.
+- Production readback:
+  - `/api/status`: `ready=true`, transport `external-jsonl-tcp`,
+    persistent owned mux enabled, active Codex Home
+    `/Users/xuxin/.codex-homes/previous`.
+  - After `/api/public-config`, all known Profiles had
+    `[mcp_servers.codex_mobile]`:
+    `/Users/xuxin/.codex`, `/Users/xuxin/.codex-homes/current`,
+    `/Users/xuxin/.codex-homes/previous`.
+  - Each `codex_mobile` section had two `approval_mode = "approve"` tool
+    entries.
+- Runtime reload:
+  - Restarting only the 8787 listener did not reload MCP approval config because
+    persistent Mobile-owned mux/app-server stayed alive.
+  - A controlled mux/app-server reload was performed by terminating the
+    Mobile-owned mux parent and letting the listener recreate it.
+  - Final active chain:
+    listener PID `14345`, mux PID `24765`, app-server PID `24766`, endpoint
+    port `59607`, `/api/status` ready.
+- Final smoke:
+  - Sent a direct diagnostic card to Android:
+    `ttc_4135a9e8eb6568c404`,
+    target turn `019eed27-fd7b-76c0-a0fb-84db43849b78`.
+  - Android confirmed `mcp__codex_mobile.list_threads` is visible.
+  - `list_threads` with limit 3 returned directly, without
+    `mcpServer/elicitation/request` and without waiting for MCP approval.
+- Important boundary:
+  - Running app-server processes do not appear to hot-reload MCP approval
+    config. If the config is changed again, reload the Mobile-owned mux/app-server
+    once before testing tool approval behavior.

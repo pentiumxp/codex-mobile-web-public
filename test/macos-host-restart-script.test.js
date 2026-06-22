@@ -34,11 +34,40 @@ test("macOS host restart script is a LaunchDaemon recovery entrypoint", () => {
   assert.match(hostRestartScript, /--codex-home/);
   assert.match(hostRestartScript, /codex-mobile-macos-profile-helper\.js/);
   assert.match(hostRestartScript, /plist_set_env CODEX_HOME "\$SELECTED_CODEX_HOME"/);
+  assert.match(hostRestartScript, /SELECTED_MUX_ENDPOINT_FILE="\$\{SELECTED_CODEX_HOME\}\/app-server-mux\/endpoint\.json"/);
+  assert.match(hostRestartScript, /plist_set_env CODEX_MOBILE_MUX_ENDPOINT_FILE "\$SELECTED_MUX_ENDPOINT_FILE"/);
   assert.match(hostRestartScript, /select_args\+=\(--no-write\)/);
   assert.match(hostRestartScript, /launchctl bootout "system\/\$\{SERVICE_LABEL\}"/);
+  assert.match(hostRestartScript, /bootstrap_service_with_retry/);
   assert.match(hostRestartScript, /launchctl bootstrap system "\$PLIST_PATH"/);
   assert.match(hostRestartScript, /curl -fsS "\$READINESS_URL"/);
   assert.doesNotMatch(hostRestartScript, /cat "\$SUDO_PASSWORD_FILE"/);
+});
+
+test("macOS host restart script fails safely around bootstrap and postflight", () => {
+  assert.match(hostRestartScript, /json_error\(\) \{/);
+  assert.match(hostRestartScript, /stage:\s*process\.argv\[1\]/);
+  assert.match(hostRestartScript, /validate_preflight_selection/);
+  assert.match(hostRestartScript, /validate_postflight_selection/);
+  assert.match(hostRestartScript, /public_config_active_profile/);
+  assert.match(hostRestartScript, /launchd_env_value CODEX_HOME/);
+  assert.match(hostRestartScript, /launchd_env_value CODEX_MOBILE_MUX_ENDPOINT_FILE/);
+  assert.match(hostRestartScript, /bootstrap_service_with_retry\(\) \{/);
+  assert.match(hostRestartScript, /"\$status" -eq 5/);
+  assert.match(hostRestartScript, /LaunchDaemon bootstrap failed/);
+  assert.match(hostRestartScript, /"bootstrap"/);
+  assert.match(hostRestartScript, /POSTFLIGHT_JSON/);
+});
+
+test("macOS host restart script reports stale non-selected mux endpoints without killing them", () => {
+  assert.match(hostRestartScript, /detect_stale_muxes\(\) \{/);
+  assert.match(hostRestartScript, /selectedCodexHome/);
+  assert.match(hostRestartScript, /endpoint\.json/);
+  assert.match(hostRestartScript, /pidAlive/);
+  assert.match(hostRestartScript, /childPidAlive/);
+  assert.match(hostRestartScript, /action:\s*"reported_only"/);
+  assert.match(hostRestartScript, /STALE_MUX_JSON="\$\(detect_stale_muxes/);
+  assert.doesNotMatch(hostRestartScript, /kill -9/);
 });
 
 test("macOS profile helper lists configured homes without raw auth tokens", () => {

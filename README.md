@@ -1,6 +1,11 @@
 # Codex Mobile Web
 
-- 中文说明：server-only 补强 `跨工作区委派` 的失败后恢复提示。开启后模型如果已经误尝试目标工作区写入/命令/部署并遇到 sandbox、permission denied、operation not permitted、cwd 或 approval-policy 失败，动态工具说明会要求不要在当前线程继续重试本地操作，而是把失败意图和目标线程/工作区通过 `codex_mobile.delegate_to_thread` 发成 source-direct 任务卡。本次不改变 PWA shell cache。
+- 中文说明：v372 修正 Profile 切换过程只有“预检中”而缺少后续状态的问题。前端会为每次切换生成 requestId，并轮询服务端真实阶段，逐步显示读取目标 Profile、同步工作区信任、注册 Codex Mobile 工具、启动/连接目标 app-server、初始化会话、读取额度、写入 active Profile、安排重启和等待服务恢复。macOS 宿主恢复脚本也补齐 `CODEX_MOBILE_MUX_ENDPOINT_FILE` 同步、bootstrap code 5 重试、preflight/postflight 一致性检查和非选中 profile stale mux 报告。PWA shell cache 升级到 `codex-mobile-shell-v372`。
+- 中文说明：server-only 增加 Codex 线程自己的 `codex_mobile` MCP toolset。服务端启动、读取 Profile 列表、工作区创建和 Profile 切换时会自动检查所有已知/目标 `CODEX_HOME/config.toml`，没有 `[mcp_servers.codex_mobile]` 或配置指向旧脚本时就注册/修正 `scripts/codex-mobile-mcp-server.js`；该工具集提供 `list_threads` 和 `delegate_to_thread`，后者复用现有任务卡 API 发 source-direct 卡。注册器同时写入两个工具的 `approval_mode = "approve"`，避免只读列表和受运行时开关约束的发卡工具被 Codex MCP 权限层重复弹窗。配置只保存脚本路径、server URL 和 key-file 路径，不保存 raw key。本次不改变 PWA shell cache。
+- 中文说明：server-only 给 `跨工作区委派` 增加 bounded 诊断日志。开启后 `thread/start` / `turn/start` / `thread/resume` 出站 RPC 会记录是否带有 `codex_mobile.delegate_to_thread`、动态工具数量、fallback 指令是否存在，以及 sandbox/approval 概要；`item/tool/call` 回调会记录工具名、target 引用数量、是否有 body 和 outcome。日志不记录用户正文、完整 developer instructions、访问 key 或完整任务卡内容，用于区分“没有注入”“app-server 没暴露”和“模型未调用/调用失败”。本次不改变 PWA shell cache。
+- 中文说明：v370 修正线程详情页活跃回执被较旧 V4 投影快照覆盖的问题。客户端现在会对 V4 refresh 做单调合并：同一 turn 保留更完整的可见回执，旧 revision 不再把当前 live turn 覆盖成历史内容，同时 durable 用户消息仍会清理本地 pending echo。PWA shell cache 升级到 `codex-mobile-shell-v370`。
+- 中文说明：server-only 给 `跨工作区委派` 增加模型可见脚本 fallback。开启后 `thread/start` / `turn/start` 除了注入 `codex_mobile.delegate_to_thread`，还会在开发者指令里写明：如果动态工具不可见或不可发现，源线程必须运行 `scripts/create-thread-task-card.js` 创建任务卡；`multi_agent_v1.*` 不是 Codex Mobile 任务卡 API，不能替代跨工作区发卡。本次不改变 PWA shell cache。
+- 中文说明：server-only 明确 `跨工作区委派` 的失败后恢复边界。开启后模型如果已经误尝试目标工作区写入/命令/部署并遇到 sandbox、permission denied、operation not permitted、cwd 或 approval-policy 失败，动态工具说明会要求源线程模型结合当前上下文自行决定并调用 `codex_mobile.delegate_to_thread`；服务端不会从失败日志后台代发任务卡，避免丢失原线程上下文和意图。本次不改变 PWA shell cache。
 - 中文说明：server-only 给 `跨工作区委派` 的运行时写入守卫增加受控维护豁免。普通插件线程仍会被收敛到当前 cwd 的 `workspace-write`，避免跨工作区直接改文件；但 Codex Mobile 自维护工作区、Home AI 中央控制面工作区、`CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS` 显式 allowlist，以及紧急 `CODEX_MOBILE_WORKSPACE_DELEGATION_WRITE_GUARD=0` / `CODEX_MOBILE_WORKSPACE_DELEGATION_DISABLE_WRITE_GUARD=1` 会保留线程原本权限，保证中心部署脚本和维护线程不会被自己卡住。该守卫只收窄写权限，不负责 MCP/CodeGraph 读审批配置。本次不改变 PWA shell cache。
 - 中文说明：server-only 给 `跨工作区委派` 增加运行时写入守卫。开关开启后，`thread/start`、`thread/resume`、`turn/start` 会把文件写入权限收敛到当前线程 cwd 的 `workspace-write`，并设置 `approvalPolicy=never`，避免模型先跨工作区直接改文件、再补发任务卡。模型仍可读取上下文并调用 `codex_mobile.delegate_to_thread` 发 source-direct 卡；已经在运行的旧 turn 不能 retroactive 改 sandbox，下一次启动/续跑/恢复才生效。本次不改变 PWA shell cache。
 - 中文说明：server-only 收紧 `跨工作区委派` 的模型可见工具说明和审批语义。开关开启后，`codex_mobile.delegate_to_thread` 的描述明确要求：如果用户请求的实现、文件修改、命令、测试、部署或其他状态变更属于另一个工作区/线程，模型必须先调用该工具创建任务卡，不得在当前线程里直接 `cd`、读写、打补丁、运行命令或部署目标工作区。该动态工具路径固定创建 source-direct 卡，不允许模型把自由委派卡发成 Pending；Pending 仍保留给手动/API/MCP 等显式审批路径。仍保持“由模型判断是否跨工作区”，不恢复本地关键词/路径启发式预检。本次不改变 PWA shell cache。
@@ -8,7 +13,7 @@
 - 中文说明：v368 修正 Android APK/WebView 下 Composer 首次点击偶发不弹系统输入法、第二次点击后键盘虽出现但文字不上屏的问题。Codex Composer 仍使用 `contenteditable`，但 Android 上不再在 `pointerup/click` 后程序化 blur/refocus 抢 IME；如果发现输入框已假聚焦但键盘未打开，会在下一次 `pointerdown` 用户手势开始时先释放旧焦点，再交给 WebView 原生 tap 建立 editor connection。同时收窄 disabled 状态下保留 `contenteditable=true` 的条件，避免留下可编辑但 `aria-disabled/tabIndex` 冲突的混合状态。PWA shell cache 升级到 `codex-mobile-shell-v368`。
 - 中文说明：server-only 修复运行中线程投影回执被裁剪的问题。当最后一个 live turn 只是空壳，而前一个正在产出内容的 turn 尚未标记 completed 时，服务端会把这个有可见内容的 turn 也作为详细 turn 保留，避免只显示最后一条 assistant 回执、前面的中间回执被刷新掉。本次不改变 PWA shell cache。
 - 中文说明：v367 缓解进入线程时首屏加载变慢的问题。线程详情正在打开时，后台静默线程列表刷新会临时使用 `fallback=defer`，不再和详情首屏同时抢 state DB / rollout fallback 扫描；线程列表 fallback cache 默认从 5 秒延长到 30 秒，减少活跃使用中反复冷扫 rollout 的概率。启动后的完整列表补拉仍保留，历史/fallback 线程不会因此丢失。PWA shell cache 升级到 `codex-mobile-shell-v367`。
-- 中文说明：server-only 给已开启 `跨工作区委派` 的 Codex 线程注入 app-server dynamic tool `codex_mobile.delegate_to_thread`。模型在判断当前请求需要另一个工作区/线程处理时，可以显式调用这个工具，服务端复用 `/api/threads/:sourceThreadId/task-cards` 创建任务卡；开关关闭时完全不注入。这个能力不是 MCP，MCP 仍只用于 ChatGPT Pro 等外部客户端。本次不改变 PWA shell cache。
+- 中文说明：server-only 给已开启 `跨工作区委派` 的 Codex 线程注入 app-server dynamic tool `codex_mobile.delegate_to_thread`。模型在判断当前请求需要另一个工作区/线程处理时，可以显式调用这个工具，服务端复用 `/api/threads/:sourceThreadId/task-cards` 创建任务卡；开关关闭时完全不注入。该 dynamic tool 本身不是 MCP；后续版本另行补充了标准 `codex_mobile` MCP toolset。本次不改变 PWA shell cache。
 - 中文说明：v366 把跨工作区模型/工具委派开关补到设置面板里。入口是左侧菜单齿轮 -> `跨工作区委派`，默认关闭；切换会写入运行时 `settings.json` 并立即生效，无需修改环境变量或重启。关闭时 `/api/threads/:sourceThreadId/task-cards` 只创建 pending 任务卡；开启后模型/工具显式发卡才允许源线程直批并启动目标线程。普通发送前本地关键词/目录名预检仍保持关闭。PWA shell cache 升级到 `codex-mobile-shell-v366`。
 - 中文说明：v365 为跨工作区模型/工具委派增加服务端开关，默认关闭。只有设置 `CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1`（或兼容别名 `CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED=1`）后，`/api/threads/:sourceThreadId/task-cards` 才会执行源线程直批并启动目标线程；默认关闭时同一路径只创建 pending 任务卡，需要目标线程审批。普通发送前本地关键词/目录名预检仍保持关闭。PWA shell cache 升级到 `codex-mobile-shell-v365`。
 - 中文说明：v364 禁用 v363 普通发送前的本地跨工作区启发式委派。`/api/threads/:sourceThreadId/workspace-delegation` 保留为兼容接口但只返回禁用/未委派状态，不会再根据目录名、线程标题或关键词自动发卡；跨工作区任务必须由模型输出结构化任务卡，或由线程/工具显式调用 `/api/threads/:sourceThreadId/task-cards` / `scripts/create-thread-task-card.js`。PWA shell cache 升级到 `codex-mobile-shell-v364`。
@@ -391,8 +396,29 @@ app-server dynamic tool `codex_mobile.delegate_to_thread` into `thread/start`
 and `turn/start`. This is the model-visible path for ordinary Codex turns: the
 model decides whether a request needs another workspace/thread, calls the tool
 with an exact target thread id/title or exact target cwd, and the server creates
-the task card through the same source-thread route. This path is not MCP; the
-ChatGPT Pro MCP connector remains the external-client integration.
+the task card through the same source-thread route.
+The same start/turn runtime guidance also includes a local script fallback for
+agents that do not see the dynamic tool. App-server dynamic tools may not appear
+in deferred discovery surfaces such as `tool_search`, so that absence is not
+treated as an injection failure. If no direct callable
+`codex_mobile.delegate_to_thread` tool surface is visible, the agent should use
+`scripts/create-thread-task-card.js` against
+`/api/threads/:sourceThreadId/task-cards` as the first-class fallback path.
+`multi_agent_v1.*` tools are not task-card APIs and should not be used as a
+substitute for cross-workspace file-change delegation.
+
+Codex Mobile also registers a standard Codex MCP toolset named `codex_mobile`.
+On server startup, Profile list reads, workspace creation, and Profile switch,
+Mobile Web checks every known or target `CODEX_HOME/config.toml`; if
+`[mcp_servers.codex_mobile]` is missing or stale, it adds or repairs a stdio
+wrapper for `scripts/codex-mobile-mcp-server.js`. The wrapper exposes
+`list_threads` and `delegate_to_thread`, uses the same authenticated local
+task-card API, and stores only command/script/server/key-file paths in
+`config.toml`, never raw key material. It also writes tool-level
+`approval_mode = "approve"` entries for both tools, so Codex does not add a second
+MCP approval prompt around the Mobile Web runtime delegation gate. This MCP
+toolset is for Codex threads. The ChatGPT Pro MCP connector under
+`/api/chatgpt-pro/mcp` remains a separate external-client integration.
 
 Local thread-callable wrapper:
 

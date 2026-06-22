@@ -75,6 +75,7 @@ const {
   resolveActiveCodexHomeFromStore,
   resolveEffectiveCodexHome,
 } = require("./adapters/codex-profile-service");
+const { ensureCodexMobileMcpServer } = require("./adapters/codex-mobile-mcp-config-service");
 const { ensureCodexProjectsTrusted } = require("./adapters/codex-project-trust-service");
 const { createThreadDetailProjectionService } = require("./adapters/thread-detail-projection-service");
 const { createThreadDetailProjectionV4Service } = require("./adapters/thread-detail-projection-v4-service");
@@ -119,6 +120,33 @@ function detectDevelopmentWorkspaceRoot(appRoot) {
   return "";
 }
 
+function normalizePathForEarlyCompare(value) {
+  return path.resolve(String(value || "")).toLowerCase();
+}
+
+function sameEarlyFsPath(left, right) {
+  const a = String(left || "").trim();
+  const b = String(right || "").trim();
+  return Boolean(a && b && normalizePathForEarlyCompare(a) === normalizePathForEarlyCompare(b));
+}
+
+function defaultMuxEndpointFileForCodexHome(codexHome) {
+  const home = String(codexHome || "").trim();
+  return home ? path.join(path.resolve(home), "app-server-mux", "endpoint.json") : "";
+}
+
+function resolveMuxEndpointFile(env, codexHome, codexHomeResolution = {}) {
+  const fallback = defaultMuxEndpointFileForCodexHome(codexHome);
+  const configured = String(env && env.CODEX_MOBILE_MUX_ENDPOINT_FILE || "").trim();
+  if (!configured) return fallback;
+  const envCodexHome = codexHomeResolution && codexHomeResolution.envCodexHome || "";
+  const staleEnvDefault = envCodexHome
+    && codexHomeResolution.envCodexHomeIgnored
+    && sameEarlyFsPath(configured, defaultMuxEndpointFileForCodexHome(envCodexHome))
+    && !sameEarlyFsPath(configured, fallback);
+  return staleEnvDefault ? fallback : path.resolve(configured);
+}
+
 const RUNTIME_ROOT = process.env.CODEX_MOBILE_RUNTIME_DIR || path.join(USER_HOME, ".codex-mobile-web");
 const CODEX_PROFILE_BOOTSTRAP = resolveActiveCodexHomeFromStore({
   userHome: USER_HOME,
@@ -141,11 +169,12 @@ const ARCHIVED_SESSIONS_DIR = path.join(CODEX_HOME, "archived_sessions");
 const MOBILE_ARCHIVED_THREAD_IDS_FILE = process.env.CODEX_MOBILE_ARCHIVED_THREAD_IDS_FILE
   || path.join(RUNTIME_ROOT, "archived-thread-ids.json");
 const CODEX_EXE = resolveDefaultCodexExecutable();
-const MUX_ENDPOINT_FILE = process.env.CODEX_MOBILE_MUX_ENDPOINT_FILE || path.join(CODEX_HOME, "app-server-mux", "endpoint.json");
+const MUX_ENDPOINT_FILE = resolveMuxEndpointFile(process.env, CODEX_HOME, CODEX_HOME_RESOLUTION);
 const EXTERNAL_APP_SERVER_WS = process.env.CODEX_MOBILE_APP_SERVER_WS || "";
 const EXTERNAL_APP_SERVER_TCP = process.env.CODEX_MOBILE_APP_SERVER_TCP || "";
 const REQUIRE_SHARED_APP_SERVER = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER || "");
 const DISABLE_MOBILE_OWNED_MUX = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_DISABLE_OWNED_MUX || "");
+const PERSIST_MOBILE_OWNED_MUX = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_PERSIST_OWNED_MUX || "");
 const HOST = process.env.CODEX_MOBILE_HOST || "0.0.0.0";
 const PORT = Number(process.env.CODEX_MOBILE_PORT || "8787");
 const APP_VERSION = readPackageVersion();
@@ -311,6 +340,51 @@ function syncRegisteredWorkspaceTrust(codexHome = CODEX_HOME) {
     console.error(`[workspace-trust] failed to sync registered workspaces: ${err.message || err}`);
     return { changed: false, added: [], error: err.message || String(err) };
   }
+}
+
+function syncCodexMobileMcpToolset(codexHome = CODEX_HOME) {
+  try {
+    const result = ensureCodexMobileMcpServer({
+      codexHome,
+      command: process.execPath,
+      scriptPath: path.join(APP_ROOT, "scripts", "codex-mobile-mcp-server.js"),
+      baseUrl: process.env.CODEX_MOBILE_MCP_SERVER_URL || `http://127.0.0.1:${PORT}`,
+      keyFile: AUTH_KEY_FILE,
+    });
+    if (result.changed) {
+      console.log(`[codex-mobile-mcp] registered ${result.serverName} in ${result.configPath}`);
+    }
+    return result;
+  } catch (err) {
+    console.error(`[codex-mobile-mcp] failed to sync toolset: ${err.message || err}`);
+    return { changed: false, added: false, error: err.message || String(err) };
+  }
+}
+
+function syncKnownCodexMobileMcpToolsets(profileOptions = {}) {
+  const homes = new Set([CODEX_HOME]);
+  let profileError = "";
+  try {
+    const profileState = codexProfileService.profiles(profileOptions);
+    for (const profile of profileState.profiles || []) {
+      const codexHome = String(profile && profile.codexHome || "").trim();
+      if (!codexHome) continue;
+      if (profile.exists || profile.active || codexHome === CODEX_HOME) homes.add(codexHome);
+    }
+  } catch (err) {
+    profileError = err && err.message || String(err);
+    console.error(`[codex-mobile-mcp] failed to enumerate known profiles: ${profileError}`);
+  }
+  const results = [];
+  for (const codexHome of homes) {
+    results.push(syncCodexMobileMcpToolset(codexHome));
+  }
+  return {
+    changed: results.some((item) => item && item.changed),
+    count: results.length,
+    results,
+    profileError,
+  };
 }
 
 function activeProfileRestartOptions(profile = null) {
@@ -824,6 +898,7 @@ const DEFAULT_RPC_TIMEOUT_MS = 30000;
 const READ_RPC_TIMEOUT_MS = 12000;
 const THREAD_DETAIL_RPC_TIMEOUT_MS = Math.min(6000, READ_RPC_TIMEOUT_MS);
 const PROFILE_SWITCH_PREFLIGHT_TIMEOUT_MS = Math.max(4000, Number(process.env.CODEX_MOBILE_PROFILE_SWITCH_PREFLIGHT_TIMEOUT_MS || "12000"));
+const PROFILE_SWITCH_PROGRESS_TTL_MS = Math.max(60_000, Number(process.env.CODEX_MOBILE_PROFILE_SWITCH_PROGRESS_TTL_MS || "300000"));
 const MUTATION_RPC_TIMEOUT_MS = 120000;
 const MESSAGE_DEDUPE_WINDOW_MS = Math.max(5_000, Number(process.env.CODEX_MOBILE_MESSAGE_DEDUPE_WINDOW_MS || "90000"));
 const MESSAGE_DEDUPE_MAX = Math.max(20, Number(process.env.CODEX_MOBILE_MESSAGE_DEDUPE_MAX || "300"));
@@ -4695,7 +4770,7 @@ function applyResumeRuntimeSettings(params, settings) {
 }
 
 function applyStartThreadRuntimeSettings(params, settings) {
-  attachWorkspaceDelegationDynamicTools(params);
+  attachWorkspaceDelegationRuntimeGuidance(params);
   if (settings) {
     if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
     if (settings.permissionProfile) params.permissionProfile = settings.permissionProfile;
@@ -4710,7 +4785,7 @@ function applyStartThreadRuntimeSettings(params, settings) {
 }
 
 function applyTurnRuntimeSettings(params, settings) {
-  attachWorkspaceDelegationDynamicTools(params);
+  attachWorkspaceDelegationRuntimeGuidance(params);
   if (settings) {
     if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
     if (settings.sandboxPolicy) params.sandboxPolicy = settings.sandboxPolicy;
@@ -5983,6 +6058,8 @@ function workspaceDelegationPublicSettings(settings = readRuntimeSettings()) {
     dynamicToolEnabled: enabled,
     ordinarySendPreflight: false,
     localHeuristics: false,
+    failureRecovery: enabled ? "source_model_tool_call_only" : "off",
+    serverAutoTaskCardFromFailures: false,
     source: hasRuntimeValue ? "runtime" : WORKSPACE_DELEGATION_ENV_DEFAULT ? "environment" : "default",
     updatedAt: String(raw.updatedAt || ""),
   };
@@ -6028,7 +6105,8 @@ function workspaceDelegationDynamicToolSpec() {
       "Create a Codex Mobile cross-thread task card when the current user request requires work in another Codex thread or workspace.",
       "Mandatory boundary when this tool is available: if the requested implementation, file edit, command execution, test, deployment, or other mutation belongs to a different workspace or thread, call this tool before doing that work.",
       "Do not inspect, cd into, edit, patch, run commands in, test, deploy, or otherwise operate on the other workspace from the current thread. Delegate first, then stop or report the created task card.",
-      "If you already attempted target-workspace work and it failed with sandbox, filesystem, permission denied, operation not permitted, cwd, or approval-policy errors, do not retry the local operation. Treat that as the delegation boundary and call this tool with the failed intent and exact target.",
+      "If the user requested target-workspace mutation and your local attempt already failed with sandbox, filesystem, permission denied, operation not permitted, cwd, or approval-policy errors, do not retry locally or merely report blocked. Use the source-thread context to decide the exact delegation, then call this tool yourself with the failed intent and exact target.",
+      "The server does not auto-create task cards from failure logs; the source model must call this tool so the card preserves source-thread context and intent.",
       "This dynamic tool always creates source-direct cards when workspace delegation is enabled; do not request target-side pending approval from this tool.",
       "Do not use this for ordinary discussion, read-only references that do not require target-workspace inspection, or work that clearly belongs in the current thread workspace.",
       "The model must decide from the user's request whether delegation is required; do not rely on local keyword or path heuristics.",
@@ -6134,6 +6212,116 @@ function attachWorkspaceDelegationDynamicTools(params, settings = readRuntimeSet
   }
   params.dynamicTools = existing;
   return params;
+}
+
+function appendDeveloperInstructions(params, instructions, marker) {
+  if (!params || typeof params !== "object") return params;
+  const text = String(instructions || "").trim();
+  if (!text) return params;
+  const existing = String(params.developerInstructions || "").trim();
+  if (marker && existing.includes(marker)) return params;
+  params.developerInstructions = existing ? `${existing}\n\n${text}` : text;
+  return params;
+}
+
+function workspaceDelegationScriptFallbackInstruction(params = {}) {
+  const sourceThreadId = String(params && params.threadId || "").trim();
+  const scriptPath = path.join(APP_ROOT, "scripts", "create-thread-task-card.js");
+  return [
+    "Codex Mobile cross-thread delegation fallback:",
+    `- Prefer the app-server dynamic tool \`${WORKSPACE_DELEGATION_TOOL_FULL_NAME}\` when it is visible.`,
+    "- App-server dynamic tools may not appear in deferred tool discovery such as `tool_search`; absence there is not proof that delegation is unavailable.",
+    "- If no direct callable `codex_mobile.delegate_to_thread` tool surface is visible, use the local script below as the first-class fallback path:",
+    `  node ${JSON.stringify(scriptPath)} --source-thread ${sourceThreadId || "<current-thread-id>"} --target-thread <target-thread-id-or-exact-title> --title \"<short title>\" --body-file <markdown-file>`,
+    "- `multi_agent_v1.spawn_agent`, `multi_agent_v1.resume`, `multi_agent_v1.send`, and `multi_agent_v1.close` are not Codex Mobile task-card APIs and must not be used as a substitute for cross-workspace file changes.",
+    "- When the user requested another workspace/thread to be modified, tested, deployed, or otherwise mutated, do not retry a guarded local write after sandbox/permission/cwd/approval failure. Delegate through the dynamic tool or this script and then report the created card.",
+    "- The server does not create task cards from failure logs in the background; the source thread model must create the card so the body preserves source-thread context and intent.",
+  ].join("\n");
+}
+
+function attachWorkspaceDelegationRuntimeGuidance(params, settings = readRuntimeSettings()) {
+  attachWorkspaceDelegationDynamicTools(params, settings);
+  if (workspaceDelegationPublicSettings(settings).enabled) {
+    appendDeveloperInstructions(
+      params,
+      workspaceDelegationScriptFallbackInstruction(params),
+      "Codex Mobile cross-thread delegation fallback:",
+    );
+  }
+  return params;
+}
+
+function workspaceDelegationDynamicToolName(tool) {
+  if (!tool || typeof tool !== "object") return "";
+  const fullName = String(tool.fullName || tool.toolFullName || tool.dynamicTool || "").trim();
+  if (fullName) return fullName;
+  const namespace = String(tool.namespace || tool.toolNamespace || tool.dynamicToolNamespace || "").trim();
+  const name = String(tool.name || tool.toolName || tool.tool || tool.action || "").trim();
+  return namespace && name ? `${namespace}.${name}` : name;
+}
+
+function workspaceDelegationRpcDynamicToolNames(params = {}) {
+  const raw = Array.isArray(params.dynamicTools)
+    ? params.dynamicTools
+    : params.dynamicTools ? [params.dynamicTools] : [];
+  const seen = new Set();
+  const names = [];
+  for (const tool of raw) {
+    const name = workspaceDelegationDynamicToolName(tool);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    names.push(name);
+  }
+  return names;
+}
+
+function workspaceDelegationRpcDiagnostics(method, params = {}) {
+  const toolNames = workspaceDelegationRpcDynamicToolNames(params);
+  const developerInstructions = String(params.developerInstructions || "");
+  const cwd = String(params.cwd || "").trim();
+  const sandboxPolicy = params.sandboxPolicy && typeof params.sandboxPolicy === "object"
+    ? params.sandboxPolicy
+    : null;
+  const permissionProfile = params.permissionProfile && typeof params.permissionProfile === "object"
+    ? params.permissionProfile
+    : null;
+  return {
+    method: String(method || ""),
+    threadId: truncateToolDescriptionText(params.threadId || params.thread_id || "", 80),
+    cwd: truncateToolDescriptionText(cwd, 220),
+    workspaceDelegationEnabled: workspaceDelegationPublicSettings().enabled,
+    dynamicToolsCount: toolNames.length,
+    dynamicToolNames: toolNames.map((name) => truncateToolDescriptionText(name, 120)),
+    hasWorkspaceDelegationTool: toolNames.includes(WORKSPACE_DELEGATION_TOOL_FULL_NAME),
+    hasFallbackGuidance: developerInstructions.includes("Codex Mobile cross-thread delegation fallback:"),
+    developerInstructionsChars: developerInstructions.length,
+    sandbox: truncateToolDescriptionText(params.sandbox || "", 80),
+    sandboxPolicyType: truncateToolDescriptionText(
+      sandboxPolicy && (sandboxPolicy.type || sandboxPolicy.kind || sandboxPolicy.mode) || "",
+      80,
+    ),
+    approvalPolicy: truncateToolDescriptionText(params.approvalPolicy || params.approval_policy || "", 80),
+    permissionProfileType: truncateToolDescriptionText(
+      permissionProfile && (permissionProfile.type || permissionProfile.kind || permissionProfile.mode) || "",
+      80,
+    ),
+  };
+}
+
+function shouldLogWorkspaceDelegationRpc(method, params = {}) {
+  if (!["thread/start", "turn/start", "thread/resume"].includes(String(method || ""))) return false;
+  if (workspaceDelegationPublicSettings().enabled) return true;
+  if (workspaceDelegationRpcDynamicToolNames(params).length) return true;
+  return String(params.developerInstructions || "").includes("Codex Mobile cross-thread delegation fallback:");
+}
+
+function logWorkspaceDelegationRpc(method, params = {}) {
+  if (!shouldLogWorkspaceDelegationRpc(method, params)) return;
+  try {
+    console.log(`[workspace-delegation-rpc] ${JSON.stringify(workspaceDelegationRpcDiagnostics(method, params))}`);
+  } catch (err) {
+    console.error(`[workspace-delegation-rpc] failed to summarize request: ${err.message || String(err)}`);
+  }
 }
 
 function setWorkspaceDelegationEnabled(enabled) {
@@ -7294,6 +7482,77 @@ function getFreePort() {
   });
 }
 
+const profileSwitchProgress = new Map();
+
+function profileSwitchProgressRequestId(value) {
+  const raw = String(value || "").trim();
+  if (/^[a-zA-Z0-9_-]{8,80}$/.test(raw)) return raw;
+  return crypto.randomUUID();
+}
+
+function cleanupProfileSwitchProgress(now = Date.now()) {
+  for (const [id, item] of profileSwitchProgress.entries()) {
+    const updatedAtMs = Number(item && item.updatedAtMs || 0);
+    if (!updatedAtMs || now - updatedAtMs > PROFILE_SWITCH_PROGRESS_TTL_MS) {
+      profileSwitchProgress.delete(id);
+    }
+  }
+}
+
+function setProfileSwitchProgress(requestId, patch = {}) {
+  const id = profileSwitchProgressRequestId(requestId);
+  const now = Date.now();
+  cleanupProfileSwitchProgress(now);
+  const previous = profileSwitchProgress.get(id) || {
+    requestId: id,
+    ok: true,
+    status: "running",
+    stepIndex: 0,
+    stepCount: 10,
+    stage: "queued",
+    message: "正在准备切换 Profile...",
+    createdAtMs: now,
+    createdAt: new Date(now).toISOString(),
+  };
+  const next = Object.assign({}, previous, patch || {}, {
+    requestId: id,
+    updatedAtMs: now,
+    updatedAt: new Date(now).toISOString(),
+  });
+  if (!next.message) next.message = "正在切换 Profile...";
+  if (!next.stage) next.stage = "running";
+  if (!next.status) next.status = "running";
+  profileSwitchProgress.set(id, next);
+  return profileSwitchProgressSnapshot(next);
+}
+
+function getProfileSwitchProgress(requestId) {
+  cleanupProfileSwitchProgress();
+  const id = String(requestId || "").trim();
+  if (!id) return null;
+  const item = profileSwitchProgress.get(id);
+  return item ? profileSwitchProgressSnapshot(item) : null;
+}
+
+function profileSwitchProgressSnapshot(item = {}) {
+  return {
+    requestId: String(item.requestId || ""),
+    targetProfileId: String(item.targetProfileId || ""),
+    targetProfileLabel: String(item.targetProfileLabel || ""),
+    status: String(item.status || "running"),
+    stage: String(item.stage || "running"),
+    message: String(item.message || ""),
+    stepIndex: Number(item.stepIndex || 0),
+    stepCount: Number(item.stepCount || 10),
+    restarting: Boolean(item.restarting),
+    error: item.error ? String(item.error) : undefined,
+    code: item.code ? String(item.code) : undefined,
+    detail: item.detail ? String(item.detail) : undefined,
+    updatedAt: item.updatedAt || "",
+    createdAt: item.createdAt || "",
+  };
+}
+
 function profileSwitchPreflightError(err) {
   const raw = String(err && (err.message || err) || "");
   const lower = raw.toLowerCase();
@@ -7325,6 +7584,19 @@ function boundedProfilePreflightDetail(err) {
   const raw = String(err && (err.message || err) || "").replace(/\s+/g, " ").trim();
   if (!raw) return "";
   return raw.slice(0, 260);
+}
+
+function profileSwitchStage(id, label, status = "completed", detail = "") {
+  const cleanStatus = ["pending", "running", "completed", "warning", "failed"].includes(status)
+    ? status
+    : "completed";
+  return {
+    id: String(id || "").trim(),
+    label: String(label || id || "").trim(),
+    status: cleanStatus,
+    detail: String(detail || "").replace(/\s+/g, " ").trim().slice(0, 220),
+    at: new Date().toISOString(),
+  };
 }
 
 function connectPreflightWebSocket(url, timeoutMs) {
@@ -7412,9 +7684,21 @@ async function preflightCodexProfileSwitch(profile, options = {}) {
     err.statusCode = 409;
     throw err;
   }
+  const onProgress = typeof options.onProgress === "function" ? options.onProgress : null;
+  const emitProgress = (patch) => {
+    if (!onProgress) return;
+    try {
+      onProgress(patch || {});
+    } catch (_) {}
+  };
   const timeoutMs = Math.max(3000, Number(options.timeoutMs || PROFILE_SWITCH_PREFLIGHT_TIMEOUT_MS));
   const startedAt = Date.now();
   const port = await getFreePort();
+  emitProgress({
+    stage: "preflight_spawn",
+    message: "正在启动目标账号 app-server...",
+    stepIndex: 4,
+  });
   const childEnv = codexAppServerChildEnv({ CODEX_HOME: codexHome });
   const child = spawn(CODEX_EXE, ["app-server", "--listen", `ws://127.0.0.1:${port}`], {
     cwd: APP_ROOT,
@@ -7443,9 +7727,19 @@ async function preflightCodexProfileSwitch(profile, options = {}) {
         reject(new Error(`profile switch preflight app-server exited (${code ?? signal ?? "unknown"})`));
       });
     });
+    emitProgress({
+      stage: "preflight_connect",
+      message: "正在连接目标账号 app-server...",
+      stepIndex: 5,
+    });
     const ws = await connectPreflightWebSocket(`ws://127.0.0.1:${port}`, timeoutMs);
     try {
       const remaining = Math.max(2000, timeoutMs - (Date.now() - startedAt));
+      emitProgress({
+        stage: "preflight_initialize",
+        message: "正在初始化目标账号会话...",
+        stepIndex: 6,
+      });
       await preflightRpc(ws, 1, "initialize", {
         clientInfo: {
           name: "codex-mobile-web",
@@ -7455,7 +7749,17 @@ async function preflightCodexProfileSwitch(profile, options = {}) {
         },
         capabilities: { experimentalApi: true },
       }, remaining);
+      emitProgress({
+        stage: "preflight_rate_limits",
+        message: "正在读取目标账号额度并确认登录...",
+        stepIndex: 7,
+      });
       await preflightRpc(ws, 2, "account/rateLimits/read", {}, Math.max(2000, timeoutMs - (Date.now() - startedAt)));
+      emitProgress({
+        stage: "preflight_done",
+        message: "目标账号预检通过",
+        stepIndex: 8,
+      });
     } finally {
       try {
         ws.close();
@@ -7699,22 +8003,27 @@ class CodexAppServerClient {
         CODEX_MUX_ENDPOINT_FILE: MUX_ENDPOINT_FILE,
         CODEX_MUX_CODEX_EXE: CODEX_EXE,
       }),
+      detached: PERSIST_MOBILE_OWNED_MUX,
       windowsHide: true,
-      stdio: ["ignore", "ignore", "pipe"],
+      stdio: PERSIST_MOBILE_OWNED_MUX ? ["ignore", "ignore", "ignore"] : ["ignore", "ignore", "pipe"],
     });
-    this.muxChild = child;
-    child.stderr.on("data", (chunk) => this.handleAppServerLog(chunk));
-    child.on("exit", (code, signal) => {
-      if (this.muxChild !== child) return;
-      this.muxChild = null;
-      this.ready = false;
-      this.lastError = `Mobile-owned mux exited (${code ?? signal ?? "unknown"})`;
-      broadcast({ type: "status", status: this.status() });
-    });
+    if (PERSIST_MOBILE_OWNED_MUX) {
+      child.unref();
+    } else {
+      this.muxChild = child;
+      child.stderr.on("data", (chunk) => this.handleAppServerLog(chunk));
+      child.on("exit", (code, signal) => {
+        if (this.muxChild !== child) return;
+        this.muxChild = null;
+        this.ready = false;
+        this.lastError = `Mobile-owned mux exited (${code ?? signal ?? "unknown"})`;
+        broadcast({ type: "status", status: this.status() });
+      });
+    }
     await new Promise((resolve, reject) => {
       const onError = (err) => {
         child.off("spawn", onSpawn);
-        if (this.muxChild === child) this.muxChild = null;
+        if (!PERSIST_MOBILE_OWNED_MUX && this.muxChild === child) this.muxChild = null;
         reject(err);
       };
       const onSpawn = () => {
@@ -8066,6 +8375,7 @@ class CodexAppServerClient {
     if (!this.isTransportOpen()) {
       return Promise.reject(new Error("codex app-server connection is not open"));
     }
+    logWorkspaceDelegationRpc(method, params);
     this.ws.send(JSON.stringify(payload));
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -8130,6 +8440,7 @@ class CodexAppServerClient {
         capabilities: this.endpoint.capabilities || null,
       } : null,
       muxEndpointFile: MUX_ENDPOINT_FILE,
+      persistentOwnedMux: PERSIST_MOBILE_OWNED_MUX,
       mobileOwnedMux: this.muxChild ? {
         pid: this.muxChild.pid || null,
         running: this.muxChild.exitCode === null && this.muxChild.signalCode === null,
@@ -10257,6 +10568,36 @@ function isWorkspaceDelegationDynamicToolCall(params = {}, args = {}) {
   return Boolean(references.length && (args.title || args.body || args.bodyMarkdown || args.message));
 }
 
+function workspaceDelegationDynamicToolCallDiagnostics(request, params = {}, args = {}, extra = {}) {
+  const identity = dynamicToolCallIdentity(params);
+  const argKeys = Object.keys(args || {})
+    .filter((key) => !["body", "bodyMarkdown", "message"].includes(key))
+    .sort()
+    .slice(0, 30);
+  return Object.assign({
+    requestId: shortIdentifier(request && request.id),
+    tool: truncateToolDescriptionText(identity.fullName || identity.name || "", 160),
+    namespace: truncateToolDescriptionText(identity.namespace || "", 80),
+    name: truncateToolDescriptionText(identity.name || "", 80),
+    isWorkspaceDelegationTool: isWorkspaceDelegationDynamicToolCall(params, args),
+    workspaceDelegationEnabled: workspaceDelegationPublicSettings().enabled,
+    sourceThreadId: truncateToolDescriptionText(sourceThreadIdFromDynamicToolCall(params, args), 80),
+    turnId: truncateToolDescriptionText(params.turnId || params.turn_id || "", 80),
+    callId: truncateToolDescriptionText(params.callId || params.call_id || "", 80),
+    targetRefCount: threadTaskCardTargetReferences(args).length,
+    argKeys,
+    hasBody: Boolean(String(args.body || args.bodyMarkdown || args.message || "").trim()),
+  }, extra);
+}
+
+function logWorkspaceDelegationDynamicToolCall(request, params = {}, args = {}, extra = {}) {
+  try {
+    console.log(`[workspace-delegation-tool-call] ${JSON.stringify(workspaceDelegationDynamicToolCallDiagnostics(request, params, args, extra))}`);
+  } catch (err) {
+    console.error(`[workspace-delegation-tool-call] failed to summarize request=${shortIdentifier(request && request.id)}: ${err.message || String(err)}`);
+  }
+}
+
 function dynamicToolTextResponse(text) {
   return {
     result: {
@@ -10311,6 +10652,7 @@ async function dynamicToolServerRequestResponsePayload(request) {
   const args = parseDynamicToolArguments(params.arguments || params.input || params.args);
   if (!isWorkspaceDelegationDynamicToolCall(params, args)) {
     const identity = dynamicToolCallIdentity(params);
+    logWorkspaceDelegationDynamicToolCall(request, params, args, { outcome: "unsupported_dynamic_tool" });
     return dynamicToolErrorPayload(
       "unsupported_dynamic_tool",
       `Unsupported Codex Mobile dynamic tool: ${identity.fullName || identity.name || "unknown"}`,
@@ -10318,6 +10660,7 @@ async function dynamicToolServerRequestResponsePayload(request) {
   }
   const workspaceDelegation = workspaceDelegationPublicSettings();
   if (!workspaceDelegation.enabled) {
+    logWorkspaceDelegationDynamicToolCall(request, params, args, { outcome: "workspace_delegation_tool_disabled" });
     return dynamicToolErrorPayload(
       "workspace_delegation_tool_disabled",
       "Codex Mobile workspace delegation is disabled in Settings.",
@@ -10326,6 +10669,7 @@ async function dynamicToolServerRequestResponsePayload(request) {
   }
   const body = workspaceDelegationDynamicToolBody(params, args);
   if (!body.sourceThreadId) {
+    logWorkspaceDelegationDynamicToolCall(request, params, args, { outcome: "source_thread_id_required" });
     return dynamicToolErrorPayload(
       "source_thread_id_required",
       "Codex Mobile could not infer the source thread id for this tool call.",
@@ -10333,18 +10677,28 @@ async function dynamicToolServerRequestResponsePayload(request) {
     );
   }
   if (!threadTaskCardTargetReferences(body).length) {
+    logWorkspaceDelegationDynamicToolCall(request, params, args, { outcome: "target_thread_required" });
     return dynamicToolErrorPayload(
       "target_thread_required",
       "A target thread id, exact thread title, or exact target workspace cwd is required.",
     );
   }
   if (!String(body.title || "").trim()) {
+    logWorkspaceDelegationDynamicToolCall(request, params, args, { outcome: "task_card_title_required" });
     return dynamicToolErrorPayload("task_card_title_required", "Task-card title is required.");
   }
   if (!String(body.body || body.bodyMarkdown || body.message || "").trim()) {
+    logWorkspaceDelegationDynamicToolCall(request, params, args, { outcome: "task_card_body_required" });
     return dynamicToolErrorPayload("task_card_body_required", "Task-card body is required.");
   }
   const result = await createThreadTaskCardsFromSourceThread(body.sourceThreadId, body);
+  logWorkspaceDelegationDynamicToolCall(request, params, args, {
+    outcome: "ok",
+    cardCount: Array.isArray(result.cards) ? result.cards.length : result.card ? 1 : 0,
+    targetThreadCount: (result.cards || []).map((card) => card && card.target && card.target.threadId).filter(Boolean).length,
+    direct: result.direct,
+    autoApprove: result.autoApprove,
+  });
   return dynamicToolJsonResponse({
     ok: true,
     tool: WORKSPACE_DELEGATION_TOOL_FULL_NAME,
@@ -11206,6 +11560,8 @@ async function handleApi(req, res) {
     loadRecentRateLimitsFromRollouts();
     const buildConfig = currentPublicBuildConfig();
     const workspaceDelegation = workspaceDelegationPublicSettings();
+    const activeQuota = liveQuotaSnapshotForProfiles();
+    syncKnownCodexMobileMcpToolsets({ activeQuota });
     sendJson(res, 200, {
       authRequired: !DISABLE_AUTH,
       title: "Codex Mobile Web",
@@ -11228,7 +11584,7 @@ async function handleApi(req, res) {
       rateLimits: activeRateLimits(),
       rateLimitsByModel: rateLimitsByModelObject(),
       codexProfiles: codexProfileService.profiles({
-        activeQuota: liveQuotaSnapshotForProfiles(),
+        activeQuota,
       }),
       push: pushSubscriptionPublicStatus(),
       update: {
@@ -11293,15 +11649,37 @@ async function handleApi(req, res) {
     return;
   }
   if (url.pathname === "/api/codex-profiles" && req.method === "GET") {
+    const activeQuota = liveQuotaSnapshotForProfiles();
+    syncKnownCodexMobileMcpToolsets({ activeQuota });
     sendJson(res, 200, codexProfileService.profiles({
-      activeQuota: liveQuotaSnapshotForProfiles(),
+      activeQuota,
     }));
     return;
   }
+  if (url.pathname === "/api/codex-profiles/switch-progress" && req.method === "GET") {
+    const requestId = String(url.searchParams.get("requestId") || "").trim();
+    const progress = getProfileSwitchProgress(requestId);
+    if (!progress) {
+      sendJson(res, 404, { ok: false, error: "Profile switch progress not found" });
+      return;
+    }
+    sendJson(res, 200, { ok: true, progress });
+    return;
+  }
   if (url.pathname === "/api/codex-profiles/active" && req.method === "POST") {
+    let requestId = "";
     try {
       const body = await readBody(req);
+      requestId = profileSwitchProgressRequestId(body.requestId);
       const targetProfileId = String(body.profileId || body.id || "").trim().toLowerCase();
+      setProfileSwitchProgress(requestId, {
+        targetProfileId,
+        status: "running",
+        stage: "profile_lookup",
+        message: "正在读取目标 Profile...",
+        stepIndex: 1,
+        stepCount: 10,
+      });
       const availableProfiles = codexProfileService.profiles({
         activeQuota: liveQuotaSnapshotForProfiles(),
       });
@@ -11312,19 +11690,75 @@ async function handleApi(req, res) {
       if (!targetProfile) {
         throw httpStatusError(404, "Unknown Codex profile");
       }
-      const preflight = await preflightCodexProfileSwitch(targetProfile);
+      setProfileSwitchProgress(requestId, {
+        targetProfileId: targetProfile.id,
+        targetProfileLabel: targetProfile.label || targetProfile.id,
+        stage: "workspace_trust",
+        message: "正在同步目标账号的工作区信任...",
+        stepIndex: 2,
+      });
       syncRegisteredWorkspaceTrust(targetProfile.codexHome);
+      setProfileSwitchProgress(requestId, {
+        targetProfileId: targetProfile.id,
+        targetProfileLabel: targetProfile.label || targetProfile.id,
+        stage: "mcp_toolset",
+        message: "正在注册 Codex Mobile 工具...",
+        stepIndex: 3,
+      });
+      syncCodexMobileMcpToolset(targetProfile.codexHome);
+      const preflight = await preflightCodexProfileSwitch(targetProfile, {
+        onProgress: (patch) => setProfileSwitchProgress(requestId, Object.assign({
+          targetProfileId: targetProfile.id,
+          targetProfileLabel: targetProfile.label || targetProfile.id,
+          status: "running",
+        }, patch || {})),
+      });
+      setProfileSwitchProgress(requestId, {
+        targetProfileId: targetProfile.id,
+        targetProfileLabel: targetProfile.label || targetProfile.id,
+        stage: "write_active_profile",
+        message: "正在写入 active Profile 配置...",
+        stepIndex: 9,
+      });
       const profile = codexProfileService.setActiveProfile(targetProfile.id);
+      setProfileSwitchProgress(requestId, {
+        targetProfileId: profile.id,
+        targetProfileLabel: profile.label || profile.id,
+        stage: "schedule_restart",
+        message: "正在安排 Mobile Web 重启...",
+        stepIndex: 10,
+      });
       const restart = sharedChainRestartService.restart(Object.assign({
         delayMs: SHARED_CHAIN_RESTART_DELAY_MS,
       }, activeProfileRestartOptions(profile)));
-      sendJson(res, 202, Object.assign({ ok: true, activeProfileId: profile.id, profile, preflight }, restart));
+      const progress = setProfileSwitchProgress(requestId, {
+        targetProfileId: profile.id,
+        targetProfileLabel: profile.label || profile.id,
+        status: "restarting",
+        stage: "waiting_for_restart",
+        message: "切换已写入，正在等待服务恢复...",
+        stepIndex: 10,
+        restarting: true,
+      });
+      sendJson(res, 202, Object.assign({ ok: true, requestId, activeProfileId: profile.id, profile, preflight, progress }, restart));
     } catch (err) {
+      if (requestId) {
+        setProfileSwitchProgress(requestId, {
+          status: "failed",
+          stage: "failed",
+          message: err.message || "Profile 切换失败",
+          error: err.message || String(err),
+          code: err.code || undefined,
+          detail: err.detail || undefined,
+        });
+      }
       sendJson(res, err.statusCode || 500, {
         ok: false,
         error: err.message || String(err),
         code: err.code || undefined,
         detail: err.detail || undefined,
+        requestId: requestId || undefined,
+        progress: requestId ? getProfileSwitchProgress(requestId) || undefined : undefined,
       });
     }
     return;
@@ -11873,6 +12307,7 @@ async function handleApi(req, res) {
       const body = await readBody(req);
       const created = workspaceRegistryService.create(body);
       syncRegisteredWorkspaceTrust(CODEX_HOME);
+      syncKnownCodexMobileMcpToolsets();
       sendJson(res, 200, created);
     } catch (err) {
       sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
@@ -12896,13 +13331,14 @@ function shutdown() {
     if (codex.child && codex.child.exitCode === null) codex.child.kill();
   } catch (_) {}
   try {
-    if (codex.muxChild && codex.muxChild.exitCode === null) codex.muxChild.kill();
+    if (!PERSIST_MOBILE_OWNED_MUX && codex.muxChild && codex.muxChild.exitCode === null) codex.muxChild.kill();
   } catch (_) {}
   process.exit(0);
 }
 
 function startServer() {
   syncRegisteredWorkspaceTrust(CODEX_HOME);
+  syncKnownCodexMobileMcpToolsets();
   server.listen(PORT, HOST, () => {
     console.log(`Codex Mobile Web listening on http://${HOST}:${PORT}`);
     if (REQUIRE_SHARED_APP_SERVER) {
@@ -12958,5 +13394,7 @@ module.exports = {
   threadMatchesWorkspaceCwd,
   workspaceDelegationDynamicToolSpec,
   attachWorkspaceDelegationDynamicTools,
+  attachWorkspaceDelegationRuntimeGuidance,
+  workspaceDelegationScriptFallbackInstruction,
   dynamicToolTextResponse,
 };

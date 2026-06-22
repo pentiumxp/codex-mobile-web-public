@@ -47,16 +47,21 @@ test("profile switch restart passes the selected profile to the shared-chain scr
   assert.match(serverJs, /function activeProfileRestartOptions\(profile = null\)/);
   assert.match(serverJs, /profileId:\s*selected\.id/);
   assert.match(serverJs, /codexHome:\s*selected\.codexHome/);
-  assert.match(serverJs, /const preflight = await preflightCodexProfileSwitch\(targetProfile\)/);
+  assert.match(serverJs, /const preflight = await preflightCodexProfileSwitch\(targetProfile,\s*\{/);
   assert.match(serverJs, /syncRegisteredWorkspaceTrust\(targetProfile\.codexHome\)/);
+  assert.match(serverJs, /syncCodexMobileMcpToolset\(targetProfile\.codexHome\)/);
   assert.match(serverJs, /codexProfileService\.setActiveProfile/);
   assert.ok(
-    serverJs.indexOf("const preflight = await preflightCodexProfileSwitch(targetProfile)") < serverJs.indexOf("const profile = codexProfileService.setActiveProfile(targetProfile.id)"),
+    serverJs.indexOf("const preflight = await preflightCodexProfileSwitch(targetProfile, {") < serverJs.indexOf("const profile = codexProfileService.setActiveProfile(targetProfile.id)"),
     "profile switch must preflight the target account before writing active profile state",
   );
   assert.ok(
     serverJs.indexOf("syncRegisteredWorkspaceTrust(targetProfile.codexHome)") < serverJs.indexOf("const profile = codexProfileService.setActiveProfile(targetProfile.id)"),
     "profile switch should trust registered workspaces in the target profile before restart",
+  );
+  assert.ok(
+    serverJs.indexOf("syncCodexMobileMcpToolset(targetProfile.codexHome)") < serverJs.indexOf("const preflight = await preflightCodexProfileSwitch(targetProfile, {"),
+    "profile switch should register the Codex Mobile MCP toolset before target preflight",
   );
   assert.ok(
     serverJs.indexOf("const profile = codexProfileService.setActiveProfile(targetProfile.id)") < serverJs.indexOf("sharedChainRestartService.restart(Object.assign({"),
@@ -65,6 +70,9 @@ test("profile switch restart passes the selected profile to the shared-chain scr
   assert.match(serverJs, /activeProfileRestartOptions\(profile\)/);
   assert.match(serverJs, /sendJson\(res,\s*err\.statusCode \|\| 500,[\s\S]*code:\s*err\.code \|\| undefined/);
   assert.match(serverJs, /target_profile_auth_invalid/);
+  assert.match(serverJs, /profileSwitchProgress/);
+  assert.match(serverJs, /\/api\/codex-profiles\/switch-progress/);
+  assert.match(serverJs, /preflight_rate_limits/);
   const connectBody = serverJs.slice(
     serverJs.indexOf("function connectPreflightWebSocket"),
     serverJs.indexOf("function preflightRpc"),
@@ -73,9 +81,16 @@ test("profile switch restart passes the selected profile to the shared-chain scr
   assert.match(connectBody, /profile switch preflight websocket timeout/);
   assert.match(appJs, /codexProfileSwitchTargetId/);
   assert.match(appJs, /codex-profile-progress/);
-  assert.match(appJs, /正在预检目标 Codex 账号/);
+  assert.match(appJs, /startCodexProfileSwitchProgressPolling/);
+  assert.match(appJs, /正在读取目标 Profile/);
+  assert.match(appJs, /正在读取目标账号额度并确认登录/);
   assert.match(appJs, /timeoutMs:\s*90000/);
   assert.match(stylesCss, /\.codex-profile-main \.codex-profile-progress/);
+  assert.match(serverJs, /function syncCodexMobileMcpToolset\(codexHome = CODEX_HOME\)/);
+  assert.match(serverJs, /function syncKnownCodexMobileMcpToolsets\(profileOptions = \{\}\)/);
+  assert.match(serverJs, /codexProfileService\.profiles\(profileOptions\)/);
+  assert.match(serverJs, /syncKnownCodexMobileMcpToolsets\(\)/);
+  assert.match(serverJs, /syncKnownCodexMobileMcpToolsets\(\{ activeQuota \}\)/);
 });
 
 test("shared-chain restart cleans stale bare node server listener on the selected port", () => {

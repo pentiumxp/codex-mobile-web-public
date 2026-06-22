@@ -131,8 +131,12 @@ test("server hydrates rollout quota snapshots without overwriting live quota", (
   assert.match(serverJs, /CODEX_MUX_STANDALONE:\s*"1"[\s\S]*CODEX_MUX_KEEP_ALIVE:\s*"1"[\s\S]*CODEX_MUX_PUBLISH_ENDPOINT:\s*"1"/, "Mobile-owned mux should stay alive after Desktop exits and publish the active profile endpoint");
   assert.match(serverJs, /shared endpoint missing; starting Mobile-owned mux/, "required shared mode should start a Mobile-owned mux when the profile endpoint is absent");
   assert.match(serverJs, /profile mux endpoint unavailable; starting Mobile-owned mux/, "stale profile endpoints should be replaced by a Mobile-owned mux");
+  assert.match(serverJs, /const PERSIST_MOBILE_OWNED_MUX =/, "server should expose a persistent owned mux mode for Listener restarts");
+  assert.match(serverJs, /detached:\s*PERSIST_MOBILE_OWNED_MUX/, "persistent owned mux should detach from the Listener process group");
+  assert.match(serverJs, /child\.unref\(\)/, "persistent owned mux should not keep the Listener process alive");
+  assert.match(serverJs, /persistentOwnedMux:\s*PERSIST_MOBILE_OWNED_MUX/, "status should expose persistent owned mux mode");
   assert.match(serverJs, /mobileOwnedMux:\s*this\.muxChild \? \{[\s\S]*pid:[\s\S]*running:/, "status should expose bounded Mobile-owned mux runtime evidence");
-  assert.match(serverJs, /if \(codex\.muxChild && codex\.muxChild\.exitCode === null\) codex\.muxChild\.kill\(\)/, "server shutdown should stop the Mobile-owned mux child");
+  assert.match(serverJs, /if \(!PERSIST_MOBILE_OWNED_MUX && codex\.muxChild && codex\.muxChild\.exitCode === null\) codex\.muxChild\.kill\(\)/, "server shutdown should preserve persistent owned mux children");
   assert.match(serverJs, /function activeRateLimits\(\)[\s\S]*latestLiveRateLimits \|\| latestSnapshotRateLimits/, "live quota should win over rollout snapshots");
   assert.match(serverJs, /\/api\/public-config"[\s\S]*await codex\.refreshRateLimitsIfMissing\(\);[\s\S]*rateLimits: activeRateLimits\(\)/, "public config should refresh and include active quota");
   assert.match(serverJs, /\/api\/status"[\s\S]*await codex\.refreshRateLimitsIfMissing\(\);[\s\S]*sendJson\(res, 200, codex\.status\(\)\)/, "status should refresh and include hydrated quota snapshots");
@@ -145,12 +149,12 @@ test("server runtime inheritance includes model and reasoning effort", () => {
   assert.match(settingsBody, /model,\s*reasoningEffort,/, "runtime settings response should expose inherited model and effort");
 
   const startBody = functionBody(serverJs, "applyStartThreadRuntimeSettings");
-  assert.match(startBody, /attachWorkspaceDelegationDynamicTools\(params\)/, "thread/start should receive workspace delegation dynamic tools when enabled");
+  assert.match(startBody, /attachWorkspaceDelegationRuntimeGuidance\(params\)/, "thread/start should receive workspace delegation dynamic tools and script fallback guidance when enabled");
   assert.match(startBody, /if \(settings\.model\) params\.model = settings\.model;/, "thread/start should inherit model");
   assert.match(startBody, /applyWorkspaceDelegationRuntimeGuard\(params, settings, \{ useSandboxPolicy: false \}\)/, "thread/start should enforce workspace delegation write guard");
 
   const turnBody = functionBody(serverJs, "applyTurnRuntimeSettings");
-  assert.match(turnBody, /attachWorkspaceDelegationDynamicTools\(params\)/, "turn/start should receive workspace delegation dynamic tools when enabled");
+  assert.match(turnBody, /attachWorkspaceDelegationRuntimeGuidance\(params\)/, "turn/start should receive workspace delegation dynamic tools and script fallback guidance when enabled");
   assert.match(turnBody, /if \(settings\.model\) params\.model = settings\.model;/, "turn/start should inherit model");
   assert.match(turnBody, /if \(settings\.reasoningEffort\) params\.effort = settings\.reasoningEffort;/, "turn/start should inherit reasoning effort");
   assert.match(turnBody, /applyWorkspaceDelegationRuntimeGuard\(params, settings, \{ useSandboxPolicy: true \}\)/, "turn/start should enforce workspace delegation write guard");
@@ -177,6 +181,17 @@ test("server runtime inheritance includes model and reasoning effort", () => {
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS/, "server should expose explicit cwd allowlist env");
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_DISABLE_SELF_EXEMPTION/, "self-maintenance exemption should be explicitly disableable");
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_DISABLE_PLATFORM_EXEMPTION/, "platform-control exemption should be explicitly disableable");
+
+  const guidanceBody = functionBody(serverJs, "attachWorkspaceDelegationRuntimeGuidance");
+  assert.match(guidanceBody, /attachWorkspaceDelegationDynamicTools\(params, settings\)/, "runtime guidance should preserve dynamic tool injection");
+  assert.match(guidanceBody, /appendDeveloperInstructions\(/, "runtime guidance should add model-visible fallback instructions");
+  assert.match(guidanceBody, /workspaceDelegationScriptFallbackInstruction\(params\)/, "runtime guidance should include the local task-card script fallback");
+
+  const fallbackBody = functionBody(serverJs, "workspaceDelegationScriptFallbackInstruction");
+  assert.match(fallbackBody, /create-thread-task-card\.js/, "fallback guidance should point to the local task-card script");
+  assert.match(fallbackBody, /multi_agent_v1\.spawn_agent/, "fallback guidance should tell models not to substitute multi-agent tools for task cards");
+  assert.match(fallbackBody, /--source-thread/, "fallback script command should include the source-thread argument");
+  assert.match(fallbackBody, /--body-file/, "fallback script command should support long Markdown bodies");
 
   const exemptBody = functionBody(serverJs, "workspaceDelegationGuardExemptCwd");
   assert.match(exemptBody, /workspaceDelegationGuardExemptCwds\(\)/, "exemption should honor explicit cwd allowlist");

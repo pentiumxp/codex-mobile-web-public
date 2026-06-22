@@ -25,6 +25,16 @@ Codex Desktop <-> codex-app-server-mux.js <-> real codex app-server
                  Mobile Web connects through endpoint.json
 ```
 
+Mac production should use the shared stream even when Codex Desktop is not
+running. The Codex Mobile LaunchDaemon sets
+`CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER=1`,
+`CODEX_MOBILE_MUX_ENDPOINT_FILE=<CODEX_HOME>/app-server-mux/endpoint.json`, and
+`CODEX_MOBILE_PERSIST_OWNED_MUX=1`. If the endpoint is missing, `server.js`
+starts a standalone mux with `CODEX_MUX_KEEP_ALIVE=1`, detaches it from the
+Listener process, and then connects through the endpoint. Later Listener
+deploys or restarts close only the HTTP/SSE process; the mux and real
+app-server continue running so active turns can survive.
+
 ## Process Boundaries
 
 | Process | Owner | Responsibility |
@@ -446,10 +456,23 @@ mutations should create a task card before target-workspace work, not directly
 the current thread. This dynamic-tool path is fixed to source-thread direct
 approval while the switch is enabled; a model-supplied `pending:true` is ignored
 for this path so free delegation cannot create target-side Pending cards.
+If a guarded local attempt fails with sandbox, permission, cwd, or
+approval-policy errors, the server still does not create a card from the log.
+The source model must evaluate the failure in context and call the dynamic tool
+itself, so the delegated task keeps the originating thread's intent and
+evidence.
 Server-side handling of `item/tool/call` resolves the source thread from
 app-server metadata or the recent turn/thread map, resolves the target by exact
 thread id/title/cwd, and then calls the same source-thread task-card helper.
-This path is not MCP; it is only for Codex app-server turns.
+This app-server dynamic-tool path is only for Codex app-server turns. Codex
+Mobile also registers a standard `codex_mobile` MCP server into each active or
+target Codex Home during startup, workspace creation, and profile switching.
+That MCP server is backed by `scripts/codex-mobile-mcp-server.js`, exposes
+`list_threads` and `delegate_to_thread`, and uses the same authenticated local
+task-card API. The registration writes command/script/server/key-file paths to
+`CODEX_HOME/config.toml`; it does not store raw key material. This gives new
+Profiles and new Codex Homes the same delegation toolset without manual config
+edits.
 To keep this from being only a model prompt, the same runtime switch also
 applies a server-side write guard to `thread/start`, `thread/resume`, and
 `turn/start`: if the request has a cwd, or the thread id can be resolved to a
@@ -704,6 +727,13 @@ GitHub preview metadata is available through authenticated `GET /api/link-previe
 ## Invariants
 
 - Shared-stream mode must not silently fall back to a managed app-server child.
+- A Codex Home owns one shared mux endpoint. Codex Desktop, Codex Mobile Web,
+  and any Home-specific shortcut using the same `CODEX_HOME` must attach to the
+  same `app-server-mux/endpoint.json` information stream instead of creating
+  independent per-client streams. Reliability fixes should change mux process
+  lifetime, not split mux ownership by client surface.
+- Mac production shared-stream mode uses a persistent Mobile-owned mux when
+  Desktop is closed; Listener shutdown must not kill that mux.
 - Mux endpoint drift must be detected before using a stale live socket.
 - Windows background helpers started by Mobile Web or the Desktop shared bridge
   must be windowless. Use `-WindowStyle Hidden` for PowerShell/Start-Process
