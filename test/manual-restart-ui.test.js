@@ -83,7 +83,7 @@ test("profile switch restart passes the selected profile to the shared-chain scr
   assert.match(appJs, /codex-profile-progress/);
   assert.match(appJs, /startCodexProfileSwitchProgressPolling/);
   assert.match(appJs, /正在读取目标 Profile/);
-  assert.match(appJs, /正在读取目标账号额度并确认登录/);
+  assert.match(appJs, /正在读取目标账号额度/);
   assert.match(appJs, /timeoutMs:\s*90000/);
   assert.match(stylesCss, /\.codex-profile-main \.codex-profile-progress/);
   assert.match(serverJs, /function syncCodexMobileMcpToolset\(codexHome = CODEX_HOME\)/);

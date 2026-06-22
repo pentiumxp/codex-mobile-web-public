@@ -29,7 +29,9 @@ test("settings panel exposes Codex profile account and switch UI", () => {
   assert.match(appJs, /\/api\/codex-profiles\/switch-progress\?requestId=/);
   assert.match(appJs, /正在读取目标 Profile/);
   assert.match(appJs, /切换已写入，正在等待服务恢复/);
-  assert.match(appJs, /state\.codexProfileSwitchStage = "切换失败"/);
+  assert.match(appJs, /setCodexProfileSwitchStage\(`切换失败：/);
+  assert.match(appJs, /showingSwitchProgress/);
+  assert.match(appJs, /switchAccepted/);
   assert.match(appJs, /function finishRestartingUiIfReady\(\)/);
   assert.match(appJs, /state\.codexProfileRestarting = false/);
   assert.match(appJs, /state\.codexProfileSwitchTargetId = ""/);
@@ -47,6 +49,8 @@ test("server exposes profile list and active profile switch endpoints", () => {
   assert.match(serverJs, /url\.pathname === "\/api\/codex-profiles\/switch-progress"/);
   assert.match(serverJs, /url\.pathname === "\/api\/codex-profiles\/active"/);
   assert.match(serverJs, /setProfileSwitchProgress/);
+  assert.match(serverJs, /target_profile_rate_limits_unavailable/);
+  assert.match(serverJs, /\[codex-profile-switch\] failed/);
   assert.match(serverJs, /sharedChainRestartService\.restart/);
 });
 

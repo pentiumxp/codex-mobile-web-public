@@ -385,7 +385,7 @@ const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v372";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v373";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -393,7 +393,7 @@ const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "preflight_spawn", label: "正在启动目标账号 app-server" },
   { id: "preflight_connect", label: "正在连接目标账号 app-server" },
   { id: "preflight_initialize", label: "正在初始化目标账号会话" },
-  { id: "preflight_rate_limits", label: "正在读取目标账号额度并确认登录" },
+  { id: "preflight_rate_limits", label: "正在读取目标账号额度" },
   { id: "preflight_done", label: "目标账号预检通过" },
   { id: "write_active_profile", label: "正在写入 active Profile 配置" },
   { id: "schedule_restart", label: "正在安排 Mobile Web 重启" },
@@ -2167,6 +2167,7 @@ function renderCodexProfileSettings() {
     const id = String(profile.id || "");
     const active = Boolean(profile.active) || id === state.activeCodexProfileId;
     const switchingThisProfile = state.codexProfileSwitchBusy && state.codexProfileSwitchTargetId === id;
+    const showingSwitchProgress = state.codexProfileSwitchTargetId === id && Boolean(state.codexProfileSwitchStage);
     const loggedIn = profile.auth && profile.auth.status === "loggedIn";
     const disabled = active || state.codexProfileSwitchBusy || state.codexProfileRestarting || !state.codexProfileSwitchSupported || !loggedIn;
     const action = switchingThisProfile
@@ -2180,10 +2181,12 @@ function renderCodexProfileSettings() {
         ? "Login to this Codex home before switching"
         : switchingThisProfile
           ? "Checking target account before switching"
+        : showingSwitchProgress
+          ? "Last profile switch status"
         : active
           ? "Current active profile"
           : "Switch all workspaces to this profile";
-    const status = switchingThisProfile
+    const status = showingSwitchProgress
       ? `<small class="codex-profile-progress">${escapeHtml(state.codexProfileSwitchStage || "正在预检目标账号...")}</small>`
       : "";
     return `<div class="codex-profile-row${active ? " active" : ""}">`
@@ -2498,6 +2501,7 @@ function startCodexProfileSwitchProgressPolling(requestId) {
 
 async function performCodexProfileSwitch(profileId) {
   const requestId = createSubmissionId();
+  let switchAccepted = false;
   state.codexProfileSwitchBusy = true;
   state.codexProfileSwitchTargetId = profileId;
   state.codexProfileSwitchRequestId = requestId;
@@ -2523,22 +2527,33 @@ async function performCodexProfileSwitch(profileId) {
       stepCount: 10,
     });
     state.codexProfileRestarting = true;
+    switchAccepted = true;
     showReconnectRefreshPrompt("restart");
   } catch (err) {
     stopCodexProfileSwitchProgressPolling();
+    let showedProgress = false;
     try {
       const progressResult = await api(`/api/codex-profiles/switch-progress?requestId=${encodeURIComponent(requestId)}`, {
         timeoutMs: 5000,
       });
-      if (progressResult && progressResult.progress) setCodexProfileSwitchStage(progressResult.progress);
+      if (progressResult && progressResult.progress) {
+        setCodexProfileSwitchStage(progressResult.progress);
+        showedProgress = true;
+      }
     } catch (_) {}
-    if (err && err.progress) setCodexProfileSwitchStage(err.progress);
-    state.codexProfileSwitchStage = "切换失败";
-    $("connectionState").textContent = err.message || "Codex profile switch failed";
+    if (err && err.progress) {
+      setCodexProfileSwitchStage(err.progress);
+      showedProgress = true;
+    }
+    if (!showedProgress) {
+      setCodexProfileSwitchStage(`切换失败：${err.message || "Codex profile switch failed"}`);
+    }
+    const connection = $("connectionState");
+    if (connection) connection.textContent = state.codexProfileSwitchStage || err.message || "Codex profile switch failed";
     showError(err);
   } finally {
     state.codexProfileSwitchBusy = false;
-    if (!state.codexProfileRestarting) {
+    if (!state.codexProfileRestarting && switchAccepted) {
       state.codexProfileSwitchTargetId = "";
       state.codexProfileSwitchStage = "";
       state.codexProfileSwitchRequestId = "";

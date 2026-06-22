@@ -2,6 +2,53 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-22 Profile Switch Failure Visibility And Rate Limit Warning
+
+- Status: implemented and validated locally; commit/deploy pending at this
+  handoff update point.
+- Trigger:
+  - After v372 deploy, user switched Profile to `default`.
+  - UI showed more progress steps such as reading account/quota, then the
+    progress disappeared and the page appeared stuck.
+- Production diagnosis before change:
+  - 8787 service was healthy.
+  - `/api/public-config`, authenticated `/api/status`, profile store, and
+    launchd environment all still reported active profile `previous`.
+  - Therefore the `default` switch did not commit.
+  - stderr showed target mux startup activity and
+    `account/rateLimits/read failed`, indicating the target preflight likely
+    aborted during quota read after the target app-server had started.
+- Change:
+  - `preflightCodexProfileSwitch()` still fails closed for explicit auth
+    failures such as 401/token-expired.
+  - Non-auth quota read failures from `account/rateLimits/read` now become a
+    bounded warning and do not silently abort a profile switch after target
+    app-server initialization succeeds.
+  - Profile switch failures now log a bounded `[codex-profile-switch] failed`
+    record with request id, target profile, failed stage, code, and truncated
+    detail only.
+  - `/api/codex-profiles/active` error responses preserve `progress`, and
+    `public/api-client.js` attaches `progress`, `requestId`, and `responseBody`
+    to thrown errors.
+  - `public/app.js` keeps the failed Profile row status visible instead of
+    clearing it in `finally`; shell cache/client build moved to
+    `codex-mobile-shell-v373`.
+  - README top entry has the required Chinese release note.
+- Validation:
+  - `node --check server.js`, `node --check public/app.js`,
+    `node --check public/api-client.js`, `node --check public/sw.js`
+  - `node --test test/api-client.test.js test/codex-profile-ui.test.js
+    test/codex-profile-preflight.test.js test/manual-restart-ui.test.js`
+  - `node --test test/mobile-viewport.test.js test/thread-goal-service.test.js
+    test/thread-task-card-route.test.js`
+  - `npm run check`
+  - Central AI Ops required checks:
+    `node tests/gateway-run-lifecycle-service.test.js`,
+    `node tests/gateway-run-start-service.test.js`,
+    `node tests/gateway-run-stream-service.test.js`,
+    `node tests/runtime-config-provider.test.js`
+  - `git diff --check`
+
 ## 2026-06-22 Profile Switch Progress And macOS Host Restart Safety
 
 - Status: committed and deployed to Mac production.

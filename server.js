@@ -7548,6 +7548,12 @@ function profileSwitchProgressSnapshot(item = {}) {
     error: item.error ? String(item.error) : undefined,
     code: item.code ? String(item.code) : undefined,
     detail: item.detail ? String(item.detail) : undefined,
+    failedStage: item.failedStage ? String(item.failedStage) : undefined,
+    warnings: Array.isArray(item.warnings) ? item.warnings.slice(0, 5).map((warning) => ({
+      code: warning && warning.code ? String(warning.code) : "",
+      message: warning && warning.message ? String(warning.message) : "",
+      detail: warning && warning.detail ? String(warning.detail) : "",
+    })) : undefined,
     updatedAt: item.updatedAt || "",
     createdAt: item.createdAt || "",
   };
@@ -7584,6 +7590,12 @@ function boundedProfilePreflightDetail(err) {
   const raw = String(err && (err.message || err) || "").replace(/\s+/g, " ").trim();
   if (!raw) return "";
   return raw.slice(0, 260);
+}
+
+function profileSwitchLogDetail(value) {
+  const raw = String(value || "").replace(/\s+/g, " ").trim();
+  if (!raw) return "";
+  return raw.slice(0, 220);
 }
 
 function profileSwitchStage(id, label, status = "completed", detail = "") {
@@ -7693,6 +7705,8 @@ async function preflightCodexProfileSwitch(profile, options = {}) {
   };
   const timeoutMs = Math.max(3000, Number(options.timeoutMs || PROFILE_SWITCH_PREFLIGHT_TIMEOUT_MS));
   const startedAt = Date.now();
+  const warnings = [];
+  let rateLimitsChecked = false;
   const port = await getFreePort();
   emitProgress({
     stage: "preflight_spawn",
@@ -7751,13 +7765,38 @@ async function preflightCodexProfileSwitch(profile, options = {}) {
       }, remaining);
       emitProgress({
         stage: "preflight_rate_limits",
-        message: "正在读取目标账号额度并确认登录...",
+        message: "正在读取目标账号额度...",
         stepIndex: 7,
       });
-      await preflightRpc(ws, 2, "account/rateLimits/read", {}, Math.max(2000, timeoutMs - (Date.now() - startedAt)));
+      try {
+        await preflightRpc(ws, 2, "account/rateLimits/read", {}, Math.max(2000, timeoutMs - (Date.now() - startedAt)));
+        rateLimitsChecked = true;
+      } catch (rateLimitErr) {
+        const classified = profileSwitchPreflightError(rateLimitErr);
+        if (classified.code === "target_profile_auth_invalid") throw rateLimitErr;
+        const warningDetail = boundedProfilePreflightDetail(rateLimitErr);
+        warnings.push({
+          code: "target_profile_rate_limits_unavailable",
+          message: "目标账号额度暂时读取失败，已继续切换预检。",
+          detail: warningDetail,
+        });
+        console.error(`[codex-profile-switch] rate_limits_warning ${JSON.stringify({
+          targetProfileId: String(profile.id || ""),
+          code: "target_profile_rate_limits_unavailable",
+          detail: profileSwitchLogDetail(warningDetail),
+        })}`);
+        emitProgress({
+          stage: "preflight_rate_limits",
+          status: "warning",
+          message: "目标账号额度暂时读取失败，继续确认切换...",
+          stepIndex: 7,
+          code: "target_profile_rate_limits_unavailable",
+          detail: warningDetail,
+        });
+      }
       emitProgress({
         stage: "preflight_done",
-        message: "目标账号预检通过",
+        message: warnings.length ? "目标账号预检通过，额度读取稍后刷新" : "目标账号预检通过",
         stepIndex: 8,
       });
     } finally {
@@ -7768,7 +7807,8 @@ async function preflightCodexProfileSwitch(profile, options = {}) {
     return {
       ok: true,
       profileId: profile.id,
-      checked: ["initialize", "account/rateLimits/read"],
+      checked: rateLimitsChecked ? ["initialize", "account/rateLimits/read"] : ["initialize"],
+      warnings,
     };
   } catch (err) {
     const classified = profileSwitchPreflightError(err);
@@ -11743,14 +11783,25 @@ async function handleApi(req, res) {
       sendJson(res, 202, Object.assign({ ok: true, requestId, activeProfileId: profile.id, profile, preflight, progress }, restart));
     } catch (err) {
       if (requestId) {
-        setProfileSwitchProgress(requestId, {
+        const previousProgress = getProfileSwitchProgress(requestId);
+        const failedProgress = setProfileSwitchProgress(requestId, {
           status: "failed",
           stage: "failed",
-          message: err.message || "Profile 切换失败",
+          message: `切换失败：${err.message || "Profile 切换失败"}`,
           error: err.message || String(err),
           code: err.code || undefined,
           detail: err.detail || undefined,
+          failedStage: previousProgress && previousProgress.stage !== "failed" ? previousProgress.stage : undefined,
+          stepIndex: previousProgress && previousProgress.stepIndex ? previousProgress.stepIndex : undefined,
         });
+        console.error(`[codex-profile-switch] failed ${JSON.stringify({
+          requestId,
+          targetProfileId: failedProgress.targetProfileId || undefined,
+          stage: failedProgress.stage,
+          failedStage: previousProgress && previousProgress.stage || undefined,
+          code: failedProgress.code || undefined,
+          detail: profileSwitchLogDetail(failedProgress.detail || failedProgress.error),
+        })}`);
       }
       sendJson(res, err.statusCode || 500, {
         ok: false,
