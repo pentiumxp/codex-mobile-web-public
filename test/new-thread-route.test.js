@@ -171,12 +171,13 @@ test("server runtime inheritance includes model and reasoning effort", () => {
     guardBody.indexOf("workspaceDelegationGuardExemptCwd(cwd)") < guardBody.indexOf("applyWorkspaceDelegationFullAccessCompatRuntime(params, options)"),
     "maintenance/deploy exemptions must run before runtime compatibility overrides",
   );
-  assert.match(guardBody, /applyWorkspaceDelegationFullAccessCompatRuntime\(params, options\)/, "write guard should route default enforcement through dynamic approval compatibility");
-  assert.match(guardBody, /WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD/, "hard sandbox narrowing should require an explicit opt-in");
-  assert.match(guardBody, /applyWorkspaceDelegationFullAccessCompatRuntime\(params, options\)/, "default guard should heal app-server workspace-write inheritance that makes .git read-only");
+  assert.match(guardBody, /WORKSPACE_DELEGATION_APPROVAL_PROXY_ONLY/, "old full-access approval-proxy mode should require explicit operator opt-in");
+  assert.match(guardBody, /WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD/, "explicit hard sandbox env should override approval-proxy-only compatibility");
+  assert.match(guardBody, /params\.approvalPolicy = "on-request"/, "default guard should keep approval events available for current .git auto-allow and foreign-source denials");
+  assert.match(guardBody, /params\.sandboxPolicy = workspaceDelegationWriteGuardSandboxPolicy\(cwd, settings && settings\.sandboxPolicy\)/, "turn/start should receive a real workspace-write sandbox policy by default");
   assert.match(guardBody, /workspaceDelegationWriteGuardPermissionProfile\(cwd, settings && settings\.sandboxPolicy\)/, "opt-in hard guard should still use a bounded managed permission profile");
   assert.match(guardBody, /delete params\.sandboxPolicy/, "guard should be able to clear stale workspace-write sandbox policy");
-  assert.match(guardBody, /params\.sandbox = "workspace-write"/, "explicit hard guard should still support workspace-write sandbox mode");
+  assert.match(guardBody, /params\.sandbox = "workspace-write"/, "thread/start and thread/resume should still support workspace-write sandbox mode");
 
   const compatBody = functionBody(serverJs, "applyWorkspaceDelegationFullAccessCompatRuntime");
   assert.match(compatBody, /params\.approvalPolicy = "on-request"/, "compat runtime should keep app-server approval events available for dynamic source-write decisions");
@@ -184,10 +185,24 @@ test("server runtime inheritance includes model and reasoning effort", () => {
   assert.match(compatBody, /params\.sandbox = "danger-full-access"/, "thread/start and thread/resume compatibility should restore full access sandbox mode");
   assert.match(compatBody, /delete params\.permissionProfile/, "compat runtime should clear stale managed profiles that made .git read-only");
 
+  const guardSandboxPolicyBody = functionBody(serverJs, "workspaceDelegationWriteGuardSandboxPolicy");
+  assert.match(guardSandboxPolicyBody, /path\.join\(root, "\.git"\)/, "guard sandbox policy should include current .git as an explicit writable root");
+  assert.match(guardSandboxPolicyBody, /policy\.writableRoots = writableRoots/, "guard sandbox policy should publish expanded writable roots to app-server");
+
   assert.match(serverJs, /handleServerRequest\(msg\)[\s\S]*answerWorkspaceSourceWriteGuardRequest\(request\)/, "app-server approval requests should pass through the dynamic source-write guard");
   const approvalGuardBody = functionBody(serverJs, "workspaceSourceWriteGuardDecisionForRequest");
   assert.match(approvalGuardBody, /ACTIONABLE_APPROVAL_METHODS\.has\(request\.method\)/, "dynamic guard should only auto-answer app-server approval requests");
+  assert.match(approvalGuardBody, /workspaceSourceWriteGuardThreadCwdForRequest\(request\)/, "approval guard should base exemptions on the source thread cwd, not the command cwd");
+  assert.match(approvalGuardBody, /const cwd = sourceCwd \|\| workspaceSourceWriteGuardCwdForRequest\(request\)/, "approval guard should fall back to request cwd only when thread cwd is unavailable");
   assert.match(approvalGuardBody, /workspaceSourceWriteGuardService\.classify\(request\)/, "dynamic guard should delegate source-write policy to the adapter service");
+
+  const sourceCwdBody = functionBody(serverJs, "workspaceSourceWriteGuardThreadCwdForRequest");
+  assert.doesNotMatch(sourceCwdBody, /params\.cwd/, "source-thread cwd resolution must not treat command cwd as the source workspace");
+  const requestCwdBody = functionBody(serverJs, "workspaceSourceWriteGuardCwdForRequest");
+  assert.ok(
+    requestCwdBody.indexOf("workspaceSourceWriteGuardThreadCwdForRequest(request)") < requestCwdBody.indexOf("params.cwd"),
+    "request cwd fallback should only run after source-thread cwd lookup",
+  );
 
   const guardProfileBody = functionBody(serverJs, "workspaceDelegationWriteGuardPermissionProfile");
   assert.match(guardProfileBody, /kind: "root"[\s\S]*access: "read"/, "guard profile should keep root read-only");
@@ -201,7 +216,8 @@ test("server runtime inheritance includes model and reasoning effort", () => {
 
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_WRITE_GUARD/, "server should expose an emergency write-guard disable env");
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_DISABLE_WRITE_GUARD/, "server should expose a positive emergency write-guard disable env");
-  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD/, "server should expose an explicit hard-sandbox opt-in env");
+  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_APPROVAL_PROXY_ONLY/, "server should expose an emergency opt-in for the old approval-proxy-only mode");
+  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD/, "server should preserve the explicit hard-sandbox env as an override");
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS/, "server should expose explicit cwd allowlist env");
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_DISABLE_SELF_EXEMPTION/, "self-maintenance exemption should be explicitly disableable");
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_DISABLE_PLATFORM_EXEMPTION/, "platform-control exemption should be explicitly disableable");

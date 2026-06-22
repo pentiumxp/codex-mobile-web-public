@@ -222,6 +222,26 @@ function commandLooksWriteLike(command) {
   return WRITE_COMMAND_PATTERN.test(String(command || ""));
 }
 
+function commandHasShellChaining(command) {
+  return /(?:&&|\|\||;|\||`|\$\(|>\s*[^&]|\btee\s+)/.test(String(command || ""));
+}
+
+function isHomeAiControlPlaneRoot(root) {
+  const base = normalizeFsPath(root);
+  if (!base) return false;
+  return fs.existsSync(path.join(base, "scripts", "ai-ops-control-plane.js"))
+    && fs.existsSync(path.join(base, "scripts", "deploy-macos-production.js"))
+    && fs.existsSync(path.join(base, "docs", "PLATFORM_CONTRACTS", "plugin-workspace-platform-contract.md"));
+}
+
+function commandLooksTrustedHomeAiTool(command, cwdRoot) {
+  const text = String(command || "").trim();
+  if (!text || commandHasShellChaining(text) || !isHomeAiControlPlaneRoot(cwdRoot)) return false;
+  return /^(?:env\s+[\w.-]+=[^\s]+\s+)*(?:npm|npm\.cmd)\s+run(?:\s+--silent)?\s+(?:deploy:macos|ios:pwa:visual)\b/.test(text)
+    || /^(?:env\s+[\w.-]+=[^\s]+\s+)*node\s+scripts\/(?:ai-ops-control-plane|deploy-macos-production|plugin-workspace-platform-contract-check)\.js\b/.test(text)
+    || /^(?:env\s+[\w.-]+=[^\s]+\s+)*node\s+tests\/architecture-code-test-harness-map\.test\.js\b/.test(text);
+}
+
 function permissionRequestLooksWritable(params = {}) {
   const fileSystem = params.permissions && params.permissions.fileSystem;
   if (!fileSystem) return false;
@@ -295,9 +315,17 @@ function classifyWorkspaceSourceWriteRequest(request, options = {}) {
 
   if (method === "item/commandExecution/requestApproval" || method === "execCommandApproval") {
     const command = commandTextFromRequest(method, params);
-    if (!commandLooksWriteLike(command)) return { action: "allow", reason: "read_or_non_write_command" };
     const cwdRoot = matchingForeignRoot(params.cwd || currentCwd, roots);
     if (cwdRoot) {
+      if (commandLooksTrustedHomeAiTool(command, cwdRoot)) {
+        return {
+          action: "allow",
+          reason: "trusted_home_ai_tool_command",
+          matchedPath: params.cwd || currentCwd,
+          matchedRoot: cwdRoot,
+        };
+      }
+      if (!commandLooksWriteLike(command)) return { action: "allow", reason: "read_or_non_write_command" };
       return {
         action: "deny",
         reason: "foreign_source_write_command_cwd",
@@ -305,6 +333,7 @@ function classifyWorkspaceSourceWriteRequest(request, options = {}) {
         matchedRoot: cwdRoot,
       };
     }
+    if (!commandLooksWriteLike(command)) return { action: "allow", reason: "read_or_non_write_command" };
     const deniedPath = commandPathTokens(command, params.cwd || currentCwd).find((target) => matchingForeignRoot(target, roots));
     if (deniedPath) {
       return {
@@ -347,6 +376,7 @@ function createWorkspaceSourceWriteGuard(options = {}) {
 module.exports = {
   SOURCE_ROOT_MARKERS,
   classifyWorkspaceSourceWriteRequest,
+  commandLooksTrustedHomeAiTool,
   commandLooksWriteLike,
   createWorkspaceSourceWriteGuard,
   extractWritePathsFromRequest,

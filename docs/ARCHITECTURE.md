@@ -479,32 +479,40 @@ Profiles and new Codex Homes the same delegation toolset without manual config
 edits.
 To keep this from being only a model prompt, the same runtime switch also adds a
 dynamic source-write decision layer. For ordinary non-exempt workspaces,
-`thread/start`, `thread/resume`, and `turn/start` still restore
-`danger-full-access` and clear inherited managed profiles, but now use
-`approvalPolicy:"on-request"` so app-server sends approval-visible operations
-back to Mobile Web. `adapters/workspace-source-write-guard-service.js` then
-auto-allows reads, MCP calls, network, current-workspace writes, and
-current-workspace `.git` writes, while auto-denying explicit file changes,
-patches, write-like shell commands, or write-like file-system grants that target
-another known source root. This deliberately avoids the older default
-`workspace-write` / managed-profile path, because current Codex app-server
-builds can turn that path into a read-only `.git` metadata profile and break
-normal current-repository `git add/commit`.
+`thread/start`, `thread/resume`, and `turn/start` use a real
+`workspace-write` / managed profile plus `approvalPolicy:"on-request"` so direct
+tool calls are still constrained by the app-server sandbox. The profile keeps
+root read-only, allows writes to the current cwd, temporary directories, and the
+current cwd's `.git` metadata, and keeps `.codex` / `.agents` under the cwd
+read-only. The workspace-write sandbox policy also lists the current `.git` as
+an explicit writable root because the app-server sandbox can otherwise keep git
+metadata read-only even when the managed permission profile allows it.
+`adapters/workspace-source-write-guard-service.js` auto-allows reads,
+MCP calls, network, current-workspace writes, and current-workspace `.git`
+approval requests, while auto-denying explicit file changes, patches,
+write-like shell commands, or write-like file-system grants that target another
+known source root.
 
 Cross-workspace discipline is therefore enforced through two layers: the
 model-visible `codex_mobile.delegate_to_thread` dynamic tool/MCP/script
-fallback, and the server-side approval proxy that blocks approval-visible writes
-to other source roots. The approval proxy is not a full kernel sandbox for
-opaque scripts that hide their write target; if that becomes required, the
-app-server sandbox must support a profile that keeps the current cwd including
-`.git` writable while denying other source roots. Operators who explicitly want
-the older hard sandbox behavior can opt in with
-`CODEX_MOBILE_WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD=1`; that profile keeps
-root read-only, allows writes to the current cwd, temporary directories, and the
-current cwd's `.git` metadata, and keeps `.codex` / `.agents` under the cwd
-read-only. Trusted maintenance paths are still exempt from hard narrowing: the
-Codex Mobile source workspace itself, the Home AI central control-plane
-workspace that owns deployment scripts, and any cwd explicitly listed in
+fallback, and the server-side sandbox/approval decision layer. Home AI central
+control-plane provided tools are allowed through a narrow command allowlist when
+the cwd is the Home AI control-plane root and the command is not shell-chained:
+AI Ops, platform contract checks, visual harness commands, and `deploy:macos`.
+Direct `apply_patch`, `git add`, `git commit`, or arbitrary write commands
+against Home AI source remain denied from plugin workspaces. The guard resolves
+the source workspace from thread/turn ownership before looking at command cwd, so
+changing a command's cwd to Home AI cannot turn a plugin thread into a Home AI
+maintenance thread.
+
+The older `danger-full-access` approval-proxy-only mode is available only as an
+explicit emergency fallback with
+`CODEX_MOBILE_WORKSPACE_DELEGATION_APPROVAL_PROXY_ONLY=1`; setting
+`CODEX_MOBILE_WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD=1` keeps the real
+sandbox path even if the compatibility flag is present. Trusted maintenance
+source workspaces are still exempt from narrowing when they are the source
+thread cwd: the Codex Mobile source workspace itself, the Home AI central
+control-plane workspace that owns deployment scripts, and any cwd explicitly listed in
 `CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS`. Operators can disable
 the guard in an emergency with
 `CODEX_MOBILE_WORKSPACE_DELEGATION_WRITE_GUARD=0` or
