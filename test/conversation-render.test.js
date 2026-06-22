@@ -444,6 +444,7 @@ function evaluatedMergeItemsPreservingLocalVisible() {
     "userMessageSpecificity",
     "userMessagesLikelySame",
     "userMessagesCanShadow",
+    "sameUserMessageClientSubmission",
     "hasMatchingIncomingUserMessage",
     "hasMatchingRealUserMessage",
     "removeShadowedMuxUserMessages",
@@ -500,6 +501,7 @@ function evaluatedMergeItemsPreservingLocalVisibleWithRealVisibleWeight() {
     "userMessageSpecificity",
     "userMessagesLikelySame",
     "userMessagesCanShadow",
+    "sameUserMessageClientSubmission",
     "hasMatchingIncomingUserMessage",
     "hasMatchingRealUserMessage",
     "removeShadowedMuxUserMessages",
@@ -566,6 +568,7 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "userMessageSpecificity",
     "userMessagesLikelySame",
     "userMessagesCanShadow",
+    "sameUserMessageClientSubmission",
     "hasMatchingIncomingUserMessage",
     "hasMatchingRealUserMessage",
     "removeShadowedMuxUserMessages",
@@ -575,6 +578,7 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "userMessageHasVisualAttachment",
     "normalizeThreadVisibleUserMessages",
     "shouldDropOptimisticUserMessageForDurable",
+    "shouldDropOptimisticUserMessageForOptimistic",
     "threadDurableUserMessages",
     "shouldDropInitialSubmissionEchoTurn",
     "threadHasInitialSubmissionEcho",
@@ -648,6 +652,7 @@ function evaluatedNormalizeThreadVisibleUserMessages() {
     "userMessageSpecificity",
     "userMessagesLikelySame",
     "userMessagesCanShadow",
+    "sameUserMessageClientSubmission",
     "hasMatchingRealUserMessage",
     "removeShadowedMuxUserMessages",
     "userMessageShadowPriority",
@@ -656,6 +661,7 @@ function evaluatedNormalizeThreadVisibleUserMessages() {
     "userMessageHasVisualAttachment",
     "normalizeThreadVisibleUserMessages",
     "shouldDropOptimisticUserMessageForDurable",
+    "shouldDropOptimisticUserMessageForOptimistic",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
 function itemVisibleWeight(item) { return JSON.stringify(item || {}).length; }
@@ -692,6 +698,7 @@ function evaluatedLiveUserMessageUpsert() {
     "userMessagePathNameOverlap",
     "userMessagesLikelySame",
     "userMessagesCanShadow",
+    "sameUserMessageClientSubmission",
     "hasMatchingRealUserMessage",
     "removeShadowedMuxUserMessages",
     "userMessageShadowPriority",
@@ -700,6 +707,7 @@ function evaluatedLiveUserMessageUpsert() {
     "userMessageHasVisualAttachment",
     "normalizeThreadVisibleUserMessages",
     "shouldDropOptimisticUserMessageForDurable",
+    "shouldDropOptimisticUserMessageForOptimistic",
     "upsertItem",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
@@ -2379,6 +2387,77 @@ test("cross-turn normalization keeps synthetic repeat when matching durable mess
   assert.equal(thread.turns[0].items[0].id, "real-user-1");
   assert.equal(thread.turns[1].items.length, 1);
   assert.equal(thread.turns[1].items[0].id, "mux-user-thread-1-turn-2-submit-2");
+});
+
+test("cross-turn normalization drops later local echo after durable message with same submission id", () => {
+  const normalizeThreadVisibleUserMessages = evaluatedNormalizeThreadVisibleUserMessages();
+  const thread = {
+    turns: [
+      {
+        id: "durable-turn",
+        status: { type: "completed" },
+        items: [{
+          id: "real-user-current",
+          type: "userMessage",
+          clientSubmissionId: "submit-current",
+          content: [{ type: "input_text", text: "好的，帮我再测一遍" }],
+        }],
+      },
+      {
+        id: "local-live-turn",
+        status: { type: "active" },
+        items: [{
+          id: "local-user-submit-current",
+          type: "userMessage",
+          mobilePendingSubmission: true,
+          clientSubmissionId: "submit-current",
+          content: [{ type: "text", text: "好的，帮我再测一遍" }],
+        }],
+      },
+    ],
+  };
+
+  normalizeThreadVisibleUserMessages(thread);
+
+  assert.equal(thread.turns[0].items.length, 1);
+  assert.equal(thread.turns[0].items[0].id, "real-user-current");
+  assert.equal(thread.turns[1].items.length, 0);
+});
+
+test("cross-turn normalization keeps mux echo over local echo with same submission id", () => {
+  const normalizeThreadVisibleUserMessages = evaluatedNormalizeThreadVisibleUserMessages();
+  const thread = {
+    turns: [
+      {
+        id: "local-turn",
+        status: { type: "active" },
+        items: [{
+          id: "local-user-submit-current",
+          type: "userMessage",
+          mobilePendingSubmission: true,
+          clientSubmissionId: "submit-current",
+          content: [{ type: "text", text: "好的，帮我再测一遍" }],
+        }],
+      },
+      {
+        id: "mux-turn",
+        status: { type: "active" },
+        items: [{
+          id: "mux-user-thread-mux-turn-submit-current",
+          type: "userMessage",
+          mobilePendingSubmission: true,
+          clientSubmissionId: "submit-current",
+          content: [{ type: "input_text", text: "好的，帮我再测一遍" }],
+        }],
+      },
+    ],
+  };
+
+  normalizeThreadVisibleUserMessages(thread);
+
+  assert.equal(thread.turns[0].items.length, 0);
+  assert.equal(thread.turns[1].items.length, 1);
+  assert.equal(thread.turns[1].items[0].id, "mux-user-thread-mux-turn-submit-current");
 });
 
 test("cross-turn normalization drops later optimistic upload image echoes after durable image appears", () => {

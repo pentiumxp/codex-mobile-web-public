@@ -384,7 +384,7 @@ const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v371";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v372";
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -4997,6 +4997,12 @@ function userMessagesCanShadow(left, right) {
     && userMessagesLikelySame(left, right));
 }
 
+function sameUserMessageClientSubmission(left, right) {
+  const leftId = String(left && left.clientSubmissionId || "").trim();
+  const rightId = String(right && right.clientSubmissionId || "").trim();
+  return Boolean(leftId && rightId && leftId === rightId);
+}
+
 function hasMatchingIncomingUserMessage(existingItem, incomingItems) {
   if (!existingItem || existingItem.type !== "userMessage") return false;
   return (incomingItems || []).some((incomingItem) => incomingItem
@@ -5071,18 +5077,21 @@ function normalizeThreadVisibleUserMessages(thread) {
     turn.items = removeShadowedMuxUserMessages(dedupeLikelySameUserMessages(turn.items));
   }
   const durableUserMessages = [];
+  const optimisticUserMessages = [];
   for (let turnIndex = 0; turnIndex < thread.turns.length; turnIndex += 1) {
     const turn = thread.turns[turnIndex];
     const items = Array.isArray(turn && turn.items) ? turn.items : [];
     for (const item of items) {
       if (item && item.type === "userMessage" && !isOptimisticUserMessage(item)) durableUserMessages.push({ item, turnIndex });
+      if (isOptimisticUserMessage(item)) optimisticUserMessages.push({ item, turnIndex });
     }
   }
-  if (!durableUserMessages.length) return thread;
+  if (!durableUserMessages.length && !optimisticUserMessages.length) return thread;
   for (let turnIndex = 0; turnIndex < thread.turns.length; turnIndex += 1) {
     const turn = thread.turns[turnIndex];
     if (!turn || !Array.isArray(turn.items)) continue;
-    turn.items = turn.items.filter((item) => !shouldDropOptimisticUserMessageForDurable(item, turnIndex, durableUserMessages));
+    turn.items = turn.items.filter((item) => !shouldDropOptimisticUserMessageForDurable(item, turnIndex, durableUserMessages)
+      && !shouldDropOptimisticUserMessageForOptimistic(item, turnIndex, optimisticUserMessages));
   }
   return thread;
 }
@@ -5092,8 +5101,22 @@ function shouldDropOptimisticUserMessageForDurable(item, turnIndex, durableUserM
   return durableUserMessages.some((real) => {
     if (!real || !real.item || real.item.id === item.id) return false;
     if (!userMessagesCanShadow(real.item, item)) return false;
+    if (sameUserMessageClientSubmission(real.item, item)) return true;
     if (real.turnIndex >= turnIndex) return true;
     return userMessageHasVisualAttachment(real.item) && userMessageHasVisualAttachment(item);
+  });
+}
+
+function shouldDropOptimisticUserMessageForOptimistic(item, turnIndex, optimisticUserMessages) {
+  if (!isOptimisticUserMessage(item) || !Array.isArray(optimisticUserMessages)) return false;
+  const itemPriority = userMessageShadowPriority(item);
+  return optimisticUserMessages.some((other) => {
+    if (!other || !other.item || other.item.id === item.id) return false;
+    if (!sameUserMessageClientSubmission(other.item, item)) return false;
+    if (!userMessagesCanShadow(other.item, item)) return false;
+    const otherPriority = userMessageShadowPriority(other.item);
+    if (otherPriority > itemPriority) return true;
+    return otherPriority === itemPriority && other.turnIndex > turnIndex;
   });
 }
 
