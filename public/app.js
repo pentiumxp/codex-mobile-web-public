@@ -385,7 +385,7 @@ const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v373";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v374";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -7682,6 +7682,7 @@ async function loadThread(threadId, options = {}) {
   if (shouldBackfillFullThreadDetail(result.thread)) {
     backfillFullThreadDetail(threadId, { seq, source }).catch(() => {});
   }
+  scheduleUsageBackfillRefresh();
   const renderElapsedMs = roundedDurationMs(renderStartedAt);
   postPerformanceEvent("thread_detail_first_paint", {
     source,
