@@ -436,9 +436,10 @@ const threadSideChatService = createThreadSideChatService({
       input: [{ type: "text", text }],
     }, runtimeSettings);
     const result = await codex.request("turn/start", turnParams, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+    const turnId = notifyLocalTurnStarted(threadId, result, { source: "side-chat-apply" });
     return {
       threadId,
-      turnId: String((result && result.turnId) || (result && result.turn && result.turn.id) || ""),
+      turnId,
     };
   },
 });
@@ -773,13 +774,7 @@ async function autoRecoverThreadTurn(threadId, options = {}) {
     }, runtimeSettings);
     if (options.cwd) params.cwd = options.cwd;
     const result = await codex.request("turn/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
-    const turnId = turnStartResultTurnId(result);
-    if (turnId && threadDetailProjectionService) {
-      threadDetailProjectionService.applyNotification("turn/started", {
-        threadId: id,
-        turn: Object.assign({ id: turnId, status: { type: "active" } }, result && result.turn && typeof result.turn === "object" ? result.turn : {}),
-      });
-    }
+    const turnId = notifyLocalTurnStarted(id, result, { source: "auto-turn-recovery" });
     return { recovered: true, action: "started", threadId: id, turnId };
   })();
 
@@ -818,10 +813,8 @@ const threadTaskCardService = createThreadTaskCardService({
       input: [{ type: "text", text: message.text }],
     }, runtimeSettings);
     const result = await codex.request("turn/start", turnParams, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
-    const turnId = String((result && result.turnId) || (result && result.turn && result.turn.id) || "");
-    broadcastThreadStatusChanged(card.target.threadId, { type: "active" }, {
+    const turnId = notifyLocalTurnStarted(card.target.threadId, result, {
       source: "thread-task-card-approval",
-      turnId,
     });
     return {
       threadId: String(card.target.threadId || ""),
@@ -7595,6 +7588,23 @@ function broadcastThreadStatusChanged(threadId, status, meta = {}) {
   return true;
 }
 
+function notifyLocalTurnStarted(threadId, result, meta = {}) {
+  const id = String(threadId || "").trim();
+  const turnId = turnStartResultTurnId(result);
+  if (!id) return turnId;
+  if (turnId && threadDetailProjectionService) {
+    threadDetailProjectionService.applyNotification("turn/started", {
+      threadId: id,
+      turn: Object.assign({ id: turnId, status: { type: "active" } }, result && result.turn && typeof result.turn === "object" ? result.turn : {}),
+    });
+  }
+  broadcastThreadStatusChanged(id, { type: "active" }, {
+    source: String(meta.source || "local-turn-start"),
+    turnId,
+  });
+  return turnId;
+}
+
 function threadStatusChangedPayloadFromTurnNotification(payload) {
   if (!payload || payload.type !== "notification" || !payload.params) return null;
   const method = String(payload.method || "");
@@ -8732,11 +8742,13 @@ const chatGptProBridgeService = createChatGptProBridgeService({
     } catch (err) {
       if (!/already|loaded|active/i.test(err.message || "")) throw err;
     }
-    return codex.request("turn/start", applyTurnRuntimeSettings({
+    const result = await codex.request("turn/start", applyTurnRuntimeSettings({
       threadId,
       input,
       cwd: cwd || APP_ROOT,
     }, runtimeSettings), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+    notifyLocalTurnStarted(threadId, result, { source: "chatgpt-pro-bridge" });
+    return result;
   },
   updateThreadTitle: tryUpdateThreadTitle,
   persistThreadTitle: persistThreadTitleToSessionIndex,
@@ -9606,6 +9618,7 @@ async function createSourceContinuationHandoff({ cwd, sourceThreadId, sourceThre
     });
   }
   const turnId = turnIdFromResult(result);
+  notifyLocalTurnStarted(threadId, result, { source: "continuation-source-handoff" });
   if (onProgress) onProgress("handoff-file", "正在等待源线程写入交接文件", { turnId });
   let file;
   try {
@@ -10280,6 +10293,7 @@ async function startThreadFromRequestBody(body, options = {}) {
   const bootstrap = threadId
     ? await codex.request("turn/start", bootstrapParams, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false })
     : null;
+  if (threadId && bootstrap) notifyLocalTurnStarted(threadId, bootstrap, { source: "continuation-bootstrap" });
   const titleUpdatedAfterBootstrap = await tryUpdateThreadTitle(threadId, desiredTitle).catch(() => false);
   let sourceGoalMigration = null;
   if (sourceThreadId && threadId && sourceThreadId !== threadId && body.migrateSourceGoal !== false) {
@@ -13035,7 +13049,8 @@ async function handleApi(req, res) {
           timeoutMs: MUTATION_RPC_TIMEOUT_MS,
           retry: false,
         });
-        rememberThreadIdForTurnId(threadId, turnStartResultTurnId(turnResult));
+        const turnId = notifyLocalTurnStarted(threadId, turnResult, { source: "new-thread-message" });
+        rememberThreadIdForTurnId(threadId, turnId);
         const startedThread = (startResult && startResult.thread) || (startResult && startResult.data && startResult.data.thread) || {};
         const thread = rememberStartedThread(Object.assign(
           {},
@@ -13767,7 +13782,7 @@ async function handleApi(req, res) {
         if (requestedModel) params.model = requestedModel;
         if (requestedEffort) params.effort = requestedEffort;
         const turnResult = await codex.request("turn/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
-        rememberThreadIdForTurnId(threadId, turnStartResultTurnId(turnResult));
+        rememberThreadIdForTurnId(threadId, notifyLocalTurnStarted(threadId, turnResult, { source: "message-submit" }));
         return turnResult;
       });
       logMessageSubmit("done", {
@@ -13775,13 +13790,6 @@ async function handleApi(req, res) {
         clientSubmissionId: body.clientSubmissionId,
         resultTurnId: result && (result.turnId || result.id || result.turn && result.turn.id || ""),
       });
-      const resultTurnId = String(result && (result.turnId || result.id || result.turn && result.turn.id || "") || "");
-      if (resultTurnId) {
-        threadDetailProjectionService.applyNotification("turn/started", {
-          threadId,
-          turn: Object.assign({ id: resultTurnId, status: { type: "active" } }, result.turn && typeof result.turn === "object" ? result.turn : {}),
-        });
-      }
     } catch (err) {
       logMessageSubmit("failed", {
         threadId,

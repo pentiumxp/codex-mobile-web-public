@@ -186,7 +186,7 @@ test("approved task cards inherit target thread model and effort", () => {
   assert.match(setupBlock, /thread\/resume", applyResumeRuntimeSettings\(/);
   assert.match(setupBlock, /const turnParams = applyTurnRuntimeSettings\(/);
   assert.match(setupBlock, /codex\.request\("turn\/start", turnParams/);
-  assert.match(setupBlock, /broadcastThreadStatusChanged\(card\.target\.threadId, \{ type: "active" \}/);
+  assert.match(setupBlock, /notifyLocalTurnStarted\(card\.target\.threadId, result, \{/);
   assert.match(setupBlock, /source: "thread-task-card-approval"/);
   assert.match(functionBody(serverJs, "applyTurnRuntimeSettings"), /if \(settings\.reasoningEffort\) params\.effort = settings\.reasoningEffort;/);
   assert.match(functionBody(serverJs, "applyTurnRuntimeSettings"), /if \(settings\.model\) params\.model = settings\.model;/);
@@ -205,6 +205,22 @@ test("server broadcasts lightweight thread status for background turn notificati
   const eventFilterBody = functionBody(serverJs, "shouldSendEventToClient");
   assert.match(eventFilterBody, /payload\.method === "thread\/status\/changed"[\s\S]*return true;/);
   assert.match(functionBody(serverJs, "broadcastThreadStatusChanged"), /clearThreadListFallbackCache\(\);\s*broadcast\(payload\);/);
+});
+
+test("server broadcasts active status immediately for local turn starts", () => {
+  const helperBody = functionBody(serverJs, "notifyLocalTurnStarted");
+  assert.match(helperBody, /const turnId = turnStartResultTurnId\(result\)/);
+  assert.match(helperBody, /threadDetailProjectionService\.applyNotification\("turn\/started"/);
+  assert.match(helperBody, /broadcastThreadStatusChanged\(id, \{ type: "active" \}/);
+  assert.match(helperBody, /source: String\(meta\.source \|\| "local-turn-start"\)/);
+
+  assert.match(serverJs, /notifyLocalTurnStarted\(card\.target\.threadId, result, \{[\s\S]*source: "thread-task-card-approval"/);
+  assert.match(serverJs, /notifyLocalTurnStarted\(threadId, turnResult, \{ source: "message-submit" \}\)/);
+  assert.match(serverJs, /notifyLocalTurnStarted\(threadId, turnResult, \{ source: "new-thread-message" \}\)/);
+  assert.match(serverJs, /notifyLocalTurnStarted\(id, result, \{ source: "auto-turn-recovery" \}\)/);
+  assert.match(serverJs, /notifyLocalTurnStarted\(threadId, result, \{ source: "side-chat-apply" \}\)/);
+  assert.match(serverJs, /notifyLocalTurnStarted\(threadId, result, \{ source: "continuation-source-handoff" \}\)/);
+  assert.match(serverJs, /notifyLocalTurnStarted\(threadId, bootstrap, \{ source: "continuation-bootstrap" \}\)/);
 });
 
 test("server materializes structured task-card drafts from thread detail", () => {
