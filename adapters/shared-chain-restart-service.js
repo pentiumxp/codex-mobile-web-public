@@ -210,12 +210,21 @@ function buildRestartMacShellCommand(options = {}) {
   const logPath = path.resolve(options.logPath || path.join(options.runtimeDir || path.join(process.env.HOME || workspacePath, ".codex-mobile-web"), "logs", "mobile-web.log"));
   const logDir = path.dirname(logPath);
   const labelPrefix = String(options.labelPrefix || `com.xuefusong.codex-mobile-web.${port}`).replace(/[^A-Za-z0-9_.-]/g, "-");
+  const targetProfileId = String(options.profileId || "").trim();
+  const targetCodexHome = String(options.codexHome || (options.env && options.env.CODEX_HOME) || "").trim();
+  const targetMuxEndpointFile = String(
+    options.muxEndpointFile
+      || (targetCodexHome ? path.join(targetCodexHome, "app-server-mux", "endpoint.json") : "")
+      || (options.env && options.env.CODEX_MOBILE_MUX_ENDPOINT_FILE)
+      || "",
+  ).trim();
   const serviceLabel = safeLaunchdServiceLabel(
     options.serviceLabel
       || (options.env && (options.env.CODEX_MOBILE_LAUNCHD_LABEL || options.env.XPC_SERVICE_NAME)),
   );
   const envArgs = buildRestartEnvArgs(safeRestartEnvAssignments(options.env || process.env, {
-    CODEX_HOME: options.codexHome || (options.env && options.env.CODEX_HOME),
+    CODEX_HOME: targetCodexHome,
+    CODEX_MOBILE_MUX_ENDPOINT_FILE: targetMuxEndpointFile,
     CODEX_MOBILE_HOST: options.host || (options.env && options.env.CODEX_MOBILE_HOST) || "0.0.0.0",
     CODEX_MOBILE_PORT: String(port),
     CODEX_MOBILE_RUNTIME_DIR: options.runtimeDir || (options.env && options.env.CODEX_MOBILE_RUNTIME_DIR),
@@ -226,6 +235,9 @@ function buildRestartMacShellCommand(options = {}) {
     `sleep ${delaySeconds}`,
     `label_prefix=${shQuote(labelPrefix)}`,
     `service_label=${shQuote(serviceLabel)}`,
+    `target_profile_id=${shQuote(targetProfileId)}`,
+    `target_codex_home=${shQuote(targetCodexHome)}`,
+    `target_mux_endpoint_file=${shQuote(targetMuxEndpointFile)}`,
     `launchctl_path=${shQuote(launchctlPath)}`,
     "sudo_password_file=\"${HOMEAI_MAC_SUDO_PASSWORD_FILE:-}\"",
     "launchd_domain=\"gui/$(/usr/bin/id -u)\"",
@@ -252,6 +264,32 @@ function buildRestartMacShellCommand(options = {}) {
     "    service_domain=\"$launchd_domain/$service_label\"",
     "    printf '%s\\n' \"$launchd_info\"",
     "  fi",
+    "}",
+    "system_launchdaemon_plist_path() {",
+    "  printf '%s\\n' \"$1\" | /usr/bin/awk -F' = ' '/path = / { print $2; exit }'",
+    "}",
+    "plist_set_env_value() {",
+    "  local plist_path=\"$1\"",
+    "  local key=\"$2\"",
+    "  local value=\"$3\"",
+    "  [[ -n \"$plist_path\" && -n \"$key\" && -n \"$value\" ]] || return 0",
+    "  run_restart_sudo /usr/libexec/PlistBuddy -c \"Print :EnvironmentVariables\" \"$plist_path\" >/dev/null 2>&1 || run_restart_sudo /usr/libexec/PlistBuddy -c \"Add :EnvironmentVariables dict\" \"$plist_path\" >/dev/null",
+    "  if run_restart_sudo /usr/libexec/PlistBuddy -c \"Print :EnvironmentVariables:${key}\" \"$plist_path\" >/dev/null 2>&1; then",
+    "    run_restart_sudo /usr/libexec/PlistBuddy -c \"Set :EnvironmentVariables:${key} ${value}\" \"$plist_path\" >/dev/null",
+    "  else",
+    "    run_restart_sudo /usr/libexec/PlistBuddy -c \"Add :EnvironmentVariables:${key} string ${value}\" \"$plist_path\" >/dev/null",
+    "  fi",
+    "}",
+    "sync_system_launchdaemon_profile_env() {",
+    "  [[ \"$service_domain\" == system/* ]] || return 0",
+    "  [[ -n \"$target_codex_home\" ]] || return 0",
+    "  local plist_path=\"$1\"",
+    "  [[ -n \"$plist_path\" ]] || return 0",
+    "  plist_set_env_value \"$plist_path\" CODEX_HOME \"$target_codex_home\"",
+    "  if [[ -n \"$target_mux_endpoint_file\" ]]; then",
+    "    plist_set_env_value \"$plist_path\" CODEX_MOBILE_MUX_ENDPOINT_FILE \"$target_mux_endpoint_file\"",
+    "  fi",
+    "  run_restart_sudo /usr/bin/plutil -lint \"$plist_path\" >/dev/null",
     "}",
     "restart_launchd_service() {",
     "  [[ -n \"$service_domain\" ]] || return 1",
@@ -288,7 +326,9 @@ function buildRestartMacShellCommand(options = {}) {
   ];
   if (serviceLabel) {
     return commonLines.concat([
-      "detect_launchd_service_domain >/dev/null 2>&1 || true",
+      "launchd_info=\"$(detect_launchd_service_domain || true)\"",
+      "service_plist_path=\"$(system_launchdaemon_plist_path \"$launchd_info\")\"",
+      "sync_system_launchdaemon_profile_env \"$service_plist_path\" >/dev/null 2>&1 || true",
       "if restart_launchd_service; then exit 0; fi",
       `if /bin/kill ${currentPid} >/dev/null 2>&1; then exit 0; fi`,
       "exit 1",
@@ -359,6 +399,7 @@ function createSharedChainRestartService(deps = {}) {
     const delayMs = Math.max(500, Number(options.delayMs || deps.delayMs || 900));
 
     if (platform === "darwin") {
+      const explicitCodexHome = options.codexHome || deps.codexHome;
       const command = buildRestartMacShellCommand({
         delayMs,
         env,
@@ -371,7 +412,11 @@ function createSharedChainRestartService(deps = {}) {
         labelPrefix: deps.launchdLabelPrefix || env.CODEX_MOBILE_LAUNCHD_LABEL_PREFIX || `com.xuefusong.codex-mobile-web.${port}`,
         port,
         host: deps.host || env.CODEX_MOBILE_HOST,
-        codexHome: deps.codexHome || env.CODEX_HOME,
+        profileId: options.profileId || deps.profileId,
+        codexHome: explicitCodexHome || env.CODEX_HOME,
+        muxEndpointFile: options.muxEndpointFile
+          || deps.muxEndpointFile
+          || (explicitCodexHome ? "" : env.CODEX_MOBILE_MUX_ENDPOINT_FILE),
         runtimeDir: deps.runtimeDir || env.CODEX_MOBILE_RUNTIME_DIR,
       });
       const child = spawnFn(deps.shellPath || "/bin/bash", ["-lc", command], {

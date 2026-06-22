@@ -407,6 +407,7 @@ function evaluatedUserMessagesLikelySame() {
     "isMuxUserMessage",
     "isOptimisticUserMessage",
     "isTurnUsageSummaryItem",
+    "dedupeTurnUsageSummaryItems",
     "normalizeComparableText",
     "userMessageComparableParts",
     "userMessagePathOverlap",
@@ -435,6 +436,7 @@ function evaluatedMergeItemsPreservingLocalVisible() {
     "isMuxUserMessage",
     "isOptimisticUserMessage",
     "isTurnUsageSummaryItem",
+    "dedupeTurnUsageSummaryItems",
     "normalizeComparableText",
     "userMessageComparableParts",
     "userMessagePathOverlap",
@@ -492,6 +494,7 @@ function evaluatedMergeItemsPreservingLocalVisibleWithRealVisibleWeight() {
     "isMuxUserMessage",
     "isOptimisticUserMessage",
     "isTurnUsageSummaryItem",
+    "dedupeTurnUsageSummaryItems",
     "normalizeComparableText",
     "userMessageComparableParts",
     "userMessagePathOverlap",
@@ -588,11 +591,18 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "appendV4PendingOverlayItem",
     "copyTurnWithOnlyItems",
     "applyV4PendingOverlay",
+    "v4ProjectionRevisionValue",
+    "isV4ProjectionRefreshRegressive",
+    "isActiveLikeProjectionTurn",
+    "incomingTurnsClearlySupersedeExistingTurn",
+    "existingV4TurnHasOnlyMatchedPendingItems",
+    "shouldPreserveExistingV4ProjectionTurn",
     "mergeV4ProjectionThread",
     "comparableVisibleTextItem",
     "comparableVisibleText",
     "visibleTextItemsLikelySame",
     "hasMatchingIncomingVisibleItem",
+    "mergeItemPreservingVisibleFields",
     "mergeVisibleTextItemPreservingRenderIdentity",
     "mergeItemsPreservingLocalVisible",
     "mergeTurnPreservingVisibleItems",
@@ -602,6 +612,8 @@ function evaluatedMergeThreadPreservingVisibleItems() {
 const MAX_EXPANDED_VISIBLE_TURNS = 40;
 const state = { activeTurnId: "local-start-turn", currentThreadId: "thread-new" };
 function isReasoningItem(item) { return Boolean(item && item.type === "reasoning"); }
+function isContextCompactionItem() { return false; }
+function isOperationalItem() { return false; }
 function isRecentlySubmittedUserMessage(item) { return Boolean(item && item.mobilePendingSubmission); }
 function itemVisibleWeight(item) { return item ? JSON.stringify(item).length : 0; }
 function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false) {
@@ -609,6 +621,7 @@ function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false) {
   if (item.type === "userMessage" && /^mux-user-/.test(String(item.id || ""))) return true;
   return preserveLocalVisible && !isReasoningItem(item);
 }
+function dedupeTurnUsageSummaryItems(items) { return items || []; }
 function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
   return Object.assign({}, existingItem || {}, incomingItem || {});
 }
@@ -619,9 +632,20 @@ function isTurnComplete(turn) {
   const text = String(turn && (turn.status && turn.status.type || turn.status) || "").toLowerCase();
   return /completed|failed|canceled|cancelled/.test(text);
 }
+function isRunningStatus(status) {
+  const text = String(status && status.type || status || "").toLowerCase();
+  return /active|running|queued|processing|inprogress|in_progress|in-progress|pending|started/.test(text);
+}
+function isIncompleteInterruptedTurn() { return false; }
+function turnHasActiveLiveItems(turn) {
+  return (turn && Array.isArray(turn.items) ? turn.items : []).some((item) => item && item.status && !/completed|failed|canceled|cancelled/.test(String(item.status.type || item.status).toLowerCase()));
+}
+function turnOrderMs(turn) {
+  return Number(turn && (turn.completedAtMs || turn.completedAt || turn.startedAtMs || turn.startedAt || 0)) || 0;
+}
 function turnIsSupersededBy() { return false; }
 function sortTurnsForDisplay(turns) { return turns || []; }
-function dedupeTurnUsageSummaryItems(items) { return items || []; }
+function maxVisibleTurnsForThread() { return 10; }
 ${sources.join("\n")}
 return mergeThreadPreservingVisibleItems;
 `)();
@@ -2667,6 +2691,84 @@ test("v4 projection merge removes local pending message after durable user match
     "durable-user-current",
     "agent-progress",
   ]);
+});
+
+test("v4 projection merge keeps longer live receipt when refresh returns an older same-turn item", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const existingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 6,
+    turns: [{
+      id: "turn-current",
+      status: { type: "active" },
+      items: [
+        { id: "user-current", type: "userMessage", content: [{ type: "text", text: "continue" }] },
+        { id: "agent-current", type: "agentMessage", text: "first paragraph\nsecond paragraph" },
+      ],
+    }],
+  };
+  const incomingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 5,
+    turns: [{
+      id: "turn-current",
+      status: { type: "active" },
+      items: [
+        { id: "user-current", type: "userMessage", content: [{ type: "text", text: "continue" }] },
+        { id: "agent-current", type: "agentMessage", text: "first paragraph" },
+      ],
+    }],
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, incomingThread);
+
+  assert.equal(merged.mobileProjectionRevision, 6);
+  assert.equal(merged.turns.length, 1);
+  assert.equal(
+    merged.turns[0].items.find((item) => item.id === "agent-current").text,
+    "first paragraph\nsecond paragraph",
+  );
+});
+
+test("v4 projection merge preserves current live turn when stale refresh only has older content", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const existingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 8,
+    turns: [{
+      id: "turn-current",
+      status: { type: "active" },
+      startedAtMs: 3000,
+      items: [
+        { id: "user-current", type: "userMessage", content: [{ type: "text", text: "new instruction" }] },
+        { id: "agent-current", type: "agentMessage", text: "new reply in progress" },
+      ],
+    }],
+  };
+  const incomingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 7,
+    turns: [{
+      id: "turn-previous",
+      status: { type: "completed" },
+      startedAtMs: 1000,
+      completedAtMs: 2000,
+      items: [
+        { id: "user-previous", type: "userMessage", content: [{ type: "text", text: "old instruction" }] },
+        { id: "agent-previous", type: "agentMessage", text: "old reply" },
+      ],
+    }],
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, incomingThread);
+
+  assert.equal(merged.mobileProjectionRevision, 8);
+  assert.deepEqual(merged.turns.map((turn) => turn.id), ["turn-previous", "turn-current"]);
+  assert.deepEqual(merged.turns[1].items.map((item) => item.id), ["user-current", "agent-current"]);
 });
 
 test("live user message upsert collapses mux echoes before refresh", () => {

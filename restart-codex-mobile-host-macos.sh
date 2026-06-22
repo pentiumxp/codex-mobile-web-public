@@ -12,6 +12,8 @@ LIST_HOMES=0
 JSON_OUTPUT=0
 MAX_WAIT_SECONDS=45
 DRY_RUN=0
+POSTFLIGHT_JSON="{}"
+STALE_MUX_JSON="[]"
 
 usage() {
   cat <<'EOF'
@@ -48,6 +50,38 @@ run_sudo() {
   fi
 }
 
+bounded_text() {
+  printf '%s' "${1:-}" | /usr/bin/tr '\n\r\t' '   ' | /usr/bin/cut -c 1-260
+}
+
+json_error() {
+  local stage="${1:-unknown}"
+  local message="${2:-Codex Mobile host restart failed}"
+  local detail="${3:-}"
+  local status="${4:-1}"
+  if [[ "$JSON_OUTPUT" -eq 1 && -n "${NODE_EXE:-}" && -x "${NODE_EXE:-}" ]]; then
+    "$NODE_EXE" -e '
+const payload = {
+  ok: false,
+  stage: process.argv[1],
+  error: process.argv[2],
+  detail: process.argv[3] || undefined,
+  serviceLabel: process.argv[4],
+  plistPath: process.argv[5],
+  profileId: process.argv[6] || undefined,
+  codexHome: process.argv[7] || undefined,
+};
+console.log(JSON.stringify(payload, null, 2));
+' "$stage" "$(bounded_text "$message")" "$(bounded_text "$detail")" "$SERVICE_LABEL" "$PLIST_PATH" "${SELECTED_PROFILE_ID:-}" "${SELECTED_CODEX_HOME:-}"
+  else
+    echo "[$stage] $message" >&2
+    if [[ -n "$detail" ]]; then
+      echo "$(bounded_text "$detail")" >&2
+    fi
+  fi
+  exit "$status"
+}
+
 plist_get_env() {
   local key="$1"
   /usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:${key}" "$PLIST_PATH" 2>/dev/null || true
@@ -76,6 +110,10 @@ plist_set_env() {
 
 json_success() {
   "$NODE_EXE" -e '
+let postflight = {};
+let staleMuxes = [];
+try { postflight = JSON.parse(process.env.POSTFLIGHT_JSON || "{}"); } catch (_) {}
+try { staleMuxes = JSON.parse(process.env.STALE_MUX_JSON || "[]"); } catch (_) {}
 const payload = {
   ok: true,
   serviceLabel: process.argv[1],
@@ -84,10 +122,167 @@ const payload = {
   codexHome: process.argv[4],
   port: Number(process.argv[5]),
   url: process.argv[6],
-  dryRun: process.argv[7] === "1"
+  dryRun: process.argv[7] === "1",
+  muxEndpointFile: process.argv[8],
+  postflight,
+  staleMuxes
 };
 console.log(JSON.stringify(payload, null, 2));
-' "$SERVICE_LABEL" "$PLIST_PATH" "$SELECTED_PROFILE_ID" "$SELECTED_CODEX_HOME" "$PORT" "$READINESS_URL" "$DRY_RUN"
+' "$SERVICE_LABEL" "$PLIST_PATH" "$SELECTED_PROFILE_ID" "$SELECTED_CODEX_HOME" "$PORT" "$READINESS_URL" "$DRY_RUN" "$SELECTED_MUX_ENDPOINT_FILE"
+}
+
+profile_store_active_id() {
+  "$NODE_EXE" -e '
+const fs = require("node:fs");
+try {
+  const store = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+  process.stdout.write(String(store.activeProfileId || ""));
+} catch (_) {}
+' "$PROFILE_FILE"
+}
+
+launchd_env_value() {
+  local key="$1"
+  /bin/launchctl print "system/${SERVICE_LABEL}" 2>/dev/null \
+    | /usr/bin/awk -v key="$key" '$1 == key && $2 == "=>" { print substr($0, index($0, "=>") + 3); exit }' \
+    | /usr/bin/sed 's/^ *//; s/ *$//'
+}
+
+public_config_active_profile() {
+  /usr/bin/curl -fsS "$READINESS_URL" \
+    | "$NODE_EXE" -e '
+let input = "";
+process.stdin.on("data", (chunk) => { input += chunk; });
+process.stdin.on("end", () => {
+  try {
+    const config = JSON.parse(input);
+    process.stdout.write(String(config.codexProfiles && config.codexProfiles.activeProfileId || ""));
+  } catch (_) {}
+});
+'
+}
+
+detect_stale_muxes() {
+  "$NODE_EXE" - "$HELPER" "$PROFILE_FILE" "$RUNTIME_DIR" "$TARGET_USER_HOME" "$ACTIVE_CODEX_HOME" "$SELECTED_CODEX_HOME" <<'NODE'
+const path = require("node:path");
+const fs = require("node:fs");
+const helperPath = process.argv[2];
+const profileFile = process.argv[3];
+const runtimeDir = process.argv[4];
+const userHome = process.argv[5];
+const activeCodexHome = process.argv[6];
+const selectedCodexHome = path.resolve(process.argv[7]);
+const { listProfiles } = require(helperPath);
+
+function isAlive(pid) {
+  const value = Number(pid || 0);
+  if (!Number.isInteger(value) || value <= 0) return false;
+  try {
+    process.kill(value, 0);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+const out = [];
+try {
+  const profiles = listProfiles({ profileFile, runtimeDir, userHome, activeCodexHome }).profiles || [];
+  for (const profile of profiles) {
+    const codexHome = profile && profile.codexHome ? path.resolve(profile.codexHome) : "";
+    if (!codexHome || codexHome === selectedCodexHome) continue;
+    const endpointFile = path.join(codexHome, "app-server-mux", "endpoint.json");
+    if (!fs.existsSync(endpointFile)) continue;
+    let endpoint = {};
+    try {
+      endpoint = JSON.parse(fs.readFileSync(endpointFile, "utf8"));
+    } catch (_) {}
+    const pid = Number(endpoint.pid || 0);
+    const childPid = Number(endpoint.childPid || 0);
+    out.push({
+      profileId: String(profile.id || ""),
+      codexHome,
+      endpointFile,
+      port: Number(endpoint.port || 0) || undefined,
+      pid: pid || undefined,
+      childPid: childPid || undefined,
+      pidAlive: isAlive(pid),
+      childPidAlive: isAlive(childPid),
+      selectedProfile: false,
+      action: "reported_only",
+    });
+  }
+} catch (err) {
+  out.push({ error: String(err && err.message || err).slice(0, 220), action: "reported_only" });
+}
+process.stdout.write(JSON.stringify(out));
+NODE
+}
+
+validate_preflight_selection() {
+  local plist_codex_home
+  local plist_mux_endpoint
+  local store_active_id
+  plist_codex_home="$(plist_get_env CODEX_HOME)"
+  plist_mux_endpoint="$(plist_get_env CODEX_MOBILE_MUX_ENDPOINT_FILE)"
+  store_active_id="$(profile_store_active_id)"
+  if [[ "$plist_codex_home" != "$SELECTED_CODEX_HOME" ]]; then
+    json_error "preflight" "LaunchDaemon plist CODEX_HOME does not match selected profile." "plist=${plist_codex_home}; selected=${SELECTED_CODEX_HOME}" 1
+  fi
+  if [[ "$plist_mux_endpoint" != "$SELECTED_MUX_ENDPOINT_FILE" ]]; then
+    json_error "preflight" "LaunchDaemon plist mux endpoint does not match selected profile." "plist=${plist_mux_endpoint}; selected=${SELECTED_MUX_ENDPOINT_FILE}" 1
+  fi
+  if [[ "$store_active_id" != "$SELECTED_PROFILE_ID" ]]; then
+    json_error "preflight" "Profile store active id does not match selected profile." "store=${store_active_id}; selected=${SELECTED_PROFILE_ID}" 1
+  fi
+}
+
+validate_postflight_selection() {
+  local public_active
+  local launchd_codex_home
+  local launchd_mux_endpoint
+  public_active="$(public_config_active_profile || true)"
+  launchd_codex_home="$(launchd_env_value CODEX_HOME)"
+  launchd_mux_endpoint="$(launchd_env_value CODEX_MOBILE_MUX_ENDPOINT_FILE)"
+  if [[ "$public_active" != "$SELECTED_PROFILE_ID" ]]; then
+    json_error "postflight" "Public config active profile does not match selected profile." "public=${public_active}; selected=${SELECTED_PROFILE_ID}" 1
+  fi
+  if [[ "$launchd_codex_home" != "$SELECTED_CODEX_HOME" ]]; then
+    json_error "postflight" "Running LaunchDaemon CODEX_HOME does not match selected profile." "launchd=${launchd_codex_home}; selected=${SELECTED_CODEX_HOME}" 1
+  fi
+  if [[ "$launchd_mux_endpoint" != "$SELECTED_MUX_ENDPOINT_FILE" ]]; then
+    json_error "postflight" "Running LaunchDaemon mux endpoint does not match selected profile." "launchd=${launchd_mux_endpoint}; selected=${SELECTED_MUX_ENDPOINT_FILE}" 1
+  fi
+  POSTFLIGHT_JSON="$("$NODE_EXE" -e '
+const payload = {
+  activeProfileId: process.argv[1],
+  codexHome: process.argv[2],
+  muxEndpointFile: process.argv[3],
+  matched: true,
+};
+process.stdout.write(JSON.stringify(payload));
+' "$public_active" "$launchd_codex_home" "$launchd_mux_endpoint")"
+}
+
+bootstrap_service_with_retry() {
+  local output
+  local status
+  if output="$(run_sudo /bin/launchctl bootstrap system "$PLIST_PATH" 2>&1)"; then
+    return 0
+  fi
+  status=$?
+  if [[ "$status" -eq 5 ]]; then
+    sleep 1
+    if ! run_sudo /bin/launchctl print "system/${SERVICE_LABEL}" >/dev/null 2>&1; then
+      local retry_output
+      if retry_output="$(run_sudo /bin/launchctl bootstrap system "$PLIST_PATH" 2>&1)"; then
+        return 0
+      fi
+      status=$?
+      output="${output}; retry: ${retry_output}"
+    fi
+  fi
+  json_error "bootstrap" "LaunchDaemon bootstrap failed." "exit=${status}; ${output}" 1
 }
 
 while [[ $# -gt 0 ]]; do
@@ -222,6 +417,7 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
   select_args+=(--no-write)
 fi
 eval "$("$NODE_EXE" "$HELPER" "${select_args[@]}")"
+SELECTED_MUX_ENDPOINT_FILE="${SELECTED_CODEX_HOME}/app-server-mux/endpoint.json"
 
 READINESS_URL="http://127.0.0.1:${PORT}/api/public-config"
 
@@ -235,6 +431,7 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
 fi
 
 plist_set_env CODEX_HOME "$SELECTED_CODEX_HOME"
+plist_set_env CODEX_MOBILE_MUX_ENDPOINT_FILE "$SELECTED_MUX_ENDPOINT_FILE"
 plist_set_env CODEX_MOBILE_PROFILE_FILE "$PROFILE_FILE"
 plist_set_env CODEX_MOBILE_RUNTIME_DIR "$RUNTIME_DIR"
 plist_set_env CODEX_MOBILE_PORT "$PORT"
@@ -243,8 +440,10 @@ plist_set_env CODEX_MOBILE_HOST "$HOST"
 run_sudo /bin/chmod 644 "$PLIST_PATH"
 run_sudo /usr/sbin/chown root:wheel "$PLIST_PATH"
 
+validate_preflight_selection
+
 run_sudo /bin/launchctl bootout "system/${SERVICE_LABEL}" >/dev/null 2>&1 || true
-run_sudo /bin/launchctl bootstrap system "$PLIST_PATH"
+bootstrap_service_with_retry
 run_sudo /bin/launchctl kickstart -k "system/${SERVICE_LABEL}" >/dev/null 2>&1 || true
 
 deadline=$((SECONDS + MAX_WAIT_SECONDS))
@@ -256,6 +455,9 @@ until /usr/bin/curl -fsS "$READINESS_URL" >/dev/null 2>&1; do
   fi
   sleep 1
 done
+
+validate_postflight_selection
+STALE_MUX_JSON="$(detect_stale_muxes || printf '[]')"
 
 if [[ "$JSON_OUTPUT" -eq 1 ]]; then
   json_success

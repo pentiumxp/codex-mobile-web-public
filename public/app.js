@@ -318,6 +318,9 @@ const state = {
   codexProfileRestarting: false,
   codexProfileSwitchTargetId: "",
   codexProfileSwitchStage: "",
+  codexProfileSwitchStageTimers: [],
+  codexProfileSwitchRequestId: "",
+  codexProfileSwitchProgressTimer: null,
   pushServerSupported: false,
   pushSubscribed: false,
   pushBusy: false,
@@ -386,7 +389,20 @@ const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v373";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v374";
+const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
+  { id: "profile_lookup", label: "正在读取目标 Profile" },
+  { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
+  { id: "mcp_toolset", label: "正在注册 Codex Mobile 工具" },
+  { id: "preflight_spawn", label: "正在启动目标账号 app-server" },
+  { id: "preflight_connect", label: "正在连接目标账号 app-server" },
+  { id: "preflight_initialize", label: "正在初始化目标账号会话" },
+  { id: "preflight_rate_limits", label: "正在读取目标账号额度" },
+  { id: "preflight_done", label: "目标账号预检通过" },
+  { id: "write_active_profile", label: "正在写入 active Profile 配置" },
+  { id: "schedule_restart", label: "正在安排 Mobile Web 重启" },
+  { id: "waiting_for_restart", label: "切换已写入，正在等待服务恢复" },
+]);
 const PLUGIN_VOICE_INPUT_LONG_PRESS_MS = 560;
 const LONG_RECEIPT_SCROLL_CHARS = 1200;
 const THREAD_HISTORY_TOP_LOAD_PX = 64;
@@ -2403,6 +2419,7 @@ function renderCodexProfileSettings() {
     const id = String(profile.id || "");
     const active = Boolean(profile.active) || id === state.activeCodexProfileId;
     const switchingThisProfile = state.codexProfileSwitchBusy && state.codexProfileSwitchTargetId === id;
+    const showingSwitchProgress = state.codexProfileSwitchTargetId === id && Boolean(state.codexProfileSwitchStage);
     const loggedIn = profile.auth && profile.auth.status === "loggedIn";
     const disabled = active || state.codexProfileSwitchBusy || state.codexProfileRestarting || !state.codexProfileSwitchSupported || !loggedIn;
     const action = switchingThisProfile
@@ -2416,10 +2433,12 @@ function renderCodexProfileSettings() {
         ? "Login to this Codex home before switching"
         : switchingThisProfile
           ? "Checking target account before switching"
+        : showingSwitchProgress
+          ? "Last profile switch status"
         : active
           ? "Current active profile"
           : "Switch all workspaces to this profile";
-    const status = switchingThisProfile
+    const status = showingSwitchProgress
       ? `<small class="codex-profile-progress">${escapeHtml(state.codexProfileSwitchStage || "正在预检目标账号...")}</small>`
       : "";
     return `<div class="codex-profile-row${active ? " active" : ""}">`
@@ -2666,33 +2685,130 @@ function requestCodexProfileSwitchConfirmation(profileId, label) {
   });
 }
 
+function codexProfileSwitchStageLabel(stageId, fallback = "") {
+  const id = String(stageId || "");
+  const stage = CODEX_PROFILE_SWITCH_STAGES.find((item) => item.id === id);
+  return stage ? stage.label : String(fallback || id || "");
+}
+
+function formatCodexProfileSwitchProgress(progress = {}) {
+  const input = progress && typeof progress === "object" ? progress : {};
+  const fallback = codexProfileSwitchStageLabel(input.stage, "正在切换 Profile");
+  const message = String(input.message || fallback || "").trim();
+  const stepIndex = Number(input.stepIndex || 0);
+  const stepCount = Number(input.stepCount || 0);
+  if (message && stepIndex > 0 && stepCount > 0) return `${stepIndex}/${stepCount} ${message}`;
+  return message || "正在切换 Profile...";
+}
+
+function setCodexProfileSwitchStage(progress) {
+  const text = typeof progress === "string"
+    ? progress
+    : formatCodexProfileSwitchProgress(progress);
+  state.codexProfileSwitchStage = text;
+  const connection = $("connectionState");
+  if (connection) connection.textContent = text;
+  renderCodexProfileSettings();
+}
+
+function clearCodexProfileSwitchStageTimers() {
+  for (const timer of state.codexProfileSwitchStageTimers || []) {
+    window.clearTimeout(timer);
+  }
+  state.codexProfileSwitchStageTimers = [];
+}
+
+function stopCodexProfileSwitchProgressPolling() {
+  clearCodexProfileSwitchStageTimers();
+  if (state.codexProfileSwitchProgressTimer) {
+    window.clearTimeout(state.codexProfileSwitchProgressTimer);
+    state.codexProfileSwitchProgressTimer = null;
+  }
+}
+
+function startCodexProfileSwitchProgressPolling(requestId) {
+  const id = String(requestId || "").trim();
+  stopCodexProfileSwitchProgressPolling();
+  if (!id) return;
+  const poll = async () => {
+    if (!state.codexProfileSwitchBusy || state.codexProfileSwitchRequestId !== id) return;
+    try {
+      const result = await api(`/api/codex-profiles/switch-progress?requestId=${encodeURIComponent(id)}`, {
+        timeoutMs: 5000,
+      });
+      if (result && result.progress) {
+        setCodexProfileSwitchStage(result.progress);
+        const status = String(result.progress.status || "");
+        if (status === "failed" || status === "restarting" || status === "complete") return;
+      }
+    } catch (_) {
+      // The progress endpoint can briefly be unavailable before the request is registered or during restart.
+    }
+    if (state.codexProfileSwitchBusy && state.codexProfileSwitchRequestId === id) {
+      state.codexProfileSwitchProgressTimer = window.setTimeout(poll, 700);
+    }
+  };
+  state.codexProfileSwitchProgressTimer = window.setTimeout(poll, 250);
+}
+
 async function performCodexProfileSwitch(profileId) {
+  const requestId = createSubmissionId();
+  let switchAccepted = false;
   state.codexProfileSwitchBusy = true;
   state.codexProfileSwitchTargetId = profileId;
-  state.codexProfileSwitchStage = "预检中...";
+  state.codexProfileSwitchRequestId = requestId;
   clearStoredRateLimits();
-  $("connectionState").textContent = "正在预检目标 Codex 账号...";
-  renderCodexProfileSettings();
+  setCodexProfileSwitchStage({
+    stage: "profile_lookup",
+    message: "正在读取目标 Profile...",
+    stepIndex: 1,
+    stepCount: 10,
+  });
+  startCodexProfileSwitchProgressPolling(requestId);
   try {
-    await api("/api/codex-profiles/active", {
+    const result = await api("/api/codex-profiles/active", {
       method: "POST",
-      body: JSON.stringify({ profileId }),
+      body: JSON.stringify({ profileId, requestId }),
       timeoutMs: 90000,
     });
-    state.codexProfileSwitchStage = "重启中...";
+    stopCodexProfileSwitchProgressPolling();
+    setCodexProfileSwitchStage(result && result.progress ? result.progress : {
+      stage: "waiting_for_restart",
+      message: "切换已写入，正在等待服务恢复...",
+      stepIndex: 10,
+      stepCount: 10,
+    });
     state.codexProfileRestarting = true;
-    $("connectionState").textContent = "Codex profile switched. Restarting...";
-    renderCodexProfileSettings();
+    switchAccepted = true;
     showReconnectRefreshPrompt("restart");
   } catch (err) {
-    state.codexProfileSwitchStage = "失败";
-    $("connectionState").textContent = err.message || "Codex profile switch failed";
+    stopCodexProfileSwitchProgressPolling();
+    let showedProgress = false;
+    try {
+      const progressResult = await api(`/api/codex-profiles/switch-progress?requestId=${encodeURIComponent(requestId)}`, {
+        timeoutMs: 5000,
+      });
+      if (progressResult && progressResult.progress) {
+        setCodexProfileSwitchStage(progressResult.progress);
+        showedProgress = true;
+      }
+    } catch (_) {}
+    if (err && err.progress) {
+      setCodexProfileSwitchStage(err.progress);
+      showedProgress = true;
+    }
+    if (!showedProgress) {
+      setCodexProfileSwitchStage(`切换失败：${err.message || "Codex profile switch failed"}`);
+    }
+    const connection = $("connectionState");
+    if (connection) connection.textContent = state.codexProfileSwitchStage || err.message || "Codex profile switch failed";
     showError(err);
   } finally {
     state.codexProfileSwitchBusy = false;
-    if (!state.codexProfileRestarting) {
+    if (!state.codexProfileRestarting && switchAccepted) {
       state.codexProfileSwitchTargetId = "";
       state.codexProfileSwitchStage = "";
+      state.codexProfileSwitchRequestId = "";
     }
     renderCodexProfileSettings();
   }
@@ -3631,9 +3747,11 @@ function finishRestartingUiIfReady() {
   const targetId = String(state.codexProfileSwitchTargetId || "");
   if (state.codexProfileRestarting && targetId && state.activeCodexProfileId && targetId !== state.activeCodexProfileId) return false;
   const changed = Boolean(state.codexProfileRestarting || state.sharedRestarting || state.codexProfileSwitchTargetId || state.codexProfileSwitchStage);
+  stopCodexProfileSwitchProgressPolling();
   state.codexProfileRestarting = false;
   state.codexProfileSwitchTargetId = "";
   state.codexProfileSwitchStage = "";
+  state.codexProfileSwitchRequestId = "";
   state.sharedRestarting = false;
   state.sharedRestartBusy = false;
   if (changed) {
@@ -5223,6 +5341,53 @@ function applyV4PendingOverlay(existingThread, mergedThread) {
   return mergedThread;
 }
 
+function v4ProjectionRevisionValue(thread) {
+  const direct = Number(thread && thread.mobileProjectionRevision);
+  if (Number.isFinite(direct) && direct > 0) return Math.trunc(direct);
+  const nested = Number(thread && thread.mobileProjection && thread.mobileProjection.revision);
+  return Number.isFinite(nested) && nested > 0 ? Math.trunc(nested) : 0;
+}
+
+function isV4ProjectionRefreshRegressive(existingThread, incomingThread) {
+  const existingRevision = v4ProjectionRevisionValue(existingThread);
+  const incomingRevision = v4ProjectionRevisionValue(incomingThread);
+  return Boolean(existingRevision && incomingRevision && incomingRevision < existingRevision);
+}
+
+function isActiveLikeProjectionTurn(turn) {
+  return Boolean(turn
+    && !isTurnComplete(turn)
+    && (isRunningStatus(turn.status) || isIncompleteInterruptedTurn(turn) || turnHasActiveLiveItems(turn)));
+}
+
+function incomingTurnsClearlySupersedeExistingTurn(existingTurn, incomingTurns) {
+  const existingOrder = turnOrderMs(existingTurn);
+  if (!existingOrder) return false;
+  return (incomingTurns || []).some((incomingTurn) => {
+    if (!incomingTurn || String(incomingTurn.id || "") === String(existingTurn && existingTurn.id || "")) return false;
+    const incomingOrder = turnOrderMs(incomingTurn);
+    return Boolean(incomingOrder && incomingOrder > existingOrder);
+  });
+}
+
+function existingV4TurnHasOnlyMatchedPendingItems(existingTurn, incomingTurns) {
+  const visibleItems = (Array.isArray(existingTurn && existingTurn.items) ? existingTurn.items : [])
+    .filter((item) => item && itemVisibleWeight(item) > 0 && !isReasoningItem(item));
+  return Boolean(visibleItems.length && visibleItems.every((item) => shouldPreserveV4PendingOverlayItem(item)
+    && v4ThreadHasPendingMatch({ turns: incomingTurns || [] }, item)));
+}
+
+function shouldPreserveExistingV4ProjectionTurn(existingThread, incomingThread, existingTurn, incomingTurns) {
+  if (!existingTurn || turnVisibleWeight(existingTurn) <= 0) return false;
+  const id = String(existingTurn.id || "");
+  if (id && (incomingTurns || []).some((turn) => String(turn && turn.id || "") === id)) return false;
+  if (existingV4TurnHasOnlyMatchedPendingItems(existingTurn, incomingTurns)) return false;
+  const activeLike = isActiveLikeProjectionTurn(existingTurn);
+  const regressiveRefresh = isV4ProjectionRefreshRegressive(existingThread, incomingThread);
+  if (!activeLike && !regressiveRefresh) return false;
+  return !incomingTurnsClearlySupersedeExistingTurn(existingTurn, incomingTurns);
+}
+
 function mergeV4ProjectionThread(existingThread, incomingThread) {
   if (!existingThread || !incomingThread || existingThread.id !== incomingThread.id) {
     return normalizeThreadVisibleUserMessages(incomingThread);
@@ -5236,13 +5401,29 @@ function mergeV4ProjectionThread(existingThread, incomingThread) {
     delete merged.mobileDeferredEnrichmentReason;
   }
   if (Array.isArray(incomingThread.turns)) {
-    const existingById = new Map((Array.isArray(existingThread.turns) ? existingThread.turns : [])
-      .map((turn) => [String(turn && turn.id || ""), turn]));
-    merged.turns = incomingThread.turns.map((incomingTurn) => {
+    const existingTurns = Array.isArray(existingThread.turns) ? existingThread.turns : [];
+    const incomingTurns = incomingThread.turns.slice();
+    const existingById = new Map(existingTurns.map((turn) => [String(turn && turn.id || ""), turn]));
+    merged.turns = incomingTurns.map((incomingTurn) => {
       const existingTurn = existingById.get(String(incomingTurn && incomingTurn.id || ""));
       return existingTurn ? mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) : incomingTurn;
     });
+    for (const existingTurn of existingTurns) {
+      if (shouldPreserveExistingV4ProjectionTurn(existingThread, incomingThread, existingTurn, merged.turns)) {
+        merged.turns.push(existingTurn);
+      }
+    }
     applyV4PendingOverlay(existingThread, merged);
+    merged.turns = sortTurnsForDisplay(merged.turns).slice(-maxVisibleTurnsForThread(merged));
+  }
+  if (isV4ProjectionRefreshRegressive(existingThread, incomingThread)) {
+    const existingRevision = v4ProjectionRevisionValue(existingThread);
+    if (existingRevision) {
+      merged.mobileProjectionRevision = existingRevision;
+      if (merged.mobileProjection && typeof merged.mobileProjection === "object") {
+        merged.mobileProjection = Object.assign({}, merged.mobileProjection, { revision: existingRevision });
+      }
+    }
   }
   return normalizeThreadVisibleUserMessages(merged);
 }

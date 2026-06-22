@@ -26,6 +26,7 @@ Interpretation:
 | Refresh prompt repeats after a static bump | Compare `/api/public-config.clientBuildId` and `shellCacheName` with served `/app.js` and `/sw.js`; current builds read shell metadata on each config request and do not use plain `version` for this comparison |
 | Push missing | HTTPS/Tailscale access, VAPID files, subscription count, sub-agent suppression |
 | Push says turn ended but no final reply appears | rollout `task_complete.last_agent_message`, completion-push no-final-message guard |
+| Continuation fails because source thread cannot reply | continuation job progress `handoff-fallback`, generated `.agent-context/thread-handoffs/*.md` mode, `/api/status` profile/quota |
 | Profile switch hides workspaces or threads | active `codexProfiles.activeCodexHome`, non-default profile shared-state links, `/api/threads?limit=10` |
 | Quota chips show the previous account after switch | `/api/status.rateLimits`, browser quota localStorage, profile-switch cache clearing, shared `sessions/` quota fallback |
 | Archived projectless thread reappears | session-index fallback, `archived_sessions`, `test/thread-archive.test.js` |
@@ -192,6 +193,23 @@ Recovery:
 1. Call authenticated `POST /api/app-server/reconnect` when only Mobile Web is stale.
 2. If bridge code changed or endpoint process is stale, fully quit Desktop and relaunch once with `start-codex-desktop-shared.ps1 -ForceRestartMux`.
 3. Avoid starting an independent managed app-server when shared mode is required; that creates a divergent stream.
+
+## Continuation When Source Thread Cannot Reply
+
+Normal continuation first asks the source thread to write a concise handoff
+file, then starts a new thread with a small bootstrap index. If the source
+thread cannot be resumed, cannot start the handoff turn, completes without
+writing the file, or times out, Mobile Web now writes a bounded server fallback
+handoff under `.agent-context/thread-handoffs/`.
+
+The fallback handoff is not a model-authored source-thread summary. It contains
+source thread metadata, recent visible turn summaries, workspace context
+references, and a bounded reason. The new thread must re-check
+`.agent-context/PROJECT_CONTEXT.md`, `.agent-context/HANDOFF.md`, the smallest
+relevant docs, `/api/status`, active profile, and quota before making changes.
+Use continuation progress step `handoff-fallback` and the bootstrap handoff
+mode line to distinguish this recovery path from a normal source-generated
+handoff.
 
 ## Codex Profile Switch Shows Empty Threads
 
@@ -1542,6 +1560,12 @@ Check these facts in order:
   selected `activeProfileId`.
 - After switching, the hidden/windowless launcher must restart the shared
   chain; `/api/status.codexHome` should match the selected profile home.
+- On macOS system LaunchDaemon deployments, `launchctl print
+  system/<label>` and the LaunchDaemon plist should also show the selected
+  `CODEX_HOME` and `<CODEX_HOME>/app-server-mux/endpoint.json`. If the API
+  status is correct but those static values still point at the previous
+  profile, inspect `adapters/shared-chain-restart-service.js`; the macOS
+  shared-chain restart must have received the explicit profile `codexHome`.
 - The restart log should show the same `codexHome=...` value and the mux
   endpoint should be under that profile's
   `<CODEX_HOME>\app-server-mux\endpoint.json`, not always the default

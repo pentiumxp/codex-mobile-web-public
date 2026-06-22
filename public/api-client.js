@@ -50,17 +50,24 @@
           let message = `${res.status} ${res.statusText}`;
           let code = "";
           let detail = "";
+          let requestId = "";
+          let progress = null;
+          let responseBody = null;
           try {
             const body = await res.json();
+            responseBody = body;
             if (body.error) message = body.error;
             if (body.code) code = String(body.code);
             if (body.detail) detail = String(body.detail);
+            if (body.requestId) requestId = String(body.requestId);
+            if (body.progress && typeof body.progress === "object") progress = body.progress;
           } catch (_) {}
           onResponseError({
             status: res.status,
             message,
             code,
             detail,
+            requestId,
             path,
           });
           if (res.status === 401) {
@@ -70,6 +77,9 @@
           err.status = res.status;
           err.code = code;
           err.detail = detail;
+          err.requestId = requestId;
+          err.progress = progress;
+          err.responseBody = responseBody;
           throw err;
         }
         if (res.status === 204) return null;
