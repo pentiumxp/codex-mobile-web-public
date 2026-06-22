@@ -396,6 +396,39 @@ test("legacy stored quota snapshots without live provenance are ignored", () => 
   assert.equal(previous.quota.source, null);
 });
 
+test("profile switching remains enabled with the active profile default mux endpoint", () => {
+  const userHome = tempDir();
+  const activeHome = path.join(userHome, ".codex-homes", "previous");
+  const service = createCodexProfileService({
+    userHome,
+    runtimeRoot: path.join(userHome, ".codex-mobile-web"),
+    activeCodexHome: activeHome,
+    env: {
+      CODEX_HOME: activeHome,
+      CODEX_MOBILE_MUX_ENDPOINT_FILE: path.join(activeHome, "app-server-mux", "endpoint.json"),
+    },
+  });
+
+  assert.equal(service.profiles().switchSupported, true);
+});
+
+test("profile switching remains enabled with a stale environment profile default mux endpoint", () => {
+  const userHome = tempDir();
+  const activeHome = path.join(userHome, ".codex");
+  const staleEnvHome = path.join(userHome, ".codex-homes", "previous");
+  const service = createCodexProfileService({
+    userHome,
+    runtimeRoot: path.join(userHome, ".codex-mobile-web"),
+    activeCodexHome: activeHome,
+    env: {
+      CODEX_HOME: staleEnvHome,
+      CODEX_MOBILE_MUX_ENDPOINT_FILE: path.join(staleEnvHome, "app-server-mux", "endpoint.json"),
+    },
+  });
+
+  assert.equal(service.profiles().switchSupported, true);
+});
+
 test("profile switching is disabled when a fixed app-server endpoint is configured", () => {
   const userHome = tempDir();
   const service = createCodexProfileService({

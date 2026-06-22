@@ -24,12 +24,18 @@ test("settings panel exposes Codex profile account and switch UI", () => {
   assert.match(appJs, /\/api\/codex-profiles\/active/);
   assert.match(appJs, /function clearStoredRateLimits\(\)/);
   assert.match(appJs, /codexProfileSwitchStage/);
-  assert.match(appJs, /state\.codexProfileSwitchStage = "预检中\.\.\."/);
-  assert.match(appJs, /state\.codexProfileSwitchStage = "重启中\.\.\."/);
-  assert.match(appJs, /state\.codexProfileSwitchStage = "失败"/);
+  assert.match(appJs, /codexProfileSwitchRequestId/);
+  assert.match(appJs, /startCodexProfileSwitchProgressPolling/);
+  assert.match(appJs, /\/api\/codex-profiles\/switch-progress\?requestId=/);
+  assert.match(appJs, /正在读取目标 Profile/);
+  assert.match(appJs, /切换已写入，正在等待服务恢复/);
+  assert.match(appJs, /setCodexProfileSwitchStage\(`切换失败：/);
+  assert.match(appJs, /showingSwitchProgress/);
+  assert.match(appJs, /switchAccepted/);
   assert.match(appJs, /function finishRestartingUiIfReady\(\)/);
   assert.match(appJs, /state\.codexProfileRestarting = false/);
   assert.match(appJs, /state\.codexProfileSwitchTargetId = ""/);
+  assert.match(appJs, /state\.codexProfileSwitchRequestId = ""/);
   assert.match(appJs, /codex-profile-progress/);
   assert.match(stylesCss, /\.codex-profile-row/);
   assert.match(stylesCss, /\.profile-switch-confirm-dialog/);
@@ -40,7 +46,11 @@ test("server exposes profile list and active profile switch endpoints", () => {
   assert.match(serverJs, /codexProfiles:\s*codexProfileService\.profiles\(\{/);
   assert.match(serverJs, /activeQuota:\s*liveQuotaSnapshotForProfiles\(\)/);
   assert.match(serverJs, /url\.pathname === "\/api\/codex-profiles"/);
+  assert.match(serverJs, /url\.pathname === "\/api\/codex-profiles\/switch-progress"/);
   assert.match(serverJs, /url\.pathname === "\/api\/codex-profiles\/active"/);
+  assert.match(serverJs, /setProfileSwitchProgress/);
+  assert.match(serverJs, /target_profile_rate_limits_unavailable/);
+  assert.match(serverJs, /\[codex-profile-switch\] failed/);
   assert.match(serverJs, /sharedChainRestartService\.restart/);
 });
 

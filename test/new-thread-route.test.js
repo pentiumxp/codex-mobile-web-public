@@ -131,8 +131,12 @@ test("server hydrates rollout quota snapshots without overwriting live quota", (
   assert.match(serverJs, /CODEX_MUX_STANDALONE:\s*"1"[\s\S]*CODEX_MUX_KEEP_ALIVE:\s*"1"[\s\S]*CODEX_MUX_PUBLISH_ENDPOINT:\s*"1"/, "Mobile-owned mux should stay alive after Desktop exits and publish the active profile endpoint");
   assert.match(serverJs, /shared endpoint missing; starting Mobile-owned mux/, "required shared mode should start a Mobile-owned mux when the profile endpoint is absent");
   assert.match(serverJs, /profile mux endpoint unavailable; starting Mobile-owned mux/, "stale profile endpoints should be replaced by a Mobile-owned mux");
+  assert.match(serverJs, /const PERSIST_MOBILE_OWNED_MUX =/, "server should expose a persistent owned mux mode for Listener restarts");
+  assert.match(serverJs, /detached:\s*PERSIST_MOBILE_OWNED_MUX/, "persistent owned mux should detach from the Listener process group");
+  assert.match(serverJs, /child\.unref\(\)/, "persistent owned mux should not keep the Listener process alive");
+  assert.match(serverJs, /persistentOwnedMux:\s*PERSIST_MOBILE_OWNED_MUX/, "status should expose persistent owned mux mode");
   assert.match(serverJs, /mobileOwnedMux:\s*this\.muxChild \? \{[\s\S]*pid:[\s\S]*running:/, "status should expose bounded Mobile-owned mux runtime evidence");
-  assert.match(serverJs, /if \(codex\.muxChild && codex\.muxChild\.exitCode === null\) codex\.muxChild\.kill\(\)/, "server shutdown should stop the Mobile-owned mux child");
+  assert.match(serverJs, /if \(!PERSIST_MOBILE_OWNED_MUX && codex\.muxChild && codex\.muxChild\.exitCode === null\) codex\.muxChild\.kill\(\)/, "server shutdown should preserve persistent owned mux children");
   assert.match(serverJs, /function activeRateLimits\(\)[\s\S]*latestLiveRateLimits \|\| latestSnapshotRateLimits/, "live quota should win over rollout snapshots");
   assert.match(serverJs, /\/api\/public-config"[\s\S]*await codex\.refreshRateLimitsIfMissing\(\);[\s\S]*rateLimits: activeRateLimits\(\)/, "public config should refresh and include active quota");
   assert.match(serverJs, /\/api\/status"[\s\S]*await codex\.refreshRateLimitsIfMissing\(\);[\s\S]*sendJson\(res, 200, codex\.status\(\)\)/, "status should refresh and include hydrated quota snapshots");
@@ -145,13 +149,91 @@ test("server runtime inheritance includes model and reasoning effort", () => {
   assert.match(settingsBody, /model,\s*reasoningEffort,/, "runtime settings response should expose inherited model and effort");
 
   const startBody = functionBody(serverJs, "applyStartThreadRuntimeSettings");
-  assert.match(startBody, /attachWorkspaceDelegationDynamicTools\(params\)/, "thread/start should receive workspace delegation dynamic tools when enabled");
+  assert.match(startBody, /attachWorkspaceDelegationRuntimeGuidance\(params\)/, "thread/start should receive workspace delegation dynamic tools and script fallback guidance when enabled");
   assert.match(startBody, /if \(settings\.model\) params\.model = settings\.model;/, "thread/start should inherit model");
+  assert.match(startBody, /applyWorkspaceDelegationRuntimeGuard\(params, settings, \{ useSandboxPolicy: false \}\)/, "thread/start should enforce workspace delegation write guard");
 
   const turnBody = functionBody(serverJs, "applyTurnRuntimeSettings");
-  assert.match(turnBody, /attachWorkspaceDelegationDynamicTools\(params\)/, "turn/start should receive workspace delegation dynamic tools when enabled");
+  assert.match(turnBody, /attachWorkspaceDelegationRuntimeGuidance\(params\)/, "turn/start should receive workspace delegation dynamic tools and script fallback guidance when enabled");
   assert.match(turnBody, /if \(settings\.model\) params\.model = settings\.model;/, "turn/start should inherit model");
   assert.match(turnBody, /if \(settings\.reasoningEffort\) params\.effort = settings\.reasoningEffort;/, "turn/start should inherit reasoning effort");
+  assert.match(turnBody, /applyWorkspaceDelegationRuntimeGuard\(params, settings, \{ useSandboxPolicy: true \}\)/, "turn/start should enforce workspace delegation write guard");
+
+  const resumeBody = functionBody(serverJs, "applyResumeRuntimeSettings");
+  assert.match(resumeBody, /applyWorkspaceDelegationRuntimeGuard\(params, settings, \{ useSandboxPolicy: false \}\)/, "thread/resume should enforce workspace delegation write guard");
+
+  const guardBody = functionBody(serverJs, "applyWorkspaceDelegationRuntimeGuard");
+  assert.match(guardBody, /workspaceDelegationPublicSettings\(\)\.enabled/, "write guard should only run when workspace delegation is enabled");
+  assert.match(guardBody, /WORKSPACE_DELEGATION_WRITE_GUARD_DISABLED/, "write guard should have an emergency server-side disable gate");
+  assert.match(guardBody, /runtimeCwdForParams\(params\)/, "write guard should resolve cwd from params or thread id");
+  assert.match(guardBody, /workspaceDelegationGuardExemptCwd\(cwd\)/, "write guard should preserve trusted maintenance/deploy permissions");
+  assert.ok(
+    guardBody.indexOf("workspaceDelegationGuardExemptCwd(cwd)") < guardBody.indexOf("applyWorkspaceDelegationFullAccessCompatRuntime(params, options)"),
+    "maintenance/deploy exemptions must run before runtime compatibility overrides",
+  );
+  assert.match(guardBody, /applyWorkspaceDelegationFullAccessCompatRuntime\(params, options\)/, "write guard should route default enforcement through dynamic approval compatibility");
+  assert.match(guardBody, /WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD/, "hard sandbox narrowing should require an explicit opt-in");
+  assert.match(guardBody, /applyWorkspaceDelegationFullAccessCompatRuntime\(params, options\)/, "default guard should heal app-server workspace-write inheritance that makes .git read-only");
+  assert.match(guardBody, /workspaceDelegationWriteGuardPermissionProfile\(cwd, settings && settings\.sandboxPolicy\)/, "opt-in hard guard should still use a bounded managed permission profile");
+  assert.match(guardBody, /delete params\.sandboxPolicy/, "guard should be able to clear stale workspace-write sandbox policy");
+  assert.match(guardBody, /params\.sandbox = "workspace-write"/, "explicit hard guard should still support workspace-write sandbox mode");
+
+  const compatBody = functionBody(serverJs, "applyWorkspaceDelegationFullAccessCompatRuntime");
+  assert.match(compatBody, /params\.approvalPolicy = "on-request"/, "compat runtime should keep app-server approval events available for dynamic source-write decisions");
+  assert.match(compatBody, /params\.sandboxPolicy = \{ type: "dangerFullAccess" \}/, "turn/start compatibility should override inherited workspace-write sandbox policy");
+  assert.match(compatBody, /params\.sandbox = "danger-full-access"/, "thread/start and thread/resume compatibility should restore full access sandbox mode");
+  assert.match(compatBody, /delete params\.permissionProfile/, "compat runtime should clear stale managed profiles that made .git read-only");
+
+  assert.match(serverJs, /handleServerRequest\(msg\)[\s\S]*answerWorkspaceSourceWriteGuardRequest\(request\)/, "app-server approval requests should pass through the dynamic source-write guard");
+  const approvalGuardBody = functionBody(serverJs, "workspaceSourceWriteGuardDecisionForRequest");
+  assert.match(approvalGuardBody, /ACTIONABLE_APPROVAL_METHODS\.has\(request\.method\)/, "dynamic guard should only auto-answer app-server approval requests");
+  assert.match(approvalGuardBody, /workspaceSourceWriteGuardService\.classify\(request\)/, "dynamic guard should delegate source-write policy to the adapter service");
+
+  const guardProfileBody = functionBody(serverJs, "workspaceDelegationWriteGuardPermissionProfile");
+  assert.match(guardProfileBody, /kind: "root"[\s\S]*access: "read"/, "guard profile should keep root read-only");
+  assert.match(guardProfileBody, /path\.join\(root, "\.git"\)[\s\S]*access: "write"/, "guard profile should allow git metadata writes inside the current workspace");
+  assert.match(guardProfileBody, /path\.join\(root, "\.codex"\)[\s\S]*access: "read"/, "guard profile should keep workspace .codex metadata read-only");
+  assert.match(guardProfileBody, /path\.join\(root, "\.agents"\)[\s\S]*access: "read"/, "guard profile should keep workspace .agents metadata read-only");
+
+  const normalizeProfileBody = functionBody(serverJs, "normalizePermissionProfile");
+  assert.match(normalizeProfileBody, /type: profile\.type \|\| profile\.kind \|\| null/, "runtime inheritance should preserve permission profile type");
+  assert.match(normalizeProfileBody, /type: fileSystem\.type \|\| null/, "runtime inheritance should preserve permission profile file-system type");
+
+  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_WRITE_GUARD/, "server should expose an emergency write-guard disable env");
+  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_DISABLE_WRITE_GUARD/, "server should expose a positive emergency write-guard disable env");
+  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD/, "server should expose an explicit hard-sandbox opt-in env");
+  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS/, "server should expose explicit cwd allowlist env");
+  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_DISABLE_SELF_EXEMPTION/, "self-maintenance exemption should be explicitly disableable");
+  assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_DISABLE_PLATFORM_EXEMPTION/, "platform-control exemption should be explicitly disableable");
+
+  const guidanceBody = functionBody(serverJs, "attachWorkspaceDelegationRuntimeGuidance");
+  assert.match(guidanceBody, /attachWorkspaceDelegationDynamicTools\(params, settings\)/, "runtime guidance should preserve dynamic tool injection");
+  assert.match(guidanceBody, /appendDeveloperInstructions\(/, "runtime guidance should add model-visible fallback instructions");
+  assert.match(guidanceBody, /workspaceDelegationScriptFallbackInstruction\(params\)/, "runtime guidance should include the local task-card script fallback");
+
+  const fallbackBody = functionBody(serverJs, "workspaceDelegationScriptFallbackInstruction");
+  assert.match(fallbackBody, /create-thread-task-card\.js/, "fallback guidance should point to the local task-card script");
+  assert.match(fallbackBody, /multi_agent_v1\.spawn_agent/, "fallback guidance should tell models not to substitute multi-agent tools for task cards");
+  assert.match(fallbackBody, /--source-thread/, "fallback script command should include the source-thread argument");
+  assert.match(fallbackBody, /--body-file/, "fallback script command should support long Markdown bodies");
+
+  const exemptBody = functionBody(serverJs, "workspaceDelegationGuardExemptCwd");
+  assert.match(exemptBody, /workspaceDelegationGuardExemptCwds\(\)/, "exemption should honor explicit cwd allowlist");
+  assert.match(exemptBody, /isCodexMobileMaintenanceCwd\(cwd\)/, "exemption should preserve Codex Mobile self-maintenance permissions");
+  assert.match(exemptBody, /isHomeAiControlPlaneCwd\(cwd\)/, "exemption should preserve Home AI central deploy/control-plane permissions");
+
+  const selfBody = functionBody(serverJs, "isCodexMobileMaintenanceCwd");
+  assert.match(selfBody, /workspaceDelegationGuardPackageName\(cwd\) === "codex-mobile-web"/, "self-maintenance should be limited to the Codex Mobile package");
+  assert.match(selfBody, /workspaceDelegationGuardHasFile\(cwd, "server\.js"\)/, "self-maintenance should require the server entrypoint");
+
+  const platformBody = functionBody(serverJs, "isHomeAiControlPlaneCwd");
+  assert.match(platformBody, /scripts", "ai-ops-control-plane\.js"/, "platform exemption should require the central intake script");
+  assert.match(platformBody, /scripts", "deploy-macos-production\.js"/, "platform exemption should require the central deploy script");
+  assert.match(platformBody, /docs", "PLATFORM_CONTRACTS", "plugin-workspace-platform-contract\.md"/, "platform exemption should require central platform contracts");
+
+  const cwdBody = functionBody(serverJs, "runtimeCwdForParams");
+  assert.match(cwdBody, /params && params\.cwd/, "cwd resolver should prefer explicit cwd");
+  assert.match(cwdBody, /readStateDbThread\(threadId\)[\s\S]*readStartedThread\(threadId\)[\s\S]*readRolloutSessionFallbackThread\(threadId\)/, "cwd resolver should fall back through thread summaries");
 });
 
 test("continuation paths apply inherited model and effort", () => {
@@ -163,6 +245,29 @@ test("continuation paths apply inherited model and effort", () => {
   assert.match(startContinuationBody, /const runtimeSettings = applyPermissionModeOverride\(sourceSnapshot\.runtimeSettings \|\| \{\}, body\.permissionMode, cwd\);/);
   assert.match(startContinuationBody, /const params = applyStartThreadRuntimeSettings\(/, "continuation thread/start should inherit model");
   assert.match(startContinuationBody, /const bootstrapParams = applyTurnRuntimeSettings\(/, "continuation bootstrap turn should inherit model and effort");
+});
+
+test("continuation can fall back when source thread cannot write a handoff", () => {
+  const sourceHandoffBody = functionBody(serverJs, "createSourceContinuationHandoff");
+  assert.match(sourceHandoffBody, /sourceSnapshot/, "source handoff generation should receive the source snapshot for fallback");
+  assert.match(sourceHandoffBody, /writeFallbackSourceContinuationHandoff\(/, "source handoff generation should have a server fallback path");
+  assert.match(sourceHandoffBody, /handoff-fallback/, "continuation progress should expose fallback handoff generation");
+  assert.match(sourceHandoffBody, /readContinuationTurnStatus\(threadId, turnId\)/, "completed source turns without a file should not wait for the long timeout");
+
+  const fallbackBody = functionBody(serverJs, "writeFallbackSourceContinuationHandoff");
+  assert.match(fallbackBody, /Fallback Continuation Handoff/, "fallback handoff should identify itself");
+  assert.match(fallbackBody, /not a source-thread model summary/, "fallback handoff should not pretend the source thread summarized itself");
+  assert.match(fallbackBody, /continuationSourceThreadSection\(snapshot\)/, "fallback handoff should include bounded source metadata");
+  assert.match(fallbackBody, /continuationTurnSummaries\(snapshot\.turns \|\| \[\]\)/, "fallback handoff should include bounded recent visible turns");
+  assert.match(fallbackBody, /workspaceContextReference\(cwd\)/, "fallback handoff should point the new thread to durable context files");
+  assert.match(fallbackBody, /fallback:\s*true/, "fallback handoff result should be marked for bootstrap display");
+
+  const startContinuationBody = functionBody(serverJs, "startThreadFromRequestBody");
+  assert.match(startContinuationBody, /sourceSnapshot,\s*\n\s*onProgress: progress/, "continuation start should pass the source snapshot into handoff generation");
+
+  const handoffSectionBody = functionBody(serverJs, "sourceHandoffSection");
+  assert.match(handoffSectionBody, /sourceHandoff\.fallback/, "bootstrap should disclose fallback handoff mode");
+  assert.match(handoffSectionBody, /fallbackReason/, "bootstrap should include a bounded fallback reason");
 });
 
 test("continuation titles survive app-server rename gaps", () => {

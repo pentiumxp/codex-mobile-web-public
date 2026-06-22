@@ -250,6 +250,13 @@ test("macOS restart command restarts the existing LaunchDaemon when available", 
   assert.match(command, /service_label='com\.homeai\.plugin\.codex-mobile'/);
   assert.match(command, /run_restart_sudo "\$launchctl_path" print "system\/\$service_label"/);
   assert.match(command, /service_domain="system\/\$service_label"/);
+  assert.match(command, /target_codex_home='\/Users\/xuefusong\/\.codex'/);
+  assert.match(command, /target_mux_endpoint_file='\/Users\/xuefusong\/\.codex\/app-server-mux\/endpoint\.json'/);
+  assert.match(command, /system_launchdaemon_plist_path/);
+  assert.match(command, /sync_system_launchdaemon_profile_env "\$service_plist_path"/);
+  assert.match(command, /PlistBuddy -c "Set :EnvironmentVariables:\$\{key\} \$\{value\}"/);
+  assert.match(command, /plist_set_env_value "\$plist_path" CODEX_HOME "\$target_codex_home"/);
+  assert.match(command, /plist_set_env_value "\$plist_path" CODEX_MOBILE_MUX_ENDPOINT_FILE "\$target_mux_endpoint_file"/);
   assert.match(command, /repair_system_launchdaemon_stdio >/);
   assert.match(command, /std\(out\|err\) path = /);
   assert.match(command, /\/usr\/bin\/touch "\$log_path"/);
@@ -267,6 +274,44 @@ test("macOS restart command restarts the existing LaunchDaemon when available", 
   assert.doesNotMatch(command, /AUTH_KEY/);
   assert.doesNotMatch(command, /Codex\.app/);
   assert.doesNotMatch(command, /osascript/);
+});
+
+test("macOS restart service uses explicit profile restart arguments over inherited env", () => {
+  const root = path.resolve(__dirname, "..");
+  let spawnCall = null;
+  const service = createSharedChainRestartService({
+    platform: "darwin",
+    env: {
+      HOME: "/Users/xuefusong",
+      XPC_SERVICE_NAME: "com.homeai.plugin.codex-mobile",
+      CODEX_HOME: "/Users/xuefusong/.codex-homes/previous",
+      CODEX_MOBILE_MUX_ENDPOINT_FILE: "/Users/xuefusong/.codex-homes/previous/app-server-mux/endpoint.json",
+      CODEX_MOBILE_PORT: "8789",
+      CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER: "1",
+    },
+    spawn: (exe, args, options) => {
+      spawnCall = { exe, args, options };
+      return { pid: 24681, unref: () => {} };
+    },
+    workspacePath: root,
+    serverPath: path.join(root, "server.js"),
+    nodePath: "/usr/local/bin/node",
+    currentPid: 4321,
+    launchctlPath: "/bin/launchctl",
+    logPath: "/Users/xuefusong/.codex-mobile-web/logs/mobile-web.log",
+  });
+
+  service.restart({
+    delayMs: 900,
+    profileId: "default",
+    codexHome: "/Users/xuefusong/.codex",
+  });
+
+  assert.match(spawnCall.args[1], /target_profile_id='default'/);
+  assert.match(spawnCall.args[1], /target_codex_home='\/Users\/xuefusong\/\.codex'/);
+  assert.match(spawnCall.args[1], /target_mux_endpoint_file='\/Users\/xuefusong\/\.codex\/app-server-mux\/endpoint\.json'/);
+  assert.doesNotMatch(spawnCall.args[1], /target_codex_home='\/Users\/xuefusong\/\.codex-homes\/previous'/);
+  assert.doesNotMatch(spawnCall.args[1], /target_mux_endpoint_file='\/Users\/xuefusong\/\.codex-homes\/previous\/app-server-mux\/endpoint\.json'/);
 });
 
 test("macOS restart command falls back to a one-shot nohup listener without a LaunchAgent label", () => {

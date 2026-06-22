@@ -86,16 +86,17 @@ function shellQuote(value) {
 }
 
 function createService(options) {
+  const env = options.env || process.env;
   const userHome = path.resolve(options.userHome || process.env.HOME || os.homedir());
-  const runtimeRoot = path.resolve(options.runtimeDir || process.env.CODEX_MOBILE_RUNTIME_DIR || path.join(userHome, ".codex-mobile-web"));
-  const storeFile = path.resolve(options.profileFile || process.env.CODEX_MOBILE_PROFILE_FILE || path.join(runtimeRoot, "codex-profiles.json"));
-  const activeCodexHome = path.resolve(options.activeCodexHome || process.env.CODEX_HOME || path.join(userHome, ".codex"));
+  const runtimeRoot = path.resolve(options.runtimeDir || env.CODEX_MOBILE_RUNTIME_DIR || path.join(userHome, ".codex-mobile-web"));
+  const storeFile = path.resolve(options.profileFile || env.CODEX_MOBILE_PROFILE_FILE || path.join(runtimeRoot, "codex-profiles.json"));
+  const activeCodexHome = path.resolve(options.activeCodexHome || env.CODEX_HOME || path.join(userHome, ".codex"));
   const service = createCodexProfileService({
     userHome,
     runtimeRoot,
     storeFile,
     activeCodexHome,
-    env: Object.assign({}, process.env),
+    env: Object.assign({}, env),
   });
   return { service, userHome, runtimeRoot, storeFile, activeCodexHome };
 }

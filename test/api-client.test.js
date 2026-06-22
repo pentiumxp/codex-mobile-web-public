@@ -101,6 +101,12 @@ test("api client reports unauthorized responses and server error payloads", asyn
         error: "auth failed",
         code: "codex_account_auth_invalid",
         detail: "token_expired",
+        requestId: "profile-switch-1",
+        progress: {
+          status: "failed",
+          stage: "failed",
+          message: "切换失败：目标账号登录已失效",
+        },
       }),
     }),
   });
@@ -111,6 +117,9 @@ test("api client reports unauthorized responses and server error payloads", asyn
     assert.equal(err.status, 409);
     assert.equal(err.code, "codex_account_auth_invalid");
     assert.equal(err.detail, "token_expired");
+    assert.equal(err.requestId, "profile-switch-1");
+    assert.equal(err.progress.status, "failed");
+    assert.equal(err.responseBody.progress.stage, "failed");
     return true;
   });
 });

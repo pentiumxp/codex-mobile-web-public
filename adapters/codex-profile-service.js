@@ -18,6 +18,29 @@ function normalizePathForCompare(value) {
   return path.resolve(String(value || "")).toLowerCase();
 }
 
+function defaultMuxEndpointFileForHome(codexHome) {
+  const home = String(codexHome || "").trim();
+  return home ? path.join(path.resolve(home), "app-server-mux", "endpoint.json") : "";
+}
+
+function isDefaultMuxEndpointForHome(endpointFile, codexHome) {
+  const endpoint = String(endpointFile || "").trim();
+  const expected = defaultMuxEndpointFileForHome(codexHome);
+  return Boolean(
+    endpoint
+    && expected
+    && normalizePathForCompare(endpoint) === normalizePathForCompare(expected),
+  );
+}
+
+function profileSwitchSupportedForEnv(env = {}, activeCodexHome = "") {
+  if (env.CODEX_MOBILE_APP_SERVER_WS || env.CODEX_MOBILE_APP_SERVER_TCP) return false;
+  const endpointFile = String(env.CODEX_MOBILE_MUX_ENDPOINT_FILE || "").trim();
+  if (!endpointFile) return true;
+  return isDefaultMuxEndpointForHome(endpointFile, activeCodexHome)
+    || isDefaultMuxEndpointForHome(endpointFile, env.CODEX_HOME);
+}
+
 function safeReadJson(file, fallback = null) {
   try {
     return JSON.parse(fs.readFileSync(file, "utf8"));
@@ -460,7 +483,7 @@ function createCodexProfileService(options = {}) {
       activeCodexHome,
       storeFile,
       restartRequired: true,
-      switchSupported: !env.CODEX_MOBILE_MUX_ENDPOINT_FILE && !env.CODEX_MOBILE_APP_SERVER_WS && !env.CODEX_MOBILE_APP_SERVER_TCP,
+      switchSupported: profileSwitchSupportedForEnv(env, activeCodexHome),
       profiles: normalized.map((profile) => {
         const rolloutQuota = loadRateLimitSnapshotForHome(profile.codexHome);
         const storedQuota = normalizeQuotaSnapshot(quotaSnapshots[profile.id]);

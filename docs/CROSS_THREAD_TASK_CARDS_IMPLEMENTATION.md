@@ -115,16 +115,130 @@ When the runtime `跨工作区委派` switch is enabled, server-side `thread/sta
 codex_mobile.delegate_to_thread
 ```
 
-This is the model-visible path for running Codex turns. It is not MCP. The
-model decides from the current request whether cross-workspace delegation is
-needed, calls the tool with an exact target thread id/title or exact target
-workspace cwd, and the server converts the tool call into the same
+This is one model-visible path for running Codex turns. The model decides from
+the current request whether cross-workspace delegation is needed, calls the tool
+with an exact target thread id/title or exact target workspace cwd, and the
+server converts the tool call into the same
 `createThreadTaskCardsFromSourceThread()` path used by
 `POST /api/threads/:sourceThreadId/task-cards`. The tool returns bounded JSON
 text containing card ids, target thread ids, and whether source-direct approval
 was used. If the switch is off, the tool is not injected. If the tool is called
 without a target or source thread id cannot be inferred, the server returns a
 bounded error to the model instead of hanging the turn.
+
+The same runtime path appends a short developer-instruction fallback to
+`thread/start` and `turn/start`. If the app-server dynamic tool is not visible
+or not discoverable in a particular Codex surface, the source model should run:
+
+```bash
+node scripts/create-thread-task-card.js \
+  --source-thread <current-thread-id> \
+  --target-thread <target-thread-id-or-exact-title> \
+  --title "<title>" \
+  --body-file <markdown-file>
+```
+
+This fallback still uses the Codex Mobile task-card API and preserves the same
+source-thread ownership boundary. `multi_agent_v1.spawn_agent`,
+`multi_agent_v1.resume`, `multi_agent_v1.send`, and `multi_agent_v1.close` are
+not Codex Mobile task-card APIs and must not be substituted for cross-workspace
+file-change delegation.
+
+App-server dynamic tools are passed in the `dynamicTools` field of
+`thread/start` and `turn/start`, but they may not be listed by deferred tool
+discovery surfaces such as `tool_search`. Production diagnostics should
+distinguish "injected into RPC" from "discoverable through tool search". When
+the dynamic tool is injected but no direct callable tool surface is visible to
+the source model, the script fallback is the supported path and should create
+the same source-direct task card.
+
+Codex Mobile also registers a standard Codex MCP server named `codex_mobile`.
+`server.js` calls `syncKnownCodexMobileMcpToolsets()` on startup, Profile list
+reads, and workspace creation, and still calls `syncCodexMobileMcpToolset()` for
+the target home before Profile-switch preflight. Those functions check every
+known/target `CODEX_HOME/config.toml` and add or repair
+`[mcp_servers.codex_mobile]` when it is missing or stale. The registered stdio
+wrapper is `scripts/codex-mobile-mcp-server.js`; it exposes `list_threads` and
+`delegate_to_thread`, and it calls the same authenticated local HTTP task-card
+API as the script fallback. The config entry stores only command, script,
+server URL, and key-file paths, not raw key material. It also registers
+tool-level `approval_mode = "approve"` for `list_threads` and
+`delegate_to_thread`, so Codex's MCP permission layer does not add a second
+approval prompt around the Mobile Web runtime delegation gate. This keeps new
+Codex Profiles and new Codex Homes from losing the task-card toolset after a
+profile switch.
+
+When injected, the tool's model-visible description is a mandatory boundary,
+not just an optional shortcut. If the requested implementation, file edit,
+command, test, deployment, or other mutation belongs to another workspace or
+thread, the model should call `codex_mobile.delegate_to_thread` before doing
+target-workspace work. It should not `cd` into, inspect, edit, patch, test,
+deploy, or otherwise mutate the other workspace from the current thread.
+Mobile Web still does not restore local keyword/path heuristics; the model is
+responsible for deciding whether the user's request crosses a workspace/thread
+boundary. If the current thread already attempted the target-workspace mutation
+and received a sandbox, permission, cwd, or approval-policy failure, that
+failure is treated as evidence for the source model to evaluate. The server
+must not scan failure logs and auto-create a card in the background; the source
+model must call `codex_mobile.delegate_to_thread` itself so the delegated body
+preserves the source-thread context, intent, and failure evidence. Because this
+is the free delegation path for an already trusted Codex thread, the dynamic
+tool always forces `direct:true`, `autoApprove:true`, and `pending:false` before
+calling the shared task-card helper. Manual/API callers can still request
+Pending cards through the explicit task-card route; the model dynamic-tool
+schema does not expose that override.
+
+For production triage, Mobile Web emits bounded workspace-delegation diagnostics
+around this path. `thread/start`, `turn/start`, and `thread/resume` log a
+`[workspace-delegation-rpc]` summary with the dynamic tool names/count,
+`hasWorkspaceDelegationTool`, `hasFallbackGuidance`, and sandbox/approval
+summary. `item/tool/call` handling logs `[workspace-delegation-tool-call]` with
+the called tool identity, source/turn ids, target reference count, body
+presence, and outcome such as `ok`, `unsupported_dynamic_tool`,
+`source_thread_id_required`, or `target_thread_required`. These logs are
+diagnostic only: they must not contain user message bodies, full developer
+instructions, access keys, cookies, or full task-card Markdown.
+
+The switch also normalizes runtime write permissions for new or resumed work.
+The server applies `applyWorkspaceDelegationRuntimeGuard()` from the shared
+runtime settings helpers so `thread/start`, `thread/resume`, and `turn/start`
+restore `danger-full-access`, clear inherited managed profiles, and use
+`approvalPolicy:"on-request"`. Mobile Web then auto-answers app-server approval
+requests through `adapters/workspace-source-write-guard-service.js`: reads,
+MCP, network, current-workspace writes, and current-workspace `.git` writes are
+allowed, while explicit writes into another known source root are denied. This
+is intentional: current Codex app-server builds can ignore Mobile Web's custom
+current-cwd profile and recreate a `workspace-write` permission profile that
+makes the current workspace's `.git` metadata read-only, breaking normal
+current-repository `git add/commit`.
+
+The hard current-cwd sandbox remains available only as an explicit operator
+opt-in with `CODEX_MOBILE_WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD=1`. In
+that mode the guard keeps root read-only, allows writes to the current cwd,
+temporary directories, and the current cwd's `.git` metadata, and keeps
+`.codex` / `.agents` under the cwd read-only. The guard resolves cwd from
+request params when available and otherwise from the thread id. Existing active
+turns are not retroactively changed; the guard applies when the next
+start/resume request is sent.
+
+The default write guard is intentionally scoped to approval-visible source-code
+writes. It does not reduce read access, MCP access, network access, current
+workspace writes, or current workspace Git metadata writes. It denies
+`apply_patch` / app-server file-change approvals, write-like shell commands, and
+write-like file-system grants when the target is another known source root. It
+cannot perfectly block an opaque script that hides its target path; that level
+requires app-server sandbox support that can express the current-cwd-including-
+`.git` exception. The guard also preserves the original runtime permission
+profile for trusted maintenance paths: the Codex Mobile source workspace
+itself, the Home AI central control-plane workspace that owns deployment
+scripts, and any cwd explicitly listed in
+`CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS`. Operators can disable
+the write guard in an emergency with
+`CODEX_MOBILE_WORKSPACE_DELEGATION_WRITE_GUARD=0` or
+`CODEX_MOBILE_WORKSPACE_DELEGATION_DISABLE_WRITE_GUARD=1`. These exceptions are
+for self-maintenance and bounded central deployment; ordinary plugin workspaces
+should still delegate cross-workspace writes through the model-visible tool or
+script fallback.
 
 `POST /api/threads/:sourceThreadId/workspace-delegation` is retained only as a
 compatibility endpoint for clients that shipped during the v363 experiment. It

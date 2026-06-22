@@ -75,12 +75,14 @@ const {
   resolveActiveCodexHomeFromStore,
   resolveEffectiveCodexHome,
 } = require("./adapters/codex-profile-service");
+const { ensureCodexMobileMcpServer } = require("./adapters/codex-mobile-mcp-config-service");
 const { ensureCodexProjectsTrusted } = require("./adapters/codex-project-trust-service");
 const { createThreadDetailProjectionService } = require("./adapters/thread-detail-projection-service");
 const { createThreadDetailProjectionV4Service } = require("./adapters/thread-detail-projection-v4-service");
 const { createChatGptProBridgeService } = require("./adapters/chatgpt-pro-bridge-service");
 const { createChatGptProPlannerService } = require("./adapters/chatgpt-pro-planner-service");
 const { createChatGptProMcpService } = require("./adapters/chatgpt-pro-mcp-service");
+const { createWorkspaceSourceWriteGuard } = require("./adapters/workspace-source-write-guard-service");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -119,6 +121,33 @@ function detectDevelopmentWorkspaceRoot(appRoot) {
   return "";
 }
 
+function normalizePathForEarlyCompare(value) {
+  return path.resolve(String(value || "")).toLowerCase();
+}
+
+function sameEarlyFsPath(left, right) {
+  const a = String(left || "").trim();
+  const b = String(right || "").trim();
+  return Boolean(a && b && normalizePathForEarlyCompare(a) === normalizePathForEarlyCompare(b));
+}
+
+function defaultMuxEndpointFileForCodexHome(codexHome) {
+  const home = String(codexHome || "").trim();
+  return home ? path.join(path.resolve(home), "app-server-mux", "endpoint.json") : "";
+}
+
+function resolveMuxEndpointFile(env, codexHome, codexHomeResolution = {}) {
+  const fallback = defaultMuxEndpointFileForCodexHome(codexHome);
+  const configured = String(env && env.CODEX_MOBILE_MUX_ENDPOINT_FILE || "").trim();
+  if (!configured) return fallback;
+  const envCodexHome = codexHomeResolution && codexHomeResolution.envCodexHome || "";
+  const staleEnvDefault = envCodexHome
+    && codexHomeResolution.envCodexHomeIgnored
+    && sameEarlyFsPath(configured, defaultMuxEndpointFileForCodexHome(envCodexHome))
+    && !sameEarlyFsPath(configured, fallback);
+  return staleEnvDefault ? fallback : path.resolve(configured);
+}
+
 const RUNTIME_ROOT = process.env.CODEX_MOBILE_RUNTIME_DIR || path.join(USER_HOME, ".codex-mobile-web");
 const CODEX_PROFILE_BOOTSTRAP = resolveActiveCodexHomeFromStore({
   userHome: USER_HOME,
@@ -141,11 +170,12 @@ const ARCHIVED_SESSIONS_DIR = path.join(CODEX_HOME, "archived_sessions");
 const MOBILE_ARCHIVED_THREAD_IDS_FILE = process.env.CODEX_MOBILE_ARCHIVED_THREAD_IDS_FILE
   || path.join(RUNTIME_ROOT, "archived-thread-ids.json");
 const CODEX_EXE = resolveDefaultCodexExecutable();
-const MUX_ENDPOINT_FILE = process.env.CODEX_MOBILE_MUX_ENDPOINT_FILE || path.join(CODEX_HOME, "app-server-mux", "endpoint.json");
+const MUX_ENDPOINT_FILE = resolveMuxEndpointFile(process.env, CODEX_HOME, CODEX_HOME_RESOLUTION);
 const EXTERNAL_APP_SERVER_WS = process.env.CODEX_MOBILE_APP_SERVER_WS || "";
 const EXTERNAL_APP_SERVER_TCP = process.env.CODEX_MOBILE_APP_SERVER_TCP || "";
 const REQUIRE_SHARED_APP_SERVER = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_REQUIRE_SHARED_APP_SERVER || "");
 const DISABLE_MOBILE_OWNED_MUX = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_DISABLE_OWNED_MUX || "");
+const PERSIST_MOBILE_OWNED_MUX = /^(1|true|yes|on)$/i.test(process.env.CODEX_MOBILE_PERSIST_OWNED_MUX || "");
 const HOST = process.env.CODEX_MOBILE_HOST || "0.0.0.0";
 const PORT = Number(process.env.CODEX_MOBILE_PORT || "8787");
 const APP_VERSION = readPackageVersion();
@@ -214,6 +244,21 @@ const WORKSPACE_DELEGATION_ENV_DEFAULT = /^(1|true|yes|on)$/i.test(
   process.env.CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION
     || process.env.CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED
     || "",
+);
+const WORKSPACE_DELEGATION_WRITE_GUARD_DISABLED = /^(0|false|no|off)$/i.test(
+  process.env.CODEX_MOBILE_WORKSPACE_DELEGATION_WRITE_GUARD || "",
+) || /^(1|true|yes|on)$/i.test(
+  process.env.CODEX_MOBILE_WORKSPACE_DELEGATION_DISABLE_WRITE_GUARD || "",
+);
+const WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD = /^(1|true|yes|on)$/i.test(
+  process.env.CODEX_MOBILE_WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD || "",
+);
+const WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS = process.env.CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS || "";
+const WORKSPACE_DELEGATION_GUARD_SELF_EXEMPTION_DISABLED = /^(1|true|yes|on)$/i.test(
+  process.env.CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_DISABLE_SELF_EXEMPTION || "",
+);
+const WORKSPACE_DELEGATION_GUARD_PLATFORM_EXEMPTION_DISABLED = /^(1|true|yes|on)$/i.test(
+  process.env.CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_DISABLE_PLATFORM_EXEMPTION || "",
 );
 const WORKSPACE_DELEGATION_TOOL_NAMESPACE = "codex_mobile";
 const WORKSPACE_DELEGATION_TOOL_NAME = "delegate_to_thread";
@@ -299,6 +344,51 @@ function syncRegisteredWorkspaceTrust(codexHome = CODEX_HOME) {
     console.error(`[workspace-trust] failed to sync registered workspaces: ${err.message || err}`);
     return { changed: false, added: [], error: err.message || String(err) };
   }
+}
+
+function syncCodexMobileMcpToolset(codexHome = CODEX_HOME) {
+  try {
+    const result = ensureCodexMobileMcpServer({
+      codexHome,
+      command: process.execPath,
+      scriptPath: path.join(APP_ROOT, "scripts", "codex-mobile-mcp-server.js"),
+      baseUrl: process.env.CODEX_MOBILE_MCP_SERVER_URL || `http://127.0.0.1:${PORT}`,
+      keyFile: AUTH_KEY_FILE,
+    });
+    if (result.changed) {
+      console.log(`[codex-mobile-mcp] registered ${result.serverName} in ${result.configPath}`);
+    }
+    return result;
+  } catch (err) {
+    console.error(`[codex-mobile-mcp] failed to sync toolset: ${err.message || err}`);
+    return { changed: false, added: false, error: err.message || String(err) };
+  }
+}
+
+function syncKnownCodexMobileMcpToolsets(profileOptions = {}) {
+  const homes = new Set([CODEX_HOME]);
+  let profileError = "";
+  try {
+    const profileState = codexProfileService.profiles(profileOptions);
+    for (const profile of profileState.profiles || []) {
+      const codexHome = String(profile && profile.codexHome || "").trim();
+      if (!codexHome) continue;
+      if (profile.exists || profile.active || codexHome === CODEX_HOME) homes.add(codexHome);
+    }
+  } catch (err) {
+    profileError = err && err.message || String(err);
+    console.error(`[codex-mobile-mcp] failed to enumerate known profiles: ${profileError}`);
+  }
+  const results = [];
+  for (const codexHome of homes) {
+    results.push(syncCodexMobileMcpToolset(codexHome));
+  }
+  return {
+    changed: results.some((item) => item && item.changed),
+    count: results.length,
+    results,
+    profileError,
+  };
 }
 
 function activeProfileRestartOptions(profile = null) {
@@ -812,6 +902,7 @@ const DEFAULT_RPC_TIMEOUT_MS = 30000;
 const READ_RPC_TIMEOUT_MS = 12000;
 const THREAD_DETAIL_RPC_TIMEOUT_MS = Math.min(6000, READ_RPC_TIMEOUT_MS);
 const PROFILE_SWITCH_PREFLIGHT_TIMEOUT_MS = Math.max(4000, Number(process.env.CODEX_MOBILE_PROFILE_SWITCH_PREFLIGHT_TIMEOUT_MS || "12000"));
+const PROFILE_SWITCH_PROGRESS_TTL_MS = Math.max(60_000, Number(process.env.CODEX_MOBILE_PROFILE_SWITCH_PROGRESS_TTL_MS || "300000"));
 const MUTATION_RPC_TIMEOUT_MS = 120000;
 const MESSAGE_DEDUPE_WINDOW_MS = Math.max(5_000, Number(process.env.CODEX_MOBILE_MESSAGE_DEDUPE_WINDOW_MS || "90000"));
 const MESSAGE_DEDUPE_MAX = Math.max(20, Number(process.env.CODEX_MOBILE_MESSAGE_DEDUPE_MAX || "300"));
@@ -3361,8 +3452,10 @@ function normalizePermissionProfile(value) {
   if (!profile) return null;
   const fileSystem = profile.fileSystem || profile.file_system || null;
   return {
+    type: profile.type || profile.kind || null,
     network: profile.network || null,
     fileSystem: fileSystem ? {
+      type: fileSystem.type || null,
       entries: Array.isArray(fileSystem.entries) ? fileSystem.entries : [],
       ...(fileSystem.globScanMaxDepth || fileSystem.glob_scan_max_depth
         ? { globScanMaxDepth: fileSystem.globScanMaxDepth || fileSystem.glob_scan_max_depth }
@@ -3434,6 +3527,56 @@ function workspaceWriteSandboxPolicy(cwd, inheritedPolicy) {
     networkAccess: Boolean(inherited.networkAccess),
     excludeTmpdirEnvVar: Boolean(inherited.excludeTmpdirEnvVar),
     excludeSlashTmp: Boolean(inherited.excludeSlashTmp),
+  };
+}
+
+function workspaceDelegationWriteGuardPermissionProfile(cwd, inheritedPolicy) {
+  const workspace = String(cwd || "").trim();
+  const policy = workspaceDelegationWriteGuardSandboxPolicy(workspace, inheritedPolicy);
+  const entries = [
+    {
+      path: { type: "special", value: { kind: "root" } },
+      access: "read",
+    },
+  ];
+  for (const root of policy.writableRoots || []) {
+    if (!root) continue;
+    entries.push({
+      path: { type: "path", path: root },
+      access: "write",
+    });
+    entries.push({
+      path: { type: "path", path: path.join(root, ".agents") },
+      access: "read",
+    });
+    entries.push({
+      path: { type: "path", path: path.join(root, ".codex") },
+      access: "read",
+    });
+    entries.push({
+      path: { type: "path", path: path.join(root, ".git") },
+      access: "write",
+    });
+  }
+  if (!policy.excludeSlashTmp) {
+    entries.push({
+      path: { type: "special", value: { kind: "slash_tmp" } },
+      access: "write",
+    });
+  }
+  if (!policy.excludeTmpdirEnvVar) {
+    entries.push({
+      path: { type: "special", value: { kind: "tmpdir" } },
+      access: "write",
+    });
+  }
+  return {
+    type: "managed",
+    fileSystem: {
+      type: "restricted",
+      entries,
+    },
+    network: policy.networkAccess ? "enabled" : "restricted",
   };
 }
 
@@ -4563,43 +4706,242 @@ async function resolveThreadRuntimeSettings(threadId) {
   return threadRuntimeSettings(threadId, fallbackThread);
 }
 
-function applyResumeRuntimeSettings(params, settings) {
-  if (!settings) return params;
-  if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
-  if (settings.permissionProfile) params.permissionProfile = settings.permissionProfile;
-  else if (settings.sandboxMode) params.sandbox = settings.sandboxMode;
-  if (settings.model) params.model = settings.model;
-  const config = {};
-  if (settings.reasoningSummary) config.model_reasoning_summary = settings.reasoningSummary;
-  if (settings.modelVerbosity) config.model_verbosity = settings.modelVerbosity;
-  if (Object.keys(config).length) params.config = Object.assign({}, params.config || {}, config);
+function workspaceDelegationWriteGuardSandboxPolicy(cwd, inheritedPolicy) {
+  const policy = workspaceWriteSandboxPolicy(cwd, inheritedPolicy);
+  const inheritedType = normalizeSandboxPolicyType(inheritedPolicy && inheritedPolicy.type);
+  if (inheritedType === "dangerFullAccess") {
+    policy.networkAccess = true;
+  }
+  return policy;
+}
+
+function workspaceDelegationGuardPathCandidates(cwd) {
+  const raw = String(cwd || "").trim();
+  if (!raw) return [];
+  const candidates = [raw];
+  try {
+    const real = fs.realpathSync.native ? fs.realpathSync.native(raw) : fs.realpathSync(raw);
+    if (real && real !== raw) candidates.push(real);
+  } catch (_) {
+    // Keep the raw cwd candidate when the path is not currently readable.
+  }
+  return candidates;
+}
+
+function workspaceDelegationGuardNormalizedPathSet(cwd) {
+  return new Set(workspaceDelegationGuardPathCandidates(cwd).map((entry) => normalizeFsPath(entry)).filter(Boolean));
+}
+
+function workspaceDelegationGuardExemptCwds() {
+  const separator = process.platform === "win32" ? /[;\n\r]+/ : /[:;\n\r]+/;
+  return new Set(String(WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS || "")
+    .split(separator)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .flatMap((entry) => Array.from(workspaceDelegationGuardNormalizedPathSet(entry))));
+}
+
+function workspaceDelegationGuardHasFile(cwd, ...parts) {
+  try {
+    return fs.existsSync(path.join(cwd, ...parts));
+  } catch (_) {
+    return false;
+  }
+}
+
+function workspaceDelegationGuardPackageName(cwd) {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(cwd, "package.json"), "utf8"));
+    return String(pkg && pkg.name || "").trim();
+  } catch (_) {
+    return "";
+  }
+}
+
+function isCodexMobileMaintenanceCwd(cwd) {
+  if (WORKSPACE_DELEGATION_GUARD_SELF_EXEMPTION_DISABLED) return false;
+  return workspaceDelegationGuardPackageName(cwd) === "codex-mobile-web"
+    && workspaceDelegationGuardHasFile(cwd, "server.js");
+}
+
+function isHomeAiControlPlaneCwd(cwd) {
+  if (WORKSPACE_DELEGATION_GUARD_PLATFORM_EXEMPTION_DISABLED) return false;
+  return workspaceDelegationGuardHasFile(cwd, "scripts", "ai-ops-control-plane.js")
+    && workspaceDelegationGuardHasFile(cwd, "scripts", "deploy-macos-production.js")
+    && workspaceDelegationGuardHasFile(cwd, "docs", "PLATFORM_CONTRACTS", "plugin-workspace-platform-contract.md");
+}
+
+function workspaceDelegationGuardExemptCwd(cwd) {
+  const normalizedCandidates = workspaceDelegationGuardNormalizedPathSet(cwd);
+  if (!normalizedCandidates.size) return false;
+  const explicitExemptCwds = workspaceDelegationGuardExemptCwds();
+  for (const candidate of normalizedCandidates) {
+    if (explicitExemptCwds.has(candidate)) return true;
+  }
+  return isCodexMobileMaintenanceCwd(cwd) || isHomeAiControlPlaneCwd(cwd);
+}
+
+function runtimeCwdForParams(params) {
+  const explicitCwd = String(params && params.cwd || "").trim();
+  if (explicitCwd) return explicitCwd;
+  const threadId = String(params && params.threadId || "").trim();
+  if (!threadId) return "";
+  const thread = readStateDbThread(threadId) || readStartedThread(threadId) || readRolloutSessionFallbackThread(threadId) || null;
+  return String(thread && thread.cwd || "").trim();
+}
+
+let workspaceSourceWriteGuardRootsCache = { roots: [], cachedAt: 0 };
+
+function workspaceSourceWriteGuardWorkspaceRoots() {
+  const now = Date.now();
+  if (now - Number(workspaceSourceWriteGuardRootsCache.cachedAt || 0) < 10_000) {
+    return workspaceSourceWriteGuardRootsCache.roots.slice();
+  }
+  const roots = new Set([...visibleWorkspaceRoots(readGlobalState())]);
+  try {
+    for (const thread of readThreadListFallback(300, { archived: false }) || []) {
+      if (thread && thread.cwd) roots.add(thread.cwd);
+    }
+  } catch (_) {}
+  for (const entry of recentStartedThreads.values()) {
+    if (entry && entry.thread && entry.thread.cwd) roots.add(entry.thread.cwd);
+  }
+  workspaceSourceWriteGuardRootsCache = {
+    roots: [...roots].filter(Boolean),
+    cachedAt: now,
+  };
+  return workspaceSourceWriteGuardRootsCache.roots.slice();
+}
+
+function threadCwdForRuntimeThreadId(threadId) {
+  const id = String(threadId || "").trim();
+  if (!id) return "";
+  const thread = readStateDbThread(id) || readStartedThread(id) || readRolloutSessionFallbackThread(id) || null;
+  return String(thread && thread.cwd || "").trim();
+}
+
+function workspaceSourceWriteGuardCwdForRequest(request) {
+  const params = request && request.params && typeof request.params === "object" ? request.params : {};
+  const explicitCwd = String(params.cwd || "").trim();
+  if (explicitCwd) return explicitCwd;
+  const threadId = pushThreadId(params)
+    || String(params.threadId || params.conversationId || params.sessionId || params.thread_id || params.conversation_id || params.session_id || "").trim();
+  const threadCwd = threadCwdForRuntimeThreadId(threadId);
+  if (threadCwd) return threadCwd;
+  const turnId = String(params.turnId || params.turn_id || params.itemTurnId || params.item_turn_id
+    || params.item && (params.item.turnId || params.item.turn_id)
+    || "").trim();
+  const inferredThreadId = turnId ? latestThreadIdByTurnId.get(turnId) : "";
+  return threadCwdForRuntimeThreadId(inferredThreadId);
+}
+
+const workspaceSourceWriteGuardService = createWorkspaceSourceWriteGuard({
+  currentCwdForRequest: workspaceSourceWriteGuardCwdForRequest,
+  workspaceRoots: workspaceSourceWriteGuardWorkspaceRoots,
+});
+
+function workspaceSourceWriteGuardDecisionForRequest(request) {
+  if (!workspaceDelegationPublicSettings().enabled) return null;
+  if (WORKSPACE_DELEGATION_WRITE_GUARD_DISABLED || WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD) return null;
+  if (!request || !ACTIONABLE_APPROVAL_METHODS.has(request.method)) return null;
+  const cwd = workspaceSourceWriteGuardCwdForRequest(request);
+  if (cwd && workspaceDelegationGuardExemptCwd(cwd)) return null;
+  return workspaceSourceWriteGuardService.classify(request);
+}
+
+function workspaceSourceWriteGuardLogPayload(request, decision, responseDecision) {
+  return {
+    requestId: shortIdentifier(request && request.id),
+    method: request && request.method || "",
+    action: decision && decision.action || "",
+    responseDecision,
+    reason: decision && decision.reason || "",
+    threadId: shortIdentifier(pushThreadId(request && request.params || {})),
+    turnId: shortIdentifier(request && request.params && (request.params.turnId || request.params.turn_id) || ""),
+    cwd: compactOneLine(workspaceSourceWriteGuardCwdForRequest(request), 160),
+    matchedRoot: compactOneLine(decision && decision.matchedRoot || "", 160),
+  };
+}
+
+function applyWorkspaceDelegationFullAccessCompatRuntime(params, options = {}) {
+  if (!params || typeof params !== "object") return params;
+  params.approvalPolicy = "on-request";
+  if (options.useSandboxPolicy) {
+    params.sandboxPolicy = { type: "dangerFullAccess" };
+    delete params.permissionProfile;
+    delete params.sandbox;
+  } else {
+    params.sandbox = "danger-full-access";
+    delete params.permissionProfile;
+    delete params.sandboxPolicy;
+  }
   return params;
+}
+
+function applyWorkspaceDelegationRuntimeGuard(params, settings, options = {}) {
+  if (!params || typeof params !== "object") return params;
+  if (!workspaceDelegationPublicSettings().enabled) return params;
+  if (WORKSPACE_DELEGATION_WRITE_GUARD_DISABLED) return params;
+  const cwd = runtimeCwdForParams(params);
+  if (!cwd) return params;
+  params.cwd = cwd;
+  if (workspaceDelegationGuardExemptCwd(cwd)) return params;
+  if (!WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD) {
+    return applyWorkspaceDelegationFullAccessCompatRuntime(params, options);
+  }
+  params.approvalPolicy = "never";
+  if (options.useSandboxPolicy) {
+    params.permissionProfile = workspaceDelegationWriteGuardPermissionProfile(cwd, settings && settings.sandboxPolicy);
+    delete params.sandboxPolicy;
+    delete params.sandbox;
+  } else {
+    params.sandbox = "workspace-write";
+    params.permissionProfile = workspaceDelegationWriteGuardPermissionProfile(cwd, settings && settings.sandboxPolicy);
+    delete params.sandboxPolicy;
+  }
+  return params;
+}
+
+function applyResumeRuntimeSettings(params, settings) {
+  if (settings) {
+    if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
+    if (settings.permissionProfile) params.permissionProfile = settings.permissionProfile;
+    else if (settings.sandboxMode) params.sandbox = settings.sandboxMode;
+    if (settings.model) params.model = settings.model;
+    const config = {};
+    if (settings.reasoningSummary) config.model_reasoning_summary = settings.reasoningSummary;
+    if (settings.modelVerbosity) config.model_verbosity = settings.modelVerbosity;
+    if (Object.keys(config).length) params.config = Object.assign({}, params.config || {}, config);
+  }
+  return applyWorkspaceDelegationRuntimeGuard(params, settings, { useSandboxPolicy: false });
 }
 
 function applyStartThreadRuntimeSettings(params, settings) {
-  attachWorkspaceDelegationDynamicTools(params);
-  if (!settings) return params;
-  if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
-  if (settings.permissionProfile) params.permissionProfile = settings.permissionProfile;
-  else if (settings.sandboxMode) params.sandbox = settings.sandboxMode;
-  if (settings.model) params.model = settings.model;
-  const config = {};
-  if (settings.reasoningSummary) config.model_reasoning_summary = settings.reasoningSummary;
-  if (settings.modelVerbosity) config.model_verbosity = settings.modelVerbosity;
-  if (Object.keys(config).length) params.config = Object.assign({}, params.config || {}, config);
-  return params;
+  attachWorkspaceDelegationRuntimeGuidance(params);
+  if (settings) {
+    if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
+    if (settings.permissionProfile) params.permissionProfile = settings.permissionProfile;
+    else if (settings.sandboxMode) params.sandbox = settings.sandboxMode;
+    if (settings.model) params.model = settings.model;
+    const config = {};
+    if (settings.reasoningSummary) config.model_reasoning_summary = settings.reasoningSummary;
+    if (settings.modelVerbosity) config.model_verbosity = settings.modelVerbosity;
+    if (Object.keys(config).length) params.config = Object.assign({}, params.config || {}, config);
+  }
+  return applyWorkspaceDelegationRuntimeGuard(params, settings, { useSandboxPolicy: false });
 }
 
 function applyTurnRuntimeSettings(params, settings) {
-  attachWorkspaceDelegationDynamicTools(params);
-  if (!settings) return params;
-  if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
-  if (settings.sandboxPolicy) params.sandboxPolicy = settings.sandboxPolicy;
-  else if (settings.permissionProfile) params.permissionProfile = settings.permissionProfile;
-  if (settings.model) params.model = settings.model;
-  if (settings.reasoningEffort) params.effort = settings.reasoningEffort;
-  if (settings.reasoningSummary) params.summary = settings.reasoningSummary;
-  return params;
+  attachWorkspaceDelegationRuntimeGuidance(params);
+  if (settings) {
+    if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
+    if (settings.sandboxPolicy) params.sandboxPolicy = settings.sandboxPolicy;
+    else if (settings.permissionProfile) params.permissionProfile = settings.permissionProfile;
+    if (settings.model) params.model = settings.model;
+    if (settings.reasoningEffort) params.effort = settings.reasoningEffort;
+    if (settings.reasoningSummary) params.summary = settings.reasoningSummary;
+  }
+  return applyWorkspaceDelegationRuntimeGuard(params, settings, { useSandboxPolicy: true });
 }
 
 function requestedCodexFastMode(value) {
@@ -5857,12 +6199,14 @@ function workspaceDelegationPublicSettings(settings = readRuntimeSettings()) {
   const enabled = hasRuntimeValue ? raw.enabled : WORKSPACE_DELEGATION_ENV_DEFAULT;
   return {
     enabled,
-    mode: enabled ? "model_driven_explicit_task_card" : "off",
+    mode: enabled ? "model_driven_explicit_task_card_with_source_write_guard" : "off",
     directTaskCardAutoApproval: enabled,
     dynamicTool: enabled ? WORKSPACE_DELEGATION_TOOL_FULL_NAME : "",
     dynamicToolEnabled: enabled,
     ordinarySendPreflight: false,
     localHeuristics: false,
+    failureRecovery: enabled ? "source_model_tool_call_with_dynamic_source_write_guard" : "off",
+    serverAutoTaskCardFromFailures: false,
     source: hasRuntimeValue ? "runtime" : WORKSPACE_DELEGATION_ENV_DEFAULT ? "environment" : "default",
     updatedAt: String(raw.updatedAt || ""),
   };
@@ -5906,7 +6250,13 @@ function workspaceDelegationDynamicToolSpec() {
     name: WORKSPACE_DELEGATION_TOOL_NAME,
     description: [
       "Create a Codex Mobile cross-thread task card when the current user request requires work in another Codex thread or workspace.",
-      "Use this instead of directly editing or operating outside the current workspace. Do not use it for ordinary discussion, read-only references, or work that belongs in the current thread.",
+      "Mandatory boundary when this tool is available: if the requested implementation, file edit, command execution, test, deployment, or other mutation belongs to a different workspace or thread, call this tool before doing that work.",
+      "Do not inspect, cd into, edit, patch, run commands in, test, deploy, or otherwise operate on the other workspace from the current thread. Delegate first, then stop or report the created task card.",
+      "If the user requested target-workspace mutation and your local attempt already failed with sandbox, filesystem, permission denied, operation not permitted, cwd, or approval-policy errors, do not retry locally or merely report blocked. Use the source-thread context to decide the exact delegation, then call this tool yourself with the failed intent and exact target.",
+      "The server does not auto-create task cards from failure logs; the source model must call this tool so the card preserves source-thread context and intent.",
+      "This dynamic tool always creates source-direct cards when workspace delegation is enabled; do not request target-side pending approval from this tool.",
+      "Do not use this for ordinary discussion, read-only references that do not require target-workspace inspection, or work that clearly belongs in the current thread workspace.",
+      "The model must decide from the user's request whether delegation is required; do not rely on local keyword or path heuristics.",
       "Prefer an exact targetThreadId. If only a target is named, pass an exact visible targetThreadTitle or targetWorkspace/cwd from the hints.",
       targetHints ? `Visible target hints:\n${targetHints}` : "",
     ].filter(Boolean).join("\n\n"),
@@ -5969,10 +6319,6 @@ function workspaceDelegationDynamicToolSpec() {
           type: "string",
           description: "Optional stable idempotency seed for this tool call.",
         },
-        pending: {
-          type: "boolean",
-          description: "Set true to force target-side approval even when source-direct delegation is enabled.",
-        },
       },
       required: ["title", "body"],
     },
@@ -6013,6 +6359,116 @@ function attachWorkspaceDelegationDynamicTools(params, settings = readRuntimeSet
   }
   params.dynamicTools = existing;
   return params;
+}
+
+function appendDeveloperInstructions(params, instructions, marker) {
+  if (!params || typeof params !== "object") return params;
+  const text = String(instructions || "").trim();
+  if (!text) return params;
+  const existing = String(params.developerInstructions || "").trim();
+  if (marker && existing.includes(marker)) return params;
+  params.developerInstructions = existing ? `${existing}\n\n${text}` : text;
+  return params;
+}
+
+function workspaceDelegationScriptFallbackInstruction(params = {}) {
+  const sourceThreadId = String(params && params.threadId || "").trim();
+  const scriptPath = path.join(APP_ROOT, "scripts", "create-thread-task-card.js");
+  return [
+    "Codex Mobile cross-thread delegation fallback:",
+    `- Prefer the app-server dynamic tool \`${WORKSPACE_DELEGATION_TOOL_FULL_NAME}\` when it is visible.`,
+    "- App-server dynamic tools may not appear in deferred tool discovery such as `tool_search`; absence there is not proof that delegation is unavailable.",
+    "- If no direct callable `codex_mobile.delegate_to_thread` tool surface is visible, use the local script below as the first-class fallback path:",
+    `  node ${JSON.stringify(scriptPath)} --source-thread ${sourceThreadId || "<current-thread-id>"} --target-thread <target-thread-id-or-exact-title> --title \"<short title>\" --body-file <markdown-file>`,
+    "- `multi_agent_v1.spawn_agent`, `multi_agent_v1.resume`, `multi_agent_v1.send`, and `multi_agent_v1.close` are not Codex Mobile task-card APIs and must not be used as a substitute for cross-workspace file changes.",
+    "- When the user requested another workspace/thread to be modified, tested, deployed, or otherwise mutated, do not retry a guarded local write after sandbox/permission/cwd/approval failure. Delegate through the dynamic tool or this script and then report the created card.",
+    "- The server does not create task cards from failure logs in the background; the source thread model must create the card so the body preserves source-thread context and intent.",
+  ].join("\n");
+}
+
+function attachWorkspaceDelegationRuntimeGuidance(params, settings = readRuntimeSettings()) {
+  attachWorkspaceDelegationDynamicTools(params, settings);
+  if (workspaceDelegationPublicSettings(settings).enabled) {
+    appendDeveloperInstructions(
+      params,
+      workspaceDelegationScriptFallbackInstruction(params),
+      "Codex Mobile cross-thread delegation fallback:",
+    );
+  }
+  return params;
+}
+
+function workspaceDelegationDynamicToolName(tool) {
+  if (!tool || typeof tool !== "object") return "";
+  const fullName = String(tool.fullName || tool.toolFullName || tool.dynamicTool || "").trim();
+  if (fullName) return fullName;
+  const namespace = String(tool.namespace || tool.toolNamespace || tool.dynamicToolNamespace || "").trim();
+  const name = String(tool.name || tool.toolName || tool.tool || tool.action || "").trim();
+  return namespace && name ? `${namespace}.${name}` : name;
+}
+
+function workspaceDelegationRpcDynamicToolNames(params = {}) {
+  const raw = Array.isArray(params.dynamicTools)
+    ? params.dynamicTools
+    : params.dynamicTools ? [params.dynamicTools] : [];
+  const seen = new Set();
+  const names = [];
+  for (const tool of raw) {
+    const name = workspaceDelegationDynamicToolName(tool);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    names.push(name);
+  }
+  return names;
+}
+
+function workspaceDelegationRpcDiagnostics(method, params = {}) {
+  const toolNames = workspaceDelegationRpcDynamicToolNames(params);
+  const developerInstructions = String(params.developerInstructions || "");
+  const cwd = String(params.cwd || "").trim();
+  const sandboxPolicy = params.sandboxPolicy && typeof params.sandboxPolicy === "object"
+    ? params.sandboxPolicy
+    : null;
+  const permissionProfile = params.permissionProfile && typeof params.permissionProfile === "object"
+    ? params.permissionProfile
+    : null;
+  return {
+    method: String(method || ""),
+    threadId: truncateToolDescriptionText(params.threadId || params.thread_id || "", 80),
+    cwd: truncateToolDescriptionText(cwd, 220),
+    workspaceDelegationEnabled: workspaceDelegationPublicSettings().enabled,
+    dynamicToolsCount: toolNames.length,
+    dynamicToolNames: toolNames.map((name) => truncateToolDescriptionText(name, 120)),
+    hasWorkspaceDelegationTool: toolNames.includes(WORKSPACE_DELEGATION_TOOL_FULL_NAME),
+    hasFallbackGuidance: developerInstructions.includes("Codex Mobile cross-thread delegation fallback:"),
+    developerInstructionsChars: developerInstructions.length,
+    sandbox: truncateToolDescriptionText(params.sandbox || "", 80),
+    sandboxPolicyType: truncateToolDescriptionText(
+      sandboxPolicy && (sandboxPolicy.type || sandboxPolicy.kind || sandboxPolicy.mode) || "",
+      80,
+    ),
+    approvalPolicy: truncateToolDescriptionText(params.approvalPolicy || params.approval_policy || "", 80),
+    permissionProfileType: truncateToolDescriptionText(
+      permissionProfile && (permissionProfile.type || permissionProfile.kind || permissionProfile.mode) || "",
+      80,
+    ),
+  };
+}
+
+function shouldLogWorkspaceDelegationRpc(method, params = {}) {
+  if (!["thread/start", "turn/start", "thread/resume"].includes(String(method || ""))) return false;
+  if (workspaceDelegationPublicSettings().enabled) return true;
+  if (workspaceDelegationRpcDynamicToolNames(params).length) return true;
+  return String(params.developerInstructions || "").includes("Codex Mobile cross-thread delegation fallback:");
+}
+
+function logWorkspaceDelegationRpc(method, params = {}) {
+  if (!shouldLogWorkspaceDelegationRpc(method, params)) return;
+  try {
+    console.log(`[workspace-delegation-rpc] ${JSON.stringify(workspaceDelegationRpcDiagnostics(method, params))}`);
+  } catch (err) {
+    console.error(`[workspace-delegation-rpc] failed to summarize request: ${err.message || String(err)}`);
+  }
 }
 
 function setWorkspaceDelegationEnabled(enabled) {
@@ -7173,6 +7629,83 @@ function getFreePort() {
   });
 }
 
+const profileSwitchProgress = new Map();
+
+function profileSwitchProgressRequestId(value) {
+  const raw = String(value || "").trim();
+  if (/^[a-zA-Z0-9_-]{8,80}$/.test(raw)) return raw;
+  return crypto.randomUUID();
+}
+
+function cleanupProfileSwitchProgress(now = Date.now()) {
+  for (const [id, item] of profileSwitchProgress.entries()) {
+    const updatedAtMs = Number(item && item.updatedAtMs || 0);
+    if (!updatedAtMs || now - updatedAtMs > PROFILE_SWITCH_PROGRESS_TTL_MS) {
+      profileSwitchProgress.delete(id);
+    }
+  }
+}
+
+function setProfileSwitchProgress(requestId, patch = {}) {
+  const id = profileSwitchProgressRequestId(requestId);
+  const now = Date.now();
+  cleanupProfileSwitchProgress(now);
+  const previous = profileSwitchProgress.get(id) || {
+    requestId: id,
+    ok: true,
+    status: "running",
+    stepIndex: 0,
+    stepCount: 10,
+    stage: "queued",
+    message: "正在准备切换 Profile...",
+    createdAtMs: now,
+    createdAt: new Date(now).toISOString(),
+  };
+  const next = Object.assign({}, previous, patch || {}, {
+    requestId: id,
+    updatedAtMs: now,
+    updatedAt: new Date(now).toISOString(),
+  });
+  if (!next.message) next.message = "正在切换 Profile...";
+  if (!next.stage) next.stage = "running";
+  if (!next.status) next.status = "running";
+  profileSwitchProgress.set(id, next);
+  return profileSwitchProgressSnapshot(next);
+}
+
+function getProfileSwitchProgress(requestId) {
+  cleanupProfileSwitchProgress();
+  const id = String(requestId || "").trim();
+  if (!id) return null;
+  const item = profileSwitchProgress.get(id);
+  return item ? profileSwitchProgressSnapshot(item) : null;
+}
+
+function profileSwitchProgressSnapshot(item = {}) {
+  return {
+    requestId: String(item.requestId || ""),
+    targetProfileId: String(item.targetProfileId || ""),
+    targetProfileLabel: String(item.targetProfileLabel || ""),
+    status: String(item.status || "running"),
+    stage: String(item.stage || "running"),
+    message: String(item.message || ""),
+    stepIndex: Number(item.stepIndex || 0),
+    stepCount: Number(item.stepCount || 10),
+    restarting: Boolean(item.restarting),
+    error: item.error ? String(item.error) : undefined,
+    code: item.code ? String(item.code) : undefined,
+    detail: item.detail ? String(item.detail) : undefined,
+    failedStage: item.failedStage ? String(item.failedStage) : undefined,
+    warnings: Array.isArray(item.warnings) ? item.warnings.slice(0, 5).map((warning) => ({
+      code: warning && warning.code ? String(warning.code) : "",
+      message: warning && warning.message ? String(warning.message) : "",
+      detail: warning && warning.detail ? String(warning.detail) : "",
+    })) : undefined,
+    updatedAt: item.updatedAt || "",
+    createdAt: item.createdAt || "",
+  };
+}
+
 function profileSwitchPreflightError(err) {
   const raw = String(err && (err.message || err) || "");
   const lower = raw.toLowerCase();
@@ -7204,6 +7737,35 @@ function boundedProfilePreflightDetail(err) {
   const raw = String(err && (err.message || err) || "").replace(/\s+/g, " ").trim();
   if (!raw) return "";
   return raw.slice(0, 260);
+}
+
+function profileSwitchLogDetail(value) {
+  const raw = String(value || "").replace(/\s+/g, " ").trim();
+  if (!raw) return "";
+  return raw.slice(0, 220);
+}
+
+function profileSwitchRateLimitsWarningForError(err) {
+  const classified = profileSwitchPreflightError(err);
+  if (classified.code === "target_profile_auth_invalid") return null;
+  return {
+    code: "target_profile_rate_limits_unavailable",
+    message: "目标账号额度暂时读取失败，已继续切换预检。",
+    detail: boundedProfilePreflightDetail(err),
+  };
+}
+
+function profileSwitchStage(id, label, status = "completed", detail = "") {
+  const cleanStatus = ["pending", "running", "completed", "warning", "failed"].includes(status)
+    ? status
+    : "completed";
+  return {
+    id: String(id || "").trim(),
+    label: String(label || id || "").trim(),
+    status: cleanStatus,
+    detail: String(detail || "").replace(/\s+/g, " ").trim().slice(0, 220),
+    at: new Date().toISOString(),
+  };
 }
 
 function connectPreflightWebSocket(url, timeoutMs) {
@@ -7291,9 +7853,23 @@ async function preflightCodexProfileSwitch(profile, options = {}) {
     err.statusCode = 409;
     throw err;
   }
+  const onProgress = typeof options.onProgress === "function" ? options.onProgress : null;
+  const emitProgress = (patch) => {
+    if (!onProgress) return;
+    try {
+      onProgress(patch || {});
+    } catch (_) {}
+  };
   const timeoutMs = Math.max(3000, Number(options.timeoutMs || PROFILE_SWITCH_PREFLIGHT_TIMEOUT_MS));
   const startedAt = Date.now();
+  const warnings = [];
+  let rateLimitsChecked = false;
   const port = await getFreePort();
+  emitProgress({
+    stage: "preflight_spawn",
+    message: "正在启动目标账号 app-server...",
+    stepIndex: 4,
+  });
   const childEnv = codexAppServerChildEnv({ CODEX_HOME: codexHome });
   const child = spawn(CODEX_EXE, ["app-server", "--listen", `ws://127.0.0.1:${port}`], {
     cwd: APP_ROOT,
@@ -7322,9 +7898,19 @@ async function preflightCodexProfileSwitch(profile, options = {}) {
         reject(new Error(`profile switch preflight app-server exited (${code ?? signal ?? "unknown"})`));
       });
     });
+    emitProgress({
+      stage: "preflight_connect",
+      message: "正在连接目标账号 app-server...",
+      stepIndex: 5,
+    });
     const ws = await connectPreflightWebSocket(`ws://127.0.0.1:${port}`, timeoutMs);
     try {
       const remaining = Math.max(2000, timeoutMs - (Date.now() - startedAt));
+      emitProgress({
+        stage: "preflight_initialize",
+        message: "正在初始化目标账号会话...",
+        stepIndex: 6,
+      });
       await preflightRpc(ws, 1, "initialize", {
         clientInfo: {
           name: "codex-mobile-web",
@@ -7334,7 +7920,37 @@ async function preflightCodexProfileSwitch(profile, options = {}) {
         },
         capabilities: { experimentalApi: true },
       }, remaining);
-      await preflightRpc(ws, 2, "account/rateLimits/read", {}, Math.max(2000, timeoutMs - (Date.now() - startedAt)));
+      emitProgress({
+        stage: "preflight_rate_limits",
+        message: "正在读取目标账号额度...",
+        stepIndex: 7,
+      });
+      try {
+        await preflightRpc(ws, 2, "account/rateLimits/read", {}, Math.max(2000, timeoutMs - (Date.now() - startedAt)));
+        rateLimitsChecked = true;
+      } catch (rateLimitErr) {
+        const warning = profileSwitchRateLimitsWarningForError(rateLimitErr);
+        if (!warning) throw rateLimitErr;
+        warnings.push(warning);
+        console.error(`[codex-profile-switch] rate_limits_warning ${JSON.stringify({
+          targetProfileId: String(profile.id || ""),
+          code: warning.code,
+          detail: profileSwitchLogDetail(warning.detail),
+        })}`);
+        emitProgress({
+          stage: "preflight_rate_limits",
+          status: "warning",
+          message: "目标账号额度暂时读取失败，继续确认切换...",
+          stepIndex: 7,
+          code: warning.code,
+          detail: warning.detail,
+        });
+      }
+      emitProgress({
+        stage: "preflight_done",
+        message: warnings.length ? "目标账号预检通过，额度读取稍后刷新" : "目标账号预检通过",
+        stepIndex: 8,
+      });
     } finally {
       try {
         ws.close();
@@ -7343,7 +7959,8 @@ async function preflightCodexProfileSwitch(profile, options = {}) {
     return {
       ok: true,
       profileId: profile.id,
-      checked: ["initialize", "account/rateLimits/read"],
+      checked: rateLimitsChecked ? ["initialize", "account/rateLimits/read"] : ["initialize"],
+      warnings,
     };
   } catch (err) {
     const classified = profileSwitchPreflightError(err);
@@ -7578,22 +8195,27 @@ class CodexAppServerClient {
         CODEX_MUX_ENDPOINT_FILE: MUX_ENDPOINT_FILE,
         CODEX_MUX_CODEX_EXE: CODEX_EXE,
       }),
+      detached: PERSIST_MOBILE_OWNED_MUX,
       windowsHide: true,
-      stdio: ["ignore", "ignore", "pipe"],
+      stdio: PERSIST_MOBILE_OWNED_MUX ? ["ignore", "ignore", "ignore"] : ["ignore", "ignore", "pipe"],
     });
-    this.muxChild = child;
-    child.stderr.on("data", (chunk) => this.handleAppServerLog(chunk));
-    child.on("exit", (code, signal) => {
-      if (this.muxChild !== child) return;
-      this.muxChild = null;
-      this.ready = false;
-      this.lastError = `Mobile-owned mux exited (${code ?? signal ?? "unknown"})`;
-      broadcast({ type: "status", status: this.status() });
-    });
+    if (PERSIST_MOBILE_OWNED_MUX) {
+      child.unref();
+    } else {
+      this.muxChild = child;
+      child.stderr.on("data", (chunk) => this.handleAppServerLog(chunk));
+      child.on("exit", (code, signal) => {
+        if (this.muxChild !== child) return;
+        this.muxChild = null;
+        this.ready = false;
+        this.lastError = `Mobile-owned mux exited (${code ?? signal ?? "unknown"})`;
+        broadcast({ type: "status", status: this.status() });
+      });
+    }
     await new Promise((resolve, reject) => {
       const onError = (err) => {
         child.off("spawn", onSpawn);
-        if (this.muxChild === child) this.muxChild = null;
+        if (!PERSIST_MOBILE_OWNED_MUX && this.muxChild === child) this.muxChild = null;
         reject(err);
       };
       const onSpawn = () => {
@@ -7821,6 +8443,7 @@ class CodexAppServerClient {
       decision: null,
       respondedAt: null,
     };
+    if (this.answerWorkspaceSourceWriteGuardRequest(request)) return;
     this.serverRequests.set(key, request);
     broadcast({ type: "serverRequest", request: publicServerRequest(request) });
     if (msg.method === "item/tool/call") {
@@ -7832,6 +8455,24 @@ class CodexAppServerClient {
         broadcast({ type: "serverRequestResolved", requestId: key, request: publicServerRequest(request) });
         setTimeout(() => this.serverRequests.delete(key), 15000).unref();
       });
+    }
+  }
+
+  answerWorkspaceSourceWriteGuardRequest(request) {
+    const decision = workspaceSourceWriteGuardDecisionForRequest(request);
+    if (!decision) return false;
+    const responseDecision = decision.action === "deny" ? "deny" : "allow_once";
+    try {
+      const payload = serverRequestResponsePayload(request, { decision: responseDecision });
+      this.sendServerRequestResponse(request, payload);
+      request.status = "responded";
+      request.decision = decision.action === "deny" ? "source_write_guard_deny" : "source_write_guard_allow";
+      request.respondedAt = Date.now();
+      console.log(`[workspace-source-write-guard] ${JSON.stringify(workspaceSourceWriteGuardLogPayload(request, decision, responseDecision))}`);
+      return true;
+    } catch (err) {
+      console.error(`[workspace-source-write-guard] failed request=${shortIdentifier(request && request.id)}: ${err.message || String(err)}`);
+      return false;
     }
   }
 
@@ -7945,6 +8586,7 @@ class CodexAppServerClient {
     if (!this.isTransportOpen()) {
       return Promise.reject(new Error("codex app-server connection is not open"));
     }
+    logWorkspaceDelegationRpc(method, params);
     this.ws.send(JSON.stringify(payload));
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -8009,6 +8651,7 @@ class CodexAppServerClient {
         capabilities: this.endpoint.capabilities || null,
       } : null,
       muxEndpointFile: MUX_ENDPOINT_FILE,
+      persistentOwnedMux: PERSIST_MOBILE_OWNED_MUX,
       mobileOwnedMux: this.muxChild ? {
         pid: this.muxChild.pid || null,
         running: this.muxChild.exitCode === null && this.muxChild.signalCode === null,
@@ -8656,6 +9299,93 @@ function continuationHandoffFromText(target, text, extra = {}) {
   }, extra);
 }
 
+function continuationFallbackReason(error, phase = "") {
+  const message = error && (error.message || String(error)) || "";
+  const code = error && error.code ? ` (${error.code})` : "";
+  const prefix = phase ? `${phase}: ` : "";
+  return truncateSingleLine(`${prefix}${message}${code}`.trim() || "source thread did not produce a handoff", 240);
+}
+
+function writeFallbackSourceContinuationHandoff({ target, cwd, sourceThreadId, sourceThreadTitle, sourceSnapshot, reason, turnId, turnStatus }) {
+  const snapshot = sourceSnapshot || { threadId: sourceThreadId, title: sourceThreadTitle, turns: [], readWarnings: [] };
+  const text = [
+    `Continuation handoff marker: ${target.id}`,
+    "",
+    "# Fallback Continuation Handoff",
+    "",
+    "This handoff was generated by Codex Mobile Web because the source thread did not write its own continuation handoff.",
+    "It is a bounded recovery index, not a source-thread model summary. The next thread must re-check repository and runtime state before changing files.",
+    "",
+    `Source thread id: ${sourceThreadId || "(unknown)"}`,
+    `Source thread title: ${sourceThreadTitle || (snapshot && snapshot.title) || "(unknown)"}`,
+    `Workspace: ${cwd || "(unknown)"}`,
+    `Fallback reason: ${reason || "source thread handoff unavailable"}`,
+    turnId ? `Source handoff turn id: ${turnId}` : "",
+    turnStatus ? `Source handoff turn status: ${statusText(turnStatus) || turnStatus}` : "",
+    "",
+    "## Current Goal",
+    "",
+    "- Unknown from fallback generation. Treat the old thread as potentially stale and ask the user only if workspace/context files do not answer the next action.",
+    "",
+    "## Source Thread Snapshot",
+    "",
+    continuationSourceThreadSection(snapshot),
+    "",
+    "## Recent Visible Turns",
+    "",
+    continuationTurnSummaries(snapshot.turns || []),
+    "",
+    "## Workspace Context References",
+    "",
+    workspaceContextReference(cwd),
+    "",
+    "## Risks/Caveats",
+    "",
+    "- The source thread did not confirm this handoff itself.",
+    "- Full rollout body, hidden UI state, raw prompts, upload contents, keys, tokens, and long logs were intentionally not copied.",
+    "- Re-read `.agent-context/PROJECT_CONTEXT.md`, `.agent-context/HANDOFF.md`, and the smallest relevant docs before doing work.",
+    "- If the source thread failed due account/profile/mux state, verify `/api/status`, active profile, and quota before sending another turn.",
+    "",
+    "## Next-Thread Suggestions",
+    "",
+    "- Start by confirming the current workspace status and whether the old source thread should remain archived.",
+    "- Continue from durable workspace files rather than assuming this fallback captured every old-thread detail.",
+  ].filter((line) => line !== "").join("\n");
+  fs.writeFileSync(target.file, text, "utf8");
+  return continuationHandoffFromText(target, text, {
+    fallback: true,
+    fallbackReason: reason || "",
+    turnId: turnId || "",
+    turnCompletion: turnStatus ? {
+      waited: true,
+      completed: isCompletedStatus(turnStatus),
+      status: statusText(turnStatus) || String(turnStatus || ""),
+      reason: "fallback handoff generated after source thread could not write file",
+    } : {
+      waited: false,
+      completed: false,
+      reason: "fallback handoff generated without source handoff turn status",
+    },
+  });
+}
+
+async function readContinuationTurnStatus(threadId, turnId) {
+  const id = String(turnId || "").trim();
+  if (!threadId || !id) return null;
+  const result = await codex.request("thread/turns/list", {
+    threadId,
+    limit: Math.max(3, CONTINUATION_RECENT_TURNS),
+    sortDirection: "desc",
+  }, { timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS, retry: false, resetOnTimeout: false });
+  const turns = Array.isArray(result && result.data)
+    ? result.data
+    : Array.isArray(result && result.turns)
+      ? result.turns
+      : [];
+  const turn = turns.find((entry) => entry && String(entry.id || "") === id);
+  return turn ? turn.status : null;
+}
+
 function findRecentContinuationHandoff(cwd, sourceThreadId) {
   if (!CONTINUATION_REUSE_HANDOFF_MS || !cwd || !sourceThreadId) return null;
   const dir = path.join(cwd, ".agent-context", "thread-handoffs");
@@ -8787,7 +9517,7 @@ async function waitForContinuationTurnCompletion(threadId, turnId) {
   };
 }
 
-async function createSourceContinuationHandoff({ cwd, sourceThreadId, sourceThreadTitle, runtimeSettings, onProgress }) {
+async function createSourceContinuationHandoff({ cwd, sourceThreadId, sourceThreadTitle, runtimeSettings, sourceSnapshot, onProgress }) {
   const threadId = String(sourceThreadId || "").trim();
   if (!threadId) return null;
   const target = continuationHandoffTarget(cwd, threadId);
@@ -8829,24 +9559,92 @@ async function createSourceContinuationHandoff({ cwd, sourceThreadId, sourceThre
       persistExtendedHistory: true,
     }, runtimeSettings || {}), { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
   } catch (err) {
-    if (!/already|loaded|active/i.test(err.message || "")) throw err;
+    if (!/already|loaded|active/i.test(err.message || "")) {
+      if (onProgress) onProgress("handoff-fallback", "源线程无法唤醒，改用服务端交接文件", { reason: continuationFallbackReason(err, "resume") });
+      return writeFallbackSourceContinuationHandoff({
+        target,
+        cwd,
+        sourceThreadId: threadId,
+        sourceThreadTitle,
+        sourceSnapshot,
+        reason: continuationFallbackReason(err, "resume"),
+      });
+    }
   }
   if (onProgress) onProgress("handoff-turn", "正在让源线程生成交接文件");
-  const result = await codex.request("turn/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+  let result;
+  try {
+    result = await codex.request("turn/start", params, { timeoutMs: MUTATION_RPC_TIMEOUT_MS, retry: false });
+  } catch (err) {
+    if (onProgress) onProgress("handoff-fallback", "源线程无法启动交接 turn，改用服务端交接文件", { reason: continuationFallbackReason(err, "turn/start") });
+    return writeFallbackSourceContinuationHandoff({
+      target,
+      cwd,
+      sourceThreadId: threadId,
+      sourceThreadTitle,
+      sourceSnapshot,
+      reason: continuationFallbackReason(err, "turn/start"),
+    });
+  }
   const turnId = turnIdFromResult(result);
   if (onProgress) onProgress("handoff-file", "正在等待源线程写入交接文件", { turnId });
   let file;
   try {
-    file = await waitForContinuationHandoffFile(target);
+    file = await waitForContinuationHandoffFile(target, Math.min(CONTINUATION_HANDOFF_TIMEOUT_MS, 30_000));
   } catch (err) {
     if (err.code !== "HANDOFF_TIMEOUT") throw err;
+    let turnStatus = null;
+    try {
+      turnStatus = await readContinuationTurnStatus(threadId, turnId);
+    } catch (_) {
+      turnStatus = null;
+    }
+    if (isCompletedStatus(turnStatus)) {
+      const reason = continuationFallbackReason(err, "source turn completed without handoff");
+      if (onProgress) onProgress("handoff-fallback", "源线程已结束但没有写交接文件，改用服务端交接文件", { turnId, reason });
+      return Object.assign(writeFallbackSourceContinuationHandoff({
+        target,
+        cwd,
+        sourceThreadId: threadId,
+        sourceThreadTitle,
+        sourceSnapshot,
+        reason,
+        turnId,
+        turnStatus,
+      }), {
+        result,
+      });
+    }
     if (onProgress) {
       onProgress("handoff-late", "源线程仍在写交接文件，继续后台等待", {
         turnId,
         extraTimeoutMs: CONTINUATION_LATE_HANDOFF_TIMEOUT_MS,
       });
     }
-    file = await waitForContinuationHandoffFile(target, CONTINUATION_LATE_HANDOFF_TIMEOUT_MS);
+    try {
+      file = await waitForContinuationHandoffFile(target, CONTINUATION_LATE_HANDOFF_TIMEOUT_MS);
+    } catch (lateErr) {
+      const reason = continuationFallbackReason(lateErr, "handoff timeout");
+      if (onProgress) onProgress("handoff-fallback", "源线程未按时写入交接文件，改用服务端交接文件", { turnId, reason });
+      let finalTurnStatus = null;
+      try {
+        finalTurnStatus = await readContinuationTurnStatus(threadId, turnId);
+      } catch (_) {
+        finalTurnStatus = null;
+      }
+      return Object.assign(writeFallbackSourceContinuationHandoff({
+        target,
+        cwd,
+        sourceThreadId: threadId,
+        sourceThreadTitle,
+        sourceSnapshot,
+        reason,
+        turnId,
+        turnStatus: finalTurnStatus,
+      }), {
+        result,
+      });
+    }
   }
   if (onProgress) onProgress("handoff-complete", "交接文件已写入，正在确认源线程完成", { turnId, chars: file.chars || 0 });
   const turnCompletion = await waitForContinuationTurnCompletion(threadId, turnId);
@@ -8866,9 +9664,11 @@ function sourceHandoffSection(sourceHandoff) {
     `- Handoff relative path: ${sourceHandoff.relativePath || "(unknown)"}`,
     `- Handoff id: ${sourceHandoff.id}`,
     `- Handoff chars: ${sourceHandoff.chars || 0}`,
+    `- Handoff mode: ${sourceHandoff.fallback ? "server fallback; source thread did not write this handoff" : "source thread generated"}`,
+    sourceHandoff.fallbackReason ? `- Fallback reason: ${sourceHandoff.fallbackReason}` : "",
     "- The handoff content is intentionally not inlined in this bootstrap.",
     "- Read this file first when exact source-thread state is needed.",
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 function continuationLineageIndexReference(cwd, sourceThreadId) {
@@ -9411,6 +10211,7 @@ async function startThreadFromRequestBody(body, options = {}) {
     sourceThreadId,
     sourceThreadTitle,
     runtimeSettings,
+    sourceSnapshot,
     onProgress: progress,
   });
   if (job && sourceHandoff) {
@@ -10136,6 +10937,36 @@ function isWorkspaceDelegationDynamicToolCall(params = {}, args = {}) {
   return Boolean(references.length && (args.title || args.body || args.bodyMarkdown || args.message));
 }
 
+function workspaceDelegationDynamicToolCallDiagnostics(request, params = {}, args = {}, extra = {}) {
+  const identity = dynamicToolCallIdentity(params);
+  const argKeys = Object.keys(args || {})
+    .filter((key) => !["body", "bodyMarkdown", "message"].includes(key))
+    .sort()
+    .slice(0, 30);
+  return Object.assign({
+    requestId: shortIdentifier(request && request.id),
+    tool: truncateToolDescriptionText(identity.fullName || identity.name || "", 160),
+    namespace: truncateToolDescriptionText(identity.namespace || "", 80),
+    name: truncateToolDescriptionText(identity.name || "", 80),
+    isWorkspaceDelegationTool: isWorkspaceDelegationDynamicToolCall(params, args),
+    workspaceDelegationEnabled: workspaceDelegationPublicSettings().enabled,
+    sourceThreadId: truncateToolDescriptionText(sourceThreadIdFromDynamicToolCall(params, args), 80),
+    turnId: truncateToolDescriptionText(params.turnId || params.turn_id || "", 80),
+    callId: truncateToolDescriptionText(params.callId || params.call_id || "", 80),
+    targetRefCount: threadTaskCardTargetReferences(args).length,
+    argKeys,
+    hasBody: Boolean(String(args.body || args.bodyMarkdown || args.message || "").trim()),
+  }, extra);
+}
+
+function logWorkspaceDelegationDynamicToolCall(request, params = {}, args = {}, extra = {}) {
+  try {
+    console.log(`[workspace-delegation-tool-call] ${JSON.stringify(workspaceDelegationDynamicToolCallDiagnostics(request, params, args, extra))}`);
+  } catch (err) {
+    console.error(`[workspace-delegation-tool-call] failed to summarize request=${shortIdentifier(request && request.id)}: ${err.message || String(err)}`);
+  }
+}
+
 function dynamicToolTextResponse(text) {
   return {
     result: {
@@ -10179,6 +11010,9 @@ function workspaceDelegationDynamicToolBody(params = {}, args = {}) {
   body.sourceTurnId = body.sourceTurnId || body.turnId || params.turnId || params.turn_id || "";
   body.requestId = body.requestId || body.request_id || params.callId || params.call_id || "";
   if (!body.body && body.bodyMarkdown) body.body = body.bodyMarkdown;
+  body.direct = true;
+  body.autoApprove = true;
+  body.pending = false;
   return body;
 }
 
@@ -10187,6 +11021,7 @@ async function dynamicToolServerRequestResponsePayload(request) {
   const args = parseDynamicToolArguments(params.arguments || params.input || params.args);
   if (!isWorkspaceDelegationDynamicToolCall(params, args)) {
     const identity = dynamicToolCallIdentity(params);
+    logWorkspaceDelegationDynamicToolCall(request, params, args, { outcome: "unsupported_dynamic_tool" });
     return dynamicToolErrorPayload(
       "unsupported_dynamic_tool",
       `Unsupported Codex Mobile dynamic tool: ${identity.fullName || identity.name || "unknown"}`,
@@ -10194,6 +11029,7 @@ async function dynamicToolServerRequestResponsePayload(request) {
   }
   const workspaceDelegation = workspaceDelegationPublicSettings();
   if (!workspaceDelegation.enabled) {
+    logWorkspaceDelegationDynamicToolCall(request, params, args, { outcome: "workspace_delegation_tool_disabled" });
     return dynamicToolErrorPayload(
       "workspace_delegation_tool_disabled",
       "Codex Mobile workspace delegation is disabled in Settings.",
@@ -10202,6 +11038,7 @@ async function dynamicToolServerRequestResponsePayload(request) {
   }
   const body = workspaceDelegationDynamicToolBody(params, args);
   if (!body.sourceThreadId) {
+    logWorkspaceDelegationDynamicToolCall(request, params, args, { outcome: "source_thread_id_required" });
     return dynamicToolErrorPayload(
       "source_thread_id_required",
       "Codex Mobile could not infer the source thread id for this tool call.",
@@ -10209,18 +11046,28 @@ async function dynamicToolServerRequestResponsePayload(request) {
     );
   }
   if (!threadTaskCardTargetReferences(body).length) {
+    logWorkspaceDelegationDynamicToolCall(request, params, args, { outcome: "target_thread_required" });
     return dynamicToolErrorPayload(
       "target_thread_required",
       "A target thread id, exact thread title, or exact target workspace cwd is required.",
     );
   }
   if (!String(body.title || "").trim()) {
+    logWorkspaceDelegationDynamicToolCall(request, params, args, { outcome: "task_card_title_required" });
     return dynamicToolErrorPayload("task_card_title_required", "Task-card title is required.");
   }
   if (!String(body.body || body.bodyMarkdown || body.message || "").trim()) {
+    logWorkspaceDelegationDynamicToolCall(request, params, args, { outcome: "task_card_body_required" });
     return dynamicToolErrorPayload("task_card_body_required", "Task-card body is required.");
   }
   const result = await createThreadTaskCardsFromSourceThread(body.sourceThreadId, body);
+  logWorkspaceDelegationDynamicToolCall(request, params, args, {
+    outcome: "ok",
+    cardCount: Array.isArray(result.cards) ? result.cards.length : result.card ? 1 : 0,
+    targetThreadCount: (result.cards || []).map((card) => card && card.target && card.target.threadId).filter(Boolean).length,
+    direct: result.direct,
+    autoApprove: result.autoApprove,
+  });
   return dynamicToolJsonResponse({
     ok: true,
     tool: WORKSPACE_DELEGATION_TOOL_FULL_NAME,
@@ -10228,6 +11075,7 @@ async function dynamicToolServerRequestResponsePayload(request) {
     workspaceDelegationEnabled: result.workspaceDelegationEnabled,
     direct: result.direct,
     autoApprove: result.autoApprove,
+    forcedDirect: true,
     cardCount: Array.isArray(result.cards) ? result.cards.length : result.card ? 1 : 0,
     cardIds: (result.cards || []).map((card) => card && card.id).filter(Boolean),
     targetThreadIds: (result.cards || []).map((card) => card && card.target && card.target.threadId).filter(Boolean),
@@ -11081,6 +11929,8 @@ async function handleApi(req, res) {
     loadRecentRateLimitsFromRollouts();
     const buildConfig = currentPublicBuildConfig();
     const workspaceDelegation = workspaceDelegationPublicSettings();
+    const activeQuota = liveQuotaSnapshotForProfiles();
+    syncKnownCodexMobileMcpToolsets({ activeQuota });
     sendJson(res, 200, {
       authRequired: !DISABLE_AUTH,
       title: "Codex Mobile Web",
@@ -11103,7 +11953,7 @@ async function handleApi(req, res) {
       rateLimits: activeRateLimits(),
       rateLimitsByModel: rateLimitsByModelObject(),
       codexProfiles: codexProfileService.profiles({
-        activeQuota: liveQuotaSnapshotForProfiles(),
+        activeQuota,
       }),
       push: pushSubscriptionPublicStatus(),
       update: {
@@ -11168,15 +12018,37 @@ async function handleApi(req, res) {
     return;
   }
   if (url.pathname === "/api/codex-profiles" && req.method === "GET") {
+    const activeQuota = liveQuotaSnapshotForProfiles();
+    syncKnownCodexMobileMcpToolsets({ activeQuota });
     sendJson(res, 200, codexProfileService.profiles({
-      activeQuota: liveQuotaSnapshotForProfiles(),
+      activeQuota,
     }));
     return;
   }
+  if (url.pathname === "/api/codex-profiles/switch-progress" && req.method === "GET") {
+    const requestId = String(url.searchParams.get("requestId") || "").trim();
+    const progress = getProfileSwitchProgress(requestId);
+    if (!progress) {
+      sendJson(res, 404, { ok: false, error: "Profile switch progress not found" });
+      return;
+    }
+    sendJson(res, 200, { ok: true, progress });
+    return;
+  }
   if (url.pathname === "/api/codex-profiles/active" && req.method === "POST") {
+    let requestId = "";
     try {
       const body = await readBody(req);
+      requestId = profileSwitchProgressRequestId(body.requestId);
       const targetProfileId = String(body.profileId || body.id || "").trim().toLowerCase();
+      setProfileSwitchProgress(requestId, {
+        targetProfileId,
+        status: "running",
+        stage: "profile_lookup",
+        message: "正在读取目标 Profile...",
+        stepIndex: 1,
+        stepCount: 10,
+      });
       const availableProfiles = codexProfileService.profiles({
         activeQuota: liveQuotaSnapshotForProfiles(),
       });
@@ -11187,19 +12059,86 @@ async function handleApi(req, res) {
       if (!targetProfile) {
         throw httpStatusError(404, "Unknown Codex profile");
       }
-      const preflight = await preflightCodexProfileSwitch(targetProfile);
+      setProfileSwitchProgress(requestId, {
+        targetProfileId: targetProfile.id,
+        targetProfileLabel: targetProfile.label || targetProfile.id,
+        stage: "workspace_trust",
+        message: "正在同步目标账号的工作区信任...",
+        stepIndex: 2,
+      });
       syncRegisteredWorkspaceTrust(targetProfile.codexHome);
+      setProfileSwitchProgress(requestId, {
+        targetProfileId: targetProfile.id,
+        targetProfileLabel: targetProfile.label || targetProfile.id,
+        stage: "mcp_toolset",
+        message: "正在注册 Codex Mobile 工具...",
+        stepIndex: 3,
+      });
+      syncCodexMobileMcpToolset(targetProfile.codexHome);
+      const preflight = await preflightCodexProfileSwitch(targetProfile, {
+        onProgress: (patch) => setProfileSwitchProgress(requestId, Object.assign({
+          targetProfileId: targetProfile.id,
+          targetProfileLabel: targetProfile.label || targetProfile.id,
+          status: "running",
+        }, patch || {})),
+      });
+      setProfileSwitchProgress(requestId, {
+        targetProfileId: targetProfile.id,
+        targetProfileLabel: targetProfile.label || targetProfile.id,
+        stage: "write_active_profile",
+        message: "正在写入 active Profile 配置...",
+        stepIndex: 9,
+      });
       const profile = codexProfileService.setActiveProfile(targetProfile.id);
+      setProfileSwitchProgress(requestId, {
+        targetProfileId: profile.id,
+        targetProfileLabel: profile.label || profile.id,
+        stage: "schedule_restart",
+        message: "正在安排 Mobile Web 重启...",
+        stepIndex: 10,
+      });
       const restart = sharedChainRestartService.restart(Object.assign({
         delayMs: SHARED_CHAIN_RESTART_DELAY_MS,
       }, activeProfileRestartOptions(profile)));
-      sendJson(res, 202, Object.assign({ ok: true, activeProfileId: profile.id, profile, preflight }, restart));
+      const progress = setProfileSwitchProgress(requestId, {
+        targetProfileId: profile.id,
+        targetProfileLabel: profile.label || profile.id,
+        status: "restarting",
+        stage: "waiting_for_restart",
+        message: "切换已写入，正在等待服务恢复...",
+        stepIndex: 10,
+        restarting: true,
+      });
+      sendJson(res, 202, Object.assign({ ok: true, requestId, activeProfileId: profile.id, profile, preflight, progress }, restart));
     } catch (err) {
+      if (requestId) {
+        const previousProgress = getProfileSwitchProgress(requestId);
+        const failedProgress = setProfileSwitchProgress(requestId, {
+          status: "failed",
+          stage: "failed",
+          message: `切换失败：${err.message || "Profile 切换失败"}`,
+          error: err.message || String(err),
+          code: err.code || undefined,
+          detail: err.detail || undefined,
+          failedStage: previousProgress && previousProgress.stage !== "failed" ? previousProgress.stage : undefined,
+          stepIndex: previousProgress && previousProgress.stepIndex ? previousProgress.stepIndex : undefined,
+        });
+        console.error(`[codex-profile-switch] failed ${JSON.stringify({
+          requestId,
+          targetProfileId: failedProgress.targetProfileId || undefined,
+          stage: failedProgress.stage,
+          failedStage: previousProgress && previousProgress.stage || undefined,
+          code: failedProgress.code || undefined,
+          detail: profileSwitchLogDetail(failedProgress.detail || failedProgress.error),
+        })}`);
+      }
       sendJson(res, err.statusCode || 500, {
         ok: false,
         error: err.message || String(err),
         code: err.code || undefined,
         detail: err.detail || undefined,
+        requestId: requestId || undefined,
+        progress: requestId ? getProfileSwitchProgress(requestId) || undefined : undefined,
       });
     }
     return;
@@ -11748,6 +12687,7 @@ async function handleApi(req, res) {
       const body = await readBody(req);
       const created = workspaceRegistryService.create(body);
       syncRegisteredWorkspaceTrust(CODEX_HOME);
+      syncKnownCodexMobileMcpToolsets();
       sendJson(res, 200, created);
     } catch (err) {
       sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
@@ -12771,13 +13711,14 @@ function shutdown() {
     if (codex.child && codex.child.exitCode === null) codex.child.kill();
   } catch (_) {}
   try {
-    if (codex.muxChild && codex.muxChild.exitCode === null) codex.muxChild.kill();
+    if (!PERSIST_MOBILE_OWNED_MUX && codex.muxChild && codex.muxChild.exitCode === null) codex.muxChild.kill();
   } catch (_) {}
   process.exit(0);
 }
 
 function startServer() {
   syncRegisteredWorkspaceTrust(CODEX_HOME);
+  syncKnownCodexMobileMcpToolsets();
   server.listen(PORT, HOST, () => {
     console.log(`Codex Mobile Web listening on http://${HOST}:${PORT}`);
     if (REQUIRE_SHARED_APP_SERVER) {
@@ -12816,6 +13757,7 @@ module.exports = {
   previewFileReferencesFromText,
   parseThreadTurnsCursor,
   profileSwitchPreflightError,
+  profileSwitchRateLimitsWarningForError,
   readFilePreview,
   readRolloutItemTimestampCandidates,
   readRolloutSessionFallbackThreadFromFile,
@@ -12833,5 +13775,7 @@ module.exports = {
   threadMatchesWorkspaceCwd,
   workspaceDelegationDynamicToolSpec,
   attachWorkspaceDelegationDynamicTools,
+  attachWorkspaceDelegationRuntimeGuidance,
+  workspaceDelegationScriptFallbackInstruction,
   dynamicToolTextResponse,
 };
