@@ -1,5 +1,6 @@
 # Codex Mobile Web
 
+- 中文说明：v375 缓解大线程打开期间的后台列表补拉卡顿。线程列表首屏仍可用 `fallback=defer` 快速返回，但完整 fallback rollout 扫描不再 800ms 后立即启动；前端现在把它作为可取消、可推迟的后台任务，等待线程详情首屏稳定、没有列表请求在跑、且没有 workspace/search 过滤时再补拉。这样 Music 这类 200MB rollout 线程在服务重启后不会因为后台列表恢复马上扫大文件而拖慢首屏。PWA shell cache 升级到 `codex-mobile-shell-v375`。
 - 中文说明：v374 修正首次打开已完成线程时 Usage 卡片可能缺失、退出再进才出现的问题。线程详情首屏如果命中较旧投影缓存，且最新 completed turn 已有最终回执但还没有 Usage，前端现在会立即启动已有的 bounded Usage backfill 刷新；后台刷新拿到 `turnUsageSummary` 后会在当前页面补出 Usage，不再依赖重新进入线程。PWA shell cache 升级到 `codex-mobile-shell-v374`。
 - 中文说明：server-only 收紧 source-thread 任务卡目标校验，防止动态工具或 fallback 脚本把卡发到旧线程/隐藏线程。`/api/threads/:sourceThreadId/task-cards` 现在只接受当前可见、非归档、非子代理的目标线程；同一 cwd/workspace 有多个线程时，只允许最新可见 canonical 线程。传入旧 date-suffixed 线程、只存在 rollout fallback 的线程或不可见 id 会返回 `stale_target_thread` / `target_thread_not_visible`，并带上当前可投递线程信息；服务端不会自动改投。本次不改变 PWA shell cache。
 - 中文说明：server-only 继续修正 `codex_mobile.delegate_to_thread` 动态工具创建任务卡成功后，结果格式被 app-server 判为无效的问题。动态工具响应现在使用 app-server 事件 schema 的 `result.content_items[{ type:"input_text" }]`，不是 MCP 风格 `content[{ type:"text" }]`，避免模型收到 invalid 后再走 fallback 脚本重复发卡。任务卡幂等 seed 仍使用显式 requestId 或 source/target/title/body/workflow 语义字段，不使用每次调用都会变化的 call id / turn id。本次不改变 PWA shell cache。
