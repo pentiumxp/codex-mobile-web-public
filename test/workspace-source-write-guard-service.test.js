@@ -8,6 +8,7 @@ const { test } = require("node:test");
 
 const {
   classifyWorkspaceSourceWriteRequest,
+  commandLooksTrustedHomeAiTool,
   createWorkspaceSourceWriteGuard,
   extractWritePathsFromRequest,
   isPathInside,
@@ -17,6 +18,17 @@ function tempProjectRoot(name) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), `codex-mobile-${name}-`));
   fs.mkdirSync(path.join(root, ".git"));
   fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name }), "utf8");
+  return root;
+}
+
+function tempHomeAiRoot() {
+  const root = tempProjectRoot("homeai");
+  fs.mkdirSync(path.join(root, "scripts"), { recursive: true });
+  fs.mkdirSync(path.join(root, "docs", "PLATFORM_CONTRACTS"), { recursive: true });
+  fs.writeFileSync(path.join(root, "scripts", "ai-ops-control-plane.js"), "", "utf8");
+  fs.writeFileSync(path.join(root, "scripts", "deploy-macos-production.js"), "", "utf8");
+  fs.writeFileSync(path.join(root, "scripts", "plugin-workspace-platform-contract-check.js"), "", "utf8");
+  fs.writeFileSync(path.join(root, "docs", "PLATFORM_CONTRACTS", "plugin-workspace-platform-contract.md"), "", "utf8");
   return root;
 }
 
@@ -118,6 +130,58 @@ test("workspace source write guard denies write-like commands in another source 
   assert.equal(byPath.reason, "foreign_source_write_command_path");
   fs.rmSync(current, { recursive: true, force: true });
   fs.rmSync(foreign, { recursive: true, force: true });
+});
+
+test("workspace source write guard allows trusted Home AI tools but denies direct Home AI source writes", () => {
+  const current = tempProjectRoot("current");
+  const homeAi = tempHomeAiRoot();
+
+  assert.equal(commandLooksTrustedHomeAiTool("npm run --silent deploy:macos -- --plugin music", homeAi), true);
+  assert.equal(commandLooksTrustedHomeAiTool("npm run --silent deploy:macos -- --plugin music && git status", homeAi), false);
+
+  const deployDecision = classifyWorkspaceSourceWriteRequest({
+    method: "item/commandExecution/requestApproval",
+    params: {
+      cwd: homeAi,
+      command: "npm run --silent deploy:macos -- --plugin music --source /tmp/music --execute --json",
+    },
+  }, {
+    currentCwd: current,
+    workspaceRoots: [current, homeAi],
+  });
+  assert.equal(deployDecision.action, "allow");
+  assert.equal(deployDecision.reason, "trusted_home_ai_tool_command");
+
+  const gitDecision = classifyWorkspaceSourceWriteRequest({
+    method: "item/commandExecution/requestApproval",
+    params: {
+      cwd: homeAi,
+      command: "git add adapters/gateway-run-instruction-service.js && git commit -m update",
+    },
+  }, {
+    currentCwd: current,
+    workspaceRoots: [current, homeAi],
+  });
+  assert.equal(gitDecision.action, "deny");
+  assert.equal(gitDecision.reason, "foreign_source_write_command_cwd");
+
+  const patchDecision = classifyWorkspaceSourceWriteRequest({
+    method: "applyPatchApproval",
+    params: {
+      cwd: current,
+      fileChanges: {
+        [path.join(homeAi, "mobile-server-runtime.js")]: { type: "modify" },
+      },
+    },
+  }, {
+    currentCwd: current,
+    workspaceRoots: [current, homeAi],
+  });
+  assert.equal(patchDecision.action, "deny");
+  assert.equal(patchDecision.reason, "foreign_source_file_change");
+
+  fs.rmSync(current, { recursive: true, force: true });
+  fs.rmSync(homeAi, { recursive: true, force: true });
 });
 
 test("workspace source write guard allows read permission requests and denies foreign write grants", () => {

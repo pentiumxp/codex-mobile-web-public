@@ -201,37 +201,35 @@ instructions, access keys, cookies, or full task-card Markdown.
 
 The switch also normalizes runtime write permissions for new or resumed work.
 The server applies `applyWorkspaceDelegationRuntimeGuard()` from the shared
-runtime settings helpers so `thread/start`, `thread/resume`, and `turn/start`
-restore `danger-full-access`, clear inherited managed profiles, and use
-`approvalPolicy:"on-request"`. Mobile Web then auto-answers app-server approval
-requests through `adapters/workspace-source-write-guard-service.js`: reads,
-MCP, network, current-workspace writes, and current-workspace `.git` writes are
-allowed, while explicit writes into another known source root are denied. This
-is intentional: current Codex app-server builds can ignore Mobile Web's custom
-current-cwd profile and recreate a `workspace-write` permission profile that
-makes the current workspace's `.git` metadata read-only, breaking normal
-current-repository `git add/commit`.
+runtime settings helpers so ordinary plugin `thread/start`, `thread/resume`,
+and `turn/start` use a real `workspace-write` / managed profile and
+`approvalPolicy:"on-request"`. The profile keeps root read-only, allows writes
+to the current cwd, temporary directories, and the current cwd's `.git`
+metadata, and keeps `.codex` / `.agents` under the cwd read-only. If the Codex
+app-server still asks for current-workspace `.git` or ordinary write
+permissions, Mobile Web auto-allows them through
+`adapters/workspace-source-write-guard-service.js`; explicit writes into another
+known source root are auto-denied. Existing active turns are not retroactively
+changed; the guard applies when the next start/resume request is sent.
 
-The hard current-cwd sandbox remains available only as an explicit operator
-opt-in with `CODEX_MOBILE_WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD=1`. In
-that mode the guard keeps root read-only, allows writes to the current cwd,
-temporary directories, and the current cwd's `.git` metadata, and keeps
-`.codex` / `.agents` under the cwd read-only. The guard resolves cwd from
-request params when available and otherwise from the thread id. Existing active
-turns are not retroactively changed; the guard applies when the next
-start/resume request is sent.
+Home AI central control-plane scripts are treated as provided tools, not as
+arbitrary cross-workspace source edits. The approval guard allows narrow command
+forms for `ai-ops-control-plane.js`, platform contract checks, visual harnesses,
+and `deploy:macos` when the cwd is the Home AI control-plane root and the
+command is not shell-chained. Direct `apply_patch`, file writes, `git add`,
+`git commit`, or arbitrary write commands against Home AI source remain denied
+from a plugin workspace. The request classifier resolves the source workspace
+from thread/turn ownership before consulting the command cwd, so a plugin thread
+cannot bypass the guard by running a shell command with `cwd` set to Home AI.
 
-The default write guard is intentionally scoped to approval-visible source-code
-writes. It does not reduce read access, MCP access, network access, current
-workspace writes, or current workspace Git metadata writes. It denies
-`apply_patch` / app-server file-change approvals, write-like shell commands, and
-write-like file-system grants when the target is another known source root. It
-cannot perfectly block an opaque script that hides its target path; that level
-requires app-server sandbox support that can express the current-cwd-including-
-`.git` exception. The guard also preserves the original runtime permission
-profile for trusted maintenance paths: the Codex Mobile source workspace
-itself, the Home AI central control-plane workspace that owns deployment
-scripts, and any cwd explicitly listed in
+The old `danger-full-access` approval-proxy-only compatibility mode is available
+only when `CODEX_MOBILE_WORKSPACE_DELEGATION_APPROVAL_PROXY_ONLY=1` is set and
+`CODEX_MOBILE_WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD` is not set. That mode
+is an emergency fallback only: it cannot block direct tool writes that do not
+raise app-server approval requests. The guard also preserves the original
+runtime permission profile for trusted maintenance source workspaces when they
+are the source thread cwd: the Codex Mobile source workspace itself, the Home AI
+central control-plane workspace that owns deployment scripts, and any cwd explicitly listed in
 `CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS`. Operators can disable
 the write guard in an emergency with
 `CODEX_MOBILE_WORKSPACE_DELEGATION_WRITE_GUARD=0` or

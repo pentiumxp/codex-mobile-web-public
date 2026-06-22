@@ -9915,3 +9915,63 @@ The previous full handoff was archived and should be opened only when old proven
   - Running app-server processes do not appear to hot-reload MCP approval
     config. If the config is changed again, reload the Mobile-owned mux/app-server
     once before testing tool approval behavior.
+
+## 2026-06-22 Workspace Delegation Source Write Guard Hardening
+
+- Status: implemented locally and validated; deployment/commit may follow this
+  handoff entry.
+- User issue:
+  - With `跨工作区委派` enabled, the Music workspace thread was still able to
+    modify, commit, and deploy Home AI source files, then send a task card after
+    the fact.
+  - Official Home AI-provided tools should remain callable, but direct
+    cross-workspace source edits must be blocked.
+- Root cause:
+  - The previous compatibility runtime defaulted delegated plugin turns to
+    `danger-full-access` plus an approval proxy. Direct tools such as
+    `apply_patch` or shell commands do not necessarily raise app-server approval
+    requests, so the proxy could not block them.
+  - Server approval classification also treated explicit command `params.cwd`
+    as the source workspace before resolving the source thread/turn cwd. A
+    plugin thread could therefore set command cwd to Home AI and make Home AI
+    appear to be the current workspace for guard decisions.
+- Patch:
+  - `server.js`
+    - Default workspace-delegation runtime now uses real
+      `workspace-write` / managed profile plus `approvalPolicy:"on-request"`.
+    - Old `danger-full-access` approval-proxy-only behavior is only available
+      through explicit `CODEX_MOBILE_WORKSPACE_DELEGATION_APPROVAL_PROXY_ONLY=1`.
+    - App-server approval guard remains active in real sandbox mode.
+    - Source cwd resolution now prefers thread/turn ownership; command cwd is
+      only a fallback when no source thread cwd is known.
+  - `adapters/workspace-source-write-guard-service.js`
+    - Adds a narrow Home AI official-tool allowlist:
+      `scripts/ai-ops-control-plane.js`,
+      `scripts/deploy-macos-production.js`,
+      `scripts/plugin-workspace-platform-contract-check.js`,
+      `tests/architecture-code-test-harness-map.test.js`,
+      `npm run deploy:macos`, and `npm run ios:pwa:visual`.
+    - Shell-chained commands are not trusted.
+    - Direct `apply_patch`, file-change approvals, `git add/commit`, write-like
+      commands, and write-like file-system grants against another source root
+      are denied.
+  - Tests/docs updated:
+    - `test/workspace-source-write-guard-service.test.js`
+    - `test/new-thread-route.test.js`
+    - `README.md`
+    - `docs/ARCHITECTURE.md`
+    - `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md`
+    - `docs/MODULES.md`
+- Validation:
+  - `node --test test/workspace-source-write-guard-service.test.js test/new-thread-route.test.js test/thread-task-card-route.test.js test/protocol.test.js test/codex-profile-service.test.js`
+  - `npm run check`
+  - `git diff --check`
+  - Center architecture harness:
+    `cd /Users/hermes-dev/HermesMobileDev/app && node tests/architecture-code-test-harness-map.test.js`
+  - Evidence ledger:
+    `/Users/xuxin/.homeai-qa/codex-mobile-web-evidence-ledger.jsonl`
+    record `evidence-435833f2-c22f-4550-8564-cbf91e890093`.
+- Operational note:
+  - Existing active turns keep the sandbox they were started with. New
+    thread/start, thread/resume, and turn/start requests pick up the hardened
+    runtime.

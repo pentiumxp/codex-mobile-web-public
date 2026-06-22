@@ -253,6 +253,9 @@ const WORKSPACE_DELEGATION_WRITE_GUARD_DISABLED = /^(0|false|no|off)$/i.test(
 const WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD = /^(1|true|yes|on)$/i.test(
   process.env.CODEX_MOBILE_WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD || "",
 );
+const WORKSPACE_DELEGATION_APPROVAL_PROXY_ONLY = /^(1|true|yes|on)$/i.test(
+  process.env.CODEX_MOBILE_WORKSPACE_DELEGATION_APPROVAL_PROXY_ONLY || "",
+);
 const WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS = process.env.CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS || "";
 const WORKSPACE_DELEGATION_GUARD_SELF_EXEMPTION_DISABLED = /^(1|true|yes|on)$/i.test(
   process.env.CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_DISABLE_SELF_EXEMPTION || "",
@@ -4820,10 +4823,8 @@ function threadCwdForRuntimeThreadId(threadId) {
   return String(thread && thread.cwd || "").trim();
 }
 
-function workspaceSourceWriteGuardCwdForRequest(request) {
+function workspaceSourceWriteGuardThreadCwdForRequest(request) {
   const params = request && request.params && typeof request.params === "object" ? request.params : {};
-  const explicitCwd = String(params.cwd || "").trim();
-  if (explicitCwd) return explicitCwd;
   const threadId = pushThreadId(params)
     || String(params.threadId || params.conversationId || params.sessionId || params.thread_id || params.conversation_id || params.session_id || "").trim();
   const threadCwd = threadCwdForRuntimeThreadId(threadId);
@@ -4835,6 +4836,13 @@ function workspaceSourceWriteGuardCwdForRequest(request) {
   return threadCwdForRuntimeThreadId(inferredThreadId);
 }
 
+function workspaceSourceWriteGuardCwdForRequest(request) {
+  const threadCwd = workspaceSourceWriteGuardThreadCwdForRequest(request);
+  if (threadCwd) return threadCwd;
+  const params = request && request.params && typeof request.params === "object" ? request.params : {};
+  return String(params.cwd || "").trim();
+}
+
 const workspaceSourceWriteGuardService = createWorkspaceSourceWriteGuard({
   currentCwdForRequest: workspaceSourceWriteGuardCwdForRequest,
   workspaceRoots: workspaceSourceWriteGuardWorkspaceRoots,
@@ -4842,9 +4850,10 @@ const workspaceSourceWriteGuardService = createWorkspaceSourceWriteGuard({
 
 function workspaceSourceWriteGuardDecisionForRequest(request) {
   if (!workspaceDelegationPublicSettings().enabled) return null;
-  if (WORKSPACE_DELEGATION_WRITE_GUARD_DISABLED || WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD) return null;
+  if (WORKSPACE_DELEGATION_WRITE_GUARD_DISABLED) return null;
   if (!request || !ACTIONABLE_APPROVAL_METHODS.has(request.method)) return null;
-  const cwd = workspaceSourceWriteGuardCwdForRequest(request);
+  const sourceCwd = workspaceSourceWriteGuardThreadCwdForRequest(request);
+  const cwd = sourceCwd || workspaceSourceWriteGuardCwdForRequest(request);
   if (cwd && workspaceDelegationGuardExemptCwd(cwd)) return null;
   return workspaceSourceWriteGuardService.classify(request);
 }
@@ -4886,13 +4895,13 @@ function applyWorkspaceDelegationRuntimeGuard(params, settings, options = {}) {
   if (!cwd) return params;
   params.cwd = cwd;
   if (workspaceDelegationGuardExemptCwd(cwd)) return params;
-  if (!WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD) {
+  if (WORKSPACE_DELEGATION_APPROVAL_PROXY_ONLY && !WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD) {
     return applyWorkspaceDelegationFullAccessCompatRuntime(params, options);
   }
-  params.approvalPolicy = "never";
+  params.approvalPolicy = "on-request";
   if (options.useSandboxPolicy) {
+    params.sandboxPolicy = workspaceDelegationWriteGuardSandboxPolicy(cwd, settings && settings.sandboxPolicy);
     params.permissionProfile = workspaceDelegationWriteGuardPermissionProfile(cwd, settings && settings.sandboxPolicy);
-    delete params.sandboxPolicy;
     delete params.sandbox;
   } else {
     params.sandbox = "workspace-write";

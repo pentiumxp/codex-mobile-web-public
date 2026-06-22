@@ -1,6 +1,6 @@
 # Codex Mobile Web
 
-- 中文说明：server-only 将 `跨工作区委派` 默认写保护改为动态源码写保护。开启后，普通工作线程仍恢复 `danger-full-access` 并清除 stale managed profile，当前工作区源码和 `.git`、MCP、读取、网络和普通命令保持放开；同时把 app-server 审批模式设为 `on-request`，由 Mobile Web 自动允许非跨源码写请求，自动拒绝明确写入其他已知源码工作区根的 `apply_patch`、文件变更、写类命令或写类文件系统授权。模型仍应通过 `codex_mobile.delegate_to_thread` / MCP / 脚本 fallback 发 source-direct 任务卡；硬 sandbox 写入收窄仍只在显式设置 `CODEX_MOBILE_WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD=1` 后启用。本次不改变 PWA shell cache。
+- 中文说明：server-only 修正 `跨工作区委派` 写保护没有覆盖直接工具调用的问题。开启后，普通插件线程默认使用真实 `workspace-write`/managed profile 和 `approvalPolicy:on-request`，当前工作区源码、当前 `.git`、读取、MCP 和网络继续可用；如果 app-server 对当前 `.git` 或普通读写发出审批，Mobile Web 会自动允许；如果尝试 `apply_patch`、文件变更、写类 shell 或写类文件系统授权到其他已知源码根，会自动拒绝。Home AI 中央控制平面提供的 AI Ops、平台检查、视觉核验和 `deploy:macos` 脚本被识别为官方工具命令，可以从插件线程调用；但直接修改、提交 Home AI 源码仍会被拦截。旧的 `danger-full-access` approval-proxy-only 兼容模式仅在显式设置 `CODEX_MOBILE_WORKSPACE_DELEGATION_APPROVAL_PROXY_ONLY=1` 时启用。本次不改变 PWA shell cache。
 - 中文说明：v373 修正 Profile 切换到目标账号时，额度接口临时失败会让切换进度消失并停住的问题。目标 app-server 初始化成功后，`account/rateLimits/read` 的网络/服务端临时失败会降级为警告继续切换，只有明确的 401/token 失效才阻止切换；失败响应会把 requestId/progress 带回前端，Profile 行会保留“切换失败：原因”和失败阶段，不再几秒后清空。PWA shell cache 升级到 `codex-mobile-shell-v373`。
 - 中文说明：v372 修正 Profile 切换过程只有“预检中”而缺少后续状态的问题。前端会为每次切换生成 requestId，并轮询服务端真实阶段，逐步显示读取目标 Profile、同步工作区信任、注册 Codex Mobile 工具、启动/连接目标 app-server、初始化会话、读取额度、写入 active Profile、安排重启和等待服务恢复。macOS 宿主恢复脚本也补齐 `CODEX_MOBILE_MUX_ENDPOINT_FILE` 同步、bootstrap code 5 重试、preflight/postflight 一致性检查和非选中 profile stale mux 报告。PWA shell cache 升级到 `codex-mobile-shell-v372`。
 - 中文说明：server-only 增加 Codex 线程自己的 `codex_mobile` MCP toolset。服务端启动、读取 Profile 列表、工作区创建和 Profile 切换时会自动检查所有已知/目标 `CODEX_HOME/config.toml`，没有 `[mcp_servers.codex_mobile]` 或配置指向旧脚本时就注册/修正 `scripts/codex-mobile-mcp-server.js`；该工具集提供 `list_threads` 和 `delegate_to_thread`，后者复用现有任务卡 API 发 source-direct 卡。注册器同时写入两个工具的 `approval_mode = "approve"`，避免只读列表和受运行时开关约束的发卡工具被 Codex MCP 权限层重复弹窗。配置只保存脚本路径、server URL 和 key-file 路径，不保存 raw key。本次不改变 PWA shell cache。
@@ -8,8 +8,8 @@
 - 中文说明：v370 修正线程详情页活跃回执被较旧 V4 投影快照覆盖的问题。客户端现在会对 V4 refresh 做单调合并：同一 turn 保留更完整的可见回执，旧 revision 不再把当前 live turn 覆盖成历史内容，同时 durable 用户消息仍会清理本地 pending echo。PWA shell cache 升级到 `codex-mobile-shell-v370`。
 - 中文说明：server-only 给 `跨工作区委派` 增加模型可见脚本 fallback。开启后 `thread/start` / `turn/start` 除了注入 `codex_mobile.delegate_to_thread`，还会在开发者指令里写明：如果动态工具不可见或不可发现，源线程必须运行 `scripts/create-thread-task-card.js` 创建任务卡；`multi_agent_v1.*` 不是 Codex Mobile 任务卡 API，不能替代跨工作区发卡。本次不改变 PWA shell cache。
 - 中文说明：server-only 明确 `跨工作区委派` 的失败后恢复边界。开启后模型如果已经误尝试目标工作区写入/命令/部署并遇到 sandbox、permission denied、operation not permitted、cwd 或 approval-policy 失败，动态工具说明会要求源线程模型结合当前上下文自行决定并调用 `codex_mobile.delegate_to_thread`；服务端不会从失败日志后台代发任务卡，避免丢失原线程上下文和意图。本次不改变 PWA shell cache。
-- 中文说明：历史说明：曾给 `跨工作区委派` 的运行时写入守卫增加受控维护豁免。当时普通插件线程会被收敛到当前 cwd 的 `workspace-write`；该默认实现后来因为会误伤当前工作区 `.git` 写入，已被“默认全权限 + 动态源码写保护”取代。显式硬 sandbox 仍可通过 `CODEX_MOBILE_WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD=1` 启用。
-- 中文说明：历史说明：曾给 `跨工作区委派` 增加基于 `workspace-write` / `approvalPolicy=never` 的运行时写入守卫。该默认实现后来被动态源码写保护取代；当前默认路径不收窄读/MCP/当前工作区写权限，而是在 app-server 审批层拒绝明确写入其他源码工作区根的操作。
+- 中文说明：历史说明：曾给 `跨工作区委派` 的运行时写入守卫增加受控维护豁免。当时普通插件线程会被收敛到当前 cwd 的 `workspace-write` / `approvalPolicy=never`；该默认实现后来因为会误伤当前工作区 `.git` 写入，短暂被“默认全权限 + 动态源码写保护”取代。当前默认已回到真实 sandbox，但改为 `approvalPolicy:on-request`，由 Mobile Web 自动允许当前工作区 `.git` 许可并拒绝外部源码写入。
+- 中文说明：历史说明：曾给 `跨工作区委派` 增加基于 approval proxy 的动态源码写保护。该版本只能拦截 app-server 审批请求，拦不住 `danger-full-access` 下的直接 `apply_patch` / shell 工具调用；当前版本改为默认真实 sandbox，approval proxy 只负责自动决策当前 `.git`、官方工具和外部源码写入审批。
 - 中文说明：server-only 收紧 `跨工作区委派` 的模型可见工具说明和审批语义。开关开启后，`codex_mobile.delegate_to_thread` 的描述明确要求：如果用户请求的实现、文件修改、命令、测试、部署或其他状态变更属于另一个工作区/线程，模型必须先调用该工具创建任务卡，不得在当前线程里直接 `cd`、读写、打补丁、运行命令或部署目标工作区。该动态工具路径固定创建 source-direct 卡，不允许模型把自由委派卡发成 Pending；Pending 仍保留给手动/API/MCP 等显式审批路径。仍保持“由模型判断是否跨工作区”，不恢复本地关键词/路径启发式预检。本次不改变 PWA shell cache。
 - 中文说明：v369 修正 Android 折叠屏/嵌入态线程详情右上角运行状态框计时被裁剪的问题。`turn-timer` 不再用固定宽度压缩内部内容，计时段 `本轮 00:00:00` 改为不可收缩并保留完整显示，活动状态文字（思考/命令/输入等）在剩余空间内省略，避免秒个位被遮挡。PWA shell cache 升级到 `codex-mobile-shell-v369`。
 - 中文说明：v368 修正 Android APK/WebView 下 Composer 首次点击偶发不弹系统输入法、第二次点击后键盘虽出现但文字不上屏的问题。Codex Composer 仍使用 `contenteditable`，但 Android 上不再在 `pointerup/click` 后程序化 blur/refocus 抢 IME；如果发现输入框已假聚焦但键盘未打开，会在下一次 `pointerdown` 用户手势开始时先释放旧焦点，再交给 WebView 原生 tap 建立 editor connection。同时收窄 disabled 状态下保留 `contenteditable=true` 的条件，避免留下可编辑但 `aria-disabled/tabIndex` 冲突的混合状态。PWA shell cache 升级到 `codex-mobile-shell-v368`。
@@ -422,18 +422,23 @@ MCP approval prompt around the Mobile Web runtime delegation gate. This MCP
 toolset is for Codex threads. The ChatGPT Pro MCP connector under
 `/api/chatgpt-pro/mcp` remains a separate external-client integration.
 
-The same switch keeps normal execution broad but adds a dynamic source-write
-decision layer. For non-exempt workspaces, Mobile Web sends new
-`thread/start`, `thread/resume`, and `turn/start` requests with
-`danger-full-access` plus `approvalPolicy:"on-request"`. App-server approval
-requests are then auto-answered by `adapters/workspace-source-write-guard-service.js`:
-reads, MCP calls, network, current-workspace writes, and current-workspace
-`.git` writes are allowed; explicit writes into another known source root are
-denied so the source model can delegate through a task card. The guard only
-covers approval-visible file changes, patch requests, write-like commands, and
-write-like file-system permission grants. It is not a general OS sandbox for
-opaque scripts. Operators can still opt into the older hard current-cwd sandbox
-with `CODEX_MOBILE_WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD=1`.
+The same switch keeps ordinary execution usable but adds a real source-write
+boundary. For non-exempt workspaces, Mobile Web sends new `thread/start`,
+`thread/resume`, and `turn/start` requests with `workspace-write` / managed
+profile plus `approvalPolicy:"on-request"`. The profile allows the current cwd,
+temporary directories, and current-workspace `.git`; app-server approval
+requests are then auto-answered by
+`adapters/workspace-source-write-guard-service.js`. Reads, MCP calls, network,
+current-workspace writes, current `.git` writes, and narrow Home AI provided
+tool commands are allowed; direct `apply_patch`, file changes, `git add/commit`,
+write-like commands, or write-like file-system grants into another known source
+root are denied so the source model can delegate through a task card. The guard
+uses thread/turn ownership to identify the source workspace before considering a
+command cwd, so setting a command cwd to Home AI does not bypass plugin
+workspace boundaries. Operators
+can temporarily return to the old full-access approval-proxy-only mode with
+`CODEX_MOBILE_WORKSPACE_DELEGATION_APPROVAL_PROXY_ONLY=1`, but that mode cannot
+block direct tool writes that do not raise approval requests.
 
 Local thread-callable wrapper:
 
