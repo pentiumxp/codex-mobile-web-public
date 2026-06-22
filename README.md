@@ -1,6 +1,6 @@
 # Codex Mobile Web
 
-- 中文说明：server-only 修正 `codex_mobile.delegate_to_thread` 动态工具创建任务卡成功后，结果格式被 app-server 判为无效的问题。动态工具现在返回 app-server 可接受的 text content 结果；任务卡幂等 seed 不再使用每次调用都会变化的 call id / turn id，改为显式 requestId 或 source/target/title/body/workflow 语义字段，避免同一委派任务在模型重试时重复发卡。本次不改变 PWA shell cache。
+- 中文说明：server-only 继续修正 `codex_mobile.delegate_to_thread` 动态工具创建任务卡成功后，结果格式被 app-server 判为无效的问题。动态工具响应现在使用 app-server 事件 schema 的 `result.content_items[{ type:"input_text" }]`，不是 MCP 风格 `content[{ type:"text" }]`，避免模型收到 invalid 后再走 fallback 脚本重复发卡。任务卡幂等 seed 仍使用显式 requestId 或 source/target/title/body/workflow 语义字段，不使用每次调用都会变化的 call id / turn id。本次不改变 PWA shell cache。
 - 中文说明：server-only 修正 `跨工作区委派` 写保护没有覆盖直接工具调用的问题。开启后，普通插件线程默认使用真实 `workspace-write`/managed profile 和 `approvalPolicy:on-request`，并把当前 `.git` 同时加入 sandbox writable roots，确保当前工作区源码、当前 `.git`、读取、MCP 和网络继续可用；如果 app-server 对当前 `.git` 或普通读写发出审批，Mobile Web 会自动允许；如果尝试 `apply_patch`、文件变更、写类 shell 或写类文件系统授权到其他已知源码根，会自动拒绝。Home AI 中央控制平面提供的 AI Ops、平台检查、视觉核验和 `deploy:macos` 脚本被识别为官方工具命令，可以从插件线程调用；但直接修改、提交 Home AI 源码仍会被拦截。旧的 `danger-full-access` approval-proxy-only 兼容模式仅在显式设置 `CODEX_MOBILE_WORKSPACE_DELEGATION_APPROVAL_PROXY_ONLY=1` 时启用。本次不改变 PWA shell cache。
 - 中文说明：v373 修正 Profile 切换到目标账号时，额度接口临时失败会让切换进度消失并停住的问题。目标 app-server 初始化成功后，`account/rateLimits/read` 的网络/服务端临时失败会降级为警告继续切换，只有明确的 401/token 失效才阻止切换；失败响应会把 requestId/progress 带回前端，Profile 行会保留“切换失败：原因”和失败阶段，不再几秒后清空。PWA shell cache 升级到 `codex-mobile-shell-v373`。
 - 中文说明：v372 修正 Profile 切换过程只有“预检中”而缺少后续状态的问题。前端会为每次切换生成 requestId，并轮询服务端真实阶段，逐步显示读取目标 Profile、同步工作区信任、注册 Codex Mobile 工具、启动/连接目标 app-server、初始化会话、读取额度、写入 active Profile、安排重启和等待服务恢复。macOS 宿主恢复脚本也补齐 `CODEX_MOBILE_MUX_ENDPOINT_FILE` 同步、bootstrap code 5 重试、preflight/postflight 一致性检查和非选中 profile stale mux 报告。PWA shell cache 升级到 `codex-mobile-shell-v372`。
@@ -399,7 +399,9 @@ app-server dynamic tool `codex_mobile.delegate_to_thread` into `thread/start`
 and `turn/start`. This is the model-visible path for ordinary Codex turns: the
 model decides whether a request needs another workspace/thread, calls the tool
 with an exact target thread id/title or exact target cwd, and the server creates
-the task card through the same source-thread route.
+the task card through the same source-thread route. The dynamic tool response is
+serialized as app-server dynamic-tool output, `result.content_items` with an
+`input_text` item, not MCP `content` text.
 The same start/turn runtime guidance also includes a local script fallback for
 agents that do not see the dynamic tool. App-server dynamic tools may not appear
 in deferred discovery surfaces such as `tool_search`, so that absence is not

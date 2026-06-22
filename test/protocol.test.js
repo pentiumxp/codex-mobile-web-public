@@ -72,19 +72,22 @@ function writeJsonLine(socket, message) {
   socket.write(`${JSON.stringify(message)}\n`);
 }
 
-test("dynamic tool responses use app-server text content schema", () => {
+test("dynamic tool responses use app-server content_items text schema", () => {
   const payload = dynamicToolTextResponse("ok");
   assert.deepEqual(payload, {
     result: {
-      content: [
+      content_items: [
         {
-          type: "text",
+          type: "input_text",
           text: "ok",
         },
       ],
     },
   });
-  assert.doesNotMatch(JSON.stringify(payload), /contentItems|inputText/);
+  const serialized = JSON.stringify(payload);
+  assert.doesNotMatch(serialized, /contentItems|inputText/);
+  assert.doesNotMatch(serialized, /"content"\s*:/);
+  assert.doesNotMatch(serialized, /"type":"text"/);
 });
 
 test("stdio app-server mux does not overwrite an available shared endpoint", async (t) => {
