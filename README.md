@@ -1,5 +1,6 @@
 # Codex Mobile Web
 
+- 中文说明：v376 修正嵌入态/移动端前台恢复后，已完成线程沿用内存里的旧详情而不拉取最终回执的问题。`resumeMobileSession()` 现在只在启动阶段跳过网络恢复；已有当前线程恢复可见时会始终触发一次轻量 detail refresh，运行中线程仍用 250ms 合并刷新，completed/idle 线程直接读取最新详情，避免最终回执或 Usage 已在服务端存在但第一次进入仍看不到。PWA shell cache 升级到 `codex-mobile-shell-v376`。
 - 中文说明：server-only 修正已完成线程首次打开最终回执先出现又被较旧投影覆盖、退出再进才稳定的问题。线程详情压缩/投影/raw/turns-list 路径现在会从同一 bounded rollout enrichment 数据里读取 `task_complete.last_agent_message`；如果 completed turn 里已有中间 `agentMessage` 但没有匹配 rollout 最终文本的 `agentMessage`/`plan`，就补一个 synthetic 最终回执，再继续附加已有 Usage 摘要。已有匹配回执不会被覆盖，失败/取消/中断/运行中 turn 不补。本次不改变 PWA shell cache。
 - 中文说明：server-only 二次修正后台 turn 已经启动但线程列表/详情摘要又被 `idle` 覆盖的问题。Mobile Web 自己发起的 `turn/start` 成功返回后，现在会记录 bounded 服务端 active overlay，并把它统一应用到 `/api/threads` 和 `/api/threads/:id` 的状态合成；后续 state-db/app-server 暂时返回 `idle` 时不会洗掉运行标志。overlay 会在收到 `turn/completed`、rollout 尾部出现 `task_complete`，或 TTL 到期时清理。仍会广播轻量 `thread/status/changed active`，覆盖普通消息、source-direct/自动任务卡注入、auto-recover、side-chat apply、continuation handoff/bootstrap 和新线程首 turn。本次不改变 PWA shell cache。
 - 中文说明：v375 缓解大线程打开期间的后台列表补拉卡顿。线程列表首屏仍可用 `fallback=defer` 快速返回，但完整 fallback rollout 扫描不再 800ms 后立即启动；前端现在把它作为可取消、可推迟的后台任务，等待线程详情首屏稳定、没有列表请求在跑、且没有 workspace/search 过滤时再补拉。这样 Music 这类 200MB rollout 线程在服务重启后不会因为后台列表恢复马上扫大文件而拖慢首屏。PWA shell cache 升级到 `codex-mobile-shell-v375`。

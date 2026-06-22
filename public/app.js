@@ -388,7 +388,7 @@ const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v375";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v376";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -15463,16 +15463,16 @@ async function resumeMobileSession(reason = "resume") {
     if (status.codexProfiles) rememberCodexProfiles(status.codexProfiles);
     await loadThreads({ silent: Boolean(state.threads.length) });
     if (state.currentThreadId && state.currentThread && !state.currentThread.mobileLoading && !state.currentThread.mobileLoadError) {
-      if (currentThreadNeedsForegroundRefresh()) {
-        scheduleCurrentThreadRefresh(250);
-      } else {
-        postClientEvent("mobile_resume_thread_refresh_skipped", {
-          reason,
-          currentThreadId: state.currentThreadId || "",
-          status: statusText(state.currentThread && state.currentThread.status),
-          activeTurnId: state.activeTurnId || "",
-        });
-      }
+      const foregroundRefresh = currentThreadNeedsForegroundRefresh();
+      postClientEvent("mobile_resume_thread_refresh_scheduled", {
+        reason,
+        currentThreadId: state.currentThreadId || "",
+        status: statusText(state.currentThread && state.currentThread.status),
+        activeTurnId: state.activeTurnId || "",
+        foregroundRefresh,
+      });
+      if (foregroundRefresh) scheduleCurrentThreadRefresh(250, "resume");
+      else await refreshCurrentThread({ source: "resume" });
     } else if (state.currentThreadId) {
       await refreshCurrentThread({ source: "resume" });
     } else {

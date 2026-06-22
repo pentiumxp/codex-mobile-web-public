@@ -1006,6 +1006,87 @@ The previous full handoff was archived and should be opened only when old proven
   - This has not been pushed to public. Follow the release-order rule: wait for
     production/user confirmation before any public sync/push.
 
+## 2026-06-22 - Foreground resume final receipt fix v376 deployed
+
+- Root cause:
+  - Production server detail for Home AI thread
+    `019eed86-2002-7cc2-b0b7-937eb5355f36` already returned the normal final
+    receipt and Usage in stable `projection-v4-cache` responses.
+  - The first foreground/open path could keep stale `state.currentThread`
+    because `resumeMobileSession()` skipped current-thread detail refresh when
+    the thread was idle/completed. Logs showed
+    `mobile_resume_thread_refresh_skipped` for the Home AI thread.
+  - Exiting to the thread list and entering again forced a fresh detail fetch,
+    which explained why the final receipt appeared on the second entry.
+- Change:
+  - `public/app.js` bumped `CLIENT_BUILD_ID` to
+    `0.1.11|codex-mobile-shell-v376`.
+  - Foreground resume now schedules or runs a bounded current-thread detail
+    refresh instead of skipping idle/completed threads.
+  - Running/active threads still use the existing short delayed refresh path;
+    idle/completed threads refresh directly.
+  - `public/sw.js` bumped the shell cache to `codex-mobile-shell-v376`.
+- Tests/docs:
+  - Updated mobile viewport/task-card/goal tests for the v376 build id and
+    resume-refresh behavior.
+  - Updated `README.md` and `docs/TROUBLESHOOTING.md` with the final-receipt
+    foreground refresh diagnosis.
+- Validation:
+  - Private workspace:
+    - `node --check public/app.js public/sw.js server.js`
+    - Focused 94-test suite passed:
+      `test/mobile-viewport.test.js`, `test/conversation-render.test.js`,
+      `test/thread-task-card-route.test.js`, and
+      `test/thread-goal-service.test.js`.
+    - `npm run check`
+    - `npm run check:macos`
+    - `git diff --check`
+    - `npm test` passed (`608` tests).
+  - Staging:
+    - Source staged at:
+      `/tmp/codex-mobile-web-stage-resume-refresh.93d0z1`.
+    - Staging excluded `.git`, `.agent-context`, `.codegraph`,
+      `node_modules`, `data`, `logs`, `uploads`, env files, and machine local
+      runtime state.
+    - Narrow secret scan passed for private-key and raw-secret assignment
+      patterns.
+    - `npm run check`
+    - `npm run check:macos`
+    - Same focused 94-test suite passed with `NODE_PATH` pointed at private
+      workspace dependencies.
+  - Production target after sync:
+    - `npm run check`
+    - `npm run check:macos`
+    - Same focused 94-test suite passed with `NODE_PATH` pointed at production
+      dependencies.
+- Production deploy:
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup retained at:
+    `/tmp/codex-mobile-web-deploy-resume-refresh-20260622T144855Z.backup.tar.gz`.
+  - Sync used sudo `rsync` from private staging and preserved `data/`, `logs/`,
+    `node_modules/`, `uploads/`, `.git/`, `.agent-context`, env files, and
+    machine-specific runtime state.
+  - Restart:
+    `launchctl kickstart -k system/com.hermesmobile.plugin.codex-mobile`.
+  - Post-restart smoke:
+    - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` is running
+      with PID `77209`, `runs=17`, and last exit code `0`.
+    - `/api/public-config` returned HTTP `200`,
+      `clientBuildId=0.1.11|codex-mobile-shell-v376`,
+      `shellCacheName=codex-mobile-shell-v376`, and `authRequired=true`.
+    - Authenticated `/api/status` returned HTTP `200`, `ready=true`, and
+      `transport=external-jsonl-tcp`.
+    - Home AI thread `019eed86-2002-7cc2-b0b7-937eb5355f36` recent detail
+      returned `projection-v4-cache`, 10 turns, latest completed turn
+      `019eefb8-f6dc-7a91-a634-75fc2c3726f7`, agent receipt count `19`, last
+      agent text length `479`, usage count `1`, and synthetic final receipt
+      count `0`.
+- Operational notes:
+  - This is deployed to Mac production and requires the client to load the
+    v376 shell/cache to exercise the fix.
+  - This has not been pushed to public. Follow the release-order rule: deploy
+    and validate before any public sync/push.
+
 ## 2026-06-22 - Final receipt fallback v2 deployed
 
 - User-observed correction:

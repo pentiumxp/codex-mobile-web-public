@@ -1488,6 +1488,10 @@ Expected behavior after `codex-mobile-shell-v152`:
 - The thread list refresh stays silent.
 - The active current thread refreshes through background merge/poll work rather
   than a same-thread `loadThread()` reset.
+- Completed/idle current threads also run a lightweight detail refresh on
+  foreground resume. Do not skip this only because the thread is not running;
+  otherwise a WebView that kept stale in-memory detail can miss the final
+  receipt until the user exits and re-enters the thread.
 - URL thread hints still open a different thread when needed, but if the hinted
   thread already matches the current thread, the app should schedule a
   lightweight refresh instead of a full reload.
