@@ -15,6 +15,8 @@ const {
   approvalResponsePayload,
   dynamicToolTextResponse,
   publicServerRequest,
+  resolveThreadTaskCardTargetReference,
+  resolvedThreadTaskCardTargetIds,
   serverRequestResponsePayload,
 } = require("../server");
 
@@ -88,6 +90,68 @@ test("dynamic tool responses use app-server content_items text schema", () => {
   assert.doesNotMatch(serialized, /contentItems|inputText/);
   assert.doesNotMatch(serialized, /"content"\s*:/);
   assert.doesNotMatch(serialized, /"type":"text"/);
+});
+
+test("source-thread task cards target only current visible canonical threads", () => {
+  const sourceThreadId = "10000000-0000-4000-8000-000000000001";
+  const staleThreadId = "10000000-0000-4000-8000-000000000002";
+  const currentThreadId = "10000000-0000-4000-8000-000000000003";
+  const currentCwd = "/tmp/codex-mobile-fixtures/current-project";
+  const visibleThreads = [
+    {
+      id: currentThreadId,
+      name: "Current Project",
+      cwd: currentCwd,
+      updatedAt: 200,
+      status: { type: "idle" },
+    },
+    {
+      id: "10000000-0000-4000-8000-000000000004",
+      name: "Other Project",
+      cwd: "/tmp/codex-mobile-fixtures/other-project",
+      updatedAt: 190,
+      status: { type: "idle" },
+    },
+  ];
+  const options = {
+    visibleThreads,
+    readThreadSummary(threadId) {
+      if (threadId !== staleThreadId) return null;
+      return {
+        id: staleThreadId,
+        name: "Stale Project",
+        cwd: currentCwd,
+        updatedAt: 100,
+        status: { type: "completed" },
+      };
+    },
+  };
+
+  assert.equal(
+    resolveThreadTaskCardTargetReference(currentCwd, sourceThreadId, options),
+    currentThreadId,
+  );
+  assert.equal(
+    resolveThreadTaskCardTargetReference("Current Project", sourceThreadId, options),
+    currentThreadId,
+  );
+  assert.deepEqual(
+    resolvedThreadTaskCardTargetIds({ targetCwd: currentCwd }, sourceThreadId, options),
+    [currentThreadId],
+  );
+  assert.throws(
+    () => resolveThreadTaskCardTargetReference(staleThreadId, sourceThreadId, options),
+    (err) => err
+      && err.code === "stale_target_thread"
+      && err.statusCode === 409
+      && err.details
+      && err.details.currentTarget
+      && err.details.currentTarget.threadId === currentThreadId,
+  );
+  assert.throws(
+    () => resolveThreadTaskCardTargetReference("10000000-0000-4000-8000-000000009999", sourceThreadId, options),
+    (err) => err && err.code === "target_thread_not_visible" && err.statusCode === 404,
+  );
 });
 
 test("stdio app-server mux does not overwrite an available shared endpoint", async (t) => {

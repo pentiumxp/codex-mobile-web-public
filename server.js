@@ -6240,7 +6240,7 @@ function workspaceDelegationTargetHints() {
     return workspaceDelegationTargetHintsCache.text || "";
   }
   try {
-    const threads = readThreadListFallback(80, { archived: false });
+    const threads = threadTaskCardCanonicalVisibleTargets(threadTaskCardVisibleTargetThreads()).slice(0, 80);
     const lines = [];
     for (const thread of threads) {
       if (!thread || lines.length >= 24) break;
@@ -6273,7 +6273,9 @@ function workspaceDelegationDynamicToolSpec() {
       "This dynamic tool always creates source-direct cards when workspace delegation is enabled; do not request target-side pending approval from this tool.",
       "Do not use this for ordinary discussion, read-only references that do not require target-workspace inspection, or work that clearly belongs in the current thread workspace.",
       "The model must decide from the user's request whether delegation is required; do not rely on local keyword or path heuristics.",
-      "Prefer an exact targetThreadId. If only a target is named, pass an exact visible targetThreadTitle or targetWorkspace/cwd from the hints.",
+      "Use only a current visible target from the hints. Stale, hidden, archived, old-rollout, or non-detail-readable targetThreadId values are rejected by the server.",
+      "When several threads share the same cwd/workspace, use the latest visible canonical thread for that cwd. Do not use older date-suffixed threads for new task cards.",
+      "Prefer an exact current targetThreadId from the hints. If only a target is named, pass an exact visible targetThreadTitle or targetWorkspace/cwd from the hints.",
       targetHints ? `Visible target hints:\n${targetHints}` : "",
     ].filter(Boolean).join("\n\n"),
     inputSchema: {
@@ -8546,8 +8548,9 @@ class CodexAppServerClient {
     } catch (err) {
       decision = "failed";
       payload = dynamicToolErrorPayload(
-        "dynamic_tool_failed",
+        err.code || "dynamic_tool_failed",
         err.message || String(err),
+        err.details ? { details: err.details } : {},
       );
     }
     this.sendServerRequestResponse(request, payload);
@@ -9839,6 +9842,13 @@ function httpStatusError(statusCode, message) {
   return err;
 }
 
+function httpStatusErrorWithDetails(statusCode, code, message, details = {}) {
+  const err = httpStatusError(statusCode, message || code);
+  err.code = code;
+  err.details = details && typeof details === "object" ? details : {};
+  return err;
+}
+
 const THREAD_GOAL_OBJECTIVE_MAX_CHARS = 4000;
 
 function normalizeThreadGoalObjectiveInput(value) {
@@ -10790,52 +10800,193 @@ function uniqueThreadTaskCardTargetIds(values, fallback = "") {
 
 function threadTaskCardTargetReferenceText(value) {
   if (value && typeof value === "object" && !Array.isArray(value)) {
-    return String(value.threadId || value.id || value.title || value.name || value.label || "").trim();
+    return String(value.threadId || value.id || value.cwd || value.workspace || value.title || value.name || value.label || "").trim();
   }
   return String(value || "").trim();
 }
 
-function threadTaskCardTargetReferences(body = {}) {
-  const values = [];
-  if (Array.isArray(body.targetThreadIds)) values.push(...body.targetThreadIds);
-  if (body.targetThreadId) values.push(body.targetThreadId);
-  if (Array.isArray(body.targetThreads)) values.push(...body.targetThreads);
-  if (Array.isArray(body.targetThreadRefs)) values.push(...body.targetThreadRefs);
-  if (Array.isArray(body.targetThreadTitles)) values.push(...body.targetThreadTitles);
-  if (body.targetThreadTitle) values.push(body.targetThreadTitle);
-  if (Array.isArray(body.targetWorkspaces)) values.push(...body.targetWorkspaces);
-  if (body.targetWorkspace) values.push(body.targetWorkspace);
-  if (body.targetWorkspaceId) values.push(body.targetWorkspaceId);
-  if (Array.isArray(body.targetCwds)) values.push(...body.targetCwds);
-  if (body.targetCwd) values.push(body.targetCwd);
-  return values.map(threadTaskCardTargetReferenceText).filter(Boolean);
+function threadTaskCardTargetReferenceEntry(kind, value) {
+  const text = threadTaskCardTargetReferenceText(value);
+  if (!text) return null;
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    if (value.threadId || value.id) kind = "threadId";
+    else if (value.cwd || value.workspace) kind = "workspace";
+    else if (value.title || value.name || value.label) kind = "title";
+  }
+  return { kind, text };
 }
 
-function resolveThreadTaskCardTargetReference(value, sourceThreadId = "") {
-  const raw = String(value || "").trim();
+function threadTaskCardTargetReferenceEntries(body = {}) {
+  const values = [];
+  const push = (kind, value) => {
+    const entry = threadTaskCardTargetReferenceEntry(kind, value);
+    if (entry) values.push(entry);
+  };
+  if (Array.isArray(body.targetThreadIds)) body.targetThreadIds.forEach((value) => push("threadId", value));
+  if (body.targetThreadId) push("threadId", body.targetThreadId);
+  if (Array.isArray(body.targetThreads)) body.targetThreads.forEach((value) => push("thread", value));
+  if (Array.isArray(body.targetThreadRefs)) body.targetThreadRefs.forEach((value) => push("thread", value));
+  if (Array.isArray(body.targetThreadTitles)) body.targetThreadTitles.forEach((value) => push("title", value));
+  if (body.targetThreadTitle) push("title", body.targetThreadTitle);
+  if (Array.isArray(body.targetWorkspaces)) body.targetWorkspaces.forEach((value) => push("workspace", value));
+  if (body.targetWorkspace) push("workspace", body.targetWorkspace);
+  if (body.targetWorkspaceId) push("workspace", body.targetWorkspaceId);
+  if (Array.isArray(body.targetCwds)) body.targetCwds.forEach((value) => push("workspace", value));
+  if (body.targetCwd) push("workspace", body.targetCwd);
+  return values;
+}
+
+function threadTaskCardTargetReferences(body = {}) {
+  return threadTaskCardTargetReferenceEntries(body).map((entry) => entry.text).filter(Boolean);
+}
+
+function isThreadIdLike(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || "").trim());
+}
+
+function threadTaskCardTargetUpdatedAt(thread) {
+  const value = Number(thread && (thread.updatedAt || thread.updated_at || thread.updatedAtMs || thread.updated_at_ms) || 0);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function publicThreadTaskCardTarget(thread) {
+  if (!thread || typeof thread !== "object") return null;
+  return {
+    threadId: String(thread.id || ""),
+    title: threadDisplayTitle(thread),
+    cwd: String(thread.cwd || ""),
+    updatedAt: threadTaskCardTargetUpdatedAt(thread),
+  };
+}
+
+function threadTaskCardTargetError(code, message, details = {}, statusCode = 400) {
+  return httpStatusErrorWithDetails(statusCode, code, message || code, details);
+}
+
+function threadTaskCardVisibleTargetThreads(options = {}) {
+  const rawThreads = Array.isArray(options.visibleThreads)
+    ? options.visibleThreads
+    : readThreadListFallback(500, { archived: false });
+  const byId = new Map();
+  for (const thread of rawThreads || []) {
+    const id = String(thread && thread.id || "").trim();
+    if (!id || byId.has(id)) continue;
+    if (threadHasArchiveSignal(thread) || isSubagentThreadSummary(thread)) continue;
+    byId.set(id, thread);
+  }
+  return [...byId.values()];
+}
+
+function threadTaskCardCanonicalTargetForCwd(cwd, visibleThreads = []) {
+  const wanted = normalizeFsPath(cwd || "");
+  if (!wanted) return null;
+  let best = null;
+  for (const thread of visibleThreads || []) {
+    if (!thread || normalizeFsPath(thread.cwd || "") !== wanted) continue;
+    if (!best || threadTaskCardTargetUpdatedAt(thread) > threadTaskCardTargetUpdatedAt(best)) {
+      best = thread;
+    }
+  }
+  return best;
+}
+
+function threadTaskCardCanonicalTargetForThread(thread, visibleThreads = []) {
+  if (!thread || !thread.cwd) return thread || null;
+  return threadTaskCardCanonicalTargetForCwd(thread.cwd, visibleThreads) || thread;
+}
+
+function threadTaskCardCanonicalVisibleTargets(visibleThreads = []) {
+  const out = [];
+  const seenCwds = new Set();
+  for (const thread of [...(visibleThreads || [])].sort((a, b) => threadTaskCardTargetUpdatedAt(b) - threadTaskCardTargetUpdatedAt(a))) {
+    if (!thread || !thread.id) continue;
+    const cwd = normalizeFsPath(thread.cwd || "");
+    if (!cwd) {
+      out.push(thread);
+      continue;
+    }
+    if (seenCwds.has(cwd)) continue;
+    seenCwds.add(cwd);
+    out.push(thread);
+  }
+  return out;
+}
+
+function readThreadTaskCardTargetSummary(threadId, options = {}) {
+  if (typeof options.readThreadSummary === "function") return options.readThreadSummary(threadId);
+  return readStateDbThread(threadId) || readStartedThread(threadId) || readRolloutSessionFallbackThread(threadId);
+}
+
+function resolveThreadTaskCardTargetReference(value, sourceThreadId = "", options = {}) {
+  const entry = value && typeof value === "object" && !Array.isArray(value) && value.text
+    ? value
+    : threadTaskCardTargetReferenceEntry("thread", value);
+  const raw = String(entry && entry.text || "").trim();
   if (!raw) return "";
   if (raw === String(sourceThreadId || "")) return "";
-  const direct = readStateDbThread(raw) || readStartedThread(raw) || readRolloutSessionFallbackThread(raw);
-  if (direct && String(direct.id || "") === raw) return raw;
+  const visibleThreads = threadTaskCardVisibleTargetThreads(options);
+  const visibleById = new Map(visibleThreads.map((thread) => [String(thread.id || ""), thread]));
+  const currentVisible = visibleById.get(raw);
+  if (currentVisible) {
+    const canonical = threadTaskCardCanonicalTargetForThread(currentVisible, visibleThreads);
+    if (canonical && String(canonical.id || "") !== raw) {
+      throw threadTaskCardTargetError(
+        "stale_target_thread",
+        "Target thread is not the current visible thread for its workspace.",
+        {
+          requestedTarget: publicThreadTaskCardTarget(currentVisible),
+          currentTarget: publicThreadTaskCardTarget(canonical),
+        },
+        409,
+      );
+    }
+    return String(currentVisible.id || "");
+  }
+  const direct = isThreadIdLike(raw) ? readThreadTaskCardTargetSummary(raw, options) : null;
+  if (direct && String(direct.id || "") === raw) {
+    const canonical = threadTaskCardCanonicalTargetForThread(direct, visibleThreads);
+    if (canonical && String(canonical.id || "") !== raw) {
+      throw threadTaskCardTargetError(
+        "stale_target_thread",
+        "Target thread is stale or hidden; use the current visible thread for this workspace.",
+        {
+          requestedTarget: publicThreadTaskCardTarget(direct),
+          currentTarget: publicThreadTaskCardTarget(canonical),
+        },
+        409,
+      );
+    }
+  }
   const lowered = raw.toLowerCase();
   const rawPath = normalizeFsPath(raw);
-  const candidates = readThreadListFallback(500, { archived: false });
-  for (const thread of candidates) {
+  const byCwd = threadTaskCardCanonicalTargetForCwd(rawPath, visibleThreads);
+  if (byCwd && String(byCwd.id || "") !== String(sourceThreadId || "")) return String(byCwd.id || "");
+  for (const thread of visibleThreads) {
     if (!thread || String(thread.id || "") === String(sourceThreadId || "")) continue;
     const id = String(thread.id || "").trim();
     const title = threadDisplayTitle(thread);
-    if (id.toLowerCase() === lowered || String(title || "").trim().toLowerCase() === lowered) return id;
-    const cwd = normalizeFsPath(thread.cwd || "");
-    if (cwd && cwd === rawPath) return id;
+    if (id.toLowerCase() === lowered || String(title || "").trim().toLowerCase() === lowered) {
+      const canonical = threadTaskCardCanonicalTargetForThread(thread, visibleThreads);
+      return String(canonical && canonical.id || id);
+    }
   }
-  return raw;
+  throw threadTaskCardTargetError(
+    "target_thread_not_visible",
+    "Target thread is not visible or is not a current deliverable thread.",
+    {
+      reference: raw,
+      referenceKind: entry.kind || "thread",
+    },
+    404,
+  );
 }
 
-function resolvedThreadTaskCardTargetIds(body = {}, sourceThreadId = "") {
+function resolvedThreadTaskCardTargetIds(body = {}, sourceThreadId = "", options = {}) {
+  const visibleThreads = threadTaskCardVisibleTargetThreads(options);
   const seen = new Set();
   const out = [];
-  for (const reference of threadTaskCardTargetReferences(body)) {
-    const id = resolveThreadTaskCardTargetReference(reference, sourceThreadId);
+  for (const reference of threadTaskCardTargetReferenceEntries(body)) {
+    const id = resolveThreadTaskCardTargetReference(reference, sourceThreadId, Object.assign({}, options, { visibleThreads }));
     if (!id || seen.has(id)) continue;
     seen.add(id);
     out.push(id);
@@ -10866,6 +11017,14 @@ function buildThreadTaskCardCreatePayload(body = {}, sourceThreadId = "") {
   }
   const sourceSummary = readStateDbThread(sourceId) || readStartedThread(sourceId) || readRolloutSessionFallbackThread(sourceId);
   const targetThreadIds = resolvedThreadTaskCardTargetIds(body, sourceId);
+  if (!targetThreadIds.length) {
+    throw threadTaskCardTargetError(
+      "target_thread_required",
+      "A visible target thread id, exact visible thread title, or exact target workspace cwd is required.",
+      { sourceThreadId: sourceId },
+      400,
+    );
+  }
   const targetWorkspaceIds = Object.assign({}, body.targetWorkspaceIds && typeof body.targetWorkspaceIds === "object" ? body.targetWorkspaceIds : {});
   for (const targetThreadId of targetThreadIds) {
     if (!targetThreadId || targetWorkspaceIds[targetThreadId]) continue;
@@ -12594,7 +12753,12 @@ async function handleApi(req, res) {
       const body = await readBody(req);
       sendJson(res, 200, await createThreadTaskCardsFromSourceThread(sourceThreadId, body));
     } catch (err) {
-      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+      sendJson(res, err.statusCode || 500, {
+        ok: false,
+        error: err.message || String(err),
+        code: err.code || err.message || String(err),
+        details: err.details || undefined,
+      });
     }
     return;
   }
@@ -13777,6 +13941,8 @@ module.exports = {
   readFilePreview,
   readRolloutItemTimestampCandidates,
   readRolloutSessionFallbackThreadFromFile,
+  resolveThreadTaskCardTargetReference,
+  resolvedThreadTaskCardTargetIds,
   resolveFilePreviewPath,
   attachPendingServerRequestsToResult,
   clearStaticCompressionCache,
@@ -13789,6 +13955,7 @@ module.exports = {
   staticCompressionEncoding,
   stripMarkdownFileTarget,
   threadMatchesWorkspaceCwd,
+  threadTaskCardCanonicalVisibleTargets,
   workspaceDelegationDynamicToolSpec,
   attachWorkspaceDelegationDynamicTools,
   attachWorkspaceDelegationRuntimeGuidance,
