@@ -9975,3 +9975,25 @@ The previous full handoff was archived and should be opened only when old proven
   - Existing active turns keep the sandbox they were started with. New
     thread/start, thread/resume, and turn/start requests pick up the hardened
     runtime.
+
+### Follow-up smoke finding
+
+- A source-direct test card was sent to idle `Note`
+  (`019ea7f4-223e-7c12-a389-4efb75df8ec5`), target turn
+  `019eee26-7f24-7bb3-87ec-76f5efad22c1`.
+- Result before the follow-up patch:
+  - Foreign Home AI source write was denied and left no test file.
+  - Home AI AI Ops intake command was allowed.
+  - Current workspace `.git` write still failed under the ordinary sandbox and
+    only succeeded after escalation.
+- Follow-up patch:
+  - `workspaceDelegationWriteGuardSandboxPolicy()` now explicitly adds each
+    current writable root's `.git` directory to `sandboxPolicy.writableRoots`,
+    because the app-server sandbox can reject git metadata writes before the
+    managed permission profile is consulted.
+  - Added `test/new-thread-route.test.js` guard assertions for explicit `.git`
+    writable roots.
+- Required post-deploy validation:
+  - Send another source-direct test card to an idle thread and confirm ordinary
+    `.git` temp write succeeds without escalation, foreign source write is
+    denied, and Home AI official tool invocation still works.
