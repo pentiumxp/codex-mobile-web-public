@@ -93,6 +93,7 @@ test("macOS profile helper lists configured homes without raw auth tokens", () =
     runtimeDir,
     profileFile,
     activeCodexHome: previousHome,
+    env: {},
   });
 
   assert.equal(result.ok, true);
@@ -128,6 +129,7 @@ test("macOS profile helper selects existing and explicit Codex Homes offline", (
     profileFile,
     activeCodexHome: previousHome,
     profileId: "current",
+    env: {},
   });
   assert.equal(selected.id, "current");
   assert.equal(JSON.parse(fs.readFileSync(profileFile, "utf8")).activeProfileId, "current");
@@ -138,6 +140,7 @@ test("macOS profile helper selects existing and explicit Codex Homes offline", (
     profileFile,
     activeCodexHome: currentHome,
     codexHome: customHome,
+    env: {},
   });
   const store = JSON.parse(fs.readFileSync(profileFile, "utf8"));
   assert.equal(custom.codexHome, customHome);
@@ -168,6 +171,7 @@ test("macOS profile helper can resolve a selection without writing state", () =>
     activeCodexHome: previousHome,
     profileId: "current",
     noWrite: true,
+    env: {},
   });
 
   assert.equal(selected.id, "current");

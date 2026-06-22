@@ -2,6 +2,68 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-22 macOS Profile Restart Env Sync
+
+- Status: source fixed and validated; not deployed in this turn.
+- Trigger:
+  - After switching Profile to `default`, `/api/status` and profile store used
+    `/Users/xuxin/.codex`, but `launchctl print
+    system/com.hermesmobile.plugin.codex-mobile` and the LaunchDaemon plist
+    still showed `/Users/xuxin/.codex-homes/previous`.
+- Runtime diagnosis:
+  - Authenticated `/api/status` reported `ready=true`,
+    `transport=external-jsonl-tcp`, `lastError=null`,
+    `codexHome=/Users/xuxin/.codex`,
+    `muxEndpointFile=/Users/xuxin/.codex/app-server-mux/endpoint.json`,
+    `codexHomeSource=profile-store`, and `codexHomeEnvIgnored=true`.
+  - Profile store active profile was `default`.
+  - LaunchDaemon static environment still pointed at `previous`, so a later
+    service restart could reintroduce profile/mux drift unless the plist is
+    repaired.
+- Change:
+  - `adapters/shared-chain-restart-service.js` now passes explicit macOS
+    profile restart arguments through the Darwin restart path instead of
+    falling back to inherited `CODEX_HOME`.
+  - When a system LaunchDaemon is detected, the restart shell derives the target
+    mux endpoint from the selected `CODEX_HOME` and writes both
+    `CODEX_HOME` and `CODEX_MOBILE_MUX_ENDPOINT_FILE` into the LaunchDaemon
+    plist before `kickstart`.
+  - `scripts/codex-mobile-macos-profile-helper.js` accepts an explicit env for
+    tests so offline profile-helper checks do not inherit current production
+    fixed-endpoint variables.
+  - Updated `docs/ARCHITECTURE.md` and `docs/TROUBLESHOOTING.md` with the macOS
+    plist/profile consistency invariant.
+- Home AI side observation:
+  - Home AI thread `019ed8d8-e328-7301-9c1e-33fe1dbaf480` showed
+    `status.type=systemError` and goal `status=usageLimited`.
+  - Recent user turns `019eed64-e596-7122-88cd-5845b3018c23` and
+    `019eed65-47dd-7e21-8691-e5e4b5ac744e` were accepted by app-server and then
+    completed in under 4 seconds with `last_agent_message=null`; Mobile Web did
+    not drop a successful assistant reply.
+  - This was only diagnosed; no Home AI goal/thread state was changed.
+- Validation:
+  - `node --check adapters/shared-chain-restart-service.js`
+  - `node --check scripts/codex-mobile-macos-profile-helper.js`
+  - `node --check test/shared-chain-restart-service.test.js`
+  - `node --check test/macos-host-restart-script.test.js`
+  - `node --test test/shared-chain-restart-service.test.js
+    test/manual-restart-ui.test.js test/macos-host-restart-script.test.js`
+  - `npm run check`
+  - `git diff --check`
+  - Center checks: `node tests/architecture-code-test-harness-map.test.js`,
+    `node tests/gateway-run-lifecycle-service.test.js`,
+    `node tests/gateway-run-start-service.test.js`,
+    `node tests/gateway-run-stream-service.test.js`,
+    `node tests/runtime-config-provider.test.js`,
+    `node --check scripts/deploy-macos-production.js`,
+    `node tests/macos-production-deploy-script.test.js`,
+    `node tests/production-status-smoke-harness.test.js`
+  - Deploy plan only:
+    `npm run --silent deploy:macos -- --target plugin:codex-mobile-web --json`
+- Evidence ledger:
+  - `/Users/xuxin/.homeai-qa/codex-mobile-web-evidence-ledger.jsonl`
+    id `evidence-513db925-b035-4f08-b83a-67e3d876f3e6`.
+
 ## 2026-06-22 Profile Switch Failure Visibility And Rate Limit Warning
 
 - Status: committed and deployed to Mac production.

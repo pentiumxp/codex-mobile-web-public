@@ -115,7 +115,11 @@ an inherited `CODEX_HOME` so a stale shell environment cannot silently keep the
 listener on the previous account after a switch. When Mobile Web starts its own
 managed `codex app-server`, the child process is also launched with this resolved
 `CODEX_HOME`; it must not inherit a stale LaunchDaemon, shell, or service
-environment home. Explicit environment override requires
+environment home. On macOS system LaunchDaemon deployments, the shared-chain
+restart command also writes the selected `CODEX_HOME` and derived
+`CODEX_MOBILE_MUX_ENDPOINT_FILE` back to the LaunchDaemon plist before
+`kickstart`, so the static service environment, active profile store, and
+runtime status stay aligned across later restarts. Explicit environment override requires
 `CODEX_MOBILE_CODEX_HOME_OVERRIDE=1`, and status snapshots expose
 `codexHomeSource` plus `codexHomeEnvIgnored` for diagnostics. The Desktop escape
 hatch can be launched through `start-codex-desktop-shared.ps1 -ProfileId

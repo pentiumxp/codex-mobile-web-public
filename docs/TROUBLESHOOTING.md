@@ -1542,6 +1542,12 @@ Check these facts in order:
   selected `activeProfileId`.
 - After switching, the hidden/windowless launcher must restart the shared
   chain; `/api/status.codexHome` should match the selected profile home.
+- On macOS system LaunchDaemon deployments, `launchctl print
+  system/<label>` and the LaunchDaemon plist should also show the selected
+  `CODEX_HOME` and `<CODEX_HOME>/app-server-mux/endpoint.json`. If the API
+  status is correct but those static values still point at the previous
+  profile, inspect `adapters/shared-chain-restart-service.js`; the macOS
+  shared-chain restart must have received the explicit profile `codexHome`.
 - The restart log should show the same `codexHome=...` value and the mux
   endpoint should be under that profile's
   `<CODEX_HOME>\app-server-mux\endpoint.json`, not always the default
