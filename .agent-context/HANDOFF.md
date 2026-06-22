@@ -4,7 +4,7 @@ Last compacted: 2026-06-08T13:27:43.304Z
 
 ## 2026-06-22 Workspace Delegation Guard Git Metadata Write Fix
 
-- Status: source fixed and validated; deployment pending at this handoff entry.
+- Status: committed and deployed to Mac production.
 - Trigger:
   - Music thread under `/Users/xuxin/Documents/Music` could edit source files
     but `git add/commit` failed because creating `.git/index.lock` was denied.
@@ -39,6 +39,20 @@ Last compacted: 2026-06-08T13:27:43.304Z
     `node tests/gateway-run-start-service.test.js`,
     `node tests/gateway-run-stream-service.test.js`,
     `node tests/runtime-config-provider.test.js`.
+- Commit/deploy:
+  - Source commit deployed: `9c5f558` (`修复跨工作区写保护下的 Git 提交权限`).
+  - Mac production deploy:
+    `npm run --silent deploy:macos -- --target plugin:codex-mobile-web --execute --reason codex-workspace-delegation-git-write-profile --json`.
+  - Deploy validation passed: production file hashes, LaunchDaemon print,
+    manifest health URL, and codex auth profile audit.
+  - Production readback after deploy:
+    `/api/status` reported `ready=true`, `lastError=null`,
+    `codexHome=/Users/xuxin/.codex`, and active quota not limited; production
+    `server.js` contains `workspaceDelegationWriteGuardPermissionProfile()` and
+    the current-workspace `.git` write rule.
+- Evidence ledger:
+  - `/Users/xuxin/.homeai-qa/codex-mobile-web-evidence-ledger.jsonl`
+    id `evidence-440e1db1-59d2-43a2-968c-c9d7a42df704`.
 
 ## 2026-06-22 Continuation Fallback Handoff For Broken Source Threads
 
