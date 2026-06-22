@@ -427,3 +427,86 @@ The previous full handoff was archived and should be opened only when old proven
   - Existing active turns that already loaded old runtime instructions are not
     retroactively changed; new start/resume/turn requests use the deployed
     response schema and semantic retry idempotency.
+
+### Follow-up schema correction
+
+- Status: public-synced, merged back into private main, deployed to Mac
+  production, and smoke verified.
+- Evidence from the Home AI source thread:
+  - At `2026-06-22T10:28:17Z`, Home AI called
+    `codex_mobile.delegate_to_thread` for Moira and the task card was created.
+  - The app-server returned `dynamic tool response was invalid`, so the source
+    model used the documented fallback script and created a second card for the
+    same Moira work.
+  - Both cards targeted old Moira thread
+    `019ec3c0-86d2-7852-a9ea-e4c703262cdc`, not current visible
+    `星盘 06-22` / `019eee78-681b-7db0-b314-aafc85f624cd`.
+  - The old Moira rollout did run. Turn
+    `019eeedf-bcb3-75a1-a9ee-8920aaa4013a` completed at
+    `2026-06-22T10:33:59Z` and deployed Moira `0.2.385`.
+- Root cause update:
+  - The earlier follow-up changed dynamic tool responses to
+    `result.content[{ type:"text" }]`, but the current app-server still treats
+    that MCP-style response shape as invalid for dynamic tools.
+  - Current evidence from app-server dynamic-tool event naming indicates the
+    accepted response is snake_case dynamic-tool output:
+    `result.content_items[{ type:"input_text" }]`.
+- Patch:
+  - `server.js`
+    - `dynamicToolTextResponse()` now returns
+      `result.content_items[{ type:"input_text" }]`.
+  - `test/protocol.test.js`
+    - Asserts the snake_case schema and rejects `contentItems`, `inputText`,
+      `"content":`, and `"type":"text"`.
+  - `test/thread-task-card-route.test.js`
+    - Structural guard updated to require `content_items` / `input_text` and
+      reject the two previous invalid shapes.
+  - Docs:
+    - `README.md`
+    - `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md`
+- Validation:
+  - Private workspace:
+    - `node --test test/protocol.test.js test/thread-task-card-route.test.js`
+    - `node --test test/protocol.test.js test/thread-task-card-route.test.js test/thread-task-card-service.test.js test/new-thread-route.test.js test/codex-mobile-mcp-server.test.js`
+    - `npm run check`
+    - `npm test` (`601` tests passed)
+    - `git diff --check`
+  - Public mirror:
+    - `node --test test/protocol.test.js test/thread-task-card-route.test.js test/thread-task-card-service.test.js test/new-thread-route.test.js test/codex-mobile-mcp-server.test.js`
+    - `npm run check`
+    - `git diff --check`
+    - Public path scan passed for the five publishable files only.
+- Public/private sync:
+  - Public commit:
+    `f6e7c7b fix: align dynamic tool response schema`.
+  - Private main merged `public/main` with:
+    `c4d8616 Merge remote-tracking branch 'public/main'`.
+  - Private main pushed to origin.
+- Production deploy:
+  - Source archive: public mirror commit `f6e7c7b`.
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup retained at:
+    `/tmp/codex-mobile-web-deploy-f6e7c7b-20260622T104039Z.backup.tar.gz`.
+  - Stage syntax checks passed. Focused tests in pure git archive could not run
+    because archive excludes `node_modules`; the same tests passed in the public
+    mirror and in the production target after sync.
+  - Target checks:
+    `npm run check`, `npm run check:macos`, and focused dynamic
+    task-card/thread-card tests passed in the production target.
+  - Production `dynamicToolTextResponse("ok")` returned
+    `{"result":{"content_items":[{"type":"input_text","text":"ok"}]}}`.
+  - Post-restart smoke:
+    `/api/public-config` returned `version=0.1.11`,
+    `clientBuildId=0.1.11|codex-mobile-shell-v373`,
+    `shellCacheName=codex-mobile-shell-v373`, `platform=darwin`,
+    and `authRequired=true`.
+  - Authenticated `/api/status` returned `ready=true`, `lastError=null`,
+    `codexProfileActiveId=default`, and `codexHomeSource=profile-store`.
+  - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` is running with
+    PID `74321` after restart.
+- Operational note:
+  - Existing duplicate cards were not removed.
+  - The old hidden/not-listable Moira thread completed the delegated work; the
+    current visible `星盘 06-22` thread did not receive those Home AI cards.
+  - New dynamic delegation calls should no longer report invalid solely because
+    of the response schema.
