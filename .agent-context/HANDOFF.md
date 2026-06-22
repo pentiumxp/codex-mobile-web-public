@@ -132,6 +132,24 @@ Last compacted: 2026-06-08T13:27:43.304Z
   - `/Users/xuxin/.homeai-qa/codex-mobile-web-evidence-ledger.jsonl`
     ids `evidence-fdd2cd75-c6f7-4868-a75d-1442dc8c8e53` and
     `evidence-3c9b43c9-ef9e-49c2-a8fc-e6aa143a05e4`.
+- Follow-up harness:
+  - Commit `c743ebf` (`Add profile switch preflight harness`) extracts
+    `profileSwitchRateLimitsWarningForError()` and adds direct tests proving
+    transient `account/rateLimits/read` failures become
+    `target_profile_rate_limits_unavailable` warnings, while 401/token-expired
+    failures still block switching.
+  - Re-ran focused profile-switch harnesses, `npm run check`, central Gateway
+    runtime required checks, and `git diff --check`.
+  - Deployed the harness/source ref with:
+    `npm run --silent deploy:macos -- --target plugin:codex-mobile-web --execute --reason codex-profile-switch-preflight-harness --json`.
+  - Production readback after the follow-up deploy: `/api/public-config` still
+    reports `clientBuildId:"0.1.11|codex-mobile-shell-v373"`,
+    `shellCacheName:"codex-mobile-shell-v373"`, active profile `previous`, and
+    `switchSupported:true`; authenticated `/api/status` reports `ready:true`,
+    `lastError:null`, and profile `previous`.
+  - Additional evidence ledger ids:
+    `evidence-4bbd34e9-a26c-40c7-ab03-21ad77ca44ae` and
+    `evidence-b11ff7ed-dd88-4004-a849-1f73347be318`.
 
 ## 2026-06-22 Profile Switch Progress And macOS Host Restart Safety
 
