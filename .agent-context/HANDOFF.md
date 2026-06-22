@@ -594,3 +594,86 @@ The previous full handoff was archived and should be opened only when old proven
     this deploy.
   - Manual pending-card APIs remain unchanged; the strict resolver applies to
     source-thread direct task-card creation.
+
+### Usage card initial-open backfill
+
+- Status: public-synced, merged back into private main, deployed to Mac
+  production, and smoke verified.
+- Problem addressed:
+  - A completed thread could show no `Usage` card on the first open after the
+    browser had been away, then show Usage after leaving and reopening the
+    thread.
+  - Production/server data for the reported Home AI turn already had
+    `turnUsageSummary`; the missing card was caused by the client first-open
+    detail path not scheduling the existing bounded Usage backfill when it
+    rendered an older projection cache.
+- Patch:
+  - `public/app.js`
+    - `loadThread()` now schedules `scheduleUsageBackfillRefresh()` after the
+      first successful detail render, matching the post-completion and detail
+      refresh backfill behavior.
+    - `CLIENT_BUILD_ID` bumped to
+      `0.1.11|codex-mobile-shell-v374`.
+  - `public/sw.js`
+    - PWA shell cache bumped to `codex-mobile-shell-v374`.
+  - Tests:
+    - `test/turn-scroll-controls.test.js`
+    - `test/mobile-viewport.test.js`
+    - `test/thread-goal-service.test.js`
+    - `test/thread-task-card-route.test.js`
+  - Docs:
+    - `README.md`
+    - `docs/TROUBLESHOOTING.md`
+- Validation:
+  - Private workspace:
+    - `node --test test/turn-scroll-controls.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/app-update.test.js`
+    - `npm run check`
+    - `npm run check:macos`
+    - `npm test` passed (`602` tests).
+    - `git diff --check`
+  - Public mirror:
+    - `npm run check`
+    - `npm run check:macos`
+    - Focused 109-test suite passed.
+    - `npm test` passed (`602` tests).
+    - `git diff --check`
+- Public/private sync:
+  - Public commit:
+    `16cab26 fix: backfill usage on initial thread load`.
+  - Private main merged `public/main` with:
+    `f72eaee Merge remote-tracking branch 'public/main'`.
+  - Public main was pushed.
+  - Excluding `.agent-context`, `public/main..main` has no source diff.
+- Production deploy:
+  - Source archive: public mirror commit `16cab26`.
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup retained at:
+    `/tmp/codex-mobile-web-deploy-16cab26-20260622T113507Z.backup.tar.gz`.
+  - The first deploy attempt's blocked-path scan was overbroad and matched
+    legitimate `token-usage-stats` source files; no production sync occurred in
+    that attempt. A later non-sudo rsync attempt also failed on target file
+    permissions before restart. Final sync used sudo rsync with production
+    owner/group restored.
+  - Staging checks passed:
+    `npm run check`, `npm run check:macos`, blocked-path scan, and the focused
+    109-test suite.
+  - Target checks passed after sync:
+    `npm run check`, `npm run check:macos`, and the same focused 109-test
+    suite.
+  - Restart:
+    `launchctl kickstart -k system/com.hermesmobile.plugin.codex-mobile`.
+  - Post-restart smoke:
+    `/api/public-config` returned HTTP `200`, `version=0.1.11`,
+    `clientBuildId=0.1.11|codex-mobile-shell-v374`,
+    `shellCacheName=codex-mobile-shell-v374`, and `authRequired=true`.
+  - Authenticated `/api/status` returned HTTP `200`, `ready=true`,
+    `lastError=null`, `codexProfileActiveId=default`, and
+    `codexHomeSource=profile-store`.
+  - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` is running after
+    restart with a new PID.
+- Operational note:
+  - Existing open clients may still need to accept the refresh prompt or
+    hard-reopen the PWA/WebView to load shell v374.
+  - In-app Browser verification was attempted but the Browser MCP/Node REPL
+    channel returned `sandboxCwd` metadata errors before page navigation; HTTP
+    smoke and production target tests are the current verification evidence.
