@@ -2,6 +2,47 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-22 Workspace Delegation Dynamic Source Write Guard
+
+- Status: source fixed and validated; deployment in progress from this turn.
+- Trigger:
+  - Restoring `danger-full-access` fixed current-workspace Git metadata writes,
+    but also removed the default hard barrier against direct cross-workspace
+    source edits.
+  - User clarified the desired boundary: only prevent writing other
+    workspaces' source code; leave reads, MCP, network, commands,
+    current-workspace writes, and current-workspace `.git` writes open.
+- Change:
+  - Added `adapters/workspace-source-write-guard-service.js`.
+  - Default `跨工作区委派` runtime now restores `danger-full-access`, clears
+    inherited managed profiles, and uses `approvalPolicy:"on-request"` for
+    non-exempt workspaces.
+  - `CodexAppServerClient.handleServerRequest()` now routes app-server approval
+    requests through the dynamic source-write guard before exposing them to the
+    UI.
+  - The guard auto-allows read-like commands, MCP/permission requests without
+    write grants, current-workspace writes, and current-workspace `.git`
+    writes. It auto-denies explicit `applyPatch` / file-change approvals,
+    write-like shell commands, and write-like file-system grants that target
+    another known source root.
+  - The old hard current-cwd sandbox remains opt-in through
+    `CODEX_MOBILE_WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD=1`.
+  - Updated `README.md`, `docs/ARCHITECTURE.md`,
+    `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md`, and `docs/MODULES.md`.
+- Scope caveat:
+  - This is an approval-proxy guard, not a kernel-level sandbox. It blocks
+    approval-visible cross-source writes but cannot perfectly stop an opaque
+    script that hides its target path.
+- Validation:
+  - `node --check server.js`
+  - `node --check adapters/workspace-source-write-guard-service.js`
+  - `node --check test/workspace-source-write-guard-service.test.js`
+  - `node --test test/workspace-source-write-guard-service.test.js`
+  - `node --test test/workspace-source-write-guard-service.test.js test/new-thread-route.test.js test/thread-task-card-route.test.js test/protocol.test.js test/codex-profile-service.test.js`
+  - `npm run check`
+  - Center check: `node tests/architecture-code-test-harness-map.test.js`
+  - `git diff --check`
+
 ## 2026-06-22 Workspace Delegation Full-Access Compatibility Recovery
 
 - Status: committed, deployed to Mac production, and verified through a

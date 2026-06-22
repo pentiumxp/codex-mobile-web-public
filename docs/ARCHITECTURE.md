@@ -477,20 +477,28 @@ task-card API. The registration writes command/script/server/key-file paths to
 `CODEX_HOME/config.toml`; it does not store raw key material. This gives new
 Profiles and new Codex Homes the same delegation toolset without manual config
 edits.
-To keep this from being only a model prompt, the same runtime switch also
-normalizes runtime permissions for `thread/start`, `thread/resume`, and
-`turn/start`: if the request has a cwd, or the thread id can be resolved to a
-cwd, Mobile Web forces `approvalPolicy:"never"` and by default restores
-`danger-full-access`. This deliberately clears stale `workspace-write` /
-managed-profile state from older Mobile Web starts, because current Codex
-app-server builds can turn that path into a read-only `.git` metadata profile
-and break normal current-repository `git add/commit`.
+To keep this from being only a model prompt, the same runtime switch also adds a
+dynamic source-write decision layer. For ordinary non-exempt workspaces,
+`thread/start`, `thread/resume`, and `turn/start` still restore
+`danger-full-access` and clear inherited managed profiles, but now use
+`approvalPolicy:"on-request"` so app-server sends approval-visible operations
+back to Mobile Web. `adapters/workspace-source-write-guard-service.js` then
+auto-allows reads, MCP calls, network, current-workspace writes, and
+current-workspace `.git` writes, while auto-denying explicit file changes,
+patches, write-like shell commands, or write-like file-system grants that target
+another known source root. This deliberately avoids the older default
+`workspace-write` / managed-profile path, because current Codex app-server
+builds can turn that path into a read-only `.git` metadata profile and break
+normal current-repository `git add/commit`.
 
-Cross-workspace discipline therefore remains model/tool enforced by the
-injected `codex_mobile.delegate_to_thread` dynamic tool, the automatically
-registered `codex_mobile` MCP server, and the local
-`scripts/create-thread-task-card.js` fallback. Operators who explicitly want the
-older hard sandbox behavior can opt in with
+Cross-workspace discipline is therefore enforced through two layers: the
+model-visible `codex_mobile.delegate_to_thread` dynamic tool/MCP/script
+fallback, and the server-side approval proxy that blocks approval-visible writes
+to other source roots. The approval proxy is not a full kernel sandbox for
+opaque scripts that hide their write target; if that becomes required, the
+app-server sandbox must support a profile that keeps the current cwd including
+`.git` writable while denying other source roots. Operators who explicitly want
+the older hard sandbox behavior can opt in with
 `CODEX_MOBILE_WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD=1`; that profile keeps
 root read-only, allows writes to the current cwd, temporary directories, and the
 current cwd's `.git` metadata, and keeps `.codex` / `.agents` under the cwd

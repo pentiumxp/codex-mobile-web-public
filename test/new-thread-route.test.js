@@ -171,7 +171,7 @@ test("server runtime inheritance includes model and reasoning effort", () => {
     guardBody.indexOf("workspaceDelegationGuardExemptCwd(cwd)") < guardBody.indexOf("applyWorkspaceDelegationFullAccessCompatRuntime(params, options)"),
     "maintenance/deploy exemptions must run before runtime compatibility overrides",
   );
-  assert.match(guardBody, /params\.approvalPolicy = "never"/, "write guard should prevent approval bypass for cross-workspace writes");
+  assert.match(guardBody, /applyWorkspaceDelegationFullAccessCompatRuntime\(params, options\)/, "write guard should route default enforcement through dynamic approval compatibility");
   assert.match(guardBody, /WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD/, "hard sandbox narrowing should require an explicit opt-in");
   assert.match(guardBody, /applyWorkspaceDelegationFullAccessCompatRuntime\(params, options\)/, "default guard should heal app-server workspace-write inheritance that makes .git read-only");
   assert.match(guardBody, /workspaceDelegationWriteGuardPermissionProfile\(cwd, settings && settings\.sandboxPolicy\)/, "opt-in hard guard should still use a bounded managed permission profile");
@@ -179,10 +179,15 @@ test("server runtime inheritance includes model and reasoning effort", () => {
   assert.match(guardBody, /params\.sandbox = "workspace-write"/, "explicit hard guard should still support workspace-write sandbox mode");
 
   const compatBody = functionBody(serverJs, "applyWorkspaceDelegationFullAccessCompatRuntime");
-  assert.match(compatBody, /params\.approvalPolicy = "never"/, "compat runtime should avoid approval prompts while restoring full workspace function");
+  assert.match(compatBody, /params\.approvalPolicy = "on-request"/, "compat runtime should keep app-server approval events available for dynamic source-write decisions");
   assert.match(compatBody, /params\.sandboxPolicy = \{ type: "dangerFullAccess" \}/, "turn/start compatibility should override inherited workspace-write sandbox policy");
   assert.match(compatBody, /params\.sandbox = "danger-full-access"/, "thread/start and thread/resume compatibility should restore full access sandbox mode");
   assert.match(compatBody, /delete params\.permissionProfile/, "compat runtime should clear stale managed profiles that made .git read-only");
+
+  assert.match(serverJs, /handleServerRequest\(msg\)[\s\S]*answerWorkspaceSourceWriteGuardRequest\(request\)/, "app-server approval requests should pass through the dynamic source-write guard");
+  const approvalGuardBody = functionBody(serverJs, "workspaceSourceWriteGuardDecisionForRequest");
+  assert.match(approvalGuardBody, /ACTIONABLE_APPROVAL_METHODS\.has\(request\.method\)/, "dynamic guard should only auto-answer app-server approval requests");
+  assert.match(approvalGuardBody, /workspaceSourceWriteGuardService\.classify\(request\)/, "dynamic guard should delegate source-write policy to the adapter service");
 
   const guardProfileBody = functionBody(serverJs, "workspaceDelegationWriteGuardPermissionProfile");
   assert.match(guardProfileBody, /kind: "root"[\s\S]*access: "read"/, "guard profile should keep root read-only");

@@ -83,7 +83,7 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(serverJs, /function dynamicToolServerRequestResponsePayload\(/);
   assert.match(serverJs, /function setWorkspaceDelegationEnabled\(/);
   assert.match(serverJs, /url\.pathname === "\/api\/settings\/workspace-delegation"/);
-  assert.match(functionBody(serverJs, "workspaceDelegationPublicSettings"), /failureRecovery:\s*enabled \? "source_model_tool_call_only" : "off"/);
+  assert.match(functionBody(serverJs, "workspaceDelegationPublicSettings"), /failureRecovery:\s*enabled \? "source_model_tool_call_with_dynamic_source_write_guard" : "off"/);
   assert.match(functionBody(serverJs, "workspaceDelegationPublicSettings"), /serverAutoTaskCardFromFailures:\s*false/);
   assert.match(serverJs, /function buildThreadTaskCardCreatePayload\(/);
   assert.match(serverJs, /function threadTaskCardThreadCallIdempotencyKey\(/);

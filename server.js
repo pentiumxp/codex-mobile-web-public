@@ -82,6 +82,7 @@ const { createThreadDetailProjectionV4Service } = require("./adapters/thread-det
 const { createChatGptProBridgeService } = require("./adapters/chatgpt-pro-bridge-service");
 const { createChatGptProPlannerService } = require("./adapters/chatgpt-pro-planner-service");
 const { createChatGptProMcpService } = require("./adapters/chatgpt-pro-mcp-service");
+const { createWorkspaceSourceWriteGuard } = require("./adapters/workspace-source-write-guard-service");
 
 const APP_ROOT = __dirname;
 const PUBLIC_ROOT = path.join(APP_ROOT, "public");
@@ -4789,9 +4790,82 @@ function runtimeCwdForParams(params) {
   return String(thread && thread.cwd || "").trim();
 }
 
+let workspaceSourceWriteGuardRootsCache = { roots: [], cachedAt: 0 };
+
+function workspaceSourceWriteGuardWorkspaceRoots() {
+  const now = Date.now();
+  if (now - Number(workspaceSourceWriteGuardRootsCache.cachedAt || 0) < 10_000) {
+    return workspaceSourceWriteGuardRootsCache.roots.slice();
+  }
+  const roots = new Set([...visibleWorkspaceRoots(readGlobalState())]);
+  try {
+    for (const thread of readThreadListFallback(300, { archived: false }) || []) {
+      if (thread && thread.cwd) roots.add(thread.cwd);
+    }
+  } catch (_) {}
+  for (const entry of recentStartedThreads.values()) {
+    if (entry && entry.thread && entry.thread.cwd) roots.add(entry.thread.cwd);
+  }
+  workspaceSourceWriteGuardRootsCache = {
+    roots: [...roots].filter(Boolean),
+    cachedAt: now,
+  };
+  return workspaceSourceWriteGuardRootsCache.roots.slice();
+}
+
+function threadCwdForRuntimeThreadId(threadId) {
+  const id = String(threadId || "").trim();
+  if (!id) return "";
+  const thread = readStateDbThread(id) || readStartedThread(id) || readRolloutSessionFallbackThread(id) || null;
+  return String(thread && thread.cwd || "").trim();
+}
+
+function workspaceSourceWriteGuardCwdForRequest(request) {
+  const params = request && request.params && typeof request.params === "object" ? request.params : {};
+  const explicitCwd = String(params.cwd || "").trim();
+  if (explicitCwd) return explicitCwd;
+  const threadId = pushThreadId(params)
+    || String(params.threadId || params.conversationId || params.sessionId || params.thread_id || params.conversation_id || params.session_id || "").trim();
+  const threadCwd = threadCwdForRuntimeThreadId(threadId);
+  if (threadCwd) return threadCwd;
+  const turnId = String(params.turnId || params.turn_id || params.itemTurnId || params.item_turn_id
+    || params.item && (params.item.turnId || params.item.turn_id)
+    || "").trim();
+  const inferredThreadId = turnId ? latestThreadIdByTurnId.get(turnId) : "";
+  return threadCwdForRuntimeThreadId(inferredThreadId);
+}
+
+const workspaceSourceWriteGuardService = createWorkspaceSourceWriteGuard({
+  currentCwdForRequest: workspaceSourceWriteGuardCwdForRequest,
+  workspaceRoots: workspaceSourceWriteGuardWorkspaceRoots,
+});
+
+function workspaceSourceWriteGuardDecisionForRequest(request) {
+  if (!workspaceDelegationPublicSettings().enabled) return null;
+  if (WORKSPACE_DELEGATION_WRITE_GUARD_DISABLED || WORKSPACE_DELEGATION_ENFORCE_SANDBOX_GUARD) return null;
+  if (!request || !ACTIONABLE_APPROVAL_METHODS.has(request.method)) return null;
+  const cwd = workspaceSourceWriteGuardCwdForRequest(request);
+  if (cwd && workspaceDelegationGuardExemptCwd(cwd)) return null;
+  return workspaceSourceWriteGuardService.classify(request);
+}
+
+function workspaceSourceWriteGuardLogPayload(request, decision, responseDecision) {
+  return {
+    requestId: shortIdentifier(request && request.id),
+    method: request && request.method || "",
+    action: decision && decision.action || "",
+    responseDecision,
+    reason: decision && decision.reason || "",
+    threadId: shortIdentifier(pushThreadId(request && request.params || {})),
+    turnId: shortIdentifier(request && request.params && (request.params.turnId || request.params.turn_id) || ""),
+    cwd: compactOneLine(workspaceSourceWriteGuardCwdForRequest(request), 160),
+    matchedRoot: compactOneLine(decision && decision.matchedRoot || "", 160),
+  };
+}
+
 function applyWorkspaceDelegationFullAccessCompatRuntime(params, options = {}) {
   if (!params || typeof params !== "object") return params;
-  params.approvalPolicy = "never";
+  params.approvalPolicy = "on-request";
   if (options.useSandboxPolicy) {
     params.sandboxPolicy = { type: "dangerFullAccess" };
     delete params.permissionProfile;
@@ -6125,13 +6199,13 @@ function workspaceDelegationPublicSettings(settings = readRuntimeSettings()) {
   const enabled = hasRuntimeValue ? raw.enabled : WORKSPACE_DELEGATION_ENV_DEFAULT;
   return {
     enabled,
-    mode: enabled ? "model_driven_explicit_task_card" : "off",
+    mode: enabled ? "model_driven_explicit_task_card_with_source_write_guard" : "off",
     directTaskCardAutoApproval: enabled,
     dynamicTool: enabled ? WORKSPACE_DELEGATION_TOOL_FULL_NAME : "",
     dynamicToolEnabled: enabled,
     ordinarySendPreflight: false,
     localHeuristics: false,
-    failureRecovery: enabled ? "source_model_tool_call_only" : "off",
+    failureRecovery: enabled ? "source_model_tool_call_with_dynamic_source_write_guard" : "off",
     serverAutoTaskCardFromFailures: false,
     source: hasRuntimeValue ? "runtime" : WORKSPACE_DELEGATION_ENV_DEFAULT ? "environment" : "default",
     updatedAt: String(raw.updatedAt || ""),
@@ -8369,6 +8443,7 @@ class CodexAppServerClient {
       decision: null,
       respondedAt: null,
     };
+    if (this.answerWorkspaceSourceWriteGuardRequest(request)) return;
     this.serverRequests.set(key, request);
     broadcast({ type: "serverRequest", request: publicServerRequest(request) });
     if (msg.method === "item/tool/call") {
@@ -8380,6 +8455,24 @@ class CodexAppServerClient {
         broadcast({ type: "serverRequestResolved", requestId: key, request: publicServerRequest(request) });
         setTimeout(() => this.serverRequests.delete(key), 15000).unref();
       });
+    }
+  }
+
+  answerWorkspaceSourceWriteGuardRequest(request) {
+    const decision = workspaceSourceWriteGuardDecisionForRequest(request);
+    if (!decision) return false;
+    const responseDecision = decision.action === "deny" ? "deny" : "allow_once";
+    try {
+      const payload = serverRequestResponsePayload(request, { decision: responseDecision });
+      this.sendServerRequestResponse(request, payload);
+      request.status = "responded";
+      request.decision = decision.action === "deny" ? "source_write_guard_deny" : "source_write_guard_allow";
+      request.respondedAt = Date.now();
+      console.log(`[workspace-source-write-guard] ${JSON.stringify(workspaceSourceWriteGuardLogPayload(request, decision, responseDecision))}`);
+      return true;
+    } catch (err) {
+      console.error(`[workspace-source-write-guard] failed request=${shortIdentifier(request && request.id)}: ${err.message || String(err)}`);
+      return false;
     }
   }
 
