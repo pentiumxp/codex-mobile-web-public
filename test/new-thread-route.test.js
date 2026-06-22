@@ -172,9 +172,19 @@ test("server runtime inheritance includes model and reasoning effort", () => {
     "maintenance/deploy exemptions must run before permission narrowing",
   );
   assert.match(guardBody, /params\.approvalPolicy = "never"/, "write guard should prevent approval bypass for cross-workspace writes");
-  assert.match(guardBody, /delete params\.permissionProfile/, "write guard should remove full-access permission profiles");
-  assert.match(guardBody, /params\.sandboxPolicy = policy/, "turn/start should receive structured workspace-write sandbox policy");
+  assert.match(guardBody, /workspaceDelegationWriteGuardPermissionProfile\(cwd, settings && settings\.sandboxPolicy\)/, "write guard should use a bounded managed permission profile");
+  assert.match(guardBody, /delete params\.sandboxPolicy/, "turn/start should not let workspace-write sandbox policy re-add read-only .git rules");
   assert.match(guardBody, /params\.sandbox = "workspace-write"/, "thread/start and thread/resume should receive workspace-write sandbox mode");
+
+  const guardProfileBody = functionBody(serverJs, "workspaceDelegationWriteGuardPermissionProfile");
+  assert.match(guardProfileBody, /kind: "root"[\s\S]*access: "read"/, "guard profile should keep root read-only");
+  assert.match(guardProfileBody, /path\.join\(root, "\.git"\)[\s\S]*access: "write"/, "guard profile should allow git metadata writes inside the current workspace");
+  assert.match(guardProfileBody, /path\.join\(root, "\.codex"\)[\s\S]*access: "read"/, "guard profile should keep workspace .codex metadata read-only");
+  assert.match(guardProfileBody, /path\.join\(root, "\.agents"\)[\s\S]*access: "read"/, "guard profile should keep workspace .agents metadata read-only");
+
+  const normalizeProfileBody = functionBody(serverJs, "normalizePermissionProfile");
+  assert.match(normalizeProfileBody, /type: profile\.type \|\| profile\.kind \|\| null/, "runtime inheritance should preserve permission profile type");
+  assert.match(normalizeProfileBody, /type: fileSystem\.type \|\| null/, "runtime inheritance should preserve permission profile file-system type");
 
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_WRITE_GUARD/, "server should expose an emergency write-guard disable env");
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_DISABLE_WRITE_GUARD/, "server should expose a positive emergency write-guard disable env");

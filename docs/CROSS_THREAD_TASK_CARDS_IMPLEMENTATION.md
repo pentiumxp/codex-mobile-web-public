@@ -202,12 +202,15 @@ instructions, access keys, cookies, or full task-card Markdown.
 The switch also changes runtime write permissions for new or resumed work. The
 server applies `applyWorkspaceDelegationRuntimeGuard()` from the shared runtime
 settings helpers so `thread/start`, `thread/resume`, and `turn/start` are forced
-to the current thread cwd's `workspace-write` sandbox with
-`approvalPolicy:"never"`. This is the hard boundary that prevents the model from
-directly modifying a different workspace first and sending a card afterward.
-The guard resolves cwd from request params when available and otherwise from
-the thread id. Existing active turns are not retroactively sandboxed; the guard
-applies when the next start/resume request is sent.
+to `approvalPolicy:"never"` plus a bounded current-cwd write profile. The guard
+keeps root read-only, allows writes to the current cwd, temporary directories,
+and the current cwd's `.git` metadata, and keeps `.codex` / `.agents` under the
+cwd read-only. This is the hard boundary that prevents the model from directly
+modifying a different workspace first and sending a card afterward while still
+allowing normal current-repository `git add/commit`. The guard resolves cwd
+from request params when available and otherwise from the thread id. Existing
+active turns are not retroactively sandboxed; the guard applies when the next
+start/resume request is sent.
 
 The write guard is intentionally scoped to ordinary workspace execution. It
 does not reduce read access. It also preserves the original runtime permission

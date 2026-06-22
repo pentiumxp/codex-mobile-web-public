@@ -2,6 +2,44 @@
 
 Last compacted: 2026-06-08T13:27:43.304Z
 
+## 2026-06-22 Workspace Delegation Guard Git Metadata Write Fix
+
+- Status: source fixed and validated; deployment pending at this handoff entry.
+- Trigger:
+  - Music thread under `/Users/xuxin/Documents/Music` could edit source files
+    but `git add/commit` failed because creating `.git/index.lock` was denied.
+  - The thread reported that `.git` was inside the workspace but current
+    permissions only allowed reading it.
+- Runtime evidence:
+  - Music rollout latest `turn_context` before the fix showed older turns had
+    `sandbox_policy.type=danger-full-access` and `permission_profile.type=disabled`.
+  - After enabling `跨工作区委派`, new Music turns had
+    `sandbox_policy.type=workspace-write`, `approval_policy=never`, and a
+    managed `permission_profile` where `/Users/xuxin/Documents/Music` was
+    writeable but `/Users/xuxin/Documents/Music/.git` appeared as read-only.
+- Change:
+  - `server.js` now builds a bounded managed permission profile for the
+    workspace-delegation write guard instead of relying on app-server's generic
+    `workspace-write` profile.
+  - The guard keeps root read-only, allows writes to the current cwd, temp dirs,
+    and the current cwd's `.git`, and keeps `.codex` / `.agents` read-only.
+  - This preserves current-repository `git add/commit` while still blocking
+    direct writes to other workspaces when automatic delegation is enabled.
+  - `normalizePermissionProfile()` now preserves profile and file-system type
+    metadata when inheriting runtime settings.
+  - Updated `README.md`, `docs/ARCHITECTURE.md`, and
+    `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md`.
+- Validation:
+  - `node --check server.js`
+  - `node --test test/new-thread-route.test.js test/thread-task-card-route.test.js test/codex-profile-service.test.js`
+  - `npm run check`
+  - `git diff --check`
+  - Central AI Ops required checks:
+    `node tests/gateway-run-lifecycle-service.test.js`,
+    `node tests/gateway-run-start-service.test.js`,
+    `node tests/gateway-run-stream-service.test.js`,
+    `node tests/runtime-config-provider.test.js`.
+
 ## 2026-06-22 Continuation Fallback Handoff For Broken Source Threads
 
 - Status: source fixed and validated; deployment pending at the time of this

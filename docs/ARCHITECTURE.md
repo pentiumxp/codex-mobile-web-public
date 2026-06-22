@@ -480,14 +480,17 @@ edits.
 To keep this from being only a model prompt, the same runtime switch also
 applies a server-side write guard to `thread/start`, `thread/resume`, and
 `turn/start`: if the request has a cwd, or the thread id can be resolved to a
-cwd, Mobile Web forces a `workspace-write` sandbox rooted at that cwd and sets
-`approvalPolicy:"never"`. That preserves normal current-workspace command
-execution while making direct cross-workspace writes fail instead of asking for
-approval. The guard only narrows write access; it does not intentionally reduce
-read access. It also preserves the original runtime permission profile for
-trusted maintenance paths: the Codex Mobile source workspace itself, the Home
-AI central control-plane workspace that owns deployment scripts, and any cwd
-explicitly listed in
+cwd, Mobile Web forces `approvalPolicy:"never"` and a bounded write profile
+rooted at that cwd. The profile keeps root read-only, allows writes to the
+current cwd, temporary directories, and the current cwd's `.git` metadata, and
+keeps `.codex` / `.agents` under the cwd read-only. This preserves normal
+current-workspace command execution and `git add/commit` while making direct
+cross-workspace writes fail instead of asking for approval. The guard only
+narrows write access; it does not intentionally reduce read access. It also
+preserves the original runtime permission profile for trusted maintenance
+paths: the Codex Mobile source workspace itself, the Home AI central
+control-plane workspace that owns deployment scripts, and any cwd explicitly
+listed in
 `CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS`. Operators can disable
 the guard in an emergency with
 `CODEX_MOBILE_WORKSPACE_DELEGATION_WRITE_GUARD=0` or

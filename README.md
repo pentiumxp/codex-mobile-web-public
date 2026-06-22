@@ -1,5 +1,6 @@
 # Codex Mobile Web
 
+- 中文说明：server-only 修正 `跨工作区委派` 写入守卫把当前工作区 `.git` 目录降成只读的问题。开启自动发卡/写保护后，普通线程仍只能写当前 cwd 和临时目录，但服务端会下发 managed permission profile，显式允许当前 cwd 内的 `.git` 写入，保留 `.codex` / `.agents` 只读，从而允许 `git add/commit` 创建 `index.lock`，同时继续阻止直接写其他工作区。本次不改变 PWA shell cache。
 - 中文说明：v373 修正 Profile 切换到目标账号时，额度接口临时失败会让切换进度消失并停住的问题。目标 app-server 初始化成功后，`account/rateLimits/read` 的网络/服务端临时失败会降级为警告继续切换，只有明确的 401/token 失效才阻止切换；失败响应会把 requestId/progress 带回前端，Profile 行会保留“切换失败：原因”和失败阶段，不再几秒后清空。PWA shell cache 升级到 `codex-mobile-shell-v373`。
 - 中文说明：v372 修正 Profile 切换过程只有“预检中”而缺少后续状态的问题。前端会为每次切换生成 requestId，并轮询服务端真实阶段，逐步显示读取目标 Profile、同步工作区信任、注册 Codex Mobile 工具、启动/连接目标 app-server、初始化会话、读取额度、写入 active Profile、安排重启和等待服务恢复。macOS 宿主恢复脚本也补齐 `CODEX_MOBILE_MUX_ENDPOINT_FILE` 同步、bootstrap code 5 重试、preflight/postflight 一致性检查和非选中 profile stale mux 报告。PWA shell cache 升级到 `codex-mobile-shell-v372`。
 - 中文说明：server-only 增加 Codex 线程自己的 `codex_mobile` MCP toolset。服务端启动、读取 Profile 列表、工作区创建和 Profile 切换时会自动检查所有已知/目标 `CODEX_HOME/config.toml`，没有 `[mcp_servers.codex_mobile]` 或配置指向旧脚本时就注册/修正 `scripts/codex-mobile-mcp-server.js`；该工具集提供 `list_threads` 和 `delegate_to_thread`，后者复用现有任务卡 API 发 source-direct 卡。注册器同时写入两个工具的 `approval_mode = "approve"`，避免只读列表和受运行时开关约束的发卡工具被 Codex MCP 权限层重复弹窗。配置只保存脚本路径、server URL 和 key-file 路径，不保存 raw key。本次不改变 PWA shell cache。

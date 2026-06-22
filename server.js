@@ -3448,8 +3448,10 @@ function normalizePermissionProfile(value) {
   if (!profile) return null;
   const fileSystem = profile.fileSystem || profile.file_system || null;
   return {
+    type: profile.type || profile.kind || null,
     network: profile.network || null,
     fileSystem: fileSystem ? {
+      type: fileSystem.type || null,
       entries: Array.isArray(fileSystem.entries) ? fileSystem.entries : [],
       ...(fileSystem.globScanMaxDepth || fileSystem.glob_scan_max_depth
         ? { globScanMaxDepth: fileSystem.globScanMaxDepth || fileSystem.glob_scan_max_depth }
@@ -3521,6 +3523,56 @@ function workspaceWriteSandboxPolicy(cwd, inheritedPolicy) {
     networkAccess: Boolean(inherited.networkAccess),
     excludeTmpdirEnvVar: Boolean(inherited.excludeTmpdirEnvVar),
     excludeSlashTmp: Boolean(inherited.excludeSlashTmp),
+  };
+}
+
+function workspaceDelegationWriteGuardPermissionProfile(cwd, inheritedPolicy) {
+  const workspace = String(cwd || "").trim();
+  const policy = workspaceDelegationWriteGuardSandboxPolicy(workspace, inheritedPolicy);
+  const entries = [
+    {
+      path: { type: "special", value: { kind: "root" } },
+      access: "read",
+    },
+  ];
+  for (const root of policy.writableRoots || []) {
+    if (!root) continue;
+    entries.push({
+      path: { type: "path", path: root },
+      access: "write",
+    });
+    entries.push({
+      path: { type: "path", path: path.join(root, ".agents") },
+      access: "read",
+    });
+    entries.push({
+      path: { type: "path", path: path.join(root, ".codex") },
+      access: "read",
+    });
+    entries.push({
+      path: { type: "path", path: path.join(root, ".git") },
+      access: "write",
+    });
+  }
+  if (!policy.excludeSlashTmp) {
+    entries.push({
+      path: { type: "special", value: { kind: "slash_tmp" } },
+      access: "write",
+    });
+  }
+  if (!policy.excludeTmpdirEnvVar) {
+    entries.push({
+      path: { type: "special", value: { kind: "tmpdir" } },
+      access: "write",
+    });
+  }
+  return {
+    type: "managed",
+    fileSystem: {
+      type: "restricted",
+      entries,
+    },
+    network: policy.networkAccess ? "enabled" : "restricted",
   };
 }
 
@@ -4744,12 +4796,13 @@ function applyWorkspaceDelegationRuntimeGuard(params, settings, options = {}) {
   if (workspaceDelegationGuardExemptCwd(cwd)) return params;
   const policy = workspaceDelegationWriteGuardSandboxPolicy(cwd, settings && settings.sandboxPolicy);
   params.approvalPolicy = "never";
-  delete params.permissionProfile;
   if (options.useSandboxPolicy) {
-    params.sandboxPolicy = policy;
+    params.permissionProfile = workspaceDelegationWriteGuardPermissionProfile(cwd, settings && settings.sandboxPolicy);
+    delete params.sandboxPolicy;
     delete params.sandbox;
   } else {
     params.sandbox = "workspace-write";
+    params.permissionProfile = workspaceDelegationWriteGuardPermissionProfile(cwd, settings && settings.sandboxPolicy);
     delete params.sandboxPolicy;
   }
   return params;
