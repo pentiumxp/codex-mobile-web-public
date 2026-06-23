@@ -21,6 +21,339 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-23 - Public Sync After Dynamic Task Card Fix
+
+- Status: public sync completed after Mac production deploy and user
+  confirmation.
+- Public remote:
+  - `public/main` was advanced from `8da296e` to
+    `d7b9ffb fix: return valid dynamic task card responses`.
+  - Published commits on the clean public branch:
+    - `97900af fix: make Fast thread-local`
+    - `0212d3e fix: allow tool workspaces under source guard`
+    - `3307eae fix: recover embedded protected images`
+    - `d7b9ffb fix: return valid dynamic task card responses`
+- Public/private hygiene:
+  - A first temporary publish branch was discarded because cherry-picking older
+    commits also changed `.agent-context/HANDOFF.md`.
+  - The final publish branch was rebuilt from `public/main`; every
+    cherry-pick explicitly restored `.agent-context` before committing.
+  - `public/main..d7b9ffb` contains no `.agent-context` diff.
+  - Local backup of the prior private main:
+    `backup/main-before-public-sync-20260623-140315`.
+- Validation on the clean public branch before push:
+  - `npm run check`
+  - `npm run check:macos`
+  - `npm test` passed with 610/610 tests.
+  - `git diff --check`
+- Next local-state requirement:
+  - Keep private `main` derived from `public/main`; only private
+    `.agent-context` changes should remain ahead of public.
+
+## 2026-06-23 - Dynamic Task Card Response Schema Deployed
+
+- Status: diagnosed, fixed, locally committed, deployed to Mac production, and
+  pushed to public after user confirmation.
+- Trigger:
+  - User reported Home AI -> 星盘/Moira task-card sends repeatedly failed, while
+    星盘/Moira -> Home AI task cards still worked.
+  - Home AI latest turn `019ef2e0-29f4-7620-b658-f8d879b9a776` contained three
+    failed `dynamicToolCall` items for `codex_mobile.delegate_to_thread`, each
+    with rollout output `dynamic tool response was invalid`.
+- Root cause evidence:
+  - Mobile Web injected the app-server dynamic tool into the Home AI turn:
+    `[workspace-delegation-rpc] ... dynamicToolsCount:1 ...
+    hasWorkspaceDelegationTool:true`.
+  - app-server mux broadcast real `item/tool/call` requests for the failed calls
+    and forwarded Mobile Web responses.
+  - mux logged the concrete app-server deserialization error:
+    `failed to deserialize DynamicToolCallResponse: missing field contentItems`.
+  - The deployed response was still `result.content_items[{type:"input_text"}]`;
+    app-server currently expects camelCase `result.success` and
+    `result.contentItems[{type:"inputText"}]`.
+  - No latest Home AI -> Moira card was persisted for the failed 05:16 turn;
+    the recent task-card store showed only older Home AI -> Moira cards and a
+    later Moira -> Home AI card.
+- Change:
+  - `server.js` dynamic tool responses now return
+    `result.success` plus `result.contentItems[{ type:"inputText" }]`.
+  - Dynamic tool error payloads now return `success:false`.
+  - Tests were updated for the current app-server response schema.
+  - Stale frontend build-id assertions in two tests were updated from v377 to
+    the already-deployed v378 shell.
+- Changed files:
+  - `server.js`
+  - `test/protocol.test.js`
+  - `test/thread-task-card-route.test.js`
+  - `test/thread-goal-service.test.js`
+  - `README.md`
+  - `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md`
+  - `.agent-context/HANDOFF.md`
+- Validation:
+  - Private workspace:
+    - `node --test test/protocol.test.js test/thread-task-card-route.test.js
+      test/thread-goal-service.test.js test/codex-mobile-mcp-server.test.js`
+      passed with 33/33 tests.
+    - `npm run check`
+    - `npm run check:macos`
+    - `git diff --check`
+    - `npm test` passed with 610/610 tests.
+  - Production target after deploy:
+    - `npm run check`
+    - `npm run check:macos`
+    - same focused 33-test suite passed.
+    - Direct production function probe returned
+      `{"result":{"success":true,"contentItems":[{"type":"inputText","text":"ok"}]}}`.
+    - `/api/public-config` returned HTTP 200 with
+      `clientBuildId=0.1.11|codex-mobile-shell-v378`,
+      `shellCacheName=codex-mobile-shell-v378`, and
+      `workspacePath=/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+    - Authenticated `/api/status` returned HTTP 200 and `ready=true`.
+    - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` is running
+      with PID `58288`, `runs=21`, and last exit code `0`.
+- Commit/deploy:
+  - Local commit:
+    `5a2d630 fix: return valid dynamic task card responses`.
+  - Production deploy used Home AI central Mac deploy:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --execute --json`.
+  - Target:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260623T052711Z-plugin-codex-mobile-web-manual`.
+- Operational notes:
+  - This is server-only; no PWA cache bump.
+  - The fix has not been live-tested by starting a new Home AI -> Moira
+    delegation turn after deployment, to avoid creating another unintended card.
+    The next dynamic-tool call should no longer hit the
+    `missing field contentItems` app-server error.
+  - Public sync completed after production deploy and user confirmation.
+
+## 2026-06-23 - Embedded Upload Image Recovery v378 Deployed
+
+- Status: implemented, validated, locally committed, deployed to Mac
+  production, and not pushed public.
+- Trigger:
+  - User reported that the same uploaded image displayed in the current Codex
+    Mobile thread but roon thread images did not display.
+  - Live checks showed roon upload files existed, were valid baseline JPEGs,
+    and `/api/uploads/file` returned `200 image/jpeg` with auth. Plugin
+    session authorization also worked, including stale query token plus current
+    plugin-session cookie.
+- Change:
+  - In `public/app.js`, Hermes/Home AI embed images still render the direct
+    same-origin `/api/uploads/file` or `/api/generated-images/file` URL first,
+    but now also retain `data-protected-image-src`.
+  - Scheduled image scans can hydrate those direct embedded images by fetching
+    with the current in-memory session key and replacing unstable direct loads
+    with page-local `data:image/...` or `blob:` URLs.
+  - Already-loaded embedded images are skipped, so the fallback does not disturb
+    working direct loads.
+  - PWA shell cache/client build advanced to `codex-mobile-shell-v378`.
+- Changed files:
+  - `public/app.js`
+  - `public/sw.js`
+  - `test/conversation-render.test.js`
+  - `test/mobile-viewport.test.js`
+  - `README.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/TROUBLESHOOTING.md`
+  - `.agent-context/HANDOFF.md`
+- Validation:
+  - Private workspace:
+    - `node --test test/conversation-render.test.js`
+    - `node --test test/conversation-render.test.js test/mobile-viewport.test.js`
+      passed with 79/79 tests.
+    - `npm run check`
+    - `npm run check:macos`
+    - `git diff --check`
+  - Staging:
+    - Staged under `/tmp/codex-mobile-web-stage-image-recover.ryMXle`.
+    - Blocked-path scan excluded `.git`, `.agent-context`, `.codegraph`,
+      `node_modules`, runtime data/log/upload directories, env files, access
+      key files, and secret/private-key patterns.
+  - Production target after sync:
+    - `npm run check`
+    - `npm run check:macos`
+    - `node --test test/conversation-render.test.js test/mobile-viewport.test.js`
+      passed with 79/79 tests.
+- Commit/deploy:
+  - Local commit:
+    `0ab5a94 fix: recover embedded protected images`.
+  - Target:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/tmp/codex-mobile-web-deploy-image-recover-v378-20260623T034120Z.backup`.
+    The standard `/Users/hermes-host/HermesMobile/backups/deploy` path was not
+    writable from this thread and passwordless sudo was unavailable, so no
+    production files were synced until the `/tmp` backup completed.
+  - Static-only deploy; listener restart was not required. Current server reads
+    build metadata from static files on each `/api/public-config` request.
+  - Production smoke:
+    - `/api/public-config` returned HTTP 200 with
+      `clientBuildId=0.1.11|codex-mobile-shell-v378`,
+      `shellCacheName=codex-mobile-shell-v378`, and
+      `workspacePath=/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+    - Authenticated `/api/status` returned HTTP 200 and `ready=true`.
+    - Served `/app.js` and `/sw.js` both contained
+      `codex-mobile-shell-v378`.
+    - roon uploaded image route returned 401 without auth and
+      `200 image/jpeg` with auth.
+- Operational notes:
+  - The user observed roon photos displaying again before the v378 deploy
+    completed, which supports the diagnosis that the backend/file path was
+    already healthy and the bug was in transient frontend/WebView image
+    recovery state.
+  - This has not been pushed public.
+
+## 2026-06-23 - Workspace Delegation Tool Workspace Allowance
+
+- Status: implemented, validated, locally committed, deployed to Mac
+  production, and not pushed public.
+- User clarification:
+  - Cross-workspace delegation protection should prevent modifying other source
+    trees.
+  - Tool workspaces must remain usable for validation and diagnostics, including
+    local Playwright / Chromium and Home AI visual harness flows.
+- Change:
+  - `adapters/workspace-source-write-guard-service.js` no longer treats
+    JavaScript `=>` as shell redirection.
+  - Foreign-cwd tool commands are allowed when they do not write into the
+    foreign source root, including writing bounded artifacts to `/tmp` or
+    `/private/tmp`.
+  - Direct foreign source mutations remain denied: `apply_patch`, file-change
+    requests, relative-path source writes, `git add` / `git commit`, install or
+    update commands, and write-like file-system grants.
+- Changed files:
+  - `adapters/workspace-source-write-guard-service.js`
+  - `test/workspace-source-write-guard-service.test.js`
+  - `README.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md`
+  - `.agent-context/HANDOFF.md`
+- Validation so far:
+  - `node --test test/workspace-source-write-guard-service.test.js`
+  - `node --test test/new-thread-route.test.js`
+  - `node --check adapters/workspace-source-write-guard-service.js`
+  - `npm run check`
+  - `npm run check:macos`
+  - `npm test` passed with 609/609 tests.
+  - `git diff --check`
+- Commit/deploy:
+  - Local commit subject:
+    `fix: allow tool workspaces under source guard`.
+  - Production deploy used Home AI central Mac deploy:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --execute --json`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260623T025203Z-plugin-codex-mobile-web-manual`.
+  - LaunchDaemon:
+    `system/com.hermesmobile.plugin.codex-mobile` running, PID `87679`,
+    runs `20`, last exit code `0`.
+  - Production health:
+    `/api/public-config` returned HTTP 200 with
+    `clientBuildId=0.1.11|codex-mobile-shell-v377`.
+  - Authenticated `/api/status` returned HTTP 200 and `ready=true`.
+  - Production target readback contains `CWD_SOURCE_MUTATING_COMMAND_PATTERN`
+    and the JavaScript arrow-function redirection fix.
+  - Production target
+    `node --test test/workspace-source-write-guard-service.test.js` passed
+    with 9/9 tests.
+- Operational notes:
+  - This is server-only; no PWA shell cache bump is needed.
+  - This has not been pushed public.
+
+## 2026-06-23 - Fast Thread-Local Tag v377 Deployed
+
+- Status: implemented, validated, deployed to Mac production, and pending local
+  private commit.
+- User decision:
+  - Mobile Web Fast should intentionally differ from the official/global model:
+    it is now a thread-persistent tag, not a global browser switch.
+  - Turning Fast on/off affects only the current thread. A new-thread draft can
+    carry Fast into the created thread, but it does not change other threads.
+- Change:
+  - `public/app.js` no longer initializes Fast from the retired global
+    `codexMobileCodexFastMode` key and no longer writes that key.
+  - Current-target draft state is the source of truth:
+    `draft.fastMode === true` turns Fast on for that thread/new-thread draft;
+    missing `fastMode` turns it off for that target.
+  - Switching targets clears Fast until the target draft is restored.
+  - Toggling Fast clears the retired global key best-effort so old browser state
+    cannot re-enable Fast.
+  - The Fast button now suppresses synthetic `click` / `touchend` after
+    `pointerdown`, preventing one touch from toggling twice.
+  - UI title/aria text now says `Fast tag`.
+  - PWA shell cache/client build advanced to `codex-mobile-shell-v377`.
+- Changed files:
+  - `public/app.js`
+  - `public/index.html`
+  - `public/sw.js`
+  - `test/composer-draft.test.js`
+  - `test/composer-quota.test.js`
+  - `test/mobile-viewport.test.js`
+  - `test/thread-goal-service.test.js`
+  - `test/thread-task-card-route.test.js`
+  - `README.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/TROUBLESHOOTING.md`
+- Validation:
+  - Private workspace:
+    - Focused 60-test suite passed:
+      `test/composer-draft.test.js`, `test/composer-quota.test.js`,
+      `test/draft-store.test.js`, `test/mobile-viewport.test.js`,
+      `test/thread-goal-service.test.js`,
+      `test/thread-task-card-route.test.js`, and
+      `test/new-thread-route.test.js`.
+    - `node --check public/app.js`
+    - `node --check public/draft-store.js`
+    - `git diff --check`
+    - `npm run check`
+    - `npm run check:macos`
+    - `npm test` passed (`608` tests).
+  - Staging:
+    - Source staged at:
+      `/tmp/codex-mobile-web-stage-fast-thread.Xo8YE9`.
+    - Blocked-path scan was clean for `.git`, `.agent-context`, `.codegraph`,
+      `node_modules`, `data`, `logs`, `uploads`, env files, access-key,
+      private-key, and secret path patterns.
+    - `npm run check`
+    - `npm run check:macos`
+    - Same focused 60-test suite passed with `NODE_PATH` pointed at the private
+      workspace `node_modules`.
+  - Production target after sync:
+    - `npm run check`
+    - `npm run check:macos`
+    - Same focused 60-test suite passed.
+    - Note: direct use of the production runtime `npm` symlink from the source
+      user failed with a `readlink` permission error, so target checks used the
+      normal available `npm` binary while running in the production target cwd.
+- Production deploy:
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup retained at:
+    `/tmp/codex-mobile-web-deploy-fast-thread-20260623T014608Z.backup.tar.gz`.
+  - Sync used `sudo -S` with the configured local sudo password file as stdin;
+    no secret content was printed. Runtime directories and machine-specific
+    state were preserved.
+  - Restart:
+    `launchctl kickstart -k system/com.hermesmobile.plugin.codex-mobile`.
+  - Post-restart smoke:
+    - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` is running
+      with PID `69706`, `runs=19`, and last exit code `0`.
+    - `/api/public-config` returned HTTP `200`,
+      `clientBuildId=0.1.11|codex-mobile-shell-v377`,
+      `shellCacheName=codex-mobile-shell-v377`, `platform=darwin`, and
+      `authRequired=true`.
+    - Authenticated `/api/status` returned HTTP `200`, `ready=true`, and
+      `lastError=null`.
+    - Production HTTP static checks for `/app.js`, `/sw.js`, and `/` returned
+      HTTP `200`; `/app.js` and `/sw.js` contain `codex-mobile-shell-v377`,
+      `/app.js` no longer restores Fast from a global `localStorage` read, and
+      `/` contains the `Fast tag off for this thread` initial title.
+- Operational notes:
+  - This has not been pushed to public. Follow the release-order rule: wait for
+    production/user confirmation before any public sync/push.
+  - Already-open PWA/browser clients must accept the refresh prompt, hard
+    refresh, or close/reopen to load `codex-mobile-shell-v377`.
+
 ## Preserved Recent Handoff Tail
 
 ## 2026-06-21 Per-thread Incremental Rollout Enrichment Index
