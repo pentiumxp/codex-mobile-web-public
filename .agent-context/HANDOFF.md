@@ -3206,6 +3206,61 @@ The previous full handoff was archived and should be opened only when old proven
   - This is a second completed development phase, not completion of the full
     system-level refactor objective.
 
+## 2026-06-24 - Development runtime smoke after Phase 1-6 refactor commits
+
+- Scope:
+  - Runtime smoke for the local/private development workspace after these local
+    commits:
+    - `22e7b8e` task-card routing service;
+    - `0549375` turn compaction policy service;
+    - `d345726` projection input service;
+    - `ad16a1f` projection result service;
+    - `4acc038` thread-list fallback cache service;
+    - `c6aef7f` thread-detail summary service.
+  - This was development-environment validation only, not production deploy and
+    not public sync.
+- Development server:
+  - Started from `/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web`
+    on `127.0.0.1:18787`.
+  - Used temporary runtime directory
+    `/tmp/codex-mobile-web-dev-runtime-18787`.
+  - Auth, update check, and public-PR check were disabled for the local smoke.
+  - Service was stopped after validation; `18787` was no longer listening.
+- Smoke evidence:
+  - `GET /api/public-config` returned HTTP `200`,
+    `clientBuildId=0.1.11|codex-mobile-shell-v400`, and
+    `authRequired=false` for the dev smoke environment.
+  - `GET /api/status` returned HTTP `200` and `ready=true`.
+  - `GET /api/threads?limit=5&fallback=defer` returned HTTP `200`, 5 rows,
+    `mobileDeferredFallback=true`, `fallbackDeferredReason=client`, and
+    `fallbackMs=0`.
+  - First full `GET /api/threads?limit=5` returned HTTP `200`, 5 rows,
+    `fallbackCacheHit=false`, `fallbackMs=1110`,
+    `fallbackStateDbMs=78`, `fallbackRolloutMs=955`, and
+    `fallbackSessionIndexMs=1`.
+  - Second full `GET /api/threads?limit=5` returned HTTP `200`, 5 rows,
+    `fallbackCacheHit=true`, `fallbackMs=0`,
+    `fallbackStateDbMs=0`, `fallbackRolloutMs=0`, and
+    `fallbackSessionIndexMs=0`.
+  - `GET /api/threads/<visible-thread>?mode=recent` returned HTTP `200`,
+    `mobileReadMode=turns-list-initial`, and 10 turns.
+  - First full `GET /api/threads/<visible-thread>` returned HTTP `200`,
+    `mobileReadMode=thread-read`, 10 turns, `mobileOmittedTurnCount=54`,
+    and `mobileProjection.source=seeded`.
+  - Second full `GET /api/threads/<visible-thread>` returned HTTP `200`,
+    `mobileReadMode=projection-v4-cache`, 10 turns,
+    `mobileOmittedTurnCount=54`, `mobileProjection.source=cache`, and
+    `mobileProjection.ageMs=86`.
+  - Server logs showed summary resolver refresh:
+    `summary_app_server_refresh_start`, `summary_app_server_refresh_ok`, and
+    `summary_ready` with `source=state-db+app-server`, followed by
+    `thread_read_ok` on first full detail and `projection_hit` on the second.
+- Deployment status:
+  - Not deployed.
+  - Not pushed to public.
+  - Runtime smoke supports entering deployment preflight, but production deploy
+    has not yet been performed in this phase.
+
 ## 2026-06-24 - Phase 6 architecture refactor: thread-detail summary resolver
 
 - User goal:
