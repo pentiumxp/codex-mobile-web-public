@@ -965,6 +965,60 @@ test("thread detail compaction appends latest rollout completion when turns-list
   }
 });
 
+test("thread detail compaction appends latest rollout completion from final jsonl line without newline", () => {
+  const threadId = "019e9000-0000-7000-8000-rolloutdone2";
+  const latestTurnId = "turn-rollout-completed-eof";
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-rollout-completion-eof-"));
+  const rolloutPath = path.join(tempDir, `rollout-2099-01-01T00-00-00-${threadId}.jsonl`);
+  try {
+    const completedAt = new Date(Date.now() - 1000);
+    fs.writeFileSync(rolloutPath, [
+      JSON.stringify({
+        type: "event_msg",
+        timestamp: new Date(completedAt.getTime() - 60000).toISOString(),
+        payload: {
+          type: "task_started",
+          turn_id: latestTurnId,
+        },
+      }),
+      JSON.stringify({
+        type: "event_msg",
+        timestamp: completedAt.toISOString(),
+        payload: {
+          type: "task_complete",
+          turn_id: latestTurnId,
+          completed_at: completedAt.toISOString(),
+          duration_ms: 60000,
+          last_agent_message: "latest completed receipt without newline",
+        },
+      }),
+    ].join("\n"), "utf8");
+
+    const compacted = compactThread({
+      id: threadId,
+      name: "Music",
+      path: rolloutPath,
+      updatedAt: Math.floor(completedAt.getTime() / 1000),
+      status: { type: "completed" },
+      turns: [{
+        id: "older-turn",
+        status: { type: "completed" },
+        startedAt: Math.floor((completedAt.getTime() - 500000) / 1000),
+        completedAt: Math.floor((completedAt.getTime() - 450000) / 1000),
+        items: [{ id: "older-agent", type: "agentMessage", text: "older" }],
+      }],
+    });
+
+    const latest = compacted.turns.find((turn) => turn.id === latestTurnId);
+    assert.ok(latest);
+    assert.equal(latest.mobileSyntheticCompletionTurn, true);
+    assert.equal(latest.items[0].text, "latest completed receipt without newline");
+    assert.equal(compacted.mobileAppendedRolloutCompletionTurn, latestTurnId);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("thread list merge does not let notLoaded rows erase settled status", () => {
   const threadId = "019e9000-0000-7000-8000-000000000011";
   const result = mergeThreadListFallback({
@@ -1084,5 +1138,47 @@ test("turn sorting uses item timestamps when turn ids are not chronological", ()
   assert.deepEqual(sorted.map((turn) => turn.id), [
     "zz-old-random-id",
     "019e7ed2-da22-79b2-b514-eb8970509954",
+  ]);
+});
+
+test("turn sorting keeps timestamped completions after unknown fallback rows", () => {
+  const sorted = sortTurnsChronologically([
+    {
+      id: "019ef3e3-5671-73a0-b10e-6fa6bd84b08e",
+      status: { type: "completed" },
+      completedAt: 1782208276,
+      items: [{ type: "agentMessage", text: "latest" }],
+    },
+    {
+      id: "rollout-94836",
+      status: { type: "completed" },
+      items: [{ type: "agentMessage", text: "older fallback without timestamp" }],
+    },
+  ]);
+
+  assert.deepEqual(sorted.map((turn) => turn.id), [
+    "rollout-94836",
+    "019ef3e3-5671-73a0-b10e-6fa6bd84b08e",
+  ]);
+});
+
+test("turn sorting keeps timestamp-less live turns after completed history", () => {
+  const sorted = sortTurnsChronologically([
+    {
+      id: "live-shell",
+      status: { type: "inProgress" },
+      items: [],
+    },
+    {
+      id: "completed-turn",
+      status: { type: "completed" },
+      completedAt: 1782208276,
+      items: [{ type: "agentMessage", text: "done" }],
+    },
+  ]);
+
+  assert.deepEqual(sorted.map((turn) => turn.id), [
+    "completed-turn",
+    "live-shell",
   ]);
 });

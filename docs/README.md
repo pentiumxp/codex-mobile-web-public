@@ -43,6 +43,7 @@ Do not assume a new thread inherits prior UI state, shell PATH, running process 
 - Keep generated continuation handoff files under `.agent-context/thread-handoffs/` ignored.
 - Keep model-context and continuation-size policy changes documented in `docs/CONTEXT_STRATEGY.md`.
 - Outside explicit public-release work, do not sync or push the clean public repository.
+- For plugin bugfix, deploy, MCP, schema, provisioning, and platform-boundary work, follow the central Home AI root-cause architecture contract at `/Users/hermes-dev/HermesMobileDev/app/docs/PLATFORM_CONTRACTS/root-cause-architecture-contract.md`; reference that file directly instead of copying it here.
 
 ## Standard Verification
 

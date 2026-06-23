@@ -44,6 +44,7 @@ function emptyIndex(filePath) {
 function snapshot(index, extra = {}) {
   return Object.assign({
     entries: index && Array.isArray(index.entries) ? index.entries : [],
+    provisionalEntryCount: 0,
     offset: safeNumber(index && index.offset),
     sizeBytes: safeNumber(index && index.sizeBytes),
     mtimeMs: safeNumber(index && index.mtimeMs),
@@ -110,6 +111,26 @@ function createRolloutEnrichmentIndexService(options = {}) {
     return { parsedLines, parseErrors };
   }
 
+  function parseCarryEntry(index) {
+    const carry = String(index && index.carry || "");
+    if (!carry.trim()) return null;
+    try {
+      return parseJsonLine(carry) || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function snapshotWithCarry(index, extra = {}) {
+    const base = snapshot(index, extra);
+    const carryEntry = parseCarryEntry(index);
+    if (!carryEntry) return base;
+    return Object.assign({}, base, {
+      entries: base.entries.concat([carryEntry]),
+      provisionalEntryCount: safeNumber(base.provisionalEntryCount) + 1,
+    });
+  }
+
   function read(filePath) {
     const key = normalizePath(filePath);
     if (!key) return snapshot(emptyIndex(""));
@@ -119,7 +140,7 @@ function createRolloutEnrichmentIndexService(options = {}) {
       if (!stat.isFile()) return snapshot(emptyIndex(key));
     } catch (_) {
       indexes.delete(key);
-      return snapshot(emptyIndex(key), { missing: true });
+      return snapshotWithCarry(emptyIndex(key), { missing: true });
     }
 
     let index = indexes.get(key);
@@ -154,7 +175,7 @@ function createRolloutEnrichmentIndexService(options = {}) {
         index.offset = position;
       } catch (_) {
         indexes.delete(key);
-        return snapshot(emptyIndex(key), { readError: true });
+        return snapshotWithCarry(emptyIndex(key), { readError: true });
       } finally {
         if (fd !== null) {
           try {
@@ -168,7 +189,7 @@ function createRolloutEnrichmentIndexService(options = {}) {
     index.mtimeMs = Math.trunc(Number(stat.mtimeMs || 0));
     index.updatedAtMs = now();
     pruneIndexes();
-    return snapshot(index, {
+    return snapshotWithCarry(index, {
       bytesRead,
       parsedLines,
       parseErrors,

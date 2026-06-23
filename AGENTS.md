@@ -23,3 +23,15 @@ that merely hide projection, synchronization, state ownership, routing, or
 runtime-contract defects while leaving the underlying inconsistency in place.
 Any temporary diagnostic workaround must be clearly scoped, documented, and
 removed or replaced by the architectural fix before release.
+
+## Home AI Root-Cause Contract
+
+For plugin bugfix, deploy, MCP, schema, provisioning, and platform-boundary
+work, follow the central Home AI root-cause architecture contract:
+`/Users/hermes-dev/HermesMobileDev/app/docs/PLATFORM_CONTRACTS/root-cause-architecture-contract.md`.
+Reference that file as the canonical contract; do not copy it locally.
+
+Before non-trivial fixes, identify the symptom, failing layer, owning workspace,
+violated invariant, root cause or strongest hypothesis, and closure validation.
+Fallbacks must be bounded, observable, temporary, validated, and have an owner
+and removal path.

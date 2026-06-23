@@ -21,6 +21,105 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-23 - Rollout EOF Completion and Recent Sort Fix
+
+- Status: implemented, validated locally/staging/production, and deployed to
+  Mac production. Not pushed public.
+- Home AI contract:
+  - Adopted the central Home AI root-cause architecture contract for future
+    plugin bugfix/deploy/MCP/schema/provisioning work:
+    `/Users/hermes-dev/HermesMobileDev/app/docs/PLATFORM_CONTRACTS/root-cause-architecture-contract.md`.
+  - Recorded a direct reference in `AGENTS.md`,
+    `.agent-context/PROJECT_CONTEXT.md`, `docs/README.md`, and `README.md`.
+  - Do not copy the full contract locally.
+- Trigger:
+  - After the prior root-state deploy, user reported that reloading `Music`
+    was still wrong.
+  - Production cold first-open evidence showed `mode=recent` could return a
+    `turns-list-initial` response where latest rollout completion was present
+    only after later warming, or present but not ordered as the last visible
+    turn.
+- Root cause:
+  - The rollout enrichment index ignored a complete JSONL event when it was the
+    final file line without a trailing newline. That made just-finished
+    `task_complete` invisible to the recent-window completion repair path.
+  - `thread/turns/list` may include timestamp-less `rollout-*` fallback rows;
+    generic sorting by id can place those after timestamped completed turns,
+    making the UI bottom anchor an older fallback turn on first open.
+- Change:
+  - `adapters/rollout-enrichment-index-service.js`
+    - Exposes a parseable EOF carry as a provisional read-only entry.
+    - Keeps incomplete final JSON fragments invisible.
+    - When the newline later arrives, the same event enters the persistent index
+      normally without duplication.
+  - `server.js`
+    - Turn sorting now only treats timestamp-less `rollout-*` fallback rows as
+      older than timestamped turns.
+    - It does not globally reorder ordinary timestamp-less historical turns,
+      preserving existing compact-detail semantics.
+  - Tests/docs:
+    - `test/rollout-enrichment-index-service.test.js`
+    - `test/thread-visibility.test.js`
+    - `README.md`
+    - `docs/ARCHITECTURE.md`
+    - `docs/TROUBLESHOOTING.md`
+    - `docs/README.md`
+- Validation:
+  - Private workspace:
+    - `node --test test/thread-visibility.test.js
+      test/thread-detail-projection-service.test.js
+      test/thread-detail-projection-v4-service.test.js
+      test/conversation-render.test.js
+      test/turn-usage-summary-service.test.js
+      test/thread-item-timestamp-enrichment.test.js
+      test/rollout-enrichment-index-service.test.js` passed 160/160.
+    - `npm test` passed 624/624.
+    - `npm run check`
+    - `npm run check:macos`
+    - `git diff --check`
+  - Staging:
+    - Final staging package:
+      `/tmp/codex-mobile-web-stage-rollout-eof-sort.v7i9py`.
+    - Excluded `.git`, `.agent-context`, `.codegraph`, `node_modules`, `data`,
+      `logs`, `uploads`, env files, access-key, and secret path patterns.
+    - `npm run check`
+    - `npm run check:macos`
+    - Focused 160-test suite passed with `NODE_PATH` pointed at private
+      workspace dependencies.
+    - Sensitive-content scan had no hits.
+  - Production target after sync:
+    - `npm run check`
+    - `npm run check:macos`
+    - Same focused 160-test suite passed with `NODE_PATH` pointed at production
+      dependencies.
+- Production deploy:
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Final backup retained at:
+    `/tmp/codex-mobile-web-deploy-rollout-eof-sort-20260623T100132Z.backup`.
+  - Restart:
+    `launchctl kickstart -k system/com.hermesmobile.plugin.codex-mobile`.
+  - Post-restart health:
+    - `/api/public-config` returned HTTP `200`,
+      `clientBuildId=0.1.11|codex-mobile-shell-v380`,
+      `shellCacheName=codex-mobile-shell-v380`, and `authRequired=true`.
+    - Authenticated `/api/status` returned HTTP `200`, `ready=true`,
+      `transport=external-jsonl-tcp`, and active Codex home
+      `/Users/xuxin/.codex-homes/previous`.
+  - Music smoke:
+    - Latest rollout `task_complete` for thread
+      `019ed959-27ce-7312-ba77-226ef9c526c7` was
+      `019ef3ed-69a6-71f2-bc72-e15c67b7739d` with final receipt length `194`.
+    - `/api/threads/:id?mode=recent` returned `turns-list-initial`, `idle`, no
+      active turn id, no empty turns, and that latest completion was the last
+      visible turn with `userMessage`, `agentMessage`, and `turnUsageSummary`.
+    - `/api/threads?limit=80` row for `Music` was `idle`, no active turn id,
+      `updatedAt=1782208888`; warm list read hit fallback cache with
+      `fallbackCacheHit=true`, `fallbackMs=0`, total about `283ms`.
+- Operational notes:
+  - This is server-only; no PWA shell cache bump.
+  - Public has not been pushed. Follow release-order rule: production/user test
+    first, public only after confirmation.
+
 ## 2026-06-23 - Root State Ownership Fix for Music Running/Receipt Drift
 
 - Status: implemented, validated locally and in staging, deployed to Mac

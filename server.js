@@ -11217,8 +11217,14 @@ function sortTurnsChronologically(turns) {
     const left = turnSortTimestampMs(a);
     const right = turnSortTimestampMs(b);
     if (Number.isFinite(left) && Number.isFinite(right) && left !== right) return left - right;
+    if (Number.isFinite(left) && !Number.isFinite(right) && isRolloutFallbackTurnId(b)) return 1;
+    if (!Number.isFinite(left) && Number.isFinite(right) && isRolloutFallbackTurnId(a)) return -1;
     return String((a && a.id) || "").localeCompare(String((b && b.id) || ""));
   });
+}
+
+function isRolloutFallbackTurnId(turn) {
+  return /^rollout-\d+$/i.test(String(turn && (turn.id || turn.turnId) || ""));
 }
 
 function turnSortTimestampMs(turn) {
@@ -11246,7 +11252,8 @@ function turnSortTimestampMs(turn) {
   const itemTimestamps = ((turn && turn.items) || [])
     .map(itemDisplayTimestampMs)
     .filter(Boolean);
-  return itemTimestamps.length ? Math.min(...itemTimestamps) : NaN;
+  if (itemTimestamps.length) return Math.min(...itemTimestamps);
+  return isLiveTurn(turn) ? Number.MAX_SAFE_INTEGER : NaN;
 }
 
 function threadFromTurnsList(threadId, summary, turnsResult) {
