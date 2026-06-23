@@ -1,3 +1,34 @@
+# 2026-06-23 - v390 public push completed
+
+- Trigger: User explicitly requested `推送 public` after v390 production deploy
+  and smoke passed.
+- Publish method:
+  - Created a temporary public worktree from `public/main` at
+    `/tmp/codex-mobile-public-v390.zDBPfA`.
+  - Applied `main` -> `public/main` diff excluding `.agent-context`.
+  - Verified staged public paths did not include `.agent-context`, env files,
+    runtime data, logs, uploads, `node_modules`, or `.codegraph`.
+  - Committed public release as
+    `6f177f4 fix: publish completed turn receipt convergence`.
+  - Pushed `6f177f4` to `public/main`.
+  - Merged `public/main` back into private `main` with
+    `66b22b3 Merge public release v390` so public history is an ancestor of
+    private history.
+- Public validation:
+  - `git diff --check`
+  - `npm run check`
+  - `npm run check:macos`
+  - `NODE_PATH=/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web/node_modules npm test`
+    passed (`647` tests). The first plain `npm test` in the temporary public
+    worktree failed only because that worktree intentionally had no
+    `node_modules` and could not resolve `web-push`; rerun with the private
+    dependency tree passed.
+- Final verification:
+  - `git merge-base --is-ancestor public/main main` returned success.
+  - `git diff --stat public/main..main -- ':!.agent-context'` was empty.
+  - `git ls-tree -r --name-only public/main` had no `.agent-context`, env,
+    runtime, logs, uploads, `node_modules`, or `.codegraph` paths.
+
 # 2026-06-23 - v390 completed-turn receipt merge fix
 
 - Trigger:
