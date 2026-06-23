@@ -14,3 +14,12 @@ Treat them as the durable project context.
 Before ending substantial work, update `.agent-context/HANDOFF.md`.
 
 Do not store raw secrets, access tokens, passwords, or one-time approval state in shared context files.
+
+## Codex Mobile Reliability Rule
+
+Codex Mobile is a primary coding tool. Bugs in Codex Mobile itself must be fixed
+from the root cause and architecture boundary first. Do not add fallback layers
+that merely hide projection, synchronization, state ownership, routing, or
+runtime-contract defects while leaving the underlying inconsistency in place.
+Any temporary diagnostic workaround must be clearly scoped, documented, and
+removed or replaced by the architectural fix before release.

@@ -381,6 +381,11 @@ Cause to check:
   `adapters/thread-detail-projection-service.js`, rollout size/mtime changes,
   and summary `updatedAt/status` changes that may be invalidating the
   projection signature.
+- `projection-v4-dynamic` is not an unconditional long-lived cache. If the
+  backing rollout path/size/mtime, retained turn window, or policy version
+  changes after the projection seed, completed/idle/error-like threads should
+  miss and reseed; active threads only keep the dynamic projection for a short
+  stale window while notifications continue arriving.
 - The projection index is updated from raw app-server notifications before
   browser SSE compaction. It should observe `item/started`, `item/completed`,
   `item/agentMessage/delta`, `item/reasoning/*Delta`,
@@ -388,6 +393,15 @@ Cause to check:
   If re-entering a running thread misses the latest intermediate output, check
   whether the listener is receiving raw notifications and whether the current
   projection entry was seeded before those notifications arrived.
+- If the status chip shows live output/commands/reasoning but the thread body is
+  anchored on an empty latest `inProgress` turn, compare `activeTurnId`,
+  `mobileLocalActiveStatus`, and the last two detail turns. A Mobile Web
+  `message-submit` overlay is only a temporary state bridge until a real turn is
+  materialized. Server compaction must transfer active ownership to a different
+  unfinished turn that already has runtime items, and must drop empty live
+  shells once the thread summary is idle/completed/error-like. Do not fix this
+  in the browser by displaying another fallback turn; the server projection
+  should not emit the contradictory empty active shell.
 - If a completed turn shows two different `Usage` cards or the final assistant
   receipt disappears after leaving and re-entering, check the
   `turn/completed` projection merge path first. Completion notifications are
@@ -409,6 +423,12 @@ Cause to check:
   items are not enough to suppress this fallback. Existing matching receipts
   must not be replaced, and failed, cancelled, interrupted, active, or
   in-progress turns must not receive this fallback.
+- If `thread/turns/list` omits the latest completed turn entirely while the
+  thread summary `updatedAt` and rollout tail both point to a later
+  `task_complete`, the compacted detail response must append that completed
+  turn from the rollout completion event before trimming the recent window. This
+  is separate from adding a missing receipt to an existing turn: the turn itself
+  is absent from app-server's bounded list.
 - If raw rollout has valid scoped `token_count` for a recently completed turn
   but the detail response has no `turnUsageSummary`, check whether the fixed
   rollout tail no longer contains that turn's token events. Thread detail should

@@ -31,6 +31,11 @@ function normalizeStatus(value) {
   return String(value).toLowerCase();
 }
 
+function isRestingStatus(value) {
+  const status = normalizeStatus(value).replace(/[_\s]+/g, "-");
+  return /^(idle|completed|complete|success|succeeded|failed|failure|cancelled|canceled|interrupted|error)$/.test(status);
+}
+
 function projectionSignature(input = {}) {
   const stats = input.rolloutStats || {};
   const signature = {
@@ -49,6 +54,16 @@ function projectionSignature(input = {}) {
 
 function signatureHash(signature) {
   return signature ? hashText(stableJson(signature)) : "";
+}
+
+function dynamicBackingSignatureChanged(left, right) {
+  if (!left || !right) return false;
+  return String(left.policyVersion || "") !== String(right.policyVersion || "")
+    || String(left.threadId || "") !== String(right.threadId || "")
+    || String(left.rolloutPathHash || "") !== String(right.rolloutPathHash || "")
+    || safeNumber(left.rolloutSizeBytes) !== safeNumber(right.rolloutSizeBytes)
+    || safeNumber(left.rolloutMtimeMs) !== safeNumber(right.rolloutMtimeMs)
+    || safeNumber(left.maxTurns) !== safeNumber(right.maxTurns);
 }
 
 function readJsonFile(filePath) {
@@ -484,6 +499,7 @@ function createThreadDetailProjectionService(options = {}) {
   const cacheDir = String(options.cacheDir || "").trim();
   const policyVersion = String(options.policyVersion || "1");
   const maxTurns = Math.max(1, safeNumber(options.maxTurns) || 10);
+  const dynamicSignatureMismatchMaxAgeMs = Math.max(1000, safeNumber(options.dynamicSignatureMismatchMaxAgeMs) || 15000);
   const now = typeof options.now === "function" ? options.now : () => Date.now();
   const memory = new Map();
 
@@ -563,6 +579,10 @@ function createThreadDetailProjectionService(options = {}) {
     const summaryUpdatedAtMs = safeNumber(input.summaryUpdatedAtMs);
     if (entry.dynamic) {
       if (summaryUpdatedAtMs && entry.updatedAtMs && summaryUpdatedAtMs > entry.updatedAtMs + 2000) return null;
+      if (dynamicBackingSignatureChanged(entry.signature, signature)) {
+        const dynamicAgeMs = Math.max(0, now() - safeNumber(entry.updatedAtMs || entry.cachedAtMs));
+        if (isRestingStatus(input.summaryStatus) || dynamicAgeMs > dynamicSignatureMismatchMaxAgeMs) return null;
+      }
     } else if (!expectedHash || entry.signatureHash !== expectedHash) {
       return null;
     }

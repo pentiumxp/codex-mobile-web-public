@@ -3184,6 +3184,180 @@ function turnIdentifier(turn) {
   return String(turn && (turn.id || turn.turnId) || "");
 }
 
+function turnTimestampFromFields(turn, fields) {
+  for (const field of fields) {
+    const value = timestampToMs(turn && turn[field]);
+    if (value) return value;
+  }
+  return 0;
+}
+
+function turnStartedAtMs(turn) {
+  return turnTimestampFromFields(turn, [
+    "startedAtMs",
+    "startedAt",
+    "started_at_ms",
+    "started_at",
+    "createdAtMs",
+    "createdAt",
+    "created_at_ms",
+    "created_at",
+  ]);
+}
+
+function turnHasNoVisibleItems(turn) {
+  const items = Array.isArray(turn && turn.items) ? turn.items : [];
+  return !items.some(Boolean);
+}
+
+function isUnmaterializedLiveTurnShell(turn) {
+  if (!turn || !isLiveTurn(turn) || isEndedTurn(turn)) return false;
+  return turnHasNoVisibleItems(turn);
+}
+
+function itemLooksLikeActiveRuntime(item) {
+  if (!item || typeof item !== "object" || isCompletedStatus(item.status)) return false;
+  if (item.type === "reasoning" || isOperationalItem(item)) return true;
+  if (item.type === "agentMessage" || item.type === "plan") return true;
+  return isUserQuestionItem(item) || userMessageHasVisualAttachment(item);
+}
+
+function turnHasMaterializedActiveRuntime(turn) {
+  const items = Array.isArray(turn && turn.items) ? turn.items : [];
+  return items.some(itemLooksLikeActiveRuntime);
+}
+
+function latestMaterializedActiveTurnCandidate(turns, excludedTurnIds = new Set()) {
+  for (let index = Array.isArray(turns) ? turns.length - 1 : -1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    const turnId = turnIdentifier(turn);
+    if (!turnId || excludedTurnIds.has(turnId) || isEndedTurn(turn)) continue;
+    if (turnHasMaterializedActiveRuntime(turn)) return turn;
+  }
+  return null;
+}
+
+function rolloutEvidenceHasRuntimeActivity(evidence) {
+  return Boolean(evidence && !evidence.hasTerminal
+    && evidence.turnId
+    && (evidence.hasVisibleUser || evidence.hasAssistant || evidence.hasOperation));
+}
+
+function rolloutEvidenceIsRecent(evidence, nowMs = Date.now()) {
+  const lastActivityMs = Number(evidence && evidence.lastActivityMs || 0);
+  if (!lastActivityMs) return false;
+  return Math.max(0, Number(nowMs || Date.now()) - lastActivityMs) <= ROLLOUT_ACTIVE_STATUS_WINDOW_MS;
+}
+
+function rolloutLatestEvidenceForThread(thread, options = {}) {
+  if (!thread || typeof thread !== "object") return null;
+  let rolloutPath = rolloutPathForThread(thread);
+  if (!rolloutPath && thread.id) {
+    const stateThread = readStateDbThread(thread.id);
+    rolloutPath = rolloutPathForThread(stateThread);
+  }
+  if (!rolloutPath) return null;
+  let stat = options.stat || null;
+  if (!stat) {
+    try {
+      stat = fs.statSync(rolloutPath);
+    } catch (_) {
+      stat = null;
+    }
+  }
+  return rolloutLatestTurnEvidence(rolloutPath, stat);
+}
+
+function activeRuntimeEvidenceForThread(thread, options = {}) {
+  const evidence = rolloutLatestEvidenceForThread(thread, options);
+  if (!rolloutEvidenceHasRuntimeActivity(evidence)) return null;
+  return evidence;
+}
+
+function activeStatusFromRuntimeEvidence(previousStatus) {
+  const previousType = statusText(previousStatus);
+  const status = {
+    type: "active",
+    mobileRuntimeDerived: true,
+  };
+  if (previousType && previousType !== "active") status.previousType = previousType;
+  return status;
+}
+
+function reconcileThreadActiveTurnWithRolloutEvidence(thread, options = {}) {
+  if (!thread || typeof thread !== "object" || !Array.isArray(thread.turns)) return thread;
+  const turns = thread.turns;
+  const shouldReconcile = isThreadListLiveStatus(thread.status)
+    || Boolean(thread.activeTurnId)
+    || Boolean(thread.mobileLocalActiveStatus)
+    || turns.some(isLiveTurn);
+  if (!shouldReconcile) return thread;
+  const evidence = activeRuntimeEvidenceForThread(thread, options);
+  const unmaterializedShellIds = new Set(
+    turns.filter(isUnmaterializedLiveTurnShell)
+      .map(turnIdentifier)
+      .filter(Boolean),
+  );
+  if (unmaterializedShellIds.size && isThreadListRestStatus(thread.status)) {
+    const dropped = [];
+    thread.turns = turns.filter((turn) => {
+      const turnId = turnIdentifier(turn);
+      if (!turnId || !unmaterializedShellIds.has(turnId)) return true;
+      dropped.push(turnId);
+      return false;
+    });
+    if (dropped.length) {
+      thread.mobileDroppedUnmaterializedRestingActiveTurn = dropped[0];
+      if (dropped.includes(String(thread.activeTurnId || ""))) delete thread.activeTurnId;
+      if (thread.mobileLocalActiveStatus && dropped.includes(String(thread.mobileLocalActiveStatus.turnId || ""))) {
+        delete thread.mobileLocalActiveStatus;
+      }
+    }
+    return thread;
+  }
+  if (!evidence && !unmaterializedShellIds.size) return thread;
+  if (evidence && !rolloutEvidenceIsRecent(evidence, options.nowMs || Date.now()) && !isThreadListLiveStatus(thread.status)) {
+    return thread;
+  }
+  const materializedCandidate = latestMaterializedActiveTurnCandidate(turns, unmaterializedShellIds);
+  const activeTurnId = String((evidence && evidence.turnId) || turnIdentifier(materializedCandidate) || "").trim();
+  if (!activeTurnId) return thread;
+
+  const dropped = [];
+  thread.turns = turns.filter((turn) => {
+    const turnId = turnIdentifier(turn);
+    if (!turnId || turnId === activeTurnId) return true;
+    if (!isUnmaterializedLiveTurnShell(turn)) return true;
+    dropped.push(turnId);
+    return false;
+  });
+
+  const activeTurn = thread.turns.find((turn) => turnIdentifier(turn) === activeTurnId) || null;
+  if (!activeTurn || isEndedTurn(activeTurn)) return thread;
+
+  thread.status = activeStatusFromRuntimeEvidence(thread.status);
+  thread.activeTurnId = activeTurnId;
+  activeTurn.status = activeStatusFromRuntimeEvidence(activeTurn.status);
+  if (!turnStartedAtMs(activeTurn)) {
+    const startedAtMs = Number((evidence && (evidence.startedAtMs || evidence.lastActivityMs)) || 0);
+    if (startedAtMs) activeTurn.startedAt = Math.floor(startedAtMs / 1000);
+  }
+  if (evidence) {
+    thread.mobileRolloutActiveTurn = {
+      turnId: activeTurnId,
+      startedAtMs: Math.trunc(Number(evidence.startedAtMs || 0)),
+      lastActivityMs: Math.trunc(Number(evidence.lastActivityMs || 0)),
+    };
+  }
+  if (dropped.length) {
+    thread.mobileDroppedUnmaterializedLocalActiveTurn = dropped[0];
+    if (thread.mobileLocalActiveStatus && dropped.includes(String(thread.mobileLocalActiveStatus.turnId || ""))) {
+      delete thread.mobileLocalActiveStatus;
+    }
+  }
+  return thread;
+}
+
 function turnListFromResult(result) {
   if (Array.isArray(result)) return result;
   if (Array.isArray(result && result.data)) return result.data;
@@ -4240,6 +4414,112 @@ function rolloutFinalReceiptItem(entry, turnId, text) {
     source: "rollout_task_complete",
     mobileSyntheticFinalReceipt: true,
   };
+}
+
+function rolloutCompletionTimestampMs(entry) {
+  const payload = entry && entry.payload && typeof entry.payload === "object" ? entry.payload : {};
+  return timestampToMs(payload.completed_at || payload.completedAt || entry.timestamp || payload.timestamp);
+}
+
+function rolloutCompletionTurnFromEntry(entry, turnId, text) {
+  const payload = entry && entry.payload && typeof entry.payload === "object" ? entry.payload : {};
+  const completedAtMs = rolloutCompletionTimestampMs(entry);
+  const durationMs = Number(payload.duration_ms || payload.durationMs || 0);
+  const turn = {
+    id: turnId,
+    status: "completed",
+    items: [rolloutFinalReceiptItem(entry, turnId, text)],
+    source: "rollout_task_complete",
+    mobileSyntheticCompletionTurn: true,
+  };
+  if (completedAtMs) {
+    turn.completedAt = Math.floor(completedAtMs / 1000);
+    turn.completedAtMs = completedAtMs;
+  }
+  if (Number.isFinite(durationMs) && durationMs > 0) {
+    turn.durationMs = durationMs;
+    if (completedAtMs && durationMs <= completedAtMs) {
+      turn.startedAt = Math.floor((completedAtMs - durationMs) / 1000);
+      turn.startedAtMs = completedAtMs - durationMs;
+    }
+  }
+  return turn;
+}
+
+function cloneRolloutCompletionTurnPayload(payload) {
+  const byTurn = new Map();
+  const sourceByTurn = payload && payload.byTurn instanceof Map ? payload.byTurn : new Map();
+  for (const [turnId, turn] of sourceByTurn.entries()) {
+    byTurn.set(turnId, clonePlainJson(turn));
+  }
+  return {
+    byTurn,
+    scopedCount: Number(payload && payload.scopedCount) || 0,
+  };
+}
+
+function readRolloutCompletionTurns(rolloutPath) {
+  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) {
+    return { byTurn: new Map(), scopedCount: 0 };
+  }
+  let cacheKey = "";
+  try {
+    const stat = fs.statSync(rolloutPath);
+    cacheKey = `${runtimeContextCacheKey(rolloutPath, stat)}:completion-turns`;
+    const cached = latestFinalReceiptsByPath.get(cacheKey);
+    if (cached && Date.now() - cached.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS) {
+      return cloneRolloutCompletionTurnPayload(cached.payload);
+    }
+  } catch (_) {
+    return { byTurn: new Map(), scopedCount: 0 };
+  }
+  const byTurn = new Map();
+  let scopedCount = 0;
+  let currentTurnId = "";
+  for (const entry of readRolloutEnrichmentEntries(rolloutPath)) {
+    if (!entry || !entry.type) continue;
+    const payload = entry.payload || {};
+    const explicitTurnId = rolloutEntryTurnId(entry);
+    if (entry.type === "turn_context" && explicitTurnId) currentTurnId = explicitTurnId;
+    if (entry.type === "event_msg" && payload.type === "task_started" && explicitTurnId) currentTurnId = explicitTurnId;
+    if (entry.type !== "event_msg" || !/^(task_complete|task_completed)$/.test(String(payload.type || ""))) continue;
+    const turnId = explicitTurnId || currentTurnId;
+    if (!turnId) continue;
+    const text = finalReceiptTextFromParams(payload);
+    if (!text) continue;
+    byTurn.set(turnId, rolloutCompletionTurnFromEntry(entry, turnId, text));
+    scopedCount += 1;
+  }
+  const payload = { byTurn, scopedCount };
+  if (cacheKey) rememberRolloutFinalReceipts(cacheKey, payload);
+  return cloneRolloutCompletionTurnPayload(payload);
+}
+
+function threadUpdatedAtOnlyMs(thread) {
+  return timestampToMs(thread && (thread.updatedAt || thread.updated_at || thread.updatedAtMs || thread.updated_at_ms));
+}
+
+function appendMissingRolloutCompletionTurnsToThread(thread) {
+  if (!thread || typeof thread !== "object" || !Array.isArray(thread.turns)) return thread;
+  if (!isThreadListRestStatus(thread.status)) return thread;
+  const rolloutPath = rolloutPathForThread(thread);
+  if (!rolloutPath) return thread;
+  const payload = readRolloutCompletionTurns(rolloutPath);
+  if (!payload || !(payload.byTurn instanceof Map) || !payload.byTurn.size) return thread;
+  const existingIds = new Set(thread.turns.map(turnIdentifier).filter(Boolean));
+  const updatedAtMs = threadUpdatedAtOnlyMs(thread);
+  const candidates = Array.from(payload.byTurn.values())
+    .filter((turn) => turn && turn.id && !existingIds.has(String(turn.id)))
+    .filter((turn) => {
+      if (!updatedAtMs) return true;
+      const completedAtMs = timestampToMs(turn.completedAtMs || turn.completedAt);
+      return Boolean(completedAtMs && completedAtMs >= updatedAtMs - 5000);
+    })
+    .sort((a, b) => turnSortTimestampMs(a) - turnSortTimestampMs(b));
+  if (!candidates.length) return thread;
+  thread.turns.push(...candidates.map(clonePlainJson));
+  thread.mobileAppendedRolloutCompletionTurn = candidates[candidates.length - 1].id || true;
+  return thread;
 }
 
 function readRolloutFinalReceiptItems(rolloutPath) {
@@ -5661,8 +5941,10 @@ function compactThread(thread, options = {}) {
   const maxTurns = Math.max(1, Math.min(200, Number(options.maxTurns || MAX_THREAD_TURNS)));
   if (Array.isArray(out.turns)) {
     pendingSteerEchoStore.injectIntoThread(out);
+    reconcileThreadActiveTurnWithRolloutEvidence(out, options);
     normalizeSupersededLiveTurns(out);
     pruneSupersededLiveShellTurns(out);
+    appendMissingRolloutCompletionTurnsToThread(out);
     const omitted = Math.max(0, out.turns.length - maxTurns);
     if (omitted > 0) {
       out.mobileOmittedTurnCount = omitted;
@@ -10698,6 +10980,26 @@ function rolloutHasTerminalEntryAtOrAfter(rolloutPath, timestampMs = 0) {
   return false;
 }
 
+function localActiveSupersedingRolloutEvidence(rolloutPath, entry, nowMs = Date.now()) {
+  const localTurnId = String(entry && entry.turnId || "").trim();
+  if (!rolloutPath || !localTurnId) return null;
+  let stat = null;
+  try {
+    stat = fs.statSync(rolloutPath);
+  } catch (_) {
+    stat = null;
+  }
+  const evidence = rolloutLatestTurnEvidence(rolloutPath, stat);
+  if (!rolloutEvidenceHasRuntimeActivity(evidence)) return null;
+  const evidenceTurnId = String(evidence.turnId || "").trim();
+  if (!evidenceTurnId || evidenceTurnId === localTurnId) return null;
+  const lastActivityMs = Number(evidence.lastActivityMs || 0);
+  const localStartedAtMs = Number(entry && entry.startedAtMs || 0);
+  if (localStartedAtMs && lastActivityMs && lastActivityMs < localStartedAtMs - 1000) return null;
+  if (!rolloutEvidenceIsRecent(evidence, nowMs)) return null;
+  return evidence;
+}
+
 function localActiveSummaryRolloutPath(threadId, summary = null) {
   const direct = rolloutPathForThread(summary);
   if (direct) return direct;
@@ -10719,9 +11021,19 @@ function readLocalActiveThreadStatus(threadId, summary = null, nowMs = Date.now(
     updateThreadListFallbackCacheStatus(id, { type: "idle" }, { source: "local-active-expired" });
     return null;
   }
-  if (rolloutHasTerminalEntryAtOrAfter(localActiveSummaryRolloutPath(id, summary), entry.startedAtMs)) {
+  const rolloutPath = localActiveSummaryRolloutPath(id, summary);
+  if (rolloutHasTerminalEntryAtOrAfter(rolloutPath, entry.startedAtMs)) {
     localActiveThreadStatuses.delete(id);
     updateThreadListFallbackCacheStatus(id, { type: "completed" }, { source: "local-active-terminal" });
+    return null;
+  }
+  const supersedingEvidence = localActiveSupersedingRolloutEvidence(rolloutPath, entry, nowMs);
+  if (supersedingEvidence) {
+    localActiveThreadStatuses.delete(id);
+    updateThreadListFallbackCacheStatus(id, { type: "active" }, {
+      source: "rollout-active-evidence",
+      turnId: supersedingEvidence.turnId,
+    });
     return null;
   }
   return entry;

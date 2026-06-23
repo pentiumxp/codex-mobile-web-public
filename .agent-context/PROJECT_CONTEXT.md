@@ -33,6 +33,12 @@ The full previous context was archived and should be read only when this routing
 - Before production/user validation, at most create a local/private commit. Do not push public preemptively.
 - If a public push already happened before this rule was recorded, document that fact in `.agent-context/HANDOFF.md` and follow this rule going forward.
 
+## Codex Mobile Reliability Rule
+
+- Codex Mobile is a primary coding tool. Problems in Codex Mobile itself must be solved at the root cause and architecture boundary before release.
+- Do not add fallback layers that merely mask projection, synchronization, state ownership, routing, or runtime-contract defects while leaving the underlying inconsistency in place.
+- Any temporary diagnostic workaround must be explicitly scoped, documented, and removed or replaced by the architectural fix before production/public release.
+
 ## Preserved Project Context Excerpt
 
 # PROJECT_CONTEXT

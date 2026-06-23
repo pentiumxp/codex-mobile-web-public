@@ -12,6 +12,7 @@ const {
   anyThreadMatchesVisibleWorkspace,
   applyLocalActiveThreadStatusToSummary,
   clearLocalActiveThreadStatus,
+  compactThread,
   filterFallbackThreads,
   hydrateThreadListResultTitlesFromSessionIndex,
   hydrateThreadListTitlesFromSessionIndex,
@@ -771,6 +772,195 @@ test("local turn-start overlay clears when rollout tail has a later terminal eve
     assert.equal(summary.activeTurnId, undefined);
   } finally {
     clearLocalActiveThreadStatus(threadId);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("local turn-start overlay yields to a different materialized rollout active turn", () => {
+  const threadId = "019e9000-0000-7000-8000-localactive3";
+  const localTurnId = "turn-local-active";
+  const materializedTurnId = "turn-rollout-active";
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-local-active-materialized-"));
+  const rolloutPath = path.join(tempDir, `rollout-2099-01-01T00-00-00-${threadId}.jsonl`);
+  rememberLocalActiveThreadStatus(threadId, localTurnId, { source: "test" });
+  try {
+    const timestamp = new Date(Date.now() + 1000).toISOString();
+    fs.writeFileSync(rolloutPath, [
+      JSON.stringify({
+        type: "event_msg",
+        timestamp,
+        payload: {
+          type: "task_started",
+          turn_id: materializedTurnId,
+        },
+      }),
+      JSON.stringify({
+        type: "event_msg",
+        timestamp,
+        payload: {
+          type: "agent_message",
+          turn_id: materializedTurnId,
+          message: "working",
+        },
+      }),
+    ].join("\n") + "\n", "utf8");
+
+    const summary = applyLocalActiveThreadStatusToSummary({
+      id: threadId,
+      name: "Music",
+      path: rolloutPath,
+      updatedAt: 1780722169,
+      status: { type: "active" },
+    });
+
+    assert.equal(summary.status.type, "active");
+    assert.equal(summary.activeTurnId, undefined);
+    assert.equal(summary.mobileLocalActiveStatus, undefined);
+  } finally {
+    clearLocalActiveThreadStatus(threadId);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("thread detail compaction drops empty local active shell when rollout has a materialized active turn", () => {
+  const threadId = "019e9000-0000-7000-8000-localactive4";
+  const localTurnId = "turn-local-active";
+  const materializedTurnId = "turn-rollout-active";
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-active-shell-"));
+  const rolloutPath = path.join(tempDir, `rollout-2099-01-01T00-00-00-${threadId}.jsonl`);
+  try {
+    const timestamp = new Date(Date.now() - 1000).toISOString();
+    fs.writeFileSync(rolloutPath, [
+      JSON.stringify({
+        type: "event_msg",
+        timestamp,
+        payload: {
+          type: "task_started",
+          turn_id: materializedTurnId,
+        },
+      }),
+      JSON.stringify({
+        type: "event_msg",
+        timestamp,
+        payload: {
+          type: "agent_message",
+          turn_id: materializedTurnId,
+          message: "working",
+        },
+      }),
+    ].join("\n") + "\n", "utf8");
+
+    const compacted = compactThread({
+      id: threadId,
+      name: "Music",
+      path: rolloutPath,
+      updatedAt: 1780722169,
+      status: { type: "active" },
+      activeTurnId: localTurnId,
+      turns: [{
+        id: materializedTurnId,
+        status: null,
+        items: [{ id: "agent-1", type: "agentMessage", text: "working" }],
+      }, {
+        id: localTurnId,
+        status: { type: "inProgress" },
+        items: [],
+      }],
+    }, { nowMs: Date.now() });
+
+    assert.equal(compacted.activeTurnId, materializedTurnId);
+    assert.equal(compacted.status.type, "active");
+    assert.equal(compacted.turns.length, 1);
+    assert.equal(compacted.turns[0].id, materializedTurnId);
+    assert.equal(compacted.turns[0].status.type, "active");
+    assert.ok(compacted.turns[0].startedAt);
+    assert.equal(compacted.mobileDroppedUnmaterializedLocalActiveTurn, localTurnId);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("thread detail compaction drops empty live shell from resting thread projection", () => {
+  const compacted = compactThread({
+    id: "019e9000-0000-7000-8000-localactive5",
+    name: "Music",
+    updatedAt: 1780722169,
+    status: { type: "idle" },
+    activeTurnId: "turn-local-active",
+    turns: [{
+      id: "turn-completed",
+      status: { type: "completed" },
+      startedAt: 1780722100,
+      completedAt: 1780722169,
+      items: [{ id: "agent-1", type: "agentMessage", text: "done" }],
+    }, {
+      id: "turn-local-active",
+      status: { type: "inProgress" },
+      items: [],
+    }],
+  });
+
+  assert.equal(compacted.status.type, "idle");
+  assert.equal(compacted.activeTurnId, undefined);
+  assert.equal(compacted.turns.length, 1);
+  assert.equal(compacted.turns[0].id, "turn-completed");
+  assert.equal(compacted.mobileDroppedUnmaterializedRestingActiveTurn, "turn-local-active");
+});
+
+test("thread detail compaction appends latest rollout completion when turns-list omits it", () => {
+  const threadId = "019e9000-0000-7000-8000-rolloutdone1";
+  const latestTurnId = "turn-rollout-completed";
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-rollout-completion-"));
+  const rolloutPath = path.join(tempDir, `rollout-2099-01-01T00-00-00-${threadId}.jsonl`);
+  try {
+    const completedAt = new Date(Date.now() - 1000);
+    fs.writeFileSync(rolloutPath, [
+      JSON.stringify({
+        type: "event_msg",
+        timestamp: new Date(completedAt.getTime() - 120000).toISOString(),
+        payload: {
+          type: "task_started",
+          turn_id: latestTurnId,
+        },
+      }),
+      JSON.stringify({
+        type: "event_msg",
+        timestamp: completedAt.toISOString(),
+        payload: {
+          type: "task_complete",
+          turn_id: latestTurnId,
+          completed_at: completedAt.toISOString(),
+          duration_ms: 120000,
+          last_agent_message: "latest completed receipt",
+        },
+      }),
+    ].join("\n") + "\n", "utf8");
+
+    const compacted = compactThread({
+      id: threadId,
+      name: "Music",
+      path: rolloutPath,
+      updatedAt: Math.floor(completedAt.getTime() / 1000),
+      status: { type: "idle" },
+      turns: [{
+        id: "older-turn",
+        status: { type: "completed" },
+        startedAt: Math.floor((completedAt.getTime() - 500000) / 1000),
+        completedAt: Math.floor((completedAt.getTime() - 450000) / 1000),
+        items: [{ id: "older-agent", type: "agentMessage", text: "older" }],
+      }],
+    });
+
+    const latest = compacted.turns.find((turn) => turn.id === latestTurnId);
+    assert.ok(latest);
+    assert.equal(latest.status, "completed");
+    assert.equal(latest.mobileSyntheticCompletionTurn, true);
+    assert.equal(latest.durationMs, 120000);
+    assert.equal(latest.items.length, 1);
+    assert.equal(latest.items[0].type, "agentMessage");
+    assert.equal(latest.items[0].text, "latest completed receipt");
+    assert.equal(compacted.mobileAppendedRolloutCompletionTurn, latestTurnId);
+  } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });

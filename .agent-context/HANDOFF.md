@@ -21,6 +21,99 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-23 - Root State Ownership Fix for Music Running/Receipt Drift
+
+- Status: implemented, validated locally and in staging, deployed to Mac
+  production. Not pushed public.
+- New project rule:
+  - Codex Mobile is a primary coding tool. Codex Mobile bugs must be fixed at
+    the root cause and architecture boundary first.
+  - Do not add fallback layers that merely hide projection, synchronization,
+    state ownership, routing, or runtime-contract defects while leaving the
+    underlying inconsistency in place.
+  - Temporary diagnostics must be explicitly scoped and replaced by the
+    architectural fix before release.
+  - Rule recorded in `AGENTS.md` and `.agent-context/PROJECT_CONTEXT.md`.
+- Trigger:
+  - `Music` thread appeared stuck/running in the list after the task had
+    completed.
+  - Opening the thread could show status-chip activity but no visible messages
+    or final receipt; a stale local `turn/start` active shell with zero items
+    owned the detail view.
+  - After completion, app-server `thread/turns/list` could omit the latest
+    completed turn from the recent window even though rollout `task_complete`
+    had the final receipt.
+- Root fix:
+  - `server.js`
+    - Added runtime evidence ownership reconciliation so local `turn/start`
+      overlays yield to a different materialized rollout/app-server active
+      turn.
+    - Drops empty local active shells from resting thread detail projections.
+    - Prunes unmaterialized live shells when summary state is resting.
+    - Appends the latest rollout completion turn when a resting thread summary
+      and rollout `task_complete` prove that `thread/turns/list` omitted the
+      latest completed turn.
+  - `adapters/thread-detail-projection-service.js`
+    - Dynamic detail cache soft-expires when a resting summary's backing
+      signature changes, and when old active dynamic cache points at changed
+      backing evidence.
+  - Tests/docs updated:
+    - `test/thread-visibility.test.js`
+    - `test/thread-detail-projection-service.test.js`
+    - `README.md`
+    - `docs/ARCHITECTURE.md`
+    - `docs/TROUBLESHOOTING.md`
+- Validation:
+  - Private workspace:
+    - `npm test` passed 619/619.
+    - `node --check server.js`
+    - `npm run check`
+    - `npm run check:macos`
+    - `git diff --check`
+  - Staging package:
+    `/tmp/codex-mobile-web-stage-root-state.lBagfT`.
+    - Excluded `.git`, `.agent-context`, `.codegraph`, `node_modules`, `data`,
+      `logs`, `uploads`, env files, access-key, and secret path patterns.
+    - `npm run check`
+    - `npm run check:macos`
+    - Focused 153-test suite passed with `NODE_PATH` pointed at the private
+      workspace dependencies.
+    - Sensitive-content scan had no hits.
+  - Production target after sync:
+    - `npm run check`
+    - `npm run check:macos`
+    - Same focused 153-test suite passed with `NODE_PATH` pointed at production
+      dependencies.
+- Production deploy:
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup retained at:
+    `/tmp/codex-mobile-web-deploy-root-state-20260623T094901Z.backup`.
+  - Restart:
+    `launchctl kickstart -k system/com.hermesmobile.plugin.codex-mobile`.
+  - Post-restart health:
+    - LaunchDaemon running with PID `50048`, `runs=28`, last exit code `0`.
+    - `/api/public-config` returned HTTP `200`,
+      `clientBuildId=0.1.11|codex-mobile-shell-v380`,
+      `shellCacheName=codex-mobile-shell-v380`, and `authRequired=true`.
+    - Authenticated `/api/status` returned HTTP `200`, `ready=true`,
+      `transport=external-jsonl-tcp`, and active Codex home
+      `/Users/xuxin/.codex-homes/previous`.
+  - Music smoke:
+    - `/api/threads?limit=80` row for thread
+      `019ed959-27ce-7312-ba77-226ef9c526c7` was `idle`, with no active turn
+      id and no local active overlay.
+    - Recent detail returned `projection-v4-cache`, no stale empty shell
+      `019ef3cb-bbe5-7093-a909-59d58d4db562`.
+    - Latest completed turn `019ef07e-7a6e-7110-b73f-30f2a297e835` appeared in
+      the 10-turn recent window with final agent receipt text length `685` and
+      one `turnUsageSummary`.
+    - Second list read after restart hit fallback cache:
+      `fallbackCacheHit=true`, `fallbackMs=0`, total about `492ms`.
+- Operational notes:
+  - This is server-only; no PWA shell cache bump.
+  - Public has not been pushed. Follow release-order rule: production/user test
+    first, public only after confirmation.
+
 ## 2026-06-23 - Thread List Fallback Baseline Incremental Cache
 
 - Status: implemented, validated locally, committed, pushed to private
