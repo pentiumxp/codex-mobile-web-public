@@ -388,7 +388,7 @@ const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v382";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v383";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -4268,6 +4268,13 @@ function isOperationalItem(item) {
   return item && (OPERATIONAL_ITEM_TYPES.has(item.type) || isWebSearchLikeItem(item));
 }
 
+function isActiveOperationalItem(item) {
+  if (!isOperationalItem(item)) return false;
+  const completedByTimestamp = Boolean(item.completedAtMs || item.completedAt || item.completed_at_ms || item.completed_at);
+  const status = statusText(item.status) || (completedByTimestamp ? "completed" : "");
+  return !isCompletedStatus(status);
+}
+
 function activityLabelForItem(item) {
   if (!item) return "更新";
   const status = statusText(item.status);
@@ -4620,11 +4627,12 @@ function currentLiveOperationEntry(thread) {
   if (!thread || !Array.isArray(thread.turns) || !thread.turns.length) return null;
   const turn = thread.turns[thread.turns.length - 1];
   if (!turn || !isLatestTurn(turn) || !isLiveTurn(turn)) return null;
-  let latest = null;
-  (turn.items || []).forEach((item, index) => {
-    if (isOperationalItem(item)) latest = { turn, item, sourceIndex: index };
-  });
-  return latest;
+  const items = Array.isArray(turn.items) ? turn.items : [];
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (isActiveOperationalItem(item)) return { turn, item, sourceIndex: index };
+  }
+  return null;
 }
 
 function visibleItemSignature(item, turn = null) {
@@ -5650,14 +5658,17 @@ function activeLiveOperationItemForTurn(turn) {
   const items = Array.isArray(turn && turn.items) ? turn.items : [];
   for (let index = items.length - 1; index >= 0; index -= 1) {
     const item = items[index];
-    if (item && isOperationalItem(item) && !isCompletedStatus(item.status)) return item;
+    if (isActiveOperationalItem(item)) return item;
   }
   return null;
 }
 
 function turnHasActiveLiveItems(turn) {
   const items = Array.isArray(turn && turn.items) ? turn.items : [];
-  return items.some((item) => item && !isCompletedStatus(item.status) && (item.type === "reasoning" || isOperationalItem(item)));
+  return items.some((item) => item && (
+    (item.type === "reasoning" && !isCompletedStatus(item.status))
+    || isActiveOperationalItem(item)
+  ));
 }
 
 function liveTurnStartedAtMs(turn) {
@@ -5669,8 +5680,12 @@ function liveTurnStartedAtMs(turn) {
   if (explicit) return explicit;
   const items = Array.isArray(turn.items) ? turn.items : [];
   for (const item of items) {
-    if (!item || isCompletedStatus(item.status)) continue;
-    if (item.type !== "reasoning" && !isOperationalItem(item)) continue;
+    if (!item) continue;
+    if (item.type === "reasoning") {
+      if (isCompletedStatus(item.status)) continue;
+    } else if (!isActiveOperationalItem(item)) {
+      continue;
+    }
     const itemStarted = numericTimestampMs(item.startedAtMs)
       || numericTimestampMs(item.startedAt)
       || numericTimestampMs(item.createdAtMs)

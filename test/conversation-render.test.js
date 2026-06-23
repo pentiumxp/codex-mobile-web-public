@@ -1347,10 +1347,10 @@ test("turn timer prefers live item activity over idle sync labels", () => {
   assert.match(appJs, /function liveTurnStartedAtMs\(/);
   assert.match(functionBody("isLiveTurn"), /turnHasActiveLiveItems\(turn\)/);
   assert.match(functionBody("turnElapsedSeconds"), /liveTurnStartedAtMs\(turn\) \|\| state\.nowMs/);
-  assert.match(functionBody("turnHasActiveLiveItems"), /item\.type === "reasoning" \|\| isOperationalItem\(item\)/);
+  assert.match(functionBody("turnHasActiveLiveItems"), /isActiveOperationalItem\(item\)/);
   assert.match(functionBody("liveTurnStartedAtMs"), /numericTimestampMs\(item\.startedAtMs\)/);
   assert.match(functionBody("liveActivityLabelForTurn"), /item\.type === "reasoning"[\s\S]*return "思考"/);
-  assert.match(functionBody("activeLiveOperationItemForTurn"), /isOperationalItem\(item\)[\s\S]*return item/);
+  assert.match(functionBody("activeLiveOperationItemForTurn"), /isActiveOperationalItem\(item\)[\s\S]*return item/);
   assert.match(functionBody("markIdleActivity"), /const liveTurn = currentLiveTurn\(\);/);
   assert.match(functionBody("markIdleActivity"), /if \(liveActivityLabelForTurn\(liveTurn\)\) return;/);
   assert.match(functionBody("markIdleActivity"), /if \(isIdleSyncActivityLabel\(label\) && liveTurn\) return;/);
