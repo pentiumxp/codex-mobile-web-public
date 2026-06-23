@@ -10,6 +10,7 @@ const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const { uploadPathForId } = require("../server");
 
 test("mobile file preview UI is wired from markdown link to preview API", () => {
   assert.match(indexHtml, /id="filePreviewDialog"/);
@@ -54,6 +55,8 @@ test("mobile file preview UI is wired from markdown link to preview API", () => 
   assert.match(serverJs, /cacheGeneratedImageDataUrl/);
   assert.match(serverJs, /readRolloutToolOutputImageItems/);
   assert.match(serverJs, /\/api\/generated-images\/file/);
+  assert.match(serverJs, /\/api\/uploads\/file/);
+  assert.match(serverJs, /url\.searchParams\.get\("id"\)/);
   assert.match(serverJs, /out\.type === "imageView" \|\| out\.type === "imageGeneration"/);
   assert.match(appJs, /function canRenderImageAttachment\(attachment\)/);
   assert.match(appJs, /imageAttachments[\s\S]*\.filter\(canRenderImageAttachment\)[\s\S]*renderInputImage\(\{ path: attachment\.path \}, attachment, index\)/);
@@ -78,4 +81,15 @@ test("mobile file preview UI is wired from markdown link to preview API", () => 
   assert.match(appJs, /\/api\/files\/preview\/content\?\$\{params\.toString\(\)\}/);
   assert.match(serverJs, /\/api\/files\/preview/);
   assert.match(serverJs, /\/api\/files\/preview\/content/);
+});
+
+test("upload image ids resolve only inside the upload root", () => {
+  const uploadRoot = path.join(root, ".tmp-upload-root");
+  assert.equal(
+    uploadPathForId(uploadRoot, "2026-06-23/thread-id/homeai-upload.jpg"),
+    path.join(uploadRoot, "2026-06-23", "thread-id", "homeai-upload.jpg"),
+  );
+  assert.throws(() => uploadPathForId(uploadRoot, "../secret.jpg"), /Invalid upload id/);
+  assert.throws(() => uploadPathForId(uploadRoot, "2026-06-23/../secret.jpg"), /Invalid upload id/);
+  assert.throws(() => uploadPathForId(uploadRoot, "C:/Users/xuxin/.codex-mobile-web/uploads/a.jpg"), /Invalid upload id/);
 });

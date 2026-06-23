@@ -1,5 +1,6 @@
 # Codex Mobile Web
 
+- 中文说明：v379 修正 Home AI/Hermes 嵌入态 iOS/PWA 中 `Image` 卡片偶发坏图的问题。上传图和生成图在嵌入态继续使用同源 `/api/uploads/file` / `/api/generated-images/file` 作为浏览器 `<img src>`，但定时扫描不再把尚未失败的直接图片主动转换成 `data:image/...` 或 `blob:`。出错恢复仍会 fetch 探测；嵌入态和 iOS 恢复时改为 cache-busted 同源文件 URL，避免在 DOM 中塞入大 base64。上传图浏览器 `src` 也改为 `/api/uploads/file?id=...` 的运行时相对 id，不再把本地绝对路径放进图片 `src` 参数。PWA shell cache 升级到 `codex-mobile-shell-v379`。
 - 中文说明：v378 修正 Hermes/Home AI 嵌入态下历史上传图片偶发不显示的问题。嵌入模式仍先用同源 `/api/uploads/file` / `/api/generated-images/file` 直接作为 `<img src>`，但现在也保留 `data-protected-image-src` 并允许定时图片扫描主动用当前会话 key `fetch` 后替换为本页 `data:image/...` 或 `blob:` URL。这样当前本地预览可继续显示，重新进入 roon 等历史线程时若 WebView、代理或 cookie/query 图片加载链路不稳定，也会走同一受保护图片恢复路径。PWA shell cache 升级到 `codex-mobile-shell-v378`。
 - 中文说明：server-only 修正 `跨工作区委派` 写保护误伤工具工作区的问题。源码写保护现在只防止修改其他已知源码根：`apply_patch`、文件变更、相对路径写入、`git add/commit`、安装/构建类源码写命令和写类文件系统授权仍会被拒绝；但外部工具 workspace 中的 Playwright/Chromium、Home AI 视觉核验、只读/网络/MCP 命令，以及把截图或诊断输出写到 `/tmp` / `/private/tmp` 的工具命令可以继续使用。同步修正 JavaScript `=>` 被误判成 shell 重定向的问题。本次不改变 PWA shell cache。
 - 中文说明：v377 将 Composer 的 Fast 从全局浏览器开关改为线程持久化标签。点击 Fast 只影响当前线程；切换到其他线程会读取该线程自己的 Fast 标签，新建对话时开启 Fast 会在创建成功后迁移到新线程。旧的全局 `codexMobileCodexFastMode` 不再恢复 Fast，触摸事件也会压住合成 click/touchend，避免取消后又被第二次事件打开。PWA shell cache 升级到 `codex-mobile-shell-v377`。

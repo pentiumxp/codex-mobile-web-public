@@ -7455,14 +7455,48 @@ function isPathInside(parent, child) {
   return childPath === parentPath || childPath.startsWith(parentPath + path.sep);
 }
 
+function uploadPathForId(uploadRoot, id) {
+  const normalized = String(id || "").replace(/\\/g, "/").replace(/^\/+/, "");
+  const parts = normalized.split("/").filter(Boolean);
+  if (!parts.length || parts.some((part) => part === "." || part === ".." || part.includes("\0"))) {
+    const err = new Error("Invalid upload id");
+    err.statusCode = 400;
+    throw err;
+  }
+  if (/^[a-zA-Z]:/.test(parts[0] || "")) {
+    const err = new Error("Invalid upload id");
+    err.statusCode = 400;
+    throw err;
+  }
+  const target = path.resolve(uploadRoot, ...parts);
+  if (!isPathInside(uploadRoot, target)) {
+    const err = new Error("Forbidden");
+    err.statusCode = 403;
+    throw err;
+  }
+  return target;
+}
+
 function serveUploadedFile(req, res) {
   const url = getUrl(req);
-  const rawPath = url.searchParams.get("path") || "";
-  const target = path.resolve(rawPath);
-  if (!rawPath || !isPathInside(UPLOAD_ROOT, target)) {
-    res.writeHead(403);
-    res.end("Forbidden");
-    return;
+  let target = "";
+  const uploadId = url.searchParams.get("id") || "";
+  if (uploadId) {
+    try {
+      target = uploadPathForId(UPLOAD_ROOT, uploadId);
+    } catch (err) {
+      res.writeHead(err.statusCode || 400);
+      res.end(err.message || "Invalid upload id");
+      return;
+    }
+  } else {
+    const rawPath = url.searchParams.get("path") || "";
+    target = path.resolve(rawPath);
+    if (!rawPath || !isPathInside(UPLOAD_ROOT, target)) {
+      res.writeHead(403);
+      res.end("Forbidden");
+      return;
+    }
   }
   fs.stat(target, (statErr, stat) => {
     if (statErr || !stat.isFile()) {
@@ -14251,6 +14285,7 @@ module.exports = {
   stripMarkdownFileTarget,
   threadMatchesWorkspaceCwd,
   threadTaskCardCanonicalVisibleTargets,
+  uploadPathForId,
   workspaceDelegationDynamicToolSpec,
   attachWorkspaceDelegationDynamicTools,
   attachWorkspaceDelegationRuntimeGuidance,
