@@ -26,6 +26,7 @@ Interpretation:
 | Refresh prompt repeats after a static bump | Compare `/api/public-config.clientBuildId` and `shellCacheName` with served `/app.js` and `/sw.js`; current builds read shell metadata on each config request and do not use plain `version` for this comparison |
 | Push missing | HTTPS/Tailscale access, VAPID files, subscription count, sub-agent suppression |
 | Push says turn ended but no final reply appears | rollout `task_complete.last_agent_message`, completion-push no-final-message guard |
+| First open after completion lacks the latest receipt | `/api/threads/:id?mode=recent` read mode, whether the latest rollout EOF line is a complete `task_complete` JSON object without a trailing newline, and whether enrichment index exposes a provisional entry |
 | Continuation fails because source thread cannot reply | continuation job progress `handoff-fallback`, generated `.agent-context/thread-handoffs/*.md` mode, `/api/status` profile/quota |
 | Profile switch hides workspaces or threads | active `codexProfiles.activeCodexHome`, non-default profile shared-state links, `/api/threads?limit=10` |
 | Quota chips show the previous account after switch | `/api/status.rateLimits`, browser quota localStorage, profile-switch cache clearing, shared `sessions/` quota fallback |
@@ -323,7 +324,8 @@ erase the running marker even though the turn already started. The overlay
 clears when `turn/completed` arrives, when the rollout tail has a later
 terminal event such as `task_complete`, or when its TTL expires. The server also
 derives the same lightweight event from raw `turn/started` / `turn/completed`
-notifications and clears the thread-list fallback cache. If both the local
+notifications and incrementally updates the matching thread-list fallback cache
+row. If both the local
 overlay and the derived event are missing, the running spinner may appear only
 after a later full list refresh. Those hints also carry
 `codexMobileRunningThreadHintedAtById` timestamps; if a row stays
@@ -380,6 +382,11 @@ Cause to check:
   `adapters/thread-detail-projection-service.js`, rollout size/mtime changes,
   and summary `updatedAt/status` changes that may be invalidating the
   projection signature.
+- `projection-v4-dynamic` is not an unconditional long-lived cache. If the
+  backing rollout path/size/mtime, retained turn window, or policy version
+  changes after the projection seed, completed/idle/error-like threads should
+  miss and reseed; active threads only keep the dynamic projection for a short
+  stale window while notifications continue arriving.
 - The projection index is updated from raw app-server notifications before
   browser SSE compaction. It should observe `item/started`, `item/completed`,
   `item/agentMessage/delta`, `item/reasoning/*Delta`,
@@ -387,6 +394,15 @@ Cause to check:
   If re-entering a running thread misses the latest intermediate output, check
   whether the listener is receiving raw notifications and whether the current
   projection entry was seeded before those notifications arrived.
+- If the status chip shows live output/commands/reasoning but the thread body is
+  anchored on an empty latest `inProgress` turn, compare `activeTurnId`,
+  `mobileLocalActiveStatus`, and the last two detail turns. A Mobile Web
+  `message-submit` overlay is only a temporary state bridge until a real turn is
+  materialized. Server compaction must transfer active ownership to a different
+  unfinished turn that already has runtime items, and must drop empty live
+  shells once the thread summary is idle/completed/error-like. Do not fix this
+  in the browser by displaying another fallback turn; the server projection
+  should not emit the contradictory empty active shell.
 - If a completed turn shows two different `Usage` cards or the final assistant
   receipt disappears after leaving and re-entering, check the
   `turn/completed` projection merge path first. Completion notifications are
@@ -408,6 +424,12 @@ Cause to check:
   items are not enough to suppress this fallback. Existing matching receipts
   must not be replaced, and failed, cancelled, interrupted, active, or
   in-progress turns must not receive this fallback.
+- If `thread/turns/list` omits the latest completed turn entirely while the
+  thread summary `updatedAt` and rollout tail both point to a later
+  `task_complete`, the compacted detail response must append that completed
+  turn from the rollout completion event before trimming the recent window. This
+  is separate from adding a missing receipt to an existing turn: the turn itself
+  is absent from app-server's bounded list.
 - If raw rollout has valid scoped `token_count` for a recently completed turn
   but the detail response has no `turnUsageSummary`, check whether the fixed
   rollout tail no longer contains that turn's token events. Thread detail should
@@ -477,7 +499,19 @@ Do not infer from rollout file size alone. Separate:
   `thread_list_rendered.serverTimings`. Large threads may return 10-turn detail
   quickly while a cold full list fallback spends time in `fallbackRolloutMs`.
   The deferred full-list fallback should be delayed and cancellable, not run
-  immediately while a thread detail is still loading.
+  immediately while a thread detail request is still loading. If a list response
+  reports `fallbackDeferredReason=active-thread-detail`, the server intentionally
+  skipped the expensive fallback scan because a detail request was in flight;
+  wait for the later deferred list refresh instead of rebuilding in-memory
+  projection caches.
+- Does the same list key become slow again after a fixed interval? Current
+  server behavior should not do that by default: the expensive fallback baseline
+  is process-lifetime, not a 30-second timer. `fallbackCacheHit=false` should be
+  expected after cold start/redeploy/restart, after a new cwd/search/visibility
+  cache key, or if `CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS` was
+  explicitly set for diagnostics. Normal turn/status/title/archive changes
+  should update the cached row incrementally rather than clearing the baseline
+  and forcing another rollout/session scan.
 - Is app-server/mux CPU active?
 - Is the latest turn `inProgress` but no event has been written for minutes?
 
@@ -602,9 +636,9 @@ dialog; native `window.confirm()` is not reliable in that WebView path.
 
 If the original user upload renders as a thumbnail but a later Codex/plan reply shows raw `Uploaded attachments:` text, inspect `public/app.js` attachment-summary parsing first.
 
-The parser should recognize LF and CRLF summaries, plus Markdown blockquote-style quoted lines such as `> Uploaded attachments:` and `> - IMG_0001.jpg (...)`. It should also treat raw app-server `input_text` parts as text and `input_image` / `image_url` parts as images, including object-shaped `image_url.url`. The saved upload path must still be under `%USERPROFILE%\.codex-mobile-web\uploads` so `/api/uploads/file?path=...` can serve it to the authenticated browser.
+The parser should recognize LF and CRLF summaries, plus Markdown blockquote-style quoted lines such as `> Uploaded attachments:` and `> - IMG_0001.jpg (...)`. It should also treat raw app-server `input_text` parts as text and `input_image` / `image_url` parts as images, including object-shaped `image_url.url`. The saved upload path must still be under `%USERPROFILE%\.codex-mobile-web\uploads`. Current clients should turn default-runtime upload paths into `/api/uploads/file?id=<upload-root-relative-id>` so the browser image `src` does not include a local absolute path; `/api/uploads/file?path=...` remains a compatibility fallback for old clients and non-default upload roots.
 
-If the DOM contains an `<img>` for the saved upload path but the browser still shows a broken or blank thumbnail, check the upload route response headers. Saved `.jpg`, `.jpeg`, `.webp`, `.gif`, and `.png` files must return image MIME types such as `image/jpeg` rather than `application/octet-stream`. In Hermes/Home AI embed mode, the `<img>` should also keep `data-protected-image-src`; scheduled image scans can then recover unstable direct API image loads by fetching with the current session key and replacing the source with a page-local `data:image/...` or `blob:` URL.
+If the DOM contains an `<img>` for the saved upload path but the browser still shows a broken or blank thumbnail, check the upload route response headers. Saved `.jpg`, `.jpeg`, `.webp`, `.gif`, and `.png` files must return image MIME types such as `image/jpeg` rather than `application/octet-stream`. In Hermes/Home AI embed mode, the `<img>` should keep the same-origin `/api/uploads/file` or `/api/generated-images/file` URL as `src` plus `data-protected-image-src`. Scheduled image scans should not proactively convert still-loading embedded direct images into `data:image/...` or `blob:` URLs. If the image actually errors, recovery may fetch with the current session key; embedded/iOS recovery should retry a cache-busted same-origin URL first.
 
 If Codex generates an image as Markdown or plain text `data:image/png;base64,...`, inspect `public/markdown-renderer.js`. Current builds render safe bitmap data images (`png`, `jpeg`, `webp`, `gif`) as bounded `<img>` figures and intentionally reject SVG data images.
 

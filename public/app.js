@@ -388,7 +388,7 @@ const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v378";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v380";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -7441,6 +7441,14 @@ function clearThreadListDeferredFallbackTimer() {
   state.threadListDeferredFallbackTimer = null;
 }
 
+function hasThreadDetailRequestInFlight() {
+  return Boolean(
+    state.threadLoadController
+    || state.refreshThreadController
+    || (state.currentThread && state.currentThread.mobileLoading),
+  );
+}
+
 function scheduleThreadListDeferredFallback(delayMs = THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS) {
   clearThreadListDeferredFallbackTimer();
   const delay = Math.max(500, Number(delayMs) || THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS);
@@ -7448,7 +7456,7 @@ function scheduleThreadListDeferredFallback(delayMs = THREAD_LIST_DEFERRED_FALLB
     state.threadListDeferredFallbackTimer = null;
     const search = $("threadSearch").value.trim();
     if (state.selectedCwd || search) return;
-    if (state.threadListLoadController || (state.currentThread && state.currentThread.mobileLoading)) {
+    if (state.threadListLoadController || hasThreadDetailRequestInFlight()) {
       scheduleThreadListDeferredFallback(THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS);
       return;
     }
@@ -7470,7 +7478,7 @@ async function loadThreads(options = {}) {
   if (state.selectedCwd) params.set("cwd", state.selectedCwd);
   const search = $("threadSearch").value.trim();
   if (search) params.set("search", search);
-  const threadDetailOpening = Boolean(state.currentThread && state.currentThread.mobileLoading);
+  const threadDetailOpening = hasThreadDetailRequestInFlight();
   const shouldDeferFallback = options.deferFallback === true
     || (silent && options.deferFallback !== false && threadDetailOpening && !state.selectedCwd && !search);
   if (shouldDeferFallback && !search) params.set("fallback", "defer");
@@ -7489,7 +7497,7 @@ async function loadThreads(options = {}) {
     renderThreads(result);
     restoreConnectionState(result.mobileFallback ? "Recovered from session index" : "Connected");
     scheduleVisiblePageRefreshCheck(500);
-    if (result && result.mobileDeferredFallback && options.deferFallback === true) {
+    if (result && result.mobileDeferredFallback && !state.selectedCwd && !search) {
       scheduleThreadListDeferredFallback();
     }
     if (!state.currentThread) renderCurrentThread();
@@ -12568,8 +12576,26 @@ function parseAttachmentLine(line) {
   };
 }
 
+function codexMobileUploadIdForPath(filePath) {
+  const text = String(filePath || "")
+    .trim()
+    .replace(/^\\\\\?\\/, "")
+    .replace(/\\/g, "/")
+    .replace(/\/+$/, "");
+  if (!text) return "";
+  const marker = "/.codex-mobile-web/uploads/";
+  const index = text.toLowerCase().indexOf(marker);
+  if (index < 0) return "";
+  const id = text.slice(index + marker.length).replace(/^\/+/, "");
+  if (!id || /^[a-zA-Z]:/.test(id) || id.split("/").some((part) => !part || part === "." || part === "..")) return "";
+  return id;
+}
+
 function uploadFileUrl(filePath) {
-  const params = new URLSearchParams({ path: filePath });
+  const uploadId = codexMobileUploadIdForPath(filePath);
+  const params = uploadId
+    ? new URLSearchParams({ id: uploadId })
+    : new URLSearchParams({ path: filePath });
   if (state.key) params.set("key", state.key);
   return authenticatedApiContentUrl(`/api/uploads/file?${params.toString()}`);
 }
@@ -14109,6 +14135,22 @@ function retryProtectedAppImageSource(image, src) {
   }
 }
 
+function cacheBustedProtectedImageSrc(src, paramName = "_imgRetry") {
+  const source = protectedGeneratedImageSrc(src);
+  if (!source) return "";
+  try {
+    const parsed = new URL(source, window.location.origin);
+    parsed.searchParams.set(paramName, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch (_) {
+    return source;
+  }
+}
+
+function shouldRecoverProtectedImageAsDirectUrl() {
+  return isHermesEmbedMode() || (typeof isIosWebKitBrowser === "function" && isIosWebKitBrowser());
+}
+
 function blobToDataUrl(blob) {
   if (!blob || typeof FileReader === "undefined") return Promise.resolve("");
   return new Promise((resolve) => {
@@ -14123,8 +14165,13 @@ function blobToDataUrl(blob) {
   });
 }
 
-async function protectedAppImageRecoveredUrl(response) {
-  if (!response || typeof response.blob !== "function") return { url: "", objectUrl: false };
+async function protectedAppImageRecoveredUrl(response, src = "") {
+  if (!response) return { url: "", objectUrl: false };
+  if (shouldRecoverProtectedImageAsDirectUrl()) {
+    const directUrl = cacheBustedProtectedImageSrc(src, "_imgRecover");
+    if (directUrl) return { url: directUrl, objectUrl: false, directUrl: true };
+  }
+  if (typeof response.blob !== "function") return { url: "", objectUrl: false };
   const blob = await response.blob().catch(() => null);
   if (!blob) return { url: "", objectUrl: false };
   const type = String(blob.type || "").trim();
@@ -14156,7 +14203,7 @@ function shouldHydrateProtectedAppImage(image) {
   if (!image || !image.dataset) return false;
   const src = protectedAppImageElementSrc(image);
   if (!src) return false;
-  if (shouldRenderProtectedImageDirectly(src) && image.complete && Number(image.naturalWidth || 0) > 0) return false;
+  if (shouldRenderProtectedImageDirectly(src)) return false;
   if (image.dataset.protectedImageHydrated === "1" || image.dataset.protectedImageHydrating === "1") return false;
   const current = String(image.currentSrc || image.src || "");
   if (/^(data:image|blob:)/i.test(current) && current !== PROTECTED_IMAGE_PLACEHOLDER_SRC) return false;
@@ -14184,7 +14231,7 @@ function hydrateProtectedAppImage(image, reason = "scan") {
       }, { force: true });
       return;
     }
-    const recovered = await protectedAppImageRecoveredUrl(response);
+    const recovered = await protectedAppImageRecoveredUrl(response, src);
     if (!imageStillConnected(image)) {
       if (recovered && recovered.objectUrl && recovered.url) {
         const urlApi = protectedAppImageUrlApi();
@@ -14259,7 +14306,7 @@ function handleProtectedAppImageError(image) {
     }
     if (response && response.ok) {
       clearFailedAppImage(image);
-      const recovered = await protectedAppImageRecoveredUrl(response);
+      const recovered = await protectedAppImageRecoveredUrl(response, src);
       if (!imageStillConnected(image)) {
         if (recovered && recovered.objectUrl && recovered.url) {
           const urlApi = protectedAppImageUrlApi();

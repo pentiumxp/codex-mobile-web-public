@@ -109,6 +109,7 @@ function evaluatedInputContentRendererWithKey(key = "", options = {}) {
     "protectedImageDisplaySrc",
     "imageLoadingModeForSource",
     "protectedImageSourceAttribute",
+    "codexMobileUploadIdForPath",
     "uploadFileUrl",
     "localFilePreviewContentUrl",
     "imageContentUrlForPath",
@@ -185,6 +186,7 @@ function evaluatedImageViewRenderer(options = {}) {
     "protectedImageDisplaySrc",
     "imageLoadingModeForSource",
     "protectedImageSourceAttribute",
+    "codexMobileUploadIdForPath",
     "uploadFileUrl",
     "authenticatedApiContentUrl",
     "localFilePreviewContentUrl",
@@ -213,6 +215,8 @@ function evaluatedConversationImageErrorHandler(options = {}) {
     "protectedAppImageUrlApi",
     "revokeProtectedAppImageObjectUrl",
     "retryProtectedAppImageSource",
+    "cacheBustedProtectedImageSrc",
+    "shouldRecoverProtectedImageAsDirectUrl",
     "blobToDataUrl",
     "protectedAppImageRecoveredUrl",
     "applyProtectedAppImageRecoveredUrl",
@@ -267,6 +271,8 @@ function evaluatedFailedImageScanner(options = {}) {
     "protectedAppImageUrlApi",
     "revokeProtectedAppImageObjectUrl",
     "retryProtectedAppImageSource",
+    "cacheBustedProtectedImageSrc",
+    "shouldRecoverProtectedImageAsDirectUrl",
     "blobToDataUrl",
     "protectedAppImageRecoveredUrl",
     "applyProtectedAppImageRecoveredUrl",
@@ -290,6 +296,49 @@ return scanFailedAppImages;`,
     FileReader: undefined,
     isHermesEmbedMode: () => false,
     requestHermesPluginRefresh: () => {},
+  }, options));
+}
+
+function evaluatedProtectedImageHydrator(options = {}) {
+  const sources = [
+    "protectedGeneratedImageSrc",
+    "imageDiagnosticSourceKind",
+    "shouldRenderProtectedImageDirectly",
+    "imageStillConnected",
+    "protectedAppImageElementSrc",
+    "protectedAppImageUrlApi",
+    "revokeProtectedAppImageObjectUrl",
+    "cacheBustedProtectedImageSrc",
+    "shouldRecoverProtectedImageAsDirectUrl",
+    "blobToDataUrl",
+    "protectedAppImageRecoveredUrl",
+    "applyProtectedAppImageRecoveredUrl",
+    "failedAppImageContainer",
+    "setRetryingAppImage",
+    "clearFailedAppImage",
+    "isIosWebKitBrowser",
+    "shouldHydrateProtectedAppImage",
+    "hydrateProtectedAppImage",
+    "hydrateProtectedAppImages",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(
+    "deps",
+    `const window = deps.window;
+const state = deps.state;
+const fetch = deps.fetch;
+const FileReader = deps.FileReader;
+const navigator = deps.navigator;
+const isHermesEmbedMode = deps.isHermesEmbedMode;
+const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+${sources.join("\n")}
+return hydrateProtectedAppImages;`,
+  )(Object.assign({
+    window: { location: { origin: "http://127.0.0.1:8787" } },
+    state: { key: "session-key" },
+    fetch: () => Promise.reject(new Error("unexpected fetch")),
+    FileReader: undefined,
+    navigator: { userAgent: "", vendor: "", platform: "", maxTouchPoints: 0 },
+    isHermesEmbedMode: () => false,
   }, options));
 }
 
@@ -1392,7 +1441,8 @@ test("raw app-server input text upload summaries render as thumbnails", () => {
 
   assert.match(html, /class="input-image"/);
   assert.match(html, /src="data:image\/gif;base64,R0lGODlhAQABAIAAAAAAAP\/\/\/ywAAAAAAQABAAACAUwAOw=="/);
-  assert.match(html, /data-protected-image-src="\/api\/uploads\/file\?path=/);
+  assert.match(html, /data-protected-image-src="\/api\/uploads\/file\?id=/);
+  assert.doesNotMatch(html, /data-protected-image-src="[^"]*path=/);
   assert.match(html, /IMG_5433\.jpg/);
   assert.doesNotMatch(html, /<code>C:\\Users\\example/);
 });
@@ -1432,7 +1482,8 @@ test("user message text before upload summaries still renders jpg thumbnails", (
   assert.match(html, /class="input-text"/);
   assert.match(html, /class="input-image"/);
   assert.match(html, /src="data:image\/gif;base64,R0lGODlhAQABAIAAAAAAAP\/\/\/ywAAAAAAQABAAACAUwAOw=="/);
-  assert.match(html, /data-protected-image-src="\/api\/uploads\/file\?path=/);
+  assert.match(html, /data-protected-image-src="\/api\/uploads\/file\?id=/);
+  assert.doesNotMatch(html, /data-protected-image-src="[^"]*path=/);
   assert.match(html, /IMG_5435\.jpg/);
   assert.doesNotMatch(html, /Uploaded attachments:/);
 });
@@ -1448,21 +1499,23 @@ test("Hermes embedded upload summaries render direct image sources with hydrate 
   ]);
 
   assert.match(html, /class="input-image"/);
-  assert.match(html, /<img src="\/api\/uploads\/file\?path=/);
+  assert.match(html, /<img src="\/api\/uploads\/file\?id=2026-06-20%2Fthread%2F1781956411989-photo\.jpg&amp;key=test-key"/);
   assert.doesNotMatch(html, /src="data:image\/gif;base64/);
-  assert.match(html, /data-protected-image-src="\/api\/uploads\/file\?path=/);
+  assert.match(html, /data-protected-image-src="\/api\/uploads\/file\?id=2026-06-20%2Fthread%2F1781956411989-photo\.jpg&amp;key=test-key"/);
+  assert.doesNotMatch(html, /<img src="[^"]*(?:\/Users|%2FUsers|\.codex-mobile-web|path=)/);
 });
 
-test("imageView upload screenshots use the uploads route instead of file preview", () => {
+test("imageView upload screenshots use opaque uploads route instead of file preview", () => {
   const renderImageView = evaluatedImageViewRenderer();
   const html = renderImageView({
     type: "imageView",
-    path: "/Users/example/.codex-mobile-web/uploads/2026-06-08/thread-id/1780893354486-IMG_1618.jpg",
+    path: "/Users/xuxin/.codex-mobile-web/uploads/2026-06-08/thread-id/1780893354486-IMG_1618.jpg",
   });
 
   assert.match(html, /class="image-view"/);
   assert.match(html, /src="data:image\/gif;base64,R0lGODlhAQABAIAAAAAAAP\/\/\/ywAAAAAAQABAAACAUwAOw=="/);
-  assert.match(html, /data-protected-image-src="\/api\/uploads\/file\?path=/);
+  assert.match(html, /data-protected-image-src="\/api\/uploads\/file\?id=2026-06-08%2Fthread-id%2F1780893354486-IMG_1618\.jpg&amp;key=test-key"/);
+  assert.doesNotMatch(html, /data-protected-image-src="[^"]*(?:\/Users|%2FUsers|\.codex-mobile-web|path=)/);
   assert.doesNotMatch(html, /\/api\/files\/preview\/content/);
 });
 
@@ -1500,6 +1553,53 @@ test("Hermes embedded generated image content urls render directly with hydrate 
   assert.match(html, /<img src="\/api\/generated-images\/file\?id=thread%2Fview-image-output\.png&amp;key=test-key"/);
   assert.doesNotMatch(html, /src="data:image\/gif;base64/);
   assert.match(html, /data-protected-image-src="\/api\/generated-images\/file\?id=thread%2Fview-image-output\.png&amp;key=test-key"/);
+});
+
+test("Hermes embedded protected images are not proactively converted into data urls", () => {
+  const hydrateProtectedAppImages = evaluatedProtectedImageHydrator({
+    isHermesEmbedMode: () => true,
+    fetch: () => {
+      throw new Error("embedded direct images should not be proactively hydrated");
+    },
+  });
+  let uploadSrc = "/api/uploads/file?id=2026-06-23%2Fthread-id%2Fhomeai-upload.jpg&key=session-key";
+  let generatedSrc = "/api/generated-images/file?id=thread%2Fview-image-output.jpg&key=session-key";
+  const uploadImage = {
+    dataset: { protectedImageSrc: uploadSrc },
+    complete: false,
+    naturalWidth: 0,
+    currentSrc: uploadSrc,
+    get src() {
+      return uploadSrc;
+    },
+    set src(value) {
+      uploadSrc = value;
+      this.currentSrc = value;
+    },
+  };
+  const generatedImage = {
+    dataset: { protectedImageSrc: generatedSrc },
+    complete: false,
+    naturalWidth: 0,
+    currentSrc: generatedSrc,
+    get src() {
+      return generatedSrc;
+    },
+    set src(value) {
+      generatedSrc = value;
+      this.currentSrc = value;
+    },
+  };
+  const rootNode = {
+    querySelectorAll(selector) {
+      assert.equal(selector, "img");
+      return [uploadImage, generatedImage];
+    },
+  };
+
+  assert.equal(hydrateProtectedAppImages(rootNode, "scheduled-scan"), 0);
+  assert.equal(uploadSrc, "/api/uploads/file?id=2026-06-23%2Fthread-id%2Fhomeai-upload.jpg&key=session-key");
+  assert.equal(generatedSrc, "/api/generated-images/file?id=thread%2Fview-image-output.jpg&key=session-key");
 });
 
 test("generated image content urls replace stale auth keys with the current session key", () => {
@@ -1559,7 +1659,7 @@ test("failed conversation images collapse into a neutral fallback", () => {
   assert.match(functionBody("scheduleFailedAppImageScan"), /hydrateProtectedAppImages\(root, "scheduled-scan"\)/);
   assert.match(functionBody("handleConversationImageError"), /handleProtectedAppImageError\(image\)/);
   assert.match(functionBody("shouldHydrateProtectedAppImage"), /isIosWebKitBrowser\(\) \|\| imageDiagnosticSourceKind\(src\) === "upload" \|\| shouldRenderProtectedImageDirectly\(src\)/);
-  assert.match(functionBody("hydrateProtectedAppImage"), /protectedAppImageRecoveredUrl\(response\)/);
+  assert.match(functionBody("hydrateProtectedAppImage"), /protectedAppImageRecoveredUrl\(response, src\)/);
   assert.match(functionBody("hydrateProtectedAppImage"), /applyProtectedAppImageRecoveredUrl\(image, recovered\)/);
   assert.match(functionBody("hydrateProtectedAppImage"), /protectedImageHydrated = "1"/);
   assert.match(appJs, /const IMAGE_DIAGNOSTICS_ENABLED = false;/);
@@ -1663,6 +1763,67 @@ test("protected upload image errors are probed before showing failed fallback", 
     ["image-load-retrying", true],
     ["image-load-retrying", false],
   ]);
+});
+
+test("Hermes embedded protected image recovery keeps proxy-safe file urls", async () => {
+  const fetchCalls = [];
+  const handleConversationImageError = evaluatedConversationImageErrorHandler({
+    isHermesEmbedMode: () => true,
+    FileReader: class {
+      readAsDataURL(blob) {
+        this.result = `data:${blob.type};base64,ZmFrZS1qcGVn`;
+        setTimeout(() => this.onload && this.onload(), 0);
+      }
+    },
+    fetch: (src, options) => {
+      fetchCalls.push({ src, options });
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        blob: () => Promise.resolve({ type: "image/jpeg", size: 164771 }),
+      });
+    },
+  });
+  let imageSrc = "/api/uploads/file?id=2026-06-23%2Fthread-id%2Fhomeai-upload.jpg&key=session-key";
+  const figure = {
+    classList: {
+      remove() {},
+      toggle() {},
+    },
+  };
+  const image = {
+    dataset: { protectedImageSrc: imageSrc },
+    currentSrc: imageSrc,
+    naturalWidth: 0,
+    isConnected: true,
+    get src() {
+      return imageSrc;
+    },
+    set src(value) {
+      imageSrc = value;
+      this.currentSrc = value;
+    },
+    closest(selector) {
+      if (String(selector).includes(".image-view")) return figure;
+      return null;
+    },
+    getAttribute(name) {
+      if (name === "src") return imageSrc;
+      if (name === "aria-hidden") return "";
+      return "";
+    },
+    removeAttribute() {},
+  };
+
+  handleConversationImageError({ target: { closest: () => image } });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  assert.equal(fetchCalls.length, 1);
+  assert.match(fetchCalls[0].src, /^\/api\/uploads\/file\?id=2026-06-23%2Fthread-id%2Fhomeai-upload\.jpg/);
+  assert.match(imageSrc, /^\/api\/uploads\/file\?id=2026-06-23%2Fthread-id%2Fhomeai-upload\.jpg/);
+  assert.match(imageSrc, /_imgRecover=/);
+  assert.doesNotMatch(imageSrc, /^data:image\//);
+  assert.doesNotMatch(imageSrc, /(?:\/Users|%2FUsers|\.codex-mobile-web|path=)/);
 });
 
 test("protected upload image errors fall back to cache-busted src retry without blob support", async () => {
@@ -1989,8 +2150,9 @@ test("raw app-server input image url local upload paths use authenticated upload
   ]);
 
   assert.match(html, /class="input-image"/);
-  assert.match(html, /\/api\/uploads\/file\?path=/);
+  assert.match(html, /\/api\/uploads\/file\?id=2026-06-08%2Fthread-id%2F1780936946968-IMG_5882\.jpg/);
   assert.match(html, /key=session-key/);
+  assert.doesNotMatch(html, /<img src="[^"]*(?:\/Users|%2FUsers|\.codex-mobile-web|path=)/);
   assert.equal(html.includes(`src="${uploadPath}"`), false);
 });
 
@@ -2010,9 +2172,10 @@ test("durable upload summaries take precedence over stale blob image parts", () 
   ]);
 
   assert.match(html, /class="input-image"/);
-  assert.match(html, /\/api\/uploads\/file\?path=/);
+  assert.match(html, /\/api\/uploads\/file\?id=2026-06-20%2Fthread-id%2F1781947353793-homeai-upload-2B62320E\.jpg/);
   assert.match(html, /key=session-key/);
   assert.match(html, /homeai-upload-2B62320E\.jpg/);
+  assert.doesNotMatch(html, /<img src="[^"]*(?:\/Users|%2FUsers|\.codex-mobile-web|path=)/);
   assert.doesNotMatch(html, /blob:http:\/\/127\.0\.0\.1:8787\/local-preview/);
 });
 
@@ -2220,9 +2383,10 @@ test("durable uploaded image messages replace revoked optimistic blob previews",
   assert.doesNotMatch(JSON.stringify(imageItems[0].content), /blob:/);
 
   const html = renderInputContent(imageItems[0].content);
-  assert.match(html, /\/api\/uploads\/file\?path=/);
+  assert.match(html, /\/api\/uploads\/file\?id=2026-06-20%2Fthread%2Fhomeai-upload-54FE12C6\.jpg/);
   assert.match(html, /key=test-key/);
   assert.match(html, /homeai-upload-54FE12C6\.jpg/);
+  assert.doesNotMatch(html, /<img src="[^"]*(?:\/Users|%2FUsers|\.codex-mobile-web|path=)/);
   assert.doesNotMatch(html, /blob:/);
 });
 

@@ -12,6 +12,7 @@ const {
   anyThreadMatchesVisibleWorkspace,
   applyLocalActiveThreadStatusToSummary,
   clearLocalActiveThreadStatus,
+  compactThread,
   filterFallbackThreads,
   hydrateThreadListResultTitlesFromSessionIndex,
   hydrateThreadListTitlesFromSessionIndex,
@@ -47,6 +48,24 @@ function globalStateForRoots(roots) {
     "electron-saved-workspace-roots": roots,
     "project-order": roots,
   };
+}
+
+function functionBody(source, name) {
+  const marker = `function ${name}`;
+  const start = source.indexOf(marker);
+  assert.notEqual(start, -1, `missing function ${name}`);
+  const open = source.indexOf("{", start);
+  assert.notEqual(open, -1, `missing function body ${name}`);
+  let depth = 0;
+  for (let index = open; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "{") depth += 1;
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return source.slice(open, index + 1);
+    }
+  }
+  throw new Error(`unterminated function ${name}`);
 }
 
 test("thread visibility allows Codex worktrees for a visible repository root", () => {
@@ -643,12 +662,21 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(serverJs, /function readRolloutSessionFallback\(/);
   assert.match(serverJs, /function readThreadListFallback\(/);
   assert.match(serverJs, /function logThreadList\(event, details = \{\}\)/);
-  assert.match(serverJs, /const THREAD_LIST_FALLBACK_CACHE_TTL_MS/);
+  assert.match(serverJs, /const THREAD_LIST_FALLBACK_CACHE_TTL_MS[\s\S]*\|\| "0"/);
   assert.match(serverJs, /const threadListFallbackCache = new Map\(\);/);
   assert.match(serverJs, /function clearThreadListFallbackCache\(\)/);
+  assert.match(serverJs, /function upsertThreadListFallbackCacheThread\(thread, options = \{\}\)/);
+  assert.match(serverJs, /function removeThreadFromThreadListFallbackCache\(threadId\)/);
+  assert.match(serverJs, /function updateThreadListFallbackCacheStatus\(threadId, status, meta = \{\}\)/);
+  assert.match(serverJs, /let activeThreadDetailRequestCount = 0;/);
+  assert.match(serverJs, /function trackThreadDetailRequestLifecycle\(res\)/);
+  assert.match(serverJs, /function shouldDeferThreadListFallbackForActiveDetail\(\{ deferFallback, cursor, archived, searchTerm, cwd \} = \{\}\)/);
   assert.match(serverJs, /function threadListFallbackCacheKey\(limit, filters = \{\}\)/);
   assert.match(serverJs, /function readThreadListFallbackCache\(key\)/);
+  assert.doesNotMatch(functionBody(serverJs, "threadListFallbackCacheKey"), /fileFingerprint/);
+  assert.match(functionBody(serverJs, "readThreadListFallbackCache"), /THREAD_LIST_FALLBACK_CACHE_TTL_MS > 0/);
   assert.match(serverJs, /diagnostics\.cacheHit = true/);
+  assert.match(serverJs, /diagnostics\.cacheIncrementalUpdates = cached\.incrementalUpdates/);
   assert.match(routeBody, /mobileDiagnostics[\s\S]*threadListTimings/);
   assert.match(routeBody, /fallbackCacheHit: Boolean\(fallbackDiagnostics\.cacheHit\)/);
   assert.match(routeBody, /appServerMs/);
@@ -660,7 +688,9 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /fallbackSessionIndexMs/);
   assert.match(routeBody, /const fallbackMode = String\(url\.searchParams\.get\("fallback"\) \|\| ""\)/);
   assert.match(routeBody, /const deferFallback = fallbackMode === "defer" && !cursor && !archived && !searchTerm/);
+  assert.match(routeBody, /const shouldDeferFallback = shouldDeferThreadListFallbackForActiveDetail\(\{[\s\S]*deferFallback,[\s\S]*cursor,[\s\S]*archived,[\s\S]*searchTerm,[\s\S]*cwd,[\s\S]*\}\);/);
   assert.match(routeBody, /fallbackDeferred: true/);
+  assert.match(routeBody, /fallbackDeferredReason: deferFallback \? "client" : "active-thread-detail"/);
   assert.match(routeBody, /const indexedResult = normalizeThreadListResultStatuses\(hydrateThreadListResultTitlesFromSessionIndex\(appServerResult\)\)/);
   assert.match(routeBody, /attachThreadListStateToResult\(indexedResult\)/);
   assert.match(routeBody, /decorated\.mobileDeferredFallback = true/);
@@ -669,6 +699,9 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /const fallback = readThreadListFallback\(limit, \{ cwd, searchTerm, globalState, diagnostics: fallbackDiagnostics \}\);/);
   assert.match(routeBody, /normalizeThreadListResultStatuses\(mergeThreadListFallback\(appServerResult, fallback, limit\)\)/);
   assert.match(routeBody, /normalizeThreadSummaryLiveStatus\(attachThreadTaskCardCountsToSummary\(thread\)\)/);
+  const threadReadIndex = serverJs.indexOf('const threadRead = url.pathname.match(/^\\/api\\/threads\\/([^/]+)$/);');
+  const threadReadBody = serverJs.slice(threadReadIndex, serverJs.indexOf('const threadTurns = url.pathname.match', threadReadIndex));
+  assert.match(threadReadBody, /trackThreadDetailRequestLifecycle\(res\);/);
 });
 
 test("thread list merge keeps app-server idle over stale rollout active", () => {
@@ -739,6 +772,249 @@ test("local turn-start overlay clears when rollout tail has a later terminal eve
     assert.equal(summary.activeTurnId, undefined);
   } finally {
     clearLocalActiveThreadStatus(threadId);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("local turn-start overlay yields to a different materialized rollout active turn", () => {
+  const threadId = "019e9000-0000-7000-8000-localactive3";
+  const localTurnId = "turn-local-active";
+  const materializedTurnId = "turn-rollout-active";
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-local-active-materialized-"));
+  const rolloutPath = path.join(tempDir, `rollout-2099-01-01T00-00-00-${threadId}.jsonl`);
+  rememberLocalActiveThreadStatus(threadId, localTurnId, { source: "test" });
+  try {
+    const timestamp = new Date(Date.now() + 1000).toISOString();
+    fs.writeFileSync(rolloutPath, [
+      JSON.stringify({
+        type: "event_msg",
+        timestamp,
+        payload: {
+          type: "task_started",
+          turn_id: materializedTurnId,
+        },
+      }),
+      JSON.stringify({
+        type: "event_msg",
+        timestamp,
+        payload: {
+          type: "agent_message",
+          turn_id: materializedTurnId,
+          message: "working",
+        },
+      }),
+    ].join("\n") + "\n", "utf8");
+
+    const summary = applyLocalActiveThreadStatusToSummary({
+      id: threadId,
+      name: "Music",
+      path: rolloutPath,
+      updatedAt: 1780722169,
+      status: { type: "active" },
+    });
+
+    assert.equal(summary.status.type, "active");
+    assert.equal(summary.activeTurnId, undefined);
+    assert.equal(summary.mobileLocalActiveStatus, undefined);
+  } finally {
+    clearLocalActiveThreadStatus(threadId);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("thread detail compaction drops empty local active shell when rollout has a materialized active turn", () => {
+  const threadId = "019e9000-0000-7000-8000-localactive4";
+  const localTurnId = "turn-local-active";
+  const materializedTurnId = "turn-rollout-active";
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-active-shell-"));
+  const rolloutPath = path.join(tempDir, `rollout-2099-01-01T00-00-00-${threadId}.jsonl`);
+  try {
+    const timestamp = new Date(Date.now() - 1000).toISOString();
+    fs.writeFileSync(rolloutPath, [
+      JSON.stringify({
+        type: "event_msg",
+        timestamp,
+        payload: {
+          type: "task_started",
+          turn_id: materializedTurnId,
+        },
+      }),
+      JSON.stringify({
+        type: "event_msg",
+        timestamp,
+        payload: {
+          type: "agent_message",
+          turn_id: materializedTurnId,
+          message: "working",
+        },
+      }),
+    ].join("\n") + "\n", "utf8");
+
+    const compacted = compactThread({
+      id: threadId,
+      name: "Music",
+      path: rolloutPath,
+      updatedAt: 1780722169,
+      status: { type: "active" },
+      activeTurnId: localTurnId,
+      turns: [{
+        id: materializedTurnId,
+        status: null,
+        items: [{ id: "agent-1", type: "agentMessage", text: "working" }],
+      }, {
+        id: localTurnId,
+        status: { type: "inProgress" },
+        items: [],
+      }],
+    }, { nowMs: Date.now() });
+
+    assert.equal(compacted.activeTurnId, materializedTurnId);
+    assert.equal(compacted.status.type, "active");
+    assert.equal(compacted.turns.length, 1);
+    assert.equal(compacted.turns[0].id, materializedTurnId);
+    assert.equal(compacted.turns[0].status.type, "active");
+    assert.ok(compacted.turns[0].startedAt);
+    assert.equal(compacted.mobileDroppedUnmaterializedLocalActiveTurn, localTurnId);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("thread detail compaction drops empty live shell from resting thread projection", () => {
+  const compacted = compactThread({
+    id: "019e9000-0000-7000-8000-localactive5",
+    name: "Music",
+    updatedAt: 1780722169,
+    status: { type: "idle" },
+    activeTurnId: "turn-local-active",
+    turns: [{
+      id: "turn-completed",
+      status: { type: "completed" },
+      startedAt: 1780722100,
+      completedAt: 1780722169,
+      items: [{ id: "agent-1", type: "agentMessage", text: "done" }],
+    }, {
+      id: "turn-local-active",
+      status: { type: "inProgress" },
+      items: [],
+    }],
+  });
+
+  assert.equal(compacted.status.type, "idle");
+  assert.equal(compacted.activeTurnId, undefined);
+  assert.equal(compacted.turns.length, 1);
+  assert.equal(compacted.turns[0].id, "turn-completed");
+  assert.equal(compacted.mobileDroppedUnmaterializedRestingActiveTurn, "turn-local-active");
+});
+
+test("thread detail compaction appends latest rollout completion when turns-list omits it", () => {
+  const threadId = "019e9000-0000-7000-8000-rolloutdone1";
+  const latestTurnId = "turn-rollout-completed";
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-rollout-completion-"));
+  const rolloutPath = path.join(tempDir, `rollout-2099-01-01T00-00-00-${threadId}.jsonl`);
+  try {
+    const completedAt = new Date(Date.now() - 1000);
+    fs.writeFileSync(rolloutPath, [
+      JSON.stringify({
+        type: "event_msg",
+        timestamp: new Date(completedAt.getTime() - 120000).toISOString(),
+        payload: {
+          type: "task_started",
+          turn_id: latestTurnId,
+        },
+      }),
+      JSON.stringify({
+        type: "event_msg",
+        timestamp: completedAt.toISOString(),
+        payload: {
+          type: "task_complete",
+          turn_id: latestTurnId,
+          completed_at: completedAt.toISOString(),
+          duration_ms: 120000,
+          last_agent_message: "latest completed receipt",
+        },
+      }),
+    ].join("\n") + "\n", "utf8");
+
+    const compacted = compactThread({
+      id: threadId,
+      name: "Music",
+      path: rolloutPath,
+      updatedAt: Math.floor(completedAt.getTime() / 1000),
+      status: { type: "idle" },
+      turns: [{
+        id: "older-turn",
+        status: { type: "completed" },
+        startedAt: Math.floor((completedAt.getTime() - 500000) / 1000),
+        completedAt: Math.floor((completedAt.getTime() - 450000) / 1000),
+        items: [{ id: "older-agent", type: "agentMessage", text: "older" }],
+      }],
+    });
+
+    const latest = compacted.turns.find((turn) => turn.id === latestTurnId);
+    assert.ok(latest);
+    assert.equal(latest.status, "completed");
+    assert.equal(latest.mobileSyntheticCompletionTurn, true);
+    assert.equal(latest.durationMs, 120000);
+    assert.equal(latest.items.length, 1);
+    assert.equal(latest.items[0].type, "agentMessage");
+    assert.equal(latest.items[0].text, "latest completed receipt");
+    assert.equal(compacted.mobileAppendedRolloutCompletionTurn, latestTurnId);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("thread detail compaction appends latest rollout completion from final jsonl line without newline", () => {
+  const threadId = "019e9000-0000-7000-8000-rolloutdone2";
+  const latestTurnId = "turn-rollout-completed-eof";
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-rollout-completion-eof-"));
+  const rolloutPath = path.join(tempDir, `rollout-2099-01-01T00-00-00-${threadId}.jsonl`);
+  try {
+    const completedAt = new Date(Date.now() - 1000);
+    fs.writeFileSync(rolloutPath, [
+      JSON.stringify({
+        type: "event_msg",
+        timestamp: new Date(completedAt.getTime() - 60000).toISOString(),
+        payload: {
+          type: "task_started",
+          turn_id: latestTurnId,
+        },
+      }),
+      JSON.stringify({
+        type: "event_msg",
+        timestamp: completedAt.toISOString(),
+        payload: {
+          type: "task_complete",
+          turn_id: latestTurnId,
+          completed_at: completedAt.toISOString(),
+          duration_ms: 60000,
+          last_agent_message: "latest completed receipt without newline",
+        },
+      }),
+    ].join("\n"), "utf8");
+
+    const compacted = compactThread({
+      id: threadId,
+      name: "Music",
+      path: rolloutPath,
+      updatedAt: Math.floor(completedAt.getTime() / 1000),
+      status: { type: "completed" },
+      turns: [{
+        id: "older-turn",
+        status: { type: "completed" },
+        startedAt: Math.floor((completedAt.getTime() - 500000) / 1000),
+        completedAt: Math.floor((completedAt.getTime() - 450000) / 1000),
+        items: [{ id: "older-agent", type: "agentMessage", text: "older" }],
+      }],
+    });
+
+    const latest = compacted.turns.find((turn) => turn.id === latestTurnId);
+    assert.ok(latest);
+    assert.equal(latest.mobileSyntheticCompletionTurn, true);
+    assert.equal(latest.items[0].text, "latest completed receipt without newline");
+    assert.equal(compacted.mobileAppendedRolloutCompletionTurn, latestTurnId);
+  } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
@@ -862,5 +1138,47 @@ test("turn sorting uses item timestamps when turn ids are not chronological", ()
   assert.deepEqual(sorted.map((turn) => turn.id), [
     "zz-old-random-id",
     "019e7ed2-da22-79b2-b514-eb8970509954",
+  ]);
+});
+
+test("turn sorting keeps timestamped completions after unknown fallback rows", () => {
+  const sorted = sortTurnsChronologically([
+    {
+      id: "019ef3e3-5671-73a0-b10e-6fa6bd84b08e",
+      status: { type: "completed" },
+      completedAt: 1782208276,
+      items: [{ type: "agentMessage", text: "latest" }],
+    },
+    {
+      id: "rollout-94836",
+      status: { type: "completed" },
+      items: [{ type: "agentMessage", text: "older fallback without timestamp" }],
+    },
+  ]);
+
+  assert.deepEqual(sorted.map((turn) => turn.id), [
+    "rollout-94836",
+    "019ef3e3-5671-73a0-b10e-6fa6bd84b08e",
+  ]);
+});
+
+test("turn sorting keeps timestamp-less live turns after completed history", () => {
+  const sorted = sortTurnsChronologically([
+    {
+      id: "live-shell",
+      status: { type: "inProgress" },
+      items: [],
+    },
+    {
+      id: "completed-turn",
+      status: { type: "completed" },
+      completedAt: 1782208276,
+      items: [{ type: "agentMessage", text: "done" }],
+    },
+  ]);
+
+  assert.deepEqual(sorted.map((turn) => turn.id), [
+    "completed-turn",
+    "live-shell",
   ]);
 });

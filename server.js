@@ -861,7 +861,8 @@ const MAX_THREAD_TURNS = Math.max(1, Math.min(100, Number(process.env.CODEX_MOBI
 const MAX_FULL_THREAD_TURNS = Math.max(MAX_THREAD_TURNS, Math.min(200, Number(process.env.CODEX_MOBILE_FULL_THREAD_TURNS || "10")));
 const MAX_LIVE_OPERATION_ITEMS = Math.max(1, Math.min(30, Number(process.env.CODEX_MOBILE_LIVE_OPERATION_ITEMS || "12")));
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
-const THREAD_LIST_FALLBACK_CACHE_TTL_MS = Math.max(0, Number(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS || "30000"));
+const THREAD_LIST_FALLBACK_CACHE_TTL_MS = Math.max(0, Number(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS || "0"));
+let activeThreadDetailRequestCount = 0;
 threadDetailProjectionService = THREAD_DETAIL_PROJECTION_V4_ENABLED
   ? createThreadDetailProjectionV4Service({
     cacheDir: THREAD_DETAIL_PROJECTION_CACHE_DIR,
@@ -2863,7 +2864,7 @@ function threadHasArchiveSignal(thread) {
 function rememberMobileArchivedThreadId(threadId) {
   try {
     const remembered = mobileArchiveIndexService.remember(threadId);
-    if (remembered) clearThreadListFallbackCache();
+    if (remembered) removeThreadFromThreadListFallbackCache(threadId);
     return remembered;
   } catch (err) {
     console.warn(`Failed to update Mobile archived thread index: ${err.message || String(err)}`);
@@ -3181,6 +3182,180 @@ function pruneSupersededLiveShellTurns(thread) {
 
 function turnIdentifier(turn) {
   return String(turn && (turn.id || turn.turnId) || "");
+}
+
+function turnTimestampFromFields(turn, fields) {
+  for (const field of fields) {
+    const value = timestampToMs(turn && turn[field]);
+    if (value) return value;
+  }
+  return 0;
+}
+
+function turnStartedAtMs(turn) {
+  return turnTimestampFromFields(turn, [
+    "startedAtMs",
+    "startedAt",
+    "started_at_ms",
+    "started_at",
+    "createdAtMs",
+    "createdAt",
+    "created_at_ms",
+    "created_at",
+  ]);
+}
+
+function turnHasNoVisibleItems(turn) {
+  const items = Array.isArray(turn && turn.items) ? turn.items : [];
+  return !items.some(Boolean);
+}
+
+function isUnmaterializedLiveTurnShell(turn) {
+  if (!turn || !isLiveTurn(turn) || isEndedTurn(turn)) return false;
+  return turnHasNoVisibleItems(turn);
+}
+
+function itemLooksLikeActiveRuntime(item) {
+  if (!item || typeof item !== "object" || isCompletedStatus(item.status)) return false;
+  if (item.type === "reasoning" || isOperationalItem(item)) return true;
+  if (item.type === "agentMessage" || item.type === "plan") return true;
+  return isUserQuestionItem(item) || userMessageHasVisualAttachment(item);
+}
+
+function turnHasMaterializedActiveRuntime(turn) {
+  const items = Array.isArray(turn && turn.items) ? turn.items : [];
+  return items.some(itemLooksLikeActiveRuntime);
+}
+
+function latestMaterializedActiveTurnCandidate(turns, excludedTurnIds = new Set()) {
+  for (let index = Array.isArray(turns) ? turns.length - 1 : -1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    const turnId = turnIdentifier(turn);
+    if (!turnId || excludedTurnIds.has(turnId) || isEndedTurn(turn)) continue;
+    if (turnHasMaterializedActiveRuntime(turn)) return turn;
+  }
+  return null;
+}
+
+function rolloutEvidenceHasRuntimeActivity(evidence) {
+  return Boolean(evidence && !evidence.hasTerminal
+    && evidence.turnId
+    && (evidence.hasVisibleUser || evidence.hasAssistant || evidence.hasOperation));
+}
+
+function rolloutEvidenceIsRecent(evidence, nowMs = Date.now()) {
+  const lastActivityMs = Number(evidence && evidence.lastActivityMs || 0);
+  if (!lastActivityMs) return false;
+  return Math.max(0, Number(nowMs || Date.now()) - lastActivityMs) <= ROLLOUT_ACTIVE_STATUS_WINDOW_MS;
+}
+
+function rolloutLatestEvidenceForThread(thread, options = {}) {
+  if (!thread || typeof thread !== "object") return null;
+  let rolloutPath = rolloutPathForThread(thread);
+  if (!rolloutPath && thread.id) {
+    const stateThread = readStateDbThread(thread.id);
+    rolloutPath = rolloutPathForThread(stateThread);
+  }
+  if (!rolloutPath) return null;
+  let stat = options.stat || null;
+  if (!stat) {
+    try {
+      stat = fs.statSync(rolloutPath);
+    } catch (_) {
+      stat = null;
+    }
+  }
+  return rolloutLatestTurnEvidence(rolloutPath, stat);
+}
+
+function activeRuntimeEvidenceForThread(thread, options = {}) {
+  const evidence = rolloutLatestEvidenceForThread(thread, options);
+  if (!rolloutEvidenceHasRuntimeActivity(evidence)) return null;
+  return evidence;
+}
+
+function activeStatusFromRuntimeEvidence(previousStatus) {
+  const previousType = statusText(previousStatus);
+  const status = {
+    type: "active",
+    mobileRuntimeDerived: true,
+  };
+  if (previousType && previousType !== "active") status.previousType = previousType;
+  return status;
+}
+
+function reconcileThreadActiveTurnWithRolloutEvidence(thread, options = {}) {
+  if (!thread || typeof thread !== "object" || !Array.isArray(thread.turns)) return thread;
+  const turns = thread.turns;
+  const shouldReconcile = isThreadListLiveStatus(thread.status)
+    || Boolean(thread.activeTurnId)
+    || Boolean(thread.mobileLocalActiveStatus)
+    || turns.some(isLiveTurn);
+  if (!shouldReconcile) return thread;
+  const evidence = activeRuntimeEvidenceForThread(thread, options);
+  const unmaterializedShellIds = new Set(
+    turns.filter(isUnmaterializedLiveTurnShell)
+      .map(turnIdentifier)
+      .filter(Boolean),
+  );
+  if (unmaterializedShellIds.size && isThreadListRestStatus(thread.status)) {
+    const dropped = [];
+    thread.turns = turns.filter((turn) => {
+      const turnId = turnIdentifier(turn);
+      if (!turnId || !unmaterializedShellIds.has(turnId)) return true;
+      dropped.push(turnId);
+      return false;
+    });
+    if (dropped.length) {
+      thread.mobileDroppedUnmaterializedRestingActiveTurn = dropped[0];
+      if (dropped.includes(String(thread.activeTurnId || ""))) delete thread.activeTurnId;
+      if (thread.mobileLocalActiveStatus && dropped.includes(String(thread.mobileLocalActiveStatus.turnId || ""))) {
+        delete thread.mobileLocalActiveStatus;
+      }
+    }
+    return thread;
+  }
+  if (!evidence && !unmaterializedShellIds.size) return thread;
+  if (evidence && !rolloutEvidenceIsRecent(evidence, options.nowMs || Date.now()) && !isThreadListLiveStatus(thread.status)) {
+    return thread;
+  }
+  const materializedCandidate = latestMaterializedActiveTurnCandidate(turns, unmaterializedShellIds);
+  const activeTurnId = String((evidence && evidence.turnId) || turnIdentifier(materializedCandidate) || "").trim();
+  if (!activeTurnId) return thread;
+
+  const dropped = [];
+  thread.turns = turns.filter((turn) => {
+    const turnId = turnIdentifier(turn);
+    if (!turnId || turnId === activeTurnId) return true;
+    if (!isUnmaterializedLiveTurnShell(turn)) return true;
+    dropped.push(turnId);
+    return false;
+  });
+
+  const activeTurn = thread.turns.find((turn) => turnIdentifier(turn) === activeTurnId) || null;
+  if (!activeTurn || isEndedTurn(activeTurn)) return thread;
+
+  thread.status = activeStatusFromRuntimeEvidence(thread.status);
+  thread.activeTurnId = activeTurnId;
+  activeTurn.status = activeStatusFromRuntimeEvidence(activeTurn.status);
+  if (!turnStartedAtMs(activeTurn)) {
+    const startedAtMs = Number((evidence && (evidence.startedAtMs || evidence.lastActivityMs)) || 0);
+    if (startedAtMs) activeTurn.startedAt = Math.floor(startedAtMs / 1000);
+  }
+  if (evidence) {
+    thread.mobileRolloutActiveTurn = {
+      turnId: activeTurnId,
+      startedAtMs: Math.trunc(Number(evidence.startedAtMs || 0)),
+      lastActivityMs: Math.trunc(Number(evidence.lastActivityMs || 0)),
+    };
+  }
+  if (dropped.length) {
+    thread.mobileDroppedUnmaterializedLocalActiveTurn = dropped[0];
+    if (thread.mobileLocalActiveStatus && dropped.includes(String(thread.mobileLocalActiveStatus.turnId || ""))) {
+      delete thread.mobileLocalActiveStatus;
+    }
+  }
+  return thread;
 }
 
 function turnListFromResult(result) {
@@ -4241,6 +4416,112 @@ function rolloutFinalReceiptItem(entry, turnId, text) {
   };
 }
 
+function rolloutCompletionTimestampMs(entry) {
+  const payload = entry && entry.payload && typeof entry.payload === "object" ? entry.payload : {};
+  return timestampToMs(payload.completed_at || payload.completedAt || entry.timestamp || payload.timestamp);
+}
+
+function rolloutCompletionTurnFromEntry(entry, turnId, text) {
+  const payload = entry && entry.payload && typeof entry.payload === "object" ? entry.payload : {};
+  const completedAtMs = rolloutCompletionTimestampMs(entry);
+  const durationMs = Number(payload.duration_ms || payload.durationMs || 0);
+  const turn = {
+    id: turnId,
+    status: "completed",
+    items: [rolloutFinalReceiptItem(entry, turnId, text)],
+    source: "rollout_task_complete",
+    mobileSyntheticCompletionTurn: true,
+  };
+  if (completedAtMs) {
+    turn.completedAt = Math.floor(completedAtMs / 1000);
+    turn.completedAtMs = completedAtMs;
+  }
+  if (Number.isFinite(durationMs) && durationMs > 0) {
+    turn.durationMs = durationMs;
+    if (completedAtMs && durationMs <= completedAtMs) {
+      turn.startedAt = Math.floor((completedAtMs - durationMs) / 1000);
+      turn.startedAtMs = completedAtMs - durationMs;
+    }
+  }
+  return turn;
+}
+
+function cloneRolloutCompletionTurnPayload(payload) {
+  const byTurn = new Map();
+  const sourceByTurn = payload && payload.byTurn instanceof Map ? payload.byTurn : new Map();
+  for (const [turnId, turn] of sourceByTurn.entries()) {
+    byTurn.set(turnId, clonePlainJson(turn));
+  }
+  return {
+    byTurn,
+    scopedCount: Number(payload && payload.scopedCount) || 0,
+  };
+}
+
+function readRolloutCompletionTurns(rolloutPath) {
+  if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) {
+    return { byTurn: new Map(), scopedCount: 0 };
+  }
+  let cacheKey = "";
+  try {
+    const stat = fs.statSync(rolloutPath);
+    cacheKey = `${runtimeContextCacheKey(rolloutPath, stat)}:completion-turns`;
+    const cached = latestFinalReceiptsByPath.get(cacheKey);
+    if (cached && Date.now() - cached.cachedAt <= RUNTIME_CONTEXT_CACHE_TTL_MS) {
+      return cloneRolloutCompletionTurnPayload(cached.payload);
+    }
+  } catch (_) {
+    return { byTurn: new Map(), scopedCount: 0 };
+  }
+  const byTurn = new Map();
+  let scopedCount = 0;
+  let currentTurnId = "";
+  for (const entry of readRolloutEnrichmentEntries(rolloutPath)) {
+    if (!entry || !entry.type) continue;
+    const payload = entry.payload || {};
+    const explicitTurnId = rolloutEntryTurnId(entry);
+    if (entry.type === "turn_context" && explicitTurnId) currentTurnId = explicitTurnId;
+    if (entry.type === "event_msg" && payload.type === "task_started" && explicitTurnId) currentTurnId = explicitTurnId;
+    if (entry.type !== "event_msg" || !/^(task_complete|task_completed)$/.test(String(payload.type || ""))) continue;
+    const turnId = explicitTurnId || currentTurnId;
+    if (!turnId) continue;
+    const text = finalReceiptTextFromParams(payload);
+    if (!text) continue;
+    byTurn.set(turnId, rolloutCompletionTurnFromEntry(entry, turnId, text));
+    scopedCount += 1;
+  }
+  const payload = { byTurn, scopedCount };
+  if (cacheKey) rememberRolloutFinalReceipts(cacheKey, payload);
+  return cloneRolloutCompletionTurnPayload(payload);
+}
+
+function threadUpdatedAtOnlyMs(thread) {
+  return timestampToMs(thread && (thread.updatedAt || thread.updated_at || thread.updatedAtMs || thread.updated_at_ms));
+}
+
+function appendMissingRolloutCompletionTurnsToThread(thread) {
+  if (!thread || typeof thread !== "object" || !Array.isArray(thread.turns)) return thread;
+  if (!isThreadListRestStatus(thread.status)) return thread;
+  const rolloutPath = rolloutPathForThread(thread);
+  if (!rolloutPath) return thread;
+  const payload = readRolloutCompletionTurns(rolloutPath);
+  if (!payload || !(payload.byTurn instanceof Map) || !payload.byTurn.size) return thread;
+  const existingIds = new Set(thread.turns.map(turnIdentifier).filter(Boolean));
+  const updatedAtMs = threadUpdatedAtOnlyMs(thread);
+  const candidates = Array.from(payload.byTurn.values())
+    .filter((turn) => turn && turn.id && !existingIds.has(String(turn.id)))
+    .filter((turn) => {
+      if (!updatedAtMs) return true;
+      const completedAtMs = timestampToMs(turn.completedAtMs || turn.completedAt);
+      return Boolean(completedAtMs && completedAtMs >= updatedAtMs - 5000);
+    })
+    .sort((a, b) => turnSortTimestampMs(a) - turnSortTimestampMs(b));
+  if (!candidates.length) return thread;
+  thread.turns.push(...candidates.map(clonePlainJson));
+  thread.mobileAppendedRolloutCompletionTurn = candidates[candidates.length - 1].id || true;
+  return thread;
+}
+
 function readRolloutFinalReceiptItems(rolloutPath) {
   if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) {
     return { byTurn: new Map(), scopedCount: 0 };
@@ -4577,16 +4858,6 @@ function fileSizeBytes(filePath) {
     return stat.isFile() ? stat.size : 0;
   } catch (_) {
     return 0;
-  }
-}
-
-function fileFingerprint(filePath) {
-  if (!filePath || typeof filePath !== "string") return "missing";
-  try {
-    const stat = fs.statSync(filePath);
-    return `${stat.isDirectory() ? "d" : "f"}:${Number(stat.size || 0)}:${Math.trunc(Number(stat.mtimeMs || 0))}`;
-  } catch (_) {
-    return "missing";
   }
 }
 
@@ -5670,8 +5941,10 @@ function compactThread(thread, options = {}) {
   const maxTurns = Math.max(1, Math.min(200, Number(options.maxTurns || MAX_THREAD_TURNS)));
   if (Array.isArray(out.turns)) {
     pendingSteerEchoStore.injectIntoThread(out);
+    reconcileThreadActiveTurnWithRolloutEvidence(out, options);
     normalizeSupersededLiveTurns(out);
     pruneSupersededLiveShellTurns(out);
+    appendMissingRolloutCompletionTurnsToThread(out);
     const omitted = Math.max(0, out.turns.length - maxTurns);
     if (omitted > 0) {
       out.mobileOmittedTurnCount = omitted;
@@ -7455,14 +7728,48 @@ function isPathInside(parent, child) {
   return childPath === parentPath || childPath.startsWith(parentPath + path.sep);
 }
 
+function uploadPathForId(uploadRoot, id) {
+  const normalized = String(id || "").replace(/\\/g, "/").replace(/^\/+/, "");
+  const parts = normalized.split("/").filter(Boolean);
+  if (!parts.length || parts.some((part) => part === "." || part === ".." || part.includes("\0"))) {
+    const err = new Error("Invalid upload id");
+    err.statusCode = 400;
+    throw err;
+  }
+  if (/^[a-zA-Z]:/.test(parts[0] || "")) {
+    const err = new Error("Invalid upload id");
+    err.statusCode = 400;
+    throw err;
+  }
+  const target = path.resolve(uploadRoot, ...parts);
+  if (!isPathInside(uploadRoot, target)) {
+    const err = new Error("Forbidden");
+    err.statusCode = 403;
+    throw err;
+  }
+  return target;
+}
+
 function serveUploadedFile(req, res) {
   const url = getUrl(req);
-  const rawPath = url.searchParams.get("path") || "";
-  const target = path.resolve(rawPath);
-  if (!rawPath || !isPathInside(UPLOAD_ROOT, target)) {
-    res.writeHead(403);
-    res.end("Forbidden");
-    return;
+  let target = "";
+  const uploadId = url.searchParams.get("id") || "";
+  if (uploadId) {
+    try {
+      target = uploadPathForId(UPLOAD_ROOT, uploadId);
+    } catch (err) {
+      res.writeHead(err.statusCode || 400);
+      res.end(err.message || "Invalid upload id");
+      return;
+    }
+  } else {
+    const rawPath = url.searchParams.get("path") || "";
+    target = path.resolve(rawPath);
+    if (!rawPath || !isPathInside(UPLOAD_ROOT, target)) {
+      res.writeHead(403);
+      res.end("Forbidden");
+      return;
+    }
   }
   fs.stat(target, (statErr, stat) => {
     if (statErr || !stat.isFile()) {
@@ -7677,7 +7984,7 @@ function broadcast(payload) {
     updateLocalActiveThreadStatusFromNotification(payload);
     const statusPayload = threadStatusChangedPayloadFromTurnNotification(payload);
     if (statusPayload) {
-      clearThreadListFallbackCache();
+      applyThreadStatusPayloadToThreadListFallbackCache(statusPayload);
       broadcast(statusPayload);
     }
     try {
@@ -7727,7 +8034,7 @@ function threadStatusChangedPayload(threadId, status, meta = {}) {
 function broadcastThreadStatusChanged(threadId, status, meta = {}) {
   const payload = threadStatusChangedPayload(threadId, status, meta);
   if (!payload) return false;
-  clearThreadListFallbackCache();
+  applyThreadStatusPayloadToThreadListFallbackCache(payload);
   broadcast(payload);
   return true;
 }
@@ -10642,7 +10949,7 @@ function rememberStartedThread(thread) {
     cachedAt: Date.now(),
     thread: summary,
   });
-  clearThreadListFallbackCache();
+  upsertThreadListFallbackCacheThread(summary, { addIfMissing: true });
   return summary;
 }
 
@@ -10673,6 +10980,26 @@ function rolloutHasTerminalEntryAtOrAfter(rolloutPath, timestampMs = 0) {
   return false;
 }
 
+function localActiveSupersedingRolloutEvidence(rolloutPath, entry, nowMs = Date.now()) {
+  const localTurnId = String(entry && entry.turnId || "").trim();
+  if (!rolloutPath || !localTurnId) return null;
+  let stat = null;
+  try {
+    stat = fs.statSync(rolloutPath);
+  } catch (_) {
+    stat = null;
+  }
+  const evidence = rolloutLatestTurnEvidence(rolloutPath, stat);
+  if (!rolloutEvidenceHasRuntimeActivity(evidence)) return null;
+  const evidenceTurnId = String(evidence.turnId || "").trim();
+  if (!evidenceTurnId || evidenceTurnId === localTurnId) return null;
+  const lastActivityMs = Number(evidence.lastActivityMs || 0);
+  const localStartedAtMs = Number(entry && entry.startedAtMs || 0);
+  if (localStartedAtMs && lastActivityMs && lastActivityMs < localStartedAtMs - 1000) return null;
+  if (!rolloutEvidenceIsRecent(evidence, nowMs)) return null;
+  return evidence;
+}
+
 function localActiveSummaryRolloutPath(threadId, summary = null) {
   const direct = rolloutPathForThread(summary);
   if (direct) return direct;
@@ -10691,12 +11018,22 @@ function readLocalActiveThreadStatus(threadId, summary = null, nowMs = Date.now(
   if (!entry) return null;
   if (Number(entry.expiresAtMs || 0) <= nowMs) {
     localActiveThreadStatuses.delete(id);
-    clearThreadListFallbackCache();
+    updateThreadListFallbackCacheStatus(id, { type: "idle" }, { source: "local-active-expired" });
     return null;
   }
-  if (rolloutHasTerminalEntryAtOrAfter(localActiveSummaryRolloutPath(id, summary), entry.startedAtMs)) {
+  const rolloutPath = localActiveSummaryRolloutPath(id, summary);
+  if (rolloutHasTerminalEntryAtOrAfter(rolloutPath, entry.startedAtMs)) {
     localActiveThreadStatuses.delete(id);
-    clearThreadListFallbackCache();
+    updateThreadListFallbackCacheStatus(id, { type: "completed" }, { source: "local-active-terminal" });
+    return null;
+  }
+  const supersedingEvidence = localActiveSupersedingRolloutEvidence(rolloutPath, entry, nowMs);
+  if (supersedingEvidence) {
+    localActiveThreadStatuses.delete(id);
+    updateThreadListFallbackCacheStatus(id, { type: "active" }, {
+      source: "rollout-active-evidence",
+      turnId: supersedingEvidence.turnId,
+    });
     return null;
   }
   return entry;
@@ -10714,7 +11051,10 @@ function rememberLocalActiveThreadStatus(threadId, turnId = "", meta = {}) {
     expiresAtMs: nowMs + LOCAL_ACTIVE_THREAD_STATUS_TTL_MS,
   };
   localActiveThreadStatuses.set(id, entry);
-  clearThreadListFallbackCache();
+  updateThreadListFallbackCacheStatus(id, { type: "active" }, {
+    source: entry.source,
+    turnId: entry.turnId,
+  });
   return entry;
 }
 
@@ -10722,7 +11062,7 @@ function clearLocalActiveThreadStatus(threadId) {
   const id = String(threadId || "").trim();
   if (!id) return false;
   const deleted = localActiveThreadStatuses.delete(id);
-  if (deleted) clearThreadListFallbackCache();
+  if (deleted) updateThreadListFallbackCacheStatus(id, { type: "idle" }, { source: "local-active-cleared" });
   return deleted;
 }
 
@@ -10877,8 +11217,14 @@ function sortTurnsChronologically(turns) {
     const left = turnSortTimestampMs(a);
     const right = turnSortTimestampMs(b);
     if (Number.isFinite(left) && Number.isFinite(right) && left !== right) return left - right;
+    if (Number.isFinite(left) && !Number.isFinite(right) && isRolloutFallbackTurnId(b)) return 1;
+    if (!Number.isFinite(left) && Number.isFinite(right) && isRolloutFallbackTurnId(a)) return -1;
     return String((a && a.id) || "").localeCompare(String((b && b.id) || ""));
   });
+}
+
+function isRolloutFallbackTurnId(turn) {
+  return /^rollout-\d+$/i.test(String(turn && (turn.id || turn.turnId) || ""));
 }
 
 function turnSortTimestampMs(turn) {
@@ -10906,7 +11252,8 @@ function turnSortTimestampMs(turn) {
   const itemTimestamps = ((turn && turn.items) || [])
     .map(itemDisplayTimestampMs)
     .filter(Boolean);
-  return itemTimestamps.length ? Math.min(...itemTimestamps) : NaN;
+  if (itemTimestamps.length) return Math.min(...itemTimestamps);
+  return isLiveTurn(turn) ? Number.MAX_SAFE_INTEGER : NaN;
 }
 
 function threadFromTurnsList(threadId, summary, turnsResult) {
@@ -11796,7 +12143,12 @@ function persistThreadTitleToSessionIndex(threadId, threadName, updatedAt = new 
   try {
     fs.mkdirSync(path.dirname(p), { recursive: true });
     fs.appendFileSync(p, `${JSON.stringify({ id, thread_name: name, updated_at: timestamp })}\n`, "utf8");
-    clearThreadListFallbackCache();
+    upsertThreadListFallbackCacheThread({
+      id,
+      name,
+      preview: name,
+      updatedAt: Math.floor(date.getTime() / 1000),
+    }, { addIfMissing: false });
     return true;
   } catch (_) {
     return false;
@@ -12248,6 +12600,105 @@ function clearThreadListFallbackCache() {
   threadListFallbackCache.clear();
 }
 
+function removeThreadFromThreadListFallbackCache(threadId) {
+  const id = String(threadId || "").trim();
+  if (!id || !threadListFallbackCache.size) return false;
+  let removed = false;
+  for (const entry of threadListFallbackCache.values()) {
+    const before = Array.isArray(entry.threads) ? entry.threads.length : 0;
+    entry.threads = (entry.threads || []).filter((thread) => String(thread && thread.id || "") !== id);
+    if (entry.threads.length !== before) {
+      removed = true;
+      entry.updatedAt = Date.now();
+      entry.incrementalUpdates = Number(entry.incrementalUpdates || 0) + 1;
+    }
+  }
+  return removed;
+}
+
+function cloneThreadListFallbackFilters(filters = {}) {
+  return {
+    cwd: String(filters.cwd || ""),
+    searchTerm: String(filters.searchTerm || ""),
+    globalState: filters.globalState && typeof filters.globalState === "object"
+      ? clonePlainJson(filters.globalState)
+      : null,
+  };
+}
+
+function upsertThreadListFallbackCacheThread(thread, options = {}) {
+  const id = String(thread && thread.id || "").trim();
+  if (!id || !threadListFallbackCache.size) return false;
+  const addIfMissing = options.addIfMissing === true;
+  const nowMs = Date.now();
+  let changed = false;
+  for (const entry of threadListFallbackCache.values()) {
+    const existing = (entry.threads || []).find((candidate) => String(candidate && candidate.id || "") === id) || null;
+    if (!existing && !addIfMissing) continue;
+    const candidate = normalizeThreadSummaryLiveStatus(mergeThreadDisplaySummary(existing, thread) || thread);
+    const filters = entry.filters || {};
+    const filtered = filterFallbackThreads([candidate], {
+      cwd: filters.cwd,
+      searchTerm: filters.searchTerm,
+      globalState: filters.globalState || undefined,
+    });
+    const withoutThread = (entry.threads || []).filter((item) => String(item && item.id || "") !== id);
+    entry.threads = filtered.length
+      ? mergeThreadSummaryList([...withoutThread, filtered[0]]).slice(0, Math.max(1, Number(entry.limit || 80)))
+      : withoutThread;
+    entry.updatedAt = nowMs;
+    entry.incrementalUpdates = Number(entry.incrementalUpdates || 0) + 1;
+    changed = true;
+  }
+  return changed;
+}
+
+function updateThreadListFallbackCacheStatus(threadId, status, meta = {}) {
+  const id = String(threadId || "").trim();
+  if (!id || !threadListFallbackCache.size) return false;
+  const updatedAt = Math.floor(Date.now() / 1000);
+  const patch = {
+    id,
+    status: status || { type: "notLoaded" },
+    updatedAt,
+  };
+  const source = String(meta.source || "").trim();
+  const turnId = String(meta.turnId || "").trim();
+  if (source) patch.mobileStatusSource = source;
+  if (turnId) patch.mobileStatusTurnId = turnId;
+  return upsertThreadListFallbackCacheThread(patch, { addIfMissing: false });
+}
+
+function applyThreadStatusPayloadToThreadListFallbackCache(payload) {
+  if (!payload || payload.type !== "notification" || payload.method !== "thread/status/changed") return false;
+  const params = payload.params || {};
+  return updateThreadListFallbackCacheStatus(params.threadId, params.status, {
+    source: params.source,
+    turnId: params.turnId,
+  });
+}
+
+function trackThreadDetailRequestLifecycle(res) {
+  activeThreadDetailRequestCount += 1;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    activeThreadDetailRequestCount = Math.max(0, activeThreadDetailRequestCount - 1);
+  };
+  if (res && typeof res.once === "function") {
+    res.once("finish", release);
+    res.once("close", release);
+  }
+  return release;
+}
+
+function shouldDeferThreadListFallbackForActiveDetail({ deferFallback, cursor, archived, searchTerm, cwd } = {}) {
+  if (deferFallback) return true;
+  if (cursor || archived || searchTerm || cwd) return false;
+  return activeThreadDetailRequestCount > 0;
+}
+
 function clonePlainJson(value) {
   if (value === undefined) return undefined;
   return JSON.parse(JSON.stringify(value));
@@ -12263,19 +12714,19 @@ function threadListFallbackCacheKey(limit, filters = {}) {
     search: String(filters.searchTerm || "").trim().toLowerCase(),
     roots,
     projectlessIds,
-    stateDb: fileFingerprint(STATE_DB),
-    sessionIndex: fileFingerprint(path.join(CODEX_HOME, "session_index.jsonl")),
-    archiveIndex: fileFingerprint(MOBILE_ARCHIVED_THREAD_IDS_FILE),
-    sessionsDir: fileFingerprint(SESSIONS_DIR),
   });
 }
 
-function rememberThreadListFallbackCache(key, threads, timings = {}) {
-  if (!THREAD_LIST_FALLBACK_CACHE_TTL_MS || !key) return;
+function rememberThreadListFallbackCache(key, threads, timings = {}, options = {}) {
+  if (!key) return;
   threadListFallbackCache.set(key, {
-    expiresAt: Date.now() + THREAD_LIST_FALLBACK_CACHE_TTL_MS,
+    cachedAt: Date.now(),
+    updatedAt: Date.now(),
+    limit: Math.max(1, Math.min(200, Number(options.limit || 80))),
+    filters: cloneThreadListFallbackFilters(options.filters || {}),
     threads: clonePlainJson(Array.isArray(threads) ? threads : []),
     timings: Object.assign({}, timings || {}),
+    incrementalUpdates: 0,
   });
   if (threadListFallbackCache.size > 12) {
     const oldestKey = threadListFallbackCache.keys().next().value;
@@ -12284,15 +12735,21 @@ function rememberThreadListFallbackCache(key, threads, timings = {}) {
 }
 
 function readThreadListFallbackCache(key) {
-  if (!THREAD_LIST_FALLBACK_CACHE_TTL_MS || !key) return null;
+  if (!key) return null;
   const cached = threadListFallbackCache.get(key);
-  if (!cached || cached.expiresAt <= Date.now()) {
+  if (!cached) return null;
+  if (THREAD_LIST_FALLBACK_CACHE_TTL_MS > 0
+    && cached.cachedAt
+    && Date.now() - Number(cached.cachedAt || 0) > THREAD_LIST_FALLBACK_CACHE_TTL_MS) {
     if (cached) threadListFallbackCache.delete(key);
     return null;
   }
   return {
     threads: clonePlainJson(cached.threads || []),
     timings: Object.assign({}, cached.timings || {}),
+    cachedAt: Number(cached.cachedAt || 0),
+    updatedAt: Number(cached.updatedAt || cached.cachedAt || 0),
+    incrementalUpdates: Number(cached.incrementalUpdates || 0),
   };
 }
 
@@ -12307,6 +12764,8 @@ function readThreadListFallback(limit = 80, filters = {}) {
       diagnostics.rolloutMs = 0;
       diagnostics.sessionIndexMs = 0;
       diagnostics.cachedSourceTimings = cached.timings;
+      diagnostics.cacheAgeMs = cached.updatedAt ? Math.max(0, Date.now() - cached.updatedAt) : 0;
+      diagnostics.cacheIncrementalUpdates = cached.incrementalUpdates || 0;
     }
     return cached.threads;
   }
@@ -12329,6 +12788,9 @@ function readThreadListFallback(limit = 80, filters = {}) {
     stateDbMs: diagnostics && diagnostics.stateDbMs || 0,
     rolloutMs: diagnostics && diagnostics.rolloutMs || 0,
     sessionIndexMs: diagnostics && diagnostics.sessionIndexMs || 0,
+  }, {
+    limit,
+    filters,
   });
   return threads;
 }
@@ -13450,11 +13912,19 @@ async function handleApi(req, res) {
         cwd,
       );
       markTiming("appServerMs", appServerStartedAtMs);
-      if (deferFallback) {
+      const shouldDeferFallback = shouldDeferThreadListFallbackForActiveDetail({
+        deferFallback,
+        cursor,
+        archived,
+        searchTerm,
+        cwd,
+      });
+      if (shouldDeferFallback) {
         Object.assign(timings, {
           fallbackMs: 0,
           fallbackCacheHit: false,
           fallbackDeferred: true,
+          fallbackDeferredReason: deferFallback ? "client" : "active-thread-detail",
           fallbackStateDbMs: 0,
           fallbackRolloutMs: 0,
           fallbackSessionIndexMs: 0,
@@ -13603,6 +14073,7 @@ async function handleApi(req, res) {
   }
   const threadRead = url.pathname.match(/^\/api\/threads\/([^/]+)$/);
   if (threadRead && req.method === "GET") {
+    trackThreadDetailRequestLifecycle(res);
     const threadId = decodeURIComponent(threadRead[1]);
     const detailMode = String(url.searchParams.get("mode") || "").trim().toLowerCase();
     const preferRecentTurns = detailMode === "recent";
@@ -14251,6 +14722,7 @@ module.exports = {
   stripMarkdownFileTarget,
   threadMatchesWorkspaceCwd,
   threadTaskCardCanonicalVisibleTargets,
+  uploadPathForId,
   workspaceDelegationDynamicToolSpec,
   attachWorkspaceDelegationDynamicTools,
   attachWorkspaceDelegationRuntimeGuidance,

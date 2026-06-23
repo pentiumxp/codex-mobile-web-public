@@ -147,8 +147,8 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v378/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v378"/);
+  assert.match(swJs, /codex-mobile-shell-v380/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v380"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);
@@ -359,16 +359,18 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /function formatTokenMillion\(value\)/);
   assert.match(appJs, /const THREAD_LIST_PAGE_LIMIT = 40;/);
   assert.match(appJs, /new URLSearchParams\(\{ limit: String\(THREAD_LIST_PAGE_LIMIT\), archived: "false" \}\)/);
-  assert.match(appJs, /const threadDetailOpening = Boolean\(state\.currentThread && state\.currentThread\.mobileLoading\);/);
+  assert.match(appJs, /function hasThreadDetailRequestInFlight\(\)/);
+  assert.match(appJs, /state\.threadLoadController[\s\S]*state\.refreshThreadController[\s\S]*state\.currentThread && state\.currentThread\.mobileLoading/);
+  assert.match(appJs, /const threadDetailOpening = hasThreadDetailRequestInFlight\(\);/);
   assert.match(appJs, /silent && options\.deferFallback !== false && threadDetailOpening && !state\.selectedCwd && !search/);
   assert.match(appJs, /if \(shouldDeferFallback && !search\) params\.set\("fallback", "defer"\)/);
   assert.match(appJs, /const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;/);
   assert.match(appJs, /const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;/);
   assert.match(appJs, /threadListDeferredFallbackTimer: null/);
   assert.match(appJs, /function scheduleThreadListDeferredFallback\(delayMs = THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS\)/);
-  assert.match(appJs, /if \(state\.threadListLoadController \|\| \(state\.currentThread && state\.currentThread\.mobileLoading\)\) \{[\s\S]*scheduleThreadListDeferredFallback\(THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS\);[\s\S]*return;/);
+  assert.match(appJs, /if \(state\.threadListLoadController \|\| hasThreadDetailRequestInFlight\(\)\) \{[\s\S]*scheduleThreadListDeferredFallback\(THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS\);[\s\S]*return;/);
   assert.match(appJs, /if \(options\.deferFallback !== true\) clearThreadListDeferredFallbackTimer\(\);/);
-  assert.match(appJs, /if \(result && result\.mobileDeferredFallback && options\.deferFallback === true\) \{[\s\S]*scheduleThreadListDeferredFallback\(\);[\s\S]*\}/);
+  assert.match(appJs, /if \(result && result\.mobileDeferredFallback && !state\.selectedCwd && !search\) \{[\s\S]*scheduleThreadListDeferredFallback\(\);[\s\S]*\}/);
   assert.match(appJs, /Uncached \$\{escapeHtml\(formatTokenMillion\(displayInputTokensExcludingCached\(entry\)\)\)\}/);
   assert.match(appJs, /Cached \$\{escapeHtml\(formatTokenMillion\(entry && entry\.cachedInputTokens\)\)\}/);
   assert.match(appJs, /Out \$\{escapeHtml\(formatTokenMillion\(entry && entry\.outputTokens\)\)\}/);
