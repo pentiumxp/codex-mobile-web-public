@@ -1,3 +1,68 @@
+# 2026-06-23 - Mobile operation sheet and long task-card folding deployed
+
+- Trigger:
+  - User reported the mobile operation bubble expanded panel was translucent
+    and disappeared immediately after tapping if the underlying operation
+    completed.
+  - User then reported cross-thread task-card injected messages can be much
+    longer than normal user messages and push the final receipt/Usage out of
+    view.
+  - User clarified collapsed cross-thread cards should show only the source
+    thread name and task purpose, with details available on expand.
+- Change:
+  - `public/app.js` now pins the expanded mobile operation sheet per current
+    thread. If a refresh removes the active operation while the user has the
+    sheet open, the existing expanded sheet is preserved until the user
+    collapses it or leaves the thread.
+  - Mobile operation sheet/card surfaces now use opaque panel backgrounds.
+  - Injected cross-thread task-card user messages are detected from
+    `[Cross-thread task card sent by source thread]` and
+    `[Cross-thread task card approved]`.
+  - Those messages now render as a collapsed `<details>` card whose summary is
+    `来源：<Source thread> · 目的：<Title/body heading>` plus payload length; the
+    full injected task card remains available inside a bounded internal scroll
+    area.
+  - PWA shell/cache advanced to `codex-mobile-shell-v398`.
+- Validation:
+  - Focused 117-test suite passed:
+    `test/conversation-render.test.js`,
+    `test/thread-task-card-route.test.js`,
+    `test/mobile-viewport.test.js`,
+    `test/collab-agent-render.test.js`, and
+    `test/thread-goal-service.test.js`.
+  - `npm run check`
+  - `npm run check:macos`
+  - `npm test` passed (`654` tests).
+  - `git diff --check`
+  - `codegraph sync && codegraph status` reported the index up to date with
+    the existing older-engine warning.
+- Commit/deploy:
+  - Code commit: `8a69483 fix: stabilize mobile operation and task cards`.
+  - Deployed through the Home AI center script:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --execute --json`.
+  - Production source ref: `8a69483bcc09`, dirty false.
+  - Production target:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260623T155832Z-plugin-codex-mobile-web-manual`.
+  - Restart label `com.hermesmobile.plugin.codex-mobile` was running after
+    deploy; health URL passed on attempt 2.
+  - `/api/public-config` returned `clientBuildId=0.1.11|codex-mobile-shell-v398`,
+    `shellCacheName=codex-mobile-shell-v398`, and `authRequired=true`.
+  - Authenticated `/api/status` returned `ready=true` over
+    `external-jsonl-tcp`.
+  - Production `npm run check` passed.
+- Visual check:
+  - Attempted Home AI center visual smoke with
+    `npm run ios:pwa:visual -- --scenario embedded-plugin-shell --plugin-id codex-mobile`.
+  - The run did not complete: the visual harness returned
+    `This operation was aborted`, and npm banner text was mixed into the JSON
+    output. Do not count this as visual-pass evidence.
+- Notes:
+  - Public was not pushed in this step.
+  - Long-card folding is a frontend rendering change only; task-card storage,
+    delivery, approval, and return-card protocol were not changed.
+
 # 2026-06-23 - Same-workspace task-card routing fix deployed
 
 - Trigger:
