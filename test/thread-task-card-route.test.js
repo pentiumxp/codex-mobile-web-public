@@ -76,6 +76,8 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(serverJs, /function attachWorkspaceDelegationDynamicTools\(/);
   assert.match(serverJs, /function attachWorkspaceDelegationRuntimeGuidance\(/);
   assert.match(serverJs, /function workspaceDelegationScriptFallbackInstruction\(/);
+  assert.doesNotMatch(functionBody(serverJs, "workspaceDelegationTargetHints"), /threadTaskCardCanonicalVisibleTargets/);
+  assert.match(functionBody(serverJs, "workspaceDelegationTargetHints"), /threadTaskCardVisibleTargetThreads\(\)/);
   assert.match(serverJs, /function workspaceDelegationRpcDiagnostics\(/);
   assert.match(serverJs, /function logWorkspaceDelegationRpc\(/);
   assert.match(serverJs, /function workspaceDelegationDynamicToolCallDiagnostics\(/);
@@ -92,7 +94,9 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(serverJs, /function threadTaskCardCanonicalVisibleTargets\(/);
   assert.match(serverJs, /function threadTaskCardCanonicalTargetForCwd\(/);
   assert.match(functionBody(serverJs, "resolveThreadTaskCardTargetReference"), /threadTaskCardVisibleTargetThreads\(options\)/);
-  assert.match(functionBody(serverJs, "resolveThreadTaskCardTargetReference"), /stale_target_thread/);
+  assert.match(serverJs, /function assertThreadTaskCardTargetDeliverable\(/);
+  assert.match(functionBody(serverJs, "resolveThreadTaskCardTargetReference"), /target_thread_self/);
+  assert.match(functionBody(serverJs, "assertThreadTaskCardTargetDeliverable"), /target_thread_archived/);
   assert.match(functionBody(serverJs, "resolveThreadTaskCardTargetReference"), /target_thread_not_visible/);
   assert.doesNotMatch(functionBody(serverJs, "resolveThreadTaskCardTargetReference"), /return raw;/);
   assert.match(functionBody(serverJs, "buildThreadTaskCardCreatePayload"), /if \(!targetThreadIds\.length\)/);
@@ -113,8 +117,9 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /source model must call this tool/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /The model must decide from the user's request whether delegation is required/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /always creates source-direct cards/);
-  assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /Stale, hidden, archived, old-rollout, or non-detail-readable targetThreadId values are rejected/);
-  assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /latest visible canonical thread/);
+  assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /Archived, deleted, hidden, subagent, or non-detail-readable targetThreadId values are rejected/);
+  assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /Several normal threads may share the same cwd\/workspace/);
+  assert.doesNotMatch(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /latest visible canonical thread/);
   assert.doesNotMatch(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /pending:\s*\{/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolBody"), /body\.direct = true/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolBody"), /body\.autoApprove = true/);

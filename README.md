@@ -1,6 +1,7 @@
 # Codex Mobile Web
 
 - 中文说明：v396 修复移动端发送用户消息后，思考过程中同一条用户消息可能出现两张相同卡片的问题。服务端 mux-local `userMessage` echo 和 pending steer echo 现在携带 `clientSubmissionId`；前端线程合并会用提交 id、本地 `local-user-*` id、确定性 `mux-user-*` id 后缀和内容签名收敛同一次提交，只保留优先级更高的 mux/durable 用户消息，同时保留用户后来真正重复发送的同文消息。PWA shell cache 升级到 `codex-mobile-shell-v396`。
+- 中文说明：server-only 修正同一工作区多个正常线程之间无法发任务卡的问题。`/api/threads/:sourceThreadId/task-cards` 现在把精确 `targetThreadId` / `targetThreadTitle` 视为线程身份，只要目标存在且未归档、未删除、非隐藏/子代理，就允许同 cwd 投递；不会再因为另一个同 cwd 线程更新时间更新而拒绝或改投。`targetCwd` / `targetWorkspace` 仍是模糊 workspace 目标，才会选择该 workspace 的当前可见线程。传入源线程自身会返回 `target_thread_self`，归档目标返回 `target_thread_archived`；本次不改变 PWA shell cache。
 - 中文说明：v395 将手机端底部 Command dock 改为悬浮 operation bubble。手机窄屏不再为纯 reasoning 或命令状态常驻占用一行纵向空间；只有真实 command/file/tool/search 正在运行时才在 composer 上方显示一个不参与布局的气泡，内容只保留操作类型、短摘要和运行时长。点击或上滑气泡会展开当前操作详情 sheet，可查看完整命令和参数。桌面和 iPad 宽屏继续保留原一行 Command dock。PWA shell cache 升级到 `codex-mobile-shell-v395`。
 
 - 中文说明：server-only 跟进修正 v394 后 Mac 上 Command 详情仍为空的问题。实测 `/api/threads/:id?mode=recent` 返回的 `commandExecution.command` 本身为空，失败层不是前端 dock 渲染，而是服务端 raw-operation fallback 只解析 rollout `function_call.arguments.command`，没有解析 Mac `exec_command` 常见的 `arguments.cmd`。现在服务端投影同时支持 `command`、`cmd`、`shellCommand`、`shell_command`，且支持 `arguments` 为对象或 JSON 字符串；本次不改变 PWA shell cache。
@@ -66,7 +67,7 @@
 - 中文说明：server-only 二次修正后台 turn 已经启动但线程列表/详情摘要又被 `idle` 覆盖的问题。Mobile Web 自己发起的 `turn/start` 成功返回后，现在会记录 bounded 服务端 active overlay，并把它统一应用到 `/api/threads` 和 `/api/threads/:id` 的状态合成；后续 state-db/app-server 暂时返回 `idle` 时不会洗掉运行标志。overlay 会在收到 `turn/completed`、rollout 尾部出现 `task_complete`，或 TTL 到期时清理。仍会广播轻量 `thread/status/changed active`，覆盖普通消息、source-direct/自动任务卡注入、auto-recover、side-chat apply、continuation handoff/bootstrap 和新线程首 turn。本次不改变 PWA shell cache。
 - 中文说明：v375 缓解大线程打开期间的后台列表补拉卡顿。线程列表首屏仍可用 `fallback=defer` 快速返回，但完整 fallback rollout 扫描不再 800ms 后立即启动；前端现在把它作为可取消、可推迟的后台任务，等待线程详情首屏稳定、没有列表请求在跑、且没有 workspace/search 过滤时再补拉。这样 Music 这类 200MB rollout 线程在服务重启后不会因为后台列表恢复马上扫大文件而拖慢首屏。PWA shell cache 升级到 `codex-mobile-shell-v375`。
 - 中文说明：v374 修正首次打开已完成线程时 Usage 卡片可能缺失、退出再进才出现的问题。线程详情首屏如果命中较旧投影缓存，且最新 completed turn 已有最终回执但还没有 Usage，前端现在会立即启动已有的 bounded Usage backfill 刷新；后台刷新拿到 `turnUsageSummary` 后会在当前页面补出 Usage，不再依赖重新进入线程。PWA shell cache 升级到 `codex-mobile-shell-v374`。
-- 中文说明：server-only 收紧 source-thread 任务卡目标校验，防止动态工具或 fallback 脚本把卡发到旧线程/隐藏线程。`/api/threads/:sourceThreadId/task-cards` 现在只接受当前可见、非归档、非子代理的目标线程；同一 cwd/workspace 有多个线程时，只允许最新可见 canonical 线程。传入旧 date-suffixed 线程、只存在 rollout fallback 的线程或不可见 id 会返回 `stale_target_thread` / `target_thread_not_visible`，并带上当前可投递线程信息；服务端不会自动改投。本次不改变 PWA shell cache。
+- 中文说明：历史说明：曾经为防止动态工具或 fallback 脚本把任务卡发到旧线程/隐藏线程，source-thread 任务卡目标校验把同一 cwd/workspace 收敛到最新可见 canonical 线程。该规则已被后续同工作区多线程修正收窄；当前规则是 exact `targetThreadId` / `targetThreadTitle` 按线程身份投递，归档/删除/隐藏/子代理目标仍会被拒绝。
 - 中文说明：server-only 修正 `codex_mobile.delegate_to_thread` 动态工具响应仍被 app-server 判为无效的问题。mux 真实错误显示当前 app-server 需要 `result.success` 和 camelCase `result.contentItems[{ type:"inputText" }]`，不是 `content_items/input_text`；错误响应会返回 `success:false`。任务卡幂等 seed 继续使用显式 requestId 或 source/target/title/body/workflow 语义字段，避免模型重试重复发卡。本次不改变 PWA shell cache。
 - 中文说明：server-only 修正 `跨工作区委派` 写保护没有覆盖直接工具调用的问题。开启后，普通插件线程默认使用真实 `workspace-write`/managed profile 和 `approvalPolicy:on-request`，并把当前 `.git` 同时加入 sandbox writable roots，确保当前工作区源码、当前 `.git`、读取、MCP 和网络继续可用；如果 app-server 对当前 `.git` 或普通读写发出审批，Mobile Web 会自动允许；如果尝试 `apply_patch`、文件变更、写类 shell 或写类文件系统授权到其他已知源码根，会自动拒绝。Home AI 中央控制平面提供的 AI Ops、平台检查、视觉核验和 `deploy:macos` 脚本被识别为官方工具命令，可以从插件线程调用；但直接修改、提交 Home AI 源码仍会被拦截。旧的 `danger-full-access` approval-proxy-only 兼容模式仅在显式设置 `CODEX_MOBILE_WORKSPACE_DELEGATION_APPROVAL_PROXY_ONLY=1` 时启用。本次不改变 PWA shell cache。
 - 中文说明：v373 修正 Profile 切换到目标账号时，额度接口临时失败会让切换进度消失并停住的问题。目标 app-server 初始化成功后，`account/rateLimits/read` 的网络/服务端临时失败会降级为警告继续切换，只有明确的 401/token 失效才阻止切换；失败响应会把 requestId/progress 带回前端，Profile 行会保留“切换失败：原因”和失败阶段，不再几秒后清空。PWA shell cache 升级到 `codex-mobile-shell-v373`。
@@ -466,12 +467,14 @@ app-server dynamic tool `codex_mobile.delegate_to_thread` into `thread/start`
 and `turn/start`. This is the model-visible path for ordinary Codex turns: the
 model decides whether a request needs another workspace/thread, calls the tool
 with an exact target thread id/title or exact target cwd, and the server creates
-the task card through the same source-thread route. The dynamic tool response is
+the task card through the same source-thread route. Exact thread ids/titles are
+thread identity, so multiple normal threads may share one cwd; archived,
+deleted, hidden, subagent, or non-detail-readable targets are still rejected.
+`targetCwd` / `targetWorkspace` remain fuzzy workspace targets and choose a
+current visible thread for that workspace. The dynamic tool response is
 serialized as app-server dynamic-tool output, `result.content_items` with an
 `input_text` item, not MCP `content` text. Source-thread task-card creation only
-accepts current visible target threads. If several threads share the same cwd,
-the latest visible thread is the canonical target; stale/hidden/old-rollout ids
-are rejected with a bounded error instead of being silently auto-retargeted.
+accepts deliverable target threads and rejects self-cards explicitly.
 The same start/turn runtime guidance also includes a local script fallback for
 agents that do not see the dynamic tool. App-server dynamic tools may not appear
 in deferred discovery surfaces such as `tool_search`, so that absence is not

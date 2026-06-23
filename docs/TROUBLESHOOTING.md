@@ -939,13 +939,16 @@ ambiguous failure instead of a bounded task-card diagnostic.
 
 For source-thread direct task-card creation through
 `/api/threads/:sourceThreadId/task-cards`, target resolution is intentionally
-stricter than the manual pending-card API. `409 stale_target_thread` means the
-requested thread exists or was found in fallback state, but it is not the latest
-visible canonical thread for that cwd/workspace; use `details.currentTarget`.
-`404 target_thread_not_visible` means the id/title/cwd is not currently
-deliverable from the non-archived visible thread list. Dynamic tool calls and
-`scripts/create-thread-task-card.js` share this same guard, so fallback cannot
-bypass stale-target rejection.
+stricter than the manual pending-card API. Exact `targetThreadId` and exact
+`targetThreadTitle` are thread identity and may point to any normal
+non-archived thread, even when several threads share the same cwd/workspace.
+`400 target_thread_self` means the caller tried to send a card to the same
+source thread. `409 target_thread_archived` means the target is archived,
+deleted, or otherwise not deliverable. `404 target_thread_not_visible` means
+the id/title/cwd is not currently deliverable. `targetCwd` /
+`targetWorkspace` are fuzzy workspace targets and choose a current visible
+thread for that workspace. Dynamic tool calls and
+`scripts/create-thread-task-card.js` share this same guard.
 
 ## `#` Task-card Command Does Not Parse
 

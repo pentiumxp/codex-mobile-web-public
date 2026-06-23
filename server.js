@@ -6902,7 +6902,9 @@ function workspaceDelegationTargetHints() {
     return workspaceDelegationTargetHintsCache.text || "";
   }
   try {
-    const threads = threadTaskCardCanonicalVisibleTargets(threadTaskCardVisibleTargetThreads()).slice(0, 80);
+    const threads = [...threadTaskCardVisibleTargetThreads()]
+      .sort((a, b) => threadTaskCardTargetUpdatedAt(b) - threadTaskCardTargetUpdatedAt(a))
+      .slice(0, 80);
     const lines = [];
     for (const thread of threads) {
       if (!thread || lines.length >= 24) break;
@@ -6935,9 +6937,9 @@ function workspaceDelegationDynamicToolSpec() {
       "This dynamic tool always creates source-direct cards when workspace delegation is enabled; do not request target-side pending approval from this tool.",
       "Do not use this for ordinary discussion, read-only references that do not require target-workspace inspection, or work that clearly belongs in the current thread workspace.",
       "The model must decide from the user's request whether delegation is required; do not rely on local keyword or path heuristics.",
-      "Use only a current visible target from the hints. Stale, hidden, archived, old-rollout, or non-detail-readable targetThreadId values are rejected by the server.",
-      "When several threads share the same cwd/workspace, use the latest visible canonical thread for that cwd. Do not use older date-suffixed threads for new task cards.",
-      "Prefer an exact current targetThreadId from the hints. If only a target is named, pass an exact visible targetThreadTitle or targetWorkspace/cwd from the hints.",
+      "Use only a current non-archived target thread. Archived, deleted, hidden, subagent, or non-detail-readable targetThreadId values are rejected by the server.",
+      "Several normal threads may share the same cwd/workspace. Prefer an exact targetThreadId or exact targetThreadTitle for the intended thread; do not retarget only because another thread in the same cwd was updated more recently.",
+      "Use targetWorkspace/cwd only when the request intentionally names a workspace rather than a specific thread; cwd targeting chooses a current visible thread for that workspace.",
       targetHints ? `Visible target hints:\n${targetHints}` : "",
     ].filter(Boolean).join("\n\n"),
     inputSchema: {
@@ -11739,6 +11741,7 @@ function threadTaskCardTargetReferenceEntries(body = {}) {
   if (Array.isArray(body.targetThreadRefs)) body.targetThreadRefs.forEach((value) => push("thread", value));
   if (Array.isArray(body.targetThreadTitles)) body.targetThreadTitles.forEach((value) => push("title", value));
   if (body.targetThreadTitle) push("title", body.targetThreadTitle);
+  if (values.some((entry) => entry && entry.kind !== "workspace")) return values;
   if (Array.isArray(body.targetWorkspaces)) body.targetWorkspaces.forEach((value) => push("workspace", value));
   if (body.targetWorkspace) push("workspace", body.targetWorkspace);
   if (body.targetWorkspaceId) push("workspace", body.targetWorkspaceId);
@@ -11828,45 +11831,74 @@ function readThreadTaskCardTargetSummary(threadId, options = {}) {
   return readStateDbThread(threadId) || readStartedThread(threadId) || readRolloutSessionFallbackThread(threadId);
 }
 
+function assertThreadTaskCardTargetDeliverable(thread, details = {}) {
+  const target = publicThreadTaskCardTarget(thread);
+  if (!thread || !String(thread.id || "").trim()) {
+    throw threadTaskCardTargetError(
+      "target_thread_not_visible",
+      "Target thread is not visible or is not a current deliverable thread.",
+      details,
+      404,
+    );
+  }
+  if (threadHasArchiveSignal(thread)) {
+    throw threadTaskCardTargetError(
+      "target_thread_archived",
+      "Target thread is archived, deleted, or otherwise not deliverable.",
+      Object.assign({}, details, { requestedTarget: target }),
+      409,
+    );
+  }
+  if (isSubagentThreadSummary(thread) || isSideChatSidecarThreadSummary(thread)) {
+    throw threadTaskCardTargetError(
+      "target_thread_not_visible",
+      "Target thread is not visible or is not a current deliverable thread.",
+      Object.assign({}, details, { requestedTarget: target }),
+      404,
+    );
+  }
+  return String(thread.id || "");
+}
+
 function resolveThreadTaskCardTargetReference(value, sourceThreadId = "", options = {}) {
   const entry = value && typeof value === "object" && !Array.isArray(value) && value.text
     ? value
     : threadTaskCardTargetReferenceEntry("thread", value);
   const raw = String(entry && entry.text || "").trim();
   if (!raw) return "";
-  if (raw === String(sourceThreadId || "")) return "";
+  if (raw === String(sourceThreadId || "")) {
+    throw threadTaskCardTargetError(
+      "target_thread_self",
+      "Target thread must be different from the source thread.",
+      { sourceThreadId: String(sourceThreadId || "") },
+      400,
+    );
+  }
   const visibleThreads = threadTaskCardVisibleTargetThreads(options);
   const visibleById = new Map(visibleThreads.map((thread) => [String(thread.id || ""), thread]));
   const currentVisible = visibleById.get(raw);
   if (currentVisible) {
-    const canonical = threadTaskCardCanonicalTargetForThread(currentVisible, visibleThreads);
-    if (canonical && String(canonical.id || "") !== raw) {
-      throw threadTaskCardTargetError(
-        "stale_target_thread",
-        "Target thread is not the current visible thread for its workspace.",
-        {
-          requestedTarget: publicThreadTaskCardTarget(currentVisible),
-          currentTarget: publicThreadTaskCardTarget(canonical),
-        },
-        409,
-      );
-    }
-    return String(currentVisible.id || "");
+    return assertThreadTaskCardTargetDeliverable(currentVisible, {
+      reference: raw,
+      referenceKind: entry.kind || "thread",
+    });
   }
   const direct = isThreadIdLike(raw) ? readThreadTaskCardTargetSummary(raw, options) : null;
   if (direct && String(direct.id || "") === raw) {
-    const canonical = threadTaskCardCanonicalTargetForThread(direct, visibleThreads);
-    if (canonical && String(canonical.id || "") !== raw) {
-      throw threadTaskCardTargetError(
-        "stale_target_thread",
-        "Target thread is stale or hidden; use the current visible thread for this workspace.",
-        {
-          requestedTarget: publicThreadTaskCardTarget(direct),
-          currentTarget: publicThreadTaskCardTarget(canonical),
-        },
-        409,
-      );
-    }
+    assertThreadTaskCardTargetDeliverable(direct, {
+      reference: raw,
+      referenceKind: entry.kind || "threadId",
+    });
+    throw threadTaskCardTargetError(
+      "target_thread_not_visible",
+      "Target thread is not visible or is not a current deliverable thread.",
+      {
+        reference: raw,
+        referenceKind: entry.kind || "threadId",
+        requestedTarget: publicThreadTaskCardTarget(direct),
+      },
+      404,
+    );
   }
   const lowered = raw.toLowerCase();
   const rawPath = normalizeFsPath(raw);
@@ -11877,8 +11909,10 @@ function resolveThreadTaskCardTargetReference(value, sourceThreadId = "", option
     const id = String(thread.id || "").trim();
     const title = threadDisplayTitle(thread);
     if (id.toLowerCase() === lowered || String(title || "").trim().toLowerCase() === lowered) {
-      const canonical = threadTaskCardCanonicalTargetForThread(thread, visibleThreads);
-      return String(canonical && canonical.id || id);
+      return assertThreadTaskCardTargetDeliverable(thread, {
+        reference: raw,
+        referenceKind: entry.kind || "thread",
+      });
     }
   }
   throw threadTaskCardTargetError(

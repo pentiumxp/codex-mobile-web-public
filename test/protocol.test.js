@@ -108,21 +108,31 @@ test("dynamic tool error responses report unsuccessful contentItems output", () 
   });
 });
 
-test("source-thread task cards target only current visible canonical threads", () => {
+test("source-thread task cards allow exact same-workspace thread targets", () => {
   const sourceThreadId = "10000000-0000-4000-8000-000000000001";
-  const staleThreadId = "10000000-0000-4000-8000-000000000002";
-  const currentThreadId = "10000000-0000-4000-8000-000000000003";
+  const pluginAuditThreadId = "10000000-0000-4000-8000-000000000002";
+  const platformAuditThreadId = "10000000-0000-4000-8000-000000000003";
+  const crossWorkspaceThreadId = "10000000-0000-4000-8000-000000000004";
+  const archivedThreadId = "10000000-0000-4000-8000-000000000005";
+  const hiddenThreadId = "10000000-0000-4000-8000-000000000006";
   const currentCwd = "/tmp/codex-mobile-fixtures/current-project";
   const visibleThreads = [
     {
-      id: currentThreadId,
-      name: "Current Project",
+      id: platformAuditThreadId,
+      name: "Home AI Platform Audit",
+      cwd: currentCwd,
+      updatedAt: 300,
+      status: { type: "idle" },
+    },
+    {
+      id: pluginAuditThreadId,
+      name: "Plugin Workspace Audit",
       cwd: currentCwd,
       updatedAt: 200,
       status: { type: "idle" },
     },
     {
-      id: "10000000-0000-4000-8000-000000000004",
+      id: crossWorkspaceThreadId,
       name: "Other Project",
       cwd: "/tmp/codex-mobile-fixtures/other-project",
       updatedAt: 190,
@@ -132,37 +142,68 @@ test("source-thread task cards target only current visible canonical threads", (
   const options = {
     visibleThreads,
     readThreadSummary(threadId) {
-      if (threadId !== staleThreadId) return null;
+      if (threadId === hiddenThreadId) {
+        return {
+          id: hiddenThreadId,
+          name: "Hidden Project",
+          cwd: currentCwd,
+          updatedAt: 120,
+          status: { type: "idle" },
+        };
+      }
+      if (threadId !== archivedThreadId) return null;
       return {
-        id: staleThreadId,
-        name: "Stale Project",
+        id: archivedThreadId,
+        name: "Archived Project",
         cwd: currentCwd,
         updatedAt: 100,
-        status: { type: "completed" },
+        archived: true,
+        status: { type: "idle" },
       };
     },
   };
 
   assert.equal(
-    resolveThreadTaskCardTargetReference(currentCwd, sourceThreadId, options),
-    currentThreadId,
+    resolveThreadTaskCardTargetReference(pluginAuditThreadId, sourceThreadId, options),
+    pluginAuditThreadId,
   );
   assert.equal(
-    resolveThreadTaskCardTargetReference("Current Project", sourceThreadId, options),
-    currentThreadId,
+    resolveThreadTaskCardTargetReference("Plugin Workspace Audit", sourceThreadId, options),
+    pluginAuditThreadId,
+  );
+  assert.equal(
+    resolveThreadTaskCardTargetReference(crossWorkspaceThreadId, sourceThreadId, options),
+    crossWorkspaceThreadId,
+  );
+  assert.equal(
+    resolveThreadTaskCardTargetReference(currentCwd, sourceThreadId, options),
+    platformAuditThreadId,
   );
   assert.deepEqual(
-    resolvedThreadTaskCardTargetIds({ targetCwd: currentCwd }, sourceThreadId, options),
-    [currentThreadId],
+    resolvedThreadTaskCardTargetIds({ targetThreadId: pluginAuditThreadId, targetCwd: currentCwd }, sourceThreadId, options),
+    [pluginAuditThreadId],
   );
   assert.throws(
-    () => resolveThreadTaskCardTargetReference(staleThreadId, sourceThreadId, options),
+    () => resolveThreadTaskCardTargetReference(sourceThreadId, sourceThreadId, options),
+    (err) => err && err.code === "target_thread_self" && err.statusCode === 400,
+  );
+  assert.throws(
+    () => resolveThreadTaskCardTargetReference(archivedThreadId, sourceThreadId, options),
     (err) => err
-      && err.code === "stale_target_thread"
+      && err.code === "target_thread_archived"
       && err.statusCode === 409
       && err.details
-      && err.details.currentTarget
-      && err.details.currentTarget.threadId === currentThreadId,
+      && err.details.requestedTarget
+      && err.details.requestedTarget.threadId === archivedThreadId,
+  );
+  assert.throws(
+    () => resolveThreadTaskCardTargetReference(hiddenThreadId, sourceThreadId, options),
+    (err) => err
+      && err.code === "target_thread_not_visible"
+      && err.statusCode === 404
+      && err.details
+      && err.details.requestedTarget
+      && err.details.requestedTarget.threadId === hiddenThreadId,
   );
   assert.throws(
     () => resolveThreadTaskCardTargetReference("10000000-0000-4000-8000-000000009999", sourceThreadId, options),
