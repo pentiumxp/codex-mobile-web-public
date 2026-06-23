@@ -21,6 +21,56 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-23 - Continuation First-Open Receipt v386
+
+- Status: implemented and validated locally; deployment pending after local
+  commit because the central macOS deploy script rejected dirty source input.
+- User trigger:
+  - After compressing/continuing the large Music thread, Mobile Web navigated
+    into the newly created continuation thread and showed the long bootstrap
+    message. A short time later the UI showed the turn ended, but the final
+    assistant receipt was not visible until leaving and reopening the thread.
+- Evidence:
+  - New Music continuation thread:
+    `019ef42b-2cb8-7332-ab17-033ec5b48947`.
+  - Production log sequence showed initial continuation open returned
+    `turns-list-initial` with one turn, then post-completion recent refresh
+    again returned `turns-list-initial` while summary status was `idle`.
+  - The rollout EOF had `task_complete.last_agent_message`; current API after
+    re-entry returned the final receipt and `turnUsageSummary`, proving the
+    model output existed and the gap was first-open projection/detail hydration.
+- Root cause:
+  - Before projection was seeded, `mode=recent` could paint a
+    `turns-list-initial` window. During the completion boundary the app-server
+    summary could be `idle`, and the visible turn from `thread/turns/list`
+    could lack completed status, so server-side rollout final receipt and scoped
+    Usage backfill did not attach to that existing turn on the first render.
+- Change:
+  - `server.js` now allows matching rollout `task_complete` final receipts to
+    attach to a turn with missing/idle status only when the thread summary is a
+    successful resting state (`idle`, `completed`, `success`, `done`, etc.).
+    Failed, cancelled, interrupted, running, active, pending, and progress
+    statuses remain excluded.
+  - `adapters/turn-usage-summary-service.js` mirrors that resting-window rule
+    for scoped `token_count` summaries, and only when the current turn id has a
+    scoped Usage entry.
+  - `public/app.js` post-completion refreshes now request full detail for both
+    scheduled refreshes instead of first asking for recent detail.
+  - PWA shell cache/client build advanced to `codex-mobile-shell-v386`.
+- Tests:
+  - Added `resting turns-list window backfills rollout final receipt and scoped
+    usage` in `test/thread-item-timestamp-enrichment.test.js`.
+  - Added `attaches scoped usage during resting turns-list completion window`
+    in `test/turn-usage-summary-service.test.js`.
+- Validation:
+  - `npm run check` passed.
+  - `npm test` passed after docs update: `635` tests.
+- Deployment note:
+  - First central deploy attempt failed safely with
+    `deploy_source_dirty_requires_allow_dirty`, listing only this hotfix's
+    modified files. Commit locally, then rerun the central script from the Home
+    AI app workspace; do not use a task card for local deployment.
+
 ## 2026-06-23 - Active Thread Feedback v385 Deployed
 
 - Status: implemented, locally committed, deployed to Mac production, and

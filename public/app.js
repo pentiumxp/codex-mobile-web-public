@@ -388,7 +388,7 @@ const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v385";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v386";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -8121,7 +8121,7 @@ function schedulePostCompletionThreadRefreshes(threadId, delays = [700, 2400]) {
     if (state.currentThreadId !== id) return;
     refreshCurrentThread({
       source: "post-completion",
-      full: index === delays.length - 1,
+      full: true,
     }).catch(showError);
     }, delay);
     return timer;

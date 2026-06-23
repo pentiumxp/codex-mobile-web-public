@@ -355,6 +355,64 @@ test("completed turn missing app-server receipt is backfilled from rollout task_
   }
 });
 
+test("resting turns-list window backfills rollout final receipt and scoped usage", () => {
+  const { dir, rolloutPath } = writeRollout([
+    event("2026-05-24T11:21:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-resting-window" }),
+    event("2026-05-24T11:21:05.000Z", "event_msg", {
+      type: "token_count",
+      turn_id: "turn-resting-window",
+      info: {
+        last_token_usage: {
+          input_tokens: 100,
+          cached_input_tokens: 40,
+          output_tokens: 20,
+          total_tokens: 120,
+        },
+        total_token_usage: {
+          input_tokens: 100,
+          output_tokens: 20,
+          total_tokens: 120,
+        },
+        model_context_window: 1000,
+      },
+    }),
+    event("2026-05-24T11:21:08.000Z", "event_msg", {
+      type: "task_complete",
+      turn_id: "turn-resting-window",
+      last_agent_message: "Final receipt after resting list window.",
+    }),
+  ]);
+  try {
+    const compacted = compactThread({
+      id: "thread-resting-window",
+      status: { type: "idle" },
+      path: rolloutPath,
+      turns: [{
+        id: "turn-resting-window",
+        items: [
+          { id: "user-1", type: "userMessage", content: [{ type: "text", text: "bootstrap" }] },
+          { id: "agent-progress", type: "agentMessage", text: "Reading context." },
+        ],
+      }],
+    });
+
+    const items = compacted.turns[0].items;
+    assert.deepEqual(items.map((item) => item.type), [
+      "userMessage",
+      "agentMessage",
+      "agentMessage",
+      "turnUsageSummary",
+    ]);
+    assert.equal(items[2].id, "mobile-final-receipt-turn-resting-window");
+    assert.equal(items[2].text, "Final receipt after resting list window.");
+    assert.equal(items[2].mobileSyntheticFinalReceipt, true);
+    assert.equal(items[3].mobileUsageSummary.turnId, "turn-resting-window");
+    assert.equal(items[3].mobileUsageSummary.contextWindowUsedTokens, 100);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("completed turn with only intermediate agent messages is backfilled from rollout final receipt", () => {
   const { dir, rolloutPath } = writeRollout([
     event("2026-05-24T11:22:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-progress-only" }),

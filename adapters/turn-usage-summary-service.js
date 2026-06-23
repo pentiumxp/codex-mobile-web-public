@@ -25,11 +25,19 @@ function statusText(status) {
   return "";
 }
 
-function canAttachUsageSummary(status) {
+function isUsageSummaryRestingStatus(status) {
   const text = statusText(status).toLowerCase();
   if (!text) return false;
   if (/failed|fail|cancel|error|interrupt|running|active|progress|pending/.test(text)) return false;
-  return /completed|success|succeeded|done|finished|closed/.test(text);
+  return /^(idle|completed|success|succeeded|done|finished|closed)$/.test(text);
+}
+
+function canAttachUsageSummary(status, options = {}) {
+  const text = statusText(status).toLowerCase();
+  if (!text) return Boolean(options.allowRestingThreadStatus);
+  if (/failed|fail|cancel|error|interrupt|running|active|progress|pending/.test(text)) return false;
+  if (/completed|success|succeeded|done|finished|closed/.test(text)) return true;
+  return Boolean(options.allowRestingThreadStatus && /^(idle|unknown|notloaded|not_loaded|not-loaded)$/.test(text));
 }
 
 function rolloutEntryTurnId(entry) {
@@ -403,11 +411,15 @@ function attachTurnUsageSummaries(thread, summaries, options = {}) {
     : null;
   const completedTurns = thread.turns.filter((turn) => canAttachUsageSummary(turn && turn.status));
   const latestCompletedTurn = completedTurns.length ? completedTurns[completedTurns.length - 1] : null;
+  const allowRestingThreadStatus = isUsageSummaryRestingStatus(thread.status);
   for (const turn of thread.turns) {
     if (!turn || typeof turn !== "object") continue;
     turn.items = removeExistingSummaryItems(Array.isArray(turn.items) ? turn.items : []);
-    if (!canAttachUsageSummary(turn.status)) continue;
     const turnId = turnIdentifier(turn);
+    const hasScopedSummary = Boolean(turnId && byTurnId.has(turnId));
+    if (!canAttachUsageSummary(turn.status, {
+      allowRestingThreadStatus: allowRestingThreadStatus && hasScopedSummary,
+    })) continue;
     const summary = (turnId && byTurnId.get(turnId))
       || (latestUnscoped && latestCompletedTurn === turn ? latestUnscoped : null);
     if (!summary) continue;

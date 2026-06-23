@@ -4443,11 +4443,19 @@ function insertProjectedItemByTimestamp(items, item) {
   else items.splice(index, 0, item);
 }
 
-function canAttachRolloutFinalReceipt(status) {
+function isRolloutFinalReceiptRestingStatus(status) {
   const text = statusText(status).toLowerCase();
   if (!text) return false;
   if (/failed|fail|cancel|error|interrupt|running|active|progress|pending/.test(text)) return false;
-  return /completed|success|succeeded|done|finished|closed/.test(text);
+  return /^(idle|completed|success|succeeded|done|finished|closed)$/.test(text);
+}
+
+function canAttachRolloutFinalReceipt(status, options = {}) {
+  const text = statusText(status).toLowerCase();
+  if (!text) return Boolean(options.allowRestingThreadStatus);
+  if (/failed|fail|cancel|error|interrupt|running|active|progress|pending/.test(text)) return false;
+  if (/completed|success|succeeded|done|finished|closed/.test(text)) return true;
+  return Boolean(options.allowRestingThreadStatus && /^(idle|unknown|notloaded|not_loaded|not-loaded)$/.test(text));
 }
 
 function normalizeFinalReceiptText(value) {
@@ -4655,8 +4663,9 @@ function appendRolloutFinalReceiptsToThread(thread) {
   if (!rolloutPath) return thread;
   const payload = readRolloutFinalReceiptItems(rolloutPath);
   if (!payload || !(payload.byTurn instanceof Map) || !payload.byTurn.size) return thread;
+  const allowRestingThreadStatus = isRolloutFinalReceiptRestingStatus(thread.status);
   for (const turn of thread.turns) {
-    if (!turn || !canAttachRolloutFinalReceipt(turn.status)) continue;
+    if (!turn || !canAttachRolloutFinalReceipt(turn.status, { allowRestingThreadStatus })) continue;
     const turnId = String(turn.id || turn.turnId || "").trim();
     const item = turnId ? payload.byTurn.get(turnId) : null;
     if (!item) continue;

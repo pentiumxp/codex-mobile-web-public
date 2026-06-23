@@ -472,6 +472,16 @@ Cause to check:
 - Current clients still enter thread detail at the bottom. Do not fix missing
   large-thread history by changing the open position; first check whether the
   server returned full `thread-read` or a fallback `turns-list` window.
+- If a compressed continuation thread first opens with only the bootstrap
+  message, then shows the turn ended before the final receipt/Usage appears,
+  check the first `thread_refresh_ms` after `turn/completed`. It must not leave
+  the browser on a `turns-list-initial` recent window when projection has not
+  been seeded yet. Post-completion refreshes should request full detail, and
+  a resting `idle` / `completed` summary with matching rollout
+  `task_complete` / scoped `token_count` evidence should still backfill the
+  same turn's synthetic final receipt and `turnUsageSummary`. Failed,
+  cancelled, interrupted, running, active, pending, or progress statuses must
+  remain excluded from that relaxed resting-window path.
 - Long latest-turn final receipts are intentionally rendered once after
   `turn/completed` when the live turn already has command/file/tool/search
   operation items. Pure chat replies may still stream normally. If the receipt
@@ -482,7 +492,7 @@ Cause to check:
   after the full deferred receipt is merged. If `/api/threads/<id>` already has
   `turnUsageSummary` but the just-completed browser view does not, inspect the
   post-completion refresh queue; completion should schedule both an immediate
-  and a delayed detail refresh.
+  and a delayed full detail refresh.
 - If a thread finished while the browser was away and Usage appears only after
   leaving and reopening the thread, inspect the initial `loadThread()` path in
   `public/app.js`. The first successful detail render must schedule the same
