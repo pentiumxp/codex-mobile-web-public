@@ -333,6 +333,15 @@ after a later full list refresh. Those hints also carry
 the hint expires after the stale window so completed work does not keep a
 permanent spinner.
 
+If a newly submitted message briefly shows local input feedback and then the
+right-side turn timer changes to `已结束` while `/api/threads/:id?mode=recent`
+still returns thread-level `status=active`, check for a stale latest turn row in
+the detail payload. Some app-server/detail windows can expose a completed latest
+turn row before the real active turn is materialized. The browser must treat the
+thread-level non-stale active status as a runtime signal: continue live polling
+and keep the timer in an active fallback state instead of trusting the completed
+turn row and stopping refresh.
+
 If thread detail shows `idle` or latest turn `interrupted`, but the thread list
 still reports the same row as `active`, compare app-server list rows with
 rollout fallback rows. A stale rollout fallback `active` summary must not

@@ -140,6 +140,55 @@ function evaluatedLocalUserMessageItem() {
   return Function(`${sources.join("\n")}\nreturn localUserMessageItem;`)();
 }
 
+function evaluatedActiveRuntimeHarness() {
+  const sources = [
+    "statusText",
+    "isStaleActiveStatus",
+    "isRunningStatus",
+    "isCompletedStatus",
+    "isTurnComplete",
+    "turnHasDisplayItems",
+    "latestTurn",
+    "latestRawTurn",
+    "currentThreadHasActiveRuntimeStatus",
+    "latestLiveTurnCandidate",
+    "isLiveTurn",
+    "shouldPollCurrentThread",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`
+const document = { visibilityState: "visible" };
+const state = {
+  activeTurnId: "",
+  currentThreadId: "thread-1",
+  currentThread: {
+    id: "thread-1",
+    status: { type: "active" },
+    turns: [
+      {
+        id: "turn-old",
+        status: { type: "completed" },
+        startedAt: 1000,
+        completedAt: 1010,
+        durationMs: 10000,
+        items: [{ id: "item-1", type: "userMessage" }],
+      },
+    ],
+  },
+};
+function turnHasActiveLiveItems() { return false; }
+function isIncompleteInterruptedTurn() { return false; }
+function isLatestTurn(turn) { return Boolean(turn && latestTurn() === turn); }
+${sources.join("\n")}
+return {
+  state,
+  currentThreadHasActiveRuntimeStatus,
+  shouldPollCurrentThread,
+  currentLiveCandidate: () => latestLiveTurnCandidate(),
+  latestIsLive: () => isLiveTurn(latestTurn()),
+};
+`)();
+}
+
 function evaluatedPendingAttachmentClearHarness() {
   const sources = [
     "revokeAttachmentPreviewUrls",
@@ -1342,11 +1391,15 @@ test("live detail refresh can patch changed visible items without replacing the 
 test("turn timer prefers live item activity over idle sync labels", () => {
   assert.match(appJs, /function liveActivityLabelForTurn\(/);
   assert.match(appJs, /function activeLiveOperationItemForTurn\(/);
+  assert.match(appJs, /function currentThreadHasActiveRuntimeStatus\(/);
+  assert.match(appJs, /function activeThreadFallbackElapsedSeconds\(/);
+  assert.match(appJs, /function activeThreadFallbackActivityLabel\(/);
   assert.match(functionBody("liveActivityLabelForTurn"), /const operation = activeLiveOperationItemForTurn\(turn\);/);
   assert.match(functionBody("liveActivityLabelForTurn"), /if \(operation\) return activityLabelForItem\(operation\);/);
   assert.match(appJs, /function turnHasActiveLiveItems\(/);
   assert.match(appJs, /function liveTurnStartedAtMs\(/);
   assert.match(functionBody("isLiveTurn"), /turnHasActiveLiveItems\(turn\)/);
+  assert.match(functionBody("isLiveTurn"), /isLatestTurn\(turn\) && currentThreadHasActiveRuntimeStatus\(\)/);
   assert.match(functionBody("turnElapsedSeconds"), /liveTurnStartedAtMs\(turn\) \|\| state\.nowMs/);
   assert.match(functionBody("turnHasActiveLiveItems"), /isActiveOperationalItem\(item\)/);
   assert.match(functionBody("liveTurnStartedAtMs"), /numericTimestampMs\(item\.startedAtMs\)/);
@@ -1356,7 +1409,21 @@ test("turn timer prefers live item activity over idle sync labels", () => {
   assert.match(functionBody("markIdleActivity"), /if \(liveActivityLabelForTurn\(liveTurn\)\) return;/);
   assert.match(functionBody("markIdleActivity"), /if \(isIdleSyncActivityLabel\(label\) && liveTurn\) return;/);
   assert.match(functionBody("updateTurnTimer"), /liveActivityLabelForTurn\(turn\) \|\| liveTurnFallbackActivityLabel\(turn\)/);
+  assert.match(functionBody("updateTurnTimer"), /if \(currentThreadHasActiveRuntimeStatus\(\)\) \{[\s\S]*activeThreadFallbackElapsedSeconds\(latest\)[\s\S]*activeThreadFallbackActivityLabel\(\)/);
+  assert.match(functionBody("updateTickTimer"), /if \(!currentLiveTurn\(\) && !currentThreadHasActiveRuntimeStatus\(\)\) return;/);
   assert.match(functionBody("liveTurnFallbackActivityLabel"), /return "运行";/);
+});
+
+test("thread-level active status keeps polling through stale completed latest turn rows", () => {
+  const harness = evaluatedActiveRuntimeHarness();
+  assert.equal(harness.currentThreadHasActiveRuntimeStatus(), true);
+  assert.equal(harness.currentLiveCandidate(), null);
+  assert.equal(harness.latestIsLive(), false);
+  assert.equal(harness.shouldPollCurrentThread(), true);
+
+  harness.state.currentThread.status = { type: "active", mobileStaleActiveTurn: true };
+  assert.equal(harness.currentThreadHasActiveRuntimeStatus(), false);
+  assert.equal(harness.shouldPollCurrentThread(), false);
 });
 
 test("loading and thread-list state preserve locally visible live turns", () => {

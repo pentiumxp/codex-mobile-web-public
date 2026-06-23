@@ -388,7 +388,7 @@ const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v384";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v385";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -4363,6 +4363,12 @@ function latestRawTurn() {
   return turns.length ? turns[turns.length - 1] : null;
 }
 
+function currentThreadHasActiveRuntimeStatus() {
+  const thread = state.currentThread;
+  if (!thread || isStaleActiveStatus(thread.status) || thread.mobileStaleActiveTurn) return false;
+  return Boolean(state.activeTurnId) || isRunningStatus(thread.status);
+}
+
 function latestLiveTurnCandidate() {
   const displayLatest = latestTurn();
   if (displayLatest && !isTurnComplete(displayLatest) && isRunningStatus(displayLatest.status)) return displayLatest;
@@ -4385,6 +4391,7 @@ function isIncompleteInterruptedTurn(turn) {
 
 function shouldPollCurrentThread() {
   if (!state.currentThreadId || document.visibilityState === "hidden") return false;
+  if (currentThreadHasActiveRuntimeStatus()) return true;
   const turn = latestTurn();
   if (!turn) return false;
   if (isTurnComplete(turn)) return false;
@@ -4411,7 +4418,10 @@ function currentThreadNeedsForegroundRefresh() {
 
 function isLiveTurn(turn) {
   if (!turn || isTurnComplete(turn)) return false;
-  return isRunningStatus(turn && turn.status) || isIncompleteInterruptedTurn(turn) || turnHasActiveLiveItems(turn);
+  return isRunningStatus(turn && turn.status)
+    || isIncompleteInterruptedTurn(turn)
+    || turnHasActiveLiveItems(turn)
+    || (isLatestTurn(turn) && currentThreadHasActiveRuntimeStatus());
 }
 
 function isLatestTurn(turn) {
@@ -5620,6 +5630,12 @@ function turnElapsedSeconds(turn) {
   return Math.max(0, Math.floor((state.nowMs - startedMs) / 1000));
 }
 
+function activeThreadFallbackElapsedSeconds(latest = null) {
+  const latestStarted = liveTurnStartedAtMs(latest) || turnStartedAtMs(latest);
+  const startedMs = latestStarted || Number(state.activityAtMs || 0) || state.nowMs;
+  return Math.max(0, Math.floor((state.nowMs - startedMs) / 1000));
+}
+
 function turnFinalSeconds(turn) {
   if (!turn) return null;
   if (turn.durationMs) return Math.max(0, Math.round(turn.durationMs / 1000));
@@ -5651,6 +5667,12 @@ function liveTurnFallbackActivityLabel(turn) {
   const label = String(state.activityLabel || "").trim();
   if (label && !isIdleSyncActivityLabel(label) && label !== "加载线程") return label;
   if (isIncompleteInterruptedTurn(turn)) return "同步";
+  return "运行";
+}
+
+function activeThreadFallbackActivityLabel() {
+  const label = String(state.activityLabel || "").trim();
+  if (label && !isIdleSyncActivityLabel(label) && label !== "加载线程") return label;
   return "运行";
 }
 
@@ -5721,6 +5743,13 @@ function updateTurnTimer() {
   const turn = currentLiveTurn();
   if (!turn) {
     const latest = latestTurn();
+    if (currentThreadHasActiveRuntimeStatus()) {
+      setTurnTimerContent(el, activeThreadFallbackElapsedSeconds(latest), activeThreadFallbackActivityLabel());
+      el.classList.add("visible", "active");
+      el.classList.remove("settled");
+      el.setAttribute("aria-hidden", "false");
+      return;
+    }
     const finalSeconds = turnFinalSeconds(latest);
     if (finalSeconds != null) {
       setTurnTimerContent(el, finalSeconds, "已结束");
@@ -5744,7 +5773,7 @@ function updateTickTimer() {
   clearInterval(state.tickTimer);
   state.tickTimer = null;
   updateTurnTimer();
-  if (!currentLiveTurn()) return;
+  if (!currentLiveTurn() && !currentThreadHasActiveRuntimeStatus()) return;
   state.tickTimer = setInterval(() => {
     state.nowMs = Date.now();
     updateTurnTimer();
