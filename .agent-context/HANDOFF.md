@@ -1,3 +1,66 @@
+# 2026-06-23 - v391 completed receipt render-identity stabilization
+
+- Trigger:
+  - User observed a visible screen shake after a turn completed: an assistant
+    receipt appeared, briefly disappeared, then reappeared one line shorter.
+- Evidence:
+  - The failing surface is browser V4 local-visible merge state, not a server
+    duplicate projection. v390 correctly removed unrelated local-only live
+    receipts once a completed server receipt plus Usage arrived, but it also
+    allowed a same-origin completed receipt with a shorter text prefix and a
+    different id to replace the existing live receipt node.
+- Root cause:
+  - `findUnusedExistingItemIndexForIncoming()` only matched text receipts when
+    the incoming server text was equal to, or longer than, the existing text.
+    If the existing live receipt was longer and the completed server receipt
+    was a shorter stable prefix, the completed item was treated as a new
+    `agentMessage`; the old local receipt was then dropped by the v390
+    completed-turn cleanup. That changed the render id and could reduce item
+    height by one line.
+- Change:
+  - `public/app.js` now treats completed authoritative `agentMessage`/`plan`
+    receipts as the same render identity when they share a stable same-type
+    prefix with the existing visible receipt.
+  - The merge preserves the existing render id and, when the existing text is
+    the longer prefix-compatible version, keeps that visible text while still
+    merging the completed turn and Usage.
+  - PWA shell advanced to `codex-mobile-shell-v391`.
+  - Added regression coverage:
+    `completed projection merge adopts shorter final receipt without repainting live receipt`.
+- Docs:
+  - `README.md`
+  - `docs/TROUBLESHOOTING.md`
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js`
+  - `node --test test/conversation-render.test.js`
+  - `node --test test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+  - `npm run check`
+  - `npm run check:macos`
+  - `npm test` passed (`648` tests).
+  - `git diff --check`
+  - `codegraph sync && codegraph status` was up to date; status still warned
+    the index was built by an earlier CodeGraph engine version.
+- Local commit:
+  - `fca350b fix: stabilize completed receipt rendering`
+- Production deploy:
+  - Used the Home AI center deploy script:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --execute --json`
+  - Source ref was clean at `fca350b233b2`.
+  - Production path:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260623T134827Z-plugin-codex-mobile-web-manual`.
+  - Deploy validation passed: log permission repair, production file hashes,
+    launchd print, manifest health URL, and Codex auth profile audit.
+  - `/api/public-config` returned HTTP `200`,
+    `clientBuildId=0.1.11|codex-mobile-shell-v391`,
+    `shellCacheName=codex-mobile-shell-v391`, and `authRequired=true`.
+  - Production `public/app.js` and `public/sw.js` contain v391 and the new
+    completed receipt render-identity helpers.
+- Release note:
+  - Deploy to production first and wait for user verification before any
+    `public/main` sync/push.
+
 # 2026-06-23 - v390 public push completed
 
 - Trigger: User explicitly requested `推送 public` after v390 production deploy

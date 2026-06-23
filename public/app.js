@@ -388,7 +388,7 @@ const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v390";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v391";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -5306,7 +5306,33 @@ function visibleTextItemsLikelySame(existingItem, incomingItem) {
     || (incomingText.length >= existingText.length && incomingText.startsWith(existingText));
 }
 
-function findUnusedExistingItemIndexForIncoming(incomingItem, existingItems, usedExistingIndexes) {
+function visibleTextItemsHaveStableSharedPrefix(existingItem, incomingItem) {
+  if (!comparableVisibleTextItem(existingItem) || !comparableVisibleTextItem(incomingItem)) return false;
+  if (existingItem.type !== incomingItem.type) return false;
+  const existingText = comparableVisibleText(existingItem);
+  const incomingText = comparableVisibleText(incomingItem);
+  if (!existingText || !incomingText) return false;
+  if (existingText === incomingText) return true;
+  const shorterText = existingText.length <= incomingText.length ? existingText : incomingText;
+  const longerText = existingText.length <= incomingText.length ? incomingText : existingText;
+  if (shorterText.length < 16) return false;
+  if (!longerText.startsWith(shorterText)) return false;
+  return shorterText.length / Math.max(1, longerText.length) >= 0.5;
+}
+
+function completedReceiptItemsLikelySame(existingItem, incomingItem, incomingTurn = null) {
+  if (!completedIncomingTurnHasAuthoritativeReceipt(incomingTurn)) return false;
+  if (!isAssistantReceiptLikeItem(existingItem) || !isAssistantReceiptLikeItem(incomingItem)) return false;
+  return visibleTextItemsLikelySame(existingItem, incomingItem)
+    || visibleTextItemsHaveStableSharedPrefix(existingItem, incomingItem);
+}
+
+function visibleTextItemsCanShareRenderIdentity(existingItem, incomingItem, incomingTurn = null) {
+  return visibleTextItemsLikelySame(existingItem, incomingItem)
+    || completedReceiptItemsLikelySame(existingItem, incomingItem, incomingTurn);
+}
+
+function findUnusedExistingItemIndexForIncoming(incomingItem, existingItems, usedExistingIndexes, incomingTurn = null) {
   if (!incomingItem) return -1;
   const used = usedExistingIndexes || new Set();
   if (incomingItem.id) {
@@ -5325,20 +5351,20 @@ function findUnusedExistingItemIndexForIncoming(incomingItem, existingItems, use
   if (comparableVisibleTextItem(incomingItem)) {
     const index = (existingItems || []).findIndex((existingItem, candidateIndex) => existingItem
       && !used.has(candidateIndex)
-      && visibleTextItemsLikelySame(existingItem, incomingItem));
+      && visibleTextItemsCanShareRenderIdentity(existingItem, incomingItem, incomingTurn));
     if (index >= 0) return index;
   }
   return -1;
 }
 
-function mergeIncomingOrderedItem(existingItem, incomingItem) {
+function mergeIncomingOrderedItem(existingItem, incomingItem, incomingTurn = null) {
   if (!existingItem) return incomingItem;
   if (!incomingItem) return existingItem;
   if (incomingItem.type === "userMessage" && existingItem.type === "userMessage") {
     return mergeLikelySameUserMessage(existingItem, incomingItem);
   }
-  if (visibleTextItemsLikelySame(existingItem, incomingItem)) {
-    return mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem);
+  if (visibleTextItemsCanShareRenderIdentity(existingItem, incomingItem, incomingTurn)) {
+    return mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem, incomingTurn);
   }
   return mergeItemPreservingVisibleFields(existingItem, incomingItem);
 }
@@ -5392,9 +5418,17 @@ function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
   return merged;
 }
 
-function mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem) {
+function mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem, incomingTurn = null) {
   const merged = mergeItemPreservingVisibleFields(existingItem, incomingItem);
-  if (!existingItem || !incomingItem || !merged || !visibleTextItemsLikelySame(existingItem, incomingItem)) return merged;
+  if (!existingItem || !incomingItem || !merged || !visibleTextItemsCanShareRenderIdentity(existingItem, incomingItem, incomingTurn)) return merged;
+  const existingText = comparableVisibleText(existingItem);
+  const incomingText = comparableVisibleText(incomingItem);
+  if (completedReceiptItemsLikelySame(existingItem, incomingItem, incomingTurn)
+    && typeof existingItem.text === "string"
+    && existingText.length > incomingText.length
+    && existingText.startsWith(incomingText)) {
+    merged.text = existingItem.text;
+  }
   if (existingItem.id) merged.id = existingItem.id;
   if (existingItem.startedAtMs && !incomingItem.startedAtMs) merged.startedAtMs = existingItem.startedAtMs;
   return merged;
@@ -5410,9 +5444,9 @@ function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserve
     if (!incomingItem) continue;
     if (incomingItem.id && added.has(incomingItem.id)) continue;
     if (hasMatchingRealUserMessage(incomingItem, merged) || hasMatchingRealUserMessage(incomingItem, incomingItems)) continue;
-    const existingIndex = findUnusedExistingItemIndexForIncoming(incomingItem, existingItems || [], usedExistingIndexes);
+    const existingIndex = findUnusedExistingItemIndexForIncoming(incomingItem, existingItems || [], usedExistingIndexes, incomingTurn);
     const existingItem = existingIndex >= 0 ? existingItems[existingIndex] : null;
-    const mergedItem = mergeIncomingOrderedItem(existingItem, incomingItem);
+    const mergedItem = mergeIncomingOrderedItem(existingItem, incomingItem, incomingTurn);
     merged.push(mergedItem);
     if (incomingItem.id) added.add(incomingItem.id);
     if (mergedItem && mergedItem.id) added.add(mergedItem.id);
