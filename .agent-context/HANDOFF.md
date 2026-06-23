@@ -21,6 +21,85 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-23 - Active Thread Feedback v385 Deployed
+
+- Status: implemented, locally committed, deployed to Mac production, and
+  validated. Not pushed public.
+- User trigger:
+  - After recent front-end changes, the user reported that sending a message
+    briefly showed input feedback, then a few seconds later the right-side turn
+    timer indicated the current turn had ended.
+- Evidence:
+  - Production `message-submit` logs showed the POST reached app-server and
+    returned a `resultTurnId`.
+  - Authenticated recent detail for thread
+    `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3` returned thread status `active`;
+    latest detail after deploy returned `projection-v4-dynamic`, v4 revision
+    `67`, latest turn `019ef41f-b286-7f92-89c2-5bd202527e07`, latest status
+    `active`, 19 latest-turn items, including running/in-progress command
+    items.
+  - The strongest failing-window hypothesis was a client-side mismatch:
+    thread-level detail status could be `active` while the latest exposed turn
+    row was still stale/completed before the real active turn materialized.
+    The old client could stop live polling and fall through to the completed
+    turn timer branch.
+- Change:
+  - `public/app.js`
+    - Added `currentThreadHasActiveRuntimeStatus()`.
+    - `shouldPollCurrentThread()` now continues polling while the current
+      thread has non-stale active runtime status, even if the latest turn row is
+      stale/completed.
+    - `isLiveTurn()` treats the latest unfinished turn as live when the
+      thread-level runtime status is active.
+    - `updateTurnTimer()` now uses an active fallback timer/label when the
+      thread is active but no live turn row is available, avoiding premature
+      `已结束`.
+    - `updateTickTimer()` keeps ticking during this active-thread fallback.
+  - `public/app.js` / `public/sw.js`
+    - Bumped shell to `0.1.11|codex-mobile-shell-v385` /
+      `codex-mobile-shell-v385`.
+  - `test/conversation-render.test.js`
+    - Added regression coverage for thread-level active status preserving
+      polling through a stale completed latest turn row.
+  - `test/mobile-viewport.test.js`
+    - Updated shell-cache assertion to v385.
+  - `README.md` and `docs/TROUBLESHOOTING.md`
+    - Documented the failure mode and the active-thread runtime contract.
+- Validation:
+  - `node --check public/app.js`
+  - `node --test test/conversation-render.test.js` passed 77/77.
+  - `node --test test/mobile-viewport.test.js test/collab-agent-render.test.js`
+    passed 12/12.
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+- Commit:
+  - `1b30b70 fix: keep active thread feedback during stale turn refresh`
+- Production deploy:
+  - Used Home AI central deploy script, not a task card:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --execute --json`
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup retained at:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260623T110625Z-plugin-codex-mobile-web-manual`.
+  - Deploy validation passed production file hashes, launchd print,
+    `/api/public-config`, and Codex auth profile audit.
+  - Post-deploy smoke:
+    - Production `public/app.js` and `public/sw.js` contain
+      `codex-mobile-shell-v385`.
+    - `/api/public-config` returned HTTP `200`,
+      `clientBuildId=0.1.11|codex-mobile-shell-v385`,
+      `shellCacheName=codex-mobile-shell-v385`, and `authRequired=true`.
+    - `/api/status` returned HTTP `200`, `ready=true`, and
+      `transport=external-jsonl-tcp`.
+    - Current thread recent detail returned HTTP `200`, thread status
+      `active`, latest status `active`, and running/in-progress operation
+      evidence.
+- Operational notes:
+  - User devices must load the v385 shell/cache before exercising the browser
+    fix.
+  - Branch `main` remains ahead of private `origin/main`; do not push public
+    until production/user validation is confirmed.
+
 ## 2026-06-23 - Music Completed Operation Dock v383 Deployed
 
 - Status: implemented, locally committed, deployed to Mac production, and
