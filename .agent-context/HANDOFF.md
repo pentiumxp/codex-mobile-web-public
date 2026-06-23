@@ -23,7 +23,8 @@ The previous full handoff was archived and should be opened only when old proven
 
 ## 2026-06-23 - Thread List Fallback Baseline Incremental Cache
 
-- Status: implemented and validated locally; not yet committed or deployed.
+- Status: implemented, validated locally, committed, pushed to private
+  `origin/main`, and deployed to Mac production. Not pushed public.
 - User requirement:
   - Thread-list fallback memory rebuilds are unacceptable during normal use.
   - Expensive fallback baseline should be rebuilt only on server cold start,
@@ -66,6 +67,33 @@ The previous full handoff was archived and should be opened only when old proven
   - `npm run check:macos`
   - `git diff --check`
 - Operational notes:
+  - Local/private commit:
+    `cf2bf8f fix: keep thread list fallback cache incremental`.
+  - Mac production deploy completed through the Home AI central `deploy:macos`
+    script, target `plugin:codex-mobile-web`, source
+    `/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web`, production
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260623T085344Z-plugin-codex-mobile-web-manual`.
+  - Production validation:
+    - Deploy script completed successfully and restarted
+      `com.hermesmobile.plugin.codex-mobile`.
+    - Production `npm run check` passed.
+    - Production `npm run check:macos` passed.
+    - Production `node --test test/thread-visibility.test.js
+      test/thread-task-card-route.test.js` passed 39/39.
+    - Launchd env had no `CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS`
+      override.
+    - Controlled production probe with `/api/threads?limit=41&archived=false`:
+      first baseline build took about 2187ms with `fallbackCacheHit=false` and
+      `fallbackRolloutMs=1257`; 5s later took about 365ms with
+      `fallbackCacheHit=true`; 36s later took about 376ms with
+      `fallbackCacheHit=true`; 41s later took about 405ms with
+      `fallbackCacheHit=true`. `fallbackRolloutMs` stayed `0` after the first
+      build.
+    - `Music` detail was `turns-list-initial` immediately after restart, then
+      returned to `projection-v4-cache` during the same probe. This is restart
+      warming behavior, not the old 30s list fallback rebuild loop.
   - This is server-only; no PWA shell cache bump.
   - After deployment, first full fallback list read in the restarted production
     process may still be slow because it builds the baseline. Repeated list
