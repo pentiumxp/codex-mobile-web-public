@@ -1105,6 +1105,12 @@ const ACTIONABLE_SERVER_REQUEST_METHODS = new Set([
   ...ACTIONABLE_APPROVAL_METHODS,
   ...ACTIONABLE_USER_INPUT_METHODS,
 ]);
+const CODEGRAPH_READONLY_MCP_TOOLS = new Set([
+  "codegraph_search",
+  "codegraph_explore",
+  "codegraph_node",
+  "codegraph_callers",
+]);
 
 function optionListFromEnv(name, fallback) {
   const values = String(process.env[name] || "")
@@ -6712,6 +6718,39 @@ function publicServerRequest(request) {
   };
 }
 
+function codeGraphMcpElicitationToolName(request) {
+  if (!request || request.method !== "mcpServer/elicitation/request") return "";
+  const params = request.params && typeof request.params === "object" ? request.params : {};
+  const candidates = [
+    params.serverName,
+    params.server_name,
+    params.server,
+    params.mcpServer,
+    params.mcp_server,
+    params.toolName,
+    params.tool_name,
+    params.name,
+    params.title,
+    params.message,
+    params.elicitation,
+    params.schema,
+  ];
+  const text = candidates.map((value) => (typeof value === "string" ? value : JSON.stringify(value || ""))).join("\n");
+  const explicitServer = [params.serverName, params.server_name, params.server, params.mcpServer, params.mcp_server]
+    .some((value) => /^codegraph$/i.test(String(value || "").trim()) || /\bcodegraph\b/i.test(String(value || "")));
+  const messageMentionsCodeGraphServer = /\bcodegraph\b[\s-]*(?:MCP\s+)?server\b/i.test(text);
+  if (!explicitServer && !messageMentionsCodeGraphServer) return "";
+  const quoted = /\bcodegraph MCP server\b[\s\S]*?\btool\s+["“]([^"”]+)["”]/i.exec(text);
+  const raw = quoted ? quoted[1] : ((/\b(codegraph_[a-z0-9_]+)\b/i.exec(text) || [])[1] || "");
+  const toolName = String(raw || "").trim();
+  return CODEGRAPH_READONLY_MCP_TOOLS.has(toolName) ? toolName : "";
+}
+
+function codeGraphReadOnlyMcpElicitationDecision(request) {
+  const toolName = codeGraphMcpElicitationToolName(request);
+  return toolName ? { action: "allow", toolName } : null;
+}
+
 function grantedPermissionsFromRequest(params = {}) {
   const permissions = params.permissions || {};
   const granted = {};
@@ -9194,6 +9233,7 @@ class CodexAppServerClient {
       respondedAt: null,
     };
     if (this.answerWorkspaceSourceWriteGuardRequest(request)) return;
+    if (this.answerCodeGraphReadOnlyMcpElicitationRequest(request)) return;
     this.serverRequests.set(key, request);
     broadcast({ type: "serverRequest", request: publicServerRequest(request) });
     if (msg.method === "item/tool/call") {
@@ -9222,6 +9262,27 @@ class CodexAppServerClient {
       return true;
     } catch (err) {
       console.error(`[workspace-source-write-guard] failed request=${shortIdentifier(request && request.id)}: ${err.message || String(err)}`);
+      return false;
+    }
+  }
+
+  answerCodeGraphReadOnlyMcpElicitationRequest(request) {
+    const decision = codeGraphReadOnlyMcpElicitationDecision(request);
+    if (!decision) return false;
+    try {
+      const payload = serverRequestResponsePayload(request, { action: "accept" });
+      this.sendServerRequestResponse(request, payload);
+      request.status = "responded";
+      request.decision = "codegraph_readonly_allow";
+      request.respondedAt = Date.now();
+      console.log(`[mcp-elicitation] ${JSON.stringify({
+        action: request.decision,
+        requestId: shortIdentifier(request && request.id),
+        toolName: decision.toolName,
+      })}`);
+      return true;
+    } catch (err) {
+      console.error(`[mcp-elicitation] failed request=${shortIdentifier(request && request.id)}: ${err.message || String(err)}`);
       return false;
     }
   }
@@ -11960,7 +12021,9 @@ function buildThreadTaskCardCreatePayload(body = {}, sourceThreadId = "") {
   if (body.sourceThreadId && String(body.sourceThreadId || "").trim() !== sourceId) {
     throw httpStatusError(400, "source_thread_id_mismatch");
   }
-  const sourceSummary = readStateDbThread(sourceId) || readStartedThread(sourceId) || readRolloutSessionFallbackThread(sourceId);
+  const sourceSummary = hydrateThreadTitleFromSessionIndex(
+    readStateDbThread(sourceId) || readStartedThread(sourceId) || readRolloutSessionFallbackThread(sourceId) || (sourceId ? { id: sourceId } : null),
+  );
   const targetThreadIds = resolvedThreadTaskCardTargetIds(body, sourceId);
   if (!targetThreadIds.length) {
     throw threadTaskCardTargetError(
@@ -11982,7 +12045,7 @@ function buildThreadTaskCardCreatePayload(body = {}, sourceThreadId = "") {
     sourceThreadId: sourceId,
     sourceTurnId: body.sourceTurnId || body.turnId || "",
     sourceWorkspaceId: body.sourceWorkspaceId || body.sourceWorkspace || (sourceSummary && sourceSummary.cwd) || "",
-    sourceThreadTitle: body.sourceThreadTitle || (sourceSummary && threadDisplayTitle(sourceSummary)) || sourceId,
+    sourceThreadTitle: taskCardSourceThreadTitle(sourceId, body.sourceThreadTitle, sourceSummary),
     targetThreadIds,
     targetWorkspaceIds,
     idempotencyKey: threadTaskCardThreadCallIdempotencyKey(sourceId, body, targetThreadIds),
@@ -12275,14 +12338,35 @@ function truncateThreadTaskCardBody(value, maxChars = THREAD_TASK_CARD_BODY_MAX_
 }
 
 function threadDisplayTitle(thread) {
-  return String((thread && (thread.name || thread.title || thread.preview || thread.id)) || "").trim();
+  if (!thread || typeof thread !== "object") return "";
+  const id = String(thread.id || thread.threadId || "").trim();
+  for (const value of [
+    thread.displayTitle,
+    thread.threadTitle,
+    thread.thread_name,
+    thread.name,
+    thread.title,
+    thread.preview,
+  ]) {
+    const text = String(value || "").trim();
+    if (text && !isRecoverableThreadListTitle(text, id)) return text;
+  }
+  return id;
+}
+
+function taskCardSourceThreadTitle(sourceThreadId, requestedTitle = "", sourceSummary = null) {
+  const id = String(sourceThreadId || "").trim();
+  const requested = String(requestedTitle || "").trim();
+  if (requested && !isRecoverableThreadListTitle(requested, id)) return requested;
+  const title = threadDisplayTitle(hydrateThreadTitleFromSessionIndex(sourceSummary || (id ? { id } : null)));
+  return title || id;
 }
 
 async function materializeThreadTaskCardDraftsForThread(thread) {
   if (!thread || typeof thread !== "object" || !thread.id || !Array.isArray(thread.turns)) return [];
   const sourceThreadId = String(thread.id || "");
   const sourceWorkspaceId = String(thread.cwd || (readStateDbThread(sourceThreadId) || {}).cwd || "");
-  const sourceThreadTitle = threadDisplayTitle(thread) || sourceThreadId;
+  const sourceThreadTitle = taskCardSourceThreadTitle(sourceThreadId, "", thread);
   const created = [];
   for (const turn of thread.turns) {
     const turnId = String(turn && turn.id || "");
@@ -12446,6 +12530,13 @@ function readSessionIndexEntries(maxLines = 2000) {
     return byId;
   }
   return byId;
+}
+
+function hydrateThreadTitleFromSessionIndex(thread, indexEntries = readSessionIndexEntries()) {
+  if (!thread || typeof thread !== "object") return thread || null;
+  const id = String(thread.id || thread.threadId || "").trim();
+  if (!id || !indexEntries || typeof indexEntries.get !== "function") return thread;
+  return applySessionIndexTitleToThread(thread, indexEntries.get(id));
 }
 
 function persistThreadTitleToSessionIndex(threadId, threadName, updatedAt = new Date()) {
@@ -13834,7 +13925,7 @@ async function handleApi(req, res) {
   if (url.pathname === "/api/thread-task-cards" && req.method === "POST") {
     try {
       const body = await readBody(req);
-      const sourceSummary = readStateDbThread(body.sourceThreadId) || readStartedThread(body.sourceThreadId);
+      const sourceSummary = hydrateThreadTitleFromSessionIndex(readStateDbThread(body.sourceThreadId) || readStartedThread(body.sourceThreadId) || (body.sourceThreadId ? { id: body.sourceThreadId } : null));
       const requestedTargetIds = Array.isArray(body.targetThreadIds) && body.targetThreadIds.length
         ? body.targetThreadIds
         : [body.targetThreadId];
@@ -13848,7 +13939,7 @@ async function handleApi(req, res) {
       const cards = await threadTaskCardService.createMany(Object.assign({}, body, {
         sourceWorkspaceId: body.sourceWorkspaceId || body.sourceWorkspace || (sourceSummary && sourceSummary.cwd) || "",
         targetWorkspaceIds,
-        sourceThreadTitle: body.sourceThreadTitle || (sourceSummary && (sourceSummary.name || sourceSummary.preview || sourceSummary.id)) || body.sourceThreadId || "",
+        sourceThreadTitle: taskCardSourceThreadTitle(body.sourceThreadId, body.sourceThreadTitle, sourceSummary),
       }));
       sendJson(res, 200, {
         ok: true,
@@ -13916,11 +14007,11 @@ async function handleApi(req, res) {
       const cardId = decodeURIComponent(threadTaskCardReply[1]);
       const body = await readBody(req);
       const actorThreadId = body.threadId || body.actorThreadId || "";
-      const actorSummary = readStateDbThread(actorThreadId) || readStartedThread(actorThreadId);
+      const actorSummary = hydrateThreadTitleFromSessionIndex(readStateDbThread(actorThreadId) || readStartedThread(actorThreadId) || (actorThreadId ? { id: actorThreadId } : null));
       sendJson(res, 200, Object.assign({ ok: true }, await threadTaskCardService.reply(cardId, actorThreadId, Object.assign({}, body, {
         sourceWorkspaceId: body.sourceWorkspaceId || (actorSummary && actorSummary.cwd) || "",
         sourceThreadId: body.sourceThreadId || actorThreadId,
-        sourceThreadTitle: body.sourceThreadTitle || (actorSummary && (actorSummary.name || actorSummary.preview || actorSummary.id)) || actorThreadId,
+        sourceThreadTitle: taskCardSourceThreadTitle(actorThreadId, body.sourceThreadTitle, actorSummary),
       }))));
     } catch (err) {
       sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
@@ -14997,6 +15088,8 @@ module.exports = {
   approvalResponsePayload,
   anyThreadMatchesVisibleWorkspace,
   applyLocalActiveThreadStatusToSummary,
+  codeGraphMcpElicitationToolName,
+  codeGraphReadOnlyMcpElicitationDecision,
   clearLocalActiveThreadStatus,
   compactThread,
   enrichThreadItemTimestampsFromRollout,
@@ -15035,6 +15128,8 @@ module.exports = {
   staticCompressionCacheStats,
   staticCompressionEncoding,
   stripMarkdownFileTarget,
+  taskCardSourceThreadTitle,
+  threadDisplayTitle,
   threadMatchesWorkspaceCwd,
   threadTaskCardCanonicalVisibleTargets,
   uploadPathForId,

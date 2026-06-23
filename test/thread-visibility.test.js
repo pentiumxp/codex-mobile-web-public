@@ -23,6 +23,8 @@ const {
   readRolloutSessionFallbackThreadFromFile,
   rememberLocalActiveThreadStatus,
   sortTurnsChronologically,
+  taskCardSourceThreadTitle,
+  threadDisplayTitle,
   threadMatchesWorkspaceCwd,
 } = require("../server");
 
@@ -290,6 +292,25 @@ test("deferred thread list result hydrates display titles before first paint", (
 
   assert.equal(result.data[0].name, "Home AI 06-18");
   assert.equal(result.data[0].preview, "Home AI 06-18");
+});
+
+test("task-card source titles skip continuation bootstrap text", () => {
+  const threadId = "019ef506-cac2-76f2-a1df-46ed6de1e7eb";
+  const bootstrapTitle = "# Continuation Bootstrap Index\n\nThis thread is a same-workspace continuation created by Codex Mobile Web.";
+
+  assert.equal(threadDisplayTitle({
+    id: threadId,
+    name: bootstrapTitle,
+    preview: "# Continuation Bootstrap Index",
+    displayTitle: "Plugin Workspace Audit",
+  }), "Plugin Workspace Audit");
+
+  assert.equal(taskCardSourceThreadTitle(threadId, bootstrapTitle, {
+    id: threadId,
+    name: bootstrapTitle,
+    preview: "# Continuation Bootstrap Index",
+    thread_name: "Plugin Workspace Audit",
+  }), "Plugin Workspace Audit");
 });
 
 test("rollout session fallback recovers thread summary without state db text columns", () => {

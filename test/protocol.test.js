@@ -13,6 +13,8 @@ process.env.CODEX_MOBILE_DISABLE_AUTH = "1";
 const {
   attachPendingServerRequestsToResult,
   approvalResponsePayload,
+  codeGraphMcpElicitationToolName,
+  codeGraphReadOnlyMcpElicitationDecision,
   dynamicToolTextResponse,
   publicServerRequest,
   resolveThreadTaskCardTargetReference,
@@ -779,4 +781,41 @@ test("MCP elicitation server requests accept and decline", () => {
     serverRequestResponsePayload(request, { action: "decline" }),
     { result: { action: "decline", content: null } },
   );
+});
+
+test("CodeGraph read-only MCP elicitation is auto-allowable", () => {
+  const request = {
+    id: 3,
+    method: "mcpServer/elicitation/request",
+    status: "waiting",
+    params: {
+      message: 'Allow the codegraph MCP server to run tool "codegraph_search"?',
+    },
+  };
+
+  assert.equal(codeGraphMcpElicitationToolName(request), "codegraph_search");
+  assert.deepEqual(codeGraphReadOnlyMcpElicitationDecision(request), {
+    action: "allow",
+    toolName: "codegraph_search",
+  });
+  assert.deepEqual(serverRequestResponsePayload(request, { action: "accept" }), {
+    result: { action: "accept", content: {} },
+  });
+});
+
+test("CodeGraph MCP elicitation auto-allow rejects unknown tools and other servers", () => {
+  assert.equal(codeGraphReadOnlyMcpElicitationDecision({
+    id: 4,
+    method: "mcpServer/elicitation/request",
+    params: {
+      message: 'Allow the codegraph MCP server to run tool "codegraph_mutate"?',
+    },
+  }), null);
+  assert.equal(codeGraphReadOnlyMcpElicitationDecision({
+    id: 5,
+    method: "mcpServer/elicitation/request",
+    params: {
+      message: 'Allow the browser MCP server to run tool "codegraph_search"?',
+    },
+  }), null);
 });

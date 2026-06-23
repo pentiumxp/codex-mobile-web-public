@@ -393,7 +393,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = 500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v399";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v400";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -1343,8 +1343,35 @@ function saveThreadStatusHints() {
   saveStringSetStorage(STORAGE_UNREAD_THREAD_IDS, state.unreadThreadIds);
 }
 
+function isRecoverableThreadDisplayTitle(value, threadId = "") {
+  const text = String(value || "").trim();
+  const id = String(threadId || "").trim();
+  if (!text) return true;
+  if (id && text === id) return true;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(text)
+    || /^#\s*Continuation Bootstrap Index\b/i.test(text)
+    || /This thread is a same-workspace continuation created by Codex Mobile Web/i.test(text);
+}
+
+function preferredThreadDisplayTitle(thread) {
+  if (!thread || typeof thread !== "object") return "";
+  const id = String(thread.id || thread.threadId || "");
+  for (const value of [
+    thread.displayTitle,
+    thread.threadTitle,
+    thread.thread_name,
+    thread.name,
+    thread.title,
+    thread.preview,
+  ]) {
+    const text = String(value || "").trim();
+    if (text && !isRecoverableThreadDisplayTitle(text, id)) return text;
+  }
+  return id;
+}
+
 function threadDisplayName(thread) {
-  return String(thread && (thread.name || thread.preview || thread.id || "") || "");
+  return preferredThreadDisplayTitle(thread);
 }
 
 function isPwaMode() {
@@ -9793,7 +9820,7 @@ function threadById(threadId) {
 }
 
 function threadTitleForDisplay(thread) {
-  return String(thread && (thread.name || thread.preview || thread.id) || "").trim();
+  return preferredThreadDisplayTitle(thread);
 }
 
 function updateThreadNameLocally(threadId, name) {

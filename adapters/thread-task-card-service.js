@@ -360,6 +360,7 @@ function injectedMessageText(card) {
     "",
     `Source workspace: ${card.source.workspaceId}`,
     `Source thread: ${card.source.title || card.source.threadId}`,
+    `Source thread id: ${card.source.threadId}`,
     card.message && card.message.title ? `Title: ${card.message.title}` : "",
     sourceDirect ? "Approval: target approval bypassed by the thread-callable interface." : "",
     autonomous ? `Workflow mode: ${card.workflow.mode}` : "",
