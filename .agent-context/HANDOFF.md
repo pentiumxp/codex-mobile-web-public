@@ -1,3 +1,52 @@
+# 2026-06-23 - v392 post-completion refresh patch stabilization
+
+- Trigger:
+  - User reported that v391 still left visible UI flicker after the assistant
+    receipt appeared.
+- Evidence:
+  - v391 fixed same-turn completed receipt identity, but the remaining flicker
+    can still occur when `turn/completed` renders once and the scheduled
+    post-completion / usage-backfill refresh returns a projection with only
+    item-level changes such as Usage or projection metadata.
+  - `patchCurrentThreadDetailFromRefresh()` previously required
+    `conversationRootSignature(previousThread) === conversationRootSignature(nextThread)`.
+    That root signature included `mobileProjectionRevision` and
+    `mobileVisibleItemKeys`, so ordinary v4 notification/refresh revisions and
+    Usage insertion could bypass local patch and fall back to larger
+    conversation/article patching.
+  - `patchVisibleItemsOnlyFromRefresh()` also only allowed latest live turns
+    with the exact same item-key shape. A latest completed turn that appended
+    Usage could not use this item-level patch path.
+- Change:
+  - `public/app.js` now adds `conversationPatchShellSignature()`, comparing
+    only conversation shell factors that affect root structure while excluding
+    projection revision and visible item keys.
+  - `patchCurrentThreadDetailFromRefresh()` uses the shell signature gate for
+    local refresh patching.
+  - `patchVisibleItemsOnlyFromRefresh()` now allows the latest turn after
+    completion to preserve existing visible item keys while appending new
+    items such as `turnUsageSummary`; it rejects removals and reorders.
+  - PWA shell advanced to `codex-mobile-shell-v392`.
+- Tests:
+  - Updated conversation render and mobile viewport assertions.
+  - Added `visible item refresh patch shape preserves existing keys while appending usage`.
+- Docs:
+  - `README.md`
+  - `docs/TROUBLESHOOTING.md`
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js`
+  - `node --test test/conversation-render.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+  - `npm run check`
+  - `npm run check:macos`
+  - `npm test` passed (`649` tests).
+  - `git diff --check`
+  - `codegraph sync && codegraph status` was up to date; status still warned
+    the index was built by an earlier CodeGraph engine version.
+- Next:
+  - Commit and deploy via the Home AI center deploy script.
+  - After deploy, run Home AI visual verification/video capture as requested.
+  - Do not push Public until production/user testing is confirmed.
+
 # 2026-06-23 - v391 completed receipt render-identity stabilization
 
 - Trigger:
