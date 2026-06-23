@@ -1,3 +1,57 @@
+# 2026-06-23 - Server raw exec command text projection fix
+
+- Trigger:
+  - User reported that the bottom `Command` dock still had empty detail after
+    v394.
+- Evidence:
+  - Production `/api/public-config` was already serving
+    `0.1.11|codex-mobile-shell-v394`.
+  - Current thread
+    `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3` recent detail returned
+    `commandExecution.command` as an empty string for raw rollout operations,
+    so the failure layer was server projection, not the v394 frontend dock
+    renderer.
+  - The corresponding rollout `response_item` entries used
+    `payload.type=function_call`, `payload.name=exec_command`, and
+    `payload.arguments` JSON shaped as `{ "cmd": "..." }`. The old server
+    helper only read `arguments.command`.
+- Change:
+  - `server.js` `commandFromRawPayload()` now extracts command text from
+    `arguments.command`, `arguments.cmd`, `arguments.shellCommand`, and
+    `arguments.shell_command`, for both object arguments and JSON-string
+    arguments.
+  - Updated raw-operation fallback coverage so the live-turn command sample
+    uses the Mac `cmd` argument shape.
+  - Updated README and troubleshooting docs to classify this as a server
+    raw-operation projection failure when the API command field is empty.
+  - This is server-only; no PWA shell/cache bump beyond v394.
+- Validation:
+  - `node --check server.js`
+  - `node --test test/thread-item-timestamp-enrichment.test.js`
+  - `npm run check`
+  - `npm run check:macos`
+  - `npm test` passed (`651` tests).
+  - `git diff --check`
+  - `codegraph sync && codegraph status` reported the index up to date.
+  - Local offline compact of the current rollout produced non-empty command
+    text for recent raw operations.
+- Commit/deploy:
+  - Local commit: `758a1d0 fix: project raw exec command text`.
+  - Deployed with the Home AI center deploy script:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --execute --json`.
+  - Production source ref: `758a1d09f814`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260623T144818Z-plugin-codex-mobile-web-manual`.
+- Production smoke:
+  - `/api/public-config` returned HTTP `200`,
+    `clientBuildId=0.1.11|codex-mobile-shell-v394`,
+    `shellCacheName=codex-mobile-shell-v394`, and `authRequired=true`.
+  - Current thread recent detail returned `commandOperationCount=14` and
+    `nonEmptyCommandCount=14`.
+- Next:
+  - Do not push this server-only follow-up to Public until production/user
+    testing is confirmed.
+
 # 2026-06-23 - v394 Command dock placeholder semantics and macOS command detail
 
 - Trigger:
