@@ -1,3 +1,91 @@
+# 2026-06-24 - Service-first refactor deployed after dev and production smoke
+
+- Trigger:
+  - User asked whether Codex Mobile Web needed a system-level refactor after
+    projection, in-memory cache, task-card routing, and runtime behavior had
+    grown beyond the original architecture.
+- Scope:
+  - Backend/service-first refactor only. No PWA shell cache bump and no public
+    sync/push in this step.
+  - Followed the Home AI center deployment contract: local/private validation,
+    then Mac production deploy through the center script, then production
+    smoke. Public remains separate and requires explicit approval after
+    production/user validation.
+- Commits:
+  - `22e7b8e refactor: extract task-card routing service`
+  - `0549375 refactor: extract turn compaction policy`
+  - `d345726 refactor: extract projection input service`
+  - `ad16a1f refactor: extract projection result service`
+  - `4acc038 refactor: extract thread list fallback cache`
+  - `c6aef7f refactor: extract thread detail summary service`
+  - `a7b474f docs: record refactor dev smoke`
+- Changed services/files:
+  - `adapters/thread-task-card-routing-service.js`
+  - `adapters/thread-turn-compaction-policy-service.js`
+  - `adapters/thread-detail-projection-input-service.js`
+  - `adapters/thread-detail-projection-result-service.js`
+  - `adapters/thread-list-fallback-cache-service.js`
+  - `adapters/thread-detail-summary-service.js`
+  - Focused service tests were added or updated for each extracted boundary.
+- Validation before deploy:
+  - After the final refactor phase:
+    - focused service/test set passed (`162` tests);
+    - `npm run check`;
+    - `npm test` passed (`691` tests);
+    - `npm run check:macos`;
+    - `git diff --check`;
+    - Home AI platform checker passed for `codex-mobile` with the existing
+      `handoff_pointer_missing` warning only;
+    - `codegraph sync && codegraph status` reported up to date with the
+      existing earlier-engine warning.
+  - Development server smoke on `127.0.0.1:18787` with isolated runtime:
+    - `/api/public-config` HTTP 200,
+      `clientBuildId=0.1.11|codex-mobile-shell-v400`;
+    - `/api/status` HTTP 200, `ready=true`;
+    - `/api/threads?limit=5&fallback=defer` returned 5 rows and deferred
+      fallback;
+    - first full thread list had `fallbackCacheHit=false`, `fallbackMs=1110`;
+    - second full thread list had `fallbackCacheHit=true`, `fallbackMs=0`;
+    - recent thread detail returned 10 turns;
+    - first full thread detail used `thread-read` / projection `seeded`;
+    - second full thread detail used `projection-v4-cache` / projection
+      `cache`.
+- Deployment:
+  - Center script plan-only preflight passed:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --reason codex-mobile-service-refactor --json`.
+  - Executed through the Home AI center script from
+    `/Users/hermes-dev/HermesMobileDev/app`:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --reason codex-mobile-service-refactor --execute --json`.
+  - Production source ref: `a7b474f5fb99`, dirty false.
+  - Production target:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260623T193234Z-plugin-codex-mobile-web-codex-mobile-service-refactor`.
+  - Production owner restored to `xuxin:staff`.
+  - Restarted only `com.hermesmobile.plugin.codex-mobile`.
+  - Deploy validations passed:
+    `codex-mobile-log-permissions`, `codex-shared-auth-permissions-repair`,
+    `deploy-backup-retention-prune`, `production-file-hashes`,
+    `launchd-print`, `health-url`, and `codex-auth-profile-audit` with zero
+    blocking issues.
+- Production smoke after deploy:
+  - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` is running.
+  - `/api/public-config` returned HTTP 200,
+    `clientBuildId=0.1.11|codex-mobile-shell-v400`,
+    `shellCacheName=codex-mobile-shell-v400`, and `authRequired=true`.
+  - Plugin manifest returned HTTP 200 with `id=codex-mobile`,
+    `kind=embedded_app`, and `version=0.1.11`.
+  - Authenticated `/api/threads?limit=5` returned 5 rows and hit fallback
+    cache on both checks (`fallbackMs` 0 then 1).
+  - Authenticated recent detail returned 10 turns.
+  - Authenticated full detail first read used `thread-read` / projection
+    `seeded`; second read used `projection-v4-cache` / projection `cache`.
+- Operational notes:
+  - No raw secrets, access keys, cookies, launch tokens, uploads, or long logs
+    were recorded.
+  - This has been deployed to Mac production but has not been pushed/synced to
+    public.
+
 # 2026-06-24 - Healthy exact task-card target deliverability fix
 
 - Trigger:
