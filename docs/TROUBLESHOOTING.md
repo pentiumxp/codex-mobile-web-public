@@ -604,7 +604,7 @@ If the original user upload renders as a thumbnail but a later Codex/plan reply 
 
 The parser should recognize LF and CRLF summaries, plus Markdown blockquote-style quoted lines such as `> Uploaded attachments:` and `> - IMG_0001.jpg (...)`. It should also treat raw app-server `input_text` parts as text and `input_image` / `image_url` parts as images, including object-shaped `image_url.url`. The saved upload path must still be under `%USERPROFILE%\.codex-mobile-web\uploads` so `/api/uploads/file?path=...` can serve it to the authenticated browser.
 
-If the DOM contains an `<img>` for the saved upload path but the browser still shows a broken or blank thumbnail, check the upload route response headers. Saved `.jpg`, `.jpeg`, `.webp`, `.gif`, and `.png` files must return image MIME types such as `image/jpeg` rather than `application/octet-stream`.
+If the DOM contains an `<img>` for the saved upload path but the browser still shows a broken or blank thumbnail, check the upload route response headers. Saved `.jpg`, `.jpeg`, `.webp`, `.gif`, and `.png` files must return image MIME types such as `image/jpeg` rather than `application/octet-stream`. In Hermes/Home AI embed mode, the `<img>` should also keep `data-protected-image-src`; scheduled image scans can then recover unstable direct API image loads by fetching with the current session key and replacing the source with a page-local `data:image/...` or `blob:` URL.
 
 If Codex generates an image as Markdown or plain text `data:image/png;base64,...`, inspect `public/markdown-renderer.js`. Current builds render safe bitmap data images (`png`, `jpeg`, `webp`, `gif`) as bounded `<img>` figures and intentionally reject SVG data images.
 

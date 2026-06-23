@@ -388,7 +388,7 @@ const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v377";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v378";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -13977,7 +13977,6 @@ function protectedImageDisplaySrc(src) {
 
 function protectedImageSourceAttribute(src) {
   const protectedSrc = protectedGeneratedImageSrc(src);
-  if (shouldRenderProtectedImageDirectly(protectedSrc)) return "";
   return protectedSrc ? ` data-protected-image-src="${escapeHtml(protectedSrc)}"` : "";
 }
 
@@ -14157,11 +14156,11 @@ function shouldHydrateProtectedAppImage(image) {
   if (!image || !image.dataset) return false;
   const src = protectedAppImageElementSrc(image);
   if (!src) return false;
-  if (shouldRenderProtectedImageDirectly(src)) return false;
+  if (shouldRenderProtectedImageDirectly(src) && image.complete && Number(image.naturalWidth || 0) > 0) return false;
   if (image.dataset.protectedImageHydrated === "1" || image.dataset.protectedImageHydrating === "1") return false;
   const current = String(image.currentSrc || image.src || "");
   if (/^(data:image|blob:)/i.test(current) && current !== PROTECTED_IMAGE_PLACEHOLDER_SRC) return false;
-  return isIosWebKitBrowser() || imageDiagnosticSourceKind(src) === "upload";
+  return isIosWebKitBrowser() || imageDiagnosticSourceKind(src) === "upload" || shouldRenderProtectedImageDirectly(src);
 }
 
 function hydrateProtectedAppImage(image, reason = "scan") {

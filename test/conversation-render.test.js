@@ -1437,7 +1437,7 @@ test("user message text before upload summaries still renders jpg thumbnails", (
   assert.doesNotMatch(html, /Uploaded attachments:/);
 });
 
-test("Hermes embedded upload summaries render direct image sources without hydrate placeholders", () => {
+test("Hermes embedded upload summaries render direct image sources with hydrate fallback", () => {
   const renderInputContent = evaluatedInputContentRendererWithKey("test-key", { embedded: true });
   const uploadPath = "/Users/example/.codex-mobile-web/uploads/2026-06-20/thread/1781956411989-photo.jpg";
   const html = renderInputContent([
@@ -1450,7 +1450,7 @@ test("Hermes embedded upload summaries render direct image sources without hydra
   assert.match(html, /class="input-image"/);
   assert.match(html, /<img src="\/api\/uploads\/file\?path=/);
   assert.doesNotMatch(html, /src="data:image\/gif;base64/);
-  assert.doesNotMatch(html, /data-protected-image-src=/);
+  assert.match(html, /data-protected-image-src="\/api\/uploads\/file\?path=/);
 });
 
 test("imageView upload screenshots use the uploads route instead of file preview", () => {
@@ -1488,7 +1488,7 @@ test("generated image content urls render bounded image cards", () => {
   assert.doesNotMatch(html, /\/api\/files\/preview\/content/);
 });
 
-test("Hermes embedded generated image content urls render directly without hydrate placeholders", () => {
+test("Hermes embedded generated image content urls render directly with hydrate fallback", () => {
   const renderImageView = evaluatedImageViewRenderer({ embedded: true });
   const html = renderImageView({
     type: "imageView",
@@ -1499,7 +1499,7 @@ test("Hermes embedded generated image content urls render directly without hydra
   assert.match(html, /class="image-view"/);
   assert.match(html, /<img src="\/api\/generated-images\/file\?id=thread%2Fview-image-output\.png&amp;key=test-key"/);
   assert.doesNotMatch(html, /src="data:image\/gif;base64/);
-  assert.doesNotMatch(html, /data-protected-image-src=/);
+  assert.match(html, /data-protected-image-src="\/api\/generated-images\/file\?id=thread%2Fview-image-output\.png&amp;key=test-key"/);
 });
 
 test("generated image content urls replace stale auth keys with the current session key", () => {
@@ -1558,7 +1558,7 @@ test("failed conversation images collapse into a neutral fallback", () => {
   assert.match(functionBody("updateConversationHtml"), /scheduleFailedAppImageScan\(conversation/);
   assert.match(functionBody("scheduleFailedAppImageScan"), /hydrateProtectedAppImages\(root, "scheduled-scan"\)/);
   assert.match(functionBody("handleConversationImageError"), /handleProtectedAppImageError\(image\)/);
-  assert.match(functionBody("shouldHydrateProtectedAppImage"), /isIosWebKitBrowser\(\) \|\| imageDiagnosticSourceKind\(src\) === "upload"/);
+  assert.match(functionBody("shouldHydrateProtectedAppImage"), /isIosWebKitBrowser\(\) \|\| imageDiagnosticSourceKind\(src\) === "upload" \|\| shouldRenderProtectedImageDirectly\(src\)/);
   assert.match(functionBody("hydrateProtectedAppImage"), /protectedAppImageRecoveredUrl\(response\)/);
   assert.match(functionBody("hydrateProtectedAppImage"), /applyProtectedAppImageRecoveredUrl\(image, recovered\)/);
   assert.match(functionBody("hydrateProtectedAppImage"), /protectedImageHydrated = "1"/);
