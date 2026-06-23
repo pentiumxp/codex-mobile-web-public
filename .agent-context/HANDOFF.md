@@ -1958,6 +1958,72 @@ The previous full handoff was archived and should be opened only when old proven
   - This has not been pushed to public. Follow the release-order rule: wait for
     production/user confirmation before any public sync/push.
 
+## 2026-06-23 - System/assistant image output media contract fix
+
+- User-facing symptom:
+  - User-uploaded images rendered in the Home AI embedded Codex Mobile view,
+    but system/assistant `Image` outputs could render as a broken-image box
+    with only a filename caption.
+- Failing layer:
+  - Codex Mobile server image projection/media normalization.
+  - User-upload serving through `/api/uploads/file` was not the broken layer.
+- Root cause:
+  - The generated-image cache path only treated `path`, `filePath`,
+    `imagePath`, `savedPath`, and related fields as source files.
+  - Assistant/system image items can carry local image files in `url`,
+    `imageUrl`, `image_url`, or `file://` fields. Those fields were not copied
+    into the runtime generated-image cache, so the client could receive a raw
+    local path or a bare filename and create an `<img src>` the WebView could
+    not fetch.
+- Change:
+  - `adapters/generated-image-cache-service.js`
+    - Extracts local filesystem image sources from `url`, `imageUrl`,
+      `image_url`, and `file://` values while ignoring already-safe browser
+      routes such as `/api/generated-images/file`.
+  - `server.js`
+    - Normalizes assistant/system image sources into
+      `/api/generated-images/file?id=...`.
+    - Removes raw local path, `file://`, data URL, and unservable bare-image
+      filename source fields from compacted image items after caching.
+    - Marks missing/unresolvable image sources as
+      `generatedImage.unavailable` with `reason=source_unavailable` instead of
+      letting the browser render a broken `<img>`.
+  - `public/app.js`
+    - Renders `generatedImage.unavailable` items with the existing neutral
+      `image-load-failed` card and no `<img src>`.
+  - `public/sw.js` / `public/app.js`
+    - Shell cache/build bumped to `codex-mobile-shell-v384`.
+- Tests:
+  - Added assistant/system-specific coverage in:
+    - `test/generated-image-cache-service.test.js`
+    - `test/tool-output-image-projection.test.js`
+    - `test/conversation-render.test.js`
+  - Updated shell version assertions in:
+    - `test/mobile-viewport.test.js`
+    - `test/thread-goal-service.test.js`
+    - `test/thread-task-card-route.test.js`
+- Validation before deploy:
+  - Minimal pre-fix reproduction showed an `imageView` item with local image
+    source in `url` extracted no source path and did not cache.
+  - `node --test test/generated-image-cache-service.test.js
+    test/tool-output-image-projection.test.js test/conversation-render.test.js
+    test/file-preview-ui.test.js`
+  - `npm run check`
+  - `node --test test/generated-image-cache-service.test.js
+    test/tool-output-image-projection.test.js test/conversation-render.test.js
+    test/file-preview-ui.test.js test/mobile-viewport.test.js
+    test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+  - `npm run check:macos`
+  - `git diff --check`
+  - `npm test` passed (`632` tests).
+- Deployment status:
+  - Not deployed yet at the time of this handoff entry.
+  - The first deploy attempt was correctly blocked by dirty-source protection;
+    make a local commit, redeploy, then append production verification here.
+- Public status:
+  - Not pushed to public. Follow the project rule: deploy and validate first,
+    then push public only after explicit user instruction.
+
 ## 2026-06-23 - Public sync after thread state consistency repairs
 
 - User requested pushing the already production-validated thread state fixes to

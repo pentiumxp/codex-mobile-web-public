@@ -194,6 +194,7 @@ function evaluatedImageViewRenderer(options = {}) {
     "imageViewPath",
     "imageViewUrl",
     "imageViewContentUrl",
+    "isImageViewUnavailable",
     "renderImageView",
   ].map((name) => functionSourceFrom(appJs, name));
   const pluginEmbed = options.embedded ? { embedded: true } : null;
@@ -1621,6 +1622,23 @@ test("generated image content urls replace stale auth keys with the current sess
   assert.match(html, /class="image-view"/);
   assert.match(html, /key=test-key/);
   assert.doesNotMatch(html, /stale-key/);
+});
+
+test("unavailable generated images render a bounded failure card without img src", () => {
+  const renderImageView = evaluatedImageViewRenderer();
+  const html = renderImageView({
+    type: "imageView",
+    fileName: "1782210953458-homeai-upload.jpg",
+    generatedImage: {
+      unavailable: true,
+      reason: "source_unavailable",
+    },
+  });
+
+  assert.match(html, /class="image-view image-load-failed"/);
+  assert.match(html, /1782210953458-homeai-upload\.jpg/);
+  assert.doesNotMatch(html, /<img\b/);
+  assert.doesNotMatch(html, /src=/);
 });
 
 test("failed conversation images collapse into a neutral fallback", () => {

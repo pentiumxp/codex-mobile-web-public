@@ -227,6 +227,64 @@ test("direct imageView upload paths remain visible without a matching user uploa
   assert.match(image.contentUrl, /^\/api\/generated-images\/file\?id=/);
 });
 
+test("direct assistant imageView url paths are normalized to generated image content urls", () => {
+  const sourceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-assistant-image-url-"));
+  const sourcePath = path.join(sourceRoot, "assistant-output.png");
+  fs.writeFileSync(sourcePath, Buffer.from("iVBORw0KGgo=", "base64"));
+  try {
+    const compacted = compactThread({
+      id: "thread-assistant-image-url",
+      turns: [{
+        id: "turn-assistant-image",
+        status: { type: "completed" },
+        items: [
+          {
+            id: "assistant-image-url",
+            type: "imageView",
+            image_url: sourcePath,
+          },
+        ],
+      }],
+    });
+
+    const image = compacted.turns[0].items.find((item) => item.type === "imageView");
+    assert.ok(image);
+    assert.match(image.contentUrl, /^\/api\/generated-images\/file\?id=/);
+    assert.equal(image.image_url, undefined);
+    assert.equal(image.url, undefined);
+    assert.equal(image.path, undefined);
+    assert.equal(image.fileName, "assistant-output.png");
+    assert.doesNotMatch(JSON.stringify(image), /codex-mobile-assistant-image-url/);
+  } finally {
+    fs.rmSync(sourceRoot, { recursive: true, force: true });
+  }
+});
+
+test("unresolvable assistant imageView filenames become bounded unavailable items", () => {
+  const compacted = compactThread({
+    id: "thread-assistant-missing-image",
+    turns: [{
+      id: "turn-assistant-missing-image",
+      status: { type: "completed" },
+      items: [
+        {
+          id: "assistant-image-missing",
+          type: "imageView",
+          url: "1782210953458-homeai-upload.jpg",
+        },
+      ],
+    }],
+  });
+
+  const image = compacted.turns[0].items.find((item) => item.type === "imageView");
+  assert.ok(image);
+  assert.equal(image.contentUrl, undefined);
+  assert.equal(image.url, undefined);
+  assert.equal(image.fileName, "1782210953458-homeai-upload.jpg");
+  assert.equal(image.generatedImage.unavailable, true);
+  assert.equal(image.generatedImage.reason, "source_unavailable");
+});
+
 test("view_image outputs outside the upload directory still become image cards", () => {
   const outsidePath = path.join(os.tmpdir(), "codex-mobile-outside-view-image.png");
   const { dir, rolloutPath } = writeRollout([
