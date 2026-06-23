@@ -388,7 +388,7 @@ const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v386";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v387";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -13830,17 +13830,69 @@ function filePreviewContentUrl(file) {
   return localFilePreviewContentUrl(file.path);
 }
 
+function hermesPluginProxyPrefixFromPathname(pathname) {
+  const pathValue = String(pathname || "");
+  const match = pathValue.match(/^(\/api\/hermes-plugins\/[^/]+\/proxy)(?:\/|$)/);
+  return match ? match[1] : "";
+}
+
+function hermesPluginProxyPrefix() {
+  if (!isHermesEmbedMode()) return "";
+  try {
+    return hermesPluginProxyPrefixFromPathname(window.location && window.location.pathname);
+  } catch (_) {
+    return "";
+  }
+}
+
+function protectedImageUpstreamPathname(pathname) {
+  const pathValue = String(pathname || "");
+  if (
+    pathValue === "/api/generated-images/file"
+    || pathValue === "/api/uploads/file"
+    || pathValue === "/api/files/preview/content"
+  ) {
+    return pathValue;
+  }
+  const match = pathValue.match(/^\/api\/hermes-plugins\/[^/]+\/proxy(\/api\/(?:generated-images\/file|uploads\/file|files\/preview\/content))$/);
+  return match ? match[1] : "";
+}
+
+function browserApiContentUrl(value) {
+  const raw = String(value || "");
+  if (!raw) return "";
+  try {
+    const origin = typeof window !== "undefined" && window.location && window.location.origin
+      ? window.location.origin
+      : "http://127.0.0.1";
+    const parsed = new URL(raw, origin);
+    if (parsed.origin !== origin) return raw;
+    const pathValue = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    const proxyPrefix = hermesPluginProxyPrefix();
+    if (
+      proxyPrefix
+      && parsed.pathname.startsWith("/api/")
+      && !parsed.pathname.startsWith(`${proxyPrefix}/`)
+    ) {
+      return `${proxyPrefix}${pathValue}`;
+    }
+    return pathValue;
+  } catch (_) {
+    return raw;
+  }
+}
+
 function authenticatedApiContentUrl(value) {
   const raw = String(value || "");
-  if (!raw || !state.key) return raw;
+  if (!raw) return "";
   try {
     const origin = typeof window !== "undefined" && window.location && window.location.origin
       ? window.location.origin
       : "http://127.0.0.1";
     const parsed = new URL(raw, origin);
     if (parsed.origin === origin && parsed.pathname.startsWith("/api/")) {
-      parsed.searchParams.set("key", state.key);
-      return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+      if (state.key) parsed.searchParams.set("key", state.key);
+      return browserApiContentUrl(`${parsed.pathname}${parsed.search}${parsed.hash}`);
     }
   } catch (_) {}
   return raw;
@@ -13853,7 +13905,7 @@ function localFilePreviewContentUrl(filePath) {
     path: String(filePath),
   });
   if (state.key) params.set("key", state.key);
-  return `/api/files/preview/content?${params.toString()}`;
+  return browserApiContentUrl(`/api/files/preview/content?${params.toString()}`);
 }
 
 function renderJsonPreview(content) {
@@ -14065,11 +14117,7 @@ function protectedGeneratedImageSrc(value) {
   if (!raw) return "";
   try {
     const parsed = new URL(raw, window.location.origin);
-    if (parsed.origin === window.location.origin && (
-      parsed.pathname === "/api/generated-images/file"
-      || parsed.pathname === "/api/uploads/file"
-      || parsed.pathname === "/api/files/preview/content"
-    )) {
+    if (parsed.origin === window.location.origin && protectedImageUpstreamPathname(parsed.pathname)) {
       return `${parsed.pathname}${parsed.search}${parsed.hash}`;
     }
   } catch (_) {}
@@ -14115,9 +14163,10 @@ function imageDiagnosticSourceKind(src) {
   try {
     const parsed = new URL(raw, window.location.origin);
     if (parsed.origin !== window.location.origin) return "remote";
-    if (parsed.pathname === "/api/uploads/file") return "upload";
-    if (parsed.pathname === "/api/generated-images/file") return "generated-image";
-    if (parsed.pathname === "/api/files/preview/content") return "file-preview";
+    const upstreamPathname = protectedImageUpstreamPathname(parsed.pathname) || parsed.pathname;
+    if (upstreamPathname === "/api/uploads/file") return "upload";
+    if (upstreamPathname === "/api/generated-images/file") return "generated-image";
+    if (upstreamPathname === "/api/files/preview/content") return "file-preview";
     if (parsed.pathname.startsWith("/api/")) return "api";
     return "same-origin";
   } catch (_) {

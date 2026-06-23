@@ -1,6 +1,6 @@
 # Codex Mobile Web
 
-- 中文说明：v386 修正压缩续接新线程首开时可能先显示启动长消息和“已结束”，但最终回执/Usage 要退出重进后才出现的问题。生产日志显示 Music 续接线程的 rollout EOF 已有 `task_complete.last_agent_message`，但首个 `mode=recent` 详情在 projection 尚未 seed 时走了 `turns-list-initial`，且 app-server summary 短暂为 `idle`，导致 EOF final receipt 和 scoped Usage 没被附到当前可见 turn。现在服务端在 resting summary 下允许 matching `task_complete` / scoped `token_count` 补齐状态暂缺或 idle 的同 turn，失败/取消/中断/运行态仍排除；客户端 post-completion 的两次刷新都改为 full，避免先渲染缺回执的 recent 窗口。PWA shell cache 升级到 `codex-mobile-shell-v386`。
+- 中文说明：v387 修正 Home AI embedded/proxy 页面中上传摘要和 generated-image 图片卡仍使用根 `/api/...` 作为动态 `<img src>` 的问题。实测坏图文件通过 Codex 服务 `8787/api/uploads/file?id=...` 返回 `200 image/jpeg`，但同一根路径落到 Home AI host `8797/api/uploads/file` 返回 `401`，导致 iOS/PWA 中永久坏图。现在当前页面路径处于 `/api/hermes-plugins/<plugin-id>/proxy/` 时，动态图片内容 URL 会生成到同插件 proxy 前缀下；直接打开 `8787` 的独立模式不变。PWA shell cache 升级到 `codex-mobile-shell-v387`。
 
 - 中文说明：v385 修正普通发送后右上角反馈可能过早显示“已结束”的问题。生产日志显示提交 RPC 已成功创建 active turn，详情接口也返回线程级 `active`，但在 app-server/detail 投影短暂只暴露旧 completed turn 行的窗口里，旧前端只按最新 turn 行决定是否继续 live poll 和是否显示运行态；这会让客户端停止刷新并把计时器落到 completed turn 的“已结束”。现在新增线程级 active runtime 判定：只要当前线程状态仍是非 stale 的 `active/running/...`，前端会继续 poll，并在没有可用 live turn 行时把右上角保持为运行反馈，不再提前显示结束。PWA shell cache 升级到 `codex-mobile-shell-v385`。
 

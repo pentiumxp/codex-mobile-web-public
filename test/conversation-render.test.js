@@ -101,6 +101,10 @@ function evaluatedInputContentRendererWithKey(key = "", options = {}) {
     "isCodexMobileUploadPath",
     "isLikelyAbsoluteLocalPath",
     "canRenderImageAttachment",
+    "hermesPluginProxyPrefixFromPathname",
+    "hermesPluginProxyPrefix",
+    "protectedImageUpstreamPathname",
+    "browserApiContentUrl",
     "authenticatedApiContentUrl",
     "protectedGeneratedImageSrc",
     "isHermesEmbedMode",
@@ -123,9 +127,10 @@ function evaluatedInputContentRendererWithKey(key = "", options = {}) {
     "renderInputContent",
   ].map((name) => functionSourceFrom(appJs, name));
   const pluginEmbed = options.embedded ? { embedded: true } : null;
+  const pathname = options.pathname || "/";
   return Function(
     "URLSearchParams",
-    `const state = { key: ${JSON.stringify(String(key || ""))}, pluginEmbed: ${JSON.stringify(pluginEmbed)} };\nconst window = { location: { origin: "http://127.0.0.1:8787" } };\nconst THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";\nconst PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";\n${sources.join("\n")}\nreturn renderInputContent;`,
+    `const state = { key: ${JSON.stringify(String(key || ""))}, pluginEmbed: ${JSON.stringify(pluginEmbed)} };\nconst window = { location: { origin: "http://127.0.0.1:8787", pathname: ${JSON.stringify(pathname)} } };\nconst THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";\nconst PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";\n${sources.join("\n")}\nreturn renderInputContent;`,
   )(URLSearchParams);
 }
 
@@ -228,6 +233,10 @@ function evaluatedImageViewRenderer(options = {}) {
     "shortPath",
     "normalizeFsPath",
     "isCodexMobileUploadPath",
+    "hermesPluginProxyPrefixFromPathname",
+    "hermesPluginProxyPrefix",
+    "protectedImageUpstreamPathname",
+    "browserApiContentUrl",
     "protectedGeneratedImageSrc",
     "isHermesEmbedMode",
     "imageDiagnosticSourceKind",
@@ -247,9 +256,10 @@ function evaluatedImageViewRenderer(options = {}) {
     "renderImageView",
   ].map((name) => functionSourceFrom(appJs, name));
   const pluginEmbed = options.embedded ? { embedded: true } : null;
+  const pathname = options.pathname || "/";
   return Function(
     "URLSearchParams",
-    `const state = { key: "test-key", currentThreadId: "thread-id", pluginEmbed: ${JSON.stringify(pluginEmbed)} };\nconst window = { location: { origin: "http://127.0.0.1:8787" } };\nconst PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";\n${sources.join("\n")}\nreturn renderImageView;`,
+    `const state = { key: "test-key", currentThreadId: "thread-id", pluginEmbed: ${JSON.stringify(pluginEmbed)} };\nconst window = { location: { origin: "http://127.0.0.1:8787", pathname: ${JSON.stringify(pathname)} } };\nconst PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";\n${sources.join("\n")}\nreturn renderImageView;`,
   )(URLSearchParams);
 }
 
@@ -259,6 +269,7 @@ function evaluatedConversationImageErrorHandler(options = {}) {
     "setRetryingAppImage",
     "markFailedAppImage",
     "clearFailedAppImage",
+    "protectedImageUpstreamPathname",
     "protectedAppImageElementSrc",
     "protectedGeneratedImageSrc",
     "imageStillConnected",
@@ -312,6 +323,7 @@ function evaluatedFailedImageScanner(options = {}) {
     "clearFailedAppImage",
     "imageHadExplicitLoadError",
     "isLazyAppImage",
+    "protectedImageUpstreamPathname",
     "protectedGeneratedImageSrc",
     "imageDiagnosticSourceKind",
     "protectedAppImageElementSrc",
@@ -352,6 +364,7 @@ return scanFailedAppImages;`,
 function evaluatedProtectedImageHydrator(options = {}) {
   const sources = [
     "protectedGeneratedImageSrc",
+    "protectedImageUpstreamPathname",
     "imageDiagnosticSourceKind",
     "shouldRenderProtectedImageDirectly",
     "imageStillConnected",
@@ -1581,6 +1594,26 @@ test("Hermes embedded upload summaries render direct image sources with hydrate 
   assert.doesNotMatch(html, /<img src="[^"]*(?:\/Users|%2FUsers|\.codex-mobile-web|path=)/);
 });
 
+test("Hermes proxy embedded upload summaries render proxy-scoped image sources", () => {
+  const renderInputContent = evaluatedInputContentRendererWithKey("test-key", {
+    embedded: true,
+    pathname: "/api/hermes-plugins/codex-mobile/proxy/",
+  });
+  const uploadPath = "/Users/example/.codex-mobile-web/uploads/2026-06-23/thread/1782214683627-photo.jpg";
+  const html = renderInputContent([
+    {
+      type: "input_text",
+      text: `Uploaded attachments:\n- homeai-upload.jpg (image, image/jpeg, 157.2 KB): ${uploadPath}`,
+    },
+  ]);
+
+  assert.match(html, /class="input-image"/);
+  assert.match(html, /<img src="\/api\/hermes-plugins\/codex-mobile\/proxy\/api\/uploads\/file\?id=2026-06-23%2Fthread%2F1782214683627-photo\.jpg&amp;key=test-key"/);
+  assert.match(html, /data-protected-image-src="\/api\/hermes-plugins\/codex-mobile\/proxy\/api\/uploads\/file\?id=2026-06-23%2Fthread%2F1782214683627-photo\.jpg&amp;key=test-key"/);
+  assert.doesNotMatch(html, /<img src="\/api\/uploads\/file/);
+  assert.doesNotMatch(html, /(?:\/Users|%2FUsers|\.codex-mobile-web|path=)/);
+});
+
 test("imageView upload screenshots use opaque uploads route instead of file preview", () => {
   const renderImageView = evaluatedImageViewRenderer();
   const html = renderImageView({
@@ -1596,9 +1629,10 @@ test("imageView upload screenshots use opaque uploads route instead of file prev
 });
 
 test("protected image auth recovery covers uploaded images", () => {
-  assert.match(functionBody("protectedGeneratedImageSrc"), /"\/api\/generated-images\/file"/);
-  assert.match(functionBody("protectedGeneratedImageSrc"), /"\/api\/uploads\/file"/);
-  assert.match(functionBody("protectedGeneratedImageSrc"), /"\/api\/files\/preview\/content"/);
+  assert.match(functionBody("protectedImageUpstreamPathname"), /"\/api\/generated-images\/file"/);
+  assert.match(functionBody("protectedImageUpstreamPathname"), /"\/api\/uploads\/file"/);
+  assert.match(functionBody("protectedImageUpstreamPathname"), /"\/api\/files\/preview\/content"/);
+  assert.match(functionBody("protectedGeneratedImageSrc"), /protectedImageUpstreamPathname\(parsed\.pathname\)/);
   assert.match(functionBody("uploadFileUrl"), /authenticatedApiContentUrl\(`\/api\/uploads\/file\?\$\{params\.toString\(\)\}`\)/);
 });
 
@@ -1629,6 +1663,23 @@ test("Hermes embedded generated image content urls render directly with hydrate 
   assert.match(html, /<img src="\/api\/generated-images\/file\?id=thread%2Fview-image-output\.png&amp;key=test-key"/);
   assert.doesNotMatch(html, /src="data:image\/gif;base64/);
   assert.match(html, /data-protected-image-src="\/api\/generated-images\/file\?id=thread%2Fview-image-output\.png&amp;key=test-key"/);
+});
+
+test("Hermes proxy embedded generated image urls render through the plugin proxy", () => {
+  const renderImageView = evaluatedImageViewRenderer({
+    embedded: true,
+    pathname: "/api/hermes-plugins/codex-mobile/proxy/",
+  });
+  const html = renderImageView({
+    type: "imageView",
+    contentUrl: "/api/generated-images/file?id=thread%2Fview-image-output.png",
+    fileName: "view_image_output",
+  });
+
+  assert.match(html, /class="image-view"/);
+  assert.match(html, /<img src="\/api\/hermes-plugins\/codex-mobile\/proxy\/api\/generated-images\/file\?id=thread%2Fview-image-output\.png&amp;key=test-key"/);
+  assert.match(html, /data-protected-image-src="\/api\/hermes-plugins\/codex-mobile\/proxy\/api\/generated-images\/file\?id=thread%2Fview-image-output\.png&amp;key=test-key"/);
+  assert.doesNotMatch(html, /<img src="\/api\/generated-images\/file/);
 });
 
 test("Hermes embedded protected images are not proactively converted into data urls", () => {
@@ -1917,6 +1968,67 @@ test("Hermes embedded protected image recovery keeps proxy-safe file urls", asyn
   assert.match(imageSrc, /_imgRecover=/);
   assert.doesNotMatch(imageSrc, /^data:image\//);
   assert.doesNotMatch(imageSrc, /(?:\/Users|%2FUsers|\.codex-mobile-web|path=)/);
+});
+
+test("Hermes proxy embedded protected image recovery stays under plugin proxy", async () => {
+  const fetchCalls = [];
+  const handleConversationImageError = evaluatedConversationImageErrorHandler({
+    window: {
+      location: {
+        origin: "http://127.0.0.1:8797",
+        pathname: "/api/hermes-plugins/codex-mobile/proxy/",
+      },
+    },
+    isHermesEmbedMode: () => true,
+    fetch: (src, options) => {
+      fetchCalls.push({ src, options });
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        blob: () => Promise.resolve({ type: "image/jpeg", size: 160931 }),
+      });
+    },
+  });
+  let imageSrc = "/api/hermes-plugins/codex-mobile/proxy/api/uploads/file?id=2026-06-23%2Fthread-id%2Fhomeai-upload.jpg&key=session-key";
+  const figure = {
+    classList: {
+      remove() {},
+      toggle() {},
+    },
+  };
+  const image = {
+    dataset: { protectedImageSrc: imageSrc },
+    currentSrc: imageSrc,
+    naturalWidth: 0,
+    isConnected: true,
+    get src() {
+      return imageSrc;
+    },
+    set src(value) {
+      imageSrc = value;
+      this.currentSrc = value;
+    },
+    closest(selector) {
+      if (String(selector).includes(".image-view")) return figure;
+      return null;
+    },
+    getAttribute(name) {
+      if (name === "src") return imageSrc;
+      if (name === "aria-hidden") return "";
+      return "";
+    },
+    removeAttribute() {},
+  };
+
+  handleConversationImageError({ target: { closest: () => image } });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  assert.equal(fetchCalls.length, 1);
+  assert.match(fetchCalls[0].src, /^\/api\/hermes-plugins\/codex-mobile\/proxy\/api\/uploads\/file\?id=2026-06-23%2Fthread-id%2Fhomeai-upload\.jpg/);
+  assert.match(imageSrc, /^\/api\/hermes-plugins\/codex-mobile\/proxy\/api\/uploads\/file\?id=2026-06-23%2Fthread-id%2Fhomeai-upload\.jpg/);
+  assert.match(imageSrc, /_imgRecover=/);
+  assert.doesNotMatch(imageSrc, /^\/api\/uploads\/file/);
+  assert.doesNotMatch(imageSrc, /^data:image\//);
 });
 
 test("protected upload image errors fall back to cache-busted src retry without blob support", async () => {
