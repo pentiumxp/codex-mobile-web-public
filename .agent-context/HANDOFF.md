@@ -1818,6 +1818,120 @@ The previous full handoff was archived and should be opened only when old proven
   - This has not been pushed to public. Follow the release-order rule: wait for
     production/user confirmation before any public sync/push.
 
+## 2026-06-23 - Public sync after thread state consistency repairs
+
+- User requested pushing the already production-validated thread state fixes to
+  public, then clarified that public README entries must be detailed Chinese
+  explanations.
+- Local private commits before public sync:
+  - `443e8ea fix: reconcile thread runtime state ownership`
+  - `d378c60 fix: include rollout eof completions in recent detail`
+  - `c22c9bc docs: expand chinese public release notes`
+- Public-safe publication:
+  - Created a temporary public worktree from `public/main`, copied only
+    publishable files from private `main`, and committed:
+    `c5a4ee6 fix: publish thread state consistency repairs`.
+  - Pushed `c5a4ee6` to `public/main`.
+  - The public commit intentionally deletes previously tracked
+    `.agent-context/HANDOFF.md` and `.agent-context/PROJECT_CONTEXT.md` from
+    the public tree. Private `main` keeps those files.
+  - Public worktree validation passed:
+    - `npm run check`
+    - `npm run check:macos`
+    - `git diff --check`
+    - Focused 160-test suite with private workspace `node_modules`.
+    - Sensitive-pattern scan found only README placeholder examples, not real
+      keys.
+  - Private `main` merged `public/main` back and resolved the expected
+    `.agent-context` modify/delete conflict by keeping private context files.
+
+## 2026-06-23 - v381 live/detail merge item-order fix deployed
+
+- Symptom:
+  - During an active Home AI thread, the initial `You` message could appear
+    below newer Codex receipt cards, disappear when a new receipt streamed, and
+    reappear after a later refresh.
+- Failing layer:
+  - Frontend live/detail merge layer in `public/app.js`.
+- Owning workspace:
+  - Codex Mobile Web plugin workspace.
+- Violated invariant:
+  - Detail/projection refresh item order is the authority for a turn. SSE/live
+    incremental append may add or update items, but it must not keep a local
+    transient item position after a refresh has returned the same item in its
+    canonical order.
+- Root cause:
+  - `mergeItemsPreservingLocalVisible()` iterated `existingItems` first and
+    merged matching incoming items into the existing local order.
+  - If a live SSE event had appended a durable `userMessage` at the tail of a
+    running turn, a later refresh containing the same item at the canonical
+    beginning of the turn still preserved the tail position.
+  - That made the already-answered initial prompt render below later assistant
+    receipts until another render path temporarily rebuilt the turn.
+- Change:
+  - `mergeItemsPreservingLocalVisible()` now iterates `incomingItems` first,
+    using refresh/projection order as authority.
+  - Matching existing items still preserve richer local visible fields when
+    appropriate, such as longer streamed agent text, but cannot override the
+    incoming item order.
+  - Truly local-only pending/overlay items are inserted back near matched
+    existing anchors instead of globally overriding refresh order.
+  - Removed the old `hasMatchingIncomingVisibleItem()` helper so the previous
+    existing-first fallback path cannot be reintroduced accidentally.
+  - Bumped frontend shell cache from `codex-mobile-shell-v380` to
+    `codex-mobile-shell-v381`.
+- Tests:
+  - Added `test/conversation-render.test.js` coverage for:
+    - durable user message appended locally at the tail is moved back to the
+      incoming refresh order;
+    - v4 projection merge corrects local SSE user-message order;
+    - longer local agent text remains preserved while order follows incoming.
+  - Updated version assertions in:
+    - `test/mobile-viewport.test.js`
+    - `test/thread-goal-service.test.js`
+    - `test/thread-task-card-route.test.js`
+- Validation:
+  - Private workspace:
+    - Focused 150-test suite passed:
+      `test/conversation-render.test.js`,
+      `test/thread-detail-projection-service.test.js`,
+      `test/thread-detail-projection-v4-service.test.js`,
+      `test/thread-visibility.test.js`,
+      `test/mobile-viewport.test.js`,
+      `test/thread-goal-service.test.js`, and
+      `test/thread-task-card-route.test.js`.
+    - `npm run check`
+    - `npm run check:macos`
+    - `git diff --check`
+    - `npm test` passed (`625` tests).
+  - Production deploy:
+    - Commit deployed: `5933772 fix: preserve projection item order during live merges`.
+    - Deploy harness:
+      `npm run --silent deploy:macos -- --target plugin:codex-mobile-web --execute --reason codex-mobile-live-merge-order-v381 --json`.
+    - Production target:
+      `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+    - Backup:
+      `/Users/hermes-host/HermesMobile/backups/deploy/20260623T101842Z-plugin-codex-mobile-web-codex-mobile-live-merge-order-v381`.
+    - Deploy validation passed: log permissions repair, shared auth permission
+      repair, file hashes, LaunchDaemon print, Hermes plugin manifest health,
+      and codex auth profile audit.
+    - Runtime smoke:
+      `/api/public-config` returned HTTP `200`,
+      `clientBuildId=0.1.11|codex-mobile-shell-v381`,
+      `shellCacheName=codex-mobile-shell-v381`, and `authRequired=true`.
+      Authenticated `/api/status` returned HTTP `200`, `ready=true`,
+      `transport=external-jsonl-tcp`, and
+      `codexHome=/Users/xuxin/.codex-homes/previous`.
+      Served `/app.js` and `/sw.js` both contain `codex-mobile-shell-v381`.
+    - Production focused 150-test suite passed in
+      `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+- Operational notes:
+  - This is deployed to Mac production.
+  - This has not been pushed to public. Follow the release-order rule and wait
+    for user confirmation before a public sync.
+  - The in-app Browser tool was not available in this session; validation used
+    production HTTP/runtime checks and the production focused test suite.
+
 ## 2026-06-22 - Foreground resume final receipt fix v376 deployed
 
 - Root cause:
