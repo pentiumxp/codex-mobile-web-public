@@ -226,7 +226,7 @@ test("raw operation fallback can attach an unfinished operation from the same li
     event("2026-05-24T10:50:02.000Z", "response_item", {
       type: "function_call",
       call_id: "call-live",
-      arguments: JSON.stringify({ command: "rg -n live public" }),
+      arguments: JSON.stringify({ cmd: "rg -n live public" }),
     }),
   ]);
   try {

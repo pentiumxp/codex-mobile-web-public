@@ -5528,9 +5528,22 @@ function commandFromRawPayload(payload) {
     return String(payload.parsed_cmd[0].cmd);
   }
   if (Array.isArray(payload.command)) return payload.command.join(" ");
+  if (payload.arguments && typeof payload.arguments === "object" && !Array.isArray(payload.arguments)) {
+    return String(payload.arguments.command
+      || payload.arguments.cmd
+      || payload.arguments.shellCommand
+      || payload.arguments.shell_command
+      || "");
+  }
   if (typeof payload.arguments === "string") {
     const parsed = parseJsonLine(payload.arguments);
-    if (parsed && parsed.command) return String(parsed.command);
+    if (parsed) {
+      return String(parsed.command
+        || parsed.cmd
+        || parsed.shellCommand
+        || parsed.shell_command
+        || "");
+    }
   }
   return "";
 }
