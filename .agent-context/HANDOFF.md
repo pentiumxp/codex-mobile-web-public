@@ -1,3 +1,70 @@
+# 2026-06-23 - Same-workspace task-card routing fix deployed
+
+- Trigger:
+  - Home AI reported same-workspace task-card sending failed from
+    `Home AI 06-22` to `Plugin Workspace Audit` even with exact
+    `targetThreadId=019ef506-cac2-76f2-a1df-46ed6de1e7eb`.
+  - The failing error was `Target thread is not the current visible thread for
+    its workspace.`
+- Root cause:
+  - `resolveThreadTaskCardTargetReference()` treated an exact thread id as
+    stale when another visible thread with the same cwd had a newer
+    `updatedAt`.
+  - Dynamic-tool target hints also collapsed visible targets to one thread per
+    cwd, so dedicated audit threads sharing `/Users/hermes-dev/HermesMobileDev/app`
+    were omitted or misrepresented.
+  - Requests that supplied exact `targetThreadId` plus `targetCwd` could treat
+    the cwd as a second fuzzy target instead of metadata.
+- Change:
+  - Exact `targetThreadId` / `targetThreadTitle` now resolve by thread identity
+    as long as the thread is visible and deliverable.
+  - Archived/deleted targets are rejected with `target_thread_archived`.
+  - Hidden/subagent/non-visible targets are rejected with
+    `target_thread_not_visible`.
+  - Exact self-cards are rejected with `target_thread_self`.
+  - `targetCwd` / `targetWorkspace` remain fuzzy workspace targets and are only
+    used when no exact thread id/title target is supplied.
+  - Dynamic-tool visible target hints no longer collapse same-cwd threads.
+  - README, cross-thread task-card implementation docs, and troubleshooting
+    docs were updated to remove the stale same-cwd canonical-thread rule.
+- Related durable thread facts:
+  - `Home AI Platform Audit`: `019ef506-c2e1-7801-be95-a0bdb42808c9`, cwd
+    `/Users/hermes-dev/HermesMobileDev/app`.
+  - `Plugin Workspace Audit`: `019ef506-cac2-76f2-a1df-46ed6de1e7eb`, cwd
+    `/Users/hermes-dev/HermesMobileDev/app`.
+  - Both were seeded with the no-HANDOFF audit rule earlier in this run.
+- Validation:
+  - `node --check server.js`
+  - Focused task-card suite:
+    `node --test test/protocol.test.js test/thread-task-card-route.test.js test/thread-task-card-service.test.js`
+  - `npm run check`
+  - `npm run check:macos`
+  - `npm test` passed (`653` tests).
+  - `git diff --check`
+  - `codegraph sync && codegraph status` reported the index up to date with the
+    existing older-engine warning.
+- Commit/deploy:
+  - Code commit: `d1d8ad0 fix: allow same-workspace task cards`.
+  - Deployed through the Home AI center script:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --execute --json`.
+  - Production source ref: `d1d8ad0b5cc8`, dirty false.
+  - Production target:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260623T153001Z-plugin-codex-mobile-web-manual`.
+  - Restart label `com.hermesmobile.plugin.codex-mobile` was running after
+    deploy; health URL passed on attempt 2.
+  - Production `npm run check` passed.
+  - `/api/public-config` returned `authRequired=true`,
+    `clientBuildId=0.1.11|codex-mobile-shell-v396`,
+    `shellCacheName=codex-mobile-shell-v396`, and
+    `defaultPermissionMode=full`.
+- Notes:
+  - This is server-only; no PWA shell/cache bump.
+  - No live same-workspace test card was created because there is no dry-run
+    route and a real card would pollute the audit/implementation threads.
+  - Public was not pushed.
+
 # 2026-06-23 - Server raw exec command text projection fix
 
 - Trigger:
