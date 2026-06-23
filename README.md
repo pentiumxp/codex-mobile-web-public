@@ -1,5 +1,7 @@
 # Codex Mobile Web
 
+- 中文说明：v382 修正 live turn 详情打开时的双路读取竞态。症状是用户刚发送“推送 public”等消息后，Codex 回执在首屏或 SSE 增量里短暂出现，随后被后到的 `thread-read` / `turns-list-initial` / full backfill 结果覆盖并消失；服务端详情接口仍能读到该回执，所以失败层不是写入或投影丢数据，而是前端同一 turn 的 item 合并规则。旧逻辑用整个 turn 的可见内容总权重判断是否保留本地已显示项，后到的回填如果带着更多旧命令输出但缺少刚出现的 assistant receipt，就可能把已经显示过的回执删掉。现在同一未完成 live turn 的可见项合并改为单调：后到结果可以更新已有项、补充新项、按 incoming 顺序校正已有项，但不能删除已经显示过且未被同 ID/同文本/用户消息去重规则替代的非 reasoning 可见项；completed turn 仍按服务端最终结果收敛。新增回归测试覆盖“回执已显示，后到 thread-read 有更多旧内容但缺回执”的路径。PWA shell cache 升级到 `codex-mobile-shell-v382`。
+
 - 中文说明：v381 修正 live SSE 增量和 detail/projection refresh 合并时的 item 顺序所有权。症状是运行中 turn 的初始 `You` 消息可能被错误显示在较新的 Codex 回执下面，并随着新回执或后台 refresh 反复消失/出现；失败层是前端 `mergeItemsPreservingLocalVisible()` 把本地增量数组顺序当成权威，保留了 SSE 先 append 到 turn 尾部的 userMessage 位置。现在 refresh/projection 的 incoming item 顺序是权威顺序，本地只保留真正没有进入 refresh 的 pending/local-only item，并按已有锚点插回；已有更完整的本地 agent 文本仍可保留，但不能改变服务端权威 user/agent 顺序。旧的 `hasMatchingIncomingVisibleItem()` 路径已删除，避免继续留下“先遍历 existingItems”的兜底后遗症。PWA shell cache 升级到 `codex-mobile-shell-v381`。
 
 ## 2026-06-23 public 发布说明：线程详情、线程列表和完成回执一致性修复

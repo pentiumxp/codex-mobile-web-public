@@ -568,6 +568,7 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "mergeVisibleTextItemPreservingRenderIdentity",
     "insertLocalOnlyItemByExistingOrder",
     "mergeItemsPreservingLocalVisible",
+    "shouldPreserveLiveTurnLocalVisibleItems",
     "mergeTurnPreservingVisibleItems",
     "mergeThreadPreservingVisibleItems",
   ].map((name) => functionSourceFrom(appJs, name));
@@ -2640,6 +2641,51 @@ test("v4 projection merge preserves local pending message when server refresh ha
     "local-user-submit-current",
   ]);
   assert.equal(merged.mobileProjectionVersion, "v4");
+});
+
+test("live turn merge keeps displayed assistant receipt when backfill has more stale items", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const existingThread = {
+    id: "thread-new",
+    turns: [{
+      id: "turn-current",
+      status: { type: "active" },
+      items: [
+        { id: "user-current", type: "userMessage", content: [{ type: "text", text: "push public" }] },
+        { id: "agent-live-receipt", type: "agentMessage", text: "pausing public push" },
+      ],
+    }],
+  };
+  const incomingThread = {
+    id: "thread-new",
+    mobileReadMode: "thread-read",
+    turns: [{
+      id: "turn-current",
+      status: { type: "active" },
+      items: [
+        { id: "user-current", type: "userMessage", content: [{ type: "input_text", text: "push public" }] },
+        {
+          id: "older-command-output",
+          type: "commandExecution",
+          status: "completed",
+          command: "npm test",
+          output: "older backfill output ".repeat(40),
+        },
+      ],
+    }],
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, incomingThread);
+
+  assert.deepEqual(merged.turns[0].items.map((item) => item.id), [
+    "user-current",
+    "agent-live-receipt",
+    "older-command-output",
+  ]);
+  assert.equal(
+    merged.turns[0].items.find((item) => item.id === "agent-live-receipt").text,
+    "pausing public push",
+  );
 });
 
 test("v4 projection merge removes local pending message after durable user match arrives", () => {

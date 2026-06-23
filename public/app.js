@@ -388,7 +388,7 @@ const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v381";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v382";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -5291,10 +5291,20 @@ function mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) {
   if (!incomingHasItems) merged.items = existingItems;
   else {
     const incomingWeight = turnVisibleWeight(Object.assign({}, incomingTurn, { items: incomingTurn.items || [] }));
-    const preserveLocalVisible = incomingWeight < turnVisibleWeight(existingTurn);
+    const existingWeight = turnVisibleWeight(existingTurn);
+    const preserveLocalVisible = incomingWeight < existingWeight
+      || shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight);
     merged.items = mergeItemsPreservingLocalVisible(existingItems, incomingTurn.items || [], preserveLocalVisible);
   }
   return merged;
+}
+
+function shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight = null) {
+  if (!existingTurn || !incomingTurn) return false;
+  if (String(existingTurn.id || "") !== String(incomingTurn.id || "")) return false;
+  if (isTurnComplete(existingTurn) || isTurnComplete(incomingTurn)) return false;
+  const weight = existingWeight == null ? turnVisibleWeight(existingTurn) : Number(existingWeight || 0);
+  return weight > 0;
 }
 
 function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
