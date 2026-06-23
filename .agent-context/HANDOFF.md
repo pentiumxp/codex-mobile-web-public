@@ -3155,6 +3155,57 @@ The previous full handoff was archived and should be opened only when old proven
   - This is one completed development phase, not completion of the full
     system-level refactor objective.
 
+## 2026-06-24 - Phase 2 architecture refactor: thread turn compaction policy
+
+- User goal:
+  - Continue the phased Codex Mobile Web system-level refactor in development.
+  - Prefer central-contract/root-cause closure over broad fallbacks.
+  - Keep work effective and bounded; no deployment until all requested phases
+    are complete and verified.
+- Phase 2 scope:
+  - Extract pure thread-detail turn compaction policy from `server.js` into
+    `adapters/thread-turn-compaction-policy-service.js`.
+  - Covered policies:
+    - trailing operation retention;
+    - receipt-only item index selection;
+    - ended-turn and visible non-live turn discovery;
+    - operation-detail turn selection for live/resting detail windows.
+  - `server.js` still composes rollout, image, Usage, pending echo, stale
+    active, and raw-operation fallback enrichment.
+  - No fallback behavior was added.
+- Changed files:
+  - `adapters/thread-turn-compaction-policy-service.js`
+  - `server.js`
+  - `test/thread-turn-compaction-policy-service.test.js`
+  - `package.json`
+  - `docs/MODULES.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/COMPLEX_FEATURE_PATHS.md`
+- Validation:
+  - Focused thread-detail/render/projection/Usage suites passed: `154` tests
+    across `test/thread-turn-compaction-policy-service.test.js`,
+    `test/thread-item-timestamp-enrichment.test.js`,
+    `test/conversation-render.test.js`,
+    `test/thread-detail-projection-service.test.js`,
+    `test/thread-visible-item-normalizer.test.js`,
+    `test/thread-detail-projection-v4-service.test.js`,
+    `test/turn-scroll-controls.test.js`, and
+    `test/turn-usage-summary-service.test.js`.
+  - `npm run check`
+  - `npm test` passed (`674` tests).
+  - `npm run check:macos`
+  - `git diff --check`
+  - Home AI central checker:
+    `node scripts/plugin-workspace-platform-contract-check.js --plugin codex-mobile --json`
+    returned `ok: true`; existing warning: `handoff_pointer_missing`.
+  - `codegraph sync && codegraph status` reported the index is up to date; it
+    still warns the index was built by an earlier engine version.
+- Deployment status:
+  - Not deployed.
+  - Not pushed to public.
+  - This is a second completed development phase, not completion of the full
+    system-level refactor objective.
+
 ## 2026-06-23 - System/assistant image output media contract fix
 
 - User-facing symptom:

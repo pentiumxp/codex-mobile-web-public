@@ -127,6 +127,7 @@ Implementation path:
 12. Existing v3 behavior still uses
     `test/thread-item-timestamp-enrichment.test.js`,
     `test/conversation-render.test.js`, `test/collab-agent-render.test.js`,
+    `test/thread-turn-compaction-policy-service.test.js`,
     `test/message-timestamp.test.js`, `test/turn-scroll-controls.test.js`,
     `test/turn-usage-summary-service.test.js`, and
     `test/mobile-viewport.test.js`.

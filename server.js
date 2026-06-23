@@ -80,6 +80,7 @@ const { ensureCodexMobileMcpServer } = require("./adapters/codex-mobile-mcp-conf
 const { ensureCodexProjectsTrusted } = require("./adapters/codex-project-trust-service");
 const { createThreadDetailProjectionService } = require("./adapters/thread-detail-projection-service");
 const { createThreadDetailProjectionV4Service } = require("./adapters/thread-detail-projection-v4-service");
+const { createThreadTurnCompactionPolicyService } = require("./adapters/thread-turn-compaction-policy-service");
 const { createChatGptProBridgeService } = require("./adapters/chatgpt-pro-bridge-service");
 const { createChatGptProPlannerService } = require("./adapters/chatgpt-pro-planner-service");
 const { createChatGptProMcpService } = require("./adapters/chatgpt-pro-mcp-service");
@@ -5831,19 +5832,18 @@ function compactItem(item, options = {}) {
   return out;
 }
 
+const threadTurnCompactionPolicyService = createThreadTurnCompactionPolicyService({
+  isLiveTurn,
+  isCompletedStatus,
+  isOperationalItem,
+  isUserQuestionItem,
+  isAssistantReceiptItem,
+  isVisualReceiptItem,
+  isTurnUsageSummaryItem,
+});
+
 function trailingOperationIndexes(items, allowLiveOperation, maxOperations = 1) {
-  const indexes = new Set();
-  if (!allowLiveOperation || !Array.isArray(items)) return indexes;
-  const requestedLimit = Number(maxOperations || 1);
-  const limit = maxOperations === "all"
-    ? items.length
-    : Math.max(1, Math.min(50, Number.isFinite(requestedLimit) ? requestedLimit : 1));
-  for (let index = items.length - 1; index >= 0; index -= 1) {
-    if (!isOperationalItem(items[index])) continue;
-    indexes.add(index);
-    if (indexes.size >= limit) break;
-  }
-  return indexes;
+  return threadTurnCompactionPolicyService.trailingOperationIndexes(items, allowLiveOperation, maxOperations);
 }
 
 function isUserQuestionItem(item) {
@@ -6061,84 +6061,27 @@ function filterDuplicateUploadImageViewsInTurnItems(items, options = {}) {
 }
 
 function receiptOnlyItemIndexes(items) {
-  const indexes = new Set();
-  if (!Array.isArray(items)) return indexes;
-  let receiptIndex = -1;
-  for (let index = 0; index < items.length; index += 1) {
-    const item = items[index];
-    if (isUserQuestionItem(item)) indexes.add(index);
-    if (isTurnUsageSummaryItem(item)) indexes.add(index);
-    if (isVisualReceiptItem(item)) indexes.add(index);
-    if (isAssistantReceiptItem(item)) receiptIndex = index;
-  }
-  if (receiptIndex >= 0) indexes.add(receiptIndex);
-  return indexes;
+  return threadTurnCompactionPolicyService.receiptOnlyItemIndexes(items);
 }
 
 function isEndedTurn(turn) {
-  if (!turn || typeof turn !== "object" || isLiveTurn(turn)) return false;
-  if (isCompletedStatus(turn.status)) return true;
-  return Boolean(turn.completedAt || turn.completed_at || turn.completedAtMs
-    || turn.endedAt || turn.ended_at || turn.finishedAt || turn.finished_at
-    || turn.durationMs || turn.duration_ms);
+  return threadTurnCompactionPolicyService.isEndedTurn(turn);
 }
 
 function findPreviousEndedTurnIndex(turns, startIndex) {
-  for (let index = Math.min(startIndex, turns.length - 1); index >= 0; index -= 1) {
-    if (isEndedTurn(turns[index])) return index;
-  }
-  for (let index = Math.min(startIndex, turns.length - 1); index >= 0; index -= 1) {
-    if (turns[index] && !isLiveTurn(turns[index])) return index;
-  }
-  return -1;
+  return threadTurnCompactionPolicyService.findPreviousEndedTurnIndex(turns, startIndex);
 }
 
 function turnHasVisibleDetailItems(turn) {
-  if (!turn || !Array.isArray(turn.items)) return false;
-  return turn.items.some((item) => isUserQuestionItem(item)
-    || isAssistantReceiptItem(item)
-    || isVisualReceiptItem(item)
-    || isOperationalItem(item)
-    || isTurnUsageSummaryItem(item));
+  return threadTurnCompactionPolicyService.turnHasVisibleDetailItems(turn);
 }
 
 function findPreviousVisibleNonLiveTurnIndex(turns, startIndex) {
-  for (let index = Math.min(startIndex, turns.length - 1); index >= 0; index -= 1) {
-    const turn = turns[index];
-    if (!turn || isLiveTurn(turn)) continue;
-    if (turnHasVisibleDetailItems(turn)) return index;
-  }
-  return -1;
+  return threadTurnCompactionPolicyService.findPreviousVisibleNonLiveTurnIndex(turns, startIndex);
 }
 
 function operationDetailTurnIndexes(turns) {
-  const indexes = new Set();
-  if (!Array.isArray(turns) || turns.length === 0) return indexes;
-  let latestLiveIndex = -1;
-  for (let index = turns.length - 1; index >= 0; index -= 1) {
-    if (isLiveTurn(turns[index])) {
-      latestLiveIndex = index;
-      break;
-    }
-  }
-  if (latestLiveIndex >= 0) {
-    indexes.add(latestLiveIndex);
-    const previousVisibleIndex = findPreviousVisibleNonLiveTurnIndex(turns, latestLiveIndex - 1);
-    if (previousVisibleIndex >= 0) indexes.add(previousVisibleIndex);
-    const previousEndedIndex = findPreviousEndedTurnIndex(turns, latestLiveIndex - 1);
-    if (previousEndedIndex >= 0) indexes.add(previousEndedIndex);
-    return indexes;
-  }
-  const latestVisibleIndex = findPreviousVisibleNonLiveTurnIndex(turns, turns.length - 1);
-  if (latestVisibleIndex >= 0) {
-    indexes.add(latestVisibleIndex);
-    const latestEndedIndex = findPreviousEndedTurnIndex(turns, turns.length - 1);
-    if (latestEndedIndex >= 0) indexes.add(latestEndedIndex);
-    return indexes;
-  }
-  const latestEndedIndex = findPreviousEndedTurnIndex(turns, turns.length - 1);
-  indexes.add(latestEndedIndex >= 0 ? latestEndedIndex : turns.length - 1);
-  return indexes;
+  return threadTurnCompactionPolicyService.operationDetailTurnIndexes(turns);
 }
 
 function compactTurn(turn, options = {}) {
