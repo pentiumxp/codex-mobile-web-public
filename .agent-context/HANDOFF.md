@@ -41,10 +41,34 @@
   - `npm run check:macos`
   - `npm test` passed (`651` tests).
   - `git diff --check`
+- Commit/deploy:
+  - Local commit: `9977bc0 fix: stabilize command dock semantics`.
+  - Deployed with the Home AI center deploy script:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --execute --json`.
+  - Production source ref: `9977bc008a00`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260623T143747Z-plugin-codex-mobile-web-manual`.
+- Production smoke:
+  - `/api/public-config` returned HTTP `200`,
+    `clientBuildId=0.1.11|codex-mobile-shell-v394`,
+    `shellCacheName=codex-mobile-shell-v394`, and `authRequired=true`.
+  - Production `public/app.js`, `public/styles.css`, and `public/sw.js`
+    contain v394 shell/build markers, the active-turn dock placeholder helper,
+    command-argument extraction, `40px` dock fallback height, and `32px`
+    compact card height.
+- Visual verification:
+  - Home AI central iOS PWA embedded shell scenario passed with video capture:
+    `/tmp/homeai-codex-v394-visual/direct/codex-v394-embedded-shell.mp4`.
+  - Screenshot:
+    `/tmp/homeai-codex-v394-visual/direct/codex-v394-embedded-shell.png`.
+  - Assertions passed for plugin id, embedded shell/frame presence, meaningful
+    frame size, no horizontal overflow, and screenshot byte threshold.
+  - Visual inspection showed the bottom live-operation row at single-line
+    height. The visible row was an actual `Command running` operation, so
+    status/duration were expected; pure reasoning placeholders stay
+    semantics-neutral.
 - Next:
-  - Commit and deploy via the Home AI center deploy script.
-  - Run Home AI visual verification after deploy.
-  - Do not push Public until production/user testing is confirmed.
+  - Do not push v394 Public until production/user testing is confirmed.
 
 # 2026-06-23 - v393 active-turn bottom status row stabilization
 
