@@ -39,11 +39,12 @@ The full previous context was archived and should be read only when this routing
 - Do not add fallback layers that merely mask projection, synchronization, state ownership, routing, or runtime-contract defects while leaving the underlying inconsistency in place.
 - Any temporary diagnostic workaround must be explicitly scoped, documented, and removed or replaced by the architectural fix before production/public release.
 
-## Home AI Root-Cause Contract
+## Home AI Root-Cause And Fallback Governance Contracts
 
 - For plugin bugfix, deploy, MCP, schema, provisioning, and platform-boundary work, follow the central Home AI root-cause architecture contract at `/Users/hermes-dev/HermesMobileDev/app/docs/PLATFORM_CONTRACTS/root-cause-architecture-contract.md`.
-- Treat that Home AI file as the canonical contract and reference it directly; do not copy the full contract into this plugin workspace.
-- Before non-trivial fixes, identify the symptom, failing layer, owning workspace, violated invariant, root cause or strongest hypothesis, and closure validation. Fallbacks must be bounded, observable, temporary, validated, and have an owner/removal path.
+- For any new or extended fallback behavior, follow `/Users/hermes-dev/HermesMobileDev/app/docs/PLATFORM_CONTRACTS/fallback-governance-contract.md` and register active mitigation in `/Users/hermes-dev/HermesMobileDev/app/docs/IMPLEMENTATION_NOTES/fallback-registry.md`.
+- Treat those Home AI files as canonical contracts and reference them directly; do not copy the full contracts or registry into this plugin workspace.
+- Before non-trivial fixes, identify the symptom, failing layer, owning workspace, violated invariant, root cause or strongest hypothesis, mitigation versus closure classification, and closure validation. Fallbacks must be bounded, observable, temporary, validated, owner-assigned, and either removed or centrally registered.
 
 ## Preserved Project Context Excerpt
 

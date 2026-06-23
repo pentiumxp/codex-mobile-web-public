@@ -1,3 +1,27 @@
+# 2026-06-23 - Home AI fallback governance pointer adopted
+
+- Trigger:
+  - Cross-thread task card from Home AI requested Codex Mobile plugin workspace
+    adoption of the central fallback governance contract and registry pointers.
+- Change:
+  - Updated `docs/HOME_AI_PLATFORM_CONTRACT.md` so the canonical Home AI docs
+    list includes:
+    - `/Users/hermes-dev/HermesMobileDev/app/docs/PLATFORM_CONTRACTS/root-cause-architecture-contract.md`
+    - `/Users/hermes-dev/HermesMobileDev/app/docs/PLATFORM_CONTRACTS/fallback-governance-contract.md`
+    - `/Users/hermes-dev/HermesMobileDev/app/docs/IMPLEMENTATION_NOTES/fallback-registry.md`
+    - `/Users/hermes-dev/HermesMobileDev/app/docs/MODULES/ai-operations-control-plane.md`
+    - `/Users/hermes-dev/HermesMobileDev/app/docs/IMPLEMENTATION_NOTES/ai-operations-control-plane.md`
+  - Updated `.agent-context/PROJECT_CONTEXT.md` durable routing so future
+    non-trivial fixes classify mitigation versus closure and centrally register
+    any new or extended fallback behavior.
+- Scope:
+  - Documentation/context-only. No fallback behavior, business code, runtime
+    route, deployment, or public sync changes were made for this task.
+- Validation:
+  - `rg -n "root-cause-architecture-contract|fallback-governance-contract|fallback-registry" docs/HOME_AI_PLATFORM_CONTRACT.md .agent-context/PROJECT_CONTEXT.md .agent-context/HANDOFF.md`
+  - `git diff --check`
+  - No dedicated local docs-check package script was present.
+
 # 2026-06-23 - v389 projection ownership fix deployed, public not pushed
 
 - User correction:
