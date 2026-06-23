@@ -21,6 +21,82 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-23 - Uploaded Image Echo Suppression And Plugin Continuation Contract v388
+
+- Status: implemented, committed, deployed to Mac production, and
+  smoke-validated. Not pushed public.
+- Commit:
+  - `4aaf92b fix: suppress uploaded image echo receipts`
+- User triggers:
+  - User clarified that an uploaded image displays correctly in the local/user
+    message bubble, then a later system/tool matcher receipt repeats the same
+    image as an `Image` card and that duplicate receipt is the broken surface.
+  - User also requested plugin-mode compression continuations to inject a
+    prompt requiring the new thread to fully load and follow the Home AI
+    central platform contract.
+- Changes:
+  - `server.js`
+    - `readRolloutToolOutputImageItems()` now records `view_image` call ids
+      whose source path is under the Codex Mobile upload root.
+    - `compactTurn()` suppresses tool/image receipts for the same uploaded
+      file when the turn already has a user upload summary, including native
+      `imageView` echoes that only retain the upload filename or matching
+      `view_image` call id.
+    - Real generated screenshots/tool images without a matching user upload
+      summary still render as generated-image cards.
+    - Plugin-mode continuation bootstrap adds a `Home AI Central Contract`
+      section pointing to
+      `/Users/hermes-dev/HermesMobileDev/app/docs/PLATFORM_CONTRACTS/plugin-workspace-platform-contract.md`.
+  - `public/app.js`
+    - Embedded/plugin continuation requests now include `pluginMode=hermes`,
+      `hermesPluginMode`, and `pluginId=codex-mobile`.
+  - `public/sw.js`
+    - PWA shell cache advanced to `codex-mobile-shell-v388`.
+  - Docs updated:
+    - `README.md`
+    - `docs/ARCHITECTURE.md`
+    - `docs/TROUBLESHOOTING.md`
+- Tests:
+  - Focused suites passed:
+    - `test/tool-output-image-projection.test.js`
+    - `test/continuation-lineage.test.js`
+    - `test/new-thread-route.test.js`
+    - `test/conversation-render.test.js`
+    - `test/mobile-viewport.test.js`
+    - `test/thread-goal-service.test.js`
+    - `test/thread-task-card-route.test.js`
+  - `npm run check` passed.
+  - `npm test` passed: `642/642`.
+- Production deploy:
+  - Used Home AI central deploy script directly from
+    `/Users/hermes-dev/HermesMobileDev/app`; no task card was used for deploy.
+  - Source ref: `4aaf92b1ef20`, dirty `false`.
+  - Production target:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260623T121427Z-plugin-codex-mobile-web-manual`.
+  - Deploy validation passed production file hashes, launchd print,
+    `/api/public-config`, and Codex auth profile audit.
+- Production smoke:
+  - `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v388`,
+    `shellCacheName=codex-mobile-shell-v388`, and build id
+    `91955e07b8588cc1`.
+  - Authenticated `/api/status` returned `ready=true` and
+    `transport=external-jsonl-tcp`.
+  - Production source contains `suppressedUploadViewImageCallIds` and
+    `Home AI Central Contract`.
+  - Current Codex Mobile thread
+    `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3` full detail returned HTTP `200`;
+    the sampled uploaded image `homeai-upload-33BC9A93...jpg` appears only as
+    the user message item and has no duplicate system `imageView` receipt.
+- Operational notes:
+  - Existing browser/PWA sessions must load the v388 shell for the
+    plugin-mode continuation request fields; the server-side image echo
+    suppression is active after the production restart.
+  - Public sync/push remains pending until the user explicitly asks for public
+    publication after production validation.
+
 ## 2026-06-23 - Continuation First-Open Receipt v386
 
 - Status: implemented, locally committed, deployed to Mac production, and
