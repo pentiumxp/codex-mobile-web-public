@@ -21,6 +21,92 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-23 - Embedded Image Card Rendering v379 Deployed
+
+- Status: implemented, validated, locally committed, deployed to Mac
+  production, and not pushed public.
+- Trigger:
+  - Home AI task card reported that the embedded Codex `Music` thread showed a
+    broken `Image` card on iOS/PWA for
+    `1782199969807-4e31c10e9220-homeai-upload-2E2E2EB6-136A-4EA9-96B6-84C29D358A87.jpg`.
+  - Home AI-side evidence showed the upload file and generated-image copy were
+    valid `882x1280` RGB JPEGs, 164771 bytes, and Home AI proxy returned the
+    exact same bytes with HTTP 200 / `image/jpeg`.
+- Diagnosis:
+  - v378 allowed embedded protected images to start with direct same-origin
+    `/api/uploads/file` or `/api/generated-images/file` URLs, but scheduled
+    image scans could still fetch and proactively replace still-loading direct
+    images with `data:image/...` or `blob:` URLs.
+  - Chromium could render the data URL path, but the reported failure was on
+    iOS/PWA; the safer embedded/iOS path is to keep proxy-safe same-origin file
+    URLs and use fetch only for error recovery.
+  - Production `Music` recent API showed the target filename only inside
+    bounded reasoning metadata in the latest 10 turns; a post-deploy embedded
+    Chromium check did not find the target figure in the currently visible
+    window, likely because the large Music thread had shifted it into older
+    history. Route and focused DOM harness checks covered the target URL path.
+- Change:
+  - `public/app.js`
+    - Added `codexMobileUploadIdForPath()` so default-runtime upload paths
+      render as `/api/uploads/file?id=<upload-root-relative-id>` instead of
+      `path=<absolute local path>` in browser image `src`.
+    - Embedded/Hermes direct protected images are no longer proactively
+      hydrated by scheduled scans while they are still loading.
+    - Embedded and iOS recovery keeps a cache-busted same-origin file URL
+      before falling back to page-local `data:` / `blob:` recovery.
+    - PWA shell/client build advanced to `codex-mobile-shell-v379`.
+  - `server.js`
+    - `/api/uploads/file` accepts an `id` query parameter resolved only under
+      `UPLOAD_ROOT`; legacy `path` remains as a compatibility fallback.
+  - Docs updated:
+    - `README.md`
+    - `docs/ARCHITECTURE.md`
+    - `docs/TROUBLESHOOTING.md`
+- Tests and validation:
+  - Focused local:
+    - `node --test test/conversation-render.test.js test/file-preview-ui.test.js`
+      passed 75/75.
+    - `node --test test/conversation-render.test.js test/file-preview-ui.test.js
+      test/mobile-viewport.test.js test/thread-task-card-route.test.js
+      test/thread-goal-service.test.js` passed 98/98.
+    - `node --test test/generated-image-cache-service.test.js
+      test/tool-output-image-projection.test.js` passed 12/12.
+  - Full local:
+    - `npm run check`
+    - `npm run check:macos`
+    - `npm test` passed 613/613.
+    - `git diff --check`
+  - Production target after deploy:
+    - `npm run check`
+    - `npm run check:macos`
+    - `node --test test/conversation-render.test.js test/file-preview-ui.test.js
+      test/mobile-viewport.test.js` passed 83/83.
+    - Direct Codex route
+      `/api/uploads/file?id=2026-06-23/.../1782199969807-...jpg` returned HTTP
+      200, `image/jpeg`, 164771 bytes, short SHA `687f8f083cf0e92a`, and bytes
+      equal to disk.
+    - Home AI proxy route for the same `id` returned HTTP 200, `image/jpeg`,
+      164771 bytes, short SHA `687f8f083cf0e92a`, and bytes equal to disk.
+    - `/api/public-config` returned
+      `clientBuildId=0.1.11|codex-mobile-shell-v379` and
+      `shellCacheName=codex-mobile-shell-v379`.
+    - Authenticated `/api/status` returned `ready=true`.
+    - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` is running.
+- Commit/deploy:
+  - Local code commit:
+    `c71c619 fix: stabilize embedded image card rendering`.
+  - Production deploy used Home AI central Mac deploy:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --execute --json`.
+  - Target:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260623T075712Z-plugin-codex-mobile-web-manual`.
+- Operational notes:
+  - This has not been pushed public.
+  - iOS/WebKit was not directly available in this thread; coverage is through
+    production route smoke, Chromium embedded route checks, and focused DOM
+    harness tests for embedded direct URL and error recovery behavior.
+
 ## 2026-06-23 - Public Sync After Dynamic Task Card Fix
 
 - Status: public sync completed after Mac production deploy and user
