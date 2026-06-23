@@ -31,6 +31,27 @@
     `test/generated-image-cache-service.test.js`,
     `test/file-preview-ui.test.js`,
     `test/build-refresh-policy.test.js`, and `test/app-update.test.js`.
+  - `node --check server.js && node --check adapters/thread-task-card-service.js && node --check test/protocol.test.js && node --check test/thread-task-card-service.test.js && node --check test/thread-task-card-route.test.js`
+  - `npm run check`
+  - `npm run check:macos`
+  - `npm test` passed (`663` tests).
+  - `git diff --check`
+  - `codegraph sync && codegraph status` reported the index up to date with
+    the existing earlier-engine warning.
+- Commit/deploy:
+  - Code commit: `700215c fix: harden task-card store and routing coverage`.
+  - Deployed through the Home AI center script from
+    `/Users/hermes-dev/HermesMobileDev/app`:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --execute --json`.
+  - Production source ref: `700215cf6197`, dirty false.
+  - Production target:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260623T163413Z-plugin-codex-mobile-web-manual`.
+  - `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v400` and
+    `shellCacheName=codex-mobile-shell-v400`; no frontend shell bump was needed.
+  - Production `npm run check` passed.
 - Remaining audit scope:
   - PWA/WebView shell lifecycle and media rendering already have focused
     source/DOM tests in this checkout, but a live iOS/WebView video harness
