@@ -1,3 +1,64 @@
+# 2026-06-24 - Task-card source title and CodeGraph MCP elicitation v400 deployed
+
+- Trigger:
+  - User reported v399 injected task-card chrome still showed the wrong source
+    thread title, e.g. `# Continuation Bootstrap Index`, instead of the
+    original thread name.
+  - User also reported the `男装衣橱` thread again showed an MCP prompt:
+    `Allow the codegraph MCP server to run tool "codegraph_search"?`.
+- Root cause:
+  - Task-card creation paths accepted recoverable continuation bootstrap text
+    from app-server `name`/`preview` as `sourceThreadTitle`.
+  - `mcpServer/elicitation/request` was treated as ordinary user input and
+    broadcast to the UI; the workspace/source-write guard did not cover
+    CodeGraph MCP's own read-only tool permission prompt.
+- Change:
+  - `server.js` now normalizes thread display titles through
+    `threadDisplayTitle()` / `taskCardSourceThreadTitle()`, skipping
+    `# Continuation Bootstrap Index` and similar recoverable titles. It
+    hydrates from the Mobile session index when available before creating
+    task cards or replies.
+  - `public/app.js` mirrors the same title preference so browser-created task
+    cards send a real display title instead of bootstrap text.
+  - `adapters/thread-task-card-service.js` now includes `Source thread id:` in
+    injected task-card text so future title failures remain traceable.
+  - `server.js` now auto-accepts only CodeGraph read-only MCP elicitation for
+    `codegraph_search`, `codegraph_explore`, `codegraph_node`, and
+    `codegraph_callers`. Other MCP servers or unknown tools still require
+    explicit handling.
+  - PWA shell/cache advanced to `codex-mobile-shell-v400`.
+- Validation:
+  - `node --check server.js && node --check public/app.js && node --check public/sw.js && node --check adapters/thread-task-card-service.js`
+  - Focused suite passed:
+    `test/protocol.test.js`, `test/thread-visibility.test.js`,
+    `test/conversation-render.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-task-card-route.test.js`, and
+    `test/thread-goal-service.test.js`.
+  - `npm run check`
+  - `npm run check:macos`
+  - `npm test` passed (`658` tests).
+  - `git diff --check`
+  - `codegraph sync && codegraph status` reported the index up to date with
+    the existing older-engine warning.
+- Commit/deploy:
+  - Code commit: `bfbbc22 fix: normalize task-card source titles`.
+  - Deployed through the Home AI center script:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --execute --json`.
+  - Production source ref: `bfbbc2217707`, dirty false.
+  - Production target:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260623T162110Z-plugin-codex-mobile-web-manual`.
+  - `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v400` and
+    `shellCacheName=codex-mobile-shell-v400`.
+  - Production `npm run check` passed.
+  - Authenticated `/api/approvals` returned `count=0`.
+- Notes:
+  - Public was not pushed in this step.
+  - Existing already-rendered approval cards may require a thread refresh to
+    disappear, but the server no longer has pending requests after deployment.
+
 # 2026-06-24 - Task-card chrome v399 and operation bubble minimum display deployed
 
 - Trigger:
