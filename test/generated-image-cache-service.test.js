@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { test } = require("node:test");
+const { pathToFileURL } = require("node:url");
 
 const {
   cacheGeneratedImageDataUrl,
@@ -24,6 +25,14 @@ test("image view source path is extracted from direct and nested item fields", (
   assert.equal(imageViewSourcePath({ type: "imageView", arguments: { imagePath: "C:\\tmp\\b.png" } }), "C:\\tmp\\b.png");
   assert.equal(imageViewSourcePath({ type: "imageView", result: { filePath: "C:\\tmp\\c.png" } }), "C:\\tmp\\c.png");
   assert.equal(imageViewSourcePath({ type: "imageGeneration", savedPath: "C:\\tmp\\generated.png" }), "C:\\tmp\\generated.png");
+});
+
+test("image view source path accepts local url fields but not browser routes", () => {
+  const source = path.join(os.tmpdir(), "codex-mobile-image-url-source.png");
+  assert.equal(imageViewSourcePath({ type: "imageView", url: source }), source);
+  assert.equal(imageViewSourcePath({ type: "imageView", image_url: pathToFileURL(source).href }), source);
+  assert.equal(imageViewSourcePath({ type: "imageView", url: "/api/generated-images/file?id=thread%2Fimage.png" }), "");
+  assert.equal(imageViewSourcePath({ type: "imageView", url: "assistant-output.png" }), "");
 });
 
 test("generated image cache copies imageView screenshots into a runtime-safe cache", () => {
@@ -47,6 +56,32 @@ test("generated image cache copies imageView screenshots into a runtime-safe cac
   assert.equal(cached.contentType, "image/png");
   assert.equal(fs.readFileSync(cached.cachedPath).length, 4);
   assert.equal(generatedImagePathForId(cacheRoot, cached.cacheId), cached.cachedPath);
+});
+
+test("generated image cache copies local image urls into a runtime-safe cache", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-generated-url-source-"));
+  const cacheRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-generated-url-cache-"));
+  const source = path.join(tempRoot, "assistant-output.png");
+  fs.writeFileSync(source, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  try {
+    const cached = cacheGeneratedImageForItem(
+      { type: "imageView", image_url: source },
+      {
+        cacheRoot,
+        threadId: "thread-url-image",
+        maxBytes: 1024,
+        contentTypes: imageTypes,
+      },
+    );
+
+    assert.ok(cached.cacheId.includes("thread-url-image/"));
+    assert.equal(cached.fileName, "assistant-output.png");
+    assert.equal(cached.contentType, "image/png");
+    assert.equal(fs.readFileSync(cached.cachedPath).length, 4);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    fs.rmSync(cacheRoot, { recursive: true, force: true });
+  }
 });
 
 test("generated image cache stores safe bitmap data urls", () => {

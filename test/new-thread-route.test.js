@@ -263,6 +263,32 @@ test("continuation paths apply inherited model and effort", () => {
   assert.match(startContinuationBody, /const bootstrapParams = applyTurnRuntimeSettings\(/, "continuation bootstrap turn should inherit model and effort");
 });
 
+test("embedded plugin continuations carry plugin mode into the bootstrap", () => {
+  const requestBody = functionBody(appJs, "startThreadRequestBody");
+  assert.match(requestBody, /const pluginMode = isHermesEmbedMode\(\) \? "hermes" : ""/);
+  assert.match(requestBody, /pluginMode,/);
+  assert.match(requestBody, /hermesPluginMode: Boolean\(pluginMode\)/);
+  assert.match(requestBody, /pluginId: pluginMode \? "codex-mobile" : ""/);
+
+  const directStartBody = functionBody(appJs, "startNewThreadFromThread");
+  assert.match(directStartBody, /pluginMode: isHermesEmbedMode\(\) \? "hermes" : ""/);
+  assert.match(directStartBody, /hermesPluginMode: isHermesEmbedMode\(\)/);
+  assert.match(directStartBody, /pluginId: isHermesEmbedMode\(\) \? "codex-mobile" : ""/);
+
+  const pluginModeBody = functionBody(serverJs, "continuationPluginMode");
+  assert.match(pluginModeBody, /mode === "hermes" \|\| mode === "homeai" \|\| mode === "plugin"/);
+  assert.match(pluginModeBody, /body\.hermesPluginMode === true/);
+  assert.match(pluginModeBody, /pluginId \? "hermes" : ""/);
+
+  const sourceKeyBody = functionBody(serverJs, "continuationJobSourceKey");
+  assert.match(sourceKeyBody, /continuationPluginMode\(body\)/);
+  const startContinuationBody = functionBody(serverJs, "startThreadFromRequestBody");
+  assert.match(startContinuationBody, /const pluginMode = continuationPluginMode\(body\)/);
+  assert.match(startContinuationBody, /newThreadBootstrapInput\(\{ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff, pluginMode \}\)/);
+  assert.match(functionBody(serverJs, "createContinuationJob"), /pluginMode: continuationPluginMode\(body\)/);
+  assert.match(functionBody(serverJs, "publicContinuationJob"), /pluginMode: job\.pluginMode \|\| ""/);
+});
+
 test("continuation can fall back when source thread cannot write a handoff", () => {
   const sourceHandoffBody = functionBody(serverJs, "createSourceContinuationHandoff");
   assert.match(sourceHandoffBody, /sourceSnapshot/, "source handoff generation should receive the source snapshot for fallback");

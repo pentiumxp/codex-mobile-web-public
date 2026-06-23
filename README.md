@@ -1,5 +1,21 @@
 # Codex Mobile Web
 
+- 中文说明：v390 修正同一页面内 active turn 结束后可能短暂保留两条 Codex 回执的问题。失败层是前端 V4 thread detail 合并：为避免 live refresh 变轻，旧逻辑会保留本地-only 可见项；当 completed 服务端投影已经带回最终 `agentMessage` 和 `Usage` 时，本地 active 阶段的旧 receipt 仍可能留在页面里，形成一条无 Usage、一条有 Usage。现在 completed incoming turn 已有服务端 receipt 时，前端不再保留同 turn 的本地-only `agentMessage`/`plan`；本地 operation 卡仍可按既有规则保留。PWA shell cache 升级到 `codex-mobile-shell-v390`。
+
+- 中文说明：v389 修正 v388 后仍可见的两个投影状态归并回归。第一，已有线程发送消息时，浏览器会先插入本地 `local-turn` optimistic overlay；现在 `/api/threads/:id/messages` 成功返回真实 `turnId` 后，会立即把该 overlay 归并到真实 turn，不再等下一次详情刷新，因此同一条用户消息不会在本地 turn 和服务端 turn 中同时显示。第二，服务端压缩 turn 时会给已抑制的“用户上传图 view_image 回执”写入 `mobileSuppressedVisualReceiptKeys`；V4 详情 refresh 合并只按这个服务端投影标记移除旧本地 visual receipt，不再由客户端按上传摘要自行猜测。普通系统生成图和视觉核验输出仍可保留。PWA shell cache 升级到 `codex-mobile-shell-v389`。
+
+- 中文说明：v388 修正两类 Home AI embedded 回归。第一，插件模式下压缩续接新线程的启动索引缺少中心平台契约要求；现在从 embedded/plugin iframe 触发续接时，前端会把 `pluginMode=hermes` 传给续接任务，服务端只在该模式下给新线程 bootstrap 追加 `Home AI Central Contract` 区块，要求先完整读取 `/Users/hermes-dev/HermesMobileDev/app/docs/PLATFORM_CONTRACTS/plugin-workspace-platform-contract.md` 并按中心契约工作。第二，用户上传图片已在用户消息里正常显示时，后续 `view_image`/工具 matcher 对同一上传图生成的系统图片回执不再投影，避免出现一张重复且无法加载的 `Image` 卡；普通系统生成图和无用户上传对应的视觉核验图仍保留。PWA shell cache 升级到 `codex-mobile-shell-v388`。
+
+- 中文说明：v387 修正 Home AI embedded/proxy 页面中上传摘要和 generated-image 图片卡仍使用根 `/api/...` 作为动态 `<img src>` 的问题。实测坏图文件通过 Codex 服务 `8787/api/uploads/file?id=...` 返回 `200 image/jpeg`，但同一根路径落到 Home AI host `8797/api/uploads/file` 返回 `401`，导致 iOS/PWA 中永久坏图。现在当前页面路径处于 `/api/hermes-plugins/<plugin-id>/proxy/` 时，动态图片内容 URL 会生成到同插件 proxy 前缀下；直接打开 `8787` 的独立模式不变。PWA shell cache 升级到 `codex-mobile-shell-v387`。
+
+- 中文说明：v385 修正普通发送后右上角反馈可能过早显示“已结束”的问题。生产日志显示提交 RPC 已成功创建 active turn，详情接口也返回线程级 `active`，但在 app-server/detail 投影短暂只暴露旧 completed turn 行的窗口里，旧前端只按最新 turn 行决定是否继续 live poll 和是否显示运行态；这会让客户端停止刷新并把计时器落到 completed turn 的“已结束”。现在新增线程级 active runtime 判定：只要当前线程状态仍是非 stale 的 `active/running/...`，前端会继续 poll，并在没有可用 live turn 行时把右上角保持为运行反馈，不再提前显示结束。PWA shell cache 升级到 `codex-mobile-shell-v385`。
+
+- 中文说明：v383 修正 Music 等大线程 active turn 底部 Command 框一直显示 completed 的问题。生产数据里 Music 最新 turn 仍是 active，但该 turn 内 39 个 command/file operation 都已经 completed，没有任何 running/pending operation；旧前端 `currentLiveOperationEntry()` 仍然选择“最新 live turn 的最后一个 operation”，不看 operation 是否已完成，于是底部 live dock 会永久固定在一个 completed 卡片上，真正的 Command 框状态不可用。现在新增统一的 `isActiveOperationalItem()` 判定，dock、turn activity label、live turn active item 判断都只把未完成的 command/file/tool/search operation 当作 live operation；同一 active turn 如果只有 completed operation，底部 dock 会隐藏，而不是显示 stale completed。新增回归测试覆盖“running operation 后面有 completed item 时仍选 running”和“只有 completed operation 时返回空”的路径。PWA shell cache 升级到 `codex-mobile-shell-v383`。
+
+- 中文说明：v382 修正 live turn 详情打开时的双路读取竞态。症状是用户刚发送“推送 public”等消息后，Codex 回执在首屏或 SSE 增量里短暂出现，随后被后到的 `thread-read` / `turns-list-initial` / full backfill 结果覆盖并消失；服务端详情接口仍能读到该回执，所以失败层不是写入或投影丢数据，而是前端同一 turn 的 item 合并规则。旧逻辑用整个 turn 的可见内容总权重判断是否保留本地已显示项，后到的回填如果带着更多旧命令输出但缺少刚出现的 assistant receipt，就可能把已经显示过的回执删掉。现在同一未完成 live turn 的可见项合并改为单调：后到结果可以更新已有项、补充新项、按 incoming 顺序校正已有项，但不能删除已经显示过且未被同 ID/同文本/用户消息去重规则替代的非 reasoning 可见项；completed turn 仍按服务端最终结果收敛。新增回归测试覆盖“回执已显示，后到 thread-read 有更多旧内容但缺回执”的路径。PWA shell cache 升级到 `codex-mobile-shell-v382`。
+
+- 中文说明：v381 修正 live SSE 增量和 detail/projection refresh 合并时的 item 顺序所有权。症状是运行中 turn 的初始 `You` 消息可能被错误显示在较新的 Codex 回执下面，并随着新回执或后台 refresh 反复消失/出现；失败层是前端 `mergeItemsPreservingLocalVisible()` 把本地增量数组顺序当成权威，保留了 SSE 先 append 到 turn 尾部的 userMessage 位置。现在 refresh/projection 的 incoming item 顺序是权威顺序，本地只保留真正没有进入 refresh 的 pending/local-only item，并按已有锚点插回；已有更完整的本地 agent 文本仍可保留，但不能改变服务端权威 user/agent 顺序。旧的 `hasMatchingIncomingVisibleItem()` 路径已删除，避免继续留下“先遍历 existingItems”的兜底后遗症。PWA shell cache 升级到 `codex-mobile-shell-v381`。
+
 ## 2026-06-23 public 发布说明：线程详情、线程列表和完成回执一致性修复
 
 本次 public 发布对应 Mac 生产环境已先行部署并完成 smoke 验证后的代码同步。修复目标不是给 Music 等大线程再加一层前端兜底，而是把线程详情、线程列表、rollout enrichment、active overlay 和投影缓存的状态所有权收敛到同一套服务端不变量：真实 app-server / rollout 已经物化的 turn 优先于本地临时 overlay；已完成线程的最终回执和 Usage 由 bounded rollout completion 作为补齐证据；线程列表 fallback 不能在详情首屏期间抢占大 rollout 扫描。

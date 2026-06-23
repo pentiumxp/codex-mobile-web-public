@@ -3,6 +3,44 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+const { fileURLToPath } = require("node:url");
+
+function imageViewCandidateValue(value) {
+  if (value && typeof value === "object") return String(value.url || value.uri || value.href || "").trim();
+  return String(value || "").trim();
+}
+
+function isApiContentPath(value) {
+  return /^\/api\/(?:generated-images\/file|uploads\/file|files\/preview\/content)(?:[?#]|$)/.test(String(value || "").trim());
+}
+
+function isAbsoluteFilesystemPath(value) {
+  const text = String(value || "").trim();
+  return Boolean(text && (
+    path.isAbsolute(text)
+    || /^[A-Za-z]:[\\/]/.test(text)
+    || /^\\\\/.test(text)
+  ));
+}
+
+function fileUrlToLocalPath(value) {
+  const text = String(value || "").trim();
+  if (!/^file:\/\//i.test(text)) return "";
+  try {
+    return fileURLToPath(text);
+  } catch (_) {
+    return "";
+  }
+}
+
+function localPathFromImageUrlValue(value) {
+  const text = imageViewCandidateValue(value);
+  if (!text || isApiContentPath(text)) return "";
+  const fileUrlPath = fileUrlToLocalPath(text);
+  if (fileUrlPath) return fileUrlPath;
+  if (/^(?:https?:|blob:|data:)/i.test(text)) return "";
+  return isAbsoluteFilesystemPath(text) ? text : "";
+}
 
 function imageViewSourcePath(item) {
   if (!item || typeof item !== "object") return "";
@@ -20,7 +58,19 @@ function imageViewSourcePath(item) {
     item.result && (item.result.path || item.result.filePath || item.result.imagePath || item.result.savedPath),
   ];
   const found = candidates.find((value) => typeof value === "string" && value.trim());
-  return found ? found.trim() : "";
+  if (found) return found.trim();
+  const urlCandidates = [
+    item.url,
+    item.imageUrl,
+    item.image_url,
+    item.arguments && (item.arguments.url || item.arguments.imageUrl || item.arguments.image_url),
+    item.result && (item.result.url || item.result.imageUrl || item.result.image_url),
+  ];
+  for (const candidate of urlCandidates) {
+    const localPath = localPathFromImageUrlValue(candidate);
+    if (localPath) return localPath;
+  }
+  return "";
 }
 
 function imageContentTypeForPath(filePath, contentTypes) {
@@ -177,7 +227,7 @@ function generatedImagePathForId(cacheRoot, cacheId) {
 
 function cacheGeneratedImageForItem(item, options = {}) {
   const sourcePath = imageViewSourcePath(item);
-  if (!sourcePath || !path.isAbsolute(sourcePath)) return null;
+  if (!sourcePath || !isAbsoluteFilesystemPath(sourcePath)) return null;
   const resolved = path.resolve(sourcePath);
   if (options.isDeniedPath && options.isDeniedPath(resolved)) return null;
   const contentType = imageContentTypeForPath(resolved, options.contentTypes);

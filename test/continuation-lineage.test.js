@@ -99,6 +99,19 @@ test("continuation bootstrap keeps heavy context behind file references", () => 
   assert.doesNotMatch(bootstrapBody, /continuationWorkspaceContextSections\(cwd\)/);
 });
 
+test("plugin-mode continuation bootstrap points to the Home AI central contract", () => {
+  const contractBody = functionBody("homeAiCentralContractReference");
+  assert.match(contractBody, /continuationPluginMode\(\{ pluginMode \}\) !== "hermes"/);
+  assert.match(contractBody, /Home AI Central Contract/);
+  assert.match(contractBody, /PLATFORM_CONTRACTS\/plugin-workspace-platform-contract\.md/);
+  assert.match(contractBody, /central contract as authoritative over plugin-local pointer docs/);
+
+  const bootstrapBody = functionBody("newThreadBootstrapPromptScoped");
+  assert.match(bootstrapBody, /const centralContract = homeAiCentralContractReference\(pluginMode\)/);
+  assert.match(bootstrapBody, /centralContract \? "" : null/);
+  assert.match(bootstrapBody, /\.filter\(\(part\) => part !== null\)/);
+});
+
 test("source handoff generation prompt is ascii-safe", () => {
   const promptBody = functionBody("sourceContinuationHandoffPrompt");
   assert.match(promptBody, /Continuation Handoff File Generation/);
@@ -109,7 +122,7 @@ test("source handoff generation prompt is ascii-safe", () => {
 test("continuation result persists lineage after bootstrap and archive attempt", () => {
   const startBody = functionBody("startThreadFromRequestBody");
   assert.doesNotMatch(startBody, /const sourceLineage = continuationLineageSection\(cwd, sourceThreadId\)/);
-  assert.match(startBody, /input: newThreadBootstrapInput\(\{ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff \}\)/);
+  assert.match(startBody, /input: newThreadBootstrapInput\(\{ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff, pluginMode \}\)/);
   assert.match(startBody, /await migrateContinuationThreadGoal\(sourceThreadId, threadId\)/);
   assert.match(startBody, /if \(job\) job\.sourceGoalMigration = sourceGoalMigration/);
   assert.match(startBody, /mobileArchivedFallbackResult\("continuation-fallback", sourceThreadId, err\)/);

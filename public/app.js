@@ -388,7 +388,7 @@ const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v380";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v390";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -994,6 +994,66 @@ function insertLocalSubmittedUserMessage(threadId, text, attachments, clientSubm
   mergeThreadIntoThreadList(state.currentThread);
   syncActiveTurnFromThread();
   return true;
+}
+
+function mergeSubmittedUserItemIntoTurn(turn, item) {
+  if (!turn || !item || item.type !== "userMessage") return false;
+  turn.items = Array.isArray(turn.items) ? turn.items : [];
+  const existingIndex = turn.items.findIndex((existing) => existing
+    && existing.type === "userMessage"
+    && (existing.id === item.id || userMessagesCanShadow(existing, item)));
+  if (existingIndex >= 0) {
+    turn.items[existingIndex] = mergeLikelySameUserMessage(turn.items[existingIndex], item);
+    return true;
+  }
+  turn.items.unshift(item);
+  return true;
+}
+
+function reconcileSubmittedUserMessageTurn(threadId, clientSubmissionId, serverTurnId) {
+  const id = String(threadId || "").trim();
+  const submissionId = String(clientSubmissionId || "").trim();
+  const turnId = String(serverTurnId || "").trim();
+  const thread = state.currentThread;
+  if (!id || !submissionId || !turnId || !thread || String(thread.id || "") !== id) return false;
+  thread.turns = Array.isArray(thread.turns) ? thread.turns : [];
+  let sourceTurn = null;
+  let sourceItem = null;
+  for (const turn of thread.turns) {
+    const item = (Array.isArray(turn && turn.items) ? turn.items : []).find((entry) => entry
+      && entry.type === "userMessage"
+      && String(entry.clientSubmissionId || "") === submissionId
+      && isOptimisticUserMessage(entry));
+    if (!item) continue;
+    sourceTurn = turn;
+    sourceItem = item;
+    break;
+  }
+  if (!sourceItem) return false;
+  let targetTurn = thread.turns.find((turn) => String(turn && turn.id || "") === turnId);
+  if (!targetTurn) {
+    targetTurn = {
+      id: turnId,
+      status: { type: "active" },
+      startedAt: sourceTurn && sourceTurn.startedAt,
+      startedAtMs: sourceTurn && sourceTurn.startedAtMs,
+      completedAt: null,
+      durationMs: null,
+      items: [],
+    };
+    thread.turns.push(targetTurn);
+  }
+  const changed = mergeSubmittedUserItemIntoTurn(targetTurn, sourceItem);
+  if (sourceTurn && sourceTurn !== targetTurn) {
+    sourceTurn.items = (sourceTurn.items || []).filter((item) => item !== sourceItem);
+    if (!sourceTurn.items.length && /^local-turn-/.test(String(sourceTurn.id || ""))) {
+      thread.turns = thread.turns.filter((turn) => turn !== sourceTurn);
+    }
+  }
+  normalizeThreadVisibleUserMessages(thread);
+  syncActiveTurnFromThread();
+  mergeThreadIntoThreadList(thread);
+  return changed;
 }
 
 function markSubmittedUserMessageFailed(threadId, text, attachments, clientSubmissionId, message) {
@@ -4268,6 +4328,13 @@ function isOperationalItem(item) {
   return item && (OPERATIONAL_ITEM_TYPES.has(item.type) || isWebSearchLikeItem(item));
 }
 
+function isActiveOperationalItem(item) {
+  if (!isOperationalItem(item)) return false;
+  const completedByTimestamp = Boolean(item.completedAtMs || item.completedAt || item.completed_at_ms || item.completed_at);
+  const status = statusText(item.status) || (completedByTimestamp ? "completed" : "");
+  return !isCompletedStatus(status);
+}
+
 function activityLabelForItem(item) {
   if (!item) return "更新";
   const status = statusText(item.status);
@@ -4356,6 +4423,12 @@ function latestRawTurn() {
   return turns.length ? turns[turns.length - 1] : null;
 }
 
+function currentThreadHasActiveRuntimeStatus() {
+  const thread = state.currentThread;
+  if (!thread || isStaleActiveStatus(thread.status) || thread.mobileStaleActiveTurn) return false;
+  return Boolean(state.activeTurnId) || isRunningStatus(thread.status);
+}
+
 function latestLiveTurnCandidate() {
   const displayLatest = latestTurn();
   if (displayLatest && !isTurnComplete(displayLatest) && isRunningStatus(displayLatest.status)) return displayLatest;
@@ -4378,6 +4451,7 @@ function isIncompleteInterruptedTurn(turn) {
 
 function shouldPollCurrentThread() {
   if (!state.currentThreadId || document.visibilityState === "hidden") return false;
+  if (currentThreadHasActiveRuntimeStatus()) return true;
   const turn = latestTurn();
   if (!turn) return false;
   if (isTurnComplete(turn)) return false;
@@ -4404,7 +4478,10 @@ function currentThreadNeedsForegroundRefresh() {
 
 function isLiveTurn(turn) {
   if (!turn || isTurnComplete(turn)) return false;
-  return isRunningStatus(turn && turn.status) || isIncompleteInterruptedTurn(turn) || turnHasActiveLiveItems(turn);
+  return isRunningStatus(turn && turn.status)
+    || isIncompleteInterruptedTurn(turn)
+    || turnHasActiveLiveItems(turn)
+    || (isLatestTurn(turn) && currentThreadHasActiveRuntimeStatus());
 }
 
 function isLatestTurn(turn) {
@@ -4620,11 +4697,12 @@ function currentLiveOperationEntry(thread) {
   if (!thread || !Array.isArray(thread.turns) || !thread.turns.length) return null;
   const turn = thread.turns[thread.turns.length - 1];
   if (!turn || !isLatestTurn(turn) || !isLiveTurn(turn)) return null;
-  let latest = null;
-  (turn.items || []).forEach((item, index) => {
-    if (isOperationalItem(item)) latest = { turn, item, sourceIndex: index };
-  });
-  return latest;
+  const items = Array.isArray(turn.items) ? turn.items : [];
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (isActiveOperationalItem(item)) return { turn, item, sourceIndex: index };
+  }
+  return null;
 }
 
 function visibleItemSignature(item, turn = null) {
@@ -4734,8 +4812,24 @@ function turnVisibleWeight(turn) {
   return items.reduce((total, item) => total + itemVisibleWeight(item), 0);
 }
 
-function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false) {
+function isAssistantReceiptLikeItem(item) {
+  return Boolean(item && (item.type === "agentMessage" || item.type === "plan"));
+}
+
+function completedIncomingTurnHasAuthoritativeReceipt(incomingTurn) {
+  if (!incomingTurn || !isTurnComplete(incomingTurn) || !Array.isArray(incomingTurn.items)) return false;
+  return incomingTurn.items.some((item) => isAssistantReceiptLikeItem(item));
+}
+
+function shouldDropLocalOnlyReceiptForIncomingTurn(item, incomingTurn = null) {
+  return isAssistantReceiptLikeItem(item)
+    && completedIncomingTurnHasAuthoritativeReceipt(incomingTurn);
+}
+
+function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false, suppressedVisualReceiptKeys = null, incomingTurn = null) {
   if (!item || itemVisibleWeight(item) <= 0) return false;
+  if (visualReceiptMatchesSuppressionKeys(item, suppressedVisualReceiptKeys)) return false;
+  if (shouldDropLocalOnlyReceiptForIncomingTurn(item, incomingTurn)) return false;
   if (item.type === "userMessage" && /^mux-user-/.test(String(item.id || ""))) return true;
   return preserveLocalVisible && !isReasoningItem(item);
 }
@@ -4824,6 +4918,61 @@ function comparablePathNamesLikelySame(leftName, rightName) {
   if (!left || !right) return false;
   if (left === right) return true;
   return left.endsWith(`-${right}`) || right.endsWith(`-${left}`);
+}
+
+function isVisualReceiptItem(item) {
+  return Boolean(item && (item.type === "imageView" || item.type === "imageGeneration"));
+}
+
+function visualReceiptComparableNames(item) {
+  if (!isVisualReceiptItem(item)) return [];
+  const values = [
+    imageViewPath(item),
+    imageViewContentUrl(item),
+    imageViewUrl(item),
+    item.fileName,
+    item.file_name,
+    item.label,
+    item.caption,
+    item.name,
+  ];
+  return [...new Set(values.map(comparablePathName).filter(Boolean))];
+}
+
+function visualReceiptCallId(item) {
+  return String(item && (
+    item.callId
+    || item.call_id
+    || item.toolCallId
+    || item.tool_call_id
+    || item.arguments && (item.arguments.callId || item.arguments.call_id || item.arguments.toolCallId || item.arguments.tool_call_id)
+    || item.result && (item.result.callId || item.result.call_id || item.result.toolCallId || item.result.tool_call_id)
+  ) || "").trim();
+}
+
+function visualReceiptSuppressionKeys(item) {
+  if (!isVisualReceiptItem(item)) return [];
+  const keys = new Set();
+  const id = String(item && item.id || "").trim();
+  const callId = visualReceiptCallId(item);
+  if (id) keys.add(`id:${id}`);
+  if (callId) keys.add(`call:${callId}`);
+  for (const name of visualReceiptComparableNames(item)) {
+    keys.add(`name:${name}`);
+  }
+  return [...keys];
+}
+
+function suppressedVisualReceiptKeySet(turn) {
+  const values = Array.isArray(turn && turn.mobileSuppressedVisualReceiptKeys)
+    ? turn.mobileSuppressedVisualReceiptKeys
+    : [];
+  return new Set(values.map((entry) => String(entry || "").trim()).filter(Boolean));
+}
+
+function visualReceiptMatchesSuppressionKeys(item, suppressedVisualReceiptKeys) {
+  if (!isVisualReceiptItem(item) || !suppressedVisualReceiptKeys || !suppressedVisualReceiptKeys.size) return false;
+  return visualReceiptSuppressionKeys(item).some((key) => suppressedVisualReceiptKeys.has(key));
 }
 
 function userMessageSpecificity(item) {
@@ -5157,9 +5306,65 @@ function visibleTextItemsLikelySame(existingItem, incomingItem) {
     || (incomingText.length >= existingText.length && incomingText.startsWith(existingText));
 }
 
-function hasMatchingIncomingVisibleItem(existingItem, incomingItems) {
-  if (hasMatchingIncomingUserMessage(existingItem, incomingItems)) return true;
-  return (incomingItems || []).some((incomingItem) => visibleTextItemsLikelySame(existingItem, incomingItem));
+function findUnusedExistingItemIndexForIncoming(incomingItem, existingItems, usedExistingIndexes) {
+  if (!incomingItem) return -1;
+  const used = usedExistingIndexes || new Set();
+  if (incomingItem.id) {
+    const index = (existingItems || []).findIndex((existingItem, candidateIndex) => existingItem
+      && !used.has(candidateIndex)
+      && existingItem.id === incomingItem.id);
+    if (index >= 0) return index;
+  }
+  if (incomingItem.type === "userMessage") {
+    const index = (existingItems || []).findIndex((existingItem, candidateIndex) => existingItem
+      && !used.has(candidateIndex)
+      && existingItem.type === "userMessage"
+      && userMessagesCanShadow(existingItem, incomingItem));
+    if (index >= 0) return index;
+  }
+  if (comparableVisibleTextItem(incomingItem)) {
+    const index = (existingItems || []).findIndex((existingItem, candidateIndex) => existingItem
+      && !used.has(candidateIndex)
+      && visibleTextItemsLikelySame(existingItem, incomingItem));
+    if (index >= 0) return index;
+  }
+  return -1;
+}
+
+function mergeIncomingOrderedItem(existingItem, incomingItem) {
+  if (!existingItem) return incomingItem;
+  if (!incomingItem) return existingItem;
+  if (incomingItem.type === "userMessage" && existingItem.type === "userMessage") {
+    return mergeLikelySameUserMessage(existingItem, incomingItem);
+  }
+  if (visibleTextItemsLikelySame(existingItem, incomingItem)) {
+    return mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem);
+  }
+  return mergeItemPreservingVisibleFields(existingItem, incomingItem);
+}
+
+function insertLocalOnlyItemByExistingOrder(merged, item, existingIndex, existingIndexToMergedIndex) {
+  if (!item) return;
+  let insertAt = -1;
+  for (let index = existingIndex - 1; index >= 0; index -= 1) {
+    if (existingIndexToMergedIndex.has(index)) {
+      insertAt = existingIndexToMergedIndex.get(index) + 1;
+      break;
+    }
+  }
+  if (insertAt < 0) {
+    for (const [index, mergedIndex] of existingIndexToMergedIndex.entries()) {
+      if (index > existingIndex && (insertAt < 0 || mergedIndex < insertAt)) {
+        insertAt = mergedIndex;
+      }
+    }
+  }
+  if (insertAt < 0 || insertAt > merged.length) insertAt = merged.length;
+  merged.splice(insertAt, 0, item);
+  for (const [index, mergedIndex] of existingIndexToMergedIndex.entries()) {
+    if (mergedIndex >= insertAt) existingIndexToMergedIndex.set(index, mergedIndex + 1);
+  }
+  existingIndexToMergedIndex.set(existingIndex, insertAt);
 }
 
 function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
@@ -5195,64 +5400,35 @@ function mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem
   return merged;
 }
 
-function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserveLocalVisible = false) {
-  const incomingById = new Map((incomingItems || [])
-    .filter((item) => item && item.id)
-    .map((item) => [item.id, item]));
+function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserveLocalVisible = false, incomingTurn = null) {
   const added = new Set();
-  const addedIncomingItems = new Set();
+  const usedExistingIndexes = new Set();
+  const existingIndexToMergedIndex = new Map();
   const merged = [];
-  for (const existingItem of existingItems || []) {
-    if (!existingItem) continue;
-    const id = existingItem.id;
-    if (id && incomingById.has(id)) {
-      const incomingMatch = incomingById.get(id);
-      merged.push(userMessagesCanShadow(existingItem, incomingMatch)
-        ? mergeLikelySameUserMessage(existingItem, incomingMatch)
-        : mergeItemPreservingVisibleFields(existingItem, incomingMatch));
-      added.add(id);
-      addedIncomingItems.add(incomingMatch);
-    } else if (hasMatchingIncomingVisibleItem(existingItem, incomingItems)) {
-      const incomingUserMatch = (incomingItems || []).find((incomingItem) => incomingItem
-        && incomingItem.id !== id
-        && incomingItem.type === "userMessage"
-        && existingItem.type === "userMessage"
-        && userMessagesCanShadow(existingItem, incomingItem));
-      const incomingTextMatch = incomingUserMatch
-        ? null
-        : (incomingItems || []).find((incomingItem) => visibleTextItemsLikelySame(existingItem, incomingItem));
-      if (incomingUserMatch) {
-        merged.push(mergeLikelySameUserMessage(existingItem, incomingUserMatch));
-        if (incomingUserMatch.id) added.add(incomingUserMatch.id);
-        addedIncomingItems.add(incomingUserMatch);
-      } else if (incomingTextMatch) {
-        merged.push(mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingTextMatch));
-        if (incomingTextMatch.id) added.add(incomingTextMatch.id);
-        addedIncomingItems.add(incomingTextMatch);
-      }
-      if (id) added.add(id);
-    } else if (shouldPreserveLocalOnlyItem(existingItem, preserveLocalVisible)) {
-      merged.push(existingItem);
-      if (id) added.add(id);
-    }
-  }
+  const suppressedVisualReceiptKeys = suppressedVisualReceiptKeySet(incomingTurn);
   for (const incomingItem of incomingItems || []) {
     if (!incomingItem) continue;
-    if (addedIncomingItems.has(incomingItem)) continue;
     if (incomingItem.id && added.has(incomingItem.id)) continue;
     if (hasMatchingRealUserMessage(incomingItem, merged) || hasMatchingRealUserMessage(incomingItem, incomingItems)) continue;
-    if (incomingItem.type === "userMessage") {
-      const existingUserIndex = merged.findIndex((existingItem) => userMessagesCanShadow(existingItem, incomingItem));
-      if (existingUserIndex >= 0) {
-        merged[existingUserIndex] = mergeLikelySameUserMessage(merged[existingUserIndex], incomingItem);
-        if (incomingItem.id) added.add(incomingItem.id);
-        addedIncomingItems.add(incomingItem);
-        continue;
-      }
-    }
-    merged.push(incomingItem);
+    const existingIndex = findUnusedExistingItemIndexForIncoming(incomingItem, existingItems || [], usedExistingIndexes);
+    const existingItem = existingIndex >= 0 ? existingItems[existingIndex] : null;
+    const mergedItem = mergeIncomingOrderedItem(existingItem, incomingItem);
+    merged.push(mergedItem);
     if (incomingItem.id) added.add(incomingItem.id);
+    if (mergedItem && mergedItem.id) added.add(mergedItem.id);
+    if (existingItem && existingItem.id) added.add(existingItem.id);
+    if (existingIndex >= 0) {
+      usedExistingIndexes.add(existingIndex);
+      existingIndexToMergedIndex.set(existingIndex, merged.length - 1);
+    }
   }
+  (existingItems || []).forEach((existingItem, existingIndex) => {
+    if (!existingItem || usedExistingIndexes.has(existingIndex)) return;
+    if (!shouldPreserveLocalOnlyItem(existingItem, preserveLocalVisible, suppressedVisualReceiptKeys, incomingTurn)) return;
+    if (existingItem.id && added.has(existingItem.id)) return;
+    insertLocalOnlyItemByExistingOrder(merged, existingItem, existingIndex, existingIndexToMergedIndex);
+    if (existingItem.id) added.add(existingItem.id);
+  });
   return dedupeTurnUsageSummaryItems(removeShadowedMuxUserMessages(dedupeLikelySameUserMessages(merged)));
 }
 
@@ -5265,10 +5441,20 @@ function mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) {
   if (!incomingHasItems) merged.items = existingItems;
   else {
     const incomingWeight = turnVisibleWeight(Object.assign({}, incomingTurn, { items: incomingTurn.items || [] }));
-    const preserveLocalVisible = incomingWeight < turnVisibleWeight(existingTurn);
-    merged.items = mergeItemsPreservingLocalVisible(existingItems, incomingTurn.items || [], preserveLocalVisible);
+    const existingWeight = turnVisibleWeight(existingTurn);
+    const preserveLocalVisible = incomingWeight < existingWeight
+      || shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight);
+    merged.items = mergeItemsPreservingLocalVisible(existingItems, incomingTurn.items || [], preserveLocalVisible, incomingTurn);
   }
   return merged;
+}
+
+function shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight = null) {
+  if (!existingTurn || !incomingTurn) return false;
+  if (String(existingTurn.id || "") !== String(incomingTurn.id || "")) return false;
+  if (isTurnComplete(existingTurn) || isTurnComplete(incomingTurn)) return false;
+  const weight = existingWeight == null ? turnVisibleWeight(existingTurn) : Number(existingWeight || 0);
+  return weight > 0;
 }
 
 function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
@@ -5576,6 +5762,12 @@ function turnElapsedSeconds(turn) {
   return Math.max(0, Math.floor((state.nowMs - startedMs) / 1000));
 }
 
+function activeThreadFallbackElapsedSeconds(latest = null) {
+  const latestStarted = liveTurnStartedAtMs(latest) || turnStartedAtMs(latest);
+  const startedMs = latestStarted || Number(state.activityAtMs || 0) || state.nowMs;
+  return Math.max(0, Math.floor((state.nowMs - startedMs) / 1000));
+}
+
 function turnFinalSeconds(turn) {
   if (!turn) return null;
   if (turn.durationMs) return Math.max(0, Math.round(turn.durationMs / 1000));
@@ -5610,18 +5802,27 @@ function liveTurnFallbackActivityLabel(turn) {
   return "运行";
 }
 
+function activeThreadFallbackActivityLabel() {
+  const label = String(state.activityLabel || "").trim();
+  if (label && !isIdleSyncActivityLabel(label) && label !== "加载线程") return label;
+  return "运行";
+}
+
 function activeLiveOperationItemForTurn(turn) {
   const items = Array.isArray(turn && turn.items) ? turn.items : [];
   for (let index = items.length - 1; index >= 0; index -= 1) {
     const item = items[index];
-    if (item && isOperationalItem(item) && !isCompletedStatus(item.status)) return item;
+    if (isActiveOperationalItem(item)) return item;
   }
   return null;
 }
 
 function turnHasActiveLiveItems(turn) {
   const items = Array.isArray(turn && turn.items) ? turn.items : [];
-  return items.some((item) => item && !isCompletedStatus(item.status) && (item.type === "reasoning" || isOperationalItem(item)));
+  return items.some((item) => item && (
+    (item.type === "reasoning" && !isCompletedStatus(item.status))
+    || isActiveOperationalItem(item)
+  ));
 }
 
 function liveTurnStartedAtMs(turn) {
@@ -5633,8 +5834,12 @@ function liveTurnStartedAtMs(turn) {
   if (explicit) return explicit;
   const items = Array.isArray(turn.items) ? turn.items : [];
   for (const item of items) {
-    if (!item || isCompletedStatus(item.status)) continue;
-    if (item.type !== "reasoning" && !isOperationalItem(item)) continue;
+    if (!item) continue;
+    if (item.type === "reasoning") {
+      if (isCompletedStatus(item.status)) continue;
+    } else if (!isActiveOperationalItem(item)) {
+      continue;
+    }
     const itemStarted = numericTimestampMs(item.startedAtMs)
       || numericTimestampMs(item.startedAt)
       || numericTimestampMs(item.createdAtMs)
@@ -5670,6 +5875,13 @@ function updateTurnTimer() {
   const turn = currentLiveTurn();
   if (!turn) {
     const latest = latestTurn();
+    if (currentThreadHasActiveRuntimeStatus()) {
+      setTurnTimerContent(el, activeThreadFallbackElapsedSeconds(latest), activeThreadFallbackActivityLabel());
+      el.classList.add("visible", "active");
+      el.classList.remove("settled");
+      el.setAttribute("aria-hidden", "false");
+      return;
+    }
     const finalSeconds = turnFinalSeconds(latest);
     if (finalSeconds != null) {
       setTurnTimerContent(el, finalSeconds, "已结束");
@@ -5693,7 +5905,7 @@ function updateTickTimer() {
   clearInterval(state.tickTimer);
   state.tickTimer = null;
   updateTurnTimer();
-  if (!currentLiveTurn()) return;
+  if (!currentLiveTurn() && !currentThreadHasActiveRuntimeStatus()) return;
   state.tickTimer = setInterval(() => {
     state.nowMs = Date.now();
     updateTurnTimer();
@@ -8041,7 +8253,7 @@ function schedulePostCompletionThreadRefreshes(threadId, delays = [700, 2400]) {
     if (state.currentThreadId !== id) return;
     refreshCurrentThread({
       source: "post-completion",
-      full: index === delays.length - 1,
+      full: true,
     }).catch(showError);
     }, delay);
     return timer;
@@ -11615,11 +11827,15 @@ async function createThreadTaskCardFromCurrent(event) {
 
 function startThreadRequestBody(sourceThread = null, options = {}) {
   const thread = sourceThread || state.currentThread || {};
+  const pluginMode = isHermesEmbedMode() ? "hermes" : "";
   return {
     cwd: thread.cwd || state.selectedCwd || "",
     sourceThreadId: thread.id || "",
     sourceThreadTitle: threadTitleForDisplay(thread) || thread.id || "",
     archiveSourceThread: Boolean(options.archiveSourceThread && thread.id),
+    pluginMode,
+    hermesPluginMode: Boolean(pluginMode),
+    pluginId: pluginMode ? "codex-mobile" : "",
   };
 }
 
@@ -11766,6 +11982,9 @@ async function startNewThreadFromThread(sourceThread, event) {
     sourceThreadId: thread.id || "",
     sourceThreadTitle: threadTitleForDisplay(thread) || thread.id || "",
     archiveSourceThread: Boolean(thread.id),
+    pluginMode: isHermesEmbedMode() ? "hermes" : "",
+    hermesPluginMode: isHermesEmbedMode(),
+    pluginId: isHermesEmbedMode() ? "codex-mobile" : "",
   };
   if (!body.cwd) {
     showError(new Error("Thread has no workspace path"));
@@ -13750,17 +13969,69 @@ function filePreviewContentUrl(file) {
   return localFilePreviewContentUrl(file.path);
 }
 
+function hermesPluginProxyPrefixFromPathname(pathname) {
+  const pathValue = String(pathname || "");
+  const match = pathValue.match(/^(\/api\/hermes-plugins\/[^/]+\/proxy)(?:\/|$)/);
+  return match ? match[1] : "";
+}
+
+function hermesPluginProxyPrefix() {
+  if (!isHermesEmbedMode()) return "";
+  try {
+    return hermesPluginProxyPrefixFromPathname(window.location && window.location.pathname);
+  } catch (_) {
+    return "";
+  }
+}
+
+function protectedImageUpstreamPathname(pathname) {
+  const pathValue = String(pathname || "");
+  if (
+    pathValue === "/api/generated-images/file"
+    || pathValue === "/api/uploads/file"
+    || pathValue === "/api/files/preview/content"
+  ) {
+    return pathValue;
+  }
+  const match = pathValue.match(/^\/api\/hermes-plugins\/[^/]+\/proxy(\/api\/(?:generated-images\/file|uploads\/file|files\/preview\/content))$/);
+  return match ? match[1] : "";
+}
+
+function browserApiContentUrl(value) {
+  const raw = String(value || "");
+  if (!raw) return "";
+  try {
+    const origin = typeof window !== "undefined" && window.location && window.location.origin
+      ? window.location.origin
+      : "http://127.0.0.1";
+    const parsed = new URL(raw, origin);
+    if (parsed.origin !== origin) return raw;
+    const pathValue = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    const proxyPrefix = hermesPluginProxyPrefix();
+    if (
+      proxyPrefix
+      && parsed.pathname.startsWith("/api/")
+      && !parsed.pathname.startsWith(`${proxyPrefix}/`)
+    ) {
+      return `${proxyPrefix}${pathValue}`;
+    }
+    return pathValue;
+  } catch (_) {
+    return raw;
+  }
+}
+
 function authenticatedApiContentUrl(value) {
   const raw = String(value || "");
-  if (!raw || !state.key) return raw;
+  if (!raw) return "";
   try {
     const origin = typeof window !== "undefined" && window.location && window.location.origin
       ? window.location.origin
       : "http://127.0.0.1";
     const parsed = new URL(raw, origin);
     if (parsed.origin === origin && parsed.pathname.startsWith("/api/")) {
-      parsed.searchParams.set("key", state.key);
-      return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+      if (state.key) parsed.searchParams.set("key", state.key);
+      return browserApiContentUrl(`${parsed.pathname}${parsed.search}${parsed.hash}`);
     }
   } catch (_) {}
   return raw;
@@ -13773,7 +14044,7 @@ function localFilePreviewContentUrl(filePath) {
     path: String(filePath),
   });
   if (state.key) params.set("key", state.key);
-  return `/api/files/preview/content?${params.toString()}`;
+  return browserApiContentUrl(`/api/files/preview/content?${params.toString()}`);
 }
 
 function renderJsonPreview(content) {
@@ -13881,12 +14152,23 @@ function imageViewContentUrl(item) {
   )) || "");
 }
 
+function isImageViewUnavailable(item) {
+  return Boolean(item && (
+    item.imageUnavailable
+    || item.unavailable
+    || item.generatedImage && item.generatedImage.unavailable
+  ));
+}
+
 function renderImageView(item) {
   const filePath = imageViewPath(item);
   const contentUrl = imageViewContentUrl(item);
   const url = imageViewUrl(item);
   const src = contentUrl ? authenticatedApiContentUrl(contentUrl) : (filePath ? imageContentUrlForPath(filePath) : url);
   const label = shortPath(filePath || item.label || item.fileName || item.file_name || item.caption || url || item.id || "image");
+  if (isImageViewUnavailable(item)) {
+    return `<figure class="image-view image-load-failed">${label ? `<figcaption>${escapeHtml(label)}</figcaption>` : ""}</figure>`;
+  }
   if (!src) return renderStructuredBlock(item, "Image");
   const displaySrc = protectedImageDisplaySrc(src);
   return `<figure class="image-view">
@@ -13974,11 +14256,7 @@ function protectedGeneratedImageSrc(value) {
   if (!raw) return "";
   try {
     const parsed = new URL(raw, window.location.origin);
-    if (parsed.origin === window.location.origin && (
-      parsed.pathname === "/api/generated-images/file"
-      || parsed.pathname === "/api/uploads/file"
-      || parsed.pathname === "/api/files/preview/content"
-    )) {
+    if (parsed.origin === window.location.origin && protectedImageUpstreamPathname(parsed.pathname)) {
       return `${parsed.pathname}${parsed.search}${parsed.hash}`;
     }
   } catch (_) {}
@@ -14024,9 +14302,10 @@ function imageDiagnosticSourceKind(src) {
   try {
     const parsed = new URL(raw, window.location.origin);
     if (parsed.origin !== window.location.origin) return "remote";
-    if (parsed.pathname === "/api/uploads/file") return "upload";
-    if (parsed.pathname === "/api/generated-images/file") return "generated-image";
-    if (parsed.pathname === "/api/files/preview/content") return "file-preview";
+    const upstreamPathname = protectedImageUpstreamPathname(parsed.pathname) || parsed.pathname;
+    if (upstreamPathname === "/api/uploads/file") return "upload";
+    if (upstreamPathname === "/api/generated-images/file") return "generated-image";
+    if (upstreamPathname === "/api/files/preview/content") return "file-preview";
     if (parsed.pathname.startsWith("/api/")) return "api";
     return "same-origin";
   } catch (_) {
@@ -17465,11 +17744,15 @@ async function sendThreadTaskCardCommand(commandText, options = {}) {
     renderThreads();
     if (insertedLocalMessage) renderCurrentThread({ stickToBottom: true });
     followSubmittedMessageToBottom(state.currentThreadId, clientSubmissionId);
-    await api(`/api/threads/${encodeURIComponent(state.currentThreadId)}/messages`, {
+    const result = await api(`/api/threads/${encodeURIComponent(state.currentThreadId)}/messages`, {
       method: "POST",
       body,
       timeoutMs: 180000,
     });
+    const serverTurnId = startedTurnId(result);
+    if (serverTurnId && reconcileSubmittedUserMessageTurn(state.currentThreadId, clientSubmissionId, serverTurnId)) {
+      renderCurrentThread({ stickToBottom: true });
+    }
     commitPluginVoiceInputSessionsAfterSend(submittedDraftKey, text, {
       threadId: state.currentThreadId,
       messageId: clientSubmissionId,
@@ -17602,11 +17885,15 @@ async function sendMessage(event) {
     }
     if (insertedLocalMessage) renderCurrentThread({ stickToBottom: true });
     followSubmittedMessageToBottom(state.currentThreadId, clientSubmissionId);
-    await api(`/api/threads/${encodeURIComponent(state.currentThreadId)}/messages`, {
+    const result = await api(`/api/threads/${encodeURIComponent(state.currentThreadId)}/messages`, {
       method: "POST",
       body,
       timeoutMs: 180000,
     });
+    const serverTurnId = startedTurnId(result);
+    if (!steering && serverTurnId && reconcileSubmittedUserMessageTurn(state.currentThreadId, clientSubmissionId, serverTurnId)) {
+      renderCurrentThread({ stickToBottom: true });
+    }
     commitPluginVoiceInputSessionsAfterSend(submittedDraftKey, text, {
       threadId: state.currentThreadId,
       messageId: clientSubmissionId,

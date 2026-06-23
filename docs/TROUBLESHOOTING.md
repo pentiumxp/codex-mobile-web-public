@@ -27,6 +27,7 @@ Interpretation:
 | Push missing | HTTPS/Tailscale access, VAPID files, subscription count, sub-agent suppression |
 | Push says turn ended but no final reply appears | rollout `task_complete.last_agent_message`, completion-push no-final-message guard |
 | First open after completion lacks the latest receipt | `/api/threads/:id?mode=recent` read mode, whether the latest rollout EOF line is a complete `task_complete` JSON object without a trailing newline, and whether enrichment index exposes a provisional entry |
+| Same turn shows two final receipts and only one has Usage | Compare `/api/threads/:id?mode=recent` service projection against the open client shell. If the API has one `agentMessage` plus one `turnUsageSummary` but the page shows two receipts, the failure layer is browser V4 local-visible merge; current clients after `codex-mobile-shell-v390` drop local-only live receipts once a completed server turn has an authoritative receipt. |
 | Continuation fails because source thread cannot reply | continuation job progress `handoff-fallback`, generated `.agent-context/thread-handoffs/*.md` mode, `/api/status` profile/quota |
 | Profile switch hides workspaces or threads | active `codexProfiles.activeCodexHome`, non-default profile shared-state links, `/api/threads?limit=10` |
 | Quota chips show the previous account after switch | `/api/status.rateLimits`, browser quota localStorage, profile-switch cache clearing, shared `sessions/` quota fallback |
@@ -333,6 +334,15 @@ after a later full list refresh. Those hints also carry
 the hint expires after the stale window so completed work does not keep a
 permanent spinner.
 
+If a newly submitted message briefly shows local input feedback and then the
+right-side turn timer changes to `已结束` while `/api/threads/:id?mode=recent`
+still returns thread-level `status=active`, check for a stale latest turn row in
+the detail payload. Some app-server/detail windows can expose a completed latest
+turn row before the real active turn is materialized. The browser must treat the
+thread-level non-stale active status as a runtime signal: continue live polling
+and keep the timer in an active fallback state instead of trusting the completed
+turn row and stopping refresh.
+
 If thread detail shows `idle` or latest turn `interrupted`, but the thread list
 still reports the same row as `active`, compare app-server list rows with
 rollout fallback rows. A stale rollout fallback `active` summary must not
@@ -463,6 +473,16 @@ Cause to check:
 - Current clients still enter thread detail at the bottom. Do not fix missing
   large-thread history by changing the open position; first check whether the
   server returned full `thread-read` or a fallback `turns-list` window.
+- If a compressed continuation thread first opens with only the bootstrap
+  message, then shows the turn ended before the final receipt/Usage appears,
+  check the first `thread_refresh_ms` after `turn/completed`. It must not leave
+  the browser on a `turns-list-initial` recent window when projection has not
+  been seeded yet. Post-completion refreshes should request full detail, and
+  a resting `idle` / `completed` summary with matching rollout
+  `task_complete` / scoped `token_count` evidence should still backfill the
+  same turn's synthetic final receipt and `turnUsageSummary`. Failed,
+  cancelled, interrupted, running, active, pending, or progress statuses must
+  remain excluded from that relaxed resting-window path.
 - Long latest-turn final receipts are intentionally rendered once after
   `turn/completed` when the live turn already has command/file/tool/search
   operation items. Pure chat replies may still stream normally. If the receipt
@@ -473,7 +493,7 @@ Cause to check:
   after the full deferred receipt is merged. If `/api/threads/<id>` already has
   `turnUsageSummary` but the just-completed browser view does not, inspect the
   post-completion refresh queue; completion should schedule both an immediate
-  and a delayed detail refresh.
+  and a delayed full detail refresh.
 - If a thread finished while the browser was away and Usage appears only after
   leaving and reopening the thread, inspect the initial `loadThread()` path in
   `public/app.js`. The first successful detail render must schedule the same
@@ -638,7 +658,7 @@ If the original user upload renders as a thumbnail but a later Codex/plan reply 
 
 The parser should recognize LF and CRLF summaries, plus Markdown blockquote-style quoted lines such as `> Uploaded attachments:` and `> - IMG_0001.jpg (...)`. It should also treat raw app-server `input_text` parts as text and `input_image` / `image_url` parts as images, including object-shaped `image_url.url`. The saved upload path must still be under `%USERPROFILE%\.codex-mobile-web\uploads`. Current clients should turn default-runtime upload paths into `/api/uploads/file?id=<upload-root-relative-id>` so the browser image `src` does not include a local absolute path; `/api/uploads/file?path=...` remains a compatibility fallback for old clients and non-default upload roots.
 
-If the DOM contains an `<img>` for the saved upload path but the browser still shows a broken or blank thumbnail, check the upload route response headers. Saved `.jpg`, `.jpeg`, `.webp`, `.gif`, and `.png` files must return image MIME types such as `image/jpeg` rather than `application/octet-stream`. In Hermes/Home AI embed mode, the `<img>` should keep the same-origin `/api/uploads/file` or `/api/generated-images/file` URL as `src` plus `data-protected-image-src`. Scheduled image scans should not proactively convert still-loading embedded direct images into `data:image/...` or `blob:` URLs. If the image actually errors, recovery may fetch with the current session key; embedded/iOS recovery should retry a cache-busted same-origin URL first.
+If the DOM contains an `<img>` for the saved upload path but the browser still shows a broken or blank thumbnail, check the upload route response headers. Saved `.jpg`, `.jpeg`, `.webp`, `.gif`, and `.png` files must return image MIME types such as `image/jpeg` rather than `application/octet-stream`. In Hermes/Home AI embed mode, the `<img>` should keep the browser-visible same-origin `/api/uploads/file` or `/api/generated-images/file` URL as `src` plus `data-protected-image-src`; when the iframe page is served under `/api/hermes-plugins/<plugin-id>/proxy/`, the browser-visible URL must include that same plugin proxy prefix instead of the Home AI host root `/api`. Scheduled image scans should not proactively convert still-loading embedded direct images into `data:image/...` or `blob:` URLs. If the image actually errors, recovery may fetch with the current session key; embedded/iOS recovery should retry a cache-busted same-origin URL first.
 
 If Codex generates an image as Markdown or plain text `data:image/png;base64,...`, inspect `public/markdown-renderer.js`. Current builds render safe bitmap data images (`png`, `jpeg`, `webp`, `gif`) as bounded `<img>` figures and intentionally reject SVG data images.
 
@@ -653,6 +673,8 @@ node --test test\conversation-render.test.js test\mobile-viewport.test.js
 If a Codex turn displays an `Image` card for a visual verification screenshot but the thumbnail is broken, distinguish it from uploaded attachments first. Tool-generated screenshots often come from `view_image` / `imageView` paths under `%TEMP%`, not `%USERPROFILE%\.codex-mobile-web\uploads`. Codex-generated effect images can also arrive as `imageGeneration` items with `savedPath` under `%USERPROFILE%\.codex\generated_images`. Some Codex tool screenshots arrive only in rollout `function_call_output` / `custom_tool_call_output` payloads as `input_image` parts with `data:image/...;base64,...`; Mobile Web should project those into `imageView` cards during thread-detail compaction.
 
 Current behavior should cache small `imageView`, `imageGeneration.savedPath`, and safe bitmap tool-output data images into `%USERPROFILE%\.codex-mobile-web\generated-images` and serve them through `/api/generated-images/file`. Receipt-only historical turn compaction must keep these image cards; otherwise only the latest turn's generated image will appear after thread projection/reload. If a rollout tool-output image has no explicit turn id, Mobile Web should attach it by timestamp window rather than appending every unscoped image to the latest turn. Do not fix this by adding `%TEMP%` or `%USERPROFILE%\.codex` to `CODEX_MOBILE_FILE_PREVIEW_ROOTS`; that would broaden local file preview access beyond the current thread workspace. If the source temp/generated file was already deleted before Mobile Web saw the item, the historical card cannot be recovered from the path alone.
+
+If the original user upload thumbnail is visible but a later system `Image` receipt for the same uploaded file is broken, do not try to make that duplicate receipt render. The intended projection is to keep the user upload in the user message and suppress `view_image` / tool-output echoes for the same upload, including native `imageView` echoes that only retain the upload filename or the original `view_image` call id. Visual verification screenshots and other generated tool images without a matching user-upload summary should still render as generated-image cards.
 
 Focused checks:
 

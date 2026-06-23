@@ -394,6 +394,51 @@ test("attaches summaries only to completed turns and includes rollout stats", ()
   assert.equal(thread.turns[2].items.length, 0);
 });
 
+test("attaches scoped usage during resting turns-list completion window", () => {
+  const summaries = collectTurnUsageSummariesFromEntries([
+    { type: "turn_context", payload: { turn_id: "resting" } },
+    {
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          last_token_usage: { input_tokens: 15, output_tokens: 5, total_tokens: 20 },
+          total_token_usage: { input_tokens: 15, output_tokens: 5, total_tokens: 20 },
+          model_context_window: 100,
+        },
+      },
+    },
+    { type: "turn_context", payload: { turn_id: "failed" } },
+    {
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          last_token_usage: { input_tokens: 30, output_tokens: 1, total_tokens: 31 },
+          total_token_usage: { input_tokens: 45, output_tokens: 6, total_tokens: 51 },
+          model_context_window: 100,
+        },
+      },
+    },
+  ]);
+  const thread = {
+    status: { type: "idle" },
+    turns: [
+      { id: "resting", items: [] },
+      { id: "failed", status: { type: "failed" }, items: [] },
+      { id: "unknown", items: [] },
+    ],
+  };
+
+  attachTurnUsageSummaries(thread, summaries);
+
+  assert.equal(thread.turns[0].items.length, 1);
+  assert.equal(thread.turns[0].items[0].type, "turnUsageSummary");
+  assert.equal(thread.turns[0].items[0].mobileUsageSummary.turnId, "resting");
+  assert.equal(thread.turns[1].items.length, 0);
+  assert.equal(thread.turns[2].items.length, 0);
+});
+
 test("context risk thresholds match visible warning levels", () => {
   assert.equal(contextRiskLevel(69.9), "normal");
   assert.equal(contextRiskLevel(70), "warn");

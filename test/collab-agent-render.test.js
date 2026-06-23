@@ -25,6 +25,14 @@ function functionBody(name) {
   throw new Error(`could not parse function ${name}`);
 }
 
+function functionSource(name) {
+  const start = appJs.indexOf(`function ${name}(`);
+  assert.notEqual(start, -1, `missing function ${name}`);
+  const open = appJs.indexOf(") {", start) + 2;
+  assert.notEqual(open, 1, `missing function body ${name}`);
+  return `${appJs.slice(start, open + 1)}${functionBody(name)}}`;
+}
+
 function cssRuleBody(selector) {
   const start = stylesCss.indexOf(`${selector} {`);
   assert.notEqual(start, -1, `missing css rule ${selector}`);
@@ -48,7 +56,8 @@ test("live operation cards dock at the bottom and expose only the newest operati
   assert.match(appJs, /function currentLiveOperationEntry\(thread\)/);
   assert.match(functionBody("currentLiveOperationEntry"), /const turn = thread\.turns\[thread\.turns\.length - 1\]/);
   assert.match(functionBody("currentLiveOperationEntry"), /if \(!turn \|\| !isLatestTurn\(turn\) \|\| !isLiveTurn\(turn\)\) return null;/);
-  assert.match(functionBody("currentLiveOperationEntry"), /if \(isOperationalItem\(item\)\) latest = \{ turn, item, sourceIndex: index \};/);
+  assert.match(appJs, /function isActiveOperationalItem\(item\)/);
+  assert.match(functionBody("currentLiveOperationEntry"), /if \(isActiveOperationalItem\(item\)\) return \{ turn, item, sourceIndex: index \};/);
   assert.match(appJs, /function renderLiveOperationDock\(thread, previousKeys = new Set\(\)\)/);
   assert.match(functionBody("renderLiveOperationDock"), /currentLiveOperationEntry\(thread\)/);
   assert.match(functionBody("renderLiveOperationDock"), /live-operation-dock-inner/);
@@ -122,6 +131,63 @@ test("live operation cards dock at the bottom and expose only the newest operati
   assert.match(stylesCss, /\.operation-detail\s*{[\s\S]*max-height:\s*100%;/);
   assert.match(stylesCss, /\.operation-detail\s*{[\s\S]*white-space:\s*normal;/);
   assert.match(stylesCss, /\.live-operation-dock \.operation-detail\s*{[\s\S]*-webkit-line-clamp:\s*2;/);
+});
+
+test("live operation dock ignores completed operations in an active turn", () => {
+  const currentLiveOperationEntry = Function(`
+const state = { currentThread: null };
+function statusText(status) {
+  if (!status) return "";
+  if (typeof status === "string") return status;
+  return status.type || status.state || "";
+}
+function isCompletedStatus(status) {
+  return /completed|failed|cancel|error|interrupted/i.test(statusText(status));
+}
+function isRunningStatus(status) {
+  const text = statusText(status).toLowerCase();
+  return /(running|active|queued|processing|inprogress|in_progress|in-progress)/.test(text)
+    && !/(completed|failed|cancel|error|interrupted)/.test(text);
+}
+function isTurnComplete(turn) {
+  return Boolean(turn && (turn.completedAt || turn.durationMs || isCompletedStatus(turn.status)));
+}
+function isOperationalItem(item) {
+  return item && ["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"].includes(item.type);
+}
+function isLatestTurn(turn) {
+  const turns = state.currentThread && Array.isArray(state.currentThread.turns) ? state.currentThread.turns : [];
+  return Boolean(turn && turns[turns.length - 1] === turn);
+}
+function isLiveTurn(turn) {
+  return Boolean(turn && !isTurnComplete(turn) && isRunningStatus(turn.status));
+}
+${functionSource("isActiveOperationalItem")}
+${functionSource("currentLiveOperationEntry")}
+return (thread) => {
+  state.currentThread = thread;
+  return currentLiveOperationEntry(thread);
+};
+`)();
+  const thread = {
+    turns: [{
+      id: "music-live",
+      status: { type: "active" },
+      items: [
+        { id: "running-cmd", type: "commandExecution", status: "running", command: "npm test" },
+        { id: "completed-file", type: "fileChange", status: "completed" },
+      ],
+    }],
+  };
+
+  assert.equal(currentLiveOperationEntry(thread).item.id, "running-cmd");
+
+  thread.turns[0].items = [
+    { id: "completed-cmd", type: "commandExecution", status: "completed", command: "npm test" },
+    { id: "completed-file", type: "fileChange", status: "completed" },
+  ];
+
+  assert.equal(currentLiveOperationEntry(thread), null);
 });
 
 test("current-turn subagent panel opens from a left swipe without a topbar button", () => {

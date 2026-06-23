@@ -45,7 +45,7 @@ test("upward user scroll can jump back to the current turn final receipt", () =>
   assert.match(appJs, /postCompletionRefreshTimers: \[\]/);
   assert.match(appJs, /function schedulePostCompletionThreadRefreshes\(threadId, delays = \[700, 2400\]\)/);
   assert.match(appJs, /schedulePostCompletionThreadRefreshes\(params\.threadId, \[700, 2400\]\)/);
-  assert.match(appJs, /refreshCurrentThread\(\{\s*source: "post-completion",\s*full: index === delays\.length - 1,\s*\}\)\.catch\(showError\);/);
+  assert.match(appJs, /refreshCurrentThread\(\{\s*source: "post-completion",\s*full: true,\s*\}\)\.catch\(showError\);/);
   assert.match(appJs, /function latestSuccessfulCompletedTurnMissingUsage\(\)/);
   assert.match(appJs, /function scheduleUsageBackfillRefresh\(delay = 1200\)/);
   assert.match(functionBody("loadThread"), /renderCurrentThread\(\{ stickToBottom: true \}\);[\s\S]*scheduleUsageBackfillRefresh\(\);[\s\S]*postPerformanceEvent\("thread_detail_first_paint"/);
