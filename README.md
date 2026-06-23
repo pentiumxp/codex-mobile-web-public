@@ -1,5 +1,7 @@
 # Codex Mobile Web
 
+- 中文说明：v381 修正 live SSE 增量和 detail/projection refresh 合并时的 item 顺序所有权。症状是运行中 turn 的初始 `You` 消息可能被错误显示在较新的 Codex 回执下面，并随着新回执或后台 refresh 反复消失/出现；失败层是前端 `mergeItemsPreservingLocalVisible()` 把本地增量数组顺序当成权威，保留了 SSE 先 append 到 turn 尾部的 userMessage 位置。现在 refresh/projection 的 incoming item 顺序是权威顺序，本地只保留真正没有进入 refresh 的 pending/local-only item，并按已有锚点插回；已有更完整的本地 agent 文本仍可保留，但不能改变服务端权威 user/agent 顺序。旧的 `hasMatchingIncomingVisibleItem()` 路径已删除，避免继续留下“先遍历 existingItems”的兜底后遗症。PWA shell cache 升级到 `codex-mobile-shell-v381`。
+
 ## 2026-06-23 public 发布说明：线程详情、线程列表和完成回执一致性修复
 
 本次 public 发布对应 Mac 生产环境已先行部署并完成 smoke 验证后的代码同步。修复目标不是给 Music 等大线程再加一层前端兜底，而是把线程详情、线程列表、rollout enrichment、active overlay 和投影缓存的状态所有权收敛到同一套服务端不变量：真实 app-server / rollout 已经物化的 turn 优先于本地临时 overlay；已完成线程的最终回执和 Usage 由 bounded rollout completion 作为补齐证据；线程列表 fallback 不能在详情首屏期间抢占大 rollout 扫描。

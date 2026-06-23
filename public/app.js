@@ -388,7 +388,7 @@ const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v380";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v381";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -5157,9 +5157,65 @@ function visibleTextItemsLikelySame(existingItem, incomingItem) {
     || (incomingText.length >= existingText.length && incomingText.startsWith(existingText));
 }
 
-function hasMatchingIncomingVisibleItem(existingItem, incomingItems) {
-  if (hasMatchingIncomingUserMessage(existingItem, incomingItems)) return true;
-  return (incomingItems || []).some((incomingItem) => visibleTextItemsLikelySame(existingItem, incomingItem));
+function findUnusedExistingItemIndexForIncoming(incomingItem, existingItems, usedExistingIndexes) {
+  if (!incomingItem) return -1;
+  const used = usedExistingIndexes || new Set();
+  if (incomingItem.id) {
+    const index = (existingItems || []).findIndex((existingItem, candidateIndex) => existingItem
+      && !used.has(candidateIndex)
+      && existingItem.id === incomingItem.id);
+    if (index >= 0) return index;
+  }
+  if (incomingItem.type === "userMessage") {
+    const index = (existingItems || []).findIndex((existingItem, candidateIndex) => existingItem
+      && !used.has(candidateIndex)
+      && existingItem.type === "userMessage"
+      && userMessagesCanShadow(existingItem, incomingItem));
+    if (index >= 0) return index;
+  }
+  if (comparableVisibleTextItem(incomingItem)) {
+    const index = (existingItems || []).findIndex((existingItem, candidateIndex) => existingItem
+      && !used.has(candidateIndex)
+      && visibleTextItemsLikelySame(existingItem, incomingItem));
+    if (index >= 0) return index;
+  }
+  return -1;
+}
+
+function mergeIncomingOrderedItem(existingItem, incomingItem) {
+  if (!existingItem) return incomingItem;
+  if (!incomingItem) return existingItem;
+  if (incomingItem.type === "userMessage" && existingItem.type === "userMessage") {
+    return mergeLikelySameUserMessage(existingItem, incomingItem);
+  }
+  if (visibleTextItemsLikelySame(existingItem, incomingItem)) {
+    return mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem);
+  }
+  return mergeItemPreservingVisibleFields(existingItem, incomingItem);
+}
+
+function insertLocalOnlyItemByExistingOrder(merged, item, existingIndex, existingIndexToMergedIndex) {
+  if (!item) return;
+  let insertAt = -1;
+  for (let index = existingIndex - 1; index >= 0; index -= 1) {
+    if (existingIndexToMergedIndex.has(index)) {
+      insertAt = existingIndexToMergedIndex.get(index) + 1;
+      break;
+    }
+  }
+  if (insertAt < 0) {
+    for (const [index, mergedIndex] of existingIndexToMergedIndex.entries()) {
+      if (index > existingIndex && (insertAt < 0 || mergedIndex < insertAt)) {
+        insertAt = mergedIndex;
+      }
+    }
+  }
+  if (insertAt < 0 || insertAt > merged.length) insertAt = merged.length;
+  merged.splice(insertAt, 0, item);
+  for (const [index, mergedIndex] of existingIndexToMergedIndex.entries()) {
+    if (mergedIndex >= insertAt) existingIndexToMergedIndex.set(index, mergedIndex + 1);
+  }
+  existingIndexToMergedIndex.set(existingIndex, insertAt);
 }
 
 function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
@@ -5196,63 +5252,33 @@ function mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem
 }
 
 function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserveLocalVisible = false) {
-  const incomingById = new Map((incomingItems || [])
-    .filter((item) => item && item.id)
-    .map((item) => [item.id, item]));
   const added = new Set();
-  const addedIncomingItems = new Set();
+  const usedExistingIndexes = new Set();
+  const existingIndexToMergedIndex = new Map();
   const merged = [];
-  for (const existingItem of existingItems || []) {
-    if (!existingItem) continue;
-    const id = existingItem.id;
-    if (id && incomingById.has(id)) {
-      const incomingMatch = incomingById.get(id);
-      merged.push(userMessagesCanShadow(existingItem, incomingMatch)
-        ? mergeLikelySameUserMessage(existingItem, incomingMatch)
-        : mergeItemPreservingVisibleFields(existingItem, incomingMatch));
-      added.add(id);
-      addedIncomingItems.add(incomingMatch);
-    } else if (hasMatchingIncomingVisibleItem(existingItem, incomingItems)) {
-      const incomingUserMatch = (incomingItems || []).find((incomingItem) => incomingItem
-        && incomingItem.id !== id
-        && incomingItem.type === "userMessage"
-        && existingItem.type === "userMessage"
-        && userMessagesCanShadow(existingItem, incomingItem));
-      const incomingTextMatch = incomingUserMatch
-        ? null
-        : (incomingItems || []).find((incomingItem) => visibleTextItemsLikelySame(existingItem, incomingItem));
-      if (incomingUserMatch) {
-        merged.push(mergeLikelySameUserMessage(existingItem, incomingUserMatch));
-        if (incomingUserMatch.id) added.add(incomingUserMatch.id);
-        addedIncomingItems.add(incomingUserMatch);
-      } else if (incomingTextMatch) {
-        merged.push(mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingTextMatch));
-        if (incomingTextMatch.id) added.add(incomingTextMatch.id);
-        addedIncomingItems.add(incomingTextMatch);
-      }
-      if (id) added.add(id);
-    } else if (shouldPreserveLocalOnlyItem(existingItem, preserveLocalVisible)) {
-      merged.push(existingItem);
-      if (id) added.add(id);
-    }
-  }
   for (const incomingItem of incomingItems || []) {
     if (!incomingItem) continue;
-    if (addedIncomingItems.has(incomingItem)) continue;
     if (incomingItem.id && added.has(incomingItem.id)) continue;
     if (hasMatchingRealUserMessage(incomingItem, merged) || hasMatchingRealUserMessage(incomingItem, incomingItems)) continue;
-    if (incomingItem.type === "userMessage") {
-      const existingUserIndex = merged.findIndex((existingItem) => userMessagesCanShadow(existingItem, incomingItem));
-      if (existingUserIndex >= 0) {
-        merged[existingUserIndex] = mergeLikelySameUserMessage(merged[existingUserIndex], incomingItem);
-        if (incomingItem.id) added.add(incomingItem.id);
-        addedIncomingItems.add(incomingItem);
-        continue;
-      }
-    }
-    merged.push(incomingItem);
+    const existingIndex = findUnusedExistingItemIndexForIncoming(incomingItem, existingItems || [], usedExistingIndexes);
+    const existingItem = existingIndex >= 0 ? existingItems[existingIndex] : null;
+    const mergedItem = mergeIncomingOrderedItem(existingItem, incomingItem);
+    merged.push(mergedItem);
     if (incomingItem.id) added.add(incomingItem.id);
+    if (mergedItem && mergedItem.id) added.add(mergedItem.id);
+    if (existingItem && existingItem.id) added.add(existingItem.id);
+    if (existingIndex >= 0) {
+      usedExistingIndexes.add(existingIndex);
+      existingIndexToMergedIndex.set(existingIndex, merged.length - 1);
+    }
   }
+  (existingItems || []).forEach((existingItem, existingIndex) => {
+    if (!existingItem || usedExistingIndexes.has(existingIndex)) return;
+    if (!shouldPreserveLocalOnlyItem(existingItem, preserveLocalVisible)) return;
+    if (existingItem.id && added.has(existingItem.id)) return;
+    insertLocalOnlyItemByExistingOrder(merged, existingItem, existingIndex, existingIndexToMergedIndex);
+    if (existingItem.id) added.add(existingItem.id);
+  });
   return dedupeTurnUsageSummaryItems(removeShadowedMuxUserMessages(dedupeLikelySameUserMessages(merged)));
 }
 

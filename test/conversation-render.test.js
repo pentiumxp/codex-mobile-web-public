@@ -416,8 +416,10 @@ function evaluatedMergeItemsPreservingLocalVisible() {
     "comparableVisibleTextItem",
     "comparableVisibleText",
     "visibleTextItemsLikelySame",
-    "hasMatchingIncomingVisibleItem",
+    "findUnusedExistingItemIndexForIncoming",
+    "mergeIncomingOrderedItem",
     "mergeVisibleTextItemPreservingRenderIdentity",
+    "insertLocalOnlyItemByExistingOrder",
     "mergeItemsPreservingLocalVisible",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
@@ -479,8 +481,10 @@ function evaluatedMergeItemsPreservingLocalVisibleWithRealVisibleWeight() {
     "comparableVisibleTextItem",
     "comparableVisibleText",
     "visibleTextItemsLikelySame",
-    "hasMatchingIncomingVisibleItem",
+    "findUnusedExistingItemIndexForIncoming",
+    "mergeIncomingOrderedItem",
     "mergeVisibleTextItemPreservingRenderIdentity",
+    "insertLocalOnlyItemByExistingOrder",
     "mergeItemsPreservingLocalVisible",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
@@ -558,9 +562,11 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "comparableVisibleTextItem",
     "comparableVisibleText",
     "visibleTextItemsLikelySame",
-    "hasMatchingIncomingVisibleItem",
+    "findUnusedExistingItemIndexForIncoming",
+    "mergeIncomingOrderedItem",
     "mergeItemPreservingVisibleFields",
     "mergeVisibleTextItemPreservingRenderIdentity",
+    "insertLocalOnlyItemByExistingOrder",
     "mergeItemsPreservingLocalVisible",
     "mergeTurnPreservingVisibleItems",
     "mergeThreadPreservingVisibleItems",
@@ -1385,9 +1391,10 @@ test("long agent messages keep a stable render path when a turn completes", () =
   assert.match(functionBody("applyNotification"), /renderCurrentThread\(\{ stickToBottom: true \}\)/);
   assert.match(appJs, /function mergeVisibleTextItemPreservingRenderIdentity\(/);
   assert.match(functionBody("mergeVisibleTextItemPreservingRenderIdentity"), /merged\.id = existingItem\.id/);
-  assert.match(functionBody("mergeItemsPreservingLocalVisible"), /mergeVisibleTextItemPreservingRenderIdentity\(existingItem, incomingTextMatch\)/);
-  assert.match(functionBody("mergeItemsPreservingLocalVisible"), /const addedIncomingItems = new Set\(\)/);
-  assert.match(functionBody("mergeItemsPreservingLocalVisible"), /if \(addedIncomingItems\.has\(incomingItem\)\) continue/);
+  assert.match(appJs, /function findUnusedExistingItemIndexForIncoming\(/);
+  assert.match(appJs, /function mergeIncomingOrderedItem\(/);
+  assert.match(functionBody("mergeItemsPreservingLocalVisible"), /for \(const incomingItem of incomingItems \|\| \[\]\)/);
+  assert.match(functionBody("mergeItemsPreservingLocalVisible"), /findUnusedExistingItemIndexForIncoming\(incomingItem, existingItems \|\| \[\], usedExistingIndexes\)/);
 });
 
 test("agent markdown can render uploaded image summaries as thumbnails", () => {
@@ -2218,14 +2225,21 @@ test("server only emits context compaction notices from explicit item state", ()
   assert.match(turnBody, /out\.items = sourceItems\.map\(\(item\) => compactItem\(item, options\)\)/);
 });
 
-test("matching user messages keep their original turn position after final refresh", () => {
-  const body = functionBody("mergeItemsPreservingLocalVisible");
-  assert.match(body, /const incomingUserMatch = \(incomingItems \|\| \[\]\)\.find/);
-  assert.match(body, /existingItem\.type === "userMessage"/);
-  assert.match(body, /userMessagesCanShadow\(existingItem, incomingItem\)/);
-  assert.match(body, /merged\.push\(mergeLikelySameUserMessage\(existingItem, incomingUserMatch\)\)/);
-  assert.match(body, /addedIncomingItems\.add\(incomingUserMatch\)/);
-  assert.match(body, /const incomingTextMatch = incomingUserMatch[\s\S]*visibleTextItemsLikelySame\(existingItem, incomingItem\)/);
+test("refresh merge uses incoming item order for durable user messages appended locally", () => {
+  const mergeItemsPreservingLocalVisible = evaluatedMergeItemsPreservingLocalVisibleWithRealVisibleWeight();
+  const existingItems = [
+    { id: "agent-progress", type: "agentMessage", text: "working\nwith more detail" },
+    { id: "real-user-prompt", type: "userMessage", content: [{ type: "text", text: "initial prompt" }] },
+  ];
+  const incomingItems = [
+    { id: "real-user-prompt", type: "userMessage", content: [{ type: "input_text", text: "initial prompt" }] },
+    { id: "agent-progress", type: "agentMessage", text: "working" },
+  ];
+
+  const merged = mergeItemsPreservingLocalVisible(existingItems, incomingItems, true);
+
+  assert.deepEqual(merged.map((item) => item.id), ["real-user-prompt", "agent-progress"]);
+  assert.equal(merged[1].text, "working\nwith more detail");
 });
 
 test("failed submitted messages render an inline receipt", () => {
@@ -2670,6 +2684,44 @@ test("v4 projection merge removes local pending message after durable user match
     "durable-user-current",
     "agent-progress",
   ]);
+});
+
+test("v4 projection merge corrects local SSE user message order from refresh", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const existingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 8,
+    turns: [{
+      id: "turn-current",
+      status: { type: "active" },
+      items: [
+        { id: "agent-progress", type: "agentMessage", text: "working\nwith more detail" },
+        { id: "durable-user-current", type: "userMessage", content: [{ type: "text", text: "current prompt" }] },
+      ],
+    }],
+  };
+  const incomingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 9,
+    turns: [{
+      id: "turn-current",
+      status: { type: "active" },
+      items: [
+        { id: "durable-user-current", type: "userMessage", content: [{ type: "input_text", text: "current prompt" }] },
+        { id: "agent-progress", type: "agentMessage", text: "working" },
+      ],
+    }],
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, incomingThread);
+
+  assert.deepEqual(merged.turns[0].items.map((item) => item.id), [
+    "durable-user-current",
+    "agent-progress",
+  ]);
+  assert.equal(merged.turns[0].items[1].text, "working\nwith more detail");
 });
 
 test("v4 projection merge keeps longer live receipt when refresh returns an older same-turn item", () => {
