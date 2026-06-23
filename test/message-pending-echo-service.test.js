@@ -30,6 +30,7 @@ test("pending steer echo injects a temporary user message into the live turn", (
   assert.equal(thread.turns[0].items[0].type, "userMessage");
   assert.equal(thread.turns[0].items[0].content[0].text, "what happened?");
   assert.equal(thread.turns[0].items[0].mobilePendingSubmission, true);
+  assert.equal(thread.turns[0].items[0].clientSubmissionId, "submission-1");
 
   now += 61_000;
   const nextThread = {

@@ -553,6 +553,7 @@ test("mux keeps mobile active-turn synthetic user messages off desktop clients",
     && message.params.item.type === "userMessage"));
   assert.match(mobileEchoed.params.item.id, /^mux-user-thread-active-turn-active-submission-1$/);
   assert.equal(mobileEchoed.params.item.content[0].text, "steer from phone");
+  assert.equal(mobileEchoed.params.item.clientSubmissionId, "submission-1");
   await delay(100);
   assert.equal(
     desktopMessages.some((message) => message.method === "item/completed"

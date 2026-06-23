@@ -419,6 +419,7 @@ function buildUserMessageNotification(params) {
           : `mux-user-${Date.now()}-${nextSyntheticItemId++}`,
         type: "userMessage",
         content,
+        clientSubmissionId: params.clientSubmissionId ? String(params.clientSubmissionId) : "",
       },
     },
   };

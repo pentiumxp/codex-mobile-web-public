@@ -1,5 +1,6 @@
 # Codex Mobile Web
 
+- 中文说明：v396 修复移动端发送用户消息后，思考过程中同一条用户消息可能出现两张相同卡片的问题。服务端 mux-local `userMessage` echo 和 pending steer echo 现在携带 `clientSubmissionId`；前端线程合并会用提交 id、本地 `local-user-*` id、确定性 `mux-user-*` id 后缀和内容签名收敛同一次提交，只保留优先级更高的 mux/durable 用户消息，同时保留用户后来真正重复发送的同文消息。PWA shell cache 升级到 `codex-mobile-shell-v396`。
 - 中文说明：v395 将手机端底部 Command dock 改为悬浮 operation bubble。手机窄屏不再为纯 reasoning 或命令状态常驻占用一行纵向空间；只有真实 command/file/tool/search 正在运行时才在 composer 上方显示一个不参与布局的气泡，内容只保留操作类型、短摘要和运行时长。点击或上滑气泡会展开当前操作详情 sheet，可查看完整命令和参数。桌面和 iPad 宽屏继续保留原一行 Command dock。PWA shell cache 升级到 `codex-mobile-shell-v395`。
 
 - 中文说明：server-only 跟进修正 v394 后 Mac 上 Command 详情仍为空的问题。实测 `/api/threads/:id?mode=recent` 返回的 `commandExecution.command` 本身为空，失败层不是前端 dock 渲染，而是服务端 raw-operation fallback 只解析 rollout `function_call.arguments.command`，没有解析 Mac `exec_command` 常见的 `arguments.cmd`。现在服务端投影同时支持 `command`、`cmd`、`shellCommand`、`shell_command`，且支持 `arguments` 为对象或 JSON 字符串；本次不改变 PWA shell cache。

@@ -224,6 +224,7 @@ function createPendingSteerEchoStore(options = {}) {
         startedAtMs,
         startedAt: new Date(startedAtMs).toISOString(),
         mobilePendingSubmission: true,
+        clientSubmissionId: String(params.clientSubmissionId || "").trim(),
       },
     });
     prune(startedAtMs);

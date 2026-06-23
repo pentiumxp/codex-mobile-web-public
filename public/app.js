@@ -388,7 +388,7 @@ const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v395";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v396";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -4851,6 +4851,31 @@ function isOptimisticUserMessage(item) {
   return Boolean(item && item.type === "userMessage" && (item.mobilePendingSubmission || /^local-user-/.test(String(item.id || "")) || isMuxUserMessage(item)));
 }
 
+function userMessageSubmissionIdCandidates(item) {
+  if (!item || item.type !== "userMessage") return [];
+  const values = [];
+  const explicit = String(item.clientSubmissionId || "").trim();
+  if (explicit) values.push(explicit);
+  const local = String(item.id || "").match(/^local-user-(.+)$/);
+  if (local && local[1]) values.push(local[1]);
+  return [...new Set(values)];
+}
+
+function userMessageHasSubmissionId(item, submissionId) {
+  const value = String(submissionId || "").trim();
+  if (!value || !item || item.type !== "userMessage") return false;
+  if (userMessageSubmissionIdCandidates(item).includes(value)) return true;
+  const id = String(item.id || "");
+  return Boolean(id && id.endsWith(`-${value}`));
+}
+
+function userMessagesShareSubmissionId(left, right) {
+  const leftValues = userMessageSubmissionIdCandidates(left);
+  const rightValues = userMessageSubmissionIdCandidates(right);
+  return leftValues.some((value) => userMessageHasSubmissionId(right, value))
+    || rightValues.some((value) => userMessageHasSubmissionId(left, value));
+}
+
 function isTurnUsageSummaryItem(item) {
   return Boolean(item && item.type === "turnUsageSummary");
 }
@@ -5085,21 +5110,32 @@ function normalizeThreadVisibleUserMessages(thread) {
     if (!turn || !Array.isArray(turn.items)) continue;
     turn.items = removeShadowedMuxUserMessages(dedupeLikelySameUserMessages(turn.items));
   }
+  const userMessages = threadUserMessageEntries(thread.turns);
   const durableUserMessages = [];
-  for (let turnIndex = 0; turnIndex < thread.turns.length; turnIndex += 1) {
-    const turn = thread.turns[turnIndex];
-    const items = Array.isArray(turn && turn.items) ? turn.items : [];
-    for (const item of items) {
-      if (item && item.type === "userMessage" && !isOptimisticUserMessage(item)) durableUserMessages.push({ item, turnIndex });
-    }
+  for (const entry of userMessages) {
+    if (entry && entry.item && !isOptimisticUserMessage(entry.item)) durableUserMessages.push(entry);
   }
-  if (!durableUserMessages.length) return thread;
+  if (!durableUserMessages.length && userMessages.length < 2) return thread;
   for (let turnIndex = 0; turnIndex < thread.turns.length; turnIndex += 1) {
     const turn = thread.turns[turnIndex];
     if (!turn || !Array.isArray(turn.items)) continue;
-    turn.items = turn.items.filter((item) => !shouldDropOptimisticUserMessageForDurable(item, turnIndex, durableUserMessages));
+    turn.items = turn.items.filter((item, itemIndex) => !shouldDropOptimisticUserMessageForDurable(item, turnIndex, durableUserMessages)
+      && !shouldDropOptimisticUserMessageForHigherPriorityEcho(item, turnIndex, itemIndex, userMessages));
   }
   return thread;
+}
+
+function threadUserMessageEntries(turns) {
+  const entries = [];
+  for (let turnIndex = 0; turnIndex < (turns || []).length; turnIndex += 1) {
+    const turn = turns[turnIndex];
+    const items = Array.isArray(turn && turn.items) ? turn.items : [];
+    for (let itemIndex = 0; itemIndex < items.length; itemIndex += 1) {
+      const item = items[itemIndex];
+      if (item && item.type === "userMessage") entries.push({ item, turnIndex, itemIndex });
+    }
+  }
+  return entries;
 }
 
 function shouldDropOptimisticUserMessageForDurable(item, turnIndex, durableUserMessages) {
@@ -5109,6 +5145,22 @@ function shouldDropOptimisticUserMessageForDurable(item, turnIndex, durableUserM
     if (!userMessagesCanShadow(real.item, item)) return false;
     if (real.turnIndex >= turnIndex) return true;
     return userMessageHasVisualAttachment(real.item) && userMessageHasVisualAttachment(item);
+  });
+}
+
+function shouldDropOptimisticUserMessageForHigherPriorityEcho(item, turnIndex, itemIndex, userMessages) {
+  if (!isOptimisticUserMessage(item) || item.mobileSendError || !Array.isArray(userMessages)) return false;
+  const itemPriority = userMessageShadowPriority(item);
+  if (itemPriority <= 0 || itemPriority >= 3) return false;
+  return userMessages.some((candidate) => {
+    if (!candidate || !candidate.item || candidate.item === item || candidate.item.id === item.id) return false;
+    if (userMessageShadowPriority(candidate.item) <= itemPriority) return false;
+    const sameSubmission = userMessagesShareSubmissionId(candidate.item, item);
+    if (!sameSubmission) {
+      if (candidate.turnIndex < turnIndex) return false;
+      if (candidate.turnIndex === turnIndex && candidate.itemIndex <= itemIndex) return false;
+    }
+    return userMessagesCanShadow(candidate.item, item);
   });
 }
 
@@ -5166,7 +5218,7 @@ function v4ThreadHasPendingMatch(thread, pendingItem) {
   for (const turn of Array.isArray(thread && thread.turns) ? thread.turns : []) {
     for (const item of Array.isArray(turn && turn.items) ? turn.items : []) {
       if (!item || item.type !== "userMessage") continue;
-      if (submissionId && String(item.clientSubmissionId || "").trim() === submissionId) return true;
+      if (submissionId && userMessageHasSubmissionId(item, submissionId)) return true;
       if (!isOptimisticUserMessage(item) && userMessagesCanShadow(item, pendingItem)) return true;
     }
   }
@@ -5178,7 +5230,7 @@ function appendV4PendingOverlayItem(turn, item) {
   turn.items = Array.isArray(turn.items) ? turn.items : [];
   const submissionId = String(item.clientSubmissionId || "").trim();
   const alreadyPresent = turn.items.some((existing) => existing && (
-    (submissionId && String(existing.clientSubmissionId || "").trim() === submissionId)
+    (submissionId && userMessageHasSubmissionId(existing, submissionId))
     || existing.id === item.id
     || userMessagesCanShadow(existing, item)
   ));

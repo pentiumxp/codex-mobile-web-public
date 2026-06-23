@@ -477,6 +477,9 @@ function evaluatedUserMessagesLikelySame() {
     "canRenderImageAttachment",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
+    "userMessageSubmissionIdCandidates",
+    "userMessageHasSubmissionId",
+    "userMessagesShareSubmissionId",
     "isTurnUsageSummaryItem",
     "dedupeTurnUsageSummaryItems",
     "normalizeComparableText",
@@ -506,6 +509,9 @@ function evaluatedMergeItemsPreservingLocalVisible() {
     "canRenderImageAttachment",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
+    "userMessageSubmissionIdCandidates",
+    "userMessageHasSubmissionId",
+    "userMessagesShareSubmissionId",
     "isTurnUsageSummaryItem",
     "dedupeTurnUsageSummaryItems",
     "normalizeComparableText",
@@ -576,6 +582,9 @@ function evaluatedMergeItemsPreservingLocalVisibleWithRealVisibleWeight() {
     "canRenderImageAttachment",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
+    "userMessageSubmissionIdCandidates",
+    "userMessageHasSubmissionId",
+    "userMessagesShareSubmissionId",
     "isTurnUsageSummaryItem",
     "dedupeTurnUsageSummaryItems",
     "normalizeComparableText",
@@ -653,6 +662,9 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "canRenderImageAttachment",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
+    "userMessageSubmissionIdCandidates",
+    "userMessageHasSubmissionId",
+    "userMessagesShareSubmissionId",
     "isTurnUsageSummaryItem",
     "normalizeComparableText",
     "userMessageComparableParts",
@@ -680,7 +692,9 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "dedupeLikelySameUserMessages",
     "userMessageHasVisualAttachment",
     "normalizeThreadVisibleUserMessages",
+    "threadUserMessageEntries",
     "shouldDropOptimisticUserMessageForDurable",
+    "shouldDropOptimisticUserMessageForHigherPriorityEcho",
     "threadDurableUserMessages",
     "shouldDropInitialSubmissionEchoTurn",
     "threadHasInitialSubmissionEcho",
@@ -771,6 +785,9 @@ function evaluatedNormalizeThreadVisibleUserMessages() {
     "canRenderImageAttachment",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
+    "userMessageSubmissionIdCandidates",
+    "userMessageHasSubmissionId",
+    "userMessagesShareSubmissionId",
     "normalizeComparableText",
     "userMessageComparableParts",
     "userMessagePathOverlap",
@@ -787,7 +804,9 @@ function evaluatedNormalizeThreadVisibleUserMessages() {
     "dedupeLikelySameUserMessages",
     "userMessageHasVisualAttachment",
     "normalizeThreadVisibleUserMessages",
+    "threadUserMessageEntries",
     "shouldDropOptimisticUserMessageForDurable",
+    "shouldDropOptimisticUserMessageForHigherPriorityEcho",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
 function itemVisibleWeight(item) { return JSON.stringify(item || {}).length; }
@@ -815,6 +834,9 @@ function evaluatedLiveUserMessageUpsert() {
     "canRenderImageAttachment",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
+    "userMessageSubmissionIdCandidates",
+    "userMessageHasSubmissionId",
+    "userMessagesShareSubmissionId",
     "isTurnUsageSummaryItem",
     "normalizeComparableText",
     "userMessageComparableParts",
@@ -831,7 +853,9 @@ function evaluatedLiveUserMessageUpsert() {
     "dedupeLikelySameUserMessages",
     "userMessageHasVisualAttachment",
     "normalizeThreadVisibleUserMessages",
+    "threadUserMessageEntries",
     "shouldDropOptimisticUserMessageForDurable",
+    "shouldDropOptimisticUserMessageForHigherPriorityEcho",
     "upsertItem",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
@@ -881,6 +905,9 @@ function evaluatedVisibleItemsForTurn() {
     "canRenderImageAttachment",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
+    "userMessageSubmissionIdCandidates",
+    "userMessageHasSubmissionId",
+    "userMessagesShareSubmissionId",
     "isTurnUsageSummaryItem",
     "normalizeComparableText",
     "userMessageComparableParts",
@@ -984,6 +1011,9 @@ function evaluatedLocalSubmissionInserter() {
     "insertLocalSubmittedUserMessage",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
+    "userMessageSubmissionIdCandidates",
+    "userMessageHasSubmissionId",
+    "userMessagesShareSubmissionId",
     "isTurnUsageSummaryItem",
     "dedupeTurnUsageSummaryItems",
     "normalizeComparableText",
@@ -1002,7 +1032,9 @@ function evaluatedLocalSubmissionInserter() {
     "dedupeLikelySameUserMessages",
     "userMessageHasVisualAttachment",
     "normalizeThreadVisibleUserMessages",
+    "threadUserMessageEntries",
     "shouldDropOptimisticUserMessageForDurable",
+    "shouldDropOptimisticUserMessageForHigherPriorityEcho",
     "mergeSubmittedUserItemIntoTurn",
     "reconcileSubmittedUserMessageTurn",
   ].map((name) => functionSourceFrom(appJs, name));
@@ -3048,6 +3080,80 @@ test("v4 projection merge preserves local pending message when server refresh ha
     "local-user-submit-current",
   ]);
   assert.equal(merged.mobileProjectionVersion, "v4");
+});
+
+test("v4 projection merge removes local pending message after matching mux echo arrives", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const existingThread = {
+    id: "thread-new",
+    turns: [{
+      id: "local-turn-submit-current",
+      status: { type: "active" },
+      items: [{
+        id: "local-user-submit-current",
+        type: "userMessage",
+        mobilePendingSubmission: true,
+        clientSubmissionId: "submit-current",
+        content: [{ type: "text", text: "current guidance" }],
+      }],
+    }],
+  };
+  const incomingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 3,
+    turns: [{
+      id: "real-active-turn",
+      status: { type: "active" },
+      items: [
+        {
+          id: "mux-user-thread-new-real-active-turn-submit-current",
+          type: "userMessage",
+          content: [{ type: "text", text: "current   guidance" }],
+        },
+        { id: "agent-progress", type: "agentMessage", text: "working" },
+      ],
+    }],
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, incomingThread);
+
+  assert.deepEqual(merged.turns.map((turn) => turn.id), ["real-active-turn"]);
+  assert.deepEqual(merged.turns[0].items.map((item) => item.id), [
+    "mux-user-thread-new-real-active-turn-submit-current",
+    "agent-progress",
+  ]);
+});
+
+test("cross-turn normalization keeps later local repeat when only earlier mux text matches", () => {
+  const normalizeThreadVisibleUserMessages = evaluatedNormalizeThreadVisibleUserMessages();
+  const thread = {
+    turns: [
+      {
+        id: "turn-1",
+        items: [{
+          id: "mux-user-thread-1-turn-1-submit-old",
+          type: "userMessage",
+          content: [{ type: "input_text", text: "repeat prompt" }],
+        }],
+      },
+      {
+        id: "turn-2",
+        items: [{
+          id: "local-user-submit-new",
+          type: "userMessage",
+          mobilePendingSubmission: true,
+          clientSubmissionId: "submit-new",
+          content: [{ type: "text", text: "repeat   prompt" }],
+        }],
+      },
+    ],
+  };
+
+  normalizeThreadVisibleUserMessages(thread);
+
+  assert.deepEqual(thread.turns[0].items.map((item) => item.id), ["mux-user-thread-1-turn-1-submit-old"]);
+  assert.deepEqual(thread.turns[1].items.map((item) => item.id), ["local-user-submit-new"]);
 });
 
 test("live turn merge keeps displayed assistant receipt when backfill has more stale items", () => {
