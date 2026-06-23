@@ -388,7 +388,7 @@ const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v390";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v392";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -5306,7 +5306,33 @@ function visibleTextItemsLikelySame(existingItem, incomingItem) {
     || (incomingText.length >= existingText.length && incomingText.startsWith(existingText));
 }
 
-function findUnusedExistingItemIndexForIncoming(incomingItem, existingItems, usedExistingIndexes) {
+function visibleTextItemsHaveStableSharedPrefix(existingItem, incomingItem) {
+  if (!comparableVisibleTextItem(existingItem) || !comparableVisibleTextItem(incomingItem)) return false;
+  if (existingItem.type !== incomingItem.type) return false;
+  const existingText = comparableVisibleText(existingItem);
+  const incomingText = comparableVisibleText(incomingItem);
+  if (!existingText || !incomingText) return false;
+  if (existingText === incomingText) return true;
+  const shorterText = existingText.length <= incomingText.length ? existingText : incomingText;
+  const longerText = existingText.length <= incomingText.length ? incomingText : existingText;
+  if (shorterText.length < 16) return false;
+  if (!longerText.startsWith(shorterText)) return false;
+  return shorterText.length / Math.max(1, longerText.length) >= 0.5;
+}
+
+function completedReceiptItemsLikelySame(existingItem, incomingItem, incomingTurn = null) {
+  if (!completedIncomingTurnHasAuthoritativeReceipt(incomingTurn)) return false;
+  if (!isAssistantReceiptLikeItem(existingItem) || !isAssistantReceiptLikeItem(incomingItem)) return false;
+  return visibleTextItemsLikelySame(existingItem, incomingItem)
+    || visibleTextItemsHaveStableSharedPrefix(existingItem, incomingItem);
+}
+
+function visibleTextItemsCanShareRenderIdentity(existingItem, incomingItem, incomingTurn = null) {
+  return visibleTextItemsLikelySame(existingItem, incomingItem)
+    || completedReceiptItemsLikelySame(existingItem, incomingItem, incomingTurn);
+}
+
+function findUnusedExistingItemIndexForIncoming(incomingItem, existingItems, usedExistingIndexes, incomingTurn = null) {
   if (!incomingItem) return -1;
   const used = usedExistingIndexes || new Set();
   if (incomingItem.id) {
@@ -5325,20 +5351,20 @@ function findUnusedExistingItemIndexForIncoming(incomingItem, existingItems, use
   if (comparableVisibleTextItem(incomingItem)) {
     const index = (existingItems || []).findIndex((existingItem, candidateIndex) => existingItem
       && !used.has(candidateIndex)
-      && visibleTextItemsLikelySame(existingItem, incomingItem));
+      && visibleTextItemsCanShareRenderIdentity(existingItem, incomingItem, incomingTurn));
     if (index >= 0) return index;
   }
   return -1;
 }
 
-function mergeIncomingOrderedItem(existingItem, incomingItem) {
+function mergeIncomingOrderedItem(existingItem, incomingItem, incomingTurn = null) {
   if (!existingItem) return incomingItem;
   if (!incomingItem) return existingItem;
   if (incomingItem.type === "userMessage" && existingItem.type === "userMessage") {
     return mergeLikelySameUserMessage(existingItem, incomingItem);
   }
-  if (visibleTextItemsLikelySame(existingItem, incomingItem)) {
-    return mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem);
+  if (visibleTextItemsCanShareRenderIdentity(existingItem, incomingItem, incomingTurn)) {
+    return mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem, incomingTurn);
   }
   return mergeItemPreservingVisibleFields(existingItem, incomingItem);
 }
@@ -5392,9 +5418,17 @@ function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
   return merged;
 }
 
-function mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem) {
+function mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem, incomingTurn = null) {
   const merged = mergeItemPreservingVisibleFields(existingItem, incomingItem);
-  if (!existingItem || !incomingItem || !merged || !visibleTextItemsLikelySame(existingItem, incomingItem)) return merged;
+  if (!existingItem || !incomingItem || !merged || !visibleTextItemsCanShareRenderIdentity(existingItem, incomingItem, incomingTurn)) return merged;
+  const existingText = comparableVisibleText(existingItem);
+  const incomingText = comparableVisibleText(incomingItem);
+  if (completedReceiptItemsLikelySame(existingItem, incomingItem, incomingTurn)
+    && typeof existingItem.text === "string"
+    && existingText.length > incomingText.length
+    && existingText.startsWith(incomingText)) {
+    merged.text = existingItem.text;
+  }
   if (existingItem.id) merged.id = existingItem.id;
   if (existingItem.startedAtMs && !incomingItem.startedAtMs) merged.startedAtMs = existingItem.startedAtMs;
   return merged;
@@ -5410,9 +5444,9 @@ function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserve
     if (!incomingItem) continue;
     if (incomingItem.id && added.has(incomingItem.id)) continue;
     if (hasMatchingRealUserMessage(incomingItem, merged) || hasMatchingRealUserMessage(incomingItem, incomingItems)) continue;
-    const existingIndex = findUnusedExistingItemIndexForIncoming(incomingItem, existingItems || [], usedExistingIndexes);
+    const existingIndex = findUnusedExistingItemIndexForIncoming(incomingItem, existingItems || [], usedExistingIndexes, incomingTurn);
     const existingItem = existingIndex >= 0 ? existingItems[existingIndex] : null;
-    const mergedItem = mergeIncomingOrderedItem(existingItem, incomingItem);
+    const mergedItem = mergeIncomingOrderedItem(existingItem, incomingItem, incomingTurn);
     merged.push(mergedItem);
     if (incomingItem.id) added.add(incomingItem.id);
     if (mergedItem && mergedItem.id) added.add(mergedItem.id);
@@ -5652,6 +5686,33 @@ function conversationRootSignature(thread) {
     readWarning: String(thread.mobileReadWarning || ""),
     readWarningMessage,
     visibleItemKeys: Array.isArray(thread.mobileVisibleItemKeys) ? thread.mobileVisibleItemKeys : [],
+    visibleTurns: turns.map((turn) => turn && (turn.id || turn.startedAt || "")),
+  };
+  return JSON.stringify(payload);
+}
+
+function conversationPatchShellSignature(thread) {
+  if (!thread) return "home";
+  if (thread.mobileLoadError) return `load-error|${state.currentThreadId || thread.id || ""}|${thread.mobileLoadError}`;
+  if (threadIsLoadingWithoutVisibleTurns(thread)) return `loading|${state.currentThreadId || thread.id || ""}`;
+  const turns = visibleTurnsForConversation(thread);
+  const omitted = Number(thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread.turns || []).length - turns.length);
+  const readWarningMessage = threadReadWarningMessage(thread);
+  const payload = {
+    threadId: state.currentThreadId || thread.id || "",
+    imageAuthVersion: Number(state.imageAuthVersion || 0),
+    pluginRefreshPendingNotice: String(state.pluginRefreshPendingNotice || ""),
+    rolloutWarning: rolloutWarningSignature(thread),
+    omitted,
+    olderTurnsCursor: threadTurnsCursorSignature(thread.mobileOlderTurnsCursor),
+    historyExpanded: Boolean(thread.mobileHistoryExpanded),
+    historyBusy: Boolean(state.threadHistoryBusy),
+    historyError: String(state.threadHistoryError || ""),
+    goal: threadGoalSignature(thread),
+    approvals: approvalRequestsSignature(state.currentThreadId || thread.id || ""),
+    taskCards: threadTaskCardsSignature(thread),
+    readWarning: String(thread.mobileReadWarning || ""),
+    readWarningMessage,
     visibleTurns: turns.map((turn) => turn && (turn.id || turn.startedAt || "")),
   };
   return JSON.stringify(payload);
@@ -10750,23 +10811,45 @@ function visibleItemPatchEntries(turn) {
   }).filter((entry) => entry.item && entry.key && entry.signature);
 }
 
-function sameVisibleItemPatchShape(previousTurn, nextTurn) {
-  const previous = visibleItemPatchEntries(previousTurn);
-  const next = visibleItemPatchEntries(nextTurn);
-  if (previous.length !== next.length) return false;
-  return previous.every((entry, index) => entry.key === next[index].key);
+function visibleItemPatchShapePreservesExisting(previousEntries, nextEntries) {
+  if (!Array.isArray(previousEntries) || !Array.isArray(nextEntries)) return false;
+  if (previousEntries.length > nextEntries.length) return false;
+  let previousIndex = 0;
+  for (const nextEntry of nextEntries) {
+    const previousEntry = previousEntries[previousIndex];
+    if (previousEntry && previousEntry.key === nextEntry.key) previousIndex += 1;
+  }
+  return previousIndex === previousEntries.length;
 }
 
 function patchVisibleItemsOnlyFromRefresh(previousTurn, nextTurn, previousKeys) {
-  if (!previousTurn || !nextTurn || !isLatestTurn(nextTurn) || !isLiveTurn(nextTurn)) return false;
-  if (!sameVisibleItemPatchShape(previousTurn, nextTurn)) return false;
+  if (!previousTurn || !nextTurn || !isLatestTurn(nextTurn)) return false;
   const previousEntries = visibleItemPatchEntries(previousTurn);
   const nextEntries = visibleItemPatchEntries(nextTurn);
+  if (!visibleItemPatchShapePreservesExisting(previousEntries, nextEntries)) return false;
+  const article = turnArticleNode(nextTurn);
+  if (!article) return false;
+  const previousByKey = new Map(previousEntries.map((entry) => [entry.key, entry]));
+  let lastPatchedNode = null;
   for (let index = 0; index < nextEntries.length; index += 1) {
-    const previousSignature = JSON.stringify(previousEntries[index].signature);
-    const nextSignature = JSON.stringify(nextEntries[index].signature);
-    if (previousSignature === nextSignature) continue;
-    if (!patchVisibleItemDomNode(nextTurn, nextEntries[index].item, previousKeys, nextEntries[index].sourceIndex)) return false;
+    const nextEntry = nextEntries[index];
+    const previousEntry = previousByKey.get(nextEntry.key);
+    if (previousEntry) {
+      const existingNode = article.querySelector(`[data-render-key="${escapeSelectorAttr(nextEntry.key)}"]`);
+      if (!existingNode) return false;
+      const previousSignature = JSON.stringify(previousEntry.signature);
+      const nextSignature = JSON.stringify(nextEntry.signature);
+      lastPatchedNode = previousSignature === nextSignature
+        ? existingNode
+        : patchVisibleItemDomNode(nextTurn, nextEntry.item, previousKeys, nextEntry.sourceIndex);
+      if (!lastPatchedNode) return false;
+      continue;
+    }
+    const html = renderVisibleItemPatchHtml(nextTurn, nextEntry.item, previousKeys, nextEntry.sourceIndex);
+    const source = firstElementFromHtml(html);
+    if (!source) return false;
+    article.insertBefore(source, lastPatchedNode ? lastPatchedNode.nextSibling : article.firstChild);
+    lastPatchedNode = source;
   }
   return true;
 }
@@ -10794,7 +10877,7 @@ function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previou
   if (!conversation || !previousThread || !nextThread) return false;
   if (previousThread.mobileLoading || previousThread.mobileLoadError || nextThread.mobileLoading || nextThread.mobileLoadError) return false;
   if (state.renderedConversationSignature !== previousConversationSignature) return false;
-  if (conversationRootSignature(previousThread) !== conversationRootSignature(nextThread)) return false;
+  if (conversationPatchShellSignature(previousThread) !== conversationPatchShellSignature(nextThread)) return false;
   const wasNearBottom = isConversationNearBottom();
   const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom: wasNearBottom });
   const previousKeys = existingConversationRenderKeys();

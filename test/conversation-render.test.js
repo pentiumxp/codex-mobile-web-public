@@ -488,8 +488,11 @@ function evaluatedMergeItemsPreservingLocalVisible() {
     "comparableVisibleTextItem",
     "comparableVisibleText",
     "visibleTextItemsLikelySame",
+    "visibleTextItemsHaveStableSharedPrefix",
     "isAssistantReceiptLikeItem",
     "completedIncomingTurnHasAuthoritativeReceipt",
+    "completedReceiptItemsLikelySame",
+    "visibleTextItemsCanShareRenderIdentity",
     "shouldDropLocalOnlyReceiptForIncomingTurn",
     "shouldPreserveLocalOnlyItem",
     "findUnusedExistingItemIndexForIncoming",
@@ -561,8 +564,11 @@ function evaluatedMergeItemsPreservingLocalVisibleWithRealVisibleWeight() {
     "comparableVisibleTextItem",
     "comparableVisibleText",
     "visibleTextItemsLikelySame",
+    "visibleTextItemsHaveStableSharedPrefix",
     "isAssistantReceiptLikeItem",
     "completedIncomingTurnHasAuthoritativeReceipt",
+    "completedReceiptItemsLikelySame",
+    "visibleTextItemsCanShareRenderIdentity",
     "shouldDropLocalOnlyReceiptForIncomingTurn",
     "shouldPreserveLocalOnlyItem",
     "findUnusedExistingItemIndexForIncoming",
@@ -647,8 +653,11 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "comparableVisibleTextItem",
     "comparableVisibleText",
     "visibleTextItemsLikelySame",
+    "visibleTextItemsHaveStableSharedPrefix",
     "isAssistantReceiptLikeItem",
     "completedIncomingTurnHasAuthoritativeReceipt",
+    "completedReceiptItemsLikelySame",
+    "visibleTextItemsCanShareRenderIdentity",
     "shouldDropLocalOnlyReceiptForIncomingTurn",
     "shouldPreserveLocalOnlyItem",
     "findUnusedExistingItemIndexForIncoming",
@@ -1467,12 +1476,40 @@ test("replacing unsent attachments still revokes stale local image blobs immedia
 test("live detail refresh can patch changed visible items without replacing the whole turn", () => {
   assert.match(appJs, /function patchVisibleItemDomNode\(/);
   assert.match(appJs, /function visibleItemPatchEntries\(/);
-  assert.match(appJs, /function sameVisibleItemPatchShape\(/);
+  assert.match(appJs, /function visibleItemPatchShapePreservesExisting\(/);
   assert.match(appJs, /function patchVisibleItemsOnlyFromRefresh\(/);
-  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /isLatestTurn\(nextTurn\) \|\| !isLiveTurn\(nextTurn\)/);
-  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /sameVisibleItemPatchShape\(previousTurn, nextTurn\)/);
-  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /patchVisibleItemDomNode\(nextTurn, nextEntries\[index\]\.item, previousKeys, nextEntries\[index\]\.sourceIndex\)/);
+  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /!isLatestTurn\(nextTurn\)/);
+  assert.doesNotMatch(functionBody("patchVisibleItemsOnlyFromRefresh"), /!isLiveTurn\(nextTurn\)/);
+  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /visibleItemPatchShapePreservesExisting\(previousEntries, nextEntries\)/);
+  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /article\.insertBefore\(source, lastPatchedNode \? lastPatchedNode\.nextSibling : article\.firstChild\)/);
+  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /patchVisibleItemDomNode\(nextTurn, nextEntry\.item, previousKeys, nextEntry\.sourceIndex\)/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /patchVisibleItemsOnlyFromRefresh\(previousTurn, turn, previousKeys\)/);
+});
+
+test("visible item refresh patch shape preserves existing keys while appending usage", () => {
+  const preservesExisting = Function(`${functionSourceFrom(appJs, "visibleItemPatchShapePreservesExisting")}\nreturn visibleItemPatchShapePreservesExisting;`)();
+
+  assert.equal(
+    preservesExisting(
+      [{ key: "turn-current:user" }, { key: "turn-current:receipt" }],
+      [{ key: "turn-current:user" }, { key: "turn-current:receipt" }, { key: "turn-current:usage" }],
+    ),
+    true,
+  );
+  assert.equal(
+    preservesExisting(
+      [{ key: "turn-current:user" }, { key: "turn-current:receipt" }],
+      [{ key: "turn-current:receipt" }, { key: "turn-current:user" }, { key: "turn-current:usage" }],
+    ),
+    false,
+  );
+  assert.equal(
+    preservesExisting(
+      [{ key: "turn-current:user" }, { key: "turn-current:receipt" }],
+      [{ key: "turn-current:user" }, { key: "turn-current:usage" }],
+    ),
+    false,
+  );
 });
 
 test("turn timer prefers live item activity over idle sync labels", () => {
@@ -1550,7 +1587,7 @@ test("long agent messages keep a stable render path when a turn completes", () =
   assert.match(appJs, /function findUnusedExistingItemIndexForIncoming\(/);
   assert.match(appJs, /function mergeIncomingOrderedItem\(/);
   assert.match(functionBody("mergeItemsPreservingLocalVisible"), /for \(const incomingItem of incomingItems \|\| \[\]\)/);
-  assert.match(functionBody("mergeItemsPreservingLocalVisible"), /findUnusedExistingItemIndexForIncoming\(incomingItem, existingItems \|\| \[\], usedExistingIndexes\)/);
+  assert.match(functionBody("mergeItemsPreservingLocalVisible"), /findUnusedExistingItemIndexForIncoming\(incomingItem, existingItems \|\| \[\], usedExistingIndexes, incomingTurn\)/);
 });
 
 test("agent markdown can render uploaded image summaries as thumbnails", () => {
@@ -3014,6 +3051,63 @@ test("completed projection merge drops local-only live receipts when server rece
     mergedItems.filter((item) => item.type === "agentMessage").map((item) => item.id),
     ["server-final-receipt"],
   );
+  assert.equal(mergedItems.filter((item) => item.type === "turnUsageSummary").length, 1);
+});
+
+test("completed projection merge adopts shorter final receipt without repainting live receipt", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const existingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 20,
+    turns: [{
+      id: "turn-current",
+      status: { type: "active" },
+      items: [
+        { id: "user-current", type: "userMessage", content: [{ type: "text", text: "stabilize receipt" }] },
+        {
+          id: "local-live-receipt",
+          type: "agentMessage",
+          text: "Root cause isolated.\nPatch applied.\nValidation is still running.",
+        },
+      ],
+    }],
+  };
+  const incomingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 21,
+    turns: [{
+      id: "turn-current",
+      status: { type: "completed" },
+      completedAtMs: 1782222000000,
+      items: [
+        { id: "user-current", type: "userMessage", content: [{ type: "input_text", text: "stabilize receipt" }] },
+        {
+          id: "server-final-receipt",
+          type: "agentMessage",
+          text: "Root cause isolated.\nPatch applied.",
+        },
+        {
+          id: "mobile-turn-usage-turn-current",
+          type: "turnUsageSummary",
+          mobileUsageSummary: { totalTokenUsage: { totalTokens: 128 } },
+        },
+      ],
+    }],
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, incomingThread);
+  const mergedItems = merged.turns[0].items;
+  const receipts = mergedItems.filter((item) => item.type === "agentMessage");
+
+  assert.deepEqual(mergedItems.map((item) => item.id), [
+    "user-current",
+    "local-live-receipt",
+    "mobile-turn-usage-turn-current",
+  ]);
+  assert.equal(receipts.length, 1);
+  assert.equal(receipts[0].text, "Root cause isolated.\nPatch applied.\nValidation is still running.");
   assert.equal(mergedItems.filter((item) => item.type === "turnUsageSummary").length, 1);
 });
 

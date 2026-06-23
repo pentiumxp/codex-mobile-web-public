@@ -147,8 +147,8 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v390/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v390"/);
+  assert.match(swJs, /codex-mobile-shell-v392/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v392"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);
@@ -304,17 +304,21 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /skippedDetailRender: !shouldRenderDetail/);
   assert.match(appJs, /locallyPatchedDetail,/);
   assert.match(appJs, /function conversationRootSignature\(thread\)/);
+  assert.match(appJs, /function conversationPatchShellSignature\(thread\)/);
   assert.match(appJs, /function rolloutWarningSignature\(thread\)/);
   assert.doesNotMatch(functionBody("conversationRootSignature"), /rolloutSizeBytes: rolloutSizeBytes\(thread\)/);
   assert.doesNotMatch(functionBody("conversationRenderSignature"), /rolloutSizeBytes: rolloutSizeBytes\(thread\)/);
   assert.match(functionBody("conversationRootSignature"), /rolloutWarning: rolloutWarningSignature\(thread\)/);
+  assert.match(functionBody("conversationPatchShellSignature"), /rolloutWarning: rolloutWarningSignature\(thread\)/);
+  assert.doesNotMatch(functionBody("conversationPatchShellSignature"), /projectionRevision/);
+  assert.doesNotMatch(functionBody("conversationPatchShellSignature"), /visibleItemKeys/);
   assert.match(functionBody("conversationRenderSignature"), /rolloutWarning: rolloutWarningSignature\(thread\)/);
   assert.match(functionBody("conversationRootSignature"), /visibleTurns: turns\.map\(\(turn\) => turn && \(turn\.id \|\| turn\.startedAt \|\| ""\)\)/);
   assert.match(appJs, /function patchVisibleItemDom\(turn, item\)/);
   assert.match(appJs, /function insertVisibleItemDom\(turn, item\)/);
   assert.match(appJs, /function insertTurnArticleDom\(turn, previousKeys = existingConversationRenderKeys\(\)\)/);
   assert.match(appJs, /function patchCurrentThreadDetailFromRefresh\(previousThread, nextThread, previousConversationSignature\)/);
-  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /conversationRootSignature\(previousThread\) !== conversationRootSignature\(nextThread\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /conversationPatchShellSignature\(previousThread\) !== conversationPatchShellSignature\(nextThread\)/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /updateLiveOperationDockHtml\(renderLiveOperationDock\(nextThread, previousKeys\)\)/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /patchNode\(article, source\);/);
   assert.match(functionBody("insertVisibleItemDom"), /if \(isOperationalItem\(item\)\) return updateLiveOperationDockForLocalPatch\(\);/);

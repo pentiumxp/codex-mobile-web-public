@@ -1,5 +1,9 @@
 # Codex Mobile Web
 
+- 中文说明：v392 继续修正完成回执出现后的画面闪烁。v391 已处理同一 turn 内较短完成回执接管旧 receipt 节点，但 post-completion refresh 仍会因为 `mobileProjectionRevision` / `mobileVisibleItemKeys` 变化而绕过局部 patch，退回较大的 conversation/article patch。现在 refresh patch 判断改用只包含外壳可见因素的 `conversationPatchShellSignature`，并允许 latest turn 在完成态追加 Usage 或更新 receipt 时保留已有 item key 做局部 patch；只有删除、重排或外壳结构变化才回退完整渲染。PWA shell cache 升级到 `codex-mobile-shell-v392`。
+
+- 中文说明：v391 修正完成回执替换造成的短暂画面颤动。v390 会在 completed 服务端投影带回最终 `agentMessage` 和 `Usage` 后丢弃本地 active 阶段的 local-only 回执；但如果服务端最终回执是实时回执的较短前缀，旧逻辑会先移除较长本地回执再插入较短服务端回执，导致同一位置高度瞬间少一行。现在 completed incoming turn 的权威回执会在同类型、同前缀且重合度足够时接管已有可见回执节点，沿用旧 id 和较完整文本，同时保留 Usage 归并，避免 DOM 节点重建和高度缩短。PWA shell cache 升级到 `codex-mobile-shell-v391`。
+
 - 中文说明：v390 修正同一页面内 active turn 结束后可能短暂保留两条 Codex 回执的问题。失败层是前端 V4 thread detail 合并：为避免 live refresh 变轻，旧逻辑会保留本地-only 可见项；当 completed 服务端投影已经带回最终 `agentMessage` 和 `Usage` 时，本地 active 阶段的旧 receipt 仍可能留在页面里，形成一条无 Usage、一条有 Usage。现在 completed incoming turn 已有服务端 receipt 时，前端不再保留同 turn 的本地-only `agentMessage`/`plan`；本地 operation 卡仍可按既有规则保留。PWA shell cache 升级到 `codex-mobile-shell-v390`。
 
 - 中文说明：v389 修正 v388 后仍可见的两个投影状态归并回归。第一，已有线程发送消息时，浏览器会先插入本地 `local-turn` optimistic overlay；现在 `/api/threads/:id/messages` 成功返回真实 `turnId` 后，会立即把该 overlay 归并到真实 turn，不再等下一次详情刷新，因此同一条用户消息不会在本地 turn 和服务端 turn 中同时显示。第二，服务端压缩 turn 时会给已抑制的“用户上传图 view_image 回执”写入 `mobileSuppressedVisualReceiptKeys`；V4 详情 refresh 合并只按这个服务端投影标记移除旧本地 visual receipt，不再由客户端按上传摘要自行猜测。普通系统生成图和视觉核验输出仍可保留。PWA shell cache 升级到 `codex-mobile-shell-v389`。
