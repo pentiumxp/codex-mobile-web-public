@@ -4112,6 +4112,15 @@ html.keyboard-open .side-chat-form textarea {
   border-color: rgba(122, 199, 167, 0.35);
 }
 
+.item.thread-task-card-injected {
+  background: var(--approval-bg);
+  border-color: rgba(240, 180, 108, 0.42);
+}
+
+.item.thread-task-card-injected .item-body {
+  white-space: normal;
+}
+
 .send-error-receipt {
   margin-top: 8px;
   padding: 7px 9px;
@@ -4367,6 +4376,38 @@ html.keyboard-open .side-chat-form textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.thread-task-card-message-head {
+  align-items: flex-start;
+  gap: 12px;
+  color: var(--text);
+}
+
+.thread-task-card-message-heading {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  line-height: 1.32;
+}
+
+.item-head .thread-task-card-message-heading,
+.item-head .thread-task-card-message-heading span {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.thread-task-card-message-source {
+  color: var(--text);
+  font-size: var(--content-font-size);
+  font-weight: 760;
+}
+
+.thread-task-card-message-purpose {
+  color: var(--text-muted);
+  font-size: var(--content-small-font-size);
+  font-weight: 650;
 }
 
 .item-head-actions {
@@ -4789,6 +4830,39 @@ html.keyboard-open .side-chat-form textarea {
 
 .input-text {
   white-space: pre-wrap;
+}
+
+.thread-task-card-message-standalone {
+  display: grid;
+  gap: 8px;
+}
+
+.thread-task-card-message-overview {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(240, 180, 108, 0.38);
+  border-radius: 8px;
+  background: var(--approval-bg);
+  white-space: normal;
+}
+
+.thread-task-card-message-overview div {
+  display: grid;
+  gap: 3px;
+}
+
+.thread-task-card-message-overview span {
+  color: var(--muted);
+  font-size: var(--content-small-font-size);
+  font-weight: 650;
+}
+
+.thread-task-card-message-overview strong {
+  color: var(--text);
+  font-size: var(--content-font-size);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .thread-task-card-message {

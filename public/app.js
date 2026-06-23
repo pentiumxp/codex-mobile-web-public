@@ -201,6 +201,8 @@ const state = {
   liveOperationDockGesture: null,
   liveOperationDockPinned: false,
   liveOperationDockPinnedThreadId: "",
+  liveOperationDockCompactVisibleUntilMs: 0,
+  liveOperationDockCompactTimer: null,
   threadSideChats: new Map(),
   sideChatLoadingThreadId: "",
   sideChatError: "",
@@ -390,7 +392,8 @@ const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v398";
+const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = 500;
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v399";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -10675,15 +10678,41 @@ function preservePinnedLiveOperationDock(dock) {
   return true;
 }
 
+function scheduleLiveOperationDockCompactMinimumRefresh(delayMs = LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS) {
+  if (state.liveOperationDockCompactTimer) clearTimeout(state.liveOperationDockCompactTimer);
+  const delay = Math.max(0, Number(delayMs) || 0);
+  state.liveOperationDockCompactTimer = setTimeout(() => {
+    state.liveOperationDockCompactTimer = null;
+    renderCurrentThread();
+  }, delay + 16);
+}
+
+function shouldPreserveCompactLiveOperationBubble(dock, html = "") {
+  if (!dock || String(html || "").includes("mobile-operation-bubble")) return false;
+  if (!dock.querySelector(".mobile-operation-bubble")) return false;
+  const remainingMs = Number(state.liveOperationDockCompactVisibleUntilMs || 0) - Date.now();
+  if (remainingMs <= 0) return false;
+  scheduleLiveOperationDockCompactMinimumRefresh(remainingMs);
+  return true;
+}
+
 function updateLiveOperationDockHtml(html = "") {
   const dock = $("liveOperationDock");
   if (!dock) return false;
   const next = String(html || "");
+  if (next.includes("mobile-operation-bubble")) {
+    state.liveOperationDockCompactVisibleUntilMs = Math.max(
+      Number(state.liveOperationDockCompactVisibleUntilMs || 0),
+      Date.now() + LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS,
+    );
+  }
   if (shouldPreservePinnedLiveOperationDock(dock, next)) return preservePinnedLiveOperationDock(dock);
+  if (shouldPreserveCompactLiveOperationBubble(dock, next)) return true;
   if (!next.includes("mobile-operation-bubble")) {
     state.liveOperationDockPinned = false;
     state.liveOperationDockPinnedThreadId = "";
     state.liveOperationDockMode = "compact";
+    state.liveOperationDockCompactVisibleUntilMs = 0;
   }
   if (!next) {
     if (dock.innerHTML) dock.innerHTML = "";
@@ -12861,6 +12890,8 @@ function renderItem(item, turn = null, previousKeys = new Set(), index = 0) {
       <div class="item-body">${renderTurnUsageSummary(item)}</div>
     </section>`;
   }
+  const injectedTaskCardText = injectedThreadTaskCardTextForItem(item);
+  if (injectedTaskCardText) return renderInjectedThreadTaskCardItem(item, turn, previousKeys, index, injectedTaskCardText);
   const itemCopyKey = rememberCopyText(copyTextForItem(item));
   const itemCopyButton = copyButtonHtml(itemCopyKey, "复制全文", "item-copy-button");
   const timestampHtml = renderItemTimestampHtml(item, turn);
@@ -12870,6 +12901,24 @@ function renderItem(item, turn = null, previousKeys = new Set(), index = 0) {
       <span class="item-head-actions">${timestampHtml}<span>${escapeHtml(item.status ? statusText(item.status) : "")}</span>${itemCopyButton}</span>
     </div>
     <div class="item-body">${renderItemBody(item, turn)}</div>
+  </section>`;
+}
+
+function renderInjectedThreadTaskCardItem(item, turn = null, previousKeys = new Set(), index = 0, text = "") {
+  const key = stableItemKey(turn, item, index);
+  const metadata = injectedThreadTaskCardMetadata(text);
+  const itemCopyKey = rememberCopyText(copyTextForItem(item));
+  const itemCopyButton = copyButtonHtml(itemCopyKey, "复制全文", "item-copy-button");
+  const timestampHtml = renderItemTimestampHtml(item, turn);
+  return `<section class="item${entryAnimationClass(key, previousKeys)} thread-task-card-injected" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}" data-thread-task-card-item>
+    <div class="item-head thread-task-card-message-head">
+      <span class="thread-task-card-message-heading">
+        <span class="thread-task-card-message-source">来源：${escapeHtml(metadata.source)}</span>
+        <span class="thread-task-card-message-purpose">目的：${escapeHtml(metadata.purpose)}</span>
+      </span>
+      <span class="item-head-actions">${timestampHtml}${itemCopyButton}</span>
+    </div>
+    <div class="item-body">${renderInjectedThreadTaskCardBody(text, metadata)}</div>
   </section>`;
 }
 
@@ -13120,22 +13169,52 @@ function injectedThreadTaskCardPurpose(lines) {
   return bodyLine ? bodyLine.replace(/^#+\s*/, "").trim() : "Cross-thread task card";
 }
 
+function injectedThreadTaskCardMetadata(text) {
+  const value = String(text || "").replace(/\r\n?/g, "\n").trim();
+  const lines = value.split("\n");
+  return {
+    value,
+    source: injectedThreadTaskCardLineValue(lines, "Source thread") || "source thread",
+    purpose: injectedThreadTaskCardPurpose(lines),
+    charCount: value.length.toLocaleString(),
+  };
+}
+
 function injectedThreadTaskCardSummary(text) {
-  const lines = String(text || "").replace(/\r\n?/g, "\n").split("\n");
-  const source = injectedThreadTaskCardLineValue(lines, "Source thread") || "source thread";
-  const purpose = injectedThreadTaskCardPurpose(lines);
-  return `来源：${truncateSingleLine(source, 72)} · 目的：${truncateSingleLine(purpose, 96)}`;
+  const metadata = injectedThreadTaskCardMetadata(text);
+  return `来源：${truncateSingleLine(metadata.source, 72)} · 目的：${truncateSingleLine(metadata.purpose, 96)}`;
+}
+
+function injectedThreadTaskCardTextForItem(item) {
+  if (!item || item.type !== "userMessage") return "";
+  const content = Array.isArray(item.content) ? item.content : [];
+  for (const part of content) {
+    if (!part) continue;
+    const text = isInputTextPart(part) ? inputTextValue(part) : "";
+    if (isInjectedThreadTaskCardMessage(text)) return text;
+  }
+  return "";
+}
+
+function renderInjectedThreadTaskCardBody(text, metadata = null) {
+  const details = metadata || injectedThreadTaskCardMetadata(text);
+  if (!isInjectedThreadTaskCardMessage(details.value)) return "";
+  return `<details class="thread-task-card-message" data-thread-task-card-message>
+    <summary><span>完整任务卡</span><small>${escapeHtml(`${details.charCount} chars`)}</small></summary>
+    <pre class="thread-task-card-message-body">${escapeHtml(details.value)}</pre>
+  </details>`;
 }
 
 function renderInjectedThreadTaskCardMessage(text) {
-  const value = String(text || "").replace(/\r\n?/g, "\n").trim();
-  if (!isInjectedThreadTaskCardMessage(value)) return "";
-  const charCount = value.length.toLocaleString();
-  const summary = injectedThreadTaskCardSummary(value);
-  return `<details class="thread-task-card-message" data-thread-task-card-message>
-    <summary><span>${escapeHtml(summary)}</span><small>${escapeHtml(`${charCount} chars`)}</small></summary>
-    <pre class="thread-task-card-message-body">${escapeHtml(value)}</pre>
-  </details>`;
+  const metadata = injectedThreadTaskCardMetadata(text);
+  if (!isInjectedThreadTaskCardMessage(metadata.value)) return "";
+  return `<div class="thread-task-card-message-standalone" data-thread-task-card-standalone>
+    <div class="thread-task-card-message-overview">
+      <div><span>来源</span><strong>${escapeHtml(metadata.source)}</strong></div>
+      <div><span>目的</span><strong>${escapeHtml(metadata.purpose)}</strong></div>
+    </div>
+    ${renderInjectedThreadTaskCardBody(metadata.value, metadata)}
+  </div>`;
 }
 
 function renderInputText(text) {

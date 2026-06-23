@@ -124,7 +124,9 @@ function evaluatedInputContentRendererWithKey(key = "", options = {}) {
     "isInjectedThreadTaskCardMessage",
     "injectedThreadTaskCardLineValue",
     "injectedThreadTaskCardPurpose",
+    "injectedThreadTaskCardMetadata",
     "injectedThreadTaskCardSummary",
+    "renderInjectedThreadTaskCardBody",
     "renderInjectedThreadTaskCardMessage",
     "renderInputText",
     "renderInputImage",
@@ -1827,10 +1829,23 @@ test("injected cross-thread task card user messages render collapsed", () => {
 
   assert.match(html, /class="thread-task-card-message"/);
   assert.match(html, /data-thread-task-card-message/);
-  assert.match(html, /来源：Home AI 06-22 · 目的：Audit Music plugin workspace/);
+  assert.match(html, /data-thread-task-card-standalone/);
+  assert.match(html, /<span>来源<\/span><strong>Home AI 06-22<\/strong>/);
+  assert.match(html, /<span>目的<\/span><strong>Audit Music plugin workspace<\/strong>/);
+  assert.match(html, /完整任务卡/);
   assert.match(html, /Audit Music plugin workspace/);
   assert.match(html, /class="thread-task-card-message-body"/);
   assert.doesNotMatch(html, /class="input-text"/);
+});
+
+test("injected cross-thread task card items use dedicated card chrome instead of You", () => {
+  assert.match(functionBody("renderItem"), /injectedThreadTaskCardTextForItem\(item\)/);
+  assert.match(functionBody("renderInjectedThreadTaskCardItem"), /thread-task-card-injected/);
+  assert.match(functionBody("renderInjectedThreadTaskCardItem"), /data-thread-task-card-item/);
+  assert.match(functionBody("renderInjectedThreadTaskCardItem"), /来源：\$\{escapeHtml\(metadata\.source\)\}/);
+  assert.match(functionBody("renderInjectedThreadTaskCardItem"), /目的：\$\{escapeHtml\(metadata\.purpose\)\}/);
+  assert.match(stylesCss, /\.item\.thread-task-card-injected/);
+  assert.match(stylesCss, /\.thread-task-card-message-heading/);
 });
 
 test("user message text before upload summaries still renders jpg thumbnails", () => {
