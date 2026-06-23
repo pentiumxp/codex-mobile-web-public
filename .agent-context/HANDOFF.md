@@ -23,8 +23,8 @@ The previous full handoff was archived and should be opened only when old proven
 
 ## 2026-06-23 - Continuation First-Open Receipt v386
 
-- Status: implemented and validated locally; deployment pending after local
-  commit because the central macOS deploy script rejected dirty source input.
+- Status: implemented, locally committed, deployed to Mac production, and
+  smoke-validated. Not pushed public.
 - User trigger:
   - After compressing/continuing the large Music thread, Mobile Web navigated
     into the newly created continuation thread and showed the long bootstrap
@@ -65,11 +65,24 @@ The previous full handoff was archived and should be opened only when old proven
 - Validation:
   - `npm run check` passed.
   - `npm test` passed after docs update: `635` tests.
-- Deployment note:
+- Deployment:
   - First central deploy attempt failed safely with
     `deploy_source_dirty_requires_allow_dirty`, listing only this hotfix's
-    modified files. Commit locally, then rerun the central script from the Home
-    AI app workspace; do not use a task card for local deployment.
+    modified files.
+  - Local code commit before deploy:
+    `0fb7a28 fix: show continuation completion receipt on first open`.
+  - Central Home AI macOS deploy script then succeeded from the app workspace.
+  - Production backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260623T112319Z-plugin-codex-mobile-web-manual`.
+  - `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v386`,
+    `shellCacheName=codex-mobile-shell-v386`, and build id `ad7dba2ee83e734b`.
+  - Authenticated `/api/status` returned `ready=true`,
+    `transport=external-jsonl-tcp`, and active profile `default`.
+  - Music continuation thread `019ef42b-2cb8-7332-ab17-033ec5b48947` recent
+    detail returned HTTP `200`, `mobileReadMode=turns-list-initial`, 2 turns,
+    and the latest completed turn included a final `agentMessage` and
+    `turnUsageSummary`; full detail returned HTTP `200`, `mobileReadMode=thread-read`.
 
 ## 2026-06-23 - Active Thread Feedback v385 Deployed
 
