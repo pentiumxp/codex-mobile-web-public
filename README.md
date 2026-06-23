@@ -1,5 +1,7 @@
 # Codex Mobile Web
 
+- 中文说明：v389 修正 v388 后仍可见的两个投影状态归并回归。第一，已有线程发送消息时，浏览器会先插入本地 `local-turn` optimistic overlay；现在 `/api/threads/:id/messages` 成功返回真实 `turnId` 后，会立即把该 overlay 归并到真实 turn，不再等下一次详情刷新，因此同一条用户消息不会在本地 turn 和服务端 turn 中同时显示。第二，服务端压缩 turn 时会给已抑制的“用户上传图 view_image 回执”写入 `mobileSuppressedVisualReceiptKeys`；V4 详情 refresh 合并只按这个服务端投影标记移除旧本地 visual receipt，不再由客户端按上传摘要自行猜测。普通系统生成图和视觉核验输出仍可保留。PWA shell cache 升级到 `codex-mobile-shell-v389`。
+
 - 中文说明：v388 修正两类 Home AI embedded 回归。第一，插件模式下压缩续接新线程的启动索引缺少中心平台契约要求；现在从 embedded/plugin iframe 触发续接时，前端会把 `pluginMode=hermes` 传给续接任务，服务端只在该模式下给新线程 bootstrap 追加 `Home AI Central Contract` 区块，要求先完整读取 `/Users/hermes-dev/HermesMobileDev/app/docs/PLATFORM_CONTRACTS/plugin-workspace-platform-contract.md` 并按中心契约工作。第二，用户上传图片已在用户消息里正常显示时，后续 `view_image`/工具 matcher 对同一上传图生成的系统图片回执不再投影，避免出现一张重复且无法加载的 `Image` 卡；普通系统生成图和无用户上传对应的视觉核验图仍保留。PWA shell cache 升级到 `codex-mobile-shell-v388`。
 
 - 中文说明：v387 修正 Home AI embedded/proxy 页面中上传摘要和 generated-image 图片卡仍使用根 `/api/...` 作为动态 `<img src>` 的问题。实测坏图文件通过 Codex 服务 `8787/api/uploads/file?id=...` 返回 `200 image/jpeg`，但同一根路径落到 Home AI host `8797/api/uploads/file` 返回 `401`，导致 iOS/PWA 中永久坏图。现在当前页面路径处于 `/api/hermes-plugins/<plugin-id>/proxy/` 时，动态图片内容 URL 会生成到同插件 proxy 前缀下；直接打开 `8787` 的独立模式不变。PWA shell cache 升级到 `codex-mobile-shell-v387`。

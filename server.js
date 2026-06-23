@@ -4378,6 +4378,15 @@ function cloneRolloutToolOutputImagePayload(payload) {
   for (const [turnId, items] of sourceByTurn.entries()) {
     byTurn.set(turnId, Array.isArray(items) ? items.map((item) => Object.assign({}, item)) : []);
   }
+  const suppressedUploadViewImageCallIdsByTurn = new Map();
+  const sourceSuppressedByTurn = payload && payload.suppressedUploadViewImageCallIdsByTurn instanceof Map
+    ? payload.suppressedUploadViewImageCallIdsByTurn
+    : new Map();
+  for (const [turnId, callIds] of sourceSuppressedByTurn.entries()) {
+    suppressedUploadViewImageCallIdsByTurn.set(String(turnId || ""), new Set(callIds instanceof Set
+      ? [...callIds]
+      : (Array.isArray(callIds) ? callIds : [])));
+  }
   const suppressedUploadViewImageCallIds = payload && payload.suppressedUploadViewImageCallIds instanceof Set
     ? new Set(payload.suppressedUploadViewImageCallIds)
     : new Set();
@@ -4388,6 +4397,7 @@ function cloneRolloutToolOutputImagePayload(payload) {
       : [],
     scopedCount: Number(payload && payload.scopedCount) || 0,
     suppressedUploadViewImageCallIds,
+    suppressedUploadViewImageCallIdsByTurn,
   };
 }
 
@@ -4699,7 +4709,13 @@ function orderTurnItemsByDisplayTimestamp(turn) {
 
 function readRolloutToolOutputImageItems(rolloutPath, options = {}) {
   if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) {
-    return { byTurn: new Map(), unscoped: [], scopedCount: 0, suppressedUploadViewImageCallIds: new Set() };
+    return {
+      byTurn: new Map(),
+      unscoped: [],
+      scopedCount: 0,
+      suppressedUploadViewImageCallIds: new Set(),
+      suppressedUploadViewImageCallIdsByTurn: new Map(),
+    };
   }
   let cacheKey = "";
   try {
@@ -4710,15 +4726,26 @@ function readRolloutToolOutputImageItems(rolloutPath, options = {}) {
       return cloneRolloutToolOutputImagePayload(cached.payload);
     }
   } catch (_) {
-    return { byTurn: new Map(), unscoped: [], scopedCount: 0, suppressedUploadViewImageCallIds: new Set() };
+    return {
+      byTurn: new Map(),
+      unscoped: [],
+      scopedCount: 0,
+      suppressedUploadViewImageCallIds: new Set(),
+      suppressedUploadViewImageCallIdsByTurn: new Map(),
+    };
   }
 
   const entries = readRolloutEnrichmentEntries(rolloutPath);
   const toolCallInfoById = new Map();
   const suppressedUploadViewImageCallIds = new Set();
+  const suppressedUploadViewImageCallIdsByTurn = new Map();
+  let currentSuppressionTurnId = "";
   for (const entry of entries) {
     if (!entry || !entry.type) continue;
     const payload = entry.payload || {};
+    const explicitTurnId = rolloutEntryTurnId(entry);
+    if (entry.type === "turn_context" && explicitTurnId) currentSuppressionTurnId = explicitTurnId;
+    if (entry.type === "event_msg" && payload.type === "task_started" && explicitTurnId) currentSuppressionTurnId = explicitTurnId;
     if (entry.type !== "response_item" || !/^(function_call|custom_tool_call)$/.test(String(payload.type || ""))) continue;
     const callId = String(payload.call_id || "");
     if (!callId) continue;
@@ -4728,6 +4755,13 @@ function readRolloutToolOutputImageItems(rolloutPath, options = {}) {
     });
     if (shouldSuppressToolOutputImageCandidates(toolCallInfoById.get(callId))) {
       suppressedUploadViewImageCallIds.add(callId);
+      const turnId = explicitTurnId || currentSuppressionTurnId;
+      if (turnId) {
+        if (!suppressedUploadViewImageCallIdsByTurn.has(turnId)) {
+          suppressedUploadViewImageCallIdsByTurn.set(turnId, new Set());
+        }
+        suppressedUploadViewImageCallIdsByTurn.get(turnId).add(callId);
+      }
     }
   }
   const byTurn = new Map();
@@ -4771,7 +4805,13 @@ function readRolloutToolOutputImageItems(rolloutPath, options = {}) {
       unscoped.push(...items);
     }
   }
-  const payload = { byTurn, unscoped, scopedCount, suppressedUploadViewImageCallIds };
+  const payload = {
+    byTurn,
+    unscoped,
+    scopedCount,
+    suppressedUploadViewImageCallIds,
+    suppressedUploadViewImageCallIdsByTurn,
+  };
   if (cacheKey) rememberToolOutputImages(cacheKey, payload);
   return cloneRolloutToolOutputImagePayload(payload);
 }
@@ -5924,6 +5964,18 @@ function imageViewDisplayBasename(item) {
   return fsPathDisplayBasename(source);
 }
 
+function visualReceiptSuppressionKeys(item) {
+  if (!isVisualReceiptItem(item)) return [];
+  const keys = new Set();
+  const id = String(item && item.id || "").trim();
+  const callId = imageViewCallId(item);
+  const displayBasename = imageViewDisplayBasename(item);
+  if (id) keys.add(`id:${id}`);
+  if (callId) keys.add(`call:${callId}`);
+  if (displayBasename) keys.add(`name:${displayBasename}`);
+  return [...keys];
+}
+
 function suppressedUploadViewImageCallIdSet(options = {}) {
   const value = options.suppressedUploadViewImageCallIds;
   if (value instanceof Set) return value;
@@ -5939,8 +5991,7 @@ function isUploadImageEchoReceipt(item, uploadBasenames, suppressedCallIds) {
   return Boolean(displayBasename && uploadBasenames.has(displayBasename));
 }
 
-function filterDuplicateUploadImageViewsInTurnItems(items, options = {}) {
-  if (!Array.isArray(items) || items.length < 2) return items;
+function uploadImageEchoContextForTurnItems(items, options = {}) {
   const userUploadPaths = new Set();
   const uploadBasenames = new Set();
   for (const item of items) {
@@ -5951,12 +6002,41 @@ function filterDuplicateUploadImageViewsInTurnItems(items, options = {}) {
       if (basename) uploadBasenames.add(basename);
     }
   }
-  if (!userUploadPaths.size) return items;
-  const suppressedCallIds = suppressedUploadViewImageCallIdSet(options);
+  return {
+    userUploadPaths,
+    uploadBasenames,
+    suppressedCallIds: suppressedUploadViewImageCallIdSet(options),
+  };
+}
+
+function shouldSuppressUploadImageEchoItem(item, context) {
+  if (!context || !context.userUploadPaths || !context.userUploadPaths.size) return false;
+  const imagePath = imageViewUploadSourcePath(item);
+  if (imagePath && context.userUploadPaths.has(imagePath)) return true;
+  return isUploadImageEchoReceipt(item, context.uploadBasenames, context.suppressedCallIds);
+}
+
+function uploadImageEchoSuppressionKeysForTurnItems(items, options = {}) {
+  if (!Array.isArray(items)) return [];
+  const context = uploadImageEchoContextForTurnItems(items, options);
+  if (!context.userUploadPaths.size) return [];
+  const keys = new Set();
+  for (const callId of context.suppressedCallIds) {
+    if (callId) keys.add(`call:${callId}`);
+  }
+  for (const item of items) {
+    if (!shouldSuppressUploadImageEchoItem(item, context)) continue;
+    visualReceiptSuppressionKeys(item).forEach((key) => keys.add(key));
+  }
+  return [...keys].sort();
+}
+
+function filterDuplicateUploadImageViewsInTurnItems(items, options = {}) {
+  if (!Array.isArray(items) || items.length < 2) return items;
+  const context = uploadImageEchoContextForTurnItems(items, options);
+  if (!context.userUploadPaths.size) return items;
   return items.filter((item) => {
-    const imagePath = imageViewUploadSourcePath(item);
-    if (imagePath && userUploadPaths.has(imagePath)) return false;
-    return !isUploadImageEchoReceipt(item, uploadBasenames, suppressedCallIds);
+    return !shouldSuppressUploadImageEchoItem(item, context);
   });
 }
 
@@ -6045,6 +6125,9 @@ function compactTurn(turn, options = {}) {
   if (!turn || typeof turn !== "object") return turn;
   const out = Object.assign({}, turn);
   if (Array.isArray(out.items)) {
+    const suppressedVisualReceiptKeys = uploadImageEchoSuppressionKeysForTurnItems(out.items, options);
+    if (suppressedVisualReceiptKeys.length) out.mobileSuppressedVisualReceiptKeys = suppressedVisualReceiptKeys;
+    else delete out.mobileSuppressedVisualReceiptKeys;
     const sourceItems = filterDuplicateUploadImageViewsInTurnItems(out.items, options);
     const allowOperation = Boolean(options.allowOperations)
       || (Boolean(options.allowLiveOperation) && isLiveTurn(out));
@@ -6125,7 +6208,9 @@ function compactThread(thread, options = {}) {
       maxOperationItems: operationDetailIndexes.has(index) ? "all" : MAX_LIVE_OPERATION_ITEMS,
       receiptOnly: !operationDetailIndexes.has(index),
       threadId: out.id || out.threadId || "",
-      suppressedUploadViewImageCallIds: toolOutputImagePayload.suppressedUploadViewImageCallIds,
+      suppressedUploadViewImageCallIds: toolOutputImagePayload.suppressedUploadViewImageCallIdsByTurn instanceof Map
+        ? toolOutputImagePayload.suppressedUploadViewImageCallIdsByTurn.get(String(turn && turn.id || "")) || new Set()
+        : new Set(),
     })).map(orderTurnItemsByDisplayTimestamp);
     const latest = out.turns[latestIndex];
     if (latest && isLiveTurn(latest) && Array.isArray(latest.items)

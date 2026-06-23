@@ -466,6 +466,15 @@ function evaluatedMergeItemsPreservingLocalVisible() {
     "userMessagePathOverlap",
     "comparablePathName",
     "comparablePathNamesLikelySame",
+    "imageViewPath",
+    "imageViewContentUrl",
+    "imageViewUrl",
+    "isVisualReceiptItem",
+    "visualReceiptComparableNames",
+    "visualReceiptCallId",
+    "visualReceiptSuppressionKeys",
+    "suppressedVisualReceiptKeySet",
+    "visualReceiptMatchesSuppressionKeys",
     "userMessagePathNameOverlap",
     "userMessageSpecificity",
     "userMessagesLikelySame",
@@ -479,6 +488,7 @@ function evaluatedMergeItemsPreservingLocalVisible() {
     "comparableVisibleTextItem",
     "comparableVisibleText",
     "visibleTextItemsLikelySame",
+    "shouldPreserveLocalOnlyItem",
     "findUnusedExistingItemIndexForIncoming",
     "mergeIncomingOrderedItem",
     "mergeVisibleTextItemPreservingRenderIdentity",
@@ -487,11 +497,6 @@ function evaluatedMergeItemsPreservingLocalVisible() {
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
 function itemVisibleWeight(item) { return JSON.stringify(item || {}).length; }
-function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false) {
-  if (!item || itemVisibleWeight(item) <= 0) return false;
-  if (item.type === "userMessage" && /^mux-user-/.test(String(item.id || ""))) return true;
-  return preserveLocalVisible;
-}
 function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
   return Object.assign({}, existingItem || {}, incomingItem || {});
 }
@@ -525,6 +530,15 @@ function evaluatedMergeItemsPreservingLocalVisibleWithRealVisibleWeight() {
     "userMessagePathOverlap",
     "comparablePathName",
     "comparablePathNamesLikelySame",
+    "imageViewPath",
+    "imageViewContentUrl",
+    "imageViewUrl",
+    "isVisualReceiptItem",
+    "visualReceiptComparableNames",
+    "visualReceiptCallId",
+    "visualReceiptSuppressionKeys",
+    "suppressedVisualReceiptKeySet",
+    "visualReceiptMatchesSuppressionKeys",
     "userMessagePathNameOverlap",
     "userMessageSpecificity",
     "userMessagesLikelySame",
@@ -544,6 +558,7 @@ function evaluatedMergeItemsPreservingLocalVisibleWithRealVisibleWeight() {
     "comparableVisibleTextItem",
     "comparableVisibleText",
     "visibleTextItemsLikelySame",
+    "shouldPreserveLocalOnlyItem",
     "findUnusedExistingItemIndexForIncoming",
     "mergeIncomingOrderedItem",
     "mergeVisibleTextItemPreservingRenderIdentity",
@@ -557,14 +572,6 @@ function isContextCompactionItem() { return false; }
 function contextCompactionNotice() { return null; }
 function isOperationalItem() { return false; }
 function operationDetailText() { return ""; }
-function imageViewPath(item) { return item && item.path || ""; }
-function imageViewContentUrl(item) { return item && item.contentUrl || ""; }
-function imageViewUrl(item) { return item && item.url || ""; }
-function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false) {
-  if (!item || itemVisibleWeight(item) <= 0) return false;
-  if (item.type === "userMessage" && /^mux-user-/.test(String(item.id || ""))) return true;
-  return preserveLocalVisible && !isReasoningItem(item);
-}
 function dedupeTurnUsageSummaryItems(items) { return items || []; }
 ${sources.join("\n")}
 return mergeItemsPreservingLocalVisible;
@@ -593,6 +600,15 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "userMessagePathOverlap",
     "comparablePathName",
     "comparablePathNamesLikelySame",
+    "imageViewPath",
+    "imageViewContentUrl",
+    "imageViewUrl",
+    "isVisualReceiptItem",
+    "visualReceiptComparableNames",
+    "visualReceiptCallId",
+    "visualReceiptSuppressionKeys",
+    "suppressedVisualReceiptKeySet",
+    "visualReceiptMatchesSuppressionKeys",
     "userMessagePathNameOverlap",
     "userMessageSpecificity",
     "userMessagesLikelySame",
@@ -625,6 +641,7 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "comparableVisibleTextItem",
     "comparableVisibleText",
     "visibleTextItemsLikelySame",
+    "shouldPreserveLocalOnlyItem",
     "findUnusedExistingItemIndexForIncoming",
     "mergeIncomingOrderedItem",
     "mergeItemPreservingVisibleFields",
@@ -643,11 +660,6 @@ function isContextCompactionItem() { return false; }
 function isOperationalItem() { return false; }
 function isRecentlySubmittedUserMessage(item) { return Boolean(item && item.mobilePendingSubmission); }
 function itemVisibleWeight(item) { return item ? JSON.stringify(item).length : 0; }
-function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false) {
-  if (!item || itemVisibleWeight(item) <= 0) return false;
-  if (item.type === "userMessage" && /^mux-user-/.test(String(item.id || ""))) return true;
-  return preserveLocalVisible && !isReasoningItem(item);
-}
 function dedupeTurnUsageSummaryItems(items) { return items || []; }
 function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
   return Object.assign({}, existingItem || {}, incomingItem || {});
@@ -890,9 +902,44 @@ return { state, latestTurn, syncActiveTurnFromThread, interruptDisabled: () => i
 
 function evaluatedLocalSubmissionInserter() {
   const sources = [
+    "normalizeFsPath",
+    "imageUrlValue",
+    "isInputTextPart",
+    "inputTextValue",
+    "isTruncatedImagePayloadPart",
+    "isInputImagePart",
+    "attachmentSummaryMarkerMatch",
+    "stripAttachmentSummaryLinePrefix",
+    "parseAttachmentLine",
+    "splitAttachmentSummaryText",
+    "isLikelyAbsoluteLocalPath",
+    "canRenderImageAttachment",
     "localSubmittedTurnId",
     "currentThreadHasClientSubmission",
     "insertLocalSubmittedUserMessage",
+    "isMuxUserMessage",
+    "isOptimisticUserMessage",
+    "isTurnUsageSummaryItem",
+    "dedupeTurnUsageSummaryItems",
+    "normalizeComparableText",
+    "userMessageComparableParts",
+    "userMessagePathOverlap",
+    "comparablePathName",
+    "comparablePathNamesLikelySame",
+    "userMessagePathNameOverlap",
+    "userMessageSpecificity",
+    "userMessagesLikelySame",
+    "userMessagesCanShadow",
+    "hasMatchingRealUserMessage",
+    "removeShadowedMuxUserMessages",
+    "userMessageShadowPriority",
+    "mergeLikelySameUserMessage",
+    "dedupeLikelySameUserMessages",
+    "userMessageHasVisualAttachment",
+    "normalizeThreadVisibleUserMessages",
+    "shouldDropOptimisticUserMessageForDurable",
+    "mergeSubmittedUserItemIntoTurn",
+    "reconcileSubmittedUserMessageTurn",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function([
     `
@@ -918,12 +965,15 @@ function isCompletedStatus(status) {
 }
 function mergeThreadIntoThreadList() { mergeCount += 1; }
 function syncActiveTurnFromThread() { syncCount += 1; }
+function isReasoningItem() { return false; }
+function itemVisibleWeight(item) { return JSON.stringify(item || {}).length; }
 `,
     sources.join("\n"),
     `
 return {
   state,
   insertLocalSubmittedUserMessage,
+  reconcileSubmittedUserMessageTurn,
   counters: () => ({ mergeCount, syncCount }),
 };
 `,
@@ -1334,6 +1384,21 @@ test("existing thread send inserts a local pending user turn before server proje
   assert.deepEqual(harness.counters(), { mergeCount: 1, syncCount: 1 });
   assert.equal(harness.insertLocalSubmittedUserMessage("thread-live", "continue work", [], "submit-123"), false);
   assert.equal(harness.state.currentThread.turns[0].items.length, 1);
+});
+
+test("existing thread send reconciles local pending turn to returned server turn id", () => {
+  const harness = evaluatedLocalSubmissionInserter();
+  harness.insertLocalSubmittedUserMessage("thread-live", "推送Public", [], "submit-public");
+
+  const reconciled = harness.reconcileSubmittedUserMessageTurn("thread-live", "submit-public", "server-turn-public");
+
+  assert.equal(reconciled, true);
+  assert.equal(harness.state.currentThread.turns.length, 1);
+  assert.equal(harness.state.currentThread.turns[0].id, "server-turn-public");
+  assert.equal(harness.state.currentThread.turns[0].items.length, 1);
+  assert.equal(harness.state.currentThread.turns[0].items[0].clientSubmissionId, "submit-public");
+  assert.equal(harness.state.currentThread.turns[0].items[0].mobilePendingSubmission, true);
+  assert.deepEqual(harness.counters(), { mergeCount: 2, syncCount: 2 });
 });
 
 test("local pending image attachments render browser previews before upload projection catches up", () => {
@@ -3006,6 +3071,79 @@ test("v4 projection merge keeps longer live receipt when refresh returns an olde
   );
 });
 
+test("v4 projection merge does not preserve server-suppressed upload image echoes", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const uploadPath = "/Users/xuxin/.codex-mobile-web/uploads/2026-06-23/thread/1782217099872-Screenshot_20260623_201803_Home AI.jpg";
+  const existingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 10,
+    turns: [{
+      id: "turn-current",
+      status: { type: "active" },
+      items: [
+        {
+          id: "user-upload",
+          type: "userMessage",
+          content: [{
+            type: "input_text",
+            text: `Uploaded attachments:\n- 1782217099872-Screenshot_20260623_201803_Home AI.jpg (image, image/jpeg, 109.3 KB): ${uploadPath}`,
+          }],
+        },
+        {
+          id: "stale-upload-echo",
+          type: "imageView",
+          fileName: "1782217099872-Screenshot_20260623_201803_Home AI.jpg",
+          contentUrl: "/api/generated-images/file?id=thread%2Fstale-upload-echo.jpg",
+        },
+        {
+          id: "real-generated-image",
+          type: "imageView",
+          fileName: "visual-check-output.png",
+          contentUrl: "/api/generated-images/file?id=thread%2Fvisual-check-output.png",
+        },
+        { id: "agent-live-receipt", type: "agentMessage", text: "working\nwith more detail" },
+      ],
+    }],
+  };
+  const incomingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 11,
+    turns: [{
+      id: "turn-current",
+      status: { type: "active" },
+      mobileSuppressedVisualReceiptKeys: [
+        "id:stale-upload-echo",
+        "name:1782217099872-screenshot_20260623_201803_home ai.jpg",
+      ],
+      items: [
+        {
+          id: "user-upload",
+          type: "userMessage",
+          content: [{
+            type: "input_text",
+            text: `Uploaded attachments:\n- 1782217099872-Screenshot_20260623_201803_Home AI.jpg (image, image/jpeg, 109.3 KB): ${uploadPath}`,
+          }],
+        },
+        { id: "agent-live-receipt", type: "agentMessage", text: "working" },
+      ],
+    }],
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, incomingThread);
+
+  assert.deepEqual(merged.turns[0].items.map((item) => item.id), [
+    "user-upload",
+    "real-generated-image",
+    "agent-live-receipt",
+  ]);
+  assert.equal(
+    merged.turns[0].items.find((item) => item.id === "agent-live-receipt").text,
+    "working\nwith more detail",
+  );
+});
+
 test("v4 projection merge preserves current live turn when stale refresh only has older content", () => {
   const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
   const existingThread = {
@@ -3161,7 +3299,16 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(sendBody, /const previousThreadStatus = snapshotThreadStatus\(state\.currentThreadId\);/);
   assert.match(sendBody, /registerSubmittedUserMessage\(state\.currentThreadId, outboundText, submittedAttachments, clientSubmissionId\);\s*const insertedLocalMessage = insertLocalSubmittedUserMessage/);
   assert.match(sendBody, /if \(insertedLocalMessage\) renderCurrentThread\(\{ stickToBottom: true \}\);/);
+  assert.match(sendBody, /const result = await api\(`\/api\/threads\/\$\{encodeURIComponent\(state\.currentThreadId\)\}\/messages`/);
+  assert.match(sendBody, /const serverTurnId = startedTurnId\(result\);/);
+  assert.match(sendBody, /if \(!steering && serverTurnId && reconcileSubmittedUserMessageTurn\(state\.currentThreadId, clientSubmissionId, serverTurnId\)\)/);
   assert.match(sendBody, /if \(!steering\) \{[\s\S]*restoreThreadStatusSnapshot\(previousThreadStatus\);[\s\S]*renderThreads\(\);[\s\S]*\}/);
+
+  const taskCardSendBody = functionBody("sendThreadTaskCardCommand");
+  assert.match(taskCardSendBody, /const result = await api\(`\/api\/threads\/\$\{encodeURIComponent\(state\.currentThreadId\)\}\/messages`/);
+  assert.match(taskCardSendBody, /const serverTurnId = startedTurnId\(result\);/);
+  assert.match(taskCardSendBody, /if \(serverTurnId && reconcileSubmittedUserMessageTurn\(state\.currentThreadId, clientSubmissionId, serverTurnId\)\)/);
+  assert.doesNotMatch(taskCardSendBody, /!steering/);
 
   const expireBody = functionBody("shouldExpireRunningThreadHint");
   assert.match(expireBody, /id === state\.currentThreadId && state\.activeTurnId/);

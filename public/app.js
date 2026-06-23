@@ -388,7 +388,7 @@ const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v388";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v389";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -994,6 +994,66 @@ function insertLocalSubmittedUserMessage(threadId, text, attachments, clientSubm
   mergeThreadIntoThreadList(state.currentThread);
   syncActiveTurnFromThread();
   return true;
+}
+
+function mergeSubmittedUserItemIntoTurn(turn, item) {
+  if (!turn || !item || item.type !== "userMessage") return false;
+  turn.items = Array.isArray(turn.items) ? turn.items : [];
+  const existingIndex = turn.items.findIndex((existing) => existing
+    && existing.type === "userMessage"
+    && (existing.id === item.id || userMessagesCanShadow(existing, item)));
+  if (existingIndex >= 0) {
+    turn.items[existingIndex] = mergeLikelySameUserMessage(turn.items[existingIndex], item);
+    return true;
+  }
+  turn.items.unshift(item);
+  return true;
+}
+
+function reconcileSubmittedUserMessageTurn(threadId, clientSubmissionId, serverTurnId) {
+  const id = String(threadId || "").trim();
+  const submissionId = String(clientSubmissionId || "").trim();
+  const turnId = String(serverTurnId || "").trim();
+  const thread = state.currentThread;
+  if (!id || !submissionId || !turnId || !thread || String(thread.id || "") !== id) return false;
+  thread.turns = Array.isArray(thread.turns) ? thread.turns : [];
+  let sourceTurn = null;
+  let sourceItem = null;
+  for (const turn of thread.turns) {
+    const item = (Array.isArray(turn && turn.items) ? turn.items : []).find((entry) => entry
+      && entry.type === "userMessage"
+      && String(entry.clientSubmissionId || "") === submissionId
+      && isOptimisticUserMessage(entry));
+    if (!item) continue;
+    sourceTurn = turn;
+    sourceItem = item;
+    break;
+  }
+  if (!sourceItem) return false;
+  let targetTurn = thread.turns.find((turn) => String(turn && turn.id || "") === turnId);
+  if (!targetTurn) {
+    targetTurn = {
+      id: turnId,
+      status: { type: "active" },
+      startedAt: sourceTurn && sourceTurn.startedAt,
+      startedAtMs: sourceTurn && sourceTurn.startedAtMs,
+      completedAt: null,
+      durationMs: null,
+      items: [],
+    };
+    thread.turns.push(targetTurn);
+  }
+  const changed = mergeSubmittedUserItemIntoTurn(targetTurn, sourceItem);
+  if (sourceTurn && sourceTurn !== targetTurn) {
+    sourceTurn.items = (sourceTurn.items || []).filter((item) => item !== sourceItem);
+    if (!sourceTurn.items.length && /^local-turn-/.test(String(sourceTurn.id || ""))) {
+      thread.turns = thread.turns.filter((turn) => turn !== sourceTurn);
+    }
+  }
+  normalizeThreadVisibleUserMessages(thread);
+  syncActiveTurnFromThread();
+  mergeThreadIntoThreadList(thread);
+  return changed;
 }
 
 function markSubmittedUserMessageFailed(threadId, text, attachments, clientSubmissionId, message) {
@@ -4752,8 +4812,9 @@ function turnVisibleWeight(turn) {
   return items.reduce((total, item) => total + itemVisibleWeight(item), 0);
 }
 
-function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false) {
+function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false, suppressedVisualReceiptKeys = null) {
   if (!item || itemVisibleWeight(item) <= 0) return false;
+  if (visualReceiptMatchesSuppressionKeys(item, suppressedVisualReceiptKeys)) return false;
   if (item.type === "userMessage" && /^mux-user-/.test(String(item.id || ""))) return true;
   return preserveLocalVisible && !isReasoningItem(item);
 }
@@ -4842,6 +4903,61 @@ function comparablePathNamesLikelySame(leftName, rightName) {
   if (!left || !right) return false;
   if (left === right) return true;
   return left.endsWith(`-${right}`) || right.endsWith(`-${left}`);
+}
+
+function isVisualReceiptItem(item) {
+  return Boolean(item && (item.type === "imageView" || item.type === "imageGeneration"));
+}
+
+function visualReceiptComparableNames(item) {
+  if (!isVisualReceiptItem(item)) return [];
+  const values = [
+    imageViewPath(item),
+    imageViewContentUrl(item),
+    imageViewUrl(item),
+    item.fileName,
+    item.file_name,
+    item.label,
+    item.caption,
+    item.name,
+  ];
+  return [...new Set(values.map(comparablePathName).filter(Boolean))];
+}
+
+function visualReceiptCallId(item) {
+  return String(item && (
+    item.callId
+    || item.call_id
+    || item.toolCallId
+    || item.tool_call_id
+    || item.arguments && (item.arguments.callId || item.arguments.call_id || item.arguments.toolCallId || item.arguments.tool_call_id)
+    || item.result && (item.result.callId || item.result.call_id || item.result.toolCallId || item.result.tool_call_id)
+  ) || "").trim();
+}
+
+function visualReceiptSuppressionKeys(item) {
+  if (!isVisualReceiptItem(item)) return [];
+  const keys = new Set();
+  const id = String(item && item.id || "").trim();
+  const callId = visualReceiptCallId(item);
+  if (id) keys.add(`id:${id}`);
+  if (callId) keys.add(`call:${callId}`);
+  for (const name of visualReceiptComparableNames(item)) {
+    keys.add(`name:${name}`);
+  }
+  return [...keys];
+}
+
+function suppressedVisualReceiptKeySet(turn) {
+  const values = Array.isArray(turn && turn.mobileSuppressedVisualReceiptKeys)
+    ? turn.mobileSuppressedVisualReceiptKeys
+    : [];
+  return new Set(values.map((entry) => String(entry || "").trim()).filter(Boolean));
+}
+
+function visualReceiptMatchesSuppressionKeys(item, suppressedVisualReceiptKeys) {
+  if (!isVisualReceiptItem(item) || !suppressedVisualReceiptKeys || !suppressedVisualReceiptKeys.size) return false;
+  return visualReceiptSuppressionKeys(item).some((key) => suppressedVisualReceiptKeys.has(key));
 }
 
 function userMessageSpecificity(item) {
@@ -5269,11 +5385,12 @@ function mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem
   return merged;
 }
 
-function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserveLocalVisible = false) {
+function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserveLocalVisible = false, incomingTurn = null) {
   const added = new Set();
   const usedExistingIndexes = new Set();
   const existingIndexToMergedIndex = new Map();
   const merged = [];
+  const suppressedVisualReceiptKeys = suppressedVisualReceiptKeySet(incomingTurn);
   for (const incomingItem of incomingItems || []) {
     if (!incomingItem) continue;
     if (incomingItem.id && added.has(incomingItem.id)) continue;
@@ -5292,7 +5409,7 @@ function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserve
   }
   (existingItems || []).forEach((existingItem, existingIndex) => {
     if (!existingItem || usedExistingIndexes.has(existingIndex)) return;
-    if (!shouldPreserveLocalOnlyItem(existingItem, preserveLocalVisible)) return;
+    if (!shouldPreserveLocalOnlyItem(existingItem, preserveLocalVisible, suppressedVisualReceiptKeys)) return;
     if (existingItem.id && added.has(existingItem.id)) return;
     insertLocalOnlyItemByExistingOrder(merged, existingItem, existingIndex, existingIndexToMergedIndex);
     if (existingItem.id) added.add(existingItem.id);
@@ -5312,7 +5429,7 @@ function mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) {
     const existingWeight = turnVisibleWeight(existingTurn);
     const preserveLocalVisible = incomingWeight < existingWeight
       || shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight);
-    merged.items = mergeItemsPreservingLocalVisible(existingItems, incomingTurn.items || [], preserveLocalVisible);
+    merged.items = mergeItemsPreservingLocalVisible(existingItems, incomingTurn.items || [], preserveLocalVisible, incomingTurn);
   }
   return merged;
 }
@@ -17612,11 +17729,15 @@ async function sendThreadTaskCardCommand(commandText, options = {}) {
     renderThreads();
     if (insertedLocalMessage) renderCurrentThread({ stickToBottom: true });
     followSubmittedMessageToBottom(state.currentThreadId, clientSubmissionId);
-    await api(`/api/threads/${encodeURIComponent(state.currentThreadId)}/messages`, {
+    const result = await api(`/api/threads/${encodeURIComponent(state.currentThreadId)}/messages`, {
       method: "POST",
       body,
       timeoutMs: 180000,
     });
+    const serverTurnId = startedTurnId(result);
+    if (serverTurnId && reconcileSubmittedUserMessageTurn(state.currentThreadId, clientSubmissionId, serverTurnId)) {
+      renderCurrentThread({ stickToBottom: true });
+    }
     commitPluginVoiceInputSessionsAfterSend(submittedDraftKey, text, {
       threadId: state.currentThreadId,
       messageId: clientSubmissionId,
@@ -17749,11 +17870,15 @@ async function sendMessage(event) {
     }
     if (insertedLocalMessage) renderCurrentThread({ stickToBottom: true });
     followSubmittedMessageToBottom(state.currentThreadId, clientSubmissionId);
-    await api(`/api/threads/${encodeURIComponent(state.currentThreadId)}/messages`, {
+    const result = await api(`/api/threads/${encodeURIComponent(state.currentThreadId)}/messages`, {
       method: "POST",
       body,
       timeoutMs: 180000,
     });
+    const serverTurnId = startedTurnId(result);
+    if (!steering && serverTurnId && reconcileSubmittedUserMessageTurn(state.currentThreadId, clientSubmissionId, serverTurnId)) {
+      renderCurrentThread({ stickToBottom: true });
+    }
     commitPluginVoiceInputSessionsAfterSend(submittedDraftKey, text, {
       threadId: state.currentThreadId,
       messageId: clientSubmissionId,
