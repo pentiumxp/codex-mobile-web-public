@@ -13,14 +13,17 @@ process.env.CODEX_MOBILE_DISABLE_AUTH = "1";
 const {
   attachPendingServerRequestsToResult,
   approvalResponsePayload,
+  buildThreadTaskCardCreatePayload,
   codeGraphMcpElicitationToolName,
   codeGraphReadOnlyMcpElicitationDecision,
+  createThreadTaskCardsFromSourceThread,
   dynamicToolTextResponse,
   publicServerRequest,
   resolveThreadTaskCardTargetReference,
   resolvedThreadTaskCardTargetIds,
   serverRequestResponsePayload,
 } = require("../server");
+const { createThreadTaskCardService } = require("../adapters/thread-task-card-service");
 
 const repoRoot = path.resolve(__dirname, "..");
 const muxPath = path.join(repoRoot, "codex-app-server-mux.js");
@@ -117,6 +120,7 @@ test("source-thread task cards allow exact same-workspace thread targets", () =>
   const crossWorkspaceThreadId = "10000000-0000-4000-8000-000000000004";
   const archivedThreadId = "10000000-0000-4000-8000-000000000005";
   const hiddenThreadId = "10000000-0000-4000-8000-000000000006";
+  const subagentThreadId = "10000000-0000-4000-8000-000000000007";
   const currentCwd = "/tmp/codex-mobile-fixtures/current-project";
   const visibleThreads = [
     {
@@ -140,6 +144,14 @@ test("source-thread task cards allow exact same-workspace thread targets", () =>
       updatedAt: 190,
       status: { type: "idle" },
     },
+    {
+      id: subagentThreadId,
+      name: "Implementation subagent",
+      cwd: currentCwd,
+      updatedAt: 180,
+      agentNickname: "audit-worker",
+      status: { type: "idle" },
+    },
   ];
   const options = {
     visibleThreads,
@@ -150,6 +162,16 @@ test("source-thread task cards allow exact same-workspace thread targets", () =>
           name: "Hidden Project",
           cwd: currentCwd,
           updatedAt: 120,
+          status: { type: "idle" },
+        };
+      }
+      if (threadId === subagentThreadId) {
+        return {
+          id: subagentThreadId,
+          name: "Implementation subagent",
+          cwd: currentCwd,
+          updatedAt: 180,
+          agentNickname: "audit-worker",
           status: { type: "idle" },
         };
       }
@@ -185,6 +207,10 @@ test("source-thread task cards allow exact same-workspace thread targets", () =>
     resolvedThreadTaskCardTargetIds({ targetThreadId: pluginAuditThreadId, targetCwd: currentCwd }, sourceThreadId, options),
     [pluginAuditThreadId],
   );
+  assert.deepEqual(
+    resolvedThreadTaskCardTargetIds({ targetThreadIds: [pluginAuditThreadId, "Plugin Workspace Audit", pluginAuditThreadId] }, sourceThreadId, options),
+    [pluginAuditThreadId],
+  );
   assert.throws(
     () => resolveThreadTaskCardTargetReference(sourceThreadId, sourceThreadId, options),
     (err) => err && err.code === "target_thread_self" && err.statusCode === 400,
@@ -208,9 +234,98 @@ test("source-thread task cards allow exact same-workspace thread targets", () =>
       && err.details.requestedTarget.threadId === hiddenThreadId,
   );
   assert.throws(
+    () => resolveThreadTaskCardTargetReference(subagentThreadId, sourceThreadId, options),
+    (err) => err
+      && err.code === "target_thread_not_visible"
+      && err.statusCode === 404
+      && err.details
+      && err.details.requestedTarget
+      && err.details.requestedTarget.threadId === subagentThreadId,
+  );
+  assert.throws(
     () => resolveThreadTaskCardTargetReference("10000000-0000-4000-8000-000000009999", sourceThreadId, options),
     (err) => err && err.code === "target_thread_not_visible" && err.statusCode === 404,
   );
+});
+
+test("source-thread task-card creation uses exact target resolver and source-direct service path", async () => {
+  const sourceThreadId = "10000000-0000-4000-8000-000000000101";
+  const exactTargetId = "10000000-0000-4000-8000-000000000102";
+  const newerSameCwdThreadId = "10000000-0000-4000-8000-000000000103";
+  const cwd = "/tmp/codex-mobile-fixtures/shared-workspace";
+  const visibleThreads = [
+    {
+      id: newerSameCwdThreadId,
+      name: "Newer implementation thread",
+      cwd,
+      updatedAt: 300,
+      status: { type: "idle" },
+    },
+    {
+      id: exactTargetId,
+      name: "Plugin Workspace Audit",
+      cwd,
+      updatedAt: 200,
+      status: { type: "idle" },
+    },
+  ];
+  const byId = new Map([
+    [sourceThreadId, {
+      id: sourceThreadId,
+      name: "Home AI 06-22",
+      cwd,
+      updatedAt: 250,
+      status: { type: "idle" },
+    }],
+    ...visibleThreads.map((thread) => [thread.id, thread]),
+  ]);
+  const resolverOptions = {
+    visibleThreads,
+    readThreadSummary(threadId) {
+      return byId.get(threadId) || null;
+    },
+  };
+
+  const payload = buildThreadTaskCardCreatePayload({
+    targetThreadId: exactTargetId,
+    targetCwd: cwd,
+    title: "Audit request",
+    body: "Read-only audit body.",
+  }, sourceThreadId, resolverOptions);
+  assert.deepEqual(payload.targetThreadIds, [exactTargetId]);
+  assert.equal(payload.targetWorkspaceIds[exactTargetId], cwd);
+  assert.equal(payload.sourceThreadTitle, "Home AI 06-22");
+
+  const storageFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-task-card-route-")), "cards.json");
+  const service = createThreadTaskCardService({
+    storageFile,
+    idGenerator: () => "ttc_exact_target",
+    executeApprovedCard: async (card) => ({
+      threadId: card.target.threadId,
+      turnId: "turn_exact_target",
+    }),
+  });
+  const result = await createThreadTaskCardsFromSourceThread(sourceThreadId, {
+    targetThreadId: exactTargetId,
+    targetCwd: cwd,
+    title: "Audit request",
+    body: "Read-only audit body.",
+    direct: true,
+    autoApprove: true,
+  }, Object.assign({}, resolverOptions, {
+    threadTaskCardService: service,
+    workspaceDelegation: { enabled: true },
+  }));
+
+  assert.equal(result.ok, true);
+  assert.equal(result.direct, true);
+  assert.equal(result.cards.length, 1);
+  assert.equal(result.cards[0].id, "ttc_exact_target");
+  assert.equal(result.cards[0].status, "approved");
+  assert.equal(result.cards[0].target.threadId, exactTargetId);
+  assert.equal(result.cards[0].delivery.targetApprovalBypassed, true);
+  assert.equal(result.cards[0].injectedTurnId, "turn_exact_target");
+  assert.equal(service.get("ttc_exact_target", sourceThreadId).target.threadId, exactTargetId);
 });
 
 test("stdio app-server mux does not overwrite an available shared endpoint", async (t) => {

@@ -12016,15 +12016,18 @@ function threadTaskCardThreadCallIdempotencyKey(sourceThreadId, body = {}, targe
   return `thread-call:${stableTextHash(sourceThreadId)}:${stableTextHash(seed)}`;
 }
 
-function buildThreadTaskCardCreatePayload(body = {}, sourceThreadId = "") {
+function buildThreadTaskCardCreatePayload(body = {}, sourceThreadId = "", options = {}) {
   const sourceId = String(sourceThreadId || body.sourceThreadId || "").trim();
   if (body.sourceThreadId && String(body.sourceThreadId || "").trim() !== sourceId) {
     throw httpStatusError(400, "source_thread_id_mismatch");
   }
+  const readThreadSummary = typeof options.readThreadSummary === "function"
+    ? options.readThreadSummary
+    : (threadId) => readStateDbThread(threadId) || readStartedThread(threadId) || readRolloutSessionFallbackThread(threadId) || null;
   const sourceSummary = hydrateThreadTitleFromSessionIndex(
-    readStateDbThread(sourceId) || readStartedThread(sourceId) || readRolloutSessionFallbackThread(sourceId) || (sourceId ? { id: sourceId } : null),
+    readThreadSummary(sourceId) || (sourceId ? { id: sourceId } : null),
   );
-  const targetThreadIds = resolvedThreadTaskCardTargetIds(body, sourceId);
+  const targetThreadIds = resolvedThreadTaskCardTargetIds(body, sourceId, options);
   if (!targetThreadIds.length) {
     throw threadTaskCardTargetError(
       "target_thread_required",
@@ -12036,7 +12039,7 @@ function buildThreadTaskCardCreatePayload(body = {}, sourceThreadId = "") {
   const targetWorkspaceIds = Object.assign({}, body.targetWorkspaceIds && typeof body.targetWorkspaceIds === "object" ? body.targetWorkspaceIds : {});
   for (const targetThreadId of targetThreadIds) {
     if (!targetThreadId || targetWorkspaceIds[targetThreadId]) continue;
-    const targetSummary = readStateDbThread(targetThreadId) || readStartedThread(targetThreadId) || readRolloutSessionFallbackThread(targetThreadId);
+    const targetSummary = readThreadSummary(targetThreadId);
     targetWorkspaceIds[targetThreadId] = body.targetWorkspaceId || body.targetWorkspace || (targetSummary && targetSummary.cwd) || "";
   }
   const rawBody = String(body.body || body.bodyMarkdown || body.message || "").trim();
@@ -12056,10 +12059,11 @@ function buildThreadTaskCardCreatePayload(body = {}, sourceThreadId = "") {
   });
 }
 
-async function createThreadTaskCardsFromSourceThread(sourceThreadId, body = {}) {
-  const payload = buildThreadTaskCardCreatePayload(body, sourceThreadId);
-  const cards = await threadTaskCardService.createMany(payload);
-  const workspaceDelegation = workspaceDelegationPublicSettings();
+async function createThreadTaskCardsFromSourceThread(sourceThreadId, body = {}, options = {}) {
+  const payload = buildThreadTaskCardCreatePayload(body, sourceThreadId, options);
+  const service = options.threadTaskCardService || threadTaskCardService;
+  const cards = await service.createMany(payload);
+  const workspaceDelegation = options.workspaceDelegation || workspaceDelegationPublicSettings();
   const autoApprove = workspaceDelegation.enabled
     && body.autoApprove !== false
     && body.direct !== false
@@ -12067,7 +12071,7 @@ async function createThreadTaskCardsFromSourceThread(sourceThreadId, body = {}) 
   const approvals = [];
   if (autoApprove) {
     for (const card of cards) {
-      approvals.push(await threadTaskCardService.approveFromSource(card.id, payload.sourceThreadId));
+      approvals.push(await service.approveFromSource(card.id, payload.sourceThreadId));
     }
   }
   const publicCards = autoApprove
@@ -15119,7 +15123,9 @@ module.exports = {
   resolvedThreadTaskCardTargetIds,
   resolveFilePreviewPath,
   attachPendingServerRequestsToResult,
+  buildThreadTaskCardCreatePayload,
   clearStaticCompressionCache,
+  createThreadTaskCardsFromSourceThread,
   publicServerRequest,
   serveFilePreviewContent,
   serveStatic,

@@ -16,6 +16,58 @@ function tempFile(name) {
   return path.join(dir, name);
 }
 
+test("missing task-card store is treated as first-run empty state", () => {
+  const service = createThreadTaskCardService({ storageFile: tempFile("missing-cards.json") });
+
+  assert.deepEqual(service.listForThread("thread-src"), []);
+  assert.equal(service.pendingCountForThread("thread-src"), 0);
+  assert.deepEqual(service.pendingCountsForThread("thread-src"), {
+    pendingTotal: 0,
+    pendingIncoming: 0,
+    pendingOutgoing: 0,
+  });
+});
+
+test("malformed task-card store fails closed instead of returning empty state", async () => {
+  const storageFile = tempFile("malformed-cards.json");
+  fs.writeFileSync(storageFile, "{ not json", "utf8");
+  const service = createThreadTaskCardService({ storageFile });
+
+  assert.throws(() => service.listForThread("thread-src"), /task_card_store_malformed_json/);
+  assert.throws(() => service.pendingCountsForThread("thread-src"), /task_card_store_malformed_json/);
+  await assert.rejects(
+    () => service.create({
+      sourceWorkspaceId: "finance",
+      sourceThreadId: "thread-src",
+      targetWorkspaceId: "ops",
+      targetThreadId: "thread-dst",
+      idempotencyKey: "malformed:1",
+      format: "markdown",
+      title: "Need verification",
+      summary: "Please verify the mapping.",
+      body: "Detailed request.",
+    }),
+    /task_card_store_malformed_json/,
+  );
+  assert.equal(fs.readFileSync(storageFile, "utf8"), "{ not json");
+});
+
+test("wrong-shaped task-card store fails closed", () => {
+  const storageFile = tempFile("wrong-shape-cards.json");
+  fs.writeFileSync(storageFile, JSON.stringify({ cards: {}, workflows: [] }), "utf8");
+  const service = createThreadTaskCardService({ storageFile });
+
+  assert.throws(() => service.listForThread("thread-src"), /task_card_store_invalid_shape/);
+  assert.throws(() => service.get("missing", "thread-src"), /task_card_store_invalid_shape/);
+});
+
+test("unreadable task-card store fails closed", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-thread-task-card-dir-"));
+  const service = createThreadTaskCardService({ storageFile: dir });
+
+  assert.throws(() => service.pendingCountForThread("thread-src"), /task_card_store_unreadable/);
+});
+
 test("create persists a pending task card and lists it for source and target threads", async () => {
   const service = createThreadTaskCardService({ storageFile: tempFile("cards.json") });
   const card = await service.create({

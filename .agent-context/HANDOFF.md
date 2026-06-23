@@ -1,3 +1,42 @@
+# 2026-06-24 - Audit repair: task-card store fail-closed and exact target coverage
+
+- Trigger:
+  - Home AI `Plugin Workspace Audit` returned Codex Mobile audit findings:
+    task-card store reads silently fell back to empty state on corrupt/unreadable
+    persistence, and same-workspace/exact target routing semantics needed
+    executable coverage beyond source-string assertions.
+- Change:
+  - `adapters/thread-task-card-service.js` now treats a missing task-card store
+    as first-run empty state, but fails closed for unreadable files, malformed
+    JSON, invalid `cards`, or invalid `workflows` shapes. Errors use bounded
+    codes such as `task_card_store_malformed_json`,
+    `task_card_store_invalid_shape`, and `task_card_store_unreadable`; raw card
+    bodies are not logged or emitted.
+  - `server.js` now lets the source-thread task-card create/payload path accept
+    injected resolver and task-card service dependencies for tests while
+    preserving the production route/dynamic-tool behavior.
+  - `test/thread-task-card-service.test.js` covers missing file, malformed
+    JSON, wrong shape, and unreadable-store behavior.
+  - `test/protocol.test.js` now exercises exact same-cwd target routing through
+    the create/payload path, exact id winning over cwd canonical selection,
+    source-direct auto-approval, duplicate target de-dupe, and subagent target
+    rejection.
+- Validation so far:
+  - `node --test test/thread-task-card-service.test.js`
+  - `node --test test/protocol.test.js`
+  - `node --test test/thread-task-card-route.test.js`
+  - Media/PWA evidence checks passed:
+    `test/conversation-render.test.js`,
+    `test/tool-output-image-projection.test.js`,
+    `test/generated-image-cache-service.test.js`,
+    `test/file-preview-ui.test.js`,
+    `test/build-refresh-policy.test.js`, and `test/app-update.test.js`.
+- Remaining audit scope:
+  - PWA/WebView shell lifecycle and media rendering already have focused
+    source/DOM tests in this checkout, but a live iOS/WebView video harness
+    remains outside this repair step.
+  - No Public push has been performed for this audit repair.
+
 # 2026-06-24 - Task-card source title and CodeGraph MCP elicitation v400 deployed
 
 - Trigger:

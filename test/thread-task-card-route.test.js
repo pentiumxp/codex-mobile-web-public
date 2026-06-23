@@ -155,7 +155,8 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(serverJs, "resolveThreadTaskCardTargetReference"), /threadTaskCardCanonicalTargetForCwd\(rawPath, visibleThreads\)/);
   assert.match(workspaceDelegationRoute, /details: err\.details/);
   assert.match(serverJs, /"item\/tool\/call"/);
-  assert.match(serverJs, /threadTaskCardService\.approveFromSource\(card\.id, payload\.sourceThreadId\)/);
+  assert.match(serverJs, /const service = options\.threadTaskCardService \|\| threadTaskCardService/);
+  assert.match(serverJs, /service\.approveFromSource\(card\.id, payload\.sourceThreadId\)/);
   assert.match(serverJs, /direct: autoApprove/);
   assert.match(serverJs, /workspaceDelegationEnabled: workspaceDelegation\.enabled/);
   assert.match(serverJs, /workspaceDelegation,\s+hermesPlugin:/);
