@@ -1,3 +1,83 @@
+# 2026-06-23 - v389 projection ownership fix deployed, public not pushed
+
+- User correction:
+  - The duplicate `推送Public` screenshot was a real duplicate display of one
+    user message. It was not contradicted by the following explanatory message.
+  - The user rejected a display-layer fallback for duplicates or broken image
+    receipts. The fix had to follow the central Home AI root-cause contract:
+    repair projection/state ownership, not hide extra cards at render time.
+- Root cause:
+  - Existing-thread sends inserted a local optimistic `local-turn-*` user item,
+    but the client ignored the `/api/threads/:id/messages` response `turnId`.
+    Until a later detail refresh reconciled state, the local optimistic turn and
+    the materialized server turn could both be visible.
+  - v388 already suppressed same-upload `view_image` echoes server-side, but
+    V4 client merging could preserve an older local visual receipt when a server
+    refresh omitted it. The first attempted client-side upload-name inference was
+    removed because it was too broad and not server-owned.
+- Change:
+  - `public/app.js` now reconciles submitted existing-thread messages
+    immediately after message POST success by moving the matching optimistic
+    user item into the returned real server `turnId`.
+  - The same submitted-turn reconciliation is applied to task-card command
+    sends, without referencing nonexistent `steering` state.
+  - `server.js` now emits bounded turn-level
+    `mobileSuppressedVisualReceiptKeys` for suppressed uploaded-image visual
+    receipts. Keys contain only item id, tool call id, or basename identity;
+    no upload absolute paths are added.
+  - V4 browser merge consumes only those server-projection tombstone keys when
+    deciding not to preserve an old local visual receipt. It no longer infers
+    suppression from upload summaries on its own.
+  - PWA shell cache advanced to `codex-mobile-shell-v389`.
+- Tests:
+  - Added/updated coverage in:
+    - `test/conversation-render.test.js`
+    - `test/tool-output-image-projection.test.js`
+    - version assertions in `test/mobile-viewport.test.js`,
+      `test/thread-goal-service.test.js`, and
+      `test/thread-task-card-route.test.js`.
+  - New image projection coverage proves:
+    - server-suppressed upload image echoes produce a scoped tombstone;
+    - a tombstone can exist without a direct `imageView` item;
+    - tombstones are scoped to the matching rollout turn and do not leak to
+      other upload turns.
+- Validation:
+  - `node --test test/conversation-render.test.js`
+  - Focused 119-test suite:
+    `test/conversation-render.test.js`,
+    `test/tool-output-image-projection.test.js`,
+    `test/mobile-viewport.test.js`,
+    `test/thread-goal-service.test.js`, and
+    `test/thread-task-card-route.test.js`.
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+  - `npm test` passed (`646` tests).
+- Local commit:
+  - `9946773 fix: reconcile submitted turn projection`
+- Production deploy:
+  - Used Home AI central deploy script, not task cards:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --reason codex-mobile-v389-scoped-projection-tombstones --execute --json`
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260623T124551Z-plugin-codex-mobile-web-codex-mobile-v389-scoped-projection-tombstones`.
+  - Deploy validation passed: log permissions repair, shared auth permissions
+    repair, production file hashes, LaunchDaemon print, plugin manifest health,
+    and Codex auth profile audit.
+  - Production smoke:
+    - `/api/public-config`: `clientBuildId=0.1.11|codex-mobile-shell-v389`,
+      `shellCacheName=codex-mobile-shell-v389`, `authRequired=true`.
+    - Authenticated `/api/status`: `ready=true`,
+      `transport=external-jsonl-tcp`, `persistentOwnedMux=true`.
+    - Current Home AI/Codex thread recent detail returned v4 projection,
+      10 turns, `imageViewCount=0`, `rawAbsoluteImageSrcCount=0`, and scoped
+      suppression keys distributed by turn instead of repeated as a thread-wide
+      key set.
+- Operational notes:
+  - This has been deployed to Mac production for user testing.
+  - This has not been pushed to public. Follow the release-order rule: wait for
+    user confirmation on production before public sync/push.
+
 # HANDOFF
 
 Last compacted: 2026-06-22T08:21:02.101Z
