@@ -3206,6 +3206,57 @@ The previous full handoff was archived and should be opened only when old proven
   - This is a second completed development phase, not completion of the full
     system-level refactor objective.
 
+## 2026-06-24 - Phase 3 architecture refactor: projection cache input contract
+
+- User goal:
+  - Continue the phased Codex Mobile Web system-level refactor in development.
+  - Focus on effective structural optimization around thread-detail projection
+    and memory/cache rebuild behavior.
+  - Do not deploy until all requested phases are complete and verified.
+- Phase 3 scope:
+  - Extract thread-detail projection cache-signature input construction from
+    `server.js` into `adapters/thread-detail-projection-input-service.js`.
+  - Covered input fields:
+    - thread id;
+    - rollout path aliases (`path`, `rolloutPath`, `rollout_path`);
+    - rollout stats provider output;
+    - retained turn window (`maxTurns`);
+    - summary updated timestamp;
+    - summary status.
+  - `server.js` still owns route sequencing and the projection services still
+    own memory/disk storage, cache comparison, miss, and reseed behavior.
+  - No cache policy fallback or behavioral shortcut was added.
+- Changed files:
+  - `adapters/thread-detail-projection-input-service.js`
+  - `server.js`
+  - `test/thread-detail-projection-input-service.test.js`
+  - `package.json`
+  - `docs/MODULES.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/COMPLEX_FEATURE_PATHS.md`
+- Validation:
+  - Focused projection/detail/visibility suites passed: `170` tests across
+    `test/thread-detail-projection-input-service.test.js`,
+    `test/thread-detail-projection-service.test.js`,
+    `test/thread-detail-projection-v4-service.test.js`,
+    `test/thread-item-timestamp-enrichment.test.js`,
+    `test/conversation-render.test.js`, and
+    `test/thread-visibility.test.js`.
+  - `npm run check`
+  - `npm test` passed (`678` tests).
+  - `npm run check:macos`
+  - `git diff --check`
+  - Home AI central checker:
+    `node scripts/plugin-workspace-platform-contract-check.js --plugin codex-mobile --json`
+    returned `ok: true`; existing warning: `handoff_pointer_missing`.
+  - `codegraph sync && codegraph status` reported the index is up to date; it
+    still warns the index was built by an earlier engine version.
+- Deployment status:
+  - Not deployed.
+  - Not pushed to public.
+  - This is a third completed development phase, not completion of the full
+    system-level refactor objective.
+
 ## 2026-06-23 - System/assistant image output media contract fix
 
 - User-facing symptom:

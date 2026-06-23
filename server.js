@@ -78,6 +78,7 @@ const {
 } = require("./adapters/codex-profile-service");
 const { ensureCodexMobileMcpServer } = require("./adapters/codex-mobile-mcp-config-service");
 const { ensureCodexProjectsTrusted } = require("./adapters/codex-project-trust-service");
+const { createThreadDetailProjectionInputService } = require("./adapters/thread-detail-projection-input-service");
 const { createThreadDetailProjectionService } = require("./adapters/thread-detail-projection-service");
 const { createThreadDetailProjectionV4Service } = require("./adapters/thread-detail-projection-v4-service");
 const { createThreadTurnCompactionPolicyService } = require("./adapters/thread-turn-compaction-policy-service");
@@ -5054,18 +5055,15 @@ function annotateThreadRolloutStats(thread) {
   return out;
 }
 
+const threadDetailProjectionInputService = createThreadDetailProjectionInputService({
+  maxTurns: MAX_FULL_THREAD_TURNS,
+  rolloutStatsForPath,
+  statusText,
+  timestampToMs,
+});
+
 function threadDetailProjectionInput(threadId, summary) {
-  const rolloutPath = rolloutPathForThread(summary);
-  const rolloutStats = rolloutStatsForPath(rolloutPath);
-  if (!threadId || !rolloutPath || !rolloutStats) return null;
-  return {
-    threadId,
-    rolloutPath,
-    rolloutStats,
-    maxTurns: MAX_FULL_THREAD_TURNS,
-    summaryUpdatedAtMs: timestampToMs(summary && (summary.updatedAt || summary.updated_at || summary.updatedAtMs || summary.updated_at_ms)),
-    summaryStatus: statusText(summary && summary.status),
-  };
+  return threadDetailProjectionInputService.projectionInput(threadId, summary);
 }
 
 function prepareProjectedThreadReadResult(cached, summary, runtimeSettings) {

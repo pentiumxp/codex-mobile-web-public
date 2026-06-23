@@ -381,7 +381,10 @@ one-per-turn, with the newest summary replacing older summaries. Cache
 signatures include the rollout size/mtime, summary updated time/status, the
 retained turn window, and the projection policy version; stale signatures miss,
 while live in-memory projection entries are accepted only when their
-notification timestamp is not older than the current summary. Dynamic
+notification timestamp is not older than the current summary.
+`adapters/thread-detail-projection-input-service.js` owns construction of the
+server-side signature input for detail reads; the projection cache service owns
+comparison, memory/disk storage, and miss/reseed behavior. Dynamic
 in-memory projection entries intentionally relax the full signature check while
 a thread is actively changing, but only for a bounded window: if the backing
 rollout path/size/mtime, retained turn window, or policy version changes after
