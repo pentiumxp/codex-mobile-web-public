@@ -488,6 +488,9 @@ function evaluatedMergeItemsPreservingLocalVisible() {
     "comparableVisibleTextItem",
     "comparableVisibleText",
     "visibleTextItemsLikelySame",
+    "isAssistantReceiptLikeItem",
+    "completedIncomingTurnHasAuthoritativeReceipt",
+    "shouldDropLocalOnlyReceiptForIncomingTurn",
     "shouldPreserveLocalOnlyItem",
     "findUnusedExistingItemIndexForIncoming",
     "mergeIncomingOrderedItem",
@@ -558,6 +561,9 @@ function evaluatedMergeItemsPreservingLocalVisibleWithRealVisibleWeight() {
     "comparableVisibleTextItem",
     "comparableVisibleText",
     "visibleTextItemsLikelySame",
+    "isAssistantReceiptLikeItem",
+    "completedIncomingTurnHasAuthoritativeReceipt",
+    "shouldDropLocalOnlyReceiptForIncomingTurn",
     "shouldPreserveLocalOnlyItem",
     "findUnusedExistingItemIndexForIncoming",
     "mergeIncomingOrderedItem",
@@ -641,6 +647,9 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "comparableVisibleTextItem",
     "comparableVisibleText",
     "visibleTextItemsLikelySame",
+    "isAssistantReceiptLikeItem",
+    "completedIncomingTurnHasAuthoritativeReceipt",
+    "shouldDropLocalOnlyReceiptForIncomingTurn",
     "shouldPreserveLocalOnlyItem",
     "findUnusedExistingItemIndexForIncoming",
     "mergeIncomingOrderedItem",
@@ -2948,6 +2957,64 @@ test("live turn merge keeps displayed assistant receipt when backfill has more s
     merged.turns[0].items.find((item) => item.id === "agent-live-receipt").text,
     "pausing public push",
   );
+});
+
+test("completed projection merge drops local-only live receipts when server receipt and usage arrive", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const existingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 12,
+    turns: [{
+      id: "turn-current",
+      status: { type: "active" },
+      items: [
+        { id: "user-current", type: "userMessage", content: [{ type: "text", text: "fix it" }] },
+        {
+          id: "local-operation",
+          type: "commandExecution",
+          status: "completed",
+          command: "npm test",
+          output: "local operation detail ".repeat(80),
+        },
+        { id: "local-live-receipt", type: "agentMessage", text: "I am still checking this." },
+      ],
+    }],
+  };
+  const incomingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 13,
+    turns: [{
+      id: "turn-current",
+      status: { type: "completed" },
+      completedAtMs: 1782221000000,
+      items: [
+        { id: "user-current", type: "userMessage", content: [{ type: "input_text", text: "fix it" }] },
+        { id: "server-final-receipt", type: "agentMessage", text: "Fixed and verified." },
+        {
+          id: "mobile-turn-usage-turn-current",
+          type: "turnUsageSummary",
+          mobileUsageSummary: { totalTokenUsage: { totalTokens: 42 } },
+        },
+      ],
+    }],
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, incomingThread);
+  const mergedItems = merged.turns[0].items;
+
+  assert.deepEqual(mergedItems.map((item) => item.id), [
+    "user-current",
+    "local-operation",
+    "server-final-receipt",
+    "mobile-turn-usage-turn-current",
+  ]);
+  assert.deepEqual(
+    mergedItems.filter((item) => item.type === "agentMessage").map((item) => item.id),
+    ["server-final-receipt"],
+  );
+  assert.equal(mergedItems.filter((item) => item.type === "turnUsageSummary").length, 1);
 });
 
 test("v4 projection merge removes local pending message after durable user match arrives", () => {

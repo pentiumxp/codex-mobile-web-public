@@ -1,3 +1,64 @@
+# 2026-06-23 - v390 completed-turn receipt merge fix
+
+- Trigger:
+  - User observed that, without leaving the thread, two duplicate Codex receipts
+    appeared after the turn settled: the first receipt had no Usage and the
+    second receipt had Usage.
+- Evidence:
+  - Current production `/api/threads/:id?mode=recent` for the source thread and
+    Home AI target thread showed one `agentMessage` plus one `turnUsageSummary`
+    for the relevant completed turns. The duplicate was therefore in browser
+    V4 local-visible merge state, not a duplicate service projection write.
+- Root cause:
+  - `mergeItemsPreservingLocalVisible()` preserved local-only visible items to
+    prevent live refreshes from deleting in-progress receipts. When an incoming
+    completed server turn already contained the authoritative final receipt and
+    Usage, the local active-stage `agentMessage` could remain beside the final
+    server `agentMessage`.
+- Change:
+  - `public/app.js` now drops local-only `agentMessage`/`plan` receipts when
+    the incoming same-turn projection is completed and already contains a
+    server receipt. Local operation cards remain eligible for preservation.
+  - PWA shell advanced to `codex-mobile-shell-v390`.
+  - Added a focused regression test:
+    `completed projection merge drops local-only live receipts when server receipt and usage arrive`.
+  - Updated README and troubleshooting notes.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js`
+  - `node --test test/conversation-render.test.js`
+  - `node --test test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+  - `npm run check`
+  - `npm run check:macos`
+  - `npm test` passed (`647` tests).
+  - `git diff --check`
+  - `codegraph sync && codegraph status` reported the index up to date, with
+    the existing earlier-engine warning.
+- Deployment:
+  - Central Home AI deploy dry-run for `--plugin codex-mobile-web --source
+    /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --json`
+    resolved the production path
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`, restart label
+    `com.hermesmobile.plugin.codex-mobile`, and health URL
+    `http://127.0.0.1:8787/api/v1/hermes/plugin/manifest`.
+  - Local commit before deploy: `9ee428f fix: converge completed turn receipts`.
+  - Executed central deploy:
+    `cd /Users/hermes-dev/HermesMobileDev/app && npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --execute --json`.
+  - Deploy source ref was clean at `9ee428fa45f3`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260623T132341Z-plugin-codex-mobile-web-manual`.
+  - Deploy validation passed: log permission repair, shared auth permission
+    repair, production proof-file hashes, launchd print, health URL, and Codex
+    auth profile audit.
+  - Post-deploy smoke:
+    - `/api/public-config` returned
+      `clientBuildId=0.1.11|codex-mobile-shell-v390` and
+      `shellCacheName=codex-mobile-shell-v390`.
+    - Authenticated `/api/status` returned `ready=true` and no active thread
+      ids.
+    - Production `public/app.js` and `public/sw.js` contain v390 and the
+      completed-turn receipt drop helper.
+  - Public was not pushed.
+
 # 2026-06-23 - Home AI platform pointer version-line correction
 
 - Trigger: Home AI central checker reported

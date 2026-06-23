@@ -388,7 +388,7 @@ const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v389";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v390";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -4812,9 +4812,24 @@ function turnVisibleWeight(turn) {
   return items.reduce((total, item) => total + itemVisibleWeight(item), 0);
 }
 
-function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false, suppressedVisualReceiptKeys = null) {
+function isAssistantReceiptLikeItem(item) {
+  return Boolean(item && (item.type === "agentMessage" || item.type === "plan"));
+}
+
+function completedIncomingTurnHasAuthoritativeReceipt(incomingTurn) {
+  if (!incomingTurn || !isTurnComplete(incomingTurn) || !Array.isArray(incomingTurn.items)) return false;
+  return incomingTurn.items.some((item) => isAssistantReceiptLikeItem(item));
+}
+
+function shouldDropLocalOnlyReceiptForIncomingTurn(item, incomingTurn = null) {
+  return isAssistantReceiptLikeItem(item)
+    && completedIncomingTurnHasAuthoritativeReceipt(incomingTurn);
+}
+
+function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false, suppressedVisualReceiptKeys = null, incomingTurn = null) {
   if (!item || itemVisibleWeight(item) <= 0) return false;
   if (visualReceiptMatchesSuppressionKeys(item, suppressedVisualReceiptKeys)) return false;
+  if (shouldDropLocalOnlyReceiptForIncomingTurn(item, incomingTurn)) return false;
   if (item.type === "userMessage" && /^mux-user-/.test(String(item.id || ""))) return true;
   return preserveLocalVisible && !isReasoningItem(item);
 }
@@ -5409,7 +5424,7 @@ function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserve
   }
   (existingItems || []).forEach((existingItem, existingIndex) => {
     if (!existingItem || usedExistingIndexes.has(existingIndex)) return;
-    if (!shouldPreserveLocalOnlyItem(existingItem, preserveLocalVisible, suppressedVisualReceiptKeys)) return;
+    if (!shouldPreserveLocalOnlyItem(existingItem, preserveLocalVisible, suppressedVisualReceiptKeys, incomingTurn)) return;
     if (existingItem.id && added.has(existingItem.id)) return;
     insertLocalOnlyItemByExistingOrder(merged, existingItem, existingIndex, existingIndexToMergedIndex);
     if (existingItem.id) added.add(existingItem.id);

@@ -1,5 +1,7 @@
 # Codex Mobile Web
 
+- 中文说明：v390 修正同一页面内 active turn 结束后可能短暂保留两条 Codex 回执的问题。失败层是前端 V4 thread detail 合并：为避免 live refresh 变轻，旧逻辑会保留本地-only 可见项；当 completed 服务端投影已经带回最终 `agentMessage` 和 `Usage` 时，本地 active 阶段的旧 receipt 仍可能留在页面里，形成一条无 Usage、一条有 Usage。现在 completed incoming turn 已有服务端 receipt 时，前端不再保留同 turn 的本地-only `agentMessage`/`plan`；本地 operation 卡仍可按既有规则保留。PWA shell cache 升级到 `codex-mobile-shell-v390`。
+
 - 中文说明：v389 修正 v388 后仍可见的两个投影状态归并回归。第一，已有线程发送消息时，浏览器会先插入本地 `local-turn` optimistic overlay；现在 `/api/threads/:id/messages` 成功返回真实 `turnId` 后，会立即把该 overlay 归并到真实 turn，不再等下一次详情刷新，因此同一条用户消息不会在本地 turn 和服务端 turn 中同时显示。第二，服务端压缩 turn 时会给已抑制的“用户上传图 view_image 回执”写入 `mobileSuppressedVisualReceiptKeys`；V4 详情 refresh 合并只按这个服务端投影标记移除旧本地 visual receipt，不再由客户端按上传摘要自行猜测。普通系统生成图和视觉核验输出仍可保留。PWA shell cache 升级到 `codex-mobile-shell-v389`。
 
 - 中文说明：v388 修正两类 Home AI embedded 回归。第一，插件模式下压缩续接新线程的启动索引缺少中心平台契约要求；现在从 embedded/plugin iframe 触发续接时，前端会把 `pluginMode=hermes` 传给续接任务，服务端只在该模式下给新线程 bootstrap 追加 `Home AI Central Contract` 区块，要求先完整读取 `/Users/hermes-dev/HermesMobileDev/app/docs/PLATFORM_CONTRACTS/plugin-workspace-platform-contract.md` 并按中心契约工作。第二，用户上传图片已在用户消息里正常显示时，后续 `view_image`/工具 matcher 对同一上传图生成的系统图片回执不再投影，避免出现一张重复且无法加载的 `Image` 卡；普通系统生成图和无用户上传对应的视觉核验图仍保留。PWA shell cache 升级到 `codex-mobile-shell-v388`。
