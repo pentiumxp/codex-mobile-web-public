@@ -11425,12 +11425,14 @@ function logWorkspaceDelegationDynamicToolCall(request, params = {}, args = {}, 
   }
 }
 
-function dynamicToolTextResponse(text) {
+function dynamicToolTextResponse(text, options = {}) {
+  const success = options && typeof options.success === "boolean" ? options.success : true;
   return {
     result: {
-      content_items: [
+      success,
+      contentItems: [
         {
-          type: "input_text",
+          type: "inputText",
           text: String(text || ""),
         },
       ],
@@ -11438,8 +11440,8 @@ function dynamicToolTextResponse(text) {
   };
 }
 
-function dynamicToolJsonResponse(payload) {
-  return dynamicToolTextResponse(JSON.stringify(payload, null, 2));
+function dynamicToolJsonResponse(payload, options = {}) {
+  return dynamicToolTextResponse(JSON.stringify(payload, null, 2), options);
 }
 
 function sourceThreadIdFromDynamicToolCall(params = {}, args = {}) {
@@ -11458,7 +11460,7 @@ function dynamicToolErrorPayload(code, message, extra = {}) {
     ok: false,
     error: code,
     message: String(message || code || "dynamic_tool_error"),
-  }, extra));
+  }, extra), { success: false });
 }
 
 function workspaceDelegationDynamicToolBody(params = {}, args = {}) {

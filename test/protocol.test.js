@@ -74,22 +74,38 @@ function writeJsonLine(socket, message) {
   socket.write(`${JSON.stringify(message)}\n`);
 }
 
-test("dynamic tool responses use app-server content_items text schema", () => {
+test("dynamic tool responses use app-server success and contentItems schema", () => {
   const payload = dynamicToolTextResponse("ok");
   assert.deepEqual(payload, {
     result: {
-      content_items: [
+      success: true,
+      contentItems: [
         {
-          type: "input_text",
+          type: "inputText",
           text: "ok",
         },
       ],
     },
   });
   const serialized = JSON.stringify(payload);
-  assert.doesNotMatch(serialized, /contentItems|inputText/);
+  assert.doesNotMatch(serialized, /content_items|input_text/);
   assert.doesNotMatch(serialized, /"content"\s*:/);
   assert.doesNotMatch(serialized, /"type":"text"/);
+});
+
+test("dynamic tool error responses report unsuccessful contentItems output", () => {
+  const payload = dynamicToolTextResponse("nope", { success: false });
+  assert.deepEqual(payload, {
+    result: {
+      success: false,
+      contentItems: [
+        {
+          type: "inputText",
+          text: "nope",
+        },
+      ],
+    },
+  });
 });
 
 test("source-thread task cards target only current visible canonical threads", () => {

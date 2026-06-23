@@ -101,9 +101,10 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(serverJs, "createThreadTaskCardsFromSourceThread"), /workspaceDelegation\.enabled[\s\S]*body\.autoApprove !== false[\s\S]*body\.direct !== false[\s\S]*body\.pending !== true/);
   assert.match(functionBody(serverJs, "threadTaskCardThreadCallIdempotencyKey"), /body\.requestId \|\| body\.request_id/);
   assert.doesNotMatch(functionBody(serverJs, "threadTaskCardThreadCallIdempotencyKey"), /body\.sourceTurnId \|\| body\.turnId/);
-  assert.match(functionBody(serverJs, "dynamicToolTextResponse"), /content_items:\s*\[/);
-  assert.match(functionBody(serverJs, "dynamicToolTextResponse"), /type: "input_text"/);
-  assert.doesNotMatch(functionBody(serverJs, "dynamicToolTextResponse"), /contentItems|inputText|\bcontent:\s*\[|type: "text"/);
+  assert.match(functionBody(serverJs, "dynamicToolTextResponse"), /success/);
+  assert.match(functionBody(serverJs, "dynamicToolTextResponse"), /contentItems:\s*\[/);
+  assert.match(functionBody(serverJs, "dynamicToolTextResponse"), /type: "inputText"/);
+  assert.doesNotMatch(functionBody(serverJs, "dynamicToolTextResponse"), /content_items|input_text|\bcontent:\s*\[|type: "text"/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /Mandatory boundary when this tool is available/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /call this tool before doing that work/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /Do not inspect, cd into, edit, patch, run commands in, test, deploy/);
@@ -261,7 +262,7 @@ test("server materializes structured task-card drafts from thread detail", () =>
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v377"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v378"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.threadRole \|\| ""\) === "target"\)/);
