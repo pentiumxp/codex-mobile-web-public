@@ -21,6 +21,76 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-23 - Thread List Fallback Detail-Contention Fix v380
+
+- Status: implemented and validated locally; not yet deployed to Mac production,
+  not committed, and not pushed public.
+- Trigger:
+  - User reported that large-thread loading can still feel slow on first entry
+    but fast on the second entry, and asked whether the app-server memory cache
+    should be rebuilt more often.
+- Diagnosis:
+  - Production logs for the `Music` thread showed recent detail refreshes mostly
+    returning `projection-v4-dynamic` in sub-second times while the rollout was
+    about 244MB.
+  - One slow sample showed `/api/threads/:id` detail blocked for about 3.3s
+    while a background thread-list full fallback ran for about 2.9s, including
+    about 1.46s in `fallbackRolloutMs`.
+  - Direct production probes matched this: `mode=recent` detail was about
+    445ms then 146ms, `fallback=defer` list was about 240ms, full list cold was
+    about 2811ms, and full list warm was about 578ms.
+  - Conclusion: the symptom is primarily synchronous thread-list fallback
+    contention, not a signal to rebuild the thread-detail projection memory
+    cache more frequently.
+- Change:
+  - `server.js`
+    - Tracks active `/api/threads/:id` detail responses.
+    - Unfiltered ordinary `/api/threads` list requests now return a deferred
+      app-server-only list when a detail request is active, with
+      `mobileDeferredFallback=true` and
+      `fallbackDeferredReason=active-thread-detail`, instead of running the
+      expensive state DB / rollout fallback scan.
+  - `public/app.js`
+    - Adds `hasThreadDetailRequestInFlight()` and treats thread switching,
+      live detail refresh, Usage backfill, and full-detail backfill as detail
+      activity for deferred-list scheduling.
+    - Reschedules full fallback whenever the server returns
+      `mobileDeferredFallback`, not only for the initial `fallback=defer`
+      startup request.
+    - PWA shell/client build advanced to `codex-mobile-shell-v380`.
+  - `public/sw.js`
+    - Cache advanced to `codex-mobile-shell-v380`.
+  - Docs/tests updated:
+    - `README.md`
+    - `docs/ARCHITECTURE.md`
+    - `docs/TROUBLESHOOTING.md`
+    - `test/mobile-viewport.test.js`
+    - `test/thread-visibility.test.js`
+    - `test/thread-goal-service.test.js`
+    - `test/thread-task-card-route.test.js`
+- Validation:
+  - `node --test test/thread-goal-service.test.js
+    test/thread-task-card-route.test.js test/thread-visibility.test.js
+    test/mobile-viewport.test.js` passed 54/54.
+  - `npm test` passed 613/613.
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+- Operational notes:
+  - This changes both server behavior and PWA static assets, so production deploy
+    must restart the 8787 Node listener and clients must load shell v380.
+  - A deployment task card was mistakenly sent to Home AI thread
+    `019eed86-2002-7cc2-b0b7-937eb5355f36` with card id
+    `ttc_88f91779895e5db9ef`. Per the central platform deployment contract,
+    this class of plugin-local deploy closure is plugin-owned and should be
+    completed directly by calling the Home AI central `deploy:macos` script,
+    not by sending a Home AI card.
+  - A revoke attempt for that card returned
+    `task_card_not_pending:approved`, so it cannot be revoked by the source
+    thread and should be ignored rather than used as the deployment path.
+  - Follow the release-order rule: deploy and validate Mac production before any
+    public sync/push.
+
 ## 2026-06-23 - Embedded Image Card Rendering v379 Deployed
 
 - Status: implemented, validated, locally committed, deployed to Mac

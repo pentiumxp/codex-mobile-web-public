@@ -388,7 +388,7 @@ const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v379";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v380";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -7441,6 +7441,14 @@ function clearThreadListDeferredFallbackTimer() {
   state.threadListDeferredFallbackTimer = null;
 }
 
+function hasThreadDetailRequestInFlight() {
+  return Boolean(
+    state.threadLoadController
+    || state.refreshThreadController
+    || (state.currentThread && state.currentThread.mobileLoading),
+  );
+}
+
 function scheduleThreadListDeferredFallback(delayMs = THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS) {
   clearThreadListDeferredFallbackTimer();
   const delay = Math.max(500, Number(delayMs) || THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS);
@@ -7448,7 +7456,7 @@ function scheduleThreadListDeferredFallback(delayMs = THREAD_LIST_DEFERRED_FALLB
     state.threadListDeferredFallbackTimer = null;
     const search = $("threadSearch").value.trim();
     if (state.selectedCwd || search) return;
-    if (state.threadListLoadController || (state.currentThread && state.currentThread.mobileLoading)) {
+    if (state.threadListLoadController || hasThreadDetailRequestInFlight()) {
       scheduleThreadListDeferredFallback(THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS);
       return;
     }
@@ -7470,7 +7478,7 @@ async function loadThreads(options = {}) {
   if (state.selectedCwd) params.set("cwd", state.selectedCwd);
   const search = $("threadSearch").value.trim();
   if (search) params.set("search", search);
-  const threadDetailOpening = Boolean(state.currentThread && state.currentThread.mobileLoading);
+  const threadDetailOpening = hasThreadDetailRequestInFlight();
   const shouldDeferFallback = options.deferFallback === true
     || (silent && options.deferFallback !== false && threadDetailOpening && !state.selectedCwd && !search);
   if (shouldDeferFallback && !search) params.set("fallback", "defer");
@@ -7489,7 +7497,7 @@ async function loadThreads(options = {}) {
     renderThreads(result);
     restoreConnectionState(result.mobileFallback ? "Recovered from session index" : "Connected");
     scheduleVisiblePageRefreshCheck(500);
-    if (result && result.mobileDeferredFallback && options.deferFallback === true) {
+    if (result && result.mobileDeferredFallback && !state.selectedCwd && !search) {
       scheduleThreadListDeferredFallback();
     }
     if (!state.currentThread) renderCurrentThread();

@@ -646,6 +646,9 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(serverJs, /const THREAD_LIST_FALLBACK_CACHE_TTL_MS/);
   assert.match(serverJs, /const threadListFallbackCache = new Map\(\);/);
   assert.match(serverJs, /function clearThreadListFallbackCache\(\)/);
+  assert.match(serverJs, /let activeThreadDetailRequestCount = 0;/);
+  assert.match(serverJs, /function trackThreadDetailRequestLifecycle\(res\)/);
+  assert.match(serverJs, /function shouldDeferThreadListFallbackForActiveDetail\(\{ deferFallback, cursor, archived, searchTerm, cwd \} = \{\}\)/);
   assert.match(serverJs, /function threadListFallbackCacheKey\(limit, filters = \{\}\)/);
   assert.match(serverJs, /function readThreadListFallbackCache\(key\)/);
   assert.match(serverJs, /diagnostics\.cacheHit = true/);
@@ -660,7 +663,9 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /fallbackSessionIndexMs/);
   assert.match(routeBody, /const fallbackMode = String\(url\.searchParams\.get\("fallback"\) \|\| ""\)/);
   assert.match(routeBody, /const deferFallback = fallbackMode === "defer" && !cursor && !archived && !searchTerm/);
+  assert.match(routeBody, /const shouldDeferFallback = shouldDeferThreadListFallbackForActiveDetail\(\{[\s\S]*deferFallback,[\s\S]*cursor,[\s\S]*archived,[\s\S]*searchTerm,[\s\S]*cwd,[\s\S]*\}\);/);
   assert.match(routeBody, /fallbackDeferred: true/);
+  assert.match(routeBody, /fallbackDeferredReason: deferFallback \? "client" : "active-thread-detail"/);
   assert.match(routeBody, /const indexedResult = normalizeThreadListResultStatuses\(hydrateThreadListResultTitlesFromSessionIndex\(appServerResult\)\)/);
   assert.match(routeBody, /attachThreadListStateToResult\(indexedResult\)/);
   assert.match(routeBody, /decorated\.mobileDeferredFallback = true/);
@@ -669,6 +674,9 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(routeBody, /const fallback = readThreadListFallback\(limit, \{ cwd, searchTerm, globalState, diagnostics: fallbackDiagnostics \}\);/);
   assert.match(routeBody, /normalizeThreadListResultStatuses\(mergeThreadListFallback\(appServerResult, fallback, limit\)\)/);
   assert.match(routeBody, /normalizeThreadSummaryLiveStatus\(attachThreadTaskCardCountsToSummary\(thread\)\)/);
+  const threadReadIndex = serverJs.indexOf('const threadRead = url.pathname.match(/^\\/api\\/threads\\/([^/]+)$/);');
+  const threadReadBody = serverJs.slice(threadReadIndex, serverJs.indexOf('const threadTurns = url.pathname.match', threadReadIndex));
+  assert.match(threadReadBody, /trackThreadDetailRequestLifecycle\(res\);/);
 });
 
 test("thread list merge keeps app-server idle over stale rollout active", () => {

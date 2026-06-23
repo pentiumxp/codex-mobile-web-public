@@ -477,7 +477,11 @@ Do not infer from rollout file size alone. Separate:
   `thread_list_rendered.serverTimings`. Large threads may return 10-turn detail
   quickly while a cold full list fallback spends time in `fallbackRolloutMs`.
   The deferred full-list fallback should be delayed and cancellable, not run
-  immediately while a thread detail is still loading.
+  immediately while a thread detail request is still loading. If a list response
+  reports `fallbackDeferredReason=active-thread-detail`, the server intentionally
+  skipped the expensive fallback scan because a detail request was in flight;
+  wait for the later deferred list refresh instead of rebuilding in-memory
+  projection caches.
 - Is app-server/mux CPU active?
 - Is the latest turn `inProgress` but no event has been written for minutes?
 

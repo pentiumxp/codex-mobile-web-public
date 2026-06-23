@@ -862,6 +862,7 @@ const MAX_FULL_THREAD_TURNS = Math.max(MAX_THREAD_TURNS, Math.min(200, Number(pr
 const MAX_LIVE_OPERATION_ITEMS = Math.max(1, Math.min(30, Number(process.env.CODEX_MOBILE_LIVE_OPERATION_ITEMS || "12")));
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
 const THREAD_LIST_FALLBACK_CACHE_TTL_MS = Math.max(0, Number(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS || "30000"));
+let activeThreadDetailRequestCount = 0;
 threadDetailProjectionService = THREAD_DETAIL_PROJECTION_V4_ENABLED
   ? createThreadDetailProjectionV4Service({
     cacheDir: THREAD_DETAIL_PROJECTION_CACHE_DIR,
@@ -12282,6 +12283,27 @@ function clearThreadListFallbackCache() {
   threadListFallbackCache.clear();
 }
 
+function trackThreadDetailRequestLifecycle(res) {
+  activeThreadDetailRequestCount += 1;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    activeThreadDetailRequestCount = Math.max(0, activeThreadDetailRequestCount - 1);
+  };
+  if (res && typeof res.once === "function") {
+    res.once("finish", release);
+    res.once("close", release);
+  }
+  return release;
+}
+
+function shouldDeferThreadListFallbackForActiveDetail({ deferFallback, cursor, archived, searchTerm, cwd } = {}) {
+  if (deferFallback) return true;
+  if (cursor || archived || searchTerm || cwd) return false;
+  return activeThreadDetailRequestCount > 0;
+}
+
 function clonePlainJson(value) {
   if (value === undefined) return undefined;
   return JSON.parse(JSON.stringify(value));
@@ -13484,11 +13506,19 @@ async function handleApi(req, res) {
         cwd,
       );
       markTiming("appServerMs", appServerStartedAtMs);
-      if (deferFallback) {
+      const shouldDeferFallback = shouldDeferThreadListFallbackForActiveDetail({
+        deferFallback,
+        cursor,
+        archived,
+        searchTerm,
+        cwd,
+      });
+      if (shouldDeferFallback) {
         Object.assign(timings, {
           fallbackMs: 0,
           fallbackCacheHit: false,
           fallbackDeferred: true,
+          fallbackDeferredReason: deferFallback ? "client" : "active-thread-detail",
           fallbackStateDbMs: 0,
           fallbackRolloutMs: 0,
           fallbackSessionIndexMs: 0,
@@ -13637,6 +13667,7 @@ async function handleApi(req, res) {
   }
   const threadRead = url.pathname.match(/^\/api\/threads\/([^/]+)$/);
   if (threadRead && req.method === "GET") {
+    trackThreadDetailRequestLifecycle(res);
     const threadId = decodeURIComponent(threadRead[1]);
     const detailMode = String(url.searchParams.get("mode") || "").trim().toLowerCase();
     const preferRecentTurns = detailMode === "recent";
