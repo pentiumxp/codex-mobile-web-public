@@ -82,6 +82,7 @@ const { createThreadDetailProjectionInputService } = require("./adapters/thread-
 const { createThreadDetailProjectionResultService } = require("./adapters/thread-detail-projection-result-service");
 const { createThreadDetailProjectionService } = require("./adapters/thread-detail-projection-service");
 const { createThreadDetailProjectionV4Service } = require("./adapters/thread-detail-projection-v4-service");
+const { createThreadDetailSummaryService } = require("./adapters/thread-detail-summary-service");
 const { createThreadListFallbackCacheService } = require("./adapters/thread-list-fallback-cache-service");
 const { createThreadTurnCompactionPolicyService } = require("./adapters/thread-turn-compaction-policy-service");
 const { createChatGptProBridgeService } = require("./adapters/chatgpt-pro-bridge-service");
@@ -5072,6 +5073,15 @@ const threadDetailProjectionResultService = createThreadDetailProjectionResultSe
   mergeThreadRuntimeFromStateDb,
   normalizeThreadSummaryLiveStatus,
   publicRuntimeSettings,
+});
+const threadDetailSummaryService = createThreadDetailSummaryService({
+  readStateDbThread,
+  readStartedThread,
+  readRolloutSessionFallbackThread,
+  readThreadSummaryFromAppServer,
+  mergeThreadDisplaySummary,
+  applyLocalActiveThreadStatusToSummary,
+  threadRolloutSizeBytes,
 });
 
 function threadDetailProjectionInput(threadId, summary) {
@@ -14160,59 +14170,7 @@ async function handleApi(req, res) {
     });
     const globalState = readGlobalState();
     const visibility = visibilityFromGlobalState(globalState);
-    let summary = readStateDbThread(threadId);
-    let summarySource = summary ? "state-db" : "none";
-    if (!summary) {
-      summary = readStartedThread(threadId);
-      summarySource = summary ? "started-cache" : "none";
-    }
-    if (!summary) {
-      summary = readRolloutSessionFallbackThread(threadId);
-      summarySource = summary ? "rollout-session" : "none";
-    }
-    if (!summary) {
-      const summaryStartedAtMs = Date.now();
-      threadLog("summary_app_server_start");
-      try {
-        summary = await readThreadSummaryFromAppServer(codex, threadId);
-        summarySource = summary ? "app-server" : "none";
-        threadLog("summary_app_server_ok", {
-          durationMs: Date.now() - summaryStartedAtMs,
-          found: Boolean(summary),
-        });
-      } catch (err) {
-        threadLog("summary_app_server_error", {
-          durationMs: Date.now() - summaryStartedAtMs,
-          error: err.message || String(err),
-        });
-      }
-    } else {
-      const summaryStartedAtMs = Date.now();
-      threadLog("summary_app_server_refresh_start", { baseSource: summarySource });
-      try {
-        const appServerSummary = await readThreadSummaryFromAppServer(codex, threadId);
-        if (appServerSummary) {
-          summary = mergeThreadDisplaySummary(summary, appServerSummary);
-          summarySource = `${summarySource}+app-server`;
-        }
-        threadLog("summary_app_server_refresh_ok", {
-          durationMs: Date.now() - summaryStartedAtMs,
-          found: Boolean(appServerSummary),
-        });
-      } catch (err) {
-        threadLog("summary_app_server_refresh_error", {
-          durationMs: Date.now() - summaryStartedAtMs,
-          error: err.message || String(err),
-        });
-      }
-    }
-    summary = applyLocalActiveThreadStatusToSummary(summary, { threadId });
-    threadLog("summary_ready", {
-      source: summarySource,
-      title: summary && (summary.name || summary.preview || ""),
-      rolloutSizeBytes: summary ? threadRolloutSizeBytes(summary) : null,
-      status: summary && summary.status ? summary.status.type || summary.status : null,
-    });
+    const { summary } = await threadDetailSummaryService.resolveSummary(codex, threadId, { threadLog });
     const runtimeSettings = threadRuntimeSettings(threadId, summary);
     if (summary && isHiddenThread(summary, visibility)) {
       threadLog("hidden", { status: 404 });

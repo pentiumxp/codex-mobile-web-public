@@ -6,11 +6,13 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+const summaryServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-detail-summary-service.js"), "utf8");
 
 test("thread detail refreshes display title from app-server summary", () => {
   assert.match(serverJs, /function mergeThreadDisplaySummary\(base, display\)/);
-  assert.match(serverJs, /summary = mergeThreadDisplaySummary\(summary, appServerSummary\);/);
-  assert.match(serverJs, /summarySource = `\$\{summarySource\}\+app-server`;/);
+  assert.match(serverJs, /createThreadDetailSummaryService\(\{\s*readStateDbThread,\s*readStartedThread,\s*readRolloutSessionFallbackThread,\s*readThreadSummaryFromAppServer,\s*mergeThreadDisplaySummary,/);
+  assert.match(summaryServiceJs, /summary = mergeThreadDisplaySummary\(summary, appServerSummary\);/);
+  assert.match(summaryServiceJs, /source = `\$\{source\}\+app-server`;/);
 });
 
 test("thread display summary keeps local runtime fields while accepting display fields", () => {

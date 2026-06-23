@@ -130,6 +130,7 @@ Implementation path:
     `test/thread-item-timestamp-enrichment.test.js`,
     `test/conversation-render.test.js`, `test/collab-agent-render.test.js`,
     `test/thread-turn-compaction-policy-service.test.js`,
+    `test/thread-detail-summary-service.test.js`,
     `test/thread-detail-projection-input-service.test.js`,
     `test/thread-detail-projection-result-service.test.js`,
     `test/message-timestamp.test.js`, `test/turn-scroll-controls.test.js`,

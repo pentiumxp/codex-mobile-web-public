@@ -3206,6 +3206,65 @@ The previous full handoff was archived and should be opened only when old proven
   - This is a second completed development phase, not completion of the full
     system-level refactor objective.
 
+## 2026-06-24 - Phase 6 architecture refactor: thread-detail summary resolver
+
+- User goal:
+  - Continue the phased Codex Mobile Web system-level refactor in development.
+  - Keep thread-opening work tied to concrete startup/detail latency surfaces.
+  - Do not deploy or push public until all requested phases are complete and
+    verified.
+- Phase 6 scope:
+  - Extract `/api/threads/:id` summary resolution from `server.js` into
+    `adapters/thread-detail-summary-service.js`.
+  - Covered summary behavior:
+    - lookup order: state DB, started-thread cache, rollout-session fallback,
+      app-server lookup;
+    - app-server refresh when a local summary exists;
+    - bounded summary lookup/refresh logs;
+    - local-active overlay application before hidden-thread checks and
+      projection cache input construction;
+    - summary-ready diagnostics for source, title, rollout size, and status.
+  - `server.js` still owns detail route sequencing, hidden-thread checks,
+    projection cache get/seed calls, full `thread/read`, and turns-list
+    fallback.
+  - No cache policy or fallback behavior was changed.
+- Changed files:
+  - `adapters/thread-detail-summary-service.js`
+  - `server.js`
+  - `test/thread-detail-summary-service.test.js`
+  - `package.json`
+  - `docs/MODULES.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/COMPLEX_FEATURE_PATHS.md`
+- Validation:
+  - Focused detail summary/list/projection suites passed: `47` tests across
+    `test/thread-detail-summary-service.test.js`,
+    `test/thread-visibility.test.js`, and
+    `test/thread-detail-projection-result-service.test.js`.
+  - Focused projection/list/render suites passed: `162` tests across
+    `test/thread-detail-summary-service.test.js`,
+    `test/thread-list-fallback-cache-service.test.js`,
+    `test/thread-visibility.test.js`,
+    `test/thread-detail-projection-result-service.test.js`,
+    `test/thread-detail-projection-input-service.test.js`,
+    `test/thread-detail-projection-service.test.js`,
+    `test/thread-detail-projection-v4-service.test.js`, and
+    `test/conversation-render.test.js`.
+  - `npm run check`
+  - `npm test` passed (`691` tests).
+  - `npm run check:macos`
+  - `git diff --check`
+  - Home AI central checker:
+    `node scripts/plugin-workspace-platform-contract-check.js --plugin codex-mobile --json`
+    returned `ok: true`; existing warning: `handoff_pointer_missing`.
+  - `codegraph sync && codegraph status` reported the index is up to date; it
+    still warns the index was built by an earlier engine version.
+- Deployment status:
+  - Not deployed.
+  - Not pushed to public.
+  - This is a sixth development phase, not completion of the full
+    system-level refactor objective.
+
 ## 2026-06-24 - Phase 5 architecture refactor: thread-list fallback cache policy
 
 - User goal:
