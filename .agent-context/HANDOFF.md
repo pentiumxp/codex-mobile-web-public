@@ -1,3 +1,63 @@
+# 2026-06-24 - Task-card chrome v399 and operation bubble minimum display deployed
+
+- Trigger:
+  - User reported the collapsed cross-thread task-card message still looked
+    like an ordinary `You` user message and its source/purpose line was clipped
+    on phone.
+  - User clarified injected cross-thread task-card messages should use their
+    own card format: the header area should show source thread first, then the
+    task purpose; full card details should remain expandable.
+  - User also required the compact operation bubble to remain visible for at
+    least 0.5 seconds so short operations do not flash and disappear.
+- Change:
+  - `public/app.js` now detects injected task-card text before normal
+    `userMessage` rendering and renders it through
+    `renderInjectedThreadTaskCardItem()`.
+  - Injected cards now use `.thread-task-card-injected` chrome instead of the
+    normal user-message `You` surface. The visible header has separate source
+    and purpose rows; the complete raw task-card body remains behind a
+    collapsible `完整任务卡` details block.
+  - Standalone injected input-text rendering now uses a compact overview block
+    with source/purpose rows before the expandable raw body.
+  - Compact mobile operation bubbles use
+    `LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = 500` and preserve the existing
+    bubble until the minimum display window expires, then re-render once.
+  - PWA shell/cache advanced to `codex-mobile-shell-v399`.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js`
+  - Focused 118-test suite passed:
+    `test/conversation-render.test.js`,
+    `test/collab-agent-render.test.js`,
+    `test/mobile-viewport.test.js`,
+    `test/thread-task-card-route.test.js`, and
+    `test/thread-goal-service.test.js`.
+  - `npm run check`
+  - `npm run check:macos`
+  - `npm test` passed (`655` tests).
+  - `git diff --check`
+  - `codegraph sync && codegraph status` reported the index up to date with
+    the existing older-engine warning.
+- Commit/deploy:
+  - Code commit: `f1e66cb fix: clarify task-card summary chrome`.
+  - Deployed through the Home AI center script:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --execute --json`.
+  - Production source ref: `f1e66cba3b16`, dirty false.
+  - Production target:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260623T161028Z-plugin-codex-mobile-web-manual`.
+  - Restart label `com.hermesmobile.plugin.codex-mobile` was running after
+    deploy; health URL passed on attempt 2.
+  - `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v399` and
+    `shellCacheName=codex-mobile-shell-v399`.
+  - Production `npm run check` passed.
+- Notes:
+  - Public was not pushed in this step.
+  - This fixes the task-card display/chrome and operation-bubble minimum
+    visibility only. The separate audit repair card findings were not addressed
+    by this UI-focused change.
+
 # 2026-06-23 - Mobile operation sheet and long task-card folding deployed
 
 - Trigger:
