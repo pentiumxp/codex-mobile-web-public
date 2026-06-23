@@ -1,5 +1,6 @@
 # Codex Mobile Web
 
+- 中文说明：server-only 修正 `跨工作区委派` 写保护误伤工具工作区的问题。源码写保护现在只防止修改其他已知源码根：`apply_patch`、文件变更、相对路径写入、`git add/commit`、安装/构建类源码写命令和写类文件系统授权仍会被拒绝；但外部工具 workspace 中的 Playwright/Chromium、Home AI 视觉核验、只读/网络/MCP 命令，以及把截图或诊断输出写到 `/tmp` / `/private/tmp` 的工具命令可以继续使用。同步修正 JavaScript `=>` 被误判成 shell 重定向的问题。本次不改变 PWA shell cache。
 - 中文说明：v377 将 Composer 的 Fast 从全局浏览器开关改为线程持久化标签。点击 Fast 只影响当前线程；切换到其他线程会读取该线程自己的 Fast 标签，新建对话时开启 Fast 会在创建成功后迁移到新线程。旧的全局 `codexMobileCodexFastMode` 不再恢复 Fast，触摸事件也会压住合成 click/touchend，避免取消后又被第二次事件打开。PWA shell cache 升级到 `codex-mobile-shell-v377`。
 - 中文说明：v376 修正嵌入态/移动端前台恢复后，已完成线程沿用内存里的旧详情而不拉取最终回执的问题。`resumeMobileSession()` 现在只在启动阶段跳过网络恢复；已有当前线程恢复可见时会始终触发一次轻量 detail refresh，运行中线程仍用 250ms 合并刷新，completed/idle 线程直接读取最新详情，避免最终回执或 Usage 已在服务端存在但第一次进入仍看不到。PWA shell cache 升级到 `codex-mobile-shell-v376`。
 - 中文说明：server-only 修正已完成线程首次打开最终回执先出现又被较旧投影覆盖、退出再进才稳定的问题。线程详情压缩/投影/raw/turns-list 路径现在会从同一 bounded rollout enrichment 数据里读取 `task_complete.last_agent_message`；如果 completed turn 里已有中间 `agentMessage` 但没有匹配 rollout 最终文本的 `agentMessage`/`plan`，就补一个 synthetic 最终回执，再继续附加已有 Usage 摘要。已有匹配回执不会被覆盖，失败/取消/中断/运行中 turn 不补。本次不改变 PWA shell cache。

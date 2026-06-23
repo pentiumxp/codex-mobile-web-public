@@ -242,6 +242,11 @@ command is not shell-chained. Direct `apply_patch`, file writes, `git add`,
 from a plugin workspace. The request classifier resolves the source workspace
 from thread/turn ownership before consulting the command cwd, so a plugin thread
 cannot bypass the guard by running a shell command with `cwd` set to Home AI.
+The guard is intentionally about source mutation, not about closing tool
+workspaces. Foreign-cwd tool commands are allowed when they do not target the
+foreign source root, including local Playwright / Chromium validation and
+diagnostics that write bounded artifacts to temporary paths. Inline JavaScript
+`=>` is not treated as shell redirection.
 
 The old `danger-full-access` approval-proxy-only compatibility mode is available
 only when `CODEX_MOBILE_WORKSPACE_DELEGATION_APPROVAL_PROXY_ONLY=1` is set and

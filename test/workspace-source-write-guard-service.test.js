@@ -132,6 +132,61 @@ test("workspace source write guard denies write-like commands in another source 
   fs.rmSync(foreign, { recursive: true, force: true });
 });
 
+test("workspace source write guard allows foreign tool workspace commands that do not write source", () => {
+  const current = tempProjectRoot("current");
+  const foreign = tempProjectRoot("foreign");
+
+  const playwrightDecision = classifyWorkspaceSourceWriteRequest({
+    method: "item/commandExecution/requestApproval",
+    params: {
+      cwd: foreign,
+      command: [
+        "node -e '",
+        "import { chromium } from \"playwright\";",
+        "const page = await browser.newPage();",
+        "const info = await page.evaluate(() => ({ ok: true }));",
+        "await page.screenshot({ path: \"/private/tmp/music-demo-menu-fix.png\" });",
+        "console.log(JSON.stringify(info));",
+        "'",
+      ].join("\n"),
+    },
+  }, {
+    currentCwd: current,
+    workspaceRoots: [current, foreign],
+  });
+  assert.equal(playwrightDecision.action, "allow");
+  assert.equal(playwrightDecision.reason, "read_or_non_write_command");
+
+  const tmpWriteDecision = classifyWorkspaceSourceWriteRequest({
+    method: "item/commandExecution/requestApproval",
+    params: {
+      cwd: foreign,
+      command: "node -e 'require(\"fs\").writeFileSync(\"/private/tmp/tool-output.json\", \"{}\")'",
+    },
+  }, {
+    currentCwd: current,
+    workspaceRoots: [current, foreign],
+  });
+  assert.equal(tmpWriteDecision.action, "allow");
+  assert.equal(tmpWriteDecision.reason, "write_command_without_foreign_source");
+
+  const relativeSourceWriteDecision = classifyWorkspaceSourceWriteRequest({
+    method: "item/commandExecution/requestApproval",
+    params: {
+      cwd: foreign,
+      command: "node -e 'require(\"fs\").writeFileSync(\"src/app.js\", \"changed\")'",
+    },
+  }, {
+    currentCwd: current,
+    workspaceRoots: [current, foreign],
+  });
+  assert.equal(relativeSourceWriteDecision.action, "deny");
+  assert.equal(relativeSourceWriteDecision.reason, "foreign_source_write_command_cwd");
+
+  fs.rmSync(current, { recursive: true, force: true });
+  fs.rmSync(foreign, { recursive: true, force: true });
+});
+
 test("workspace source write guard allows trusted Home AI tools but denies direct Home AI source writes", () => {
   const current = tempProjectRoot("current");
   const homeAi = tempHomeAiRoot();

@@ -490,8 +490,14 @@ metadata read-only even when the managed permission profile allows it.
 `adapters/workspace-source-write-guard-service.js` auto-allows reads,
 MCP calls, network, current-workspace writes, and current-workspace `.git`
 approval requests, while auto-denying explicit file changes, patches,
-write-like shell commands, or write-like file-system grants that target another
-known source root.
+relative-path source writes, `git add` / `git commit`, install/update commands,
+or write-like file-system grants that target another known source root. Tool
+workspaces remain usable: commands such as local Playwright / Chromium checks,
+Home AI visual harnesses, network probes, and diagnostics that write only to
+temporary output paths are allowed even when their command cwd is another known
+source root. The guard treats JavaScript `=>` as code, not shell redirection, so
+inline tool scripts are not rejected merely because they contain arrow
+functions.
 
 Cross-workspace discipline is therefore enforced through two layers: the
 model-visible `codex_mobile.delegate_to_thread` dynamic tool/MCP/script
@@ -499,11 +505,11 @@ fallback, and the server-side sandbox/approval decision layer. Home AI central
 control-plane provided tools are allowed through a narrow command allowlist when
 the cwd is the Home AI control-plane root and the command is not shell-chained:
 AI Ops, platform contract checks, visual harness commands, and `deploy:macos`.
-Direct `apply_patch`, `git add`, `git commit`, or arbitrary write commands
-against Home AI source remain denied from plugin workspaces. The guard resolves
-the source workspace from thread/turn ownership before looking at command cwd, so
-changing a command's cwd to Home AI cannot turn a plugin thread into a Home AI
-maintenance thread.
+Direct `apply_patch`, `git add`, `git commit`, relative source writes, or
+arbitrary write commands against Home AI source remain denied from plugin
+workspaces. The guard resolves the source workspace from thread/turn ownership
+before looking at command cwd, so changing a command's cwd to Home AI cannot
+turn a plugin thread into a Home AI maintenance thread.
 
 The older `danger-full-access` approval-proxy-only mode is available only as an
 explicit emergency fallback with
