@@ -4165,7 +4165,7 @@ html.keyboard-open .side-chat-form textarea {
   background: var(--item-bg);
   animation: none;
   overflow: hidden;
-  padding: 8px 10px;
+  padding: 5px 10px;
 }
 
 .item.live-operation.entry-animate {
@@ -4176,8 +4176,8 @@ html.keyboard-open .side-chat-form textarea {
   flex: 0 0 auto;
   min-width: 0;
   width: 100%;
-  min-height: var(--live-operation-dock-compact-height, 54px);
-  padding: 0 20px 8px;
+  min-height: var(--live-operation-dock-compact-height, 40px);
+  padding: 0 20px 6px;
   background: var(--bg);
   border-top: 1px solid var(--line-soft);
   overflow: hidden;
@@ -4191,13 +4191,13 @@ html.keyboard-open .side-chat-form textarea {
 }
 
 .live-operation-dock:not([data-mode="expanded"]) {
-  height: var(--live-operation-dock-compact-height, 54px);
+  height: var(--live-operation-dock-compact-height, 40px);
 }
 
 .live-operation-dock:not([data-mode="expanded"]) .live-operation {
-  height: 44px;
-  min-height: 44px;
-  max-height: 44px;
+  height: 32px;
+  min-height: 32px;
+  max-height: 32px;
 }
 
 .live-operation-dock-inner {
@@ -4208,7 +4208,7 @@ html.keyboard-open .side-chat-form textarea {
 
 .live-operation-dock-controls {
   position: absolute;
-  top: 7px;
+  top: 2px;
   right: 8px;
   z-index: 1;
   display: inline-flex;
@@ -4240,7 +4240,7 @@ html.keyboard-open .side-chat-form textarea {
 }
 
 .live-operation-dock .operation-meta-line {
-  min-height: 28px;
+  min-height: 20px;
   padding-right: 118px;
 }
 

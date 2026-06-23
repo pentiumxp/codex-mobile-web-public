@@ -220,6 +220,27 @@ return { state, currentLiveOperationEntry };
 `)();
 }
 
+function evaluatedOperationCommandHarness() {
+  const sources = [
+    "truncateSingleLine",
+    "stripMatchingOuterQuotes",
+    "operationArgumentsObject",
+    "operationCommandText",
+    "operationCommandSummary",
+    "operationCommandName",
+    "operationCommandGroupText",
+    "operationSummaryLines",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`
+function shortPath(value) {
+  if (!value) return "";
+  return String(value).replace(/^\\\\\\\\\\?\\\\/, "").replace(/^.*[\\\\/]/, "");
+}
+${sources.join("\n")}
+return { operationCommandText, operationCommandSummary, operationSummaryLines };
+`)();
+}
+
 function evaluatedPendingAttachmentClearHarness() {
   const sources = [
     "revokeAttachmentPreviewUrls",
@@ -1158,9 +1179,11 @@ test("visible turn items keep source order after live operations move to the doc
 test("live operation dock keeps a status row while active turn is reasoning only", () => {
   assert.match(appJs, /function liveTurnStatusDockItem\(turn\)/);
   assert.match(functionBody("currentLiveOperationEntry"), /liveTurnStatusDockItem\(turn\)/);
-  assert.match(functionBody("liveTurnStatusDockItem"), /liveActivityLabelForTurn\(turn\) \|\| liveTurnFallbackActivityLabel\(turn\) \|\| "运行"/);
+  assert.match(functionBody("liveTurnStatusDockItem"), /title: "Command"/);
+  assert.doesNotMatch(functionBody("liveTurnStatusDockItem"), /liveActivityLabelForTurn/);
   assert.match(functionBody("operationTitle"), /if \(item && item\.title\) return item\.title;/);
   assert.match(functionBody("operationSummaryLines"), /item\.type === "liveTurnStatus"/);
+  assert.match(functionBody("renderLiveOperation"), /item && item\.type === "liveTurnStatus"[\s\S]*\? ""/);
 
   const harness = evaluatedLiveOperationDockEntryHarness();
   const turn = {
@@ -1176,15 +1199,33 @@ test("live operation dock keeps a status row while active turn is reasoning only
   assert.equal(statusEntry.turn, turn);
   assert.equal(statusEntry.sourceIndex, -1);
   assert.equal(statusEntry.item.type, "liveTurnStatus");
-  assert.equal(statusEntry.item.title, "思考");
-  assert.equal(statusEntry.item.status, "running");
-  assert.equal(statusEntry.item.startedAtMs, 1000);
+  assert.equal(statusEntry.item.title, "Command");
+  assert.equal(statusEntry.item.status, "");
+  assert.equal(statusEntry.item.startedAtMs, undefined);
 
   const command = { id: "cmd-1", type: "commandExecution", activeOperation: true };
   turn.items.push(command);
   const commandEntry = harness.currentLiveOperationEntry(harness.state.currentThread);
   assert.equal(commandEntry.item, command);
   assert.equal(commandEntry.sourceIndex, 1);
+});
+
+test("command operation detail reads command from serialized arguments on macOS", () => {
+  assert.match(appJs, /function operationCommandText\(item\)/);
+  assert.match(functionBody("operationCommandText"), /args\.command \|\| args\.cmd \|\| args\.shellCommand \|\| args\.shell_command/);
+  assert.match(functionBody("operationCommandSummary"), /operationCommandText\(item\)/);
+  assert.match(functionBody("operationCommandName"), /operationCommandText\(item\)/);
+  assert.match(functionBody("operationSummaryLines"), /operationCommandText\(item\)/);
+  assert.match(functionBody("visibleItemSignature"), /command: operationCommandText\(item\)/);
+
+  const harness = evaluatedOperationCommandHarness();
+  const item = {
+    type: "commandExecution",
+    arguments: JSON.stringify({ command: "npm run check" }),
+  };
+  assert.equal(harness.operationCommandText(item), "npm run check");
+  assert.equal(harness.operationCommandSummary(item), "npm run check");
+  assert.deepEqual(harness.operationSummaryLines(item), ["npm run check"]);
 });
 
 test("superseded live usage-only shells do not render as blank completed receipts", () => {

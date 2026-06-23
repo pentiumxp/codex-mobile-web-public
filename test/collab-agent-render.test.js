@@ -81,7 +81,8 @@ test("live operation cards dock at the bottom and expose only the newest operati
   assert.match(functionBody("renderOperationCard"), /operation-detail-line/);
   assert.match(functionBody("renderOperationCard"), /operation-detail-line\$\{detail \? "" : " empty"\}/);
   assert.match(functionBody("renderOperationCard"), /detail \? escapeHtml\(detail\) : "&nbsp;"/);
-  assert.match(functionBody("renderOperationCard"), /operation-title[\s\S]*operation-status/);
+  assert.match(functionBody("renderOperationCard"), /const statusHtml = String\(status \|\| ""\)\.trim\(\)/);
+  assert.match(functionBody("renderOperationCard"), /operation-title[\s\S]*\$\{statusHtml\}/);
   assert.match(functionBody("renderOperationCard"), /operation-duration/);
   assert.match(functionBody("renderOperationCard"), /operationDurationData\(item, status\)/);
   assert.match(functionBody("updateTurnTimer"), /updateOperationDurationBadges\(\)/);
@@ -100,7 +101,7 @@ test("live operation cards dock at the bottom and expose only the newest operati
   assert.doesNotMatch(functionBody("visibleItemsForTurn"), /lastOperationEntry/);
   assert.doesNotMatch(appJs, /function trimTrailingOperationCards\(/);
   assert.match(functionBody("stableOperationRenderKey"), /operationGroupKey\(item\)/);
-  assert.match(functionBody("operationGroupKey"), /item\.command/);
+  assert.match(functionBody("operationGroupKey"), /operationCommandText\(item\)/);
   assert.match(functionBody("operationGroupKey"), /operationCommandGroupText\(item\)/);
   assert.match(functionBody("operationCommandGroupText"), /operationCommandName\(item\)/);
   assert.match(functionBody("operationCommandName"), /shortPath\(stripMatchingOuterQuotes\(token\)\)/);
@@ -163,9 +164,6 @@ function isLatestTurn(turn) {
 function isLiveTurn(turn) {
   return Boolean(turn && !isTurnComplete(turn) && isRunningStatus(turn.status));
 }
-function liveActivityLabelForTurn() { return "思考"; }
-function liveTurnFallbackActivityLabel() { return "运行"; }
-function liveTurnStartedAtMs() { return 1000; }
 function turnStartedAtMs() { return 0; }
 ${functionSource("isActiveOperationalItem")}
 ${functionSource("liveTurnStatusDockItem")}
@@ -196,8 +194,8 @@ return (thread) => {
   const fallbackEntry = currentLiveOperationEntry(thread);
   assert.equal(fallbackEntry.sourceIndex, -1);
   assert.equal(fallbackEntry.item.type, "liveTurnStatus");
-  assert.equal(fallbackEntry.item.title, "思考");
-  assert.equal(fallbackEntry.item.status, "running");
+  assert.equal(fallbackEntry.item.title, "Command");
+  assert.equal(fallbackEntry.item.status, "");
 });
 
 test("current-turn subagent panel opens from a left swipe without a topbar button", () => {

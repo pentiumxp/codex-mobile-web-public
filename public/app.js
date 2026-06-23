@@ -388,7 +388,7 @@ const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v393";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v394";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -4706,17 +4706,11 @@ function currentLiveOperationEntry(thread) {
 }
 
 function liveTurnStatusDockItem(turn) {
-  const label = liveActivityLabelForTurn(turn) || liveTurnFallbackActivityLabel(turn) || "运行";
-  const startedAtMs = liveTurnStartedAtMs(turn)
-    || turnStartedAtMs(turn)
-    || Number(state.activityAtMs || 0)
-    || state.nowMs;
   return {
     id: `live-turn-status-${turn && (turn.id || turn.startedAt || "active")}`,
     type: "liveTurnStatus",
-    status: "running",
-    title: label,
-    startedAtMs,
+    status: "",
+    title: "Command",
   };
 }
 
@@ -4748,7 +4742,7 @@ function visibleItemSignature(item, turn = null) {
       startedAtMs: item.startedAtMs || item.startedAt || item.started_at_ms || item.started_at || "",
       completedAtMs: item.completedAtMs || item.completedAt || item.completed_at_ms || item.completed_at || "",
       durationMs: item.durationMs || item.duration_ms || item.elapsedMs || item.elapsed_ms || "",
-      command: item.command || "",
+      command: operationCommandText(item),
       fileNames: Array.isArray(item.fileNames) ? item.fileNames : [],
       tool: item.tool || "",
       server: item.server || "",
@@ -12535,7 +12529,9 @@ function renderTurn(turn, previousKeys = new Set()) {
 }
 
 function renderLiveOperation(item, turn, previousKeys = new Set(), index = 0) {
-  const status = statusText(item.status) || (item.completedAtMs ? "completed" : "running");
+  const status = item && item.type === "liveTurnStatus"
+    ? ""
+    : statusText(item.status) || (item.completedAtMs ? "completed" : "running");
   const key = stableOperationRenderKey(turn, item, index);
   return renderOperationCard(item, key, { status });
 }
@@ -12557,8 +12553,11 @@ function renderOperationCard(item, key, options = {}) {
     type,
   ].filter(Boolean).map(escapeHtml).join(" ");
   const body = `<div class="operation-detail-line${detail ? "" : " empty"}"><span class="operation-detail">${detail ? escapeHtml(detail) : "&nbsp;"}</span></div>`;
+  const statusHtml = String(status || "").trim()
+    ? `<span class="operation-status">${escapeHtml(status)}</span>`
+    : "";
   return `<section class="${classes}" data-item="${escapeHtml(item.id || "")}" data-render-key="${escapeHtml(key)}">
-    <div class="operation-meta-line"><span class="operation-meta-main"><span class="operation-title">${escapeHtml(title)}</span><span class="operation-status">${escapeHtml(status)}</span></span>${duration}</div>
+    <div class="operation-meta-line"><span class="operation-meta-main"><span class="operation-title">${escapeHtml(title)}</span>${statusHtml}</span>${duration}</div>
     ${body}
   </section>`;
 }
@@ -12592,8 +12591,30 @@ function stripMatchingOuterQuotes(value) {
   return text;
 }
 
+function operationArgumentsObject(item) {
+  const value = item && item.arguments;
+  if (!value) return null;
+  if (typeof value === "object" && !Array.isArray(value)) return value;
+  if (typeof value !== "string") return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function operationCommandText(item) {
+  const direct = Array.isArray(item && item.command)
+    ? item.command.join(" ")
+    : String(item && item.command || "");
+  if (direct.trim()) return direct;
+  const args = operationArgumentsObject(item);
+  return String(args && (args.command || args.cmd || args.shellCommand || args.shell_command) || "");
+}
+
 function operationCommandSummary(item) {
-  const raw = String(item && item.command || "").replace(/\s+/g, " ").trim();
+  const raw = operationCommandText(item).replace(/\s+/g, " ").trim();
   if (!raw) return "";
   const commandMatch = raw.match(/(?:^|\s)-(?:Command|c)\s+([\s\S]+)$/i);
   if (commandMatch && /(?:powershell|pwsh)(?:\.exe)?/i.test(raw.slice(0, commandMatch.index + commandMatch[0].length))) {
@@ -12607,7 +12628,7 @@ function operationCommandSummary(item) {
 }
 
 function operationCommandName(item) {
-  const raw = String(item && item.command || "").trim();
+  const raw = operationCommandText(item).trim();
   if (!raw) return "";
   const quoted = raw.match(/^["']([^"']+)["']/);
   const token = quoted ? quoted[1] : raw.split(/\s+/, 1)[0];
@@ -12640,7 +12661,7 @@ function operationGroupKey(item) {
     .filter(Boolean)
     .sort();
   if (fileNames.length) return `${type}:files:${stableTextHash(fileNames.join("|"))}`;
-  if (item.command) return `${type}:command:${stableTextHash(normalizeOperationIdentityValue(operationCommandGroupText(item)))}`;
+  if (operationCommandText(item)) return `${type}:command:${stableTextHash(normalizeOperationIdentityValue(operationCommandGroupText(item)))}`;
   const searchSummary = isWebSearchLikeItem(item) ? operationSearchSummary(item) : "";
   if (searchSummary) return `${type}:search:${stableTextHash(normalizeOperationIdentityValue(searchSummary))}`;
   const toolParts = [item.server, item.namespace, item.tool].map(normalizeOperationIdentityValue).filter(Boolean);
@@ -12687,7 +12708,7 @@ function operationSummaryLines(item) {
     const names = operationFileNames(item);
     return names.length ? [names.join(", ")] : [];
   }
-  if (item.command) return [operationCommandSummary(item)];
+  if (operationCommandText(item)) return [operationCommandSummary(item)];
   const searchSummary = isWebSearchLikeItem(item) ? operationSearchSummary(item) : "";
   if (searchSummary) return [truncateMiddle(searchSummary, 180, "search")];
   const names = operationFileNames(item);

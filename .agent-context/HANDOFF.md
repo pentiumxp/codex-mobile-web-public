@@ -1,3 +1,51 @@
+# 2026-06-23 - v394 Command dock placeholder semantics and macOS command detail
+
+- Trigger:
+  - After v393, user pointed out that showing `思考` inside the bottom dock
+    conflicts with the top-right turn status. The bottom dock's product
+    meaning is command/file/tool operation detail; it should reserve a stable
+    row during active turns, but not duplicate the thinking status there.
+  - User also reported that after moving to Mac, `Command` rows no longer show
+    detailed command text, while `File` rows still show detail.
+- Root cause:
+  - v393 used `liveActivityLabelForTurn()` for the synthetic dock row, so
+    reasoning-only phases displayed `思考` in the bottom command area.
+  - Frontend command detail rendering only read `item.command`. Mac/newer
+    protocol operation items may carry the command in serialized
+    `item.arguments` JSON, e.g. `{ "command": "npm run check" }`, which made
+    the dock detail empty even though the operation data existed.
+- Change:
+  - `public/app.js` now keeps the synthetic active-turn dock row as a
+    semantics-neutral `Command` placeholder with empty status and no duration.
+    It preserves dock height without duplicating the top-right `思考` label.
+  - Compact dock height was reduced from `54px` to `40px`, and the inner live
+    operation card from `44px` to `32px`, leaving a single-line row with small
+    visual padding.
+  - Added `operationCommandText()` to read command text from direct
+    `item.command` and from `item.arguments.command`, `cmd`, `shellCommand`, or
+    `shell_command`.
+  - Command summary, command name, operation summary lines, operation grouping,
+    and visible-item signatures now use the unified command text helper.
+  - PWA shell advanced to `codex-mobile-shell-v394`.
+- Tests:
+  - Updated v393 reasoning-only dock tests to assert `Command` placeholder
+    semantics and empty status.
+  - Added `command operation detail reads command from serialized arguments on macOS`.
+- Docs:
+  - `README.md`
+  - `docs/TROUBLESHOOTING.md`
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js`
+  - `node --test test/collab-agent-render.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+  - `npm run check`
+  - `npm run check:macos`
+  - `npm test` passed (`651` tests).
+  - `git diff --check`
+- Next:
+  - Commit and deploy via the Home AI center deploy script.
+  - Run Home AI visual verification after deploy.
+  - Do not push Public until production/user testing is confirmed.
+
 # 2026-06-23 - v393 active-turn bottom status row stabilization
 
 - Trigger:
