@@ -58,6 +58,7 @@ test("live operation cards dock at the bottom and expose only the newest operati
   assert.match(functionBody("currentLiveOperationEntry"), /if \(!turn \|\| !isLatestTurn\(turn\) \|\| !isLiveTurn\(turn\)\) return null;/);
   assert.match(appJs, /function isActiveOperationalItem\(item\)/);
   assert.match(functionBody("currentLiveOperationEntry"), /if \(isActiveOperationalItem\(item\)\) return \{ turn, item, sourceIndex: index \};/);
+  assert.match(functionBody("currentLiveOperationEntry"), /return \{ turn, item: liveTurnStatusDockItem\(turn\), sourceIndex: -1 \};/);
   assert.match(appJs, /function renderLiveOperationDock\(thread, previousKeys = new Set\(\)\)/);
   assert.match(functionBody("renderLiveOperationDock"), /currentLiveOperationEntry\(thread\)/);
   assert.match(functionBody("renderLiveOperationDock"), /live-operation-dock-inner/);
@@ -133,9 +134,9 @@ test("live operation cards dock at the bottom and expose only the newest operati
   assert.match(stylesCss, /\.live-operation-dock \.operation-detail\s*{[\s\S]*-webkit-line-clamp:\s*2;/);
 });
 
-test("live operation dock ignores completed operations in an active turn", () => {
+test("live operation dock ignores completed operations but keeps active status row", () => {
   const currentLiveOperationEntry = Function(`
-const state = { currentThread: null };
+const state = { currentThread: null, nowMs: 2000, activityAtMs: 0 };
 function statusText(status) {
   if (!status) return "";
   if (typeof status === "string") return status;
@@ -162,7 +163,12 @@ function isLatestTurn(turn) {
 function isLiveTurn(turn) {
   return Boolean(turn && !isTurnComplete(turn) && isRunningStatus(turn.status));
 }
+function liveActivityLabelForTurn() { return "思考"; }
+function liveTurnFallbackActivityLabel() { return "运行"; }
+function liveTurnStartedAtMs() { return 1000; }
+function turnStartedAtMs() { return 0; }
 ${functionSource("isActiveOperationalItem")}
+${functionSource("liveTurnStatusDockItem")}
 ${functionSource("currentLiveOperationEntry")}
 return (thread) => {
   state.currentThread = thread;
@@ -187,7 +193,11 @@ return (thread) => {
     { id: "completed-file", type: "fileChange", status: "completed" },
   ];
 
-  assert.equal(currentLiveOperationEntry(thread), null);
+  const fallbackEntry = currentLiveOperationEntry(thread);
+  assert.equal(fallbackEntry.sourceIndex, -1);
+  assert.equal(fallbackEntry.item.type, "liveTurnStatus");
+  assert.equal(fallbackEntry.item.title, "思考");
+  assert.equal(fallbackEntry.item.status, "running");
 });
 
 test("current-turn subagent panel opens from a left swipe without a topbar button", () => {

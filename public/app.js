@@ -388,7 +388,7 @@ const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v392";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v393";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -4702,7 +4702,22 @@ function currentLiveOperationEntry(thread) {
     const item = items[index];
     if (isActiveOperationalItem(item)) return { turn, item, sourceIndex: index };
   }
-  return null;
+  return { turn, item: liveTurnStatusDockItem(turn), sourceIndex: -1 };
+}
+
+function liveTurnStatusDockItem(turn) {
+  const label = liveActivityLabelForTurn(turn) || liveTurnFallbackActivityLabel(turn) || "运行";
+  const startedAtMs = liveTurnStartedAtMs(turn)
+    || turnStartedAtMs(turn)
+    || Number(state.activityAtMs || 0)
+    || state.nowMs;
+  return {
+    id: `live-turn-status-${turn && (turn.id || turn.startedAt || "active")}`,
+    type: "liveTurnStatus",
+    status: "running",
+    title: label,
+    startedAtMs,
+  };
 }
 
 function visibleItemSignature(item, turn = null) {
@@ -12549,6 +12564,7 @@ function renderOperationCard(item, key, options = {}) {
 }
 
 function operationTitle(item) {
+  if (item && item.title) return item.title;
   return labelForItem(item);
 }
 
@@ -12666,6 +12682,7 @@ function operationSearchSummary(item) {
 }
 
 function operationSummaryLines(item) {
+  if (item.type === "liveTurnStatus") return item.detail ? [item.detail] : [];
   if (item.type === "fileChange") {
     const names = operationFileNames(item);
     return names.length ? [names.join(", ")] : [];

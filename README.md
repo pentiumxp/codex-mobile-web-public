@@ -1,5 +1,7 @@
 # Codex Mobile Web
 
+- 中文说明：v393 恢复 active turn 期间底部状态行恒定。v392 后底部 live operation dock 只在最新 live turn 存在 active command/tool/search 项时渲染；当 turn 处于 reasoning-only “思考”阶段时 dock 会消失，进入命令阶段再出现，导致 composer 上方高度变化并可能造成剩余画面颤动。现在 latest live turn 没有 active operational item 时也会渲染 synthetic `liveTurnStatus` 行，显示 `思考`/`运行` 等 live activity label；真正的 command/tool 到来时仍优先显示对应操作项。PWA shell cache 升级到 `codex-mobile-shell-v393`。
+
 - 中文说明：v392 继续修正完成回执出现后的画面闪烁。v391 已处理同一 turn 内较短完成回执接管旧 receipt 节点，但 post-completion refresh 仍会因为 `mobileProjectionRevision` / `mobileVisibleItemKeys` 变化而绕过局部 patch，退回较大的 conversation/article patch。现在 refresh patch 判断改用只包含外壳可见因素的 `conversationPatchShellSignature`，并允许 latest turn 在完成态追加 Usage 或更新 receipt 时保留已有 item key 做局部 patch；只有删除、重排或外壳结构变化才回退完整渲染。PWA shell cache 升级到 `codex-mobile-shell-v392`。
 
 - 中文说明：v391 修正完成回执替换造成的短暂画面颤动。v390 会在 completed 服务端投影带回最终 `agentMessage` 和 `Usage` 后丢弃本地 active 阶段的 local-only 回执；但如果服务端最终回执是实时回执的较短前缀，旧逻辑会先移除较长本地回执再插入较短服务端回执，导致同一位置高度瞬间少一行。现在 completed incoming turn 的权威回执会在同类型、同前缀且重合度足够时接管已有可见回执节点，沿用旧 id 和较完整文本，同时保留 Usage 归并，避免 DOM 节点重建和高度缩短。PWA shell cache 升级到 `codex-mobile-shell-v391`。

@@ -1,3 +1,50 @@
+# 2026-06-23 - v393 active-turn bottom status row stabilization
+
+- Trigger:
+  - User reported that the bottom command/status box disappeared while a turn
+    was still running, then clarified the historical contract: the bottom line
+    should remain present for the whole active turn, not only while an actual
+    command/tool item is active.
+  - User also suspected the remaining visual shake could be related to this
+    row appearing/disappearing.
+- Root cause:
+  - `renderLiveOperationDock()` only rendered when
+    `currentLiveOperationEntry()` found an active operational item
+    (`commandExecution`, `fileChange`, `dynamicToolCall`, `mcpToolCall`, or
+    search-like item).
+  - During reasoning-only active phases, `liveActivityLabelForTurn()` already
+    resolved the activity as `思考`, but the dock did not use that label and
+    returned no row. The dock could therefore disappear during reasoning and
+    reappear when a command/tool began, changing the fixed area above the
+    composer.
+- Change:
+  - `public/app.js` now returns a synthetic `liveTurnStatus` entry from
+    `currentLiveOperationEntry()` when the latest live turn has no active
+    operational item.
+  - The synthetic row uses the existing live activity label
+    (`思考`, `运行`, etc.) and the existing `.live-operation` rendering path, so
+    active command/tool entries still take priority while the dock height stays
+    stable during reasoning-only phases.
+  - PWA shell advanced to `codex-mobile-shell-v393`.
+- Tests:
+  - Added `live operation dock keeps a status row while active turn is reasoning only`.
+  - Updated the collab-agent live operation dock test to assert completed
+    operations are ignored but the active status row remains.
+- Docs:
+  - `README.md`
+  - `docs/TROUBLESHOOTING.md`
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js`
+  - `node --test test/collab-agent-render.test.js test/conversation-render.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+  - `npm run check`
+  - `npm run check:macos`
+  - `npm test` passed (`650` tests).
+  - `git diff --check`
+- Next:
+  - Commit and deploy via the Home AI center deploy script.
+  - Use Home AI central visual verification after deploy.
+  - Do not push Public until production/user testing is confirmed.
+
 # 2026-06-23 - v392 post-completion refresh patch stabilization
 
 - Trigger:
@@ -73,6 +120,38 @@
     still needs a dedicated scenario if the symptom persists.
 - Next:
   - Do not push Public until production/user testing is confirmed.
+
+# 2026-06-23 - v392 public push completed
+
+- Trigger:
+  - User explicitly approved pushing the deployed/tested v392 version to
+    Public.
+- Publish method:
+  - Created a temporary public worktree from `public/main` at
+    `/tmp/codex-mobile-public-v392.bF7ZDT`.
+  - Applied `main` -> `public/main` diff excluding `.agent-context`.
+  - Verified staged public paths did not include `.agent-context`, env files,
+    runtime data, logs, uploads, `node_modules`, `.codegraph`, secret, or
+    token-like paths.
+  - Committed public release as
+    `545bae2 fix: publish completed receipt refresh stabilization`.
+  - Pushed `545bae2` to `public/main`.
+  - Merged `public/main` back into private `main` with
+    `29c364c Merge public release v392`.
+- Public validation:
+  - `git diff --cached --check`
+  - `npm run check`
+  - `npm run check:macos`
+  - `NODE_PATH=/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web/node_modules npm test`
+    passed (`649` tests).
+- Follow-up observation:
+  - User reported that the bottom command box seemed missing.
+  - Screenshots showed the bottom composer was still visible; the missing card
+    was the `Command running` live operation dock.
+  - The screenshots' topbar state was `思考`, not `命令`. Current client logic
+    only renders the live operation dock for active operational items such as
+    `commandExecution`, `fileChange`, `dynamicToolCall`, `mcpToolCall`, or web
+    search. Reasoning-only phases do not render that dock.
 
 # 2026-06-23 - v391 completed receipt render-identity stabilization
 
