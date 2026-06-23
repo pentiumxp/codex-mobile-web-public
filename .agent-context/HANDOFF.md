@@ -21,6 +21,146 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-23 - Music Completed Operation Dock v383 Deployed
+
+- Status: implemented, locally committed, deployed to Mac production, and
+  validated. Not pushed public.
+- User trigger:
+  - User reported the Music thread bottom Command box did not show correctly
+    and permanently displayed `completed`.
+- Evidence:
+  - Music thread id: `019ed959-27ce-7312-ba77-226ef9c526c7`.
+  - Production detail returned `projection-v4-dynamic`, thread status
+    `active`, latest turn `019ef403-9ac9-7183-a2e7-2a1818cf4b39` status
+    `active`.
+  - Latest turn had many command/file operation items, but all were completed;
+    active operation count was `0`.
+  - Existing front-end `currentLiveOperationEntry()` selected the last
+    operation in the latest live turn without checking status, so the bottom
+    live-operation dock could pin a stale completed card indefinitely.
+- Root cause:
+  - The live dock used a different operation-active invariant from
+    `activeLiveOperationItemForTurn()`: dock selected "last operation" while
+    timer/activity selected "last unfinished operation".
+  - Violated invariant: the bottom Command dock represents the currently
+    active operation only; completed operation history belongs in turn content
+    / compact history, not a persistent live dock.
+- Change:
+  - `public/app.js`
+    - Added shared `isActiveOperationalItem()`.
+    - `currentLiveOperationEntry()`, `activeLiveOperationItemForTurn()`,
+      `turnHasActiveLiveItems()`, and `liveTurnStartedAtMs()` now use the same
+      active-operation predicate.
+    - If a live turn has only completed operations, the bottom dock returns no
+      entry and hides.
+  - `public/app.js` / `public/sw.js`
+    - Bumped shell to `0.1.11|codex-mobile-shell-v383` /
+      `codex-mobile-shell-v383`.
+  - `test/collab-agent-render.test.js`
+    - Added executable regression coverage for "running operation followed by
+      completed item still selects running" and "only completed operations
+      returns null".
+  - `README.md`
+    - Added detailed Chinese v383 release note.
+- Validation:
+  - Focused local suite passed 102/102:
+    `test/collab-agent-render.test.js`, `test/conversation-render.test.js`,
+    `test/mobile-viewport.test.js`, `test/thread-goal-service.test.js`, and
+    `test/thread-task-card-route.test.js`.
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+  - Full local `npm test` passed 627/627.
+  - Production focused suite passed 102/102 in
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Production `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v383`,
+    `shellCacheName=codex-mobile-shell-v383`, and `authRequired=true`.
+  - Served `/app.js` and `/sw.js` contain v383.
+  - A production JS smoke using Music's current API data and the served
+    `currentLiveOperationEntry()` returned `null` with
+    `activeOperationCount=0`.
+- Commit/deploy:
+  - Private main commit:
+    `062f088 fix: hide stale completed live operation dock`.
+  - Deploy command:
+    `npm run --silent deploy:macos -- --target plugin:codex-mobile-web --execute --reason codex-mobile-live-operation-dock-v383 --json`
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260623T103021Z-plugin-codex-mobile-web-codex-mobile-live-operation-dock-v383`
+- Public state:
+  - Not pushed public. `public/main` still needs a fresh public-safe worktree if
+    the user later asks to publish v383.
+
+## 2026-06-23 - Live Receipt Merge v382 Deployed, Public Paused
+
+- Status: implemented, locally committed, deployed to Mac production, and
+  validated. Not pushed public.
+- User trigger:
+  - User asked to pause public push after observing that, immediately after
+    sending "推送 public", the assistant receipt appeared briefly and then
+    disappeared.
+- Evidence:
+  - Current thread detail API still returned the new turn and agent receipt, so
+    the service did not lose the message.
+  - Production client events showed first paint/read paths followed by another
+    `thread-read` / `turns-list-initial` / backfill path for the same thread.
+  - Public publish was paused before any v381/v382 public commit or push.
+- Root cause:
+  - `mergeTurnPreservingVisibleItems()` decided whether to keep existing
+    local visible items by comparing total turn visible weight.
+  - A later backfill/read result could contain more old command output while
+    missing a just-displayed assistant receipt. Because its total weight was
+    larger, the merge could drop the already-rendered receipt.
+  - Violated invariant: same live turn visible items must be monotonic until a
+    completed turn result is authoritative.
+- Change:
+  - `public/app.js`
+    - Added `shouldPreserveLiveTurnLocalVisibleItems()`.
+    - Same-id, not-complete existing/incoming turns now preserve non-reasoning
+      local-only visible items during merge.
+    - Completed turns still converge to the incoming authoritative result.
+  - `public/app.js` / `public/sw.js`
+    - Bumped shell to `0.1.11|codex-mobile-shell-v382` /
+      `codex-mobile-shell-v382`.
+  - `test/conversation-render.test.js`
+    - Added regression coverage for a displayed assistant receipt surviving a
+      later `thread-read` backfill with more stale content.
+  - `README.md`
+    - Added detailed Chinese v382 release note.
+- Validation:
+  - Focused local suite passed 151/151:
+    `test/conversation-render.test.js`,
+    `test/thread-detail-projection-service.test.js`,
+    `test/thread-detail-projection-v4-service.test.js`,
+    `test/thread-visibility.test.js`, `test/mobile-viewport.test.js`,
+    `test/thread-goal-service.test.js`, and
+    `test/thread-task-card-route.test.js`.
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+  - Full local `npm test` passed 626/626.
+  - Production focused suite passed 151/151 in
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+- Commit/deploy:
+  - Private main commit:
+    `46aa5c3 fix: keep live receipts across detail backfills`.
+  - Deploy command:
+    `npm run --silent deploy:macos -- --target plugin:codex-mobile-web --execute --reason codex-mobile-live-receipt-merge-v382 --json`
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260623T102530Z-plugin-codex-mobile-web-codex-mobile-live-receipt-merge-v382`
+  - `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v382`,
+    `shellCacheName=codex-mobile-shell-v382`, and `authRequired=true`.
+  - Served `/app.js` and `/sw.js` contain v382.
+- Public state:
+  - `public/main` remains
+    `c5a4ee65a85b11c6378ae012255e6244caa0eaaa`.
+  - Removed stale temp public worktrees:
+    `/private/tmp/codex-mobile-public-v381.YDuPFd` and
+    `/private/tmp/codex-mobile-public.I5p2PN`.
+  - If user later asks to push public, create a fresh public-safe worktree from
+    current `public/main`, exclude `.agent-context`, validate, then push.
+
 ## 2026-06-23 - Rollout EOF Completion and Recent Sort Fix
 
 - Status: implemented, validated locally/staging/production, and deployed to
