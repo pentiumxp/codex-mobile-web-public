@@ -21,6 +21,59 @@ The previous full handoff was archived and should be opened only when old proven
 - Keep future handoff updates concise: current state, changed files, validation, risks, and next steps.
 - Do not store raw secrets, tokens, one-time approvals, hidden UI state, long logs, or bulky generated output.
 
+## 2026-06-23 - Thread List Fallback Baseline Incremental Cache
+
+- Status: implemented and validated locally; not yet committed or deployed.
+- User requirement:
+  - Thread-list fallback memory rebuilds are unacceptable during normal use.
+  - Expensive fallback baseline should be rebuilt only on server cold start,
+    redeploy, or listener restart. Runtime changes should be incremental sync.
+- Prior evidence:
+  - Production had no `CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS` override,
+    so the old default 30000ms applied.
+  - Controlled production probe showed one list key slow at about 2477ms,
+    fast 5s later at about 513ms, slow again after 36s at about 2516ms, and fast
+    again 5s later at about 472ms.
+  - The same probe kept `Music` detail on `projection-v4-cache`, so the problem
+    was thread-list fallback baseline expiry/rescan, not detail projection
+    rebuild.
+- Change:
+  - `server.js`
+    - `CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS` default changed from
+      `30000` to `0`; `0` now means no time-based expiry in the running server
+      process.
+    - Thread-list fallback cache keys no longer include `state_5.sqlite`,
+      `session_index.jsonl`, archive-index, or `sessions/` directory
+      fingerprints, so file mtime/size changes no longer force a cache miss.
+    - Normal turn/status/title/archive/new-thread paths no longer clear the
+      whole fallback cache. They update, remove, or status-patch the matching
+      cached thread summary incrementally.
+    - Kept `clearThreadListFallbackCache()` only as an explicit maintenance
+      helper; normal event paths should not call it.
+  - Docs/tests updated:
+    - `README.md`
+    - `docs/ARCHITECTURE.md`
+    - `docs/TROUBLESHOOTING.md`
+    - `test/thread-visibility.test.js`
+    - `test/thread-task-card-route.test.js`
+- Validation:
+  - `node --check server.js`
+  - `node --test test/thread-visibility.test.js
+    test/thread-task-card-route.test.js test/mobile-viewport.test.js` passed
+    47/47.
+  - `npm test` passed 613/613.
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+- Operational notes:
+  - This is server-only; no PWA shell cache bump.
+  - After deployment, first full fallback list read in the restarted production
+    process may still be slow because it builds the baseline. Repeated list
+    reads after that should remain fallback-cache hits unless a distinct
+    cwd/search/visibility key is requested or the server restarts.
+  - Public has not been pushed. Follow release-order rule: deploy and validate
+    Mac production first, then public only after user confirmation.
+
 ## 2026-06-23 - Thread List Fallback Detail-Contention Fix v380
 
 - Status: implemented, validated locally, committed, pushed to private
@@ -111,6 +164,35 @@ The previous full handoff was archived and should be opened only when old proven
     thread and should be ignored rather than used as the deployment path.
   - Follow the release-order rule for any later public sync/push: public publish
     only after production/user confirmation.
+
+## 2026-06-23 - Thread List Cache Timing Follow-Up
+
+- User asked how often the in-memory rebuild path triggers because repeated
+  entry over several minutes still feels alternately fast and slow.
+- Findings:
+  - Production launchd env has no override for
+    `CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS`, so the default 30000ms
+    thread-list fallback cache TTL is active.
+  - Thread detail projection v4 does not have a fixed TTL rebuild interval.
+    It uses an in-memory Map plus disk cache and invalidates by projection
+    signature: rollout path hash, rollout size/mtime, summary updated/status,
+    max turn window, and policy version. Dynamic projections are invalidated
+    when summary updated time is more than 2s newer than the projection update.
+  - Controlled production probe with an otherwise unused
+    `/api/threads?limit=41&archived=false` cache key reproduced the timing:
+    first list fallback miss took about 2477ms, 5s later cache hit took about
+    513ms, 36s later cache miss took about 2516ms, and 5s later cache hit took
+    about 472ms.
+  - The same probe showed `Music` detail remained `projection-v4-cache` across
+    those checks: about 426ms, 144ms, 471ms, and 137ms. That supports the
+    conclusion that the observed alternating slow/fast behavior is primarily
+    the 30s thread-list fallback cache expiry and rescan, not periodic rebuild
+    of the Music thread detail projection memory.
+- Potential next fix:
+  - Increase or make adaptive the thread-list fallback cache TTL, and/or make
+    ordinary background list refreshes use the deferred fallback path more
+    aggressively while detail navigation is active. Validate against stale
+    active-turn/list-state risk before changing.
 
 ## 2026-06-23 - Embedded Image Card Rendering v379 Deployed
 

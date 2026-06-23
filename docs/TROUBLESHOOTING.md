@@ -323,7 +323,8 @@ erase the running marker even though the turn already started. The overlay
 clears when `turn/completed` arrives, when the rollout tail has a later
 terminal event such as `task_complete`, or when its TTL expires. The server also
 derives the same lightweight event from raw `turn/started` / `turn/completed`
-notifications and clears the thread-list fallback cache. If both the local
+notifications and incrementally updates the matching thread-list fallback cache
+row. If both the local
 overlay and the derived event are missing, the running spinner may appear only
 after a later full list refresh. Those hints also carry
 `codexMobileRunningThreadHintedAtById` timestamps; if a row stays
@@ -482,6 +483,14 @@ Do not infer from rollout file size alone. Separate:
   skipped the expensive fallback scan because a detail request was in flight;
   wait for the later deferred list refresh instead of rebuilding in-memory
   projection caches.
+- Does the same list key become slow again after a fixed interval? Current
+  server behavior should not do that by default: the expensive fallback baseline
+  is process-lifetime, not a 30-second timer. `fallbackCacheHit=false` should be
+  expected after cold start/redeploy/restart, after a new cwd/search/visibility
+  cache key, or if `CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS` was
+  explicitly set for diagnostics. Normal turn/status/title/archive changes
+  should update the cached row incrementally rather than clearing the baseline
+  and forcing another rollout/session scan.
 - Is app-server/mux CPU active?
 - Is the latest turn `inProgress` but no event has been written for minutes?
 

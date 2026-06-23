@@ -196,7 +196,7 @@ test("approved task cards inherit target thread model and effort", () => {
 test("server broadcasts lightweight thread status for background turn notifications", () => {
   const broadcastBody = functionBody(serverJs, "broadcast");
   assert.match(broadcastBody, /threadStatusChangedPayloadFromTurnNotification\(payload\)/);
-  assert.match(broadcastBody, /clearThreadListFallbackCache\(\);\s*broadcast\(statusPayload\);/);
+  assert.match(broadcastBody, /applyThreadStatusPayloadToThreadListFallbackCache\(statusPayload\);\s*broadcast\(statusPayload\);/);
 
   const statusPayloadBody = functionBody(serverJs, "threadStatusChangedPayloadFromTurnNotification");
   assert.match(statusPayloadBody, /method !== "turn\/started" && method !== "turn\/completed"/);
@@ -205,7 +205,7 @@ test("server broadcasts lightweight thread status for background turn notificati
 
   const eventFilterBody = functionBody(serverJs, "shouldSendEventToClient");
   assert.match(eventFilterBody, /payload\.method === "thread\/status\/changed"[\s\S]*return true;/);
-  assert.match(functionBody(serverJs, "broadcastThreadStatusChanged"), /clearThreadListFallbackCache\(\);\s*broadcast\(payload\);/);
+  assert.match(functionBody(serverJs, "broadcastThreadStatusChanged"), /applyThreadStatusPayloadToThreadListFallbackCache\(payload\);\s*broadcast\(payload\);/);
 });
 
 test("server broadcasts active status immediately for local turn starts", () => {

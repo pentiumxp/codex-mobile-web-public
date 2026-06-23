@@ -49,6 +49,24 @@ function globalStateForRoots(roots) {
   };
 }
 
+function functionBody(source, name) {
+  const marker = `function ${name}`;
+  const start = source.indexOf(marker);
+  assert.notEqual(start, -1, `missing function ${name}`);
+  const open = source.indexOf("{", start);
+  assert.notEqual(open, -1, `missing function body ${name}`);
+  let depth = 0;
+  for (let index = open; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "{") depth += 1;
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return source.slice(open, index + 1);
+    }
+  }
+  throw new Error(`unterminated function ${name}`);
+}
+
 test("thread visibility allows Codex worktrees for a visible repository root", () => {
   const repoRoot = path.join(os.homedir(), "hermes-webui");
   const worktreeRoot = path.join(os.homedir(), ".codex", "worktrees", "7ebd", "hermes-webui");
@@ -643,15 +661,21 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(serverJs, /function readRolloutSessionFallback\(/);
   assert.match(serverJs, /function readThreadListFallback\(/);
   assert.match(serverJs, /function logThreadList\(event, details = \{\}\)/);
-  assert.match(serverJs, /const THREAD_LIST_FALLBACK_CACHE_TTL_MS/);
+  assert.match(serverJs, /const THREAD_LIST_FALLBACK_CACHE_TTL_MS[\s\S]*\|\| "0"/);
   assert.match(serverJs, /const threadListFallbackCache = new Map\(\);/);
   assert.match(serverJs, /function clearThreadListFallbackCache\(\)/);
+  assert.match(serverJs, /function upsertThreadListFallbackCacheThread\(thread, options = \{\}\)/);
+  assert.match(serverJs, /function removeThreadFromThreadListFallbackCache\(threadId\)/);
+  assert.match(serverJs, /function updateThreadListFallbackCacheStatus\(threadId, status, meta = \{\}\)/);
   assert.match(serverJs, /let activeThreadDetailRequestCount = 0;/);
   assert.match(serverJs, /function trackThreadDetailRequestLifecycle\(res\)/);
   assert.match(serverJs, /function shouldDeferThreadListFallbackForActiveDetail\(\{ deferFallback, cursor, archived, searchTerm, cwd \} = \{\}\)/);
   assert.match(serverJs, /function threadListFallbackCacheKey\(limit, filters = \{\}\)/);
   assert.match(serverJs, /function readThreadListFallbackCache\(key\)/);
+  assert.doesNotMatch(functionBody(serverJs, "threadListFallbackCacheKey"), /fileFingerprint/);
+  assert.match(functionBody(serverJs, "readThreadListFallbackCache"), /THREAD_LIST_FALLBACK_CACHE_TTL_MS > 0/);
   assert.match(serverJs, /diagnostics\.cacheHit = true/);
+  assert.match(serverJs, /diagnostics\.cacheIncrementalUpdates = cached\.incrementalUpdates/);
   assert.match(routeBody, /mobileDiagnostics[\s\S]*threadListTimings/);
   assert.match(routeBody, /fallbackCacheHit: Boolean\(fallbackDiagnostics\.cacheHit\)/);
   assert.match(routeBody, /appServerMs/);

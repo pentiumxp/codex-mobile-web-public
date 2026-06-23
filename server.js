@@ -861,7 +861,7 @@ const MAX_THREAD_TURNS = Math.max(1, Math.min(100, Number(process.env.CODEX_MOBI
 const MAX_FULL_THREAD_TURNS = Math.max(MAX_THREAD_TURNS, Math.min(200, Number(process.env.CODEX_MOBILE_FULL_THREAD_TURNS || "10")));
 const MAX_LIVE_OPERATION_ITEMS = Math.max(1, Math.min(30, Number(process.env.CODEX_MOBILE_LIVE_OPERATION_ITEMS || "12")));
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
-const THREAD_LIST_FALLBACK_CACHE_TTL_MS = Math.max(0, Number(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS || "30000"));
+const THREAD_LIST_FALLBACK_CACHE_TTL_MS = Math.max(0, Number(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS || "0"));
 let activeThreadDetailRequestCount = 0;
 threadDetailProjectionService = THREAD_DETAIL_PROJECTION_V4_ENABLED
   ? createThreadDetailProjectionV4Service({
@@ -2864,7 +2864,7 @@ function threadHasArchiveSignal(thread) {
 function rememberMobileArchivedThreadId(threadId) {
   try {
     const remembered = mobileArchiveIndexService.remember(threadId);
-    if (remembered) clearThreadListFallbackCache();
+    if (remembered) removeThreadFromThreadListFallbackCache(threadId);
     return remembered;
   } catch (err) {
     console.warn(`Failed to update Mobile archived thread index: ${err.message || String(err)}`);
@@ -4578,16 +4578,6 @@ function fileSizeBytes(filePath) {
     return stat.isFile() ? stat.size : 0;
   } catch (_) {
     return 0;
-  }
-}
-
-function fileFingerprint(filePath) {
-  if (!filePath || typeof filePath !== "string") return "missing";
-  try {
-    const stat = fs.statSync(filePath);
-    return `${stat.isDirectory() ? "d" : "f"}:${Number(stat.size || 0)}:${Math.trunc(Number(stat.mtimeMs || 0))}`;
-  } catch (_) {
-    return "missing";
   }
 }
 
@@ -7712,7 +7702,7 @@ function broadcast(payload) {
     updateLocalActiveThreadStatusFromNotification(payload);
     const statusPayload = threadStatusChangedPayloadFromTurnNotification(payload);
     if (statusPayload) {
-      clearThreadListFallbackCache();
+      applyThreadStatusPayloadToThreadListFallbackCache(statusPayload);
       broadcast(statusPayload);
     }
     try {
@@ -7762,7 +7752,7 @@ function threadStatusChangedPayload(threadId, status, meta = {}) {
 function broadcastThreadStatusChanged(threadId, status, meta = {}) {
   const payload = threadStatusChangedPayload(threadId, status, meta);
   if (!payload) return false;
-  clearThreadListFallbackCache();
+  applyThreadStatusPayloadToThreadListFallbackCache(payload);
   broadcast(payload);
   return true;
 }
@@ -10677,7 +10667,7 @@ function rememberStartedThread(thread) {
     cachedAt: Date.now(),
     thread: summary,
   });
-  clearThreadListFallbackCache();
+  upsertThreadListFallbackCacheThread(summary, { addIfMissing: true });
   return summary;
 }
 
@@ -10726,12 +10716,12 @@ function readLocalActiveThreadStatus(threadId, summary = null, nowMs = Date.now(
   if (!entry) return null;
   if (Number(entry.expiresAtMs || 0) <= nowMs) {
     localActiveThreadStatuses.delete(id);
-    clearThreadListFallbackCache();
+    updateThreadListFallbackCacheStatus(id, { type: "idle" }, { source: "local-active-expired" });
     return null;
   }
   if (rolloutHasTerminalEntryAtOrAfter(localActiveSummaryRolloutPath(id, summary), entry.startedAtMs)) {
     localActiveThreadStatuses.delete(id);
-    clearThreadListFallbackCache();
+    updateThreadListFallbackCacheStatus(id, { type: "completed" }, { source: "local-active-terminal" });
     return null;
   }
   return entry;
@@ -10749,7 +10739,10 @@ function rememberLocalActiveThreadStatus(threadId, turnId = "", meta = {}) {
     expiresAtMs: nowMs + LOCAL_ACTIVE_THREAD_STATUS_TTL_MS,
   };
   localActiveThreadStatuses.set(id, entry);
-  clearThreadListFallbackCache();
+  updateThreadListFallbackCacheStatus(id, { type: "active" }, {
+    source: entry.source,
+    turnId: entry.turnId,
+  });
   return entry;
 }
 
@@ -10757,7 +10750,7 @@ function clearLocalActiveThreadStatus(threadId) {
   const id = String(threadId || "").trim();
   if (!id) return false;
   const deleted = localActiveThreadStatuses.delete(id);
-  if (deleted) clearThreadListFallbackCache();
+  if (deleted) updateThreadListFallbackCacheStatus(id, { type: "idle" }, { source: "local-active-cleared" });
   return deleted;
 }
 
@@ -11831,7 +11824,12 @@ function persistThreadTitleToSessionIndex(threadId, threadName, updatedAt = new 
   try {
     fs.mkdirSync(path.dirname(p), { recursive: true });
     fs.appendFileSync(p, `${JSON.stringify({ id, thread_name: name, updated_at: timestamp })}\n`, "utf8");
-    clearThreadListFallbackCache();
+    upsertThreadListFallbackCacheThread({
+      id,
+      name,
+      preview: name,
+      updatedAt: Math.floor(date.getTime() / 1000),
+    }, { addIfMissing: false });
     return true;
   } catch (_) {
     return false;
@@ -12283,6 +12281,84 @@ function clearThreadListFallbackCache() {
   threadListFallbackCache.clear();
 }
 
+function removeThreadFromThreadListFallbackCache(threadId) {
+  const id = String(threadId || "").trim();
+  if (!id || !threadListFallbackCache.size) return false;
+  let removed = false;
+  for (const entry of threadListFallbackCache.values()) {
+    const before = Array.isArray(entry.threads) ? entry.threads.length : 0;
+    entry.threads = (entry.threads || []).filter((thread) => String(thread && thread.id || "") !== id);
+    if (entry.threads.length !== before) {
+      removed = true;
+      entry.updatedAt = Date.now();
+      entry.incrementalUpdates = Number(entry.incrementalUpdates || 0) + 1;
+    }
+  }
+  return removed;
+}
+
+function cloneThreadListFallbackFilters(filters = {}) {
+  return {
+    cwd: String(filters.cwd || ""),
+    searchTerm: String(filters.searchTerm || ""),
+    globalState: filters.globalState && typeof filters.globalState === "object"
+      ? clonePlainJson(filters.globalState)
+      : null,
+  };
+}
+
+function upsertThreadListFallbackCacheThread(thread, options = {}) {
+  const id = String(thread && thread.id || "").trim();
+  if (!id || !threadListFallbackCache.size) return false;
+  const addIfMissing = options.addIfMissing === true;
+  const nowMs = Date.now();
+  let changed = false;
+  for (const entry of threadListFallbackCache.values()) {
+    const existing = (entry.threads || []).find((candidate) => String(candidate && candidate.id || "") === id) || null;
+    if (!existing && !addIfMissing) continue;
+    const candidate = normalizeThreadSummaryLiveStatus(mergeThreadDisplaySummary(existing, thread) || thread);
+    const filters = entry.filters || {};
+    const filtered = filterFallbackThreads([candidate], {
+      cwd: filters.cwd,
+      searchTerm: filters.searchTerm,
+      globalState: filters.globalState || undefined,
+    });
+    const withoutThread = (entry.threads || []).filter((item) => String(item && item.id || "") !== id);
+    entry.threads = filtered.length
+      ? mergeThreadSummaryList([...withoutThread, filtered[0]]).slice(0, Math.max(1, Number(entry.limit || 80)))
+      : withoutThread;
+    entry.updatedAt = nowMs;
+    entry.incrementalUpdates = Number(entry.incrementalUpdates || 0) + 1;
+    changed = true;
+  }
+  return changed;
+}
+
+function updateThreadListFallbackCacheStatus(threadId, status, meta = {}) {
+  const id = String(threadId || "").trim();
+  if (!id || !threadListFallbackCache.size) return false;
+  const updatedAt = Math.floor(Date.now() / 1000);
+  const patch = {
+    id,
+    status: status || { type: "notLoaded" },
+    updatedAt,
+  };
+  const source = String(meta.source || "").trim();
+  const turnId = String(meta.turnId || "").trim();
+  if (source) patch.mobileStatusSource = source;
+  if (turnId) patch.mobileStatusTurnId = turnId;
+  return upsertThreadListFallbackCacheThread(patch, { addIfMissing: false });
+}
+
+function applyThreadStatusPayloadToThreadListFallbackCache(payload) {
+  if (!payload || payload.type !== "notification" || payload.method !== "thread/status/changed") return false;
+  const params = payload.params || {};
+  return updateThreadListFallbackCacheStatus(params.threadId, params.status, {
+    source: params.source,
+    turnId: params.turnId,
+  });
+}
+
 function trackThreadDetailRequestLifecycle(res) {
   activeThreadDetailRequestCount += 1;
   let released = false;
@@ -12319,19 +12395,19 @@ function threadListFallbackCacheKey(limit, filters = {}) {
     search: String(filters.searchTerm || "").trim().toLowerCase(),
     roots,
     projectlessIds,
-    stateDb: fileFingerprint(STATE_DB),
-    sessionIndex: fileFingerprint(path.join(CODEX_HOME, "session_index.jsonl")),
-    archiveIndex: fileFingerprint(MOBILE_ARCHIVED_THREAD_IDS_FILE),
-    sessionsDir: fileFingerprint(SESSIONS_DIR),
   });
 }
 
-function rememberThreadListFallbackCache(key, threads, timings = {}) {
-  if (!THREAD_LIST_FALLBACK_CACHE_TTL_MS || !key) return;
+function rememberThreadListFallbackCache(key, threads, timings = {}, options = {}) {
+  if (!key) return;
   threadListFallbackCache.set(key, {
-    expiresAt: Date.now() + THREAD_LIST_FALLBACK_CACHE_TTL_MS,
+    cachedAt: Date.now(),
+    updatedAt: Date.now(),
+    limit: Math.max(1, Math.min(200, Number(options.limit || 80))),
+    filters: cloneThreadListFallbackFilters(options.filters || {}),
     threads: clonePlainJson(Array.isArray(threads) ? threads : []),
     timings: Object.assign({}, timings || {}),
+    incrementalUpdates: 0,
   });
   if (threadListFallbackCache.size > 12) {
     const oldestKey = threadListFallbackCache.keys().next().value;
@@ -12340,15 +12416,21 @@ function rememberThreadListFallbackCache(key, threads, timings = {}) {
 }
 
 function readThreadListFallbackCache(key) {
-  if (!THREAD_LIST_FALLBACK_CACHE_TTL_MS || !key) return null;
+  if (!key) return null;
   const cached = threadListFallbackCache.get(key);
-  if (!cached || cached.expiresAt <= Date.now()) {
+  if (!cached) return null;
+  if (THREAD_LIST_FALLBACK_CACHE_TTL_MS > 0
+    && cached.cachedAt
+    && Date.now() - Number(cached.cachedAt || 0) > THREAD_LIST_FALLBACK_CACHE_TTL_MS) {
     if (cached) threadListFallbackCache.delete(key);
     return null;
   }
   return {
     threads: clonePlainJson(cached.threads || []),
     timings: Object.assign({}, cached.timings || {}),
+    cachedAt: Number(cached.cachedAt || 0),
+    updatedAt: Number(cached.updatedAt || cached.cachedAt || 0),
+    incrementalUpdates: Number(cached.incrementalUpdates || 0),
   };
 }
 
@@ -12363,6 +12445,8 @@ function readThreadListFallback(limit = 80, filters = {}) {
       diagnostics.rolloutMs = 0;
       diagnostics.sessionIndexMs = 0;
       diagnostics.cachedSourceTimings = cached.timings;
+      diagnostics.cacheAgeMs = cached.updatedAt ? Math.max(0, Date.now() - cached.updatedAt) : 0;
+      diagnostics.cacheIncrementalUpdates = cached.incrementalUpdates || 0;
     }
     return cached.threads;
   }
@@ -12385,6 +12469,9 @@ function readThreadListFallback(limit = 80, filters = {}) {
     stateDbMs: diagnostics && diagnostics.stateDbMs || 0,
     rolloutMs: diagnostics && diagnostics.rolloutMs || 0,
     sessionIndexMs: diagnostics && diagnostics.sessionIndexMs || 0,
+  }, {
+    limit,
+    filters,
   });
   return threads;
 }
