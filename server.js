@@ -79,6 +79,7 @@ const {
 const { ensureCodexMobileMcpServer } = require("./adapters/codex-mobile-mcp-config-service");
 const { ensureCodexProjectsTrusted } = require("./adapters/codex-project-trust-service");
 const { createThreadDetailProjectionInputService } = require("./adapters/thread-detail-projection-input-service");
+const { createThreadDetailProjectionResultService } = require("./adapters/thread-detail-projection-result-service");
 const { createThreadDetailProjectionService } = require("./adapters/thread-detail-projection-service");
 const { createThreadDetailProjectionV4Service } = require("./adapters/thread-detail-projection-v4-service");
 const { createThreadTurnCompactionPolicyService } = require("./adapters/thread-turn-compaction-policy-service");
@@ -5061,36 +5062,23 @@ const threadDetailProjectionInputService = createThreadDetailProjectionInputServ
   statusText,
   timestampToMs,
 });
+const threadDetailProjectionResultService = createThreadDetailProjectionResultService({
+  maxTurns: MAX_FULL_THREAD_TURNS,
+  compactThreadReadResult,
+  mergeThreadDisplaySummary,
+  applySessionIndexTitleToThread,
+  readSessionIndexEntries,
+  mergeThreadRuntimeFromStateDb,
+  normalizeThreadSummaryLiveStatus,
+  publicRuntimeSettings,
+});
 
 function threadDetailProjectionInput(threadId, summary) {
   return threadDetailProjectionInputService.projectionInput(threadId, summary);
 }
 
 function prepareProjectedThreadReadResult(cached, summary, runtimeSettings) {
-  if (!cached || !cached.result || !cached.result.thread) return null;
-  const mergedResult = Object.assign({}, cached.result, {
-    thread: mergeThreadDisplaySummary(cached.result.thread, summary) || cached.result.thread,
-  });
-  const result = compactThreadReadResult(mergedResult, { maxTurns: MAX_FULL_THREAD_TURNS });
-  if (!result.thread) return null;
-  result.thread = applySessionIndexTitleToThread(result.thread, readSessionIndexEntries().get(result.thread.id));
-  result.thread = mergeThreadRuntimeFromStateDb(result.thread, summary);
-  result.thread = normalizeThreadSummaryLiveStatus(result.thread);
-  result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
-  const projectionVersion = String(cached.version || result.thread.mobileProjectionVersion || "");
-  const v4 = projectionVersion === "v4";
-  result.thread.mobileReadMode = cached.dynamic
-    ? (v4 ? "projection-v4-dynamic" : "projection-dynamic")
-    : (v4 ? "projection-v4-cache" : "projection-cache");
-  result.thread.mobileProjection = {
-    ...(result.thread.mobileProjection || {}),
-    source: cached.dynamic ? "dynamic" : "cache",
-    version: projectionVersion || result.thread.mobileProjectionVersion || "",
-    cachedAtMs: cached.cachedAtMs || null,
-    updatedAtMs: cached.updatedAtMs || cached.cachedAtMs || null,
-    ageMs: cached.updatedAtMs ? Math.max(0, Date.now() - cached.updatedAtMs) : null,
-  };
-  return result;
+  return threadDetailProjectionResultService.prepareProjectedThreadReadResult(cached, summary, runtimeSettings);
 }
 
 function finalizeThreadDetailProjectionResult(result, details = {}) {

@@ -129,6 +129,7 @@ Implementation path:
     `test/conversation-render.test.js`, `test/collab-agent-render.test.js`,
     `test/thread-turn-compaction-policy-service.test.js`,
     `test/thread-detail-projection-input-service.test.js`,
+    `test/thread-detail-projection-result-service.test.js`,
     `test/message-timestamp.test.js`, `test/turn-scroll-controls.test.js`,
     `test/turn-usage-summary-service.test.js`, and
     `test/mobile-viewport.test.js`.

@@ -384,7 +384,12 @@ while live in-memory projection entries are accepted only when their
 notification timestamp is not older than the current summary.
 `adapters/thread-detail-projection-input-service.js` owns construction of the
 server-side signature input for detail reads; the projection cache service owns
-comparison, memory/disk storage, and miss/reseed behavior. Dynamic
+comparison, memory/disk storage, and miss/reseed behavior; and
+`adapters/thread-detail-projection-result-service.js` owns projection-hit result
+assembly before the route sends the detail response. That result assembly merges
+cached projection output with display summary data, session-index title
+hydration, state-db runtime fields, live-status normalization, public runtime
+settings, and projection read-mode metadata. Dynamic
 in-memory projection entries intentionally relax the full signature check while
 a thread is actively changing, but only for a bounded window: if the backing
 rollout path/size/mtime, retained turn window, or policy version changes after
