@@ -1,5 +1,28 @@
 # Codex Mobile Web
 
+## 2026-06-23 public 发布说明：线程详情、线程列表和完成回执一致性修复
+
+本次 public 发布对应 Mac 生产环境已先行部署并完成 smoke 验证后的代码同步。修复目标不是给 Music 等大线程再加一层前端兜底，而是把线程详情、线程列表、rollout enrichment、active overlay 和投影缓存的状态所有权收敛到同一套服务端不变量：真实 app-server / rollout 已经物化的 turn 优先于本地临时 overlay；已完成线程的最终回执和 Usage 由 bounded rollout completion 作为补齐证据；线程列表 fallback 不能在详情首屏期间抢占大 rollout 扫描。
+
+本次公开发布包含以下主要变更：
+
+- 详情首屏和线程列表 fallback 的竞争被收紧到 v380。前端现在把线程切换、live poll、Usage backfill 和 full backfill 都视为详情忙碌窗口；服务端同时跟踪正在读取的 `/api/threads/:id` 详情请求。普通 `/api/threads` 列表刷新如果在详情请求期间到达，会返回 `mobileDeferredFallback=true` 和 `fallbackDeferredReason=active-thread-detail`，跳过同步 state DB / rollout fallback 扫描。这样 Music 这类 200MB 级 rollout 线程在冷启动或重启后不会被后台列表冷扫阻塞首屏详情。这个部分包含前端资源更新，PWA shell cache 升级到 `codex-mobile-shell-v380`。
+- 线程列表 fallback cache 改成进程内 baseline 加增量同步。默认不再按 30 秒 TTL 失效，也不再因为 `state_5.sqlite`、`session_index.jsonl`、归档索引或 `sessions/` 目录 mtime/size 变化就整体换 cache key 重扫。服务重启后的首次完整 fallback 读取会建立 baseline；之后通过 turn、status、title、archive、new-thread 事件对单条 summary 做 upsert/remove/status update。`CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS=0` 表示不过期，只保留为显式诊断覆盖。
+- 本地 `turn/start` active overlay 和真实物化 turn 的所有权重新定义。Mobile Web 自己提交消息后，本地 overlay 只在 app-server / rollout 还没有物化真实 turn 时暂时拥有 `activeTurnId`。一旦详情投影或 rollout 证据显示另一个未完成且有运行中 item 的真实 turn，服务端会把 active 所有权转移到该物化 turn，并删除空的本地 active shell。线程已回到 idle/completed/failed/cancelled/interrupted/error 等静止态时，列表和详情投影里残留的空 live shell 也会被剪掉。
+- 已完成线程的最终回执和 Usage 由服务端统一补齐。若 `thread/turns/list` 没有返回 summary `updatedAt` 对应的最新 completed turn，但 rollout `task_complete` / `task_completed` 已经证明它存在，服务端会在 recent/detail 响应里追加这个 completed turn，再附加最终 agent receipt 和 `turnUsageSummary`。这覆盖“第一次进入已完成线程时正文缺最终回执或 Usage，退出再进才出现”的根因路径。
+- rollout enrichment index 现在会读取文件末尾没有尾随换行但已经完整可解析的 JSONL 最后一行。正在写入中的半截 JSON 仍不可见，不会被当成完成事件；等后续换行落盘后也不会重复计入。这样刚完成的 turn 不再因为最后一行缺换行而在首次详情读取时缺失 `task_complete.last_agent_message`。
+- recent/detail 排序修正了 `rollout-*` fallback 行和有真实时间戳 turn 的顺序。只有没有时间戳的 `rollout-*` fallback 行会被视为比有时间戳的 turn 更旧，避免旧 fallback 行排到最新 completed turn 后面；普通没有时间戳的 live turn 仍允许排在 completed 历史之后，保证正在运行的 turn 可见。
+- 线程详情 `projection-v4-dynamic` 的缓存软失效规则被固化。动态投影仍可用于活跃线程的增量快路径；但当 backing signature 的 rollout path/size/mtime/maxTurns/policy 变化且线程已经静止，或动态投影超过短阈值仍没收到新事件时，会返回 miss 并触发详情 reseed，避免 completed 线程长期沿用漏片段的旧 dynamic projection。
+- Home AI 平台边界文档已明确引用中央 root-cause architecture contract：`/Users/hermes-dev/HermesMobileDev/app/docs/PLATFORM_CONTRACTS/root-cause-architecture-contract.md`。本仓库只保留直接引用，不复制合同全文；后续插件 bugfix、部署、MCP、schema、provisioning 和平台边界工作都要先明确症状、失败层、归属 workspace、被破坏的不变量、根因或最强假设，以及关闭验证。
+
+发布和验证边界：
+
+- 本次先部署到 Mac production，再由用户确认当前版本可推 public，随后才同步 public 仓库。
+- 本地完整测试已通过：`npm test` 共 `624/624` 通过；同时通过 `npm run check`、`npm run check:macos` 和 `git diff --check`。
+- 生产目标同步后通过 `npm run check`、`npm run check:macos`，并用生产依赖跑过 160 个 focused tests。
+- Music 线程 smoke 验证显示：recent detail 返回 `idle`，没有 `activeTurnId`，10 个 turns 中最新 turn 是 rollout `task_complete` 对应 completed turn，包含 `userMessage`、`agentMessage` 和 `turnUsageSummary`，没有空 turn；线程列表返回 Music `idle`，warm list fallback cache 命中。
+- public 发布只包含公开源码、README、docs 和测试；不会复制 `.agent-context`、runtime state、本地密钥、上传内容、完整 rollout、访问 key、launch token、私有日志或机器特定诊断。
+
 - 中文说明：Home AI 插件 bugfix、部署、MCP、schema、provisioning 和平台边界工作遵循中央 root-cause architecture contract：`/Users/hermes-dev/HermesMobileDev/app/docs/PLATFORM_CONTRACTS/root-cause-architecture-contract.md`。本仓库只引用该权威文件，不复制全文；非平凡修复前应明确症状、失败层、归属 workspace、被破坏的不变量、根因或最强假设，以及关闭验证。
 - 中文说明：server-only 修正本地 `turn/start` active overlay 和真实物化 turn 分叉时的状态所有权。Mobile Web 自己发起消息后，`message-submit` overlay 只在 app-server/rollout 尚未物化真实 turn 时拥有 activeTurnId；如果详情投影里出现另一个已有运行 item 的未完成 turn，服务端会把 active 所有权转移到该物化 turn 并删除空的本地 active shell；如果线程已回到 idle/completed 等静止态，旧投影里残留的空 inProgress shell 也会被删除。若 app-server `thread/turns/list` 漏掉 summary updatedAt 对应的最新 `task_complete` turn，服务端会从 rollout completion 事件补入 completed turn，再接上最终回执和 Usage；rollout JSONL 最后一行即使没有尾随换行，只要是完整可解析 JSON，也会进入 enrichment index，避免刚完成后首次打开仍缺最新回执。这样避免 Music 这类线程出现右上角有输出/命令/思考但正文和最终回执锚在空 turn 上，或完成后首屏缺最新回执的状态分裂。本次不改变 PWA shell cache。
 - 中文说明：server-only 固化线程详情 `projection-v4-dynamic` 的软失效规则。动态投影仍允许活跃线程在 rollout 文件变化时短时间走增量快路径；但如果 backing signature 的 rollout path/size/mtime/maxTurns/policy 变化后线程已进入 idle/completed/failed/cancelled/interrupted/error 等静止态，或动态投影超过短阈值仍未收到新事件，就返回 miss 并触发详情读取/reseed。这样保留 live 性能，同时避免事件流漏片段后 completed 线程长期沿用旧 dynamic projection。本次不改变 PWA shell cache。
