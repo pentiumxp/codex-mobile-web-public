@@ -23,8 +23,8 @@ The previous full handoff was archived and should be opened only when old proven
 
 ## 2026-06-23 - Thread List Fallback Detail-Contention Fix v380
 
-- Status: implemented and validated locally; not yet deployed to Mac production,
-  not committed, and not pushed public.
+- Status: implemented, validated locally, committed, pushed to private
+  `origin/main`, and deployed to Mac production. Not pushed public.
 - Trigger:
   - User reported that large-thread loading can still feel slow on first entry
     but fast on the second entry, and asked whether the app-server memory cache
@@ -77,8 +77,29 @@ The previous full handoff was archived and should be opened only when old proven
   - `npm run check:macos`
   - `git diff --check`
 - Operational notes:
-  - This changes both server behavior and PWA static assets, so production deploy
-    must restart the 8787 Node listener and clients must load shell v380.
+  - Local/private commit:
+    `cb748ab fix: defer list fallback during active detail reads`.
+  - Pushed to `origin/main`.
+  - Mac production deploy was completed directly through the Home AI central
+    `deploy:macos` script, target `plugin:codex-mobile-web`, from source
+    `/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web` to production
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260623T083815Z-plugin-codex-mobile-web-manual`.
+  - Post-deploy production validation:
+    - Deploy script completed successfully, restarted
+      `com.hermesmobile.plugin.codex-mobile`, and `/api/public-config` returned
+      `clientBuildId=0.1.11|codex-mobile-shell-v380` and
+      `shellCacheName=codex-mobile-shell-v380`.
+    - `npm run check` passed in production.
+    - `npm run check:macos` passed in production.
+    - `node --test test/thread-visibility.test.js
+      test/mobile-viewport.test.js` passed 39/39 in production.
+    - Authenticated `/api/status` returned `ready=true` with
+      `transport=external-jsonl-tcp`.
+    - Production probes: `Music` recent detail returned HTTP 200 in about
+      722ms then 31ms; `fallback=defer` thread list returned HTTP 200 in about
+      145ms with `mobileDeferredFallback=true`.
   - A deployment task card was mistakenly sent to Home AI thread
     `019eed86-2002-7cc2-b0b7-937eb5355f36` with card id
     `ttc_88f91779895e5db9ef`. Per the central platform deployment contract,
@@ -88,8 +109,8 @@ The previous full handoff was archived and should be opened only when old proven
   - A revoke attempt for that card returned
     `task_card_not_pending:approved`, so it cannot be revoked by the source
     thread and should be ignored rather than used as the deployment path.
-  - Follow the release-order rule: deploy and validate Mac production before any
-    public sync/push.
+  - Follow the release-order rule for any later public sync/push: public publish
+    only after production/user confirmation.
 
 ## 2026-06-23 - Embedded Image Card Rendering v379 Deployed
 
