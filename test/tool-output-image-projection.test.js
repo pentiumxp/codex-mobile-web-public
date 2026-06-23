@@ -196,6 +196,94 @@ test("direct imageView items for uploaded user images are not repeated beside up
   assert.equal(compacted.turns[0].items.some((item) => item.type === "imageView"), false);
 });
 
+test("native tool image echoes for uploaded user images are removed by upload filename", () => {
+  const uploadPath = path.join(uploadRoot, "2026-06-20", "thread-upload", "homeai-upload-76E2D26C.jpg");
+  fs.mkdirSync(path.dirname(uploadPath), { recursive: true });
+  fs.writeFileSync(uploadPath, Buffer.from("iVBORw0KGgo=", "base64"));
+
+  const compacted = compactThread({
+    id: "thread-native-upload-image-echo",
+    turns: [{
+      id: "turn-upload",
+      status: { type: "completed" },
+      items: [
+        {
+          id: "user-upload",
+          type: "userMessage",
+          content: [{
+            type: "input_text",
+            text: `Uploaded attachments:\n- homeai-upload-76E2D26C.jpg (image, image/jpeg, 123.3 KB): ${uploadPath}`,
+          }],
+        },
+        {
+          id: "native-upload-echo",
+          type: "imageView",
+          source: "tool_output",
+          fileName: "homeai-upload-76E2D26C.jpg",
+          contentUrl: "/api/generated-images/file?id=thread-native-upload-image-echo%2Fecho.png",
+        },
+        {
+          id: "generated-output",
+          type: "imageView",
+          source: "tool_output",
+          fileName: "generated-output.png",
+          contentUrl: "/api/generated-images/file?id=thread-native-upload-image-echo%2Fgenerated-output.png",
+        },
+      ],
+    }],
+  });
+
+  const imageIds = compacted.turns[0].items.filter((item) => item.type === "imageView").map((item) => item.id);
+  assert.deepEqual(imageIds, ["generated-output"]);
+});
+
+test("native view_image echoes for uploaded user images are removed by rollout call id", () => {
+  const uploadPath = path.join(uploadRoot, "2026-06-20", "thread-upload", "homeai-upload-call-id.jpg");
+  fs.mkdirSync(path.dirname(uploadPath), { recursive: true });
+  fs.writeFileSync(uploadPath, Buffer.from("iVBORw0KGgo=", "base64"));
+  const { dir, rolloutPath } = writeRollout([
+    event("2026-06-20T08:00:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-upload" }),
+    event("2026-06-20T08:00:01.000Z", "response_item", {
+      type: "function_call",
+      name: "view_image",
+      call_id: "call-view-upload",
+      arguments: JSON.stringify({ path: uploadPath, detail: "high" }),
+    }),
+  ]);
+  try {
+    const compacted = compactThread({
+      id: "thread-native-upload-image-call-id",
+      path: rolloutPath,
+      turns: [{
+        id: "turn-upload",
+        status: { type: "completed" },
+        items: [
+          {
+            id: "user-upload",
+            type: "userMessage",
+            content: [{
+              type: "input_text",
+              text: `Uploaded attachments:\n- homeai-upload-call-id.jpg (image, image/jpeg, 123.3 KB): ${uploadPath}`,
+            }],
+          },
+          {
+            id: "native-view-image-output",
+            type: "imageView",
+            source: "tool_output",
+            callId: "call-view-upload",
+            fileName: "view_image output",
+            contentUrl: "/api/generated-images/file?id=thread-native-upload-image-call-id%2Fecho.png",
+          },
+        ],
+      }],
+    });
+
+    assert.equal(compacted.turns[0].items.some((item) => item.type === "imageView"), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("direct imageView upload paths remain visible without a matching user upload summary", () => {
   const uploadPath = path.join(uploadRoot, "2026-06-20", "thread-upload", "standalone-image-view.jpg");
   fs.mkdirSync(path.dirname(uploadPath), { recursive: true });

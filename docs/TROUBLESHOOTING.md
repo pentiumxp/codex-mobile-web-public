@@ -673,6 +673,8 @@ If a Codex turn displays an `Image` card for a visual verification screenshot bu
 
 Current behavior should cache small `imageView`, `imageGeneration.savedPath`, and safe bitmap tool-output data images into `%USERPROFILE%\.codex-mobile-web\generated-images` and serve them through `/api/generated-images/file`. Receipt-only historical turn compaction must keep these image cards; otherwise only the latest turn's generated image will appear after thread projection/reload. If a rollout tool-output image has no explicit turn id, Mobile Web should attach it by timestamp window rather than appending every unscoped image to the latest turn. Do not fix this by adding `%TEMP%` or `%USERPROFILE%\.codex` to `CODEX_MOBILE_FILE_PREVIEW_ROOTS`; that would broaden local file preview access beyond the current thread workspace. If the source temp/generated file was already deleted before Mobile Web saw the item, the historical card cannot be recovered from the path alone.
 
+If the original user upload thumbnail is visible but a later system `Image` receipt for the same uploaded file is broken, do not try to make that duplicate receipt render. The intended projection is to keep the user upload in the user message and suppress `view_image` / tool-output echoes for the same upload, including native `imageView` echoes that only retain the upload filename or the original `view_image` call id. Visual verification screenshots and other generated tool images without a matching user-upload summary should still render as generated-image cards.
+
 Focused checks:
 
 ```powershell

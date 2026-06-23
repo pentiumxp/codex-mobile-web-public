@@ -4378,12 +4378,16 @@ function cloneRolloutToolOutputImagePayload(payload) {
   for (const [turnId, items] of sourceByTurn.entries()) {
     byTurn.set(turnId, Array.isArray(items) ? items.map((item) => Object.assign({}, item)) : []);
   }
+  const suppressedUploadViewImageCallIds = payload && payload.suppressedUploadViewImageCallIds instanceof Set
+    ? new Set(payload.suppressedUploadViewImageCallIds)
+    : new Set();
   return {
     byTurn,
     unscoped: Array.isArray(payload && payload.unscoped)
       ? payload.unscoped.map((item) => Object.assign({}, item))
       : [],
     scopedCount: Number(payload && payload.scopedCount) || 0,
+    suppressedUploadViewImageCallIds,
   };
 }
 
@@ -4695,7 +4699,7 @@ function orderTurnItemsByDisplayTimestamp(turn) {
 
 function readRolloutToolOutputImageItems(rolloutPath, options = {}) {
   if (!rolloutPath || typeof rolloutPath !== "string" || !fs.existsSync(rolloutPath)) {
-    return { byTurn: new Map(), unscoped: [], scopedCount: 0 };
+    return { byTurn: new Map(), unscoped: [], scopedCount: 0, suppressedUploadViewImageCallIds: new Set() };
   }
   let cacheKey = "";
   try {
@@ -4706,11 +4710,12 @@ function readRolloutToolOutputImageItems(rolloutPath, options = {}) {
       return cloneRolloutToolOutputImagePayload(cached.payload);
     }
   } catch (_) {
-    return { byTurn: new Map(), unscoped: [], scopedCount: 0 };
+    return { byTurn: new Map(), unscoped: [], scopedCount: 0, suppressedUploadViewImageCallIds: new Set() };
   }
 
   const entries = readRolloutEnrichmentEntries(rolloutPath);
   const toolCallInfoById = new Map();
+  const suppressedUploadViewImageCallIds = new Set();
   for (const entry of entries) {
     if (!entry || !entry.type) continue;
     const payload = entry.payload || {};
@@ -4721,6 +4726,9 @@ function readRolloutToolOutputImageItems(rolloutPath, options = {}) {
       tool: String(payload.name || ""),
       viewImagePath: viewImageToolPath(payload),
     });
+    if (shouldSuppressToolOutputImageCandidates(toolCallInfoById.get(callId))) {
+      suppressedUploadViewImageCallIds.add(callId);
+    }
   }
   const byTurn = new Map();
   const unscoped = [];
@@ -4763,16 +4771,16 @@ function readRolloutToolOutputImageItems(rolloutPath, options = {}) {
       unscoped.push(...items);
     }
   }
-  const payload = { byTurn, unscoped, scopedCount };
+  const payload = { byTurn, unscoped, scopedCount, suppressedUploadViewImageCallIds };
   if (cacheKey) rememberToolOutputImages(cacheKey, payload);
   return cloneRolloutToolOutputImagePayload(payload);
 }
 
-function appendRolloutToolOutputImagesToThread(thread) {
+function appendRolloutToolOutputImagesToThread(thread, existingPayload = null) {
   if (!thread || typeof thread !== "object" || !Array.isArray(thread.turns) || !thread.turns.length) return thread;
   const rolloutPath = rolloutPathForThread(thread);
   if (!rolloutPath) return thread;
-  const payload = readRolloutToolOutputImageItems(rolloutPath, {
+  const payload = existingPayload || readRolloutToolOutputImageItems(rolloutPath, {
     threadId: thread.id || thread.threadId || "",
   });
   if (!payload) return thread;
@@ -5894,17 +5902,61 @@ function imageViewUploadSourcePath(item) {
   return normalizedCodexMobileUploadPath(imageViewSourcePath(item));
 }
 
-function filterDuplicateUploadImageViewsInTurnItems(items) {
+function imageViewCallId(item) {
+  return String(item && (
+    item.callId
+    || item.call_id
+    || item.toolCallId
+    || item.tool_call_id
+    || item.arguments && (item.arguments.callId || item.arguments.call_id || item.arguments.toolCallId || item.arguments.tool_call_id)
+    || item.result && (item.result.callId || item.result.call_id || item.result.toolCallId || item.result.tool_call_id)
+  ) || "").trim();
+}
+
+function fsPathDisplayBasename(value) {
+  const normalized = String(value || "").trim().replace(/\\/g, "/").replace(/\/+$/, "");
+  return normalized ? normalized.split("/").pop().toLowerCase() : "";
+}
+
+function imageViewDisplayBasename(item) {
+  const source = imageViewSourcePath(item)
+    || item && (item.fileName || item.file_name || item.label || item.caption || item.name || item.id);
+  return fsPathDisplayBasename(source);
+}
+
+function suppressedUploadViewImageCallIdSet(options = {}) {
+  const value = options.suppressedUploadViewImageCallIds;
+  if (value instanceof Set) return value;
+  if (Array.isArray(value)) return new Set(value.map((entry) => String(entry || "").trim()).filter(Boolean));
+  return new Set();
+}
+
+function isUploadImageEchoReceipt(item, uploadBasenames, suppressedCallIds) {
+  if (!isVisualReceiptItem(item)) return false;
+  const callId = imageViewCallId(item);
+  if (callId && suppressedCallIds.has(callId)) return true;
+  const displayBasename = imageViewDisplayBasename(item);
+  return Boolean(displayBasename && uploadBasenames.has(displayBasename));
+}
+
+function filterDuplicateUploadImageViewsInTurnItems(items, options = {}) {
   if (!Array.isArray(items) || items.length < 2) return items;
   const userUploadPaths = new Set();
+  const uploadBasenames = new Set();
   for (const item of items) {
     if (!isUserQuestionItem(item)) continue;
-    for (const uploadPath of userMessageUploadedImagePaths(item)) userUploadPaths.add(uploadPath);
+    for (const uploadPath of userMessageUploadedImagePaths(item)) {
+      userUploadPaths.add(uploadPath);
+      const basename = fsPathDisplayBasename(uploadPath);
+      if (basename) uploadBasenames.add(basename);
+    }
   }
   if (!userUploadPaths.size) return items;
+  const suppressedCallIds = suppressedUploadViewImageCallIdSet(options);
   return items.filter((item) => {
     const imagePath = imageViewUploadSourcePath(item);
-    return !imagePath || !userUploadPaths.has(imagePath);
+    if (imagePath && userUploadPaths.has(imagePath)) return false;
+    return !isUploadImageEchoReceipt(item, uploadBasenames, suppressedCallIds);
   });
 }
 
@@ -5993,7 +6045,7 @@ function compactTurn(turn, options = {}) {
   if (!turn || typeof turn !== "object") return turn;
   const out = Object.assign({}, turn);
   if (Array.isArray(out.items)) {
-    const sourceItems = filterDuplicateUploadImageViewsInTurnItems(out.items);
+    const sourceItems = filterDuplicateUploadImageViewsInTurnItems(out.items, options);
     const allowOperation = Boolean(options.allowOperations)
       || (Boolean(options.allowLiveOperation) && isLiveTurn(out));
     const operationIndexes = trailingOperationIndexes(
@@ -6051,7 +6103,10 @@ function compactThread(thread, options = {}) {
       out.mobileOlderTurnsCursor = olderTurnsCursorBeforeTurn(out.turns[0]);
     }
     enrichThreadItemTimestampsFromRollout(out);
-    appendRolloutToolOutputImagesToThread(out);
+    const toolOutputImagePayload = readRolloutToolOutputImageItems(rolloutPath, {
+      threadId: out.id || out.threadId || "",
+    });
+    appendRolloutToolOutputImagesToThread(out, toolOutputImagePayload);
     appendRolloutFinalReceiptsToThread(out);
     attachTurnUsageSummaries(out, readRolloutTurnUsageSummaries(rolloutPath, {
       targetTurnIds: out.turns.map((turn) => turn && turn.id).filter(Boolean),
@@ -6070,6 +6125,7 @@ function compactThread(thread, options = {}) {
       maxOperationItems: operationDetailIndexes.has(index) ? "all" : MAX_LIVE_OPERATION_ITEMS,
       receiptOnly: !operationDetailIndexes.has(index),
       threadId: out.id || out.threadId || "",
+      suppressedUploadViewImageCallIds: toolOutputImagePayload.suppressedUploadViewImageCallIds,
     })).map(orderTurnItemsByDisplayTimestamp);
     const latest = out.turns[latestIndex];
     if (latest && isLiveTurn(latest) && Array.isArray(latest.items)
@@ -10297,9 +10353,23 @@ function workspaceContextReference(cwd) {
   ].join("\n");
 }
 
-function newThreadBootstrapPromptScoped({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff }) {
+function homeAiCentralContractReference(pluginMode) {
+  if (continuationPluginMode({ pluginMode }) !== "hermes") return "";
+  return [
+    "## Home AI Central Contract",
+    "",
+    "- This continuation was created from Home AI embedded plugin mode.",
+    "- Before code changes, deployment, task-card routing, mobile visual validation, or plugin/workspace policy decisions, read the full central Home AI platform contract document:",
+    "  `/Users/hermes-dev/HermesMobileDev/app/docs/PLATFORM_CONTRACTS/plugin-workspace-platform-contract.md`",
+    "- Treat that central contract as authoritative over plugin-local pointer docs and work according to its required workflow.",
+    "- If the task touches deployment or mobile UI, also read the smallest relevant central companion contract/runbook named by that document before acting.",
+  ].join("\n");
+}
+
+function newThreadBootstrapPromptScoped({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff, pluginMode }) {
   const snapshot = sourceSnapshot || { threadId: sourceThreadId, title: sourceThreadTitle, turns: [], readWarnings: [] };
   const publicRuntime = publicRuntimeSettings(runtimeSettings);
+  const centralContract = homeAiCentralContractReference(pluginMode);
   const parts = [
     "# Continuation Bootstrap Index",
     "",
@@ -10329,6 +10399,8 @@ function newThreadBootstrapPromptScoped({ cwd, sourceThreadId, sourceThreadTitle
     "## Workspace Context Files",
     workspaceContextReference(cwd),
     "",
+    centralContract,
+    centralContract ? "" : null,
     "## Continuation Lineage",
     continuationLineageIndexReference(cwd, sourceThreadId),
     "",
@@ -10339,7 +10411,7 @@ function newThreadBootstrapPromptScoped({ cwd, sourceThreadId, sourceThreadTitle
     "## Privacy And Size Constraints",
     "- Do not copy handoff bodies, lineage handoff bodies, rollout bodies, or workspace context bodies back into chat unless the user explicitly asks.",
     "- Do not write or display raw secrets, access keys, VAPID private keys, subscription endpoints, upload contents, full rollouts, full prompts, or one-time approval state.",
-  ];
+  ].filter((part) => part !== null);
   return truncateMiddle(parts.join("\n"), MAX_CONTINUATION_BOOTSTRAP_CHARS, "continuation bootstrap");
 }
 async function tryUpdateThreadTitle(threadId, title) {
@@ -10709,7 +10781,16 @@ function continuationJobSourceKey(body) {
     sourceThreadId,
     normalizeFsPath(String(body.cwd || "").trim()),
     Boolean(body.archiveSourceThread),
+    continuationPluginMode(body),
   ].join("|");
+}
+
+function continuationPluginMode(body = {}) {
+  const mode = String(body.pluginMode || body.plugin_mode || "").trim().toLowerCase();
+  if (mode === "hermes" || mode === "homeai" || mode === "plugin") return "hermes";
+  if (body.hermesPluginMode === true || body.hermes_plugin_mode === true || body.embeddedPlugin === true || body.embedded_plugin === true) return "hermes";
+  const pluginId = String(body.pluginId || body.plugin_id || "").trim();
+  return pluginId ? "hermes" : "";
 }
 
 function publicContinuationJob(job) {
@@ -10721,6 +10802,7 @@ function publicContinuationJob(job) {
     step: job.step,
     message: job.message,
     sourceThreadId: job.sourceThreadId,
+    pluginMode: job.pluginMode || "",
     threadId: job.threadId || "",
     contextCompaction: job.contextCompaction || null,
     sourceArchive: job.sourceArchive || null,
@@ -10805,6 +10887,7 @@ async function startThreadFromRequestBody(body, options = {}) {
   const sourceThreadId = String(body.sourceThreadId || "").trim();
   const requestedSourceThreadTitle = String(body.sourceThreadTitle || "").trim();
   const archiveSourceThread = Boolean(body.archiveSourceThread && sourceThreadId);
+  const pluginMode = continuationPluginMode(body);
   progress("source-snapshot", "正在读取源线程摘要", { sourceThreadId });
   const sourceSnapshot = await continuationSourceSnapshot(sourceThreadId, requestedSourceThreadTitle, visibility);
   const sourceThreadTitle = sourceTitleForContinuation(sourceSnapshot, requestedSourceThreadTitle, cwd);
@@ -10851,7 +10934,7 @@ async function startThreadFromRequestBody(body, options = {}) {
   const titleUpdatedBeforeBootstrap = await tryUpdateThreadTitle(threadId, desiredTitle).catch(() => false);
   const bootstrapParams = applyTurnRuntimeSettings({
     threadId,
-    input: newThreadBootstrapInput({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff }),
+    input: newThreadBootstrapInput({ cwd, sourceThreadId, sourceThreadTitle, desiredTitle, sourceSnapshot, runtimeSettings, sourceHandoff, pluginMode }),
     cwd,
     summary: "auto",
   }, runtimeSettings);
@@ -10968,6 +11051,7 @@ function createContinuationJob(body) {
     message: "续接任务已创建",
     body: Object.assign({}, body),
     sourceThreadId: String(body.sourceThreadId || "").trim(),
+    pluginMode: continuationPluginMode(body),
     sourceKey,
     threadId: "",
     sourceArchive: null,

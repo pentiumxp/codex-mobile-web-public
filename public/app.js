@@ -388,7 +388,7 @@ const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v387";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v388";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -11695,11 +11695,15 @@ async function createThreadTaskCardFromCurrent(event) {
 
 function startThreadRequestBody(sourceThread = null, options = {}) {
   const thread = sourceThread || state.currentThread || {};
+  const pluginMode = isHermesEmbedMode() ? "hermes" : "";
   return {
     cwd: thread.cwd || state.selectedCwd || "",
     sourceThreadId: thread.id || "",
     sourceThreadTitle: threadTitleForDisplay(thread) || thread.id || "",
     archiveSourceThread: Boolean(options.archiveSourceThread && thread.id),
+    pluginMode,
+    hermesPluginMode: Boolean(pluginMode),
+    pluginId: pluginMode ? "codex-mobile" : "",
   };
 }
 
@@ -11846,6 +11850,9 @@ async function startNewThreadFromThread(sourceThread, event) {
     sourceThreadId: thread.id || "",
     sourceThreadTitle: threadTitleForDisplay(thread) || thread.id || "",
     archiveSourceThread: Boolean(thread.id),
+    pluginMode: isHermesEmbedMode() ? "hermes" : "",
+    hermesPluginMode: isHermesEmbedMode(),
+    pluginId: isHermesEmbedMode() ? "codex-mobile" : "",
   };
   if (!body.cwd) {
     showError(new Error("Thread has no workspace path"));

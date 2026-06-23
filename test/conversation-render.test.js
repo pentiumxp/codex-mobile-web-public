@@ -2419,7 +2419,7 @@ test("server only emits context compaction notices from explicit item state", ()
   assert.match(itemBody, /if \(!compactionState\) return compacted/);
   assert.doesNotMatch(itemBody, /options\.contextCompactionPending !== false/);
   assert.doesNotMatch(turnBody, /contextCompactionPending = isLiveTurn\(out\)/);
-  assert.match(turnBody, /const sourceItems = filterDuplicateUploadImageViewsInTurnItems\(out\.items\)/);
+  assert.match(turnBody, /const sourceItems = filterDuplicateUploadImageViewsInTurnItems\(out\.items, options\)/);
   assert.match(turnBody, /out\.items = sourceItems\.map\(\(item\) => compactItem\(item, options\)\)/);
 });
 
