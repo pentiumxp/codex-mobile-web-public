@@ -1,5 +1,7 @@
 # Codex Mobile Web
 
+- 中文说明：v395 将手机端底部 Command dock 改为悬浮 operation bubble。手机窄屏不再为纯 reasoning 或命令状态常驻占用一行纵向空间；只有真实 command/file/tool/search 正在运行时才在 composer 上方显示一个不参与布局的气泡，内容只保留操作类型、短摘要和运行时长。点击或上滑气泡会展开当前操作详情 sheet，可查看完整命令和参数。桌面和 iPad 宽屏继续保留原一行 Command dock。PWA shell cache 升级到 `codex-mobile-shell-v395`。
+
 - 中文说明：server-only 跟进修正 v394 后 Mac 上 Command 详情仍为空的问题。实测 `/api/threads/:id?mode=recent` 返回的 `commandExecution.command` 本身为空，失败层不是前端 dock 渲染，而是服务端 raw-operation fallback 只解析 rollout `function_call.arguments.command`，没有解析 Mac `exec_command` 常见的 `arguments.cmd`。现在服务端投影同时支持 `command`、`cmd`、`shellCommand`、`shell_command`，且支持 `arguments` 为对象或 JSON 字符串；本次不改变 PWA shell cache。
 
 - 中文说明：v394 调整 v393 的底部 dock 语义，并修复 Mac 上 Command 详情为空。底部 dock 仍会在 active turn 全程保留一行高度，避免 reasoning ↔ command/tool 阶段切换导致 composer 上方布局跳动；但 reasoning-only 阶段的 synthetic 占位行只显示 `Command` 空状态，不再显示 `思考`，避免和右上角 turn 状态重复。Command 详情提取现在同时支持 `item.command` 和 Mac/新协议常见的 `item.arguments` JSON 里的 `command`/`cmd`/`shellCommand` 字段；真实 command/tool/file 操作仍优先显示在 dock。compact dock 高度从 54px 降到 40px，内部卡片从 44px 降到 32px，只保留一行文字和少量边距。PWA shell cache 升级到 `codex-mobile-shell-v394`。

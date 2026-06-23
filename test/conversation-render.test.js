@@ -1221,7 +1221,7 @@ test("command operation detail reads command from serialized arguments on macOS"
   const harness = evaluatedOperationCommandHarness();
   const item = {
     type: "commandExecution",
-    arguments: JSON.stringify({ command: "npm run check" }),
+    arguments: JSON.stringify({ cmd: "npm run check" }),
   };
   assert.equal(harness.operationCommandText(item), "npm run check");
   assert.equal(harness.operationCommandSummary(item), "npm run check");

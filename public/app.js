@@ -388,7 +388,7 @@ const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v394";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v395";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -10606,10 +10606,12 @@ function updateLiveOperationDockHtml(html = "") {
   if (!next) {
     if (dock.innerHTML) dock.innerHTML = "";
     dock.hidden = true;
+    delete dock.dataset.mobileVisible;
     return true;
   }
   dock.hidden = false;
   dock.dataset.mode = normalizeLiveOperationDockMode(state.liveOperationDockMode);
+  dock.dataset.mobileVisible = next.includes("mobile-operation-bubble") ? "true" : "false";
   if (dock.innerHTML !== next) patchHtml(dock, next);
   return true;
 }
@@ -10626,13 +10628,14 @@ function setLiveOperationDockMode(mode) {
   const dock = $("liveOperationDock");
   if (!dock) return;
   dock.dataset.mode = next;
-  const button = dock.querySelector("[data-live-operation-dock-toggle]");
-  if (button) {
+  dock.querySelectorAll("[data-live-operation-dock-toggle]").forEach((button) => {
     button.setAttribute("aria-expanded", String(next === "expanded"));
     button.setAttribute("aria-label", next === "expanded" ? "收起 Command 框" : "展开 Command 框");
     button.setAttribute("title", next === "expanded" ? "收起 Command 框" : "展开 Command 框");
-    button.textContent = next === "expanded" ? "↓" : "↑";
-  }
+    if (!button.classList.contains("mobile-operation-bubble")) {
+      button.textContent = next === "expanded" ? "↓" : "↑";
+    }
+  });
 }
 
 function beginLiveOperationDockGesture(event) {
@@ -12485,11 +12488,17 @@ function renderLiveOperationDock(thread, previousKeys = new Set()) {
   if (!entry) return "";
   const mode = normalizeLiveOperationDockMode(state.liveOperationDockMode);
   const expanded = mode === "expanded";
+  const mobileOperation = entry.item && entry.item.type !== "liveTurnStatus"
+    ? renderMobileOperationStack(entry.item, entry.turn, previousKeys, entry.sourceIndex, expanded)
+    : "";
   return `<div class="live-operation-dock-inner">
-    <div class="live-operation-dock-controls">
-      <button type="button" data-live-operation-dock-toggle aria-expanded="${String(expanded)}" title="${expanded ? "收起 Command 框" : "展开 Command 框"}" aria-label="${expanded ? "收起 Command 框" : "展开 Command 框"}">${expanded ? "↓" : "↑"}</button>
+    ${mobileOperation}
+    <div class="live-operation-dock-desktop">
+      <div class="live-operation-dock-controls">
+        <button type="button" data-live-operation-dock-toggle aria-expanded="${String(expanded)}" title="${expanded ? "收起 Command 框" : "展开 Command 框"}" aria-label="${expanded ? "收起 Command 框" : "展开 Command 框"}">${expanded ? "↓" : "↑"}</button>
+      </div>
+      ${renderLiveOperation(entry.item, entry.turn, previousKeys, entry.sourceIndex)}
     </div>
-    ${renderLiveOperation(entry.item, entry.turn, previousKeys, entry.sourceIndex)}
   </div>`;
 }
 
@@ -12560,6 +12569,35 @@ function renderOperationCard(item, key, options = {}) {
     <div class="operation-meta-line"><span class="operation-meta-main"><span class="operation-title">${escapeHtml(title)}</span>${statusHtml}</span>${duration}</div>
     ${body}
   </section>`;
+}
+
+function operationDurationHtml(item, status = "", className = "operation-duration") {
+  const durationData = operationDurationData(item, status);
+  return durationData
+    ? `<time class="${escapeHtml(className)}" ${operationDurationAttrs(durationData)} title="${escapeHtml(`Elapsed ${durationData.text}`)}">${escapeHtml(durationData.text)}</time>`
+    : "";
+}
+
+function operationBubbleSummary(item) {
+  return truncateSingleLine(operationSummaryLines(item).filter(Boolean).join(" | "), 52);
+}
+
+function renderMobileOperationStack(item, turn, previousKeys = new Set(), index = 0, expanded = false) {
+  const status = statusText(item.status) || (item.completedAtMs ? "completed" : "running");
+  const key = stableOperationRenderKey(turn, item, index);
+  const title = operationTitle(item);
+  const summary = operationBubbleSummary(item);
+  const duration = operationDurationHtml(item, status, "operation-duration mobile-operation-bubble-duration");
+  return `<div class="mobile-operation-stack">
+    <div class="mobile-operation-sheet" role="region" aria-label="Command 详情">
+      ${renderOperationCard(item, key, { status, extraClass: "mobile-operation-sheet-card" })}
+    </div>
+    <button class="mobile-operation-bubble" type="button" data-live-operation-dock-toggle aria-expanded="${String(expanded)}" title="${expanded ? "收起 Command 框" : "展开 Command 框"}" aria-label="${expanded ? "收起 Command 框" : "展开 Command 框"}">
+      <span class="mobile-operation-bubble-title">${escapeHtml(title)}</span>
+      ${summary ? `<span class="mobile-operation-bubble-summary">${escapeHtml(summary)}</span>` : ""}
+      ${duration}
+    </button>
+  </div>`;
 }
 
 function operationTitle(item) {
