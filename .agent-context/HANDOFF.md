@@ -1,3 +1,16 @@
+# 2026-06-23 - Home AI platform pointer version-line correction
+
+- Trigger: Home AI central checker reported
+  `codex-mobile:pointer_missing_supported_contract_version:20260623-v5|20260618-v4`
+  after the fallback governance pointer adoption.
+- Change: `docs/HOME_AI_PLATFORM_CONTRACT.md` now includes the supported
+  `Home AI platform contract version: 20260623-v5` line while retaining the
+  root-cause and fallback governance references.
+- Scope: docs/context-only correction; no runtime or business-code changes.
+- Validation:
+  - `rg -n "Home AI platform contract version|root-cause-architecture-contract|fallback-governance-contract|fallback-registry" docs/HOME_AI_PLATFORM_CONTRACT.md .agent-context/HANDOFF.md .agent-context/PROJECT_CONTEXT.md`
+  - `git diff --check`
+
 # 2026-06-23 - Home AI fallback governance pointer adopted
 
 - Trigger:

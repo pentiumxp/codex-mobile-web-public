@@ -1,6 +1,7 @@
 # Home AI Platform Contract Pointer
 
 Last updated: 2026-06-23.
+Home AI platform contract version: `20260623-v5`.
 Home AI root-cause contract version: `20260623-v3`.
 Home AI fallback governance contract version: `20260623-v1`.
 
