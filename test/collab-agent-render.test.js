@@ -82,7 +82,19 @@ test("live operation cards dock on wide screens and become a mobile bubble", () 
   assert.match(functionBody("renderCurrentThread"), /updateLiveOperationDockHtml\(liveOperationDock\);/);
   assert.doesNotMatch(functionBody("renderCurrentThread"), /taskCardsHtml\}\$\{liveOperationDock\}/);
   assert.match(appJs, /liveOperationDockMode:\s*"compact"/);
+  assert.match(appJs, /liveOperationDockPinned:\s*false/);
+  assert.match(appJs, /liveOperationDockPinnedThreadId:\s*""/);
   assert.match(appJs, /function setLiveOperationDockMode\(/);
+  assert.match(appJs, /function shouldPreservePinnedLiveOperationDock\(/);
+  assert.match(appJs, /function preservePinnedLiveOperationDock\(/);
+  assert.match(functionBody("updateLiveOperationDockHtml"), /shouldPreservePinnedLiveOperationDock\(dock, next\)/);
+  assert.match(functionBody("updateLiveOperationDockHtml"), /!next\.includes\("mobile-operation-bubble"\)[\s\S]*state\.liveOperationDockPinned = false/);
+  assert.match(functionBody("updateLiveOperationDockHtml"), /state\.liveOperationDockPinnedThreadId = ""/);
+  assert.match(functionBody("updateLiveOperationDockHtml"), /state\.liveOperationDockMode = "compact"/);
+  assert.match(functionBody("setLiveOperationDockMode"), /state\.liveOperationDockPinned = next === "expanded"/);
+  assert.match(functionBody("setLiveOperationDockMode"), /state\.liveOperationDockPinnedThreadId = state\.liveOperationDockPinned \? String\(state\.currentThreadId \|\| ""\) : ""/);
+  assert.match(functionBody("shouldPreservePinnedLiveOperationDock"), /!String\(html \|\| ""\)\.includes\("mobile-operation-bubble"\)/);
+  assert.match(functionBody("shouldPreservePinnedLiveOperationDock"), /dock\.querySelector\("\.mobile-operation-sheet"\)/);
   assert.match(functionBody("setLiveOperationDockMode"), /querySelectorAll\("\[data-live-operation-dock-toggle\]"\)/);
   assert.match(functionBody("setLiveOperationDockMode"), /!button\.classList\.contains\("mobile-operation-bubble"\)/);
   assert.match(functionBody("updateLiveOperationDockHtml"), /dock\.dataset\.mobileVisible = next\.includes\("mobile-operation-bubble"\) \? "true" : "false"/);
@@ -153,7 +165,10 @@ test("live operation cards dock on wide screens and become a mobile bubble", () 
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.mobile-operation-bubble\s*{[\s\S]*display:\s*inline-flex;/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.mobile-operation-bubble-summary\s*{[\s\S]*max-width:\s*34vw;/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.mobile-operation-bubble-duration\s*{[\s\S]*color:\s*var\(--accent-strong\);/);
+  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.mobile-operation-sheet\s*{[\s\S]*background:\s*var\(--panel\);[\s\S]*border:\s*1px solid var\(--line\);/);
+  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.mobile-operation-sheet\s*{[\s\S]*isolation:\s*isolate;/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.live-operation-dock\[data-mode="expanded"\] \.mobile-operation-sheet\s*{[\s\S]*display:\s*block;/);
+  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.mobile-operation-sheet \.live-operation\s*{[\s\S]*background:\s*var\(--panel\);/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.mobile-operation-sheet \.operation-meta-line\s*{[\s\S]*padding-right:\s*0;/);
 });
 

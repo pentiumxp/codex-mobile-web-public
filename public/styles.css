@@ -4791,6 +4791,73 @@ html.keyboard-open .side-chat-form textarea {
   white-space: pre-wrap;
 }
 
+.thread-task-card-message {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  border: 1px solid rgba(240, 180, 108, 0.38);
+  border-radius: 8px;
+  background: var(--approval-bg);
+  overflow: hidden;
+}
+
+.thread-task-card-message summary {
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  cursor: pointer;
+  color: var(--text);
+  list-style: none;
+}
+
+.thread-task-card-message summary::-webkit-details-marker {
+  display: none;
+}
+
+.thread-task-card-message summary span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
+}
+
+.thread-task-card-message summary small {
+  color: var(--muted);
+  font-size: var(--content-small-font-size);
+  white-space: nowrap;
+}
+
+.thread-task-card-message summary::after {
+  content: "展开";
+  color: var(--accent-strong);
+  font-size: var(--content-small-font-size);
+  white-space: nowrap;
+}
+
+.thread-task-card-message[open] summary::after {
+  content: "收起";
+}
+
+.thread-task-card-message-body {
+  max-height: min(52vh, 420px);
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  color: var(--code-text);
+  background: var(--code);
+  border-top: 1px solid var(--line-soft);
+  font-family: "Cascadia Mono", "Consolas", "Microsoft YaHei", monospace;
+  font-size: var(--content-code-font-size);
+  line-height: 1.48;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .markdown-body {
   white-space: normal;
   display: grid;
@@ -6916,7 +6983,12 @@ html.embed-hermes #openMenu.split-return-visible {
     width: min(100%, 520px);
     max-height: min(42vh, 280px);
     padding: 0;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: 0 16px 42px rgba(0, 0, 0, 0.34);
     overflow: hidden;
+    isolation: isolate;
     pointer-events: auto;
   }
 
@@ -6928,7 +7000,9 @@ html.embed-hermes #openMenu.split-return-visible {
     margin: 0;
     max-height: min(42vh, 280px);
     padding: 8px 10px;
-    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.26);
+    background: var(--panel);
+    border-color: rgba(122, 199, 167, 0.5);
+    box-shadow: none;
   }
 
   .mobile-operation-sheet .operation-meta-line {

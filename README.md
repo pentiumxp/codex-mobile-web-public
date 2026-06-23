@@ -1,5 +1,7 @@
 # Codex Mobile Web
 
+- 中文说明：v398 将注入到目标线程的跨线程任务卡用户消息改为默认折叠。长任务卡只在消息流里显示来源线程、任务目的和长度摘要，点击可展开，展开内容在卡片内部滚动并可再次收起，避免任务卡正文把后续回执和 Usage 淹没。PWA shell cache 升级到 `codex-mobile-shell-v398`。
+- 中文说明：v397 修正手机端 operation bubble 展开详情不稳定的问题。用户点开气泡后，详情 sheet 会进入 pinned 状态，即使当前 command/file/tool operation 很快完成、后续刷新只剩 reasoning/status，也会保留最后一条 operation 详情，直到用户下拉或再次收起；展开 sheet/card 改为不透明 panel 背景，避免底下对话内容透出影响阅读。PWA shell cache 升级到 `codex-mobile-shell-v397`。
 - 中文说明：v396 修复移动端发送用户消息后，思考过程中同一条用户消息可能出现两张相同卡片的问题。服务端 mux-local `userMessage` echo 和 pending steer echo 现在携带 `clientSubmissionId`；前端线程合并会用提交 id、本地 `local-user-*` id、确定性 `mux-user-*` id 后缀和内容签名收敛同一次提交，只保留优先级更高的 mux/durable 用户消息，同时保留用户后来真正重复发送的同文消息。PWA shell cache 升级到 `codex-mobile-shell-v396`。
 - 中文说明：server-only 修正同一工作区多个正常线程之间无法发任务卡的问题。`/api/threads/:sourceThreadId/task-cards` 现在把精确 `targetThreadId` / `targetThreadTitle` 视为线程身份，只要目标存在且未归档、未删除、非隐藏/子代理，就允许同 cwd 投递；不会再因为另一个同 cwd 线程更新时间更新而拒绝或改投。`targetCwd` / `targetWorkspace` 仍是模糊 workspace 目标，才会选择该 workspace 的当前可见线程。传入源线程自身会返回 `target_thread_self`，归档目标返回 `target_thread_archived`；本次不改变 PWA shell cache。
 - 中文说明：v395 将手机端底部 Command dock 改为悬浮 operation bubble。手机窄屏不再为纯 reasoning 或命令状态常驻占用一行纵向空间；只有真实 command/file/tool/search 正在运行时才在 composer 上方显示一个不参与布局的气泡，内容只保留操作类型、短摘要和运行时长。点击或上滑气泡会展开当前操作详情 sheet，可查看完整命令和参数。桌面和 iPad 宽屏继续保留原一行 Command dock。PWA shell cache 升级到 `codex-mobile-shell-v395`。

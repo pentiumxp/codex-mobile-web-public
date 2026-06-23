@@ -199,6 +199,8 @@ const state = {
   subagentPanelOpen: false,
   liveOperationDockMode: "compact",
   liveOperationDockGesture: null,
+  liveOperationDockPinned: false,
+  liveOperationDockPinnedThreadId: "",
   threadSideChats: new Map(),
   sideChatLoadingThreadId: "",
   sideChatError: "",
@@ -388,7 +390,7 @@ const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v396";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v398";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -10651,10 +10653,38 @@ function updateCurrentThreadHeader(thread = state.currentThread) {
   if (metaEl) metaEl.textContent = "";
 }
 
+function shouldPreservePinnedLiveOperationDock(dock, html = "") {
+  if (!dock || !state.liveOperationDockPinned) return false;
+  if (normalizeLiveOperationDockMode(state.liveOperationDockMode) !== "expanded") return false;
+  if (String(state.liveOperationDockPinnedThreadId || "") !== String(state.currentThreadId || "")) return false;
+  if (!dock.querySelector(".mobile-operation-sheet")) return false;
+  return !String(html || "").includes("mobile-operation-bubble");
+}
+
+function preservePinnedLiveOperationDock(dock) {
+  if (!dock) return false;
+  dock.hidden = false;
+  dock.dataset.mode = "expanded";
+  dock.dataset.mobileVisible = "true";
+  dock.querySelectorAll("[data-live-operation-dock-toggle]").forEach((button) => {
+    button.setAttribute("aria-expanded", "true");
+    button.setAttribute("aria-label", "收起 Command 框");
+    button.setAttribute("title", "收起 Command 框");
+    if (!button.classList.contains("mobile-operation-bubble")) button.textContent = "↓";
+  });
+  return true;
+}
+
 function updateLiveOperationDockHtml(html = "") {
   const dock = $("liveOperationDock");
   if (!dock) return false;
   const next = String(html || "");
+  if (shouldPreservePinnedLiveOperationDock(dock, next)) return preservePinnedLiveOperationDock(dock);
+  if (!next.includes("mobile-operation-bubble")) {
+    state.liveOperationDockPinned = false;
+    state.liveOperationDockPinnedThreadId = "";
+    state.liveOperationDockMode = "compact";
+  }
   if (!next) {
     if (dock.innerHTML) dock.innerHTML = "";
     dock.hidden = true;
@@ -10677,6 +10707,8 @@ function normalizeLiveOperationDockMode(mode) {
 function setLiveOperationDockMode(mode) {
   const next = normalizeLiveOperationDockMode(mode);
   state.liveOperationDockMode = next;
+  state.liveOperationDockPinned = next === "expanded";
+  state.liveOperationDockPinnedThreadId = state.liveOperationDockPinned ? String(state.currentThreadId || "") : "";
   const dock = $("liveOperationDock");
   if (!dock) return;
   dock.dataset.mode = next;
@@ -13064,8 +13096,52 @@ function canRenderImageAttachment(attachment) {
   return Boolean(attachment && attachment.isImage && isLikelyAbsoluteLocalPath(attachment.path));
 }
 
+function isInjectedThreadTaskCardMessage(text) {
+  const value = String(text || "").trimStart();
+  return value.startsWith("[Cross-thread task card sent by source thread]")
+    || value.startsWith("[Cross-thread task card approved]");
+}
+
+function injectedThreadTaskCardLineValue(lines, label) {
+  const pattern = new RegExp(`^${label}:\\s*`, "i");
+  const line = (Array.isArray(lines) ? lines : []).find((entry) => pattern.test(entry));
+  return line ? line.replace(pattern, "").trim() : "";
+}
+
+function injectedThreadTaskCardPurpose(lines) {
+  const title = injectedThreadTaskCardLineValue(lines, "Title");
+  if (title) return title;
+  const bodyLine = (Array.isArray(lines) ? lines : []).find((line) => {
+    const text = String(line || "").trim();
+    return text
+      && !text.startsWith("[Cross-thread task card")
+      && !/^(Source workspace|Source thread|Approval|Workflow mode|Workflow id|Auto-return):/i.test(text);
+  });
+  return bodyLine ? bodyLine.replace(/^#+\s*/, "").trim() : "Cross-thread task card";
+}
+
+function injectedThreadTaskCardSummary(text) {
+  const lines = String(text || "").replace(/\r\n?/g, "\n").split("\n");
+  const source = injectedThreadTaskCardLineValue(lines, "Source thread") || "source thread";
+  const purpose = injectedThreadTaskCardPurpose(lines);
+  return `来源：${truncateSingleLine(source, 72)} · 目的：${truncateSingleLine(purpose, 96)}`;
+}
+
+function renderInjectedThreadTaskCardMessage(text) {
+  const value = String(text || "").replace(/\r\n?/g, "\n").trim();
+  if (!isInjectedThreadTaskCardMessage(value)) return "";
+  const charCount = value.length.toLocaleString();
+  const summary = injectedThreadTaskCardSummary(value);
+  return `<details class="thread-task-card-message" data-thread-task-card-message>
+    <summary><span>${escapeHtml(summary)}</span><small>${escapeHtml(`${charCount} chars`)}</small></summary>
+    <pre class="thread-task-card-message-body">${escapeHtml(value)}</pre>
+  </details>`;
+}
+
 function renderInputText(text) {
   if (!String(text || "").trim()) return "";
+  const taskCardMessage = renderInjectedThreadTaskCardMessage(text);
+  if (taskCardMessage) return taskCardMessage;
   return `<div class="input-text">${escapeHtml(text)}</div>`;
 }
 

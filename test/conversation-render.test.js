@@ -85,6 +85,7 @@ function evaluatedInputContentRenderer() {
 function evaluatedInputContentRendererWithKey(key = "", options = {}) {
   const sources = [
     "escapeHtml",
+    "truncateSingleLine",
     "shortPath",
     "threadTaskCardRequestMarkerMatch",
     "visibleThreadTaskCardCommandText",
@@ -120,6 +121,11 @@ function evaluatedInputContentRendererWithKey(key = "", options = {}) {
     "localAttachmentPreviewUrl",
     "imageSourceForPart",
     "compactStructuredForSignature",
+    "isInjectedThreadTaskCardMessage",
+    "injectedThreadTaskCardLineValue",
+    "injectedThreadTaskCardPurpose",
+    "injectedThreadTaskCardSummary",
+    "renderInjectedThreadTaskCardMessage",
     "renderInputText",
     "renderInputImage",
     "renderInputAttachment",
@@ -1798,6 +1804,33 @@ test("thread task card request prompts render only the original hash command in 
   assert.match(html, /# 发给 Hermes 05-26/);
   assert.doesNotMatch(html, /codex-mobile-thread-task-card-request/);
   assert.doesNotMatch(html, /Return only one XML block/);
+});
+
+test("injected cross-thread task card user messages render collapsed", () => {
+  const renderInputContent = evaluatedInputContentRenderer();
+  const longBody = Array.from({ length: 24 }, (_, index) => `Task detail line ${index + 1}`).join("\n");
+  const html = renderInputContent([
+    {
+      type: "input_text",
+      text: [
+        "[Cross-thread task card sent by source thread]",
+        "",
+        "Source workspace: /Users/hermes-dev/HermesMobileDev/app",
+        "Source thread: Home AI 06-22",
+        "Title: Audit Music plugin workspace",
+        "Approval: target approval bypassed by the thread-callable interface.",
+        "",
+        longBody,
+      ].join("\n"),
+    },
+  ]);
+
+  assert.match(html, /class="thread-task-card-message"/);
+  assert.match(html, /data-thread-task-card-message/);
+  assert.match(html, /来源：Home AI 06-22 · 目的：Audit Music plugin workspace/);
+  assert.match(html, /Audit Music plugin workspace/);
+  assert.match(html, /class="thread-task-card-message-body"/);
+  assert.doesNotMatch(html, /class="input-text"/);
 });
 
 test("user message text before upload summaries still renders jpg thumbnails", () => {
