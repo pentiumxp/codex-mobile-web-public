@@ -35,9 +35,28 @@
   - `codegraph sync && codegraph status` reported the index up to date with
     the existing earlier-engine warning.
 - Next:
-  - Commit, deploy through the Home AI center script, then verify with a
-    harmless exact Healthy `delegate_to_thread` diagnostic card before
-    returning `target_ready_verified` to Home AI.
+  - Completed.
+- Commit/deploy:
+  - Code commit: `8ae26f5 fix: allow exact task-card targets from summaries`.
+  - Deployed through the Home AI center script from
+    `/Users/hermes-dev/HermesMobileDev/app`:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --execute --json`.
+  - Production source ref: `8ae26f500731`, dirty false.
+  - Production target:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Production backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260623T164836Z-plugin-codex-mobile-web-manual`.
+  - `/api/public-config` returned `workspaceDelegation=true` and
+    `clientBuildId=0.1.11|codex-mobile-shell-v400`; no frontend shell bump was
+    needed.
+  - Production `npm run check` passed.
+- Healthy verification:
+  - Exact Healthy diagnostic `delegate_to_thread` succeeded after deployment:
+    card `ttc_66e0f299864a552b0e`, target thread
+    `019ea9d5-8f99-7d92-90a2-e9ae094a7977`, injected turn
+    `019ef562-c8ae-7100-b87a-1b15095933ec`.
+  - Return card to Home AI succeeded: `ttc_484be862e3d89fb7bf`, injected turn
+    `019ef563-1afe-7ac3-9569-4fc971e61c3a`.
 
 # 2026-06-24 - Audit repair: task-card store fail-closed and exact target coverage
 
