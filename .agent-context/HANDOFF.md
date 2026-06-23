@@ -2017,9 +2017,42 @@ The previous full handoff was archived and should be opened only when old proven
   - `git diff --check`
   - `npm test` passed (`632` tests).
 - Deployment status:
-  - Not deployed yet at the time of this handoff entry.
-  - The first deploy attempt was correctly blocked by dirty-source protection;
-    make a local commit, redeploy, then append production verification here.
+  - Deployed from private commit `de2f34867944`.
+  - Command:
+    `npm run --silent deploy:macos -- --target plugin:codex-mobile-web
+    --execute --reason codex-mobile-system-image-render-v384 --json`
+  - Target:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260623T104755Z-plugin-codex-mobile-web-codex-mobile-system-image-render-v384`.
+  - Deploy validation passed:
+    - dirty-source protection clean after local commit;
+    - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` running;
+    - plugin manifest health URL returned HTTP 200;
+    - profile audit reported no blocking issues.
+  - Runtime verification after deploy:
+    - `/api/public-config` returned HTTP 200 with
+      `clientBuildId=0.1.11|codex-mobile-shell-v384` and
+      `shellCacheName=codex-mobile-shell-v384`.
+    - Authenticated `/api/status` returned HTTP 200 and `ready=true`.
+    - A production `compactThread` verification item with assistant
+      `image_url=<local temp png>` produced
+      `/api/generated-images/file?id=<cache-id>`, removed the raw local source
+      from the item, and `/api/generated-images/file` returned HTTP 200 with
+      `Content-Type: image/png`.
+    - A known user upload still served through `/api/uploads/file?id=<upload-id>`
+      with HTTP 200 and `Content-Type: image/jpeg`.
+    - `/?embed=hermes` returned HTTP 200 and CSP frame ancestors included the
+      Home AI origins.
+    - Served `app.js` contains
+      `CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v384"` and
+      `isImageViewUnavailable`.
+  - Browser/DOM limitation:
+    - Browser MCP initialization failed before code execution with
+      `sandboxCwd must be an absolute file URI`.
+    - Local Playwright, Puppeteer, and Chromium were not installed, so this
+      handoff records HTTP/media-route verification rather than a live DOM
+      screenshot from the embedded WebView.
 - Public status:
   - Not pushed to public. Follow the project rule: deploy and validate first,
     then push public only after explicit user instruction.
