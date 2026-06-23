@@ -62,6 +62,7 @@ const {
 } = require("./adapters/mobile-archive-index-service");
 const { createHermesPluginService } = require("./adapters/hermes-plugin-service");
 const { createThreadTaskCardService } = require("./adapters/thread-task-card-service");
+const { createThreadTaskCardRoutingService } = require("./adapters/thread-task-card-routing-service");
 const { createThreadSideChatService } = require("./adapters/thread-side-chat-service");
 const {
   continuationGoalMigrationPlan,
@@ -11772,125 +11773,69 @@ function uniqueThreadTaskCardTargetIds(values, fallback = "") {
   return out;
 }
 
+const threadTaskCardRoutingService = createThreadTaskCardRoutingService({
+  normalizeFsPath,
+  threadDisplayTitle,
+  readThreadListFallback,
+  readThreadSummary: (threadId) => readStateDbThread(threadId) || readStartedThread(threadId) || readRolloutSessionFallbackThread(threadId),
+  visibilityFromGlobalState,
+  threadHasArchiveSignal,
+  isHiddenThread,
+  isSubagentThreadSummary,
+  isSideChatSidecarThreadSummary,
+  createError: (statusCode, code, message, details = {}) => httpStatusErrorWithDetails(statusCode, code, message || code, details),
+});
+
 function threadTaskCardTargetReferenceText(value) {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return String(value.threadId || value.id || value.cwd || value.workspace || value.title || value.name || value.label || "").trim();
-  }
-  return String(value || "").trim();
+  return threadTaskCardRoutingService.targetReferenceText(value);
 }
 
 function threadTaskCardTargetReferenceEntry(kind, value) {
-  const text = threadTaskCardTargetReferenceText(value);
-  if (!text) return null;
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    if (value.threadId || value.id) kind = "threadId";
-    else if (value.cwd || value.workspace) kind = "workspace";
-    else if (value.title || value.name || value.label) kind = "title";
-  }
-  return { kind, text };
+  return threadTaskCardRoutingService.targetReferenceEntry(kind, value);
 }
 
 function threadTaskCardTargetReferenceEntries(body = {}) {
-  const values = [];
-  const push = (kind, value) => {
-    const entry = threadTaskCardTargetReferenceEntry(kind, value);
-    if (entry) values.push(entry);
-  };
-  if (Array.isArray(body.targetThreadIds)) body.targetThreadIds.forEach((value) => push("threadId", value));
-  if (body.targetThreadId) push("threadId", body.targetThreadId);
-  if (Array.isArray(body.targetThreads)) body.targetThreads.forEach((value) => push("thread", value));
-  if (Array.isArray(body.targetThreadRefs)) body.targetThreadRefs.forEach((value) => push("thread", value));
-  if (Array.isArray(body.targetThreadTitles)) body.targetThreadTitles.forEach((value) => push("title", value));
-  if (body.targetThreadTitle) push("title", body.targetThreadTitle);
-  if (values.some((entry) => entry && entry.kind !== "workspace")) return values;
-  if (Array.isArray(body.targetWorkspaces)) body.targetWorkspaces.forEach((value) => push("workspace", value));
-  if (body.targetWorkspace) push("workspace", body.targetWorkspace);
-  if (body.targetWorkspaceId) push("workspace", body.targetWorkspaceId);
-  if (Array.isArray(body.targetCwds)) body.targetCwds.forEach((value) => push("workspace", value));
-  if (body.targetCwd) push("workspace", body.targetCwd);
-  return values;
+  return threadTaskCardRoutingService.targetReferenceEntries(body);
 }
 
 function threadTaskCardTargetReferences(body = {}) {
-  return threadTaskCardTargetReferenceEntries(body).map((entry) => entry.text).filter(Boolean);
+  return threadTaskCardRoutingService.targetReferences(body);
 }
 
 function isThreadIdLike(value) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || "").trim());
+  return threadTaskCardRoutingService.isThreadIdLike(value);
 }
 
 function threadTaskCardTargetUpdatedAt(thread) {
-  const value = Number(thread && (thread.updatedAt || thread.updated_at || thread.updatedAtMs || thread.updated_at_ms) || 0);
-  return Number.isFinite(value) ? value : 0;
+  return threadTaskCardRoutingService.targetUpdatedAt(thread);
 }
 
 function publicThreadTaskCardTarget(thread) {
-  if (!thread || typeof thread !== "object") return null;
-  return {
-    threadId: String(thread.id || ""),
-    title: threadDisplayTitle(thread),
-    cwd: String(thread.cwd || ""),
-    updatedAt: threadTaskCardTargetUpdatedAt(thread),
-  };
+  return threadTaskCardRoutingService.publicTarget(thread);
 }
 
 function threadTaskCardTargetError(code, message, details = {}, statusCode = 400) {
-  return httpStatusErrorWithDetails(statusCode, code, message || code, details);
+  return threadTaskCardRoutingService.targetError(code, message, details, statusCode);
 }
 
 function threadTaskCardTargetVisibility(options = {}) {
-  if (options.visibility && typeof options.visibility === "object") return options.visibility;
-  if (options.globalState && typeof options.globalState === "object") return visibilityFromGlobalState(options.globalState);
-  return visibilityFromGlobalState();
+  return threadTaskCardRoutingService.targetVisibility(options);
 }
 
 function threadTaskCardVisibleTargetThreads(options = {}) {
-  const rawThreads = Array.isArray(options.visibleThreads)
-    ? options.visibleThreads
-    : readThreadListFallback(500, { archived: false });
-  const byId = new Map();
-  for (const thread of rawThreads || []) {
-    const id = String(thread && thread.id || "").trim();
-    if (!id || byId.has(id)) continue;
-    if (threadHasArchiveSignal(thread) || isSubagentThreadSummary(thread) || isSideChatSidecarThreadSummary(thread)) continue;
-    byId.set(id, thread);
-  }
-  return [...byId.values()];
+  return threadTaskCardRoutingService.visibleTargetThreads(options);
 }
 
 function threadTaskCardCanonicalTargetForCwd(cwd, visibleThreads = []) {
-  const wanted = normalizeFsPath(cwd || "");
-  if (!wanted) return null;
-  let best = null;
-  for (const thread of visibleThreads || []) {
-    if (!thread || normalizeFsPath(thread.cwd || "") !== wanted) continue;
-    if (!best || threadTaskCardTargetUpdatedAt(thread) > threadTaskCardTargetUpdatedAt(best)) {
-      best = thread;
-    }
-  }
-  return best;
+  return threadTaskCardRoutingService.canonicalTargetForCwd(cwd, visibleThreads);
 }
 
 function threadTaskCardCanonicalTargetForThread(thread, visibleThreads = []) {
-  if (!thread || !thread.cwd) return thread || null;
-  return threadTaskCardCanonicalTargetForCwd(thread.cwd, visibleThreads) || thread;
+  return threadTaskCardRoutingService.canonicalTargetForThread(thread, visibleThreads);
 }
 
 function threadTaskCardCanonicalVisibleTargets(visibleThreads = []) {
-  const out = [];
-  const seenCwds = new Set();
-  for (const thread of [...(visibleThreads || [])].sort((a, b) => threadTaskCardTargetUpdatedAt(b) - threadTaskCardTargetUpdatedAt(a))) {
-    if (!thread || !thread.id) continue;
-    const cwd = normalizeFsPath(thread.cwd || "");
-    if (!cwd) {
-      out.push(thread);
-      continue;
-    }
-    if (seenCwds.has(cwd)) continue;
-    seenCwds.add(cwd);
-    out.push(thread);
-  }
-  return out;
+  return threadTaskCardRoutingService.canonicalVisibleTargets(visibleThreads);
 }
 
 function readThreadTaskCardTargetSummary(threadId, options = {}) {
@@ -11899,110 +11844,15 @@ function readThreadTaskCardTargetSummary(threadId, options = {}) {
 }
 
 function assertThreadTaskCardTargetDeliverable(thread, details = {}, options = {}) {
-  const target = publicThreadTaskCardTarget(thread);
-  if (!thread || !String(thread.id || "").trim()) {
-    throw threadTaskCardTargetError(
-      "target_thread_not_visible",
-      "Target thread is not visible or is not a current deliverable thread.",
-      details,
-      404,
-    );
-  }
-  if (threadHasArchiveSignal(thread)) {
-    throw threadTaskCardTargetError(
-      "target_thread_archived",
-      "Target thread is archived, deleted, or otherwise not deliverable.",
-      Object.assign({}, details, { requestedTarget: target }),
-      409,
-    );
-  }
-  if (isSubagentThreadSummary(thread) || isSideChatSidecarThreadSummary(thread)) {
-    throw threadTaskCardTargetError(
-      "target_thread_not_visible",
-      "Target thread is not visible or is not a current deliverable thread.",
-      Object.assign({}, details, { requestedTarget: target }),
-      404,
-    );
-  }
-  if (isHiddenThread(thread, threadTaskCardTargetVisibility(options))) {
-    throw threadTaskCardTargetError(
-      "target_thread_not_visible",
-      "Target thread is not visible or is not a current deliverable thread.",
-      Object.assign({}, details, { requestedTarget: target }),
-      404,
-    );
-  }
-  return String(thread.id || "");
+  return threadTaskCardRoutingService.assertTargetDeliverable(thread, details, options);
 }
 
 function resolveThreadTaskCardTargetReference(value, sourceThreadId = "", options = {}) {
-  const entry = value && typeof value === "object" && !Array.isArray(value) && value.text
-    ? value
-    : threadTaskCardTargetReferenceEntry("thread", value);
-  const raw = String(entry && entry.text || "").trim();
-  if (!raw) return "";
-  if (raw === String(sourceThreadId || "")) {
-    throw threadTaskCardTargetError(
-      "target_thread_self",
-      "Target thread must be different from the source thread.",
-      { sourceThreadId: String(sourceThreadId || "") },
-      400,
-    );
-  }
-  const visibleThreads = threadTaskCardVisibleTargetThreads(options);
-  const visibleById = new Map(visibleThreads.map((thread) => [String(thread.id || ""), thread]));
-  const currentVisible = visibleById.get(raw);
-  if (currentVisible) {
-    return assertThreadTaskCardTargetDeliverable(currentVisible, {
-      reference: raw,
-      referenceKind: entry.kind || "thread",
-    }, options);
-  }
-  const direct = isThreadIdLike(raw) ? readThreadTaskCardTargetSummary(raw, options) : null;
-  if (direct && String(direct.id || "") === raw) {
-    return assertThreadTaskCardTargetDeliverable(direct, {
-      reference: raw,
-      referenceKind: entry.kind || "threadId",
-    }, options);
-  }
-  const lowered = raw.toLowerCase();
-  const rawPath = normalizeFsPath(raw);
-  const byCwd = threadTaskCardCanonicalTargetForCwd(rawPath, visibleThreads);
-  if (byCwd && String(byCwd.id || "") !== String(sourceThreadId || "")) return String(byCwd.id || "");
-  for (const thread of visibleThreads) {
-    if (!thread || String(thread.id || "") === String(sourceThreadId || "")) continue;
-    const id = String(thread.id || "").trim();
-    const title = threadDisplayTitle(thread);
-    if (id.toLowerCase() === lowered || String(title || "").trim().toLowerCase() === lowered) {
-      return assertThreadTaskCardTargetDeliverable(thread, {
-        reference: raw,
-        referenceKind: entry.kind || "thread",
-      }, options);
-    }
-  }
-  throw threadTaskCardTargetError(
-    "target_thread_not_visible",
-    "Target thread is not visible or is not a current deliverable thread.",
-    {
-      reference: raw,
-      referenceKind: entry.kind || "thread",
-    },
-    404,
-  );
+  return threadTaskCardRoutingService.resolveTargetReference(value, sourceThreadId, options);
 }
 
 function resolvedThreadTaskCardTargetIds(body = {}, sourceThreadId = "", options = {}) {
-  const visibleThreads = threadTaskCardVisibleTargetThreads(options);
-  const seen = new Set();
-  const out = [];
-  for (const reference of threadTaskCardTargetReferenceEntries(body)) {
-    const id = resolveThreadTaskCardTargetReference(reference, sourceThreadId, Object.assign({}, options, { visibleThreads }));
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    out.push(id);
-    if (out.length >= 12) break;
-  }
-  return out;
+  return threadTaskCardRoutingService.resolvedTargetIds(body, sourceThreadId, options);
 }
 
 function threadTaskCardThreadCallIdempotencyKey(sourceThreadId, body = {}, targetThreadIds = []) {

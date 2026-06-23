@@ -3108,6 +3108,53 @@ The previous full handoff was archived and should be opened only when old proven
   - This has not been pushed to public. Follow the release-order rule: wait for
     production/user confirmation before any public sync/push.
 
+## 2026-06-24 - Phase 1 architecture refactor: task-card target routing service
+
+- User goal:
+  - Execute the Codex Mobile Web system-level refactor in phases.
+  - Keep this in development validation until all phases are complete and
+    verified; do not deploy from this phase alone.
+  - Follow Home AI central platform/root-cause/fallback governance: prefer
+    root-cause closure, avoid broad fallbacks, and document durable ownership.
+- Phase 1 scope:
+  - Extract cross-thread task-card target routing and deliverability rules from
+    `server.js` into `adapters/thread-task-card-routing-service.js`.
+  - Keep `server.js` as HTTP/app-server composition glue with thin wrappers so
+    existing routes, dynamic tool handling, MCP/CLI fallback, and tests keep
+    the same public function names.
+  - No fallback behavior was added.
+- Changed files:
+  - `adapters/thread-task-card-routing-service.js`
+  - `server.js`
+  - `test/thread-task-card-routing-service.test.js`
+  - `test/thread-task-card-route.test.js`
+  - `package.json`
+  - `docs/MODULES.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/COMPLEX_FEATURE_PATHS.md`
+- Validation:
+  - Focused task-card and related suites passed: `159` tests across
+    `test/thread-task-card-routing-service.test.js`,
+    `test/protocol.test.js`, `test/thread-task-card-route.test.js`,
+    `test/thread-task-card-service.test.js`,
+    `test/thread-task-card-harness.test.js`,
+    `test/conversation-render.test.js`, and
+    `test/workspace-source-write-guard-service.test.js`.
+  - `npm run check`
+  - `npm test` passed (`668` tests).
+  - `npm run check:macos`
+  - `git diff --check`
+  - Home AI central checker:
+    `node scripts/plugin-workspace-platform-contract-check.js --plugin codex-mobile --json`
+    returned `ok: true`; existing warning: `handoff_pointer_missing`.
+  - `codegraph sync && codegraph status` reported the index is up to date; it
+    still warns the index was built by an earlier engine version.
+- Deployment status:
+  - Not deployed.
+  - Not pushed to public.
+  - This is one completed development phase, not completion of the full
+    system-level refactor objective.
+
 ## 2026-06-23 - System/assistant image output media contract fix
 
 - User-facing symptom:

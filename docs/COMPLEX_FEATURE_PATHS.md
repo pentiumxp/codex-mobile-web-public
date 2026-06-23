@@ -432,6 +432,7 @@ Implementation path:
    auto-return creation.
 11. The current implementation uses:
    - `adapters/thread-task-card-service.js`
+   - `adapters/thread-task-card-routing-service.js`
    - `POST /api/thread-task-cards`
    - `POST /api/threads/:sourceThreadId/task-cards`
    - `GET /api/thread-task-cards/:id`
@@ -446,7 +447,8 @@ Implementation path:
     `跨工作区委派` is enabled. Do not enable that bypass for ordinary browser
     composer or `#` draft-created cards.
 13. Keep `test/thread-task-card-harness.test.js` green, and cover real behavior
-   with `test/thread-task-card-service.test.js` and
+   with `test/thread-task-card-service.test.js`,
+   `test/thread-task-card-routing-service.test.js`, and
    `test/thread-task-card-route.test.js`.
 14. Composer input is routed into the natural-language task-card flow when it
     starts with a leading non-empty `#` command. Plain `# ...` is the manual
