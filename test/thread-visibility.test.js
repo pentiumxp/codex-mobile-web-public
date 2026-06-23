@@ -676,6 +676,7 @@ test("rollout session fallback carries agent metadata so subagent rows stay hidd
 
 test("thread list route uses rollout-aware fallback aggregator", () => {
   const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+  const cacheServiceJs = fs.readFileSync(path.resolve(__dirname, "..", "adapters", "thread-list-fallback-cache-service.js"), "utf8");
   const routeIndex = serverJs.indexOf('if (url.pathname === "/api/threads" && req.method === "GET")');
   assert.ok(routeIndex >= 0, "missing thread list route");
   const routeBody = serverJs.slice(routeIndex, serverJs.indexOf('const threadRename = url.pathname.match', routeIndex));
@@ -684,7 +685,8 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(serverJs, /function readThreadListFallback\(/);
   assert.match(serverJs, /function logThreadList\(event, details = \{\}\)/);
   assert.match(serverJs, /const THREAD_LIST_FALLBACK_CACHE_TTL_MS[\s\S]*\|\| "0"/);
-  assert.match(serverJs, /const threadListFallbackCache = new Map\(\);/);
+  assert.match(serverJs, /createThreadListFallbackCacheService/);
+  assert.match(serverJs, /const threadListFallbackCacheService = createThreadListFallbackCacheService\(\{\s*ttlMs: THREAD_LIST_FALLBACK_CACHE_TTL_MS,/);
   assert.match(serverJs, /function clearThreadListFallbackCache\(\)/);
   assert.match(serverJs, /function upsertThreadListFallbackCacheThread\(thread, options = \{\}\)/);
   assert.match(serverJs, /function removeThreadFromThreadListFallbackCache\(threadId\)/);
@@ -694,10 +696,12 @@ test("thread list route uses rollout-aware fallback aggregator", () => {
   assert.match(serverJs, /function shouldDeferThreadListFallbackForActiveDetail\(\{ deferFallback, cursor, archived, searchTerm, cwd \} = \{\}\)/);
   assert.match(serverJs, /function threadListFallbackCacheKey\(limit, filters = \{\}\)/);
   assert.match(serverJs, /function readThreadListFallbackCache\(key\)/);
-  assert.doesNotMatch(functionBody(serverJs, "threadListFallbackCacheKey"), /fileFingerprint/);
-  assert.match(functionBody(serverJs, "readThreadListFallbackCache"), /THREAD_LIST_FALLBACK_CACHE_TTL_MS > 0/);
-  assert.match(serverJs, /diagnostics\.cacheHit = true/);
-  assert.match(serverJs, /diagnostics\.cacheIncrementalUpdates = cached\.incrementalUpdates/);
+  assert.match(serverJs, /function threadListFallbackCacheKey\(limit, filters = \{\}\) \{\s*return threadListFallbackCacheService\.cacheKey\(limit, filters\);\s*\}/);
+  assert.match(functionBody(serverJs, "readThreadListFallbackCache"), /threadListFallbackCacheService\.read\(key\)/);
+  assert.doesNotMatch(cacheServiceJs, /fileFingerprint/);
+  assert.match(cacheServiceJs, /ttlMs > 0/);
+  assert.match(cacheServiceJs, /diagnostics\.cacheHit = true/);
+  assert.match(cacheServiceJs, /diagnostics\.cacheIncrementalUpdates = cached\.incrementalUpdates/);
   assert.match(routeBody, /mobileDiagnostics[\s\S]*threadListTimings/);
   assert.match(routeBody, /fallbackCacheHit: Boolean\(fallbackDiagnostics\.cacheHit\)/);
   assert.match(routeBody, /appServerMs/);

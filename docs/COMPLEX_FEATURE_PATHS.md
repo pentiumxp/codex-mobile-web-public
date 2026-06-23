@@ -67,8 +67,10 @@ Implementation path:
 4. If app-server `thread/list` can omit rows, merge bounded state DB and
    session-index fallback rows, then dedupe by thread id and reapply filters.
 5. Browser changes require a `CLIENT_BUILD_ID` / `public/sw.js` cache bump.
-6. Test with `test/thread-visibility.test.js` and `test/mobile-viewport.test.js`;
-   add thread detail or render tests if the detail shape changes.
+6. Test with `test/thread-visibility.test.js`,
+   `test/thread-list-fallback-cache-service.test.js`, and
+   `test/mobile-viewport.test.js`; add thread detail or render tests if the
+   detail shape changes.
 
 ## Workspace Token Usage Ledger
 

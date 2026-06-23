@@ -1,0 +1,238 @@
+"use strict";
+
+function clonePlainJson(value) {
+  if (value === undefined) return undefined;
+  return JSON.parse(JSON.stringify(value));
+}
+
+function createThreadListFallbackCacheService(options = {}) {
+  const ttlMs = Math.max(0, Number(options.ttlMs || 0));
+  const maxEntries = Math.max(1, Number(options.maxEntries || 12));
+  const now = typeof options.now === "function" ? options.now : Date.now;
+  const readGlobalState = typeof options.readGlobalState === "function" ? options.readGlobalState : () => ({});
+  const normalizeFsPath = typeof options.normalizeFsPath === "function"
+    ? options.normalizeFsPath
+    : (value) => String(value || "");
+  const normalizeThreadId = typeof options.normalizeThreadId === "function"
+    ? options.normalizeThreadId
+    : (value) => String(value || "").trim();
+  const visibleWorkspaceRoots = typeof options.visibleWorkspaceRoots === "function"
+    ? options.visibleWorkspaceRoots
+    : () => new Set();
+  const visibleProjectlessThreadIds = typeof options.visibleProjectlessThreadIds === "function"
+    ? options.visibleProjectlessThreadIds
+    : () => new Set();
+  const mergeThreadDisplaySummary = typeof options.mergeThreadDisplaySummary === "function"
+    ? options.mergeThreadDisplaySummary
+    : (base, display) => display || base;
+  const normalizeThreadSummaryLiveStatus = typeof options.normalizeThreadSummaryLiveStatus === "function"
+    ? options.normalizeThreadSummaryLiveStatus
+    : (thread) => thread;
+  const filterFallbackThreads = typeof options.filterFallbackThreads === "function"
+    ? options.filterFallbackThreads
+    : (threads) => threads || [];
+  const mergeThreadSummaryList = typeof options.mergeThreadSummaryList === "function"
+    ? options.mergeThreadSummaryList
+    : (threads) => threads || [];
+  const readStateDbFallback = typeof options.readStateDbFallback === "function"
+    ? options.readStateDbFallback
+    : () => [];
+  const readRolloutSessionFallback = typeof options.readRolloutSessionFallback === "function"
+    ? options.readRolloutSessionFallback
+    : () => [];
+  const readSessionIndexFallback = typeof options.readSessionIndexFallback === "function"
+    ? options.readSessionIndexFallback
+    : () => [];
+
+  const cache = new Map();
+
+  function clear() {
+    cache.clear();
+  }
+
+  function removeThread(threadId) {
+    const id = String(threadId || "").trim();
+    if (!id || !cache.size) return false;
+    let removed = false;
+    const nowMs = now();
+    for (const entry of cache.values()) {
+      const before = Array.isArray(entry.threads) ? entry.threads.length : 0;
+      entry.threads = (entry.threads || []).filter((thread) => String(thread && thread.id || "") !== id);
+      if (entry.threads.length !== before) {
+        removed = true;
+        entry.updatedAt = nowMs;
+        entry.incrementalUpdates = Number(entry.incrementalUpdates || 0) + 1;
+      }
+    }
+    return removed;
+  }
+
+  function cloneFilters(filters = {}) {
+    return {
+      cwd: String(filters.cwd || ""),
+      searchTerm: String(filters.searchTerm || ""),
+      globalState: filters.globalState && typeof filters.globalState === "object"
+        ? clonePlainJson(filters.globalState)
+        : null,
+    };
+  }
+
+  function upsertThread(thread, upsertOptions = {}) {
+    const id = String(thread && thread.id || "").trim();
+    if (!id || !cache.size) return false;
+    const addIfMissing = upsertOptions.addIfMissing === true;
+    const nowMs = now();
+    let changed = false;
+    for (const entry of cache.values()) {
+      const existing = (entry.threads || []).find((candidate) => String(candidate && candidate.id || "") === id) || null;
+      if (!existing && !addIfMissing) continue;
+      const candidate = normalizeThreadSummaryLiveStatus(mergeThreadDisplaySummary(existing, thread) || thread);
+      const filters = entry.filters || {};
+      const filtered = filterFallbackThreads([candidate], {
+        cwd: filters.cwd,
+        searchTerm: filters.searchTerm,
+        globalState: filters.globalState || undefined,
+      });
+      const withoutThread = (entry.threads || []).filter((item) => String(item && item.id || "") !== id);
+      entry.threads = filtered.length
+        ? mergeThreadSummaryList([...withoutThread, filtered[0]]).slice(0, Math.max(1, Number(entry.limit || 80)))
+        : withoutThread;
+      entry.updatedAt = nowMs;
+      entry.incrementalUpdates = Number(entry.incrementalUpdates || 0) + 1;
+      changed = true;
+    }
+    return changed;
+  }
+
+  function updateStatus(threadId, status, meta = {}) {
+    const id = String(threadId || "").trim();
+    if (!id || !cache.size) return false;
+    const patch = {
+      id,
+      status: status || { type: "notLoaded" },
+      updatedAt: Math.floor(now() / 1000),
+    };
+    const source = String(meta.source || "").trim();
+    const turnId = String(meta.turnId || "").trim();
+    if (source) patch.mobileStatusSource = source;
+    if (turnId) patch.mobileStatusTurnId = turnId;
+    return upsertThread(patch, { addIfMissing: false });
+  }
+
+  function applyStatusPayload(payload) {
+    if (!payload || payload.type !== "notification" || payload.method !== "thread/status/changed") return false;
+    const params = payload.params || {};
+    return updateStatus(params.threadId, params.status, {
+      source: params.source,
+      turnId: params.turnId,
+    });
+  }
+
+  function cacheKey(limit, filters = {}) {
+    const globalState = filters.globalState || readGlobalState();
+    const roots = [...visibleWorkspaceRoots(globalState)].map(normalizeFsPath).filter(Boolean).sort();
+    const projectlessIds = [...visibleProjectlessThreadIds(globalState)].map(normalizeThreadId).filter(Boolean).sort();
+    return JSON.stringify({
+      limit: Math.max(1, Math.min(200, Number(limit || 80))),
+      cwd: normalizeFsPath(filters.cwd || ""),
+      search: String(filters.searchTerm || "").trim().toLowerCase(),
+      roots,
+      projectlessIds,
+    });
+  }
+
+  function remember(key, threads, timings = {}, rememberOptions = {}) {
+    if (!key) return;
+    const nowMs = now();
+    cache.set(key, {
+      cachedAt: nowMs,
+      updatedAt: nowMs,
+      limit: Math.max(1, Math.min(200, Number(rememberOptions.limit || 80))),
+      filters: cloneFilters(rememberOptions.filters || {}),
+      threads: clonePlainJson(Array.isArray(threads) ? threads : []),
+      timings: Object.assign({}, timings || {}),
+      incrementalUpdates: 0,
+    });
+    while (cache.size > maxEntries) {
+      const oldestKey = cache.keys().next().value;
+      if (oldestKey) cache.delete(oldestKey);
+    }
+  }
+
+  function read(key) {
+    if (!key) return null;
+    const cached = cache.get(key);
+    if (!cached) return null;
+    if (ttlMs > 0
+      && cached.cachedAt
+      && now() - Number(cached.cachedAt || 0) > ttlMs) {
+      cache.delete(key);
+      return null;
+    }
+    return {
+      threads: clonePlainJson(cached.threads || []),
+      timings: Object.assign({}, cached.timings || {}),
+      cachedAt: Number(cached.cachedAt || 0),
+      updatedAt: Number(cached.updatedAt || cached.cachedAt || 0),
+      incrementalUpdates: Number(cached.incrementalUpdates || 0),
+    };
+  }
+
+  function readFallback(limit = 80, filters = {}) {
+    const diagnostics = filters.diagnostics && typeof filters.diagnostics === "object" ? filters.diagnostics : null;
+    const key = cacheKey(limit, filters);
+    const cached = read(key);
+    if (cached) {
+      if (diagnostics) {
+        diagnostics.cacheHit = true;
+        diagnostics.stateDbMs = 0;
+        diagnostics.rolloutMs = 0;
+        diagnostics.sessionIndexMs = 0;
+        diagnostics.cachedSourceTimings = cached.timings;
+        diagnostics.cacheAgeMs = cached.updatedAt ? Math.max(0, now() - cached.updatedAt) : 0;
+        diagnostics.cacheIncrementalUpdates = cached.incrementalUpdates || 0;
+      }
+      return cached.threads;
+    }
+    if (diagnostics) diagnostics.cacheHit = false;
+    const stateDbStartedAtMs = now();
+    const stateDbFallback = readStateDbFallback(limit, filters);
+    if (diagnostics) diagnostics.stateDbMs = Math.max(0, now() - stateDbStartedAtMs);
+    const rolloutStartedAtMs = now();
+    const rolloutFallback = readRolloutSessionFallback(limit, filters);
+    if (diagnostics) diagnostics.rolloutMs = Math.max(0, now() - rolloutStartedAtMs);
+    const sessionIndexStartedAtMs = now();
+    const sessionIndexFallback = readSessionIndexFallback(limit, filters);
+    if (diagnostics) diagnostics.sessionIndexMs = Math.max(0, now() - sessionIndexStartedAtMs);
+    const threads = mergeThreadSummaryList([
+      ...stateDbFallback,
+      ...rolloutFallback,
+      ...sessionIndexFallback,
+    ]).slice(0, limit);
+    remember(key, threads, {
+      stateDbMs: diagnostics && diagnostics.stateDbMs || 0,
+      rolloutMs: diagnostics && diagnostics.rolloutMs || 0,
+      sessionIndexMs: diagnostics && diagnostics.sessionIndexMs || 0,
+    }, {
+      limit,
+      filters,
+    });
+    return threads;
+  }
+
+  return {
+    applyStatusPayload,
+    cacheKey,
+    clear,
+    read,
+    readFallback,
+    remember,
+    removeThread,
+    upsertThread,
+    updateStatus,
+  };
+}
+
+module.exports = {
+  createThreadListFallbackCacheService,
+};
