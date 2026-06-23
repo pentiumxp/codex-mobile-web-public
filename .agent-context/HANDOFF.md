@@ -63,6 +63,12 @@
   - This is server-only; no PWA shell/cache bump.
   - No live same-workspace test card was created because there is no dry-run
     route and a real card would pollute the audit/implementation threads.
+  - Home AI later verified the real same-workspace exact target path:
+    `Home AI 06-22` sent a read-only Music plugin audit request to exact
+    `targetThreadId=019ef506-cac2-76f2-a1df-46ed6de1e7eb`
+    (`Plugin Workspace Audit`) with the same app cwd, and the card succeeded.
+    Verification card id: `ttc_f916f01ec635a3c105`; injected target turn id:
+    `019ef51d-b711-74a0-a658-c10ae64343e6`.
   - Public was not pushed.
 
 # 2026-06-23 - Server raw exec command text projection fix
