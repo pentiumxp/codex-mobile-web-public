@@ -583,13 +583,14 @@ steerable, it resumes the thread and starts a new turn with a bounded
 continuation prompt. A thread-level cooldown prevents reconnect flapping from
 creating repeated continuation turns.
 
-Browser-selected model, reasoning effort, and permission mode are persisted in
-the browser draft store by thread/workspace key even when the composer text is
-empty. Reopening the app or switching away and back should restore that runtime
-selection. Once an existing-thread non-steering send succeeds, Mobile Web clears
-only text and attachments, then writes the runtime-only draft back under the
-thread key. New-thread send captures selected runtime values before creation and
-writes them back under the newly created thread key after the thread id is
+Browser-selected model, reasoning effort, permission mode, and the Fast tag are
+persisted in the browser draft store by thread/workspace key even when the
+composer text is empty. Reopening the app or switching away and back should
+restore that runtime selection for the current target only; Fast is not a global
+browser flag. Once an existing-thread non-steering send succeeds, Mobile Web
+clears only text and attachments, then writes the runtime-only draft back under
+the thread key. New-thread send captures selected runtime values before creation
+and writes them back under the newly created thread key after the thread id is
 known. This avoids an immediate UI fallback to stale thread metadata while the
 new turn is starting and before app-server state DB metadata catches up.
 

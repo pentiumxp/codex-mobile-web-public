@@ -336,7 +336,7 @@ const state = {
   runningThreadHintedAtById: loadNumberMapStorage("codexMobileRunningThreadHintedAtById", {}),
   unreadThreadIds: loadStringSetStorage("codexMobileUnreadThreadIds"),
   rolloutWarningDismissals: loadStringSetStorage("codexMobileDismissedRolloutWarnings"),
-  codexFastMode: localStorage.getItem("codexMobileCodexFastMode") === "on",
+  codexFastMode: false,
   fontSize: localStorage.getItem("codexMobileFontSize")
     || (INITIAL_PLUGIN_EMBED.appearance && INITIAL_PLUGIN_EMBED.appearance.fontSize)
     || "default",
@@ -388,7 +388,7 @@ const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v376";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v377";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -3776,7 +3776,7 @@ function showComposerFastHint(enabled) {
   if (state.composerFastHintTimer) window.clearTimeout(state.composerFastHintTimer);
   el.classList.remove("error");
   el.textContent = enabled ? "Fast on" : "Fast off";
-  el.title = enabled ? "Fast mode enabled for the next turn" : "Fast mode disabled";
+  el.title = enabled ? "Fast tag enabled for this thread" : "Fast tag disabled for this thread";
   state.composerFastHintTimer = window.setTimeout(() => {
     state.composerFastHintTimer = null;
     restoreConnectionState();
@@ -4017,10 +4017,7 @@ function applyDraftRuntimeSelection(draft) {
   const model = String(draft && draft.model || "");
   const effort = String(draft && draft.effort || "");
   const permission = effectiveComposerPermissionMode(draft && draft.permissionMode);
-  if (draft && draft.fastMode === true) {
-    state.codexFastMode = true;
-    localStorage.setItem(STORAGE_CODEX_FAST_MODE, "on");
-  }
+  state.codexFastMode = Boolean(draft && draft.fastMode === true);
   if (state.newThreadDraft) {
     state.newThreadTitle = String(draft && draft.threadTitle || "").trim();
     state.newThreadModel = model && state.modelOptions.includes(model) ? model : defaultNewThreadModel();
@@ -16859,6 +16856,7 @@ function resetComposerRuntimeSelection() {
   state.composerModel = "";
   state.composerEffort = "";
   state.composerPermissionMode = "";
+  state.codexFastMode = false;
   closeComposerRuntimeMenu();
   closeComposerIntentMenu();
   state.quotaDetailsOpen = false;
@@ -16889,10 +16887,17 @@ function codexFastCommandEnabled() {
   return Boolean(state.codexFastMode);
 }
 
+function clearLegacyCodexFastModeStorage() {
+  try {
+    localStorage.removeItem(STORAGE_CODEX_FAST_MODE);
+  } catch (_) {
+    // Ignore storage errors; Fast state is now stored in the per-target draft.
+  }
+}
+
 function setCodexFastCommandEnabled(enabled) {
   state.codexFastMode = Boolean(enabled);
-  if (state.codexFastMode) localStorage.setItem(STORAGE_CODEX_FAST_MODE, "on");
-  else localStorage.removeItem(STORAGE_CODEX_FAST_MODE);
+  clearLegacyCodexFastModeStorage();
   renderComposerSettings();
   updateComposerControls();
   saveCurrentDraftNow();
@@ -17069,10 +17074,11 @@ function renderComposerSettings() {
   const selectedEffort = selectedComposerEffort();
   const selectedPermission = selectedComposerPermissionMode();
   const fastEnabled = codexFastCommandEnabled();
+  const fastScopeLabel = state.newThreadDraft ? "this new thread" : "this thread";
   commandControl.classList.toggle("is-fast", fastEnabled);
   commandControl.setAttribute("aria-pressed", fastEnabled ? "true" : "false");
-  commandControl.title = fastEnabled ? "Fast mode on" : "Fast mode off";
-  commandControl.setAttribute("aria-label", fastEnabled ? "Fast mode on" : "Fast mode off");
+  commandControl.title = fastEnabled ? `Fast tag on for ${fastScopeLabel}` : `Fast tag off for ${fastScopeLabel}`;
+  commandControl.setAttribute("aria-label", fastEnabled ? `Fast tag on for ${fastScopeLabel}` : `Fast tag off for ${fastScopeLabel}`);
   commandControl.disabled = state.composerBusy;
   const controls = [
     [modelControl, selectedModel ? labelForModel(selectedModel) : "--", state.newThreadDraft || state.composerModel ? "下一轮使用" : "当前记录"],
@@ -18172,12 +18178,16 @@ function wireUi() {
   const commandControl = $("composerCommandControl");
   if (commandControl) {
     let lastFastToggleAt = 0;
+    let suppressSyntheticFastToggleUntil = 0;
     const handleFastToggle = (event) => {
       event.preventDefault();
       event.stopPropagation();
       const now = Date.now();
+      const eventType = String(event.type || "");
+      if ((eventType === "click" || eventType === "touchend") && now < suppressSyntheticFastToggleUntil) return;
       if (now - lastFastToggleAt < 650) return;
       lastFastToggleAt = now;
+      if (eventType === "pointerdown") suppressSyntheticFastToggleUntil = now + 2200;
       if (commandControl.disabled) return;
       closeComposerRuntimeMenu();
       setCodexFastCommandEnabled(!codexFastCommandEnabled());

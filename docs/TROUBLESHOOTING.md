@@ -1220,15 +1220,17 @@ running, a follow-up message may be sent as `turn/steer`. That path steers the
 already-started turn and cannot change its model or reasoning effort; wait for a
 new turn when verifying runtime-setting changes.
 
-If model/effort changes disappear after closing and reopening Mobile Web, or
-immediately after pressing Send, inspect the browser draft map
-`codexMobileDraftsV1`. Runtime-only drafts are valid: `model`, `effort`, or
-`permissionMode` should keep a thread-keyed draft even when `text` is empty and
-there are no attachments. Existing-thread send success should clear only text
-and attachments, then write the runtime-only draft back while the new turn is
-starting. New-thread send success should move the selected runtime values from
-the workspace draft to a thread-keyed runtime draft once the new thread id is
-known.
+If model/effort/Fast changes disappear after closing and reopening Mobile Web,
+or immediately after pressing Send, inspect the browser draft map
+`codexMobileDraftsV1`. Runtime-only drafts are valid: `model`, `effort`,
+`permissionMode`, or `fastMode: true` should keep a thread-keyed draft even when
+`text` is empty and there are no attachments. Fast is intentionally a
+thread-local tag; the retired global `codexMobileCodexFastMode` flag should not
+restore Fast after `codex-mobile-shell-v377`. Existing-thread send success should
+clear only text and attachments, then write the runtime-only draft back while
+the new turn is starting. New-thread send success should move the selected
+runtime values from the workspace draft to a thread-keyed runtime draft once the
+new thread id is known.
 
 If a continuation starts with unexpectedly high input tokens, inspect the bootstrap size and source handoff handling:
 

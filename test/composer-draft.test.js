@@ -58,6 +58,8 @@ test("switching targets saves the previous draft and restores the next draft", (
 });
 
 test("composer runtime selections persist without typed text", () => {
+  assert.doesNotMatch(appJs, /codexFastMode:\s*localStorage\.getItem/, "Fast should not restore from a global browser flag");
+
   const draftStoreBody = draftStoreJs.slice(
     draftStoreJs.indexOf("function draftHasContent("),
     draftStoreJs.indexOf("function attachmentStorageKey(", draftStoreJs.indexOf("function draftHasContent(")),
@@ -82,13 +84,18 @@ test("composer runtime selections persist without typed text", () => {
 
   const fastBody = functionBody("setCodexFastCommandEnabled");
   assert.match(fastBody, /saveCurrentDraftNow\(\)/, "Fast toggle should use the existing draft save path");
+  assert.match(fastBody, /clearLegacyCodexFastModeStorage\(\)/, "Fast toggle should clear the retired global flag");
+  assert.doesNotMatch(fastBody, /localStorage\.setItem\(STORAGE_CODEX_FAST_MODE/, "Fast should not write a global browser flag");
   assert.doesNotMatch(appJs, /saveDraftForCurrentTarget/, "runtime controls must not call a missing draft-save helper");
 
   const restoreBody = functionBody("applyDraftRuntimeSelection");
   assert.match(restoreBody, /const hasDraft = Boolean\(draft && typeof draft === "object"\)/);
-  assert.match(restoreBody, /if \(draft && draft\.fastMode === true\)/);
-  assert.match(restoreBody, /localStorage\.setItem\(STORAGE_CODEX_FAST_MODE, "on"\)/);
-  assert.match(restoreBody, /if \(!hasDraft\) return;/, "same-thread refresh without a draft must not clear pending runtime selections");
+  assert.match(restoreBody, /state\.codexFastMode = Boolean\(draft && draft\.fastMode === true\)/);
+  assert.doesNotMatch(restoreBody, /localStorage\.setItem\(STORAGE_CODEX_FAST_MODE/);
+  assert.match(restoreBody, /if \(!hasDraft\) return;/, "same-thread refresh without a draft must not clear model, effort, or permission selections");
+
+  const resetBody = functionBody("resetComposerRuntimeSelection");
+  assert.match(resetBody, /state\.codexFastMode = false;/, "switching targets should clear Fast until that target draft is restored");
 
   const loadThreadBody = functionBody("loadThread");
   assert.match(loadThreadBody, /state\.currentThread = mergeThreadPreservingVisibleItems/);
