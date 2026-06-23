@@ -153,6 +153,68 @@ test("thread detail projection updates live intermediate items from notification
   assert.equal(agent.text, "partial reply");
 });
 
+test("thread detail projection soft-expires completed dynamic cache when rollout signature changes", () => {
+  let current = 10000;
+  const service = createThreadDetailProjectionService({
+    cacheDir: "",
+    policyVersion: "test-v1",
+    maxTurns: 2,
+    now: () => current,
+  });
+  service.seed(signatureInput({ summaryStatus: "active" }), {
+    thread: {
+      id: "thread-1",
+      turns: [{ id: "turn-1", status: { type: "active" }, items: [] }],
+    },
+  });
+  service.applyNotification("turn/completed", {
+    threadId: "thread-1",
+    turn: { id: "turn-1", status: { type: "completed" }, items: [] },
+  });
+
+  current = 10100;
+  assert.equal(service.get(signatureInput({
+    summaryStatus: "completed",
+    rolloutStats: { sizeBytes: 4096, mtimeMs: 9000 },
+    summaryUpdatedAtMs: 1000,
+  })), null);
+});
+
+test("thread detail projection soft-expires old active dynamic cache when rollout signature changes", () => {
+  let current = 20000;
+  const service = createThreadDetailProjectionService({
+    cacheDir: "",
+    policyVersion: "test-v1",
+    maxTurns: 2,
+    dynamicSignatureMismatchMaxAgeMs: 1000,
+    now: () => current,
+  });
+  service.seed(signatureInput({ summaryStatus: "active" }), {
+    thread: {
+      id: "thread-1",
+      turns: [{ id: "turn-0", status: { type: "completed" }, items: [] }],
+    },
+  });
+  service.applyNotification("turn/started", {
+    threadId: "thread-1",
+    turn: { id: "turn-1", status: { type: "active" }, items: [] },
+  });
+
+  current = 20500;
+  assert.ok(service.get(signatureInput({
+    summaryStatus: "active",
+    rolloutStats: { sizeBytes: 4096, mtimeMs: 9000 },
+    summaryUpdatedAtMs: 1000,
+  })));
+
+  current = 22000;
+  assert.equal(service.get(signatureInput({
+    summaryStatus: "active",
+    rolloutStats: { sizeBytes: 4096, mtimeMs: 9000 },
+    summaryUpdatedAtMs: 1000,
+  })), null);
+});
+
 test("thread detail projection collapses synthetic mobile user echoes", () => {
   const service = createThreadDetailProjectionService({
     cacheDir: "",
@@ -369,7 +431,6 @@ test("thread detail projection keeps streamed receipt when completed turn patch 
 
   const cached = service.get(signatureInput({
     summaryStatus: "completed",
-    rolloutStats: { sizeBytes: 4096, mtimeMs: 9000 },
     summaryUpdatedAtMs: 6200,
   }));
   assert.ok(cached);
@@ -413,7 +474,6 @@ test("thread detail projection merges replacement receipts and keeps one usage s
 
   const cached = service.get(signatureInput({
     summaryStatus: "completed",
-    rolloutStats: { sizeBytes: 4096, mtimeMs: 9000 },
     summaryUpdatedAtMs: 7000,
   }));
   assert.ok(cached);

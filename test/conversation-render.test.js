@@ -101,6 +101,10 @@ function evaluatedInputContentRendererWithKey(key = "", options = {}) {
     "isCodexMobileUploadPath",
     "isLikelyAbsoluteLocalPath",
     "canRenderImageAttachment",
+    "hermesPluginProxyPrefixFromPathname",
+    "hermesPluginProxyPrefix",
+    "protectedImageUpstreamPathname",
+    "browserApiContentUrl",
     "authenticatedApiContentUrl",
     "protectedGeneratedImageSrc",
     "isHermesEmbedMode",
@@ -109,6 +113,7 @@ function evaluatedInputContentRendererWithKey(key = "", options = {}) {
     "protectedImageDisplaySrc",
     "imageLoadingModeForSource",
     "protectedImageSourceAttribute",
+    "codexMobileUploadIdForPath",
     "uploadFileUrl",
     "localFilePreviewContentUrl",
     "imageContentUrlForPath",
@@ -122,9 +127,10 @@ function evaluatedInputContentRendererWithKey(key = "", options = {}) {
     "renderInputContent",
   ].map((name) => functionSourceFrom(appJs, name));
   const pluginEmbed = options.embedded ? { embedded: true } : null;
+  const pathname = options.pathname || "/";
   return Function(
     "URLSearchParams",
-    `const state = { key: ${JSON.stringify(String(key || ""))}, pluginEmbed: ${JSON.stringify(pluginEmbed)} };\nconst window = { location: { origin: "http://127.0.0.1:8787" } };\nconst THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";\nconst PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";\n${sources.join("\n")}\nreturn renderInputContent;`,
+    `const state = { key: ${JSON.stringify(String(key || ""))}, pluginEmbed: ${JSON.stringify(pluginEmbed)} };\nconst window = { location: { origin: "http://127.0.0.1:8787", pathname: ${JSON.stringify(pathname)} } };\nconst THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";\nconst PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";\n${sources.join("\n")}\nreturn renderInputContent;`,
   )(URLSearchParams);
 }
 
@@ -227,6 +233,55 @@ return {
 `)();
 }
 
+function evaluatedActiveRuntimeHarness() {
+  const sources = [
+    "statusText",
+    "isStaleActiveStatus",
+    "isRunningStatus",
+    "isCompletedStatus",
+    "isTurnComplete",
+    "turnHasDisplayItems",
+    "latestTurn",
+    "latestRawTurn",
+    "currentThreadHasActiveRuntimeStatus",
+    "latestLiveTurnCandidate",
+    "isLiveTurn",
+    "shouldPollCurrentThread",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(`
+const document = { visibilityState: "visible" };
+const state = {
+  activeTurnId: "",
+  currentThreadId: "thread-1",
+  currentThread: {
+    id: "thread-1",
+    status: { type: "active" },
+    turns: [
+      {
+        id: "turn-old",
+        status: { type: "completed" },
+        startedAt: 1000,
+        completedAt: 1010,
+        durationMs: 10000,
+        items: [{ id: "item-1", type: "userMessage" }],
+      },
+    ],
+  },
+};
+function turnHasActiveLiveItems() { return false; }
+function isIncompleteInterruptedTurn() { return false; }
+function isLatestTurn(turn) { return Boolean(turn && latestTurn() === turn); }
+${sources.join("\n")}
+return {
+  state,
+  currentThreadHasActiveRuntimeStatus,
+  shouldPollCurrentThread,
+  currentLiveCandidate: () => latestLiveTurnCandidate(),
+  latestIsLive: () => isLiveTurn(latestTurn()),
+};
+`)();
+}
+
 function evaluatedPendingAttachmentClearHarness() {
   const sources = [
     "revokeAttachmentPreviewUrls",
@@ -266,6 +321,10 @@ function evaluatedImageViewRenderer(options = {}) {
     "shortPath",
     "normalizeFsPath",
     "isCodexMobileUploadPath",
+    "hermesPluginProxyPrefixFromPathname",
+    "hermesPluginProxyPrefix",
+    "protectedImageUpstreamPathname",
+    "browserApiContentUrl",
     "protectedGeneratedImageSrc",
     "isHermesEmbedMode",
     "imageDiagnosticSourceKind",
@@ -273,6 +332,7 @@ function evaluatedImageViewRenderer(options = {}) {
     "protectedImageDisplaySrc",
     "imageLoadingModeForSource",
     "protectedImageSourceAttribute",
+    "codexMobileUploadIdForPath",
     "uploadFileUrl",
     "authenticatedApiContentUrl",
     "localFilePreviewContentUrl",
@@ -280,12 +340,14 @@ function evaluatedImageViewRenderer(options = {}) {
     "imageViewPath",
     "imageViewUrl",
     "imageViewContentUrl",
+    "isImageViewUnavailable",
     "renderImageView",
   ].map((name) => functionSourceFrom(appJs, name));
   const pluginEmbed = options.embedded ? { embedded: true } : null;
+  const pathname = options.pathname || "/";
   return Function(
     "URLSearchParams",
-    `const state = { key: "test-key", currentThreadId: "thread-id", pluginEmbed: ${JSON.stringify(pluginEmbed)} };\nconst window = { location: { origin: "http://127.0.0.1:8787" } };\nconst PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";\n${sources.join("\n")}\nreturn renderImageView;`,
+    `const state = { key: "test-key", currentThreadId: "thread-id", pluginEmbed: ${JSON.stringify(pluginEmbed)} };\nconst window = { location: { origin: "http://127.0.0.1:8787", pathname: ${JSON.stringify(pathname)} } };\nconst PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";\n${sources.join("\n")}\nreturn renderImageView;`,
   )(URLSearchParams);
 }
 
@@ -295,12 +357,15 @@ function evaluatedConversationImageErrorHandler(options = {}) {
     "setRetryingAppImage",
     "markFailedAppImage",
     "clearFailedAppImage",
+    "protectedImageUpstreamPathname",
     "protectedAppImageElementSrc",
     "protectedGeneratedImageSrc",
     "imageStillConnected",
     "protectedAppImageUrlApi",
     "revokeProtectedAppImageObjectUrl",
     "retryProtectedAppImageSource",
+    "cacheBustedProtectedImageSrc",
+    "shouldRecoverProtectedImageAsDirectUrl",
     "blobToDataUrl",
     "protectedAppImageRecoveredUrl",
     "applyProtectedAppImageRecoveredUrl",
@@ -346,6 +411,7 @@ function evaluatedFailedImageScanner(options = {}) {
     "clearFailedAppImage",
     "imageHadExplicitLoadError",
     "isLazyAppImage",
+    "protectedImageUpstreamPathname",
     "protectedGeneratedImageSrc",
     "imageDiagnosticSourceKind",
     "protectedAppImageElementSrc",
@@ -355,6 +421,8 @@ function evaluatedFailedImageScanner(options = {}) {
     "protectedAppImageUrlApi",
     "revokeProtectedAppImageObjectUrl",
     "retryProtectedAppImageSource",
+    "cacheBustedProtectedImageSrc",
+    "shouldRecoverProtectedImageAsDirectUrl",
     "blobToDataUrl",
     "protectedAppImageRecoveredUrl",
     "applyProtectedAppImageRecoveredUrl",
@@ -378,6 +446,50 @@ return scanFailedAppImages;`,
     FileReader: undefined,
     isHermesEmbedMode: () => false,
     requestHermesPluginRefresh: () => {},
+  }, options));
+}
+
+function evaluatedProtectedImageHydrator(options = {}) {
+  const sources = [
+    "protectedGeneratedImageSrc",
+    "protectedImageUpstreamPathname",
+    "imageDiagnosticSourceKind",
+    "shouldRenderProtectedImageDirectly",
+    "imageStillConnected",
+    "protectedAppImageElementSrc",
+    "protectedAppImageUrlApi",
+    "revokeProtectedAppImageObjectUrl",
+    "cacheBustedProtectedImageSrc",
+    "shouldRecoverProtectedImageAsDirectUrl",
+    "blobToDataUrl",
+    "protectedAppImageRecoveredUrl",
+    "applyProtectedAppImageRecoveredUrl",
+    "failedAppImageContainer",
+    "setRetryingAppImage",
+    "clearFailedAppImage",
+    "isIosWebKitBrowser",
+    "shouldHydrateProtectedAppImage",
+    "hydrateProtectedAppImage",
+    "hydrateProtectedAppImages",
+  ].map((name) => functionSourceFrom(appJs, name));
+  return Function(
+    "deps",
+    `const window = deps.window;
+const state = deps.state;
+const fetch = deps.fetch;
+const FileReader = deps.FileReader;
+const navigator = deps.navigator;
+const isHermesEmbedMode = deps.isHermesEmbedMode;
+const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+${sources.join("\n")}
+return hydrateProtectedAppImages;`,
+  )(Object.assign({
+    window: { location: { origin: "http://127.0.0.1:8787" } },
+    state: { key: "session-key" },
+    fetch: () => Promise.reject(new Error("unexpected fetch")),
+    FileReader: undefined,
+    navigator: { userAgent: "", vendor: "", platform: "", maxTouchPoints: 0 },
+    isHermesEmbedMode: () => false,
   }, options));
 }
 
@@ -442,6 +554,15 @@ function evaluatedMergeItemsPreservingLocalVisible() {
     "userMessagePathOverlap",
     "comparablePathName",
     "comparablePathNamesLikelySame",
+    "imageViewPath",
+    "imageViewContentUrl",
+    "imageViewUrl",
+    "isVisualReceiptItem",
+    "visualReceiptComparableNames",
+    "visualReceiptCallId",
+    "visualReceiptSuppressionKeys",
+    "suppressedVisualReceiptKeySet",
+    "visualReceiptMatchesSuppressionKeys",
     "userMessagePathNameOverlap",
     "userMessageSpecificity",
     "userMessagesLikelySame",
@@ -456,17 +577,21 @@ function evaluatedMergeItemsPreservingLocalVisible() {
     "comparableVisibleTextItem",
     "comparableVisibleText",
     "visibleTextItemsLikelySame",
-    "hasMatchingIncomingVisibleItem",
+    "visibleTextItemsHaveStableSharedPrefix",
+    "isAssistantReceiptLikeItem",
+    "completedIncomingTurnHasAuthoritativeReceipt",
+    "completedReceiptItemsLikelySame",
+    "visibleTextItemsCanShareRenderIdentity",
+    "shouldDropLocalOnlyReceiptForIncomingTurn",
+    "shouldPreserveLocalOnlyItem",
+    "findUnusedExistingItemIndexForIncoming",
+    "mergeIncomingOrderedItem",
     "mergeVisibleTextItemPreservingRenderIdentity",
+    "insertLocalOnlyItemByExistingOrder",
     "mergeItemsPreservingLocalVisible",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
 function itemVisibleWeight(item) { return JSON.stringify(item || {}).length; }
-function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false) {
-  if (!item || itemVisibleWeight(item) <= 0) return false;
-  if (item.type === "userMessage" && /^mux-user-/.test(String(item.id || ""))) return true;
-  return preserveLocalVisible;
-}
 function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
   return Object.assign({}, existingItem || {}, incomingItem || {});
 }
@@ -500,6 +625,15 @@ function evaluatedMergeItemsPreservingLocalVisibleWithRealVisibleWeight() {
     "userMessagePathOverlap",
     "comparablePathName",
     "comparablePathNamesLikelySame",
+    "imageViewPath",
+    "imageViewContentUrl",
+    "imageViewUrl",
+    "isVisualReceiptItem",
+    "visualReceiptComparableNames",
+    "visualReceiptCallId",
+    "visualReceiptSuppressionKeys",
+    "suppressedVisualReceiptKeySet",
+    "visualReceiptMatchesSuppressionKeys",
     "userMessagePathNameOverlap",
     "userMessageSpecificity",
     "userMessagesLikelySame",
@@ -520,8 +654,17 @@ function evaluatedMergeItemsPreservingLocalVisibleWithRealVisibleWeight() {
     "comparableVisibleTextItem",
     "comparableVisibleText",
     "visibleTextItemsLikelySame",
-    "hasMatchingIncomingVisibleItem",
+    "visibleTextItemsHaveStableSharedPrefix",
+    "isAssistantReceiptLikeItem",
+    "completedIncomingTurnHasAuthoritativeReceipt",
+    "completedReceiptItemsLikelySame",
+    "visibleTextItemsCanShareRenderIdentity",
+    "shouldDropLocalOnlyReceiptForIncomingTurn",
+    "shouldPreserveLocalOnlyItem",
+    "findUnusedExistingItemIndexForIncoming",
+    "mergeIncomingOrderedItem",
     "mergeVisibleTextItemPreservingRenderIdentity",
+    "insertLocalOnlyItemByExistingOrder",
     "mergeItemsPreservingLocalVisible",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function(`
@@ -531,14 +674,6 @@ function isContextCompactionItem() { return false; }
 function contextCompactionNotice() { return null; }
 function isOperationalItem() { return false; }
 function operationDetailText() { return ""; }
-function imageViewPath(item) { return item && item.path || ""; }
-function imageViewContentUrl(item) { return item && item.contentUrl || ""; }
-function imageViewUrl(item) { return item && item.url || ""; }
-function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false) {
-  if (!item || itemVisibleWeight(item) <= 0) return false;
-  if (item.type === "userMessage" && /^mux-user-/.test(String(item.id || ""))) return true;
-  return preserveLocalVisible && !isReasoningItem(item);
-}
 function dedupeTurnUsageSummaryItems(items) { return items || []; }
 ${sources.join("\n")}
 return mergeItemsPreservingLocalVisible;
@@ -567,6 +702,15 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "userMessagePathOverlap",
     "comparablePathName",
     "comparablePathNamesLikelySame",
+    "imageViewPath",
+    "imageViewContentUrl",
+    "imageViewUrl",
+    "isVisualReceiptItem",
+    "visualReceiptComparableNames",
+    "visualReceiptCallId",
+    "visualReceiptSuppressionKeys",
+    "suppressedVisualReceiptKeySet",
+    "visualReceiptMatchesSuppressionKeys",
     "userMessagePathNameOverlap",
     "userMessageSpecificity",
     "userMessagesLikelySame",
@@ -601,10 +745,20 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "comparableVisibleTextItem",
     "comparableVisibleText",
     "visibleTextItemsLikelySame",
-    "hasMatchingIncomingVisibleItem",
+    "visibleTextItemsHaveStableSharedPrefix",
+    "isAssistantReceiptLikeItem",
+    "completedIncomingTurnHasAuthoritativeReceipt",
+    "completedReceiptItemsLikelySame",
+    "visibleTextItemsCanShareRenderIdentity",
+    "shouldDropLocalOnlyReceiptForIncomingTurn",
+    "shouldPreserveLocalOnlyItem",
+    "findUnusedExistingItemIndexForIncoming",
+    "mergeIncomingOrderedItem",
     "mergeItemPreservingVisibleFields",
     "mergeVisibleTextItemPreservingRenderIdentity",
+    "insertLocalOnlyItemByExistingOrder",
     "mergeItemsPreservingLocalVisible",
+    "shouldPreserveLiveTurnLocalVisibleItems",
     "mergeTurnPreservingVisibleItems",
     "mergeThreadPreservingVisibleItems",
   ].map((name) => functionSourceFrom(appJs, name));
@@ -616,11 +770,6 @@ function isContextCompactionItem() { return false; }
 function isOperationalItem() { return false; }
 function isRecentlySubmittedUserMessage(item) { return Boolean(item && item.mobilePendingSubmission); }
 function itemVisibleWeight(item) { return item ? JSON.stringify(item).length : 0; }
-function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false) {
-  if (!item || itemVisibleWeight(item) <= 0) return false;
-  if (item.type === "userMessage" && /^mux-user-/.test(String(item.id || ""))) return true;
-  return preserveLocalVisible && !isReasoningItem(item);
-}
 function dedupeTurnUsageSummaryItems(items) { return items || []; }
 function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
   return Object.assign({}, existingItem || {}, incomingItem || {});
@@ -870,9 +1019,45 @@ return { state, latestTurn, syncActiveTurnFromThread, interruptDisabled: () => i
 
 function evaluatedLocalSubmissionInserter() {
   const sources = [
+    "normalizeFsPath",
+    "imageUrlValue",
+    "isInputTextPart",
+    "inputTextValue",
+    "isTruncatedImagePayloadPart",
+    "isInputImagePart",
+    "attachmentSummaryMarkerMatch",
+    "stripAttachmentSummaryLinePrefix",
+    "parseAttachmentLine",
+    "splitAttachmentSummaryText",
+    "isLikelyAbsoluteLocalPath",
+    "canRenderImageAttachment",
     "localSubmittedTurnId",
     "currentThreadHasClientSubmission",
     "insertLocalSubmittedUserMessage",
+    "isMuxUserMessage",
+    "isOptimisticUserMessage",
+    "isTurnUsageSummaryItem",
+    "dedupeTurnUsageSummaryItems",
+    "normalizeComparableText",
+    "userMessageComparableParts",
+    "userMessagePathOverlap",
+    "comparablePathName",
+    "comparablePathNamesLikelySame",
+    "userMessagePathNameOverlap",
+    "userMessageSpecificity",
+    "userMessagesLikelySame",
+    "userMessagesCanShadow",
+    "hasMatchingRealUserMessage",
+    "removeShadowedMuxUserMessages",
+    "userMessageShadowPriority",
+    "mergeLikelySameUserMessage",
+    "dedupeLikelySameUserMessages",
+    "userMessageHasVisualAttachment",
+    "normalizeThreadVisibleUserMessages",
+    "shouldDropOptimisticUserMessageForDurable",
+    "shouldDropOptimisticUserMessageForOptimistic",
+    "mergeSubmittedUserItemIntoTurn",
+    "reconcileSubmittedUserMessageTurn",
   ].map((name) => functionSourceFrom(appJs, name));
   return Function([
     `
@@ -898,12 +1083,15 @@ function isCompletedStatus(status) {
 }
 function mergeThreadIntoThreadList() { mergeCount += 1; }
 function syncActiveTurnFromThread() { syncCount += 1; }
+function isReasoningItem() { return false; }
+function itemVisibleWeight(item) { return JSON.stringify(item || {}).length; }
 `,
     sources.join("\n"),
     `
 return {
   state,
   insertLocalSubmittedUserMessage,
+  reconcileSubmittedUserMessageTurn,
   counters: () => ({ mergeCount, syncCount }),
 };
 `,
@@ -1330,6 +1518,21 @@ test("existing thread send inserts a local pending user turn before server proje
   assert.equal(harness.state.currentThread.turns[0].items.length, 1);
 });
 
+test("existing thread send reconciles local pending turn to returned server turn id", () => {
+  const harness = evaluatedLocalSubmissionInserter();
+  harness.insertLocalSubmittedUserMessage("thread-live", "推送Public", [], "submit-public");
+
+  const reconciled = harness.reconcileSubmittedUserMessageTurn("thread-live", "submit-public", "server-turn-public");
+
+  assert.equal(reconciled, true);
+  assert.equal(harness.state.currentThread.turns.length, 1);
+  assert.equal(harness.state.currentThread.turns[0].id, "server-turn-public");
+  assert.equal(harness.state.currentThread.turns[0].items.length, 1);
+  assert.equal(harness.state.currentThread.turns[0].items[0].clientSubmissionId, "submit-public");
+  assert.equal(harness.state.currentThread.turns[0].items[0].mobilePendingSubmission, true);
+  assert.deepEqual(harness.counters(), { mergeCount: 2, syncCount: 2 });
+});
+
 test("local pending image attachments render browser previews before upload projection catches up", () => {
   const localUserMessageItem = evaluatedLocalUserMessageItem();
   const renderInputContent = evaluatedInputContentRenderer();
@@ -1387,32 +1590,78 @@ test("replacing unsent attachments still revokes stale local image blobs immedia
 test("live detail refresh can patch changed visible items without replacing the whole turn", () => {
   assert.match(appJs, /function patchVisibleItemDomNode\(/);
   assert.match(appJs, /function visibleItemPatchEntries\(/);
-  assert.match(appJs, /function sameVisibleItemPatchShape\(/);
+  assert.match(appJs, /function visibleItemPatchShapePreservesExisting\(/);
   assert.match(appJs, /function patchVisibleItemsOnlyFromRefresh\(/);
-  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /isLatestTurn\(nextTurn\) \|\| !isLiveTurn\(nextTurn\)/);
-  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /sameVisibleItemPatchShape\(previousTurn, nextTurn\)/);
-  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /patchVisibleItemDomNode\(nextTurn, nextEntries\[index\]\.item, previousKeys, nextEntries\[index\]\.sourceIndex\)/);
+  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /!isLatestTurn\(nextTurn\)/);
+  assert.doesNotMatch(functionBody("patchVisibleItemsOnlyFromRefresh"), /!isLiveTurn\(nextTurn\)/);
+  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /visibleItemPatchShapePreservesExisting\(previousEntries, nextEntries\)/);
+  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /article\.insertBefore\(source, lastPatchedNode \? lastPatchedNode\.nextSibling : article\.firstChild\)/);
+  assert.match(functionBody("patchVisibleItemsOnlyFromRefresh"), /patchVisibleItemDomNode\(nextTurn, nextEntry\.item, previousKeys, nextEntry\.sourceIndex\)/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /patchVisibleItemsOnlyFromRefresh\(previousTurn, turn, previousKeys\)/);
+});
+
+test("visible item refresh patch shape preserves existing keys while appending usage", () => {
+  const preservesExisting = Function(`${functionSourceFrom(appJs, "visibleItemPatchShapePreservesExisting")}\nreturn visibleItemPatchShapePreservesExisting;`)();
+
+  assert.equal(
+    preservesExisting(
+      [{ key: "turn-current:user" }, { key: "turn-current:receipt" }],
+      [{ key: "turn-current:user" }, { key: "turn-current:receipt" }, { key: "turn-current:usage" }],
+    ),
+    true,
+  );
+  assert.equal(
+    preservesExisting(
+      [{ key: "turn-current:user" }, { key: "turn-current:receipt" }],
+      [{ key: "turn-current:receipt" }, { key: "turn-current:user" }, { key: "turn-current:usage" }],
+    ),
+    false,
+  );
+  assert.equal(
+    preservesExisting(
+      [{ key: "turn-current:user" }, { key: "turn-current:receipt" }],
+      [{ key: "turn-current:user" }, { key: "turn-current:usage" }],
+    ),
+    false,
+  );
 });
 
 test("turn timer prefers live item activity over idle sync labels", () => {
   assert.match(appJs, /function liveActivityLabelForTurn\(/);
   assert.match(appJs, /function activeLiveOperationItemForTurn\(/);
+  assert.match(appJs, /function currentThreadHasActiveRuntimeStatus\(/);
+  assert.match(appJs, /function activeThreadFallbackElapsedSeconds\(/);
+  assert.match(appJs, /function activeThreadFallbackActivityLabel\(/);
   assert.match(functionBody("liveActivityLabelForTurn"), /const operation = activeLiveOperationItemForTurn\(turn\);/);
   assert.match(functionBody("liveActivityLabelForTurn"), /if \(operation\) return activityLabelForItem\(operation\);/);
   assert.match(appJs, /function turnHasActiveLiveItems\(/);
   assert.match(appJs, /function liveTurnStartedAtMs\(/);
   assert.match(functionBody("isLiveTurn"), /turnHasActiveLiveItems\(turn\)/);
+  assert.match(functionBody("isLiveTurn"), /isLatestTurn\(turn\) && currentThreadHasActiveRuntimeStatus\(\)/);
   assert.match(functionBody("turnElapsedSeconds"), /liveTurnStartedAtMs\(turn\) \|\| state\.nowMs/);
-  assert.match(functionBody("turnHasActiveLiveItems"), /item\.type === "reasoning" \|\| isOperationalItem\(item\)/);
+  assert.match(functionBody("turnHasActiveLiveItems"), /isActiveOperationalItem\(item\)/);
   assert.match(functionBody("liveTurnStartedAtMs"), /numericTimestampMs\(item\.startedAtMs\)/);
   assert.match(functionBody("liveActivityLabelForTurn"), /item\.type === "reasoning"[\s\S]*return "思考"/);
-  assert.match(functionBody("activeLiveOperationItemForTurn"), /isOperationalItem\(item\)[\s\S]*return item/);
+  assert.match(functionBody("activeLiveOperationItemForTurn"), /isActiveOperationalItem\(item\)[\s\S]*return item/);
   assert.match(functionBody("markIdleActivity"), /const liveTurn = currentLiveTurn\(\);/);
   assert.match(functionBody("markIdleActivity"), /if \(liveActivityLabelForTurn\(liveTurn\)\) return;/);
   assert.match(functionBody("markIdleActivity"), /if \(isIdleSyncActivityLabel\(label\) && liveTurn\) return;/);
   assert.match(functionBody("updateTurnTimer"), /liveActivityLabelForTurn\(turn\) \|\| liveTurnFallbackActivityLabel\(turn\)/);
+  assert.match(functionBody("updateTurnTimer"), /if \(currentThreadHasActiveRuntimeStatus\(\)\) \{[\s\S]*activeThreadFallbackElapsedSeconds\(latest\)[\s\S]*activeThreadFallbackActivityLabel\(\)/);
+  assert.match(functionBody("updateTickTimer"), /if \(!currentLiveTurn\(\) && !currentThreadHasActiveRuntimeStatus\(\)\) return;/);
   assert.match(functionBody("liveTurnFallbackActivityLabel"), /return "运行";/);
+});
+
+test("thread-level active status keeps polling through stale completed latest turn rows", () => {
+  const harness = evaluatedActiveRuntimeHarness();
+  assert.equal(harness.currentThreadHasActiveRuntimeStatus(), true);
+  assert.equal(harness.currentLiveCandidate(), null);
+  assert.equal(harness.latestIsLive(), false);
+  assert.equal(harness.shouldPollCurrentThread(), true);
+
+  harness.state.currentThread.status = { type: "active", mobileStaleActiveTurn: true };
+  assert.equal(harness.currentThreadHasActiveRuntimeStatus(), false);
+  assert.equal(harness.shouldPollCurrentThread(), false);
 });
 
 test("loading and thread-list state preserve locally visible live turns", () => {
@@ -1450,9 +1699,10 @@ test("long agent messages keep a stable render path when a turn completes", () =
   assert.match(functionBody("applyNotification"), /renderCurrentThread\(\{ stickToBottom: true \}\)/);
   assert.match(appJs, /function mergeVisibleTextItemPreservingRenderIdentity\(/);
   assert.match(functionBody("mergeVisibleTextItemPreservingRenderIdentity"), /merged\.id = existingItem\.id/);
-  assert.match(functionBody("mergeItemsPreservingLocalVisible"), /mergeVisibleTextItemPreservingRenderIdentity\(existingItem, incomingTextMatch\)/);
-  assert.match(functionBody("mergeItemsPreservingLocalVisible"), /const addedIncomingItems = new Set\(\)/);
-  assert.match(functionBody("mergeItemsPreservingLocalVisible"), /if \(addedIncomingItems\.has\(incomingItem\)\) continue/);
+  assert.match(appJs, /function findUnusedExistingItemIndexForIncoming\(/);
+  assert.match(appJs, /function mergeIncomingOrderedItem\(/);
+  assert.match(functionBody("mergeItemsPreservingLocalVisible"), /for \(const incomingItem of incomingItems \|\| \[\]\)/);
+  assert.match(functionBody("mergeItemsPreservingLocalVisible"), /findUnusedExistingItemIndexForIncoming\(incomingItem, existingItems \|\| \[\], usedExistingIndexes, incomingTurn\)/);
 });
 
 test("agent markdown can render uploaded image summaries as thumbnails", () => {
@@ -1506,7 +1756,8 @@ test("raw app-server input text upload summaries render as thumbnails", () => {
 
   assert.match(html, /class="input-image"/);
   assert.match(html, /src="data:image\/gif;base64,R0lGODlhAQABAIAAAAAAAP\/\/\/ywAAAAAAQABAAACAUwAOw=="/);
-  assert.match(html, /data-protected-image-src="\/api\/uploads\/file\?path=/);
+  assert.match(html, /data-protected-image-src="\/api\/uploads\/file\?id=/);
+  assert.doesNotMatch(html, /data-protected-image-src="[^"]*path=/);
   assert.match(html, /IMG_5433\.jpg/);
   assert.doesNotMatch(html, /<code>C:\\Users\\example/);
 });
@@ -1546,12 +1797,13 @@ test("user message text before upload summaries still renders jpg thumbnails", (
   assert.match(html, /class="input-text"/);
   assert.match(html, /class="input-image"/);
   assert.match(html, /src="data:image\/gif;base64,R0lGODlhAQABAIAAAAAAAP\/\/\/ywAAAAAAQABAAACAUwAOw=="/);
-  assert.match(html, /data-protected-image-src="\/api\/uploads\/file\?path=/);
+  assert.match(html, /data-protected-image-src="\/api\/uploads\/file\?id=/);
+  assert.doesNotMatch(html, /data-protected-image-src="[^"]*path=/);
   assert.match(html, /IMG_5435\.jpg/);
   assert.doesNotMatch(html, /Uploaded attachments:/);
 });
 
-test("Hermes embedded upload summaries render direct image sources without hydrate placeholders", () => {
+test("Hermes embedded upload summaries render direct image sources with hydrate fallback", () => {
   const renderInputContent = evaluatedInputContentRendererWithKey("test-key", { embedded: true });
   const uploadPath = "/Users/example/.codex-mobile-web/uploads/2026-06-20/thread/1781956411989-photo.jpg";
   const html = renderInputContent([
@@ -1562,28 +1814,51 @@ test("Hermes embedded upload summaries render direct image sources without hydra
   ]);
 
   assert.match(html, /class="input-image"/);
-  assert.match(html, /<img src="\/api\/uploads\/file\?path=/);
+  assert.match(html, /<img src="\/api\/uploads\/file\?id=2026-06-20%2Fthread%2F1781956411989-photo\.jpg&amp;key=test-key"/);
   assert.doesNotMatch(html, /src="data:image\/gif;base64/);
-  assert.doesNotMatch(html, /data-protected-image-src=/);
+  assert.match(html, /data-protected-image-src="\/api\/uploads\/file\?id=2026-06-20%2Fthread%2F1781956411989-photo\.jpg&amp;key=test-key"/);
+  assert.doesNotMatch(html, /<img src="[^"]*(?:\/Users|%2FUsers|\.codex-mobile-web|path=)/);
 });
 
-test("imageView upload screenshots use the uploads route instead of file preview", () => {
+test("Hermes proxy embedded upload summaries render proxy-scoped image sources", () => {
+  const renderInputContent = evaluatedInputContentRendererWithKey("test-key", {
+    embedded: true,
+    pathname: "/api/hermes-plugins/codex-mobile/proxy/",
+  });
+  const uploadPath = "/Users/example/.codex-mobile-web/uploads/2026-06-23/thread/1782214683627-photo.jpg";
+  const html = renderInputContent([
+    {
+      type: "input_text",
+      text: `Uploaded attachments:\n- homeai-upload.jpg (image, image/jpeg, 157.2 KB): ${uploadPath}`,
+    },
+  ]);
+
+  assert.match(html, /class="input-image"/);
+  assert.match(html, /<img src="\/api\/hermes-plugins\/codex-mobile\/proxy\/api\/uploads\/file\?id=2026-06-23%2Fthread%2F1782214683627-photo\.jpg&amp;key=test-key"/);
+  assert.match(html, /data-protected-image-src="\/api\/hermes-plugins\/codex-mobile\/proxy\/api\/uploads\/file\?id=2026-06-23%2Fthread%2F1782214683627-photo\.jpg&amp;key=test-key"/);
+  assert.doesNotMatch(html, /<img src="\/api\/uploads\/file/);
+  assert.doesNotMatch(html, /(?:\/Users|%2FUsers|\.codex-mobile-web|path=)/);
+});
+
+test("imageView upload screenshots use opaque uploads route instead of file preview", () => {
   const renderImageView = evaluatedImageViewRenderer();
   const html = renderImageView({
     type: "imageView",
-    path: "/Users/example/.codex-mobile-web/uploads/2026-06-08/thread-id/1780893354486-IMG_1618.jpg",
+    path: "/Users/xuxin/.codex-mobile-web/uploads/2026-06-08/thread-id/1780893354486-IMG_1618.jpg",
   });
 
   assert.match(html, /class="image-view"/);
   assert.match(html, /src="data:image\/gif;base64,R0lGODlhAQABAIAAAAAAAP\/\/\/ywAAAAAAQABAAACAUwAOw=="/);
-  assert.match(html, /data-protected-image-src="\/api\/uploads\/file\?path=/);
+  assert.match(html, /data-protected-image-src="\/api\/uploads\/file\?id=2026-06-08%2Fthread-id%2F1780893354486-IMG_1618\.jpg&amp;key=test-key"/);
+  assert.doesNotMatch(html, /data-protected-image-src="[^"]*(?:\/Users|%2FUsers|\.codex-mobile-web|path=)/);
   assert.doesNotMatch(html, /\/api\/files\/preview\/content/);
 });
 
 test("protected image auth recovery covers uploaded images", () => {
-  assert.match(functionBody("protectedGeneratedImageSrc"), /"\/api\/generated-images\/file"/);
-  assert.match(functionBody("protectedGeneratedImageSrc"), /"\/api\/uploads\/file"/);
-  assert.match(functionBody("protectedGeneratedImageSrc"), /"\/api\/files\/preview\/content"/);
+  assert.match(functionBody("protectedImageUpstreamPathname"), /"\/api\/generated-images\/file"/);
+  assert.match(functionBody("protectedImageUpstreamPathname"), /"\/api\/uploads\/file"/);
+  assert.match(functionBody("protectedImageUpstreamPathname"), /"\/api\/files\/preview\/content"/);
+  assert.match(functionBody("protectedGeneratedImageSrc"), /protectedImageUpstreamPathname\(parsed\.pathname\)/);
   assert.match(functionBody("uploadFileUrl"), /authenticatedApiContentUrl\(`\/api\/uploads\/file\?\$\{params\.toString\(\)\}`\)/);
 });
 
@@ -1602,7 +1877,7 @@ test("generated image content urls render bounded image cards", () => {
   assert.doesNotMatch(html, /\/api\/files\/preview\/content/);
 });
 
-test("Hermes embedded generated image content urls render directly without hydrate placeholders", () => {
+test("Hermes embedded generated image content urls render directly with hydrate fallback", () => {
   const renderImageView = evaluatedImageViewRenderer({ embedded: true });
   const html = renderImageView({
     type: "imageView",
@@ -1613,7 +1888,71 @@ test("Hermes embedded generated image content urls render directly without hydra
   assert.match(html, /class="image-view"/);
   assert.match(html, /<img src="\/api\/generated-images\/file\?id=thread%2Fview-image-output\.png&amp;key=test-key"/);
   assert.doesNotMatch(html, /src="data:image\/gif;base64/);
-  assert.doesNotMatch(html, /data-protected-image-src=/);
+  assert.match(html, /data-protected-image-src="\/api\/generated-images\/file\?id=thread%2Fview-image-output\.png&amp;key=test-key"/);
+});
+
+test("Hermes proxy embedded generated image urls render through the plugin proxy", () => {
+  const renderImageView = evaluatedImageViewRenderer({
+    embedded: true,
+    pathname: "/api/hermes-plugins/codex-mobile/proxy/",
+  });
+  const html = renderImageView({
+    type: "imageView",
+    contentUrl: "/api/generated-images/file?id=thread%2Fview-image-output.png",
+    fileName: "view_image_output",
+  });
+
+  assert.match(html, /class="image-view"/);
+  assert.match(html, /<img src="\/api\/hermes-plugins\/codex-mobile\/proxy\/api\/generated-images\/file\?id=thread%2Fview-image-output\.png&amp;key=test-key"/);
+  assert.match(html, /data-protected-image-src="\/api\/hermes-plugins\/codex-mobile\/proxy\/api\/generated-images\/file\?id=thread%2Fview-image-output\.png&amp;key=test-key"/);
+  assert.doesNotMatch(html, /<img src="\/api\/generated-images\/file/);
+});
+
+test("Hermes embedded protected images are not proactively converted into data urls", () => {
+  const hydrateProtectedAppImages = evaluatedProtectedImageHydrator({
+    isHermesEmbedMode: () => true,
+    fetch: () => {
+      throw new Error("embedded direct images should not be proactively hydrated");
+    },
+  });
+  let uploadSrc = "/api/uploads/file?id=2026-06-23%2Fthread-id%2Fhomeai-upload.jpg&key=session-key";
+  let generatedSrc = "/api/generated-images/file?id=thread%2Fview-image-output.jpg&key=session-key";
+  const uploadImage = {
+    dataset: { protectedImageSrc: uploadSrc },
+    complete: false,
+    naturalWidth: 0,
+    currentSrc: uploadSrc,
+    get src() {
+      return uploadSrc;
+    },
+    set src(value) {
+      uploadSrc = value;
+      this.currentSrc = value;
+    },
+  };
+  const generatedImage = {
+    dataset: { protectedImageSrc: generatedSrc },
+    complete: false,
+    naturalWidth: 0,
+    currentSrc: generatedSrc,
+    get src() {
+      return generatedSrc;
+    },
+    set src(value) {
+      generatedSrc = value;
+      this.currentSrc = value;
+    },
+  };
+  const rootNode = {
+    querySelectorAll(selector) {
+      assert.equal(selector, "img");
+      return [uploadImage, generatedImage];
+    },
+  };
+
+  assert.equal(hydrateProtectedAppImages(rootNode, "scheduled-scan"), 0);
+  assert.equal(uploadSrc, "/api/uploads/file?id=2026-06-23%2Fthread-id%2Fhomeai-upload.jpg&key=session-key");
+  assert.equal(generatedSrc, "/api/generated-images/file?id=thread%2Fview-image-output.jpg&key=session-key");
 });
 
 test("generated image content urls replace stale auth keys with the current session key", () => {
@@ -1627,6 +1966,23 @@ test("generated image content urls replace stale auth keys with the current sess
   assert.match(html, /class="image-view"/);
   assert.match(html, /key=test-key/);
   assert.doesNotMatch(html, /stale-key/);
+});
+
+test("unavailable generated images render a bounded failure card without img src", () => {
+  const renderImageView = evaluatedImageViewRenderer();
+  const html = renderImageView({
+    type: "imageView",
+    fileName: "1782210953458-homeai-upload.jpg",
+    generatedImage: {
+      unavailable: true,
+      reason: "source_unavailable",
+    },
+  });
+
+  assert.match(html, /class="image-view image-load-failed"/);
+  assert.match(html, /1782210953458-homeai-upload\.jpg/);
+  assert.doesNotMatch(html, /<img\b/);
+  assert.doesNotMatch(html, /src=/);
 });
 
 test("failed conversation images collapse into a neutral fallback", () => {
@@ -1672,8 +2028,8 @@ test("failed conversation images collapse into a neutral fallback", () => {
   assert.match(functionBody("updateConversationHtml"), /scheduleFailedAppImageScan\(conversation/);
   assert.match(functionBody("scheduleFailedAppImageScan"), /hydrateProtectedAppImages\(root, "scheduled-scan"\)/);
   assert.match(functionBody("handleConversationImageError"), /handleProtectedAppImageError\(image\)/);
-  assert.match(functionBody("shouldHydrateProtectedAppImage"), /isIosWebKitBrowser\(\) \|\| imageDiagnosticSourceKind\(src\) === "upload"/);
-  assert.match(functionBody("hydrateProtectedAppImage"), /protectedAppImageRecoveredUrl\(response\)/);
+  assert.match(functionBody("shouldHydrateProtectedAppImage"), /isIosWebKitBrowser\(\) \|\| imageDiagnosticSourceKind\(src\) === "upload" \|\| shouldRenderProtectedImageDirectly\(src\)/);
+  assert.match(functionBody("hydrateProtectedAppImage"), /protectedAppImageRecoveredUrl\(response, src\)/);
   assert.match(functionBody("hydrateProtectedAppImage"), /applyProtectedAppImageRecoveredUrl\(image, recovered\)/);
   assert.match(functionBody("hydrateProtectedAppImage"), /protectedImageHydrated = "1"/);
   assert.match(appJs, /const IMAGE_DIAGNOSTICS_ENABLED = false;/);
@@ -1777,6 +2133,128 @@ test("protected upload image errors are probed before showing failed fallback", 
     ["image-load-retrying", true],
     ["image-load-retrying", false],
   ]);
+});
+
+test("Hermes embedded protected image recovery keeps proxy-safe file urls", async () => {
+  const fetchCalls = [];
+  const handleConversationImageError = evaluatedConversationImageErrorHandler({
+    isHermesEmbedMode: () => true,
+    FileReader: class {
+      readAsDataURL(blob) {
+        this.result = `data:${blob.type};base64,ZmFrZS1qcGVn`;
+        setTimeout(() => this.onload && this.onload(), 0);
+      }
+    },
+    fetch: (src, options) => {
+      fetchCalls.push({ src, options });
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        blob: () => Promise.resolve({ type: "image/jpeg", size: 164771 }),
+      });
+    },
+  });
+  let imageSrc = "/api/uploads/file?id=2026-06-23%2Fthread-id%2Fhomeai-upload.jpg&key=session-key";
+  const figure = {
+    classList: {
+      remove() {},
+      toggle() {},
+    },
+  };
+  const image = {
+    dataset: { protectedImageSrc: imageSrc },
+    currentSrc: imageSrc,
+    naturalWidth: 0,
+    isConnected: true,
+    get src() {
+      return imageSrc;
+    },
+    set src(value) {
+      imageSrc = value;
+      this.currentSrc = value;
+    },
+    closest(selector) {
+      if (String(selector).includes(".image-view")) return figure;
+      return null;
+    },
+    getAttribute(name) {
+      if (name === "src") return imageSrc;
+      if (name === "aria-hidden") return "";
+      return "";
+    },
+    removeAttribute() {},
+  };
+
+  handleConversationImageError({ target: { closest: () => image } });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  assert.equal(fetchCalls.length, 1);
+  assert.match(fetchCalls[0].src, /^\/api\/uploads\/file\?id=2026-06-23%2Fthread-id%2Fhomeai-upload\.jpg/);
+  assert.match(imageSrc, /^\/api\/uploads\/file\?id=2026-06-23%2Fthread-id%2Fhomeai-upload\.jpg/);
+  assert.match(imageSrc, /_imgRecover=/);
+  assert.doesNotMatch(imageSrc, /^data:image\//);
+  assert.doesNotMatch(imageSrc, /(?:\/Users|%2FUsers|\.codex-mobile-web|path=)/);
+});
+
+test("Hermes proxy embedded protected image recovery stays under plugin proxy", async () => {
+  const fetchCalls = [];
+  const handleConversationImageError = evaluatedConversationImageErrorHandler({
+    window: {
+      location: {
+        origin: "http://127.0.0.1:8797",
+        pathname: "/api/hermes-plugins/codex-mobile/proxy/",
+      },
+    },
+    isHermesEmbedMode: () => true,
+    fetch: (src, options) => {
+      fetchCalls.push({ src, options });
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        blob: () => Promise.resolve({ type: "image/jpeg", size: 160931 }),
+      });
+    },
+  });
+  let imageSrc = "/api/hermes-plugins/codex-mobile/proxy/api/uploads/file?id=2026-06-23%2Fthread-id%2Fhomeai-upload.jpg&key=session-key";
+  const figure = {
+    classList: {
+      remove() {},
+      toggle() {},
+    },
+  };
+  const image = {
+    dataset: { protectedImageSrc: imageSrc },
+    currentSrc: imageSrc,
+    naturalWidth: 0,
+    isConnected: true,
+    get src() {
+      return imageSrc;
+    },
+    set src(value) {
+      imageSrc = value;
+      this.currentSrc = value;
+    },
+    closest(selector) {
+      if (String(selector).includes(".image-view")) return figure;
+      return null;
+    },
+    getAttribute(name) {
+      if (name === "src") return imageSrc;
+      if (name === "aria-hidden") return "";
+      return "";
+    },
+    removeAttribute() {},
+  };
+
+  handleConversationImageError({ target: { closest: () => image } });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  assert.equal(fetchCalls.length, 1);
+  assert.match(fetchCalls[0].src, /^\/api\/hermes-plugins\/codex-mobile\/proxy\/api\/uploads\/file\?id=2026-06-23%2Fthread-id%2Fhomeai-upload\.jpg/);
+  assert.match(imageSrc, /^\/api\/hermes-plugins\/codex-mobile\/proxy\/api\/uploads\/file\?id=2026-06-23%2Fthread-id%2Fhomeai-upload\.jpg/);
+  assert.match(imageSrc, /_imgRecover=/);
+  assert.doesNotMatch(imageSrc, /^\/api\/uploads\/file/);
+  assert.doesNotMatch(imageSrc, /^data:image\//);
 });
 
 test("protected upload image errors fall back to cache-busted src retry without blob support", async () => {
@@ -2103,8 +2581,9 @@ test("raw app-server input image url local upload paths use authenticated upload
   ]);
 
   assert.match(html, /class="input-image"/);
-  assert.match(html, /\/api\/uploads\/file\?path=/);
+  assert.match(html, /\/api\/uploads\/file\?id=2026-06-08%2Fthread-id%2F1780936946968-IMG_5882\.jpg/);
   assert.match(html, /key=session-key/);
+  assert.doesNotMatch(html, /<img src="[^"]*(?:\/Users|%2FUsers|\.codex-mobile-web|path=)/);
   assert.equal(html.includes(`src="${uploadPath}"`), false);
 });
 
@@ -2124,9 +2603,10 @@ test("durable upload summaries take precedence over stale blob image parts", () 
   ]);
 
   assert.match(html, /class="input-image"/);
-  assert.match(html, /\/api\/uploads\/file\?path=/);
+  assert.match(html, /\/api\/uploads\/file\?id=2026-06-20%2Fthread-id%2F1781947353793-homeai-upload-2B62320E\.jpg/);
   assert.match(html, /key=session-key/);
   assert.match(html, /homeai-upload-2B62320E\.jpg/);
+  assert.doesNotMatch(html, /<img src="[^"]*(?:\/Users|%2FUsers|\.codex-mobile-web|path=)/);
   assert.doesNotMatch(html, /blob:http:\/\/127\.0\.0\.1:8787\/local-preview/);
 });
 
@@ -2165,18 +2645,25 @@ test("server only emits context compaction notices from explicit item state", ()
   assert.match(itemBody, /if \(!compactionState\) return compacted/);
   assert.doesNotMatch(itemBody, /options\.contextCompactionPending !== false/);
   assert.doesNotMatch(turnBody, /contextCompactionPending = isLiveTurn\(out\)/);
-  assert.match(turnBody, /const sourceItems = filterDuplicateUploadImageViewsInTurnItems\(out\.items\)/);
+  assert.match(turnBody, /const sourceItems = filterDuplicateUploadImageViewsInTurnItems\(out\.items, options\)/);
   assert.match(turnBody, /out\.items = sourceItems\.map\(\(item\) => compactItem\(item, options\)\)/);
 });
 
-test("matching user messages keep their original turn position after final refresh", () => {
-  const body = functionBody("mergeItemsPreservingLocalVisible");
-  assert.match(body, /const incomingUserMatch = \(incomingItems \|\| \[\]\)\.find/);
-  assert.match(body, /existingItem\.type === "userMessage"/);
-  assert.match(body, /userMessagesCanShadow\(existingItem, incomingItem\)/);
-  assert.match(body, /merged\.push\(mergeLikelySameUserMessage\(existingItem, incomingUserMatch\)\)/);
-  assert.match(body, /addedIncomingItems\.add\(incomingUserMatch\)/);
-  assert.match(body, /const incomingTextMatch = incomingUserMatch[\s\S]*visibleTextItemsLikelySame\(existingItem, incomingItem\)/);
+test("refresh merge uses incoming item order for durable user messages appended locally", () => {
+  const mergeItemsPreservingLocalVisible = evaluatedMergeItemsPreservingLocalVisibleWithRealVisibleWeight();
+  const existingItems = [
+    { id: "agent-progress", type: "agentMessage", text: "working\nwith more detail" },
+    { id: "real-user-prompt", type: "userMessage", content: [{ type: "text", text: "initial prompt" }] },
+  ];
+  const incomingItems = [
+    { id: "real-user-prompt", type: "userMessage", content: [{ type: "input_text", text: "initial prompt" }] },
+    { id: "agent-progress", type: "agentMessage", text: "working" },
+  ];
+
+  const merged = mergeItemsPreservingLocalVisible(existingItems, incomingItems, true);
+
+  assert.deepEqual(merged.map((item) => item.id), ["real-user-prompt", "agent-progress"]);
+  assert.equal(merged[1].text, "working\nwith more detail");
 });
 
 test("failed submitted messages render an inline receipt", () => {
@@ -2334,9 +2821,10 @@ test("durable uploaded image messages replace revoked optimistic blob previews",
   assert.doesNotMatch(JSON.stringify(imageItems[0].content), /blob:/);
 
   const html = renderInputContent(imageItems[0].content);
-  assert.match(html, /\/api\/uploads\/file\?path=/);
+  assert.match(html, /\/api\/uploads\/file\?id=2026-06-20%2Fthread%2Fhomeai-upload-54FE12C6\.jpg/);
   assert.match(html, /key=test-key/);
   assert.match(html, /homeai-upload-54FE12C6\.jpg/);
+  assert.doesNotMatch(html, /<img src="[^"]*(?:\/Users|%2FUsers|\.codex-mobile-web|path=)/);
   assert.doesNotMatch(html, /blob:/);
 });
 
@@ -2649,6 +3137,166 @@ test("v4 projection merge preserves local pending message when server refresh ha
   assert.equal(merged.mobileProjectionVersion, "v4");
 });
 
+test("live turn merge keeps displayed assistant receipt when backfill has more stale items", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const existingThread = {
+    id: "thread-new",
+    turns: [{
+      id: "turn-current",
+      status: { type: "active" },
+      items: [
+        { id: "user-current", type: "userMessage", content: [{ type: "text", text: "push public" }] },
+        { id: "agent-live-receipt", type: "agentMessage", text: "pausing public push" },
+      ],
+    }],
+  };
+  const incomingThread = {
+    id: "thread-new",
+    mobileReadMode: "thread-read",
+    turns: [{
+      id: "turn-current",
+      status: { type: "active" },
+      items: [
+        { id: "user-current", type: "userMessage", content: [{ type: "input_text", text: "push public" }] },
+        {
+          id: "older-command-output",
+          type: "commandExecution",
+          status: "completed",
+          command: "npm test",
+          output: "older backfill output ".repeat(40),
+        },
+      ],
+    }],
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, incomingThread);
+
+  assert.deepEqual(merged.turns[0].items.map((item) => item.id), [
+    "user-current",
+    "agent-live-receipt",
+    "older-command-output",
+  ]);
+  assert.equal(
+    merged.turns[0].items.find((item) => item.id === "agent-live-receipt").text,
+    "pausing public push",
+  );
+});
+
+test("completed projection merge drops local-only live receipts when server receipt and usage arrive", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const existingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 12,
+    turns: [{
+      id: "turn-current",
+      status: { type: "active" },
+      items: [
+        { id: "user-current", type: "userMessage", content: [{ type: "text", text: "fix it" }] },
+        {
+          id: "local-operation",
+          type: "commandExecution",
+          status: "completed",
+          command: "npm test",
+          output: "local operation detail ".repeat(80),
+        },
+        { id: "local-live-receipt", type: "agentMessage", text: "I am still checking this." },
+      ],
+    }],
+  };
+  const incomingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 13,
+    turns: [{
+      id: "turn-current",
+      status: { type: "completed" },
+      completedAtMs: 1782221000000,
+      items: [
+        { id: "user-current", type: "userMessage", content: [{ type: "input_text", text: "fix it" }] },
+        { id: "server-final-receipt", type: "agentMessage", text: "Fixed and verified." },
+        {
+          id: "mobile-turn-usage-turn-current",
+          type: "turnUsageSummary",
+          mobileUsageSummary: { totalTokenUsage: { totalTokens: 42 } },
+        },
+      ],
+    }],
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, incomingThread);
+  const mergedItems = merged.turns[0].items;
+
+  assert.deepEqual(mergedItems.map((item) => item.id), [
+    "user-current",
+    "local-operation",
+    "server-final-receipt",
+    "mobile-turn-usage-turn-current",
+  ]);
+  assert.deepEqual(
+    mergedItems.filter((item) => item.type === "agentMessage").map((item) => item.id),
+    ["server-final-receipt"],
+  );
+  assert.equal(mergedItems.filter((item) => item.type === "turnUsageSummary").length, 1);
+});
+
+test("completed projection merge adopts shorter final receipt without repainting live receipt", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const existingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 20,
+    turns: [{
+      id: "turn-current",
+      status: { type: "active" },
+      items: [
+        { id: "user-current", type: "userMessage", content: [{ type: "text", text: "stabilize receipt" }] },
+        {
+          id: "local-live-receipt",
+          type: "agentMessage",
+          text: "Root cause isolated.\nPatch applied.\nValidation is still running.",
+        },
+      ],
+    }],
+  };
+  const incomingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 21,
+    turns: [{
+      id: "turn-current",
+      status: { type: "completed" },
+      completedAtMs: 1782222000000,
+      items: [
+        { id: "user-current", type: "userMessage", content: [{ type: "input_text", text: "stabilize receipt" }] },
+        {
+          id: "server-final-receipt",
+          type: "agentMessage",
+          text: "Root cause isolated.\nPatch applied.",
+        },
+        {
+          id: "mobile-turn-usage-turn-current",
+          type: "turnUsageSummary",
+          mobileUsageSummary: { totalTokenUsage: { totalTokens: 128 } },
+        },
+      ],
+    }],
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, incomingThread);
+  const mergedItems = merged.turns[0].items;
+  const receipts = mergedItems.filter((item) => item.type === "agentMessage");
+
+  assert.deepEqual(mergedItems.map((item) => item.id), [
+    "user-current",
+    "local-live-receipt",
+    "mobile-turn-usage-turn-current",
+  ]);
+  assert.equal(receipts.length, 1);
+  assert.equal(receipts[0].text, "Root cause isolated.\nPatch applied.\nValidation is still running.");
+  assert.equal(mergedItems.filter((item) => item.type === "turnUsageSummary").length, 1);
+});
+
 test("v4 projection merge removes local pending message after durable user match arrives", () => {
   const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
   const existingThread = {
@@ -2693,6 +3341,44 @@ test("v4 projection merge removes local pending message after durable user match
   ]);
 });
 
+test("v4 projection merge corrects local SSE user message order from refresh", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const existingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 8,
+    turns: [{
+      id: "turn-current",
+      status: { type: "active" },
+      items: [
+        { id: "agent-progress", type: "agentMessage", text: "working\nwith more detail" },
+        { id: "durable-user-current", type: "userMessage", content: [{ type: "text", text: "current prompt" }] },
+      ],
+    }],
+  };
+  const incomingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 9,
+    turns: [{
+      id: "turn-current",
+      status: { type: "active" },
+      items: [
+        { id: "durable-user-current", type: "userMessage", content: [{ type: "input_text", text: "current prompt" }] },
+        { id: "agent-progress", type: "agentMessage", text: "working" },
+      ],
+    }],
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, incomingThread);
+
+  assert.deepEqual(merged.turns[0].items.map((item) => item.id), [
+    "durable-user-current",
+    "agent-progress",
+  ]);
+  assert.equal(merged.turns[0].items[1].text, "working\nwith more detail");
+});
+
 test("v4 projection merge keeps longer live receipt when refresh returns an older same-turn item", () => {
   const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
   const existingThread = {
@@ -2729,6 +3415,79 @@ test("v4 projection merge keeps longer live receipt when refresh returns an olde
   assert.equal(
     merged.turns[0].items.find((item) => item.id === "agent-current").text,
     "first paragraph\nsecond paragraph",
+  );
+});
+
+test("v4 projection merge does not preserve server-suppressed upload image echoes", () => {
+  const mergeThreadPreservingVisibleItems = evaluatedMergeThreadPreservingVisibleItems();
+  const uploadPath = "/Users/xuxin/.codex-mobile-web/uploads/2026-06-23/thread/1782217099872-Screenshot_20260623_201803_Home AI.jpg";
+  const existingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 10,
+    turns: [{
+      id: "turn-current",
+      status: { type: "active" },
+      items: [
+        {
+          id: "user-upload",
+          type: "userMessage",
+          content: [{
+            type: "input_text",
+            text: `Uploaded attachments:\n- 1782217099872-Screenshot_20260623_201803_Home AI.jpg (image, image/jpeg, 109.3 KB): ${uploadPath}`,
+          }],
+        },
+        {
+          id: "stale-upload-echo",
+          type: "imageView",
+          fileName: "1782217099872-Screenshot_20260623_201803_Home AI.jpg",
+          contentUrl: "/api/generated-images/file?id=thread%2Fstale-upload-echo.jpg",
+        },
+        {
+          id: "real-generated-image",
+          type: "imageView",
+          fileName: "visual-check-output.png",
+          contentUrl: "/api/generated-images/file?id=thread%2Fvisual-check-output.png",
+        },
+        { id: "agent-live-receipt", type: "agentMessage", text: "working\nwith more detail" },
+      ],
+    }],
+  };
+  const incomingThread = {
+    id: "thread-new",
+    mobileProjectionVersion: "v4",
+    mobileProjectionRevision: 11,
+    turns: [{
+      id: "turn-current",
+      status: { type: "active" },
+      mobileSuppressedVisualReceiptKeys: [
+        "id:stale-upload-echo",
+        "name:1782217099872-screenshot_20260623_201803_home ai.jpg",
+      ],
+      items: [
+        {
+          id: "user-upload",
+          type: "userMessage",
+          content: [{
+            type: "input_text",
+            text: `Uploaded attachments:\n- 1782217099872-Screenshot_20260623_201803_Home AI.jpg (image, image/jpeg, 109.3 KB): ${uploadPath}`,
+          }],
+        },
+        { id: "agent-live-receipt", type: "agentMessage", text: "working" },
+      ],
+    }],
+  };
+
+  const merged = mergeThreadPreservingVisibleItems(existingThread, incomingThread);
+
+  assert.deepEqual(merged.turns[0].items.map((item) => item.id), [
+    "user-upload",
+    "real-generated-image",
+    "agent-live-receipt",
+  ]);
+  assert.equal(
+    merged.turns[0].items.find((item) => item.id === "agent-live-receipt").text,
+    "working\nwith more detail",
   );
 });
 
@@ -2929,7 +3688,16 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(sendBody, /const previousThreadStatus = snapshotThreadStatus\(state\.currentThreadId\);/);
   assert.match(sendBody, /registerSubmittedUserMessage\(state\.currentThreadId, outboundText, submittedAttachments, clientSubmissionId\);\s*const insertedLocalMessage = insertLocalSubmittedUserMessage/);
   assert.match(sendBody, /if \(insertedLocalMessage\) renderCurrentThread\(\{ stickToBottom: true \}\);/);
+  assert.match(sendBody, /const result = await api\(`\/api\/threads\/\$\{encodeURIComponent\(state\.currentThreadId\)\}\/messages`/);
+  assert.match(sendBody, /const serverTurnId = startedTurnId\(result\);/);
+  assert.match(sendBody, /if \(!steering && serverTurnId && reconcileSubmittedUserMessageTurn\(state\.currentThreadId, clientSubmissionId, serverTurnId\)\)/);
   assert.match(sendBody, /if \(!steering\) \{[\s\S]*restoreThreadStatusSnapshot\(previousThreadStatus\);[\s\S]*renderThreads\(\);[\s\S]*\}/);
+
+  const taskCardSendBody = functionBody("sendThreadTaskCardCommand");
+  assert.match(taskCardSendBody, /const result = await api\(`\/api\/threads\/\$\{encodeURIComponent\(state\.currentThreadId\)\}\/messages`/);
+  assert.match(taskCardSendBody, /const serverTurnId = startedTurnId\(result\);/);
+  assert.match(taskCardSendBody, /if \(serverTurnId && reconcileSubmittedUserMessageTurn\(state\.currentThreadId, clientSubmissionId, serverTurnId\)\)/);
+  assert.doesNotMatch(taskCardSendBody, /!steering/);
 
   const expireBody = functionBody("shouldExpireRunningThreadHint");
   assert.match(expireBody, /id === state\.currentThreadId && state\.activeTurnId && currentLiveTurnSupportsThreadStatusHint\(id\)/);

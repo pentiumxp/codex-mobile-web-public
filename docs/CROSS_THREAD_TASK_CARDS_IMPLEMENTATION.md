@@ -122,13 +122,27 @@ server converts the tool call into the same
 `createThreadTaskCardsFromSourceThread()` path used by
 `POST /api/threads/:sourceThreadId/task-cards`. The tool returns bounded JSON
 text containing card ids, target thread ids, and whether source-direct approval
-was used, wrapped as app-server text content. Direct dynamic-tool task cards are
-idempotent by explicit request id when one is supplied; otherwise the server
-uses the source thread plus target/title/body/workflow semantics so retry calls
-with a new tool call id do not create duplicate cards. If the switch is off, the
+was used, wrapped as app-server dynamic-tool output:
+`result.success` plus `result.contentItems[{ type:"inputText" }]`. This schema is intentionally not
+the MCP `content[{ type:"text" }]` response shape. Direct dynamic-tool task
+cards are idempotent by explicit request id when one is supplied; otherwise the
+server uses the source thread plus target/title/body/workflow semantics so retry
+calls with a new tool call id do not create duplicate cards. If the switch is off, the
 tool is not injected. If the tool is called without a target or source thread id
 cannot be inferred, the server returns a bounded error to the model instead of
 hanging the turn.
+
+Source-thread task-card creation has a stricter target resolver than the manual
+pending-card API. The resolver only accepts current visible target threads from
+the non-archived Mobile thread list. Hidden, archived, sub-agent, old rollout
+fallback, and non-detail-readable thread ids are rejected. When several visible
+threads share the same cwd/workspace, the latest visible thread is the canonical
+target for that cwd; older date-suffixed threads return `stale_target_thread`
+with a bounded `currentTarget` object instead of being silently retargeted.
+Completely invisible or unknown ids return `target_thread_not_visible`. This
+same guard applies to both the app-server dynamic tool and the
+`scripts/create-thread-task-card.js` fallback because both use
+`POST /api/threads/:sourceThreadId/task-cards`.
 
 The same runtime path appends a short developer-instruction fallback to
 `thread/start` and `turn/start`. If the app-server dynamic tool is not visible
@@ -228,6 +242,11 @@ command is not shell-chained. Direct `apply_patch`, file writes, `git add`,
 from a plugin workspace. The request classifier resolves the source workspace
 from thread/turn ownership before consulting the command cwd, so a plugin thread
 cannot bypass the guard by running a shell command with `cwd` set to Home AI.
+The guard is intentionally about source mutation, not about closing tool
+workspaces. Foreign-cwd tool commands are allowed when they do not target the
+foreign source root, including local Playwright / Chromium validation and
+diagnostics that write bounded artifacts to temporary paths. Inline JavaScript
+`=>` is not treated as shell redirection.
 
 The old `danger-full-access` approval-proxy-only compatibility mode is available
 only when `CODEX_MOBILE_WORKSPACE_DELEGATION_APPROVAL_PROXY_ONLY=1` is set and

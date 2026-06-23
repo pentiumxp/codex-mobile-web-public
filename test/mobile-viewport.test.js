@@ -147,8 +147,8 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v374/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v374"/);
+  assert.match(swJs, /codex-mobile-shell-v393/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v393"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);
@@ -233,7 +233,7 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /function currentThreadNeedsForegroundRefresh\(\)/);
   assert.match(appJs, /function currentThreadListRowChanged\(\)/);
   assert.match(appJs, /threadUpdatedAtMs\(row\)/);
-  assert.match(appJs, /mobile_resume_thread_refresh_skipped/);
+  assert.match(appJs, /mobile_resume_thread_refresh_scheduled/);
   assert.match(appJs, /function isTransientResumeError\(err\)/);
   assert.match(appJs, /function scheduleTransientResumeRetry\(reason, delay = 1200\)/);
   assert.match(appJs, /async function resumeMobileSession\(reason = "resume"\)[\s\S]*transient: isTransientResumeError\(err\)/);
@@ -250,7 +250,7 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /maybeAutoRecoverTurnAfterReconnect\(payload\.status, "app-server-reconnect"\)/);
   assert.match(appJs, /if \(state\.currentThreadId && state\.currentThread && !state\.currentThread\.mobileLoading && !state\.currentThread\.mobileLoadError\) \{/);
   assert.match(appJs, /return shouldPollCurrentThread\(\) \|\| currentThreadListRowChanged\(\);/);
-  assert.match(appJs, /if \(currentThreadNeedsForegroundRefresh\(\)\) \{[\s\S]*scheduleCurrentThreadRefresh\(250\);[\s\S]*mobile_resume_thread_refresh_skipped[\s\S]*else if \(state\.currentThreadId\) \{[\s\S]*await refreshCurrentThread\(\{ source: "resume" \}\);[\s\S]*else \{[\s\S]*await restoreThreadSelection\(\);/);
+  assert.match(appJs, /const foregroundRefresh = currentThreadNeedsForegroundRefresh\(\);[\s\S]*mobile_resume_thread_refresh_scheduled[\s\S]*if \(foregroundRefresh\) scheduleCurrentThreadRefresh\(250, "resume"\);[\s\S]*else await refreshCurrentThread\(\{ source: "resume" \}\);[\s\S]*else if \(state\.currentThreadId\) \{[\s\S]*await refreshCurrentThread\(\{ source: "resume" \}\);[\s\S]*else \{[\s\S]*await restoreThreadSelection\(\);/);
   assert.match(appJs, /async function restoreThreadSelection\(\) \{[\s\S]*if \(isHermesEmbedMode\(\)\) \{[\s\S]*showHermesPluginPrimaryPage\(\);[\s\S]*return;/);
   assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*publishPluginNavigationState\(\{ force: true \}\);\s*\n\s*updateComposerControls\(\);/);
   assert.doesNotMatch(appJs, /function shouldOpenLargeThreadHistoryAtTop/);
@@ -306,17 +306,21 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /skippedDetailRender: !shouldRenderDetail/);
   assert.match(appJs, /locallyPatchedDetail,/);
   assert.match(appJs, /function conversationRootSignature\(thread\)/);
+  assert.match(appJs, /function conversationPatchShellSignature\(thread\)/);
   assert.match(appJs, /function rolloutWarningSignature\(thread\)/);
   assert.doesNotMatch(functionBody("conversationRootSignature"), /rolloutSizeBytes: rolloutSizeBytes\(thread\)/);
   assert.doesNotMatch(functionBody("conversationRenderSignature"), /rolloutSizeBytes: rolloutSizeBytes\(thread\)/);
   assert.match(functionBody("conversationRootSignature"), /rolloutWarning: rolloutWarningSignature\(thread\)/);
+  assert.match(functionBody("conversationPatchShellSignature"), /rolloutWarning: rolloutWarningSignature\(thread\)/);
+  assert.doesNotMatch(functionBody("conversationPatchShellSignature"), /projectionRevision/);
+  assert.doesNotMatch(functionBody("conversationPatchShellSignature"), /visibleItemKeys/);
   assert.match(functionBody("conversationRenderSignature"), /rolloutWarning: rolloutWarningSignature\(thread\)/);
   assert.match(functionBody("conversationRootSignature"), /visibleTurns: turns\.map\(\(turn\) => turn && \(turn\.id \|\| turn\.startedAt \|\| ""\)\)/);
   assert.match(appJs, /function patchVisibleItemDom\(turn, item\)/);
   assert.match(appJs, /function insertVisibleItemDom\(turn, item\)/);
   assert.match(appJs, /function insertTurnArticleDom\(turn, previousKeys = existingConversationRenderKeys\(\)\)/);
   assert.match(appJs, /function patchCurrentThreadDetailFromRefresh\(previousThread, nextThread, previousConversationSignature\)/);
-  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /conversationRootSignature\(previousThread\) !== conversationRootSignature\(nextThread\)/);
+  assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /conversationPatchShellSignature\(previousThread\) !== conversationPatchShellSignature\(nextThread\)/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /updateLiveOperationDockHtml\(renderLiveOperationDock\(nextThread, previousKeys\)\)/);
   assert.match(functionBody("patchCurrentThreadDetailFromRefresh"), /patchNode\(article, source\);/);
   assert.match(functionBody("insertVisibleItemDom"), /if \(isOperationalItem\(item\)\) return updateLiveOperationDockForLocalPatch\(\);/);
@@ -362,10 +366,18 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /function formatTokenMillion\(value\)/);
   assert.match(appJs, /const THREAD_LIST_PAGE_LIMIT = 40;/);
   assert.match(appJs, /new URLSearchParams\(\{ limit: String\(THREAD_LIST_PAGE_LIMIT\), archived: "false" \}\)/);
-  assert.match(appJs, /const threadDetailOpening = Boolean\(state\.currentThread && state\.currentThread\.mobileLoading\);/);
+  assert.match(appJs, /function hasThreadDetailRequestInFlight\(\)/);
+  assert.match(appJs, /state\.threadLoadController[\s\S]*state\.refreshThreadController[\s\S]*state\.currentThread && state\.currentThread\.mobileLoading/);
+  assert.match(appJs, /const threadDetailOpening = hasThreadDetailRequestInFlight\(\);/);
   assert.match(appJs, /silent && options\.deferFallback !== false && threadDetailOpening && !state\.selectedCwd && !search/);
   assert.match(appJs, /if \(shouldDeferFallback && !search\) params\.set\("fallback", "defer"\)/);
-  assert.match(appJs, /if \(result && result\.mobileDeferredFallback && options\.deferFallback === true\) \{[\s\S]*loadThreads\(\{ silent: true, deferFallback: false \}\)\.catch\(showError\);[\s\S]*\}, 800\);/);
+  assert.match(appJs, /const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;/);
+  assert.match(appJs, /const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;/);
+  assert.match(appJs, /threadListDeferredFallbackTimer: null/);
+  assert.match(appJs, /function scheduleThreadListDeferredFallback\(delayMs = THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS\)/);
+  assert.match(appJs, /if \(state\.threadListLoadController \|\| hasThreadDetailRequestInFlight\(\)\) \{[\s\S]*scheduleThreadListDeferredFallback\(THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS\);[\s\S]*return;/);
+  assert.match(appJs, /if \(options\.deferFallback !== true\) clearThreadListDeferredFallbackTimer\(\);/);
+  assert.match(appJs, /if \(result && result\.mobileDeferredFallback && !state\.selectedCwd && !search\) \{[\s\S]*scheduleThreadListDeferredFallback\(\);[\s\S]*\}/);
   assert.match(appJs, /Uncached \$\{escapeHtml\(formatTokenMillion\(displayInputTokensExcludingCached\(entry\)\)\)\}/);
   assert.match(appJs, /Cached \$\{escapeHtml\(formatTokenMillion\(entry && entry\.cachedInputTokens\)\)\}/);
   assert.match(appJs, /Out \$\{escapeHtml\(formatTokenMillion\(entry && entry\.outputTokens\)\)\}/);

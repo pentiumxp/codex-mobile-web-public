@@ -190,6 +190,7 @@ const state = {
   threadListLoadSeq: 0,
   threadListLoadController: null,
   threadListLoadedAtMs: 0,
+  threadListDeferredFallbackTimer: null,
   threadActionMenuId: "",
   threadLongPress: null,
   renameThreadId: "",
@@ -339,7 +340,7 @@ const state = {
   unreadThreadIds: loadStringSetStorage("codexMobileUnreadThreadIds"),
   threadViewedAtById: loadNumberMapStorage("codexMobileThreadViewedAtById", {}),
   rolloutWarningDismissals: loadStringSetStorage("codexMobileDismissedRolloutWarnings"),
-  codexFastMode: localStorage.getItem("codexMobileCodexFastMode") === "on",
+  codexFastMode: false,
   fontSize: localStorage.getItem("codexMobileFontSize")
     || (INITIAL_PLUGIN_EMBED.appearance && INITIAL_PLUGIN_EMBED.appearance.fontSize)
     || "default",
@@ -389,7 +390,9 @@ const MAX_RAW_THREAD_VISIBLE_ITEMS_PER_TURN = 24;
 const PROTECTED_IMAGE_PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v374";
+const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
+const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v393";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -998,6 +1001,66 @@ function insertLocalSubmittedUserMessage(threadId, text, attachments, clientSubm
   mergeThreadIntoThreadList(state.currentThread);
   syncActiveTurnFromThread();
   return true;
+}
+
+function mergeSubmittedUserItemIntoTurn(turn, item) {
+  if (!turn || !item || item.type !== "userMessage") return false;
+  turn.items = Array.isArray(turn.items) ? turn.items : [];
+  const existingIndex = turn.items.findIndex((existing) => existing
+    && existing.type === "userMessage"
+    && (existing.id === item.id || userMessagesCanShadow(existing, item)));
+  if (existingIndex >= 0) {
+    turn.items[existingIndex] = mergeLikelySameUserMessage(turn.items[existingIndex], item);
+    return true;
+  }
+  turn.items.unshift(item);
+  return true;
+}
+
+function reconcileSubmittedUserMessageTurn(threadId, clientSubmissionId, serverTurnId) {
+  const id = String(threadId || "").trim();
+  const submissionId = String(clientSubmissionId || "").trim();
+  const turnId = String(serverTurnId || "").trim();
+  const thread = state.currentThread;
+  if (!id || !submissionId || !turnId || !thread || String(thread.id || "") !== id) return false;
+  thread.turns = Array.isArray(thread.turns) ? thread.turns : [];
+  let sourceTurn = null;
+  let sourceItem = null;
+  for (const turn of thread.turns) {
+    const item = (Array.isArray(turn && turn.items) ? turn.items : []).find((entry) => entry
+      && entry.type === "userMessage"
+      && String(entry.clientSubmissionId || "") === submissionId
+      && isOptimisticUserMessage(entry));
+    if (!item) continue;
+    sourceTurn = turn;
+    sourceItem = item;
+    break;
+  }
+  if (!sourceItem) return false;
+  let targetTurn = thread.turns.find((turn) => String(turn && turn.id || "") === turnId);
+  if (!targetTurn) {
+    targetTurn = {
+      id: turnId,
+      status: { type: "active" },
+      startedAt: sourceTurn && sourceTurn.startedAt,
+      startedAtMs: sourceTurn && sourceTurn.startedAtMs,
+      completedAt: null,
+      durationMs: null,
+      items: [],
+    };
+    thread.turns.push(targetTurn);
+  }
+  const changed = mergeSubmittedUserItemIntoTurn(targetTurn, sourceItem);
+  if (sourceTurn && sourceTurn !== targetTurn) {
+    sourceTurn.items = (sourceTurn.items || []).filter((item) => item !== sourceItem);
+    if (!sourceTurn.items.length && /^local-turn-/.test(String(sourceTurn.id || ""))) {
+      thread.turns = thread.turns.filter((turn) => turn !== sourceTurn);
+    }
+  }
+  normalizeThreadVisibleUserMessages(thread);
+  syncActiveTurnFromThread();
+  mergeThreadIntoThreadList(thread);
+  return changed;
 }
 
 function markSubmittedUserMessageFailed(threadId, text, attachments, clientSubmissionId, message) {
@@ -4025,7 +4088,7 @@ function showComposerFastHint(enabled) {
   if (state.composerFastHintTimer) window.clearTimeout(state.composerFastHintTimer);
   el.classList.remove("error");
   el.textContent = enabled ? "Fast on" : "Fast off";
-  el.title = enabled ? "Fast mode enabled for the next turn" : "Fast mode disabled";
+  el.title = enabled ? "Fast tag enabled for this thread" : "Fast tag disabled for this thread";
   state.composerFastHintTimer = window.setTimeout(() => {
     state.composerFastHintTimer = null;
     restoreConnectionState();
@@ -4266,10 +4329,7 @@ function applyDraftRuntimeSelection(draft) {
   const model = String(draft && draft.model || "");
   const effort = String(draft && draft.effort || "");
   const permission = effectiveComposerPermissionMode(draft && draft.permissionMode);
-  if (draft && draft.fastMode === true) {
-    state.codexFastMode = true;
-    localStorage.setItem(STORAGE_CODEX_FAST_MODE, "on");
-  }
+  state.codexFastMode = Boolean(draft && draft.fastMode === true);
   if (state.newThreadDraft) {
     state.newThreadTitle = String(draft && draft.threadTitle || "").trim();
     state.newThreadModel = model && state.modelOptions.includes(model) ? model : defaultNewThreadModel();
@@ -4531,6 +4591,13 @@ function isOperationalItem(item) {
   return item && (OPERATIONAL_ITEM_TYPES.has(item.type) || isWebSearchLikeItem(item));
 }
 
+function isActiveOperationalItem(item) {
+  if (!isOperationalItem(item)) return false;
+  const completedByTimestamp = Boolean(item.completedAtMs || item.completedAt || item.completed_at_ms || item.completed_at);
+  const status = statusText(item.status) || (completedByTimestamp ? "completed" : "");
+  return !isCompletedStatus(status);
+}
+
 function activityLabelForItem(item) {
   if (!item) return "更新";
   const status = statusText(item.status);
@@ -4619,6 +4686,12 @@ function latestRawTurn() {
   return turns.length ? turns[turns.length - 1] : null;
 }
 
+function currentThreadHasActiveRuntimeStatus() {
+  const thread = state.currentThread;
+  if (!thread || isStaleActiveStatus(thread.status) || thread.mobileStaleActiveTurn) return false;
+  return Boolean(state.activeTurnId) || isRunningStatus(thread.status);
+}
+
 function latestLiveTurnCandidate() {
   const displayLatest = latestTurn();
   if (displayLatest && !isTurnComplete(displayLatest) && isRunningStatus(displayLatest.status)) return displayLatest;
@@ -4641,6 +4714,7 @@ function isIncompleteInterruptedTurn(turn) {
 
 function shouldPollCurrentThread() {
   if (!state.currentThreadId || document.visibilityState === "hidden") return false;
+  if (currentThreadHasActiveRuntimeStatus()) return true;
   const turn = latestTurn();
   if (!turn) return false;
   if (isTurnComplete(turn)) return false;
@@ -4667,7 +4741,10 @@ function currentThreadNeedsForegroundRefresh() {
 
 function isLiveTurn(turn) {
   if (!turn || isTurnComplete(turn)) return false;
-  return isRunningStatus(turn && turn.status) || isIncompleteInterruptedTurn(turn) || turnHasActiveLiveItems(turn);
+  return isRunningStatus(turn && turn.status)
+    || isIncompleteInterruptedTurn(turn)
+    || turnHasActiveLiveItems(turn)
+    || (isLatestTurn(turn) && currentThreadHasActiveRuntimeStatus());
 }
 
 function isLatestTurn(turn) {
@@ -4883,11 +4960,12 @@ function currentLiveOperationEntry(thread) {
   if (!thread || !Array.isArray(thread.turns) || !thread.turns.length) return null;
   const turn = thread.turns[thread.turns.length - 1];
   if (!turn || !isLatestTurn(turn) || !isLiveTurn(turn)) return null;
-  let latest = null;
-  (turn.items || []).forEach((item, index) => {
-    if (isOperationalItem(item)) latest = { turn, item, sourceIndex: index };
-  });
-  return latest;
+  const items = Array.isArray(turn.items) ? turn.items : [];
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (isActiveOperationalItem(item)) return { turn, item, sourceIndex: index };
+  }
+  return null;
 }
 
 function visibleItemSignature(item, turn = null) {
@@ -4997,8 +5075,24 @@ function turnVisibleWeight(turn) {
   return items.reduce((total, item) => total + itemVisibleWeight(item), 0);
 }
 
-function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false) {
+function isAssistantReceiptLikeItem(item) {
+  return Boolean(item && (item.type === "agentMessage" || item.type === "plan"));
+}
+
+function completedIncomingTurnHasAuthoritativeReceipt(incomingTurn) {
+  if (!incomingTurn || !isTurnComplete(incomingTurn) || !Array.isArray(incomingTurn.items)) return false;
+  return incomingTurn.items.some((item) => isAssistantReceiptLikeItem(item));
+}
+
+function shouldDropLocalOnlyReceiptForIncomingTurn(item, incomingTurn = null) {
+  return isAssistantReceiptLikeItem(item)
+    && completedIncomingTurnHasAuthoritativeReceipt(incomingTurn);
+}
+
+function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false, suppressedVisualReceiptKeys = null, incomingTurn = null) {
   if (!item || itemVisibleWeight(item) <= 0) return false;
+  if (visualReceiptMatchesSuppressionKeys(item, suppressedVisualReceiptKeys)) return false;
+  if (shouldDropLocalOnlyReceiptForIncomingTurn(item, incomingTurn)) return false;
   if (item.type === "userMessage" && /^mux-user-/.test(String(item.id || ""))) return true;
   return preserveLocalVisible && !isReasoningItem(item);
 }
@@ -5087,6 +5181,61 @@ function comparablePathNamesLikelySame(leftName, rightName) {
   if (!left || !right) return false;
   if (left === right) return true;
   return left.endsWith(`-${right}`) || right.endsWith(`-${left}`);
+}
+
+function isVisualReceiptItem(item) {
+  return Boolean(item && (item.type === "imageView" || item.type === "imageGeneration"));
+}
+
+function visualReceiptComparableNames(item) {
+  if (!isVisualReceiptItem(item)) return [];
+  const values = [
+    imageViewPath(item),
+    imageViewContentUrl(item),
+    imageViewUrl(item),
+    item.fileName,
+    item.file_name,
+    item.label,
+    item.caption,
+    item.name,
+  ];
+  return [...new Set(values.map(comparablePathName).filter(Boolean))];
+}
+
+function visualReceiptCallId(item) {
+  return String(item && (
+    item.callId
+    || item.call_id
+    || item.toolCallId
+    || item.tool_call_id
+    || item.arguments && (item.arguments.callId || item.arguments.call_id || item.arguments.toolCallId || item.arguments.tool_call_id)
+    || item.result && (item.result.callId || item.result.call_id || item.result.toolCallId || item.result.tool_call_id)
+  ) || "").trim();
+}
+
+function visualReceiptSuppressionKeys(item) {
+  if (!isVisualReceiptItem(item)) return [];
+  const keys = new Set();
+  const id = String(item && item.id || "").trim();
+  const callId = visualReceiptCallId(item);
+  if (id) keys.add(`id:${id}`);
+  if (callId) keys.add(`call:${callId}`);
+  for (const name of visualReceiptComparableNames(item)) {
+    keys.add(`name:${name}`);
+  }
+  return [...keys];
+}
+
+function suppressedVisualReceiptKeySet(turn) {
+  const values = Array.isArray(turn && turn.mobileSuppressedVisualReceiptKeys)
+    ? turn.mobileSuppressedVisualReceiptKeys
+    : [];
+  return new Set(values.map((entry) => String(entry || "").trim()).filter(Boolean));
+}
+
+function visualReceiptMatchesSuppressionKeys(item, suppressedVisualReceiptKeys) {
+  if (!isVisualReceiptItem(item) || !suppressedVisualReceiptKeys || !suppressedVisualReceiptKeys.size) return false;
+  return visualReceiptSuppressionKeys(item).some((key) => suppressedVisualReceiptKeys.has(key));
 }
 
 function userMessageSpecificity(item) {
@@ -5447,9 +5596,91 @@ function visibleTextItemsLikelySame(existingItem, incomingItem) {
     || (incomingText.length >= existingText.length && incomingText.startsWith(existingText));
 }
 
-function hasMatchingIncomingVisibleItem(existingItem, incomingItems) {
-  if (hasMatchingIncomingUserMessage(existingItem, incomingItems)) return true;
-  return (incomingItems || []).some((incomingItem) => visibleTextItemsLikelySame(existingItem, incomingItem));
+function visibleTextItemsHaveStableSharedPrefix(existingItem, incomingItem) {
+  if (!comparableVisibleTextItem(existingItem) || !comparableVisibleTextItem(incomingItem)) return false;
+  if (existingItem.type !== incomingItem.type) return false;
+  const existingText = comparableVisibleText(existingItem);
+  const incomingText = comparableVisibleText(incomingItem);
+  if (!existingText || !incomingText) return false;
+  if (existingText === incomingText) return true;
+  const shorterText = existingText.length <= incomingText.length ? existingText : incomingText;
+  const longerText = existingText.length <= incomingText.length ? incomingText : existingText;
+  if (shorterText.length < 16) return false;
+  if (!longerText.startsWith(shorterText)) return false;
+  return shorterText.length / Math.max(1, longerText.length) >= 0.5;
+}
+
+function completedReceiptItemsLikelySame(existingItem, incomingItem, incomingTurn = null) {
+  if (!completedIncomingTurnHasAuthoritativeReceipt(incomingTurn)) return false;
+  if (!isAssistantReceiptLikeItem(existingItem) || !isAssistantReceiptLikeItem(incomingItem)) return false;
+  return visibleTextItemsLikelySame(existingItem, incomingItem)
+    || visibleTextItemsHaveStableSharedPrefix(existingItem, incomingItem);
+}
+
+function visibleTextItemsCanShareRenderIdentity(existingItem, incomingItem, incomingTurn = null) {
+  return visibleTextItemsLikelySame(existingItem, incomingItem)
+    || completedReceiptItemsLikelySame(existingItem, incomingItem, incomingTurn);
+}
+
+function findUnusedExistingItemIndexForIncoming(incomingItem, existingItems, usedExistingIndexes, incomingTurn = null) {
+  if (!incomingItem) return -1;
+  const used = usedExistingIndexes || new Set();
+  if (incomingItem.id) {
+    const index = (existingItems || []).findIndex((existingItem, candidateIndex) => existingItem
+      && !used.has(candidateIndex)
+      && existingItem.id === incomingItem.id);
+    if (index >= 0) return index;
+  }
+  if (incomingItem.type === "userMessage") {
+    const index = (existingItems || []).findIndex((existingItem, candidateIndex) => existingItem
+      && !used.has(candidateIndex)
+      && existingItem.type === "userMessage"
+      && userMessagesCanShadow(existingItem, incomingItem));
+    if (index >= 0) return index;
+  }
+  if (comparableVisibleTextItem(incomingItem)) {
+    const index = (existingItems || []).findIndex((existingItem, candidateIndex) => existingItem
+      && !used.has(candidateIndex)
+      && visibleTextItemsCanShareRenderIdentity(existingItem, incomingItem, incomingTurn));
+    if (index >= 0) return index;
+  }
+  return -1;
+}
+
+function mergeIncomingOrderedItem(existingItem, incomingItem, incomingTurn = null) {
+  if (!existingItem) return incomingItem;
+  if (!incomingItem) return existingItem;
+  if (incomingItem.type === "userMessage" && existingItem.type === "userMessage") {
+    return mergeLikelySameUserMessage(existingItem, incomingItem);
+  }
+  if (visibleTextItemsCanShareRenderIdentity(existingItem, incomingItem, incomingTurn)) {
+    return mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem, incomingTurn);
+  }
+  return mergeItemPreservingVisibleFields(existingItem, incomingItem);
+}
+
+function insertLocalOnlyItemByExistingOrder(merged, item, existingIndex, existingIndexToMergedIndex) {
+  if (!item) return;
+  let insertAt = -1;
+  for (let index = existingIndex - 1; index >= 0; index -= 1) {
+    if (existingIndexToMergedIndex.has(index)) {
+      insertAt = existingIndexToMergedIndex.get(index) + 1;
+      break;
+    }
+  }
+  if (insertAt < 0) {
+    for (const [index, mergedIndex] of existingIndexToMergedIndex.entries()) {
+      if (index > existingIndex && (insertAt < 0 || mergedIndex < insertAt)) {
+        insertAt = mergedIndex;
+      }
+    }
+  }
+  if (insertAt < 0 || insertAt > merged.length) insertAt = merged.length;
+  merged.splice(insertAt, 0, item);
+  for (const [index, mergedIndex] of existingIndexToMergedIndex.entries()) {
+    if (mergedIndex >= insertAt) existingIndexToMergedIndex.set(index, mergedIndex + 1);
+  }
+  existingIndexToMergedIndex.set(existingIndex, insertAt);
 }
 
 function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
@@ -5477,72 +5708,51 @@ function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
   return merged;
 }
 
-function mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem) {
+function mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem, incomingTurn = null) {
   const merged = mergeItemPreservingVisibleFields(existingItem, incomingItem);
-  if (!existingItem || !incomingItem || !merged || !visibleTextItemsLikelySame(existingItem, incomingItem)) return merged;
+  if (!existingItem || !incomingItem || !merged || !visibleTextItemsCanShareRenderIdentity(existingItem, incomingItem, incomingTurn)) return merged;
+  const existingText = comparableVisibleText(existingItem);
+  const incomingText = comparableVisibleText(incomingItem);
+  if (completedReceiptItemsLikelySame(existingItem, incomingItem, incomingTurn)
+    && typeof existingItem.text === "string"
+    && existingText.length > incomingText.length
+    && existingText.startsWith(incomingText)) {
+    merged.text = existingItem.text;
+  }
   if (existingItem.id) merged.id = existingItem.id;
   if (existingItem.startedAtMs && !incomingItem.startedAtMs) merged.startedAtMs = existingItem.startedAtMs;
   return merged;
 }
 
-function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserveLocalVisible = false) {
-  const incomingById = new Map((incomingItems || [])
-    .filter((item) => item && item.id)
-    .map((item) => [item.id, item]));
+function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserveLocalVisible = false, incomingTurn = null) {
   const added = new Set();
-  const addedIncomingItems = new Set();
+  const usedExistingIndexes = new Set();
+  const existingIndexToMergedIndex = new Map();
   const merged = [];
-  for (const existingItem of existingItems || []) {
-    if (!existingItem) continue;
-    const id = existingItem.id;
-    if (id && incomingById.has(id)) {
-      const incomingMatch = incomingById.get(id);
-      merged.push(userMessagesCanShadow(existingItem, incomingMatch)
-        ? mergeLikelySameUserMessage(existingItem, incomingMatch)
-        : mergeItemPreservingVisibleFields(existingItem, incomingMatch));
-      added.add(id);
-      addedIncomingItems.add(incomingMatch);
-    } else if (hasMatchingIncomingVisibleItem(existingItem, incomingItems)) {
-      const incomingUserMatch = (incomingItems || []).find((incomingItem) => incomingItem
-        && incomingItem.id !== id
-        && incomingItem.type === "userMessage"
-        && existingItem.type === "userMessage"
-        && userMessagesCanShadow(existingItem, incomingItem));
-      const incomingTextMatch = incomingUserMatch
-        ? null
-        : (incomingItems || []).find((incomingItem) => visibleTextItemsLikelySame(existingItem, incomingItem));
-      if (incomingUserMatch) {
-        merged.push(mergeLikelySameUserMessage(existingItem, incomingUserMatch));
-        if (incomingUserMatch.id) added.add(incomingUserMatch.id);
-        addedIncomingItems.add(incomingUserMatch);
-      } else if (incomingTextMatch) {
-        merged.push(mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingTextMatch));
-        if (incomingTextMatch.id) added.add(incomingTextMatch.id);
-        addedIncomingItems.add(incomingTextMatch);
-      }
-      if (id) added.add(id);
-    } else if (shouldPreserveLocalOnlyItem(existingItem, preserveLocalVisible)) {
-      merged.push(existingItem);
-      if (id) added.add(id);
-    }
-  }
+  const suppressedVisualReceiptKeys = suppressedVisualReceiptKeySet(incomingTurn);
   for (const incomingItem of incomingItems || []) {
     if (!incomingItem) continue;
-    if (addedIncomingItems.has(incomingItem)) continue;
     if (incomingItem.id && added.has(incomingItem.id)) continue;
     if (hasMatchingRealUserMessage(incomingItem, merged) || hasMatchingRealUserMessage(incomingItem, incomingItems)) continue;
-    if (incomingItem.type === "userMessage") {
-      const existingUserIndex = merged.findIndex((existingItem) => userMessagesCanShadow(existingItem, incomingItem));
-      if (existingUserIndex >= 0) {
-        merged[existingUserIndex] = mergeLikelySameUserMessage(merged[existingUserIndex], incomingItem);
-        if (incomingItem.id) added.add(incomingItem.id);
-        addedIncomingItems.add(incomingItem);
-        continue;
-      }
-    }
-    merged.push(incomingItem);
+    const existingIndex = findUnusedExistingItemIndexForIncoming(incomingItem, existingItems || [], usedExistingIndexes, incomingTurn);
+    const existingItem = existingIndex >= 0 ? existingItems[existingIndex] : null;
+    const mergedItem = mergeIncomingOrderedItem(existingItem, incomingItem, incomingTurn);
+    merged.push(mergedItem);
     if (incomingItem.id) added.add(incomingItem.id);
+    if (mergedItem && mergedItem.id) added.add(mergedItem.id);
+    if (existingItem && existingItem.id) added.add(existingItem.id);
+    if (existingIndex >= 0) {
+      usedExistingIndexes.add(existingIndex);
+      existingIndexToMergedIndex.set(existingIndex, merged.length - 1);
+    }
   }
+  (existingItems || []).forEach((existingItem, existingIndex) => {
+    if (!existingItem || usedExistingIndexes.has(existingIndex)) return;
+    if (!shouldPreserveLocalOnlyItem(existingItem, preserveLocalVisible, suppressedVisualReceiptKeys, incomingTurn)) return;
+    if (existingItem.id && added.has(existingItem.id)) return;
+    insertLocalOnlyItemByExistingOrder(merged, existingItem, existingIndex, existingIndexToMergedIndex);
+    if (existingItem.id) added.add(existingItem.id);
+  });
   return dedupeTurnUsageSummaryItems(removeShadowedMuxUserMessages(dedupeLikelySameUserMessages(merged)));
 }
 
@@ -5555,10 +5765,20 @@ function mergeTurnPreservingVisibleItems(existingTurn, incomingTurn) {
   if (!incomingHasItems) merged.items = existingItems;
   else {
     const incomingWeight = turnVisibleWeight(Object.assign({}, incomingTurn, { items: incomingTurn.items || [] }));
-    const preserveLocalVisible = incomingWeight < turnVisibleWeight(existingTurn);
-    merged.items = mergeItemsPreservingLocalVisible(existingItems, incomingTurn.items || [], preserveLocalVisible);
+    const existingWeight = turnVisibleWeight(existingTurn);
+    const preserveLocalVisible = incomingWeight < existingWeight
+      || shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight);
+    merged.items = mergeItemsPreservingLocalVisible(existingItems, incomingTurn.items || [], preserveLocalVisible, incomingTurn);
   }
   return merged;
+}
+
+function shouldPreserveLiveTurnLocalVisibleItems(existingTurn, incomingTurn, existingWeight = null) {
+  if (!existingTurn || !incomingTurn) return false;
+  if (String(existingTurn.id || "") !== String(incomingTurn.id || "")) return false;
+  if (isTurnComplete(existingTurn) || isTurnComplete(incomingTurn)) return false;
+  const weight = existingWeight == null ? turnVisibleWeight(existingTurn) : Number(existingWeight || 0);
+  return weight > 0;
 }
 
 function mergeThreadPreservingVisibleItems(existingThread, incomingThread) {
@@ -5765,6 +5985,33 @@ function conversationRootSignature(thread) {
   return JSON.stringify(payload);
 }
 
+function conversationPatchShellSignature(thread) {
+  if (!thread) return "home";
+  if (thread.mobileLoadError) return `load-error|${state.currentThreadId || thread.id || ""}|${thread.mobileLoadError}`;
+  if (threadIsLoadingWithoutVisibleTurns(thread)) return `loading|${state.currentThreadId || thread.id || ""}`;
+  const turns = visibleTurnsForConversation(thread);
+  const omitted = Number(thread.mobileOmittedTurnCount || 0) + Math.max(0, (thread.turns || []).length - turns.length);
+  const readWarningMessage = threadReadWarningMessage(thread);
+  const payload = {
+    threadId: state.currentThreadId || thread.id || "",
+    imageAuthVersion: Number(state.imageAuthVersion || 0),
+    pluginRefreshPendingNotice: String(state.pluginRefreshPendingNotice || ""),
+    rolloutWarning: rolloutWarningSignature(thread),
+    omitted,
+    olderTurnsCursor: threadTurnsCursorSignature(thread.mobileOlderTurnsCursor),
+    historyExpanded: Boolean(thread.mobileHistoryExpanded),
+    historyBusy: Boolean(state.threadHistoryBusy),
+    historyError: String(state.threadHistoryError || ""),
+    goal: threadGoalSignature(thread),
+    approvals: approvalRequestsSignature(state.currentThreadId || thread.id || ""),
+    taskCards: threadTaskCardsSignature(thread),
+    readWarning: String(thread.mobileReadWarning || ""),
+    readWarningMessage,
+    visibleTurns: turns.map((turn) => turn && (turn.id || turn.startedAt || "")),
+  };
+  return JSON.stringify(payload);
+}
+
 function conversationRenderSignature(thread) {
   if (!thread) return "home";
   if (thread.mobileLoadError) return `load-error|${state.currentThreadId || thread.id || ""}|${thread.mobileLoadError}`;
@@ -5871,6 +6118,12 @@ function turnElapsedSeconds(turn) {
   return Math.max(0, Math.floor((state.nowMs - startedMs) / 1000));
 }
 
+function activeThreadFallbackElapsedSeconds(latest = null) {
+  const latestStarted = liveTurnStartedAtMs(latest) || turnStartedAtMs(latest);
+  const startedMs = latestStarted || Number(state.activityAtMs || 0) || state.nowMs;
+  return Math.max(0, Math.floor((state.nowMs - startedMs) / 1000));
+}
+
 function turnFinalSeconds(turn) {
   if (!turn) return null;
   if (turn.durationMs) return Math.max(0, Math.round(turn.durationMs / 1000));
@@ -5905,18 +6158,27 @@ function liveTurnFallbackActivityLabel(turn) {
   return "运行";
 }
 
+function activeThreadFallbackActivityLabel() {
+  const label = String(state.activityLabel || "").trim();
+  if (label && !isIdleSyncActivityLabel(label) && label !== "加载线程") return label;
+  return "运行";
+}
+
 function activeLiveOperationItemForTurn(turn) {
   const items = Array.isArray(turn && turn.items) ? turn.items : [];
   for (let index = items.length - 1; index >= 0; index -= 1) {
     const item = items[index];
-    if (item && isOperationalItem(item) && !isCompletedStatus(item.status)) return item;
+    if (isActiveOperationalItem(item)) return item;
   }
   return null;
 }
 
 function turnHasActiveLiveItems(turn) {
   const items = Array.isArray(turn && turn.items) ? turn.items : [];
-  return items.some((item) => item && !isCompletedStatus(item.status) && (item.type === "reasoning" || isOperationalItem(item)));
+  return items.some((item) => item && (
+    (item.type === "reasoning" && !isCompletedStatus(item.status))
+    || isActiveOperationalItem(item)
+  ));
 }
 
 function liveTurnStartedAtMs(turn) {
@@ -5928,8 +6190,12 @@ function liveTurnStartedAtMs(turn) {
   if (explicit) return explicit;
   const items = Array.isArray(turn.items) ? turn.items : [];
   for (const item of items) {
-    if (!item || isCompletedStatus(item.status)) continue;
-    if (item.type !== "reasoning" && !isOperationalItem(item)) continue;
+    if (!item) continue;
+    if (item.type === "reasoning") {
+      if (isCompletedStatus(item.status)) continue;
+    } else if (!isActiveOperationalItem(item)) {
+      continue;
+    }
     const itemStarted = numericTimestampMs(item.startedAtMs)
       || numericTimestampMs(item.startedAt)
       || numericTimestampMs(item.createdAtMs)
@@ -5965,6 +6231,13 @@ function updateTurnTimer() {
   const turn = currentLiveTurn();
   if (!turn) {
     const latest = latestTurn();
+    if (currentThreadHasActiveRuntimeStatus()) {
+      setTurnTimerContent(el, activeThreadFallbackElapsedSeconds(latest), activeThreadFallbackActivityLabel());
+      el.classList.add("visible", "active");
+      el.classList.remove("settled");
+      el.setAttribute("aria-hidden", "false");
+      return;
+    }
     const finalSeconds = turnFinalSeconds(latest);
     if (finalSeconds != null) {
       setTurnTimerContent(el, finalSeconds, "已结束");
@@ -5988,7 +6261,7 @@ function updateTickTimer() {
   clearInterval(state.tickTimer);
   state.tickTimer = null;
   updateTurnTimer();
-  if (!currentLiveTurn()) return;
+  if (!currentLiveTurn() && !currentThreadHasActiveRuntimeStatus()) return;
   state.tickTimer = setInterval(() => {
     state.nowMs = Date.now();
     updateTurnTimer();
@@ -7730,9 +8003,39 @@ function renderThreadListLoading() {
   state.renderedThreadListSignature = `loading|${state.selectedCwd}|${$("threadSearch").value.trim()}`;
 }
 
+function clearThreadListDeferredFallbackTimer() {
+  if (!state.threadListDeferredFallbackTimer) return;
+  clearTimeout(state.threadListDeferredFallbackTimer);
+  state.threadListDeferredFallbackTimer = null;
+}
+
+function hasThreadDetailRequestInFlight() {
+  return Boolean(
+    state.threadLoadController
+    || state.refreshThreadController
+    || (state.currentThread && state.currentThread.mobileLoading),
+  );
+}
+
+function scheduleThreadListDeferredFallback(delayMs = THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS) {
+  clearThreadListDeferredFallbackTimer();
+  const delay = Math.max(500, Number(delayMs) || THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS);
+  state.threadListDeferredFallbackTimer = setTimeout(() => {
+    state.threadListDeferredFallbackTimer = null;
+    const search = $("threadSearch").value.trim();
+    if (state.selectedCwd || search) return;
+    if (state.threadListLoadController || hasThreadDetailRequestInFlight()) {
+      scheduleThreadListDeferredFallback(THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS);
+      return;
+    }
+    loadThreads({ silent: true, deferFallback: false }).catch(showError);
+  }, delay);
+}
+
 async function loadThreads(options = {}) {
   const silent = options.silent === true;
   if (silent && state.threadListLoadController) return null;
+  if (options.deferFallback !== true) clearThreadListDeferredFallbackTimer();
   const loadStartedAt = nowPerfMs();
   const seq = state.threadListLoadSeq + 1;
   state.threadListLoadSeq = seq;
@@ -7743,7 +8046,7 @@ async function loadThreads(options = {}) {
   if (state.selectedCwd) params.set("cwd", state.selectedCwd);
   const search = $("threadSearch").value.trim();
   if (search) params.set("search", search);
-  const threadDetailOpening = Boolean(state.currentThread && state.currentThread.mobileLoading);
+  const threadDetailOpening = hasThreadDetailRequestInFlight();
   const shouldDeferFallback = options.deferFallback === true
     || (silent && options.deferFallback !== false && threadDetailOpening && !state.selectedCwd && !search);
   if (shouldDeferFallback && !search) params.set("fallback", "defer");
@@ -7762,10 +8065,8 @@ async function loadThreads(options = {}) {
     renderThreads(result);
     restoreConnectionState(result.mobileFallback ? "Recovered from session index" : "Connected");
     scheduleVisiblePageRefreshCheck(500);
-    if (result && result.mobileDeferredFallback && options.deferFallback === true) {
-      setTimeout(() => {
-        loadThreads({ silent: true, deferFallback: false }).catch(showError);
-      }, 800);
+    if (result && result.mobileDeferredFallback && !state.selectedCwd && !search) {
+      scheduleThreadListDeferredFallback();
     }
     if (!state.currentThread) renderCurrentThread();
     postPerformanceEvent("thread_list_rendered", {
@@ -7980,6 +8281,7 @@ async function loadThread(threadId, options = {}) {
   if (shouldBackfillFullThreadDetail(result.thread)) {
     backfillFullThreadDetail(threadId, { seq, source }).catch(() => {});
   }
+  scheduleUsageBackfillRefresh();
   const renderElapsedMs = roundedDurationMs(renderStartedAt);
   postPerformanceEvent("thread_detail_first_paint", {
     source,
@@ -8344,7 +8646,7 @@ function schedulePostCompletionThreadRefreshes(threadId, delays = [700, 2400]) {
     if (state.currentThreadId !== id) return;
     refreshCurrentThread({
       source: "post-completion",
-      full: index === delays.length - 1,
+      full: true,
     }).catch(showError);
     }, delay);
     return timer;
@@ -10841,23 +11143,45 @@ function visibleItemPatchEntries(turn) {
   }).filter((entry) => entry.item && entry.key && entry.signature);
 }
 
-function sameVisibleItemPatchShape(previousTurn, nextTurn) {
-  const previous = visibleItemPatchEntries(previousTurn);
-  const next = visibleItemPatchEntries(nextTurn);
-  if (previous.length !== next.length) return false;
-  return previous.every((entry, index) => entry.key === next[index].key);
+function visibleItemPatchShapePreservesExisting(previousEntries, nextEntries) {
+  if (!Array.isArray(previousEntries) || !Array.isArray(nextEntries)) return false;
+  if (previousEntries.length > nextEntries.length) return false;
+  let previousIndex = 0;
+  for (const nextEntry of nextEntries) {
+    const previousEntry = previousEntries[previousIndex];
+    if (previousEntry && previousEntry.key === nextEntry.key) previousIndex += 1;
+  }
+  return previousIndex === previousEntries.length;
 }
 
 function patchVisibleItemsOnlyFromRefresh(previousTurn, nextTurn, previousKeys) {
-  if (!previousTurn || !nextTurn || !isLatestTurn(nextTurn) || !isLiveTurn(nextTurn)) return false;
-  if (!sameVisibleItemPatchShape(previousTurn, nextTurn)) return false;
+  if (!previousTurn || !nextTurn || !isLatestTurn(nextTurn)) return false;
   const previousEntries = visibleItemPatchEntries(previousTurn);
   const nextEntries = visibleItemPatchEntries(nextTurn);
+  if (!visibleItemPatchShapePreservesExisting(previousEntries, nextEntries)) return false;
+  const article = turnArticleNode(nextTurn);
+  if (!article) return false;
+  const previousByKey = new Map(previousEntries.map((entry) => [entry.key, entry]));
+  let lastPatchedNode = null;
   for (let index = 0; index < nextEntries.length; index += 1) {
-    const previousSignature = JSON.stringify(previousEntries[index].signature);
-    const nextSignature = JSON.stringify(nextEntries[index].signature);
-    if (previousSignature === nextSignature) continue;
-    if (!patchVisibleItemDomNode(nextTurn, nextEntries[index].item, previousKeys, nextEntries[index].sourceIndex)) return false;
+    const nextEntry = nextEntries[index];
+    const previousEntry = previousByKey.get(nextEntry.key);
+    if (previousEntry) {
+      const existingNode = article.querySelector(`[data-render-key="${escapeSelectorAttr(nextEntry.key)}"]`);
+      if (!existingNode) return false;
+      const previousSignature = JSON.stringify(previousEntry.signature);
+      const nextSignature = JSON.stringify(nextEntry.signature);
+      lastPatchedNode = previousSignature === nextSignature
+        ? existingNode
+        : patchVisibleItemDomNode(nextTurn, nextEntry.item, previousKeys, nextEntry.sourceIndex);
+      if (!lastPatchedNode) return false;
+      continue;
+    }
+    const html = renderVisibleItemPatchHtml(nextTurn, nextEntry.item, previousKeys, nextEntry.sourceIndex);
+    const source = firstElementFromHtml(html);
+    if (!source) return false;
+    article.insertBefore(source, lastPatchedNode ? lastPatchedNode.nextSibling : article.firstChild);
+    lastPatchedNode = source;
   }
   return true;
 }
@@ -10885,7 +11209,7 @@ function patchCurrentThreadDetailFromRefresh(previousThread, nextThread, previou
   if (!conversation || !previousThread || !nextThread) return false;
   if (previousThread.mobileLoading || previousThread.mobileLoadError || nextThread.mobileLoading || nextThread.mobileLoadError) return false;
   if (state.renderedConversationSignature !== previousConversationSignature) return false;
-  if (conversationRootSignature(previousThread) !== conversationRootSignature(nextThread)) return false;
+  if (conversationPatchShellSignature(previousThread) !== conversationPatchShellSignature(nextThread)) return false;
   const wasNearBottom = isConversationNearBottom();
   const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom: wasNearBottom });
   const previousKeys = existingConversationRenderKeys();
@@ -11918,11 +12242,15 @@ async function createThreadTaskCardFromCurrent(event) {
 
 function startThreadRequestBody(sourceThread = null, options = {}) {
   const thread = sourceThread || state.currentThread || {};
+  const pluginMode = isHermesEmbedMode() ? "hermes" : "";
   return {
     cwd: thread.cwd || state.selectedCwd || "",
     sourceThreadId: thread.id || "",
     sourceThreadTitle: threadTitleForDisplay(thread) || thread.id || "",
     archiveSourceThread: Boolean(options.archiveSourceThread && thread.id),
+    pluginMode,
+    hermesPluginMode: Boolean(pluginMode),
+    pluginId: pluginMode ? "codex-mobile" : "",
   };
 }
 
@@ -12069,6 +12397,9 @@ async function startNewThreadFromThread(sourceThread, event) {
     sourceThreadId: thread.id || "",
     sourceThreadTitle: threadTitleForDisplay(thread) || thread.id || "",
     archiveSourceThread: Boolean(thread.id),
+    pluginMode: isHermesEmbedMode() ? "hermes" : "",
+    hermesPluginMode: isHermesEmbedMode(),
+    pluginId: isHermesEmbedMode() ? "codex-mobile" : "",
   };
   if (!body.cwd) {
     showError(new Error("Thread has no workspace path"));
@@ -12879,8 +13210,26 @@ function parseAttachmentLine(line) {
   };
 }
 
+function codexMobileUploadIdForPath(filePath) {
+  const text = String(filePath || "")
+    .trim()
+    .replace(/^\\\\\?\\/, "")
+    .replace(/\\/g, "/")
+    .replace(/\/+$/, "");
+  if (!text) return "";
+  const marker = "/.codex-mobile-web/uploads/";
+  const index = text.toLowerCase().indexOf(marker);
+  if (index < 0) return "";
+  const id = text.slice(index + marker.length).replace(/^\/+/, "");
+  if (!id || /^[a-zA-Z]:/.test(id) || id.split("/").some((part) => !part || part === "." || part === "..")) return "";
+  return id;
+}
+
 function uploadFileUrl(filePath) {
-  const params = new URLSearchParams({ path: filePath });
+  const uploadId = codexMobileUploadIdForPath(filePath);
+  const params = uploadId
+    ? new URLSearchParams({ id: uploadId })
+    : new URLSearchParams({ path: filePath });
   if (state.key) params.set("key", state.key);
   return authenticatedApiContentUrl(`/api/uploads/file?${params.toString()}`);
 }
@@ -14035,17 +14384,69 @@ function filePreviewContentUrl(file) {
   return localFilePreviewContentUrl(file.path);
 }
 
+function hermesPluginProxyPrefixFromPathname(pathname) {
+  const pathValue = String(pathname || "");
+  const match = pathValue.match(/^(\/api\/hermes-plugins\/[^/]+\/proxy)(?:\/|$)/);
+  return match ? match[1] : "";
+}
+
+function hermesPluginProxyPrefix() {
+  if (!isHermesEmbedMode()) return "";
+  try {
+    return hermesPluginProxyPrefixFromPathname(window.location && window.location.pathname);
+  } catch (_) {
+    return "";
+  }
+}
+
+function protectedImageUpstreamPathname(pathname) {
+  const pathValue = String(pathname || "");
+  if (
+    pathValue === "/api/generated-images/file"
+    || pathValue === "/api/uploads/file"
+    || pathValue === "/api/files/preview/content"
+  ) {
+    return pathValue;
+  }
+  const match = pathValue.match(/^\/api\/hermes-plugins\/[^/]+\/proxy(\/api\/(?:generated-images\/file|uploads\/file|files\/preview\/content))$/);
+  return match ? match[1] : "";
+}
+
+function browserApiContentUrl(value) {
+  const raw = String(value || "");
+  if (!raw) return "";
+  try {
+    const origin = typeof window !== "undefined" && window.location && window.location.origin
+      ? window.location.origin
+      : "http://127.0.0.1";
+    const parsed = new URL(raw, origin);
+    if (parsed.origin !== origin) return raw;
+    const pathValue = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    const proxyPrefix = hermesPluginProxyPrefix();
+    if (
+      proxyPrefix
+      && parsed.pathname.startsWith("/api/")
+      && !parsed.pathname.startsWith(`${proxyPrefix}/`)
+    ) {
+      return `${proxyPrefix}${pathValue}`;
+    }
+    return pathValue;
+  } catch (_) {
+    return raw;
+  }
+}
+
 function authenticatedApiContentUrl(value) {
   const raw = String(value || "");
-  if (!raw || !state.key) return raw;
+  if (!raw) return "";
   try {
     const origin = typeof window !== "undefined" && window.location && window.location.origin
       ? window.location.origin
       : "http://127.0.0.1";
     const parsed = new URL(raw, origin);
     if (parsed.origin === origin && parsed.pathname.startsWith("/api/")) {
-      parsed.searchParams.set("key", state.key);
-      return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+      if (state.key) parsed.searchParams.set("key", state.key);
+      return browserApiContentUrl(`${parsed.pathname}${parsed.search}${parsed.hash}`);
     }
   } catch (_) {}
   return raw;
@@ -14058,7 +14459,7 @@ function localFilePreviewContentUrl(filePath) {
     path: String(filePath),
   });
   if (state.key) params.set("key", state.key);
-  return `/api/files/preview/content?${params.toString()}`;
+  return browserApiContentUrl(`/api/files/preview/content?${params.toString()}`);
 }
 
 function renderJsonPreview(content) {
@@ -14166,12 +14567,23 @@ function imageViewContentUrl(item) {
   )) || "");
 }
 
+function isImageViewUnavailable(item) {
+  return Boolean(item && (
+    item.imageUnavailable
+    || item.unavailable
+    || item.generatedImage && item.generatedImage.unavailable
+  ));
+}
+
 function renderImageView(item) {
   const filePath = imageViewPath(item);
   const contentUrl = imageViewContentUrl(item);
   const url = imageViewUrl(item);
   const src = contentUrl ? authenticatedApiContentUrl(contentUrl) : (filePath ? imageContentUrlForPath(filePath) : url);
   const label = shortPath(filePath || item.label || item.fileName || item.file_name || item.caption || url || item.id || "image");
+  if (isImageViewUnavailable(item)) {
+    return `<figure class="image-view image-load-failed">${label ? `<figcaption>${escapeHtml(label)}</figcaption>` : ""}</figure>`;
+  }
   if (!src) return renderStructuredBlock(item, "Image");
   const displaySrc = protectedImageDisplaySrc(src);
   return `<figure class="image-view">
@@ -14259,11 +14671,7 @@ function protectedGeneratedImageSrc(value) {
   if (!raw) return "";
   try {
     const parsed = new URL(raw, window.location.origin);
-    if (parsed.origin === window.location.origin && (
-      parsed.pathname === "/api/generated-images/file"
-      || parsed.pathname === "/api/uploads/file"
-      || parsed.pathname === "/api/files/preview/content"
-    )) {
+    if (parsed.origin === window.location.origin && protectedImageUpstreamPathname(parsed.pathname)) {
       return `${parsed.pathname}${parsed.search}${parsed.hash}`;
     }
   } catch (_) {}
@@ -14288,7 +14696,6 @@ function protectedImageDisplaySrc(src) {
 
 function protectedImageSourceAttribute(src) {
   const protectedSrc = protectedGeneratedImageSrc(src);
-  if (shouldRenderProtectedImageDirectly(protectedSrc)) return "";
   return protectedSrc ? ` data-protected-image-src="${escapeHtml(protectedSrc)}"` : "";
 }
 
@@ -14310,9 +14717,10 @@ function imageDiagnosticSourceKind(src) {
   try {
     const parsed = new URL(raw, window.location.origin);
     if (parsed.origin !== window.location.origin) return "remote";
-    if (parsed.pathname === "/api/uploads/file") return "upload";
-    if (parsed.pathname === "/api/generated-images/file") return "generated-image";
-    if (parsed.pathname === "/api/files/preview/content") return "file-preview";
+    const upstreamPathname = protectedImageUpstreamPathname(parsed.pathname) || parsed.pathname;
+    if (upstreamPathname === "/api/uploads/file") return "upload";
+    if (upstreamPathname === "/api/generated-images/file") return "generated-image";
+    if (upstreamPathname === "/api/files/preview/content") return "file-preview";
     if (parsed.pathname.startsWith("/api/")) return "api";
     return "same-origin";
   } catch (_) {
@@ -14421,6 +14829,22 @@ function retryProtectedAppImageSource(image, src) {
   }
 }
 
+function cacheBustedProtectedImageSrc(src, paramName = "_imgRetry") {
+  const source = protectedGeneratedImageSrc(src);
+  if (!source) return "";
+  try {
+    const parsed = new URL(source, window.location.origin);
+    parsed.searchParams.set(paramName, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch (_) {
+    return source;
+  }
+}
+
+function shouldRecoverProtectedImageAsDirectUrl() {
+  return isHermesEmbedMode() || (typeof isIosWebKitBrowser === "function" && isIosWebKitBrowser());
+}
+
 function blobToDataUrl(blob) {
   if (!blob || typeof FileReader === "undefined") return Promise.resolve("");
   return new Promise((resolve) => {
@@ -14435,8 +14859,13 @@ function blobToDataUrl(blob) {
   });
 }
 
-async function protectedAppImageRecoveredUrl(response) {
-  if (!response || typeof response.blob !== "function") return { url: "", objectUrl: false };
+async function protectedAppImageRecoveredUrl(response, src = "") {
+  if (!response) return { url: "", objectUrl: false };
+  if (shouldRecoverProtectedImageAsDirectUrl()) {
+    const directUrl = cacheBustedProtectedImageSrc(src, "_imgRecover");
+    if (directUrl) return { url: directUrl, objectUrl: false, directUrl: true };
+  }
+  if (typeof response.blob !== "function") return { url: "", objectUrl: false };
   const blob = await response.blob().catch(() => null);
   if (!blob) return { url: "", objectUrl: false };
   const type = String(blob.type || "").trim();
@@ -14472,7 +14901,7 @@ function shouldHydrateProtectedAppImage(image) {
   if (image.dataset.protectedImageHydrated === "1" || image.dataset.protectedImageHydrating === "1") return false;
   const current = String(image.currentSrc || image.src || "");
   if (/^(data:image|blob:)/i.test(current) && current !== PROTECTED_IMAGE_PLACEHOLDER_SRC) return false;
-  return isIosWebKitBrowser() || imageDiagnosticSourceKind(src) === "upload";
+  return isIosWebKitBrowser() || imageDiagnosticSourceKind(src) === "upload" || shouldRenderProtectedImageDirectly(src);
 }
 
 function hydrateProtectedAppImage(image, reason = "scan") {
@@ -14496,7 +14925,7 @@ function hydrateProtectedAppImage(image, reason = "scan") {
       }, { force: true });
       return;
     }
-    const recovered = await protectedAppImageRecoveredUrl(response);
+    const recovered = await protectedAppImageRecoveredUrl(response, src);
     if (!imageStillConnected(image)) {
       if (recovered && recovered.objectUrl && recovered.url) {
         const urlApi = protectedAppImageUrlApi();
@@ -14571,7 +15000,7 @@ function handleProtectedAppImageError(image) {
     }
     if (response && response.ok) {
       clearFailedAppImage(image);
-      const recovered = await protectedAppImageRecoveredUrl(response);
+      const recovered = await protectedAppImageRecoveredUrl(response, src);
       if (!imageStillConnected(image)) {
         if (recovered && recovered.objectUrl && recovered.url) {
           const urlApi = protectedAppImageUrlApi();
@@ -15790,16 +16219,16 @@ async function resumeMobileSession(reason = "resume") {
     if (status.codexProfiles) rememberCodexProfiles(status.codexProfiles);
     await loadThreads({ silent: Boolean(state.threads.length) });
     if (state.currentThreadId && state.currentThread && !state.currentThread.mobileLoading && !state.currentThread.mobileLoadError) {
-      if (currentThreadNeedsForegroundRefresh()) {
-        scheduleCurrentThreadRefresh(250);
-      } else {
-        postClientEvent("mobile_resume_thread_refresh_skipped", {
-          reason,
-          currentThreadId: state.currentThreadId || "",
-          status: statusText(state.currentThread && state.currentThread.status),
-          activeTurnId: state.activeTurnId || "",
-        });
-      }
+      const foregroundRefresh = currentThreadNeedsForegroundRefresh();
+      postClientEvent("mobile_resume_thread_refresh_scheduled", {
+        reason,
+        currentThreadId: state.currentThreadId || "",
+        status: statusText(state.currentThread && state.currentThread.status),
+        activeTurnId: state.activeTurnId || "",
+        foregroundRefresh,
+      });
+      if (foregroundRefresh) scheduleCurrentThreadRefresh(250, "resume");
+      else await refreshCurrentThread({ source: "resume" });
     } else if (state.currentThreadId) {
       await refreshCurrentThread({ source: "resume" });
     } else {
@@ -17186,6 +17615,7 @@ function resetComposerRuntimeSelection() {
   state.composerModel = "";
   state.composerEffort = "";
   state.composerPermissionMode = "";
+  state.codexFastMode = false;
   closeComposerRuntimeMenu();
   closeComposerIntentMenu();
   state.quotaDetailsOpen = false;
@@ -17216,10 +17646,17 @@ function codexFastCommandEnabled() {
   return Boolean(state.codexFastMode);
 }
 
+function clearLegacyCodexFastModeStorage() {
+  try {
+    localStorage.removeItem(STORAGE_CODEX_FAST_MODE);
+  } catch (_) {
+    // Ignore storage errors; Fast state is now stored in the per-target draft.
+  }
+}
+
 function setCodexFastCommandEnabled(enabled) {
   state.codexFastMode = Boolean(enabled);
-  if (state.codexFastMode) localStorage.setItem(STORAGE_CODEX_FAST_MODE, "on");
-  else localStorage.removeItem(STORAGE_CODEX_FAST_MODE);
+  clearLegacyCodexFastModeStorage();
   renderComposerSettings();
   updateComposerControls();
   saveCurrentDraftNow();
@@ -17396,10 +17833,11 @@ function renderComposerSettings() {
   const selectedEffort = selectedComposerEffort();
   const selectedPermission = selectedComposerPermissionMode();
   const fastEnabled = codexFastCommandEnabled();
+  const fastScopeLabel = state.newThreadDraft ? "this new thread" : "this thread";
   commandControl.classList.toggle("is-fast", fastEnabled);
   commandControl.setAttribute("aria-pressed", fastEnabled ? "true" : "false");
-  commandControl.title = fastEnabled ? "Fast mode on" : "Fast mode off";
-  commandControl.setAttribute("aria-label", fastEnabled ? "Fast mode on" : "Fast mode off");
+  commandControl.title = fastEnabled ? `Fast tag on for ${fastScopeLabel}` : `Fast tag off for ${fastScopeLabel}`;
+  commandControl.setAttribute("aria-label", fastEnabled ? `Fast tag on for ${fastScopeLabel}` : `Fast tag off for ${fastScopeLabel}`);
   commandControl.disabled = state.composerBusy;
   const controls = [
     [modelControl, selectedModel ? labelForModel(selectedModel) : "--", state.newThreadDraft || state.composerModel ? "下一轮使用" : "当前记录"],
@@ -17740,11 +18178,15 @@ async function sendThreadTaskCardCommand(commandText, options = {}) {
     renderThreads();
     if (insertedLocalMessage) renderCurrentThread({ stickToBottom: true });
     followSubmittedMessageToBottom(state.currentThreadId, clientSubmissionId);
-    await api(`/api/threads/${encodeURIComponent(state.currentThreadId)}/messages`, {
+    const result = await api(`/api/threads/${encodeURIComponent(state.currentThreadId)}/messages`, {
       method: "POST",
       body,
       timeoutMs: 180000,
     });
+    const serverTurnId = startedTurnId(result);
+    if (serverTurnId && reconcileSubmittedUserMessageTurn(state.currentThreadId, clientSubmissionId, serverTurnId)) {
+      renderCurrentThread({ stickToBottom: true });
+    }
     commitPluginVoiceInputSessionsAfterSend(submittedDraftKey, text, {
       threadId: state.currentThreadId,
       messageId: clientSubmissionId,
@@ -17877,11 +18319,15 @@ async function sendMessage(event) {
     }
     if (insertedLocalMessage) renderCurrentThread({ stickToBottom: true });
     followSubmittedMessageToBottom(state.currentThreadId, clientSubmissionId);
-    await api(`/api/threads/${encodeURIComponent(state.currentThreadId)}/messages`, {
+    const result = await api(`/api/threads/${encodeURIComponent(state.currentThreadId)}/messages`, {
       method: "POST",
       body,
       timeoutMs: 180000,
     });
+    const serverTurnId = startedTurnId(result);
+    if (!steering && serverTurnId && reconcileSubmittedUserMessageTurn(state.currentThreadId, clientSubmissionId, serverTurnId)) {
+      renderCurrentThread({ stickToBottom: true });
+    }
     commitPluginVoiceInputSessionsAfterSend(submittedDraftKey, text, {
       threadId: state.currentThreadId,
       messageId: clientSubmissionId,
@@ -18499,12 +18945,16 @@ function wireUi() {
   const commandControl = $("composerCommandControl");
   if (commandControl) {
     let lastFastToggleAt = 0;
+    let suppressSyntheticFastToggleUntil = 0;
     const handleFastToggle = (event) => {
       event.preventDefault();
       event.stopPropagation();
       const now = Date.now();
+      const eventType = String(event.type || "");
+      if ((eventType === "click" || eventType === "touchend") && now < suppressSyntheticFastToggleUntil) return;
       if (now - lastFastToggleAt < 650) return;
       lastFastToggleAt = now;
+      if (eventType === "pointerdown") suppressSyntheticFastToggleUntil = now + 2200;
       if (commandControl.disabled) return;
       closeComposerRuntimeMenu();
       setCodexFastCommandEnabled(!codexFastCommandEnabled());

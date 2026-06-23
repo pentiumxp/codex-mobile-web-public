@@ -88,13 +88,23 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(serverJs, /function buildThreadTaskCardCreatePayload\(/);
   assert.match(serverJs, /function threadTaskCardThreadCallIdempotencyKey\(/);
   assert.match(serverJs, /function resolvedThreadTaskCardTargetIds\(/);
+  assert.match(serverJs, /function threadTaskCardVisibleTargetThreads\(/);
+  assert.match(serverJs, /function threadTaskCardCanonicalVisibleTargets\(/);
+  assert.match(serverJs, /function threadTaskCardCanonicalTargetForCwd\(/);
+  assert.match(functionBody(serverJs, "resolveThreadTaskCardTargetReference"), /threadTaskCardVisibleTargetThreads\(options\)/);
+  assert.match(functionBody(serverJs, "resolveThreadTaskCardTargetReference"), /stale_target_thread/);
+  assert.match(functionBody(serverJs, "resolveThreadTaskCardTargetReference"), /target_thread_not_visible/);
+  assert.doesNotMatch(functionBody(serverJs, "resolveThreadTaskCardTargetReference"), /return raw;/);
+  assert.match(functionBody(serverJs, "buildThreadTaskCardCreatePayload"), /if \(!targetThreadIds\.length\)/);
+  assert.match(functionBody(serverJs, "buildThreadTaskCardCreatePayload"), /target_thread_required/);
   assert.match(functionBody(serverJs, "createThreadTaskCardsFromSourceThread"), /workspaceDelegationPublicSettings\(\)/);
   assert.match(functionBody(serverJs, "createThreadTaskCardsFromSourceThread"), /workspaceDelegation\.enabled[\s\S]*body\.autoApprove !== false[\s\S]*body\.direct !== false[\s\S]*body\.pending !== true/);
   assert.match(functionBody(serverJs, "threadTaskCardThreadCallIdempotencyKey"), /body\.requestId \|\| body\.request_id/);
   assert.doesNotMatch(functionBody(serverJs, "threadTaskCardThreadCallIdempotencyKey"), /body\.sourceTurnId \|\| body\.turnId/);
-  assert.match(functionBody(serverJs, "dynamicToolTextResponse"), /content:\s*\[/);
-  assert.match(functionBody(serverJs, "dynamicToolTextResponse"), /type: "text"/);
-  assert.doesNotMatch(functionBody(serverJs, "dynamicToolTextResponse"), /contentItems|inputText/);
+  assert.match(functionBody(serverJs, "dynamicToolTextResponse"), /success/);
+  assert.match(functionBody(serverJs, "dynamicToolTextResponse"), /contentItems:\s*\[/);
+  assert.match(functionBody(serverJs, "dynamicToolTextResponse"), /type: "inputText"/);
+  assert.doesNotMatch(functionBody(serverJs, "dynamicToolTextResponse"), /content_items|input_text|\bcontent:\s*\[|type: "text"/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /Mandatory boundary when this tool is available/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /call this tool before doing that work/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /Do not inspect, cd into, edit, patch, run commands in, test, deploy/);
@@ -103,6 +113,8 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /source model must call this tool/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /The model must decide from the user's request whether delegation is required/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /always creates source-direct cards/);
+  assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /Stale, hidden, archived, old-rollout, or non-detail-readable targetThreadId values are rejected/);
+  assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /latest visible canonical thread/);
   assert.doesNotMatch(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /pending:\s*\{/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolBody"), /body\.direct = true/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolBody"), /body\.autoApprove = true/);
@@ -133,9 +145,10 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolCallDiagnostics"), /targetRefCount: threadTaskCardTargetReferences\(args\)\.length/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolCallDiagnostics"), /hasBody: Boolean/);
   assert.doesNotMatch(functionBody(serverJs, "workspaceDelegationDynamicToolCallDiagnostics"), /bodyMarkdown:[\s\S]*args\.bodyMarkdown/);
-  assert.match(functionBody(serverJs, "threadTaskCardTargetReferences"), /targetWorkspace/);
-  assert.match(functionBody(serverJs, "threadTaskCardTargetReferences"), /targetCwd/);
-  assert.match(functionBody(serverJs, "resolveThreadTaskCardTargetReference"), /normalizeFsPath\(thread\.cwd \|\| ""\)/);
+  assert.match(functionBody(serverJs, "threadTaskCardTargetReferenceEntries"), /targetWorkspace/);
+  assert.match(functionBody(serverJs, "threadTaskCardTargetReferenceEntries"), /targetCwd/);
+  assert.match(functionBody(serverJs, "resolveThreadTaskCardTargetReference"), /threadTaskCardCanonicalTargetForCwd\(rawPath, visibleThreads\)/);
+  assert.match(workspaceDelegationRoute, /details: err\.details/);
   assert.match(serverJs, /"item\/tool\/call"/);
   assert.match(serverJs, /threadTaskCardService\.approveFromSource\(card\.id, payload\.sourceThreadId\)/);
   assert.match(serverJs, /direct: autoApprove/);
@@ -174,7 +187,7 @@ test("approved task cards inherit target thread model and effort", () => {
   assert.match(setupBlock, /thread\/resume", applyResumeRuntimeSettings\(/);
   assert.match(setupBlock, /const turnParams = applyTurnRuntimeSettings\(/);
   assert.match(setupBlock, /codex\.request\("turn\/start", turnParams/);
-  assert.match(setupBlock, /broadcastThreadStatusChanged\(card\.target\.threadId, \{ type: "active" \}/);
+  assert.match(setupBlock, /notifyLocalTurnStarted\(card\.target\.threadId, result, \{/);
   assert.match(setupBlock, /source: "thread-task-card-approval"/);
   assert.match(functionBody(serverJs, "applyTurnRuntimeSettings"), /if \(settings\.reasoningEffort\) params\.effort = settings\.reasoningEffort;/);
   assert.match(functionBody(serverJs, "applyTurnRuntimeSettings"), /if \(settings\.model\) params\.model = settings\.model;/);
@@ -183,7 +196,7 @@ test("approved task cards inherit target thread model and effort", () => {
 test("server broadcasts lightweight thread status for background turn notifications", () => {
   const broadcastBody = functionBody(serverJs, "broadcast");
   assert.match(broadcastBody, /threadStatusChangedPayloadFromTurnNotification\(payload\)/);
-  assert.match(broadcastBody, /clearThreadListFallbackCache\(\);\s*broadcast\(statusPayload\);/);
+  assert.match(broadcastBody, /applyThreadStatusPayloadToThreadListFallbackCache\(statusPayload\);\s*broadcast\(statusPayload\);/);
 
   const statusPayloadBody = functionBody(serverJs, "threadStatusChangedPayloadFromTurnNotification");
   assert.match(statusPayloadBody, /method !== "turn\/started" && method !== "turn\/completed"/);
@@ -195,7 +208,31 @@ test("server broadcasts lightweight thread status for background turn notificati
 
   const eventFilterBody = functionBody(serverJs, "shouldSendEventToClient");
   assert.match(eventFilterBody, /payload\.method === "thread\/status\/changed"[\s\S]*return true;/);
-  assert.match(functionBody(serverJs, "broadcastThreadStatusChanged"), /clearThreadListFallbackCache\(\);\s*broadcast\(payload\);/);
+  assert.match(functionBody(serverJs, "broadcastThreadStatusChanged"), /applyThreadStatusPayloadToThreadListFallbackCache\(payload\);\s*broadcast\(payload\);/);
+});
+
+test("server broadcasts active status immediately for local turn starts", () => {
+  const helperBody = functionBody(serverJs, "notifyLocalTurnStarted");
+  assert.match(helperBody, /const turnId = turnStartResultTurnId\(result\)/);
+  assert.match(helperBody, /rememberLocalActiveThreadStatus\(id, turnId/);
+  assert.match(helperBody, /threadDetailProjectionService\.applyNotification\("turn\/started"/);
+  assert.match(helperBody, /broadcastThreadStatusChanged\(id, \{ type: "active" \}/);
+  assert.match(helperBody, /source: String\(meta\.source \|\| "local-turn-start"\)/);
+
+  assert.match(serverJs, /const localActiveThreadStatuses = new Map\(\);/);
+  assert.match(serverJs, /function applyLocalActiveThreadStatusToSummary\(/);
+  assert.match(serverJs, /function updateLocalActiveThreadStatusFromNotification\(/);
+  assert.match(functionBody(serverJs, "broadcast"), /updateLocalActiveThreadStatusFromNotification\(payload\)/);
+  assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /applyLocalActiveThreadStatusToResult/);
+  assert.match(functionBody(serverJs, "normalizeThreadListResultStatuses"), /normalizeThreadSummaryLiveStatus/);
+
+  assert.match(serverJs, /notifyLocalTurnStarted\(card\.target\.threadId, result, \{[\s\S]*source: "thread-task-card-approval"/);
+  assert.match(serverJs, /notifyLocalTurnStarted\(threadId, turnResult, \{ source: "message-submit" \}\)/);
+  assert.match(serverJs, /notifyLocalTurnStarted\(threadId, turnResult, \{ source: "new-thread-message" \}\)/);
+  assert.match(serverJs, /notifyLocalTurnStarted\(id, result, \{ source: "auto-turn-recovery" \}\)/);
+  assert.match(serverJs, /notifyLocalTurnStarted\(threadId, result, \{ source: "side-chat-apply" \}\)/);
+  assert.match(serverJs, /notifyLocalTurnStarted\(threadId, result, \{ source: "continuation-source-handoff" \}\)/);
+  assert.match(serverJs, /notifyLocalTurnStarted\(threadId, bootstrap, \{ source: "continuation-bootstrap" \}\)/);
 });
 
 test("server materializes structured task-card drafts from thread detail", () => {
@@ -220,7 +257,7 @@ test("server materializes structured task-card drafts from thread detail", () =>
   assert.match(functionBody(serverJs, "prepareThreadTaskCardsToResult"), /attachThreadTaskCardsToResult\(result\)/);
   assert.match(functionBody(serverJs, "prepareThreadTaskCardsToResult"), /attachPendingServerRequestsToResult/);
   assert.doesNotMatch(functionBody(serverJs, "prepareThreadTaskCardsToResult"), /prepareThreadTaskCardsToResult\(result\)/);
-  assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /await prepareThreadTaskCardsToResult\(result\)/);
+  assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /await prepareThreadTaskCardsToResult\(applyLocalActiveThreadStatusToResult\(result, details\)\)/);
   assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /finalizeThreadDetailProjectionResult/);
   assert.match(functionBody(serverJs, "turnsListThreadReadResult"), /return prepareThreadDetailResponseResult\(result/);
   assert.match(serverJs, /maybeMaterializeThreadTaskCardDrafts\(msg\.method, msg\.params \|\| null\)/);
@@ -228,7 +265,7 @@ test("server materializes structured task-card drafts from thread detail", () =>
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v374"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v393"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.threadRole \|\| ""\) === "target"\)/);

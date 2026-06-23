@@ -62,7 +62,22 @@ const WRITE_COMMAND_PATTERN = new RegExp([
   "\\bpnpm\\s+(?:add|install|update|remove)\\b",
   "\\b(?:pip|pip3)\\s+install\\b",
   "\\b(?:cargo|go)\\s+(?:fmt|mod\\s+tidy|fix)\\b",
-  "(?:^|[^<])>>?\\s*['\\\"]?[^\\s;&|]+",
+  "(?:^|[\\s;&|])>>?\\s*['\\\"]?[^\\s;&|]+",
+].join("|"), "i");
+
+const CWD_SOURCE_MUTATING_COMMAND_PATTERN = new RegExp([
+  "\\bapply_patch\\b",
+  "\\bsed\\s+-[^\\n;&|]*i",
+  "\\bperl\\s+-[^\\n;&|]*p[^\\n;&|]*i",
+  "\\bpython(?:3)?\\b[\\s\\S]{0,240}\\b(open\\s*\\(\\s*['\\\"](?!/|[a-z]:|~)|write_text\\s*\\(\\s*['\\\"](?!/|[a-z]:|~)|write_bytes\\s*\\(\\s*['\\\"](?!/|[a-z]:|~)|shutil\\.(?:copy|move)|os\\.(?:remove|unlink|rename|replace|makedirs))",
+  "\\bnode\\b[\\s\\S]{0,240}\\b(writeFileSync|appendFileSync|rmSync|renameSync|copyFileSync|mkdirSync)\\s*\\(\\s*['\\\"](?!/|[a-z]:|~)",
+  "(?:^|[\\s;&|])(?:rm|mv|cp|rsync|touch|mkdir|truncate)\\b",
+  "(?:^|[\\s;&|])git\\s+(?:add|commit|checkout|reset|clean|rm|mv|restore|switch|rebase|merge|cherry-pick|stash)\\b",
+  "\\bnpm\\s+(?:install|i|ci|update|dedupe)\\b",
+  "\\byarn\\s+(?:add|install|upgrade|remove)\\b",
+  "\\bpnpm\\s+(?:add|install|update|remove)\\b",
+  "\\b(?:cargo|go)\\s+(?:fmt|mod\\s+tidy|fix)\\b",
+  "(?:^|[\\s;&|])>>?\\s*['\\\"]?(?!/|[a-z]:|~)[^\\s;&|]+",
 ].join("|"), "i");
 
 function normalizeFsPath(value) {
@@ -223,7 +238,11 @@ function commandLooksWriteLike(command) {
 }
 
 function commandHasShellChaining(command) {
-  return /(?:&&|\|\||;|\||`|\$\(|>\s*[^&]|\btee\s+)/.test(String(command || ""));
+  return /(?:&&|\|\||;|\||`|\$\(|(?:^|[\s;&|])>>?\s*[^&]|\btee\s+)/.test(String(command || ""));
+}
+
+function commandLooksCwdSourceMutating(command) {
+  return CWD_SOURCE_MUTATING_COMMAND_PATTERN.test(String(command || ""));
 }
 
 function isHomeAiControlPlaneRoot(root) {
@@ -326,6 +345,24 @@ function classifyWorkspaceSourceWriteRequest(request, options = {}) {
         };
       }
       if (!commandLooksWriteLike(command)) return { action: "allow", reason: "read_or_non_write_command" };
+      const deniedPath = commandPathTokens(command, params.cwd || currentCwd).find((target) => matchingForeignRoot(target, roots));
+      if (deniedPath) {
+        return {
+          action: "deny",
+          reason: "foreign_source_write_command_path",
+          matchedPath: deniedPath,
+          matchedRoot: matchingForeignRoot(deniedPath, roots),
+        };
+      }
+      const mentionedRoot = roots.find((root) => commandMentionsRoot(command, root));
+      if (mentionedRoot) {
+        return {
+          action: "deny",
+          reason: "foreign_source_write_command_path",
+          matchedRoot: mentionedRoot,
+        };
+      }
+      if (!commandLooksCwdSourceMutating(command)) return { action: "allow", reason: "write_command_without_foreign_source" };
       return {
         action: "deny",
         reason: "foreign_source_write_command_cwd",

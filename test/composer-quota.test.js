@@ -27,8 +27,10 @@ test("composer exposes Fast bolt, model, reasoning, permission, and quota as com
   assert.match(appJs, /setCodexFastCommandEnabled\(!codexFastCommandEnabled\(\)\)/);
   assert.match(appJs, /commandControl\.addEventListener\("click", handleFastToggle\)/);
   assert.match(appJs, /commandControl\.addEventListener\("touchend", handleFastToggle, \{ passive: false \}\)/);
+  assert.match(appJs, /suppressSyntheticFastToggleUntil/);
   assert.match(appJs, /now - lastFastToggleAt < 650/);
   assert.match(appJs, /showComposerFastHint\(state\.codexFastMode\)/);
+  assert.match(appJs, /Fast tag on for \$\{fastScopeLabel\}/);
   assert.match(stylesCss, /\.composer-fast-toggle/);
   assert.match(stylesCss, /\.composer-fast-icon/);
   assert.match(appJs, /body\.append\("fastMode", "1"\)/);
