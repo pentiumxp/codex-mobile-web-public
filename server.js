@@ -11838,6 +11838,12 @@ function threadTaskCardTargetError(code, message, details = {}, statusCode = 400
   return httpStatusErrorWithDetails(statusCode, code, message || code, details);
 }
 
+function threadTaskCardTargetVisibility(options = {}) {
+  if (options.visibility && typeof options.visibility === "object") return options.visibility;
+  if (options.globalState && typeof options.globalState === "object") return visibilityFromGlobalState(options.globalState);
+  return visibilityFromGlobalState();
+}
+
 function threadTaskCardVisibleTargetThreads(options = {}) {
   const rawThreads = Array.isArray(options.visibleThreads)
     ? options.visibleThreads
@@ -11846,7 +11852,7 @@ function threadTaskCardVisibleTargetThreads(options = {}) {
   for (const thread of rawThreads || []) {
     const id = String(thread && thread.id || "").trim();
     if (!id || byId.has(id)) continue;
-    if (threadHasArchiveSignal(thread) || isSubagentThreadSummary(thread)) continue;
+    if (threadHasArchiveSignal(thread) || isSubagentThreadSummary(thread) || isSideChatSidecarThreadSummary(thread)) continue;
     byId.set(id, thread);
   }
   return [...byId.values()];
@@ -11892,7 +11898,7 @@ function readThreadTaskCardTargetSummary(threadId, options = {}) {
   return readStateDbThread(threadId) || readStartedThread(threadId) || readRolloutSessionFallbackThread(threadId);
 }
 
-function assertThreadTaskCardTargetDeliverable(thread, details = {}) {
+function assertThreadTaskCardTargetDeliverable(thread, details = {}, options = {}) {
   const target = publicThreadTaskCardTarget(thread);
   if (!thread || !String(thread.id || "").trim()) {
     throw threadTaskCardTargetError(
@@ -11911,6 +11917,14 @@ function assertThreadTaskCardTargetDeliverable(thread, details = {}) {
     );
   }
   if (isSubagentThreadSummary(thread) || isSideChatSidecarThreadSummary(thread)) {
+    throw threadTaskCardTargetError(
+      "target_thread_not_visible",
+      "Target thread is not visible or is not a current deliverable thread.",
+      Object.assign({}, details, { requestedTarget: target }),
+      404,
+    );
+  }
+  if (isHiddenThread(thread, threadTaskCardTargetVisibility(options))) {
     throw threadTaskCardTargetError(
       "target_thread_not_visible",
       "Target thread is not visible or is not a current deliverable thread.",
@@ -11942,24 +11956,14 @@ function resolveThreadTaskCardTargetReference(value, sourceThreadId = "", option
     return assertThreadTaskCardTargetDeliverable(currentVisible, {
       reference: raw,
       referenceKind: entry.kind || "thread",
-    });
+    }, options);
   }
   const direct = isThreadIdLike(raw) ? readThreadTaskCardTargetSummary(raw, options) : null;
   if (direct && String(direct.id || "") === raw) {
-    assertThreadTaskCardTargetDeliverable(direct, {
+    return assertThreadTaskCardTargetDeliverable(direct, {
       reference: raw,
       referenceKind: entry.kind || "threadId",
-    });
-    throw threadTaskCardTargetError(
-      "target_thread_not_visible",
-      "Target thread is not visible or is not a current deliverable thread.",
-      {
-        reference: raw,
-        referenceKind: entry.kind || "threadId",
-        requestedTarget: publicThreadTaskCardTarget(direct),
-      },
-      404,
-    );
+    }, options);
   }
   const lowered = raw.toLowerCase();
   const rawPath = normalizeFsPath(raw);
@@ -11973,7 +11977,7 @@ function resolveThreadTaskCardTargetReference(value, sourceThreadId = "", option
       return assertThreadTaskCardTargetDeliverable(thread, {
         reference: raw,
         referenceKind: entry.kind || "thread",
-      });
+      }, options);
     }
   }
   throw threadTaskCardTargetError(

@@ -119,9 +119,11 @@ test("source-thread task cards allow exact same-workspace thread targets", () =>
   const platformAuditThreadId = "10000000-0000-4000-8000-000000000003";
   const crossWorkspaceThreadId = "10000000-0000-4000-8000-000000000004";
   const archivedThreadId = "10000000-0000-4000-8000-000000000005";
-  const hiddenThreadId = "10000000-0000-4000-8000-000000000006";
+  const directSummaryThreadId = "10000000-0000-4000-8000-000000000006";
   const subagentThreadId = "10000000-0000-4000-8000-000000000007";
+  const hiddenWorkspaceThreadId = "10000000-0000-4000-8000-000000000008";
   const currentCwd = "/tmp/codex-mobile-fixtures/current-project";
+  const hiddenCwd = "/tmp/codex-mobile-fixtures/hidden-project";
   const visibleThreads = [
     {
       id: platformAuditThreadId,
@@ -154,14 +156,29 @@ test("source-thread task cards allow exact same-workspace thread targets", () =>
     },
   ];
   const options = {
+    globalState: {
+      "active-workspace-roots": [
+        currentCwd,
+        "/tmp/codex-mobile-fixtures/other-project",
+      ],
+    },
     visibleThreads,
     readThreadSummary(threadId) {
-      if (threadId === hiddenThreadId) {
+      if (threadId === directSummaryThreadId) {
         return {
-          id: hiddenThreadId,
-          name: "Hidden Project",
+          id: directSummaryThreadId,
+          name: "Readable Project",
           cwd: currentCwd,
           updatedAt: 120,
+          status: { type: "idle" },
+        };
+      }
+      if (threadId === hiddenWorkspaceThreadId) {
+        return {
+          id: hiddenWorkspaceThreadId,
+          name: "Hidden Workspace Project",
+          cwd: hiddenCwd,
+          updatedAt: 110,
           status: { type: "idle" },
         };
       }
@@ -211,6 +228,10 @@ test("source-thread task cards allow exact same-workspace thread targets", () =>
     resolvedThreadTaskCardTargetIds({ targetThreadIds: [pluginAuditThreadId, "Plugin Workspace Audit", pluginAuditThreadId] }, sourceThreadId, options),
     [pluginAuditThreadId],
   );
+  assert.equal(
+    resolveThreadTaskCardTargetReference(directSummaryThreadId, sourceThreadId, options),
+    directSummaryThreadId,
+  );
   assert.throws(
     () => resolveThreadTaskCardTargetReference(sourceThreadId, sourceThreadId, options),
     (err) => err && err.code === "target_thread_self" && err.statusCode === 400,
@@ -225,13 +246,13 @@ test("source-thread task cards allow exact same-workspace thread targets", () =>
       && err.details.requestedTarget.threadId === archivedThreadId,
   );
   assert.throws(
-    () => resolveThreadTaskCardTargetReference(hiddenThreadId, sourceThreadId, options),
+    () => resolveThreadTaskCardTargetReference(hiddenWorkspaceThreadId, sourceThreadId, options),
     (err) => err
       && err.code === "target_thread_not_visible"
       && err.statusCode === 404
       && err.details
       && err.details.requestedTarget
-      && err.details.requestedTarget.threadId === hiddenThreadId,
+      && err.details.requestedTarget.threadId === hiddenWorkspaceThreadId,
   );
   assert.throws(
     () => resolveThreadTaskCardTargetReference(subagentThreadId, sourceThreadId, options),
@@ -280,6 +301,9 @@ test("source-thread task-card creation uses exact target resolver and source-dir
     ...visibleThreads.map((thread) => [thread.id, thread]),
   ]);
   const resolverOptions = {
+    globalState: {
+      "active-workspace-roots": [cwd],
+    },
     visibleThreads,
     readThreadSummary(threadId) {
       return byId.get(threadId) || null;

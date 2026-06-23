@@ -1,3 +1,44 @@
+# 2026-06-24 - Healthy exact task-card target deliverability fix
+
+- Trigger:
+  - Home AI reported that Healthy thread
+    `019ea9d5-8f99-7d92-90a2-e9ae094a7977` was visible through
+    `list_threads`, but exact `delegate_to_thread` still failed with
+    `target_thread_not_visible`.
+- Root cause:
+  - MCP `list_threads` reads `/api/threads`, which includes app-server
+    `thread/list` results plus fallback.
+  - The task-card resolver only treated the fallback/current target list as
+    deliverable. When a target id could be read directly from thread summary
+    but was not in that fallback list slice, the resolver deliberately threw
+    `target_thread_not_visible` even after successfully reading the target.
+- Change:
+  - `server.js` now lets exact `targetThreadId` direct-summary resolution pass
+    when the target is not archived, deleted, hidden by workspace visibility,
+    a subagent, or a side-chat sidecar.
+  - `assertThreadTaskCardTargetDeliverable()` now applies the same visibility
+    rules to direct targets and visible-list targets, while preserving
+    `target_thread_archived` for archived targets.
+  - `test/protocol.test.js` covers a directly readable thread that is not in
+    `visibleThreads` and must still be accepted, plus a direct thread under an
+    invisible workspace that must still be rejected.
+- Validation so far:
+  - Failed before deployment: exact Healthy diagnostic
+    `delegate_to_thread` returned `target_thread_not_visible`.
+  - `node --test test/protocol.test.js`
+  - `node --test test/thread-task-card-route.test.js`
+  - `node --check server.js && node --check test/protocol.test.js`
+  - `npm run check`
+  - `npm run check:macos`
+  - `npm test` passed (`663` tests).
+  - `git diff --check`
+  - `codegraph sync && codegraph status` reported the index up to date with
+    the existing earlier-engine warning.
+- Next:
+  - Commit, deploy through the Home AI center script, then verify with a
+    harmless exact Healthy `delegate_to_thread` diagnostic card before
+    returning `target_ready_verified` to Home AI.
+
 # 2026-06-24 - Audit repair: task-card store fail-closed and exact target coverage
 
 - Trigger:
