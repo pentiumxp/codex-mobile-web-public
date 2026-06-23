@@ -42,9 +42,36 @@
   - `git diff --check`
   - `codegraph sync && codegraph status` was up to date; status still warned
     the index was built by an earlier CodeGraph engine version.
+- Local commit:
+  - `3538b9d fix: patch completed receipt refreshes locally`
+- Production deploy:
+  - Used the Home AI center deploy script:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --execute --json`
+  - Source ref was clean at `3538b9d49068`.
+  - Production path:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260623T140758Z-plugin-codex-mobile-web-manual`.
+  - Deploy validation passed: log permission repair, production file hashes,
+    launchd print, manifest health URL, and Codex auth profile audit.
+  - `/api/public-config` returned HTTP `200`,
+    `clientBuildId=0.1.11|codex-mobile-shell-v392`,
+    `shellCacheName=codex-mobile-shell-v392`, and `authRequired=true`.
+  - Production `public/app.js` and `public/sw.js` contain v392,
+    `conversationPatchShellSignature`, and
+    `visibleItemPatchShapePreservesExisting`.
+- Home AI visual verification:
+  - Center visual polish audit passed for plugin `codex-mobile`, scenario
+    `embedded-plugin-shell`, with video:
+    `/tmp/homeai-codex-v392-visual/codex-v392-receipt-refresh/videos/codex-mobile-embedded-plugin-shell-codex-mobile.mp4`.
+  - Center iOS PWA visual scenario `embedded-plugin-keyboard-composer` passed
+    for thread `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3`, loaded
+    `pluginClientBuildId=0.1.11|codex-mobile-shell-v392`, and captured video:
+    `/tmp/homeai-codex-v392-visual/thread-video/codex-thread-v392-keyboard.mp4`.
+  - These visual lanes verify embedded loading and thread/composer stability on
+    v392; they do not submit a real Codex turn, so a send-turn flicker video
+    still needs a dedicated scenario if the symptom persists.
 - Next:
-  - Commit and deploy via the Home AI center deploy script.
-  - After deploy, run Home AI visual verification/video capture as requested.
   - Do not push Public until production/user testing is confirmed.
 
 # 2026-06-23 - v391 completed receipt render-identity stabilization
