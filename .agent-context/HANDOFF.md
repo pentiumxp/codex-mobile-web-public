@@ -1,8 +1,10 @@
-# 2026-06-24 - Task-card manual return toolchain repaired locally
+# 2026-06-24 - Task-card manual return toolchain repaired and deployed
 
 - Scope:
-  - Implemented and validated locally.
-  - Not yet committed, deployed, or pushed.
+  - Implemented, validated, committed, and deployed to Mac production.
+  - Not pushed Public.
+  - Code commit:
+    - `c079581 fix: restore task card return path`
 - Trigger:
   - Home AI reported that a Note implementation thread completed a manual
     repair card but could only report in its local final answer because no
@@ -39,7 +41,7 @@
     `list_threads`, `delegate_to_thread`, and `return_to_source`.
   - Updated task-card README, architecture, implementation, module, and
     troubleshooting docs to record that local final text is not a return card.
-- Validation:
+- Validation before deploy:
   - Focused suite:
     `node --test test/thread-task-card-service.test.js test/codex-mobile-mcp-server.test.js test/thread-task-card-route.test.js test/thread-task-card-harness.test.js test/new-thread-route.test.js`
     passed (`63` tests).
@@ -49,13 +51,31 @@
   - `git diff --check` passed.
   - `codegraph sync && codegraph status` reported the index is up to date
     with a non-blocking older-engine warning.
+- Production deploy:
+  - Central Home AI deploy script used:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --reason task-card-return-toolchain-c079581 --execute --json`
+  - Source ref deployed:
+    `c0795813abc8`.
+  - Production target:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup retained at:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260624T154821Z-plugin-codex-mobile-web-task-card-return-toolchain-c079581`.
+  - Deploy validation:
+    - central health check passed for
+      `http://127.0.0.1:8787/api/public-config`;
+    - central auth-profile audit returned `blockingIssueCount=0`;
+    - production `npm run check` passed;
+    - production MCP self-test returned
+      `["list_threads","delegate_to_thread","return_to_source"]`;
+    - `/Users/xuxin/.codex/config.toml` has approve-mode entries for
+      `list_threads`, `delegate_to_thread`, and `return_to_source`.
 - Operational notes:
-  - Server restart is required for production to expose the new dynamic tool
-    and MCP config repair behavior.
+  - Production listener has been restarted through the central deploy script.
   - Existing Codex Homes get the new MCP tool when Mobile Web startup/Profile
     list/workspace creation/profile-switch sync runs.
-  - After commit/deploy, return a real task card to Home AI
-    `019eed86-2002-7cc2-b0b7-937eb5355f36` with completion details.
+  - Return a real task card to Home AI
+    `019eed86-2002-7cc2-b0b7-937eb5355f36` with completion details before
+    ending the thread.
 
 # 2026-06-24 - Tile pane management v424 committed, deployed, and pushed Public
 
