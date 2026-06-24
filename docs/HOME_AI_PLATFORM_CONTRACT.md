@@ -200,72 +200,39 @@ Minimum closure for Codex Mobile production changes:
 
 ## Latest Production Evidence
 
-2026-06-09 Mac production deployment:
+2026-06-24 Mac production deployment:
 
 - Production source path:
   `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
 - LaunchDaemon: `system/com.hermesmobile.plugin.codex-mobile`.
 - Loopback production URL: `http://127.0.0.1:8787`.
-- Current verified shell after image rendering deployment:
-  `0.1.11|codex-mobile-shell-v251`.
+- Current verified shell after route-hint / tile-pane deployment:
+  `0.1.11|codex-mobile-shell-v425`.
+- Source ref deployed:
+  `06d8c8b4b7d6` with clean source worktree.
 - Backup path:
-  `/Users/hermes-host/HermesMobile/backups/deploy/20260609T061100Z-plugin-codex-mobile-web-codex-mobile-image-rendering-v251`.
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260624T160709Z-plugin-codex-mobile-web-route-hint-tile-pane-v425`.
 - Production smoke confirmed `/api/public-config` reports
-  `clientBuildId=0.1.11|codex-mobile-shell-v251` and
-  `shellCacheName=codex-mobile-shell-v251`.
-- Plugin manifest returns `plugin_id=codex-mobile`, `kind=embedded_app`, and
-  does not return the exact raw Codex Mobile Access Key value.
-- Production upload-image route remains protected: no auth returns `401`; with
-  the Codex Mobile Access Key, the current thread upload
-  `IMG_5888.jpg` returns `200 image/jpeg`.
-- Production generated-image route remains protected: no auth returns `401`;
-  with the Codex Mobile Access Key, a cached generated image returns
-  `200 image/png`.
-- Production thread detail smoke for
-  `019ea76b-d846-7892-bda0-c0fff9cf7581` returned 10 projected turns, 23
-  image-related items, 6 authenticated upload-route items, and 6 authenticated
-  generated-image-route items. Image items were present across several turns,
-  not only the latest turn.
-- Side-chat route smoke confirmed unauthenticated
-  `/api/threads/<id>/side-chat` returns 401, authenticated read returns 200,
-  and `sideChat.persistence=server`.
-- Production iOS live debug smoke against `http://127.0.0.1:8787/` verified
-  the combined left-swipe panel, server draft round-trip, and
-  `draftInMainConversation=false`; screenshot:
-  `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v250-prod-side-chat-panel.png`.
-- Production `workspacePath` is
-  `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`; the visible
-  review/source workspace remains
-  `/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web`.
-- Live iOS PWA debug evidence for v247 opened production `127.0.0.1:8787`,
-  created a smoke thread, waited for the first turn to complete, then sent a
-  follow-up with the real composer. Across 50 DOM samples,
-  `maxCount=1`, `duplicateSamples=0`, and `finalCount=1`; the smoke thread was
-  archived. Screenshot artifact:
-  `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v247-prod-dup-smoke.png`.
-- Development live debug evidence for v247 opened source dev `127.0.0.1:18787`
-  and ran the same real-composer duplicate-message smoke with
-  `maxCount=1`, `duplicateSamples=0`, and `finalCount=1`. Screenshot artifact:
-  `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v247-dev-dup-smoke.png`.
-- Generated-image endpoint remains protected: no auth returns `401`, Access
-  Key returns `200 image/png`, and a short-lived plugin session cookie can
-  still authorize `/api/generated-images/file` when the query string contains a
-  stale plugin-session token.
-- Uploaded-image endpoint remains protected: no auth returns `401`, Access Key
-  returns `200 image/jpeg`, and a short-lived plugin session cookie can still
-  authorize `/api/uploads/file` when the query string contains a stale token.
-- Live iOS PWA debug evidence for direct Codex plugin launch confirmed
-  `data-font-size=xlarge`, opened thread
-  `019ea76b-d846-7892-bda0-c0fff9cf7581`, rendered one uploaded image
-  `IMG_5882.jpg` with natural size `591x1280`, and `failedUploadCount=0`.
-  Screenshot artifact:
-  `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v227-upload-image-1781040000.png`.
-- Prior live iOS PWA debug evidence for generated images confirmed
-  `CLIENT_BUILD_ID=0.1.11|codex-mobile-shell-v226`,
-  `data-font-size=xlarge`, opened thread
-  `019ea77e-4e36-7820-adf4-9bf0272965b8`, rendered one `view_image output`
-  image with natural size `942x2048`, and `failedCount=0`. Screenshot artifact:
-  `/Users/xuxin/.homeai-qa/artifacts/codex-mobile-v226-media-font-1780937849769.png`.
+  `clientBuildId=0.1.11|codex-mobile-shell-v425`,
+  `shellCacheName=codex-mobile-shell-v425`, `version=0.1.11`,
+  `authRequired=true`, and production `workspacePath` above.
+- Source/production short SHA-256 samples matched after deploy:
+  `public/app.js` `396846f6abdf536a`,
+  `public/sw.js` `126e12a6be176fed`,
+  `public/plugin-embed.js` `2b103de8c50a31ed`,
+  `public/thread-tile-layout.js` `98af9e1e50f8e973`,
+  `README.md` `eedbfe7e0fbbe7d7`,
+  `docs/ARCHITECTURE.md` `236de26f6df947b8`, and
+  `docs/MODULES.md` `abfc03d3855cef40`.
+- Focused validation before deploy included route-hint, Hermes embed, tile,
+  viewport, goal, and task-card route tests; full validation passed
+  `npm run check`, `npm run check:macos`, `npm test` (`754` tests), and
+  `git diff --check`.
+- Deployment validation also ran the central production file-hash, LaunchDaemon,
+  public-config, and non-strict auth-profile audit checks. The auth-profile
+  audit remained non-blocking with zero blocking issues.
+- The older 2026-06-09 `codex-mobile-shell-v251` image-rendering evidence is
+  historical only and must not be treated as the latest production shell.
 
 ## Open Gaps
 

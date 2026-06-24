@@ -1,3 +1,66 @@
+# 2026-06-24 - Route-hint coverage and tile user pane ceiling v425 deployed
+
+- Scope:
+  - Implemented, validated, committed, and deployed to Mac production.
+  - Not pushed Public.
+  - Code commit:
+    - `06d8c8b feat: repair route hints and tile pane limits`
+- Trigger:
+  - User requested removing the hard 4-pane add-window stop because wide desktop
+    screens may reasonably support 6 or more tile panes.
+  - Plugin Workspace Audit card `ttc_d59788971449b66f5e` also reported that
+    Hermes notification/task-card route-hint behavior was product-critical but
+    mostly covered by source-string tests, and that
+    `docs/HOME_AI_PLATFORM_CONTRACT.md` still presented old v251 production
+    evidence as latest.
+- Change:
+  - `public/thread-tile-layout.js` now distinguishes automatic recommended pane
+    capacity (`DEFAULT_MAX_PANES=6`) from the bounded user pane safety ceiling
+    (`DEFAULT_USER_MAX_PANES=12`).
+  - `public/app.js` keeps `paneCount=0` on automatic current/running-thread and
+    viewport recommended capacity, but positive user pane counts are no longer
+    capped by the current viewport capacity. Explicitly added panes wrap into
+    extra rows when they exceed recommended columns.
+  - The pane-title switch menu now shows count against the user-reachable max
+    count and keeps `关闭窗口` / `新增窗口` ownership in the pane menu.
+  - Hermes route-hint normalization, open/focus plan, DOM target selector order,
+    and URL scrub policy moved into `public/plugin-embed.js`; `public/app.js`
+    consumes the plan and performs state transitions.
+  - PWA shell cache bumped to `codex-mobile-shell-v425`.
+  - `docs/HOME_AI_PLATFORM_CONTRACT.md` latest production evidence replaced the
+    stale v251 block with v425 bounded readback evidence.
+- Validation before deploy:
+  - Focused suite:
+    `node --test test/plugin-embed.test.js test/hermes-plugin-route.test.js test/thread-tile-layout.test.js test/thread-tile-layout-ui.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    passed (`52` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed (`754` tests).
+  - `git diff --check` passed.
+- Production deploy:
+  - Central Home AI deploy script used from `/Users/hermes-dev/HermesMobileDev/app`:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --reason route-hint-tile-pane-v425 --execute --json`
+  - Source ref deployed:
+    `06d8c8b4b7d6`.
+  - Production target:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup retained at:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260624T160709Z-plugin-codex-mobile-web-route-hint-tile-pane-v425`.
+  - Post-deploy `/api/public-config` returned `version=0.1.11`,
+    `clientBuildId=0.1.11|codex-mobile-shell-v425`,
+    `shellCacheName=codex-mobile-shell-v425`, and production workspace path
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Source/production short SHA-256 samples matched for `public/app.js`,
+    `public/sw.js`, `public/plugin-embed.js`, `public/thread-tile-layout.js`,
+    `README.md`, `docs/ARCHITECTURE.md`, and `docs/MODULES.md`.
+  - Central deployment audit remained non-blocking with
+    `blockingIssueCount=0`.
+- Operational notes:
+  - Browser/PWA clients must load v425 shell/cache to exercise the frontend
+    route-hint and tile-pane changes.
+  - Need return a real task card to Plugin Workspace Audit for
+    `ttc_d59788971449b66f5e` before ending the thread.
+
 # 2026-06-24 - Task-card manual return toolchain repaired and deployed
 
 - Scope:
