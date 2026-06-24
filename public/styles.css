@@ -6958,6 +6958,12 @@ html.embed-hermes #openMenu.split-return-visible {
     padding: 14px 12px;
   }
 
+  .main {
+    --mobile-floating-control-size: 36px;
+    --mobile-floating-control-right: max(14px, env(safe-area-inset-right, 0px));
+    --mobile-floating-control-gap: 6px;
+  }
+
   .live-operation-dock {
     position: fixed;
     left: max(12px, env(safe-area-inset-left, 0px));
@@ -6983,11 +6989,13 @@ html.embed-hermes #openMenu.split-return-visible {
   }
 
   .live-operation-dock[data-recall-visible="true"]:not([data-mode="expanded"]) {
-    bottom: calc(var(--composer-height, 92px) + 2px);
+    right: var(--mobile-floating-control-right);
+    bottom: calc(var(--composer-height, 92px) + 8px);
   }
 
   html.embed-hermes .live-operation-dock[data-recall-visible="true"]:not([data-mode="expanded"]) {
-    bottom: calc(var(--composer-height, 92px) + max(2px, var(--host-bottom-safe-area, 0px)));
+    right: var(--mobile-floating-control-right);
+    bottom: calc(var(--composer-height, 92px) + max(8px, var(--host-bottom-safe-area, 0px)));
   }
 
   .live-operation-dock[data-mobile-visible="false"] {
@@ -7069,9 +7077,9 @@ html.embed-hermes #openMenu.split-return-visible {
     -webkit-appearance: none;
     display: grid;
     place-items: center;
-    width: 32px;
-    height: 32px;
-    min-height: 32px;
+    width: var(--mobile-floating-control-size);
+    height: var(--mobile-floating-control-size);
+    min-height: var(--mobile-floating-control-size);
     padding: 0;
     color: var(--accent-strong);
     background: var(--panel);
@@ -7137,10 +7145,15 @@ html.embed-hermes #openMenu.split-return-visible {
   }
 
   .scroll-bottom-button {
-    right: 14px;
-    bottom: calc(var(--composer-height, 92px) + 40px);
-    width: 42px;
-    height: 42px;
+    right: var(--mobile-floating-control-right);
+    bottom: calc(var(--composer-height, 92px) + 8px + var(--mobile-floating-control-size) + var(--mobile-floating-control-gap));
+    width: var(--mobile-floating-control-size);
+    height: var(--mobile-floating-control-size);
+    font-size: 20px;
+  }
+
+  .scroll-turn-reply-button {
+    right: calc(var(--mobile-floating-control-right) + var(--mobile-floating-control-size) + 8px);
   }
 
   .new-thread-page {

@@ -1,3 +1,32 @@
+# 2026-06-24 - v404 mobile floating control alignment ready
+
+- Trigger:
+  - User screenshot showed the lower-right scroll button and operation recall
+    dot appearing together as two mismatched circles: one large, one small, and
+    not visually aligned.
+- Change:
+  - `public/styles.css` now defines a phone-width floating-control rail:
+    `--mobile-floating-control-size: 36px`,
+    `--mobile-floating-control-right`, and
+    `--mobile-floating-control-gap`.
+  - The lower-right `scrollToBottom` / `scrollToTurnReply` buttons and the
+    operation recall dot now share the same 36px size and right edge.
+  - The operation recall dot remains below the scroll button with a fixed gap;
+    the optional turn-reply button stays horizontally offset from the
+    scroll-to-bottom button, so the controls do not overlap.
+  - PWA shell bumped to `codex-mobile-shell-v404`.
+  - `README.md`, `docs/TROUBLESHOOTING.md`, and focused tests were updated.
+- Validation:
+  - `node --check public/app.js`
+  - `node --test test/collab-agent-render.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+  - `npm run check`
+  - `npm run check:macos`
+  - `npm test` passed (`696` tests).
+  - `git diff --check`
+- Release status:
+  - Local implementation ready for commit/deploy.
+  - Not pushed to Public.
+
 # 2026-06-24 - v403 mobile operation recall dot ready
 
 - Trigger:
