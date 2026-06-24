@@ -1,8 +1,44 @@
-# 2026-06-24 - v410 iPad embedded tile toggle fix ready locally
+# 2026-06-24 - v411 thread tile display setting deployed to Mac production
 
 - Scope:
-  - Local source workspace only.
-  - Not deployed to production and not pushed to Public.
+  - Committed locally and deployed to Mac production.
+  - Not pushed to Public.
+- Trigger:
+  - User asked to move the thread tile feature into the settings menu as a
+    visible display choice, with non-tiled single-thread mode as the default.
+- Change:
+  - Removed the topbar `threadTileToggle` / `▦` entry.
+  - Added a settings-menu `显示` section with `单线程` and `平铺` choices.
+  - Default mode is single-thread: the new persistent key is
+    `codexMobileThreadDisplayMode=tile`; absence of that key means single.
+  - `setThreadTileMode()` now clears the legacy `codexMobileThreadTileMode`
+    key when writing the new setting, so v409 temporary toggle state does not
+    force tile mode after v411.
+  - The tile rendering policy remains unchanged from v410: tile mode only
+    renders when the wide/iPad landscape capability check passes.
+  - PWA shell bumped to `codex-mobile-shell-v411`.
+- Validation:
+  - `node --check public/thread-tile-layout.js && node --check public/app.js && node --check public/sw.js && node --test test/thread-tile-layout.test.js test/thread-tile-layout-ui.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+  - `npm run check`
+  - `npm test` passed (`731` tests).
+  - `npm run check:macos`
+  - `git diff --check`
+- Production deploy:
+  - Used the Home AI central deploy script directly:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --execute --json`.
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Health check returned HTTP `200` with
+    `clientBuildId=0.1.11|codex-mobile-shell-v411`,
+    `shellCacheName=codex-mobile-shell-v411`, and
+    `workspacePath=/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - `launchctl print system/com.hermesmobile.plugin.codex-mobile` reported
+    the service running.
+
+# 2026-06-24 - v410 iPad embedded tile toggle fix deployed to Mac production
+
+- Scope:
+  - Committed locally and deployed to Mac production.
+  - Not pushed to Public.
 - Trigger:
   - After v409 deployment, iPad did not show the thread tile toggle in the
     Home AI embedded surface.

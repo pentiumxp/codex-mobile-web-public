@@ -26,10 +26,12 @@ function functionBody(source, name) {
 }
 
 test("thread tile layout is wired as an explicit shell policy", () => {
-  assert.match(indexHtml, /id="threadTileToggle"/);
+  assert.doesNotMatch(indexHtml, /id="threadTileToggle"/);
+  assert.match(indexHtml, /data-thread-display-choice="single"[\s\S]*data-thread-display-choice="tile"/);
   assert.match(indexHtml, /<script src="\/thread-detail-state\.js"><\/script>\s*\n\s*<script src="\/thread-tile-layout\.js"><\/script>\s*\n\s*<script src="\/build-refresh-policy\.js"><\/script>/);
   assert.match(appJs, /const threadTileLayoutPolicy = window\.CodexThreadTileLayout/);
-  assert.match(appJs, /threadTileMode: localStorage\.getItem\("codexMobileThreadTileMode"\) === "true"/);
+  assert.match(appJs, /threadTileMode: localStorage\.getItem\("codexMobileThreadDisplayMode"\) === "tile"/);
+  assert.match(appJs, /STORAGE_LEGACY_THREAD_TILE_MODE = "codexMobileThreadTileMode"/);
 
   const layoutBody = functionBody(appJs, "threadTileLayout");
   assert.match(layoutBody, /threadTileLayoutPolicy\.layoutForViewport/);
@@ -39,7 +41,12 @@ test("thread tile layout is wired as an explicit shell policy", () => {
 
   const toggleBody = functionBody(appJs, "syncThreadTileToggle");
   assert.match(toggleBody, /threadTileLayout\(\{ enabled: true \}\)/);
-  assert.match(toggleBody, /button\.classList\.toggle\("hidden", !canEnable\)/);
+  assert.match(toggleBody, /document\.querySelectorAll\("\[data-thread-display-choice\]"\)/);
+  assert.match(toggleBody, /button\.classList\.toggle\("selected", isSelected\)/);
+
+  const choiceBody = functionBody(appJs, "handleThreadTileModeChoice");
+  assert.match(choiceBody, /event\.target\.closest\("\[data-thread-display-choice\]"\)/);
+  assert.match(choiceBody, /setThreadTileMode\(button\.getAttribute\("data-thread-display-choice"\) === "tile"\)/);
 });
 
 test("thread tile rendering is read-only and separate from full conversation rendering", () => {

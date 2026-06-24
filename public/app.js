@@ -140,7 +140,7 @@ const state = {
   threads: [],
   currentThread: null,
   currentThreadId: "",
-  threadTileMode: localStorage.getItem("codexMobileThreadTileMode") === "true",
+  threadTileMode: localStorage.getItem("codexMobileThreadDisplayMode") === "tile",
   threadTileDetails: new Map(),
   threadTileLoadingIds: new Set(),
   threadTileErrors: new Map(),
@@ -438,7 +438,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v410";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v411";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -516,7 +516,8 @@ const STORAGE_PUBLIC_PR_PROMPT = "codexMobilePublicPrPromptKey";
 const STORAGE_TASK_CARD_DRAFT_STATES = "codexMobileThreadTaskCardDraftStates";
 const STORAGE_RESTART_AUTO_RECOVER_THREADS = "codexMobileRestartAutoRecoverThreads";
 const STORAGE_COMPOSER_INTENT_DRAFTS = "codexMobileComposerIntentDrafts";
-const STORAGE_THREAD_TILE_MODE = "codexMobileThreadTileMode";
+const STORAGE_THREAD_DISPLAY_MODE = "codexMobileThreadDisplayMode";
+const STORAGE_LEGACY_THREAD_TILE_MODE = "codexMobileThreadTileMode";
 const PUBLIC_PR_REVIEW_THREAD_TITLE = "Codex Mobile Public PR";
 const MERMAID_SCRIPT_URL = "/vendor/mermaid.min.js";
 const MERMAID_MIN_SCALE = 0.65;
@@ -11234,22 +11235,26 @@ function bindThreadTileActions() {
 }
 
 function syncThreadTileToggle() {
-  const button = $("threadTileToggle");
-  if (!button) return;
   const layout = threadTileLayout({ enabled: true });
-  const canEnable = layout.enabled || state.threadTileMode;
-  button.classList.toggle("active", Boolean(state.threadTileMode));
-  button.classList.toggle("hidden", !canEnable);
-  button.setAttribute("aria-pressed", state.threadTileMode ? "true" : "false");
-  button.setAttribute("title", state.threadTileMode ? "退出线程平铺" : "平铺多个线程");
-  button.setAttribute("aria-label", state.threadTileMode ? "退出线程平铺" : "平铺多个线程");
+  document.querySelectorAll("[data-thread-display-choice]").forEach((button) => {
+    const choice = button.getAttribute("data-thread-display-choice") || "single";
+    const isTile = choice === "tile";
+    const isSelected = isTile ? state.threadTileMode : !state.threadTileMode;
+    button.classList.toggle("selected", isSelected);
+    button.setAttribute("aria-pressed", isSelected ? "true" : "false");
+    if (isTile && !layout.enabled && !state.threadTileMode) button.setAttribute("title", "平铺会在 iPad 横屏或宽屏可用时生效");
+    else button.removeAttribute("title");
+  });
 }
 
 function setThreadTileMode(enabled) {
   state.threadTileMode = enabled === true;
-  if (state.threadTileMode) localStorage.setItem(STORAGE_THREAD_TILE_MODE, "true");
-  else {
-    localStorage.removeItem(STORAGE_THREAD_TILE_MODE);
+  try {
+    localStorage.removeItem(STORAGE_LEGACY_THREAD_TILE_MODE);
+    if (state.threadTileMode) localStorage.setItem(STORAGE_THREAD_DISPLAY_MODE, "tile");
+    else localStorage.removeItem(STORAGE_THREAD_DISPLAY_MODE);
+  } catch (_) {}
+  if (!state.threadTileMode) {
     abortThreadTileLoads();
     setThreadTileConversationMode(false);
   }
@@ -11257,9 +11262,11 @@ function setThreadTileMode(enabled) {
   renderCurrentThread({ stickToBottom: true });
 }
 
-function handleThreadTileToggle(event) {
-  if (event) event.preventDefault();
-  setThreadTileMode(!state.threadTileMode);
+function handleThreadTileModeChoice(event) {
+  const button = event.target.closest("[data-thread-display-choice]");
+  if (!button) return;
+  event.preventDefault();
+  setThreadTileMode(button.getAttribute("data-thread-display-choice") === "tile");
 }
 
 function shouldPreservePinnedLiveOperationDock(dock, html = "") {
@@ -19604,7 +19611,6 @@ function wireUi() {
   if ($("goalDialog")) $("goalDialog").addEventListener("click", (event) => {
     if (event.target === $("goalDialog")) closeThreadGoalDialog(false);
   });
-  if ($("threadTileToggle")) $("threadTileToggle").addEventListener("click", handleThreadTileToggle);
   if ($("themeSettingsToggle")) $("themeSettingsToggle").addEventListener("click", () => {
     loadCodexProfiles().catch(showError);
     setTimeout(() => publishPluginNavigationState({ force: true }), 0);
@@ -19612,6 +19618,7 @@ function wireUi() {
   const settingsPanel = $("themeSettingsPanel");
   if (settingsPanel) {
     settingsPanel.addEventListener("click", handleFontSizeChoice);
+    settingsPanel.addEventListener("click", handleThreadTileModeChoice);
     settingsPanel.addEventListener("click", (event) => handleCodexProfileSettingsClick(event).catch(showError));
     settingsPanel.addEventListener("click", (event) => handleWorkspaceDelegationSettingsClick(event).catch(showError));
   }
@@ -20039,6 +20046,7 @@ function wireUi() {
   applyPluginAppearancePreference(state.pluginAppearance);
   applyFontSizePreference();
   renderFontSizeControl();
+  syncThreadTileToggle();
   installLaunchQueueHandler();
   installPluginWindowingGuards();
   installHermesPluginBackSwipeGuard();

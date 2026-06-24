@@ -375,6 +375,13 @@
           </div>
         </div>
         <div class="settings-section">
+          <div class="theme-settings-title">显示</div>
+          <div class="settings-options thread-display-options" role="group" aria-label="线程显示">
+            <button type="button" data-thread-display-choice="single">单线程</button>
+            <button type="button" data-thread-display-choice="tile">平铺</button>
+          </div>
+        </div>
+        <div class="settings-section">
           <div class="theme-settings-title">Codex Profile</div>
           <div id="codexProfileSettings" class="codex-profile-settings" aria-live="polite"></div>
         </div>
@@ -415,7 +422,6 @@
           <div id="threadTitle" class="thread-title">Select a thread</div>
           <div id="threadMeta" class="thread-meta"></div>
         </div>
-        <button id="threadTileToggle" class="icon-button thread-tile-toggle" type="button" title="平铺多个线程" aria-label="平铺多个线程" aria-pressed="false">▦</button>
         <div id="turnTimer" class="turn-timer" aria-live="polite" aria-hidden="true">&#26412;&#36718; 00:00:00</div>
         <button id="interruptTurn" class="icon-button" type="button" title="Interrupt" disabled>■</button>
       </header>
