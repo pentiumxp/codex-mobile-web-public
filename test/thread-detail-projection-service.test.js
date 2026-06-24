@@ -180,6 +180,73 @@ test("thread detail projection soft-expires completed dynamic cache when rollout
   })), null);
 });
 
+test("thread detail projection persists full dynamic cache with refreshed rollout signature", () => {
+  const dir = tempDir();
+  const rolloutPath = path.join(dir, "rollout-thread-1.jsonl");
+  try {
+    fs.writeFileSync(rolloutPath, "{\"type\":\"session_meta\"}\n", "utf8");
+    fs.utimesSync(rolloutPath, new Date(1), new Date(1));
+    const firstStats = fs.statSync(rolloutPath);
+    let current = 10000;
+    const service = createThreadDetailProjectionService({
+      cacheDir: dir,
+      policyVersion: "test-v1",
+      maxTurns: 2,
+      dynamicPersistMinIntervalMs: 0,
+      now: () => current,
+    });
+    service.seed(signatureInput({
+      rolloutPath,
+      rolloutStats: { sizeBytes: firstStats.size, mtimeMs: Math.trunc(firstStats.mtimeMs) },
+      summaryStatus: "active",
+      summaryUpdatedAtMs: Math.trunc(firstStats.mtimeMs),
+    }), {
+      thread: {
+        id: "thread-1",
+        path: rolloutPath,
+        turns: [{ id: "turn-1", status: { type: "active" }, items: [] }],
+      },
+    });
+
+    fs.appendFileSync(rolloutPath, "{\"type\":\"turn_complete\"}\n", "utf8");
+    fs.utimesSync(rolloutPath, new Date(2), new Date(2));
+    const secondStats = fs.statSync(rolloutPath);
+    current = 11000;
+    service.applyNotification("item/completed", {
+      threadId: "thread-1",
+      turnId: "turn-1",
+      item: { id: "agent-1", type: "agentMessage", text: "done" },
+    });
+    service.applyNotification("turn/completed", {
+      threadId: "thread-1",
+      turn: { id: "turn-1", status: { type: "completed" }, items: [] },
+    });
+
+    current = 12000;
+    const restoredService = createThreadDetailProjectionService({
+      cacheDir: dir,
+      policyVersion: "test-v1",
+      maxTurns: 2,
+      now: () => current,
+    });
+    const cached = restoredService.get(signatureInput({
+      rolloutPath,
+      rolloutStats: { sizeBytes: secondStats.size, mtimeMs: Math.trunc(secondStats.mtimeMs) },
+      summaryStatus: "completed",
+      summaryUpdatedAtMs: Math.trunc(secondStats.mtimeMs),
+    }));
+
+    assert.ok(cached);
+    assert.equal(cached.dynamic, true);
+    assert.equal(cached.result.thread.turns.length, 1);
+    const turn = cached.result.thread.turns[0];
+    assert.equal(turn.status.type, "completed");
+    assert.ok(turn.items.some((item) => item.id === "agent-1" && item.text === "done"));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("thread detail projection soft-expires old active dynamic cache when rollout signature changes", () => {
   let current = 20000;
   const service = createThreadDetailProjectionService({

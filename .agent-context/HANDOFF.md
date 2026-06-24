@@ -1,3 +1,65 @@
+# 2026-06-24 - Large-session dynamic projection disk persistence implemented locally
+
+- Scope:
+  - Implemented and locally validated.
+  - Not committed, not deployed, not pushed Public.
+- Trigger:
+  - User asked to continue the next optimization step and start solving large
+    session load slowness.
+- Production evidence gathered before code change:
+  - Current production health is still
+    `clientBuildId=0.1.11|codex-mobile-shell-v419` from the existing deployed
+    build.
+  - Active thread rollout sizes from `state_5.sqlite` metadata:
+    - `019eee6c-a6f5-7b20-bfb4-f96ccb6431b3` Codex Mobile: about `84 MB`.
+    - `019eed86-2002-7cc2-b0b7-937eb5355f36` Home AI: about `56 MB`.
+    - `019ec3c0-86d2-7852-a9ea-e4c703262cdc` older Moira: about `209 MB`,
+      but hidden by current visibility rules.
+  - Direct `/api/threads/:id` timing samples showed the current process is fast
+    while dynamic projection is in memory:
+    - Codex Mobile full/recent reads used `projection-v4-dynamic`,
+      `threadReadMs=0`, total about `177-233 ms`.
+    - Home AI full/recent reads used `projection-v4-dynamic`,
+      `threadReadMs=0`, total about `127-146 ms`.
+    - Music first read used cold `thread-read` about `172 ms`, then disk
+      `projection-v4-cache` about `38-39 ms`.
+  - Runtime projection cache files for Codex Mobile/Home AI existed but carried
+    old rollout size/mtime signatures. The live process had newer in-memory
+    dynamic projections, but those dynamic updates were not persisted. After a
+    listener restart, those large threads could miss disk cache and fall back to
+    full `thread/read`.
+- Change:
+  - Updated `adapters/thread-detail-projection-service.js` so full, non-partial
+    dynamic projections are persisted with throttling after notification
+    updates.
+  - Before dynamic persistence, the service refreshes the projection signature
+    from the actual rollout file size/mtime, so restart-time disk cache can
+    match the current backing rollout.
+  - Partial notification-only projection shells remain invalid as durable detail
+    cache and are not persisted as valid warm cache.
+  - Added focused test coverage in `test/thread-detail-projection-service.test.js`
+    for restart-style restoration from a persisted completed dynamic projection
+    after rollout size/mtime changes.
+- Docs updated:
+  - `README.md`
+  - `docs/MODULES.md`
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+  - `docs/THREAD_DETAIL_PROJECTION_V4_DESIGN.md`
+- Validation:
+  - `node --check adapters/thread-detail-projection-service.js`
+  - `node --test test/thread-detail-projection-service.test.js test/thread-detail-projection-v4-service.test.js test/thread-detail-projection-input-service.test.js test/thread-detail-projection-result-service.test.js`
+  - `node --test test/thread-detail-projection-service.test.js test/thread-detail-projection-v4-service.test.js test/thread-detail-read-orchestration-service.test.js test/thread-detail-performance-service.test.js test/thread-detail-projection-input-service.test.js test/thread-detail-projection-result-service.test.js test/thread-visibility.test.js`
+  - `git diff --check`
+  - `npm test --silent` (`741` tests passed)
+  - `npm run check --silent`
+  - `npm run check:macos --silent`
+- Next:
+  - If deploying this change, use the Home AI central deploy script, then verify
+    a service restart/cold-open path for a large active or recently completed
+    thread. Expected detail result is disk-backed projection with
+    `threadReadMs=0`, not full `thread/read`.
+  - Public sync remains blocked until production/user validation.
+
 # 2026-06-24 - Thread detail orchestration deployed, Public synced, PR #78 closed
 
 - User request:

@@ -161,6 +161,9 @@ The pipeline:
 7. Projection cache signatures include source rollout size/mtime, summary
    status/update time, retained window policy, v4 policy version, and schema
    version. A stale signature misses instead of returning mixed-policy data.
+   Full non-partial dynamic projections may refresh their rollout size/mtime
+   signature and persist to disk after notifications; partial notification-only
+   shells remain invalid as restart detail cache.
 
 ## Browser Pipeline
 

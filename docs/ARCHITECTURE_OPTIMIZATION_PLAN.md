@@ -84,7 +84,11 @@ Target:
 
 Status: in progress. The first slice extracts the `/api/threads/:id` branch
 ordering into `adapters/thread-detail-read-orchestration-service.js` while
-preserving the existing first-paint contract and read strategy.
+preserving the existing first-paint contract and read strategy. The second
+slice addresses the first measured large-session cold-path issue: full dynamic
+projection state was fast while the server process lived, but was not persisted
+with refreshed rollout stats, so a service restart could miss disk cache and
+fall back to full `thread/read` on large rollouts.
 
 - The coordinator owns summary resolution, hidden-thread rejection, projection
   hit, `mode=recent` initial turns-list, full `thread/read`, turns-list
@@ -94,15 +98,20 @@ preserving the existing first-paint contract and read strategy.
 - Focused tests cover warm projection, full `thread/read` before turns-list
   fallback, recent initial turns-list, timeout fallback, and hidden-thread
   rejection without relying on route source-string assertions.
+- Full non-partial dynamic projections are now persisted with throttling and
+  refreshed rollout size/mtime before write. Partial notification-only shells
+  are still not persisted as valid detail cache.
 - Preserve the first-paint contract for large sessions. Do not introduce
   deferred incomplete detail enrichment as a UI fallback for server cold-path
   slowness.
 
 Remaining target:
 
-- Gather production cold/warm timings for large sessions after this boundary is
-  deployed, then optimize the slowest measured phase rather than adding a
-  client-side second-refresh workaround.
+- After deployment, verify a restart/cold-open path for large active or recently
+  completed sessions: disk-backed projection should be the first detail result
+  instead of a full `thread/read`, and
+  `thread.mobileDiagnostics.threadDetailTimings` should keep `threadReadMs=0`
+  for that path.
 
 ### Phase 4: Browser And Visual Coverage
 
