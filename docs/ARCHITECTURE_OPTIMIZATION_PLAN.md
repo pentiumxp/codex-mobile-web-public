@@ -139,14 +139,17 @@ Target:
   split-screen reader where the user can add panes, close panes, drag widths,
   decide how many threads stay visible, and type into each pane through a
   pane-local composer.
-- Current interim state: v424 persists `单线程` / `平铺`, ordered pane thread ids,
+- Current interim state: v425 persists `单线程` / `平铺`, ordered pane thread ids,
   selected pane thread id, and desired pane count in server runtime
-  `settings.json` `threadDisplay`. Device width decides maximum capacity only;
-  `paneCount=0` keeps an automatic current/running-thread-based count, and
-  the pane title menu lets the user expand or close visible panes without
-  reordering unrelated slots. When the user explicitly opens a non-visible
-  thread from the outer thread list, the last visible pane is replaced and that
-  slot order is saved; background recent ordering still cannot move fixed panes.
+  `settings.json` `threadDisplay`. Device width decides the automatic
+  recommended capacity only; `paneCount=0` keeps an automatic
+  current/running-thread-based count, and the pane title menu lets the user
+  expand or close visible panes without reordering unrelated slots. Explicit
+  user-added panes can exceed the recommended viewport capacity and wrap into
+  additional rows up to the bounded user pane ceiling. When the user explicitly
+  opens a non-visible thread from the outer thread list, the last visible pane
+  is replaced and that slot order is saved; background recent ordering still
+  cannot move fixed panes.
 - Keep the current automatic tile policy as the interim capability gate for
   iPad/desktop width, not as the final interaction model. Manual pane count is
   now the owner of "how many windows should be visible" until draggable split

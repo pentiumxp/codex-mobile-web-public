@@ -34,6 +34,11 @@ test("thread tile layout uses multiple desktop panes when width allows", () => {
   assert.equal(layout.maxPanes, 6);
 });
 
+test("thread tile layout exposes a separate user pane ceiling", () => {
+  assert.equal(tile.DEFAULT_MAX_PANES, 6);
+  assert.equal(tile.DEFAULT_USER_MAX_PANES, 12);
+});
+
 test("thread tile layout keeps iPad portrait in single-thread mode", () => {
   const layout = tile.layoutForViewport({
     enabled: true,
@@ -161,4 +166,27 @@ test("thread tile id selection starts with current thread then fills recents", (
     threadIds: ["thread-1", "thread-3", "thread-4"],
     maxPanes: 3,
   }), ["thread-2", "thread-3", "thread-1"]);
+});
+
+test("thread tile id selection can fill the user pane ceiling", () => {
+  const threadIds = Array.from({ length: 16 }, (_, index) => `thread-${index + 1}`);
+
+  assert.deepEqual(tile.selectThreadTileIds({
+    currentThreadId: "thread-0",
+    threadIds,
+    maxPanes: tile.DEFAULT_USER_MAX_PANES,
+  }), [
+    "thread-0",
+    "thread-1",
+    "thread-2",
+    "thread-3",
+    "thread-4",
+    "thread-5",
+    "thread-6",
+    "thread-7",
+    "thread-8",
+    "thread-9",
+    "thread-10",
+    "thread-11",
+  ]);
 });

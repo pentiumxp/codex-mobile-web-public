@@ -11,11 +11,18 @@ function initialPluginLaunchKeyFromUrl() {
 
 const pluginEmbedApi = window.CodexPluginEmbed || {
   detect: () => ({ embedded: false, launchKey: initialPluginLaunchKeyFromUrl(), workspaceId: "", routeHint: null, appearance: {} }),
+  findRouteHintTargetNode: () => null,
   isBackMessage: () => false,
   navigationMessage: () => null,
+  normalizeRouteHint: () => null,
   parentOriginFromReferrer: () => "",
   postBackResult: () => null,
   postNavigation: () => null,
+  routeHintFocusPlan: () => ({ action: "ignore" }),
+  routeHintFromUrl: () => null,
+  routeHintOpenPlan: () => ({ action: "ignore" }),
+  routeHintTargetId: () => "",
+  scrubRouteHintPath: () => "",
 };
 const pluginVoiceInputApi = window.CodexPluginVoiceInput || {
   MAX_TEXT_CHARS: 12000,
@@ -456,7 +463,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v424";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v425";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -629,6 +636,9 @@ const THREAD_TASK_CARD_DRAFT_TAG = "codex-mobile-thread-task-card-draft";
 const THREAD_TILE_REFRESH_INTERVAL_MS = 2400;
 const THREAD_TILE_REFRESH_MIN_INTERVAL_MS = 1100;
 const THREAD_TILE_SETTINGS_SAVE_DEBOUNCE_MS = 500;
+const THREAD_TILE_USER_MAX_PANES = Math.max(1, Math.floor(Number(
+  threadTileLayoutPolicy.DEFAULT_USER_MAX_PANES || threadTileLayoutPolicy.DEFAULT_MAX_PANES || 6,
+)) || 6);
 const THEME_VALUES = new Set(["system", "dark", "light"]);
 const FONT_SIZE_VALUES = new Set(["small", "default", "large", "xlarge", "xxlarge"]);
 const MENU_OVERLAY_MEDIA = "(max-width: 1180px), (pointer: coarse) and (max-width: 1400px)";
@@ -7468,15 +7478,11 @@ function renderPluginRefreshPendingNotice(previousKeys = new Set()) {
 function scrubPluginLaunchUrl() {
   if (!isHermesEmbedMode()) return;
   try {
-    const url = new URL(window.location.href, window.location.origin);
-    url.searchParams.set("embed", "hermes");
-    url.searchParams.delete("codexPluginLaunch");
-    url.searchParams.delete("pluginLaunch");
-    if (state.pluginEmbed.workspaceId) url.searchParams.set("workspaceId", state.pluginEmbed.workspaceId);
-    const appearance = currentPluginAppearanceForHost();
-    if (appearance && appearance.theme) url.searchParams.set("pluginTheme", appearance.theme);
-    if (appearance && appearance.fontSize) url.searchParams.set("pluginFontSize", appearance.fontSize);
-    window.history.replaceState({}, "", `${url.pathname || "/"}?${url.searchParams.toString()}${url.hash || ""}`);
+    const scrubbed = pluginEmbedApi.scrubRouteHintPath(window.location.href, {
+      workspaceId: state.pluginEmbed.workspaceId,
+      appearance: currentPluginAppearanceForHost(),
+    });
+    if (scrubbed) window.history.replaceState({}, "", scrubbed);
   } catch (_) {
     // URL scrubbing is best-effort; auth state is already held in memory.
   }
@@ -7484,9 +7490,9 @@ function scrubPluginLaunchUrl() {
 
 function pluginRootPath() {
   if (!isHermesEmbedMode()) return window.location.pathname || "/";
-  const params = new URLSearchParams({ embed: "hermes" });
-  if (state.pluginEmbed && state.pluginEmbed.workspaceId) params.set("workspaceId", state.pluginEmbed.workspaceId);
-  return `/?${params.toString()}`;
+  return pluginEmbedApi.scrubRouteHintPath("/", {
+    workspaceId: state.pluginEmbed && state.pluginEmbed.workspaceId,
+  }) || "/?embed=hermes";
 }
 
 function showPluginEmbedAuthError(message = "") {
@@ -7769,37 +7775,19 @@ function threadIdFromUrlValue(value) {
 }
 
 function normalizePluginRouteHint(value) {
-  if (!value || typeof value !== "object") return null;
-  const pluginId = String(value.pluginId || "").trim().slice(0, 80);
-  const route = String(value.route || "").trim().slice(0, 80);
-  const itemId = String(value.itemId || "").trim().slice(0, 160);
-  const threadId = String(value.threadId || "").trim().slice(0, 160);
-  const taskId = String(value.taskId || "").trim().slice(0, 160);
-  if (!(pluginId || route || itemId || threadId || taskId)) return null;
-  return { pluginId, route, itemId, threadId, taskId };
+  return pluginEmbedApi.normalizeRouteHint(value);
 }
 
 function pluginRouteHintFromUrl(value) {
   try {
-    const detected = pluginEmbedApi.detect ? pluginEmbedApi.detect(value || window.location.href) : null;
-    const normalized = normalizePluginRouteHint(detected && detected.routeHint);
-    if (normalized) return normalized;
-    const url = new URL(value || window.location.href, window.location.origin);
-    return normalizePluginRouteHint({
-      pluginId: url.searchParams.get("pluginId"),
-      route: url.searchParams.get("pluginRoute"),
-      itemId: url.searchParams.get("pluginItemId"),
-      threadId: url.searchParams.get("pluginThreadId"),
-      taskId: url.searchParams.get("pluginTaskId"),
-    });
+    return pluginEmbedApi.routeHintFromUrl(value || window.location.href);
   } catch (_) {
     return null;
   }
 }
 
 function pluginRouteHintTargetId(hint) {
-  if (!hint) return "";
-  return String(hint.taskId || hint.itemId || "").trim();
+  return pluginEmbedApi.routeHintTargetId(hint);
 }
 
 function setPluginRouteDiagnostic(message, options = {}) {
@@ -7818,14 +7806,9 @@ function clearThreadUrl() {
 }
 
 function findPluginRouteTargetNode(hint) {
-  const targetId = pluginRouteHintTargetId(hint);
-  if (!targetId) return null;
   const conversation = $("conversation");
   if (!conversation) return null;
-  return conversation.querySelector(`[data-approval-card="${escapeSelectorAttr(targetId)}"]`)
-    || conversation.querySelector(`[data-task-card="${escapeSelectorAttr(targetId)}"]`)
-    || conversation.querySelector(`[data-turn="${escapeSelectorAttr(targetId)}"]`)
-    || conversation.querySelector(`[data-item="${escapeSelectorAttr(targetId)}"]`);
+  return pluginEmbedApi.findRouteHintTargetNode(conversation, hint, { escapeSelector: escapeSelectorAttr });
 }
 
 function focusPluginRouteTargetNode(hint) {
@@ -7842,22 +7825,25 @@ function focusPluginRouteTargetNode(hint) {
 function applyPendingPluginRouteHintFocus() {
   const hint = normalizePluginRouteHint(state.pendingPluginRouteHint);
   if (!hint) return false;
-  const threadId = String(state.currentThreadId || "").trim();
-  if (!threadId || hint.threadId !== threadId) return false;
-  const targetId = pluginRouteHintTargetId(hint);
-  if (!targetId) {
+  const node = findPluginRouteTargetNode(hint);
+  const plan = pluginEmbedApi.routeHintFocusPlan(hint, {
+    currentThreadId: state.currentThreadId,
+    targetFound: Boolean(node),
+  });
+  if (!plan || plan.action === "ignore" || plan.action === "wait") return false;
+  if (plan.action === "clear") {
     state.pendingPluginRouteHint = null;
     return false;
   }
-  const focused = focusPluginRouteTargetNode(hint);
-  if (focused) {
+  if (plan.action === "focused") {
+    focusPluginRouteTargetNode(hint);
     state.pendingPluginRouteHint = null;
-    setPluginRouteDiagnostic("Opened notification target", { error: false });
+    if (plan.diagnostic) setPluginRouteDiagnostic(plan.diagnostic.message, { error: plan.diagnostic.error });
     return true;
   }
   state.pendingPluginRouteHint = null;
   showHermesPluginPrimaryPage();
-  setPluginRouteDiagnostic("Notification target is no longer available", { error: true });
+  if (plan.diagnostic) setPluginRouteDiagnostic(plan.diagnostic.message, { error: plan.diagnostic.error });
   return false;
 }
 
@@ -7880,30 +7866,21 @@ async function openExternalThreadSelection(threadId, options = {}) {
 }
 
 async function openHermesPluginRouteHint(hint) {
-  const normalized = normalizePluginRouteHint(hint);
-  if (!normalized || normalized.pluginId !== "codex-mobile") return false;
+  const plan = pluginEmbedApi.routeHintOpenPlan(hint);
+  if (!plan || plan.action === "ignore") return false;
   state.queuedPluginRouteHint = null;
   clearThreadUrl();
-  const threadId = String(normalized.threadId || "").trim();
-  const targetId = pluginRouteHintTargetId(normalized);
-  if (!threadId && !targetId) {
-    if (normalized.route && normalized.route !== "root") {
-      setPluginRouteDiagnostic("Notification target is unavailable", { error: true });
-    }
+  if (plan.action === "primary") {
+    if (plan.diagnostic) setPluginRouteDiagnostic(plan.diagnostic.message, { error: plan.diagnostic.error });
     showHermesPluginPrimaryPage();
-    return true;
-  }
-  if (!threadId) {
-    showHermesPluginPrimaryPage();
-    setPluginRouteDiagnostic("Notification thread is unavailable", { error: true });
     return true;
   }
   try {
-    state.pendingPluginRouteHint = targetId ? normalized : null;
-    await openExternalThreadSelection(threadId, {
-      statusMessage: targetId ? "Opening notification target" : "Opening notification thread",
+    state.pendingPluginRouteHint = plan.pendingHint || null;
+    await openExternalThreadSelection(plan.threadId, {
+      statusMessage: plan.statusMessage,
     });
-    if (!targetId) {
+    if (!plan.targetId) {
       setPluginRouteDiagnostic("Opened notification thread", { error: false });
     } else {
       applyPendingPluginRouteHintFocus();
@@ -7912,7 +7889,7 @@ async function openHermesPluginRouteHint(hint) {
   } catch (error) {
     state.pendingPluginRouteHint = null;
     showHermesPluginPrimaryPage();
-    setPluginRouteDiagnostic(targetId ? "Notification target is unavailable" : "Notification thread is unavailable", {
+    setPluginRouteDiagnostic(plan.targetId ? "Notification target is unavailable" : "Notification thread is unavailable", {
       error: true,
     });
     return true;
@@ -11320,7 +11297,7 @@ function threadTileLayout(options = {}) {
 function normalizeThreadTilePaneCount(value, fallback = 0) {
   const parsed = Math.floor(Number(value));
   if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(0, Math.min(threadTileLayoutPolicy.DEFAULT_MAX_PANES, parsed));
+  return Math.max(0, Math.min(THREAD_TILE_USER_MAX_PANES, parsed));
 }
 
 function threadTileLayoutCapacity(layout = threadTileLayout()) {
@@ -11332,7 +11309,7 @@ function threadTileLayoutCapacity(layout = threadTileLayout()) {
 
 function defaultThreadTileCandidateIds(layout = threadTileLayout(), options = {}) {
   const maxPanes = Math.max(1, Math.min(
-    threadTileLayoutPolicy.DEFAULT_MAX_PANES,
+    THREAD_TILE_USER_MAX_PANES,
     Math.floor(Number(options.maxPanes || layout && layout.maxPanes || 1)) || 1,
   ));
   const threadIds = visibleThreads(state.threads).map((thread) => thread && thread.id).filter(Boolean);
@@ -11361,7 +11338,10 @@ function autoThreadTilePaneCount(layout = threadTileLayout()) {
 function effectiveThreadTilePaneCount(layout = threadTileLayout()) {
   const capacity = threadTileLayoutCapacity(layout);
   const explicit = normalizeThreadTilePaneCount(state.threadTilePaneCount, 0);
-  const desired = explicit > 0 ? explicit : autoThreadTilePaneCount(layout);
+  if (explicit > 0) {
+    return Math.max(1, Math.min(threadTileMaximumPaneCount(layout), explicit));
+  }
+  const desired = autoThreadTilePaneCount(layout);
   const candidateCount = defaultThreadTileCandidateIds(layout, { maxPanes: capacity }).length || 1;
   return Math.max(1, Math.min(capacity, candidateCount, desired));
 }
@@ -11386,7 +11366,7 @@ function normalizeThreadTilePinnedIds(values = []) {
     if (!id || seen.has(id)) continue;
     seen.add(id);
     ids.push(id);
-    if (ids.length >= threadTileLayoutPolicy.DEFAULT_MAX_PANES * 2) break;
+    if (ids.length >= THREAD_TILE_USER_MAX_PANES * 2) break;
   }
   return ids;
 }
@@ -11583,13 +11563,12 @@ function renderThreadTileSwitchMenu(currentId) {
   const count = activeIds.length || effectiveThreadTilePaneCount(layout);
   const minCount = threadTileMinimumPaneCount(layout);
   const maxCount = threadTileMaximumPaneCount(layout);
-  const capacity = threadTileLayoutCapacity(layout);
   const canClose = activeIds.includes(current) && count > minCount;
   const canAdd = count < maxCount;
   return `<div class="thread-tile-switch-menu" role="listbox" aria-label="切换此窗口线程">
     <div class="thread-tile-switch-actions">
       <button class="thread-tile-switch-action" type="button" data-thread-tile-close-pane="${escapeHtml(current)}"${canClose ? "" : " disabled"}>关闭窗口</button>
-      <span class="thread-tile-switch-count">${escapeHtml(String(count))}/${escapeHtml(String(capacity))}</span>
+      <span class="thread-tile-switch-count">${escapeHtml(String(count))}/${escapeHtml(String(maxCount))}</span>
       <button class="thread-tile-switch-action" type="button" data-thread-tile-pane-count="1"${canAdd ? "" : " disabled"}>新增窗口</button>
     </div>
     ${options.map((threadId) => {
@@ -12062,9 +12041,8 @@ function threadTileMinimumPaneCount(layout = threadTileLayout()) {
 }
 
 function threadTileMaximumPaneCount(layout = threadTileLayout()) {
-  const capacity = threadTileLayoutCapacity(layout);
-  const candidateCount = defaultThreadTileCandidateIds(layout, { maxPanes: capacity }).length || 1;
-  return Math.max(1, Math.min(capacity, candidateCount));
+  const candidateCount = defaultThreadTileCandidateIds(layout, { maxPanes: THREAD_TILE_USER_MAX_PANES }).length || 1;
+  return Math.max(1, Math.min(THREAD_TILE_USER_MAX_PANES, candidateCount));
 }
 
 function setThreadTilePaneCount(nextCount, options = {}) {
@@ -12107,7 +12085,7 @@ function closeThreadTilePane(threadId) {
   const existing = normalizeThreadTilePinnedIds(state.threadTilePinnedIds);
   const sourceIds = existing.length ? existing : ids;
   const remaining = sourceIds.filter((candidateId) => candidateId !== id);
-  const fillIds = defaultThreadTileCandidateIds(layout, { maxPanes: threadTileLayoutCapacity(layout) })
+  const fillIds = defaultThreadTileCandidateIds(layout, { maxPanes: threadTileMaximumPaneCount(layout) })
     .filter((candidateId) => candidateId !== id);
   saveCurrentDraftNow();
   state.threadTilePinnedIds = normalizeThreadTilePinnedIds([...remaining, ...fillIds]);
@@ -12352,8 +12330,8 @@ function threadTileLayoutStatusText(layout) {
   if (!state.threadTileMode) return "当前视口：单线程";
   if (layout && layout.enabled) {
     const count = effectiveThreadTilePaneCount(layout);
-    const capacity = threadTileLayoutCapacity(layout);
-    return capacity > 1 ? `当前视口：平铺 ${count}/${capacity} 窗` : "当前视口：平铺可用";
+    const maxCount = threadTileMaximumPaneCount(layout);
+    return maxCount > 1 ? `当前视口：平铺 ${count}/${maxCount} 窗` : "当前视口：平铺可用";
   }
   const reason = String(layout && layout.reason || "");
   if (reason === "tablet-portrait") return "当前视口：竖屏单线程";

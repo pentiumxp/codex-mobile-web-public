@@ -7,6 +7,7 @@ const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
 const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+const pluginEmbedJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "plugin-embed.js"), "utf8");
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
 const startScript = fs.readFileSync(path.resolve(__dirname, "..", "start-codex-mobile-web.ps1"), "utf8");
@@ -77,9 +78,11 @@ test("Hermes plugin launch token is a browser-session key, not local storage log
   assert.match(appJs, /function applyUrlPluginRouteHint\(options = \{\}\)/);
   assert.match(appJs, /async function openHermesPluginRouteHint\(hint\)/);
   assert.match(appJs, /pluginRouteHintFromUrl\(window\.location\.href\)/);
-  assert.match(appJs, /Notification target is unavailable/);
-  assert.match(appJs, /Notification target is no longer available/);
-  assert.match(appJs, /Opened notification target/);
+  assert.match(appJs, /pluginEmbedApi\.routeHintOpenPlan\(hint\)/);
+  assert.match(appJs, /pluginEmbedApi\.routeHintFocusPlan\(hint/);
+  assert.match(pluginEmbedJs, /Notification target is unavailable/);
+  assert.match(pluginEmbedJs, /Notification target is no longer available/);
+  assert.match(pluginEmbedJs, /Opened notification target/);
   assert.match(appJs, /scrubPluginLaunchUrl\(\)/);
 });
 

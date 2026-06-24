@@ -14,6 +14,7 @@
   const DEFAULT_MIN_PANE_HEIGHT = 360;
   const DEFAULT_MIN_LANDSCAPE_VIEWPORT_HEIGHT = 480;
   const DEFAULT_MAX_PANES = 6;
+  const DEFAULT_USER_MAX_PANES = 12;
 
   function positiveNumber(value, fallback = 0) {
     const parsed = Number(value);
@@ -41,7 +42,7 @@
     const landscapeTile = orientation === "landscape" && viewportWidth >= minLandscapeViewportWidth && viewportHeight >= minLandscapeViewportHeight;
     const menuOverlay = input.menuOverlay === true;
     const tabletLandscape = landscapeTile && (coarsePointer || menuOverlay);
-    const maxPanes = clampInteger(input.maxPanes || DEFAULT_MAX_PANES, 1, 12);
+    const maxPanes = clampInteger(input.maxPanes || DEFAULT_MAX_PANES, 1, DEFAULT_USER_MAX_PANES);
     if (!enabled || viewportWidth <= 0 || viewportHeight <= 0) {
       return { enabled: false, reason: "disabled", columns: 1, rows: 1, maxPanes: 1 };
     }
@@ -102,6 +103,7 @@
 
   return {
     DEFAULT_MAX_PANES,
+    DEFAULT_USER_MAX_PANES,
     DEFAULT_MIN_DESKTOP_PANE_WIDTH,
     DEFAULT_MIN_LANDSCAPE_VIEWPORT_WIDTH,
     DEFAULT_MIN_LANDSCAPE_VIEWPORT_HEIGHT,

@@ -3629,7 +3629,7 @@ html.keyboard-open .side-chat-form textarea {
 }
 
 .thread-tile-switch-count {
-  min-width: 3.2em;
+  min-width: 4.4em;
   color: var(--muted);
   font-size: 10px;
   font-variant-numeric: tabular-nums;

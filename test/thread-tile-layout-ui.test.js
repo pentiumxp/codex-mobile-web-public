@@ -46,6 +46,7 @@ test("thread tile layout is wired as an explicit shell policy", () => {
   assert.match(appJs, /threadTileComposerHeightBaselinePx: 0/);
   assert.match(appJs, /THREAD_TILE_REFRESH_INTERVAL_MS/);
   assert.match(appJs, /THREAD_TILE_SETTINGS_SAVE_DEBOUNCE_MS/);
+  assert.match(appJs, /THREAD_TILE_USER_MAX_PANES/);
   assert.match(appJs, /STORAGE_LEGACY_THREAD_TILE_MODE = "codexMobileThreadTileMode"/);
   assert.match(appJs, /function loadThreadDisplaySettings\(/);
   assert.match(appJs, /\/api\/settings\/thread-display/);
@@ -65,6 +66,7 @@ test("thread tile layout is wired as an explicit shell policy", () => {
   assert.match(layoutBody, /menuOverlay,/);
   assert.match(layoutBody, /verticalChromePx: threadTileVerticalChromePx\(\)/);
   assert.match(appJs, /function effectiveThreadTilePaneCount\(/);
+  assert.match(functionBody(appJs, "effectiveThreadTilePaneCount"), /if \(explicit > 0\) \{[\s\S]*threadTileMaximumPaneCount\(layout\)[\s\S]*explicit/);
   assert.match(appJs, /function setThreadTilePaneCount\(/);
   assert.match(appJs, /function closeThreadTilePane\(/);
   assert.match(functionBody(appJs, "threadDisplaySettingsPayload"), /paneCount: normalizeThreadTilePaneCount\(state\.threadTilePaneCount, 0\)/);
@@ -114,6 +116,8 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(candidateBody, /effectiveThreadTilePaneCount\(layout\)/);
   assert.match(candidateBody, /defaultThreadTileCandidateIds\(layout, \{ maxPanes \}\)/);
   assert.match(candidateBody, /threadTileVisibleIdSet\(\)/);
+  assert.match(functionBody(appJs, "threadTileMaximumPaneCount"), /THREAD_TILE_USER_MAX_PANES/);
+  assert.match(functionBody(appJs, "defaultThreadTileCandidateIds"), /THREAD_TILE_USER_MAX_PANES/);
 
   const loadBody = functionBody(appJs, "loadThreadTileDetail");
   assert.match(loadBody, /const force = options\.force === true/);

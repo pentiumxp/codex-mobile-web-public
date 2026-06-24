@@ -41,13 +41,13 @@
   function detect(value) {
     const url = urlFrom(value);
     const params = url ? url.searchParams : new URLSearchParams();
-    const routeHint = {
+    const routeHint = normalizeRouteHint({
       pluginId: boundedString(params.get("pluginId"), 80),
       route: boundedString(params.get("pluginRoute"), 80),
       itemId: boundedString(params.get("pluginItemId"), 160),
       threadId: boundedString(params.get("pluginThreadId"), 160),
       taskId: boundedString(params.get("pluginTaskId"), 160),
-    };
+    }) || { pluginId: "", route: "", itemId: "", threadId: "", taskId: "" };
     const appearance = {};
     const theme = normalizedEnum(params.get("pluginTheme") || params.get("theme"), THEME_VALUES);
     const fontSize = normalizedEnum(params.get("pluginFontSize") || params.get("fontSize"), FONT_SIZE_VALUES);
@@ -60,6 +60,112 @@
       routeHint,
       appearance,
     };
+  }
+
+  function normalizeRouteHint(value) {
+    if (!value || typeof value !== "object") return null;
+    const pluginId = boundedString(value.pluginId, 80);
+    const route = boundedString(value.route, 80);
+    const itemId = boundedString(value.itemId, 160);
+    const threadId = boundedString(value.threadId, 160);
+    const taskId = boundedString(value.taskId, 160);
+    if (!(pluginId || route || itemId || threadId || taskId)) return null;
+    return { pluginId, route, itemId, threadId, taskId };
+  }
+
+  function routeHintFromUrl(value) {
+    const detected = detect(value);
+    return normalizeRouteHint(detected.routeHint);
+  }
+
+  function routeHintTargetId(hint) {
+    const normalized = normalizeRouteHint(hint);
+    return normalized ? stringValue(normalized.taskId || normalized.itemId) : "";
+  }
+
+  function routeHintOpenPlan(hint) {
+    const normalized = normalizeRouteHint(hint);
+    if (!normalized || normalized.pluginId !== "codex-mobile") return { action: "ignore" };
+    const threadId = stringValue(normalized.threadId);
+    const targetId = routeHintTargetId(normalized);
+    if (!threadId && !targetId) {
+      return {
+        action: "primary",
+        diagnostic: normalized.route && normalized.route !== "root"
+          ? { message: "Notification target is unavailable", error: true }
+          : null,
+      };
+    }
+    if (!threadId) {
+      return {
+        action: "primary",
+        diagnostic: { message: "Notification thread is unavailable", error: true },
+      };
+    }
+    return {
+      action: "openThread",
+      hint: normalized,
+      threadId,
+      targetId,
+      pendingHint: targetId ? normalized : null,
+      statusMessage: targetId ? "Opening notification target" : "Opening notification thread",
+    };
+  }
+
+  function routeHintFocusPlan(hint, state = {}) {
+    const normalized = normalizeRouteHint(hint);
+    if (!normalized) return { action: "ignore" };
+    const currentThreadId = stringValue(state.currentThreadId);
+    if (!currentThreadId || normalized.threadId !== currentThreadId) return { action: "wait" };
+    const targetId = routeHintTargetId(normalized);
+    if (!targetId) return { action: "clear" };
+    if (state.targetFound === true) {
+      return {
+        action: "focused",
+        diagnostic: { message: "Opened notification target", error: false },
+      };
+    }
+    return {
+      action: "primary",
+      diagnostic: { message: "Notification target is no longer available", error: true },
+    };
+  }
+
+  function routeHintTargetSelectors(hint, options = {}) {
+    const targetId = routeHintTargetId(hint);
+    if (!targetId) return [];
+    const escapeSelector = typeof options.escapeSelector === "function"
+      ? options.escapeSelector
+      : (value) => stringValue(value).replace(/["\\]/g, "\\$&");
+    const escaped = escapeSelector(targetId);
+    return [
+      `[data-approval-card="${escaped}"]`,
+      `[data-task-card="${escaped}"]`,
+      `[data-turn="${escaped}"]`,
+      `[data-item="${escaped}"]`,
+    ];
+  }
+
+  function findRouteHintTargetNode(rootNode, hint, options = {}) {
+    if (!rootNode || typeof rootNode.querySelector !== "function") return null;
+    for (const selector of routeHintTargetSelectors(hint, options)) {
+      const node = rootNode.querySelector(selector);
+      if (node) return node;
+    }
+    return null;
+  }
+
+  function scrubRouteHintPath(value, options = {}) {
+    const url = urlFrom(value);
+    if (!url) return "";
+    url.search = "";
+    url.searchParams.set("embed", "hermes");
+    const workspaceId = boundedString(options.workspaceId, 120);
+    if (workspaceId) url.searchParams.set("workspaceId", workspaceId);
+    const appearance = appearanceFromState(options.appearance || {});
+    if (appearance.theme) url.searchParams.set("pluginTheme", appearance.theme);
+    if (appearance.fontSize) url.searchParams.set("pluginFontSize", appearance.fontSize);
+    return `${url.pathname || "/"}?${url.searchParams.toString()}${url.hash || ""}`;
   }
 
   function parentOriginFromReferrer(referrer) {
@@ -247,14 +353,22 @@
     backResultMessage,
     canGoBack,
     detect,
+    findRouteHintTargetNode,
     isBackMessage,
     isInternalUrl,
     navigationMessage,
+    normalizeRouteHint,
     parentOriginFromReferrer,
     postBackResult,
     postRefreshRequired,
     postNavigation,
     refreshRequiredMessage,
+    routeHintFocusPlan,
+    routeHintFromUrl,
+    routeHintOpenPlan,
+    routeHintTargetId,
+    routeHintTargetSelectors,
     routeFromState,
+    scrubRouteHintPath,
   };
 }));
