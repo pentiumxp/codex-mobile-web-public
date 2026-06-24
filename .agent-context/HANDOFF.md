@@ -1,8 +1,10 @@
-# 2026-06-24 - Thread-list open replaces last tile pane v424 local
+# 2026-06-24 - Tile pane management v424 committed and deployed
 
 - Scope:
-  - Implemented and validated locally.
-  - Not committed, not deployed, not pushed Public.
+  - Implemented, validated, committed, and deployed to Mac production.
+  - Not pushed Public.
+  - Commit:
+    - `5500932 feat: 优化平铺窗口管理`
 - Trigger:
   - User reported that server-persisted tile panes can hide occasionally active
     threads: if a less-used thread is actively opened from the outer thread list,
@@ -37,9 +39,24 @@
   - `npm run check:macos`
   - `git diff --check`
 - Operational notes:
-  - Production still has v422 until the v423/v424 local changes are committed
-    and deployed.
   - Browser/PWA clients must load v424 shell to exercise the frontend changes.
+  - Central Home AI deploy script used:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --reason tile-pane-management-v424 --execute --json`
+  - Source ref: `5500932e3dc3`.
+  - Production target:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup retained at:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260624T130337Z-plugin-codex-mobile-web-tile-pane-management-v424`.
+  - Deploy pruned previous v422 backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260624T123122Z-plugin-codex-mobile-web-dynamic-tile-pane-count-v422`.
+  - Post-deploy health returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v424` and
+    `shellCacheName=codex-mobile-shell-v424`.
+  - Production target validation:
+    `npm run check` and `npm run check:macos` both passed in
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Central deployment audit remained non-blocking:
+    `auditOk=false`, `issueCount=11`, `blockingIssueCount=0`.
 
 # 2026-06-24 - Tile pane count controls in title menu v423 local
 
