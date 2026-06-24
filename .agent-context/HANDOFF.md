@@ -44,15 +44,22 @@
     `06d8c8b4b7d6`.
   - Production target:
     `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
-  - Backup retained at:
+  - Initial v425 code-deploy backup reported at:
     `/Users/hermes-host/HermesMobile/backups/deploy/20260624T160709Z-plugin-codex-mobile-web-route-hint-tile-pane-v425`.
+  - Follow-up evidence-doc sync deployed source ref `8ba84412c2c2` with central
+    reason `route-hint-tile-pane-v425-evidence`. It reported backup path
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260624T160929Z-plugin-codex-mobile-web-route-hint-tile-pane-v425-evidence`
+    and pruned the initial v425 code-deploy backup under retention policy.
+    Direct local `ls` of the backup root is permission-denied for this session,
+    so do not claim backup filesystem existence from a later manual stat.
   - Post-deploy `/api/public-config` returned `version=0.1.11`,
     `clientBuildId=0.1.11|codex-mobile-shell-v425`,
     `shellCacheName=codex-mobile-shell-v425`, and production workspace path
     `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
-  - Source/production short SHA-256 samples matched for `public/app.js`,
-    `public/sw.js`, `public/plugin-embed.js`, `public/thread-tile-layout.js`,
-    `README.md`, `docs/ARCHITECTURE.md`, and `docs/MODULES.md`.
+  - Source/production short SHA-256 samples matched for
+    `docs/HOME_AI_PLATFORM_CONTRACT.md`, `public/app.js`, `public/sw.js`,
+    `public/plugin-embed.js`, and `public/thread-tile-layout.js` after the
+    evidence-doc sync.
   - Central deployment audit remained non-blocking with
     `blockingIssueCount=0`.
 - Operational notes:
