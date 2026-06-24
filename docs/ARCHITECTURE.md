@@ -666,13 +666,17 @@ Composer-height baseline while a keyboard-editable input is focused, and
 visualViewport resize does not trigger a full thread render for the tile board.
 Home AI embedded tile mode also suppresses whole-app `--app-top` translation
 while the keyboard is open so the shared Composer can adapt without moving the
-entire pane grid. The display mode and tile pane slot order are server-side
-runtime settings under `settings.json` `threadDisplay`, exposed through
-`GET/POST /api/settings/thread-display`; `localStorage` is only a legacy
-migration/cache mirror. Pane slots are stable thread id positions: normal
-thread-list recent sorting can fill empty slots but must not reorder existing
-slots. A manual pane title-menu switch replaces only that slot and persists the
-new ordered pane id list.
+entire pane grid. The display mode, desired pane count, and tile pane slot order
+are server-side runtime settings under `settings.json` `threadDisplay`, exposed
+through `GET/POST /api/settings/thread-display`; `localStorage` is only a legacy
+migration/cache mirror. `paneCount=0` means automatic sizing from current/running
+threads and viewport capacity; a positive value is the user's manual window
+count. Device width sets the maximum pane capacity only, so a four-pane-capable
+tablet can still display two wider panes until the user taps the tile `+`
+control. Pane slots are stable thread id positions: normal thread-list recent
+sorting can fill empty slots but must not reorder existing slots. A manual pane
+title-menu switch replaces only that slot and persists the new ordered pane id
+list; `+ / -` changes only how many slots are visible.
 
 Tile-mode pane refreshes are local by default. The browser keeps per-pane
 detail cache, operation bubble state, and scroll-bottom hold state keyed by

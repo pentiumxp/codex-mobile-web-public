@@ -1,3 +1,50 @@
+# 2026-06-24 - Dynamic tile pane count v422 local
+
+- Scope:
+  - Implemented and validated locally.
+  - Not committed, not deployed, not pushed Public.
+- Trigger:
+  - User clarified that tile mode should not automatically fill every available
+    device column. A four-pane-capable tablet should show two wider panes when
+    only two threads are currently useful, while still allowing the user to add
+    or close panes directly on the current screen.
+- Root cause:
+  - v421 persisted tile mode and pane slot order, but it did not persist a
+    separate desired pane count. The layout policy's device capacity was still
+    serving double duty as the visible window count, so wide devices could make
+    panes narrower than necessary.
+- Change:
+  - `server.js` extends `settings.json` `threadDisplay` with bounded
+    `paneCount`; `0` means automatic current/running-thread-based sizing, and a
+    positive integer is the user's manual visible pane count.
+  - `public/app.js` now distinguishes device capacity from visible pane count.
+    The tile candidate list uses `effectiveThreadTilePaneCount()`, while the
+    rendered grid columns use the actual visible pane count so two panes occupy
+    two wide columns even on four-pane-capable screens.
+  - Tile mode adds a compact floating `- / +` control inside the tile board.
+    `-` reduces the visible pane count without deleting saved pane slots; `+`
+    expands the visible count and lets existing slot order/recent threads fill
+    the new pane.
+  - `public/styles.css` adds the small non-layout-taking tile window controls.
+  - PWA shell cache bumped to `codex-mobile-shell-v422`.
+- Docs updated:
+  - `README.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+  - `docs/MODULES.md`
+- Validation:
+  - `node --check server.js && node --check public/app.js && node --check public/sw.js`
+  - Focused suite:
+    `node --test test/thread-visibility.test.js test/thread-tile-layout.test.js test/thread-tile-layout-ui.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (`78` tests passed)
+  - `npm test` (`748` tests passed)
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+- Operational notes:
+  - Production still has v421 until this change is committed and deployed.
+  - Browser/PWA clients must load v422 shell to exercise the frontend controls.
+
 # 2026-06-24 - Thread-display persistence and tile stability v421 committed and deployed
 
 - Scope:

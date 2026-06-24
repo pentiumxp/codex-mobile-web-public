@@ -182,14 +182,22 @@ test("thread display settings normalize tile mode and stable pane slots", () => 
   const settings = setThreadDisplaySettings({
     displayMode: "tile",
     paneThreadIds: ["thread-a", "thread-b", "thread-a", "", "thread-c"],
+    paneCount: 4.8,
     selectedThreadId: "thread-b",
   });
 
   assert.equal(settings.displayMode, "tile");
   assert.equal(settings.threadTileMode, true);
   assert.deepEqual(settings.paneThreadIds.slice(0, 3), ["thread-a", "thread-b", "thread-c"]);
+  assert.equal(settings.paneCount, 4);
   assert.equal(settings.selectedThreadId, "thread-b");
   assert.equal(threadDisplayPublicSettings().source, "runtime");
+  assert.equal(threadDisplayPublicSettings().paneCount, 4);
+});
+
+test("thread display pane count is bounded and allows automatic zero", () => {
+  assert.equal(setThreadDisplaySettings({ displayMode: "tile", paneCount: 0 }).paneCount, 0);
+  assert.equal(setThreadDisplaySettings({ displayMode: "tile", paneCount: 99 }).paneCount, 12);
 });
 
 test("thread detail uses full thread/read before bounded turns/list fallback", () => {

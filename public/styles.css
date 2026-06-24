@@ -3508,12 +3508,59 @@ html.keyboard-open .side-chat-form textarea {
 }
 
 .thread-tile-board {
+  position: relative;
   height: 100%;
   min-height: 0;
   min-width: 0;
   display: grid;
   grid-template-columns: repeat(var(--thread-tile-columns, 2), minmax(0, 1fr));
   gap: 10px;
+}
+
+.thread-tile-window-controls {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 18;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+}
+
+.thread-tile-window-control-button {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 24px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  color: var(--text);
+  background: var(--control-muted-bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  font-size: 15px;
+  font-weight: 760;
+  line-height: 1;
+}
+
+.thread-tile-window-control-button:disabled {
+  opacity: 0.42;
+}
+
+.thread-tile-window-count {
+  min-width: 3.2em;
+  color: var(--muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: center;
 }
 
 .thread-tile-pane {

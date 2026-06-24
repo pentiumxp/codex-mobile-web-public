@@ -139,13 +139,16 @@ Target:
   split-screen reader where the user can add panes, close panes, drag widths,
   decide how many threads stay visible, and type into each pane through a
   pane-local composer.
-- Current interim state: v421 persists `单线程` / `平铺`, ordered pane thread ids,
-  and the selected pane thread id in server runtime `settings.json`
-  `threadDisplay`. Device width still decides how many persisted slots are
-  visible, so an iPad can show the first two/three slots while a wider Android
-  tablet can show the first four without changing the shared slot order.
+- Current interim state: v422 persists `单线程` / `平铺`, ordered pane thread ids,
+  selected pane thread id, and desired pane count in server runtime
+  `settings.json` `threadDisplay`. Device width decides maximum capacity only;
+  `paneCount=0` keeps an automatic current/running-thread-based count, and
+  the in-view `+ / -` controls let the user expand or close visible panes
+  without reordering slots.
 - Keep the current automatic tile policy as the interim capability gate for
-  iPad/desktop width, not as the final interaction model.
+  iPad/desktop width, not as the final interaction model. Manual pane count is
+  now the owner of "how many windows should be visible" until draggable split
+  sizing exists.
 - Preserve action ownership: v417 routes the shared bottom Composer's
   draft key, send target, Stop/steer state, local echo, and failure receipt to
   the selected active pane, operation bubble state is pane-local, and pane

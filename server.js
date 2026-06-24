@@ -6944,6 +6944,12 @@ function normalizeThreadDisplayThreadId(value) {
   return text;
 }
 
+function normalizeThreadDisplayPaneCount(value, fallback = 0) {
+  const parsed = Math.floor(Number(value));
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(0, Math.min(THREAD_DISPLAY_MAX_PANES, parsed));
+}
+
 function normalizeThreadDisplayMode(value, fallback = "single") {
   const text = String(value || "").trim().toLowerCase();
   if (text === "tile" || text === "tiles" || text === "tiled") return "tile";
@@ -6970,12 +6976,21 @@ function normalizeThreadDisplaySettings(raw = {}, options = {}) {
     .filter(Boolean)
     .slice(0, THREAD_DISPLAY_MAX_PANES);
   const selectedThreadId = normalizeThreadDisplayThreadId(input.selectedThreadId);
+  const paneCount = normalizeThreadDisplayPaneCount(
+    Object.prototype.hasOwnProperty.call(input, "paneCount")
+      ? input.paneCount
+      : Object.prototype.hasOwnProperty.call(input, "threadTilePaneCount")
+        ? input.threadTilePaneCount
+        : input.tilePaneCount,
+    0,
+  );
   const updatedAt = String(input.updatedAt || "").trim();
   const updatedAtMs = timestampToMs(input.updatedAtMs || updatedAt);
   return {
     displayMode,
     threadTileMode: displayMode === "tile",
     paneThreadIds,
+    paneCount,
     selectedThreadId,
     updatedAt,
     updatedAtMs,
@@ -7004,6 +7019,7 @@ function setThreadDisplaySettings(patch = {}) {
     threadDisplay: {
       displayMode: next.displayMode,
       paneThreadIds: next.paneThreadIds,
+      paneCount: next.paneCount,
       selectedThreadId: next.selectedThreadId,
       updatedAt: next.updatedAt,
       updatedAtMs: next.updatedAtMs,
