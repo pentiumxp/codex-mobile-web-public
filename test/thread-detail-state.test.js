@@ -6,8 +6,8 @@ const { test } = require("node:test");
 
 const { createThreadDetailStatePolicy } = require(path.resolve(__dirname, "..", "public", "thread-detail-state.js"));
 
-function createPolicy() {
-  return createThreadDetailStatePolicy({
+function createPolicy(overrides = {}) {
+  return createThreadDetailStatePolicy(Object.assign({
     itemVisibleWeight(item) {
       if (item && Object.prototype.hasOwnProperty.call(item, "weight")) return Number(item.weight) || 0;
       return JSON.stringify(item || {}).length;
@@ -30,7 +30,7 @@ function createPolicy() {
     visualReceiptMatchesSuppressionKeys(item, keys) {
       return Boolean(item && keys && keys.has(item.suppressionKey));
     },
-  });
+  }, overrides));
 }
 
 test("thread detail state keeps stronger existing visible fields when incoming is smaller", () => {
@@ -159,4 +159,92 @@ test("thread detail state preserves only eligible local-only items", () => {
   assert.equal(policy.shouldPreserveLocalOnlyItem({ id: "reasoning-1", type: "reasoning", weight: 10 }, true), false);
   assert.equal(policy.shouldPreserveLocalOnlyItem({ id: "operation-1", type: "commandExecution", weight: 10 }, true), true);
   assert.equal(policy.shouldPreserveLocalOnlyItem({ id: "operation-1", type: "commandExecution", weight: 10 }, false), false);
+});
+
+test("thread detail state detects reusable render identity for visible text items", () => {
+  const policy = createPolicy({
+    visibleTextItemsLikelySame(existingItem, incomingItem) {
+      return Boolean(existingItem && incomingItem && existingItem.matchKey === incomingItem.matchKey);
+    },
+    completedReceiptItemsLikelySame(existingItem, incomingItem, incomingTurn) {
+      return Boolean(incomingTurn && incomingTurn.receiptMatch
+        && existingItem && incomingItem
+        && existingItem.receiptKey === incomingItem.receiptKey);
+    },
+  });
+
+  assert.equal(policy.visibleTextItemsCanShareRenderIdentity({ matchKey: "same" }, { matchKey: "same" }), true);
+  assert.equal(policy.visibleTextItemsCanShareRenderIdentity(
+    { receiptKey: "receipt-1" },
+    { receiptKey: "receipt-1" },
+    { receiptMatch: true },
+  ), true);
+  assert.equal(policy.visibleTextItemsCanShareRenderIdentity({ matchKey: "a" }, { matchKey: "b" }), false);
+});
+
+test("thread detail state preserves render identity and stronger completed receipt text", () => {
+  const policy = createPolicy({
+    comparableVisibleText(item) {
+      return String(item && item.text || "").trim().toLowerCase();
+    },
+    visibleTextItemsLikelySame() {
+      return false;
+    },
+    completedReceiptItemsLikelySame(existingItem, incomingItem, incomingTurn) {
+      return Boolean(incomingTurn && incomingTurn.status === "completed"
+        && existingItem && incomingItem
+        && existingItem.type === "agentMessage"
+        && incomingItem.type === "agentMessage");
+    },
+  });
+
+  const merged = policy.mergeVisibleTextItemPreservingRenderIdentity({
+    id: "existing-receipt",
+    type: "agentMessage",
+    text: "Final answer with an extra validation line",
+    startedAtMs: 1234,
+    weight: 100,
+  }, {
+    id: "incoming-receipt",
+    type: "agentMessage",
+    text: "Final answer",
+    status: "completed",
+    weight: 10,
+  }, {
+    status: "completed",
+  });
+
+  assert.equal(merged.id, "existing-receipt");
+  assert.equal(merged.status, "completed");
+  assert.equal(merged.text, "Final answer with an extra validation line");
+  assert.equal(merged.startedAtMs, 1234);
+});
+
+test("thread detail state does not force render identity when visible text items differ", () => {
+  const policy = createPolicy({
+    visibleTextItemsLikelySame() {
+      return false;
+    },
+    completedReceiptItemsLikelySame() {
+      return false;
+    },
+  });
+
+  const merged = policy.mergeVisibleTextItemPreservingRenderIdentity({
+    id: "existing",
+    type: "agentMessage",
+    text: "longer visible response",
+    startedAtMs: 456,
+    weight: 100,
+  }, {
+    id: "incoming",
+    type: "agentMessage",
+    text: "short",
+    status: "completed",
+    weight: 10,
+  });
+
+  assert.equal(merged.id, "incoming");
+  assert.equal(merged.text, "longer visible response");
+  assert.equal(merged.startedAtMs, 456);
 });

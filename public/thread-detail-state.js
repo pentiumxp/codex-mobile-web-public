@@ -34,6 +34,15 @@
     const visualReceiptMatchesSuppressionKeys = typeof options.visualReceiptMatchesSuppressionKeys === "function"
       ? options.visualReceiptMatchesSuppressionKeys
       : () => false;
+    const comparableVisibleText = typeof options.comparableVisibleText === "function"
+      ? options.comparableVisibleText
+      : () => "";
+    const visibleTextItemsLikelySame = typeof options.visibleTextItemsLikelySame === "function"
+      ? options.visibleTextItemsLikelySame
+      : () => false;
+    const completedReceiptItemsLikelySame = typeof options.completedReceiptItemsLikelySame === "function"
+      ? options.completedReceiptItemsLikelySame
+      : () => false;
 
     function completedIncomingTurnHasAuthoritativeReceipt(incomingTurn) {
       if (!incomingTurn || !isTurnComplete(incomingTurn) || !Array.isArray(incomingTurn.items)) return false;
@@ -78,11 +87,34 @@
       return merged;
     }
 
+    function visibleTextItemsCanShareRenderIdentity(existingItem, incomingItem, incomingTurn = null) {
+      return visibleTextItemsLikelySame(existingItem, incomingItem)
+        || completedReceiptItemsLikelySame(existingItem, incomingItem, incomingTurn);
+    }
+
+    function mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem, incomingTurn = null) {
+      const merged = mergeItemPreservingVisibleFields(existingItem, incomingItem);
+      if (!existingItem || !incomingItem || !merged || !visibleTextItemsCanShareRenderIdentity(existingItem, incomingItem, incomingTurn)) return merged;
+      const existingText = comparableVisibleText(existingItem);
+      const incomingText = comparableVisibleText(incomingItem);
+      if (completedReceiptItemsLikelySame(existingItem, incomingItem, incomingTurn)
+        && typeof existingItem.text === "string"
+        && existingText.length > incomingText.length
+        && existingText.startsWith(incomingText)) {
+        merged.text = existingItem.text;
+      }
+      if (existingItem.id) merged.id = existingItem.id;
+      if (existingItem.startedAtMs && !incomingItem.startedAtMs) merged.startedAtMs = existingItem.startedAtMs;
+      return merged;
+    }
+
     return {
       completedIncomingTurnHasAuthoritativeReceipt,
       mergeItemPreservingVisibleFields,
+      mergeVisibleTextItemPreservingRenderIdentity,
       shouldDropLocalOnlyReceiptForIncomingTurn,
       shouldPreserveLocalOnlyItem,
+      visibleTextItemsCanShareRenderIdentity,
     };
   }
 

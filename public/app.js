@@ -403,6 +403,9 @@ const threadDetailStatePolicy = threadDetailStateApi.createThreadDetailStatePoli
   isTurnComplete,
   isReasoningItem,
   visualReceiptMatchesSuppressionKeys,
+  comparableVisibleText,
+  visibleTextItemsLikelySame,
+  completedReceiptItemsLikelySame,
 });
 
 function setAuthKey(value) {
@@ -426,7 +429,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v407";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v408";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -5674,8 +5677,7 @@ function completedReceiptItemsLikelySame(existingItem, incomingItem, incomingTur
 }
 
 function visibleTextItemsCanShareRenderIdentity(existingItem, incomingItem, incomingTurn = null) {
-  return visibleTextItemsLikelySame(existingItem, incomingItem)
-    || completedReceiptItemsLikelySame(existingItem, incomingItem, incomingTurn);
+  return threadDetailStatePolicy.visibleTextItemsCanShareRenderIdentity(existingItem, incomingItem, incomingTurn);
 }
 
 function findUnusedExistingItemIndexForIncoming(incomingItem, existingItems, usedExistingIndexes, incomingTurn = null) {
@@ -5744,19 +5746,7 @@ function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
 }
 
 function mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem, incomingTurn = null) {
-  const merged = mergeItemPreservingVisibleFields(existingItem, incomingItem);
-  if (!existingItem || !incomingItem || !merged || !visibleTextItemsCanShareRenderIdentity(existingItem, incomingItem, incomingTurn)) return merged;
-  const existingText = comparableVisibleText(existingItem);
-  const incomingText = comparableVisibleText(incomingItem);
-  if (completedReceiptItemsLikelySame(existingItem, incomingItem, incomingTurn)
-    && typeof existingItem.text === "string"
-    && existingText.length > incomingText.length
-    && existingText.startsWith(incomingText)) {
-    merged.text = existingItem.text;
-  }
-  if (existingItem.id) merged.id = existingItem.id;
-  if (existingItem.startedAtMs && !incomingItem.startedAtMs) merged.startedAtMs = existingItem.startedAtMs;
-  return merged;
+  return threadDetailStatePolicy.mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem, incomingTurn);
 }
 
 function mergeItemsPreservingLocalVisible(existingItems, incomingItems, preserveLocalVisible = false, incomingTurn = null) {

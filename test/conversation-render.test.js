@@ -581,6 +581,9 @@ const threadDetailStatePolicy = createThreadDetailStatePolicy({
   isTurnComplete,
   isReasoningItem,
   visualReceiptMatchesSuppressionKeys,
+  comparableVisibleText,
+  visibleTextItemsLikelySame,
+  completedReceiptItemsLikelySame,
 });
 return mergeItemsPreservingLocalVisible;
 	`)(createThreadDetailStatePolicy);
@@ -675,6 +678,9 @@ const threadDetailStatePolicy = createThreadDetailStatePolicy({
   isTurnComplete,
   isReasoningItem,
   visualReceiptMatchesSuppressionKeys,
+  comparableVisibleText,
+  visibleTextItemsLikelySame,
+  completedReceiptItemsLikelySame,
 });
 return mergeItemsPreservingLocalVisible;
 	`)(createThreadDetailStatePolicy);
@@ -807,6 +813,9 @@ const threadDetailStatePolicy = createThreadDetailStatePolicy({
   isTurnComplete,
   isReasoningItem,
   visualReceiptMatchesSuppressionKeys,
+  comparableVisibleText,
+  visibleTextItemsLikelySame,
+  completedReceiptItemsLikelySame,
 });
 return mergeThreadPreservingVisibleItems;
 `)(createThreadDetailStatePolicy);
@@ -1757,7 +1766,7 @@ test("long agent messages keep a stable render path when a turn completes", () =
   assert.doesNotMatch(functionBody("applyNotification"), /renderCurrentThread\(shouldScrollToLongReceiptStart\(turn\) \? \{ scrollToTurnReceiptStart: params\.turn\.id \} : \{\}\)/);
   assert.match(functionBody("applyNotification"), /renderCurrentThread\(\{ stickToBottom: true \}\)/);
   assert.match(appJs, /function mergeVisibleTextItemPreservingRenderIdentity\(/);
-  assert.match(functionBody("mergeVisibleTextItemPreservingRenderIdentity"), /merged\.id = existingItem\.id/);
+  assert.match(functionBody("mergeVisibleTextItemPreservingRenderIdentity"), /threadDetailStatePolicy\.mergeVisibleTextItemPreservingRenderIdentity\(existingItem, incomingItem, incomingTurn\)/);
   assert.match(appJs, /function findUnusedExistingItemIndexForIncoming\(/);
   assert.match(appJs, /function mergeIncomingOrderedItem\(/);
   assert.match(functionBody("mergeItemsPreservingLocalVisible"), /for \(const incomingItem of incomingItems \|\| \[\]\)/);
@@ -2737,7 +2746,10 @@ test("item merge delegates visible-field preservation to thread detail state pol
   const body = functionBody("mergeItemPreservingVisibleFields");
   assert.match(appJs, /const threadDetailStateApi = window\.CodexThreadDetailState/);
   assert.match(appJs, /threadDetailStateApi\.createThreadDetailStatePolicy\(\{/);
+  assert.match(appJs, /comparableVisibleText,\n\s+visibleTextItemsLikelySame,\n\s+completedReceiptItemsLikelySame,/);
   assert.match(body, /threadDetailStatePolicy\.mergeItemPreservingVisibleFields\(existingItem, incomingItem\)/);
+  assert.match(functionBody("visibleTextItemsCanShareRenderIdentity"), /threadDetailStatePolicy\.visibleTextItemsCanShareRenderIdentity\(existingItem, incomingItem, incomingTurn\)/);
+  assert.match(functionBody("mergeVisibleTextItemPreservingRenderIdentity"), /threadDetailStatePolicy\.mergeVisibleTextItemPreservingRenderIdentity\(existingItem, incomingItem, incomingTurn\)/);
   assert.match(functionBody("completedIncomingTurnHasAuthoritativeReceipt"), /threadDetailStatePolicy\.completedIncomingTurnHasAuthoritativeReceipt\(incomingTurn\)/);
   assert.match(functionBody("shouldDropLocalOnlyReceiptForIncomingTurn"), /threadDetailStatePolicy\.shouldDropLocalOnlyReceiptForIncomingTurn\(item, incomingTurn\)/);
   assert.match(functionBody("shouldPreserveLocalOnlyItem"), /threadDetailStatePolicy\.shouldPreserveLocalOnlyItem\(/);

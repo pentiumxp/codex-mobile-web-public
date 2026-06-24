@@ -143,6 +143,7 @@ Implementation path:
     patching and event binding.
 15. Browser thread-detail item merge/state rules belong in
     `public/thread-detail-state.js`. Keep visible-field preservation,
+    visible-text render identity, completed-receipt text retention,
     context-compaction notice cleanup, operation metadata retention,
     authoritative completed-receipt detection, and local-only item retention
     covered by `test/thread-detail-state.test.js`; `public/app.js` should only

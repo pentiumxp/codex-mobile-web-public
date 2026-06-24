@@ -65,10 +65,10 @@ Status: in progress.
 
 ### Phase 2: Frontend State Ownership
 
-Status: in progress. The first slices extract item visible-field merge policy
-and local-only item retention/drop policy to `public/thread-detail-state.js`;
-broader thread detail merge orchestration and DOM patching remain in
-`public/app.js`.
+Status: in progress. The first slices extract item visible-field merge policy,
+visible-text render identity / completed-receipt retention, and local-only item
+retention/drop policy to `public/thread-detail-state.js`; broader thread detail
+merge orchestration and DOM patching remain in `public/app.js`.
 
 Target:
 

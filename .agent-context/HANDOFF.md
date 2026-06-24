@@ -1,3 +1,43 @@
+# 2026-06-24 - v408 visible text render identity policy ready locally
+
+- Scope:
+  - Local source workspace only.
+  - Not deployed to production and not pushed to Public per current release
+    order.
+- Change:
+  - Continued Phase 2 frontend state ownership extraction in
+    `public/thread-detail-state.js`.
+  - Moved visible-text render identity and completed-receipt text retention
+    policy behind `threadDetailStatePolicy`:
+    `visibleTextItemsCanShareRenderIdentity` and
+    `mergeVisibleTextItemPreservingRenderIdentity`.
+  - `public/app.js` now creates the policy with local
+    `comparableVisibleText`, `visibleTextItemsLikelySame`, and
+    `completedReceiptItemsLikelySame` dependencies, then delegates those two
+    decisions. Incoming-order array merge orchestration and DOM patching remain
+    in `public/app.js`.
+  - Expanded `test/thread-detail-state.test.js` to cover reusable render
+    identity, completed-receipt longer text retention, existing id/start time
+    retention, and the non-identity fallback to ordinary visible-field merge.
+  - Updated source-evaluated conversation-render harnesses so their
+    `createThreadDetailStatePolicy` calls use the same visible-text
+    dependencies as the browser app.
+  - PWA shell bumped locally to `codex-mobile-shell-v408`.
+  - Updated `README.md`, `docs/MODULES.md`,
+    `docs/COMPLEX_FEATURE_PATHS.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation:
+  - `node --check public/thread-detail-state.js`
+  - `node --check public/app.js`
+  - `node --check public/sw.js`
+  - `node --test test/thread-detail-state.test.js test/conversation-render.test.js test/app-update.test.js test/mobile-viewport.test.js test/plugin-voice-input.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+  - `npm run check`
+  - `npm test` passed (`723` tests).
+  - `npm run check:macos`
+  - `git diff --check`
+  - `codegraph status` was up to date; it warned the index was built by an
+    earlier engine version.
+
 # 2026-06-24 - v407 local-only item policy helper ready locally
 
 - Scope:
