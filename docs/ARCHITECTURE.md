@@ -503,8 +503,15 @@ Separately, Mobile Web injects `codex_mobile.return_to_source` for task-card
 target turns. This return tool is independent of the workspace-delegation
 switch because it closes an already received card; it validates the original
 `Task card id`, the target actor thread, and the return body before calling
-`threadTaskCardService.reply()`. A target-thread final answer is not a
+`threadTaskCardService.reply()`. Return cards with `returnToSource:true` are
+source-direct approved into the original source thread and do not require a
+second source-thread approval. A target-thread final answer is not a
 source-thread return card.
+Deep audit/task-card callers can pass `reasoningEffort` (`low`, `medium`,
+`high`, or `xhigh`) through the source-thread create route, dynamic tool, MCP
+tool, or create script. The service stores the bounded request on delivery
+metadata, the injected message exposes it, and the approval path overrides the
+target turn's inherited runtime effort before `thread/resume` / `turn/start`.
 Target parsing, visible-thread filtering, archived/hidden/subagent/sidecar
 rejection, same-cwd canonical selection, and public target metadata shaping are
 owned by `adapters/thread-task-card-routing-service.js`; `server.js` keeps only
@@ -678,12 +685,15 @@ are server-side runtime settings under `settings.json` `threadDisplay`, exposed
 through `GET/POST /api/settings/thread-display`; `localStorage` is only a legacy
 migration/cache mirror. `paneCount=0` means automatic sizing from current/running
 threads and viewport recommended capacity; a positive value is the user's
-manual window count. Device width sets the automatic/recommended capacity and
-the physical column capacity separately. It does not cap explicit user-added
-panes at the automatic recommendation: when the screen can physically fit five
-or six panes, the tile board keeps them on one row. It wraps into additional
-rows only after the requested pane count exceeds the physical column capacity,
-up to the bounded user pane ceiling. Pane slots are stable thread id positions:
+manual window count. Device width uses the browser CSS viewport, not the
+display's physical pixels, and sets the automatic/recommended capacity and the
+physical column capacity separately. Automatic mode keeps the wider desktop
+reading width; explicit user-added panes pass the desired pane count into the
+layout policy so the manual pane width is derived from current CSS available
+width, bounded by a desktop safety floor. When the screen can physically fit
+five or six requested panes, the tile board keeps them on one row. It wraps into
+additional rows only after the requested pane count exceeds the physical column
+capacity, up to the bounded user pane ceiling. Pane slots are stable thread id positions:
 normal thread-list
 recent sorting can fill empty slots but must not reorder existing slots. A manual
 pane title-menu switch replaces only that slot and persists the new ordered pane

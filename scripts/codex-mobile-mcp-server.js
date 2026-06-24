@@ -122,6 +122,7 @@ function toolsList() {
           idempotencyKey: { type: "string", maxLength: 180 },
           workflowMode: { type: "string", enum: ["manual", "autonomous"] },
           workflowId: { type: "string", maxLength: 180 },
+          reasoningEffort: { type: "string", enum: ["low", "medium", "high", "xhigh"] },
         },
       },
       { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false },
@@ -136,7 +137,7 @@ function toolsList() {
         properties: {
           taskCardId: { type: "string", minLength: 1, maxLength: 120 },
           threadId: { type: "string", minLength: 1, maxLength: 120 },
-          status: { type: "string", enum: ["completed", "blocked", "redirected"] },
+          status: { type: "string", enum: ["completed", "blocked", "redirected", "partially_completed"] },
           title: { type: "string", minLength: 1, maxLength: 120 },
           summary: { type: "string", maxLength: 300 },
           bodyMarkdown: { type: "string", minLength: 1 },
@@ -176,7 +177,7 @@ function stableTextHash(value) {
 function normalizedReturnStatus(value) {
   const status = boundedString(value, "status", 40, false).toLowerCase();
   if (!status) return "";
-  if (!["completed", "blocked", "redirected"].includes(status)) throw new Error("status_invalid");
+  if (!["completed", "blocked", "redirected", "partially_completed"].includes(status)) throw new Error("status_invalid");
   return status;
 }
 
@@ -246,6 +247,7 @@ async function delegateToThread(context, args = {}) {
     idempotencyKey: boundedString(args.idempotencyKey, "idempotency_key", 180, false),
     workflowMode: boundedString(args.workflowMode || "manual", "workflow_mode", 40, false) || "manual",
     workflowId: boundedString(args.workflowId, "workflow_id", 180, false),
+    reasoningEffort: boundedString(args.reasoningEffort || args.reasoning_effort || args.effort, "reasoning_effort", 40, false),
     direct: true,
     autoApprove: true,
     pending: false,
@@ -264,6 +266,8 @@ async function delegateToThread(context, args = {}) {
       targetThreadId: String(card.target && card.target.threadId || card.injectedThreadId || ""),
       injectedTurnId: String(card.injectedTurnId || ""),
       targetApprovalBypassed: Boolean(card.delivery && card.delivery.targetApprovalBypassed),
+      reasoningEffort: String(card.delivery && card.delivery.reasoningEffort || card.injectionRuntime && card.injectionRuntime.requestedReasoningEffort || ""),
+      runtimeReasoningEffort: String(card.injectionRuntime && card.injectionRuntime.reasoningEffort || ""),
     })),
   };
 }
@@ -280,6 +284,7 @@ async function returnToSource(context, args = {}) {
   const payload = {
     threadId,
     status,
+    returnToSource: true,
     title: /^Return:/i.test(title) ? title : `Return: ${title}`,
     summary: boundedString(args.summary, "summary", 300, false) || status,
     body: bodyMarkdown,
@@ -298,16 +303,18 @@ async function returnToSource(context, args = {}) {
     ok: result.ok !== false,
     taskCardId,
     threadId,
-    status: String(result.card && result.card.status || ""),
-    replyCard: {
-      id: String(replyCard.id || ""),
-      status: String(replyCard.status || ""),
-      sourceThreadId: String(replyCard.source && replyCard.source.threadId || ""),
-      targetThreadId: String(replyCard.target && replyCard.target.threadId || ""),
-      injectedTurnId: String(replyCard.injectedTurnId || ""),
-    },
-  };
-}
+      status: String(result.card && result.card.status || ""),
+      replyCard: {
+        id: String(replyCard.id || ""),
+        status: String(replyCard.status || ""),
+        sourceThreadId: String(replyCard.source && replyCard.source.threadId || ""),
+        targetThreadId: String(replyCard.target && replyCard.target.threadId || ""),
+        injectedTurnId: String(replyCard.injectedTurnId || ""),
+        returnToSource: Boolean(replyCard.delivery && replyCard.delivery.returnToSource),
+        returnStatus: String(replyCard.delivery && replyCard.delivery.returnStatus || ""),
+      },
+    };
+  }
 
 async function handleMessage(context, message = {}) {
   const method = String(message.method || "");

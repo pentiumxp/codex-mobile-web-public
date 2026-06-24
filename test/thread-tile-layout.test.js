@@ -54,9 +54,42 @@ test("thread tile layout keeps manual desktop panes in one row when width allows
   assert.equal(layout.recommendedMaxPanes, 6);
 });
 
+test("thread tile layout fits five manual panes on a 2560px desktop display", () => {
+  const automatic = tile.layoutForViewport({
+    enabled: true,
+    viewportWidth: 2560,
+    viewportHeight: 1440,
+    sidebarWidth: 520,
+    coarsePointer: false,
+    menuOverlay: false,
+    maxPanes: tile.DEFAULT_USER_MAX_PANES,
+    recommendedMaxPanes: tile.DEFAULT_MAX_PANES,
+  });
+  const layout = tile.layoutForViewport({
+    enabled: true,
+    viewportWidth: 2560,
+    viewportHeight: 1440,
+    sidebarWidth: 520,
+    coarsePointer: false,
+    menuOverlay: false,
+    maxPanes: tile.DEFAULT_USER_MAX_PANES,
+    recommendedMaxPanes: tile.DEFAULT_MAX_PANES,
+    desiredPaneCount: 5,
+  });
+
+  assert.equal(automatic.columns, 4);
+  assert.equal(automatic.minPaneWidth, tile.DEFAULT_MIN_DESKTOP_PANE_WIDTH);
+  assert.equal(layout.enabled, true);
+  assert.equal(layout.reason, "wide");
+  assert.equal(layout.minPaneWidth, 408);
+  assert.equal(layout.columns >= 5, true);
+  assert.equal(Math.min(layout.columns, 5), 5);
+});
+
 test("thread tile layout exposes a separate user pane ceiling", () => {
   assert.equal(tile.DEFAULT_MAX_PANES, 6);
   assert.equal(tile.DEFAULT_USER_MAX_PANES, 12);
+  assert.equal(tile.DEFAULT_MIN_DESKTOP_MANUAL_PANE_WIDTH, 300);
 });
 
 test("thread tile layout keeps iPad portrait in single-thread mode", () => {

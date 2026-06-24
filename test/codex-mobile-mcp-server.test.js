@@ -79,6 +79,7 @@ test("Codex Mobile MCP server calls existing authenticated task-card API", async
       assert.equal(body.autoApprove, true);
       assert.equal(body.pending, false);
       assert.equal(body.body, "body");
+      assert.equal(body.reasoningEffort, "xhigh");
       assert.deepEqual(body.targetThreadIds, ["thread-home"]);
       res.setHeader("content-type", "application/json");
       res.end(JSON.stringify({
@@ -92,7 +93,8 @@ test("Codex Mobile MCP server calls existing authenticated task-card API", async
             status: "approved",
             target: { threadId: "thread-home" },
             injectedTurnId: "turn-1",
-            delivery: { targetApprovalBypassed: true },
+            delivery: { targetApprovalBypassed: true, reasoningEffort: "xhigh" },
+            injectionRuntime: { reasoningEffort: "xhigh", requestedReasoningEffort: "xhigh" },
           },
         ],
       }));
@@ -104,6 +106,7 @@ test("Codex Mobile MCP server calls existing authenticated task-card API", async
       assert.equal(body.title, "Return: completed");
       assert.equal(body.summary, "completed");
       assert.equal(body.body, "done");
+      assert.equal(body.returnToSource, true);
       assert.match(body.idempotencyKey, /^task-card-return:/);
       res.setHeader("content-type", "application/json");
       res.end(JSON.stringify({
@@ -111,9 +114,11 @@ test("Codex Mobile MCP server calls existing authenticated task-card API", async
         card: { id: "ttc_inbound", status: "replied" },
         replyCard: {
           id: "ttc_return",
-          status: "pending",
+          status: "approved",
           source: { threadId: "target-1" },
           target: { threadId: "source-1" },
+          injectedTurnId: "turn-return",
+          delivery: { returnToSource: true, returnStatus: "completed" },
         },
       }));
       return;
@@ -134,10 +139,13 @@ test("Codex Mobile MCP server calls existing authenticated task-card API", async
     targetThreadIds: ["thread-home"],
     title: "title",
     bodyMarkdown: "body",
+    reasoningEffort: "xhigh",
   });
   assert.equal(delegated.cardCount, 1);
   assert.equal(delegated.cards[0].id, "ttc_1");
   assert.equal(delegated.cards[0].targetApprovalBypassed, true);
+  assert.equal(delegated.cards[0].reasoningEffort, "xhigh");
+  assert.equal(delegated.cards[0].runtimeReasoningEffort, "xhigh");
 
   const returned = await returnToSource(context, {
     taskCardId: "ttc_inbound",
@@ -148,7 +156,11 @@ test("Codex Mobile MCP server calls existing authenticated task-card API", async
   });
   assert.equal(returned.status, "replied");
   assert.equal(returned.replyCard.id, "ttc_return");
+  assert.equal(returned.replyCard.status, "approved");
   assert.equal(returned.replyCard.targetThreadId, "source-1");
+  assert.equal(returned.replyCard.injectedTurnId, "turn-return");
+  assert.equal(returned.replyCard.returnToSource, true);
+  assert.equal(returned.replyCard.returnStatus, "completed");
   assert.ok(calls.every((call) => call.authorization === "Bearer secret"));
 });
 

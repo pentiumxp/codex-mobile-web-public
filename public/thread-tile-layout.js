@@ -9,6 +9,7 @@
   }
 }(typeof globalThis !== "undefined" ? globalThis : null, function () {
   const DEFAULT_MIN_DESKTOP_PANE_WIDTH = 420;
+  const DEFAULT_MIN_DESKTOP_MANUAL_PANE_WIDTH = 300;
   const DEFAULT_MIN_TABLET_PANE_WIDTH = 260;
   const DEFAULT_MIN_LANDSCAPE_VIEWPORT_WIDTH = 760;
   const DEFAULT_MIN_PANE_HEIGHT = 360;
@@ -44,6 +45,10 @@
     const tabletLandscape = landscapeTile && (coarsePointer || menuOverlay);
     const maxPanes = clampInteger(input.maxPanes || DEFAULT_MAX_PANES, 1, DEFAULT_USER_MAX_PANES);
     const recommendedMaxPanes = clampInteger(input.recommendedMaxPanes || DEFAULT_MAX_PANES, 1, maxPanes);
+    const desiredPaneCount = Math.max(0, Math.min(
+      maxPanes,
+      Math.floor(Number(input.desiredPaneCount || 0)) || 0,
+    ));
     if (!enabled || viewportWidth <= 0 || viewportHeight <= 0) {
       return { enabled: false, reason: "disabled", columns: 1, rows: 1, maxPanes: 1, recommendedMaxPanes: 1 };
     }
@@ -54,10 +59,18 @@
       return { enabled: false, reason: "narrow", columns: 1, rows: 1, maxPanes: 1, recommendedMaxPanes: 1 };
     }
 
-    const minPaneWidth = positiveNumber(input.minPaneWidth, tabletLandscape ? DEFAULT_MIN_TABLET_PANE_WIDTH : DEFAULT_MIN_DESKTOP_PANE_WIDTH);
-    const minPaneHeight = positiveNumber(input.minPaneHeight, DEFAULT_MIN_PANE_HEIGHT);
     const availableWidth = Math.max(0, viewportWidth - (menuOverlay ? 0 : sidebarWidth));
     const availableHeight = Math.max(0, viewportHeight - Math.max(0, Number(input.verticalChromePx || 0) || 0));
+    const manualTargetWidth = desiredPaneCount > 0 && availableWidth > 0
+      ? Math.floor(availableWidth / desiredPaneCount)
+      : 0;
+    const defaultMinPaneWidth = tabletLandscape
+      ? DEFAULT_MIN_TABLET_PANE_WIDTH
+      : (desiredPaneCount > 0
+        ? Math.min(DEFAULT_MIN_DESKTOP_PANE_WIDTH, Math.max(DEFAULT_MIN_DESKTOP_MANUAL_PANE_WIDTH, manualTargetWidth))
+        : DEFAULT_MIN_DESKTOP_PANE_WIDTH);
+    const minPaneWidth = positiveNumber(input.minPaneWidth, defaultMinPaneWidth);
+    const minPaneHeight = positiveNumber(input.minPaneHeight, DEFAULT_MIN_PANE_HEIGHT);
     const rawColumns = Math.floor(availableWidth / minPaneWidth);
     const rawRows = Math.floor(availableHeight / minPaneHeight);
     const minimumColumns = tabletLandscape ? 2 : 2;
@@ -106,6 +119,7 @@
   return {
     DEFAULT_MAX_PANES,
     DEFAULT_USER_MAX_PANES,
+    DEFAULT_MIN_DESKTOP_MANUAL_PANE_WIDTH,
     DEFAULT_MIN_DESKTOP_PANE_WIDTH,
     DEFAULT_MIN_LANDSCAPE_VIEWPORT_WIDTH,
     DEFAULT_MIN_LANDSCAPE_VIEWPORT_HEIGHT,

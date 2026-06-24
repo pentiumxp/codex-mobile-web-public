@@ -94,6 +94,7 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(serverJs, "workspaceDelegationPublicSettings"), /serverAutoTaskCardFromFailures:\s*false/);
   assert.match(serverJs, /function buildThreadTaskCardCreatePayload\(/);
   assert.match(serverJs, /function threadTaskCardThreadCallIdempotencyKey\(/);
+  assert.match(serverJs, /function normalizeThreadTaskCardReasoningEffort\(/);
   assert.match(serverJs, /function resolvedThreadTaskCardTargetIds\(/);
   assert.match(serverJs, /function threadTaskCardVisibleTargetThreads\(/);
   assert.match(serverJs, /function threadTaskCardCanonicalVisibleTargets\(/);
@@ -114,6 +115,7 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(serverJs, "createThreadTaskCardsFromSourceThread"), /workspaceDelegationPublicSettings\(\)/);
   assert.match(functionBody(serverJs, "createThreadTaskCardsFromSourceThread"), /workspaceDelegation\.enabled[\s\S]*body\.autoApprove !== false[\s\S]*body\.direct !== false[\s\S]*body\.pending !== true/);
   assert.match(functionBody(serverJs, "threadTaskCardThreadCallIdempotencyKey"), /body\.requestId \|\| body\.request_id/);
+  assert.match(functionBody(serverJs, "threadTaskCardThreadCallIdempotencyKey"), /reasoningEffort: normalizeThreadTaskCardReasoningEffort/);
   assert.doesNotMatch(functionBody(serverJs, "threadTaskCardThreadCallIdempotencyKey"), /body\.sourceTurnId \|\| body\.turnId/);
   assert.match(functionBody(serverJs, "dynamicToolTextResponse"), /success/);
   assert.match(functionBody(serverJs, "dynamicToolTextResponse"), /contentItems:\s*\[/);
@@ -129,6 +131,8 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /always creates source-direct cards/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /Archived, deleted, hidden, subagent, or non-detail-readable targetThreadId values are rejected/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /Several normal threads may share the same cwd\/workspace/);
+  assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /reasoningEffort/);
+  assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /REASONING_EFFORT_OPTIONS/);
   assert.doesNotMatch(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /latest visible canonical thread/);
   assert.doesNotMatch(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /pending:\s*\{/);
   assert.match(functionBody(serverJs, "taskCardReturnDynamicToolSpec"), /A plain final answer in the target thread is not a source-thread return card/);
@@ -157,6 +161,8 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /threadTaskCardService\.reply\(prepared\.taskCardId, prepared\.actorThreadId, prepared\.body\)/);
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /TASK_CARD_RETURN_TOOL_FULL_NAME/);
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /forcedDirect: true/);
+  assert.match(functionBody(serverJs, "taskCardReturnDynamicToolBody"), /returnToSource: true/);
+  assert.match(functionBody(serverJs, "taskCardReturnDynamicToolBody"), /const status = normalizedTaskCardReturnStatus/);
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /logWorkspaceDelegationDynamicToolCall\(request, params, args, \{[\s\S]*outcome: "ok"/);
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /outcome: "unsupported_dynamic_tool"/);
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /outcome: "source_thread_id_required"/);
@@ -182,10 +188,13 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(createThreadTaskCardScript, /\/api\/threads\/\$\{encodeURIComponent\(sourceThreadId\)\}\/task-cards/);
   assert.match(createThreadTaskCardScript, /CODEX_MOBILE_KEY_FILE/);
   assert.match(createThreadTaskCardScript, /--pending/);
+  assert.match(createThreadTaskCardScript, /--reasoning-effort <value>/);
   assert.match(createThreadTaskCardScript, /Settings -> 跨工作区委派/);
   assert.match(returnThreadTaskCardScript, /\/api\/thread-task-cards\/\$\{encodeURIComponent\(taskCardId\)\}\/reply/);
   assert.match(returnThreadTaskCardScript, /CODEX_MOBILE_KEY_FILE/);
   assert.match(returnThreadTaskCardScript, /--status <value>/);
+  assert.match(returnThreadTaskCardScript, /partially_completed/);
+  assert.match(returnThreadTaskCardScript, /returnToSource = true/);
   assert.match(returnThreadTaskCardScript, /task-card-return:/);
 });
 
@@ -212,10 +221,14 @@ test("approved task cards inherit target thread model and effort", () => {
     serverJs.indexOf("const threadTaskCardService = createThreadTaskCardService"),
     serverJs.indexOf("const PUSH_VAPID_FILE"),
   );
-  assert.match(setupBlock, /const runtimeSettings = await resolveThreadRuntimeSettings\(card\.target\.threadId\);/);
+  assert.match(setupBlock, /const requestedReasoningEffort = String\(card && card\.delivery && card\.delivery\.reasoningEffort/);
+  assert.match(setupBlock, /const inheritedRuntimeSettings = await resolveThreadRuntimeSettings\(card\.target\.threadId\);/);
+  assert.match(setupBlock, /Object\.assign\(\{\}, inheritedRuntimeSettings, \{ reasoningEffort: requestedReasoningEffort \}\)/);
   assert.match(setupBlock, /thread\/resume", applyResumeRuntimeSettings\(/);
   assert.match(setupBlock, /const turnParams = applyTurnRuntimeSettings\(/);
   assert.match(setupBlock, /codex\.request\("turn\/start", turnParams/);
+  assert.match(setupBlock, /requestedReasoningEffort/);
+  assert.match(setupBlock, /runtime:\s*\{[\s\S]*reasoningEffort: runtimeSettings\.reasoningEffort \|\| ""/);
   assert.match(setupBlock, /notifyLocalTurnStarted\(card\.target\.threadId, result, \{/);
   assert.match(setupBlock, /source: "thread-task-card-approval"/);
   assert.match(functionBody(serverJs, "applyTurnRuntimeSettings"), /if \(settings\.reasoningEffort\) params\.effort = settings\.reasoningEffort;/);
@@ -293,7 +306,7 @@ test("server materializes structured task-card drafts from thread detail", () =>
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v426"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v427"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
   assert.match(appJs, /filter\(\(card\) => String\(card && card\.threadRole \|\| ""\) === "target"\)/);

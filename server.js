@@ -809,7 +809,11 @@ let threadDetailProjectionService;
 const threadTaskCardService = createThreadTaskCardService({
   storageFile: THREAD_TASK_CARD_FILE,
   executeApprovedCard: async (card, message) => {
-    const runtimeSettings = await resolveThreadRuntimeSettings(card.target.threadId);
+    const requestedReasoningEffort = String(card && card.delivery && card.delivery.reasoningEffort || "").trim();
+    const inheritedRuntimeSettings = await resolveThreadRuntimeSettings(card.target.threadId);
+    const runtimeSettings = requestedReasoningEffort
+      ? Object.assign({}, inheritedRuntimeSettings, { reasoningEffort: requestedReasoningEffort })
+      : inheritedRuntimeSettings;
     try {
       await codex.request("thread/resume", applyResumeRuntimeSettings({
         threadId: card.target.threadId,
@@ -831,6 +835,10 @@ const threadTaskCardService = createThreadTaskCardService({
       threadId: String(card.target.threadId || ""),
       turnId,
       result,
+      runtime: {
+        reasoningEffort: runtimeSettings.reasoningEffort || "",
+        requestedReasoningEffort,
+      },
     };
   },
 });
@@ -7158,6 +7166,11 @@ function workspaceDelegationDynamicToolSpec() {
           enum: ["manual", "autonomous"],
           description: "Task-card workflow mode. Default is manual.",
         },
+        reasoningEffort: {
+          type: "string",
+          enum: REASONING_EFFORT_OPTIONS,
+          description: "Optional target turn reasoning effort for this injected task card, for example xhigh for deep audits.",
+        },
         requestId: {
           type: "string",
           description: "Optional stable idempotency seed for this tool call.",
@@ -7204,7 +7217,7 @@ function taskCardReturnDynamicToolSpec() {
         },
         status: {
           type: "string",
-          enum: ["completed", "blocked", "redirected"],
+          enum: ["completed", "blocked", "redirected", "partially_completed"],
           description: "Closure status for the source thread.",
         },
         title: {
@@ -11983,6 +11996,12 @@ function normalizeThreadTaskCardWorkflowMode(value) {
   return "manual";
 }
 
+function normalizeThreadTaskCardReasoningEffort(value) {
+  const effort = String(value || "").trim().toLowerCase();
+  if (!effort) return "";
+  return REASONING_EFFORT_OPTIONS.includes(effort) ? effort : "";
+}
+
 function uniqueThreadTaskCardTargetIds(values, fallback = "") {
   const raw = Array.isArray(values) ? values : [values, fallback];
   const seen = new Set();
@@ -12087,6 +12106,7 @@ function threadTaskCardThreadCallIdempotencyKey(sourceThreadId, body = {}, targe
     title: String(body.title || "").trim(),
     summary: String(body.summary || "").trim(),
     body: String(body.body || body.bodyMarkdown || body.message || "").trim(),
+    reasoningEffort: normalizeThreadTaskCardReasoningEffort(body.reasoningEffort || body.reasoning_effort || body.effort),
     workflowMode: normalizeThreadTaskCardWorkflowMode(body.workflowMode),
     workflowId: String(body.workflowId || "").trim(),
   });
@@ -12121,6 +12141,10 @@ function buildThreadTaskCardCreatePayload(body = {}, sourceThreadId = "", option
   }
   const rawBody = String(body.body || body.bodyMarkdown || body.message || "").trim();
   const cardBody = truncateThreadTaskCardBody(rawBody);
+  const reasoningEffort = normalizeThreadTaskCardReasoningEffort(body.reasoningEffort || body.reasoning_effort || body.effort);
+  if ((body.reasoningEffort || body.reasoning_effort || body.effort) && !reasoningEffort) {
+    throw httpStatusError(400, "reasoning_effort_invalid");
+  }
   return Object.assign({}, body, {
     sourceThreadId: sourceId,
     sourceTurnId: body.sourceTurnId || body.turnId || "",
@@ -12133,6 +12157,7 @@ function buildThreadTaskCardCreatePayload(body = {}, sourceThreadId = "", option
     title: body.title,
     summary: body.summary || summarizeTaskCardText(cardBody),
     body: cardBody,
+    reasoningEffort,
   });
 }
 
@@ -12292,7 +12317,7 @@ function isTaskCardReturnDynamicToolCall(params = {}) {
 function normalizedTaskCardReturnStatus(value) {
   const status = String(value || "").trim().toLowerCase();
   if (!status) return "";
-  return ["completed", "blocked", "redirected"].includes(status) ? status : "";
+  return ["completed", "blocked", "redirected", "partially_completed"].includes(status) ? status : "";
 }
 
 function taskCardReturnIdempotencyKey(taskCardId, actorThreadId, body = {}) {
@@ -12322,6 +12347,7 @@ function taskCardReturnDynamicToolBody(params = {}, args = {}) {
     body: {
       threadId: actorThreadId,
       status,
+      returnToSource: true,
       title: /^Return:/i.test(title) ? title : `Return: ${title || status || "task card"}`,
       summary: String(args.summary || "").trim() || status,
       body: truncateThreadTaskCardBody(rawBody),
@@ -12380,7 +12406,7 @@ async function dynamicToolServerRequestResponsePayload(request) {
     }
     if (args.status && !prepared.body.status) {
       logTaskCardReturnDynamicToolCall(request, params, args, { outcome: "status_invalid" });
-      return dynamicToolErrorPayload("status_invalid", "Return status must be completed, blocked, or redirected.");
+      return dynamicToolErrorPayload("status_invalid", "Return status must be completed, blocked, redirected, or partially_completed.");
     }
     if (!String(args.title || "").trim()) {
       logTaskCardReturnDynamicToolCall(request, params, args, { outcome: "return_title_required" });

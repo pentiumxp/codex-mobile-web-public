@@ -139,18 +139,21 @@ Target:
   split-screen reader where the user can add panes, close panes, drag widths,
   decide how many threads stay visible, and type into each pane through a
   pane-local composer.
-- Current interim state: v426 persists `单线程` / `平铺`, ordered pane thread ids,
+- Current interim state: v427 persists `单线程` / `平铺`, ordered pane thread ids,
   selected pane thread id, and desired pane count in server runtime
   `settings.json` `threadDisplay`. Device width decides the automatic
   recommended capacity only; `paneCount=0` keeps an automatic
   current/running-thread-based count, and the pane title menu lets the user
   expand or close visible panes without reordering unrelated slots. Explicit
-  user-added panes can exceed the recommended viewport capacity. Wide desktop
-  screens keep five or six panes in one row when the physical width allows it;
-  wrapping happens only after the requested pane count exceeds the physical
-  column capacity. When the user explicitly opens a non-visible thread from the
-  outer thread list, the last visible pane is replaced and that slot order is
-  saved; background recent ordering still cannot move fixed panes.
+  user-added panes can exceed the recommended viewport capacity. Layout uses
+  browser CSS viewport width, not display physical pixels; automatic mode keeps
+  the wider default pane width, while manual mode derives pane width from the
+  requested pane count and current available CSS width. Wide desktop screens
+  keep five or six requested panes in one row when the CSS width allows it;
+  wrapping happens only after the requested pane count exceeds physical column
+  capacity. When the user explicitly opens a non-visible thread from the outer
+  thread list, the last visible pane is replaced and that slot order is saved;
+  background recent ordering still cannot move fixed panes.
 - Keep the current automatic tile policy as the interim capability gate for
   iPad/desktop width, not as the final interaction model. Manual pane count is
   now the owner of "how many windows should be visible" until draggable split

@@ -99,6 +99,7 @@ node scripts/create-thread-task-card.js \
   --source-thread <source-thread-id> \
   --target-thread <target-thread-id-or-exact-title> \
   --title "<title>" \
+  --reasoning-effort xhigh \
   --body-file <markdown-file>
 ```
 
@@ -109,6 +110,10 @@ prints only the bounded JSON response. Prefer `--body-file` or `--json-file`
 for Chinese or long Markdown payloads. The script can request direct
 auto-approval, but the server only honors that request when the runtime
 `跨工作区委派` switch is enabled.
+Callers may pass `--reasoning-effort xhigh` or JSON
+`reasoningEffort:"xhigh"` for deep audit cards. The create route accepts only
+`low`, `medium`, `high`, or `xhigh`; invalid values fail with a bounded
+`reasoning_effort_invalid` error instead of silently accepting a Medium default.
 
 The supported target-side return CLI wrapper is:
 
@@ -126,13 +131,21 @@ fallback path for target implementation or audit threads when a direct
 `codex_mobile.return_to_source` tool surface is not visible. It reads the
 access key from the same env/key-file sources as the create wrapper, does not
 print key material, and generates a stable `task-card-return:*` idempotency key
-when the caller does not supply one.
+when the caller does not supply one. It always sets `returnToSource:true`, so
+the service treats the reverse card as a source-thread return closure rather
+than an ordinary pending reply.
 
 Every approved task-card injection includes `Task card id: ...` in the target
 turn input. For manual workflows, the target must close with a real return card
 using that id. A target-thread `final` answer is not a source-thread return card
 and must not be counted as `completed`, `blocked`, or `redirected` by the
-source workflow.
+source workflow. Return cards created by `codex_mobile.return_to_source`,
+`scripts/return-thread-task-card.js`, or `/reply` with `returnToSource:true`
+are source-direct approved into the original source thread and do not require a
+second source-thread approval. If a previous runtime version already created a
+pending return card with the same `task-card-return:*` idempotency key, retrying
+through the return path promotes that existing card through the same direct
+return approval flow.
 
 When the runtime `跨工作区委派` switch is enabled, server-side `thread/start` and
 `turn/start` requests also receive a Codex app-server dynamic tool:
@@ -157,6 +170,12 @@ calls with a new tool call id do not create duplicate cards. If the switch is of
 tool is not injected. If the tool is called without a target or source thread id
 cannot be inferred, the server returns a bounded error to the model instead of
 hanging the turn.
+The tool schema includes optional `reasoningEffort`. When supplied, the value is
+stored on the card delivery metadata, shown in the injected task-card message as
+`Requested reasoning effort: ...`, and used to override the target turn's
+inherited runtime effort during `thread/resume` / `turn/start`. The approved card
+records bounded `injectionRuntime.reasoningEffort` and
+`injectionRuntime.requestedReasoningEffort` evidence.
 
 Server-side `thread/start` and `turn/start` also receive a Codex app-server
 dynamic return tool:
@@ -174,6 +193,8 @@ The server validates the target actor, allows return while the original card is
 `threadTaskCardService.reply()`, and keeps retries idempotent. Invalid status
 values, missing card ids, missing actor thread ids, missing title, and missing
 body return bounded tool errors instead of hanging the turn.
+The accepted return statuses are `completed`, `blocked`, `redirected`, and
+`partially_completed`.
 
 Source-thread task-card creation has a stricter target resolver than the manual
 pending-card API. Exact `targetThreadId` and exact `targetThreadTitle` are

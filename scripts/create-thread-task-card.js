@@ -25,6 +25,7 @@ function usage() {
     "  --idempotency-key <key>    Explicit task-card idempotency key.",
     "  --workflow-mode <mode>     manual or autonomous.",
     "  --workflow-id <id>         Optional workflow id.",
+    "  --reasoning-effort <value> Optional target turn reasoning effort: low, medium, high, or xhigh.",
     "  --pending                  Create a normal pending card instead of requesting source-thread direct approval.",
     "  --auto-approve <bool>      Request direct auto-approval; honored only when Settings -> 跨工作区委派 is enabled.",
     "  --json-file <path>         Read request JSON from file. Use '-' for stdin.",
@@ -103,6 +104,8 @@ function parseArgs(argv) {
       options.request.workflowMode = next();
     } else if (arg === "--workflow-id") {
       options.request.workflowId = next();
+    } else if (arg === "--reasoning-effort" || arg === "--reasoning_effort") {
+      options.request.reasoningEffort = next();
     } else if (arg === "--pending") {
       options.request.pending = true;
       options.request.autoApprove = false;
