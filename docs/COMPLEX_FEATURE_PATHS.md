@@ -152,9 +152,13 @@ Implementation path:
     `public/thread-tile-layout.js`. Keep viewport/sidebar/orientation to
     columns/rows/maxPanes decisions covered by `test/thread-tile-layout.test.js`,
     including iPad portrait single-thread mode and iPad landscape two/three-pane
-    rules. `public/app.js` may own DOM assembly and event binding, but tile
-    panes are read-only recent-detail windows; composer, interrupt, approvals,
-    and live operation dock state remain bound to the current active thread.
+    rules. Do not bind tile availability to the sidebar split media query:
+    Home AI embedded iPad landscape can have an overlay sidebar or a visual
+    viewport height below the split threshold while still having enough reading
+    width for two or three panes. `public/app.js` may own DOM assembly and event
+    binding, but tile panes are read-only recent-detail windows; composer,
+    interrupt, approvals, and live operation dock state remain bound to the
+    current active thread.
 17. Existing v3 behavior still uses
     `test/thread-completion-diagnostic-service.test.js`,
     `test/thread-item-timestamp-enrichment.test.js`,

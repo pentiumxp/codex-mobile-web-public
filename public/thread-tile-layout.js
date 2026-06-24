@@ -11,6 +11,7 @@
   const DEFAULT_MIN_DESKTOP_PANE_WIDTH = 420;
   const DEFAULT_MIN_TABLET_PANE_WIDTH = 300;
   const DEFAULT_MIN_PANE_HEIGHT = 360;
+  const DEFAULT_MIN_LANDSCAPE_VIEWPORT_HEIGHT = 480;
   const DEFAULT_MAX_PANES = 6;
 
   function positiveNumber(value, fallback = 0) {
@@ -34,8 +35,9 @@
     const sidebarWidth = Math.max(0, Number(input.sidebarWidth || 0) || 0);
     const coarsePointer = input.coarsePointer === true;
     const orientation = String(input.orientation || viewportOrientation(viewportWidth, viewportHeight));
-    const tabletLandscape = coarsePointer && orientation === "landscape" && viewportWidth >= 900 && viewportHeight >= 600;
+    const landscapeTile = orientation === "landscape" && viewportWidth >= 900 && viewportHeight >= DEFAULT_MIN_LANDSCAPE_VIEWPORT_HEIGHT;
     const menuOverlay = input.menuOverlay === true;
+    const tabletLandscape = landscapeTile && (coarsePointer || menuOverlay);
     const maxPanes = clampInteger(input.maxPanes || DEFAULT_MAX_PANES, 1, 12);
     if (!enabled || viewportWidth <= 0 || viewportHeight <= 0) {
       return { enabled: false, reason: "disabled", columns: 1, rows: 1, maxPanes: 1 };
@@ -98,6 +100,7 @@
   return {
     DEFAULT_MAX_PANES,
     DEFAULT_MIN_DESKTOP_PANE_WIDTH,
+    DEFAULT_MIN_LANDSCAPE_VIEWPORT_HEIGHT,
     DEFAULT_MIN_PANE_HEIGHT,
     DEFAULT_MIN_TABLET_PANE_WIDTH,
     layoutForViewport,

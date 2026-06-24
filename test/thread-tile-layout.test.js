@@ -75,6 +75,34 @@ test("thread tile layout gives iPad landscape at least two panes and up to three
   assert.equal(threePane.columns, 3);
 });
 
+test("thread tile layout keeps iPad embedded landscape available below split height", () => {
+  const embeddedLandscape = tile.layoutForViewport({
+    enabled: true,
+    viewportWidth: 1024,
+    viewportHeight: 560,
+    sidebarWidth: 0,
+    coarsePointer: true,
+    orientation: "landscape",
+    menuOverlay: true,
+  });
+  const desktopPointerIpad = tile.layoutForViewport({
+    enabled: true,
+    viewportWidth: 1024,
+    viewportHeight: 700,
+    sidebarWidth: 0,
+    coarsePointer: false,
+    orientation: "landscape",
+    menuOverlay: true,
+  });
+
+  assert.equal(embeddedLandscape.enabled, true);
+  assert.equal(embeddedLandscape.reason, "tablet-landscape");
+  assert.equal(embeddedLandscape.columns, 3);
+  assert.equal(desktopPointerIpad.enabled, true);
+  assert.equal(desktopPointerIpad.reason, "tablet-landscape");
+  assert.equal(desktopPointerIpad.columns, 3);
+});
+
 test("thread tile id selection starts with current thread then fills recents", () => {
   assert.deepEqual(tile.selectThreadTileIds({
     currentThreadId: "thread-2",

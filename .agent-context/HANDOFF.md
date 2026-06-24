@@ -1,3 +1,32 @@
+# 2026-06-24 - v410 iPad embedded tile toggle fix ready locally
+
+- Scope:
+  - Local source workspace only.
+  - Not deployed to production and not pushed to Public.
+- Trigger:
+  - After v409 deployment, iPad did not show the thread tile toggle in the
+    Home AI embedded surface.
+- Root cause:
+  - v409 tile availability was effectively tied to the tablet sidebar split
+    shape: landscape + `pointer: coarse` + `min-height: 600px`.
+  - In Home AI embedded iPad views, the iframe visual height can be below 600px
+    because of host chrome, and iPadOS can report a non-coarse pointer in some
+    modes. That hid the tile toggle even when horizontal reading width was
+    enough for two or three panes.
+- Change:
+  - Updated `public/thread-tile-layout.js` so tile availability is independent
+    of the sidebar split media query.
+  - Tile mode now accepts landscape viewports with width >= 900px and height >=
+    480px, including overlay-sidebar embedded mode and non-coarse iPad pointer
+    reporting.
+  - Phone/iPad portrait still stay single-thread.
+  - iPad/wide command dock behavior is unchanged: the full-width command dock
+    remains for iPad and desktop; the compact operation bubble remains
+    phone-only.
+  - PWA shell bumped to `codex-mobile-shell-v410`.
+- Validation:
+  - `node --check public/thread-tile-layout.js && node --check public/app.js && node --check public/sw.js && node --test test/thread-tile-layout.test.js test/thread-tile-layout-ui.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+
 # 2026-06-24 - v409 wide thread tile reading mode deployed to Mac production
 
 - Scope:
