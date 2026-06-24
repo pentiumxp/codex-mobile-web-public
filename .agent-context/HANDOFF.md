@@ -1,8 +1,10 @@
-# 2026-06-24 - Thread-display persistence and tile stability v421 local
+# 2026-06-24 - Thread-display persistence and tile stability v421 committed and deployed
 
 - Scope:
-  - Implemented and locally validated.
-  - Not committed, not deployed, not pushed Public.
+  - Implemented, locally validated, committed, and deployed to Mac production.
+  - Not pushed Public.
+  - Commit:
+    - `034ca97 fix: 持久化平铺状态并修正线程状态刷新`
 - Trigger:
   - User reported that after PR #78 absorption, outer thread-list status could
     stay refreshing after a thread had ended.
@@ -58,7 +60,23 @@
   - `git diff --check`
 - Operational notes:
   - Browser/PWA clients must load v421 shell to exercise the frontend changes.
-  - Production still had v420 at the time this handoff entry was written.
+  - Central Home AI deploy script used:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --reason thread-display-v421 --execute --json`
+  - Source ref: `034ca979a1c9`.
+  - Production target:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup retained at:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260624T120947Z-plugin-codex-mobile-web-thread-display-v421`.
+  - Deploy pruned previous v420 backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260624T113808Z-plugin-codex-mobile-web-mobile-floating-controls-v420`.
+  - Post-deploy health returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v421` and
+    `shellCacheName=codex-mobile-shell-v421`.
+  - Production target validation:
+    `npm run check` and `npm run check:macos` both passed in
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Central deployment audit remained non-blocking:
+    `auditOk=false`, `issueCount=11`, `blockingIssueCount=0`.
 
 # 2026-06-24 - Mobile floating controls v420 committed and deployed
 
