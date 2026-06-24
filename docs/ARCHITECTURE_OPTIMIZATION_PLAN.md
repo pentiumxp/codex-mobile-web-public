@@ -82,16 +82,27 @@ Target:
 
 ### Phase 3: Thread Detail Read Orchestration
 
-Target:
+Status: in progress. The first slice extracts the `/api/threads/:id` branch
+ordering into `adapters/thread-detail-read-orchestration-service.js` while
+preserving the existing first-paint contract and read strategy.
 
-- Extract `/api/threads/:id` read orchestration from `server.js` into a
-  service-level coordinator.
-- Keep summary lookup, projection input, projection hit assembly, thread-read
-  fallback, turns-list fallback, rollout enrichment, and response diagnostics
-  testable without the route handler.
+- The coordinator owns summary resolution, hidden-thread rejection, projection
+  hit, `mode=recent` initial turns-list, full `thread/read`, turns-list
+  fallback, summary fallback, and bounded timing aggregation.
+- `server.js` now supplies the concrete Codex app-server reads, compaction,
+  projection seed, fallback shaping, and JSON transport response only.
+- Focused tests cover warm projection, full `thread/read` before turns-list
+  fallback, recent initial turns-list, timeout fallback, and hidden-thread
+  rejection without relying on route source-string assertions.
 - Preserve the first-paint contract for large sessions. Do not introduce
   deferred incomplete detail enrichment as a UI fallback for server cold-path
   slowness.
+
+Remaining target:
+
+- Gather production cold/warm timings for large sessions after this boundary is
+  deployed, then optimize the slowest measured phase rather than adding a
+  client-side second-refresh workaround.
 
 ### Phase 4: Browser And Visual Coverage
 

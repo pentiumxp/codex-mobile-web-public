@@ -1,3 +1,45 @@
+# 2026-06-24 - Thread detail read orchestration service extracted locally
+
+- Scope:
+  - Implemented and locally validated.
+  - Not committed, not deployed, not pushed Public.
+- Trigger:
+  - User paused UI/tile work and asked to do the fourth optimization point:
+    large-session first-paint / thread-detail read orchestration.
+- Change:
+  - Added `adapters/thread-detail-read-orchestration-service.js`.
+  - `/api/threads/:id` now delegates detail read branch ordering to the service
+    and only parses the route, tracks lifecycle count, creates bounded logs,
+    sends JSON, and records completion.
+  - The coordinator preserves the existing large-session first-paint contract:
+    summary resolution, hidden-thread rejection, projection hit, `mode=recent`
+    initial turns-list, full `thread/read`, turns-list fallback, and summary
+    fallback. It does not add a client-side second-refresh workaround and does
+    not skip full `thread/read` because of rollout size.
+  - Server-specific app-server reads, compaction, title hydration, runtime
+    settings, projection seeding, task-card enrichment, and fallback shaping
+    remain injected from `server.js`.
+  - Added focused executable coverage for warm projection, full `thread/read`
+    before bounded turns-list fallback, recent initial turns-list, read timeout
+    fallback, and hidden-thread rejection.
+- Docs updated:
+  - `docs/MODULES.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+- Validation:
+  - `node --check adapters/thread-detail-read-orchestration-service.js && node --check server.js`
+  - `npm run check --silent`
+  - `node --test test/thread-detail-read-orchestration-service.test.js test/thread-detail-performance-service.test.js test/thread-detail-projection-input-service.test.js test/thread-detail-projection-result-service.test.js`
+  - `node --test test/thread-visibility.test.js test/thread-task-card-route.test.js`
+  - `npm test --silent` (`740` tests passed)
+  - `npm run check:macos --silent`
+  - `git diff --check`
+- Next:
+  - If user wants to continue this performance track, gather production
+    cold/warm `thread.mobileDiagnostics.threadDetailTimings` on one large
+    session after deployment, then optimize the measured slowest phase.
+  - Deployment and Public push remain blocked until explicitly requested.
+
 # 2026-06-24 - v419 tile Composer keyboard-focus jitter fix deployed
 
 - Scope:

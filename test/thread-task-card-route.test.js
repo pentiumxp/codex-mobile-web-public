@@ -270,7 +270,9 @@ test("server materializes structured task-card drafts from thread detail", () =>
   assert.match(functionBody(serverJs, "prepareThreadDetailResponseResult"), /finalizeThreadDetailProjectionResult/);
   assert.match(functionBody(serverJs, "turnsListThreadReadResult"), /return prepareThreadDetailResponseResult\(result/);
   assert.match(serverJs, /maybeMaterializeThreadTaskCardDrafts\(msg\.method, msg\.params \|\| null\)/);
-  assert.match(serverJs, /sendJson\(res, 200, await prepareDetailResponse\(result/);
+  assert.match(serverJs, /prepareResponse: prepareThreadDetailResponseResult/);
+  assert.match(serverJs, /threadDetailReadOrchestrationService\.readThreadDetail/);
+  assert.match(serverJs, /sendJson\(res, detailResponse\.status \|\| 200, detailResponse\.body \|\| \{\}\)/);
 });
 
 test("conversation render includes task card signature, toolbar, and action handlers", () => {

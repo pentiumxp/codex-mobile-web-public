@@ -400,13 +400,17 @@ comparison, memory/disk storage, and miss/reseed behavior; and
 assembly before the route sends the detail response. That result assembly merges
 cached projection output with display summary data, session-index title
 hydration, state-db runtime fields, live-status normalization, public runtime
-settings, and projection read-mode metadata. Dynamic
+settings, and projection read-mode metadata.
+`adapters/thread-detail-read-orchestration-service.js` owns the detail read
+phase order and timing aggregation for `/api/threads/:id`; `server.js` supplies
+the concrete app-server read, compaction, projection seed, fallback, and JSON
+transport adapters. Dynamic
 in-memory projection entries intentionally relax the full signature check while
 a thread is actively changing, but only for a bounded window: if the backing
 rollout path/size/mtime, retained turn window, or policy version changes after
 the seed and the thread is now resting, or the dynamic entry ages past the soft
 threshold without a new notification, the projection read must miss and reseed
-from detail. If projection misses, the route still prefers
+from detail. If projection misses, the read coordinator still prefers
 full app-server `thread/read includeTurns:true` regardless of rollout file size
 because bounded `thread/turns/list` does not reliably preserve the
 command/tool/file/search operation items expected in the Mobile detail view.

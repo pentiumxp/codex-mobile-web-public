@@ -7,6 +7,10 @@ const path = require("node:path");
 const { test } = require("node:test");
 
 const serverJs = fs.readFileSync(path.resolve(__dirname, "..", "server.js"), "utf8");
+const threadDetailReadOrchestrationServiceJs = fs.readFileSync(
+  path.resolve(__dirname, "..", "adapters", "thread-detail-read-orchestration-service.js"),
+  "utf8",
+);
 
 const {
   anyThreadMatchesVisibleWorkspace,
@@ -133,9 +137,10 @@ test("thread detail uses full thread/read before bounded turns/list fallback", (
   assert.doesNotMatch(serverJs, /large-rollout-turns-list/);
   assert.doesNotMatch(serverJs, /skip_detail_rpc/);
   const routeStart = serverJs.indexOf("const threadRead = url.pathname.match");
-  const threadReadIndex = serverJs.indexOf('codex.request("thread/read", { threadId, includeTurns: true }', routeStart);
-  const turnsListIndex = serverJs.indexOf('turnsListThreadReadResult(', threadReadIndex);
-  assert.ok(threadReadIndex > routeStart, "thread detail route should call full thread/read");
+  assert.ok(serverJs.indexOf("threadDetailReadOrchestrationService.readThreadDetail", routeStart) > routeStart);
+  const threadReadIndex = threadDetailReadOrchestrationServiceJs.indexOf("await readFullThread(");
+  const turnsListIndex = threadDetailReadOrchestrationServiceJs.indexOf("await turnsListThreadReadResult(", threadReadIndex);
+  assert.ok(threadReadIndex > 0, "thread detail orchestration should call full thread/read");
   assert.ok(turnsListIndex > threadReadIndex, "bounded turns/list should stay a fallback after thread/read");
   assert.match(serverJs, /result\.thread\.mobileReadMode = "thread-read";/);
 });
@@ -147,8 +152,8 @@ test("thread detail defaults to ten turns and exposes an older cursor when compa
   assert.match(serverJs, /return JSON\.stringify\(\{ turnId, includeAnchor: false \}\);/);
   assert.match(serverJs, /out\.mobileOlderTurnsCursor = olderTurnsCursorBeforeTurn\(out\.turns\[0\]\);/);
   assert.match(serverJs, /const preferRecentTurns = detailMode === "recent";/);
-  assert.match(serverJs, /if \(preferRecentTurns\) \{/);
-  assert.match(serverJs, /"turns-list-initial"/);
+  assert.match(threadDetailReadOrchestrationServiceJs, /if \(preferRecentTurns\) \{/);
+  assert.match(threadDetailReadOrchestrationServiceJs, /"turns-list-initial"/);
   assert.match(serverJs, /limit: Math\.max\(1, Math\.min\(100, Number\(url\.searchParams\.get\("limit"\) \|\| String\(MAX_THREAD_TURNS\)\)\)\)/);
 });
 
