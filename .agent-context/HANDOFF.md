@@ -1,8 +1,12 @@
-# 2026-06-24 - Large-session dynamic projection disk persistence implemented locally
+# 2026-06-24 - Large-session dynamic projection and bounded-window cold path deployed
 
 - Scope:
-  - Implemented and locally validated.
-  - Not committed, not deployed, not pushed Public.
+  - Implemented, locally validated, committed, and deployed to Mac production.
+  - Not pushed Public.
+  - Commits:
+    - `6275dea fix: persist dynamic thread projections`
+    - follow-up local commit for bounded large-thread projection-miss reads
+      pending final hash in git history.
 - Trigger:
   - User asked to continue the next optimization step and start solving large
     session load slowness.
@@ -37,9 +41,20 @@
     match the current backing rollout.
   - Partial notification-only projection shells remain invalid as durable detail
     cache and are not persisted as valid warm cache.
+  - Added a large-rollout bounded first-read path in
+    `adapters/thread-detail-read-orchestration-service.js`: when projection
+    misses and the rollout size is over
+    `CODEX_MOBILE_THREAD_DETAIL_TURNS_LIST_FIRST_BYTES` (default `8 MB`), the
+    server reads the current retained window through `thread/turns/list`, seeds
+    projection from that result, and only falls back to full `thread/read` if the
+    bounded read fails.
+  - Added `turns-list-large` / `bounded-large-thread-window` diagnostics with
+    `turnsListBeforeFullMs`.
   - Added focused test coverage in `test/thread-detail-projection-service.test.js`
     for restart-style restoration from a persisted completed dynamic projection
     after rollout size/mtime changes.
+  - Added focused orchestration/performance tests for the large-rollout bounded
+    read path.
 - Docs updated:
   - `README.md`
   - `docs/MODULES.md`
@@ -50,14 +65,33 @@
   - `node --test test/thread-detail-projection-service.test.js test/thread-detail-projection-v4-service.test.js test/thread-detail-projection-input-service.test.js test/thread-detail-projection-result-service.test.js`
   - `node --test test/thread-detail-projection-service.test.js test/thread-detail-projection-v4-service.test.js test/thread-detail-read-orchestration-service.test.js test/thread-detail-performance-service.test.js test/thread-detail-projection-input-service.test.js test/thread-detail-projection-result-service.test.js test/thread-visibility.test.js`
   - `git diff --check`
-  - `npm test --silent` (`741` tests passed)
+  - `npm test --silent` (`742` tests passed after the bounded-window follow-up)
   - `npm run check --silent`
   - `npm run check:macos --silent`
+- Production:
+  - Central deploy script used:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --execute --json`
+  - First deploy used source ref `6275deae3fca`, backup
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260624T104829Z-plugin-codex-mobile-web-manual`.
+  - A second controlled central deploy/restart for verification used the same
+    source ref and backup
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260624T105015Z-plugin-codex-mobile-web-manual`.
+  - Direct `launchctl kickstart -k system/com.hermesmobile.plugin.codex-mobile`
+    as the current user failed with `Operation not permitted`; use the central
+    deploy script or an approved launchd helper for system-daemon restarts.
+  - Production health after restart:
+    `clientBuildId=0.1.11|codex-mobile-shell-v419`,
+    `shellCacheName=codex-mobile-shell-v419`,
+    `workspacePath=/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`,
+    `activeProfileId=default`.
+  - Verification before the bounded-window follow-up showed static Music
+    cold-open hit `projection-v4-cache` with `threadReadMs=0`, but actively
+    advancing Home AI could still cold-read after rollout growth. The follow-up
+    bounded-window path is implemented locally and must be deployed next.
 - Next:
-  - If deploying this change, use the Home AI central deploy script, then verify
-    a service restart/cold-open path for a large active or recently completed
-    thread. Expected detail result is disk-backed projection with
-    `threadReadMs=0`, not full `thread/read`.
+  - Commit and deploy the bounded-window follow-up, then verify a restart/cold
+    open on an actively advancing large thread. Expected read mode is
+    `turns-list-large` or projection cache/dynamic with `threadReadMs=0`.
   - Public sync remains blocked until production/user validation.
 
 # 2026-06-24 - Thread detail orchestration deployed, Public synced, PR #78 closed

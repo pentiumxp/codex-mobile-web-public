@@ -868,6 +868,10 @@ const MAX_STRUCTURED_CHARS = 24000;
 const MAX_DELTA_CHARS = 12000;
 const MAX_THREAD_TURNS = Math.max(1, Math.min(100, Number(process.env.CODEX_MOBILE_THREAD_TURNS || "10")));
 const MAX_FULL_THREAD_TURNS = Math.max(MAX_THREAD_TURNS, Math.min(200, Number(process.env.CODEX_MOBILE_FULL_THREAD_TURNS || "10")));
+const THREAD_DETAIL_TURNS_LIST_FIRST_BYTES = Math.max(
+  0,
+  Number(process.env.CODEX_MOBILE_THREAD_DETAIL_TURNS_LIST_FIRST_BYTES || String(8 * 1024 * 1024)),
+);
 const MAX_LIVE_OPERATION_ITEMS = Math.max(1, Math.min(30, Number(process.env.CODEX_MOBILE_LIVE_OPERATION_ITEMS || "12")));
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
 const THREAD_LIST_FALLBACK_CACHE_TTL_MS = Math.max(0, Number(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS || "0"));
@@ -5144,6 +5148,12 @@ const threadDetailReadOrchestrationService = createThreadDetailReadOrchestration
   ),
   readFullThread: readFullThreadDetailForOrchestrator,
   seedProjection: (input, result) => threadDetailProjectionService.seed(input, result),
+  preferBoundedReadBeforeFullRead: ({ projection }) => {
+    if (THREAD_DETAIL_TURNS_LIST_FIRST_BYTES <= 0 || !projection) return false;
+    const stats = projection.rolloutStats || {};
+    const sizeBytes = Number(stats.sizeBytes || stats.size || 0);
+    return Number.isFinite(sizeBytes) && sizeBytes >= THREAD_DETAIL_TURNS_LIST_FIRST_BYTES;
+  },
   prepareResponse: prepareThreadDetailResponseResult,
   fallbackThreadReadResult: fallbackThreadReadResultForOrchestrator,
   isReadTimeoutError,

@@ -153,6 +153,26 @@ test("thread detail orchestration preserves full thread/read before bounded turn
   assert.ok(calls.indexOf("seed") > calls.indexOf("thread-read"));
 });
 
+test("large projection miss can use bounded turns/list before full thread/read", async () => {
+  const { service, calls } = createHarness({
+    preferBoundedReadBeforeFullRead: () => true,
+  });
+
+  const response = await service.readThreadDetail({
+    codex: { transportKind: "mux", ready: true },
+    threadId: "thread-1",
+    preferRecentTurns: false,
+    threadLog: () => {},
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.mode, "turns-list-large");
+  assert.deepEqual(response.body.thread.turns.map((turn) => turn.id), ["turn-from-list"]);
+  assert.ok(calls.indexOf("turns-list:turns-list-large") > calls.indexOf("projection-miss"));
+  assert.equal(calls.includes("thread-read"), false);
+  assert.ok(calls.indexOf("seed") > calls.indexOf("turns-list:turns-list-large"));
+});
+
 test("recent thread detail can use initial bounded turns/list without full read", async () => {
   const { service, calls } = createHarness();
 

@@ -39,6 +39,7 @@ test("thread detail diagnostics classify warm projection and bounded timings", (
     summaryMs: 3,
     projectionMs: 1,
     turnsListInitialMs: 0,
+    turnsListBeforeFullMs: 0,
     threadReadMs: 0,
     rawThreadReadMs: 0,
     turnsListFallbackMs: 0,
@@ -75,6 +76,7 @@ test("thread detail diagnostics attach to thread without copying private body co
 
 test("thread detail phase classification distinguishes cold and fallback paths", () => {
   assert.equal(classifyThreadDetailPhase("turns-list-initial"), "cold-turns-list-initial");
+  assert.equal(classifyThreadDetailPhase("turns-list-large"), "bounded-large-thread-window");
   assert.equal(classifyThreadDetailPhase("turns-list"), "fallback-turns-list");
   assert.equal(classifyThreadDetailPhase("thread-read-raw"), "cold-thread-read-raw");
   assert.equal(classifyThreadDetailPhase("summary-timeout-fallback"), "fallback-summary");

@@ -88,7 +88,11 @@ preserving the existing first-paint contract and read strategy. The second
 slice addresses the first measured large-session cold-path issue: full dynamic
 projection state was fast while the server process lived, but was not persisted
 with refreshed rollout stats, so a service restart could miss disk cache and
-fall back to full `thread/read` on large rollouts.
+fall back to full `thread/read` on large rollouts. A follow-up production
+restart check showed active external writers can still advance rollout size
+between cache persistence and restart, so large rollout projection misses now
+use bounded `thread/turns/list` for the current visible window before trying
+full `thread/read`.
 
 - The coordinator owns summary resolution, hidden-thread rejection, projection
   hit, `mode=recent` initial turns-list, full `thread/read`, turns-list
@@ -101,17 +105,21 @@ fall back to full `thread/read` on large rollouts.
 - Full non-partial dynamic projections are now persisted with throttling and
   refreshed rollout size/mtime before write. Partial notification-only shells
   are still not persisted as valid detail cache.
+- Large rollout projection misses use a server-side bounded turns-list current
+  window and seed projection from that result. This keeps the first response
+  authoritative for the current retained window without adding a frontend
+  second-refresh replacement path.
 - Preserve the first-paint contract for large sessions. Do not introduce
   deferred incomplete detail enrichment as a UI fallback for server cold-path
   slowness.
 
 Remaining target:
 
-- After deployment, verify a restart/cold-open path for large active or recently
-  completed sessions: disk-backed projection should be the first detail result
-  instead of a full `thread/read`, and
-  `thread.mobileDiagnostics.threadDetailTimings` should keep `threadReadMs=0`
-  for that path.
+- After deployment, verify restart/cold-open paths for both static and actively
+  advancing large threads. Expected first detail result should be either
+  disk-backed projection or `turns-list-large`, with `threadReadMs=0`; full
+  `thread/read` should only remain for small/non-rollout threads or bounded
+  turns-list failure.
 
 ### Phase 4: Browser And Visual Coverage
 
