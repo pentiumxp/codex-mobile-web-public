@@ -155,7 +155,10 @@ Implementation path:
     rules. Do not bind tile availability to the sidebar split media query:
     Home AI embedded iPad landscape can have an overlay sidebar or a visual
     viewport height below the split threshold while still having enough reading
-    width for two or three panes. `public/app.js` may own DOM assembly and event
+    width for two or three panes. In the browser caller, subtract sidebar width
+    only when `splitPaneSidebarVisible()` proves the sidebar actually occupies
+    layout space; Home AI embed fixed/offscreen sidebars are overlays even when
+    tablet split media matches. `public/app.js` may own DOM assembly and event
     binding, but tile panes are read-only recent-detail windows; composer,
     interrupt, approvals, and live operation dock state remain bound to the
     current active thread. Treat this automatic tile policy as an interim

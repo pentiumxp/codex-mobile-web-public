@@ -438,7 +438,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v412";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v413";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -11046,7 +11046,9 @@ function isCoarsePointerViewport() {
 function threadTileLayout(options = {}) {
   const viewport = viewportPixelSize();
   const sidebar = $("sidebar");
-  const sidebarWidth = sidebar && !isMenuOverlayMode()
+  const sidebarSplitVisible = splitPaneSidebarVisible();
+  const menuOverlay = isMenuOverlayMode() || !sidebarSplitVisible;
+  const sidebarWidth = sidebar && sidebarSplitVisible
     ? Math.round(sidebar.getBoundingClientRect().width || 0)
     : 0;
   return threadTileLayoutPolicy.layoutForViewport({
@@ -11055,7 +11057,7 @@ function threadTileLayout(options = {}) {
     viewportHeight: viewport.height,
     sidebarWidth,
     coarsePointer: isCoarsePointerViewport(),
-    menuOverlay: isMenuOverlayMode(),
+    menuOverlay,
     maxPanes: threadTileLayoutPolicy.DEFAULT_MAX_PANES,
     verticalChromePx: Math.max(120, Number(state.composerHeightPx || 0) + 64),
   });

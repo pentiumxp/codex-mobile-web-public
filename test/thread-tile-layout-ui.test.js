@@ -34,9 +34,11 @@ test("thread tile layout is wired as an explicit shell policy", () => {
   assert.match(appJs, /STORAGE_LEGACY_THREAD_TILE_MODE = "codexMobileThreadTileMode"/);
 
   const layoutBody = functionBody(appJs, "threadTileLayout");
+  assert.match(layoutBody, /const sidebarSplitVisible = splitPaneSidebarVisible\(\)/);
+  assert.match(layoutBody, /const menuOverlay = isMenuOverlayMode\(\) \|\| !sidebarSplitVisible/);
   assert.match(layoutBody, /threadTileLayoutPolicy\.layoutForViewport/);
   assert.match(layoutBody, /coarsePointer: isCoarsePointerViewport\(\)/);
-  assert.match(layoutBody, /menuOverlay: isMenuOverlayMode\(\)/);
+  assert.match(layoutBody, /menuOverlay,/);
   assert.match(layoutBody, /verticalChromePx:/);
 
   const toggleBody = functionBody(appJs, "syncThreadTileToggle");

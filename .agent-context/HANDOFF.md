@@ -1,3 +1,46 @@
+# 2026-06-24 - v413 iPad embed tile sidebar-width fix deployed to Mac production
+
+- Scope:
+  - Committed locally and deployed to Mac production.
+  - Not pushed to Public.
+- Trigger:
+  - After v412 deployment, user reported that iPad 11-inch still had no thread
+    tiling at all.
+- Root cause:
+  - v412's pure `public/thread-tile-layout.js` policy can produce three panes
+    for iPad Pro 11 landscape, but `public/app.js` passed the wrong
+    `sidebarWidth` in Home AI embed thread-detail mode.
+  - Home AI embed CSS keeps `.sidebar` as fixed/offscreen overlay. On iPad
+    landscape, tablet split media can still make `isMenuOverlayMode()` return
+    false, so v412 subtracted the offscreen `100vw` sidebar as though it were a
+    real layout column.
+  - The policy then saw available width close to 0 and returned
+    `insufficient-width`, which made the UI stay single-thread.
+- Change:
+  - `threadTileLayout()` now computes `sidebarSplitVisible =
+    splitPaneSidebarVisible()` and subtracts sidebar width only when that
+    function proves the sidebar actually occupies layout space.
+  - Fixed/offscreen sidebar overlays are passed as `menuOverlay=true` with
+    `sidebarWidth=0`, even when tablet split media matches.
+  - Updated focused UI wiring test to assert this caller boundary.
+  - PWA shell bumped to `codex-mobile-shell-v413`.
+- Validation:
+  - `node --check public/thread-tile-layout.js && node --check public/app.js && node --check public/sw.js && node --test test/thread-tile-layout.test.js test/thread-tile-layout-ui.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+  - `npm run check`
+  - `git diff --check`
+  - `npm test` passed (`733` tests).
+  - `npm run check:macos`
+- Production deploy:
+  - Used the Home AI central deploy script directly:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --execute --json`.
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Health check returned HTTP `200` with
+    `clientBuildId=0.1.11|codex-mobile-shell-v413`,
+    `shellCacheName=codex-mobile-shell-v413`, and
+    `workspacePath=/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - `launchctl print system/com.hermesmobile.plugin.codex-mobile` reported
+    the service running.
+
 # 2026-06-24 - v412 iPad landscape tile density deployed to Mac production
 
 - Scope:
