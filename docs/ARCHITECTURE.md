@@ -654,6 +654,13 @@ toolbar, not pane-local state. Once an existing-thread non-steering send
 succeeds, Mobile Web clears only text and attachments, then writes the
 runtime-only draft back under the thread key. New-thread send captures selected
 runtime values before creation and writes them back under the newly created
+thread key. In tile mode, Composer focus and keyboard visualViewport changes
+are not tile layout changes: the pane grid uses the pre-keyboard viewport and
+Composer-height baseline while a keyboard-editable input is focused, and
+visualViewport resize does not trigger a full thread render for the tile board.
+Home AI embedded tile mode also suppresses whole-app `--app-top` translation
+while the keyboard is open so the shared Composer can adapt without moving the
+entire pane grid.
 thread key after the thread id is known. This avoids an immediate UI fallback
 to stale thread metadata while the new turn is starting and before app-server
 state DB metadata catches up.

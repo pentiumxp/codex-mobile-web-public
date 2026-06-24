@@ -482,6 +482,15 @@ html.embed-hermes .app {
   transform: translateY(var(--app-top, 0px));
 }
 
+html.embed-hermes.thread-tile-open.keyboard-open .app {
+  transform: none;
+}
+
+html.embed-hermes.thread-tile-open.keyboard-open .app.resume-repaint {
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+}
+
 html.embed-hermes.plugin-startup-loading .app,
 html.embed-hermes.plugin-startup-loading .login {
   visibility: hidden;

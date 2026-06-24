@@ -156,6 +156,8 @@ const state = {
   threadTileOperationModesById: new Map(),
   threadTileOperationBubblesById: new Map(),
   threadTileOperationRefreshTimer: null,
+  threadTileViewportBaseline: null,
+  threadTileComposerHeightBaselinePx: 0,
   newThreadDraft: false,
   newThreadTitle: "",
   activeTurnId: "",
@@ -450,7 +452,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v418";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v419";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -11221,11 +11223,21 @@ function updateThreadTileGlobalHeader(layout = null, ids = []) {
   if (metaEl) metaEl.textContent = "";
 }
 
-function viewportPixelSize() {
+function viewportPixelSize(options = {}) {
   const visualViewport = window.visualViewport;
+  const visualWidth = Math.round((visualViewport && visualViewport.width) || 0);
+  const visualHeight = Math.round((visualViewport && visualViewport.height) || 0);
+  const layoutWidth = Math.round(window.innerWidth || document.documentElement.clientWidth || 0);
+  const layoutHeight = Math.round(window.innerHeight || document.documentElement.clientHeight || 0);
+  if (options.preferLayoutViewport) {
+    return {
+      width: Math.max(layoutWidth, visualWidth),
+      height: Math.max(layoutHeight, visualHeight),
+    };
+  }
   return {
-    width: Math.round((visualViewport && visualViewport.width) || window.innerWidth || document.documentElement.clientWidth || 0),
-    height: Math.round((visualViewport && visualViewport.height) || window.innerHeight || document.documentElement.clientHeight || 0),
+    width: Math.round(visualWidth || layoutWidth || 0),
+    height: Math.round(visualHeight || layoutHeight || 0),
   };
 }
 
@@ -11233,8 +11245,34 @@ function isCoarsePointerViewport() {
   return Boolean(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
 }
 
+function isThreadTileKeyboardFocusActive() {
+  return Boolean(state.threadTileMode && isKeyboardEditableElement(document.activeElement));
+}
+
+function threadTileViewportSize() {
+  const keyboardActive = isThreadTileKeyboardFocusActive();
+  const layoutViewport = viewportPixelSize({ preferLayoutViewport: true });
+  if (!keyboardActive) {
+    state.threadTileViewportBaseline = layoutViewport;
+    return layoutViewport;
+  }
+  const baseline = state.threadTileViewportBaseline;
+  return baseline && baseline.width && baseline.height ? baseline : layoutViewport;
+}
+
+function threadTileVerticalChromePx() {
+  const keyboardActive = isThreadTileKeyboardFocusActive();
+  if (!keyboardActive) {
+    state.threadTileComposerHeightBaselinePx = Number(state.composerHeightPx || 0) || state.threadTileComposerHeightBaselinePx || 0;
+  }
+  const composerHeight = keyboardActive && state.threadTileComposerHeightBaselinePx
+    ? state.threadTileComposerHeightBaselinePx
+    : Number(state.composerHeightPx || 0);
+  return Math.max(120, composerHeight + 64);
+}
+
 function threadTileLayout(options = {}) {
-  const viewport = viewportPixelSize();
+  const viewport = threadTileViewportSize();
   const sidebar = $("sidebar");
   const sidebarSplitVisible = splitPaneSidebarVisible();
   const menuOverlay = isMenuOverlayMode() || !sidebarSplitVisible;
@@ -11249,7 +11287,7 @@ function threadTileLayout(options = {}) {
     coarsePointer: isCoarsePointerViewport(),
     menuOverlay,
     maxPanes: threadTileLayoutPolicy.DEFAULT_MAX_PANES,
-    verticalChromePx: Math.max(120, Number(state.composerHeightPx || 0) + 64),
+    verticalChromePx: threadTileVerticalChromePx(),
   });
 }
 
@@ -11417,6 +11455,7 @@ function threadTilePaneIsVisible(threadId) {
 function setThreadTileConversationMode(active, layout = null) {
   const conversation = $("conversation");
   const main = document.querySelector(".main");
+  document.documentElement.classList.toggle("thread-tile-open", Boolean(active));
   if (main) main.classList.toggle("thread-tile-main", Boolean(active));
   if (!conversation) return;
   conversation.classList.toggle("thread-tile-mode", Boolean(active));
@@ -11426,6 +11465,8 @@ function setThreadTileConversationMode(active, layout = null) {
     state.threadTileActiveIds = [];
     state.threadTileSelectedThreadId = "";
     state.threadTileSwitchMenuPaneId = "";
+    state.threadTileViewportBaseline = null;
+    state.threadTileComposerHeightBaselinePx = 0;
     for (const frame of state.threadTilePaneRenderFramesById.values()) {
       if (window.cancelAnimationFrame) window.cancelAnimationFrame(frame);
       else clearTimeout(frame);
@@ -20896,7 +20937,7 @@ function wireUi() {
     updateComposerHeightVar();
     positionComposerIntentMenu();
     syncThreadTileToggle();
-    if (state.threadTileMode) scheduleRenderCurrentThread();
+    if (state.threadTileMode && !isThreadTileKeyboardFocusActive()) scheduleRenderCurrentThread();
     if (!isHermesKeyboardInputActive()) {
       followViewportChangeToBottom("resize");
       scheduleViewportBottomFollowScroll();
@@ -20909,7 +20950,7 @@ function wireUi() {
       updateComposerHeightVar();
       positionComposerIntentMenu();
       syncThreadTileToggle();
-      if (state.threadTileMode) scheduleRenderCurrentThread();
+      if (state.threadTileMode && !isThreadTileKeyboardFocusActive()) scheduleRenderCurrentThread();
       if (!isHermesKeyboardInputActive()) {
         followViewportChangeToBottom("visual-viewport-resize");
         scheduleViewportBottomFollowScroll();

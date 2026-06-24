@@ -39,16 +39,24 @@ test("thread tile layout is wired as an explicit shell policy", () => {
   assert.match(appJs, /threadTilePaneRenderFramesById: new Map\(\)/);
   assert.match(appJs, /threadTilePaneScrollHoldById: new Map\(\)/);
   assert.match(appJs, /threadTileOperationModesById: new Map\(\)/);
+  assert.match(appJs, /threadTileViewportBaseline: null/);
+  assert.match(appJs, /threadTileComposerHeightBaselinePx: 0/);
   assert.match(appJs, /THREAD_TILE_REFRESH_INTERVAL_MS/);
   assert.match(appJs, /STORAGE_LEGACY_THREAD_TILE_MODE = "codexMobileThreadTileMode"/);
 
   const layoutBody = functionBody(appJs, "threadTileLayout");
+  assert.match(appJs, /function isThreadTileKeyboardFocusActive\(/);
+  assert.match(appJs, /function threadTileViewportSize\(/);
+  assert.match(appJs, /function threadTileVerticalChromePx\(/);
+  assert.match(functionBody(appJs, "threadTileViewportSize"), /state\.threadTileViewportBaseline = layoutViewport/);
+  assert.match(functionBody(appJs, "threadTileViewportSize"), /return baseline && baseline\.width && baseline\.height \? baseline : layoutViewport/);
+  assert.match(layoutBody, /const viewport = threadTileViewportSize\(\)/);
   assert.match(layoutBody, /const sidebarSplitVisible = splitPaneSidebarVisible\(\)/);
   assert.match(layoutBody, /const menuOverlay = isMenuOverlayMode\(\) \|\| !sidebarSplitVisible/);
   assert.match(layoutBody, /threadTileLayoutPolicy\.layoutForViewport/);
   assert.match(layoutBody, /coarsePointer: isCoarsePointerViewport\(\)/);
   assert.match(layoutBody, /menuOverlay,/);
-  assert.match(layoutBody, /verticalChromePx:/);
+  assert.match(layoutBody, /verticalChromePx: threadTileVerticalChromePx\(\)/);
 
   const toggleBody = functionBody(appJs, "syncThreadTileToggle");
   assert.match(toggleBody, /threadTileLayout\(\{ enabled: true \}\)/);
@@ -166,9 +174,11 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(functionBody(appJs, "toggleThreadTileSwitchMenu"), /patchThreadTilePane\(id, \{ preserveScroll: true \}\)/);
   assert.match(functionBody(appJs, "loadThreadTileDetail"), /scheduleRenderThreadTilePane\(id, \{ preserveScroll: true \}\)/);
   assert.match(functionBody(appJs, "setThreadTileSelectedThread"), /patchThreadTilePane\(id, \{ preserveScroll: true \}\)/);
+  assert.match(appJs, /if \(state\.threadTileMode && !isThreadTileKeyboardFocusActive\(\)\) scheduleRenderCurrentThread\(\)/);
   assert.match(functionBody(appJs, "updateTurnTimer"), /applyTurnTimerState\(el, currentThreadTurnTimerState\(\)\)/);
   assert.match(functionBody(appJs, "updateThreadTilePaneStatusBadges"), /turnTimerStateHtml\(threadTilePaneTimerState\(threadTileDisplayThread\(id\)\)\)/);
   assert.match(stylesCss, /\.conversation\.thread-tile-mode\s*{/);
+  assert.match(stylesCss, /html\.embed-hermes\.thread-tile-open\.keyboard-open \.app\s*{[\s\S]*transform:\s*none;/);
   assert.match(stylesCss, /\.main\.thread-tile-main \.topbar\s*{/);
   assert.match(stylesCss, /\.main\.thread-tile-main > \.live-operation-dock\s*{/);
   assert.match(stylesCss, /\.conversation\.thread-tile-mode\s*{[\s\S]*max\(env\(safe-area-inset-top, 0px\), var\(--host-top-safe-area, 0px\)\)/);

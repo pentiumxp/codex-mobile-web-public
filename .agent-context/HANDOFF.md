@@ -1,3 +1,61 @@
+# 2026-06-24 - v419 tile Composer keyboard-focus jitter fix deployed
+
+- Scope:
+  - Implemented, locally validated, committed, and deployed to Mac production.
+  - Not pushed to Public.
+  - Commit: this local commit (`fix: stabilize tiled composer focus`).
+- Trigger:
+  - After v418 deployment, user reported that in tile mode tapping Composer
+    made the whole interface drop briefly and then repaint.
+- Root cause:
+  - Tile layout decisions still used live `visualViewport.height` and live
+    Composer height. iPad/WebView keyboard focus changes those values during
+    keyboard animation, so the tile board was treated as a layout change.
+  - The Home AI embedded shell also translated the entire `.app` by `--app-top`
+    while the keyboard was open, which is correct for some single-window mobile
+    keyboard recovery paths but visually moves the whole tile grid.
+  - `window.resize` and `visualViewport.resize` called
+    `scheduleRenderCurrentThread()` whenever tile mode was on, including during
+    keyboard focus.
+- Change:
+  - PWA shell bumped to `codex-mobile-shell-v419`.
+  - Added tile viewport and Composer-height baselines. While a
+    keyboard-editable input is focused in tile mode, `threadTileLayout()` uses
+    the pre-keyboard baseline instead of keyboard-shrunk visual viewport values.
+  - Added `thread-tile-open` root class. In Home AI embedded tile mode with the
+    keyboard open, `.app` no longer follows `--app-top`, so the tile grid does
+    not drop as a unit.
+  - Gated window/visualViewport resize so tile mode does not schedule a full
+    `renderCurrentThread()` during Composer keyboard focus. The resize handlers
+    still update viewport CSS variables, Composer height, and intent-menu
+    position.
+- Docs updated:
+  - `README.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/COMPLEX_FEATURE_PATHS.md`
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js`
+  - `node --test test/thread-tile-layout-ui.test.js test/thread-tile-layout.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js`
+    (`34` tests passed)
+  - `node --test test/composer-draft.test.js test/composer-quota.test.js test/collab-agent-render.test.js test/live-operation-dock-state.test.js test/turn-scroll-controls.test.js`
+    (`25` tests passed)
+  - `npm test` (`734` tests passed)
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+  - Central deploy script:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --execute --json`
+    returned `ok: true` from a clean source tree and `blockingIssueCount=0`
+    for `codex_auth_*`.
+  - Independent production health returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v419`,
+    `shellCacheName=codex-mobile-shell-v419`,
+    `workspacePath=/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`,
+    and `activeProfileId=default`.
+- Next:
+  - Wait for iPad/Home AI production verification.
+  - Public push remains blocked until explicitly requested.
+
 # 2026-06-24 - v418 tile pane menu, active runtime toolbar, and pane-local refresh deployed
 
 - Scope:

@@ -196,6 +196,13 @@ Implementation path:
     global tile title strip, per-turn Active/Completed footer, or always-visible
     pane bottom button in tile mode. On touch wide screens, command state is a
     floating operation bubble/sheet and must not reserve a bottom layout row.
+    Composer/keyboard focus must not be treated as a tile layout change:
+    while a keyboard-editable element is focused in tile mode, layout decisions
+    should reuse the pre-keyboard viewport and Composer-height baseline, and
+    visualViewport resize events should not call full `renderCurrentThread()`
+    just to settle keyboard animation. In Home AI embedded mode, tile keyboard
+    focus should not translate the entire app via `--app-top`; only the
+    Composer/keyboard-safe surface should adapt.
     Treat
     this automatic tile policy as an interim surface. The long-term product
     direction is a user-managed
