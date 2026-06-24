@@ -23,8 +23,27 @@
   - `npm run check:macos`
   - `npm test` passed (`696` tests).
   - `git diff --check`
+- Local commit:
+  - `49ff17e fix: align mobile floating controls`.
+- Production deploy:
+  - Used the Home AI center script:
+    `node /Users/hermes-dev/HermesMobileDev/app/scripts/deploy-macos-production.js --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --reason codex-mobile-v404-floating-controls --execute --json`
+  - Target:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260624T023734Z-plugin-codex-mobile-web-codex-mobile-v404-floating-controls`.
+  - Restarted `system/com.hermesmobile.plugin.codex-mobile`.
+  - Deploy validations passed: production file hashes, launchd print,
+    plugin manifest health URL, Codex auth profile audit, shared auth
+    permissions repair, and Codex Mobile log permission repair.
+  - `/api/public-config` now returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v404` and
+    `shellCacheName=codex-mobile-shell-v404`.
+  - Production CSS/JS contains `--mobile-floating-control-size: 36px`,
+    `mobile-floating-control-right`, `data-recall-visible`, and
+    `codex-mobile-shell-v404`.
 - Release status:
-  - Local implementation ready for commit/deploy.
+  - Deployed to production for user testing.
   - Not pushed to Public.
 
 # 2026-06-24 - v403 mobile operation recall dot ready
