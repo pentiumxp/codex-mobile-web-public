@@ -147,9 +147,13 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v402/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v402"/);
+  assert.match(swJs, /codex-mobile-shell-v419/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v419"/);
   assert.match(swJs, /"\/thread-status-hints\.js"/);
+  assert.match(swJs, /"\/thread-performance-metrics\.js"/);
+  assert.match(swJs, /"\/live-operation-dock-state\.js"/);
+  assert.match(swJs, /"\/thread-detail-state\.js"/);
+  assert.match(swJs, /"\/thread-tile-layout\.js"/);
   assert.match(stylesCss, /\.subagent-panel\s*{[\s\S]*position:\s*fixed;[\s\S]*height:\s*var\(--app-height, 100dvh\);/);
   assert.match(stylesCss, /\.thread-side-panel\s*{[\s\S]*grid-template-rows:\s*minmax\(92px, 0\.42fr\) minmax\(224px, 1fr\);/);
   assert.match(stylesCss, /\.thread-side-panel\.no-subagents\s*{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\);/);
@@ -193,7 +197,9 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(appJs, /postClientEvent\("startup_stage"/);
   assert.match(appJs, /postPerformanceEvent\("shell_loaded"/);
   assert.match(appJs, /postPerformanceEvent\("thread_list_rendered"/);
-  assert.match(appJs, /serverTimings: result && result\.mobileDiagnostics && result\.mobileDiagnostics\.threadListTimings \|\| null/);
+  assert.match(appJs, /const listPerformance = threadPerformanceMetrics\.threadListEventFields\(result\);/);
+  assert.match(appJs, /serverTimings: listPerformance\.serverTimings/);
+  assert.match(appJs, /performancePhase: listPerformance\.performancePhase/);
   assert.match(appJs, /postPerformanceEvent\("thread_detail_first_paint"/);
   assert.match(appJs, /postPerformanceEvent\("conversation_render_ms"/);
   assert.match(appJs, /postPerformanceEvent\("github_cards_hydrate_ms"/);
@@ -259,8 +265,8 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.doesNotMatch(appJs, /scrollConversationToTop/);
   assert.doesNotMatch(appJs, /scrollToTop/);
   assert.match(appJs, /const explicitNoStickToBottom = options\.stickToBottom === false \|\| Boolean\(options\.scrollToTurnReceiptStart\);/);
-  assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*if \(isMenuOverlayMode\(\)\) closeSidebarMenu\(\);/);
-  assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*publishPluginNavigationState\(\{ force: true \}\);\s*\n\s*restoreConnectionState\(\);/);
+  assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*const conversationRenderMs = roundedDurationMs\(conversationRenderStartedAt\);\s*\n\s*if \(isMenuOverlayMode\(\)\) closeSidebarMenu\(\);/);
+  assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*const conversationRenderMs = roundedDurationMs\(conversationRenderStartedAt\);\s*\n\s*const postRenderStartedAt = nowPerfMs\(\);\s*\n\s*publishPluginNavigationState\(\{ force: true \}\);\s*\n\s*restoreConnectionState\(\);/);
   assert.match(appJs, /const PLUGIN_EMBED_BACK_EDGE_SWIPE_PX = 44/);
   assert.match(appJs, /function installHermesPluginBackSwipeGuard\(\)/);
   assert.match(appJs, /pluginEmbedApi\.navigationMessage\(state, pluginNavigationUiState\(\)\)/);
@@ -330,6 +336,9 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(stylesCss, /\.live-operation-dock\s*{[\s\S]*min-height:\s*var\(--live-operation-dock-compact-height, 40px\);[\s\S]*contain:\s*layout paint;/);
   assert.match(stylesCss, /\.live-operation-dock:not\(\[data-mode="expanded"\]\)\s*{[\s\S]*height:\s*var\(--live-operation-dock-compact-height, 40px\);/);
   assert.match(stylesCss, /\.live-operation-dock:not\(\[data-mode="expanded"\]\) \.live-operation\s*{[\s\S]*height:\s*32px;[\s\S]*max-height:\s*32px;/);
+  assert.match(stylesCss, /@media \(pointer: coarse\)[\s\S]*\.live-operation-dock\s*{[\s\S]*position:\s*fixed;[\s\S]*bottom:\s*calc\(var\(--composer-height, 92px\) \+ 8px\);/);
+  assert.match(stylesCss, /@media \(pointer: coarse\)[\s\S]*\.live-operation-dock-desktop\s*{[\s\S]*display:\s*none;/);
+  assert.match(stylesCss, /@media \(pointer: coarse\)[\s\S]*\.mobile-operation-stack\s*{[\s\S]*display:\s*grid;/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.live-operation-dock\s*{[\s\S]*position:\s*fixed;[\s\S]*bottom:\s*calc\(var\(--composer-height, 92px\) \+ 8px\);/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.live-operation-dock:not\(\[data-mode="expanded"\]\)\s*{[\s\S]*height:\s*auto;/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.mobile-operation-bubble\s*{[\s\S]*max-width:\s*min\(78vw, 420px\);/);
@@ -347,11 +356,19 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(swJs, /"\/conversation-scroll\.js"/);
   assert.match(swJs, /"\/image-compressor\.js"/);
   assert.match(swJs, /"\/plugin-embed\.js"/);
+  assert.match(swJs, /"\/thread-performance-metrics\.js"/);
+  assert.match(swJs, /"\/live-operation-dock-state\.js"/);
+  assert.match(swJs, /"\/thread-detail-state\.js"/);
+  assert.match(swJs, /"\/thread-tile-layout\.js"/);
   assert.match(swJs, /"\/build-refresh-policy\.js"/);
   assert.match(appJs, /"\/viewport-metrics\.js"/);
   assert.match(appJs, /"\/conversation-scroll\.js"/);
   assert.match(appJs, /"\/image-compressor\.js"/);
   assert.match(appJs, /"\/plugin-embed\.js"/);
+  assert.match(appJs, /"\/thread-performance-metrics\.js"/);
+  assert.match(appJs, /"\/live-operation-dock-state\.js"/);
+  assert.match(appJs, /"\/thread-detail-state\.js"/);
+  assert.match(appJs, /"\/thread-tile-layout\.js"/);
   assert.match(appJs, /"\/build-refresh-policy\.js"/);
   assert.match(appJs, /navigator\.serviceWorker\.register\("\/sw\.js"\)/);
   assert.match(appJs, /state\.serviceWorkerRegistration\.update\(\)\.catch/);

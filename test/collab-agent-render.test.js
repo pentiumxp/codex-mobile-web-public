@@ -54,8 +54,10 @@ test("collab agent tool calls render as compact summary cards", () => {
 
 test("live operation cards dock on wide screens and become a mobile bubble", () => {
   assert.match(appJs, /function currentLiveOperationEntry\(thread\)/);
-  assert.match(functionBody("currentLiveOperationEntry"), /const turn = thread\.turns\[thread\.turns\.length - 1\]/);
-  assert.match(functionBody("currentLiveOperationEntry"), /if \(!turn \|\| !isLatestTurn\(turn\) \|\| !isLiveTurn\(turn\)\) return null;/);
+  assert.match(functionBody("currentLiveOperationEntry"), /const turn = latestTurnForThread\(thread\);/);
+  assert.match(functionBody("currentLiveOperationEntry"), /if \(!turn \|\| !isLiveTurnForThread\(thread, turn\)\) return null;/);
+  assert.match(appJs, /function latestTurnForThread\(thread\)/);
+  assert.match(appJs, /function isLiveTurnForThread\(thread, turn\)/);
   assert.match(appJs, /function isActiveOperationalItem\(item\)/);
   assert.match(functionBody("currentLiveOperationEntry"), /if \(isActiveOperationalItem\(item\)\) return \{ turn, item, sourceIndex: index \};/);
   assert.match(functionBody("currentLiveOperationEntry"), /return \{ turn, item: liveTurnStatusDockItem\(turn\), sourceIndex: -1 \};/);
@@ -84,25 +86,39 @@ test("live operation cards dock on wide screens and become a mobile bubble", () 
   assert.match(appJs, /liveOperationDockMode:\s*"compact"/);
   assert.match(appJs, /liveOperationDockPinned:\s*false/);
   assert.match(appJs, /liveOperationDockPinnedThreadId:\s*""/);
-  assert.match(appJs, /const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = 500;/);
+  assert.match(appJs, /const liveOperationDockPolicy = window\.CodexLiveOperationDockState/);
+  assert.match(appJs, /const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy\.DEFAULT_MIN_VISIBLE_MS;/);
   assert.match(appJs, /liveOperationDockCompactVisibleUntilMs:\s*0/);
   assert.match(appJs, /liveOperationDockCompactHtml:\s*""/);
   assert.match(appJs, /liveOperationDockCompactThreadId:\s*""/);
   assert.match(appJs, /liveOperationDockCompactTimer:\s*null/);
+  assert.match(appJs, /liveOperationDockRecallHtml:\s*""/);
+  assert.match(appJs, /liveOperationDockRecallThreadId:\s*""/);
+  assert.match(appJs, /liveOperationDockRecallAtMs:\s*0/);
   assert.match(appJs, /function setLiveOperationDockMode\(/);
   assert.match(appJs, /function shouldPreservePinnedLiveOperationDock\(/);
   assert.match(appJs, /function preservePinnedLiveOperationDock\(/);
   assert.match(appJs, /function rememberCompactLiveOperationBubbleHtml\(/);
+  assert.match(appJs, /function renderLiveOperationRecallDockHtml\(/);
   assert.match(appJs, /function clearCompactLiveOperationBubbleState\(/);
   assert.match(appJs, /function renderLiveOperationDockOnly\(/);
   assert.match(appJs, /function scheduleLiveOperationDockCompactMinimumRefresh\(/);
   assert.match(appJs, /function shouldPreserveCompactLiveOperationBubble\(/);
   assert.match(functionBody("updateLiveOperationDockHtml"), /shouldPreservePinnedLiveOperationDock\(dock, next\)/);
-  assert.match(functionBody("rememberCompactLiveOperationBubbleHtml"), /Date\.now\(\) \+ LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS/);
-  assert.match(functionBody("rememberCompactLiveOperationBubbleHtml"), /state\.liveOperationDockCompactHtml = String\(html \|\| ""\)/);
-  assert.match(functionBody("rememberCompactLiveOperationBubbleHtml"), /state\.liveOperationDockCompactThreadId = String\(state\.currentThreadId \|\| ""\)/);
+  assert.match(functionBody("rememberCompactLiveOperationBubbleHtml"), /liveOperationDockPolicy\.rememberCompactBubble/);
+  assert.match(functionBody("rememberCompactLiveOperationBubbleHtml"), /minVisibleMs:\s*LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS/);
+  assert.match(functionBody("rememberCompactLiveOperationBubbleHtml"), /state\.liveOperationDockCompactHtml = next\.html/);
+  assert.match(functionBody("rememberCompactLiveOperationBubbleHtml"), /state\.liveOperationDockCompactThreadId = next\.threadId/);
+  assert.match(functionBody("rememberCompactLiveOperationBubbleHtml"), /state\.liveOperationDockRecallHtml = next\.recallHtml/);
+  assert.match(functionBody("rememberCompactLiveOperationBubbleHtml"), /state\.liveOperationDockRecallThreadId = next\.recallThreadId/);
+  assert.match(functionBody("renderLiveOperationRecallDockHtml"), /liveOperationDockPolicy\.shouldShowRecall/);
+  assert.match(functionBody("renderLiveOperationRecallDockHtml"), /querySelectorAll\("\.mobile-operation-bubble, \.mobile-operation-recall"\)/);
+  assert.match(functionBody("renderLiveOperationRecallDockHtml"), /button\.className = "mobile-operation-recall"/);
+  assert.match(functionBody("renderLiveOperationRecallDockHtml"), /button\.dataset\.liveOperationDockToggle = ""/);
   assert.match(functionBody("updateLiveOperationDockHtml"), /shouldPreserveCompactLiveOperationBubble\(dock, next\)/);
   assert.match(functionBody("updateLiveOperationDockHtml"), /rememberCompactLiveOperationBubbleHtml\(next\)/);
+  assert.match(functionBody("updateLiveOperationDockHtml"), /const recall = !next \? renderLiveOperationRecallDockHtml\(\) : ""/);
+  assert.match(functionBody("updateLiveOperationDockHtml"), /dock\.dataset\.recallVisible = "true"/);
   assert.match(functionBody("updateLiveOperationDockHtml"), /!next\.includes\("mobile-operation-bubble"\)[\s\S]*state\.liveOperationDockPinned = false/);
   assert.match(functionBody("updateLiveOperationDockHtml"), /state\.liveOperationDockPinnedThreadId = ""/);
   assert.match(functionBody("updateLiveOperationDockHtml"), /state\.liveOperationDockMode = "compact"/);
@@ -111,18 +127,18 @@ test("live operation cards dock on wide screens and become a mobile bubble", () 
   assert.match(functionBody("clearCompactLiveOperationBubbleState"), /state\.liveOperationDockCompactThreadId = ""/);
   assert.match(functionBody("scheduleLiveOperationDockCompactMinimumRefresh"), /setTimeout\(\(\) => \{[\s\S]*renderLiveOperationDockOnly\(\);[\s\S]*\}, delay \+ 16\)/);
   assert.match(functionBody("shouldPreserveCompactLiveOperationBubble"), /querySelector\("\.mobile-operation-bubble"\)/);
-  assert.match(functionBody("shouldPreserveCompactLiveOperationBubble"), /remainingMs <= 0/);
-  assert.match(functionBody("shouldPreserveCompactLiveOperationBubble"), /savedThreadId && savedThreadId === String\(state\.currentThreadId \|\| ""\)/);
-  assert.match(functionBody("shouldPreserveCompactLiveOperationBubble"), /savedHtml\.includes\("mobile-operation-bubble"\)/);
-  assert.match(functionBody("shouldPreserveCompactLiveOperationBubble"), /patchHtml\(dock, savedHtml\)/);
-  assert.match(functionBody("shouldPreserveCompactLiveOperationBubble"), /scheduleLiveOperationDockCompactMinimumRefresh\(remainingMs\)/);
+  assert.match(functionBody("shouldPreserveCompactLiveOperationBubble"), /liveOperationDockPolicy\.compactBubblePreservation/);
+  assert.match(functionBody("shouldPreserveCompactLiveOperationBubble"), /if \(!preservation\.preserve\) return false;/);
+  assert.match(functionBody("shouldPreserveCompactLiveOperationBubble"), /patchHtml\(dock, preservation\.savedHtml\)/);
+  assert.match(functionBody("shouldPreserveCompactLiveOperationBubble"), /scheduleLiveOperationDockCompactMinimumRefresh\(preservation\.remainingMs\)/);
   assert.doesNotMatch(functionBody("scheduleLiveOperationDockCompactMinimumRefresh"), /renderCurrentThread\(\)/);
   assert.match(functionBody("setLiveOperationDockMode"), /state\.liveOperationDockPinned = next === "expanded"/);
   assert.match(functionBody("setLiveOperationDockMode"), /state\.liveOperationDockPinnedThreadId = state\.liveOperationDockPinned \? String\(state\.currentThreadId \|\| ""\) : ""/);
-  assert.match(functionBody("shouldPreservePinnedLiveOperationDock"), /!String\(html \|\| ""\)\.includes\("mobile-operation-bubble"\)/);
+  assert.match(functionBody("shouldPreservePinnedLiveOperationDock"), /liveOperationDockPolicy\.shouldPreservePinned/);
   assert.match(functionBody("shouldPreservePinnedLiveOperationDock"), /dock\.querySelector\("\.mobile-operation-sheet"\)/);
   assert.match(functionBody("setLiveOperationDockMode"), /querySelectorAll\("\[data-live-operation-dock-toggle\]"\)/);
   assert.match(functionBody("setLiveOperationDockMode"), /!button\.classList\.contains\("mobile-operation-bubble"\)/);
+  assert.match(functionBody("setLiveOperationDockMode"), /!button\.classList\.contains\("mobile-operation-recall"\)/);
   assert.match(functionBody("updateLiveOperationDockHtml"), /dock\.dataset\.mobileVisible = next\.includes\("mobile-operation-bubble"\) \? "true" : "false"/);
   assert.match(appJs, /function beginLiveOperationDockGesture\(/);
   assert.match(appJs, /function finishLiveOperationDockGesture\(/);
@@ -177,6 +193,8 @@ test("live operation cards dock on wide screens and become a mobile bubble", () 
   assert.match(stylesCss, /\.operation-title\s*{[\s\S]*font-size:\s*calc\(var\(--content-small-font-size\) \* 0\.92\);/);
   assert.match(stylesCss, /\.operation-status\s*{[\s\S]*font-size:\s*calc\(var\(--content-small-font-size\) \* 0\.92\);/);
   assert.match(stylesCss, /\.operation-duration\s*{[\s\S]*font-variant-numeric:\s*tabular-nums;/);
+  assert.match(stylesCss, /\.mobile-operation-bubble-duration\s*{[\s\S]*flex:\s*0 0 8ch;[\s\S]*min-width:\s*8ch;[\s\S]*text-align:\s*right;/);
+  assert.match(stylesCss, /\.thread-tile-operation-dock \.mobile-operation-bubble-duration\s*{[\s\S]*flex:\s*0 0 8ch;[\s\S]*min-width:\s*8ch;[\s\S]*text-align:\s*right;/);
   assert.match(stylesCss, /\.item\.live-operation\.entry-animate\s*{[\s\S]*animation:\s*none;/);
   assert.match(stylesCss, /\.operation-detail-line\s*{[\s\S]*overflow:\s*hidden;/);
   assert.match(stylesCss, /\.live-operation-dock \.operation-detail-line\s*{[\s\S]*display:\s*none;/);
@@ -185,12 +203,19 @@ test("live operation cards dock on wide screens and become a mobile bubble", () 
   assert.match(stylesCss, /\.operation-detail\s*{[\s\S]*max-height:\s*100%;/);
   assert.match(stylesCss, /\.operation-detail\s*{[\s\S]*white-space:\s*normal;/);
   assert.match(stylesCss, /\.live-operation-dock \.operation-detail\s*{[\s\S]*-webkit-line-clamp:\s*2;/);
+  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.main\s*{[\s\S]*--mobile-floating-control-size:\s*36px;[\s\S]*--mobile-floating-control-right:\s*max\(14px, env\(safe-area-inset-right, 0px\)\);[\s\S]*--mobile-floating-control-gap:\s*6px;/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.live-operation-dock\s*{[\s\S]*position:\s*fixed;/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.live-operation-dock\[data-mobile-visible="false"\]\s*{[\s\S]*display:\s*none;/);
+  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.live-operation-dock\[data-recall-visible="true"\]:not\(\[data-mode="expanded"\]\)\s*{[\s\S]*right:\s*var\(--mobile-floating-control-right\);[\s\S]*bottom:\s*calc\(var\(--composer-height, 92px\) \+ 8px\);/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.live-operation-dock-desktop\s*{[\s\S]*display:\s*none;/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.mobile-operation-bubble\s*{[\s\S]*display:\s*inline-flex;/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.mobile-operation-bubble-summary\s*{[\s\S]*max-width:\s*34vw;/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.mobile-operation-bubble-duration\s*{[\s\S]*color:\s*var\(--accent-strong\);/);
+  assert.match(stylesCss, /\.mobile-operation-recall\s*{[\s\S]*display:\s*none;/);
+  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.mobile-operation-recall\s*{[\s\S]*display:\s*grid;[\s\S]*width:\s*var\(--mobile-floating-control-size\);[\s\S]*height:\s*var\(--mobile-floating-control-size\);/);
+  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.mobile-operation-recall-dot\s*{[\s\S]*width:\s*7px;[\s\S]*height:\s*7px;/);
+  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.scroll-bottom-button\s*{[\s\S]*right:\s*var\(--mobile-floating-control-right\);[\s\S]*bottom:\s*calc\(var\(--composer-height, 92px\) \+ 8px \+ var\(--mobile-floating-control-size\) \+ var\(--mobile-floating-control-gap\)\);[\s\S]*width:\s*var\(--mobile-floating-control-size\);[\s\S]*height:\s*var\(--mobile-floating-control-size\);/);
+  assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.scroll-turn-reply-button\s*{[\s\S]*right:\s*calc\(var\(--mobile-floating-control-right\) \+ var\(--mobile-floating-control-size\) \+ 8px\);/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.mobile-operation-sheet\s*{[\s\S]*background:\s*var\(--panel\);[\s\S]*border:\s*1px solid var\(--line\);/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.mobile-operation-sheet\s*{[\s\S]*isolation:\s*isolate;/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.live-operation-dock\[data-mode="expanded"\] \.mobile-operation-sheet\s*{[\s\S]*display:\s*block;/);
@@ -227,9 +252,16 @@ function isLatestTurn(turn) {
 function isLiveTurn(turn) {
   return Boolean(turn && !isTurnComplete(turn) && isRunningStatus(turn.status));
 }
+function isIncompleteInterruptedTurn() { return false; }
+function turnHasActiveLiveItems(turn) {
+  const items = Array.isArray(turn && turn.items) ? turn.items : [];
+  return items.some(isActiveOperationalItem);
+}
 function turnStartedAtMs() { return 0; }
 ${functionSource("isActiveOperationalItem")}
 ${functionSource("liveTurnStatusDockItem")}
+${functionSource("latestTurnForThread")}
+${functionSource("isLiveTurnForThread")}
 ${functionSource("currentLiveOperationEntry")}
 return (thread) => {
   state.currentThread = thread;

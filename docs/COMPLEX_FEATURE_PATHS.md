@@ -126,15 +126,110 @@ Implementation path:
     `test/thread-detail-projection-v4-service.test.js`, and a focused UI test
     such as `test/thread-detail-projection-v4-ui.test.js` or equivalent
     assertions in `test/conversation-render.test.js`.
-12. Existing v3 behavior still uses
+12. Large-session performance work must preserve the authoritative first-paint
+    contract. Use `mobileDiagnostics.threadDetailTimings` and client
+    `performancePhase` events to distinguish warm projection cache, turns-list
+    first paint, full `thread/read`, fallback list cache, and DOM render before
+    changing caching/projection behavior. Do not introduce deferred incomplete
+    detail enrichment as a UI fallback for server cold-path slowness.
+13. Explicit empty final assistant-message completions belong in
+    `adapters/thread-completion-diagnostic-service.js`. They should attach a
+    bounded `turnDiagnostic` / `runtime_completed_without_response` item and
+    must not synthesize an `agentMessage` or normal completion receipt.
+14. Mobile operation dock state belongs in `public/live-operation-dock-state.js`.
+    Keep 500ms compact-bubble dwell, expanded pinned sheet preservation, and
+    same-thread recall-dot visibility covered by
+    `test/live-operation-dock-state.test.js`; `public/app.js` should only do DOM
+    patching and event binding.
+15. Browser thread-detail item merge/state rules belong in
+    `public/thread-detail-state.js`. Keep visible-field preservation,
+    visible-text render identity, completed-receipt text retention,
+    context-compaction notice cleanup, operation metadata retention,
+    authoritative completed-receipt detection, and local-only item retention
+    covered by `test/thread-detail-state.test.js`; `public/app.js` should only
+    create the policy with local classifiers and delegate merge calls.
+16. Wide-screen multi-thread reading layout belongs in
+    `public/thread-tile-layout.js`. Keep viewport/sidebar/orientation to
+    columns/rows/maxPanes decisions covered by `test/thread-tile-layout.test.js`,
+    including iPad portrait single-thread mode and iPad landscape two/three-pane
+    rules. Do not bind tile availability to the sidebar split media query:
+    Home AI embedded iPad landscape can have an overlay sidebar or a visual
+    viewport height below the split threshold while still having enough reading
+    width for two or three panes. In the browser caller, subtract sidebar width
+    only when `splitPaneSidebarVisible()` proves the sidebar actually occupies
+    layout space; Home AI embed fixed/offscreen sidebars are overlays even when
+    tablet split media matches. `public/app.js` may own DOM assembly and event
+    binding, but tile panes must preserve explicit pane ownership: active pane,
+    detail cache, local optimistic message echo, operation bubble state, and
+    bounded background refresh must be keyed by thread id. Tile panes should
+    feel like shrunken normal thread pages: initial render lands at the bottom,
+    each pane has a direct bottom button, manual upward scroll is preserved
+    across refresh, visible non-current panes refresh through bounded
+    recent-detail reads plus notification-triggered updates, and command/tool
+    status appears inside that pane through the same compact mobile operation
+    bubble/sheet vocabulary. Pane-level changes should patch only the affected
+    pane where possible: selected-pane border, title switch menu, background
+    recent-detail refresh, and operation bubble updates must not require a full
+    tile-board repaint unless the pane id set or column layout changes. Each
+    pane must track whether the user has intentionally scrolled away from the
+    bottom. If not, new content and background refreshes should follow the
+    bottom like the single-thread mobile page; if yes, preserve distance from
+    bottom until the user returns. Operation bubble duration text must reserve
+    enough fixed tabular width for `HH:MM:SS`; long command text may shrink only
+    the summary region, not the elapsed-time seconds. Pane header run state
+    should reuse the same
+    turn-timer vocabulary as the single-thread page (`本轮`, elapsed time, and
+    thinking/output/running/settled detail) instead of inventing a separate
+    status string. The current v418 middle state keeps one shared
+    bottom Composer and one shared Composer runtime row, but their draft key,
+    send target, Stop/steer state, local echo, failure receipt, task-card
+    command source, ChatGPT Pro source thread, Fast tag, model, reasoning
+    effort, and permission controls must follow the selected active pane
+    without reordering the tile board. Quota remains a global display in that
+    reused toolbar; do not create pane-local quota state. Pane thread switching
+    is slot-local: selecting a thread from a pane title replaces that pane's
+    thread id and must not navigate the whole page into single-thread mode;
+    title/menu pointer handling must not trigger a pane-select re-render before
+    the menu opens, and the menu-open state must be part of the tile render
+    signature or a pane-local patch. Do not reintroduce
+    a global iPad command dock,
+    global tile title strip, per-turn Active/Completed footer, or always-visible
+    pane bottom button in tile mode. On touch wide screens, command state is a
+    floating operation bubble/sheet and must not reserve a bottom layout row.
+    Composer/keyboard focus must not be treated as a tile layout change:
+    while a keyboard-editable element is focused in tile mode, layout decisions
+    should reuse the pre-keyboard viewport and Composer-height baseline, and
+    visualViewport resize events should not call full `renderCurrentThread()`
+    just to settle keyboard animation. In Home AI embedded mode, tile keyboard
+    focus should not translate the entire app via `--app-top`; only the
+    Composer/keyboard-safe surface should adapt.
+    Treat
+    this automatic tile policy as an interim surface. The long-term product
+    direction is a user-managed
+    split-screen reader: users can add/close panes, drag pane widths, decide
+    how many threads to keep visible, and type into pane-local composers. That
+    future split manager must keep pane identity, width persistence,
+    per-pane draft/input state, detail-read concurrency caps, active pane,
+    approvals, interrupt ownership, command/operation bubble state, command
+    detail panels, and current-thread action ownership explicit instead of
+    extending the automatic viewport heuristic. Product rule: every split pane
+    is a self-contained mobile single-thread window scaled down; global
+    composer or global command dock reuse is not sufficient for the final
+    split-screen model.
+17. Existing v3 behavior still uses
+    `test/thread-completion-diagnostic-service.test.js`,
     `test/thread-item-timestamp-enrichment.test.js`,
     `test/conversation-render.test.js`, `test/collab-agent-render.test.js`,
     `test/thread-turn-compaction-policy-service.test.js`,
     `test/thread-detail-summary-service.test.js`,
+    `test/thread-detail-performance-service.test.js`,
     `test/thread-detail-projection-input-service.test.js`,
     `test/thread-detail-projection-result-service.test.js`,
     `test/message-timestamp.test.js`, `test/turn-scroll-controls.test.js`,
-    `test/turn-usage-summary-service.test.js`, and
+    `test/turn-usage-summary-service.test.js`,
+    `test/thread-performance-metrics.test.js`,
+    `test/live-operation-dock-state.test.js`,
+    `test/thread-detail-state.test.js`, and
     `test/mobile-viewport.test.js`.
 
 ## Rollout Continuation

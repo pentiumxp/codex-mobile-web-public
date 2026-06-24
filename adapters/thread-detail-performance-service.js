@@ -1,0 +1,83 @@
+"use strict";
+
+function safeDurationMs(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) return 0;
+  return Math.round(number);
+}
+
+function safeCount(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) return 0;
+  return Math.round(number);
+}
+
+function nonEmptyText(value) {
+  return String(value || "").trim();
+}
+
+function classifyThreadDetailPhase(readMode, options = {}) {
+  const mode = nonEmptyText(readMode).toLowerCase();
+  if (options.cached === true) return "warm-client-current";
+  if (!mode) return "unknown";
+  if (/projection-v?\d*-cache|projection-cache/.test(mode)) return "warm-projection-cache";
+  if (/projection-v?\d*-dynamic|projection-dynamic/.test(mode)) return "warm-projection-dynamic";
+  if (/turns-list-initial/.test(mode)) return "cold-turns-list-initial";
+  if (/turns-list/.test(mode)) return "fallback-turns-list";
+  if (/thread-read-raw/.test(mode)) return "cold-thread-read-raw";
+  if (/thread-read/.test(mode)) return "cold-thread-read";
+  if (/summary-timeout|unmaterialized|fallback/.test(mode)) return "fallback-summary";
+  return "unknown";
+}
+
+function threadCounts(thread) {
+  const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+  return {
+    returnedTurns: turns.length,
+    omittedTurns: safeCount(thread && thread.mobileOmittedTurnCount),
+  };
+}
+
+function buildThreadDetailDiagnostics(input = {}) {
+  const thread = input.thread || null;
+  const timings = input.timings && typeof input.timings === "object" ? input.timings : {};
+  const readMode = nonEmptyText(input.readMode || (thread && thread.mobileReadMode));
+  const counts = threadCounts(thread);
+  const output = {
+    totalMs: safeDurationMs(input.totalMs),
+    requestMode: nonEmptyText(input.requestMode),
+    readMode,
+    phase: classifyThreadDetailPhase(readMode, input),
+    summarySource: nonEmptyText(input.summarySource),
+    returnedTurns: safeCount(input.returnedTurns || counts.returnedTurns),
+    omittedTurns: safeCount(input.omittedTurns || counts.omittedTurns),
+    rolloutSizeBytes: safeCount(input.rolloutSizeBytes),
+  };
+  for (const key of [
+    "summaryMs",
+    "projectionMs",
+    "turnsListInitialMs",
+    "threadReadMs",
+    "rawThreadReadMs",
+    "turnsListFallbackMs",
+    "prepareResponseMs",
+  ]) {
+    output[key] = safeDurationMs(timings[key]);
+  }
+  return output;
+}
+
+function attachThreadDetailDiagnostics(result, input = {}) {
+  if (!result || typeof result !== "object" || !result.thread || typeof result.thread !== "object") return result;
+  const diagnostics = buildThreadDetailDiagnostics(Object.assign({}, input, { thread: result.thread }));
+  result.thread.mobileDiagnostics = Object.assign({}, result.thread.mobileDiagnostics || {}, {
+    threadDetailTimings: diagnostics,
+  });
+  return result;
+}
+
+module.exports = {
+  attachThreadDetailDiagnostics,
+  buildThreadDetailDiagnostics,
+  classifyThreadDetailPhase,
+};

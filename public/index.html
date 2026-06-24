@@ -375,6 +375,14 @@
           </div>
         </div>
         <div class="settings-section">
+          <div class="theme-settings-title">显示</div>
+          <div class="settings-options thread-display-options" role="group" aria-label="线程显示">
+            <button type="button" data-thread-display-choice="single">单线程</button>
+            <button type="button" data-thread-display-choice="tile">平铺</button>
+          </div>
+          <div id="threadDisplaySettingsStatus" class="settings-status" aria-live="polite"></div>
+        </div>
+        <div class="settings-section">
           <div class="theme-settings-title">Codex Profile</div>
           <div id="codexProfileSettings" class="codex-profile-settings" aria-live="polite"></div>
         </div>
@@ -737,6 +745,10 @@
   <script src="/plugin-embed.js"></script>
   <script src="/plugin-voice-input.js"></script>
   <script src="/thread-status-hints.js"></script>
+  <script src="/thread-performance-metrics.js"></script>
+  <script src="/live-operation-dock-state.js"></script>
+  <script src="/thread-detail-state.js"></script>
+  <script src="/thread-tile-layout.js"></script>
   <script src="/build-refresh-policy.js"></script>
   <script src="/app.js"></script>
   <script>

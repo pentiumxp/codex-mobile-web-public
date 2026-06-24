@@ -202,7 +202,7 @@ test("server enriches thread list and detail responses with thread goals", () =>
 });
 
 test("mobile client renders and updates thread goals from app-server notifications", () => {
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v402"/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v419"/);
   assert.match(appJs, /function normalizeThreadGoal\(/);
   assert.match(appJs, /function submittedThreadGoal\(/);
   assert.match(appJs, /function renderThreadGoal\(/);
@@ -244,7 +244,7 @@ test("mobile client opens goal dialog from /g and sets goal through app-server r
   assert.match(functionBody(appJs, "updateComposerControls"), /isThreadGoalCommandText\(composerText\(\)\)/);
   assert.match(functionBody(appJs, "updateComposerControls"), /setComposerActionButtonLabel\(sendButton, "Goal"\)/);
   assert.match(functionBody(appJs, "sendMessage"), /const threadGoalCommand = isThreadGoalCommandText\(text\)/);
-  assert.match(functionBody(appJs, "sendMessage"), /openThreadGoalDialog\(state\.currentThreadId\)/);
+  assert.match(functionBody(appJs, "sendMessage"), /openThreadGoalDialog\(targetThreadId\)/);
   assert.match(functionBody(appJs, "sendMessage"), /setComposerText\(""\)/);
   assert.match(functionBody(appJs, "submitThreadGoalMessage"), /api\(`\/api\/threads\/\$\{encodeURIComponent\(threadId\)\}\/goal`/);
   assert.match(functionBody(appJs, "submitThreadGoalMessage"), /JSON\.stringify\(\{/);

@@ -383,7 +383,7 @@ test("existing-thread message send refreshes the sidebar thread list", () => {
   assert.ok(start > 0 && end > start, "missing sendMessage body");
   const body = appJs.slice(start, end);
 
-  assert.match(body, /scheduleCurrentThreadRefresh\(600\);[\s\S]*scheduleLivePollIfNeeded\(1200\);[\s\S]*loadThreads\(\{ silent: true \}\)\.catch\(showError\);/);
+  assert.match(body, /scheduleComposerTargetRefresh\(targetThreadId, 600, "message-submit"\);[\s\S]*scheduleLivePollIfNeeded\(1200\);[\s\S]*loadThreads\(\{ silent: true \}\)\.catch\(showError\);/);
 });
 
 test("send auth failures return stable codes and render message receipts", () => {
@@ -394,7 +394,7 @@ test("send auth failures return stable codes and render message receipts", () =>
   const sendStart = appJs.indexOf("async function sendMessage(");
   const sendEnd = appJs.indexOf("async function sendNewThreadMessage(", sendStart);
   const sendBody = appJs.slice(sendStart, sendEnd);
-  assert.match(sendBody, /markSubmittedUserMessageFailed\(state\.currentThreadId,\s*outboundText,\s*submittedAttachments,\s*clientSubmissionId,\s*message\)/);
+  assert.match(sendBody, /markSubmittedUserMessageFailed\(targetThreadId,\s*outboundText,\s*submittedAttachments,\s*clientSubmissionId,\s*message\)/);
   assert.match(sendBody, /发送失败，详情见消息回执/);
   assert.match(appJs, /function renderUserMessageBody\(/);
   assert.match(appJs, /send-error-receipt/);

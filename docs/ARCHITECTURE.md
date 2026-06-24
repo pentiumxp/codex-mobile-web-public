@@ -400,13 +400,17 @@ comparison, memory/disk storage, and miss/reseed behavior; and
 assembly before the route sends the detail response. That result assembly merges
 cached projection output with display summary data, session-index title
 hydration, state-db runtime fields, live-status normalization, public runtime
-settings, and projection read-mode metadata. Dynamic
+settings, and projection read-mode metadata.
+`adapters/thread-detail-read-orchestration-service.js` owns the detail read
+phase order and timing aggregation for `/api/threads/:id`; `server.js` supplies
+the concrete app-server read, compaction, projection seed, fallback, and JSON
+transport adapters. Dynamic
 in-memory projection entries intentionally relax the full signature check while
 a thread is actively changing, but only for a bounded window: if the backing
 rollout path/size/mtime, retained turn window, or policy version changes after
 the seed and the thread is now resting, or the dynamic entry ages past the soft
 threshold without a new notification, the projection read must miss and reseed
-from detail. If projection misses, the route still prefers
+from detail. If projection misses, the read coordinator still prefers
 full app-server `thread/read includeTurns:true` regardless of rollout file size
 because bounded `thread/turns/list` does not reliably preserve the
 command/tool/file/search operation items expected in the Mobile detail view.
@@ -582,6 +586,27 @@ completion of the injected target turn and creates one
 reverse-direction auto-return card with the final receipt. That return card
 reuses the same workflow id and auto-injects back into the source thread through
 the active grant.
+### Thread Detail Performance Diagnostics
+
+Thread detail reads expose bounded timing metadata under
+`thread.mobileDiagnostics.threadDetailTimings`. This diagnostic payload is for
+root-cause performance analysis only; it must not copy user messages, prompts,
+tool output, upload paths, provider payloads, or rollout bodies. The stable
+fields include `requestMode`, `readMode`, `phase`, `summarySource`, `totalMs`,
+`summaryMs`, `projectionMs`, `turnsListInitialMs`, `threadReadMs`,
+`rawThreadReadMs`, `turnsListFallbackMs`, `prepareResponseMs`,
+`returnedTurns`, `omittedTurns`, and `rolloutSizeBytes`.
+
+The browser forwards those fields through `/api/client-events` as
+`thread_detail_first_paint.serverTimings`, `thread_refresh_ms.serverTimings`,
+and `thread_detail_full_ready.serverTimings`, plus a compact
+`performancePhase`. Thread-list events similarly report `serverTimings` and a
+phase for fallback cache hits versus cold fallback rebuilds. This is an
+evidence path, not a content strategy: large-session first paint must still
+return the current authoritative detail/projection state rather than showing an
+intentionally incomplete page and relying on a second refresh to hide the
+missing data.
+
 ### Conversation Navigation
 
 The browser owns conversation scroll controls. The return-to-bottom button appears only when the current thread is loaded, scrollable, and away from the newest content.
@@ -623,12 +648,34 @@ Browser-selected model, reasoning effort, permission mode, and the Fast tag are
 persisted in the browser draft store by thread/workspace key even when the
 composer text is empty. Reopening the app or switching away and back should
 restore that runtime selection for the current target only; Fast is not a global
-browser flag. Once an existing-thread non-steering send succeeds, Mobile Web
-clears only text and attachments, then writes the runtime-only draft back under
-the thread key. New-thread send captures selected runtime values before creation
-and writes them back under the newly created thread key after the thread id is
-known. This avoids an immediate UI fallback to stale thread metadata while the
-new turn is starting and before app-server state DB metadata catches up.
+browser flag. In wide-screen tile mode, the existing Composer runtime row is
+not duplicated per pane; it follows the selected active pane exactly like the
+shared Composer target. Switching the active pane saves the previous pane's
+runtime draft, restores the new pane's thread-keyed draft, and clears stale
+pending runtime overrides when the new pane has no draft so controls fall back
+to that thread's own metadata. Quota remains a global display in the reused
+toolbar, not pane-local state. Once an existing-thread non-steering send
+succeeds, Mobile Web clears only text and attachments, then writes the
+runtime-only draft back under the thread key. New-thread send captures selected
+runtime values before creation and writes them back under the newly created
+thread key. In tile mode, Composer focus and keyboard visualViewport changes
+are not tile layout changes: the pane grid uses the pre-keyboard viewport and
+Composer-height baseline while a keyboard-editable input is focused, and
+visualViewport resize does not trigger a full thread render for the tile board.
+Home AI embedded tile mode also suppresses whole-app `--app-top` translation
+while the keyboard is open so the shared Composer can adapt without moving the
+entire pane grid.
+thread key after the thread id is known. This avoids an immediate UI fallback
+to stale thread metadata while the new turn is starting and before app-server
+state DB metadata catches up.
+
+Tile-mode pane refreshes are local by default. The browser keeps per-pane
+detail cache, operation bubble state, and scroll-bottom hold state keyed by
+thread id. Pane selection, title switch menus, background recent-detail refresh,
+and operation bubble changes should patch the affected pane only when pane ids
+and column layout are unchanged. A pane follows new content to the bottom unless
+the user has explicitly scrolled away from the bottom; in that case Mobile Web
+preserves distance from bottom until the user scrolls back down.
 
 The latest durable live turn must not be auto-interrupted only because it is quiet or ended with a completed operation/context marker. User guidance during a real latest live turn should steer that turn.
 
@@ -698,7 +745,9 @@ handler focuses an existing app shell and posts the target id, or opens the
 deep-link URL directly for cold-start/PWA launch so startup thread selection can
 load the matching thread without relying on a late `postMessage`.
 
-If the completion payload explicitly says the turn has no final assistant message, Mobile Web must not send a normal "turn ended" Push notification. That shape means the runtime ended the turn without a final reply, so treating it as a normal completed turn is misleading.
+If the completion payload explicitly says the turn has no final assistant message, Mobile Web must not send a normal "turn ended" Push notification. That shape means the runtime ended the turn without a final reply, so treating it as a normal completed turn is misleading. Thread detail projection should expose this as a bounded `turnDiagnostic` item with code `runtime_completed_without_response`; it must not fabricate an `agentMessage`, and receipt-only compaction must retain the diagnostic so the turn does not appear to silently vanish.
+
+Client-side incident reporting should reuse the authenticated Mobile Web server rather than opening a separate unauthenticated listener. Frontend diagnostics may POST bounded fields such as build id, thread id, turn id, read mode, status, render/scroll state, event source, item counts, and timing buckets. They must not include access keys, cookies, raw prompts, message bodies, image contents, full logs, or provider payloads. Any task-card closure built from these diagnostics should be deduplicated, rate-limited, and reference a diagnostic package id instead of embedding private evidence directly.
 
 When the Hermes plugin notification delegate is configured, turn-completed
 events are sent to Hermes Action Inbox/Web Push instead of Mobile Web's direct

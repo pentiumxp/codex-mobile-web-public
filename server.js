@@ -83,8 +83,11 @@ const { createThreadDetailProjectionResultService } = require("./adapters/thread
 const { createThreadDetailProjectionService } = require("./adapters/thread-detail-projection-service");
 const { createThreadDetailProjectionV4Service } = require("./adapters/thread-detail-projection-v4-service");
 const { createThreadDetailSummaryService } = require("./adapters/thread-detail-summary-service");
+const { attachThreadDetailDiagnostics } = require("./adapters/thread-detail-performance-service");
+const { createThreadDetailReadOrchestrationService } = require("./adapters/thread-detail-read-orchestration-service");
 const { createThreadListFallbackCacheService } = require("./adapters/thread-list-fallback-cache-service");
 const { createThreadTurnCompactionPolicyService } = require("./adapters/thread-turn-compaction-policy-service");
+const { createThreadCompletionDiagnosticService } = require("./adapters/thread-completion-diagnostic-service");
 const { createChatGptProBridgeService } = require("./adapters/chatgpt-pro-bridge-service");
 const { createChatGptProPlannerService } = require("./adapters/chatgpt-pro-planner-service");
 const { createChatGptProMcpService } = require("./adapters/chatgpt-pro-mcp-service");
@@ -1158,7 +1161,12 @@ function appShellBuildId(cacheName = readServiceWorkerCacheName()) {
     "conversation-scroll.js",
     "image-compressor.js",
     "plugin-embed.js",
+    "plugin-voice-input.js",
     "build-refresh-policy.js",
+    "thread-performance-metrics.js",
+    "live-operation-dock-state.js",
+    "thread-detail-state.js",
+    "thread-tile-layout.js",
     "app.js",
     "sw.js",
     "manifest.json",
@@ -3267,7 +3275,7 @@ function isMeaningfulSupersededLiveItem(item) {
   if (isReasoningOnlyItem(item)) return false;
   if (isTurnUsageSummaryItem(item)) return false;
   if (isOperationalItem(item)) return false;
-  return isAssistantReceiptItem(item) || isVisualReceiptItem(item) || isContextCompactionType(item.type);
+  return isAssistantReceiptItem(item) || isVisualReceiptItem(item) || isTurnDiagnosticItem(item) || isContextCompactionType(item.type);
 }
 
 function pruneSupersededLiveShellTurns(thread) {
@@ -4683,6 +4691,34 @@ function readRolloutFinalReceiptItems(rolloutPath) {
   return cloneRolloutFinalReceiptPayload(payload);
 }
 
+let threadCompletionDiagnosticService = null;
+
+function getThreadCompletionDiagnosticService() {
+  if (!threadCompletionDiagnosticService) {
+    threadCompletionDiagnosticService = createThreadCompletionDiagnosticService({
+      fs,
+      cacheTtlMs: RUNTIME_CONTEXT_CACHE_TTL_MS,
+      cacheMaxEntries: RUNTIME_CONTEXT_CACHE_MAX,
+      cacheKeyForStat: runtimeContextCacheKey,
+      finalReceiptTextFromParams,
+      insertProjectedItemByTimestamp,
+      isAssistantReceiptItem,
+      isDiagnosticReceiptItem: isTurnDiagnosticItem,
+      readRolloutEnrichmentEntries,
+      rolloutCompletionTimestampMs,
+      rolloutEntryTurnId,
+      rolloutPathForThread,
+      stableTextHash,
+      visibleItemId,
+    });
+  }
+  return threadCompletionDiagnosticService;
+}
+
+function appendRolloutEmptyCompletionDiagnosticsToThread(thread) {
+  return getThreadCompletionDiagnosticService().appendEmptyCompletionDiagnosticsToThread(thread);
+}
+
 function appendRolloutFinalReceiptsToThread(thread) {
   if (!thread || typeof thread !== "object" || !Array.isArray(thread.turns) || !thread.turns.length) return thread;
   const rolloutPath = rolloutPathForThread(thread);
@@ -5082,6 +5118,41 @@ const threadDetailSummaryService = createThreadDetailSummaryService({
   mergeThreadDisplaySummary,
   applyLocalActiveThreadStatusToSummary,
   threadRolloutSizeBytes,
+});
+const threadDetailReadOrchestrationService = createThreadDetailReadOrchestrationService({
+  attachDiagnostics: attachThreadDetailDiagnostics,
+  resolveSummary: (requestCodex, threadId, options) => threadDetailSummaryService.resolveSummary(requestCodex, threadId, options),
+  resolveVisibility: () => visibilityFromGlobalState(readGlobalState()),
+  threadRuntimeSettings,
+  isHiddenThread,
+  rawAllEnabled: () => THREAD_DETAIL_RAW_ALL_ENABLED,
+  readRawThread: readRawThreadDetailForOrchestrator,
+  projectionInput: threadDetailProjectionInput,
+  projectedThreadResult: (input, summary, runtimeSettings) => prepareProjectedThreadReadResult(
+    threadDetailProjectionService.get(input),
+    summary,
+    runtimeSettings,
+  ),
+  rememberThreadSummary: (thread) => threadDisplaySummaryCache.remember(thread),
+  turnsListThreadReadResult: ({ threadId, summary, runtimeSettings, warning, mode, threadLog }) => turnsListThreadReadResult(
+    threadId,
+    summary,
+    runtimeSettings,
+    warning,
+    mode,
+    threadLog,
+  ),
+  readFullThread: readFullThreadDetailForOrchestrator,
+  seedProjection: (input, result) => threadDetailProjectionService.seed(input, result),
+  prepareResponse: prepareThreadDetailResponseResult,
+  fallbackThreadReadResult: fallbackThreadReadResultForOrchestrator,
+  isReadTimeoutError,
+  isUnmaterializedThreadError,
+  threadRolloutSizeBytes,
+  readTimeoutMs: READ_RPC_TIMEOUT_MS,
+  threadDetailRpcTimeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS,
+  maxThreadTurns: MAX_THREAD_TURNS,
+  maxFullThreadTurns: MAX_FULL_THREAD_TURNS,
 });
 
 function threadDetailProjectionInput(threadId, summary) {
@@ -5837,6 +5908,7 @@ const threadTurnCompactionPolicyService = createThreadTurnCompactionPolicyServic
   isAssistantReceiptItem,
   isVisualReceiptItem,
   isTurnUsageSummaryItem,
+  isDiagnosticReceiptItem: isTurnDiagnosticItem,
 });
 
 function trailingOperationIndexes(items, allowLiveOperation, maxOperations = 1) {
@@ -5948,6 +6020,10 @@ function isAssistantReceiptItem(item) {
 
 function isTurnUsageSummaryItem(item) {
   return Boolean(item && typeof item === "object" && item.type === "turnUsageSummary");
+}
+
+function isTurnDiagnosticItem(item) {
+  return Boolean(item && typeof item === "object" && item.type === "turnDiagnostic");
 }
 
 function isVisualReceiptItem(item) {
@@ -6151,6 +6227,7 @@ function compactThread(thread, options = {}) {
     });
     appendRolloutToolOutputImagesToThread(out, toolOutputImagePayload);
     appendRolloutFinalReceiptsToThread(out);
+    appendRolloutEmptyCompletionDiagnosticsToThread(out);
     attachTurnUsageSummaries(out, readRolloutTurnUsageSummaries(rolloutPath, {
       targetTurnIds: out.turns.map((turn) => turn && turn.id).filter(Boolean),
     }), {
@@ -12256,6 +12333,53 @@ async function turnsListThreadReadResult(threadId, summary, runtimeSettings, war
   return prepareThreadDetailResponseResult(result, { threadId, source: mode });
 }
 
+async function readRawThreadDetailForOrchestrator({ threadId, summary, runtimeSettings }) {
+  const result = await codex.request("thread/read", { threadId, includeTurns: true }, {
+    timeoutMs: READ_RPC_TIMEOUT_MS,
+    retry: false,
+    resetOnTimeout: false,
+  });
+  if (result && result.thread) {
+    result.thread = applySessionIndexTitleToThread(result.thread, readSessionIndexEntries().get(threadId));
+    threadDisplaySummaryCache.remember(result.thread);
+    result.thread = mergeThreadRuntimeFromStateDb(result.thread, summary);
+    result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
+    result.thread.mobileReadMode = "thread-read-raw";
+    result.thread.mobileProjectionVersion = "raw";
+    result.thread.mobileProjection = {
+      source: "thread-read",
+      version: "raw",
+      projectionDisabled: true,
+    };
+    result.thread.mobileRawThreadRead = true;
+    appendRolloutFinalReceiptsToThread(result.thread);
+  }
+  return result;
+}
+
+async function readFullThreadDetailForOrchestrator({ threadId, summary, runtimeSettings }) {
+  const result = compactThreadReadResult(await codex.request("thread/read", { threadId, includeTurns: true }, {
+    timeoutMs: READ_RPC_TIMEOUT_MS,
+    retry: false,
+    resetOnTimeout: false,
+  }), { maxTurns: MAX_FULL_THREAD_TURNS });
+  if (result.thread) {
+    result.thread = applySessionIndexTitleToThread(result.thread, readSessionIndexEntries().get(threadId));
+    threadDisplaySummaryCache.remember(result.thread);
+    result.thread = mergeThreadRuntimeFromStateDb(result.thread, summary);
+    result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
+    result.thread.mobileReadMode = "thread-read";
+  }
+  return result;
+}
+
+function fallbackThreadReadResultForOrchestrator({ threadId, summary, runtimeSettings, warning, mode }) {
+  return finalizeThreadDetailProjectionResult(
+    fallbackThreadReadResult(threadId, summary, runtimeSettings, warning, mode),
+    { threadId, source: mode },
+  );
+}
+
 function filterFallbackThreads(threads, filters = {}) {
   const globalState = filters.globalState || readGlobalState();
   const visibility = visibilityFromGlobalState(globalState);
@@ -14164,242 +14288,18 @@ async function handleApi(req, res) {
       threadId,
       elapsedMs: Date.now() - requestStartedAtMs,
     }, details));
-    threadLog("start", {
-      transport: codex.transportKind,
-      ready: codex.ready,
+    const detailResponse = await threadDetailReadOrchestrationService.readThreadDetail({
+      codex,
+      threadId,
+      preferRecentTurns,
+      threadLog,
     });
-    const globalState = readGlobalState();
-    const visibility = visibilityFromGlobalState(globalState);
-    const { summary } = await threadDetailSummaryService.resolveSummary(codex, threadId, { threadLog });
-    const runtimeSettings = threadRuntimeSettings(threadId, summary);
-    if (summary && isHiddenThread(summary, visibility)) {
-      threadLog("hidden", { status: 404 });
-      sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
-      threadLog("complete", { status: 404, mode: "hidden" });
-      return;
-    }
-    if (THREAD_DETAIL_RAW_ALL_ENABLED) {
-      const readStartedAtMs = Date.now();
-      threadLog("thread_read_raw_start", { timeoutMs: READ_RPC_TIMEOUT_MS });
-      try {
-        const result = await codex.request("thread/read", { threadId, includeTurns: true }, {
-          timeoutMs: READ_RPC_TIMEOUT_MS,
-          retry: false,
-          resetOnTimeout: false,
-        });
-        if (result && result.thread) {
-          result.thread = applySessionIndexTitleToThread(result.thread, readSessionIndexEntries().get(threadId));
-          threadDisplaySummaryCache.remember(result.thread);
-          result.thread = mergeThreadRuntimeFromStateDb(result.thread, summary);
-          result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
-          result.thread.mobileReadMode = "thread-read-raw";
-          result.thread.mobileProjectionVersion = "raw";
-          result.thread.mobileProjection = {
-            source: "thread-read",
-            version: "raw",
-            projectionDisabled: true,
-          };
-          result.thread.mobileRawThreadRead = true;
-          appendRolloutFinalReceiptsToThread(result.thread);
-        }
-        if (isHiddenThread(result && result.thread, visibility)) {
-          threadLog("thread_read_raw_hidden", {
-            durationMs: Date.now() - readStartedAtMs,
-            status: 404,
-          });
-          sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
-          return;
-        }
-        threadLog("thread_read_raw_ok", {
-          durationMs: Date.now() - readStartedAtMs,
-          returnedTurns: result && result.thread && Array.isArray(result.thread.turns) ? result.thread.turns.length : null,
-        });
-        sendJson(res, 200, await prepareThreadDetailResponseResult(result, { threadId, source: "thread-read-raw" }));
-        threadLog("complete", { status: 200, mode: "thread-read-raw" });
-      } catch (err) {
-        threadLog("thread_read_raw_error", {
-          durationMs: Date.now() - readStartedAtMs,
-          timeout: isReadTimeoutError(err),
-          error: err.message || String(err),
-        });
-        sendJson(res, err.statusCode || 500, { error: err.message || String(err) });
-      }
-      return;
-    }
-    const projectionInput = threadDetailProjectionInput(threadId, summary);
-    const projectionStartedAtMs = Date.now();
-    const projected = projectionInput ? prepareProjectedThreadReadResult(
-      threadDetailProjectionService.get(projectionInput),
-      summary,
-      runtimeSettings,
-    ) : null;
-    if (projected && projected.thread) {
-      if (isHiddenThread(projected.thread, visibility)) {
-        threadLog("projection_hidden", {
-          durationMs: Date.now() - projectionStartedAtMs,
-          status: 404,
-        });
-        sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
-        return;
-      }
-      threadDisplaySummaryCache.remember(projected.thread);
-      threadLog("projection_hit", {
-        durationMs: Date.now() - projectionStartedAtMs,
-        mode: projected.thread.mobileReadMode,
-        returnedTurns: Array.isArray(projected.thread.turns) ? projected.thread.turns.length : null,
-        omittedTurns: projected.thread.mobileOmittedTurnCount || 0,
+    sendJson(res, detailResponse.status || 200, detailResponse.body || {});
+    if (detailResponse.complete !== false) {
+      threadLog("complete", {
+        status: detailResponse.status || 200,
+        mode: detailResponse.mode || "unknown",
       });
-      sendJson(res, 200, await prepareThreadDetailResponseResult(projected, {
-        threadId,
-        source: projected.thread.mobileReadMode || "projection",
-      }));
-      threadLog("complete", { status: 200, mode: projected.thread.mobileReadMode });
-      return;
-    }
-    if (preferRecentTurns) {
-      const turnsStartedAtMs = Date.now();
-      try {
-        const result = await turnsListThreadReadResult(
-          threadId,
-          summary,
-          runtimeSettings,
-          "",
-          "turns-list-initial",
-          threadLog,
-        );
-        if (isHiddenThread(result.thread, visibility)) {
-          threadLog("turns_list_initial_hidden", {
-            durationMs: Date.now() - turnsStartedAtMs,
-            status: 404,
-          });
-          sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
-          return;
-        }
-        threadLog("complete", { status: 200, mode: "turns-list-initial" });
-        sendJson(res, 200, result);
-        return;
-      } catch (turnsErr) {
-        threadLog("turns_list_initial_error", {
-          durationMs: Date.now() - turnsStartedAtMs,
-          timeout: isReadTimeoutError(turnsErr),
-          error: turnsErr.message || String(turnsErr),
-        });
-      }
-    }
-    const readStartedAtMs = Date.now();
-    threadLog("thread_read_start", {
-      timeoutMs: READ_RPC_TIMEOUT_MS,
-      maxTurns: MAX_FULL_THREAD_TURNS,
-    });
-    try {
-      let result = compactThreadReadResult(await codex.request("thread/read", { threadId, includeTurns: true }, {
-        timeoutMs: READ_RPC_TIMEOUT_MS,
-        retry: false,
-        resetOnTimeout: false,
-      }), { maxTurns: MAX_FULL_THREAD_TURNS });
-      if (result.thread) {
-        result.thread = applySessionIndexTitleToThread(result.thread, readSessionIndexEntries().get(threadId));
-        threadDisplaySummaryCache.remember(result.thread);
-        result.thread = mergeThreadRuntimeFromStateDb(result.thread, summary);
-        result.thread.runtimeSettings = publicRuntimeSettings(runtimeSettings);
-        result.thread.mobileReadMode = "thread-read";
-      }
-      if (isHiddenThread(result.thread, visibility)) {
-        threadLog("thread_read_hidden", {
-          durationMs: Date.now() - readStartedAtMs,
-          status: 404,
-        });
-        sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
-        return;
-      }
-      threadLog("thread_read_ok", {
-        durationMs: Date.now() - readStartedAtMs,
-        returnedTurns: result.thread && Array.isArray(result.thread.turns) ? result.thread.turns.length : null,
-        omittedTurns: result.thread && result.thread.mobileOmittedTurnCount ? result.thread.mobileOmittedTurnCount : 0,
-      });
-      if (projectionInput && result.thread) {
-        try {
-          threadDetailProjectionService.seed(projectionInput, result);
-          result.thread.mobileProjection = Object.assign({}, result.thread.mobileProjection || {}, { source: "seeded" });
-        } catch (err) {
-          threadLog("projection_seed_error", { error: err.message || String(err) });
-        }
-      }
-      sendJson(res, 200, await prepareThreadDetailResponseResult(result, {
-        threadId,
-        source: "thread-read",
-      }));
-      threadLog("complete", { status: 200, mode: "thread-read" });
-    } catch (readErr) {
-      threadLog("thread_read_error", {
-        durationMs: Date.now() - readStartedAtMs,
-        timeout: isReadTimeoutError(readErr),
-        error: readErr.message || String(readErr),
-      });
-      const turnsStartedAtMs = Date.now();
-      threadLog("turns_list_start", {
-        limit: MAX_THREAD_TURNS,
-        timeoutMs: THREAD_DETAIL_RPC_TIMEOUT_MS,
-        fallbackFrom: "thread-read",
-      });
-      try {
-        const result = await turnsListThreadReadResult(
-          threadId,
-          summary,
-          runtimeSettings,
-          `thread/read failed: ${readErr.message || String(readErr)}`,
-          "turns-list",
-          null,
-        );
-        if (isHiddenThread(result.thread, visibility)) {
-          threadLog("turns_list_hidden", {
-            durationMs: Date.now() - turnsStartedAtMs,
-            status: 404,
-          });
-          sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
-          return;
-        }
-        threadLog("turns_list_ok", {
-          durationMs: Date.now() - turnsStartedAtMs,
-          returnedTurns: result.thread && Array.isArray(result.thread.turns) ? result.thread.turns.length : null,
-          mode: result.thread && result.thread.mobileReadMode ? result.thread.mobileReadMode : "turns-list",
-        });
-        sendJson(res, 200, result);
-        threadLog("complete", { status: 200, mode: "turns-list" });
-      } catch (turnsErr) {
-        threadLog("turns_list_error", {
-          durationMs: Date.now() - turnsStartedAtMs,
-          timeout: isReadTimeoutError(turnsErr),
-          error: turnsErr.message || String(turnsErr),
-        });
-        if (isUnmaterializedThreadError(turnsErr)) {
-          sendJson(res, 200, finalizeThreadDetailProjectionResult(
-            fallbackThreadReadResult(threadId, summary, runtimeSettings, turnsErr.message || String(turnsErr), "unmaterialized"),
-            { threadId, source: "unmaterialized" },
-          ));
-          threadLog("complete", { status: 200, mode: "unmaterialized" });
-          return;
-        }
-
-        if (isReadTimeoutError(turnsErr)) {
-          sendJson(res, 200, finalizeThreadDetailProjectionResult(
-            fallbackThreadReadResult(threadId, summary, runtimeSettings, turnsErr.message || String(turnsErr), "summary-timeout-fallback"),
-            { threadId, source: "summary-timeout-fallback" },
-          ));
-          threadLog("complete", { status: 200, mode: "summary-timeout-fallback" });
-          return;
-        }
-
-        const mode = isReadTimeoutError(turnsErr) ? "summary-timeout-fallback" : "summary-error-fallback";
-        sendJson(res, 200, finalizeThreadDetailProjectionResult(fallbackThreadReadResult(
-          threadId,
-          summary,
-          runtimeSettings,
-          `thread/read failed: ${readErr.message || String(readErr)}; thread/turns/list failed: ${turnsErr.message || String(turnsErr)}`,
-          mode,
-        ), { threadId, source: mode }));
-        threadLog("complete", { status: 200, mode });
-      }
     }
     return;
   }
