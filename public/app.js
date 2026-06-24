@@ -210,6 +210,9 @@ const state = {
   liveOperationDockCompactHtml: "",
   liveOperationDockCompactThreadId: "",
   liveOperationDockCompactTimer: null,
+  liveOperationDockRecallHtml: "",
+  liveOperationDockRecallThreadId: "",
+  liveOperationDockRecallAtMs: 0,
   threadSideChats: new Map(),
   sideChatLoadingThreadId: "",
   sideChatError: "",
@@ -401,7 +404,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = 500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v402";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v403";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -10906,7 +10909,7 @@ function preservePinnedLiveOperationDock(dock) {
     button.setAttribute("aria-expanded", "true");
     button.setAttribute("aria-label", "收起 Command 框");
     button.setAttribute("title", "收起 Command 框");
-    if (!button.classList.contains("mobile-operation-bubble")) button.textContent = "↓";
+    if (!button.classList.contains("mobile-operation-bubble") && !button.classList.contains("mobile-operation-recall")) button.textContent = "↓";
   });
   return true;
 }
@@ -10918,12 +10921,43 @@ function clearCompactLiveOperationBubbleState() {
 }
 
 function rememberCompactLiveOperationBubbleHtml(html = "") {
+  const nextHtml = String(html || "");
+  const threadId = String(state.currentThreadId || "");
   state.liveOperationDockCompactVisibleUntilMs = Math.max(
     Number(state.liveOperationDockCompactVisibleUntilMs || 0),
     Date.now() + LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS,
   );
-  state.liveOperationDockCompactHtml = String(html || "");
-  state.liveOperationDockCompactThreadId = String(state.currentThreadId || "");
+  state.liveOperationDockCompactHtml = nextHtml;
+  state.liveOperationDockCompactThreadId = threadId;
+  state.liveOperationDockRecallHtml = nextHtml;
+  state.liveOperationDockRecallThreadId = threadId;
+  state.liveOperationDockRecallAtMs = Date.now();
+}
+
+function renderLiveOperationRecallDockHtml() {
+  if (!isMobileViewport()) return "";
+  if (!state.currentThread || state.newThreadDraft) return "";
+  const savedThreadId = String(state.liveOperationDockRecallThreadId || "");
+  if (!savedThreadId || savedThreadId !== String(state.currentThreadId || "")) return "";
+  const savedHtml = String(state.liveOperationDockRecallHtml || "");
+  if (!savedHtml.includes("mobile-operation-sheet")) return "";
+  const root = firstElementFromHtml(savedHtml);
+  if (!root) return "";
+  const stack = root.querySelector(".mobile-operation-stack");
+  if (!stack || !stack.querySelector(".mobile-operation-sheet")) return "";
+  stack.querySelectorAll(".mobile-operation-bubble, .mobile-operation-recall").forEach((node) => node.remove());
+  const expanded = normalizeLiveOperationDockMode(state.liveOperationDockMode) === "expanded";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "mobile-operation-recall";
+  button.dataset.liveOperationDockToggle = "";
+  button.dataset.liveOperationRecall = "true";
+  button.setAttribute("aria-expanded", String(expanded));
+  button.setAttribute("aria-label", expanded ? "收起最近 Command 框" : "查看最近 Command 框");
+  button.setAttribute("title", expanded ? "收起最近 Command 框" : "查看最近 Command 框");
+  button.innerHTML = `<span class="mobile-operation-recall-dot" aria-hidden="true"></span>`;
+  stack.appendChild(button);
+  return root.outerHTML;
 }
 
 function renderLiveOperationDockOnly() {
@@ -10972,6 +11006,16 @@ function updateLiveOperationDockHtml(html = "") {
   }
   if (shouldPreservePinnedLiveOperationDock(dock, next)) return preservePinnedLiveOperationDock(dock);
   if (shouldPreserveCompactLiveOperationBubble(dock, next)) return true;
+  const recall = !next ? renderLiveOperationRecallDockHtml() : "";
+  if (recall) {
+    clearCompactLiveOperationBubbleState();
+    dock.hidden = false;
+    dock.dataset.mode = normalizeLiveOperationDockMode(state.liveOperationDockMode);
+    dock.dataset.mobileVisible = "true";
+    dock.dataset.recallVisible = "true";
+    if (dock.innerHTML !== recall) patchHtml(dock, recall);
+    return true;
+  }
   if (!next.includes("mobile-operation-bubble")) {
     state.liveOperationDockPinned = false;
     state.liveOperationDockPinnedThreadId = "";
@@ -10982,11 +11026,13 @@ function updateLiveOperationDockHtml(html = "") {
     if (dock.innerHTML) dock.innerHTML = "";
     dock.hidden = true;
     delete dock.dataset.mobileVisible;
+    delete dock.dataset.recallVisible;
     return true;
   }
   dock.hidden = false;
   dock.dataset.mode = normalizeLiveOperationDockMode(state.liveOperationDockMode);
   dock.dataset.mobileVisible = next.includes("mobile-operation-bubble") ? "true" : "false";
+  delete dock.dataset.recallVisible;
   if (dock.innerHTML !== next) patchHtml(dock, next);
   return true;
 }
@@ -11009,7 +11055,7 @@ function setLiveOperationDockMode(mode) {
     button.setAttribute("aria-expanded", String(next === "expanded"));
     button.setAttribute("aria-label", next === "expanded" ? "收起 Command 框" : "展开 Command 框");
     button.setAttribute("title", next === "expanded" ? "收起 Command 框" : "展开 Command 框");
-    if (!button.classList.contains("mobile-operation-bubble")) {
+    if (!button.classList.contains("mobile-operation-bubble") && !button.classList.contains("mobile-operation-recall")) {
       button.textContent = next === "expanded" ? "↓" : "↑";
     }
   });

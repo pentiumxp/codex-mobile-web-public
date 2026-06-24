@@ -1,3 +1,92 @@
+# 2026-06-24 - v403 mobile operation recall dot ready
+
+- Trigger:
+  - User asked for a persistent small bubble/dot near the lower-right scroll
+    controls after the transient operation bubble disappears.
+  - The dot should reopen the recent operation detail, stay smaller than the
+    temporary operation bubble, and avoid covering the existing up/down scroll
+    buttons.
+- Change:
+  - `public/app.js` now preserves the last same-thread mobile operation dock
+    HTML as recall state whenever a real command/file/tool/search bubble is
+    rendered.
+  - After the 500ms transient bubble window expires and no live operation is
+    present, phone-width clients render a small same-thread recall dot instead
+    of hiding the dock entirely.
+  - The recall dot is restricted to `isMobileViewport()` so wide desktop/iPad
+    clients do not regain a stale desktop command row.
+  - Tapping the dot toggles the existing opaque operation detail sheet through
+    the same `data-live-operation-dock-toggle` path; the dot itself keeps its
+    compact shape when expanded/collapsed.
+  - `public/styles.css` positions the recall-only dock slightly lower than the
+    transient bubble and uses a 32px visual dot to avoid overlapping the
+    42px scroll buttons.
+  - PWA shell bumped to `codex-mobile-shell-v403`.
+  - `README.md`, `docs/TROUBLESHOOTING.md`, and focused tests were updated.
+- Validation:
+  - `node --check public/app.js`
+  - `node --test test/collab-agent-render.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+  - `npm run check`
+  - `npm run check:macos`
+  - `npm test` passed (`696` tests).
+  - `git diff --check`
+- Release status:
+  - Local implementation is ready for commit/deploy.
+  - Not pushed to Public. Public already points at v402 commit `df6cada` until
+    the user explicitly requests another public sync.
+
+# 2026-06-24 - v402 public sync completed
+
+- User request:
+  - Commit the recent work and push Public.
+  - Add a complete Chinese README explanation covering the recent changes,
+    the absorptive PR #78 merge, why the large-session first-screen refresh
+    approach was not merged, and the follow-up plan.
+- Local/private commits:
+  - `4f93576 fix: stabilize thread status and mobile operation dock`
+    includes the recent implementation, tests, docs, and private handoff
+    update.
+  - `5893d0f Merge remote-tracking branch 'public/main'`
+    merges the public release commit back into private `main`.
+- Public release:
+  - Public branch: `public/main`.
+  - Public commit: `df6cada release: publish v402 stability refactor`.
+  - Public sync was produced from
+    `git diff --binary public/main..main -- ':!.agent-context'`, so
+    `.agent-context` remained private.
+  - Public staged scope covered source, public docs, browser assets, services,
+    and tests only; no `.agent-context`, runtime state, uploads, logs, data,
+    env, access-key, private-key, or secret paths were staged.
+- README:
+  - Added the Chinese overview sections at the top of `README.md`.
+  - The README now describes the staged service-first refactor, the PR #78
+    status-freshness absorption, recent user-visible fixes, and follow-up
+    architecture plan.
+  - It explicitly records that PR #78's deferred large-session first-screen
+    detail was not merged because it returns incomplete first detail and risks
+    two-phase UI jitter; the remaining large-session work should be solved in
+    server projection/cache/cold-path design with measurements.
+- Validation:
+  - Private workspace before public sync:
+    - `git diff --check`
+    - `npm run check`
+    - `npm run check:macos`
+    - `npm test` passed (`696` tests).
+  - Public worktree before push:
+    - `git diff --check`
+    - `npm run check`
+    - Secret/path scan was clean for key, env, auth bearer, and runtime
+      directory patterns.
+    - First direct `npm test` in the temporary worktree failed because that
+      worktree intentionally had no `node_modules` and could not resolve
+      `web-push`.
+    - Re-run with
+      `NODE_PATH=/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web/node_modules npm test`
+      passed (`696` tests).
+- Post-publish closure still required:
+  - Verify `public/main` is an ancestor of private `main`.
+  - Verify `git diff --stat public/main..main -- ':!.agent-context'` is empty.
+
 # 2026-06-24 - v402 mobile operation bubble dwell deployed
 
 - Trigger:
