@@ -1,3 +1,65 @@
+# 2026-06-24 - Thread detail orchestration deployed, Public synced, PR #78 closed
+
+- User request:
+  - Push/deploy the Phase 3 thread-detail orchestration work.
+  - Handle public PR #78 so its useful content is absorbed and it no longer
+    keeps prompting on login.
+- Local/private commits:
+  - `230f277 refactor: extract thread detail read orchestration`
+  - `350a6f5 docs: update public notes for detail orchestration`
+  - `e98fe98 Merge remote-tracking branch 'public/main'`
+- Production deploy:
+  - Used Home AI central deploy script from `/Users/hermes-dev/HermesMobileDev/app`:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --execute --json`
+  - Deployed source ref `230f277a775e` to
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup path:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260624T102917Z-plugin-codex-mobile-web-manual`.
+  - Deploy returned `ok: true`; LaunchDaemon
+    `system/com.hermesmobile.plugin.codex-mobile` was running.
+  - Production health returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v419`,
+    `shellCacheName=codex-mobile-shell-v419`,
+    `workspacePath=/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`,
+    `activeProfileId=default`, and server `buildId=83af848305f59e19`.
+  - No frontend shell bump was needed because the deployed code change is
+    server-side orchestration plus tests/docs.
+- Public sync:
+  - Created filtered public worktree from `public/main`, applied
+    `git diff --binary public/main..main -- ':!.agent-context'`, and scanned
+    the public path list for `.agent-context`, env/key/token/auth/cookie,
+    upload/log/runtime/data, and private key patterns.
+  - Public validation:
+    - `git diff --check`
+    - `npm run check --silent`
+    - `npm run check:macos --silent`
+    - `NODE_PATH=/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web/node_modules npm test --silent`
+      (`740` tests passed)
+  - Content scan only matched fixed dummy strings inside tests; no raw secrets
+    or runtime paths were published.
+  - Public commit:
+    `2f07f09 release: publish v419 detail orchestration`.
+  - Public pushed to `pentiumxp/codex-mobile-web-public:main`.
+  - After merging Public back into private `main`, verified
+    `git merge-base --is-ancestor public/main main` returned `0` and
+    `git diff --stat public/main..main -- ':!.agent-context'` was empty.
+- PR #78:
+  - Current PR state before handling: `OPEN`, `mergeable=CONFLICTING`, branch
+    `franksong2702/fix-unread-dot-state`.
+  - Confirmed existing v401/v402 work had already absorbed the status
+    freshness / unread-running / mux replay / submitted echo concepts.
+  - Confirmed deferred large-session enrichment was intentionally not merged
+    because it returns incomplete first detail and risks two-stage replacement
+    jitter.
+  - Closed PR #78 with a comment pointing to the absorbed mainline work and the
+    new server-side read orchestration.
+  - `gh pr list --repo pentiumxp/codex-mobile-web-public --state open` returned
+    an empty list after closure.
+- Next:
+  - If large-session performance remains slow, gather production
+    `thread.mobileDiagnostics.threadDetailTimings` for one cold and one warm
+    open, then optimize the measured slowest phase.
+
 # 2026-06-24 - Thread detail read orchestration service extracted locally
 
 - Scope:
