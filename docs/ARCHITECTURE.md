@@ -672,11 +672,15 @@ through `GET/POST /api/settings/thread-display`; `localStorage` is only a legacy
 migration/cache mirror. `paneCount=0` means automatic sizing from current/running
 threads and viewport capacity; a positive value is the user's manual window
 count. Device width sets the maximum pane capacity only, so a four-pane-capable
-tablet can still display two wider panes until the user taps the tile `+`
-control. Pane slots are stable thread id positions: normal thread-list recent
-sorting can fill empty slots but must not reorder existing slots. A manual pane
-title-menu switch replaces only that slot and persists the new ordered pane id
-list; `+ / -` changes only how many slots are visible.
+tablet can still display two wider panes until the user adds a window from the
+pane title menu. Pane slots are stable thread id positions: normal thread-list
+recent sorting can fill empty slots but must not reorder existing slots. A manual
+pane title-menu switch replaces only that slot and persists the new ordered pane
+id list. An explicit outer thread-list open is also treated as a user pane
+selection: when tile mode is active and the opened thread is not currently
+visible, the browser replaces the last visible pane slot with that thread and
+persists the new ordered pane id list. The title menu's `关闭窗口` / `新增窗口`
+actions change only how many slots are visible.
 
 Tile-mode pane refreshes are local by default. The browser keeps per-pane
 detail cache, operation bubble state, and scroll-bottom hold state keyed by

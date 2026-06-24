@@ -66,7 +66,7 @@ test("thread tile layout is wired as an explicit shell policy", () => {
   assert.match(layoutBody, /verticalChromePx: threadTileVerticalChromePx\(\)/);
   assert.match(appJs, /function effectiveThreadTilePaneCount\(/);
   assert.match(appJs, /function setThreadTilePaneCount\(/);
-  assert.match(appJs, /function renderThreadTileWindowControls\(/);
+  assert.match(appJs, /function closeThreadTilePane\(/);
   assert.match(functionBody(appJs, "threadDisplaySettingsPayload"), /paneCount: normalizeThreadTilePaneCount\(state\.threadTilePaneCount, 0\)/);
   assert.match(functionBody(appJs, "applyThreadDisplaySettings"), /state\.threadTilePaneCount = normalizeThreadTilePaneCount/);
 
@@ -94,7 +94,7 @@ test("thread tile rendering is read-only and separate from full conversation ren
   const tileLayoutBody = functionBody(appJs, "renderThreadTileLayout");
   assert.match(tileLayoutBody, /const scrollState = captureThreadTilePaneScrollState\(\)/);
   assert.match(tileLayoutBody, /const displayLayout = threadTileDisplayLayout\(layout, ids\)/);
-  assert.match(tileLayoutBody, /renderThreadTileWindowControls\(layout, ids\)/);
+  assert.doesNotMatch(tileLayoutBody, /renderThreadTileWindowControls/);
   assert.match(tileLayoutBody, /ensureThreadTileDetails\(ids\)/);
   assert.match(tileLayoutBody, /bindThreadTileActions\(\)/);
   assert.match(tileLayoutBody, /restoreThreadTilePaneScrollState\(scrollState\)/);
@@ -129,6 +129,10 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(tilePaneBody, /data-thread-tile-pane-state/);
   assert.match(tilePaneBody, /data-thread-tile-title/);
   assert.match(tilePaneBody, /renderThreadTileSwitchMenu\(id\)/);
+  const switchMenuBody = functionBody(appJs, "renderThreadTileSwitchMenu");
+  assert.match(switchMenuBody, /thread-tile-switch-actions/);
+  assert.match(switchMenuBody, /data-thread-tile-close-pane/);
+  assert.match(switchMenuBody, /data-thread-tile-pane-count="1"/);
   assert.match(tilePaneBody, /renderThreadTileOperationDock\(thread, previousKeys\)/);
   assert.match(tilePaneBody, /data-thread-tile-bottom/);
   assert.match(tilePaneBody, /thread-tile-bottom-button hidden/);
@@ -148,6 +152,8 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(tileActionsBody, /replaceThreadTilePaneThread/);
   assert.match(tileActionsBody, /data-thread-tile-pane-count/);
   assert.match(tileActionsBody, /changeThreadTilePaneCount/);
+  assert.match(tileActionsBody, /data-thread-tile-close-pane/);
+  assert.match(tileActionsBody, /closeThreadTilePane/);
   assert.doesNotMatch(tileActionsBody, /data-thread-tile-open/);
   assert.match(tileActionsBody, /data-thread-tile-bottom/);
   assert.match(tileActionsBody, /scrollThreadTilePaneToBottom/);
@@ -166,6 +172,16 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(switchBody, /scheduleThreadDisplaySettingsSave\(\)/);
   assert.match(switchBody, /state\.threadTileSelectedThreadId = to/);
   assert.match(switchBody, /loadThreadTileDetail\(to, \{ force: true, source: "tile-switch" \}\)/);
+
+  const listOpenReplaceBody = functionBody(appJs, "replaceLastThreadTilePaneForThreadListOpen");
+  assert.match(listOpenReplaceBody, /source !== "thread-list"/);
+  assert.match(listOpenReplaceBody, /const ids = threadTileCandidateIds\(layout\)/);
+  assert.match(listOpenReplaceBody, /const index = ids\.length - 1/);
+  assert.match(listOpenReplaceBody, /state\.threadTilePinnedIds = normalized/);
+  assert.match(listOpenReplaceBody, /state\.threadTileSelectedThreadId = id/);
+  assert.match(listOpenReplaceBody, /scheduleThreadDisplaySettingsSave\(\)/);
+  const loadThreadBody = functionBody(appJs, "loadThread");
+  assert.match(loadThreadBody, /replaceLastThreadTilePaneForThreadListOpen\(threadId, \{ source \}\)/);
 
   const tileOperationDockBody = functionBody(appJs, "renderThreadTileOperationDock");
   assert.match(tileOperationDockBody, /currentLiveOperationEntry\(thread\)/);
@@ -204,8 +220,9 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(stylesCss, /\.main\.thread-tile-main > \.live-operation-dock\s*{/);
   assert.match(stylesCss, /\.conversation\.thread-tile-mode\s*{[\s\S]*max\(env\(safe-area-inset-top, 0px\), var\(--host-top-safe-area, 0px\)\)/);
   assert.match(stylesCss, /\.thread-tile-board\s*{/);
-  assert.match(stylesCss, /\.thread-tile-window-controls\s*{/);
-  assert.match(stylesCss, /\.thread-tile-window-control-button\s*{/);
+  assert.match(stylesCss, /\.thread-tile-switch-actions\s*{/);
+  assert.match(stylesCss, /\.thread-tile-switch-action\s*{/);
+  assert.doesNotMatch(stylesCss, /\.thread-tile-window-controls\s*{/);
   assert.match(stylesCss, /\.thread-tile-pane\s*{/);
   assert.match(stylesCss, /\.thread-tile-pane-body\s*{/);
   assert.match(stylesCss, /\.thread-tile-pane-content\s*{/);

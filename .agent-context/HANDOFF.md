@@ -1,3 +1,89 @@
+# 2026-06-24 - Thread-list open replaces last tile pane v424 local
+
+- Scope:
+  - Implemented and validated locally.
+  - Not committed, not deployed, not pushed Public.
+- Trigger:
+  - User reported that server-persisted tile panes can hide occasionally active
+    threads: if a less-used thread is actively opened from the outer thread list,
+    the fixed tile panes can still occupy all visible slots.
+- Root cause:
+  - v421-v423 correctly stabilized pane slot order, but the only explicit pane
+    replacement action was the per-pane title switch menu. The outer thread-list
+    open path (`loadThread(..., { source: "thread-list" })`) changed the current
+    detail thread without updating the persisted visible tile slot order.
+- Change:
+  - `public/app.js` adds `replaceLastThreadTilePaneForThreadListOpen()`.
+  - When tile mode is active and the user opens a non-visible thread from the
+    outer thread list, the browser replaces the last currently visible pane slot
+    with that thread, selects it for the shared Composer/runtime controls, clears
+    stale pane scroll/menu state, and schedules `threadDisplay` persistence.
+  - Background recent sorting and notification refresh still cannot reorder
+    fixed pane slots; title-menu pane switching keeps its existing dedicated
+    path.
+  - PWA shell cache bumped to `codex-mobile-shell-v424`.
+- Docs updated:
+  - `README.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+- Validation:
+  - `node --check public/app.js`
+  - `node --check public/sw.js`
+  - Focused suite:
+    `node --test test/thread-tile-layout-ui.test.js test/thread-tile-layout.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (`35` tests passed)
+  - `npm test` (`748` tests passed)
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+- Operational notes:
+  - Production still has v422 until the v423/v424 local changes are committed
+    and deployed.
+  - Browser/PWA clients must load v424 shell to exercise the frontend changes.
+
+# 2026-06-24 - Tile pane count controls in title menu v423 local
+
+- Scope:
+  - Implemented and validated locally.
+  - Not committed, not deployed, not pushed Public.
+- Trigger:
+  - User reported that the tile pane `- / +` controls should not live in the
+    board's top-right corner because that placement covers content and is less
+    flexible. The requested interaction is to show `关闭窗口` and `新增窗口`
+    at the top of the thread-title switch menu.
+- Root cause:
+  - v422 put pane-count controls at board level. That made the controls global
+    and floating over the reading surface instead of contextual to the pane the
+    user is already managing through the title menu.
+- Change:
+  - `public/app.js` removes the board-level window control render path.
+  - `renderThreadTileSwitchMenu()` now renders a compact action row above the
+    thread list with `关闭窗口`, current count/capacity, and `新增窗口`.
+  - `closeThreadTilePane()` closes the current pane by removing that thread id
+    from the saved pane slot order, reducing visible pane count, selecting the
+    next remaining pane, and restoring the shared Composer draft target.
+  - `public/styles.css` removes the old absolute floating control styles and
+    adds compact menu action styles.
+  - PWA shell cache bumped to `codex-mobile-shell-v423`.
+- Docs updated:
+  - `README.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js`
+  - Focused suite:
+    `node --test test/thread-tile-layout-ui.test.js test/thread-tile-layout.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    (`35` tests passed)
+  - `npm test` initially hit an unrelated temp-directory cleanup race in
+    `test/protocol.test.js`; immediate rerun passed.
+  - `npm test` (`748` tests passed on rerun)
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+- Operational notes:
+  - Production still has v422 until this change is committed and deployed.
+  - Browser/PWA clients must load v423 shell to exercise the frontend changes.
+
 # 2026-06-24 - Dynamic tile pane count v422 committed and deployed
 
 - Scope:

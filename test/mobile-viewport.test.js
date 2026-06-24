@@ -147,8 +147,8 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v422/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v422"/);
+  assert.match(swJs, /codex-mobile-shell-v424/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v424"/);
   assert.match(swJs, /"\/thread-status-hints\.js"/);
   assert.match(swJs, /"\/thread-performance-metrics\.js"/);
   assert.match(swJs, /"\/live-operation-dock-state\.js"/);
@@ -265,7 +265,7 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.doesNotMatch(appJs, /scrollConversationToTop/);
   assert.doesNotMatch(appJs, /scrollToTop/);
   assert.match(appJs, /const explicitNoStickToBottom = options\.stickToBottom === false \|\| Boolean\(options\.scrollToTurnReceiptStart\);/);
-  assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*const conversationRenderMs = roundedDurationMs\(conversationRenderStartedAt\);\s*\n\s*if \(isMenuOverlayMode\(\)\) closeSidebarMenu\(\);/);
+  assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*const conversationRenderMs = roundedDurationMs\(conversationRenderStartedAt\);\s*\n\s*if \(replacedTilePaneForThreadListOpen\) \{[\s\S]*restoreDraftForCurrentTarget\(\{ resetRuntimeWhenMissingDraft: true \}\);[\s\S]*updateComposerControls\(\);[\s\S]*\}\s*\n\s*if \(isMenuOverlayMode\(\)\) closeSidebarMenu\(\);/);
   assert.match(appJs, /renderCurrentThread\(\{ stickToBottom: true \}\);\s*\n\s*const conversationRenderMs = roundedDurationMs\(conversationRenderStartedAt\);\s*\n\s*const postRenderStartedAt = nowPerfMs\(\);\s*\n\s*publishPluginNavigationState\(\{ force: true \}\);\s*\n\s*restoreConnectionState\(\);/);
   assert.match(appJs, /const PLUGIN_EMBED_BACK_EDGE_SWIPE_PX = 44/);
   assert.match(appJs, /function installHermesPluginBackSwipeGuard\(\)/);
