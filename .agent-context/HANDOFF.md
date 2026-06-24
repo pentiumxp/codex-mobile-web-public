@@ -5,6 +5,7 @@
   - Not pushed Public.
   - Commit:
     - `5500932 feat: 优化平铺窗口管理`
+    - `aa863f1 docs: record v424 production deploy`
 - Trigger:
   - User reported that server-persisted tile panes can hide occasionally active
     threads: if a less-used thread is actively opened from the outer thread list,
@@ -42,12 +43,15 @@
   - Browser/PWA clients must load v424 shell to exercise the frontend changes.
   - Central Home AI deploy script used:
     `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --reason tile-pane-management-v424 --execute --json`
-  - Source ref: `5500932e3dc3`.
+  - Final deployed source ref: `aa863f163afb`.
   - Production target:
     `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
   - Backup retained at:
-    `/Users/hermes-host/HermesMobile/backups/deploy/20260624T130337Z-plugin-codex-mobile-web-tile-pane-management-v424`.
-  - Deploy pruned previous v422 backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260624T130631Z-plugin-codex-mobile-web-tile-pane-management-v424-record`.
+  - First v424 deploy used source ref `5500932e3dc3` and backup
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260624T130337Z-plugin-codex-mobile-web-tile-pane-management-v424`;
+    the second deploy synced the README deployment-status update and pruned the
+    first v424 backup. The first deploy pruned the previous v422 backup
     `/Users/hermes-host/HermesMobile/backups/deploy/20260624T123122Z-plugin-codex-mobile-web-dynamic-tile-pane-count-v422`.
   - Post-deploy health returned
     `clientBuildId=0.1.11|codex-mobile-shell-v424` and
