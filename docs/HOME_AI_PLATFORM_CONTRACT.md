@@ -206,31 +206,34 @@ Minimum closure for Codex Mobile production changes:
   `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
 - LaunchDaemon: `system/com.hermesmobile.plugin.codex-mobile`.
 - Loopback production URL: `http://127.0.0.1:8787`.
-- Current verified shell after route-hint / tile-pane deployment:
-  `0.1.11|codex-mobile-shell-v425`.
+- Current verified shell after wide tile-column deployment:
+  `0.1.11|codex-mobile-shell-v426`.
 - Source ref deployed:
-  `06d8c8b4b7d6` with clean source worktree.
+  `8ca8dae0dffc` with clean source worktree.
 - Backup path:
-  `/Users/hermes-host/HermesMobile/backups/deploy/20260624T160709Z-plugin-codex-mobile-web-route-hint-tile-pane-v425`.
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260624T161704Z-plugin-codex-mobile-web-wide-tile-columns-v426`.
 - Production smoke confirmed `/api/public-config` reports
-  `clientBuildId=0.1.11|codex-mobile-shell-v425`,
-  `shellCacheName=codex-mobile-shell-v425`, `version=0.1.11`,
+  `clientBuildId=0.1.11|codex-mobile-shell-v426`,
+  `shellCacheName=codex-mobile-shell-v426`, `version=0.1.11`,
   `authRequired=true`, and production `workspacePath` above.
 - Source/production short SHA-256 samples matched after deploy:
-  `public/app.js` `396846f6abdf536a`,
-  `public/sw.js` `126e12a6be176fed`,
+  `public/app.js` `4c57343966276422`,
+  `public/sw.js` `33fce8120b4a6d59`,
   `public/plugin-embed.js` `2b103de8c50a31ed`,
-  `public/thread-tile-layout.js` `98af9e1e50f8e973`,
-  `README.md` `eedbfe7e0fbbe7d7`,
-  `docs/ARCHITECTURE.md` `236de26f6df947b8`, and
-  `docs/MODULES.md` `abfc03d3855cef40`.
+  `public/thread-tile-layout.js` `081aa0816adee148`,
+  `README.md` `b5c4a3058ae7642f`,
+  `docs/ARCHITECTURE.md` `18a0fa65895bb062`,
+  `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` `bb360515606aa512`, and
+  `docs/MODULES.md` `515112dbd89beed2`.
 - Focused validation before deploy included route-hint, Hermes embed, tile,
   viewport, goal, and task-card route tests; full validation passed
-  `npm run check`, `npm run check:macos`, `npm test` (`754` tests), and
+  `npm run check`, `npm run check:macos`, `npm test` (`755` tests), and
   `git diff --check`.
 - Deployment validation also ran the central production file-hash, LaunchDaemon,
   public-config, and non-strict auth-profile audit checks. The auth-profile
   audit remained non-blocking with zero blocking issues.
+- The earlier 2026-06-24 `codex-mobile-shell-v425` route-hint / tile-pane
+  evidence is historical after the v426 wide tile-column deployment.
 - The older 2026-06-09 `codex-mobile-shell-v251` image-rendering evidence is
   historical only and must not be treated as the latest production shell.
 

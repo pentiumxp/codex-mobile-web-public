@@ -1,3 +1,61 @@
+# 2026-06-24 - Wide tile-column v426 deployed
+
+- Scope:
+  - Implemented, validated, committed, and deployed to Mac production.
+  - Not pushed Public.
+  - Code commit:
+    - `8ca8dae fix: keep wide tile panes in one row`
+- Trigger:
+  - v425 removed the 4-pane add-window stop, but desktop layout still used the
+    old physical 4-column cap. On a sufficiently wide desktop screen, the 5th
+    or 6th pane could wrap even though the user intentionally requested more
+    panes and the screen width could hold them.
+- Change:
+  - `public/thread-tile-layout.js` now separates three concepts:
+    automatic recommended pane capacity, physical columns/rows, and bounded
+    user pane ceiling (`DEFAULT_USER_MAX_PANES=12`).
+  - Desktop physical columns can grow with available width up to the user pane
+    ceiling; tablet landscape remains capped at 4 columns.
+  - `public/app.js` still uses recommended capacity for automatic tile mode
+    (`paneCount=0`), but honors the user-selected count when explicit panes are
+    added.
+  - PWA shell cache bumped to `codex-mobile-shell-v426`.
+  - `docs/HOME_AI_PLATFORM_CONTRACT.md` latest production evidence was updated
+    from v425 to v426 after deployment.
+- Validation before deploy:
+  - `node --check public/thread-tile-layout.js public/app.js public/sw.js`
+    passed.
+  - Focused suite:
+    `node --test test/thread-tile-layout.test.js test/thread-tile-layout-ui.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+    passed (`38` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed (`755` tests).
+  - `git diff --check` passed.
+- Production deploy:
+  - Central Home AI deploy script used from `/Users/hermes-dev/HermesMobileDev/app`:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --reason wide-tile-columns-v426 --execute --json`
+  - Source ref deployed:
+    `8ca8dae0dffc`.
+  - Production target:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup path reported by deployment:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260624T161704Z-plugin-codex-mobile-web-wide-tile-columns-v426`.
+  - Post-deploy `/api/public-config` returned `version=0.1.11`,
+    `clientBuildId=0.1.11|codex-mobile-shell-v426`,
+    `shellCacheName=codex-mobile-shell-v426`, and production workspace path
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Source/production short SHA-256 samples matched for `public/app.js`,
+    `public/sw.js`, `public/plugin-embed.js`, `public/thread-tile-layout.js`,
+    README, and architecture/module docs before the evidence-doc update.
+  - Central deployment audit remained non-blocking with
+    `blockingIssueCount=0`.
+- Operational notes:
+  - Browser/PWA clients must load v426 shell/cache to exercise the wide-column
+    tile behavior.
+  - Plugin Workspace Audit task card `ttc_d59788971449b66f5e` was already
+    returned before v426 follow-up; do not re-reply to the same original card.
+
 # 2026-06-24 - Route-hint coverage and tile user pane ceiling v425 deployed
 
 - Scope:
@@ -63,10 +121,11 @@
   - Central deployment audit remained non-blocking with
     `blockingIssueCount=0`.
 - Operational notes:
-  - Browser/PWA clients must load v425 shell/cache to exercise the frontend
-    route-hint and tile-pane changes.
-  - Need return a real task card to Plugin Workspace Audit for
-    `ttc_d59788971449b66f5e` before ending the thread.
+  - Browser/PWA clients must load v425 or newer shell/cache to exercise the
+    frontend route-hint and tile-pane changes.
+  - Returned a real task card to Plugin Workspace Audit for
+    `ttc_d59788971449b66f5e`; return card id was
+    `ttc_5493760d67b99f4fbb`.
 
 # 2026-06-24 - Task-card manual return toolchain repaired and deployed
 
