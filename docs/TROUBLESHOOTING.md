@@ -320,7 +320,13 @@ rollout file mtime as a fallback `updatedAt` source. This lets a Hermes/remote
 client show or clear the spinner even when app-server only returns `notLoaded`.
 The browser still keeps `runningThreadIds` across thread-list refreshes where
 the row only says `notLoaded`, and current-thread `turn/started` /
-`turn/completed` notifications write back to the matching sidebar row. For
+`turn/completed` notifications write back to the matching sidebar row. Derived
+background `thread/status/changed` notifications created from
+`turn/completed` must include the completion `eventAtMs` when available; if the
+server emits a terminal status without a fresh event time, the browser's
+replay-aware freshness policy may keep the local running hint and make the
+outer thread list look like it is still refreshing after the detail page has
+ended. For
 background work started by normal sends, source-direct or automatic task cards,
 auto-recover, side-chat apply, continuation handoff/bootstrap, or ChatGPT Pro
 bridge starts, the server must broadcast `thread/status/changed active`

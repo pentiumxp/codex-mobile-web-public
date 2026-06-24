@@ -84,7 +84,15 @@ Target:
 
 Status: in progress. The first slice extracts the `/api/threads/:id` branch
 ordering into `adapters/thread-detail-read-orchestration-service.js` while
-preserving the existing first-paint contract and read strategy.
+preserving the existing first-paint contract and read strategy. The second
+slice addresses the first measured large-session cold-path issue: full dynamic
+projection state was fast while the server process lived, but was not persisted
+with refreshed rollout stats, so a service restart could miss disk cache and
+fall back to full `thread/read` on large rollouts. A follow-up production
+restart check showed active external writers can still advance rollout size
+between cache persistence and restart, so large rollout projection misses now
+use bounded `thread/turns/list` for the current visible window before trying
+full `thread/read`.
 
 - The coordinator owns summary resolution, hidden-thread rejection, projection
   hit, `mode=recent` initial turns-list, full `thread/read`, turns-list
@@ -94,15 +102,24 @@ preserving the existing first-paint contract and read strategy.
 - Focused tests cover warm projection, full `thread/read` before turns-list
   fallback, recent initial turns-list, timeout fallback, and hidden-thread
   rejection without relying on route source-string assertions.
+- Full non-partial dynamic projections are now persisted with throttling and
+  refreshed rollout size/mtime before write. Partial notification-only shells
+  are still not persisted as valid detail cache.
+- Large rollout projection misses use a server-side bounded turns-list current
+  window and seed projection from that result. This keeps the first response
+  authoritative for the current retained window without adding a frontend
+  second-refresh replacement path.
 - Preserve the first-paint contract for large sessions. Do not introduce
   deferred incomplete detail enrichment as a UI fallback for server cold-path
   slowness.
 
 Remaining target:
 
-- Gather production cold/warm timings for large sessions after this boundary is
-  deployed, then optimize the slowest measured phase rather than adding a
-  client-side second-refresh workaround.
+- After deployment, verify restart/cold-open paths for both static and actively
+  advancing large threads. Expected first detail result should be either
+  disk-backed projection or `turns-list-large`, with `threadReadMs=0`; full
+  `thread/read` should only remain for small/non-rollout threads or bounded
+  turns-list failure.
 
 ### Phase 4: Browser And Visual Coverage
 
@@ -122,8 +139,18 @@ Target:
   split-screen reader where the user can add panes, close panes, drag widths,
   decide how many threads stay visible, and type into each pane through a
   pane-local composer.
+- Current interim state: v424 persists `单线程` / `平铺`, ordered pane thread ids,
+  selected pane thread id, and desired pane count in server runtime
+  `settings.json` `threadDisplay`. Device width decides maximum capacity only;
+  `paneCount=0` keeps an automatic current/running-thread-based count, and
+  the pane title menu lets the user expand or close visible panes without
+  reordering unrelated slots. When the user explicitly opens a non-visible
+  thread from the outer thread list, the last visible pane is replaced and that
+  slot order is saved; background recent ordering still cannot move fixed panes.
 - Keep the current automatic tile policy as the interim capability gate for
-  iPad/desktop width, not as the final interaction model.
+  iPad/desktop width, not as the final interaction model. Manual pane count is
+  now the owner of "how many windows should be visible" until draggable split
+  sizing exists.
 - Preserve action ownership: v417 routes the shared bottom Composer's
   draft key, send target, Stop/steer state, local echo, and failure receipt to
   the selected active pane, operation bubble state is pane-local, and pane

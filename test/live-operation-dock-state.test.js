@@ -55,6 +55,17 @@ test("live operation dock state does not preserve compact bubble after thread ch
     currentThreadId: "thread-1",
     dockHasBubble: true,
   }).preserve, false);
+
+  assert.equal(dock.compactBubblePreservation({
+    nextHtml: "",
+    visibleUntilMs: 1500,
+    nowMs: 1200,
+    savedHtml: "<button class=\"mobile-operation-bubble\"></button>",
+    savedThreadId: "thread-1",
+    currentThreadId: "thread-1",
+    dockHasBubble: true,
+    liveTurnActive: false,
+  }).preserve, false);
 });
 
 test("live operation dock state preserves pinned sheet and recall only under same-thread rules", () => {
@@ -74,6 +85,15 @@ test("live operation dock state preserves pinned sheet and recall only under sam
     dockHasSheet: true,
     nextHtml: "<button class=\"mobile-operation-bubble\"></button>",
   }), false);
+  assert.equal(dock.shouldPreservePinned({
+    pinned: true,
+    mode: "expanded",
+    pinnedThreadId: "thread-1",
+    currentThreadId: "thread-1",
+    dockHasSheet: true,
+    nextHtml: "",
+    liveTurnActive: false,
+  }), false);
 
   assert.equal(dock.shouldShowRecall({
     isMobile: true,
@@ -90,5 +110,14 @@ test("live operation dock state preserves pinned sheet and recall only under sam
     currentThreadId: "thread-1",
     recallThreadId: "thread-1",
     recallHtml: "<div class=\"mobile-operation-sheet\"></div>",
+  }), false);
+  assert.equal(dock.shouldShowRecall({
+    isMobile: true,
+    hasCurrentThread: true,
+    newThreadDraft: false,
+    currentThreadId: "thread-1",
+    recallThreadId: "thread-1",
+    recallHtml: "<div class=\"mobile-operation-sheet\"></div>",
+    liveTurnActive: false,
   }), false);
 });

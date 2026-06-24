@@ -63,6 +63,9 @@ function createThreadDetailReadOrchestrationService(options = {}) {
     : async () => ({ thread: null });
   const readFullThread = typeof options.readFullThread === "function" ? options.readFullThread : async () => ({ thread: null });
   const seedProjection = typeof options.seedProjection === "function" ? options.seedProjection : () => {};
+  const preferBoundedReadBeforeFullRead = typeof options.preferBoundedReadBeforeFullRead === "function"
+    ? options.preferBoundedReadBeforeFullRead
+    : () => false;
   const prepareResponse = typeof options.prepareResponse === "function" ? options.prepareResponse : async (result) => result;
   const fallbackThreadReadResult = typeof options.fallbackThreadReadResult === "function"
     ? options.fallbackThreadReadResult
@@ -214,6 +217,53 @@ function createThreadDetailReadOrchestrationService(options = {}) {
         };
       } catch (err) {
         threadLog("turns_list_initial_error", {
+          durationMs: now() - turnsStartedAtMs,
+          timeout: isReadTimeoutError(err),
+          error: safeErrorMessage(err),
+        });
+      }
+    }
+
+    if (preferBoundedReadBeforeFullRead({ threadId, summary, projection, runtimeSettings })) {
+      const turnsStartedAtMs = now();
+      const mode = "turns-list-large";
+      threadLog("turns_list_before_full_start", {
+        limit: maxThreadTurns,
+        timeoutMs: threadDetailRpcTimeoutMs,
+        fallbackFrom: "projection-miss",
+      });
+      try {
+        const result = await turnsListThreadReadResult({
+          threadId,
+          summary,
+          runtimeSettings,
+          warning: "",
+          mode,
+          threadLog,
+        });
+        if (isHiddenThread(result && result.thread, visibility)) {
+          threadLog("turns_list_before_full_hidden", {
+            durationMs: now() - turnsStartedAtMs,
+            status: 404,
+          });
+          return hiddenResponse();
+        }
+        timer.mark("turnsListBeforeFullMs", turnsStartedAtMs);
+        if (projection && result && result.thread) {
+          try {
+            seedProjection(projection, result);
+            result.thread.mobileProjection = Object.assign({}, result.thread.mobileProjection || {}, { source: "seeded-from-turns-list" });
+          } catch (err) {
+            threadLog("projection_seed_error", { error: safeErrorMessage(err) });
+          }
+        }
+        return {
+          status: 200,
+          mode,
+          body: attachDetailDiagnostics(result, context, { threadId, source: mode }),
+        };
+      } catch (err) {
+        threadLog("turns_list_before_full_error", {
           durationMs: now() - turnsStartedAtMs,
           timeout: isReadTimeoutError(err),
           error: safeErrorMessage(err),

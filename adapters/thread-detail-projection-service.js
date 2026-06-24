@@ -87,6 +87,31 @@ function cacheFileForThread(cacheDir, threadId) {
   return path.join(cacheDir, `${hash}.json`);
 }
 
+function rolloutPathForEntry(entry) {
+  return String(entry && (entry.rolloutPath
+    || entry.result && entry.result.thread && (
+      entry.result.thread.path
+      || entry.result.thread.rolloutPath
+      || entry.result.thread.rollout_path
+    )
+  ) || "").trim();
+}
+
+function rolloutStatsForPath(rolloutPath) {
+  const filePath = String(rolloutPath || "").trim();
+  if (!filePath) return null;
+  try {
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile()) return null;
+    return {
+      sizeBytes: stat.size,
+      mtimeMs: Math.trunc(Number(stat.mtimeMs || 0)),
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
 function notificationThreadId(method, params = {}) {
   if (!params || typeof params !== "object") return "";
   return String(params.threadId
@@ -500,6 +525,9 @@ function createThreadDetailProjectionService(options = {}) {
   const policyVersion = String(options.policyVersion || "1");
   const maxTurns = Math.max(1, safeNumber(options.maxTurns) || 10);
   const dynamicSignatureMismatchMaxAgeMs = Math.max(1000, safeNumber(options.dynamicSignatureMismatchMaxAgeMs) || 15000);
+  const dynamicPersistMinIntervalMs = options.dynamicPersistMinIntervalMs === undefined
+    ? 1000
+    : Math.max(0, safeNumber(options.dynamicPersistMinIntervalMs));
   const now = typeof options.now === "function" ? options.now : () => Date.now();
   const memory = new Map();
 
@@ -514,12 +542,56 @@ function createThreadDetailProjectionService(options = {}) {
       version: 1,
       policyVersion,
       threadId: entry.threadId,
+      rolloutPath: entry.rolloutPath || rolloutPathForEntry(entry),
       signature: entry.signature,
       signatureHash: entry.signatureHash,
       cachedAtMs: entry.cachedAtMs,
+      updatedAtMs: entry.updatedAtMs,
+      dynamic: Boolean(entry.dynamic),
       result: entry.result,
     });
     return true;
+  }
+
+  function refreshEntrySignatureFromRollout(entry) {
+    if (!entry || !entry.signature) return false;
+    const rolloutPath = rolloutPathForEntry(entry);
+    const stats = rolloutStatsForPath(rolloutPath);
+    if (!stats) return false;
+    const rolloutPathHash = hashText(path.resolve(rolloutPath));
+    if (entry.signature.rolloutPathHash && entry.signature.rolloutPathHash !== rolloutPathHash) return false;
+    entry.rolloutPath = rolloutPath;
+    entry.signature = Object.assign({}, entry.signature, {
+      rolloutPathHash,
+      rolloutSizeBytes: safeNumber(stats.sizeBytes),
+      rolloutMtimeMs: safeNumber(stats.mtimeMs),
+    });
+    entry.signatureHash = signatureHash(entry.signature);
+    return true;
+  }
+
+  function shouldForceDynamicPersist(method) {
+    return method === "thread/name/updated"
+      || method === "thread/status/changed"
+      || method === "turn/completed"
+      || method === "item/completed";
+  }
+
+  function persistDynamicEntry(entry, method) {
+    if (!entry || entry.partial || !entry.signatureHash || !cacheDir) return false;
+    const current = safeNumber(entry.updatedAtMs) || now();
+    const force = shouldForceDynamicPersist(method);
+    const lastPersistedAtMs = safeNumber(entry.lastPersistedAtMs || entry.cachedAtMs);
+    if (!force && dynamicPersistMinIntervalMs > 0
+      && lastPersistedAtMs && current - lastPersistedAtMs < dynamicPersistMinIntervalMs) {
+      return false;
+    }
+    refreshEntrySignatureFromRollout(entry);
+    if (persistEntry(entry)) {
+      entry.lastPersistedAtMs = current;
+      return true;
+    }
+    return false;
   }
 
   function seed(input = {}, result) {
@@ -528,10 +600,12 @@ function createThreadDetailProjectionService(options = {}) {
     const signature = projectionSignature(Object.assign({}, input, { policyVersion, maxTurns }));
     const entry = {
       threadId,
+      rolloutPath: String(input.rolloutPath || "").trim(),
       signature,
       signatureHash: signatureHash(signature),
       cachedAtMs: now(),
       updatedAtMs: now(),
+      lastPersistedAtMs: 0,
       dynamic: false,
       partial: false,
       result: cloneJson(result),
@@ -555,12 +629,14 @@ function createThreadDetailProjectionService(options = {}) {
     if (!raw || raw.version !== 1 || raw.policyVersion !== policyVersion || !raw.result) return null;
     const entry = {
       threadId,
+      rolloutPath: String(raw.rolloutPath || "").trim(),
       signature: raw.signature || null,
       signatureHash: String(raw.signatureHash || ""),
       cachedAtMs: safeNumber(raw.cachedAtMs),
-      updatedAtMs: safeNumber(raw.cachedAtMs),
-      dynamic: false,
-      partial: false,
+      updatedAtMs: safeNumber(raw.updatedAtMs || raw.cachedAtMs),
+      lastPersistedAtMs: safeNumber(raw.updatedAtMs || raw.cachedAtMs),
+      dynamic: Boolean(raw.dynamic),
+      partial: Boolean(raw.partial),
       result: raw.result,
     };
     memory.set(threadId, entry);
@@ -662,6 +738,7 @@ function createThreadDetailProjectionService(options = {}) {
     trimTurns(thread, maxTurns);
     entry.updatedAtMs = now();
     entry.dynamic = true;
+    persistDynamicEntry(entry, method);
     return true;
   }
 

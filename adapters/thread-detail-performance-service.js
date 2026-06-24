@@ -22,6 +22,7 @@ function classifyThreadDetailPhase(readMode, options = {}) {
   if (!mode) return "unknown";
   if (/projection-v?\d*-cache|projection-cache/.test(mode)) return "warm-projection-cache";
   if (/projection-v?\d*-dynamic|projection-dynamic/.test(mode)) return "warm-projection-dynamic";
+  if (/turns-list-large/.test(mode)) return "bounded-large-thread-window";
   if (/turns-list-initial/.test(mode)) return "cold-turns-list-initial";
   if (/turns-list/.test(mode)) return "fallback-turns-list";
   if (/thread-read-raw/.test(mode)) return "cold-thread-read-raw";
@@ -57,6 +58,7 @@ function buildThreadDetailDiagnostics(input = {}) {
     "summaryMs",
     "projectionMs",
     "turnsListInitialMs",
+    "turnsListBeforeFullMs",
     "threadReadMs",
     "rawThreadReadMs",
     "turnsListFallbackMs",

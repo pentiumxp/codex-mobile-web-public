@@ -49,6 +49,7 @@
 
   function compactBubblePreservation(input = {}) {
     if (containsBubble(input.nextHtml)) return { preserve: false };
+    if (input.liveTurnActive === false) return { preserve: false };
     const remainingMs = Number(input.visibleUntilMs || 0) - nowValue(input.nowMs);
     if (remainingMs <= 0) return { preserve: false };
     const savedThreadId = text(input.savedThreadId);
@@ -69,6 +70,7 @@
       && normalizeMode(input.mode) === "expanded"
       && text(input.pinnedThreadId) === text(input.currentThreadId)
       && input.dockHasSheet
+      && input.liveTurnActive !== false
       && !containsBubble(input.nextHtml));
   }
 
@@ -77,6 +79,7 @@
     return Boolean(input.isMobile
       && input.hasCurrentThread
       && !input.newThreadDraft
+      && input.liveTurnActive !== false
       && recallThreadId
       && recallThreadId === text(input.currentThreadId)
       && containsSheet(input.recallHtml));

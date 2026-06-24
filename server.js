@@ -868,6 +868,10 @@ const MAX_STRUCTURED_CHARS = 24000;
 const MAX_DELTA_CHARS = 12000;
 const MAX_THREAD_TURNS = Math.max(1, Math.min(100, Number(process.env.CODEX_MOBILE_THREAD_TURNS || "10")));
 const MAX_FULL_THREAD_TURNS = Math.max(MAX_THREAD_TURNS, Math.min(200, Number(process.env.CODEX_MOBILE_FULL_THREAD_TURNS || "10")));
+const THREAD_DETAIL_TURNS_LIST_FIRST_BYTES = Math.max(
+  0,
+  Number(process.env.CODEX_MOBILE_THREAD_DETAIL_TURNS_LIST_FIRST_BYTES || String(8 * 1024 * 1024)),
+);
 const MAX_LIVE_OPERATION_ITEMS = Math.max(1, Math.min(30, Number(process.env.CODEX_MOBILE_LIVE_OPERATION_ITEMS || "12")));
 const OPERATIONAL_ITEM_TYPES = new Set(["commandExecution", "fileChange", "dynamicToolCall", "mcpToolCall"]);
 const THREAD_LIST_FALLBACK_CACHE_TTL_MS = Math.max(0, Number(process.env.CODEX_MOBILE_THREAD_LIST_FALLBACK_CACHE_TTL_MS || "0"));
@@ -5144,6 +5148,12 @@ const threadDetailReadOrchestrationService = createThreadDetailReadOrchestration
   ),
   readFullThread: readFullThreadDetailForOrchestrator,
   seedProjection: (input, result) => threadDetailProjectionService.seed(input, result),
+  preferBoundedReadBeforeFullRead: ({ projection }) => {
+    if (THREAD_DETAIL_TURNS_LIST_FIRST_BYTES <= 0 || !projection) return false;
+    const stats = projection.rolloutStats || {};
+    const sizeBytes = Number(stats.sizeBytes || stats.size || 0);
+    return Number.isFinite(sizeBytes) && sizeBytes >= THREAD_DETAIL_TURNS_LIST_FIRST_BYTES;
+  },
   prepareResponse: prepareThreadDetailResponseResult,
   fallbackThreadReadResult: fallbackThreadReadResultForOrchestrator,
   isReadTimeoutError,
@@ -6926,6 +6936,98 @@ function writeRuntimeSettings(patch = {}) {
   return next;
 }
 
+const THREAD_DISPLAY_MAX_PANES = 12;
+
+function normalizeThreadDisplayThreadId(value) {
+  const text = String(value || "").trim();
+  if (!text || text.length > 220) return "";
+  return text;
+}
+
+function normalizeThreadDisplayPaneCount(value, fallback = 0) {
+  const parsed = Math.floor(Number(value));
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(0, Math.min(THREAD_DISPLAY_MAX_PANES, parsed));
+}
+
+function normalizeThreadDisplayMode(value, fallback = "single") {
+  const text = String(value || "").trim().toLowerCase();
+  if (text === "tile" || text === "tiles" || text === "tiled") return "tile";
+  if (text === "single" || text === "normal") return "single";
+  return fallback === "tile" ? "tile" : "single";
+}
+
+function normalizeThreadDisplaySettings(raw = {}, options = {}) {
+  const input = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const hasExplicitMode = Object.prototype.hasOwnProperty.call(input, "displayMode")
+    || Object.prototype.hasOwnProperty.call(input, "mode");
+  let displayMode = normalizeThreadDisplayMode(input.displayMode || input.mode, "single");
+  if (!hasExplicitMode && input.threadTileMode === true) displayMode = "tile";
+  if (!hasExplicitMode && input.threadTileMode === false) displayMode = "single";
+  const rawPaneIds = Array.isArray(input.paneThreadIds)
+    ? input.paneThreadIds
+    : Array.isArray(input.threadTilePinnedIds)
+      ? input.threadTilePinnedIds
+      : Array.isArray(input.threadIds)
+        ? input.threadIds
+        : [];
+  const paneThreadIds = uniqueStrings(rawPaneIds)
+    .map(normalizeThreadDisplayThreadId)
+    .filter(Boolean)
+    .slice(0, THREAD_DISPLAY_MAX_PANES);
+  const selectedThreadId = normalizeThreadDisplayThreadId(input.selectedThreadId);
+  const paneCount = normalizeThreadDisplayPaneCount(
+    Object.prototype.hasOwnProperty.call(input, "paneCount")
+      ? input.paneCount
+      : Object.prototype.hasOwnProperty.call(input, "threadTilePaneCount")
+        ? input.threadTilePaneCount
+        : input.tilePaneCount,
+    0,
+  );
+  const updatedAt = String(input.updatedAt || "").trim();
+  const updatedAtMs = timestampToMs(input.updatedAtMs || updatedAt);
+  return {
+    displayMode,
+    threadTileMode: displayMode === "tile",
+    paneThreadIds,
+    paneCount,
+    selectedThreadId,
+    updatedAt,
+    updatedAtMs,
+    source: options.source || "runtime",
+  };
+}
+
+function threadDisplayPublicSettings(settings = readRuntimeSettings()) {
+  const raw = settings && settings.threadDisplay && typeof settings.threadDisplay === "object" && !Array.isArray(settings.threadDisplay)
+    ? settings.threadDisplay
+    : null;
+  return normalizeThreadDisplaySettings(raw || {}, { source: raw ? "runtime" : "default" });
+}
+
+function setThreadDisplaySettings(patch = {}) {
+  const input = patch && patch.threadDisplay && typeof patch.threadDisplay === "object" && !Array.isArray(patch.threadDisplay)
+    ? patch.threadDisplay
+    : patch;
+  const current = threadDisplayPublicSettings();
+  const now = new Date();
+  const next = normalizeThreadDisplaySettings(Object.assign({}, current, input || {}, {
+    updatedAt: now.toISOString(),
+    updatedAtMs: now.getTime(),
+  }), { source: "runtime" });
+  writeRuntimeSettings({
+    threadDisplay: {
+      displayMode: next.displayMode,
+      paneThreadIds: next.paneThreadIds,
+      paneCount: next.paneCount,
+      selectedThreadId: next.selectedThreadId,
+      updatedAt: next.updatedAt,
+      updatedAtMs: next.updatedAtMs,
+    },
+  });
+  return threadDisplayPublicSettings(readRuntimeSettings());
+}
+
 function workspaceDelegationPublicSettings(settings = readRuntimeSettings()) {
   const raw = settings && settings.workspaceDelegation && typeof settings.workspaceDelegation === "object"
     ? settings.workspaceDelegation
@@ -8334,8 +8436,11 @@ function threadStatusChangedPayload(threadId, status, meta = {}) {
   };
   const source = String(meta.source || "").trim();
   const turnId = String(meta.turnId || "").trim();
+  const eventAtMs = timestampToMs(meta.eventAtMs || meta.eventAt || meta.completedAtMs || meta.completedAt || meta.startedAtMs || meta.startedAt);
   if (source) params.source = source;
   if (turnId) params.turnId = turnId;
+  if (eventAtMs) params.eventAtMs = eventAtMs;
+  if (meta.mobileReplay) params.mobileReplay = true;
   return {
     type: "notification",
     method: "thread/status/changed",
@@ -8380,9 +8485,15 @@ function threadStatusChangedPayloadFromTurnNotification(payload) {
   const status = method === "turn/started"
     ? { type: "active" }
     : (turn.status || payload.params.status || { type: "completed" });
+  const eventAtMs = method === "turn/started"
+    ? timestampToMs(turn.startedAtMs || turn.startedAt || turn.createdAtMs || turn.createdAt || payload.params.startedAtMs || payload.params.startedAt)
+    : timestampToMs(turn.completedAtMs || turn.completedAt || turn.finishedAtMs || turn.finishedAt || turn.updatedAtMs || turn.updatedAt || payload.params.completedAtMs || payload.params.completedAt || payload.params.finishedAtMs || payload.params.finishedAt || payload.params.updatedAtMs || payload.params.updatedAt);
+  const fallbackEventAtMs = payload.params.mobileReplay ? 0 : Date.now();
   return threadStatusChangedPayload(threadId, status, {
     source: method,
     turnId,
+    eventAtMs: eventAtMs || fallbackEventAtMs,
+    mobileReplay: Boolean(payload.params.mobileReplay),
   });
 }
 
@@ -13312,6 +13423,22 @@ async function handleApi(req, res) {
     }
     return;
   }
+  if (url.pathname === "/api/settings/thread-display" && (req.method === "GET" || req.method === "POST")) {
+    try {
+      if (req.method === "GET") {
+        sendJson(res, 200, { ok: true, threadDisplay: threadDisplayPublicSettings() });
+        return;
+      }
+      const body = await readBody(req);
+      sendJson(res, 200, {
+        ok: true,
+        threadDisplay: setThreadDisplaySettings(body),
+      });
+    } catch (err) {
+      sendJson(res, err.statusCode || 500, { ok: false, error: err.message || String(err) });
+    }
+    return;
+  }
   if (url.pathname === "/api/v1/hermes/plugin/session" && req.method === "POST") {
     try {
       const body = await readBody(req);
@@ -14655,6 +14782,9 @@ module.exports = {
   staticCompressionEncoding,
   stripMarkdownFileTarget,
   taskCardSourceThreadTitle,
+  threadDisplayPublicSettings,
+  setThreadDisplaySettings,
+  threadStatusChangedPayloadFromTurnNotification,
   threadDisplayTitle,
   threadMatchesWorkspaceCwd,
   threadTaskCardCanonicalVisibleTargets,

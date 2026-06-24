@@ -11,6 +11,10 @@ const threadDetailReadOrchestrationServiceJs = fs.readFileSync(
   path.resolve(__dirname, "..", "adapters", "thread-detail-read-orchestration-service.js"),
   "utf8",
 );
+process.env.CODEX_MOBILE_SETTINGS_FILE = path.join(os.tmpdir(), `codex-mobile-thread-visibility-settings-${process.pid}.json`);
+try {
+  fs.rmSync(process.env.CODEX_MOBILE_SETTINGS_FILE, { force: true });
+} catch (_) {}
 
 const {
   anyThreadMatchesVisibleWorkspace,
@@ -28,8 +32,11 @@ const {
   rememberLocalActiveThreadStatus,
   sortTurnsChronologically,
   taskCardSourceThreadTitle,
+  threadDisplayPublicSettings,
   threadDisplayTitle,
   threadMatchesWorkspaceCwd,
+  threadStatusChangedPayloadFromTurnNotification,
+  setThreadDisplaySettings,
 } = require("../server");
 
 function normalizeFsPath(value) {
@@ -128,6 +135,69 @@ test("thread turns cursor accepts app-server JSON cursor objects from query stri
   assert.equal(parseThreadTurnsCursor({ turnId: "turn-3", includeAnchor: false }), '{"turnId":"turn-3","includeAnchor":false}');
   assert.equal(parseThreadTurnsCursor("opaque-cursor"), "opaque-cursor");
   assert.equal(parseThreadTurnsCursor(""), null);
+});
+
+test("turn completion status broadcasts carry fresh event time for thread-list hints", () => {
+  const payload = threadStatusChangedPayloadFromTurnNotification({
+    type: "notification",
+    method: "turn/completed",
+    params: {
+      threadId: "thread-status-a",
+      turn: {
+        id: "turn-status-a",
+        status: { type: "completed" },
+        completedAtMs: 1_782_300_000_123,
+      },
+    },
+  });
+
+  assert.equal(payload.method, "thread/status/changed");
+  assert.equal(payload.params.threadId, "thread-status-a");
+  assert.deepEqual(payload.params.status, { type: "completed" });
+  assert.equal(payload.params.source, "turn/completed");
+  assert.equal(payload.params.turnId, "turn-status-a");
+  assert.equal(payload.params.eventAtMs, 1_782_300_000_123);
+});
+
+test("replayed turn completion status does not invent a fresh event time", () => {
+  const payload = threadStatusChangedPayloadFromTurnNotification({
+    type: "notification",
+    method: "turn/completed",
+    params: {
+      threadId: "thread-status-a",
+      mobileReplay: true,
+      turn: {
+        id: "turn-status-a",
+        status: { type: "completed" },
+      },
+    },
+  });
+
+  assert.equal(payload.method, "thread/status/changed");
+  assert.equal(payload.params.mobileReplay, true);
+  assert.equal(Object.prototype.hasOwnProperty.call(payload.params, "eventAtMs"), false);
+});
+
+test("thread display settings normalize tile mode and stable pane slots", () => {
+  const settings = setThreadDisplaySettings({
+    displayMode: "tile",
+    paneThreadIds: ["thread-a", "thread-b", "thread-a", "", "thread-c"],
+    paneCount: 4.8,
+    selectedThreadId: "thread-b",
+  });
+
+  assert.equal(settings.displayMode, "tile");
+  assert.equal(settings.threadTileMode, true);
+  assert.deepEqual(settings.paneThreadIds.slice(0, 3), ["thread-a", "thread-b", "thread-c"]);
+  assert.equal(settings.paneCount, 4);
+  assert.equal(settings.selectedThreadId, "thread-b");
+  assert.equal(threadDisplayPublicSettings().source, "runtime");
+  assert.equal(threadDisplayPublicSettings().paneCount, 4);
+});
+
+test("thread display pane count is bounded and allows automatic zero", () => {
+  assert.equal(setThreadDisplaySettings({ displayMode: "tile", paneCount: 0 }).paneCount, 0);
+  assert.equal(setThreadDisplaySettings({ displayMode: "tile", paneCount: 99 }).paneCount, 12);
 });
 
 test("thread detail uses full thread/read before bounded turns/list fallback", () => {

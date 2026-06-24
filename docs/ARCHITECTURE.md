@@ -611,7 +611,9 @@ missing data.
 
 The browser owns conversation scroll controls. The return-to-bottom button appears only when the current thread is loaded, scrollable, and away from the newest content.
 
-The upward floating button for the current live or recently completed turn is a summary/receipt jump, not a start-of-answer jump. A real upward user scroll can activate the anchor while a turn is live, and `turn/completed` also creates a completion anchor so a user who has already reached the bottom can still jump back to the beginning of the final receipt. Clicking the button should scroll to the last `agentMessage` or `plan` item in that turn. If no such final receipt exists, it falls back to the last non-user, non-live-operation, non-Usage item, then to the turn container. Tapping the down-arrow to skip to the bottom must not clear the completion anchor; the anchor clears on a new turn, expiry, thread change, or after the user taps the upward receipt-jump button. Visibility is based on the target item's start being above the viewport, not on the whole target item being above the viewport, because final summaries can be tall.
+The upward floating button for the current live or recently completed turn is a summary/receipt jump, not a start-of-answer jump. It shares the same floating slot as the return-to-bottom button and must not appear at the same time; return-to-bottom wins when both predicates are true. A real upward user scroll can activate the anchor while a turn is live, and `turn/completed` also creates a completion anchor so a user who has already reached the bottom can still jump back to the beginning of the final receipt. Clicking the button should scroll to the last `agentMessage` or `plan` item in that turn. If no such final receipt exists, it falls back to the last non-user, non-live-operation, non-Usage item, then to the turn container. Tapping the down-arrow to skip to the bottom must not clear the completion anchor; the anchor clears on a new turn, expiry, thread change, or after the user taps the upward receipt-jump button. Visibility is based on the target item's start being above the viewport, not on the whole target item being above the viewport, because final summaries can be tall.
+
+Mobile operation bubbles are live-turn controls. The compact bubble may stay visible for the 500ms minimum dwell while the turn is still live, and the recall dot may reopen the current live turn's latest command/file/tool/search sheet. Once the turn completes and the final receipt/Usage surface is shown, the old operation bubble or recall dot must not remain as a command entry.
 
 Live and final receipt rendering must respect reading position. Once recent manual scroll intent moves the conversation away from the bottom, Mobile Web creates a current-turn auto-scroll hold even if a programmatic bottom-scroll window is active. While that hold is active, render-time stick-to-bottom, submitted-message follow, and viewport follow should not scroll down. The hold clears when the conversation returns to bottom or the user explicitly taps the down-arrow button. Plain live chat replies may continue streaming, but a latest live `agentMessage` in a turn that already has command/file/tool/search operation items is treated as a final receipt: the client stores deltas without repainting the card, then renders the receipt once on `turn/completed`. If the final receipt is long, the completion render scrolls to the start of that receipt instead of the bottom so the user can read downward or tap the down-arrow to skip it. If `turn/completed` arrives with a short completion payload and the full deferred receipt is only restored by the follow-up thread refresh, the completion anchor remains pending and the refresh render performs the same one-time receipt-start positioning.
 
@@ -664,10 +666,21 @@ Composer-height baseline while a keyboard-editable input is focused, and
 visualViewport resize does not trigger a full thread render for the tile board.
 Home AI embedded tile mode also suppresses whole-app `--app-top` translation
 while the keyboard is open so the shared Composer can adapt without moving the
-entire pane grid.
-thread key after the thread id is known. This avoids an immediate UI fallback
-to stale thread metadata while the new turn is starting and before app-server
-state DB metadata catches up.
+entire pane grid. The display mode, desired pane count, and tile pane slot order
+are server-side runtime settings under `settings.json` `threadDisplay`, exposed
+through `GET/POST /api/settings/thread-display`; `localStorage` is only a legacy
+migration/cache mirror. `paneCount=0` means automatic sizing from current/running
+threads and viewport capacity; a positive value is the user's manual window
+count. Device width sets the maximum pane capacity only, so a four-pane-capable
+tablet can still display two wider panes until the user adds a window from the
+pane title menu. Pane slots are stable thread id positions: normal thread-list
+recent sorting can fill empty slots but must not reorder existing slots. A manual
+pane title-menu switch replaces only that slot and persists the new ordered pane
+id list. An explicit outer thread-list open is also treated as a user pane
+selection: when tile mode is active and the opened thread is not currently
+visible, the browser replaces the last visible pane slot with that thread and
+persists the new ordered pane id list. The title menu's `关闭窗口` / `新增窗口`
+actions change only how many slots are visible.
 
 Tile-mode pane refreshes are local by default. The browser keeps per-pane
 detail cache, operation bubble state, and scroll-bottom hold state keyed by

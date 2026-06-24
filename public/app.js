@@ -140,7 +140,10 @@ const state = {
   threads: [],
   currentThread: null,
   currentThreadId: "",
-  threadTileMode: localStorage.getItem("codexMobileThreadDisplayMode") === "tile",
+  threadTileMode: false,
+  threadDisplaySettingsLoaded: false,
+  threadDisplaySettingsSaveTimer: null,
+  threadDisplaySettingsSaveInFlight: false,
   threadTileDetails: new Map(),
   threadTileLoadingIds: new Set(),
   threadTileErrors: new Map(),
@@ -148,6 +151,7 @@ const state = {
   threadTileLoadedAtById: new Map(),
   threadTileActiveIds: [],
   threadTilePinnedIds: [],
+  threadTilePaneCount: 0,
   threadTileSelectedThreadId: "",
   threadTileSwitchMenuPaneId: "",
   threadTileRefreshTimer: null,
@@ -452,7 +456,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v419";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v424";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -624,6 +628,7 @@ const THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";
 const THREAD_TASK_CARD_DRAFT_TAG = "codex-mobile-thread-task-card-draft";
 const THREAD_TILE_REFRESH_INTERVAL_MS = 2400;
 const THREAD_TILE_REFRESH_MIN_INTERVAL_MS = 1100;
+const THREAD_TILE_SETTINGS_SAVE_DEBOUNCE_MS = 500;
 const THEME_VALUES = new Set(["system", "dark", "light"]);
 const FONT_SIZE_VALUES = new Set(["small", "default", "large", "xlarge", "xxlarge"]);
 const MENU_OVERLAY_MEDIA = "(max-width: 1180px), (pointer: coarse) and (max-width: 1400px)";
@@ -7703,6 +7708,14 @@ async function bootstrap() {
     durationMs: roundedDurationMs(workspacesStartedAt),
     workspaceCount: Array.isArray(state.workspaces) ? state.workspaces.length : 0,
   });
+  const threadDisplayStartedAt = nowPerfMs();
+  await loadThreadDisplaySettings({ render: false }).catch(showError);
+  postStartupStage("thread_display_done", bootstrapStartedAt, {
+    durationMs: roundedDurationMs(threadDisplayStartedAt),
+    mode: state.threadTileMode ? "tile" : "single",
+    paneCount: normalizeThreadTilePaneCount(state.threadTilePaneCount, 0),
+    paneSlotCount: normalizeThreadTilePinnedIds(state.threadTilePinnedIds).length,
+  });
   const threadsStartedAt = nowPerfMs();
   await loadThreads({ silent: startupThreadOpenPending, deferFallback: true });
   postStartupStage("threads_done", bootstrapStartedAt, {
@@ -8267,6 +8280,13 @@ async function loadThreads(options = {}) {
     reconcileThreadStatusHints(state.threads);
     renderWorkspaceTokenUsage();
     renderThreads(result);
+    if (state.currentThread && state.threadTileMode && !isThreadTileKeyboardFocusActive()) {
+      const tileLayout = threadTileLayout();
+      if (tileLayout.enabled) {
+        const nextTileIds = threadTileCandidateIds(tileLayout);
+        if (!threadTileIdsEqual(nextTileIds, state.threadTileActiveIds)) renderCurrentThread({ stickToBottom: true });
+      }
+    }
     restoreConnectionState(result.mobileFallback ? "Recovered from session index" : "Connected");
     scheduleVisiblePageRefreshCheck(500);
     if (result && result.mobileDeferredFallback && !state.selectedCwd && !search) {
@@ -8352,6 +8372,7 @@ async function loadThread(threadId, options = {}) {
   if (threadId && threadId !== state.continuationSourceThreadId) {
     state.continuationSourceThreadId = "";
   }
+  const replacedTilePaneForThreadListOpen = replaceLastThreadTilePaneForThreadListOpen(threadId, { source });
   if (threadId === state.currentThreadId
     && state.currentThread
     && !state.currentThread.mobileLoading
@@ -8365,6 +8386,11 @@ async function loadThread(threadId, options = {}) {
     const conversationRenderStartedAt = nowPerfMs();
     renderCurrentThread({ stickToBottom: true });
     const conversationRenderMs = roundedDurationMs(conversationRenderStartedAt);
+    if (replacedTilePaneForThreadListOpen) {
+      restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
+      renderComposerSettings();
+      updateComposerControls();
+    }
     if (isMenuOverlayMode()) closeSidebarMenu();
     if (!state.threadSideChats.has(threadId)) loadSideChat(threadId, { silent: true }).catch(showError);
     const renderElapsedMs = roundedDurationMs(renderStartedAt);
@@ -11291,25 +11317,208 @@ function threadTileLayout(options = {}) {
   });
 }
 
-function defaultThreadTileCandidateIds(layout = threadTileLayout()) {
+function normalizeThreadTilePaneCount(value, fallback = 0) {
+  const parsed = Math.floor(Number(value));
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(0, Math.min(threadTileLayoutPolicy.DEFAULT_MAX_PANES, parsed));
+}
+
+function threadTileLayoutCapacity(layout = threadTileLayout()) {
+  return Math.max(1, Math.min(
+    threadTileLayoutPolicy.DEFAULT_MAX_PANES,
+    Math.floor(Number(layout && layout.maxPanes || 1)) || 1,
+  ));
+}
+
+function defaultThreadTileCandidateIds(layout = threadTileLayout(), options = {}) {
+  const maxPanes = Math.max(1, Math.min(
+    threadTileLayoutPolicy.DEFAULT_MAX_PANES,
+    Math.floor(Number(options.maxPanes || layout && layout.maxPanes || 1)) || 1,
+  ));
   const threadIds = visibleThreads(state.threads).map((thread) => thread && thread.id).filter(Boolean);
   return threadTileLayoutPolicy.selectThreadTileIds({
     currentThreadId: state.currentThreadId,
     threadIds,
-    maxPanes: layout.maxPanes,
+    maxPanes,
   });
 }
 
-function threadTileCandidateIds(layout = threadTileLayout()) {
-  const defaults = defaultThreadTileCandidateIds(layout);
+function autoThreadTilePaneCount(layout = threadTileLayout()) {
+  const capacity = threadTileLayoutCapacity(layout);
+  const candidates = defaultThreadTileCandidateIds(layout, { maxPanes: capacity });
+  const candidateCount = candidates.length;
+  if (!candidateCount) return 1;
+  const runningIds = new Set();
+  visibleThreads(state.threads).forEach((thread) => {
+    const id = String(thread && thread.id || "");
+    if (id && isRunningStatus(thread && thread.status)) runningIds.add(id);
+  });
+  if (state.currentThreadId) runningIds.add(String(state.currentThreadId));
+  const baseline = capacity > 1 ? Math.min(2, candidateCount, capacity) : 1;
+  return Math.max(1, Math.min(capacity, candidateCount, Math.max(baseline, runningIds.size)));
+}
+
+function effectiveThreadTilePaneCount(layout = threadTileLayout()) {
+  const capacity = threadTileLayoutCapacity(layout);
+  const explicit = normalizeThreadTilePaneCount(state.threadTilePaneCount, 0);
+  const desired = explicit > 0 ? explicit : autoThreadTilePaneCount(layout);
+  const candidateCount = defaultThreadTileCandidateIds(layout, { maxPanes: capacity }).length || 1;
+  return Math.max(1, Math.min(capacity, candidateCount, desired));
+}
+
+function threadTileDisplayLayout(layout = threadTileLayout(), ids = []) {
+  const count = Math.max(1, Array.isArray(ids) && ids.length ? ids.length : effectiveThreadTilePaneCount(layout));
+  const capacityColumns = Math.max(1, Math.floor(Number(layout && layout.columns || 1)) || 1);
+  const columns = Math.max(1, Math.min(capacityColumns, count));
+  return Object.assign({}, layout, {
+    capacityPanes: threadTileLayoutCapacity(layout),
+    visiblePanes: count,
+    columns,
+    rows: Math.max(1, Math.ceil(count / columns)),
+  });
+}
+
+function normalizeThreadTilePinnedIds(values = []) {
+  const seen = new Set();
+  const ids = [];
+  for (const value of Array.isArray(values) ? values : []) {
+    const id = String(value || "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+    if (ids.length >= threadTileLayoutPolicy.DEFAULT_MAX_PANES * 2) break;
+  }
+  return ids;
+}
+
+function threadTileVisibleIdSet() {
   const visibleIds = new Set(visibleThreads(state.threads).map((thread) => String(thread && thread.id || "")).filter(Boolean));
   if (state.currentThreadId) visibleIds.add(String(state.currentThreadId));
-  const maxPanes = Math.max(1, Number(layout && layout.maxPanes || defaults.length || 1));
+  return visibleIds;
+}
+
+function threadTileIdsEqual(a = [], b = []) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  return a.every((id, index) => String(id || "") === String(b[index] || ""));
+}
+
+function threadTileCandidateIds(layout = threadTileLayout()) {
+  const maxPanes = effectiveThreadTilePaneCount(layout);
+  const defaults = defaultThreadTileCandidateIds(layout, { maxPanes });
+  const visibleIds = threadTileVisibleIdSet();
   const pinned = (state.threadTilePinnedIds || [])
     .map((id) => String(id || ""))
     .filter((id) => id && visibleIds.has(id));
   if (!pinned.length) return defaults;
   return Array.from(new Set([...pinned, ...defaults])).slice(0, maxPanes);
+}
+
+function threadDisplaySettingsPayload() {
+  return {
+    displayMode: state.threadTileMode ? "tile" : "single",
+    paneThreadIds: normalizeThreadTilePinnedIds(state.threadTilePinnedIds),
+    paneCount: normalizeThreadTilePaneCount(state.threadTilePaneCount, 0),
+    selectedThreadId: String(state.threadTileSelectedThreadId || ""),
+  };
+}
+
+function localThreadDisplayMode() {
+  try {
+    return localStorage.getItem(STORAGE_THREAD_DISPLAY_MODE) === "tile"
+      || localStorage.getItem(STORAGE_LEGACY_THREAD_TILE_MODE) === "true"
+      ? "tile"
+      : "single";
+  } catch (_) {
+    return "single";
+  }
+}
+
+function mirrorThreadDisplayModeToLocalStorage() {
+  try {
+    localStorage.removeItem(STORAGE_LEGACY_THREAD_TILE_MODE);
+    if (state.threadTileMode) localStorage.setItem(STORAGE_THREAD_DISPLAY_MODE, "tile");
+    else localStorage.removeItem(STORAGE_THREAD_DISPLAY_MODE);
+  } catch (_) {}
+}
+
+function applyThreadDisplaySettings(settings = {}, options = {}) {
+  const displayMode = String(settings.displayMode || (settings.threadTileMode ? "tile" : "single")).toLowerCase() === "tile"
+    ? "tile"
+    : "single";
+  state.threadTileMode = displayMode === "tile";
+  state.threadTilePinnedIds = normalizeThreadTilePinnedIds(settings.paneThreadIds || settings.threadTilePinnedIds || []);
+  const paneCountInput = Object.prototype.hasOwnProperty.call(settings, "paneCount")
+    ? settings.paneCount
+    : Object.prototype.hasOwnProperty.call(settings, "threadTilePaneCount")
+      ? settings.threadTilePaneCount
+      : settings.tilePaneCount;
+  state.threadTilePaneCount = normalizeThreadTilePaneCount(paneCountInput, 0);
+  const selected = String(settings.selectedThreadId || "").trim();
+  state.threadTileSelectedThreadId = selected && state.threadTilePinnedIds.includes(selected) ? selected : "";
+  mirrorThreadDisplayModeToLocalStorage();
+  syncThreadTileToggle();
+  if (options.render === true) renderCurrentThread({ stickToBottom: true });
+}
+
+async function loadThreadDisplaySettings(options = {}) {
+  try {
+    const result = await api("/api/settings/thread-display");
+    const settings = result && result.threadDisplay && typeof result.threadDisplay === "object" ? result.threadDisplay : {};
+    state.threadDisplaySettingsLoaded = true;
+    if (settings.source !== "runtime" && localThreadDisplayMode() === "tile") {
+      applyThreadDisplaySettings({ displayMode: "tile", paneThreadIds: [], selectedThreadId: "" }, { render: options.render === true });
+      await saveThreadDisplaySettingsNow();
+      return;
+    }
+    applyThreadDisplaySettings(settings, { render: options.render === true });
+  } catch (err) {
+    state.threadDisplaySettingsLoaded = true;
+    if (localThreadDisplayMode() === "tile") applyThreadDisplaySettings({ displayMode: "tile" }, { render: options.render === true });
+    throw err;
+  }
+}
+
+async function saveThreadDisplaySettingsNow() {
+  if (state.threadDisplaySettingsSaveTimer) {
+    clearTimeout(state.threadDisplaySettingsSaveTimer);
+    state.threadDisplaySettingsSaveTimer = null;
+  }
+  if (state.threadDisplaySettingsSaveInFlight) return null;
+  state.threadDisplaySettingsSaveInFlight = true;
+  try {
+    const result = await api("/api/settings/thread-display", {
+      method: "POST",
+      body: JSON.stringify(threadDisplaySettingsPayload()),
+    });
+    const settings = result && result.threadDisplay && typeof result.threadDisplay === "object" ? result.threadDisplay : null;
+    if (settings) applyThreadDisplaySettings(settings, { render: false });
+    return result;
+  } finally {
+    state.threadDisplaySettingsSaveInFlight = false;
+  }
+}
+
+function scheduleThreadDisplaySettingsSave() {
+  if (!state.threadDisplaySettingsLoaded) return;
+  if (state.threadDisplaySettingsSaveTimer) clearTimeout(state.threadDisplaySettingsSaveTimer);
+  state.threadDisplaySettingsSaveTimer = setTimeout(() => {
+    state.threadDisplaySettingsSaveTimer = null;
+    saveThreadDisplaySettingsNow().catch(showError);
+  }, THREAD_TILE_SETTINGS_SAVE_DEBOUNCE_MS);
+}
+
+function syncThreadTilePinnedIdsFromActiveIds(activeIds = []) {
+  const ids = normalizeThreadTilePinnedIds(activeIds);
+  if (!state.threadTileMode || !ids.length) return false;
+  const visibleIds = threadTileVisibleIdSet();
+  const existingVisible = normalizeThreadTilePinnedIds(state.threadTilePinnedIds)
+    .filter((id) => visibleIds.has(id));
+  if (threadTileIdsEqual(existingVisible.slice(0, ids.length), ids)) return false;
+  const remaining = normalizeThreadTilePinnedIds(state.threadTilePinnedIds)
+    .filter((id) => !ids.includes(id));
+  state.threadTilePinnedIds = normalizeThreadTilePinnedIds([...ids, ...remaining]);
+  scheduleThreadDisplaySettingsSave();
+  return true;
 }
 
 function threadTileSummary(threadId) {
@@ -11369,7 +11578,20 @@ function renderThreadTileSwitchMenu(currentId) {
   if (!current || state.threadTileSwitchMenuPaneId !== current) return "";
   const options = threadTileVisibleThreadOptions(current);
   if (!options.length) return "";
+  const layout = threadTileLayout({ enabled: true });
+  const activeIds = threadTileCandidateIds(layout);
+  const count = activeIds.length || effectiveThreadTilePaneCount(layout);
+  const minCount = threadTileMinimumPaneCount(layout);
+  const maxCount = threadTileMaximumPaneCount(layout);
+  const capacity = threadTileLayoutCapacity(layout);
+  const canClose = activeIds.includes(current) && count > minCount;
+  const canAdd = count < maxCount;
   return `<div class="thread-tile-switch-menu" role="listbox" aria-label="切换此窗口线程">
+    <div class="thread-tile-switch-actions">
+      <button class="thread-tile-switch-action" type="button" data-thread-tile-close-pane="${escapeHtml(current)}"${canClose ? "" : " disabled"}>关闭窗口</button>
+      <span class="thread-tile-switch-count">${escapeHtml(String(count))}/${escapeHtml(String(capacity))}</span>
+      <button class="thread-tile-switch-action" type="button" data-thread-tile-pane-count="1"${canAdd ? "" : " disabled"}>新增窗口</button>
+    </div>
     ${options.map((threadId) => {
       const thread = threadTileDisplayThread(threadId);
       const title = threadDisplayName(thread) || threadId;
@@ -11396,22 +11618,56 @@ function replaceThreadTilePaneThread(fromThreadId, toThreadId) {
   if (index < 0) return false;
   const sourcePane = threadTilePaneElement(from);
   saveCurrentDraftNow();
-  const nextIds = ids.slice();
+  const nextIds = normalizeThreadTilePinnedIds(state.threadTilePinnedIds).length
+    ? normalizeThreadTilePinnedIds(state.threadTilePinnedIds)
+    : ids.slice();
+  while (nextIds.length < ids.length) nextIds.push(ids[nextIds.length]);
   const duplicateIndex = nextIds.indexOf(to);
   if (duplicateIndex >= 0 && duplicateIndex !== index) nextIds[duplicateIndex] = from;
   nextIds[index] = to;
-  state.threadTilePinnedIds = nextIds;
-  state.threadTileActiveIds = nextIds;
+  state.threadTilePinnedIds = normalizeThreadTilePinnedIds(nextIds);
+  state.threadTileActiveIds = threadTileCandidateIds(layout);
   state.threadTileSelectedThreadId = to;
   state.threadTileSwitchMenuPaneId = "";
   state.threadTilePaneScrollHoldById.delete(from);
   state.threadTilePaneScrollHoldById.delete(to);
+  scheduleThreadDisplaySettingsSave();
   restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
   renderComposerSettings();
   updateComposerControls();
   loadThreadTileDetail(to, { force: true, source: "tile-switch" }).catch(showError);
   if (duplicateIndex >= 0 && duplicateIndex !== index) scheduleRenderCurrentThread();
   else if (!patchThreadTilePane(to, { paneElement: sourcePane, stickToBottom: true })) scheduleRenderCurrentThread();
+  return true;
+}
+
+function replaceLastThreadTilePaneForThreadListOpen(threadId, options = {}) {
+  const id = String(threadId || "").trim();
+  const source = String(options.source || "").trim();
+  if (!id || source !== "thread-list" || !state.threadTileMode) return false;
+  const layout = threadTileLayout({ enabled: true });
+  if (!layout || !layout.enabled) return false;
+  const ids = threadTileCandidateIds(layout);
+  if (!ids.length || ids.includes(id)) return false;
+  const index = ids.length - 1;
+  const from = ids[index] || "";
+  if (!from || from === id) return false;
+  const nextIds = normalizeThreadTilePinnedIds(state.threadTilePinnedIds).length
+    ? normalizeThreadTilePinnedIds(state.threadTilePinnedIds)
+    : ids.slice();
+  while (nextIds.length < ids.length) nextIds.push(ids[nextIds.length]);
+  const duplicateIndex = nextIds.indexOf(id);
+  if (duplicateIndex >= 0 && duplicateIndex !== index) nextIds[duplicateIndex] = from;
+  nextIds[index] = id;
+  const normalized = normalizeThreadTilePinnedIds(nextIds);
+  if (threadTileIdsEqual(normalizeThreadTilePinnedIds(state.threadTilePinnedIds), normalized)) return false;
+  state.threadTilePinnedIds = normalized;
+  state.threadTileActiveIds = threadTileCandidateIds(layout);
+  state.threadTileSelectedThreadId = id;
+  state.threadTileSwitchMenuPaneId = "";
+  state.threadTilePaneScrollHoldById.delete(from);
+  state.threadTilePaneScrollHoldById.delete(id);
+  scheduleThreadDisplaySettingsSave();
   return true;
 }
 
@@ -11689,6 +11945,7 @@ function ensureThreadTileDetails(ids = []) {
   if (!state.threadTileMode) return;
   const activeIds = new Set(ids.map((id) => String(id || "")).filter(Boolean));
   state.threadTileActiveIds = Array.from(activeIds);
+  syncThreadTilePinnedIdsFromActiveIds(state.threadTileActiveIds);
   syncThreadTileSelectedThread(state.threadTileActiveIds);
   for (const [id, controller] of Array.from(state.threadTileControllers.entries())) {
     if (activeIds.has(id)) continue;
@@ -11756,6 +12013,12 @@ function recentThreadTileOperationBubble(threadId) {
   return String(record.html || "");
 }
 
+function clearThreadTileOperationBubble(threadId) {
+  const id = String(threadId || "");
+  if (!id) return;
+  state.threadTileOperationBubblesById.delete(id);
+}
+
 function renderThreadTileOperationDock(thread, previousKeys = new Set()) {
   const id = String(thread && thread.id || "");
   if (!id) return "";
@@ -11763,7 +12026,7 @@ function renderThreadTileOperationDock(thread, previousKeys = new Set()) {
   const mode = normalizeLiveOperationDockMode(state.threadTileOperationModesById.get(id) || "compact");
   const expanded = mode === "expanded";
   if (!entry || !entry.item || entry.item.type === "liveTurnStatus") {
-    return recentThreadTileOperationBubble(id);
+    return latestLiveTurnForThread(thread) ? recentThreadTileOperationBubble(id) : "";
   }
   const html = `<div class="thread-tile-operation-dock" data-thread-tile-operation-dock="${escapeHtml(id)}" data-mode="${escapeHtml(mode)}">
     <div class="live-operation-dock-inner">
@@ -11790,6 +12053,77 @@ function threadTileOperationSignature(threadId) {
       ? visibleItemSignature(entry.item, entry.turn)
       : null,
   };
+}
+
+function threadTileMinimumPaneCount(layout = threadTileLayout()) {
+  const capacity = threadTileLayoutCapacity(layout);
+  const candidateCount = defaultThreadTileCandidateIds(layout, { maxPanes: capacity }).length || 1;
+  return Math.min(capacity, candidateCount) >= 2 ? 2 : 1;
+}
+
+function threadTileMaximumPaneCount(layout = threadTileLayout()) {
+  const capacity = threadTileLayoutCapacity(layout);
+  const candidateCount = defaultThreadTileCandidateIds(layout, { maxPanes: capacity }).length || 1;
+  return Math.max(1, Math.min(capacity, candidateCount));
+}
+
+function setThreadTilePaneCount(nextCount, options = {}) {
+  if (!state.threadTileMode) return false;
+  const layout = threadTileLayout({ enabled: true });
+  if (!layout || !layout.enabled) return false;
+  const minCount = threadTileMinimumPaneCount(layout);
+  const maxCount = threadTileMaximumPaneCount(layout);
+  const current = effectiveThreadTilePaneCount(layout);
+  const next = Math.max(minCount, Math.min(maxCount, normalizeThreadTilePaneCount(nextCount, current)));
+  if (next === current && state.threadTilePaneCount === next) return false;
+  state.threadTilePaneCount = next;
+  state.threadTileSwitchMenuPaneId = "";
+  const ids = threadTileCandidateIds(layout);
+  if (state.threadTileSelectedThreadId && !ids.includes(state.threadTileSelectedThreadId)) {
+    state.threadTileSelectedThreadId = ids[0] || "";
+  }
+  scheduleThreadDisplaySettingsSave();
+  if (options.render !== false) renderCurrentThread({ stickToBottom: true });
+  return true;
+}
+
+function changeThreadTilePaneCount(delta) {
+  const layout = threadTileLayout({ enabled: true });
+  if (!layout || !layout.enabled) return false;
+  const current = effectiveThreadTilePaneCount(layout);
+  return setThreadTilePaneCount(current + (Number(delta) || 0));
+}
+
+function closeThreadTilePane(threadId) {
+  const id = String(threadId || "").trim();
+  if (!id || !state.threadTileMode) return false;
+  const layout = threadTileLayout({ enabled: true });
+  if (!layout || !layout.enabled) return false;
+  const ids = threadTileCandidateIds(layout);
+  if (!ids.includes(id)) return false;
+  const minCount = threadTileMinimumPaneCount(layout);
+  if (ids.length <= minCount) return false;
+  const nextCount = Math.max(minCount, ids.length - 1);
+  const existing = normalizeThreadTilePinnedIds(state.threadTilePinnedIds);
+  const sourceIds = existing.length ? existing : ids;
+  const remaining = sourceIds.filter((candidateId) => candidateId !== id);
+  const fillIds = defaultThreadTileCandidateIds(layout, { maxPanes: threadTileLayoutCapacity(layout) })
+    .filter((candidateId) => candidateId !== id);
+  saveCurrentDraftNow();
+  state.threadTilePinnedIds = normalizeThreadTilePinnedIds([...remaining, ...fillIds]);
+  state.threadTilePaneCount = nextCount;
+  state.threadTileSwitchMenuPaneId = "";
+  state.threadTilePaneScrollHoldById.delete(id);
+  const nextIds = threadTileCandidateIds(layout);
+  state.threadTileSelectedThreadId = nextIds.includes(state.threadTileSelectedThreadId)
+    ? state.threadTileSelectedThreadId
+    : nextIds[0] || "";
+  scheduleThreadDisplaySettingsSave();
+  restoreDraftForCurrentTarget({ resetRuntimeWhenMissingDraft: true });
+  renderComposerSettings();
+  updateComposerControls();
+  renderCurrentThread({ stickToBottom: true });
+  return true;
 }
 
 function renderThreadTilePane(threadId, layout, previousKeys = new Set()) {
@@ -11843,6 +12177,9 @@ function threadTileRenderSignature(layout, ids) {
     view: "thread-tiles",
     columns: layout.columns,
     rows: layout.rows,
+    visiblePanes: layout.visiblePanes || ids.length,
+    capacityPanes: layout.capacityPanes || layout.maxPanes,
+    desiredPaneCount: normalizeThreadTilePaneCount(state.threadTilePaneCount, 0),
     ids,
     selected: effectiveThreadTileSelectedThreadId(ids),
     loading: ids.filter((id) => state.threadTileLoadingIds.has(id)),
@@ -11864,12 +12201,13 @@ function patchThreadTilePane(threadId, options = {}) {
   if (!layout.enabled) return false;
   const ids = threadTileCandidateIds(layout);
   if (!ids.includes(id)) return false;
+  const displayLayout = threadTileDisplayLayout(layout, ids);
   const pane = options.paneElement || threadTilePaneElement(id);
   if (!pane) return false;
   const previousScroll = captureThreadTilePaneElementScrollState(pane);
   const previousKeys = existingConversationRenderKeys();
   const template = document.createElement("template");
-  template.innerHTML = renderThreadTilePane(id, layout, previousKeys);
+  template.innerHTML = renderThreadTilePane(id, displayLayout, previousKeys);
   const sourcePane = template.content.firstElementChild;
   if (!sourcePane) return false;
   const patchedPane = patchNode(pane, sourcePane);
@@ -11882,7 +12220,7 @@ function patchThreadTilePane(threadId, options = {}) {
   } else {
     updateThreadTileBottomButtonForBody(patchedPane.querySelector(".thread-tile-pane-body"));
   }
-  state.renderedConversationSignature = threadTileRenderSignature(layout, ids);
+  state.renderedConversationSignature = threadTileRenderSignature(displayLayout, ids);
   bindThreadTileActions();
   return true;
 }
@@ -11905,16 +12243,17 @@ function scheduleRenderThreadTilePane(threadId, options = {}) {
 function renderThreadTileLayout(layout, options = {}) {
   const ids = threadTileCandidateIds(layout);
   if (!ids.length) return false;
+  const displayLayout = threadTileDisplayLayout(layout, ids);
   const scrollState = captureThreadTilePaneScrollState();
   ensureThreadTileDetails(ids);
-  updateThreadTileGlobalHeader(layout, ids);
+  updateThreadTileGlobalHeader(displayLayout, ids);
   state.nowMs = Date.now();
   const previousKeys = existingConversationRenderKeys();
   const html = `<div class="thread-tile-board" data-thread-tile-board data-render-key="thread-tile-board">
-    ${ids.map((id) => renderThreadTilePane(id, layout, previousKeys)).join("")}
+    ${ids.map((id) => renderThreadTilePane(id, displayLayout, previousKeys)).join("")}
   </div>`;
-  const signature = threadTileRenderSignature(layout, ids);
-  setThreadTileConversationMode(true, layout);
+  const signature = threadTileRenderSignature(displayLayout, ids);
+  setThreadTileConversationMode(true, displayLayout);
   updateConversationHtml(html, signature, { stickToBottom: options.stickToBottom === true });
   bindThreadTileActions();
   restoreThreadTilePaneScrollState(scrollState);
@@ -11943,7 +12282,7 @@ function bindThreadTileActions() {
       toggleThreadTileSwitchMenu(titleButton.getAttribute("data-thread-tile-title") || "");
       return;
     }
-    if (closestTileTarget(event.target, "[data-thread-tile-switch-target], .thread-tile-switch-menu, [data-thread-tile-bottom], [data-thread-tile-operation-toggle]")) {
+    if (closestTileTarget(event.target, "[data-thread-tile-switch-target], .thread-tile-switch-menu, [data-thread-tile-bottom], [data-thread-tile-operation-toggle], [data-thread-tile-pane-count], [data-thread-tile-close-pane]")) {
       event.stopPropagation();
       return;
     }
@@ -11972,6 +12311,20 @@ function bindThreadTileActions() {
       replaceThreadTilePaneThread(fromId, switchButton.getAttribute("data-thread-tile-switch-target") || "");
       return;
     }
+    const paneCountButton = closestTileTarget(event.target, "[data-thread-tile-pane-count]");
+    if (paneCountButton && conversation.contains(paneCountButton)) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!paneCountButton.disabled) changeThreadTilePaneCount(Number(paneCountButton.getAttribute("data-thread-tile-pane-count") || 0));
+      return;
+    }
+    const closePaneButton = closestTileTarget(event.target, "[data-thread-tile-close-pane]");
+    if (closePaneButton && conversation.contains(closePaneButton)) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!closePaneButton.disabled) closeThreadTilePane(closePaneButton.getAttribute("data-thread-tile-close-pane") || "");
+      return;
+    }
     const bottomButton = closestTileTarget(event.target, "[data-thread-tile-bottom]");
     if (bottomButton && conversation.contains(bottomButton)) {
       event.preventDefault();
@@ -11998,8 +12351,9 @@ function bindThreadTileActions() {
 function threadTileLayoutStatusText(layout) {
   if (!state.threadTileMode) return "当前视口：单线程";
   if (layout && layout.enabled) {
-    const columns = Number(layout.columns || 0);
-    return columns > 1 ? `当前视口：平铺 ${columns} 栏` : "当前视口：平铺可用";
+    const count = effectiveThreadTilePaneCount(layout);
+    const capacity = threadTileLayoutCapacity(layout);
+    return capacity > 1 ? `当前视口：平铺 ${count}/${capacity} 窗` : "当前视口：平铺可用";
   }
   const reason = String(layout && layout.reason || "");
   if (reason === "tablet-portrait") return "当前视口：竖屏单线程";
@@ -12025,16 +12379,13 @@ function syncThreadTileToggle() {
 
 function setThreadTileMode(enabled) {
   state.threadTileMode = enabled === true;
-  try {
-    localStorage.removeItem(STORAGE_LEGACY_THREAD_TILE_MODE);
-    if (state.threadTileMode) localStorage.setItem(STORAGE_THREAD_DISPLAY_MODE, "tile");
-    else localStorage.removeItem(STORAGE_THREAD_DISPLAY_MODE);
-  } catch (_) {}
+  mirrorThreadDisplayModeToLocalStorage();
   if (!state.threadTileMode) {
     abortThreadTileLoads();
     state.threadTileSelectedThreadId = "";
     setThreadTileConversationMode(false);
   }
+  scheduleThreadDisplaySettingsSave();
   syncThreadTileToggle();
   renderCurrentThread({ stickToBottom: true });
 }
@@ -12054,6 +12405,7 @@ function shouldPreservePinnedLiveOperationDock(dock, html = "") {
     currentThreadId: state.currentThreadId,
     dockHasSheet: Boolean(dock && dock.querySelector(".mobile-operation-sheet")),
     nextHtml: html,
+    liveTurnActive: Boolean(currentLiveTurn()),
   });
 }
 
@@ -12075,6 +12427,20 @@ function clearCompactLiveOperationBubbleState() {
   state.liveOperationDockCompactVisibleUntilMs = 0;
   state.liveOperationDockCompactHtml = "";
   state.liveOperationDockCompactThreadId = "";
+}
+
+function clearLiveOperationDockRuntimeState() {
+  if (state.liveOperationDockCompactTimer) {
+    clearTimeout(state.liveOperationDockCompactTimer);
+    state.liveOperationDockCompactTimer = null;
+  }
+  state.liveOperationDockPinned = false;
+  state.liveOperationDockPinnedThreadId = "";
+  state.liveOperationDockMode = "compact";
+  clearCompactLiveOperationBubbleState();
+  state.liveOperationDockRecallHtml = "";
+  state.liveOperationDockRecallThreadId = "";
+  state.liveOperationDockRecallAtMs = 0;
 }
 
 function rememberCompactLiveOperationBubbleHtml(html = "") {
@@ -12102,6 +12468,7 @@ function renderLiveOperationRecallDockHtml() {
     currentThreadId: state.currentThreadId,
     recallThreadId: state.liveOperationDockRecallThreadId,
     recallHtml: savedHtml,
+    liveTurnActive: Boolean(currentLiveTurn()),
   })) return "";
   const root = firstElementFromHtml(savedHtml);
   if (!root) return "";
@@ -12151,6 +12518,7 @@ function shouldPreserveCompactLiveOperationBubble(dock, html = "") {
     savedThreadId: state.liveOperationDockCompactThreadId,
     currentThreadId: state.currentThreadId,
     dockHasBubble,
+    liveTurnActive: Boolean(currentLiveTurn()),
   });
   if (!preservation.preserve) return false;
   if (preservation.patchSavedHtml) {
@@ -17238,6 +17606,9 @@ function applyNotification(method, params) {
     return;
   }
   if (shouldThrottleThreadNotification(method, params)) return;
+  if ((method === "turn/started" || method === "turn/completed") && params.threadId) {
+    clearThreadTileOperationBubble(params.threadId);
+  }
   if (method === "thread/started" && params.thread) {
     if (isHiddenThread(params.thread)) {
       state.threads = state.threads.filter((thread) => thread.id !== params.thread.id);
@@ -17347,6 +17718,7 @@ function applyNotification(method, params) {
     updateThreadListStatus(params.threadId, runningStatus);
     clearRecentCompletedReplyAnchor();
     clearConversationAutoScrollHold();
+    clearLiveOperationDockRuntimeState();
     markActivity("开始");
     $("interruptTurn").disabled = false;
     updateComposerControls();
@@ -17376,6 +17748,7 @@ function applyNotification(method, params) {
     });
     updateThreadListStatus(params.threadId, completedStatus);
     state.activeTurnId = "";
+    clearLiveOperationDockRuntimeState();
     markActivity("完成");
     if (completedPendingSteer) setSteerFeedback("completed", { turnId: String(params.turn.id) });
     $("interruptTurn").disabled = true;
@@ -18248,7 +18621,8 @@ function updateScrollToBottomButton() {
   const replyAnchor = currentRecentCompletedReplyAnchor();
   const replyNode = turnFinalReceiptNode(replyAnchor);
   const shouldShowReply = Boolean(
-    state.currentThread
+    !shouldShow
+      && state.currentThread
       && !state.currentThread.mobileLoading
       && !state.currentThread.mobileLoadError
       && isScrollable
