@@ -83,8 +83,10 @@ const { createThreadDetailProjectionResultService } = require("./adapters/thread
 const { createThreadDetailProjectionService } = require("./adapters/thread-detail-projection-service");
 const { createThreadDetailProjectionV4Service } = require("./adapters/thread-detail-projection-v4-service");
 const { createThreadDetailSummaryService } = require("./adapters/thread-detail-summary-service");
+const { attachThreadDetailDiagnostics } = require("./adapters/thread-detail-performance-service");
 const { createThreadListFallbackCacheService } = require("./adapters/thread-list-fallback-cache-service");
 const { createThreadTurnCompactionPolicyService } = require("./adapters/thread-turn-compaction-policy-service");
+const { createThreadCompletionDiagnosticService } = require("./adapters/thread-completion-diagnostic-service");
 const { createChatGptProBridgeService } = require("./adapters/chatgpt-pro-bridge-service");
 const { createChatGptProPlannerService } = require("./adapters/chatgpt-pro-planner-service");
 const { createChatGptProMcpService } = require("./adapters/chatgpt-pro-mcp-service");
@@ -1158,7 +1160,11 @@ function appShellBuildId(cacheName = readServiceWorkerCacheName()) {
     "conversation-scroll.js",
     "image-compressor.js",
     "plugin-embed.js",
+    "plugin-voice-input.js",
     "build-refresh-policy.js",
+    "thread-performance-metrics.js",
+    "live-operation-dock-state.js",
+    "thread-detail-state.js",
     "app.js",
     "sw.js",
     "manifest.json",
@@ -3267,7 +3273,7 @@ function isMeaningfulSupersededLiveItem(item) {
   if (isReasoningOnlyItem(item)) return false;
   if (isTurnUsageSummaryItem(item)) return false;
   if (isOperationalItem(item)) return false;
-  return isAssistantReceiptItem(item) || isVisualReceiptItem(item) || isContextCompactionType(item.type);
+  return isAssistantReceiptItem(item) || isVisualReceiptItem(item) || isTurnDiagnosticItem(item) || isContextCompactionType(item.type);
 }
 
 function pruneSupersededLiveShellTurns(thread) {
@@ -4683,6 +4689,34 @@ function readRolloutFinalReceiptItems(rolloutPath) {
   return cloneRolloutFinalReceiptPayload(payload);
 }
 
+let threadCompletionDiagnosticService = null;
+
+function getThreadCompletionDiagnosticService() {
+  if (!threadCompletionDiagnosticService) {
+    threadCompletionDiagnosticService = createThreadCompletionDiagnosticService({
+      fs,
+      cacheTtlMs: RUNTIME_CONTEXT_CACHE_TTL_MS,
+      cacheMaxEntries: RUNTIME_CONTEXT_CACHE_MAX,
+      cacheKeyForStat: runtimeContextCacheKey,
+      finalReceiptTextFromParams,
+      insertProjectedItemByTimestamp,
+      isAssistantReceiptItem,
+      isDiagnosticReceiptItem: isTurnDiagnosticItem,
+      readRolloutEnrichmentEntries,
+      rolloutCompletionTimestampMs,
+      rolloutEntryTurnId,
+      rolloutPathForThread,
+      stableTextHash,
+      visibleItemId,
+    });
+  }
+  return threadCompletionDiagnosticService;
+}
+
+function appendRolloutEmptyCompletionDiagnosticsToThread(thread) {
+  return getThreadCompletionDiagnosticService().appendEmptyCompletionDiagnosticsToThread(thread);
+}
+
 function appendRolloutFinalReceiptsToThread(thread) {
   if (!thread || typeof thread !== "object" || !Array.isArray(thread.turns) || !thread.turns.length) return thread;
   const rolloutPath = rolloutPathForThread(thread);
@@ -5837,6 +5871,7 @@ const threadTurnCompactionPolicyService = createThreadTurnCompactionPolicyServic
   isAssistantReceiptItem,
   isVisualReceiptItem,
   isTurnUsageSummaryItem,
+  isDiagnosticReceiptItem: isTurnDiagnosticItem,
 });
 
 function trailingOperationIndexes(items, allowLiveOperation, maxOperations = 1) {
@@ -5948,6 +5983,10 @@ function isAssistantReceiptItem(item) {
 
 function isTurnUsageSummaryItem(item) {
   return Boolean(item && typeof item === "object" && item.type === "turnUsageSummary");
+}
+
+function isTurnDiagnosticItem(item) {
+  return Boolean(item && typeof item === "object" && item.type === "turnDiagnostic");
 }
 
 function isVisualReceiptItem(item) {
@@ -6151,6 +6190,7 @@ function compactThread(thread, options = {}) {
     });
     appendRolloutToolOutputImagesToThread(out, toolOutputImagePayload);
     appendRolloutFinalReceiptsToThread(out);
+    appendRolloutEmptyCompletionDiagnosticsToThread(out);
     attachTurnUsageSummaries(out, readRolloutTurnUsageSummaries(rolloutPath, {
       targetTurnIds: out.turns.map((turn) => turn && turn.id).filter(Boolean),
     }), {
@@ -14160,6 +14200,26 @@ async function handleApi(req, res) {
     const detailMode = String(url.searchParams.get("mode") || "").trim().toLowerCase();
     const preferRecentTurns = detailMode === "recent";
     const requestStartedAtMs = Date.now();
+    const detailTimings = {};
+    let summarySource = "";
+    const markDetailTiming = (name, startedAtMs) => {
+      detailTimings[name] = Math.max(0, Date.now() - Number(startedAtMs || Date.now()));
+      return detailTimings[name];
+    };
+    const attachDetailDiagnostics = (result, details = {}) => attachThreadDetailDiagnostics(result, {
+      requestMode: preferRecentTurns ? "recent" : "full",
+      readMode: details.readMode || details.source || result && result.thread && result.thread.mobileReadMode || "",
+      summarySource,
+      timings: detailTimings,
+      totalMs: Date.now() - requestStartedAtMs,
+      rolloutSizeBytes: result && result.thread ? threadRolloutSizeBytes(result.thread) : 0,
+    });
+    const prepareDetailResponse = async (result, details = {}) => {
+      const prepareStartedAtMs = Date.now();
+      const prepared = await prepareThreadDetailResponseResult(result, details);
+      markDetailTiming("prepareResponseMs", prepareStartedAtMs);
+      return attachDetailDiagnostics(prepared, details);
+    };
     const threadLog = (event, details = {}) => logThreadDetail(event, Object.assign({
       threadId,
       elapsedMs: Date.now() - requestStartedAtMs,
@@ -14170,7 +14230,11 @@ async function handleApi(req, res) {
     });
     const globalState = readGlobalState();
     const visibility = visibilityFromGlobalState(globalState);
-    const { summary } = await threadDetailSummaryService.resolveSummary(codex, threadId, { threadLog });
+    const summaryStartedAtMs = Date.now();
+    const summaryResult = await threadDetailSummaryService.resolveSummary(codex, threadId, { threadLog });
+    markDetailTiming("summaryMs", summaryStartedAtMs);
+    const { summary } = summaryResult;
+    summarySource = summaryResult.source || "";
     const runtimeSettings = threadRuntimeSettings(threadId, summary);
     if (summary && isHiddenThread(summary, visibility)) {
       threadLog("hidden", { status: 404 });
@@ -14214,7 +14278,8 @@ async function handleApi(req, res) {
           durationMs: Date.now() - readStartedAtMs,
           returnedTurns: result && result.thread && Array.isArray(result.thread.turns) ? result.thread.turns.length : null,
         });
-        sendJson(res, 200, await prepareThreadDetailResponseResult(result, { threadId, source: "thread-read-raw" }));
+        markDetailTiming("rawThreadReadMs", readStartedAtMs);
+        sendJson(res, 200, await prepareDetailResponse(result, { threadId, source: "thread-read-raw" }));
         threadLog("complete", { status: 200, mode: "thread-read-raw" });
       } catch (err) {
         threadLog("thread_read_raw_error", {
@@ -14233,6 +14298,7 @@ async function handleApi(req, res) {
       summary,
       runtimeSettings,
     ) : null;
+    markDetailTiming("projectionMs", projectionStartedAtMs);
     if (projected && projected.thread) {
       if (isHiddenThread(projected.thread, visibility)) {
         threadLog("projection_hidden", {
@@ -14249,7 +14315,7 @@ async function handleApi(req, res) {
         returnedTurns: Array.isArray(projected.thread.turns) ? projected.thread.turns.length : null,
         omittedTurns: projected.thread.mobileOmittedTurnCount || 0,
       });
-      sendJson(res, 200, await prepareThreadDetailResponseResult(projected, {
+      sendJson(res, 200, await prepareDetailResponse(projected, {
         threadId,
         source: projected.thread.mobileReadMode || "projection",
       }));
@@ -14275,8 +14341,9 @@ async function handleApi(req, res) {
           sendJson(res, 404, { error: "Thread is archived, deleted, or outside visible workspaces" });
           return;
         }
+        markDetailTiming("turnsListInitialMs", turnsStartedAtMs);
         threadLog("complete", { status: 200, mode: "turns-list-initial" });
-        sendJson(res, 200, result);
+        sendJson(res, 200, attachDetailDiagnostics(result, { threadId, source: "turns-list-initial" }));
         return;
       } catch (turnsErr) {
         threadLog("turns_list_initial_error", {
@@ -14317,6 +14384,7 @@ async function handleApi(req, res) {
         returnedTurns: result.thread && Array.isArray(result.thread.turns) ? result.thread.turns.length : null,
         omittedTurns: result.thread && result.thread.mobileOmittedTurnCount ? result.thread.mobileOmittedTurnCount : 0,
       });
+      markDetailTiming("threadReadMs", readStartedAtMs);
       if (projectionInput && result.thread) {
         try {
           threadDetailProjectionService.seed(projectionInput, result);
@@ -14325,7 +14393,7 @@ async function handleApi(req, res) {
           threadLog("projection_seed_error", { error: err.message || String(err) });
         }
       }
-      sendJson(res, 200, await prepareThreadDetailResponseResult(result, {
+      sendJson(res, 200, await prepareDetailResponse(result, {
         threadId,
         source: "thread-read",
       }));
@@ -14364,7 +14432,8 @@ async function handleApi(req, res) {
           returnedTurns: result.thread && Array.isArray(result.thread.turns) ? result.thread.turns.length : null,
           mode: result.thread && result.thread.mobileReadMode ? result.thread.mobileReadMode : "turns-list",
         });
-        sendJson(res, 200, result);
+        markDetailTiming("turnsListFallbackMs", turnsStartedAtMs);
+        sendJson(res, 200, attachDetailDiagnostics(result, { threadId, source: "turns-list" }));
         threadLog("complete", { status: 200, mode: "turns-list" });
       } catch (turnsErr) {
         threadLog("turns_list_error", {
@@ -14373,31 +14442,31 @@ async function handleApi(req, res) {
           error: turnsErr.message || String(turnsErr),
         });
         if (isUnmaterializedThreadError(turnsErr)) {
-          sendJson(res, 200, finalizeThreadDetailProjectionResult(
+          sendJson(res, 200, attachDetailDiagnostics(finalizeThreadDetailProjectionResult(
             fallbackThreadReadResult(threadId, summary, runtimeSettings, turnsErr.message || String(turnsErr), "unmaterialized"),
             { threadId, source: "unmaterialized" },
-          ));
+          ), { threadId, source: "unmaterialized" }));
           threadLog("complete", { status: 200, mode: "unmaterialized" });
           return;
         }
 
         if (isReadTimeoutError(turnsErr)) {
-          sendJson(res, 200, finalizeThreadDetailProjectionResult(
+          sendJson(res, 200, attachDetailDiagnostics(finalizeThreadDetailProjectionResult(
             fallbackThreadReadResult(threadId, summary, runtimeSettings, turnsErr.message || String(turnsErr), "summary-timeout-fallback"),
             { threadId, source: "summary-timeout-fallback" },
-          ));
+          ), { threadId, source: "summary-timeout-fallback" }));
           threadLog("complete", { status: 200, mode: "summary-timeout-fallback" });
           return;
         }
 
         const mode = isReadTimeoutError(turnsErr) ? "summary-timeout-fallback" : "summary-error-fallback";
-        sendJson(res, 200, finalizeThreadDetailProjectionResult(fallbackThreadReadResult(
+        sendJson(res, 200, attachDetailDiagnostics(finalizeThreadDetailProjectionResult(fallbackThreadReadResult(
           threadId,
           summary,
           runtimeSettings,
           `thread/read failed: ${readErr.message || String(readErr)}; thread/turns/list failed: ${turnsErr.message || String(turnsErr)}`,
           mode,
-        ), { threadId, source: mode }));
+        ), { threadId, source: mode }), { threadId, source: mode }));
         threadLog("complete", { status: 200, mode });
       }
     }

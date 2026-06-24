@@ -9,6 +9,7 @@ const root = path.resolve(__dirname, "..");
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 const serverJs = fs.readFileSync(path.join(root, "server.js"), "utf8");
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
+const { createThreadDetailStatePolicy } = require(path.join(root, "public", "thread-detail-state.js"));
 
 function functionBodyFrom(source, name) {
   const start = source.indexOf(`function ${name}(`);
@@ -562,15 +563,27 @@ function evaluatedMergeItemsPreservingLocalVisible() {
     "insertLocalOnlyItemByExistingOrder",
     "mergeItemsPreservingLocalVisible",
   ].map((name) => functionSourceFrom(appJs, name));
-  return Function(`
+  return Function("createThreadDetailStatePolicy", `
 function itemVisibleWeight(item) { return JSON.stringify(item || {}).length; }
 function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
   return Object.assign({}, existingItem || {}, incomingItem || {});
 }
+function isTurnComplete(turn) {
+  const text = String(turn && (turn.status && turn.status.type || turn.status) || "").toLowerCase();
+  return /completed|failed|canceled|cancelled/.test(text);
+}
+function isReasoningItem(item) { return Boolean(item && item.type === "reasoning"); }
 function dedupeTurnUsageSummaryItems(items) { return items || []; }
 ${sources.join("\n")}
+const threadDetailStatePolicy = createThreadDetailStatePolicy({
+  itemVisibleWeight,
+  isAssistantReceiptLikeItem,
+  isTurnComplete,
+  isReasoningItem,
+  visualReceiptMatchesSuppressionKeys,
+});
 return mergeItemsPreservingLocalVisible;
-	`)();
+	`)(createThreadDetailStatePolicy);
 }
 
 function evaluatedMergeItemsPreservingLocalVisibleWithRealVisibleWeight() {
@@ -641,17 +654,30 @@ function evaluatedMergeItemsPreservingLocalVisibleWithRealVisibleWeight() {
     "insertLocalOnlyItemByExistingOrder",
     "mergeItemsPreservingLocalVisible",
   ].map((name) => functionSourceFrom(appJs, name));
-  return Function(`
+  return Function("createThreadDetailStatePolicy", `
 function truncateMiddle(value) { return String(value || ""); }
 function isReasoningItem(item) { return Boolean(item && item.type === "reasoning"); }
 function isContextCompactionItem() { return false; }
 function contextCompactionNotice() { return null; }
 function isOperationalItem() { return false; }
+function isTurnComplete(turn) {
+  const text = String(turn && (turn.status && turn.status.type || turn.status) || "").toLowerCase();
+  return /completed|failed|canceled|cancelled/.test(text);
+}
 function operationDetailText() { return ""; }
 function dedupeTurnUsageSummaryItems(items) { return items || []; }
 ${sources.join("\n")}
+const threadDetailStatePolicy = createThreadDetailStatePolicy({
+  itemVisibleWeight,
+  isContextCompactionItem,
+  isOperationalItem,
+  isAssistantReceiptLikeItem,
+  isTurnComplete,
+  isReasoningItem,
+  visualReceiptMatchesSuppressionKeys,
+});
 return mergeItemsPreservingLocalVisible;
-	`)();
+	`)(createThreadDetailStatePolicy);
 }
 
 function evaluatedMergeThreadPreservingVisibleItems() {
@@ -739,7 +765,7 @@ function evaluatedMergeThreadPreservingVisibleItems() {
     "mergeTurnPreservingVisibleItems",
     "mergeThreadPreservingVisibleItems",
   ].map((name) => functionSourceFrom(appJs, name));
-  return Function(`
+  return Function("createThreadDetailStatePolicy", `
 const MAX_EXPANDED_VISIBLE_TURNS = 40;
 const state = { activeTurnId: "local-start-turn", currentThreadId: "thread-new" };
 function isReasoningItem(item) { return Boolean(item && item.type === "reasoning"); }
@@ -773,8 +799,17 @@ function turnIsSupersededBy() { return false; }
 function sortTurnsForDisplay(turns) { return turns || []; }
 function maxVisibleTurnsForThread() { return 10; }
 ${sources.join("\n")}
+const threadDetailStatePolicy = createThreadDetailStatePolicy({
+  itemVisibleWeight,
+  isContextCompactionItem,
+  isOperationalItem,
+  isAssistantReceiptLikeItem,
+  isTurnComplete,
+  isReasoningItem,
+  visualReceiptMatchesSuppressionKeys,
+});
 return mergeThreadPreservingVisibleItems;
-`)();
+`)(createThreadDetailStatePolicy);
 }
 
 function evaluatedNormalizeThreadVisibleUserMessages() {
@@ -1727,6 +1762,14 @@ test("long agent messages keep a stable render path when a turn completes", () =
   assert.match(appJs, /function mergeIncomingOrderedItem\(/);
   assert.match(functionBody("mergeItemsPreservingLocalVisible"), /for \(const incomingItem of incomingItems \|\| \[\]\)/);
   assert.match(functionBody("mergeItemsPreservingLocalVisible"), /findUnusedExistingItemIndexForIncoming\(incomingItem, existingItems \|\| \[\], usedExistingIndexes, incomingTurn\)/);
+});
+
+test("turn diagnostic items render as explicit runtime diagnostics", () => {
+  assert.match(functionBody("labelForItem"), /turnDiagnostic: "Diagnostic"/);
+  assert.match(functionBody("visibleItemSignature"), /if \(item\.type === "turnDiagnostic"\) \{/);
+  assert.match(functionBody("renderItemBody"), /if \(isTurnDiagnosticItem\(item\)\) return renderTurnDiagnostic\(item\);/);
+  assert.match(functionBody("renderTurnDiagnostic"), /runtime ended this turn without visible response content/);
+  assert.doesNotMatch(functionBody("renderTurnDiagnostic"), /renderMarkdownWithAttachmentSummary/);
 });
 
 test("agent markdown can render uploaded image summaries as thumbnails", () => {
@@ -2690,12 +2733,14 @@ test("image view render keys include their image source", () => {
   assert.match(body, /stableTextHash\(imageSource\)/);
 });
 
-test("context compaction merge does not preserve stale mobile notices", () => {
+test("item merge delegates visible-field preservation to thread detail state policy", () => {
   const body = functionBody("mergeItemPreservingVisibleFields");
-  assert.match(body, /isContextCompactionItem\(existingItem\) \|\| isContextCompactionItem\(incomingItem\)/);
-  assert.match(body, /delete merged\.mobileNotice/);
-  assert.match(body, /delete merged\.mobileCompactionStatus/);
-  assert.match(body, /else if \(existingItem\.mobileNotice\)/);
+  assert.match(appJs, /const threadDetailStateApi = window\.CodexThreadDetailState/);
+  assert.match(appJs, /threadDetailStateApi\.createThreadDetailStatePolicy\(\{/);
+  assert.match(body, /threadDetailStatePolicy\.mergeItemPreservingVisibleFields\(existingItem, incomingItem\)/);
+  assert.match(functionBody("completedIncomingTurnHasAuthoritativeReceipt"), /threadDetailStatePolicy\.completedIncomingTurnHasAuthoritativeReceipt\(incomingTurn\)/);
+  assert.match(functionBody("shouldDropLocalOnlyReceiptForIncomingTurn"), /threadDetailStatePolicy\.shouldDropLocalOnlyReceiptForIncomingTurn\(item, incomingTurn\)/);
+  assert.match(functionBody("shouldPreserveLocalOnlyItem"), /threadDetailStatePolicy\.shouldPreserveLocalOnlyItem\(/);
 });
 
 test("server only emits context compaction notices from explicit item state", () => {

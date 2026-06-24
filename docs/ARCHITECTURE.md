@@ -582,6 +582,27 @@ completion of the injected target turn and creates one
 reverse-direction auto-return card with the final receipt. That return card
 reuses the same workflow id and auto-injects back into the source thread through
 the active grant.
+### Thread Detail Performance Diagnostics
+
+Thread detail reads expose bounded timing metadata under
+`thread.mobileDiagnostics.threadDetailTimings`. This diagnostic payload is for
+root-cause performance analysis only; it must not copy user messages, prompts,
+tool output, upload paths, provider payloads, or rollout bodies. The stable
+fields include `requestMode`, `readMode`, `phase`, `summarySource`, `totalMs`,
+`summaryMs`, `projectionMs`, `turnsListInitialMs`, `threadReadMs`,
+`rawThreadReadMs`, `turnsListFallbackMs`, `prepareResponseMs`,
+`returnedTurns`, `omittedTurns`, and `rolloutSizeBytes`.
+
+The browser forwards those fields through `/api/client-events` as
+`thread_detail_first_paint.serverTimings`, `thread_refresh_ms.serverTimings`,
+and `thread_detail_full_ready.serverTimings`, plus a compact
+`performancePhase`. Thread-list events similarly report `serverTimings` and a
+phase for fallback cache hits versus cold fallback rebuilds. This is an
+evidence path, not a content strategy: large-session first paint must still
+return the current authoritative detail/projection state rather than showing an
+intentionally incomplete page and relying on a second refresh to hide the
+missing data.
+
 ### Conversation Navigation
 
 The browser owns conversation scroll controls. The return-to-bottom button appears only when the current thread is loaded, scrollable, and away from the newest content.
@@ -698,7 +719,9 @@ handler focuses an existing app shell and posts the target id, or opens the
 deep-link URL directly for cold-start/PWA launch so startup thread selection can
 load the matching thread without relying on a late `postMessage`.
 
-If the completion payload explicitly says the turn has no final assistant message, Mobile Web must not send a normal "turn ended" Push notification. That shape means the runtime ended the turn without a final reply, so treating it as a normal completed turn is misleading.
+If the completion payload explicitly says the turn has no final assistant message, Mobile Web must not send a normal "turn ended" Push notification. That shape means the runtime ended the turn without a final reply, so treating it as a normal completed turn is misleading. Thread detail projection should expose this as a bounded `turnDiagnostic` item with code `runtime_completed_without_response`; it must not fabricate an `agentMessage`, and receipt-only compaction must retain the diagnostic so the turn does not appear to silently vanish.
+
+Client-side incident reporting should reuse the authenticated Mobile Web server rather than opening a separate unauthenticated listener. Frontend diagnostics may POST bounded fields such as build id, thread id, turn id, read mode, status, render/scroll state, event source, item counts, and timing buckets. They must not include access keys, cookies, raw prompts, message bodies, image contents, full logs, or provider payloads. Any task-card closure built from these diagnostics should be deduplicated, rate-limited, and reference a diagnostic package id instead of embedding private evidence directly.
 
 When the Hermes plugin notification delegate is configured, turn-completed
 events are sent to Hermes Action Inbox/Web Push instead of Mobile Web's direct

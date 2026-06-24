@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "codex-mobile-shell-v404";
+const CACHE_NAME = "codex-mobile-shell-v407";
 const STATIC_ASSETS = [
   "/",
   "/index.html",
@@ -15,6 +15,9 @@ const STATIC_ASSETS = [
   "/plugin-embed.js",
   "/plugin-voice-input.js",
   "/thread-status-hints.js",
+  "/thread-performance-metrics.js",
+  "/live-operation-dock-state.js",
+  "/thread-detail-state.js",
   "/build-refresh-policy.js",
   "/app.js",
   "/manifest.json",

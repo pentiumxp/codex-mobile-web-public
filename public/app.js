@@ -72,6 +72,18 @@ const threadStatusHintPolicy = window.CodexThreadStatusHints;
 if (!threadStatusHintPolicy) {
   throw new Error("CodexThreadStatusHints policy script failed to load");
 }
+const threadPerformanceMetrics = window.CodexThreadPerformanceMetrics;
+if (!threadPerformanceMetrics) {
+  throw new Error("CodexThreadPerformanceMetrics script failed to load");
+}
+const liveOperationDockPolicy = window.CodexLiveOperationDockState;
+if (!liveOperationDockPolicy) {
+  throw new Error("CodexLiveOperationDockState script failed to load");
+}
+const threadDetailStateApi = window.CodexThreadDetailState;
+if (!threadDetailStateApi) {
+  throw new Error("CodexThreadDetailState policy script failed to load");
+}
 const INITIAL_PLUGIN_EMBED = pluginEmbedApi.detect(window.location.href);
 const INITIAL_PLUGIN_LAUNCH_KEY = INITIAL_PLUGIN_EMBED.launchKey || initialPluginLaunchKeyFromUrl();
 
@@ -383,6 +395,16 @@ const state = {
   shellLoadedReported: false,
 };
 
+const threadDetailStatePolicy = threadDetailStateApi.createThreadDetailStatePolicy({
+  itemVisibleWeight,
+  isContextCompactionItem,
+  isOperationalItem,
+  isAssistantReceiptLikeItem,
+  isTurnComplete,
+  isReasoningItem,
+  visualReceiptMatchesSuppressionKeys,
+});
+
 function setAuthKey(value) {
   const next = String(value || "");
   if (state.key !== next) {
@@ -403,8 +425,8 @@ const IMAGE_DIAGNOSTICS_ENABLED = false;
 const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
-const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = 500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v404";
+const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v407";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -452,6 +474,9 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/plugin-embed.js",
   "/plugin-voice-input.js",
   "/thread-status-hints.js",
+  "/thread-performance-metrics.js",
+  "/live-operation-dock-state.js",
+  "/thread-detail-state.js",
   "/build-refresh-policy.js",
   "/app.js",
   "/manifest.json",
@@ -4795,6 +4820,7 @@ function liveTurnHasNonUserProgress(turn) {
       || isContextCompactionItem(item)
       || item.type === "agentMessage"
       || item.type === "plan"
+      || item.type === "turnDiagnostic"
       || item.type === "turnUsageSummary"));
 }
 
@@ -4806,6 +4832,7 @@ function isVisibleNonUserProgressItem(item) {
       || isContextCompactionItem(item)
       || item.type === "agentMessage"
       || item.type === "plan"
+      || item.type === "turnDiagnostic"
       || item.type === "turnUsageSummary"));
 }
 
@@ -5000,6 +5027,20 @@ function visibleItemSignature(item, turn = null) {
       mobileUsageSummary: item.mobileUsageSummary || {},
     };
   }
+  if (item.type === "turnDiagnostic") {
+    return {
+      ...projection,
+      id: item.id || "",
+      type: item.type || "",
+      status: statusText(item.status),
+      code: item.code || "",
+      severity: item.severity || "",
+      title: item.title || "",
+      message: item.message || "",
+      source: item.source || "",
+      mobileRuntimeDiagnostic: Boolean(item.mobileRuntimeDiagnostic),
+    };
+  }
   if (item.type === "imageView") {
     return {
       ...projection,
@@ -5067,21 +5108,20 @@ function isAssistantReceiptLikeItem(item) {
 }
 
 function completedIncomingTurnHasAuthoritativeReceipt(incomingTurn) {
-  if (!incomingTurn || !isTurnComplete(incomingTurn) || !Array.isArray(incomingTurn.items)) return false;
-  return incomingTurn.items.some((item) => isAssistantReceiptLikeItem(item));
+  return threadDetailStatePolicy.completedIncomingTurnHasAuthoritativeReceipt(incomingTurn);
 }
 
 function shouldDropLocalOnlyReceiptForIncomingTurn(item, incomingTurn = null) {
-  return isAssistantReceiptLikeItem(item)
-    && completedIncomingTurnHasAuthoritativeReceipt(incomingTurn);
+  return threadDetailStatePolicy.shouldDropLocalOnlyReceiptForIncomingTurn(item, incomingTurn);
 }
 
 function shouldPreserveLocalOnlyItem(item, preserveLocalVisible = false, suppressedVisualReceiptKeys = null, incomingTurn = null) {
-  if (!item || itemVisibleWeight(item) <= 0) return false;
-  if (visualReceiptMatchesSuppressionKeys(item, suppressedVisualReceiptKeys)) return false;
-  if (shouldDropLocalOnlyReceiptForIncomingTurn(item, incomingTurn)) return false;
-  if (item.type === "userMessage" && /^mux-user-/.test(String(item.id || ""))) return true;
-  return preserveLocalVisible && !isReasoningItem(item);
+  return threadDetailStatePolicy.shouldPreserveLocalOnlyItem(
+    item,
+    preserveLocalVisible,
+    suppressedVisualReceiptKeys,
+    incomingTurn,
+  );
 }
 
 function isMuxUserMessage(item) {
@@ -5119,6 +5159,10 @@ function userMessagesShareSubmissionId(left, right) {
 
 function isTurnUsageSummaryItem(item) {
   return Boolean(item && item.type === "turnUsageSummary");
+}
+
+function isTurnDiagnosticItem(item) {
+  return Boolean(item && item.type === "turnDiagnostic");
 }
 
 function dedupeTurnUsageSummaryItems(items) {
@@ -5696,28 +5740,7 @@ function insertLocalOnlyItemByExistingOrder(merged, item, existingIndex, existin
 }
 
 function mergeItemPreservingVisibleFields(existingItem, incomingItem) {
-  if (!existingItem || !incomingItem) return incomingItem || existingItem;
-  const existingWeight = itemVisibleWeight(existingItem);
-  const incomingWeight = itemVisibleWeight(incomingItem);
-  if (existingWeight <= incomingWeight) return incomingItem;
-  const merged = Object.assign({}, existingItem, incomingItem);
-  if (typeof existingItem.text === "string") merged.text = existingItem.text;
-  if (Array.isArray(existingItem.content)) merged.content = existingItem.content;
-  if (Array.isArray(existingItem.summary)) merged.summary = existingItem.summary;
-  if (isContextCompactionItem(existingItem) || isContextCompactionItem(incomingItem)) {
-    if (!Object.prototype.hasOwnProperty.call(incomingItem, "mobileNotice")) delete merged.mobileNotice;
-    if (!Object.prototype.hasOwnProperty.call(incomingItem, "mobileCompactionStatus")) delete merged.mobileCompactionStatus;
-  } else if (existingItem.mobileNotice) {
-    merged.mobileNotice = existingItem.mobileNotice;
-  }
-  if (isOperationalItem(existingItem)) {
-    if (existingItem.command) merged.command = existingItem.command;
-    if (Array.isArray(existingItem.fileNames)) merged.fileNames = existingItem.fileNames;
-    if (existingItem.tool) merged.tool = existingItem.tool;
-    if (existingItem.server) merged.server = existingItem.server;
-    if (existingItem.namespace) merged.namespace = existingItem.namespace;
-  }
-  return merged;
+  return threadDetailStatePolicy.mergeItemPreservingVisibleFields(existingItem, incomingItem);
 }
 
 function mergeVisibleTextItemPreservingRenderIdentity(existingItem, incomingItem, incomingTurn = null) {
@@ -8076,11 +8099,13 @@ async function loadThreads(options = {}) {
       scheduleThreadListDeferredFallback();
     }
     if (!state.currentThread) renderCurrentThread();
+    const listPerformance = threadPerformanceMetrics.threadListEventFields(result);
     postPerformanceEvent("thread_list_rendered", {
       elapsedMs: roundedDurationMs(loadStartedAt),
       apiElapsedMs,
       renderElapsedMs: roundedDurationMs(renderStartedAt),
-      serverTimings: result && result.mobileDiagnostics && result.mobileDiagnostics.threadListTimings || null,
+      serverTimings: listPerformance.serverTimings,
+      performancePhase: listPerformance.performancePhase,
       count: state.threads.length,
       silent,
       hasSearch: Boolean(search),
@@ -8157,18 +8182,38 @@ async function loadThread(threadId, options = {}) {
     && state.currentThread
     && !state.currentThread.mobileLoading
     && !state.currentThread.mobileLoadError) {
+    const renderStartedAt = nowPerfMs();
     followThreadOpenToBottom(threadId);
     mergeThreadIntoThreadList(state.currentThread);
+    const threadListRenderStartedAt = nowPerfMs();
     renderThreads();
+    const threadListRenderMs = roundedDurationMs(threadListRenderStartedAt);
+    const conversationRenderStartedAt = nowPerfMs();
     renderCurrentThread({ stickToBottom: true });
+    const conversationRenderMs = roundedDurationMs(conversationRenderStartedAt);
     if (isMenuOverlayMode()) closeSidebarMenu();
     if (!state.threadSideChats.has(threadId)) loadSideChat(threadId, { silent: true }).catch(showError);
+    const renderElapsedMs = roundedDurationMs(renderStartedAt);
+    const detailPerformance = threadPerformanceMetrics.threadDetailEventFieldsWithClient(state.currentThread, {
+      source,
+      elapsedMs: roundedDurationMs(switchStartedAt),
+      apiElapsedMs: 0,
+      renderElapsedMs,
+      threadListRenderMs,
+      conversationRenderMs,
+      detailRenderMode: "cached-current",
+    });
     postPerformanceEvent("thread_detail_first_paint", {
       source,
       threadId,
       elapsedMs: roundedDurationMs(switchStartedAt),
       apiElapsedMs: 0,
-      renderElapsedMs: 0,
+      renderElapsedMs,
+      serverTimings: detailPerformance.serverTimings,
+      performancePhase: detailPerformance.performancePhase === "unknown"
+        ? "warm-client-current"
+        : detailPerformance.performancePhase,
+      clientTimings: detailPerformance.clientTimings,
       cached: true,
       readMode: state.currentThread && state.currentThread.mobileReadMode || "",
       turns: Array.isArray(state.currentThread && state.currentThread.turns) ? state.currentThread.turns.length : 0,
@@ -8265,6 +8310,7 @@ async function loadThread(threadId, options = {}) {
     return;
   }
   const renderStartedAt = nowPerfMs();
+  const mergeStartedAt = nowPerfMs();
   syncThreadPendingServerRequests(result.thread);
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
   mergeThreadIntoThreadList(state.currentThread);
@@ -8272,11 +8318,21 @@ async function loadThread(threadId, options = {}) {
   draftStore.setTargetKey("");
   followThreadOpenToBottom(threadId);
   if (state.events) connectEvents();
+  const mergeMs = roundedDurationMs(mergeStartedAt);
+  const draftRestoreStartedAt = nowPerfMs();
   restoreDraftForCurrentTarget();
+  const draftRestoreMs = roundedDurationMs(draftRestoreStartedAt);
+  const composerRenderStartedAt = nowPerfMs();
   renderComposerSettings();
   syncActiveTurnFromThread();
+  const composerRenderMs = roundedDurationMs(composerRenderStartedAt);
+  const threadListRenderStartedAt = nowPerfMs();
   renderThreads();
+  const threadListRenderMs = roundedDurationMs(threadListRenderStartedAt);
+  const conversationRenderStartedAt = nowPerfMs();
   renderCurrentThread({ stickToBottom: true });
+  const conversationRenderMs = roundedDurationMs(conversationRenderStartedAt);
+  const postRenderStartedAt = nowPerfMs();
   publishPluginNavigationState({ force: true });
   restoreConnectionState();
   scheduleLivePollIfNeeded(1200);
@@ -8286,13 +8342,30 @@ async function loadThread(threadId, options = {}) {
     backfillFullThreadDetail(threadId, { seq, source }).catch(() => {});
   }
   scheduleUsageBackfillRefresh();
+  const postRenderMs = roundedDurationMs(postRenderStartedAt);
   const renderElapsedMs = roundedDurationMs(renderStartedAt);
+  const detailPerformance = threadPerformanceMetrics.threadDetailEventFieldsWithClient(result.thread, {
+    source,
+    elapsedMs: roundedDurationMs(switchStartedAt),
+    apiElapsedMs,
+    renderElapsedMs,
+    mergeMs,
+    draftRestoreMs,
+    composerRenderMs,
+    threadListRenderMs,
+    conversationRenderMs,
+    postRenderMs,
+    detailRenderMode: "first-paint",
+  });
   postPerformanceEvent("thread_detail_first_paint", {
     source,
     threadId,
     elapsedMs: roundedDurationMs(switchStartedAt),
     apiElapsedMs,
     renderElapsedMs,
+    serverTimings: detailPerformance.serverTimings,
+    performancePhase: detailPerformance.performancePhase,
+    clientTimings: detailPerformance.clientTimings,
     cached: false,
     readMode: result.thread && result.thread.mobileReadMode || "",
     status: statusText(result.thread && result.thread.status),
@@ -8397,6 +8470,7 @@ async function refreshCurrentThread(options = {}) {
   const apiElapsedMs = roundedDurationMs(apiStartedAt);
   if (state.currentThreadId !== threadId || seq !== state.threadLoadSeq) return;
   const renderStartedAt = nowPerfMs();
+  const mergeStartedAt = nowPerfMs();
   const previousThread = state.currentThread;
   const previousConversationSignature = conversationRenderSignature(state.currentThread);
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
@@ -8404,25 +8478,59 @@ async function refreshCurrentThread(options = {}) {
   const shouldRenderDetail = previousConversationSignature !== nextConversationSignature
     || state.renderedConversationSignature !== nextConversationSignature;
   mergeThreadIntoThreadList(state.currentThread);
+  const mergeMs = roundedDurationMs(mergeStartedAt);
+  const composerRenderStartedAt = nowPerfMs();
   renderComposerSettings();
   syncActiveTurnFromThread();
+  const composerRenderMs = roundedDurationMs(composerRenderStartedAt);
+  const threadListRenderStartedAt = nowPerfMs();
   renderThreads();
+  const threadListRenderMs = roundedDurationMs(threadListRenderStartedAt);
   let locallyPatchedDetail = false;
+  let conversationRenderMs = 0;
+  let detailPatchMs = 0;
+  let metadataUpdateMs = 0;
+  let detailRenderMode = shouldRenderDetail ? "full-render" : "metadata-only";
   if (shouldRenderDetail) {
+    const patchStartedAt = nowPerfMs();
     locallyPatchedDetail = patchCurrentThreadDetailFromRefresh(previousThread, state.currentThread, previousConversationSignature);
+    detailPatchMs = roundedDurationMs(patchStartedAt);
     if (locallyPatchedDetail) {
+      detailRenderMode = "patch";
+      const metadataStartedAt = nowPerfMs();
       updateCurrentThreadHeader(state.currentThread);
       updateTickTimer();
       publishPluginNavigationState();
+      metadataUpdateMs = roundedDurationMs(metadataStartedAt);
     } else {
+      const conversationRenderStartedAt = nowPerfMs();
       renderCurrentThread();
+      conversationRenderMs = roundedDurationMs(conversationRenderStartedAt);
     }
   } else {
+    const metadataStartedAt = nowPerfMs();
     updateCurrentThreadHeader(state.currentThread);
     updateLiveOperationDockHtml(renderLiveOperationDock(state.currentThread, existingConversationRenderKeys()));
     updateTickTimer();
     scheduleScrollToBottomButtonUpdate();
+    metadataUpdateMs = roundedDurationMs(metadataStartedAt);
   }
+  const renderElapsedMs = roundedDurationMs(renderStartedAt);
+  const detailPerformance = threadPerformanceMetrics.threadDetailEventFieldsWithClient(result.thread, {
+    source,
+    elapsedMs: roundedDurationMs(refreshStartedAt),
+    apiElapsedMs,
+    renderElapsedMs,
+    mergeMs,
+    composerRenderMs,
+    threadListRenderMs,
+    conversationRenderMs,
+    detailPatchMs,
+    metadataUpdateMs,
+    detailRenderMode,
+    skippedDetailRender: !shouldRenderDetail,
+    locallyPatchedDetail,
+  });
   postPerformanceEvent("thread_refresh_ms", {
     source,
     threadId,
@@ -8430,7 +8538,10 @@ async function refreshCurrentThread(options = {}) {
     readMode: result.thread && result.thread.mobileReadMode || "",
     elapsedMs: roundedDurationMs(refreshStartedAt),
     apiElapsedMs,
-    renderElapsedMs: roundedDurationMs(renderStartedAt),
+    renderElapsedMs,
+    serverTimings: detailPerformance.serverTimings,
+    performancePhase: detailPerformance.performancePhase,
+    clientTimings: detailPerformance.clientTimings,
     status: statusText(result.thread && result.thread.status),
     turns: Array.isArray(result.thread && result.thread.turns) ? result.thread.turns.length : 0,
     omittedTurns: Number(result.thread && result.thread.mobileOmittedTurnCount || 0),
@@ -8497,22 +8608,48 @@ async function backfillFullThreadDetail(threadId, options = {}) {
   const apiElapsedMs = roundedDurationMs(apiStartedAt);
   const renderStartedAt = nowPerfMs();
   const wasNearBottom = isConversationNearBottom();
+  const mergeStartedAt = nowPerfMs();
   syncThreadPendingServerRequests(result.thread);
   state.currentThread = mergeThreadPreservingVisibleItems(state.currentThread, result.thread);
   mergeThreadIntoThreadList(state.currentThread);
+  const mergeMs = roundedDurationMs(mergeStartedAt);
+  const composerRenderStartedAt = nowPerfMs();
   renderComposerSettings();
   syncActiveTurnFromThread();
+  const composerRenderMs = roundedDurationMs(composerRenderStartedAt);
+  const threadListRenderStartedAt = nowPerfMs();
   renderThreads();
+  const threadListRenderMs = roundedDurationMs(threadListRenderStartedAt);
+  const conversationRenderStartedAt = nowPerfMs();
   renderCurrentThread({ stickToBottom: wasNearBottom });
+  const conversationRenderMs = roundedDurationMs(conversationRenderStartedAt);
+  const postRenderStartedAt = nowPerfMs();
   scheduleUsageBackfillRefresh();
   scheduleLivePollIfNeeded();
   updateComposerControls();
+  const postRenderMs = roundedDurationMs(postRenderStartedAt);
+  const renderElapsedMs = roundedDurationMs(renderStartedAt);
+  const detailPerformance = threadPerformanceMetrics.threadDetailEventFieldsWithClient(result.thread, {
+    source: String(options.source || "unknown").slice(0, 40),
+    elapsedMs: roundedDurationMs(apiStartedAt),
+    apiElapsedMs,
+    renderElapsedMs,
+    mergeMs,
+    composerRenderMs,
+    threadListRenderMs,
+    conversationRenderMs,
+    postRenderMs,
+    detailRenderMode: "full-backfill",
+  });
   postPerformanceEvent("thread_detail_full_ready", {
     source: String(options.source || "unknown").slice(0, 40),
     threadId: id,
     elapsedMs: roundedDurationMs(apiStartedAt),
     apiElapsedMs,
-    renderElapsedMs: roundedDurationMs(renderStartedAt),
+    renderElapsedMs,
+    serverTimings: detailPerformance.serverTimings,
+    performancePhase: detailPerformance.performancePhase,
+    clientTimings: detailPerformance.clientTimings,
     readMode: result.thread && result.thread.mobileReadMode || "",
     turns: Array.isArray(result.thread && result.thread.turns) ? result.thread.turns.length : 0,
     omittedTurns: Number(result.thread && result.thread.mobileOmittedTurnCount || 0),
@@ -10893,11 +11030,14 @@ function updateCurrentThreadHeader(thread = state.currentThread) {
 }
 
 function shouldPreservePinnedLiveOperationDock(dock, html = "") {
-  if (!dock || !state.liveOperationDockPinned) return false;
-  if (normalizeLiveOperationDockMode(state.liveOperationDockMode) !== "expanded") return false;
-  if (String(state.liveOperationDockPinnedThreadId || "") !== String(state.currentThreadId || "")) return false;
-  if (!dock.querySelector(".mobile-operation-sheet")) return false;
-  return !String(html || "").includes("mobile-operation-bubble");
+  return liveOperationDockPolicy.shouldPreservePinned({
+    pinned: state.liveOperationDockPinned,
+    mode: state.liveOperationDockMode,
+    pinnedThreadId: state.liveOperationDockPinnedThreadId,
+    currentThreadId: state.currentThreadId,
+    dockHasSheet: Boolean(dock && dock.querySelector(".mobile-operation-sheet")),
+    nextHtml: html,
+  });
 }
 
 function preservePinnedLiveOperationDock(dock) {
@@ -10921,26 +11061,31 @@ function clearCompactLiveOperationBubbleState() {
 }
 
 function rememberCompactLiveOperationBubbleHtml(html = "") {
-  const nextHtml = String(html || "");
-  const threadId = String(state.currentThreadId || "");
-  state.liveOperationDockCompactVisibleUntilMs = Math.max(
-    Number(state.liveOperationDockCompactVisibleUntilMs || 0),
-    Date.now() + LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS,
-  );
-  state.liveOperationDockCompactHtml = nextHtml;
-  state.liveOperationDockCompactThreadId = threadId;
-  state.liveOperationDockRecallHtml = nextHtml;
-  state.liveOperationDockRecallThreadId = threadId;
-  state.liveOperationDockRecallAtMs = Date.now();
+  const next = liveOperationDockPolicy.rememberCompactBubble({
+    html,
+    threadId: state.currentThreadId,
+    nowMs: Date.now(),
+    minVisibleMs: LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS,
+    existingVisibleUntilMs: state.liveOperationDockCompactVisibleUntilMs,
+  });
+  state.liveOperationDockCompactVisibleUntilMs = next.visibleUntilMs;
+  state.liveOperationDockCompactHtml = next.html;
+  state.liveOperationDockCompactThreadId = next.threadId;
+  state.liveOperationDockRecallHtml = next.recallHtml;
+  state.liveOperationDockRecallThreadId = next.recallThreadId;
+  state.liveOperationDockRecallAtMs = next.recallAtMs;
 }
 
 function renderLiveOperationRecallDockHtml() {
-  if (!isMobileViewport()) return "";
-  if (!state.currentThread || state.newThreadDraft) return "";
-  const savedThreadId = String(state.liveOperationDockRecallThreadId || "");
-  if (!savedThreadId || savedThreadId !== String(state.currentThreadId || "")) return "";
   const savedHtml = String(state.liveOperationDockRecallHtml || "");
-  if (!savedHtml.includes("mobile-operation-sheet")) return "";
+  if (!liveOperationDockPolicy.shouldShowRecall({
+    isMobile: isMobileViewport(),
+    hasCurrentThread: Boolean(state.currentThread),
+    newThreadDraft: state.newThreadDraft,
+    currentThreadId: state.currentThreadId,
+    recallThreadId: state.liveOperationDockRecallThreadId,
+    recallHtml: savedHtml,
+  })) return "";
   const root = firstElementFromHtml(savedHtml);
   if (!root) return "";
   const stack = root.querySelector(".mobile-operation-stack");
@@ -10979,21 +11124,25 @@ function scheduleLiveOperationDockCompactMinimumRefresh(delayMs = LIVE_OPERATION
 }
 
 function shouldPreserveCompactLiveOperationBubble(dock, html = "") {
-  if (!dock || String(html || "").includes("mobile-operation-bubble")) return false;
-  const remainingMs = Number(state.liveOperationDockCompactVisibleUntilMs || 0) - Date.now();
-  if (remainingMs <= 0) return false;
-  const savedHtml = String(state.liveOperationDockCompactHtml || "");
-  const savedThreadId = String(state.liveOperationDockCompactThreadId || "");
-  const sameThread = savedThreadId && savedThreadId === String(state.currentThreadId || "");
-  if (!sameThread) return false;
-  if (!dock.querySelector(".mobile-operation-bubble") && !savedHtml.includes("mobile-operation-bubble")) return false;
-  if (sameThread && savedHtml && !dock.querySelector(".mobile-operation-bubble")) {
+  if (!dock) return false;
+  const dockHasBubble = Boolean(dock.querySelector(".mobile-operation-bubble"));
+  const preservation = liveOperationDockPolicy.compactBubblePreservation({
+    nextHtml: html,
+    visibleUntilMs: state.liveOperationDockCompactVisibleUntilMs,
+    nowMs: Date.now(),
+    savedHtml: state.liveOperationDockCompactHtml,
+    savedThreadId: state.liveOperationDockCompactThreadId,
+    currentThreadId: state.currentThreadId,
+    dockHasBubble,
+  });
+  if (!preservation.preserve) return false;
+  if (preservation.patchSavedHtml) {
     dock.hidden = false;
     dock.dataset.mode = "compact";
     dock.dataset.mobileVisible = "true";
-    if (dock.innerHTML !== savedHtml) patchHtml(dock, savedHtml);
+    if (dock.innerHTML !== preservation.savedHtml) patchHtml(dock, preservation.savedHtml);
   }
-  scheduleLiveOperationDockCompactMinimumRefresh(remainingMs);
+  scheduleLiveOperationDockCompactMinimumRefresh(preservation.remainingMs);
   return true;
 }
 
@@ -11038,9 +11187,7 @@ function updateLiveOperationDockHtml(html = "") {
 }
 
 function normalizeLiveOperationDockMode(mode) {
-  const value = String(mode || "");
-  if (value === "expanded") return value;
-  return "compact";
+  return liveOperationDockPolicy.normalizeMode(mode);
 }
 
 function setLiveOperationDockMode(mode) {
@@ -13301,6 +13448,7 @@ function labelForItem(item) {
     commandExecution: "Command",
     fileChange: "File Change",
     collabAgentToolCall: "协作 Agent",
+    turnDiagnostic: "Diagnostic",
     imageView: "Image",
     imageGeneration: "Image",
     mcpToolCall: `MCP ${item.server || ""}.${item.tool || ""}`,
@@ -13313,8 +13461,10 @@ function labelForItem(item) {
 }
 
 function copyTextForItem(item) {
-  if (!item || item.type !== "agentMessage") return "";
-  return item.text || "";
+  if (!item) return "";
+  if (item.type === "agentMessage") return item.text || "";
+  if (item.type === "turnDiagnostic") return [item.title, item.message].filter(Boolean).join("\n");
+  return "";
 }
 
 function imageUrlValue(part) {
@@ -15672,6 +15822,7 @@ function renderItemBody(item, turn = null) {
   if (item.type === "agentMessage") {
     return renderThreadTaskCardDraftMessage(item.text || "", item, turn) || renderMarkdownWithAttachmentSummary(item.text || "");
   }
+  if (isTurnDiagnosticItem(item)) return renderTurnDiagnostic(item);
   if (item.type === "reasoning") {
     const summary = (item.summary || []).join("\n");
     const content = (item.content || []).join("\n");
@@ -15698,6 +15849,18 @@ function renderUserMessageBody(item) {
   const errorMessage = String(item && item.mobileSendError && item.mobileSendError.message || "").trim();
   if (!errorMessage) return body;
   return `${body}<div class="send-error-receipt" role="status">${escapeHtml(`发送失败：${errorMessage}`)}</div>`;
+}
+
+function renderTurnDiagnostic(item) {
+  const title = String(item && item.title || "Codex runtime diagnostic");
+  const message = String(item && item.message || "Codex runtime ended this turn without visible response content.");
+  const code = String(item && item.code || "");
+  const severity = String(item && item.severity || "warning");
+  return `<div class="turn-diagnostic-body ${escapeHtml(severity)}">
+    <div class="turn-diagnostic-title">${escapeHtml(title)}</div>
+    <div class="turn-diagnostic-message">${escapeHtml(message)}</div>
+    ${code ? `<div class="turn-diagnostic-code">${escapeHtml(code)}</div>` : ""}
+  </div>`;
 }
 
 function renderOutputBlock(output, item = {}) {

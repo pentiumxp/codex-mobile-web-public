@@ -38,6 +38,9 @@ function createThreadTurnCompactionPolicyService(options = {}) {
   const isTurnUsageSummaryItem = typeof options.isTurnUsageSummaryItem === "function"
     ? options.isTurnUsageSummaryItem
     : (item) => defaultItemType(item) === "turnusagesummary";
+  const isDiagnosticReceiptItem = typeof options.isDiagnosticReceiptItem === "function"
+    ? options.isDiagnosticReceiptItem
+    : (item) => defaultItemType(item) === "turndiagnostic";
 
   function trailingOperationIndexes(items, allowLiveOperation, maxOperations = 1) {
     const indexes = new Set();
@@ -63,6 +66,7 @@ function createThreadTurnCompactionPolicyService(options = {}) {
       if (isUserQuestionItem(item)) indexes.add(index);
       if (isTurnUsageSummaryItem(item)) indexes.add(index);
       if (isVisualReceiptItem(item)) indexes.add(index);
+      if (isDiagnosticReceiptItem(item)) indexes.add(index);
       if (isAssistantReceiptItem(item)) receiptIndex = index;
     }
     if (receiptIndex >= 0) indexes.add(receiptIndex);
@@ -92,6 +96,7 @@ function createThreadTurnCompactionPolicyService(options = {}) {
     return turn.items.some((item) => isUserQuestionItem(item)
       || isAssistantReceiptItem(item)
       || isVisualReceiptItem(item)
+      || isDiagnosticReceiptItem(item)
       || isOperationalItem(item)
       || isTurnUsageSummaryItem(item));
   }

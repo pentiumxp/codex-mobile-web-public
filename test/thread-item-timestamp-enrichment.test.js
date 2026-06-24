@@ -496,6 +496,40 @@ test("rollout final receipt fallback does not replace existing receipts or faile
   }
 });
 
+test("completed turn with explicit empty final message gets a runtime diagnostic item", () => {
+  const { dir, rolloutPath } = writeRollout([
+    event("2026-05-24T11:27:00.000Z", "event_msg", { type: "task_started", turn_id: "turn-empty-completion" }),
+    event("2026-05-24T11:27:18.000Z", "event_msg", {
+      type: "task_complete",
+      turn_id: "turn-empty-completion",
+      last_agent_message: null,
+      duration_ms: 18000,
+    }),
+  ]);
+  try {
+    const compacted = compactThread({
+      id: "thread-empty-completion",
+      path: rolloutPath,
+      turns: [{
+        id: "turn-empty-completion",
+        status: { type: "completed" },
+        completedAt: Date.parse("2026-05-24T11:27:18.000Z") / 1000,
+        durationMs: 18000,
+        items: [],
+      }],
+    });
+
+    const items = compacted.turns[0].items;
+    assert.deepEqual(items.map((item) => item.type), ["turnDiagnostic"]);
+    assert.equal(items[0].id, "mobile-empty-completion-turn-empty-completion");
+    assert.equal(items[0].code, "runtime_completed_without_response");
+    assert.equal(items[0].mobileRuntimeDiagnostic, true);
+    assert.equal(items.some((item) => item.type === "agentMessage"), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("older compacted turns keep only question and receipt items", () => {
   const turns = [];
   const rolloutEvents = [];

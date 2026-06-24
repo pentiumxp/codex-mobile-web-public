@@ -4137,6 +4137,31 @@ html.keyboard-open .side-chat-form textarea {
   background: var(--item-agent-bg);
 }
 
+.item.turnDiagnostic {
+  background: color-mix(in srgb, var(--danger) 8%, var(--panel));
+  border-color: color-mix(in srgb, var(--danger) 28%, var(--border));
+}
+
+.turn-diagnostic-body {
+  display: grid;
+  gap: 6px;
+  white-space: normal;
+}
+
+.turn-diagnostic-title {
+  font-weight: 720;
+}
+
+.turn-diagnostic-message {
+  color: var(--muted);
+}
+
+.turn-diagnostic-code {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--danger);
+}
+
 .item.reasoning,
 .item.plan {
   background: rgba(240, 180, 108, 0.07);

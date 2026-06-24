@@ -19,6 +19,7 @@ function policy() {
     isAssistantReceiptItem: (item) => Boolean(item && item.kind === "assistant"),
     isVisualReceiptItem: (item) => Boolean(item && item.kind === "visual"),
     isTurnUsageSummaryItem: (item) => Boolean(item && item.kind === "usage"),
+    isDiagnosticReceiptItem: (item) => Boolean(item && item.kind === "diagnostic"),
   });
 }
 
@@ -36,18 +37,19 @@ test("trailingOperationIndexes keeps the latest operation items only when operat
   assert.deepEqual(setValues(service.trailingOperationIndexes(items, true, "all")), [0, 2, 3]);
 });
 
-test("receiptOnlyItemIndexes preserves user, visual, usage, and the last assistant receipt", () => {
+test("receiptOnlyItemIndexes preserves user, visual, diagnostic, usage, and the last assistant receipt", () => {
   const service = policy();
   const items = [
     { kind: "user" },
     { kind: "assistant", id: "old" },
     { operation: true },
     { kind: "visual" },
+    { kind: "diagnostic" },
     { kind: "assistant", id: "final" },
     { kind: "usage" },
   ];
 
-  assert.deepEqual(setValues(service.receiptOnlyItemIndexes(items)), [0, 3, 4, 5]);
+  assert.deepEqual(setValues(service.receiptOnlyItemIndexes(items)), [0, 3, 4, 5, 6]);
 });
 
 test("operationDetailTurnIndexes keeps latest live, previous visible, and previous ended turns", () => {

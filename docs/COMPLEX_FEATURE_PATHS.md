@@ -126,15 +126,41 @@ Implementation path:
     `test/thread-detail-projection-v4-service.test.js`, and a focused UI test
     such as `test/thread-detail-projection-v4-ui.test.js` or equivalent
     assertions in `test/conversation-render.test.js`.
-12. Existing v3 behavior still uses
+12. Large-session performance work must preserve the authoritative first-paint
+    contract. Use `mobileDiagnostics.threadDetailTimings` and client
+    `performancePhase` events to distinguish warm projection cache, turns-list
+    first paint, full `thread/read`, fallback list cache, and DOM render before
+    changing caching/projection behavior. Do not introduce deferred incomplete
+    detail enrichment as a UI fallback for server cold-path slowness.
+13. Explicit empty final assistant-message completions belong in
+    `adapters/thread-completion-diagnostic-service.js`. They should attach a
+    bounded `turnDiagnostic` / `runtime_completed_without_response` item and
+    must not synthesize an `agentMessage` or normal completion receipt.
+14. Mobile operation dock state belongs in `public/live-operation-dock-state.js`.
+    Keep 500ms compact-bubble dwell, expanded pinned sheet preservation, and
+    same-thread recall-dot visibility covered by
+    `test/live-operation-dock-state.test.js`; `public/app.js` should only do DOM
+    patching and event binding.
+15. Browser thread-detail item merge/state rules belong in
+    `public/thread-detail-state.js`. Keep visible-field preservation,
+    context-compaction notice cleanup, operation metadata retention,
+    authoritative completed-receipt detection, and local-only item retention
+    covered by `test/thread-detail-state.test.js`; `public/app.js` should only
+    create the policy with local classifiers and delegate merge calls.
+16. Existing v3 behavior still uses
+    `test/thread-completion-diagnostic-service.test.js`,
     `test/thread-item-timestamp-enrichment.test.js`,
     `test/conversation-render.test.js`, `test/collab-agent-render.test.js`,
     `test/thread-turn-compaction-policy-service.test.js`,
     `test/thread-detail-summary-service.test.js`,
+    `test/thread-detail-performance-service.test.js`,
     `test/thread-detail-projection-input-service.test.js`,
     `test/thread-detail-projection-result-service.test.js`,
     `test/message-timestamp.test.js`, `test/turn-scroll-controls.test.js`,
-    `test/turn-usage-summary-service.test.js`, and
+    `test/turn-usage-summary-service.test.js`,
+    `test/thread-performance-metrics.test.js`,
+    `test/live-operation-dock-state.test.js`,
+    `test/thread-detail-state.test.js`, and
     `test/mobile-viewport.test.js`.
 
 ## Rollout Continuation

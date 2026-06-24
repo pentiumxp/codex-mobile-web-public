@@ -1,3 +1,194 @@
+# 2026-06-24 - v407 local-only item policy helper ready locally
+
+- Scope:
+  - Local source workspace plus Mac production deploy.
+  - Not pushed to Public per current release order.
+- Change:
+  - Continued Phase 2 frontend state ownership extraction in
+    `public/thread-detail-state.js`.
+  - Moved authoritative completed-receipt detection and local-only item
+    retention/drop decisions behind `threadDetailStatePolicy`:
+    `completedIncomingTurnHasAuthoritativeReceipt`,
+    `shouldDropLocalOnlyReceiptForIncomingTurn`, and
+    `shouldPreserveLocalOnlyItem`.
+  - `public/app.js` now delegates those decisions and keeps the higher-level
+    incoming-order merge orchestration in place.
+  - Expanded `test/thread-detail-state.test.js` to cover authoritative
+    completed receipts, dropping local-only live receipts when the incoming
+    completed turn has an authoritative receipt, mux user echo preservation,
+    visual receipt suppression, reasoning-item rejection, and preserve flag
+    behavior.
+  - PWA shell bumped locally to `codex-mobile-shell-v407`.
+  - Updated `README.md`, `docs/MODULES.md`,
+    `docs/COMPLEX_FEATURE_PATHS.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation:
+  - `node --check public/thread-detail-state.js`
+  - `node --check public/app.js`
+  - `node --check public/sw.js`
+  - `node --test test/thread-detail-state.test.js test/conversation-render.test.js test/app-update.test.js test/mobile-viewport.test.js test/plugin-voice-input.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+  - `npm run check`
+  - `npm test` passed (`720` tests).
+  - `npm run check:macos`
+  - `git diff --check`
+  - `codegraph status` was up to date; it warned the index was built by an
+    earlier engine version.
+- Production deploy:
+  - Used the Home AI central deploy script directly, not a task card:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --execute --json`.
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Validation results included log-permission repair, shared-auth permission
+    repair, production file hashes, `launchctl print`, health URL, and Codex
+    auth profile audit.
+  - `/api/public-config` returned HTTP `200` with
+    `clientBuildId=0.1.11|codex-mobile-shell-v407`,
+    `shellCacheName=codex-mobile-shell-v407`, and
+    `workspacePath=/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+
+# 2026-06-24 - v406 thread detail state helper ready locally
+
+- Scope:
+  - Local source workspace only.
+  - Not deployed to production and not pushed to Public per current release
+    order.
+- Change:
+  - Added `public/thread-detail-state.js` as the first Phase 2 frontend state
+    ownership slice. It owns `mergeItemPreservingVisibleFields` policy for
+    stronger visible-field preservation, context-compaction notice cleanup, and
+    operation metadata retention.
+  - `public/app.js` now creates `threadDetailStatePolicy` with local
+    `itemVisibleWeight`, `isContextCompactionItem`, and `isOperationalItem`
+    classifiers, and delegates item merge policy instead of keeping those rules
+    inline.
+  - Added the new static helper to `public/index.html`, `public/sw.js`,
+    `server.js` app-shell build-id asset tracking, and `npm run check`.
+  - PWA shell bumped locally to `codex-mobile-shell-v406`.
+  - Updated `README.md`, `docs/MODULES.md`,
+    `docs/COMPLEX_FEATURE_PATHS.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`.
+- Validation:
+  - `node --check public/thread-detail-state.js`
+  - `node --check public/app.js`
+  - `node --check public/sw.js`
+  - `node --test test/thread-detail-state.test.js test/conversation-render.test.js test/app-update.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+  - `npm run check`
+  - `npm test` passed (`717` tests).
+  - `npm run check:macos`
+  - `git diff --check`
+  - `codegraph status` was up to date; it warned the index was built by an
+    earlier engine version.
+
+# 2026-06-24 - Empty completed-turn diagnostic ready locally
+
+- Scope:
+  - Local source workspace only.
+  - Not deployed to production and not pushed to Public.
+- Trigger:
+  - Home AI thread `019eed86-2002-7cc2-b0b7-937eb5355f36` accepted a short
+    user message, showed the running timer, then the turn ended with no visible
+    feedback.
+- Evidence:
+  - Production `/api/public-config` was still v404 when investigated, so local
+    v405/v406 changes were not the cause.
+  - The affected turn `019ef7a6-f274-73d0-aa3c-e6f232dfb036` was completed in
+    current detail projection with `itemCount=0`.
+  - The rollout contained `task_started` and `task_complete`, but no scoped
+    user/agent item for that turn and an explicit empty final assistant
+    message.
+  - A later Home AI turn did produce visible items, but the first visible agent
+    content arrived only after a long no-visible-output window. Treat active
+    no-output latency as a separate diagnostic target from explicit empty
+    completion.
+- Change:
+  - Added `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` to record the current
+    diagnosis, the Home AI-owned platform incident-intake boundary, and the
+    staged Codex Mobile optimization path.
+  - Added `adapters/thread-completion-diagnostic-service.js` so explicit empty
+    completed-turn diagnostics are service-owned instead of implemented inline
+    in `server.js`.
+  - `server.js` now detects completed rollout entries whose final assistant
+    payload is explicitly empty through that service and attaches a bounded
+    `turnDiagnostic` item with code
+    `runtime_completed_without_response`. It does not synthesize an
+    `agentMessage` for this shape and does not treat it as a normal
+    completed-reply notification case.
+  - `adapters/thread-turn-compaction-policy-service.js` preserves diagnostic
+    receipt items through receipt-only compaction.
+  - `public/app.js` renders `turnDiagnostic` as a visible diagnostic card and
+    includes it in visible-item signatures/progress checks.
+  - `public/styles.css` adds the diagnostic card styling.
+  - `README.md`, `docs/README.md`, `docs/ARCHITECTURE.md`, `docs/MODULES.md`,
+    `docs/COMPLEX_FEATURE_PATHS.md`, and `docs/TROUBLESHOOTING.md` document the
+    no-final-message invariant, the service boundary, and the future
+    authenticated client-incident reporting direction.
+- Validation:
+  - `node --check server.js`
+  - `node --check public/app.js`
+  - `node --test test/thread-completion-diagnostic-service.test.js test/thread-turn-compaction-policy-service.test.js test/thread-item-timestamp-enrichment.test.js test/conversation-render.test.js`
+  - `node --test test/mobile-viewport.test.js`
+  - `npm run check`
+  - `npm run check:macos`
+  - `npm test` passed (`713` tests).
+  - `git diff --check`
+  - `codegraph status` was up to date; it warned the index was built by an
+    earlier engine version.
+  - Local proof against the real Home AI rollout: compacting the affected turn
+    now yields one `turnDiagnostic` with
+    `runtime_completed_without_response`, and does not synthesize an
+    assistant reply.
+- Follow-up:
+  - Add a first-class authenticated client diagnostic endpoint and bounded
+    diagnostic package store before enabling any automatic task-card closure.
+  - The endpoint should capture build id, thread id, turn id, read mode,
+    status, render/scroll state, event source, item counts, and timing buckets
+    only. It must not include access keys, cookies, raw prompts, message
+    bodies, image contents, full logs, or provider payloads.
+  - Task-card closure from diagnostics must be deduplicated, rate-limited, and
+    reference a diagnostic package id instead of embedding private evidence.
+
+# 2026-06-24 - v405 local performance diagnostics and operation dock helper ready
+
+- Scope:
+  - Local source workspace only.
+  - Not deployed to production and not pushed to Public per current task
+    boundary.
+- Change:
+  - Added `adapters/thread-detail-performance-service.js` to attach bounded
+    `mobileDiagnostics.threadDetailTimings` metadata to thread detail
+    responses. The diagnostics classify warm client/current, warm projection
+    cache, dynamic projection, cold thread reads, turns-list fallback, and
+    summary fallback phases without including message bodies or private
+    payloads.
+  - Added `public/thread-performance-metrics.js` so client telemetry events
+    (`thread_list_rendered`, `thread_detail_first_paint`,
+    `thread_refresh_ms`, `thread_detail_full_ready`) can include
+    `serverTimings` and `performancePhase`.
+  - Added `public/live-operation-dock-state.js` and routed mobile operation
+    bubble/dock state decisions through it. The 500ms minimum visible window,
+    recall-dot visibility, pinned-sheet preservation, and compact-bubble
+    preservation are now unit-testable outside `public/app.js`.
+  - Confirmed the task-card store fail-closed behavior already exists:
+    missing store is first-run empty; malformed JSON, wrong shape, and
+    unreadable existing stores fail closed with bounded status instead of
+    silently presenting an empty normal state.
+  - PWA shell was bumped locally to `codex-mobile-shell-v405`.
+  - Updated `README.md`, `docs/MODULES.md`, `docs/TROUBLESHOOTING.md`,
+    `docs/ARCHITECTURE.md`, and `docs/COMPLEX_FEATURE_PATHS.md` to document
+    the local v405 architecture boundary and next diagnostics path.
+- Validation:
+  - `node --test test/thread-detail-performance-service.test.js test/thread-performance-metrics.test.js test/live-operation-dock-state.test.js`
+  - `node --test test/thread-task-card-service.test.js test/thread-detail-summary-service.test.js test/thread-detail-projection-input-service.test.js test/thread-detail-projection-result-service.test.js test/thread-list-fallback-cache-service.test.js`
+  - `node --test test/collab-agent-render.test.js test/mobile-viewport.test.js test/app-update.test.js test/plugin-voice-input.test.js test/conversation-render.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js test/turn-scroll-controls.test.js`
+  - `npm run check`
+  - `npm run check:macos`
+  - `npm test` passed (`705` tests).
+  - `git diff --check`
+  - `codegraph sync` reported already up to date.
+- Current status:
+  - Ready for local commit if desired.
+  - Do not treat v405 as deployed or Public-published until the user
+    explicitly requests that step.
+
 # 2026-06-24 - v404 mobile floating control alignment ready
 
 - Trigger:
