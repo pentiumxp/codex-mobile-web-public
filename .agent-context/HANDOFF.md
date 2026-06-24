@@ -1,3 +1,100 @@
+# 2026-06-24 - v402 mobile operation bubble dwell deployed
+
+- Trigger:
+  - User reported that the mobile command/status operation bubble still flashes
+    and disappears instead of staying visible for the intended 500ms minimum.
+  - User also reported occasional Composer and upper-screen flicker while
+    typing.
+- Root cause:
+  - The v399 minimum-dwell implementation only preserved the bubble when the
+    DOM already contained `.mobile-operation-bubble`.
+  - Very short command/file/tool events can complete before the next stable DOM
+    state, so a later refresh can clear the dock before the minimum-dwell guard
+    has a DOM bubble to preserve.
+  - The minimum-dwell expiry timer called full `renderCurrentThread()`, which
+    can update header/conversation/scroll state and contribute to Composer-area
+    jitter.
+- Change:
+  - `public/app.js` now stores the last same-thread mobile bubble HTML,
+    thread id, and minimum visible-until timestamp in dock state.
+  - If a short operation completes before 500ms, the dock reuses that saved
+    same-thread bubble until the deadline rather than clearing immediately.
+  - The expiry timer now runs a dock-only refresh through
+    `renderLiveOperationDockOnly()` instead of full `renderCurrentThread()`.
+  - PWA shell bumped to `codex-mobile-shell-v402`.
+  - `README.md`, `docs/TROUBLESHOOTING.md`, `public/sw.js`, and focused tests
+    were updated.
+- Validation:
+  - `node --test test/collab-agent-render.test.js test/mobile-viewport.test.js test/thread-task-card-route.test.js test/thread-goal-service.test.js`
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+  - Production target `npm run check`
+  - `codegraph sync && codegraph status` up to date with the existing
+    earlier-engine warning.
+- Deployment:
+  - Used the Home AI center script:
+    `node /Users/hermes-dev/HermesMobileDev/app/scripts/deploy-macos-production.js --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --reason codex-mobile-v402-bubble-dwell --allow-dirty --execute --json`
+  - Target:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260624T021115Z-plugin-codex-mobile-web-codex-mobile-v402-bubble-dwell`.
+  - Restarted `system/com.hermesmobile.plugin.codex-mobile`.
+  - Deploy validations passed: production file hashes, launchd print,
+    plugin manifest health URL, Codex auth profile audit, and Codex Mobile log
+    permission repair.
+  - `/api/public-config` now returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v402` and
+    `shellCacheName=codex-mobile-shell-v402`.
+  - Authenticated `/api/status` returned HTTP 200 with `ready=true`.
+- Operational notes:
+  - This deploy included the prior v401 thread-status freshness changes plus
+    the v402 bubble dwell fix from the private workspace.
+  - No public sync, commit, or push was performed. Follow the release-order
+    rule and wait for production/user validation before public publishing.
+
+# 2026-06-24 - PR #78 status freshness logic absorbed into current architecture
+
+- Trigger:
+  - User asked to absorb the useful parts of public PR #78 without merging or
+    copying it wholesale, and to follow the Home AI root-cause-first contract
+    rather than adding fallback behavior.
+- Scope:
+  - Absorbed the thread status / unread / replay freshness concept only.
+  - Did not absorb PR #78's large-session deferred enrichment approach because
+    it intentionally returns an incomplete first detail and can reintroduce
+    visible two-phase rendering jitter; large-session slowness remains owned by
+    server projection/cache behavior, not by hiding it in the browser.
+- Changes:
+  - Added `public/thread-status-hints.js` as the pure browser status policy for
+    running hints, viewed timestamps, submitted-processing hints, terminal
+    event timestamps, and mux replay freshness.
+  - `public/app.js` now records `codexMobileThreadViewedAtById`, keeps short
+    submitted-processing state after sends, delegates running/unread decisions
+    to the helper, and uses event timestamps for `thread/status/changed`,
+    `turn/started`, and `turn/completed`.
+  - `codex-app-server-mux.js` annotates replayed Mobile notifications with
+    `mobileReplay`, `mobileReplayReceivedAtMs`, and `mobileReplaySeq`; desktop
+    replay behavior is unchanged.
+  - PWA shell bumped to `codex-mobile-shell-v401`; `public/index.html`,
+    `public/sw.js`, `public/app.js`, `README.md`, docs, and tests were updated.
+  - `package.json` syntax check now includes `public/thread-status-hints.js`.
+- Validation:
+  - Focused:
+    - `node --test test/thread-status-hints.test.js test/protocol.test.js test/mobile-viewport.test.js test/conversation-render.test.js`
+    - `node --test test/thread-list-fallback-cache-service.test.js test/thread-visibility.test.js`
+    - `node --test test/plugin-voice-input.test.js`
+  - Broad:
+    - `npm run check`
+    - `npm run check:macos`
+    - `npm test` passed (`696` tests)
+    - `git diff --check`
+    - `codegraph sync && codegraph status` up to date with the existing earlier-engine warning.
+- Operational notes:
+  - This is implemented and validated in the private workspace only.
+  - No production deploy, public sync, commit, or push was performed in this
+    step. Follow the release-order rule before public publishing.
+
 # 2026-06-24 - Service-first refactor deployed after dev and production smoke
 
 - Trigger:

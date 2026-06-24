@@ -68,6 +68,10 @@ const buildRefreshPolicy = window.CodexBuildRefreshPolicy || {
     return true;
   },
 };
+const threadStatusHintPolicy = window.CodexThreadStatusHints;
+if (!threadStatusHintPolicy) {
+  throw new Error("CodexThreadStatusHints policy script failed to load");
+}
 const INITIAL_PLUGIN_EMBED = pluginEmbedApi.detect(window.location.href);
 const INITIAL_PLUGIN_LAUNCH_KEY = INITIAL_PLUGIN_EMBED.launchKey || initialPluginLaunchKeyFromUrl();
 
@@ -146,6 +150,7 @@ const state = {
   threadListRenderFrame: null,
   threadNotificationThrottle: new Map(),
   recentSubmittedUserMessages: new Map(),
+  submittedProcessingThreadHintedAtById: {},
   sendProgressWatchdog: null,
   sendProgressStartAt: 0,
   sendProgressWarned: false,
@@ -202,6 +207,8 @@ const state = {
   liveOperationDockPinned: false,
   liveOperationDockPinnedThreadId: "",
   liveOperationDockCompactVisibleUntilMs: 0,
+  liveOperationDockCompactHtml: "",
+  liveOperationDockCompactThreadId: "",
   liveOperationDockCompactTimer: null,
   threadSideChats: new Map(),
   sideChatLoadingThreadId: "",
@@ -339,6 +346,7 @@ const state = {
   runningThreadIds: loadStringSetStorage("codexMobileRunningThreadIds"),
   runningThreadHintedAtById: loadNumberMapStorage("codexMobileRunningThreadHintedAtById", {}),
   unreadThreadIds: loadStringSetStorage("codexMobileUnreadThreadIds"),
+  threadViewedAtById: loadNumberMapStorage("codexMobileThreadViewedAtById", {}),
   rolloutWarningDismissals: loadStringSetStorage("codexMobileDismissedRolloutWarnings"),
   codexFastMode: false,
   fontSize: localStorage.getItem("codexMobileFontSize")
@@ -393,7 +401,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = 500;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v400";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v402";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -423,6 +431,8 @@ const PERF_EVENT_THROTTLE_MS = 2000;
 const PERF_RENDER_REPORT_MIN_MS = 16;
 const PERF_SLOW_RENDER_REPORT_MS = 50;
 const RUNNING_THREAD_HINT_STALE_MS = 20 * 60 * 1000;
+const SUBMITTED_PROCESSING_HINT_STALE_MS = threadStatusHintPolicy.DEFAULT_SUBMITTED_PROCESSING_HINT_STALE_MS;
+const STATUS_EVENT_FRESHNESS_TOLERANCE_MS = threadStatusHintPolicy.DEFAULT_STATUS_EVENT_FRESHNESS_TOLERANCE_MS;
 const AUTO_TURN_RECOVERY_COOLDOWN_MS = 120000;
 const GITHUB_LINK_PREVIEW_TIMEOUT_MS = 12000;
 const PAGE_SHELL_ASSETS = Object.freeze([
@@ -438,6 +448,7 @@ const PAGE_SHELL_ASSETS = Object.freeze([
   "/image-compressor.js",
   "/plugin-embed.js",
   "/plugin-voice-input.js",
+  "/thread-status-hints.js",
   "/build-refresh-policy.js",
   "/app.js",
   "/manifest.json",
@@ -454,6 +465,7 @@ const STORAGE_CONTINUATION_JOB = "codexMobileContinuationJobId";
 const STORAGE_RUNNING_THREAD_IDS = "codexMobileRunningThreadIds";
 const STORAGE_RUNNING_THREAD_HINTED_AT = "codexMobileRunningThreadHintedAtById";
 const STORAGE_UNREAD_THREAD_IDS = "codexMobileUnreadThreadIds";
+const STORAGE_THREAD_VIEWED_AT = "codexMobileThreadViewedAtById";
 const STORAGE_DISMISSED_ROLLOUT_WARNINGS = "codexMobileDismissedRolloutWarnings";
 const STORAGE_FONT_SIZE = "codexMobileFontSize";
 const STORAGE_CODEX_FAST_MODE = "codexMobileCodexFastMode";
@@ -1341,6 +1353,7 @@ function saveThreadStatusHints() {
   saveStringSetStorage(STORAGE_RUNNING_THREAD_IDS, state.runningThreadIds);
   saveNumberMapStorage(STORAGE_RUNNING_THREAD_HINTED_AT, state.runningThreadHintedAtById);
   saveStringSetStorage(STORAGE_UNREAD_THREAD_IDS, state.unreadThreadIds);
+  saveNumberMapStorage(STORAGE_THREAD_VIEWED_AT, state.threadViewedAtById);
 }
 
 function isRecoverableThreadDisplayTitle(value, threadId = "") {
@@ -1481,11 +1494,39 @@ function showCompletionAlert(threadId, threadName) {
   playCompletionTone({ audible: true });
 }
 
-function markThreadViewed(threadId) {
+function threadForStatusHint(threadId, inputThread = null) {
   const id = String(threadId || "");
-  if (!id || !state.unreadThreadIds.has(id)) return;
-  state.unreadThreadIds.delete(id);
-  saveThreadStatusHints();
+  if (!id) return inputThread || null;
+  if (inputThread && String(inputThread.id || id) === id) return inputThread;
+  if (state.currentThread && String(state.currentThread.id || "") === id) return state.currentThread;
+  return state.threads.find((thread) => String(thread && thread.id || "") === id) || inputThread || null;
+}
+
+function threadViewedAtMs(threadId) {
+  return Number(state.threadViewedAtById[String(threadId || "")] || 0);
+}
+
+function markThreadViewed(threadId, thread = null, viewedAtMs = Date.now()) {
+  const id = String(threadId || "");
+  if (!id) return;
+  const viewedThread = threadForStatusHint(id, thread);
+  const nowMs = Date.now();
+  const explicitViewedAt = Math.min(numericTimestampMs(viewedAtMs), nowMs);
+  const viewedAt = Math.max(explicitViewedAt || 0, nowMs);
+  let changed = false;
+  if (state.unreadThreadIds.delete(id)) changed = true;
+  if (Number.isFinite(viewedAt) && viewedAt > 0 && viewedAt > threadViewedAtMs(id)) {
+    state.threadViewedAtById[id] = viewedAt;
+    changed = true;
+  }
+  const status = viewedThread && viewedThread.status;
+  const staleActive = isStaleActiveStatus(status) || Boolean(viewedThread && viewedThread.mobileStaleActiveTurn);
+  const freshSettled = isThreadListSettledStatus(status)
+    && !shouldKeepRunningHintForSettledStatus(id, viewedThread, status, {
+      eventAtMs: threadUpdatedAtMs(viewedThread),
+    });
+  if ((staleActive || freshSettled) && clearRunningThreadHint(id)) changed = true;
+  if (changed) saveThreadStatusHints();
 }
 
 function noteRunningThreadHint(threadId, nowMs = Date.now()) {
@@ -1504,6 +1545,23 @@ function noteRunningThreadHint(threadId, nowMs = Date.now()) {
   return changed;
 }
 
+function noteSubmittedProcessingThreadHint(threadId, nowMs = Date.now()) {
+  const id = String(threadId || "");
+  if (!id) return false;
+  const previous = Number(state.submittedProcessingThreadHintedAtById[id] || 0);
+  if (previous && Math.abs(nowMs - previous) <= 1000) return false;
+  state.submittedProcessingThreadHintedAtById[id] = nowMs;
+  return true;
+}
+
+function clearSubmittedProcessingThreadHint(threadId) {
+  const id = String(threadId || "");
+  if (!id) return false;
+  if (!Object.prototype.hasOwnProperty.call(state.submittedProcessingThreadHintedAtById, id)) return false;
+  delete state.submittedProcessingThreadHintedAtById[id];
+  return true;
+}
+
 function clearRunningThreadHint(threadId) {
   const id = String(threadId || "");
   if (!id) return false;
@@ -1513,58 +1571,172 @@ function clearRunningThreadHint(threadId) {
     delete state.runningThreadHintedAtById[id];
     changed = true;
   }
+  if (clearSubmittedProcessingThreadHint(id)) changed = true;
   return changed;
 }
 
 function threadUpdatedAtMs(thread) {
-  return numericTimestampMs(thread && (thread.updatedAtMs || thread.updatedAt || thread.updated_at_ms || thread.updated_at));
+  return threadStatusHintPolicy.threadUpdatedAtMs(thread);
+}
+
+function threadStatusNotificationDurableEventAtMs(params = {}) {
+  return threadStatusHintPolicy.notificationDurableEventAtMs(params);
+}
+
+function threadStatusNotificationEventAtMs(params = {}, fallbackMs = 0, options = {}) {
+  return threadStatusHintPolicy.notificationEventAtMs(params, fallbackMs, options);
+}
+
+function threadLatestTerminalTurnAtMs(thread) {
+  return threadStatusHintPolicy.latestTerminalTurnAtMs(thread);
+}
+
+function currentThreadAllowsLiveTurn() {
+  const thread = state.currentThread;
+  if (!thread) return true;
+  const status = thread.status;
+  if (isStaleActiveStatus(status) || thread.mobileStaleActiveTurn) return false;
+  if (isThreadListSettledStatus(status)) return false;
+  return true;
+}
+
+function currentLiveTurnSupportsThreadStatusHint(threadId = "") {
+  const id = String(threadId || "");
+  return Boolean(id && id === state.currentThreadId && currentThreadAllowsLiveTurn() && currentLiveTurn());
+}
+
+function shouldKeepRunningHintForSettledStatus(threadId, thread = null, status = null, options = {}) {
+  const id = String(threadId || "");
+  const inputThread = threadForStatusHint(id, thread);
+  return threadStatusHintPolicy.shouldKeepRunningHintForSettledStatus({
+    threadId: id,
+    thread: inputThread,
+    status: status || (inputThread && inputThread.status),
+    isRunningHinted: state.runningThreadIds.has(id),
+    runningHintedAtMs: state.runningThreadHintedAtById[id],
+    submittedProcessingHintedAtMs: state.submittedProcessingThreadHintedAtById[id],
+    submittedProcessingHintStaleMs: SUBMITTED_PROCESSING_HINT_STALE_MS,
+    currentThreadId: state.currentThreadId,
+    currentThreadSettled: !currentThreadAllowsLiveTurn(),
+    currentThreadHasLiveTurn: currentLiveTurnSupportsThreadStatusHint(id),
+    eventAtMs: options.eventAtMs,
+    eventIsTerminal: Boolean(options.eventIsTerminal),
+    mobileReplay: Boolean(options.mobileReplay),
+    allowLocalProcessing: options.allowLocalProcessing !== false,
+    freshnessToleranceMs: STATUS_EVENT_FRESHNESS_TOLERANCE_MS,
+    nowMs: options.nowMs,
+  });
+}
+
+function shouldMarkThreadUnread(threadId, thread = null, status = null, options = {}) {
+  const id = String(threadId || "");
+  const inputThread = threadForStatusHint(id, thread);
+  return threadStatusHintPolicy.shouldMarkThreadUnread({
+    threadId: id,
+    currentThreadId: state.currentThreadId,
+    thread: inputThread,
+    status: status || (inputThread && inputThread.status),
+    viewedAtMs: state.threadViewedAtById[id],
+    wasRunning: Boolean(options.wasRunning),
+    runningHintedAtMs: options.hintedAtMs || state.runningThreadHintedAtById[id],
+    eventAtMs: options.eventAtMs,
+    eventIsTerminal: Boolean(options.eventIsTerminal),
+    mobileReplay: Boolean(options.mobileReplay),
+    freshnessToleranceMs: STATUS_EVENT_FRESHNESS_TOLERANCE_MS,
+  });
 }
 
 function runningThreadHintAgeMs(threadId, thread, nowMs = Date.now()) {
-  const hintedAt = Number(state.runningThreadHintedAtById[String(threadId || "")] || 0);
-  if (hintedAt > 0) return nowMs - hintedAt;
-  const updatedAt = threadUpdatedAtMs(thread);
-  if (updatedAt > 0) return nowMs - updatedAt;
-  return RUNNING_THREAD_HINT_STALE_MS + 1;
+  return threadStatusHintPolicy.runningHintAgeMs({
+    threadId: String(threadId || ""),
+    thread,
+    runningHintedAtMs: state.runningThreadHintedAtById[String(threadId || "")],
+    runningHintStaleMs: RUNNING_THREAD_HINT_STALE_MS,
+    nowMs,
+  });
 }
 
 function shouldExpireRunningThreadHint(threadId, thread, nowMs = Date.now()) {
   const id = String(threadId || "");
-  if (!id || !state.runningThreadIds.has(id)) return false;
-  if (isStaleActiveStatus(thread && thread.status) || (thread && thread.mobileStaleActiveTurn)) return true;
-  if (isRunningStatus(thread && thread.status) || isCompletedStatus(thread && thread.status)) return false;
-  if (id === state.currentThreadId && state.activeTurnId) return false;
-  return runningThreadHintAgeMs(id, thread, nowMs) > RUNNING_THREAD_HINT_STALE_MS;
+  const inputThread = threadForStatusHint(id, thread);
+  return threadStatusHintPolicy.shouldExpireRunningThreadHint({
+    threadId: id,
+    thread: inputThread,
+    status: inputThread && inputThread.status,
+    isRunningHinted: state.runningThreadIds.has(id),
+    runningHintedAtMs: state.runningThreadHintedAtById[id],
+    submittedProcessingHintedAtMs: state.submittedProcessingThreadHintedAtById[id],
+    submittedProcessingHintStaleMs: SUBMITTED_PROCESSING_HINT_STALE_MS,
+    currentThreadId: state.currentThreadId,
+    currentThreadSettled: !currentThreadAllowsLiveTurn(),
+    currentThreadHasLiveTurn: currentLiveTurnSupportsThreadStatusHint(id),
+    freshnessToleranceMs: STATUS_EVENT_FRESHNESS_TOLERANCE_MS,
+    runningHintStaleMs: RUNNING_THREAD_HINT_STALE_MS,
+    nowMs,
+  });
 }
 
 function updateThreadStatusHints(threadId, previousStatus, nextStatus, options = {}) {
   const id = String(threadId || "");
   if (!id) return;
+  const thread = threadForStatusHint(id, options.thread);
+  const nextThread = thread ? Object.assign({}, thread, { status: nextStatus || thread.status }) : null;
   const wasRunning = state.runningThreadIds.has(id) || isRunningStatus(previousStatus);
   const isRunning = isRunningStatus(nextStatus);
   const staleActive = isStaleActiveStatus(nextStatus);
+  const eventIsTerminal = isThreadListTerminalStatus(nextStatus);
   let changed = false;
   let shouldAlert = false;
   if (isRunning) {
     if (noteRunningThreadHint(id)) changed = true;
     if (state.unreadThreadIds.delete(id)) changed = true;
   } else if (wasRunning) {
-    if (clearRunningThreadHint(id)) changed = true;
-    if (!staleActive && id !== state.currentThreadId && !state.unreadThreadIds.has(id)) {
+    const hintedAtMs = Number(state.runningThreadHintedAtById[id] || 0);
+    const keepRunningHint = shouldKeepRunningHintForSettledStatus(id, nextThread, nextStatus, {
+      eventAtMs: options.eventAtMs,
+      eventIsTerminal,
+      mobileReplay: Boolean(options.mobileReplay),
+      allowLocalProcessing: options.allowLocalProcessing !== false,
+    });
+    const shouldUnread = !keepRunningHint
+      && !staleActive
+      && !state.unreadThreadIds.has(id)
+      && shouldMarkThreadUnread(id, nextThread, nextStatus, {
+        wasRunning,
+        eventAtMs: options.eventAtMs,
+        eventIsTerminal,
+        hintedAtMs,
+        mobileReplay: Boolean(options.mobileReplay),
+      });
+    if (!keepRunningHint && clearRunningThreadHint(id)) changed = true;
+    if (shouldUnread) {
       state.unreadThreadIds.add(id);
       changed = true;
       shouldAlert = true;
     }
+  } else if (!state.unreadThreadIds.has(id)
+    && shouldMarkThreadUnread(id, nextThread, nextStatus, {
+      wasRunning,
+      eventAtMs: options.eventAtMs,
+      eventIsTerminal,
+      mobileReplay: Boolean(options.mobileReplay),
+    })) {
+    state.unreadThreadIds.add(id);
+    changed = true;
+    shouldAlert = true;
   }
   if (changed) saveThreadStatusHints();
   if (shouldAlert && options.notify) {
-    showCompletionAlert(id, options.threadName || threadDisplayName(options.thread));
+    showCompletionAlert(id, options.threadName || threadDisplayName(thread));
   }
 }
 
 function isThreadListSettledStatus(status) {
-  const text = statusText(status).toLowerCase();
-  return /^(idle|completed|complete|done|failed|failure|cancelled|canceled|cancel|error|interrupted|stopped|stop)$/.test(text);
+  return threadStatusHintPolicy.isSettledStatus(status);
+}
+
+function isThreadListTerminalStatus(status) {
+  return threadStatusHintPolicy.isTerminalStatus(status);
 }
 
 function reconcileThreadStatusHints(threads) {
@@ -1578,18 +1750,47 @@ function reconcileThreadStatusHints(threads) {
     const isRunning = !staleActive && isRunningStatus(thread.status);
     if (isRunning && !wasRunning) {
       if (noteRunningThreadHint(id, nowMs)) changed = true;
-      state.unreadThreadIds.delete(id);
+      if (state.unreadThreadIds.delete(id)) changed = true;
     } else if (isRunning) {
       if (noteRunningThreadHint(id, nowMs)) changed = true;
+      if (state.unreadThreadIds.delete(id)) changed = true;
     } else if (wasRunning && staleActive) {
       if (clearRunningThreadHint(id)) changed = true;
     } else if (wasRunning && isThreadListSettledStatus(thread.status)) {
-      if (id === state.currentThreadId && currentLiveTurn()) {
+      const terminalAtMs = threadLatestTerminalTurnAtMs(thread);
+      if (currentLiveTurnSupportsThreadStatusHint(id)) {
         if (noteRunningThreadHint(id, nowMs)) changed = true;
         continue;
       }
+      const hintedAtMs = Number(state.runningThreadHintedAtById[id] || 0);
+      if (shouldKeepRunningHintForSettledStatus(id, thread, thread.status, {
+        eventAtMs: threadUpdatedAtMs(thread),
+        eventIsTerminal: Boolean(terminalAtMs),
+      })) {
+        if (shouldExpireRunningThreadHint(id, thread, nowMs) && clearRunningThreadHint(id)) changed = true;
+        continue;
+      }
       if (clearRunningThreadHint(id)) changed = true;
-      if (id !== state.currentThreadId) state.unreadThreadIds.add(id);
+      if (!state.unreadThreadIds.has(id)
+        && shouldMarkThreadUnread(id, thread, thread.status, {
+          wasRunning,
+          eventAtMs: terminalAtMs,
+          eventIsTerminal: Boolean(terminalAtMs),
+          hintedAtMs,
+        })) {
+        state.unreadThreadIds.add(id);
+        changed = true;
+      }
+    } else if (!wasRunning && !state.unreadThreadIds.has(id)) {
+      const terminalAtMs = threadLatestTerminalTurnAtMs(thread);
+      if (shouldMarkThreadUnread(id, thread, thread.status, {
+        wasRunning,
+        eventAtMs: terminalAtMs,
+        eventIsTerminal: Boolean(terminalAtMs),
+      })) {
+        state.unreadThreadIds.add(id);
+        changed = true;
+      }
     } else if (shouldExpireRunningThreadHint(id, thread, nowMs)) {
       if (clearRunningThreadHint(id)) changed = true;
     }
@@ -1604,11 +1805,15 @@ function statusIconInfo(status, threadId = "") {
   if (/active|running|queued|processing|inprogress|in_progress|in-progress|pending|started/.test(normalized)) {
     return { kind: "running", label: text || "running", symbol: "" };
   }
-  if (threadId && state.runningThreadIds.has(String(threadId))
-    && (!isThreadListSettledStatus(status) || (String(threadId) === state.currentThreadId && currentLiveTurn()))) {
+  const id = String(threadId || "");
+  const hintThread = id ? threadForStatusHint(id) : null;
+  if (id && state.runningThreadIds.has(id)
+    && (!isThreadListSettledStatus(status)
+      || currentLiveTurnSupportsThreadStatusHint(id)
+      || shouldKeepRunningHintForSettledStatus(id, hintThread, status))) {
     return { kind: "running", label: text && text !== "notLoaded" ? text : "running", symbol: "" };
   }
-  if (threadId && state.unreadThreadIds.has(String(threadId))) {
+  if (id && state.unreadThreadIds.has(id)) {
     return { kind: "unread", label: "completed, unread", symbol: "" };
   }
   return null;
@@ -4287,6 +4492,7 @@ function markThreadOptimisticallyActive(threadId) {
   const id = String(threadId || "");
   if (!id) return;
   const runningStatus = { type: "active" };
+  noteSubmittedProcessingThreadHint(id);
   const listThread = state.threads.find((entry) => String(entry && entry.id || "") === id) || null;
   const currentMatches = Boolean(state.currentThread && String(state.currentThread.id || "") === id);
   const previousStatus = currentMatches ? state.currentThread.status : listThread && listThread.status;
@@ -10705,20 +10911,54 @@ function preservePinnedLiveOperationDock(dock) {
   return true;
 }
 
+function clearCompactLiveOperationBubbleState() {
+  state.liveOperationDockCompactVisibleUntilMs = 0;
+  state.liveOperationDockCompactHtml = "";
+  state.liveOperationDockCompactThreadId = "";
+}
+
+function rememberCompactLiveOperationBubbleHtml(html = "") {
+  state.liveOperationDockCompactVisibleUntilMs = Math.max(
+    Number(state.liveOperationDockCompactVisibleUntilMs || 0),
+    Date.now() + LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS,
+  );
+  state.liveOperationDockCompactHtml = String(html || "");
+  state.liveOperationDockCompactThreadId = String(state.currentThreadId || "");
+}
+
+function renderLiveOperationDockOnly() {
+  state.nowMs = Date.now();
+  const html = state.currentThread && !state.newThreadDraft
+    ? renderLiveOperationDock(state.currentThread, existingConversationRenderKeys())
+    : "";
+  updateLiveOperationDockHtml(html);
+  updateOperationDurationBadges();
+}
+
 function scheduleLiveOperationDockCompactMinimumRefresh(delayMs = LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS) {
   if (state.liveOperationDockCompactTimer) clearTimeout(state.liveOperationDockCompactTimer);
   const delay = Math.max(0, Number(delayMs) || 0);
   state.liveOperationDockCompactTimer = setTimeout(() => {
     state.liveOperationDockCompactTimer = null;
-    renderCurrentThread();
+    renderLiveOperationDockOnly();
   }, delay + 16);
 }
 
 function shouldPreserveCompactLiveOperationBubble(dock, html = "") {
   if (!dock || String(html || "").includes("mobile-operation-bubble")) return false;
-  if (!dock.querySelector(".mobile-operation-bubble")) return false;
   const remainingMs = Number(state.liveOperationDockCompactVisibleUntilMs || 0) - Date.now();
   if (remainingMs <= 0) return false;
+  const savedHtml = String(state.liveOperationDockCompactHtml || "");
+  const savedThreadId = String(state.liveOperationDockCompactThreadId || "");
+  const sameThread = savedThreadId && savedThreadId === String(state.currentThreadId || "");
+  if (!sameThread) return false;
+  if (!dock.querySelector(".mobile-operation-bubble") && !savedHtml.includes("mobile-operation-bubble")) return false;
+  if (sameThread && savedHtml && !dock.querySelector(".mobile-operation-bubble")) {
+    dock.hidden = false;
+    dock.dataset.mode = "compact";
+    dock.dataset.mobileVisible = "true";
+    if (dock.innerHTML !== savedHtml) patchHtml(dock, savedHtml);
+  }
   scheduleLiveOperationDockCompactMinimumRefresh(remainingMs);
   return true;
 }
@@ -10728,10 +10968,7 @@ function updateLiveOperationDockHtml(html = "") {
   if (!dock) return false;
   const next = String(html || "");
   if (next.includes("mobile-operation-bubble")) {
-    state.liveOperationDockCompactVisibleUntilMs = Math.max(
-      Number(state.liveOperationDockCompactVisibleUntilMs || 0),
-      Date.now() + LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS,
-    );
+    rememberCompactLiveOperationBubbleHtml(next);
   }
   if (shouldPreservePinnedLiveOperationDock(dock, next)) return preservePinnedLiveOperationDock(dock);
   if (shouldPreserveCompactLiveOperationBubble(dock, next)) return true;
@@ -10739,7 +10976,7 @@ function updateLiveOperationDockHtml(html = "") {
     state.liveOperationDockPinned = false;
     state.liveOperationDockPinnedThreadId = "";
     state.liveOperationDockMode = "compact";
-    state.liveOperationDockCompactVisibleUntilMs = 0;
+    clearCompactLiveOperationBubbleState();
   }
   if (!next) {
     if (dock.innerHTML) dock.innerHTML = "";
@@ -15749,18 +15986,25 @@ function applyNotification(method, params) {
     return;
   }
   if (method === "thread/status/changed") {
+    const replayed = Boolean(params.mobileReplay);
+    const runningNotification = isRunningStatus(params.status);
+    const eventAtMs = threadStatusNotificationEventAtMs(params, runningNotification ? Date.now() : 0, {
+      allowReplayReceivedAt: !replayed || runningNotification,
+    });
     const thread = state.threads.find((x) => x.id === params.threadId);
     const previousStatus = thread ? thread.status : null;
     updateThreadStatusHints(params.threadId, previousStatus, params.status, {
       thread,
       notify: true,
       threadName: threadDisplayName(thread),
+      eventAtMs,
+      mobileReplay: replayed,
     });
     if (thread) thread.status = params.status;
     pruneHiddenThreads();
     if (state.currentThread && state.currentThread.id === params.threadId) {
-      markThreadViewed(params.threadId);
       state.currentThread.status = params.status;
+      markThreadViewed(params.threadId, state.currentThread, eventAtMs);
       renderCurrentThread();
       scheduleLivePollIfNeeded(1400);
     }
@@ -15804,12 +16048,18 @@ function applyNotification(method, params) {
   }
   if (!state.currentThread || params.threadId !== state.currentThread.id) return;
   if (method === "turn/started") {
+    const replayed = Boolean(params.mobileReplay);
+    const eventAtMs = threadStatusNotificationEventAtMs(params, Date.now(), {
+      allowReplayReceivedAt: true,
+    });
     const runningStatus = { type: "active" };
     state.activeTurnId = params.turn.id;
     updateThreadStatusHints(params.threadId, state.currentThread.status, runningStatus, {
       thread: state.currentThread,
       threadName: threadDisplayName(state.currentThread),
       notify: false,
+      eventAtMs,
+      mobileReplay: replayed,
     });
     updateThreadListStatus(params.threadId, runningStatus);
     clearRecentCompletedReplyAnchor();
@@ -15825,6 +16075,10 @@ function applyNotification(method, params) {
     return;
   }
   if (method === "turn/completed") {
+    const replayed = Boolean(params.mobileReplay);
+    const eventAtMs = threadStatusNotificationEventAtMs(params, Date.now(), {
+      allowReplayReceivedAt: !replayed,
+    });
     const completedStatus = (params.turn && params.turn.status) || { type: "completed" };
     const turn = ensureTurn(params.turn.id);
     Object.assign(turn, mergeTurnPreservingVisibleItems(turn, params.turn));
@@ -15834,6 +16088,8 @@ function applyNotification(method, params) {
       thread: state.currentThread,
       threadName: threadDisplayName(state.currentThread),
       notify: true,
+      eventAtMs,
+      mobileReplay: replayed,
     });
     updateThreadListStatus(params.threadId, completedStatus);
     state.activeTurnId = "";

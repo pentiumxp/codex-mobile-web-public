@@ -588,6 +588,9 @@ test("mux honors mobile replay notification limit", async (t) => {
   const replayed = secondMessages.filter((message) => message.method === "thread/status/changed");
   assert.equal(replayed.length, 1);
   assert.equal(replayed[0].params.status.index, 2);
+  assert.equal(replayed[0].params.mobileReplay, true);
+  assert.equal(typeof replayed[0].params.mobileReplayReceivedAtMs, "number");
+  assert.equal(typeof replayed[0].params.mobileReplaySeq, "number");
 });
 
 test("mux keeps mobile new-turn synthetic user messages off desktop clients", async (t) => {

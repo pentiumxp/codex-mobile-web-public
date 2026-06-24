@@ -1695,8 +1695,8 @@ test("loading and thread-list state preserve locally visible live turns", () => 
   assert.match(functionBody("conversationRootSignature"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) return `loading\\|/);
   assert.match(functionBody("renderCurrentThread"), /if \(threadIsLoadingWithoutVisibleTurns\(thread\)\) \{/);
   assert.match(functionBody("renderCurrentThread"), /const loadingNote = thread\.mobileLoading/);
-  assert.match(functionBody("reconcileThreadStatusHints"), /id === state\.currentThreadId && currentLiveTurn\(\)/);
-  assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(String\(threadId\)\)[\s\S]*currentLiveTurn\(\)/);
+  assert.match(functionBody("reconcileThreadStatusHints"), /currentLiveTurnSupportsThreadStatusHint\(id\)/);
+  assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(id\)[\s\S]*currentLiveTurnSupportsThreadStatusHint\(id\)/);
 });
 
 test("long agent messages keep a stable render path when a turn completes", () => {
@@ -3678,16 +3678,21 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(appJs, /function mergeThreadIntoThreadList\(/);
   assert.match(appJs, /const RUNNING_THREAD_HINT_STALE_MS = 20 \* 60 \* 1000;/);
   assert.match(appJs, /runningThreadHintedAtById: loadNumberMapStorage\("codexMobileRunningThreadHintedAtById", \{\}\)/);
+  assert.match(appJs, /threadViewedAtById: loadNumberMapStorage\("codexMobileThreadViewedAtById", \{\}\)/);
+  assert.match(appJs, /submittedProcessingThreadHintedAtById: \{\}/);
   assert.match(functionBody("saveThreadStatusHints"), /saveNumberMapStorage\(STORAGE_RUNNING_THREAD_HINTED_AT, state\.runningThreadHintedAtById\)/);
+  assert.match(functionBody("saveThreadStatusHints"), /saveNumberMapStorage\(STORAGE_THREAD_VIEWED_AT, state\.threadViewedAtById\)/);
   assert.match(appJs, /function isThreadListSettledStatus\(status\)/);
-  assert.match(functionBody("isThreadListSettledStatus"), /idle\|completed\|complete\|done\|failed/);
+  assert.match(functionBody("isThreadListSettledStatus"), /threadStatusHintPolicy\.isSettledStatus\(status\)/);
+  assert.match(appJs, /function isThreadListTerminalStatus\(status\)/);
+  assert.match(functionBody("isThreadListTerminalStatus"), /threadStatusHintPolicy\.isTerminalStatus\(status\)/);
   assert.match(appJs, /function isStaleActiveStatus\(status\)/);
   assert.match(functionBody("isStaleActiveStatus"), /mobileStaleActiveTurn/);
-  assert.match(functionBody("shouldExpireRunningThreadHint"), /isStaleActiveStatus\(thread && thread\.status\)/);
+  assert.match(functionBody("shouldExpireRunningThreadHint"), /threadStatusHintPolicy\.shouldExpireRunningThreadHint/);
   assert.match(functionBody("updateThreadStatusHints"), /const staleActive = isStaleActiveStatus\(nextStatus\)/);
-  assert.match(functionBody("updateThreadStatusHints"), /if \(!staleActive && id !== state\.currentThreadId/);
+  assert.match(functionBody("updateThreadStatusHints"), /shouldMarkThreadUnread\(id, nextThread, nextStatus/);
   assert.match(functionBody("statusIconInfo"), /if \(isStaleActiveStatus\(status\)\) return null;/);
-  assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(String\(threadId\)\)[\s\S]*currentLiveTurn\(\)/);
+  assert.match(functionBody("statusIconInfo"), /state\.runningThreadIds\.has\(id\)[\s\S]*currentLiveTurnSupportsThreadStatusHint\(id\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /const staleActive = isStaleActiveStatus\(thread\.status\) \|\| Boolean\(thread\.mobileStaleActiveTurn\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /const isRunning = !staleActive && isRunningStatus\(thread\.status\)/);
   assert.match(functionBody("reconcileThreadStatusHints"), /else if \(wasRunning && staleActive\)/);
@@ -3700,6 +3705,7 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(listMergeBody, /Object\.assign\(\{\}, entry, summary\)/);
   const optimisticBody = functionBody("markThreadOptimisticallyActive");
   assert.match(optimisticBody, /const runningStatus = \{ type: "active" \};/);
+  assert.match(optimisticBody, /noteSubmittedProcessingThreadHint\(id\)/);
   assert.match(optimisticBody, /updateThreadStatusHints\(id, previousStatus, runningStatus/);
   assert.match(optimisticBody, /updateThreadListStatus\(id, runningStatus\)/);
   assert.match(optimisticBody, /mergeThreadIntoThreadList\(state\.currentThread\)/);
@@ -3725,8 +3731,8 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.doesNotMatch(taskCardSendBody, /!steering/);
 
   const expireBody = functionBody("shouldExpireRunningThreadHint");
-  assert.match(expireBody, /id === state\.currentThreadId && state\.activeTurnId/);
-  assert.match(expireBody, /runningThreadHintAgeMs\(id, thread, nowMs\) > RUNNING_THREAD_HINT_STALE_MS/);
+  assert.match(expireBody, /currentThreadHasLiveTurn: currentLiveTurnSupportsThreadStatusHint\(id\)/);
+  assert.match(expireBody, /runningHintStaleMs: RUNNING_THREAD_HINT_STALE_MS/);
 
   const notificationBody = functionBody("applyNotification");
   assert.match(notificationBody, /const runningStatus = \{ type: "active" \};/);

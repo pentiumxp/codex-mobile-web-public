@@ -364,13 +364,23 @@ function replayMissedNotifications(client, reason) {
       ? (replayLimit === 0 ? [] : replayBuffer.slice(-replayLimit))
       : replayBuffer;
     for (const entry of replayEntries) {
-      sendToClient(client, entry.message);
+      sendToClient(client, replayNotificationMessageForClient(entry, client));
       notificationCount += 1;
     }
   }
   if (requestCount > 0 || notificationCount > 0) {
     log(`replayed ${requestCount} pending request(s), ${notificationCount} buffered notification(s) to ${client.id} after ${reason}`);
   }
+}
+
+function replayNotificationMessageForClient(entry, client) {
+  const message = cloneJson(entry && entry.message);
+  if (!isMobileWebClient(client) || !message || hasId(message) || !message.method) return message;
+  if (!message.params || typeof message.params !== "object") return message;
+  message.params.mobileReplay = true;
+  if (entry && entry.receivedAt) message.params.mobileReplayReceivedAtMs = entry.receivedAt;
+  if (entry && entry.seq) message.params.mobileReplaySeq = entry.seq;
+  return message;
 }
 
 function isTcpClient(client) {

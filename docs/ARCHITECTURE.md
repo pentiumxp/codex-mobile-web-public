@@ -359,6 +359,13 @@ Thread list reads app-server `thread/list`, then filters archived/deleted/sub-ag
 
 `adapters/thread-list-fallback-cache-service.js` owns the fallback cache policy: key construction from visible workspace roots/projectless thread ids, process-lifetime default retention, optional TTL expiry, cache-hit diagnostics, first-run fallback aggregation, and incremental status/title/archive mutation. State-db, rollout-session, and session-index scanners remain separate providers injected by `server.js`.
 
+Browser thread-status freshness policy lives in `public/thread-status-hints.js`.
+It records local viewed times and short submitted-processing hints, and it uses
+event timestamps plus mux `mobileReplay` metadata before clearing running
+indicators or marking completed rows unread. A replayed old completion must not
+clear a newer running hint or create an unread marker simply because the
+notification was replayed after reconnect.
+
 Existing-thread send reconciliation treats the mutation response's real `turnId` as authoritative for the temporary submitted-message overlay. After `/api/threads/:id/messages` succeeds, the browser immediately moves any matching `local-turn-<clientSubmissionId>` user item into the returned server turn. That local overlay must not remain visible as a separate turn while the materialized server turn is also visible.
 
 `adapters/thread-detail-summary-service.js` owns the summary resolution phase for `/api/threads/:id`: state DB first, then started-thread cache, rollout-session fallback, and app-server lookup/refresh with bounded timing logs. It applies the local-active overlay before the route checks hidden-thread state or builds projection cache inputs, so immediate post-send detail refreshes do not wash active state back to idle.
