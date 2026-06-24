@@ -30,9 +30,28 @@
   - `npm run check:macos`
   - `npm test` passed (`696` tests).
   - `git diff --check`
+- Local commit:
+  - `a9f1fdf fix: keep mobile operation recall dot`.
+- Production deploy:
+  - Used the Home AI center script:
+    `node /Users/hermes-dev/HermesMobileDev/app/scripts/deploy-macos-production.js --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --reason codex-mobile-v403-operation-recall --execute --json`
+  - Target:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260624T022954Z-plugin-codex-mobile-web-codex-mobile-v403-operation-recall`.
+  - Restarted `system/com.hermesmobile.plugin.codex-mobile`.
+  - Deploy validations passed: production file hashes, launchd print,
+    plugin manifest health URL, Codex auth profile audit, shared auth
+    permissions repair, and Codex Mobile log permission repair.
+  - `/api/public-config` now returns
+    `clientBuildId=0.1.11|codex-mobile-shell-v403` and
+    `shellCacheName=codex-mobile-shell-v403`.
+  - `/api/v1/hermes/plugin/manifest` returned HTTP 200.
+  - Production files contain `codex-mobile-shell-v403`,
+    `mobile-operation-recall`, and `data-recall-visible`.
 - Release status:
-  - Local implementation is ready for commit/deploy.
-  - Not pushed to Public. Public already points at v402 commit `df6cada` until
+  - Deployed to production for user testing.
+  - Not pushed to Public. Public still points at v402 commit `df6cada` until
     the user explicitly requests another public sync.
 
 # 2026-06-24 - v402 public sync completed
