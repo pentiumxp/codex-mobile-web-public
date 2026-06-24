@@ -1,8 +1,10 @@
-# 2026-06-24 - Mobile floating controls v420 local fix
+# 2026-06-24 - Mobile floating controls v420 committed and deployed
 
 - Scope:
-  - Implemented and validated in the private workspace.
-  - Not committed, not deployed, not pushed Public.
+  - Implemented, validated, committed, and deployed to Mac production.
+  - Not pushed Public.
+  - Commit:
+    - `6020a12 fix: stabilize mobile floating controls`
 - Trigger:
   - User reported the right-bottom upward arrow still appearing in the wrong
     position after several fixes. The screenshot showed the `scrollToTurnReply`
@@ -42,6 +44,27 @@
   - `npm run check`
   - `npm run check:macos`
   - `npm test --silent` (`742` tests passed)
+- Production deploy:
+  - Central Home AI deploy script used:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --reason mobile-floating-controls-v420 --execute --json`
+  - Source ref: `6020a129af24`.
+  - Production target:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup retained at:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260624T113808Z-plugin-codex-mobile-web-mobile-floating-controls-v420`.
+  - Post-deploy health returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v420` and
+    `shellCacheName=codex-mobile-shell-v420`.
+  - Production target validation:
+    - `npm run check`
+    - `npm run check:macos`
+  - Deploy audit note:
+    - Central profile audit reported non-blocking issues only
+      (`blockingIssueCount=0`).
+  - Quota note from deployment health:
+    - Current primary 5-hour quota snapshot was not exhausted at deploy time
+      (`usedPercent` about `3`, reset around `2026-06-25 00:31:32 CST`).
+      Weekly/secondary snapshot was high (`usedPercent` about `89`).
 
 # 2026-06-24 - Large-session dynamic projection and bounded-window cold path deployed
 
