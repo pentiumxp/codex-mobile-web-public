@@ -1,3 +1,62 @@
+# 2026-06-24 - Task-card manual return toolchain repaired locally
+
+- Scope:
+  - Implemented and validated locally.
+  - Not yet committed, deployed, or pushed.
+- Trigger:
+  - Home AI reported that a Note implementation thread completed a manual
+    repair card but could only report in its local final answer because no
+    return-card/delegation tool was visible. Home AI did not receive a real
+    cross-thread return card, breaking audit/repair closure.
+- Root cause:
+  - `threadTaskCardService.reply()` only allowed `pending` originals. Real
+    implementation task cards become `approved` after target approval or
+    source-thread direct injection, so the target could not return the card
+    after doing the work.
+  - Approved injected task-card messages did not expose a stable original
+    `Task card id`.
+  - The Codex Mobile dynamic/MCP toolset only exposed `delegate_to_thread`
+    for new delegation. It had no target-side `return_to_source` tool and no
+    target-side script fallback, so a local final answer could be mistaken for
+    closure.
+- Change:
+  - `adapters/thread-task-card-service.js` now allows target-side reply while
+    the original card is `pending` or `approved`, keeps same-key retries
+    idempotent after the original becomes `replied`, and marks approved cards
+    as returnable for the target thread.
+  - Approved injected messages now include `Task card id: ...` and a manual
+    return requirement stating that target-thread final text is not a
+    source-thread return card.
+  - `server.js` now injects `codex_mobile.return_to_source` as a task-card
+    closure dynamic tool independently from the workspace-delegation switch.
+    The existing `codex_mobile.delegate_to_thread` remains gated by
+    `跨工作区委派`.
+  - Added `scripts/return-thread-task-card.js`, a target-side CLI fallback that
+    calls `POST /api/thread-task-cards/:id/reply` and generates stable
+    `task-card-return:*` idempotency keys.
+  - `scripts/codex-mobile-mcp-server.js` now exposes `return_to_source`; the
+    MCP config service registers tool-level `approval_mode = "approve"` for
+    `list_threads`, `delegate_to_thread`, and `return_to_source`.
+  - Updated task-card README, architecture, implementation, module, and
+    troubleshooting docs to record that local final text is not a return card.
+- Validation:
+  - Focused suite:
+    `node --test test/thread-task-card-service.test.js test/codex-mobile-mcp-server.test.js test/thread-task-card-route.test.js test/thread-task-card-harness.test.js test/new-thread-route.test.js`
+    passed (`63` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed (`749` tests).
+  - `git diff --check` passed.
+  - `codegraph sync && codegraph status` reported the index is up to date
+    with a non-blocking older-engine warning.
+- Operational notes:
+  - Server restart is required for production to expose the new dynamic tool
+    and MCP config repair behavior.
+  - Existing Codex Homes get the new MCP tool when Mobile Web startup/Profile
+    list/workspace creation/profile-switch sync runs.
+  - After commit/deploy, return a real task card to Home AI
+    `019eed86-2002-7cc2-b0b7-937eb5355f36` with completion details.
+
 # 2026-06-24 - Tile pane management v424 committed, deployed, and pushed Public
 
 - Scope:

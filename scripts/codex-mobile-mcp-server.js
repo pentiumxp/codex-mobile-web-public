@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -125,6 +126,26 @@ function toolsList() {
       },
       { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false },
     ),
+    tool(
+      "return_to_source",
+      "Return a received Codex Mobile task card to its source thread. Use this when target work is completed, blocked, or redirected; a local final answer is not a return card.",
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["taskCardId", "threadId", "title", "bodyMarkdown"],
+        properties: {
+          taskCardId: { type: "string", minLength: 1, maxLength: 120 },
+          threadId: { type: "string", minLength: 1, maxLength: 120 },
+          status: { type: "string", enum: ["completed", "blocked", "redirected"] },
+          title: { type: "string", minLength: 1, maxLength: 120 },
+          summary: { type: "string", maxLength: 300 },
+          bodyMarkdown: { type: "string", minLength: 1 },
+          requestId: { type: "string", maxLength: 180 },
+          idempotencyKey: { type: "string", maxLength: 180 },
+        },
+      },
+      { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+    ),
   ];
 }
 
@@ -146,6 +167,17 @@ function boundedStringArray(value, fieldName, maxLength = 220) {
     out.push(text);
   }
   return out;
+}
+
+function stableTextHash(value) {
+  return crypto.createHash("sha256").update(String(value || "")).digest("hex").slice(0, 24);
+}
+
+function normalizedReturnStatus(value) {
+  const status = boundedString(value, "status", 40, false).toLowerCase();
+  if (!status) return "";
+  if (!["completed", "blocked", "redirected"].includes(status)) throw new Error("status_invalid");
+  return status;
 }
 
 async function requestJson(context, method, pathname, body = null) {
@@ -236,6 +268,47 @@ async function delegateToThread(context, args = {}) {
   };
 }
 
+async function returnToSource(context, args = {}) {
+  const taskCardId = boundedString(args.taskCardId || args.cardId, "task_card_id", 120, true);
+  const threadId = boundedString(args.threadId || args.actorThreadId, "thread_id", 120, true);
+  const title = boundedString(args.title, "title", 120, true);
+  const bodyMarkdown = boundedString(args.bodyMarkdown || args.body, "body_markdown", 50_000, true);
+  const status = normalizedReturnStatus(args.status);
+  const seed = boundedString(args.idempotencyKey, "idempotency_key", 180, false)
+    || boundedString(args.requestId, "request_id", 180, false)
+    || JSON.stringify({ taskCardId, threadId, status, title, body: bodyMarkdown });
+  const payload = {
+    threadId,
+    status,
+    title: /^Return:/i.test(title) ? title : `Return: ${title}`,
+    summary: boundedString(args.summary, "summary", 300, false) || status,
+    body: bodyMarkdown,
+    bodyMarkdown,
+    format: "markdown",
+    idempotencyKey: boundedString(
+      args.idempotencyKey || `task-card-return:${stableTextHash(`${taskCardId}|${threadId}`)}:${stableTextHash(seed)}`,
+      "idempotency_key",
+      220,
+      true,
+    ),
+  };
+  const result = await requestJson(context, "POST", `/api/thread-task-cards/${encodeURIComponent(taskCardId)}/reply`, payload);
+  const replyCard = result.replyCard || {};
+  return {
+    ok: result.ok !== false,
+    taskCardId,
+    threadId,
+    status: String(result.card && result.card.status || ""),
+    replyCard: {
+      id: String(replyCard.id || ""),
+      status: String(replyCard.status || ""),
+      sourceThreadId: String(replyCard.source && replyCard.source.threadId || ""),
+      targetThreadId: String(replyCard.target && replyCard.target.threadId || ""),
+      injectedTurnId: String(replyCard.injectedTurnId || ""),
+    },
+  };
+}
+
 async function handleMessage(context, message = {}) {
   const method = String(message.method || "");
   if (method === "initialize") {
@@ -245,6 +318,7 @@ async function handleMessage(context, message = {}) {
       serverInfo: { name: SERVER_NAME, version: packageVersion() },
       instructions: [
         "Use delegate_to_thread when a user request requires code, files, commands, tests, deployment, or other mutation in another Codex thread/workspace.",
+        "Use return_to_source when a received task card is completed, blocked, or redirected; a target-thread final answer is not a source-thread return card.",
         "Do not use multi_agent_v1 tools as a substitute for Codex Mobile cross-thread task cards.",
       ].join("\n"),
     };
@@ -257,6 +331,7 @@ async function handleMessage(context, message = {}) {
     const args = params.arguments && typeof params.arguments === "object" ? params.arguments : {};
     if (name === "list_threads") return textContent(await listThreads(context, args));
     if (name === "delegate_to_thread") return textContent(await delegateToThread(context, args));
+    if (name === "return_to_source") return textContent(await returnToSource(context, args));
     throw new Error("codex_mobile_mcp_unknown_tool");
   }
   if (method === "ping") return {};
@@ -356,5 +431,6 @@ module.exports = {
   handleMessage,
   listThreads,
   parseArgs,
+  returnToSource,
   toolsList,
 };

@@ -223,8 +223,9 @@ test("server runtime inheritance includes model and reasoning effort", () => {
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_GUARD_DISABLE_PLATFORM_EXEMPTION/, "platform-control exemption should be explicitly disableable");
 
   const guidanceBody = functionBody(serverJs, "attachWorkspaceDelegationRuntimeGuidance");
-  assert.match(guidanceBody, /attachWorkspaceDelegationDynamicTools\(params, settings\)/, "runtime guidance should preserve dynamic tool injection");
+  assert.match(guidanceBody, /attachTaskCardRuntimeDynamicTools\(params, settings\)/, "runtime guidance should preserve dynamic tool injection");
   assert.match(guidanceBody, /appendDeveloperInstructions\(/, "runtime guidance should add model-visible fallback instructions");
+  assert.match(guidanceBody, /taskCardReturnScriptFallbackInstruction\(params\)/, "runtime guidance should include the local return-card script fallback");
   assert.match(guidanceBody, /workspaceDelegationScriptFallbackInstruction\(params\)/, "runtime guidance should include the local task-card script fallback");
 
   const fallbackBody = functionBody(serverJs, "workspaceDelegationScriptFallbackInstruction");

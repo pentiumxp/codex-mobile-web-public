@@ -498,6 +498,12 @@ evidence.
 Server-side handling of `item/tool/call` resolves the source thread from
 app-server metadata or the recent turn/thread map, resolves the target by exact
 thread id/title/cwd, and then calls the same source-thread task-card helper.
+Separately, Mobile Web injects `codex_mobile.return_to_source` for task-card
+target turns. This return tool is independent of the workspace-delegation
+switch because it closes an already received card; it validates the original
+`Task card id`, the target actor thread, and the return body before calling
+`threadTaskCardService.reply()`. A target-thread final answer is not a
+source-thread return card.
 Target parsing, visible-thread filtering, archived/hidden/subagent/sidecar
 rejection, same-cwd canonical selection, and public target metadata shaping are
 owned by `adapters/thread-task-card-routing-service.js`; `server.js` keeps only
@@ -506,11 +512,11 @@ This app-server dynamic-tool path is only for Codex app-server turns. Codex
 Mobile also registers a standard `codex_mobile` MCP server into each active or
 target Codex Home during startup, workspace creation, and profile switching.
 That MCP server is backed by `scripts/codex-mobile-mcp-server.js`, exposes
-`list_threads` and `delegate_to_thread`, and uses the same authenticated local
-task-card API. The registration writes command/script/server/key-file paths to
-`CODEX_HOME/config.toml`; it does not store raw key material. This gives new
-Profiles and new Codex Homes the same delegation toolset without manual config
-edits.
+`list_threads`, `delegate_to_thread`, and `return_to_source`, and uses the same
+authenticated local task-card API. The registration writes
+command/script/server/key-file paths to `CODEX_HOME/config.toml`; it does not
+store raw key material. This gives new Profiles and new Codex Homes the same
+delegation and return toolset without manual config edits.
 To keep this from being only a model prompt, the same runtime switch also adds a
 dynamic source-write decision layer. For ordinary non-exempt workspaces,
 `thread/start`, `thread/resume`, and `turn/start` use a real

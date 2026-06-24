@@ -13,6 +13,7 @@ const {
   encodeMessage,
   handleMessage,
   listThreads,
+  returnToSource,
   toolsList,
 } = require("../scripts/codex-mobile-mcp-server");
 const {
@@ -41,12 +42,14 @@ function readBody(req) {
 
 test("Codex Mobile MCP server exposes delegation tools and parses stdio framing", async () => {
   const listedTools = toolsList();
-  assert.deepEqual(listedTools.map((entry) => entry.name), ["list_threads", "delegate_to_thread"]);
+  assert.deepEqual(listedTools.map((entry) => entry.name), ["list_threads", "delegate_to_thread", "return_to_source"]);
   assert.equal(listedTools.find((entry) => entry.name === "list_threads").annotations.readOnlyHint, true);
   assert.equal(listedTools.find((entry) => entry.name === "delegate_to_thread").annotations.destructiveHint, false);
+  assert.equal(listedTools.find((entry) => entry.name === "return_to_source").annotations.idempotentHint, true);
   const initialized = await handleMessage({ server: "http://127.0.0.1:1", key: "secret" }, { id: 1, method: "initialize" });
   assert.equal(initialized.serverInfo.name, "codex_mobile");
   assert.match(initialized.instructions, /delegate_to_thread/);
+  assert.match(initialized.instructions, /return_to_source/);
 
   const parsed = [];
   const parser = createMessageParser((message) => parsed.push(message));
@@ -95,6 +98,26 @@ test("Codex Mobile MCP server calls existing authenticated task-card API", async
       }));
       return;
     }
+    if (req.method === "POST" && req.url === "/api/thread-task-cards/ttc_inbound/reply") {
+      const body = JSON.parse(await readBody(req));
+      assert.equal(body.threadId, "target-1");
+      assert.equal(body.title, "Return: completed");
+      assert.equal(body.summary, "completed");
+      assert.equal(body.body, "done");
+      assert.match(body.idempotencyKey, /^task-card-return:/);
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        ok: true,
+        card: { id: "ttc_inbound", status: "replied" },
+        replyCard: {
+          id: "ttc_return",
+          status: "pending",
+          source: { threadId: "target-1" },
+          target: { threadId: "source-1" },
+        },
+      }));
+      return;
+    }
     res.statusCode = 404;
     res.end("{}");
   });
@@ -115,6 +138,17 @@ test("Codex Mobile MCP server calls existing authenticated task-card API", async
   assert.equal(delegated.cardCount, 1);
   assert.equal(delegated.cards[0].id, "ttc_1");
   assert.equal(delegated.cards[0].targetApprovalBypassed, true);
+
+  const returned = await returnToSource(context, {
+    taskCardId: "ttc_inbound",
+    threadId: "target-1",
+    status: "completed",
+    title: "completed",
+    bodyMarkdown: "done",
+  });
+  assert.equal(returned.status, "replied");
+  assert.equal(returned.replyCard.id, "ttc_return");
+  assert.equal(returned.replyCard.targetThreadId, "source-1");
   assert.ok(calls.every((call) => call.authorization === "Bearer secret"));
 });
 
@@ -136,7 +170,8 @@ test("Codex Mobile MCP config registration is per Codex Home and stores no raw k
   assert.match(text, /"\/runtime\/access_key"/);
   assert.match(text, /\[mcp_servers\.codex_mobile\.tools\.list_threads\]/);
   assert.match(text, /\[mcp_servers\.codex_mobile\.tools\.delegate_to_thread\]/);
-  assert.equal((text.match(/approval_mode = "approve"/g) || []).length, 2);
+  assert.match(text, /\[mcp_servers\.codex_mobile\.tools\.return_to_source\]/);
+  assert.equal((text.match(/approval_mode = "approve"/g) || []).length, 3);
   assert.doesNotMatch(text, /Bearer/);
   assert.doesNotMatch(text, /secret/);
 
@@ -179,6 +214,7 @@ test("Codex Mobile MCP config registration repairs stale command args", () => {
   assert.doesNotMatch(text, /old-node|\/old\/script|manual/);
   assert.equal((text.match(/\[mcp_servers\.codex_mobile\.tools\.list_threads\]/g) || []).length, 1);
   assert.equal((text.match(/\[mcp_servers\.codex_mobile\.tools\.delegate_to_thread\]/g) || []).length, 1);
-  assert.equal((text.match(/approval_mode = "approve"/g) || []).length, 2);
+  assert.equal((text.match(/\[mcp_servers\.codex_mobile\.tools\.return_to_source\]/g) || []).length, 1);
+  assert.equal((text.match(/approval_mode = "approve"/g) || []).length, 3);
   assert.match(text, /\[mcp_servers\.codegraph\]/);
 });

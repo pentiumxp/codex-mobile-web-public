@@ -887,7 +887,14 @@ Current implementation rules:
 - approval injects a real new target-thread `turn/start` input;
 - delete and revoke never inject;
 - reply creates a reverse-direction pending card, not a direct source-thread
-  message.
+  message;
+- a target-thread `final` answer is not a source-thread return card. Manual
+  task-card closure must use `codex_mobile.return_to_source` or
+  `scripts/return-thread-task-card.js`, both of which call
+  `POST /api/thread-task-cards/:id/reply`;
+- approved implementation cards remain returnable by the target thread. If a
+  return attempt fails with `task_card_not_returnable:*`, inspect the stored
+  card status and confirm the target is using the original `Task card id`.
 - autonomous workflow cards still require the first target-side approval; only
   later cards with the same workflow id and the same unordered pair of
   source/target thread ids may auto-inject without another click.

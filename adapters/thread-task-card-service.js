@@ -186,7 +186,7 @@ function publicCard(card, threadId) {
   out.threadRole = role;
   out.canApprove = role === "target" && out.status === "pending";
   out.canDelete = role === "target" && out.status === "pending";
-  out.canReply = role === "target" && out.status === "pending";
+  out.canReply = role === "target" && (out.status === "pending" || out.status === "approved");
   out.canRevoke = role === "source" && out.status === "pending";
   return out;
 }
@@ -391,11 +391,13 @@ function injectedMessageText(card) {
     `Source workspace: ${card.source.workspaceId}`,
     `Source thread: ${card.source.title || card.source.threadId}`,
     `Source thread id: ${card.source.threadId}`,
+    `Task card id: ${card.id}`,
     card.message && card.message.title ? `Title: ${card.message.title}` : "",
     sourceDirect ? "Approval: target approval bypassed by the thread-callable interface." : "",
     autonomous ? `Workflow mode: ${card.workflow.mode}` : "",
     autonomous ? `Workflow id: ${card.workflow.id}` : "",
     autoReturnOnCompletion ? "Auto-return: when this injected turn completes, Codex Mobile Web will send a return task card back to the source thread in this workflow." : "",
+    autoReturnOnCompletion ? "" : `Return required: local final text in this target thread is not a source-thread return card. When this work is completed, blocked, or redirected, return a task card to the source with taskCardId ${card.id} through codex_mobile.return_to_source or scripts/return-thread-task-card.js.`,
     "",
     stringValue(card.message && card.message.body),
   ].filter((line, index, all) => line !== "" || (index > 0 && all[index - 1] !== ""));
@@ -422,8 +424,17 @@ function transitionAllowed(card, action, actorThreadId) {
   const actorThread = stringValue(actorThreadId);
   if (!actorThread) throw errorWithStatus("actor_thread_id_required");
   if (!card) throw errorWithStatus("task_card_not_found", 404);
+  if (action === "reply") {
+    if (stringValue(card.target && card.target.threadId) !== actorThread) {
+      throw errorWithStatus("reply_requires_target_thread", 403);
+    }
+    if (card.status !== "pending" && card.status !== "approved") {
+      throw errorWithStatus(`task_card_not_returnable:${card.status}`, 409);
+    }
+    return;
+  }
   if (card.status !== "pending") throw errorWithStatus(`task_card_not_pending:${card.status}`, 409);
-  if (action === "approve" || action === "delete" || action === "reply") {
+  if (action === "approve" || action === "delete") {
     if (stringValue(card.target && card.target.threadId) !== actorThread) {
       throw errorWithStatus(`${action}_requires_target_thread`, 403);
     }
@@ -739,8 +750,14 @@ function createThreadTaskCardService(options = {}) {
     const replyRequest = normalizeReplyRequest(payload);
     const result = await withStore(async (store) => {
       const card = safeArray(store.cards).find((entry) => stringValue(entry.id) === id);
-      transitionAllowed(card, "reply", actorThreadId);
       const existing = findByIdempotency(store, replyRequest.idempotencyKey);
+      if (card && card.status === "replied" && existing && stringValue(card.replyCardId) === stringValue(existing.id)) {
+        return {
+          card: publicCard(card, actorThreadId),
+          replyCard: publicCard(existing, card.source && card.source.threadId || ""),
+        };
+      }
+      transitionAllowed(card, "reply", actorThreadId);
       const timestamp = nowIso(options.now);
       const replyWorkflowMode = replyRequest.workflowModeExplicit
         ? replyRequest.workflowMode

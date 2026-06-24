@@ -78,6 +78,9 @@ function buildCodexMobileMcpSection(options = {}) {
     toolSectionHeader(serverName, "delegate_to_thread"),
     `approval_mode = ${tomlBasicString("approve")}`,
     "",
+    toolSectionHeader(serverName, "return_to_source"),
+    `approval_mode = ${tomlBasicString("approve")}`,
+    "",
   ].join("\n");
 }
 

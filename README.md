@@ -16,6 +16,35 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-06-24 任务卡手动回执工具链修复
+
+本次修复针对 Home AI 审计/修复闭环中发现的问题：目标实现线程完成任务卡
+后，如果当前 Codex surface 没有可见的回卡工具，只能在本线程 `final`
+里写结果，源线程不会收到真实的 return task card。
+
+根因不是前端显示，而是 task-card 工具链缺了目标侧闭环：
+
+- 服务层原先只允许 `pending` 卡 `reply`，但真实实现卡在审批/源线程直投后
+  会变成 `approved`，目标线程完成工作时已无法对原卡回执。
+- 注入到目标线程的任务卡消息没有稳定暴露原始 `Task card id`。
+- `codex_mobile` MCP / app-server dynamic tool 只有 `delegate_to_thread`，
+  没有“把收到的卡回给来源线程”的 `return_to_source`。
+
+当前规则：
+
+- 目标线程可以对 `pending` 或 `approved` 的原始任务卡创建回执卡。
+- 目标线程本地 `final` 不算源线程回卡；`completed`、`blocked`、
+  `redirected` 必须通过真实 return card 关闭。
+- app-server dynamic tool 新增 `codex_mobile.return_to_source`，不依赖
+  `跨工作区委派` 开关，因为它关闭的是已收到的任务卡。
+- MCP stdio 工具集新增 `return_to_source`，并自动写入
+  `[mcp_servers.codex_mobile.tools.return_to_source] approval_mode = "approve"`。
+- 新增 `scripts/return-thread-task-card.js` 作为目标侧脚本 fallback，调用
+  `/api/thread-task-cards/:id/reply`，并生成稳定 `task-card-return:*`
+  幂等键。
+- 审批注入消息现在包含 `Task card id: ...` 和手动回执要求，避免模型把
+  普通 final 当作 Home AI 已收到的回卡。
+
 ## 2026-06-24 公开发布说明（v424 平铺窗口管理与架构重构）
 
 本次 public 发布是在 Mac production 已先部署并通过用户验证后的同步。
@@ -872,7 +901,13 @@ Behavior:
 - The source thread can `Revoke` while the card is still pending.
 - `Approve` injects the request as a real new target-thread turn, not as a fake
   static message row.
-- `Reply` creates a reverse-direction pending card.
+- `Reply` creates a reverse-direction pending card. Target-side reply is valid
+  while the original card is still `pending` or after it has been approved and
+  injected into the target implementation thread.
+- A plain target-thread final answer is never treated as a source-thread return
+  card. Manual task cards must close by creating a real reverse card through
+  `POST /api/thread-task-cards/:id/reply`, `codex_mobile.return_to_source`, or
+  `scripts/return-thread-task-card.js`.
 
 `POST /api/threads/:sourceThreadId/task-cards` is the thread-callable
 delegation path. It is intended for a Codex thread/tool to hand scoped work to
@@ -907,17 +942,27 @@ treated as an injection failure. If no direct callable
 `multi_agent_v1.*` tools are not task-card APIs and should not be used as a
 substitute for cross-workspace file-change delegation.
 
+All task-card injected target turns also receive the app-server dynamic tool
+`codex_mobile.return_to_source` and a script fallback instruction for
+`scripts/return-thread-task-card.js`. The injected task-card message includes
+`Task card id: ...`; the target model must use that id when returning
+`completed`, `blocked`, or `redirected` to the source. This return path is
+separate from the workspace-delegation switch because it closes an already
+received card rather than creating new cross-workspace work. It calls the same
+`/api/thread-task-cards/:id/reply` route, so the source thread can distinguish
+real return cards from local target replies.
+
 Codex Mobile also registers a standard Codex MCP toolset named `codex_mobile`.
 On server startup, Profile list reads, workspace creation, and Profile switch,
 Mobile Web checks every known or target `CODEX_HOME/config.toml`; if
 `[mcp_servers.codex_mobile]` is missing or stale, it adds or repairs a stdio
 wrapper for `scripts/codex-mobile-mcp-server.js`. The wrapper exposes
-`list_threads` and `delegate_to_thread`, uses the same authenticated local
-task-card API, and stores only command/script/server/key-file paths in
-`config.toml`, never raw key material. It also writes tool-level
-`approval_mode = "approve"` entries for both tools, so Codex does not add a second
-MCP approval prompt around the Mobile Web runtime delegation gate. This MCP
-toolset is for Codex threads. The ChatGPT Pro MCP connector under
+`list_threads`, `delegate_to_thread`, and `return_to_source`, uses the same
+authenticated local task-card API, and stores only command/script/server/key-file
+paths in `config.toml`, never raw key material. It also writes tool-level
+`approval_mode = "approve"` entries for all three tools, so Codex does not add a
+second MCP approval prompt around the Mobile Web runtime delegation/return gate.
+This MCP toolset is for Codex threads. The ChatGPT Pro MCP connector under
 `/api/chatgpt-pro/mcp` remains a separate external-client integration.
 
 The same switch keeps ordinary execution usable but adds a real source-write
@@ -950,6 +995,21 @@ node scripts/create-thread-task-card.js \
 
 The script reads the Codex Mobile access key from env or
 `$HOME/.codex-mobile-web/access_key` and does not print key material.
+
+Target-side return wrapper:
+
+```bash
+node scripts/return-thread-task-card.js \
+  --task-card <task-card-id> \
+  --thread <target-thread-id> \
+  --status completed \
+  --title "<return title>" \
+  --body-file <markdown-file>
+```
+
+The script calls only `/api/thread-task-cards/:id/reply`, uses a stable return
+idempotency key when none is supplied, and prints bounded JSON without key
+material.
 
 The browser currently exposes a minimal `Send task card` entry inside the thread
 detail view. It resolves the target by exact visible thread title or explicit

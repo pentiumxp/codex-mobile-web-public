@@ -11,6 +11,7 @@ const appJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"),
 const indexHtml = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
 const createThreadTaskCardScript = fs.readFileSync(path.resolve(__dirname, "..", "scripts", "create-thread-task-card.js"), "utf8");
+const returnThreadTaskCardScript = fs.readFileSync(path.resolve(__dirname, "..", "scripts", "return-thread-task-card.js"), "utf8");
 
 function functionBody(source, name) {
   let start = source.indexOf(`function ${name}(`);
@@ -70,12 +71,15 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(serverJs, /const WORKSPACE_DELEGATION_ENV_DEFAULT =/);
   assert.match(serverJs, /const WORKSPACE_DELEGATION_TOOL_NAMESPACE = "codex_mobile"/);
   assert.match(serverJs, /const WORKSPACE_DELEGATION_TOOL_NAME = "delegate_to_thread"/);
+  assert.match(serverJs, /const TASK_CARD_RETURN_TOOL_NAME = "return_to_source"/);
   assert.match(serverJs, /CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION/);
   assert.match(serverJs, /CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED/);
   assert.match(serverJs, /function workspaceDelegationPublicSettings\(/);
   assert.match(serverJs, /function workspaceDelegationDynamicToolSpec\(/);
-  assert.match(serverJs, /function attachWorkspaceDelegationDynamicTools\(/);
+  assert.match(serverJs, /function taskCardReturnDynamicToolSpec\(/);
+  assert.match(serverJs, /function attachTaskCardRuntimeDynamicTools\(/);
   assert.match(serverJs, /function attachWorkspaceDelegationRuntimeGuidance\(/);
+  assert.match(serverJs, /function taskCardReturnScriptFallbackInstruction\(/);
   assert.match(serverJs, /function workspaceDelegationScriptFallbackInstruction\(/);
   assert.doesNotMatch(functionBody(serverJs, "workspaceDelegationTargetHints"), /threadTaskCardCanonicalVisibleTargets/);
   assert.match(functionBody(serverJs, "workspaceDelegationTargetHints"), /threadTaskCardVisibleTargetThreads\(\)/);
@@ -127,12 +131,19 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /Several normal threads may share the same cwd\/workspace/);
   assert.doesNotMatch(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /latest visible canonical thread/);
   assert.doesNotMatch(functionBody(serverJs, "workspaceDelegationDynamicToolSpec"), /pending:\s*\{/);
+  assert.match(functionBody(serverJs, "taskCardReturnDynamicToolSpec"), /A plain final answer in the target thread is not a source-thread return card/);
+  assert.match(functionBody(serverJs, "taskCardReturnDynamicToolSpec"), /Task card id/);
+  assert.match(functionBody(serverJs, "taskCardRuntimeDynamicTools"), /taskCardReturnDynamicToolSpec\(\)/);
+  assert.match(functionBody(serverJs, "taskCardRuntimeDynamicTools"), /workspaceDelegationPublicSettings\(settings\)\.enabled/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolBody"), /body\.direct = true/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolBody"), /body\.autoApprove = true/);
   assert.match(functionBody(serverJs, "workspaceDelegationDynamicToolBody"), /body\.pending = false/);
   assert.doesNotMatch(functionBody(serverJs, "workspaceDelegationDynamicToolBody"), /params\.callId \|\| params\.call_id/);
-  assert.match(functionBody(serverJs, "attachWorkspaceDelegationRuntimeGuidance"), /attachWorkspaceDelegationDynamicTools\(params, settings\)/);
+  assert.match(functionBody(serverJs, "attachWorkspaceDelegationRuntimeGuidance"), /attachTaskCardRuntimeDynamicTools\(params, settings\)/);
+  assert.match(functionBody(serverJs, "attachWorkspaceDelegationRuntimeGuidance"), /taskCardReturnScriptFallbackInstruction\(params\)/);
   assert.match(functionBody(serverJs, "attachWorkspaceDelegationRuntimeGuidance"), /workspaceDelegationScriptFallbackInstruction\(params\)/);
+  assert.match(functionBody(serverJs, "taskCardReturnScriptFallbackInstruction"), /return-thread-task-card\.js/);
+  assert.match(functionBody(serverJs, "taskCardReturnScriptFallbackInstruction"), /local final answer in the target thread is not a source-thread return card/);
   assert.match(functionBody(serverJs, "workspaceDelegationScriptFallbackInstruction"), /create-thread-task-card\.js/);
   assert.match(functionBody(serverJs, "workspaceDelegationScriptFallbackInstruction"), /deferred tool discovery such as `tool_search`/);
   assert.match(functionBody(serverJs, "workspaceDelegationScriptFallbackInstruction"), /first-class fallback path/);
@@ -143,6 +154,8 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(serverJs, "sendRpc"), /logWorkspaceDelegationRpc\(method, params\);[\s\S]*this\.ws\.send\(JSON\.stringify\(payload\)\)/);
   assert.match(functionBody(serverJs, "handleServerRequest"), /msg\.method === "item\/tool\/call"[\s\S]*answerDynamicToolServerRequest\(request\)/);
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /createThreadTaskCardsFromSourceThread\(body\.sourceThreadId, body\)/);
+  assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /threadTaskCardService\.reply\(prepared\.taskCardId, prepared\.actorThreadId, prepared\.body\)/);
+  assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /TASK_CARD_RETURN_TOOL_FULL_NAME/);
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /forcedDirect: true/);
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /logWorkspaceDelegationDynamicToolCall\(request, params, args, \{[\s\S]*outcome: "ok"/);
   assert.match(functionBody(serverJs, "dynamicToolServerRequestResponsePayload"), /outcome: "unsupported_dynamic_tool"/);
@@ -170,6 +183,10 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(createThreadTaskCardScript, /CODEX_MOBILE_KEY_FILE/);
   assert.match(createThreadTaskCardScript, /--pending/);
   assert.match(createThreadTaskCardScript, /Settings -> 跨工作区委派/);
+  assert.match(returnThreadTaskCardScript, /\/api\/thread-task-cards\/\$\{encodeURIComponent\(taskCardId\)\}\/reply/);
+  assert.match(returnThreadTaskCardScript, /CODEX_MOBILE_KEY_FILE/);
+  assert.match(returnThreadTaskCardScript, /--status <value>/);
+  assert.match(returnThreadTaskCardScript, /task-card-return:/);
 });
 
 test("thread task card routes preserve service status codes", () => {
