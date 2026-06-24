@@ -3487,6 +3487,7 @@ html.keyboard-open .side-chat-form textarea {
 }
 
 .thread-tile-pane {
+  position: relative;
   min-width: 0;
   min-height: 0;
   display: grid;
@@ -3560,7 +3561,39 @@ html.keyboard-open .side-chat-form textarea {
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 10px;
+  padding: 10px 10px 48px;
+}
+
+.thread-tile-pane-content {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.thread-tile-bottom-button {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 2;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--text);
+  background: var(--control-bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+  font-size: 18px;
+  font-weight: 820;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.thread-tile-bottom-button:active {
+  transform: translateY(1px);
 }
 
 .thread-tile-pane .turn {

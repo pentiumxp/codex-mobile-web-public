@@ -161,12 +161,22 @@ Implementation path:
     tablet split media matches. `public/app.js` may own DOM assembly and event
     binding, but tile panes are read-only recent-detail windows; composer,
     interrupt, approvals, and live operation dock state remain bound to the
-    current active thread. Treat this automatic tile policy as an interim
-    surface. The long-term product direction is a user-managed split-screen
-    reader: users can add/close panes, drag pane widths, and decide how many
-    threads to keep visible. That future split manager must keep pane identity,
-    width persistence, detail-read concurrency caps, and current-thread action
-    ownership explicit instead of extending the automatic viewport heuristic.
+    current active thread. Tile panes should feel like shrunken normal thread
+    pages: initial render lands at the bottom, each pane has a direct bottom
+    button, manual upward scroll is preserved across refresh, and visible
+    non-current panes refresh through bounded recent-detail reads plus
+    notification-triggered updates. Treat this automatic tile policy as an
+    interim surface. The long-term product direction is a user-managed
+    split-screen reader: users can add/close panes, drag pane widths, decide
+    how many threads to keep visible, and type into pane-local composers. That
+    future split manager must keep pane identity, width persistence,
+    per-pane draft/input state, detail-read concurrency caps, active pane,
+    approvals, interrupt ownership, command/operation bubble state, command
+    detail panels, and current-thread action ownership explicit instead of
+    extending the automatic viewport heuristic. Product rule: every split pane
+    is a self-contained mobile single-thread window scaled down; global
+    composer or global command dock reuse is not sufficient for the final
+    split-screen model.
 17. Existing v3 behavior still uses
     `test/thread-completion-diagnostic-service.test.js`,
     `test/thread-item-timestamp-enrichment.test.js`,

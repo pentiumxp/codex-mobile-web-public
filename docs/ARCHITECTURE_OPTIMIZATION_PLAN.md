@@ -109,15 +109,21 @@ Target:
 
 - Evolve the current explicit `单线程` / `平铺` display setting into a
   split-screen reader where the user can add panes, close panes, drag widths,
-  and decide how many threads stay visible.
+  decide how many threads stay visible, and type into each pane through a
+  pane-local composer.
 - Keep the current automatic tile policy as the interim capability gate for
   iPad/desktop width, not as the final interaction model.
 - Preserve action ownership: composer, approvals, interrupts, active-turn
   steering, and operation dock state remain bound to the current active thread
   unless a future pane is explicitly promoted to active.
 - Add a dedicated pane-state helper before expanding `public/app.js`: pane ids,
-  widths, ordering, active pane, max concurrent detail reads, and mobile
-  collapse behavior should be testable without DOM side effects.
+  widths, ordering, active pane, per-pane drafts, max concurrent detail reads,
+  pane-local send/approval/interrupt ownership, command/operation bubble state,
+  command detail panels, and mobile collapse behavior should be testable
+  without DOM side effects.
+- Treat each pane as a scaled mobile single-thread runtime instance. Shared
+  global composer, shared global command dock, or shared operation bubble are
+  interim-only and must not be considered closure for the split-screen feature.
 
 ## Release Rule
 

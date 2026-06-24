@@ -145,6 +145,9 @@ const state = {
   threadTileLoadingIds: new Set(),
   threadTileErrors: new Map(),
   threadTileControllers: new Map(),
+  threadTileLoadedAtById: new Map(),
+  threadTileActiveIds: [],
+  threadTileRefreshTimer: null,
   newThreadDraft: false,
   newThreadTitle: "",
   activeTurnId: "",
@@ -438,7 +441,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v413";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v414";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -608,6 +611,8 @@ const THREAD_TASK_CARD_MENTION_PATTERN = /^@(任务卡片|Task\s*Card|TaskCard)(
 const THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN = /^@(自由协作|Autonomous|Auto\s*Task\s*Card|AutoTaskCard)(?:\s|$)/i;
 const THREAD_TASK_CARD_REQUEST_TAG = "codex-mobile-thread-task-card-request";
 const THREAD_TASK_CARD_DRAFT_TAG = "codex-mobile-thread-task-card-draft";
+const THREAD_TILE_REFRESH_INTERVAL_MS = 2400;
+const THREAD_TILE_REFRESH_MIN_INTERVAL_MS = 1100;
 const THEME_VALUES = new Set(["system", "dark", "light"]);
 const FONT_SIZE_VALUES = new Set(["small", "default", "large", "xlarge", "xxlarge"]);
 const MENU_OVERLAY_MEDIA = "(max-width: 1180px), (pointer: coarse) and (max-width: 1400px)";
@@ -11086,15 +11091,111 @@ function threadTileError(threadId) {
   return state.threadTileErrors.get(String(threadId || "")) || "";
 }
 
+function threadTilePaneIsVisible(threadId) {
+  const id = String(threadId || "");
+  return Boolean(id && state.threadTileActiveIds.includes(id));
+}
+
 function setThreadTileConversationMode(active, layout = null) {
   const conversation = $("conversation");
   if (!conversation) return;
   conversation.classList.toggle("thread-tile-mode", Boolean(active));
   if (active && layout && layout.columns) conversation.style.setProperty("--thread-tile-columns", String(layout.columns));
-  else conversation.style.removeProperty("--thread-tile-columns");
+  else {
+    conversation.style.removeProperty("--thread-tile-columns");
+    state.threadTileActiveIds = [];
+    clearThreadTileRefreshTimer();
+  }
+}
+
+function captureThreadTilePaneScrollState() {
+  const conversation = $("conversation");
+  const states = new Map();
+  if (!conversation) return states;
+  conversation.querySelectorAll("[data-thread-tile-pane]").forEach((pane) => {
+    const id = pane.getAttribute("data-thread-tile-pane") || "";
+    const body = pane.querySelector(".thread-tile-pane-body");
+    if (!id || !body) return;
+    const distanceFromBottom = Math.max(0, Number(body.scrollHeight || 0) - Number(body.clientHeight || 0) - Number(body.scrollTop || 0));
+    states.set(id, {
+      distanceFromBottom,
+      nearBottom: distanceFromBottom <= 48,
+    });
+  });
+  return states;
+}
+
+function scrollThreadTilePaneBodyToBottom(body, options = {}) {
+  if (!body) return;
+  const top = Math.max(0, Number(body.scrollHeight || 0));
+  if (options.smooth && typeof body.scrollTo === "function") {
+    body.scrollTo({ top, behavior: "smooth" });
+    return;
+  }
+  body.scrollTop = top;
+}
+
+function restoreThreadTilePaneScrollState(scrollState = new Map()) {
+  const conversation = $("conversation");
+  if (!conversation) return;
+  conversation.querySelectorAll("[data-thread-tile-pane]").forEach((pane) => {
+    const id = pane.getAttribute("data-thread-tile-pane") || "";
+    const body = pane.querySelector(".thread-tile-pane-body");
+    if (!id || !body) return;
+    const previous = scrollState.get(id);
+    if (previous && !previous.nearBottom) {
+      body.scrollTop = Math.max(0, Number(body.scrollHeight || 0) - Number(body.clientHeight || 0) - Number(previous.distanceFromBottom || 0));
+      return;
+    }
+    scrollThreadTilePaneBodyToBottom(body);
+  });
+}
+
+function scrollThreadTilePaneToBottom(threadId, options = {}) {
+  const id = String(threadId || "");
+  if (!id) return;
+  const pane = Array.from(document.querySelectorAll("[data-thread-tile-pane]"))
+    .find((entry) => String(entry.getAttribute("data-thread-tile-pane") || "") === id);
+  const body = pane && pane.querySelector(".thread-tile-pane-body");
+  scrollThreadTilePaneBodyToBottom(body, options);
+}
+
+function clearThreadTileRefreshTimer() {
+  clearTimeout(state.threadTileRefreshTimer);
+  state.threadTileRefreshTimer = null;
+}
+
+function scheduleThreadTileRefresh(delayMs = THREAD_TILE_REFRESH_INTERVAL_MS) {
+  if (!state.threadTileMode || document.visibilityState === "hidden") {
+    clearThreadTileRefreshTimer();
+    return;
+  }
+  if (!state.threadTileActiveIds.length || state.threadTileRefreshTimer) return;
+  state.threadTileRefreshTimer = setTimeout(() => {
+    state.threadTileRefreshTimer = null;
+    if (!state.threadTileMode || document.visibilityState === "hidden") return;
+    refreshThreadTileDetails(state.threadTileActiveIds, { source: "tile-refresh" }).catch(showError);
+    scheduleThreadTileRefresh();
+  }, Math.max(500, Number(delayMs) || THREAD_TILE_REFRESH_INTERVAL_MS));
+}
+
+async function refreshThreadTileDetails(ids = [], options = {}) {
+  const uniqueIds = Array.from(new Set((ids || []).map((id) => String(id || "")).filter(Boolean)));
+  if (!state.threadTileMode || !uniqueIds.length) return;
+  await Promise.all(uniqueIds.map((id) => {
+    if (!threadTilePaneIsVisible(id)) return Promise.resolve();
+    if (state.currentThread && String(state.currentThread.id || "") === id) return Promise.resolve();
+    return loadThreadTileDetail(id, {
+      force: true,
+      background: true,
+      source: options.source || "tile-refresh",
+    });
+  }));
 }
 
 function abortThreadTileLoads() {
+  clearThreadTileRefreshTimer();
+  state.threadTileActiveIds = [];
   for (const controller of state.threadTileControllers.values()) {
     try {
       controller.abort();
@@ -11104,18 +11205,25 @@ function abortThreadTileLoads() {
   state.threadTileLoadingIds.clear();
 }
 
-async function loadThreadTileDetail(threadId) {
+async function loadThreadTileDetail(threadId, options = {}) {
   const id = String(threadId || "");
   if (!id) return;
   if (state.currentThread && String(state.currentThread.id || "") === id && !state.currentThread.mobileLoading) return;
+  if (state.threadTileControllers.has(id)) return;
   if (state.threadTileLoadingIds.has(id)) return;
   const cached = state.threadTileDetails.get(id);
-  if (cached && !cached.mobileLoading && !cached.mobileLoadError) return;
+  const force = options.force === true;
+  const background = options.background === true && cached && !cached.mobileLoading && !cached.mobileLoadError;
+  const lastLoadedAt = Number(state.threadTileLoadedAtById.get(id) || 0);
+  if (!force && cached && !cached.mobileLoading && !cached.mobileLoadError) return;
+  if (force && Date.now() - lastLoadedAt < THREAD_TILE_REFRESH_MIN_INTERVAL_MS) return;
   const controller = new AbortController();
   state.threadTileControllers.set(id, controller);
-  state.threadTileLoadingIds.add(id);
-  state.threadTileErrors.delete(id);
-  scheduleRenderCurrentThread();
+  if (!background) {
+    state.threadTileLoadingIds.add(id);
+    scheduleRenderCurrentThread();
+  }
+  if (!background) state.threadTileErrors.delete(id);
   try {
     const result = await api(threadDetailApiPath(id, { mode: "recent" }), {
       timeoutMs: 20000,
@@ -11124,20 +11232,23 @@ async function loadThreadTileDetail(threadId) {
     if (controller.signal.aborted) return;
     if (result && result.thread) {
       state.threadTileDetails.set(id, result.thread);
+      state.threadTileLoadedAtById.set(id, Date.now());
+      state.threadTileErrors.delete(id);
       mergeThreadIntoThreadList(result.thread);
     }
   } catch (err) {
-    if (!controller.signal.aborted) state.threadTileErrors.set(id, err && err.message ? err.message : String(err));
+    if (!controller.signal.aborted && !background) state.threadTileErrors.set(id, err && err.message ? err.message : String(err));
   } finally {
     if (state.threadTileControllers.get(id) === controller) state.threadTileControllers.delete(id);
     state.threadTileLoadingIds.delete(id);
-    scheduleRenderCurrentThread();
+    if (threadTilePaneIsVisible(id)) scheduleRenderCurrentThread();
   }
 }
 
 function ensureThreadTileDetails(ids = []) {
   if (!state.threadTileMode) return;
   const activeIds = new Set(ids.map((id) => String(id || "")).filter(Boolean));
+  state.threadTileActiveIds = Array.from(activeIds);
   for (const [id, controller] of Array.from(state.threadTileControllers.entries())) {
     if (activeIds.has(id)) continue;
     controller.abort();
@@ -11145,6 +11256,7 @@ function ensureThreadTileDetails(ids = []) {
     state.threadTileLoadingIds.delete(id);
   }
   for (const id of activeIds) loadThreadTileDetail(id).catch(showError);
+  scheduleThreadTileRefresh();
 }
 
 function renderThreadTileTurn(thread, turn, previousKeys = new Set()) {
@@ -11196,13 +11308,15 @@ function renderThreadTilePane(threadId, layout, previousKeys = new Set()) {
       ${status}
       <button class="thread-tile-open" type="button" data-thread-tile-open="${escapeHtml(id)}" title="打开为当前线程">打开</button>
     </header>
-    <div class="thread-tile-pane-body">${body}</div>
+    <div class="thread-tile-pane-body"><div class="thread-tile-pane-content">${body}</div></div>
+    <button class="thread-tile-bottom-button" type="button" data-thread-tile-bottom="${escapeHtml(id)}" aria-label="跳到此线程底部" title="跳到底部">↓</button>
   </section>`;
 }
 
 function renderThreadTileLayout(layout, options = {}) {
   const ids = threadTileCandidateIds(layout);
   if (!ids.length) return false;
+  const scrollState = captureThreadTilePaneScrollState();
   ensureThreadTileDetails(ids);
   state.nowMs = Date.now();
   const previousKeys = existingConversationRenderKeys();
@@ -11221,6 +11335,10 @@ function renderThreadTileLayout(layout, options = {}) {
   setThreadTileConversationMode(true, layout);
   updateConversationHtml(html, signature, { stickToBottom: options.stickToBottom === true });
   bindThreadTileActions();
+  restoreThreadTilePaneScrollState(scrollState);
+  if (typeof window.requestAnimationFrame === "function") {
+    window.requestAnimationFrame(() => restoreThreadTilePaneScrollState(scrollState));
+  }
   return true;
 }
 
@@ -11232,6 +11350,12 @@ function bindThreadTileActions() {
       event.preventDefault();
       const threadId = button.getAttribute("data-thread-tile-open") || "";
       if (threadId) loadThread(threadId, { source: "thread-tile" }).catch(showError);
+    });
+  });
+  conversation.querySelectorAll("[data-thread-tile-bottom]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      scrollThreadTilePaneToBottom(button.getAttribute("data-thread-tile-bottom") || "", { smooth: true });
     });
   });
 }
@@ -16488,6 +16612,10 @@ function applyNotification(method, params) {
       markThreadViewed(params.threadId, state.currentThread, eventAtMs);
       renderCurrentThread();
       scheduleLivePollIfNeeded(1400);
+    } else if (state.threadTileMode && threadTilePaneIsVisible(params.threadId)) {
+      const cached = state.threadTileDetails.get(String(params.threadId || ""));
+      if (cached) cached.status = params.status;
+      loadThreadTileDetail(params.threadId, { force: true, background: true, source: "tile-status" }).catch(showError);
     }
     scheduleRenderThreads();
     return;
@@ -16499,6 +16627,10 @@ function applyNotification(method, params) {
     if (state.currentThread && state.currentThread.id === params.threadId) {
       state.currentThread.name = params.threadName;
       renderCurrentThread();
+    } else if (state.threadTileMode && threadTilePaneIsVisible(params.threadId)) {
+      const cached = state.threadTileDetails.get(String(params.threadId || ""));
+      if (cached) cached.name = params.threadName;
+      loadThreadTileDetail(params.threadId, { force: true, background: true, source: "tile-name" }).catch(showError);
     }
     scheduleRenderThreads();
     return;
@@ -16527,7 +16659,12 @@ function applyNotification(method, params) {
     renderCurrentThread();
     return;
   }
-  if (!state.currentThread || params.threadId !== state.currentThread.id) return;
+  if (!state.currentThread || params.threadId !== state.currentThread.id) {
+    if (state.threadTileMode && params.threadId && threadTilePaneIsVisible(params.threadId)) {
+      loadThreadTileDetail(params.threadId, { force: true, background: true, source: `tile-${method}` }).catch(showError);
+    }
+    return;
+  }
   if (method === "turn/started") {
     const replayed = Boolean(params.mobileReplay);
     const eventAtMs = threadStatusNotificationEventAtMs(params, Date.now(), {

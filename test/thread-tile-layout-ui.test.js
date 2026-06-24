@@ -31,6 +31,9 @@ test("thread tile layout is wired as an explicit shell policy", () => {
   assert.match(indexHtml, /<script src="\/thread-detail-state\.js"><\/script>\s*\n\s*<script src="\/thread-tile-layout\.js"><\/script>\s*\n\s*<script src="\/build-refresh-policy\.js"><\/script>/);
   assert.match(appJs, /const threadTileLayoutPolicy = window\.CodexThreadTileLayout/);
   assert.match(appJs, /threadTileMode: localStorage\.getItem\("codexMobileThreadDisplayMode"\) === "tile"/);
+  assert.match(appJs, /threadTileActiveIds: \[\]/);
+  assert.match(appJs, /threadTileRefreshTimer: null/);
+  assert.match(appJs, /THREAD_TILE_REFRESH_INTERVAL_MS/);
   assert.match(appJs, /STORAGE_LEGACY_THREAD_TILE_MODE = "codexMobileThreadTileMode"/);
 
   const layoutBody = functionBody(appJs, "threadTileLayout");
@@ -58,9 +61,30 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(renderCurrentThreadBody, /renderThreadTileLayout\(tileLayout, options\)/);
 
   const tileLayoutBody = functionBody(appJs, "renderThreadTileLayout");
+  assert.match(tileLayoutBody, /const scrollState = captureThreadTilePaneScrollState\(\)/);
   assert.match(tileLayoutBody, /ensureThreadTileDetails\(ids\)/);
   assert.match(tileLayoutBody, /bindThreadTileActions\(\)/);
+  assert.match(tileLayoutBody, /restoreThreadTilePaneScrollState\(scrollState\)/);
   assert.match(tileLayoutBody, /view: "thread-tiles"/);
+
+  const ensureBody = functionBody(appJs, "ensureThreadTileDetails");
+  assert.match(ensureBody, /state\.threadTileActiveIds = Array\.from\(activeIds\)/);
+  assert.match(ensureBody, /scheduleThreadTileRefresh\(\)/);
+
+  const loadBody = functionBody(appJs, "loadThreadTileDetail");
+  assert.match(loadBody, /const force = options\.force === true/);
+  assert.match(loadBody, /state\.threadTileControllers\.has\(id\)/);
+  assert.match(loadBody, /THREAD_TILE_REFRESH_MIN_INTERVAL_MS/);
+  assert.match(loadBody, /state\.threadTileDetails\.set\(id, result\.thread\)/);
+
+  const tilePaneBody = functionBody(appJs, "renderThreadTilePane");
+  assert.match(tilePaneBody, /thread-tile-pane-content/);
+  assert.match(tilePaneBody, /data-thread-tile-bottom/);
+
+  const tileActionsBody = functionBody(appJs, "bindThreadTileActions");
+  assert.match(tileActionsBody, /data-thread-tile-open/);
+  assert.match(tileActionsBody, /data-thread-tile-bottom/);
+  assert.match(tileActionsBody, /scrollThreadTilePaneToBottom/);
 
   const tileTurnBody = functionBody(appJs, "renderThreadTileTurn");
   assert.match(tileTurnBody, /renderVisibleItemPatchHtml/);
@@ -71,4 +95,10 @@ test("thread tile rendering is read-only and separate from full conversation ren
   assert.match(stylesCss, /\.thread-tile-board\s*{/);
   assert.match(stylesCss, /\.thread-tile-pane\s*{/);
   assert.match(stylesCss, /\.thread-tile-pane-body\s*{/);
+  assert.match(stylesCss, /\.thread-tile-pane-content\s*{/);
+  assert.match(stylesCss, /\.thread-tile-bottom-button\s*{/);
+
+  const notificationBody = functionBody(appJs, "applyNotification");
+  assert.match(notificationBody, /threadTilePaneIsVisible\(params\.threadId\)/);
+  assert.match(notificationBody, /loadThreadTileDetail\(params\.threadId, \{ force: true, background: true/);
 });

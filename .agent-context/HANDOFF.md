@@ -1,3 +1,57 @@
+# 2026-06-24 - v414 tile pane bottom anchoring and live refresh deployed to Mac production
+
+- Scope:
+  - Committed locally and deployed to Mac production.
+  - Not pushed to Public.
+- Trigger:
+  - User confirmed iPad tiling now appears, but tile pane content opens at the
+    top, lacks a direct down arrow, and should feel like a shrunken normal
+    thread page.
+  - User also clarified that split panes should eventually allow independent
+    input in each pane, and that every displayed pane should refresh like a
+    normal thread.
+- Change:
+  - Tile panes now wrap visible content in `thread-tile-pane-content`; short
+    content bottom-aligns inside the pane.
+  - `renderThreadTileLayout()` captures pane scroll state before re-render and
+    restores it after render. New panes or panes already near bottom land at
+    the bottom; panes where the user has manually scrolled upward preserve
+    their distance from bottom.
+  - Each pane gets a compact `↓` button bound to that pane's body scroller.
+  - Tile mode now records visible pane ids and schedules bounded recent-detail
+    refreshes for non-current panes. Existing cached pane detail is updated in
+    the background instead of stopping after the first load.
+  - Relevant non-current thread notifications trigger a throttled tile detail
+    refresh for the visible pane.
+  - PWA shell bumped to `codex-mobile-shell-v414`.
+- Architecture note:
+  - Pane-local independent input is recorded as the next split-screen composer
+    phase, not part of this read-only tile hotfix. It needs pane-level draft,
+    active pane, send, approval, interrupt, and operation ownership before it
+    can be implemented safely.
+  - User further clarified that the command box / operation bubble must also
+    be pane-local. Final split-screen behavior should treat every pane as an
+    independent scaled mobile single-thread window with its own composer,
+    draft, command/operation bubble, approvals, interrupt, scroll, active turn,
+    and live refresh. Reusing the global composer or global command dock is not
+    sufficient closure.
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js && node --test test/thread-tile-layout-ui.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+  - `npm run check`
+  - `git diff --check`
+  - `npm test` passed (`733` tests).
+  - `npm run check:macos`
+- Production deploy:
+  - Used the Home AI central deploy script directly:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --execute --json`.
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Health check returned HTTP `200` with
+    `clientBuildId=0.1.11|codex-mobile-shell-v414`,
+    `shellCacheName=codex-mobile-shell-v414`, and
+    `workspacePath=/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - `launchctl print system/com.hermesmobile.plugin.codex-mobile` reported
+    the service running.
+
 # 2026-06-24 - v413 iPad embed tile sidebar-width fix deployed to Mac production
 
 - Scope:
