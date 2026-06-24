@@ -5,8 +5,7 @@
   - Not pushed Public.
   - Commits:
     - `6275dea fix: persist dynamic thread projections`
-    - follow-up local commit for bounded large-thread projection-miss reads
-      pending final hash in git history.
+    - `661507a fix: bound large thread detail cold reads`
 - Trigger:
   - User asked to continue the next optimization step and start solving large
     session load slowness.
@@ -76,6 +75,8 @@
   - A second controlled central deploy/restart for verification used the same
     source ref and backup
     `/Users/hermes-host/HermesMobile/backups/deploy/20260624T105015Z-plugin-codex-mobile-web-manual`.
+  - Final deploy used source ref `661507a78107`, backup
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260624T105745Z-plugin-codex-mobile-web-manual`.
   - Direct `launchctl kickstart -k system/com.hermesmobile.plugin.codex-mobile`
     as the current user failed with `Operation not permitted`; use the central
     deploy script or an approved launchd helper for system-daemon restarts.
@@ -86,12 +87,20 @@
     `activeProfileId=default`.
   - Verification before the bounded-window follow-up showed static Music
     cold-open hit `projection-v4-cache` with `threadReadMs=0`, but actively
-    advancing Home AI could still cold-read after rollout growth. The follow-up
-    bounded-window path is implemented locally and must be deployed next.
+    advancing Home AI could still cold-read after rollout growth.
+  - Verification after final deploy:
+    - Home AI first open after deploy used `turns-list-large`,
+      `phase=bounded-large-thread-window`, `threadReadMs=0`,
+      `turnsListBeforeFullMs=539`, total about `628 ms`, body about `211 KB`.
+    - Home AI second open used `projection-v4-dynamic`, `threadReadMs=0`, total
+      about `204 ms`.
+    - Codex Mobile used `projection-v4-dynamic`, `threadReadMs=0`, total about
+      `150-151 ms`.
+    - Music used `projection-v4-cache`, `threadReadMs=0`, total about `87 ms`.
 - Next:
-  - Commit and deploy the bounded-window follow-up, then verify a restart/cold
-    open on an actively advancing large thread. Expected read mode is
-    `turns-list-large` or projection cache/dynamic with `threadReadMs=0`.
+  - If the user still sees slow first detail on active large threads, the next
+    measured bottleneck is the app-server `thread/turns/list` / summary path
+    rather than full rollout `thread/read`.
   - Public sync remains blocked until production/user validation.
 
 # 2026-06-24 - Thread detail orchestration deployed, Public synced, PR #78 closed
