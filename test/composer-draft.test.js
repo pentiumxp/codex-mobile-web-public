@@ -30,7 +30,7 @@ test("composer drafts are browser-local and keyed by thread or new-thread worksp
   assert.match(appJs, /window\.CodexDraftStore\.createDraftStore/);
   assert.match(appJs, /function draftKeyForThread\(threadId\)/);
   assert.match(appJs, /function draftKeyForNewThread\(cwd\)/);
-  assert.match(appJs, /return draftKeyForThread\(state\.currentThreadId\)/);
+  assert.match(appJs, /return draftKeyForThread\(currentComposerThreadId\(\)\)/);
 
   const buildBody = functionBody("buildCurrentDraft");
   assert.match(buildBody, /text: composerText\(\)/);
@@ -116,7 +116,7 @@ test("draft attachments use IndexedDB and are cleared only after a successful se
   assert.match(sendBody, /const submittedDraftKey = currentDraftKey\(\)/);
   assert.match(sendBody, /const threadTaskCardCommand = isThreadTaskCardCommandText\(text\)/);
   assert.match(sendBody, /await sendThreadTaskCardCommand\(text\)/);
-  assert.match(functionBody("sendThreadTaskCardCommand"), /const outboundText = buildThreadTaskCardDraftRequestText\(text\)/);
+  assert.match(functionBody("sendThreadTaskCardCommand"), /const outboundText = buildThreadTaskCardDraftRequestText\(text, targetThread\)/);
   assert.match(sendBody, /writeCurrentDraftToKey\(submittedDraftKey\)/);
   assert.doesNotMatch(sendBody, /clearDraftForKey\(submittedDraftKey\)/);
 

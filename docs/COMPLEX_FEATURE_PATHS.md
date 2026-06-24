@@ -159,14 +159,21 @@ Implementation path:
     only when `splitPaneSidebarVisible()` proves the sidebar actually occupies
     layout space; Home AI embed fixed/offscreen sidebars are overlays even when
     tablet split media matches. `public/app.js` may own DOM assembly and event
-    binding, but tile panes are read-only recent-detail windows; composer,
-    interrupt, approvals, and live operation dock state remain bound to the
-    current active thread. Tile panes should feel like shrunken normal thread
-    pages: initial render lands at the bottom, each pane has a direct bottom
-    button, manual upward scroll is preserved across refresh, and visible
-    non-current panes refresh through bounded recent-detail reads plus
-    notification-triggered updates. Treat this automatic tile policy as an
-    interim surface. The long-term product direction is a user-managed
+    binding, but tile panes must preserve explicit pane ownership: active pane,
+    detail cache, local optimistic message echo, operation bubble state, and
+    bounded background refresh must be keyed by thread id. Tile panes should
+    feel like shrunken normal thread pages: initial render lands at the bottom,
+    each pane has a direct bottom button, manual upward scroll is preserved
+    across refresh, visible non-current panes refresh through bounded
+    recent-detail reads plus notification-triggered updates, and command/tool
+    status appears inside that pane through the same compact mobile operation
+    bubble/sheet vocabulary. The current v415 middle state keeps one shared
+    bottom Composer, but its draft key, send target, Stop/steer state, local
+    echo, failure receipt, task-card command source, and ChatGPT Pro source
+    thread must follow the selected active pane without reordering the tile
+    board. Do not reintroduce a global iPad command dock in tile mode. Treat
+    this automatic tile policy as an interim surface. The long-term product
+    direction is a user-managed
     split-screen reader: users can add/close panes, drag pane widths, decide
     how many threads to keep visible, and type into pane-local composers. That
     future split manager must keep pane identity, width persistence,

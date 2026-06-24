@@ -108,7 +108,7 @@ test("server and client wire @ChatGPT Pro without normal message submission", ()
   const sendEnd = appJs.indexOf("async function sendNewThreadMessage", sendStart);
   const sendBody = appJs.slice(sendStart, sendEnd);
   assert.ok(sendBody.indexOf("isChatGptProCommandText(text)") < sendBody.indexOf("sendNewThreadMessage(text"), "Pro command should intercept before new-thread send");
-  assert.ok(sendBody.indexOf("isChatGptProCommandText(text)") < sendBody.indexOf("/api/threads/${encodeURIComponent(state.currentThreadId)}/messages"), "Pro command should intercept before normal message send");
+  assert.ok(sendBody.indexOf("isChatGptProCommandText(text)") < sendBody.indexOf("/api/threads/${encodeURIComponent(targetThreadId)}/messages"), "Pro command should intercept before normal message send");
 });
 
 test("README documents standalone ChatGPT Pro bridge boundary in Chinese", () => {

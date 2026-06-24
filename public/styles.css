@@ -3541,6 +3541,17 @@ html.keyboard-open .side-chat-form textarea {
   line-height: 1.2;
 }
 
+.thread-tile-pane-state {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--accent-strong);
+  font-size: 11px;
+  font-weight: 680;
+  line-height: 1.2;
+}
+
 .thread-tile-status-icon {
   margin: 0;
 }
@@ -3569,6 +3580,121 @@ html.keyboard-open .side-chat-form textarea {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
+}
+
+.thread-tile-operation-dock {
+  position: absolute;
+  left: 10px;
+  right: 52px;
+  bottom: 10px;
+  z-index: 3;
+  min-width: 0;
+  pointer-events: none;
+}
+
+.thread-tile-operation-dock .live-operation-dock-inner {
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-end;
+}
+
+.thread-tile-operation-dock .mobile-operation-stack {
+  display: grid;
+  justify-items: end;
+  gap: 7px;
+  min-width: 0;
+  width: min(100%, 420px);
+  margin-left: auto;
+  pointer-events: none;
+}
+
+.thread-tile-operation-dock .mobile-operation-bubble {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 28px;
+  padding: 4px 8px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid rgba(122, 199, 167, 0.42);
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  font-size: calc(var(--content-small-font-size) * 0.9);
+  line-height: 1.2;
+  pointer-events: auto;
+}
+
+.thread-tile-operation-dock .mobile-operation-bubble-title,
+.thread-tile-operation-dock .mobile-operation-bubble-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-tile-operation-dock .mobile-operation-bubble-title {
+  flex: 0 0 auto;
+  font-weight: 760;
+}
+
+.thread-tile-operation-dock .mobile-operation-bubble-summary {
+  flex: 1 1 auto;
+  max-width: 22vw;
+  color: var(--muted-code-text);
+  font-family: "Cascadia Mono", "Consolas", "Microsoft YaHei", monospace;
+}
+
+.thread-tile-operation-dock .mobile-operation-bubble-duration {
+  margin-left: 0;
+  color: var(--accent-strong);
+  font-size: calc(var(--content-small-font-size) * 0.88);
+}
+
+.thread-tile-operation-dock .mobile-operation-sheet {
+  display: none;
+  width: min(100%, 420px);
+  max-height: min(42vh, 240px);
+  padding: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.34);
+  overflow: hidden;
+  isolation: isolate;
+  pointer-events: auto;
+}
+
+.thread-tile-operation-dock[data-mode="expanded"] .mobile-operation-sheet {
+  display: block;
+}
+
+.thread-tile-operation-dock .mobile-operation-sheet .live-operation {
+  margin: 0;
+  max-height: min(42vh, 240px);
+  padding: 8px 10px;
+  background: var(--panel);
+  border-color: rgba(122, 199, 167, 0.5);
+  box-shadow: none;
+}
+
+.thread-tile-operation-dock .mobile-operation-sheet .operation-meta-line {
+  padding-right: 0;
+}
+
+.thread-tile-operation-dock .mobile-operation-sheet .operation-detail-line {
+  display: block;
+  height: min(120px, 22vh);
+}
+
+.thread-tile-operation-dock .mobile-operation-sheet .operation-detail {
+  display: block;
+  max-height: 100%;
+  overflow: auto;
+  -webkit-line-clamp: unset;
 }
 
 .thread-tile-bottom-button {

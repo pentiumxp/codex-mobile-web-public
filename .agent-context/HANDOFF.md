@@ -1,3 +1,56 @@
+# 2026-06-24 - v415 tile active-pane composer and pane-local operation bubble completed locally
+
+- Scope:
+  - Committed locally and deployed to Mac production.
+  - Not pushed to Public.
+- Trigger:
+  - User clarified that tile mode should treat every pane like a scaled phone
+    single-thread window.
+  - Exception: Composer chrome may remain shared at the bottom, but tapping a
+    pane makes that pane the active Composer target.
+  - In tile mode the iPad-wide global command box must not remain; operation
+    status should appear inside each pane with the same mobile bubble/sheet
+    vocabulary.
+- Change:
+  - Added `threadTileSelectedThreadId` as the active pane state. Pointer/focus
+    on a pane selects it without reordering the tile board.
+  - `currentDraftKey()`, Composer controls, normal send, task-card command
+    source, ChatGPT Pro source, Stop/steer state, local optimistic user
+    message, failed send receipt, and post-send refresh now target the active
+    pane thread id in tile mode.
+  - Local optimistic/failed messages for non-current panes mutate that pane's
+    cached thread detail instead of writing to the first/current thread.
+  - Tile mode hard-clears the global live operation dock, including compact,
+    pinned, and recall state, so the iPad-wide command strip/bubble cannot
+    remain in tile mode. Each pane renders its own
+    `thread-tile-operation-dock` using the existing mobile operation
+    bubble/sheet component, with pane-local expanded/compact mode and minimum
+    bubble dwell.
+  - Global tile header now shows `平铺视图`; each pane header shows title,
+    path/time metadata, and `本轮` status. The global turn timer is hidden in
+    tile mode, while pane status labels update on tick.
+  - PWA shell bumped to `codex-mobile-shell-v415`.
+- Docs updated:
+  - `README.md`
+  - `docs/COMPLEX_FEATURE_PATHS.md`
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js`
+  - `node --test test/thread-tile-layout-ui.test.js test/thread-tile-layout.test.js test/mobile-viewport.test.js test/live-operation-dock-state.test.js`
+  - `node --test test/chatgpt-pro-bridge-service.test.js test/composer-draft.test.js test/conversation-render.test.js test/thread-status-hints.test.js test/turn-scroll-controls.test.js`
+  - `node --test test/thread-goal-service.test.js test/new-thread-route.test.js test/thread-task-card-route.test.js`
+  - `npm test` (`734` tests passed)
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+  - Central deploy script:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --execute --json`
+  - Production health returned `clientBuildId=0.1.11|codex-mobile-shell-v415`
+    and `shellCacheName=codex-mobile-shell-v415`.
+- Next:
+  - Wait for production/user verification. Public push remains blocked until
+    explicitly requested.
+
 # 2026-06-24 - v414 tile pane bottom anchoring and live refresh deployed to Mac production
 
 - Scope:

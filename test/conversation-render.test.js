@@ -1060,6 +1060,9 @@ function evaluatedLocalSubmissionInserter() {
     "canRenderImageAttachment",
     "localSubmittedTurnId",
     "currentThreadHasClientSubmission",
+    "threadHasClientSubmission",
+    "mutableThreadForLocalSubmission",
+    "syncLocalSubmissionThread",
     "insertLocalSubmittedUserMessage",
     "isMuxUserMessage",
     "isOptimisticUserMessage",
@@ -1098,6 +1101,7 @@ const state = {
   currentThreadId: "thread-live",
   currentThread: { id: "thread-live", status: { type: "idle" }, turns: [], mobileLoading: true },
   threads: [],
+  threadTileDetails: new Map(),
 };
 function localUserMessageItem(text, attachments, clientSubmissionId) {
   return {
@@ -1114,6 +1118,7 @@ function isCompletedStatus(status) {
 }
 function mergeThreadIntoThreadList() { mergeCount += 1; }
 function syncActiveTurnFromThread() { syncCount += 1; }
+function threadById(id) { return state.threads.find((entry) => entry && entry.id === id) || null; }
 function isReasoningItem() { return false; }
 function itemVisibleWeight(item) { return JSON.stringify(item || {}).length; }
 `,
@@ -3765,7 +3770,7 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(optimisticBody, /noteSubmittedProcessingThreadHint\(id\)/);
   assert.match(optimisticBody, /updateThreadStatusHints\(id, previousStatus, runningStatus/);
   assert.match(optimisticBody, /updateThreadListStatus\(id, runningStatus\)/);
-  assert.match(optimisticBody, /mergeThreadIntoThreadList\(state\.currentThread\)/);
+  assert.match(optimisticBody, /if \(currentMatches\) \{[\s\S]*mergeThreadIntoThreadList\(state\.currentThread\)/);
   const restoreBody = functionBody("restoreThreadStatusSnapshot");
   assert.match(restoreBody, /updateThreadStatusHints\(id, \{ type: "active" \}, restoredStatus/);
   assert.match(restoreBody, /state\.currentThread\.status = snapshot\.currentStatus/);
@@ -3773,18 +3778,20 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(functionBody("refreshCurrentThread"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);[\s\S]*mergeThreadIntoThreadList\(state\.currentThread\);/);
   assert.match(functionBody("backfillFullThreadDetail"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);\s*mergeThreadIntoThreadList\(state\.currentThread\);/);
   const sendBody = functionBody("sendMessage");
-  assert.match(sendBody, /const previousThreadStatus = snapshotThreadStatus\(state\.currentThreadId\);/);
-  assert.match(sendBody, /registerSubmittedUserMessage\(state\.currentThreadId, outboundText, submittedAttachments, clientSubmissionId\);\s*const insertedLocalMessage = insertLocalSubmittedUserMessage/);
+  assert.match(sendBody, /const targetThreadId = currentComposerThreadId\(\);/);
+  assert.match(sendBody, /const previousThreadStatus = snapshotThreadStatus\(targetThreadId\);/);
+  assert.match(sendBody, /registerSubmittedUserMessage\(targetThreadId, outboundText, submittedAttachments, clientSubmissionId\);\s*const insertedLocalMessage = insertLocalSubmittedUserMessage/);
   assert.match(sendBody, /if \(insertedLocalMessage\) renderCurrentThread\(\{ stickToBottom: true \}\);/);
-  assert.match(sendBody, /const result = await api\(`\/api\/threads\/\$\{encodeURIComponent\(state\.currentThreadId\)\}\/messages`/);
+  assert.match(sendBody, /const result = await api\(`\/api\/threads\/\$\{encodeURIComponent\(targetThreadId\)\}\/messages`/);
   assert.match(sendBody, /const serverTurnId = startedTurnId\(result\);/);
-  assert.match(sendBody, /if \(!steering && serverTurnId && reconcileSubmittedUserMessageTurn\(state\.currentThreadId, clientSubmissionId, serverTurnId\)\)/);
+  assert.match(sendBody, /if \(!steering && serverTurnId && reconcileSubmittedUserMessageTurn\(targetThreadId, clientSubmissionId, serverTurnId\)\)/);
   assert.match(sendBody, /if \(!steering\) \{[\s\S]*restoreThreadStatusSnapshot\(previousThreadStatus\);[\s\S]*renderThreads\(\);[\s\S]*\}/);
 
   const taskCardSendBody = functionBody("sendThreadTaskCardCommand");
-  assert.match(taskCardSendBody, /const result = await api\(`\/api\/threads\/\$\{encodeURIComponent\(state\.currentThreadId\)\}\/messages`/);
+  assert.match(taskCardSendBody, /const targetThreadId = currentComposerThreadId\(\);/);
+  assert.match(taskCardSendBody, /const result = await api\(`\/api\/threads\/\$\{encodeURIComponent\(targetThreadId\)\}\/messages`/);
   assert.match(taskCardSendBody, /const serverTurnId = startedTurnId\(result\);/);
-  assert.match(taskCardSendBody, /if \(serverTurnId && reconcileSubmittedUserMessageTurn\(state\.currentThreadId, clientSubmissionId, serverTurnId\)\)/);
+  assert.match(taskCardSendBody, /if \(serverTurnId && reconcileSubmittedUserMessageTurn\(targetThreadId, clientSubmissionId, serverTurnId\)\)/);
   assert.doesNotMatch(taskCardSendBody, /!steering/);
 
   const expireBody = functionBody("shouldExpireRunningThreadHint");

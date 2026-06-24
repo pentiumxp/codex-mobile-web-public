@@ -145,7 +145,7 @@ test("successful message submit follows the new turn to the bottom", () => {
   assert.match(appJs, /function scheduleSubmittedMessageBottomFollowScroll\(\)/);
   assert.match(appJs, /scheduleBottomFollowScroll\(shouldFollowSubmittedMessageToBottom\);/);
   assert.match(appJs, /if \(shouldFollow\(\)\) scheduleConversationToBottom\(\);/);
-  assert.match(appJs, /followSubmittedMessageToBottom\(state\.currentThreadId, clientSubmissionId\);[\s\S]*await api\(`\/api\/threads\/\$\{encodeURIComponent\(state\.currentThreadId\)\}\/messages`/);
+  assert.match(appJs, /followSubmittedMessageToBottom\(targetThreadId, clientSubmissionId\);[\s\S]*await api\(`\/api\/threads\/\$\{encodeURIComponent\(targetThreadId\)\}\/messages`/);
   assert.match(appJs, /sustainSubmittedMessageBottomFollow\(turn, itemType, field\);/);
   assert.match(appJs, /clearSubmittedMessageBottomFollow\(\);[\s\S]*const message = normalizeClientErrorMessage/);
   assert.match(appJs, /conversationScroll\.isNearBottom\(\{/);

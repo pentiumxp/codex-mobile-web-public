@@ -147,7 +147,11 @@ const state = {
   threadTileControllers: new Map(),
   threadTileLoadedAtById: new Map(),
   threadTileActiveIds: [],
+  threadTileSelectedThreadId: "",
   threadTileRefreshTimer: null,
+  threadTileOperationModesById: new Map(),
+  threadTileOperationBubblesById: new Map(),
+  threadTileOperationRefreshTimer: null,
   newThreadDraft: false,
   newThreadTitle: "",
   activeTurnId: "",
@@ -174,6 +178,7 @@ const state = {
   threadListRenderFrame: null,
   threadNotificationThrottle: new Map(),
   recentSubmittedUserMessages: new Map(),
+  renderContextThreadId: "",
   submittedProcessingThreadHintedAtById: {},
   sendProgressWatchdog: null,
   sendProgressStartAt: 0,
@@ -441,7 +446,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v414";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v415";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -1028,20 +1033,55 @@ function localSubmittedTurnId(clientSubmissionId) {
 
 function currentThreadHasClientSubmission(clientSubmissionId) {
   const id = String(clientSubmissionId || "").trim();
-  if (!id || !state.currentThread || !Array.isArray(state.currentThread.turns)) return false;
-  return state.currentThread.turns.some((turn) => Array.isArray(turn && turn.items)
+  return threadHasClientSubmission(state.currentThread, id);
+}
+
+function threadHasClientSubmission(thread, clientSubmissionId) {
+  const id = String(clientSubmissionId || "").trim();
+  if (!id || !thread || !Array.isArray(thread.turns)) return false;
+  return thread.turns.some((turn) => Array.isArray(turn && turn.items)
     && turn.items.some((item) => item && String(item.clientSubmissionId || "") === id));
+}
+
+function mutableThreadForLocalSubmission(threadId) {
+  const id = String(threadId || "").trim();
+  if (!id) return null;
+  if (state.currentThread && String(state.currentThread.id || "") === id) return state.currentThread;
+  const existing = state.threadTileDetails.get(id);
+  if (existing) return existing;
+  const summary = threadById(id);
+  const thread = Object.assign({
+    id,
+    name: id,
+    preview: id,
+    turns: [],
+  }, summary || {});
+  thread.turns = Array.isArray(thread.turns) ? thread.turns.slice() : [];
+  state.threadTileDetails.set(id, thread);
+  return thread;
+}
+
+function syncLocalSubmissionThread(thread) {
+  if (!thread || !thread.id) return;
+  const id = String(thread.id || "");
+  if (state.currentThread && String(state.currentThread.id || "") === id) {
+    syncActiveTurnFromThread();
+  } else {
+    state.threadTileDetails.set(id, thread);
+  }
+  mergeThreadIntoThreadList(thread);
 }
 
 function insertLocalSubmittedUserMessage(threadId, text, attachments, clientSubmissionId, options = null) {
   const id = String(threadId || "").trim();
-  if (!id || !state.currentThread || String(state.currentThread.id || "") !== id) return false;
+  const thread = mutableThreadForLocalSubmission(id);
+  if (!id || !thread) return false;
   const submissionId = String(clientSubmissionId || "").trim();
-  if (submissionId && currentThreadHasClientSubmission(submissionId)) return false;
+  if (submissionId && threadHasClientSubmission(thread, submissionId)) return false;
   const opts = options || {};
   const turnId = String(opts.turnId || "").trim() || localSubmittedTurnId(submissionId);
-  state.currentThread.turns = Array.isArray(state.currentThread.turns) ? state.currentThread.turns : [];
-  let turn = state.currentThread.turns.find((entry) => entry && String(entry.id || "") === turnId);
+  thread.turns = Array.isArray(thread.turns) ? thread.turns : [];
+  let turn = thread.turns.find((entry) => entry && String(entry.id || "") === turnId);
   if (!turn) {
     const nowSeconds = Math.floor(Date.now() / 1000);
     turn = {
@@ -1050,14 +1090,13 @@ function insertLocalSubmittedUserMessage(threadId, text, attachments, clientSubm
       startedAt: nowSeconds,
       items: [],
     };
-    state.currentThread.turns.push(turn);
+    thread.turns.push(turn);
   }
   turn.items = Array.isArray(turn.items) ? turn.items : [];
   turn.status = isCompletedStatus(turn.status) ? { type: "active" } : (turn.status || { type: "active" });
   turn.items.push(localUserMessageItem(text, attachments || [], submissionId));
-  state.currentThread.status = { type: "active" };
-  mergeThreadIntoThreadList(state.currentThread);
-  syncActiveTurnFromThread();
+  thread.status = { type: "active" };
+  syncLocalSubmissionThread(thread);
   return true;
 }
 
@@ -1079,7 +1118,7 @@ function reconcileSubmittedUserMessageTurn(threadId, clientSubmissionId, serverT
   const id = String(threadId || "").trim();
   const submissionId = String(clientSubmissionId || "").trim();
   const turnId = String(serverTurnId || "").trim();
-  const thread = state.currentThread;
+  const thread = mutableThreadForLocalSubmission(id);
   if (!id || !submissionId || !turnId || !thread || String(thread.id || "") !== id) return false;
   thread.turns = Array.isArray(thread.turns) ? thread.turns : [];
   let sourceTurn = null;
@@ -1116,8 +1155,7 @@ function reconcileSubmittedUserMessageTurn(threadId, clientSubmissionId, serverT
     }
   }
   normalizeThreadVisibleUserMessages(thread);
-  syncActiveTurnFromThread();
-  mergeThreadIntoThreadList(thread);
+  syncLocalSubmissionThread(thread);
   return changed;
 }
 
@@ -1139,7 +1177,7 @@ function markSubmittedUserMessageFailed(threadId, text, attachments, clientSubmi
   });
   state.recentSubmittedUserMessages.set(id, record);
 
-  const thread = state.currentThread;
+  const thread = mutableThreadForLocalSubmission(threadId);
   if (!thread || (threadId && thread.id !== threadId)) return;
   thread.turns = Array.isArray(thread.turns) ? thread.turns : [];
   let found = false;
@@ -1154,7 +1192,7 @@ function markSubmittedUserMessageFailed(threadId, text, attachments, clientSubmi
     found = true;
   }
   if (!found) {
-    const localTurnId = state.activeTurnId || `local-turn-${id}`;
+    const localTurnId = activeTurnIdForThread(thread) || `local-turn-${id}`;
     let turn = thread.turns.find((entry) => entry && entry.id === localTurnId);
     if (!turn) {
       turn = {
@@ -1169,6 +1207,7 @@ function markSubmittedUserMessageFailed(threadId, text, attachments, clientSubmi
     }
     turn.items = mergeItemsPreservingLocalVisible([record.item], turn.items || [], true);
   }
+  syncLocalSubmissionThread(thread);
   scheduleRenderCurrentThread();
 }
 
@@ -1180,7 +1219,7 @@ function recentSubmittedUserRecordBelongsToThread(record, threadId) {
 function isRecentlySubmittedUserMessage(item) {
   if (!item || item.type !== "userMessage") return false;
   pruneRecentSubmittedUserMessages();
-  const threadId = String(state.currentThreadId || (state.currentThread && state.currentThread.id) || "");
+  const threadId = String(state.renderContextThreadId || state.currentThreadId || (state.currentThread && state.currentThread.id) || "");
   const id = String(item.clientSubmissionId || "").trim();
   if (id) {
     const record = state.recentSubmittedUserMessages.get(id);
@@ -4225,9 +4264,40 @@ function draftKeyForNewThread(cwd) {
   return draftStore.keyForNewThread(cwd);
 }
 
+function effectiveThreadTileSelectedThreadId(ids = state.threadTileActiveIds) {
+  const activeIds = (ids || []).map((id) => String(id || "")).filter(Boolean);
+  if (!state.threadTileMode || !activeIds.length) return "";
+  const selected = String(state.threadTileSelectedThreadId || "");
+  if (selected && activeIds.includes(selected)) return selected;
+  const current = String(state.currentThreadId || "");
+  if (current && activeIds.includes(current)) return current;
+  return activeIds[0] || "";
+}
+
+function currentComposerThreadId() {
+  if (state.newThreadDraft) return "";
+  return effectiveThreadTileSelectedThreadId() || state.currentThreadId || "";
+}
+
+function composerTargetThread() {
+  const id = currentComposerThreadId();
+  if (!id) return null;
+  if (state.currentThread && String(state.currentThread.id || "") === id) return state.currentThread;
+  return threadTileDisplayThread(id);
+}
+
+function composerTargetActiveTurnId() {
+  const target = composerTargetThread();
+  if (!target) return "";
+  if (state.currentThread && String(state.currentThread.id || "") === String(target.id || "") && state.activeTurnId) {
+    return String(state.activeTurnId);
+  }
+  return activeTurnIdForThread(target);
+}
+
 function currentDraftKey() {
   if (state.newThreadDraft) return draftKeyForNewThread(state.selectedCwd);
-  return draftKeyForThread(state.currentThreadId);
+  return draftKeyForThread(currentComposerThreadId());
 }
 
 function readDraftMap() {
@@ -6140,6 +6210,21 @@ function liveReasoningElapsed(item, turn) {
   return Math.max(0, Math.floor((state.nowMs - startedMs) / 1000));
 }
 
+function latestTurnForThread(thread) {
+  const turns = Array.isArray(thread && thread.turns) ? thread.turns : [];
+  return turns.length ? turns[turns.length - 1] : null;
+}
+
+function latestLiveTurnForThread(thread) {
+  const latest = latestTurnForThread(thread);
+  return latest && isLiveTurn(latest) ? latest : null;
+}
+
+function activeTurnIdForThread(thread) {
+  const live = latestLiveTurnForThread(thread);
+  return live && live.id ? String(live.id) : "";
+}
+
 function currentLiveTurn() {
   const latest = latestLiveTurnCandidate() || latestTurn();
   if (state.activeTurnId) {
@@ -6265,6 +6350,13 @@ function updateTurnTimer() {
   if (!el) return;
   updateComposerHeightVar();
   updateOperationDurationBadges();
+  if (state.threadTileMode && state.threadTileActiveIds.length) {
+    updateThreadTilePaneStatusBadges();
+    setTurnTimerContent(el, 0);
+    el.classList.remove("visible", "settled", "active");
+    el.setAttribute("aria-hidden", "true");
+    return;
+  }
   const turn = currentLiveTurn();
   if (!turn) {
     const latest = latestTurn();
@@ -6298,7 +6390,9 @@ function updateTickTimer() {
   clearInterval(state.tickTimer);
   state.tickTimer = null;
   updateTurnTimer();
-  if (!currentLiveTurn() && !currentThreadHasActiveRuntimeStatus()) return;
+  if (state.threadTileMode && state.threadTileActiveIds.length) {
+    if (!threadTileHasLiveThread()) return;
+  } else if (!currentLiveTurn() && !currentThreadHasActiveRuntimeStatus()) return;
   state.tickTimer = setInterval(() => {
     state.nowMs = Date.now();
     updateTurnTimer();
@@ -8749,6 +8843,19 @@ function scheduleCurrentThreadRefresh(delay = 600, source = "scheduled") {
   }, delay);
 }
 
+function scheduleComposerTargetRefresh(threadId, delay = 600, source = "scheduled") {
+  const id = String(threadId || "").trim();
+  if (!id) return;
+  if (id === String(state.currentThreadId || "")) {
+    scheduleCurrentThreadRefresh(delay, source);
+    return;
+  }
+  setTimeout(() => {
+    if (!state.threadTileMode || !threadTilePaneIsVisible(id)) return;
+    loadThreadTileDetail(id, { force: true, background: true, source }).catch(showError);
+  }, Math.max(0, Number(delay) || 0));
+}
+
 function schedulePostCompletionThreadRefreshes(threadId, delays = [700, 2400]) {
   const id = String(threadId || "");
   if (!id) return;
@@ -11036,6 +11143,17 @@ function updateCurrentThreadHeader(thread = state.currentThread) {
   if (metaEl) metaEl.textContent = "";
 }
 
+function updateThreadTileGlobalHeader(layout = null, ids = []) {
+  const titleEl = $("threadTitle");
+  const metaEl = $("threadMeta");
+  if (titleEl) titleEl.textContent = "平铺视图";
+  if (metaEl) {
+    const count = Array.isArray(ids) ? ids.length : 0;
+    const columns = Number(layout && layout.columns || 0);
+    metaEl.textContent = [count ? `${count} 个线程` : "", columns ? `${columns} 栏` : ""].filter(Boolean).join(" | ");
+  }
+}
+
 function viewportPixelSize() {
   const visualViewport = window.visualViewport;
   return {
@@ -11087,6 +11205,59 @@ function threadTileDisplayThread(threadId) {
   return state.threadTileDetails.get(id) || threadTileSummary(id) || { id, name: id, preview: id, turns: [] };
 }
 
+function syncThreadTileSelectedThread(ids = state.threadTileActiveIds) {
+  const next = effectiveThreadTileSelectedThreadId(ids);
+  if (state.threadTileSelectedThreadId === next) return false;
+  state.threadTileSelectedThreadId = next;
+  return true;
+}
+
+function setThreadTileSelectedThread(threadId, options = {}) {
+  const id = String(threadId || "").trim();
+  if (!id || !state.threadTileMode || !state.threadTileActiveIds.includes(id)) return false;
+  if (state.threadTileSelectedThreadId === id) return false;
+  saveCurrentDraftNow();
+  state.threadTileSelectedThreadId = id;
+  restoreDraftForCurrentTarget();
+  renderComposerSettings();
+  updateComposerControls();
+  if (options.render !== false) scheduleRenderCurrentThread();
+  return true;
+}
+
+function threadTilePaneStatusText(thread) {
+  const latest = latestTurnForThread(thread);
+  const live = latestLiveTurnForThread(thread);
+  if (live) {
+    const label = displayTurnStatus(live) || "running";
+    return `本轮 ${label} ${formatElapsedTime(turnElapsedSeconds(live))}`;
+  }
+  if (latest) {
+    const label = displayTurnStatus(latest);
+    const finalSeconds = turnFinalSeconds(latest);
+    return ["本轮", label, finalSeconds != null ? formatElapsedTime(finalSeconds) : ""].filter(Boolean).join(" ");
+  }
+  const status = statusText(thread && thread.status);
+  return status ? `状态 ${status}` : "";
+}
+
+function threadTileHasLiveThread() {
+  if (!state.threadTileMode || !state.threadTileActiveIds.length) return false;
+  return state.threadTileActiveIds.some((id) => {
+    const thread = threadTileDisplayThread(id);
+    return Boolean(latestLiveTurnForThread(thread) || isRunningStatus(thread && thread.status));
+  });
+}
+
+function updateThreadTilePaneStatusBadges() {
+  if (!state.threadTileMode) return;
+  document.querySelectorAll("[data-thread-tile-pane-state]").forEach((node) => {
+    const id = node.getAttribute("data-thread-tile-pane-state") || "";
+    const text = threadTilePaneStatusText(threadTileDisplayThread(id));
+    if (node.textContent !== text) node.textContent = text;
+  });
+}
+
 function threadTileError(threadId) {
   return state.threadTileErrors.get(String(threadId || "")) || "";
 }
@@ -11104,7 +11275,12 @@ function setThreadTileConversationMode(active, layout = null) {
   else {
     conversation.style.removeProperty("--thread-tile-columns");
     state.threadTileActiveIds = [];
+    state.threadTileSelectedThreadId = "";
     clearThreadTileRefreshTimer();
+    if (state.threadTileOperationRefreshTimer) {
+      clearTimeout(state.threadTileOperationRefreshTimer);
+      state.threadTileOperationRefreshTimer = null;
+    }
   }
 }
 
@@ -11249,6 +11425,7 @@ function ensureThreadTileDetails(ids = []) {
   if (!state.threadTileMode) return;
   const activeIds = new Set(ids.map((id) => String(id || "")).filter(Boolean));
   state.threadTileActiveIds = Array.from(activeIds);
+  syncThreadTileSelectedThread(state.threadTileActiveIds);
   for (const [id, controller] of Array.from(state.threadTileControllers.entries())) {
     if (activeIds.has(id)) continue;
     controller.abort();
@@ -11260,19 +11437,91 @@ function ensureThreadTileDetails(ids = []) {
 }
 
 function renderThreadTileTurn(thread, turn, previousKeys = new Set()) {
-  const renderedItems = visibleItemsForTurn(turn).map((entry, index) => {
-    const item = entry && entry.item;
-    const sourceIndex = Number.isInteger(entry && entry.sourceIndex) && entry.sourceIndex >= 0 ? entry.sourceIndex : index;
-    return renderVisibleItemPatchHtml(turn, item, previousKeys, sourceIndex);
-  }).filter(Boolean).join("");
-  if (!renderedItems.trim()) return "";
-  const threadId = String(thread && thread.id || "");
-  const turnId = String(turn && (turn.id || turn.startedAt || "turn") || "turn");
-  const duration = turn && turn.durationMs ? ` | ${formatElapsedTime(Math.round(turn.durationMs / 1000))}` : "";
-  return `<article class="turn thread-tile-turn" data-thread-tile-turn="${escapeHtml(turnId)}" data-render-key="${escapeHtml(`tile-turn|${threadId}|${turnId}`)}">
-    ${renderedItems}
-    <div class="turn-status">${escapeHtml(displayTurnStatus(turn))}${duration}</div>
-  </article>`;
+  const previousRenderThreadId = state.renderContextThreadId;
+  state.renderContextThreadId = String(thread && thread.id || "");
+  try {
+    const renderedItems = visibleItemsForTurn(turn).map((entry, index) => {
+      const item = entry && entry.item;
+      const sourceIndex = Number.isInteger(entry && entry.sourceIndex) && entry.sourceIndex >= 0 ? entry.sourceIndex : index;
+      return renderVisibleItemPatchHtml(turn, item, previousKeys, sourceIndex);
+    }).filter(Boolean).join("");
+    if (!renderedItems.trim()) return "";
+    const threadId = String(thread && thread.id || "");
+    const turnId = String(turn && (turn.id || turn.startedAt || "turn") || "turn");
+    const duration = turn && turn.durationMs ? ` | ${formatElapsedTime(Math.round(turn.durationMs / 1000))}` : "";
+    return `<article class="turn thread-tile-turn" data-thread-tile-turn="${escapeHtml(turnId)}" data-render-key="${escapeHtml(`tile-turn|${threadId}|${turnId}`)}">
+      ${renderedItems}
+      <div class="turn-status">${escapeHtml(displayTurnStatus(turn))}${duration}</div>
+    </article>`;
+  } finally {
+    state.renderContextThreadId = previousRenderThreadId;
+  }
+}
+
+function scheduleThreadTileOperationMinimumRefresh(delayMs = LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS) {
+  if (state.threadTileOperationRefreshTimer) clearTimeout(state.threadTileOperationRefreshTimer);
+  state.threadTileOperationRefreshTimer = setTimeout(() => {
+    state.threadTileOperationRefreshTimer = null;
+    if (state.threadTileMode) scheduleRenderCurrentThread();
+  }, Math.max(0, Number(delayMs) || 0) + 16);
+}
+
+function rememberThreadTileOperationBubble(threadId, html = "") {
+  const id = String(threadId || "");
+  if (!id || !html || !html.includes("mobile-operation-bubble")) return;
+  state.threadTileOperationBubblesById.set(id, {
+    html,
+    visibleUntilMs: Date.now() + LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS,
+  });
+}
+
+function recentThreadTileOperationBubble(threadId) {
+  const id = String(threadId || "");
+  const record = state.threadTileOperationBubblesById.get(id);
+  if (!record) return "";
+  const remainingMs = Number(record.visibleUntilMs || 0) - Date.now();
+  if (remainingMs <= 0) {
+    state.threadTileOperationBubblesById.delete(id);
+    return "";
+  }
+  scheduleThreadTileOperationMinimumRefresh(remainingMs);
+  return String(record.html || "");
+}
+
+function renderThreadTileOperationDock(thread, previousKeys = new Set()) {
+  const id = String(thread && thread.id || "");
+  if (!id) return "";
+  const entry = currentLiveOperationEntry(thread);
+  const mode = normalizeLiveOperationDockMode(state.threadTileOperationModesById.get(id) || "compact");
+  const expanded = mode === "expanded";
+  if (!entry || !entry.item || entry.item.type === "liveTurnStatus") {
+    return recentThreadTileOperationBubble(id);
+  }
+  const html = `<div class="thread-tile-operation-dock" data-thread-tile-operation-dock="${escapeHtml(id)}" data-mode="${escapeHtml(mode)}">
+    <div class="live-operation-dock-inner">
+      ${renderMobileOperationStack(entry.item, entry.turn, previousKeys, entry.sourceIndex, expanded, {
+        toggleAttribute: "data-thread-tile-operation-toggle",
+        toggleValue: id,
+      })}
+    </div>
+  </div>`;
+  rememberThreadTileOperationBubble(id, html);
+  return html;
+}
+
+function threadTileOperationSignature(threadId) {
+  const id = String(threadId || "");
+  const thread = threadTileDisplayThread(id);
+  const entry = currentLiveOperationEntry(thread);
+  const remembered = state.threadTileOperationBubblesById.get(id);
+  const rememberedVisible = Boolean(remembered && remembered.html && Number(remembered.visibleUntilMs || 0) > Date.now());
+  return {
+    mode: state.threadTileOperationModesById.get(id) || "compact",
+    rememberedVisible,
+    entry: entry && entry.item && entry.item.type !== "liveTurnStatus"
+      ? visibleItemSignature(entry.item, entry.turn)
+      : null,
+  };
 }
 
 function renderThreadTilePane(threadId, layout, previousKeys = new Set()) {
@@ -11284,6 +11533,7 @@ function renderThreadTilePane(threadId, layout, previousKeys = new Set()) {
   const pathText = shortPath((thread && thread.cwd) || (summary && summary.cwd) || "") || "聊天";
   const updatedAt = Number((thread && thread.updatedAt) || (summary && summary.updatedAt) || 0);
   const meta = [pathText, updatedAt ? formatTime(updatedAt, state.nowMs) : "", rolloutSizeText(thread || summary)].filter(Boolean).join(" | ");
+  const paneState = threadTilePaneStatusText(thread || summary);
   const error = threadTileError(id);
   const loading = state.threadTileLoadingIds.has(id) || (thread && thread.mobileLoading && !threadHasVisibleConversationTurns(thread));
   const readWarning = threadReadWarningMessage(thread);
@@ -11298,17 +11548,20 @@ function renderThreadTilePane(threadId, layout, previousKeys = new Set()) {
         readWarning ? `<div class="history-note">${escapeHtml(readWarning)}</div>` : "",
         turns.map((turn) => renderThreadTileTurn(thread, turn, previousKeys)).join("") || `<div class="thread-tile-empty">No visible turns.</div>`,
       ].join("");
-  const active = id && id === state.currentThreadId ? " active" : "";
+  const active = id && id === effectiveThreadTileSelectedThreadId() ? " active" : "";
+  const operationDock = renderThreadTileOperationDock(thread, previousKeys);
   return `<section class="thread-tile-pane${active}" data-thread-tile-pane="${escapeHtml(id)}" data-render-key="${escapeHtml(`thread-tile|${id}`)}">
     <header class="thread-tile-pane-header">
       <div class="thread-tile-pane-title-wrap">
         <div class="thread-tile-pane-title">${escapeHtml(title)}</div>
         <div class="thread-tile-pane-meta">${escapeHtml(meta)}</div>
+        <div class="thread-tile-pane-state" data-thread-tile-pane-state="${escapeHtml(id)}">${escapeHtml(paneState)}</div>
       </div>
       ${status}
       <button class="thread-tile-open" type="button" data-thread-tile-open="${escapeHtml(id)}" title="打开为当前线程">打开</button>
     </header>
     <div class="thread-tile-pane-body"><div class="thread-tile-pane-content">${body}</div></div>
+    ${operationDock}
     <button class="thread-tile-bottom-button" type="button" data-thread-tile-bottom="${escapeHtml(id)}" aria-label="跳到此线程底部" title="跳到底部">↓</button>
   </section>`;
 }
@@ -11318,6 +11571,7 @@ function renderThreadTileLayout(layout, options = {}) {
   if (!ids.length) return false;
   const scrollState = captureThreadTilePaneScrollState();
   ensureThreadTileDetails(ids);
+  updateThreadTileGlobalHeader(layout, ids);
   state.nowMs = Date.now();
   const previousKeys = existingConversationRenderKeys();
   const html = `<div class="thread-tile-board" data-thread-tile-board data-render-key="thread-tile-board">
@@ -11328,8 +11582,10 @@ function renderThreadTileLayout(layout, options = {}) {
     columns: layout.columns,
     rows: layout.rows,
     ids,
+    selected: effectiveThreadTileSelectedThreadId(ids),
     loading: ids.filter((id) => state.threadTileLoadingIds.has(id)),
     errors: ids.map((id) => [id, threadTileError(id)]),
+    operations: ids.map((id) => [id, threadTileOperationSignature(id)]),
     threads: ids.map((id) => conversationRenderSignature(threadTileDisplayThread(id))),
   });
   setThreadTileConversationMode(true, layout);
@@ -11345,6 +11601,11 @@ function renderThreadTileLayout(layout, options = {}) {
 function bindThreadTileActions() {
   const conversation = $("conversation");
   if (!conversation) return;
+  conversation.querySelectorAll("[data-thread-tile-pane]").forEach((pane) => {
+    const selectPane = () => setThreadTileSelectedThread(pane.getAttribute("data-thread-tile-pane") || "");
+    pane.addEventListener("pointerdown", selectPane, { passive: true });
+    pane.addEventListener("focusin", selectPane);
+  });
   conversation.querySelectorAll("[data-thread-tile-open]").forEach((button) => {
     button.addEventListener("click", (event) => {
       event.preventDefault();
@@ -11356,6 +11617,17 @@ function bindThreadTileActions() {
     button.addEventListener("click", (event) => {
       event.preventDefault();
       scrollThreadTilePaneToBottom(button.getAttribute("data-thread-tile-bottom") || "", { smooth: true });
+    });
+  });
+  conversation.querySelectorAll("[data-thread-tile-operation-toggle]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const id = button.getAttribute("data-thread-tile-operation-toggle") || "";
+      const current = normalizeLiveOperationDockMode(state.threadTileOperationModesById.get(id) || "compact");
+      state.threadTileOperationModesById.set(id, current === "expanded" ? "compact" : "expanded");
+      setThreadTileSelectedThread(id, { render: false });
+      scheduleRenderCurrentThread();
     });
   });
 }
@@ -11397,6 +11669,7 @@ function setThreadTileMode(enabled) {
   } catch (_) {}
   if (!state.threadTileMode) {
     abortThreadTileLoads();
+    state.threadTileSelectedThreadId = "";
     setThreadTileConversationMode(false);
   }
   syncThreadTileToggle();
@@ -11564,6 +11837,28 @@ function updateLiveOperationDockHtml(html = "") {
   dock.dataset.mobileVisible = next.includes("mobile-operation-bubble") ? "true" : "false";
   delete dock.dataset.recallVisible;
   if (dock.innerHTML !== next) patchHtml(dock, next);
+  return true;
+}
+
+function clearGlobalLiveOperationDockForThreadTiles() {
+  const dock = $("liveOperationDock");
+  if (state.liveOperationDockCompactTimer) {
+    clearTimeout(state.liveOperationDockCompactTimer);
+    state.liveOperationDockCompactTimer = null;
+  }
+  state.liveOperationDockPinned = false;
+  state.liveOperationDockPinnedThreadId = "";
+  state.liveOperationDockMode = "compact";
+  clearCompactLiveOperationBubbleState();
+  state.liveOperationDockRecallHtml = "";
+  state.liveOperationDockRecallThreadId = "";
+  state.liveOperationDockRecallAtMs = 0;
+  if (!dock) return false;
+  if (dock.innerHTML) dock.innerHTML = "";
+  dock.hidden = true;
+  delete dock.dataset.mobileVisible;
+  delete dock.dataset.recallVisible;
+  delete dock.dataset.mode;
   return true;
 }
 
@@ -12075,17 +12370,16 @@ function renderCurrentThread(options = {}) {
         && !shouldHoldAutoScrollForCurrentTurn()
         && (options.stickToBottom === true || nearBottom)));
   const previousKeys = existingConversationRenderKeys();
-  updateCurrentThreadHeader(thread);
   const tileLayout = threadTileLayout();
   if (tileLayout.enabled) {
-    const liveOperationDock = renderLiveOperationDock(thread, previousKeys);
-    updateLiveOperationDockHtml(liveOperationDock);
+    clearGlobalLiveOperationDockForThreadTiles();
     if (renderThreadTileLayout(tileLayout, options)) {
       updateTickTimer();
       publishPluginNavigationState();
       return;
     }
   }
+  updateCurrentThreadHeader(thread);
   setThreadTileConversationMode(false);
   if (threadIsLoadingWithoutVisibleTurns(thread)) {
     updateLiveOperationDockHtml("");
@@ -12331,10 +12625,11 @@ async function submitChatGptProRequest(text, options = {}) {
     showError(new Error("@ChatGPT Pro does not support attachments in this entry point"));
     return true;
   }
-  const sourceThreadId = state.currentThreadId || "";
+  const sourceThreadId = currentComposerThreadId() || state.currentThreadId || "";
+  const sourceThread = composerTargetThread() || state.currentThread || null;
   const cwd = state.newThreadDraft
     ? state.selectedCwd || ""
-    : (state.currentThread && state.currentThread.cwd) || "";
+    : (sourceThread && sourceThread.cwd) || "";
   state.composerBusy = true;
   state.sendButtonHint = "";
   $("connectionState").classList.remove("error");
@@ -12347,7 +12642,7 @@ async function submitChatGptProRequest(text, options = {}) {
       body: JSON.stringify({
         prompt: text,
         sourceThreadId,
-        sourceThreadTitle: state.currentThread ? threadDisplayName(state.currentThread) : "",
+        sourceThreadTitle: sourceThread ? threadDisplayName(sourceThread) : "",
         cwd,
         language: "zh-CN",
         outputFormat: "markdown",
@@ -12399,8 +12694,9 @@ function threadTaskCardCommandText(value) {
 }
 
 function threadTaskCardVisibleTargets() {
+  const sourceThreadId = currentComposerThreadId() || state.currentThreadId;
   return (state.threads || [])
-    .filter((thread) => thread && thread.id && thread.id !== state.currentThreadId)
+    .filter((thread) => thread && thread.id && thread.id !== sourceThreadId)
     .slice(0, 40)
     .map((thread) => ({
       threadId: String(thread.id || ""),
@@ -12409,17 +12705,18 @@ function threadTaskCardVisibleTargets() {
     }));
 }
 
-function buildThreadTaskCardDraftRequestText(commandText) {
+function buildThreadTaskCardDraftRequestText(commandText, sourceThread = composerTargetThread()) {
   const original = String(commandText || "").trim();
   const compactCommand = threadTaskCardCommandText(original);
   if (!compactCommand) throw new Error("Task-card command is empty");
   const legacyAutonomousCommand = original.startsWith(THREAD_TASK_CARD_LEGACY_COMMAND_PREFIX)
     || THREAD_TASK_CARD_AUTONOMOUS_MENTION_PATTERN.test(original);
-  const sourceThread = state.currentThread || {};
+  const source = sourceThread || {};
+  const sourceThreadId = currentComposerThreadId() || state.currentThreadId || "";
   const envelope = {
     version: 1,
-    sourceThreadId: String(state.currentThreadId || ""),
-    sourceThreadTitle: threadTitleForDisplay(sourceThread) || String(state.currentThreadId || ""),
+    sourceThreadId: String(sourceThreadId),
+    sourceThreadTitle: threadTitleForDisplay(source) || String(sourceThreadId),
     availableTargets: threadTaskCardVisibleTargets(),
   };
   return [
@@ -13548,17 +13845,22 @@ function operationBubbleSummary(item) {
   return truncateSingleLine(operationSummaryLines(item).filter(Boolean).join(" | "), 52);
 }
 
-function renderMobileOperationStack(item, turn, previousKeys = new Set(), index = 0, expanded = false) {
+function renderMobileOperationStack(item, turn, previousKeys = new Set(), index = 0, expanded = false, options = {}) {
   const status = statusText(item.status) || (item.completedAtMs ? "completed" : "running");
   const key = stableOperationRenderKey(turn, item, index);
   const title = operationTitle(item);
   const summary = operationBubbleSummary(item);
   const duration = operationDurationHtml(item, status, "operation-duration mobile-operation-bubble-duration");
+  const toggleName = String(options.toggleAttribute || "data-live-operation-dock-toggle").trim();
+  const toggleValue = String(options.toggleValue || "");
+  const toggleAttr = toggleName
+    ? `${escapeHtml(toggleName)}${toggleValue ? `="${escapeHtml(toggleValue)}"` : ""}`
+    : "data-live-operation-dock-toggle";
   return `<div class="mobile-operation-stack">
     <div class="mobile-operation-sheet" role="region" aria-label="Command 详情">
       ${renderOperationCard(item, key, { status, extraClass: "mobile-operation-sheet-card" })}
     </div>
-    <button class="mobile-operation-bubble" type="button" data-live-operation-dock-toggle aria-expanded="${String(expanded)}" title="${expanded ? "收起 Command 框" : "展开 Command 框"}" aria-label="${expanded ? "收起 Command 框" : "展开 Command 框"}">
+    <button class="mobile-operation-bubble" type="button" ${toggleAttr} aria-expanded="${String(expanded)}" title="${expanded ? "收起 Command 框" : "展开 Command 框"}" aria-label="${expanded ? "收起 Command 框" : "展开 Command 框"}">
       <span class="mobile-operation-bubble-title">${escapeHtml(title)}</span>
       ${summary ? `<span class="mobile-operation-bubble-summary">${escapeHtml(summary)}</span>` : ""}
       ${duration}
@@ -17648,7 +17950,7 @@ function startSendProgressWatchdog(threadId) {
   state.sendProgressWarned = false;
   const targetThreadId = String(threadId || "");
   state.sendProgressWatchdog = setTimeout(() => {
-    if (!state.composerBusy || state.currentThreadId !== targetThreadId) return;
+    if (!state.composerBusy || currentComposerThreadId() !== targetThreadId) return;
     state.sendProgressWarned = true;
     const steering = state.steerFeedback && state.steerFeedback.status === "sending";
     $("connectionState").textContent = steering ? "引导较慢，稍等一下，避免重复提交" : "发送较慢，检查网络后稍等，避免重复提交";
@@ -18413,16 +18715,16 @@ function composerHasContent() {
   return Boolean(composerText() || state.pendingAttachments.length);
 }
 
-function effectiveDefaultModel() {
-  return (state.currentThread && state.currentThread.model) || state.defaultModel || "";
+function effectiveDefaultModel(thread = composerTargetThread()) {
+  return (thread && thread.model) || state.defaultModel || "";
 }
 
-function effectiveDefaultEffort() {
-  return (state.currentThread && state.currentThread.effort) || state.defaultReasoningEffort || "";
+function effectiveDefaultEffort(thread = composerTargetThread()) {
+  return (thread && thread.effort) || state.defaultReasoningEffort || "";
 }
 
-function effectiveDefaultPermissionMode() {
-  const settings = state.currentThread && state.currentThread.runtimeSettings;
+function effectiveDefaultPermissionMode(thread = composerTargetThread()) {
+  const settings = thread && thread.runtimeSettings;
   const sandboxType = String((settings && settings.sandboxPolicyType) || "").replace(/[-_]/g, "").toLowerCase();
   if (sandboxType === "dangerfullaccess") return "full";
   return effectiveComposerPermissionMode((settings && settings.permissionMode) || "");
@@ -18688,10 +18990,13 @@ function renderComposerSettings() {
 }
 
 function updateComposerControls() {
-  const hasThread = Boolean(state.currentThreadId
-    && state.currentThread
-    && !state.currentThread.mobileLoading
-    && !state.currentThread.mobileLoadError);
+  const targetThreadId = currentComposerThreadId();
+  const targetThread = composerTargetThread();
+  const targetActiveTurnId = composerTargetActiveTurnId();
+  const hasThread = Boolean(targetThreadId
+    && targetThread
+    && !targetThread.mobileLoading
+    && !targetThread.mobileLoadError);
   const hasNewThreadDraft = Boolean(state.newThreadDraft);
   const canComposeNewThread = Boolean(hasNewThreadDraft);
   const disabled = !(hasThread || canComposeNewThread) || state.composerBusy || state.attachmentProcessingCount > 0;
@@ -18699,8 +19004,8 @@ function updateComposerControls() {
   const bareIntentKind = composerIntentBareTagKind(composerText());
   const goalCommandMode = Boolean(!hasNewThreadDraft && isThreadGoalCommandText(composerText()));
   const commandMode = Boolean(!hasNewThreadDraft && isThreadTaskCardCommandText(composerText()));
-  const interruptMode = Boolean(!hasNewThreadDraft && state.activeTurnId) && !hasContent;
-  const steerMode = Boolean(!hasNewThreadDraft && state.activeTurnId) && hasContent;
+  const interruptMode = Boolean(!hasNewThreadDraft && targetActiveTurnId) && !hasContent;
+  const steerMode = Boolean(!hasNewThreadDraft && targetActiveTurnId) && hasContent;
   const sendButton = $("sendMessage");
   const attachButton = $("attachFiles");
   const messageInput = $("messageInput");
@@ -18977,7 +19282,9 @@ function requestGoalDialogSubmit() {
 
 async function sendThreadTaskCardCommand(commandText, options = {}) {
   const text = String(commandText || "").trim();
-  if (!text || !state.currentThreadId) return false;
+  const targetThreadId = currentComposerThreadId();
+  const targetThread = composerTargetThread();
+  if (!text || !targetThreadId) return false;
   if (state.pendingAttachments.length) {
     const err = new Error("Task-card commands do not support attachments yet");
     showError(err);
@@ -18986,10 +19293,10 @@ async function sendThreadTaskCardCommand(commandText, options = {}) {
   }
   const submittedDraftKey = currentDraftKey();
   const clientSubmissionId = createSubmissionId();
-  const outboundText = buildThreadTaskCardDraftRequestText(text);
+  const outboundText = buildThreadTaskCardDraftRequestText(text, targetThread);
   state.composerBusy = true;
   state.sendButtonHint = "";
-  startSendProgressWatchdog(state.currentThreadId);
+  startSendProgressWatchdog(targetThreadId);
   markActivity("任务卡片");
   updateComposerControls();
   if (state.sendProgressWarned) {
@@ -19000,28 +19307,28 @@ async function sendThreadTaskCardCommand(commandText, options = {}) {
     const body = new FormData();
     body.append("clientSubmissionId", clientSubmissionId);
     body.append("text", outboundText);
-    if (state.currentThread && state.currentThread.cwd) body.append("cwd", state.currentThread.cwd);
+    if (targetThread && targetThread.cwd) body.append("cwd", targetThread.cwd);
     body.append("model", selectedComposerModel());
     body.append("effort", selectedComposerEffort());
     body.append("permissionMode", selectedComposerPermissionMode());
     if (codexFastCommandEnabled()) body.append("fastMode", "1");
-    registerSubmittedUserMessage(state.currentThreadId, outboundText, [], clientSubmissionId);
-    const insertedLocalMessage = insertLocalSubmittedUserMessage(state.currentThreadId, outboundText, [], clientSubmissionId);
-    markThreadOptimisticallyActive(state.currentThreadId);
+    registerSubmittedUserMessage(targetThreadId, outboundText, [], clientSubmissionId);
+    const insertedLocalMessage = insertLocalSubmittedUserMessage(targetThreadId, outboundText, [], clientSubmissionId);
+    markThreadOptimisticallyActive(targetThreadId);
     renderThreads();
     if (insertedLocalMessage) renderCurrentThread({ stickToBottom: true });
-    followSubmittedMessageToBottom(state.currentThreadId, clientSubmissionId);
-    const result = await api(`/api/threads/${encodeURIComponent(state.currentThreadId)}/messages`, {
+    followSubmittedMessageToBottom(targetThreadId, clientSubmissionId);
+    const result = await api(`/api/threads/${encodeURIComponent(targetThreadId)}/messages`, {
       method: "POST",
       body,
       timeoutMs: 180000,
     });
     const serverTurnId = startedTurnId(result);
-    if (serverTurnId && reconcileSubmittedUserMessageTurn(state.currentThreadId, clientSubmissionId, serverTurnId)) {
+    if (serverTurnId && reconcileSubmittedUserMessageTurn(targetThreadId, clientSubmissionId, serverTurnId)) {
       renderCurrentThread({ stickToBottom: true });
     }
     commitPluginVoiceInputSessionsAfterSend(submittedDraftKey, text, {
-      threadId: state.currentThreadId,
+      threadId: targetThreadId,
       messageId: clientSubmissionId,
       composerId: "thread-composer",
     });
@@ -19030,7 +19337,7 @@ async function sendThreadTaskCardCommand(commandText, options = {}) {
     $("connectionState").classList.remove("error");
     $("connectionState").textContent = "Task card draft requested";
     markActivity("草案已请求");
-    scheduleCurrentThreadRefresh(600);
+    scheduleComposerTargetRefresh(targetThreadId, 600, "task-card-submit");
     scheduleLivePollIfNeeded(1200);
     loadThreads({ silent: true }).catch(showError);
     return true;
@@ -19039,11 +19346,11 @@ async function sendThreadTaskCardCommand(commandText, options = {}) {
     const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err), err)
       || "任务卡片提交失败，请重试";
     state.sendButtonHint = "重试";
-    markSubmittedUserMessageFailed(state.currentThreadId, outboundText, [], clientSubmissionId, message);
+    markSubmittedUserMessageFailed(targetThreadId, outboundText, [], clientSubmissionId, message);
     $("connectionState").classList.remove("error");
     $("connectionState").textContent = "发送失败，详情见消息回执";
     postClientEvent("send_failure", {
-      threadId: state.currentThreadId || "",
+      threadId: targetThreadId || "",
       message,
       steering: false,
       taskCardCommand: true,
@@ -19065,6 +19372,9 @@ async function sendMessage(event) {
   const text = composerText();
   const normalizedIntentText = normalizedComposerIntentText(text);
   const hasContent = Boolean(text || state.pendingAttachments.length);
+  const targetThreadId = currentComposerThreadId();
+  const targetThread = composerTargetThread();
+  const targetActiveTurnId = composerTargetActiveTurnId();
   if (normalizedIntentText === "@") {
     openComposerIntentMenu();
     return;
@@ -19084,10 +19394,10 @@ async function sendMessage(event) {
       showError(new Error("Goal commands do not support attachments"));
       return;
     }
-    if (!state.currentThreadId) return;
+    if (!targetThreadId) return;
     setComposerText("");
     scheduleCurrentDraftSave();
-    openThreadGoalDialog(state.currentThreadId);
+    openThreadGoalDialog(targetThreadId);
     return;
   }
   if (isChatGptProCommandText(text)) {
@@ -19098,11 +19408,11 @@ async function sendMessage(event) {
     await sendNewThreadMessage(text, hasContent, input);
     return;
   }
-  if (state.activeTurnId && !hasContent) {
-    await interruptActiveTurn();
+  if (targetActiveTurnId && !hasContent) {
+    await interruptActiveTurn(targetThreadId, targetActiveTurnId);
     return;
   }
-  if ((!text && !state.pendingAttachments.length) || !state.currentThreadId) return;
+  if ((!text && !state.pendingAttachments.length) || !targetThreadId) return;
   const threadTaskCardCommand = isThreadTaskCardCommandText(text);
   if (threadTaskCardCommand && state.pendingAttachments.length) {
     showError(new Error("# task-card commands do not support attachments yet"));
@@ -19113,16 +19423,16 @@ async function sendMessage(event) {
     return;
   }
   const outboundText = text;
-  const steering = Boolean(state.activeTurnId && hasContent);
-  const steerTurnId = steering ? String(state.activeTurnId) : "";
+  const steering = Boolean(targetActiveTurnId && hasContent);
+  const steerTurnId = steering ? String(targetActiveTurnId) : "";
   const submittedDraftKey = currentDraftKey();
   const clientSubmissionId = createSubmissionId();
   const submittedAttachments = state.pendingAttachments.slice();
-  const previousThreadStatus = snapshotThreadStatus(state.currentThreadId);
+  const previousThreadStatus = snapshotThreadStatus(targetThreadId);
   state.composerBusy = true;
   state.sendButtonHint = "";
-  startSendProgressWatchdog(state.currentThreadId);
-  if (steering) setSteerFeedback("sending", { threadId: state.currentThreadId, turnId: steerTurnId, clientSubmissionId });
+  startSendProgressWatchdog(targetThreadId);
+  if (steering) setSteerFeedback("sending", { threadId: targetThreadId, turnId: steerTurnId, clientSubmissionId });
   else markActivity("发送");
   updateComposerControls();
   if (state.sendProgressWarned) {
@@ -19133,7 +19443,7 @@ async function sendMessage(event) {
     const body = new FormData();
     body.append("clientSubmissionId", clientSubmissionId);
     body.append("text", outboundText);
-    if (state.currentThread && state.currentThread.cwd) body.append("cwd", state.currentThread.cwd);
+    if (targetThread && targetThread.cwd) body.append("cwd", targetThread.cwd);
     if (steerTurnId) body.append("activeTurnId", steerTurnId);
     body.append("model", selectedComposerModel());
     body.append("effort", selectedComposerEffort());
@@ -19142,27 +19452,27 @@ async function sendMessage(event) {
     for (const item of state.pendingAttachments) {
       body.append("attachments", item.file, item.file.name || "upload");
     }
-    registerSubmittedUserMessage(state.currentThreadId, outboundText, submittedAttachments, clientSubmissionId);
-    const insertedLocalMessage = insertLocalSubmittedUserMessage(state.currentThreadId, outboundText, submittedAttachments, clientSubmissionId, {
+    registerSubmittedUserMessage(targetThreadId, outboundText, submittedAttachments, clientSubmissionId);
+    const insertedLocalMessage = insertLocalSubmittedUserMessage(targetThreadId, outboundText, submittedAttachments, clientSubmissionId, {
       turnId: steering ? steerTurnId : "",
     });
     if (!steering) {
-      markThreadOptimisticallyActive(state.currentThreadId);
+      markThreadOptimisticallyActive(targetThreadId);
       renderThreads();
     }
     if (insertedLocalMessage) renderCurrentThread({ stickToBottom: true });
-    followSubmittedMessageToBottom(state.currentThreadId, clientSubmissionId);
-    const result = await api(`/api/threads/${encodeURIComponent(state.currentThreadId)}/messages`, {
+    followSubmittedMessageToBottom(targetThreadId, clientSubmissionId);
+    const result = await api(`/api/threads/${encodeURIComponent(targetThreadId)}/messages`, {
       method: "POST",
       body,
       timeoutMs: 180000,
     });
     const serverTurnId = startedTurnId(result);
-    if (!steering && serverTurnId && reconcileSubmittedUserMessageTurn(state.currentThreadId, clientSubmissionId, serverTurnId)) {
+    if (!steering && serverTurnId && reconcileSubmittedUserMessageTurn(targetThreadId, clientSubmissionId, serverTurnId)) {
       renderCurrentThread({ stickToBottom: true });
     }
     commitPluginVoiceInputSessionsAfterSend(submittedDraftKey, text, {
-      threadId: state.currentThreadId,
+      threadId: targetThreadId,
       messageId: clientSubmissionId,
       composerId: "thread-composer",
     });
@@ -19174,12 +19484,12 @@ async function sendMessage(event) {
     }
     input.blur();
     $("connectionState").classList.remove("error");
-    if (steering) setSteerFeedback("delivered", { threadId: state.currentThreadId, turnId: steerTurnId, clientSubmissionId });
+    if (steering) setSteerFeedback("delivered", { threadId: targetThreadId, turnId: steerTurnId, clientSubmissionId });
     else {
       $("connectionState").textContent = "Sent";
       markActivity("已发送");
     }
-    scheduleCurrentThreadRefresh(600);
+    scheduleComposerTargetRefresh(targetThreadId, 600, "message-submit");
     scheduleLivePollIfNeeded(1200);
     loadThreads({ silent: true }).catch(showError);
   } catch (err) {
@@ -19191,14 +19501,14 @@ async function sendMessage(event) {
     const message = normalizeClientErrorMessage(err && err.message ? err.message : String(err), err)
       || "发送失败，请重试";
     state.sendButtonHint = "重试";
-    markSubmittedUserMessageFailed(state.currentThreadId, outboundText, submittedAttachments, clientSubmissionId, message);
-    if (steering) setSteerFeedback("failed", { threadId: state.currentThreadId, turnId: steerTurnId, clientSubmissionId });
+    markSubmittedUserMessageFailed(targetThreadId, outboundText, submittedAttachments, clientSubmissionId, message);
+    if (steering) setSteerFeedback("failed", { threadId: targetThreadId, turnId: steerTurnId, clientSubmissionId });
     else {
       $("connectionState").classList.remove("error");
       $("connectionState").textContent = "发送失败，详情见消息回执";
     }
     postClientEvent("send_failure", {
-      threadId: state.currentThreadId || "",
+      threadId: targetThreadId || "",
       message,
       steering,
     });
@@ -19391,13 +19701,15 @@ function requestAttachmentPickerFromButton(event) {
   }
 }
 
-async function interruptActiveTurn() {
-  if (!state.currentThreadId || !state.activeTurnId) return;
+async function interruptActiveTurn(threadId = currentComposerThreadId(), activeTurnId = composerTargetActiveTurnId()) {
+  const targetThreadId = String(threadId || "").trim();
+  const targetActiveTurnId = String(activeTurnId || "").trim();
+  if (!targetThreadId || !targetActiveTurnId) return;
   $("connectionState").classList.remove("error");
   $("connectionState").textContent = "Interrupt requested";
   markActivity("中断");
-  await api(`/api/threads/${encodeURIComponent(state.currentThreadId)}/turns/${encodeURIComponent(state.activeTurnId)}/interrupt`, { method: "POST" })
-    .then(() => scheduleCurrentThreadRefresh(900))
+  await api(`/api/threads/${encodeURIComponent(targetThreadId)}/turns/${encodeURIComponent(targetActiveTurnId)}/interrupt`, { method: "POST" })
+    .then(() => scheduleComposerTargetRefresh(targetThreadId, 900))
     .catch(showError);
 }
 

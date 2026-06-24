@@ -32,7 +32,9 @@ test("thread tile layout is wired as an explicit shell policy", () => {
   assert.match(appJs, /const threadTileLayoutPolicy = window\.CodexThreadTileLayout/);
   assert.match(appJs, /threadTileMode: localStorage\.getItem\("codexMobileThreadDisplayMode"\) === "tile"/);
   assert.match(appJs, /threadTileActiveIds: \[\]/);
+  assert.match(appJs, /threadTileSelectedThreadId: ""/);
   assert.match(appJs, /threadTileRefreshTimer: null/);
+  assert.match(appJs, /threadTileOperationModesById: new Map\(\)/);
   assert.match(appJs, /THREAD_TILE_REFRESH_INTERVAL_MS/);
   assert.match(appJs, /STORAGE_LEGACY_THREAD_TILE_MODE = "codexMobileThreadTileMode"/);
 
@@ -58,6 +60,7 @@ test("thread tile rendering is read-only and separate from full conversation ren
   const renderCurrentThreadBody = functionBody(appJs, "renderCurrentThread");
   assert.match(renderCurrentThreadBody, /const tileLayout = threadTileLayout\(\)/);
   assert.match(renderCurrentThreadBody, /if \(tileLayout\.enabled\) \{/);
+  assert.match(renderCurrentThreadBody, /updateLiveOperationDockHtml\(""\)/);
   assert.match(renderCurrentThreadBody, /renderThreadTileLayout\(tileLayout, options\)/);
 
   const tileLayoutBody = functionBody(appJs, "renderThreadTileLayout");
@@ -69,6 +72,7 @@ test("thread tile rendering is read-only and separate from full conversation ren
 
   const ensureBody = functionBody(appJs, "ensureThreadTileDetails");
   assert.match(ensureBody, /state\.threadTileActiveIds = Array\.from\(activeIds\)/);
+  assert.match(ensureBody, /syncThreadTileSelectedThread\(state\.threadTileActiveIds\)/);
   assert.match(ensureBody, /scheduleThreadTileRefresh\(\)/);
 
   const loadBody = functionBody(appJs, "loadThreadTileDetail");
@@ -79,26 +83,77 @@ test("thread tile rendering is read-only and separate from full conversation ren
 
   const tilePaneBody = functionBody(appJs, "renderThreadTilePane");
   assert.match(tilePaneBody, /thread-tile-pane-content/);
+  assert.match(tilePaneBody, /effectiveThreadTileSelectedThreadId\(\)/);
+  assert.match(tilePaneBody, /thread-tile-pane-state/);
+  assert.match(tilePaneBody, /renderThreadTileOperationDock\(thread, previousKeys\)/);
   assert.match(tilePaneBody, /data-thread-tile-bottom/);
 
   const tileActionsBody = functionBody(appJs, "bindThreadTileActions");
+  assert.match(tileActionsBody, /data-thread-tile-pane/);
+  assert.match(tileActionsBody, /setThreadTileSelectedThread/);
   assert.match(tileActionsBody, /data-thread-tile-open/);
   assert.match(tileActionsBody, /data-thread-tile-bottom/);
   assert.match(tileActionsBody, /scrollThreadTilePaneToBottom/);
+  assert.match(tileActionsBody, /data-thread-tile-operation-toggle/);
 
   const tileTurnBody = functionBody(appJs, "renderThreadTileTurn");
+  assert.match(tileTurnBody, /state\.renderContextThreadId/);
   assert.match(tileTurnBody, /renderVisibleItemPatchHtml/);
   assert.doesNotMatch(tileTurnBody, /renderTurn\(/);
   assert.doesNotMatch(tileTurnBody, /renderThreadTaskCardDraft/);
+
+  const tileOperationDockBody = functionBody(appJs, "renderThreadTileOperationDock");
+  assert.match(tileOperationDockBody, /currentLiveOperationEntry\(thread\)/);
+  assert.match(tileOperationDockBody, /data-thread-tile-operation-dock/);
+  assert.match(tileOperationDockBody, /data-thread-tile-operation-toggle/);
+  assert.match(tileOperationDockBody, /rememberThreadTileOperationBubble/);
+
+  const clearGlobalDockBody = functionBody(appJs, "clearGlobalLiveOperationDockForThreadTiles");
+  assert.match(clearGlobalDockBody, /state\.liveOperationDockPinned = false/);
+  assert.match(clearGlobalDockBody, /state\.liveOperationDockRecallHtml = ""/);
+  assert.match(clearGlobalDockBody, /dock\.hidden = true/);
+  assert.match(functionBody(appJs, "renderCurrentThread"), /if \(tileLayout\.enabled\) \{\s*clearGlobalLiveOperationDockForThreadTiles\(\)/);
+
+  const mobileOperationBody = functionBody(appJs, "renderMobileOperationStack");
+  assert.match(mobileOperationBody, /options\.toggleAttribute/);
 
   assert.match(stylesCss, /\.conversation\.thread-tile-mode\s*{/);
   assert.match(stylesCss, /\.thread-tile-board\s*{/);
   assert.match(stylesCss, /\.thread-tile-pane\s*{/);
   assert.match(stylesCss, /\.thread-tile-pane-body\s*{/);
   assert.match(stylesCss, /\.thread-tile-pane-content\s*{/);
+  assert.match(stylesCss, /\.thread-tile-pane-state\s*{/);
+  assert.match(stylesCss, /\.thread-tile-operation-dock\s*{/);
+  assert.match(stylesCss, /\.thread-tile-operation-dock \.mobile-operation-stack\s*{/);
   assert.match(stylesCss, /\.thread-tile-bottom-button\s*{/);
 
   const notificationBody = functionBody(appJs, "applyNotification");
   assert.match(notificationBody, /threadTilePaneIsVisible\(params\.threadId\)/);
   assert.match(notificationBody, /loadThreadTileDetail\(params\.threadId, \{ force: true, background: true/);
+});
+
+test("thread tile composer targets the active pane without replacing the shared composer", () => {
+  const currentDraftKeyBody = functionBody(appJs, "currentDraftKey");
+  assert.match(currentDraftKeyBody, /currentComposerThreadId\(\)/);
+
+  const targetIdBody = functionBody(appJs, "currentComposerThreadId");
+  assert.match(targetIdBody, /effectiveThreadTileSelectedThreadId\(\) \|\| state\.currentThreadId/);
+
+  const updateControlsBody = functionBody(appJs, "updateComposerControls");
+  assert.match(updateControlsBody, /const targetThreadId = currentComposerThreadId\(\)/);
+  assert.match(updateControlsBody, /const targetActiveTurnId = composerTargetActiveTurnId\(\)/);
+  assert.match(updateControlsBody, /Boolean\(!hasNewThreadDraft && targetActiveTurnId\) && hasContent/);
+
+  const sendMessageBody = functionBody(appJs, "sendMessage");
+  assert.match(sendMessageBody, /const targetThreadId = currentComposerThreadId\(\)/);
+  assert.match(sendMessageBody, /openThreadGoalDialog\(targetThreadId\)/);
+  assert.match(sendMessageBody, /interruptActiveTurn\(targetThreadId, targetActiveTurnId\)/);
+  assert.match(sendMessageBody, /insertLocalSubmittedUserMessage\(targetThreadId/);
+  assert.match(sendMessageBody, /api\(`\/api\/threads\/\$\{encodeURIComponent\(targetThreadId\)\}\/messages`/);
+  assert.match(sendMessageBody, /scheduleComposerTargetRefresh\(targetThreadId/);
+
+  const taskCardBody = functionBody(appJs, "sendThreadTaskCardCommand");
+  assert.match(taskCardBody, /const targetThreadId = currentComposerThreadId\(\)/);
+  assert.match(taskCardBody, /buildThreadTaskCardDraftRequestText\(text, targetThread\)/);
+  assert.match(taskCardBody, /api\(`\/api\/threads\/\$\{encodeURIComponent\(targetThreadId\)\}\/messages`/);
 });

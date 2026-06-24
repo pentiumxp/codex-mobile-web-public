@@ -113,17 +113,20 @@ Target:
   pane-local composer.
 - Keep the current automatic tile policy as the interim capability gate for
   iPad/desktop width, not as the final interaction model.
-- Preserve action ownership: composer, approvals, interrupts, active-turn
-  steering, and operation dock state remain bound to the current active thread
-  unless a future pane is explicitly promoted to active.
+- Preserve action ownership: v415 already routes the shared bottom Composer's
+  draft key, send target, Stop/steer state, local echo, and failure receipt to
+  the selected active pane, and operation bubble state is pane-local. Future
+  work should continue that ownership model instead of falling back to the
+  first/current global thread.
 - Add a dedicated pane-state helper before expanding `public/app.js`: pane ids,
   widths, ordering, active pane, per-pane drafts, max concurrent detail reads,
   pane-local send/approval/interrupt ownership, command/operation bubble state,
   command detail panels, and mobile collapse behavior should be testable
   without DOM side effects.
 - Treat each pane as a scaled mobile single-thread runtime instance. Shared
-  global composer, shared global command dock, or shared operation bubble are
-  interim-only and must not be considered closure for the split-screen feature.
+  global Composer chrome is only an interim input surface; global command dock
+  or shared operation bubble are no longer acceptable in tile mode and must not
+  be considered closure for the split-screen feature.
 
 ## Release Rule
 
