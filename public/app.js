@@ -448,7 +448,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v416";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v417";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -6355,6 +6355,86 @@ function setTurnTimerContent(el, seconds, detail = "") {
   el.setAttribute("aria-label", detail ? `${timeText} ${detail}` : timeText);
 }
 
+function turnTimerStateFromThread(thread, options = {}) {
+  const activeRuntime = options.activeRuntime === true;
+  const activeLabel = String(options.activeLabel || "").trim();
+  const latest = options.latest || latestTurnForThread(thread);
+  const live = latest && isLiveTurnForThread(thread, latest) ? latest : null;
+  if (!live) {
+    if (activeRuntime) {
+      const startedMs = liveTurnStartedAtMs(latest) || turnStartedAtMs(latest) || Number(options.activityAtMs || 0) || state.nowMs;
+      const seconds = Math.max(0, Math.floor((state.nowMs - startedMs) / 1000));
+      return { visible: true, active: true, settled: false, seconds, detail: activeLabel || "运行" };
+    }
+    const finalSeconds = turnFinalSeconds(latest);
+    if (finalSeconds != null) return { visible: true, active: false, settled: true, seconds: finalSeconds, detail: "已结束" };
+    return { visible: false, active: false, settled: false, seconds: 0, detail: "" };
+  }
+  return {
+    visible: true,
+    active: true,
+    settled: false,
+    seconds: turnElapsedSeconds(live),
+    detail: liveActivityLabelForTurn(live) || String(options.liveFallbackLabel || "").trim() || liveTurnFallbackActivityLabel(live),
+  };
+}
+
+function currentThreadTurnTimerState() {
+  const thread = state.currentThread;
+  if (!thread) return { visible: false, active: false, settled: false, seconds: 0, detail: "" };
+  const latest = latestTurn();
+  const live = currentLiveTurn();
+  if (live) {
+    return {
+      visible: true,
+      active: true,
+      settled: false,
+      seconds: turnElapsedSeconds(live),
+      detail: liveActivityLabelForTurn(live) || liveTurnFallbackActivityLabel(live),
+    };
+  }
+  return turnTimerStateFromThread(thread, {
+    activeRuntime: currentThreadHasActiveRuntimeStatus(),
+    activityAtMs: state.activityAtMs,
+    activeLabel: activeThreadFallbackActivityLabel(),
+    latest,
+  });
+}
+
+function applyTurnTimerState(el, timerState = {}) {
+  if (!el) return;
+  setTurnTimerContent(el, Number(timerState.seconds || 0), timerState.detail || "");
+  el.classList.toggle("visible", Boolean(timerState.visible));
+  el.classList.toggle("active", Boolean(timerState.active));
+  el.classList.toggle("settled", Boolean(timerState.settled));
+  el.setAttribute("aria-hidden", timerState.visible ? "false" : "true");
+}
+
+function turnTimerStateHtml(timerState = {}) {
+  if (!timerState.visible) return "";
+  const seconds = Number(timerState.seconds || 0);
+  const detail = String(timerState.detail || "");
+  const className = [
+    "thread-tile-pane-state",
+    "turn-timer",
+    "visible",
+    timerState.active ? "active" : "",
+    timerState.settled ? "settled" : "",
+  ].filter(Boolean).join(" ");
+  const timeText = `\u672c\u8f6e ${formatElapsedTime(seconds)}`;
+  return `<div class="${escapeHtml(className)}">
+    <span class="turn-timer-time">${escapeHtml(timeText)}</span><span class="turn-timer-detail${detail ? "" : " empty"}">${escapeHtml(detail)}</span>
+  </div>`;
+}
+
+function threadTilePaneTimerState(thread) {
+  return turnTimerStateFromThread(thread, {
+    activeRuntime: Boolean(thread && !isStaleActiveStatus(thread.status) && !thread.mobileStaleActiveTurn && isRunningStatus(thread.status)),
+    activeLabel: "运行",
+    liveFallbackLabel: "运行",
+  });
+}
+
 function updateTurnTimer() {
   const el = $("turnTimer");
   if (!el) return;
@@ -6362,38 +6442,10 @@ function updateTurnTimer() {
   updateOperationDurationBadges();
   if (state.threadTileMode && state.threadTileActiveIds.length) {
     updateThreadTilePaneStatusBadges();
-    setTurnTimerContent(el, 0);
-    el.classList.remove("visible", "settled", "active");
-    el.setAttribute("aria-hidden", "true");
+    applyTurnTimerState(el, { visible: false, active: false, settled: false, seconds: 0, detail: "" });
     return;
   }
-  const turn = currentLiveTurn();
-  if (!turn) {
-    const latest = latestTurn();
-    if (currentThreadHasActiveRuntimeStatus()) {
-      setTurnTimerContent(el, activeThreadFallbackElapsedSeconds(latest), activeThreadFallbackActivityLabel());
-      el.classList.add("visible", "active");
-      el.classList.remove("settled");
-      el.setAttribute("aria-hidden", "false");
-      return;
-    }
-    const finalSeconds = turnFinalSeconds(latest);
-    if (finalSeconds != null) {
-      setTurnTimerContent(el, finalSeconds, "已结束");
-      el.classList.add("visible", "settled");
-      el.classList.remove("active");
-      el.setAttribute("aria-hidden", "false");
-    } else {
-      setTurnTimerContent(el, 0);
-      el.classList.remove("visible", "settled", "active");
-      el.setAttribute("aria-hidden", "true");
-    }
-    return;
-  }
-  setTurnTimerContent(el, turnElapsedSeconds(turn), liveActivityLabelForTurn(turn) || liveTurnFallbackActivityLabel(turn));
-  el.classList.add("visible", "active");
-  el.classList.remove("settled");
-  el.setAttribute("aria-hidden", "false");
+  applyTurnTimerState(el, currentThreadTurnTimerState());
 }
 
 function updateTickTimer() {
@@ -11314,22 +11366,6 @@ function toggleThreadTileSwitchMenu(threadId) {
   return true;
 }
 
-function threadTilePaneStatusText(thread) {
-  const latest = latestTurnForThread(thread);
-  const live = latestLiveTurnForThread(thread);
-  if (live) {
-    const label = displayTurnStatus(live) || "running";
-    return `本轮 ${label} ${formatElapsedTime(turnElapsedSeconds(live))}`;
-  }
-  if (latest) {
-    const label = displayTurnStatus(latest);
-    const finalSeconds = turnFinalSeconds(latest);
-    return ["本轮", label, finalSeconds != null ? formatElapsedTime(finalSeconds) : ""].filter(Boolean).join(" ");
-  }
-  const status = statusText(thread && thread.status);
-  return status ? `状态 ${status}` : "";
-}
-
 function threadTileHasLiveThread() {
   if (!state.threadTileMode || !state.threadTileActiveIds.length) return false;
   return state.threadTileActiveIds.some((id) => {
@@ -11340,10 +11376,12 @@ function threadTileHasLiveThread() {
 
 function updateThreadTilePaneStatusBadges() {
   if (!state.threadTileMode) return;
-  document.querySelectorAll("[data-thread-tile-pane-state]").forEach((node) => {
-    const id = node.getAttribute("data-thread-tile-pane-state") || "";
-    const text = threadTilePaneStatusText(threadTileDisplayThread(id));
-    if (node.textContent !== text) node.textContent = text;
+  document.querySelectorAll("[data-thread-tile-pane]").forEach((pane) => {
+    const id = pane.getAttribute("data-thread-tile-pane") || "";
+    const container = pane.querySelector("[data-thread-tile-pane-state]");
+    if (!container) return;
+    const html = turnTimerStateHtml(threadTilePaneTimerState(threadTileDisplayThread(id)));
+    if (container.innerHTML !== html) container.innerHTML = html;
   });
 }
 
@@ -11644,7 +11682,7 @@ function renderThreadTilePane(threadId, layout, previousKeys = new Set()) {
   const id = String(threadId || thread && thread.id || "");
   const title = threadTitleForDisplay(thread) || id;
   const summary = threadTileSummary(id);
-  const paneState = threadTilePaneStatusText(thread || summary);
+  const paneStateHtml = turnTimerStateHtml(threadTilePaneTimerState(thread || summary));
   const error = threadTileError(id);
   const loading = state.threadTileLoadingIds.has(id) || (thread && thread.mobileLoading && !threadHasVisibleConversationTurns(thread));
   const readWarning = threadReadWarningMessage(thread);
@@ -11662,7 +11700,6 @@ function renderThreadTilePane(threadId, layout, previousKeys = new Set()) {
   const active = id && id === effectiveThreadTileSelectedThreadId() ? " active" : "";
   const operationDock = renderThreadTileOperationDock(thread, previousKeys);
   const switchMenu = renderThreadTileSwitchMenu(id);
-  const paneStatusClass = paneState ? " visible" : "";
   return `<section class="thread-tile-pane${active}" data-thread-tile-pane="${escapeHtml(id)}" data-render-key="${escapeHtml(`thread-tile|${id}`)}">
     <header class="thread-tile-pane-header">
       <div class="thread-tile-pane-title-wrap">
@@ -11671,7 +11708,7 @@ function renderThreadTilePane(threadId, layout, previousKeys = new Set()) {
         </button>
         ${switchMenu}
       </div>
-      <div class="thread-tile-pane-state${paneStatusClass}" data-thread-tile-pane-state="${escapeHtml(id)}">${escapeHtml(paneState)}</div>
+      <div class="thread-tile-pane-state-slot" data-thread-tile-pane-state>${paneStateHtml}</div>
     </header>
     <div class="thread-tile-pane-body"><div class="thread-tile-pane-content">${body}</div></div>
     ${operationDock}
@@ -11718,7 +11755,10 @@ function bindThreadTileActions() {
   const conversation = $("conversation");
   if (!conversation) return;
   conversation.querySelectorAll("[data-thread-tile-pane]").forEach((pane) => {
-    const selectPane = () => setThreadTileSelectedThread(pane.getAttribute("data-thread-tile-pane") || "");
+    const selectPane = (event) => {
+      if (event && event.target && event.target.closest("[data-thread-tile-title], [data-thread-tile-switch-target], .thread-tile-switch-menu")) return;
+      setThreadTileSelectedThread(pane.getAttribute("data-thread-tile-pane") || "");
+    };
     pane.addEventListener("pointerdown", selectPane, { passive: true });
     pane.addEventListener("focusin", selectPane);
   });

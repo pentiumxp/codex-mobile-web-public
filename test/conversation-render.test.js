@@ -1710,7 +1710,9 @@ test("turn timer prefers live item activity over idle sync labels", () => {
   assert.match(appJs, /function liveActivityLabelForTurn\(/);
   assert.match(appJs, /function activeLiveOperationItemForTurn\(/);
   assert.match(appJs, /function currentThreadHasActiveRuntimeStatus\(/);
-  assert.match(appJs, /function activeThreadFallbackElapsedSeconds\(/);
+  assert.match(appJs, /function currentThreadTurnTimerState\(/);
+  assert.match(appJs, /function turnTimerStateFromThread\(/);
+  assert.match(appJs, /function turnTimerStateHtml\(/);
   assert.match(appJs, /function activeThreadFallbackActivityLabel\(/);
   assert.match(functionBody("liveActivityLabelForTurn"), /const operation = activeLiveOperationItemForTurn\(turn\);/);
   assert.match(functionBody("liveActivityLabelForTurn"), /if \(operation\) return activityLabelForItem\(operation\);/);
@@ -1726,8 +1728,10 @@ test("turn timer prefers live item activity over idle sync labels", () => {
   assert.match(functionBody("markIdleActivity"), /const liveTurn = currentLiveTurn\(\);/);
   assert.match(functionBody("markIdleActivity"), /if \(liveActivityLabelForTurn\(liveTurn\)\) return;/);
   assert.match(functionBody("markIdleActivity"), /if \(isIdleSyncActivityLabel\(label\) && liveTurn\) return;/);
-  assert.match(functionBody("updateTurnTimer"), /liveActivityLabelForTurn\(turn\) \|\| liveTurnFallbackActivityLabel\(turn\)/);
-  assert.match(functionBody("updateTurnTimer"), /if \(currentThreadHasActiveRuntimeStatus\(\)\) \{[\s\S]*activeThreadFallbackElapsedSeconds\(latest\)[\s\S]*activeThreadFallbackActivityLabel\(\)/);
+  assert.match(functionBody("currentThreadTurnTimerState"), /liveActivityLabelForTurn\(live\) \|\| liveTurnFallbackActivityLabel\(live\)/);
+  assert.match(functionBody("currentThreadTurnTimerState"), /activeRuntime: currentThreadHasActiveRuntimeStatus\(\)/);
+  assert.match(functionBody("currentThreadTurnTimerState"), /activeLabel: activeThreadFallbackActivityLabel\(\)/);
+  assert.match(functionBody("updateTurnTimer"), /applyTurnTimerState\(el, currentThreadTurnTimerState\(\)\)/);
   assert.match(functionBody("updateTickTimer"), /if \(!currentLiveTurn\(\) && !currentThreadHasActiveRuntimeStatus\(\)\) return;/);
   assert.match(functionBody("liveTurnFallbackActivityLabel"), /return "运行";/);
 });

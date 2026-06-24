@@ -94,7 +94,9 @@ test("thread tile rendering is read-only and separate from full conversation ren
   const tilePaneBody = functionBody(appJs, "renderThreadTilePane");
   assert.match(tilePaneBody, /thread-tile-pane-content/);
   assert.match(tilePaneBody, /effectiveThreadTileSelectedThreadId\(\)/);
-  assert.match(tilePaneBody, /thread-tile-pane-state/);
+  assert.match(tilePaneBody, /turnTimerStateHtml\(threadTilePaneTimerState\(thread \|\| summary\)\)/);
+  assert.match(tilePaneBody, /thread-tile-pane-state-slot/);
+  assert.match(tilePaneBody, /data-thread-tile-pane-state/);
   assert.match(tilePaneBody, /data-thread-tile-title/);
   assert.match(tilePaneBody, /renderThreadTileSwitchMenu\(id\)/);
   assert.match(tilePaneBody, /renderThreadTileOperationDock\(thread, previousKeys\)/);
@@ -105,6 +107,7 @@ test("thread tile rendering is read-only and separate from full conversation ren
   const tileActionsBody = functionBody(appJs, "bindThreadTileActions");
   assert.match(tileActionsBody, /data-thread-tile-pane/);
   assert.match(tileActionsBody, /setThreadTileSelectedThread/);
+  assert.match(tileActionsBody, /closest\("\[data-thread-tile-title\], \[data-thread-tile-switch-target\], \.thread-tile-switch-menu"\)/);
   assert.match(tileActionsBody, /data-thread-tile-title/);
   assert.match(tileActionsBody, /data-thread-tile-switch-target/);
   assert.match(tileActionsBody, /replaceThreadTilePaneThread/);
@@ -141,8 +144,15 @@ test("thread tile rendering is read-only and separate from full conversation ren
   const mobileOperationBody = functionBody(appJs, "renderMobileOperationStack");
   assert.match(mobileOperationBody, /options\.toggleAttribute/);
 
+  assert.match(appJs, /function turnTimerStateFromThread\(/);
+  assert.match(appJs, /function turnTimerStateHtml\(/);
+  assert.match(appJs, /function threadTilePaneTimerState\(/);
+  assert.match(functionBody(appJs, "updateTurnTimer"), /applyTurnTimerState\(el, currentThreadTurnTimerState\(\)\)/);
+  assert.match(functionBody(appJs, "updateThreadTilePaneStatusBadges"), /turnTimerStateHtml\(threadTilePaneTimerState\(threadTileDisplayThread\(id\)\)\)/);
   assert.match(stylesCss, /\.conversation\.thread-tile-mode\s*{/);
   assert.match(stylesCss, /\.main\.thread-tile-main \.topbar\s*{/);
+  assert.match(stylesCss, /\.main\.thread-tile-main > \.live-operation-dock\s*{/);
+  assert.match(stylesCss, /\.conversation\.thread-tile-mode\s*{[\s\S]*max\(env\(safe-area-inset-top, 0px\), var\(--host-top-safe-area, 0px\)\)/);
   assert.match(stylesCss, /\.thread-tile-board\s*{/);
   assert.match(stylesCss, /\.thread-tile-pane\s*{/);
   assert.match(stylesCss, /\.thread-tile-pane-body\s*{/);

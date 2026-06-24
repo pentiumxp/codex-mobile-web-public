@@ -167,15 +167,22 @@ Implementation path:
     across refresh, visible non-current panes refresh through bounded
     recent-detail reads plus notification-triggered updates, and command/tool
     status appears inside that pane through the same compact mobile operation
-    bubble/sheet vocabulary. The current v416 middle state keeps one shared
+    bubble/sheet vocabulary. Pane header run state should reuse the same
+    turn-timer vocabulary as the single-thread page (`本轮`, elapsed time, and
+    thinking/output/running/settled detail) instead of inventing a separate
+    status string. The current v417 middle state keeps one shared
     bottom Composer, but its draft key, send target, Stop/steer state, local
     echo, failure receipt, task-card command source, and ChatGPT Pro source
     thread must follow the selected active pane without reordering the tile
     board. Pane thread switching is slot-local: selecting a thread from a pane
     title replaces that pane's thread id and must not navigate the whole page
-    into single-thread mode. Do not reintroduce a global iPad command dock,
+    into single-thread mode; title/menu pointer handling must not trigger a
+    pane-select re-render before the click opens the menu. Do not reintroduce
+    a global iPad command dock,
     global tile title strip, per-turn Active/Completed footer, or always-visible
-    pane bottom button in tile mode. Treat
+    pane bottom button in tile mode. On touch wide screens, command state is a
+    floating operation bubble/sheet and must not reserve a bottom layout row.
+    Treat
     this automatic tile policy as an interim surface. The long-term product
     direction is a user-managed
     split-screen reader: users can add/close panes, drag pane widths, decide

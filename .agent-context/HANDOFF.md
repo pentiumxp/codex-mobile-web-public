@@ -1,9 +1,70 @@
+# 2026-06-24 - v417 tile safe-area, timer reuse, and touch dock fix in progress
+
+- Scope:
+  - Implemented, validated, committed locally, and deployed to Mac production.
+  - Not pushed to Public.
+  - Commit: this local commit (`fix: align tiled pane chrome with mobile shell`).
+- Trigger:
+  - After v416 deployment, user reported tile content was too high and collided
+    with the system notification/status area.
+  - User also reported the command/status box still reserved a bottom row even
+    after adopting mobile-style bubbles, causing wasted vertical space.
+  - User clarified pane header run status should be the same as the
+    single-thread `turnTimer`: `本轮`, elapsed time, and thinking/running/output
+    detail, not a separate custom string.
+  - User reported tapping a pane thread title did not open the thread switch
+    list.
+- Change:
+  - PWA shell bumped to `codex-mobile-shell-v417`.
+  - Extracted shared turn-timer state/render helpers so the single-thread
+    header and tile pane header use the same elapsed-time/detail vocabulary.
+  - Tile pane header now renders the timer through the same
+    `turn-timer-time` / `turn-timer-detail` structure.
+  - Pane title/menu pointer handling no longer lets pane `pointerdown`
+    selection re-render before the title click opens the switch menu.
+  - Tile mode top padding now includes the browser and Home AI host safe-area
+    inset.
+  - Tile mode removes the global live-operation dock from layout flow, and
+    touch wide screens use fixed mobile operation bubble/sheet instead of a
+    bottom layout row.
+  - Tile pane body no longer reserves bottom padding for operation bubbles;
+    bubbles and bottom arrows are overlays.
+- Docs updated:
+  - `README.md`
+  - `docs/COMPLEX_FEATURE_PATHS.md`
+  - `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md`
+- Validation:
+  - `node --check public/app.js && node --check public/sw.js`
+  - `node --test test/thread-tile-layout-ui.test.js test/mobile-viewport.test.js test/collab-agent-render.test.js`
+  - `node --test test/conversation-render.test.js test/thread-tile-layout.test.js test/live-operation-dock-state.test.js test/turn-scroll-controls.test.js`
+  - `node --test test/thread-tile-layout.test.js test/live-operation-dock-state.test.js test/turn-scroll-controls.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+  - `npm test` (`734` tests passed)
+  - `npm run check`
+  - `npm run check:macos`
+  - `git diff --check`
+  - Local temporary server smoke:
+    `CODEX_MOBILE_PORT=8799 CODEX_MOBILE_HOST=127.0.0.1 node server.js`;
+    `/api/public-config` returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v417` and
+    `shellCacheName=codex-mobile-shell-v417`; fetched `app.js`/`styles.css`
+    contained the v417 tile timer/menu/touch-dock selectors.
+  - Central deploy script:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --execute --json`
+  - Production health returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v417`,
+    `shellCacheName=codex-mobile-shell-v417`,
+    `workspacePath=/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`,
+    and `activeProfileId=default`.
+- Next:
+  - Wait for production/user verification. Public push remains blocked until
+    explicitly requested.
+
 # 2026-06-24 - v416 tile pane compact header and slot-local thread switch completed locally
 
 - Scope:
   - Implemented, validated, committed locally, and deployed to Mac production.
   - Not pushed to Public.
-  - Commit: `7cbce28 feat: compact thread tile panes`.
+  - Commit: this local commit (`feat: compact thread tile panes`).
 - Trigger:
   - User clarified that tile mode should preserve vertical space: no global
     `平铺视图` strip, no pane path/time/open button chrome, no per-turn

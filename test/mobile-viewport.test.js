@@ -147,8 +147,8 @@ test("turn timer preserves elapsed digits on narrow embedded viewports", () => {
 });
 
 test("public app shell cache advances after local stream item insertion", () => {
-  assert.match(swJs, /codex-mobile-shell-v416/);
-  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v416"/);
+  assert.match(swJs, /codex-mobile-shell-v417/);
+  assert.match(appJs, /CLIENT_BUILD_ID = "0\.1\.11\|codex-mobile-shell-v417"/);
   assert.match(swJs, /"\/thread-status-hints\.js"/);
   assert.match(swJs, /"\/thread-performance-metrics\.js"/);
   assert.match(swJs, /"\/live-operation-dock-state\.js"/);
@@ -336,6 +336,9 @@ test("public app shell cache advances after local stream item insertion", () => 
   assert.match(stylesCss, /\.live-operation-dock\s*{[\s\S]*min-height:\s*var\(--live-operation-dock-compact-height, 40px\);[\s\S]*contain:\s*layout paint;/);
   assert.match(stylesCss, /\.live-operation-dock:not\(\[data-mode="expanded"\]\)\s*{[\s\S]*height:\s*var\(--live-operation-dock-compact-height, 40px\);/);
   assert.match(stylesCss, /\.live-operation-dock:not\(\[data-mode="expanded"\]\) \.live-operation\s*{[\s\S]*height:\s*32px;[\s\S]*max-height:\s*32px;/);
+  assert.match(stylesCss, /@media \(pointer: coarse\)[\s\S]*\.live-operation-dock\s*{[\s\S]*position:\s*fixed;[\s\S]*bottom:\s*calc\(var\(--composer-height, 92px\) \+ 8px\);/);
+  assert.match(stylesCss, /@media \(pointer: coarse\)[\s\S]*\.live-operation-dock-desktop\s*{[\s\S]*display:\s*none;/);
+  assert.match(stylesCss, /@media \(pointer: coarse\)[\s\S]*\.mobile-operation-stack\s*{[\s\S]*display:\s*grid;/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.live-operation-dock\s*{[\s\S]*position:\s*fixed;[\s\S]*bottom:\s*calc\(var\(--composer-height, 92px\) \+ 8px\);/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.live-operation-dock:not\(\[data-mode="expanded"\]\)\s*{[\s\S]*height:\s*auto;/);
   assert.match(stylesCss, /@media \(max-width: 760px\)[\s\S]*\.mobile-operation-bubble\s*{[\s\S]*max-width:\s*min\(78vw, 420px\);/);
