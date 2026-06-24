@@ -1,6 +1,6 @@
 # Home AI Platform Contract Pointer
 
-Last updated: 2026-06-23.
+Last updated: 2026-06-25.
 Home AI platform contract version: `20260623-v5`.
 Home AI root-cause contract version: `20260623-v3`.
 Home AI fallback governance contract version: `20260623-v1`.
@@ -56,7 +56,7 @@ Mobile docs should link to that registry instead of copying entries.
 | --- | --- |
 | `plugin_id` | `codex-mobile` |
 | `workspace_path_windows` | `C:\Users\xuxin\Documents\codex-mobile-web` |
-| `current_branch_snapshot` | `main` with local commits through `89cda66` before this production-evidence update |
+| `current_branch_snapshot` | `main` with local commits through `8a41a1e` before this production-evidence update |
 | `production_source_path_macos` | `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web` |
 | `production_data_root_macos` | `/Users/xuxin/.codex-mobile-web` |
 | `windows_dev_base_url` | `http://127.0.0.1:8787` |
@@ -200,40 +200,46 @@ Minimum closure for Codex Mobile production changes:
 
 ## Latest Production Evidence
 
-2026-06-24 Mac production deployment:
+2026-06-25 Mac production deployment:
 
 - Production source path:
   `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
 - LaunchDaemon: `system/com.hermesmobile.plugin.codex-mobile`.
 - Loopback production URL: `http://127.0.0.1:8787`.
-- Current verified shell after wide tile-column deployment:
-  `0.1.11|codex-mobile-shell-v426`.
-- Source ref deployed:
-  `8ca8dae0dffc` with clean source worktree.
+- Current verified shell after manual tile-width and task-card protocol deployment:
+  `0.1.11|codex-mobile-shell-v427`.
+- Source ref deployed for code change:
+  `8a41a1e7e287` with clean source worktree.
 - Backup path:
-  `/Users/hermes-host/HermesMobile/backups/deploy/20260624T161704Z-plugin-codex-mobile-web-wide-tile-columns-v426`.
+  `/Users/hermes-host/HermesMobile/backups/deploy/20260624T165259Z-plugin-codex-mobile-web-codex-mobile-v427-return-reasoning`.
 - Production smoke confirmed `/api/public-config` reports
-  `clientBuildId=0.1.11|codex-mobile-shell-v426`,
-  `shellCacheName=codex-mobile-shell-v426`, `version=0.1.11`,
-  `authRequired=true`, and production `workspacePath` above.
+  `clientBuildId=0.1.11|codex-mobile-shell-v427`,
+  `shellCacheName=codex-mobile-shell-v427`, `version=0.1.11`,
+  `authRequired=true`, production `workspacePath` above, and
+  `reasoningEffortOptions=["low","medium","high","xhigh"]`.
 - Source/production short SHA-256 samples matched after deploy:
-  `public/app.js` `4c57343966276422`,
-  `public/sw.js` `33fce8120b4a6d59`,
-  `public/plugin-embed.js` `2b103de8c50a31ed`,
-  `public/thread-tile-layout.js` `081aa0816adee148`,
-  `README.md` `b5c4a3058ae7642f`,
-  `docs/ARCHITECTURE.md` `18a0fa65895bb062`,
-  `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` `bb360515606aa512`, and
-  `docs/MODULES.md` `515112dbd89beed2`.
-- Focused validation before deploy included route-hint, Hermes embed, tile,
-  viewport, goal, and task-card route tests; full validation passed
-  `npm run check`, `npm run check:macos`, `npm test` (`755` tests), and
-  `git diff --check`.
+  `server.js` `8c699be0498110e3`,
+  `adapters/thread-task-card-service.js` `bc80c67ab8c268dc`,
+  `scripts/codex-mobile-mcp-server.js` `48c20abb34be4735`,
+  `scripts/create-thread-task-card.js` `fef03e3a95c019bc`,
+  `scripts/return-thread-task-card.js` `3ab920d25b3bd16a`,
+  `public/app.js` `0313548ef2e58ca5`,
+  `public/sw.js` `7a25093c35b599bf`,
+  `public/thread-tile-layout.js` `f57e11f1a35f3f3f`,
+  `README.md` `4f104656288cc2db`,
+  `docs/ARCHITECTURE.md` `f9d251988366e72f`,
+  `docs/MODULES.md` `ffc104c0ab8de57d`, and
+  `docs/CROSS_THREAD_TASK_CARDS_IMPLEMENTATION.md` `caf0ae54810660b9`.
+- Focused validation before deploy included task-card service/route/MCP,
+  tile-layout, viewport, and goal tests (`68` tests); full validation passed
+  `npm run check`, `npm run check:macos`, `npm test` (`759` tests), and
+  `git diff --check`. CodeGraph sync/status reported the index up to date.
 - Deployment validation also ran the central production file-hash, LaunchDaemon,
   public-config, and non-strict auth-profile audit checks. The auth-profile
   audit remained non-blocking with zero blocking issues.
-- The earlier 2026-06-24 `codex-mobile-shell-v425` route-hint / tile-pane
-  evidence is historical after the v426 wide tile-column deployment.
+- The earlier 2026-06-24 `codex-mobile-shell-v426` wide tile-column and
+  `codex-mobile-shell-v425` route-hint / tile-pane evidence is historical after
+  the v427 manual tile-width and task-card protocol deployment.
 - The older 2026-06-09 `codex-mobile-shell-v251` image-rendering evidence is
   historical only and must not be treated as the latest production shell.
 

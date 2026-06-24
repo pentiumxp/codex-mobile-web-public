@@ -1,3 +1,86 @@
+# 2026-06-25 - v427 manual tile width and task-card protocol deployed
+
+- Scope:
+  - Implemented, validated, committed, and deployed to Mac production.
+  - Not pushed Public.
+  - Code commit:
+    - `8a41a1e feat: add task-card reasoning return controls`
+- Trigger:
+  - User reported a 6K/high-DPI desktop still wrapped the 5th tile pane after
+    v426. The actual browser layout width is the macOS CSS `Looks like` width
+    rather than display physical pixels, so automatic 420px panes still produced
+    only 4 columns with the sidebar present.
+  - User also reported return task cards showing as Pending/Approve in the source
+    thread. Root cause: `return_to_source` went through the ordinary `/reply`
+    reverse-card path, whose persisted card status was `pending`, and the service
+    did not distinguish source-thread return closure from an ordinary reply.
+  - Home AI task card `ttc_f03349b5d390fa1d87` requested first-class task-card
+    reasoning control for deep Product Reality audits.
+- Change:
+  - `public/thread-tile-layout.js` now accepts the explicit desired pane count.
+    Automatic mode keeps the 420 CSS px desktop pane width; manual mode derives
+    pane width from available CSS width and requested pane count, with a 300 CSS
+    px desktop safety floor. A 2560 CSS px desktop with a 520px sidebar now fits
+    5 manual panes in one row.
+  - PWA shell cache bumped to `codex-mobile-shell-v427`.
+  - `adapters/thread-task-card-service.js` now validates optional
+    `reasoningEffort` (`low|medium|high|xhigh`), stores it on delivery metadata,
+    shows it in injected task-card text, and persists bounded
+    `injectionRuntime` evidence after approval.
+  - The task-card approval executor in `server.js` applies requested
+    `reasoningEffort` over the inherited target-thread runtime before
+    `thread/resume` / `turn/start`.
+  - `return_to_source`, `scripts/return-thread-task-card.js`, and `/reply` with
+    `returnToSource:true` now create source-direct approved return cards instead
+    of ordinary pending reply cards. Reusing an old `task-card-return:*`
+    idempotency key can promote an already-created pending return card through
+    the same direct-return path.
+  - MCP/script/dynamic-tool schemas now expose bounded `reasoningEffort` and
+    `partially_completed` return status.
+  - `docs/HOME_AI_PLATFORM_CONTRACT.md` latest production evidence updated from
+    v426 to v427 after deployment.
+- Validation before deploy:
+  - `node --check` for changed server/service/script/static files passed.
+  - Focused suite:
+    `node --test test/thread-task-card-service.test.js test/thread-task-card-route.test.js test/codex-mobile-mcp-server.test.js test/thread-tile-layout.test.js test/thread-tile-layout-ui.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js`
+    passed (`68` tests).
+  - `npm run check` passed.
+  - `npm run check:macos` passed.
+  - `npm test` passed (`759` tests).
+  - `git diff --check` passed.
+  - `codegraph sync && codegraph status` reported the index up to date, with an
+    older-engine-version warning only.
+- Production deploy:
+  - Central Home AI deploy script used from `/Users/hermes-dev/HermesMobileDev/app`:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart auto --health-url http://127.0.0.1:8787/api/public-config --reason codex-mobile-v427-return-reasoning --execute --json`
+  - Source ref deployed:
+    `8a41a1e7e287`.
+  - Production target:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup path reported by deployment:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260624T165259Z-plugin-codex-mobile-web-codex-mobile-v427-return-reasoning`.
+  - Post-deploy `/api/public-config` returned `version=0.1.11`,
+    `clientBuildId=0.1.11|codex-mobile-shell-v427`,
+    `shellCacheName=codex-mobile-shell-v427`, `authRequired=true`,
+    production workspace path
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`, and
+    `reasoningEffortOptions=["low","medium","high","xhigh"]`.
+  - Source/production short SHA-256 samples matched for `server.js`,
+    `adapters/thread-task-card-service.js`, task-card scripts, `public/app.js`,
+    `public/sw.js`, `public/thread-tile-layout.js`, README, and task-card/
+    architecture/module docs.
+  - LaunchDaemon `system/com.hermesmobile.plugin.codex-mobile` was running after
+    deploy.
+  - Central deployment audit remained non-blocking with `blockingIssueCount=0`.
+- Operational notes:
+  - Browser/PWA clients must load v427 shell/cache to exercise the manual
+    tile-width behavior.
+  - Future deep audit task cards should pass `reasoningEffort:"xhigh"` through
+    `delegate_to_thread` or `scripts/create-thread-task-card.js`.
+  - Target thread local final answers still do not count as source-thread return
+    cards; use `codex_mobile.return_to_source` or
+    `scripts/return-thread-task-card.js`.
+
 # 2026-06-24 - Wide tile-column v426 deployed
 
 - Scope:
