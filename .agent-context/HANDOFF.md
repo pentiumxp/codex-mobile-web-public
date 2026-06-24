@@ -1,3 +1,53 @@
+# 2026-06-24 - v412 iPad landscape tile density deployed to Mac production
+
+- Scope:
+  - Committed locally and deployed to Mac production.
+  - Not pushed to Public.
+- Trigger:
+  - User selected `设置 -> 显示 -> 平铺` on iPad, but the thread detail still
+    stayed single-thread.
+  - User clarified that iPad Pro 11 landscape should have enough width for
+    roughly three thread panes compared with a vertical iPhone width.
+  - User also clarified the long-term product direction: this should evolve
+    into a user-managed split-screen reader where panes can be added, closed,
+    and resized by dragging, rather than only an automatic viewport heuristic.
+- Root cause / boundary:
+  - v411 made tile mode an explicit setting, but the render policy still
+    required the v410 900px landscape threshold before it would render tiles.
+  - In Home AI embedded iPad mode, the actual iframe CSS viewport can be
+    narrower than the physical screen width after host chrome/sidebar layout,
+    so the setting was persisted but the capability check still rejected tile.
+- Change:
+  - `public/thread-tile-layout.js` lowers tablet landscape entry width to
+    760px and tablet pane minimum width to 260px.
+  - Focused tests now cover 820px embedded iPad landscape and iPad Pro 11
+    landscape with a 360px sidebar, both yielding three panes.
+  - Settings status text reports `当前视口：平铺 N 栏`, width insufficiency,
+    portrait single-thread, or normal single-thread so the user can distinguish
+    a stored setting from an unavailable viewport.
+  - PWA shell bumped to `codex-mobile-shell-v412`.
+  - `README.md`, `docs/COMPLEX_FEATURE_PATHS.md`, and
+    `docs/ARCHITECTURE_OPTIMIZATION_PLAN.md` record that current automatic
+    tile mode is an interim surface; the long-term direction is a
+    user-managed draggable split reader with explicit pane identity, widths,
+    order, active pane, and detail-read concurrency caps.
+- Validation:
+  - `node --check public/thread-tile-layout.js && node --check public/app.js && node --check public/sw.js && node --test test/thread-tile-layout.test.js test/thread-tile-layout-ui.test.js test/mobile-viewport.test.js test/thread-goal-service.test.js test/thread-task-card-route.test.js`
+  - `npm run check`
+  - `git diff --check`
+  - `npm test` passed (`733` tests).
+  - `npm run check:macos`
+- Production deploy:
+  - Used the Home AI central deploy script directly:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --execute --json`.
+  - Target: `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Health check returned HTTP `200` with
+    `clientBuildId=0.1.11|codex-mobile-shell-v412`,
+    `shellCacheName=codex-mobile-shell-v412`, and
+    `workspacePath=/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - `launchctl print system/com.hermesmobile.plugin.codex-mobile` reported
+    the service running.
+
 # 2026-06-24 - v411 thread tile display setting deployed to Mac production
 
 - Scope:

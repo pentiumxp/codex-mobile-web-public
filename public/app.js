@@ -438,7 +438,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v411";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v412";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -11234,6 +11234,19 @@ function bindThreadTileActions() {
   });
 }
 
+function threadTileLayoutStatusText(layout) {
+  if (!state.threadTileMode) return "当前视口：单线程";
+  if (layout && layout.enabled) {
+    const columns = Number(layout.columns || 0);
+    return columns > 1 ? `当前视口：平铺 ${columns} 栏` : "当前视口：平铺可用";
+  }
+  const reason = String(layout && layout.reason || "");
+  if (reason === "tablet-portrait") return "当前视口：竖屏单线程";
+  if (reason === "insufficient-width" || reason === "narrow") return "当前视口：宽度不足";
+  if (reason === "disabled") return "当前视口：单线程";
+  return "当前视口：暂不可平铺";
+}
+
 function syncThreadTileToggle() {
   const layout = threadTileLayout({ enabled: true });
   document.querySelectorAll("[data-thread-display-choice]").forEach((button) => {
@@ -11245,6 +11258,8 @@ function syncThreadTileToggle() {
     if (isTile && !layout.enabled && !state.threadTileMode) button.setAttribute("title", "平铺会在 iPad 横屏或宽屏可用时生效");
     else button.removeAttribute("title");
   });
+  const status = $("threadDisplaySettingsStatus");
+  if (status) status.textContent = threadTileLayoutStatusText(layout);
 }
 
 function setThreadTileMode(enabled) {

@@ -158,7 +158,12 @@ Implementation path:
     width for two or three panes. `public/app.js` may own DOM assembly and event
     binding, but tile panes are read-only recent-detail windows; composer,
     interrupt, approvals, and live operation dock state remain bound to the
-    current active thread.
+    current active thread. Treat this automatic tile policy as an interim
+    surface. The long-term product direction is a user-managed split-screen
+    reader: users can add/close panes, drag pane widths, and decide how many
+    threads to keep visible. That future split manager must keep pane identity,
+    width persistence, detail-read concurrency caps, and current-thread action
+    ownership explicit instead of extending the automatic viewport heuristic.
 17. Existing v3 behavior still uses
     `test/thread-completion-diagnostic-service.test.js`,
     `test/thread-item-timestamp-enrichment.test.js`,

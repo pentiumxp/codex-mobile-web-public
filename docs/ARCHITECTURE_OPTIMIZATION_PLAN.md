@@ -103,6 +103,22 @@ Target:
 - Prefer evidence-driven fixes over client-only duplicate filtering or visual
   masking.
 
+### Phase 5: User-Managed Split Reading
+
+Target:
+
+- Evolve the current explicit `单线程` / `平铺` display setting into a
+  split-screen reader where the user can add panes, close panes, drag widths,
+  and decide how many threads stay visible.
+- Keep the current automatic tile policy as the interim capability gate for
+  iPad/desktop width, not as the final interaction model.
+- Preserve action ownership: composer, approvals, interrupts, active-turn
+  steering, and operation dock state remain bound to the current active thread
+  unless a future pane is explicitly promoted to active.
+- Add a dedicated pane-state helper before expanding `public/app.js`: pane ids,
+  widths, ordering, active pane, max concurrent detail reads, and mobile
+  collapse behavior should be testable without DOM side effects.
+
 ## Release Rule
 
 Follow the current release order:

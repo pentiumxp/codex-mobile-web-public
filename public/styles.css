@@ -1965,6 +1965,13 @@ html.visual-recovering body::before {
   line-height: 1.3;
 }
 
+.settings-status {
+  min-height: 14px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
 .codex-profile-settings {
   display: grid;
   gap: 6px;

@@ -103,6 +103,40 @@ test("thread tile layout keeps iPad embedded landscape available below split hei
   assert.equal(desktopPointerIpad.columns, 3);
 });
 
+test("thread tile layout supports narrower Home AI iPad landscape with three panes", () => {
+  const layout = tile.layoutForViewport({
+    enabled: true,
+    viewportWidth: 820,
+    viewportHeight: 620,
+    sidebarWidth: 0,
+    coarsePointer: true,
+    orientation: "landscape",
+    menuOverlay: true,
+  });
+
+  assert.equal(layout.enabled, true);
+  assert.equal(layout.reason, "tablet-landscape");
+  assert.equal(layout.columns, 3);
+  assert.equal(layout.maxPanes, 3);
+});
+
+test("thread tile layout gives iPad Pro 11 landscape three panes after sidebar", () => {
+  const layout = tile.layoutForViewport({
+    enabled: true,
+    viewportWidth: 1194,
+    viewportHeight: 834,
+    sidebarWidth: 360,
+    coarsePointer: true,
+    orientation: "landscape",
+    menuOverlay: false,
+  });
+
+  assert.equal(layout.enabled, true);
+  assert.equal(layout.reason, "tablet-landscape");
+  assert.equal(layout.columns, 3);
+  assert.equal(layout.maxPanes, 3);
+});
+
 test("thread tile id selection starts with current thread then fills recents", () => {
   assert.deepEqual(tile.selectThreadTileIds({
     currentThreadId: "thread-2",
