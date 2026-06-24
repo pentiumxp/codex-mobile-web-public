@@ -463,7 +463,7 @@ const THREAD_LIST_PAGE_LIMIT = 40;
 const THREAD_LIST_DEFERRED_FALLBACK_DELAY_MS = 8000;
 const THREAD_LIST_DEFERRED_FALLBACK_RETRY_MS = 2500;
 const LIVE_OPERATION_BUBBLE_MIN_VISIBLE_MS = liveOperationDockPolicy.DEFAULT_MIN_VISIBLE_MS;
-const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v425";
+const CLIENT_BUILD_ID = "0.1.11|codex-mobile-shell-v426";
 const CODEX_PROFILE_SWITCH_STAGES = Object.freeze([
   { id: "profile_lookup", label: "正在读取目标 Profile" },
   { id: "workspace_trust", label: "正在同步目标账号的工作区信任" },
@@ -11289,7 +11289,8 @@ function threadTileLayout(options = {}) {
     sidebarWidth,
     coarsePointer: isCoarsePointerViewport(),
     menuOverlay,
-    maxPanes: threadTileLayoutPolicy.DEFAULT_MAX_PANES,
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+    recommendedMaxPanes: threadTileLayoutPolicy.DEFAULT_MAX_PANES,
     verticalChromePx: threadTileVerticalChromePx(),
   });
 }
@@ -11303,7 +11304,7 @@ function normalizeThreadTilePaneCount(value, fallback = 0) {
 function threadTileLayoutCapacity(layout = threadTileLayout()) {
   return Math.max(1, Math.min(
     threadTileLayoutPolicy.DEFAULT_MAX_PANES,
-    Math.floor(Number(layout && layout.maxPanes || 1)) || 1,
+    Math.floor(Number(layout && (layout.recommendedMaxPanes || layout.maxPanes) || 1)) || 1,
   ));
 }
 

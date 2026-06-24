@@ -43,14 +43,15 @@
     const menuOverlay = input.menuOverlay === true;
     const tabletLandscape = landscapeTile && (coarsePointer || menuOverlay);
     const maxPanes = clampInteger(input.maxPanes || DEFAULT_MAX_PANES, 1, DEFAULT_USER_MAX_PANES);
+    const recommendedMaxPanes = clampInteger(input.recommendedMaxPanes || DEFAULT_MAX_PANES, 1, maxPanes);
     if (!enabled || viewportWidth <= 0 || viewportHeight <= 0) {
-      return { enabled: false, reason: "disabled", columns: 1, rows: 1, maxPanes: 1 };
+      return { enabled: false, reason: "disabled", columns: 1, rows: 1, maxPanes: 1, recommendedMaxPanes: 1 };
     }
     if (coarsePointer && orientation !== "landscape") {
-      return { enabled: false, reason: "tablet-portrait", columns: 1, rows: 1, maxPanes: 1 };
+      return { enabled: false, reason: "tablet-portrait", columns: 1, rows: 1, maxPanes: 1, recommendedMaxPanes: 1 };
     }
     if (menuOverlay && !tabletLandscape) {
-      return { enabled: false, reason: "narrow", columns: 1, rows: 1, maxPanes: 1 };
+      return { enabled: false, reason: "narrow", columns: 1, rows: 1, maxPanes: 1, recommendedMaxPanes: 1 };
     }
 
     const minPaneWidth = positiveNumber(input.minPaneWidth, tabletLandscape ? DEFAULT_MIN_TABLET_PANE_WIDTH : DEFAULT_MIN_DESKTOP_PANE_WIDTH);
@@ -60,10 +61,10 @@
     const rawColumns = Math.floor(availableWidth / minPaneWidth);
     const rawRows = Math.floor(availableHeight / minPaneHeight);
     const minimumColumns = tabletLandscape ? 2 : 2;
-    const maximumColumns = 4;
+    const maximumColumns = tabletLandscape ? Math.min(4, maxPanes) : maxPanes;
     const columns = Math.max(minimumColumns, Math.min(maximumColumns, rawColumns || 0));
     if (columns < minimumColumns || availableWidth < minPaneWidth * minimumColumns * 0.86) {
-      return { enabled: false, reason: "insufficient-width", columns: 1, rows: 1, maxPanes: 1, availableWidth, availableHeight };
+      return { enabled: false, reason: "insufficient-width", columns: 1, rows: 1, maxPanes: 1, recommendedMaxPanes: 1, availableWidth, availableHeight };
     }
     const rows = Math.max(1, Math.min(tabletLandscape ? 1 : 2, rawRows || 1));
     return {
@@ -72,6 +73,7 @@
       columns,
       rows,
       maxPanes: Math.max(1, Math.min(maxPanes, columns * rows)),
+      recommendedMaxPanes: Math.max(1, Math.min(recommendedMaxPanes, columns * rows)),
       availableWidth,
       availableHeight,
       minPaneWidth,

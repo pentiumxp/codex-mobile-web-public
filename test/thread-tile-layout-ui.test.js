@@ -64,8 +64,11 @@ test("thread tile layout is wired as an explicit shell policy", () => {
   assert.match(layoutBody, /threadTileLayoutPolicy\.layoutForViewport/);
   assert.match(layoutBody, /coarsePointer: isCoarsePointerViewport\(\)/);
   assert.match(layoutBody, /menuOverlay,/);
+  assert.match(layoutBody, /maxPanes: THREAD_TILE_USER_MAX_PANES/);
+  assert.match(layoutBody, /recommendedMaxPanes: threadTileLayoutPolicy\.DEFAULT_MAX_PANES/);
   assert.match(layoutBody, /verticalChromePx: threadTileVerticalChromePx\(\)/);
   assert.match(appJs, /function effectiveThreadTilePaneCount\(/);
+  assert.match(functionBody(appJs, "threadTileLayoutCapacity"), /layout\.recommendedMaxPanes \|\| layout\.maxPanes/);
   assert.match(functionBody(appJs, "effectiveThreadTilePaneCount"), /if \(explicit > 0\) \{[\s\S]*threadTileMaximumPaneCount\(layout\)[\s\S]*explicit/);
   assert.match(appJs, /function setThreadTilePaneCount\(/);
   assert.match(appJs, /function closeThreadTilePane\(/);

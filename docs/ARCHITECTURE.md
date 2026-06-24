@@ -678,10 +678,12 @@ are server-side runtime settings under `settings.json` `threadDisplay`, exposed
 through `GET/POST /api/settings/thread-display`; `localStorage` is only a legacy
 migration/cache mirror. `paneCount=0` means automatic sizing from current/running
 threads and viewport recommended capacity; a positive value is the user's
-manual window count. Device width sets the automatic/recommended capacity only.
-It does not cap explicit user-added panes: when the user adds more panes than
-the recommended column capacity, the tile board wraps into additional rows up
-to the bounded user pane ceiling. Pane slots are stable thread id positions:
+manual window count. Device width sets the automatic/recommended capacity and
+the physical column capacity separately. It does not cap explicit user-added
+panes at the automatic recommendation: when the screen can physically fit five
+or six panes, the tile board keeps them on one row. It wraps into additional
+rows only after the requested pane count exceeds the physical column capacity,
+up to the bounded user pane ceiling. Pane slots are stable thread id positions:
 normal thread-list
 recent sorting can fill empty slots but must not reorder existing slots. A manual
 pane title-menu switch replaces only that slot and persists the new ordered pane

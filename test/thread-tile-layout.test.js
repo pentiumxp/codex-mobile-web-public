@@ -32,6 +32,26 @@ test("thread tile layout uses multiple desktop panes when width allows", () => {
   assert.equal(layout.columns, 4);
   assert.equal(layout.rows, 2);
   assert.equal(layout.maxPanes, 6);
+  assert.equal(layout.recommendedMaxPanes, 6);
+});
+
+test("thread tile layout keeps manual desktop panes in one row when width allows", () => {
+  const layout = tile.layoutForViewport({
+    enabled: true,
+    viewportWidth: 3100,
+    viewportHeight: 1200,
+    sidebarWidth: 420,
+    coarsePointer: false,
+    menuOverlay: false,
+    maxPanes: tile.DEFAULT_USER_MAX_PANES,
+    recommendedMaxPanes: tile.DEFAULT_MAX_PANES,
+  });
+
+  assert.equal(layout.enabled, true);
+  assert.equal(layout.reason, "wide");
+  assert.equal(layout.columns, 6);
+  assert.equal(layout.maxPanes, 12);
+  assert.equal(layout.recommendedMaxPanes, 6);
 });
 
 test("thread tile layout exposes a separate user pane ceiling", () => {
