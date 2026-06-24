@@ -1,11 +1,14 @@
-# 2026-06-24 - Tile pane management v424 committed and deployed
+# 2026-06-24 - Tile pane management v424 committed, deployed, and pushed Public
 
 - Scope:
   - Implemented, validated, committed, and deployed to Mac production.
-  - Not pushed Public.
+  - Pushed private `origin/main` and public `codex-mobile-web-public/main`.
   - Commit:
     - `5500932 feat: 优化平铺窗口管理`
     - `aa863f1 docs: record v424 production deploy`
+    - `60e5c20 docs: 标记 v424 已同步 public`
+  - Public commit:
+    - `b952ebc release: 发布 v424 平铺窗口管理与架构重构`
 - Trigger:
   - User reported that server-persisted tile panes can hide occasionally active
     threads: if a less-used thread is actively opened from the outer thread list,
@@ -61,6 +64,21 @@
     `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
   - Central deployment audit remained non-blocking:
     `auditOk=false`, `issueCount=11`, `blockingIssueCount=0`.
+  - Private push:
+    `origin/main` updated to `60e5c20`.
+  - Public sync:
+    clean public mirror `/Users/hermes-dev/HermesMobileDev/public-mirrors/codex-mobile-web-public`
+    was fast-forwarded to public `2f07f09`, then product files were rsynced from
+    private checkout excluding `.agent-context`, runtime state, uploads, logs,
+    env files, and local-only state.
+  - Public validation before push:
+    `npm test` (`748` tests passed), `npm run check`,
+    `npm run check:macos`, `git diff --check`, and a tracked-file privacy scan
+    for `.agent-context`, `.codegraph`, `.codex`, `node_modules`, `logs`,
+    `uploads`, `runtime`, `data`, `.env`, VAPID/subscription/private-key/
+    access-key/secret/cookie/launch-token terms.
+  - Public push:
+    `public/main` updated to `b952ebc`.
 
 # 2026-06-24 - Tile pane count controls in title menu v423 local
 
