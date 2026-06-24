@@ -1,8 +1,10 @@
-# 2026-06-24 - Dynamic tile pane count v422 local
+# 2026-06-24 - Dynamic tile pane count v422 committed and deployed
 
 - Scope:
-  - Implemented and validated locally.
-  - Not committed, not deployed, not pushed Public.
+  - Implemented, locally validated, committed, and deployed to Mac production.
+  - Not pushed Public.
+  - Commit:
+    - `2231717 feat: 支持动态平铺窗口数`
 - Trigger:
   - User clarified that tile mode should not automatically fill every available
     device column. A four-pane-capable tablet should show two wider panes when
@@ -42,8 +44,24 @@
   - `npm run check:macos`
   - `git diff --check`
 - Operational notes:
-  - Production still has v421 until this change is committed and deployed.
   - Browser/PWA clients must load v422 shell to exercise the frontend controls.
+  - Central Home AI deploy script used:
+    `npm run --silent deploy:macos -- --plugin codex-mobile-web --source /Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web --restart-label com.hermesmobile.plugin.codex-mobile --health-url http://127.0.0.1:8787/api/public-config --reason dynamic-tile-pane-count-v422 --execute --json`
+  - Source ref: `2231717811b7`.
+  - Production target:
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Backup retained at:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260624T123122Z-plugin-codex-mobile-web-dynamic-tile-pane-count-v422`.
+  - Deploy pruned previous v421 backup:
+    `/Users/hermes-host/HermesMobile/backups/deploy/20260624T120947Z-plugin-codex-mobile-web-thread-display-v421`.
+  - Post-deploy health returned
+    `clientBuildId=0.1.11|codex-mobile-shell-v422` and
+    `shellCacheName=codex-mobile-shell-v422`.
+  - Production target validation:
+    `npm run check` and `npm run check:macos` both passed in
+    `/Users/hermes-host/HermesMobile/plugins/codex-mobile-web`.
+  - Central deployment audit remained non-blocking:
+    `auditOk=false`, `issueCount=11`, `blockingIssueCount=0`.
 
 # 2026-06-24 - Thread-display persistence and tile stability v421 committed and deployed
 
